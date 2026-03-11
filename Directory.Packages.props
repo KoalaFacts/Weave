@@ -1,0 +1,76 @@
+<Project>
+
+  <PropertyGroup>
+    <ManagePackageVersionsCentrally>true</ManagePackageVersionsCentrally>
+    <CentralPackageTransitivePinningEnabled>true</CentralPackageTransitivePinningEnabled>
+  </PropertyGroup>
+
+  <ItemGroup Label="Aspire">
+    <PackageVersion Include="Aspire.Hosting.AppHost" Version="13.1.2" />
+    <PackageVersion Include="Aspire.Hosting.Orleans" Version="13.1.2" />
+    <PackageVersion Include="Aspire.Hosting.Redis" Version="13.1.2" />
+    <PackageVersion Include="CommunityToolkit.Aspire.Hosting.Dapr" Version="9.5.0" />
+  </ItemGroup>
+
+  <ItemGroup Label="Aspire ServiceDefaults">
+    <PackageVersion Include="Microsoft.Extensions.Http.Resilience" Version="9.5.0" />
+    <PackageVersion Include="Microsoft.Extensions.ServiceDiscovery" Version="9.5.0" />
+    <PackageVersion Include="OpenTelemetry.Exporter.OpenTelemetryProtocol" Version="1.11.2" />
+    <PackageVersion Include="OpenTelemetry.Extensions.Hosting" Version="1.11.2" />
+    <PackageVersion Include="OpenTelemetry.Instrumentation.AspNetCore" Version="1.11.1" />
+    <PackageVersion Include="OpenTelemetry.Instrumentation.Http" Version="1.11.1" />
+    <PackageVersion Include="OpenTelemetry.Instrumentation.Runtime" Version="1.11.1" />
+  </ItemGroup>
+
+  <ItemGroup Label="Orleans">
+    <PackageVersion Include="Microsoft.Orleans.Server" Version="9.1.2" />
+    <PackageVersion Include="Microsoft.Orleans.Client" Version="9.1.2" />
+    <PackageVersion Include="Microsoft.Orleans.Sdk" Version="9.1.2" />
+    <PackageVersion Include="Microsoft.Orleans.Streaming" Version="9.1.2" />
+    <PackageVersion Include="Microsoft.Orleans.Persistence.Redis" Version="9.1.2" />
+    <PackageVersion Include="Microsoft.Orleans.Clustering.Redis" Version="9.1.2" />
+    <PackageVersion Include="Microsoft.Orleans.Testing" Version="9.1.2" />
+  </ItemGroup>
+
+  <ItemGroup Label="Microsoft.Extensions">
+    <PackageVersion Include="Microsoft.Extensions.DependencyInjection.Abstractions" Version="10.0.1" />
+    <PackageVersion Include="Microsoft.Extensions.Logging.Abstractions" Version="10.0.1" />
+  </ItemGroup>
+
+  <ItemGroup Label="Microsoft.Extensions.AI">
+    <PackageVersion Include="Microsoft.Extensions.AI" Version="9.5.0" />
+    <PackageVersion Include="Microsoft.Extensions.AI.Abstractions" Version="9.5.0" />
+    <PackageVersion Include="Microsoft.Extensions.AI.OpenAI" Version="9.5.0" />
+  </ItemGroup>
+
+  <ItemGroup Label="Dapr">
+    <PackageVersion Include="Dapr.Client" Version="1.15.3" />
+    <PackageVersion Include="Dapr.AspNetCore" Version="1.15.3" />
+  </ItemGroup>
+
+  <ItemGroup Label="YAML + Configuration">
+    <PackageVersion Include="YamlDotNet" Version="16.3.0" />
+  </ItemGroup>
+
+  <ItemGroup Label="Security">
+    <PackageVersion Include="VaultSharp" Version="1.17.6.1" />
+  </ItemGroup>
+
+  <ItemGroup Label="CLI">
+    <PackageVersion Include="System.CommandLine" Version="2.0.0-beta5.25306.1" />
+  </ItemGroup>
+
+  <ItemGroup Label="Testing">
+    <PackageVersion Include="Microsoft.NET.Test.Sdk" Version="17.13.0" />
+    <PackageVersion Include="xunit" Version="2.9.3" />
+    <PackageVersion Include="xunit.runner.visualstudio" Version="3.0.2" />
+    <PackageVersion Include="NSubstitute" Version="5.3.0" />
+    <PackageVersion Include="FluentAssertions" Version="8.2.0" />
+    <PackageVersion Include="Verify.Xunit" Version="28.12.3" />
+  </ItemGroup>
+
+  <ItemGroup Label="Blazor Dashboard">
+    <PackageVersion Include="MudBlazor" Version="8.5.0" />
+  </ItemGroup>
+
+</Project>

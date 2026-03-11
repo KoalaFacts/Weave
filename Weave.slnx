@@ -1,0 +1,7 @@
+<Solution>
+  <Folder Name="/src/">
+    <Project Path="src/Weave.Shared/Weave.Shared.csproj" />
+    <Project Path="src/Weave.ServiceDefaults/Weave.ServiceDefaults.csproj" />
+    <Project Path="src/Weave.AppHost/Weave.AppHost.csproj" />
+  </Folder>
+</Solution>

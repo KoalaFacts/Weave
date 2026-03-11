@@ -1,0 +1,64 @@
+## .NET
+bin/
+obj/
+*.user
+*.suo
+*.userosscache
+*.sln.docstates
+*.userprefs
+
+## Build results
+[Dd]ebug/
+[Rr]elease/
+x64/
+x86/
+[Ww][Ii][Nn]32/
+bld/
+[Bb]uild/
+[Ll]og/
+[Ll]ogs/
+
+## NuGet
+**/[Pp]ackages/*
+!**/[Pp]ackages/build/
+*.nupkg
+**/packages/
+project.lock.json
+
+## Visual Studio
+.vs/
+*.rsuser
+*.DotSettings.user
+_ReSharper*/
+*.[Rr]e[Ss]harper
+*.ncrunchproject
+*.ncrunchsolution
+*.DotSettings
+
+## Rider
+.idea/
+
+## VS Code
+.vscode/
+
+## Aspire
+.dcproj
+
+## Weave runtime state
+.weave/
+secrets.enc
+*.env
+.env.*
+
+## OS
+.DS_Store
+Thumbs.db
+ehthumbs.db
+Desktop.ini
+
+## Test results
+TestResults/
+coverage/
+*.trx
+*.coverage
+*.coveragexml
