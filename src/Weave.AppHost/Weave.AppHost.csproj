@@ -12,4 +12,8 @@
     <PackageReference Include="Aspire.Hosting.Redis" />
   </ItemGroup>
 
+  <ItemGroup>
+    <ProjectReference Include="..\Weave.Silo\Weave.Silo.csproj" IsAspireProjectResource="true" />
+  </ItemGroup>
+
 </Project>

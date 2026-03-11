@@ -9,11 +9,11 @@ var orleans = builder.AddOrleans("weave-cluster")
     .WithClustering(redis)
     .WithGrainStorage("Default", redis);
 
-// TODO: Phase 2 — Add silo project
-// builder.AddProject<Projects.Weave_Silo>("silo")
-//     .WithReference(orleans)
-//     .WaitFor(redis)
-//     .WithReplicas(2);
+// Silo — Orleans grain host
+builder.AddProject<Projects.Weave_Silo>("silo")
+    .WithReference(orleans)
+    .WaitFor(redis)
+    .WithReplicas(2);
 
 // TODO: Phase 4 — Add Dapr sidecars
 // .WithDaprSidecar(...)

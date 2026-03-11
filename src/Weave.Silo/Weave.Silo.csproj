@@ -1,0 +1,20 @@
+<Project Sdk="Microsoft.NET.Sdk.Web">
+
+  <PropertyGroup>
+    <OutputType>Exe</OutputType>
+    <IsAotExcluded>true</IsAotExcluded>
+  </PropertyGroup>
+
+  <ItemGroup>
+    <ProjectReference Include="..\Weave.ServiceDefaults\Weave.ServiceDefaults.csproj" />
+    <ProjectReference Include="..\Weave.Workspaces\Weave.Workspaces.csproj" />
+    <ProjectReference Include="..\Weave.Agents\Weave.Agents.csproj" />
+  </ItemGroup>
+
+  <ItemGroup>
+    <PackageReference Include="Microsoft.Orleans.Server" />
+    <PackageReference Include="Microsoft.Orleans.Persistence.Redis" />
+    <PackageReference Include="Microsoft.Orleans.Clustering.Redis" />
+  </ItemGroup>
+
+</Project>
