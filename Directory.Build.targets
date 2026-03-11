@@ -1,0 +1,6 @@
+<Project>
+  <!-- Suppress AOT/trimming warnings for projects that opt out -->
+  <PropertyGroup Condition="'$(IsAotExcluded)' == 'true'">
+    <NoWarn>$(NoWarn);IL2026;IL3050</NoWarn>
+  </PropertyGroup>
+</Project>
