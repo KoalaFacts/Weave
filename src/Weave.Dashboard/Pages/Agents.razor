@@ -1,0 +1,72 @@
+@page "/agents"
+
+<PageTitle>Agents - Weave</PageTitle>
+
+<FluentLabel Typo="Typography.H4" Style="margin-bottom: 1rem;">Agent Console</FluentLabel>
+
+<FluentStack Orientation="Orientation.Horizontal" HorizontalGap="16" Style="height: 500px;">
+    <FluentCard Style="width: 250px; padding: 1rem;">
+        <FluentLabel Typo="Typography.Subject" Style="margin-bottom: 0.5rem;">Active Agents</FluentLabel>
+        @if (_agents.Count == 0)
+        {
+            <FluentLabel Typo="Typography.Body">No agents active</FluentLabel>
+        }
+        @foreach (var agent in _agents)
+        {
+            <FluentButton Appearance="@(_selectedAgent == agent ? Appearance.Accent : Appearance.Stealth)"
+                          Style="width: 100%; margin-bottom: 4px;"
+                          OnClick="@(() => SelectAgent(agent))">
+                @agent
+            </FluentButton>
+        }
+    </FluentCard>
+
+    <FluentCard Style="flex: 1; padding: 1rem; display: flex; flex-direction: column;">
+        <FluentLabel Typo="Typography.Subject" Style="margin-bottom: 0.5rem;">
+            @(_selectedAgent ?? "Select an agent")
+        </FluentLabel>
+
+        <div style="flex: 1; overflow-y: auto; margin-bottom: 0.5rem;">
+            @foreach (var msg in _messages)
+            {
+                <div style="margin-bottom: 0.5rem;">
+                    <FluentLabel Typo="Typography.Body"><strong>@msg.Role:</strong> @msg.Content</FluentLabel>
+                </div>
+            }
+        </div>
+
+        <FluentStack Orientation="Orientation.Horizontal" HorizontalGap="8">
+            <FluentTextField @bind-Value="_inputMessage" Placeholder="Send message..."
+                             Style="flex: 1;" Disabled="@(_selectedAgent is null)" />
+            <FluentButton Appearance="Appearance.Accent" OnClick="SendMessage"
+                          Disabled="@(_selectedAgent is null)"
+>
+                Send
+            </FluentButton>
+        </FluentStack>
+    </FluentCard>
+</FluentStack>
+
+@code {
+    private record ChatMessage(string Role, string Content);
+
+    private List<string> _agents = [];
+    private string? _selectedAgent;
+    private string _inputMessage = string.Empty;
+    private List<ChatMessage> _messages = [];
+
+    private void SelectAgent(string agent)
+    {
+        _selectedAgent = agent;
+        _messages = [];
+    }
+
+    private void SendMessage()
+    {
+        if (string.IsNullOrWhiteSpace(_inputMessage) || _selectedAgent is null)
+            return;
+
+        _messages.Add(new ChatMessage("You", _inputMessage));
+        _inputMessage = string.Empty;
+    }
+}

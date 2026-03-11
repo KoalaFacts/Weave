@@ -7,9 +7,17 @@
     <Project Path="src/Weave.Agents/Weave.Agents.csproj" />
     <Project Path="src/Weave.Silo/Weave.Silo.csproj" />
     <Project Path="src/Weave.SourceGen/Weave.SourceGen.csproj" />
+    <Project Path="src/Weave.Security/Weave.Security.csproj" />
+    <Project Path="src/Weave.Tools/Weave.Tools.csproj" />
+    <Project Path="src/Weave.Deploy/Weave.Deploy.csproj" />
+    <Project Path="src/Weave.Dashboard/Weave.Dashboard.csproj" />
+    <Project Path="src/Weave.Cli/Weave.Cli.csproj" />
   </Folder>
   <Folder Name="/tests/">
     <Project Path="tests/Weave.Workspaces.Tests/Weave.Workspaces.Tests.csproj" />
     <Project Path="tests/Weave.Agents.Tests/Weave.Agents.Tests.csproj" />
+    <Project Path="tests/Weave.Security.Tests/Weave.Security.Tests.csproj" />
+    <Project Path="tests/Weave.Tools.Tests/Weave.Tools.Tests.csproj" />
+    <Project Path="tests/Weave.Deploy.Tests/Weave.Deploy.Tests.csproj" />
   </Folder>
 </Solution>

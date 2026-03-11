@@ -1,0 +1,39 @@
+@page "/"
+
+<PageTitle>Weave Dashboard</PageTitle>
+
+<FluentLabel Typo="Typography.H4">Welcome to Weave</FluentLabel>
+<FluentLabel Typo="Typography.Body" Style="margin-bottom: 1.5rem;">AI Agent Workspace Orchestrator</FluentLabel>
+
+<FluentStack Orientation="Orientation.Horizontal" Wrap="true" HorizontalGap="16">
+    <FluentCard Style="width: 200px; padding: 1rem;">
+        <FluentLabel Typo="Typography.Subject">Workspaces</FluentLabel>
+        <FluentLabel Typo="Typography.H2" Color="Color.Accent">0</FluentLabel>
+        <FluentLabel Typo="Typography.Body">Active</FluentLabel>
+    </FluentCard>
+
+    <FluentCard Style="width: 200px; padding: 1rem;">
+        <FluentLabel Typo="Typography.Subject">Agents</FluentLabel>
+        <FluentLabel Typo="Typography.H2" Color="Color.Accent">0</FluentLabel>
+        <FluentLabel Typo="Typography.Body">Running</FluentLabel>
+    </FluentCard>
+
+    <FluentCard Style="width: 200px; padding: 1rem;">
+        <FluentLabel Typo="Typography.Subject">Tools</FluentLabel>
+        <FluentLabel Typo="Typography.H2" Color="Color.Accent">0</FluentLabel>
+        <FluentLabel Typo="Typography.Body">Connected</FluentLabel>
+    </FluentCard>
+
+    <FluentCard Style="width: 200px; padding: 1rem;">
+        <FluentLabel Typo="Typography.Subject">LLM Costs</FluentLabel>
+        <FluentLabel Typo="Typography.H2" Color="Color.Accent">$0.00</FluentLabel>
+        <FluentLabel Typo="Typography.Body">Today</FluentLabel>
+    </FluentCard>
+</FluentStack>
+
+<FluentLabel Typo="Typography.H5" Style="margin-top: 2rem; margin-bottom: 1rem;">Quick Actions</FluentLabel>
+<FluentStack Orientation="Orientation.Horizontal" Wrap="true" HorizontalGap="12">
+    <FluentAnchor Href="/workspaces" Appearance="Appearance.Accent">New Workspace</FluentAnchor>
+    <FluentAnchor Href="/setup" Appearance="Appearance.Outline">Setup Wizard</FluentAnchor>
+    <FluentAnchor Href="/monitoring" Appearance="Appearance.Outline">View Monitoring</FluentAnchor>
+</FluentStack>

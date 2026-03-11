@@ -1,0 +1,32 @@
+@page "/workspaces"
+
+<PageTitle>Workspaces - Weave</PageTitle>
+
+<FluentLabel Typo="Typography.H4" Style="margin-bottom: 1rem;">Workspaces</FluentLabel>
+
+<FluentDataGrid Items="@_workspaces" GridTemplateColumns="1fr 120px 80px 80px 160px">
+    <PropertyColumn Property="@(w => w.Name)" Title="Name" />
+    <TemplateColumn Title="Status">
+        <FluentBadge Appearance="@GetStatusAppearance(context.Status)">@context.Status</FluentBadge>
+    </TemplateColumn>
+    <PropertyColumn Property="@(w => w.AgentCount)" Title="Agents" />
+    <PropertyColumn Property="@(w => w.ToolCount)" Title="Tools" />
+    <TemplateColumn Title="Actions">
+        <FluentButton Appearance="Appearance.Stealth">Start</FluentButton>
+        <FluentButton Appearance="Appearance.Stealth">Stop</FluentButton>
+    </TemplateColumn>
+</FluentDataGrid>
+
+@code {
+    private record WorkspaceRow(string Name, string Status, int AgentCount, int ToolCount);
+
+    private IQueryable<WorkspaceRow> _workspaces = Array.Empty<WorkspaceRow>().AsQueryable();
+
+    private static Appearance GetStatusAppearance(string status) => status switch
+    {
+        "Running" => Appearance.Accent,
+        "Stopped" => Appearance.Neutral,
+        "Error" => Appearance.Accent,
+        _ => Appearance.Neutral
+    };
+}

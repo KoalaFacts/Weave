@@ -1,0 +1,23 @@
+@inherits LayoutComponentBase
+
+<FluentLayout>
+    <FluentHeader>
+        Weave Dashboard
+    </FluentHeader>
+
+    <FluentStack Orientation="Orientation.Horizontal" Style="height: calc(100vh - 50px);">
+        <FluentNavMenu Width="250" Title="Navigation">
+            <NavMenu />
+        </FluentNavMenu>
+
+        <FluentBodyContent>
+            <div style="padding: 1.5rem;">
+                @Body
+            </div>
+        </FluentBodyContent>
+    </FluentStack>
+
+    <FluentFooter>
+        <span>Weave v0.1.0 — AI Agent Workspace Orchestrator</span>
+    </FluentFooter>
+</FluentLayout>
