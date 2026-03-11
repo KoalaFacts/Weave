@@ -1,0 +1,17 @@
+<Project>
+
+  <!-- Import parent Directory.Build.props -->
+  <Import Project="$([MSBuild]::GetPathOfFileAbove('Directory.Build.props', '$(MSBuildThisFileDirectory)..'))" />
+
+  <PropertyGroup>
+    <IsAotExcluded>true</IsAotExcluded>
+    <IsAotCompatible>false</IsAotCompatible>
+    <IsTrimmable>false</IsTrimmable>
+  </PropertyGroup>
+
+  <PropertyGroup>
+    <!-- Allow underscores in test method names -->
+    <NoWarn>$(NoWarn);CA1707</NoWarn>
+  </PropertyGroup>
+
+</Project>

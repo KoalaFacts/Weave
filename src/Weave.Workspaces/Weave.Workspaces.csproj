@@ -1,0 +1,16 @@
+<Project Sdk="Microsoft.NET.Sdk">
+
+  <PropertyGroup>
+    <IsAotExcluded>true</IsAotExcluded>
+  </PropertyGroup>
+
+  <ItemGroup>
+    <ProjectReference Include="..\Weave.Shared\Weave.Shared.csproj" />
+  </ItemGroup>
+
+  <ItemGroup>
+    <PackageReference Include="Microsoft.Orleans.Sdk" />
+    <PackageReference Include="YamlDotNet" />
+  </ItemGroup>
+
+</Project>
