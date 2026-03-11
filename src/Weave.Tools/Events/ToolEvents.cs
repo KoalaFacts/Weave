@@ -5,21 +5,6 @@ using Weave.Shared.Ids;
 namespace Weave.Tools.Events;
 
 [GenerateSerializer]
-public sealed record ToolConnectedEvent : DomainEvent
-{
-    [Id(3)] public required string ToolName { get; init; }
-    [Id(4)] public required WorkspaceId WorkspaceId { get; init; }
-    [Id(5)] public required string ToolType { get; init; }
-}
-
-[GenerateSerializer]
-public sealed record ToolDisconnectedEvent : DomainEvent
-{
-    [Id(3)] public required string ToolName { get; init; }
-    [Id(4)] public required WorkspaceId WorkspaceId { get; init; }
-}
-
-[GenerateSerializer]
 public sealed record ToolInvocationCompletedEvent : DomainEvent
 {
     [Id(3)] public required string ToolName { get; init; }

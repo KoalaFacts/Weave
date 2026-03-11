@@ -1,10 +1,7 @@
-using FluentAssertions;
 using Microsoft.Extensions.Logging;
-using NSubstitute;
 using Weave.Security.Proxy;
 using Weave.Security.Scanning;
 using Weave.Shared.Secrets;
-using Xunit;
 
 namespace Weave.Security.Tests;
 
@@ -25,7 +22,7 @@ public sealed class TransparentSecretProxyTests
 
         var result = _proxy.SubstitutePlaceholders("Authorization: {secret:api_key}");
 
-        result.Should().Be("Authorization: my-secret-key");
+        result.ShouldBe("Authorization: my-secret-key");
     }
 
     [Fact]
@@ -33,7 +30,7 @@ public sealed class TransparentSecretProxyTests
     {
         var result = _proxy.SubstitutePlaceholders("Authorization: {secret:unknown}");
 
-        result.Should().Be("Authorization: {secret:unknown}");
+        result.ShouldBe("Authorization: {secret:unknown}");
     }
 
     [Fact]
@@ -44,7 +41,7 @@ public sealed class TransparentSecretProxyTests
 
         var result = _proxy.SubstitutePlaceholders("{secret:key1} and {secret:key2}");
 
-        result.Should().Be("value1 and value2");
+        result.ShouldBe("value1 and value2");
     }
 
     [Fact]
@@ -54,7 +51,7 @@ public sealed class TransparentSecretProxyTests
         _proxy.UnregisterSecret("temp");
 
         var result = _proxy.SubstitutePlaceholders("{secret:temp}");
-        result.Should().Be("{secret:temp}");
+        result.ShouldBe("{secret:temp}");
     }
 
     [Fact]
@@ -62,6 +59,6 @@ public sealed class TransparentSecretProxyTests
     {
         var result = await _proxy.ScanResponseAsync("AKIAIOSFODNN7EXAMPLE", "test-ws");
 
-        result.HasLeaks.Should().BeTrue();
+        result.HasLeaks.ShouldBeTrue();
     }
 }

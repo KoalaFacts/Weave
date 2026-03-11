@@ -1,4 +1,3 @@
-using Orleans;
 using Weave.Shared.Events;
 
 namespace Weave.Workspaces.Events;

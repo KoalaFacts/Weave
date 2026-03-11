@@ -14,7 +14,7 @@ public sealed class ConfigShowCommand : AsyncCommand<ConfigShowCommand.Settings>
         public string? Workspace { get; init; }
     }
 
-    public override async Task<int> ExecuteAsync(CommandContext context, Settings settings)
+    public override async Task<int> ExecuteAsync(CommandContext context, Settings settings, CancellationToken cancellationToken)
     {
         var manifestPath = ManifestResolver.Resolve(settings.Workspace);
         if (manifestPath is null)
@@ -23,7 +23,7 @@ public sealed class ConfigShowCommand : AsyncCommand<ConfigShowCommand.Settings>
             return 1;
         }
 
-        var content = await File.ReadAllTextAsync(manifestPath);
+        var content = await File.ReadAllTextAsync(manifestPath, cancellationToken);
         AnsiConsole.Write(new Panel(content).Header("workspace.yml").Border(BoxBorder.Rounded));
         return 0;
     }
@@ -38,7 +38,7 @@ public sealed class ConfigValidateCommand : AsyncCommand<ConfigValidateCommand.S
         public string? Workspace { get; init; }
     }
 
-    public override async Task<int> ExecuteAsync(CommandContext context, Settings settings)
+    public override async Task<int> ExecuteAsync(CommandContext context, Settings settings, CancellationToken cancellationToken)
     {
         var manifestPath = ManifestResolver.Resolve(settings.Workspace);
         if (manifestPath is null)
@@ -49,7 +49,7 @@ public sealed class ConfigValidateCommand : AsyncCommand<ConfigValidateCommand.S
 
         try
         {
-            var yaml = await File.ReadAllTextAsync(manifestPath);
+            var yaml = await File.ReadAllTextAsync(manifestPath, cancellationToken);
             var parser = new ManifestParser();
             var manifest = parser.Parse(yaml);
 

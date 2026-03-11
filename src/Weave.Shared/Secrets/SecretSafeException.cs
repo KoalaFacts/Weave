@@ -1,6 +1,6 @@
 namespace Weave.Shared.Secrets;
 
-public class SecretSafeException : Exception
+public sealed class SecretSafeException : Exception
 {
     private static readonly string[] RedactionPatterns =
     [
@@ -22,21 +22,30 @@ public class SecretSafeException : Exception
     {
         foreach (var pattern in RedactionPatterns)
         {
-            var index = message.IndexOf(pattern, StringComparison.OrdinalIgnoreCase);
-            if (index >= 0)
+            var startIndex = 0;
+            while (startIndex < message.Length)
             {
-                // Find the value after '=' or ':' or ' ' following the pattern keyword
+                var index = message.IndexOf(pattern, startIndex, StringComparison.OrdinalIgnoreCase);
+                if (index < 0)
+                    break;
+
                 var afterPattern = index + pattern.Length;
-                if (afterPattern < message.Length)
+                if (afterPattern >= message.Length)
+                    break;
+
+                var separator = message.IndexOfAny(['=', ':', ' '], afterPattern);
+                if (separator < 0 || separator + 1 >= message.Length)
                 {
-                    var separator = message.IndexOfAny(['=', ':', ' '], afterPattern);
-                    if (separator >= 0 && separator + 1 < message.Length)
-                    {
-                        var end = message.IndexOfAny([' ', ';', ',', '\n', '\r', '"', '\''], separator + 1);
-                        if (end < 0) end = message.Length;
-                        message = string.Concat(message.AsSpan(0, separator + 1), "***REDACTED***", message.AsSpan(end));
-                    }
+                    startIndex = afterPattern;
+                    continue;
                 }
+
+                var end = message.IndexOfAny([' ', ';', ',', '\n', '\r', '"', '\''], separator + 1);
+                if (end < 0)
+                    end = message.Length;
+
+                message = string.Concat(message.AsSpan(0, separator + 1), "***REDACTED***", message.AsSpan(end));
+                startIndex = separator + 1 + "***REDACTED***".Length;
             }
         }
         return message;

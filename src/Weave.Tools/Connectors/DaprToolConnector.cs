@@ -36,9 +36,11 @@ public sealed class DaprToolConnector(DaprClient daprClient, ILogger<DaprToolCon
         var sw = Stopwatch.StartNew();
         try
         {
-            var appId = handle.ConnectionId.Replace("dapr:", "");
+            var appId = handle.ConnectionId.Replace("dapr:", "", StringComparison.Ordinal);
+#pragma warning disable CS0618 // Dapr service invocation migration is tracked separately
             var response = await daprClient.InvokeMethodAsync<Dictionary<string, string>, string>(
                 appId, invocation.Method, invocation.Parameters, ct);
+#pragma warning restore CS0618
             sw.Stop();
 
             return new ToolResult

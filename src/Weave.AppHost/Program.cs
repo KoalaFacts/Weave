@@ -18,10 +18,11 @@ var pubSub = builder.AddDaprPubSub("pubsub");
 // Silo — Orleans grain host with Dapr sidecar
 builder.AddProject<Projects.Weave_Silo>("silo")
     .WithReference(orleans)
-    .WithReference(stateStore)
-    .WithReference(pubSub)
     .WaitFor(redis)
-    .WithDaprSidecar(new DaprSidecarOptions { AppId = "weave-silo" })
+    .WithDaprSidecar(sidecar => sidecar
+        .WithOptions(new DaprSidecarOptions { AppId = "weave-silo" })
+        .WithReference(stateStore)
+        .WithReference(pubSub))
     .WithReplicas(2);
 
 // Dashboard — Blazor Server UI for management + monitoring

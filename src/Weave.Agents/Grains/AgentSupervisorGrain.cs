@@ -1,5 +1,4 @@
 using Microsoft.Extensions.Logging;
-using Orleans;
 using Weave.Agents.Models;
 using Weave.Shared.Ids;
 using Weave.Workspaces.Models;
@@ -10,8 +9,8 @@ public sealed class AgentSupervisorGrain(
     IGrainFactory grainFactory,
     ILogger<AgentSupervisorGrain> logger) : Grain, IAgentSupervisorGrain
 {
-    private readonly List<string> _agentNames = [];
-    private string _workspaceId = null!;
+    private readonly HashSet<string> _agentNames = [];
+    private string _workspaceId = string.Empty;
 
     public override Task OnActivateAsync(CancellationToken cancellationToken)
     {

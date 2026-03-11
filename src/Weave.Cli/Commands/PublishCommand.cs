@@ -25,7 +25,7 @@ public sealed class PublishCommand : AsyncCommand<PublishCommand.Settings>
         public string? Workspace { get; init; }
     }
 
-    public override async Task<int> ExecuteAsync(CommandContext context, Settings settings)
+    public override async Task<int> ExecuteAsync(CommandContext context, Settings settings, CancellationToken cancellationToken)
     {
         var manifestPath = ManifestResolver.Resolve(settings.Workspace);
         if (manifestPath is null)
@@ -34,7 +34,7 @@ public sealed class PublishCommand : AsyncCommand<PublishCommand.Settings>
             return 1;
         }
 
-        var yaml = await File.ReadAllTextAsync(manifestPath);
+        var yaml = await File.ReadAllTextAsync(manifestPath, cancellationToken);
         var parser = new ManifestParser();
         var manifest = parser.Parse(yaml);
 
@@ -49,7 +49,7 @@ public sealed class PublishCommand : AsyncCommand<PublishCommand.Settings>
         };
 
         var options = new PublishOptions { OutputPath = settings.Output };
-        var result = await publisher.PublishAsync(manifest, options);
+        var result = await publisher.PublishAsync(manifest, options, cancellationToken);
 
         if (result.Success)
         {

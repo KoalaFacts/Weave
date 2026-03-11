@@ -107,18 +107,34 @@ public sealed partial class LeakScanner : ILeakScanner
 
     public static double CalculateShannonEntropy(string input)
     {
-        var freq = new Dictionary<char, int>();
+        // Use stackalloc for ASCII frequency counting (covers all printable chars)
+        Span<int> freq = stackalloc int[128];
+        var nonAsciiCount = 0;
+
         foreach (var c in input)
         {
-            freq.TryGetValue(c, out var count);
-            freq[c] = count + 1;
+            if (c < 128)
+                freq[c]++;
+            else
+                nonAsciiCount++;
         }
 
         double entropy = 0;
         var len = (double)input.Length;
-        foreach (var count in freq.Values)
+
+        for (var i = 0; i < 128; i++)
         {
-            var p = count / len;
+            if (freq[i] > 0)
+            {
+                var p = freq[i] / len;
+                entropy -= p * Math.Log2(p);
+            }
+        }
+
+        // Treat all non-ASCII chars as a single bucket (rare in secrets)
+        if (nonAsciiCount > 0)
+        {
+            var p = nonAsciiCount / len;
             entropy -= p * Math.Log2(p);
         }
 

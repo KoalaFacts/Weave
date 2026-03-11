@@ -1,3 +1,4 @@
+using System.Collections.Frozen;
 using System.Diagnostics.CodeAnalysis;
 using Weave.Workspaces.Models;
 using YamlDotNet.Serialization;
@@ -16,6 +17,9 @@ public interface IManifestParser
 [RequiresDynamicCode("ManifestParser uses YamlDotNet reflection-based serialization.")]
 public sealed class ManifestParser : IManifestParser
 {
+    private static readonly FrozenSet<string> ValidToolTypes =
+        FrozenSet.ToFrozenSet(["mcp", "dapr", "openapi", "cli", "library"]);
+
     private readonly IDeserializer _deserializer;
     private readonly ISerializer _serializer;
 
@@ -86,9 +90,8 @@ public sealed class ManifestParser : IManifestParser
             if (string.IsNullOrWhiteSpace(tool.Type))
                 errors.Add($"Tool '{toolName}': 'type' is required.");
 
-            var validTypes = new[] { "mcp", "dapr", "openapi", "cli", "library" };
-            if (!validTypes.Contains(tool.Type))
-                errors.Add($"Tool '{toolName}': invalid type '{tool.Type}'. Must be one of: {string.Join(", ", validTypes)}.");
+            if (!ValidToolTypes.Contains(tool.Type))
+                errors.Add($"Tool '{toolName}': invalid type '{tool.Type}'. Must be one of: {string.Join(", ", ValidToolTypes)}.");
         }
 
         foreach (var (targetName, target) in manifest.Targets)
@@ -122,7 +125,8 @@ public sealed class ManifestParser : IManifestParser
 
     private static WorkspaceConfig MapWorkspaceConfig(WorkspaceConfigDto? dto)
     {
-        if (dto is null) return new WorkspaceConfig();
+        if (dto is null)
+            return new WorkspaceConfig();
         return new WorkspaceConfig
         {
             Isolation = Enum.TryParse<IsolationLevel>(dto.Isolation, true, out var level) ? level : IsolationLevel.Full,
@@ -212,7 +216,110 @@ public sealed class ManifestParser : IManifestParser
     private static ManifestDto MapToDto(WorkspaceManifest manifest) => new()
     {
         Version = manifest.Version,
-        Name = manifest.Name
+        Name = manifest.Name,
+        Workspace = MapWorkspaceConfigToDto(manifest.Workspace),
+        Agents = manifest.Agents.Count > 0
+            ? manifest.Agents.ToDictionary(kvp => kvp.Key, kvp => MapAgentDefinitionToDto(kvp.Value))
+            : null,
+        Tools = manifest.Tools.Count > 0
+            ? manifest.Tools.ToDictionary(kvp => kvp.Key, kvp => MapToolDefinitionToDto(kvp.Value))
+            : null,
+        Targets = manifest.Targets.Count > 0
+            ? manifest.Targets.ToDictionary(kvp => kvp.Key, kvp => MapTargetDefinitionToDto(kvp.Value))
+            : null,
+        Hooks = manifest.Hooks is not null ? MapHooksConfigToDto(manifest.Hooks) : null
+    };
+
+    private static WorkspaceConfigDto MapWorkspaceConfigToDto(WorkspaceConfig config) => new()
+    {
+        Isolation = config.Isolation.ToString().ToLowerInvariant(),
+        Network = config.Network is not null ? new NetworkConfigDto { Name = config.Network.Name, Subnet = config.Network.Subnet } : null,
+        Filesystem = config.Filesystem is not null ? new FilesystemConfigDto
+        {
+            Root = config.Filesystem.Root,
+            Mounts = config.Filesystem.Mounts.Count > 0
+                ? config.Filesystem.Mounts.Select(m => new MountConfigDto { Source = m.Source, Target = m.Target, Readonly = m.Readonly }).ToList()
+                : null
+        } : null,
+        Secrets = config.Secrets is not null ? new SecretsConfigDto
+        {
+            Provider = config.Secrets.Provider,
+            Vault = config.Secrets.Vault is not null ? new VaultConfigDto { Address = config.Secrets.Vault.Address, Mount = config.Secrets.Vault.Mount } : null
+        } : null
+    };
+
+    private static AgentDefinitionDto MapAgentDefinitionToDto(AgentDefinition agent) => new()
+    {
+        Model = agent.Model,
+        SystemPromptFile = agent.SystemPromptFile,
+        MaxConcurrentTasks = agent.MaxConcurrentTasks,
+        Memory = agent.Memory is not null ? new MemoryConfigDto { Provider = agent.Memory.Provider, Ttl = agent.Memory.Ttl } : null,
+        Tools = agent.Tools.Count > 0 ? agent.Tools.ToList() : null,
+        Capabilities = agent.Capabilities.Count > 0 ? agent.Capabilities.ToList() : null,
+        Heartbeat = agent.Heartbeat is not null
+            ? new HeartbeatConfigDto { Cron = agent.Heartbeat.Cron, Tasks = agent.Heartbeat.Tasks.Count > 0 ? agent.Heartbeat.Tasks.ToList() : null }
+            : null,
+        Target = agent.Target is not null
+            ? new TargetSelectorDto { Labels = agent.Target.Labels.Count > 0 ? agent.Target.Labels.ToList() : null }
+            : null
+    };
+
+    private static ToolDefinitionDto MapToolDefinitionToDto(ToolDefinition tool) => new()
+    {
+        Type = tool.Type,
+        Mcp = tool.Mcp is not null ? new McpConfigDto
+        {
+            Server = tool.Mcp.Server,
+            Args = tool.Mcp.Args.Count > 0 ? tool.Mcp.Args.ToList() : null,
+            Env = tool.Mcp.Env.Count > 0 ? new Dictionary<string, string>(tool.Mcp.Env) : null
+        } : null,
+        OpenApi = tool.OpenApi is not null ? new OpenApiConfigDto
+        {
+            SpecUrl = tool.OpenApi.SpecUrl,
+            Auth = tool.OpenApi.Auth is not null ? new AuthConfigDto { Type = tool.OpenApi.Auth.Type, Token = tool.OpenApi.Auth.Token } : null
+        } : null,
+        Cli = tool.Cli is not null ? new CliConfigDto
+        {
+            Shell = tool.Cli.Shell,
+            AllowedCommands = tool.Cli.AllowedCommands.Count > 0 ? tool.Cli.AllowedCommands.ToList() : null,
+            DeniedCommands = tool.Cli.DeniedCommands.Count > 0 ? tool.Cli.DeniedCommands.ToList() : null
+        } : null
+    };
+
+    private static TargetDefinitionDto MapTargetDefinitionToDto(TargetDefinition target) => new()
+    {
+        Runtime = target.Runtime,
+        Replicas = target.Replicas,
+        Trigger = target.Trigger,
+        Region = target.Region,
+        Scaling = target.Scaling is not null ? new ScalingConfigDto { Min = target.Scaling.Min, Max = target.Scaling.Max } : null
+    };
+
+    private static HooksConfigDto MapHooksConfigToDto(HooksConfig hooks) => new()
+    {
+        Workspace = hooks.Workspace is not null ? new WorkspaceHooksDto
+        {
+            PreStart = hooks.Workspace.PreStart.Count > 0 ? hooks.Workspace.PreStart.ToList() : null,
+            PostStart = hooks.Workspace.PostStart.Count > 0 ? hooks.Workspace.PostStart.ToList() : null,
+            PreStop = hooks.Workspace.PreStop.Count > 0 ? hooks.Workspace.PreStop.ToList() : null,
+            PostStop = hooks.Workspace.PostStop.Count > 0 ? hooks.Workspace.PostStop.ToList() : null
+        } : null,
+        Agents = hooks.Agents?.ToDictionary(
+            kvp => kvp.Key,
+            kvp => new AgentHooksDto
+            {
+                OnActivated = kvp.Value.OnActivated.Count > 0 ? kvp.Value.OnActivated.ToList() : null,
+                OnDeactivated = kvp.Value.OnDeactivated.Count > 0 ? kvp.Value.OnDeactivated.ToList() : null,
+                OnError = kvp.Value.OnError.Count > 0 ? kvp.Value.OnError.ToList() : null
+            }),
+        Tools = hooks.Tools?.ToDictionary(
+            kvp => kvp.Key,
+            kvp => new ToolHooksDto
+            {
+                OnConnected = kvp.Value.OnConnected.Count > 0 ? kvp.Value.OnConnected.ToList() : null,
+                OnDisconnected = kvp.Value.OnDisconnected.Count > 0 ? kvp.Value.OnDisconnected.ToList() : null,
+                OnError = kvp.Value.OnError.Count > 0 ? kvp.Value.OnError.ToList() : null
+            })
     };
 }
 

@@ -1,5 +1,4 @@
 using Microsoft.Extensions.Logging;
-using Orleans;
 using Weave.Agents.Grains;
 
 namespace Weave.Agents.Heartbeat;
@@ -16,14 +15,16 @@ public sealed class HeartbeatGrain(
         if (_state.IsRunning)
             return Task.CompletedTask;
 
+        var minutes = ParseCronMinutes(config.Cron);
+
         _state = new HeartbeatState
         {
             IsRunning = true,
             Config = config,
-            NextRun = DateTimeOffset.UtcNow.AddMinutes(ParseCronMinutes(config.Cron))
+            NextRun = DateTimeOffset.UtcNow.AddMinutes(minutes)
         };
 
-        var interval = TimeSpan.FromMinutes(ParseCronMinutes(config.Cron));
+        var interval = TimeSpan.FromMinutes(minutes);
         _timer = this.RegisterGrainTimer(OnHeartbeatTick, interval, interval);
 
         logger.LogInformation("Heartbeat started for {Key} with interval {Interval}",
@@ -67,7 +68,7 @@ public sealed class HeartbeatGrain(
                 {
                     await agentGrain.SubmitTaskAsync($"[Heartbeat] {task}");
                 }
-                catch (InvalidOperationException ex) when (ex.Message.Contains("max concurrent"))
+                catch (InvalidOperationException ex) when (ex.Message.Contains("max concurrent", StringComparison.Ordinal))
                 {
                     logger.LogDebug("Agent {Key} at max capacity, deferring heartbeat task", key);
                     break;

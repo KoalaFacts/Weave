@@ -15,7 +15,7 @@ public sealed class WorkspaceNewCommand : AsyncCommand<WorkspaceNewCommand.Setti
         public string Name { get; init; } = string.Empty;
     }
 
-    public override async Task<int> ExecuteAsync(CommandContext context, Settings settings)
+    public override async Task<int> ExecuteAsync(CommandContext context, Settings settings, CancellationToken cancellationToken)
     {
         var name = settings.Name;
         var basePath = Path.Combine("workspaces", name);
@@ -48,9 +48,9 @@ public sealed class WorkspaceNewCommand : AsyncCommand<WorkspaceNewCommand.Setti
         manifest.AppendLine("  local:");
         manifest.AppendLine("    runtime: podman");
 
-        await File.WriteAllTextAsync(Path.Combine(basePath, "workspace.yml"), manifest.ToString());
+        await File.WriteAllTextAsync(Path.Combine(basePath, "workspace.yml"), manifest.ToString(), cancellationToken);
         await File.WriteAllTextAsync(Path.Combine(basePath, "prompts", "assistant.md"),
-            "# Assistant\n\nYou are a helpful AI assistant.\n");
+            "# Assistant\n\nYou are a helpful AI assistant.\n", cancellationToken);
 
         AnsiConsole.MarkupLine($"[green]Workspace '{name}' created at {basePath}/[/]");
         AnsiConsole.MarkupLine("  workspace.yml — workspace manifest");
@@ -63,7 +63,7 @@ public sealed class WorkspaceListCommand : Command<WorkspaceListCommand.Settings
 {
     public sealed class Settings : CommandSettings { }
 
-    public override int Execute(CommandContext context, Settings settings)
+    public override int Execute(CommandContext context, Settings settings, CancellationToken cancellationToken)
     {
         var workspacesDir = "workspaces";
         if (!Directory.Exists(workspacesDir))
@@ -110,7 +110,7 @@ public sealed class WorkspaceRemoveCommand : Command<WorkspaceRemoveCommand.Sett
         public bool Purge { get; init; }
     }
 
-    public override int Execute(CommandContext context, Settings settings)
+    public override int Execute(CommandContext context, Settings settings, CancellationToken cancellationToken)
     {
         var path = Path.Combine("workspaces", settings.Name);
         if (!Directory.Exists(path))

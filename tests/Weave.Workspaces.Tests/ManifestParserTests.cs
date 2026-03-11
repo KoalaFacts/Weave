@@ -1,7 +1,5 @@
-using FluentAssertions;
 using Weave.Workspaces.Manifest;
 using Weave.Workspaces.Models;
-using Xunit;
 
 namespace Weave.Workspaces.Tests;
 
@@ -79,11 +77,11 @@ public sealed class ManifestParserTests
     {
         var manifest = _parser.Parse(FullManifest);
 
-        manifest.Version.Should().Be("1.0");
-        manifest.Name.Should().Be("test-workspace");
-        manifest.Workspace.Isolation.Should().Be(IsolationLevel.Full);
-        manifest.Workspace.Network!.Subnet.Should().Be("10.42.0.0/16");
-        manifest.Workspace.Secrets!.Provider.Should().Be("vault");
+        manifest.Version.ShouldBe("1.0");
+        manifest.Name.ShouldBe("test-workspace");
+        manifest.Workspace.Isolation.ShouldBe(IsolationLevel.Full);
+        manifest.Workspace.Network!.Subnet.ShouldBe("10.42.0.0/16");
+        manifest.Workspace.Secrets!.Provider.ShouldBe("vault");
     }
 
     [Fact]
@@ -91,13 +89,13 @@ public sealed class ManifestParserTests
     {
         var manifest = _parser.Parse(FullManifest);
 
-        manifest.Agents.Should().ContainKey("researcher");
+        manifest.Agents.ShouldContainKey("researcher");
         var agent = manifest.Agents["researcher"];
-        agent.Model.Should().Be("claude-sonnet-4-20250514");
-        agent.MaxConcurrentTasks.Should().Be(5);
-        agent.Tools.Should().Contain("web-search");
-        agent.Heartbeat!.Cron.Should().Be("*/30 * * * *");
-        agent.Heartbeat.Tasks.Should().Contain("Check for updates");
+        agent.Model.ShouldBe("claude-sonnet-4-20250514");
+        agent.MaxConcurrentTasks.ShouldBe(5);
+        agent.Tools.ShouldContain("web-search");
+        agent.Heartbeat!.Cron.ShouldBe("*/30 * * * *");
+        agent.Heartbeat.Tasks.ShouldContain("Check for updates");
     }
 
     [Fact]
@@ -105,18 +103,18 @@ public sealed class ManifestParserTests
     {
         var manifest = _parser.Parse(FullManifest);
 
-        manifest.Tools.Should().HaveCount(2);
+        manifest.Tools.Count.ShouldBe(2);
 
         var mcpTool = manifest.Tools["web-search"];
-        mcpTool.Type.Should().Be("mcp");
-        mcpTool.Mcp!.Server.Should().Be("npx");
-        mcpTool.Mcp.Args.Should().Contain("-y");
+        mcpTool.Type.ShouldBe("mcp");
+        mcpTool.Mcp!.Server.ShouldBe("npx");
+        mcpTool.Mcp.Args.ShouldContain("-y");
 
         var cliTool = manifest.Tools["terminal"];
-        cliTool.Type.Should().Be("cli");
-        cliTool.Cli!.Shell.Should().Be("/bin/bash");
-        cliTool.Cli.AllowedCommands.Should().Contain("git *");
-        cliTool.Cli.DeniedCommands.Should().Contain("rm -rf /");
+        cliTool.Type.ShouldBe("cli");
+        cliTool.Cli!.Shell.ShouldBe("/bin/bash");
+        cliTool.Cli.AllowedCommands.ShouldContain("git *");
+        cliTool.Cli.DeniedCommands.ShouldContain("rm -rf /");
     }
 
     [Fact]
@@ -124,9 +122,9 @@ public sealed class ManifestParserTests
     {
         var manifest = _parser.Parse(FullManifest);
 
-        manifest.Targets.Should().ContainKey("local");
-        manifest.Targets["local"].Runtime.Should().Be("podman");
-        manifest.Targets["staging"].Replicas.Should().Be(2);
+        manifest.Targets.ShouldContainKey("local");
+        manifest.Targets["local"].Runtime.ShouldBe("podman");
+        manifest.Targets["staging"].Replicas.ShouldBe(2);
     }
 
     [Fact]
@@ -134,7 +132,7 @@ public sealed class ManifestParserTests
     {
         var manifest = _parser.Parse(FullManifest);
         var errors = _parser.Validate(manifest);
-        errors.Should().BeEmpty();
+        errors.ShouldBeEmpty();
     }
 
     [Fact]
@@ -142,7 +140,7 @@ public sealed class ManifestParserTests
     {
         var manifest = new WorkspaceManifest { Version = "", Name = "test" };
         var errors = _parser.Validate(manifest);
-        errors.Should().Contain(e => e.Contains("version"));
+        errors.ShouldContain(e => e.Contains("version"));
     }
 
     [Fact]
@@ -163,7 +161,7 @@ public sealed class ManifestParserTests
         };
 
         var errors = _parser.Validate(manifest);
-        errors.Should().Contain(e => e.Contains("nonexistent-tool"));
+        errors.ShouldContain(e => e.Contains("nonexistent-tool"));
     }
 
     [Fact]
@@ -180,7 +178,7 @@ public sealed class ManifestParserTests
         };
 
         var errors = _parser.Validate(manifest);
-        errors.Should().Contain(e => e.Contains("invalid"));
+        errors.ShouldContain(e => e.Contains("invalid"));
     }
 
     [Fact]
@@ -193,10 +191,10 @@ public sealed class ManifestParserTests
 
         var manifest = _parser.Parse(yaml);
 
-        manifest.Name.Should().Be("minimal");
-        manifest.Agents.Should().BeEmpty();
-        manifest.Tools.Should().BeEmpty();
-        manifest.Targets.Should().BeEmpty();
+        manifest.Name.ShouldBe("minimal");
+        manifest.Agents.ShouldBeEmpty();
+        manifest.Tools.ShouldBeEmpty();
+        manifest.Targets.ShouldBeEmpty();
     }
 
     [Fact]
@@ -204,14 +202,32 @@ public sealed class ManifestParserTests
     {
         var manifest = _parser.Parse(FullManifest);
         var yaml = _parser.Serialize(manifest);
+        var roundTripped = _parser.Parse(yaml);
 
-        yaml.Should().Contain("test-workspace");
+        roundTripped.Name.ShouldBe(manifest.Name);
+        roundTripped.Version.ShouldBe(manifest.Version);
+        roundTripped.Agents.Count.ShouldBe(manifest.Agents.Count);
+        roundTripped.Tools.Count.ShouldBe(manifest.Tools.Count);
+        roundTripped.Targets.Count.ShouldBe(manifest.Targets.Count);
+
+        var agent = roundTripped.Agents["researcher"];
+        agent.Model.ShouldBe("claude-sonnet-4-20250514");
+        agent.MaxConcurrentTasks.ShouldBe(5);
+        agent.Tools.ShouldContain("web-search");
+        agent.Heartbeat!.Cron.ShouldBe("*/30 * * * *");
+
+        var mcpTool = roundTripped.Tools["web-search"];
+        mcpTool.Type.ShouldBe("mcp");
+        mcpTool.Mcp!.Server.ShouldBe("npx");
+
+        roundTripped.Workspace.Secrets!.Provider.ShouldBe("vault");
+        roundTripped.Workspace.Secrets.Vault!.Address.ShouldBe("https://vault.example.com");
     }
 
     [Fact]
     public void Parse_EmptyYaml_ThrowsArgumentException()
     {
         var act = () => _parser.Parse("");
-        act.Should().Throw<ArgumentException>();
+        Should.Throw<ArgumentException>(act);
     }
 }

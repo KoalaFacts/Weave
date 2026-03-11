@@ -1,17 +1,14 @@
-using FluentAssertions;
 using Microsoft.Extensions.Logging;
-using NSubstitute;
 using Weave.Agents.Grains;
 using Weave.Agents.Models;
 using Weave.Shared.Events;
 using Weave.Shared.Ids;
 using Weave.Shared.Lifecycle;
 using Weave.Workspaces.Models;
-using Xunit;
 
 namespace Weave.Agents.Tests;
 
-public class AgentGrainTests
+public sealed class AgentGrainTests
 {
     private static readonly WorkspaceId TestWorkspaceId = WorkspaceId.From("ws-1");
 
@@ -40,10 +37,10 @@ public class AgentGrainTests
 
         var state = await grain.ActivateAgentAsync(TestWorkspaceId, definition);
 
-        state.Status.Should().Be(AgentStatus.Active);
-        state.Model.Should().Be("claude-sonnet-4-20250514");
-        state.ActivatedAt.Should().NotBeNull();
-        state.MaxConcurrentTasks.Should().Be(2);
+        state.Status.ShouldBe(AgentStatus.Active);
+        state.Model.ShouldBe("claude-sonnet-4-20250514");
+        state.ActivatedAt.ShouldNotBeNull();
+        state.MaxConcurrentTasks.ShouldBe(2);
     }
 
     [Fact]
@@ -86,7 +83,7 @@ public class AgentGrainTests
         var first = await grain.ActivateAgentAsync(TestWorkspaceId, definition);
         var second = await grain.ActivateAgentAsync(TestWorkspaceId, definition);
 
-        second.Should().BeSameAs(first);
+        second.ShouldBeSameAs(first);
     }
 
     [Fact]
@@ -98,10 +95,10 @@ public class AgentGrainTests
         await grain.DeactivateAsync();
 
         var state = await grain.GetStateAsync();
-        state.Status.Should().Be(AgentStatus.Idle);
-        state.DeactivatedAt.Should().NotBeNull();
-        state.ConnectedTools.Should().BeEmpty();
-        state.ActiveTasks.Should().BeEmpty();
+        state.Status.ShouldBe(AgentStatus.Idle);
+        state.DeactivatedAt.ShouldNotBeNull();
+        state.ConnectedTools.ShouldBeEmpty();
+        state.ActiveTasks.ShouldBeEmpty();
     }
 
     [Fact]
@@ -125,9 +122,9 @@ public class AgentGrainTests
 
         var task = await grain.SubmitTaskAsync("Fix the bug");
 
-        task.TaskId.IsEmpty.Should().BeFalse();
-        task.Description.Should().Be("Fix the bug");
-        task.Status.Should().Be(AgentTaskStatus.Running);
+        task.TaskId.IsEmpty.ShouldBeFalse();
+        task.Description.ShouldBe("Fix the bug");
+        task.Status.ShouldBe(AgentTaskStatus.Running);
     }
 
     [Fact]
@@ -139,7 +136,7 @@ public class AgentGrainTests
         await grain.SubmitTaskAsync("Fix the bug");
 
         var state = await grain.GetStateAsync();
-        state.Status.Should().Be(AgentStatus.Busy);
+        state.Status.ShouldBe(AgentStatus.Busy);
     }
 
     [Fact]
@@ -149,10 +146,8 @@ public class AgentGrainTests
         await grain.ActivateAgentAsync(TestWorkspaceId, CreateDefinition(maxTasks: 1));
         await grain.SubmitTaskAsync("Task 1");
 
-        var act = () => grain.SubmitTaskAsync("Task 2");
-
-        await act.Should().ThrowAsync<InvalidOperationException>()
-            .WithMessage("*max concurrent*");
+        var ex = await Should.ThrowAsync<InvalidOperationException>(() => grain.SubmitTaskAsync("Task 2"));
+        ex.Message.ShouldContain("max concurrent");
     }
 
     [Fact]
@@ -160,10 +155,8 @@ public class AgentGrainTests
     {
         var (grain, _, _) = CreateGrain();
 
-        var act = () => grain.SubmitTaskAsync("Task 1");
-
-        await act.Should().ThrowAsync<InvalidOperationException>()
-            .WithMessage("*not active*");
+        var ex = await Should.ThrowAsync<InvalidOperationException>(() => grain.SubmitTaskAsync("Task 1"));
+        ex.Message.ShouldContain("not active");
     }
 
     [Fact]
@@ -176,7 +169,7 @@ public class AgentGrainTests
         await grain.CompleteTaskAsync(task.TaskId, success: true);
 
         var state = await grain.GetStateAsync();
-        state.ActiveTasks.Should().ContainSingle(t =>
+        state.ActiveTasks.ShouldContain(t =>
             t.TaskId == task.TaskId &&
             t.Status == AgentTaskStatus.Completed &&
             t.CompletedAt != null);
@@ -192,7 +185,7 @@ public class AgentGrainTests
         await grain.CompleteTaskAsync(task.TaskId, success: true);
 
         var state = await grain.GetStateAsync();
-        state.Status.Should().Be(AgentStatus.Active);
+        state.Status.ShouldBe(AgentStatus.Active);
     }
 
     [Fact]
@@ -205,7 +198,7 @@ public class AgentGrainTests
         await grain.CompleteTaskAsync(task.TaskId, success: false);
 
         var state = await grain.GetStateAsync();
-        state.ActiveTasks.Should().ContainSingle(t =>
+        state.ActiveTasks.ShouldContain(t =>
             t.TaskId == task.TaskId &&
             t.Status == AgentTaskStatus.Failed);
     }
@@ -216,10 +209,8 @@ public class AgentGrainTests
         var (grain, _, _) = CreateGrain();
         await grain.ActivateAgentAsync(TestWorkspaceId, CreateDefinition());
 
-        var act = () => grain.CompleteTaskAsync(AgentTaskId.From("nonexistent"), success: true);
-
-        await act.Should().ThrowAsync<InvalidOperationException>()
-            .WithMessage("*not found*");
+        var ex = await Should.ThrowAsync<InvalidOperationException>(() => grain.CompleteTaskAsync(AgentTaskId.From("nonexistent"), success: true));
+        ex.Message.ShouldContain("not found");
     }
 
     [Fact]
@@ -231,7 +222,7 @@ public class AgentGrainTests
         await grain.ConnectToolAsync("code-search");
 
         var state = await grain.GetStateAsync();
-        state.ConnectedTools.Should().Contain("code-search");
+        state.ConnectedTools.ShouldContain("code-search");
     }
 
     [Fact]
@@ -244,6 +235,6 @@ public class AgentGrainTests
         await grain.DisconnectToolAsync("code-search");
 
         var state = await grain.GetStateAsync();
-        state.ConnectedTools.Should().NotContain("code-search");
+        state.ConnectedTools.ShouldNotContain("code-search");
     }
 }

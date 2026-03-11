@@ -1,5 +1,4 @@
 using Weave.Agents.Models;
-using Weave.Shared.Ids;
 using Weave.Workspaces.Models;
 
 namespace Weave.Silo.Api;

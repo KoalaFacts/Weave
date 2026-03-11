@@ -1,14 +1,12 @@
-using FluentAssertions;
 using Microsoft.Extensions.Logging;
-using NSubstitute;
 using Weave.Security.Scanning;
 using Weave.Security.Tokens;
+using Weave.Shared.Events;
 using Weave.Shared.Lifecycle;
 using Weave.Tools.Connectors;
 using Weave.Tools.Discovery;
 using Weave.Tools.Grains;
 using Weave.Tools.Models;
-using Xunit;
 
 namespace Weave.Tools.Tests;
 
@@ -27,7 +25,8 @@ public sealed class ToolGrainTests
         var lifecycleManager = Substitute.For<ILifecycleManager>();
         var logger = Substitute.For<ILogger<ToolGrain>>();
 
-        var grain = new ToolGrain(discovery, leakScanner, tokenService, lifecycleManager, logger);
+        var eventBus = Substitute.For<IEventBus>();
+        var grain = new ToolGrain(discovery, leakScanner, tokenService, lifecycleManager, eventBus, logger);
         return (grain, connector, tokenService);
     }
 
@@ -52,9 +51,9 @@ public sealed class ToolGrainTests
         var definition = new ToolSpec { Name = "test-tool", Type = ToolType.Cli, Cli = new Weave.Workspaces.Models.CliConfig() };
         var handle = await grain.ConnectAsync(definition, token);
 
-        handle.Should().NotBeNull();
-        handle.ToolName.Should().Be("test-tool");
-        handle.IsConnected.Should().BeTrue();
+        handle.ShouldNotBeNull();
+        handle.ToolName.ShouldBe("test-tool");
+        handle.IsConnected.ShouldBeTrue();
     }
 
     [Fact]
@@ -70,8 +69,7 @@ public sealed class ToolGrainTests
         });
 
         var definition = new ToolSpec { Name = "tool", Type = ToolType.Cli };
-        var act = () => grain.ConnectAsync(definition, token);
-        await act.Should().ThrowAsync<UnauthorizedAccessException>();
+        await Should.ThrowAsync<UnauthorizedAccessException>(() => grain.ConnectAsync(definition, token));
     }
 
     [Fact]
@@ -95,7 +93,7 @@ public sealed class ToolGrainTests
 
         var result = await grain.InvokeAsync(invocation, token);
 
-        result.Success.Should().BeFalse();
-        result.Error.Should().Contain("secret leak");
+        result.Success.ShouldBeFalse();
+        result.Error!.ShouldContain("secret leak");
     }
 }

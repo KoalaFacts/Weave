@@ -1,8 +1,5 @@
-using FluentAssertions;
 using Microsoft.Extensions.Logging;
-using NSubstitute;
 using Weave.Security.Scanning;
-using Xunit;
 
 namespace Weave.Security.Tests;
 
@@ -22,8 +19,8 @@ public sealed class LeakScannerTests
     {
         var result = await _scanner.ScanStringAsync("Hello, world!", TestContext);
 
-        result.HasLeaks.Should().BeFalse();
-        result.Findings.Should().BeEmpty();
+        result.HasLeaks.ShouldBeFalse();
+        result.Findings.ShouldBeEmpty();
     }
 
     [Theory]
@@ -37,8 +34,8 @@ public sealed class LeakScannerTests
     {
         var result = await _scanner.ScanStringAsync(content, TestContext);
 
-        result.HasLeaks.Should().BeTrue();
-        result.Findings.Should().Contain(f => f.PatternName == expectedPattern);
+        result.HasLeaks.ShouldBeTrue();
+        result.Findings.ShouldContain(f => f.PatternName == expectedPattern);
     }
 
     [Fact]
@@ -47,8 +44,8 @@ public sealed class LeakScannerTests
         var jwt = "eyJhbGciOiJIUzI1NiJ9.eyJzdWIiOiIxMjM0NTY3ODkwIn0.abc123def456ghi789";
         var result = await _scanner.ScanStringAsync(jwt, TestContext);
 
-        result.HasLeaks.Should().BeTrue();
-        result.Findings.Should().Contain(f => f.PatternName == "jwt_token");
+        result.HasLeaks.ShouldBeTrue();
+        result.Findings.ShouldContain(f => f.PatternName == "jwt_token");
     }
 
     [Fact]
@@ -57,20 +54,20 @@ public sealed class LeakScannerTests
         var bytes = System.Text.Encoding.UTF8.GetBytes("AKIAIOSFODNN7EXAMPLE");
         var result = await _scanner.ScanAsync(bytes, TestContext);
 
-        result.HasLeaks.Should().BeTrue();
+        result.HasLeaks.ShouldBeTrue();
     }
 
     [Fact]
     public void CalculateShannonEntropy_WithLowEntropy_ReturnsLowValue()
     {
         var entropy = LeakScanner.CalculateShannonEntropy("aaaaaaaaaa");
-        entropy.Should().BeLessThan(1.0);
+        entropy.ShouldBeLessThan(1.0);
     }
 
     [Fact]
     public void CalculateShannonEntropy_WithHighEntropy_ReturnsHighValue()
     {
         var entropy = LeakScanner.CalculateShannonEntropy("aB3$xZ9!mK2@pL5#nQ8&");
-        entropy.Should().BeGreaterThan(3.5);
+        entropy.ShouldBeGreaterThan(3.5);
     }
 }

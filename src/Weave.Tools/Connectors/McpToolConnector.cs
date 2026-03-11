@@ -1,5 +1,6 @@
 using System.Diagnostics;
 using System.Text.Json;
+using System.Text.Json.Serialization;
 using Microsoft.Extensions.Logging;
 using Weave.Security.Tokens;
 using Weave.Tools.Models;
@@ -77,13 +78,12 @@ public sealed class McpToolConnector(ILogger<McpToolConnector> logger) : IToolCo
         var sw = Stopwatch.StartNew();
         try
         {
-            var request = JsonSerializer.Serialize(new
+            var request = JsonSerializer.Serialize(new JsonRpcRequest
             {
-                jsonrpc = "2.0",
-                id = Guid.NewGuid().ToString("N"),
-                method = invocation.Method,
-                @params = invocation.Parameters
-            });
+                Id = Guid.NewGuid().ToString("N"),
+                Method = invocation.Method,
+                Params = invocation.Parameters
+            }, McpJsonContext.Default.JsonRpcRequest);
 
             await process.StandardInput.WriteLineAsync(request.AsMemory(), ct);
             var response = await process.StandardOutput.ReadLineAsync(ct);
@@ -119,3 +119,21 @@ public sealed class McpToolConnector(ILogger<McpToolConnector> logger) : IToolCo
         });
     }
 }
+
+internal sealed record JsonRpcRequest
+{
+    [JsonPropertyName("jsonrpc")]
+    public string JsonRpc { get; init; } = "2.0";
+
+    [JsonPropertyName("id")]
+    public required string Id { get; init; }
+
+    [JsonPropertyName("method")]
+    public required string Method { get; init; }
+
+    [JsonPropertyName("params")]
+    public Dictionary<string, string>? Params { get; init; }
+}
+
+[JsonSerializable(typeof(JsonRpcRequest))]
+internal sealed partial class McpJsonContext : JsonSerializerContext;

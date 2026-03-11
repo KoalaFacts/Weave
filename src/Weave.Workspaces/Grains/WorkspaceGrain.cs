@@ -1,5 +1,4 @@
 using Microsoft.Extensions.Logging;
-using Orleans;
 using Weave.Shared.Events;
 using Weave.Shared.Ids;
 using Weave.Shared.Lifecycle;
@@ -15,7 +14,7 @@ public sealed class WorkspaceGrain(
     IEventBus eventBus,
     ILogger<WorkspaceGrain> logger) : Grain, IWorkspaceGrain
 {
-    private WorkspaceState _state = null!;
+    private WorkspaceState _state = new() { WorkspaceId = WorkspaceId.Empty };
     private WorkspaceManifest? _manifest;
 
     public override Task OnActivateAsync(CancellationToken cancellationToken)
@@ -62,7 +61,7 @@ public sealed class WorkspaceGrain(
             {
                 SourceId = _state.WorkspaceId,
                 WorkspaceName = manifest.Name,
-                AgentNames = manifest.Agents.Keys.ToList()
+                AgentNames = [.. manifest.Agents.Keys]
             }, CancellationToken.None);
 
             logger.LogInformation("Workspace {WorkspaceId} started", _state.WorkspaceId);

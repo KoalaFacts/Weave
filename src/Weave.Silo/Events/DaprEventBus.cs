@@ -1,6 +1,5 @@
 using System.Collections.Concurrent;
 using Dapr.Client;
-using Microsoft.Extensions.Logging;
 using Weave.Shared.Events;
 
 namespace Weave.Silo.Events;

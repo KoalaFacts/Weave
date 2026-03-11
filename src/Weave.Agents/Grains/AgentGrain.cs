@@ -1,5 +1,4 @@
 using Microsoft.Extensions.Logging;
-using Orleans;
 using Weave.Agents.Events;
 using Weave.Agents.Models;
 using Weave.Shared.Events;
@@ -156,7 +155,12 @@ public sealed class AgentGrain(
         if (_state.Status is not (AgentStatus.Active or AgentStatus.Busy))
             throw new InvalidOperationException($"Agent {_state.AgentName} is not active (status: {_state.Status}).");
 
-        var runningCount = _state.ActiveTasks.Count(t => t.Status is AgentTaskStatus.Running);
+        var runningCount = 0;
+        foreach (var t in _state.ActiveTasks)
+        {
+            if (t.Status is AgentTaskStatus.Running)
+                runningCount++;
+        }
         if (runningCount >= _state.MaxConcurrentTasks)
             throw new InvalidOperationException(
                 $"Agent {_state.AgentName} has reached max concurrent tasks ({_state.MaxConcurrentTasks}).");
@@ -188,7 +192,15 @@ public sealed class AgentGrain(
         };
         _state.ActiveTasks[taskIndex] = completed;
 
-        var hasRunning = _state.ActiveTasks.Any(t => t.Status is AgentTaskStatus.Running);
+        var hasRunning = false;
+        foreach (var t in _state.ActiveTasks)
+        {
+            if (t.Status is AgentTaskStatus.Running)
+            {
+                hasRunning = true;
+                break;
+            }
+        }
         if (!hasRunning)
             _state.Status = AgentStatus.Active;
 

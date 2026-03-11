@@ -223,7 +223,9 @@ To add a new branded ID, add a `[BrandedId] public readonly partial record struc
 
 ## Testing Patterns
 
-Tests use xunit + FluentAssertions + NSubstitute. Requires `using Xunit;` (not auto-imported).
+Tests use xunit v3 (`xunit.v3`) + Shouldly + NSubstitute. `Xunit`, `NSubstitute`, and `Shouldly` are globally imported via `tests/Directory.Build.props`.
+
+**Do not use FluentAssertions** — it has a commercial license. Use **Shouldly** for all test assertions.
 
 Grain tests instantiate grains directly (not through Orleans runtime). This means `OnActivateAsync` is NOT called — grains must handle this by initializing state defensively.
 

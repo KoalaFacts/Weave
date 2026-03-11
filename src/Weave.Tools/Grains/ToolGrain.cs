@@ -1,9 +1,10 @@
 using Microsoft.Extensions.Logging;
-using Orleans;
 using Weave.Security.Scanning;
 using Weave.Security.Tokens;
+using Weave.Shared.Events;
 using Weave.Shared.Lifecycle;
 using Weave.Tools.Discovery;
+using Weave.Tools.Events;
 using Weave.Tools.Models;
 
 namespace Weave.Tools.Grains;
@@ -13,6 +14,7 @@ public sealed class ToolGrain(
     ILeakScanner leakScanner,
     ICapabilityTokenService tokenService,
     ILifecycleManager lifecycleManager,
+    IEventBus eventBus,
     ILogger<ToolGrain> logger) : Grain, IToolGrain
 {
     private ToolHandle? _handle;
@@ -88,6 +90,8 @@ public sealed class ToolGrain(
         if (_handle is null || _definition is null)
             throw new InvalidOperationException($"Tool '{_toolName}' is not connected");
 
+        var wsId = Shared.Ids.WorkspaceId.From(_workspaceId);
+
         // Scan outbound payload for secret leaks
         if (invocation.RawInput is not null)
         {
@@ -101,6 +105,15 @@ public sealed class ToolGrain(
             if (scanResult.HasLeaks)
             {
                 logger.LogWarning("Secret leak detected in tool invocation for '{Tool}' — blocked", _toolName);
+
+                await eventBus.PublishAsync(new ToolInvocationBlockedEvent
+                {
+                    SourceId = $"{_workspaceId}/{_toolName}",
+                    ToolName = _toolName,
+                    WorkspaceId = wsId,
+                    Reason = "Secret leak detected in outbound payload"
+                }, CancellationToken.None);
+
                 return new ToolResult
                 {
                     Success = false,
@@ -126,9 +139,27 @@ public sealed class ToolGrain(
             if (responseScan.HasLeaks)
             {
                 logger.LogWarning("Secret leak detected in tool response from '{Tool}' — redacted", _toolName);
+
+                await eventBus.PublishAsync(new ToolInvocationBlockedEvent
+                {
+                    SourceId = $"{_workspaceId}/{_toolName}",
+                    ToolName = _toolName,
+                    WorkspaceId = wsId,
+                    Reason = "Secret leak detected in inbound response"
+                }, CancellationToken.None);
+
                 return result with { Output = "***REDACTED: potential secret detected in response***" };
             }
         }
+
+        await eventBus.PublishAsync(new ToolInvocationCompletedEvent
+        {
+            SourceId = $"{_workspaceId}/{_toolName}",
+            ToolName = _toolName,
+            WorkspaceId = wsId,
+            Success = result.Success,
+            Duration = result.Duration
+        }, CancellationToken.None);
 
         return result;
     }

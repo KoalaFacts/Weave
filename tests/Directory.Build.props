@@ -7,11 +7,13 @@
     <IsAotExcluded>true</IsAotExcluded>
     <IsAotCompatible>false</IsAotCompatible>
     <IsTrimmable>false</IsTrimmable>
+    <OutputType>Exe</OutputType>
   </PropertyGroup>
 
-  <PropertyGroup>
-    <!-- Allow underscores in test method names -->
-    <NoWarn>$(NoWarn);CA1707</NoWarn>
-  </PropertyGroup>
+  <ItemGroup Label="Global test usings">
+    <Using Include="Xunit" />
+    <Using Include="NSubstitute" />
+    <Using Include="Shouldly" />
+  </ItemGroup>
 
 </Project>

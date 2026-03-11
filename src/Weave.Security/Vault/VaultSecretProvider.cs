@@ -1,8 +1,8 @@
 using Microsoft.Extensions.Logging;
-using Weave.Security.Tokens;
-using Weave.Shared.Secrets;
 using VaultSharp;
 using VaultSharp.V1.AuthMethods.Token;
+using Weave.Security.Tokens;
+using Weave.Shared.Secrets;
 
 namespace Weave.Security.Vault;
 

@@ -1,8 +1,5 @@
-using FluentAssertions;
-using Weave.Deploy;
 using Weave.Deploy.Translators;
 using Weave.Workspaces.Models;
-using Xunit;
 
 namespace Weave.Deploy.Tests;
 
@@ -34,14 +31,14 @@ public sealed class PublisherTests : IDisposable
         var publisher = new DockerComposePublisher();
         var result = await publisher.PublishAsync(CreateTestManifest(), new PublishOptions { OutputPath = _outputDir });
 
-        result.Success.Should().BeTrue();
-        result.GeneratedFiles.Should().ContainSingle();
+        result.Success.ShouldBeTrue();
+        result.GeneratedFiles.Count.ShouldBe(1);
 
         var content = await File.ReadAllTextAsync(result.GeneratedFiles[0]);
-        content.Should().Contain("services:");
-        content.Should().Contain("weave-silo:");
-        content.Should().Contain("redis:");
-        content.Should().Contain("tool-web-search:");
+        content.ShouldContain("services:");
+        content.ShouldContain("weave-silo:");
+        content.ShouldContain("redis:");
+        content.ShouldContain("tool-web-search:");
     }
 
     [Fact]
@@ -50,12 +47,12 @@ public sealed class PublisherTests : IDisposable
         var publisher = new KubernetesPublisher();
         var result = await publisher.PublishAsync(CreateTestManifest(), new PublishOptions { OutputPath = _outputDir });
 
-        result.Success.Should().BeTrue();
-        result.GeneratedFiles.Should().HaveCountGreaterThan(2);
+        result.Success.ShouldBeTrue();
+        result.GeneratedFiles.Count.ShouldBeGreaterThan(2);
 
         var nsFile = result.GeneratedFiles.First(f => f.Contains("namespace"));
         var nsContent = await File.ReadAllTextAsync(nsFile);
-        nsContent.Should().Contain("weave-test-workspace");
+        nsContent.ShouldContain("weave-test-workspace");
     }
 
     [Fact]
@@ -64,10 +61,10 @@ public sealed class PublisherTests : IDisposable
         var publisher = new NomadPublisher();
         var result = await publisher.PublishAsync(CreateTestManifest(), new PublishOptions { OutputPath = _outputDir });
 
-        result.Success.Should().BeTrue();
+        result.Success.ShouldBeTrue();
         var content = await File.ReadAllTextAsync(result.GeneratedFiles[0]);
-        content.Should().Contain("job \"weave-test-workspace\"");
-        content.Should().Contain("driver = \"docker\"");
+        content.ShouldContain("job \"weave-test-workspace\"");
+        content.ShouldContain("driver = \"docker\"");
     }
 
     [Fact]
@@ -76,10 +73,10 @@ public sealed class PublisherTests : IDisposable
         var publisher = new FlyIoPublisher();
         var result = await publisher.PublishAsync(CreateTestManifest(), new PublishOptions { OutputPath = _outputDir });
 
-        result.Success.Should().BeTrue();
+        result.Success.ShouldBeTrue();
         var content = await File.ReadAllTextAsync(result.GeneratedFiles[0]);
-        content.Should().Contain("app = \"weave-test-workspace\"");
-        content.Should().Contain("primary_region");
+        content.ShouldContain("app = \"weave-test-workspace\"");
+        content.ShouldContain("primary_region");
     }
 
     [Fact]
@@ -88,10 +85,10 @@ public sealed class PublisherTests : IDisposable
         var publisher = new GitHubActionsPublisher();
         var result = await publisher.PublishAsync(CreateTestManifest(), new PublishOptions { OutputPath = _outputDir });
 
-        result.Success.Should().BeTrue();
+        result.Success.ShouldBeTrue();
         var content = await File.ReadAllTextAsync(result.GeneratedFiles[0]);
-        content.Should().Contain("runs-on: ubuntu-latest");
-        content.Should().Contain("researcher");
+        content.ShouldContain("runs-on: ubuntu-latest");
+        content.ShouldContain("researcher");
     }
 
     public void Dispose()

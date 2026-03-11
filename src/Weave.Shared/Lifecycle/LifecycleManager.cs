@@ -7,16 +7,22 @@ public sealed partial class LifecycleManager(ILogger<LifecycleManager> logger) :
     private readonly ILogger _logger = logger;
     private readonly List<ILifecycleHook> _hooks = [];
     private readonly Lock _lock = new();
+    private Dictionary<LifecyclePhase, ILifecycleHook[]> _hooksByPhase = [];
+    private bool _hooksDirty = true;
 
     public async Task RunHooksAsync(LifecyclePhase phase, LifecycleContext context, CancellationToken ct)
     {
         ILifecycleHook[] hooks;
         lock (_lock)
         {
-            hooks = _hooks
-                .Where(h => h.Phase == phase)
-                .OrderBy(h => h.Order)
-                .ToArray();
+            if (_hooksDirty)
+            {
+                _hooksByPhase = _hooks
+                    .GroupBy(h => h.Phase)
+                    .ToDictionary(g => g.Key, g => g.OrderBy(h => h.Order).ToArray());
+                _hooksDirty = false;
+            }
+            hooks = _hooksByPhase.TryGetValue(phase, out var cached) ? cached : [];
         }
 
         foreach (var hook in hooks)
@@ -40,6 +46,7 @@ public sealed partial class LifecycleManager(ILogger<LifecycleManager> logger) :
         lock (_lock)
         {
             _hooks.Add(hook);
+            _hooksDirty = true;
         }
         return new HookRegistration(this, hook);
     }
@@ -49,6 +56,7 @@ public sealed partial class LifecycleManager(ILogger<LifecycleManager> logger) :
         lock (_lock)
         {
             _hooks.Remove(hook);
+            _hooksDirty = true;
         }
     }
 

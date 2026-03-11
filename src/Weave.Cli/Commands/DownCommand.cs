@@ -13,7 +13,7 @@ public sealed class DownCommand : AsyncCommand<DownCommand.Settings>
         public string? Workspace { get; init; }
     }
 
-    public override async Task<int> ExecuteAsync(CommandContext context, Settings settings)
+    public override async Task<int> ExecuteAsync(CommandContext context, Settings settings, CancellationToken cancellationToken)
     {
         var manifestPath = ManifestResolver.Resolve(settings.Workspace);
         if (manifestPath is null)
@@ -23,7 +23,7 @@ public sealed class DownCommand : AsyncCommand<DownCommand.Settings>
         }
 
         AnsiConsole.MarkupLine("Stopping workspace...");
-        await Task.Delay(100); // placeholder for actual teardown
+        await Task.Delay(100, cancellationToken); // placeholder for actual teardown
         AnsiConsole.MarkupLine("[green]Workspace stopped.[/]");
         return 0;
     }

@@ -1,3 +1,4 @@
+using System.Collections.Frozen;
 using Microsoft.Extensions.Logging;
 using Weave.Tools.Connectors;
 using Weave.Tools.Models;
@@ -12,15 +13,15 @@ public interface IToolDiscoveryService
 
 public sealed class ToolDiscoveryService : IToolDiscoveryService
 {
-    private readonly Dictionary<ToolType, IToolConnector> _connectors;
-    private readonly ILogger<ToolDiscoveryService> _logger;
+    private readonly FrozenDictionary<ToolType, IToolConnector> _connectors;
+    private readonly IReadOnlyList<ToolType> _supportedTypes;
 
     public ToolDiscoveryService(IEnumerable<IToolConnector> connectors, ILogger<ToolDiscoveryService> logger)
     {
-        _logger = logger;
-        _connectors = connectors.ToDictionary(c => c.ToolType);
+        _connectors = connectors.ToFrozenDictionary(c => c.ToolType);
+        _supportedTypes = [.. _connectors.Keys];
 
-        _logger.LogInformation("Tool discovery initialized with {Count} connector(s): {Types}",
+        logger.LogInformation("Tool discovery initialized with {Count} connector(s): {Types}",
             _connectors.Count, string.Join(", ", _connectors.Keys));
     }
 
@@ -31,5 +32,5 @@ public sealed class ToolDiscoveryService : IToolDiscoveryService
             : throw new NotSupportedException($"No connector registered for tool type '{type}'");
     }
 
-    public IReadOnlyList<ToolType> SupportedTypes => _connectors.Keys.ToList();
+    public IReadOnlyList<ToolType> SupportedTypes => _supportedTypes;
 }

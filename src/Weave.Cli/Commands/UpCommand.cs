@@ -19,7 +19,7 @@ public sealed class UpCommand : AsyncCommand<UpCommand.Settings>
         public string? Workspace { get; init; }
     }
 
-    public override async Task<int> ExecuteAsync(CommandContext context, Settings settings)
+    public override async Task<int> ExecuteAsync(CommandContext context, Settings settings, CancellationToken cancellationToken)
     {
         var manifestPath = ManifestResolver.Resolve(settings.Workspace);
         if (manifestPath is null)
@@ -30,7 +30,7 @@ public sealed class UpCommand : AsyncCommand<UpCommand.Settings>
 
         AnsiConsole.MarkupLine($"Starting workspace from [bold]{manifestPath}[/] (target: {settings.Target})...");
 
-        var yaml = await File.ReadAllTextAsync(manifestPath);
+        var yaml = await File.ReadAllTextAsync(manifestPath, cancellationToken);
         var parser = new ManifestParser();
         var manifest = parser.Parse(yaml);
 

@@ -1,6 +1,4 @@
-using FluentAssertions;
 using Weave.Security.Tokens;
-using Xunit;
 
 namespace Weave.Security.Tests;
 
@@ -21,11 +19,11 @@ public sealed class CapabilityTokenServiceTests
 
         var token = _service.Mint(request);
 
-        token.WorkspaceId.Should().Be("test-workspace");
-        token.IssuedTo.Should().Be("agent-1");
-        token.Grants.Should().Contain("tool:web-search");
-        token.Signature.Should().NotBeNullOrEmpty();
-        token.IsExpired.Should().BeFalse();
+        token.WorkspaceId.ShouldBe("test-workspace");
+        token.IssuedTo.ShouldBe("agent-1");
+        token.Grants.ShouldContain("tool:web-search");
+        token.Signature.ShouldNotBeNullOrEmpty();
+        token.IsExpired.ShouldBeFalse();
     }
 
     [Fact]
@@ -39,7 +37,7 @@ public sealed class CapabilityTokenServiceTests
             Lifetime = TimeSpan.FromHours(1)
         });
 
-        _service.Validate(token).Should().BeTrue();
+        _service.Validate(token).ShouldBeTrue();
     }
 
     [Fact]
@@ -53,7 +51,7 @@ public sealed class CapabilityTokenServiceTests
             Lifetime = TimeSpan.FromMilliseconds(-1)
         });
 
-        _service.Validate(token).Should().BeFalse();
+        _service.Validate(token).ShouldBeFalse();
     }
 
     [Fact]
@@ -69,7 +67,7 @@ public sealed class CapabilityTokenServiceTests
 
         _service.Revoke(token.TokenId);
 
-        _service.Validate(token).Should().BeFalse();
+        _service.Validate(token).ShouldBeFalse();
     }
 
     [Fact]
@@ -85,7 +83,7 @@ public sealed class CapabilityTokenServiceTests
 
         var tampered = token with { Signature = "tampered" };
 
-        _service.Validate(tampered).Should().BeFalse();
+        _service.Validate(tampered).ShouldBeFalse();
     }
 
     [Fact]
@@ -99,8 +97,8 @@ public sealed class CapabilityTokenServiceTests
             Lifetime = TimeSpan.FromHours(1)
         });
 
-        token.HasGrant("tool:anything").Should().BeTrue();
-        token.HasGrant("secret:anything").Should().BeTrue();
+        token.HasGrant("tool:anything").ShouldBeTrue();
+        token.HasGrant("secret:anything").ShouldBeTrue();
     }
 
     [Fact]
@@ -114,7 +112,7 @@ public sealed class CapabilityTokenServiceTests
             Lifetime = TimeSpan.FromHours(1)
         });
 
-        token.HasGrant("tool:web-search").Should().BeTrue();
-        token.HasGrant("tool:github-api").Should().BeFalse();
+        token.HasGrant("tool:web-search").ShouldBeTrue();
+        token.HasGrant("tool:github-api").ShouldBeFalse();
     }
 }

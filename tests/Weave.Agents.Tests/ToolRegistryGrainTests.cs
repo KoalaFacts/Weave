@@ -1,16 +1,13 @@
-using FluentAssertions;
 using Microsoft.Extensions.Logging;
-using NSubstitute;
 using Weave.Agents.Grains;
 using Weave.Agents.Models;
 using Weave.Shared.Events;
 using Weave.Shared.Lifecycle;
 using Weave.Workspaces.Models;
-using Xunit;
 
 namespace Weave.Agents.Tests;
 
-public class ToolRegistryGrainTests
+public sealed class ToolRegistryGrainTests
 {
     private static (ToolRegistryGrain Grain, ILifecycleManager Lifecycle, IEventBus EventBus) CreateGrain()
     {
@@ -44,8 +41,8 @@ public class ToolRegistryGrainTests
         await grain.ConnectToolsAsync(tools);
 
         var connections = await grain.GetAllConnectionsAsync();
-        connections.Should().HaveCount(2);
-        connections.Should().AllSatisfy(c => c.Status.Should().Be(ToolConnectionStatus.Connected));
+        connections.Count.ShouldBe(2);
+        connections.ShouldAllBe(c => c.Status == ToolConnectionStatus.Connected);
     }
 
     [Fact]
@@ -57,12 +54,12 @@ public class ToolRegistryGrainTests
         await grain.ConnectToolsAsync(tools);
 
         var mcpConn = await grain.GetConnectionAsync("code-search");
-        mcpConn!.Endpoint.Should().Be("npx");
-        mcpConn.ToolType.Should().Be("mcp");
+        mcpConn!.Endpoint.ShouldBe("npx");
+        mcpConn.ToolType.ShouldBe("mcp");
 
         var cliConn = await grain.GetConnectionAsync("shell");
-        cliConn!.Endpoint.Should().BeNull();
-        cliConn.ToolType.Should().Be("cli");
+        cliConn!.Endpoint.ShouldBeNull();
+        cliConn.ToolType.ShouldBe("cli");
     }
 
     [Fact]
@@ -101,7 +98,7 @@ public class ToolRegistryGrainTests
 
         var result = await grain.GetConnectionAsync("nonexistent");
 
-        result.Should().BeNull();
+        result.ShouldBeNull();
     }
 
     [Fact]
@@ -113,7 +110,7 @@ public class ToolRegistryGrainTests
         await grain.DisconnectAllAsync();
 
         var connections = await grain.GetAllConnectionsAsync();
-        connections.Should().BeEmpty();
+        connections.ShouldBeEmpty();
     }
 
     [Fact]
