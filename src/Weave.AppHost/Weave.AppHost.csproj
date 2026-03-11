@@ -15,6 +15,7 @@
 
   <ItemGroup>
     <ProjectReference Include="..\Weave.Silo\Weave.Silo.csproj" IsAspireProjectResource="true" />
+    <ProjectReference Include="..\Weave.Dashboard\Weave.Dashboard.csproj" IsAspireProjectResource="true" />
   </ItemGroup>
 
 </Project>

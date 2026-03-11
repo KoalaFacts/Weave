@@ -10,10 +10,7 @@
   </ItemGroup>
 
   <ItemGroup>
-    <PackageReference Include="Microsoft.Orleans.Sdk" />
-    <PackageReference Include="Microsoft.Extensions.AI" />
-    <PackageReference Include="Microsoft.Extensions.AI.Abstractions" />
-    <PackageReference Include="System.Threading.RateLimiting" />
+    <PackageReference Include="YamlDotNet" />
   </ItemGroup>
 
 </Project>

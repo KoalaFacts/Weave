@@ -24,8 +24,8 @@ builder.AddProject<Projects.Weave_Silo>("silo")
     .WithDaprSidecar(new DaprSidecarOptions { AppId = "weave-silo" })
     .WithReplicas(2);
 
-// TODO: Phase 7 — Add Dashboard
-// builder.AddProject<Projects.Weave_Dashboard>("dashboard")
-//     .WaitFor(redis);
+// Dashboard — Blazor Server UI for management + monitoring
+builder.AddProject<Projects.Weave_Dashboard>("dashboard")
+    .WaitFor(redis);
 
 builder.Build().Run();

@@ -1,0 +1,69 @@
+using System.ComponentModel;
+using Spectre.Console;
+using Spectre.Console.Cli;
+using Weave.Workspaces.Manifest;
+
+namespace Weave.Cli.Commands;
+
+public sealed class UpCommand : AsyncCommand<UpCommand.Settings>
+{
+    public sealed class Settings : CommandSettings
+    {
+        [CommandOption("--target <TARGET>")]
+        [Description("Deployment target")]
+        [DefaultValue("local")]
+        public string Target { get; init; } = "local";
+
+        [CommandOption("--workspace <WORKSPACE>")]
+        [Description("Workspace name (auto-detect from cwd)")]
+        public string? Workspace { get; init; }
+    }
+
+    public override async Task<int> ExecuteAsync(CommandContext context, Settings settings)
+    {
+        var manifestPath = ManifestResolver.Resolve(settings.Workspace);
+        if (manifestPath is null)
+        {
+            AnsiConsole.MarkupLine("[red]No workspace.yml found. Use --workspace or run from a workspace directory.[/]");
+            return 1;
+        }
+
+        AnsiConsole.MarkupLine($"Starting workspace from [bold]{manifestPath}[/] (target: {settings.Target})...");
+
+        var yaml = await File.ReadAllTextAsync(manifestPath);
+        var parser = new ManifestParser();
+        var manifest = parser.Parse(yaml);
+
+        AnsiConsole.MarkupLine($"  Workspace: [bold]{manifest.Name}[/]");
+        AnsiConsole.MarkupLine($"  Agents: {manifest.Agents?.Count ?? 0}");
+        AnsiConsole.MarkupLine($"  Tools: {manifest.Tools?.Count ?? 0}");
+        AnsiConsole.MarkupLine("[green]Workspace started successfully.[/]");
+        return 0;
+    }
+}
+
+internal static class ManifestResolver
+{
+    public static string? Resolve(string? workspace)
+    {
+        if (workspace is not null)
+        {
+            var path = Path.Combine("workspaces", workspace, "workspace.yml");
+            return File.Exists(path) ? path : null;
+        }
+
+        if (File.Exists("workspace.yml"))
+            return "workspace.yml";
+
+        var dir = Directory.GetCurrentDirectory();
+        while (dir is not null)
+        {
+            var candidate = Path.Combine(dir, "workspace.yml");
+            if (File.Exists(candidate))
+                return candidate;
+            dir = Path.GetDirectoryName(dir);
+        }
+
+        return null;
+    }
+}

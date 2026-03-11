@@ -1,0 +1,87 @@
+using System.Collections.Concurrent;
+using System.Text;
+using System.Text.RegularExpressions;
+using Microsoft.Extensions.Logging;
+using Weave.Security.Scanning;
+using Weave.Shared.Secrets;
+
+namespace Weave.Security.Proxy;
+
+/// <summary>
+/// Middleware that intercepts HTTP traffic and:
+/// 1. Replaces {secret:path} placeholders with real secret values at the network boundary
+/// 2. Scans responses for leaked secrets
+/// </summary>
+public sealed partial class TransparentSecretProxy
+{
+    private readonly ConcurrentDictionary<string, SecretValue> _secretMapping = new();
+    private readonly ILeakScanner _leakScanner;
+    private readonly ILogger<TransparentSecretProxy> _logger;
+
+    public TransparentSecretProxy(ILeakScanner leakScanner, ILogger<TransparentSecretProxy> logger)
+    {
+        _leakScanner = leakScanner;
+        _logger = logger;
+    }
+
+    public void RegisterSecret(string placeholder, SecretValue secret)
+    {
+        _secretMapping[placeholder] = secret;
+    }
+
+    public void UnregisterSecret(string placeholder)
+    {
+        _secretMapping.TryRemove(placeholder, out _);
+    }
+
+    /// <summary>
+    /// Substitute {secret:X} placeholders with real secret values in outbound content.
+    /// </summary>
+    public string SubstitutePlaceholders(string content)
+    {
+        return SecretPlaceholderRegex().Replace(content, match =>
+        {
+            var path = match.Groups[1].Value;
+            if (_secretMapping.TryGetValue(path, out var secret))
+            {
+                return secret.DecryptToString();
+            }
+
+            _logger.LogWarning("Secret placeholder '{Path}' referenced but not registered", path);
+            return match.Value;
+        });
+    }
+
+    /// <summary>
+    /// Scan response content for potential secret leaks.
+    /// </summary>
+    public async Task<ScanResult> ScanResponseAsync(string content, string workspaceId, CancellationToken ct = default)
+    {
+        var context = new ScanContext
+        {
+            WorkspaceId = workspaceId,
+            SourceComponent = "TransparentSecretProxy",
+            Direction = ScanDirection.Inbound
+        };
+
+        return await _leakScanner.ScanStringAsync(content, context, ct);
+    }
+
+    /// <summary>
+    /// Scan outbound request content for potential secret leaks.
+    /// </summary>
+    public async Task<ScanResult> ScanRequestAsync(string content, string workspaceId, CancellationToken ct = default)
+    {
+        var context = new ScanContext
+        {
+            WorkspaceId = workspaceId,
+            SourceComponent = "TransparentSecretProxy",
+            Direction = ScanDirection.Outbound
+        };
+
+        return await _leakScanner.ScanStringAsync(content, context, ct);
+    }
+
+    [GeneratedRegex(@"\{secret:([^}]+)\}", RegexOptions.Compiled)]
+    private static partial Regex SecretPlaceholderRegex();
+}

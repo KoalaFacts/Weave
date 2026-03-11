@@ -6,14 +6,12 @@
 
   <ItemGroup>
     <ProjectReference Include="..\Weave.Shared\Weave.Shared.csproj" />
-    <ProjectReference Include="..\Weave.Workspaces\Weave.Workspaces.csproj" />
   </ItemGroup>
 
   <ItemGroup>
     <PackageReference Include="Microsoft.Orleans.Sdk" />
-    <PackageReference Include="Microsoft.Extensions.AI" />
-    <PackageReference Include="Microsoft.Extensions.AI.Abstractions" />
-    <PackageReference Include="System.Threading.RateLimiting" />
+    <PackageReference Include="Microsoft.Extensions.Logging.Abstractions" />
+    <PackageReference Include="VaultSharp" />
   </ItemGroup>
 
 </Project>

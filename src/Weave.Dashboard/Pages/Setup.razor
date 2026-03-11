@@ -1,0 +1,55 @@
+@page "/setup"
+
+<PageTitle>Setup Wizard - Weave</PageTitle>
+
+<FluentLabel Typo="Typography.H4" Style="margin-bottom: 1rem;">Setup Wizard</FluentLabel>
+
+<FluentWizard StepperPosition="StepperPosition.Top"
+              Style="height: 600px;">
+    <Steps>
+        <FluentWizardStep Label="Runtime">
+            <FluentLabel Typo="Typography.Subject" Style="margin-bottom: 0.5rem;">Container Runtime</FluentLabel>
+            <FluentLabel Typo="Typography.Body" Style="margin-bottom: 1rem;">Select your container runtime for workspace isolation.</FluentLabel>
+            <FluentRadioGroup @bind-Value="_runtime">
+                <FluentRadio Value="@("podman")">Podman (Recommended)</FluentRadio>
+                <FluentRadio Value="@("docker")">Docker</FluentRadio>
+                <FluentRadio Value="@("containerd")">containerd</FluentRadio>
+                <FluentRadio Value="@("none")">None (in-process only)</FluentRadio>
+            </FluentRadioGroup>
+        </FluentWizardStep>
+
+        <FluentWizardStep Label="Secrets">
+            <FluentLabel Typo="Typography.Subject" Style="margin-bottom: 0.5rem;">Secrets Provider</FluentLabel>
+            <FluentLabel Typo="Typography.Body" Style="margin-bottom: 1rem;">Choose how secrets are managed.</FluentLabel>
+            <FluentRadioGroup @bind-Value="_secretsProvider">
+                <FluentRadio Value="@("env")">Environment Variables (Simple)</FluentRadio>
+                <FluentRadio Value="@("file")">Encrypted File</FluentRadio>
+                <FluentRadio Value="@("vault")">HashiCorp Vault</FluentRadio>
+            </FluentRadioGroup>
+        </FluentWizardStep>
+
+        <FluentWizardStep Label="Workspace">
+            <FluentLabel Typo="Typography.Subject" Style="margin-bottom: 0.5rem;">Create First Workspace</FluentLabel>
+            <FluentTextField @bind-Value="_workspaceName" Label="Workspace Name" Style="margin-bottom: 0.5rem;" />
+            <FluentTextField @bind-Value="_workspacePath" Label="Workspace Path" />
+        </FluentWizardStep>
+
+        <FluentWizardStep Label="Review">
+            <FluentLabel Typo="Typography.Subject" Style="margin-bottom: 0.5rem;">Review Configuration</FluentLabel>
+            <div style="margin-bottom: 1rem;">
+                <p><strong>Runtime:</strong> @_runtime</p>
+                <p><strong>Secrets Provider:</strong> @_secretsProvider</p>
+                <p><strong>Workspace Name:</strong> @_workspaceName</p>
+                <p><strong>Workspace Path:</strong> @_workspacePath</p>
+            </div>
+            <FluentButton Appearance="Appearance.Accent">Complete Setup</FluentButton>
+        </FluentWizardStep>
+    </Steps>
+</FluentWizard>
+
+@code {
+    private string _runtime = "podman";
+    private string _secretsProvider = "env";
+    private string _workspaceName = "my-workspace";
+    private string _workspacePath = "./workspaces/my-workspace";
+}
