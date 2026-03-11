@@ -49,6 +49,7 @@ _ReSharper*/
 secrets.enc
 *.env
 .env.*
+*.local.json
 
 ## OS
 .DS_Store
@@ -62,3 +63,7 @@ coverage/
 *.trx
 *.coverage
 *.coveragexml
+
+## AI
+nul
+NUL
