@@ -1,4 +1,5 @@
 using Orleans;
+using Weave.Shared.Ids;
 
 namespace Weave.Agents.Models;
 
@@ -6,7 +7,7 @@ namespace Weave.Agents.Models;
 public sealed record AgentState
 {
     [Id(0)] public required string AgentId { get; init; }
-    [Id(1)] public required string WorkspaceId { get; init; }
+    [Id(1)] public required WorkspaceId WorkspaceId { get; init; }
     [Id(2)] public required string AgentName { get; init; }
     [Id(3)] public AgentStatus Status { get; set; } = AgentStatus.Idle;
     [Id(4)] public string? Model { get; set; }
@@ -31,7 +32,7 @@ public enum AgentStatus
 [GenerateSerializer]
 public sealed record AgentTaskInfo
 {
-    [Id(0)] public required string TaskId { get; init; }
+    [Id(0)] public required AgentTaskId TaskId { get; init; }
     [Id(1)] public required string Description { get; init; }
     [Id(2)] public AgentTaskStatus Status { get; init; } = AgentTaskStatus.Pending;
     [Id(3)] public DateTimeOffset CreatedAt { get; init; } = DateTimeOffset.UtcNow;

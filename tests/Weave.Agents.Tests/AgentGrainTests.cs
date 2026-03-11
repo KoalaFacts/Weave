@@ -3,15 +3,18 @@ using Microsoft.Extensions.Logging;
 using NSubstitute;
 using Weave.Agents.Grains;
 using Weave.Agents.Models;
-using Xunit;
 using Weave.Shared.Events;
+using Weave.Shared.Ids;
 using Weave.Shared.Lifecycle;
 using Weave.Workspaces.Models;
+using Xunit;
 
 namespace Weave.Agents.Tests;
 
 public class AgentGrainTests
 {
+    private static readonly WorkspaceId TestWorkspaceId = WorkspaceId.From("ws-1");
+
     private static AgentDefinition CreateDefinition(string model = "claude-sonnet-4-20250514", int maxTasks = 2) =>
         new()
         {
@@ -35,7 +38,7 @@ public class AgentGrainTests
         var (grain, _, _) = CreateGrain();
         var definition = CreateDefinition();
 
-        var state = await grain.ActivateAgentAsync("ws-1", definition);
+        var state = await grain.ActivateAgentAsync(TestWorkspaceId, definition);
 
         state.Status.Should().Be(AgentStatus.Active);
         state.Model.Should().Be("claude-sonnet-4-20250514");
@@ -48,7 +51,7 @@ public class AgentGrainTests
     {
         var (grain, lifecycle, _) = CreateGrain();
 
-        await grain.ActivateAgentAsync("ws-1", CreateDefinition());
+        await grain.ActivateAgentAsync(TestWorkspaceId, CreateDefinition());
 
         await lifecycle.Received(1).RunHooksAsync(
             LifecyclePhase.AgentActivating,
@@ -65,11 +68,11 @@ public class AgentGrainTests
     {
         var (grain, _, eventBus) = CreateGrain();
 
-        await grain.ActivateAgentAsync("ws-1", CreateDefinition());
+        await grain.ActivateAgentAsync(TestWorkspaceId, CreateDefinition());
 
         await eventBus.Received(1).PublishAsync(
             Arg.Is<Events.AgentActivatedEvent>(e =>
-                e.WorkspaceId == "ws-1" &&
+                e.WorkspaceId == TestWorkspaceId &&
                 e.Model == "claude-sonnet-4-20250514"),
             Arg.Any<CancellationToken>());
     }
@@ -80,8 +83,8 @@ public class AgentGrainTests
         var (grain, _, _) = CreateGrain();
         var definition = CreateDefinition();
 
-        var first = await grain.ActivateAgentAsync("ws-1", definition);
-        var second = await grain.ActivateAgentAsync("ws-1", definition);
+        var first = await grain.ActivateAgentAsync(TestWorkspaceId, definition);
+        var second = await grain.ActivateAgentAsync(TestWorkspaceId, definition);
 
         second.Should().BeSameAs(first);
     }
@@ -90,7 +93,7 @@ public class AgentGrainTests
     public async Task DeactivateAsync_SetsIdleStatus()
     {
         var (grain, _, _) = CreateGrain();
-        await grain.ActivateAgentAsync("ws-1", CreateDefinition());
+        await grain.ActivateAgentAsync(TestWorkspaceId, CreateDefinition());
 
         await grain.DeactivateAsync();
 
@@ -105,12 +108,12 @@ public class AgentGrainTests
     public async Task DeactivateAsync_PublishesEvent()
     {
         var (grain, _, eventBus) = CreateGrain();
-        await grain.ActivateAgentAsync("ws-1", CreateDefinition());
+        await grain.ActivateAgentAsync(TestWorkspaceId, CreateDefinition());
 
         await grain.DeactivateAsync();
 
         await eventBus.Received(1).PublishAsync(
-            Arg.Is<Events.AgentDeactivatedEvent>(e => e.WorkspaceId == "ws-1"),
+            Arg.Is<Events.AgentDeactivatedEvent>(e => e.WorkspaceId == TestWorkspaceId),
             Arg.Any<CancellationToken>());
     }
 
@@ -118,11 +121,11 @@ public class AgentGrainTests
     public async Task SubmitTaskAsync_ReturnsRunningTask()
     {
         var (grain, _, _) = CreateGrain();
-        await grain.ActivateAgentAsync("ws-1", CreateDefinition());
+        await grain.ActivateAgentAsync(TestWorkspaceId, CreateDefinition());
 
         var task = await grain.SubmitTaskAsync("Fix the bug");
 
-        task.TaskId.Should().NotBeNullOrEmpty();
+        task.TaskId.IsEmpty.Should().BeFalse();
         task.Description.Should().Be("Fix the bug");
         task.Status.Should().Be(AgentTaskStatus.Running);
     }
@@ -131,7 +134,7 @@ public class AgentGrainTests
     public async Task SubmitTaskAsync_SetsBusyStatus()
     {
         var (grain, _, _) = CreateGrain();
-        await grain.ActivateAgentAsync("ws-1", CreateDefinition());
+        await grain.ActivateAgentAsync(TestWorkspaceId, CreateDefinition());
 
         await grain.SubmitTaskAsync("Fix the bug");
 
@@ -143,7 +146,7 @@ public class AgentGrainTests
     public async Task SubmitTaskAsync_WhenAtMaxConcurrent_Throws()
     {
         var (grain, _, _) = CreateGrain();
-        await grain.ActivateAgentAsync("ws-1", CreateDefinition(maxTasks: 1));
+        await grain.ActivateAgentAsync(TestWorkspaceId, CreateDefinition(maxTasks: 1));
         await grain.SubmitTaskAsync("Task 1");
 
         var act = () => grain.SubmitTaskAsync("Task 2");
@@ -167,7 +170,7 @@ public class AgentGrainTests
     public async Task CompleteTaskAsync_MarksTaskCompleted()
     {
         var (grain, _, _) = CreateGrain();
-        await grain.ActivateAgentAsync("ws-1", CreateDefinition());
+        await grain.ActivateAgentAsync(TestWorkspaceId, CreateDefinition());
         var task = await grain.SubmitTaskAsync("Fix the bug");
 
         await grain.CompleteTaskAsync(task.TaskId, success: true);
@@ -183,7 +186,7 @@ public class AgentGrainTests
     public async Task CompleteTaskAsync_WhenAllDone_ReturnsToActive()
     {
         var (grain, _, _) = CreateGrain();
-        await grain.ActivateAgentAsync("ws-1", CreateDefinition());
+        await grain.ActivateAgentAsync(TestWorkspaceId, CreateDefinition());
         var task = await grain.SubmitTaskAsync("Fix the bug");
 
         await grain.CompleteTaskAsync(task.TaskId, success: true);
@@ -196,7 +199,7 @@ public class AgentGrainTests
     public async Task CompleteTaskAsync_WithFailure_MarksAsFailed()
     {
         var (grain, _, _) = CreateGrain();
-        await grain.ActivateAgentAsync("ws-1", CreateDefinition());
+        await grain.ActivateAgentAsync(TestWorkspaceId, CreateDefinition());
         var task = await grain.SubmitTaskAsync("Fix the bug");
 
         await grain.CompleteTaskAsync(task.TaskId, success: false);
@@ -211,9 +214,9 @@ public class AgentGrainTests
     public async Task CompleteTaskAsync_UnknownTaskId_Throws()
     {
         var (grain, _, _) = CreateGrain();
-        await grain.ActivateAgentAsync("ws-1", CreateDefinition());
+        await grain.ActivateAgentAsync(TestWorkspaceId, CreateDefinition());
 
-        var act = () => grain.CompleteTaskAsync("nonexistent", success: true);
+        var act = () => grain.CompleteTaskAsync(AgentTaskId.From("nonexistent"), success: true);
 
         await act.Should().ThrowAsync<InvalidOperationException>()
             .WithMessage("*not found*");
@@ -223,7 +226,7 @@ public class AgentGrainTests
     public async Task ConnectToolAsync_AddsTool()
     {
         var (grain, _, _) = CreateGrain();
-        await grain.ActivateAgentAsync("ws-1", CreateDefinition());
+        await grain.ActivateAgentAsync(TestWorkspaceId, CreateDefinition());
 
         await grain.ConnectToolAsync("code-search");
 
@@ -235,7 +238,7 @@ public class AgentGrainTests
     public async Task DisconnectToolAsync_RemovesTool()
     {
         var (grain, _, _) = CreateGrain();
-        await grain.ActivateAgentAsync("ws-1", CreateDefinition());
+        await grain.ActivateAgentAsync(TestWorkspaceId, CreateDefinition());
         await grain.ConnectToolAsync("code-search");
 
         await grain.DisconnectToolAsync("code-search");

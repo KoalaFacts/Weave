@@ -1,6 +1,7 @@
 using Microsoft.Extensions.Logging;
 using Orleans;
 using Weave.Agents.Models;
+using Weave.Shared.Ids;
 using Weave.Workspaces.Models;
 
 namespace Weave.Agents.Grains;
@@ -31,7 +32,7 @@ public sealed class AgentSupervisorGrain(
 
             try
             {
-                await agentGrain.ActivateAgentAsync(_workspaceId, definition);
+                await agentGrain.ActivateAgentAsync(WorkspaceId.From(_workspaceId), definition);
                 _agentNames.Add(agentName);
 
                 foreach (var toolName in definition.Tools)

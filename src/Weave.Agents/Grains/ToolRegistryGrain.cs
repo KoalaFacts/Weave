@@ -3,6 +3,7 @@ using Orleans;
 using Weave.Agents.Events;
 using Weave.Agents.Models;
 using Weave.Shared.Events;
+using Weave.Shared.Ids;
 using Weave.Shared.Lifecycle;
 using Weave.Workspaces.Models;
 
@@ -31,7 +32,7 @@ public sealed class ToolRegistryGrain(
         {
             var context = new LifecycleContext
             {
-                WorkspaceId = _workspaceId,
+                WorkspaceId = WorkspaceId.From(_workspaceId),
                 ToolName = toolName,
                 Phase = LifecyclePhase.ToolConnecting
             };
@@ -60,7 +61,7 @@ public sealed class ToolRegistryGrain(
                 {
                     SourceId = $"{_workspaceId}/{toolName}",
                     ToolName = toolName,
-                    WorkspaceId = _workspaceId,
+                    WorkspaceId = WorkspaceId.From(_workspaceId),
                     ToolType = definition.Type
                 }, CancellationToken.None);
 
@@ -81,7 +82,7 @@ public sealed class ToolRegistryGrain(
                 {
                     SourceId = $"{_workspaceId}/{toolName}",
                     ToolName = toolName,
-                    WorkspaceId = _workspaceId,
+                    WorkspaceId = WorkspaceId.From(_workspaceId),
                     ErrorMessage = ex.Message
                 }, CancellationToken.None);
 
@@ -100,7 +101,7 @@ public sealed class ToolRegistryGrain(
 
             var context = new LifecycleContext
             {
-                WorkspaceId = _workspaceId,
+                WorkspaceId = WorkspaceId.From(_workspaceId),
                 ToolName = toolName,
                 Phase = LifecyclePhase.ToolDisconnecting
             };
@@ -124,7 +125,7 @@ public sealed class ToolRegistryGrain(
                 {
                     SourceId = $"{_workspaceId}/{toolName}",
                     ToolName = toolName,
-                    WorkspaceId = _workspaceId
+                    WorkspaceId = WorkspaceId.From(_workspaceId)
                 }, CancellationToken.None);
             }
             catch (Exception ex)

@@ -87,6 +87,29 @@ Use `ILifecycleManager.RunHooksAsync(phase, context, ct)` at state transitions. 
 
 All Orleans-serializable models use `[GenerateSerializer]` and `[Id(N)]` on every serialized property. Prefer `sealed record` for immutable data. Use `sealed record` with mutable setters only for state objects that grains mutate in place.
 
+### Branded IDs
+
+Use strongly-typed ID structs instead of raw `string` for entity identifiers. IDs are defined in `Weave.Shared/Ids/BrandedIds.cs` using the `[BrandedId]` source generator attribute:
+
+```csharp
+[BrandedId]
+public readonly partial record struct WorkspaceId;
+```
+
+The source generator (`Weave.SourceGen`) produces a full struct with: `Value` property, `New()` (GUID v7), `From(string)`, `Parse`/`TryParse`, `Empty`/`IsEmpty`, implicit `operator string`, `ToString()`, `CompareTo`, comparison operators, `TypeConverter`, and Orleans `[GenerateSerializer]` + `[Id(0)]`.
+
+**Usage patterns:**
+- Create new IDs: `WorkspaceId.New()` (uses `Guid.CreateVersion7()` for time-sortable UUIDs)
+- Wrap existing values: `WorkspaceId.From(someString)`
+- Grain keys remain `string` — convert at grain boundaries: `WorkspaceId.From(this.GetPrimaryKeyString())`
+- Pass to grain factory using `.ToString()`: `grainFactory.GetGrain<IFooGrain>(workspaceId.ToString())`
+- Assign to `DomainEvent.SourceId` (which is `string`) — implicit conversion handles this
+- Nullable value types work naturally: `NetworkId?` for optional IDs
+
+**Available branded IDs:** `WorkspaceId`, `AgentId`, `AgentTaskId`, `ContainerId`, `NetworkId`
+
+To add a new branded ID, add a `[BrandedId] public readonly partial record struct FooId;` to `BrandedIds.cs`.
+
 ## C# Conventions
 
 - **File-scoped namespaces** — always (`namespace Foo;` not `namespace Foo { }`)

@@ -1,10 +1,11 @@
 using Orleans;
 using Weave.Agents.Grains;
 using Weave.Shared.Cqrs;
+using Weave.Shared.Ids;
 
 namespace Weave.Agents.Commands;
 
-public sealed record DeactivateAgentCommand(string WorkspaceId, string AgentName);
+public sealed record DeactivateAgentCommand(WorkspaceId WorkspaceId, string AgentName);
 
 public sealed class DeactivateAgentHandler(IGrainFactory grainFactory)
     : ICommandHandler<DeactivateAgentCommand, bool>

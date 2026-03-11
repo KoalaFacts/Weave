@@ -2,10 +2,11 @@ using Orleans;
 using Weave.Agents.Grains;
 using Weave.Agents.Models;
 using Weave.Shared.Cqrs;
+using Weave.Shared.Ids;
 
 namespace Weave.Agents.Commands;
 
-public sealed record SubmitAgentTaskCommand(string WorkspaceId, string AgentName, string Description);
+public sealed record SubmitAgentTaskCommand(WorkspaceId WorkspaceId, string AgentName, string Description);
 
 public sealed class SubmitAgentTaskHandler(IGrainFactory grainFactory)
     : ICommandHandler<SubmitAgentTaskCommand, AgentTaskInfo>

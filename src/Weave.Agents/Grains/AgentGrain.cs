@@ -3,6 +3,7 @@ using Orleans;
 using Weave.Agents.Events;
 using Weave.Agents.Models;
 using Weave.Shared.Events;
+using Weave.Shared.Ids;
 using Weave.Shared.Lifecycle;
 using Weave.Workspaces.Models;
 
@@ -13,7 +14,7 @@ public sealed class AgentGrain(
     IEventBus eventBus,
     ILogger<AgentGrain> logger) : Grain, IAgentGrain
 {
-    private AgentState _state = new() { AgentId = "", WorkspaceId = "", AgentName = "" };
+    private AgentState _state = new() { AgentId = "", WorkspaceId = WorkspaceId.Empty, AgentName = "" };
     private AgentDefinition? _definition;
 
     public override Task OnActivateAsync(CancellationToken cancellationToken)
@@ -23,13 +24,13 @@ public sealed class AgentGrain(
         _state = new AgentState
         {
             AgentId = key,
-            WorkspaceId = parts.Length > 1 ? parts[0] : key,
+            WorkspaceId = WorkspaceId.From(parts.Length > 1 ? parts[0] : key),
             AgentName = parts.Length > 1 ? parts[1] : key
         };
         return Task.CompletedTask;
     }
 
-    public async Task<AgentState> ActivateAgentAsync(string workspaceId, AgentDefinition definition)
+    public async Task<AgentState> ActivateAgentAsync(WorkspaceId workspaceId, AgentDefinition definition)
     {
         if (_state.Status is AgentStatus.Active or AgentStatus.Busy)
             return _state;
@@ -162,7 +163,7 @@ public sealed class AgentGrain(
 
         var task = new AgentTaskInfo
         {
-            TaskId = Guid.NewGuid().ToString("N"),
+            TaskId = AgentTaskId.New(),
             Description = description,
             Status = AgentTaskStatus.Running
         };
@@ -174,7 +175,7 @@ public sealed class AgentGrain(
         return Task.FromResult(task);
     }
 
-    public async Task CompleteTaskAsync(string taskId, bool success)
+    public async Task CompleteTaskAsync(AgentTaskId taskId, bool success)
     {
         var taskIndex = _state.ActiveTasks.FindIndex(t => t.TaskId == taskId);
         if (taskIndex < 0)

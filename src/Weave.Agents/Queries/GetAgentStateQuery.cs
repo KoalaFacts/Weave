@@ -2,10 +2,11 @@ using Orleans;
 using Weave.Agents.Grains;
 using Weave.Agents.Models;
 using Weave.Shared.Cqrs;
+using Weave.Shared.Ids;
 
 namespace Weave.Agents.Queries;
 
-public sealed record GetAgentStateQuery(string WorkspaceId, string AgentName);
+public sealed record GetAgentStateQuery(WorkspaceId WorkspaceId, string AgentName);
 
 public sealed class GetAgentStateHandler(IGrainFactory grainFactory)
     : IQueryHandler<GetAgentStateQuery, AgentState>
