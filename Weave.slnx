@@ -4,8 +4,12 @@
     <Project Path="src/Weave.ServiceDefaults/Weave.ServiceDefaults.csproj" />
     <Project Path="src/Weave.AppHost/Weave.AppHost.csproj" />
     <Project Path="src/Weave.Workspaces/Weave.Workspaces.csproj" />
+    <Project Path="src/Weave.Agents/Weave.Agents.csproj" />
+    <Project Path="src/Weave.Silo/Weave.Silo.csproj" />
+    <Project Path="src/Weave.SourceGen/Weave.SourceGen.csproj" />
   </Folder>
   <Folder Name="/tests/">
     <Project Path="tests/Weave.Workspaces.Tests/Weave.Workspaces.Tests.csproj" />
+    <Project Path="tests/Weave.Agents.Tests/Weave.Agents.Tests.csproj" />
   </Folder>
 </Solution>

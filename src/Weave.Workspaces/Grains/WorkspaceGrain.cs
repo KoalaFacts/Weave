@@ -1,6 +1,7 @@
 using Microsoft.Extensions.Logging;
 using Orleans;
 using Weave.Shared.Events;
+using Weave.Shared.Ids;
 using Weave.Shared.Lifecycle;
 using Weave.Workspaces.Events;
 using Weave.Workspaces.Models;
@@ -19,7 +20,7 @@ public sealed class WorkspaceGrain(
 
     public override Task OnActivateAsync(CancellationToken cancellationToken)
     {
-        _state = new WorkspaceState { WorkspaceId = this.GetPrimaryKeyString() };
+        _state = new WorkspaceState { WorkspaceId = WorkspaceId.From(this.GetPrimaryKeyString()) };
         return Task.CompletedTask;
     }
 

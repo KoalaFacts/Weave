@@ -1,6 +1,7 @@
 using System.Diagnostics;
 using System.Text.Json;
 using Microsoft.Extensions.Logging;
+using Weave.Shared.Ids;
 using Weave.Workspaces.Models;
 
 namespace Weave.Workspaces.Runtime;
@@ -45,10 +46,10 @@ public sealed partial class PodmanRuntime(ILogger<PodmanRuntime> logger) : IWork
 
         LogWorkspaceProvisioned(workspaceId, containers.Count);
 
-        return new WorkspaceEnvironment(workspaceId, network.NetworkId, containers);
+        return new WorkspaceEnvironment(WorkspaceId.From(workspaceId), network.NetworkId, containers);
     }
 
-    public async Task TeardownAsync(string workspaceId, CancellationToken ct)
+    public async Task TeardownAsync(WorkspaceId workspaceId, CancellationToken ct)
     {
         // Stop all containers in the workspace
         var output = await RunPodmanAsync(["ps", "--filter", $"name=weave-{workspaceId}", "--format", "{{.ID}}"], ct);
@@ -56,7 +57,7 @@ public sealed partial class PodmanRuntime(ILogger<PodmanRuntime> logger) : IWork
 
         foreach (var id in containerIds)
         {
-            await StopContainerAsync(id.Trim(), ct);
+            await StopContainerAsync(ContainerId.From(id.Trim()), ct);
         }
 
         // Remove network
@@ -70,7 +71,7 @@ public sealed partial class PodmanRuntime(ILogger<PodmanRuntime> logger) : IWork
         var args = new List<string> { "run", "-d", "--name", spec.Name };
 
         if (spec.NetworkId is not null)
-            args.AddRange(["--network", spec.NetworkId]);
+            args.AddRange(["--network", spec.NetworkId.Value.ToString()]);
 
         if (spec.ReadOnly)
             args.Add("--read-only");
@@ -91,15 +92,15 @@ public sealed partial class PodmanRuntime(ILogger<PodmanRuntime> logger) : IWork
         args.AddRange(spec.Command);
 
         var output = await RunPodmanAsync(args, ct);
-        var containerId = output.Trim();
+        var containerId = ContainerId.From(output.Trim());
 
         return new ContainerHandle(containerId, spec.Name, spec.Image, spec.PortMappings);
     }
 
-    public async Task StopContainerAsync(string containerId, CancellationToken ct)
+    public async Task StopContainerAsync(ContainerId containerId, CancellationToken ct)
     {
-        await RunPodmanAsync(["stop", containerId], ct);
-        await RunPodmanAsync(["rm", "-f", containerId], ct);
+        await RunPodmanAsync(["stop", containerId.ToString()], ct);
+        await RunPodmanAsync(["rm", "-f", containerId.ToString()], ct);
     }
 
     public async Task<NetworkHandle> CreateNetworkAsync(NetworkSpec spec, CancellationToken ct)
@@ -112,12 +113,12 @@ public sealed partial class PodmanRuntime(ILogger<PodmanRuntime> logger) : IWork
         args.Add(spec.Name);
 
         var output = await RunPodmanAsync(args, ct);
-        return new NetworkHandle(output.Trim(), spec.Name);
+        return new NetworkHandle(NetworkId.From(output.Trim()), spec.Name);
     }
 
-    public async Task DeleteNetworkAsync(string networkId, CancellationToken ct)
+    public async Task DeleteNetworkAsync(NetworkId networkId, CancellationToken ct)
     {
-        await RunPodmanAsync(["network", "rm", "-f", networkId], ct);
+        await RunPodmanAsync(["network", "rm", "-f", networkId.ToString()], ct);
     }
 
     private async Task<string> RunPodmanAsync(IEnumerable<string> arguments, CancellationToken ct)

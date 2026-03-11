@@ -1,3 +1,5 @@
+using CommunityToolkit.Aspire.Hosting.Dapr;
+
 var builder = DistributedApplication.CreateBuilder(args);
 
 // Infrastructure
@@ -9,14 +11,18 @@ var orleans = builder.AddOrleans("weave-cluster")
     .WithClustering(redis)
     .WithGrainStorage("Default", redis);
 
-// TODO: Phase 2 — Add silo project
-// builder.AddProject<Projects.Weave_Silo>("silo")
-//     .WithReference(orleans)
-//     .WaitFor(redis)
-//     .WithReplicas(2);
+// Dapr components
+var stateStore = builder.AddDaprStateStore("statestore");
+var pubSub = builder.AddDaprPubSub("pubsub");
 
-// TODO: Phase 4 — Add Dapr sidecars
-// .WithDaprSidecar(...)
+// Silo — Orleans grain host with Dapr sidecar
+builder.AddProject<Projects.Weave_Silo>("silo")
+    .WithReference(orleans)
+    .WithReference(stateStore)
+    .WithReference(pubSub)
+    .WaitFor(redis)
+    .WithDaprSidecar(new DaprSidecarOptions { AppId = "weave-silo" })
+    .WithReplicas(2);
 
 // TODO: Phase 7 — Add Dashboard
 // builder.AddProject<Projects.Weave_Dashboard>("dashboard")
