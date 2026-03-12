@@ -21,4 +21,10 @@
     <Project Path="tests/Weave.Tools.Tests/Weave.Tools.Tests.csproj" />
     <Project Path="tests/Weave.Deploy.Tests/Weave.Deploy.Tests.csproj" />
   </Folder>
-</Solution>
+  <Folder Name="/docs/">
+    <File Path="docs/PRD-MVP.md" />
+  </Folder>
+ </Solution>
+
+
+

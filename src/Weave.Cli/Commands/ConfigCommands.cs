@@ -52,6 +52,16 @@ public sealed class ConfigValidateCommand : AsyncCommand<ConfigValidateCommand.S
             var yaml = await File.ReadAllTextAsync(manifestPath, cancellationToken);
             var parser = new ManifestParser();
             var manifest = parser.Parse(yaml);
+            var errors = parser.Validate(manifest);
+
+            if (errors.Count > 0)
+            {
+                AnsiConsole.MarkupLine("[red]Configuration invalid:[/]");
+                foreach (var error in errors)
+                    AnsiConsole.MarkupLine($"  - {error}");
+
+                return 1;
+            }
 
             AnsiConsole.MarkupLine("[green]Configuration valid.[/]");
             AnsiConsole.MarkupLine($"  Name: [bold]{manifest.Name}[/]");

@@ -2,243 +2,217 @@
 
 ## Overview
 
-Weave agents are Orleans virtual actors (grains) that own the AI reasoning loop. Each agent is a long-lived, single-threaded, location-transparent entity that can be distributed across a cluster or run in-process for local development.
+Weave agents are Orleans grains keyed by `{workspaceId}/{agentName}`. They own agent state, conversation history, active task tracking, tool connections, and the chat pipeline used to talk to an LLM provider.
+
+This document describes the current implementation in the repository. It intentionally separates implemented behavior from future expansion ideas.
+
+## Current Grain Topology
+
+### `AgentGrain`
+
+Primary responsibilities:
+
+- activate an agent from a `WorkspaceId` and `AgentDefinition`
+- keep `AgentState` persisted through Orleans storage
+- append message history and call the `IChatClient` pipeline
+- submit and complete agent tasks
+- connect and disconnect tools
+- publish lifecycle and task events
+
+Current interface shape:
+
+```csharp
+public interface IAgentGrain : IGrainWithStringKey
+{
+    Task<AgentState> ActivateAgentAsync(WorkspaceId workspaceId, AgentDefinition definition);
+    Task DeactivateAsync();
+    Task<AgentState> GetStateAsync();
+    Task<AgentChatResponse> SendAsync(AgentMessage message);
+    Task<AgentTaskInfo> SubmitTaskAsync(string description);
+    Task CompleteTaskAsync(AgentTaskId taskId, bool success);
+    Task ConnectToolAsync(string toolName);
+    Task DisconnectToolAsync(string toolName);
+}
+```
+
+### `AgentSupervisorGrain`
+
+Keyed by `{workspaceId}`.
+
+Current responsibilities:
+
+- activate all agents from a workspace manifest
+- deactivate all agents in a workspace
+- return aggregate agent state snapshots
+
+### `ToolRegistryGrain`
+
+Keyed by `{workspaceId}`.
+
+Current responsibilities:
+
+- connect and track tools available within a workspace
+- resolve tool connections for agent use
+- return tool status to the API layer
+
+### `HeartbeatGrain`
+
+Keyed by `{workspaceId}/{agentName}`.
+
+Current responsibilities:
+
+- start and stop heartbeat scheduling for an agent
+- track heartbeat state
+- submit configured tasks on a cron-like schedule
 
 ## Agent Lifecycle
 
-```
-                ┌──────────┐
-                │  Created  │
-                └─────┬─────┘
-                      │ ActivateAgentAsync()
-                      ▼
-                ┌──────────┐
-       ┌───────│  Active   │◄──────────────┐
-       │       └─────┬─────┘               │
-       │             │                      │
-       │   SendAsync() / SubmitTaskAsync()  │ Resume
-       │             │                      │
-       │       ┌─────▼─────┐               │
-       │       │ Processing │───────────────┘
-       │       └─────┬─────┘
-       │             │
-       │    Error / Deactivate
-       │             │
-       │       ┌─────▼─────┐
-       │       │  Errored   │
-       │       └─────┬─────┘
-       │             │
-       └─────────────┘
-              Deactivate
-                 │
-           ┌─────▼──────┐
-           │ Deactivated │
-           └─────────────┘
+The current status model in `AgentState` is:
+
+```text
+Idle -> Activating -> Active -> Busy -> Active
+  \-> Deactivating -> Idle
+  \-> Error
 ```
 
-## Grain Architecture
+Observed transitions:
 
-### AgentGrain
+- `ActivateAgentAsync(...)` moves an agent through `Activating` to `Active`
+- `SendAsync(...)` requires `Active` or `Busy`
+- `SubmitTaskAsync(...)` marks work as running and moves the agent to `Busy`
+- `CompleteTaskAsync(...)` returns the agent to `Active` when no tasks remain running
+- `DeactivateAsync()` clears active task and connected tool state, then returns to `Idle`
 
-**Key:** `{workspaceId}/{agentName}` (string)
+## Agent State
 
-The `AgentGrain` is the core AI reasoning unit. It:
-1. Maintains conversation history and agent state
-2. Dispatches LLM calls through the `IChatClient` middleware pipeline
-3. Invokes tools via the `ToolRegistryGrain`
-4. Manages concurrent task limits
-5. Publishes domain events on state transitions
+`AgentState` currently includes:
 
-```csharp
-interface IAgentGrain : IGrainWithStringKey
-{
-    Task<AgentState> ActivateAgentAsync(AgentConfig config);
-    Task<AgentResponse> SendAsync(AgentMessage message);
-    Task SubmitTaskAsync(string description);
-    Task<AgentState> GetStateAsync();
-    Task DeactivateAgentAsync();
-}
-```
-
-### AgentSupervisorGrain
-
-**Key:** `{workspaceId}` (string)
-
-Manages the fleet of agents within a workspace:
-- Activates/deactivates agents based on the workspace manifest
-- Routes messages to the correct agent
-- Enforces workspace-level agent limits
-- Reports aggregate agent status
-
-### ToolRegistryGrain
-
-**Key:** `{workspaceId}` (string)
-
-Central registry of tools available to agents within a workspace:
-- Registers and deregisters tools
-- Resolves tool names to `ToolGrain` references
-- Enforces per-agent tool access (allow/deny lists)
-
-### HeartbeatGrain
-
-**Key:** `{workspaceId}/{agentName}` (mirrors agent key)
-
-Proactive agent behavior inspired by OpenClaw's heartbeat system:
-- Runs on a cron schedule (e.g., `*/30 * * * *` = every 30 minutes)
-- Wakes the agent and submits predefined tasks from the heartbeat config
-- Respects agent capacity — defers tasks if agent is at max concurrency
-- Tracks execution count and last/next run times
-
-```yaml
-# In workspace.yml
-agents:
-  researcher:
-    heartbeat:
-      cron: "*/30 * * * *"
-      tasks:
-        - Check for new research papers on topic X
-        - Summarize unread emails
-```
+- `AgentId`
+- `WorkspaceId`
+- `AgentName`
+- `Status`
+- `Model`
+- `ConnectedTools`
+- `ActiveTasks`
+- `MaxConcurrentTasks`
+- `ActivatedAt` / `DeactivatedAt`
+- `ErrorMessage`
+- `History`
+- `LastActive`
+- `TotalTasksCompleted`
+- `Definition`
+- `ConversationId`
 
 ## LLM Pipeline
 
-All LLM calls flow through the `IChatClient` middleware pipeline (Microsoft.Extensions.AI):
+Agents use `Microsoft.Extensions.AI` through a small pipeline abstraction:
 
-```
-Agent → CostTrackingChatClient → RateLimitingChatClient → [Provider Client]
-         (tracks tokens/cost)     (token bucket limiter)    (OpenAI, Anthropic, etc.)
-```
-
-### CostTrackingChatClient
-
-Tracks per-agent token usage and estimated cost:
-- Input/output token counts per request
-- Cumulative totals per agent ID
-- Model ID tracking for cost estimation
-- Queryable via `GetCostSummary(agentId)` and `GetAllCosts()`
-
-### RateLimitingChatClient
-
-Token bucket rate limiter per pipeline instance:
-- Configurable requests per minute
-- Queue depth limit (default: 10, oldest-first processing)
-- Throws `InvalidOperationException` when rate exceeded
-
-## Tool Invocation Flow
-
-```
-1. Agent decides to call a tool (LLM function calling)
-2. AgentGrain → ToolRegistryGrain.ResolveAsync(toolName)
-3. AgentGrain → ToolGrain.InvokeAsync(invocation, capabilityToken)
-4. ToolGrain validates capability token
-5. ToolGrain runs LeakScanner on request payload
-6. ToolGrain delegates to IToolConnector (MCP/Dapr/CLI/OpenAPI)
-7. ToolGrain runs LeakScanner on response payload
-8. Result returned to AgentGrain
-9. Agent continues LLM loop with tool result
+```text
+AgentGrain -> CostTrackingChatClient -> RateLimitingChatClient -> provider client
 ```
 
-### Security at Every Boundary
+Current pipeline components:
 
-- **Capability tokens** are validated at both the agent and tool grain boundaries (defense in depth)
-- **Leak scanning** runs on both inbound (request) and outbound (response) payloads
-- **Secret placeholders** (`{secret:X}`) are substituted only at the network boundary via the transparent proxy
-- **No grain ever sees raw secret values** — only encrypted `SecretValue` or placeholder references
+- `CostTrackingChatClient` records usage and cost data per agent
+- `RateLimitingChatClient` enforces request throttling
+- `AgentChatClientFactory` constructs the pipeline for a given agent and model
 
-## Inter-Agent Communication
+## Tool Invocation Model
 
-Agents within the same workspace can communicate via:
+The current tool flow is:
 
-1. **Direct messaging** — `AgentGrain.SendAsync()` with a message referencing another agent
-2. **Task delegation** — `AgentGrain.SubmitTaskAsync()` with routing to a target agent
-3. **Domain events** — publish events that other agents subscribe to via `IEventBus`
-4. **Shared tool state** — agents in the same workspace share the `ToolRegistryGrain`
-
-## Agent State Model
-
-```csharp
-[GenerateSerializer]
-public sealed record AgentState
-{
-    [Id(0)] public AgentStatus Status { get; set; } = AgentStatus.Created;
-    [Id(1)] public AgentConfig Config { get; set; } = new();
-    [Id(2)] public List<AgentTask> ActiveTasks { get; set; } = [];
-    [Id(3)] public List<ConversationMessage> History { get; set; } = [];
-    [Id(4)] public DateTimeOffset? LastActive { get; set; }
-    [Id(5)] public int TotalTasksCompleted { get; set; }
-}
-
-public enum AgentStatus { Created, Active, Processing, Errored, Deactivated }
+```text
+AgentGrain -> ToolRegistryGrain -> ToolGrain -> IToolConnector
 ```
 
-## Configuration
+Implemented connector categories in the repo:
 
-Agents are configured in `workspace.yml`:
+- MCP
+- CLI
+- OpenAPI
+- Dapr, when Dapr is configured in the Silo host
+
+`ToolGrain` currently performs:
+
+- capability token validation
+- outbound leak scanning before invocation
+- secret substitution via `ISecretProxyGrain`
+- connector dispatch
+- inbound leak scanning and redaction on responses
+- domain event publication for completed or blocked invocations
+
+## Security Boundaries
+
+Current security controls around agents and tools include:
+
+- capability-token validation before tool access
+- leak scanning on both outbound input and inbound output
+- secret substitution through the secret proxy grain
+- redaction when a tool response appears to contain secrets
+
+## HTTP API Surface
+
+`Weave.Silo` exposes agent endpoints under:
+
+- `GET /api/workspaces/{workspaceId}/agents`
+- `GET /api/workspaces/{workspaceId}/agents/{agentName}`
+- `POST /api/workspaces/{workspaceId}/agents/{agentName}/activate`
+- `POST /api/workspaces/{workspaceId}/agents/{agentName}/deactivate`
+- `POST /api/workspaces/{workspaceId}/agents/{agentName}/messages`
+- `POST /api/workspaces/{workspaceId}/agents/{agentName}/tasks`
+- `POST /api/workspaces/{workspaceId}/agents/{agentName}/tasks/{taskId}/complete`
+
+The CLI currently consumes workspace-level endpoints for start, stop, and status. Agent-specific CLI commands are not implemented yet.
+
+## Manifest Configuration
+
+Agents are declared in `workspace.yml` through `AgentDefinition`:
 
 ```yaml
 agents:
-  researcher:
-    model: claude-sonnet-4-20250514         # LLM model ID
-    system_prompt_file: ./prompts/researcher.md  # System prompt path
-    max_concurrent_tasks: 5                  # Task concurrency limit
-    memory:
-      provider: redis                        # redis | sqlite | in-memory
-      ttl: 24h                               # Conversation history TTL
-    tools: [web-search, github-api]          # Allowed tools
-    capabilities: [net:outbound, fs:read:/workspace/data]  # Sandbox permissions
-    heartbeat:                               # Proactive behavior
-      cron: "*/30 * * * *"
+  assistant:
+    model: claude-sonnet-4-20250514
+    system_prompt_file: ./prompts/assistant.md
+    max_concurrent_tasks: 3
+    tools: [git]
+    capabilities: [tool:*]
+    heartbeat:
+      cron: "0 * * * *"
       tasks:
-        - Check for new research papers
+        - Review repository status
 ```
 
-## Agent Registration (Remote Agents)
+Supported manifest fields today include:
 
-For distributed deployments, agents can register with the Weave platform using a token-based flow (GitHub runner-style):
+- `model`
+- `system_prompt_file`
+- `max_concurrent_tasks`
+- `memory`
+- `tools`
+- `capabilities`
+- `heartbeat`
+- `target`
 
-```bash
-# 1. Generate a registration token
-weave agent register --workspace=my-workspace --generate-token
-# → Token: WEAVE-REG-abc123def456 (expires in 1 hour)
+## Current Limitations
 
-# 2. Configure the agent on a remote machine
-weave agent configure \
-    --url https://weave.example.com \
-    --token WEAVE-REG-abc123def456 \
-    --name "gpu-agent-01" \
-    --labels "gpu,cuda,a100"
+The repository does not currently implement:
 
-# 3. Start the agent
-weave agent run
-# → Listening for work from workspace "my-workspace"...
-```
+- remote agent registration flows
+- ephemeral runner-style agents
+- label-based remote scheduling
+- a separate in-process local agent orchestrator
+- dedicated CLI commands for direct agent chat or task submission
 
-**Key features:**
-- **One-time registration tokens** — short-lived (1h default), exchanged for long-lived capability tokens
-- **Labels** — agents self-declare capabilities (`gpu`, `region:us-east`, `tool:browser`). Workspaces route tasks by label selectors
-- **Ephemeral mode** — `--ephemeral` flag deregisters after one task (like GitHub ephemeral runners)
-- **Graceful drain** — `weave agent drain` stops accepting new work, finishes current tasks, exits
+Those ideas can still inform roadmap planning, but they should not be documented as shipped behavior.
 
-## Scaling
+## Near-Term Direction
 
-### Local Mode (AOT)
+The current codebase is strongest around a hosted, workspace-centric flow:
 
-- `InProcessOrchestrator` manages agents via `Task`-based concurrency + `Channel<T>` message passing
-- No Orleans dependency — fully AOT-publishable
-- One workspace per process; multiple workspaces = multiple CLI processes
+1. create a workspace manifest
+2. start the workspace through `Weave.Silo`
+3. activate agents from the manifest
+4. connect tools through the registry
+5. inspect state through the API or dashboard
 
-### Cluster Mode (Orleans)
-
-- Standard Orleans silo with Redis clustering
-- Agents distributed across silos via Orleans placement
-- Heartbeats use Orleans grain timers (survive silo restarts)
-- Inter-agent messaging via Orleans grain references (location-transparent)
-
-### Workspace Isolation
-
-Each workspace gets:
-- Its own network namespace (container isolation)
-- Separate capability token scope
-- Independent secret mount
-- Isolated filesystem root
-- Agents in workspace A cannot see workspace B's grains
+That hosted flow should remain the baseline for the MVP.
