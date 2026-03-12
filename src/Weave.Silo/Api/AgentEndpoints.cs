@@ -17,6 +17,7 @@ public static class AgentEndpoints
         group.MapGet("/{agentName}", GetAgent);
         group.MapPost("/{agentName}/activate", ActivateAgent);
         group.MapPost("/{agentName}/deactivate", DeactivateAgent);
+        group.MapPost("/{agentName}/messages", SendMessage);
         group.MapPost("/{agentName}/tasks", SubmitTask);
         group.MapPost("/{agentName}/tasks/{taskId}/complete", CompleteTask);
 
@@ -79,6 +80,25 @@ public static class AgentEndpoints
         return Results.Created(
             $"/api/workspaces/{workspaceId}/agents/{agentName}/tasks/{info.TaskId}",
             TaskResponse.FromInfo(info));
+    }
+
+    private static async Task<IResult> SendMessage(
+        string workspaceId,
+        string agentName,
+        SendMessageRequest request,
+        ICommandDispatcher dispatcher,
+        CancellationToken ct)
+    {
+        var command = new SendAgentMessageCommand(
+            WorkspaceId.From(workspaceId),
+            agentName,
+            new AgentMessage
+            {
+                Role = request.Role,
+                Content = request.Content
+            });
+        var response = await dispatcher.DispatchAsync<SendAgentMessageCommand, Weave.Agents.Models.AgentChatResponse>(command, ct);
+        return Results.Ok(Api.AgentChatResponse.FromResponse(response));
     }
 
     private static async Task<IResult> CompleteTask(

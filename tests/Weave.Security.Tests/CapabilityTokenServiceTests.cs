@@ -115,4 +115,115 @@ public sealed class CapabilityTokenServiceTests
         token.HasGrant("tool:web-search").ShouldBeTrue();
         token.HasGrant("tool:github-api").ShouldBeFalse();
     }
+
+    [Fact]
+    public void Mint_WithEmptyWorkspaceId_Throws()
+    {
+        var act = () => _service.Mint(new CapabilityTokenRequest
+        {
+            WorkspaceId = "",
+            IssuedTo = "agent",
+            Grants = ["*"],
+            Lifetime = TimeSpan.FromHours(1)
+        });
+
+        Should.Throw<ArgumentException>(act);
+    }
+
+    [Fact]
+    public void Mint_WithEmptyIssuedTo_Throws()
+    {
+        var act = () => _service.Mint(new CapabilityTokenRequest
+        {
+            WorkspaceId = "ws",
+            IssuedTo = "",
+            Grants = ["*"],
+            Lifetime = TimeSpan.FromHours(1)
+        });
+
+        Should.Throw<ArgumentException>(act);
+    }
+
+    [Fact]
+    public void IsRevoked_WithNonRevokedToken_ReturnsFalse()
+    {
+        _service.IsRevoked("non-existent-id").ShouldBeFalse();
+    }
+
+    [Fact]
+    public void IsRevoked_AfterRevoke_ReturnsTrue()
+    {
+        var token = _service.Mint(new CapabilityTokenRequest
+        {
+            WorkspaceId = "ws",
+            IssuedTo = "agent",
+            Grants = ["*"],
+            Lifetime = TimeSpan.FromHours(1)
+        });
+
+        _service.Revoke(token.TokenId);
+
+        _service.IsRevoked(token.TokenId).ShouldBeTrue();
+    }
+
+    [Fact]
+    public void HasGrant_WithMultipleGrants_MatchesAny()
+    {
+        var token = _service.Mint(new CapabilityTokenRequest
+        {
+            WorkspaceId = "ws",
+            IssuedTo = "agent",
+            Grants = ["tool:web-search", "secret:api_key", "tool:code-search"],
+            Lifetime = TimeSpan.FromHours(1)
+        });
+
+        token.HasGrant("tool:web-search").ShouldBeTrue();
+        token.HasGrant("secret:api_key").ShouldBeTrue();
+        token.HasGrant("tool:code-search").ShouldBeTrue();
+        token.HasGrant("tool:github-api").ShouldBeFalse();
+        token.HasGrant("secret:other").ShouldBeFalse();
+    }
+
+    [Fact]
+    public void Mint_SetsCorrectExpiration()
+    {
+        var before = DateTimeOffset.UtcNow;
+        var token = _service.Mint(new CapabilityTokenRequest
+        {
+            WorkspaceId = "ws",
+            IssuedTo = "agent",
+            Grants = ["*"],
+            Lifetime = TimeSpan.FromHours(2)
+        });
+        var after = DateTimeOffset.UtcNow;
+
+        token.ExpiresAt.ShouldBeGreaterThan(before.AddHours(2).AddSeconds(-1));
+        token.ExpiresAt.ShouldBeLessThanOrEqualTo(after.AddHours(2));
+        token.IssuedAt.ShouldBeGreaterThanOrEqualTo(before);
+        token.IssuedAt.ShouldBeLessThanOrEqualTo(after);
+    }
+
+    [Fact]
+    public void Validate_WithDifferentInstances_SameData_ValidatesCorrectly()
+    {
+        var token1 = _service.Mint(new CapabilityTokenRequest
+        {
+            WorkspaceId = "ws",
+            IssuedTo = "agent",
+            Grants = ["*"],
+            Lifetime = TimeSpan.FromHours(1)
+        });
+
+        var token2 = _service.Mint(new CapabilityTokenRequest
+        {
+            WorkspaceId = "ws",
+            IssuedTo = "agent",
+            Grants = ["*"],
+            Lifetime = TimeSpan.FromHours(1)
+        });
+
+        _service.Validate(token1).ShouldBeTrue();
+        _service.Validate(token2).ShouldBeTrue();
+        token1.TokenId.ShouldNotBe(token2.TokenId);
+    }
 }

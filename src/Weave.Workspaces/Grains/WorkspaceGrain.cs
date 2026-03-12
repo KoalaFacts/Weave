@@ -1,4 +1,5 @@
 using Microsoft.Extensions.Logging;
+using Orleans.Runtime;
 using Weave.Shared.Events;
 using Weave.Shared.Ids;
 using Weave.Shared.Lifecycle;
@@ -12,28 +13,30 @@ public sealed class WorkspaceGrain(
     IWorkspaceRuntime runtime,
     ILifecycleManager lifecycleManager,
     IEventBus eventBus,
-    ILogger<WorkspaceGrain> logger) : Grain, IWorkspaceGrain
+    ILogger<WorkspaceGrain> logger,
+    [PersistentState("workspace", "Default")] IPersistentState<WorkspaceState> persistentState) : Grain, IWorkspaceGrain
 {
-    private WorkspaceState _state = new() { WorkspaceId = WorkspaceId.Empty };
-    private WorkspaceManifest? _manifest;
-
-    public override Task OnActivateAsync(CancellationToken cancellationToken)
+    public override async Task OnActivateAsync(CancellationToken cancellationToken)
     {
-        _state = new WorkspaceState { WorkspaceId = WorkspaceId.From(this.GetPrimaryKeyString()) };
-        return Task.CompletedTask;
+        await persistentState.ReadStateAsync(cancellationToken);
+        var key = TryGetPrimaryKeyString();
+        if (persistentState.State.WorkspaceId.IsEmpty && !string.IsNullOrWhiteSpace(key))
+        {
+            persistentState.State.WorkspaceId = WorkspaceId.From(key!);
+            await persistentState.WriteStateAsync(cancellationToken);
+        }
     }
 
     public async Task<WorkspaceState> StartAsync(WorkspaceManifest manifest)
     {
-        if (_state.Status is WorkspaceStatus.Running)
-            return _state;
+        if (persistentState.State.Status is WorkspaceStatus.Running)
+            return persistentState.State;
 
-        _manifest = manifest;
-        _state.Status = WorkspaceStatus.Starting;
+        persistentState.State.Status = WorkspaceStatus.Starting;
 
         var context = new LifecycleContext
         {
-            WorkspaceId = _state.WorkspaceId,
+            WorkspaceId = persistentState.State.WorkspaceId,
             Phase = LifecyclePhase.WorkspaceStarting
         };
 
@@ -43,80 +46,113 @@ public sealed class WorkspaceGrain(
 
             var env = await runtime.ProvisionAsync(manifest, CancellationToken.None);
 
-            _state.Status = WorkspaceStatus.Running;
-            _state.StartedAt = DateTimeOffset.UtcNow;
-            _state.NetworkId = env.NetworkId;
-            _state.Containers.Clear();
-            _state.Containers.AddRange(env.Containers.Select(c => new ContainerInfo
+            persistentState.State.Status = WorkspaceStatus.Running;
+            persistentState.State.StartedAt = DateTimeOffset.UtcNow;
+            persistentState.State.NetworkId = env.NetworkId;
+            persistentState.State.Containers.Clear();
+            persistentState.State.ActiveAgents.Clear();
+            persistentState.State.ActiveTools.Clear();
+            persistentState.State.ActiveAgents.AddRange(manifest.Agents.Keys);
+            persistentState.State.ActiveTools.AddRange(manifest.Tools.Keys);
+            foreach (var container in env.Containers)
             {
-                ContainerId = c.ContainerId,
-                Name = c.Name,
-                Image = c.Image,
-                Status = Models.ContainerStatus.Running
-            }));
+                persistentState.State.Containers.Add(new ContainerInfo
+                {
+                    ContainerId = container.ContainerId,
+                    Name = container.Name,
+                    Image = container.Image,
+                    Status = Models.ContainerStatus.Running
+                });
+            }
 
-            await lifecycleManager.RunHooksAsync(LifecyclePhase.WorkspaceStarted, context with { Phase = LifecyclePhase.WorkspaceStarted }, CancellationToken.None);
+            await persistentState.WriteStateAsync();
+
+            await lifecycleManager.RunHooksAsync(
+                LifecyclePhase.WorkspaceStarted,
+                context with { Phase = LifecyclePhase.WorkspaceStarted },
+                CancellationToken.None);
 
             await eventBus.PublishAsync(new WorkspaceStartedEvent
             {
-                SourceId = _state.WorkspaceId,
+                SourceId = persistentState.State.WorkspaceId,
                 WorkspaceName = manifest.Name,
                 AgentNames = [.. manifest.Agents.Keys]
             }, CancellationToken.None);
 
-            logger.LogInformation("Workspace {WorkspaceId} started", _state.WorkspaceId);
+            logger.LogInformation("Workspace {WorkspaceId} started", persistentState.State.WorkspaceId);
         }
         catch (Exception ex)
         {
-            _state.Status = WorkspaceStatus.Error;
-            _state.ErrorMessage = ex.Message;
-            logger.LogError(ex, "Failed to start workspace {WorkspaceId}", _state.WorkspaceId);
+            persistentState.State.Status = WorkspaceStatus.Error;
+            persistentState.State.ErrorMessage = ex.Message;
+            await persistentState.WriteStateAsync();
+            logger.LogError(ex, "Failed to start workspace {WorkspaceId}", persistentState.State.WorkspaceId);
             throw;
         }
 
-        return _state;
+        return persistentState.State;
     }
 
     public async Task StopAsync()
     {
-        if (_state.Status is not WorkspaceStatus.Running)
+        if (persistentState.State.Status is not WorkspaceStatus.Running)
             return;
 
-        _state.Status = WorkspaceStatus.Stopping;
+        persistentState.State.Status = WorkspaceStatus.Stopping;
 
         var context = new LifecycleContext
         {
-            WorkspaceId = _state.WorkspaceId,
+            WorkspaceId = persistentState.State.WorkspaceId,
             Phase = LifecyclePhase.WorkspaceStopping
         };
 
         try
         {
             await lifecycleManager.RunHooksAsync(LifecyclePhase.WorkspaceStopping, context, CancellationToken.None);
-            await runtime.TeardownAsync(_state.WorkspaceId, CancellationToken.None);
+            await runtime.TeardownAsync(persistentState.State.WorkspaceId, CancellationToken.None);
 
-            _state.Status = WorkspaceStatus.Stopped;
-            _state.StoppedAt = DateTimeOffset.UtcNow;
-            _state.Containers.Clear();
-            _state.NetworkId = null;
+            persistentState.State.Status = WorkspaceStatus.Stopped;
+            persistentState.State.StoppedAt = DateTimeOffset.UtcNow;
+            persistentState.State.Containers.Clear();
+            persistentState.State.ActiveAgents.Clear();
+            persistentState.State.ActiveTools.Clear();
+            persistentState.State.NetworkId = null;
 
-            await lifecycleManager.RunHooksAsync(LifecyclePhase.WorkspaceStopped, context with { Phase = LifecyclePhase.WorkspaceStopped }, CancellationToken.None);
+            await persistentState.WriteStateAsync();
+
+            await lifecycleManager.RunHooksAsync(
+                LifecyclePhase.WorkspaceStopped,
+                context with { Phase = LifecyclePhase.WorkspaceStopped },
+                CancellationToken.None);
 
             await eventBus.PublishAsync(new WorkspaceStoppedEvent
             {
-                SourceId = _state.WorkspaceId
+                SourceId = persistentState.State.WorkspaceId
             }, CancellationToken.None);
 
-            logger.LogInformation("Workspace {WorkspaceId} stopped", _state.WorkspaceId);
+            logger.LogInformation("Workspace {WorkspaceId} stopped", persistentState.State.WorkspaceId);
         }
         catch (Exception ex)
         {
-            _state.Status = WorkspaceStatus.Error;
-            _state.ErrorMessage = ex.Message;
-            logger.LogError(ex, "Failed to stop workspace {WorkspaceId}", _state.WorkspaceId);
+            persistentState.State.Status = WorkspaceStatus.Error;
+            persistentState.State.ErrorMessage = ex.Message;
+            await persistentState.WriteStateAsync();
+            logger.LogError(ex, "Failed to stop workspace {WorkspaceId}", persistentState.State.WorkspaceId);
             throw;
         }
     }
 
-    public Task<WorkspaceState> GetStateAsync() => Task.FromResult(_state);
+    public Task<WorkspaceState> GetStateAsync() => Task.FromResult(persistentState.State);
+
+    private string? TryGetPrimaryKeyString()
+    {
+        try
+        {
+            return this.GetPrimaryKeyString();
+        }
+        catch (NullReferenceException)
+        {
+            return null;
+        }
+    }
 }

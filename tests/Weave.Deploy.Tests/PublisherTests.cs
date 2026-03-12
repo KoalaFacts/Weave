@@ -91,6 +91,109 @@ public sealed class PublisherTests : IDisposable
         content.ShouldContain("researcher");
     }
 
+    [Theory]
+    [InlineData("docker-compose", "docker-compose")]
+    [InlineData("kubernetes", "kubernetes")]
+    [InlineData("nomad", "nomad")]
+    [InlineData("fly-io", "fly-io")]
+    [InlineData("github-actions", "github-actions")]
+    public void AllPublishers_HaveCorrectTargetName(string _, string expectedName)
+    {
+        IPublisher publisher = expectedName switch
+        {
+            "docker-compose" => new DockerComposePublisher(),
+            "kubernetes" => new KubernetesPublisher(),
+            "nomad" => new NomadPublisher(),
+            "fly-io" => new FlyIoPublisher(),
+            "github-actions" => new GitHubActionsPublisher(),
+            _ => throw new ArgumentException($"Unknown target: {expectedName}")
+        };
+
+        publisher.TargetName.ShouldBe(expectedName);
+    }
+
+    [Fact]
+    public async Task DockerComposePublisher_WithNoTools_GeneratesValidYaml()
+    {
+        var manifest = new WorkspaceManifest
+        {
+            Name = "no-tools-workspace",
+            Version = "1.0",
+            Workspace = new WorkspaceConfig
+            {
+                Network = new NetworkConfig { Name = "weave-net" }
+            }
+        };
+        var publisher = new DockerComposePublisher();
+        var result = await publisher.PublishAsync(manifest, new PublishOptions { OutputPath = _outputDir });
+
+        result.Success.ShouldBeTrue();
+        var content = await File.ReadAllTextAsync(result.GeneratedFiles[0]);
+        content.ShouldContain("services:");
+        content.ShouldContain("weave-silo:");
+        content.ShouldContain("redis:");
+        content.ShouldNotContain("tool-");
+    }
+
+    [Fact]
+    public async Task KubernetesPublisher_UsesCustomRegistry()
+    {
+        var publisher = new KubernetesPublisher();
+        var options = new PublishOptions
+        {
+            OutputPath = _outputDir,
+            Registry = "myregistry.azurecr.io"
+        };
+        var result = await publisher.PublishAsync(CreateTestManifest(), options);
+
+        result.Success.ShouldBeTrue();
+        var siloFile = result.GeneratedFiles.First(f => f.Contains("silo-deployment"));
+        var content = await File.ReadAllTextAsync(siloFile);
+        content.ShouldContain("myregistry.azurecr.io");
+    }
+
+    [Fact]
+    public async Task DockerComposePublisher_CancellationRequested_ThrowsOperationCanceled()
+    {
+        var manifest = CreateTestManifest();
+        var publisher = new DockerComposePublisher();
+        using var cts = new CancellationTokenSource();
+        await cts.CancelAsync();
+
+        await Should.ThrowAsync<OperationCanceledException>(
+            () => publisher.PublishAsync(manifest, new PublishOptions { OutputPath = _outputDir }, cts.Token));
+    }
+
+    [Fact]
+    public async Task NomadPublisher_IncludesWorkspaceNameInFileName()
+    {
+        var publisher = new NomadPublisher();
+        var result = await publisher.PublishAsync(CreateTestManifest(), new PublishOptions { OutputPath = _outputDir });
+
+        result.Success.ShouldBeTrue();
+        result.GeneratedFiles[0].ShouldContain("weave-test-workspace.nomad.hcl");
+    }
+
+    [Fact]
+    public async Task GitHubActionsPublisher_GeneratesInsideGithubWorkflowsDir()
+    {
+        var publisher = new GitHubActionsPublisher();
+        var result = await publisher.PublishAsync(CreateTestManifest(), new PublishOptions { OutputPath = _outputDir });
+
+        result.Success.ShouldBeTrue();
+        result.GeneratedFiles[0].ShouldContain(Path.Combine(".github", "workflows"));
+    }
+
+    [Fact]
+    public async Task FlyIoPublisher_GeneratesFlyToml()
+    {
+        var publisher = new FlyIoPublisher();
+        var result = await publisher.PublishAsync(CreateTestManifest(), new PublishOptions { OutputPath = _outputDir });
+
+        result.Success.ShouldBeTrue();
+        result.GeneratedFiles[0].ShouldEndWith("fly.toml");
+    }
+
     public void Dispose()
     {
         if (Directory.Exists(_outputDir))

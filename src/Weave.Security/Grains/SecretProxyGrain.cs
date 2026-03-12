@@ -27,7 +27,7 @@ public sealed class SecretProxyGrain : Grain, ISecretProxyGrain
         var placeholder = $"{{secret:{secretPath}}}";
         _proxy.RegisterSecret(secretPath, secret);
         _logger.LogInformation("Registered secret proxy for '{Path}' in workspace {Workspace}",
-            secretPath, this.GetPrimaryKeyString());
+            secretPath, GetWorkspaceKey(token));
         return placeholder;
     }
 
@@ -41,5 +41,17 @@ public sealed class SecretProxyGrain : Grain, ISecretProxyGrain
     {
         var result = _proxy.SubstitutePlaceholders(content);
         return Task.FromResult(result);
+    }
+
+    private string GetWorkspaceKey(CapabilityToken token)
+    {
+        try
+        {
+            return this.GetPrimaryKeyString();
+        }
+        catch (NullReferenceException)
+        {
+            return token.WorkspaceId;
+        }
     }
 }

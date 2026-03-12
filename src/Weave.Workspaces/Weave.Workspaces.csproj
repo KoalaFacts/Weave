@@ -10,6 +10,7 @@
 
   <ItemGroup>
     <PackageReference Include="Microsoft.Orleans.Sdk" />
+    <PackageReference Include="Microsoft.Orleans.Runtime" />
     <PackageReference Include="YamlDotNet" />
   </ItemGroup>
 

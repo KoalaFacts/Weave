@@ -1,0 +1,98 @@
+using Weave.Shared.Secrets;
+
+namespace Weave.Shared.Tests;
+
+public sealed class SecretSafeExceptionTests
+{
+    [Fact]
+    public void Constructor_WithPasswordInMessage_RedactsValue()
+    {
+        var ex = new SecretSafeException("Failed with password=SuperSecret123");
+
+        ex.Message.ShouldContain("***REDACTED***");
+        ex.Message.ShouldNotContain("SuperSecret123");
+    }
+
+    [Fact]
+    public void Constructor_WithTokenInMessage_RedactsValue()
+    {
+        var ex = new SecretSafeException("Auth token:ghp_abc123def456 expired");
+
+        ex.Message.ShouldContain("***REDACTED***");
+        ex.Message.ShouldNotContain("ghp_abc123def456");
+    }
+
+    [Fact]
+    public void Constructor_WithSecretInMessage_RedactsValue()
+    {
+        var ex = new SecretSafeException("secret=my-api-secret-value in config");
+
+        ex.Message.ShouldContain("***REDACTED***");
+        ex.Message.ShouldNotContain("my-api-secret-value");
+    }
+
+    [Fact]
+    public void Constructor_WithApiKeyInMessage_RedactsValue()
+    {
+        var ex = new SecretSafeException("apikey=AKIAIOSFODNN7EXAMPLE was invalid");
+
+        ex.Message.ShouldContain("***REDACTED***");
+        ex.Message.ShouldNotContain("AKIAIOSFODNN7EXAMPLE");
+    }
+
+    [Fact]
+    public void Constructor_WithBearerInMessage_RedactsValue()
+    {
+        var ex = new SecretSafeException("bearer=eyJhbGciOiJIUzI1NiJ9 rejected");
+
+        ex.Message.ShouldContain("***REDACTED***");
+        ex.Message.ShouldNotContain("eyJhbGciOiJIUzI1NiJ9");
+    }
+
+    [Fact]
+    public void Constructor_WithCleanMessage_LeavesUnchanged()
+    {
+        var ex = new SecretSafeException("Connection timed out after 30 seconds");
+
+        ex.Message.ShouldBe("Connection timed out after 30 seconds");
+    }
+
+    [Fact]
+    public void Constructor_WithInnerException_PreservesInner()
+    {
+        var inner = new InvalidOperationException("inner error");
+        var ex = new SecretSafeException("outer error", inner);
+
+        ex.InnerException.ShouldBeSameAs(inner);
+    }
+
+    [Fact]
+    public void Constructor_WithMultipleSecrets_RedactsAll()
+    {
+        var ex = new SecretSafeException("password=abc123 and api_key=xyz789 found");
+
+        ex.Message.ShouldNotContain("abc123");
+        ex.Message.ShouldNotContain("xyz789");
+    }
+
+    [Fact]
+    public void ToString_DoesNotIncludeStackTrace()
+    {
+        var ex = new SecretSafeException("Test error");
+
+        var result = ex.ToString();
+
+        result.ShouldContain("SecretSafeException");
+        result.ShouldContain("Test error");
+        result.ShouldNotContain("at ");
+    }
+
+    [Fact]
+    public void Constructor_WithCredentialInMessage_RedactsValue()
+    {
+        var ex = new SecretSafeException("credential:user:pass123 invalid");
+
+        ex.Message.ShouldContain("***REDACTED***");
+        ex.Message.ShouldNotContain("user:pass123");
+    }
+}

@@ -44,6 +44,12 @@ public sealed record SubmitTaskRequest
     public required string Description { get; init; }
 }
 
+public sealed record SendMessageRequest
+{
+    public required string Content { get; init; }
+    public string Role { get; init; } = "user";
+}
+
 public sealed record CompleteTaskRequest
 {
     public required bool Success { get; init; }
@@ -90,6 +96,38 @@ public sealed record TaskResponse
         Status = info.Status.ToString(),
         CreatedAt = info.CreatedAt,
         CompletedAt = info.CompletedAt
+    };
+}
+
+public sealed record AgentChatResponse
+{
+    public required string Content { get; init; }
+    public required string ConversationId { get; init; }
+    public List<ConversationMessageResponse> Messages { get; init; } = [];
+    public bool UsedTools { get; init; }
+    public string? Model { get; init; }
+
+    public static AgentChatResponse FromResponse(Weave.Agents.Models.AgentChatResponse response) => new()
+    {
+        Content = response.Content,
+        ConversationId = response.ConversationId,
+        UsedTools = response.UsedTools,
+        Model = response.Model,
+        Messages = response.Messages.Select(ConversationMessageResponse.FromMessage).ToList()
+    };
+}
+
+public sealed record ConversationMessageResponse
+{
+    public required string Role { get; init; }
+    public required string Content { get; init; }
+    public DateTimeOffset Timestamp { get; init; }
+
+    public static ConversationMessageResponse FromMessage(ConversationMessage message) => new()
+    {
+        Role = message.Role,
+        Content = message.Content,
+        Timestamp = message.Timestamp
     };
 }
 

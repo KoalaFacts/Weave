@@ -1,20 +1,65 @@
 using Microsoft.Extensions.Logging;
+using Orleans.Runtime;
 using Weave.Agents.Grains;
 using Weave.Agents.Models;
+using Weave.Security.Grains;
+using Weave.Security.Tokens;
 using Weave.Shared.Events;
 using Weave.Shared.Lifecycle;
+using Weave.Tools.Grains;
+using Weave.Tools.Models;
 using Weave.Workspaces.Models;
 
 namespace Weave.Agents.Tests;
 
 public sealed class ToolRegistryGrainTests
 {
+    private static IPersistentState<ToolRegistryState> CreatePersistentState()
+    {
+        var persistentState = Substitute.For<IPersistentState<ToolRegistryState>>();
+        persistentState.State.Returns(new ToolRegistryState());
+        persistentState.ReadStateAsync(Arg.Any<CancellationToken>()).Returns(Task.CompletedTask);
+        persistentState.WriteStateAsync(Arg.Any<CancellationToken>()).Returns(Task.CompletedTask);
+        persistentState.WriteStateAsync().Returns(Task.CompletedTask);
+        persistentState.ClearStateAsync().Returns(Task.CompletedTask);
+        return persistentState;
+    }
+
     private static (ToolRegistryGrain Grain, ILifecycleManager Lifecycle, IEventBus EventBus) CreateGrain()
     {
+        var grainFactory = Substitute.For<IGrainFactory>();
+        var toolGrain = Substitute.For<IToolGrain>();
+        var secretProxy = Substitute.For<ISecretProxyGrain>();
         var lifecycle = Substitute.For<ILifecycleManager>();
         var eventBus = Substitute.For<IEventBus>();
         var logger = Substitute.For<ILogger<ToolRegistryGrain>>();
-        var grain = new ToolRegistryGrain(lifecycle, eventBus, logger);
+        var tokenService = new CapabilityTokenService();
+        var persistentState = CreatePersistentState();
+
+        toolGrain.ConnectAsync(Arg.Any<ToolSpec>(), Arg.Any<CapabilityToken>())
+            .Returns(callInfo => Task.FromResult(new ToolHandle
+            {
+                ToolName = callInfo.Arg<ToolSpec>().Name,
+                Type = callInfo.Arg<ToolSpec>().Type,
+                IsConnected = true
+            }));
+        toolGrain.GetHandleAsync().Returns(Task.FromResult<ToolHandle?>(new ToolHandle
+        {
+            ToolName = "connected",
+            Type = ToolType.Cli,
+            IsConnected = true
+        }));
+        toolGrain.GetSchemaAsync().Returns(Task.FromResult(new ToolSchema
+        {
+            ToolName = "connected",
+            Description = "Connected tool"
+        }));
+        secretProxy.SubstituteAsync(Arg.Any<string>()).Returns(callInfo => callInfo.Arg<string>());
+
+        grainFactory.GetGrain<IToolGrain>(Arg.Any<string>(), null).Returns(toolGrain);
+        grainFactory.GetGrain<ISecretProxyGrain>(Arg.Any<string>(), null).Returns(secretProxy);
+
+        var grain = new ToolRegistryGrain(grainFactory, tokenService, lifecycle, eventBus, logger, persistentState);
         return (grain, lifecycle, eventBus);
     }
 

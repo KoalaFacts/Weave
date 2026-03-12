@@ -1,5 +1,6 @@
 using Microsoft.Extensions.Logging;
 using Weave.Agents.Grains;
+using Weave.Agents.Models;
 
 namespace Weave.Agents.Heartbeat;
 
@@ -12,7 +13,7 @@ public sealed class HeartbeatGrain(
 
     public Task StartAsync(HeartbeatConfig config)
     {
-        if (_state.IsRunning)
+        if (_state.IsRunning || !config.Enabled)
             return Task.CompletedTask;
 
         var minutes = ParseCronMinutes(config.Cron);
@@ -28,7 +29,7 @@ public sealed class HeartbeatGrain(
         _timer = this.RegisterGrainTimer(OnHeartbeatTick, interval, interval);
 
         logger.LogInformation("Heartbeat started for {Key} with interval {Interval}",
-            this.GetPrimaryKeyString(), interval);
+            GetAgentKey(), interval);
 
         return Task.CompletedTask;
     }
@@ -39,7 +40,7 @@ public sealed class HeartbeatGrain(
         _timer = null;
         _state = _state with { IsRunning = false, NextRun = null };
 
-        logger.LogInformation("Heartbeat stopped for {Key}", this.GetPrimaryKeyString());
+        logger.LogInformation("Heartbeat stopped for {Key}", GetAgentKey());
         return Task.CompletedTask;
     }
 
@@ -47,11 +48,14 @@ public sealed class HeartbeatGrain(
 
     private async Task OnHeartbeatTick(CancellationToken ct)
     {
-        var key = this.GetPrimaryKeyString();
+        var key = GetAgentKey();
         logger.LogDebug("Heartbeat tick for {Key}", key);
 
         try
         {
+            if (string.Equals(key, "unknown-agent", StringComparison.Ordinal))
+                return;
+
             var agentGrain = grainFactory.GetGrain<IAgentGrain>(key);
             var agentState = await agentGrain.GetStateAsync();
 
@@ -64,14 +68,34 @@ public sealed class HeartbeatGrain(
             // Submit heartbeat tasks to the agent
             foreach (var task in _state.Config.Tasks)
             {
+                AgentTaskInfo? taskInfo = null;
                 try
                 {
-                    await agentGrain.SubmitTaskAsync($"[Heartbeat] {task}");
+                    taskInfo = await agentGrain.SubmitTaskAsync($"[Heartbeat] {task}");
+                    var response = await agentGrain.SendAsync(new Models.AgentMessage
+                    {
+                        Content = task,
+                        Metadata = new Dictionary<string, string>
+                        {
+                            ["source"] = "heartbeat"
+                        }
+                    });
+
+                    await agentGrain.CompleteTaskAsync(taskInfo.TaskId, success: true);
+
+                    logger.LogDebug("Heartbeat task for {Key} completed with response length {Length}", key, response.Content.Length);
                 }
                 catch (InvalidOperationException ex) when (ex.Message.Contains("max concurrent", StringComparison.Ordinal))
                 {
                     logger.LogDebug("Agent {Key} at max capacity, deferring heartbeat task", key);
                     break;
+                }
+                catch (Exception ex)
+                {
+                    if (taskInfo is not null)
+                        await agentGrain.CompleteTaskAsync(taskInfo.TaskId, success: false);
+
+                    logger.LogError(ex, "Heartbeat task failed for {Key}", key);
                 }
             }
 
@@ -108,5 +132,17 @@ public sealed class HeartbeatGrain(
     public void Dispose()
     {
         _timer?.Dispose();
+    }
+
+    private string GetAgentKey()
+    {
+        try
+        {
+            return this.GetPrimaryKeyString();
+        }
+        catch (NullReferenceException)
+        {
+            return "unknown-agent";
+        }
     }
 }

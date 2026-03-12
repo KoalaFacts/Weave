@@ -1,6 +1,9 @@
 using Microsoft.Extensions.Logging;
+using Microsoft.Extensions.AI;
+using Orleans.Runtime;
 using Weave.Agents.Grains;
 using Weave.Agents.Models;
+using Weave.Agents.Pipeline;
 using Weave.Shared.Events;
 using Weave.Shared.Ids;
 using Weave.Shared.Lifecycle;
@@ -11,6 +14,25 @@ namespace Weave.Agents.Tests;
 public sealed class AgentGrainTests
 {
     private static readonly WorkspaceId TestWorkspaceId = WorkspaceId.From("ws-1");
+    private const string TestAgentName = "researcher";
+
+    private static IPersistentState<AgentState> CreatePersistentState()
+    {
+        var state = new AgentState
+        {
+            AgentId = $"{TestWorkspaceId}/{TestAgentName}",
+            WorkspaceId = TestWorkspaceId,
+            AgentName = TestAgentName
+        };
+
+        var persistentState = Substitute.For<IPersistentState<AgentState>>();
+        persistentState.State.Returns(state);
+        persistentState.ReadStateAsync(Arg.Any<CancellationToken>()).Returns(Task.CompletedTask);
+        persistentState.WriteStateAsync(Arg.Any<CancellationToken>()).Returns(Task.CompletedTask);
+        persistentState.WriteStateAsync().Returns(Task.CompletedTask);
+        persistentState.ClearStateAsync().Returns(Task.CompletedTask);
+        return persistentState;
+    }
 
     private static AgentDefinition CreateDefinition(string model = "claude-sonnet-4-20250514", int maxTasks = 2) =>
         new()
@@ -22,10 +44,16 @@ public sealed class AgentGrainTests
 
     private static (AgentGrain Grain, ILifecycleManager Lifecycle, IEventBus EventBus) CreateGrain()
     {
+        var grainFactory = Substitute.For<IGrainFactory>();
+        var chatClientFactory = Substitute.For<IAgentChatClientFactory>();
         var lifecycle = Substitute.For<ILifecycleManager>();
         var eventBus = Substitute.For<IEventBus>();
         var logger = Substitute.For<ILogger<AgentGrain>>();
-        var grain = new AgentGrain(lifecycle, eventBus, logger);
+        chatClientFactory.Create(Arg.Any<string>(), Arg.Any<string?>())
+            .Returns(Substitute.For<IChatClient>());
+        var persistentState = CreatePersistentState();
+
+        var grain = new AgentGrain(grainFactory, chatClientFactory, lifecycle, eventBus, logger, persistentState);
         return (grain, lifecycle, eventBus);
     }
 

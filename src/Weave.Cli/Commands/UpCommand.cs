@@ -32,12 +32,31 @@ public sealed class UpCommand : AsyncCommand<UpCommand.Settings>
 
         var yaml = await File.ReadAllTextAsync(manifestPath, cancellationToken);
         var parser = new ManifestParser();
-        var manifest = parser.Parse(yaml);
+        var manifest = WorkspaceApiClient.PrepareManifest(
+            parser.Parse(yaml),
+            Path.GetDirectoryName(Path.GetFullPath(manifestPath)) ?? Directory.GetCurrentDirectory());
 
-        AnsiConsole.MarkupLine($"  Workspace: [bold]{manifest.Name}[/]");
-        AnsiConsole.MarkupLine($"  Agents: {manifest.Agents?.Count ?? 0}");
-        AnsiConsole.MarkupLine($"  Tools: {manifest.Tools?.Count ?? 0}");
-        AnsiConsole.MarkupLine("[green]Workspace started successfully.[/]");
+        try
+        {
+            using var client = new WorkspaceApiClient();
+            var response = await client.StartWorkspaceAsync(manifest, cancellationToken);
+            var statePath = WorkspaceApiClient.GetWorkspaceStatePath(manifestPath);
+            Directory.CreateDirectory(Path.GetDirectoryName(statePath)!);
+            await File.WriteAllTextAsync(statePath, response.WorkspaceId, cancellationToken);
+
+            AnsiConsole.MarkupLine($"  Workspace: [bold]{manifest.Name}[/]");
+            AnsiConsole.MarkupLine($"  Workspace ID: [bold]{response.WorkspaceId}[/]");
+            AnsiConsole.MarkupLine($"  Status: {response.Status}");
+            AnsiConsole.MarkupLine($"  Agents: {manifest.Agents.Count}");
+            AnsiConsole.MarkupLine($"  Tools: {manifest.Tools.Count}");
+            AnsiConsole.MarkupLine("[green]Workspace started successfully.[/]");
+        }
+        catch (Exception ex)
+        {
+            AnsiConsole.MarkupLine($"[red]Failed to start workspace: {ex.Message}[/]");
+            return 1;
+        }
+
         return 0;
     }
 }

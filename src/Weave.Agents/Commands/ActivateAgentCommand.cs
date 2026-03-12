@@ -1,4 +1,5 @@
 using Weave.Agents.Grains;
+using Weave.Agents.Heartbeat;
 using Weave.Agents.Models;
 using Weave.Shared.Cqrs;
 using Weave.Shared.Ids;
@@ -13,7 +14,26 @@ public sealed class ActivateAgentHandler(IGrainFactory grainFactory)
 {
     public async Task<AgentState> HandleAsync(ActivateAgentCommand command, CancellationToken ct)
     {
+        var registry = grainFactory.GetGrain<IToolRegistryGrain>(command.WorkspaceId.ToString());
+        await registry.GrantAgentToolsAsync(command.AgentName, command.Definition.Tools);
+
         var grain = grainFactory.GetGrain<IAgentGrain>($"{command.WorkspaceId}/{command.AgentName}");
-        return await grain.ActivateAgentAsync(command.WorkspaceId, command.Definition);
+        var state = await grain.ActivateAgentAsync(command.WorkspaceId, command.Definition);
+
+        foreach (var toolName in command.Definition.Tools)
+            await grain.ConnectToolAsync(toolName);
+
+        if (command.Definition.Heartbeat is not null)
+        {
+            var heartbeat = grainFactory.GetGrain<IHeartbeatGrain>($"{command.WorkspaceId}/{command.AgentName}");
+            await heartbeat.StartAsync(new Heartbeat.HeartbeatConfig
+            {
+                Cron = command.Definition.Heartbeat.Cron,
+                Tasks = command.Definition.Heartbeat.Tasks,
+                Enabled = true
+            });
+        }
+
+        return state;
     }
 }

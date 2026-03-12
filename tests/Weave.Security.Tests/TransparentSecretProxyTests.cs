@@ -61,4 +61,50 @@ public sealed class TransparentSecretProxyTests
 
         result.HasLeaks.ShouldBeTrue();
     }
+
+    [Fact]
+    public async Task ScanResponseAsync_WithCleanContent_ReturnsNoFindings()
+    {
+        var result = await _proxy.ScanResponseAsync("Hello, world!", "test-ws");
+
+        result.HasLeaks.ShouldBeFalse();
+        result.Findings.ShouldBeEmpty();
+    }
+
+    [Fact]
+    public async Task ScanRequestAsync_WithLeaks_ReturnsFindings()
+    {
+        var result = await _proxy.ScanRequestAsync("ghp_ABCDEFGHIJKLMNOPQRSTUVWXYZabcdefghij", "test-ws");
+
+        result.HasLeaks.ShouldBeTrue();
+        result.Findings.ShouldContain(f => f.PatternName == "github_token");
+    }
+
+    [Fact]
+    public async Task ScanRequestAsync_WithCleanContent_ReturnsNoFindings()
+    {
+        var result = await _proxy.ScanRequestAsync("just a normal request body", "test-ws");
+
+        result.HasLeaks.ShouldBeFalse();
+    }
+
+    [Fact]
+    public void SubstitutePlaceholders_WithNoPlaceholders_ReturnsUnchanged()
+    {
+        var input = "plain text with no secrets";
+        var result = _proxy.SubstitutePlaceholders(input);
+
+        result.ShouldBe(input);
+    }
+
+    [Fact]
+    public void RegisterSecret_ThenUnregister_ThenReRegister_Works()
+    {
+        _proxy.RegisterSecret("key", new SecretValue("first"));
+        _proxy.UnregisterSecret("key");
+        _proxy.RegisterSecret("key", new SecretValue("second"));
+
+        var result = _proxy.SubstitutePlaceholders("{secret:key}");
+        result.ShouldBe("second");
+    }
 }

@@ -5,7 +5,7 @@ namespace Weave.Workspaces.Models;
 [GenerateSerializer]
 public sealed record WorkspaceState
 {
-    [Id(0)] public required WorkspaceId WorkspaceId { get; init; }
+    [Id(0)] public WorkspaceId WorkspaceId { get; set; } = WorkspaceId.Empty;
     [Id(1)] public WorkspaceStatus Status { get; set; } = WorkspaceStatus.Stopped;
     [Id(2)] public DateTimeOffset? StartedAt { get; set; }
     [Id(3)] public DateTimeOffset? StoppedAt { get; set; }

@@ -1,58 +1,63 @@
+using System.Text;
+using System.Text.Json;
+using Microsoft.Extensions.AI;
 using Microsoft.Extensions.Logging;
+using Orleans.Runtime;
 using Weave.Agents.Events;
 using Weave.Agents.Models;
+using Weave.Agents.Pipeline;
 using Weave.Shared.Events;
 using Weave.Shared.Ids;
 using Weave.Shared.Lifecycle;
+using Weave.Tools.Grains;
+using Weave.Tools.Models;
 using Weave.Workspaces.Models;
 
 namespace Weave.Agents.Grains;
 
 public sealed class AgentGrain(
+    IGrainFactory grainFactory,
+    IAgentChatClientFactory chatClientFactory,
     ILifecycleManager lifecycleManager,
     IEventBus eventBus,
-    ILogger<AgentGrain> logger) : Grain, IAgentGrain
+    ILogger<AgentGrain> logger,
+    [PersistentState("agent", "Default")] IPersistentState<AgentState> persistentState) : Grain, IAgentGrain
 {
-    private AgentState _state = new() { AgentId = "", WorkspaceId = WorkspaceId.Empty, AgentName = "" };
-    private AgentDefinition? _definition;
+    private static readonly JsonSerializerOptions ToolInputJsonOptions = new(JsonSerializerDefaults.Web);
+    private IChatClient? _chatClient;
+    private string? _systemPrompt;
 
-    public override Task OnActivateAsync(CancellationToken cancellationToken)
+    public override async Task OnActivateAsync(CancellationToken cancellationToken)
     {
-        var key = this.GetPrimaryKeyString();
-        var parts = key.Split('/', 2);
-        _state = new AgentState
+        await persistentState.ReadStateAsync(cancellationToken);
+
+        var key = TryGetPrimaryKeyString();
+        if (string.IsNullOrWhiteSpace(persistentState.State.AgentId))
         {
-            AgentId = key,
-            WorkspaceId = WorkspaceId.From(parts.Length > 1 ? parts[0] : key),
-            AgentName = parts.Length > 1 ? parts[1] : key
-        };
-        return Task.CompletedTask;
+            ApplyIdentity(key, persistentState.State.WorkspaceId);
+            await persistentState.WriteStateAsync(cancellationToken);
+        }
+
+        if (persistentState.State.Definition is not null)
+            _chatClient = chatClientFactory.Create(persistentState.State.AgentId, persistentState.State.Model);
     }
 
     public async Task<AgentState> ActivateAgentAsync(WorkspaceId workspaceId, AgentDefinition definition)
     {
-        if (_state.Status is AgentStatus.Active or AgentStatus.Busy)
-            return _state;
+        if (persistentState.State.Status is AgentStatus.Active or AgentStatus.Busy)
+            return persistentState.State;
 
-        if (string.IsNullOrEmpty(_state.AgentId))
-        {
-            _state = new AgentState
-            {
-                AgentId = $"{workspaceId}/agent",
-                WorkspaceId = workspaceId,
-                AgentName = "agent"
-            };
-        }
+        EnsureIdentity(workspaceId);
 
-        _definition = definition;
-        _state.Status = AgentStatus.Activating;
-        _state.Model = definition.Model;
-        _state.MaxConcurrentTasks = definition.MaxConcurrentTasks;
+        persistentState.State.Status = AgentStatus.Activating;
+        persistentState.State.Model = definition.Model;
+        persistentState.State.MaxConcurrentTasks = definition.MaxConcurrentTasks;
+        persistentState.State.Definition = definition;
 
         var context = new LifecycleContext
         {
             WorkspaceId = workspaceId,
-            AgentName = _state.AgentName,
+            AgentName = persistentState.State.AgentName,
             Phase = LifecyclePhase.AgentActivating
         };
 
@@ -60,10 +65,16 @@ public sealed class AgentGrain(
         {
             await lifecycleManager.RunHooksAsync(LifecyclePhase.AgentActivating, context, CancellationToken.None);
 
-            _state.Status = AgentStatus.Active;
-            _state.ActivatedAt = DateTimeOffset.UtcNow;
-            _state.DeactivatedAt = null;
-            _state.ErrorMessage = null;
+            _chatClient = chatClientFactory.Create(persistentState.State.AgentId, definition.Model);
+            _systemPrompt = null;
+
+            persistentState.State.Status = AgentStatus.Active;
+            persistentState.State.ActivatedAt = DateTimeOffset.UtcNow;
+            persistentState.State.DeactivatedAt = null;
+            persistentState.State.ErrorMessage = null;
+            persistentState.State.LastActive = persistentState.State.ActivatedAt;
+
+            await persistentState.WriteStateAsync();
 
             await lifecycleManager.RunHooksAsync(
                 LifecyclePhase.AgentActivated,
@@ -72,47 +83,50 @@ public sealed class AgentGrain(
 
             await eventBus.PublishAsync(new AgentActivatedEvent
             {
-                SourceId = _state.AgentId,
-                AgentName = _state.AgentName,
+                SourceId = persistentState.State.AgentId,
+                AgentName = persistentState.State.AgentName,
                 WorkspaceId = workspaceId,
                 Model = definition.Model,
                 Tools = definition.Tools
             }, CancellationToken.None);
 
-            logger.LogInformation("Agent {AgentName} activated in workspace {WorkspaceId}",
-                _state.AgentName, workspaceId);
+            logger.LogInformation(
+                "Agent {AgentName} activated in workspace {WorkspaceId}",
+                persistentState.State.AgentName,
+                workspaceId);
         }
         catch (Exception ex)
         {
-            _state.Status = AgentStatus.Error;
-            _state.ErrorMessage = ex.Message;
+            persistentState.State.Status = AgentStatus.Error;
+            persistentState.State.ErrorMessage = ex.Message;
+            await persistentState.WriteStateAsync();
 
             await eventBus.PublishAsync(new AgentErrorEvent
             {
-                SourceId = _state.AgentId,
-                AgentName = _state.AgentName,
+                SourceId = persistentState.State.AgentId,
+                AgentName = persistentState.State.AgentName,
                 WorkspaceId = workspaceId,
                 ErrorMessage = ex.Message
             }, CancellationToken.None);
 
-            logger.LogError(ex, "Failed to activate agent {AgentName}", _state.AgentName);
+            logger.LogError(ex, "Failed to activate agent {AgentName}", persistentState.State.AgentName);
             throw;
         }
 
-        return _state;
+        return persistentState.State;
     }
 
     public async Task DeactivateAsync()
     {
-        if (_state.Status is AgentStatus.Idle or AgentStatus.Deactivating)
+        if (persistentState.State.Status is AgentStatus.Idle or AgentStatus.Deactivating)
             return;
 
-        _state.Status = AgentStatus.Deactivating;
+        persistentState.State.Status = AgentStatus.Deactivating;
 
         var context = new LifecycleContext
         {
-            WorkspaceId = _state.WorkspaceId,
-            AgentName = _state.AgentName,
+            WorkspaceId = persistentState.State.WorkspaceId,
+            AgentName = persistentState.State.AgentName,
             Phase = LifecyclePhase.AgentDeactivating
         };
 
@@ -120,10 +134,12 @@ public sealed class AgentGrain(
         {
             await lifecycleManager.RunHooksAsync(LifecyclePhase.AgentDeactivating, context, CancellationToken.None);
 
-            _state.Status = AgentStatus.Idle;
-            _state.DeactivatedAt = DateTimeOffset.UtcNow;
-            _state.ActiveTasks.Clear();
-            _state.ConnectedTools.Clear();
+            persistentState.State.Status = AgentStatus.Idle;
+            persistentState.State.DeactivatedAt = DateTimeOffset.UtcNow;
+            persistentState.State.ActiveTasks.Clear();
+            persistentState.State.ConnectedTools.Clear();
+
+            await persistentState.WriteStateAsync();
 
             await lifecycleManager.RunHooksAsync(
                 LifecyclePhase.AgentDeactivated,
@@ -132,38 +148,106 @@ public sealed class AgentGrain(
 
             await eventBus.PublishAsync(new AgentDeactivatedEvent
             {
-                SourceId = _state.AgentId,
-                AgentName = _state.AgentName,
-                WorkspaceId = _state.WorkspaceId
+                SourceId = persistentState.State.AgentId,
+                AgentName = persistentState.State.AgentName,
+                WorkspaceId = persistentState.State.WorkspaceId
             }, CancellationToken.None);
 
-            logger.LogInformation("Agent {AgentName} deactivated", _state.AgentName);
+            logger.LogInformation("Agent {AgentName} deactivated", persistentState.State.AgentName);
         }
         catch (Exception ex)
         {
-            _state.Status = AgentStatus.Error;
-            _state.ErrorMessage = ex.Message;
-            logger.LogError(ex, "Failed to deactivate agent {AgentName}", _state.AgentName);
+            persistentState.State.Status = AgentStatus.Error;
+            persistentState.State.ErrorMessage = ex.Message;
+            await persistentState.WriteStateAsync();
+            logger.LogError(ex, "Failed to deactivate agent {AgentName}", persistentState.State.AgentName);
             throw;
         }
     }
 
-    public Task<AgentState> GetStateAsync() => Task.FromResult(_state);
+    public Task<AgentState> GetStateAsync() => Task.FromResult(persistentState.State);
 
-    public Task<AgentTaskInfo> SubmitTaskAsync(string description)
+    public async Task<AgentChatResponse> SendAsync(AgentMessage message)
     {
-        if (_state.Status is not (AgentStatus.Active or AgentStatus.Busy))
-            throw new InvalidOperationException($"Agent {_state.AgentName} is not active (status: {_state.Status}).");
+        if (persistentState.State.Status is not (AgentStatus.Active or AgentStatus.Busy))
+            throw new InvalidOperationException($"Agent {persistentState.State.AgentName} is not active (status: {persistentState.State.Status}).");
+
+        _chatClient ??= chatClientFactory.Create(persistentState.State.AgentId, persistentState.State.Model);
+
+        var userEntry = new ConversationMessage
+        {
+            Role = string.IsNullOrWhiteSpace(message.Role) ? "user" : message.Role,
+            Content = message.Content,
+            Timestamp = DateTimeOffset.UtcNow
+        };
+        persistentState.State.History.Add(userEntry);
+        persistentState.State.LastActive = userEntry.Timestamp;
+
+        var prompt = await GetSystemPromptAsync();
+        var chatMessages = new List<ChatMessage>(persistentState.State.History.Count + 1);
+        if (!string.IsNullOrWhiteSpace(prompt))
+            chatMessages.Add(new ChatMessage(ChatRole.System, prompt));
+
+        foreach (var historyMessage in persistentState.State.History)
+            chatMessages.Add(ToChatMessage(historyMessage));
+
+        var tools = await BuildToolsAsync();
+        var options = new ChatOptions
+        {
+            ModelId = persistentState.State.Model,
+            ConversationId = persistentState.State.ConversationId,
+            AdditionalProperties = new AdditionalPropertiesDictionary
+            {
+                ["agentId"] = persistentState.State.AgentId
+            }
+        };
+
+        if (tools.Count > 0)
+            options.Tools = tools;
+
+        var response = await _chatClient.GetResponseAsync(chatMessages, options, CancellationToken.None);
+        persistentState.State.ConversationId = response.ConversationId ?? persistentState.State.ConversationId;
+
+        var newMessages = new List<ConversationMessage>();
+        foreach (var responseMessage in response.Messages)
+        {
+            foreach (var conversationMessage in ToConversationMessages(responseMessage))
+            {
+                persistentState.State.History.Add(conversationMessage);
+                newMessages.Add(conversationMessage);
+            }
+        }
+
+        persistentState.State.LastActive = DateTimeOffset.UtcNow;
+        await persistentState.WriteStateAsync();
+
+        return new AgentChatResponse
+        {
+            Content = response.Text,
+            ConversationId = persistentState.State.ConversationId ?? string.Empty,
+            Messages = newMessages,
+            UsedTools = response.Messages.Any(static m => m.Contents.Any(static c => c is FunctionCallContent or FunctionResultContent)),
+            Model = response.ModelId ?? persistentState.State.Model
+        };
+    }
+
+    public async Task<AgentTaskInfo> SubmitTaskAsync(string description)
+    {
+        if (persistentState.State.Status is not (AgentStatus.Active or AgentStatus.Busy))
+            throw new InvalidOperationException($"Agent {persistentState.State.AgentName} is not active (status: {persistentState.State.Status}).");
 
         var runningCount = 0;
-        foreach (var t in _state.ActiveTasks)
+        foreach (var taskInfo in persistentState.State.ActiveTasks)
         {
-            if (t.Status is AgentTaskStatus.Running)
+            if (taskInfo.Status is AgentTaskStatus.Running)
                 runningCount++;
         }
-        if (runningCount >= _state.MaxConcurrentTasks)
+
+        if (runningCount >= persistentState.State.MaxConcurrentTasks)
+        {
             throw new InvalidOperationException(
-                $"Agent {_state.AgentName} has reached max concurrent tasks ({_state.MaxConcurrentTasks}).");
+                $"Agent {persistentState.State.AgentName} has reached max concurrent tasks ({persistentState.State.MaxConcurrentTasks}).");
+        }
 
         var task = new AgentTaskInfo
         {
@@ -172,60 +256,319 @@ public sealed class AgentGrain(
             Status = AgentTaskStatus.Running
         };
 
-        _state.ActiveTasks.Add(task);
-        _state.Status = AgentStatus.Busy;
+        persistentState.State.ActiveTasks.Add(task);
+        persistentState.State.Status = AgentStatus.Busy;
+        persistentState.State.LastActive = DateTimeOffset.UtcNow;
+        await persistentState.WriteStateAsync();
 
-        logger.LogInformation("Task {TaskId} submitted to agent {AgentName}", task.TaskId, _state.AgentName);
-        return Task.FromResult(task);
+        logger.LogInformation("Task {TaskId} submitted to agent {AgentName}", task.TaskId, persistentState.State.AgentName);
+        return task;
     }
 
     public async Task CompleteTaskAsync(AgentTaskId taskId, bool success)
     {
-        var taskIndex = _state.ActiveTasks.FindIndex(t => t.TaskId == taskId);
-        if (taskIndex < 0)
-            throw new InvalidOperationException($"Task {taskId} not found on agent {_state.AgentName}.");
-
-        var completed = _state.ActiveTasks[taskIndex] with
+        AgentTaskInfo? task = null;
+        foreach (var candidate in persistentState.State.ActiveTasks)
         {
-            Status = success ? AgentTaskStatus.Completed : AgentTaskStatus.Failed,
-            CompletedAt = DateTimeOffset.UtcNow
-        };
-        _state.ActiveTasks[taskIndex] = completed;
+            if (candidate.TaskId == taskId)
+            {
+                task = candidate;
+                break;
+            }
+        }
+
+        if (task is null)
+            throw new InvalidOperationException($"Task {taskId} not found on agent {persistentState.State.AgentName}.");
+
+        task.Status = success ? AgentTaskStatus.Completed : AgentTaskStatus.Failed;
+        task.CompletedAt = DateTimeOffset.UtcNow;
+        persistentState.State.TotalTasksCompleted++;
 
         var hasRunning = false;
-        foreach (var t in _state.ActiveTasks)
+        foreach (var activeTask in persistentState.State.ActiveTasks)
         {
-            if (t.Status is AgentTaskStatus.Running)
+            if (activeTask.Status is AgentTaskStatus.Running)
             {
                 hasRunning = true;
                 break;
             }
         }
+
         if (!hasRunning)
-            _state.Status = AgentStatus.Active;
+            persistentState.State.Status = AgentStatus.Active;
+
+        persistentState.State.LastActive = DateTimeOffset.UtcNow;
+        await persistentState.WriteStateAsync();
 
         await eventBus.PublishAsync(new AgentTaskCompletedEvent
         {
-            SourceId = _state.AgentId,
-            AgentName = _state.AgentName,
-            WorkspaceId = _state.WorkspaceId,
+            SourceId = persistentState.State.AgentId,
+            AgentName = persistentState.State.AgentName,
+            WorkspaceId = persistentState.State.WorkspaceId,
             TaskId = taskId
         }, CancellationToken.None);
 
-        logger.LogInformation("Task {TaskId} completed on agent {AgentName} (success: {Success})",
-            taskId, _state.AgentName, success);
+        logger.LogInformation(
+            "Task {TaskId} completed on agent {AgentName} (success: {Success})",
+            taskId,
+            persistentState.State.AgentName,
+            success);
     }
 
-    public Task ConnectToolAsync(string toolName)
+    public async Task ConnectToolAsync(string toolName)
     {
-        if (!_state.ConnectedTools.Contains(toolName))
-            _state.ConnectedTools.Add(toolName);
-        return Task.CompletedTask;
+        if (!persistentState.State.ConnectedTools.Contains(toolName, StringComparer.Ordinal))
+            persistentState.State.ConnectedTools.Add(toolName);
+
+        await persistentState.WriteStateAsync();
     }
 
-    public Task DisconnectToolAsync(string toolName)
+    public async Task DisconnectToolAsync(string toolName)
     {
-        _state.ConnectedTools.Remove(toolName);
-        return Task.CompletedTask;
+        persistentState.State.ConnectedTools.Remove(toolName);
+        await persistentState.WriteStateAsync();
+    }
+
+    private void EnsureIdentity(WorkspaceId workspaceId)
+    {
+        if (!string.IsNullOrWhiteSpace(persistentState.State.AgentId))
+        {
+            if (persistentState.State.WorkspaceId.IsEmpty)
+                persistentState.State.WorkspaceId = workspaceId;
+
+            if (string.IsNullOrWhiteSpace(persistentState.State.AgentName))
+                persistentState.State.AgentName = GetAgentName(persistentState.State.AgentId);
+
+            return;
+        }
+
+        ApplyIdentity(TryGetPrimaryKeyString(), workspaceId);
+    }
+
+    private void ApplyIdentity(string? key, WorkspaceId workspaceId)
+    {
+        if (!string.IsNullOrWhiteSpace(key))
+        {
+            var parts = key.Split('/', 2);
+            persistentState.State.AgentId = key;
+            persistentState.State.WorkspaceId = WorkspaceId.From(parts.Length > 1 ? parts[0] : key);
+            persistentState.State.AgentName = parts.Length > 1 ? parts[1] : key;
+            return;
+        }
+
+        persistentState.State.WorkspaceId = workspaceId;
+        persistentState.State.AgentName = string.IsNullOrWhiteSpace(persistentState.State.AgentName)
+            ? "agent"
+            : persistentState.State.AgentName;
+        persistentState.State.AgentId = $"{workspaceId}/{persistentState.State.AgentName}";
+    }
+
+    private static string GetAgentName(string agentId)
+    {
+        var separatorIndex = agentId.IndexOf('/', StringComparison.Ordinal);
+        return separatorIndex >= 0 && separatorIndex < agentId.Length - 1
+            ? agentId[(separatorIndex + 1)..]
+            : agentId;
+    }
+
+    private string? TryGetPrimaryKeyString()
+    {
+        try
+        {
+            return this.GetPrimaryKeyString();
+        }
+        catch (NullReferenceException)
+        {
+            return null;
+        }
+    }
+
+    private async Task<string?> GetSystemPromptAsync()
+    {
+        if (_systemPrompt is not null || persistentState.State.Definition?.SystemPromptFile is null)
+            return _systemPrompt;
+
+        var promptPath = persistentState.State.Definition.SystemPromptFile;
+        if (!File.Exists(promptPath))
+        {
+            logger.LogWarning("System prompt file '{PromptPath}' was not found for agent {AgentName}", promptPath, persistentState.State.AgentName);
+            _systemPrompt = string.Empty;
+            return _systemPrompt;
+        }
+
+        _systemPrompt = await File.ReadAllTextAsync(promptPath);
+        return _systemPrompt;
+    }
+
+    private async Task<List<AITool>> BuildToolsAsync()
+    {
+        var registry = grainFactory.GetGrain<IToolRegistryGrain>(persistentState.State.WorkspaceId.ToString());
+        var tools = new List<AITool>(persistentState.State.ConnectedTools.Count);
+
+        foreach (var toolName in persistentState.State.ConnectedTools)
+        {
+            var resolution = await registry.ResolveAsync(persistentState.State.AgentName, toolName);
+            if (resolution is null)
+                continue;
+
+            Func<string, Task<string>> toolDelegate = input => InvokeToolAsync(toolName, input);
+            var function = AIFunctionFactory.Create(
+                toolDelegate,
+                new AIFunctionFactoryOptions
+                {
+                    Name = toolName,
+                    Description = BuildToolDescription(resolution.Schema)
+                });
+            tools.Add(function);
+        }
+
+        return tools;
+    }
+
+    private async Task<string> InvokeToolAsync(string toolName, string input)
+    {
+        var registry = grainFactory.GetGrain<IToolRegistryGrain>(persistentState.State.WorkspaceId.ToString());
+        var resolution = await registry.ResolveAsync(persistentState.State.AgentName, toolName)
+            ?? throw new InvalidOperationException($"Tool '{toolName}' is not available to agent '{persistentState.State.AgentName}'.");
+
+        var toolGrain = grainFactory.GetGrain<IToolGrain>(resolution.GrainKey);
+        var invocation = CreateToolInvocation(toolName, input);
+        var result = await toolGrain.InvokeAsync(invocation, resolution.Token);
+        return result.Success ? result.Output : $"Tool '{toolName}' failed: {result.Error}";
+    }
+
+    private static ToolInvocation CreateToolInvocation(string toolName, string input)
+    {
+        if (!string.IsNullOrWhiteSpace(input) && input.TrimStart().StartsWith('{'))
+        {
+            try
+            {
+                using var document = JsonDocument.Parse(input);
+                if (document.RootElement.ValueKind is JsonValueKind.Object)
+                {
+                    var parameters = new Dictionary<string, string>(StringComparer.Ordinal);
+                    var method = "invoke";
+                    string? rawInput = null;
+
+                    foreach (var property in document.RootElement.EnumerateObject())
+                    {
+                        if (property.NameEquals("method"))
+                        {
+                            method = property.Value.GetString() ?? "invoke";
+                            continue;
+                        }
+
+                        if (property.NameEquals("rawInput"))
+                        {
+                            rawInput = property.Value.GetString();
+                            continue;
+                        }
+
+                        parameters[property.Name] = property.Value.ValueKind switch
+                        {
+                            JsonValueKind.String => property.Value.GetString() ?? string.Empty,
+                            _ => property.Value.GetRawText()
+                        };
+                    }
+
+                    return new ToolInvocation
+                    {
+                        ToolName = toolName,
+                        Method = method,
+                        Parameters = parameters,
+                        RawInput = rawInput
+                    };
+                }
+            }
+            catch (JsonException)
+            {
+            }
+        }
+
+        return new ToolInvocation
+        {
+            ToolName = toolName,
+            Method = "invoke",
+            RawInput = input
+        };
+    }
+
+    private static string BuildToolDescription(ToolSchema schema)
+    {
+        if (schema.Parameters.Count == 0)
+            return schema.Description;
+
+        var builder = new StringBuilder(schema.Description);
+        builder.Append(" Parameters: ");
+
+        for (var i = 0; i < schema.Parameters.Count; i++)
+        {
+            if (i > 0)
+                builder.Append("; ");
+
+            var parameter = schema.Parameters[i];
+            builder.Append(parameter.Name);
+            builder.Append(" (");
+            builder.Append(parameter.Type);
+            if (parameter.Required)
+                builder.Append(", required");
+            builder.Append("): ");
+            builder.Append(parameter.Description);
+        }
+
+        builder.Append(". Pass a JSON object if multiple fields are required.");
+        return builder.ToString();
+    }
+
+    private static ChatMessage ToChatMessage(ConversationMessage historyMessage)
+    {
+        var role = historyMessage.Role.ToLowerInvariant() switch
+        {
+            "assistant" => ChatRole.Assistant,
+            "system" => ChatRole.System,
+            "tool" => ChatRole.Tool,
+            _ => ChatRole.User
+        };
+
+        return new ChatMessage(role, historyMessage.Content)
+        {
+            CreatedAt = historyMessage.Timestamp
+        };
+    }
+
+    private static IEnumerable<ConversationMessage> ToConversationMessages(ChatMessage message)
+    {
+        if (!string.IsNullOrWhiteSpace(message.Text))
+        {
+            yield return new ConversationMessage
+            {
+                Role = message.Role.Value,
+                Content = message.Text,
+                Timestamp = message.CreatedAt ?? DateTimeOffset.UtcNow
+            };
+        }
+
+        foreach (var content in message.Contents)
+        {
+            switch (content)
+            {
+                case FunctionCallContent functionCall:
+                    yield return new ConversationMessage
+                    {
+                        Role = "tool",
+                        Content = $"Requested tool '{functionCall.Name}' with arguments: {JsonSerializer.Serialize(functionCall.Arguments, ToolInputJsonOptions)}",
+                        Timestamp = message.CreatedAt ?? DateTimeOffset.UtcNow
+                    };
+                    break;
+                case FunctionResultContent functionResult:
+                    yield return new ConversationMessage
+                    {
+                        Role = "tool",
+                        Content = $"Tool result: {functionResult.Result}",
+                        Timestamp = message.CreatedAt ?? DateTimeOffset.UtcNow
+                    };
+                    break;
+            }
+        }
     }
 }

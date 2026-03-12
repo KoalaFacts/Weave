@@ -13,6 +13,9 @@ public sealed class OpenApiToolConnector(HttpClient httpClient, ILogger<OpenApiT
     {
         var openApi = tool.OpenApi ?? throw new InvalidOperationException($"Tool '{tool.Name}' has no OpenAPI configuration");
 
+        if (Uri.TryCreate(openApi.SpecUrl, UriKind.Absolute, out var specUri))
+            httpClient.BaseAddress = new Uri(specUri.GetLeftPart(UriPartial.Authority), UriKind.Absolute);
+
         if (openApi.Auth is { Type: "bearer" })
         {
             httpClient.DefaultRequestHeaders.Authorization =

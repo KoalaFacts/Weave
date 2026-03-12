@@ -1,4 +1,6 @@
+using System.Text.Json;
 using Microsoft.Extensions.Logging;
+using Weave.Security.Grains;
 using Weave.Security.Scanning;
 using Weave.Security.Tokens;
 using Weave.Shared.Events;
@@ -10,6 +12,7 @@ using Weave.Tools.Models;
 namespace Weave.Tools.Grains;
 
 public sealed class ToolGrain(
+    IGrainFactory grainFactory,
     IToolDiscoveryService discovery,
     ILeakScanner leakScanner,
     ICapabilityTokenService tokenService,
@@ -24,15 +27,13 @@ public sealed class ToolGrain(
 
     public override Task OnActivateAsync(CancellationToken cancellationToken)
     {
-        var key = this.GetPrimaryKeyString();
-        var parts = key.Split('/', 2);
-        _workspaceId = parts.Length > 1 ? parts[0] : key;
-        _toolName = parts.Length > 1 ? parts[1] : key;
+        EnsureIdentity();
         return Task.CompletedTask;
     }
 
     public async Task<ToolHandle> ConnectAsync(ToolSpec definition, CapabilityToken token)
     {
+        EnsureIdentity(definition, token);
         if (!tokenService.Validate(token))
             throw new UnauthorizedAccessException("Invalid or expired capability token");
 
@@ -52,8 +53,10 @@ public sealed class ToolGrain(
         var connector = discovery.GetConnector(definition.Type);
         _handle = await connector.ConnectAsync(definition, token);
 
-        await lifecycleManager.RunHooksAsync(LifecyclePhase.ToolConnected,
-            context with { Phase = LifecyclePhase.ToolConnected }, CancellationToken.None);
+        await lifecycleManager.RunHooksAsync(
+            LifecyclePhase.ToolConnected,
+            context with { Phase = LifecyclePhase.ToolConnected },
+            CancellationToken.None);
 
         logger.LogInformation("Tool '{Tool}' connected in workspace '{Workspace}'", _toolName, _workspaceId);
         return _handle;
@@ -75,8 +78,10 @@ public sealed class ToolGrain(
         var connector = discovery.GetConnector(_definition.Type);
         await connector.DisconnectAsync(_handle);
 
-        await lifecycleManager.RunHooksAsync(LifecyclePhase.ToolDisconnected,
-            context with { Phase = LifecyclePhase.ToolDisconnected }, CancellationToken.None);
+        await lifecycleManager.RunHooksAsync(
+            LifecyclePhase.ToolDisconnected,
+            context with { Phase = LifecyclePhase.ToolDisconnected },
+            CancellationToken.None);
 
         _handle = null;
         logger.LogInformation("Tool '{Tool}' disconnected from workspace '{Workspace}'", _toolName, _workspaceId);
@@ -84,6 +89,7 @@ public sealed class ToolGrain(
 
     public async Task<ToolResult> InvokeAsync(ToolInvocation invocation, CapabilityToken token)
     {
+        EnsureIdentity(invocation: invocation, token: token);
         if (!tokenService.Validate(token))
             throw new UnauthorizedAccessException("Invalid or expired capability token");
 
@@ -92,8 +98,9 @@ public sealed class ToolGrain(
 
         var wsId = Shared.Ids.WorkspaceId.From(_workspaceId);
 
-        // Scan outbound payload for secret leaks
-        if (invocation.RawInput is not null)
+        // Scan the original outbound request before placeholders are substituted at the network boundary.
+        var outboundPayload = invocation.RawInput ?? JsonSerializer.Serialize(invocation.Parameters);
+        if (!string.IsNullOrWhiteSpace(outboundPayload))
         {
             var scanContext = new ScanContext
             {
@@ -101,10 +108,10 @@ public sealed class ToolGrain(
                 SourceComponent = $"tool:{_toolName}",
                 Direction = ScanDirection.Outbound
             };
-            var scanResult = await leakScanner.ScanStringAsync(invocation.RawInput, scanContext);
+            var scanResult = await leakScanner.ScanStringAsync(outboundPayload, scanContext);
             if (scanResult.HasLeaks)
             {
-                logger.LogWarning("Secret leak detected in tool invocation for '{Tool}' — blocked", _toolName);
+                logger.LogWarning("Secret leak detected in tool invocation for '{Tool}' - blocked", _toolName);
 
                 await eventBus.PublishAsync(new ToolInvocationBlockedEvent
                 {
@@ -123,10 +130,10 @@ public sealed class ToolGrain(
             }
         }
 
+        var effectiveInvocation = await SubstituteSecretsAsync(invocation);
         var connector = discovery.GetConnector(_definition.Type);
-        var result = await connector.InvokeAsync(_handle, invocation);
+        var result = await connector.InvokeAsync(_handle, effectiveInvocation);
 
-        // Scan response for secret leaks
         if (result.Success && !string.IsNullOrEmpty(result.Output))
         {
             var responseScanContext = new ScanContext
@@ -138,7 +145,7 @@ public sealed class ToolGrain(
             var responseScan = await leakScanner.ScanStringAsync(result.Output, responseScanContext);
             if (responseScan.HasLeaks)
             {
-                logger.LogWarning("Secret leak detected in tool response from '{Tool}' — redacted", _toolName);
+                logger.LogWarning("Secret leak detected in tool response from '{Tool}' - redacted", _toolName);
 
                 await eventBus.PublishAsync(new ToolInvocationBlockedEvent
                 {
@@ -174,4 +181,41 @@ public sealed class ToolGrain(
     }
 
     public Task<ToolHandle?> GetHandleAsync() => Task.FromResult(_handle);
+
+    private async Task<ToolInvocation> SubstituteSecretsAsync(ToolInvocation invocation)
+    {
+        var proxy = grainFactory.GetGrain<ISecretProxyGrain>(_workspaceId);
+        var parameters = new Dictionary<string, string>(invocation.Parameters.Count, StringComparer.Ordinal);
+        foreach (var (key, value) in invocation.Parameters)
+            parameters[key] = await proxy.SubstituteAsync(value);
+
+        return invocation with
+        {
+            Parameters = parameters,
+            RawInput = invocation.RawInput is null ? null : await proxy.SubstituteAsync(invocation.RawInput)
+        };
+    }
+
+    private void EnsureIdentity(ToolSpec? definition = null, CapabilityToken? token = null, ToolInvocation? invocation = null)
+    {
+        if (string.IsNullOrWhiteSpace(_workspaceId) || string.IsNullOrWhiteSpace(_toolName))
+        {
+            try
+            {
+                var key = this.GetPrimaryKeyString();
+                var parts = key.Split('/', 2);
+                _workspaceId = parts.Length > 1 ? parts[0] : key;
+                _toolName = parts.Length > 1 ? parts[1] : key;
+            }
+            catch (NullReferenceException)
+            {
+            }
+        }
+
+        if (string.IsNullOrWhiteSpace(_workspaceId))
+            _workspaceId = token?.WorkspaceId ?? "unknown-workspace";
+
+        if (string.IsNullOrWhiteSpace(_toolName))
+            _toolName = definition?.Name ?? invocation?.ToolName ?? "tool";
+    }
 }

@@ -9,6 +9,7 @@ public interface IAgentGrain : IGrainWithStringKey
     Task<AgentState> ActivateAgentAsync(WorkspaceId workspaceId, AgentDefinition definition);
     Task DeactivateAsync();
     Task<AgentState> GetStateAsync();
+    Task<AgentChatResponse> SendAsync(AgentMessage message);
     Task<AgentTaskInfo> SubmitTaskAsync(string description);
     Task CompleteTaskAsync(AgentTaskId taskId, bool success);
     Task ConnectToolAsync(string toolName);

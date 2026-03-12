@@ -1,4 +1,5 @@
 using Microsoft.Extensions.Logging;
+using Weave.Security.Grains;
 using Weave.Security.Scanning;
 using Weave.Security.Tokens;
 using Weave.Shared.Events;
@@ -14,6 +15,7 @@ public sealed class ToolGrainTests
 {
     private static (ToolGrain Grain, IToolConnector Connector, ICapabilityTokenService TokenService) CreateGrain()
     {
+        var grainFactory = Substitute.For<IGrainFactory>();
         var connector = Substitute.For<IToolConnector>();
         connector.ToolType.Returns(ToolType.Cli);
 
@@ -24,9 +26,13 @@ public sealed class ToolGrainTests
         var tokenService = new CapabilityTokenService();
         var lifecycleManager = Substitute.For<ILifecycleManager>();
         var logger = Substitute.For<ILogger<ToolGrain>>();
-
         var eventBus = Substitute.For<IEventBus>();
-        var grain = new ToolGrain(discovery, leakScanner, tokenService, lifecycleManager, eventBus, logger);
+        var secretProxy = Substitute.For<ISecretProxyGrain>();
+        secretProxy.SubstituteAsync(Arg.Any<string>()).Returns(callInfo => callInfo.Arg<string>());
+
+        grainFactory.GetGrain<ISecretProxyGrain>(Arg.Any<string>(), null).Returns(secretProxy);
+
+        var grain = new ToolGrain(grainFactory, discovery, leakScanner, tokenService, lifecycleManager, eventBus, logger);
         return (grain, connector, tokenService);
     }
 
