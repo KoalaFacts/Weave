@@ -66,9 +66,7 @@ public sealed partial class LeakScanner : ILeakScanner
 
         if (findings.Count > 0)
         {
-            _logger.LogWarning(
-                "Leak scanner found {Count} potential secret(s) in {Direction} payload from {Source} in workspace {Workspace}",
-                findings.Count, context.Direction, context.SourceComponent, context.WorkspaceId);
+            LogLeaksDetected(findings.Count, context.Direction, context.SourceComponent, context.WorkspaceId);
         }
 
         var result = new ScanResult
@@ -186,4 +184,7 @@ public sealed partial class LeakScanner : ILeakScanner
 
     [GeneratedRegex(@"(?i)(?:AccountKey|account_key)\s*=\s*[A-Za-z0-9+/=]{40,}", RegexOptions.Compiled)]
     private static partial Regex AzureStorageKey();
+
+    [LoggerMessage(Level = LogLevel.Warning, Message = "Leak scanner found {Count} potential secret(s) in {Direction} payload from {Source} in workspace {Workspace}")]
+    private partial void LogLeaksDetected(int count, ScanDirection direction, string source, string workspace);
 }

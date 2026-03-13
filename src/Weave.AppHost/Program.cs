@@ -16,7 +16,7 @@ var stateStore = builder.AddDaprStateStore("statestore");
 var pubSub = builder.AddDaprPubSub("pubsub");
 
 // Silo — Orleans grain host with Dapr sidecar
-builder.AddProject<Projects.Weave_Silo>("silo")
+var silo = builder.AddProject<Projects.Weave_Silo>("silo")
     .WithReference(orleans)
     .WaitFor(redis)
     .WithDaprSidecar(sidecar => sidecar
@@ -27,6 +27,7 @@ builder.AddProject<Projects.Weave_Silo>("silo")
 
 // Dashboard — Blazor Server UI for management + monitoring
 builder.AddProject<Projects.Weave_Dashboard>("dashboard")
-    .WaitFor(redis);
+    .WithReference(silo)
+    .WaitFor(silo);
 
 builder.Build().Run();

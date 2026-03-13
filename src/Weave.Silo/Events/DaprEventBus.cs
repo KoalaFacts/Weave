@@ -8,7 +8,7 @@ namespace Weave.Silo.Events;
 /// Event bus that publishes domain events to Dapr pub/sub while also
 /// dispatching to local in-process subscribers for grain-to-grain communication.
 /// </summary>
-public sealed class DaprEventBus(
+public sealed partial class DaprEventBus(
     DaprClient daprClient,
     ILogger<DaprEventBus> logger) : IEventBus
 {
@@ -23,12 +23,11 @@ public sealed class DaprEventBus(
         try
         {
             await daprClient.PublishEventAsync(PubSubName, topicName, domainEvent, ct);
-            logger.LogDebug("Published {EventType} ({EventId}) to Dapr topic {Topic}",
-                topicName, domainEvent.EventId, topicName);
+            LogEventPublished(topicName, domainEvent.EventId, topicName);
         }
         catch (Exception ex)
         {
-            logger.LogWarning(ex, "Failed to publish {EventType} to Dapr, falling back to local-only", topicName);
+            LogDaprPublishFailed(ex, topicName);
         }
 
         // Also dispatch locally for in-process subscribers
@@ -65,8 +64,7 @@ public sealed class DaprEventBus(
             }
             catch (Exception ex)
             {
-                logger.LogError(ex, "Error handling event {EventType} ({EventId})",
-                    typeof(TEvent).Name, domainEvent.EventId);
+                LogEventHandlerError(ex, typeof(TEvent).Name, domainEvent.EventId);
             }
         }
     }
@@ -75,4 +73,13 @@ public sealed class DaprEventBus(
     {
         public void Dispose() => onDispose();
     }
+
+    [LoggerMessage(Level = LogLevel.Debug, Message = "Published {EventType} ({EventId}) to Dapr topic {Topic}")]
+    private partial void LogEventPublished(string eventType, string eventId, string topic);
+
+    [LoggerMessage(Level = LogLevel.Warning, Message = "Failed to publish {EventType} to Dapr, falling back to local-only")]
+    private partial void LogDaprPublishFailed(Exception ex, string eventType);
+
+    [LoggerMessage(Level = LogLevel.Error, Message = "Error handling event {EventType} ({EventId})")]
+    private partial void LogEventHandlerError(Exception ex, string eventType, string eventId);
 }

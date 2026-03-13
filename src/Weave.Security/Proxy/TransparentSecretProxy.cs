@@ -46,7 +46,7 @@ public sealed partial class TransparentSecretProxy
                 return secret.DecryptToString();
             }
 
-            _logger.LogWarning("Secret placeholder '{Path}' referenced but not registered", path);
+            LogPlaceholderNotRegistered(path);
             return match.Value;
         });
     }
@@ -83,4 +83,7 @@ public sealed partial class TransparentSecretProxy
 
     [GeneratedRegex(@"\{secret:([^}]+)\}", RegexOptions.Compiled)]
     private static partial Regex SecretPlaceholderRegex();
+
+    [LoggerMessage(Level = LogLevel.Warning, Message = "Secret placeholder '{Path}' referenced but not registered")]
+    private partial void LogPlaceholderNotRegistered(string path);
 }

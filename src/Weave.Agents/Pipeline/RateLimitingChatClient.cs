@@ -7,7 +7,7 @@ namespace Weave.Agents.Pipeline;
 /// <summary>
 /// IChatClient middleware that rate-limits LLM calls per agent.
 /// </summary>
-public sealed class RateLimitingChatClient : DelegatingChatClient
+public sealed partial class RateLimitingChatClient : DelegatingChatClient
 {
     private readonly RateLimiter _limiter;
     private readonly ILogger<RateLimitingChatClient> _logger;
@@ -36,12 +36,15 @@ public sealed class RateLimitingChatClient : DelegatingChatClient
         using var lease = await _limiter.AcquireAsync(1, cancellationToken);
         if (!lease.IsAcquired)
         {
-            _logger.LogWarning("Rate limit exceeded for LLM request");
+            LogRateLimitExceeded();
             throw new InvalidOperationException("LLM rate limit exceeded. Please try again later.");
         }
 
         return await base.GetResponseAsync(messages, options, cancellationToken);
     }
+
+    [LoggerMessage(Level = LogLevel.Warning, Message = "Rate limit exceeded for LLM request")]
+    private partial void LogRateLimitExceeded();
 
     protected override void Dispose(bool disposing)
     {

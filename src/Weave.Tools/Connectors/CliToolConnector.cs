@@ -6,7 +6,7 @@ using Weave.Tools.Models;
 
 namespace Weave.Tools.Connectors;
 
-public sealed class CliToolConnector(ILogger<CliToolConnector> logger) : IToolConnector
+public sealed partial class CliToolConnector(ILogger<CliToolConnector> logger) : IToolConnector
 {
     private readonly ConcurrentDictionary<string, Weave.Workspaces.Models.CliConfig> _configurations = new();
 
@@ -18,7 +18,7 @@ public sealed class CliToolConnector(ILogger<CliToolConnector> logger) : IToolCo
         var connectionId = $"cli:{tool.Name}:{Guid.NewGuid():N}";
         _configurations[connectionId] = cli;
 
-        logger.LogInformation("CLI tool '{Tool}' connected (shell: {Shell})", tool.Name, cli.Shell);
+        LogCliToolConnected(tool.Name, cli.Shell);
 
         return Task.FromResult(new ToolHandle
         {
@@ -181,4 +181,7 @@ public sealed class CliToolConnector(ILogger<CliToolConnector> logger) : IToolCo
 
         return true;
     }
+
+    [LoggerMessage(Level = LogLevel.Information, Message = "CLI tool '{Tool}' connected (shell: {Shell})")]
+    private partial void LogCliToolConnected(string tool, string shell);
 }

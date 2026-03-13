@@ -1,30 +1,56 @@
 @page "/agents"
+@using Weave.Dashboard.Services
+@inject WeaveApiClient Api
 
 <PageTitle>Agents - Weave</PageTitle>
 
 <FluentLabel Typo="Typography.H4" Style="margin-bottom: 1rem;">Agent Console</FluentLabel>
 
+@if (_error is not null)
+{
+    <FluentMessageBar Intent="MessageIntent.Error" Style="margin-bottom: 1rem;">@_error</FluentMessageBar>
+}
+
 <FluentStack Orientation="Orientation.Horizontal" HorizontalGap="16" Style="height: 500px;">
     <FluentCard Style="width: 250px; padding: 1rem;">
         <FluentLabel Typo="Typography.Subject" Style="margin-bottom: 0.5rem;">Active Agents</FluentLabel>
-        @if (_agents.Count == 0)
+        @if (_loading)
+        {
+            <FluentProgressRing />
+        }
+        else if (_agents.Count == 0)
         {
             <FluentLabel Typo="Typography.Body">No agents active</FluentLabel>
         }
         @foreach (var agent in _agents)
         {
-            <FluentButton Appearance="@(_selectedAgent == agent ? Appearance.Accent : Appearance.Stealth)"
+            <FluentButton Appearance="@(_selectedAgent?.AgentName == agent.AgentName ? Appearance.Accent : Appearance.Stealth)"
                           Style="width: 100%; margin-bottom: 4px;"
                           OnClick="@(() => SelectAgent(agent))">
-                @agent
+                @agent.AgentName (@agent.Status)
             </FluentButton>
         }
     </FluentCard>
 
     <FluentCard Style="flex: 1; padding: 1rem; display: flex; flex-direction: column;">
         <FluentLabel Typo="Typography.Subject" Style="margin-bottom: 0.5rem;">
-            @(_selectedAgent ?? "Select an agent")
+            @(_selectedAgent?.AgentName ?? "Select an agent")
         </FluentLabel>
+
+        @if (_selectedAgent is not null)
+        {
+            <FluentStack Orientation="Orientation.Horizontal" HorizontalGap="8" Style="margin-bottom: 0.5rem;">
+                <FluentBadge>@_selectedAgent.Status</FluentBadge>
+                @if (_selectedAgent.Model is not null)
+                {
+                    <FluentBadge Appearance="Appearance.Neutral">@_selectedAgent.Model</FluentBadge>
+                }
+                @foreach (var tool in _selectedAgent.ConnectedTools)
+                {
+                    <FluentBadge Appearance="Appearance.Neutral">@tool</FluentBadge>
+                }
+            </FluentStack>
+        }
 
         <div style="flex: 1; overflow-y: auto; margin-bottom: 0.5rem;">
             @foreach (var msg in _messages)
@@ -37,11 +63,10 @@
 
         <FluentStack Orientation="Orientation.Horizontal" HorizontalGap="8">
             <FluentTextField @bind-Value="_inputMessage" Placeholder="Send message..."
-                             Style="flex: 1;" Disabled="@(_selectedAgent is null)" />
+                             Style="flex: 1;" Disabled="@(_selectedAgent is null || _sending)" />
             <FluentButton Appearance="Appearance.Accent" OnClick="SendMessage"
-                          Disabled="@(_selectedAgent is null)"
->
-                Send
+                          Disabled="@(_selectedAgent is null || _sending)">
+                @(_sending ? "Sending..." : "Send")
             </FluentButton>
         </FluentStack>
     </FluentCard>
@@ -50,23 +75,68 @@
 @code {
     private record ChatMessage(string Role, string Content);
 
-    private List<string> _agents = [];
-    private string? _selectedAgent;
+    private List<AgentDto> _agents = [];
+    private AgentDto? _selectedAgent;
     private string _inputMessage = string.Empty;
     private List<ChatMessage> _messages = [];
+    private bool _loading = true;
+    private bool _sending;
+    private string? _error;
 
-    private void SelectAgent(string agent)
+    protected override async Task OnInitializedAsync()
+    {
+        try
+        {
+            var workspaces = await Api.GetWorkspacesAsync();
+            foreach (var ws in workspaces)
+            {
+                var agents = await Api.GetAgentsAsync(ws.WorkspaceId);
+                _agents.AddRange(agents);
+            }
+        }
+        catch (HttpRequestException)
+        {
+            _error = "Unable to connect to the Weave Silo API.";
+        }
+        finally
+        {
+            _loading = false;
+        }
+    }
+
+    private void SelectAgent(AgentDto agent)
     {
         _selectedAgent = agent;
         _messages = [];
     }
 
-    private void SendMessage()
+    private async Task SendMessage()
     {
         if (string.IsNullOrWhiteSpace(_inputMessage) || _selectedAgent is null)
             return;
 
-        _messages.Add(new ChatMessage("You", _inputMessage));
+        var content = _inputMessage;
         _inputMessage = string.Empty;
+        _messages.Add(new ChatMessage("You", content));
+        _sending = true;
+
+        try
+        {
+            var response = await Api.SendMessageAsync(
+                _selectedAgent.WorkspaceId,
+                _selectedAgent.AgentName,
+                content);
+
+            if (response is not null)
+                _messages.Add(new ChatMessage("Agent", response.Content));
+        }
+        catch (HttpRequestException)
+        {
+            _messages.Add(new ChatMessage("System", "Failed to send message."));
+        }
+        finally
+        {
+            _sending = false;
+        }
     }
 }

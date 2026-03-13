@@ -4,7 +4,6 @@ using Weave.Security.Proxy;
 using Weave.Security.Scanning;
 using Weave.Security.Tokens;
 using Weave.Security.Vault;
-using Weave.Shared.Secrets;
 
 namespace Weave.Security.Tests;
 

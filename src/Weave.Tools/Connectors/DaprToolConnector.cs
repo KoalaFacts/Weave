@@ -6,7 +6,7 @@ using Weave.Tools.Models;
 
 namespace Weave.Tools.Connectors;
 
-public sealed class DaprToolConnector(DaprClient daprClient, ILogger<DaprToolConnector> logger) : IToolConnector
+public sealed partial class DaprToolConnector(DaprClient daprClient, ILogger<DaprToolConnector> logger) : IToolConnector
 {
     public ToolType ToolType => ToolType.Dapr;
 
@@ -14,7 +14,7 @@ public sealed class DaprToolConnector(DaprClient daprClient, ILogger<DaprToolCon
     {
         var dapr = tool.Dapr ?? throw new InvalidOperationException($"Tool '{tool.Name}' has no Dapr configuration");
 
-        logger.LogInformation("Dapr tool '{Tool}' connected to app '{AppId}'", tool.Name, dapr.AppId);
+        LogDaprToolConnected(tool.Name, dapr.AppId);
 
         return Task.FromResult(new ToolHandle
         {
@@ -27,7 +27,7 @@ public sealed class DaprToolConnector(DaprClient daprClient, ILogger<DaprToolCon
 
     public Task DisconnectAsync(ToolHandle handle, CancellationToken ct = default)
     {
-        logger.LogInformation("Dapr tool '{Tool}' disconnected", handle.ToolName);
+        LogDaprToolDisconnected(handle.ToolName);
         return Task.CompletedTask;
     }
 
@@ -54,7 +54,7 @@ public sealed class DaprToolConnector(DaprClient daprClient, ILogger<DaprToolCon
         catch (Exception ex)
         {
             sw.Stop();
-            logger.LogError(ex, "Dapr tool invocation failed for '{Tool}'", handle.ToolName);
+            LogDaprToolInvocationFailed(ex, handle.ToolName);
             return new ToolResult
             {
                 Success = false,
@@ -73,4 +73,12 @@ public sealed class DaprToolConnector(DaprClient daprClient, ILogger<DaprToolCon
             Description = $"Dapr service invocation tool: {handle.ToolName}"
         });
     }
+    [LoggerMessage(Level = LogLevel.Information, Message = "Dapr tool '{Tool}' connected to app '{AppId}'")]
+    private partial void LogDaprToolConnected(string tool, string appId);
+
+    [LoggerMessage(Level = LogLevel.Information, Message = "Dapr tool '{Tool}' disconnected")]
+    private partial void LogDaprToolDisconnected(string tool);
+
+    [LoggerMessage(Level = LogLevel.Error, Message = "Dapr tool invocation failed for '{Tool}'")]
+    private partial void LogDaprToolInvocationFailed(Exception ex, string tool);
 }

@@ -11,7 +11,7 @@ using Weave.Tools.Models;
 
 namespace Weave.Tools.Grains;
 
-public sealed class ToolGrain(
+public sealed partial class ToolGrain(
     IGrainFactory grainFactory,
     IToolDiscoveryService discovery,
     ILeakScanner leakScanner,
@@ -58,7 +58,7 @@ public sealed class ToolGrain(
             context with { Phase = LifecyclePhase.ToolConnected },
             CancellationToken.None);
 
-        logger.LogInformation("Tool '{Tool}' connected in workspace '{Workspace}'", _toolName, _workspaceId);
+        LogToolConnected(_toolName, _workspaceId);
         return _handle;
     }
 
@@ -84,7 +84,7 @@ public sealed class ToolGrain(
             CancellationToken.None);
 
         _handle = null;
-        logger.LogInformation("Tool '{Tool}' disconnected from workspace '{Workspace}'", _toolName, _workspaceId);
+        LogToolDisconnected(_toolName, _workspaceId);
     }
 
     public async Task<ToolResult> InvokeAsync(ToolInvocation invocation, CapabilityToken token)
@@ -111,7 +111,7 @@ public sealed class ToolGrain(
             var scanResult = await leakScanner.ScanStringAsync(outboundPayload, scanContext);
             if (scanResult.HasLeaks)
             {
-                logger.LogWarning("Secret leak detected in tool invocation for '{Tool}' - blocked", _toolName);
+                LogLeakDetectedBlocked(_toolName);
 
                 await eventBus.PublishAsync(new ToolInvocationBlockedEvent
                 {
@@ -145,7 +145,7 @@ public sealed class ToolGrain(
             var responseScan = await leakScanner.ScanStringAsync(result.Output, responseScanContext);
             if (responseScan.HasLeaks)
             {
-                logger.LogWarning("Secret leak detected in tool response from '{Tool}' - redacted", _toolName);
+                LogLeakDetectedRedacted(_toolName);
 
                 await eventBus.PublishAsync(new ToolInvocationBlockedEvent
                 {
@@ -218,4 +218,16 @@ public sealed class ToolGrain(
         if (string.IsNullOrWhiteSpace(_toolName))
             _toolName = definition?.Name ?? invocation?.ToolName ?? "tool";
     }
+
+    [LoggerMessage(Level = LogLevel.Information, Message = "Tool '{Tool}' connected in workspace '{Workspace}'")]
+    private partial void LogToolConnected(string tool, string workspace);
+
+    [LoggerMessage(Level = LogLevel.Information, Message = "Tool '{Tool}' disconnected from workspace '{Workspace}'")]
+    private partial void LogToolDisconnected(string tool, string workspace);
+
+    [LoggerMessage(Level = LogLevel.Warning, Message = "Secret leak detected in tool invocation for '{Tool}' - blocked")]
+    private partial void LogLeakDetectedBlocked(string tool);
+
+    [LoggerMessage(Level = LogLevel.Warning, Message = "Secret leak detected in tool response from '{Tool}' - redacted")]
+    private partial void LogLeakDetectedRedacted(string tool);
 }

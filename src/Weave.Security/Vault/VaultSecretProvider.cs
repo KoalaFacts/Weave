@@ -6,7 +6,7 @@ using Weave.Shared.Secrets;
 
 namespace Weave.Security.Vault;
 
-public sealed class VaultSecretProvider : ISecretProvider
+public sealed partial class VaultSecretProvider : ISecretProvider
 {
     private readonly IVaultClient _client;
     private readonly ICapabilityTokenService _tokenService;
@@ -30,8 +30,7 @@ public sealed class VaultSecretProvider : ISecretProvider
         if (!token.HasGrant($"secret:{secretPath}") && !token.HasGrant("secret:*"))
             throw new UnauthorizedAccessException($"Token does not grant access to secret '{secretPath}'");
 
-        _logger.LogInformation("Resolving secret '{Path}' for {IssuedTo} in workspace {Workspace}",
-            secretPath, token.IssuedTo, token.WorkspaceId);
+        LogResolvingSecret(secretPath, token.IssuedTo, token.WorkspaceId);
 
         var secret = await _client.V1.Secrets.KeyValue.V2.ReadSecretAsync(
             path: secretPath,
@@ -59,4 +58,7 @@ public sealed class VaultSecretProvider : ISecretProvider
         var settings = new VaultClientSettings(address, auth);
         return new VaultClient(settings);
     }
+
+    [LoggerMessage(Level = LogLevel.Information, Message = "Resolving secret '{Path}' for {IssuedTo} in workspace {Workspace}")]
+    private partial void LogResolvingSecret(string path, string issuedTo, string workspace);
 }

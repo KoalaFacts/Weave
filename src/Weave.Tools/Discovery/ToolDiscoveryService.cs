@@ -11,18 +11,19 @@ public interface IToolDiscoveryService
     IReadOnlyList<ToolType> SupportedTypes { get; }
 }
 
-public sealed class ToolDiscoveryService : IToolDiscoveryService
+public sealed partial class ToolDiscoveryService : IToolDiscoveryService
 {
     private readonly FrozenDictionary<ToolType, IToolConnector> _connectors;
     private readonly IReadOnlyList<ToolType> _supportedTypes;
+    private readonly ILogger<ToolDiscoveryService> _logger;
 
     public ToolDiscoveryService(IEnumerable<IToolConnector> connectors, ILogger<ToolDiscoveryService> logger)
     {
+        _logger = logger;
         _connectors = connectors.ToFrozenDictionary(c => c.ToolType);
         _supportedTypes = [.. _connectors.Keys];
 
-        logger.LogInformation("Tool discovery initialized with {Count} connector(s): {Types}",
-            _connectors.Count, string.Join(", ", _connectors.Keys));
+        LogDiscoveryInitialized(_connectors.Count, string.Join(", ", _connectors.Keys));
     }
 
     public IToolConnector GetConnector(ToolType type)
@@ -33,4 +34,7 @@ public sealed class ToolDiscoveryService : IToolDiscoveryService
     }
 
     public IReadOnlyList<ToolType> SupportedTypes => _supportedTypes;
+
+    [LoggerMessage(Level = LogLevel.Information, Message = "Tool discovery initialized with {Count} connector(s): {Types}")]
+    private partial void LogDiscoveryInitialized(int count, string types);
 }

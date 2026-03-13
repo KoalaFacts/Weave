@@ -7,7 +7,7 @@ using Weave.Tools.Models;
 
 namespace Weave.Tools.Connectors;
 
-public sealed class McpToolConnector(ILogger<McpToolConnector> logger) : IToolConnector
+public sealed partial class McpToolConnector(ILogger<McpToolConnector> logger) : IToolConnector
 {
     private readonly Dictionary<string, Process> _processes = [];
 
@@ -39,7 +39,7 @@ public sealed class McpToolConnector(ILogger<McpToolConnector> logger) : IToolCo
         var connectionId = Guid.NewGuid().ToString("N");
         _processes[connectionId] = process;
 
-        logger.LogInformation("MCP tool '{Tool}' connected (pid: {Pid})", tool.Name, process.Id);
+        LogMcpToolConnected(tool.Name, process.Id);
 
         await Task.CompletedTask;
         return new ToolHandle
@@ -58,7 +58,7 @@ public sealed class McpToolConnector(ILogger<McpToolConnector> logger) : IToolCo
             if (!process.HasExited)
                 process.Kill(entireProcessTree: true);
             process.Dispose();
-            logger.LogInformation("MCP tool '{Tool}' disconnected", handle.ToolName);
+            LogMcpToolDisconnected(handle.ToolName);
         }
         return Task.CompletedTask;
     }
@@ -118,6 +118,12 @@ public sealed class McpToolConnector(ILogger<McpToolConnector> logger) : IToolCo
             Description = $"MCP tool: {handle.ToolName}"
         });
     }
+
+    [LoggerMessage(Level = LogLevel.Information, Message = "MCP tool '{Tool}' connected (pid: {Pid})")]
+    private partial void LogMcpToolConnected(string tool, int pid);
+
+    [LoggerMessage(Level = LogLevel.Information, Message = "MCP tool '{Tool}' disconnected")]
+    private partial void LogMcpToolDisconnected(string tool);
 }
 
 internal sealed record JsonRpcRequest

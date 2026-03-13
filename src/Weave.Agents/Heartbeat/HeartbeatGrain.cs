@@ -4,7 +4,7 @@ using Weave.Agents.Models;
 
 namespace Weave.Agents.Heartbeat;
 
-public sealed class HeartbeatGrain(
+public sealed partial class HeartbeatGrain(
     IGrainFactory grainFactory,
     ILogger<HeartbeatGrain> logger) : Grain, IHeartbeatGrain, IDisposable
 {
@@ -28,8 +28,7 @@ public sealed class HeartbeatGrain(
         var interval = TimeSpan.FromMinutes(minutes);
         _timer = this.RegisterGrainTimer(OnHeartbeatTick, interval, interval);
 
-        logger.LogInformation("Heartbeat started for {Key} with interval {Interval}",
-            GetAgentKey(), interval);
+        LogHeartbeatStarted(GetAgentKey(), interval);
 
         return Task.CompletedTask;
     }
@@ -40,7 +39,7 @@ public sealed class HeartbeatGrain(
         _timer = null;
         _state = _state with { IsRunning = false, NextRun = null };
 
-        logger.LogInformation("Heartbeat stopped for {Key}", GetAgentKey());
+        LogHeartbeatStopped(GetAgentKey());
         return Task.CompletedTask;
     }
 
@@ -49,7 +48,7 @@ public sealed class HeartbeatGrain(
     private async Task OnHeartbeatTick(CancellationToken ct)
     {
         var key = GetAgentKey();
-        logger.LogDebug("Heartbeat tick for {Key}", key);
+        LogHeartbeatTick(key);
 
         try
         {
@@ -61,7 +60,7 @@ public sealed class HeartbeatGrain(
 
             if (agentState.Status is not Models.AgentStatus.Active)
             {
-                logger.LogDebug("Agent {Key} not active, skipping heartbeat tasks", key);
+                LogAgentNotActive(key);
                 return;
             }
 
@@ -83,11 +82,11 @@ public sealed class HeartbeatGrain(
 
                     await agentGrain.CompleteTaskAsync(taskInfo.TaskId, success: true);
 
-                    logger.LogDebug("Heartbeat task for {Key} completed with response length {Length}", key, response.Content.Length);
+                    LogHeartbeatTaskCompleted(key, response.Content.Length);
                 }
                 catch (InvalidOperationException ex) when (ex.Message.Contains("max concurrent", StringComparison.Ordinal))
                 {
-                    logger.LogDebug("Agent {Key} at max capacity, deferring heartbeat task", key);
+                    LogAgentAtMaxCapacity(key);
                     break;
                 }
                 catch (Exception ex)
@@ -95,7 +94,7 @@ public sealed class HeartbeatGrain(
                     if (taskInfo is not null)
                         await agentGrain.CompleteTaskAsync(taskInfo.TaskId, success: false);
 
-                    logger.LogError(ex, "Heartbeat task failed for {Key}", key);
+                    LogHeartbeatTaskFailed(ex, key);
                 }
             }
 
@@ -108,7 +107,7 @@ public sealed class HeartbeatGrain(
         }
         catch (Exception ex)
         {
-            logger.LogError(ex, "Heartbeat tick failed for {Key}", key);
+            LogHeartbeatTickFailed(ex, key);
         }
     }
 
@@ -145,4 +144,28 @@ public sealed class HeartbeatGrain(
             return "unknown-agent";
         }
     }
+
+    [LoggerMessage(Level = LogLevel.Information, Message = "Heartbeat started for {Key} with interval {Interval}")]
+    private partial void LogHeartbeatStarted(string key, TimeSpan interval);
+
+    [LoggerMessage(Level = LogLevel.Information, Message = "Heartbeat stopped for {Key}")]
+    private partial void LogHeartbeatStopped(string key);
+
+    [LoggerMessage(Level = LogLevel.Debug, Message = "Heartbeat tick for {Key}")]
+    private partial void LogHeartbeatTick(string key);
+
+    [LoggerMessage(Level = LogLevel.Debug, Message = "Agent {Key} not active, skipping heartbeat tasks")]
+    private partial void LogAgentNotActive(string key);
+
+    [LoggerMessage(Level = LogLevel.Debug, Message = "Heartbeat task for {Key} completed with response length {Length}")]
+    private partial void LogHeartbeatTaskCompleted(string key, int length);
+
+    [LoggerMessage(Level = LogLevel.Debug, Message = "Agent {Key} at max capacity, deferring heartbeat task")]
+    private partial void LogAgentAtMaxCapacity(string key);
+
+    [LoggerMessage(Level = LogLevel.Error, Message = "Heartbeat task failed for {Key}")]
+    private partial void LogHeartbeatTaskFailed(Exception ex, string key);
+
+    [LoggerMessage(Level = LogLevel.Error, Message = "Heartbeat tick failed for {Key}")]
+    private partial void LogHeartbeatTickFailed(Exception ex, string key);
 }

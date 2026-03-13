@@ -5,7 +5,7 @@ using Weave.Security.Vault;
 
 namespace Weave.Security.Grains;
 
-public sealed class SecretProxyGrain : Grain, ISecretProxyGrain
+public sealed partial class SecretProxyGrain : Grain, ISecretProxyGrain
 {
     private readonly TransparentSecretProxy _proxy;
     private readonly ISecretProvider _secretProvider;
@@ -26,8 +26,7 @@ public sealed class SecretProxyGrain : Grain, ISecretProxyGrain
         var secret = await _secretProvider.ResolveAsync(secretPath, token);
         var placeholder = $"{{secret:{secretPath}}}";
         _proxy.RegisterSecret(secretPath, secret);
-        _logger.LogInformation("Registered secret proxy for '{Path}' in workspace {Workspace}",
-            secretPath, GetWorkspaceKey(token));
+        LogSecretRegistered(secretPath, GetWorkspaceKey(token));
         return placeholder;
     }
 
@@ -54,4 +53,7 @@ public sealed class SecretProxyGrain : Grain, ISecretProxyGrain
             return token.WorkspaceId;
         }
     }
+
+    [LoggerMessage(Level = LogLevel.Information, Message = "Registered secret proxy for '{Path}' in workspace {Workspace}")]
+    private partial void LogSecretRegistered(string path, string workspace);
 }

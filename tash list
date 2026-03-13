@@ -1,0 +1,35 @@
+[1mdiff --git a/Directory.Packages.props b/Directory.Packages.props[m
+[1mindex 26c1e81..3f1a718 100644[m
+[1m--- a/Directory.Packages.props[m
+[1m+++ b/Directory.Packages.props[m
+[36m@@ -29,9 +29,9 @@[m
+     <PackageVersion Include="Microsoft.Orleans.Testing" Version="10.0.1" />[m
+   </ItemGroup>[m
+   <ItemGroup Label="Microsoft.Extensions">[m
+[31m-    <PackageVersion Include="Microsoft.Extensions.DependencyInjection.Abstractions" Version="10.0.4" />[m
+[31m-    <PackageVersion Include="Microsoft.Extensions.Logging.Abstractions" Version="10.0.4" />[m
+[31m-    <PackageVersion Include="System.Threading.RateLimiting" Version="10.0.4" />[m
+[32m+[m[32m    <PackageVersion Include="Microsoft.Extensions.DependencyInjection.Abstractions" Version="10.0.5" />[m
+[32m+[m[32m    <PackageVersion Include="Microsoft.Extensions.Logging.Abstractions" Version="10.0.5" />[m
+[32m+[m[32m    <PackageVersion Include="System.Threading.RateLimiting" Version="10.0.5" />[m
+   </ItemGroup>[m
+   <ItemGroup Label="Microsoft.Extensions.AI">[m
+     <PackageVersion Include="Microsoft.Extensions.AI" Version="10.4.0" />[m
+[36m@@ -39,8 +39,8 @@[m
+     <PackageVersion Include="Microsoft.Extensions.AI.OpenAI" Version="10.4.0" />[m
+   </ItemGroup>[m
+   <ItemGroup Label="Dapr">[m
+[31m-    <PackageVersion Include="Dapr.Client" Version="1.17.3" />[m
+[31m-    <PackageVersion Include="Dapr.AspNetCore" Version="1.17.3" />[m
+[32m+[m[32m    <PackageVersion Include="Dapr.Client" Version="1.17.4" />[m
+[32m+[m[32m    <PackageVersion Include="Dapr.AspNetCore" Version="1.17.4" />[m
+   </ItemGroup>[m
+   <ItemGroup Label="YAML + Configuration">[m
+     <PackageVersion Include="YamlDotNet" Version="16.3.0" />[m
+[36m@@ -62,4 +62,4 @@[m
+     <PackageVersion Include="Microsoft.FluentUI.AspNetCore.Components" Version="4.14.0" />[m
+     <PackageVersion Include="Microsoft.FluentUI.AspNetCore.Components.Icons" Version="4.14.0" />[m
+   </ItemGroup>[m
+[31m-</Project>[m
+[32m+[m[32m</Project>[m
+\ No newline at end of file[m

@@ -1,4 +1,6 @@
 @page "/"
+@using Weave.Dashboard.Services
+@inject WeaveApiClient Api
 
 <PageTitle>Weave Dashboard</PageTitle>
 
@@ -8,19 +10,19 @@
 <FluentStack Orientation="Orientation.Horizontal" Wrap="true" HorizontalGap="16">
     <FluentCard Style="width: 200px; padding: 1rem;">
         <FluentLabel Typo="Typography.Subject">Workspaces</FluentLabel>
-        <FluentLabel Typo="Typography.H2" Color="Color.Accent">0</FluentLabel>
+        <FluentLabel Typo="Typography.H2" Color="Color.Accent">@_workspaceCount</FluentLabel>
         <FluentLabel Typo="Typography.Body">Active</FluentLabel>
     </FluentCard>
 
     <FluentCard Style="width: 200px; padding: 1rem;">
         <FluentLabel Typo="Typography.Subject">Agents</FluentLabel>
-        <FluentLabel Typo="Typography.H2" Color="Color.Accent">0</FluentLabel>
+        <FluentLabel Typo="Typography.H2" Color="Color.Accent">@_agentCount</FluentLabel>
         <FluentLabel Typo="Typography.Body">Running</FluentLabel>
     </FluentCard>
 
     <FluentCard Style="width: 200px; padding: 1rem;">
         <FluentLabel Typo="Typography.Subject">Tools</FluentLabel>
-        <FluentLabel Typo="Typography.H2" Color="Color.Accent">0</FluentLabel>
+        <FluentLabel Typo="Typography.H2" Color="Color.Accent">@_toolCount</FluentLabel>
         <FluentLabel Typo="Typography.Body">Connected</FluentLabel>
     </FluentCard>
 
@@ -37,3 +39,42 @@
     <FluentAnchor Href="/setup" Appearance="Appearance.Outline">Setup Wizard</FluentAnchor>
     <FluentAnchor Href="/monitoring" Appearance="Appearance.Outline">View Monitoring</FluentAnchor>
 </FluentStack>
+
+@if (_error is not null)
+{
+    <FluentMessageBar Intent="MessageIntent.Error" Style="margin-top: 1rem;">@_error</FluentMessageBar>
+}
+
+@code {
+    private int _workspaceCount;
+    private int _agentCount;
+    private int _toolCount;
+    private string? _error;
+
+    protected override async Task OnInitializedAsync()
+    {
+        try
+        {
+            var workspaces = await Api.GetWorkspacesAsync();
+            _workspaceCount = workspaces.Count;
+
+            var agentCount = 0;
+            var toolCount = 0;
+            foreach (var ws in workspaces)
+            {
+                var agents = await Api.GetAgentsAsync(ws.WorkspaceId);
+                agentCount += agents.Count;
+
+                var tools = await Api.GetToolsAsync(ws.WorkspaceId);
+                toolCount += tools.Count;
+            }
+
+            _agentCount = agentCount;
+            _toolCount = toolCount;
+        }
+        catch (HttpRequestException)
+        {
+            _error = "Unable to connect to the Weave Silo API.";
+        }
+    }
+}

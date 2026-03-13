@@ -6,7 +6,7 @@ namespace Weave.Agents.Pipeline;
 /// <summary>
 /// IChatClient middleware that tracks token usage and estimated cost per agent.
 /// </summary>
-public sealed class CostTrackingChatClient : DelegatingChatClient
+public sealed partial class CostTrackingChatClient : DelegatingChatClient
 {
     private readonly ILogger<CostTrackingChatClient> _logger;
     private readonly IAgentCostLedger _ledger;
@@ -39,9 +39,7 @@ public sealed class CostTrackingChatClient : DelegatingChatClient
             var modelId = response.ModelId ?? "unknown";
             _ledger.RecordUsage(agentId, modelId, usage.InputTokenCount ?? 0, usage.OutputTokenCount ?? 0);
 
-            _logger.LogDebug(
-                "Agent {AgentId} used {Input} input + {Output} output tokens (model: {Model})",
-                agentId, usage.InputTokenCount, usage.OutputTokenCount, modelId);
+            LogTokenUsage(agentId, usage.InputTokenCount, usage.OutputTokenCount, modelId);
         }
 
         return response;
@@ -50,6 +48,9 @@ public sealed class CostTrackingChatClient : DelegatingChatClient
     public AgentCostSummary? GetCostSummary(string agentId) => _ledger.GetCostSummary(agentId);
 
     public IReadOnlyDictionary<string, AgentCostSummary> GetAllCosts() => _ledger.GetAllCosts();
+
+    [LoggerMessage(Level = LogLevel.Debug, Message = "Agent {AgentId} used {Input} input + {Output} output tokens (model: {Model})")]
+    private partial void LogTokenUsage(string agentId, long? input, long? output, string model);
 }
 
 public sealed class AgentCostSummary

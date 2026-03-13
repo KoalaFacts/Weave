@@ -1,4 +1,17 @@
 <Solution>
+  <Folder Name="/01 - Solution/">
+    <File Path=".editorconfig" />
+    <File Path=".gitignore" />
+    <File Path="AGENTS.md" />
+    <File Path="CLAUDE.md" />
+    <File Path="Directory.Build.props" />
+    <File Path="Directory.Build.targets" />
+    <File Path="Directory.Packages.props" />
+    <File Path="README.md" />
+  </Folder>
+  <Folder Name="/02 - Docs/">
+    <File Path="docs/PRD-MVP.md" />
+  </Folder>
   <Folder Name="/src/">
     <Project Path="src/Weave.Shared/Weave.Shared.csproj" />
     <Project Path="src/Weave.ServiceDefaults/Weave.ServiceDefaults.csproj" />
@@ -20,9 +33,6 @@
     <Project Path="tests/Weave.Shared.Tests/Weave.Shared.Tests.csproj" />
     <Project Path="tests/Weave.Tools.Tests/Weave.Tools.Tests.csproj" />
     <Project Path="tests/Weave.Deploy.Tests/Weave.Deploy.Tests.csproj" />
-  </Folder>
-  <Folder Name="/docs/">
-    <File Path="docs/PRD-MVP.md" />
   </Folder>
  </Solution>
 

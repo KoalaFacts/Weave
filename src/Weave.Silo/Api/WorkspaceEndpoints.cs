@@ -1,6 +1,7 @@
 using Weave.Shared.Cqrs;
 using Weave.Shared.Ids;
 using Weave.Workspaces.Commands;
+using Weave.Workspaces.Models;
 using Weave.Workspaces.Queries;
 
 namespace Weave.Silo.Api;
@@ -12,11 +13,22 @@ public static class WorkspaceEndpoints
         var group = routes.MapGroup("/api/workspaces")
             .WithTags("Workspaces");
 
+        group.MapGet("/", GetAllWorkspaces);
         group.MapPost("/", StartWorkspace);
         group.MapDelete("/{workspaceId}", StopWorkspace);
         group.MapGet("/{workspaceId}", GetWorkspaceState);
 
         return group;
+    }
+
+    private static async Task<IResult> GetAllWorkspaces(
+        IQueryDispatcher dispatcher,
+        CancellationToken ct)
+    {
+        var states = await dispatcher.DispatchAsync<GetAllWorkspaceStatesQuery, IReadOnlyList<WorkspaceState>>(
+            new GetAllWorkspaceStatesQuery(),
+            ct);
+        return Results.Ok(states.Select(WorkspaceResponse.FromState));
     }
 
     private static async Task<IResult> StartWorkspace(

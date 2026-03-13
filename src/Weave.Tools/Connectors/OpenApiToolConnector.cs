@@ -5,7 +5,7 @@ using Weave.Tools.Models;
 
 namespace Weave.Tools.Connectors;
 
-public sealed class OpenApiToolConnector(HttpClient httpClient, ILogger<OpenApiToolConnector> logger) : IToolConnector
+public sealed partial class OpenApiToolConnector(HttpClient httpClient, ILogger<OpenApiToolConnector> logger) : IToolConnector
 {
     public ToolType ToolType => ToolType.OpenApi;
 
@@ -22,7 +22,7 @@ public sealed class OpenApiToolConnector(HttpClient httpClient, ILogger<OpenApiT
                 new System.Net.Http.Headers.AuthenticationHeaderValue("Bearer", openApi.Auth.Token);
         }
 
-        logger.LogInformation("OpenAPI tool '{Tool}' connected to '{Spec}'", tool.Name, openApi.SpecUrl);
+        LogOpenApiToolConnected(tool.Name, openApi.SpecUrl);
 
         return Task.FromResult(new ToolHandle
         {
@@ -96,4 +96,7 @@ public sealed class OpenApiToolConnector(HttpClient httpClient, ILogger<OpenApiT
             ]
         });
     }
+
+    [LoggerMessage(Level = LogLevel.Information, Message = "OpenAPI tool '{Tool}' connected to '{Spec}'")]
+    private partial void LogOpenApiToolConnected(string tool, string spec);
 }

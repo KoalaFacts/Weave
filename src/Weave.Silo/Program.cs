@@ -1,4 +1,5 @@
 using System.Diagnostics.CodeAnalysis;
+using Weave.Agents.Pipeline;
 using Weave.Security.Proxy;
 using Weave.Security.Scanning;
 using Weave.Security.Tokens;
@@ -9,7 +10,6 @@ using Weave.Shared.Events;
 using Weave.Shared.Lifecycle;
 using Weave.Silo.Api;
 using Weave.Silo.Events;
-using Weave.Agents.Pipeline;
 using Weave.Tools.Connectors;
 using Weave.Tools.Discovery;
 using Weave.Workspaces.Runtime;

@@ -1,5 +1,4 @@
 using Microsoft.Extensions.Logging;
-using Orleans.Runtime;
 using Weave.Shared.Events;
 using Weave.Shared.Ids;
 using Weave.Shared.Lifecycle;
@@ -9,7 +8,7 @@ using Weave.Workspaces.Runtime;
 
 namespace Weave.Workspaces.Grains;
 
-public sealed class WorkspaceGrain(
+public sealed partial class WorkspaceGrain(
     IWorkspaceRuntime runtime,
     ILifecycleManager lifecycleManager,
     IEventBus eventBus,
@@ -79,14 +78,14 @@ public sealed class WorkspaceGrain(
                 AgentNames = [.. manifest.Agents.Keys]
             }, CancellationToken.None);
 
-            logger.LogInformation("Workspace {WorkspaceId} started", persistentState.State.WorkspaceId);
+            LogWorkspaceStarted(persistentState.State.WorkspaceId);
         }
         catch (Exception ex)
         {
             persistentState.State.Status = WorkspaceStatus.Error;
             persistentState.State.ErrorMessage = ex.Message;
             await persistentState.WriteStateAsync();
-            logger.LogError(ex, "Failed to start workspace {WorkspaceId}", persistentState.State.WorkspaceId);
+            LogWorkspaceFailed(ex, persistentState.State.WorkspaceId, "start");
             throw;
         }
 
@@ -130,14 +129,14 @@ public sealed class WorkspaceGrain(
                 SourceId = persistentState.State.WorkspaceId
             }, CancellationToken.None);
 
-            logger.LogInformation("Workspace {WorkspaceId} stopped", persistentState.State.WorkspaceId);
+            LogWorkspaceStopped(persistentState.State.WorkspaceId);
         }
         catch (Exception ex)
         {
             persistentState.State.Status = WorkspaceStatus.Error;
             persistentState.State.ErrorMessage = ex.Message;
             await persistentState.WriteStateAsync();
-            logger.LogError(ex, "Failed to stop workspace {WorkspaceId}", persistentState.State.WorkspaceId);
+            LogWorkspaceFailed(ex, persistentState.State.WorkspaceId, "stop");
             throw;
         }
     }
@@ -155,4 +154,13 @@ public sealed class WorkspaceGrain(
             return null;
         }
     }
+
+    [LoggerMessage(Level = LogLevel.Information, Message = "Workspace {WorkspaceId} started")]
+    private partial void LogWorkspaceStarted(WorkspaceId workspaceId);
+
+    [LoggerMessage(Level = LogLevel.Information, Message = "Workspace {WorkspaceId} stopped")]
+    private partial void LogWorkspaceStopped(WorkspaceId workspaceId);
+
+    [LoggerMessage(Level = LogLevel.Error, Message = "Failed to {Operation} workspace {WorkspaceId}")]
+    private partial void LogWorkspaceFailed(Exception ex, WorkspaceId workspaceId, string operation);
 }

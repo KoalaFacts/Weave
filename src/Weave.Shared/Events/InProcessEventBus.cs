@@ -3,7 +3,7 @@ using Microsoft.Extensions.Logging;
 
 namespace Weave.Shared.Events;
 
-public sealed class InProcessEventBus(ILogger<InProcessEventBus> logger) : IEventBus
+public sealed partial class InProcessEventBus(ILogger<InProcessEventBus> logger) : IEventBus
 {
     private readonly ConcurrentDictionary<Type, List<Delegate>> _handlers = new();
 
@@ -22,7 +22,7 @@ public sealed class InProcessEventBus(ILogger<InProcessEventBus> logger) : IEven
             }
             catch (Exception ex)
             {
-                logger.LogError(ex, "Error handling event {EventType} ({EventId})", typeof(TEvent).Name, domainEvent.EventId);
+                LogEventHandlerError(ex, typeof(TEvent).Name, domainEvent.EventId);
             }
         }
     }
@@ -47,4 +47,7 @@ public sealed class InProcessEventBus(ILogger<InProcessEventBus> logger) : IEven
     {
         public void Dispose() => onDispose();
     }
+
+    [LoggerMessage(Level = LogLevel.Error, Message = "Error handling event {EventType} ({EventId})")]
+    private partial void LogEventHandlerError(Exception ex, string eventType, string eventId);
 }

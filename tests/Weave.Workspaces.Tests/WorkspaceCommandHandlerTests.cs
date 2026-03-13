@@ -1,6 +1,6 @@
 using Weave.Agents.Grains;
-using Weave.Silo.Api;
 using Weave.Shared.Ids;
+using Weave.Silo.Api;
 using Weave.Workspaces.Commands;
 using Weave.Workspaces.Grains;
 using Weave.Workspaces.Models;
@@ -27,6 +27,7 @@ public sealed class WorkspaceCommandHandlerTests
     {
         var grainFactory = Substitute.For<IGrainFactory>();
         var workspaceGrain = Substitute.For<IWorkspaceGrain>();
+        var workspaceRegistry = Substitute.For<IWorkspaceRegistryGrain>();
         var toolRegistry = Substitute.For<IToolRegistryGrain>();
         var supervisor = Substitute.For<IAgentSupervisorGrain>();
         var expectedState = new WorkspaceState
@@ -38,6 +39,8 @@ public sealed class WorkspaceCommandHandlerTests
 
         grainFactory.GetGrain<IWorkspaceGrain>(TestWorkspaceId.ToString(), null)
             .Returns(workspaceGrain);
+        grainFactory.GetGrain<IWorkspaceRegistryGrain>("active", null)
+            .Returns(workspaceRegistry);
         grainFactory.GetGrain<IToolRegistryGrain>(TestWorkspaceId.ToString(), null)
             .Returns(toolRegistry);
         grainFactory.GetGrain<IAgentSupervisorGrain>(TestWorkspaceId.ToString(), null)
@@ -55,6 +58,7 @@ public sealed class WorkspaceCommandHandlerTests
         result.Status.ShouldBe(WorkspaceStatus.Running);
         result.WorkspaceId.ShouldBe(TestWorkspaceId);
         await workspaceGrain.Received(1).StartAsync(manifest);
+        await workspaceRegistry.Received(1).RegisterAsync(TestWorkspaceId.ToString());
         await toolRegistry.Received(1).ConnectToolsAsync(manifest.Tools);
         await supervisor.Received(1).ActivateAllAsync(manifest);
     }
@@ -64,6 +68,7 @@ public sealed class WorkspaceCommandHandlerTests
     {
         var grainFactory = Substitute.For<IGrainFactory>();
         var workspaceGrain = Substitute.For<IWorkspaceGrain>();
+        var workspaceRegistry = Substitute.For<IWorkspaceRegistryGrain>();
         var toolRegistry = Substitute.For<IToolRegistryGrain>();
         var supervisor = Substitute.For<IAgentSupervisorGrain>();
 
@@ -75,6 +80,8 @@ public sealed class WorkspaceCommandHandlerTests
 
         grainFactory.GetGrain<IWorkspaceGrain>(TestWorkspaceId.ToString(), null)
             .Returns(workspaceGrain);
+        grainFactory.GetGrain<IWorkspaceRegistryGrain>("active", null)
+            .Returns(workspaceRegistry);
         grainFactory.GetGrain<IToolRegistryGrain>(TestWorkspaceId.ToString(), null)
             .Returns(toolRegistry);
         grainFactory.GetGrain<IAgentSupervisorGrain>(TestWorkspaceId.ToString(), null)
@@ -89,6 +96,44 @@ public sealed class WorkspaceCommandHandlerTests
         await workspaceGrain.Received(1).StopAsync();
         await supervisor.Received(1).DeactivateAllAsync();
         await toolRegistry.Received(1).DisconnectAllAsync();
+        await workspaceRegistry.Received(1).UnregisterAsync(TestWorkspaceId.ToString());
+    }
+
+    [Fact]
+    public async Task GetAllWorkspaceStatesHandler_ReturnsWorkspaceStatesFromRegistry()
+    {
+        var grainFactory = Substitute.For<IGrainFactory>();
+        var registry = Substitute.For<IWorkspaceRegistryGrain>();
+        var workspace1 = Substitute.For<IWorkspaceGrain>();
+        var workspace2 = Substitute.For<IWorkspaceGrain>();
+        var workspace1State = new WorkspaceState
+        {
+            WorkspaceId = WorkspaceId.From("ws-1"),
+            Status = WorkspaceStatus.Running
+        };
+        var workspace2State = new WorkspaceState
+        {
+            WorkspaceId = WorkspaceId.From("ws-2"),
+            Status = WorkspaceStatus.Starting
+        };
+
+        grainFactory.GetGrain<IWorkspaceRegistryGrain>("active", null)
+            .Returns(registry);
+        grainFactory.GetGrain<IWorkspaceGrain>("ws-1", null)
+            .Returns(workspace1);
+        grainFactory.GetGrain<IWorkspaceGrain>("ws-2", null)
+            .Returns(workspace2);
+        registry.GetWorkspaceIdsAsync().Returns(["ws-2", "ws-1"]);
+        workspace1.GetStateAsync().Returns(workspace1State);
+        workspace2.GetStateAsync().Returns(workspace2State);
+
+        var handler = new GetAllWorkspaceStatesHandler(grainFactory);
+
+        var result = await handler.HandleAsync(new GetAllWorkspaceStatesQuery(), CancellationToken.None);
+
+        result.Count.ShouldBe(2);
+        result[0].WorkspaceId.ShouldBe(WorkspaceId.From("ws-1"));
+        result[1].WorkspaceId.ShouldBe(WorkspaceId.From("ws-2"));
     }
 
     [Fact]
@@ -147,11 +192,14 @@ public sealed class WorkspaceCommandHandlerTests
     {
         var grainFactory = Substitute.For<IGrainFactory>();
         var workspaceGrain = Substitute.For<IWorkspaceGrain>();
+        var workspaceRegistry = Substitute.For<IWorkspaceRegistryGrain>();
         var toolRegistry = Substitute.For<IToolRegistryGrain>();
         var supervisor = Substitute.For<IAgentSupervisorGrain>();
 
         grainFactory.GetGrain<IWorkspaceGrain>(TestWorkspaceId.ToString(), null)
             .Returns(workspaceGrain);
+        grainFactory.GetGrain<IWorkspaceRegistryGrain>("active", null)
+            .Returns(workspaceRegistry);
         grainFactory.GetGrain<IToolRegistryGrain>(TestWorkspaceId.ToString(), null)
             .Returns(toolRegistry);
         grainFactory.GetGrain<IAgentSupervisorGrain>(TestWorkspaceId.ToString(), null)
@@ -164,5 +212,6 @@ public sealed class WorkspaceCommandHandlerTests
 
         await Should.ThrowAsync<InvalidOperationException>(
             () => handler.HandleAsync(command, CancellationToken.None));
+        await workspaceRegistry.DidNotReceive().RegisterAsync(Arg.Any<string>());
     }
 }

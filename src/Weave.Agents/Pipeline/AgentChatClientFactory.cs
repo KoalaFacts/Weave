@@ -17,7 +17,7 @@ public sealed class AgentChatClientFactory(
 {
     public IChatClient Create(string agentId, string? modelId = null)
     {
-        var baseClient = ActivatorUtilities.CreateInstance<FallbackChatClient>(services, [(object?)modelId!]);
+        var baseClient = ActivatorUtilities.CreateInstance<FallbackChatClient>(services, [(modelId!)]);
         var rateLimited = new RateLimitingChatClient(
             baseClient,
             maxRequestsPerMinute: 60,
@@ -27,15 +27,16 @@ public sealed class AgentChatClientFactory(
             costLedger,
             loggerFactory.CreateLogger<CostTrackingChatClient>());
 
-        var builder = new ChatClientBuilder(tracked);
-        builder.UseFunctionInvocation(loggerFactory);
+        var builder = new ChatClientBuilder(tracked)
+            .UseFunctionInvocation(loggerFactory);
+
         return builder.Build(services);
     }
 }
 
-internal sealed class FallbackChatClient(string? defaultModelId, ILogger<FallbackChatClient> logger) : IChatClient
+internal sealed partial class FallbackChatClient(string? defaultModelId, ILogger<FallbackChatClient> logger) : IChatClient
 {
-    private static readonly JsonSerializerOptions JsonOptions = new(JsonSerializerDefaults.Web);
+    private static readonly JsonSerializerOptions _jsonOptions = new(JsonSerializerDefaults.Web);
     private readonly ChatClientMetadata _metadata = new("weave-fallback", new Uri("https://weave.local/"), defaultModelId ?? "weave-local");
 
     public Task<ChatResponse> GetResponseAsync(
@@ -92,7 +93,7 @@ internal sealed class FallbackChatClient(string? defaultModelId, ILogger<Fallbac
         [System.Runtime.CompilerServices.EnumeratorCancellation] CancellationToken cancellationToken = default)
     {
         var response = await GetResponseAsync(messages, options, cancellationToken);
-        logger.LogDebug("Fallback chat client does not support incremental streaming; returning no updates for {ModelId}", response.ModelId);
+        LogStreamingNotSupported(response.ModelId);
         yield break;
     }
 
@@ -100,6 +101,9 @@ internal sealed class FallbackChatClient(string? defaultModelId, ILogger<Fallbac
         serviceType == typeof(ChatClientMetadata) ? _metadata : null;
 
     public void Dispose() { }
+
+    [LoggerMessage(Level = LogLevel.Debug, Message = "Fallback chat client does not support incremental streaming; returning no updates for {ModelId}")]
+    private partial void LogStreamingNotSupported(string? modelId);
 
     private static FunctionResultContent? FindLastFunctionResult(IEnumerable<ChatMessage> messages)
     {
@@ -172,7 +176,7 @@ internal sealed class FallbackChatClient(string? defaultModelId, ILogger<Fallbac
             if (document.RootElement.ValueKind is not JsonValueKind.Object)
                 return false;
 
-            arguments = new Dictionary<string, object>(StringComparer.Ordinal);
+            arguments = new(StringComparer.Ordinal);
             foreach (var property in document.RootElement.EnumerateObject())
             {
                 arguments[property.Name] = property.Value.ValueKind switch
@@ -182,7 +186,9 @@ internal sealed class FallbackChatClient(string? defaultModelId, ILogger<Fallbac
                     JsonValueKind.False => false,
                     JsonValueKind.Number when property.Value.TryGetInt64(out var l) => l,
                     JsonValueKind.Number => property.Value.GetDouble(),
-                    _ => property.Value.Deserialize<object>(JsonOptions) ?? string.Empty
+                    JsonValueKind.Object or JsonValueKind.Array => property.Value.Deserialize<object>(_jsonOptions) ?? string.Empty,
+                    JsonValueKind.Null or JsonValueKind.Undefined => null!,
+                    _ => property.Value.Deserialize<object>(_jsonOptions) ?? string.Empty
                 };
             }
 
@@ -214,9 +220,8 @@ internal sealed class FallbackChatClient(string? defaultModelId, ILogger<Fallbac
 
     private static int CountPseudoTokens(string? text)
     {
-        if (string.IsNullOrWhiteSpace(text))
-            return 0;
-
-        return text.Split(' ', StringSplitOptions.RemoveEmptyEntries | StringSplitOptions.TrimEntries).Length;
+        return string.IsNullOrWhiteSpace(text)
+            ? 0
+            : text.Split(' ', StringSplitOptions.RemoveEmptyEntries | StringSplitOptions.TrimEntries).Length;
     }
 }

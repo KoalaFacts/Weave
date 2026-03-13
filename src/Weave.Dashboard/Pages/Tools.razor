@@ -1,10 +1,10 @@
-@page "/workspaces"
+@page "/tools"
 @using Weave.Dashboard.Services
 @inject WeaveApiClient Api
 
-<PageTitle>Workspaces - Weave</PageTitle>
+<PageTitle>Tools - Weave</PageTitle>
 
-<FluentLabel Typo="Typography.H4" Style="margin-bottom: 1rem;">Workspaces</FluentLabel>
+<FluentLabel Typo="Typography.H4" Style="margin-bottom: 1rem;">Tool Connections</FluentLabel>
 
 @if (_loading)
 {
@@ -14,21 +14,25 @@ else if (_error is not null)
 {
     <FluentMessageBar Intent="MessageIntent.Error">@_error</FluentMessageBar>
 }
+else if (_tools.Count == 0)
+{
+    <FluentLabel Typo="Typography.Body">No tools connected. Start a workspace to register tools.</FluentLabel>
+}
 else
 {
-    <FluentDataGrid Items="@_workspaces" GridTemplateColumns="1fr 120px 80px 160px 160px">
-        <PropertyColumn Property="@(w => w.WorkspaceId)" Title="Workspace ID" />
+    <FluentDataGrid Items="@_tools.AsQueryable()" GridTemplateColumns="1fr 120px 120px 1fr 160px">
+        <PropertyColumn Property="@(t => t.ToolName)" Title="Tool" />
+        <PropertyColumn Property="@(t => t.ToolType)" Title="Type" />
         <TemplateColumn Title="Status">
             <FluentBadge Appearance="@GetStatusAppearance(context.Status)">@context.Status</FluentBadge>
         </TemplateColumn>
-        <PropertyColumn Property="@(w => w.ContainerCount)" Title="Containers" />
-        <PropertyColumn Property="@(w => w.StartedAt)" Title="Started" Format="g" />
-        <PropertyColumn Property="@(w => w.StoppedAt)" Title="Stopped" Format="g" />
+        <PropertyColumn Property="@(t => t.Endpoint)" Title="Endpoint" />
+        <PropertyColumn Property="@(t => t.ConnectedAt)" Title="Connected" Format="g" />
     </FluentDataGrid>
 }
 
 @code {
-    private IQueryable<WorkspaceDto> _workspaces = Array.Empty<WorkspaceDto>().AsQueryable();
+    private List<ToolConnectionDto> _tools = [];
     private bool _loading = true;
     private string? _error;
 
@@ -37,7 +41,11 @@ else
         try
         {
             var workspaces = await Api.GetWorkspacesAsync();
-            _workspaces = workspaces.AsQueryable();
+            foreach (var ws in workspaces)
+            {
+                var tools = await Api.GetToolsAsync(ws.WorkspaceId);
+                _tools.AddRange(tools);
+            }
         }
         catch (HttpRequestException)
         {
@@ -51,8 +59,8 @@ else
 
     private static Appearance GetStatusAppearance(string status) => status switch
     {
-        "Running" => Appearance.Accent,
-        "Stopped" => Appearance.Neutral,
+        "Connected" => Appearance.Accent,
+        "Disconnected" => Appearance.Neutral,
         "Error" => Appearance.Accent,
         _ => Appearance.Neutral
     };
