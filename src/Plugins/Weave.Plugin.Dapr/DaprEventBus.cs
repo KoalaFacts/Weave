@@ -1,17 +1,16 @@
 using System.Collections.Concurrent;
-using System.Text.Json;
+using Dapr.Client;
 using Microsoft.Extensions.Logging;
 using Weave.Shared.Events;
 
-namespace Weave.Silo.Events;
+namespace Weave.Plugin.Dapr;
 
 /// <summary>
-/// HTTP-based Dapr event bus — no Dapr SDK required. Publishes to the Dapr sidecar
-/// via its HTTP API and dispatches locally subscribed handlers in-process.
-/// Activated when the workspace or environment configures a "dapr" plugin.
+/// Event bus that publishes domain events to Dapr pub/sub while also
+/// dispatching to local in-process subscribers for grain-to-grain communication.
 /// </summary>
 public sealed partial class DaprEventBus(
-    HttpClient httpClient,
+    DaprClient daprClient,
     ILogger<DaprEventBus> logger) : IEventBus
 {
     private const string PubSubName = "pubsub";
@@ -20,13 +19,10 @@ public sealed partial class DaprEventBus(
     public async Task PublishAsync<TEvent>(TEvent domainEvent, CancellationToken ct) where TEvent : IDomainEvent
     {
         var topicName = typeof(TEvent).Name;
+
         try
         {
-            var bytes = JsonSerializer.SerializeToUtf8Bytes(domainEvent);
-            using var content = new ByteArrayContent(bytes);
-            content.Headers.ContentType = new System.Net.Http.Headers.MediaTypeHeaderValue("application/json");
-            using var response = await httpClient.PostAsync($"/v1.0/publish/{PubSubName}/{topicName}", content, ct);
-            response.EnsureSuccessStatusCode();
+            await daprClient.PublishEventAsync(PubSubName, topicName, domainEvent, ct);
             LogEventPublished(topicName, domainEvent.EventId, topicName);
         }
         catch (Exception ex)
@@ -40,18 +36,35 @@ public sealed partial class DaprEventBus(
     public IDisposable Subscribe<TEvent>(Func<TEvent, CancellationToken, Task> handler) where TEvent : IDomainEvent
     {
         var handlers = _handlers.GetOrAdd(typeof(TEvent), _ => []);
-        lock (handlers) { handlers.Add(handler); }
-        return new Subscription(() => { lock (handlers) { handlers.Remove(handler); } });
+        lock (handlers)
+        {
+            handlers.Add(handler);
+        }
+        return new Subscription(() =>
+        {
+            lock (handlers)
+            {
+                handlers.Remove(handler);
+            }
+        });
     }
 
     private async Task DispatchLocalAsync<TEvent>(TEvent domainEvent, CancellationToken ct) where TEvent : IDomainEvent
     {
-        if (!_handlers.TryGetValue(typeof(TEvent), out var handlers)) return;
+        if (!_handlers.TryGetValue(typeof(TEvent), out var handlers))
+            return;
+
         var snapshot = handlers.ToArray();
         foreach (var handler in snapshot)
         {
-            try { await ((Func<TEvent, CancellationToken, Task>)handler)(domainEvent, ct); }
-            catch (Exception ex) { LogEventHandlerError(ex, typeof(TEvent).Name, domainEvent.EventId); }
+            try
+            {
+                await ((Func<TEvent, CancellationToken, Task>)handler)(domainEvent, ct);
+            }
+            catch (Exception ex)
+            {
+                LogEventHandlerError(ex, typeof(TEvent).Name, domainEvent.EventId);
+            }
         }
     }
 

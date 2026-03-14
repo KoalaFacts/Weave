@@ -19,12 +19,12 @@ public sealed class WorkspaceShowCommand : AsyncCommand<WorkspaceShowCommand.Set
         var manifestPath = ManifestResolver.Resolve(settings.Name);
         if (manifestPath is null)
         {
-            AnsiConsole.MarkupLine($"[red]No workspace.yml found for '{settings.Name}'.[/]");
+            AnsiConsole.MarkupLine($"[red]No workspace.json found for '{settings.Name}'.[/]");
             return 1;
         }
 
         var content = await File.ReadAllTextAsync(manifestPath, cancellationToken);
-        AnsiConsole.Write(new Panel(content).Header("workspace.yml").Border(BoxBorder.Rounded));
+        AnsiConsole.Write(new Panel(content).Header("workspace.json").Border(BoxBorder.Rounded));
         return 0;
     }
 }
@@ -43,15 +43,15 @@ public sealed class WorkspaceValidateCommand : AsyncCommand<WorkspaceValidateCom
         var manifestPath = ManifestResolver.Resolve(settings.Name);
         if (manifestPath is null)
         {
-            AnsiConsole.MarkupLine($"[red]No workspace.yml found for '{settings.Name}'.[/]");
+            AnsiConsole.MarkupLine($"[red]No workspace.json found for '{settings.Name}'.[/]");
             return 1;
         }
 
         try
         {
-            var yaml = await File.ReadAllTextAsync(manifestPath, cancellationToken);
+            var json = await File.ReadAllTextAsync(manifestPath, cancellationToken);
             var parser = new ManifestParser();
-            var manifest = parser.Parse(yaml);
+            var manifest = parser.Parse(json);
             var errors = parser.Validate(manifest);
 
             if (errors.Count > 0)

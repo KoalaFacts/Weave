@@ -8,68 +8,76 @@ public sealed class ManifestParserTests
     private readonly ManifestParser _parser = new();
 
     private const string FullManifest = """
-        version: "1.0"
-        name: test-workspace
-
-        workspace:
-          isolation: full
-          network:
-            name: weave-test
-            subnet: "10.42.0.0/16"
-          filesystem:
-            root: /var/weave/workspaces/test
-            mounts:
-              - source: ./data
-                target: /workspace/data
-                readonly: false
-          secrets:
-            provider: vault
-            vault:
-              address: https://vault.example.com
-              mount: weave/test
-
-        agents:
-          researcher:
-            model: claude-sonnet-4-20250514
-            system_prompt_file: ./prompts/researcher.md
-            max_concurrent_tasks: 5
-            memory:
-              provider: redis
-              ttl: 24h
-            tools:
-              - web-search
-            capabilities:
-              - net:outbound
-            heartbeat:
-              cron: "*/30 * * * *"
-              tasks:
-                - Check for updates
-
-        tools:
-          web-search:
-            type: mcp
-            mcp:
-              server: npx
-              args:
-                - "-y"
-                - "@anthropic/mcp-server-web-search"
-              env:
-                ANTHROPIC_API_KEY: "${secrets.anthropic_api_key}"
-          terminal:
-            type: cli
-            cli:
-              shell: /bin/bash
-              allowed_commands:
-                - "git *"
-              denied_commands:
-                - "rm -rf /"
-
-        targets:
-          local:
-            runtime: podman
-          staging:
-            runtime: k3s
-            replicas: 2
+        {
+          // Full workspace manifest for testing
+          "version": "1.0",
+          "name": "test-workspace",
+          "workspace": {
+            "isolation": "full",
+            "network": {
+              "name": "weave-test",
+              "subnet": "10.42.0.0/16"
+            },
+            "filesystem": {
+              "root": "/var/weave/workspaces/test",
+              "mounts": [
+                {
+                  "source": "./data",
+                  "target": "/workspace/data",
+                  "readonly": false
+                }
+              ]
+            },
+            "secrets": {
+              "provider": "vault",
+              "vault": {
+                "address": "https://vault.example.com",
+                "mount": "weave/test"
+              }
+            }
+          },
+          "agents": {
+            "researcher": {
+              "model": "claude-sonnet-4-20250514",
+              "system_prompt_file": "./prompts/researcher.md",
+              "max_concurrent_tasks": 5,
+              "memory": {
+                "provider": "redis",
+                "ttl": "24h"
+              },
+              "tools": ["web-search"],
+              "capabilities": ["net:outbound"],
+              "heartbeat": {
+                "cron": "*/30 * * * *",
+                "tasks": ["Check for updates"]
+              }
+            }
+          },
+          "tools": {
+            "web-search": {
+              "type": "mcp",
+              "mcp": {
+                "server": "npx",
+                "args": ["-y", "@anthropic/mcp-server-web-search"],
+                "env": {
+                  "ANTHROPIC_API_KEY": "${secrets.anthropic_api_key}"
+                }
+              }
+            },
+            "terminal": {
+              "type": "cli",
+              "cli": {
+                "shell": "/bin/bash",
+                "allowed_commands": ["git *"],
+                "denied_commands": ["rm -rf /"]
+              }
+            }
+          },
+          "targets": {
+            "local": { "runtime": "podman" },
+            "staging": { "runtime": "k3s", "replicas": 2 }
+          }
+        }
         """;
 
     [Fact]
@@ -184,12 +192,11 @@ public sealed class ManifestParserTests
     [Fact]
     public void Parse_MinimalManifest_UsesDefaults()
     {
-        const string yaml = """
-            version: "1.0"
-            name: minimal
+        const string json = """
+            { "version": "1.0", "name": "minimal" }
             """;
 
-        var manifest = _parser.Parse(yaml);
+        var manifest = _parser.Parse(json);
 
         manifest.Name.ShouldBe("minimal");
         manifest.Agents.ShouldBeEmpty();
@@ -201,8 +208,8 @@ public sealed class ManifestParserTests
     public void Serialize_RoundTrips()
     {
         var manifest = _parser.Parse(FullManifest);
-        var yaml = _parser.Serialize(manifest);
-        var roundTripped = _parser.Parse(yaml);
+        var json = _parser.Serialize(manifest);
+        var roundTripped = _parser.Parse(json);
 
         roundTripped.Name.ShouldBe(manifest.Name);
         roundTripped.Version.ShouldBe(manifest.Version);
@@ -225,9 +232,27 @@ public sealed class ManifestParserTests
     }
 
     [Fact]
-    public void Parse_EmptyYaml_ThrowsArgumentException()
+    public void Parse_EmptyJson_ThrowsArgumentException()
     {
         var act = () => _parser.Parse("");
         Should.Throw<ArgumentException>(act);
+    }
+
+    [Fact]
+    public void Parse_JsonWithComments_ParsesCorrectly()
+    {
+        const string jsonc = """
+            {
+              // This is a comment
+              "version": "1.0",
+              "name": "commented",
+              /* Block comment */
+              "agents": {},
+              "tools": {},
+            }
+            """;
+
+        var manifest = _parser.Parse(jsonc);
+        manifest.Name.ShouldBe("commented");
     }
 }

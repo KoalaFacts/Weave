@@ -10,6 +10,7 @@ public sealed record WorkspaceManifest
     [Id(4)] public Dictionary<string, ToolDefinition> Tools { get; init; } = [];
     [Id(5)] public Dictionary<string, TargetDefinition> Targets { get; init; } = [];
     [Id(6)] public HooksConfig? Hooks { get; init; }
+    [Id(7)] public Dictionary<string, PluginDefinition> Plugins { get; init; } = [];
 }
 
 [GenerateSerializer]
@@ -144,6 +145,15 @@ public sealed record ScalingConfig
 {
     [Id(0)] public int Min { get; init; } = 1;
     [Id(1)] public int Max { get; init; } = 1;
+}
+
+[GenerateSerializer]
+public sealed record PluginDefinition
+{
+    [Id(0)] public required string Type { get; init; }
+    [Id(1)] public string? Description { get; init; }
+    [Id(2)] public Dictionary<string, string> Config { get; init; } = [];
+    [Id(3)] public string? EnabledWhen { get; init; }
 }
 
 [GenerateSerializer]

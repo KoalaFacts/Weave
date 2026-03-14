@@ -15,6 +15,6 @@
 - The CLI emphasizes a rich interactive terminal experience: selection prompts, multi-select, confirmations — not flags to memorize.
 - Include presets for first-time users so they can start without configuring anything.
 - CLI commands follow a consistent pattern: `weave workspace <action> <name>`.
-- YAML manifest editing is an advanced scenario. Link to a separate reference doc instead of inlining full examples.
+- JSON manifest editing is an advanced scenario. Link to a separate reference doc instead of inlining full examples.
 - Use language like "assistants" and "tools" rather than "agents" and "grains" in user-facing copy.
 - GitHub repo: https://github.com/KoalaFacts/Weave

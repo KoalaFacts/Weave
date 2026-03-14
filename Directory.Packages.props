@@ -38,16 +38,7 @@
     <PackageVersion Include="Microsoft.Extensions.AI.Abstractions" Version="10.4.0" />
     <PackageVersion Include="Microsoft.Extensions.AI.OpenAI" Version="10.4.0" />
   </ItemGroup>
-  <ItemGroup Label="Dapr">
-    <PackageVersion Include="Dapr.Client" Version="1.17.4" />
-    <PackageVersion Include="Dapr.AspNetCore" Version="1.17.4" />
-  </ItemGroup>
-  <ItemGroup Label="YAML + Configuration">
-    <PackageVersion Include="YamlDotNet" Version="16.3.0" />
-  </ItemGroup>
-  <ItemGroup Label="Security">
-    <PackageVersion Include="VaultSharp" Version="1.17.5.1" />
-  </ItemGroup>
+  <!-- Dapr SDK and VaultSharp removed — now using direct HTTP to sidecar/API -->
   <ItemGroup Label="CLI">
     <PackageVersion Include="Spectre.Console" Version="0.54.0" />
     <PackageVersion Include="Spectre.Console.Cli" Version="0.53.1" />

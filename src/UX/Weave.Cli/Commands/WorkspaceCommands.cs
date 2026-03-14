@@ -1,8 +1,8 @@
 using System.ComponentModel;
-using System.Globalization;
-using System.Text;
 using Spectre.Console;
 using Spectre.Console.Cli;
+using Weave.Workspaces.Manifest;
+using Weave.Workspaces.Models;
 
 namespace Weave.Cli.Commands;
 
@@ -78,56 +78,35 @@ public sealed class WorkspaceNewCommand : AsyncCommand<WorkspaceNewCommand.Setti
         Directory.CreateDirectory(Path.Combine(basePath, "data"));
         Directory.CreateDirectory(Path.Combine(basePath, ".weave"));
 
-        var manifest = new StringBuilder();
-        manifest.AppendLine(CultureInfo.InvariantCulture, $"version: \"1.0\"");
-        manifest.AppendLine(CultureInfo.InvariantCulture, $"name: {name}");
-        manifest.AppendLine();
-        manifest.AppendLine("workspace:");
-        manifest.AppendLine("  isolation: full");
-        manifest.AppendLine("  network:");
-        manifest.AppendLine(CultureInfo.InvariantCulture, $"    name: weave-{name}");
-        manifest.AppendLine("  secrets:");
-        manifest.AppendLine("    provider: env");
-        manifest.AppendLine();
-        manifest.AppendLine("agents:");
-        manifest.AppendLine("  assistant:");
-        manifest.AppendLine(CultureInfo.InvariantCulture, $"    model: {model}");
-        manifest.AppendLine("    system_prompt_file: ./prompts/assistant.md");
-        manifest.AppendLine("    max_concurrent_tasks: 3");
-
-        if (tools.Count > 0)
+        var manifest = new WorkspaceManifest
         {
-            manifest.AppendLine("    tools:");
-            foreach (var tool in tools)
-                manifest.AppendLine(CultureInfo.InvariantCulture, $"      - {tool}");
-        }
-        else
-        {
-            manifest.AppendLine("    tools: []");
-        }
-
-        manifest.AppendLine();
-
-        if (tools.Count > 0)
-        {
-            manifest.AppendLine("tools:");
-            foreach (var tool in tools)
+            Version = "1.0",
+            Name = name,
+            Workspace = new WorkspaceConfig
             {
-                manifest.AppendLine(CultureInfo.InvariantCulture, $"  {tool}:");
-                manifest.AppendLine("    type: mcp");
+                Isolation = IsolationLevel.Full,
+                Network = new NetworkConfig { Name = $"weave-{name}" },
+                Secrets = new SecretsConfig { Provider = "env" }
+            },
+            Agents = new Dictionary<string, AgentDefinition>
+            {
+                ["assistant"] = new AgentDefinition
+                {
+                    Model = model,
+                    SystemPromptFile = "./prompts/assistant.md",
+                    MaxConcurrentTasks = 3,
+                    Tools = tools
+                }
+            },
+            Tools = tools.ToDictionary(t => t, _ => new ToolDefinition { Type = "mcp" }),
+            Targets = new Dictionary<string, TargetDefinition>
+            {
+                ["local"] = new TargetDefinition { Runtime = "podman" }
             }
-        }
-        else
-        {
-            manifest.AppendLine("tools: {}");
-        }
+        };
 
-        manifest.AppendLine();
-        manifest.AppendLine("targets:");
-        manifest.AppendLine("  local:");
-        manifest.AppendLine("    runtime: podman");
-
-        await File.WriteAllTextAsync(Path.Combine(basePath, "workspace.yml"), manifest.ToString(), cancellationToken);
+        var parser = new ManifestParser();
+        await File.WriteAllTextAsync(Path.Combine(basePath, "workspace.json"), parser.Serialize(manifest), cancellationToken);
         await File.WriteAllTextAsync(Path.Combine(basePath, "prompts", "assistant.md"),
             "# Assistant\n\nYou are a helpful AI assistant.\n", cancellationToken);
 
@@ -164,7 +143,7 @@ public sealed class WorkspaceListCommand : Command<WorkspaceListCommand.Settings
         foreach (var dir in dirs)
         {
             var name = Path.GetFileName(dir);
-            var hasManifest = File.Exists(Path.Combine(dir, "workspace.yml"));
+            var hasManifest = File.Exists(Path.Combine(dir, "workspace.json"));
             var status = hasManifest ? "[green]Ready[/]" : "[red]Invalid[/]";
             table.AddRow(name, dir, status);
         }

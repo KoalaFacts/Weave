@@ -1,30 +1,22 @@
+using System.Text.Json;
 using Microsoft.Extensions.Logging;
-using VaultSharp;
-using VaultSharp.V1.AuthMethods.Token;
 using Weave.Security.Tokens;
 using Weave.Shared.Secrets;
 
 namespace Weave.Security.Vault;
 
-public sealed partial class VaultSecretProvider : ISecretProvider
+/// <summary>
+/// HTTP-based HashiCorp Vault secret provider — no VaultSharp SDK required.
+/// Calls the Vault HTTP API directly. Activated when a "vault" plugin is configured.
+/// </summary>
+public sealed partial class VaultSecretProvider(
+    HttpClient httpClient,
+    ICapabilityTokenService tokenService,
+    ILogger<VaultSecretProvider> logger) : ISecretProvider
 {
-    private readonly IVaultClient _client;
-    private readonly ICapabilityTokenService _tokenService;
-    private readonly ILogger<VaultSecretProvider> _logger;
-
-    public VaultSecretProvider(
-        IVaultClient client,
-        ICapabilityTokenService tokenService,
-        ILogger<VaultSecretProvider> logger)
-    {
-        _client = client;
-        _tokenService = tokenService;
-        _logger = logger;
-    }
-
     public async Task<SecretValue> ResolveAsync(string secretPath, CapabilityToken token, CancellationToken ct = default)
     {
-        if (!_tokenService.Validate(token))
+        if (!tokenService.Validate(token))
             throw new UnauthorizedAccessException($"Invalid or expired capability token for secret '{secretPath}'");
 
         if (!token.HasGrant($"secret:{secretPath}") && !token.HasGrant("secret:*"))
@@ -32,11 +24,14 @@ public sealed partial class VaultSecretProvider : ISecretProvider
 
         LogResolvingSecret(secretPath, token.IssuedTo, token.WorkspaceId);
 
-        var secret = await _client.V1.Secrets.KeyValue.V2.ReadSecretAsync(
-            path: secretPath,
-            mountPoint: $"weave/{token.WorkspaceId}");
+        var mountPoint = $"weave/{token.WorkspaceId}";
+        using var response = await httpClient.GetAsync($"/v1/{mountPoint}/data/{secretPath}", ct);
+        response.EnsureSuccessStatusCode();
 
-        var value = secret.Data.Data.TryGetValue("value", out var v) ? v?.ToString() : null;
+        using var doc = await JsonDocument.ParseAsync(await response.Content.ReadAsStreamAsync(ct), cancellationToken: ct);
+        var data = doc.RootElement.GetProperty("data").GetProperty("data");
+
+        var value = data.TryGetProperty("value", out var v) ? v.GetString() : null;
 
         return string.IsNullOrEmpty(value)
             ? throw new KeyNotFoundException($"Secret '{secretPath}' not found or has no value")
@@ -45,18 +40,22 @@ public sealed partial class VaultSecretProvider : ISecretProvider
 
     public async Task<IReadOnlyList<string>> ListPathsAsync(string workspaceId, CancellationToken ct = default)
     {
-        var result = await _client.V1.Secrets.KeyValue.V2.ReadSecretPathsAsync(
-            path: "/",
-            mountPoint: $"weave/{workspaceId}");
+        var mountPoint = $"weave/{workspaceId}";
+        using var request = new HttpRequestMessage(HttpMethod.Get, $"/v1/{mountPoint}/metadata/?list=true");
+        using var response = await httpClient.SendAsync(request, ct);
+        response.EnsureSuccessStatusCode();
 
-        return [.. result.Data.Keys];
-    }
+        using var doc = await JsonDocument.ParseAsync(await response.Content.ReadAsStreamAsync(ct), cancellationToken: ct);
+        var keys = doc.RootElement.GetProperty("data").GetProperty("keys");
 
-    public static IVaultClient CreateClient(string address, string token)
-    {
-        var auth = new TokenAuthMethodInfo(token);
-        var settings = new VaultClientSettings(address, auth);
-        return new VaultClient(settings);
+        var paths = new List<string>();
+        foreach (var key in keys.EnumerateArray())
+        {
+            if (key.GetString() is { } k)
+                paths.Add(k);
+        }
+
+        return paths;
     }
 
     [LoggerMessage(Level = LogLevel.Information, Message = "Resolving secret '{Path}' for {IssuedTo} in workspace {Workspace}")]

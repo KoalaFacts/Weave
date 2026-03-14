@@ -13,7 +13,6 @@
   <ItemGroup>
     <PackageReference Include="Microsoft.Orleans.Sdk" />
     <PackageReference Include="Microsoft.Extensions.Logging.Abstractions" />
-    <PackageReference Include="Dapr.Client" />
   </ItemGroup>
 
 </Project>

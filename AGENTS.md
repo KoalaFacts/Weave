@@ -158,7 +158,7 @@ Implemented connector categories in the repo:
 - MCP
 - CLI
 - OpenAPI
-- Dapr, when Dapr is configured in the Silo host
+- Dapr (via `Weave.Plugin.Dapr`, loaded when the Dapr sidecar is detected)
 
 `ToolGrain` currently performs:
 
@@ -292,21 +292,29 @@ When `success: false`, the task fails immediately with the proof recorded for di
 
 ## Manifest Configuration
 
-Agents are declared in `workspace.yml` through `AgentDefinition`:
+Agents are declared in `workspace.json` through `AgentDefinition`:
 
-```yaml
-agents:
-  assistant:
-    model: claude-sonnet-4-20250514
-    system_prompt_file: ./prompts/assistant.md
-    max_concurrent_tasks: 3
-    tools: [git]
-    capabilities: [tool:*]
-    heartbeat:
-      cron: "0 * * * *"
-      tasks:
-        - Review repository status
+```jsonc
+{
+  "version": "1.0",
+  "name": "my-workspace",
+  "agents": {
+    "assistant": {
+      "model": "claude-sonnet-4-20250514",
+      "system_prompt_file": "./prompts/assistant.md",
+      "max_concurrent_tasks": 3,
+      "tools": ["git"],
+      "capabilities": ["tool:*"],
+      "heartbeat": {
+        "cron": "0 * * * *",
+        "tasks": ["Review repository status"]
+      }
+    }
+  }
+}
 ```
+
+The manifest uses JSONC (JSON with comments and trailing commas) so hand-edited files can include inline documentation.
 
 Supported manifest fields today include:
 
@@ -358,7 +366,7 @@ Configuration:
 
 - Orleans clustering and persistence via Redis (or future Valkey/Garnet)
 - `PodmanRuntime` manages real containers for tools
-- Dapr sidecar for pub/sub when configured
+- Dapr sidecar for pub/sub when the `Weave.Plugin.Dapr` plugin detects a running sidecar
 - Full Aspire service defaults (OTEL, service discovery)
 
 ### `InProcessRuntime`

@@ -20,13 +20,13 @@ public sealed class WorkspaceStatusCommand : AsyncCommand<WorkspaceStatusCommand
         var manifestPath = ManifestResolver.Resolve(settings.Name);
         if (manifestPath is null)
         {
-            AnsiConsole.MarkupLine($"[red]No workspace.yml found for '{settings.Name}'.[/]");
+            AnsiConsole.MarkupLine($"[red]No workspace.json found for '{settings.Name}'.[/]");
             return 1;
         }
 
-        var yaml = await File.ReadAllTextAsync(manifestPath, cancellationToken);
+        var json = await File.ReadAllTextAsync(manifestPath, cancellationToken);
         var parser = new ManifestParser();
-        var manifest = parser.Parse(yaml);
+        var manifest = parser.Parse(json);
 
         var statePath = WorkspaceApiClient.GetWorkspaceStatePath(manifestPath);
         if (File.Exists(statePath))

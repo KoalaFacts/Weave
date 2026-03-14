@@ -2,7 +2,8 @@ using System.ComponentModel;
 using System.Globalization;
 using Spectre.Console;
 using Spectre.Console.Cli;
-using YamlDotNet.RepresentationModel;
+using Weave.Workspaces.Manifest;
+using Weave.Workspaces.Models;
 
 namespace Weave.Cli.Commands;
 
@@ -29,7 +30,7 @@ public sealed class WorkspaceAddAgentCommand : AsyncCommand<WorkspaceAddAgentCom
         var manifestPath = ManifestResolver.Resolve(settings.Workspace);
         if (manifestPath is null)
         {
-            AnsiConsole.MarkupLine($"[red]No workspace.yml found for '{settings.Workspace}'.[/]");
+            AnsiConsole.MarkupLine($"[red]No workspace.json found for '{settings.Workspace}'.[/]");
             return 1;
         }
 
@@ -39,41 +40,24 @@ public sealed class WorkspaceAddAgentCommand : AsyncCommand<WorkspaceAddAgentCom
             agentName = AnsiConsole.Prompt(new TextPrompt<string>("Agent name:"));
         }
 
-        var yaml = new YamlStream();
-        using (var reader = new StreamReader(manifestPath))
-        {
-            yaml.Load(reader);
-        }
+        var parser = new ManifestParser();
+        var json = await File.ReadAllTextAsync(manifestPath, cancellationToken);
+        var manifest = parser.Parse(json);
 
-        var root = (YamlMappingNode)yaml.Documents[0].RootNode;
-        var agentsKey = new YamlScalarNode("agents");
-
-        if (!root.Children.TryGetValue(agentsKey, out var agentsNode) || agentsNode is not YamlMappingNode agentsMapping)
-        {
-            agentsMapping = new YamlMappingNode();
-            root.Children[agentsKey] = agentsMapping;
-        }
-
-        var agentNameNode = new YamlScalarNode(agentName);
-        if (agentsMapping.Children.ContainsKey(agentNameNode))
+        if (manifest.Agents.ContainsKey(agentName))
         {
             AnsiConsole.MarkupLine($"[yellow]Agent '{agentName}' already exists in the workspace.[/]");
             return 1;
         }
 
-        var agentDef = new YamlMappingNode
+        manifest.Agents[agentName] = new AgentDefinition
         {
-            { "model", settings.Model },
-            { "system_prompt_file", $"./prompts/{agentName}.md" },
-            { "max_concurrent_tasks", "3" },
-            { "tools", new YamlSequenceNode() }
+            Model = settings.Model,
+            SystemPromptFile = $"./prompts/{agentName}.md",
+            MaxConcurrentTasks = 3
         };
-        agentsMapping.Children[agentNameNode] = agentDef;
 
-        using (var writer = new StreamWriter(manifestPath))
-        {
-            yaml.Save(writer, assignAnchors: false);
-        }
+        await File.WriteAllTextAsync(manifestPath, parser.Serialize(manifest), cancellationToken);
 
         var promptPath = Path.Combine(Path.GetDirectoryName(manifestPath)!, "prompts", $"{agentName}.md");
         Directory.CreateDirectory(Path.GetDirectoryName(promptPath)!);
@@ -106,13 +90,13 @@ public sealed class WorkspaceAddToolCommand : AsyncCommand<WorkspaceAddToolComma
         public string Type { get; init; } = "mcp";
     }
 
-    public override Task<int> ExecuteAsync(CommandContext context, Settings settings, CancellationToken cancellationToken)
+    public override async Task<int> ExecuteAsync(CommandContext context, Settings settings, CancellationToken cancellationToken)
     {
         var manifestPath = ManifestResolver.Resolve(settings.Workspace);
         if (manifestPath is null)
         {
-            AnsiConsole.MarkupLine($"[red]No workspace.yml found for '{settings.Workspace}'.[/]");
-            return Task.FromResult(1);
+            AnsiConsole.MarkupLine($"[red]No workspace.json found for '{settings.Workspace}'.[/]");
+            return 1;
         }
 
         var toolName = settings.Name;
@@ -121,41 +105,22 @@ public sealed class WorkspaceAddToolCommand : AsyncCommand<WorkspaceAddToolComma
             toolName = AnsiConsole.Prompt(new TextPrompt<string>("Tool name:"));
         }
 
-        var yaml = new YamlStream();
-        using (var reader = new StreamReader(manifestPath))
-        {
-            yaml.Load(reader);
-        }
+        var parser = new ManifestParser();
+        var json = await File.ReadAllTextAsync(manifestPath, cancellationToken);
+        var manifest = parser.Parse(json);
 
-        var root = (YamlMappingNode)yaml.Documents[0].RootNode;
-        var toolsKey = new YamlScalarNode("tools");
-
-        if (!root.Children.TryGetValue(toolsKey, out var toolsNode) || toolsNode is not YamlMappingNode toolsMapping)
-        {
-            toolsMapping = new YamlMappingNode();
-            root.Children[toolsKey] = toolsMapping;
-        }
-
-        var toolNameNode = new YamlScalarNode(toolName);
-        if (toolsMapping.Children.ContainsKey(toolNameNode))
+        if (manifest.Tools.ContainsKey(toolName))
         {
             AnsiConsole.MarkupLine($"[yellow]Tool '{toolName}' already exists in the workspace.[/]");
-            return Task.FromResult(1);
+            return 1;
         }
 
-        var toolDef = new YamlMappingNode
-        {
-            { "type", settings.Type }
-        };
-        toolsMapping.Children[toolNameNode] = toolDef;
+        manifest.Tools[toolName] = new ToolDefinition { Type = settings.Type };
 
-        using (var writer = new StreamWriter(manifestPath))
-        {
-            yaml.Save(writer, assignAnchors: false);
-        }
+        await File.WriteAllTextAsync(manifestPath, parser.Serialize(manifest), cancellationToken);
 
         AnsiConsole.MarkupLine($"[green]Tool '{toolName}' added to workspace '{settings.Workspace}'.[/]");
-        return Task.FromResult(0);
+        return 0;
     }
 }
 
@@ -177,13 +142,13 @@ public sealed class WorkspaceAddTargetCommand : AsyncCommand<WorkspaceAddTargetC
         public string Runtime { get; init; } = "podman";
     }
 
-    public override Task<int> ExecuteAsync(CommandContext context, Settings settings, CancellationToken cancellationToken)
+    public override async Task<int> ExecuteAsync(CommandContext context, Settings settings, CancellationToken cancellationToken)
     {
         var manifestPath = ManifestResolver.Resolve(settings.Workspace);
         if (manifestPath is null)
         {
-            AnsiConsole.MarkupLine($"[red]No workspace.yml found for '{settings.Workspace}'.[/]");
-            return Task.FromResult(1);
+            AnsiConsole.MarkupLine($"[red]No workspace.json found for '{settings.Workspace}'.[/]");
+            return 1;
         }
 
         var targetName = settings.Name;
@@ -192,40 +157,21 @@ public sealed class WorkspaceAddTargetCommand : AsyncCommand<WorkspaceAddTargetC
             targetName = AnsiConsole.Prompt(new TextPrompt<string>("Target name:"));
         }
 
-        var yaml = new YamlStream();
-        using (var reader = new StreamReader(manifestPath))
-        {
-            yaml.Load(reader);
-        }
+        var parser = new ManifestParser();
+        var json = await File.ReadAllTextAsync(manifestPath, cancellationToken);
+        var manifest = parser.Parse(json);
 
-        var root = (YamlMappingNode)yaml.Documents[0].RootNode;
-        var targetsKey = new YamlScalarNode("targets");
-
-        if (!root.Children.TryGetValue(targetsKey, out var targetsNode) || targetsNode is not YamlMappingNode targetsMapping)
-        {
-            targetsMapping = new YamlMappingNode();
-            root.Children[targetsKey] = targetsMapping;
-        }
-
-        var targetNameNode = new YamlScalarNode(targetName);
-        if (targetsMapping.Children.ContainsKey(targetNameNode))
+        if (manifest.Targets.ContainsKey(targetName))
         {
             AnsiConsole.MarkupLine($"[yellow]Target '{targetName}' already exists in the workspace.[/]");
-            return Task.FromResult(1);
+            return 1;
         }
 
-        var targetDef = new YamlMappingNode
-        {
-            { "runtime", settings.Runtime }
-        };
-        targetsMapping.Children[targetNameNode] = targetDef;
+        manifest.Targets[targetName] = new TargetDefinition { Runtime = settings.Runtime };
 
-        using (var writer = new StreamWriter(manifestPath))
-        {
-            yaml.Save(writer, assignAnchors: false);
-        }
+        await File.WriteAllTextAsync(manifestPath, parser.Serialize(manifest), cancellationToken);
 
         AnsiConsole.MarkupLine($"[green]Target '{targetName}' added to workspace '{settings.Workspace}'.[/]");
-        return Task.FromResult(0);
+        return 0;
     }
 }

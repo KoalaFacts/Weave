@@ -9,8 +9,4 @@
     <ProjectReference Include="..\..\Workspaces\Weave.Workspaces\Weave.Workspaces.csproj" />
   </ItemGroup>
 
-  <ItemGroup>
-    <PackageReference Include="YamlDotNet" />
-  </ItemGroup>
-
 </Project>

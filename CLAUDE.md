@@ -30,20 +30,23 @@ The solution uses central package management through `Directory.Packages.props`.
 ```text
 src/
   Foundation/
-    Weave.Shared/        Shared abstractions, branded IDs, CQRS, events, lifecycle
-    Weave.SourceGen/     Branded ID source generator (`netstandard2.0`)
-  Workspaces/            Workspace manifest parsing and runtime abstraction
+    Weave.Shared/        Shared abstractions, branded IDs, CQRS, events, lifecycle, plugin interface
+    Weave.SourceGen/     Source generators: branded IDs, CQRS registration, plugin discovery (`netstandard2.0`)
+  Workspaces/            Workspace manifest parsing (JSONC) and runtime abstraction
   Assistants/            Assistant grains, supervisor, heartbeat, chat pipeline
   Tools/                 Tool connectors, discovery, and tool grain
   Security/              Capability tokens, leak scanning, secret proxy, providers
   Deployment/            Deployment publishers
+  Plugins/
+    Weave.Plugin.Dapr/   Optional Dapr event bus and tool connector
+    Weave.Plugin.Vault/  Optional HashiCorp Vault secret provider
   Runtime/               Orleans host, Aspire app host, and shared service defaults
   UX/                    Spectre.Console CLI and Blazor dashboard
 ```
 
 Dependency flow should stay roughly:
 
-`Shared -> Workspaces -> Agents/Tools/Security/Deploy -> Silo/Cli/Dashboard -> AppHost`
+`Shared -> Workspaces -> Agents/Tools/Security/Deploy -> Plugins -> Silo/Cli/Dashboard -> AppHost`
 
 ## Architecture Conventions
 
@@ -62,7 +65,7 @@ Dependency flow should stay roughly:
 ### CQRS and API Flow
 
 - Commands and queries live with their domain.
-- `Weave.Silo` wires handlers through `AddCqrs(...)`.
+- `Weave.Silo` wires handlers through source-generated `AddGeneratedCqrsHandlers()` (from `CqrsRegistrationGenerator`).
 - HTTP endpoints in `src/Runtime/Weave.Silo/Api` are thin adapters over CQRS dispatch.
 
 ### Branded IDs
@@ -82,6 +85,14 @@ The repo defaults to AOT-friendly settings in `Directory.Build.props`, but sever
 - Prefer source-generated patterns already used in the repo.
 - Use `[GeneratedRegex]` for regex definitions.
 - Use Orleans serializers on models that cross grain boundaries.
+- Workspace manifests use `ManifestJsonContext` (STJ source gen) with JSONC support (comments + trailing commas).
+
+### Plugins
+
+- Optional integrations (Dapr, VaultSharp) live under `src/Plugins/`.
+- Each plugin implements `IWeavePlugin` and marks its assembly with `[WeavePlugin(typeof(T))]`.
+- `PluginDiscoveryGenerator` (source gen) produces `AddDiscoveredPlugins()` — no runtime reflection.
+- Plugins check environment conditions (e.g. `DAPR_HTTP_PORT`, `Vault:Address`) in `IsEnabled` to auto-activate.
 
 ### Performance
 

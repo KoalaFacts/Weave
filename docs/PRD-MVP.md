@@ -26,7 +26,7 @@ The MVP should make an agent workspace portable, inspectable, and safer by cente
 
 ## Jobs To Be Done
 
-- create a workspace from a preset or interactive prompts without editing YAML by hand
+- create a workspace from a preset or interactive prompts without editing JSON by hand
 - start and stop that workspace locally through a consistent control plane
 - activate agents and tools from the manifest
 - inspect workspace, agent, and tool state
@@ -125,13 +125,13 @@ After workspace creation, users can add components individually:
 3. user runs `weave workspace add target demo --name production`
 4. user runs `weave workspace validate demo`
 
-Manual YAML editing is an advanced scenario — the CLI should handle all common configuration.
+Manual JSON editing is an advanced scenario — the CLI should handle all common configuration.
 
 ## Functional Requirements
 
 ### Workspace definition
 
-- support `workspace.yml` version `1.0`
+- support `workspace.json` version `1.0`
 - support workspace, agent, tool, target, and hook sections already modeled in `Weave.Workspaces`
 - validate required fields and basic cross-references such as agent tool references
 
@@ -140,7 +140,7 @@ Manual YAML editing is an advanced scenario — the CLI should handle all common
 - provide built-in presets (`starter`, `coding-assistant`, `research`, `multi-agent`)
 - support `--preset` flag to skip interactive prompts
 - when no preset is specified, present interactive prompts for preset selection, model choice, tool selection, and permission configuration
-- generate the `workspace.yml` and supporting files without manual editing
+- generate the `workspace.json` and supporting files without manual editing
 
 ### Workspace lifecycle
 
@@ -198,7 +198,7 @@ Manual YAML editing is an advanced scenario — the CLI should handle all common
 ### Adoption metrics
 
 - a new developer can create, validate, and start a sample workspace in under five minutes using a preset
-- the CLI happy path completes without manual YAML editing or API calls
+- the CLI happy path completes without manual JSON editing or API calls
 
 ### Product metrics
 

@@ -24,16 +24,16 @@ public sealed class WorkspaceUpCommand : AsyncCommand<WorkspaceUpCommand.Setting
         var manifestPath = ManifestResolver.Resolve(settings.Name);
         if (manifestPath is null)
         {
-            AnsiConsole.MarkupLine($"[red]No workspace.yml found for '{settings.Name}'.[/]");
+            AnsiConsole.MarkupLine($"[red]No workspace.json found for '{settings.Name}'.[/]");
             return 1;
         }
 
         AnsiConsole.MarkupLine($"Starting workspace from [bold]{manifestPath}[/] (target: {settings.Target})...");
 
-        var yaml = await File.ReadAllTextAsync(manifestPath, cancellationToken);
+        var json = await File.ReadAllTextAsync(manifestPath, cancellationToken);
         var parser = new ManifestParser();
         var manifest = WorkspaceApiClient.PrepareManifest(
-            parser.Parse(yaml),
+            parser.Parse(json),
             Path.GetDirectoryName(Path.GetFullPath(manifestPath)) ?? Directory.GetCurrentDirectory());
 
         try
@@ -75,17 +75,17 @@ internal static class ManifestResolver
     {
         if (workspace is not null)
         {
-            var path = Path.Combine("workspaces", workspace, "workspace.yml");
+            var path = Path.Combine("workspaces", workspace, "workspace.json");
             return File.Exists(path) ? path : null;
         }
 
-        if (File.Exists("workspace.yml"))
-            return "workspace.yml";
+        if (File.Exists("workspace.json"))
+            return "workspace.json";
 
         var dir = Directory.GetCurrentDirectory();
         while (dir is not null)
         {
-            var candidate = Path.Combine(dir, "workspace.yml");
+            var candidate = Path.Combine(dir, "workspace.json");
             if (File.Exists(candidate))
                 return candidate;
             dir = Path.GetDirectoryName(dir);

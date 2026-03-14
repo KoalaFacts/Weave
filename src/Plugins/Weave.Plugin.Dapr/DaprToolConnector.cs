@@ -1,23 +1,22 @@
 using System.Diagnostics;
-using System.Text.Json;
+using Dapr.Client;
 using Microsoft.Extensions.Logging;
 using Weave.Security.Tokens;
+using Weave.Tools.Connectors;
 using Weave.Tools.Models;
 
-namespace Weave.Tools.Connectors;
+namespace Weave.Plugin.Dapr;
 
-/// <summary>
-/// HTTP-based Dapr tool connector — no Dapr SDK required. Invokes Dapr service
-/// methods via the sidecar HTTP API. Activated when a "dapr" plugin is configured.
-/// </summary>
-public sealed partial class DaprToolConnector(HttpClient httpClient, ILogger<DaprToolConnector> logger) : IToolConnector
+public sealed partial class DaprToolConnector(DaprClient daprClient, ILogger<DaprToolConnector> logger) : IToolConnector
 {
     public ToolType ToolType => ToolType.Dapr;
 
     public Task<ToolHandle> ConnectAsync(ToolSpec tool, CapabilityToken token, CancellationToken ct = default)
     {
         var dapr = tool.Dapr ?? throw new InvalidOperationException($"Tool '{tool.Name}' has no Dapr configuration");
+
         LogDaprToolConnected(tool.Name, dapr.AppId);
+
         return Task.FromResult(new ToolHandle
         {
             ToolName = tool.Name,
@@ -39,21 +38,31 @@ public sealed partial class DaprToolConnector(HttpClient httpClient, ILogger<Dap
         try
         {
             var appId = handle.ConnectionId.Replace("dapr:", "", StringComparison.Ordinal);
-            var bytes = JsonSerializer.SerializeToUtf8Bytes(invocation.Parameters);
-            using var content = new ByteArrayContent(bytes);
-            content.Headers.ContentType = new System.Net.Http.Headers.MediaTypeHeaderValue("application/json");
-            using var response = await httpClient.PostAsync(
-                $"/v1.0/invoke/{appId}/method/{invocation.Method}", content, ct);
-            response.EnsureSuccessStatusCode();
-            var output = await response.Content.ReadAsStringAsync(ct);
+#pragma warning disable CS0618 // Dapr service invocation migration is tracked separately
+            var response = await daprClient.InvokeMethodAsync<Dictionary<string, string>, string>(
+                appId, invocation.Method, invocation.Parameters, ct);
+#pragma warning restore CS0618
             sw.Stop();
-            return new ToolResult { Success = true, ToolName = handle.ToolName, Output = output, Duration = sw.Elapsed };
+
+            return new ToolResult
+            {
+                Success = true,
+                ToolName = handle.ToolName,
+                Output = response,
+                Duration = sw.Elapsed
+            };
         }
         catch (Exception ex)
         {
             sw.Stop();
             LogDaprToolInvocationFailed(ex, handle.ToolName);
-            return new ToolResult { Success = false, ToolName = handle.ToolName, Error = ex.Message, Duration = sw.Elapsed };
+            return new ToolResult
+            {
+                Success = false,
+                ToolName = handle.ToolName,
+                Error = ex.Message,
+                Duration = sw.Elapsed
+            };
         }
     }
 
