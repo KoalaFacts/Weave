@@ -3,14 +3,17 @@ using Weave.Security.Proxy;
 using Weave.Security.Scanning;
 using Weave.Security.Tokens;
 using Weave.Security.Vault;
-using Weave.ServiceDefaults;
 using Weave.Shared.Cqrs;
 using Weave.Shared.Events;
 using Weave.Shared.Lifecycle;
+using Weave.Shared.Secrets;
+using Weave.ServiceDefaults;
 using Weave.Silo.Api;
-using Weave.Silo.Events;
+using Weave.Silo.Plugins;
 using Weave.Tools.Connectors;
 using Weave.Tools.Discovery;
+using Weave.Workspaces.Models;
+using Weave.Workspaces.Plugins;
 using Weave.Workspaces.Runtime;
 
 var builder = WebApplication.CreateBuilder(args);
@@ -66,40 +69,57 @@ builder.Services.AddSingleton<IToolConnector>(sp => sp.GetRequiredService<OpenAp
 // Default event bus — in-process, no external dependencies
 builder.Services.AddSingleton<IEventBus, InProcessEventBus>();
 
-// --- JSON-configured plugins (environment / config driven) ---
-// Dapr: activated when DAPR_HTTP_PORT is set (sidecar present)
-var daprPort = builder.Configuration["DAPR_HTTP_PORT"]
-    ?? Environment.GetEnvironmentVariable("DAPR_HTTP_PORT");
-
-if (daprPort is not null)
-{
-    var daprBaseUrl = $"http://localhost:{daprPort}";
-    builder.Services.AddHttpClient<DaprEventBus>(c => c.BaseAddress = new Uri(daprBaseUrl));
-    builder.Services.AddSingleton<IEventBus, DaprEventBus>();
-    builder.Services.AddHttpClient<DaprToolConnector>(c => c.BaseAddress = new Uri(daprBaseUrl));
-    builder.Services.AddSingleton<IToolConnector>(sp => sp.GetRequiredService<DaprToolConnector>());
-}
-
-// Vault: activated when Vault:Address is configured
-var vaultAddress = builder.Configuration["Vault:Address"];
-if (vaultAddress is not null)
-{
-    builder.Services.AddHttpClient<VaultSecretProvider>(c =>
-    {
-        c.BaseAddress = new Uri(vaultAddress);
-        var token = builder.Configuration["Vault:Token"];
-        if (token is not null)
-            c.DefaultRequestHeaders.Add("X-Vault-Token", token);
-    });
-    builder.Services.AddSingleton<ISecretProvider, VaultSecretProvider>();
-}
+// --- Plugin connectors (registered so PluginRegistry can find them) ---
+builder.Services.AddSingleton<IPluginConnector>(sp =>
+    new DaprPluginConnector(builder.Services, sp.GetRequiredService<ILogger<DaprPluginConnector>>()));
+builder.Services.AddSingleton<IPluginConnector>(sp =>
+    new VaultPluginConnector(builder.Services, sp.GetRequiredService<ILogger<VaultPluginConnector>>()));
+builder.Services.AddSingleton<IPluginConnector>(sp =>
+    new HttpPluginConnector(builder.Services, sp.GetRequiredService<ILogger<HttpPluginConnector>>()));
+builder.Services.AddSingleton<IPluginRegistry, PluginRegistry>();
 
 var app = builder.Build();
 
+// --- Activate plugins from workspace manifest or environment ---
+var pluginRegistry = app.Services.GetRequiredService<IPluginRegistry>();
+var pluginsFromConfig = builder.Configuration.GetSection("Weave:Plugins");
+
+// Environment-detected plugins (backward compat with DAPR_HTTP_PORT / Vault:Address)
+var daprPort = builder.Configuration["DAPR_HTTP_PORT"]
+    ?? Environment.GetEnvironmentVariable("DAPR_HTTP_PORT");
 if (daprPort is not null)
-    app.Logger.LogInformation("Dapr plugin active — sidecar at localhost:{DaprPort}", daprPort);
+{
+    pluginRegistry.Connect("dapr", new PluginDefinition
+    {
+        Type = "dapr",
+        Description = "Auto-detected Dapr sidecar",
+        Config = new Dictionary<string, string> { ["port"] = daprPort }
+    });
+}
+
+var vaultAddress = builder.Configuration["Vault:Address"];
 if (vaultAddress is not null)
-    app.Logger.LogInformation("Vault plugin active — server at {VaultAddress}", vaultAddress);
+{
+    var vaultConfig = new Dictionary<string, string> { ["address"] = vaultAddress };
+    var vaultToken = builder.Configuration["Vault:Token"];
+    if (vaultToken is not null) vaultConfig["token"] = vaultToken;
+
+    pluginRegistry.Connect("vault", new PluginDefinition
+    {
+        Type = "vault",
+        Description = "Auto-detected Vault server",
+        Config = vaultConfig
+    });
+}
+
+// Log active plugins
+foreach (var status in pluginRegistry.GetAll())
+{
+    if (status.IsConnected)
+        app.Logger.LogInformation("Plugin '{Name}' ({Type}) active", status.Name, status.Type);
+    else
+        app.Logger.LogWarning("Plugin '{Name}' ({Type}) failed: {Error}", status.Name, status.Type, status.Error);
+}
 
 if (isLocalMode)
 {
@@ -112,5 +132,6 @@ app.MapDefaultEndpoints();
 app.MapWorkspaceEndpoints();
 app.MapAgentEndpoints();
 app.MapToolEndpoints();
+app.MapPluginEndpoints();
 
 app.Run();

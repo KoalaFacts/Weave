@@ -30,6 +30,15 @@ app.Configure(config =>
             add.AddCommand<WorkspaceAddAgentCommand>("agent").WithDescription("Add an assistant");
             add.AddCommand<WorkspaceAddToolCommand>("tool").WithDescription("Add a tool");
             add.AddCommand<WorkspaceAddTargetCommand>("target").WithDescription("Add a deployment target");
+            add.AddCommand<WorkspaceAddPluginCommand>("plugin").WithDescription("Add a plugin");
+        });
+
+        ws.AddBranch("plugin", plugin =>
+        {
+            plugin.SetDescription("Manage workspace plugins");
+            plugin.AddCommand<WorkspacePluginListCommand>("list").WithDescription("List configured plugins");
+            plugin.AddCommand<WorkspaceAddPluginCommand>("add").WithDescription("Add a plugin");
+            plugin.AddCommand<WorkspacePluginRemoveCommand>("remove").WithDescription("Remove a plugin");
         });
     });
 

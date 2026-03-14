@@ -255,4 +255,88 @@ public sealed class ManifestParserTests
         var manifest = _parser.Parse(jsonc);
         manifest.Name.ShouldBe("commented");
     }
+
+    [Fact]
+    public void Parse_ManifestWithPlugins_ParsesCorrectly()
+    {
+        const string json = """
+            {
+              "version": "1.0",
+              "name": "with-plugins",
+              "plugins": {
+                "dapr-sidecar": {
+                  "type": "dapr",
+                  "description": "Local Dapr sidecar",
+                  "config": { "port": "3500" }
+                },
+                "vault": {
+                  "type": "vault",
+                  "description": "HashiCorp Vault",
+                  "config": { "address": "http://localhost:8200", "token": "root" },
+                  "enabled_when": "env:VAULT_ADDR"
+                }
+              }
+            }
+            """;
+
+        var manifest = _parser.Parse(json);
+
+        manifest.Plugins.Count.ShouldBe(2);
+
+        var dapr = manifest.Plugins["dapr-sidecar"];
+        dapr.Type.ShouldBe("dapr");
+        dapr.Description.ShouldBe("Local Dapr sidecar");
+        dapr.Config["port"].ShouldBe("3500");
+
+        var vault = manifest.Plugins["vault"];
+        vault.Type.ShouldBe("vault");
+        vault.Config["address"].ShouldBe("http://localhost:8200");
+        vault.Config["token"].ShouldBe("root");
+        vault.EnabledWhen.ShouldBe("env:VAULT_ADDR");
+    }
+
+    [Fact]
+    public void Validate_InvalidPluginType_ReturnsError()
+    {
+        var manifest = new WorkspaceManifest
+        {
+            Version = "1.0",
+            Name = "test",
+            Plugins = new Dictionary<string, PluginDefinition>
+            {
+                ["bad-plugin"] = new PluginDefinition { Type = "unknown" }
+            }
+        };
+
+        var errors = _parser.Validate(manifest);
+        errors.ShouldContain(e => e.Contains("unknown"));
+    }
+
+    [Fact]
+    public void Serialize_PluginsRoundTrip()
+    {
+        var manifest = new WorkspaceManifest
+        {
+            Version = "1.0",
+            Name = "plugin-test",
+            Plugins = new Dictionary<string, PluginDefinition>
+            {
+                ["my-http"] = new PluginDefinition
+                {
+                    Type = "http",
+                    Description = "Custom API",
+                    Config = new Dictionary<string, string> { ["base_url"] = "http://api.local:3000" }
+                }
+            }
+        };
+
+        var json = _parser.Serialize(manifest);
+        var roundTripped = _parser.Parse(json);
+
+        roundTripped.Plugins.Count.ShouldBe(1);
+        var plugin = roundTripped.Plugins["my-http"];
+        plugin.Type.ShouldBe("http");
+        plugin.Description.ShouldBe("Custom API");
+        plugin.Config["base_url"].ShouldBe("http://api.local:3000");
+    }
 }
