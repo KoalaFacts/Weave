@@ -18,13 +18,31 @@ using Weave.Workspaces.Runtime;
 
 var builder = WebApplication.CreateBuilder(args);
 
+var isLocalMode = builder.Configuration.GetValue<bool>("Weave:LocalMode")
+    || builder.Configuration["Orleans:ClusterId"] is null;
+
 builder.AddServiceDefaults();
 
-builder.UseOrleans();
+if (isLocalMode)
+{
+    builder.Services.AddOrleans(siloBuilder =>
+    {
+        siloBuilder.UseLocalhostClustering();
+        siloBuilder.AddMemoryGrainStorageAsDefault();
+    });
+}
+else
+{
+    builder.UseOrleans();
+}
 
 // Shared kernel services
 builder.Services.AddSingleton<ILifecycleManager, LifecycleManager>();
-builder.Services.AddSingleton<IWorkspaceRuntime, PodmanRuntime>();
+
+if (isLocalMode)
+    builder.Services.AddSingleton<IWorkspaceRuntime, InProcessRuntime>();
+else
+    builder.Services.AddSingleton<IWorkspaceRuntime, PodmanRuntime>();
 builder.Services.AddCqrs(
     typeof(Weave.Workspaces.Commands.StartWorkspaceCommand).Assembly,
     typeof(Weave.Agents.Commands.ActivateAgentCommand).Assembly,
@@ -65,6 +83,11 @@ else
 }
 
 var app = builder.Build();
+
+if (isLocalMode)
+{
+    app.Logger.LogInformation("Weave running in local mode — no external services required");
+}
 
 app.MapDefaultEndpoints();
 

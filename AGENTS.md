@@ -319,6 +319,69 @@ Supported manifest fields today include:
 - `heartbeat`
 - `target`
 
+## Runtime Modes
+
+The Silo supports two runtime modes, selected automatically at startup.
+
+### Local Mode
+
+Detected when `Weave:LocalMode` is `true` or `Orleans:ClusterId` is not set (i.e., not running under Aspire).
+
+Configuration:
+
+- Orleans uses `UseLocalhostClustering()` — single-node, no external coordination
+- Grain storage uses `AddMemoryGrainStorageAsDefault()` — state lives in memory for the process lifetime
+- `InProcessRuntime` is registered — all container and network operations are no-ops
+- No Redis, Podman, Dapr, or Aspire required
+
+Starting locally:
+
+```bash
+dotnet run --project src/Runtime/Weave.Silo -- --Weave:LocalMode=true
+```
+
+Or via the CLI:
+
+```bash
+weave serve
+```
+
+The `weave serve` command finds the Silo binary (via `WEAVE_SILO_PATH` env, well-known dev paths, or adjacent published binary), starts it with local mode config on `http://localhost:9401`, and waits for it to become healthy.
+
+The CLI `weave workspace up` command checks reachability before starting a workspace and directs the user to `weave serve` if the Silo is not running.
+
+### Distributed Mode
+
+Active when running under Aspire (`Orleans:ClusterId` is set) or when `Weave:LocalMode` is `false` with explicit Orleans config.
+
+Configuration:
+
+- Orleans clustering and persistence via Redis (or future Valkey/Garnet)
+- `PodmanRuntime` manages real containers for tools
+- Dapr sidecar for pub/sub when configured
+- Full Aspire service defaults (OTEL, service discovery)
+
+### `InProcessRuntime`
+
+Implements `IWorkspaceRuntime` for local mode. Behavior:
+
+- `ProvisionAsync` — returns a `WorkspaceEnvironment` with `NetworkId.From("local")` and no containers
+- `StartContainerAsync` — returns a local handle (`local-{name}`) without starting anything
+- `TeardownAsync`, `StopContainerAsync`, `CreateNetworkAsync`, `DeleteNetworkAsync` — no-ops
+- `RuntimeName` is `"in-process"`
+
+This allows workspace grains to complete their full lifecycle without container infrastructure.
+
+### Storage Spectrum (Planned)
+
+| Tier | Storage | Use Case |
+|------|---------|----------|
+| Ephemeral | Memory (current local default) | Development, quick experiments |
+| Local | SQLite via ADO.NET | Persistent local workspaces |
+| Distributed | Valkey / Garnet | Production multi-node clusters |
+
+Redis is avoided for new distributed work due to the RSALv2/SSPL licensing change (March 2024). Valkey (BSD, Linux Foundation) is the planned replacement.
+
 ## Current Limitations
 
 The repository does not currently implement:
@@ -326,7 +389,6 @@ The repository does not currently implement:
 - remote agent registration flows
 - ephemeral runner-style agents
 - label-based remote scheduling
-- a separate in-process local agent orchestrator
 - dedicated CLI commands for direct agent chat or task submission
 
 Those ideas can still inform roadmap planning, but they should not be documented as shipped behavior.
@@ -341,4 +403,4 @@ The current codebase is strongest around a hosted, workspace-centric flow:
 4. connect tools through the registry
 5. inspect state through the API or dashboard
 
-That hosted flow should remain the baseline for the MVP.
+That hosted flow should remain the baseline for the MVP. Local mode (no external services) is the default for first-time users. Distributed mode via Aspire is available for production deployments.

@@ -39,6 +39,14 @@ public sealed class WorkspaceUpCommand : AsyncCommand<WorkspaceUpCommand.Setting
         try
         {
             using var client = new WorkspaceApiClient();
+
+            if (!await client.IsReachableAsync(cancellationToken))
+            {
+                AnsiConsole.MarkupLine("[red]Cannot reach the Weave server.[/]");
+                AnsiConsole.MarkupLine("Start it first with: [bold]weave serve[/]");
+                return 1;
+            }
+
             var response = await client.StartWorkspaceAsync(manifest, cancellationToken);
             var statePath = WorkspaceApiClient.GetWorkspaceStatePath(manifestPath);
             Directory.CreateDirectory(Path.GetDirectoryName(statePath)!);

@@ -32,6 +32,9 @@ app.Configure(config =>
             add.AddCommand<WorkspaceAddTargetCommand>("target").WithDescription("Add a deployment target");
         });
     });
+
+    config.AddCommand<WorkspaceServeCommand>("serve")
+        .WithDescription("Start the local Weave server");
 });
 
 return app.Run(args);

@@ -55,6 +55,21 @@ internal sealed class WorkspaceApiClient : IDisposable
 
     public void Dispose() => _httpClient.Dispose();
 
+    public async Task<bool> IsReachableAsync(CancellationToken cancellationToken)
+    {
+        try
+        {
+            using var cts = CancellationTokenSource.CreateLinkedTokenSource(cancellationToken);
+            cts.CancelAfter(TimeSpan.FromSeconds(2));
+            var response = await _httpClient.GetAsync("/health", cts.Token);
+            return response.IsSuccessStatusCode;
+        }
+        catch
+        {
+            return false;
+        }
+    }
+
     public static WorkspaceManifest PrepareManifest(WorkspaceManifest manifest, string manifestDirectory)
     {
         return manifest with
