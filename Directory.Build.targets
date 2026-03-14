@@ -3,4 +3,18 @@
   <PropertyGroup Condition="'$(IsAotExcluded)' == 'true'">
     <NoWarn>$(NoWarn);IL2026;IL3050</NoWarn>
   </PropertyGroup>
+
+  <!-- Test project defaults (moved from Directory.Build.props so IsTestProject is available) -->
+  <PropertyGroup Condition="'$(IsTestProject)' == 'true'">
+    <IsAotExcluded>true</IsAotExcluded>
+    <IsAotCompatible>false</IsAotCompatible>
+    <IsTrimmable>false</IsTrimmable>
+    <OutputType>Exe</OutputType>
+  </PropertyGroup>
+
+  <ItemGroup Condition="'$(IsTestProject)' == 'true'" Label="Global test usings">
+    <Using Include="Xunit" />
+    <Using Include="NSubstitute" />
+    <Using Include="Shouldly" />
+  </ItemGroup>
 </Project>

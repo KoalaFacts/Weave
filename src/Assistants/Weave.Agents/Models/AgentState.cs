@@ -43,15 +43,97 @@ public sealed record AgentTaskInfo
     [Id(3)] public DateTimeOffset CreatedAt { get; init; } = DateTimeOffset.UtcNow;
     [Id(4)] public DateTimeOffset? CompletedAt { get; set; }
     [Id(5)] public string? ResultSummary { get; set; }
+    [Id(6)] public ProofOfWork? Proof { get; set; }
 }
 
 public enum AgentTaskStatus
 {
     Pending,
     Running,
+    AwaitingReview,
+    Accepted,
+    Rejected,
     Completed,
     Failed,
     Cancelled
+}
+
+[GenerateSerializer]
+public sealed record ProofOfWork
+{
+    [Id(0)] public List<ProofItem> Items { get; init; } = [];
+    [Id(1)] public DateTimeOffset SubmittedAt { get; init; } = DateTimeOffset.UtcNow;
+    [Id(2)] public string? ReviewFeedback { get; set; }
+    [Id(3)] public DateTimeOffset? ReviewedAt { get; set; }
+    [Id(4)] public VerificationRecord? Verification { get; set; }
+}
+
+[GenerateSerializer]
+public sealed record ProofItem
+{
+    [Id(0)] public required ProofType Type { get; init; }
+    [Id(1)] public required string Label { get; init; }
+    [Id(2)] public required string Value { get; init; }
+    [Id(3)] public string? Uri { get; init; }
+}
+
+public enum ProofType
+{
+    CiStatus,
+    TestResults,
+    PullRequest,
+    CodeReview,
+    DiffSummary,
+    Custom
+}
+
+[GenerateSerializer]
+public sealed record VerificationCondition
+{
+    [Id(0)] public required string Name { get; init; }
+    [Id(1)] public required string Description { get; init; }
+}
+
+[GenerateSerializer]
+public sealed record VerificationVote
+{
+    [Id(0)] public required string ValidatorId { get; init; }
+    [Id(1)] public required bool Accepted { get; init; }
+    [Id(2)] public required string Reason { get; init; }
+    [Id(3)] public DateTimeOffset VotedAt { get; init; } = DateTimeOffset.UtcNow;
+    [Id(4)] public List<ConditionResult> ConditionResults { get; init; } = [];
+}
+
+[GenerateSerializer]
+public sealed record ConditionResult
+{
+    [Id(0)] public required string ConditionName { get; init; }
+    [Id(1)] public required bool Passed { get; init; }
+    [Id(2)] public string? Detail { get; init; }
+}
+
+[GenerateSerializer]
+public sealed record VerificationRecord
+{
+    [Id(0)] public List<VerificationVote> Votes { get; init; } = [];
+    [Id(1)] public required int RequiredVotes { get; init; }
+    [Id(2)] public required bool ConsensusReached { get; init; }
+    [Id(3)] public required bool Accepted { get; init; }
+    [Id(4)] public DateTimeOffset CompletedAt { get; init; } = DateTimeOffset.UtcNow;
+}
+
+[GenerateSerializer]
+public sealed record ValidatorConfig
+{
+    [Id(0)] public string? ModelId { get; init; }
+}
+
+[GenerateSerializer]
+public sealed record VerifierState
+{
+    [Id(0)] public List<VerificationCondition> Conditions { get; init; } = [];
+    [Id(1)] public int RequiredValidators { get; set; } = 2;
+    [Id(2)] public List<ValidatorConfig> ValidatorConfigs { get; init; } = [];
 }
 
 [GenerateSerializer]

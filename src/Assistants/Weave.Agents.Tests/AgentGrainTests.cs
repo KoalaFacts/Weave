@@ -187,32 +187,42 @@ public sealed class AgentGrainTests
     }
 
     [Fact]
-    public async Task CompleteTaskAsync_MarksTaskCompleted()
+    public async Task CompleteTaskAsync_SuccessWithProof_SetsAwaitingReview()
     {
         var (grain, _, _) = CreateGrain();
         await grain.ActivateAgentAsync(TestWorkspaceId, CreateDefinition());
         var task = await grain.SubmitTaskAsync("Fix the bug");
+        var proof = new ProofOfWork
+        {
+            Items = [new ProofItem { Type = ProofType.CiStatus, Label = "CI", Value = "passed" }]
+        };
 
-        await grain.CompleteTaskAsync(task.TaskId, success: true);
+        await grain.CompleteTaskAsync(task.TaskId, success: true, proof);
 
         var state = await grain.GetStateAsync();
         state.ActiveTasks.ShouldContain(t =>
             t.TaskId == task.TaskId &&
-            t.Status == AgentTaskStatus.Completed &&
-            t.CompletedAt != null);
+            t.Status == AgentTaskStatus.AwaitingReview &&
+            t.Proof != null);
     }
 
     [Fact]
-    public async Task CompleteTaskAsync_WhenAllDone_ReturnsToActive()
+    public async Task CompleteTaskAsync_SuccessWithProof_DoesNotCompleteYet()
     {
         var (grain, _, _) = CreateGrain();
         await grain.ActivateAgentAsync(TestWorkspaceId, CreateDefinition());
         var task = await grain.SubmitTaskAsync("Fix the bug");
+        var proof = new ProofOfWork
+        {
+            Items = [new ProofItem { Type = ProofType.CiStatus, Label = "CI", Value = "passed" }]
+        };
 
-        await grain.CompleteTaskAsync(task.TaskId, success: true);
+        await grain.CompleteTaskAsync(task.TaskId, success: true, proof);
 
         var state = await grain.GetStateAsync();
-        state.Status.ShouldBe(AgentStatus.Active);
+        var updated = state.ActiveTasks.First(t => t.TaskId == task.TaskId);
+        updated.CompletedAt.ShouldBeNull();
+        state.TotalTasksCompleted.ShouldBe(0);
     }
 
     [Fact]
@@ -221,8 +231,12 @@ public sealed class AgentGrainTests
         var (grain, _, _) = CreateGrain();
         await grain.ActivateAgentAsync(TestWorkspaceId, CreateDefinition());
         var task = await grain.SubmitTaskAsync("Fix the bug");
+        var proof = new ProofOfWork
+        {
+            Items = [new ProofItem { Type = ProofType.Custom, Label = "Error", Value = "compilation failed" }]
+        };
 
-        await grain.CompleteTaskAsync(task.TaskId, success: false);
+        await grain.CompleteTaskAsync(task.TaskId, success: false, proof);
 
         var state = await grain.GetStateAsync();
         state.ActiveTasks.ShouldContain(t =>
@@ -231,13 +245,163 @@ public sealed class AgentGrainTests
     }
 
     [Fact]
+    public async Task CompleteTaskAsync_Failure_ReturnsToActive_WhenNoRunningTasks()
+    {
+        var (grain, _, _) = CreateGrain();
+        await grain.ActivateAgentAsync(TestWorkspaceId, CreateDefinition());
+        var task = await grain.SubmitTaskAsync("Fix the bug");
+        var proof = new ProofOfWork
+        {
+            Items = [new ProofItem { Type = ProofType.Custom, Label = "Error", Value = "failed" }]
+        };
+
+        await grain.CompleteTaskAsync(task.TaskId, success: false, proof);
+
+        var state = await grain.GetStateAsync();
+        state.Status.ShouldBe(AgentStatus.Active);
+    }
+
+    [Fact]
     public async Task CompleteTaskAsync_UnknownTaskId_Throws()
     {
         var (grain, _, _) = CreateGrain();
         await grain.ActivateAgentAsync(TestWorkspaceId, CreateDefinition());
+        var proof = new ProofOfWork
+        {
+            Items = [new ProofItem { Type = ProofType.Custom, Label = "X", Value = "y" }]
+        };
 
-        var ex = await Should.ThrowAsync<InvalidOperationException>(() => grain.CompleteTaskAsync(AgentTaskId.From("nonexistent"), success: true));
+        var ex = await Should.ThrowAsync<InvalidOperationException>(
+            () => grain.CompleteTaskAsync(AgentTaskId.From("nonexistent"), success: true, proof));
         ex.Message.ShouldContain("not found");
+    }
+
+    [Fact]
+    public async Task CompleteTaskAsync_WithProof_PublishesAwaitingReviewEvent()
+    {
+        var (grain, _, eventBus) = CreateGrain();
+        await grain.ActivateAgentAsync(TestWorkspaceId, CreateDefinition());
+        var task = await grain.SubmitTaskAsync("Implement feature");
+        var proof = new ProofOfWork
+        {
+            Items = [new ProofItem { Type = ProofType.TestResults, Label = "Tests", Value = "42 passed" }]
+        };
+
+        await grain.CompleteTaskAsync(task.TaskId, success: true, proof);
+
+        await eventBus.Received(1).PublishAsync(
+            Arg.Is<Events.AgentTaskAwaitingReviewEvent>(e =>
+                e.TaskId == task.TaskId &&
+                e.WorkspaceId == TestWorkspaceId),
+            Arg.Any<CancellationToken>());
+    }
+
+    [Fact]
+    public async Task ReviewTaskAsync_Accepted_SetsAcceptedStatus()
+    {
+        var (grain, _, _) = CreateGrain();
+        await grain.ActivateAgentAsync(TestWorkspaceId, CreateDefinition());
+        var task = await grain.SubmitTaskAsync("Implement feature");
+        var proof = new ProofOfWork
+        {
+            Items = [new ProofItem { Type = ProofType.PullRequest, Label = "PR", Value = "#10" }]
+        };
+        await grain.CompleteTaskAsync(task.TaskId, success: true, proof);
+
+        await grain.ReviewTaskAsync(task.TaskId, accepted: true, "Looks good");
+
+        var state = await grain.GetStateAsync();
+        var reviewed = state.ActiveTasks.First(t => t.TaskId == task.TaskId);
+        reviewed.Status.ShouldBe(AgentTaskStatus.Accepted);
+        reviewed.CompletedAt.ShouldNotBeNull();
+        reviewed.Proof!.ReviewFeedback.ShouldBe("Looks good");
+        reviewed.Proof.ReviewedAt.ShouldNotBeNull();
+        state.TotalTasksCompleted.ShouldBe(1);
+    }
+
+    [Fact]
+    public async Task ReviewTaskAsync_Rejected_SetsRejectedStatus()
+    {
+        var (grain, _, _) = CreateGrain();
+        await grain.ActivateAgentAsync(TestWorkspaceId, CreateDefinition());
+        var task = await grain.SubmitTaskAsync("Implement feature");
+        var proof = new ProofOfWork
+        {
+            Items = [new ProofItem { Type = ProofType.CiStatus, Label = "CI", Value = "failed" }]
+        };
+        await grain.CompleteTaskAsync(task.TaskId, success: true, proof);
+
+        await grain.ReviewTaskAsync(task.TaskId, accepted: false, "CI is red");
+
+        var state = await grain.GetStateAsync();
+        var reviewed = state.ActiveTasks.First(t => t.TaskId == task.TaskId);
+        reviewed.Status.ShouldBe(AgentTaskStatus.Rejected);
+        reviewed.CompletedAt.ShouldBeNull();
+        reviewed.Proof!.ReviewFeedback.ShouldBe("CI is red");
+        state.TotalTasksCompleted.ShouldBe(0);
+    }
+
+    [Fact]
+    public async Task ReviewTaskAsync_PublishesReviewedEvent()
+    {
+        var (grain, _, eventBus) = CreateGrain();
+        await grain.ActivateAgentAsync(TestWorkspaceId, CreateDefinition());
+        var task = await grain.SubmitTaskAsync("Implement feature");
+        var proof = new ProofOfWork
+        {
+            Items = [new ProofItem { Type = ProofType.DiffSummary, Label = "Diff", Value = "+10 -2" }]
+        };
+        await grain.CompleteTaskAsync(task.TaskId, success: true, proof);
+
+        await grain.ReviewTaskAsync(task.TaskId, accepted: true);
+
+        await eventBus.Received(1).PublishAsync(
+            Arg.Is<Events.AgentTaskReviewedEvent>(e =>
+                e.TaskId == task.TaskId &&
+                e.Accepted &&
+                e.WorkspaceId == TestWorkspaceId),
+            Arg.Any<CancellationToken>());
+    }
+
+    [Fact]
+    public async Task ReviewTaskAsync_WhenNotAwaitingReview_Throws()
+    {
+        var (grain, _, _) = CreateGrain();
+        await grain.ActivateAgentAsync(TestWorkspaceId, CreateDefinition());
+        var task = await grain.SubmitTaskAsync("Task");
+
+        var ex = await Should.ThrowAsync<InvalidOperationException>(
+            () => grain.ReviewTaskAsync(task.TaskId, accepted: true));
+        ex.Message.ShouldContain("not awaiting review");
+    }
+
+    [Fact]
+    public async Task ReviewTaskAsync_UnknownTaskId_Throws()
+    {
+        var (grain, _, _) = CreateGrain();
+        await grain.ActivateAgentAsync(TestWorkspaceId, CreateDefinition());
+
+        var ex = await Should.ThrowAsync<InvalidOperationException>(
+            () => grain.ReviewTaskAsync(AgentTaskId.From("nonexistent"), accepted: true));
+        ex.Message.ShouldContain("not found");
+    }
+
+    [Fact]
+    public async Task ReviewTaskAsync_Accepted_ReturnsToActive_WhenNoRunningTasks()
+    {
+        var (grain, _, _) = CreateGrain();
+        await grain.ActivateAgentAsync(TestWorkspaceId, CreateDefinition());
+        var task = await grain.SubmitTaskAsync("Feature");
+        var proof = new ProofOfWork
+        {
+            Items = [new ProofItem { Type = ProofType.Custom, Label = "Note", Value = "done" }]
+        };
+        await grain.CompleteTaskAsync(task.TaskId, success: true, proof);
+
+        await grain.ReviewTaskAsync(task.TaskId, accepted: true);
+
+        var state = await grain.GetStateAsync();
+        state.Status.ShouldBe(AgentStatus.Active);
     }
 
     [Fact]

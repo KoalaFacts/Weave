@@ -264,7 +264,7 @@ public sealed class AgentGrain(
         return task;
     }
 
-    public async Task CompleteTaskAsync(AgentTaskId taskId, bool success)
+    public async Task CompleteTaskAsync(AgentTaskId taskId, bool success, ProofOfWork proof)
     {
         AgentTaskInfo? task = null;
         foreach (var candidate in persistentState.State.ActiveTasks)
@@ -279,27 +279,34 @@ public sealed class AgentGrain(
         if (task is null)
             throw new InvalidOperationException($"Task {taskId} not found on agent {persistentState.State.AgentName}.");
 
-        task.Status = success ? AgentTaskStatus.Completed : AgentTaskStatus.Failed;
-        task.CompletedAt = DateTimeOffset.UtcNow;
-        persistentState.State.TotalTasksCompleted++;
-
-        var hasRunning = false;
-        foreach (var activeTask in persistentState.State.ActiveTasks)
+        if (!success)
         {
-            if (activeTask.Status is AgentTaskStatus.Running)
+            task.Status = AgentTaskStatus.Failed;
+            task.CompletedAt = DateTimeOffset.UtcNow;
+            task.Proof = proof;
+
+            UpdateAgentBusyStatus();
+            persistentState.State.LastActive = DateTimeOffset.UtcNow;
+            await persistentState.WriteStateAsync();
+
+            await eventBus.PublishAsync(new AgentTaskCompletedEvent
             {
-                hasRunning = true;
-                break;
-            }
+                SourceId = persistentState.State.AgentId,
+                AgentName = persistentState.State.AgentName,
+                WorkspaceId = persistentState.State.WorkspaceId,
+                TaskId = taskId
+            }, CancellationToken.None);
+
+            logger.LogInformation("Task {TaskId} failed on agent {AgentName}", taskId, persistentState.State.AgentName);
+            return;
         }
 
-        if (!hasRunning)
-            persistentState.State.Status = AgentStatus.Active;
-
+        task.Status = AgentTaskStatus.AwaitingReview;
+        task.Proof = proof;
         persistentState.State.LastActive = DateTimeOffset.UtcNow;
         await persistentState.WriteStateAsync();
 
-        await eventBus.PublishAsync(new AgentTaskCompletedEvent
+        await eventBus.PublishAsync(new AgentTaskAwaitingReviewEvent
         {
             SourceId = persistentState.State.AgentId,
             AgentName = persistentState.State.AgentName,
@@ -308,10 +315,74 @@ public sealed class AgentGrain(
         }, CancellationToken.None);
 
         logger.LogInformation(
-            "Task {TaskId} completed on agent {AgentName} (success: {Success})",
+            "Task {TaskId} awaiting review on agent {AgentName} ({ProofCount} proof items)",
             taskId,
             persistentState.State.AgentName,
-            success);
+            proof.Items.Count);
+
+        var verifier = grainFactory.GetGrain<IProofVerifierGrain>(persistentState.State.WorkspaceId.ToString());
+        _ = verifier.VerifyAsync(
+            persistentState.State.WorkspaceId,
+            persistentState.State.AgentName,
+            taskId,
+            proof);
+    }
+
+    public async Task ReviewTaskAsync(AgentTaskId taskId, bool accepted, string? feedback = null, VerificationRecord? verification = null)
+    {
+        AgentTaskInfo? task = null;
+        foreach (var candidate in persistentState.State.ActiveTasks)
+        {
+            if (candidate.TaskId == taskId)
+            {
+                task = candidate;
+                break;
+            }
+        }
+
+        if (task is null)
+            throw new InvalidOperationException($"Task {taskId} not found on agent {persistentState.State.AgentName}.");
+
+        if (task.Status is not AgentTaskStatus.AwaitingReview)
+            throw new InvalidOperationException($"Task {taskId} is not awaiting review (status: {task.Status}).");
+
+        if (task.Proof is not null)
+        {
+            task.Proof.ReviewFeedback = feedback;
+            task.Proof.ReviewedAt = DateTimeOffset.UtcNow;
+            if (verification is not null)
+                task.Proof.Verification = verification;
+        }
+
+        if (accepted)
+        {
+            task.Status = AgentTaskStatus.Accepted;
+            task.CompletedAt = DateTimeOffset.UtcNow;
+            persistentState.State.TotalTasksCompleted++;
+        }
+        else
+        {
+            task.Status = AgentTaskStatus.Rejected;
+        }
+
+        UpdateAgentBusyStatus();
+        persistentState.State.LastActive = DateTimeOffset.UtcNow;
+        await persistentState.WriteStateAsync();
+
+        await eventBus.PublishAsync(new AgentTaskReviewedEvent
+        {
+            SourceId = persistentState.State.AgentId,
+            AgentName = persistentState.State.AgentName,
+            WorkspaceId = persistentState.State.WorkspaceId,
+            TaskId = taskId,
+            Accepted = accepted
+        }, CancellationToken.None);
+
+        logger.LogInformation(
+            "Task {TaskId} reviewed on agent {AgentName} (accepted: {Accepted})",
+            taskId,
+            persistentState.State.AgentName,
+            accepted);
     }
 
     public async Task ConnectToolAsync(string toolName)
@@ -342,6 +413,22 @@ public sealed class AgentGrain(
         }
 
         ApplyIdentity(TryGetPrimaryKeyString(), workspaceId);
+    }
+
+    private void UpdateAgentBusyStatus()
+    {
+        var hasRunning = false;
+        foreach (var activeTask in persistentState.State.ActiveTasks)
+        {
+            if (activeTask.Status is AgentTaskStatus.Running)
+            {
+                hasRunning = true;
+                break;
+            }
+        }
+
+        if (!hasRunning)
+            persistentState.State.Status = AgentStatus.Active;
     }
 
     private void ApplyIdentity(string? key, WorkspaceId workspaceId)

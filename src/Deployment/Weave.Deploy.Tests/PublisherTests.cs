@@ -29,12 +29,13 @@ public sealed class PublisherTests : IDisposable
     public async Task DockerComposePublisher_GeneratesValidYaml()
     {
         var publisher = new DockerComposePublisher();
-        var result = await publisher.PublishAsync(CreateTestManifest(), new PublishOptions { OutputPath = _outputDir });
+        var ct = TestContext.Current.CancellationToken;
+        var result = await publisher.PublishAsync(CreateTestManifest(), new PublishOptions { OutputPath = _outputDir }, ct);
 
         result.Success.ShouldBeTrue();
         result.GeneratedFiles.Count.ShouldBe(1);
 
-        var content = await File.ReadAllTextAsync(result.GeneratedFiles[0]);
+        var content = await File.ReadAllTextAsync(result.GeneratedFiles[0], ct);
         content.ShouldContain("services:");
         content.ShouldContain("weave-silo:");
         content.ShouldContain("redis:");
@@ -45,13 +46,14 @@ public sealed class PublisherTests : IDisposable
     public async Task KubernetesPublisher_GeneratesMultipleFiles()
     {
         var publisher = new KubernetesPublisher();
-        var result = await publisher.PublishAsync(CreateTestManifest(), new PublishOptions { OutputPath = _outputDir });
+        var ct = TestContext.Current.CancellationToken;
+        var result = await publisher.PublishAsync(CreateTestManifest(), new PublishOptions { OutputPath = _outputDir }, ct);
 
         result.Success.ShouldBeTrue();
         result.GeneratedFiles.Count.ShouldBeGreaterThan(2);
 
         var nsFile = result.GeneratedFiles.First(f => f.Contains("namespace"));
-        var nsContent = await File.ReadAllTextAsync(nsFile);
+        var nsContent = await File.ReadAllTextAsync(nsFile, ct);
         nsContent.ShouldContain("weave-test-workspace");
     }
 
@@ -59,10 +61,11 @@ public sealed class PublisherTests : IDisposable
     public async Task NomadPublisher_GeneratesHclFile()
     {
         var publisher = new NomadPublisher();
-        var result = await publisher.PublishAsync(CreateTestManifest(), new PublishOptions { OutputPath = _outputDir });
+        var ct = TestContext.Current.CancellationToken;
+        var result = await publisher.PublishAsync(CreateTestManifest(), new PublishOptions { OutputPath = _outputDir }, ct);
 
         result.Success.ShouldBeTrue();
-        var content = await File.ReadAllTextAsync(result.GeneratedFiles[0]);
+        var content = await File.ReadAllTextAsync(result.GeneratedFiles[0], ct);
         content.ShouldContain("job \"weave-test-workspace\"");
         content.ShouldContain("driver = \"docker\"");
     }
@@ -71,10 +74,11 @@ public sealed class PublisherTests : IDisposable
     public async Task FlyIoPublisher_GeneratesTomlFile()
     {
         var publisher = new FlyIoPublisher();
-        var result = await publisher.PublishAsync(CreateTestManifest(), new PublishOptions { OutputPath = _outputDir });
+        var ct = TestContext.Current.CancellationToken;
+        var result = await publisher.PublishAsync(CreateTestManifest(), new PublishOptions { OutputPath = _outputDir }, ct);
 
         result.Success.ShouldBeTrue();
-        var content = await File.ReadAllTextAsync(result.GeneratedFiles[0]);
+        var content = await File.ReadAllTextAsync(result.GeneratedFiles[0], ct);
         content.ShouldContain("app = \"weave-test-workspace\"");
         content.ShouldContain("primary_region");
     }
@@ -83,10 +87,11 @@ public sealed class PublisherTests : IDisposable
     public async Task GitHubActionsPublisher_GeneratesWorkflowFile()
     {
         var publisher = new GitHubActionsPublisher();
-        var result = await publisher.PublishAsync(CreateTestManifest(), new PublishOptions { OutputPath = _outputDir });
+        var ct = TestContext.Current.CancellationToken;
+        var result = await publisher.PublishAsync(CreateTestManifest(), new PublishOptions { OutputPath = _outputDir }, ct);
 
         result.Success.ShouldBeTrue();
-        var content = await File.ReadAllTextAsync(result.GeneratedFiles[0]);
+        var content = await File.ReadAllTextAsync(result.GeneratedFiles[0], ct);
         content.ShouldContain("runs-on: ubuntu-latest");
         content.ShouldContain("researcher");
     }
@@ -125,10 +130,11 @@ public sealed class PublisherTests : IDisposable
             }
         };
         var publisher = new DockerComposePublisher();
-        var result = await publisher.PublishAsync(manifest, new PublishOptions { OutputPath = _outputDir });
+        var ct = TestContext.Current.CancellationToken;
+        var result = await publisher.PublishAsync(manifest, new PublishOptions { OutputPath = _outputDir }, ct);
 
         result.Success.ShouldBeTrue();
-        var content = await File.ReadAllTextAsync(result.GeneratedFiles[0]);
+        var content = await File.ReadAllTextAsync(result.GeneratedFiles[0], ct);
         content.ShouldContain("services:");
         content.ShouldContain("weave-silo:");
         content.ShouldContain("redis:");
@@ -144,11 +150,12 @@ public sealed class PublisherTests : IDisposable
             OutputPath = _outputDir,
             Registry = "myregistry.azurecr.io"
         };
-        var result = await publisher.PublishAsync(CreateTestManifest(), options);
+        var ct = TestContext.Current.CancellationToken;
+        var result = await publisher.PublishAsync(CreateTestManifest(), options, ct);
 
         result.Success.ShouldBeTrue();
         var siloFile = result.GeneratedFiles.First(f => f.Contains("silo-deployment"));
-        var content = await File.ReadAllTextAsync(siloFile);
+        var content = await File.ReadAllTextAsync(siloFile, ct);
         content.ShouldContain("myregistry.azurecr.io");
     }
 
@@ -168,7 +175,7 @@ public sealed class PublisherTests : IDisposable
     public async Task NomadPublisher_IncludesWorkspaceNameInFileName()
     {
         var publisher = new NomadPublisher();
-        var result = await publisher.PublishAsync(CreateTestManifest(), new PublishOptions { OutputPath = _outputDir });
+        var result = await publisher.PublishAsync(CreateTestManifest(), new PublishOptions { OutputPath = _outputDir }, TestContext.Current.CancellationToken);
 
         result.Success.ShouldBeTrue();
         result.GeneratedFiles[0].ShouldContain("weave-test-workspace.nomad.hcl");
@@ -178,7 +185,7 @@ public sealed class PublisherTests : IDisposable
     public async Task GitHubActionsPublisher_GeneratesInsideGithubWorkflowsDir()
     {
         var publisher = new GitHubActionsPublisher();
-        var result = await publisher.PublishAsync(CreateTestManifest(), new PublishOptions { OutputPath = _outputDir });
+        var result = await publisher.PublishAsync(CreateTestManifest(), new PublishOptions { OutputPath = _outputDir }, TestContext.Current.CancellationToken);
 
         result.Success.ShouldBeTrue();
         result.GeneratedFiles[0].ShouldContain(Path.Combine(".github", "workflows"));
@@ -188,7 +195,7 @@ public sealed class PublisherTests : IDisposable
     public async Task FlyIoPublisher_GeneratesFlyToml()
     {
         var publisher = new FlyIoPublisher();
-        var result = await publisher.PublishAsync(CreateTestManifest(), new PublishOptions { OutputPath = _outputDir });
+        var result = await publisher.PublishAsync(CreateTestManifest(), new PublishOptions { OutputPath = _outputDir }, TestContext.Current.CancellationToken);
 
         result.Success.ShouldBeTrue();
         result.GeneratedFiles[0].ShouldEndWith("fly.toml");

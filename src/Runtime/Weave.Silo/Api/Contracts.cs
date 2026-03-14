@@ -53,6 +53,21 @@ public sealed record SendMessageRequest
 public sealed record CompleteTaskRequest
 {
     public required bool Success { get; init; }
+    public required List<ProofItemRequest> Proof { get; init; }
+}
+
+public sealed record ReviewTaskRequest
+{
+    public required bool Accepted { get; init; }
+    public string? Feedback { get; init; }
+}
+
+public sealed record ProofItemRequest
+{
+    public required string Type { get; init; }
+    public required string Label { get; init; }
+    public required string Value { get; init; }
+    public string? Uri { get; init; }
 }
 
 public sealed record AgentResponse
@@ -88,6 +103,7 @@ public sealed record TaskResponse
     public required string Status { get; init; }
     public DateTimeOffset CreatedAt { get; init; }
     public DateTimeOffset? CompletedAt { get; init; }
+    public ProofOfWorkResponse? Proof { get; init; }
 
     public static TaskResponse FromInfo(AgentTaskInfo info) => new()
     {
@@ -95,7 +111,94 @@ public sealed record TaskResponse
         Description = info.Description,
         Status = info.Status.ToString(),
         CreatedAt = info.CreatedAt,
-        CompletedAt = info.CompletedAt
+        CompletedAt = info.CompletedAt,
+        Proof = info.Proof is not null ? ProofOfWorkResponse.FromProof(info.Proof) : null
+    };
+}
+
+public sealed record ProofOfWorkResponse
+{
+    public List<ProofItemResponse> Items { get; init; } = [];
+    public DateTimeOffset SubmittedAt { get; init; }
+    public string? ReviewFeedback { get; init; }
+    public DateTimeOffset? ReviewedAt { get; init; }
+    public VerificationRecordResponse? Verification { get; init; }
+
+    public static ProofOfWorkResponse FromProof(ProofOfWork proof) => new()
+    {
+        Items = proof.Items.Select(ProofItemResponse.FromItem).ToList(),
+        SubmittedAt = proof.SubmittedAt,
+        ReviewFeedback = proof.ReviewFeedback,
+        ReviewedAt = proof.ReviewedAt,
+        Verification = proof.Verification is not null
+            ? VerificationRecordResponse.FromRecord(proof.Verification)
+            : null
+    };
+}
+
+public sealed record VerificationRecordResponse
+{
+    public List<VerificationVoteResponse> Votes { get; init; } = [];
+    public required int RequiredVotes { get; init; }
+    public required bool ConsensusReached { get; init; }
+    public required bool Accepted { get; init; }
+    public DateTimeOffset CompletedAt { get; init; }
+
+    public static VerificationRecordResponse FromRecord(VerificationRecord record) => new()
+    {
+        Votes = record.Votes.Select(VerificationVoteResponse.FromVote).ToList(),
+        RequiredVotes = record.RequiredVotes,
+        ConsensusReached = record.ConsensusReached,
+        Accepted = record.Accepted,
+        CompletedAt = record.CompletedAt
+    };
+}
+
+public sealed record VerificationVoteResponse
+{
+    public required string ValidatorId { get; init; }
+    public required bool Accepted { get; init; }
+    public required string Reason { get; init; }
+    public DateTimeOffset VotedAt { get; init; }
+    public List<ConditionResultResponse> ConditionResults { get; init; } = [];
+
+    public static VerificationVoteResponse FromVote(VerificationVote vote) => new()
+    {
+        ValidatorId = vote.ValidatorId,
+        Accepted = vote.Accepted,
+        Reason = vote.Reason,
+        VotedAt = vote.VotedAt,
+        ConditionResults = vote.ConditionResults.Select(ConditionResultResponse.FromResult).ToList()
+    };
+}
+
+public sealed record ConditionResultResponse
+{
+    public required string ConditionName { get; init; }
+    public required bool Passed { get; init; }
+    public string? Detail { get; init; }
+
+    public static ConditionResultResponse FromResult(ConditionResult result) => new()
+    {
+        ConditionName = result.ConditionName,
+        Passed = result.Passed,
+        Detail = result.Detail
+    };
+}
+
+public sealed record ProofItemResponse
+{
+    public required string Type { get; init; }
+    public required string Label { get; init; }
+    public required string Value { get; init; }
+    public string? Uri { get; init; }
+
+    public static ProofItemResponse FromItem(ProofItem item) => new()
+    {
+        Type = item.Type.ToString(),
+        Label = item.Label,
+        Value = item.Value,
+        Uri = item.Uri
     };
 }
 

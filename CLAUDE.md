@@ -4,13 +4,13 @@
 
 ```bash
 dotnet build Weave.slnx
-dotnet test Weave.slnx
+dotnet test --solution Weave.slnx
 
-dotnet test src/Workspaces/Weave.Workspaces.Tests
-dotnet test src/Assistants/Weave.Agents.Tests
-dotnet test src/Security/Weave.Security.Tests
-dotnet test src/Tools/Weave.Tools.Tests
-dotnet test src/Deployment/Weave.Deploy.Tests
+dotnet test --project src/Workspaces/Weave.Workspaces.Tests
+dotnet test --project src/Assistants/Weave.Agents.Tests
+dotnet test --project src/Security/Weave.Security.Tests
+dotnet test --project src/Tools/Weave.Tools.Tests
+dotnet test --project src/Deployment/Weave.Deploy.Tests
 ```
 
 Most projects target `net10.0`. `Weave.SourceGen` targets `netstandard2.0`.
@@ -93,7 +93,7 @@ The repo defaults to AOT-friendly settings in `Directory.Build.props`, but sever
 
 Tests use `xunit.v3`, `Shouldly`, and `NSubstitute`.
 
-Global test usings are configured in `Directory.Build.props`, so `Xunit`, `Shouldly`, and `NSubstitute` are already available.
+Global test usings are configured in `Directory.Build.targets`, so `Xunit`, `Shouldly`, and `NSubstitute` are already available.
 
 Preferred test naming:
 

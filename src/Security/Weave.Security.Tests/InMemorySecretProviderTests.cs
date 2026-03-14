@@ -32,7 +32,7 @@ public sealed class InMemorySecretProviderTests
         _provider.SetSecret("api_key", "my-secret");
         var token = MintToken();
 
-        var result = await _provider.ResolveAsync("api_key", token);
+        var result = await _provider.ResolveAsync("api_key", token, TestContext.Current.CancellationToken);
 
         result.DecryptToString().ShouldBe("my-secret");
     }
@@ -44,7 +44,7 @@ public sealed class InMemorySecretProviderTests
         var token = MintToken(lifetime: TimeSpan.FromMilliseconds(-1));
 
         await Should.ThrowAsync<UnauthorizedAccessException>(
-            () => _provider.ResolveAsync("api_key", token));
+            () => _provider.ResolveAsync("api_key", token, TestContext.Current.CancellationToken));
     }
 
     [Fact]
@@ -54,7 +54,7 @@ public sealed class InMemorySecretProviderTests
         var token = MintToken(grants: ["secret:other_key"]);
 
         var ex = await Should.ThrowAsync<UnauthorizedAccessException>(
-            () => _provider.ResolveAsync("api_key", token));
+            () => _provider.ResolveAsync("api_key", token, TestContext.Current.CancellationToken));
         ex.Message.ShouldContain("api_key");
     }
 
@@ -64,7 +64,7 @@ public sealed class InMemorySecretProviderTests
         _provider.SetSecret("api_key", "my-secret");
         var token = MintToken(grants: ["secret:api_key"]);
 
-        var result = await _provider.ResolveAsync("api_key", token);
+        var result = await _provider.ResolveAsync("api_key", token, TestContext.Current.CancellationToken);
 
         result.DecryptToString().ShouldBe("my-secret");
     }
@@ -75,7 +75,7 @@ public sealed class InMemorySecretProviderTests
         var token = MintToken();
 
         await Should.ThrowAsync<KeyNotFoundException>(
-            () => _provider.ResolveAsync("nonexistent", token));
+            () => _provider.ResolveAsync("nonexistent", token, TestContext.Current.CancellationToken));
     }
 
     [Fact]
@@ -85,7 +85,7 @@ public sealed class InMemorySecretProviderTests
         _provider.SetSecret("key", "updated");
         var token = MintToken();
 
-        var result = await _provider.ResolveAsync("key", token);
+        var result = await _provider.ResolveAsync("key", token, TestContext.Current.CancellationToken);
 
         result.DecryptToString().ShouldBe("updated");
     }
@@ -97,7 +97,7 @@ public sealed class InMemorySecretProviderTests
         _provider.SetSecret("key2", "value2");
         _provider.SetSecret("key3", "value3");
 
-        var paths = await _provider.ListPathsAsync("ws-1");
+        var paths = await _provider.ListPathsAsync("ws-1", TestContext.Current.CancellationToken);
 
         paths.Count.ShouldBe(3);
         paths.ShouldContain("key1");
@@ -108,7 +108,7 @@ public sealed class InMemorySecretProviderTests
     [Fact]
     public async Task ListPathsAsync_WithNoSecrets_ReturnsEmpty()
     {
-        var paths = await _provider.ListPathsAsync("ws-1");
+        var paths = await _provider.ListPathsAsync("ws-1", TestContext.Current.CancellationToken);
 
         paths.ShouldBeEmpty();
     }
@@ -121,6 +121,6 @@ public sealed class InMemorySecretProviderTests
         _tokenService.Revoke(token.TokenId);
 
         await Should.ThrowAsync<UnauthorizedAccessException>(
-            () => _provider.ResolveAsync("api_key", token));
+            () => _provider.ResolveAsync("api_key", token, TestContext.Current.CancellationToken));
     }
 }

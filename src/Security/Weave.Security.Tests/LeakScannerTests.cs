@@ -7,7 +7,7 @@ public sealed class LeakScannerTests
 {
     private readonly LeakScanner _scanner = new(Substitute.For<ILogger<LeakScanner>>());
 
-    private static ScanContext TestContext => new()
+    private static ScanContext DefaultScanContext => new()
     {
         WorkspaceId = "test",
         SourceComponent = "test",
@@ -17,7 +17,7 @@ public sealed class LeakScannerTests
     [Fact]
     public async Task ScanStringAsync_WithCleanContent_ReturnsClean()
     {
-        var result = await _scanner.ScanStringAsync("Hello, world!", TestContext);
+        var result = await _scanner.ScanStringAsync("Hello, world!", DefaultScanContext, TestContext.Current.CancellationToken);
 
         result.HasLeaks.ShouldBeFalse();
         result.Findings.ShouldBeEmpty();
@@ -32,7 +32,7 @@ public sealed class LeakScannerTests
     [InlineData("-----BEGIN RSA PRIVATE KEY-----", "private_key_pem")]
     public async Task ScanStringAsync_WithKnownPatterns_DetectsLeak(string content, string expectedPattern)
     {
-        var result = await _scanner.ScanStringAsync(content, TestContext);
+        var result = await _scanner.ScanStringAsync(content, DefaultScanContext, TestContext.Current.CancellationToken);
 
         result.HasLeaks.ShouldBeTrue();
         result.Findings.ShouldContain(f => f.PatternName == expectedPattern);
@@ -42,7 +42,7 @@ public sealed class LeakScannerTests
     public async Task ScanStringAsync_WithJwt_DetectsLeak()
     {
         var jwt = "eyJhbGciOiJIUzI1NiJ9.eyJzdWIiOiIxMjM0NTY3ODkwIn0.abc123def456ghi789";
-        var result = await _scanner.ScanStringAsync(jwt, TestContext);
+        var result = await _scanner.ScanStringAsync(jwt, DefaultScanContext, TestContext.Current.CancellationToken);
 
         result.HasLeaks.ShouldBeTrue();
         result.Findings.ShouldContain(f => f.PatternName == "jwt_token");
@@ -52,7 +52,7 @@ public sealed class LeakScannerTests
     public async Task ScanAsync_WithBytePayload_ScansCorrectly()
     {
         var bytes = System.Text.Encoding.UTF8.GetBytes("AKIAIOSFODNN7EXAMPLE");
-        var result = await _scanner.ScanAsync(bytes, TestContext);
+        var result = await _scanner.ScanAsync(bytes, DefaultScanContext, TestContext.Current.CancellationToken);
 
         result.HasLeaks.ShouldBeTrue();
     }

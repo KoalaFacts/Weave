@@ -80,7 +80,18 @@ public sealed partial class HeartbeatGrain(
                         }
                     });
 
-                    await agentGrain.CompleteTaskAsync(taskInfo.TaskId, success: true);
+                    var proof = new Models.ProofOfWork
+                    {
+                        Items = [new Models.ProofItem
+                        {
+                            Type = Models.ProofType.Custom,
+                            Label = "Heartbeat response",
+                            Value = response.Content.Length > 200
+                                ? response.Content[..200]
+                                : response.Content
+                        }]
+                    };
+                    await agentGrain.CompleteTaskAsync(taskInfo.TaskId, success: true, proof);
 
                     LogHeartbeatTaskCompleted(key, response.Content.Length);
                 }
@@ -92,7 +103,18 @@ public sealed partial class HeartbeatGrain(
                 catch (Exception ex)
                 {
                     if (taskInfo is not null)
-                        await agentGrain.CompleteTaskAsync(taskInfo.TaskId, success: false);
+                    {
+                        var failProof = new Models.ProofOfWork
+                        {
+                            Items = [new Models.ProofItem
+                            {
+                                Type = Models.ProofType.Custom,
+                                Label = "Heartbeat failure",
+                                Value = ex.Message.Length > 200 ? ex.Message[..200] : ex.Message
+                            }]
+                        };
+                        await agentGrain.CompleteTaskAsync(taskInfo.TaskId, success: false, failProof);
+                    }
 
                     LogHeartbeatTaskFailed(ex, key);
                 }

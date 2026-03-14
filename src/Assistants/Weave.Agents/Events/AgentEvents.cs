@@ -34,3 +34,32 @@ public sealed record AgentTaskCompletedEvent : DomainEvent
     [Id(4)] public required WorkspaceId WorkspaceId { get; init; }
     [Id(5)] public required AgentTaskId TaskId { get; init; }
 }
+
+[GenerateSerializer]
+public sealed record AgentTaskAwaitingReviewEvent : DomainEvent
+{
+    [Id(3)] public required string AgentName { get; init; }
+    [Id(4)] public required WorkspaceId WorkspaceId { get; init; }
+    [Id(5)] public required AgentTaskId TaskId { get; init; }
+}
+
+[GenerateSerializer]
+public sealed record AgentTaskReviewedEvent : DomainEvent
+{
+    [Id(3)] public required string AgentName { get; init; }
+    [Id(4)] public required WorkspaceId WorkspaceId { get; init; }
+    [Id(5)] public required AgentTaskId TaskId { get; init; }
+    [Id(6)] public required bool Accepted { get; init; }
+}
+
+[GenerateSerializer]
+public sealed record ProofVerifiedEvent : DomainEvent
+{
+    [Id(3)] public required WorkspaceId WorkspaceId { get; init; }
+    [Id(4)] public required string AgentName { get; init; }
+    [Id(5)] public required AgentTaskId TaskId { get; init; }
+    [Id(6)] public required bool Accepted { get; init; }
+    [Id(7)] public required string Feedback { get; init; }
+    [Id(8)] public required int VoteCount { get; init; }
+    [Id(9)] public required int AcceptCount { get; init; }
+}

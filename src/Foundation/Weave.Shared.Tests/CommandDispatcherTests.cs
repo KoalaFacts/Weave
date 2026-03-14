@@ -20,7 +20,7 @@ public sealed class CommandDispatcherTests
             Task.FromResult(query.Input.Length);
     }
 
-    private static IServiceProvider BuildServiceProvider()
+    private static ServiceProvider BuildServiceProvider()
     {
         var services = new ServiceCollection();
         services.AddScoped<ICommandHandler<TestCommand, string>, TestCommandHandler>();

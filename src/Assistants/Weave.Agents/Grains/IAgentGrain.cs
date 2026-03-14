@@ -11,7 +11,8 @@ public interface IAgentGrain : IGrainWithStringKey
     Task<AgentState> GetStateAsync();
     Task<AgentChatResponse> SendAsync(AgentMessage message);
     Task<AgentTaskInfo> SubmitTaskAsync(string description);
-    Task CompleteTaskAsync(AgentTaskId taskId, bool success);
+    Task CompleteTaskAsync(AgentTaskId taskId, bool success, ProofOfWork proof);
+    Task ReviewTaskAsync(AgentTaskId taskId, bool accepted, string? feedback = null, VerificationRecord? verification = null);
     Task ConnectToolAsync(string toolName);
     Task DisconnectToolAsync(string toolName);
 }

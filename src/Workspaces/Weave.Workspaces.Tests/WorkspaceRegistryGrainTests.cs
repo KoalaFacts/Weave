@@ -26,7 +26,9 @@ public sealed class WorkspaceRegistryGrainTests
 
         var workspaceIds = await grain.GetWorkspaceIdsAsync();
         workspaceIds.ShouldBe(["ws-1"]);
+#pragma warning disable xUnit1051 // NSubstitute verification must match the parameterless overload the grain calls
         await persistentState.Received(1).WriteStateAsync();
+#pragma warning restore xUnit1051
     }
 
     [Fact]
@@ -42,6 +44,8 @@ public sealed class WorkspaceRegistryGrainTests
 
         var workspaceIds = await grain.GetWorkspaceIdsAsync();
         workspaceIds.ShouldBe(["ws-2"]);
+#pragma warning disable xUnit1051 // NSubstitute verification must match the parameterless overload the grain calls
         await persistentState.Received(1).WriteStateAsync();
+#pragma warning restore xUnit1051
     }
 }

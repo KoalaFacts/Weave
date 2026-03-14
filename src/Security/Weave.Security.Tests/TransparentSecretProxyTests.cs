@@ -57,7 +57,7 @@ public sealed class TransparentSecretProxyTests
     [Fact]
     public async Task ScanResponseAsync_WithLeaks_ReturnsFindings()
     {
-        var result = await _proxy.ScanResponseAsync("AKIAIOSFODNN7EXAMPLE", "test-ws");
+        var result = await _proxy.ScanResponseAsync("AKIAIOSFODNN7EXAMPLE", "test-ws", TestContext.Current.CancellationToken);
 
         result.HasLeaks.ShouldBeTrue();
     }
@@ -65,7 +65,7 @@ public sealed class TransparentSecretProxyTests
     [Fact]
     public async Task ScanResponseAsync_WithCleanContent_ReturnsNoFindings()
     {
-        var result = await _proxy.ScanResponseAsync("Hello, world!", "test-ws");
+        var result = await _proxy.ScanResponseAsync("Hello, world!", "test-ws", TestContext.Current.CancellationToken);
 
         result.HasLeaks.ShouldBeFalse();
         result.Findings.ShouldBeEmpty();
@@ -74,7 +74,7 @@ public sealed class TransparentSecretProxyTests
     [Fact]
     public async Task ScanRequestAsync_WithLeaks_ReturnsFindings()
     {
-        var result = await _proxy.ScanRequestAsync("ghp_ABCDEFGHIJKLMNOPQRSTUVWXYZabcdefghij", "test-ws");
+        var result = await _proxy.ScanRequestAsync("ghp_ABCDEFGHIJKLMNOPQRSTUVWXYZabcdefghij", "test-ws", TestContext.Current.CancellationToken);
 
         result.HasLeaks.ShouldBeTrue();
         result.Findings.ShouldContain(f => f.PatternName == "github_token");
@@ -83,7 +83,7 @@ public sealed class TransparentSecretProxyTests
     [Fact]
     public async Task ScanRequestAsync_WithCleanContent_ReturnsNoFindings()
     {
-        var result = await _proxy.ScanRequestAsync("just a normal request body", "test-ws");
+        var result = await _proxy.ScanRequestAsync("just a normal request body", "test-ws", TestContext.Current.CancellationToken);
 
         result.HasLeaks.ShouldBeFalse();
     }

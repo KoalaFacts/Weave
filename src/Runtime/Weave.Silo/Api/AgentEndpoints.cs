@@ -20,6 +20,7 @@ public static class AgentEndpoints
         group.MapPost("/{agentName}/messages", SendMessage);
         group.MapPost("/{agentName}/tasks", SubmitTask);
         group.MapPost("/{agentName}/tasks/{taskId}/complete", CompleteTask);
+        group.MapPost("/{agentName}/tasks/{taskId}/review", ReviewTask);
 
         return group;
     }
@@ -109,9 +110,34 @@ public static class AgentEndpoints
         ICommandDispatcher dispatcher,
         CancellationToken ct)
     {
+        var proof = new ProofOfWork
+        {
+            Items = request.Proof.Select(p => new ProofItem
+            {
+                Type = Enum.Parse<ProofType>(p.Type, ignoreCase: true),
+                Label = p.Label,
+                Value = p.Value,
+                Uri = p.Uri
+            }).ToList()
+        };
+
         var command = new CompleteAgentTaskCommand(
-            WorkspaceId.From(workspaceId), agentName, AgentTaskId.From(taskId), request.Success);
+            WorkspaceId.From(workspaceId), agentName, AgentTaskId.From(taskId), request.Success, proof);
         var info = await dispatcher.DispatchAsync<CompleteAgentTaskCommand, AgentTaskInfo>(command, ct);
+        return Results.Ok(TaskResponse.FromInfo(info));
+    }
+
+    private static async Task<IResult> ReviewTask(
+        string workspaceId,
+        string agentName,
+        string taskId,
+        ReviewTaskRequest request,
+        ICommandDispatcher dispatcher,
+        CancellationToken ct)
+    {
+        var command = new ReviewAgentTaskCommand(
+            WorkspaceId.From(workspaceId), agentName, AgentTaskId.From(taskId), request.Accepted, request.Feedback);
+        var info = await dispatcher.DispatchAsync<ReviewAgentTaskCommand, AgentTaskInfo>(command, ct);
         return Results.Ok(TaskResponse.FromInfo(info));
     }
 }
