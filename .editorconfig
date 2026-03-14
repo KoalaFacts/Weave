@@ -208,3 +208,8 @@ dotnet_diagnostic.CA1716.severity = suggestion
 
 # CA1873: Logging performance (suggestion only)
 dotnet_diagnostic.CA1873.severity = suggestion
+
+# Test project overrides (*.Tests folders)
+[src/**.Tests/**.cs]
+dotnet_naming_rule.async_methods_should_end_with_async.severity = none
+dotnet_diagnostic.CA1707.severity = none

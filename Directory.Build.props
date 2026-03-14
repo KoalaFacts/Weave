@@ -19,4 +19,19 @@
     <IsTrimmable>false</IsTrimmable>
   </PropertyGroup>
 
+  <!-- Test project defaults (previously tests/Directory.Build.props) -->
+  <PropertyGroup Condition="'$(IsTestProject)' == 'true'">
+    <IsAotExcluded>true</IsAotExcluded>
+    <IsAotCompatible>false</IsAotCompatible>
+    <IsTrimmable>false</IsTrimmable>
+    <OutputType>Exe</OutputType>
+    <TestingPlatformDotnetTestSupport>true</TestingPlatformDotnetTestSupport>
+  </PropertyGroup>
+
+  <ItemGroup Condition="'$(IsTestProject)' == 'true'" Label="Global test usings">
+    <Using Include="Xunit" />
+    <Using Include="NSubstitute" />
+    <Using Include="Shouldly" />
+  </ItemGroup>
+
 </Project>

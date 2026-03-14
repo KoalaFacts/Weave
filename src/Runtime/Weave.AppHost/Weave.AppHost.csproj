@@ -1,0 +1,21 @@
+<Project Sdk="Microsoft.NET.Sdk">
+
+  <PropertyGroup>
+    <OutputType>Exe</OutputType>
+    <IsAotExcluded>true</IsAotExcluded>
+    <NuGetAuditMode>direct</NuGetAuditMode>
+  </PropertyGroup>
+
+  <ItemGroup>
+    <PackageReference Include="Aspire.Hosting.AppHost" />
+    <PackageReference Include="Aspire.Hosting.Orleans" />
+    <PackageReference Include="Aspire.Hosting.Redis" />
+    <PackageReference Include="CommunityToolkit.Aspire.Hosting.Dapr" />
+  </ItemGroup>
+
+  <ItemGroup>
+    <ProjectReference Include="..\Weave.Silo\Weave.Silo.csproj" IsAspireProjectResource="true" />
+    <ProjectReference Include="..\..\UX\Weave.Dashboard\Weave.Dashboard.csproj" IsAspireProjectResource="true" />
+  </ItemGroup>
+
+</Project>

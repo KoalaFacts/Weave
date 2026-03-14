@@ -1,0 +1,12 @@
+{
+  "profiles": {
+    "Weave.Dashboard": {
+      "commandName": "Project",
+      "launchBrowser": true,
+      "environmentVariables": {
+        "ASPNETCORE_ENVIRONMENT": "Development"
+      },
+      "applicationUrl": "https://localhost:9402;http://localhost:9403"
+    }
+  }
+}

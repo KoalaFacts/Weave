@@ -1,0 +1,25 @@
+<Project Sdk="Microsoft.NET.Sdk.Web">
+
+  <PropertyGroup>
+    <IsAotExcluded>true</IsAotExcluded>
+    <IsTrimmable>false</IsTrimmable>
+    <SuppressTrimAnalysisWarnings>true</SuppressTrimAnalysisWarnings>
+  </PropertyGroup>
+
+  <ItemGroup>
+    <ProjectReference Include="..\..\Runtime\Weave.ServiceDefaults\Weave.ServiceDefaults.csproj" />
+    <ProjectReference Include="..\..\Foundation\Weave.Shared\Weave.Shared.csproj" />
+    <ProjectReference Include="..\..\Workspaces\Weave.Workspaces\Weave.Workspaces.csproj" />
+    <ProjectReference Include="..\..\Assistants\Weave.Agents\Weave.Agents.csproj" />
+    <ProjectReference Include="..\..\Security\Weave.Security\Weave.Security.csproj" />
+    <ProjectReference Include="..\..\Tools\Weave.Tools\Weave.Tools.csproj" />
+    <ProjectReference Include="..\..\Deployment\Weave.Deploy\Weave.Deploy.csproj" />
+  </ItemGroup>
+
+  <ItemGroup>
+    <PackageReference Include="Microsoft.Orleans.Client" />
+    <PackageReference Include="Microsoft.FluentUI.AspNetCore.Components" />
+    <PackageReference Include="Microsoft.FluentUI.AspNetCore.Components.Icons" />
+  </ItemGroup>
+
+</Project>

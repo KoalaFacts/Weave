@@ -1,187 +1,152 @@
 # Weave
 
-Weave is a .NET 10 workspace orchestration prototype for AI agents. It combines Orleans grains, a manifest-driven workspace model, a CLI, an HTTP API, and a Blazor dashboard so a single `workspace.yml` can describe agents, tools, hooks, secrets, and deployment targets.
+Weave lets you set up AI assistants that can use tools on your behalf — with guardrails you control. Define what an assistant can do, which tools it can access, and how your data stays protected. Then run it all locally with one command.
 
-## Current Scope
+## Why Weave
 
-The repository currently includes:
+- **Get started in minutes** — install, pick a preset, and you have a working setup.
+- **You stay in control** — decide exactly which tools your assistants can use and what they are allowed to do.
+- **Your data stays yours** — secrets and sensitive information are handled with privacy and security first.
+- **See what is happening** — a live dashboard shows what your assistants are working on at any time.
+- **Reuse what you build** — save your setup once and reuse or share it without starting over.
+- **Grow at your own pace** — everything works locally out of the box. Add more capabilities only when you need them.
 
-- manifest parsing and validation in `Weave.Workspaces`
-- workspace startup and teardown through an Orleans-backed API in `Weave.Silo`
-- a local Podman runtime for workspace networking and MCP-style tool containers
-- agent lifecycle, chat, task, heartbeat, and tool-registry grains in `Weave.Agents`
-- tool connectors for MCP, CLI, OpenAPI, and optional Dapr wiring in `Weave.Tools`
-- security primitives for capability tokens, leak scanning, and secret substitution in `Weave.Security`
-- deployment manifest generation for `docker-compose`, `kubernetes`, `nomad`, `fly-io`, and `github-actions`
+## What People Use It For
+
+- **Automate tasks safely** — let an assistant run approved tools (like checking code, searching files, or calling services) without giving it free access to everything.
+- **Keep things private** — passwords, keys, and sensitive settings stay protected and never leak into places they should not be.
+- **Work solo or with a team** — use the same setup whether you are experimenting on your own or sharing it across a group.
+- **See everything in one place** — a dashboard shows you what assistants are doing, what tasks are running, and what has finished.
+- **Try things without risk** — save any setup as a reusable template so you can rerun it or hand it to someone else without redoing the work.
 
 ## Quick Start
 
+Weave runs on Windows, macOS, and Linux. One command to install, one command to start.
+
+**Install** — pick the one that matches your system:
+
+| Platform | Command |
+|----------|--------|
+| **Windows** | `irm https://raw.githubusercontent.com/KoalaFacts/Weave/main/scripts/install.ps1 \| iex` |
+| **macOS / Linux** | `curl -fsSL https://raw.githubusercontent.com/KoalaFacts/Weave/main/scripts/install.sh \| sh` |
+| **.NET** | `dotnet tool install --global Weave.Cli` |
+
+Or download directly from [GitHub Releases](https://github.com/KoalaFacts/Weave/releases).
+
+**Create and run your first workspace:**
+
 ```bash
-# Build and test
-dotnet build Weave.slnx
-dotnet test Weave.slnx
-
-# Start the local stack (Redis + Orleans silo + dashboard)
-dotnet run --project src/Weave.AppHost
-
-# Create a workspace scaffold
-dotnet run --project src/Weave.Cli -- workspace new demo
-
-# Validate the manifest
-dotnet run --project src/Weave.Cli -- config validate --workspace demo
-
-# Start the workspace through the Silo API
-dotnet run --project src/Weave.Cli -- up --workspace demo
-
-# Inspect live state
-dotnet run --project src/Weave.Cli -- status --workspace demo
-
-# Generate deployment manifests
-dotnet run --project src/Weave.Cli -- publish kubernetes --workspace demo
-
-# Stop the workspace
-dotnet run --project src/Weave.Cli -- down --workspace demo
+weave workspace new demo
+weave workspace up demo
 ```
 
-The CLI talks to `Weave.Silo` over HTTP. By default it uses `http://localhost:52036`; override with `WEAVE_API_URL` if needed.
+That is it. Everything runs locally on your machine by default — no extra services, no complicated setup. When you are ready for more, you can add advanced capabilities at your own pace.
 
-## Architecture
+## Configuring a Workspace
 
-```
-          ┌───────────────────────┐
-          │    Weave.AppHost      │
-          │ Aspire local topology │
-          └───────────┬───────────┘
-                      │
-        ┌─────────────┴─────────────┐
-        │                           │
-┌───────▼────────┐         ┌────────▼────────┐
-│   Weave.Silo   │         │ Weave.Dashboard │
-│ Orleans + API  │         │ Blazor UI       │
-└───┬─────────┬──┘         └─────────────────┘
-    │         │
-    │         └──────────────────────────────┐
-    │                                        │
-┌───▼────────────┐  ┌────────────────┐  ┌────▼────────────┐
-│Weave.Workspaces│  │ Weave.Agents   │  │ Weave.Tools     │
-│manifest/runtime│  │ grains/pipeline│  │ connectors/grains│
-└───┬────────────┘  └──────┬─────────┘  └────┬────────────┘
-    │                      │                 │
-    └──────────────┬───────┴────────────┬────┘
-                   │                    │
-             ┌─────▼─────┐        ┌────▼─────┐
-             │Weave.Shared│        │Weave.Security│
-             │IDs/CQRS/etc│        │tokens/scanning│
-             └────────────┘        └──────────────┘
+The fastest way to configure a workspace is through the CLI. Answer a few prompts or pick a preset and you are done.
+
+### Start from a preset
+
+```bash
+# See available presets
+weave workspace presets
+
+# Create a workspace from a preset
+weave workspace new demo --preset coding-assistant
 ```
 
-## Project Structure
+Built-in presets get you running in seconds:
 
-```
-src/
-  Weave.Shared/            Shared kernel: branded IDs, CQRS, events, lifecycle
-  Weave.ServiceDefaults/   Aspire defaults and observability setup
-  Weave.Workspaces/        Manifest model, parser, runtime abstraction, workspace grains
-  Weave.Agents/            Agent grains, supervisor, heartbeat, chat pipeline
-  Weave.Security/          Capability tokens, leak scanner, secret proxy, secret providers
-  Weave.Tools/             Tool connectors, discovery, tool grains
-  Weave.Deploy/            Deployment manifest publishers
-  Weave.Dashboard/         Blazor Server dashboard
-  Weave.Cli/               Spectre.Console CLI for local workspace operations
-  Weave.Silo/              Orleans host and HTTP endpoints
-  Weave.AppHost/           Aspire app host for local orchestration
-  Weave.SourceGen/         `netstandard2.0` source generator for branded IDs
+| Preset | What you get |
+|--------|-------------|
+| **starter** | One assistant, no tools — the simplest possible workspace. |
+| **coding-assistant** | An assistant with git and file tools, ready for code tasks. |
+| **research** | An assistant with web and document tools for gathering information. |
+| **multi-agent** | A supervisor and worker assistants for more complex workflows. |
 
-tests/
-  Weave.Workspaces.Tests/
-  Weave.Agents.Tests/
-  Weave.Security.Tests/
-  Weave.Tools.Tests/
-  Weave.Deploy.Tests/
+### Build interactively
+
+No flags to memorize. The CLI gives you a rich interactive terminal where you select options, pick from lists, and confirm as you go:
+
+```bash
+weave workspace new demo
 ```
 
-## Workspace Manifest Example
-
-```yaml
-version: "1.0"
-name: demo
-
-workspace:
-  isolation: full
-  network:
-    name: weave-demo
-  secrets:
-    provider: env
-
-agents:
-  assistant:
-    model: claude-sonnet-4-20250514
-    system_prompt_file: ./prompts/assistant.md
-    max_concurrent_tasks: 3
-    tools: [git]
-    capabilities: [tool:*]
-    heartbeat:
-      cron: "0 * * * *"
-      tasks:
-        - Review repository status
-
-tools:
-  git:
-    type: cli
-    cli:
-      shell: /bin/bash
-      allowed_commands:
-        - git status
-        - git diff --stat
-
-targets:
-  local:
-    runtime: podman
-  ci:
-    runtime: github-actions
-    trigger: pull_request
 ```
+? Choose a preset:
+  ❯ starter
+    coding-assistant
+    research
+    multi-agent
+    custom (configure everything yourself)
+
+? Select a model for your assistant:
+  ❯ claude-sonnet-4-20250514
+    gpt-4o
+    custom...
+
+? Which tools should the assistant have access to?
+  ❯ ◉ git
+    ◉ file
+    ◯ web
+    ◯ custom...
+
+? What should the assistant be allowed to do?
+  ❯ ◉ use all available tools
+    ◯ read-only access
+    ◯ custom...
+
+✔ Workspace "demo" created. Run `weave workspace up demo` to start.
+```
+
+You can also add or change things individually at any time:
+
+```bash
+weave workspace add agent demo --name reviewer
+weave workspace add tool demo --name web
+weave workspace add target demo --name production
+weave workspace show demo
+weave workspace validate demo
+```
+
+Every command updates the workspace configuration for you. No manual file editing required.
+
+### What you can configure
+
+| Section | What it controls |
+|---------|------------------|
+| **workspace** | Privacy, security boundaries, and how secrets are managed. |
+| **agents** | Which AI model to use, what it can do, and any recurring tasks. |
+| **tools** | Which tools (commands, services, APIs) the assistant can call. |
+| **hooks** | Actions that run automatically at key moments (e.g. on start, on finish). |
+| **targets** | Where the workspace runs — your machine, a server, or a CI pipeline. |
+
+For advanced scenarios you can also edit the configuration file by hand. See the [Manifest Reference](docs/manifest-reference.md) for details.
 
 ## CLI Commands
 
+The CLI is designed for a rich terminal experience — clear output, interactive prompts, and no guesswork.
+
 ```text
-weave workspace new <name>     Create a workspace scaffold under `workspaces/<name>`
-weave workspace list           List workspace folders
-weave workspace remove <name>  Remove a workspace registration (`--purge` deletes files)
+weave workspace new <name>          Create a new workspace
+weave workspace list                List your workspaces
+weave workspace remove <name>       Remove a workspace
 
-weave up --workspace <name>    Start a workspace through the Silo API
-weave down --workspace <name>  Stop a running workspace
-weave status                   Show manifest data or live workspace state
+weave workspace up <name>           Start a workspace
+weave workspace down <name>         Stop a workspace
+weave workspace status <name>       See what is happening in a workspace
 
-weave publish <target>         Generate deployment manifests
-weave config show              Print `workspace.yml`
-weave config validate          Parse and validate `workspace.yml`
+weave workspace add agent <name>    Add an assistant
+weave workspace add tool <name>     Add a tool
+weave workspace add target <name>   Add a place to run the workspace
+
+weave workspace show <name>         Show the current configuration
+weave workspace validate <name>     Check that everything is set up correctly
+weave workspace publish <name>      Generate files for deploying elsewhere
+weave workspace presets             Browse ready-made workspace templates
 ```
-
-## Notes on Runtime Behavior
-
-- `Weave.AppHost` is the easiest local entry point for development.
-- `Weave.Silo` registers MCP, CLI, and OpenAPI connectors by default.
-- Dapr support is enabled when `DAPR_HTTP_PORT` is present.
-- The current `IWorkspaceRuntime` implementation is `PodmanRuntime`.
-- Deployment publishers generate manifests; they do not deploy infrastructure directly.
-
-## Tech Stack
-
-| Component | Technology |
-|-----------|------------|
-| Runtime | .NET 10 |
-| Source generator target | .NET Standard 2.0 |
-| Actor framework | Microsoft Orleans 10.0.1 |
-| App orchestration | .NET Aspire 13.1.2 |
-| LLM abstraction | Microsoft.Extensions.AI 10.4.0 |
-| Dapr integration | Dapr .NET SDK 1.17.3 |
-| CLI | Spectre.Console 0.54.0 / Spectre.Console.Cli 0.53.1 |
-| Dashboard | Blazor Server + Fluent UI 4.14.0 |
-| Manifest parsing | YamlDotNet 16.3.0 |
-| Secret provider integration | VaultSharp 1.17.5.1 |
-| Testing | xUnit v3 + Shouldly + NSubstitute |
 
 ## License
 
-See `LICENSE`.
+MIT or Apache 2.0.

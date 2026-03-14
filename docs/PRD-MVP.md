@@ -2,7 +2,7 @@
 
 ## Product Summary
 
-Weave is a manifest-driven AI workspace orchestrator for .NET. The MVP should let a developer define a workspace in `workspace.yml`, start it through a hosted control plane, inspect workspace and agent state, and generate deployment artifacts from the same source definition.
+Weave is a manifest-driven AI workspace orchestrator for .NET. The MVP should let a developer create a workspace from a preset or interactive prompts, start it through a hosted control plane, inspect workspace and agent state, and generate deployment artifacts — all through a consistent `weave workspace` CLI surface.
 
 ## Problem Statement
 
@@ -26,17 +26,18 @@ The MVP should make an agent workspace portable, inspectable, and safer by cente
 
 ## Jobs To Be Done
 
-- define a workspace once in a manifest
+- create a workspace from a preset or interactive prompts without editing YAML by hand
 - start and stop that workspace locally through a consistent control plane
 - activate agents and tools from the manifest
 - inspect workspace, agent, and tool state
+- incrementally add agents, tools, and targets to an existing workspace
 - generate deployment manifests for downstream environments
 
 ## MVP Goals
 
 ### Goal 1
 
-A user can create and validate a workspace manifest from the CLI.
+A user can create and validate a workspace from the CLI using presets or interactive prompts.
 
 ### Goal 2
 
@@ -54,6 +55,10 @@ The platform enforces basic security controls around tool access and secret leak
 
 The same workspace definition can generate deployment artifacts for common targets without changing the source manifest.
 
+### Goal 6
+
+The CLI follows a single consistent command pattern: `weave workspace <action> <name>`.
+
 ## MVP Non-Goals
 
 The MVP does not need to include:
@@ -67,17 +72,60 @@ The MVP does not need to include:
 
 ## Core User Experience
 
+### CLI command pattern
+
+All workspace commands follow the pattern `weave workspace <action> <name>`:
+
+```text
+weave workspace new <name>          Create a new workspace
+weave workspace list                List your workspaces
+weave workspace remove <name>       Remove a workspace
+
+weave workspace up <name>           Start a workspace
+weave workspace down <name>         Stop a workspace
+weave workspace status <name>       See what is happening in a workspace
+
+weave workspace add agent <name>    Add an assistant
+weave workspace add tool <name>     Add a tool
+weave workspace add target <name>   Add a deployment target
+
+weave workspace show <name>         Show the current configuration
+weave workspace validate <name>     Check that everything is set up correctly
+weave workspace publish <name>      Generate files for deploying elsewhere
+weave workspace presets             Browse ready-made workspace templates
+```
+
+### Presets
+
+Built-in presets let a user skip interactive prompts entirely:
+
+| Preset | What you get |
+|--------|-------------|
+| **starter** | One assistant, no tools — the simplest possible workspace. |
+| **coding-assistant** | An assistant with git and file tools, ready for code tasks. |
+| **research** | An assistant with web and document tools for gathering information. |
+| **multi-agent** | A supervisor and worker assistants for more complex workflows. |
+
 ### Happy path
 
-1. user starts `Weave.AppHost`
-2. user runs `weave workspace new demo`
-3. user edits `workspaces/demo/workspace.yml`
-4. user runs `weave config validate --workspace demo`
-5. user runs `weave up --workspace demo`
-6. `Weave.Silo` provisions the workspace, activates agents, and connects tools
-7. user runs `weave status --workspace demo` or opens the dashboard
-8. user runs `weave publish kubernetes --workspace demo`
-9. user runs `weave down --workspace demo`
+1. user installs the CLI
+2. user runs `weave workspace new demo` and selects a preset (or answers interactive prompts)
+3. user runs `weave workspace up demo`
+4. `Weave.Silo` provisions the workspace, activates agents, and connects tools
+5. user runs `weave workspace status demo` or opens the dashboard
+6. user runs `weave workspace publish demo` to generate deployment artifacts
+7. user runs `weave workspace down demo`
+
+### Incremental configuration path
+
+After workspace creation, users can add components individually:
+
+1. user runs `weave workspace add agent demo --name reviewer`
+2. user runs `weave workspace add tool demo --name web`
+3. user runs `weave workspace add target demo --name production`
+4. user runs `weave workspace validate demo`
+
+Manual YAML editing is an advanced scenario — the CLI should handle all common configuration.
 
 ## Functional Requirements
 
@@ -87,12 +135,24 @@ The MVP does not need to include:
 - support workspace, agent, tool, target, and hook sections already modeled in `Weave.Workspaces`
 - validate required fields and basic cross-references such as agent tool references
 
+### Workspace creation
+
+- provide built-in presets (`starter`, `coding-assistant`, `research`, `multi-agent`)
+- support `--preset` flag to skip interactive prompts
+- when no preset is specified, present interactive prompts for preset selection, model choice, tool selection, and permission configuration
+- generate the `workspace.yml` and supporting files without manual editing
+
 ### Workspace lifecycle
 
 - expose HTTP endpoints to start, stop, and query workspace state
 - persist workspace state through Orleans grains
 - provision local runtime resources through the current `PodmanRuntime`
 - record workspace identifiers locally for CLI follow-up commands
+
+### Workspace mutation
+
+- support `add agent`, `add tool`, and `add target` subcommands to modify an existing workspace
+- update the workspace manifest file in place when adding components
 
 ### Agent lifecycle
 
@@ -137,14 +197,15 @@ The MVP does not need to include:
 
 ### Adoption metrics
 
-- a new developer can create, validate, and start a sample workspace in under 15 minutes
-- the CLI happy path completes without manual API calls
+- a new developer can create, validate, and start a sample workspace in under five minutes using a preset
+- the CLI happy path completes without manual YAML editing or API calls
 
 ### Product metrics
 
 - workspace start and stop succeed for the default sample flow on a clean local setup
 - generated deployment artifacts are produced for all currently supported targets
 - agent and tool status are queryable after startup
+- all presets produce valid workspaces that pass `weave workspace validate`
 
 ### Quality metrics
 
@@ -163,17 +224,18 @@ The MVP does not need to include:
 
 - should the MVP officially require Podman, or should Docker also be a supported local runtime target
 - what sample provider configuration is expected for `IChatClient` in a first-run experience
-- should agent chat and task submission get first-class CLI commands during the MVP
 - which dashboard pages are required for MVP completion versus post-MVP polish
 
 ## Recommended MVP Cut
 
 The MVP should prioritize the hosted, workspace-centric path already reflected in the codebase:
 
-- manifest creation and validation
+- workspace creation from presets and interactive prompts
+- manifest validation
 - workspace start and stop via `Weave.Silo`
 - agent activation and state inspection
 - tool registration and guarded invocation
+- incremental workspace mutation via `add` subcommands
 - deployment manifest generation
 - basic dashboard visibility
 
