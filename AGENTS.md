@@ -158,7 +158,7 @@ Implemented connector categories in the repo:
 - MCP
 - CLI
 - OpenAPI
-- Dapr (via `Weave.Plugin.Dapr`, loaded when the Dapr sidecar is detected)
+- Dapr (HTTP-based adapter in `Weave.Silo`, activated when `DAPR_HTTP_PORT` env var is detected)
 
 `ToolGrain` currently performs:
 
