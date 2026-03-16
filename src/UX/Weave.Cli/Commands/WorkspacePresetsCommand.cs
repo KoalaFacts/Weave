@@ -1,32 +1,38 @@
+using System.CommandLine;
 using Spectre.Console;
-using Spectre.Console.Cli;
 
 namespace Weave.Cli.Commands;
 
-public sealed class WorkspacePresetsCommand : Command<WorkspacePresetsCommand.Settings>
+internal static class WorkspacePresetsCommand
 {
-    public sealed class Settings : CommandSettings { }
-
-    public override int Execute(CommandContext context, Settings settings, CancellationToken cancellationToken)
+    public static Command Create()
     {
-        var table = new Table().Border(TableBorder.Rounded);
-        table.AddColumn("Preset");
-        table.AddColumn("Description");
-        table.AddColumn("Model");
-        table.AddColumn("Tools");
-
-        foreach (var (name, preset) in WorkspacePresets.All)
+        var cmd = new Command("presets", "Browse ready-made workspace templates");
+        cmd.SetAction(parseResult =>
         {
-            table.AddRow(
-                $"[bold]{name}[/]",
-                preset.Description,
-                preset.Model,
-                preset.Tools.Count > 0 ? string.Join(", ", preset.Tools) : "[dim]none[/]");
-        }
+            var table = CliTheme.CreateTable("Presets");
+            table.AddColumn(CliTheme.StyledColumn("Preset"));
+            table.AddColumn(CliTheme.StyledColumn("Description"));
+            table.AddColumn(CliTheme.StyledColumn("Model"));
+            table.AddColumn(CliTheme.StyledColumn("Tools"));
 
-        AnsiConsole.Write(table);
-        AnsiConsole.WriteLine();
-        AnsiConsole.MarkupLine("Use [bold]weave workspace new <name> --preset <preset>[/] to create a workspace from a preset.");
-        return 0;
+            foreach (var (name, preset) in WorkspacePresets.All)
+            {
+                table.AddRow(
+                    $"[bold]{name}[/]",
+                    preset.Description,
+                    preset.Model,
+                    preset.Tools.Count > 0
+                        ? string.Join(", ", preset.Tools)
+                        : $"[rgb({CliTheme.Muted.R},{CliTheme.Muted.G},{CliTheme.Muted.B})]none[/]");
+            }
+
+            AnsiConsole.Write(table);
+            AnsiConsole.WriteLine();
+            CliTheme.WriteMuted("Use weave workspace new <name> --preset <preset> to create a workspace from a preset.");
+            return 0;
+        });
+
+        return cmd;
     }
 }

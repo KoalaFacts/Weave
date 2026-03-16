@@ -1,77 +1,80 @@
-using System.ComponentModel;
+using System.CommandLine;
 using Spectre.Console;
-using Spectre.Console.Cli;
 using Weave.Deploy;
 using Weave.Deploy.Translators;
 using Weave.Workspaces.Manifest;
 
 namespace Weave.Cli.Commands;
 
-public sealed class WorkspacePublishCommand : AsyncCommand<WorkspacePublishCommand.Settings>
+internal static class WorkspacePublishCommand
 {
-    public sealed class Settings : CommandSettings
+    public static Command Create()
     {
-        [CommandArgument(0, "<name>")]
-        [Description("Workspace name")]
-        public string Name { get; init; } = string.Empty;
-
-        [CommandOption("--target <TARGET>")]
-        [Description("Deployment target (docker-compose, kubernetes, nomad, fly-io, github-actions)")]
-        public string? Target { get; init; }
-
-        [CommandOption("--output <PATH>")]
-        [Description("Output directory")]
-        [DefaultValue("./output")]
-        public string Output { get; init; } = "./output";
-    }
-
-    public override async Task<int> ExecuteAsync(CommandContext context, Settings settings, CancellationToken cancellationToken)
-    {
-        var manifestPath = ManifestResolver.Resolve(settings.Name);
-        if (manifestPath is null)
+        var nameArg = new Argument<string>("name") { Description = "Workspace name" };
+        nameArg.CompletionSources.Add(CliCompletions.CompleteWorkspaceNames);
+        var targetOption = new Option<string?>("--target") { Description = "Deployment target (docker-compose, kubernetes, nomad, fly-io, github-actions)" };
+        targetOption.CompletionSources.Add(CliCompletions.CompleteDeployTargets);
+        var outputOption = new Option<string>("--output")
         {
-            AnsiConsole.MarkupLine($"[red]No workspace.yml found for '{settings.Name}'.[/]");
-            return 1;
-        }
-
-        var target = settings.Target;
-        if (string.IsNullOrWhiteSpace(target))
-        {
-            target = AnsiConsole.Prompt(
-                new SelectionPrompt<string>()
-                    .Title("Select a deployment target:")
-                    .AddChoices("docker-compose", "kubernetes", "nomad", "fly-io", "github-actions"));
-        }
-
-        var yaml = await File.ReadAllTextAsync(manifestPath, cancellationToken);
-        var parser = new ManifestParser();
-        var manifest = parser.Parse(yaml);
-
-        IPublisher publisher = target switch
-        {
-            "docker-compose" => new DockerComposePublisher(),
-            "kubernetes" or "k8s" => new KubernetesPublisher(),
-            "nomad" => new NomadPublisher(),
-            "fly-io" or "fly" => new FlyIoPublisher(),
-            "github-actions" or "gh-actions" => new GitHubActionsPublisher(),
-            _ => throw new ArgumentException($"Unknown target: {target}")
+            Description = "Output directory",
+            DefaultValueFactory = _ => "./output"
         };
 
-        var options = new PublishOptions { OutputPath = settings.Output };
-        var result = await publisher.PublishAsync(manifest, options, cancellationToken);
-
-        if (result.Success)
+        var cmd = new Command("publish", "Generate deployment manifests") { nameArg, targetOption, outputOption };
+        cmd.SetAction(async (parseResult, cancellationToken) =>
         {
-            AnsiConsole.MarkupLine($"[green]Published to {result.TargetName}:[/]");
-            foreach (var file in result.GeneratedFiles)
-                AnsiConsole.MarkupLine($"  {file}");
-        }
-        else
-        {
-            AnsiConsole.MarkupLine($"[red]Publish failed: {result.Error}[/]");
-            return 1;
-        }
+            var name = parseResult.GetValue(nameArg)!;
+            var target = parseResult.GetValue(targetOption);
+            var output = parseResult.GetValue(outputOption)!;
 
-        return 0;
+            var manifestPath = ManifestResolver.Resolve(name);
+            if (manifestPath is null)
+            {
+                CliTheme.WriteError($"No workspace.json found for '{name}'.");
+                return 1;
+            }
+
+            if (string.IsNullOrWhiteSpace(target))
+            {
+                target = AnsiConsole.Prompt(
+                    new SelectionPrompt<string>()
+                        .Title("Select a deployment target:")
+                        .Styled()
+                        .AddChoices("docker-compose", "kubernetes", "nomad", "fly-io", "github-actions"));
+            }
+
+            var yaml = await File.ReadAllTextAsync(manifestPath, cancellationToken);
+            var parser = new ManifestParser();
+            var manifest = parser.Parse(yaml);
+
+            IPublisher publisher = target switch
+            {
+                "docker-compose" => new DockerComposePublisher(),
+                "kubernetes" or "k8s" => new KubernetesPublisher(),
+                "nomad" => new NomadPublisher(),
+                "fly-io" or "fly" => new FlyIoPublisher(),
+                "github-actions" or "gh-actions" => new GitHubActionsPublisher(),
+                _ => throw new ArgumentException($"Unknown target: {target}")
+            };
+
+            var options = new PublishOptions { OutputPath = output };
+            var result = await publisher.PublishAsync(manifest, options, cancellationToken);
+
+            if (result.Success)
+            {
+                CliTheme.WriteSuccess($"Published to {result.TargetName}:");
+                foreach (var file in result.GeneratedFiles)
+                    CliTheme.WriteMuted($"  {file}");
+            }
+            else
+            {
+                CliTheme.WriteError($"Publish failed: {result.Error}");
+                return 1;
+            }
+
+            return 0;
+        });
+
+        return cmd;
     }
 }

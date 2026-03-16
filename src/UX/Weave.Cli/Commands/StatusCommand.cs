@@ -1,132 +1,135 @@
-using System.ComponentModel;
+using System.CommandLine;
 using System.Globalization;
 using Spectre.Console;
-using Spectre.Console.Cli;
 using Weave.Workspaces.Manifest;
 
 namespace Weave.Cli.Commands;
 
-public sealed class WorkspaceStatusCommand : AsyncCommand<WorkspaceStatusCommand.Settings>
+internal static class WorkspaceStatusCommand
 {
-    public sealed class Settings : CommandSettings
+    public static Command Create()
     {
-        [CommandArgument(0, "<name>")]
-        [Description("Workspace name")]
-        public string Name { get; init; } = string.Empty;
-    }
+        var nameArg = new Argument<string>("name") { Description = "Workspace name" };
+        nameArg.CompletionSources.Add(CliCompletions.CompleteWorkspaceNames);
 
-    public override async Task<int> ExecuteAsync(CommandContext context, Settings settings, CancellationToken cancellationToken)
-    {
-        var manifestPath = ManifestResolver.Resolve(settings.Name);
-        if (manifestPath is null)
+        var cmd = new Command("status", "Show workspace status") { nameArg };
+        cmd.SetAction(async (parseResult, cancellationToken) =>
         {
-            AnsiConsole.MarkupLine($"[red]No workspace.json found for '{settings.Name}'.[/]");
-            return 1;
-        }
+            var name = parseResult.GetValue(nameArg)!;
 
-        var json = await File.ReadAllTextAsync(manifestPath, cancellationToken);
-        var parser = new ManifestParser();
-        var manifest = parser.Parse(json);
-
-        var statePath = WorkspaceApiClient.GetWorkspaceStatePath(manifestPath);
-        if (File.Exists(statePath))
-        {
-            var workspaceId = (await File.ReadAllTextAsync(statePath, cancellationToken)).Trim();
-            try
+            var manifestPath = ManifestResolver.Resolve(name);
+            if (manifestPath is null)
             {
-                using var client = new WorkspaceApiClient();
-                var workspace = await client.GetWorkspaceAsync(workspaceId, cancellationToken);
-                var agents = await client.GetAgentsAsync(workspaceId, cancellationToken);
-                var tools = await client.GetToolsAsync(workspaceId, cancellationToken);
+                CliTheme.WriteError($"No workspace.json found for '{name}'.");
+                return 1;
+            }
 
-                var table = new Table().Border(TableBorder.Rounded);
-                table.AddColumn("Property");
-                table.AddColumn("Value");
-                table.AddRow("Workspace", $"[bold]{manifest.Name}[/]");
-                table.AddRow("Workspace ID", workspace.WorkspaceId);
-                table.AddRow("Status", workspace.Status);
-                table.AddRow("Manifest", manifestPath);
-                table.AddRow("Containers", workspace.ContainerCount.ToString(CultureInfo.InvariantCulture));
-                AnsiConsole.Write(table);
+            var json = await File.ReadAllTextAsync(manifestPath, cancellationToken);
+            var parser = new ManifestParser();
+            var manifest = parser.Parse(json);
 
-                if (agents.Count > 0)
+            var statePath = WorkspaceApiClient.GetWorkspaceStatePath(manifestPath);
+            if (File.Exists(statePath))
+            {
+                var workspaceId = (await File.ReadAllTextAsync(statePath, cancellationToken)).Trim();
+                try
                 {
-                    AnsiConsole.WriteLine();
-                    var agentTable = new Table().Title("[bold]Agents[/]").Border(TableBorder.Rounded);
-                    agentTable.AddColumn("Name");
-                    agentTable.AddColumn("Status");
-                    agentTable.AddColumn("Model");
-                    agentTable.AddColumn("Tools");
+                    using var client = new WorkspaceApiClient();
+                    var workspace = await client.GetWorkspaceAsync(workspaceId, cancellationToken);
+                    var agents = await client.GetAgentsAsync(workspaceId, cancellationToken);
+                    var tools = await client.GetToolsAsync(workspaceId, cancellationToken);
 
-                    foreach (var agent in agents.OrderBy(a => a.AgentName, StringComparer.Ordinal))
+                    var table = CliTheme.CreateTable();
+                    table.AddColumn(CliTheme.StyledColumn("Property"));
+                    table.AddColumn(CliTheme.StyledColumn("Value"));
+                    table.AddRow("Workspace", $"[bold white]{manifest.Name}[/]");
+                    table.AddRow("Workspace ID", workspace.WorkspaceId);
+                    table.AddRow("Status", workspace.Status);
+                    table.AddRow("Manifest", manifestPath);
+                    table.AddRow("Containers", workspace.ContainerCount.ToString(CultureInfo.InvariantCulture));
+                    AnsiConsole.Write(table);
+
+                    if (agents.Count > 0)
                     {
-                        agentTable.AddRow(
-                            agent.AgentName,
-                            agent.Status,
-                            agent.Model ?? string.Empty,
-                            string.Join(", ", agent.ConnectedTools));
+                        CliTheme.WriteSection("Agents");
+                        var agentTable = CliTheme.CreateTable();
+                        agentTable.AddColumn(CliTheme.StyledColumn("Name"));
+                        agentTable.AddColumn(CliTheme.StyledColumn("Status"));
+                        agentTable.AddColumn(CliTheme.StyledColumn("Model"));
+                        agentTable.AddColumn(CliTheme.StyledColumn("Tools"));
+
+                        foreach (var agent in agents.OrderBy(a => a.AgentName, StringComparer.Ordinal))
+                        {
+                            agentTable.AddRow(
+                                agent.AgentName,
+                                agent.Status,
+                                agent.Model ?? string.Empty,
+                                string.Join(", ", agent.ConnectedTools));
+                        }
+
+                        AnsiConsole.Write(agentTable);
                     }
 
-                    AnsiConsole.Write(agentTable);
-                }
+                    if (tools.Count > 0)
+                    {
+                        CliTheme.WriteSection("Tools");
+                        var toolTable = CliTheme.CreateTable();
+                        toolTable.AddColumn(CliTheme.StyledColumn("Name"));
+                        toolTable.AddColumn(CliTheme.StyledColumn("Type"));
+                        toolTable.AddColumn(CliTheme.StyledColumn("Status"));
 
-                if (tools.Count > 0)
+                        foreach (var tool in tools.OrderBy(t => t.ToolName, StringComparer.Ordinal))
+                            toolTable.AddRow(tool.ToolName, tool.ToolType, tool.Status);
+
+                        AnsiConsole.Write(toolTable);
+                    }
+
+                    return 0;
+                }
+                catch (Exception ex)
                 {
-                    AnsiConsole.WriteLine();
-                    var toolTable = new Table().Title("[bold]Tools[/]").Border(TableBorder.Rounded);
-                    toolTable.AddColumn("Name");
-                    toolTable.AddColumn("Type");
-                    toolTable.AddColumn("Status");
-
-                    foreach (var tool in tools.OrderBy(t => t.ToolName, StringComparer.Ordinal))
-                        toolTable.AddRow(tool.ToolName, tool.ToolType, tool.Status);
-
-                    AnsiConsole.Write(toolTable);
+                    AnsiConsole.MarkupLine($"[rgb({CliTheme.Warning.R},{CliTheme.Warning.G},{CliTheme.Warning.B})]{CliTheme.IconWarning} Live status unavailable: {Markup.Escape(ex.Message)}. Falling back to manifest data.[/]");
                 }
-
-                return 0;
             }
-            catch (Exception ex)
+
+            var manifestTable = CliTheme.CreateTable();
+            manifestTable.AddColumn(CliTheme.StyledColumn("Property"));
+            manifestTable.AddColumn(CliTheme.StyledColumn("Value"));
+            manifestTable.AddRow("Workspace", $"[bold white]{manifest.Name}[/]");
+            manifestTable.AddRow("Version", manifest.Version);
+            manifestTable.AddRow("Manifest", manifestPath);
+            AnsiConsole.Write(manifestTable);
+
+            if (manifest.Agents is { Count: > 0 })
             {
-                AnsiConsole.MarkupLine($"[yellow]Live status unavailable: {ex.Message}. Falling back to manifest data.[/]");
+                CliTheme.WriteSection("Agents (manifest)");
+                var agentTable = CliTheme.CreateTable();
+                agentTable.AddColumn(CliTheme.StyledColumn("Name"));
+                agentTable.AddColumn(CliTheme.StyledColumn("Model"));
+                agentTable.AddColumn(CliTheme.StyledColumn("Tools"));
+
+                foreach (var (agentName, agent) in manifest.Agents)
+                    agentTable.AddRow(agentName, agent.Model, string.Join(", ", agent.Tools));
+
+                AnsiConsole.Write(agentTable);
             }
-        }
 
-        var manifestTable = new Table().Border(TableBorder.Rounded);
-        manifestTable.AddColumn("Property");
-        manifestTable.AddColumn("Value");
-        manifestTable.AddRow("Workspace", $"[bold]{manifest.Name}[/]");
-        manifestTable.AddRow("Version", manifest.Version);
-        manifestTable.AddRow("Manifest", manifestPath);
-        AnsiConsole.Write(manifestTable);
+            if (manifest.Tools is { Count: > 0 })
+            {
+                CliTheme.WriteSection("Tools (manifest)");
+                var toolTable = CliTheme.CreateTable();
+                toolTable.AddColumn(CliTheme.StyledColumn("Name"));
+                toolTable.AddColumn(CliTheme.StyledColumn("Type"));
 
-        if (manifest.Agents is { Count: > 0 })
-        {
-            AnsiConsole.WriteLine();
-            var agentTable = new Table().Title("[bold]Agents (manifest)[/]").Border(TableBorder.Rounded);
-            agentTable.AddColumn("Name");
-            agentTable.AddColumn("Model");
-            agentTable.AddColumn("Tools");
+                foreach (var (toolName, tool) in manifest.Tools)
+                    toolTable.AddRow(toolName, tool.Type);
 
-            foreach (var (name, agent) in manifest.Agents)
-                agentTable.AddRow(name, agent.Model, string.Join(", ", agent.Tools));
+                AnsiConsole.Write(toolTable);
+            }
 
-            AnsiConsole.Write(agentTable);
-        }
+            return 0;
+        });
 
-        if (manifest.Tools is { Count: > 0 })
-        {
-            AnsiConsole.WriteLine();
-            var toolTable = new Table().Title("[bold]Tools (manifest)[/]").Border(TableBorder.Rounded);
-            toolTable.AddColumn("Name");
-            toolTable.AddColumn("Type");
-
-            foreach (var (name, tool) in manifest.Tools)
-                toolTable.AddRow(name, tool.Type);
-
-            AnsiConsole.Write(toolTable);
-        }
-
-        return 0;
+        return cmd;
     }
 }

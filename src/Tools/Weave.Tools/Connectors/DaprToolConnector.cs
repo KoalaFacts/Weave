@@ -39,7 +39,7 @@ public sealed partial class DaprToolConnector(HttpClient httpClient, ILogger<Dap
         try
         {
             var appId = handle.ConnectionId.Replace("dapr:", "", StringComparison.Ordinal);
-            var bytes = JsonSerializer.SerializeToUtf8Bytes(invocation.Parameters);
+            var bytes = JsonSerializer.SerializeToUtf8Bytes(invocation.Parameters, ToolJsonContext.Default.DictionaryStringString);
             using var content = new ByteArrayContent(bytes);
             content.Headers.ContentType = new System.Net.Http.Headers.MediaTypeHeaderValue("application/json");
             using var response = await httpClient.PostAsync(

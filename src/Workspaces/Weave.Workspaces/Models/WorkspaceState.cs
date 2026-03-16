@@ -14,6 +14,7 @@ public sealed record WorkspaceState
     [Id(6)] public List<ContainerInfo> Containers { get; init; } = [];
     [Id(7)] public NetworkId? NetworkId { get; set; }
     [Id(8)] public string? ErrorMessage { get; set; }
+    [Id(9)] public string? Name { get; set; }
 }
 
 public enum WorkspaceStatus

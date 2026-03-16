@@ -36,7 +36,6 @@ public sealed class AgentChatClientFactory(
 
 internal sealed partial class FallbackChatClient(string? defaultModelId, ILogger<FallbackChatClient> logger) : IChatClient
 {
-    private static readonly JsonSerializerOptions _jsonOptions = new(JsonSerializerDefaults.Web);
     private readonly ChatClientMetadata _metadata = new("weave-fallback", new Uri("https://weave.local/"), defaultModelId ?? "weave-local");
 
     public Task<ChatResponse> GetResponseAsync(
@@ -186,9 +185,9 @@ internal sealed partial class FallbackChatClient(string? defaultModelId, ILogger
                     JsonValueKind.False => false,
                     JsonValueKind.Number when property.Value.TryGetInt64(out var l) => l,
                     JsonValueKind.Number => property.Value.GetDouble(),
-                    JsonValueKind.Object or JsonValueKind.Array => property.Value.Deserialize<object>(_jsonOptions) ?? string.Empty,
+                    JsonValueKind.Object or JsonValueKind.Array => (object)property.Value.Clone(),
                     JsonValueKind.Null or JsonValueKind.Undefined => null!,
-                    _ => property.Value.Deserialize<object>(_jsonOptions) ?? string.Empty
+                    _ => (object)property.Value.Clone()
                 };
             }
 

@@ -1,6 +1,4 @@
 @page "/workspaces"
-@using Weave.Dashboard.Services
-@inject WeaveApiClient Api
 
 <PageTitle>Workspaces - Weave</PageTitle>
 
@@ -16,7 +14,12 @@ else if (_error is not null)
 }
 else
 {
-    <FluentDataGrid Items="@_workspaces" GridTemplateColumns="1fr 120px 80px 160px 160px">
+    <FluentDataGrid Items="@_workspaces" GridTemplateColumns="1fr 1fr 120px 80px 160px 160px">
+        <TemplateColumn Title="Name">
+            <FluentAnchor Href="@($"/workspaces/{context.WorkspaceId}")" Appearance="Appearance.Hypertext">
+                @(context.Name ?? context.WorkspaceId)
+            </FluentAnchor>
+        </TemplateColumn>
         <PropertyColumn Property="@(w => w.WorkspaceId)" Title="Workspace ID" />
         <TemplateColumn Title="Status">
             <FluentBadge Appearance="@GetStatusAppearance(context.Status)">@context.Status</FluentBadge>
@@ -25,35 +28,4 @@ else
         <PropertyColumn Property="@(w => w.StartedAt)" Title="Started" Format="g" />
         <PropertyColumn Property="@(w => w.StoppedAt)" Title="Stopped" Format="g" />
     </FluentDataGrid>
-}
-
-@code {
-    private IQueryable<WorkspaceDto> _workspaces = Array.Empty<WorkspaceDto>().AsQueryable();
-    private bool _loading = true;
-    private string? _error;
-
-    protected override async Task OnInitializedAsync()
-    {
-        try
-        {
-            var workspaces = await Api.GetWorkspacesAsync();
-            _workspaces = workspaces.AsQueryable();
-        }
-        catch (HttpRequestException)
-        {
-            _error = "Unable to connect to the Weave Silo API.";
-        }
-        finally
-        {
-            _loading = false;
-        }
-    }
-
-    private static Appearance GetStatusAppearance(string status) => status switch
-    {
-        "Running" => Appearance.Accent,
-        "Stopped" => Appearance.Neutral,
-        "Error" => Appearance.Accent,
-        _ => Appearance.Neutral
-    };
 }

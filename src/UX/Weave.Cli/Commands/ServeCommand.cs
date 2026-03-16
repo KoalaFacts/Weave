@@ -1,97 +1,97 @@
-using System.ComponentModel;
+using System.CommandLine;
 using System.Diagnostics;
 using Spectre.Console;
-using Spectre.Console.Cli;
 
 namespace Weave.Cli.Commands;
 
-public sealed class WorkspaceServeCommand : AsyncCommand<WorkspaceServeCommand.Settings>
+internal static class WorkspaceServeCommand
 {
-    public sealed class Settings : CommandSettings
+    public static Command Create()
     {
-        [CommandOption("--port <PORT>")]
-        [Description("Port to listen on")]
-        [DefaultValue(9401)]
-        public int Port { get; init; } = 9401;
-
-        [CommandOption("--background")]
-        [Description("Run in the background")]
-        [DefaultValue(false)]
-        public bool Background { get; init; }
-    }
-
-    public override async Task<int> ExecuteAsync(CommandContext context, Settings settings, CancellationToken cancellationToken)
-    {
-        // Check if silo is already running
-        if (await IsReachableAsync(settings.Port, cancellationToken))
+        var portOption = new Option<int>("--port")
         {
-            AnsiConsole.MarkupLine($"[yellow]Weave is already running on port {settings.Port}.[/]");
-            return 0;
-        }
+            Description = "Port to listen on",
+            DefaultValueFactory = _ => 9401
+        };
+        var backgroundOption = new Option<bool>("--background") { Description = "Run in the background" };
 
-        var siloPath = ResolveSiloPath();
-        if (siloPath is null)
+        var cmd = new Command("serve", "Start the local Weave server") { portOption, backgroundOption };
+        cmd.SetAction(async (parseResult, cancellationToken) =>
         {
-            AnsiConsole.MarkupLine("[red]Could not locate the Weave silo.[/]");
-            AnsiConsole.MarkupLine("Set [bold]WEAVE_SILO_PATH[/] to the silo project or published directory.");
-            return 1;
-        }
+            var port = parseResult.GetValue(portOption);
+            var background = parseResult.GetValue(backgroundOption);
 
-        var args = BuildSiloArgs(siloPath, settings.Port);
-
-        if (settings.Background)
-        {
-            var startInfo = new ProcessStartInfo
+            if (await IsReachableAsync(port, cancellationToken))
             {
-                FileName = args.FileName,
-                UseShellExecute = false,
-                CreateNoWindow = true,
-                RedirectStandardOutput = true,
-                RedirectStandardError = true
-            };
+                CliTheme.WriteWarning($"Weave is already running on port {port}.");
+                return 0;
+            }
 
-            foreach (var arg in args.Arguments)
-                startInfo.ArgumentList.Add(arg);
-
-            var process = Process.Start(startInfo);
-            if (process is null)
+            var siloPath = ResolveSiloPath();
+            if (siloPath is null)
             {
-                AnsiConsole.MarkupLine("[red]Failed to start silo process.[/]");
+                CliTheme.WriteError("Could not locate the Weave silo.");
+                CliTheme.WriteMuted("  Set WEAVE_SILO_PATH to the silo project or published directory.");
                 return 1;
             }
 
-            // Wait briefly for startup
-            await WaitForReadyAsync(settings.Port, cancellationToken);
+            var args = BuildSiloArgs(siloPath, port);
 
-            AnsiConsole.MarkupLine($"[green]Weave running in background (PID {process.Id}, port {settings.Port}).[/]");
-            AnsiConsole.MarkupLine("  Local mode — no external services required.");
-            AnsiConsole.MarkupLine($"  Stop with: [bold]weave serve stop[/] or terminate PID {process.Id}.");
-            return 0;
-        }
+            if (background)
+            {
+                var startInfo = new ProcessStartInfo
+                {
+                    FileName = args.FileName,
+                    UseShellExecute = false,
+                    CreateNoWindow = true,
+                    RedirectStandardOutput = true,
+                    RedirectStandardError = true
+                };
 
-        // Foreground mode — exec the silo inline
-        AnsiConsole.MarkupLine($"Starting Weave in local mode on port [bold]{settings.Port}[/]...");
-        AnsiConsole.MarkupLine("  No external services required. Press Ctrl+C to stop.");
-        AnsiConsole.WriteLine();
+                foreach (var arg in args.Arguments)
+                    startInfo.ArgumentList.Add(arg);
 
-        var fgStart = new ProcessStartInfo
-        {
-            FileName = args.FileName,
-            UseShellExecute = false
-        };
+                var process = Process.Start(startInfo);
+                if (process is null)
+                {
+                    CliTheme.WriteError("Failed to start silo process.");
+                    return 1;
+                }
 
-        foreach (var arg in args.Arguments)
-            fgStart.ArgumentList.Add(arg);
+                await WaitForReadyAsync(port, cancellationToken);
 
-        using var siloProcess = Process.Start(fgStart);
-        if (siloProcess is null)
-        {
-            AnsiConsole.MarkupLine("[red]Failed to start silo process.[/]");
-            return 1;
-        }
+                CliTheme.WriteSuccess($"Weave running in background (PID {process.Id}, port {port}).");
+                CliTheme.WriteMuted("  Local mode \u2014 no external services required.");
+                CliTheme.WriteMuted($"  Stop with: weave serve stop or terminate PID {process.Id}.");
+                return 0;
+            }
 
-        await siloProcess.WaitForExitAsync(cancellationToken);
-        return siloProcess.ExitCode;
+            CliTheme.WriteBanner();
+            CliTheme.WriteInfo($"Starting in local mode on port {port}...");
+            CliTheme.WriteMuted("  No external services required. Press Ctrl+C to stop.");
+            AnsiConsole.WriteLine();
+
+            var fgStart = new ProcessStartInfo
+            {
+                FileName = args.FileName,
+                UseShellExecute = false
+            };
+
+            foreach (var arg in args.Arguments)
+                fgStart.ArgumentList.Add(arg);
+
+            using var siloProcess = Process.Start(fgStart);
+            if (siloProcess is null)
+            {
+                CliTheme.WriteError("Failed to start silo process.");
+                return 1;
+            }
+
+            await siloProcess.WaitForExitAsync(cancellationToken);
+            return siloProcess.ExitCode;
+        });
+
+        return cmd;
     }
 
     private static async Task<bool> IsReachableAsync(int port, CancellationToken ct)
@@ -120,12 +120,10 @@ public sealed class WorkspaceServeCommand : AsyncCommand<WorkspaceServeCommand.S
 
     private static string? ResolveSiloPath()
     {
-        // 1. Explicit environment variable
         var envPath = Environment.GetEnvironmentVariable("WEAVE_SILO_PATH");
         if (!string.IsNullOrWhiteSpace(envPath) && (File.Exists(envPath) || Directory.Exists(envPath)))
             return envPath;
 
-        // 2. Well-known development path (relative to workspace root)
         var candidates = new[]
         {
             Path.Combine("src", "Runtime", "Weave.Silo"),
@@ -138,7 +136,6 @@ public sealed class WorkspaceServeCommand : AsyncCommand<WorkspaceServeCommand.S
                 return candidate;
         }
 
-        // 3. Adjacent published binary
         var exeDir = AppContext.BaseDirectory;
         var siloDll = Path.Combine(exeDir, "Weave.Silo.dll");
         if (File.Exists(siloDll))
@@ -149,7 +146,6 @@ public sealed class WorkspaceServeCommand : AsyncCommand<WorkspaceServeCommand.S
 
     private static SiloArgs BuildSiloArgs(string siloPath, int port)
     {
-        // If it's a .csproj or directory, use dotnet run
         if (siloPath.EndsWith(".csproj", StringComparison.OrdinalIgnoreCase)
             || Directory.Exists(siloPath))
         {
@@ -165,7 +161,6 @@ public sealed class WorkspaceServeCommand : AsyncCommand<WorkspaceServeCommand.S
             ]);
         }
 
-        // Published DLL
         return new SiloArgs("dotnet",
         [
             siloPath,

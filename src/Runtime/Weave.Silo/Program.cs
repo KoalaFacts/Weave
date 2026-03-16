@@ -18,6 +18,11 @@ using Weave.Workspaces.Runtime;
 
 var builder = WebApplication.CreateBuilder(args);
 
+builder.Services.ConfigureHttpJsonOptions(options =>
+{
+    options.SerializerOptions.TypeInfoResolverChain.Insert(0, SiloApiJsonContext.Default);
+});
+
 var isLocalMode = builder.Configuration.GetValue<bool>("Weave:LocalMode")
     || builder.Configuration["Orleans:ClusterId"] is null;
 

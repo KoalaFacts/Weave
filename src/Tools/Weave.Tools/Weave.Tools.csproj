@@ -1,7 +1,7 @@
 <Project Sdk="Microsoft.NET.Sdk">
 
   <PropertyGroup>
-    <IsAotExcluded>true</IsAotExcluded>
+    <Description>Tool integration for Weave — tool discovery, connectors, and grain-based tool execution.</Description>
   </PropertyGroup>
 
   <ItemGroup>

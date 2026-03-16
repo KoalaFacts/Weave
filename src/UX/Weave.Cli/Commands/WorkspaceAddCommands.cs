@@ -1,177 +1,184 @@
-using System.ComponentModel;
+using System.CommandLine;
 using System.Globalization;
 using Spectre.Console;
-using Spectre.Console.Cli;
 using Weave.Workspaces.Manifest;
 using Weave.Workspaces.Models;
 
 namespace Weave.Cli.Commands;
 
-public sealed class WorkspaceAddAgentCommand : AsyncCommand<WorkspaceAddAgentCommand.Settings>
+internal static class WorkspaceAddAgentCommand
 {
-    public sealed class Settings : CommandSettings
+    public static Command Create()
     {
-        [CommandArgument(0, "<workspace>")]
-        [Description("Workspace name")]
-        public string Workspace { get; init; } = string.Empty;
-
-        [CommandOption("--name <NAME>")]
-        [Description("Agent name")]
-        public string? Name { get; init; }
-
-        [CommandOption("--model <MODEL>")]
-        [Description("Model to use")]
-        [DefaultValue("claude-sonnet-4-20250514")]
-        public string Model { get; init; } = "claude-sonnet-4-20250514";
-    }
-
-    public override async Task<int> ExecuteAsync(CommandContext context, Settings settings, CancellationToken cancellationToken)
-    {
-        var manifestPath = ManifestResolver.Resolve(settings.Workspace);
-        if (manifestPath is null)
+        var workspaceArg = new Argument<string>("workspace") { Description = "Workspace name" };
+        workspaceArg.CompletionSources.Add(CliCompletions.CompleteWorkspaceNames);
+        var nameOption = new Option<string?>("--name") { Description = "Agent name" };
+        var modelOption = new Option<string>("--model")
         {
-            AnsiConsole.MarkupLine($"[red]No workspace.json found for '{settings.Workspace}'.[/]");
-            return 1;
-        }
-
-        var agentName = settings.Name;
-        if (string.IsNullOrWhiteSpace(agentName))
-        {
-            agentName = AnsiConsole.Prompt(new TextPrompt<string>("Agent name:"));
-        }
-
-        var parser = new ManifestParser();
-        var json = await File.ReadAllTextAsync(manifestPath, cancellationToken);
-        var manifest = parser.Parse(json);
-
-        if (manifest.Agents.ContainsKey(agentName))
-        {
-            AnsiConsole.MarkupLine($"[yellow]Agent '{agentName}' already exists in the workspace.[/]");
-            return 1;
-        }
-
-        manifest.Agents[agentName] = new AgentDefinition
-        {
-            Model = settings.Model,
-            SystemPromptFile = $"./prompts/{agentName}.md",
-            MaxConcurrentTasks = 3
+            Description = "Model to use",
+            DefaultValueFactory = _ => "claude-sonnet-4-20250514"
         };
 
-        await File.WriteAllTextAsync(manifestPath, parser.Serialize(manifest), cancellationToken);
-
-        var promptPath = Path.Combine(Path.GetDirectoryName(manifestPath)!, "prompts", $"{agentName}.md");
-        Directory.CreateDirectory(Path.GetDirectoryName(promptPath)!);
-        if (!File.Exists(promptPath))
+        var cmd = new Command("agent", "Add an assistant") { workspaceArg, nameOption, modelOption };
+        cmd.SetAction(async (parseResult, cancellationToken) =>
         {
-            await File.WriteAllTextAsync(promptPath,
-                string.Create(CultureInfo.InvariantCulture, $"# {agentName}\n\nYou are a helpful AI assistant.\n"), cancellationToken);
-        }
+            var workspace = parseResult.GetValue(workspaceArg)!;
+            var agentName = parseResult.GetValue(nameOption);
+            var model = parseResult.GetValue(modelOption)!;
 
-        AnsiConsole.MarkupLine($"[green]Agent '{agentName}' added to workspace '{settings.Workspace}'.[/]");
-        return 0;
+            var manifestPath = ManifestResolver.Resolve(workspace);
+            if (manifestPath is null)
+            {
+                CliTheme.WriteError($"No workspace.json found for '{workspace}'.");
+                return 1;
+            }
+
+            if (string.IsNullOrWhiteSpace(agentName))
+            {
+                agentName = AnsiConsole.Prompt(new TextPrompt<string>("Agent name:").Styled());
+            }
+
+            var parser = new ManifestParser();
+            var json = await File.ReadAllTextAsync(manifestPath, cancellationToken);
+            var manifest = parser.Parse(json);
+
+            if (manifest.Agents.ContainsKey(agentName))
+            {
+                CliTheme.WriteWarning($"Agent '{agentName}' already exists in the workspace.");
+                return 1;
+            }
+
+            manifest.Agents[agentName] = new AgentDefinition
+            {
+                Model = model,
+                SystemPromptFile = $"./prompts/{agentName}.md",
+                MaxConcurrentTasks = 3
+            };
+
+            await File.WriteAllTextAsync(manifestPath, parser.Serialize(manifest), cancellationToken);
+
+            var promptPath = Path.Combine(Path.GetDirectoryName(manifestPath)!, "prompts", $"{agentName}.md");
+            Directory.CreateDirectory(Path.GetDirectoryName(promptPath)!);
+            if (!File.Exists(promptPath))
+            {
+                await File.WriteAllTextAsync(promptPath,
+                    string.Create(CultureInfo.InvariantCulture, $"# {agentName}\n\nYou are a helpful AI assistant.\n"), cancellationToken);
+            }
+
+            CliTheme.WriteSuccess($"Agent '{agentName}' added to workspace '{workspace}'.");
+            return 0;
+        });
+
+        return cmd;
     }
 }
 
-public sealed class WorkspaceAddToolCommand : AsyncCommand<WorkspaceAddToolCommand.Settings>
+internal static class WorkspaceAddToolCommand
 {
-    public sealed class Settings : CommandSettings
+    public static Command Create()
     {
-        [CommandArgument(0, "<workspace>")]
-        [Description("Workspace name")]
-        public string Workspace { get; init; } = string.Empty;
-
-        [CommandOption("--name <NAME>")]
-        [Description("Tool name")]
-        public string? Name { get; init; }
-
-        [CommandOption("--type <TYPE>")]
-        [Description("Tool type (mcp, cli, openapi)")]
-        [DefaultValue("mcp")]
-        public string Type { get; init; } = "mcp";
-    }
-
-    public override async Task<int> ExecuteAsync(CommandContext context, Settings settings, CancellationToken cancellationToken)
-    {
-        var manifestPath = ManifestResolver.Resolve(settings.Workspace);
-        if (manifestPath is null)
+        var workspaceArg = new Argument<string>("workspace") { Description = "Workspace name" };
+        workspaceArg.CompletionSources.Add(CliCompletions.CompleteWorkspaceNames);
+        var nameOption = new Option<string?>("--name") { Description = "Tool name" };
+        var typeOption = new Option<string>("--type")
         {
-            AnsiConsole.MarkupLine($"[red]No workspace.json found for '{settings.Workspace}'.[/]");
-            return 1;
-        }
+            Description = "Tool type (mcp, cli, openapi)",
+            DefaultValueFactory = _ => "mcp"
+        };
+        typeOption.CompletionSources.Add(CliCompletions.CompleteToolTypes);
 
-        var toolName = settings.Name;
-        if (string.IsNullOrWhiteSpace(toolName))
+        var cmd = new Command("tool", "Add a tool") { workspaceArg, nameOption, typeOption };
+        cmd.SetAction(async (parseResult, cancellationToken) =>
         {
-            toolName = AnsiConsole.Prompt(new TextPrompt<string>("Tool name:"));
-        }
+            var workspace = parseResult.GetValue(workspaceArg)!;
+            var toolName = parseResult.GetValue(nameOption);
+            var type = parseResult.GetValue(typeOption)!;
 
-        var parser = new ManifestParser();
-        var json = await File.ReadAllTextAsync(manifestPath, cancellationToken);
-        var manifest = parser.Parse(json);
+            var manifestPath = ManifestResolver.Resolve(workspace);
+            if (manifestPath is null)
+            {
+                CliTheme.WriteError($"No workspace.json found for '{workspace}'.");
+                return 1;
+            }
 
-        if (manifest.Tools.ContainsKey(toolName))
-        {
-            AnsiConsole.MarkupLine($"[yellow]Tool '{toolName}' already exists in the workspace.[/]");
-            return 1;
-        }
+            if (string.IsNullOrWhiteSpace(toolName))
+            {
+                toolName = AnsiConsole.Prompt(new TextPrompt<string>("Tool name:").Styled());
+            }
 
-        manifest.Tools[toolName] = new ToolDefinition { Type = settings.Type };
+            var parser = new ManifestParser();
+            var json = await File.ReadAllTextAsync(manifestPath, cancellationToken);
+            var manifest = parser.Parse(json);
 
-        await File.WriteAllTextAsync(manifestPath, parser.Serialize(manifest), cancellationToken);
+            if (manifest.Tools.ContainsKey(toolName))
+            {
+                CliTheme.WriteWarning($"Tool '{toolName}' already exists in the workspace.");
+                return 1;
+            }
 
-        AnsiConsole.MarkupLine($"[green]Tool '{toolName}' added to workspace '{settings.Workspace}'.[/]");
-        return 0;
+            manifest.Tools[toolName] = new ToolDefinition { Type = type };
+
+            await File.WriteAllTextAsync(manifestPath, parser.Serialize(manifest), cancellationToken);
+
+            CliTheme.WriteSuccess($"Tool '{toolName}' added to workspace '{workspace}'.");
+            return 0;
+        });
+
+        return cmd;
     }
 }
 
-public sealed class WorkspaceAddTargetCommand : AsyncCommand<WorkspaceAddTargetCommand.Settings>
+internal static class WorkspaceAddTargetCommand
 {
-    public sealed class Settings : CommandSettings
+    public static Command Create()
     {
-        [CommandArgument(0, "<workspace>")]
-        [Description("Workspace name")]
-        public string Workspace { get; init; } = string.Empty;
-
-        [CommandOption("--name <NAME>")]
-        [Description("Target name")]
-        public string? Name { get; init; }
-
-        [CommandOption("--runtime <RUNTIME>")]
-        [Description("Runtime type (podman, docker)")]
-        [DefaultValue("podman")]
-        public string Runtime { get; init; } = "podman";
-    }
-
-    public override async Task<int> ExecuteAsync(CommandContext context, Settings settings, CancellationToken cancellationToken)
-    {
-        var manifestPath = ManifestResolver.Resolve(settings.Workspace);
-        if (manifestPath is null)
+        var workspaceArg = new Argument<string>("workspace") { Description = "Workspace name" };
+        workspaceArg.CompletionSources.Add(CliCompletions.CompleteWorkspaceNames);
+        var nameOption = new Option<string?>("--name") { Description = "Target name" };
+        var runtimeOption = new Option<string>("--runtime")
         {
-            AnsiConsole.MarkupLine($"[red]No workspace.json found for '{settings.Workspace}'.[/]");
-            return 1;
-        }
+            Description = "Runtime type (podman, docker)",
+            DefaultValueFactory = _ => "podman"
+        };
+        runtimeOption.CompletionSources.Add(CliCompletions.CompleteRuntimeTypes);
 
-        var targetName = settings.Name;
-        if (string.IsNullOrWhiteSpace(targetName))
+        var cmd = new Command("target", "Add a deployment target") { workspaceArg, nameOption, runtimeOption };
+        cmd.SetAction(async (parseResult, cancellationToken) =>
         {
-            targetName = AnsiConsole.Prompt(new TextPrompt<string>("Target name:"));
-        }
+            var workspace = parseResult.GetValue(workspaceArg)!;
+            var targetName = parseResult.GetValue(nameOption);
+            var runtime = parseResult.GetValue(runtimeOption)!;
 
-        var parser = new ManifestParser();
-        var json = await File.ReadAllTextAsync(manifestPath, cancellationToken);
-        var manifest = parser.Parse(json);
+            var manifestPath = ManifestResolver.Resolve(workspace);
+            if (manifestPath is null)
+            {
+                CliTheme.WriteError($"No workspace.json found for '{workspace}'.");
+                return 1;
+            }
 
-        if (manifest.Targets.ContainsKey(targetName))
-        {
-            AnsiConsole.MarkupLine($"[yellow]Target '{targetName}' already exists in the workspace.[/]");
-            return 1;
-        }
+            if (string.IsNullOrWhiteSpace(targetName))
+            {
+                targetName = AnsiConsole.Prompt(new TextPrompt<string>("Target name:").Styled());
+            }
 
-        manifest.Targets[targetName] = new TargetDefinition { Runtime = settings.Runtime };
+            var parser = new ManifestParser();
+            var json = await File.ReadAllTextAsync(manifestPath, cancellationToken);
+            var manifest = parser.Parse(json);
 
-        await File.WriteAllTextAsync(manifestPath, parser.Serialize(manifest), cancellationToken);
+            if (manifest.Targets.ContainsKey(targetName))
+            {
+                CliTheme.WriteWarning($"Target '{targetName}' already exists in the workspace.");
+                return 1;
+            }
 
-        AnsiConsole.MarkupLine($"[green]Target '{targetName}' added to workspace '{settings.Workspace}'.[/]");
-        return 0;
+            manifest.Targets[targetName] = new TargetDefinition { Runtime = runtime };
+
+            await File.WriteAllTextAsync(manifestPath, parser.Serialize(manifest), cancellationToken);
+
+            CliTheme.WriteSuccess($"Target '{targetName}' added to workspace '{workspace}'.");
+            return 0;
+        });
+
+        return cmd;
     }
 }

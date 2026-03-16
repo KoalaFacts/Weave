@@ -1,79 +1,87 @@
-using System.ComponentModel;
+using System.CommandLine;
+using System.Globalization;
 using Spectre.Console;
-using Spectre.Console.Cli;
 using Weave.Workspaces.Manifest;
 
 namespace Weave.Cli.Commands;
 
-public sealed class WorkspaceShowCommand : AsyncCommand<WorkspaceShowCommand.Settings>
+internal static class WorkspaceShowCommand
 {
-    public sealed class Settings : CommandSettings
+    public static Command Create()
     {
-        [CommandArgument(0, "<name>")]
-        [Description("Workspace name")]
-        public string Name { get; init; } = string.Empty;
-    }
+        var nameArg = new Argument<string>("name") { Description = "Workspace name" };
+        nameArg.CompletionSources.Add(CliCompletions.CompleteWorkspaceNames);
 
-    public override async Task<int> ExecuteAsync(CommandContext context, Settings settings, CancellationToken cancellationToken)
-    {
-        var manifestPath = ManifestResolver.Resolve(settings.Name);
-        if (manifestPath is null)
+        var cmd = new Command("show", "Show workspace configuration") { nameArg };
+        cmd.SetAction(async (parseResult, cancellationToken) =>
         {
-            AnsiConsole.MarkupLine($"[red]No workspace.json found for '{settings.Name}'.[/]");
-            return 1;
-        }
+            var name = parseResult.GetValue(nameArg)!;
 
-        var content = await File.ReadAllTextAsync(manifestPath, cancellationToken);
-        AnsiConsole.Write(new Panel(content).Header("workspace.json").Border(BoxBorder.Rounded));
-        return 0;
-    }
-}
-
-public sealed class WorkspaceValidateCommand : AsyncCommand<WorkspaceValidateCommand.Settings>
-{
-    public sealed class Settings : CommandSettings
-    {
-        [CommandArgument(0, "<name>")]
-        [Description("Workspace name")]
-        public string Name { get; init; } = string.Empty;
-    }
-
-    public override async Task<int> ExecuteAsync(CommandContext context, Settings settings, CancellationToken cancellationToken)
-    {
-        var manifestPath = ManifestResolver.Resolve(settings.Name);
-        if (manifestPath is null)
-        {
-            AnsiConsole.MarkupLine($"[red]No workspace.json found for '{settings.Name}'.[/]");
-            return 1;
-        }
-
-        try
-        {
-            var json = await File.ReadAllTextAsync(manifestPath, cancellationToken);
-            var parser = new ManifestParser();
-            var manifest = parser.Parse(json);
-            var errors = parser.Validate(manifest);
-
-            if (errors.Count > 0)
+            var manifestPath = ManifestResolver.Resolve(name);
+            if (manifestPath is null)
             {
-                AnsiConsole.MarkupLine("[red]Configuration invalid:[/]");
-                foreach (var error in errors)
-                    AnsiConsole.MarkupLine($"  - {error}");
-
+                CliTheme.WriteError($"No workspace.json found for '{name}'.");
                 return 1;
             }
 
-            AnsiConsole.MarkupLine("[green]Configuration valid.[/]");
-            AnsiConsole.MarkupLine($"  Name: [bold]{manifest.Name}[/]");
-            AnsiConsole.MarkupLine($"  Agents: {manifest.Agents?.Count ?? 0}");
-            AnsiConsole.MarkupLine($"  Tools: {manifest.Tools?.Count ?? 0}");
-            AnsiConsole.MarkupLine($"  Targets: {manifest.Targets?.Count ?? 0}");
+            var content = await File.ReadAllTextAsync(manifestPath, cancellationToken);
+            AnsiConsole.Write(CliTheme.CreatePanel(content, "workspace.json"));
             return 0;
-        }
-        catch (Exception ex)
+        });
+
+        return cmd;
+    }
+}
+
+internal static class WorkspaceValidateCommand
+{
+    public static Command Create()
+    {
+        var nameArg = new Argument<string>("name") { Description = "Workspace name" };
+        nameArg.CompletionSources.Add(CliCompletions.CompleteWorkspaceNames);
+
+        var cmd = new Command("validate", "Validate workspace configuration") { nameArg };
+        cmd.SetAction(async (parseResult, cancellationToken) =>
         {
-            AnsiConsole.MarkupLine($"[red]Configuration invalid: {ex.Message}[/]");
-            return 1;
-        }
+            var name = parseResult.GetValue(nameArg)!;
+
+            var manifestPath = ManifestResolver.Resolve(name);
+            if (manifestPath is null)
+            {
+                CliTheme.WriteError($"No workspace.json found for '{name}'.");
+                return 1;
+            }
+
+            try
+            {
+                var json = await File.ReadAllTextAsync(manifestPath, cancellationToken);
+                var parser = new ManifestParser();
+                var manifest = parser.Parse(json);
+                var errors = parser.Validate(manifest);
+
+                if (errors.Count > 0)
+                {
+                    CliTheme.WriteError("Configuration invalid:");
+                    foreach (var error in errors)
+                        CliTheme.WriteMuted($"  - {error}");
+
+                    return 1;
+                }
+
+                CliTheme.WriteSuccess("Configuration valid.");
+                CliTheme.WriteKeyValue("Name", manifest.Name);
+                CliTheme.WriteKeyValue("Agents", (manifest.Agents?.Count ?? 0).ToString(CultureInfo.InvariantCulture));
+                CliTheme.WriteKeyValue("Tools", (manifest.Tools?.Count ?? 0).ToString(CultureInfo.InvariantCulture));
+                CliTheme.WriteKeyValue("Targets", (manifest.Targets?.Count ?? 0).ToString(CultureInfo.InvariantCulture));
+                return 0;
+            }
+            catch (Exception ex)
+            {
+                CliTheme.WriteError($"Configuration invalid: {ex.Message}");
+                return 1;
+            }
+        });
+
+        return cmd;
     }
 }

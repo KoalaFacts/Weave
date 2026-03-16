@@ -1,7 +1,7 @@
 <Project Sdk="Microsoft.NET.Sdk">
 
   <PropertyGroup>
-    <IsAotExcluded>true</IsAotExcluded>
+    <Description>Core abstractions and utilities for Weave — event bus, lifecycle management, command dispatch, and secret handling.</Description>
     <EmitCompilerGeneratedFiles>true</EmitCompilerGeneratedFiles>
     <CompilerGeneratedFilesOutputPath>$(BaseIntermediateOutputPath)\GeneratedFiles</CompilerGeneratedFilesOutputPath>
   </PropertyGroup>
@@ -16,7 +16,8 @@
   <ItemGroup>
     <ProjectReference Include="..\Weave.SourceGen\Weave.SourceGen.csproj"
                       OutputItemType="Analyzer"
-                      ReferenceOutputAssembly="false" />
+                      ReferenceOutputAssembly="false"
+                      GlobalPropertiesToRemove="PublishTrimmed;PublishAot;PublishSingleFile;PublishReadyToRun;SelfContained;RuntimeIdentifier" />
   </ItemGroup>
 
   <!-- Ensure the source generator is loaded as an analyzer -->

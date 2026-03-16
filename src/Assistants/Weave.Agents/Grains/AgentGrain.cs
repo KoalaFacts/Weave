@@ -1,3 +1,4 @@
+using System.Diagnostics.CodeAnalysis;
 using System.Text;
 using System.Text.Json;
 using Microsoft.Extensions.AI;
@@ -622,6 +623,8 @@ public sealed class AgentGrain(
         };
     }
 
+    [UnconditionalSuppressMessage("AOT", "IL2026:RequiresUnreferencedCode", Justification = "Function call arguments are dynamic LLM outputs serialized for diagnostic logging only.")]
+    [UnconditionalSuppressMessage("AOT", "IL3050:RequiresDynamicCode", Justification = "Function call arguments are dynamic LLM outputs serialized for diagnostic logging only.")]
     private static IEnumerable<ConversationMessage> ToConversationMessages(ChatMessage message)
     {
         if (!string.IsNullOrWhiteSpace(message.Text))

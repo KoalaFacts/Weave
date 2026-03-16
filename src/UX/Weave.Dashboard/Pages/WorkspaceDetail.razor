@@ -1,0 +1,76 @@
+@page "/workspaces/{WorkspaceId}"
+
+<PageTitle>Workspace - Weave</PageTitle>
+
+@if (_loading)
+{
+    <FluentProgressRing />
+}
+else if (_error is not null)
+{
+    <FluentMessageBar Intent="MessageIntent.Error">@_error</FluentMessageBar>
+}
+else if (_workspace is not null)
+{
+    <FluentLabel Typo="Typography.H4" Style="margin-bottom: 1rem;">
+        @(_workspace.Name ?? _workspace.WorkspaceId)
+    </FluentLabel>
+
+    <FluentCard Style="padding: 1rem; margin-bottom: 1.5rem; max-width: 600px;">
+        <FluentStack Orientation="Orientation.Vertical" VerticalGap="8">
+            <div><strong>Workspace ID:</strong> @_workspace.WorkspaceId</div>
+            <div><strong>Status:</strong> <FluentBadge Appearance="@GetStatusAppearance(_workspace.Status)">@_workspace.Status</FluentBadge></div>
+            <div><strong>Containers:</strong> @_workspace.ContainerCount</div>
+            @if (_workspace.StartedAt is not null)
+            {
+                <div><strong>Started:</strong> @_workspace.StartedAt.Value.ToString("g")</div>
+            }
+            @if (_workspace.StoppedAt is not null)
+            {
+                <div><strong>Stopped:</strong> @_workspace.StoppedAt.Value.ToString("g")</div>
+            }
+            @if (_workspace.ErrorMessage is not null)
+            {
+                <div><strong>Error:</strong> @_workspace.ErrorMessage</div>
+            }
+        </FluentStack>
+    </FluentCard>
+
+    <FluentLabel Typo="Typography.H5" Style="margin-bottom: 0.5rem;">Agents</FluentLabel>
+    @if (_agents.Count == 0)
+    {
+        <FluentLabel Typo="Typography.Body" Style="margin-bottom: 1rem;">No agents active.</FluentLabel>
+    }
+    else
+    {
+        <FluentDataGrid Items="@_agents.AsQueryable()" GridTemplateColumns="1fr 120px 1fr 1fr 160px" Style="margin-bottom: 1.5rem;">
+            <PropertyColumn Property="@(a => a.AgentName)" Title="Name" />
+            <TemplateColumn Title="Status">
+                <FluentBadge Appearance="@GetAgentStatusAppearance(context.Status)">@context.Status</FluentBadge>
+            </TemplateColumn>
+            <PropertyColumn Property="@(a => a.Model)" Title="Model" />
+            <TemplateColumn Title="Tools">
+                @string.Join(", ", context.ConnectedTools)
+            </TemplateColumn>
+            <PropertyColumn Property="@(a => a.ActivatedAt)" Title="Activated" Format="g" />
+        </FluentDataGrid>
+    }
+
+    <FluentLabel Typo="Typography.H5" Style="margin-bottom: 0.5rem;">Tools</FluentLabel>
+    @if (_tools.Count == 0)
+    {
+        <FluentLabel Typo="Typography.Body">No tools connected.</FluentLabel>
+    }
+    else
+    {
+        <FluentDataGrid Items="@_tools.AsQueryable()" GridTemplateColumns="1fr 120px 120px 1fr 160px">
+            <PropertyColumn Property="@(t => t.ToolName)" Title="Tool" />
+            <PropertyColumn Property="@(t => t.ToolType)" Title="Type" />
+            <TemplateColumn Title="Status">
+                <FluentBadge Appearance="@GetToolStatusAppearance(context.Status)">@context.Status</FluentBadge>
+            </TemplateColumn>
+            <PropertyColumn Property="@(t => t.Endpoint)" Title="Endpoint" />
+            <PropertyColumn Property="@(t => t.ConnectedAt)" Title="Connected" Format="g" />
+        </FluentDataGrid>
+    }
+}

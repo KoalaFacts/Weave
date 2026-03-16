@@ -1,4 +1,22 @@
 <Project>
+  <!-- netstandard projects cannot be trimmed/AOT'd. Global properties like PublishTrimmed
+       leak during restore and publish via the dependency graph; a PropertyGroup cannot
+       override them, but a Target can. This runs before the SDK's framework-resolution
+       check (NETSDK1124 / NETSDK1195). -->
+  <Target Name="_DisableTrimmingForUnsupportedTfm"
+          BeforeTargets="_CheckForUnsupportedTargetFramework;ProcessFrameworkReferences;CollectPackageReferences"
+          Condition="!$([MSBuild]::IsTargetFrameworkCompatible('$(TargetFramework)', 'net6.0'))">
+    <PropertyGroup>
+      <PublishTrimmed>false</PublishTrimmed>
+      <PublishAot>false</PublishAot>
+      <IsTrimmable>false</IsTrimmable>
+      <IsAotCompatible>false</IsAotCompatible>
+      <EnableTrimAnalyzer>false</EnableTrimAnalyzer>
+      <EnableAotAnalyzer>false</EnableAotAnalyzer>
+      <EnableSingleFileAnalyzer>false</EnableSingleFileAnalyzer>
+    </PropertyGroup>
+  </Target>
+
   <!-- Suppress AOT/trimming warnings for projects that opt out -->
   <PropertyGroup Condition="'$(IsAotExcluded)' == 'true'">
     <NoWarn>$(NoWarn);IL2026;IL3050</NoWarn>

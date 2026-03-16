@@ -10,37 +10,38 @@
     <File Path="README.md" />
   </Folder>
   <Folder Name="/02 - Docs/">
+    <File Path="docs/PRD-MVP-REVIEW.md" />
     <File Path="docs/PRD-MVP.md" />
   </Folder>
   <Folder Name="/03 - Foundation/">
-    <Project Path="src/Foundation/Weave.Shared/Weave.Shared.csproj" />
     <Project Path="src/Foundation/Weave.Shared.Tests/Weave.Shared.Tests.csproj" />
+    <Project Path="src/Foundation/Weave.Shared/Weave.Shared.csproj" />
     <Project Path="src/Foundation/Weave.SourceGen/Weave.SourceGen.csproj" />
   </Folder>
   <Folder Name="/04 - Workspaces/">
-    <Project Path="src/Workspaces/Weave.Workspaces/Weave.Workspaces.csproj" />
     <Project Path="src/Workspaces/Weave.Workspaces.Tests/Weave.Workspaces.Tests.csproj" />
+    <Project Path="src/Workspaces/Weave.Workspaces/Weave.Workspaces.csproj" />
   </Folder>
   <Folder Name="/05 - Assistants/">
-    <Project Path="src/Assistants/Weave.Agents/Weave.Agents.csproj" />
     <Project Path="src/Assistants/Weave.Agents.Tests/Weave.Agents.Tests.csproj" />
+    <Project Path="src/Assistants/Weave.Agents/Weave.Agents.csproj" />
   </Folder>
   <Folder Name="/06 - Tools/">
-    <Project Path="src/Tools/Weave.Tools/Weave.Tools.csproj" />
     <Project Path="src/Tools/Weave.Tools.Tests/Weave.Tools.Tests.csproj" />
+    <Project Path="src/Tools/Weave.Tools/Weave.Tools.csproj" />
   </Folder>
   <Folder Name="/07 - Security/">
-    <Project Path="src/Security/Weave.Security/Weave.Security.csproj" />
     <Project Path="src/Security/Weave.Security.Tests/Weave.Security.Tests.csproj" />
+    <Project Path="src/Security/Weave.Security/Weave.Security.csproj" />
   </Folder>
   <Folder Name="/08 - Deployment/">
-    <Project Path="src/Deployment/Weave.Deploy/Weave.Deploy.csproj" />
     <Project Path="src/Deployment/Weave.Deploy.Tests/Weave.Deploy.Tests.csproj" />
+    <Project Path="src/Deployment/Weave.Deploy/Weave.Deploy.csproj" />
   </Folder>
   <Folder Name="/09 - Runtime/">
-    <Project Path="src/Runtime/Weave.Silo/Weave.Silo.csproj" />
     <Project Path="src/Runtime/Weave.AppHost/Weave.AppHost.csproj" />
     <Project Path="src/Runtime/Weave.ServiceDefaults/Weave.ServiceDefaults.csproj" />
+    <Project Path="src/Runtime/Weave.Silo/Weave.Silo.csproj" />
   </Folder>
   <Folder Name="/10 - UX/">
     <Project Path="src/UX/Weave.Cli/Weave.Cli.csproj" />

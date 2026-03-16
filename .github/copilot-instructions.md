@@ -4,6 +4,9 @@
 - Do not use FluentAssertions as it has a commercial license. Use Shouldly instead for test assertions.
 - Emphasize permissive licensing (MIT or Apache 2.0) — freedom for users matters.
 
+## Code Style
+- Blazor pages should use code-behind (.razor.cs) files instead of inline @code blocks.
+
 ## README and Product-Facing Documentation
 - Write for a non-technical audience first. Avoid developer jargon, internal project names, and implementation details.
 - Lead with user value: what the product does for people, not how it is built.

@@ -13,6 +13,7 @@ public sealed record StartWorkspaceRequest
 public sealed record WorkspaceResponse
 {
     public required string WorkspaceId { get; init; }
+    public string? Name { get; init; }
     public required string Status { get; init; }
     public DateTimeOffset? StartedAt { get; init; }
     public DateTimeOffset? StoppedAt { get; init; }
@@ -23,6 +24,7 @@ public sealed record WorkspaceResponse
     public static WorkspaceResponse FromState(WorkspaceState state) => new()
     {
         WorkspaceId = state.WorkspaceId.ToString(),
+        Name = state.Name,
         Status = state.Status.ToString(),
         StartedAt = state.StartedAt,
         StoppedAt = state.StoppedAt,

@@ -1,0 +1,25 @@
+name: 'Setup .NET SDK'
+description: 'Sets up .NET SDK with NuGet caching'
+inputs:
+  dotnet-version:
+    description: '.NET SDK version to install'
+    required: false
+    default: '10.0.x'
+  dotnet-quality:
+    description: 'SDK quality channel (ga, preview)'
+    required: false
+    default: 'preview'
+  cache:
+    description: 'Enable NuGet package caching'
+    required: false
+    default: 'true'
+runs:
+  using: 'composite'
+  steps:
+    - name: Setup .NET SDK
+      uses: actions/setup-dotnet@v4
+      with:
+        dotnet-version: ${{ inputs.dotnet-version }}
+        dotnet-quality: ${{ inputs.dotnet-quality }}
+        cache: ${{ inputs.cache }}
+        cache-dependency-path: '**/*.csproj'

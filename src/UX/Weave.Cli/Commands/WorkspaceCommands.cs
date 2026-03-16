@@ -1,190 +1,261 @@
-using System.ComponentModel;
+using System.CommandLine;
 using Spectre.Console;
-using Spectre.Console.Cli;
 using Weave.Workspaces.Manifest;
 using Weave.Workspaces.Models;
 
 namespace Weave.Cli.Commands;
 
-public sealed class WorkspaceNewCommand : AsyncCommand<WorkspaceNewCommand.Settings>
+internal static class WorkspaceNewCommand
 {
-    public sealed class Settings : CommandSettings
+    public static Command Create()
     {
-        [CommandArgument(0, "<name>")]
-        [Description("Workspace name")]
-        public string Name { get; init; } = string.Empty;
+        var nameArg = new Argument<string>("name") { Description = "Workspace name" };
+        var presetOption = new Option<string?>("--preset") { Description = "Use a built-in preset (starter, coding-assistant, research, multi-agent)" };
+        presetOption.CompletionSources.Add(CliCompletions.CompletePresetNames);
 
-        [CommandOption("--preset <PRESET>")]
-        [Description("Use a built-in preset (starter, coding-assistant, research, multi-agent)")]
-        public string? Preset { get; init; }
-    }
-
-    public override async Task<int> ExecuteAsync(CommandContext context, Settings settings, CancellationToken cancellationToken)
-    {
-        var name = settings.Name;
-        var preset = settings.Preset;
-
-        string model;
-        List<string> tools;
-
-        if (preset is not null)
+        var cmd = new Command("new", "Create a new workspace") { nameArg, presetOption };
+        cmd.SetAction(async (parseResult, cancellationToken) =>
         {
-            if (!WorkspacePresets.All.TryGetValue(preset, out var presetDef))
-            {
-                AnsiConsole.MarkupLine($"[red]Unknown preset '{preset}'. Use 'weave workspace presets' to see available options.[/]");
-                return 1;
-            }
+            var name = parseResult.GetValue(nameArg)!;
+            var preset = parseResult.GetValue(presetOption);
 
-            model = presetDef.Model;
-            tools = [.. presetDef.Tools];
-        }
-        else
-        {
-            var presetChoice = AnsiConsole.Prompt(
-                new SelectionPrompt<string>()
-                    .Title("Choose a preset:")
-                    .AddChoices([.. WorkspacePresets.All.Keys, "custom (configure everything yourself)"]));
+            string model;
+            List<string> tools;
+            string? selectedPresetName = preset;
+            var isolation = IsolationLevel.Full;
 
-            if (presetChoice != "custom (configure everything yourself)" &&
-                WorkspacePresets.All.TryGetValue(presetChoice, out var selectedPreset))
+            if (preset is not null)
             {
-                model = selectedPreset.Model;
-                tools = [.. selectedPreset.Tools];
+                if (!WorkspacePresets.All.TryGetValue(preset, out var presetDef))
+                    {
+                        CliTheme.WriteError($"Unknown preset '{preset}'. Use 'weave workspace presets' to see available options.");
+                        return 1;
+                    }
+
+                model = presetDef.Model;
+                tools = [.. presetDef.Tools];
             }
             else
             {
-                model = AnsiConsole.Prompt(
+                var presetChoice = AnsiConsole.Prompt(
                     new SelectionPrompt<string>()
-                        .Title("Select a model for your assistant:")
-                        .AddChoices("claude-sonnet-4-20250514", "gpt-4o", "custom..."));
+                        .Title("Choose a preset:")
+                        .Styled()
+                        .AddChoices([.. WorkspacePresets.All.Keys, "custom (configure everything yourself)"]));
 
-                if (model == "custom...")
+                if (presetChoice != "custom (configure everything yourself)" &&
+                    WorkspacePresets.All.TryGetValue(presetChoice, out var selectedPreset))
+                {
+                    selectedPresetName = presetChoice;
+                    model = selectedPreset.Model;
+                    tools = [.. selectedPreset.Tools];
+                }
+                else
                 {
                     model = AnsiConsole.Prompt(
-                        new TextPrompt<string>("Enter the model name:"));
+                        new SelectionPrompt<string>()
+                            .Title("Select a model for your assistant:")
+                            .Styled()
+                            .AddChoices("claude-sonnet-4-20250514", "gpt-4o", "custom..."));
+
+                    if (model == "custom...")
+                    {
+                        model = AnsiConsole.Prompt(
+                            new TextPrompt<string>("Enter the model name:").Styled());
+                    }
+
+                    tools = AnsiConsole.Prompt(
+                        new MultiSelectionPrompt<string>()
+                            .Title("Which tools should the assistant have access to?")
+                            .Styled()
+                            .NotRequired()
+                            .AddChoices("git", "file", "web", "document"));
+
+                    var isolationChoice = AnsiConsole.Prompt(
+                        new SelectionPrompt<string>()
+                            .Title("Workspace isolation level:")
+                            .Styled()
+                            .AddChoices("full (recommended)", "shared", "none"));
+
+                    isolation = isolationChoice switch
+                    {
+                        "shared" => IsolationLevel.Shared,
+                        "none" => IsolationLevel.None,
+                        _ => IsolationLevel.Full
+                    };
                 }
-
-                tools = AnsiConsole.Prompt(
-                    new MultiSelectionPrompt<string>()
-                        .Title("Which tools should the assistant have access to?")
-                        .NotRequired()
-                        .AddChoices("git", "file", "web", "document"));
             }
-        }
 
-        var basePath = Path.Combine("workspaces", name);
-        Directory.CreateDirectory(basePath);
-        Directory.CreateDirectory(Path.Combine(basePath, "prompts"));
-        Directory.CreateDirectory(Path.Combine(basePath, "data"));
-        Directory.CreateDirectory(Path.Combine(basePath, ".weave"));
+            var basePath = Path.Combine("workspaces", name);
+            Directory.CreateDirectory(basePath);
+            Directory.CreateDirectory(Path.Combine(basePath, "prompts"));
+            Directory.CreateDirectory(Path.Combine(basePath, "data"));
+            Directory.CreateDirectory(Path.Combine(basePath, ".weave"));
 
-        var manifest = new WorkspaceManifest
-        {
-            Version = "1.0",
-            Name = name,
-            Workspace = new WorkspaceConfig
+            var isMultiAgent = string.Equals(selectedPresetName, "multi-agent", StringComparison.OrdinalIgnoreCase);
+
+            Dictionary<string, AgentDefinition> agents;
+            List<(string FileName, string Content)> promptFiles;
+
+            if (isMultiAgent)
             {
-                Isolation = IsolationLevel.Full,
-                Network = new NetworkConfig { Name = $"weave-{name}" },
-                Secrets = new SecretsConfig { Provider = "env" }
-            },
-            Agents = new Dictionary<string, AgentDefinition>
-            {
-                ["assistant"] = new AgentDefinition
+                agents = new Dictionary<string, AgentDefinition>
                 {
-                    Model = model,
-                    SystemPromptFile = "./prompts/assistant.md",
-                    MaxConcurrentTasks = 3,
-                    Tools = tools
-                }
-            },
-            Tools = tools.ToDictionary(t => t, _ => new ToolDefinition { Type = "mcp" }),
-            Targets = new Dictionary<string, TargetDefinition>
-            {
-                ["local"] = new TargetDefinition { Runtime = "podman" }
+                    ["supervisor"] = new AgentDefinition
+                    {
+                        Model = model,
+                        SystemPromptFile = "./prompts/supervisor.md",
+                        MaxConcurrentTasks = 5,
+                        Tools = tools
+                    },
+                    ["worker"] = new AgentDefinition
+                    {
+                        Model = model,
+                        SystemPromptFile = "./prompts/worker.md",
+                        MaxConcurrentTasks = 3,
+                        Tools = tools
+                    }
+                };
+
+                promptFiles =
+                [
+                    ("supervisor.md", "# Supervisor\n\nYou coordinate tasks across worker assistants. Break complex requests into subtasks and delegate them.\n"),
+                    ("worker.md", "# Worker\n\nYou execute tasks assigned by the supervisor. Focus on completing one task at a time with high quality.\n")
+                ];
             }
-        };
+            else
+            {
+                agents = new Dictionary<string, AgentDefinition>
+                {
+                    ["assistant"] = new AgentDefinition
+                    {
+                        Model = model,
+                        SystemPromptFile = "./prompts/assistant.md",
+                        MaxConcurrentTasks = 3,
+                        Tools = tools
+                    }
+                };
 
-        var parser = new ManifestParser();
-        await File.WriteAllTextAsync(Path.Combine(basePath, "workspace.json"), parser.Serialize(manifest), cancellationToken);
-        await File.WriteAllTextAsync(Path.Combine(basePath, "prompts", "assistant.md"),
-            "# Assistant\n\nYou are a helpful AI assistant.\n", cancellationToken);
+                promptFiles =
+                [
+                    ("assistant.md", "# Assistant\n\nYou are a helpful AI assistant.\n")
+                ];
+            }
 
-        AnsiConsole.MarkupLine($"[green]✔ Workspace \"{name}\" created.[/] Run `weave workspace up {name}` to start.");
-        return 0;
+            var manifest = new WorkspaceManifest
+            {
+                Version = "1.0",
+                Name = name,
+                Workspace = new WorkspaceConfig
+                {
+                    Isolation = isolation,
+                    Network = new NetworkConfig { Name = $"weave-{name}" },
+                    Secrets = new SecretsConfig { Provider = "env" }
+                },
+                Agents = agents,
+                Tools = tools.ToDictionary(t => t, _ => new ToolDefinition { Type = "mcp" }),
+                Targets = new Dictionary<string, TargetDefinition>
+                {
+                    ["local"] = new TargetDefinition { Runtime = "podman" }
+                }
+            };
+
+            var parser = new ManifestParser();
+            await File.WriteAllTextAsync(Path.Combine(basePath, "workspace.json"), parser.Serialize(manifest), cancellationToken);
+
+            foreach (var (fileName, content) in promptFiles)
+            {
+                await File.WriteAllTextAsync(Path.Combine(basePath, "prompts", fileName), content, cancellationToken);
+            }
+
+            CliTheme.WriteSuccess($"Workspace \"{name}\" created.");
+            CliTheme.WriteMuted($"  Run `weave workspace up {name}` to start.");
+            return 0;
+        });
+
+        return cmd;
     }
 }
 
-public sealed class WorkspaceListCommand : Command<WorkspaceListCommand.Settings>
+internal static class WorkspaceListCommand
 {
-    public sealed class Settings : CommandSettings { }
-
-    public override int Execute(CommandContext context, Settings settings, CancellationToken cancellationToken)
+    public static Command Create()
     {
-        var workspacesDir = "workspaces";
-        if (!Directory.Exists(workspacesDir))
+        var cmd = new Command("list", "List all workspaces");
+        cmd.SetAction(parseResult =>
         {
-            AnsiConsole.MarkupLine("[yellow]No workspaces found.[/]");
+            var workspacesDir = "workspaces";
+            if (!Directory.Exists(workspacesDir))
+            {
+                CliTheme.WriteWarning("No workspaces found.");
+                return 0;
+            }
+
+            var dirs = Directory.GetDirectories(workspacesDir);
+            if (dirs.Length == 0)
+            {
+                CliTheme.WriteWarning("No workspaces found.");
+                return 0;
+            }
+
+            var table = CliTheme.CreateTable("Workspaces");
+            table.AddColumn(CliTheme.StyledColumn("Name"));
+            table.AddColumn(CliTheme.StyledColumn("Path"));
+            table.AddColumn(CliTheme.StyledColumn("Status"));
+
+            foreach (var dir in dirs)
+            {
+                var name = Path.GetFileName(dir);
+                var hasManifest = File.Exists(Path.Combine(dir, "workspace.json"));
+                var status = hasManifest
+                    ? $"[rgb({CliTheme.Success.R},{CliTheme.Success.G},{CliTheme.Success.B})]Ready[/]"
+                    : $"[rgb({CliTheme.Error.R},{CliTheme.Error.G},{CliTheme.Error.B})]Invalid[/]";
+                table.AddRow(name, dir, status);
+            }
+
+            AnsiConsole.Write(table);
             return 0;
-        }
+        });
 
-        var dirs = Directory.GetDirectories(workspacesDir);
-        if (dirs.Length == 0)
-        {
-            AnsiConsole.MarkupLine("[yellow]No workspaces found.[/]");
-            return 0;
-        }
-
-        var table = new Table();
-        table.AddColumn("Name");
-        table.AddColumn("Path");
-        table.AddColumn("Status");
-
-        foreach (var dir in dirs)
-        {
-            var name = Path.GetFileName(dir);
-            var hasManifest = File.Exists(Path.Combine(dir, "workspace.json"));
-            var status = hasManifest ? "[green]Ready[/]" : "[red]Invalid[/]";
-            table.AddRow(name, dir, status);
-        }
-
-        AnsiConsole.Write(table);
-        return 0;
+        return cmd;
     }
 }
 
-public sealed class WorkspaceRemoveCommand : Command<WorkspaceRemoveCommand.Settings>
+internal static class WorkspaceRemoveCommand
 {
-    public sealed class Settings : CommandSettings
+    public static Command Create()
     {
-        [CommandArgument(0, "<name>")]
-        [Description("Workspace name")]
-        public string Name { get; init; } = string.Empty;
+        var nameArg = new Argument<string>("name") { Description = "Workspace name" };
+        nameArg.CompletionSources.Add(CliCompletions.CompleteWorkspaceNames);
+        var purgeOption = new Option<bool>("--purge") { Description = "Delete workspace folder" };
 
-        [CommandOption("--purge")]
-        [Description("Delete workspace folder")]
-        public bool Purge { get; init; }
-    }
-
-    public override int Execute(CommandContext context, Settings settings, CancellationToken cancellationToken)
-    {
-        var path = Path.Combine("workspaces", settings.Name);
-        if (!Directory.Exists(path))
+        var cmd = new Command("remove", "Remove a workspace") { nameArg, purgeOption };
+        cmd.SetAction(parseResult =>
         {
-            AnsiConsole.MarkupLine($"[red]Workspace '{settings.Name}' not found.[/]");
-            return 1;
-        }
+            var name = parseResult.GetValue(nameArg)!;
+            var purge = parseResult.GetValue(purgeOption);
 
-        if (settings.Purge)
-        {
-            Directory.Delete(path, recursive: true);
-            AnsiConsole.MarkupLine($"[green]Workspace '{settings.Name}' purged.[/]");
-        }
-        else
-        {
-            AnsiConsole.MarkupLine($"Workspace '{settings.Name}' deregistered. Use [bold]--purge[/] to delete files.");
-        }
+            var path = Path.Combine("workspaces", name);
+            if (!Directory.Exists(path))
+            {
+                CliTheme.WriteError($"Workspace '{name}' not found.");
+                return 1;
+            }
 
-        return 0;
+            if (purge)
+            {
+                Directory.Delete(path, recursive: true);
+                CliTheme.WriteSuccess($"Workspace '{name}' purged.");
+            }
+            else
+            {
+                CliTheme.WriteInfo($"Workspace '{name}' deregistered.");
+                CliTheme.WriteMuted("  Use --purge to delete files.");
+            }
+
+            return 0;
+        });
+
+        return cmd;
     }
 }

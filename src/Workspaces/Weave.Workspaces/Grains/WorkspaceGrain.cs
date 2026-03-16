@@ -48,6 +48,7 @@ public sealed partial class WorkspaceGrain(
             persistentState.State.Status = WorkspaceStatus.Running;
             persistentState.State.StartedAt = DateTimeOffset.UtcNow;
             persistentState.State.NetworkId = env.NetworkId;
+            persistentState.State.Name = manifest.Name;
             persistentState.State.Containers.Clear();
             persistentState.State.ActiveAgents.Clear();
             persistentState.State.ActiveTools.Clear();

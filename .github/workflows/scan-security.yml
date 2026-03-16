@@ -1,0 +1,61 @@
+name: Security Scan
+
+on:
+  schedule:
+    - cron: '0 3 * * MON'
+  push:
+    branches: [main]
+  pull_request:
+    branches: [main]
+  workflow_dispatch:
+
+permissions:
+  contents: read
+
+env:
+  DOTNET_NOLOGO: true
+  DOTNET_SKIP_FIRST_TIME_EXPERIENCE: true
+  DOTNET_CLI_TELEMETRY_OPTOUT: true
+
+jobs:
+  vulnerability-audit:
+    name: Vulnerability Audit
+    runs-on: ubuntu-latest
+
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v4
+
+      - name: Setup .NET
+        uses: ./.github/actions/setup-dotnet
+
+      - name: Restore
+        run: dotnet restore Weave.slnx
+
+      - name: Audit for vulnerabilities
+        run: |
+          set -euo pipefail
+          dotnet list Weave.slnx package --vulnerable --include-transitive --verbosity minimal | tee security-audit.txt
+
+      - name: Audit for deprecated packages
+        run: |
+          dotnet list Weave.slnx package --deprecated | tee -a security-audit.txt
+
+      - name: Upload audit report
+        if: always()
+        uses: actions/upload-artifact@v4
+        with:
+          name: security-audit
+          path: security-audit.txt
+          retention-days: 14
+
+      - name: Summary
+        if: always()
+        run: |
+          echo "## Dependency Security Audit" >> $GITHUB_STEP_SUMMARY
+          echo "" >> $GITHUB_STEP_SUMMARY
+          echo "**Run**: $(date -u '+%Y-%m-%d %H:%M:%S UTC')" >> $GITHUB_STEP_SUMMARY
+          echo "" >> $GITHUB_STEP_SUMMARY
+          echo '```' >> $GITHUB_STEP_SUMMARY
+          cat security-audit.txt >> $GITHUB_STEP_SUMMARY
+          echo '```' >> $GITHUB_STEP_SUMMARY

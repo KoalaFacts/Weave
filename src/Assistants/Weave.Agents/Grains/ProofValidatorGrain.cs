@@ -29,11 +29,6 @@ public sealed class ProofValidatorGrain(
         Be strict but fair. Evaluate based on the evidence provided.
         """;
 
-    private static readonly JsonSerializerOptions JsonOptions = new()
-    {
-        PropertyNameCaseInsensitive = true
-    };
-
     public async Task<VerificationVote> ValidateAsync(
         string validatorId,
         ProofOfWork proof,
@@ -144,7 +139,7 @@ public sealed class ProofValidatorGrain(
             if (startIdx >= 0 && endIdx > startIdx)
                 json = json[startIdx..(endIdx + 1)];
 
-            var parsed = JsonSerializer.Deserialize<List<ConditionResultDto>>(json, JsonOptions);
+            var parsed = JsonSerializer.Deserialize(json, ProofValidatorJsonContext.Default.ListProofConditionResultDto);
             if (parsed is null)
                 return [];
 
@@ -159,12 +154,5 @@ public sealed class ProofValidatorGrain(
         {
             return [];
         }
-    }
-
-    private sealed record ConditionResultDto
-    {
-        public string? ConditionName { get; init; }
-        public bool Passed { get; init; }
-        public string? Detail { get; init; }
     }
 }

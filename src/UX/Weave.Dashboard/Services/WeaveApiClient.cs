@@ -1,3 +1,5 @@
+using System.Net.Http.Json;
+
 namespace Weave.Dashboard.Services;
 
 public sealed class WeaveApiClient(HttpClient http)
@@ -6,18 +8,18 @@ public sealed class WeaveApiClient(HttpClient http)
 
     public async Task<List<WorkspaceDto>> GetWorkspacesAsync(CancellationToken ct = default)
     {
-        var result = await http.GetFromJsonAsync<List<WorkspaceDto>>("/api/workspaces", ct);
+        var result = await http.GetFromJsonAsync("/api/workspaces", DashboardJsonContext.Default.ListWorkspaceDto, ct);
         return result ?? [];
     }
 
     public async Task<WorkspaceDto?> GetWorkspaceAsync(string workspaceId, CancellationToken ct = default) =>
-        await http.GetFromJsonAsync<WorkspaceDto>($"/api/workspaces/{workspaceId}", ct);
+        await http.GetFromJsonAsync($"/api/workspaces/{workspaceId}", DashboardJsonContext.Default.WorkspaceDto, ct);
 
     // === Agents ===
 
     public async Task<List<AgentDto>> GetAgentsAsync(string workspaceId, CancellationToken ct = default)
     {
-        var result = await http.GetFromJsonAsync<List<AgentDto>>($"/api/workspaces/{workspaceId}/agents", ct);
+        var result = await http.GetFromJsonAsync($"/api/workspaces/{workspaceId}/agents", DashboardJsonContext.Default.ListAgentDto, ct);
         return result ?? [];
     }
 
@@ -29,26 +31,34 @@ public sealed class WeaveApiClient(HttpClient http)
     {
         var response = await http.PostAsJsonAsync(
             $"/api/workspaces/{workspaceId}/agents/{agentName}/messages",
-            new { Content = content, Role = "user" },
+            new SendMessageDto { Content = content, Role = "user" },
+            DashboardJsonContext.Default.SendMessageDto,
             ct);
         using var _ = response.EnsureSuccessStatusCode();
-        return await response.Content.ReadFromJsonAsync<AgentChatResponseDto>(ct);
+        return await response.Content.ReadFromJsonAsync(DashboardJsonContext.Default.AgentChatResponseDto, ct);
     }
 
     // === Tools ===
 
     public async Task<List<ToolConnectionDto>> GetToolsAsync(string workspaceId, CancellationToken ct = default)
     {
-        var result = await http.GetFromJsonAsync<List<ToolConnectionDto>>($"/api/workspaces/{workspaceId}/tools", ct);
+        var result = await http.GetFromJsonAsync($"/api/workspaces/{workspaceId}/tools", DashboardJsonContext.Default.ListToolConnectionDto, ct);
         return result ?? [];
     }
 }
 
 // DTOs mirroring the Silo API contract responses
 
+public sealed record SendMessageDto
+{
+    public required string Content { get; init; }
+    public string Role { get; init; } = "user";
+}
+
 public sealed record WorkspaceDto
 {
     public string WorkspaceId { get; init; } = "";
+    public string? Name { get; init; }
     public string Status { get; init; } = "";
     public DateTimeOffset? StartedAt { get; init; }
     public DateTimeOffset? StoppedAt { get; init; }

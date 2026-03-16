@@ -1,6 +1,4 @@
 @page "/tools"
-@using Weave.Dashboard.Services
-@inject WeaveApiClient Api
 
 <PageTitle>Tools - Weave</PageTitle>
 
@@ -29,39 +27,4 @@ else
         <PropertyColumn Property="@(t => t.Endpoint)" Title="Endpoint" />
         <PropertyColumn Property="@(t => t.ConnectedAt)" Title="Connected" Format="g" />
     </FluentDataGrid>
-}
-
-@code {
-    private List<ToolConnectionDto> _tools = [];
-    private bool _loading = true;
-    private string? _error;
-
-    protected override async Task OnInitializedAsync()
-    {
-        try
-        {
-            var workspaces = await Api.GetWorkspacesAsync();
-            foreach (var ws in workspaces)
-            {
-                var tools = await Api.GetToolsAsync(ws.WorkspaceId);
-                _tools.AddRange(tools);
-            }
-        }
-        catch (HttpRequestException)
-        {
-            _error = "Unable to connect to the Weave Silo API.";
-        }
-        finally
-        {
-            _loading = false;
-        }
-    }
-
-    private static Appearance GetStatusAppearance(string status) => status switch
-    {
-        "Connected" => Appearance.Accent,
-        "Disconnected" => Appearance.Neutral,
-        "Error" => Appearance.Accent,
-        _ => Appearance.Neutral
-    };
 }

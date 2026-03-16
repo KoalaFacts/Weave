@@ -1,7 +1,7 @@
 <Project Sdk="Microsoft.NET.Sdk">
 
   <PropertyGroup>
-    <IsAotExcluded>true</IsAotExcluded>
+    <Description>Workspace management for Weave — manifests, grains, runtimes, and plugin registry.</Description>
   </PropertyGroup>
 
   <ItemGroup>

@@ -1,7 +1,7 @@
 <Project Sdk="Microsoft.NET.Sdk">
 
   <PropertyGroup>
-    <IsAotExcluded>true</IsAotExcluded>
+    <Description>Security primitives for Weave — capability tokens, secret proxies, and leak scanning.</Description>
   </PropertyGroup>
 
   <ItemGroup>

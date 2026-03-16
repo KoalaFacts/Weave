@@ -1,6 +1,4 @@
 @page "/"
-@using Weave.Dashboard.Services
-@inject WeaveApiClient Api
 
 <PageTitle>Weave Dashboard</PageTitle>
 
@@ -43,38 +41,4 @@
 @if (_error is not null)
 {
     <FluentMessageBar Intent="MessageIntent.Error" Style="margin-top: 1rem;">@_error</FluentMessageBar>
-}
-
-@code {
-    private int _workspaceCount;
-    private int _agentCount;
-    private int _toolCount;
-    private string? _error;
-
-    protected override async Task OnInitializedAsync()
-    {
-        try
-        {
-            var workspaces = await Api.GetWorkspacesAsync();
-            _workspaceCount = workspaces.Count;
-
-            var agentCount = 0;
-            var toolCount = 0;
-            foreach (var ws in workspaces)
-            {
-                var agents = await Api.GetAgentsAsync(ws.WorkspaceId);
-                agentCount += agents.Count;
-
-                var tools = await Api.GetToolsAsync(ws.WorkspaceId);
-                toolCount += tools.Count;
-            }
-
-            _agentCount = agentCount;
-            _toolCount = toolCount;
-        }
-        catch (HttpRequestException)
-        {
-            _error = "Unable to connect to the Weave Silo API.";
-        }
-    }
 }

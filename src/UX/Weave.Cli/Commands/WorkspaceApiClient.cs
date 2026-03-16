@@ -1,16 +1,10 @@
 using System.Net.Http.Json;
-using System.Text.Json;
 using Weave.Workspaces.Models;
 
 namespace Weave.Cli.Commands;
 
 internal sealed class WorkspaceApiClient : IDisposable
 {
-    private static readonly JsonSerializerOptions JsonOptions = new(JsonSerializerDefaults.Web)
-    {
-        PropertyNameCaseInsensitive = true
-    };
-
     private readonly HttpClient _httpClient;
 
     public WorkspaceApiClient(string? baseUrl = null)
@@ -26,9 +20,9 @@ internal sealed class WorkspaceApiClient : IDisposable
         var response = await _httpClient.PostAsJsonAsync("/api/workspaces", new ApiStartWorkspaceRequest
         {
             Manifest = manifest
-        }, JsonOptions, cancellationToken);
+        }, CliApiJsonContext.Default.ApiStartWorkspaceRequest, cancellationToken);
         response.EnsureSuccessStatusCode();
-        return (await response.Content.ReadFromJsonAsync<ApiWorkspaceResponse>(JsonOptions, cancellationToken))
+        return (await response.Content.ReadFromJsonAsync(CliApiJsonContext.Default.ApiWorkspaceResponse, cancellationToken))
             ?? throw new InvalidOperationException("Workspace API returned an empty start response.");
     }
 
@@ -40,17 +34,26 @@ internal sealed class WorkspaceApiClient : IDisposable
 
     public async Task<ApiWorkspaceResponse> GetWorkspaceAsync(string workspaceId, CancellationToken cancellationToken)
     {
-        return await GetAsync<ApiWorkspaceResponse>($"/api/workspaces/{workspaceId}", cancellationToken);
+        using var response = await _httpClient.GetAsync($"/api/workspaces/{workspaceId}", cancellationToken);
+        response.EnsureSuccessStatusCode();
+        return (await response.Content.ReadFromJsonAsync(CliApiJsonContext.Default.ApiWorkspaceResponse, cancellationToken))
+            ?? throw new InvalidOperationException("Workspace API returned an empty payload for '/api/workspaces/'.");
     }
 
     public async Task<IReadOnlyList<ApiAgentResponse>> GetAgentsAsync(string workspaceId, CancellationToken cancellationToken)
     {
-        return await GetAsync<List<ApiAgentResponse>>($"/api/workspaces/{workspaceId}/agents", cancellationToken);
+        using var response = await _httpClient.GetAsync($"/api/workspaces/{workspaceId}/agents", cancellationToken);
+        response.EnsureSuccessStatusCode();
+        return (await response.Content.ReadFromJsonAsync(CliApiJsonContext.Default.ListApiAgentResponse, cancellationToken))
+            ?? throw new InvalidOperationException("Workspace API returned an empty payload for '/api/workspaces/{workspaceId}/agents'.");
     }
 
     public async Task<IReadOnlyList<ApiToolResponse>> GetToolsAsync(string workspaceId, CancellationToken cancellationToken)
     {
-        return await GetAsync<List<ApiToolResponse>>($"/api/workspaces/{workspaceId}/tools", cancellationToken);
+        using var response = await _httpClient.GetAsync($"/api/workspaces/{workspaceId}/tools", cancellationToken);
+        response.EnsureSuccessStatusCode();
+        return (await response.Content.ReadFromJsonAsync(CliApiJsonContext.Default.ListApiToolResponse, cancellationToken))
+            ?? throw new InvalidOperationException("Workspace API returned an empty payload for '/api/workspaces/{workspaceId}/tools'.");
     }
 
     public void Dispose() => _httpClient.Dispose();
@@ -89,14 +92,6 @@ internal sealed class WorkspaceApiClient : IDisposable
         var directory = Path.GetDirectoryName(Path.GetFullPath(manifestPath))
             ?? throw new InvalidOperationException("Unable to determine the workspace directory.");
         return Path.Combine(directory, ".weave", "workspace-id");
-    }
-
-    private async Task<T> GetAsync<T>(string path, CancellationToken cancellationToken)
-    {
-        using var response = await _httpClient.GetAsync(path, cancellationToken);
-        response.EnsureSuccessStatusCode();
-        return (await response.Content.ReadFromJsonAsync<T>(JsonOptions, cancellationToken))
-            ?? throw new InvalidOperationException($"Workspace API returned an empty payload for '{path}'.");
     }
 
     private static string ResolveBaseUrl() =>

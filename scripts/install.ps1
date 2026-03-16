@@ -1,6 +1,7 @@
 #!/usr/bin/env pwsh
 # Weave CLI installer for Windows
-# Usage: irm https://weave.dev/install.ps1 | iex
+# Usage:  irm https://raw.githubusercontent.com/KoalaFacts/Weave/main/scripts/install.ps1 | iex
+# Pinned: $env:WEAVE_VERSION='0.1.0'; irm ... | iex
 
 $ErrorActionPreference = 'Stop'
 
@@ -28,23 +29,29 @@ $arch = if ([Environment]::Is64BitOperatingSystem) {
 $rid = "win-$arch"
 Write-Status "Detected platform: $rid"
 
-# Fetch latest release
-Write-Status "Finding latest release..."
-$release = Invoke-RestMethod -Uri "https://api.github.com/repos/$repo/releases/latest" -Headers @{ Accept = "application/vnd.github+json" }
-$tag = $release.tag_name
-Write-Status "Latest version: $tag"
+# Resolve version
+if ($env:WEAVE_VERSION) {
+    $tag = "v$env:WEAVE_VERSION"
+    Write-Status "Using requested version: $tag"
+    $version = $env:WEAVE_VERSION
+    $assetName = "weave-$version-$rid.zip"
+    $downloadUrl = "https://github.com/$repo/releases/download/$tag/$assetName"
+} else {
+    Write-Status "Finding latest release..."
+    $release = Invoke-RestMethod -Uri "https://api.github.com/repos/$repo/releases/latest" -Headers @{ Accept = "application/vnd.github+json" }
+    $tag = $release.tag_name
+    Write-Status "Latest version: $tag"
+    $version = $tag.TrimStart('v')
+    $assetName = "weave-$version-$rid.zip"
 
-# Find matching asset
-$assetName = "weave-$rid.zip"
-$asset = $release.assets | Where-Object { $_.name -eq $assetName }
-
-if (-not $asset) {
-    Write-Err "Could not find asset '$assetName' in release $tag."
-    Write-Err "Available assets: $($release.assets.name -join ', ')"
-    exit 1
+    $asset = $release.assets | Where-Object { $_.name -eq $assetName }
+    if (-not $asset) {
+        Write-Err "Could not find asset '$assetName' in release $tag."
+        Write-Err "Available assets: $($release.assets.name -join ', ')"
+        exit 1
+    }
+    $downloadUrl = $asset.browser_download_url
 }
-
-$downloadUrl = $asset.browser_download_url
 
 # Download
 $tmpFile = Join-Path $env:TEMP "weave-install.zip"

@@ -1,13 +1,12 @@
 using System.Collections.Frozen;
-using System.ComponentModel;
+using System.CommandLine;
 using Spectre.Console;
-using Spectre.Console.Cli;
 using Weave.Workspaces.Manifest;
 using Weave.Workspaces.Models;
 
 namespace Weave.Cli.Commands;
 
-public sealed class WorkspaceAddPluginCommand : AsyncCommand<WorkspaceAddPluginCommand.Settings>
+internal static class WorkspaceAddPluginCommand
 {
     private static readonly FrozenDictionary<string, PluginTemplate> Templates =
         new Dictionary<string, PluginTemplate>(StringComparer.OrdinalIgnoreCase)
@@ -20,209 +19,216 @@ public sealed class WorkspaceAddPluginCommand : AsyncCommand<WorkspaceAddPluginC
                 new Dictionary<string, string> { ["base_url"] = "http://localhost:8080" }),
         }.ToFrozenDictionary(StringComparer.OrdinalIgnoreCase);
 
-    public sealed class Settings : CommandSettings
+    public static Command Create()
     {
-        [CommandArgument(0, "<workspace>")]
-        [Description("Workspace name")]
-        public string Workspace { get; init; } = string.Empty;
+        var workspaceArg = new Argument<string>("workspace") { Description = "Workspace name" };
+        workspaceArg.CompletionSources.Add(CliCompletions.CompleteWorkspaceNames);
+        var nameOption = new Option<string?>("--name") { Description = "Plugin name" };
+        var typeOption = new Option<string?>("--type") { Description = "Plugin type (dapr, vault, http, custom)" };
+        typeOption.CompletionSources.Add(CliCompletions.CompletePluginTypes);
 
-        [CommandOption("--name <NAME>")]
-        [Description("Plugin name")]
-        public string? Name { get; init; }
-
-        [CommandOption("--type <TYPE>")]
-        [Description("Plugin type (dapr, vault, http, custom)")]
-        public string? Type { get; init; }
-    }
-
-    public override async Task<int> ExecuteAsync(CommandContext context, Settings settings, CancellationToken cancellationToken)
-    {
-        var manifestPath = ManifestResolver.Resolve(settings.Workspace);
-        if (manifestPath is null)
+        var cmd = new Command("plugin", "Add a plugin") { workspaceArg, nameOption, typeOption };
+        // Also register as just "add" when used under the plugin branch
+        cmd.Aliases.Add("add");
+        cmd.SetAction(async (parseResult, cancellationToken) =>
         {
-            AnsiConsole.MarkupLine($"[red]No workspace.json found for '{settings.Workspace}'.[/]");
-            return 1;
-        }
+            var workspace = parseResult.GetValue(workspaceArg)!;
+            var pluginName = parseResult.GetValue(nameOption);
+            var type = parseResult.GetValue(typeOption);
 
-        // Pick type interactively or from --type
-        var type = settings.Type;
-        if (string.IsNullOrWhiteSpace(type))
-        {
-            type = AnsiConsole.Prompt(
-                new SelectionPrompt<string>()
-                    .Title("Select plugin type:")
-                    .AddChoices("dapr", "vault", "http", "custom"));
-        }
-
-        // Pick name interactively or from --name
-        var pluginName = settings.Name;
-        if (string.IsNullOrWhiteSpace(pluginName))
-        {
-            pluginName = AnsiConsole.Prompt(
-                new TextPrompt<string>("Plugin name:")
-                    .DefaultValue(type));
-        }
-
-        var parser = new ManifestParser();
-        var json = await File.ReadAllTextAsync(manifestPath, cancellationToken);
-        var manifest = parser.Parse(json);
-
-        if (manifest.Plugins.ContainsKey(pluginName))
-        {
-            AnsiConsole.MarkupLine($"[yellow]Plugin '{pluginName}' already exists in the workspace.[/]");
-            return 1;
-        }
-
-        // Build config — use template defaults or prompt for custom
-        Dictionary<string, string> config;
-        string? description;
-
-        if (Templates.TryGetValue(type, out var template))
-        {
-            description = template.Description;
-            config = new Dictionary<string, string>(template.DefaultConfig);
-
-            // Let the user confirm or override each config value
-            foreach (var key in template.DefaultConfig.Keys.ToArray())
+            var manifestPath = ManifestResolver.Resolve(workspace);
+            if (manifestPath is null)
             {
-                config[key] = AnsiConsole.Prompt(
-                    new TextPrompt<string>($"  {key}:")
-                        .DefaultValue(template.DefaultConfig[key]));
+                CliTheme.WriteError($"No workspace.json found for '{workspace}'.");
+                return 1;
             }
-        }
-        else
-        {
-            description = AnsiConsole.Prompt(
-                new TextPrompt<string>("Description (optional):")
-                    .AllowEmpty());
-            if (string.IsNullOrWhiteSpace(description)) description = null;
 
-            config = [];
-            while (AnsiConsole.Confirm("Add a config value?", false))
+            if (string.IsNullOrWhiteSpace(type))
             {
-                var key = AnsiConsole.Prompt(new TextPrompt<string>("  Key:"));
-                var value = AnsiConsole.Prompt(new TextPrompt<string>("  Value:"));
-                config[key] = value;
+                type = AnsiConsole.Prompt(
+                    new SelectionPrompt<string>()
+                        .Title("Select plugin type:")
+                        .Styled()
+                        .AddChoices("dapr", "vault", "http", "custom"));
             }
-        }
 
-        manifest.Plugins[pluginName] = new PluginDefinition
-        {
-            Type = type,
-            Description = description,
-            Config = config
-        };
+            if (string.IsNullOrWhiteSpace(pluginName))
+            {
+                pluginName = AnsiConsole.Prompt(
+                    new TextPrompt<string>("Plugin name:")
+                        .Styled()
+                        .DefaultValue(type));
+            }
 
-        await File.WriteAllTextAsync(manifestPath, parser.Serialize(manifest), cancellationToken);
+            var parser = new ManifestParser();
+            var json = await File.ReadAllTextAsync(manifestPath, cancellationToken);
+            var manifest = parser.Parse(json);
 
-        AnsiConsole.MarkupLine($"[green]Plugin '{pluginName}' ({type}) added to workspace '{settings.Workspace}'.[/]");
-        return 0;
+            if (manifest.Plugins.ContainsKey(pluginName))
+            {
+                CliTheme.WriteWarning($"Plugin '{pluginName}' already exists in the workspace.");
+                return 1;
+            }
+
+            Dictionary<string, string> config;
+            string? description;
+
+            if (Templates.TryGetValue(type, out var template))
+            {
+                description = template.Description;
+                config = new Dictionary<string, string>(template.DefaultConfig);
+
+                foreach (var key in template.DefaultConfig.Keys.ToArray())
+                {
+                    config[key] = AnsiConsole.Prompt(
+                        new TextPrompt<string>($"  {key}:")
+                            .Styled()
+                            .DefaultValue(template.DefaultConfig[key]));
+                }
+            }
+            else
+            {
+                description = AnsiConsole.Prompt(
+                    new TextPrompt<string>("Description (optional):")
+                        .Styled()
+                        .AllowEmpty());
+                if (string.IsNullOrWhiteSpace(description)) description = null;
+
+                config = [];
+                while (AnsiConsole.Confirm("Add a config value?", false))
+                {
+                    var key = AnsiConsole.Prompt(new TextPrompt<string>("  Key:").Styled());
+                    var value = AnsiConsole.Prompt(new TextPrompt<string>("  Value:").Styled());
+                    config[key] = value;
+                }
+            }
+
+            manifest.Plugins[pluginName] = new PluginDefinition
+            {
+                Type = type,
+                Description = description,
+                Config = config
+            };
+
+            await File.WriteAllTextAsync(manifestPath, parser.Serialize(manifest), cancellationToken);
+
+            CliTheme.WriteSuccess($"Plugin '{pluginName}' ({type}) added to workspace '{workspace}'.");
+            return 0;
+        });
+
+        return cmd;
     }
 
     private sealed record PluginTemplate(string Type, string Description, Dictionary<string, string> DefaultConfig);
 }
 
-public sealed class WorkspacePluginListCommand : AsyncCommand<WorkspacePluginListCommand.Settings>
+internal static class WorkspacePluginListCommand
 {
-    public sealed class Settings : CommandSettings
+    public static Command Create()
     {
-        [CommandArgument(0, "<workspace>")]
-        [Description("Workspace name")]
-        public string Workspace { get; init; } = string.Empty;
-    }
+        var workspaceArg = new Argument<string>("workspace") { Description = "Workspace name" };
+        workspaceArg.CompletionSources.Add(CliCompletions.CompleteWorkspaceNames);
 
-    public override async Task<int> ExecuteAsync(CommandContext context, Settings settings, CancellationToken cancellationToken)
-    {
-        var manifestPath = ManifestResolver.Resolve(settings.Workspace);
-        if (manifestPath is null)
+        var cmd = new Command("list", "List configured plugins") { workspaceArg };
+        cmd.SetAction(async (parseResult, cancellationToken) =>
         {
-            AnsiConsole.MarkupLine($"[red]No workspace.json found for '{settings.Workspace}'.[/]");
-            return 1;
-        }
+            var workspace = parseResult.GetValue(workspaceArg)!;
 
-        var parser = new ManifestParser();
-        var json = await File.ReadAllTextAsync(manifestPath, cancellationToken);
-        var manifest = parser.Parse(json);
+            var manifestPath = ManifestResolver.Resolve(workspace);
+            if (manifestPath is null)
+            {
+                CliTheme.WriteError($"No workspace.json found for '{workspace}'.");
+                return 1;
+            }
 
-        if (manifest.Plugins.Count == 0)
-        {
-            AnsiConsole.MarkupLine("[yellow]No plugins configured in this workspace.[/]");
+            var parser = new ManifestParser();
+            var json = await File.ReadAllTextAsync(manifestPath, cancellationToken);
+            var manifest = parser.Parse(json);
+
+            if (manifest.Plugins.Count == 0)
+            {
+                AnsiConsole.MarkupLine("[yellow]No plugins configured in this workspace.[/]");
+                return 0;
+            }
+
+            var table = new Table();
+            table.AddColumn("Name");
+            table.AddColumn("Type");
+            table.AddColumn("Description");
+            table.AddColumn("Config");
+
+            foreach (var (name, plugin) in manifest.Plugins)
+            {
+                var configStr = plugin.Config.Count > 0
+                    ? string.Join(", ", plugin.Config.Select(kv => $"{kv.Key}={kv.Value}"))
+                    : "[dim]—[/]";
+                table.AddRow(
+                    name,
+                    plugin.Type,
+                    plugin.Description ?? "[dim]—[/]",
+                    configStr);
+            }
+
+            AnsiConsole.Write(table);
             return 0;
-        }
+        });
 
-        var table = new Table();
-        table.AddColumn("Name");
-        table.AddColumn("Type");
-        table.AddColumn("Description");
-        table.AddColumn("Config");
-
-        foreach (var (name, plugin) in manifest.Plugins)
-        {
-            var configStr = plugin.Config.Count > 0
-                ? string.Join(", ", plugin.Config.Select(kv => $"{kv.Key}={kv.Value}"))
-                : "[dim]—[/]";
-            table.AddRow(
-                name,
-                plugin.Type,
-                plugin.Description ?? "[dim]—[/]",
-                configStr);
-        }
-
-        AnsiConsole.Write(table);
-        return 0;
+        return cmd;
     }
 }
 
-public sealed class WorkspacePluginRemoveCommand : AsyncCommand<WorkspacePluginRemoveCommand.Settings>
+internal static class WorkspacePluginRemoveCommand
 {
-    public sealed class Settings : CommandSettings
+    public static Command Create()
     {
-        [CommandArgument(0, "<workspace>")]
-        [Description("Workspace name")]
-        public string Workspace { get; init; } = string.Empty;
+        var workspaceArg = new Argument<string>("workspace") { Description = "Workspace name" };
+        workspaceArg.CompletionSources.Add(CliCompletions.CompleteWorkspaceNames);
+        var nameOption = new Option<string?>("--name") { Description = "Plugin name to remove" };
 
-        [CommandOption("--name <NAME>")]
-        [Description("Plugin name to remove")]
-        public string? Name { get; init; }
-    }
-
-    public override async Task<int> ExecuteAsync(CommandContext context, Settings settings, CancellationToken cancellationToken)
-    {
-        var manifestPath = ManifestResolver.Resolve(settings.Workspace);
-        if (manifestPath is null)
+        var cmd = new Command("remove", "Remove a plugin") { workspaceArg, nameOption };
+        cmd.SetAction(async (parseResult, cancellationToken) =>
         {
-            AnsiConsole.MarkupLine($"[red]No workspace.json found for '{settings.Workspace}'.[/]");
-            return 1;
-        }
+            var workspace = parseResult.GetValue(workspaceArg)!;
+            var pluginName = parseResult.GetValue(nameOption);
 
-        var parser = new ManifestParser();
-        var json = await File.ReadAllTextAsync(manifestPath, cancellationToken);
-        var manifest = parser.Parse(json);
+            var manifestPath = ManifestResolver.Resolve(workspace);
+            if (manifestPath is null)
+            {
+                CliTheme.WriteError($"No workspace.json found for '{workspace}'.");
+                return 1;
+            }
 
-        if (manifest.Plugins.Count == 0)
-        {
-            AnsiConsole.MarkupLine("[yellow]No plugins configured in this workspace.[/]");
+            var parser = new ManifestParser();
+            var json = await File.ReadAllTextAsync(manifestPath, cancellationToken);
+            var manifest = parser.Parse(json);
+
+            if (manifest.Plugins.Count == 0)
+            {
+                CliTheme.WriteWarning("No plugins configured in this workspace.");
+                return 0;
+            }
+
+            if (string.IsNullOrWhiteSpace(pluginName))
+            {
+                pluginName = AnsiConsole.Prompt(
+                    new SelectionPrompt<string>()
+                        .Title("Select plugin to remove:")
+                        .Styled()
+                        .AddChoices(manifest.Plugins.Keys));
+            }
+
+            if (!manifest.Plugins.Remove(pluginName))
+            {
+                CliTheme.WriteWarning($"Plugin '{pluginName}' not found in the workspace.");
+                return 1;
+            }
+
+            await File.WriteAllTextAsync(manifestPath, parser.Serialize(manifest), cancellationToken);
+
+            CliTheme.WriteSuccess($"Plugin '{pluginName}' removed from workspace '{workspace}'.");
             return 0;
-        }
+        });
 
-        var pluginName = settings.Name;
-        if (string.IsNullOrWhiteSpace(pluginName))
-        {
-            pluginName = AnsiConsole.Prompt(
-                new SelectionPrompt<string>()
-                    .Title("Select plugin to remove:")
-                    .AddChoices(manifest.Plugins.Keys));
-        }
-
-        if (!manifest.Plugins.Remove(pluginName))
-        {
-            AnsiConsole.MarkupLine($"[yellow]Plugin '{pluginName}' not found in the workspace.[/]");
-            return 1;
-        }
-
-        await File.WriteAllTextAsync(manifestPath, parser.Serialize(manifest), cancellationToken);
-
-        AnsiConsole.MarkupLine($"[green]Plugin '{pluginName}' removed from workspace '{settings.Workspace}'.[/]");
-        return 0;
+        return cmd;
     }
 }

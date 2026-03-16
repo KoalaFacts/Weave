@@ -1,6 +1,7 @@
 #!/bin/sh
 # Weave CLI installer for macOS and Linux
-# Usage: curl -fsSL https://weave.dev/install.sh | sh
+# Usage:  curl -fsSL https://raw.githubusercontent.com/KoalaFacts/Weave/main/scripts/install.sh | sh
+# Pinned: WEAVE_VERSION=0.1.0 curl -fsSL ... | sh
 set -e
 
 REPO="KoalaFacts/Weave"
@@ -40,26 +41,32 @@ esac
 RID="${OS_NAME}-${ARCH_NAME}"
 status "Detected platform: $RID"
 
-# Fetch latest release tag
-status "Finding latest release..."
-if command -v curl > /dev/null 2>&1; then
-    RELEASE_JSON=$(curl -fsSL "https://api.github.com/repos/$REPO/releases/latest")
-elif command -v wget > /dev/null 2>&1; then
-    RELEASE_JSON=$(wget -qO- "https://api.github.com/repos/$REPO/releases/latest")
+# Resolve version
+if [ -n "${WEAVE_VERSION:-}" ]; then
+    TAG="v${WEAVE_VERSION}"
+    status "Using requested version: $TAG"
 else
-    err "Neither curl nor wget found. Please install one and try again."
-    exit 1
-fi
+    status "Finding latest release..."
+    if command -v curl > /dev/null 2>&1; then
+        RELEASE_JSON=$(curl -fsSL "https://api.github.com/repos/$REPO/releases/latest")
+    elif command -v wget > /dev/null 2>&1; then
+        RELEASE_JSON=$(wget -qO- "https://api.github.com/repos/$REPO/releases/latest")
+    else
+        err "Neither curl nor wget found. Please install one and try again."
+        exit 1
+    fi
 
-TAG=$(echo "$RELEASE_JSON" | grep '"tag_name"' | head -1 | sed 's/.*"tag_name": *"\([^"]*\)".*/\1/')
-if [ -z "$TAG" ]; then
-    err "Could not determine latest release version."
-    exit 1
+    TAG=$(echo "$RELEASE_JSON" | grep '"tag_name"' | head -1 | sed 's/.*"tag_name": *"\([^"]*\)".*/\1/')
+    if [ -z "$TAG" ]; then
+        err "Could not determine latest release version."
+        exit 1
+    fi
+    status "Latest version: $TAG"
 fi
-status "Latest version: $TAG"
 
 # Download
-ASSET_NAME="weave-${RID}.tar.gz"
+VERSION="${TAG#v}"
+ASSET_NAME="weave-${VERSION}-${RID}.tar.gz"
 DOWNLOAD_URL="https://github.com/$REPO/releases/download/$TAG/$ASSET_NAME"
 TMP_FILE="$(mktemp)"
 

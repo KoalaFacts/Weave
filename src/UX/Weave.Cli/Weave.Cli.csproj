@@ -2,22 +2,11 @@
 
   <PropertyGroup>
     <OutputType>Exe</OutputType>
-    <IsAotExcluded>true</IsAotExcluded>
     <PackAsTool>true</PackAsTool>
     <ToolCommandName>weave</ToolCommandName>
     <PackageId>Weave.Cli</PackageId>
-    <Version>0.1.0</Version>
-    <Authors>KoalaFacts</Authors>
     <Description>CLI for Weave — set up AI assistants with guardrails you control.</Description>
-    <PackageLicenseExpression>MIT</PackageLicenseExpression>
-    <PackageProjectUrl>https://github.com/KoalaFacts/Weave</PackageProjectUrl>
-    <RepositoryUrl>https://github.com/KoalaFacts/Weave</RepositoryUrl>
-    <PackageReadmeFile>README.md</PackageReadmeFile>
   </PropertyGroup>
-
-  <ItemGroup>
-    <None Include="..\..\..\README.md" Pack="true" PackagePath="\" />
-  </ItemGroup>
 
   <ItemGroup>
     <ProjectReference Include="..\..\Foundation\Weave.Shared\Weave.Shared.csproj" />
@@ -27,7 +16,7 @@
 
   <ItemGroup>
     <PackageReference Include="Spectre.Console" />
-    <PackageReference Include="Spectre.Console.Cli" />
+    <PackageReference Include="System.CommandLine" />
   </ItemGroup>
 
 </Project>

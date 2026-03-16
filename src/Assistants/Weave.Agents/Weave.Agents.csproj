@@ -1,7 +1,7 @@
 <Project Sdk="Microsoft.NET.Sdk">
 
   <PropertyGroup>
-    <IsAotExcluded>true</IsAotExcluded>
+    <Description>AI assistant framework for Weave — agent grains, proof verification, heartbeats, cost tracking, and rate limiting.</Description>
   </PropertyGroup>
 
   <ItemGroup>

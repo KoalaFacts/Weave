@@ -1,49 +1,35 @@
-using Spectre.Console.Cli;
+using System.CommandLine;
 using Weave.Cli.Commands;
 
-var app = new CommandApp();
+var root = new RootCommand("weave — set up AI assistants with guardrails you control.");
 
-app.Configure(config =>
-{
-    config.SetApplicationName("weave");
-    config.SetApplicationVersion("0.1.0");
+var workspace = new Command("workspace", "Manage workspaces");
+root.Subcommands.Add(workspace);
 
-    config.AddBranch("workspace", ws =>
-    {
-        ws.SetDescription("Manage workspaces");
-        ws.AddCommand<WorkspaceNewCommand>("new").WithDescription("Create a new workspace");
-        ws.AddCommand<WorkspaceListCommand>("list").WithDescription("List all workspaces");
-        ws.AddCommand<WorkspaceRemoveCommand>("remove").WithDescription("Remove a workspace");
+workspace.Subcommands.Add(WorkspaceNewCommand.Create());
+workspace.Subcommands.Add(WorkspaceListCommand.Create());
+workspace.Subcommands.Add(WorkspaceRemoveCommand.Create());
+workspace.Subcommands.Add(WorkspaceUpCommand.Create());
+workspace.Subcommands.Add(WorkspaceDownCommand.Create());
+workspace.Subcommands.Add(WorkspaceStatusCommand.Create());
+workspace.Subcommands.Add(WorkspaceShowCommand.Create());
+workspace.Subcommands.Add(WorkspaceValidateCommand.Create());
+workspace.Subcommands.Add(WorkspacePublishCommand.Create());
+workspace.Subcommands.Add(WorkspacePresetsCommand.Create());
 
-        ws.AddCommand<WorkspaceUpCommand>("up").WithDescription("Start a workspace");
-        ws.AddCommand<WorkspaceDownCommand>("down").WithDescription("Stop a workspace");
-        ws.AddCommand<WorkspaceStatusCommand>("status").WithDescription("Show workspace status");
+var add = new Command("add", "Add components to a workspace");
+add.Subcommands.Add(WorkspaceAddAgentCommand.Create());
+add.Subcommands.Add(WorkspaceAddToolCommand.Create());
+add.Subcommands.Add(WorkspaceAddTargetCommand.Create());
+add.Subcommands.Add(WorkspaceAddPluginCommand.Create());
+workspace.Subcommands.Add(add);
 
-        ws.AddCommand<WorkspaceShowCommand>("show").WithDescription("Show workspace configuration");
-        ws.AddCommand<WorkspaceValidateCommand>("validate").WithDescription("Validate workspace configuration");
-        ws.AddCommand<WorkspacePublishCommand>("publish").WithDescription("Generate deployment manifests");
-        ws.AddCommand<WorkspacePresetsCommand>("presets").WithDescription("Browse ready-made workspace templates");
+var plugin = new Command("plugin", "Manage workspace plugins");
+plugin.Subcommands.Add(WorkspacePluginListCommand.Create());
+plugin.Subcommands.Add(WorkspaceAddPluginCommand.Create());
+plugin.Subcommands.Add(WorkspacePluginRemoveCommand.Create());
+workspace.Subcommands.Add(plugin);
 
-        ws.AddBranch("add", add =>
-        {
-            add.SetDescription("Add components to a workspace");
-            add.AddCommand<WorkspaceAddAgentCommand>("agent").WithDescription("Add an assistant");
-            add.AddCommand<WorkspaceAddToolCommand>("tool").WithDescription("Add a tool");
-            add.AddCommand<WorkspaceAddTargetCommand>("target").WithDescription("Add a deployment target");
-            add.AddCommand<WorkspaceAddPluginCommand>("plugin").WithDescription("Add a plugin");
-        });
+root.Subcommands.Add(WorkspaceServeCommand.Create());
 
-        ws.AddBranch("plugin", plugin =>
-        {
-            plugin.SetDescription("Manage workspace plugins");
-            plugin.AddCommand<WorkspacePluginListCommand>("list").WithDescription("List configured plugins");
-            plugin.AddCommand<WorkspaceAddPluginCommand>("add").WithDescription("Add a plugin");
-            plugin.AddCommand<WorkspacePluginRemoveCommand>("remove").WithDescription("Remove a plugin");
-        });
-    });
-
-    config.AddCommand<WorkspaceServeCommand>("serve")
-        .WithDescription("Start the local Weave server");
-});
-
-return app.Run(args);
+return root.Parse(args).Invoke();

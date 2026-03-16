@@ -1,0 +1,152 @@
+name: Publish to NuGet
+run-name: ${{ github.event_name == 'workflow_dispatch' && format('Publish NuGet v{0}', inputs.version) || 'Publish NuGet' }}
+
+on:
+  workflow_run:
+    workflows: ["Create Release"]
+    types: [completed]
+    branches: [main]
+  workflow_dispatch:
+    inputs:
+      version:
+        description: 'Package version (e.g., 0.1.0) — only for emergency republishing'
+        required: false
+        type: string
+
+concurrency:
+  group: publish-nuget
+  cancel-in-progress: false
+
+permissions:
+  id-token: write
+  contents: read
+  attestations: write
+
+env:
+  DOTNET_NOLOGO: true
+  DOTNET_SKIP_FIRST_TIME_EXPERIENCE: true
+  DOTNET_CLI_TELEMETRY_OPTOUT: true
+
+jobs:
+  get-version:
+    name: Determine Version
+    runs-on: ubuntu-latest
+    if: github.event_name == 'workflow_dispatch' || github.event.workflow_run.conclusion == 'success'
+    outputs:
+      version: ${{ steps.version.outputs.VERSION }}
+
+    steps:
+      - name: Determine version
+        id: version
+        run: |
+          if [ "${{ github.event_name }}" == "workflow_run" ]; then
+            TAG=$(gh api repos/${{ github.repository }}/releases \
+              --jq '.[0].tag_name' | head -n 1)
+            if [ -z "$TAG" ] || [ "$TAG" = "null" ]; then
+              echo "::error::Could not find any releases"
+              exit 1
+            fi
+            VERSION="${TAG#v}"
+            echo "Using latest release: $TAG"
+          elif [ -n "${{ inputs.version }}" ]; then
+            VERSION="${{ inputs.version }}"
+          else
+            echo "::error::No version specified"
+            exit 1
+          fi
+
+          echo "VERSION=$VERSION" >> $GITHUB_OUTPUT
+          echo "Publishing version: $VERSION"
+        env:
+          GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+
+  publish:
+    name: Publish v${{ needs.get-version.outputs.version }}
+    needs: get-version
+    runs-on: ubuntu-latest
+    environment:
+      name: nuget
+      url: https://www.nuget.org/packages/Weave.Cli/${{ needs.get-version.outputs.version }}
+
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v4
+
+      - name: Setup .NET
+        uses: ./.github/actions/setup-dotnet
+
+      - name: Download packages from release
+        run: |
+          VERSION="${{ needs.get-version.outputs.version }}"
+          TAG="v${VERSION}"
+          mkdir -p packages
+
+          # Try downloading from release artifacts first
+          gh release download "$TAG" --pattern "*.nupkg" --dir packages 2>/dev/null || true
+          gh release download "$TAG" --pattern "*.snupkg" --dir packages 2>/dev/null || true
+
+          # If no packages attached to release, build from source
+          NUPKG_COUNT=$(ls -1 packages/*.nupkg 2>/dev/null | wc -l)
+          if [ "$NUPKG_COUNT" -eq 0 ]; then
+            echo "No packages found in release, building from source..."
+            dotnet restore Weave.slnx
+            dotnet build Weave.slnx --no-restore -c Release
+
+            dotnet pack src/UX/Weave.Cli/Weave.Cli.csproj \
+              -c Release --no-build \
+              -p:Version=$VERSION \
+              -p:IncludeSymbols=true \
+              -p:SymbolPackageFormat=snupkg \
+              -o packages
+          fi
+
+          echo "Packages to publish:"
+          ls -lh packages/
+        env:
+          GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+
+      - name: Validate packages
+        run: |
+          NUPKG_COUNT=$(ls -1 packages/*.nupkg 2>/dev/null | wc -l)
+          if [ "$NUPKG_COUNT" -eq 0 ]; then
+            echo "::error::No .nupkg files found"
+            exit 1
+          fi
+          echo "Found $NUPKG_COUNT package(s) to publish"
+
+      - name: Publish to NuGet.org
+        run: |
+          for pkg in packages/*.nupkg packages/*.snupkg; do
+            if [ -f "$pkg" ]; then
+              echo "Publishing $(basename $pkg)..."
+              dotnet nuget push "$pkg" \
+                --source https://api.nuget.org/v3/index.json \
+                --api-key ${{ secrets.NUGET_API_KEY }} \
+                --skip-duplicate
+            fi
+          done
+
+      - name: Upload package artifacts
+        if: always()
+        uses: actions/upload-artifact@v4
+        with:
+          name: nuget-packages-v${{ needs.get-version.outputs.version }}
+          path: |
+            packages/*.nupkg
+            packages/*.snupkg
+          retention-days: 90
+
+      - name: Publish summary
+        if: success()
+        run: |
+          VERSION="${{ needs.get-version.outputs.version }}"
+          echo "## NuGet Package Published" >> $GITHUB_STEP_SUMMARY
+          echo "" >> $GITHUB_STEP_SUMMARY
+          echo "**Version**: $VERSION" >> $GITHUB_STEP_SUMMARY
+          echo "**Package**: [Weave.Cli](https://www.nuget.org/packages/Weave.Cli/$VERSION)" >> $GITHUB_STEP_SUMMARY
+          echo "" >> $GITHUB_STEP_SUMMARY
+          echo '```bash' >> $GITHUB_STEP_SUMMARY
+          echo "dotnet tool install -g Weave.Cli --version $VERSION" >> $GITHUB_STEP_SUMMARY
+          echo '```' >> $GITHUB_STEP_SUMMARY
+          echo "" >> $GITHUB_STEP_SUMMARY
+          echo "Package will be available on NuGet.org within 5-10 minutes." >> $GITHUB_STEP_SUMMARY

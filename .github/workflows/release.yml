@@ -1,16 +1,113 @@
-name: Release
+name: Create Release
+run-name: Create Release v${{ inputs.version || 'unspecified' }}
 
 on:
-  push:
-    tags:
-      - 'v*'
+  workflow_dispatch:
+    inputs:
+      version:
+        description: 'Version number (e.g., 0.1.0 or 0.2.0-preview.1)'
+        required: true
+        type: string
+
+concurrency:
+  group: create-release
+  cancel-in-progress: false
 
 permissions:
   contents: write
+  id-token: write
+  attestations: write
+
+env:
+  DOTNET_NOLOGO: true
+  DOTNET_SKIP_FIRST_TIME_EXPERIENCE: true
+  DOTNET_CLI_TELEMETRY_OPTOUT: true
 
 jobs:
-  build:
+  create-release:
+    name: Release v${{ inputs.version }}
+    runs-on: ubuntu-latest
+
+    steps:
+      - name: Validate version format
+        run: |
+          VERSION="${{ inputs.version }}"
+          if [[ ! "$VERSION" =~ ^[0-9]+\.[0-9]+\.[0-9]+(-[a-zA-Z0-9.]+)?$ ]]; then
+            echo "::error::Invalid version format: $VERSION (expected X.Y.Z or X.Y.Z-prerelease)"
+            exit 1
+          fi
+          echo "VERSION=$VERSION" >> $GITHUB_ENV
+          echo "Version validated: $VERSION"
+
+      - name: Show version context
+        env:
+          GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+        run: |
+          LATEST_TAG=$(gh api repos/${{ github.repository }}/releases --jq '[.[] | select(.prerelease==false and .draft==false)][0].tag_name // "none"' || echo "none")
+          echo "## Release Context" >> $GITHUB_STEP_SUMMARY
+          echo "- **Latest release**: $LATEST_TAG" >> $GITHUB_STEP_SUMMARY
+          echo "- **New release**: v${{ env.VERSION }}" >> $GITHUB_STEP_SUMMARY
+
+      - name: Checkout
+        uses: actions/checkout@v4
+        with:
+          fetch-depth: 0
+
+      - name: Setup .NET
+        uses: ./.github/actions/setup-dotnet
+
+      - name: Restore
+        run: dotnet restore Weave.slnx
+
+      - name: Build
+        run: dotnet build Weave.slnx --no-restore -c Release
+
+      - name: Test
+        run: dotnet test Weave.slnx --no-build -c Release
+
+      - name: Pack .NET tool
+        run: >-
+          dotnet pack src/UX/Weave.Cli/Weave.Cli.csproj
+          -c Release --no-build
+          -p:Version=${{ env.VERSION }}
+          -p:IncludeSymbols=true
+          -p:SymbolPackageFormat=snupkg
+          -o packages
+
+      - name: Verify packages
+        run: |
+          echo "## Packages" >> $GITHUB_STEP_SUMMARY
+          echo "" >> $GITHUB_STEP_SUMMARY
+          echo '```' >> $GITHUB_STEP_SUMMARY
+          ls -lh packages/ >> $GITHUB_STEP_SUMMARY
+          echo '```' >> $GITHUB_STEP_SUMMARY
+
+          NUPKG_COUNT=$(ls -1 packages/*.nupkg 2>/dev/null | wc -l)
+          echo "Found $NUPKG_COUNT package(s)"
+          if [ "$NUPKG_COUNT" -eq 0 ]; then
+            echo "::error::No packages were created"
+            exit 1
+          fi
+
+      - name: Generate package provenance
+        uses: actions/attest-build-provenance@v2
+        with:
+          subject-path: 'packages/*.nupkg'
+
+      - name: Upload packages
+        uses: actions/upload-artifact@v4
+        with:
+          name: nuget-packages-v${{ env.VERSION }}
+          path: |
+            packages/*.nupkg
+            packages/*.snupkg
+          retention-days: 90
+
+  publish-binaries:
+    name: Build ${{ matrix.rid }}
+    needs: create-release
     strategy:
+      fail-fast: false
       matrix:
         include:
           - rid: win-x64
@@ -35,68 +132,96 @@ jobs:
     runs-on: ${{ matrix.os }}
 
     steps:
-      - uses: actions/checkout@v4
+      - name: Checkout
+        uses: actions/checkout@v4
 
       - name: Setup .NET
-        uses: actions/setup-dotnet@v4
-        with:
-          dotnet-version: '10.0.x'
+        uses: ./.github/actions/setup-dotnet
 
       - name: Publish self-contained
-        run: >
+        run: >-
           dotnet publish src/UX/Weave.Cli/Weave.Cli.csproj
           -c Release
           -r ${{ matrix.rid }}
           --self-contained true
           -p:PublishSingleFile=true
+          -p:PublishTrimmed=true
+          -p:PublishReadyToRun=true
+          -p:PackAsTool=false
+          -p:Version=${{ inputs.version }}
           -o publish/${{ matrix.rid }}
 
       - name: Package (tar.gz)
         if: matrix.archive == 'tar.gz'
-        run: tar -czf weave-${{ matrix.rid }}.tar.gz -C publish/${{ matrix.rid }} .
+        run: tar -czf weave-${{ inputs.version }}-${{ matrix.rid }}.tar.gz -C publish/${{ matrix.rid }} .
 
       - name: Package (zip)
         if: matrix.archive == 'zip'
         shell: pwsh
-        run: Compress-Archive -Path publish/${{ matrix.rid }}/* -DestinationPath weave-${{ matrix.rid }}.zip
+        run: Compress-Archive -Path publish/${{ matrix.rid }}/* -DestinationPath weave-${{ inputs.version }}-${{ matrix.rid }}.zip
 
       - name: Upload artifact
         uses: actions/upload-artifact@v4
         with:
           name: weave-${{ matrix.rid }}
-          path: weave-${{ matrix.rid }}.${{ matrix.archive }}
+          path: weave-${{ inputs.version }}-${{ matrix.rid }}.${{ matrix.archive }}
 
-  release:
-    needs: build
+  github-release:
+    name: Create GitHub Release
+    needs: [create-release, publish-binaries]
     runs-on: ubuntu-latest
 
     steps:
+      - name: Checkout
+        uses: actions/checkout@v4
+        with:
+          sparse-checkout: scripts
+
       - name: Download all artifacts
         uses: actions/download-artifact@v4
         with:
           path: artifacts
           merge-multiple: true
 
-      - name: Create GitHub Release
-        uses: softprops/action-gh-release@v2
-        with:
-          generate_release_notes: true
-          files: artifacts/*
+      - name: Create release
+        run: |
+          TAG="v${{ inputs.version }}"
+          RAW="https://raw.githubusercontent.com/${{ github.repository }}/${TAG}"
+          DL="https://github.com/${{ github.repository }}/releases/download/${TAG}"
 
-  nuget:
-    needs: build
-    runs-on: ubuntu-latest
+          cat > release-footer.md << FOOTER
 
-    steps:
-      - uses: actions/checkout@v4
+          ## Installation
 
-      - name: Setup .NET
-        uses: actions/setup-dotnet@v4
-        with:
-          dotnet-version: '10.0.x'
+          **One-liner** — installs this release:
 
-      - name: Pack .NET tool
-        run: dotnet pack src/UX/Weave.Cli/Weave.Cli.csproj -c Release -o nupkg
+          | Platform | Command |
+          |----------|---------|
+          | **Windows** | \`irm ${RAW}/scripts/install.ps1 \\| iex\` |
+          | **macOS / Linux** | \`curl -fsSL ${RAW}/scripts/install.sh \\| sh\` |
+          | **.NET tool** | \`dotnet tool install -g Weave.Cli --version ${{ inputs.version }}\` |
 
-      - name: Push to NuGet
-        run: dotnet nuget push nupkg/*.nupkg --api-key ${{ secrets.NUGET_API_KEY }} --source https://api.nuget.org/v3/index.json --skip-duplicate
+          Or download an archive above and extract manually. The install scripts are also attached as release assets:
+          - [install.sh](${DL}/install.sh)
+          - [install.ps1](${DL}/install.ps1)
+          FOOTER
+
+          gh release create "${TAG}" \
+            --title "Release ${TAG}" \
+            --generate-notes \
+            --notes-file release-footer.md \
+            artifacts/weave-${{ inputs.version }}-*.zip artifacts/weave-${{ inputs.version }}-*.tar.gz \
+            artifacts/*.nupkg artifacts/*.snupkg \
+            scripts/install.sh scripts/install.ps1
+        env:
+          GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+
+      - name: Release summary
+        run: |
+          echo "## Release Created" >> $GITHUB_STEP_SUMMARY
+          echo "" >> $GITHUB_STEP_SUMMARY
+          echo "**Version**: v${{ inputs.version }}" >> $GITHUB_STEP_SUMMARY
+          echo "**URL**: https://github.com/${{ github.repository }}/releases/tag/v${{ inputs.version }}" >> $GITHUB_STEP_SUMMARY
+          echo "" >> $GITHUB_STEP_SUMMARY
+          echo "### Next Steps" >> $GITHUB_STEP_SUMMARY
+          echo "The **publish-nuget** workflow will trigger automatically to publish packages to NuGet.org." >> $GITHUB_STEP_SUMMARY

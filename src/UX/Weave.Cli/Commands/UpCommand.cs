@@ -1,71 +1,77 @@
-using System.ComponentModel;
+using System.CommandLine;
+using System.Globalization;
 using Spectre.Console;
-using Spectre.Console.Cli;
 using Weave.Workspaces.Manifest;
 
 namespace Weave.Cli.Commands;
 
-public sealed class WorkspaceUpCommand : AsyncCommand<WorkspaceUpCommand.Settings>
+internal static class WorkspaceUpCommand
 {
-    public sealed class Settings : CommandSettings
+    public static Command Create()
     {
-        [CommandArgument(0, "<name>")]
-        [Description("Workspace name")]
-        public string Name { get; init; } = string.Empty;
-
-        [CommandOption("--target <TARGET>")]
-        [Description("Deployment target")]
-        [DefaultValue("local")]
-        public string Target { get; init; } = "local";
-    }
-
-    public override async Task<int> ExecuteAsync(CommandContext context, Settings settings, CancellationToken cancellationToken)
-    {
-        var manifestPath = ManifestResolver.Resolve(settings.Name);
-        if (manifestPath is null)
+        var nameArg = new Argument<string>("name") { Description = "Workspace name" };
+        nameArg.CompletionSources.Add(CliCompletions.CompleteWorkspaceNames);
+        var targetOption = new Option<string>("--target")
         {
-            AnsiConsole.MarkupLine($"[red]No workspace.json found for '{settings.Name}'.[/]");
-            return 1;
-        }
+            Description = "Deployment target",
+            DefaultValueFactory = _ => "local"
+        };
+        targetOption.CompletionSources.Add(CliCompletions.CompleteDeployTargets);
 
-        AnsiConsole.MarkupLine($"Starting workspace from [bold]{manifestPath}[/] (target: {settings.Target})...");
-
-        var json = await File.ReadAllTextAsync(manifestPath, cancellationToken);
-        var parser = new ManifestParser();
-        var manifest = WorkspaceApiClient.PrepareManifest(
-            parser.Parse(json),
-            Path.GetDirectoryName(Path.GetFullPath(manifestPath)) ?? Directory.GetCurrentDirectory());
-
-        try
+        var cmd = new Command("up", "Start a workspace") { nameArg, targetOption };
+        cmd.SetAction(async (parseResult, cancellationToken) =>
         {
-            using var client = new WorkspaceApiClient();
+            var name = parseResult.GetValue(nameArg)!;
+            var target = parseResult.GetValue(targetOption)!;
 
-            if (!await client.IsReachableAsync(cancellationToken))
+            var manifestPath = ManifestResolver.Resolve(name);
+            if (manifestPath is null)
             {
-                AnsiConsole.MarkupLine("[red]Cannot reach the Weave server.[/]");
-                AnsiConsole.MarkupLine("Start it first with: [bold]weave serve[/]");
+                CliTheme.WriteError($"No workspace.json found for '{name}'.");
                 return 1;
             }
 
-            var response = await client.StartWorkspaceAsync(manifest, cancellationToken);
-            var statePath = WorkspaceApiClient.GetWorkspaceStatePath(manifestPath);
-            Directory.CreateDirectory(Path.GetDirectoryName(statePath)!);
-            await File.WriteAllTextAsync(statePath, response.WorkspaceId, cancellationToken);
+            CliTheme.WriteInfo($"Starting workspace from {manifestPath} (target: {target})...");
 
-            AnsiConsole.MarkupLine($"  Workspace: [bold]{manifest.Name}[/]");
-            AnsiConsole.MarkupLine($"  Workspace ID: [bold]{response.WorkspaceId}[/]");
-            AnsiConsole.MarkupLine($"  Status: {response.Status}");
-            AnsiConsole.MarkupLine($"  Agents: {manifest.Agents.Count}");
-            AnsiConsole.MarkupLine($"  Tools: {manifest.Tools.Count}");
-            AnsiConsole.MarkupLine("[green]Workspace started successfully.[/]");
-        }
-        catch (Exception ex)
-        {
-            AnsiConsole.MarkupLine($"[red]Failed to start workspace: {ex.Message}[/]");
-            return 1;
-        }
+            var json = await File.ReadAllTextAsync(manifestPath, cancellationToken);
+            var parser = new ManifestParser();
+            var manifest = WorkspaceApiClient.PrepareManifest(
+                parser.Parse(json),
+                Path.GetDirectoryName(Path.GetFullPath(manifestPath)) ?? Directory.GetCurrentDirectory());
 
-        return 0;
+            try
+            {
+                using var client = new WorkspaceApiClient();
+
+                if (!await client.IsReachableAsync(cancellationToken))
+                {
+                    CliTheme.WriteError("Cannot reach the Weave server.");
+                    CliTheme.WriteMuted("  Start it first with: weave serve");
+                    return 1;
+                }
+
+                var response = await client.StartWorkspaceAsync(manifest, cancellationToken);
+                var statePath = WorkspaceApiClient.GetWorkspaceStatePath(manifestPath);
+                Directory.CreateDirectory(Path.GetDirectoryName(statePath)!);
+                await File.WriteAllTextAsync(statePath, response.WorkspaceId, cancellationToken);
+
+                CliTheme.WriteKeyValue("Workspace", manifest.Name);
+                CliTheme.WriteKeyValue("Workspace ID", response.WorkspaceId);
+                CliTheme.WriteKeyValue("Status", response.Status);
+                CliTheme.WriteKeyValue("Agents", manifest.Agents.Count.ToString(CultureInfo.InvariantCulture));
+                CliTheme.WriteKeyValue("Tools", manifest.Tools.Count.ToString(CultureInfo.InvariantCulture));
+                CliTheme.WriteSuccess("Workspace started successfully.");
+            }
+            catch (Exception ex)
+            {
+                CliTheme.WriteError($"Failed to start workspace: {ex.Message}");
+                return 1;
+            }
+
+            return 0;
+        });
+
+        return cmd;
     }
 }
 

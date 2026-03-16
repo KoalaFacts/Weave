@@ -99,7 +99,7 @@ public sealed partial class ToolGrain(
         var wsId = Shared.Ids.WorkspaceId.From(_workspaceId);
 
         // Scan the original outbound request before placeholders are substituted at the network boundary.
-        var outboundPayload = invocation.RawInput ?? JsonSerializer.Serialize(invocation.Parameters);
+        var outboundPayload = invocation.RawInput ?? JsonSerializer.Serialize(invocation.Parameters, ToolJsonContext.Default.DictionaryStringString);
         if (!string.IsNullOrWhiteSpace(outboundPayload))
         {
             var scanContext = new ScanContext
