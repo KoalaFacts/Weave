@@ -35,7 +35,7 @@
   </ItemGroup>
   <ItemGroup Label="Microsoft.Extensions.AI">
     <PackageVersion Include="Microsoft.Extensions.AI" Version="10.4.0" />
-    <PackageVersion Include="Microsoft.Extensions.AI.Abstractions" Version="10.4.0" />
+    <PackageVersion Include="Microsoft.Extensions.AI.Abstractions" Version="10.4.1" />
     <PackageVersion Include="Microsoft.Extensions.AI.OpenAI" Version="10.4.0" />
   </ItemGroup>
   <!-- Dapr SDK and VaultSharp removed — now using direct HTTP to sidecar/API -->
