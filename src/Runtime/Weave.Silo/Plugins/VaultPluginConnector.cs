@@ -21,7 +21,7 @@ public sealed partial class VaultPluginConnector(
 
     public string PluginType => "vault";
 
-    public PluginStatus Connect(string name, PluginDefinition definition)
+    public async Task<PluginStatus> ConnectAsync(string name, PluginDefinition definition)
     {
         var address = definition.Config.GetValueOrDefault("address");
         if (string.IsNullOrWhiteSpace(address))
@@ -47,7 +47,7 @@ public sealed partial class VaultPluginConnector(
             tokenService,
             loggerFactory.CreateLogger<VaultSecretProvider>());
         var previous = broker.Swap<ISecretProvider>(provider);
-        DisposeIfNeeded(previous);
+        await PluginDisposal.DisposeIfNeededAsync(previous);
 
         LogVaultConnected(name, address);
 
@@ -60,10 +60,10 @@ public sealed partial class VaultPluginConnector(
         };
     }
 
-    public PluginStatus Disconnect(string name)
+    public async Task<PluginStatus> DisconnectAsync(string name)
     {
         var previous = broker.Swap<ISecretProvider>(null);
-        DisposeIfNeeded(previous);
+        await PluginDisposal.DisposeIfNeededAsync(previous);
 
         LogVaultDisconnected(name);
         return new PluginStatus { Name = name, Type = PluginType, IsConnected = false };
@@ -73,14 +73,6 @@ public sealed partial class VaultPluginConnector(
     {
         var hasVault = broker.Get<ISecretProvider>() is VaultSecretProvider;
         return new PluginStatus { Name = name, Type = PluginType, IsConnected = hasVault };
-    }
-
-    private static void DisposeIfNeeded(object? instance)
-    {
-        if (instance is IAsyncDisposable asyncDisposable)
-            asyncDisposable.DisposeAsync().AsTask().GetAwaiter().GetResult();
-        else if (instance is IDisposable disposable)
-            disposable.Dispose();
     }
 
     [LoggerMessage(Level = LogLevel.Information, Message = "Vault plugin '{Name}' connected — server at {Address}")]

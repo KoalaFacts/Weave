@@ -10,12 +10,12 @@ public sealed class PluginRegistryTests
         new(connectors, NullLogger<PluginRegistry>.Instance);
 
     [Fact]
-    public void Connect_KnownType_ReturnsConnected()
+    public async Task ConnectAsync_KnownType_ReturnsConnected()
     {
         var connector = new FakePluginConnector("dapr", connected: true);
         var registry = CreateRegistry(connector);
 
-        var status = registry.Connect("my-dapr", new PluginDefinition
+        var status = await registry.ConnectAsync("my-dapr", new PluginDefinition
         {
             Type = "dapr",
             Config = new Dictionary<string, string> { ["port"] = "3500" }
@@ -27,18 +27,18 @@ public sealed class PluginRegistryTests
     }
 
     [Fact]
-    public void Connect_UnknownType_ReturnsError()
+    public async Task ConnectAsync_UnknownType_ReturnsError()
     {
         var registry = CreateRegistry();
 
-        var status = registry.Connect("mystery", new PluginDefinition { Type = "alien" });
+        var status = await registry.ConnectAsync("mystery", new PluginDefinition { Type = "alien" });
 
         status.IsConnected.ShouldBeFalse();
         status.Error!.ShouldContain("alien");
     }
 
     [Fact]
-    public void ConnectAll_RegistersMultiple()
+    public async Task ConnectAllAsync_RegistersMultiple()
     {
         var dapr = new FakePluginConnector("dapr", connected: true);
         var vault = new FakePluginConnector("vault", connected: true);
@@ -50,56 +50,56 @@ public sealed class PluginRegistryTests
             ["secrets"] = new PluginDefinition { Type = "vault" }
         };
 
-        var results = registry.ConnectAll(plugins);
+        var results = await registry.ConnectAllAsync(plugins);
 
         results.Count.ShouldBe(2);
         results.ShouldAllBe(s => s.IsConnected);
     }
 
     [Fact]
-    public void Disconnect_ActivePlugin_RemovesIt()
+    public async Task DisconnectAsync_ActivePlugin_RemovesIt()
     {
         var connector = new FakePluginConnector("dapr", connected: true);
         var registry = CreateRegistry(connector);
 
-        registry.Connect("dapr-1", new PluginDefinition { Type = "dapr" });
+        await registry.ConnectAsync("dapr-1", new PluginDefinition { Type = "dapr" });
         registry.GetAll().Count.ShouldBe(1);
 
-        var status = registry.Disconnect("dapr-1");
+        var status = await registry.DisconnectAsync("dapr-1");
         status.IsConnected.ShouldBeFalse();
         registry.GetAll().ShouldBeEmpty();
     }
 
     [Fact]
-    public void Disconnect_UnknownPlugin_ReturnsError()
+    public async Task DisconnectAsync_UnknownPlugin_ReturnsError()
     {
         var registry = CreateRegistry();
 
-        var status = registry.Disconnect("nonexistent");
+        var status = await registry.DisconnectAsync("nonexistent");
 
         status.IsConnected.ShouldBeFalse();
         status.Error!.ShouldContain("not active");
     }
 
     [Fact]
-    public void GetAll_ReturnsAllActive()
+    public async Task GetAll_ReturnsAllActive()
     {
         var connector = new FakePluginConnector("http", connected: true);
         var registry = CreateRegistry(connector);
 
-        registry.Connect("api-1", new PluginDefinition { Type = "http" });
-        registry.Connect("api-2", new PluginDefinition { Type = "http" });
+        await registry.ConnectAsync("api-1", new PluginDefinition { Type = "http" });
+        await registry.ConnectAsync("api-2", new PluginDefinition { Type = "http" });
 
         registry.GetAll().Count.ShouldBe(2);
     }
 
     [Fact]
-    public void Connect_AlreadyActive_HotSwapsPlugin()
+    public async Task ConnectAsync_AlreadyActive_HotSwapsPlugin()
     {
         var connector = new FakePluginConnector("dapr", connected: true);
         var registry = CreateRegistry(connector);
 
-        var first = registry.Connect("my-dapr", new PluginDefinition
+        var first = await registry.ConnectAsync("my-dapr", new PluginDefinition
         {
             Type = "dapr",
             Config = new Dictionary<string, string> { ["port"] = "3500" }
@@ -107,7 +107,7 @@ public sealed class PluginRegistryTests
         first.IsConnected.ShouldBeTrue();
 
         // Reconnect same name — should disconnect old, connect new
-        var second = registry.Connect("my-dapr", new PluginDefinition
+        var second = await registry.ConnectAsync("my-dapr", new PluginDefinition
         {
             Type = "dapr",
             Config = new Dictionary<string, string> { ["port"] = "3501" }
@@ -120,14 +120,14 @@ public sealed class PluginRegistryTests
     }
 
     [Fact]
-    public void Connect_AlreadyActive_DifferentType_HotSwaps()
+    public async Task ConnectAsync_AlreadyActive_DifferentType_HotSwaps()
     {
         var dapr = new FakePluginConnector("dapr", connected: true);
         var webhook = new FakePluginConnector("webhook", connected: true);
         var registry = CreateRegistry(dapr, webhook);
 
-        registry.Connect("events", new PluginDefinition { Type = "dapr" });
-        registry.Connect("events", new PluginDefinition { Type = "webhook" });
+        await registry.ConnectAsync("events", new PluginDefinition { Type = "dapr" });
+        await registry.ConnectAsync("events", new PluginDefinition { Type = "webhook" });
 
         registry.GetAll().Count.ShouldBe(1);
         registry.GetAll()[0].Type.ShouldBe("webhook");
@@ -135,12 +135,12 @@ public sealed class PluginRegistryTests
     }
 
     [Fact]
-    public void Connect_ConnectorThrows_ReturnsError()
+    public async Task ConnectAsync_ConnectorThrows_ReturnsError()
     {
         var connector = new ThrowingPluginConnector("dapr");
         var registry = CreateRegistry(connector);
 
-        var status = registry.Connect("bad", new PluginDefinition { Type = "dapr" });
+        var status = await registry.ConnectAsync("bad", new PluginDefinition { Type = "dapr" });
 
         status.IsConnected.ShouldBeFalse();
         status.Error!.ShouldContain("boom");
@@ -151,13 +151,13 @@ public sealed class PluginRegistryTests
         public string PluginType => type;
         public int DisconnectCount { get; private set; }
 
-        public PluginStatus Connect(string name, PluginDefinition definition) =>
-            new() { Name = name, Type = type, IsConnected = connected };
+        public Task<PluginStatus> ConnectAsync(string name, PluginDefinition definition) =>
+            Task.FromResult<PluginStatus>(new() { Name = name, Type = type, IsConnected = connected });
 
-        public PluginStatus Disconnect(string name)
+        public Task<PluginStatus> DisconnectAsync(string name)
         {
             DisconnectCount++;
-            return new() { Name = name, Type = type, IsConnected = false };
+            return Task.FromResult<PluginStatus>(new() { Name = name, Type = type, IsConnected = false });
         }
 
         public PluginStatus GetStatus(string name) =>
@@ -168,11 +168,11 @@ public sealed class PluginRegistryTests
     {
         public string PluginType => type;
 
-        public PluginStatus Connect(string name, PluginDefinition definition) =>
+        public Task<PluginStatus> ConnectAsync(string name, PluginDefinition definition) =>
             throw new InvalidOperationException("boom");
 
-        public PluginStatus Disconnect(string name) =>
-            new() { Name = name, Type = type, IsConnected = false };
+        public Task<PluginStatus> DisconnectAsync(string name) =>
+            Task.FromResult<PluginStatus>(new() { Name = name, Type = type, IsConnected = false });
 
         public PluginStatus GetStatus(string name) =>
             new() { Name = name, Type = type, IsConnected = false };

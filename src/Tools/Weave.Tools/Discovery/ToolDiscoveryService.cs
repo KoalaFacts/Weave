@@ -19,11 +19,13 @@ public sealed partial class ToolDiscoveryService : IToolDiscoveryService
     private readonly FrozenDictionary<ToolType, IToolConnector> _builtIn;
     private readonly ConcurrentDictionary<ToolType, IToolConnector> _dynamic = new();
     private readonly ILogger<ToolDiscoveryService> _logger;
+    private volatile IReadOnlyList<ToolType>? _cachedTypes;
 
     public ToolDiscoveryService(IEnumerable<IToolConnector> connectors, ILogger<ToolDiscoveryService> logger)
     {
         _logger = logger;
         _builtIn = connectors.ToFrozenDictionary(c => c.ToolType);
+        _cachedTypes = [.. _builtIn.Keys];
 
         LogDiscoveryInitialized(_builtIn.Count, string.Join(", ", _builtIn.Keys));
     }
@@ -39,7 +41,7 @@ public sealed partial class ToolDiscoveryService : IToolDiscoveryService
     }
 
     public IReadOnlyList<ToolType> SupportedTypes =>
-        [.. _builtIn.Keys, .. _dynamic.Keys];
+        _cachedTypes ?? RebuildTypeCache();
 
     /// <summary>
     /// Register a tool connector at runtime (e.g., from a plugin).
@@ -48,6 +50,7 @@ public sealed partial class ToolDiscoveryService : IToolDiscoveryService
     public void Register(IToolConnector connector)
     {
         _dynamic[connector.ToolType] = connector;
+        _cachedTypes = null;
         LogConnectorRegistered(connector.ToolType);
     }
 
@@ -58,8 +61,21 @@ public sealed partial class ToolDiscoveryService : IToolDiscoveryService
     {
         var removed = _dynamic.TryRemove(type, out _);
         if (removed)
+        {
+            _cachedTypes = null;
             LogConnectorUnregistered(type);
+        }
         return removed;
+    }
+
+    private IReadOnlyList<ToolType> RebuildTypeCache()
+    {
+        var types = new HashSet<ToolType>(_builtIn.Keys);
+        foreach (var key in _dynamic.Keys)
+            types.Add(key);
+        var result = (IReadOnlyList<ToolType>)[.. types];
+        _cachedTypes = result;
+        return result;
     }
 
     [LoggerMessage(Level = LogLevel.Information, Message = "Tool discovery initialized with {Count} connector(s): {Types}")]

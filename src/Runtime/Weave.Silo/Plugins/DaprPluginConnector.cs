@@ -24,7 +24,7 @@ public sealed partial class DaprPluginConnector(
 
     public string PluginType => "dapr";
 
-    public PluginStatus Connect(string name, PluginDefinition definition)
+    public async Task<PluginStatus> ConnectAsync(string name, PluginDefinition definition)
     {
         var port = definition.Config.GetValueOrDefault("port")
             ?? Environment.GetEnvironmentVariable("DAPR_HTTP_PORT");
@@ -47,7 +47,7 @@ public sealed partial class DaprPluginConnector(
         httpClient.BaseAddress = new Uri(baseUrl);
         var eventBus = new DaprEventBus(httpClient, loggerFactory.CreateLogger<DaprEventBus>());
         var previous = broker.Swap<IEventBus>(eventBus);
-        DisposeIfNeeded(previous);
+        await PluginDisposal.DisposeIfNeededAsync(previous);
 
         // Register Dapr tool connector dynamically
         var toolClient = httpClientFactory.CreateClient($"dapr-tool:{name}");
@@ -66,10 +66,10 @@ public sealed partial class DaprPluginConnector(
         };
     }
 
-    public PluginStatus Disconnect(string name)
+    public async Task<PluginStatus> DisconnectAsync(string name)
     {
         var previous = broker.Swap<IEventBus>(null);
-        DisposeIfNeeded(previous);
+        await PluginDisposal.DisposeIfNeededAsync(previous);
         toolDiscovery.Unregister(Tools.Models.ToolType.Dapr);
 
         LogDaprDisconnected(name);
@@ -80,14 +80,6 @@ public sealed partial class DaprPluginConnector(
     {
         var hasBus = broker.Get<IEventBus>() is DaprEventBus;
         return new PluginStatus { Name = name, Type = PluginType, IsConnected = hasBus };
-    }
-
-    private static void DisposeIfNeeded(object? instance)
-    {
-        if (instance is IAsyncDisposable asyncDisposable)
-            asyncDisposable.DisposeAsync().AsTask().GetAwaiter().GetResult();
-        else if (instance is IDisposable disposable)
-            disposable.Dispose();
     }
 
     [LoggerMessage(Level = LogLevel.Information, Message = "Dapr plugin '{Name}' connected — sidecar at {BaseUrl}")]

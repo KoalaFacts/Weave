@@ -51,6 +51,29 @@ public sealed class PluginServiceBrokerTests
     }
 
     [Fact]
+    public void OnSwap_CallbackFiredAfterSwap()
+    {
+        var callbackFired = false;
+        _broker.OnSwap<IEventBus>(() => callbackFired = true);
+
+        _broker.Swap<IEventBus>(Substitute.For<IEventBus>());
+
+        callbackFired.ShouldBeTrue();
+    }
+
+    [Fact]
+    public void OnSwap_CallbackFiredOnClear()
+    {
+        _broker.Swap<IEventBus>(Substitute.For<IEventBus>());
+        var callbackFired = false;
+        _broker.OnSwap<IEventBus>(() => callbackFired = true);
+
+        _broker.Swap<IEventBus>(null);
+
+        callbackFired.ShouldBeTrue();
+    }
+
+    [Fact]
     public void Named_SetAndGet_Works()
     {
         var client = new HttpClient();

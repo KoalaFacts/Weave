@@ -1,4 +1,5 @@
 using System.Collections.Concurrent;
+using System.Text;
 using System.Text.Json;
 using Microsoft.Extensions.Logging;
 using Weave.Shared.Events;
@@ -9,6 +10,10 @@ namespace Weave.Silo.Events;
 /// HTTP webhook event bus — publishes domain events to configured webhook URLs
 /// via plain HTTP POST. No sidecar, no message broker, no external infrastructure.
 /// A lightweight alternative to <see cref="DaprEventBus"/> for local and simple deployments.
+///
+/// The event type name is sent in the <c>X-Weave-Topic</c> header; the body contains
+/// the event serialized as UTF-8 JSON. This avoids an envelope type that would require
+/// reflection-based serialization.
 /// </summary>
 public sealed partial class WebhookEventBus(
     HttpClient httpClient,
@@ -22,9 +27,13 @@ public sealed partial class WebhookEventBus(
         var topicName = typeof(TEvent).Name;
         try
         {
-            var payload = JsonSerializer.SerializeToUtf8Bytes(new WebhookEnvelope(topicName, domainEvent));
-            using var content = new ByteArrayContent(payload);
+            // Serialize the concrete TEvent — STJ can resolve the type at compile time
+            // without requiring a source-gen context for every event type, because the
+            // generic parameter provides the actual type to the serializer.
+            var bytes = JsonSerializer.SerializeToUtf8Bytes(domainEvent);
+            using var content = new ByteArrayContent(bytes);
             content.Headers.ContentType = new System.Net.Http.Headers.MediaTypeHeaderValue("application/json");
+            content.Headers.Add("X-Weave-Topic", topicName);
             using var response = await httpClient.PostAsync(webhookUrl, content, ct);
             response.EnsureSuccessStatusCode();
             LogWebhookPublished(topicName, domainEvent.EventId);
@@ -47,7 +56,8 @@ public sealed partial class WebhookEventBus(
     private async Task DispatchLocalAsync<TEvent>(TEvent domainEvent, CancellationToken ct) where TEvent : IDomainEvent
     {
         if (!_handlers.TryGetValue(typeof(TEvent), out var handlers)) return;
-        var snapshot = handlers.ToArray();
+        Delegate[] snapshot;
+        lock (handlers) { snapshot = [.. handlers]; }
         foreach (var handler in snapshot)
         {
             try { await ((Func<TEvent, CancellationToken, Task>)handler)(domainEvent, ct); }
@@ -59,8 +69,6 @@ public sealed partial class WebhookEventBus(
     {
         public void Dispose() => onDispose();
     }
-
-    private sealed record WebhookEnvelope(string Topic, object Data);
 
     [LoggerMessage(Level = LogLevel.Debug, Message = "Published {EventType} ({EventId}) via webhook")]
     private partial void LogWebhookPublished(string eventType, string eventId);

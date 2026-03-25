@@ -20,7 +20,7 @@ public sealed partial class WebhookPluginConnector(
 
     public string PluginType => "webhook";
 
-    public PluginStatus Connect(string name, PluginDefinition definition)
+    public async Task<PluginStatus> ConnectAsync(string name, PluginDefinition definition)
     {
         var url = definition.Config.GetValueOrDefault("url");
         if (string.IsNullOrWhiteSpace(url))
@@ -52,7 +52,7 @@ public sealed partial class WebhookPluginConnector(
             loggerFactory.CreateLogger<WebhookEventBus>());
 
         var previous = broker.Swap<IEventBus>(eventBus);
-        DisposeIfNeeded(previous);
+        await PluginDisposal.DisposeIfNeededAsync(previous);
 
         LogWebhookConnected(name, url);
 
@@ -65,10 +65,10 @@ public sealed partial class WebhookPluginConnector(
         };
     }
 
-    public PluginStatus Disconnect(string name)
+    public async Task<PluginStatus> DisconnectAsync(string name)
     {
         var previous = broker.Swap<IEventBus>(null);
-        DisposeIfNeeded(previous);
+        await PluginDisposal.DisposeIfNeededAsync(previous);
 
         LogWebhookDisconnected(name);
         return new PluginStatus { Name = name, Type = PluginType, IsConnected = false };
@@ -78,14 +78,6 @@ public sealed partial class WebhookPluginConnector(
     {
         var hasBus = broker.Get<IEventBus>() is WebhookEventBus;
         return new PluginStatus { Name = name, Type = PluginType, IsConnected = hasBus };
-    }
-
-    private static void DisposeIfNeeded(object? instance)
-    {
-        if (instance is IAsyncDisposable asyncDisposable)
-            asyncDisposable.DisposeAsync().AsTask().GetAwaiter().GetResult();
-        else if (instance is IDisposable disposable)
-            disposable.Dispose();
     }
 
     [LoggerMessage(Level = LogLevel.Information, Message = "Webhook plugin '{Name}' connected — posting to {Url}")]

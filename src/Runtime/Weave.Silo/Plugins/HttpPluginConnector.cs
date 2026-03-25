@@ -18,18 +18,18 @@ public sealed partial class HttpPluginConnector(
 
     public string PluginType => "http";
 
-    public PluginStatus Connect(string name, PluginDefinition definition)
+    public Task<PluginStatus> ConnectAsync(string name, PluginDefinition definition)
     {
         var baseUrl = definition.Config.GetValueOrDefault("base_url");
         if (string.IsNullOrWhiteSpace(baseUrl))
         {
-            return new PluginStatus
+            return Task.FromResult(new PluginStatus
             {
                 Name = name,
                 Type = PluginType,
                 IsConnected = false,
                 Error = "HTTP plugin requires 'base_url' in config."
-            };
+            });
         }
 
         var httpClient = httpClientFactory.CreateClient($"plugin:{name}");
@@ -38,22 +38,22 @@ public sealed partial class HttpPluginConnector(
 
         LogHttpConnected(name, baseUrl);
 
-        return new PluginStatus
+        return Task.FromResult(new PluginStatus
         {
             Name = name,
             Type = PluginType,
             IsConnected = true,
             Info = new Dictionary<string, string> { ["base_url"] = baseUrl }
-        };
+        });
     }
 
-    public PluginStatus Disconnect(string name)
+    public Task<PluginStatus> DisconnectAsync(string name)
     {
         var previous = broker.Remove($"http:{name}");
         if (previous is IDisposable disposable)
             disposable.Dispose();
 
-        return new PluginStatus { Name = name, Type = PluginType, IsConnected = false };
+        return Task.FromResult(new PluginStatus { Name = name, Type = PluginType, IsConnected = false });
     }
 
     public PluginStatus GetStatus(string name)

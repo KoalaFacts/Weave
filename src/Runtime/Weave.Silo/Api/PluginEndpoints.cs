@@ -22,7 +22,7 @@ public static class PluginEndpoints
         return Results.Ok(registry.GetAll());
     }
 
-    private static IResult ConnectPlugin(IPluginRegistry registry, ConnectPluginRequest request)
+    private static async Task<IResult> ConnectPlugin(IPluginRegistry registry, ConnectPluginRequest request)
     {
         var definition = new PluginDefinition
         {
@@ -31,13 +31,13 @@ public static class PluginEndpoints
             Config = request.Config ?? []
         };
 
-        var status = registry.Connect(request.Name, definition);
+        var status = await registry.ConnectAsync(request.Name, definition);
         return status.IsConnected ? Results.Ok(status) : Results.UnprocessableEntity(status);
     }
 
-    private static IResult DisconnectPlugin(IPluginRegistry registry, string name)
+    private static async Task<IResult> DisconnectPlugin(IPluginRegistry registry, string name)
     {
-        var status = registry.Disconnect(name);
+        var status = await registry.DisconnectAsync(name);
         return Results.Ok(status);
     }
 }

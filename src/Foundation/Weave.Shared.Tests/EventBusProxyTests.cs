@@ -17,7 +17,7 @@ public sealed class EventBusProxyTests
     {
         var proxy = new EventBusProxy(_broker, _fallback);
         TestEvent? received = null;
-        _fallback.Subscribe<TestEvent>((e, _) => { received = e; return Task.CompletedTask; });
+        proxy.Subscribe<TestEvent>((e, _) => { received = e; return Task.CompletedTask; });
 
         await proxy.PublishAsync(new TestEvent("hello") { SourceId = "test" }, CancellationToken.None);
 
@@ -29,25 +29,29 @@ public sealed class EventBusProxyTests
     public async Task PublishAsync_WithOverride_DelegatesToOverride()
     {
         var proxy = new EventBusProxy(_broker, _fallback);
-        var mockBus = Substitute.For<IEventBus>();
-        _broker.Swap<IEventBus>(mockBus);
+        var overrideBus = new InProcessEventBus(Substitute.For<ILogger<InProcessEventBus>>());
+        TestEvent? received = null;
+        proxy.Subscribe<TestEvent>((e, _) => { received = e; return Task.CompletedTask; });
 
-        var evt = new TestEvent("routed") { SourceId = "test" };
-        await proxy.PublishAsync(evt, CancellationToken.None);
+        _broker.Swap<IEventBus>(overrideBus);
 
-        await mockBus.Received(1).PublishAsync(evt, CancellationToken.None);
+        await proxy.PublishAsync(new TestEvent("routed") { SourceId = "test" }, CancellationToken.None);
+
+        received.ShouldNotBeNull();
+        received!.Data.ShouldBe("routed");
     }
 
     [Fact]
-    public async Task PublishAsync_AfterClear_RevertToFallback()
+    public async Task PublishAsync_AfterClear_RevertsToFallback()
     {
         var proxy = new EventBusProxy(_broker, _fallback);
-        var mockBus = Substitute.For<IEventBus>();
-        _broker.Swap<IEventBus>(mockBus);
-        _broker.Swap<IEventBus>(null);
+        var overrideBus = new InProcessEventBus(Substitute.For<ILogger<InProcessEventBus>>());
+        _broker.Swap<IEventBus>(overrideBus);
 
         TestEvent? received = null;
-        _fallback.Subscribe<TestEvent>((e, _) => { received = e; return Task.CompletedTask; });
+        proxy.Subscribe<TestEvent>((e, _) => { received = e; return Task.CompletedTask; });
+
+        _broker.Swap<IEventBus>(null);
 
         await proxy.PublishAsync(new TestEvent("back") { SourceId = "test" }, CancellationToken.None);
 
@@ -56,52 +60,89 @@ public sealed class EventBusProxyTests
     }
 
     [Fact]
-    public void Subscribe_NoOverride_DelegatesToFallback()
+    public void Subscribe_ReturnsDisposable_ThatUnsubscribes()
     {
         var proxy = new EventBusProxy(_broker, _fallback);
         var sub = proxy.Subscribe<TestEvent>((_, _) => Task.CompletedTask);
-
         sub.ShouldNotBeNull();
         sub.Dispose();
     }
 
     [Fact]
-    public void Subscribe_WithOverride_DelegatesToOverride()
+    public async Task Subscribe_SurvivesHotSwap_HandlersReplayedOntoNewBus()
     {
         var proxy = new EventBusProxy(_broker, _fallback);
-        var mockBus = Substitute.For<IEventBus>();
-        _broker.Swap<IEventBus>(mockBus);
+        TestEvent? received = null;
+        proxy.Subscribe<TestEvent>((e, _) => { received = e; return Task.CompletedTask; });
 
-        Func<TestEvent, CancellationToken, Task> handler = (_, _) => Task.CompletedTask;
-        proxy.Subscribe(handler);
+        // Verify handler works on fallback
+        await proxy.PublishAsync(new TestEvent("before") { SourceId = "test" }, CancellationToken.None);
+        received.ShouldNotBeNull();
+        received!.Data.ShouldBe("before");
 
-        mockBus.Received(1).Subscribe(handler);
+        // Swap to new bus — handler should be replayed
+        var overrideBus = new InProcessEventBus(Substitute.For<ILogger<InProcessEventBus>>());
+        _broker.Swap<IEventBus>(overrideBus);
+
+        received = null;
+        await proxy.PublishAsync(new TestEvent("after") { SourceId = "test" }, CancellationToken.None);
+        received.ShouldNotBeNull();
+        received!.Data.ShouldBe("after");
     }
 
     [Fact]
-    public async Task HotSwap_MidFlight_NewPublishUsesNewBus()
+    public async Task Subscribe_SurvivesDoubleSwap_HandlersWorkOnEachBus()
     {
         var proxy = new EventBusProxy(_broker, _fallback);
+        var calls = new List<string>();
+        proxy.Subscribe<TestEvent>((e, _) => { calls.Add(e.Data); return Task.CompletedTask; });
 
-        // Start with fallback
-        TestEvent? fallbackReceived = null;
-        _fallback.Subscribe<TestEvent>((e, _) => { fallbackReceived = e; return Task.CompletedTask; });
-        await proxy.PublishAsync(new TestEvent("first") { SourceId = "test" }, CancellationToken.None);
-        fallbackReceived.ShouldNotBeNull();
+        // fallback
+        await proxy.PublishAsync(new TestEvent("1") { SourceId = "test" }, CancellationToken.None);
 
-        // Swap to override
-        var mockBus = Substitute.For<IEventBus>();
-        _broker.Swap<IEventBus>(mockBus);
+        // swap to override
+        var bus2 = new InProcessEventBus(Substitute.For<ILogger<InProcessEventBus>>());
+        _broker.Swap<IEventBus>(bus2);
+        await proxy.PublishAsync(new TestEvent("2") { SourceId = "test" }, CancellationToken.None);
 
-        var evt = new TestEvent("second") { SourceId = "test" };
-        await proxy.PublishAsync(evt, CancellationToken.None);
-        await mockBus.Received(1).PublishAsync(evt, CancellationToken.None);
-
-        // Swap back
+        // swap back to fallback
         _broker.Swap<IEventBus>(null);
-        fallbackReceived = null;
-        await proxy.PublishAsync(new TestEvent("third") { SourceId = "test" }, CancellationToken.None);
-        fallbackReceived.ShouldNotBeNull();
-        fallbackReceived!.Data.ShouldBe("third");
+        await proxy.PublishAsync(new TestEvent("3") { SourceId = "test" }, CancellationToken.None);
+
+        calls.ShouldBe(["1", "2", "3"]);
+    }
+
+    [Fact]
+    public async Task Dispose_Subscription_StopsDeliveryAfterSwap()
+    {
+        var proxy = new EventBusProxy(_broker, _fallback);
+        var received = false;
+        var sub = proxy.Subscribe<TestEvent>((_, _) => { received = true; return Task.CompletedTask; });
+
+        sub.Dispose();
+
+        // Swap to new bus — disposed subscription should not be replayed
+        var overrideBus = new InProcessEventBus(Substitute.For<ILogger<InProcessEventBus>>());
+        _broker.Swap<IEventBus>(overrideBus);
+
+        await proxy.PublishAsync(new TestEvent("nope") { SourceId = "test" }, CancellationToken.None);
+        received.ShouldBeFalse();
+    }
+
+    [Fact]
+    public async Task MultipleSubscribers_AllSurviveSwap()
+    {
+        var proxy = new EventBusProxy(_broker, _fallback);
+        var results = new List<string>();
+        proxy.Subscribe<TestEvent>((e, _) => { results.Add("A:" + e.Data); return Task.CompletedTask; });
+        proxy.Subscribe<TestEvent>((e, _) => { results.Add("B:" + e.Data); return Task.CompletedTask; });
+
+        var overrideBus = new InProcessEventBus(Substitute.For<ILogger<InProcessEventBus>>());
+        _broker.Swap<IEventBus>(overrideBus);
+
+        await proxy.PublishAsync(new TestEvent("msg") { SourceId = "test" }, CancellationToken.None);
+
+        results.ShouldContain("A:msg");
+        results.ShouldContain("B:msg");
     }
 }

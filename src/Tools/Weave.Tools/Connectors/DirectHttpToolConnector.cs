@@ -22,6 +22,11 @@ public sealed partial class DirectHttpToolConnector(HttpClient httpClient, ILogg
         if (string.IsNullOrWhiteSpace(config.BaseUrl))
             throw new InvalidOperationException($"Tool '{tool.Name}': DirectHttp 'base_url' is required");
 
+        if (!string.IsNullOrWhiteSpace(config.AuthHeader))
+        {
+            httpClient.DefaultRequestHeaders.TryAddWithoutValidation("Authorization", config.AuthHeader);
+        }
+
         LogDirectHttpToolConnected(tool.Name, config.BaseUrl);
 
         return Task.FromResult(new ToolHandle

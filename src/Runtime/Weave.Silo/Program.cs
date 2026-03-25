@@ -8,7 +8,6 @@ using Weave.Shared.Cqrs;
 using Weave.Shared.Events;
 using Weave.Shared.Lifecycle;
 using Weave.Shared.Plugins;
-using Weave.Shared.Secrets;
 using Weave.ServiceDefaults;
 using Weave.Silo.Api;
 using Weave.Silo.Plugins;
@@ -126,7 +125,7 @@ var daprPort = builder.Configuration["DAPR_HTTP_PORT"]
     ?? Environment.GetEnvironmentVariable("DAPR_HTTP_PORT");
 if (daprPort is not null)
 {
-    pluginRegistry.Connect("dapr", new PluginDefinition
+    await pluginRegistry.ConnectAsync("dapr", new PluginDefinition
     {
         Type = "dapr",
         Description = "Auto-detected Dapr sidecar",
@@ -141,7 +140,7 @@ if (vaultAddress is not null)
     var vaultToken = builder.Configuration["Vault:Token"];
     if (vaultToken is not null) vaultConfig["token"] = vaultToken;
 
-    pluginRegistry.Connect("vault", new PluginDefinition
+    await pluginRegistry.ConnectAsync("vault", new PluginDefinition
     {
         Type = "vault",
         Description = "Auto-detected Vault server",

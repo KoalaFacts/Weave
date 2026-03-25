@@ -6,14 +6,14 @@ namespace Weave.Workspaces.Plugins;
 
 /// <summary>
 /// Manages plugin lifecycle — connects, disconnects, and hot-swaps plugins.
-/// Hot-swap: calling <see cref="Connect"/> with a name that is already active
+/// Hot-swap: calling <see cref="ConnectAsync"/> with a name that is already active
 /// will disconnect the existing plugin and connect the new one atomically.
 /// </summary>
 public interface IPluginRegistry
 {
-    IReadOnlyList<PluginStatus> ConnectAll(Dictionary<string, PluginDefinition> plugins);
-    PluginStatus Connect(string name, PluginDefinition definition);
-    PluginStatus Disconnect(string name);
+    Task<IReadOnlyList<PluginStatus>> ConnectAllAsync(Dictionary<string, PluginDefinition> plugins);
+    Task<PluginStatus> ConnectAsync(string name, PluginDefinition definition);
+    Task<PluginStatus> DisconnectAsync(string name);
     IReadOnlyList<PluginStatus> GetAll();
 }
 
@@ -25,17 +25,17 @@ public sealed partial class PluginRegistry(
         connectors.ToDictionary(c => c.PluginType, StringComparer.OrdinalIgnoreCase);
     private readonly ConcurrentDictionary<string, PluginStatus> _active = new(StringComparer.OrdinalIgnoreCase);
 
-    public IReadOnlyList<PluginStatus> ConnectAll(Dictionary<string, PluginDefinition> plugins)
+    public async Task<IReadOnlyList<PluginStatus>> ConnectAllAsync(Dictionary<string, PluginDefinition> plugins)
     {
         var results = new List<PluginStatus>(plugins.Count);
         foreach (var (name, definition) in plugins)
         {
-            results.Add(Connect(name, definition));
+            results.Add(await ConnectAsync(name, definition));
         }
         return results;
     }
 
-    public PluginStatus Connect(string name, PluginDefinition definition)
+    public async Task<PluginStatus> ConnectAsync(string name, PluginDefinition definition)
     {
         if (!_connectorsByType.TryGetValue(definition.Type, out var connector))
         {
@@ -58,10 +58,10 @@ public sealed partial class PluginRegistry(
             {
                 LogPluginHotSwap(name, existing.Type, definition.Type);
                 if (_connectorsByType.TryGetValue(existing.Type, out var existingConnector))
-                    existingConnector.Disconnect(name);
+                    await existingConnector.DisconnectAsync(name);
             }
 
-            var status = connector.Connect(name, definition);
+            var status = await connector.ConnectAsync(name, definition);
             _active[name] = status;
 
             if (status.IsConnected)
@@ -86,7 +86,7 @@ public sealed partial class PluginRegistry(
         }
     }
 
-    public PluginStatus Disconnect(string name)
+    public async Task<PluginStatus> DisconnectAsync(string name)
     {
         if (!_active.TryRemove(name, out var existing))
         {
@@ -101,7 +101,7 @@ public sealed partial class PluginRegistry(
 
         if (_connectorsByType.TryGetValue(existing.Type, out var connector))
         {
-            var status = connector.Disconnect(name);
+            var status = await connector.DisconnectAsync(name);
             LogPluginDisconnected(name, existing.Type);
             return status;
         }
