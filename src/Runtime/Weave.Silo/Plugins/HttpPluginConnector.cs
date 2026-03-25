@@ -1,19 +1,21 @@
-using Microsoft.Extensions.DependencyInjection;
 using Microsoft.Extensions.Logging;
-using Weave.Tools.Connectors;
+using Weave.Shared.Plugins;
 using Weave.Workspaces.Models;
 using Weave.Workspaces.Plugins;
 
 namespace Weave.Silo.Plugins;
 
 /// <summary>
-/// Connects a generic HTTP plugin — registers an <see cref="OpenApiToolConnector"/>
-/// pointed at the configured base URL. Useful for custom REST/OpenAPI endpoints.
+/// Connects a generic HTTP plugin — stores a named <see cref="HttpClient"/>
+/// in the broker for plugin-specific HTTP integrations.
 /// </summary>
 public sealed partial class HttpPluginConnector(
-    IServiceCollection services,
-    ILogger<HttpPluginConnector> logger) : IPluginConnector
+    PluginServiceBroker broker,
+    IHttpClientFactory httpClientFactory,
+    ILoggerFactory loggerFactory) : IPluginConnector
 {
+    private readonly ILogger<HttpPluginConnector> _logger = loggerFactory.CreateLogger<HttpPluginConnector>();
+
     public string PluginType => "http";
 
     public PluginStatus Connect(string name, PluginDefinition definition)
@@ -30,7 +32,9 @@ public sealed partial class HttpPluginConnector(
             };
         }
 
-        services.AddHttpClient($"plugin:{name}", c => c.BaseAddress = new Uri(baseUrl));
+        var httpClient = httpClientFactory.CreateClient($"plugin:{name}");
+        httpClient.BaseAddress = new Uri(baseUrl);
+        broker.Set($"http:{name}", httpClient);
 
         LogHttpConnected(name, baseUrl);
 
@@ -45,12 +49,17 @@ public sealed partial class HttpPluginConnector(
 
     public PluginStatus Disconnect(string name)
     {
+        var previous = broker.Remove($"http:{name}");
+        if (previous is IDisposable disposable)
+            disposable.Dispose();
+
         return new PluginStatus { Name = name, Type = PluginType, IsConnected = false };
     }
 
     public PluginStatus GetStatus(string name)
     {
-        return new PluginStatus { Name = name, Type = PluginType, IsConnected = true };
+        var client = broker.Get<HttpClient>($"http:{name}");
+        return new PluginStatus { Name = name, Type = PluginType, IsConnected = client is not null };
     }
 
     [LoggerMessage(Level = LogLevel.Information, Message = "HTTP plugin '{Name}' connected — base URL {BaseUrl}")]

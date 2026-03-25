@@ -1,3 +1,4 @@
+using System.Collections.Concurrent;
 using System.Collections.Frozen;
 using Microsoft.Extensions.Logging;
 using Weave.Tools.Connectors;
@@ -9,32 +10,64 @@ public interface IToolDiscoveryService
 {
     IToolConnector GetConnector(ToolType type);
     IReadOnlyList<ToolType> SupportedTypes { get; }
+    void Register(IToolConnector connector);
+    bool Unregister(ToolType type);
 }
 
 public sealed partial class ToolDiscoveryService : IToolDiscoveryService
 {
-    private readonly FrozenDictionary<ToolType, IToolConnector> _connectors;
-    private readonly IReadOnlyList<ToolType> _supportedTypes;
+    private readonly FrozenDictionary<ToolType, IToolConnector> _builtIn;
+    private readonly ConcurrentDictionary<ToolType, IToolConnector> _dynamic = new();
     private readonly ILogger<ToolDiscoveryService> _logger;
 
     public ToolDiscoveryService(IEnumerable<IToolConnector> connectors, ILogger<ToolDiscoveryService> logger)
     {
         _logger = logger;
-        _connectors = connectors.ToFrozenDictionary(c => c.ToolType);
-        _supportedTypes = [.. _connectors.Keys];
+        _builtIn = connectors.ToFrozenDictionary(c => c.ToolType);
 
-        LogDiscoveryInitialized(_connectors.Count, string.Join(", ", _connectors.Keys));
+        LogDiscoveryInitialized(_builtIn.Count, string.Join(", ", _builtIn.Keys));
     }
 
     public IToolConnector GetConnector(ToolType type)
     {
-        return _connectors.TryGetValue(type, out var connector)
+        if (_dynamic.TryGetValue(type, out var dynamicConnector))
+            return dynamicConnector;
+
+        return _builtIn.TryGetValue(type, out var connector)
             ? connector
             : throw new NotSupportedException($"No connector registered for tool type '{type}'");
     }
 
-    public IReadOnlyList<ToolType> SupportedTypes => _supportedTypes;
+    public IReadOnlyList<ToolType> SupportedTypes =>
+        [.. _builtIn.Keys, .. _dynamic.Keys];
+
+    /// <summary>
+    /// Register a tool connector at runtime (e.g., from a plugin).
+    /// Overrides any built-in connector for the same <see cref="ToolType"/>.
+    /// </summary>
+    public void Register(IToolConnector connector)
+    {
+        _dynamic[connector.ToolType] = connector;
+        LogConnectorRegistered(connector.ToolType);
+    }
+
+    /// <summary>
+    /// Remove a dynamically registered connector. Built-in connectors are not affected.
+    /// </summary>
+    public bool Unregister(ToolType type)
+    {
+        var removed = _dynamic.TryRemove(type, out _);
+        if (removed)
+            LogConnectorUnregistered(type);
+        return removed;
+    }
 
     [LoggerMessage(Level = LogLevel.Information, Message = "Tool discovery initialized with {Count} connector(s): {Types}")]
     private partial void LogDiscoveryInitialized(int count, string types);
+
+    [LoggerMessage(Level = LogLevel.Information, Message = "Dynamic tool connector registered for {Type}")]
+    private partial void LogConnectorRegistered(ToolType type);
+
+    [LoggerMessage(Level = LogLevel.Information, Message = "Dynamic tool connector unregistered for {Type}")]
+    private partial void LogConnectorUnregistered(ToolType type);
 }

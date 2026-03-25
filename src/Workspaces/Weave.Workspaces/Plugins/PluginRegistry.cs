@@ -5,8 +5,9 @@ using Weave.Workspaces.Models;
 namespace Weave.Workspaces.Plugins;
 
 /// <summary>
-/// Manages plugin lifecycle — connects and disconnects plugins based on manifest config.
-/// Used by the Silo at workspace startup to activate declared plugins.
+/// Manages plugin lifecycle — connects, disconnects, and hot-swaps plugins.
+/// Hot-swap: calling <see cref="Connect"/> with a name that is already active
+/// will disconnect the existing plugin and connect the new one atomically.
 /// </summary>
 public interface IPluginRegistry
 {
@@ -52,6 +53,14 @@ public sealed partial class PluginRegistry(
 
         try
         {
+            // Hot-swap: disconnect existing plugin with this name before connecting the new one
+            if (_active.TryGetValue(name, out var existing) && existing.IsConnected)
+            {
+                LogPluginHotSwap(name, existing.Type, definition.Type);
+                if (_connectorsByType.TryGetValue(existing.Type, out var existingConnector))
+                    existingConnector.Disconnect(name);
+            }
+
             var status = connector.Connect(name, definition);
             _active[name] = status;
 
@@ -110,4 +119,7 @@ public sealed partial class PluginRegistry(
 
     [LoggerMessage(Level = LogLevel.Information, Message = "Plugin '{Name}' ({Type}) disconnected")]
     private partial void LogPluginDisconnected(string name, string type);
+
+    [LoggerMessage(Level = LogLevel.Information, Message = "Hot-swapping plugin '{Name}': {OldType} -> {NewType}")]
+    private partial void LogPluginHotSwap(string name, string oldType, string newType);
 }

@@ -1,20 +1,24 @@
-using Microsoft.Extensions.DependencyInjection;
 using Microsoft.Extensions.Logging;
+using Weave.Security.Tokens;
 using Weave.Security.Vault;
-using Weave.Shared.Secrets;
+using Weave.Shared.Plugins;
 using Weave.Workspaces.Models;
 using Weave.Workspaces.Plugins;
 
 namespace Weave.Silo.Plugins;
 
 /// <summary>
-/// Connects the Vault plugin — registers <see cref="VaultSecretProvider"/>
-/// backed by the HashiCorp Vault HTTP API.
+/// Connects the Vault plugin — swaps in <see cref="VaultSecretProvider"/>
+/// via the broker. Hot-swappable: disconnect reverts to the default provider.
 /// </summary>
 public sealed partial class VaultPluginConnector(
-    IServiceCollection services,
-    ILogger<VaultPluginConnector> logger) : IPluginConnector
+    PluginServiceBroker broker,
+    IHttpClientFactory httpClientFactory,
+    ICapabilityTokenService tokenService,
+    ILoggerFactory loggerFactory) : IPluginConnector
 {
+    private readonly ILogger<VaultPluginConnector> _logger = loggerFactory.CreateLogger<VaultPluginConnector>();
+
     public string PluginType => "vault";
 
     public PluginStatus Connect(string name, PluginDefinition definition)
@@ -33,13 +37,17 @@ public sealed partial class VaultPluginConnector(
 
         var token = definition.Config.GetValueOrDefault("token");
 
-        services.AddHttpClient<VaultSecretProvider>(c =>
-        {
-            c.BaseAddress = new Uri(address);
-            if (token is not null)
-                c.DefaultRequestHeaders.Add("X-Vault-Token", token);
-        });
-        services.AddSingleton<ISecretProvider, VaultSecretProvider>();
+        var httpClient = httpClientFactory.CreateClient($"vault-plugin:{name}");
+        httpClient.BaseAddress = new Uri(address);
+        if (token is not null)
+            httpClient.DefaultRequestHeaders.Add("X-Vault-Token", token);
+
+        var provider = new VaultSecretProvider(
+            httpClient,
+            tokenService,
+            loggerFactory.CreateLogger<VaultSecretProvider>());
+        var previous = broker.Swap<ISecretProvider>(provider);
+        DisposeIfNeeded(previous);
 
         LogVaultConnected(name, address);
 
@@ -54,14 +62,30 @@ public sealed partial class VaultPluginConnector(
 
     public PluginStatus Disconnect(string name)
     {
+        var previous = broker.Swap<ISecretProvider>(null);
+        DisposeIfNeeded(previous);
+
+        LogVaultDisconnected(name);
         return new PluginStatus { Name = name, Type = PluginType, IsConnected = false };
     }
 
     public PluginStatus GetStatus(string name)
     {
-        return new PluginStatus { Name = name, Type = PluginType, IsConnected = true };
+        var hasVault = broker.Get<ISecretProvider>() is VaultSecretProvider;
+        return new PluginStatus { Name = name, Type = PluginType, IsConnected = hasVault };
+    }
+
+    private static void DisposeIfNeeded(object? instance)
+    {
+        if (instance is IAsyncDisposable asyncDisposable)
+            asyncDisposable.DisposeAsync().AsTask().GetAwaiter().GetResult();
+        else if (instance is IDisposable disposable)
+            disposable.Dispose();
     }
 
     [LoggerMessage(Level = LogLevel.Information, Message = "Vault plugin '{Name}' connected — server at {Address}")]
     private partial void LogVaultConnected(string name, string address);
+
+    [LoggerMessage(Level = LogLevel.Information, Message = "Vault plugin '{Name}' disconnected")]
+    private partial void LogVaultDisconnected(string name);
 }

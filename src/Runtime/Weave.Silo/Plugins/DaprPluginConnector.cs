@@ -1,21 +1,27 @@
-using Microsoft.Extensions.DependencyInjection;
 using Microsoft.Extensions.Logging;
 using Weave.Shared.Events;
+using Weave.Shared.Plugins;
 using Weave.Silo.Events;
 using Weave.Tools.Connectors;
+using Weave.Tools.Discovery;
 using Weave.Workspaces.Models;
 using Weave.Workspaces.Plugins;
 
 namespace Weave.Silo.Plugins;
 
 /// <summary>
-/// Connects the Dapr plugin — registers <see cref="DaprEventBus"/> and <see cref="DaprToolConnector"/>
-/// backed by the Dapr sidecar HTTP API.
+/// Connects the Dapr plugin — swaps in <see cref="DaprEventBus"/> and registers
+/// <see cref="DaprToolConnector"/> via the broker and discovery service.
+/// Hot-swappable: disconnect reverts to defaults.
 /// </summary>
 public sealed partial class DaprPluginConnector(
-    IServiceCollection services,
-    ILogger<DaprPluginConnector> logger) : IPluginConnector
+    PluginServiceBroker broker,
+    IToolDiscoveryService toolDiscovery,
+    IHttpClientFactory httpClientFactory,
+    ILoggerFactory loggerFactory) : IPluginConnector
 {
+    private readonly ILogger<DaprPluginConnector> _logger = loggerFactory.CreateLogger<DaprPluginConnector>();
+
     public string PluginType => "dapr";
 
     public PluginStatus Connect(string name, PluginDefinition definition)
@@ -35,10 +41,19 @@ public sealed partial class DaprPluginConnector(
         }
 
         var baseUrl = $"http://localhost:{port}";
-        services.AddHttpClient<DaprEventBus>(c => c.BaseAddress = new Uri(baseUrl));
-        services.AddSingleton<IEventBus, DaprEventBus>();
-        services.AddHttpClient<DaprToolConnector>(c => c.BaseAddress = new Uri(baseUrl));
-        services.AddSingleton<IToolConnector>(sp => sp.GetRequiredService<DaprToolConnector>());
+
+        // Swap event bus to Dapr-backed implementation
+        var httpClient = httpClientFactory.CreateClient($"dapr-plugin:{name}");
+        httpClient.BaseAddress = new Uri(baseUrl);
+        var eventBus = new DaprEventBus(httpClient, loggerFactory.CreateLogger<DaprEventBus>());
+        var previous = broker.Swap<IEventBus>(eventBus);
+        DisposeIfNeeded(previous);
+
+        // Register Dapr tool connector dynamically
+        var toolClient = httpClientFactory.CreateClient($"dapr-tool:{name}");
+        toolClient.BaseAddress = new Uri(baseUrl);
+        var toolConnector = new DaprToolConnector(toolClient, loggerFactory.CreateLogger<DaprToolConnector>());
+        toolDiscovery.Register(toolConnector);
 
         LogDaprConnected(name, baseUrl);
 
@@ -53,14 +68,31 @@ public sealed partial class DaprPluginConnector(
 
     public PluginStatus Disconnect(string name)
     {
+        var previous = broker.Swap<IEventBus>(null);
+        DisposeIfNeeded(previous);
+        toolDiscovery.Unregister(Tools.Models.ToolType.Dapr);
+
+        LogDaprDisconnected(name);
         return new PluginStatus { Name = name, Type = PluginType, IsConnected = false };
     }
 
     public PluginStatus GetStatus(string name)
     {
-        return new PluginStatus { Name = name, Type = PluginType, IsConnected = true };
+        var hasBus = broker.Get<IEventBus>() is DaprEventBus;
+        return new PluginStatus { Name = name, Type = PluginType, IsConnected = hasBus };
+    }
+
+    private static void DisposeIfNeeded(object? instance)
+    {
+        if (instance is IAsyncDisposable asyncDisposable)
+            asyncDisposable.DisposeAsync().AsTask().GetAwaiter().GetResult();
+        else if (instance is IDisposable disposable)
+            disposable.Dispose();
     }
 
     [LoggerMessage(Level = LogLevel.Information, Message = "Dapr plugin '{Name}' connected — sidecar at {BaseUrl}")]
     private partial void LogDaprConnected(string name, string baseUrl);
+
+    [LoggerMessage(Level = LogLevel.Information, Message = "Dapr plugin '{Name}' disconnected")]
+    private partial void LogDaprDisconnected(string name);
 }

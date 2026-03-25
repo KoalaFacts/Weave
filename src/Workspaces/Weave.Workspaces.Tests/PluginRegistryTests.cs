@@ -94,6 +94,47 @@ public sealed class PluginRegistryTests
     }
 
     [Fact]
+    public void Connect_AlreadyActive_HotSwapsPlugin()
+    {
+        var connector = new FakePluginConnector("dapr", connected: true);
+        var registry = CreateRegistry(connector);
+
+        var first = registry.Connect("my-dapr", new PluginDefinition
+        {
+            Type = "dapr",
+            Config = new Dictionary<string, string> { ["port"] = "3500" }
+        });
+        first.IsConnected.ShouldBeTrue();
+
+        // Reconnect same name — should disconnect old, connect new
+        var second = registry.Connect("my-dapr", new PluginDefinition
+        {
+            Type = "dapr",
+            Config = new Dictionary<string, string> { ["port"] = "3501" }
+        });
+        second.IsConnected.ShouldBeTrue();
+
+        // Should still be one active plugin
+        registry.GetAll().Count.ShouldBe(1);
+        connector.DisconnectCount.ShouldBe(1);
+    }
+
+    [Fact]
+    public void Connect_AlreadyActive_DifferentType_HotSwaps()
+    {
+        var dapr = new FakePluginConnector("dapr", connected: true);
+        var webhook = new FakePluginConnector("webhook", connected: true);
+        var registry = CreateRegistry(dapr, webhook);
+
+        registry.Connect("events", new PluginDefinition { Type = "dapr" });
+        registry.Connect("events", new PluginDefinition { Type = "webhook" });
+
+        registry.GetAll().Count.ShouldBe(1);
+        registry.GetAll()[0].Type.ShouldBe("webhook");
+        dapr.DisconnectCount.ShouldBe(1);
+    }
+
+    [Fact]
     public void Connect_ConnectorThrows_ReturnsError()
     {
         var connector = new ThrowingPluginConnector("dapr");
@@ -108,12 +149,16 @@ public sealed class PluginRegistryTests
     private sealed class FakePluginConnector(string type, bool connected) : IPluginConnector
     {
         public string PluginType => type;
+        public int DisconnectCount { get; private set; }
 
         public PluginStatus Connect(string name, PluginDefinition definition) =>
             new() { Name = name, Type = type, IsConnected = connected };
 
-        public PluginStatus Disconnect(string name) =>
-            new() { Name = name, Type = type, IsConnected = false };
+        public PluginStatus Disconnect(string name)
+        {
+            DisconnectCount++;
+            return new() { Name = name, Type = type, IsConnected = false };
+        }
 
         public PluginStatus GetStatus(string name) =>
             new() { Name = name, Type = type, IsConnected = connected };

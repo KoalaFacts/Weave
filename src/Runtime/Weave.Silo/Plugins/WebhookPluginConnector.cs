@@ -1,6 +1,6 @@
-using Microsoft.Extensions.DependencyInjection;
 using Microsoft.Extensions.Logging;
 using Weave.Shared.Events;
+using Weave.Shared.Plugins;
 using Weave.Silo.Events;
 using Weave.Workspaces.Models;
 using Weave.Workspaces.Plugins;
@@ -8,13 +8,16 @@ using Weave.Workspaces.Plugins;
 namespace Weave.Silo.Plugins;
 
 /// <summary>
-/// Connects the webhook plugin — registers <see cref="WebhookEventBus"/>
-/// that publishes domain events via plain HTTP POST. No sidecar or message broker required.
+/// Connects the webhook plugin — swaps in <see cref="WebhookEventBus"/>
+/// via the broker. Hot-swappable: disconnect reverts to the default event bus.
 /// </summary>
 public sealed partial class WebhookPluginConnector(
-    IServiceCollection services,
-    ILogger<WebhookPluginConnector> logger) : IPluginConnector
+    PluginServiceBroker broker,
+    IHttpClientFactory httpClientFactory,
+    ILoggerFactory loggerFactory) : IPluginConnector
 {
+    private readonly ILogger<WebhookPluginConnector> _logger = loggerFactory.CreateLogger<WebhookPluginConnector>();
+
     public string PluginType => "webhook";
 
     public PluginStatus Connect(string name, PluginDefinition definition)
@@ -42,12 +45,14 @@ public sealed partial class WebhookPluginConnector(
             };
         }
 
-        services.AddHttpClient<WebhookEventBus>();
-        services.AddSingleton<IEventBus>(sp =>
-            new WebhookEventBus(
-                sp.GetRequiredService<HttpClient>(),
-                webhookUri,
-                sp.GetRequiredService<ILogger<WebhookEventBus>>()));
+        var httpClient = httpClientFactory.CreateClient($"webhook-plugin:{name}");
+        var eventBus = new WebhookEventBus(
+            httpClient,
+            webhookUri,
+            loggerFactory.CreateLogger<WebhookEventBus>());
+
+        var previous = broker.Swap<IEventBus>(eventBus);
+        DisposeIfNeeded(previous);
 
         LogWebhookConnected(name, url);
 
@@ -62,14 +67,30 @@ public sealed partial class WebhookPluginConnector(
 
     public PluginStatus Disconnect(string name)
     {
+        var previous = broker.Swap<IEventBus>(null);
+        DisposeIfNeeded(previous);
+
+        LogWebhookDisconnected(name);
         return new PluginStatus { Name = name, Type = PluginType, IsConnected = false };
     }
 
     public PluginStatus GetStatus(string name)
     {
-        return new PluginStatus { Name = name, Type = PluginType, IsConnected = true };
+        var hasBus = broker.Get<IEventBus>() is WebhookEventBus;
+        return new PluginStatus { Name = name, Type = PluginType, IsConnected = hasBus };
+    }
+
+    private static void DisposeIfNeeded(object? instance)
+    {
+        if (instance is IAsyncDisposable asyncDisposable)
+            asyncDisposable.DisposeAsync().AsTask().GetAwaiter().GetResult();
+        else if (instance is IDisposable disposable)
+            disposable.Dispose();
     }
 
     [LoggerMessage(Level = LogLevel.Information, Message = "Webhook plugin '{Name}' connected — posting to {Url}")]
     private partial void LogWebhookConnected(string name, string url);
+
+    [LoggerMessage(Level = LogLevel.Information, Message = "Webhook plugin '{Name}' disconnected")]
+    private partial void LogWebhookDisconnected(string name);
 }

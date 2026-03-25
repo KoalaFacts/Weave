@@ -1,4 +1,5 @@
 using Weave.Agents.Pipeline;
+using Weave.Security.Plugins;
 using Weave.Security.Proxy;
 using Weave.Security.Scanning;
 using Weave.Security.Tokens;
@@ -6,6 +7,7 @@ using Weave.Security.Vault;
 using Weave.Shared.Cqrs;
 using Weave.Shared.Events;
 using Weave.Shared.Lifecycle;
+using Weave.Shared.Plugins;
 using Weave.Shared.Secrets;
 using Weave.ServiceDefaults;
 using Weave.Silo.Api;
@@ -58,7 +60,23 @@ builder.Services.Configure<CapabilityTokenOptions>(
 builder.Services.AddSingleton<ICapabilityTokenService, CapabilityTokenService>();
 builder.Services.AddSingleton<ILeakScanner, LeakScanner>();
 builder.Services.AddSingleton<TransparentSecretProxy>();
-builder.Services.AddSingleton<ISecretProvider, InMemorySecretProvider>();
+
+// --- Plugin hot-swap broker and proxy layer ---
+// The broker holds mutable service slots; proxies delegate to the broker's current
+// backing instance or fall back to defaults. This lets plugins swap implementations
+// at runtime without rebuilding the DI container.
+builder.Services.AddSingleton<PluginServiceBroker>();
+
+// Default event bus (fallback when no plugin overrides it)
+builder.Services.AddSingleton<InProcessEventBus>();
+builder.Services.AddSingleton<IEventBus, EventBusProxy>();
+
+// Default secret provider (fallback when no plugin overrides it)
+builder.Services.AddSingleton<InMemorySecretProvider>();
+builder.Services.AddSingleton<ISecretProvider>(sp =>
+    new SecretProviderProxy(
+        sp.GetRequiredService<PluginServiceBroker>(),
+        sp.GetRequiredService<InMemorySecretProvider>()));
 
 // Agent chat pipeline
 builder.Services.AddSingleton<IAgentCostLedger, AgentCostLedger>();
@@ -73,25 +91,35 @@ builder.Services.AddSingleton<IToolConnector>(sp => sp.GetRequiredService<OpenAp
 builder.Services.AddHttpClient<DirectHttpToolConnector>();
 builder.Services.AddSingleton<IToolConnector>(sp => sp.GetRequiredService<DirectHttpToolConnector>());
 
-// Default event bus — in-process, no external dependencies
-builder.Services.AddSingleton<IEventBus, InProcessEventBus>();
-
-// --- Plugin connectors (registered so PluginRegistry can find them) ---
+// --- Plugin connectors (use broker + factories, not IServiceCollection) ---
 builder.Services.AddSingleton<IPluginConnector>(sp =>
-    new DaprPluginConnector(builder.Services, sp.GetRequiredService<ILogger<DaprPluginConnector>>()));
+    new DaprPluginConnector(
+        sp.GetRequiredService<PluginServiceBroker>(),
+        sp.GetRequiredService<IToolDiscoveryService>(),
+        sp.GetRequiredService<IHttpClientFactory>(),
+        sp.GetRequiredService<ILoggerFactory>()));
 builder.Services.AddSingleton<IPluginConnector>(sp =>
-    new VaultPluginConnector(builder.Services, sp.GetRequiredService<ILogger<VaultPluginConnector>>()));
+    new VaultPluginConnector(
+        sp.GetRequiredService<PluginServiceBroker>(),
+        sp.GetRequiredService<IHttpClientFactory>(),
+        sp.GetRequiredService<ICapabilityTokenService>(),
+        sp.GetRequiredService<ILoggerFactory>()));
 builder.Services.AddSingleton<IPluginConnector>(sp =>
-    new HttpPluginConnector(builder.Services, sp.GetRequiredService<ILogger<HttpPluginConnector>>()));
+    new HttpPluginConnector(
+        sp.GetRequiredService<PluginServiceBroker>(),
+        sp.GetRequiredService<IHttpClientFactory>(),
+        sp.GetRequiredService<ILoggerFactory>()));
 builder.Services.AddSingleton<IPluginConnector>(sp =>
-    new WebhookPluginConnector(builder.Services, sp.GetRequiredService<ILogger<WebhookPluginConnector>>()));
+    new WebhookPluginConnector(
+        sp.GetRequiredService<PluginServiceBroker>(),
+        sp.GetRequiredService<IHttpClientFactory>(),
+        sp.GetRequiredService<ILoggerFactory>()));
 builder.Services.AddSingleton<IPluginRegistry, PluginRegistry>();
 
 var app = builder.Build();
 
 // --- Activate plugins from workspace manifest or environment ---
 var pluginRegistry = app.Services.GetRequiredService<IPluginRegistry>();
-var pluginsFromConfig = builder.Configuration.GetSection("Weave:Plugins");
 
 // Environment-detected plugins (backward compat with DAPR_HTTP_PORT / Vault:Address)
 var daprPort = builder.Configuration["DAPR_HTTP_PORT"]
