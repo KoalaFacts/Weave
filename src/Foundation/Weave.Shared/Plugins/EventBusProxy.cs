@@ -25,7 +25,15 @@ public sealed class EventBusProxy : IEventBus
     private IEventBus Current => _broker.Get<IEventBus>() ?? _fallback;
 
     public Task PublishAsync<TEvent>(TEvent domainEvent, CancellationToken ct) where TEvent : IDomainEvent
-        => Current.PublishAsync(domainEvent, ct);
+    {
+        // Snapshot the current bus reference under the lock to ensure we publish
+        // to the same bus that holds our subscriptions. Without this, a concurrent
+        // swap could cause us to publish to the old bus after subscriptions have
+        // been replayed to the new one.
+        IEventBus bus;
+        lock (_lock) { bus = Current; }
+        return bus.PublishAsync(domainEvent, ct);
+    }
 
     public IDisposable Subscribe<TEvent>(Func<TEvent, CancellationToken, Task> handler) where TEvent : IDomainEvent
     {
@@ -44,8 +52,8 @@ public sealed class EventBusProxy : IEventBus
     {
         lock (_lock)
         {
-            record.InnerSubscription.Dispose();
-            _subscriptions.Remove(record);
+            if (_subscriptions.Remove(record))
+                record.InnerSubscription.Dispose();
         }
     }
 
@@ -56,8 +64,18 @@ public sealed class EventBusProxy : IEventBus
             var bus = Current;
             foreach (var record in _subscriptions)
             {
-                record.InnerSubscription.Dispose();
-                record.InnerSubscription = record.SubscribeFactory(bus);
+                var oldSub = record.InnerSubscription;
+                try
+                {
+                    record.InnerSubscription = record.SubscribeFactory(bus);
+                    oldSub.Dispose();
+                }
+                catch
+                {
+                    // If re-subscribe fails, keep the old subscription reference
+                    // so that Unsubscribe can still dispose it cleanly.
+                    record.InnerSubscription = oldSub;
+                }
             }
         }
     }
@@ -72,6 +90,12 @@ public sealed class EventBusProxy : IEventBus
 
     private sealed class ProxySubscription(EventBusProxy proxy, SubscriptionRecord record) : IDisposable
     {
-        public void Dispose() => proxy.Unsubscribe(record);
+        private int _disposed;
+
+        public void Dispose()
+        {
+            if (Interlocked.Exchange(ref _disposed, 1) == 0)
+                proxy.Unsubscribe(record);
+        }
     }
 }

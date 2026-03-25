@@ -53,15 +53,18 @@ public sealed partial class PluginRegistry(
 
         try
         {
-            // Hot-swap: disconnect existing plugin with this name before connecting the new one
-            if (_active.TryGetValue(name, out var existing) && existing.IsConnected)
+            // Make-before-break: connect the new plugin first. If it fails,
+            // the old plugin remains active and uninterrupted.
+            var status = await connector.ConnectAsync(name, definition);
+
+            if (status.IsConnected &&
+                _active.TryGetValue(name, out var existing) && existing.IsConnected)
             {
                 LogPluginHotSwap(name, existing.Type, definition.Type);
                 if (_connectorsByType.TryGetValue(existing.Type, out var existingConnector))
                     await existingConnector.DisconnectAsync(name);
             }
 
-            var status = await connector.ConnectAsync(name, definition);
             _active[name] = status;
 
             if (status.IsConnected)

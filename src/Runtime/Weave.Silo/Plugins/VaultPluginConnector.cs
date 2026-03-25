@@ -37,7 +37,11 @@ public sealed partial class VaultPluginConnector(
 
         var token = definition.Config.GetValueOrDefault("token");
 
-        var httpClient = httpClientFactory.CreateClient($"vault-plugin:{name}");
+        // Use a unique client name per connect to avoid header accumulation across swaps.
+        // IHttpClientFactory creates a fresh HttpClient each time (handlers are pooled, but
+        // DefaultRequestHeaders are per-instance).
+        var clientName = $"vault-plugin:{name}:{Guid.NewGuid():N}";
+        var httpClient = httpClientFactory.CreateClient(clientName);
         httpClient.BaseAddress = new Uri(address);
         if (token is not null)
             httpClient.DefaultRequestHeaders.Add("X-Vault-Token", token);

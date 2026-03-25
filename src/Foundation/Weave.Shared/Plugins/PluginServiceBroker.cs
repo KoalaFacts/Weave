@@ -13,7 +13,7 @@ public sealed partial class PluginServiceBroker(ILogger<PluginServiceBroker> log
 {
     private readonly Lock _lock = new();
     private readonly ConcurrentDictionary<Type, object> _services = new();
-    private readonly ConcurrentDictionary<Type, Action> _swapCallbacks = new();
+    private readonly ConcurrentDictionary<Type, List<Action>> _swapCallbacks = new();
     private readonly ConcurrentDictionary<string, object> _named = new(StringComparer.OrdinalIgnoreCase);
 
     /// <summary>
@@ -24,30 +24,37 @@ public sealed partial class PluginServiceBroker(ILogger<PluginServiceBroker> log
 
     /// <summary>
     /// Swap the implementation for <typeparamref name="T"/>. Returns the previous
-    /// instance so the caller can dispose it. Fires the registered swap callback
-    /// for this type if one exists.
+    /// instance so the caller can dispose it. Fires registered swap callbacks
+    /// sequentially under the lock to ensure atomic swap+replay.
     /// </summary>
     public T? Swap<T>(T? newService) where T : class
     {
-        T? previous;
         lock (_lock)
         {
-            previous = SwapCore<T>(newService);
+            T? previous = SwapCore<T>(newService);
+
+            // Fire callbacks under the lock to ensure no concurrent publish
+            // can observe a state where the service is swapped but subscriptions
+            // have not been replayed yet.
+            if (_swapCallbacks.TryGetValue(typeof(T), out var callbacks))
+            {
+                foreach (var callback in callbacks)
+                    callback();
+            }
+
+            return previous;
         }
-
-        // Fire callback outside the lock to avoid deadlocks
-        if (_swapCallbacks.TryGetValue(typeof(T), out var callback))
-            callback();
-
-        return previous;
     }
 
     /// <summary>
     /// Register a callback that fires after a <see cref="Swap{T}"/> for <typeparamref name="T"/>.
-    /// Used by proxies to replay subscriptions onto the new backing instance.
+    /// Multiple callbacks can be registered for the same type.
     /// </summary>
-    public void OnSwap<T>(Action callback) where T : class =>
-        _swapCallbacks[typeof(T)] = callback;
+    public void OnSwap<T>(Action callback) where T : class
+    {
+        var list = _swapCallbacks.GetOrAdd(typeof(T), _ => []);
+        lock (list) { list.Add(callback); }
+    }
 
     /// <summary>Store a named service instance.</summary>
     public void Set(string key, object service) => _named[key] = service;

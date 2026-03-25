@@ -51,6 +51,14 @@ public sealed partial class DirectHttpToolConnector(HttpClient httpClient, ILogg
         {
             var baseUrl = handle.ConnectionId.TrimEnd('/');
             var method = invocation.Method.TrimStart('/');
+
+            // Reject path traversal and absolute URLs to prevent SSRF
+            if (method.Contains("..", StringComparison.Ordinal) ||
+                method.Contains("://", StringComparison.Ordinal))
+            {
+                throw new ArgumentException($"Invalid method path: '{invocation.Method}'");
+            }
+
             var url = $"{baseUrl}/{method}";
 
             var bytes = JsonSerializer.SerializeToUtf8Bytes(invocation.Parameters, ToolJsonContext.Default.DictionaryStringString);

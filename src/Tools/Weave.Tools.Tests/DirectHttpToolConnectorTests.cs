@@ -109,6 +109,53 @@ public sealed class DirectHttpToolConnectorTests
         connector.ToolType.ShouldBe(ToolType.DirectHttp);
     }
 
+    [Theory]
+    [InlineData("../../admin/delete")]
+    [InlineData("foo/../../../etc/passwd")]
+    [InlineData("http://evil.com/steal")]
+    public async Task InvokeAsync_PathTraversal_ThrowsArgumentException(string maliciousMethod)
+    {
+        var connector = CreateConnector();
+        var handle = new ToolHandle
+        {
+            ToolName = "test",
+            Type = ToolType.DirectHttp,
+            ConnectionId = "http://localhost:8080",
+            IsConnected = true
+        };
+        var invocation = new ToolInvocation
+        {
+            ToolName = "test",
+            Method = maliciousMethod,
+            Parameters = []
+        };
+
+        var result = await connector.InvokeAsync(handle, invocation);
+
+        result.Success.ShouldBeFalse();
+        result.Error.ShouldContain("Invalid method path");
+    }
+
+    [Fact]
+    public async Task ConnectAsync_WithAuthHeader_SetsAuthorization()
+    {
+        var connector = CreateConnector();
+        var spec = new ToolSpec
+        {
+            Name = "authed-api",
+            Type = ToolType.DirectHttp,
+            DirectHttp = new DirectHttpToolConfig
+            {
+                BaseUrl = "http://localhost:8080",
+                AuthHeader = "Bearer test-token-123"
+            }
+        };
+
+        var handle = await connector.ConnectAsync(spec, TestToken);
+
+        handle.IsConnected.ShouldBeTrue();
+    }
+
     [Fact]
     public async Task DiscoverSchemaAsync_ReturnsDescription()
     {
