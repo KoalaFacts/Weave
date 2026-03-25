@@ -70,6 +70,8 @@ builder.Services.AddSingleton<IToolConnector, CliToolConnector>();
 builder.Services.AddSingleton<IToolDiscoveryService, ToolDiscoveryService>();
 builder.Services.AddHttpClient<OpenApiToolConnector>();
 builder.Services.AddSingleton<IToolConnector>(sp => sp.GetRequiredService<OpenApiToolConnector>());
+builder.Services.AddHttpClient<DirectHttpToolConnector>();
+builder.Services.AddSingleton<IToolConnector>(sp => sp.GetRequiredService<DirectHttpToolConnector>());
 
 // Default event bus — in-process, no external dependencies
 builder.Services.AddSingleton<IEventBus, InProcessEventBus>();
@@ -81,6 +83,8 @@ builder.Services.AddSingleton<IPluginConnector>(sp =>
     new VaultPluginConnector(builder.Services, sp.GetRequiredService<ILogger<VaultPluginConnector>>()));
 builder.Services.AddSingleton<IPluginConnector>(sp =>
     new HttpPluginConnector(builder.Services, sp.GetRequiredService<ILogger<HttpPluginConnector>>()));
+builder.Services.AddSingleton<IPluginConnector>(sp =>
+    new WebhookPluginConnector(builder.Services, sp.GetRequiredService<ILogger<WebhookPluginConnector>>()));
 builder.Services.AddSingleton<IPluginRegistry, PluginRegistry>();
 
 var app = builder.Build();

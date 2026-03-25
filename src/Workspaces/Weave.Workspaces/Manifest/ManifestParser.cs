@@ -15,10 +15,10 @@ public interface IManifestParser
 public sealed class ManifestParser : IManifestParser
 {
     private static readonly FrozenSet<string> ValidToolTypes =
-        FrozenSet.ToFrozenSet(["mcp", "dapr", "openapi", "cli", "library"]);
+        FrozenSet.ToFrozenSet(["mcp", "dapr", "openapi", "cli", "library", "direct_http"]);
 
     private static readonly FrozenSet<string> ValidPluginTypes =
-        FrozenSet.ToFrozenSet(["dapr", "vault", "http", "custom"]);
+        FrozenSet.ToFrozenSet(["dapr", "vault", "http", "webhook", "custom"]);
 
     public WorkspaceManifest Parse(string json)
     {
