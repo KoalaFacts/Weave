@@ -30,4 +30,6 @@ namespace Weave.Silo.Api;
 [JsonSerializable(typeof(IEnumerable<AgentResponse>))]
 [JsonSerializable(typeof(IEnumerable<ToolConnectionResponse>))]
 [JsonSerializable(typeof(IEnumerable<PluginStatus>))]
+[JsonSerializable(typeof(PluginSchema))]
+[JsonSerializable(typeof(IEnumerable<PluginSchema>))]
 internal sealed partial class SiloApiJsonContext : JsonSerializerContext;

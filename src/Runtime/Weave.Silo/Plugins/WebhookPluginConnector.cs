@@ -20,6 +20,17 @@ public sealed partial class WebhookPluginConnector(
 
     public string PluginType => "webhook";
 
+    public PluginSchema Schema { get; } = new()
+    {
+        Type = "webhook",
+        Description = "Webhook event bus — publishes domain events via HTTP POST to a URL",
+        Provides = ["events"],
+        Config =
+        [
+            new() { Name = "url", Description = "Webhook endpoint URL", Required = true },
+        ]
+    };
+
     public async Task<PluginStatus> ConnectAsync(string name, PluginDefinition definition)
     {
         var url = definition.Config.GetValueOrDefault("url");

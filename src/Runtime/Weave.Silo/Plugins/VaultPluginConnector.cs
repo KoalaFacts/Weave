@@ -21,6 +21,18 @@ public sealed partial class VaultPluginConnector(
 
     public string PluginType => "vault";
 
+    public PluginSchema Schema { get; } = new()
+    {
+        Type = "vault",
+        Description = "HashiCorp Vault — provides secret resolution via the Vault HTTP API",
+        Provides = ["secrets"],
+        Config =
+        [
+            new() { Name = "address", Description = "Vault server URL", Required = true, EnvVar = "VAULT_ADDR" },
+            new() { Name = "token", Description = "Vault authentication token", Secret = true, EnvVar = "VAULT_TOKEN" },
+        ]
+    };
+
     public async Task<PluginStatus> ConnectAsync(string name, PluginDefinition definition)
     {
         var address = definition.Config.GetValueOrDefault("address");

@@ -6,8 +6,8 @@ namespace Weave.Workspaces.Plugins;
 
 /// <summary>
 /// Manages plugin lifecycle — connects, disconnects, and hot-swaps plugins.
-/// Hot-swap: calling <see cref="ConnectAsync"/> with a name that is already active
-/// will disconnect the existing plugin and connect the new one atomically.
+/// Validates config against the connector's <see cref="PluginSchema"/> and
+/// auto-fills missing values from environment variables before connecting.
 /// </summary>
 public interface IPluginRegistry
 {
@@ -15,6 +15,7 @@ public interface IPluginRegistry
     Task<PluginStatus> ConnectAsync(string name, PluginDefinition definition);
     Task<PluginStatus> DisconnectAsync(string name);
     IReadOnlyList<PluginStatus> GetAll();
+    IReadOnlyList<PluginSchema> GetCatalog();
 }
 
 public sealed partial class PluginRegistry(
@@ -44,9 +45,27 @@ public sealed partial class PluginRegistry(
                 Name = name,
                 Type = definition.Type,
                 IsConnected = false,
-                Error = $"No connector registered for plugin type '{definition.Type}'"
+                Error = $"No connector registered for plugin type '{definition.Type}'. " +
+                        $"Available: {string.Join(", ", _connectorsByType.Keys)}"
             };
             LogPluginConnectFailed(name, definition.Type, status.Error);
+            _active[name] = status;
+            return status;
+        }
+
+        // Auto-fill config from environment and validate against schema
+        var resolved = ResolveConfig(definition, connector.Schema);
+        var validationError = ValidateConfig(resolved, connector.Schema);
+        if (validationError is not null)
+        {
+            var status = new PluginStatus
+            {
+                Name = name,
+                Type = definition.Type,
+                IsConnected = false,
+                Error = validationError
+            };
+            LogPluginConnectFailed(name, definition.Type, validationError);
             _active[name] = status;
             return status;
         }
@@ -55,7 +74,13 @@ public sealed partial class PluginRegistry(
         {
             // Make-before-break: connect the new plugin first. If it fails,
             // the old plugin remains active and uninterrupted.
-            var status = await connector.ConnectAsync(name, definition);
+            var connStatus = await connector.ConnectAsync(name, resolved);
+
+            // Redact secrets from the status info
+            var status = connStatus with
+            {
+                Info = RedactSecrets(connStatus.Info, connector.Schema)
+            };
 
             if (status.IsConnected &&
                 _active.TryGetValue(name, out var existing) && existing.IsConnected)
@@ -113,6 +138,82 @@ public sealed partial class PluginRegistry(
     }
 
     public IReadOnlyList<PluginStatus> GetAll() => [.. _active.Values];
+
+    public IReadOnlyList<PluginSchema> GetCatalog() =>
+        [.. _connectorsByType.Values.Select(c => c.Schema)];
+
+    /// <summary>
+    /// Auto-fill missing config values from environment variables declared in the schema.
+    /// Returns a new <see cref="PluginDefinition"/> with resolved config.
+    /// </summary>
+    internal static PluginDefinition ResolveConfig(PluginDefinition definition, PluginSchema schema)
+    {
+        var resolved = new Dictionary<string, string>(definition.Config, StringComparer.OrdinalIgnoreCase);
+
+        foreach (var field in schema.Config)
+        {
+            if (resolved.ContainsKey(field.Name))
+                continue;
+
+            // Try environment variable
+            if (field.EnvVar is not null)
+            {
+                var envValue = Environment.GetEnvironmentVariable(field.EnvVar);
+                if (envValue is not null)
+                {
+                    resolved[field.Name] = envValue;
+                    continue;
+                }
+            }
+
+            // Apply default
+            if (field.Default is not null)
+                resolved[field.Name] = field.Default;
+        }
+
+        return definition with { Config = resolved };
+    }
+
+    /// <summary>
+    /// Validate that all required config fields are present.
+    /// Returns an error message, or null if valid.
+    /// </summary>
+    internal static string? ValidateConfig(PluginDefinition definition, PluginSchema schema)
+    {
+        var missing = new List<string>();
+        foreach (var field in schema.Config)
+        {
+            if (field.Required && !definition.Config.ContainsKey(field.Name))
+                missing.Add(field.EnvVar is not null
+                    ? $"'{field.Name}' (or set {field.EnvVar})"
+                    : $"'{field.Name}'");
+        }
+
+        return missing.Count > 0
+            ? $"Missing required config: {string.Join(", ", missing)}"
+            : null;
+    }
+
+    /// <summary>
+    /// Replace secret values in status info with "***".
+    /// </summary>
+    private static IReadOnlyDictionary<string, string> RedactSecrets(
+        IReadOnlyDictionary<string, string> info, PluginSchema schema)
+    {
+        var secretNames = new HashSet<string>(
+            schema.Config.Where(f => f.Secret).Select(f => f.Name),
+            StringComparer.OrdinalIgnoreCase);
+
+        if (secretNames.Count == 0)
+            return info;
+
+        var redacted = new Dictionary<string, string>(info.Count, StringComparer.OrdinalIgnoreCase);
+        foreach (var (key, value) in info)
+        {
+            redacted[key] = secretNames.Contains(key) ? "***" : value;
+        }
+        return redacted;
+    }
 
     [LoggerMessage(Level = LogLevel.Information, Message = "Plugin '{Name}' ({Type}) connected")]
     private partial void LogPluginConnected(string name, string type);

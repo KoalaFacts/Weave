@@ -18,6 +18,17 @@ public sealed partial class HttpPluginConnector(
 
     public string PluginType => "http";
 
+    public PluginSchema Schema { get; } = new()
+    {
+        Type = "http",
+        Description = "Generic HTTP endpoint — provides a named HttpClient for custom integrations",
+        Provides = ["http"],
+        Config =
+        [
+            new() { Name = "base_url", Description = "Base URL of the HTTP service", Required = true },
+        ]
+    };
+
     public Task<PluginStatus> ConnectAsync(string name, PluginDefinition definition)
     {
         var baseUrl = definition.Config.GetValueOrDefault("base_url");

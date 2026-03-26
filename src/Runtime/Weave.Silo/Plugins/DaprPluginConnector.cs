@@ -24,6 +24,17 @@ public sealed partial class DaprPluginConnector(
 
     public string PluginType => "dapr";
 
+    public PluginSchema Schema { get; } = new()
+    {
+        Type = "dapr",
+        Description = "Dapr sidecar — provides event bus and service invocation via the Dapr HTTP API",
+        Provides = ["events", "tools"],
+        Config =
+        [
+            new() { Name = "port", Description = "Dapr sidecar HTTP port", EnvVar = "DAPR_HTTP_PORT" },
+        ]
+    };
+
     public async Task<PluginStatus> ConnectAsync(string name, PluginDefinition definition)
     {
         var port = definition.Config.GetValueOrDefault("port")

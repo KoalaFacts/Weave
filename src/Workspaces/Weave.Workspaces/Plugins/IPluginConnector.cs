@@ -9,6 +9,7 @@ namespace Weave.Workspaces.Plugins;
 public interface IPluginConnector
 {
     string PluginType { get; }
+    PluginSchema Schema { get; }
     Task<PluginStatus> ConnectAsync(string name, PluginDefinition definition);
     Task<PluginStatus> DisconnectAsync(string name);
     PluginStatus GetStatus(string name);

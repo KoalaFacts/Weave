@@ -11,6 +11,7 @@ public static class PluginEndpoints
             .WithTags("Plugins");
 
         group.MapGet("/", GetAllPlugins);
+        group.MapGet("/catalog", GetCatalog);
         group.MapPost("/", ConnectPlugin);
         group.MapDelete("/{name}", DisconnectPlugin);
 
@@ -20,6 +21,11 @@ public static class PluginEndpoints
     private static IResult GetAllPlugins(IPluginRegistry registry)
     {
         return Results.Ok(registry.GetAll());
+    }
+
+    private static IResult GetCatalog(IPluginRegistry registry)
+    {
+        return Results.Ok(registry.GetCatalog());
     }
 
     private static async Task<IResult> ConnectPlugin(IPluginRegistry registry, ConnectPluginRequest request)
