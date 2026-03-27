@@ -97,4 +97,44 @@ public sealed class SecretProviderProxyTests
 
         paths.Count.ShouldBe(3);
     }
+
+    [Fact]
+    public async Task HotSwap_OverrideToOverride_UsesLatest()
+    {
+        var fallback = new InMemorySecretProvider(_tokenService);
+        var proxy = new SecretProviderProxy(_broker, fallback);
+        var token = MintToken();
+
+        var first = Substitute.For<ISecretProvider>();
+        first.ResolveAsync("key", Arg.Any<CapabilityToken>(), Arg.Any<CancellationToken>())
+            .Returns(Task.FromResult(new SecretValue("first")));
+        _broker.Swap<ISecretProvider>(first);
+
+        var result1 = await proxy.ResolveAsync("key", token);
+        result1.ToString().ShouldBe("first");
+
+        var second = Substitute.For<ISecretProvider>();
+        second.ResolveAsync("key", Arg.Any<CapabilityToken>(), Arg.Any<CancellationToken>())
+            .Returns(Task.FromResult(new SecretValue("second")));
+        _broker.Swap<ISecretProvider>(second);
+
+        var result2 = await proxy.ResolveAsync("key", token);
+        result2.ToString().ShouldBe("second");
+    }
+
+    [Fact]
+    public async Task HotSwap_OverrideToOverrideToClear_RevertsToFallback()
+    {
+        var fallback = new InMemorySecretProvider(_tokenService);
+        fallback.SetSecret("key", "fallback");
+        var proxy = new SecretProviderProxy(_broker, fallback);
+        var token = MintToken();
+
+        _broker.Swap<ISecretProvider>(Substitute.For<ISecretProvider>());
+        _broker.Swap<ISecretProvider>(Substitute.For<ISecretProvider>());
+        _broker.Swap<ISecretProvider>(null);
+
+        var result = await proxy.ResolveAsync("key", token);
+        result.ToString().ShouldBe("fallback");
+    }
 }

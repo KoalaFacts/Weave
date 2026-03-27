@@ -169,6 +169,47 @@ public sealed class PluginRegistryTests
         status.Error!.ShouldContain("boom");
     }
 
+    // --- Make-before-break hot-swap ---
+
+    [Fact]
+    public async Task HotSwap_MakeBeforeBreak_FailedNewLeaveOldRunning()
+    {
+        var working = new FakePluginConnector("dapr", connected: true, schema: TestSchema);
+        var failing = new FakePluginConnector("webhook", connected: false, schema: TestSchema);
+        var registry = CreateRegistry(working, failing);
+
+        // Connect working plugin
+        var first = await registry.ConnectAsync("events", new PluginDefinition { Type = "dapr" });
+        first.IsConnected.ShouldBeTrue();
+
+        // Try to hot-swap with a connector that reports IsConnected = false
+        var second = await registry.ConnectAsync("events", new PluginDefinition { Type = "webhook" });
+        second.IsConnected.ShouldBeFalse();
+
+        // Old plugin should NOT have been disconnected (make-before-break)
+        working.DisconnectCount.ShouldBe(0);
+    }
+
+    [Fact]
+    public async Task HotSwap_MakeBeforeBreak_ThrowingNewLeavesOldRunning()
+    {
+        var working = new FakePluginConnector("dapr", connected: true, schema: TestSchema);
+        var throwing = new ThrowingPluginConnector("webhook");
+        var registry = CreateRegistry(working, throwing);
+
+        await registry.ConnectAsync("events", new PluginDefinition { Type = "dapr" });
+
+        var result = await registry.ConnectAsync("events", new PluginDefinition { Type = "webhook" });
+        result.IsConnected.ShouldBeFalse();
+
+        // Old plugin still active — never disconnected, still in registry
+        working.DisconnectCount.ShouldBe(0);
+        var active = registry.GetAll();
+        active.Count.ShouldBe(1);
+        active[0].Type.ShouldBe("dapr");
+        active[0].IsConnected.ShouldBeTrue();
+    }
+
     // --- Schema validation tests ---
 
     [Fact]

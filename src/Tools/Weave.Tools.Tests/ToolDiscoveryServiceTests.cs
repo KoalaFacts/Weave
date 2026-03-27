@@ -124,4 +124,62 @@ public sealed class ToolDiscoveryServiceTests
 
         service.Unregister(ToolType.Dapr).ShouldBeFalse();
     }
+
+    [Fact]
+    public void HotSwap_RegisterReplace_GetConnectorReturnsLatest()
+    {
+        var service = CreateService();
+        var first = CreateConnector(ToolType.Dapr);
+        var second = CreateConnector(ToolType.Dapr);
+
+        service.Register(first);
+        service.GetConnector(ToolType.Dapr).ShouldBeSameAs(first);
+
+        service.Register(second);
+        service.GetConnector(ToolType.Dapr).ShouldBeSameAs(second);
+    }
+
+    [Fact]
+    public void HotSwap_FullCycle_RegisterUseUnregisterReregister()
+    {
+        var service = CreateService();
+        var connector = CreateConnector(ToolType.Dapr);
+
+        service.Register(connector);
+        service.GetConnector(ToolType.Dapr).ShouldBeSameAs(connector);
+
+        service.Unregister(ToolType.Dapr);
+        Should.Throw<NotSupportedException>(() => service.GetConnector(ToolType.Dapr));
+
+        var newConnector = CreateConnector(ToolType.Dapr);
+        service.Register(newConnector);
+        service.GetConnector(ToolType.Dapr).ShouldBeSameAs(newConnector);
+    }
+
+    [Fact]
+    public void SupportedTypes_CacheInvalidated_AfterRegisterAndUnregister()
+    {
+        var service = CreateService(CreateConnector(ToolType.Cli));
+        var initial = service.SupportedTypes;
+        initial.Count.ShouldBe(1);
+
+        service.Register(CreateConnector(ToolType.Dapr));
+        var afterRegister = service.SupportedTypes;
+        afterRegister.Count.ShouldBe(2);
+
+        service.Unregister(ToolType.Dapr);
+        var afterUnregister = service.SupportedTypes;
+        afterUnregister.Count.ShouldBe(1);
+    }
+
+    [Fact]
+    public void SupportedTypes_ReturnsCachedInstance_WhenUnchanged()
+    {
+        var service = CreateService(CreateConnector(ToolType.Cli));
+
+        var first = service.SupportedTypes;
+        var second = service.SupportedTypes;
+
+        ReferenceEquals(first, second).ShouldBeTrue();
+    }
 }

@@ -82,8 +82,14 @@ public sealed partial class PluginRegistry(
                 Info = RedactSecrets(connStatus.Info, connector.Schema)
             };
 
-            if (status.IsConnected &&
-                _active.TryGetValue(name, out var existing) && existing.IsConnected)
+            if (!status.IsConnected)
+            {
+                // New plugin failed to connect — leave the old one running
+                LogPluginConnectFailed(name, definition.Type, status.Error ?? "unknown");
+                return status;
+            }
+
+            if (_active.TryGetValue(name, out var existing) && existing.IsConnected)
             {
                 LogPluginHotSwap(name, existing.Type, definition.Type);
                 if (_connectorsByType.TryGetValue(existing.Type, out var existingConnector))
@@ -91,12 +97,7 @@ public sealed partial class PluginRegistry(
             }
 
             _active[name] = status;
-
-            if (status.IsConnected)
-                LogPluginConnected(name, definition.Type);
-            else
-                LogPluginConnectFailed(name, definition.Type, status.Error ?? "unknown");
-
+            LogPluginConnected(name, definition.Type);
             return status;
         }
         catch (Exception ex)

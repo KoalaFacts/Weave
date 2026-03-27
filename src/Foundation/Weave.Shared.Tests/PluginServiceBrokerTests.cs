@@ -1,3 +1,4 @@
+using Microsoft.Extensions.Logging;
 using Microsoft.Extensions.Logging.Abstractions;
 using Weave.Shared.Events;
 using Weave.Shared.Plugins;
@@ -7,6 +8,8 @@ namespace Weave.Shared.Tests;
 public sealed class PluginServiceBrokerTests
 {
     private readonly PluginServiceBroker _broker = new(NullLogger<PluginServiceBroker>.Instance);
+
+    // --- Typed service swap ---
 
     [Fact]
     public void Get_NoOverride_ReturnsNull()
@@ -50,6 +53,8 @@ public sealed class PluginServiceBrokerTests
         _broker.Get<IEventBus>().ShouldBeNull();
     }
 
+    // --- Swap callbacks ---
+
     [Fact]
     public void OnSwap_CallbackFiredAfterSwap()
     {
@@ -72,6 +77,56 @@ public sealed class PluginServiceBrokerTests
 
         callbackFired.ShouldBeTrue();
     }
+
+    [Fact]
+    public void OnSwap_MultipleCallbacks_AllFired()
+    {
+        var fired = new List<string>();
+        _broker.OnSwap<IEventBus>(() => fired.Add("A"));
+        _broker.OnSwap<IEventBus>(() => fired.Add("B"));
+
+        _broker.Swap<IEventBus>(Substitute.For<IEventBus>());
+
+        fired.ShouldBe(["A", "B"]);
+    }
+
+    [Fact]
+    public void Swap_IndependentTypes_DontInterfere()
+    {
+        var bus = Substitute.For<IEventBus>();
+        _broker.Swap<IEventBus>(bus);
+
+        // Swapping a different type should not affect IEventBus
+        _broker.Set("http:test", new HttpClient());
+
+        _broker.Get<IEventBus>().ShouldBeSameAs(bus);
+    }
+
+    [Fact]
+    public void Swap_CallbackSeesNewValue()
+    {
+        IEventBus? seenInCallback = null;
+        _broker.OnSwap<IEventBus>(() => seenInCallback = _broker.Get<IEventBus>());
+        var newBus = Substitute.For<IEventBus>();
+
+        _broker.Swap<IEventBus>(newBus);
+
+        seenInCallback.ShouldBeSameAs(newBus);
+    }
+
+    [Fact]
+    public void Swap_ClearCallback_SeesNull()
+    {
+        _broker.Swap<IEventBus>(Substitute.For<IEventBus>());
+        var callbackSawNull = false;
+        _broker.OnSwap<IEventBus>(() => callbackSawNull = _broker.Get<IEventBus>() is null);
+
+        _broker.Swap<IEventBus>(null);
+
+        callbackSawNull.ShouldBeTrue();
+    }
+
+    // --- Named services ---
 
     [Fact]
     public void Named_SetAndGet_Works()
@@ -104,5 +159,16 @@ public sealed class PluginServiceBrokerTests
     public void Named_Remove_ReturnsNull_WhenMissing()
     {
         _broker.Remove("nonexistent").ShouldBeNull();
+    }
+
+    [Fact]
+    public void Named_Set_OverwritesPrevious()
+    {
+        var first = new HttpClient();
+        var second = new HttpClient();
+        _broker.Set("http:api", first);
+        _broker.Set("http:api", second);
+
+        _broker.Get<HttpClient>("http:api").ShouldBeSameAs(second);
     }
 }
