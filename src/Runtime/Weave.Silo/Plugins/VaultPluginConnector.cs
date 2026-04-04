@@ -63,7 +63,7 @@ public sealed partial class VaultPluginConnector(
             tokenService,
             loggerFactory.CreateLogger<VaultSecretProvider>());
         var previous = broker.Swap<ISecretProvider>(provider);
-        await PluginDisposal.DisposeIfNeededAsync(previous);
+        await PluginServiceBroker.DisposeIfSwappedAsync(previous);
 
         LogVaultConnected(name, address);
 
@@ -79,7 +79,7 @@ public sealed partial class VaultPluginConnector(
     public async Task<PluginStatus> DisconnectAsync(string name)
     {
         var previous = broker.Swap<ISecretProvider>(null);
-        await PluginDisposal.DisposeIfNeededAsync(previous);
+        await PluginServiceBroker.DisposeIfSwappedAsync(previous);
 
         LogVaultDisconnected(name);
         return new PluginStatus { Name = name, Type = PluginType, IsConnected = false };

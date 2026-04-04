@@ -1,50 +1,50 @@
-using Weave.Workspaces.Plugins;
+using Weave.Shared.Plugins;
 
 namespace Weave.Workspaces.Tests;
 
 public sealed class PluginDisposalTests
 {
     [Fact]
-    public async Task DisposeIfNeededAsync_Null_DoesNothing()
+    public async Task DisposeIfSwappedAsync_Null_DoesNothing()
     {
-        await PluginDisposal.DisposeIfNeededAsync(null);
+        await PluginServiceBroker.DisposeIfSwappedAsync(null);
     }
 
     [Fact]
-    public async Task DisposeIfNeededAsync_IAsyncDisposable_CallsDisposeAsync()
+    public async Task DisposeIfSwappedAsync_IAsyncDisposable_CallsDisposeAsync()
     {
         var mock = new AsyncDisposableStub();
 
-        await PluginDisposal.DisposeIfNeededAsync(mock);
+        await PluginServiceBroker.DisposeIfSwappedAsync(mock);
 
         mock.Disposed.ShouldBeTrue();
     }
 
     [Fact]
-    public async Task DisposeIfNeededAsync_IDisposable_CallsDispose()
+    public async Task DisposeIfSwappedAsync_IDisposable_CallsDispose()
     {
         var mock = new DisposableStub();
 
-        await PluginDisposal.DisposeIfNeededAsync(mock);
+        await PluginServiceBroker.DisposeIfSwappedAsync(mock);
 
         mock.Disposed.ShouldBeTrue();
     }
 
     [Fact]
-    public async Task DisposeIfNeededAsync_BothInterfaces_PrefersAsync()
+    public async Task DisposeIfSwappedAsync_BothInterfaces_PrefersAsync()
     {
         var mock = new DualDisposableStub();
 
-        await PluginDisposal.DisposeIfNeededAsync(mock);
+        await PluginServiceBroker.DisposeIfSwappedAsync(mock);
 
         mock.AsyncDisposed.ShouldBeTrue();
         mock.SyncDisposed.ShouldBeFalse();
     }
 
     [Fact]
-    public async Task DisposeIfNeededAsync_PlainObject_DoesNothing()
+    public async Task DisposeIfSwappedAsync_PlainObject_DoesNothing()
     {
-        await PluginDisposal.DisposeIfNeededAsync("not disposable");
+        await PluginServiceBroker.DisposeIfSwappedAsync("not disposable");
     }
 
     private sealed class AsyncDisposableStub : IAsyncDisposable

@@ -63,7 +63,7 @@ public sealed partial class WebhookPluginConnector(
             loggerFactory.CreateLogger<WebhookEventBus>());
 
         var previous = broker.Swap<IEventBus>(eventBus);
-        await PluginDisposal.DisposeIfNeededAsync(previous);
+        await PluginServiceBroker.DisposeIfSwappedAsync(previous);
 
         LogWebhookConnected(name, url);
 
@@ -79,7 +79,7 @@ public sealed partial class WebhookPluginConnector(
     public async Task<PluginStatus> DisconnectAsync(string name)
     {
         var previous = broker.Swap<IEventBus>(null);
-        await PluginDisposal.DisposeIfNeededAsync(previous);
+        await PluginServiceBroker.DisposeIfSwappedAsync(previous);
 
         LogWebhookDisconnected(name);
         return new PluginStatus { Name = name, Type = PluginType, IsConnected = false };

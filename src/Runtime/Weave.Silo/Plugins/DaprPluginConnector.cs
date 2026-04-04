@@ -58,7 +58,7 @@ public sealed partial class DaprPluginConnector(
         httpClient.BaseAddress = new Uri(baseUrl);
         var eventBus = new DaprEventBus(httpClient, loggerFactory.CreateLogger<DaprEventBus>());
         var previous = broker.Swap<IEventBus>(eventBus);
-        await PluginDisposal.DisposeIfNeededAsync(previous);
+        await PluginServiceBroker.DisposeIfSwappedAsync(previous);
 
         // Register Dapr tool connector dynamically
         var toolClient = httpClientFactory.CreateClient($"dapr-tool:{name}");
@@ -80,7 +80,7 @@ public sealed partial class DaprPluginConnector(
     public async Task<PluginStatus> DisconnectAsync(string name)
     {
         var previous = broker.Swap<IEventBus>(null);
-        await PluginDisposal.DisposeIfNeededAsync(previous);
+        await PluginServiceBroker.DisposeIfSwappedAsync(previous);
         toolDiscovery.Unregister(Tools.Models.ToolType.Dapr);
 
         LogDaprDisconnected(name);

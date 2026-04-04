@@ -91,4 +91,16 @@ public sealed partial class PluginServiceBroker(ILogger<PluginServiceBroker> log
 
     [LoggerMessage(Level = LogLevel.Information, Message = "Plugin service {ServiceType} cleared — reverting to default")]
     private partial void LogServiceCleared(string serviceType);
+
+    /// <summary>
+    /// Dispose a swapped-out service instance if it implements <see cref="IAsyncDisposable"/> or <see cref="IDisposable"/>.
+    /// Prefers async disposal when both are implemented.
+    /// </summary>
+    public static async ValueTask DisposeIfSwappedAsync(object? instance)
+    {
+        if (instance is IAsyncDisposable asyncDisposable)
+            await asyncDisposable.DisposeAsync();
+        else if (instance is IDisposable disposable)
+            disposable.Dispose();
+    }
 }
