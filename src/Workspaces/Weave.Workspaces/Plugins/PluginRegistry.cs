@@ -65,13 +65,26 @@ public interface IPluginRegistry
     IReadOnlyList<PluginSchema> GetCatalog();
 }
 
-public sealed partial class PluginRegistry(
-    IEnumerable<IPluginConnector> connectors,
-    ILogger<PluginRegistry> logger) : IPluginRegistry
+public sealed partial class PluginRegistry : IPluginRegistry
 {
-    private readonly Dictionary<string, IPluginConnector> _connectorsByType =
-        connectors.ToDictionary(c => c.PluginType, StringComparer.OrdinalIgnoreCase);
+    private readonly Dictionary<string, IPluginConnector> _connectorsByType;
     private readonly ConcurrentDictionary<string, PluginStatus> _active = new(StringComparer.OrdinalIgnoreCase);
+    private readonly ConcurrentDictionary<string, SemaphoreSlim> _nameLocks = new(StringComparer.OrdinalIgnoreCase);
+    private readonly ILogger<PluginRegistry> _logger;
+
+    public PluginRegistry(IEnumerable<IPluginConnector> connectors, ILogger<PluginRegistry> logger)
+    {
+        _logger = logger;
+        var byType = new Dictionary<string, IPluginConnector>(StringComparer.OrdinalIgnoreCase);
+        foreach (var connector in connectors)
+        {
+            if (!byType.TryAdd(connector.PluginType, connector))
+                throw new InvalidOperationException(
+                    $"Duplicate plugin connector for type '{connector.PluginType}'. " +
+                    $"Each plugin type must have exactly one connector.");
+        }
+        _connectorsByType = byType;
+    }
 
     public async Task<IReadOnlyList<PluginStatus>> ConnectAllAsync(Dictionary<string, PluginDefinition> plugins)
     {
@@ -115,6 +128,9 @@ public sealed partial class PluginRegistry(
             return status;
         }
 
+        // Per-name lock prevents concurrent connect/disconnect for the same plugin name
+        var nameLock = _nameLocks.GetOrAdd(name, _ => new SemaphoreSlim(1, 1));
+        await nameLock.WaitAsync();
         try
         {
             // Make-before-break: connect the new plugin first. If it fails,
@@ -157,29 +173,42 @@ public sealed partial class PluginRegistry(
             LogPluginConnectFailed(name, definition.Type, ex.Message);
             return status;
         }
+        finally
+        {
+            nameLock.Release();
+        }
     }
 
     public async Task<PluginStatus> DisconnectAsync(string name)
     {
-        if (!_active.TryRemove(name, out var existing))
+        var nameLock = _nameLocks.GetOrAdd(name, _ => new SemaphoreSlim(1, 1));
+        await nameLock.WaitAsync();
+        try
         {
-            return new PluginStatus
+            if (!_active.TryRemove(name, out var existing))
             {
-                Name = name,
-                Type = "unknown",
-                IsConnected = false,
-                Error = $"Plugin '{name}' is not active"
-            };
-        }
+                return new PluginStatus
+                {
+                    Name = name,
+                    Type = "unknown",
+                    IsConnected = false,
+                    Error = $"Plugin '{name}' is not active"
+                };
+            }
 
-        if (_connectorsByType.TryGetValue(existing.Type, out var connector))
+            if (_connectorsByType.TryGetValue(existing.Type, out var connector))
+            {
+                var status = await connector.DisconnectAsync(name);
+                LogPluginDisconnected(name, existing.Type);
+                return status;
+            }
+
+            return existing with { IsConnected = false };
+        }
+        finally
         {
-            var status = await connector.DisconnectAsync(name);
-            LogPluginDisconnected(name, existing.Type);
-            return status;
+            nameLock.Release();
         }
-
-        return existing with { IsConnected = false };
     }
 
     public IReadOnlyList<PluginStatus> GetAll() => [.. _active.Values];

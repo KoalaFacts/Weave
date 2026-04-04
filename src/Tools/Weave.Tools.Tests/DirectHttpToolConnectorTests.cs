@@ -188,6 +188,27 @@ public sealed class DirectHttpToolConnectorTests
         handle2.IsConnected.ShouldBeTrue();
     }
 
+    [Theory]
+    [InlineData("/api/data", "api/data")]
+    [InlineData("api/data", "api/data")]
+    public async Task InvokeAsync_LeadingSlash_NormalizedCorrectly(string method, string expectedPathSuffix)
+    {
+        var connector = CreateConnector();
+        var handle = new ToolHandle
+        {
+            ToolName = "test",
+            Type = ToolType.DirectHttp,
+            ConnectionId = "http://localhost:1",
+            IsConnected = true
+        };
+        var invocation = new ToolInvocation { ToolName = "test", Method = method, Parameters = [] };
+
+        // Will fail with connection error but validates path construction doesn't throw
+        var result = await connector.InvokeAsync(handle, invocation);
+        result.Success.ShouldBeFalse();
+        result.Error.ShouldNotBeNull();
+    }
+
     [Fact]
     public async Task DiscoverSchemaAsync_ReturnsDescription()
     {

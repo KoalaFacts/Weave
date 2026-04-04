@@ -171,4 +171,18 @@ public sealed class PluginServiceBrokerTests
 
         _broker.Get<HttpClient>("http:api").ShouldBeSameAs(second);
     }
+
+    [Fact]
+    public void Swap_ClearWhenNothingSet_ReturnsNull()
+    {
+        var previous = _broker.Swap<IEventBus>(null);
+        previous.ShouldBeNull();
+    }
+
+    [Fact]
+    public void Named_Get_TypeMismatch_ReturnsNull()
+    {
+        _broker.Set("key", "a string");
+        _broker.Get<HttpClient>("key").ShouldBeNull();
+    }
 }

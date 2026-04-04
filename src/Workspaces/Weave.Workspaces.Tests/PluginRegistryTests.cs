@@ -169,6 +169,28 @@ public sealed class PluginRegistryTests
         status.Error!.ShouldContain("boom");
     }
 
+    [Fact]
+    public async Task ConnectAllAsync_MixedResults_ContinuesAfterFailure()
+    {
+        var working = new FakePluginConnector("dapr", connected: true, schema: TestSchema);
+        // "vault" has no connector registered, so it fails
+        var registry = CreateRegistry(working);
+
+        var plugins = new Dictionary<string, PluginDefinition>
+        {
+            ["good"] = new PluginDefinition { Type = "dapr" },
+            ["bad"] = new PluginDefinition { Type = "vault" },
+        };
+
+        var results = await registry.ConnectAllAsync(plugins);
+
+        results.Count.ShouldBe(2);
+        results[0].IsConnected.ShouldBeTrue();
+        results[1].IsConnected.ShouldBeFalse();
+        // "good" should be in active, "bad" should not
+        registry.GetAll().Count.ShouldBe(1);
+    }
+
     // --- Make-before-break hot-swap ---
 
     [Fact]

@@ -1,4 +1,3 @@
-using System.Collections.Concurrent;
 using System.Collections.Frozen;
 using Microsoft.Extensions.Logging;
 using Weave.Tools.Connectors;
@@ -17,9 +16,10 @@ public interface IToolDiscoveryService
 public sealed partial class ToolDiscoveryService : IToolDiscoveryService
 {
     private readonly FrozenDictionary<ToolType, IToolConnector> _builtIn;
-    private readonly ConcurrentDictionary<ToolType, IToolConnector> _dynamic = new();
+    private readonly Dictionary<ToolType, IToolConnector> _dynamic = [];
+    private readonly Lock _lock = new();
+    private IReadOnlyList<ToolType>? _cachedTypes;
     private readonly ILogger<ToolDiscoveryService> _logger;
-    private volatile IReadOnlyList<ToolType>? _cachedTypes;
 
     public ToolDiscoveryService(IEnumerable<IToolConnector> connectors, ILogger<ToolDiscoveryService> logger)
     {
@@ -32,39 +32,47 @@ public sealed partial class ToolDiscoveryService : IToolDiscoveryService
 
     public IToolConnector GetConnector(ToolType type)
     {
-        if (_dynamic.TryGetValue(type, out var dynamicConnector))
-            return dynamicConnector;
+        lock (_lock)
+        {
+            if (_dynamic.TryGetValue(type, out var dynamicConnector))
+                return dynamicConnector;
+        }
 
         return _builtIn.TryGetValue(type, out var connector)
             ? connector
             : throw new NotSupportedException($"No connector registered for tool type '{type}'");
     }
 
-    public IReadOnlyList<ToolType> SupportedTypes =>
-        _cachedTypes ?? RebuildTypeCache();
+    public IReadOnlyList<ToolType> SupportedTypes
+    {
+        get
+        {
+            lock (_lock)
+            {
+                return _cachedTypes ??= RebuildTypeCache();
+            }
+        }
+    }
 
-    /// <summary>
-    /// Register a tool connector at runtime (e.g., from a plugin).
-    /// Overrides any built-in connector for the same <see cref="ToolType"/>.
-    /// </summary>
     public void Register(IToolConnector connector)
     {
-        _dynamic[connector.ToolType] = connector;
-        _cachedTypes = null;
+        lock (_lock)
+        {
+            _dynamic[connector.ToolType] = connector;
+            _cachedTypes = null;
+        }
         LogConnectorRegistered(connector.ToolType);
     }
 
-    /// <summary>
-    /// Remove a dynamically registered connector. Built-in connectors are not affected.
-    /// </summary>
     public bool Unregister(ToolType type)
     {
-        var removed = _dynamic.TryRemove(type, out _);
-        if (removed)
+        bool removed;
+        lock (_lock)
         {
-            _cachedTypes = null;
-            LogConnectorUnregistered(type);
+            removed = _dynamic.Remove(type);
+            if (removed) _cachedTypes = null;
         }
+        if (removed) LogConnectorUnregistered(type);
         return removed;
     }
 
@@ -73,9 +81,7 @@ public sealed partial class ToolDiscoveryService : IToolDiscoveryService
         var types = new HashSet<ToolType>(_builtIn.Keys);
         foreach (var key in _dynamic.Keys)
             types.Add(key);
-        var result = (IReadOnlyList<ToolType>)[.. types];
-        _cachedTypes = result;
-        return result;
+        return [.. types];
     }
 
     [LoggerMessage(Level = LogLevel.Information, Message = "Tool discovery initialized with {Count} connector(s): {Types}")]

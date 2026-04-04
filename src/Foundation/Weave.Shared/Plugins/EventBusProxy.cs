@@ -6,13 +6,15 @@ namespace Weave.Shared.Plugins;
 /// Proxy <see cref="IEventBus"/> registered as the singleton in DI.
 /// Owns the subscription list — when the backing bus is hot-swapped, all active
 /// subscriptions are disposed on the old bus and re-created on the new one.
-/// Consumers never need to know a swap happened.
+///
+/// Uses <see cref="ReaderWriterLockSlim"/>: publishes take a read lock (concurrent),
+/// swaps take a write lock (exclusive, waits for in-flight publishes to drain).
 /// </summary>
 public sealed class EventBusProxy : IEventBus
 {
     private readonly PluginServiceBroker _broker;
     private readonly InProcessEventBus _fallback;
-    private readonly Lock _lock = new();
+    private readonly ReaderWriterLockSlim _rwLock = new();
     private readonly List<SubscriptionRecord> _subscriptions = [];
 
     public EventBusProxy(PluginServiceBroker broker, InProcessEventBus fallback)
@@ -24,20 +26,26 @@ public sealed class EventBusProxy : IEventBus
 
     private IEventBus Current => _broker.Get<IEventBus>() ?? _fallback;
 
-    public Task PublishAsync<TEvent>(TEvent domainEvent, CancellationToken ct) where TEvent : IDomainEvent
+    public async Task PublishAsync<TEvent>(TEvent domainEvent, CancellationToken ct) where TEvent : IDomainEvent
     {
-        // Snapshot the current bus reference under the lock to ensure we publish
-        // to the same bus that holds our subscriptions. Without this, a concurrent
-        // swap could cause us to publish to the old bus after subscriptions have
-        // been replayed to the new one.
-        IEventBus bus;
-        lock (_lock) { bus = Current; }
-        return bus.PublishAsync(domainEvent, ct);
+        // Read lock: multiple publishes proceed concurrently.
+        // A swap (write lock) blocks until all in-flight publishes complete.
+        _rwLock.EnterReadLock();
+        try
+        {
+            var bus = Current;
+            await bus.PublishAsync(domainEvent, ct);
+        }
+        finally
+        {
+            _rwLock.ExitReadLock();
+        }
     }
 
     public IDisposable Subscribe<TEvent>(Func<TEvent, CancellationToken, Task> handler) where TEvent : IDomainEvent
     {
-        lock (_lock)
+        _rwLock.EnterWriteLock();
+        try
         {
             var innerSub = Current.Subscribe(handler);
             var record = new SubscriptionRecord(
@@ -46,20 +54,34 @@ public sealed class EventBusProxy : IEventBus
             _subscriptions.Add(record);
             return new ProxySubscription(this, record);
         }
+        finally
+        {
+            _rwLock.ExitWriteLock();
+        }
     }
 
     private void Unsubscribe(SubscriptionRecord record)
     {
-        lock (_lock)
+        _rwLock.EnterWriteLock();
+        try
         {
             if (_subscriptions.Remove(record))
                 record.InnerSubscription.Dispose();
+        }
+        finally
+        {
+            _rwLock.ExitWriteLock();
         }
     }
 
     private void ReplaySubscriptions()
     {
-        lock (_lock)
+        // Called from broker.Swap callback which holds broker._lock.
+        // We take the write lock here — this blocks until all in-flight
+        // publishes (read locks) drain, guaranteeing no publish can
+        // target a bus whose subscriptions have been replayed away.
+        _rwLock.EnterWriteLock();
+        try
         {
             var bus = Current;
             foreach (var record in _subscriptions)
@@ -70,13 +92,17 @@ public sealed class EventBusProxy : IEventBus
                     record.InnerSubscription = record.SubscribeFactory(bus);
                     oldSub.Dispose();
                 }
-                catch
+                catch (Exception)
                 {
                     // If re-subscribe fails, keep the old subscription reference
                     // so that Unsubscribe can still dispose it cleanly.
                     record.InnerSubscription = oldSub;
                 }
             }
+        }
+        finally
+        {
+            _rwLock.ExitWriteLock();
         }
     }
 

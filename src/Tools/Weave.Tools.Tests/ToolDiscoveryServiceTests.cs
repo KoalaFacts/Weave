@@ -126,6 +126,30 @@ public sealed class ToolDiscoveryServiceTests
     }
 
     [Fact]
+    public void Unregister_BuiltInType_ReturnsFalse_BuiltInStillWorks()
+    {
+        var builtIn = CreateConnector(ToolType.Cli);
+        var service = CreateService(builtIn);
+
+        // Trying to unregister a built-in (no dynamic override) returns false
+        service.Unregister(ToolType.Cli).ShouldBeFalse();
+        // Built-in still resolves
+        service.GetConnector(ToolType.Cli).ShouldBeSameAs(builtIn);
+    }
+
+    [Fact]
+    public void SupportedTypes_IncludesBothBuiltInAndDynamic()
+    {
+        var service = CreateService(CreateConnector(ToolType.Cli));
+        service.Register(CreateConnector(ToolType.Dapr));
+
+        var types = service.SupportedTypes;
+        types.Count.ShouldBe(2);
+        types.ShouldContain(ToolType.Cli);
+        types.ShouldContain(ToolType.Dapr);
+    }
+
+    [Fact]
     public void HotSwap_RegisterReplace_GetConnectorReturnsLatest()
     {
         var service = CreateService();

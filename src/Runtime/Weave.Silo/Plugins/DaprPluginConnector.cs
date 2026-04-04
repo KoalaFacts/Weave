@@ -37,8 +37,8 @@ public sealed partial class DaprPluginConnector(
 
     public Task<PluginStatus> ConnectAsync(string name, PluginDefinition definition)
     {
-        var port = definition.Config.GetValueOrDefault("port")
-            ?? Environment.GetEnvironmentVariable("DAPR_HTTP_PORT");
+        // PluginRegistry.ResolveConfig already fills config from DAPR_HTTP_PORT env var
+        var port = definition.Config.GetValueOrDefault("port");
 
         if (port is null)
         {

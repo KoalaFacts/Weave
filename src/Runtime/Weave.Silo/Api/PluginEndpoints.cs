@@ -34,7 +34,7 @@ public static class PluginEndpoints
         {
             Type = request.Type,
             Description = request.Description,
-            Config = request.Config ?? []
+            Config = request.Config is not null ? new(request.Config) : []
         };
 
         var status = await registry.ConnectAsync(request.Name, definition);

@@ -8,38 +8,58 @@ namespace Weave.Shared.Plugins;
 /// Registered as a singleton in DI. Proxy services (e.g., <see cref="EventBusProxy"/>)
 /// delegate to the current backing instance from this broker, decoupling the frozen
 /// DI container from dynamic plugin lifecycle.
+///
+/// Typed services (_services) are guarded by _lock for both reads and writes —
+/// Get and Swap are consistent. Named services (_named) use ConcurrentDictionary
+/// since they have no callback mechanism.
 /// </summary>
 public sealed partial class PluginServiceBroker(ILogger<PluginServiceBroker> logger)
 {
     private readonly Lock _lock = new();
-    private readonly ConcurrentDictionary<Type, object> _services = new();
-    private readonly ConcurrentDictionary<Type, List<Action>> _swapCallbacks = new();
+    private readonly Dictionary<Type, object> _services = [];
+    private readonly Dictionary<Type, List<Action>> _swapCallbacks = [];
     private readonly ConcurrentDictionary<string, object> _named = new(StringComparer.OrdinalIgnoreCase);
 
     /// <summary>
     /// Get the current override for <typeparamref name="T"/>, or null if none is set.
+    /// Reads under the same lock as <see cref="Swap{T}"/> for consistency.
     /// </summary>
-    public T? Get<T>() where T : class =>
-        _services.TryGetValue(typeof(T), out var service) ? (T)service : null;
+    public T? Get<T>() where T : class
+    {
+        lock (_lock)
+        {
+            return _services.TryGetValue(typeof(T), out var service) ? (T)service : null;
+        }
+    }
 
     /// <summary>
     /// Swap the implementation for <typeparamref name="T"/>. Returns the previous
-    /// instance so the caller can dispose it. Fires registered swap callbacks
-    /// sequentially under the lock to ensure atomic swap+replay.
+    /// instance. Fires registered swap callbacks under the lock to ensure
+    /// atomic swap+replay (no reader can observe the service before callbacks run).
     /// </summary>
     public T? Swap<T>(T? newService) where T : class
     {
         lock (_lock)
         {
-            T? previous = SwapCore<T>(newService);
+            T? previous = null;
+            if (newService is not null)
+            {
+                _services.TryGetValue(typeof(T), out var existing);
+                previous = existing as T;
+                _services[typeof(T)] = newService;
+                LogServiceSwapped(typeof(T).Name, newService.GetType().Name);
+            }
+            else
+            {
+                if (_services.Remove(typeof(T), out var removed))
+                    previous = (T)removed;
+                LogServiceCleared(typeof(T).Name);
+            }
 
-            // Fire callbacks under the lock to ensure no concurrent publish
-            // can observe a state where the service is swapped but subscriptions
-            // have not been replayed yet.
+            // Fire callbacks under the lock — snapshot the list to guard against
+            // concurrent OnSwap registration from another thread.
             if (_swapCallbacks.TryGetValue(typeof(T), out var callbacks))
             {
-                // M6 fix: snapshot under the list's lock to avoid
-                // InvalidOperationException if OnSwap is called concurrently.
                 Action[] snapshot;
                 lock (callbacks) { snapshot = [.. callbacks]; }
                 foreach (var callback in snapshot)
@@ -56,8 +76,15 @@ public sealed partial class PluginServiceBroker(ILogger<PluginServiceBroker> log
     /// </summary>
     public void OnSwap<T>(Action callback) where T : class
     {
-        var list = _swapCallbacks.GetOrAdd(typeof(T), _ => []);
-        lock (list) { list.Add(callback); }
+        lock (_lock)
+        {
+            if (!_swapCallbacks.TryGetValue(typeof(T), out var list))
+            {
+                list = [];
+                _swapCallbacks[typeof(T)] = list;
+            }
+            list.Add(callback);
+        }
     }
 
     /// <summary>Store a named service instance.</summary>
@@ -67,38 +94,13 @@ public sealed partial class PluginServiceBroker(ILogger<PluginServiceBroker> log
     public T? Get<T>(string key) where T : class =>
         _named.TryGetValue(key, out var service) ? service as T : null;
 
-    /// <summary>Remove a named service. Returns the removed instance for disposal.</summary>
+    /// <summary>Remove a named service. Returns the removed instance.</summary>
     public object? Remove(string key) =>
         _named.TryRemove(key, out var service) ? service : null;
 
-    private T? SwapCore<T>(T? newService) where T : class
-    {
-        T? previous = null;
-        if (newService is not null)
-        {
-            if (_services.TryGetValue(typeof(T), out var existing))
-                previous = (T)existing;
-            _services[typeof(T)] = newService;
-            LogServiceSwapped(typeof(T).Name, newService.GetType().Name);
-        }
-        else
-        {
-            if (_services.TryRemove(typeof(T), out var removed))
-                previous = (T)removed;
-            LogServiceCleared(typeof(T).Name);
-        }
-        return previous;
-    }
-
-    [LoggerMessage(Level = LogLevel.Information, Message = "Plugin service {ServiceType} swapped to {Implementation}")]
-    private partial void LogServiceSwapped(string serviceType, string implementation);
-
-    [LoggerMessage(Level = LogLevel.Information, Message = "Plugin service {ServiceType} cleared — reverting to default")]
-    private partial void LogServiceCleared(string serviceType);
-
     /// <summary>
-    /// Dispose a swapped-out service instance if it implements <see cref="IAsyncDisposable"/> or <see cref="IDisposable"/>.
-    /// Prefers async disposal when both are implemented.
+    /// Dispose a swapped-out service instance if it implements
+    /// <see cref="IAsyncDisposable"/> or <see cref="IDisposable"/>.
     /// </summary>
     public static async ValueTask DisposeIfSwappedAsync(object? instance)
     {
@@ -107,4 +109,10 @@ public sealed partial class PluginServiceBroker(ILogger<PluginServiceBroker> log
         else if (instance is IDisposable disposable)
             disposable.Dispose();
     }
+
+    [LoggerMessage(Level = LogLevel.Information, Message = "Plugin service {ServiceType} swapped to {Implementation}")]
+    private partial void LogServiceSwapped(string serviceType, string implementation);
+
+    [LoggerMessage(Level = LogLevel.Information, Message = "Plugin service {ServiceType} cleared — reverting to default")]
+    private partial void LogServiceCleared(string serviceType);
 }
