@@ -96,7 +96,6 @@ public sealed partial class PluginRegistry(
                         $"Available: {string.Join(", ", _connectorsByType.Keys)}"
             };
             LogPluginConnectFailed(name, definition.Type, status.Error);
-            _active[name] = status;
             return status;
         }
 
@@ -113,7 +112,6 @@ public sealed partial class PluginRegistry(
                 Error = validationError
             };
             LogPluginConnectFailed(name, definition.Type, validationError);
-            _active[name] = status;
             return status;
         }
 
@@ -157,7 +155,6 @@ public sealed partial class PluginRegistry(
                 Error = ex.Message
             };
             LogPluginConnectFailed(name, definition.Type, ex.Message);
-            _active[name] = status;
             return status;
         }
     }

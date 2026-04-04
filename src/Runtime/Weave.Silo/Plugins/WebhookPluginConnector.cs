@@ -31,29 +31,29 @@ public sealed partial class WebhookPluginConnector(
         ]
     };
 
-    public async Task<PluginStatus> ConnectAsync(string name, PluginDefinition definition)
+    public Task<PluginStatus> ConnectAsync(string name, PluginDefinition definition)
     {
         var url = definition.Config.GetValueOrDefault("url");
         if (string.IsNullOrWhiteSpace(url))
         {
-            return new PluginStatus
+            return Task.FromResult(new PluginStatus
             {
                 Name = name,
                 Type = PluginType,
                 IsConnected = false,
                 Error = "Webhook plugin requires 'url' in config."
-            };
+            });
         }
 
         if (!Uri.TryCreate(url, UriKind.Absolute, out var webhookUri))
         {
-            return new PluginStatus
+            return Task.FromResult(new PluginStatus
             {
                 Name = name,
                 Type = PluginType,
                 IsConnected = false,
                 Error = $"Invalid webhook URL: '{url}'"
-            };
+            });
         }
 
         var httpClient = httpClientFactory.CreateClient($"webhook-plugin:{name}");
@@ -62,27 +62,27 @@ public sealed partial class WebhookPluginConnector(
             webhookUri,
             loggerFactory.CreateLogger<WebhookEventBus>());
 
-        var previous = broker.Swap<IEventBus>(eventBus);
-        await PluginServiceBroker.DisposeIfSwappedAsync(previous);
+        broker.Swap<IEventBus>(eventBus);
 
         LogWebhookConnected(name, url);
 
-        return new PluginStatus
+        return Task.FromResult(new PluginStatus
         {
             Name = name,
             Type = PluginType,
             IsConnected = true,
             Info = new Dictionary<string, string> { ["url"] = url }
-        };
+        });
     }
 
-    public async Task<PluginStatus> DisconnectAsync(string name)
+    public Task<PluginStatus> DisconnectAsync(string name)
     {
-        var previous = broker.Swap<IEventBus>(null);
-        await PluginServiceBroker.DisposeIfSwappedAsync(previous);
+        // Only clear the slot if we still own it
+        if (broker.Get<IEventBus>() is WebhookEventBus)
+            broker.Swap<IEventBus>(null);
 
         LogWebhookDisconnected(name);
-        return new PluginStatus { Name = name, Type = PluginType, IsConnected = false };
+        return Task.FromResult(new PluginStatus { Name = name, Type = PluginType, IsConnected = false });
     }
 
     public PluginStatus GetStatus(string name)

@@ -35,56 +35,62 @@ public sealed partial class DaprPluginConnector(
         ]
     };
 
-    public async Task<PluginStatus> ConnectAsync(string name, PluginDefinition definition)
+    public Task<PluginStatus> ConnectAsync(string name, PluginDefinition definition)
     {
         var port = definition.Config.GetValueOrDefault("port")
             ?? Environment.GetEnvironmentVariable("DAPR_HTTP_PORT");
 
         if (port is null)
         {
-            return new PluginStatus
+            return Task.FromResult(new PluginStatus
             {
                 Name = name,
                 Type = PluginType,
                 IsConnected = false,
                 Error = "No Dapr sidecar port found. Set 'port' in plugin config or DAPR_HTTP_PORT env var."
-            };
+            });
         }
 
         var baseUrl = $"http://localhost:{port}";
 
-        // Swap event bus to Dapr-backed implementation
-        var httpClient = httpClientFactory.CreateClient($"dapr-plugin:{name}");
-        httpClient.BaseAddress = new Uri(baseUrl);
-        var eventBus = new DaprEventBus(httpClient, loggerFactory.CreateLogger<DaprEventBus>());
-        var previous = broker.Swap<IEventBus>(eventBus);
-        await PluginServiceBroker.DisposeIfSwappedAsync(previous);
+        // B6 fix: Create ALL resources before swapping anything, so a failure
+        // in tool setup doesn't leave a half-swapped event bus.
+        var eventClient = httpClientFactory.CreateClient($"dapr-plugin:{name}");
+        eventClient.BaseAddress = new Uri(baseUrl);
+        var eventBus = new DaprEventBus(eventClient, loggerFactory.CreateLogger<DaprEventBus>());
 
-        // Register Dapr tool connector dynamically
         var toolClient = httpClientFactory.CreateClient($"dapr-tool:{name}");
         toolClient.BaseAddress = new Uri(baseUrl);
         var toolConnector = new DaprToolConnector(toolClient, loggerFactory.CreateLogger<DaprToolConnector>());
+
+        // Now swap atomically — both resources are ready
+        // B1 fix: Don't dispose previous. HttpClient lifetime is managed by
+        // IHttpClientFactory. In-flight PublishAsync calls on the old bus
+        // will complete safely against the still-valid HttpClient handler.
+        broker.Swap<IEventBus>(eventBus);
         toolDiscovery.Register(toolConnector);
 
         LogDaprConnected(name, baseUrl);
 
-        return new PluginStatus
+        return Task.FromResult(new PluginStatus
         {
             Name = name,
             Type = PluginType,
             IsConnected = true,
             Info = new Dictionary<string, string> { ["sidecar"] = baseUrl }
-        };
+        });
     }
 
-    public async Task<PluginStatus> DisconnectAsync(string name)
+    public Task<PluginStatus> DisconnectAsync(string name)
     {
-        var previous = broker.Swap<IEventBus>(null);
-        await PluginServiceBroker.DisposeIfSwappedAsync(previous);
+        // M3 fix: Only clear the slot if we still own it
+        if (broker.Get<IEventBus>() is DaprEventBus)
+            broker.Swap<IEventBus>(null);
+
         toolDiscovery.Unregister(Tools.Models.ToolType.Dapr);
 
         LogDaprDisconnected(name);
-        return new PluginStatus { Name = name, Type = PluginType, IsConnected = false };
+        return Task.FromResult(new PluginStatus { Name = name, Type = PluginType, IsConnected = false });
     }
 
     public PluginStatus GetStatus(string name)

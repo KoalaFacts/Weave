@@ -33,25 +33,23 @@ public sealed partial class VaultPluginConnector(
         ]
     };
 
-    public async Task<PluginStatus> ConnectAsync(string name, PluginDefinition definition)
+    public Task<PluginStatus> ConnectAsync(string name, PluginDefinition definition)
     {
         var address = definition.Config.GetValueOrDefault("address");
         if (string.IsNullOrWhiteSpace(address))
         {
-            return new PluginStatus
+            return Task.FromResult(new PluginStatus
             {
                 Name = name,
                 Type = PluginType,
                 IsConnected = false,
                 Error = "Vault 'address' is required in plugin config."
-            };
+            });
         }
 
         var token = definition.Config.GetValueOrDefault("token");
 
-        // Use a unique client name per connect to avoid header accumulation across swaps.
-        // IHttpClientFactory creates a fresh HttpClient each time (handlers are pooled, but
-        // DefaultRequestHeaders are per-instance).
+        // Unique client name per connect avoids header accumulation across swaps.
         var clientName = $"vault-plugin:{name}:{Guid.NewGuid():N}";
         var httpClient = httpClientFactory.CreateClient(clientName);
         httpClient.BaseAddress = new Uri(address);
@@ -62,27 +60,29 @@ public sealed partial class VaultPluginConnector(
             httpClient,
             tokenService,
             loggerFactory.CreateLogger<VaultSecretProvider>());
-        var previous = broker.Swap<ISecretProvider>(provider);
-        await PluginServiceBroker.DisposeIfSwappedAsync(previous);
+
+        // Don't dispose previous — in-flight ResolveAsync calls may still reference it.
+        broker.Swap<ISecretProvider>(provider);
 
         LogVaultConnected(name, address);
 
-        return new PluginStatus
+        return Task.FromResult(new PluginStatus
         {
             Name = name,
             Type = PluginType,
             IsConnected = true,
             Info = new Dictionary<string, string> { ["address"] = address }
-        };
+        });
     }
 
-    public async Task<PluginStatus> DisconnectAsync(string name)
+    public Task<PluginStatus> DisconnectAsync(string name)
     {
-        var previous = broker.Swap<ISecretProvider>(null);
-        await PluginServiceBroker.DisposeIfSwappedAsync(previous);
+        // Only clear the slot if we still own it
+        if (broker.Get<ISecretProvider>() is VaultSecretProvider)
+            broker.Swap<ISecretProvider>(null);
 
         LogVaultDisconnected(name);
-        return new PluginStatus { Name = name, Type = PluginType, IsConnected = false };
+        return Task.FromResult(new PluginStatus { Name = name, Type = PluginType, IsConnected = false });
     }
 
     public PluginStatus GetStatus(string name)

@@ -1,3 +1,4 @@
+using System.Collections.Concurrent;
 using System.Diagnostics;
 using System.Text.Json;
 using Microsoft.Extensions.Logging;
@@ -13,6 +14,8 @@ namespace Weave.Tools.Connectors;
 /// </summary>
 public sealed partial class DirectHttpToolConnector(HttpClient httpClient, ILogger<DirectHttpToolConnector> logger) : IToolConnector
 {
+    private readonly ConcurrentDictionary<string, string> _authHeaders = new(StringComparer.Ordinal);
+
     public ToolType ToolType => ToolType.DirectHttp;
 
     public Task<ToolHandle> ConnectAsync(ToolSpec tool, CapabilityToken token, CancellationToken ct = default)
@@ -22,10 +25,12 @@ public sealed partial class DirectHttpToolConnector(HttpClient httpClient, ILogg
         if (string.IsNullOrWhiteSpace(config.BaseUrl))
             throw new InvalidOperationException($"Tool '{tool.Name}': DirectHttp 'base_url' is required");
 
+        // Store auth per-tool, applied per-request in InvokeAsync.
+        // Never use DefaultRequestHeaders — the HttpClient is shared across tools.
         if (!string.IsNullOrWhiteSpace(config.AuthHeader))
-        {
-            httpClient.DefaultRequestHeaders.TryAddWithoutValidation("Authorization", config.AuthHeader);
-        }
+            _authHeaders[tool.Name] = config.AuthHeader;
+        else
+            _authHeaders.TryRemove(tool.Name, out _);
 
         LogDirectHttpToolConnected(tool.Name, config.BaseUrl);
 
@@ -40,6 +45,7 @@ public sealed partial class DirectHttpToolConnector(HttpClient httpClient, ILogg
 
     public Task DisconnectAsync(ToolHandle handle, CancellationToken ct = default)
     {
+        _authHeaders.TryRemove(handle.ToolName, out _);
         LogDirectHttpToolDisconnected(handle.ToolName);
         return Task.CompletedTask;
     }
@@ -52,19 +58,27 @@ public sealed partial class DirectHttpToolConnector(HttpClient httpClient, ILogg
             var baseUrl = handle.ConnectionId.TrimEnd('/');
             var method = invocation.Method.TrimStart('/');
 
-            // Reject path traversal and absolute URLs to prevent SSRF
+            // Reject path traversal, absolute URLs, and encoded variants to prevent SSRF
             if (method.Contains("..", StringComparison.Ordinal) ||
-                method.Contains("://", StringComparison.Ordinal))
+                method.Contains("://", StringComparison.Ordinal) ||
+                method.Contains('\\') ||
+                method.Contains('%') ||
+                method.Contains('@'))
             {
                 throw new ArgumentException($"Invalid method path: '{invocation.Method}'");
             }
 
-            var url = $"{baseUrl}/{method}";
+            var url = new Uri(new Uri(baseUrl + "/"), method).AbsoluteUri;
 
             var bytes = JsonSerializer.SerializeToUtf8Bytes(invocation.Parameters, ToolJsonContext.Default.DictionaryStringString);
-            using var content = new ByteArrayContent(bytes);
-            content.Headers.ContentType = new System.Net.Http.Headers.MediaTypeHeaderValue("application/json");
-            using var response = await httpClient.PostAsync(url, content, ct);
+            using var request = new HttpRequestMessage(HttpMethod.Post, url);
+            request.Content = new ByteArrayContent(bytes);
+            request.Content.Headers.ContentType = new System.Net.Http.Headers.MediaTypeHeaderValue("application/json");
+
+            if (_authHeaders.TryGetValue(handle.ToolName, out var authHeader))
+                request.Headers.TryAddWithoutValidation("Authorization", authHeader);
+
+            using var response = await httpClient.SendAsync(request, ct);
             response.EnsureSuccessStatusCode();
 
             var output = await response.Content.ReadAsStringAsync(ct);

@@ -38,7 +38,11 @@ public sealed partial class PluginServiceBroker(ILogger<PluginServiceBroker> log
             // have not been replayed yet.
             if (_swapCallbacks.TryGetValue(typeof(T), out var callbacks))
             {
-                foreach (var callback in callbacks)
+                // M6 fix: snapshot under the list's lock to avoid
+                // InvalidOperationException if OnSwap is called concurrently.
+                Action[] snapshot;
+                lock (callbacks) { snapshot = [.. callbacks]; }
+                foreach (var callback in snapshot)
                     callback();
             }
 
