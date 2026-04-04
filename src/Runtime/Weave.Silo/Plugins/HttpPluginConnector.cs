@@ -60,9 +60,9 @@ public sealed partial class HttpPluginConnector(
 
     public Task<PluginStatus> DisconnectAsync(string name)
     {
-        var previous = broker.Remove($"http:{name}");
-        if (previous is IDisposable disposable)
-            disposable.Dispose();
+        // Remove from broker but don't dispose — HttpClient lifetime is managed
+        // by IHttpClientFactory. Disposing would fault in-flight requests.
+        broker.Remove($"http:{name}");
 
         return Task.FromResult(new PluginStatus { Name = name, Type = PluginType, IsConnected = false });
     }

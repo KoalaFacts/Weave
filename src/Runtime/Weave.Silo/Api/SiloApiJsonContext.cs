@@ -32,6 +32,7 @@ namespace Weave.Silo.Api;
 [JsonSerializable(typeof(IEnumerable<PluginStatus>))]
 [JsonSerializable(typeof(IReadOnlyList<PluginStatus>))]
 [JsonSerializable(typeof(PluginSchema))]
+[JsonSerializable(typeof(PluginConfigField))]
 [JsonSerializable(typeof(IEnumerable<PluginSchema>))]
 [JsonSerializable(typeof(IReadOnlyList<PluginSchema>))]
 internal sealed partial class SiloApiJsonContext : JsonSerializerContext;

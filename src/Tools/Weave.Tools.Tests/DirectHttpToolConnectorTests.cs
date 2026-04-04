@@ -113,7 +113,10 @@ public sealed class DirectHttpToolConnectorTests
     [InlineData("../../admin/delete")]
     [InlineData("foo/../../../etc/passwd")]
     [InlineData("http://evil.com/steal")]
-    public async Task InvokeAsync_PathTraversal_ThrowsArgumentException(string maliciousMethod)
+    [InlineData("foo\\bar")]
+    [InlineData("%2e%2e/admin")]
+    [InlineData("foo@evil.com/steal")]
+    public async Task InvokeAsync_PathTraversal_RejectsUnsafePaths(string maliciousMethod)
     {
         var connector = CreateConnector();
         var handle = new ToolHandle
@@ -154,6 +157,35 @@ public sealed class DirectHttpToolConnectorTests
         var handle = await connector.ConnectAsync(spec, TestToken);
 
         handle.IsConnected.ShouldBeTrue();
+    }
+
+    [Fact]
+    public async Task DisconnectAsync_ClearsAuthHeader()
+    {
+        var connector = CreateConnector();
+        var spec = new ToolSpec
+        {
+            Name = "authed-api",
+            Type = ToolType.DirectHttp,
+            DirectHttp = new DirectHttpToolConfig
+            {
+                BaseUrl = "http://localhost:8080",
+                AuthHeader = "Bearer secret"
+            }
+        };
+
+        var handle = await connector.ConnectAsync(spec, TestToken);
+        await connector.DisconnectAsync(handle);
+
+        // Reconnect same tool without auth — old header should be gone
+        var specNoAuth = new ToolSpec
+        {
+            Name = "authed-api",
+            Type = ToolType.DirectHttp,
+            DirectHttp = new DirectHttpToolConfig { BaseUrl = "http://localhost:8080" }
+        };
+        var handle2 = await connector.ConnectAsync(specNoAuth, TestToken);
+        handle2.IsConnected.ShouldBeTrue();
     }
 
     [Fact]

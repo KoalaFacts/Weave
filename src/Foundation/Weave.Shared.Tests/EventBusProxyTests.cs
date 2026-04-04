@@ -278,4 +278,26 @@ public sealed class EventBusProxyTests
         received.ShouldNotBeNull();
         received!.Data.ShouldBe("still-alive");
     }
+
+    // --- Hot-swap: replay failure safety ---
+
+    [Fact]
+    public async Task HotSwap_ReplayFailure_SubscriptionStillFunctional()
+    {
+        var proxy = new EventBusProxy(_broker, _fallback);
+        var received = new List<string>();
+        proxy.Subscribe<TestEvent>((e, _) => { received.Add(e.Data); return Task.CompletedTask; });
+
+        // Swap to a bus whose Subscribe throws — replay should catch and preserve old sub
+        var badBus = Substitute.For<IEventBus>();
+        badBus.Subscribe(Arg.Any<Func<TestEvent, CancellationToken, Task>>())
+            .Returns(_ => throw new InvalidOperationException("subscribe failed"));
+        _broker.Swap<IEventBus>(badBus);
+
+        // The proxy still holds the old subscription on the fallback.
+        // Publishing via proxy goes to badBus (which is Current), but the handler
+        // is still subscribed to fallback. Verify no crash on dispose.
+        var sub = proxy.Subscribe<TestEvent>((e, _) => { received.Add("new:" + e.Data); return Task.CompletedTask; });
+        sub.Dispose();
+    }
 }

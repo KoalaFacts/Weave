@@ -298,6 +298,58 @@ public sealed class PluginRegistryTests
     }
 
     [Fact]
+    public void ResolveConfig_FillsFromEnvironmentVariable()
+    {
+        var envKey = $"WEAVE_TEST_{Guid.NewGuid():N}";
+        try
+        {
+            Environment.SetEnvironmentVariable(envKey, "from-env");
+            var schema = new PluginSchema
+            {
+                Type = "test", Description = "test", Provides = [],
+                Config = [new() { Name = "addr", Description = "Address", EnvVar = envKey }]
+            };
+
+            var def = new PluginDefinition { Type = "test" };
+            var resolved = PluginRegistry.ResolveConfig(def, schema);
+
+            resolved.Config["addr"].ShouldBe("from-env");
+        }
+        finally
+        {
+            Environment.SetEnvironmentVariable(envKey, null);
+        }
+    }
+
+    [Fact]
+    public void ResolveConfig_ExplicitValueOverridesEnvVar()
+    {
+        var envKey = $"WEAVE_TEST_{Guid.NewGuid():N}";
+        try
+        {
+            Environment.SetEnvironmentVariable(envKey, "from-env");
+            var schema = new PluginSchema
+            {
+                Type = "test", Description = "test", Provides = [],
+                Config = [new() { Name = "addr", Description = "Address", EnvVar = envKey }]
+            };
+
+            var def = new PluginDefinition
+            {
+                Type = "test",
+                Config = new Dictionary<string, string> { ["addr"] = "explicit" }
+            };
+            var resolved = PluginRegistry.ResolveConfig(def, schema);
+
+            resolved.Config["addr"].ShouldBe("explicit");
+        }
+        finally
+        {
+            Environment.SetEnvironmentVariable(envKey, null);
+        }
+    }
+
+    [Fact]
     public void ValidateConfig_RequiredFieldMissing_ReturnsError()
     {
         var schema = new PluginSchema
