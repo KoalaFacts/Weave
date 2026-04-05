@@ -13,7 +13,7 @@ public static class AgentEndpoints
         var group = routes.MapGroup("/api/workspaces/{workspaceId}/agents")
             .WithTags("Agents");
 
-        group.MapGet("/", GetAllAgentsAsync);
+        group.MapGet("/", GetAllAgents);
         group.MapGet("/{agentName}", GetAgent);
         group.MapPost("/{agentName}/activate", ActivateAgent);
         group.MapPost("/{agentName}/deactivate", DeactivateAgent);
@@ -25,7 +25,7 @@ public static class AgentEndpoints
         return group;
     }
 
-    private static async Task<IResult> GetAllAgentsAsync(
+    private static async Task<IResult> GetAllAgents(
         string workspaceId,
         IQueryDispatcher dispatcher,
         CancellationToken ct)
@@ -41,16 +41,12 @@ public static class AgentEndpoints
         IQueryDispatcher dispatcher,
         CancellationToken ct)
     {
-        try
-        {
-            var query = new GetAgentStateQuery(WorkspaceId.From(workspaceId), agentName);
-            var state = await dispatcher.DispatchAsync<GetAgentStateQuery, AgentState>(query, ct);
-            return Results.Ok(AgentResponse.FromState(state));
-        }
-        catch (KeyNotFoundException ex)
-        {
-            return Results.NotFound(ex.Message);
-        }
+        var query = new GetAgentStateQuery(WorkspaceId.From(workspaceId), agentName);
+        var state = await dispatcher.DispatchAsync<GetAgentStateQuery, AgentState?>(query, ct);
+        if (state is null)
+            return ResultExtensions.NotFound($"Agent '{agentName}' not found in workspace '{workspaceId}'.");
+
+        return Results.Ok(AgentResponse.FromState(state));
     }
 
     private static async Task<IResult> ActivateAgent(
@@ -62,7 +58,7 @@ public static class AgentEndpoints
     {
         var errors = ValidateActivateAgent(request);
         if (errors is not null)
-            return Results.BadRequest(errors);
+            return ResultExtensions.ValidationFailed(errors);
 
         try
         {
@@ -72,7 +68,7 @@ public static class AgentEndpoints
         }
         catch (InvalidOperationException ex)
         {
-            return Results.Conflict(ex.Message);
+            return ResultExtensions.Conflict(ex.Message);
         }
     }
 
@@ -90,32 +86,7 @@ public static class AgentEndpoints
         }
         catch (InvalidOperationException ex)
         {
-            return Results.Conflict(ex.Message);
-        }
-    }
-
-    private static async Task<IResult> SubmitTask(
-        string workspaceId,
-        string agentName,
-        SubmitTaskRequest request,
-        ICommandDispatcher dispatcher,
-        CancellationToken ct)
-    {
-        var errors = ValidateSubmitTask(request);
-        if (errors is not null)
-            return Results.BadRequest(errors);
-
-        try
-        {
-            var command = new SubmitAgentTaskCommand(WorkspaceId.From(workspaceId), agentName, request.Description);
-            var info = await dispatcher.DispatchAsync<SubmitAgentTaskCommand, AgentTaskInfo>(command, ct);
-            return Results.Created(
-                $"/api/workspaces/{workspaceId}/agents/{agentName}/tasks/{info.TaskId}",
-                TaskResponse.FromInfo(info));
-        }
-        catch (InvalidOperationException ex)
-        {
-            return Results.Conflict(ex.Message);
+            return ResultExtensions.Conflict(ex.Message);
         }
     }
 
@@ -128,7 +99,7 @@ public static class AgentEndpoints
     {
         var errors = ValidateSendMessage(request);
         if (errors is not null)
-            return Results.BadRequest(errors);
+            return ResultExtensions.ValidationFailed(errors);
 
         try
         {
@@ -145,7 +116,32 @@ public static class AgentEndpoints
         }
         catch (InvalidOperationException ex)
         {
-            return Results.Conflict(ex.Message);
+            return ResultExtensions.Conflict(ex.Message);
+        }
+    }
+
+    private static async Task<IResult> SubmitTask(
+        string workspaceId,
+        string agentName,
+        SubmitTaskRequest request,
+        ICommandDispatcher dispatcher,
+        CancellationToken ct)
+    {
+        var errors = ValidateSubmitTask(request);
+        if (errors is not null)
+            return ResultExtensions.ValidationFailed(errors);
+
+        try
+        {
+            var command = new SubmitAgentTaskCommand(WorkspaceId.From(workspaceId), agentName, request.Description);
+            var info = await dispatcher.DispatchAsync<SubmitAgentTaskCommand, AgentTaskInfo>(command, ct);
+            return Results.Created(
+                $"/api/workspaces/{workspaceId}/agents/{agentName}/tasks/{info.TaskId}",
+                TaskResponse.FromInfo(info));
+        }
+        catch (InvalidOperationException ex)
+        {
+            return ResultExtensions.Conflict(ex.Message);
         }
     }
 
@@ -159,7 +155,7 @@ public static class AgentEndpoints
     {
         var errors = ValidateCompleteTask(request);
         if (errors is not null)
-            return Results.BadRequest(errors);
+            return ResultExtensions.ValidationFailed(errors);
 
         try
         {
@@ -167,7 +163,7 @@ public static class AgentEndpoints
             {
                 Items = request.Proof.Select(p => new ProofItem
                 {
-                    Type = Enum.Parse<ProofType>(p.Type, ignoreCase: true),
+                    Type = p.Type,
                     Label = p.Label,
                     Value = p.Value,
                     Uri = p.Uri
@@ -181,7 +177,7 @@ public static class AgentEndpoints
         }
         catch (InvalidOperationException ex)
         {
-            return Results.Conflict(ex.Message);
+            return ResultExtensions.Conflict(ex.Message);
         }
     }
 
@@ -202,7 +198,7 @@ public static class AgentEndpoints
         }
         catch (InvalidOperationException ex)
         {
-            return Results.Conflict(ex.Message);
+            return ResultExtensions.Conflict(ex.Message);
         }
     }
 

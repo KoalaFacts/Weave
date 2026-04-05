@@ -8,11 +8,12 @@ namespace Weave.Agents.Queries;
 public sealed record GetAgentStateQuery(WorkspaceId WorkspaceId, string AgentName);
 
 public sealed class GetAgentStateHandler(IGrainFactory grainFactory)
-    : IQueryHandler<GetAgentStateQuery, AgentState>
+    : IQueryHandler<GetAgentStateQuery, AgentState?>
 {
-    public async Task<AgentState> HandleAsync(GetAgentStateQuery query, CancellationToken ct)
+    public async Task<AgentState?> HandleAsync(GetAgentStateQuery query, CancellationToken ct)
     {
         var grain = grainFactory.GetGrain<IAgentGrain>($"{query.WorkspaceId}/{query.AgentName}");
-        return await grain.GetStateAsync();
+        var state = await grain.GetStateAsync();
+        return string.IsNullOrWhiteSpace(state.AgentId) ? null : state;
     }
 }
