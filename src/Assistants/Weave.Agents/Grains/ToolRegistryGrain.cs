@@ -2,11 +2,13 @@ using Microsoft.Extensions.Logging;
 using Weave.Agents.Events;
 using Weave.Agents.Models;
 using Weave.Security.Grains;
+using Weave.Security.Scanning;
 using Weave.Security.Tokens;
 using Weave.Shared.Events;
 using Weave.Shared.Ids;
 using Weave.Shared.Lifecycle;
 using Weave.Tools.Grains;
+using Weave.Tools.Mapping;
 using Weave.Tools.Models;
 using Weave.Workspaces.Models;
 
@@ -185,7 +187,7 @@ public sealed class ToolRegistryGrain(
             ToolName = toolName,
             ToolType = definition.Type,
             Status = ToolConnectionStatus.Connecting,
-            Endpoint = ResolveEndpoint(definition)
+            Endpoint = ToolSpecMapper.ResolveEndpoint(definition)
         };
 
         try
@@ -193,7 +195,7 @@ public sealed class ToolRegistryGrain(
             await lifecycleManager.RunHooksAsync(LifecyclePhase.ToolConnecting, context, CancellationToken.None);
 
             var resolvedDefinition = await ResolveSecretsAsync(definition);
-            var toolSpec = MapToToolSpec(toolName, resolvedDefinition);
+            var toolSpec = ToolSpecMapper.FromDefinition(toolName, resolvedDefinition);
             var token = tokenService.Mint(new CapabilityTokenRequest
             {
                 WorkspaceId = _workspaceId,
@@ -211,7 +213,7 @@ public sealed class ToolRegistryGrain(
                 ToolType = definition.Type,
                 Status = ToolConnectionStatus.Connected,
                 ConnectedAt = DateTimeOffset.UtcNow,
-                Endpoint = ResolveEndpoint(resolvedDefinition)
+                Endpoint = ToolSpecMapper.ResolveEndpoint(resolvedDefinition)
             };
 
             await lifecycleManager.RunHooksAsync(
@@ -236,7 +238,7 @@ public sealed class ToolRegistryGrain(
                 ToolName = toolName,
                 ToolType = definition.Type,
                 Status = ToolConnectionStatus.Error,
-                Endpoint = ResolveEndpoint(definition),
+                Endpoint = ToolSpecMapper.ResolveEndpoint(definition),
                 ErrorMessage = ex.Message
             };
 
@@ -279,7 +281,7 @@ public sealed class ToolRegistryGrain(
         var authToken = definition.OpenApi?.Auth?.Token;
         if (!string.IsNullOrWhiteSpace(authToken))
         {
-            foreach (var secretPath in EnumerateSecretPaths(authToken))
+            foreach (var secretPath in SecretPlaceholderParser.EnumeratePaths(authToken))
             {
                 await proxy.RegisterSecretAsync(secretPath, secretToken);
             }
@@ -301,63 +303,6 @@ public sealed class ToolRegistryGrain(
         };
     }
 
-    internal static ToolSpec MapToToolSpec(string toolName, ToolDefinition definition)
-    {
-        return new ToolSpec
-        {
-            Name = toolName,
-            Type = definition.Type switch
-            {
-                "mcp" => ToolType.Mcp,
-                "cli" => ToolType.Cli,
-                "openapi" => ToolType.OpenApi,
-                "dapr" => ToolType.Dapr,
-                "library" => ToolType.Library,
-                "direct_http" => ToolType.DirectHttp,
-                _ => throw new NotSupportedException($"Tool type '{definition.Type}' is not supported.")
-            },
-            Mcp = definition.Mcp,
-            OpenApi = definition.OpenApi,
-            Cli = definition.Cli,
-            DirectHttp = definition.DirectHttp is null ? null : new DirectHttpToolConfig
-            {
-                BaseUrl = definition.DirectHttp.BaseUrl,
-                AuthHeader = definition.DirectHttp.Auth is { Type: var authType, Token: var authToken }
-                    ? $"{authType} {authToken}"
-                    : null
-            }
-        };
-    }
-
-    internal static string? ResolveEndpoint(ToolDefinition definition) =>
-        definition.Type switch
-        {
-            "mcp" => definition.Mcp?.Server,
-            "openapi" => definition.OpenApi?.SpecUrl,
-            "direct_http" => definition.DirectHttp?.BaseUrl,
-            _ => null
-        };
-
-    internal static IEnumerable<string> EnumerateSecretPaths(string content)
-    {
-        const string Prefix = "{secret:";
-        var start = 0;
-        while (start < content.Length)
-        {
-            var prefixIndex = content.IndexOf(Prefix, start, StringComparison.Ordinal);
-            if (prefixIndex < 0)
-                yield break;
-
-            var secretStart = prefixIndex + Prefix.Length;
-            var end = content.IndexOf('}', secretStart);
-            if (end < 0)
-                yield break;
-
-            yield return content[secretStart..end];
-            start = end + 1;
-        }
-    }
-
     private static async Task<Dictionary<string, string>> ResolveSecretsAsync(
         Dictionary<string, string> source,
         ISecretProxyGrain proxy,
@@ -367,7 +312,7 @@ public sealed class ToolRegistryGrain(
         foreach (var (key, value) in source)
         {
             var resolvedValue = value;
-            foreach (var secretPath in EnumerateSecretPaths(value))
+            foreach (var secretPath in SecretPlaceholderParser.EnumeratePaths(value))
             {
                 await proxy.RegisterSecretAsync(secretPath, token);
             }
