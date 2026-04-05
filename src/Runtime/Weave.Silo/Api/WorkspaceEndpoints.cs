@@ -36,10 +36,21 @@ public static class WorkspaceEndpoints
         ICommandDispatcher dispatcher,
         CancellationToken ct)
     {
-        var workspaceId = WorkspaceId.New();
-        var command = new StartWorkspaceCommand(workspaceId, request.Manifest);
-        var state = await dispatcher.DispatchAsync<StartWorkspaceCommand, Workspaces.Models.WorkspaceState>(command, ct);
-        return Results.Created($"/api/workspaces/{workspaceId}", WorkspaceResponse.FromState(state));
+        var validationErrors = ValidateStartWorkspace(request);
+        if (validationErrors is not null)
+            return ResultExtensions.ValidationFailed(validationErrors);
+
+        try
+        {
+            var workspaceId = WorkspaceId.New();
+            var command = new StartWorkspaceCommand(workspaceId, request.Manifest);
+            var state = await dispatcher.DispatchAsync<StartWorkspaceCommand, Workspaces.Models.WorkspaceState>(command, ct);
+            return Results.Created($"/api/workspaces/{workspaceId}", WorkspaceResponse.FromState(state));
+        }
+        catch (InvalidOperationException ex)
+        {
+            return ResultExtensions.Conflict(ex.Message);
+        }
     }
 
     private static async Task<IResult> StopWorkspace(
@@ -47,9 +58,16 @@ public static class WorkspaceEndpoints
         ICommandDispatcher dispatcher,
         CancellationToken ct)
     {
-        var command = new StopWorkspaceCommand(WorkspaceId.From(workspaceId));
-        await dispatcher.DispatchAsync<StopWorkspaceCommand, bool>(command, ct);
-        return Results.NoContent();
+        try
+        {
+            var command = new StopWorkspaceCommand(WorkspaceId.From(workspaceId));
+            await dispatcher.DispatchAsync<StopWorkspaceCommand, bool>(command, ct);
+            return Results.NoContent();
+        }
+        catch (InvalidOperationException ex)
+        {
+            return ResultExtensions.Conflict(ex.Message);
+        }
     }
 
     private static async Task<IResult> GetWorkspaceState(
@@ -59,6 +77,18 @@ public static class WorkspaceEndpoints
     {
         var query = new GetWorkspaceStateQuery(WorkspaceId.From(workspaceId));
         var state = await dispatcher.DispatchAsync<GetWorkspaceStateQuery, Workspaces.Models.WorkspaceState>(query, ct);
+        if (state.WorkspaceId.IsEmpty)
+            return ResultExtensions.NotFound($"Workspace '{workspaceId}' not found.");
         return Results.Ok(WorkspaceResponse.FromState(state));
+    }
+
+    private static Dictionary<string, string[]>? ValidateStartWorkspace(StartWorkspaceRequest request)
+    {
+        Dictionary<string, string[]>? errors = null;
+        if (string.IsNullOrWhiteSpace(request.Manifest.Name))
+            (errors ??= [])["manifest.name"] = ["Name is required."];
+        if (string.IsNullOrWhiteSpace(request.Manifest.Version))
+            (errors ??= [])["manifest.version"] = ["Version is required."];
+        return errors;
     }
 }
