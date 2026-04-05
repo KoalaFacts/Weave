@@ -114,6 +114,15 @@ When adding or changing behavior:
 - keep assertions in `Shouldly`
 - avoid introducing new test libraries unless necessary
 
+Common test gotchas:
+
+- Warnings are errors: use `ShouldNotBeNull()` or `!` before asserting on `string?` / nullable properties
+- `SecretValue.ToString()` returns `"***REDACTED***"` — use `.DecryptToString()` for actual values
+- NSubstitute cannot mock `ILogger<T>` for `internal` types — use `NullLogger<T>.Instance`
+- `AITool` cannot be mocked — create a concrete stub that overrides `Name`
+- HTTP connectors accept `HttpClient` via constructor — use `StubHandler : HttpMessageHandler` for test isolation
+- `private static` helpers on grains should be `internal static` for direct testing (pattern: `ProofValidatorGrain`)
+
 ## Common Change Patterns
 
 ### Add a new grain

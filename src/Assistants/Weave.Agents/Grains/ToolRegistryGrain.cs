@@ -301,7 +301,7 @@ public sealed class ToolRegistryGrain(
         };
     }
 
-    private static ToolSpec MapToToolSpec(string toolName, ToolDefinition definition)
+    internal static ToolSpec MapToToolSpec(string toolName, ToolDefinition definition)
     {
         return new ToolSpec
         {
@@ -329,7 +329,7 @@ public sealed class ToolRegistryGrain(
         };
     }
 
-    private static string? ResolveEndpoint(ToolDefinition definition) =>
+    internal static string? ResolveEndpoint(ToolDefinition definition) =>
         definition.Type switch
         {
             "mcp" => definition.Mcp?.Server,
@@ -338,7 +338,7 @@ public sealed class ToolRegistryGrain(
             _ => null
         };
 
-    private static IEnumerable<string> EnumerateSecretPaths(string content)
+    internal static IEnumerable<string> EnumerateSecretPaths(string content)
     {
         const string Prefix = "{secret:";
         var start = 0;

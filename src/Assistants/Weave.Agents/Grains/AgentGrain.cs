@@ -524,7 +524,7 @@ public sealed class AgentGrain(
         return result.Success ? result.Output : $"Tool '{toolName}' failed: {result.Error}";
     }
 
-    private static ToolInvocation CreateToolInvocation(string toolName, string input)
+    internal static ToolInvocation CreateToolInvocation(string toolName, string input)
     {
         if (!string.IsNullOrWhiteSpace(input) && input.TrimStart().StartsWith('{'))
         {
@@ -580,7 +580,7 @@ public sealed class AgentGrain(
         };
     }
 
-    private static string BuildToolDescription(ToolSchema schema)
+    internal static string BuildToolDescription(ToolSchema schema)
     {
         if (schema.Parameters.Count == 0)
             return schema.Description;
@@ -607,7 +607,7 @@ public sealed class AgentGrain(
         return builder.ToString();
     }
 
-    private static ChatMessage ToChatMessage(ConversationMessage historyMessage)
+    internal static ChatMessage ToChatMessage(ConversationMessage historyMessage)
     {
         var role = historyMessage.Role.ToLowerInvariant() switch
         {

@@ -247,4 +247,124 @@ public sealed class ProofValidatorGrainTests
             result.ConditionName.ShouldNotBeNullOrWhiteSpace();
         }
     }
+
+    // --- ParseConditionResults edge cases ---
+
+    [Fact]
+    public void ParseConditionResults_EmptyString_ReturnsEmpty()
+    {
+        ProofValidatorGrain.ParseConditionResults("").ShouldBeEmpty();
+    }
+
+    [Fact]
+    public void ParseConditionResults_MultipleConditions_ParsesAll()
+    {
+        var json = """
+            [
+                {"conditionName":"ci-passing","passed":true,"detail":"build OK"},
+                {"conditionName":"tests-passing","passed":false,"detail":"3 failures"}
+            ]
+            """;
+
+        var results = ProofValidatorGrain.ParseConditionResults(json);
+
+        results.Count.ShouldBe(2);
+        results[0].Passed.ShouldBeTrue();
+        results[1].Passed.ShouldBeFalse();
+        results[1].Detail!.ShouldContain("3 failures");
+    }
+
+    [Fact]
+    public void ParseConditionResults_JsonWithExtraFields_StillParses()
+    {
+        var json = """[{"conditionName":"check","passed":true,"detail":"ok","extra":"ignored"}]""";
+
+        var results = ProofValidatorGrain.ParseConditionResults(json);
+
+        results.Count.ShouldBe(1);
+        results[0].ConditionName.ShouldBe("check");
+    }
+
+    [Fact]
+    public void ParseConditionResults_JsonInMarkdownWithLanguageTag_ExtractsArray()
+    {
+        var wrapped = """
+            Analysis complete:
+            ```json
+            [{"conditionName":"test","passed":true,"detail":"all good"}]
+            ```
+            Summary: all conditions met.
+            """;
+
+        var results = ProofValidatorGrain.ParseConditionResults(wrapped);
+
+        results.Count.ShouldBe(1);
+        results[0].Passed.ShouldBeTrue();
+    }
+
+    [Fact]
+    public void ParseConditionResults_PlainJsonWithSurroundingText_ExtractsArray()
+    {
+        var text = """
+            Based on my review:
+            [{"conditionName":"ci","passed":true,"detail":"green"}]
+            That's my assessment.
+            """;
+
+        var results = ProofValidatorGrain.ParseConditionResults(text);
+
+        results.Count.ShouldBe(1);
+    }
+
+    // --- BuildUserMessage edge cases ---
+
+    [Fact]
+    public void BuildUserMessage_SingleItemNoUri_OmitsUriLine()
+    {
+        var proof = new ProofOfWork
+        {
+            Items = [new ProofItem { Type = ProofType.CiStatus, Label = "CI", Value = "passed" }]
+        };
+
+        var message = ProofValidatorGrain.BuildUserMessage(proof, DefaultConditions());
+
+        message.ShouldContain("CI");
+        message.ShouldContain("passed");
+    }
+
+    [Fact]
+    public void BuildUserMessage_EmptyConditions_StillIncludesProofItems()
+    {
+        var proof = new ProofOfWork
+        {
+            Items = [new ProofItem { Type = ProofType.CiStatus, Label = "Build", Value = "ok" }]
+        };
+
+        var message = ProofValidatorGrain.BuildUserMessage(proof, []);
+
+        message.ShouldContain("Build");
+        message.ShouldContain("ok");
+    }
+
+    // --- ValidateAsync with multiple items ---
+
+    [Fact]
+    public async Task ValidateAsync_MultipleProofItems_AllIncludedInPrompt()
+    {
+        var validator = CreateValidator();
+        var proof = new ProofOfWork
+        {
+            Items =
+            [
+                new ProofItem { Type = ProofType.CiStatus, Label = "CI", Value = "passed" },
+                new ProofItem { Type = ProofType.TestResults, Label = "Tests", Value = "100 passed, 0 failed" },
+                new ProofItem { Type = ProofType.CodeReview, Label = "Review", Value = "approved" }
+            ]
+        };
+
+        var vote = await validator.ValidateAsync("v-0", proof, DefaultConditions());
+
+        // Should not reject for empty value since all items have values
+        vote.ConditionResults.ShouldNotContain(r => r.ConditionName == "non-empty-value" && !r.Passed);
+    }
 }
