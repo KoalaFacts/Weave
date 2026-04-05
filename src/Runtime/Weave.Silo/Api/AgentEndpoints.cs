@@ -58,7 +58,7 @@ public static class AgentEndpoints
         return Results.Ok(AgentResponse.FromState(state));
     }
 
-    private static async Task<IResult> DeactivateAgent(
+    private static async Task<IResult> DeactivateAgentAsync(
         string workspaceId,
         string agentName,
         ICommandDispatcher dispatcher,
@@ -69,7 +69,7 @@ public static class AgentEndpoints
         return Results.NoContent();
     }
 
-    private static async Task<IResult> SubmitTask(
+    private static async Task<IResult> SubmitTaskAsync(
         string workspaceId,
         string agentName,
         SubmitTaskRequest request,
@@ -102,7 +102,7 @@ public static class AgentEndpoints
         return Results.Ok(Api.AgentChatResponse.FromResponse(response));
     }
 
-    private static async Task<IResult> CompleteTask(
+    private static async Task<IResult> CompleteTaskAsync(
         string workspaceId,
         string agentName,
         string taskId,
@@ -114,7 +114,7 @@ public static class AgentEndpoints
         {
             Items = request.Proof.Select(p => new ProofItem
             {
-                Type = Enum.Parse<ProofType>(p.Type, ignoreCase: true),
+                Type = p.Type,
                 Label = p.Label,
                 Value = p.Value,
                 Uri = p.Uri
