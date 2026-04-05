@@ -1,5 +1,8 @@
 # Tools
 
+> **Source**: `src/Tools/` | **Depends on**: [Foundation](foundation.md), [Workspaces](workspaces.md), [Security](security.md) | **Depended on by**: [Assistants](assistants.md), [Runtime](runtime.md)
+> **See also**: [index](index.md)
+
 The Tools subsystem provides tool connectors, discovery, and grain-based tool execution with security scanning and lifecycle management.
 
 ## Projects

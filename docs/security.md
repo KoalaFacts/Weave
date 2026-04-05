@@ -1,5 +1,8 @@
 # Security
 
+> **Source**: `src/Security/` | **Depends on**: [Foundation](foundation.md) | **Depended on by**: [Tools](tools.md), [Assistants](assistants.md), [Runtime](runtime.md)
+> **See also**: [index](index.md)
+
 The Security subsystem provides capability tokens, leak scanning, secret proxy, and vault integration. It enforces fail-closed behavior — operations are blocked when security checks fail.
 
 ## Projects

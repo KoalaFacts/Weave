@@ -1,5 +1,8 @@
 # Foundation — Weave.Shared & Weave.SourceGen
 
+> **Source**: `src/Foundation/` | **Depends on**: (none — root dependency) | **Depended on by**: all other subsystems
+> **See also**: [index](index.md) · [workspaces](workspaces.md) · [assistants](assistants.md) · [tools](tools.md) · [security](security.md) · [deployment](deployment.md) · [runtime](runtime.md) · [ux](ux.md)
+
 The Foundation layer provides the core abstractions, utilities, and source generators that all other Weave subsystems depend on.
 
 ## Projects
