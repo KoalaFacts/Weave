@@ -1,6 +1,3 @@
-using System.Diagnostics.CodeAnalysis;
-using System.Text;
-using System.Text.Json;
 using Microsoft.Extensions.AI;
 using Microsoft.Extensions.Logging;
 using Weave.Agents.Events;
@@ -9,6 +6,7 @@ using Weave.Agents.Pipeline;
 using Weave.Shared.Events;
 using Weave.Shared.Ids;
 using Weave.Shared.Lifecycle;
+using Weave.Tools.Builders;
 using Weave.Tools.Grains;
 using Weave.Tools.Models;
 using Weave.Workspaces.Models;
@@ -23,7 +21,6 @@ public sealed class AgentGrain(
     ILogger<AgentGrain> logger,
     [PersistentState("agent", "Default")] IPersistentState<AgentState> persistentState) : Grain, IAgentGrain
 {
-    private static readonly JsonSerializerOptions ToolInputJsonOptions = new(JsonSerializerDefaults.Web);
     private IChatClient? _chatClient;
     private string? _systemPrompt;
 
@@ -189,7 +186,7 @@ public sealed class AgentGrain(
             chatMessages.Add(new ChatMessage(ChatRole.System, prompt));
 
         foreach (var historyMessage in persistentState.State.History)
-            chatMessages.Add(ToChatMessage(historyMessage));
+            chatMessages.Add(ChatMessageMapper.ToChatMessage(historyMessage));
 
         var tools = await BuildToolsAsync();
         var options = new ChatOptions
@@ -211,7 +208,7 @@ public sealed class AgentGrain(
         var newMessages = new List<ConversationMessage>();
         foreach (var responseMessage in response.Messages)
         {
-            foreach (var conversationMessage in ToConversationMessages(responseMessage))
+            foreach (var conversationMessage in ChatMessageMapper.ToConversationMessages(responseMessage))
             {
                 persistentState.State.History.Add(conversationMessage);
                 newMessages.Add(conversationMessage);
@@ -504,7 +501,7 @@ public sealed class AgentGrain(
                 new AIFunctionFactoryOptions
                 {
                     Name = toolName,
-                    Description = BuildToolDescription(resolution.Schema)
+                    Description = ToolInvocationBuilder.DescribeSchema(resolution.Schema)
                 });
             tools.Add(function);
         }
@@ -519,145 +516,8 @@ public sealed class AgentGrain(
             ?? throw new InvalidOperationException($"Tool '{toolName}' is not available to agent '{persistentState.State.AgentName}'.");
 
         var toolGrain = grainFactory.GetGrain<IToolGrain>(resolution.GrainKey);
-        var invocation = CreateToolInvocation(toolName, input);
+        var invocation = ToolInvocationBuilder.FromInput(toolName, input);
         var result = await toolGrain.InvokeAsync(invocation, resolution.Token);
         return result.Success ? result.Output : $"Tool '{toolName}' failed: {result.Error}";
-    }
-
-    internal static ToolInvocation CreateToolInvocation(string toolName, string input)
-    {
-        if (!string.IsNullOrWhiteSpace(input) && input.TrimStart().StartsWith('{'))
-        {
-            try
-            {
-                using var document = JsonDocument.Parse(input);
-                if (document.RootElement.ValueKind is JsonValueKind.Object)
-                {
-                    var parameters = new Dictionary<string, string>(StringComparer.Ordinal);
-                    var method = "invoke";
-                    string? rawInput = null;
-
-                    foreach (var property in document.RootElement.EnumerateObject())
-                    {
-                        if (property.NameEquals("method"))
-                        {
-                            method = property.Value.GetString() ?? "invoke";
-                            continue;
-                        }
-
-                        if (property.NameEquals("rawInput"))
-                        {
-                            rawInput = property.Value.GetString();
-                            continue;
-                        }
-
-                        parameters[property.Name] = property.Value.ValueKind switch
-                        {
-                            JsonValueKind.String => property.Value.GetString() ?? string.Empty,
-                            _ => property.Value.GetRawText()
-                        };
-                    }
-
-                    return new ToolInvocation
-                    {
-                        ToolName = toolName,
-                        Method = method,
-                        Parameters = parameters,
-                        RawInput = rawInput
-                    };
-                }
-            }
-            catch (JsonException)
-            {
-            }
-        }
-
-        return new ToolInvocation
-        {
-            ToolName = toolName,
-            Method = "invoke",
-            RawInput = input
-        };
-    }
-
-    internal static string BuildToolDescription(ToolSchema schema)
-    {
-        if (schema.Parameters.Count == 0)
-            return schema.Description;
-
-        var builder = new StringBuilder(schema.Description);
-        builder.Append(" Parameters: ");
-
-        for (var i = 0; i < schema.Parameters.Count; i++)
-        {
-            if (i > 0)
-                builder.Append("; ");
-
-            var parameter = schema.Parameters[i];
-            builder.Append(parameter.Name);
-            builder.Append(" (");
-            builder.Append(parameter.Type);
-            if (parameter.Required)
-                builder.Append(", required");
-            builder.Append("): ");
-            builder.Append(parameter.Description);
-        }
-
-        builder.Append(". Pass a JSON object if multiple fields are required.");
-        return builder.ToString();
-    }
-
-    internal static ChatMessage ToChatMessage(ConversationMessage historyMessage)
-    {
-        var role = historyMessage.Role.ToLowerInvariant() switch
-        {
-            "assistant" => ChatRole.Assistant,
-            "system" => ChatRole.System,
-            "tool" => ChatRole.Tool,
-            _ => ChatRole.User
-        };
-
-        return new ChatMessage(role, historyMessage.Content)
-        {
-            CreatedAt = historyMessage.Timestamp
-        };
-    }
-
-    [UnconditionalSuppressMessage("AOT", "IL2026:RequiresUnreferencedCode", Justification = "Function call arguments are dynamic LLM outputs serialized for diagnostic logging only.")]
-    [UnconditionalSuppressMessage("AOT", "IL3050:RequiresDynamicCode", Justification = "Function call arguments are dynamic LLM outputs serialized for diagnostic logging only.")]
-    private static IEnumerable<ConversationMessage> ToConversationMessages(ChatMessage message)
-    {
-        if (!string.IsNullOrWhiteSpace(message.Text))
-        {
-            yield return new ConversationMessage
-            {
-                Role = message.Role.Value,
-                Content = message.Text,
-                Timestamp = message.CreatedAt ?? DateTimeOffset.UtcNow
-            };
-        }
-
-        foreach (var content in message.Contents)
-        {
-            switch (content)
-            {
-                case FunctionCallContent functionCall:
-                    yield return new ConversationMessage
-                    {
-                        Role = "tool",
-                        Content = $"Requested tool '{functionCall.Name}' with arguments: {JsonSerializer.Serialize(functionCall.Arguments, ToolInputJsonOptions)}",
-                        Timestamp = message.CreatedAt ?? DateTimeOffset.UtcNow
-                    };
-                    break;
-                case FunctionResultContent functionResult:
-                    yield return new ConversationMessage
-                    {
-                        Role = "tool",
-                        Content = $"Tool result: {functionResult.Result}",
-                        Timestamp = message.CreatedAt ?? DateTimeOffset.UtcNow
-                    };
-                    break;
-            }
-        }
     }
 }
