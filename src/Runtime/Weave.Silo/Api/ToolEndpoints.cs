@@ -34,7 +34,7 @@ public static class ToolEndpoints
         var grain = grainFactory.GetGrain<IToolRegistryGrain>(workspaceId);
         var connection = await grain.GetConnectionAsync(toolName);
         return connection is null
-            ? Results.NotFound()
+            ? ResultExtensions.NotFound($"Tool '{toolName}' not found in workspace '{workspaceId}'.")
             : Results.Ok(ToolConnectionResponse.FromConnection(connection));
     }
 }

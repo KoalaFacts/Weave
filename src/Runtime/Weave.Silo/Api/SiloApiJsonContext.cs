@@ -26,6 +26,7 @@ namespace Weave.Silo.Api;
 [JsonSerializable(typeof(AgentChatResponse))]
 [JsonSerializable(typeof(ConversationMessageResponse))]
 [JsonSerializable(typeof(ConnectPluginRequest))]
+[JsonSerializable(typeof(ConnectPluginResponse))]
 [JsonSerializable(typeof(PluginStatus))]
 [JsonSerializable(typeof(IEnumerable<WorkspaceResponse>))]
 [JsonSerializable(typeof(IEnumerable<AgentResponse>))]
