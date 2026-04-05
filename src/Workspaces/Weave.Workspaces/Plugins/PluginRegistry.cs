@@ -65,11 +65,11 @@ public interface IPluginRegistry
     IReadOnlyList<PluginSchema> GetCatalog();
 }
 
-public sealed partial class PluginRegistry : IPluginRegistry
+public sealed partial class PluginRegistry : IPluginRegistry, IDisposable
 {
     private readonly Dictionary<string, IPluginConnector> _connectorsByType;
     private readonly ConcurrentDictionary<string, PluginStatus> _active = new(StringComparer.OrdinalIgnoreCase);
-    private readonly ConcurrentDictionary<string, SemaphoreSlim> _nameLocks = new(StringComparer.OrdinalIgnoreCase);
+    private readonly SemaphoreSlim _connectLock = new(1, 1);
     private readonly ILogger<PluginRegistry> _logger;
 
     public PluginRegistry(IEnumerable<IPluginConnector> connectors, ILogger<PluginRegistry> logger)
@@ -129,8 +129,7 @@ public sealed partial class PluginRegistry : IPluginRegistry
         }
 
         // Per-name lock prevents concurrent connect/disconnect for the same plugin name
-        var nameLock = _nameLocks.GetOrAdd(name, _ => new SemaphoreSlim(1, 1));
-        await nameLock.WaitAsync();
+        await _connectLock.WaitAsync();
         try
         {
             // Make-before-break: connect the new plugin first. If it fails,
@@ -175,14 +174,13 @@ public sealed partial class PluginRegistry : IPluginRegistry
         }
         finally
         {
-            nameLock.Release();
+            _connectLock.Release();
         }
     }
 
     public async Task<PluginStatus> DisconnectAsync(string name)
     {
-        var nameLock = _nameLocks.GetOrAdd(name, _ => new SemaphoreSlim(1, 1));
-        await nameLock.WaitAsync();
+        await _connectLock.WaitAsync();
         try
         {
             if (!_active.TryRemove(name, out var existing))
@@ -207,7 +205,7 @@ public sealed partial class PluginRegistry : IPluginRegistry
         }
         finally
         {
-            nameLock.Release();
+            _connectLock.Release();
         }
     }
 
@@ -215,6 +213,8 @@ public sealed partial class PluginRegistry : IPluginRegistry
 
     public IReadOnlyList<PluginSchema> GetCatalog() =>
         [.. _connectorsByType.Values.Select(c => c.Schema)];
+
+    public void Dispose() => _connectLock.Dispose();
 
     /// <summary>
     /// Auto-fill missing config values from environment variables declared in the schema.
