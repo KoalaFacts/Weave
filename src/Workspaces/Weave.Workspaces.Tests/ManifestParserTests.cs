@@ -313,6 +313,79 @@ public sealed class ManifestParserTests
     }
 
     [Fact]
+    public void Validate_DirectHttpToolType_IsValid()
+    {
+        var manifest = new WorkspaceManifest
+        {
+            Version = "1.0",
+            Name = "test",
+            Tools = new Dictionary<string, ToolDefinition>
+            {
+                ["my-api"] = new ToolDefinition
+                {
+                    Type = "direct_http",
+                    DirectHttp = new DirectHttpConfig { BaseUrl = "http://localhost:8080" }
+                }
+            }
+        };
+
+        var errors = _parser.Validate(manifest);
+        errors.ShouldBeEmpty();
+    }
+
+    [Fact]
+    public void Validate_WebhookPluginType_IsValid()
+    {
+        var manifest = new WorkspaceManifest
+        {
+            Version = "1.0",
+            Name = "test",
+            Plugins = new Dictionary<string, PluginDefinition>
+            {
+                ["events"] = new PluginDefinition
+                {
+                    Type = "webhook",
+                    Config = new Dictionary<string, string> { ["url"] = "http://localhost:9000/hooks" }
+                }
+            }
+        };
+
+        var errors = _parser.Validate(manifest);
+        errors.ShouldBeEmpty();
+    }
+
+    [Fact]
+    public void Parse_DirectHttpTool_ParsesConfig()
+    {
+        const string json = """
+            {
+              "version": "1.0",
+              "name": "direct-http-test",
+              "tools": {
+                "my-service": {
+                  "type": "direct_http",
+                  "direct_http": {
+                    "base_url": "http://my-service:8080",
+                    "auth": { "type": "bearer", "token": "abc123" }
+                  }
+                }
+              }
+            }
+            """;
+
+        var manifest = _parser.Parse(json);
+
+        manifest.Tools.ShouldContainKey("my-service");
+        var tool = manifest.Tools["my-service"];
+        tool.Type.ShouldBe("direct_http");
+        tool.DirectHttp.ShouldNotBeNull();
+        tool.DirectHttp!.BaseUrl.ShouldBe("http://my-service:8080");
+        tool.DirectHttp.Auth.ShouldNotBeNull();
+        tool.DirectHttp.Auth!.Type.ShouldBe("bearer");
+        tool.DirectHttp.Auth.Token.ShouldBe("abc123");
+    }
+
+    [Fact]
     public void Serialize_PluginsRoundTrip()
     {
         var manifest = new WorkspaceManifest

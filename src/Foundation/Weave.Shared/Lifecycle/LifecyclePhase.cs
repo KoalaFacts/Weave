@@ -19,6 +19,12 @@ public enum LifecyclePhase
     AgentDeactivated,
     AgentErrored,
 
+    // Plugin lifecycle
+    PluginConnecting,
+    PluginConnected,
+    PluginDisconnecting,
+    PluginDisconnected,
+
     // Tool lifecycle
     ToolConnecting,
     ToolConnected,

@@ -1,56 +1,76 @@
-using Microsoft.Extensions.DependencyInjection;
 using Microsoft.Extensions.Logging;
-using Weave.Tools.Connectors;
+using Weave.Shared.Plugins;
 using Weave.Workspaces.Models;
 using Weave.Workspaces.Plugins;
 
 namespace Weave.Silo.Plugins;
 
 /// <summary>
-/// Connects a generic HTTP plugin — registers an <see cref="OpenApiToolConnector"/>
-/// pointed at the configured base URL. Useful for custom REST/OpenAPI endpoints.
+/// Connects a generic HTTP plugin — stores a named <see cref="HttpClient"/>
+/// in the broker for plugin-specific HTTP integrations.
 /// </summary>
 public sealed partial class HttpPluginConnector(
-    IServiceCollection services,
-    ILogger<HttpPluginConnector> logger) : IPluginConnector
+    PluginServiceBroker broker,
+    IHttpClientFactory httpClientFactory,
+    ILoggerFactory loggerFactory) : IPluginConnector
 {
+    private readonly ILogger<HttpPluginConnector> _logger = loggerFactory.CreateLogger<HttpPluginConnector>();
+
     public string PluginType => "http";
 
-    public PluginStatus Connect(string name, PluginDefinition definition)
+    public PluginSchema Schema { get; } = new()
+    {
+        Type = "http",
+        Description = "Generic HTTP endpoint — provides a named HttpClient for custom integrations",
+        Provides = ["http"],
+        Config =
+        [
+            new() { Name = "base_url", Description = "Base URL of the HTTP service", Required = true },
+        ]
+    };
+
+    public Task<PluginStatus> ConnectAsync(string name, PluginDefinition definition)
     {
         var baseUrl = definition.Config.GetValueOrDefault("base_url");
         if (string.IsNullOrWhiteSpace(baseUrl))
         {
-            return new PluginStatus
+            return Task.FromResult(new PluginStatus
             {
                 Name = name,
                 Type = PluginType,
                 IsConnected = false,
                 Error = "HTTP plugin requires 'base_url' in config."
-            };
+            });
         }
 
-        services.AddHttpClient($"plugin:{name}", c => c.BaseAddress = new Uri(baseUrl));
+        var httpClient = httpClientFactory.CreateClient($"plugin:{name}");
+        httpClient.BaseAddress = new Uri(baseUrl);
+        broker.Set($"http:{name}", httpClient);
 
         LogHttpConnected(name, baseUrl);
 
-        return new PluginStatus
+        return Task.FromResult(new PluginStatus
         {
             Name = name,
             Type = PluginType,
             IsConnected = true,
             Info = new Dictionary<string, string> { ["base_url"] = baseUrl }
-        };
+        });
     }
 
-    public PluginStatus Disconnect(string name)
+    public Task<PluginStatus> DisconnectAsync(string name)
     {
-        return new PluginStatus { Name = name, Type = PluginType, IsConnected = false };
+        // Remove from broker but don't dispose — HttpClient lifetime is managed
+        // by IHttpClientFactory. Disposing would fault in-flight requests.
+        broker.Remove($"http:{name}");
+
+        return Task.FromResult(new PluginStatus { Name = name, Type = PluginType, IsConnected = false });
     }
 
     public PluginStatus GetStatus(string name)
     {
-        return new PluginStatus { Name = name, Type = PluginType, IsConnected = true };
+        var client = broker.Get<HttpClient>($"http:{name}");
+        return new PluginStatus { Name = name, Type = PluginType, IsConnected = client is not null };
     }
 
     [LoggerMessage(Level = LogLevel.Information, Message = "HTTP plugin '{Name}' connected — base URL {BaseUrl}")]

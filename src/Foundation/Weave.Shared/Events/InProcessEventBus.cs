@@ -12,8 +12,9 @@ public sealed partial class InProcessEventBus(ILogger<InProcessEventBus> logger)
         if (!_handlers.TryGetValue(typeof(TEvent), out var handlers))
             return;
 
-        // Snapshot to avoid modification during iteration
-        var snapshot = handlers.ToArray();
+        // Snapshot under lock to avoid race with concurrent Subscribe/Unsubscribe
+        Delegate[] snapshot;
+        lock (handlers) { snapshot = [.. handlers]; }
         foreach (var handler in snapshot)
         {
             try

@@ -11,6 +11,7 @@ public static class PluginEndpoints
             .WithTags("Plugins");
 
         group.MapGet("/", GetAllPlugins);
+        group.MapGet("/catalog", GetCatalog);
         group.MapPost("/", ConnectPlugin);
         group.MapDelete("/{name}", DisconnectPlugin);
 
@@ -22,22 +23,27 @@ public static class PluginEndpoints
         return Results.Ok(registry.GetAll());
     }
 
-    private static IResult ConnectPlugin(IPluginRegistry registry, ConnectPluginRequest request)
+    private static IResult GetCatalog(IPluginRegistry registry)
+    {
+        return Results.Ok(registry.GetCatalog());
+    }
+
+    private static async Task<IResult> ConnectPlugin(IPluginRegistry registry, ConnectPluginRequest request)
     {
         var definition = new PluginDefinition
         {
             Type = request.Type,
             Description = request.Description,
-            Config = request.Config ?? []
+            Config = request.Config is not null ? new(request.Config) : []
         };
 
-        var status = registry.Connect(request.Name, definition);
+        var status = await registry.ConnectAsync(request.Name, definition);
         return status.IsConnected ? Results.Ok(status) : Results.UnprocessableEntity(status);
     }
 
-    private static IResult DisconnectPlugin(IPluginRegistry registry, string name)
+    private static async Task<IResult> DisconnectPlugin(IPluginRegistry registry, string name)
     {
-        var status = registry.Disconnect(name);
+        var status = await registry.DisconnectAsync(name);
         return Results.Ok(status);
     }
 }

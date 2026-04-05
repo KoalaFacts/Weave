@@ -66,4 +66,144 @@ public sealed class ToolDiscoveryServiceTests
 
         Should.Throw<NotSupportedException>(() => service.GetConnector(ToolType.Cli));
     }
+
+    [Fact]
+    public void Register_DynamicConnector_ResolvesAtRuntime()
+    {
+        var service = CreateService(CreateConnector(ToolType.Cli));
+        var daprConnector = CreateConnector(ToolType.Dapr);
+
+        service.Register(daprConnector);
+
+        service.GetConnector(ToolType.Dapr).ShouldBeSameAs(daprConnector);
+        service.SupportedTypes.ShouldContain(ToolType.Dapr);
+    }
+
+    [Fact]
+    public void Register_DynamicConnector_OverridesBuiltIn()
+    {
+        var builtIn = CreateConnector(ToolType.Cli);
+        var replacement = CreateConnector(ToolType.Cli);
+        var service = CreateService(builtIn);
+
+        service.Register(replacement);
+
+        service.GetConnector(ToolType.Cli).ShouldBeSameAs(replacement);
+    }
+
+    [Fact]
+    public void Unregister_DynamicConnector_RevertsToBuiltIn()
+    {
+        var builtIn = CreateConnector(ToolType.Cli);
+        var replacement = CreateConnector(ToolType.Cli);
+        var service = CreateService(builtIn);
+
+        service.Register(replacement);
+        service.GetConnector(ToolType.Cli).ShouldBeSameAs(replacement);
+
+        service.Unregister(ToolType.Cli);
+        service.GetConnector(ToolType.Cli).ShouldBeSameAs(builtIn);
+    }
+
+    [Fact]
+    public void Unregister_DynamicOnlyConnector_ThrowsAfterRemoval()
+    {
+        var service = CreateService();
+        var daprConnector = CreateConnector(ToolType.Dapr);
+
+        service.Register(daprConnector);
+        service.Unregister(ToolType.Dapr);
+
+        Should.Throw<NotSupportedException>(() => service.GetConnector(ToolType.Dapr));
+    }
+
+    [Fact]
+    public void Unregister_NonexistentType_ReturnsFalse()
+    {
+        var service = CreateService();
+
+        service.Unregister(ToolType.Dapr).ShouldBeFalse();
+    }
+
+    [Fact]
+    public void Unregister_BuiltInType_ReturnsFalse_BuiltInStillWorks()
+    {
+        var builtIn = CreateConnector(ToolType.Cli);
+        var service = CreateService(builtIn);
+
+        // Trying to unregister a built-in (no dynamic override) returns false
+        service.Unregister(ToolType.Cli).ShouldBeFalse();
+        // Built-in still resolves
+        service.GetConnector(ToolType.Cli).ShouldBeSameAs(builtIn);
+    }
+
+    [Fact]
+    public void SupportedTypes_IncludesBothBuiltInAndDynamic()
+    {
+        var service = CreateService(CreateConnector(ToolType.Cli));
+        service.Register(CreateConnector(ToolType.Dapr));
+
+        var types = service.SupportedTypes;
+        types.Count.ShouldBe(2);
+        types.ShouldContain(ToolType.Cli);
+        types.ShouldContain(ToolType.Dapr);
+    }
+
+    [Fact]
+    public void HotSwap_RegisterReplace_GetConnectorReturnsLatest()
+    {
+        var service = CreateService();
+        var first = CreateConnector(ToolType.Dapr);
+        var second = CreateConnector(ToolType.Dapr);
+
+        service.Register(first);
+        service.GetConnector(ToolType.Dapr).ShouldBeSameAs(first);
+
+        service.Register(second);
+        service.GetConnector(ToolType.Dapr).ShouldBeSameAs(second);
+    }
+
+    [Fact]
+    public void HotSwap_FullCycle_RegisterUseUnregisterReregister()
+    {
+        var service = CreateService();
+        var connector = CreateConnector(ToolType.Dapr);
+
+        service.Register(connector);
+        service.GetConnector(ToolType.Dapr).ShouldBeSameAs(connector);
+
+        service.Unregister(ToolType.Dapr);
+        Should.Throw<NotSupportedException>(() => service.GetConnector(ToolType.Dapr));
+
+        var newConnector = CreateConnector(ToolType.Dapr);
+        service.Register(newConnector);
+        service.GetConnector(ToolType.Dapr).ShouldBeSameAs(newConnector);
+    }
+
+    [Fact]
+    public void SupportedTypes_CacheInvalidated_AfterRegisterAndUnregister()
+    {
+        var service = CreateService(CreateConnector(ToolType.Cli));
+        var initial = service.SupportedTypes;
+        initial.Count.ShouldBe(1);
+
+        service.Register(CreateConnector(ToolType.Dapr));
+        var afterRegister = service.SupportedTypes;
+        afterRegister.Count.ShouldBe(2);
+
+        service.Unregister(ToolType.Dapr);
+        var afterUnregister = service.SupportedTypes;
+        afterUnregister.Count.ShouldBe(1);
+    }
+
+    [Fact]
+    public void SupportedTypes_ReturnsCachedInstance_WhenUnchanged()
+    {
+        var service = CreateService(CreateConnector(ToolType.Cli));
+
+        var first = service.SupportedTypes;
+        var second = service.SupportedTypes;
+
+        ReferenceEquals(first, second).ShouldBeTrue();
+    }
 }

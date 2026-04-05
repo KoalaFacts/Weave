@@ -313,11 +313,19 @@ public sealed class ToolRegistryGrain(
                 "openapi" => ToolType.OpenApi,
                 "dapr" => ToolType.Dapr,
                 "library" => ToolType.Library,
+                "direct_http" => ToolType.DirectHttp,
                 _ => throw new NotSupportedException($"Tool type '{definition.Type}' is not supported.")
             },
             Mcp = definition.Mcp,
             OpenApi = definition.OpenApi,
-            Cli = definition.Cli
+            Cli = definition.Cli,
+            DirectHttp = definition.DirectHttp is null ? null : new DirectHttpToolConfig
+            {
+                BaseUrl = definition.DirectHttp.BaseUrl,
+                AuthHeader = definition.DirectHttp.Auth is { Type: var authType, Token: var authToken }
+                    ? $"{authType} {authToken}"
+                    : null
+            }
         };
     }
 
@@ -326,6 +334,7 @@ public sealed class ToolRegistryGrain(
         {
             "mcp" => definition.Mcp?.Server,
             "openapi" => definition.OpenApi?.SpecUrl,
+            "direct_http" => definition.DirectHttp?.BaseUrl,
             _ => null
         };
 
