@@ -49,7 +49,7 @@ jobs:
           echo "- **New release**: v${{ env.VERSION }}" >> $GITHUB_STEP_SUMMARY
 
       - name: Checkout
-        uses: actions/checkout@v4
+        uses: actions/checkout@v6
         with:
           fetch-depth: 0
 
@@ -90,12 +90,12 @@ jobs:
           fi
 
       - name: Generate package provenance
-        uses: actions/attest-build-provenance@v2
+        uses: actions/attest-build-provenance@v4
         with:
           subject-path: 'packages/*.nupkg'
 
       - name: Upload packages
-        uses: actions/upload-artifact@v4
+        uses: actions/upload-artifact@v7
         with:
           name: nuget-packages-v${{ env.VERSION }}
           path: |
@@ -133,7 +133,7 @@ jobs:
 
     steps:
       - name: Checkout
-        uses: actions/checkout@v4
+        uses: actions/checkout@v6
 
       - name: Setup .NET
         uses: ./.github/actions/setup-dotnet
@@ -161,7 +161,7 @@ jobs:
         run: Compress-Archive -Path publish/${{ matrix.rid }}/* -DestinationPath weave-${{ inputs.version }}-${{ matrix.rid }}.zip
 
       - name: Upload artifact
-        uses: actions/upload-artifact@v4
+        uses: actions/upload-artifact@v7
         with:
           name: weave-${{ matrix.rid }}
           path: weave-${{ inputs.version }}-${{ matrix.rid }}.${{ matrix.archive }}
@@ -173,12 +173,12 @@ jobs:
 
     steps:
       - name: Checkout
-        uses: actions/checkout@v4
+        uses: actions/checkout@v6
         with:
           sparse-checkout: scripts
 
       - name: Download all artifacts
-        uses: actions/download-artifact@v4
+        uses: actions/download-artifact@v8
         with:
           path: artifacts
           merge-multiple: true
