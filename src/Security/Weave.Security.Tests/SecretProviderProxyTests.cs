@@ -30,7 +30,7 @@ public sealed class SecretProviderProxyTests
 
         var result = await proxy.ResolveAsync("db-pass", token, TestContext.Current.CancellationToken);
 
-        result.ToString().ShouldBe("s3cret");
+        result.DecryptToString().ShouldBe("s3cret");
     }
 
     [Fact]
@@ -48,7 +48,7 @@ public sealed class SecretProviderProxyTests
         var token = MintToken();
         var result = await proxy.ResolveAsync("db-pass", token, TestContext.Current.CancellationToken);
 
-        result.ToString().ShouldBe("override-value");
+        result.DecryptToString().ShouldBe("override-value");
     }
 
     [Fact]
@@ -65,7 +65,7 @@ public sealed class SecretProviderProxyTests
         var token = MintToken();
         var result = await proxy.ResolveAsync("db-pass", token, TestContext.Current.CancellationToken);
 
-        result.ToString().ShouldBe("fallback-value");
+        result.DecryptToString().ShouldBe("fallback-value");
     }
 
     [Fact]
@@ -111,7 +111,7 @@ public sealed class SecretProviderProxyTests
         _broker.Swap<ISecretProvider>(first);
 
         var result1 = await proxy.ResolveAsync("key", token, TestContext.Current.CancellationToken);
-        result1.ToString().ShouldBe("first");
+        result1.DecryptToString().ShouldBe("first");
 
         var second = Substitute.For<ISecretProvider>();
         second.ResolveAsync("key", Arg.Any<CapabilityToken>(), Arg.Any<CancellationToken>())
@@ -119,7 +119,7 @@ public sealed class SecretProviderProxyTests
         _broker.Swap<ISecretProvider>(second);
 
         var result2 = await proxy.ResolveAsync("key", token, TestContext.Current.CancellationToken);
-        result2.ToString().ShouldBe("second");
+        result2.DecryptToString().ShouldBe("second");
     }
 
     [Fact]
@@ -135,6 +135,6 @@ public sealed class SecretProviderProxyTests
         _broker.Swap<ISecretProvider>(null);
 
         var result = await proxy.ResolveAsync("key", token, TestContext.Current.CancellationToken);
-        result.ToString().ShouldBe("fallback");
+        result.DecryptToString().ShouldBe("fallback");
     }
 }
