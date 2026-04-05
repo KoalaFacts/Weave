@@ -17,7 +17,7 @@ public static class ToolInvocationBuilder
                 {
                     var method = "invoke";
                     string? rawInput = null;
-                    var parameters = new Dictionary<string, string>();
+                    var parameters = new Dictionary<string, string>(StringComparer.Ordinal);
 
                     foreach (var property in doc.RootElement.EnumerateObject())
                     {
@@ -32,7 +32,7 @@ public static class ToolInvocationBuilder
                         else
                         {
                             parameters[property.Name] = property.Value.ValueKind == JsonValueKind.String
-                                ? property.Value.GetString()!
+                                ? property.Value.GetString() ?? string.Empty
                                 : property.Value.GetRawText();
                         }
                     }
