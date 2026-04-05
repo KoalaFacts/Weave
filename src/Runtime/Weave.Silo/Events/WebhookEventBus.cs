@@ -17,12 +17,9 @@ namespace Weave.Silo.Events;
 public sealed partial class WebhookEventBus(
     HttpClient httpClient,
     Uri webhookUrl,
-    ILogger<WebhookEventBus> logger) : IEventBus, IDisposable
+    ILogger<WebhookEventBus> logger) : IEventBus
 {
     private readonly ConcurrentDictionary<Type, List<Delegate>> _handlers = new();
-
-    // HttpClient lifetime is owned by IHttpClientFactory; do not dispose.
-    void IDisposable.Dispose() { }
 
     public async Task PublishAsync<TEvent>(TEvent domainEvent, CancellationToken ct) where TEvent : IDomainEvent
     {
