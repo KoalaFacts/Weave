@@ -1,4 +1,3 @@
-using Microsoft.Extensions.AI;
 using Microsoft.Extensions.Logging;
 using Weave.Agents.Grains;
 using Weave.Agents.Models;
@@ -44,15 +43,13 @@ public sealed class AgentGrainTests
     private static (AgentGrain Grain, ILifecycleManager Lifecycle, IEventBus EventBus) CreateGrain()
     {
         var grainFactory = Substitute.For<IGrainFactory>();
-        var chatClientFactory = Substitute.For<IAgentChatClientFactory>();
+        var chatPipeline = Substitute.For<IAgentChatPipeline>();
         var lifecycle = Substitute.For<ILifecycleManager>();
         var eventBus = Substitute.For<IEventBus>();
         var logger = Substitute.For<ILogger<AgentGrain>>();
-        chatClientFactory.Create(Arg.Any<string>(), Arg.Any<string?>())
-            .Returns(Substitute.For<IChatClient>());
         var persistentState = CreatePersistentState();
 
-        var grain = new AgentGrain(grainFactory, chatClientFactory, lifecycle, eventBus, logger, persistentState);
+        var grain = new AgentGrain(grainFactory, chatPipeline, lifecycle, eventBus, logger, persistentState);
         return (grain, lifecycle, eventBus);
     }
 

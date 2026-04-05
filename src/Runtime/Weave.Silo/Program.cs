@@ -82,6 +82,7 @@ builder.Services.AddSingleton<ISecretProvider>(sp =>
 // Agent chat pipeline
 builder.Services.AddSingleton<IAgentCostLedger, AgentCostLedger>();
 builder.Services.AddSingleton<IAgentChatClientFactory, AgentChatClientFactory>();
+builder.Services.AddTransient<IAgentChatPipeline, AgentChatPipeline>();
 
 // Tool connectors and discovery
 builder.Services.AddSingleton<IToolConnector, McpToolConnector>();
