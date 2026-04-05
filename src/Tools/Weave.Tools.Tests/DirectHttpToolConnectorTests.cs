@@ -228,4 +228,187 @@ public sealed class DirectHttpToolConnectorTests
         schema.Description.ShouldContain("my-tool");
         schema.Parameters.ShouldNotBeEmpty();
     }
+
+    // --- InvokeAsync with mock HTTP: success ---
+
+    [Fact]
+    public async Task InvokeAsync_SuccessfulResponse_ReturnsOutput()
+    {
+        var handler = new StubHandler("""{"result":"ok"}""");
+        var connector = CreateConnector(new HttpClient(handler));
+        var spec = new ToolSpec
+        {
+            Name = "api",
+            Type = ToolType.DirectHttp,
+            DirectHttp = new DirectHttpToolConfig { BaseUrl = "http://api.local:8080" }
+        };
+
+        var handle = await connector.ConnectAsync(spec, _testToken, TestContext.Current.CancellationToken);
+        var invocation = new ToolInvocation
+        {
+            ToolName = "api",
+            Method = "health",
+            Parameters = new Dictionary<string, string> { ["check"] = "true" }
+        };
+
+        var result = await connector.InvokeAsync(handle, invocation, TestContext.Current.CancellationToken);
+
+        result.Success.ShouldBeTrue();
+        result.Output.ShouldContain("ok");
+        result.Duration.ShouldBeGreaterThan(TimeSpan.Zero);
+    }
+
+    [Fact]
+    public async Task InvokeAsync_CallsCorrectUrl()
+    {
+        var handler = new StubHandler("{}");
+        var connector = CreateConnector(new HttpClient(handler));
+        var spec = new ToolSpec
+        {
+            Name = "api",
+            Type = ToolType.DirectHttp,
+            DirectHttp = new DirectHttpToolConfig { BaseUrl = "http://api.local:8080" }
+        };
+
+        var handle = await connector.ConnectAsync(spec, _testToken, TestContext.Current.CancellationToken);
+        var invocation = new ToolInvocation { ToolName = "api", Method = "users/list", Parameters = [] };
+
+        await connector.InvokeAsync(handle, invocation, TestContext.Current.CancellationToken);
+
+        handler.LastRequestUri.ShouldNotBeNull();
+        handler.LastRequestUri!.AbsoluteUri.ShouldBe("http://api.local:8080/users/list");
+    }
+
+    [Fact]
+    public async Task InvokeAsync_WithAuth_SendsAuthHeader()
+    {
+        var handler = new StubHandler("{}");
+        var connector = CreateConnector(new HttpClient(handler));
+        var spec = new ToolSpec
+        {
+            Name = "api",
+            Type = ToolType.DirectHttp,
+            DirectHttp = new DirectHttpToolConfig
+            {
+                BaseUrl = "http://api.local:8080",
+                AuthHeader = "Bearer my-secret-token"
+            }
+        };
+
+        var handle = await connector.ConnectAsync(spec, _testToken, TestContext.Current.CancellationToken);
+        var invocation = new ToolInvocation { ToolName = "api", Method = "data", Parameters = [] };
+
+        await connector.InvokeAsync(handle, invocation, TestContext.Current.CancellationToken);
+
+        handler.LastAuthorizationHeader.ShouldBe("Bearer my-secret-token");
+    }
+
+    [Fact]
+    public async Task InvokeAsync_ServerError_ReturnsFailure()
+    {
+        var handler = new StubHandler("error", System.Net.HttpStatusCode.InternalServerError);
+        var connector = CreateConnector(new HttpClient(handler));
+        var spec = new ToolSpec
+        {
+            Name = "api",
+            Type = ToolType.DirectHttp,
+            DirectHttp = new DirectHttpToolConfig { BaseUrl = "http://api.local:8080" }
+        };
+
+        var handle = await connector.ConnectAsync(spec, _testToken, TestContext.Current.CancellationToken);
+        var invocation = new ToolInvocation { ToolName = "api", Method = "fail", Parameters = [] };
+
+        var result = await connector.InvokeAsync(handle, invocation, TestContext.Current.CancellationToken);
+
+        result.Success.ShouldBeFalse();
+        result.Error.ShouldNotBeNull();
+    }
+
+    [Fact]
+    public async Task InvokeAsync_PostsJsonBody()
+    {
+        var handler = new StubHandler("{}");
+        var connector = CreateConnector(new HttpClient(handler));
+        var spec = new ToolSpec
+        {
+            Name = "api",
+            Type = ToolType.DirectHttp,
+            DirectHttp = new DirectHttpToolConfig { BaseUrl = "http://api.local:8080" }
+        };
+
+        var handle = await connector.ConnectAsync(spec, _testToken, TestContext.Current.CancellationToken);
+        var invocation = new ToolInvocation
+        {
+            ToolName = "api",
+            Method = "submit",
+            Parameters = new Dictionary<string, string> { ["name"] = "test" }
+        };
+
+        await connector.InvokeAsync(handle, invocation, TestContext.Current.CancellationToken);
+
+        handler.LastMethod.ShouldBe(HttpMethod.Post);
+        handler.LastContentType.ShouldBe("application/json");
+        handler.LastRequestBody.ShouldNotBeNull();
+        handler.LastRequestBody.ShouldContain("test");
+    }
+
+    [Fact]
+    public async Task DisconnectAsync_RemovesAuth_SubsequentInvokeHasNoAuth()
+    {
+        var handler = new StubHandler("{}");
+        var connector = CreateConnector(new HttpClient(handler));
+
+        // Connect with auth
+        var spec = new ToolSpec
+        {
+            Name = "api",
+            Type = ToolType.DirectHttp,
+            DirectHttp = new DirectHttpToolConfig
+            {
+                BaseUrl = "http://api.local:8080",
+                AuthHeader = "Bearer secret"
+            }
+        };
+        var handle = await connector.ConnectAsync(spec, _testToken, TestContext.Current.CancellationToken);
+        await connector.DisconnectAsync(handle, TestContext.Current.CancellationToken);
+
+        // Reconnect without auth
+        var spec2 = new ToolSpec
+        {
+            Name = "api",
+            Type = ToolType.DirectHttp,
+            DirectHttp = new DirectHttpToolConfig { BaseUrl = "http://api.local:8080" }
+        };
+        var handle2 = await connector.ConnectAsync(spec2, _testToken, TestContext.Current.CancellationToken);
+        var invocation = new ToolInvocation { ToolName = "api", Method = "ping", Parameters = [] };
+
+        await connector.InvokeAsync(handle2, invocation, TestContext.Current.CancellationToken);
+
+        handler.LastAuthorizationHeader.ShouldBeNull();
+    }
+
+    // --- Stub handler ---
+
+    private sealed class StubHandler(string responseBody, System.Net.HttpStatusCode statusCode = System.Net.HttpStatusCode.OK) : HttpMessageHandler
+    {
+        public Uri? LastRequestUri { get; private set; }
+        public HttpMethod? LastMethod { get; private set; }
+        public string? LastAuthorizationHeader { get; private set; }
+        public string? LastContentType { get; private set; }
+        public string? LastRequestBody { get; private set; }
+
+        protected override async Task<HttpResponseMessage> SendAsync(HttpRequestMessage request, CancellationToken ct)
+        {
+            LastRequestUri = request.RequestUri;
+            LastMethod = request.Method;
+            LastAuthorizationHeader = request.Headers.Authorization?.ToString();
+            LastContentType = request.Content?.Headers.ContentType?.MediaType;
+            if (request.Content is not null)
+                LastRequestBody = await request.Content.ReadAsStringAsync(ct);
+            return new HttpResponseMessage(statusCode)
+            {
+                Content = new System.Net.Http.StringContent(responseBody, System.Text.Encoding.UTF8, "application/json")
+            };
+        }
+    }
 }
