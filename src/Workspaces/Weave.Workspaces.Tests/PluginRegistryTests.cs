@@ -290,7 +290,9 @@ public sealed class PluginRegistryTests
     {
         var schema = new PluginSchema
         {
-            Type = "test", Description = "test", Provides = [],
+            Type = "test",
+            Description = "test",
+            Provides = [],
             Config = [new() { Name = "timeout", Description = "Timeout", Default = "30" }]
         };
 
@@ -305,7 +307,9 @@ public sealed class PluginRegistryTests
     {
         var schema = new PluginSchema
         {
-            Type = "test", Description = "test", Provides = [],
+            Type = "test",
+            Description = "test",
+            Provides = [],
             Config = [new() { Name = "timeout", Description = "Timeout", Default = "30" }]
         };
 
@@ -328,7 +332,9 @@ public sealed class PluginRegistryTests
             Environment.SetEnvironmentVariable(envKey, "from-env");
             var schema = new PluginSchema
             {
-                Type = "test", Description = "test", Provides = [],
+                Type = "test",
+                Description = "test",
+                Provides = [],
                 Config = [new() { Name = "addr", Description = "Address", EnvVar = envKey }]
             };
 
@@ -352,7 +358,9 @@ public sealed class PluginRegistryTests
             Environment.SetEnvironmentVariable(envKey, "from-env");
             var schema = new PluginSchema
             {
-                Type = "test", Description = "test", Provides = [],
+                Type = "test",
+                Description = "test",
+                Provides = [],
                 Config = [new() { Name = "addr", Description = "Address", EnvVar = envKey }]
             };
 
@@ -376,7 +384,9 @@ public sealed class PluginRegistryTests
     {
         var schema = new PluginSchema
         {
-            Type = "test", Description = "test", Provides = [],
+            Type = "test",
+            Description = "test",
+            Provides = [],
             Config = [new() { Name = "url", Description = "URL", Required = true }]
         };
 
@@ -392,7 +402,9 @@ public sealed class PluginRegistryTests
     {
         var schema = new PluginSchema
         {
-            Type = "test", Description = "test", Provides = [],
+            Type = "test",
+            Description = "test",
+            Provides = [],
             Config = [new() { Name = "url", Description = "URL", Required = true }]
         };
 
@@ -411,7 +423,9 @@ public sealed class PluginRegistryTests
     {
         var schema = new PluginSchema
         {
-            Type = "test", Description = "test", Provides = [],
+            Type = "test",
+            Description = "test",
+            Provides = [],
             Config = [new() { Name = "addr", Description = "Address", Required = true, EnvVar = "MY_ADDR" }]
         };
 
@@ -435,7 +449,10 @@ public sealed class PluginRegistryTests
 
         public PluginSchema Schema { get; } = schema ?? new()
         {
-            Type = type, Description = $"Fake {type}", Provides = [], Config = []
+            Type = type,
+            Description = $"Fake {type}",
+            Provides = [],
+            Config = []
         };
 
         public Task<PluginStatus> ConnectAsync(string name, PluginDefinition definition) =>
@@ -463,7 +480,10 @@ public sealed class PluginRegistryTests
 
         public PluginSchema Schema { get; } = new()
         {
-            Type = type, Description = $"Throwing {type}", Provides = [], Config = []
+            Type = type,
+            Description = $"Throwing {type}",
+            Provides = [],
+            Config = []
         };
 
         public Task<PluginStatus> ConnectAsync(string name, PluginDefinition definition) =>

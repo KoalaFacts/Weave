@@ -27,10 +27,10 @@ internal static class WorkspaceNewCommand
             if (preset is not null)
             {
                 if (!WorkspacePresets.All.TryGetValue(preset, out var presetDef))
-                    {
-                        CliTheme.WriteError($"Unknown preset '{preset}'. Use 'weave workspace presets' to see available options.");
-                        return 1;
-                    }
+                {
+                    CliTheme.WriteError($"Unknown preset '{preset}'. Use 'weave workspace presets' to see available options.");
+                    return 1;
+                }
 
                 model = presetDef.Model;
                 tools = [.. presetDef.Tools];

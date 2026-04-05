@@ -25,7 +25,8 @@ public sealed class CqrsRegistrationGenerator : IIncrementalGenerator
 
         context.RegisterSourceOutput(handlers, static (spc, list) =>
         {
-            if (list.IsEmpty) return;
+            if (list.IsEmpty)
+                return;
             spc.AddSource("GeneratedCqrsRegistration.g.cs", SourceText.From(GenerateSource(list), Encoding.UTF8));
         });
     }
@@ -67,7 +68,8 @@ public sealed class CqrsRegistrationGenerator : IIncrementalGenerator
 
             foreach (var iface in type.AllInterfaces)
             {
-                if (!iface.IsGenericType) continue;
+                if (!iface.IsGenericType)
+                    continue;
                 var original = iface.OriginalDefinition;
 
                 if ((commandHandler is not null && SymbolEqualityComparer.Default.Equals(original, commandHandler))

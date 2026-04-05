@@ -4,11 +4,11 @@ using Weave.Security.Proxy;
 using Weave.Security.Scanning;
 using Weave.Security.Tokens;
 using Weave.Security.Vault;
+using Weave.ServiceDefaults;
 using Weave.Shared.Cqrs;
 using Weave.Shared.Events;
 using Weave.Shared.Lifecycle;
 using Weave.Shared.Plugins;
-using Weave.ServiceDefaults;
 using Weave.Silo.Api;
 using Weave.Silo.Plugins;
 using Weave.Tools.Connectors;
@@ -138,7 +138,8 @@ if (vaultAddress is not null)
 {
     var vaultConfig = new Dictionary<string, string> { ["address"] = vaultAddress };
     var vaultToken = builder.Configuration["Vault:Token"];
-    if (vaultToken is not null) vaultConfig["token"] = vaultToken;
+    if (vaultToken is not null)
+        vaultConfig["token"] = vaultToken;
 
     await pluginRegistry.ConnectAsync("vault", new PluginDefinition
     {

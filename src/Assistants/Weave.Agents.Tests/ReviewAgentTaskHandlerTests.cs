@@ -50,9 +50,9 @@ public sealed class ReviewAgentTaskHandlerTests
         result.TaskId.ShouldBe(TestTaskId);
         result.Status.ShouldBe(AgentTaskStatus.Accepted);
         result.Proof.ShouldNotBeNull();
-        #pragma warning disable xUnit1051
+#pragma warning disable xUnit1051
         await agentGrain.Received(1).ReviewTaskAsync(TestTaskId, true, "LGTM");
-        #pragma warning restore xUnit1051
+#pragma warning restore xUnit1051
     }
 
     [Fact]
@@ -92,8 +92,8 @@ public sealed class ReviewAgentTaskHandlerTests
         var result = await handler.HandleAsync(command, CancellationToken.None);
 
         result.Status.ShouldBe(AgentTaskStatus.Rejected);
-        #pragma warning disable xUnit1051
+#pragma warning disable xUnit1051
         await agentGrain.Received(1).ReviewTaskAsync(TestTaskId, false, "Tests failing");
-        #pragma warning restore xUnit1051
+#pragma warning restore xUnit1051
     }
 }

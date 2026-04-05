@@ -75,13 +75,13 @@ public sealed class ProofVerifierGrainTests
 
         await verifier.VerifyAsync(TestWorkspaceId, "researcher", TestTaskId, proof);
 
-        #pragma warning disable xUnit1051
+#pragma warning disable xUnit1051
         await agentGrain.Received(1).ReviewTaskAsync(
             TestTaskId,
             true,
             Arg.Is<string>(s => s.Contains("2/2")),
             Arg.Is<VerificationRecord>(v => v.Accepted && v.Votes.Count == 2));
-        #pragma warning restore xUnit1051
+#pragma warning restore xUnit1051
     }
 
     [Fact]
@@ -106,13 +106,13 @@ public sealed class ProofVerifierGrainTests
 
         await verifier.VerifyAsync(TestWorkspaceId, "researcher", TestTaskId, proof);
 
-        #pragma warning disable xUnit1051
+#pragma warning disable xUnit1051
         await agentGrain.Received(1).ReviewTaskAsync(
             TestTaskId,
             false,
             Arg.Is<string>(s => s.Contains("0/2")),
             Arg.Is<VerificationRecord>(v => !v.Accepted));
-        #pragma warning restore xUnit1051
+#pragma warning restore xUnit1051
     }
 
     [Fact]
@@ -138,13 +138,13 @@ public sealed class ProofVerifierGrainTests
 
         await verifier.VerifyAsync(TestWorkspaceId, "researcher", TestTaskId, proof);
 
-        #pragma warning disable xUnit1051
+#pragma warning disable xUnit1051
         await agentGrain.Received(1).ReviewTaskAsync(
             TestTaskId,
             true,
             Arg.Is<string>(s => s.Contains("2/3")),
             Arg.Is<VerificationRecord>(v => v.Accepted && v.ConsensusReached));
-        #pragma warning restore xUnit1051
+#pragma warning restore xUnit1051
     }
 
     [Fact]
@@ -180,7 +180,7 @@ public sealed class ProofVerifierGrainTests
 
         await verifier.VerifyAsync(TestWorkspaceId, "researcher", TestTaskId, proof);
 
-        #pragma warning disable xUnit1051
+#pragma warning disable xUnit1051
         await agentGrain.Received(1).ReviewTaskAsync(
             TestTaskId,
             true,
@@ -189,7 +189,7 @@ public sealed class ProofVerifierGrainTests
                 v.Votes.Count == 2 &&
                 v.RequiredVotes == 2 &&
                 v.ConsensusReached));
-        #pragma warning restore xUnit1051
+#pragma warning restore xUnit1051
     }
 
     [Fact]
@@ -272,13 +272,13 @@ public sealed class ProofVerifierGrainTests
 
         await verifier.VerifyAsync(TestWorkspaceId, "researcher", TestTaskId, proof);
 
-        #pragma warning disable xUnit1051
+#pragma warning disable xUnit1051
         await agentGrain.Received(1).ReviewTaskAsync(
             TestTaskId,
             true,
             Arg.Is<string>(s => s.Contains("5/5")),
             Arg.Is<VerificationRecord>(v => v.Votes.Count == 5));
-        #pragma warning restore xUnit1051
+#pragma warning restore xUnit1051
     }
 
     [Fact]

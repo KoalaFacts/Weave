@@ -14,7 +14,8 @@ public sealed partial class InProcessEventBus(ILogger<InProcessEventBus> logger)
 
         // Snapshot under lock to avoid race with concurrent Subscribe/Unsubscribe
         Delegate[] snapshot;
-        lock (handlers) { snapshot = [.. handlers]; }
+        lock (handlers)
+        { snapshot = [.. handlers]; }
         foreach (var handler in snapshot)
         {
             try

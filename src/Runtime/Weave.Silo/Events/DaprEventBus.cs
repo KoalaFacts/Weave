@@ -40,17 +40,20 @@ public sealed partial class DaprEventBus(
     public IDisposable Subscribe<TEvent>(Func<TEvent, CancellationToken, Task> handler) where TEvent : IDomainEvent
     {
         var handlers = _handlers.GetOrAdd(typeof(TEvent), _ => []);
-        lock (handlers) { handlers.Add(handler); }
+        lock (handlers)
+        { handlers.Add(handler); }
         return new Subscription(() => { lock (handlers) { handlers.Remove(handler); } });
     }
 
     private async Task DispatchLocalAsync<TEvent>(TEvent domainEvent, CancellationToken ct) where TEvent : IDomainEvent
     {
-        if (!_handlers.TryGetValue(typeof(TEvent), out var handlers)) return;
+        if (!_handlers.TryGetValue(typeof(TEvent), out var handlers))
+            return;
         var snapshot = handlers.ToArray();
         foreach (var handler in snapshot)
         {
-            try { await ((Func<TEvent, CancellationToken, Task>)handler)(domainEvent, ct); }
+            try
+            { await ((Func<TEvent, CancellationToken, Task>)handler)(domainEvent, ct); }
             catch (Exception ex) { LogEventHandlerError(ex, typeof(TEvent).Name, domainEvent.EventId); }
         }
     }

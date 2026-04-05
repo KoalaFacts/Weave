@@ -70,9 +70,11 @@ public sealed partial class ToolDiscoveryService : IToolDiscoveryService
         lock (_lock)
         {
             removed = _dynamic.Remove(type);
-            if (removed) _cachedTypes = null;
+            if (removed)
+                _cachedTypes = null;
         }
-        if (removed) LogConnectorUnregistered(type);
+        if (removed)
+            LogConnectorUnregistered(type);
         return removed;
     }
 

@@ -92,7 +92,8 @@ internal static class WorkspaceAddPluginCommand
                     new TextPrompt<string>("Description (optional):")
                         .Styled()
                         .AllowEmpty());
-                if (string.IsNullOrWhiteSpace(description)) description = null;
+                if (string.IsNullOrWhiteSpace(description))
+                    description = null;
 
                 config = [];
                 while (AnsiConsole.Confirm("Add a config value?", false))

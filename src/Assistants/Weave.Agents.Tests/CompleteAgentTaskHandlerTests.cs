@@ -51,9 +51,9 @@ public sealed class CompleteAgentTaskHandlerTests
         result.TaskId.ShouldBe(TestTaskId);
         result.Status.ShouldBe(AgentTaskStatus.AwaitingReview);
         result.Proof.ShouldNotBeNull();
-        #pragma warning disable xUnit1051
+#pragma warning disable xUnit1051
         await agentGrain.Received(1).CompleteTaskAsync(TestTaskId, true, proof);
-        #pragma warning restore xUnit1051
+#pragma warning restore xUnit1051
     }
 
     [Fact]
@@ -89,9 +89,9 @@ public sealed class CompleteAgentTaskHandlerTests
         var result = await handler.HandleAsync(command, CancellationToken.None);
 
         result.Status.ShouldBe(AgentTaskStatus.Failed);
-        #pragma warning disable xUnit1051
+#pragma warning disable xUnit1051
         await agentGrain.Received(1).CompleteTaskAsync(TestTaskId, false, proof);
-        #pragma warning restore xUnit1051
+#pragma warning restore xUnit1051
     }
 
     [Fact]
@@ -137,8 +137,8 @@ public sealed class CompleteAgentTaskHandlerTests
         result.Status.ShouldBe(AgentTaskStatus.AwaitingReview);
         result.Proof.ShouldNotBeNull();
         result.Proof.Items.Count.ShouldBe(2);
-        #pragma warning disable xUnit1051
+#pragma warning disable xUnit1051
         await agentGrain.Received(1).CompleteTaskAsync(TestTaskId, true, proof);
-        #pragma warning restore xUnit1051
+#pragma warning restore xUnit1051
     }
 }

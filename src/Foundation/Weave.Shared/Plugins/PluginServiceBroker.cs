@@ -61,7 +61,8 @@ public sealed partial class PluginServiceBroker(ILogger<PluginServiceBroker> log
             if (_swapCallbacks.TryGetValue(typeof(T), out var callbacks))
             {
                 Action[] snapshot;
-                lock (callbacks) { snapshot = [.. callbacks]; }
+                lock (callbacks)
+                { snapshot = [.. callbacks]; }
                 foreach (var callback in snapshot)
                     callback();
             }
