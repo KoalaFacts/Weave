@@ -7,7 +7,7 @@ namespace Weave.Tools.Tests;
 
 public sealed class DirectHttpToolConnectorTests
 {
-    private static readonly CapabilityToken TestToken = new()
+    private static readonly CapabilityToken _testToken = new()
     {
         TokenId = "test-token",
         WorkspaceId = "ws-1",
@@ -28,7 +28,7 @@ public sealed class DirectHttpToolConnectorTests
             DirectHttp = new DirectHttpToolConfig { BaseUrl = "http://localhost:8080" }
         };
 
-        var handle = await connector.ConnectAsync(spec, TestToken, TestContext.Current.CancellationToken);
+        var handle = await connector.ConnectAsync(spec, _testToken, TestContext.Current.CancellationToken);
 
         handle.IsConnected.ShouldBeTrue();
         handle.ToolName.ShouldBe("my-api");
@@ -43,7 +43,7 @@ public sealed class DirectHttpToolConnectorTests
         var spec = new ToolSpec { Name = "bad", Type = ToolType.DirectHttp };
 
         await Should.ThrowAsync<InvalidOperationException>(
-            () => connector.ConnectAsync(spec, TestToken));
+            () => connector.ConnectAsync(spec, _testToken));
     }
 
     [Fact]
@@ -58,7 +58,7 @@ public sealed class DirectHttpToolConnectorTests
         };
 
         await Should.ThrowAsync<InvalidOperationException>(
-            () => connector.ConnectAsync(spec, TestToken));
+            () => connector.ConnectAsync(spec, _testToken));
     }
 
     [Fact]
@@ -155,7 +155,7 @@ public sealed class DirectHttpToolConnectorTests
             }
         };
 
-        var handle = await connector.ConnectAsync(spec, TestToken, TestContext.Current.CancellationToken);
+        var handle = await connector.ConnectAsync(spec, _testToken, TestContext.Current.CancellationToken);
 
         handle.IsConnected.ShouldBeTrue();
     }
@@ -175,7 +175,7 @@ public sealed class DirectHttpToolConnectorTests
             }
         };
 
-        var handle = await connector.ConnectAsync(spec, TestToken, TestContext.Current.CancellationToken);
+        var handle = await connector.ConnectAsync(spec, _testToken, TestContext.Current.CancellationToken);
         await connector.DisconnectAsync(handle, TestContext.Current.CancellationToken);
 
         // Reconnect same tool without auth — old header should be gone
@@ -185,7 +185,7 @@ public sealed class DirectHttpToolConnectorTests
             Type = ToolType.DirectHttp,
             DirectHttp = new DirectHttpToolConfig { BaseUrl = "http://localhost:8080" }
         };
-        var handle2 = await connector.ConnectAsync(specNoAuth, TestToken, TestContext.Current.CancellationToken);
+        var handle2 = await connector.ConnectAsync(specNoAuth, _testToken, TestContext.Current.CancellationToken);
         handle2.IsConnected.ShouldBeTrue();
     }
 
