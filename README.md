@@ -1,23 +1,30 @@
 # Weave
 
-Weave lets you set up AI assistants that can use tools on your behalf — with guardrails you control. Define what an assistant can do, which tools it can access, and how your data stays protected. Then run it all locally with one command.
+[![CI](https://github.com/KoalaFacts/Weave/actions/workflows/ci.yml/badge.svg)](https://github.com/KoalaFacts/Weave/actions/workflows/ci.yml)
+
+**Security-first AI agent orchestration for .NET.** Define assistants, lock down their tools with capability tokens, and keep secrets from leaking — all from a single manifest file. Runs locally with one command.
+
+Most agent frameworks give your AI unrestricted access and hope for the best. Weave starts from the opposite assumption: assistants get *only* the capabilities you explicitly grant, secrets are proxied and scanned for leaks, and every tool call goes through a security boundary you control.
+
+## How Weave Is Different
+
+| | Other agent frameworks | Weave |
+|---|---|---|
+| **Security model** | Bolt-on, if any | Capability tokens, secret proxying, leak scanning built in |
+| **Secret handling** | Pass API keys directly to the model | Secrets never reach the model — proxied and redacted by default |
+| **Tool access** | Allow-all or manual prompt engineering | Explicit allow/deny lists with wildcard patterns |
+| **Architecture** | Single-process, in-memory | Orleans grain-based — each agent, tool, and workspace is an independent, recoverable actor |
+| **Configuration** | Code-heavy setup | One JSONC manifest defines everything |
+| **Runtime** | Cloud-only or single-machine | Local-first, scales to Kubernetes when you need it |
 
 ## Why Weave
 
 - **Get started in minutes** — install, pick a preset, and you have a working setup.
 - **You stay in control** — decide exactly which tools your assistants can use and what they are allowed to do.
-- **Your data stays yours** — secrets and sensitive information are handled with privacy and security first.
+- **Your data stays yours** — secrets are proxied, redacted, and scanned for leaks. They never reach the model directly.
 - **See what is happening** — a live dashboard shows what your assistants are working on at any time.
 - **Reuse what you build** — save your setup once and reuse or share it without starting over.
-- **Grow at your own pace** — everything works locally out of the box. Add more capabilities only when you need them.
-
-## What People Use It For
-
-- **Automate tasks safely** — let an assistant run approved tools (like checking code, searching files, or calling services) without giving it free access to everything.
-- **Keep things private** — passwords, keys, and sensitive settings stay protected and never leak into places they should not be.
-- **Work solo or with a team** — use the same setup whether you are experimenting on your own or sharing it across a group.
-- **See everything in one place** — a dashboard shows you what assistants are doing, what tasks are running, and what has finished.
-- **Try things without risk** — save any setup as a reusable template so you can rerun it or hand it to someone else without redoing the work.
+- **Grow at your own pace** — everything works locally out of the box. Add containers, Vault, or Dapr when you need them.
 
 ## Quick Start
 
@@ -122,7 +129,7 @@ Every command updates the workspace configuration for you. No manual file editin
 | **hooks** | Actions that run automatically at key moments (e.g. on start, on finish). |
 | **targets** | Where the workspace runs — your machine, a server, or a CI pipeline. |
 
-For advanced scenarios you can also edit the configuration file by hand. See the [Manifest Reference](docs/manifest-reference.md) for details.
+For advanced scenarios you can also edit the manifest JSONC file by hand. See the [Manifest Reference](docs/manifest-reference.md) for the full schema.
 
 ## CLI Commands
 
@@ -147,6 +154,13 @@ weave workspace publish <name>      Generate files for deploying elsewhere
 weave workspace presets             Browse ready-made workspace templates
 ```
 
+## Built With
+
+- [.NET 10](https://dotnet.microsoft.com/) and [Orleans](https://learn.microsoft.com/dotnet/orleans/) for the actor-based runtime
+- [Microsoft.Extensions.AI](https://devblogs.microsoft.com/dotnet/introducing-microsoft-extensions-ai-preview/) for model-agnostic AI integration
+- [Aspire](https://learn.microsoft.com/dotnet/aspire/) for local orchestration and observability
+- [Spectre.Console](https://spectreconsole.net/) for the interactive CLI
+
 ## License
 
-MIT or Apache 2.0.
+Licensed under either of [Apache License, Version 2.0](LICENSE-APACHE) or [MIT License](LICENSE-MIT), at your option.
