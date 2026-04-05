@@ -13,16 +13,50 @@ public static class AgentEndpoints
         var group = routes.MapGroup("/api/workspaces/{workspaceId}/agents")
             .WithTags("Agents");
 
-        group.MapGet("/", GetAllAgents);
-        group.MapGet("/{agentName}", GetAgent);
-        group.MapPost("/{agentName}/activate", ActivateAgent);
-        group.MapPost("/{agentName}/deactivate", DeactivateAgent);
-        group.MapPost("/{agentName}/messages", SendMessage);
-        group.MapGet("/{agentName}/tasks", GetTasks);
-        group.MapGet("/{agentName}/tasks/{taskId}", GetTask);
-        group.MapPost("/{agentName}/tasks", SubmitTask);
-        group.MapPost("/{agentName}/tasks/{taskId}/complete", CompleteTask);
-        group.MapPost("/{agentName}/tasks/{taskId}/review", ReviewTask);
+        group.MapGet("/", GetAllAgents)
+            .WithDescription("List all agents in a workspace.")
+            .Produces<IEnumerable<AgentResponse>>();
+        group.MapGet("/{agentName}", GetAgent)
+            .WithDescription("Get a single agent by name.")
+            .Produces<AgentResponse>()
+            .ProducesProblem(404);
+        group.MapPost("/{agentName}/activate", ActivateAgent)
+            .WithDescription("Activate an agent with a definition.")
+            .Produces<AgentResponse>()
+            .ProducesValidationProblem()
+            .ProducesProblem(409);
+        group.MapPost("/{agentName}/deactivate", DeactivateAgent)
+            .WithDescription("Deactivate an agent.")
+            .Produces(204)
+            .ProducesProblem(409);
+        group.MapPost("/{agentName}/messages", SendMessage)
+            .WithDescription("Send a message to an agent and get a response.")
+            .Produces<AgentChatResponse>()
+            .ProducesValidationProblem()
+            .ProducesProblem(409);
+        group.MapGet("/{agentName}/tasks", GetTasks)
+            .WithDescription("List tasks for an agent. Optionally filter by status (e.g. ?status=awaitingReview).")
+            .Produces<IEnumerable<TaskResponse>>()
+            .ProducesValidationProblem()
+            .ProducesProblem(404);
+        group.MapGet("/{agentName}/tasks/{taskId}", GetTask)
+            .WithDescription("Get a single task by ID.")
+            .Produces<TaskResponse>()
+            .ProducesProblem(404);
+        group.MapPost("/{agentName}/tasks", SubmitTask)
+            .WithDescription("Submit a new task to an agent.")
+            .Produces<TaskResponse>(201)
+            .ProducesValidationProblem()
+            .ProducesProblem(409);
+        group.MapPost("/{agentName}/tasks/{taskId}/complete", CompleteTask)
+            .WithDescription("Complete a task with proof of work.")
+            .Produces<TaskResponse>()
+            .ProducesValidationProblem()
+            .ProducesProblem(409);
+        group.MapPost("/{agentName}/tasks/{taskId}/review", ReviewTask)
+            .WithDescription("Accept or reject a task awaiting review.")
+            .Produces<TaskResponse>()
+            .ProducesProblem(409);
 
         return group;
     }

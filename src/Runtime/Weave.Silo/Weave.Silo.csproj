@@ -11,15 +11,15 @@
     <ProjectReference Include="..\..\Assistants\Weave.Agents\Weave.Agents.csproj" />
     <ProjectReference Include="..\..\Security\Weave.Security\Weave.Security.csproj" />
     <ProjectReference Include="..\..\Tools\Weave.Tools\Weave.Tools.csproj" />
-    <ProjectReference Include="..\..\Foundation\Weave.SourceGen\Weave.SourceGen.csproj"
-                      OutputItemType="Analyzer"
-                      ReferenceOutputAssembly="false" />
+    <ProjectReference Include="..\..\Foundation\Weave.SourceGen\Weave.SourceGen.csproj" OutputItemType="Analyzer" ReferenceOutputAssembly="false" />
   </ItemGroup>
 
   <ItemGroup>
+    <PackageReference Include="Microsoft.AspNetCore.OpenApi" />
     <PackageReference Include="Microsoft.Orleans.Server" />
     <PackageReference Include="Microsoft.Orleans.Persistence.Redis" />
     <PackageReference Include="Microsoft.Orleans.Clustering.Redis" />
+    <PackageReference Include="Scalar.AspNetCore" />
   </ItemGroup>
 
 </Project>

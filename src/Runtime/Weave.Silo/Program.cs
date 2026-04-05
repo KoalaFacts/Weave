@@ -10,6 +10,7 @@ using Weave.Shared.Events;
 using Weave.Shared.Lifecycle;
 using Weave.Shared.Plugins;
 using Microsoft.AspNetCore.Mvc;
+using Scalar.AspNetCore;
 using Weave.Silo.Api;
 using Weave.Silo.Plugins;
 using Weave.Tools.Connectors;
@@ -118,6 +119,7 @@ builder.Services.AddSingleton<IPluginConnector>(sp =>
         sp.GetRequiredService<IHttpClientFactory>(),
         sp.GetRequiredService<ILoggerFactory>()));
 builder.Services.AddSingleton<IPluginRegistry, PluginRegistry>();
+builder.Services.AddOpenApi();
 
 var app = builder.Build();
 
@@ -181,6 +183,10 @@ if (isLocalMode)
 }
 
 app.MapDefaultEndpoints();
+
+// OpenAPI + Scalar
+app.MapOpenApi();
+app.MapScalarApiReference();
 
 // Domain API
 app.MapWorkspaceEndpoints();

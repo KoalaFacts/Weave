@@ -10,10 +10,22 @@ public static class PluginEndpoints
         var group = routes.MapGroup("/api/plugins")
             .WithTags("Plugins");
 
-        group.MapGet("/", GetAllPlugins);
-        group.MapGet("/catalog", GetCatalog);
-        group.MapPost("/", ConnectPlugin);
-        group.MapDelete("/{name}", DisconnectPlugin);
+        group.MapGet("/", GetAllPlugins)
+            .WithDescription("List all connected plugins.")
+            .Produces<IReadOnlyList<PluginStatus>>();
+        group.MapGet("/catalog", GetCatalog)
+            .WithDescription("List available plugin types and their configuration schemas.")
+            .Produces<IReadOnlyList<PluginSchema>>();
+        group.MapPost("/", ConnectPlugin)
+            .WithDescription("Connect a plugin with configuration. Unknown config keys are returned as warnings.")
+            .Produces<ConnectPluginResponse>()
+            .ProducesValidationProblem()
+            .ProducesProblem(409)
+            .ProducesProblem(422);
+        group.MapDelete("/{name}", DisconnectPlugin)
+            .WithDescription("Disconnect a plugin by name.")
+            .Produces<PluginStatus>()
+            .ProducesProblem(404);
 
         return group;
     }

@@ -13,10 +13,22 @@ public static class WorkspaceEndpoints
         var group = routes.MapGroup("/api/workspaces")
             .WithTags("Workspaces");
 
-        group.MapGet("/", GetAllWorkspaces);
-        group.MapPost("/", StartWorkspace);
-        group.MapDelete("/{workspaceId}", StopWorkspace);
-        group.MapGet("/{workspaceId}", GetWorkspaceState);
+        group.MapGet("/", GetAllWorkspaces)
+            .WithDescription("List all workspaces.")
+            .Produces<IEnumerable<WorkspaceResponse>>();
+        group.MapPost("/", StartWorkspace)
+            .WithDescription("Start a new workspace from a manifest.")
+            .Produces<WorkspaceResponse>(201)
+            .ProducesValidationProblem()
+            .ProducesProblem(409);
+        group.MapDelete("/{workspaceId}", StopWorkspace)
+            .WithDescription("Stop a workspace.")
+            .Produces(204)
+            .ProducesProblem(409);
+        group.MapGet("/{workspaceId}", GetWorkspaceState)
+            .WithDescription("Get the current state of a workspace.")
+            .Produces<WorkspaceResponse>()
+            .ProducesProblem(404);
 
         return group;
     }

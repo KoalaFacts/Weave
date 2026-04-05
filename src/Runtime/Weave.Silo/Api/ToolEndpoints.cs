@@ -9,8 +9,13 @@ public static class ToolEndpoints
         var group = routes.MapGroup("/api/workspaces/{workspaceId}/tools")
             .WithTags("Tools");
 
-        group.MapGet("/", GetAllTools);
-        group.MapGet("/{toolName}", GetTool);
+        group.MapGet("/", GetAllTools)
+            .WithDescription("List all tool connections in a workspace.")
+            .Produces<IEnumerable<ToolConnectionResponse>>();
+        group.MapGet("/{toolName}", GetTool)
+            .WithDescription("Get a single tool connection by name.")
+            .Produces<ToolConnectionResponse>()
+            .ProducesProblem(404);
 
         return group;
     }
