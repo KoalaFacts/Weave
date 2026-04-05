@@ -1,5 +1,4 @@
 using System.Collections.Concurrent;
-using System.Text;
 using System.Text.Json;
 using Microsoft.Extensions.Logging;
 using Weave.Shared.Events;
@@ -18,9 +17,12 @@ namespace Weave.Silo.Events;
 public sealed partial class WebhookEventBus(
     HttpClient httpClient,
     Uri webhookUrl,
-    ILogger<WebhookEventBus> logger) : IEventBus
+    ILogger<WebhookEventBus> logger) : IEventBus, IDisposable
 {
     private readonly ConcurrentDictionary<Type, List<Delegate>> _handlers = new();
+
+    // HttpClient lifetime is owned by IHttpClientFactory; do not dispose.
+    void IDisposable.Dispose() { }
 
     public async Task PublishAsync<TEvent>(TEvent domainEvent, CancellationToken ct) where TEvent : IDomainEvent
     {

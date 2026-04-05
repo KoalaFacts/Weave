@@ -12,9 +12,12 @@ namespace Weave.Tools.Connectors;
 /// No sidecar or service mesh required. A lightweight alternative to
 /// <see cref="DaprToolConnector"/> for environments without Dapr.
 /// </summary>
-public sealed partial class DirectHttpToolConnector(HttpClient httpClient, ILogger<DirectHttpToolConnector> logger) : IToolConnector
+public sealed partial class DirectHttpToolConnector(HttpClient httpClient, ILogger<DirectHttpToolConnector> logger) : IToolConnector, IDisposable
 {
     private readonly ConcurrentDictionary<string, string> _authHeaders = new(StringComparer.Ordinal);
+
+    // HttpClient lifetime is owned by IHttpClientFactory; do not dispose.
+    void IDisposable.Dispose() { }
 
     public ToolType ToolType => ToolType.DirectHttp;
 
