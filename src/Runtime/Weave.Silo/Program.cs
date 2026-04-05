@@ -9,6 +9,7 @@ using Weave.Shared.Cqrs;
 using Weave.Shared.Events;
 using Weave.Shared.Lifecycle;
 using Weave.Shared.Plugins;
+using Microsoft.AspNetCore.Mvc;
 using Weave.Silo.Api;
 using Weave.Silo.Plugins;
 using Weave.Tools.Connectors;
@@ -119,6 +120,19 @@ builder.Services.AddSingleton<IPluginConnector>(sp =>
 builder.Services.AddSingleton<IPluginRegistry, PluginRegistry>();
 
 var app = builder.Build();
+
+app.UseExceptionHandler(error => error.Run(async context =>
+{
+    context.Response.StatusCode = 500;
+    context.Response.ContentType = "application/problem+json";
+    var problem = new ProblemDetails
+    {
+        Status = 500,
+        Title = "Internal Server Error",
+        Detail = "An unexpected error occurred."
+    };
+    await context.Response.WriteAsJsonAsync(problem, SiloApiJsonContext.Default.ProblemDetails);
+}));
 
 // --- Activate plugins from workspace manifest or environment ---
 var pluginRegistry = app.Services.GetRequiredService<IPluginRegistry>();
