@@ -10,7 +10,7 @@ namespace Weave.Shared.Plugins;
 /// Uses <see cref="ReaderWriterLockSlim"/>: publishes take a read lock (concurrent),
 /// swaps take a write lock (exclusive, waits for in-flight publishes to drain).
 /// </summary>
-public sealed class EventBusProxy : IEventBus
+public sealed class EventBusProxy : IEventBus, IDisposable
 {
     private readonly PluginServiceBroker _broker;
     private readonly InProcessEventBus _fallback;
@@ -105,6 +105,8 @@ public sealed class EventBusProxy : IEventBus
             _rwLock.ExitWriteLock();
         }
     }
+
+    public void Dispose() => _rwLock.Dispose();
 
     private sealed class SubscriptionRecord(
         Func<IEventBus, IDisposable> subscribeFactory,
