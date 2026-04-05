@@ -18,6 +18,8 @@ public static class AgentEndpoints
         group.MapPost("/{agentName}/activate", ActivateAgent);
         group.MapPost("/{agentName}/deactivate", DeactivateAgent);
         group.MapPost("/{agentName}/messages", SendMessage);
+        group.MapGet("/{agentName}/tasks", GetTasks);
+        group.MapGet("/{agentName}/tasks/{taskId}", GetTask);
         group.MapPost("/{agentName}/tasks", SubmitTask);
         group.MapPost("/{agentName}/tasks/{taskId}/complete", CompleteTask);
         group.MapPost("/{agentName}/tasks/{taskId}/review", ReviewTask);
@@ -47,6 +49,53 @@ public static class AgentEndpoints
             return ResultExtensions.NotFound($"Agent '{agentName}' not found in workspace '{workspaceId}'.");
 
         return Results.Ok(AgentResponse.FromState(state));
+    }
+
+    private static async Task<IResult> GetTasks(
+        string workspaceId,
+        string agentName,
+        string? status,
+        IQueryDispatcher dispatcher,
+        CancellationToken ct)
+    {
+        var query = new GetAgentStateQuery(WorkspaceId.From(workspaceId), agentName);
+        var state = await dispatcher.DispatchAsync<GetAgentStateQuery, AgentState>(query, ct);
+        if (string.IsNullOrWhiteSpace(state.AgentId))
+            return ResultExtensions.NotFound($"Agent '{agentName}' not found in workspace '{workspaceId}'.");
+
+        IEnumerable<AgentTaskInfo> tasks = state.ActiveTasks;
+
+        if (!string.IsNullOrWhiteSpace(status))
+        {
+            if (!Enum.TryParse<AgentTaskStatus>(status, ignoreCase: true, out var parsed))
+                return ResultExtensions.ValidationFailed(new Dictionary<string, string[]>
+                {
+                    ["status"] = [$"'{status}' is not a valid task status."]
+                });
+
+            tasks = tasks.Where(t => t.Status == parsed);
+        }
+
+        return Results.Ok(tasks.Select(TaskResponse.FromInfo));
+    }
+
+    private static async Task<IResult> GetTask(
+        string workspaceId,
+        string agentName,
+        string taskId,
+        IQueryDispatcher dispatcher,
+        CancellationToken ct)
+    {
+        var query = new GetAgentStateQuery(WorkspaceId.From(workspaceId), agentName);
+        var state = await dispatcher.DispatchAsync<GetAgentStateQuery, AgentState>(query, ct);
+        if (string.IsNullOrWhiteSpace(state.AgentId))
+            return ResultExtensions.NotFound($"Agent '{agentName}' not found in workspace '{workspaceId}'.");
+
+        var task = state.ActiveTasks.FirstOrDefault(t => t.TaskId == AgentTaskId.From(taskId));
+        if (task is null)
+            return ResultExtensions.NotFound($"Task '{taskId}' not found on agent '{agentName}'.");
+
+        return Results.Ok(TaskResponse.FromInfo(task));
     }
 
     private static async Task<IResult> ActivateAgent(
