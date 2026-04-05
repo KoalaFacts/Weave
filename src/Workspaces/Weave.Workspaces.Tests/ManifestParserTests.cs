@@ -412,4 +412,193 @@ public sealed class ManifestParserTests
         plugin.Description.ShouldBe("Custom API");
         plugin.Config["base_url"].ShouldBe("http://api.local:3000");
     }
+
+    // --- Parse error paths ---
+
+    [Fact]
+    public void Parse_NullInput_Throws()
+    {
+        Should.Throw<ArgumentException>(() => _parser.Parse(null!));
+    }
+
+    [Fact]
+    public void Parse_EmptyString_Throws()
+    {
+        Should.Throw<ArgumentException>(() => _parser.Parse(""));
+    }
+
+    [Fact]
+    public void Parse_WhitespaceOnly_Throws()
+    {
+        Should.Throw<ArgumentException>(() => _parser.Parse("   "));
+    }
+
+    [Fact]
+    public void Parse_InvalidJson_ThrowsJsonException()
+    {
+        Should.Throw<System.Text.Json.JsonException>(() => _parser.Parse("not json"));
+    }
+
+    // --- ParseFile error paths ---
+
+    [Fact]
+    public void ParseFile_NullPath_Throws()
+    {
+        Should.Throw<ArgumentException>(() => _parser.ParseFile(null!));
+    }
+
+    [Fact]
+    public void ParseFile_EmptyPath_Throws()
+    {
+        Should.Throw<ArgumentException>(() => _parser.ParseFile(""));
+    }
+
+    [Fact]
+    public void ParseFile_NonexistentFile_ThrowsIOException()
+    {
+        Should.Throw<IOException>(() => _parser.ParseFile("/nonexistent/path/manifest.json"));
+    }
+
+    // --- Serialize error paths ---
+
+    [Fact]
+    public void Serialize_Null_Throws()
+    {
+        Should.Throw<ArgumentNullException>(() => _parser.Serialize(null!));
+    }
+
+    // --- Validate: agent model missing ---
+
+    [Fact]
+    public void Validate_AgentMissingModel_ReturnsError()
+    {
+        var manifest = new WorkspaceManifest
+        {
+            Version = "1.0",
+            Name = "test",
+            Agents = new Dictionary<string, AgentDefinition>
+            {
+                ["bot"] = new AgentDefinition { Model = "" }
+            }
+        };
+
+        var errors = _parser.Validate(manifest);
+
+        errors.ShouldContain(e => e.Contains("bot") && e.Contains("model"));
+    }
+
+    // --- Validate: heartbeat without cron ---
+
+    [Fact]
+    public void Validate_HeartbeatWithoutCron_ReturnsError()
+    {
+        var manifest = new WorkspaceManifest
+        {
+            Version = "1.0",
+            Name = "test",
+            Agents = new Dictionary<string, AgentDefinition>
+            {
+                ["bot"] = new AgentDefinition
+                {
+                    Model = "gpt-4",
+                    Heartbeat = new HeartbeatConfig { Cron = "" }
+                }
+            }
+        };
+
+        var errors = _parser.Validate(manifest);
+
+        errors.ShouldContain(e => e.Contains("bot") && e.Contains("cron"));
+    }
+
+    // --- Validate: target missing runtime ---
+
+    [Fact]
+    public void Validate_TargetMissingRuntime_ReturnsError()
+    {
+        var manifest = new WorkspaceManifest
+        {
+            Version = "1.0",
+            Name = "test",
+            Targets = new Dictionary<string, TargetDefinition>
+            {
+                ["prod"] = new TargetDefinition { Runtime = "" }
+            }
+        };
+
+        var errors = _parser.Validate(manifest);
+
+        errors.ShouldContain(e => e.Contains("prod") && e.Contains("runtime"));
+    }
+
+    // --- Validate: unsupported version ---
+
+    [Fact]
+    public void Validate_UnsupportedVersion_ReturnsError()
+    {
+        var manifest = new WorkspaceManifest
+        {
+            Version = "2.0",
+            Name = "test"
+        };
+
+        var errors = _parser.Validate(manifest);
+
+        errors.ShouldContain(e => e.Contains("2.0") && e.Contains("1.0"));
+    }
+
+    // --- Validate: missing name ---
+
+    [Fact]
+    public void Validate_MissingName_ReturnsError()
+    {
+        var manifest = new WorkspaceManifest
+        {
+            Version = "1.0",
+            Name = ""
+        };
+
+        var errors = _parser.Validate(manifest);
+
+        errors.ShouldContain(e => e.Contains("name"));
+    }
+
+    // --- Validate: clean manifest ---
+
+    [Fact]
+    public void Validate_CleanManifest_ReturnsNoErrors()
+    {
+        var manifest = new WorkspaceManifest
+        {
+            Version = "1.0",
+            Name = "test",
+            Agents = new Dictionary<string, AgentDefinition>
+            {
+                ["bot"] = new AgentDefinition { Model = "gpt-4", Tools = ["search"] }
+            },
+            Tools = new Dictionary<string, ToolDefinition>
+            {
+                ["search"] = new ToolDefinition { Type = "cli" }
+            }
+        };
+
+        _parser.Validate(manifest).ShouldBeEmpty();
+    }
+
+    // --- Parse: null collections default to empty ---
+
+    [Fact]
+    public void Parse_MinimalManifest_HasEmptyCollections()
+    {
+        var json = """{"version":"1.0","name":"test"}""";
+
+        var manifest = _parser.Parse(json);
+
+        manifest.Agents.ShouldNotBeNull();
+        manifest.Agents.ShouldBeEmpty();
+        manifest.Tools.ShouldNotBeNull();
+        manifest.Tools.ShouldBeEmpty();
+        manifest.Targets.ShouldNotBeNull();
+        manifest.Plugins.ShouldNotBeNull();
+    }
 }

@@ -95,4 +95,100 @@ public sealed class SecretSafeExceptionTests
         ex.Message.ShouldContain("***REDACTED***");
         ex.Message.ShouldNotContain("user:pass123");
     }
+
+    // --- Edge cases ---
+
+    [Fact]
+    public void Constructor_PatternAtEndOfMessage_NoRedaction()
+    {
+        // "password" at end with no separator — nothing to redact
+        var ex = new SecretSafeException("Enter your password");
+
+        ex.Message.ShouldBe("Enter your password");
+    }
+
+    [Fact]
+    public void Constructor_SeparatorAtEndOfMessage_NoRedaction()
+    {
+        // "password=" at end with no value — nothing to redact
+        var ex = new SecretSafeException("password=");
+
+        ex.Message.ShouldBe("password=");
+    }
+
+    [Fact]
+    public void Constructor_ValueAtEndOfMessage_RedactsToEnd()
+    {
+        // Value extends to end of string (no terminator)
+        var ex = new SecretSafeException("password=SuperSecret");
+
+        ex.Message.ShouldContain("***REDACTED***");
+        ex.Message.ShouldNotContain("SuperSecret");
+    }
+
+    [Fact]
+    public void Constructor_CaseInsensitive_RedactsAllVariants()
+    {
+        var ex1 = new SecretSafeException("PASSWORD=abc123 done");
+        var ex2 = new SecretSafeException("Password=abc123 done");
+        var ex3 = new SecretSafeException("pAsSwOrD=abc123 done");
+
+        ex1.Message.ShouldNotContain("abc123");
+        ex2.Message.ShouldNotContain("abc123");
+        ex3.Message.ShouldNotContain("abc123");
+    }
+
+    [Fact]
+    public void Constructor_SpaceSeparator_RedactsValue()
+    {
+        var ex = new SecretSafeException("token abc123def456 found");
+
+        ex.Message.ShouldContain("***REDACTED***");
+        ex.Message.ShouldNotContain("abc123def456");
+    }
+
+    [Fact]
+    public void Constructor_ColonSeparator_RedactsValue()
+    {
+        var ex = new SecretSafeException("key:my-secret-value;next");
+
+        ex.Message.ShouldContain("***REDACTED***");
+        ex.Message.ShouldNotContain("my-secret-value");
+        ex.Message.ShouldContain("next");
+    }
+
+    [Fact]
+    public void Constructor_ApiHyphenKey_RedactsValue()
+    {
+        var ex = new SecretSafeException("api-key=xyz789 was rejected");
+
+        ex.Message.ShouldContain("***REDACTED***");
+        ex.Message.ShouldNotContain("xyz789");
+    }
+
+    [Fact]
+    public void Constructor_EmptyMessage_ReturnsEmpty()
+    {
+        var ex = new SecretSafeException("");
+
+        ex.Message.ShouldBe("");
+    }
+
+    [Fact]
+    public void Constructor_ValueTerminatedBySemicolon_RedactsCorrectly()
+    {
+        var ex = new SecretSafeException("config: secret=myvalue;next=other");
+
+        ex.Message.ShouldNotContain("myvalue");
+        ex.Message.ShouldContain("next=other");
+    }
+
+    [Fact]
+    public void Constructor_ValueTerminatedByNewline_RedactsCorrectly()
+    {
+        var ex = new SecretSafeException("secret=hidden\nnext line");
+
+        ex.Message.ShouldNotContain("hidden");
+        ex.Message.ShouldContain("next line");
+    }
 }

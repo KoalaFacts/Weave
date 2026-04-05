@@ -286,3 +286,12 @@ dotnet_diagnostic.IDE0290.severity = suggestion
 [src/**.Tests/**.cs]
 dotnet_naming_rule.async_methods_should_end_with_async.severity = none
 dotnet_diagnostic.CA1707.severity = none
+
+# Test code routinely discards return values (setup calls, Should.ThrowAsync, etc.)
+dotnet_diagnostic.IDE0058.severity = none
+
+# Block bodies are often clearer in tests (arrange-act-assert)
+dotnet_diagnostic.IDE0022.severity = none
+
+# Inline JSON strings are intentional in connector tests
+dotnet_diagnostic.JSON002.severity = none
