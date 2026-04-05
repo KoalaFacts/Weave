@@ -42,8 +42,8 @@ public static class AgentEndpoints
         CancellationToken ct)
     {
         var query = new GetAgentStateQuery(WorkspaceId.From(workspaceId), agentName);
-        var state = await dispatcher.DispatchAsync<GetAgentStateQuery, AgentState?>(query, ct);
-        if (state is null)
+        var state = await dispatcher.DispatchAsync<GetAgentStateQuery, AgentState>(query, ct);
+        if (string.IsNullOrWhiteSpace(state.AgentId))
             return ResultExtensions.NotFound($"Agent '{agentName}' not found in workspace '{workspaceId}'.");
 
         return Results.Ok(AgentResponse.FromState(state));
