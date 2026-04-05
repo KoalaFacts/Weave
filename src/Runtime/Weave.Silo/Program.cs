@@ -45,6 +45,8 @@ else
 // Shared kernel services
 builder.Services.AddSingleton<ILifecycleManager, LifecycleManager>();
 
+builder.Services.AddSingleton<ICommandRunner, ProcessCommandRunner>();
+
 if (isLocalMode)
     builder.Services.AddSingleton<IWorkspaceRuntime, InProcessRuntime>();
 else

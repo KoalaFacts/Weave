@@ -1,11 +1,10 @@
-using System.Diagnostics;
 using Microsoft.Extensions.Logging;
 using Weave.Shared.Ids;
 using Weave.Workspaces.Models;
 
 namespace Weave.Workspaces.Runtime;
 
-public sealed partial class PodmanRuntime(ILogger<PodmanRuntime> logger) : IWorkspaceRuntime
+public sealed partial class PodmanRuntime(ICommandRunner runner, ILogger<PodmanRuntime> logger) : IWorkspaceRuntime
 {
     private readonly ILogger _logger = logger;
 
@@ -123,31 +122,8 @@ public sealed partial class PodmanRuntime(ILogger<PodmanRuntime> logger) : IWork
     private async Task<string> RunPodmanAsync(IEnumerable<string> arguments, CancellationToken ct)
     {
         var argList = arguments.ToList();
-        var startInfo = new ProcessStartInfo
-        {
-            FileName = "podman",
-            RedirectStandardOutput = true,
-            RedirectStandardError = true,
-            UseShellExecute = false,
-            CreateNoWindow = true
-        };
-
-        foreach (var arg in argList)
-            startInfo.ArgumentList.Add(arg);
-
         LogPodmanCommand(string.Join(" ", argList));
-
-        using var process = Process.Start(startInfo)
-            ?? throw new InvalidOperationException("Failed to start podman process.");
-
-        var stdout = await process.StandardOutput.ReadToEndAsync(ct);
-        var stderr = await process.StandardError.ReadToEndAsync(ct);
-        await process.WaitForExitAsync(ct);
-
-        if (process.ExitCode != 0)
-            throw new InvalidOperationException($"Podman command failed (exit code {process.ExitCode}): {stderr}");
-
-        return stdout;
+        return await runner.RunAsync("podman", argList, ct);
     }
 
     [LoggerMessage(Level = LogLevel.Debug, Message = "Running: podman {Arguments}")]
