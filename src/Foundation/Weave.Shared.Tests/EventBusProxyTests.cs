@@ -14,7 +14,7 @@ public sealed class EventBusProxyTests
 
     private sealed record OtherEvent(int Value) : DomainEvent;
 
-    private InProcessEventBus CreateBus() => new(Substitute.For<ILogger<InProcessEventBus>>());
+    private static InProcessEventBus CreateBus() => new(Substitute.For<ILogger<InProcessEventBus>>());
 
     // --- Basic delegation ---
 

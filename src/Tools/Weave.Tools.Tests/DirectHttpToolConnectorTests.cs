@@ -28,7 +28,7 @@ public sealed class DirectHttpToolConnectorTests
             DirectHttp = new DirectHttpToolConfig { BaseUrl = "http://localhost:8080" }
         };
 
-        var handle = await connector.ConnectAsync(spec, TestToken);
+        var handle = await connector.ConnectAsync(spec, TestToken, TestContext.Current.CancellationToken);
 
         handle.IsConnected.ShouldBeTrue();
         handle.ToolName.ShouldBe("my-api");
@@ -73,7 +73,7 @@ public sealed class DirectHttpToolConnectorTests
             IsConnected = true
         };
 
-        await connector.DisconnectAsync(handle);
+        await connector.DisconnectAsync(handle, TestContext.Current.CancellationToken);
     }
 
     [Fact]
@@ -94,7 +94,7 @@ public sealed class DirectHttpToolConnectorTests
             Parameters = new Dictionary<string, string> { ["key"] = "value" }
         };
 
-        var result = await connector.InvokeAsync(handle, invocation);
+        var result = await connector.InvokeAsync(handle, invocation, TestContext.Current.CancellationToken);
 
         result.Success.ShouldBeFalse();
         result.Error.ShouldNotBeNull();
@@ -133,9 +133,10 @@ public sealed class DirectHttpToolConnectorTests
             Parameters = []
         };
 
-        var result = await connector.InvokeAsync(handle, invocation);
+        var result = await connector.InvokeAsync(handle, invocation, TestContext.Current.CancellationToken);
 
         result.Success.ShouldBeFalse();
+        result.Error.ShouldNotBeNull();
         result.Error.ShouldContain("Invalid method path");
     }
 
@@ -154,7 +155,7 @@ public sealed class DirectHttpToolConnectorTests
             }
         };
 
-        var handle = await connector.ConnectAsync(spec, TestToken);
+        var handle = await connector.ConnectAsync(spec, TestToken, TestContext.Current.CancellationToken);
 
         handle.IsConnected.ShouldBeTrue();
     }
@@ -174,8 +175,8 @@ public sealed class DirectHttpToolConnectorTests
             }
         };
 
-        var handle = await connector.ConnectAsync(spec, TestToken);
-        await connector.DisconnectAsync(handle);
+        var handle = await connector.ConnectAsync(spec, TestToken, TestContext.Current.CancellationToken);
+        await connector.DisconnectAsync(handle, TestContext.Current.CancellationToken);
 
         // Reconnect same tool without auth — old header should be gone
         var specNoAuth = new ToolSpec
@@ -184,14 +185,14 @@ public sealed class DirectHttpToolConnectorTests
             Type = ToolType.DirectHttp,
             DirectHttp = new DirectHttpToolConfig { BaseUrl = "http://localhost:8080" }
         };
-        var handle2 = await connector.ConnectAsync(specNoAuth, TestToken);
+        var handle2 = await connector.ConnectAsync(specNoAuth, TestToken, TestContext.Current.CancellationToken);
         handle2.IsConnected.ShouldBeTrue();
     }
 
     [Theory]
-    [InlineData("/api/data", "api/data")]
-    [InlineData("api/data", "api/data")]
-    public async Task InvokeAsync_LeadingSlash_NormalizedCorrectly(string method, string expectedPathSuffix)
+    [InlineData("/api/data")]
+    [InlineData("api/data")]
+    public async Task InvokeAsync_LeadingSlash_NormalizedCorrectly(string method)
     {
         var connector = CreateConnector();
         var handle = new ToolHandle
@@ -204,7 +205,7 @@ public sealed class DirectHttpToolConnectorTests
         var invocation = new ToolInvocation { ToolName = "test", Method = method, Parameters = [] };
 
         // Will fail with connection error but validates path construction doesn't throw
-        var result = await connector.InvokeAsync(handle, invocation);
+        var result = await connector.InvokeAsync(handle, invocation, TestContext.Current.CancellationToken);
         result.Success.ShouldBeFalse();
         result.Error.ShouldNotBeNull();
     }
@@ -221,7 +222,7 @@ public sealed class DirectHttpToolConnectorTests
             IsConnected = true
         };
 
-        var schema = await connector.DiscoverSchemaAsync(handle);
+        var schema = await connector.DiscoverSchemaAsync(handle, TestContext.Current.CancellationToken);
 
         schema.ToolName.ShouldBe("my-tool");
         schema.Description.ShouldContain("my-tool");

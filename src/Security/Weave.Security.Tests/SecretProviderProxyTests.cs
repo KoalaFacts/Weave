@@ -28,7 +28,7 @@ public sealed class SecretProviderProxyTests
         var proxy = new SecretProviderProxy(_broker, fallback);
         var token = MintToken();
 
-        var result = await proxy.ResolveAsync("db-pass", token);
+        var result = await proxy.ResolveAsync("db-pass", token, TestContext.Current.CancellationToken);
 
         result.ToString().ShouldBe("s3cret");
     }
@@ -46,7 +46,7 @@ public sealed class SecretProviderProxyTests
         _broker.Swap<ISecretProvider>(mockProvider);
 
         var token = MintToken();
-        var result = await proxy.ResolveAsync("db-pass", token);
+        var result = await proxy.ResolveAsync("db-pass", token, TestContext.Current.CancellationToken);
 
         result.ToString().ShouldBe("override-value");
     }
@@ -63,7 +63,7 @@ public sealed class SecretProviderProxyTests
         _broker.Swap<ISecretProvider>(null);
 
         var token = MintToken();
-        var result = await proxy.ResolveAsync("db-pass", token);
+        var result = await proxy.ResolveAsync("db-pass", token, TestContext.Current.CancellationToken);
 
         result.ToString().ShouldBe("fallback-value");
     }
@@ -76,7 +76,7 @@ public sealed class SecretProviderProxyTests
         fallback.SetSecret("key-2", "val");
         var proxy = new SecretProviderProxy(_broker, fallback);
 
-        var paths = await proxy.ListPathsAsync("ws-1");
+        var paths = await proxy.ListPathsAsync("ws-1", TestContext.Current.CancellationToken);
 
         paths.Count.ShouldBe(2);
     }
@@ -93,7 +93,7 @@ public sealed class SecretProviderProxyTests
             .Returns(Task.FromResult(mockPaths));
         _broker.Swap<ISecretProvider>(mockProvider);
 
-        var paths = await proxy.ListPathsAsync("ws-1");
+        var paths = await proxy.ListPathsAsync("ws-1", TestContext.Current.CancellationToken);
 
         paths.Count.ShouldBe(3);
     }
@@ -110,7 +110,7 @@ public sealed class SecretProviderProxyTests
             .Returns(Task.FromResult(new SecretValue("first")));
         _broker.Swap<ISecretProvider>(first);
 
-        var result1 = await proxy.ResolveAsync("key", token);
+        var result1 = await proxy.ResolveAsync("key", token, TestContext.Current.CancellationToken);
         result1.ToString().ShouldBe("first");
 
         var second = Substitute.For<ISecretProvider>();
@@ -118,7 +118,7 @@ public sealed class SecretProviderProxyTests
             .Returns(Task.FromResult(new SecretValue("second")));
         _broker.Swap<ISecretProvider>(second);
 
-        var result2 = await proxy.ResolveAsync("key", token);
+        var result2 = await proxy.ResolveAsync("key", token, TestContext.Current.CancellationToken);
         result2.ToString().ShouldBe("second");
     }
 
@@ -134,7 +134,7 @@ public sealed class SecretProviderProxyTests
         _broker.Swap<ISecretProvider>(Substitute.For<ISecretProvider>());
         _broker.Swap<ISecretProvider>(null);
 
-        var result = await proxy.ResolveAsync("key", token);
+        var result = await proxy.ResolveAsync("key", token, TestContext.Current.CancellationToken);
         result.ToString().ShouldBe("fallback");
     }
 }
