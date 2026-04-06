@@ -212,7 +212,7 @@ public sealed record ProofItemResponse
     };
 }
 
-public sealed record AgentChatResponse
+public sealed record ChatResponse
 {
     public required string Content { get; init; }
     public required string ConversationId { get; init; }
@@ -220,7 +220,7 @@ public sealed record AgentChatResponse
     public bool UsedTools { get; init; }
     public string? Model { get; init; }
 
-    public static AgentChatResponse FromResponse(Weave.Agents.Models.AgentChatResponse response) => new()
+    public static ChatResponse FromResponse(Weave.Agents.Models.AgentChatResponse response) => new()
     {
         Content = response.Content,
         ConversationId = response.ConversationId,

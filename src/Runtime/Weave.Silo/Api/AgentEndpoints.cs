@@ -31,7 +31,7 @@ public static class AgentEndpoints
             .ProducesProblem(409);
         group.MapPost("/{agentName}/messages", SendMessage)
             .WithDescription("Send a message to an agent and get a response.")
-            .Produces<AgentChatResponse>()
+            .Produces<ChatResponse>()
             .ProducesValidationProblem()
             .ProducesProblem(409);
         group.MapGet("/{agentName}/tasks", GetTasks)
@@ -197,8 +197,8 @@ public static class AgentEndpoints
                     Role = request.Role,
                     Content = request.Content
                 });
-            var response = await dispatcher.DispatchAsync<SendAgentMessageCommand, Weave.Agents.Models.AgentChatResponse>(command, ct);
-            return Results.Ok(Api.AgentChatResponse.FromResponse(response));
+            var response = await dispatcher.DispatchAsync<SendAgentMessageCommand, Agents.Models.AgentChatResponse>(command, ct);
+            return Results.Ok(ChatResponse.FromResponse(response));
         }
         catch (InvalidOperationException ex)
         {

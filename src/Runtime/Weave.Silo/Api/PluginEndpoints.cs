@@ -18,7 +18,7 @@ public static class PluginEndpoints
             .Produces<IEnumerable<PluginSchema>>();
         group.MapPost("/", ConnectPlugin)
             .WithDescription("Connect a plugin with configuration. Unknown config keys are returned as warnings.")
-            .Produces<ConnectPluginResponse>()
+            .Produces<ConnectPluginResponse>(201)
             .ProducesValidationProblem()
             .ProducesProblem(409)
             .ProducesProblem(422);
@@ -30,20 +30,14 @@ public static class PluginEndpoints
         return group;
     }
 
-    private static async Task<IResult> GetAllPlugins(
-        IPluginRegistry registry,
-        CancellationToken ct)
+    private static Task<IResult> GetAllPlugins(IPluginRegistry registry)
     {
-        _ = ct; // registry methods are synchronous
-        return Results.Ok(registry.GetAll());
+        return Task.FromResult(Results.Ok(registry.GetAll()));
     }
 
-    private static async Task<IResult> GetCatalog(
-        IPluginRegistry registry,
-        CancellationToken ct)
+    private static Task<IResult> GetCatalog(IPluginRegistry registry)
     {
-        _ = ct;
-        return Results.Ok(registry.GetCatalog());
+        return Task.FromResult(Results.Ok(registry.GetCatalog()));
     }
 
     private static async Task<IResult> ConnectPlugin(
@@ -73,7 +67,7 @@ public static class PluginEndpoints
             if (!status.IsConnected)
                 return ResultExtensions.UnprocessableEntity(status.Error ?? "Plugin connection failed.");
 
-            return Results.Ok(new ConnectPluginResponse { Status = status, Warnings = warnings });
+            return Results.Created($"/api/plugins/{request.Name}", new ConnectPluginResponse { Status = status, Warnings = warnings });
         }
         catch (InvalidOperationException ex)
         {

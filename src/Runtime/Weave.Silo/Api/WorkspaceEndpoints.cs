@@ -56,7 +56,7 @@ public static class WorkspaceEndpoints
         {
             var workspaceId = WorkspaceId.New();
             var command = new StartWorkspaceCommand(workspaceId, request.Manifest);
-            var state = await dispatcher.DispatchAsync<StartWorkspaceCommand, Workspaces.Models.WorkspaceState>(command, ct);
+            var state = await dispatcher.DispatchAsync<StartWorkspaceCommand, WorkspaceState>(command, ct);
             return Results.Created($"/api/workspaces/{workspaceId}", WorkspaceResponse.FromState(state));
         }
         catch (InvalidOperationException ex)
@@ -88,15 +88,17 @@ public static class WorkspaceEndpoints
         CancellationToken ct)
     {
         var query = new GetWorkspaceStateQuery(WorkspaceId.From(workspaceId));
-        var state = await dispatcher.DispatchAsync<GetWorkspaceStateQuery, Workspaces.Models.WorkspaceState>(query, ct);
+        var state = await dispatcher.DispatchAsync<GetWorkspaceStateQuery, WorkspaceState>(query, ct);
         if (state.WorkspaceId.IsEmpty)
             return ResultExtensions.NotFound($"Workspace '{workspaceId}' not found.");
+
         return Results.Ok(WorkspaceResponse.FromState(state));
     }
 
     private static Dictionary<string, string[]>? ValidateStartWorkspace(StartWorkspaceRequest request)
     {
         Dictionary<string, string[]>? errors = null;
+
         if (string.IsNullOrWhiteSpace(request.Manifest.Name))
             (errors ??= [])["manifest.name"] = ["Name is required."];
         if (string.IsNullOrWhiteSpace(request.Manifest.Version))
