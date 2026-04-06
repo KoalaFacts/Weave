@@ -24,27 +24,36 @@ public static class PluginEndpoints
             .ProducesProblem(422);
         group.MapDelete("/{name}", DisconnectPlugin)
             .WithDescription("Disconnect a plugin by name.")
-            .Produces<PluginStatus>()
+            .Produces(204)
             .ProducesProblem(404);
 
         return group;
     }
 
-    private static IResult GetAllPlugins(IPluginRegistry registry)
+    private static async Task<IResult> GetAllPlugins(
+        IPluginRegistry registry,
+        CancellationToken ct)
     {
+        _ = ct; // registry methods are synchronous
         return Results.Ok(registry.GetAll());
     }
 
-    private static IResult GetCatalog(IPluginRegistry registry)
+    private static async Task<IResult> GetCatalog(
+        IPluginRegistry registry,
+        CancellationToken ct)
     {
+        _ = ct;
         return Results.Ok(registry.GetCatalog());
     }
 
-    private static async Task<IResult> ConnectPlugin(IPluginRegistry registry, ConnectPluginRequest request)
+    private static async Task<IResult> ConnectPlugin(
+        ConnectPluginRequest request,
+        IPluginRegistry registry,
+        CancellationToken ct)
     {
-        var basicErrors = ValidateConnectPlugin(request);
-        if (basicErrors is not null)
-            return ResultExtensions.ValidationFailed(basicErrors);
+        var errors = ValidateConnectPlugin(request);
+        if (errors is not null)
+            return ResultExtensions.ValidationFailed(errors);
 
         var catalog = registry.GetCatalog();
         var (configErrors, warnings) = ValidatePluginConfig(request, catalog);
@@ -72,13 +81,16 @@ public static class PluginEndpoints
         }
     }
 
-    private static async Task<IResult> DisconnectPlugin(IPluginRegistry registry, string name)
+    private static async Task<IResult> DisconnectPlugin(
+        string name,
+        IPluginRegistry registry,
+        CancellationToken ct)
     {
         var status = await registry.DisconnectAsync(name);
-        if (!status.IsConnected && status.Error is not null)
-            return ResultExtensions.NotFound($"Plugin '{name}' is not active.");
+        if (status.Error is not null)
+            return ResultExtensions.NotFound($"Plugin '{name}' not found.");
 
-        return Results.Ok(status);
+        return Results.NoContent();
     }
 
     private static Dictionary<string, string[]>? ValidateConnectPlugin(ConnectPluginRequest request)

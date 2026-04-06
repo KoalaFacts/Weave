@@ -276,7 +276,7 @@ public sealed record ToolConnectionResponse
     public static ToolConnectionResponse FromConnection(ToolConnection conn) => new()
     {
         ToolName = conn.ToolName,
-        ToolType = Enum.Parse<ToolType>(conn.ToolType, ignoreCase: true),
+        ToolType = Enum.TryParse<ToolType>(conn.ToolType, ignoreCase: true, out var toolType) ? toolType : ToolType.Mcp,
         Status = conn.Status,
         Endpoint = conn.Endpoint,
         ConnectedAt = conn.ConnectedAt,

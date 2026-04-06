@@ -22,7 +22,7 @@ public static class AgentEndpoints
             .ProducesProblem(404);
         group.MapPost("/{agentName}/activate", ActivateAgent)
             .WithDescription("Activate an agent with a definition.")
-            .Produces<AgentResponse>()
+            .Produces<AgentResponse>(201)
             .ProducesValidationProblem()
             .ProducesProblem(409);
         group.MapPost("/{agentName}/deactivate", DeactivateAgent)
@@ -128,7 +128,7 @@ public static class AgentEndpoints
 
         var task = state.ActiveTasks.FirstOrDefault(t => t.TaskId == AgentTaskId.From(taskId));
         if (task is null)
-            return ResultExtensions.NotFound($"Task '{taskId}' not found on agent '{agentName}'.");
+            return ResultExtensions.NotFound($"Task '{taskId}' not found in agent '{agentName}'.");
 
         return Results.Ok(TaskResponse.FromInfo(task));
     }
@@ -148,7 +148,9 @@ public static class AgentEndpoints
         {
             var command = new ActivateAgentCommand(WorkspaceId.From(workspaceId), agentName, request.Definition);
             var state = await dispatcher.DispatchAsync<ActivateAgentCommand, AgentState>(command, ct);
-            return Results.Ok(AgentResponse.FromState(state));
+            return Results.Created(
+                $"/api/workspaces/{workspaceId}/agents/{agentName}",
+                AgentResponse.FromState(state));
         }
         catch (InvalidOperationException ex)
         {
