@@ -12,10 +12,10 @@ public static class PluginEndpoints
 
         group.MapGet("/", GetAllPlugins)
             .WithDescription("List all connected plugins.")
-            .Produces<IReadOnlyList<PluginStatus>>();
+            .Produces<IEnumerable<PluginStatus>>();
         group.MapGet("/catalog", GetCatalog)
             .WithDescription("List available plugin types and their configuration schemas.")
-            .Produces<IReadOnlyList<PluginSchema>>();
+            .Produces<IEnumerable<PluginSchema>>();
         group.MapPost("/", ConnectPlugin)
             .WithDescription("Connect a plugin with configuration. Unknown config keys are returned as warnings.")
             .Produces<ConnectPluginResponse>()
@@ -60,7 +60,7 @@ public static class PluginEndpoints
 
         var status = await registry.ConnectAsync(request.Name, definition);
         if (!status.IsConnected)
-            return Results.Problem(detail: status.Error, statusCode: 422, title: "Plugin Connection Failed");
+            return ResultExtensions.UnprocessableEntity(status.Error ?? "Plugin connection failed.");
 
         return Results.Ok(new ConnectPluginResponse { Status = status, Warnings = warnings });
     }

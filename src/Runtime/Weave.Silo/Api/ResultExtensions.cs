@@ -11,6 +11,9 @@ internal static class ResultExtensions
     internal static IResult ValidationFailed(Dictionary<string, string[]> errors) =>
         Results.ValidationProblem(errors, title: "Validation Failed");
 
+    internal static IResult UnprocessableEntity(string detail) =>
+        Results.Problem(statusCode: 422, title: "Unprocessable Entity", detail: detail);
+
     internal static IResult ServerError() =>
         Results.Problem(statusCode: 500, title: "Internal Server Error", detail: "An unexpected error occurred.");
 }
