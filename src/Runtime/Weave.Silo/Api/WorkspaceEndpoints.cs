@@ -16,6 +16,10 @@ public static class WorkspaceEndpoints
         group.MapGet("/", GetAllWorkspaces)
             .WithDescription("List all workspaces.")
             .Produces<IEnumerable<WorkspaceResponse>>();
+        group.MapGet("/{workspaceId}", GetWorkspaceState)
+            .WithDescription("Get the current state of a workspace.")
+            .Produces<WorkspaceResponse>()
+            .ProducesProblem(404);
         group.MapPost("/", StartWorkspace)
             .WithDescription("Start a new workspace from a manifest.")
             .Produces<WorkspaceResponse>(201)
@@ -25,13 +29,11 @@ public static class WorkspaceEndpoints
             .WithDescription("Stop a workspace.")
             .Produces(204)
             .ProducesProblem(409);
-        group.MapGet("/{workspaceId}", GetWorkspaceState)
-            .WithDescription("Get the current state of a workspace.")
-            .Produces<WorkspaceResponse>()
-            .ProducesProblem(404);
 
         return group;
     }
+
+    // --- GET endpoints ---
 
     private static async Task<IResult> GetAllWorkspaces(
         IQueryDispatcher dispatcher,
@@ -42,6 +44,21 @@ public static class WorkspaceEndpoints
             ct);
         return Results.Ok(states.Select(WorkspaceResponse.FromState));
     }
+
+    private static async Task<IResult> GetWorkspaceState(
+        string workspaceId,
+        IQueryDispatcher dispatcher,
+        CancellationToken ct)
+    {
+        var query = new GetWorkspaceStateQuery(WorkspaceId.From(workspaceId));
+        var state = await dispatcher.DispatchAsync<GetWorkspaceStateQuery, WorkspaceState>(query, ct);
+        if (state.WorkspaceId.IsEmpty)
+            return ResultExtensions.NotFound($"Workspace '{workspaceId}' not found.");
+
+        return Results.Ok(WorkspaceResponse.FromState(state));
+    }
+
+    // --- POST/DELETE endpoints ---
 
     private static async Task<IResult> StartWorkspace(
         StartWorkspaceRequest request,
@@ -82,18 +99,7 @@ public static class WorkspaceEndpoints
         }
     }
 
-    private static async Task<IResult> GetWorkspaceState(
-        string workspaceId,
-        IQueryDispatcher dispatcher,
-        CancellationToken ct)
-    {
-        var query = new GetWorkspaceStateQuery(WorkspaceId.From(workspaceId));
-        var state = await dispatcher.DispatchAsync<GetWorkspaceStateQuery, WorkspaceState>(query, ct);
-        if (state.WorkspaceId.IsEmpty)
-            return ResultExtensions.NotFound($"Workspace '{workspaceId}' not found.");
-
-        return Results.Ok(WorkspaceResponse.FromState(state));
-    }
+    // --- Validation ---
 
     private static Dictionary<string, string[]>? ValidateStartWorkspace(StartWorkspaceRequest request)
     {
@@ -103,6 +109,7 @@ public static class WorkspaceEndpoints
             (errors ??= [])["manifest.name"] = ["Name is required."];
         if (string.IsNullOrWhiteSpace(request.Manifest.Version))
             (errors ??= [])["manifest.version"] = ["Version is required."];
+
         return errors;
     }
 }

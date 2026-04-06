@@ -20,9 +20,12 @@ public static class ToolEndpoints
         return group;
     }
 
+    // --- GET endpoints ---
+
     private static async Task<IResult> GetAllTools(
         string workspaceId,
-        IGrainFactory grainFactory)
+        IGrainFactory grainFactory,
+        CancellationToken ct)
     {
         var grain = grainFactory.GetGrain<IToolRegistryGrain>(workspaceId);
         var connections = await grain.GetAllConnectionsAsync();
@@ -32,12 +35,14 @@ public static class ToolEndpoints
     private static async Task<IResult> GetTool(
         string workspaceId,
         string toolName,
-        IGrainFactory grainFactory)
+        IGrainFactory grainFactory,
+        CancellationToken ct)
     {
         var grain = grainFactory.GetGrain<IToolRegistryGrain>(workspaceId);
         var connection = await grain.GetConnectionAsync(toolName);
-        return connection is null
-            ? ResultExtensions.NotFound($"Tool '{toolName}' not found in workspace '{workspaceId}'.")
-            : Results.Ok(ToolConnectionResponse.FromConnection(connection));
+        if (connection is null)
+            return ResultExtensions.NotFound($"Tool '{toolName}' not found in workspace '{workspaceId}'.");
+
+        return Results.Ok(ToolConnectionResponse.FromConnection(connection));
     }
 }

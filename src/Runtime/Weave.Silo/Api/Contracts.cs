@@ -19,10 +19,10 @@ public sealed record WorkspaceResponse
     public string? Name { get; init; }
     [JsonConverter(typeof(JsonStringEnumConverter<WorkspaceStatus>))]
     public required WorkspaceStatus Status { get; init; }
+    public required int ContainerCount { get; init; }
     public DateTimeOffset? StartedAt { get; init; }
     public DateTimeOffset? StoppedAt { get; init; }
     public string? NetworkId { get; init; }
-    public int ContainerCount { get; init; }
     public string? ErrorMessage { get; init; }
 
     public static WorkspaceResponse FromState(WorkspaceState state) => new()
@@ -30,10 +30,10 @@ public sealed record WorkspaceResponse
         WorkspaceId = state.WorkspaceId.ToString(),
         Name = state.Name,
         Status = state.Status,
+        ContainerCount = state.Containers.Count,
         StartedAt = state.StartedAt,
         StoppedAt = state.StoppedAt,
         NetworkId = state.NetworkId?.ToString(),
-        ContainerCount = state.Containers.Count,
         ErrorMessage = state.ErrorMessage
     };
 }
@@ -97,7 +97,7 @@ public sealed record AgentResponse
         AgentName = state.AgentName,
         Status = state.Status,
         Model = state.Model,
-        ConnectedTools = state.ConnectedTools,
+        ConnectedTools = [.. state.ConnectedTools],
         ActiveTasks = state.ActiveTasks.Select(TaskResponse.FromInfo).ToList(),
         ActivatedAt = state.ActivatedAt,
         ErrorMessage = state.ErrorMessage
@@ -110,7 +110,7 @@ public sealed record TaskResponse
     public required string Description { get; init; }
     [JsonConverter(typeof(JsonStringEnumConverter<AgentTaskStatus>))]
     public required AgentTaskStatus Status { get; init; }
-    public DateTimeOffset CreatedAt { get; init; }
+    public required DateTimeOffset CreatedAt { get; init; }
     public DateTimeOffset? CompletedAt { get; init; }
     public ProofOfWorkResponse? Proof { get; init; }
 
@@ -128,7 +128,7 @@ public sealed record TaskResponse
 public sealed record ProofOfWorkResponse
 {
     public List<ProofItemResponse> Items { get; init; } = [];
-    public DateTimeOffset SubmittedAt { get; init; }
+    public required DateTimeOffset SubmittedAt { get; init; }
     public string? ReviewFeedback { get; init; }
     public DateTimeOffset? ReviewedAt { get; init; }
     public VerificationRecordResponse? Verification { get; init; }
@@ -151,7 +151,7 @@ public sealed record VerificationRecordResponse
     public required int RequiredVotes { get; init; }
     public required bool ConsensusReached { get; init; }
     public required bool Accepted { get; init; }
-    public DateTimeOffset CompletedAt { get; init; }
+    public required DateTimeOffset CompletedAt { get; init; }
 
     public static VerificationRecordResponse FromRecord(VerificationRecord record) => new()
     {
@@ -168,7 +168,7 @@ public sealed record VerificationVoteResponse
     public required string ValidatorId { get; init; }
     public required bool Accepted { get; init; }
     public required string Reason { get; init; }
-    public DateTimeOffset VotedAt { get; init; }
+    public required DateTimeOffset VotedAt { get; init; }
     public List<ConditionResultResponse> ConditionResults { get; init; } = [];
 
     public static VerificationVoteResponse FromVote(VerificationVote vote) => new()
@@ -216,11 +216,11 @@ public sealed record ChatResponse
 {
     public required string Content { get; init; }
     public required string ConversationId { get; init; }
+    public required bool UsedTools { get; init; }
     public List<ConversationMessageResponse> Messages { get; init; } = [];
-    public bool UsedTools { get; init; }
     public string? Model { get; init; }
 
-    public static ChatResponse FromResponse(Weave.Agents.Models.AgentChatResponse response) => new()
+    public static ChatResponse FromResponse(AgentChatResponse response) => new()
     {
         Content = response.Content,
         ConversationId = response.ConversationId,
@@ -234,7 +234,7 @@ public sealed record ConversationMessageResponse
 {
     public required string Role { get; init; }
     public required string Content { get; init; }
-    public DateTimeOffset Timestamp { get; init; }
+    public required DateTimeOffset Timestamp { get; init; }
 
     public static ConversationMessageResponse FromMessage(ConversationMessage message) => new()
     {

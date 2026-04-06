@@ -30,15 +30,23 @@ public static class PluginEndpoints
         return group;
     }
 
-    private static Task<IResult> GetAllPlugins(IPluginRegistry registry)
+    // --- GET endpoints ---
+
+    private static async Task<IResult> GetAllPlugins(
+        IPluginRegistry registry,
+        CancellationToken ct)
     {
-        return Task.FromResult(Results.Ok(registry.GetAll()));
+        return Results.Ok(registry.GetAll());
     }
 
-    private static Task<IResult> GetCatalog(IPluginRegistry registry)
+    private static async Task<IResult> GetCatalog(
+        IPluginRegistry registry,
+        CancellationToken ct)
     {
-        return Task.FromResult(Results.Ok(registry.GetCatalog()));
+        return Results.Ok(registry.GetCatalog());
     }
+
+    // --- POST/DELETE endpoints ---
 
     private static async Task<IResult> ConnectPlugin(
         ConnectPluginRequest request,
@@ -67,7 +75,9 @@ public static class PluginEndpoints
             if (!status.IsConnected)
                 return ResultExtensions.UnprocessableEntity(status.Error ?? "Plugin connection failed.");
 
-            return Results.Created($"/api/plugins/{request.Name}", new ConnectPluginResponse { Status = status, Warnings = warnings });
+            return Results.Created(
+                $"/api/plugins/{request.Name}",
+                new ConnectPluginResponse { Status = status, Warnings = warnings });
         }
         catch (InvalidOperationException ex)
         {
@@ -87,13 +97,17 @@ public static class PluginEndpoints
         return Results.NoContent();
     }
 
+    // --- Validation ---
+
     private static Dictionary<string, string[]>? ValidateConnectPlugin(ConnectPluginRequest request)
     {
         Dictionary<string, string[]>? errors = null;
+
         if (string.IsNullOrWhiteSpace(request.Name))
             (errors ??= [])["name"] = ["Name is required."];
         if (string.IsNullOrWhiteSpace(request.Type))
             (errors ??= [])["type"] = ["Type is required."];
+
         return errors;
     }
 

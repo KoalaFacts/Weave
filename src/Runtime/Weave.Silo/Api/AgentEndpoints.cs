@@ -62,6 +62,8 @@ public static class AgentEndpoints
         return group;
     }
 
+    // --- GET endpoints ---
+
     private static async Task<IResult> GetAllAgents(
         string workspaceId,
         IQueryDispatcher dispatcher,
@@ -133,6 +135,8 @@ public static class AgentEndpoints
         return Results.Ok(TaskResponse.FromInfo(task));
     }
 
+    // --- POST endpoints ---
+
     private static async Task<IResult> ActivateAgent(
         string workspaceId,
         string agentName,
@@ -197,7 +201,7 @@ public static class AgentEndpoints
                     Role = request.Role,
                     Content = request.Content
                 });
-            var response = await dispatcher.DispatchAsync<SendAgentMessageCommand, Agents.Models.AgentChatResponse>(command, ct);
+            var response = await dispatcher.DispatchAsync<SendAgentMessageCommand, AgentChatResponse>(command, ct);
             return Results.Ok(ChatResponse.FromResponse(response));
         }
         catch (InvalidOperationException ex)
@@ -292,14 +296,14 @@ public static class AgentEndpoints
         }
     }
 
-    private static Dictionary<string, string[]>? ValidateSubmitTask(SubmitTaskRequest request)
+    // --- Validation ---
+
+    private static Dictionary<string, string[]>? ValidateActivateAgent(ActivateAgentRequest request)
     {
         Dictionary<string, string[]>? errors = null;
 
-        if (string.IsNullOrWhiteSpace(request.Description))
-            (errors ??= [])["description"] = ["Description is required."];
-        else if (request.Description.Length > 1000)
-            (errors ??= [])["description"] = ["Description must be 1000 characters or fewer."];
+        if (string.IsNullOrWhiteSpace(request.Definition.Model))
+            (errors ??= [])["definition.model"] = ["Model is required."];
 
         return errors;
     }
@@ -312,6 +316,18 @@ public static class AgentEndpoints
             (errors ??= [])["content"] = ["Content is required."];
         else if (request.Content.Length > 50_000)
             (errors ??= [])["content"] = ["Content must be 50000 characters or fewer."];
+
+        return errors;
+    }
+
+    private static Dictionary<string, string[]>? ValidateSubmitTask(SubmitTaskRequest request)
+    {
+        Dictionary<string, string[]>? errors = null;
+
+        if (string.IsNullOrWhiteSpace(request.Description))
+            (errors ??= [])["description"] = ["Description is required."];
+        else if (request.Description.Length > 1000)
+            (errors ??= [])["description"] = ["Description must be 1000 characters or fewer."];
 
         return errors;
     }
@@ -333,16 +349,6 @@ public static class AgentEndpoints
                     (errors ??= [])[$"proof[{i}].value"] = ["Value is required."];
             }
         }
-
-        return errors;
-    }
-
-    private static Dictionary<string, string[]>? ValidateActivateAgent(ActivateAgentRequest request)
-    {
-        Dictionary<string, string[]>? errors = null;
-
-        if (string.IsNullOrWhiteSpace(request.Definition.Model))
-            (errors ??= [])["definition.model"] = ["Model is required."];
 
         return errors;
     }
