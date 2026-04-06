@@ -56,6 +56,7 @@ public static class AgentEndpoints
         group.MapPost("/{agentName}/tasks/{taskId}/review", ReviewTask)
             .WithDescription("Accept or reject a task awaiting review.")
             .Produces<TaskResponse>()
+            .ProducesValidationProblem()
             .ProducesProblem(409);
 
         return group;
@@ -272,6 +273,10 @@ public static class AgentEndpoints
         ICommandDispatcher dispatcher,
         CancellationToken ct)
     {
+        var errors = ValidateReviewTask(request);
+        if (errors is not null)
+            return ResultExtensions.ValidationFailed(errors);
+
         try
         {
             var command = new ReviewAgentTaskCommand(
@@ -336,6 +341,16 @@ public static class AgentEndpoints
 
         if (string.IsNullOrWhiteSpace(request.Definition.Model))
             (errors ??= [])["definition.model"] = ["Model is required."];
+
+        return errors;
+    }
+
+    private static Dictionary<string, string[]>? ValidateReviewTask(ReviewTaskRequest request)
+    {
+        Dictionary<string, string[]>? errors = null;
+
+        if (request.Feedback is { Length: > 5000 })
+            (errors ??= [])["feedback"] = ["Feedback must be 5000 characters or fewer."];
 
         return errors;
     }
