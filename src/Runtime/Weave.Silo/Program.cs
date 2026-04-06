@@ -1,3 +1,5 @@
+using Microsoft.AspNetCore.Mvc;
+using Scalar.AspNetCore;
 using Weave.Agents.Pipeline;
 using Weave.Security.Plugins;
 using Weave.Security.Proxy;
@@ -9,8 +11,6 @@ using Weave.Shared.Cqrs;
 using Weave.Shared.Events;
 using Weave.Shared.Lifecycle;
 using Weave.Shared.Plugins;
-using Microsoft.AspNetCore.Mvc;
-using Scalar.AspNetCore;
 using Weave.Silo.Api;
 using Weave.Silo.Plugins;
 using Weave.Tools.Connectors;
