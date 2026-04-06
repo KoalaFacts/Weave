@@ -48,9 +48,9 @@ public static class WorkspaceEndpoints
         ICommandDispatcher dispatcher,
         CancellationToken ct)
     {
-        var validationErrors = ValidateStartWorkspace(request);
-        if (validationErrors is not null)
-            return ResultExtensions.ValidationFailed(validationErrors);
+        var errors = ValidateStartWorkspace(request);
+        if (errors is not null)
+            return ResultExtensions.ValidationFailed(errors);
 
         try
         {

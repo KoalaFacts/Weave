@@ -2,6 +2,7 @@ using System.Text.Json.Serialization;
 using Weave.Agents.Models;
 using Weave.Tools.Models;
 using Weave.Workspaces.Models;
+using Weave.Workspaces.Plugins;
 
 namespace Weave.Silo.Api;
 
@@ -241,6 +242,22 @@ public sealed record ConversationMessageResponse
         Content = message.Content,
         Timestamp = message.Timestamp
     };
+}
+
+// === Plugin Contracts ===
+
+public sealed record ConnectPluginRequest
+{
+    public required string Name { get; init; }
+    public required string Type { get; init; }
+    public string? Description { get; init; }
+    public Dictionary<string, string>? Config { get; init; }
+}
+
+public sealed record ConnectPluginResponse
+{
+    public required PluginStatus Status { get; init; }
+    public List<string> Warnings { get; init; } = [];
 }
 
 // === Tool Contracts ===

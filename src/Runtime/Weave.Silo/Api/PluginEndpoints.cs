@@ -51,31 +51,34 @@ public static class PluginEndpoints
         if (configErrors is not null)
             return ResultExtensions.ValidationFailed(configErrors);
 
-        var definition = new PluginDefinition
+        try
         {
-            Type = request.Type,
-            Description = request.Description,
-            Config = request.Config is not null ? new(request.Config) : []
-        };
+            var definition = new PluginDefinition
+            {
+                Type = request.Type,
+                Description = request.Description,
+                Config = request.Config is not null ? new(request.Config) : []
+            };
 
-        var status = await registry.ConnectAsync(request.Name, definition);
-        if (!status.IsConnected)
-            return ResultExtensions.UnprocessableEntity(status.Error ?? "Plugin connection failed.");
+            var status = await registry.ConnectAsync(request.Name, definition);
+            if (!status.IsConnected)
+                return ResultExtensions.UnprocessableEntity(status.Error ?? "Plugin connection failed.");
 
-        return Results.Ok(new ConnectPluginResponse { Status = status, Warnings = warnings });
+            return Results.Ok(new ConnectPluginResponse { Status = status, Warnings = warnings });
+        }
+        catch (InvalidOperationException ex)
+        {
+            return ResultExtensions.Conflict(ex.Message);
+        }
     }
 
     private static async Task<IResult> DisconnectPlugin(IPluginRegistry registry, string name)
     {
-        try
-        {
-            var status = await registry.DisconnectAsync(name);
-            return Results.Ok(status);
-        }
-        catch (KeyNotFoundException ex)
-        {
-            return ResultExtensions.NotFound(ex.Message);
-        }
+        var status = await registry.DisconnectAsync(name);
+        if (!status.IsConnected && status.Error is not null)
+            return ResultExtensions.NotFound($"Plugin '{name}' is not active.");
+
+        return Results.Ok(status);
     }
 
     private static Dictionary<string, string[]>? ValidateConnectPlugin(ConnectPluginRequest request)
@@ -115,18 +118,4 @@ public static class PluginEndpoints
 
         return (errors, warnings);
     }
-}
-
-public sealed record ConnectPluginRequest
-{
-    public required string Name { get; init; }
-    public required string Type { get; init; }
-    public string? Description { get; init; }
-    public Dictionary<string, string>? Config { get; init; }
-}
-
-public sealed record ConnectPluginResponse
-{
-    public required PluginStatus Status { get; init; }
-    public List<string> Warnings { get; init; } = [];
 }
