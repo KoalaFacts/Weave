@@ -13,19 +13,19 @@ public static class WorkspaceEndpoints
         var group = routes.MapGroup("/api/workspaces")
             .WithTags("Workspaces");
 
-        group.MapGet("/", GetAllWorkspaces)
+        group.MapGet("/", GetAllWorkspacesAsync)
             .WithDescription("List all workspaces.")
             .Produces<IEnumerable<WorkspaceResponse>>();
-        group.MapGet("/{workspaceId}", GetWorkspaceState)
+        group.MapGet("/{workspaceId}", GetWorkspaceStateAsync)
             .WithDescription("Get the current state of a workspace.")
             .Produces<WorkspaceResponse>()
             .ProducesProblem(404);
-        group.MapPost("/", StartWorkspace)
+        group.MapPost("/", StartWorkspaceAsync)
             .WithDescription("Start a new workspace from a manifest.")
             .Produces<WorkspaceResponse>(201)
             .ProducesValidationProblem()
             .ProducesProblem(409);
-        group.MapDelete("/{workspaceId}", StopWorkspace)
+        group.MapDelete("/{workspaceId}", StopWorkspaceAsync)
             .WithDescription("Stop a workspace.")
             .Produces(204)
             .ProducesProblem(409);
@@ -35,7 +35,7 @@ public static class WorkspaceEndpoints
 
     // --- GET endpoints ---
 
-    private static async Task<IResult> GetAllWorkspaces(
+    private static async Task<IResult> GetAllWorkspacesAsync(
         IQueryDispatcher dispatcher,
         CancellationToken ct)
     {
@@ -45,7 +45,7 @@ public static class WorkspaceEndpoints
         return Results.Ok(states.Select(WorkspaceResponse.FromState));
     }
 
-    private static async Task<IResult> GetWorkspaceState(
+    private static async Task<IResult> GetWorkspaceStateAsync(
         string workspaceId,
         IQueryDispatcher dispatcher,
         CancellationToken ct)
@@ -60,7 +60,7 @@ public static class WorkspaceEndpoints
 
     // --- POST/DELETE endpoints ---
 
-    private static async Task<IResult> StartWorkspace(
+    private static async Task<IResult> StartWorkspaceAsync(
         StartWorkspaceRequest request,
         ICommandDispatcher dispatcher,
         CancellationToken ct)
@@ -82,7 +82,7 @@ public static class WorkspaceEndpoints
         }
     }
 
-    private static async Task<IResult> StopWorkspace(
+    private static async Task<IResult> StopWorkspaceAsync(
         string workspaceId,
         ICommandDispatcher dispatcher,
         CancellationToken ct)

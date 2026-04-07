@@ -10,19 +10,19 @@ public static class PluginEndpoints
         var group = routes.MapGroup("/api/plugins")
             .WithTags("Plugins");
 
-        group.MapGet("/", GetAllPlugins)
+        group.MapGet("/", GetAllPluginsAsync)
             .WithDescription("List all connected plugins.")
             .Produces<IEnumerable<PluginStatus>>();
-        group.MapGet("/catalog", GetCatalog)
+        group.MapGet("/catalog", GetCatalogAsync)
             .WithDescription("List available plugin types and their configuration schemas.")
             .Produces<IEnumerable<PluginSchema>>();
-        group.MapPost("/", ConnectPlugin)
+        group.MapPost("/", ConnectPluginAsync)
             .WithDescription("Connect a plugin with configuration. Unknown config keys are returned as warnings.")
             .Produces<ConnectPluginResponse>(201)
             .ProducesValidationProblem()
             .ProducesProblem(409)
             .ProducesProblem(422);
-        group.MapDelete("/{name}", DisconnectPlugin)
+        group.MapDelete("/{name}", DisconnectPluginAsync)
             .WithDescription("Disconnect a plugin by name.")
             .Produces(204)
             .ProducesProblem(404);
@@ -32,14 +32,14 @@ public static class PluginEndpoints
 
     // --- GET endpoints ---
 
-    private static async Task<IResult> GetAllPlugins(
+    private static async Task<IResult> GetAllPluginsAsync(
         IPluginRegistry registry,
         CancellationToken ct)
     {
         return Results.Ok(registry.GetAll());
     }
 
-    private static async Task<IResult> GetCatalog(
+    private static async Task<IResult> GetCatalogAsync(
         IPluginRegistry registry,
         CancellationToken ct)
     {
@@ -48,7 +48,7 @@ public static class PluginEndpoints
 
     // --- POST/DELETE endpoints ---
 
-    private static async Task<IResult> ConnectPlugin(
+    private static async Task<IResult> ConnectPluginAsync(
         ConnectPluginRequest request,
         IPluginRegistry registry,
         CancellationToken ct)
@@ -85,7 +85,7 @@ public static class PluginEndpoints
         }
     }
 
-    private static async Task<IResult> DisconnectPlugin(
+    private static async Task<IResult> DisconnectPluginAsync(
         string name,
         IPluginRegistry registry,
         CancellationToken ct)

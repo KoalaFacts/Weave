@@ -9,10 +9,10 @@ public static class ToolEndpoints
         var group = routes.MapGroup("/api/workspaces/{workspaceId}/tools")
             .WithTags("Tools");
 
-        group.MapGet("/", GetAllTools)
+        group.MapGet("/", GetAllToolsAsync)
             .WithDescription("List all tool connections in a workspace.")
             .Produces<IEnumerable<ToolConnectionResponse>>();
-        group.MapGet("/{toolName}", GetTool)
+        group.MapGet("/{toolName}", GetToolAsync)
             .WithDescription("Get a single tool connection by name.")
             .Produces<ToolConnectionResponse>()
             .ProducesProblem(404);
@@ -22,7 +22,7 @@ public static class ToolEndpoints
 
     // --- GET endpoints ---
 
-    private static async Task<IResult> GetAllTools(
+    private static async Task<IResult> GetAllToolsAsync(
         string workspaceId,
         IGrainFactory grainFactory,
         CancellationToken ct)
@@ -32,7 +32,7 @@ public static class ToolEndpoints
         return Results.Ok(connections.Select(ToolConnectionResponse.FromConnection));
     }
 
-    private static async Task<IResult> GetTool(
+    private static async Task<IResult> GetToolAsync(
         string workspaceId,
         string toolName,
         IGrainFactory grainFactory,

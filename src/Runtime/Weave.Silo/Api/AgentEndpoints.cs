@@ -13,47 +13,47 @@ public static class AgentEndpoints
         var group = routes.MapGroup("/api/workspaces/{workspaceId}/agents")
             .WithTags("Agents");
 
-        group.MapGet("/", GetAllAgents)
+        group.MapGet("/", GetAllAgentsAsync)
             .WithDescription("List all agents in a workspace.")
             .Produces<IEnumerable<AgentResponse>>();
-        group.MapGet("/{agentName}", GetAgent)
+        group.MapGet("/{agentName}", GetAgentAsync)
             .WithDescription("Get a single agent by name.")
             .Produces<AgentResponse>()
             .ProducesProblem(404);
-        group.MapPost("/{agentName}/activate", ActivateAgent)
+        group.MapPost("/{agentName}/activate", ActivateAgentAsync)
             .WithDescription("Activate an agent with a definition.")
             .Produces<AgentResponse>(201)
             .ProducesValidationProblem()
             .ProducesProblem(409);
-        group.MapPost("/{agentName}/deactivate", DeactivateAgent)
+        group.MapPost("/{agentName}/deactivate", DeactivateAgentAsync)
             .WithDescription("Deactivate an agent.")
             .Produces(204)
             .ProducesProblem(409);
-        group.MapPost("/{agentName}/messages", SendMessage)
+        group.MapPost("/{agentName}/messages", SendMessageAsync)
             .WithDescription("Send a message to an agent and get a response.")
             .Produces<ChatResponse>()
             .ProducesValidationProblem()
             .ProducesProblem(409);
-        group.MapGet("/{agentName}/tasks", GetTasks)
+        group.MapGet("/{agentName}/tasks", GetTasksAsync)
             .WithDescription("List tasks for an agent. Optionally filter by status (e.g. ?status=awaitingReview).")
             .Produces<IEnumerable<TaskResponse>>()
             .ProducesValidationProblem()
             .ProducesProblem(404);
-        group.MapGet("/{agentName}/tasks/{taskId}", GetTask)
+        group.MapGet("/{agentName}/tasks/{taskId}", GetTaskAsync)
             .WithDescription("Get a single task by ID.")
             .Produces<TaskResponse>()
             .ProducesProblem(404);
-        group.MapPost("/{agentName}/tasks", SubmitTask)
+        group.MapPost("/{agentName}/tasks", SubmitTaskAsync)
             .WithDescription("Submit a new task to an agent.")
             .Produces<TaskResponse>(201)
             .ProducesValidationProblem()
             .ProducesProblem(409);
-        group.MapPost("/{agentName}/tasks/{taskId}/complete", CompleteTask)
+        group.MapPost("/{agentName}/tasks/{taskId}/complete", CompleteTaskAsync)
             .WithDescription("Complete a task with proof of work.")
             .Produces<TaskResponse>()
             .ProducesValidationProblem()
             .ProducesProblem(409);
-        group.MapPost("/{agentName}/tasks/{taskId}/review", ReviewTask)
+        group.MapPost("/{agentName}/tasks/{taskId}/review", ReviewTaskAsync)
             .WithDescription("Accept or reject a task awaiting review.")
             .Produces<TaskResponse>()
             .ProducesValidationProblem()
@@ -64,7 +64,7 @@ public static class AgentEndpoints
 
     // --- GET endpoints ---
 
-    private static async Task<IResult> GetAllAgents(
+    private static async Task<IResult> GetAllAgentsAsync(
         string workspaceId,
         IQueryDispatcher dispatcher,
         CancellationToken ct)
@@ -74,7 +74,7 @@ public static class AgentEndpoints
         return Results.Ok(states.Select(AgentResponse.FromState));
     }
 
-    private static async Task<IResult> GetAgent(
+    private static async Task<IResult> GetAgentAsync(
         string workspaceId,
         string agentName,
         IQueryDispatcher dispatcher,
@@ -88,7 +88,7 @@ public static class AgentEndpoints
         return Results.Ok(AgentResponse.FromState(state));
     }
 
-    private static async Task<IResult> GetTasks(
+    private static async Task<IResult> GetTasksAsync(
         string workspaceId,
         string agentName,
         string? status,
@@ -116,7 +116,7 @@ public static class AgentEndpoints
         return Results.Ok(tasks.Select(TaskResponse.FromInfo));
     }
 
-    private static async Task<IResult> GetTask(
+    private static async Task<IResult> GetTaskAsync(
         string workspaceId,
         string agentName,
         string taskId,
@@ -137,7 +137,7 @@ public static class AgentEndpoints
 
     // --- POST endpoints ---
 
-    private static async Task<IResult> ActivateAgent(
+    private static async Task<IResult> ActivateAgentAsync(
         string workspaceId,
         string agentName,
         ActivateAgentRequest request,
@@ -162,7 +162,7 @@ public static class AgentEndpoints
         }
     }
 
-    private static async Task<IResult> DeactivateAgent(
+    private static async Task<IResult> DeactivateAgentAsync(
         string workspaceId,
         string agentName,
         ICommandDispatcher dispatcher,
@@ -180,7 +180,7 @@ public static class AgentEndpoints
         }
     }
 
-    private static async Task<IResult> SendMessage(
+    private static async Task<IResult> SendMessageAsync(
         string workspaceId,
         string agentName,
         SendMessageRequest request,
@@ -210,7 +210,7 @@ public static class AgentEndpoints
         }
     }
 
-    private static async Task<IResult> SubmitTask(
+    private static async Task<IResult> SubmitTaskAsync(
         string workspaceId,
         string agentName,
         SubmitTaskRequest request,
@@ -235,7 +235,7 @@ public static class AgentEndpoints
         }
     }
 
-    private static async Task<IResult> CompleteTask(
+    private static async Task<IResult> CompleteTaskAsync(
         string workspaceId,
         string agentName,
         string taskId,
@@ -271,7 +271,7 @@ public static class AgentEndpoints
         }
     }
 
-    private static async Task<IResult> ReviewTask(
+    private static async Task<IResult> ReviewTaskAsync(
         string workspaceId,
         string agentName,
         string taskId,
