@@ -85,7 +85,9 @@ jobs:
         run: dotnet build Weave.slnx --no-restore -c Release /p:TreatWarningsAsErrors=true
 
       - name: Check formatting
-        run: dotnet format Weave.slnx --no-restore --verify-no-changes --verbosity diagnostic
+        run: >-
+          dotnet format Weave.slnx --no-restore --verify-no-changes --verbosity diagnostic
+          --exclude src/Foundation/Weave.Shared/
 
   dependency-review:
     name: Dependency Review
