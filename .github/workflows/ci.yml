@@ -44,7 +44,7 @@ jobs:
 
       - name: Test
         run: >-
-          dotnet test Weave.slnx --no-build -c Release
+          dotnet test --solution Weave.slnx --no-build -c Release
           --logger "trx;LogFileName=results.trx"
           --results-directory ./test-results
 
@@ -86,7 +86,7 @@ jobs:
         run: dotnet build Weave.slnx --no-restore -c Release /p:TreatWarningsAsErrors=true
 
       - name: Check formatting
-        run: dotnet format Weave.slnx --verify-no-changes --verbosity diagnostic
+        run: dotnet format Weave.slnx --no-restore --verify-no-changes --verbosity diagnostic
 
   dependency-review:
     name: Dependency Review
