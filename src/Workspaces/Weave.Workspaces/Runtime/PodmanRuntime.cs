@@ -61,7 +61,7 @@ public sealed partial class PodmanRuntime(ICommandRunner runner, ILogger<PodmanR
         // Remove network
         await RunPodmanAsync(["network", "rm", "-f", $"weave-{workspaceId}"], ct);
 
-        LogWorkspaceTornDown(workspaceId);
+        LogWorkspaceTornDown(workspaceId.ToString());
     }
 
     public async Task<ContainerHandle> StartContainerAsync(ContainerSpec spec, CancellationToken ct)
