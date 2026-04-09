@@ -78,15 +78,24 @@ internal static class ManifestResolver
 {
     public static string? Resolve(string? workspace)
     {
+        // 1. Named workspace — look up in registry
         if (workspace is not null)
         {
-            var path = Path.Combine("workspaces", workspace, "workspace.json");
-            return File.Exists(path) ? path : null;
+            var registeredPath = WorkspaceRegistry.Resolve(workspace);
+            if (registeredPath is not null)
+            {
+                var manifestPath = Path.Combine(registeredPath, "workspace.json");
+                return File.Exists(manifestPath) ? manifestPath : null;
+            }
+
+            return null;
         }
 
+        // 2. Current directory contains a manifest
         if (File.Exists("workspace.json"))
-            return "workspace.json";
+            return Path.GetFullPath("workspace.json");
 
+        // 3. Walk up the directory tree
         var dir = Directory.GetCurrentDirectory();
         while (dir is not null)
         {

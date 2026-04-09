@@ -12,12 +12,14 @@ internal static class WorkspaceNewCommand
         var nameArg = new Argument<string>("name") { Description = "Workspace name" };
         var presetOption = new Option<string?>("--preset") { Description = "Use a built-in preset (starter, coding-assistant, research, multi-agent)" };
         presetOption.CompletionSources.Add(CliCompletions.CompletePresetNames);
+        var pathOption = new Option<string?>("--path") { Description = "Folder path for the workspace (defaults to ./{name})" };
 
-        var cmd = new Command("new", "Create a new workspace") { nameArg, presetOption };
+        var cmd = new Command("new", "Create a new workspace") { nameArg, presetOption, pathOption };
         cmd.SetAction(async (parseResult, cancellationToken) =>
         {
             var name = parseResult.GetValue(nameArg)!;
             var preset = parseResult.GetValue(presetOption);
+            var explicitPath = parseResult.GetValue(pathOption);
 
             string model;
             List<string> tools;
@@ -86,11 +88,12 @@ internal static class WorkspaceNewCommand
                 }
             }
 
-            var basePath = Path.Combine("workspaces", name);
+            var basePath = Path.GetFullPath(explicitPath ?? name);
             Directory.CreateDirectory(basePath);
             Directory.CreateDirectory(Path.Combine(basePath, "prompts"));
             Directory.CreateDirectory(Path.Combine(basePath, "data"));
             Directory.CreateDirectory(Path.Combine(basePath, ".weave"));
+            WorkspaceRegistry.Register(name, basePath);
 
             var isMultiAgent = string.Equals(selectedPresetName, "multi-agent", StringComparison.OrdinalIgnoreCase);
 
@@ -184,15 +187,8 @@ internal static class WorkspaceListCommand
         var cmd = new Command("list", "List all workspaces");
         cmd.SetAction(parseResult =>
         {
-            var workspacesDir = "workspaces";
-            if (!Directory.Exists(workspacesDir))
-            {
-                CliTheme.WriteWarning("No workspaces found.");
-                return 0;
-            }
-
-            var dirs = Directory.GetDirectories(workspacesDir);
-            if (dirs.Length == 0)
+            var workspaces = WorkspaceRegistry.GetAll();
+            if (workspaces.Count == 0)
             {
                 CliTheme.WriteWarning("No workspaces found.");
                 return 0;
@@ -203,13 +199,14 @@ internal static class WorkspaceListCommand
             table.AddColumn(CliTheme.StyledColumn("Path"));
             table.AddColumn(CliTheme.StyledColumn("Status"));
 
-            foreach (var dir in dirs)
+            foreach (var (name, dir) in workspaces)
             {
-                var name = Path.GetFileName(dir);
                 var hasManifest = File.Exists(Path.Combine(dir, "workspace.json"));
                 var status = hasManifest
                     ? $"[rgb({CliTheme.Success.R},{CliTheme.Success.G},{CliTheme.Success.B})]Ready[/]"
-                    : $"[rgb({CliTheme.Error.R},{CliTheme.Error.G},{CliTheme.Error.B})]Invalid[/]";
+                    : Directory.Exists(dir)
+                        ? $"[rgb({CliTheme.Error.R},{CliTheme.Error.G},{CliTheme.Error.B})]Invalid[/]"
+                        : $"[rgb({CliTheme.Error.R},{CliTheme.Error.G},{CliTheme.Error.B})]Missing[/]";
                 table.AddRow(name, dir, status);
             }
 
@@ -235,14 +232,16 @@ internal static class WorkspaceRemoveCommand
             var name = parseResult.GetValue(nameArg)!;
             var purge = parseResult.GetValue(purgeOption);
 
-            var path = Path.Combine("workspaces", name);
-            if (!Directory.Exists(path))
+            var path = WorkspaceRegistry.Resolve(name);
+            if (path is null)
             {
-                CliTheme.WriteError($"Workspace '{name}' not found.");
+                CliTheme.WriteError($"Workspace '{name}' not found in registry.");
                 return 1;
             }
 
-            if (purge)
+            WorkspaceRegistry.Unregister(name);
+
+            if (purge && Directory.Exists(path))
             {
                 Directory.Delete(path, recursive: true);
                 CliTheme.WriteSuccess($"Workspace '{name}' purged.");

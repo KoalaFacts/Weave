@@ -4,15 +4,8 @@ namespace Weave.Cli.Commands;
 
 internal static class CliCompletions
 {
-    internal static IEnumerable<CompletionItem> CompleteWorkspaceNames(CompletionContext _)
-    {
-        var dir = "workspaces";
-        if (!Directory.Exists(dir))
-            return [];
-
-        return Directory.GetDirectories(dir)
-            .Select(d => new CompletionItem(Path.GetFileName(d)));
-    }
+    internal static IEnumerable<CompletionItem> CompleteWorkspaceNames(CompletionContext _) =>
+        WorkspaceRegistry.GetNames().Select(n => new CompletionItem(n));
 
     internal static IEnumerable<CompletionItem> CompletePresetNames(CompletionContext _) =>
         WorkspacePresets.All.Keys.Select(k => new CompletionItem(k));
