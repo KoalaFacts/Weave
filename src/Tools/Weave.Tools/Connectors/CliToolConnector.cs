@@ -136,15 +136,8 @@ public sealed partial class CliToolConnector(ILogger<CliToolConnector> logger) :
         });
     }
 
-    internal static bool ContainsShellMetacharacters(string command)
-    {
-        foreach (var meta in ShellMetacharacters)
-        {
-            if (command.Contains(meta, StringComparison.Ordinal))
-                return true;
-        }
-        return false;
-    }
+    internal static bool ContainsShellMetacharacters(string command) =>
+        ShellMetacharacters.Any(meta => command.Contains(meta, StringComparison.Ordinal));
 
     private static bool IsCommandAllowed(string command, Weave.Workspaces.Models.CliConfig cli)
     {

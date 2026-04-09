@@ -124,16 +124,14 @@ public static class PluginEndpoints
         var config = request.Config ?? new Dictionary<string, string>();
         var knownKeys = new HashSet<string>(schema.Config.Select(f => f.Name), StringComparer.OrdinalIgnoreCase);
 
-        foreach (var field in schema.Config)
+        foreach (var field in schema.Config.Where(f => f.Required && !config.ContainsKey(f.Name)))
         {
-            if (field.Required && !config.ContainsKey(field.Name))
-                (errors ??= [])[$"config.{field.Name}"] = [$"Required config field '{field.Name}' is missing."];
+            (errors ??= [])[$"config.{field.Name}"] = [$"Required config field '{field.Name}' is missing."];
         }
 
-        foreach (var key in config.Keys)
+        foreach (var key in config.Keys.Where(key => !knownKeys.Contains(key)))
         {
-            if (!knownKeys.Contains(key))
-                warnings.Add($"Unknown config key '{key}' for plugin type '{request.Type}'.");
+            warnings.Add($"Unknown config key '{key}' for plugin type '{request.Type}'.");
         }
 
         return (errors, warnings);

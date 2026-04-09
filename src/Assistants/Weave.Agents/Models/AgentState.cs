@@ -23,19 +23,8 @@ public sealed record AgentState
     [Id(14)] public AgentDefinition? Definition { get; set; }
     [Id(15)] public string? ConversationId { get; set; }
 
-    public int RunningTaskCount
-    {
-        get
-        {
-            var count = 0;
-            foreach (var task in ActiveTasks)
-            {
-                if (task.Status is AgentTaskStatus.Running)
-                    count++;
-            }
-            return count;
-        }
-    }
+    public int RunningTaskCount =>
+        ActiveTasks.Count(task => task.Status is AgentTaskStatus.Running);
 
     public AgentTaskInfo GetTask(AgentTaskId taskId)
     {
