@@ -8,7 +8,9 @@ namespace Weave.Security.Tests;
 
 public sealed class VaultSecretProviderTests
 {
-    private readonly CapabilityTokenService _tokenService = new();
+    private static readonly CapabilityTokenOptions _tokenOptions = new() { SigningKey = "test-signing-key-that-is-at-least-32-chars-long" };
+    private readonly CapabilityTokenService _tokenService = new(
+        Microsoft.Extensions.Options.Options.Create(_tokenOptions));
 
     private CapabilityToken MintToken(string grant = "secret:*") =>
         _tokenService.Mint(new CapabilityTokenRequest
@@ -21,7 +23,7 @@ public sealed class VaultSecretProviderTests
     private static VaultSecretProvider CreateProvider(HttpMessageHandler handler) =>
         new(
             new HttpClient(handler) { BaseAddress = new Uri("http://vault:8200") },
-            new CapabilityTokenService(),
+            new CapabilityTokenService(Microsoft.Extensions.Options.Options.Create(_tokenOptions)),
             Substitute.For<ILogger<VaultSecretProvider>>());
 
     private VaultSecretProvider CreateProviderWithSharedTokenService(HttpMessageHandler handler) =>

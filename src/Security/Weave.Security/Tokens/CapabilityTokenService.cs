@@ -11,17 +11,21 @@ public sealed class CapabilityTokenService : ICapabilityTokenService
     private readonly byte[] _signingKey;
     private readonly string _revocationDirectory;
 
-    public CapabilityTokenService() : this(Options.Create(new CapabilityTokenOptions()))
-    {
-    }
-
     public CapabilityTokenService(IOptions<CapabilityTokenOptions> options)
     {
-        var resolved = options.Value ?? new CapabilityTokenOptions();
-        var signingKey = string.IsNullOrWhiteSpace(resolved.SigningKey)
-            ? "weave-development-signing-key-change-me"
-            : resolved.SigningKey;
-        _signingKey = SHA256.HashData(Encoding.UTF8.GetBytes(signingKey));
+        var resolved = options.Value ?? throw new ArgumentNullException(nameof(options), "CapabilityTokenOptions must be configured.");
+
+        if (string.IsNullOrWhiteSpace(resolved.SigningKey))
+            throw new InvalidOperationException(
+                $"CapabilityTokens:SigningKey must be configured. " +
+                $"Set it via configuration, environment variable, or secret store.");
+
+        if (resolved.SigningKey.Length < CapabilityTokenOptions.MinimumSigningKeyLength)
+            throw new InvalidOperationException(
+                $"CapabilityTokens:SigningKey must be at least {CapabilityTokenOptions.MinimumSigningKeyLength} characters. " +
+                $"Current length: {resolved.SigningKey.Length}.");
+
+        _signingKey = SHA256.HashData(Encoding.UTF8.GetBytes(resolved.SigningKey));
         _revocationDirectory = resolved.RevocationDirectory
             ?? Path.Combine(Path.GetTempPath(), "weave-capability-revocations");
         Directory.CreateDirectory(_revocationDirectory);

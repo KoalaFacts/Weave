@@ -1,5 +1,8 @@
+using System.Text.Json.Serialization;
 using Weave.Agents.Models;
+using Weave.Tools.Models;
 using Weave.Workspaces.Models;
+using Weave.Workspaces.Plugins;
 
 namespace Weave.Silo.Api;
 
@@ -14,22 +17,23 @@ public sealed record WorkspaceResponse
 {
     public required string WorkspaceId { get; init; }
     public string? Name { get; init; }
-    public required string Status { get; init; }
+    [JsonConverter(typeof(JsonStringEnumConverter<WorkspaceStatus>))]
+    public required WorkspaceStatus Status { get; init; }
+    public required int ContainerCount { get; init; }
     public DateTimeOffset? StartedAt { get; init; }
     public DateTimeOffset? StoppedAt { get; init; }
     public string? NetworkId { get; init; }
-    public int ContainerCount { get; init; }
     public string? ErrorMessage { get; init; }
 
     public static WorkspaceResponse FromState(WorkspaceState state) => new()
     {
         WorkspaceId = state.WorkspaceId.ToString(),
         Name = state.Name,
-        Status = state.Status.ToString(),
+        Status = state.Status,
+        ContainerCount = state.Containers.Count,
         StartedAt = state.StartedAt,
         StoppedAt = state.StoppedAt,
         NetworkId = state.NetworkId?.ToString(),
-        ContainerCount = state.Containers.Count,
         ErrorMessage = state.ErrorMessage
     };
 }
@@ -66,7 +70,8 @@ public sealed record ReviewTaskRequest
 
 public sealed record ProofItemRequest
 {
-    public required string Type { get; init; }
+    [JsonConverter(typeof(JsonStringEnumConverter<ProofType>))]
+    public required ProofType Type { get; init; }
     public required string Label { get; init; }
     public required string Value { get; init; }
     public string? Uri { get; init; }
@@ -77,7 +82,8 @@ public sealed record AgentResponse
     public required string AgentId { get; init; }
     public required string WorkspaceId { get; init; }
     public required string AgentName { get; init; }
-    public required string Status { get; init; }
+    [JsonConverter(typeof(JsonStringEnumConverter<AgentStatus>))]
+    public required AgentStatus Status { get; init; }
     public string? Model { get; init; }
     public List<string> ConnectedTools { get; init; } = [];
     public List<TaskResponse> ActiveTasks { get; init; } = [];
@@ -89,9 +95,9 @@ public sealed record AgentResponse
         AgentId = state.AgentId,
         WorkspaceId = state.WorkspaceId.ToString(),
         AgentName = state.AgentName,
-        Status = state.Status.ToString(),
+        Status = state.Status,
         Model = state.Model,
-        ConnectedTools = state.ConnectedTools,
+        ConnectedTools = [.. state.ConnectedTools],
         ActiveTasks = state.ActiveTasks.Select(TaskResponse.FromInfo).ToList(),
         ActivatedAt = state.ActivatedAt,
         ErrorMessage = state.ErrorMessage
@@ -102,8 +108,9 @@ public sealed record TaskResponse
 {
     public required string TaskId { get; init; }
     public required string Description { get; init; }
-    public required string Status { get; init; }
-    public DateTimeOffset CreatedAt { get; init; }
+    [JsonConverter(typeof(JsonStringEnumConverter<AgentTaskStatus>))]
+    public required AgentTaskStatus Status { get; init; }
+    public required DateTimeOffset CreatedAt { get; init; }
     public DateTimeOffset? CompletedAt { get; init; }
     public ProofOfWorkResponse? Proof { get; init; }
 
@@ -111,7 +118,7 @@ public sealed record TaskResponse
     {
         TaskId = info.TaskId.ToString(),
         Description = info.Description,
-        Status = info.Status.ToString(),
+        Status = info.Status,
         CreatedAt = info.CreatedAt,
         CompletedAt = info.CompletedAt,
         Proof = info.Proof is not null ? ProofOfWorkResponse.FromProof(info.Proof) : null
@@ -121,7 +128,7 @@ public sealed record TaskResponse
 public sealed record ProofOfWorkResponse
 {
     public List<ProofItemResponse> Items { get; init; } = [];
-    public DateTimeOffset SubmittedAt { get; init; }
+    public required DateTimeOffset SubmittedAt { get; init; }
     public string? ReviewFeedback { get; init; }
     public DateTimeOffset? ReviewedAt { get; init; }
     public VerificationRecordResponse? Verification { get; init; }
@@ -144,7 +151,7 @@ public sealed record VerificationRecordResponse
     public required int RequiredVotes { get; init; }
     public required bool ConsensusReached { get; init; }
     public required bool Accepted { get; init; }
-    public DateTimeOffset CompletedAt { get; init; }
+    public required DateTimeOffset CompletedAt { get; init; }
 
     public static VerificationRecordResponse FromRecord(VerificationRecord record) => new()
     {
@@ -161,7 +168,7 @@ public sealed record VerificationVoteResponse
     public required string ValidatorId { get; init; }
     public required bool Accepted { get; init; }
     public required string Reason { get; init; }
-    public DateTimeOffset VotedAt { get; init; }
+    public required DateTimeOffset VotedAt { get; init; }
     public List<ConditionResultResponse> ConditionResults { get; init; } = [];
 
     public static VerificationVoteResponse FromVote(VerificationVote vote) => new()
@@ -190,29 +197,30 @@ public sealed record ConditionResultResponse
 
 public sealed record ProofItemResponse
 {
-    public required string Type { get; init; }
+    [JsonConverter(typeof(JsonStringEnumConverter<ProofType>))]
+    public required ProofType Type { get; init; }
     public required string Label { get; init; }
     public required string Value { get; init; }
     public string? Uri { get; init; }
 
     public static ProofItemResponse FromItem(ProofItem item) => new()
     {
-        Type = item.Type.ToString(),
+        Type = item.Type,
         Label = item.Label,
         Value = item.Value,
         Uri = item.Uri
     };
 }
 
-public sealed record AgentChatResponse
+public sealed record ChatResponse
 {
     public required string Content { get; init; }
     public required string ConversationId { get; init; }
+    public required bool UsedTools { get; init; }
     public List<ConversationMessageResponse> Messages { get; init; } = [];
-    public bool UsedTools { get; init; }
     public string? Model { get; init; }
 
-    public static AgentChatResponse FromResponse(Weave.Agents.Models.AgentChatResponse response) => new()
+    public static ChatResponse FromResponse(AgentChatResponse response) => new()
     {
         Content = response.Content,
         ConversationId = response.ConversationId,
@@ -226,7 +234,7 @@ public sealed record ConversationMessageResponse
 {
     public required string Role { get; init; }
     public required string Content { get; init; }
-    public DateTimeOffset Timestamp { get; init; }
+    public required DateTimeOffset Timestamp { get; init; }
 
     public static ConversationMessageResponse FromMessage(ConversationMessage message) => new()
     {
@@ -236,13 +244,31 @@ public sealed record ConversationMessageResponse
     };
 }
 
+// === Plugin Contracts ===
+
+public sealed record ConnectPluginRequest
+{
+    public required string Name { get; init; }
+    public required string Type { get; init; }
+    public string? Description { get; init; }
+    public Dictionary<string, string>? Config { get; init; }
+}
+
+public sealed record ConnectPluginResponse
+{
+    public required PluginStatus Status { get; init; }
+    public List<string> Warnings { get; init; } = [];
+}
+
 // === Tool Contracts ===
 
 public sealed record ToolConnectionResponse
 {
     public required string ToolName { get; init; }
-    public required string ToolType { get; init; }
-    public required string Status { get; init; }
+    [JsonConverter(typeof(JsonStringEnumConverter<ToolType>))]
+    public required ToolType ToolType { get; init; }
+    [JsonConverter(typeof(JsonStringEnumConverter<ToolConnectionStatus>))]
+    public required ToolConnectionStatus Status { get; init; }
     public string? Endpoint { get; init; }
     public DateTimeOffset? ConnectedAt { get; init; }
     public string? ErrorMessage { get; init; }
@@ -250,8 +276,8 @@ public sealed record ToolConnectionResponse
     public static ToolConnectionResponse FromConnection(ToolConnection conn) => new()
     {
         ToolName = conn.ToolName,
-        ToolType = conn.ToolType,
-        Status = conn.Status.ToString(),
+        ToolType = Enum.TryParse<ToolType>(conn.ToolType, ignoreCase: true, out var toolType) ? toolType : ToolType.Mcp,
+        Status = conn.Status,
         Endpoint = conn.Endpoint,
         ConnectedAt = conn.ConnectedAt,
         ErrorMessage = conn.ErrorMessage

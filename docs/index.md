@@ -48,6 +48,7 @@ Weave.AppHost (Aspire orchestrator)
 | [deployment.md](deployment.md) | Deployment | `src/Deployment/` | Publishers: Docker Compose, Kubernetes, Nomad, Fly.io, GitHub Actions |
 | [runtime.md](runtime.md) | Runtime | `src/Runtime/` | Orleans Silo host, Aspire AppHost, plugin wiring (Dapr/Vault), REST API, CQRS handler registration |
 | [ux.md](ux.md) | CLI + Dashboard | `src/UX/` | CLI commands (System.CommandLine + Spectre.Console), Blazor dashboard (FluentUI), workspace presets |
+| [examples.md](examples.md) | Code Examples | (cross-cutting) | Manifest authoring, CLI usage, grains, CQRS handlers, tokens, events, lifecycle hooks, testing patterns |
 
 ## Cross-Subsystem Interactions
 

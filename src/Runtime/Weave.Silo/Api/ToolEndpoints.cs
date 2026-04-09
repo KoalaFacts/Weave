@@ -9,13 +9,20 @@ public static class ToolEndpoints
         var group = routes.MapGroup("/api/workspaces/{workspaceId}/tools")
             .WithTags("Tools");
 
-        group.MapGet("/", GetAllTools);
-        group.MapGet("/{toolName}", GetTool);
+        group.MapGet("/", GetAllToolsAsync)
+            .WithDescription("List all tool connections in a workspace.")
+            .Produces<IEnumerable<ToolConnectionResponse>>();
+        group.MapGet("/{toolName}", GetToolAsync)
+            .WithDescription("Get a single tool connection by name.")
+            .Produces<ToolConnectionResponse>()
+            .ProducesProblem(404);
 
         return group;
     }
 
-    private static async Task<IResult> GetAllTools(
+    // --- GET endpoints ---
+
+    private static async Task<IResult> GetAllToolsAsync(
         string workspaceId,
         IGrainFactory grainFactory,
         CancellationToken ct)
@@ -25,7 +32,7 @@ public static class ToolEndpoints
         return Results.Ok(connections.Select(ToolConnectionResponse.FromConnection));
     }
 
-    private static async Task<IResult> GetTool(
+    private static async Task<IResult> GetToolAsync(
         string workspaceId,
         string toolName,
         IGrainFactory grainFactory,
@@ -33,8 +40,9 @@ public static class ToolEndpoints
     {
         var grain = grainFactory.GetGrain<IToolRegistryGrain>(workspaceId);
         var connection = await grain.GetConnectionAsync(toolName);
-        return connection is null
-            ? Results.NotFound()
-            : Results.Ok(ToolConnectionResponse.FromConnection(connection));
+        if (connection is null)
+            return ResultExtensions.NotFound($"Tool '{toolName}' not found in workspace '{workspaceId}'.");
+
+        return Results.Ok(ToolConnectionResponse.FromConnection(connection));
     }
 }

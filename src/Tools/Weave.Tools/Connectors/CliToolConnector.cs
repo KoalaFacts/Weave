@@ -10,6 +10,8 @@ public sealed partial class CliToolConnector(ILogger<CliToolConnector> logger) :
 {
     private readonly ConcurrentDictionary<string, Weave.Workspaces.Models.CliConfig> _configurations = new();
 
+    private static readonly string[] ShellMetacharacters = [";", "|", "&&", "||", "`", "$(", "$((", "\n", "\r", ">>", ">&"];
+
     public ToolType ToolType => ToolType.Cli;
 
     public Task<ToolHandle> ConnectAsync(ToolSpec tool, CapabilityToken token, CancellationToken ct = default)
@@ -49,6 +51,18 @@ public sealed partial class CliToolConnector(ILogger<CliToolConnector> logger) :
 
         var command = invocation.RawInput ?? string.Join(" ", invocation.Parameters.Values);
         var sw = Stopwatch.StartNew();
+
+        if (ContainsShellMetacharacters(command))
+        {
+            sw.Stop();
+            return new ToolResult
+            {
+                Success = false,
+                ToolName = handle.ToolName,
+                Error = "Command contains prohibited shell metacharacters.",
+                Duration = sw.Elapsed
+            };
+        }
 
         if (!IsCommandAllowed(command, cli))
         {
@@ -122,6 +136,9 @@ public sealed partial class CliToolConnector(ILogger<CliToolConnector> logger) :
         });
     }
 
+    internal static bool ContainsShellMetacharacters(string command) =>
+        ShellMetacharacters.Any(meta => command.Contains(meta, StringComparison.Ordinal));
+
     private static bool IsCommandAllowed(string command, Weave.Workspaces.Models.CliConfig cli)
     {
         if (cli.DeniedCommands.Any(pattern => WildcardMatches(pattern, command)))
@@ -163,7 +180,7 @@ public sealed partial class CliToolConnector(ILogger<CliToolConnector> logger) :
             if (part.Length == 0)
                 continue;
 
-            var matchIndex = command.IndexOf(part, currentIndex, StringComparison.Ordinal);
+            var matchIndex = command.IndexOf(part, currentIndex, StringComparison.OrdinalIgnoreCase);
             if (matchIndex < 0)
                 return false;
 
@@ -176,7 +193,7 @@ public sealed partial class CliToolConnector(ILogger<CliToolConnector> logger) :
         if (anchoredAtEnd)
         {
             var lastPart = parts.LastOrDefault(static p => p.Length > 0) ?? string.Empty;
-            return command.EndsWith(lastPart, StringComparison.Ordinal);
+            return command.EndsWith(lastPart, StringComparison.OrdinalIgnoreCase);
         }
 
         return true;

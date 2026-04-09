@@ -281,12 +281,10 @@ public sealed partial class PluginRegistry : IPluginRegistry, IDisposable
         if (secretNames.Count == 0)
             return info;
 
-        var redacted = new Dictionary<string, string>(info.Count, StringComparer.OrdinalIgnoreCase);
-        foreach (var (key, value) in info)
-        {
-            redacted[key] = secretNames.Contains(key) ? "***" : value;
-        }
-        return redacted;
+        return info.ToDictionary(
+            kvp => kvp.Key,
+            kvp => secretNames.Contains(kvp.Key) ? "***" : kvp.Value,
+            StringComparer.OrdinalIgnoreCase);
     }
 
     [LoggerMessage(Level = LogLevel.Information, Message = "Plugin '{Name}' ({Type}) connected")]

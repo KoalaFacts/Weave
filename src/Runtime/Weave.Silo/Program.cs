@@ -1,3 +1,5 @@
+using Microsoft.AspNetCore.Mvc;
+using Scalar.AspNetCore;
 using Weave.Agents.Pipeline;
 using Weave.Security.Plugins;
 using Weave.Security.Proxy;
@@ -45,6 +47,8 @@ else
 // Shared kernel services
 builder.Services.AddSingleton<ILifecycleManager, LifecycleManager>();
 
+builder.Services.AddSingleton<ICommandRunner, ProcessCommandRunner>();
+
 if (isLocalMode)
     builder.Services.AddSingleton<IWorkspaceRuntime, InProcessRuntime>();
 else
@@ -80,6 +84,7 @@ builder.Services.AddSingleton<ISecretProvider>(sp =>
 // Agent chat pipeline
 builder.Services.AddSingleton<IAgentCostLedger, AgentCostLedger>();
 builder.Services.AddSingleton<IAgentChatClientFactory, AgentChatClientFactory>();
+builder.Services.AddTransient<IAgentChatPipeline, AgentChatPipeline>();
 
 // Tool connectors and discovery
 builder.Services.AddSingleton<IToolConnector, McpToolConnector>();
@@ -114,8 +119,22 @@ builder.Services.AddSingleton<IPluginConnector>(sp =>
         sp.GetRequiredService<IHttpClientFactory>(),
         sp.GetRequiredService<ILoggerFactory>()));
 builder.Services.AddSingleton<IPluginRegistry, PluginRegistry>();
+builder.Services.AddOpenApi();
 
 var app = builder.Build();
+
+app.UseExceptionHandler(error => error.Run(async context =>
+{
+    context.Response.StatusCode = 500;
+    context.Response.ContentType = "application/problem+json";
+    var problem = new ProblemDetails
+    {
+        Status = 500,
+        Title = "Internal Server Error",
+        Detail = "An unexpected error occurred."
+    };
+    await context.Response.WriteAsJsonAsync(problem, SiloApiJsonContext.Default.ProblemDetails);
+}));
 
 // --- Activate plugins from workspace manifest or environment ---
 var pluginRegistry = app.Services.GetRequiredService<IPluginRegistry>();
@@ -164,6 +183,10 @@ if (isLocalMode)
 }
 
 app.MapDefaultEndpoints();
+
+// OpenAPI + Scalar
+app.MapOpenApi();
+app.MapScalarApiReference();
 
 // Domain API
 app.MapWorkspaceEndpoints();

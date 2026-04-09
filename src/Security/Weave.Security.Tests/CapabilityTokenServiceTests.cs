@@ -4,7 +4,11 @@ namespace Weave.Security.Tests;
 
 public sealed class CapabilityTokenServiceTests
 {
-    private readonly CapabilityTokenService _service = new();
+    private static CapabilityTokenService CreateService(string signingKey = "test-signing-key-that-is-at-least-32-chars-long") =>
+        new(Microsoft.Extensions.Options.Options.Create(
+            new CapabilityTokenOptions { SigningKey = signingKey }));
+
+    private readonly CapabilityTokenService _service = CreateService();
 
     [Fact]
     public void Mint_WithValidRequest_ReturnsSignedToken()
@@ -359,12 +363,8 @@ public sealed class CapabilityTokenServiceTests
     [Fact]
     public void Validate_DifferentSigningKey_ReturnsFalse()
     {
-        var service1 = new CapabilityTokenService(
-            Microsoft.Extensions.Options.Options.Create(
-                new CapabilityTokenOptions { SigningKey = "key-one" }));
-        var service2 = new CapabilityTokenService(
-            Microsoft.Extensions.Options.Options.Create(
-                new CapabilityTokenOptions { SigningKey = "key-two" }));
+        var service1 = CreateService("signing-key-one-that-is-at-least-32-characters");
+        var service2 = CreateService("signing-key-two-that-is-at-least-32-characters");
 
         var token = service1.Mint(new CapabilityTokenRequest
         {
@@ -376,5 +376,40 @@ public sealed class CapabilityTokenServiceTests
 
         service1.Validate(token).ShouldBeTrue();
         service2.Validate(token).ShouldBeFalse();
+    }
+
+    // --- Constructor validation ---
+
+    [Fact]
+    public void Constructor_NullSigningKey_Throws()
+    {
+        var act = () => new CapabilityTokenService(
+            Microsoft.Extensions.Options.Options.Create(
+                new CapabilityTokenOptions { SigningKey = null }));
+
+        Should.Throw<InvalidOperationException>(act)
+            .Message.ShouldContain("must be configured");
+    }
+
+    [Fact]
+    public void Constructor_EmptySigningKey_Throws()
+    {
+        var act = () => new CapabilityTokenService(
+            Microsoft.Extensions.Options.Options.Create(
+                new CapabilityTokenOptions { SigningKey = "" }));
+
+        Should.Throw<InvalidOperationException>(act)
+            .Message.ShouldContain("must be configured");
+    }
+
+    [Fact]
+    public void Constructor_ShortSigningKey_Throws()
+    {
+        var act = () => new CapabilityTokenService(
+            Microsoft.Extensions.Options.Options.Create(
+                new CapabilityTokenOptions { SigningKey = "too-short" }));
+
+        Should.Throw<InvalidOperationException>(act)
+            .Message.ShouldContain("at least");
     }
 }

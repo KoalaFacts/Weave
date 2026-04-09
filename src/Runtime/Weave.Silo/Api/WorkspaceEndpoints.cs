@@ -13,15 +13,29 @@ public static class WorkspaceEndpoints
         var group = routes.MapGroup("/api/workspaces")
             .WithTags("Workspaces");
 
-        group.MapGet("/", GetAllWorkspaces);
-        group.MapPost("/", StartWorkspace);
-        group.MapDelete("/{workspaceId}", StopWorkspace);
-        group.MapGet("/{workspaceId}", GetWorkspaceState);
+        group.MapGet("/", GetAllWorkspacesAsync)
+            .WithDescription("List all workspaces.")
+            .Produces<IEnumerable<WorkspaceResponse>>();
+        group.MapGet("/{workspaceId}", GetWorkspaceStateAsync)
+            .WithDescription("Get the current state of a workspace.")
+            .Produces<WorkspaceResponse>()
+            .ProducesProblem(404);
+        group.MapPost("/", StartWorkspaceAsync)
+            .WithDescription("Start a new workspace from a manifest.")
+            .Produces<WorkspaceResponse>(201)
+            .ProducesValidationProblem()
+            .ProducesProblem(409);
+        group.MapDelete("/{workspaceId}", StopWorkspaceAsync)
+            .WithDescription("Stop a workspace.")
+            .Produces(204)
+            .ProducesProblem(409);
 
         return group;
     }
 
-    private static async Task<IResult> GetAllWorkspaces(
+    // --- GET endpoints ---
+
+    private static async Task<IResult> GetAllWorkspacesAsync(
         IQueryDispatcher dispatcher,
         CancellationToken ct)
     {
@@ -31,34 +45,71 @@ public static class WorkspaceEndpoints
         return Results.Ok(states.Select(WorkspaceResponse.FromState));
     }
 
-    private static async Task<IResult> StartWorkspace(
-        StartWorkspaceRequest request,
-        ICommandDispatcher dispatcher,
-        CancellationToken ct)
-    {
-        var workspaceId = WorkspaceId.New();
-        var command = new StartWorkspaceCommand(workspaceId, request.Manifest);
-        var state = await dispatcher.DispatchAsync<StartWorkspaceCommand, Workspaces.Models.WorkspaceState>(command, ct);
-        return Results.Created($"/api/workspaces/{workspaceId}", WorkspaceResponse.FromState(state));
-    }
-
-    private static async Task<IResult> StopWorkspace(
-        string workspaceId,
-        ICommandDispatcher dispatcher,
-        CancellationToken ct)
-    {
-        var command = new StopWorkspaceCommand(WorkspaceId.From(workspaceId));
-        await dispatcher.DispatchAsync<StopWorkspaceCommand, bool>(command, ct);
-        return Results.NoContent();
-    }
-
-    private static async Task<IResult> GetWorkspaceState(
+    private static async Task<IResult> GetWorkspaceStateAsync(
         string workspaceId,
         IQueryDispatcher dispatcher,
         CancellationToken ct)
     {
         var query = new GetWorkspaceStateQuery(WorkspaceId.From(workspaceId));
-        var state = await dispatcher.DispatchAsync<GetWorkspaceStateQuery, Workspaces.Models.WorkspaceState>(query, ct);
+        var state = await dispatcher.DispatchAsync<GetWorkspaceStateQuery, WorkspaceState>(query, ct);
+        if (state.WorkspaceId.IsEmpty)
+            return ResultExtensions.NotFound($"Workspace '{workspaceId}' not found.");
+
         return Results.Ok(WorkspaceResponse.FromState(state));
+    }
+
+    // --- POST/DELETE endpoints ---
+
+    private static async Task<IResult> StartWorkspaceAsync(
+        StartWorkspaceRequest request,
+        ICommandDispatcher dispatcher,
+        CancellationToken ct)
+    {
+        var errors = ValidateStartWorkspace(request);
+        if (errors is not null)
+            return ResultExtensions.ValidationFailed(errors);
+
+        try
+        {
+            var workspaceId = WorkspaceId.New();
+            var command = new StartWorkspaceCommand(workspaceId, request.Manifest);
+            var state = await dispatcher.DispatchAsync<StartWorkspaceCommand, WorkspaceState>(command, ct);
+            return Results.Created($"/api/workspaces/{workspaceId}", WorkspaceResponse.FromState(state));
+        }
+        catch (InvalidOperationException ex)
+        {
+            return ResultExtensions.Conflict(ex.Message);
+        }
+    }
+
+    private static async Task<IResult> StopWorkspaceAsync(
+        string workspaceId,
+        ICommandDispatcher dispatcher,
+        CancellationToken ct)
+    {
+        try
+        {
+            var command = new StopWorkspaceCommand(WorkspaceId.From(workspaceId));
+            await dispatcher.DispatchAsync<StopWorkspaceCommand, bool>(command, ct);
+            return Results.NoContent();
+        }
+        catch (InvalidOperationException ex)
+        {
+            return ResultExtensions.Conflict(ex.Message);
+        }
+    }
+
+    // --- Validation ---
+
+    private static Dictionary<string, string[]>? ValidateStartWorkspace(StartWorkspaceRequest request)
+    {
+        Dictionary<string, string[]>? errors = null;
+
+        if (string.IsNullOrWhiteSpace(request.Manifest.Name))
+            (errors ??= [])["manifest.name"] = ["Name is required."];
+        if (string.IsNullOrWhiteSpace(request.Manifest.Version))
+            (errors ??= [])["manifest.version"] = ["Version is required."];
+
+        return errors;
     }
 }

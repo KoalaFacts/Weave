@@ -465,4 +465,56 @@ public sealed class CliToolConnectorTests
         result.Success.ShouldBeFalse();
         result.Error!.ShouldContain("not permitted");
     }
+
+    // --- Shell metacharacter protection ---
+
+    [Theory]
+    [InlineData("echo hello; rm -rf /")]
+    [InlineData("echo hello | cat /etc/passwd")]
+    [InlineData("echo hello && rm -rf /")]
+    [InlineData("echo hello || rm -rf /")]
+    [InlineData("echo `whoami`")]
+    [InlineData("echo $(whoami)")]
+    public async Task InvokeAsync_ShellMetacharacter_ReturnsFailure(string command)
+    {
+        var connector = CreateConnector();
+        var spec = CreateSpec();
+        var handle = await connector.ConnectAsync(spec, _testToken, TestContext.Current.CancellationToken);
+        var invocation = new ToolInvocation { ToolName = "my-cli", RawInput = command, Parameters = [] };
+
+        var result = await connector.InvokeAsync(handle, invocation, TestContext.Current.CancellationToken);
+
+        result.Success.ShouldBeFalse();
+        result.Error!.ShouldContain("metacharacter");
+    }
+
+    [Fact]
+    public async Task InvokeAsync_SafeCommand_PassesMetacharacterCheck()
+    {
+        var connector = CreateConnector();
+        var spec = CreateSpec(shell: "nonexistent-shell-binary");
+        var handle = await connector.ConnectAsync(spec, _testToken, TestContext.Current.CancellationToken);
+        var invocation = new ToolInvocation { ToolName = "my-cli", RawInput = "echo hello world", Parameters = [] };
+
+        var result = await connector.InvokeAsync(handle, invocation, TestContext.Current.CancellationToken);
+
+        // Passes metacharacter check but fails on nonexistent shell
+        result.Error!.ShouldNotContain("metacharacter");
+    }
+
+    // --- Case-insensitive wildcard matching ---
+
+    [Fact]
+    public async Task InvokeAsync_DeniedCommandCaseInsensitive_ReturnsFailure()
+    {
+        var connector = CreateConnector();
+        var spec = CreateSpec(denied: ["RM *"]);
+        var handle = await connector.ConnectAsync(spec, _testToken, TestContext.Current.CancellationToken);
+        var invocation = new ToolInvocation { ToolName = "my-cli", RawInput = "rm -rf /tmp", Parameters = [] };
+
+        var result = await connector.InvokeAsync(handle, invocation, TestContext.Current.CancellationToken);
+
+        result.Success.ShouldBeFalse();
+        result.Error!.ShouldContain("not permitted");
+    }
 }

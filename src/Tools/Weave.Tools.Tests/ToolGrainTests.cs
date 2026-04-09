@@ -23,7 +23,9 @@ public sealed class ToolGrainTests
         discovery.GetConnector(ToolType.Cli).Returns(connector);
 
         var leakScanner = new LeakScanner(Substitute.For<ILogger<LeakScanner>>());
-        var tokenService = new CapabilityTokenService();
+        var tokenService = new CapabilityTokenService(
+            Microsoft.Extensions.Options.Options.Create(
+                new CapabilityTokenOptions { SigningKey = "test-signing-key-that-is-at-least-32-chars-long" }));
         var lifecycleManager = Substitute.For<ILifecycleManager>();
         var logger = Substitute.For<ILogger<ToolGrain>>();
         var eventBus = Substitute.For<IEventBus>();

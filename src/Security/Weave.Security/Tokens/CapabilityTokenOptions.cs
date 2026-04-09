@@ -3,6 +3,7 @@ namespace Weave.Security.Tokens;
 public sealed class CapabilityTokenOptions
 {
     public const string ConfigurationSectionName = "CapabilityTokens";
-    public string SigningKey { get; init; } = "weave-development-signing-key-change-me";
+    public const int MinimumSigningKeyLength = 32;
+    public string? SigningKey { get; init; }
     public string? RevocationDirectory { get; init; }
 }

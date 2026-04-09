@@ -8,6 +8,8 @@
     <PackageVersion Include="Aspire.Hosting.Orleans" Version="13.2.1" />
     <PackageVersion Include="Aspire.Hosting.Redis" Version="13.2.1" />
     <PackageVersion Include="CommunityToolkit.Aspire.Hosting.Dapr" Version="13.0.0" />
+    <PackageVersion Include="Microsoft.AspNetCore.OpenApi" Version="10.0.5" />
+    <PackageVersion Include="Scalar.AspNetCore" Version="2.13.20" />
   </ItemGroup>
   <ItemGroup Label="Aspire ServiceDefaults">
     <PackageVersion Include="Microsoft.Extensions.Http.Resilience" Version="10.4.0" />
@@ -36,7 +38,6 @@
   <ItemGroup Label="Microsoft.Extensions.AI">
     <PackageVersion Include="Microsoft.Extensions.AI" Version="10.4.1" />
     <PackageVersion Include="Microsoft.Extensions.AI.Abstractions" Version="10.4.1" />
-    <PackageVersion Include="Microsoft.Extensions.AI.OpenAI" Version="10.4.0" />
   </ItemGroup>
   <!-- Dapr SDK and VaultSharp removed — now using direct HTTP to sidecar/API -->
   <ItemGroup Label="CLI">
@@ -47,7 +48,6 @@
     <PackageVersion Include="xunit.v3" Version="3.2.2" />
     <PackageVersion Include="NSubstitute" Version="5.3.0" />
     <PackageVersion Include="Shouldly" Version="4.3.0" />
-    <PackageVersion Include="Verify.XunitV3" Version="31.13.2" />
   </ItemGroup>
   <ItemGroup Label="Blazor Dashboard">
     <PackageVersion Include="Microsoft.FluentUI.AspNetCore.Components" Version="4.14.0" />

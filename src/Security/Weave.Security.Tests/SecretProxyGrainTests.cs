@@ -9,7 +9,9 @@ namespace Weave.Security.Tests;
 
 public sealed class SecretProxyGrainTests
 {
-    private static readonly CapabilityTokenService TokenService = new();
+    private static readonly CapabilityTokenService TokenService = new(
+        Microsoft.Extensions.Options.Options.Create(
+            new CapabilityTokenOptions { SigningKey = "test-signing-key-that-is-at-least-32-chars-long" }));
 
     private static CapabilityToken MintToken() =>
         TokenService.Mint(new CapabilityTokenRequest

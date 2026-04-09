@@ -1,7 +1,3 @@
-using System.Diagnostics.CodeAnalysis;
-using System.Text;
-using System.Text.Json;
-using Microsoft.Extensions.AI;
 using Microsoft.Extensions.Logging;
 using Weave.Agents.Events;
 using Weave.Agents.Models;
@@ -9,24 +5,18 @@ using Weave.Agents.Pipeline;
 using Weave.Shared.Events;
 using Weave.Shared.Ids;
 using Weave.Shared.Lifecycle;
-using Weave.Tools.Grains;
-using Weave.Tools.Models;
 using Weave.Workspaces.Models;
 
 namespace Weave.Agents.Grains;
 
 public sealed class AgentGrain(
     IGrainFactory grainFactory,
-    IAgentChatClientFactory chatClientFactory,
+    IAgentChatPipeline chatPipeline,
     ILifecycleManager lifecycleManager,
     IEventBus eventBus,
     ILogger<AgentGrain> logger,
     [PersistentState("agent", "Default")] IPersistentState<AgentState> persistentState) : Grain, IAgentGrain
 {
-    private static readonly JsonSerializerOptions ToolInputJsonOptions = new(JsonSerializerDefaults.Web);
-    private IChatClient? _chatClient;
-    private string? _systemPrompt;
-
     public override async Task OnActivateAsync(CancellationToken cancellationToken)
     {
         await persistentState.ReadStateAsync(cancellationToken);
@@ -39,7 +29,7 @@ public sealed class AgentGrain(
         }
 
         if (persistentState.State.Definition is not null)
-            _chatClient = chatClientFactory.Create(persistentState.State.AgentId, persistentState.State.Model);
+            chatPipeline.Initialize(persistentState.State.AgentId, persistentState.State.Model);
     }
 
     public async Task<AgentState> ActivateAgentAsync(WorkspaceId workspaceId, AgentDefinition definition)
@@ -65,8 +55,8 @@ public sealed class AgentGrain(
         {
             await lifecycleManager.RunHooksAsync(LifecyclePhase.AgentActivating, context, CancellationToken.None);
 
-            _chatClient = chatClientFactory.Create(persistentState.State.AgentId, definition.Model);
-            _systemPrompt = null;
+            chatPipeline.Reset();
+            chatPipeline.Initialize(persistentState.State.AgentId, definition.Model);
 
             persistentState.State.Status = AgentStatus.Active;
             persistentState.State.ActivatedAt = DateTimeOffset.UtcNow;
@@ -134,6 +124,8 @@ public sealed class AgentGrain(
         {
             await lifecycleManager.RunHooksAsync(LifecyclePhase.AgentDeactivating, context, CancellationToken.None);
 
+            chatPipeline.Reset();
+
             persistentState.State.Status = AgentStatus.Idle;
             persistentState.State.DeactivatedAt = DateTimeOffset.UtcNow;
             persistentState.State.ActiveTasks.Clear();
@@ -172,63 +164,9 @@ public sealed class AgentGrain(
         if (persistentState.State.Status is not (AgentStatus.Active or AgentStatus.Busy))
             throw new InvalidOperationException($"Agent {persistentState.State.AgentName} is not active (status: {persistentState.State.Status}).");
 
-        _chatClient ??= chatClientFactory.Create(persistentState.State.AgentId, persistentState.State.Model);
-
-        var userEntry = new ConversationMessage
-        {
-            Role = string.IsNullOrWhiteSpace(message.Role) ? "user" : message.Role,
-            Content = message.Content,
-            Timestamp = DateTimeOffset.UtcNow
-        };
-        persistentState.State.History.Add(userEntry);
-        persistentState.State.LastActive = userEntry.Timestamp;
-
-        var prompt = await GetSystemPromptAsync();
-        var chatMessages = new List<ChatMessage>(persistentState.State.History.Count + 1);
-        if (!string.IsNullOrWhiteSpace(prompt))
-            chatMessages.Add(new ChatMessage(ChatRole.System, prompt));
-
-        foreach (var historyMessage in persistentState.State.History)
-            chatMessages.Add(ToChatMessage(historyMessage));
-
-        var tools = await BuildToolsAsync();
-        var options = new ChatOptions
-        {
-            ModelId = persistentState.State.Model,
-            ConversationId = persistentState.State.ConversationId,
-            AdditionalProperties = new AdditionalPropertiesDictionary
-            {
-                ["agentId"] = persistentState.State.AgentId
-            }
-        };
-
-        if (tools.Count > 0)
-            options.Tools = tools;
-
-        var response = await _chatClient.GetResponseAsync(chatMessages, options, CancellationToken.None);
-        persistentState.State.ConversationId = response.ConversationId ?? persistentState.State.ConversationId;
-
-        var newMessages = new List<ConversationMessage>();
-        foreach (var responseMessage in response.Messages)
-        {
-            foreach (var conversationMessage in ToConversationMessages(responseMessage))
-            {
-                persistentState.State.History.Add(conversationMessage);
-                newMessages.Add(conversationMessage);
-            }
-        }
-
-        persistentState.State.LastActive = DateTimeOffset.UtcNow;
+        var response = await chatPipeline.ExecuteAsync(persistentState.State, message);
         await persistentState.WriteStateAsync();
-
-        return new AgentChatResponse
-        {
-            Content = response.Text,
-            ConversationId = persistentState.State.ConversationId ?? string.Empty,
-            Messages = newMessages,
-            UsedTools = response.Messages.Any(static m => m.Contents.Any(static c => c is FunctionCallContent or FunctionResultContent)),
-            Model = response.ModelId ?? persistentState.State.Model
-        };
+        return response;
     }
 
     public async Task<AgentTaskInfo> SubmitTaskAsync(string description)
@@ -236,29 +174,7 @@ public sealed class AgentGrain(
         if (persistentState.State.Status is not (AgentStatus.Active or AgentStatus.Busy))
             throw new InvalidOperationException($"Agent {persistentState.State.AgentName} is not active (status: {persistentState.State.Status}).");
 
-        var runningCount = 0;
-        foreach (var taskInfo in persistentState.State.ActiveTasks)
-        {
-            if (taskInfo.Status is AgentTaskStatus.Running)
-                runningCount++;
-        }
-
-        if (runningCount >= persistentState.State.MaxConcurrentTasks)
-        {
-            throw new InvalidOperationException(
-                $"Agent {persistentState.State.AgentName} has reached max concurrent tasks ({persistentState.State.MaxConcurrentTasks}).");
-        }
-
-        var task = new AgentTaskInfo
-        {
-            TaskId = AgentTaskId.New(),
-            Description = description,
-            Status = AgentTaskStatus.Running
-        };
-
-        persistentState.State.ActiveTasks.Add(task);
-        persistentState.State.Status = AgentStatus.Busy;
-        persistentState.State.LastActive = DateTimeOffset.UtcNow;
+        var task = persistentState.State.SubmitTask(description);
         await persistentState.WriteStateAsync();
 
         logger.LogInformation("Task {TaskId} submitted to agent {AgentName}", task.TaskId, persistentState.State.AgentName);
@@ -267,27 +183,9 @@ public sealed class AgentGrain(
 
     public async Task CompleteTaskAsync(AgentTaskId taskId, bool success, ProofOfWork proof)
     {
-        AgentTaskInfo? task = null;
-        foreach (var candidate in persistentState.State.ActiveTasks)
-        {
-            if (candidate.TaskId == taskId)
-            {
-                task = candidate;
-                break;
-            }
-        }
-
-        if (task is null)
-            throw new InvalidOperationException($"Task {taskId} not found on agent {persistentState.State.AgentName}.");
-
         if (!success)
         {
-            task.Status = AgentTaskStatus.Failed;
-            task.CompletedAt = DateTimeOffset.UtcNow;
-            task.Proof = proof;
-
-            UpdateAgentBusyStatus();
-            persistentState.State.LastActive = DateTimeOffset.UtcNow;
+            persistentState.State.FailTask(taskId, proof);
             await persistentState.WriteStateAsync();
 
             await eventBus.PublishAsync(new AgentTaskCompletedEvent
@@ -302,9 +200,7 @@ public sealed class AgentGrain(
             return;
         }
 
-        task.Status = AgentTaskStatus.AwaitingReview;
-        task.Proof = proof;
-        persistentState.State.LastActive = DateTimeOffset.UtcNow;
+        persistentState.State.SetAwaitingReview(taskId, proof);
         await persistentState.WriteStateAsync();
 
         await eventBus.PublishAsync(new AgentTaskAwaitingReviewEvent
@@ -331,43 +227,11 @@ public sealed class AgentGrain(
 
     public async Task ReviewTaskAsync(AgentTaskId taskId, bool accepted, string? feedback = null, VerificationRecord? verification = null)
     {
-        AgentTaskInfo? task = null;
-        foreach (var candidate in persistentState.State.ActiveTasks)
-        {
-            if (candidate.TaskId == taskId)
-            {
-                task = candidate;
-                break;
-            }
-        }
-
-        if (task is null)
-            throw new InvalidOperationException($"Task {taskId} not found on agent {persistentState.State.AgentName}.");
-
-        if (task.Status is not AgentTaskStatus.AwaitingReview)
-            throw new InvalidOperationException($"Task {taskId} is not awaiting review (status: {task.Status}).");
-
-        if (task.Proof is not null)
-        {
-            task.Proof.ReviewFeedback = feedback;
-            task.Proof.ReviewedAt = DateTimeOffset.UtcNow;
-            if (verification is not null)
-                task.Proof.Verification = verification;
-        }
-
         if (accepted)
-        {
-            task.Status = AgentTaskStatus.Accepted;
-            task.CompletedAt = DateTimeOffset.UtcNow;
-            persistentState.State.TotalTasksCompleted++;
-        }
+            persistentState.State.AcceptTask(taskId, feedback, verification);
         else
-        {
-            task.Status = AgentTaskStatus.Rejected;
-        }
+            persistentState.State.RejectTask(taskId, feedback, verification);
 
-        UpdateAgentBusyStatus();
-        persistentState.State.LastActive = DateTimeOffset.UtcNow;
         await persistentState.WriteStateAsync();
 
         await eventBus.PublishAsync(new AgentTaskReviewedEvent
@@ -416,22 +280,6 @@ public sealed class AgentGrain(
         ApplyIdentity(TryGetPrimaryKeyString(), workspaceId);
     }
 
-    private void UpdateAgentBusyStatus()
-    {
-        var hasRunning = false;
-        foreach (var activeTask in persistentState.State.ActiveTasks)
-        {
-            if (activeTask.Status is AgentTaskStatus.Running)
-            {
-                hasRunning = true;
-                break;
-            }
-        }
-
-        if (!hasRunning)
-            persistentState.State.Status = AgentStatus.Active;
-    }
-
     private void ApplyIdentity(string? key, WorkspaceId workspaceId)
     {
         if (!string.IsNullOrWhiteSpace(key))
@@ -467,197 +315,6 @@ public sealed class AgentGrain(
         catch (NullReferenceException)
         {
             return null;
-        }
-    }
-
-    private async Task<string?> GetSystemPromptAsync()
-    {
-        if (_systemPrompt is not null || persistentState.State.Definition?.SystemPromptFile is null)
-            return _systemPrompt;
-
-        var promptPath = persistentState.State.Definition.SystemPromptFile;
-        if (!File.Exists(promptPath))
-        {
-            logger.LogWarning("System prompt file '{PromptPath}' was not found for agent {AgentName}", promptPath, persistentState.State.AgentName);
-            _systemPrompt = string.Empty;
-            return _systemPrompt;
-        }
-
-        _systemPrompt = await File.ReadAllTextAsync(promptPath);
-        return _systemPrompt;
-    }
-
-    private async Task<List<AITool>> BuildToolsAsync()
-    {
-        var registry = grainFactory.GetGrain<IToolRegistryGrain>(persistentState.State.WorkspaceId.ToString());
-        var tools = new List<AITool>(persistentState.State.ConnectedTools.Count);
-
-        foreach (var toolName in persistentState.State.ConnectedTools)
-        {
-            var resolution = await registry.ResolveAsync(persistentState.State.AgentName, toolName);
-            if (resolution is null)
-                continue;
-
-            Func<string, Task<string>> toolDelegate = input => InvokeToolAsync(toolName, input);
-            var function = AIFunctionFactory.Create(
-                toolDelegate,
-                new AIFunctionFactoryOptions
-                {
-                    Name = toolName,
-                    Description = BuildToolDescription(resolution.Schema)
-                });
-            tools.Add(function);
-        }
-
-        return tools;
-    }
-
-    private async Task<string> InvokeToolAsync(string toolName, string input)
-    {
-        var registry = grainFactory.GetGrain<IToolRegistryGrain>(persistentState.State.WorkspaceId.ToString());
-        var resolution = await registry.ResolveAsync(persistentState.State.AgentName, toolName)
-            ?? throw new InvalidOperationException($"Tool '{toolName}' is not available to agent '{persistentState.State.AgentName}'.");
-
-        var toolGrain = grainFactory.GetGrain<IToolGrain>(resolution.GrainKey);
-        var invocation = CreateToolInvocation(toolName, input);
-        var result = await toolGrain.InvokeAsync(invocation, resolution.Token);
-        return result.Success ? result.Output : $"Tool '{toolName}' failed: {result.Error}";
-    }
-
-    internal static ToolInvocation CreateToolInvocation(string toolName, string input)
-    {
-        if (!string.IsNullOrWhiteSpace(input) && input.TrimStart().StartsWith('{'))
-        {
-            try
-            {
-                using var document = JsonDocument.Parse(input);
-                if (document.RootElement.ValueKind is JsonValueKind.Object)
-                {
-                    var parameters = new Dictionary<string, string>(StringComparer.Ordinal);
-                    var method = "invoke";
-                    string? rawInput = null;
-
-                    foreach (var property in document.RootElement.EnumerateObject())
-                    {
-                        if (property.NameEquals("method"))
-                        {
-                            method = property.Value.GetString() ?? "invoke";
-                            continue;
-                        }
-
-                        if (property.NameEquals("rawInput"))
-                        {
-                            rawInput = property.Value.GetString();
-                            continue;
-                        }
-
-                        parameters[property.Name] = property.Value.ValueKind switch
-                        {
-                            JsonValueKind.String => property.Value.GetString() ?? string.Empty,
-                            _ => property.Value.GetRawText()
-                        };
-                    }
-
-                    return new ToolInvocation
-                    {
-                        ToolName = toolName,
-                        Method = method,
-                        Parameters = parameters,
-                        RawInput = rawInput
-                    };
-                }
-            }
-            catch (JsonException)
-            {
-            }
-        }
-
-        return new ToolInvocation
-        {
-            ToolName = toolName,
-            Method = "invoke",
-            RawInput = input
-        };
-    }
-
-    internal static string BuildToolDescription(ToolSchema schema)
-    {
-        if (schema.Parameters.Count == 0)
-            return schema.Description;
-
-        var builder = new StringBuilder(schema.Description);
-        builder.Append(" Parameters: ");
-
-        for (var i = 0; i < schema.Parameters.Count; i++)
-        {
-            if (i > 0)
-                builder.Append("; ");
-
-            var parameter = schema.Parameters[i];
-            builder.Append(parameter.Name);
-            builder.Append(" (");
-            builder.Append(parameter.Type);
-            if (parameter.Required)
-                builder.Append(", required");
-            builder.Append("): ");
-            builder.Append(parameter.Description);
-        }
-
-        builder.Append(". Pass a JSON object if multiple fields are required.");
-        return builder.ToString();
-    }
-
-    internal static ChatMessage ToChatMessage(ConversationMessage historyMessage)
-    {
-        var role = historyMessage.Role.ToLowerInvariant() switch
-        {
-            "assistant" => ChatRole.Assistant,
-            "system" => ChatRole.System,
-            "tool" => ChatRole.Tool,
-            _ => ChatRole.User
-        };
-
-        return new ChatMessage(role, historyMessage.Content)
-        {
-            CreatedAt = historyMessage.Timestamp
-        };
-    }
-
-    [UnconditionalSuppressMessage("AOT", "IL2026:RequiresUnreferencedCode", Justification = "Function call arguments are dynamic LLM outputs serialized for diagnostic logging only.")]
-    [UnconditionalSuppressMessage("AOT", "IL3050:RequiresDynamicCode", Justification = "Function call arguments are dynamic LLM outputs serialized for diagnostic logging only.")]
-    private static IEnumerable<ConversationMessage> ToConversationMessages(ChatMessage message)
-    {
-        if (!string.IsNullOrWhiteSpace(message.Text))
-        {
-            yield return new ConversationMessage
-            {
-                Role = message.Role.Value,
-                Content = message.Text,
-                Timestamp = message.CreatedAt ?? DateTimeOffset.UtcNow
-            };
-        }
-
-        foreach (var content in message.Contents)
-        {
-            switch (content)
-            {
-                case FunctionCallContent functionCall:
-                    yield return new ConversationMessage
-                    {
-                        Role = "tool",
-                        Content = $"Requested tool '{functionCall.Name}' with arguments: {JsonSerializer.Serialize(functionCall.Arguments, ToolInputJsonOptions)}",
-                        Timestamp = message.CreatedAt ?? DateTimeOffset.UtcNow
-                    };
-                    break;
-                case FunctionResultContent functionResult:
-                    yield return new ConversationMessage
-                    {
-                        Role = "tool",
-                        Content = $"Tool result: {functionResult.Result}",
-                        Timestamp = message.CreatedAt ?? DateTimeOffset.UtcNow
-                    };
-                    break;
-            }
         }
     }
 }

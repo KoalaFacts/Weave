@@ -1,3 +1,4 @@
+using System.Collections.Concurrent;
 using System.Diagnostics;
 using Microsoft.Extensions.Logging;
 using Weave.Security.Tokens;
@@ -7,20 +8,23 @@ namespace Weave.Tools.Connectors;
 
 public sealed partial class OpenApiToolConnector(HttpClient httpClient, ILogger<OpenApiToolConnector> logger) : IToolConnector
 {
+    private readonly ConcurrentDictionary<string, (string BaseUrl, string? AuthHeader)> _toolConfigs = new(StringComparer.Ordinal);
+
     public ToolType ToolType => ToolType.OpenApi;
 
     public Task<ToolHandle> ConnectAsync(ToolSpec tool, CapabilityToken token, CancellationToken ct = default)
     {
         var openApi = tool.OpenApi ?? throw new InvalidOperationException($"Tool '{tool.Name}' has no OpenAPI configuration");
 
+        string? baseUrl = null;
         if (Uri.TryCreate(openApi.SpecUrl, UriKind.Absolute, out var specUri))
-            httpClient.BaseAddress = new Uri(specUri.GetLeftPart(UriPartial.Authority), UriKind.Absolute);
+            baseUrl = specUri.GetLeftPart(UriPartial.Authority);
 
+        string? authHeader = null;
         if (openApi.Auth is { Type: "bearer" })
-        {
-            httpClient.DefaultRequestHeaders.Authorization =
-                new System.Net.Http.Headers.AuthenticationHeaderValue("Bearer", openApi.Auth.Token);
-        }
+            authHeader = $"Bearer {openApi.Auth.Token}";
+
+        _toolConfigs[tool.Name] = (baseUrl ?? "", authHeader);
 
         LogOpenApiToolConnected(tool.Name, openApi.SpecUrl);
 
@@ -35,6 +39,7 @@ public sealed partial class OpenApiToolConnector(HttpClient httpClient, ILogger<
 
     public Task DisconnectAsync(ToolHandle handle, CancellationToken ct = default)
     {
+        _toolConfigs.TryRemove(handle.ToolName, out _);
         return Task.CompletedTask;
     }
 
@@ -46,16 +51,39 @@ public sealed partial class OpenApiToolConnector(HttpClient httpClient, ILogger<
             var endpoint = invocation.Parameters.GetValueOrDefault("endpoint", "/");
             var method = invocation.Parameters.GetValueOrDefault("http_method", "GET");
 
+            // Reject path traversal, absolute URLs, and encoded variants to prevent SSRF
+            if (endpoint.Contains("..", StringComparison.Ordinal) ||
+                endpoint.Contains("://", StringComparison.Ordinal) ||
+                endpoint.Contains('\\') ||
+                endpoint.Contains('%') ||
+                endpoint.Contains('@'))
+            {
+                throw new ArgumentException($"Invalid endpoint path: '{endpoint}'");
+            }
+
+            if (!_toolConfigs.TryGetValue(handle.ToolName, out var config))
+                throw new InvalidOperationException($"Tool '{handle.ToolName}' is not connected.");
+
+            var baseUrl = config.BaseUrl.TrimEnd('/');
+            var path = endpoint.TrimStart('/');
+            var url = string.IsNullOrEmpty(baseUrl) ? $"/{path}" : $"{baseUrl}/{path}";
+
             HttpResponseMessage response;
             if (method.Equals("POST", StringComparison.OrdinalIgnoreCase))
             {
                 var body = invocation.RawInput ?? "{}";
-                response = await httpClient.PostAsync(endpoint,
-                    new StringContent(body, System.Text.Encoding.UTF8, "application/json"), ct);
+                using var request = new HttpRequestMessage(HttpMethod.Post, url);
+                request.Content = new StringContent(body, System.Text.Encoding.UTF8, "application/json");
+                if (config.AuthHeader is not null)
+                    request.Headers.TryAddWithoutValidation("Authorization", config.AuthHeader);
+                response = await httpClient.SendAsync(request, ct);
             }
             else
             {
-                response = await httpClient.GetAsync(endpoint, ct);
+                using var request = new HttpRequestMessage(HttpMethod.Get, url);
+                if (config.AuthHeader is not null)
+                    request.Headers.TryAddWithoutValidation("Authorization", config.AuthHeader);
+                response = await httpClient.SendAsync(request, ct);
             }
 
             var content = await response.Content.ReadAsStringAsync(ct);

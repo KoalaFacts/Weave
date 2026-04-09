@@ -5,7 +5,9 @@ namespace Weave.Security.Tests;
 
 public sealed class InMemorySecretProviderTests
 {
-    private readonly CapabilityTokenService _tokenService = new();
+    private static readonly CapabilityTokenService _tokenService = new(
+        Microsoft.Extensions.Options.Options.Create(
+            new CapabilityTokenOptions { SigningKey = "test-signing-key-that-is-at-least-32-chars-long" }));
     private readonly InMemorySecretProvider _provider;
 
     public InMemorySecretProviderTests()
@@ -13,7 +15,7 @@ public sealed class InMemorySecretProviderTests
         _provider = new InMemorySecretProvider(_tokenService);
     }
 
-    private CapabilityToken MintToken(
+    private static CapabilityToken MintToken(
         string workspaceId = "ws-1",
         string issuedTo = "agent-1",
         HashSet<string>? grants = null,

@@ -1,11 +1,10 @@
-using System.Diagnostics;
 using Microsoft.Extensions.Logging;
 using Weave.Shared.Ids;
 using Weave.Workspaces.Models;
 
 namespace Weave.Workspaces.Runtime;
 
-public sealed partial class PodmanRuntime(ILogger<PodmanRuntime> logger) : IWorkspaceRuntime
+public sealed partial class PodmanRuntime(ICommandRunner runner, ILogger<PodmanRuntime> logger) : IWorkspaceRuntime
 {
     private readonly ILogger _logger = logger;
 
@@ -26,15 +25,12 @@ public sealed partial class PodmanRuntime(ILogger<PodmanRuntime> logger) : IWork
 
         // Start tool containers
         var containers = new List<ContainerHandle>();
-        foreach (var (toolName, tool) in manifest.Tools)
+        foreach (var (toolName, tool) in manifest.Tools.Where(kvp => kvp.Value.Type is "mcp" && kvp.Value.Mcp is not null))
         {
-            if (tool.Type is not "mcp" || tool.Mcp is null)
-                continue;
-
             var container = await StartContainerAsync(new ContainerSpec
             {
                 Name = $"weave-{workspaceId}-{toolName}",
-                Image = tool.Mcp.Server,
+                Image = tool.Mcp!.Server,
                 Environment = tool.Mcp.Env,
                 NetworkId = network.NetworkId,
                 Command = tool.Mcp.Args
@@ -62,7 +58,7 @@ public sealed partial class PodmanRuntime(ILogger<PodmanRuntime> logger) : IWork
         // Remove network
         await RunPodmanAsync(["network", "rm", "-f", $"weave-{workspaceId}"], ct);
 
-        LogWorkspaceTornDown(workspaceId);
+        LogWorkspaceTornDown(workspaceId.ToString());
     }
 
     public async Task<ContainerHandle> StartContainerAsync(ContainerSpec spec, CancellationToken ct)
@@ -123,31 +119,8 @@ public sealed partial class PodmanRuntime(ILogger<PodmanRuntime> logger) : IWork
     private async Task<string> RunPodmanAsync(IEnumerable<string> arguments, CancellationToken ct)
     {
         var argList = arguments.ToList();
-        var startInfo = new ProcessStartInfo
-        {
-            FileName = "podman",
-            RedirectStandardOutput = true,
-            RedirectStandardError = true,
-            UseShellExecute = false,
-            CreateNoWindow = true
-        };
-
-        foreach (var arg in argList)
-            startInfo.ArgumentList.Add(arg);
-
         LogPodmanCommand(string.Join(" ", argList));
-
-        using var process = Process.Start(startInfo)
-            ?? throw new InvalidOperationException("Failed to start podman process.");
-
-        var stdout = await process.StandardOutput.ReadToEndAsync(ct);
-        var stderr = await process.StandardError.ReadToEndAsync(ct);
-        await process.WaitForExitAsync(ct);
-
-        if (process.ExitCode != 0)
-            throw new InvalidOperationException($"Podman command failed (exit code {process.ExitCode}): {stderr}");
-
-        return stdout;
+        return await runner.RunAsync("podman", argList, ct);
     }
 
     [LoggerMessage(Level = LogLevel.Debug, Message = "Running: podman {Arguments}")]

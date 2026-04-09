@@ -1,5 +1,4 @@
 using System.Collections.Concurrent;
-using System.Text.RegularExpressions;
 using Microsoft.Extensions.Logging;
 using Weave.Security.Scanning;
 using Weave.Shared.Secrets;
@@ -38,16 +37,13 @@ public sealed partial class TransparentSecretProxy
     /// </summary>
     public string SubstitutePlaceholders(string content)
     {
-        return SecretPlaceholderRegex().Replace(content, match =>
+        return SecretPlaceholderParser.Substitute(content, path =>
         {
-            var path = match.Groups[1].Value;
             if (_secretMapping.TryGetValue(path, out var secret))
-            {
                 return secret.DecryptToString();
-            }
 
             LogPlaceholderNotRegistered(path);
-            return match.Value;
+            return null;
         });
     }
 
@@ -80,9 +76,6 @@ public sealed partial class TransparentSecretProxy
 
         return await _leakScanner.ScanStringAsync(content, context, ct);
     }
-
-    [GeneratedRegex(@"\{secret:([^}]+)\}", RegexOptions.Compiled)]
-    private static partial Regex SecretPlaceholderRegex();
 
     [LoggerMessage(Level = LogLevel.Warning, Message = "Secret placeholder '{Path}' referenced but not registered")]
     private partial void LogPlaceholderNotRegistered(string path);
