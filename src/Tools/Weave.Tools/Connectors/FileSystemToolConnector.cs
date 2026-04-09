@@ -491,6 +491,17 @@ public sealed partial class FileSystemToolConnector(ILogger<FileSystemToolConnec
                 break;
 
             var relativFile = Path.GetRelativePath(config.Root, file);
+            // Skip binary files
+            try
+            {
+                if (await IsBinaryFileAsync(file, ct))
+                    continue;
+            }
+            catch
+            {
+                continue; // Skip unreadable/locked files
+            }
+
             string[] lines;
             try
             {
@@ -498,7 +509,7 @@ public sealed partial class FileSystemToolConnector(ILogger<FileSystemToolConnec
             }
             catch
             {
-                continue; // Skip unreadable files (binary, locked, etc.)
+                continue;
             }
 
             for (var lineNum = 0; lineNum < lines.Length; lineNum++)

@@ -440,6 +440,65 @@ public sealed class FileSystemToolConnectorTests : IDisposable
         result.Success.ShouldBeFalse();
     }
 
+    [Fact]
+    public async Task EditFile_NonexistentFile_ReturnsFailure()
+    {
+        var connector = CreateConnector();
+        var handle = await connector.ConnectAsync(CreateSpec(), _testToken, TestContext.Current.CancellationToken);
+
+        var result = await connector.InvokeAsync(handle,
+            new ToolInvocation
+            {
+                ToolName = "fs-tool",
+                Method = "edit_file",
+                Parameters = new Dictionary<string, string> { ["path"] = "ghost.txt", ["old_string"] = "a", ["new_string"] = "b" }
+            },
+            TestContext.Current.CancellationToken);
+
+        result.Success.ShouldBeFalse();
+        result.Error!.ShouldContain("not found");
+    }
+
+    [Fact]
+    public async Task EditFile_EmptyNewString_DeletesText()
+    {
+        var connector = CreateConnector();
+        var handle = await connector.ConnectAsync(CreateSpec(), _testToken, TestContext.Current.CancellationToken);
+        File.WriteAllText(Path.Combine(_tempRoot, "del.txt"), "remove this word please");
+
+        var result = await connector.InvokeAsync(handle,
+            new ToolInvocation
+            {
+                ToolName = "fs-tool",
+                Method = "edit_file",
+                Parameters = new Dictionary<string, string> { ["path"] = "del.txt", ["old_string"] = "this word ", ["new_string"] = "" }
+            },
+            TestContext.Current.CancellationToken);
+
+        result.Success.ShouldBeTrue();
+        File.ReadAllText(Path.Combine(_tempRoot, "del.txt")).ShouldBe("remove please");
+    }
+
+    [Fact]
+    public async Task EditFile_MultilineContent_ReplacesCorrectly()
+    {
+        var connector = CreateConnector();
+        var handle = await connector.ConnectAsync(CreateSpec(), _testToken, TestContext.Current.CancellationToken);
+        File.WriteAllText(Path.Combine(_tempRoot, "multi.txt"), "line1\nline2\nline3\n");
+
+        var result = await connector.InvokeAsync(handle,
+            new ToolInvocation
+            {
+                ToolName = "fs-tool",
+                Method = "edit_file",
+                Parameters = new Dictionary<string, string> { ["path"] = "multi.txt", ["old_string"] = "line2\nline3", ["new_string"] = "replaced" }
+            },
+            TestContext.Current.CancellationToken);
+
+        result.Success.ShouldBeTrue();
+        File.ReadAllText(Path.Combine(_tempRoot, "multi.txt")).ShouldBe("line1\nreplaced\n");
+    }
+
     // --- list_directory ---
 
     [Fact]
@@ -746,6 +805,149 @@ public sealed class FileSystemToolConnectorTests : IDisposable
 
         result.Success.ShouldBeTrue();
         result.Output.ShouldContain("IsDirectory: True");
+    }
+
+    // --- Additional coverage ---
+
+    [Fact]
+    public async Task WriteFile_EmptyContent_CreatesEmptyFile()
+    {
+        var connector = CreateConnector();
+        var handle = await connector.ConnectAsync(CreateSpec(), _testToken, TestContext.Current.CancellationToken);
+
+        var result = await connector.InvokeAsync(handle,
+            new ToolInvocation
+            {
+                ToolName = "fs-tool",
+                Method = "write_file",
+                Parameters = new Dictionary<string, string> { ["path"] = "empty-write.txt" },
+                RawInput = ""
+            },
+            TestContext.Current.CancellationToken);
+
+        result.Success.ShouldBeTrue();
+        File.ReadAllText(Path.Combine(_tempRoot, "empty-write.txt")).ShouldBe("");
+    }
+
+    [Fact]
+    public async Task ReadFile_UnicodeContent_PreservesCharacters()
+    {
+        var connector = CreateConnector();
+        var handle = await connector.ConnectAsync(CreateSpec(), _testToken, TestContext.Current.CancellationToken);
+        var unicode = "日本語テスト 🎉 مرحبا";
+        File.WriteAllText(Path.Combine(_tempRoot, "unicode.txt"), unicode, System.Text.Encoding.UTF8);
+
+        var result = await connector.InvokeAsync(handle,
+            new ToolInvocation { ToolName = "fs-tool", Method = "read_file", Parameters = new Dictionary<string, string> { ["path"] = "unicode.txt" } },
+            TestContext.Current.CancellationToken);
+
+        result.Success.ShouldBeTrue();
+        result.Output.ShouldBe(unicode);
+    }
+
+    [Fact]
+    public async Task Grep_SkipsBinaryFiles_Gracefully()
+    {
+        var connector = CreateConnector();
+        var handle = await connector.ConnectAsync(CreateSpec(), _testToken, TestContext.Current.CancellationToken);
+        File.WriteAllBytes(Path.Combine(_tempRoot, "binary.dat"), [0x00, 0x01, 0x45, 0x52, 0x52, 0x4F, 0x52]); // contains "ERROR" bytes but has null
+        File.WriteAllText(Path.Combine(_tempRoot, "text.txt"), "ERROR here");
+
+        var result = await connector.InvokeAsync(handle,
+            new ToolInvocation { ToolName = "fs-tool", Method = "grep", Parameters = new Dictionary<string, string> { ["pattern"] = "ERROR" } },
+            TestContext.Current.CancellationToken);
+
+        result.Success.ShouldBeTrue();
+        result.Output.ShouldContain("text.txt");
+        result.Output.ShouldNotContain("binary.dat");
+    }
+
+    [Fact]
+    public async Task ListDirectory_OutputIsSorted()
+    {
+        var connector = CreateConnector();
+        var handle = await connector.ConnectAsync(CreateSpec(), _testToken, TestContext.Current.CancellationToken);
+        File.WriteAllText(Path.Combine(_tempRoot, "zebra.txt"), "");
+        File.WriteAllText(Path.Combine(_tempRoot, "alpha.txt"), "");
+        Directory.CreateDirectory(Path.Combine(_tempRoot, "middle-dir"));
+
+        var result = await connector.InvokeAsync(handle,
+            new ToolInvocation { ToolName = "fs-tool", Method = "list_directory", Parameters = [] },
+            TestContext.Current.CancellationToken);
+
+        result.Success.ShouldBeTrue();
+        var lines = result.Output.Split('\n', StringSplitOptions.RemoveEmptyEntries);
+        var names = lines.Select(l => l.Split("  ", StringSplitOptions.RemoveEmptyEntries).Last().TrimEnd('/')).ToArray();
+        names.ShouldBe(names.Order(StringComparer.OrdinalIgnoreCase).ToArray());
+    }
+
+    [Fact]
+    public async Task EditFile_WriteAndEditRoundtrip()
+    {
+        var connector = CreateConnector();
+        var handle = await connector.ConnectAsync(CreateSpec(), _testToken, TestContext.Current.CancellationToken);
+
+        // Write
+        await connector.InvokeAsync(handle,
+            new ToolInvocation { ToolName = "fs-tool", Method = "write_file", Parameters = new Dictionary<string, string> { ["path"] = "rt.txt" }, RawInput = "function oldName() {}" },
+            TestContext.Current.CancellationToken);
+
+        // Edit
+        var editResult = await connector.InvokeAsync(handle,
+            new ToolInvocation
+            {
+                ToolName = "fs-tool",
+                Method = "edit_file",
+                Parameters = new Dictionary<string, string> { ["path"] = "rt.txt", ["old_string"] = "oldName", ["new_string"] = "newName" }
+            },
+            TestContext.Current.CancellationToken);
+
+        // Read back
+        var readResult = await connector.InvokeAsync(handle,
+            new ToolInvocation { ToolName = "fs-tool", Method = "read_file", Parameters = new Dictionary<string, string> { ["path"] = "rt.txt" } },
+            TestContext.Current.CancellationToken);
+
+        editResult.Success.ShouldBeTrue();
+        readResult.Success.ShouldBeTrue();
+        readResult.Output.ShouldBe("function newName() {}");
+    }
+
+    [Fact]
+    public async Task Grep_MatchesAcrossMultipleFiles()
+    {
+        var connector = CreateConnector();
+        var handle = await connector.ConnectAsync(CreateSpec(), _testToken, TestContext.Current.CancellationToken);
+        File.WriteAllText(Path.Combine(_tempRoot, "a.cs"), "// TODO: first");
+        File.WriteAllText(Path.Combine(_tempRoot, "b.cs"), "// nothing here");
+        File.WriteAllText(Path.Combine(_tempRoot, "c.cs"), "// TODO: third");
+
+        var result = await connector.InvokeAsync(handle,
+            new ToolInvocation { ToolName = "fs-tool", Method = "grep", Parameters = new Dictionary<string, string> { ["pattern"] = "TODO" } },
+            TestContext.Current.CancellationToken);
+
+        result.Success.ShouldBeTrue();
+        result.Output.ShouldContain("a.cs:1:");
+        result.Output.ShouldContain("c.cs:1:");
+        result.Output.ShouldNotContain("b.cs");
+    }
+
+    [Fact]
+    public async Task EditFile_PreservesFileWhenOldStringNotFound()
+    {
+        var connector = CreateConnector();
+        var handle = await connector.ConnectAsync(CreateSpec(), _testToken, TestContext.Current.CancellationToken);
+        File.WriteAllText(Path.Combine(_tempRoot, "preserve.txt"), "original content");
+
+        await connector.InvokeAsync(handle,
+            new ToolInvocation
+            {
+                ToolName = "fs-tool",
+                Method = "edit_file",
+                Parameters = new Dictionary<string, string> { ["path"] = "preserve.txt", ["old_string"] = "nonexistent", ["new_string"] = "replaced" }
+            },
+            TestContext.Current.CancellationToken);
+
+        File.ReadAllText(Path.Combine(_tempRoot, "preserve.txt")).ShouldBe("original content");
     }
 
     // --- Path traversal (security) ---
