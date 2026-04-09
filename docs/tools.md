@@ -64,6 +64,17 @@ Lightweight direct HTTP calls with security protections.
 - Per-tool auth headers stored in `ConcurrentDictionary`.
 - Constructs URL: `{baseUrl}/{method}`.
 
+### FileSystemToolConnector (`filesystem`)
+
+Sandboxed file system access for agents.
+
+- **Path sandboxing**: all paths resolved relative to a configured root directory. Rejects `..`, absolute paths, drive letters, URL schemes, and null bytes.
+- **Operations**: `read_file`, `write_file`, `list_directory`, `search_files`, `file_info`.
+- **Read-only mode**: optional config to disable all write operations.
+- **Binary detection**: scans first 8KB for null bytes — rejects binary files from text reads.
+- **Size limits**: configurable `MaxReadBytes` (default 1MB) prevents unbounded reads.
+- **Glob search**: `search_files` uses `Directory.EnumerateFiles` with capped results (1000).
+
 ## Tool Grain
 
 **Key**: `{workspaceId}/{toolName}` — Orleans grain managing per-tool lifecycle.
@@ -113,7 +124,7 @@ public interface IToolDiscoveryService
 ### ToolType
 
 ```csharp
-enum ToolType { Mcp, Dapr, OpenApi, Cli, Library, DirectHttp }
+enum ToolType { Mcp, Dapr, OpenApi, Cli, Library, DirectHttp, FileSystem }
 ```
 
 ### ToolSpec
@@ -127,6 +138,7 @@ record ToolSpec {
     OpenApiConfig? OpenApi;
     CliConfig? Cli;
     DirectHttpToolConfig? DirectHttp;  // { BaseUrl, AuthHeader? }
+    FileSystemToolConfig? FileSystem;  // { Root, ReadOnly, MaxReadBytes }
 }
 ```
 

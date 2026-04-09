@@ -815,6 +815,124 @@ public sealed class FileSystemToolConnectorTests : IDisposable
         result.ShouldBe(Path.Combine(_tempRoot, "a", "b", "c", "file.txt"));
     }
 
+    // --- Sandbox mode: symlink escape prevention ---
+    // Note: Symlink creation requires developer mode or admin on Windows.
+    // Tests skip automatically when symlinks cannot be created.
+
+    private static bool CanCreateSymlinks()
+    {
+        var testDir = Path.Combine(Path.GetTempPath(), $"weave-symlink-check-{Guid.NewGuid():N}");
+        try
+        {
+            Directory.CreateDirectory(testDir);
+            var target = Path.Combine(testDir, "target");
+            Directory.CreateDirectory(target);
+            var link = Path.Combine(testDir, "link");
+            Directory.CreateSymbolicLink(link, target);
+            return Directory.Exists(link);
+        }
+        catch (IOException)
+        {
+            return false;
+        }
+        finally
+        {
+            try { Directory.Delete(testDir, recursive: true); } catch { /* best effort */ }
+        }
+    }
+
+    [Fact]
+    public void ResolveSafePath_SymlinkOutsideRoot_Throws()
+    {
+        Assert.SkipWhen(!CanCreateSymlinks(), "Symlink creation requires elevated privileges on this OS");
+
+        var outsideDir = Path.Combine(Path.GetTempPath(), $"weave-outside-{Guid.NewGuid():N}");
+        Directory.CreateDirectory(outsideDir);
+        File.WriteAllText(Path.Combine(outsideDir, "secret.txt"), "stolen");
+
+        try
+        {
+            var linkPath = Path.Combine(_tempRoot, "escape-link");
+            Directory.CreateSymbolicLink(linkPath, outsideDir);
+
+            Should.Throw<ArgumentException>(() =>
+                FileSystemToolConnector.ResolveSafePath(_tempRoot, "escape-link/secret.txt", sandbox: true));
+        }
+        finally
+        {
+            Directory.Delete(outsideDir, recursive: true);
+        }
+    }
+
+    [Fact]
+    public void ResolveSafePath_SymlinkInsideRoot_Allowed()
+    {
+        Assert.SkipWhen(!CanCreateSymlinks(), "Symlink creation requires elevated privileges on this OS");
+
+        var targetDir = Path.Combine(_tempRoot, "real-dir");
+        Directory.CreateDirectory(targetDir);
+        File.WriteAllText(Path.Combine(targetDir, "ok.txt"), "safe");
+
+        var linkPath = Path.Combine(_tempRoot, "safe-link");
+        Directory.CreateSymbolicLink(linkPath, targetDir);
+
+        var result = FileSystemToolConnector.ResolveSafePath(_tempRoot, "safe-link/ok.txt", sandbox: true);
+
+        result.ShouldNotBeNullOrEmpty();
+    }
+
+    [Fact]
+    public void ResolveSafePath_SymlinkOutsideRoot_AllowedWithSandboxOff()
+    {
+        Assert.SkipWhen(!CanCreateSymlinks(), "Symlink creation requires elevated privileges on this OS");
+
+        var outsideDir = Path.Combine(Path.GetTempPath(), $"weave-outside-{Guid.NewGuid():N}");
+        Directory.CreateDirectory(outsideDir);
+
+        try
+        {
+            var linkPath = Path.Combine(_tempRoot, "escape-link");
+            Directory.CreateSymbolicLink(linkPath, outsideDir);
+
+            Should.NotThrow(() =>
+                FileSystemToolConnector.ResolveSafePath(_tempRoot, "escape-link", sandbox: false));
+        }
+        finally
+        {
+            Directory.Delete(outsideDir, recursive: true);
+        }
+    }
+
+    [Fact]
+    public async Task ReadFile_SymlinkEscape_SandboxBlocks()
+    {
+        Assert.SkipWhen(!CanCreateSymlinks(), "Symlink creation requires elevated privileges on this OS");
+
+        var outsideDir = Path.Combine(Path.GetTempPath(), $"weave-outside-{Guid.NewGuid():N}");
+        Directory.CreateDirectory(outsideDir);
+        File.WriteAllText(Path.Combine(outsideDir, "secret.txt"), "stolen data");
+
+        try
+        {
+            var linkPath = Path.Combine(_tempRoot, "escape-link");
+            Directory.CreateSymbolicLink(linkPath, outsideDir);
+
+            var connector = CreateConnector();
+            var handle = await connector.ConnectAsync(CreateSpec(), _testToken, TestContext.Current.CancellationToken);
+
+            var result = await connector.InvokeAsync(handle,
+                new ToolInvocation { ToolName = "fs-tool", Method = "read_file", Parameters = new Dictionary<string, string> { ["path"] = "escape-link/secret.txt" } },
+                TestContext.Current.CancellationToken);
+
+            result.Success.ShouldBeFalse();
+            result.Error.ShouldNotBeNull();
+        }
+        finally
+        {
+            Directory.Delete(outsideDir, recursive: true);
+        }
+    }
+
     // --- Edge cases ---
 
     [Fact]

@@ -66,7 +66,8 @@ public static class ToolSpecMapper
         {
             Root = config.Root,
             ReadOnly = config.ReadOnly,
-            MaxReadBytes = config.MaxReadBytes
+            MaxReadBytes = config.MaxReadBytes,
+            Sandbox = config.Sandbox
         };
     }
 }

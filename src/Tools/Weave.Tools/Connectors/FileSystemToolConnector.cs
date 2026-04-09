@@ -138,7 +138,7 @@ public sealed partial class FileSystemToolConnector(ILogger<FileSystemToolConnec
         string fullPath;
         try
         {
-            fullPath = ResolveSafePath(config.Root, relativePath);
+            fullPath = ResolveSafePath(config.Root, relativePath, config.Sandbox);
         }
         catch (ArgumentException ex)
         {
@@ -204,7 +204,7 @@ public sealed partial class FileSystemToolConnector(ILogger<FileSystemToolConnec
         string fullPath;
         try
         {
-            fullPath = ResolveSafePath(config.Root, relativePath);
+            fullPath = ResolveSafePath(config.Root, relativePath, config.Sandbox);
         }
         catch (ArgumentException ex)
         {
@@ -236,7 +236,7 @@ public sealed partial class FileSystemToolConnector(ILogger<FileSystemToolConnec
         {
             fullPath = string.IsNullOrEmpty(relativePath)
                 ? config.Root
-                : ResolveSafePath(config.Root, relativePath);
+                : ResolveSafePath(config.Root, relativePath, config.Sandbox);
         }
         catch (ArgumentException ex)
         {
@@ -318,7 +318,7 @@ public sealed partial class FileSystemToolConnector(ILogger<FileSystemToolConnec
         string fullPath;
         try
         {
-            fullPath = ResolveSafePath(config.Root, relativePath);
+            fullPath = ResolveSafePath(config.Root, relativePath, config.Sandbox);
         }
         catch (ArgumentException ex)
         {
@@ -355,7 +355,7 @@ public sealed partial class FileSystemToolConnector(ILogger<FileSystemToolConnec
         return new ToolResult { Success = true, ToolName = toolName, Output = sb.ToString(), Duration = sw.Elapsed };
     }
 
-    internal static string ResolveSafePath(string root, string relativePath)
+    internal static string ResolveSafePath(string root, string relativePath, bool sandbox = true)
     {
         if (relativePath.Contains('\0', StringComparison.Ordinal))
             throw new ArgumentException("Path contains null bytes");
@@ -373,6 +373,16 @@ public sealed partial class FileSystemToolConnector(ILogger<FileSystemToolConnec
 
         var fullPath = Path.GetFullPath(Path.Combine(root, relativePath));
 
+        VerifyContainment(root, fullPath);
+
+        if (sandbox)
+            VerifyNoSymlinkEscape(root, fullPath);
+
+        return fullPath;
+    }
+
+    private static void VerifyContainment(string root, string fullPath)
+    {
         var rootWithSep = root.EndsWith(Path.DirectorySeparatorChar)
             ? root
             : root + Path.DirectorySeparatorChar;
@@ -382,8 +392,61 @@ public sealed partial class FileSystemToolConnector(ILogger<FileSystemToolConnec
         {
             throw new ArgumentException("Path traversal detected");
         }
+    }
 
-        return fullPath;
+    /// <summary>
+    /// Walk every existing component of the path and verify that no symlink/junction
+    /// redirects outside the sandbox root. This closes the symlink escape attack vector.
+    /// </summary>
+    private static void VerifyNoSymlinkEscape(string root, string fullPath)
+    {
+        // Walk from root downward through each path component that exists on disk.
+        // At each step, if the component is a symlink/junction, resolve it and verify
+        // the target is still under root.
+        var relativePart = Path.GetRelativePath(root, fullPath);
+        if (relativePart == ".")
+            return;
+
+        var segments = relativePart.Split(Path.DirectorySeparatorChar, StringSplitOptions.RemoveEmptyEntries);
+        var current = root;
+
+        foreach (var segment in segments)
+        {
+            current = Path.Combine(current, segment);
+
+            if (!Path.Exists(current))
+                break; // Remaining components don't exist yet (e.g. write to new file) — that's fine
+
+            var fileInfo = new FileInfo(current);
+            if (fileInfo.LinkTarget is not null)
+            {
+                // Resolve the final target of the symlink chain
+                var resolved = File.ResolveLinkTarget(current, returnFinalTarget: true)
+                    ?? throw new ArgumentException($"Sandbox violation: symlink at '{segment}' could not be resolved");
+
+                var resolvedPath = Path.GetFullPath(resolved.FullName);
+                VerifyContainment(root, resolvedPath);
+
+                // Continue walking from the resolved target
+                current = resolvedPath;
+            }
+
+            // Also check if it's a directory junction (Windows) — these report as directories, not symlinks
+            if (Directory.Exists(current))
+            {
+                var dirInfo = new DirectoryInfo(current);
+                if (dirInfo.LinkTarget is not null)
+                {
+                    var resolved = Directory.ResolveLinkTarget(current, returnFinalTarget: true)
+                        ?? throw new ArgumentException($"Sandbox violation: junction at '{segment}' could not be resolved");
+
+                    var resolvedPath = Path.GetFullPath(resolved.FullName);
+                    VerifyContainment(root, resolvedPath);
+
+                    current = resolvedPath;
+                }
+            }
+        }
     }
 
     private static async Task<bool> IsBinaryFileAsync(string fullPath, CancellationToken ct)

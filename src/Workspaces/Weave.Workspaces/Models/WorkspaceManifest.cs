@@ -145,6 +145,7 @@ public sealed record FileSystemToolConfig
     [Id(0)] public required string Root { get; init; }
     [Id(1)] public bool ReadOnly { get; init; }
     [Id(2)] public long MaxReadBytes { get; init; }
+    [Id(3)] public bool Sandbox { get; init; } = true;
 }
 
 [GenerateSerializer]

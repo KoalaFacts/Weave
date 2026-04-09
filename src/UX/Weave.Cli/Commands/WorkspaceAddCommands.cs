@@ -82,7 +82,7 @@ internal static class WorkspaceAddToolCommand
         var nameOption = new Option<string?>("--name") { Description = "Tool name" };
         var typeOption = new Option<string>("--type")
         {
-            Description = "Tool type (mcp, cli, openapi)",
+            Description = "Tool type (mcp, cli, openapi, direct_http, dapr, filesystem)",
             DefaultValueFactory = _ => "mcp"
         };
         typeOption.CompletionSources.Add(CliCompletions.CompleteToolTypes);

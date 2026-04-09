@@ -140,6 +140,7 @@ Each key is the tool name. The `type` field determines which configuration block
 | `cli` | Command-line tool | `cli` |
 | `direct_http` | Direct HTTP endpoint | `direct_http` |
 | `dapr` | Dapr service invocation | — |
+| `filesystem` | Sandboxed file system access | `filesystem` |
 | `library` | Internal library | — |
 
 ### mcp
@@ -223,6 +224,37 @@ Each key is the tool name. The `type` field determines which configuration block
 | `direct_http.base_url` | string | **Required** | Base URL of the HTTP service |
 | `direct_http.auth.type` | string | — | `bearer` or `basic` |
 | `direct_http.auth.token` | string | — | Auth token or credentials |
+
+### filesystem
+
+```jsonc
+"workspace-files": {
+  "type": "filesystem",
+  "filesystem": {
+    "root": "./workspace-data",
+    "read_only": false,
+    "max_read_bytes": 1048576
+  }
+}
+```
+
+| Field | Type | Default | Description |
+|-------|------|---------|-------------|
+| `filesystem.root` | string | **Required** | Root directory for sandboxed access |
+| `filesystem.read_only` | bool | `false` | Disable write operations |
+| `filesystem.max_read_bytes` | int | `1048576` | Maximum file size for reads (0 = default 1MB) |
+
+**Operations**: Agents interact via `method` parameter:
+
+| Method | Parameters | Description |
+|--------|-----------|-------------|
+| `read_file` | `path` | Read text file contents |
+| `write_file` | `path` + `RawInput` body | Write/overwrite a file |
+| `list_directory` | `path` (optional) | List directory contents |
+| `search_files` | `pattern` | Recursive glob search |
+| `file_info` | `path` | File metadata (size, modified, etc.) |
+
+**Security**: All paths are resolved relative to `root`. Path traversal (`..`), absolute paths, drive letters, URL schemes, and null bytes are rejected. Binary files are detected and blocked from text reads.
 
 ---
 

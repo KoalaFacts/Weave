@@ -31,6 +31,9 @@ internal static class CliCompletions
         new("mcp"),
         new("cli"),
         new("openapi"),
+        new("direct_http"),
+        new("dapr"),
+        new("filesystem"),
     ];
 
     internal static IEnumerable<CompletionItem> CompleteRuntimeTypes(CompletionContext _) =>
