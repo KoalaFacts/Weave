@@ -25,15 +25,12 @@ public sealed partial class PodmanRuntime(ICommandRunner runner, ILogger<PodmanR
 
         // Start tool containers
         var containers = new List<ContainerHandle>();
-        foreach (var (toolName, tool) in manifest.Tools)
+        foreach (var (toolName, tool) in manifest.Tools.Where(kvp => kvp.Value.Type is "mcp" && kvp.Value.Mcp is not null))
         {
-            if (tool.Type is not "mcp" || tool.Mcp is null)
-                continue;
-
             var container = await StartContainerAsync(new ContainerSpec
             {
                 Name = $"weave-{workspaceId}-{toolName}",
-                Image = tool.Mcp.Server,
+                Image = tool.Mcp!.Server,
                 Environment = tool.Mcp.Env,
                 NetworkId = network.NetworkId,
                 Command = tool.Mcp.Args

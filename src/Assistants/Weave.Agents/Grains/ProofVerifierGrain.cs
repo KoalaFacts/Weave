@@ -124,12 +124,9 @@ public sealed class ProofVerifierGrain(
 
     private static string BuildRejectionFeedback(VerificationVote[] votes, int acceptCount, int validatorCount)
     {
-        var rejections = new List<string>();
-        foreach (var vote in votes)
-        {
-            if (!vote.Accepted)
-                rejections.Add($"{vote.ValidatorId}: {vote.Reason}");
-        }
+        var rejections = votes
+            .Where(v => !v.Accepted)
+            .Select(v => $"{v.ValidatorId}: {v.Reason}");
 
         return $"Consensus not reached: {acceptCount}/{validatorCount} accepted. Rejections: {string.Join("; ", rejections)}";
     }

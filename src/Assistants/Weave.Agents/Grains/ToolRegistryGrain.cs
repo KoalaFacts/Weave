@@ -71,11 +71,9 @@ public sealed class ToolRegistryGrain(
     public async Task DisconnectAllAsync()
     {
         EnsureWorkspaceId();
-        foreach (var (toolName, connection) in persistentState.State.Connections.ToList())
+        foreach (var (toolName, connection) in persistentState.State.Connections.ToList()
+            .Where(kvp => kvp.Value.Status is ToolConnectionStatus.Connected))
         {
-            if (connection.Status is not ToolConnectionStatus.Connected)
-                continue;
-
             var context = new LifecycleContext
             {
                 WorkspaceId = WorkspaceId.From(_workspaceId),

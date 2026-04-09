@@ -78,13 +78,8 @@ public sealed partial class ToolDiscoveryService : IToolDiscoveryService
         return removed;
     }
 
-    private IReadOnlyList<ToolType> RebuildTypeCache()
-    {
-        var types = new HashSet<ToolType>(_builtIn.Keys);
-        foreach (var key in _dynamic.Keys)
-            types.Add(key);
-        return [.. types];
-    }
+    private IReadOnlyList<ToolType> RebuildTypeCache() =>
+        [.. _builtIn.Keys.Union(_dynamic.Keys)];
 
     [LoggerMessage(Level = LogLevel.Information, Message = "Tool discovery initialized with {Count} connector(s): {Types}")]
     private partial void LogDiscoveryInitialized(int count, string types);

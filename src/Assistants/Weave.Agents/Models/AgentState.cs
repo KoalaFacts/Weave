@@ -26,15 +26,9 @@ public sealed record AgentState
     public int RunningTaskCount =>
         ActiveTasks.Count(task => task.Status is AgentTaskStatus.Running);
 
-    public AgentTaskInfo GetTask(AgentTaskId taskId)
-    {
-        foreach (var task in ActiveTasks)
-        {
-            if (task.TaskId == taskId)
-                return task;
-        }
-        throw new InvalidOperationException($"Task {taskId} not found.");
-    }
+    public AgentTaskInfo GetTask(AgentTaskId taskId) =>
+        ActiveTasks.FirstOrDefault(task => task.TaskId == taskId)
+        ?? throw new InvalidOperationException($"Task {taskId} not found.");
 
     public AgentTaskInfo SubmitTask(string description)
     {
