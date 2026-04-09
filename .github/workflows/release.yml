@@ -13,11 +13,6 @@ concurrency:
   group: create-release
   cancel-in-progress: false
 
-permissions:
-  contents: write
-  id-token: write
-  attestations: write
-
 env:
   DOTNET_NOLOGO: true
   DOTNET_SKIP_FIRST_TIME_EXPERIENCE: true
@@ -27,6 +22,10 @@ jobs:
   create-release:
     name: Release v${{ inputs.version }}
     runs-on: ubuntu-latest
+    permissions:
+      contents: read
+      id-token: write
+      attestations: write
 
     steps:
       - name: Validate version format
@@ -49,7 +48,7 @@ jobs:
           echo "- **New release**: v${{ env.VERSION }}" >> $GITHUB_STEP_SUMMARY
 
       - name: Checkout
-        uses: actions/checkout@v6
+        uses: actions/checkout@de0fac2e4500dabe0009e67214ff5f5447ce83dd # v6
         with:
           fetch-depth: 0
 
@@ -90,12 +89,12 @@ jobs:
           fi
 
       - name: Generate package provenance
-        uses: actions/attest-build-provenance@v4
+        uses: actions/attest-build-provenance@a2bbfa25375fe432b6a289bc6b6cd05ecd0c4c32 # v4
         with:
           subject-path: 'packages/*.nupkg'
 
       - name: Upload packages
-        uses: actions/upload-artifact@v7
+        uses: actions/upload-artifact@bbbca2ddaa5d8feaa63e36b76fdaad77386f024f # v7
         with:
           name: nuget-packages-v${{ env.VERSION }}
           path: |
@@ -130,10 +129,15 @@ jobs:
             archive: tar.gz
 
     runs-on: ${{ matrix.os }}
+    permissions:
+      contents: read
+
+    env:
+      VERSION: ${{ inputs.version }}
 
     steps:
       - name: Checkout
-        uses: actions/checkout@v6
+        uses: actions/checkout@de0fac2e4500dabe0009e67214ff5f5447ce83dd # v6
 
       - name: Setup .NET
         uses: ./.github/actions/setup-dotnet
@@ -148,44 +152,49 @@ jobs:
           -p:PublishTrimmed=true
           -p:PublishReadyToRun=true
           -p:PackAsTool=false
-          -p:Version=${{ inputs.version }}
+          -p:Version=${VERSION}
           -o publish/${{ matrix.rid }}
 
       - name: Package (tar.gz)
         if: matrix.archive == 'tar.gz'
-        run: tar -czf weave-${{ inputs.version }}-${{ matrix.rid }}.tar.gz -C publish/${{ matrix.rid }} .
+        run: tar -czf weave-${VERSION}-${{ matrix.rid }}.tar.gz -C publish/${{ matrix.rid }} .
 
       - name: Package (zip)
         if: matrix.archive == 'zip'
         shell: pwsh
-        run: Compress-Archive -Path publish/${{ matrix.rid }}/* -DestinationPath weave-${{ inputs.version }}-${{ matrix.rid }}.zip
+        run: Compress-Archive -Path publish/${{ matrix.rid }}/* -DestinationPath weave-${{ env.VERSION }}-${{ matrix.rid }}.zip
 
       - name: Upload artifact
-        uses: actions/upload-artifact@v7
+        uses: actions/upload-artifact@bbbca2ddaa5d8feaa63e36b76fdaad77386f024f # v7
         with:
           name: weave-${{ matrix.rid }}
-          path: weave-${{ inputs.version }}-${{ matrix.rid }}.${{ matrix.archive }}
+          path: weave-${{ env.VERSION }}-${{ matrix.rid }}.${{ matrix.archive }}
 
   github-release:
     name: Create GitHub Release
     needs: [create-release, publish-binaries]
     runs-on: ubuntu-latest
+    permissions:
+      contents: write
+
+    env:
+      VERSION: ${{ inputs.version }}
 
     steps:
       - name: Checkout
-        uses: actions/checkout@v6
+        uses: actions/checkout@de0fac2e4500dabe0009e67214ff5f5447ce83dd # v6
         with:
           sparse-checkout: scripts
 
       - name: Download all artifacts
-        uses: actions/download-artifact@v8
+        uses: actions/download-artifact@3e5f45b2cfb9172054b4087a40e8e0b5a5461e7c # v8
         with:
           path: artifacts
           merge-multiple: true
 
       - name: Create release
         run: |
-          TAG="v${{ inputs.version }}"
+          TAG="v${VERSION}"
           RAW="https://raw.githubusercontent.com/${{ github.repository }}/${TAG}"
           DL="https://github.com/${{ github.repository }}/releases/download/${TAG}"
 
@@ -199,7 +208,7 @@ jobs:
           |----------|---------|
           | **Windows** | \`irm ${RAW}/scripts/install.ps1 \\| iex\` |
           | **macOS / Linux** | \`curl -fsSL ${RAW}/scripts/install.sh \\| sh\` |
-          | **.NET tool** | \`dotnet tool install -g Weave.Cli --version ${{ inputs.version }}\` |
+          | **.NET tool** | \`dotnet tool install -g Weave.Cli --version ${VERSION}\` |
 
           Or download an archive above and extract manually. The install scripts are also attached as release assets:
           - [install.sh](${DL}/install.sh)
@@ -210,7 +219,7 @@ jobs:
             --title "Release ${TAG}" \
             --generate-notes \
             --notes-file release-footer.md \
-            artifacts/weave-${{ inputs.version }}-*.zip artifacts/weave-${{ inputs.version }}-*.tar.gz \
+            artifacts/weave-${VERSION}-*.zip artifacts/weave-${VERSION}-*.tar.gz \
             artifacts/*.nupkg artifacts/*.snupkg \
             scripts/install.sh scripts/install.ps1
         env:
@@ -220,8 +229,8 @@ jobs:
         run: |
           echo "## Release Created" >> $GITHUB_STEP_SUMMARY
           echo "" >> $GITHUB_STEP_SUMMARY
-          echo "**Version**: v${{ inputs.version }}" >> $GITHUB_STEP_SUMMARY
-          echo "**URL**: https://github.com/${{ github.repository }}/releases/tag/v${{ inputs.version }}" >> $GITHUB_STEP_SUMMARY
+          echo "**Version**: v${VERSION}" >> $GITHUB_STEP_SUMMARY
+          echo "**URL**: https://github.com/${{ github.repository }}/releases/tag/v${VERSION}" >> $GITHUB_STEP_SUMMARY
           echo "" >> $GITHUB_STEP_SUMMARY
           echo "### Next Steps" >> $GITHUB_STEP_SUMMARY
           echo "The **publish-nuget** workflow will trigger automatically to publish packages to NuGet.org." >> $GITHUB_STEP_SUMMARY

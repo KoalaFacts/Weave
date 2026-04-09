@@ -247,6 +247,109 @@ public sealed class OpenApiToolConnectorTests
         result.Duration.ShouldBeGreaterThan(TimeSpan.Zero);
     }
 
+    // --- SSRF protection ---
+
+    [Theory]
+    [InlineData("http://169.254.169.254/latest/meta-data/")]
+    [InlineData("https://evil.com/steal")]
+    public async Task InvokeAsync_AbsoluteUrlEndpoint_ReturnsFailure(string endpoint)
+    {
+        var handler = new StubHandler("{}");
+        var connector = CreateConnector(handler);
+        var handle = await connector.ConnectAsync(CreateSpec(), _testToken, TestContext.Current.CancellationToken);
+        var invocation = new ToolInvocation
+        {
+            ToolName = "my-api",
+            Method = "exploit",
+            Parameters = new() { ["endpoint"] = endpoint }
+        };
+
+        var result = await connector.InvokeAsync(handle, invocation, TestContext.Current.CancellationToken);
+
+        result.Success.ShouldBeFalse();
+        result.Error!.ShouldContain("Invalid endpoint path");
+    }
+
+    [Theory]
+    [InlineData("/../../../etc/passwd")]
+    [InlineData("/api/../admin")]
+    public async Task InvokeAsync_PathTraversalEndpoint_ReturnsFailure(string endpoint)
+    {
+        var handler = new StubHandler("{}");
+        var connector = CreateConnector(handler);
+        var handle = await connector.ConnectAsync(CreateSpec(), _testToken, TestContext.Current.CancellationToken);
+        var invocation = new ToolInvocation
+        {
+            ToolName = "my-api",
+            Method = "exploit",
+            Parameters = new() { ["endpoint"] = endpoint }
+        };
+
+        var result = await connector.InvokeAsync(handle, invocation, TestContext.Current.CancellationToken);
+
+        result.Success.ShouldBeFalse();
+        result.Error!.ShouldContain("Invalid endpoint path");
+    }
+
+    [Theory]
+    [InlineData("/api/%2e%2e/admin")]
+    [InlineData("/api/test%00")]
+    public async Task InvokeAsync_EncodedEndpoint_ReturnsFailure(string endpoint)
+    {
+        var handler = new StubHandler("{}");
+        var connector = CreateConnector(handler);
+        var handle = await connector.ConnectAsync(CreateSpec(), _testToken, TestContext.Current.CancellationToken);
+        var invocation = new ToolInvocation
+        {
+            ToolName = "my-api",
+            Method = "exploit",
+            Parameters = new() { ["endpoint"] = endpoint }
+        };
+
+        var result = await connector.InvokeAsync(handle, invocation, TestContext.Current.CancellationToken);
+
+        result.Success.ShouldBeFalse();
+        result.Error!.ShouldContain("Invalid endpoint path");
+    }
+
+    [Fact]
+    public async Task InvokeAsync_BackslashEndpoint_ReturnsFailure()
+    {
+        var handler = new StubHandler("{}");
+        var connector = CreateConnector(handler);
+        var handle = await connector.ConnectAsync(CreateSpec(), _testToken, TestContext.Current.CancellationToken);
+        var invocation = new ToolInvocation
+        {
+            ToolName = "my-api",
+            Method = "exploit",
+            Parameters = new() { ["endpoint"] = @"/api\..\admin" }
+        };
+
+        var result = await connector.InvokeAsync(handle, invocation, TestContext.Current.CancellationToken);
+
+        result.Success.ShouldBeFalse();
+        result.Error!.ShouldContain("Invalid endpoint path");
+    }
+
+    [Fact]
+    public async Task InvokeAsync_AtSignEndpoint_ReturnsFailure()
+    {
+        var handler = new StubHandler("{}");
+        var connector = CreateConnector(handler);
+        var handle = await connector.ConnectAsync(CreateSpec(), _testToken, TestContext.Current.CancellationToken);
+        var invocation = new ToolInvocation
+        {
+            ToolName = "my-api",
+            Method = "exploit",
+            Parameters = new() { ["endpoint"] = "/api@evil.com" }
+        };
+
+        var result = await connector.InvokeAsync(handle, invocation, TestContext.Current.CancellationToken);
+
+        result.Success.ShouldBeFalse();
+        result.Error!.ShouldContain("Invalid endpoint path");
+    }
+
     // --- Stubs ---
 
     private sealed class StubHandler(string responseBody, HttpStatusCode statusCode = HttpStatusCode.OK) : HttpMessageHandler
