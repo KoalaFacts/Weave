@@ -4,7 +4,6 @@ using Weave.Agents.Grains;
 using Weave.Agents.Models;
 using Weave.Agents.Pipeline;
 using Weave.Shared.Ids;
-using Weave.Tools.Models;
 
 namespace Weave.Agents.Tests;
 

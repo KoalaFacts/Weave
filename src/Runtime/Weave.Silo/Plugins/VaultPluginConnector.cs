@@ -1,4 +1,3 @@
-using Microsoft.Extensions.Logging;
 using Weave.Security.Tokens;
 using Weave.Security.Vault;
 using Weave.Shared.Plugins;

@@ -4,7 +4,6 @@ using Weave.Agents.Grains;
 using Weave.Agents.Models;
 using Weave.Tools.Builders;
 using Weave.Tools.Grains;
-using Weave.Tools.Models;
 
 namespace Weave.Agents.Pipeline;
 

@@ -1,5 +1,4 @@
 using System.CommandLine;
-using Spectre.Console;
 
 namespace Weave.Cli.Commands;
 

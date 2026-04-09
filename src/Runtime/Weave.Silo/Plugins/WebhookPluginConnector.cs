@@ -1,4 +1,3 @@
-using Microsoft.Extensions.Logging;
 using Weave.Shared.Events;
 using Weave.Shared.Plugins;
 using Weave.Silo.Events;

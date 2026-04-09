@@ -1,5 +1,4 @@
 using Microsoft.Extensions.Logging.Abstractions;
-using Weave.Shared.Ids;
 using Weave.Workspaces.Models;
 using Weave.Workspaces.Runtime;
 

@@ -1,5 +1,3 @@
-using System.Net.Http.Json;
-
 namespace Weave.Dashboard.Services;
 
 public sealed class WeaveApiClient(HttpClient http)

@@ -1,4 +1,3 @@
-using Microsoft.Extensions.Logging;
 using Weave.Shared.Plugins;
 using Weave.Workspaces.Models;
 using Weave.Workspaces.Plugins;

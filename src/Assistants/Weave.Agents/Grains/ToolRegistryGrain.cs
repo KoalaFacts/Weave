@@ -9,7 +9,6 @@ using Weave.Shared.Ids;
 using Weave.Shared.Lifecycle;
 using Weave.Tools.Grains;
 using Weave.Tools.Mapping;
-using Weave.Tools.Models;
 using Weave.Workspaces.Models;
 
 namespace Weave.Agents.Grains;

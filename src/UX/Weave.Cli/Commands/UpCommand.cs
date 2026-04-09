@@ -1,6 +1,5 @@
 using System.CommandLine;
 using System.Globalization;
-using Spectre.Console;
 using Weave.Workspaces.Manifest;
 
 namespace Weave.Cli.Commands;
