@@ -68,7 +68,7 @@ Built-in presets get you running in seconds:
 | Preset | What you get |
 |--------|-------------|
 | **starter** | One assistant, no tools — the simplest possible workspace. |
-| **coding-assistant** | An assistant with git and file tools, ready for code tasks. |
+| **coding-assistant** | An assistant with git and filesystem tools, ready for code tasks. |
 | **research** | An assistant with web and document tools for gathering information. |
 | **multi-agent** | A supervisor and worker assistants for more complex workflows. |
 
