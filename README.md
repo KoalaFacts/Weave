@@ -95,7 +95,7 @@ weave workspace new demo
 
 ? Which tools should the assistant have access to?
   ❯ ◉ git
-    ◉ file
+    ◉ filesystem
     ◯ web
     ◯ custom...
 
@@ -125,11 +125,25 @@ Every command updates the workspace configuration for you. No manual file editin
 |---------|------------------|
 | **workspace** | Privacy, security boundaries, and how secrets are managed. |
 | **agents** | Which AI model to use, what it can do, and any recurring tasks. |
-| **tools** | Which tools (commands, services, APIs) the assistant can call. |
+| **tools** | Which tools (commands, services, APIs, filesystem) the assistant can call. |
 | **hooks** | Actions that run automatically at key moments (e.g. on start, on finish). |
 | **targets** | Where the workspace runs — your machine, a server, or a CI pipeline. |
+| **plugins** | Optional integrations (Dapr, Vault, webhooks) activated by environment. |
 
 For advanced scenarios you can also edit the manifest JSONC file by hand. See the [Manifest Reference](docs/manifest-reference.md) for the full schema.
+
+### Built-in tool types
+
+Every tool runs inside a security boundary — capability tokens gate access, and inputs/outputs are scanned for leaked secrets.
+
+| Type | What it does |
+|------|-------------|
+| **filesystem** | Sandboxed file access — read, write, edit, grep, search. All paths locked to a root directory with symlink escape prevention. |
+| **cli** | Shell commands with allow/deny lists and shell metacharacter blocking. |
+| **mcp** | Model Context Protocol servers over stdin/stdout. |
+| **openapi** | HTTP APIs described by an OpenAPI spec, with SSRF protection. |
+| **direct_http** | Lightweight HTTP calls to a base URL. |
+| **dapr** | Dapr service invocation through the sidecar. |
 
 ## CLI Commands
 
