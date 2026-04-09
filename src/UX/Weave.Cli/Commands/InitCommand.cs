@@ -1,6 +1,7 @@
 using System.CommandLine;
 using System.Globalization;
 using Spectre.Console;
+using Weave.Shared;
 
 namespace Weave.Cli.Commands;
 
@@ -46,7 +47,7 @@ internal static class InitCommand
             var port = AnsiConsole.Prompt(
                 new TextPrompt<int>("Default server port:")
                     .Styled()
-                    .DefaultValue(9401));
+                    .DefaultValue(WeavePorts.SiloHttp));
 
             // ── Save ──────────────────────────────────────────────
             var config = new CliConfig

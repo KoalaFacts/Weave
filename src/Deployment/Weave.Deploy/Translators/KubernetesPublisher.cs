@@ -83,7 +83,7 @@ public sealed class KubernetesPublisher : IPublisher
                     - name: redis
                       image: redis:7-alpine
                       ports:
-                        - containerPort: 6379
+                        - containerPort: {WeavePorts.Redis}
             ---
             apiVersion: v1
             kind: Service
@@ -94,7 +94,7 @@ public sealed class KubernetesPublisher : IPublisher
               selector:
                 app: redis
               ports:
-                - port: 6379
+                - port: {WeavePorts.Redis}
             """), ct);
         files.Add(redisFile);
 
@@ -111,11 +111,11 @@ public sealed class KubernetesPublisher : IPublisher
                 app: weave-silo
               ports:
                 - name: http
-                  port: 5000
+                  port: {WeavePorts.SiloHttp}
                 - name: orleans-silo
-                  port: 11111
+                  port: {WeavePorts.OrleansSilo}
                 - name: orleans-gateway
-                  port: 30000
+                  port: {WeavePorts.OrleansGateway}
             """), ct);
         files.Add(svcFile);
 

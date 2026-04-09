@@ -1,4 +1,5 @@
 using Microsoft.Extensions.Logging;
+using Weave.Shared;
 using Weave.Shared.Events;
 using Weave.Shared.Ids;
 using Weave.Shared.Lifecycle;
@@ -56,8 +57,8 @@ public sealed class WorkspaceGrainTests
                 WorkspaceId.From("test-workspace"),
                 NetworkId.From("net-1"),
                 [
-                    new ContainerHandle(ContainerId.From("c-1"), "silo", "weave-silo:latest", new Dictionary<int, int> { [5000] = 5000 }),
-                    new ContainerHandle(ContainerId.From("c-2"), "redis", "redis:7-alpine", new Dictionary<int, int> { [6379] = 6379 })
+                    new ContainerHandle(ContainerId.From("c-1"), "silo", "weave-silo:latest", new Dictionary<int, int> { [WeavePorts.SiloHttp] = WeavePorts.SiloHttp }),
+                    new ContainerHandle(ContainerId.From("c-2"), "redis", "redis:7-alpine", new Dictionary<int, int> { [WeavePorts.Redis] = WeavePorts.Redis })
                 ]));
 
         var grain = new WorkspaceGrain(runtime, lifecycle, eventBus, logger, persistentState);

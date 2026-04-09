@@ -1,4 +1,5 @@
 using System.Net.Http.Json;
+using Weave.Shared;
 using Weave.Workspaces.Models;
 
 namespace Weave.Cli.Commands;
@@ -95,7 +96,7 @@ internal sealed class WorkspaceApiClient : IDisposable
     }
 
     private static string ResolveBaseUrl() =>
-        Environment.GetEnvironmentVariable("WEAVE_API_URL") ?? "http://localhost:9401";
+        Environment.GetEnvironmentVariable("WEAVE_API_URL") ?? $"http://localhost:{WeavePorts.SiloHttp}";
 
     private static string? ResolvePath(string manifestDirectory, string? path)
     {

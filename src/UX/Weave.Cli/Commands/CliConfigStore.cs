@@ -1,5 +1,6 @@
 using System.Text.Json;
 using System.Text.Json.Serialization;
+using Weave.Shared;
 
 namespace Weave.Cli.Commands;
 
@@ -7,7 +8,7 @@ internal sealed record CliConfig
 {
     public string Version { get; init; } = "1.0";
     public string? SiloPath { get; init; }
-    public int DefaultPort { get; init; } = 9401;
+    public int DefaultPort { get; init; } = WeavePorts.SiloHttp;
 }
 
 internal static class CliConfigStore

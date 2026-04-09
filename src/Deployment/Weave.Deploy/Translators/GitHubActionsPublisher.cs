@@ -1,5 +1,6 @@
 using System.Globalization;
 using System.Text;
+using Weave.Shared;
 using Weave.Workspaces.Models;
 
 namespace Weave.Deploy.Translators;
@@ -27,7 +28,7 @@ public sealed class GitHubActionsPublisher : IPublisher
         sb.AppendLine("      redis:");
         sb.AppendLine("        image: redis:7-alpine");
         sb.AppendLine("        ports:");
-        sb.AppendLine("          - 6379:6379");
+        sb.AppendLine(CultureInfo.InvariantCulture, $"          - {WeavePorts.Redis}:{WeavePorts.Redis}");
         sb.AppendLine("    steps:");
         sb.AppendLine("      - uses: actions/checkout@v4");
         sb.AppendLine();
@@ -40,7 +41,7 @@ public sealed class GitHubActionsPublisher : IPublisher
         sb.AppendLine("        run: |");
         sb.AppendLine(CultureInfo.InvariantCulture, $"          dotnet run --project src/Runtime/Weave.Silo -- --workspace={manifest.Name}");
         sb.AppendLine("        env:");
-        sb.AppendLine("          REDIS_CONNECTION: localhost:6379");
+        sb.AppendLine(CultureInfo.InvariantCulture, $"          REDIS_CONNECTION: localhost:{WeavePorts.Redis}");
 
         // Add agent-specific steps
         if (manifest.Agents is { Count: > 0 })

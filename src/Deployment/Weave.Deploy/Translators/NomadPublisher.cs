@@ -1,5 +1,6 @@
 using System.Globalization;
 using System.Text;
+using Weave.Shared;
 using Weave.Workspaces.Models;
 
 namespace Weave.Deploy.Translators;
@@ -20,9 +21,9 @@ public sealed class NomadPublisher : IPublisher
         sb.AppendLine("    count = 1");
         sb.AppendLine();
         sb.AppendLine("    network {");
-        sb.AppendLine("      port \"http\" { static = 5000 }");
-        sb.AppendLine("      port \"orleans_silo\" { static = 11111 }");
-        sb.AppendLine("      port \"orleans_gw\" { static = 30000 }");
+        sb.AppendLine(CultureInfo.InvariantCulture, $"      port \"http\" {{ static = {WeavePorts.SiloHttp} }}");
+        sb.AppendLine(CultureInfo.InvariantCulture, $"      port \"orleans_silo\" {{ static = {WeavePorts.OrleansSilo} }}");
+        sb.AppendLine(CultureInfo.InvariantCulture, $"      port \"orleans_gw\" {{ static = {WeavePorts.OrleansGateway} }}");
         sb.AppendLine("    }");
         sb.AppendLine();
         sb.AppendLine("    task \"silo\" {");
@@ -44,7 +45,7 @@ public sealed class NomadPublisher : IPublisher
         sb.AppendLine("      driver = \"docker\"");
         sb.AppendLine("      config {");
         sb.AppendLine("        image = \"daprio/dapr:latest\"");
-        sb.AppendLine("        args  = [\"./daprd\", \"--app-id\", \"weave-silo\", \"--app-port\", \"5000\"]");
+        sb.AppendLine(CultureInfo.InvariantCulture, $"        args  = [\"./daprd\", \"--app-id\", \"weave-silo\", \"--app-port\", \"{WeavePorts.SiloHttp}\"]");
         sb.AppendLine("      }");
         sb.AppendLine("      lifecycle { hook = \"prestart\" sidecar = true }");
         sb.AppendLine("      resources {");
@@ -56,7 +57,7 @@ public sealed class NomadPublisher : IPublisher
         sb.AppendLine();
         sb.AppendLine("  group \"redis\" {");
         sb.AppendLine("    count = 1");
-        sb.AppendLine("    network { port \"redis\" { static = 6379 } }");
+        sb.AppendLine(CultureInfo.InvariantCulture, $"    network {{ port \"redis\" {{ static = {WeavePorts.Redis} }} }}");
         sb.AppendLine("    task \"redis\" {");
         sb.AppendLine("      driver = \"docker\"");
         sb.AppendLine("      config {");

@@ -1,5 +1,6 @@
 using System.Globalization;
 using System.Text;
+using Weave.Shared;
 using Weave.Workspaces.Models;
 
 namespace Weave.Deploy.Translators;
@@ -27,7 +28,7 @@ public sealed class FlyIoPublisher : IPublisher
         sb.AppendLine(CultureInfo.InvariantCulture, $"  WEAVE_WORKSPACE = \"{manifest.Name}\"");
         sb.AppendLine();
         sb.AppendLine("[http_service]");
-        sb.AppendLine("  internal_port = 5000");
+        sb.AppendLine(CultureInfo.InvariantCulture, $"  internal_port = {WeavePorts.SiloHttp}");
         sb.AppendLine("  force_https = true");
         sb.AppendLine(CultureInfo.InvariantCulture, $"  min_machines_running = {minScale}");
         sb.AppendLine();
