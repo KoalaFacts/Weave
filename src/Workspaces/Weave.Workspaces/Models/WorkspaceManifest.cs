@@ -99,6 +99,7 @@ public sealed record ToolDefinition
     [Id(2)] public OpenApiConfig? OpenApi { get; init; }
     [Id(3)] public CliConfig? Cli { get; init; }
     [Id(4)] public DirectHttpConfig? DirectHttp { get; init; }
+    [Id(5)] public FileSystemToolConfig? FileSystem { get; init; }
 }
 
 [GenerateSerializer]
@@ -136,6 +137,14 @@ public sealed record DirectHttpConfig
 {
     [Id(0)] public required string BaseUrl { get; init; }
     [Id(1)] public AuthConfig? Auth { get; init; }
+}
+
+[GenerateSerializer]
+public sealed record FileSystemToolConfig
+{
+    [Id(0)] public required string Root { get; init; }
+    [Id(1)] public bool ReadOnly { get; init; }
+    [Id(2)] public long MaxReadBytes { get; init; }
 }
 
 [GenerateSerializer]

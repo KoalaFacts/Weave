@@ -13,6 +13,7 @@ public sealed class ToolSpecMapperTests
     [InlineData("dapr", ToolType.Dapr)]
     [InlineData("library", ToolType.Library)]
     [InlineData("direct_http", ToolType.DirectHttp)]
+    [InlineData("filesystem", ToolType.FileSystem)]
     public void FromDefinition_AllToolTypes_MapCorrectly(string typeString, ToolType expectedType)
     {
         var definition = new ToolDefinition { Type = typeString };
@@ -105,6 +106,45 @@ public sealed class ToolSpecMapperTests
         var spec = ToolSpecMapper.FromDefinition("http-tool", definition);
 
         spec.DirectHttp.ShouldBeNull();
+    }
+
+    [Fact]
+    public void FromDefinition_FileSystemConfig_Preserved()
+    {
+        var definition = new ToolDefinition
+        {
+            Type = "filesystem",
+            FileSystem = new Weave.Workspaces.Models.FileSystemToolConfig { Root = "/data/workspace", ReadOnly = true, MaxReadBytes = 512 }
+        };
+
+        var spec = ToolSpecMapper.FromDefinition("fs-tool", definition);
+
+        spec.FileSystem.ShouldNotBeNull();
+        spec.FileSystem.Root.ShouldBe("/data/workspace");
+        spec.FileSystem.ReadOnly.ShouldBeTrue();
+        spec.FileSystem.MaxReadBytes.ShouldBe(512);
+    }
+
+    [Fact]
+    public void ResolveEndpoint_FileSystemType_ReturnsRoot()
+    {
+        var definition = new ToolDefinition
+        {
+            Type = "filesystem",
+            FileSystem = new Weave.Workspaces.Models.FileSystemToolConfig { Root = "/data/workspace" }
+        };
+
+        ToolSpecMapper.ResolveEndpoint(definition).ShouldBe("/data/workspace");
+    }
+
+    [Fact]
+    public void FromDefinition_NullFileSystemToolConfig_NullSpec()
+    {
+        var definition = new ToolDefinition { Type = "filesystem" };
+
+        var spec = ToolSpecMapper.FromDefinition("fs-tool", definition);
+
+        spec.FileSystem.ShouldBeNull();
     }
 
     [Fact]

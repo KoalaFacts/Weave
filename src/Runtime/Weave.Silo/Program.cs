@@ -89,6 +89,7 @@ builder.Services.AddTransient<IAgentChatPipeline, AgentChatPipeline>();
 // Tool connectors and discovery
 builder.Services.AddSingleton<IToolConnector, McpToolConnector>();
 builder.Services.AddSingleton<IToolConnector, CliToolConnector>();
+builder.Services.AddSingleton<IToolConnector, FileSystemToolConnector>();
 builder.Services.AddSingleton<IToolDiscoveryService, ToolDiscoveryService>();
 builder.Services.AddHttpClient<OpenApiToolConnector>();
 builder.Services.AddSingleton<IToolConnector>(sp => sp.GetRequiredService<OpenApiToolConnector>());

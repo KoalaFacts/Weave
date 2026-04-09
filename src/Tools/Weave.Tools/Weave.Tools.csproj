@@ -5,6 +5,10 @@
   </PropertyGroup>
 
   <ItemGroup>
+    <InternalsVisibleTo Include="Weave.Tools.Tests" />
+  </ItemGroup>
+
+  <ItemGroup>
     <ProjectReference Include="..\..\Foundation\Weave.Shared\Weave.Shared.csproj" />
     <ProjectReference Include="..\..\Workspaces\Weave.Workspaces\Weave.Workspaces.csproj" />
     <ProjectReference Include="..\..\Security\Weave.Security\Weave.Security.csproj" />

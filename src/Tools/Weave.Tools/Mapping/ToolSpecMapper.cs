@@ -15,6 +15,7 @@ public static class ToolSpecMapper
             "dapr" => ToolType.Dapr,
             "library" => ToolType.Library,
             "direct_http" => ToolType.DirectHttp,
+            "filesystem" => ToolType.FileSystem,
             _ => throw new NotSupportedException($"Unsupported tool type: '{definition.Type}'")
         };
 
@@ -25,7 +26,8 @@ public static class ToolSpecMapper
             Mcp = definition.Mcp,
             OpenApi = definition.OpenApi,
             Cli = definition.Cli,
-            DirectHttp = MapDirectHttp(definition.DirectHttp)
+            DirectHttp = MapDirectHttp(definition.DirectHttp),
+            FileSystem = MapFileSystem(definition.FileSystem)
         };
     }
 
@@ -36,6 +38,7 @@ public static class ToolSpecMapper
             "mcp" => definition.Mcp?.Server,
             "openapi" => definition.OpenApi?.SpecUrl,
             "direct_http" => definition.DirectHttp?.BaseUrl,
+            "filesystem" => definition.FileSystem?.Root,
             _ => null
         };
     }
@@ -51,6 +54,19 @@ public static class ToolSpecMapper
             AuthHeader = config.Auth is not null
                 ? $"{config.Auth.Type} {config.Auth.Token}"
                 : null
+        };
+    }
+
+    private static Weave.Tools.Models.FileSystemToolConfig? MapFileSystem(Weave.Workspaces.Models.FileSystemToolConfig? config)
+    {
+        if (config is null)
+            return null;
+
+        return new Weave.Tools.Models.FileSystemToolConfig
+        {
+            Root = config.Root,
+            ReadOnly = config.ReadOnly,
+            MaxReadBytes = config.MaxReadBytes
         };
     }
 }
