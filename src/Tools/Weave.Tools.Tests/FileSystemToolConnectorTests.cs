@@ -300,6 +300,146 @@ public sealed class FileSystemToolConnectorTests : IDisposable
         result.Error.ShouldNotBeNull();
     }
 
+    // --- edit_file ---
+
+    [Fact]
+    public async Task EditFile_SingleOccurrence_ReplacesText()
+    {
+        var connector = CreateConnector();
+        var handle = await connector.ConnectAsync(CreateSpec(), _testToken, TestContext.Current.CancellationToken);
+        File.WriteAllText(Path.Combine(_tempRoot, "edit.txt"), "hello world");
+
+        var result = await connector.InvokeAsync(handle,
+            new ToolInvocation
+            {
+                ToolName = "fs-tool",
+                Method = "edit_file",
+                Parameters = new Dictionary<string, string> { ["path"] = "edit.txt", ["old_string"] = "hello", ["new_string"] = "goodbye" }
+            },
+            TestContext.Current.CancellationToken);
+
+        result.Success.ShouldBeTrue();
+        File.ReadAllText(Path.Combine(_tempRoot, "edit.txt")).ShouldBe("goodbye world");
+    }
+
+    [Fact]
+    public async Task EditFile_MultipleOccurrences_WithoutReplaceAll_ReturnsFailure()
+    {
+        var connector = CreateConnector();
+        var handle = await connector.ConnectAsync(CreateSpec(), _testToken, TestContext.Current.CancellationToken);
+        File.WriteAllText(Path.Combine(_tempRoot, "dup.txt"), "aaa bbb aaa");
+
+        var result = await connector.InvokeAsync(handle,
+            new ToolInvocation
+            {
+                ToolName = "fs-tool",
+                Method = "edit_file",
+                Parameters = new Dictionary<string, string> { ["path"] = "dup.txt", ["old_string"] = "aaa", ["new_string"] = "ccc" }
+            },
+            TestContext.Current.CancellationToken);
+
+        result.Success.ShouldBeFalse();
+        result.Error!.ShouldContain("2 times");
+    }
+
+    [Fact]
+    public async Task EditFile_MultipleOccurrences_WithReplaceAll_ReplacesAll()
+    {
+        var connector = CreateConnector();
+        var handle = await connector.ConnectAsync(CreateSpec(), _testToken, TestContext.Current.CancellationToken);
+        File.WriteAllText(Path.Combine(_tempRoot, "dup.txt"), "aaa bbb aaa");
+
+        var result = await connector.InvokeAsync(handle,
+            new ToolInvocation
+            {
+                ToolName = "fs-tool",
+                Method = "edit_file",
+                Parameters = new Dictionary<string, string> { ["path"] = "dup.txt", ["old_string"] = "aaa", ["new_string"] = "ccc", ["replace_all"] = "true" }
+            },
+            TestContext.Current.CancellationToken);
+
+        result.Success.ShouldBeTrue();
+        File.ReadAllText(Path.Combine(_tempRoot, "dup.txt")).ShouldBe("ccc bbb ccc");
+    }
+
+    [Fact]
+    public async Task EditFile_OldStringNotFound_ReturnsFailure()
+    {
+        var connector = CreateConnector();
+        var handle = await connector.ConnectAsync(CreateSpec(), _testToken, TestContext.Current.CancellationToken);
+        File.WriteAllText(Path.Combine(_tempRoot, "miss.txt"), "hello world");
+
+        var result = await connector.InvokeAsync(handle,
+            new ToolInvocation
+            {
+                ToolName = "fs-tool",
+                Method = "edit_file",
+                Parameters = new Dictionary<string, string> { ["path"] = "miss.txt", ["old_string"] = "xyz", ["new_string"] = "abc" }
+            },
+            TestContext.Current.CancellationToken);
+
+        result.Success.ShouldBeFalse();
+        result.Error!.ShouldContain("not found");
+    }
+
+    [Fact]
+    public async Task EditFile_ReadOnlyMode_ReturnsFailure()
+    {
+        var connector = CreateConnector();
+        var handle = await connector.ConnectAsync(CreateSpec(readOnly: true), _testToken, TestContext.Current.CancellationToken);
+        File.WriteAllText(Path.Combine(_tempRoot, "ro.txt"), "content");
+
+        var result = await connector.InvokeAsync(handle,
+            new ToolInvocation
+            {
+                ToolName = "fs-tool",
+                Method = "edit_file",
+                Parameters = new Dictionary<string, string> { ["path"] = "ro.txt", ["old_string"] = "content", ["new_string"] = "new" }
+            },
+            TestContext.Current.CancellationToken);
+
+        result.Success.ShouldBeFalse();
+        result.Error!.ShouldContain("read-only");
+    }
+
+    [Fact]
+    public async Task EditFile_MissingOldString_ReturnsFailure()
+    {
+        var connector = CreateConnector();
+        var handle = await connector.ConnectAsync(CreateSpec(), _testToken, TestContext.Current.CancellationToken);
+        File.WriteAllText(Path.Combine(_tempRoot, "edit.txt"), "content");
+
+        var result = await connector.InvokeAsync(handle,
+            new ToolInvocation
+            {
+                ToolName = "fs-tool",
+                Method = "edit_file",
+                Parameters = new Dictionary<string, string> { ["path"] = "edit.txt", ["new_string"] = "new" }
+            },
+            TestContext.Current.CancellationToken);
+
+        result.Success.ShouldBeFalse();
+        result.Error!.ShouldContain("old_string");
+    }
+
+    [Fact]
+    public async Task EditFile_PathTraversal_ReturnsFailure()
+    {
+        var connector = CreateConnector();
+        var handle = await connector.ConnectAsync(CreateSpec(), _testToken, TestContext.Current.CancellationToken);
+
+        var result = await connector.InvokeAsync(handle,
+            new ToolInvocation
+            {
+                ToolName = "fs-tool",
+                Method = "edit_file",
+                Parameters = new Dictionary<string, string> { ["path"] = "../escape.txt", ["old_string"] = "a", ["new_string"] = "b" }
+            },
+            TestContext.Current.CancellationToken);
+
+        result.Success.ShouldBeFalse();
+    }
+
     // --- list_directory ---
 
     [Fact]
@@ -414,6 +554,151 @@ public sealed class FileSystemToolConnectorTests : IDisposable
 
         result.Success.ShouldBeTrue();
         result.Output.ShouldContain("inner.txt");
+    }
+
+    // --- grep ---
+
+    [Fact]
+    public async Task Grep_MatchingPattern_ReturnsFileLineMatches()
+    {
+        var connector = CreateConnector();
+        var handle = await connector.ConnectAsync(CreateSpec(), _testToken, TestContext.Current.CancellationToken);
+        File.WriteAllText(Path.Combine(_tempRoot, "log.txt"), "ERROR: disk full\nINFO: ok\nERROR: timeout");
+
+        var result = await connector.InvokeAsync(handle,
+            new ToolInvocation { ToolName = "fs-tool", Method = "grep", Parameters = new Dictionary<string, string> { ["pattern"] = "ERROR" } },
+            TestContext.Current.CancellationToken);
+
+        result.Success.ShouldBeTrue();
+        result.Output.ShouldContain("log.txt:1:ERROR: disk full");
+        result.Output.ShouldContain("log.txt:3:ERROR: timeout");
+        result.Output.ShouldNotContain("INFO");
+    }
+
+    [Fact]
+    public async Task Grep_RegexPattern_Works()
+    {
+        var connector = CreateConnector();
+        var handle = await connector.ConnectAsync(CreateSpec(), _testToken, TestContext.Current.CancellationToken);
+        File.WriteAllText(Path.Combine(_tempRoot, "code.cs"), "int x = 42;\nstring y = \"hello\";\nint z = 99;");
+
+        var result = await connector.InvokeAsync(handle,
+            new ToolInvocation { ToolName = "fs-tool", Method = "grep", Parameters = new Dictionary<string, string> { ["pattern"] = @"int \w+ = \d+" } },
+            TestContext.Current.CancellationToken);
+
+        result.Success.ShouldBeTrue();
+        result.Output.ShouldContain("code.cs:1:");
+        result.Output.ShouldContain("code.cs:3:");
+        result.Output.ShouldNotContain("code.cs:2:");
+    }
+
+    [Fact]
+    public async Task Grep_CaseInsensitive_MatchesBothCases()
+    {
+        var connector = CreateConnector();
+        var handle = await connector.ConnectAsync(CreateSpec(), _testToken, TestContext.Current.CancellationToken);
+        File.WriteAllText(Path.Combine(_tempRoot, "mixed.txt"), "Hello\nhello\nHELLO");
+
+        var result = await connector.InvokeAsync(handle,
+            new ToolInvocation { ToolName = "fs-tool", Method = "grep", Parameters = new Dictionary<string, string> { ["pattern"] = "hello", ["case_insensitive"] = "true" } },
+            TestContext.Current.CancellationToken);
+
+        result.Success.ShouldBeTrue();
+        result.Output.ShouldContain("mixed.txt:1:");
+        result.Output.ShouldContain("mixed.txt:2:");
+        result.Output.ShouldContain("mixed.txt:3:");
+    }
+
+    [Fact]
+    public async Task Grep_WithGlobFilter_LimitsToMatchingFiles()
+    {
+        var connector = CreateConnector();
+        var handle = await connector.ConnectAsync(CreateSpec(), _testToken, TestContext.Current.CancellationToken);
+        File.WriteAllText(Path.Combine(_tempRoot, "app.cs"), "TODO: fix");
+        File.WriteAllText(Path.Combine(_tempRoot, "readme.md"), "TODO: document");
+
+        var result = await connector.InvokeAsync(handle,
+            new ToolInvocation { ToolName = "fs-tool", Method = "grep", Parameters = new Dictionary<string, string> { ["pattern"] = "TODO", ["glob"] = "*.cs" } },
+            TestContext.Current.CancellationToken);
+
+        result.Success.ShouldBeTrue();
+        result.Output.ShouldContain("app.cs");
+        result.Output.ShouldNotContain("readme.md");
+    }
+
+    [Fact]
+    public async Task Grep_NoMatches_ReturnsEmptyOutput()
+    {
+        var connector = CreateConnector();
+        var handle = await connector.ConnectAsync(CreateSpec(), _testToken, TestContext.Current.CancellationToken);
+        File.WriteAllText(Path.Combine(_tempRoot, "clean.txt"), "all good");
+
+        var result = await connector.InvokeAsync(handle,
+            new ToolInvocation { ToolName = "fs-tool", Method = "grep", Parameters = new Dictionary<string, string> { ["pattern"] = "ERROR" } },
+            TestContext.Current.CancellationToken);
+
+        result.Success.ShouldBeTrue();
+        result.Output.ShouldBe("");
+    }
+
+    [Fact]
+    public async Task Grep_InvalidRegex_ReturnsFailure()
+    {
+        var connector = CreateConnector();
+        var handle = await connector.ConnectAsync(CreateSpec(), _testToken, TestContext.Current.CancellationToken);
+
+        var result = await connector.InvokeAsync(handle,
+            new ToolInvocation { ToolName = "fs-tool", Method = "grep", Parameters = new Dictionary<string, string> { ["pattern"] = "[invalid" } },
+            TestContext.Current.CancellationToken);
+
+        result.Success.ShouldBeFalse();
+        result.Error!.ShouldContain("Invalid regex");
+    }
+
+    [Fact]
+    public async Task Grep_MissingPattern_ReturnsFailure()
+    {
+        var connector = CreateConnector();
+        var handle = await connector.ConnectAsync(CreateSpec(), _testToken, TestContext.Current.CancellationToken);
+
+        var result = await connector.InvokeAsync(handle,
+            new ToolInvocation { ToolName = "fs-tool", Method = "grep", Parameters = [] },
+            TestContext.Current.CancellationToken);
+
+        result.Success.ShouldBeFalse();
+        result.Error!.ShouldContain("pattern");
+    }
+
+    [Fact]
+    public async Task Grep_GlobWithDotDot_ReturnsFailure()
+    {
+        var connector = CreateConnector();
+        var handle = await connector.ConnectAsync(CreateSpec(), _testToken, TestContext.Current.CancellationToken);
+
+        var result = await connector.InvokeAsync(handle,
+            new ToolInvocation { ToolName = "fs-tool", Method = "grep", Parameters = new Dictionary<string, string> { ["pattern"] = "x", ["glob"] = "../*.txt" } },
+            TestContext.Current.CancellationToken);
+
+        result.Success.ShouldBeFalse();
+        result.Error!.ShouldContain("..");
+    }
+
+    [Fact]
+    public async Task Grep_RecursiveSearch_FindsNestedFiles()
+    {
+        var connector = CreateConnector();
+        var handle = await connector.ConnectAsync(CreateSpec(), _testToken, TestContext.Current.CancellationToken);
+        var nested = Path.Combine(_tempRoot, "src", "deep");
+        Directory.CreateDirectory(nested);
+        File.WriteAllText(Path.Combine(nested, "inner.cs"), "// FIXME: broken");
+
+        var result = await connector.InvokeAsync(handle,
+            new ToolInvocation { ToolName = "fs-tool", Method = "grep", Parameters = new Dictionary<string, string> { ["pattern"] = "FIXME" } },
+            TestContext.Current.CancellationToken);
+
+        result.Success.ShouldBeTrue();
+        result.Output.ShouldContain("inner.cs");
+        result.Output.ShouldContain("FIXME");
     }
 
     // --- file_info ---

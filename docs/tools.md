@@ -66,11 +66,14 @@ Lightweight direct HTTP calls with security protections.
 
 ### FileSystemToolConnector (`filesystem`)
 
-Sandboxed file system access for agents.
+Sandboxed file system access for agents — mirrors the Agent SDK toolset (read, write, edit, glob, grep).
 
 - **Path sandboxing**: all paths resolved relative to a configured root directory. Rejects `..`, absolute paths, drive letters, URL schemes, and null bytes.
-- **Operations**: `read_file`, `write_file`, `list_directory`, `search_files`, `file_info`.
-- **Read-only mode**: optional config to disable all write operations.
+- **Sandbox mode** (default on): walks each path component and resolves symlinks/junctions to verify real targets stay under root.
+- **Operations**: `read_file`, `write_file`, `edit_file`, `list_directory`, `search_files`, `grep`, `file_info`.
+- **edit_file**: find/replace with unique-match safety — rejects ambiguous edits unless `replace_all=true`.
+- **grep**: regex content search across files with glob filter, case-insensitive option, capped at 500 matches.
+- **Read-only mode**: optional config to disable all write operations (including edit).
 - **Binary detection**: scans first 8KB for null bytes — rejects binary files from text reads.
 - **Size limits**: configurable `MaxReadBytes` (default 1MB) prevents unbounded reads.
 - **Glob search**: `search_files` uses `Directory.EnumerateFiles` with capped results (1000).

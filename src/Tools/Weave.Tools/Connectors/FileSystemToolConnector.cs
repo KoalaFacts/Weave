@@ -1,6 +1,7 @@
 using System.Collections.Concurrent;
 using System.Diagnostics;
 using System.Text;
+using System.Text.RegularExpressions;
 using Microsoft.Extensions.Logging;
 using Weave.Security.Tokens;
 using Weave.Tools.Models;
@@ -74,12 +75,18 @@ public sealed partial class FileSystemToolConnector(ILogger<FileSystemToolConnec
             if (invocation.Method.Equals("file_info", StringComparison.OrdinalIgnoreCase))
                 return GetFileInfo(handle.ToolName, config, invocation, sw);
 
+            if (invocation.Method.Equals("edit_file", StringComparison.OrdinalIgnoreCase))
+                return await EditFileAsync(handle.ToolName, config, invocation, sw, ct);
+
+            if (invocation.Method.Equals("grep", StringComparison.OrdinalIgnoreCase))
+                return await GrepAsync(handle.ToolName, config, invocation, sw, ct);
+
             sw.Stop();
             return new ToolResult
             {
                 Success = false,
                 ToolName = handle.ToolName,
-                Error = $"Unknown method '{invocation.Method}'. Supported methods: read_file, write_file, list_directory, search_files, file_info",
+                Error = $"Unknown method '{invocation.Method}'. Supported methods: read_file, write_file, edit_file, list_directory, search_files, grep, file_info",
                 Duration = sw.Elapsed
             };
         }
@@ -101,23 +108,16 @@ public sealed partial class FileSystemToolConnector(ILogger<FileSystemToolConnec
         return Task.FromResult(new ToolSchema
         {
             ToolName = handle.ToolName,
-            Description = "Sandboxed file system tool. Methods: read_file, write_file, list_directory, search_files, file_info",
+            Description = "Sandboxed file system tool. Methods: read_file, write_file, edit_file, list_directory, search_files, grep, file_info",
             Parameters =
             [
-                new ToolParameter
-                {
-                    Name = "path",
-                    Type = "string",
-                    Description = "Relative path within the sandboxed root",
-                    Required = true
-                },
-                new ToolParameter
-                {
-                    Name = "pattern",
-                    Type = "string",
-                    Description = "Glob pattern for search_files (e.g. *.txt)",
-                    Required = false
-                }
+                new ToolParameter { Name = "path", Type = "string", Description = "Relative path within the sandboxed root", Required = true },
+                new ToolParameter { Name = "pattern", Type = "string", Description = "Regex pattern for grep, or glob pattern for search_files" },
+                new ToolParameter { Name = "old_string", Type = "string", Description = "Text to find for edit_file" },
+                new ToolParameter { Name = "new_string", Type = "string", Description = "Replacement text for edit_file" },
+                new ToolParameter { Name = "replace_all", Type = "string", Description = "Set to 'true' to replace all occurrences in edit_file" },
+                new ToolParameter { Name = "glob", Type = "string", Description = "File glob filter for grep (default: *)" },
+                new ToolParameter { Name = "case_insensitive", Type = "string", Description = "Set to 'true' for case-insensitive grep" }
             ]
         });
     }
@@ -353,6 +353,196 @@ public sealed partial class FileSystemToolConnector(ILogger<FileSystemToolConnec
 
         sw.Stop();
         return new ToolResult { Success = true, ToolName = toolName, Output = sb.ToString(), Duration = sw.Elapsed };
+    }
+
+    private static async Task<ToolResult> EditFileAsync(
+        string toolName,
+        FileSystemToolConfig config,
+        ToolInvocation invocation,
+        Stopwatch sw,
+        CancellationToken ct)
+    {
+        if (config.ReadOnly)
+        {
+            sw.Stop();
+            return new ToolResult { Success = false, ToolName = toolName, Error = "FileSystem tool is configured as read-only", Duration = sw.Elapsed };
+        }
+
+        if (!invocation.Parameters.TryGetValue("path", out var relativePath) || string.IsNullOrEmpty(relativePath))
+        {
+            sw.Stop();
+            return new ToolResult { Success = false, ToolName = toolName, Error = "Parameter 'path' is required for edit_file", Duration = sw.Elapsed };
+        }
+
+        if (!invocation.Parameters.TryGetValue("old_string", out var oldString) || string.IsNullOrEmpty(oldString))
+        {
+            sw.Stop();
+            return new ToolResult { Success = false, ToolName = toolName, Error = "Parameter 'old_string' is required for edit_file", Duration = sw.Elapsed };
+        }
+
+        if (!invocation.Parameters.TryGetValue("new_string", out var newString))
+        {
+            sw.Stop();
+            return new ToolResult { Success = false, ToolName = toolName, Error = "Parameter 'new_string' is required for edit_file", Duration = sw.Elapsed };
+        }
+
+        string fullPath;
+        try
+        {
+            fullPath = ResolveSafePath(config.Root, relativePath, config.Sandbox);
+        }
+        catch (ArgumentException ex)
+        {
+            sw.Stop();
+            return new ToolResult { Success = false, ToolName = toolName, Error = ex.Message, Duration = sw.Elapsed };
+        }
+
+        if (!File.Exists(fullPath))
+        {
+            sw.Stop();
+            return new ToolResult { Success = false, ToolName = toolName, Error = $"File not found: {relativePath}", Duration = sw.Elapsed };
+        }
+
+        var content = await File.ReadAllTextAsync(fullPath, Encoding.UTF8, ct);
+        var occurrences = CountOccurrences(content, oldString);
+
+        if (occurrences == 0)
+        {
+            sw.Stop();
+            return new ToolResult { Success = false, ToolName = toolName, Error = "old_string not found in file", Duration = sw.Elapsed };
+        }
+
+        var replaceAll = invocation.Parameters.TryGetValue("replace_all", out var replaceAllStr)
+            && replaceAllStr.Equals("true", StringComparison.OrdinalIgnoreCase);
+
+        if (!replaceAll && occurrences > 1)
+        {
+            sw.Stop();
+            return new ToolResult
+            {
+                Success = false,
+                ToolName = toolName,
+                Error = $"old_string found {occurrences} times. Set replace_all=true to replace all, or provide a more specific old_string.",
+                Duration = sw.Elapsed
+            };
+        }
+
+        var updated = replaceAll
+            ? content.Replace(oldString, newString, StringComparison.Ordinal)
+            : ReplaceFirst(content, oldString, newString);
+
+        await File.WriteAllTextAsync(fullPath, updated, Encoding.UTF8, ct);
+        sw.Stop();
+        return new ToolResult
+        {
+            Success = true,
+            ToolName = toolName,
+            Output = $"Replaced {(replaceAll ? occurrences : 1)} occurrence(s) in {relativePath}",
+            Duration = sw.Elapsed
+        };
+    }
+
+    private static async Task<ToolResult> GrepAsync(
+        string toolName,
+        FileSystemToolConfig config,
+        ToolInvocation invocation,
+        Stopwatch sw,
+        CancellationToken ct)
+    {
+        if (!invocation.Parameters.TryGetValue("pattern", out var pattern) || string.IsNullOrEmpty(pattern))
+        {
+            sw.Stop();
+            return new ToolResult { Success = false, ToolName = toolName, Error = "Parameter 'pattern' is required for grep", Duration = sw.Elapsed };
+        }
+
+        Regex regex;
+        try
+        {
+            var options = RegexOptions.Compiled;
+            if (invocation.Parameters.TryGetValue("case_insensitive", out var ci)
+                && ci.Equals("true", StringComparison.OrdinalIgnoreCase))
+            {
+                options |= RegexOptions.IgnoreCase;
+            }
+            regex = new Regex(pattern, options, matchTimeout: TimeSpan.FromSeconds(5));
+        }
+        catch (RegexParseException ex)
+        {
+            sw.Stop();
+            return new ToolResult { Success = false, ToolName = toolName, Error = $"Invalid regex pattern: {ex.Message}", Duration = sw.Elapsed };
+        }
+
+        // Determine file scope: specific path or glob
+        var glob = invocation.Parameters.GetValueOrDefault("glob", "*");
+        if (glob.Contains("..", StringComparison.Ordinal))
+        {
+            sw.Stop();
+            return new ToolResult { Success = false, ToolName = toolName, Error = "Glob must not contain '..'", Duration = sw.Elapsed };
+        }
+
+        var sb = new StringBuilder();
+        var matchCount = 0;
+        const int maxMatches = 500;
+
+        foreach (var file in Directory.EnumerateFiles(config.Root, glob, SearchOption.AllDirectories))
+        {
+            ct.ThrowIfCancellationRequested();
+            if (matchCount >= maxMatches)
+                break;
+
+            var relativFile = Path.GetRelativePath(config.Root, file);
+            string[] lines;
+            try
+            {
+                lines = await File.ReadAllLinesAsync(file, Encoding.UTF8, ct);
+            }
+            catch
+            {
+                continue; // Skip unreadable files (binary, locked, etc.)
+            }
+
+            for (var lineNum = 0; lineNum < lines.Length; lineNum++)
+            {
+                if (matchCount >= maxMatches)
+                    break;
+
+                if (regex.IsMatch(lines[lineNum]))
+                {
+                    sb.Append(relativFile);
+                    sb.Append(':');
+                    sb.Append(lineNum + 1);
+                    sb.Append(':');
+                    sb.AppendLine(lines[lineNum]);
+                    matchCount++;
+                }
+            }
+        }
+
+        if (matchCount >= maxMatches)
+            sb.AppendLine(System.Globalization.CultureInfo.InvariantCulture, $"... truncated at {maxMatches} matches");
+
+        sw.Stop();
+        return new ToolResult { Success = true, ToolName = toolName, Output = sb.ToString(), Duration = sw.Elapsed };
+    }
+
+    private static int CountOccurrences(string text, string search)
+    {
+        var count = 0;
+        var index = 0;
+        while ((index = text.IndexOf(search, index, StringComparison.Ordinal)) >= 0)
+        {
+            count++;
+            index += search.Length;
+        }
+        return count;
+    }
+
+    private static string ReplaceFirst(string text, string oldValue, string newValue)
+    {
+        var index = text.IndexOf(oldValue, StringComparison.Ordinal);
+        if (index < 0)
+            return text;
+        return string.Concat(text.AsSpan(0, index), newValue, text.AsSpan(index + oldValue.Length));
     }
 
     internal static string ResolveSafePath(string root, string relativePath, bool sandbox = true)

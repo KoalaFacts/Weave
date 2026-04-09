@@ -250,11 +250,13 @@ Each key is the tool name. The `type` field determines which configuration block
 |--------|-----------|-------------|
 | `read_file` | `path` | Read text file contents |
 | `write_file` | `path` + `RawInput` body | Write/overwrite a file |
+| `edit_file` | `path`, `old_string`, `new_string`, `replace_all?` | Find/replace in a file |
 | `list_directory` | `path` (optional) | List directory contents |
 | `search_files` | `pattern` | Recursive glob search |
+| `grep` | `pattern`, `glob?`, `case_insensitive?` | Regex content search across files |
 | `file_info` | `path` | File metadata (size, modified, etc.) |
 
-**Security**: All paths are resolved relative to `root`. Path traversal (`..`), absolute paths, drive letters, URL schemes, and null bytes are rejected. Binary files are detected and blocked from text reads.
+**Security**: All paths are resolved relative to `root`. Path traversal (`..`), absolute paths, drive letters, URL schemes, and null bytes are rejected. In sandbox mode (default), symlink targets are verified to stay under root. Binary files are detected and blocked from text reads.
 
 ---
 
