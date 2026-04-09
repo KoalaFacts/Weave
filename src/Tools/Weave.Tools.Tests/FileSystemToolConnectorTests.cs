@@ -807,6 +807,95 @@ public sealed class FileSystemToolConnectorTests : IDisposable
         result.Output.ShouldContain("IsDirectory: True");
     }
 
+    // --- Security hardening (adversarial review fixes) ---
+
+    [Fact]
+    public void ResolveSafePath_AlternateDataStream_Throws()
+    {
+        Should.Throw<ArgumentException>(() =>
+            FileSystemToolConnector.ResolveSafePath(_tempRoot, "file.txt:hidden_stream"));
+    }
+
+    [Fact]
+    public void ResolveSafePath_ColonInSubdirectory_Throws()
+    {
+        Should.Throw<ArgumentException>(() =>
+            FileSystemToolConnector.ResolveSafePath(_tempRoot, "subdir/file.txt:$DATA"));
+    }
+
+    [Fact]
+    public async Task EditFile_ExceedsMaxReadBytes_ReturnsFailure()
+    {
+        var connector = CreateConnector();
+        var handle = await connector.ConnectAsync(CreateSpec(maxReadBytes: 10), _testToken, TestContext.Current.CancellationToken);
+        File.WriteAllText(Path.Combine(_tempRoot, "big-edit.txt"), new string('x', 100));
+
+        var result = await connector.InvokeAsync(handle,
+            new ToolInvocation
+            {
+                ToolName = "fs-tool",
+                Method = "edit_file",
+                Parameters = new Dictionary<string, string> { ["path"] = "big-edit.txt", ["old_string"] = "x", ["new_string"] = "y" }
+            },
+            TestContext.Current.CancellationToken);
+
+        result.Success.ShouldBeFalse();
+        result.Error!.ShouldContain("exceeds");
+    }
+
+    [Fact]
+    public async Task WriteFile_ExceedsMaxSize_ReturnsFailure()
+    {
+        var connector = CreateConnector();
+        var handle = await connector.ConnectAsync(CreateSpec(maxReadBytes: 10), _testToken, TestContext.Current.CancellationToken);
+
+        var result = await connector.InvokeAsync(handle,
+            new ToolInvocation
+            {
+                ToolName = "fs-tool",
+                Method = "write_file",
+                Parameters = new Dictionary<string, string> { ["path"] = "toobig.txt" },
+                RawInput = new string('x', 100)
+            },
+            TestContext.Current.CancellationToken);
+
+        result.Success.ShouldBeFalse();
+        result.Error!.ShouldContain("exceeds");
+    }
+
+    [Fact]
+    public async Task InvokeAsync_IoException_DoesNotLeakFullPath()
+    {
+        var connector = CreateConnector();
+        var handle = await connector.ConnectAsync(CreateSpec(), _testToken, TestContext.Current.CancellationToken);
+
+        // Trigger an error by trying to list a file as a directory
+        File.WriteAllText(Path.Combine(_tempRoot, "notadir.txt"), "data");
+        var result = await connector.InvokeAsync(handle,
+            new ToolInvocation { ToolName = "fs-tool", Method = "list_directory", Parameters = new Dictionary<string, string> { ["path"] = "notadir.txt" } },
+            TestContext.Current.CancellationToken);
+
+        result.Success.ShouldBeFalse();
+        // Error should not contain the temp root's absolute host path
+        result.Error!.ShouldNotContain(Path.GetTempPath().TrimEnd(Path.DirectorySeparatorChar));
+    }
+
+    [Fact]
+    public async Task Grep_ReDoSPattern_DoesNotHangIndefinitely()
+    {
+        var connector = CreateConnector();
+        var handle = await connector.ConnectAsync(CreateSpec(), _testToken, TestContext.Current.CancellationToken);
+        // Create a file with content that triggers catastrophic backtracking
+        File.WriteAllText(Path.Combine(_tempRoot, "redos.txt"), new string('a', 30) + "!");
+
+        var result = await connector.InvokeAsync(handle,
+            new ToolInvocation { ToolName = "fs-tool", Method = "grep", Parameters = new Dictionary<string, string> { ["pattern"] = @"(a+)+$" } },
+            TestContext.Current.CancellationToken);
+
+        // Should complete without hanging — either matches or times out per line
+        result.Success.ShouldBeTrue();
+    }
+
     // --- Additional coverage ---
 
     [Fact]

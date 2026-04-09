@@ -90,7 +90,7 @@ public sealed partial class FileSystemToolConnector(ILogger<FileSystemToolConnec
                 Duration = sw.Elapsed
             };
         }
-        catch (Exception ex)
+        catch (ArgumentException ex)
         {
             sw.Stop();
             return new ToolResult
@@ -98,6 +98,21 @@ public sealed partial class FileSystemToolConnector(ILogger<FileSystemToolConnec
                 Success = false,
                 ToolName = handle.ToolName,
                 Error = ex.Message,
+                Duration = sw.Elapsed
+            };
+        }
+        catch (Exception ex)
+        {
+            sw.Stop();
+            // Sanitize: strip root path from error messages to avoid leaking host filesystem layout
+            var safeMessage = config.Root.Length > 0
+                ? ex.Message.Replace(config.Root, "[sandbox]", StringComparison.OrdinalIgnoreCase)
+                : ex.Message;
+            return new ToolResult
+            {
+                Success = false,
+                ToolName = handle.ToolName,
+                Error = safeMessage,
                 Duration = sw.Elapsed
             };
         }
@@ -201,6 +216,14 @@ public sealed partial class FileSystemToolConnector(ILogger<FileSystemToolConnec
             return new ToolResult { Success = false, ToolName = toolName, Error = "RawInput is required for write_file", Duration = sw.Elapsed };
         }
 
+        var writeBytes = Encoding.UTF8.GetByteCount(invocation.RawInput);
+        var maxWrite = config.MaxReadBytes > 0 ? config.MaxReadBytes : 1_048_576;
+        if (writeBytes > maxWrite)
+        {
+            sw.Stop();
+            return new ToolResult { Success = false, ToolName = toolName, Error = $"Write size ({writeBytes} bytes) exceeds the limit ({maxWrite} bytes)", Duration = sw.Elapsed };
+        }
+
         string fullPath;
         try
         {
@@ -251,8 +274,15 @@ public sealed partial class FileSystemToolConnector(ILogger<FileSystemToolConnec
         }
 
         var sb = new StringBuilder();
+        var entryCount = 0;
         foreach (var entry in Directory.EnumerateFileSystemEntries(fullPath).Order(StringComparer.OrdinalIgnoreCase))
         {
+            if (++entryCount > 1000)
+            {
+                sb.AppendLine("... truncated at 1000 entries");
+                break;
+            }
+
             if (Directory.Exists(entry))
             {
                 sb.Append("[dir]  ");
@@ -293,7 +323,12 @@ public sealed partial class FileSystemToolConnector(ILogger<FileSystemToolConnec
         var results = new List<string>();
         foreach (var file in Directory.EnumerateFiles(config.Root, pattern, SearchOption.AllDirectories))
         {
-            var relative = Path.GetRelativePath(config.Root, file);
+            // Verify each result hasn't escaped via symlink/junction
+            var resolvedFile = Path.GetFullPath(file);
+            try { VerifyContainment(config.Root, resolvedFile); }
+            catch { continue; }
+
+            var relative = Path.GetRelativePath(config.Root, resolvedFile);
             results.Add(relative);
             if (results.Count >= 1000)
                 break;
@@ -403,6 +438,14 @@ public sealed partial class FileSystemToolConnector(ILogger<FileSystemToolConnec
             return new ToolResult { Success = false, ToolName = toolName, Error = $"File not found: {relativePath}", Duration = sw.Elapsed };
         }
 
+        var fileSize = new FileInfo(fullPath).Length;
+        var maxRead = config.MaxReadBytes > 0 ? config.MaxReadBytes : 1_048_576;
+        if (fileSize > maxRead)
+        {
+            sw.Stop();
+            return new ToolResult { Success = false, ToolName = toolName, Error = $"File size ({fileSize} bytes) exceeds the read limit ({maxRead} bytes)", Duration = sw.Elapsed };
+        }
+
         var content = await File.ReadAllTextAsync(fullPath, Encoding.UTF8, ct);
         var occurrences = CountOccurrences(content, oldString);
 
@@ -490,11 +533,17 @@ public sealed partial class FileSystemToolConnector(ILogger<FileSystemToolConnec
             if (matchCount >= maxMatches)
                 break;
 
-            var relativFile = Path.GetRelativePath(config.Root, file);
+            // Verify each file hasn't escaped via symlink/junction
+            var resolvedFile = Path.GetFullPath(file);
+            try { VerifyContainment(config.Root, resolvedFile); }
+            catch { continue; }
+
+            var relativFile = Path.GetRelativePath(config.Root, resolvedFile);
+
             // Skip binary files
             try
             {
-                if (await IsBinaryFileAsync(file, ct))
+                if (await IsBinaryFileAsync(resolvedFile, ct))
                     continue;
             }
             catch
@@ -505,7 +554,7 @@ public sealed partial class FileSystemToolConnector(ILogger<FileSystemToolConnec
             string[] lines;
             try
             {
-                lines = await File.ReadAllLinesAsync(file, Encoding.UTF8, ct);
+                lines = await File.ReadAllLinesAsync(resolvedFile, Encoding.UTF8, ct);
             }
             catch
             {
@@ -514,17 +563,25 @@ public sealed partial class FileSystemToolConnector(ILogger<FileSystemToolConnec
 
             for (var lineNum = 0; lineNum < lines.Length; lineNum++)
             {
+                ct.ThrowIfCancellationRequested();
                 if (matchCount >= maxMatches)
                     break;
 
-                if (regex.IsMatch(lines[lineNum]))
+                try
                 {
-                    sb.Append(relativFile);
-                    sb.Append(':');
-                    sb.Append(lineNum + 1);
-                    sb.Append(':');
-                    sb.AppendLine(lines[lineNum]);
-                    matchCount++;
+                    if (regex.IsMatch(lines[lineNum]))
+                    {
+                        sb.Append(relativFile);
+                        sb.Append(':');
+                        sb.Append(lineNum + 1);
+                        sb.Append(':');
+                        sb.AppendLine(lines[lineNum]);
+                        matchCount++;
+                    }
+                }
+                catch (RegexMatchTimeoutException)
+                {
+                    continue; // Skip lines that trigger catastrophic backtracking
                 }
             }
         }
@@ -571,6 +628,10 @@ public sealed partial class FileSystemToolConnector(ILogger<FileSystemToolConnec
 
         if (relativePath.Length >= 2 && relativePath[1] == ':')
             throw new ArgumentException("Path contains a drive letter");
+
+        // Block NTFS Alternate Data Streams (file.txt:stream_name)
+        if (relativePath.Contains(':', StringComparison.Ordinal))
+            throw new ArgumentException("Path contains illegal characters");
 
         var fullPath = Path.GetFullPath(Path.Combine(root, relativePath));
 
