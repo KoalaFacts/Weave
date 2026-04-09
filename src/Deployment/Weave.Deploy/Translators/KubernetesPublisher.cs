@@ -1,4 +1,5 @@
 using System.Globalization;
+using Weave.Shared;
 using Weave.Workspaces.Models;
 
 namespace Weave.Deploy.Translators;
@@ -48,14 +49,14 @@ public sealed class KubernetesPublisher : IPublisher
                     - name: silo
                       image: {registry}/weave-silo:latest
                       ports:
-                        - containerPort: 5000
-                        - containerPort: 11111
-                        - containerPort: 30000
+                        - containerPort: {WeavePorts.SiloHttp}
+                        - containerPort: {WeavePorts.OrleansSilo}
+                        - containerPort: {WeavePorts.OrleansGateway}
                       env:
                         - name: WEAVE_WORKSPACE
                           value: "{manifest.Name}"
                         - name: REDIS_CONNECTION
-                          value: "redis.weave-{manifest.Name}.svc.cluster.local:6379"
+                          value: "redis.weave-{manifest.Name}.svc.cluster.local:{WeavePorts.Redis}"
             """), ct);
         files.Add(siloFile);
 

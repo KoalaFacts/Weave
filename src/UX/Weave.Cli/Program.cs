@@ -31,5 +31,11 @@ plugin.Subcommands.Add(WorkspacePluginRemoveCommand.Create());
 workspace.Subcommands.Add(plugin);
 
 root.Subcommands.Add(WorkspaceServeCommand.Create());
+root.Subcommands.Add(InitCommand.Create());
+
+var config = new Command("config", "Manage CLI configuration");
+config.Subcommands.Add(ConfigGetCommand.Create());
+config.Subcommands.Add(ConfigSetCommand.Create());
+root.Subcommands.Add(config);
 
 return root.Parse(args).Invoke();

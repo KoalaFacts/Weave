@@ -42,4 +42,10 @@ internal static class CliCompletions
         new("http"),
         new("custom"),
     ];
+
+    internal static IEnumerable<CompletionItem> CompleteConfigKeys(CompletionContext _) =>
+    [
+        new("siloPath"),
+        new("defaultPort"),
+    ];
 }

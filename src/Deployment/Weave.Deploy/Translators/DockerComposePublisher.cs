@@ -1,5 +1,6 @@
 using System.Globalization;
 using System.Text;
+using Weave.Shared;
 using Weave.Workspaces.Models;
 
 namespace Weave.Deploy.Translators;
@@ -21,9 +22,9 @@ public sealed class DockerComposePublisher : IPublisher
         sb.AppendLine("  weave-silo:");
         sb.AppendLine("    image: weave-silo:latest");
         sb.AppendLine("    ports:");
-        sb.AppendLine("      - \"5000:5000\"");
-        sb.AppendLine("      - \"11111:11111\"");
-        sb.AppendLine("      - \"30000:30000\"");
+        sb.AppendLine(CultureInfo.InvariantCulture, $"      - \"{WeavePorts.SiloHttp}:{WeavePorts.SiloHttp}\"");
+        sb.AppendLine(CultureInfo.InvariantCulture, $"      - \"{WeavePorts.OrleansSilo}:{WeavePorts.OrleansSilo}\"");
+        sb.AppendLine(CultureInfo.InvariantCulture, $"      - \"{WeavePorts.OrleansGateway}:{WeavePorts.OrleansGateway}\"");
         sb.AppendLine("    environment:");
         sb.AppendLine(CultureInfo.InvariantCulture, $"      - WEAVE_WORKSPACE={manifest.Name}");
         sb.AppendLine("    depends_on:");
@@ -36,7 +37,7 @@ public sealed class DockerComposePublisher : IPublisher
         sb.AppendLine("  redis:");
         sb.AppendLine("    image: redis:7-alpine");
         sb.AppendLine("    ports:");
-        sb.AppendLine("      - \"6379:6379\"");
+        sb.AppendLine(CultureInfo.InvariantCulture, $"      - \"{WeavePorts.Redis}:{WeavePorts.Redis}\"");
         sb.AppendLine("    networks:");
         sb.AppendLine(CultureInfo.InvariantCulture, $"      - {networkName}");
         sb.AppendLine();

@@ -11,7 +11,7 @@ internal static class WorkspaceServeCommand
         var portOption = new Option<int>("--port")
         {
             Description = "Port to listen on",
-            DefaultValueFactory = _ => 9401
+            DefaultValueFactory = _ => CliConfigStore.Load().DefaultPort
         };
         var backgroundOption = new Option<bool>("--background") { Description = "Run in the background" };
 
@@ -31,7 +31,7 @@ internal static class WorkspaceServeCommand
             if (siloPath is null)
             {
                 CliTheme.WriteError("Could not locate the Weave silo.");
-                CliTheme.WriteMuted("  Set WEAVE_SILO_PATH to the silo project or published directory.");
+                CliTheme.WriteMuted("  Run `weave init` to configure, or set WEAVE_SILO_PATH.");
                 return 1;
             }
 
@@ -120,10 +120,17 @@ internal static class WorkspaceServeCommand
 
     private static string? ResolveSiloPath()
     {
+        // 1. Environment variable (highest priority)
         var envPath = Environment.GetEnvironmentVariable("WEAVE_SILO_PATH");
         if (!string.IsNullOrWhiteSpace(envPath) && (File.Exists(envPath) || Directory.Exists(envPath)))
             return envPath;
 
+        // 2. CLI config file (~/.weave/config.json)
+        var config = CliConfigStore.Load();
+        if (!string.IsNullOrWhiteSpace(config.SiloPath) && (File.Exists(config.SiloPath) || Directory.Exists(config.SiloPath)))
+            return config.SiloPath;
+
+        // 3. Well-known dev paths relative to CWD
         var candidates = new[]
         {
             Path.Combine("src", "Runtime", "Weave.Silo"),
