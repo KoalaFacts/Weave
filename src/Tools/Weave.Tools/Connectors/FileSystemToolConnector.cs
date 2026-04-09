@@ -325,7 +325,8 @@ public sealed partial class FileSystemToolConnector(ILogger<FileSystemToolConnec
         {
             // Verify each result hasn't escaped via symlink/junction
             var resolvedFile = Path.GetFullPath(file);
-            try { VerifyContainment(config.Root, resolvedFile); }
+            try
+            { VerifyContainment(config.Root, resolvedFile); }
             catch { continue; }
 
             var relative = Path.GetRelativePath(config.Root, resolvedFile);
@@ -535,7 +536,8 @@ public sealed partial class FileSystemToolConnector(ILogger<FileSystemToolConnec
 
             // Verify each file hasn't escaped via symlink/junction
             var resolvedFile = Path.GetFullPath(file);
-            try { VerifyContainment(config.Root, resolvedFile); }
+            try
+            { VerifyContainment(config.Root, resolvedFile); }
             catch { continue; }
 
             var relativFile = Path.GetRelativePath(config.Root, resolvedFile);

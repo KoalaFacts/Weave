@@ -1413,7 +1413,9 @@ public sealed class FileSystemToolConnectorTests : IDisposable
         }
         finally
         {
-            try { Directory.Delete(testDir, recursive: true); } catch { /* best effort */ }
+            try
+            { Directory.Delete(testDir, recursive: true); }
+            catch { /* best effort */ }
         }
     }
 
