@@ -6,6 +6,9 @@ if [ "${CLAUDE_CODE_REMOTE:-}" != "true" ]; then
   exit 0
 fi
 
+# Run asynchronously — session starts immediately while SDK installs in background
+echo '{"async": true, "asyncTimeout": 300000}'
+
 DOTNET_INSTALL_DIR="${HOME}/.dotnet"
 DOTNET_BIN="${DOTNET_INSTALL_DIR}/dotnet"
 
