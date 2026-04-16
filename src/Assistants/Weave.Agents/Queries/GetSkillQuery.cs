@@ -8,11 +8,12 @@ namespace Weave.Agents.Queries;
 public sealed record GetSkillQuery(WorkspaceId WorkspaceId, SkillId SkillId);
 
 public sealed class GetSkillHandler(IGrainFactory grainFactory)
-    : IQueryHandler<GetSkillQuery, SkillDocument?>
+    : IQueryHandler<GetSkillQuery, SkillDocument>
 {
-    public async Task<SkillDocument?> HandleAsync(GetSkillQuery query, CancellationToken ct)
+    public async Task<SkillDocument> HandleAsync(GetSkillQuery query, CancellationToken ct)
     {
         var grain = grainFactory.GetGrain<ISkillMemoryGrain>(query.WorkspaceId.ToString());
-        return await grain.GetSkillAsync(query.SkillId);
+        return await grain.GetSkillAsync(query.SkillId)
+            ?? throw new KeyNotFoundException($"Skill '{query.SkillId}' not found.");
     }
 }

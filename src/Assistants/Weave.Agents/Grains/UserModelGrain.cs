@@ -1,3 +1,4 @@
+using System.Globalization;
 using System.Text;
 using Microsoft.Extensions.Logging;
 using Weave.Agents.Events;
@@ -114,7 +115,7 @@ public sealed class UserModelGrain(
             sb.Append(". ");
         }
 
-        sb.Append($"Interactions: {persistentState.State.TotalInteractions} total.");
+        sb.Append(CultureInfo.InvariantCulture, $"Interactions: {persistentState.State.TotalInteractions} total.");
 
         return Task.FromResult(sb.ToString());
     }

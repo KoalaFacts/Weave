@@ -63,12 +63,16 @@ public static class SkillEndpoints
         IQueryDispatcher dispatcher,
         CancellationToken ct)
     {
-        var query = new GetSkillQuery(WorkspaceId.From(workspaceId), SkillId.From(skillId));
-        var skill = await dispatcher.DispatchAsync<GetSkillQuery, SkillDocument?>(query, ct);
-        if (skill is null)
+        try
+        {
+            var query = new GetSkillQuery(WorkspaceId.From(workspaceId), SkillId.From(skillId));
+            var skill = await dispatcher.DispatchAsync<GetSkillQuery, SkillDocument>(query, ct);
+            return Results.Ok(SkillResponse.FromDocument(skill));
+        }
+        catch (KeyNotFoundException)
+        {
             return ResultExtensions.NotFound($"Skill '{skillId}' not found.");
-
-        return Results.Ok(SkillResponse.FromDocument(skill));
+        }
     }
 
     private static async Task<IResult> StoreSkillAsync(
