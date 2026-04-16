@@ -171,4 +171,120 @@ public sealed class AgentChatPipelineTests
 
         await registry.Received(1).ResolveAsync("researcher", "code-search");
     }
+
+    [Fact]
+    public async Task ExecuteAsync_WithUserId_EnrichesPromptWithUserContext()
+    {
+        var chatClient = Substitute.For<IChatClient>();
+        IEnumerable<ChatMessage>? capturedMessages = null;
+        chatClient.GetResponseAsync(
+                Arg.Any<IEnumerable<ChatMessage>>(),
+                Arg.Any<ChatOptions>(),
+                Arg.Any<CancellationToken>())
+            .Returns(callInfo =>
+            {
+                capturedMessages = callInfo.Arg<IEnumerable<ChatMessage>>().ToList();
+                return new ChatResponse(new ChatMessage(ChatRole.Assistant, "Hi"))
+                {
+                    ModelId = "claude-sonnet-4-20250514"
+                };
+            });
+
+        var chatClientFactory = Substitute.For<IAgentChatClientFactory>();
+        chatClientFactory.Create(Arg.Any<string>(), Arg.Any<string?>()).Returns(chatClient);
+
+        var userModelGrain = Substitute.For<IUserModelGrain>();
+        userModelGrain.GetContextSummaryAsync()
+            .Returns(Task.FromResult("User preferences: lang=csharp. Interactions: 5 total."));
+
+        var skillGrain = Substitute.For<ISkillMemoryGrain>();
+        skillGrain.SearchAsync(Arg.Any<string>(), Arg.Any<int>())
+            .Returns(Task.FromResult<IReadOnlyList<SkillSearchResult>>([]));
+
+        var grainFactory = Substitute.For<IGrainFactory>();
+        grainFactory.GetGrain<IUserModelGrain>("ws-1/user-42", null).Returns(userModelGrain);
+        grainFactory.GetGrain<ISkillMemoryGrain>("ws-1", null).Returns(skillGrain);
+
+        var pipeline = new AgentChatPipeline(grainFactory, chatClientFactory, NullLogger<AgentChatPipeline>.Instance);
+        var state = CreateActiveState();
+
+        await pipeline.ExecuteAsync(state, new AgentMessage { Content = "Hello", UserId = "user-42" });
+
+        capturedMessages.ShouldNotBeNull();
+        var systemMsg = capturedMessages.FirstOrDefault(m => m.Role == ChatRole.System);
+        systemMsg.ShouldNotBeNull();
+        systemMsg.Text.ShouldContain("User preferences: lang=csharp");
+    }
+
+    [Fact]
+    public async Task ExecuteAsync_EnrichesPromptWithMatchingSkills()
+    {
+        var chatClient = Substitute.For<IChatClient>();
+        IEnumerable<ChatMessage>? capturedMessages = null;
+        chatClient.GetResponseAsync(
+                Arg.Any<IEnumerable<ChatMessage>>(),
+                Arg.Any<ChatOptions>(),
+                Arg.Any<CancellationToken>())
+            .Returns(callInfo =>
+            {
+                capturedMessages = callInfo.Arg<IEnumerable<ChatMessage>>().ToList();
+                return new ChatResponse(new ChatMessage(ChatRole.Assistant, "Done"))
+                {
+                    ModelId = "claude-sonnet-4-20250514"
+                };
+            });
+
+        var chatClientFactory = Substitute.For<IAgentChatClientFactory>();
+        chatClientFactory.Create(Arg.Any<string>(), Arg.Any<string?>()).Returns(chatClient);
+
+        var skill = new SkillDocument
+        {
+            SkillId = SkillId.New(),
+            Title = "Deploy to K8s",
+            Description = "Steps to deploy a service to Kubernetes",
+            Tags = ["deploy", "k8s"],
+            Steps =
+            [
+                new SkillStep { Order = 0, Action = "Build image" },
+                new SkillStep { Order = 1, Action = "Push to registry" }
+            ],
+            ToolsUsed = ["docker", "kubectl"],
+            CreatedByAgent = "deployer"
+        };
+
+        var skillGrain = Substitute.For<ISkillMemoryGrain>();
+        skillGrain.SearchAsync(Arg.Any<string>(), Arg.Any<int>())
+            .Returns(Task.FromResult<IReadOnlyList<SkillSearchResult>>([
+                new SkillSearchResult { Skill = skill, RelevanceScore = 5.0 }
+            ]));
+
+        var grainFactory = Substitute.For<IGrainFactory>();
+        grainFactory.GetGrain<ISkillMemoryGrain>("ws-1", null).Returns(skillGrain);
+
+        var pipeline = new AgentChatPipeline(grainFactory, chatClientFactory, NullLogger<AgentChatPipeline>.Instance);
+        var state = CreateActiveState();
+
+        await pipeline.ExecuteAsync(state, new AgentMessage { Content = "deploy to k8s" });
+
+        capturedMessages.ShouldNotBeNull();
+        var systemMsg = capturedMessages.FirstOrDefault(m => m.Role == ChatRole.System);
+        systemMsg.ShouldNotBeNull();
+        systemMsg.Text.ShouldContain("Deploy to K8s");
+        systemMsg.Text.ShouldContain("Build image");
+    }
+
+    [Fact]
+    public async Task ExecuteAsync_WithoutUserId_SkipsUserContext()
+    {
+        var (pipeline, chatClient) = CreatePipeline();
+        var state = CreateActiveState();
+
+        await pipeline.ExecuteAsync(state, new AgentMessage { Content = "Hello" });
+
+        // Should not throw and should complete normally without user context
+        await chatClient.Received(1).GetResponseAsync(
+            Arg.Any<IEnumerable<ChatMessage>>(),
+            Arg.Any<ChatOptions>(),
+            Arg.Any<CancellationToken>());
+    }
 }

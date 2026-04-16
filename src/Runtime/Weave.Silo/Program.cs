@@ -86,6 +86,18 @@ builder.Services.AddSingleton<IAgentCostLedger, AgentCostLedger>();
 builder.Services.AddSingleton<IAgentChatClientFactory, AgentChatClientFactory>();
 builder.Services.AddTransient<IAgentChatPipeline, AgentChatPipeline>();
 
+// Channel adapters
+builder.Services.AddHttpClient<Weave.Silo.Channels.SlackChannelAdapter>();
+builder.Services.AddSingleton<Weave.Agents.Channels.IChannelAdapter>(sp => sp.GetRequiredService<Weave.Silo.Channels.SlackChannelAdapter>());
+builder.Services.AddHttpClient<Weave.Silo.Channels.DiscordChannelAdapter>();
+builder.Services.AddSingleton<Weave.Agents.Channels.IChannelAdapter>(sp => sp.GetRequiredService<Weave.Silo.Channels.DiscordChannelAdapter>());
+builder.Services.AddHttpClient<Weave.Silo.Channels.TelegramChannelAdapter>();
+builder.Services.AddSingleton<Weave.Agents.Channels.IChannelAdapter>(sp => sp.GetRequiredService<Weave.Silo.Channels.TelegramChannelAdapter>());
+builder.Services.AddHttpClient<Weave.Silo.Channels.TeamsChannelAdapter>();
+builder.Services.AddSingleton<Weave.Agents.Channels.IChannelAdapter>(sp => sp.GetRequiredService<Weave.Silo.Channels.TeamsChannelAdapter>());
+builder.Services.AddHttpClient<Weave.Silo.Channels.EmailChannelAdapter>();
+builder.Services.AddSingleton<Weave.Agents.Channels.IChannelAdapter>(sp => sp.GetRequiredService<Weave.Silo.Channels.EmailChannelAdapter>());
+
 // Tool connectors and discovery
 builder.Services.AddSingleton<IToolConnector, McpToolConnector>();
 builder.Services.AddSingleton<IToolConnector, CliToolConnector>();
@@ -194,5 +206,10 @@ app.MapWorkspaceEndpoints();
 app.MapAgentEndpoints();
 app.MapToolEndpoints();
 app.MapPluginEndpoints();
+app.MapSkillEndpoints();
+app.MapChannelEndpoints();
+app.MapUserEndpoints();
+app.MapMarketplaceEndpoints();
+app.MapTemplateEndpoints();
 
 app.Run();

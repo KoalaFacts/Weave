@@ -40,9 +40,15 @@ public sealed class AgentGrainTests
             Tools = ["code-search", "shell"]
         };
 
-    private static (AgentGrain Grain, ILifecycleManager Lifecycle, IEventBus EventBus) CreateGrain()
+    private static (AgentGrain Grain, ILifecycleManager Lifecycle, IEventBus EventBus, ISkillMemoryGrain SkillMemory) CreateGrain()
     {
+        var skillMemory = Substitute.For<ISkillMemoryGrain>();
+        skillMemory.StoreSkillAsync(Arg.Any<SkillDocument>())
+            .Returns(callInfo => Task.FromResult(callInfo.Arg<SkillDocument>()));
+
         var grainFactory = Substitute.For<IGrainFactory>();
+        grainFactory.GetGrain<ISkillMemoryGrain>(Arg.Any<string>(), null).Returns(skillMemory);
+
         var chatPipeline = Substitute.For<IAgentChatPipeline>();
         var lifecycle = Substitute.For<ILifecycleManager>();
         var eventBus = Substitute.For<IEventBus>();
@@ -50,13 +56,13 @@ public sealed class AgentGrainTests
         var persistentState = CreatePersistentState();
 
         var grain = new AgentGrain(grainFactory, chatPipeline, lifecycle, eventBus, logger, persistentState);
-        return (grain, lifecycle, eventBus);
+        return (grain, lifecycle, eventBus, skillMemory);
     }
 
     [Fact]
     public async Task ActivateAgentAsync_SetsActiveStatus()
     {
-        var (grain, _, _) = CreateGrain();
+        var (grain, _, _, _) = CreateGrain();
         var definition = CreateDefinition();
 
         var state = await grain.ActivateAgentAsync(TestWorkspaceId, definition);
@@ -70,7 +76,7 @@ public sealed class AgentGrainTests
     [Fact]
     public async Task ActivateAgentAsync_RunsLifecycleHooks()
     {
-        var (grain, lifecycle, _) = CreateGrain();
+        var (grain, lifecycle, _, _) = CreateGrain();
 
         await grain.ActivateAgentAsync(TestWorkspaceId, CreateDefinition());
 
@@ -87,7 +93,7 @@ public sealed class AgentGrainTests
     [Fact]
     public async Task ActivateAgentAsync_PublishesEvent()
     {
-        var (grain, _, eventBus) = CreateGrain();
+        var (grain, _, eventBus, _) = CreateGrain();
 
         await grain.ActivateAgentAsync(TestWorkspaceId, CreateDefinition());
 
@@ -101,7 +107,7 @@ public sealed class AgentGrainTests
     [Fact]
     public async Task ActivateAgentAsync_WhenAlreadyActive_ReturnsCurrentState()
     {
-        var (grain, _, _) = CreateGrain();
+        var (grain, _, _, _) = CreateGrain();
         var definition = CreateDefinition();
 
         var first = await grain.ActivateAgentAsync(TestWorkspaceId, definition);
@@ -113,7 +119,7 @@ public sealed class AgentGrainTests
     [Fact]
     public async Task DeactivateAsync_SetsIdleStatus()
     {
-        var (grain, _, _) = CreateGrain();
+        var (grain, _, _, _) = CreateGrain();
         await grain.ActivateAgentAsync(TestWorkspaceId, CreateDefinition());
 
         await grain.DeactivateAsync();
@@ -128,7 +134,7 @@ public sealed class AgentGrainTests
     [Fact]
     public async Task DeactivateAsync_PublishesEvent()
     {
-        var (grain, _, eventBus) = CreateGrain();
+        var (grain, _, eventBus, _) = CreateGrain();
         await grain.ActivateAgentAsync(TestWorkspaceId, CreateDefinition());
 
         await grain.DeactivateAsync();
@@ -141,7 +147,7 @@ public sealed class AgentGrainTests
     [Fact]
     public async Task SubmitTaskAsync_ReturnsRunningTask()
     {
-        var (grain, _, _) = CreateGrain();
+        var (grain, _, _, _) = CreateGrain();
         await grain.ActivateAgentAsync(TestWorkspaceId, CreateDefinition());
 
         var task = await grain.SubmitTaskAsync("Fix the bug");
@@ -154,7 +160,7 @@ public sealed class AgentGrainTests
     [Fact]
     public async Task SubmitTaskAsync_SetsBusyStatus()
     {
-        var (grain, _, _) = CreateGrain();
+        var (grain, _, _, _) = CreateGrain();
         await grain.ActivateAgentAsync(TestWorkspaceId, CreateDefinition());
 
         await grain.SubmitTaskAsync("Fix the bug");
@@ -166,7 +172,7 @@ public sealed class AgentGrainTests
     [Fact]
     public async Task SubmitTaskAsync_WhenAtMaxConcurrent_Throws()
     {
-        var (grain, _, _) = CreateGrain();
+        var (grain, _, _, _) = CreateGrain();
         await grain.ActivateAgentAsync(TestWorkspaceId, CreateDefinition(maxTasks: 1));
         await grain.SubmitTaskAsync("Task 1");
 
@@ -177,7 +183,7 @@ public sealed class AgentGrainTests
     [Fact]
     public async Task SubmitTaskAsync_WhenNotActive_Throws()
     {
-        var (grain, _, _) = CreateGrain();
+        var (grain, _, _, _) = CreateGrain();
 
         var ex = await Should.ThrowAsync<InvalidOperationException>(() => grain.SubmitTaskAsync("Task 1"));
         ex.Message.ShouldContain("not active");
@@ -186,7 +192,7 @@ public sealed class AgentGrainTests
     [Fact]
     public async Task CompleteTaskAsync_SuccessWithProof_SetsAwaitingReview()
     {
-        var (grain, _, _) = CreateGrain();
+        var (grain, _, _, _) = CreateGrain();
         await grain.ActivateAgentAsync(TestWorkspaceId, CreateDefinition());
         var task = await grain.SubmitTaskAsync("Fix the bug");
         var proof = new ProofOfWork
@@ -206,7 +212,7 @@ public sealed class AgentGrainTests
     [Fact]
     public async Task CompleteTaskAsync_SuccessWithProof_DoesNotCompleteYet()
     {
-        var (grain, _, _) = CreateGrain();
+        var (grain, _, _, _) = CreateGrain();
         await grain.ActivateAgentAsync(TestWorkspaceId, CreateDefinition());
         var task = await grain.SubmitTaskAsync("Fix the bug");
         var proof = new ProofOfWork
@@ -225,7 +231,7 @@ public sealed class AgentGrainTests
     [Fact]
     public async Task CompleteTaskAsync_WithFailure_MarksAsFailed()
     {
-        var (grain, _, _) = CreateGrain();
+        var (grain, _, _, _) = CreateGrain();
         await grain.ActivateAgentAsync(TestWorkspaceId, CreateDefinition());
         var task = await grain.SubmitTaskAsync("Fix the bug");
         var proof = new ProofOfWork
@@ -244,7 +250,7 @@ public sealed class AgentGrainTests
     [Fact]
     public async Task CompleteTaskAsync_Failure_ReturnsToActive_WhenNoRunningTasks()
     {
-        var (grain, _, _) = CreateGrain();
+        var (grain, _, _, _) = CreateGrain();
         await grain.ActivateAgentAsync(TestWorkspaceId, CreateDefinition());
         var task = await grain.SubmitTaskAsync("Fix the bug");
         var proof = new ProofOfWork
@@ -261,7 +267,7 @@ public sealed class AgentGrainTests
     [Fact]
     public async Task CompleteTaskAsync_UnknownTaskId_Throws()
     {
-        var (grain, _, _) = CreateGrain();
+        var (grain, _, _, _) = CreateGrain();
         await grain.ActivateAgentAsync(TestWorkspaceId, CreateDefinition());
         var proof = new ProofOfWork
         {
@@ -276,7 +282,7 @@ public sealed class AgentGrainTests
     [Fact]
     public async Task CompleteTaskAsync_WithProof_PublishesAwaitingReviewEvent()
     {
-        var (grain, _, eventBus) = CreateGrain();
+        var (grain, _, eventBus, _) = CreateGrain();
         await grain.ActivateAgentAsync(TestWorkspaceId, CreateDefinition());
         var task = await grain.SubmitTaskAsync("Implement feature");
         var proof = new ProofOfWork
@@ -296,7 +302,7 @@ public sealed class AgentGrainTests
     [Fact]
     public async Task ReviewTaskAsync_Accepted_SetsAcceptedStatus()
     {
-        var (grain, _, _) = CreateGrain();
+        var (grain, _, _, _) = CreateGrain();
         await grain.ActivateAgentAsync(TestWorkspaceId, CreateDefinition());
         var task = await grain.SubmitTaskAsync("Implement feature");
         var proof = new ProofOfWork
@@ -319,7 +325,7 @@ public sealed class AgentGrainTests
     [Fact]
     public async Task ReviewTaskAsync_Rejected_SetsRejectedStatus()
     {
-        var (grain, _, _) = CreateGrain();
+        var (grain, _, _, _) = CreateGrain();
         await grain.ActivateAgentAsync(TestWorkspaceId, CreateDefinition());
         var task = await grain.SubmitTaskAsync("Implement feature");
         var proof = new ProofOfWork
@@ -341,7 +347,7 @@ public sealed class AgentGrainTests
     [Fact]
     public async Task ReviewTaskAsync_PublishesReviewedEvent()
     {
-        var (grain, _, eventBus) = CreateGrain();
+        var (grain, _, eventBus, _) = CreateGrain();
         await grain.ActivateAgentAsync(TestWorkspaceId, CreateDefinition());
         var task = await grain.SubmitTaskAsync("Implement feature");
         var proof = new ProofOfWork
@@ -363,7 +369,7 @@ public sealed class AgentGrainTests
     [Fact]
     public async Task ReviewTaskAsync_WhenNotAwaitingReview_Throws()
     {
-        var (grain, _, _) = CreateGrain();
+        var (grain, _, _, _) = CreateGrain();
         await grain.ActivateAgentAsync(TestWorkspaceId, CreateDefinition());
         var task = await grain.SubmitTaskAsync("Task");
 
@@ -375,7 +381,7 @@ public sealed class AgentGrainTests
     [Fact]
     public async Task ReviewTaskAsync_UnknownTaskId_Throws()
     {
-        var (grain, _, _) = CreateGrain();
+        var (grain, _, _, _) = CreateGrain();
         await grain.ActivateAgentAsync(TestWorkspaceId, CreateDefinition());
 
         var ex = await Should.ThrowAsync<InvalidOperationException>(
@@ -386,7 +392,7 @@ public sealed class AgentGrainTests
     [Fact]
     public async Task ReviewTaskAsync_Accepted_ReturnsToActive_WhenNoRunningTasks()
     {
-        var (grain, _, _) = CreateGrain();
+        var (grain, _, _, _) = CreateGrain();
         await grain.ActivateAgentAsync(TestWorkspaceId, CreateDefinition());
         var task = await grain.SubmitTaskAsync("Feature");
         var proof = new ProofOfWork
@@ -404,7 +410,7 @@ public sealed class AgentGrainTests
     [Fact]
     public async Task ConnectToolAsync_AddsTool()
     {
-        var (grain, _, _) = CreateGrain();
+        var (grain, _, _, _) = CreateGrain();
         await grain.ActivateAgentAsync(TestWorkspaceId, CreateDefinition());
 
         await grain.ConnectToolAsync("code-search");
@@ -416,7 +422,7 @@ public sealed class AgentGrainTests
     [Fact]
     public async Task DisconnectToolAsync_RemovesTool()
     {
-        var (grain, _, _) = CreateGrain();
+        var (grain, _, _, _) = CreateGrain();
         await grain.ActivateAgentAsync(TestWorkspaceId, CreateDefinition());
         await grain.ConnectToolAsync("code-search");
 
@@ -424,5 +430,118 @@ public sealed class AgentGrainTests
 
         var state = await grain.GetStateAsync();
         state.ConnectedTools.ShouldNotContain("code-search");
+    }
+
+    [Fact]
+    public async Task ReviewTaskAsync_Accepted_WithMultiStepProof_ExtractsSkill()
+    {
+        var (grain, _, _, skillMemory) = CreateGrain();
+        await grain.ActivateAgentAsync(TestWorkspaceId, CreateDefinition());
+        var task = await grain.SubmitTaskAsync("Deploy the service");
+        var proof = new ProofOfWork
+        {
+            Items =
+            [
+                new ProofItem { Type = ProofType.CiStatus, Label = "CI", Value = "passed" },
+                new ProofItem { Type = ProofType.DiffSummary, Label = "Diff", Value = "+50 -10" },
+                new ProofItem { Type = ProofType.PullRequest, Label = "PR", Value = "#42", Uri = "https://github.com/org/repo/pull/42" }
+            ]
+        };
+        await grain.CompleteTaskAsync(task.TaskId, success: true, proof);
+
+        await grain.ReviewTaskAsync(task.TaskId, accepted: true);
+
+        await skillMemory.Received(1).StoreSkillAsync(Arg.Is<SkillDocument>(s =>
+            s.Title == "Deploy the service" &&
+            s.Steps.Count == 3));
+    }
+
+    [Fact]
+    public async Task ReviewTaskAsync_Accepted_WithSingleProofItem_DoesNotExtractSkill()
+    {
+        var (grain, _, _, skillMemory) = CreateGrain();
+        await grain.ActivateAgentAsync(TestWorkspaceId, CreateDefinition());
+        var task = await grain.SubmitTaskAsync("Quick fix");
+        var proof = new ProofOfWork
+        {
+            Items = [new ProofItem { Type = ProofType.CiStatus, Label = "CI", Value = "passed" }]
+        };
+        await grain.CompleteTaskAsync(task.TaskId, success: true, proof);
+
+        await grain.ReviewTaskAsync(task.TaskId, accepted: true);
+
+        await skillMemory.DidNotReceive().StoreSkillAsync(Arg.Any<SkillDocument>());
+    }
+
+    [Fact]
+    public async Task ReviewTaskAsync_Rejected_DoesNotExtractSkill()
+    {
+        var (grain, _, _, skillMemory) = CreateGrain();
+        await grain.ActivateAgentAsync(TestWorkspaceId, CreateDefinition());
+        var task = await grain.SubmitTaskAsync("Feature work");
+        var proof = new ProofOfWork
+        {
+            Items =
+            [
+                new ProofItem { Type = ProofType.CiStatus, Label = "CI", Value = "failed" },
+                new ProofItem { Type = ProofType.TestResults, Label = "Tests", Value = "3 failed" }
+            ]
+        };
+        await grain.CompleteTaskAsync(task.TaskId, success: true, proof);
+
+        await grain.ReviewTaskAsync(task.TaskId, accepted: false, "Needs more work");
+
+        await skillMemory.DidNotReceive().StoreSkillAsync(Arg.Any<SkillDocument>());
+    }
+
+    [Fact]
+    public void ExtractSkillFromTask_ReturnsNull_WhenTooFewProofItems()
+    {
+        var task = new AgentTaskInfo
+        {
+            TaskId = AgentTaskId.New(),
+            Description = "Simple task",
+            Proof = new ProofOfWork
+            {
+                Items = [new ProofItem { Type = ProofType.CiStatus, Label = "CI", Value = "ok" }]
+            }
+        };
+
+        var result = AgentGrain.ExtractSkillFromTask(task, new AgentState());
+        result.ShouldBeNull();
+    }
+
+    [Fact]
+    public void ExtractSkillFromTask_BuildsDocument_FromMultiStepProof()
+    {
+        var task = new AgentTaskInfo
+        {
+            TaskId = AgentTaskId.New(),
+            Description = "Build and deploy microservice",
+            Proof = new ProofOfWork
+            {
+                Items =
+                [
+                    new ProofItem { Type = ProofType.CiStatus, Label = "CI", Value = "green" },
+                    new ProofItem { Type = ProofType.Custom, Label = "docker-build", Value = "image built" },
+                    new ProofItem { Type = ProofType.DiffSummary, Label = "deploy-yaml", Value = "+20 -5" }
+                ]
+            }
+        };
+        var state = new AgentState
+        {
+            AgentName = "deployer",
+            ConnectedTools = ["docker", "kubectl"]
+        };
+
+        var skill = AgentGrain.ExtractSkillFromTask(task, state);
+
+        skill.ShouldNotBeNull();
+        skill.Title.ShouldBe("Build and deploy microservice");
+        skill.Steps.Count.ShouldBe(3);
+        skill.CreatedByAgent.ShouldBe("deployer");
+        skill.ToolsUsed.ShouldContain("docker");
+        skill.ToolsUsed.ShouldContain("kubectl");
+        skill.OriginTaskDescription.ShouldBe("Build and deploy microservice");
     }
 }

@@ -11,6 +11,7 @@ public sealed record WorkspaceManifest
     [Id(5)] public Dictionary<string, TargetDefinition> Targets { get; init; } = [];
     [Id(6)] public HooksConfig? Hooks { get; init; }
     [Id(7)] public Dictionary<string, PluginDefinition> Plugins { get; init; } = [];
+    [Id(8)] public Dictionary<string, ChannelDefinition> Channels { get; init; } = [];
 }
 
 [GenerateSerializer]
@@ -205,6 +206,15 @@ public sealed record ToolHooks
     [Id(0)] public List<string> OnConnected { get; init; } = [];
     [Id(1)] public List<string> OnDisconnected { get; init; } = [];
     [Id(2)] public List<string> OnError { get; init; } = [];
+}
+
+[GenerateSerializer]
+public sealed record ChannelDefinition
+{
+    [Id(0)] public required string Type { get; init; }
+    [Id(1)] public string? TargetAgent { get; init; }
+    [Id(2)] public Dictionary<string, string> Config { get; init; } = [];
+    [Id(3)] public bool Enabled { get; init; } = true;
 }
 
 public enum IsolationLevel

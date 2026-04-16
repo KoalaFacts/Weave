@@ -1,5 +1,6 @@
 using System.Text.Json.Serialization;
 using Weave.Agents.Models;
+using Weave.Shared.Ids;
 using Weave.Tools.Models;
 using Weave.Workspaces.Models;
 using Weave.Workspaces.Plugins;
@@ -242,6 +243,277 @@ public sealed record ConversationMessageResponse
         Content = message.Content,
         Timestamp = message.Timestamp
     };
+}
+
+// === Skill Contracts ===
+
+public sealed record StoreSkillRequest
+{
+    public required string Title { get; init; }
+    public required string Description { get; init; }
+    public List<string> Tags { get; init; } = [];
+    public required List<SkillStepRequest> Steps { get; init; }
+    public List<string> ToolsUsed { get; init; } = [];
+    public required string CreatedByAgent { get; init; }
+    public string? OriginTaskDescription { get; init; }
+}
+
+public sealed record SkillStepRequest
+{
+    public required string Action { get; init; }
+    public string? ToolName { get; init; }
+    public string? ExpectedOutcome { get; init; }
+}
+
+public sealed record SkillResponse
+{
+    public required string SkillId { get; init; }
+    public required string Title { get; init; }
+    public required string Description { get; init; }
+    public List<string> Tags { get; init; } = [];
+    public List<string> ToolsUsed { get; init; } = [];
+    public required string CreatedByAgent { get; init; }
+    public required DateTimeOffset CreatedAt { get; init; }
+    public int UseCount { get; init; }
+    public double SuccessRate { get; init; }
+    public string? OriginTaskDescription { get; init; }
+
+    public static SkillResponse FromDocument(SkillDocument doc) => new()
+    {
+        SkillId = doc.SkillId.ToString(),
+        Title = doc.Title,
+        Description = doc.Description,
+        Tags = [.. doc.Tags],
+        ToolsUsed = [.. doc.ToolsUsed],
+        CreatedByAgent = doc.CreatedByAgent,
+        CreatedAt = doc.CreatedAt,
+        UseCount = doc.UseCount,
+        SuccessRate = doc.SuccessRate,
+        OriginTaskDescription = doc.OriginTaskDescription
+    };
+}
+
+public sealed record SkillSearchResultResponse
+{
+    public required SkillResponse Skill { get; init; }
+    public required double RelevanceScore { get; init; }
+
+    public static SkillSearchResultResponse FromResult(SkillSearchResult result) => new()
+    {
+        Skill = SkillResponse.FromDocument(result.Skill),
+        RelevanceScore = result.RelevanceScore
+    };
+}
+
+// === Channel Contracts ===
+
+public sealed record RegisterChannelRequest
+{
+    [JsonConverter(typeof(JsonStringEnumConverter<ChannelType>))]
+    public required ChannelType Type { get; init; }
+    public required string Name { get; init; }
+    public Dictionary<string, string>? Config { get; init; }
+    public string? TargetAgent { get; init; }
+}
+
+public sealed record InboundMessageRequest
+{
+    public required string ChannelId { get; init; }
+    [JsonConverter(typeof(JsonStringEnumConverter<ChannelType>))]
+    public required ChannelType SourceChannel { get; init; }
+    public required string SenderId { get; init; }
+    public string SenderName { get; init; } = string.Empty;
+    public required string Content { get; init; }
+    public string? ThreadId { get; init; }
+    public Dictionary<string, string>? Metadata { get; init; }
+}
+
+public sealed record ChannelResponse
+{
+    public required string ChannelId { get; init; }
+    [JsonConverter(typeof(JsonStringEnumConverter<ChannelType>))]
+    public required ChannelType Type { get; init; }
+    public required string Name { get; init; }
+    public string? TargetAgent { get; init; }
+    public required bool Enabled { get; init; }
+
+    public static ChannelResponse FromConfig(ChannelConfig config) => new()
+    {
+        ChannelId = config.ChannelId.ToString(),
+        Type = config.Type,
+        Name = config.Name,
+        TargetAgent = config.TargetAgent,
+        Enabled = config.Enabled
+    };
+}
+
+public sealed record OutboundMessageResponse
+{
+    public required string ChannelId { get; init; }
+    public required string Content { get; init; }
+    public string? ThreadId { get; init; }
+
+    public static OutboundMessageResponse FromMessage(OutboundMessage msg) => new()
+    {
+        ChannelId = msg.ChannelId.ToString(),
+        Content = msg.Content,
+        ThreadId = msg.ThreadId
+    };
+}
+
+// === User Contracts ===
+
+public sealed record SetPreferenceRequest
+{
+    public required string Key { get; init; }
+    public required string Value { get; init; }
+}
+
+public sealed record SetDomainContextRequest
+{
+    public required string Key { get; init; }
+    public required string Value { get; init; }
+}
+
+public sealed record UserProfileResponse
+{
+    public required string UserId { get; init; }
+    public required string WorkspaceId { get; init; }
+    public Dictionary<string, string> Preferences { get; init; } = [];
+    public Dictionary<string, int> TopicFrequency { get; init; } = [];
+    public Dictionary<string, string> DomainContext { get; init; } = [];
+    public DateTimeOffset? FirstSeenAt { get; init; }
+    public DateTimeOffset? LastSeenAt { get; init; }
+    public int TotalInteractions { get; init; }
+
+    public static UserProfileResponse FromState(UserProfileState state) => new()
+    {
+        UserId = state.UserId,
+        WorkspaceId = state.WorkspaceId,
+        Preferences = new Dictionary<string, string>(state.Preferences),
+        TopicFrequency = new Dictionary<string, int>(state.TopicFrequency),
+        DomainContext = new Dictionary<string, string>(state.DomainContext),
+        FirstSeenAt = state.FirstSeenAt,
+        LastSeenAt = state.LastSeenAt,
+        TotalInteractions = state.TotalInteractions
+    };
+}
+
+// === Marketplace Contracts ===
+
+public sealed record SubmitMarketplaceItemRequest
+{
+    public required string Name { get; init; }
+    public required string Description { get; init; }
+    [JsonConverter(typeof(JsonStringEnumConverter<MarketplaceItemCategory>))]
+    public required MarketplaceItemCategory Category { get; init; }
+    public required string Version { get; init; }
+    public required string Author { get; init; }
+    public List<string>? Tags { get; init; }
+    public List<string>? RequiredCapabilities { get; init; }
+    public string? DocumentationUrl { get; init; }
+}
+
+public sealed record PublishMarketplaceItemRequest
+{
+    public required string ReviewerId { get; init; }
+    public required bool Approved { get; init; }
+    public string? Notes { get; init; }
+}
+
+public sealed record RateMarketplaceItemRequest
+{
+    public required double Rating { get; init; }
+}
+
+public sealed record MarketplaceItemResponse
+{
+    public required string ItemId { get; init; }
+    public required string Name { get; init; }
+    public required string Description { get; init; }
+    [JsonConverter(typeof(JsonStringEnumConverter<MarketplaceItemCategory>))]
+    public required MarketplaceItemCategory Category { get; init; }
+    public required string Version { get; init; }
+    public required string Author { get; init; }
+    [JsonConverter(typeof(JsonStringEnumConverter<MarketplaceItemStatus>))]
+    public required MarketplaceItemStatus Status { get; init; }
+    public List<string> Tags { get; init; } = [];
+    public DateTimeOffset? PublishedAt { get; init; }
+    public int InstallCount { get; init; }
+    public double Rating { get; init; }
+    public int RatingCount { get; init; }
+
+    public static MarketplaceItemResponse FromItem(MarketplaceItem item) => new()
+    {
+        ItemId = item.ItemId.ToString(),
+        Name = item.Name,
+        Description = item.Description,
+        Category = item.Category,
+        Version = item.Version,
+        Author = item.Author,
+        Status = item.Status,
+        Tags = [.. item.Tags],
+        PublishedAt = item.PublishedAt,
+        InstallCount = item.InstallCount,
+        Rating = item.Rating,
+        RatingCount = item.RatingCount
+    };
+}
+
+// === Template Contracts ===
+
+public sealed record RegisterTemplateRequest
+{
+    public required string Name { get; init; }
+    public required string Description { get; init; }
+    public required string Version { get; init; }
+    public required string Author { get; init; }
+    public required AgentDefinition AgentDefinition { get; init; }
+    public Dictionary<string, ToolDefinition>? RequiredTools { get; init; }
+    public List<string>? RequiredCapabilities { get; init; }
+    public List<string>? Tags { get; init; }
+    public Dictionary<string, string>? DefaultParameters { get; init; }
+}
+
+public sealed record TemplateResponse
+{
+    public required string TemplateId { get; init; }
+    public required string Name { get; init; }
+    public required string Description { get; init; }
+    public required string Version { get; init; }
+    public required string Author { get; init; }
+    [JsonConverter(typeof(JsonStringEnumConverter<TemplateStatus>))]
+    public required TemplateStatus Status { get; init; }
+    public DateTimeOffset? PublishedAt { get; init; }
+    public List<string> Tags { get; init; } = [];
+    public int InstantiationCount { get; init; }
+    public List<TemplateValidationResultResponse> ValidationResults { get; init; } = [];
+
+    public static TemplateResponse FromTemplate(CapabilityTemplate t) => new()
+    {
+        TemplateId = t.TemplateId.ToString(),
+        Name = t.Name,
+        Description = t.Description,
+        Version = t.Version,
+        Author = t.Author,
+        Status = t.Status,
+        PublishedAt = t.PublishedAt,
+        Tags = [.. t.Tags],
+        InstantiationCount = t.InstantiationCount,
+        ValidationResults = t.ValidationResults.Select(r => new TemplateValidationResultResponse
+        {
+            Check = r.Check,
+            Passed = r.Passed,
+            Detail = r.Detail
+        }).ToList()
+    };
+}
+
+public sealed record TemplateValidationResultResponse
+{
+    public required string Check { get; init; }
+    public required bool Passed { get; init; }
+    public string? Detail { get; init; }
 }
 
 // === Plugin Contracts ===
