@@ -194,5 +194,10 @@ app.MapWorkspaceEndpoints();
 app.MapAgentEndpoints();
 app.MapToolEndpoints();
 app.MapPluginEndpoints();
+app.MapSkillEndpoints();
+app.MapChannelEndpoints();
+app.MapUserEndpoints();
+app.MapMarketplaceEndpoints();
+app.MapTemplateEndpoints();
 
 app.Run();
