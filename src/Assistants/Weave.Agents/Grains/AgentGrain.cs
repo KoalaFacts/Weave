@@ -248,6 +248,66 @@ public sealed class AgentGrain(
             taskId,
             persistentState.State.AgentName,
             accepted);
+
+        if (accepted)
+            await TryExtractSkillAsync(taskId);
+    }
+
+    private async Task TryExtractSkillAsync(AgentTaskId taskId)
+    {
+        var task = persistentState.State.ActiveTasks.FirstOrDefault(t => t.TaskId == taskId);
+        if (task?.Proof is null || task.Proof.Items.Count < 2)
+            return;
+
+        var skill = ExtractSkillFromTask(task, persistentState.State);
+        if (skill is null)
+            return;
+
+        try
+        {
+            var skillGrain = grainFactory.GetGrain<ISkillMemoryGrain>(persistentState.State.WorkspaceId.ToString());
+            await skillGrain.StoreSkillAsync(skill);
+            logger.LogInformation(
+                "Auto-extracted skill '{Title}' from task {TaskId}",
+                skill.Title,
+                taskId);
+        }
+        catch (Exception ex)
+        {
+            logger.LogWarning(ex, "Failed to auto-extract skill from task {TaskId}", taskId);
+        }
+    }
+
+    internal static SkillDocument? ExtractSkillFromTask(AgentTaskInfo task, AgentState state)
+    {
+        if (task.Proof is null || task.Proof.Items.Count < 2)
+            return null;
+
+        var toolsUsed = task.Proof.Items
+            .Where(p => p.Type is ProofType.Custom or ProofType.DiffSummary)
+            .Select(p => p.Label)
+            .Distinct(StringComparer.OrdinalIgnoreCase)
+            .ToList();
+
+        var steps = task.Proof.Items.Select((item, index) => new SkillStep
+        {
+            Order = index,
+            Action = $"{item.Type}: {item.Label}",
+            ToolName = item.Type == ProofType.Custom ? item.Label : null,
+            ExpectedOutcome = item.Value.Length > 200 ? item.Value[..200] : item.Value
+        }).ToList();
+
+        return new SkillDocument
+        {
+            SkillId = Shared.Ids.SkillId.New(),
+            Title = task.Description.Length > 100 ? task.Description[..100] : task.Description,
+            Description = $"Auto-extracted from completed task: {task.Description}",
+            Tags = toolsUsed,
+            Steps = steps,
+            ToolsUsed = state.ConnectedTools.ToList(),
+            CreatedByAgent = state.AgentName,
+            OriginTaskDescription = task.Description
+        };
     }
 
     public async Task ConnectToolAsync(string toolName)

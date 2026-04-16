@@ -89,7 +89,8 @@ public sealed class ChannelGatewayGrain(
         {
             Role = "user",
             Content = message.Content,
-            Metadata = message.Metadata
+            Metadata = message.Metadata,
+            UserId = message.SenderId
         });
 
         var outbound = new OutboundMessage
