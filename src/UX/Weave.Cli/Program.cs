@@ -31,6 +31,7 @@ plugin.Subcommands.Add(WorkspacePluginRemoveCommand.Create());
 workspace.Subcommands.Add(plugin);
 
 root.Subcommands.Add(WorkspaceServeCommand.Create());
+root.Subcommands.Add(RunCommand.Create());
 root.Subcommands.Add(InitCommand.Create());
 root.Subcommands.Add(PortsCommand.Create());
 root.Subcommands.Add(MarketplaceCommands.Create());

@@ -46,10 +46,17 @@ Weave runs on Windows, macOS, and Linux.
 
 ```bash
 weave workspace new demo --preset coding-assistant
-weave workspace up demo
+weave run demo
 ```
 
-That is it. Everything runs locally — no external services required.
+That is it. `weave run` starts the server and workspace in one command. Everything runs locally — no external services required.
+
+**Or try the support-team preset** with Slack, skill memory, and a health monitor:
+
+```bash
+weave workspace new my-team --preset support-team
+weave run my-team
+```
 
 ## Example Manifest
 

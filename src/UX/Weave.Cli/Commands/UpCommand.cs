@@ -1,5 +1,7 @@
 using System.CommandLine;
+using System.Diagnostics;
 using System.Globalization;
+using Weave.Shared;
 using Weave.Workspaces.Manifest;
 
 namespace Weave.Cli.Commands;
@@ -44,9 +46,16 @@ internal static class WorkspaceUpCommand
 
                 if (!await client.IsReachableAsync(cancellationToken))
                 {
-                    CliTheme.WriteError("Cannot reach the Weave server.");
-                    CliTheme.WriteMuted("  Start it first with: weave serve");
-                    return 1;
+                    CliTheme.WriteInfo("Server not running — starting automatically...");
+                    var started = await AutoStartServeAsync(cancellationToken);
+                    if (!started)
+                    {
+                        CliTheme.WriteError("Could not start the Weave server.");
+                        CliTheme.WriteMuted("  Start it manually with: weave serve");
+                        return 1;
+                    }
+
+                    CliTheme.WriteSuccess("Server ready.");
                 }
 
                 var response = await client.StartWorkspaceAsync(manifest, cancellationToken);
@@ -71,6 +80,86 @@ internal static class WorkspaceUpCommand
         });
 
         return cmd;
+    }
+
+    private static async Task<bool> AutoStartServeAsync(CancellationToken ct)
+    {
+        var siloPath = ResolveSiloPath();
+        if (siloPath is null)
+            return false;
+
+        var port = CliConfigStore.Load().DefaultPort;
+
+        var startInfo = new ProcessStartInfo
+        {
+            FileName = "dotnet",
+            UseShellExecute = false,
+            CreateNoWindow = true,
+            RedirectStandardOutput = true,
+            RedirectStandardError = true
+        };
+
+        if (siloPath.EndsWith(".csproj", StringComparison.OrdinalIgnoreCase) || Directory.Exists(siloPath))
+        {
+            var project = siloPath.EndsWith(".csproj", StringComparison.OrdinalIgnoreCase)
+                ? siloPath
+                : Path.Combine(siloPath, "Weave.Silo.csproj");
+            startInfo.ArgumentList.Add("run");
+            startInfo.ArgumentList.Add("--project");
+            startInfo.ArgumentList.Add(project);
+            startInfo.ArgumentList.Add("--");
+        }
+        else
+        {
+            startInfo.ArgumentList.Add(siloPath);
+        }
+
+        startInfo.ArgumentList.Add("--Weave:LocalMode=true");
+        startInfo.ArgumentList.Add($"--urls=http://localhost:{port}");
+
+        Process.Start(startInfo);
+
+        using var http = new HttpClient { Timeout = TimeSpan.FromSeconds(2) };
+        for (var i = 0; i < 60; i++)
+        {
+            await Task.Delay(500, ct);
+            try
+            {
+                var response = await http.GetAsync($"http://localhost:{port}/health", ct);
+                if (response.IsSuccessStatusCode)
+                    return true;
+            }
+            catch { }
+        }
+
+        return false;
+    }
+
+    private static string? ResolveSiloPath()
+    {
+        var envPath = Environment.GetEnvironmentVariable("WEAVE_SILO_PATH");
+        if (!string.IsNullOrWhiteSpace(envPath) && (File.Exists(envPath) || Directory.Exists(envPath)))
+            return envPath;
+
+        var config = CliConfigStore.Load();
+        if (!string.IsNullOrWhiteSpace(config.SiloPath) && (File.Exists(config.SiloPath) || Directory.Exists(config.SiloPath)))
+            return config.SiloPath;
+
+        var candidates = new[]
+        {
+            Path.Combine("src", "Runtime", "Weave.Silo"),
+            Path.Combine("src", "Runtime", "Weave.Silo", "Weave.Silo.csproj")
+        };
+
+        foreach (var candidate in candidates)
+        {
+            if (File.Exists(candidate) || Directory.Exists(candidate))
+                return Path.GetFullPath(candidate);
+        }
+
+        var exeDir = AppContext.BaseDirectory;
+        var siloDll = Path.Combine(exeDir, "Weave.Silo.dll");
+        return File.Exists(siloDll) ? siloDll : null;
     }
 }
 
