@@ -33,6 +33,7 @@ workspace.Subcommands.Add(plugin);
 root.Subcommands.Add(WorkspaceServeCommand.Create());
 root.Subcommands.Add(InitCommand.Create());
 root.Subcommands.Add(PortsCommand.Create());
+root.Subcommands.Add(MarketplaceCommands.Create());
 
 var config = new Command("config", "Manage CLI configuration");
 config.Subcommands.Add(ConfigGetCommand.Create());

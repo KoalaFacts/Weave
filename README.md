@@ -322,6 +322,12 @@ weave workspace presets             Browse preset templates
 
 weave workspace list                List all workspaces
 weave workspace remove <name>       Remove a workspace
+
+weave marketplace list              Browse published marketplace items
+weave marketplace search <query>    Search the marketplace
+weave marketplace submit            Submit a new tool configuration
+weave marketplace publish <id>      Publish after security review
+weave marketplace info <id>         Show item details
 ```
 
 ## Architecture
