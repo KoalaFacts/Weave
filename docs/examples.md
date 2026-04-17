@@ -3,6 +3,84 @@
 > Practical examples drawn from the actual Weave codebase. Each example shows real patterns you can follow.
 > **See also**: [index](index.md)
 
+## Full-Featured Workspace
+
+A workspace with agents, tools, channels, and self-improving skill memory — the complete picture of what Weave can do:
+
+```jsonc
+{
+  "version": "1.0",
+  "name": "support-team",
+  "agents": {
+    "support-bot": {
+      "model": "claude-sonnet-4-20250514",
+      "system_prompt_file": "./prompts/support.md",
+      "tools": ["docs-search", "ticket-api"],
+      "max_concurrent_tasks": 5
+    },
+    "monitor": {
+      "model": "claude-haiku-4-5-20251001",
+      "tools": ["health-check"],
+      "heartbeat": {
+        "cron": "*/5 * * * *",
+        "tasks": ["Check service health"]
+      }
+    }
+  },
+  "tools": {
+    "docs-search": {
+      "type": "mcp",
+      "mcp": {
+        "server": "npx",
+        "args": ["-y", "@anthropic/mcp-server-web-search"]
+      }
+    },
+    "ticket-api": {
+      "type": "direct_http",
+      "direct_http": {
+        "base_url": "https://tickets.example.com/api",
+        "auth": { "type": "bearer", "token": "${secrets.ticket_token}" }
+      }
+    },
+    "health-check": {
+      "type": "cli",
+      "cli": {
+        "shell": "/bin/bash",
+        "allowed_commands": ["curl *", "ping *"]
+      }
+    }
+  },
+  "channels": {
+    "slack-support": {
+      "type": "slack",
+      "target_agent": "support-bot",
+      "config": {
+        "webhook_url": "${secrets.slack_webhook}"
+      }
+    },
+    "telegram-alerts": {
+      "type": "telegram",
+      "target_agent": "monitor",
+      "config": {
+        "bot_token": "${secrets.telegram_bot_token}",
+        "chat_id": "-100123456789"
+      }
+    }
+  },
+  "workspace": {
+    "secrets": { "provider": "env" }
+  }
+}
+```
+
+What happens when you `weave workspace up support-team`:
+1. Both agents activate with their tools and security tokens
+2. The monitor agent starts checking health every 5 minutes
+3. Slack messages from users route to `support-bot`, which searches docs and creates tickets
+4. Each Slack user gets a `UserModelGrain` that tracks their preferences and frequent topics
+5. When the support-bot successfully resolves a multi-step issue, a skill document is auto-extracted
+6. Next time a similar issue arrives, the agent retrieves the skill and resolves it faster
+
 ## Workspace Manifest
 
 A complete `workspace.json` with agents, tools, targets, and secrets:
@@ -528,4 +606,130 @@ public sealed class MyCloudPublisher : IPublisher
 }
 
 // 2. Wire into CLI publish command
+```
+
+## REST API — Skills, Channels, Users, Marketplace, Templates
+
+All new features are accessible via the Silo's REST API (default port 5000).
+
+### Skills API
+
+```bash
+# List all skills in a workspace
+GET /api/workspaces/{workspaceId}/skills
+
+# Search skills by keyword
+GET /api/workspaces/{workspaceId}/skills/search?q=deploy&max=5
+
+# Get a specific skill
+GET /api/workspaces/{workspaceId}/skills/{skillId}
+
+# Store a skill manually
+POST /api/workspaces/{workspaceId}/skills
+{
+  "title": "Database migration",
+  "description": "Steps to run a safe database migration",
+  "tags": ["database", "migration"],
+  "steps": [
+    { "action": "Create backup", "tool_name": "cli" },
+    { "action": "Run migration script", "tool_name": "cli" },
+    { "action": "Verify schema", "tool_name": "cli" }
+  ],
+  "tools_used": ["cli"],
+  "created_by_agent": "dba-agent"
+}
+
+# Remove a skill
+DELETE /api/workspaces/{workspaceId}/skills/{skillId}
+```
+
+### Channels API
+
+```bash
+# List registered channels
+GET /api/workspaces/{workspaceId}/channels
+
+# Register a channel
+POST /api/workspaces/{workspaceId}/channels
+{ "type": "slack", "name": "general", "target_agent": "support-bot",
+  "config": { "webhook_url": "https://hooks.slack.com/..." } }
+
+# Webhook entry point for inbound messages
+POST /api/workspaces/{workspaceId}/channels/inbound
+{ "channel_id": "ch-1", "source_channel": "slack",
+  "sender_id": "U12345", "sender_name": "Alice",
+  "content": "How do I reset my password?" }
+# -> Returns: { "channel_id": "ch-1", "content": "Here's how to reset..." }
+
+# Unregister a channel
+DELETE /api/workspaces/{workspaceId}/channels/{channelId}
+```
+
+### Users API
+
+```bash
+# Get user profile
+GET /api/workspaces/{workspaceId}/users/{userId}/profile
+
+# Set a preference
+PUT /api/workspaces/{workspaceId}/users/{userId}/preferences
+{ "key": "language", "value": "python" }
+
+# Set domain context
+PUT /api/workspaces/{workspaceId}/users/{userId}/context
+{ "key": "team", "value": "backend" }
+
+# Clear user profile
+DELETE /api/workspaces/{workspaceId}/users/{userId}
+```
+
+### Marketplace API
+
+```bash
+# Browse published items
+GET /api/marketplace
+GET /api/marketplace/search?q=github&category=ToolConnector
+
+# Get item details
+GET /api/marketplace/{itemId}
+
+# Submit a new item (starts as Draft)
+POST /api/marketplace
+{ "name": "GitHub MCP", "description": "...", "category": "ToolConnector",
+  "version": "1.0.0", "author": "platform-team", "tags": ["github"] }
+
+# Publish with security review
+POST /api/marketplace/{itemId}/publish
+{ "reviewer_id": "sec-lead", "approved": true, "notes": "Reviewed" }
+
+# Rate an item
+POST /api/marketplace/{itemId}/rate
+{ "rating": 4.5 }
+
+# Deprecate
+POST /api/marketplace/{itemId}/deprecate
+```
+
+### Templates API
+
+```bash
+# Browse published templates
+GET /api/templates
+GET /api/templates/search?q=code+review
+
+# Get template details
+GET /api/templates/{templateId}
+
+# Register a template (starts as Draft)
+POST /api/templates
+{ "name": "Code Reviewer", "description": "...", "version": "1.0.0",
+  "author": "platform-team",
+  "agent_definition": { "model": "claude-sonnet-4-20250514", "tools": ["git"] },
+  "required_tools": { "git": { "type": "cli", "cli": { "allowed_commands": ["git *"] } } } }
+
+# Validate and publish
+POST /api/templates/{templateId}/publish
+
+# Deprecate
+POST /api/templates/{templateId}/deprecate
 ```

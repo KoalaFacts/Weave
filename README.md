@@ -7,6 +7,14 @@
 
 Most agent frameworks give your AI unrestricted access and hope for the best. Weave starts from the opposite assumption: assistants get *only* the capabilities you explicitly grant, secrets are proxied and scanned for leaks, and every tool call goes through a security boundary you control.
 
+## What You Can Build
+
+- **A coding assistant** that has git and filesystem access but can't `rm -rf /` or `git push --force`
+- **A research team** with a supervisor that delegates to specialist workers, each with their own tools
+- **A support bot** on Slack, Discord, or Telegram that remembers each user's preferences and gets better at recurring tasks
+- **A DevOps agent** that deploys services on a cron schedule and builds reusable skills from successful deployments
+- **A shared tool marketplace** where your team publishes vetted tool configurations that any workspace can install
+
 ## How Weave Is Different
 
 | | Other agent frameworks | Weave |
@@ -14,6 +22,9 @@ Most agent frameworks give your AI unrestricted access and hope for the best. We
 | **Security model** | Bolt-on, if any | Capability tokens, secret proxying, leak scanning, sandboxed tools |
 | **Secret handling** | Pass API keys directly to the model | Secrets never reach the model — proxied, redacted, and scanned for 15+ leak patterns |
 | **Tool access** | Allow-all or manual prompt engineering | Sandboxed filesystem, shell metacharacter blocking, SSRF protection, allow/deny lists |
+| **Self-improving** | Static prompts | Agents auto-extract skills from completed tasks and retrieve them for similar future work |
+| **Reach users** | API-only | Built-in channel gateway — Slack, Discord, Telegram, Teams, Email out of the box |
+| **Personalization** | Stateless | User modeling tracks preferences, topics, and context across sessions |
 | **Architecture** | Single-process, in-memory | Orleans grain-based — each agent, tool, and workspace is an independent, recoverable actor |
 | **Configuration** | Code-heavy setup | One JSONC manifest defines everything |
 | **Extensibility** | Rebuild to add integrations | Hot-swap plugins at runtime (Dapr, Vault, webhooks) without restarts |
@@ -77,6 +88,145 @@ A workspace manifest is a JSONC file. This one defines an assistant with git acc
 ```
 
 See the full schema in the [Manifest Reference](docs/manifest-reference.md).
+
+## Channels — Reach Users Where They Are
+
+Connect your agents to messaging platforms. Users talk to agents on Slack, Discord, or Telegram — Weave routes messages to the right agent and sends responses back.
+
+```jsonc
+"channels": {
+  "slack-support": {
+    "type": "slack",
+    "target_agent": "support-bot",
+    "config": {
+      "webhook_url": "https://hooks.slack.com/services/..."
+    }
+  },
+  "telegram-alerts": {
+    "type": "telegram",
+    "target_agent": "monitor",
+    "config": {
+      "bot_token": "${secrets.telegram_bot_token}",
+      "chat_id": "-100123456789"
+    }
+  }
+}
+```
+
+Supported channels: **Slack**, **Discord**, **Telegram**, **Microsoft Teams**, **Email**. Each channel routes to a specific agent, or you can configure pattern-based routing rules via the API.
+
+Inbound messages are received via webhook at `POST /api/workspaces/{id}/channels/inbound`. The channel gateway resolves the target agent, forwards the message, and returns the response.
+
+## Skill Memory — Agents That Learn
+
+When an agent completes a multi-step task and it gets accepted, Weave automatically extracts a **skill document** capturing what was done, which tools were used, and in what order. The next time a similar request comes in, the agent retrieves matching skills and includes them in its context.
+
+This means your agents get measurably better at recurring tasks without any manual prompt engineering.
+
+```bash
+# Skills are created automatically, but you can also store them manually:
+curl -X POST http://localhost:5000/api/workspaces/my-ws/skills \
+  -H "Content-Type: application/json" \
+  -d '{
+    "title": "Deploy to staging",
+    "description": "Build, test, and deploy a service to the staging environment",
+    "tags": ["deploy", "staging", "docker"],
+    "steps": [
+      { "action": "Run tests", "tool_name": "cli" },
+      { "action": "Build Docker image", "tool_name": "cli" },
+      { "action": "Push to registry", "tool_name": "cli" },
+      { "action": "Update deployment manifest", "tool_name": "files" }
+    ],
+    "tools_used": ["cli", "files"],
+    "created_by_agent": "deployer"
+  }'
+
+# Search for relevant skills:
+curl http://localhost:5000/api/workspaces/my-ws/skills/search?q=deploy+staging
+```
+
+Skills are scoped to a workspace — all agents in the workspace share and benefit from accumulated skills.
+
+## User Modeling — Personalized Agents
+
+Weave tracks user preferences, frequently discussed topics, and domain context across sessions. When a user sends a message (via a channel or the API with a `userId`), their profile is automatically injected into the agent's context.
+
+```bash
+# Set user preferences
+curl -X PUT http://localhost:5000/api/workspaces/my-ws/users/alice/preferences \
+  -H "Content-Type: application/json" \
+  -d '{ "key": "language", "value": "python" }'
+
+# Set domain context
+curl -X PUT http://localhost:5000/api/workspaces/my-ws/users/alice/context \
+  -H "Content-Type: application/json" \
+  -d '{ "key": "project", "value": "data-pipeline-v2" }'
+
+# View profile
+curl http://localhost:5000/api/workspaces/my-ws/users/alice/profile
+```
+
+When Alice messages the agent, it automatically receives: *"User preferences: language=python. Top topics: deployment (12), testing (8). Domain context: project=data-pipeline-v2."*
+
+## Marketplace — Share Vetted Tool Configurations
+
+A curated registry of tool configurations that teams can share. Unlike unrestricted plugin marketplaces, every item must pass a security review before publishing.
+
+```bash
+# Submit a tool configuration
+curl -X POST http://localhost:5000/api/marketplace \
+  -H "Content-Type: application/json" \
+  -d '{
+    "name": "GitHub MCP",
+    "description": "GitHub integration via MCP server",
+    "category": "ToolConnector",
+    "version": "1.0.0",
+    "author": "platform-team",
+    "tags": ["github", "mcp", "git"]
+  }'
+
+# Publish after security review
+curl -X POST http://localhost:5000/api/marketplace/{itemId}/publish \
+  -d '{ "reviewer_id": "security-lead", "approved": true, "notes": "Reviewed, safe to use" }'
+
+# Search and browse
+curl http://localhost:5000/api/marketplace/search?q=github
+curl http://localhost:5000/api/marketplace
+```
+
+## Capability Templates — Pre-Built Agent Configurations
+
+Shareable, versioned agent configurations with pre-validated tool chains. Create a template once, instantiate it across workspaces.
+
+```bash
+# Register a template
+curl -X POST http://localhost:5000/api/templates \
+  -H "Content-Type: application/json" \
+  -d '{
+    "name": "Code Reviewer",
+    "description": "Agent configured for PR reviews with git and file access",
+    "version": "1.0.0",
+    "author": "platform-team",
+    "agent_definition": {
+      "model": "claude-sonnet-4-20250514",
+      "tools": ["git", "files"],
+      "max_concurrent_tasks": 3
+    },
+    "required_tools": {
+      "git": { "type": "cli", "cli": { "shell": "/bin/bash", "allowed_commands": ["git *"] } },
+      "files": { "type": "filesystem", "filesystem": { "root": "./repo", "sandbox": true } }
+    },
+    "tags": ["code-review", "git"]
+  }'
+
+# Validate and publish
+curl -X POST http://localhost:5000/api/templates/{templateId}/publish
+
+# Browse published templates
+curl http://localhost:5000/api/templates
+```
+
+Templates validate that the agent model is specified, all referenced tools exist in `required_tools`, and every tool has a valid type — before they can be published.
 
 ## Security
 
@@ -197,8 +347,9 @@ The dashboard provides a live view of workspace status, agent activity, tool con
 
 ## Documentation
 
-- [Manifest Reference](docs/manifest-reference.md) — full schema for workspace JSONC files
+- [Manifest Reference](docs/manifest-reference.md) — full schema for workspace JSONC files, including channels
 - [Tools](docs/tools.md) — connector interfaces, security features, and testing patterns
+- [Examples](docs/examples.md) — end-to-end workspace manifests, CLI usage, and code patterns
 - [Architecture docs](docs/) — subsystem documentation for Foundation, Workspaces, Assistants, Tools, Security, Deployment, and Runtime
 
 ## Built With
