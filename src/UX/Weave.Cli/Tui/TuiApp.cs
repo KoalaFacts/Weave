@@ -16,7 +16,9 @@ internal static class TuiApp
     private const string ActionOpen = "Open workspace";
     private const string ActionNew = "Create new workspace";
     private const string ActionPresets = "Browse presets";
+    private const string ActionWebUi = "Open Web UI";
     private const string ActionSystem = "System info";
+    private const string ActionCommand = "/ Run a slash command…";
     private const string ActionRefresh = "Refresh";
     private const string ActionQuit = "Quit";
 
@@ -56,7 +58,9 @@ internal static class TuiApp
                 choices.Add(ActionOpen);
             choices.Add(ActionNew);
             choices.Add(ActionPresets);
+            choices.Add(ActionWebUi);
             choices.Add(ActionSystem);
+            choices.Add(ActionCommand);
             choices.Add(ActionRefresh);
             choices.Add(ActionQuit);
 
@@ -64,7 +68,7 @@ internal static class TuiApp
                 new SelectionPrompt<string>()
                     .Title($"[rgb({CliTheme.Accent.R},{CliTheme.Accent.G},{CliTheme.Accent.B})]◆[/] Choose an action")
                     .Styled()
-                    .PageSize(10)
+                    .PageSize(12)
                     .AddChoices(choices));
 
             switch (action)
@@ -89,8 +93,23 @@ internal static class TuiApp
                     ShowPresetsScreen();
                     break;
 
+                case ActionWebUi:
+                    await OpenWebUiAsync(cancellationToken);
+                    break;
+
                 case ActionSystem:
                     await ShowSystemScreenAsync(cancellationToken);
+                    break;
+
+                case ActionCommand:
+                    var quit = await RunSlashCommandAsync(cancellationToken);
+                    if (quit)
+                    {
+                        AnsiConsole.Clear();
+                        AnsiConsole.MarkupLine(
+                            $"[rgb({CliTheme.Muted.R},{CliTheme.Muted.G},{CliTheme.Muted.B})]See you next weave.[/]");
+                        return 0;
+                    }
                     break;
 
                 case ActionRefresh:
@@ -641,6 +660,188 @@ internal static class TuiApp
 
         AnsiConsole.Write(table);
         Pause();
+    }
+
+    private static async Task OpenWebUiAsync(CancellationToken cancellationToken)
+    {
+        AnsiConsole.Clear();
+        RenderCompactHeader();
+        CliTheme.WriteSection("Web UI");
+
+        var url = WebUiCommand.DefaultUrl();
+        CliTheme.WriteKeyValue("URL", url);
+
+        var reachable = await WebUiCommand.IsReachableAsync(url, cancellationToken);
+        if (reachable)
+            CliTheme.WriteSuccess("Dashboard is reachable.");
+        else
+            CliTheme.WriteWarning("Dashboard is not reachable yet. Start it with `weave run` or the AppHost.");
+
+        AnsiConsole.WriteLine();
+        var choice = AnsiConsole.Prompt(
+            new SelectionPrompt<string>()
+                .Title("What would you like to do?")
+                .Styled()
+                .AddChoices("Open in browser", "Copy URL (print)", DetailBack));
+
+        switch (choice)
+        {
+            case "Open in browser":
+                if (WebUiCommand.TryOpenBrowser(url))
+                    CliTheme.WriteMuted("Opened in your default browser.");
+                else
+                    CliTheme.WriteMuted($"Could not open a browser automatically. Visit: {url}");
+                Pause();
+                break;
+
+            case "Copy URL (print)":
+                AnsiConsole.WriteLine(url);
+                Pause();
+                break;
+        }
+    }
+
+    /// <summary>
+    /// Opens a prompt where the user can type slash-prefixed commands
+    /// (e.g. /open my-workspace, /webui, /new). Returns true if the
+    /// user requested to quit the TUI.
+    /// </summary>
+    private static async Task<bool> RunSlashCommandAsync(CancellationToken cancellationToken)
+    {
+        AnsiConsole.Clear();
+        RenderCompactHeader();
+        CliTheme.WriteSection("Slash commands");
+
+        RenderSlashHelp();
+        AnsiConsole.WriteLine();
+
+        var input = AnsiConsole.Prompt(
+            new TextPrompt<string>($"[rgb({CliTheme.Accent.R},{CliTheme.Accent.G},{CliTheme.Accent.B})]›[/] Command:")
+                .Styled()
+                .AllowEmpty());
+
+        var command = input?.Trim() ?? string.Empty;
+        if (command.Length == 0)
+            return false;
+
+        if (command.StartsWith('/'))
+            command = command[1..];
+
+        var parts = command.Split(' ', 2, StringSplitOptions.TrimEntries | StringSplitOptions.RemoveEmptyEntries);
+        if (parts.Length == 0)
+            return false;
+
+        var name = parts[0].ToLowerInvariant();
+        var arg = parts.Length > 1 ? parts[1] : null;
+
+        switch (name)
+        {
+            case "help":
+            case "?":
+                RenderSlashHelp();
+                Pause();
+                return false;
+
+            case "quit":
+            case "exit":
+            case "q":
+                return true;
+
+            case "refresh":
+            case "r":
+                return false;
+
+            case "open":
+            case "o":
+                await ExecuteOpenAsync(arg, cancellationToken);
+                return false;
+
+            case "new":
+            case "n":
+                ShowNewWorkspaceHint();
+                return false;
+
+            case "presets":
+            case "p":
+                ShowPresetsScreen();
+                return false;
+
+            case "webui":
+            case "web":
+            case "w":
+                await OpenWebUiAsync(cancellationToken);
+                return false;
+
+            case "system":
+            case "sys":
+                await ShowSystemScreenAsync(cancellationToken);
+                return false;
+
+            default:
+                CliTheme.WriteError($"Unknown command: /{name}. Try /help.");
+                Pause();
+                return false;
+        }
+    }
+
+    private static async Task ExecuteOpenAsync(string? arg, CancellationToken cancellationToken)
+    {
+        var workspaces = WorkspaceRegistry.GetAll();
+        if (workspaces.Count == 0)
+        {
+            CliTheme.WriteWarning("No workspaces registered.");
+            Pause();
+            return;
+        }
+
+        string? target = arg;
+        if (string.IsNullOrWhiteSpace(target))
+        {
+            target = AnsiConsole.Prompt(
+                new SelectionPrompt<string>()
+                    .Title("Open which workspace?")
+                    .Styled()
+                    .AddChoices([.. workspaces.Keys, DetailBack]));
+
+            if (target == DetailBack)
+                return;
+        }
+
+        if (!workspaces.ContainsKey(target))
+        {
+            var match = workspaces.Keys
+                .FirstOrDefault(k => string.Equals(k, target, StringComparison.OrdinalIgnoreCase));
+
+            if (match is null)
+            {
+                CliTheme.WriteError($"Workspace '{target}' not found.");
+                Pause();
+                return;
+            }
+
+            target = match;
+        }
+
+        await ShowWorkspaceAsync(target, cancellationToken);
+    }
+
+    private static void RenderSlashHelp()
+    {
+        var table = CliTheme.CreateTable();
+        table.AddColumn(CliTheme.StyledColumn("Command"));
+        table.AddColumn(CliTheme.StyledColumn("Aliases"));
+        table.AddColumn(CliTheme.StyledColumn("Description"));
+
+        table.AddRow("/open [name]", "/o", "Open a workspace (prompts if no name).");
+        table.AddRow("/new", "/n", "Show hints for creating a workspace.");
+        table.AddRow("/presets", "/p", "List built-in presets.");
+        table.AddRow("/webui", "/web /w", "Open the web dashboard.");
+        table.AddRow("/system", "/sys", "Show system and silo info.");
+        table.AddRow("/refresh", "/r", "Refresh the current view.");
+        table.AddRow("/help", "/?", "Show this help.");
+        table.AddRow("/quit", "/exit /q", "Exit the TUI.");
+
+        AnsiConsole.Write(table);
     }
 
     private static async Task<bool> ProbeSiloAsync(CancellationToken cancellationToken)
