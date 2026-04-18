@@ -35,6 +35,8 @@ internal static class StorageCommands
                     CliTheme.WriteKeyValue("Connection", $"{config.ConnectionString} (from environment variable)");
                 else if (config.ConnectionString.StartsWith("file:", StringComparison.OrdinalIgnoreCase))
                     CliTheme.WriteKeyValue("Connection", $"{config.ConnectionString} (from secret file)");
+                else if (config.ConnectionString.StartsWith("vault:", StringComparison.OrdinalIgnoreCase))
+                    CliTheme.WriteKeyValue("Connection", $"{config.ConnectionString} (from HashiCorp Vault)");
                 else
                     CliTheme.WriteKeyValue("Connection", MaskConnectionString(config.ConnectionString) + " [yellow](inline — not recommended)[/]");
             }

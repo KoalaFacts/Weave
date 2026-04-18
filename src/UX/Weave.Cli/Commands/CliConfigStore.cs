@@ -39,6 +39,36 @@ internal static class CliConfigStore
 
     public static bool Exists() => File.Exists(ConfigPath);
 
+    private static string ResolveVaultSecret(string secretPath)
+    {
+        var vaultAddr = Environment.GetEnvironmentVariable("VAULT_ADDR")
+            ?? throw new InvalidOperationException(
+                "VAULT_ADDR environment variable is not set. Set it to your Vault server address.");
+
+        var vaultToken = Environment.GetEnvironmentVariable("VAULT_TOKEN")
+            ?? throw new InvalidOperationException(
+                "VAULT_TOKEN environment variable is not set. Set it to authenticate with Vault.");
+
+        using var httpClient = new HttpClient { BaseAddress = new Uri(vaultAddr) };
+        httpClient.DefaultRequestHeaders.Add("X-Vault-Token", vaultToken);
+
+        using var response = httpClient.GetAsync($"/v1/{secretPath}").GetAwaiter().GetResult();
+        response.EnsureSuccessStatusCode();
+
+        using var doc = System.Text.Json.JsonDocument.Parse(
+            response.Content.ReadAsStringAsync().GetAwaiter().GetResult());
+
+        var data = doc.RootElement.GetProperty("data");
+
+        if (data.TryGetProperty("data", out var nested) && nested.TryGetProperty("value", out var v2))
+            return v2.GetString() ?? throw new KeyNotFoundException($"Vault secret '{secretPath}' has no value.");
+
+        if (data.TryGetProperty("value", out var v1))
+            return v1.GetString() ?? throw new KeyNotFoundException($"Vault secret '{secretPath}' has no value.");
+
+        throw new KeyNotFoundException($"Vault secret '{secretPath}' not found or has no 'value' field.");
+    }
+
     /// <summary>
     /// Resolves a connection string reference to its actual value.
     /// Supported reference formats:
@@ -71,9 +101,8 @@ internal static class CliConfigStore
 
         if (reference.StartsWith("vault:", StringComparison.OrdinalIgnoreCase))
         {
-            throw new InvalidOperationException(
-                "Vault references require a running Weave server with the Vault plugin. "
-                + "Use env: or file: references for CLI configuration.");
+            var vaultPath = reference[6..].Trim();
+            return ResolveVaultSecret(vaultPath);
         }
 
         return reference;

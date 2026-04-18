@@ -70,6 +70,7 @@ internal static class InitCommand
                         .AddChoices(
                             "env      — environment variable (recommended, nothing stored to disk)",
                             "file     — read from a protected file on disk",
+                            "vault    — fetch from HashiCorp Vault at startup",
                             "inline   — enter now (stored in config, not recommended for production)"));
 
                 var method = secretMethod.Split(' ')[0].Trim();
@@ -116,6 +117,35 @@ internal static class InitCommand
                     else
                     {
                         CliTheme.WriteSuccess("Secret file found.");
+                    }
+                }
+                else if (method == "vault")
+                {
+                    var vaultPath = AnsiConsole.Prompt(
+                        new TextPrompt<string>("Vault secret path:")
+                            .Styled()
+                            .DefaultValue("secret/data/weave/connection"));
+
+                    connectionString = $"vault:{vaultPath}";
+
+                    var hasAddr = !string.IsNullOrWhiteSpace(Environment.GetEnvironmentVariable("VAULT_ADDR"));
+                    var hasToken = !string.IsNullOrWhiteSpace(Environment.GetEnvironmentVariable("VAULT_TOKEN"));
+
+                    if (hasAddr && hasToken)
+                    {
+                        CliTheme.WriteSuccess("VAULT_ADDR and VAULT_TOKEN are set.");
+                    }
+                    else
+                    {
+                        AnsiConsole.WriteLine();
+                        CliTheme.WriteInfo("Set these environment variables before starting Weave:");
+                        if (!hasAddr)
+                            CliTheme.WriteMuted("  export VAULT_ADDR=\"https://vault.example.com\"");
+                        if (!hasToken)
+                            CliTheme.WriteMuted("  export VAULT_TOKEN=\"hvs.your-token\"");
+                        AnsiConsole.WriteLine();
+                        CliTheme.WriteMuted("  Store your connection string in Vault:");
+                        CliTheme.WriteMuted($"  vault kv put {vaultPath.Replace("secret/data/", "secret/", StringComparison.Ordinal)} value=\"Host=...;Database=weave;...\"");
                     }
                 }
                 else
