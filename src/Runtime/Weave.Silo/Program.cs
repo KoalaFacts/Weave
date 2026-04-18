@@ -297,7 +297,7 @@ if (isLocalMode)
     app.Logger.LogInformation("Weave running in local mode — no external services required");
 }
 
-if (authOptions.Mode != ApiAuthMode.None)
+if (authOptions.Provider is not null)
     app.Logger.LogInformation("API authentication: {Mode}", authOptions.Mode);
 else
     app.Logger.LogInformation("API authentication: disabled (opt in via Weave:Auth:Mode)");

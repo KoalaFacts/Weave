@@ -11,6 +11,9 @@ internal sealed record CliConfig
     public int DefaultPort { get; init; } = WeavePorts.SiloHttp;
     public string Storage { get; init; } = "memory";
     public string? ConnectionString { get; init; }
+    public string AuthMode { get; init; } = "none";
+    public string? AuthSecret { get; init; }
+    public bool RequireHttps { get; init; }
 }
 
 internal static class CliConfigStore

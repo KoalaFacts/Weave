@@ -222,11 +222,12 @@ internal static class RunCommand
         var storageConn = workspaceStorage?.ConnectionString;
         var storageSchema = workspaceStorage?.Schema;
 
+        var cliConfig = CliConfigStore.Load();
+
         if (string.IsNullOrWhiteSpace(storageBackend))
         {
-            var config = CliConfigStore.Load();
-            storageBackend = config.Storage;
-            storageConn = CliConfigStore.ResolveConnectionString(config.ConnectionString);
+            storageBackend = cliConfig.Storage;
+            storageConn = CliConfigStore.ResolveConnectionString(cliConfig.ConnectionString);
         }
         else if (!string.IsNullOrWhiteSpace(storageConn))
         {
@@ -256,6 +257,18 @@ internal static class RunCommand
             if (!string.IsNullOrWhiteSpace(workspaceStorage?.Database))
                 startInfo.ArgumentList.Add($"--Weave:StorageDatabase={workspaceStorage.Database}");
         }
+
+        // Auth config from CLI settings
+        if (!string.IsNullOrWhiteSpace(cliConfig.AuthMode) && cliConfig.AuthMode != "none")
+        {
+            startInfo.ArgumentList.Add($"--Weave:Auth:Mode={cliConfig.AuthMode}");
+            var resolvedAuth = CliConfigStore.ResolveConnectionString(cliConfig.AuthSecret);
+            if (!string.IsNullOrWhiteSpace(resolvedAuth))
+                startInfo.ArgumentList.Add($"--Weave:Auth:Secret={resolvedAuth}");
+        }
+
+        if (cliConfig.RequireHttps)
+            startInfo.ArgumentList.Add("--Weave:RequireHttps=true");
 
         return Process.Start(startInfo);
     }

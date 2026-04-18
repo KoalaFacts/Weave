@@ -302,7 +302,43 @@ The export includes the workspace manifest, prompt files, skills, channels, user
 
 ## Security
 
-Security is not an add-on — it is the architecture. Every tool call passes through multiple layers before anything executes.
+Security is not an add-on — it is the architecture. Every layer is zero-trust by default.
+
+### API authentication
+
+Authentication is opt-in — local dev works without auth, production opts in via config. The auth layer is pluggable via the `IApiAuthProvider` interface.
+
+| Mode | Header | Use case |
+|------|--------|----------|
+| `none` | — | Local dev (default) |
+| `apikey` | `X-Api-Key: <key>` | Service-to-service, simple setups |
+| `bearer` | `Authorization: Bearer <token>` | OAuth2/OIDC integration |
+| *Custom* | Implement `IApiAuthProvider` | SAML, mTLS, custom identity providers |
+
+```jsonc
+// appsettings.json or via weave init
+{
+  "Weave": {
+    "Auth": {
+      "Mode": "apikey",
+      "Secret": "env:WEAVE_API_SECRET"  // never plaintext in config
+    },
+    "RequireHttps": true
+  }
+}
+```
+
+Secrets use the same `{provider}:{key}` reference syntax — `env:`, `file:`, `vault:`, or plain text for dev.
+
+### Audit logging
+
+Every API call is logged by default — method, path, status, caller identity, IP, duration. Audit data drives observability and feeds the self-improvement loop.
+
+```
+AUDIT POST /api/workspaces/ws-1/agents/coder/messages -> 200 | caller=apikey:a3f8c1e2*** ip=10.0.0.5 duration=342ms
+```
+
+Disable with `Weave:Audit:Disabled=true` (not recommended). Every tool call passes through multiple layers before anything executes.
 
 ### Capability tokens
 

@@ -222,13 +222,101 @@ internal static class InitCommand
                 siloPath = PromptSiloPath();
             }
 
+            // ── Step 4: Security ─────────────────────────────────────
+            AnsiConsole.WriteLine();
+            CliTheme.WriteSection("Step 4 · Security");
+            AnsiConsole.MarkupLine("API authentication protects your agents and data from unauthorized access.");
+            AnsiConsole.WriteLine();
+
+            var authChoice = AnsiConsole.Prompt(
+                new SelectionPrompt<string>()
+                    .Title("API authentication:")
+                    .Styled()
+                    .AddChoices(
+                        "none     — no auth, open access (local dev only)",
+                        "apikey   — require X-Api-Key header on every request",
+                        "bearer   — require Authorization: Bearer token on every request"));
+
+            var authMode = authChoice.Split(' ')[0].Trim();
+            string? authSecret = null;
+
+            if (authMode is "apikey" or "bearer")
+            {
+                var authSecretMethod = AnsiConsole.Prompt(
+                    new SelectionPrompt<string>()
+                        .Title("Where should the API secret come from?")
+                        .Styled()
+                        .AddChoices(
+                            "env      — environment variable",
+                            "file     — protected file on disk",
+                            "vault    — HashiCorp Vault",
+                            "generate — generate a random key now"));
+
+                var authMethod = authSecretMethod.Split(' ')[0].Trim();
+
+                if (authMethod == "env")
+                {
+                    authSecret = "env:WEAVE_API_SECRET";
+                    var exists = !string.IsNullOrWhiteSpace(Environment.GetEnvironmentVariable("WEAVE_API_SECRET"));
+                    if (exists)
+                        CliTheme.WriteSuccess("WEAVE_API_SECRET is set.");
+                    else
+                    {
+                        CliTheme.WriteInfo("Set before starting:");
+                        CliTheme.WriteMuted("  export WEAVE_API_SECRET=\"your-secret-key\"");
+                    }
+                }
+                else if (authMethod == "file")
+                {
+                    var defaultPath = Path.Combine(
+                        Environment.GetFolderPath(Environment.SpecialFolder.UserProfile),
+                        ".weave", "api.secret");
+                    var secretPath = AnsiConsole.Prompt(
+                        new TextPrompt<string>("Path to secret file:")
+                            .Styled()
+                            .DefaultValue(defaultPath));
+                    authSecret = $"file:{secretPath}";
+
+                    if (!File.Exists(secretPath))
+                    {
+                        CliTheme.WriteInfo("Create the file with your API secret:");
+                        CliTheme.WriteMuted($"  openssl rand -hex 32 > {secretPath}");
+                        CliTheme.WriteMuted($"  chmod 600 {secretPath}");
+                    }
+                }
+                else if (authMethod == "vault")
+                {
+                    var vaultPath = AnsiConsole.Prompt(
+                        new TextPrompt<string>("Vault secret path:")
+                            .Styled()
+                            .DefaultValue("secret/data/weave/api-key"));
+                    authSecret = $"vault:{vaultPath}";
+                }
+                else
+                {
+                    var generated = Convert.ToHexString(System.Security.Cryptography.RandomNumberGenerator.GetBytes(32)).ToLowerInvariant();
+                    authSecret = $"env:WEAVE_API_SECRET";
+                    CliTheme.WriteSuccess("Generated API key. Set it before starting:");
+                    CliTheme.WriteMuted($"  export WEAVE_API_SECRET=\"{generated}\"");
+                }
+            }
+
+            var requireHttps = false;
+            if (authMode is not "none")
+            {
+                requireHttps = AnsiConsole.Confirm("Require HTTPS?", defaultValue: false);
+            }
+
             // ── Save ─────────────────────────────────────────────────
             var config = new CliConfig
             {
                 SiloPath = siloPath,
                 DefaultPort = port,
                 Storage = storageKey,
-                ConnectionString = connectionString
+                ConnectionString = connectionString,
+                AuthMode = authMode,
+                AuthSecret = authSecret,
+                RequireHttps = requireHttps
             };
 
             CliConfigStore.Save(config);
@@ -238,6 +326,9 @@ internal static class InitCommand
             CliTheme.WriteKeyValue("Config saved to", "~/.weave/config.json");
             CliTheme.WriteKeyValue("Storage", storageKey);
             CliTheme.WriteKeyValue("Port", port.ToString(CultureInfo.InvariantCulture));
+            CliTheme.WriteKeyValue("Auth", authMode);
+            if (requireHttps)
+                CliTheme.WriteKeyValue("HTTPS", "enforced");
             if (siloPath is not null)
                 CliTheme.WriteKeyValue("Runtime", siloPath);
 
