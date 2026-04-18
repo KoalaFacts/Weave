@@ -148,6 +148,43 @@ Common test gotchas:
 2. Wire the target into `src/UX/Weave.Cli/Commands/PublishCommand.cs`.
 3. Add tests in `src/Deployment/Weave.Deploy.Tests/`.
 
+## CLI UX Philosophy
+
+Every CLI command must work in two modes:
+
+### Guided mode (zero arguments)
+When a user runs a command with no arguments, the CLI asks questions to fill in the gaps. Missing info is expected — resolve it by prompting, not by erroring. Help the user make the best choices with sensible defaults and clear descriptions.
+
+```bash
+# All of these should work with zero arguments:
+weave run                    # detect workspace or show list to pick from
+weave workspace new          # ask for name, pick preset interactively
+weave data export            # list workspaces, let user pick
+weave workspace up           # detect or pick workspace
+weave storage change         # pick backend, prompt for connection
+weave marketplace submit     # walk through name, description, category
+```
+
+### Advanced mode (all arguments)
+Power users and scripts pass all arguments to skip prompts:
+
+```bash
+weave run my-app --port 8080
+weave workspace new my-app --preset coding-assistant
+weave data export my-app -o backup.json
+weave storage change postgresql --connection "Host=..."
+```
+
+### Rules for new commands
+
+1. All positional arguments must be optional (`Arity = ArgumentArity.ZeroOrOne`)
+2. When a required value is missing, prompt for it — never print "error: missing argument"
+3. Selection prompts (`SelectionPrompt`) for lists, text prompts for free-form input
+4. Always provide sensible defaults in prompts (`.DefaultValue(...)`)
+5. When an operation might conflict (e.g. database already exists), offer choices: stop, override, or fix
+6. Use `CliTheme.WriteInfo/WriteSuccess/WriteWarning` for feedback, not raw `Console.WriteLine`
+7. Show next steps after completion (`CliTheme.WriteMuted`)
+
 ## Security Notes
 
 - Never add secrets to source control.

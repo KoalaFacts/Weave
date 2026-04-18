@@ -22,15 +22,36 @@ internal static class DataCommands
 
     private static Command CreateExportCommand()
     {
-        var workspaceArg = new Argument<string>("workspace") { Description = "Workspace name" };
+        var workspaceArg = new Argument<string?>("workspace")
+        {
+            Description = "Workspace name",
+            Arity = ArgumentArity.ZeroOrOne
+        };
         workspaceArg.CompletionSources.Add(CliCompletions.CompleteWorkspaceNames);
         var outputOption = new Option<string?>("--output", "-o") { Description = "Output file path (defaults to {workspace}-export.json)" };
 
         var cmd = new Command("export", "Export a complete workspace snapshot to a portable JSON file") { workspaceArg, outputOption };
         cmd.SetAction(async (parseResult, cancellationToken) =>
         {
-            var workspace = parseResult.GetValue(workspaceArg)!;
+            var workspace = parseResult.GetValue(workspaceArg);
             var output = parseResult.GetValue(outputOption);
+
+            // Guided mode: list workspaces and let user pick
+            if (string.IsNullOrWhiteSpace(workspace))
+            {
+                var all = WorkspaceRegistry.GetAll();
+                if (all.Count == 0)
+                {
+                    CliTheme.WriteError("No workspaces found. Create one first with: weave workspace new");
+                    return 1;
+                }
+
+                workspace = AnsiConsole.Prompt(
+                    new SelectionPrompt<string>()
+                        .Title("Which workspace would you like to export?")
+                        .Styled()
+                        .AddChoices(all.Keys));
+            }
 
             var manifestPath = ManifestResolver.Resolve(workspace);
             if (manifestPath is null)
@@ -154,14 +175,43 @@ internal static class DataCommands
 
     private static Command CreateImportCommand()
     {
-        var fileArg = new Argument<string>("file") { Description = "Export file to import" };
+        var fileArg = new Argument<string?>("file")
+        {
+            Description = "Export file to import",
+            Arity = ArgumentArity.ZeroOrOne
+        };
         var workspaceOption = new Option<string?>("--workspace") { Description = "Override workspace name" };
 
         var cmd = new Command("import", "Import a workspace from an export file") { fileArg, workspaceOption };
         cmd.SetAction(async (parseResult, cancellationToken) =>
         {
-            var filePath = parseResult.GetValue(fileArg)!;
+            var filePath = parseResult.GetValue(fileArg);
             var overrideName = parseResult.GetValue(workspaceOption);
+
+            // Guided mode: find export files in current directory
+            if (string.IsNullOrWhiteSpace(filePath))
+            {
+                var exportFiles = Directory.GetFiles(".", "*-export.json")
+                    .Concat(Directory.GetFiles(".", "*.export.json"))
+                    .Concat(Directory.GetFiles(".", "*-backup.json"))
+                    .Distinct()
+                    .ToList();
+
+                if (exportFiles.Count > 0)
+                {
+                    filePath = AnsiConsole.Prompt(
+                        new SelectionPrompt<string>()
+                            .Title("Which export file would you like to import?")
+                            .Styled()
+                            .AddChoices(exportFiles));
+                }
+                else
+                {
+                    filePath = AnsiConsole.Prompt(
+                        new TextPrompt<string>("Path to export file:")
+                            .Styled());
+                }
+            }
 
             if (!File.Exists(filePath))
             {

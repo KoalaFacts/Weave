@@ -1,6 +1,7 @@
 using System.CommandLine;
 using System.Diagnostics;
 using System.Globalization;
+using Spectre.Console;
 using Weave.Shared;
 using Weave.Workspaces.Manifest;
 
@@ -10,7 +11,11 @@ internal static class WorkspaceUpCommand
 {
     public static Command Create()
     {
-        var nameArg = new Argument<string>("name") { Description = "Workspace name" };
+        var nameArg = new Argument<string?>("name")
+        {
+            Description = "Workspace name",
+            Arity = ArgumentArity.ZeroOrOne
+        };
         nameArg.CompletionSources.Add(CliCompletions.CompleteWorkspaceNames);
         var targetOption = new Option<string>("--target")
         {
@@ -22,8 +27,34 @@ internal static class WorkspaceUpCommand
         var cmd = new Command("up", "Start a workspace") { nameArg, targetOption };
         cmd.SetAction(async (parseResult, cancellationToken) =>
         {
-            var name = parseResult.GetValue(nameArg)!;
+            var name = parseResult.GetValue(nameArg);
             var target = parseResult.GetValue(targetOption)!;
+
+            // Guided mode: pick a workspace when none specified
+            if (string.IsNullOrWhiteSpace(name))
+            {
+                var manifestHere = ManifestResolver.Resolve(null);
+                if (manifestHere is not null)
+                {
+                    name = Path.GetFileName(Path.GetDirectoryName(Path.GetFullPath(manifestHere)));
+                }
+                else
+                {
+                    var all = WorkspaceRegistry.GetAll();
+                    if (all.Count == 0)
+                    {
+                        CliTheme.WriteError("No workspaces found. Create one first:");
+                        CliTheme.WriteMuted("  weave workspace new");
+                        return 1;
+                    }
+
+                    name = AnsiConsole.Prompt(
+                        new SelectionPrompt<string>()
+                            .Title("Which workspace would you like to start?")
+                            .Styled()
+                            .AddChoices(all.Keys));
+                }
+            }
 
             var manifestPath = ManifestResolver.Resolve(name);
             if (manifestPath is null)

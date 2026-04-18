@@ -30,14 +30,65 @@ internal static class RunCommand
             var port = parseResult.GetValue(portOption);
 
             var manifestPath = ManifestResolver.Resolve(name);
+
+            // Guided mode: no workspace found — help the user pick or create one
             if (manifestPath is null)
             {
-                if (name is null)
-                    CliTheme.WriteError("No workspace.json found in the current directory.");
+                CliTheme.WriteBanner();
+
+                var existing = WorkspaceRegistry.GetAll();
+                if (existing.Count > 0)
+                {
+                    CliTheme.WriteInfo(name is null
+                        ? "No workspace.json found in the current directory."
+                        : $"Workspace '{name}' not found.");
+                    AnsiConsole.WriteLine();
+
+                    var choices = existing.Select(w => w.Key).ToList();
+                    choices.Add("Create a new workspace");
+
+                    var picked = AnsiConsole.Prompt(
+                        new SelectionPrompt<string>()
+                            .Title("Which workspace would you like to run?")
+                            .Styled()
+                            .AddChoices(choices));
+
+                    if (picked == "Create a new workspace")
+                    {
+                        CliTheme.WriteMuted("  Run: weave workspace new <name>");
+                        return 0;
+                    }
+
+                    name = picked;
+                    manifestPath = ManifestResolver.Resolve(name);
+                }
                 else
-                    CliTheme.WriteError($"No workspace.json found for '{name}'.");
-                CliTheme.WriteMuted("  Create one with: weave workspace new <name>");
-                return 1;
+                {
+                    CliTheme.WriteInfo("No workspaces found. Let's create one.");
+                    AnsiConsole.WriteLine();
+
+                    var wsName = AnsiConsole.Prompt(
+                        new TextPrompt<string>("Workspace name:")
+                            .Styled()
+                            .DefaultValue("my-workspace"));
+
+                    var preset = AnsiConsole.Prompt(
+                        new SelectionPrompt<string>()
+                            .Title("Choose a preset:")
+                            .Styled()
+                            .AddChoices([.. WorkspacePresets.All.Keys]));
+
+                    CliTheme.WriteMuted($"  Creating workspace '{wsName}' with preset '{preset}'...");
+                    CliTheme.WriteMuted($"  Run: weave workspace new {wsName} --preset {preset}");
+                    CliTheme.WriteMuted($"  Then: weave run {wsName}");
+                    return 0;
+                }
+
+                if (manifestPath is null)
+                {
+                    CliTheme.WriteError($"Workspace '{name}' exists but has no workspace.json.");
+                    return 1;
+                }
             }
 
             CliTheme.WriteBanner();

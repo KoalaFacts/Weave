@@ -9,17 +9,34 @@ internal static class WorkspaceNewCommand
 {
     public static Command Create()
     {
-        var nameArg = new Argument<string>("name") { Description = "Workspace name" };
-        var presetOption = new Option<string?>("--preset") { Description = "Use a built-in preset (starter, coding-assistant, research, multi-agent)" };
+        var nameArg = new Argument<string?>("name")
+        {
+            Description = "Workspace name",
+            Arity = ArgumentArity.ZeroOrOne
+        };
+        var presetOption = new Option<string?>("--preset") { Description = "Use a built-in preset (starter, coding-assistant, research, multi-agent, support-team)" };
         presetOption.CompletionSources.Add(CliCompletions.CompletePresetNames);
         var pathOption = new Option<string?>("--path") { Description = "Folder path for the workspace (defaults to ./{name})" };
 
         var cmd = new Command("new", "Create a new workspace") { nameArg, presetOption, pathOption };
         cmd.SetAction(async (parseResult, cancellationToken) =>
         {
-            var name = parseResult.GetValue(nameArg)!;
+            var name = parseResult.GetValue(nameArg);
             var preset = parseResult.GetValue(presetOption);
             var explicitPath = parseResult.GetValue(pathOption);
+
+            // Guided mode: prompt for missing name
+            if (string.IsNullOrWhiteSpace(name))
+            {
+                CliTheme.WriteBanner();
+                CliTheme.WriteInfo("Let's create a new workspace.");
+                AnsiConsole.WriteLine();
+
+                name = AnsiConsole.Prompt(
+                    new TextPrompt<string>("Workspace name:")
+                        .Styled()
+                        .DefaultValue("my-workspace"));
+            }
 
             string model;
             List<string> tools;
