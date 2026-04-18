@@ -50,6 +50,7 @@ static void ConfigureGrainStorage(ISiloBuilder siloBuilder, IConfiguration confi
 {
     var storage = configuration["Weave:Storage"]?.ToLowerInvariant() ?? "memory";
     var schema = configuration["Weave:StorageSchema"];
+    var database = configuration["Weave:StorageDatabase"];
 
     switch (storage)
     {
@@ -65,7 +66,9 @@ static void ConfigureGrainStorage(ISiloBuilder siloBuilder, IConfiguration confi
         case "sqlserver":
             var sqlConn = configuration.GetConnectionString("SqlServer")
                 ?? throw new InvalidOperationException("ConnectionStrings:SqlServer is required when Weave:Storage is 'sqlserver'.");
-            if (!string.IsNullOrWhiteSpace(schema))
+            if (!string.IsNullOrWhiteSpace(database))
+                sqlConn = AppendIfMissing(sqlConn, $"Database={database}");
+            else if (!string.IsNullOrWhiteSpace(schema))
                 sqlConn = AppendIfMissing(sqlConn, $"Initial Catalog={schema}");
             siloBuilder.AddAdoNetGrainStorageAsDefault(options =>
             {
@@ -82,6 +85,8 @@ static void ConfigureGrainStorage(ISiloBuilder siloBuilder, IConfiguration confi
         case "postgresql" or "postgres":
             var pgConn = configuration.GetConnectionString("PostgreSql")
                 ?? throw new InvalidOperationException("ConnectionStrings:PostgreSql is required when Weave:Storage is 'postgresql'.");
+            if (!string.IsNullOrWhiteSpace(database))
+                pgConn = AppendIfMissing(pgConn, $"Database={database}");
             if (!string.IsNullOrWhiteSpace(schema))
                 pgConn = AppendIfMissing(pgConn, $"SearchPath={schema}");
             siloBuilder.AddAdoNetGrainStorageAsDefault(options =>

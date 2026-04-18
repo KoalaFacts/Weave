@@ -197,6 +197,9 @@ internal static class RunCommand
 
             if (!string.IsNullOrWhiteSpace(storageSchema))
                 startInfo.ArgumentList.Add($"--Weave:StorageSchema={storageSchema}");
+
+            if (!string.IsNullOrWhiteSpace(workspaceStorage?.Database))
+                startInfo.ArgumentList.Add($"--Weave:StorageDatabase={workspaceStorage.Database}");
         }
 
         return Process.Start(startInfo);

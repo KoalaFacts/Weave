@@ -55,6 +55,8 @@ internal static class WorkspaceStorageCommands
 
                 if (!string.IsNullOrWhiteSpace(storage.Schema))
                     CliTheme.WriteKeyValue("Schema", storage.Schema);
+                if (!string.IsNullOrWhiteSpace(storage.Database))
+                    CliTheme.WriteKeyValue("Database", storage.Database);
 
                 if (!string.IsNullOrWhiteSpace(storage.ConnectionString))
                     CliTheme.WriteKeyValue("Connection", MaskPassword(storage.ConnectionString));
@@ -77,15 +79,17 @@ internal static class WorkspaceStorageCommands
         };
         var connectionOption = new Option<string?>("--connection") { Description = "Connection string" };
         var schemaOption = new Option<string?>("--schema") { Description = "Database schema for isolation (e.g. workspace name)" };
+        var databaseOption = new Option<string?>("--database") { Description = "Database name for database isolation mode" };
         var isolationOption = new Option<string?>("--isolation") { Description = "Isolation mode: schema (share db, separate schema) or database (separate db)" };
 
-        var cmd = new Command("change", "Change workspace storage backend") { workspaceArg, backendArg, connectionOption, schemaOption, isolationOption };
+        var cmd = new Command("change", "Change workspace storage backend") { workspaceArg, backendArg, connectionOption, schemaOption, databaseOption, isolationOption };
         cmd.SetAction(async (parseResult, cancellationToken) =>
         {
             var workspace = parseResult.GetValue(workspaceArg)!;
             var backend = parseResult.GetValue(backendArg);
             var connectionStr = parseResult.GetValue(connectionOption);
             var schema = parseResult.GetValue(schemaOption);
+            var database = parseResult.GetValue(databaseOption);
             var isolationStr = parseResult.GetValue(isolationOption);
 
             var manifestPath = ManifestResolver.Resolve(workspace);
@@ -169,13 +173,20 @@ internal static class WorkspaceStorageCommands
                         : StorageIsolation.Schema;
                 }
 
-                // Default schema to workspace name
                 if (isolation == StorageIsolation.Schema && string.IsNullOrWhiteSpace(schema))
                 {
                     schema = AnsiConsole.Prompt(
                         new TextPrompt<string>("Schema name:")
                             .Styled()
                             .DefaultValue(workspace));
+                }
+
+                if (isolation == StorageIsolation.Database && string.IsNullOrWhiteSpace(database))
+                {
+                    database = AnsiConsole.Prompt(
+                        new TextPrompt<string>("Database name:")
+                            .Styled()
+                            .DefaultValue($"weave_{workspace}"));
                 }
             }
 
@@ -192,6 +203,7 @@ internal static class WorkspaceStorageCommands
                     Backend = backend,
                     ConnectionString = connectionStr,
                     Schema = schema,
+                    Database = database,
                     Isolation = isolation
                 };
             }
@@ -214,6 +226,8 @@ internal static class WorkspaceStorageCommands
                 CliTheme.WriteSuccess($"Workspace '{workspace}' storage set to {backend}.");
                 if (isolation == StorageIsolation.Schema && !string.IsNullOrWhiteSpace(schema))
                     CliTheme.WriteKeyValue("Schema", schema);
+                if (isolation == StorageIsolation.Database && !string.IsNullOrWhiteSpace(database))
+                    CliTheme.WriteKeyValue("Database", database);
                 CliTheme.WriteKeyValue("Isolation", isolation.ToString().ToLowerInvariant());
             }
 
