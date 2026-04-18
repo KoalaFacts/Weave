@@ -40,7 +40,11 @@ public sealed class BearerAuthProvider(string resolvedSecret) : IApiAuthProvider
     }
 }
 
-public sealed class ApiAuthMiddleware(RequestDelegate next, ApiAuthOptions options, ILogger<ApiAuthMiddleware> logger)
+public sealed class ApiAuthMiddleware(
+    RequestDelegate next,
+    Weave.Shared.Plugins.PluginServiceBroker broker,
+    ApiAuthOptions options,
+    ILogger<ApiAuthMiddleware> logger)
 {
     private static readonly HashSet<string> BypassPaths = new(StringComparer.OrdinalIgnoreCase)
     {
@@ -52,7 +56,9 @@ public sealed class ApiAuthMiddleware(RequestDelegate next, ApiAuthOptions optio
 
     public async Task InvokeAsync(HttpContext context)
     {
-        if (options.Provider is null)
+        var provider = broker.Get<IApiAuthProvider>() ?? options.Provider;
+
+        if (provider is null)
         {
             await next(context);
             return;
@@ -72,7 +78,7 @@ public sealed class ApiAuthMiddleware(RequestDelegate next, ApiAuthOptions optio
             return;
         }
 
-        var authenticated = await options.Provider.AuthenticateAsync(context);
+        var authenticated = await provider.AuthenticateAsync(context);
 
         if (!authenticated)
         {
@@ -85,7 +91,7 @@ public sealed class ApiAuthMiddleware(RequestDelegate next, ApiAuthOptions optio
             {
                 Status = 401,
                 Title = "Unauthorized",
-                Detail = options.Provider.UnauthorizedMessage
+                Detail = provider.UnauthorizedMessage
             }, SiloApiJsonContext.Default.ProblemDetails);
             return;
         }
@@ -142,12 +148,7 @@ public static class ApiAuthExtensions
 {
     public static IApplicationBuilder UseApiAuth(this IApplicationBuilder app)
     {
-        var options = app.ApplicationServices.GetRequiredService<ApiAuthOptions>();
-        if (options.Provider is not null)
-        {
-            app.UseMiddleware<ApiAuthMiddleware>();
-        }
-
+        app.UseMiddleware<ApiAuthMiddleware>();
         return app;
     }
 }

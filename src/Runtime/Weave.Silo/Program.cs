@@ -216,6 +216,10 @@ builder.Services.AddSingleton<IPluginConnector>(sp =>
         sp.GetRequiredService<IHttpClientFactory>(),
         sp.GetRequiredService<ILoggerFactory>()));
 builder.Services.AddSingleton<IPluginConnector>(sp =>
+    new AuthPluginConnector(
+        sp.GetRequiredService<PluginServiceBroker>(),
+        sp.GetRequiredService<ILoggerFactory>()));
+builder.Services.AddSingleton<IPluginConnector>(sp =>
     new WebhookPluginConnector(
         sp.GetRequiredService<PluginServiceBroker>(),
         sp.GetRequiredService<IHttpClientFactory>(),
