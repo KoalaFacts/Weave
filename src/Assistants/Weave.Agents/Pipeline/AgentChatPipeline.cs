@@ -40,6 +40,9 @@ public sealed class AgentChatPipeline(
         state.LastActive = userEntry.Timestamp;
 
         var prompt = await GetSystemPromptAsync(state);
+        prompt = await EnrichWithUserContextAsync(state, message, prompt);
+        prompt = await EnrichWithSkillsAsync(state, message, prompt);
+
         var chatMessages = new List<ChatMessage>(state.History.Count + 1);
         if (!string.IsNullOrWhiteSpace(prompt))
             chatMessages.Add(new ChatMessage(ChatRole.System, prompt));
@@ -138,5 +141,53 @@ public sealed class AgentChatPipeline(
         var invocation = ToolInvocationBuilder.FromInput(toolName, input);
         var result = await toolGrain.InvokeAsync(invocation, resolution.Token);
         return result.Success ? result.Output : $"Tool '{toolName}' failed: {result.Error}";
+    }
+
+    private async Task<string?> EnrichWithUserContextAsync(AgentState state, AgentMessage message, string? prompt)
+    {
+        if (string.IsNullOrWhiteSpace(message.UserId))
+            return prompt;
+
+        try
+        {
+            var userGrain = grainFactory.GetGrain<IUserModelGrain>($"{state.WorkspaceId}/{message.UserId}");
+            var summary = await userGrain.GetContextSummaryAsync();
+            if (string.IsNullOrWhiteSpace(summary))
+                return prompt;
+
+            return string.IsNullOrWhiteSpace(prompt)
+                ? $"[User context]\n{summary}"
+                : $"{prompt}\n\n[User context]\n{summary}";
+        }
+        catch (Exception ex)
+        {
+            logger.LogWarning(ex, "Failed to retrieve user context for {UserId}", message.UserId);
+            return prompt;
+        }
+    }
+
+    private async Task<string?> EnrichWithSkillsAsync(AgentState state, AgentMessage message, string? prompt)
+    {
+        try
+        {
+            var skillGrain = grainFactory.GetGrain<ISkillMemoryGrain>(state.WorkspaceId.ToString());
+            var results = await skillGrain.SearchAsync(message.Content, 3);
+            if (results.Count == 0)
+                return prompt;
+
+            var skillSection = string.Join("\n\n", results.Select(r =>
+                $"### {r.Skill.Title} (relevance: {r.RelevanceScore:F1})\n{r.Skill.Description}\nSteps: {string.Join(" -> ", r.Skill.Steps.OrderBy(s => s.Order).Select(s => s.Action))}"));
+
+            var block = $"[Relevant skills from memory]\n{skillSection}";
+
+            return string.IsNullOrWhiteSpace(prompt)
+                ? block
+                : $"{prompt}\n\n{block}";
+        }
+        catch (Exception ex)
+        {
+            logger.LogWarning(ex, "Failed to retrieve skills for agent {AgentName}", state.AgentName);
+            return prompt;
+        }
     }
 }

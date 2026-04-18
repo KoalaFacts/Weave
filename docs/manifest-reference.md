@@ -35,6 +35,7 @@ A workspace manifest is a JSONC file that defines everything about your Weave wo
 | `workspace` | object | No | Workspace-level configuration |
 | `agents` | object | No | Dictionary of agent definitions |
 | `tools` | object | No | Dictionary of tool definitions |
+| `channels` | object | No | Dictionary of messaging channel definitions |
 | `targets` | object | No | Dictionary of deployment targets |
 | `hooks` | object | No | Lifecycle hooks |
 | `plugins` | object | No | Plugin configurations |
@@ -68,6 +69,11 @@ Controls isolation, networking, filesystem mounts, and secret management.
       "address": "https://vault.example.com",
       "mount": "weave/prod"
     }
+  },
+  // Override global storage for this workspace
+  "storage": {
+    "backend": "postgresql",
+    "connection_string": "Host=db.example.com;Database=weave;Username=youruser;Password=yourpassword"
   }
 }
 ```
@@ -82,6 +88,8 @@ Controls isolation, networking, filesystem mounts, and secret management.
 | `secrets.provider` | string | `"env"` | `env` or `vault` |
 | `secrets.vault.address` | string | — | Vault server address |
 | `secrets.vault.mount` | string | — | Vault mount path |
+| `storage.backend` | string | — | Override global storage (`memory`, `sqlite`, `postgresql`, `sqlserver`, `redis`) |
+| `storage.connection_string` | string | — | Connection string for this workspace's storage |
 
 ---
 
@@ -260,6 +268,82 @@ Each key is the tool name. The `type` field determines which configuration block
 
 ---
 
+## channels
+
+Each key is the channel name. Channels connect your agents to external messaging platforms so users can interact with agents where they already are.
+
+```jsonc
+"channels": {
+  "support-slack": {
+    "type": "slack",
+    "target_agent": "support-bot",
+    "config": {
+      "webhook_url": "https://hooks.slack.com/services/T00/B00/xxx"
+    }
+  },
+  "team-discord": {
+    "type": "discord",
+    "target_agent": "assistant",
+    "config": {
+      "webhook_url": "https://discord.com/api/webhooks/123/abc"
+    }
+  },
+  "alerts-telegram": {
+    "type": "telegram",
+    "target_agent": "monitor",
+    "config": {
+      "bot_token": "${secrets.telegram_bot_token}",
+      "chat_id": "-100123456789"
+    }
+  },
+  "notifications-teams": {
+    "type": "teams",
+    "target_agent": "notifier",
+    "config": {
+      "webhook_url": "https://outlook.office.com/webhook/..."
+    }
+  },
+  "email-relay": {
+    "type": "email",
+    "target_agent": "support-bot",
+    "config": {
+      "relay_url": "https://relay.example.com/send",
+      "to": "support@example.com",
+      "subject": "Agent Response"
+    }
+  }
+}
+```
+
+| Field | Type | Default | Description |
+|-------|------|---------|-------------|
+| `type` | string | **Required** | `slack`, `discord`, `telegram`, `teams`, or `email` |
+| `target_agent` | string | — | Agent name to route messages to. If not set, routing rules apply |
+| `config` | object | `{}` | Channel-specific configuration (see below) |
+| `enabled` | bool | `true` | Enable or disable this channel |
+
+### Channel config by type
+
+| Type | Required config | Optional config |
+|------|----------------|-----------------|
+| `slack` | `webhook_url` | — |
+| `discord` | `webhook_url` | — |
+| `telegram` | `bot_token`, `chat_id` | — |
+| `teams` | `webhook_url` | — |
+| `email` | `relay_url`, `to` | `subject` |
+
+### How channels work
+
+1. External messages arrive at `POST /api/workspaces/{workspaceId}/channels/inbound`
+2. The channel gateway looks up the channel config by ID
+3. Routes to `target_agent` (or applies routing rules)
+4. Forwards the message to the agent's `SendAsync` — including skill memory enrichment and user modeling
+5. Returns the agent's response as an `OutboundMessage`
+
+The channel gateway also passes the sender's ID as a `UserId`, enabling automatic user modeling for channel users.
+
+---
+
 ## targets
 
 Each key is the target name. Targets define where and how a workspace runs.
@@ -410,3 +494,5 @@ The manifest is validated when you run `weave workspace validate`:
 - If an agent has a `heartbeat`, the `cron` field is required
 - Each target must have a `runtime`
 - Each plugin must have a `type`
+- Each channel must have a `type` (`slack`, `discord`, `telegram`, `teams`, or `email`)
+- If a channel has a `target_agent`, it must reference an agent name that exists in the `agents` section

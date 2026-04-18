@@ -13,6 +13,7 @@ using Weave.Shared.Lifecycle;
 using Weave.Shared.Plugins;
 using Weave.Silo.Api;
 using Weave.Silo.Plugins;
+using Weave.Silo.Security;
 using Weave.Tools.Connectors;
 using Weave.Tools.Discovery;
 using Weave.Workspaces.Models;
@@ -36,12 +37,100 @@ if (isLocalMode)
     builder.Services.AddOrleans(siloBuilder =>
     {
         siloBuilder.UseLocalhostClustering();
-        siloBuilder.AddMemoryGrainStorageAsDefault();
+        ConfigureGrainStorage(siloBuilder, builder.Configuration);
     });
 }
 else
 {
     builder.UseOrleans();
+}
+
+// Configures grain storage based on Weave:Storage setting.
+// Supported values: "memory" (default), "sqlite", "redis", "sqlserver", "postgresql"
+static void ConfigureGrainStorage(ISiloBuilder siloBuilder, IConfiguration configuration)
+{
+    var storage = configuration["Weave:Storage"]?.ToLowerInvariant() ?? "memory";
+    var schema = configuration["Weave:StorageSchema"];
+    var database = configuration["Weave:StorageDatabase"];
+
+    switch (storage)
+    {
+        case "sqlite":
+            var sqliteConn = configuration.GetConnectionString("Sqlite")
+                ?? DefaultSqlitePath();
+            siloBuilder.AddAdoNetGrainStorageAsDefault(options =>
+            {
+                options.ConnectionString = sqliteConn;
+                options.Invariant = "Microsoft.Data.Sqlite";
+            });
+            break;
+        case "sqlserver":
+            var sqlConn = configuration.GetConnectionString("SqlServer")
+                ?? throw new InvalidOperationException("ConnectionStrings:SqlServer is required when Weave:Storage is 'sqlserver'.");
+            if (!string.IsNullOrWhiteSpace(database))
+                sqlConn = AppendIfMissing(sqlConn, $"Database={database}");
+            else if (!string.IsNullOrWhiteSpace(schema))
+                sqlConn = AppendIfMissing(sqlConn, $"Initial Catalog={schema}");
+            siloBuilder.AddAdoNetGrainStorageAsDefault(options =>
+            {
+                options.ConnectionString = sqlConn;
+                options.Invariant = "Microsoft.Data.SqlClient";
+            });
+            siloBuilder.UseAdoNetClustering(options =>
+            {
+                options.ConnectionString = sqlConn;
+                options.Invariant = "Microsoft.Data.SqlClient";
+            });
+            break;
+
+        case "postgresql" or "postgres":
+            var pgConn = configuration.GetConnectionString("PostgreSql")
+                ?? throw new InvalidOperationException("ConnectionStrings:PostgreSql is required when Weave:Storage is 'postgresql'.");
+            if (!string.IsNullOrWhiteSpace(database))
+                pgConn = AppendIfMissing(pgConn, $"Database={database}");
+            if (!string.IsNullOrWhiteSpace(schema))
+                pgConn = AppendIfMissing(pgConn, $"SearchPath={schema}");
+            siloBuilder.AddAdoNetGrainStorageAsDefault(options =>
+            {
+                options.ConnectionString = pgConn;
+                options.Invariant = "Npgsql";
+            });
+            siloBuilder.UseAdoNetClustering(options =>
+            {
+                options.ConnectionString = pgConn;
+                options.Invariant = "Npgsql";
+            });
+            break;
+
+        case "redis":
+            var redisConn = configuration.GetConnectionString("Redis")
+                ?? "localhost:6379";
+            siloBuilder.AddRedisGrainStorageAsDefault(options =>
+            {
+                options.ConfigurationOptions = StackExchange.Redis.ConfigurationOptions.Parse(redisConn);
+            });
+            break;
+
+        default:
+            siloBuilder.AddMemoryGrainStorageAsDefault();
+            break;
+    }
+}
+
+static string AppendIfMissing(string connectionString, string kvPair)
+{
+    var key = kvPair.Split('=')[0];
+    if (connectionString.Contains(key, StringComparison.OrdinalIgnoreCase))
+        return connectionString;
+    return connectionString.TrimEnd(';') + ";" + kvPair;
+}
+
+static string DefaultSqlitePath()
+{
+    var weaveHome = Path.Combine(
+        Environment.GetFolderPath(Environment.SpecialFolder.UserProfile), ".weave");
+    Directory.CreateDirectory(weaveHome);
+    return $"Data Source={Path.Combine(weaveHome, "weave.db")}";
 }
 
 // Shared kernel services
@@ -90,6 +179,18 @@ builder.Services.AddSingleton<IAgentCostLedger, AgentCostLedger>();
 builder.Services.AddSingleton<IAgentChatClientFactory, AgentChatClientFactory>();
 builder.Services.AddTransient<IAgentChatPipeline, AgentChatPipeline>();
 
+// Channel adapters
+builder.Services.AddHttpClient<Weave.Silo.Channels.SlackChannelAdapter>();
+builder.Services.AddSingleton<Weave.Agents.Channels.IChannelAdapter>(sp => sp.GetRequiredService<Weave.Silo.Channels.SlackChannelAdapter>());
+builder.Services.AddHttpClient<Weave.Silo.Channels.DiscordChannelAdapter>();
+builder.Services.AddSingleton<Weave.Agents.Channels.IChannelAdapter>(sp => sp.GetRequiredService<Weave.Silo.Channels.DiscordChannelAdapter>());
+builder.Services.AddHttpClient<Weave.Silo.Channels.TelegramChannelAdapter>();
+builder.Services.AddSingleton<Weave.Agents.Channels.IChannelAdapter>(sp => sp.GetRequiredService<Weave.Silo.Channels.TelegramChannelAdapter>());
+builder.Services.AddHttpClient<Weave.Silo.Channels.TeamsChannelAdapter>();
+builder.Services.AddSingleton<Weave.Agents.Channels.IChannelAdapter>(sp => sp.GetRequiredService<Weave.Silo.Channels.TeamsChannelAdapter>());
+builder.Services.AddHttpClient<Weave.Silo.Channels.EmailChannelAdapter>();
+builder.Services.AddSingleton<Weave.Agents.Channels.IChannelAdapter>(sp => sp.GetRequiredService<Weave.Silo.Channels.EmailChannelAdapter>());
+
 // Tool connectors and discovery
 builder.Services.AddSingleton<IToolConnector, McpToolConnector>();
 builder.Services.AddSingleton<IToolConnector, CliToolConnector>();
@@ -119,14 +220,31 @@ builder.Services.AddSingleton<IPluginConnector>(sp =>
         sp.GetRequiredService<IHttpClientFactory>(),
         sp.GetRequiredService<ILoggerFactory>()));
 builder.Services.AddSingleton<IPluginConnector>(sp =>
+    new AuthPluginConnector(
+        sp.GetRequiredService<PluginServiceBroker>(),
+        sp.GetRequiredService<ILoggerFactory>()));
+builder.Services.AddSingleton<IPluginConnector>(sp =>
     new WebhookPluginConnector(
         sp.GetRequiredService<PluginServiceBroker>(),
         sp.GetRequiredService<IHttpClientFactory>(),
         sp.GetRequiredService<ILoggerFactory>()));
 builder.Services.AddSingleton<IPluginRegistry, PluginRegistry>();
+
+// API security — opt-in authentication and audit logging
+var authOptions = ApiAuthOptions.FromConfiguration(builder.Configuration);
+builder.Services.AddSingleton(authOptions);
+var auditOptions = AuditOptions.FromConfiguration(builder.Configuration);
+builder.Services.AddSingleton(auditOptions);
+
 builder.Services.AddOpenApi();
 
 var app = builder.Build();
+
+if (builder.Configuration.GetValue<bool>("Weave:RequireHttps"))
+    app.UseHttpsRedirection();
+
+app.UseAuditLog();
+app.UseApiAuth();
 
 app.UseExceptionHandler(error => error.Run(async context =>
 {
@@ -187,6 +305,17 @@ if (isLocalMode)
     app.Logger.LogInformation("Weave running in local mode — no external services required");
 }
 
+if (authOptions.Provider is not null)
+    app.Logger.LogInformation("API authentication: {Mode}", authOptions.Mode);
+else
+    app.Logger.LogInformation("API authentication: disabled (opt in via Weave:Auth:Mode)");
+
+if (auditOptions.Enabled)
+    app.Logger.LogInformation("Audit logging: enabled");
+
+if (builder.Configuration.GetValue<bool>("Weave:RequireHttps"))
+    app.Logger.LogInformation("HTTPS enforcement: enabled");
+
 app.MapDefaultEndpoints();
 
 // OpenAPI + Scalar
@@ -198,5 +327,10 @@ app.MapWorkspaceEndpoints();
 app.MapAgentEndpoints();
 app.MapToolEndpoints();
 app.MapPluginEndpoints();
+app.MapSkillEndpoints();
+app.MapChannelEndpoints();
+app.MapUserEndpoints();
+app.MapMarketplaceEndpoints();
+app.MapTemplateEndpoints();
 
 app.Run();

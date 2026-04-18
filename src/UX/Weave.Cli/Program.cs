@@ -1,5 +1,19 @@
 using System.CommandLine;
 using Weave.Cli.Commands;
+using Weave.Cli.Tui;
+
+// Zero-args, interactive terminal → launch the TUI.
+if (args.Length == 0 && !Console.IsInputRedirected && !Console.IsOutputRedirected)
+{
+    using var tuiCts = new CancellationTokenSource();
+    Console.CancelKeyPress += (_, e) =>
+    {
+        e.Cancel = true;
+        tuiCts.Cancel();
+    };
+
+    return await TuiApp.RunAsync(tuiCts.Token);
+}
 
 var root = new RootCommand("weave — set up AI assistants with guardrails you control.");
 
@@ -24,6 +38,8 @@ add.Subcommands.Add(WorkspaceAddTargetCommand.Create());
 add.Subcommands.Add(WorkspaceAddPluginCommand.Create());
 workspace.Subcommands.Add(add);
 
+workspace.Subcommands.Add(WorkspaceStorageCommands.Create());
+
 var plugin = new Command("plugin", "Manage workspace plugins");
 plugin.Subcommands.Add(WorkspacePluginListCommand.Create());
 plugin.Subcommands.Add(WorkspaceAddPluginCommand.Create());
@@ -31,8 +47,14 @@ plugin.Subcommands.Add(WorkspacePluginRemoveCommand.Create());
 workspace.Subcommands.Add(plugin);
 
 root.Subcommands.Add(WorkspaceServeCommand.Create());
+root.Subcommands.Add(RunCommand.Create());
+root.Subcommands.Add(TuiCommand.Create());
+root.Subcommands.Add(WebUiCommand.Create());
 root.Subcommands.Add(InitCommand.Create());
 root.Subcommands.Add(PortsCommand.Create());
+root.Subcommands.Add(MarketplaceCommands.Create());
+root.Subcommands.Add(StorageCommands.Create());
+root.Subcommands.Add(DataCommands.Create());
 
 var config = new Command("config", "Manage CLI configuration");
 config.Subcommands.Add(ConfigGetCommand.Create());

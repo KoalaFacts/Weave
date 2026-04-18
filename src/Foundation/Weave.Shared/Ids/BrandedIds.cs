@@ -14,3 +14,18 @@ public readonly partial record struct ContainerId;
 
 [BrandedId]
 public readonly partial record struct NetworkId;
+
+[BrandedId]
+public readonly partial record struct SkillId;
+
+[BrandedId]
+public readonly partial record struct ChannelId;
+
+[BrandedId]
+public readonly partial record struct UserId;
+
+[BrandedId]
+public readonly partial record struct MarketplaceItemId;
+
+[BrandedId]
+public readonly partial record struct TemplateId;

@@ -63,3 +63,12 @@ public sealed record ProofVerifiedEvent : DomainEvent
     [Id(8)] public required int VoteCount { get; init; }
     [Id(9)] public required int AcceptCount { get; init; }
 }
+
+[GenerateSerializer]
+public sealed record SkillCreatedEvent : DomainEvent
+{
+    [Id(3)] public required WorkspaceId WorkspaceId { get; init; }
+    [Id(4)] public required SkillId SkillId { get; init; }
+    [Id(5)] public required string Title { get; init; }
+    [Id(6)] public required string CreatedByAgent { get; init; }
+}

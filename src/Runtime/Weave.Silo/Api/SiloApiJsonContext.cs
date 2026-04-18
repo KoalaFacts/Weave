@@ -38,6 +38,34 @@ namespace Weave.Silo.Api;
 [JsonSerializable(typeof(PluginConfigField))]
 [JsonSerializable(typeof(IEnumerable<PluginSchema>))]
 [JsonSerializable(typeof(IReadOnlyList<PluginSchema>))]
+// Skill types
+[JsonSerializable(typeof(StoreSkillRequest))]
+[JsonSerializable(typeof(SkillStepRequest))]
+[JsonSerializable(typeof(SkillResponse))]
+[JsonSerializable(typeof(SkillSearchResultResponse))]
+[JsonSerializable(typeof(IEnumerable<SkillResponse>))]
+[JsonSerializable(typeof(IEnumerable<SkillSearchResultResponse>))]
+// Channel types
+[JsonSerializable(typeof(RegisterChannelRequest))]
+[JsonSerializable(typeof(InboundMessageRequest))]
+[JsonSerializable(typeof(ChannelResponse))]
+[JsonSerializable(typeof(OutboundMessageResponse))]
+[JsonSerializable(typeof(IEnumerable<ChannelResponse>))]
+// User types
+[JsonSerializable(typeof(SetPreferenceRequest))]
+[JsonSerializable(typeof(SetDomainContextRequest))]
+[JsonSerializable(typeof(UserProfileResponse))]
+// Marketplace types
+[JsonSerializable(typeof(SubmitMarketplaceItemRequest))]
+[JsonSerializable(typeof(PublishMarketplaceItemRequest))]
+[JsonSerializable(typeof(RateMarketplaceItemRequest))]
+[JsonSerializable(typeof(MarketplaceItemResponse))]
+[JsonSerializable(typeof(IEnumerable<MarketplaceItemResponse>))]
+// Template types
+[JsonSerializable(typeof(RegisterTemplateRequest))]
+[JsonSerializable(typeof(TemplateResponse))]
+[JsonSerializable(typeof(TemplateValidationResultResponse))]
+[JsonSerializable(typeof(IEnumerable<TemplateResponse>))]
 [JsonSerializable(typeof(ProblemDetails))]
 [JsonSerializable(typeof(HttpValidationProblemDetails))]
 internal sealed partial class SiloApiJsonContext : JsonSerializerContext;
