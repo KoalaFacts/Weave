@@ -42,6 +42,34 @@ Weave runs on Windows, macOS, and Linux.
 | **macOS / Linux** | `curl -fsSL https://raw.githubusercontent.com/KoalaFacts/Weave/main/scripts/install.sh \| sh` |
 | **.NET** | `dotnet tool install --global Weave.Cli` |
 
+<details>
+<summary><b>Build from source</b></summary>
+
+Requires the .NET SDK version pinned in [`global.json`](global.json) (currently .NET 10). Install it from [dot.net](https://dot.net) if needed.
+
+```bash
+git clone https://github.com/KoalaFacts/Weave.git
+cd Weave
+
+# Build and test
+dotnet build Weave.slnx
+dotnet test --solution Weave.slnx
+
+# Run the CLI directly without installing
+dotnet run --project src/UX/Weave.Cli -- --help
+
+# Install as a global tool from source
+dotnet pack src/UX/Weave.Cli -c Release -o ./artifacts
+dotnet tool install --global --add-source ./artifacts Weave.Cli
+
+# Launch the interactive TUI (or any other subcommand)
+weave
+```
+
+To uninstall the locally built tool: `dotnet tool uninstall --global Weave.Cli`.
+
+</details>
+
 **Create and run your first workspace:**
 
 ```bash
