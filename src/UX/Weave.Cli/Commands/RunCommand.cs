@@ -169,6 +169,7 @@ internal static class RunCommand
 
         var storageBackend = workspaceStorage?.Backend;
         var storageConn = workspaceStorage?.ConnectionString;
+        var storageSchema = workspaceStorage?.Schema;
 
         if (string.IsNullOrWhiteSpace(storageBackend))
         {
@@ -193,6 +194,9 @@ internal static class RunCommand
                 };
                 startInfo.ArgumentList.Add($"--ConnectionStrings:{connKey}={storageConn}");
             }
+
+            if (!string.IsNullOrWhiteSpace(storageSchema))
+                startInfo.ArgumentList.Add($"--Weave:StorageSchema={storageSchema}");
         }
 
         return Process.Start(startInfo);

@@ -24,6 +24,8 @@ add.Subcommands.Add(WorkspaceAddTargetCommand.Create());
 add.Subcommands.Add(WorkspaceAddPluginCommand.Create());
 workspace.Subcommands.Add(add);
 
+workspace.Subcommands.Add(WorkspaceStorageCommands.Create());
+
 var plugin = new Command("plugin", "Manage workspace plugins");
 plugin.Subcommands.Add(WorkspacePluginListCommand.Create());
 plugin.Subcommands.Add(WorkspaceAddPluginCommand.Create());

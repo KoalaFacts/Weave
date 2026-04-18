@@ -45,10 +45,11 @@ else
 }
 
 // Configures grain storage based on Weave:Storage setting.
-// Supported values: "sqlite" (default for local), "memory", "redis", "sqlserver", "postgresql"
+// Supported values: "memory" (default), "sqlite", "redis", "sqlserver", "postgresql"
 static void ConfigureGrainStorage(ISiloBuilder siloBuilder, IConfiguration configuration)
 {
     var storage = configuration["Weave:Storage"]?.ToLowerInvariant() ?? "memory";
+    var schema = configuration["Weave:StorageSchema"];
 
     switch (storage)
     {
@@ -64,6 +65,8 @@ static void ConfigureGrainStorage(ISiloBuilder siloBuilder, IConfiguration confi
         case "sqlserver":
             var sqlConn = configuration.GetConnectionString("SqlServer")
                 ?? throw new InvalidOperationException("ConnectionStrings:SqlServer is required when Weave:Storage is 'sqlserver'.");
+            if (!string.IsNullOrWhiteSpace(schema))
+                sqlConn = AppendIfMissing(sqlConn, $"Initial Catalog={schema}");
             siloBuilder.AddAdoNetGrainStorageAsDefault(options =>
             {
                 options.ConnectionString = sqlConn;
@@ -79,6 +82,8 @@ static void ConfigureGrainStorage(ISiloBuilder siloBuilder, IConfiguration confi
         case "postgresql" or "postgres":
             var pgConn = configuration.GetConnectionString("PostgreSql")
                 ?? throw new InvalidOperationException("ConnectionStrings:PostgreSql is required when Weave:Storage is 'postgresql'.");
+            if (!string.IsNullOrWhiteSpace(schema))
+                pgConn = AppendIfMissing(pgConn, $"SearchPath={schema}");
             siloBuilder.AddAdoNetGrainStorageAsDefault(options =>
             {
                 options.ConnectionString = pgConn;
@@ -104,6 +109,14 @@ static void ConfigureGrainStorage(ISiloBuilder siloBuilder, IConfiguration confi
             siloBuilder.AddMemoryGrainStorageAsDefault();
             break;
     }
+}
+
+static string AppendIfMissing(string connectionString, string kvPair)
+{
+    var key = kvPair.Split('=')[0];
+    if (connectionString.Contains(key, StringComparison.OrdinalIgnoreCase))
+        return connectionString;
+    return connectionString.TrimEnd(';') + ";" + kvPair;
 }
 
 static string DefaultSqlitePath()

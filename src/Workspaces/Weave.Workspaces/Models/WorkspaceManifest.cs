@@ -29,6 +29,14 @@ public sealed record StorageConfig
 {
     [Id(0)] public required string Backend { get; init; }
     [Id(1)] public string? ConnectionString { get; init; }
+    [Id(2)] public string? Schema { get; init; }
+    [Id(3)] public StorageIsolation Isolation { get; init; } = StorageIsolation.Schema;
+}
+
+public enum StorageIsolation
+{
+    Schema,
+    Database
 }
 
 [GenerateSerializer]
