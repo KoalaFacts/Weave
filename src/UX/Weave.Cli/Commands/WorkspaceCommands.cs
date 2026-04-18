@@ -9,17 +9,34 @@ internal static class WorkspaceNewCommand
 {
     public static Command Create()
     {
-        var nameArg = new Argument<string>("name") { Description = "Workspace name" };
-        var presetOption = new Option<string?>("--preset") { Description = "Use a built-in preset (starter, coding-assistant, research, multi-agent)" };
+        var nameArg = new Argument<string?>("name")
+        {
+            Description = "Workspace name",
+            Arity = ArgumentArity.ZeroOrOne
+        };
+        var presetOption = new Option<string?>("--preset") { Description = "Use a built-in preset (starter, coding-assistant, research, multi-agent, support-team)" };
         presetOption.CompletionSources.Add(CliCompletions.CompletePresetNames);
         var pathOption = new Option<string?>("--path") { Description = "Folder path for the workspace (defaults to ./{name})" };
 
         var cmd = new Command("new", "Create a new workspace") { nameArg, presetOption, pathOption };
         cmd.SetAction(async (parseResult, cancellationToken) =>
         {
-            var name = parseResult.GetValue(nameArg)!;
+            var name = parseResult.GetValue(nameArg);
             var preset = parseResult.GetValue(presetOption);
             var explicitPath = parseResult.GetValue(pathOption);
+
+            // Guided mode: prompt for missing name
+            if (string.IsNullOrWhiteSpace(name))
+            {
+                CliTheme.WriteBanner();
+                CliTheme.WriteInfo("Let's create a new workspace.");
+                AnsiConsole.WriteLine();
+
+                name = AnsiConsole.Prompt(
+                    new TextPrompt<string>("Workspace name:")
+                        .Styled()
+                        .DefaultValue("my-workspace"));
+            }
 
             string model;
             List<string> tools;
@@ -95,12 +112,48 @@ internal static class WorkspaceNewCommand
             Directory.CreateDirectory(Path.Combine(basePath, ".weave"));
             WorkspaceRegistry.Register(name, basePath);
 
-            var isMultiAgent = string.Equals(selectedPresetName, "multi-agent", StringComparison.OrdinalIgnoreCase);
+            var activePreset = selectedPresetName is not null && WorkspacePresets.All.TryGetValue(selectedPresetName, out var presetRef)
+                ? presetRef
+                : null;
+            var isMultiAgent = activePreset?.IsMultiAgent ?? false;
 
             Dictionary<string, AgentDefinition> agents;
             List<(string FileName, string Content)> promptFiles;
 
-            if (isMultiAgent)
+            var isSupportTeam = string.Equals(selectedPresetName, "support-team", StringComparison.OrdinalIgnoreCase);
+
+            if (isSupportTeam)
+            {
+                agents = new Dictionary<string, AgentDefinition>
+                {
+                    ["support-bot"] = new AgentDefinition
+                    {
+                        Model = model,
+                        SystemPromptFile = "./prompts/support-bot.md",
+                        MaxConcurrentTasks = 5,
+                        Tools = tools
+                    },
+                    ["monitor"] = new AgentDefinition
+                    {
+                        Model = "claude-haiku-4-5-20251001",
+                        SystemPromptFile = "./prompts/monitor.md",
+                        MaxConcurrentTasks = 1,
+                        Tools = ["web-search"],
+                        Heartbeat = new HeartbeatConfig
+                        {
+                            Cron = "*/5 * * * *",
+                            Tasks = ["Check service health"]
+                        }
+                    }
+                };
+
+                promptFiles =
+                [
+                    ("support-bot.md", "# Support Bot\n\nYou are a helpful support agent. Answer questions using available tools and your skill memory. Be concise and helpful.\n"),
+                    ("monitor.md", "# Monitor\n\nYou monitor service health. Report any issues you find.\n")
+                ];
+            }
+            else if (isMultiAgent)
             {
                 agents = new Dictionary<string, AgentDefinition>
                 {
@@ -156,7 +209,12 @@ internal static class WorkspaceNewCommand
                     Secrets = new SecretsConfig { Provider = "env" }
                 },
                 Agents = agents,
-                Tools = tools.ToDictionary(t => t, _ => new ToolDefinition { Type = "mcp" }),
+                Tools = activePreset?.ToolDefinitions is not null
+                    ? new Dictionary<string, ToolDefinition>(activePreset.ToolDefinitions)
+                    : tools.ToDictionary(t => t, _ => new ToolDefinition { Type = "mcp" }),
+                Channels = activePreset?.Channels is not null
+                    ? new Dictionary<string, ChannelDefinition>(activePreset.Channels)
+                    : [],
                 Targets = new Dictionary<string, TargetDefinition>
                 {
                     ["local"] = new TargetDefinition { Runtime = "podman" }

@@ -24,6 +24,8 @@ add.Subcommands.Add(WorkspaceAddTargetCommand.Create());
 add.Subcommands.Add(WorkspaceAddPluginCommand.Create());
 workspace.Subcommands.Add(add);
 
+workspace.Subcommands.Add(WorkspaceStorageCommands.Create());
+
 var plugin = new Command("plugin", "Manage workspace plugins");
 plugin.Subcommands.Add(WorkspacePluginListCommand.Create());
 plugin.Subcommands.Add(WorkspaceAddPluginCommand.Create());
@@ -31,8 +33,12 @@ plugin.Subcommands.Add(WorkspacePluginRemoveCommand.Create());
 workspace.Subcommands.Add(plugin);
 
 root.Subcommands.Add(WorkspaceServeCommand.Create());
+root.Subcommands.Add(RunCommand.Create());
 root.Subcommands.Add(InitCommand.Create());
 root.Subcommands.Add(PortsCommand.Create());
+root.Subcommands.Add(MarketplaceCommands.Create());
+root.Subcommands.Add(StorageCommands.Create());
+root.Subcommands.Add(DataCommands.Create());
 
 var config = new Command("config", "Manage CLI configuration");
 config.Subcommands.Add(ConfigGetCommand.Create());

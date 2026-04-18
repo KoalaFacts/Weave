@@ -1,4 +1,5 @@
 using System.Net.Http.Json;
+using System.Text.Json;
 using Weave.Shared;
 using Weave.Workspaces.Models;
 
@@ -58,6 +59,109 @@ internal sealed class WorkspaceApiClient : IDisposable
     }
 
     public void Dispose() => _httpClient.Dispose();
+
+    // --- Skills ---
+
+    public async Task<IReadOnlyList<JsonElement>> GetSkillsAsync(string workspaceId, CancellationToken cancellationToken)
+    {
+        using var response = await _httpClient.GetAsync($"/api/workspaces/{workspaceId}/skills", cancellationToken);
+        response.EnsureSuccessStatusCode();
+        return (await response.Content.ReadFromJsonAsync(CliApiJsonContext.Default.ListJsonElement, cancellationToken))
+            ?? [];
+    }
+
+    public async Task PostSkillAsync(string workspaceId, JsonElement skill, CancellationToken cancellationToken)
+    {
+        var response = await _httpClient.PostAsJsonAsync(
+            $"/api/workspaces/{workspaceId}/skills", skill, CliApiJsonContext.Default.JsonElement, cancellationToken);
+        response.EnsureSuccessStatusCode();
+    }
+
+    // --- Channels ---
+
+    public async Task<IReadOnlyList<JsonElement>> GetChannelsAsync(string workspaceId, CancellationToken cancellationToken)
+    {
+        using var response = await _httpClient.GetAsync($"/api/workspaces/{workspaceId}/channels", cancellationToken);
+        response.EnsureSuccessStatusCode();
+        return (await response.Content.ReadFromJsonAsync(CliApiJsonContext.Default.ListJsonElement, cancellationToken))
+            ?? [];
+    }
+
+    public async Task PostChannelAsync(string workspaceId, JsonElement channel, CancellationToken cancellationToken)
+    {
+        var response = await _httpClient.PostAsJsonAsync(
+            $"/api/workspaces/{workspaceId}/channels", channel, CliApiJsonContext.Default.JsonElement, cancellationToken);
+        response.EnsureSuccessStatusCode();
+    }
+
+    // --- Templates ---
+
+    public async Task<IReadOnlyList<JsonElement>> GetTemplatesAsync(CancellationToken cancellationToken)
+    {
+        using var response = await _httpClient.GetAsync("/api/templates", cancellationToken);
+        response.EnsureSuccessStatusCode();
+        return (await response.Content.ReadFromJsonAsync(CliApiJsonContext.Default.ListJsonElement, cancellationToken))
+            ?? [];
+    }
+
+    // --- Marketplace ---
+
+    public async Task<IReadOnlyList<ApiMarketplaceItemResponse>> GetMarketplaceItemsAsync(CancellationToken cancellationToken)
+    {
+        using var response = await _httpClient.GetAsync("/api/marketplace", cancellationToken);
+        response.EnsureSuccessStatusCode();
+        return (await response.Content.ReadFromJsonAsync(CliApiJsonContext.Default.ListApiMarketplaceItemResponse, cancellationToken))
+            ?? [];
+    }
+
+    public async Task<IReadOnlyList<ApiMarketplaceItemResponse>> SearchMarketplaceAsync(string query, CancellationToken cancellationToken)
+    {
+        using var response = await _httpClient.GetAsync($"/api/marketplace/search?q={Uri.EscapeDataString(query)}", cancellationToken);
+        response.EnsureSuccessStatusCode();
+        return (await response.Content.ReadFromJsonAsync(CliApiJsonContext.Default.ListApiMarketplaceItemResponse, cancellationToken))
+            ?? [];
+    }
+
+    public async Task<ApiMarketplaceItemResponse?> GetMarketplaceItemAsync(string itemId, CancellationToken cancellationToken)
+    {
+        using var response = await _httpClient.GetAsync($"/api/marketplace/{Uri.EscapeDataString(itemId)}", cancellationToken);
+        if (response.StatusCode == System.Net.HttpStatusCode.NotFound)
+            return null;
+        response.EnsureSuccessStatusCode();
+        return await response.Content.ReadFromJsonAsync(CliApiJsonContext.Default.ApiMarketplaceItemResponse, cancellationToken);
+    }
+
+    public async Task<ApiMarketplaceItemResponse> SubmitMarketplaceItemAsync(
+        string name, string description, string category, string version, string author, string[] tags,
+        CancellationToken cancellationToken)
+    {
+        var response = await _httpClient.PostAsJsonAsync("/api/marketplace", new ApiSubmitMarketplaceRequest
+        {
+            Name = name,
+            Description = description,
+            Category = category,
+            Version = version,
+            Author = author,
+            Tags = [.. tags]
+        }, CliApiJsonContext.Default.ApiSubmitMarketplaceRequest, cancellationToken);
+        response.EnsureSuccessStatusCode();
+        return (await response.Content.ReadFromJsonAsync(CliApiJsonContext.Default.ApiMarketplaceItemResponse, cancellationToken))
+            ?? throw new InvalidOperationException("Marketplace API returned an empty response.");
+    }
+
+    public async Task<ApiMarketplaceItemResponse> PublishMarketplaceItemAsync(
+        string itemId, string reviewerId, bool approved, string? notes, CancellationToken cancellationToken)
+    {
+        var response = await _httpClient.PostAsJsonAsync($"/api/marketplace/{Uri.EscapeDataString(itemId)}/publish", new ApiPublishMarketplaceRequest
+        {
+            ReviewerId = reviewerId,
+            Approved = approved,
+            Notes = notes
+        }, CliApiJsonContext.Default.ApiPublishMarketplaceRequest, cancellationToken);
+        response.EnsureSuccessStatusCode();
+        return (await response.Content.ReadFromJsonAsync(CliApiJsonContext.Default.ApiMarketplaceItemResponse, cancellationToken))
+            ?? throw new InvalidOperationException("Marketplace API returned an empty response.");
+    }
 
     public async Task<bool> IsReachableAsync(CancellationToken cancellationToken)
     {
@@ -153,4 +257,37 @@ internal sealed record ApiToolResponse
     public string? Endpoint { get; init; }
     public DateTimeOffset? ConnectedAt { get; init; }
     public string? ErrorMessage { get; init; }
+}
+
+internal sealed record ApiMarketplaceItemResponse
+{
+    public required string ItemId { get; init; }
+    public required string Name { get; init; }
+    public required string Description { get; init; }
+    public required string Category { get; init; }
+    public required string Version { get; init; }
+    public required string Author { get; init; }
+    public required string Status { get; init; }
+    public List<string> Tags { get; init; } = [];
+    public DateTimeOffset? PublishedAt { get; init; }
+    public int InstallCount { get; init; }
+    public double Rating { get; init; }
+    public int RatingCount { get; init; }
+}
+
+internal sealed record ApiSubmitMarketplaceRequest
+{
+    public required string Name { get; init; }
+    public required string Description { get; init; }
+    public required string Category { get; init; }
+    public required string Version { get; init; }
+    public required string Author { get; init; }
+    public List<string> Tags { get; init; } = [];
+}
+
+internal sealed record ApiPublishMarketplaceRequest
+{
+    public required string ReviewerId { get; init; }
+    public required bool Approved { get; init; }
+    public string? Notes { get; init; }
 }
