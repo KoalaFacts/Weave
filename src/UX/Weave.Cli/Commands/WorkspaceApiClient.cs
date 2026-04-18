@@ -1,4 +1,5 @@
 using System.Net.Http.Json;
+using System.Text.Json;
 using Weave.Shared;
 using Weave.Workspaces.Models;
 
@@ -58,6 +59,50 @@ internal sealed class WorkspaceApiClient : IDisposable
     }
 
     public void Dispose() => _httpClient.Dispose();
+
+    // --- Skills ---
+
+    public async Task<IReadOnlyList<JsonElement>> GetSkillsAsync(string workspaceId, CancellationToken cancellationToken)
+    {
+        using var response = await _httpClient.GetAsync($"/api/workspaces/{workspaceId}/skills", cancellationToken);
+        response.EnsureSuccessStatusCode();
+        return (await response.Content.ReadFromJsonAsync(CliApiJsonContext.Default.ListJsonElement, cancellationToken))
+            ?? [];
+    }
+
+    public async Task PostSkillAsync(string workspaceId, JsonElement skill, CancellationToken cancellationToken)
+    {
+        var response = await _httpClient.PostAsJsonAsync(
+            $"/api/workspaces/{workspaceId}/skills", skill, CliApiJsonContext.Default.JsonElement, cancellationToken);
+        response.EnsureSuccessStatusCode();
+    }
+
+    // --- Channels ---
+
+    public async Task<IReadOnlyList<JsonElement>> GetChannelsAsync(string workspaceId, CancellationToken cancellationToken)
+    {
+        using var response = await _httpClient.GetAsync($"/api/workspaces/{workspaceId}/channels", cancellationToken);
+        response.EnsureSuccessStatusCode();
+        return (await response.Content.ReadFromJsonAsync(CliApiJsonContext.Default.ListJsonElement, cancellationToken))
+            ?? [];
+    }
+
+    public async Task PostChannelAsync(string workspaceId, JsonElement channel, CancellationToken cancellationToken)
+    {
+        var response = await _httpClient.PostAsJsonAsync(
+            $"/api/workspaces/{workspaceId}/channels", channel, CliApiJsonContext.Default.JsonElement, cancellationToken);
+        response.EnsureSuccessStatusCode();
+    }
+
+    // --- Templates ---
+
+    public async Task<IReadOnlyList<JsonElement>> GetTemplatesAsync(CancellationToken cancellationToken)
+    {
+        using var response = await _httpClient.GetAsync("/api/templates", cancellationToken);
+        response.EnsureSuccessStatusCode();
+        return (await response.Content.ReadFromJsonAsync(CliApiJsonContext.Default.ListJsonElement, cancellationToken))
+            ?? [];
+    }
 
     // --- Marketplace ---
 

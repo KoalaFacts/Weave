@@ -23,6 +23,7 @@
     <PackageReference Include="Microsoft.Orleans.Clustering.AdoNet" />
     <PackageReference Include="Microsoft.Data.SqlClient" />
     <PackageReference Include="Npgsql" />
+    <PackageReference Include="Microsoft.Data.Sqlite" />
     <PackageReference Include="Scalar.AspNetCore" />
   </ItemGroup>
 

@@ -45,13 +45,22 @@ else
 }
 
 // Configures grain storage based on Weave:Storage setting.
-// Supported values: "memory" (default for local), "redis", "sqlserver", "postgresql"
+// Supported values: "sqlite" (default for local), "memory", "redis", "sqlserver", "postgresql"
 static void ConfigureGrainStorage(ISiloBuilder siloBuilder, IConfiguration configuration)
 {
-    var storage = configuration["Weave:Storage"]?.ToLowerInvariant() ?? "memory";
+    var storage = configuration["Weave:Storage"]?.ToLowerInvariant() ?? "sqlite";
 
     switch (storage)
     {
+        case "sqlite":
+            var sqliteConn = configuration.GetConnectionString("Sqlite")
+                ?? DefaultSqlitePath();
+            siloBuilder.AddAdoNetGrainStorageAsDefault(options =>
+            {
+                options.ConnectionString = sqliteConn;
+                options.Invariant = "Microsoft.Data.Sqlite";
+            });
+            break;
         case "sqlserver":
             var sqlConn = configuration.GetConnectionString("SqlServer")
                 ?? throw new InvalidOperationException("ConnectionStrings:SqlServer is required when Weave:Storage is 'sqlserver'.");
@@ -95,6 +104,14 @@ static void ConfigureGrainStorage(ISiloBuilder siloBuilder, IConfiguration confi
             siloBuilder.AddMemoryGrainStorageAsDefault();
             break;
     }
+}
+
+static string DefaultSqlitePath()
+{
+    var weaveHome = Path.Combine(
+        Environment.GetFolderPath(Environment.SpecialFolder.UserProfile), ".weave");
+    Directory.CreateDirectory(weaveHome);
+    return $"Data Source={Path.Combine(weaveHome, "weave.db")}";
 }
 
 // Shared kernel services

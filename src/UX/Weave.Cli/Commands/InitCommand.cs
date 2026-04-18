@@ -42,16 +42,26 @@ internal static class InitCommand
                     .Title("Storage backend:")
                     .Styled()
                     .AddChoices(
-                        "memory    — local dev, no persistence (default)",
-                        "redis     — fast in-memory store, shared across silos",
+                        "sqlite    — local file, zero config, persists across restarts (default)",
                         "postgresql — cross-platform relational, open source",
-                        "sqlserver — enterprise SQL Server"));
+                        "sqlserver — enterprise SQL Server",
+                        "redis     — fast in-memory store, shared across silos",
+                        "memory    — no persistence, resets on restart"));
 
             var storageKey = storage.Split(' ')[0].Trim();
 
             string? connectionString = null;
 
-            if (storageKey is "postgresql" or "sqlserver" or "redis")
+            if (storageKey == "sqlite")
+            {
+                var weaveHome = Path.Combine(
+                    Environment.GetFolderPath(Environment.SpecialFolder.UserProfile), ".weave");
+                var defaultDb = Path.Combine(weaveHome, "weave.db");
+                connectionString = $"Data Source={defaultDb}";
+                CliTheme.WriteInfo($"Database: {defaultDb}");
+                CliTheme.WriteMuted("  Single file, portable, no server needed.");
+            }
+            else if (storageKey is "postgresql" or "sqlserver" or "redis")
             {
                 var defaultConn = storageKey switch
                 {
@@ -66,7 +76,6 @@ internal static class InitCommand
                         .Styled()
                         .DefaultValue(defaultConn));
 
-                // ── Verify connectivity ──────────────────────────────
                 AnsiConsole.WriteLine();
                 var reachable = await AnsiConsole.Status()
                     .Spinner(Spinner.Known.Dots)
@@ -76,12 +85,10 @@ internal static class InitCommand
                     });
 
                 if (reachable)
-                {
                     CliTheme.WriteSuccess("Connection successful.");
-                }
                 else
                 {
-                    CliTheme.WriteWarning("Could not connect. Saving config anyway — you can fix the connection later.");
+                    CliTheme.WriteWarning("Could not connect. Saving config anyway — fix later.");
                     CliTheme.WriteMuted("  Update with: weave config set connectionString \"<your-connection-string>\"");
                 }
 

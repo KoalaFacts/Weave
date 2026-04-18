@@ -241,7 +241,8 @@ Weave uses Orleans grain persistence. Choose the backend that fits your infrastr
 
 | Backend | Config value | Connection string key | Use case |
 |---|---|---|---|
-| **In-Memory** | `memory` (default) | — | Local dev, no persistence needed |
+| **SQLite** | `sqlite` (default) | `ConnectionStrings:Sqlite` | Zero-config local file, persists across restarts |
+| **In-Memory** | `memory` | — | Ephemeral, resets on restart |
 | **Redis** | `redis` | `ConnectionStrings:Redis` | Fast, shared state across silos |
 | **SQL Server** | `sqlserver` | `ConnectionStrings:SqlServer` | Enterprise, existing SQL infrastructure |
 | **PostgreSQL** | `postgresql` | `ConnectionStrings:PostgreSql` | Cross-platform relational, open source |
@@ -266,6 +267,23 @@ weave run my-app -- --Weave:Storage=postgresql \
 ```
 
 All backends support both grain state persistence and cluster membership. Orleans provides [SQL scripts](https://learn.microsoft.com/dotnet/orleans/host/configuration-guide/adonet-configuration) for creating the required tables.
+
+### Migrating between backends
+
+When you switch storage (e.g., SQLite locally to PostgreSQL in production), use `weave data export` to create a portable snapshot and `weave data import` to restore it on the new backend:
+
+```bash
+# Export everything from the current backend
+weave data export my-app -o my-app-backup.json
+
+# Change storage (weave init or appsettings.json)
+weave init
+
+# Import into the new backend
+weave data import my-app-backup.json
+```
+
+The export includes the workspace manifest, prompt files, skills, channels, user profiles, marketplace items, and templates — everything needed to fully reconstruct a workspace on a different machine or backend.
 
 ## Security
 
@@ -361,6 +379,9 @@ weave workspace presets             Browse preset templates
 
 weave workspace list                List all workspaces
 weave workspace remove <name>       Remove a workspace
+
+weave data export <name>            Export workspace to portable JSON
+weave data import <file>            Import workspace from export file
 
 weave marketplace list              Browse published marketplace items
 weave marketplace search <query>    Search the marketplace
