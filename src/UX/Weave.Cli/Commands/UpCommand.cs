@@ -117,6 +117,24 @@ internal static class WorkspaceUpCommand
         startInfo.ArgumentList.Add("--Weave:LocalMode=true");
         startInfo.ArgumentList.Add($"--urls=http://localhost:{port}");
 
+        var config = CliConfigStore.Load();
+        if (!string.IsNullOrWhiteSpace(config.Storage) && config.Storage != "memory")
+        {
+            startInfo.ArgumentList.Add($"--Weave:Storage={config.Storage}");
+
+            if (!string.IsNullOrWhiteSpace(config.ConnectionString))
+            {
+                var connKey = config.Storage switch
+                {
+                    "postgresql" or "postgres" => "PostgreSql",
+                    "sqlserver" => "SqlServer",
+                    "redis" => "Redis",
+                    _ => "Default"
+                };
+                startInfo.ArgumentList.Add($"--ConnectionStrings:{connKey}={config.ConnectionString}");
+            }
+        }
+
         Process.Start(startInfo);
 
         using var http = new HttpClient { Timeout = TimeSpan.FromSeconds(2) };

@@ -1,5 +1,6 @@
 using System.CommandLine;
 using System.Globalization;
+using System.Net.Sockets;
 using Spectre.Console;
 using Weave.Shared;
 
@@ -9,78 +10,154 @@ internal static class InitCommand
 {
     public static Command Create()
     {
-        var cmd = new Command("init", "Set up Weave CLI defaults");
+        var cmd = new Command("init", "Set up the Weave environment on this machine");
         cmd.SetAction(async (parseResult, cancellationToken) =>
         {
             CliTheme.WriteBanner();
+            AnsiConsole.MarkupLine("[bold]Setting up Weave on this machine.[/]");
+            AnsiConsole.WriteLine();
 
             if (CliConfigStore.Exists())
             {
                 var existing = CliConfigStore.Load();
                 CliTheme.WriteInfo("Existing configuration found:");
-                CliTheme.WriteKeyValue("Version", existing.Version);
-                CliTheme.WriteKeyValue("Silo path", existing.SiloPath ?? "(not set)");
-                CliTheme.WriteKeyValue("Default port", existing.DefaultPort.ToString(CultureInfo.InvariantCulture));
+                CliTheme.WriteKeyValue("Storage", existing.Storage);
+                CliTheme.WriteKeyValue("Port", existing.DefaultPort.ToString(CultureInfo.InvariantCulture));
+                CliTheme.WriteKeyValue("Silo path", existing.SiloPath ?? "(auto-detect)");
                 AnsiConsole.WriteLine();
 
                 if (!AnsiConsole.Confirm("Reconfigure?", defaultValue: false))
                     return 0;
+
+                AnsiConsole.WriteLine();
             }
 
-            // ── Silo path ─────────────────────────────────────────
-            var detectedSilo = DetectSiloPath();
+            // ── Step 1: Storage backend ──────────────────────────────
+            CliTheme.WriteSection("Step 1 · Storage");
+            AnsiConsole.MarkupLine("Where should Weave store agent state, skills, and user profiles?");
+            AnsiConsole.WriteLine();
 
+            var storage = AnsiConsole.Prompt(
+                new SelectionPrompt<string>()
+                    .Title("Storage backend:")
+                    .Styled()
+                    .AddChoices(
+                        "memory    — local dev, no persistence (default)",
+                        "redis     — fast in-memory store, shared across silos",
+                        "postgresql — cross-platform relational, open source",
+                        "sqlserver — enterprise SQL Server"));
+
+            var storageKey = storage.Split(' ')[0].Trim();
+
+            string? connectionString = null;
+
+            if (storageKey is "postgresql" or "sqlserver" or "redis")
+            {
+                var defaultConn = storageKey switch
+                {
+                    "postgresql" => "Host=localhost;Database=weave;Username=weave;Password=weave",
+                    "sqlserver" => "Server=localhost;Database=weave;Trusted_Connection=true;TrustServerCertificate=true",
+                    "redis" => "localhost:6379",
+                    _ => ""
+                };
+
+                connectionString = AnsiConsole.Prompt(
+                    new TextPrompt<string>("Connection string:")
+                        .Styled()
+                        .DefaultValue(defaultConn));
+
+                // ── Verify connectivity ──────────────────────────────
+                AnsiConsole.WriteLine();
+                var reachable = await AnsiConsole.Status()
+                    .Spinner(Spinner.Known.Dots)
+                    .StartAsync("Testing connectivity...", async _ =>
+                    {
+                        return await TestConnectivityAsync(storageKey, connectionString, cancellationToken);
+                    });
+
+                if (reachable)
+                {
+                    CliTheme.WriteSuccess("Connection successful.");
+                }
+                else
+                {
+                    CliTheme.WriteWarning("Could not connect. Saving config anyway — you can fix the connection later.");
+                    CliTheme.WriteMuted("  Update with: weave config set connectionString \"<your-connection-string>\"");
+                }
+
+                if (storageKey is "postgresql" or "sqlserver")
+                {
+                    AnsiConsole.WriteLine();
+                    CliTheme.WriteInfo("Orleans requires database tables for grain storage and clustering.");
+                    CliTheme.WriteMuted("  SQL scripts: https://learn.microsoft.com/dotnet/orleans/host/configuration-guide/adonet-configuration");
+                    CliTheme.WriteMuted("  Run the Main and Persistence scripts for your database before starting.");
+                }
+            }
+
+            // ── Step 2: Server port ──────────────────────────────────
+            AnsiConsole.WriteLine();
+            CliTheme.WriteSection("Step 2 · Server");
+
+            var port = AnsiConsole.Prompt(
+                new TextPrompt<int>("Server port:")
+                    .Styled()
+                    .DefaultValue(WeavePorts.SiloHttp));
+
+            // ── Step 3: Silo path ────────────────────────────────────
+            AnsiConsole.WriteLine();
+            CliTheme.WriteSection("Step 3 · Runtime");
+
+            var detectedSilo = DetectSiloPath();
             string? siloPath;
+
             if (detectedSilo is not null)
             {
-                CliTheme.WriteInfo($"Detected silo at: {detectedSilo}");
+                CliTheme.WriteInfo($"Detected runtime at: {detectedSilo}");
                 siloPath = AnsiConsole.Confirm("Use this path?")
                     ? detectedSilo
                     : PromptSiloPath();
             }
             else
             {
+                CliTheme.WriteMuted("No runtime detected in the current directory.");
                 siloPath = PromptSiloPath();
             }
 
-            // ── Default port ──────────────────────────────────────
-            var port = AnsiConsole.Prompt(
-                new TextPrompt<int>("Default server port:")
-                    .Styled()
-                    .DefaultValue(WeavePorts.SiloHttp));
-
-            // ── Save ──────────────────────────────────────────────
+            // ── Save ─────────────────────────────────────────────────
             var config = new CliConfig
             {
                 SiloPath = siloPath,
-                DefaultPort = port
+                DefaultPort = port,
+                Storage = storageKey,
+                ConnectionString = connectionString
             };
 
             CliConfigStore.Save(config);
-            CliTheme.WriteSuccess("Configuration saved to ~/.weave/config.json");
+
             AnsiConsole.WriteLine();
+            CliTheme.WriteSuccess("Environment configured.");
+            CliTheme.WriteKeyValue("Config saved to", "~/.weave/config.json");
+            CliTheme.WriteKeyValue("Storage", storageKey);
+            CliTheme.WriteKeyValue("Port", port.ToString(CultureInfo.InvariantCulture));
+            if (siloPath is not null)
+                CliTheme.WriteKeyValue("Runtime", siloPath);
 
-            // ── Offer to create first workspace ───────────────────
-            if (!WorkspaceRegistry.GetAll().Any())
-            {
-                if (AnsiConsole.Confirm("No workspaces found. Create one now?"))
-                {
-                    var name = AnsiConsole.Prompt(
-                        new TextPrompt<string>("Workspace name:")
-                            .Styled()
-                            .DefaultValue("my-workspace"));
-
-                    // Delegate to `weave workspace new <name>` interactive flow
-                    CliTheme.WriteMuted($"  Run: weave workspace new {name}");
-                    CliTheme.WriteMuted("  This will walk you through preset selection and setup.");
-                }
-            }
-
+            // ── Next steps ───────────────────────────────────────────
             AnsiConsole.WriteLine();
             CliTheme.WriteSection("Next steps");
-            CliTheme.WriteMuted("  weave workspace new <name>   Create a workspace");
-            CliTheme.WriteMuted("  weave serve                  Start the local server");
-            CliTheme.WriteMuted("  weave config get             Show current config");
+            AnsiConsole.WriteLine();
+            CliTheme.WriteMuted("  1. Create a workspace:");
+            CliTheme.WriteMuted("     weave workspace new my-app --preset coding-assistant");
+            AnsiConsole.WriteLine();
+            CliTheme.WriteMuted("  2. Run it:");
+            CliTheme.WriteMuted("     weave run my-app");
+            AnsiConsole.WriteLine();
+            CliTheme.WriteMuted("  Or try the full-featured preset:");
+            CliTheme.WriteMuted("     weave workspace new support --preset support-team");
+            CliTheme.WriteMuted("     weave run support");
+            AnsiConsole.WriteLine();
+            CliTheme.WriteMuted("  Browse the marketplace:");
+            CliTheme.WriteMuted("     weave marketplace list");
 
             return 0;
         });
@@ -88,10 +165,90 @@ internal static class InitCommand
         return cmd;
     }
 
+    private static async Task<bool> TestConnectivityAsync(string storageKey, string connectionString, CancellationToken ct)
+    {
+        try
+        {
+            var (host, port) = storageKey switch
+            {
+                "redis" => ParseHostPort(connectionString, 6379),
+                "postgresql" => ParsePgHostPort(connectionString),
+                "sqlserver" => ParseSqlServerHostPort(connectionString),
+                _ => ("localhost", 0)
+            };
+
+            if (port == 0) return false;
+
+            using var tcp = new TcpClient();
+            using var cts = CancellationTokenSource.CreateLinkedTokenSource(ct);
+            cts.CancelAfter(TimeSpan.FromSeconds(5));
+            await tcp.ConnectAsync(host, port, cts.Token);
+            return true;
+        }
+        catch
+        {
+            return false;
+        }
+    }
+
+    private static (string host, int port) ParseHostPort(string connStr, int defaultPort)
+    {
+        var parts = connStr.Split(',')[0].Split(':');
+        var host = parts[0].Trim();
+        var port = parts.Length > 1 && int.TryParse(parts[1].Trim(), CultureInfo.InvariantCulture, out var p) ? p : defaultPort;
+        return (host, port);
+    }
+
+    private static (string host, int port) ParsePgHostPort(string connStr)
+    {
+        var host = "localhost";
+        var port = 5432;
+
+        foreach (var part in connStr.Split(';'))
+        {
+            var kv = part.Split('=', 2);
+            if (kv.Length != 2) continue;
+            var key = kv[0].Trim();
+            var val = kv[1].Trim();
+
+            if (key.Equals("Host", StringComparison.OrdinalIgnoreCase) || key.Equals("Server", StringComparison.OrdinalIgnoreCase))
+                host = val;
+            else if (key.Equals("Port", StringComparison.OrdinalIgnoreCase) && int.TryParse(val, CultureInfo.InvariantCulture, out var p))
+                port = p;
+        }
+
+        return (host, port);
+    }
+
+    private static (string host, int port) ParseSqlServerHostPort(string connStr)
+    {
+        var host = "localhost";
+        var port = 1433;
+
+        foreach (var part in connStr.Split(';'))
+        {
+            var kv = part.Split('=', 2);
+            if (kv.Length != 2) continue;
+            var key = kv[0].Trim();
+            var val = kv[1].Trim();
+
+            if (key.Equals("Server", StringComparison.OrdinalIgnoreCase) ||
+                key.Equals("Data Source", StringComparison.OrdinalIgnoreCase))
+            {
+                var serverParts = val.Split(',', 2);
+                host = serverParts[0].Trim();
+                if (serverParts.Length > 1 && int.TryParse(serverParts[1].Trim(), CultureInfo.InvariantCulture, out var p))
+                    port = p;
+            }
+        }
+
+        return (host, port);
+    }
+
     private static string? PromptSiloPath()
     {
         var path = AnsiConsole.Prompt(
-            new TextPrompt<string>("Path to silo project or published directory:")
+            new TextPrompt<string>("Path to Weave runtime (or press Enter to auto-detect later):")
                 .Styled()
                 .AllowEmpty());
 
@@ -103,7 +260,7 @@ internal static class InitCommand
         if (!File.Exists(path) && !Directory.Exists(path))
         {
             CliTheme.WriteWarning($"Path does not exist: {path}");
-            CliTheme.WriteMuted("  Saving anyway — you can fix it later with: weave config set siloPath <path>");
+            CliTheme.WriteMuted("  Saving anyway — fix later with: weave config set siloPath <path>");
         }
 
         return path;
