@@ -13,6 +13,7 @@ using Weave.Shared.Lifecycle;
 using Weave.Shared.Plugins;
 using Weave.Silo.Api;
 using Weave.Silo.Plugins;
+using Weave.Silo.Security;
 using Weave.Tools.Connectors;
 using Weave.Tools.Discovery;
 using Weave.Workspaces.Models;
@@ -220,9 +221,22 @@ builder.Services.AddSingleton<IPluginConnector>(sp =>
         sp.GetRequiredService<IHttpClientFactory>(),
         sp.GetRequiredService<ILoggerFactory>()));
 builder.Services.AddSingleton<IPluginRegistry, PluginRegistry>();
+
+// API security — opt-in authentication and audit logging
+var authOptions = ApiAuthOptions.FromConfiguration(builder.Configuration);
+builder.Services.AddSingleton(authOptions);
+var auditOptions = AuditOptions.FromConfiguration(builder.Configuration);
+builder.Services.AddSingleton(auditOptions);
+
 builder.Services.AddOpenApi();
 
 var app = builder.Build();
+
+if (builder.Configuration.GetValue<bool>("Weave:RequireHttps"))
+    app.UseHttpsRedirection();
+
+app.UseAuditLog();
+app.UseApiAuth();
 
 app.UseExceptionHandler(error => error.Run(async context =>
 {
@@ -282,6 +296,17 @@ if (isLocalMode)
 {
     app.Logger.LogInformation("Weave running in local mode — no external services required");
 }
+
+if (authOptions.Mode != ApiAuthMode.None)
+    app.Logger.LogInformation("API authentication: {Mode}", authOptions.Mode);
+else
+    app.Logger.LogInformation("API authentication: disabled (opt in via Weave:Auth:Mode)");
+
+if (auditOptions.Enabled)
+    app.Logger.LogInformation("Audit logging: enabled");
+
+if (builder.Configuration.GetValue<bool>("Weave:RequireHttps"))
+    app.Logger.LogInformation("HTTPS enforcement: enabled");
 
 app.MapDefaultEndpoints();
 
