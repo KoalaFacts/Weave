@@ -1,4 +1,6 @@
 using System.CommandLine;
+using System.Globalization;
+using System.Net.Sockets;
 using Spectre.Console;
 using Weave.Workspaces.Manifest;
 using Weave.Workspaces.Models;
@@ -127,67 +129,77 @@ internal static class WorkspaceStorageCommands
                 return 1;
             }
 
-            // Connection string
-            if (backend is "postgresql" or "sqlserver" or "redis" or "sqlite" && string.IsNullOrWhiteSpace(connectionStr))
+            // Defaults: database isolation, db name = "weave"
+            var isolation = StorageIsolation.Database;
+            if (!string.IsNullOrWhiteSpace(isolationStr))
             {
-                if (backend != "memory")
-                {
-                    var defaultConn = backend switch
-                    {
-                        "sqlite" => $"Data Source={Path.Combine(Path.GetDirectoryName(manifestPath)!, ".weave", "workspace.db")}",
-                        "postgresql" => "Host=localhost;Database=weave;Username=weave;Password=weave",
-                        "sqlserver" => "Server=localhost;Database=weave;Trusted_Connection=true;TrustServerCertificate=true",
-                        "redis" => "localhost:6379",
-                        _ => ""
-                    };
+                isolation = isolationStr.Equals("schema", StringComparison.OrdinalIgnoreCase)
+                    ? StorageIsolation.Schema
+                    : StorageIsolation.Database;
+            }
 
-                    connectionStr = AnsiConsole.Prompt(
-                        new TextPrompt<string>("Connection string:")
+            database ??= "weave";
+
+            // Connection string (only prompt for server backends)
+            if (backend is not "memory" && string.IsNullOrWhiteSpace(connectionStr))
+            {
+                var defaultConn = backend switch
+                {
+                    "sqlite" => $"Data Source={Path.Combine(Path.GetDirectoryName(manifestPath)!, ".weave", "workspace.db")}",
+                    "postgresql" => $"Host=localhost;Database={database};Username=weave;Password=weave",
+                    "sqlserver" => $"Server=localhost;Database={database};Trusted_Connection=true;TrustServerCertificate=true",
+                    "redis" => "localhost:6379",
+                    _ => ""
+                };
+
+                connectionStr = AnsiConsole.Prompt(
+                    new TextPrompt<string>("Connection string:")
+                        .Styled()
+                        .DefaultValue(defaultConn));
+            }
+
+            // Safety guard: check if database already exists
+            if (backend is "postgresql" or "sqlserver" or "sqlite" && !string.IsNullOrWhiteSpace(connectionStr))
+            {
+                var dbExists = await CheckDatabaseExistsAsync(backend, connectionStr, database, cancellationToken);
+                if (dbExists)
+                {
+                    CliTheme.WriteWarning($"Database '{database}' already exists.");
+                    var action = AnsiConsole.Prompt(
+                        new SelectionPrompt<string>()
+                            .Title("What would you like to do?")
                             .Styled()
-                            .DefaultValue(defaultConn));
+                            .AddChoices(
+                                "stop     — abort, do not change storage",
+                                "override — use the existing database (data may conflict)",
+                                "rename   — choose a different database name"));
+
+                    if (action.StartsWith("stop", StringComparison.OrdinalIgnoreCase))
+                    {
+                        CliTheme.WriteInfo("Aborted. No changes made.");
+                        return 0;
+                    }
+
+                    if (action.StartsWith("rename", StringComparison.OrdinalIgnoreCase))
+                    {
+                        database = AnsiConsole.Prompt(
+                            new TextPrompt<string>("New database name:")
+                                .Styled());
+
+                        // Update connection string with new database name
+                        connectionStr = ReplaceDatabaseInConnectionString(backend, connectionStr, database);
+                    }
+                    // "override" — continue with the existing database
                 }
             }
 
-            // Isolation mode
-            var isolation = StorageIsolation.Schema;
-            if (backend is "postgresql" or "sqlserver")
+            // Schema (only for schema isolation on relational backends)
+            if (backend is "postgresql" or "sqlserver" && isolation == StorageIsolation.Schema && string.IsNullOrWhiteSpace(schema))
             {
-                if (string.IsNullOrWhiteSpace(isolationStr))
-                {
-                    isolationStr = AnsiConsole.Prompt(
-                        new SelectionPrompt<string>()
-                            .Title("Isolation mode:")
-                            .Styled()
-                            .AddChoices(
-                                "schema   — share one database, use a schema per workspace",
-                                "database — each workspace gets its own database"));
-
-                    isolation = isolationStr.StartsWith("database", StringComparison.OrdinalIgnoreCase)
-                        ? StorageIsolation.Database
-                        : StorageIsolation.Schema;
-                }
-                else
-                {
-                    isolation = isolationStr.Equals("database", StringComparison.OrdinalIgnoreCase)
-                        ? StorageIsolation.Database
-                        : StorageIsolation.Schema;
-                }
-
-                if (isolation == StorageIsolation.Schema && string.IsNullOrWhiteSpace(schema))
-                {
-                    schema = AnsiConsole.Prompt(
-                        new TextPrompt<string>("Schema name:")
-                            .Styled()
-                            .DefaultValue(workspace));
-                }
-
-                if (isolation == StorageIsolation.Database && string.IsNullOrWhiteSpace(database))
-                {
-                    database = AnsiConsole.Prompt(
-                        new TextPrompt<string>("Database name:")
-                            .Styled()
-                            .DefaultValue($"weave_{workspace}"));
-                }
+                schema = AnsiConsole.Prompt(
+                    new TextPrompt<string>("Schema name:")
+                        .Styled()
+                        .DefaultValue(workspace));
             }
 
             // Build new storage config
@@ -202,7 +214,7 @@ internal static class WorkspaceStorageCommands
                 {
                     Backend = backend,
                     ConnectionString = connectionStr,
-                    Schema = schema,
+                    Schema = isolation == StorageIsolation.Schema ? schema : null,
                     Database = database,
                     Isolation = isolation
                 };
@@ -224,11 +236,10 @@ internal static class WorkspaceStorageCommands
             else
             {
                 CliTheme.WriteSuccess($"Workspace '{workspace}' storage set to {backend}.");
+                CliTheme.WriteKeyValue("Database", database);
+                CliTheme.WriteKeyValue("Isolation", isolation.ToString().ToLowerInvariant());
                 if (isolation == StorageIsolation.Schema && !string.IsNullOrWhiteSpace(schema))
                     CliTheme.WriteKeyValue("Schema", schema);
-                if (isolation == StorageIsolation.Database && !string.IsNullOrWhiteSpace(database))
-                    CliTheme.WriteKeyValue("Database", database);
-                CliTheme.WriteKeyValue("Isolation", isolation.ToString().ToLowerInvariant());
             }
 
             CliTheme.WriteMuted("  Start with: weave run " + workspace);
@@ -237,6 +248,66 @@ internal static class WorkspaceStorageCommands
         });
 
         return cmd;
+    }
+
+    private static async Task<bool> CheckDatabaseExistsAsync(string backend, string connectionString, string database, CancellationToken ct)
+    {
+        if (backend == "sqlite")
+        {
+            var match = System.Text.RegularExpressions.Regex.Match(
+                connectionString, @"Data Source\s*=\s*([^;]+)", System.Text.RegularExpressions.RegexOptions.IgnoreCase);
+            return match.Success && File.Exists(match.Groups[1].Value.Trim());
+        }
+
+        // For PostgreSQL/SQL Server, try a TCP connect as a proxy for "server reachable"
+        // then assume the database might exist if we can connect
+        try
+        {
+            string host;
+            int port;
+            if (backend == "postgresql")
+                (host, port) = StorageCommands.ParseKvHostPort(connectionString, "Host", 5432);
+            else if (backend == "sqlserver")
+                (host, port) = StorageCommands.ParseSqlServerHostPort(connectionString);
+            else
+                return false;
+
+            using var tcp = new TcpClient();
+            using var cts = CancellationTokenSource.CreateLinkedTokenSource(ct);
+            cts.CancelAfter(TimeSpan.FromSeconds(3));
+            await tcp.ConnectAsync(host, port, cts.Token);
+
+            // Server is reachable — we can't cheaply check if the specific DB exists
+            // without a full ADO.NET connection, so check if connection string already
+            // has this database name embedded (meaning user is pointing at an existing db)
+            return connectionString.Contains($"Database={database}", StringComparison.OrdinalIgnoreCase)
+                || connectionString.Contains($"Initial Catalog={database}", StringComparison.OrdinalIgnoreCase);
+        }
+        catch
+        {
+            return false;
+        }
+    }
+
+    private static string ReplaceDatabaseInConnectionString(string backend, string connectionString, string newDatabase)
+    {
+        if (backend == "sqlite")
+        {
+            return System.Text.RegularExpressions.Regex.Replace(
+                connectionString, @"(Data Source\s*=\s*)[^;]+",
+                $"$1{newDatabase}", System.Text.RegularExpressions.RegexOptions.IgnoreCase);
+        }
+
+        // PostgreSQL uses Database=, SQL Server uses Database= or Initial Catalog=
+        var result = System.Text.RegularExpressions.Regex.Replace(
+            connectionString, @"(Database\s*=\s*)[^;]+",
+            $"$1{newDatabase}", System.Text.RegularExpressions.RegexOptions.IgnoreCase);
+
+        result = System.Text.RegularExpressions.Regex.Replace(
+            result, @"(Initial Catalog\s*=\s*)[^;]+",
+            $"$1{newDatabase}", System.Text.RegularExpressions.RegexOptions.IgnoreCase);
+
+        return result;
     }
 
     private static string MaskPassword(string connStr)

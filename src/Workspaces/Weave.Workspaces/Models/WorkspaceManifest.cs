@@ -30,7 +30,7 @@ public sealed record StorageConfig
     [Id(0)] public required string Backend { get; init; }
     [Id(1)] public string? ConnectionString { get; init; }
     [Id(2)] public string? Schema { get; init; }
-    [Id(3)] public StorageIsolation Isolation { get; init; } = StorageIsolation.Schema;
+    [Id(3)] public StorageIsolation Isolation { get; init; } = StorageIsolation.Database;
     [Id(4)] public string? Database { get; init; }
 }
 

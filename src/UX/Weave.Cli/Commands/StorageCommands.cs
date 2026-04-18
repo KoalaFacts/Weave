@@ -221,7 +221,7 @@ internal static class StorageCommands
         }
     }
 
-    private static (string host, int port) ParseHostPort(string connStr, int defaultPort)
+    internal static (string host, int port) ParseHostPort(string connStr, int defaultPort)
     {
         var parts = connStr.Split(',')[0].Split(':');
         var host = parts[0].Trim();
@@ -229,7 +229,7 @@ internal static class StorageCommands
         return (host, port);
     }
 
-    private static (string host, int port) ParseKvHostPort(string connStr, string hostKey, int defaultPort)
+    internal static (string host, int port) ParseKvHostPort(string connStr, string hostKey, int defaultPort)
     {
         var host = "localhost";
         var port = defaultPort;
@@ -250,7 +250,7 @@ internal static class StorageCommands
         return (host, port);
     }
 
-    private static (string host, int port) ParseSqlServerHostPort(string connStr)
+    internal static (string host, int port) ParseSqlServerHostPort(string connStr)
     {
         var host = "localhost";
         var port = 1433;
