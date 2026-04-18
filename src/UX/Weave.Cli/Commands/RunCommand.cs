@@ -333,6 +333,8 @@ internal static class RunCommand
     {
         if (process is null || process.HasExited)
             return;
-        try { process.Kill(entireProcessTree: true); } catch { }
+        try
+        { process.Kill(entireProcessTree: true); }
+        catch { }
     }
 }

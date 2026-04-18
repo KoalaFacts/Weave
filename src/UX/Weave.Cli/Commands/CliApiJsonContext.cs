@@ -18,6 +18,8 @@ namespace Weave.Cli.Commands;
 [JsonSerializable(typeof(List<ApiMarketplaceItemResponse>))]
 [JsonSerializable(typeof(ApiSubmitMarketplaceRequest))]
 [JsonSerializable(typeof(ApiPublishMarketplaceRequest))]
+[JsonSerializable(typeof(ApiSendMessageRequest))]
+[JsonSerializable(typeof(ApiChatResponse))]
 [JsonSerializable(typeof(JsonElement))]
 [JsonSerializable(typeof(List<JsonElement>))]
 internal sealed partial class CliApiJsonContext : JsonSerializerContext;

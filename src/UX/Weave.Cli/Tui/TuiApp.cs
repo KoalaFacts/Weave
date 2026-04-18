@@ -8,122 +8,486 @@ using Weave.Workspaces.Models;
 namespace Weave.Cli.Tui;
 
 /// <summary>
-/// Full-screen interactive terminal UI over the existing CLI primitives.
-/// Menu-driven so it works on any terminal that Spectre.Console supports.
+/// Interactive REPL over the CLI primitives. Persistent prompt at the
+/// bottom of the terminal, slash commands for workspace actions,
+/// free-form text is sent to the currently-selected agent.
 /// </summary>
 internal static class TuiApp
 {
-    private const string ActionOpen = "Open workspace";
-    private const string ActionNew = "Create new workspace";
-    private const string ActionPresets = "Browse presets";
-    private const string ActionWebUi = "Open Web UI";
-    private const string ActionSystem = "System info";
-    private const string ActionCommand = "/ Run a slash command…";
-    private const string ActionRefresh = "Refresh";
-    private const string ActionQuit = "Quit";
-
-    private const string DetailWatch = "Watch live status (auto-refresh)";
-    private const string DetailRefresh = "Refresh once";
-    private const string DetailStart = "Start workspace (up)";
-    private const string DetailStop = "Stop workspace (down)";
-    private const string DetailBack = "← Back to workspace list";
-
     public static async Task<int> RunAsync(CancellationToken cancellationToken)
     {
-        var firstPaint = true;
+        var session = new TuiSession();
+
+        AnsiConsole.Clear();
+        CliTheme.WriteBanner();
+        await RefreshDashboardAsync(cancellationToken);
+        RenderWelcomeHint();
+
         while (!cancellationToken.IsCancellationRequested)
         {
-            AnsiConsole.Clear();
-            if (firstPaint)
+            string input;
+            try
             {
-                CliTheme.WriteBanner();
-                firstPaint = false;
+                var prompt = new TextPrompt<string>(CliTheme.PromptPrefix(session.WorkspaceName, session.AgentName))
+                    .Styled()
+                    .AllowEmpty();
+                input = AnsiConsole.Prompt(prompt);
+            }
+            catch (OperationCanceledException)
+            {
+                break;
+            }
+
+            var raw = (input ?? string.Empty).Trim();
+            if (raw.Length == 0)
+                continue;
+
+            if (raw.StartsWith('/'))
+            {
+                var result = await HandleSlashAsync(session, raw[1..], cancellationToken);
+                if (result == DispatchResult.Quit)
+                    break;
             }
             else
             {
-                RenderCompactHeader();
-            }
-
-            var workspaces = WorkspaceRegistry.GetAll()
-                .OrderBy(kvp => kvp.Key, StringComparer.Ordinal)
-                .ToArray();
-
-            var siloReachable = await ProbeSiloAsync(cancellationToken);
-            RenderDashboardStats(workspaces, siloReachable);
-            RenderWorkspacesTable(workspaces);
-            RenderKeyHintFooter();
-
-            var choices = new List<string>();
-            if (workspaces.Length > 0)
-                choices.Add(ActionOpen);
-            choices.Add(ActionNew);
-            choices.Add(ActionPresets);
-            choices.Add(ActionWebUi);
-            choices.Add(ActionSystem);
-            choices.Add(ActionCommand);
-            choices.Add(ActionRefresh);
-            choices.Add(ActionQuit);
-
-            var action = AnsiConsole.Prompt(
-                new SelectionPrompt<string>()
-                    .Title($"[rgb({CliTheme.Accent.R},{CliTheme.Accent.G},{CliTheme.Accent.B})]◆[/] Choose an action")
-                    .Styled()
-                    .PageSize(12)
-                    .AddChoices(choices));
-
-            switch (action)
-            {
-                case ActionOpen:
-                    var pick = AnsiConsole.Prompt(
-                        new SelectionPrompt<string>()
-                            .Title("Select a workspace:")
-                            .Styled()
-                            .PageSize(15)
-                            .AddChoices([.. workspaces.Select(w => w.Key), DetailBack]));
-
-                    if (pick != DetailBack)
-                        await ShowWorkspaceAsync(pick, cancellationToken);
-                    break;
-
-                case ActionNew:
-                    ShowNewWorkspaceHint();
-                    break;
-
-                case ActionPresets:
-                    ShowPresetsScreen();
-                    break;
-
-                case ActionWebUi:
-                    await OpenWebUiAsync(cancellationToken);
-                    break;
-
-                case ActionSystem:
-                    await ShowSystemScreenAsync(cancellationToken);
-                    break;
-
-                case ActionCommand:
-                    var quit = await RunSlashCommandAsync(cancellationToken);
-                    if (quit)
-                    {
-                        AnsiConsole.Clear();
-                        AnsiConsole.MarkupLine(
-                            $"[rgb({CliTheme.Muted.R},{CliTheme.Muted.G},{CliTheme.Muted.B})]See you next weave.[/]");
-                        return 0;
-                    }
-                    break;
-
-                case ActionRefresh:
-                    continue;
-
-                case ActionQuit:
-                    AnsiConsole.Clear();
-                    AnsiConsole.MarkupLine(
-                        $"[rgb({CliTheme.Muted.R},{CliTheme.Muted.G},{CliTheme.Muted.B})]See you next weave.[/]");
-                    return 0;
+                await HandleChatAsync(session, raw, cancellationToken);
             }
         }
 
+        AnsiConsole.MarkupLine(
+            $"[rgb({CliTheme.Muted.R},{CliTheme.Muted.G},{CliTheme.Muted.B})]See you next weave.[/]");
         return 0;
+    }
+
+    // ── Input parsing ──────────────────────────────────────────────
+
+    /// <summary>
+    /// Splits a slash-free command line (e.g. "use my-agent") into a
+    /// lowercase name and an optional argument tail.
+    /// </summary>
+    internal static (string Name, string? Args) ParseCommand(string raw)
+    {
+        var s = raw.Trim();
+        if (s.Length == 0)
+            return (string.Empty, null);
+
+        var space = s.IndexOf(' ');
+        if (space < 0)
+            return (s.ToLowerInvariant(), null);
+
+        var name = s[..space].ToLowerInvariant();
+        var args = s[(space + 1)..].Trim();
+        return (name, args.Length == 0 ? null : args);
+    }
+
+    private enum DispatchResult { Continue, Quit }
+
+    // ── Slash dispatch ─────────────────────────────────────────────
+
+    private static async Task<DispatchResult> HandleSlashAsync(
+        TuiSession session,
+        string raw,
+        CancellationToken ct)
+    {
+        var (name, args) = ParseCommand(raw);
+        switch (name)
+        {
+            case "":
+                return DispatchResult.Continue;
+
+            case "help":
+            case "?":
+                RenderSlashHelp();
+                return DispatchResult.Continue;
+
+            case "quit":
+            case "exit":
+            case "q":
+                return DispatchResult.Quit;
+
+            case "clear":
+            case "cls":
+                AnsiConsole.Clear();
+                CliTheme.WriteBanner();
+                return DispatchResult.Continue;
+
+            case "refresh":
+            case "r":
+                await RefreshDashboardAsync(ct);
+                return DispatchResult.Continue;
+
+            case "open":
+            case "o":
+                await OpenWorkspaceAsync(session, args, ct);
+                return DispatchResult.Continue;
+
+            case "use":
+            case "agent":
+            case "a":
+                await UseAgentAsync(session, args, ct);
+                return DispatchResult.Continue;
+
+            case "agents":
+                await ListAgentsAsync(session, ct);
+                return DispatchResult.Continue;
+
+            case "watch":
+                await WatchSessionAsync(session, ct);
+                return DispatchResult.Continue;
+
+            case "new":
+            case "n":
+                ShowNewWorkspaceHint();
+                return DispatchResult.Continue;
+
+            case "presets":
+            case "p":
+                ShowPresetsScreen();
+                return DispatchResult.Continue;
+
+            case "webui":
+            case "web":
+            case "w":
+                await OpenWebUiAsync(ct);
+                return DispatchResult.Continue;
+
+            case "system":
+            case "sys":
+                await ShowSystemScreenAsync(ct);
+                return DispatchResult.Continue;
+
+            default:
+                CliTheme.WriteError($"Unknown command: /{name}. Try /help.");
+                return DispatchResult.Continue;
+        }
+    }
+
+    // ── Chat flow ──────────────────────────────────────────────────
+
+    private static async Task HandleChatAsync(
+        TuiSession session,
+        string message,
+        CancellationToken ct)
+    {
+        if (!session.HasWorkspace)
+        {
+            CliTheme.WriteMuted("No workspace open. Try: /open <workspace>");
+            return;
+        }
+        if (!session.IsRunning)
+        {
+            CliTheme.WriteMuted(
+                $"Workspace '{session.WorkspaceName}' is not running. " +
+                $"Start it from another terminal with: weave up {session.WorkspaceName}");
+            return;
+        }
+        if (session.AgentName is null)
+        {
+            CliTheme.WriteMuted("No agent selected. Try: /agents, then /use <agent>");
+            return;
+        }
+
+        CliTheme.WriteUserEcho(message);
+
+        ApiChatResponse? reply = null;
+        Exception? error = null;
+
+        await AnsiConsole.Status()
+            .Spinner(Spinner.Known.Dots)
+            .SpinnerStyle(CliTheme.AccentStyle)
+            .StartAsync($"{session.AgentName} is thinking…", async _ =>
+            {
+                try
+                {
+                    using var client = new WorkspaceApiClient();
+                    reply = await client.SendAgentMessageAsync(
+                        session.WorkspaceId!, session.AgentName, message, ct);
+                }
+                catch (Exception ex)
+                {
+                    error = ex;
+                }
+            });
+
+        if (error is not null)
+            CliTheme.WriteError($"Agent call failed: {error.Message}");
+        else if (reply is not null)
+            CliTheme.WriteAgentReply(session.AgentName, reply.Content);
+    }
+
+    // ── Command handlers ──────────────────────────────────────────
+
+    private static async Task OpenWorkspaceAsync(
+        TuiSession session,
+        string? arg,
+        CancellationToken ct)
+    {
+        var workspaces = WorkspaceRegistry.GetAll();
+        if (workspaces.Count == 0)
+        {
+            CliTheme.WriteWarning("No workspaces registered. Try /new for hints.");
+            return;
+        }
+
+        var target = arg;
+        if (string.IsNullOrWhiteSpace(target))
+        {
+            target = AnsiConsole.Prompt(
+                new SelectionPrompt<string>()
+                    .Title("Open which workspace?")
+                    .Styled()
+                    .AddChoices([.. workspaces.Keys, "(cancel)"]));
+
+            if (target == "(cancel)")
+                return;
+        }
+
+        if (!workspaces.ContainsKey(target))
+        {
+            var match = workspaces.Keys
+                .FirstOrDefault(k => string.Equals(k, target, StringComparison.OrdinalIgnoreCase));
+            if (match is null)
+            {
+                CliTheme.WriteError($"Workspace '{target}' not found.");
+                return;
+            }
+            target = match;
+        }
+
+        if (!session.TryOpen(target, out var error))
+        {
+            CliTheme.WriteError(error ?? "Failed to open workspace.");
+            return;
+        }
+
+        TryAutoSelectAgent(session);
+        await PrintWorkspaceSummaryAsync(session, ct);
+    }
+
+    private static async Task UseAgentAsync(
+        TuiSession session,
+        string? arg,
+        CancellationToken ct)
+    {
+        if (!session.HasWorkspace)
+        {
+            CliTheme.WriteMuted("No workspace open. Try: /open <workspace>");
+            return;
+        }
+
+        var agents = await FetchAgentNamesAsync(session, ct);
+        if (agents.Count == 0)
+        {
+            CliTheme.WriteWarning("No agents available for this workspace.");
+            return;
+        }
+
+        string? target = arg;
+        if (string.IsNullOrWhiteSpace(target))
+        {
+            target = AnsiConsole.Prompt(
+                new SelectionPrompt<string>()
+                    .Title("Use which agent?")
+                    .Styled()
+                    .AddChoices([.. agents, "(cancel)"]));
+
+            if (target == "(cancel)")
+                return;
+        }
+
+        var match = agents.FirstOrDefault(a => string.Equals(a, target, StringComparison.OrdinalIgnoreCase));
+        if (match is null)
+        {
+            CliTheme.WriteError($"Agent '{target}' not found in '{session.WorkspaceName}'.");
+            return;
+        }
+
+        session.AgentName = match;
+        CliTheme.WriteMuted($"Agent set to '{match}'.");
+    }
+
+    private static async Task ListAgentsAsync(TuiSession session, CancellationToken ct)
+    {
+        if (!session.HasWorkspace)
+        {
+            CliTheme.WriteMuted("No workspace open. Try: /open <workspace>");
+            return;
+        }
+
+        var names = await FetchAgentNamesAsync(session, ct);
+        if (names.Count == 0)
+        {
+            CliTheme.WriteWarning("No agents available.");
+            return;
+        }
+
+        var table = CliTheme.CreateTable($"Agents · {session.WorkspaceName}");
+        table.AddColumn(CliTheme.StyledColumn(""));
+        table.AddColumn(CliTheme.StyledColumn("Name"));
+
+        foreach (var name in names.OrderBy(n => n, StringComparer.Ordinal))
+        {
+            var marker = string.Equals(name, session.AgentName, StringComparison.Ordinal)
+                ? ColorTag(CliTheme.Primary, "●")
+                : " ";
+            table.AddRow(marker, $"[bold white]{Markup.Escape(name)}[/]");
+        }
+
+        AnsiConsole.Write(table);
+        if (session.AgentName is null)
+            CliTheme.WriteMuted("Pick one with: /use <name>");
+    }
+
+    private static async Task WatchSessionAsync(TuiSession session, CancellationToken ct)
+    {
+        if (!session.HasWorkspace)
+        {
+            CliTheme.WriteMuted("No workspace open. Try: /open <workspace>");
+            return;
+        }
+        if (!session.IsRunning)
+        {
+            CliTheme.WriteMuted($"Workspace '{session.WorkspaceName}' is not running.");
+            return;
+        }
+
+        WorkspaceManifest manifest;
+        try
+        {
+            var json = await File.ReadAllTextAsync(session.ManifestPath!, ct);
+            manifest = new ManifestParser().Parse(json);
+        }
+        catch (Exception ex)
+        {
+            CliTheme.WriteError($"Failed to parse manifest: {ex.Message}");
+            return;
+        }
+
+        await WatchLiveStatusAsync(session.ManifestPath!, manifest, ct);
+    }
+
+    // ── Helpers ───────────────────────────────────────────────────
+
+    private static void TryAutoSelectAgent(TuiSession session)
+    {
+        if (session.ManifestPath is null)
+            return;
+
+        try
+        {
+            var manifest = new ManifestParser().Parse(File.ReadAllText(session.ManifestPath));
+            if (manifest.Agents is { Count: 1 } agents)
+                session.AgentName = agents.Keys.First();
+        }
+        catch
+        {
+            // best-effort — /use still available
+        }
+    }
+
+    private static async Task<List<string>> FetchAgentNamesAsync(TuiSession session, CancellationToken ct)
+    {
+        if (session.IsRunning)
+        {
+            try
+            {
+                using var client = new WorkspaceApiClient();
+                if (await client.IsReachableAsync(ct))
+                {
+                    var live = await client.GetAgentsAsync(session.WorkspaceId!, ct);
+                    return [.. live.Select(a => a.AgentName)];
+                }
+            }
+            catch
+            {
+                // fall through to manifest
+            }
+        }
+
+        if (session.ManifestPath is null)
+            return [];
+
+        try
+        {
+            var manifest = new ManifestParser().Parse(File.ReadAllText(session.ManifestPath));
+            return manifest.Agents is null ? [] : [.. manifest.Agents.Keys];
+        }
+        catch
+        {
+            return [];
+        }
+    }
+
+    private static async Task PrintWorkspaceSummaryAsync(TuiSession session, CancellationToken ct)
+    {
+        if (session.ManifestPath is null)
+            return;
+
+        WorkspaceManifest manifest;
+        try
+        {
+            var json = await File.ReadAllTextAsync(session.ManifestPath, ct);
+            manifest = new ManifestParser().Parse(json);
+        }
+        catch (Exception ex)
+        {
+            CliTheme.WriteError($"Failed to parse manifest: {ex.Message}");
+            return;
+        }
+
+        CliTheme.WriteSection($"Workspace · {manifest.Name}");
+        var liveRendered = await TryRenderLiveStatusOnceAsync(session.ManifestPath, manifest, ct);
+        if (!liveRendered)
+            RenderManifestView(manifest, session.ManifestPath);
+
+        if (session.AgentName is not null)
+            CliTheme.WriteMuted(
+                $"Current agent: {session.AgentName}  (type a message, or /use <name> to switch)");
+        else
+            CliTheme.WriteMuted("No agent selected. Try: /agents, then /use <agent>");
+    }
+
+    private static async Task RefreshDashboardAsync(CancellationToken ct)
+    {
+        var workspaces = WorkspaceRegistry.GetAll()
+            .OrderBy(kvp => kvp.Key, StringComparer.Ordinal)
+            .ToArray();
+        var siloReachable = await ProbeSiloAsync(ct);
+        RenderDashboardStats(workspaces, siloReachable);
+        RenderWorkspacesTable(workspaces);
+    }
+
+    private static void RenderWelcomeHint()
+    {
+        AnsiConsole.MarkupLine(
+            $"[rgb({CliTheme.Muted.R},{CliTheme.Muted.G},{CliTheme.Muted.B})]" +
+            $"Type a message to chat with the current agent, or [bold]/help[/] for commands.  " +
+            $"Ctrl+C to exit.[/]");
+        AnsiConsole.WriteLine();
+    }
+
+    private static void RenderSlashHelp()
+    {
+        var table = CliTheme.CreateTable("Slash commands");
+        table.AddColumn(CliTheme.StyledColumn("Command"));
+        table.AddColumn(CliTheme.StyledColumn("Aliases"));
+        table.AddColumn(CliTheme.StyledColumn("Description"));
+
+        table.AddRow("/open [name]", "/o", "Open a workspace for this session.");
+        table.AddRow("/use [agent]", "/agent /a", "Pick the agent that receives free-form messages.");
+        table.AddRow("/agents", "", "List agents in the current workspace.");
+        table.AddRow("/watch", "", "Live-refresh the current workspace status.");
+        table.AddRow("/refresh", "/r", "Re-render the dashboard.");
+        table.AddRow("/clear", "/cls", "Clear the screen.");
+        table.AddRow("/new", "/n", "Show hints for creating a workspace.");
+        table.AddRow("/presets", "/p", "List built-in presets.");
+        table.AddRow("/webui", "/web /w", "Open the web dashboard.");
+        table.AddRow("/system", "/sys", "Show system and silo info.");
+        table.AddRow("/help", "/?", "Show this help.");
+        table.AddRow("/quit", "/exit /q", "Exit the TUI.");
+
+        AnsiConsole.Write(table);
+        CliTheme.WriteMuted("Or just type a message to send it to the current agent.");
     }
 
     private static void RenderCompactHeader()
@@ -199,7 +563,7 @@ internal static class TuiApp
         if (workspaces.Length == 0)
         {
             AnsiConsole.Write(CliTheme.CreatePanel(
-                "No workspaces registered yet. Pick \"Create new workspace\" to get started.",
+                "No workspaces registered yet. Type /new to see how to create one.",
                 "Workspaces"));
             AnsiConsole.WriteLine();
             return;
@@ -232,7 +596,6 @@ internal static class TuiApp
                 }
                 catch
                 {
-                    // Treat as invalid manifest — counts stay zero.
                     manifestOk = false;
                 }
             }
@@ -261,89 +624,6 @@ internal static class TuiApp
 
         AnsiConsole.Write(table);
         AnsiConsole.WriteLine();
-    }
-
-    private static void RenderKeyHintFooter()
-    {
-        AnsiConsole.MarkupLine(
-            $"[rgb({CliTheme.Muted.R},{CliTheme.Muted.G},{CliTheme.Muted.B})]" +
-            $"↑/↓ navigate  ·  ⏎ select  ·  choose [bold]Quit[/] or press Ctrl+C to exit[/]");
-        AnsiConsole.WriteLine();
-    }
-
-    private static async Task ShowWorkspaceAsync(string name, CancellationToken cancellationToken)
-    {
-        while (!cancellationToken.IsCancellationRequested)
-        {
-            AnsiConsole.Clear();
-            RenderCompactHeader();
-            CliTheme.WriteSection($"Workspace · {name}");
-
-            var manifestPath = ManifestResolver.Resolve(name);
-            if (manifestPath is null)
-            {
-                CliTheme.WriteError($"No workspace.json found for '{name}'.");
-                Pause();
-                return;
-            }
-
-            WorkspaceManifest manifest;
-            try
-            {
-                var json = await File.ReadAllTextAsync(manifestPath, cancellationToken);
-                manifest = new ManifestParser().Parse(json);
-            }
-            catch (Exception ex)
-            {
-                CliTheme.WriteError($"Failed to parse manifest: {ex.Message}");
-                Pause();
-                return;
-            }
-
-            var liveRendered = await TryRenderLiveStatusOnceAsync(manifestPath, manifest, cancellationToken);
-            if (!liveRendered)
-                RenderManifestView(manifest, manifestPath);
-
-            AnsiConsole.WriteLine();
-            var hasState = File.Exists(WorkspaceApiClient.GetWorkspaceStatePath(manifestPath));
-            var choices = new List<string>();
-            if (hasState)
-                choices.Add(DetailWatch);
-            choices.Add(DetailRefresh);
-            choices.Add(DetailStart);
-            choices.Add(DetailStop);
-            choices.Add(DetailBack);
-
-            var action = AnsiConsole.Prompt(
-                new SelectionPrompt<string>()
-                    .Title("Workspace actions:")
-                    .Styled()
-                    .PageSize(10)
-                    .AddChoices(choices));
-
-            switch (action)
-            {
-                case DetailWatch:
-                    await WatchLiveStatusAsync(manifestPath, manifest, cancellationToken);
-                    break;
-
-                case DetailRefresh:
-                    continue;
-
-                case DetailStart:
-                    CliTheme.WriteMuted($"  Run: weave workspace up {name}");
-                    Pause();
-                    break;
-
-                case DetailStop:
-                    CliTheme.WriteMuted($"  Run: weave workspace down {name}");
-                    Pause();
-                    break;
-
-                case DetailBack:
-                    return;
-            }
-        }
     }
 
     private static async Task<bool> TryRenderLiveStatusOnceAsync(
@@ -384,7 +664,6 @@ internal static class TuiApp
         if (workspaceId is null)
         {
             CliTheme.WriteWarning("No workspace ID on disk — nothing to watch.");
-            Pause();
             return;
         }
 
@@ -392,7 +671,8 @@ internal static class TuiApp
         RenderCompactHeader();
         CliTheme.WriteSection($"Watching · {manifest.Name}");
         AnsiConsole.MarkupLine(
-            $"[rgb({CliTheme.Muted.R},{CliTheme.Muted.G},{CliTheme.Muted.B})]Auto-refresh every 2s · press any key to return[/]");
+            $"[rgb({CliTheme.Muted.R},{CliTheme.Muted.G},{CliTheme.Muted.B})]" +
+            $"Auto-refresh every 2s · press any key to return[/]");
         AnsiConsole.WriteLine();
 
         var placeholder = new Markup(
@@ -527,7 +807,8 @@ internal static class TuiApp
             "running" or "active" or "connected" or "ready" or "healthy" => CliTheme.Success,
             "starting" or "connecting" or "pending" => CliTheme.Info,
             "stopped" or "idle" or "disconnected" => CliTheme.Muted,
-            _ when lower.Contains("error", StringComparison.Ordinal) || lower.Contains("fail", StringComparison.Ordinal) => CliTheme.Error,
+            _ when lower.Contains("error", StringComparison.Ordinal)
+                   || lower.Contains("fail", StringComparison.Ordinal) => CliTheme.Error,
             _ => CliTheme.Warning,
         };
         return ColorTag(tint, status);
@@ -582,8 +863,6 @@ internal static class TuiApp
 
     private static void ShowNewWorkspaceHint()
     {
-        AnsiConsole.Clear();
-        RenderCompactHeader();
         CliTheme.WriteSection("Create a new workspace");
 
         AnsiConsole.Write(CliTheme.CreatePanel(
@@ -596,13 +875,10 @@ internal static class TuiApp
         CliTheme.WriteMuted("         weave workspace new <name> --preset <preset>");
         AnsiConsole.WriteLine();
         CliTheme.WriteMuted("Tip: run with no arguments for a guided flow.");
-        Pause();
     }
 
     private static void ShowPresetsScreen()
     {
-        AnsiConsole.Clear();
-        RenderCompactHeader();
         CliTheme.WriteSection("Workspace presets");
 
         var table = CliTheme.CreateTable();
@@ -625,15 +901,11 @@ internal static class TuiApp
         }
 
         AnsiConsole.Write(table);
-        AnsiConsole.WriteLine();
         CliTheme.WriteMuted("Use: weave workspace new <name> --preset <preset>");
-        Pause();
     }
 
     private static async Task ShowSystemScreenAsync(CancellationToken cancellationToken)
     {
-        AnsiConsole.Clear();
-        RenderCompactHeader();
         CliTheme.WriteSection("System info");
 
         var config = CliConfigStore.Load();
@@ -659,13 +931,10 @@ internal static class TuiApp
                 Environment.GetFolderPath(Environment.SpecialFolder.UserProfile), ".weave")));
 
         AnsiConsole.Write(table);
-        Pause();
     }
 
     private static async Task OpenWebUiAsync(CancellationToken cancellationToken)
     {
-        AnsiConsole.Clear();
-        RenderCompactHeader();
         CliTheme.WriteSection("Web UI");
 
         var url = WebUiCommand.DefaultUrl();
@@ -682,7 +951,7 @@ internal static class TuiApp
             new SelectionPrompt<string>()
                 .Title("What would you like to do?")
                 .Styled()
-                .AddChoices("Open in browser", "Copy URL (print)", DetailBack));
+                .AddChoices("Open in browser", "Copy URL (print)", "(cancel)"));
 
         switch (choice)
         {
@@ -691,157 +960,12 @@ internal static class TuiApp
                     CliTheme.WriteMuted("Opened in your default browser.");
                 else
                     CliTheme.WriteMuted($"Could not open a browser automatically. Visit: {url}");
-                Pause();
                 break;
 
             case "Copy URL (print)":
                 AnsiConsole.WriteLine(url);
-                Pause();
                 break;
         }
-    }
-
-    /// <summary>
-    /// Opens a prompt where the user can type slash-prefixed commands
-    /// (e.g. /open my-workspace, /webui, /new). Returns true if the
-    /// user requested to quit the TUI.
-    /// </summary>
-    private static async Task<bool> RunSlashCommandAsync(CancellationToken cancellationToken)
-    {
-        AnsiConsole.Clear();
-        RenderCompactHeader();
-        CliTheme.WriteSection("Slash commands");
-
-        RenderSlashHelp();
-        AnsiConsole.WriteLine();
-
-        var input = AnsiConsole.Prompt(
-            new TextPrompt<string>($"[rgb({CliTheme.Accent.R},{CliTheme.Accent.G},{CliTheme.Accent.B})]›[/] Command:")
-                .Styled()
-                .AllowEmpty());
-
-        var command = input?.Trim() ?? string.Empty;
-        if (command.Length == 0)
-            return false;
-
-        if (command.StartsWith('/'))
-            command = command[1..];
-
-        var parts = command.Split(' ', 2, StringSplitOptions.TrimEntries | StringSplitOptions.RemoveEmptyEntries);
-        if (parts.Length == 0)
-            return false;
-
-        var name = parts[0].ToLowerInvariant();
-        var arg = parts.Length > 1 ? parts[1] : null;
-
-        switch (name)
-        {
-            case "help":
-            case "?":
-                RenderSlashHelp();
-                Pause();
-                return false;
-
-            case "quit":
-            case "exit":
-            case "q":
-                return true;
-
-            case "refresh":
-            case "r":
-                return false;
-
-            case "open":
-            case "o":
-                await ExecuteOpenAsync(arg, cancellationToken);
-                return false;
-
-            case "new":
-            case "n":
-                ShowNewWorkspaceHint();
-                return false;
-
-            case "presets":
-            case "p":
-                ShowPresetsScreen();
-                return false;
-
-            case "webui":
-            case "web":
-            case "w":
-                await OpenWebUiAsync(cancellationToken);
-                return false;
-
-            case "system":
-            case "sys":
-                await ShowSystemScreenAsync(cancellationToken);
-                return false;
-
-            default:
-                CliTheme.WriteError($"Unknown command: /{name}. Try /help.");
-                Pause();
-                return false;
-        }
-    }
-
-    private static async Task ExecuteOpenAsync(string? arg, CancellationToken cancellationToken)
-    {
-        var workspaces = WorkspaceRegistry.GetAll();
-        if (workspaces.Count == 0)
-        {
-            CliTheme.WriteWarning("No workspaces registered.");
-            Pause();
-            return;
-        }
-
-        string? target = arg;
-        if (string.IsNullOrWhiteSpace(target))
-        {
-            target = AnsiConsole.Prompt(
-                new SelectionPrompt<string>()
-                    .Title("Open which workspace?")
-                    .Styled()
-                    .AddChoices([.. workspaces.Keys, DetailBack]));
-
-            if (target == DetailBack)
-                return;
-        }
-
-        if (!workspaces.ContainsKey(target))
-        {
-            var match = workspaces.Keys
-                .FirstOrDefault(k => string.Equals(k, target, StringComparison.OrdinalIgnoreCase));
-
-            if (match is null)
-            {
-                CliTheme.WriteError($"Workspace '{target}' not found.");
-                Pause();
-                return;
-            }
-
-            target = match;
-        }
-
-        await ShowWorkspaceAsync(target, cancellationToken);
-    }
-
-    private static void RenderSlashHelp()
-    {
-        var table = CliTheme.CreateTable();
-        table.AddColumn(CliTheme.StyledColumn("Command"));
-        table.AddColumn(CliTheme.StyledColumn("Aliases"));
-        table.AddColumn(CliTheme.StyledColumn("Description"));
-
-        table.AddRow("/open [name]", "/o", "Open a workspace (prompts if no name).");
-        table.AddRow("/new", "/n", "Show hints for creating a workspace.");
-        table.AddRow("/presets", "/p", "List built-in presets.");
-        table.AddRow("/webui", "/web /w", "Open the web dashboard.");
-        table.AddRow("/system", "/sys", "Show system and silo info.");
-        table.AddRow("/refresh", "/r", "Refresh the current view.");
-        table.AddRow("/help", "/?", "Show this help.");
-        table.AddRow("/quit", "/exit /q", "Exit the TUI.");
-
-        AnsiConsole.Write(table);
     }
 
     private static async Task<bool> ProbeSiloAsync(CancellationToken cancellationToken)
@@ -897,12 +1021,5 @@ internal static class TuiApp
         {
             // stdin redirected — nothing to drain
         }
-    }
-
-    private static void Pause()
-    {
-        AnsiConsole.WriteLine();
-        CliTheme.WriteMuted("Press Enter to continue...");
-        _ = Console.ReadLine();
     }
 }

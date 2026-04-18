@@ -213,7 +213,8 @@ internal static class StorageCommands
                 _ => ("localhost", 0)
             };
 
-            if (port == 0) return false;
+            if (port == 0)
+                return false;
 
             using var tcp = new TcpClient();
             using var cts = CancellationTokenSource.CreateLinkedTokenSource(ct);
@@ -243,7 +244,8 @@ internal static class StorageCommands
         foreach (var part in connStr.Split(';'))
         {
             var kv = part.Split('=', 2);
-            if (kv.Length != 2) continue;
+            if (kv.Length != 2)
+                continue;
             var key = kv[0].Trim();
             var val = kv[1].Trim();
 
@@ -264,7 +266,8 @@ internal static class StorageCommands
         foreach (var part in connStr.Split(';'))
         {
             var kv = part.Split('=', 2);
-            if (kv.Length != 2) continue;
+            if (kv.Length != 2)
+                continue;
             var key = kv[0].Trim();
             var val = kv[1].Trim();
 

@@ -58,6 +58,24 @@ internal sealed class WorkspaceApiClient : IDisposable
             ?? throw new InvalidOperationException("Workspace API returned an empty payload for '/api/workspaces/{workspaceId}/tools'.");
     }
 
+    // --- Chat ---
+
+    public async Task<ApiChatResponse> SendAgentMessageAsync(
+        string workspaceId,
+        string agentName,
+        string content,
+        CancellationToken cancellationToken)
+    {
+        var response = await _httpClient.PostAsJsonAsync(
+            $"/api/workspaces/{workspaceId}/agents/{agentName}/messages",
+            new ApiSendMessageRequest { Content = content },
+            CliApiJsonContext.Default.ApiSendMessageRequest,
+            cancellationToken);
+        response.EnsureSuccessStatusCode();
+        return (await response.Content.ReadFromJsonAsync(CliApiJsonContext.Default.ApiChatResponse, cancellationToken))
+            ?? throw new InvalidOperationException("Agent API returned an empty chat response.");
+    }
+
     public void Dispose() => _httpClient.Dispose();
 
     // --- Skills ---
@@ -290,4 +308,26 @@ internal sealed record ApiPublishMarketplaceRequest
     public required string ReviewerId { get; init; }
     public required bool Approved { get; init; }
     public string? Notes { get; init; }
+}
+
+internal sealed record ApiSendMessageRequest
+{
+    public required string Content { get; init; }
+    public string Role { get; init; } = "user";
+}
+
+internal sealed record ApiChatResponse
+{
+    public required string Content { get; init; }
+    public required string ConversationId { get; init; }
+    public required bool UsedTools { get; init; }
+    public List<ApiConversationMessage> Messages { get; init; } = [];
+    public string? Model { get; init; }
+}
+
+internal sealed record ApiConversationMessage
+{
+    public required string Role { get; init; }
+    public required string Content { get; init; }
+    public required DateTimeOffset Timestamp { get; init; }
 }

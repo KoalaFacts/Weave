@@ -167,7 +167,8 @@ internal static class InitCommand
 
                 // Test connectivity if we can resolve the value
                 string? resolvedConn = null;
-                try { resolvedConn = CliConfigStore.ResolveConnectionString(connectionString); }
+                try
+                { resolvedConn = CliConfigStore.ResolveConnectionString(connectionString); }
                 catch { }
 
                 if (!string.IsNullOrWhiteSpace(resolvedConn))
@@ -367,7 +368,8 @@ internal static class InitCommand
                 _ => ("localhost", 0)
             };
 
-            if (port == 0) return false;
+            if (port == 0)
+                return false;
 
             using var tcp = new TcpClient();
             using var cts = CancellationTokenSource.CreateLinkedTokenSource(ct);
@@ -397,7 +399,8 @@ internal static class InitCommand
         foreach (var part in connStr.Split(';'))
         {
             var kv = part.Split('=', 2);
-            if (kv.Length != 2) continue;
+            if (kv.Length != 2)
+                continue;
             var key = kv[0].Trim();
             var val = kv[1].Trim();
 
@@ -418,7 +421,8 @@ internal static class InitCommand
         foreach (var part in connStr.Split(';'))
         {
             var kv = part.Split('=', 2);
-            if (kv.Length != 2) continue;
+            if (kv.Length != 2)
+                continue;
             var key = kv[0].Trim();
             var val = kv[1].Trim();
 

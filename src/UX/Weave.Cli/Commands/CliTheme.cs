@@ -106,4 +106,31 @@ internal static class CliTheme
 
     public static TextPrompt<T> Styled<T>(this TextPrompt<T> prompt)
         => prompt.PromptStyle(AccentStyle);
+
+    // ── REPL prompt + chat rendering ───────────────────────────────
+    public static string PromptPrefix(string? workspace, string? agent)
+    {
+        var wsPart = workspace is null
+            ? $"[rgb({Muted.R},{Muted.G},{Muted.B})](no workspace)[/]"
+            : $"[rgb({Primary.R},{Primary.G},{Primary.B})]{Markup.Escape(workspace)}[/]";
+
+        var agentPart = agent is null
+            ? $"[rgb({Muted.R},{Muted.G},{Muted.B})](no agent)[/]"
+            : $"[rgb({Accent.R},{Accent.G},{Accent.B})]{Markup.Escape(agent)}[/]";
+
+        var arrow = $"[bold rgb({Primary.R},{Primary.G},{Primary.B})]›[/]";
+        var sep = $"[rgb({Muted.R},{Muted.G},{Muted.B})]·[/]";
+        return $"{wsPart} {sep} {agentPart} {arrow}";
+    }
+
+    public static void WriteUserEcho(string text)
+        => AnsiConsole.MarkupLine(
+            $"[rgb({Accent.R},{Accent.G},{Accent.B})]{IconBullet} {Markup.Escape(text)}[/]");
+
+    public static void WriteAgentReply(string agentName, string text)
+    {
+        AnsiConsole.MarkupLine(
+            $"[bold rgb({Primary.R},{Primary.G},{Primary.B})]{Markup.Escape(agentName)}[/] " +
+            $"[rgb({Muted.R},{Muted.G},{Muted.B})]·[/] {Markup.Escape(text)}");
+    }
 }
