@@ -42,6 +42,12 @@ internal sealed class TuiSession
 
     public void ClearAgent() => AgentName = null;
 
+    /// <summary>Record that the Silo just started this workspace.</summary>
+    public void MarkRunning(string workspaceId) => WorkspaceId = workspaceId;
+
+    /// <summary>Record that the Silo just stopped this workspace.</summary>
+    public void MarkStopped() => WorkspaceId = null;
+
     private static string? TryReadWorkspaceId(string manifestPath)
     {
         var statePath = WorkspaceApiClient.GetWorkspaceStatePath(manifestPath);

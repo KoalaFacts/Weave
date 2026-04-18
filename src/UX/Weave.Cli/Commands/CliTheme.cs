@@ -15,6 +15,7 @@ internal static class CliTheme
     public static readonly Color Warning = new(255, 167, 38);     // Amber
     public static readonly Color Muted = new(120, 144, 156);      // Blue-gray
     public static readonly Color Info = new(79, 195, 247);        // Light blue
+    public static readonly Color Divider = new(70, 80, 90);       // Dim slate — subordinate to Muted
 
     // ── Reusable styles ────────────────────────────────────────────
     public static readonly Style BrandStyle = new(Primary, decoration: Decoration.Bold);
@@ -27,9 +28,12 @@ internal static class CliTheme
     public static readonly Style PromptHighlight = new(Primary, decoration: Decoration.Bold);
 
     // ── Icons ──────────────────────────────────────────────────────
-    public const string IconSuccess = "✔";
-    public const string IconError = "✖";
-    public const string IconWarning = "⚠";
+    // Text-presentation glyphs only. The "heavy" U+2714/U+2716/U+26A0
+    // variants trigger emoji rendering in some terminal fonts, which
+    // ignores our RGB color tags (the error cross turned up purple).
+    public const string IconSuccess = "✓";
+    public const string IconError = "✗";
+    public const string IconWarning = "⚠\uFE0E"; // force text presentation
     public const string IconBullet = "›";
     public const string IconBrand = "◆";
 
@@ -40,6 +44,24 @@ internal static class CliTheme
             new FigletText("Weave")
                 .Color(Primary));
         AnsiConsole.Write(new Rule().RuleStyle(MutedStyle));
+
+        var current = VersionInfo.Current();
+        var pending = VersionInfo.PendingUpdateFromCache();
+        if (pending is not null)
+        {
+            AnsiConsole.MarkupLine(
+                $"[rgb({Muted.R},{Muted.G},{Muted.B})]weave[/] " +
+                $"[bold rgb({Primary.R},{Primary.G},{Primary.B})]v{Markup.Escape(current)}[/] " +
+                $"[rgb({Warning.R},{Warning.G},{Warning.B})]↑ v{Markup.Escape(pending)} available[/] " +
+                $"[rgb({Muted.R},{Muted.G},{Muted.B})]· run /upgrade for details[/]");
+        }
+        else
+        {
+            AnsiConsole.MarkupLine(
+                $"[rgb({Muted.R},{Muted.G},{Muted.B})]weave[/] " +
+                $"[bold rgb({Primary.R},{Primary.G},{Primary.B})]v{Markup.Escape(current)}[/]");
+        }
+        AnsiConsole.WriteLine();
     }
 
     // ── Section header (thin rule with label) ──────────────────────

@@ -113,7 +113,7 @@ internal static class WorkspaceUpCommand
         return cmd;
     }
 
-    private static async Task<bool> AutoStartServeAsync(CancellationToken ct)
+    internal static async Task<bool> AutoStartServeAsync(CancellationToken ct)
     {
         var siloPath = ResolveSiloPath();
         if (siloPath is null)
@@ -185,7 +185,7 @@ internal static class WorkspaceUpCommand
         return false;
     }
 
-    private static string? ResolveSiloPath()
+    internal static string? ResolveSiloPath()
     {
         var envPath = Environment.GetEnvironmentVariable("WEAVE_SILO_PATH");
         if (!string.IsNullOrWhiteSpace(envPath) && (File.Exists(envPath) || Directory.Exists(envPath)))

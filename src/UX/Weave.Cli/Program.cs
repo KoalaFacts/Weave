@@ -55,6 +55,8 @@ root.Subcommands.Add(PortsCommand.Create());
 root.Subcommands.Add(MarketplaceCommands.Create());
 root.Subcommands.Add(StorageCommands.Create());
 root.Subcommands.Add(DataCommands.Create());
+root.Subcommands.Add(VersionCommand.Create());
+root.Subcommands.Add(UpgradeCommand.Create());
 
 var config = new Command("config", "Manage CLI configuration");
 config.Subcommands.Add(ConfigGetCommand.Create());
