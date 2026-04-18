@@ -255,14 +255,14 @@ Configure via `appsettings.json` or environment variables:
     "Storage": "postgresql"  // or "sqlserver", "redis", "memory"
   },
   "ConnectionStrings": {
-    "PostgreSql": "Host=localhost;Database=weave;Username=weave;Password=secret"
+    "PostgreSql": "Host=localhost;Database=weave;Username=youruser;Password=yourpassword"
   }
 }
 ```
 
 Or change the global default via CLI:
 ```bash
-weave storage change postgresql --connection "Host=localhost;Database=weave;Username=weave;Password=secret"
+weave storage change postgresql --connection "Host=localhost;Database=weave;Username=youruser;Password=yourpassword"
 ```
 
 Or override per-workspace in the manifest:

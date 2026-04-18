@@ -65,7 +65,7 @@ internal static class InitCommand
             {
                 var defaultConn = storageKey switch
                 {
-                    "postgresql" => "Host=localhost;Database=weave;Username=weave;Password=weave",
+                    "postgresql" => "Host=localhost;Database=weave;Username=;Password=",
                     "sqlserver" => "Server=localhost;Database=weave;Trusted_Connection=true;TrustServerCertificate=true",
                     "redis" => "localhost:6379",
                     _ => ""

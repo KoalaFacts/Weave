@@ -73,7 +73,7 @@ Controls isolation, networking, filesystem mounts, and secret management.
   // Override global storage for this workspace
   "storage": {
     "backend": "postgresql",
-    "connection_string": "Host=db.example.com;Database=weave_prod;Username=weave;Password=secret"
+    "connection_string": "Host=db.example.com;Database=weave;Username=youruser;Password=yourpassword"
   }
 }
 ```

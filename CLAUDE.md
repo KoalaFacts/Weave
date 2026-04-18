@@ -185,6 +185,20 @@ weave storage change postgresql --connection "Host=..."
 6. Use `CliTheme.WriteInfo/WriteSuccess/WriteWarning` for feedback, not raw `Console.WriteLine`
 7. Show next steps after completion (`CliTheme.WriteMuted`)
 
+## Default Naming Conventions
+
+All defaults must be namespaced to avoid collisions with common applications:
+
+| Resource | Default | Rationale |
+|----------|---------|-----------|
+| HTTP port | `9401` | 94xx range avoids ASP.NET 5000, Node 3000, K8s 30000+ |
+| Database name | `weave` | Distinctive enough, user provides their own credentials |
+| SQLite file | `~/.weave/weave.db` | Namespaced in `.weave/` directory |
+| Network name | `weave-{name}` | Prefixed to avoid Docker/Podman collisions |
+| Config directory | `~/.weave/` | Dot-prefixed, unique name |
+
+Never invent default credentials (usernames, passwords, tokens). Connection strings should template the structure with empty credential fields (`Username=;Password=`) so the user fills in their own. Avoid generic names like `app`, `data`, `default`, `main` for resources we name.
+
 ## Security Notes
 
 - Never add secrets to source control.

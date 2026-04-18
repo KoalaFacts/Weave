@@ -119,7 +119,7 @@ internal static class StorageCommands
                 {
                     var defaultConn = backend switch
                     {
-                        "postgresql" => "Host=localhost;Database=weave;Username=weave;Password=weave",
+                        "postgresql" => "Host=localhost;Database=weave;Username=;Password=",
                         "sqlserver" => "Server=localhost;Database=weave;Trusted_Connection=true;TrustServerCertificate=true",
                         "redis" => "localhost:6379",
                         _ => ""
