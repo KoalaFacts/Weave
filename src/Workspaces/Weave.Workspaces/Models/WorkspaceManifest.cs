@@ -21,6 +21,14 @@ public sealed record WorkspaceConfig
     [Id(1)] public NetworkConfig? Network { get; init; }
     [Id(2)] public FilesystemConfig? Filesystem { get; init; }
     [Id(3)] public SecretsConfig? Secrets { get; init; }
+    [Id(4)] public StorageConfig? Storage { get; init; }
+}
+
+[GenerateSerializer]
+public sealed record StorageConfig
+{
+    [Id(0)] public required string Backend { get; init; }
+    [Id(1)] public string? ConnectionString { get; init; }
 }
 
 [GenerateSerializer]

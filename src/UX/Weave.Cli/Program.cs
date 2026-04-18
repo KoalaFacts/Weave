@@ -35,6 +35,7 @@ root.Subcommands.Add(RunCommand.Create());
 root.Subcommands.Add(InitCommand.Create());
 root.Subcommands.Add(PortsCommand.Create());
 root.Subcommands.Add(MarketplaceCommands.Create());
+root.Subcommands.Add(StorageCommands.Create());
 root.Subcommands.Add(DataCommands.Create());
 
 var config = new Command("config", "Manage CLI configuration");

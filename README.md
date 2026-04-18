@@ -241,8 +241,8 @@ Weave uses Orleans grain persistence. Choose the backend that fits your infrastr
 
 | Backend | Config value | Connection string key | Use case |
 |---|---|---|---|
-| **SQLite** | `sqlite` (default) | `ConnectionStrings:Sqlite` | Zero-config local file, persists across restarts |
-| **In-Memory** | `memory` | — | Ephemeral, resets on restart |
+| **In-Memory** | `memory` (default) | — | Instant start, resets on restart |
+| **SQLite** | `sqlite` | `ConnectionStrings:Sqlite` | Zero-config local file, persists across restarts |
 | **Redis** | `redis` | `ConnectionStrings:Redis` | Fast, shared state across silos |
 | **SQL Server** | `sqlserver` | `ConnectionStrings:SqlServer` | Enterprise, existing SQL infrastructure |
 | **PostgreSQL** | `postgresql` | `ConnectionStrings:PostgreSql` | Cross-platform relational, open source |
@@ -260,11 +260,22 @@ Configure via `appsettings.json` or environment variables:
 }
 ```
 
-Or via CLI:
+Or change the global default via CLI:
 ```bash
-weave run my-app -- --Weave:Storage=postgresql \
-  --ConnectionStrings:PostgreSql="Host=localhost;Database=weave;Username=weave;Password=secret"
+weave storage change postgresql --connection "Host=localhost;Database=weave;Username=weave;Password=secret"
 ```
+
+Or override per-workspace in the manifest:
+```jsonc
+"workspace": {
+  "storage": {
+    "backend": "postgresql",
+    "connection_string": "Host=db.prod.example.com;Database=weave;..."
+  }
+}
+```
+
+Workspace-level storage overrides take precedence over the global setting. This lets you run dev workspaces in memory while production workspaces persist to PostgreSQL.
 
 All backends support both grain state persistence and cluster membership. Orleans provides [SQL scripts](https://learn.microsoft.com/dotnet/orleans/host/configuration-guide/adonet-configuration) for creating the required tables.
 
@@ -273,14 +284,18 @@ All backends support both grain state persistence and cluster membership. Orlean
 When you switch storage (e.g., SQLite locally to PostgreSQL in production), use `weave data export` to create a portable snapshot and `weave data import` to restore it on the new backend:
 
 ```bash
-# Export everything from the current backend
-weave data export my-app -o my-app-backup.json
+# 1. Export while current backend is running
+weave data export my-app -o backup.json
 
-# Change storage (weave init or appsettings.json)
-weave init
+# 2. Stop the server
+weave workspace down my-app
 
-# Import into the new backend
-weave data import my-app-backup.json
+# 3. Switch backend
+weave storage change postgresql --connection "Host=localhost;Database=weave;..."
+
+# 4. Import into the new backend
+weave run my-app
+weave data import backup.json
 ```
 
 The export includes the workspace manifest, prompt files, skills, channels, user profiles, marketplace items, and templates — everything needed to fully reconstruct a workspace on a different machine or backend.
@@ -379,6 +394,9 @@ weave workspace presets             Browse preset templates
 
 weave workspace list                List all workspaces
 weave workspace remove <name>       Remove a workspace
+
+weave storage show                  Show current storage backend
+weave storage change <backend>      Switch storage (stop server first)
 
 weave data export <name>            Export workspace to portable JSON
 weave data import <file>            Import workspace from export file

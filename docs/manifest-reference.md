@@ -69,6 +69,11 @@ Controls isolation, networking, filesystem mounts, and secret management.
       "address": "https://vault.example.com",
       "mount": "weave/prod"
     }
+  },
+  // Override global storage for this workspace
+  "storage": {
+    "backend": "postgresql",
+    "connection_string": "Host=db.example.com;Database=weave_prod;Username=weave;Password=secret"
   }
 }
 ```
@@ -83,6 +88,8 @@ Controls isolation, networking, filesystem mounts, and secret management.
 | `secrets.provider` | string | `"env"` | `env` or `vault` |
 | `secrets.vault.address` | string | — | Vault server address |
 | `secrets.vault.mount` | string | — | Vault mount path |
+| `storage.backend` | string | — | Override global storage (`memory`, `sqlite`, `postgresql`, `sqlserver`, `redis`) |
+| `storage.connection_string` | string | — | Connection string for this workspace's storage |
 
 ---
 

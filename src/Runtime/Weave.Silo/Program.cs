@@ -48,7 +48,7 @@ else
 // Supported values: "sqlite" (default for local), "memory", "redis", "sqlserver", "postgresql"
 static void ConfigureGrainStorage(ISiloBuilder siloBuilder, IConfiguration configuration)
 {
-    var storage = configuration["Weave:Storage"]?.ToLowerInvariant() ?? "sqlite";
+    var storage = configuration["Weave:Storage"]?.ToLowerInvariant() ?? "memory";
 
     switch (storage)
     {

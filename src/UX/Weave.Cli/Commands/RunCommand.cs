@@ -70,7 +70,7 @@ internal static class RunCommand
                     return 1;
                 }
 
-                siloProcess = StartSilo(siloPath, port);
+                siloProcess = StartSilo(siloPath, port, manifest.Workspace.Storage);
                 if (siloProcess is null)
                 {
                     CliTheme.WriteError("Failed to start server.");
@@ -136,7 +136,7 @@ internal static class RunCommand
         return cmd;
     }
 
-    private static Process? StartSilo(string siloPath, int port)
+    private static Process? StartSilo(string siloPath, int port, Weave.Workspaces.Models.StorageConfig? workspaceStorage = null)
     {
         var startInfo = new ProcessStartInfo
         {
@@ -167,21 +167,31 @@ internal static class RunCommand
         startInfo.ArgumentList.Add("--Weave:LocalMode=true");
         startInfo.ArgumentList.Add($"--urls=http://localhost:{port}");
 
-        var config = CliConfigStore.Load();
-        if (!string.IsNullOrWhiteSpace(config.Storage) && config.Storage != "memory")
-        {
-            startInfo.ArgumentList.Add($"--Weave:Storage={config.Storage}");
+        var storageBackend = workspaceStorage?.Backend;
+        var storageConn = workspaceStorage?.ConnectionString;
 
-            if (!string.IsNullOrWhiteSpace(config.ConnectionString))
+        if (string.IsNullOrWhiteSpace(storageBackend))
+        {
+            var config = CliConfigStore.Load();
+            storageBackend = config.Storage;
+            storageConn = config.ConnectionString;
+        }
+
+        if (!string.IsNullOrWhiteSpace(storageBackend) && storageBackend != "memory")
+        {
+            startInfo.ArgumentList.Add($"--Weave:Storage={storageBackend}");
+
+            if (!string.IsNullOrWhiteSpace(storageConn))
             {
-                var connKey = config.Storage switch
+                var connKey = storageBackend switch
                 {
                     "postgresql" or "postgres" => "PostgreSql",
                     "sqlserver" => "SqlServer",
                     "redis" => "Redis",
+                    "sqlite" => "Sqlite",
                     _ => "Default"
                 };
-                startInfo.ArgumentList.Add($"--ConnectionStrings:{connKey}={config.ConnectionString}");
+                startInfo.ArgumentList.Add($"--ConnectionStrings:{connKey}={storageConn}");
             }
         }
 
