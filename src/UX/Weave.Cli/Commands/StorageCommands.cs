@@ -31,8 +31,12 @@ internal static class StorageCommands
 
             if (!string.IsNullOrWhiteSpace(config.ConnectionString))
             {
-                var masked = MaskConnectionString(config.ConnectionString);
-                CliTheme.WriteKeyValue("Connection", masked);
+                if (config.ConnectionString.StartsWith("env:", StringComparison.OrdinalIgnoreCase))
+                    CliTheme.WriteKeyValue("Connection", $"{config.ConnectionString} (from environment variable)");
+                else if (config.ConnectionString.StartsWith("file:", StringComparison.OrdinalIgnoreCase))
+                    CliTheme.WriteKeyValue("Connection", $"{config.ConnectionString} (from secret file)");
+                else
+                    CliTheme.WriteKeyValue("Connection", MaskConnectionString(config.ConnectionString) + " [yellow](inline — not recommended)[/]");
             }
             else
             {

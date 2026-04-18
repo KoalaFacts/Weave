@@ -226,7 +226,11 @@ internal static class RunCommand
         {
             var config = CliConfigStore.Load();
             storageBackend = config.Storage;
-            storageConn = config.ConnectionString;
+            storageConn = CliConfigStore.ResolveConnectionString(config.ConnectionString);
+        }
+        else if (!string.IsNullOrWhiteSpace(storageConn))
+        {
+            storageConn = CliConfigStore.ResolveConnectionString(storageConn);
         }
 
         if (!string.IsNullOrWhiteSpace(storageBackend) && storageBackend != "memory")

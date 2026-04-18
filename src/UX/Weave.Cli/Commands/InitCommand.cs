@@ -63,33 +63,95 @@ internal static class InitCommand
             }
             else if (storageKey is "postgresql" or "sqlserver" or "redis")
             {
-                var defaultConn = storageKey switch
-                {
-                    "postgresql" => "Host=localhost;Database=weave;Username=;Password=",
-                    "sqlserver" => "Server=localhost;Database=weave;Trusted_Connection=true;TrustServerCertificate=true",
-                    "redis" => "localhost:6379",
-                    _ => ""
-                };
-
-                connectionString = AnsiConsole.Prompt(
-                    new TextPrompt<string>("Connection string:")
+                var secretMethod = AnsiConsole.Prompt(
+                    new SelectionPrompt<string>()
+                        .Title("How would you like to provide the connection string?")
                         .Styled()
-                        .DefaultValue(defaultConn));
+                        .AddChoices(
+                            "env      — environment variable (recommended, nothing stored to disk)",
+                            "file     — read from a protected file on disk",
+                            "inline   — enter now (stored in config, not recommended for production)"));
 
-                AnsiConsole.WriteLine();
-                var reachable = await AnsiConsole.Status()
-                    .Spinner(Spinner.Known.Dots)
-                    .StartAsync("Testing connectivity...", async _ =>
+                var method = secretMethod.Split(' ')[0].Trim();
+                var envRef = CliConfigStore.ToEnvReference(storageKey);
+                var envVar = envRef[4..];
+
+                if (method == "env")
+                {
+                    connectionString = envRef;
+
+                    var currentValue = Environment.GetEnvironmentVariable(envVar);
+                    if (!string.IsNullOrWhiteSpace(currentValue))
                     {
-                        return await TestConnectivityAsync(storageKey, connectionString, cancellationToken);
-                    });
+                        CliTheme.WriteSuccess($"Environment variable {envVar} is already set.");
+                    }
+                    else
+                    {
+                        AnsiConsole.WriteLine();
+                        CliTheme.WriteInfo($"Set the environment variable before starting Weave:");
+                        CliTheme.WriteMuted($"  export {envVar}=\"Host=localhost;Database=weave;Username=...;Password=...\"");
+                        CliTheme.WriteMuted($"  Add to your shell profile (~/.bashrc, ~/.zshrc) to persist.");
+                    }
+                }
+                else if (method == "file")
+                {
+                    var defaultPath = Path.Combine(
+                        Environment.GetFolderPath(Environment.SpecialFolder.UserProfile),
+                        ".weave", "connection.secret");
 
-                if (reachable)
-                    CliTheme.WriteSuccess("Connection successful.");
+                    var secretPath = AnsiConsole.Prompt(
+                        new TextPrompt<string>("Path to secret file:")
+                            .Styled()
+                            .DefaultValue(defaultPath));
+
+                    connectionString = $"file:{secretPath}";
+
+                    if (!File.Exists(secretPath))
+                    {
+                        AnsiConsole.WriteLine();
+                        CliTheme.WriteInfo("Create the secret file with your connection string:");
+                        CliTheme.WriteMuted($"  echo 'Host=localhost;Database=weave;...' > {secretPath}");
+                        CliTheme.WriteMuted($"  chmod 600 {secretPath}");
+                    }
+                    else
+                    {
+                        CliTheme.WriteSuccess("Secret file found.");
+                    }
+                }
                 else
                 {
-                    CliTheme.WriteWarning("Could not connect. Saving config anyway — fix later.");
-                    CliTheme.WriteMuted("  Update with: weave config set connectionString \"<your-connection-string>\"");
+                    CliTheme.WriteWarning("Storing connection strings in config is not recommended for production.");
+                    var defaultConn = storageKey switch
+                    {
+                        "postgresql" => "Host=localhost;Database=weave;Username=;Password=",
+                        "sqlserver" => "Server=localhost;Database=weave;Trusted_Connection=true;TrustServerCertificate=true",
+                        "redis" => "localhost:6379",
+                        _ => ""
+                    };
+
+                    connectionString = AnsiConsole.Prompt(
+                        new TextPrompt<string>("Connection string:")
+                            .Styled()
+                            .DefaultValue(defaultConn));
+                }
+
+                // Test connectivity if we can resolve the value
+                string? resolvedConn = null;
+                try { resolvedConn = CliConfigStore.ResolveConnectionString(connectionString); }
+                catch { }
+
+                if (!string.IsNullOrWhiteSpace(resolvedConn))
+                {
+                    AnsiConsole.WriteLine();
+                    var reachable = await AnsiConsole.Status()
+                        .Spinner(Spinner.Known.Dots)
+                        .StartAsync("Testing connectivity...", async _ =>
+                            await TestConnectivityAsync(storageKey, resolvedConn, cancellationToken));
+
+                    if (reachable)
+                        CliTheme.WriteSuccess("Connection successful.");
+                    else
+                        CliTheme.WriteWarning("Could not connect — verify your connection string before starting.");
                 }
 
                 if (storageKey is "postgresql" or "sqlserver")

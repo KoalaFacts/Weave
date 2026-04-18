@@ -119,7 +119,8 @@ internal static class WorkspaceUpCommand
         if (siloPath is null)
             return false;
 
-        var port = CliConfigStore.Load().DefaultPort;
+        var config = CliConfigStore.Load();
+        var port = config.DefaultPort;
 
         var startInfo = new ProcessStartInfo
         {
@@ -148,12 +149,12 @@ internal static class WorkspaceUpCommand
         startInfo.ArgumentList.Add("--Weave:LocalMode=true");
         startInfo.ArgumentList.Add($"--urls=http://localhost:{port}");
 
-        var config = CliConfigStore.Load();
         if (!string.IsNullOrWhiteSpace(config.Storage) && config.Storage != "memory")
         {
             startInfo.ArgumentList.Add($"--Weave:Storage={config.Storage}");
 
-            if (!string.IsNullOrWhiteSpace(config.ConnectionString))
+            var resolvedConn = CliConfigStore.ResolveConnectionString(config.ConnectionString);
+            if (!string.IsNullOrWhiteSpace(resolvedConn))
             {
                 var connKey = config.Storage switch
                 {
@@ -162,7 +163,7 @@ internal static class WorkspaceUpCommand
                     "redis" => "Redis",
                     _ => "Default"
                 };
-                startInfo.ArgumentList.Add($"--ConnectionStrings:{connKey}={config.ConnectionString}");
+                startInfo.ArgumentList.Add($"--ConnectionStrings:{connKey}={resolvedConn}");
             }
         }
 
