@@ -50,9 +50,13 @@ builder.Services.AddSingleton<ILifecycleManager, LifecycleManager>();
 builder.Services.AddSingleton<ICommandRunner, ProcessCommandRunner>();
 
 if (isLocalMode)
+{
     builder.Services.AddSingleton<IWorkspaceRuntime, InProcessRuntime>();
+}
 else
+{
     builder.Services.AddSingleton<IWorkspaceRuntime, PodmanRuntime>();
+}
 
 // Source-generated CQRS handler registration — no reflection
 builder.Services.AddGeneratedCqrsHandlers();
