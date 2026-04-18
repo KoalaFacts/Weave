@@ -36,12 +36,65 @@ if (isLocalMode)
     builder.Services.AddOrleans(siloBuilder =>
     {
         siloBuilder.UseLocalhostClustering();
-        siloBuilder.AddMemoryGrainStorageAsDefault();
+        ConfigureGrainStorage(siloBuilder, builder.Configuration);
     });
 }
 else
 {
     builder.UseOrleans();
+}
+
+// Configures grain storage based on Weave:Storage setting.
+// Supported values: "memory" (default for local), "redis", "sqlserver", "postgresql"
+static void ConfigureGrainStorage(ISiloBuilder siloBuilder, IConfiguration configuration)
+{
+    var storage = configuration["Weave:Storage"]?.ToLowerInvariant() ?? "memory";
+
+    switch (storage)
+    {
+        case "sqlserver":
+            var sqlConn = configuration.GetConnectionString("SqlServer")
+                ?? throw new InvalidOperationException("ConnectionStrings:SqlServer is required when Weave:Storage is 'sqlserver'.");
+            siloBuilder.AddAdoNetGrainStorageAsDefault(options =>
+            {
+                options.ConnectionString = sqlConn;
+                options.Invariant = "Microsoft.Data.SqlClient";
+            });
+            siloBuilder.UseAdoNetClustering(options =>
+            {
+                options.ConnectionString = sqlConn;
+                options.Invariant = "Microsoft.Data.SqlClient";
+            });
+            break;
+
+        case "postgresql" or "postgres":
+            var pgConn = configuration.GetConnectionString("PostgreSql")
+                ?? throw new InvalidOperationException("ConnectionStrings:PostgreSql is required when Weave:Storage is 'postgresql'.");
+            siloBuilder.AddAdoNetGrainStorageAsDefault(options =>
+            {
+                options.ConnectionString = pgConn;
+                options.Invariant = "Npgsql";
+            });
+            siloBuilder.UseAdoNetClustering(options =>
+            {
+                options.ConnectionString = pgConn;
+                options.Invariant = "Npgsql";
+            });
+            break;
+
+        case "redis":
+            var redisConn = configuration.GetConnectionString("Redis")
+                ?? "localhost:6379";
+            siloBuilder.AddRedisGrainStorageAsDefault(options =>
+            {
+                options.ConfigurationOptions = StackExchange.Redis.ConfigurationOptions.Parse(redisConn);
+            });
+            break;
+
+        default:
+            siloBuilder.AddMemoryGrainStorageAsDefault();
+            break;
+    }
 }
 
 // Shared kernel services

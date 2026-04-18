@@ -235,6 +235,38 @@ curl http://localhost:5000/api/templates
 
 Templates validate that the agent model is specified, all referenced tools exist in `required_tools`, and every tool has a valid type — before they can be published.
 
+## Storage Backends
+
+Weave uses Orleans grain persistence. Choose the backend that fits your infrastructure:
+
+| Backend | Config value | Connection string key | Use case |
+|---|---|---|---|
+| **In-Memory** | `memory` (default) | — | Local dev, no persistence needed |
+| **Redis** | `redis` | `ConnectionStrings:Redis` | Fast, shared state across silos |
+| **SQL Server** | `sqlserver` | `ConnectionStrings:SqlServer` | Enterprise, existing SQL infrastructure |
+| **PostgreSQL** | `postgresql` | `ConnectionStrings:PostgreSql` | Cross-platform relational, open source |
+
+Configure via `appsettings.json` or environment variables:
+
+```jsonc
+{
+  "Weave": {
+    "Storage": "postgresql"  // or "sqlserver", "redis", "memory"
+  },
+  "ConnectionStrings": {
+    "PostgreSql": "Host=localhost;Database=weave;Username=weave;Password=secret"
+  }
+}
+```
+
+Or via CLI:
+```bash
+weave run my-app -- --Weave:Storage=postgresql \
+  --ConnectionStrings:PostgreSql="Host=localhost;Database=weave;Username=weave;Password=secret"
+```
+
+All backends support both grain state persistence and cluster membership. Orleans provides [SQL scripts](https://learn.microsoft.com/dotnet/orleans/host/configuration-guide/adonet-configuration) for creating the required tables.
+
 ## Security
 
 Security is not an add-on — it is the architecture. Every tool call passes through multiple layers before anything executes.
