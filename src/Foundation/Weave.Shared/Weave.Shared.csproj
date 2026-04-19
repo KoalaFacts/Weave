@@ -4,10 +4,18 @@
     <Description>Core abstractions and utilities for Weave — event bus, lifecycle management, command dispatch, and secret handling.</Description>
     <EmitCompilerGeneratedFiles>true</EmitCompilerGeneratedFiles>
     <CompilerGeneratedFilesOutputPath>$(BaseIntermediateOutputPath)\GeneratedFiles</CompilerGeneratedFilesOutputPath>
+    <!-- NU1510: System.Text.Json is a framework package under net10.0,
+         but we reference it explicitly (PrivateAssets="all") so the
+         source-gen JsonConverter emissions bind against a known API. -->
+    <NoWarn>$(NoWarn);NU1510</NoWarn>
   </PropertyGroup>
 
   <ItemGroup>
-    <PackageReference Include="Microsoft.Orleans.Sdk" />
+    <!-- Weave.Shared is Orleans-free. Every type here that crosses
+         grain boundaries (DomainEvent, LifecycleContext, SecretValue,
+         branded IDs) has its Orleans serialization adapters in
+         Weave.Shared.Orleans. -->
+    <PackageReference Include="System.Text.Json" PrivateAssets="all" GeneratePathProperty="true" />
     <PackageReference Include="Microsoft.Extensions.AI.Abstractions" />
     <PackageReference Include="Microsoft.Extensions.DependencyInjection.Abstractions" />
     <PackageReference Include="Microsoft.Extensions.Logging.Abstractions" />

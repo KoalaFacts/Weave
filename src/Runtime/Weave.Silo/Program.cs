@@ -1,4 +1,6 @@
 using Microsoft.AspNetCore.Mvc;
+using Microsoft.Extensions.DependencyInjection;
+using Orleans.Serialization;
 using Scalar.AspNetCore;
 using Weave.Agents.Pipeline;
 using Weave.Security.Plugins;
@@ -31,6 +33,16 @@ var isLocalMode = builder.Configuration.GetValue<bool>("Weave:LocalMode")
     || builder.Configuration["Orleans:ClusterId"] is null;
 
 builder.AddServiceDefaults();
+
+// Belt + suspenders: explicitly scan our own assembly for the
+// [RegisterConverter] surrogates that adapt Weave.Shared types
+// (branded IDs, DomainEvent, LifecycleContext, SecretValue) into
+// Orleans wire format. The [ApplicationPart] attribute emitted by
+// Microsoft.Orleans.Sdk usually handles this, but explicit scan
+// guarantees the serializer config validator sees every converter
+// at startup.
+builder.Services.AddSerializer(s =>
+    s.AddAssembly(typeof(Weave.Silo.Serialization.SerializationMarker).Assembly));
 
 if (isLocalMode)
 {

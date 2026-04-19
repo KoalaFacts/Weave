@@ -684,6 +684,13 @@
           "Microsoft.Orleans.Sdk": "[10.0.1, )"
         }
       },
+      "weave.shared.orleans": {
+        "type": "Project",
+        "dependencies": {
+          "Microsoft.Orleans.Sdk": "[10.0.1, )",
+          "Weave.Shared": "[1.0.0, )"
+        }
+      },
       "weave.tools": {
         "type": "Project",
         "dependencies": {

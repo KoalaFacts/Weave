@@ -2,12 +2,16 @@ using Weave.Shared.Ids;
 
 namespace Weave.Shared.Lifecycle;
 
-[GenerateSerializer]
+/// <summary>
+/// Workspace lifecycle state passed through grain calls. Orleans
+/// serialization is applied externally via a surrogate in
+/// <c>Weave.Shared.Orleans</c>.
+/// </summary>
 public sealed record LifecycleContext
 {
-    [Id(0)] public required WorkspaceId WorkspaceId { get; init; }
-    [Id(1)] public string? AgentName { get; init; }
-    [Id(2)] public string? ToolName { get; init; }
-    [Id(3)] public LifecyclePhase Phase { get; init; }
-    [Id(4)] public Dictionary<string, string> Properties { get; init; } = [];
+    public required WorkspaceId WorkspaceId { get; init; }
+    public string? AgentName { get; init; }
+    public string? ToolName { get; init; }
+    public LifecyclePhase Phase { get; init; }
+    public Dictionary<string, string> Properties { get; init; } = [];
 }

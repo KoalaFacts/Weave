@@ -5,22 +5,26 @@ using System.Text.Json.Serialization;
 
 namespace Weave.Shared.Secrets;
 
-[GenerateSerializer]
+/// <summary>
+/// Authenticated-encryption envelope for secrets in-memory. The
+/// plaintext never leaves this struct. External code (including
+/// Orleans surrogates, custom serializers, or plugin-authored
+/// adapters) should round-trip SecretValues via
+/// <see cref="ToEnvelope"/> / <see cref="FromEnvelope"/>, which
+/// expose only the already-encrypted bytes.
+/// </summary>
 [DebuggerDisplay("SecretValue(REDACTED)")]
 [JsonConverter(typeof(SecretValueJsonConverter))]
 public readonly struct SecretValue : IEquatable<SecretValue>, IDisposable
 {
     private static readonly byte[] ProcessKey = RandomNumberGenerator.GetBytes(32);
 
-    [Id(0)]
     [DebuggerBrowsable(DebuggerBrowsableState.Never)]
     private readonly byte[] _encrypted;
 
-    [Id(1)]
     [DebuggerBrowsable(DebuggerBrowsableState.Never)]
     private readonly byte[] _nonce;
 
-    [Id(2)]
     [DebuggerBrowsable(DebuggerBrowsableState.Never)]
     private readonly byte[] _tag;
 
@@ -36,7 +40,36 @@ public readonly struct SecretValue : IEquatable<SecretValue>, IDisposable
 
     public SecretValue(string plaintext) : this(Encoding.UTF8.GetBytes(plaintext)) { }
 
+    /// <summary>
+    /// Rehydrates a SecretValue from an already-encrypted envelope.
+    /// Use together with <see cref="ToEnvelope"/> to round-trip
+    /// through a wire format. The ciphertext is bound to the
+    /// originating process's key, so envelopes are not portable
+    /// across hosts.
+    /// </summary>
+    public static SecretValue FromEnvelope(in Envelope envelope) =>
+        new(envelope.Ciphertext ?? [], envelope.Nonce ?? [], envelope.Tag ?? []);
+
+    private SecretValue(byte[] encrypted, byte[] nonce, byte[] tag)
+    {
+        _encrypted = encrypted;
+        _nonce = nonce;
+        _tag = tag;
+    }
+
     public bool HasValue => _encrypted is { Length: > 0 };
+
+    /// <summary>
+    /// Returns a copy of the internal ciphertext envelope (ciphertext,
+    /// nonce, authentication tag). Safe to serialize; the plaintext
+    /// is never exposed.
+    /// </summary>
+    public Envelope ToEnvelope() => new()
+    {
+        Ciphertext = _encrypted,
+        Nonce = _nonce,
+        Tag = _tag
+    };
 
     public byte[] Decrypt()
     {
@@ -81,5 +114,16 @@ public readonly struct SecretValue : IEquatable<SecretValue>, IDisposable
     {
         if (_encrypted is not null)
             CryptographicOperations.ZeroMemory(_encrypted);
+    }
+
+    /// <summary>
+    /// Opaque encrypted representation of a <see cref="SecretValue"/>.
+    /// All three byte arrays are required to reconstruct the original.
+    /// </summary>
+    public readonly struct Envelope
+    {
+        public required byte[] Ciphertext { get; init; }
+        public required byte[] Nonce { get; init; }
+        public required byte[] Tag { get; init; }
     }
 }

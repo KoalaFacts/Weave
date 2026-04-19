@@ -466,6 +466,7 @@ internal static class TuiApp
 
         ApiWorkspaceResponse? response = null;
         Exception? error = null;
+        WorkspaceUpCommand.AutoStartResult? siloFailure = null;
 
         await AnsiConsole.Status()
             .Spinner(Spinner.Known.Dots)
@@ -483,20 +484,16 @@ internal static class TuiApp
                         {
                             error = new InvalidOperationException(
                                 "Could not locate the Weave Silo on disk. " +
-                                "Set one of: WEAVE_SILO_PATH env var, `weave config set silo-path <path>`, " +
-                                "or run `weave tui` from the repo root.");
+                                "Set WEAVE_SILO_PATH, run `weave config set silo-path <path>`, " +
+                                "or start the TUI from the repo root.");
                             return;
                         }
 
                         ctx.Status($"Silo not running — launching from {siloPath}…");
-                        var started = await WorkspaceUpCommand.AutoStartServeAsync(ct);
-                        if (!started)
+                        var outcome = await WorkspaceUpCommand.AutoStartServeWithDiagnosticsAsync(ct);
+                        if (!outcome.Success)
                         {
-                            var port = CliConfigStore.Load().DefaultPort;
-                            error = new InvalidOperationException(
-                                $"Silo at {siloPath} was launched but did not respond on " +
-                                $"http://localhost:{port}/health within 30s. Check for a port conflict or " +
-                                $"run `weave serve` in another terminal to see startup logs.");
+                            siloFailure = outcome;
                             return;
                         }
                         ctx.Status($"Silo ready — starting '{manifest.Name}'…");
@@ -514,6 +511,13 @@ internal static class TuiApp
                 }
             });
 
+        if (siloFailure is not null)
+        {
+            CliTheme.WriteError($"Silo start failed: {siloFailure.Reason ?? "unknown"}");
+            CliTheme.WriteMuted($"  Log: {siloFailure.LogPath}");
+            RenderLogTail(siloFailure.LogPath, lineCount: 15);
+            return;
+        }
         if (error is not null)
         {
             CliTheme.WriteError($"Failed to start: {error.Message}");
@@ -531,6 +535,38 @@ internal static class TuiApp
             TryAutoSelectAgent(session);
 
         RenderNextStepHint(session);
+    }
+
+    /// <summary>
+    /// Prints the last <paramref name="lineCount"/> lines of the given
+    /// log file inside a muted panel so the user sees the Silo crash
+    /// reason without leaving the TUI.
+    /// </summary>
+    private static void RenderLogTail(string logPath, int lineCount)
+    {
+        if (!File.Exists(logPath))
+            return;
+
+        string[] lines;
+        try
+        {
+            lines = File.ReadAllLines(logPath);
+        }
+        catch (Exception ex)
+        {
+            CliTheme.WriteMuted($"  (could not read log: {ex.Message})");
+            return;
+        }
+
+        var tail = lines.Length <= lineCount
+            ? lines
+            : lines[^lineCount..];
+
+        var body = string.Join(
+            '\n',
+            tail.Select(l => $"[rgb({CliTheme.Muted.R},{CliTheme.Muted.G},{CliTheme.Muted.B})]{Markup.Escape(l)}[/]"));
+
+        AnsiConsole.Write(CliTheme.CreatePanel(body, $"last {tail.Length} lines of silo.log"));
     }
 
     private static async Task StopWorkspaceInSessionAsync(TuiSession session, CancellationToken ct)

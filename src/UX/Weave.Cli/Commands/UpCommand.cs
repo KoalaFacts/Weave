@@ -113,11 +113,24 @@ internal static class WorkspaceUpCommand
         return cmd;
     }
 
-    internal static async Task<bool> AutoStartServeAsync(CancellationToken ct)
+    internal static string GetSiloLogPath()
     {
+        var weaveHome = Path.Combine(
+            Environment.GetFolderPath(Environment.SpecialFolder.UserProfile), ".weave");
+        return Path.Combine(weaveHome, "silo.log");
+    }
+
+    internal sealed record AutoStartResult(bool Success, string LogPath, string? Reason);
+
+    internal static async Task<bool> AutoStartServeAsync(CancellationToken ct)
+        => (await AutoStartServeWithDiagnosticsAsync(ct)).Success;
+
+    internal static async Task<AutoStartResult> AutoStartServeWithDiagnosticsAsync(CancellationToken ct)
+    {
+        var logPath = GetSiloLogPath();
         var siloPath = ResolveSiloPath();
         if (siloPath is null)
-            return false;
+            return new AutoStartResult(false, logPath, "Could not locate the Weave Silo on disk.");
 
         var config = CliConfigStore.Load();
         var port = config.DefaultPort;
@@ -167,22 +180,92 @@ internal static class WorkspaceUpCommand
             }
         }
 
-        Process.Start(startInfo);
+        // Open a log file to capture the Silo's stdout/stderr. Crucially,
+        // we *drain* both pipes via event handlers; otherwise Silo blocks
+        // the moment its ~4 KB stdout buffer fills and /health never
+        // comes up.
+        Directory.CreateDirectory(Path.GetDirectoryName(logPath)!);
+        StreamWriter? logWriter = null;
+        try
+        {
+            logWriter = new StreamWriter(logPath, append: false) { AutoFlush = true };
+            logWriter.WriteLine($"=== Silo launch {DateTimeOffset.Now:o} ===");
+            logWriter.WriteLine($"    cwd: {Environment.CurrentDirectory}");
+            logWriter.WriteLine($"    args: {string.Join(' ', startInfo.ArgumentList)}");
+        }
+        catch (Exception ex)
+        {
+            // Continue without log — startup still possible on a
+            // read-only home dir, but diagnostics will be thin.
+            logWriter?.Dispose();
+            logWriter = null;
+            Console.Error.WriteLine($"(silo log unavailable: {ex.Message})");
+        }
+
+        Process? process;
+        try
+        {
+            process = Process.Start(startInfo);
+        }
+        catch (Exception ex)
+        {
+            logWriter?.Dispose();
+            return new AutoStartResult(false, logPath, $"Failed to launch dotnet: {ex.Message}");
+        }
+
+        if (process is null)
+        {
+            logWriter?.Dispose();
+            return new AutoStartResult(false, logPath, "Process.Start returned null.");
+        }
+
+        if (logWriter is not null)
+        {
+            var writerLock = new object();
+            void AppendLine(string prefix, string? line)
+            {
+                if (line is null)
+                    return;
+                lock (writerLock)
+                {
+                    try
+                    { logWriter.WriteLine($"{DateTime.Now:HH:mm:ss} {prefix} {line}"); }
+                    catch { /* writer may be disposed on exit */ }
+                }
+            }
+            process.OutputDataReceived += (_, e) => AppendLine("OUT", e.Data);
+            process.ErrorDataReceived += (_, e) => AppendLine("ERR", e.Data);
+            process.BeginOutputReadLine();
+            process.BeginErrorReadLine();
+        }
 
         using var http = new HttpClient { Timeout = TimeSpan.FromSeconds(2) };
-        for (var i = 0; i < 60; i++)
+        for (var i = 0; i < 120; i++) // 60 s budget
         {
             await Task.Delay(500, ct);
+
+            if (process.HasExited)
+                return new AutoStartResult(
+                    false,
+                    logPath,
+                    $"Silo process exited with code {process.ExitCode} during startup.");
+
             try
             {
                 var response = await http.GetAsync($"http://localhost:{port}/health", ct);
                 if (response.IsSuccessStatusCode)
-                    return true;
+                    return new AutoStartResult(true, logPath, null);
             }
-            catch { }
+            catch
+            {
+                // expected while the Silo is still warming up
+            }
         }
 
-        return false;
+        return new AutoStartResult(
+            false,
+            logPath,
+            "Silo did not respond to /health within 60s.");
     }
 
     internal static string? ResolveSiloPath()
