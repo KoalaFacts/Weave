@@ -38,8 +38,8 @@
     <PackageVersion Include="Microsoft.Data.Sqlite" Version="10.0.5" />
   </ItemGroup>
   <ItemGroup Label="Microsoft.Extensions">
-    <PackageVersion Include="Microsoft.Extensions.DependencyInjection.Abstractions" Version="10.0.5" />
-    <PackageVersion Include="Microsoft.Extensions.Logging.Abstractions" Version="10.0.5" />
+    <PackageVersion Include="Microsoft.Extensions.DependencyInjection.Abstractions" Version="10.0.6" />
+    <PackageVersion Include="Microsoft.Extensions.Logging.Abstractions" Version="10.0.6" />
     <PackageVersion Include="System.Threading.RateLimiting" Version="10.0.5" />
   </ItemGroup>
   <ItemGroup Label="Microsoft.Extensions.AI">
