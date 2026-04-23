@@ -76,6 +76,7 @@ static void ConfigureGrainStorage(ISiloBuilder siloBuilder, IConfiguration confi
                 options.Invariant = "Microsoft.Data.Sqlite";
             });
             break;
+
         case "sqlserver":
             var sqlConn = configuration.GetConnectionString("SqlServer")
                 ?? throw new InvalidOperationException("ConnectionStrings:SqlServer is required when Weave:Storage is 'sqlserver'.");
@@ -141,7 +142,7 @@ static string DefaultSqlitePath()
 {
     var weaveHome = Path.Combine(
         Environment.GetFolderPath(Environment.SpecialFolder.UserProfile), ".weave");
-    Directory.CreateDirectory(weaveHome);
+
     return $"Data Source={Path.Combine(weaveHome, "weave.db")}";
 }
 
@@ -349,8 +350,3 @@ app.MapMarketplaceEndpoints();
 app.MapTemplateEndpoints();
 
 app.Run();
-
-// Exposed for WebApplicationFactory<T> in Weave.Silo.Tests. Top-level
-// programs synthesise an internal Program class; this partial makes
-// the same class public so test hosts can bind to it.
-public partial class Program { }
