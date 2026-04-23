@@ -23,7 +23,7 @@ internal sealed class WorkspaceApiClient : IDisposable
         {
             Manifest = manifest
         }, CliApiJsonContext.Default.ApiStartWorkspaceRequest, cancellationToken);
-        response.EnsureSuccessStatusCode();
+        await EnsureSuccessOrThrowAsync(response, cancellationToken);
         return (await response.Content.ReadFromJsonAsync(CliApiJsonContext.Default.ApiWorkspaceResponse, cancellationToken))
             ?? throw new InvalidOperationException("Workspace API returned an empty start response.");
     }
@@ -31,13 +31,13 @@ internal sealed class WorkspaceApiClient : IDisposable
     public async Task StopWorkspaceAsync(string workspaceId, CancellationToken cancellationToken)
     {
         var response = await _httpClient.DeleteAsync($"/api/workspaces/{workspaceId}", cancellationToken);
-        response.EnsureSuccessStatusCode();
+        await EnsureSuccessOrThrowAsync(response, cancellationToken);
     }
 
     public async Task<ApiWorkspaceResponse> GetWorkspaceAsync(string workspaceId, CancellationToken cancellationToken)
     {
         using var response = await _httpClient.GetAsync($"/api/workspaces/{workspaceId}", cancellationToken);
-        response.EnsureSuccessStatusCode();
+        await EnsureSuccessOrThrowAsync(response, cancellationToken);
         return (await response.Content.ReadFromJsonAsync(CliApiJsonContext.Default.ApiWorkspaceResponse, cancellationToken))
             ?? throw new InvalidOperationException("Workspace API returned an empty payload for '/api/workspaces/'.");
     }
@@ -45,7 +45,7 @@ internal sealed class WorkspaceApiClient : IDisposable
     public async Task<IReadOnlyList<ApiAgentResponse>> GetAgentsAsync(string workspaceId, CancellationToken cancellationToken)
     {
         using var response = await _httpClient.GetAsync($"/api/workspaces/{workspaceId}/agents", cancellationToken);
-        response.EnsureSuccessStatusCode();
+        await EnsureSuccessOrThrowAsync(response, cancellationToken);
         return (await response.Content.ReadFromJsonAsync(CliApiJsonContext.Default.ListApiAgentResponse, cancellationToken))
             ?? throw new InvalidOperationException("Workspace API returned an empty payload for '/api/workspaces/{workspaceId}/agents'.");
     }
@@ -53,7 +53,7 @@ internal sealed class WorkspaceApiClient : IDisposable
     public async Task<IReadOnlyList<ApiToolResponse>> GetToolsAsync(string workspaceId, CancellationToken cancellationToken)
     {
         using var response = await _httpClient.GetAsync($"/api/workspaces/{workspaceId}/tools", cancellationToken);
-        response.EnsureSuccessStatusCode();
+        await EnsureSuccessOrThrowAsync(response, cancellationToken);
         return (await response.Content.ReadFromJsonAsync(CliApiJsonContext.Default.ListApiToolResponse, cancellationToken))
             ?? throw new InvalidOperationException("Workspace API returned an empty payload for '/api/workspaces/{workspaceId}/tools'.");
     }
@@ -71,9 +71,44 @@ internal sealed class WorkspaceApiClient : IDisposable
             new ApiSendMessageRequest { Content = content },
             CliApiJsonContext.Default.ApiSendMessageRequest,
             cancellationToken);
-        response.EnsureSuccessStatusCode();
+        await EnsureSuccessOrThrowAsync(response, cancellationToken);
         return (await response.Content.ReadFromJsonAsync(CliApiJsonContext.Default.ApiChatResponse, cancellationToken))
             ?? throw new InvalidOperationException("Agent API returned an empty chat response.");
+    }
+
+    // ── Error handling ────────────────────────────────────────────
+    //
+    // HttpResponseMessage.EnsureSuccessStatusCode() throws a message
+    // like "Response status code does not indicate success: 409
+    // (Conflict)" — which is what you'd see without any clue WHY.
+    // The Silo emits RFC 7807 ProblemDetails on errors, so the
+    // response body has the actual reason. This helper reads it and
+    // routes through FormatHttpError so the user's message lands on
+    // screen instead of a generic status code.
+
+    private static async Task EnsureSuccessOrThrowAsync(
+        HttpResponseMessage response, CancellationToken ct)
+    {
+        if (response.IsSuccessStatusCode)
+            return;
+
+        string body;
+        try
+        { body = await response.Content.ReadAsStringAsync(ct); }
+        catch { body = string.Empty; }
+
+        var message = FormatHttpError((int)response.StatusCode, response.ReasonPhrase, body);
+        throw new HttpRequestException(message, inner: null, response.StatusCode);
+    }
+
+    // TODO(you) — shape this however you want the CLI to present
+    // Silo errors. See the request above the method for options.
+    private static string FormatHttpError(int statusCode, string? reason, string body)
+    {
+        // BASELINE: echo the raw body verbatim. Works but verbose.
+        // Consider parsing ProblemDetails JSON for a cleaner one-liner.
+        var safeBody = string.IsNullOrWhiteSpace(body) ? "(no response body)" : body.Trim();
+        return $"HTTP {statusCode} {reason}: {safeBody}";
     }
 
     public void Dispose() => _httpClient.Dispose();
@@ -83,7 +118,7 @@ internal sealed class WorkspaceApiClient : IDisposable
     public async Task<IReadOnlyList<JsonElement>> GetSkillsAsync(string workspaceId, CancellationToken cancellationToken)
     {
         using var response = await _httpClient.GetAsync($"/api/workspaces/{workspaceId}/skills", cancellationToken);
-        response.EnsureSuccessStatusCode();
+        await EnsureSuccessOrThrowAsync(response, cancellationToken);
         return (await response.Content.ReadFromJsonAsync(CliApiJsonContext.Default.ListJsonElement, cancellationToken))
             ?? [];
     }
@@ -92,7 +127,7 @@ internal sealed class WorkspaceApiClient : IDisposable
     {
         var response = await _httpClient.PostAsJsonAsync(
             $"/api/workspaces/{workspaceId}/skills", skill, CliApiJsonContext.Default.JsonElement, cancellationToken);
-        response.EnsureSuccessStatusCode();
+        await EnsureSuccessOrThrowAsync(response, cancellationToken);
     }
 
     // --- Channels ---
@@ -100,7 +135,7 @@ internal sealed class WorkspaceApiClient : IDisposable
     public async Task<IReadOnlyList<JsonElement>> GetChannelsAsync(string workspaceId, CancellationToken cancellationToken)
     {
         using var response = await _httpClient.GetAsync($"/api/workspaces/{workspaceId}/channels", cancellationToken);
-        response.EnsureSuccessStatusCode();
+        await EnsureSuccessOrThrowAsync(response, cancellationToken);
         return (await response.Content.ReadFromJsonAsync(CliApiJsonContext.Default.ListJsonElement, cancellationToken))
             ?? [];
     }
@@ -109,7 +144,7 @@ internal sealed class WorkspaceApiClient : IDisposable
     {
         var response = await _httpClient.PostAsJsonAsync(
             $"/api/workspaces/{workspaceId}/channels", channel, CliApiJsonContext.Default.JsonElement, cancellationToken);
-        response.EnsureSuccessStatusCode();
+        await EnsureSuccessOrThrowAsync(response, cancellationToken);
     }
 
     // --- Templates ---
@@ -117,7 +152,7 @@ internal sealed class WorkspaceApiClient : IDisposable
     public async Task<IReadOnlyList<JsonElement>> GetTemplatesAsync(CancellationToken cancellationToken)
     {
         using var response = await _httpClient.GetAsync("/api/templates", cancellationToken);
-        response.EnsureSuccessStatusCode();
+        await EnsureSuccessOrThrowAsync(response, cancellationToken);
         return (await response.Content.ReadFromJsonAsync(CliApiJsonContext.Default.ListJsonElement, cancellationToken))
             ?? [];
     }
@@ -127,7 +162,7 @@ internal sealed class WorkspaceApiClient : IDisposable
     public async Task<IReadOnlyList<ApiMarketplaceItemResponse>> GetMarketplaceItemsAsync(CancellationToken cancellationToken)
     {
         using var response = await _httpClient.GetAsync("/api/marketplace", cancellationToken);
-        response.EnsureSuccessStatusCode();
+        await EnsureSuccessOrThrowAsync(response, cancellationToken);
         return (await response.Content.ReadFromJsonAsync(CliApiJsonContext.Default.ListApiMarketplaceItemResponse, cancellationToken))
             ?? [];
     }
@@ -135,7 +170,7 @@ internal sealed class WorkspaceApiClient : IDisposable
     public async Task<IReadOnlyList<ApiMarketplaceItemResponse>> SearchMarketplaceAsync(string query, CancellationToken cancellationToken)
     {
         using var response = await _httpClient.GetAsync($"/api/marketplace/search?q={Uri.EscapeDataString(query)}", cancellationToken);
-        response.EnsureSuccessStatusCode();
+        await EnsureSuccessOrThrowAsync(response, cancellationToken);
         return (await response.Content.ReadFromJsonAsync(CliApiJsonContext.Default.ListApiMarketplaceItemResponse, cancellationToken))
             ?? [];
     }
@@ -145,7 +180,7 @@ internal sealed class WorkspaceApiClient : IDisposable
         using var response = await _httpClient.GetAsync($"/api/marketplace/{Uri.EscapeDataString(itemId)}", cancellationToken);
         if (response.StatusCode == System.Net.HttpStatusCode.NotFound)
             return null;
-        response.EnsureSuccessStatusCode();
+        await EnsureSuccessOrThrowAsync(response, cancellationToken);
         return await response.Content.ReadFromJsonAsync(CliApiJsonContext.Default.ApiMarketplaceItemResponse, cancellationToken);
     }
 
@@ -162,7 +197,7 @@ internal sealed class WorkspaceApiClient : IDisposable
             Author = author,
             Tags = [.. tags]
         }, CliApiJsonContext.Default.ApiSubmitMarketplaceRequest, cancellationToken);
-        response.EnsureSuccessStatusCode();
+        await EnsureSuccessOrThrowAsync(response, cancellationToken);
         return (await response.Content.ReadFromJsonAsync(CliApiJsonContext.Default.ApiMarketplaceItemResponse, cancellationToken))
             ?? throw new InvalidOperationException("Marketplace API returned an empty response.");
     }
@@ -176,7 +211,7 @@ internal sealed class WorkspaceApiClient : IDisposable
             Approved = approved,
             Notes = notes
         }, CliApiJsonContext.Default.ApiPublishMarketplaceRequest, cancellationToken);
-        response.EnsureSuccessStatusCode();
+        await EnsureSuccessOrThrowAsync(response, cancellationToken);
         return (await response.Content.ReadFromJsonAsync(CliApiJsonContext.Default.ApiMarketplaceItemResponse, cancellationToken))
             ?? throw new InvalidOperationException("Marketplace API returned an empty response.");
     }

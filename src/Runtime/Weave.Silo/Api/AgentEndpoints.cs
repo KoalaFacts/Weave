@@ -82,7 +82,7 @@ public static class AgentEndpoints
     {
         var query = new GetAgentStateQuery(WorkspaceId.From(workspaceId), agentName);
         var state = await dispatcher.DispatchAsync<GetAgentStateQuery, AgentState>(query, ct);
-        if (string.IsNullOrWhiteSpace(state.AgentId))
+        if (state.Definition is null)
             return ResultExtensions.NotFound($"Agent '{agentName}' not found in workspace '{workspaceId}'.");
 
         return Results.Ok(AgentResponse.FromState(state));
@@ -97,7 +97,7 @@ public static class AgentEndpoints
     {
         var query = new GetAgentStateQuery(WorkspaceId.From(workspaceId), agentName);
         var state = await dispatcher.DispatchAsync<GetAgentStateQuery, AgentState>(query, ct);
-        if (string.IsNullOrWhiteSpace(state.AgentId))
+        if (state.Definition is null)
             return ResultExtensions.NotFound($"Agent '{agentName}' not found in workspace '{workspaceId}'.");
 
         IEnumerable<AgentTaskInfo> tasks = state.ActiveTasks;
@@ -125,7 +125,7 @@ public static class AgentEndpoints
     {
         var query = new GetAgentStateQuery(WorkspaceId.From(workspaceId), agentName);
         var state = await dispatcher.DispatchAsync<GetAgentStateQuery, AgentState>(query, ct);
-        if (string.IsNullOrWhiteSpace(state.AgentId))
+        if (state.Definition is null)
             return ResultExtensions.NotFound($"Agent '{agentName}' not found in workspace '{workspaceId}'.");
 
         var task = state.ActiveTasks.FirstOrDefault(t => t.TaskId == AgentTaskId.From(taskId));

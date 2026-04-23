@@ -6,6 +6,7 @@ namespace Weave.Agents.Heartbeat;
 
 public sealed partial class HeartbeatGrain(
     IGrainFactory grainFactory,
+    TimeProvider timeProvider,
     ILogger<HeartbeatGrain> logger) : Grain, IHeartbeatGrain, IDisposable
 {
     private HeartbeatState _state = new();
@@ -22,7 +23,7 @@ public sealed partial class HeartbeatGrain(
         {
             IsRunning = true,
             Config = config,
-            NextRun = DateTimeOffset.UtcNow.AddMinutes(minutes)
+            NextRun = timeProvider.GetUtcNow().AddMinutes(minutes)
         };
 
         var interval = TimeSpan.FromMinutes(minutes);
@@ -45,27 +46,44 @@ public sealed partial class HeartbeatGrain(
 
     public Task<HeartbeatState> GetStateAsync() => Task.FromResult(_state);
 
-    private async Task OnHeartbeatTick(CancellationToken ct)
+    internal async Task OnHeartbeatTick(CancellationToken ct)
     {
         var key = GetAgentKey();
-        LogHeartbeatTick(key);
+        _state = await PerformTickAsync(_state, key, grainFactory, timeProvider, logger, ct);
+    }
+
+    /// <summary>
+    /// Pure tick logic — takes the current state + collaborators and returns
+    /// the next state. Factored out of <see cref="OnHeartbeatTick"/> so tests
+    /// can exercise every branch without needing an Orleans grain runtime
+    /// (per the "promote private methods to internal for testability" rule
+    /// in <c>CLAUDE.md</c>, as demonstrated by <c>ProofValidatorGrain</c>).
+    /// </summary>
+    internal static async Task<HeartbeatState> PerformTickAsync(
+        HeartbeatState state,
+        string agentKey,
+        IGrainFactory grainFactory,
+        TimeProvider timeProvider,
+        ILogger logger,
+        CancellationToken ct)
+    {
+        Log.HeartbeatTick(logger, agentKey);
 
         try
         {
-            if (string.Equals(key, "unknown-agent", StringComparison.Ordinal))
-                return;
+            if (string.Equals(agentKey, "unknown-agent", StringComparison.Ordinal))
+                return state;
 
-            var agentGrain = grainFactory.GetGrain<IAgentGrain>(key);
+            var agentGrain = grainFactory.GetGrain<IAgentGrain>(agentKey);
             var agentState = await agentGrain.GetStateAsync();
 
             if (agentState.Status is not Models.AgentStatus.Active)
             {
-                LogAgentNotActive(key);
-                return;
+                Log.AgentNotActive(logger, agentKey);
+                return state;
             }
 
-            // Submit heartbeat tasks to the agent
-            foreach (var task in _state.Config.Tasks)
+            foreach (var task in state.Config.Tasks)
             {
                 AgentTaskInfo? taskInfo = null;
                 try
@@ -74,10 +92,7 @@ public sealed partial class HeartbeatGrain(
                     var response = await agentGrain.SendAsync(new Models.AgentMessage
                     {
                         Content = task,
-                        Metadata = new Dictionary<string, string>
-                        {
-                            ["source"] = "heartbeat"
-                        }
+                        Metadata = new Dictionary<string, string> { ["source"] = "heartbeat" }
                     });
 
                     var proof = new Models.ProofOfWork
@@ -93,11 +108,11 @@ public sealed partial class HeartbeatGrain(
                     };
                     await agentGrain.CompleteTaskAsync(taskInfo.TaskId, success: true, proof);
 
-                    LogHeartbeatTaskCompleted(key, response.Content.Length);
+                    Log.HeartbeatTaskCompleted(logger, agentKey, response.Content.Length);
                 }
                 catch (InvalidOperationException ex) when (ex.Message.Contains("max concurrent", StringComparison.Ordinal))
                 {
-                    LogAgentAtMaxCapacity(key);
+                    Log.AgentAtMaxCapacity(logger, agentKey);
                     break;
                 }
                 catch (Exception ex)
@@ -116,20 +131,22 @@ public sealed partial class HeartbeatGrain(
                         await agentGrain.CompleteTaskAsync(taskInfo.TaskId, success: false, failProof);
                     }
 
-                    LogHeartbeatTaskFailed(ex, key);
+                    Log.HeartbeatTaskFailed(logger, ex, agentKey);
                 }
             }
 
-            _state = _state with
+            var tickNow = timeProvider.GetUtcNow();
+            return state with
             {
-                LastRun = DateTimeOffset.UtcNow,
-                ExecutionCount = _state.ExecutionCount + 1,
-                NextRun = DateTimeOffset.UtcNow.AddMinutes(ParseCronMinutes(_state.Config.Cron))
+                LastRun = tickNow,
+                ExecutionCount = state.ExecutionCount + 1,
+                NextRun = tickNow.AddMinutes(ParseCronMinutes(state.Config.Cron))
             };
         }
         catch (Exception ex)
         {
-            LogHeartbeatTickFailed(ex, key);
+            Log.HeartbeatTickFailed(logger, ex, agentKey);
+            return state;
         }
     }
 
@@ -173,21 +190,26 @@ public sealed partial class HeartbeatGrain(
     [LoggerMessage(Level = LogLevel.Information, Message = "Heartbeat stopped for {Key}")]
     private partial void LogHeartbeatStopped(string key);
 
-    [LoggerMessage(Level = LogLevel.Debug, Message = "Heartbeat tick for {Key}")]
-    private partial void LogHeartbeatTick(string key);
+    // Static tick-path logging: PerformTickAsync is static (for testability),
+    // so it needs static logger helpers rather than instance partial methods.
+    private static partial class Log
+    {
+        [LoggerMessage(Level = LogLevel.Debug, Message = "Heartbeat tick for {Key}")]
+        public static partial void HeartbeatTick(ILogger logger, string key);
 
-    [LoggerMessage(Level = LogLevel.Debug, Message = "Agent {Key} not active, skipping heartbeat tasks")]
-    private partial void LogAgentNotActive(string key);
+        [LoggerMessage(Level = LogLevel.Debug, Message = "Agent {Key} not active, skipping heartbeat tasks")]
+        public static partial void AgentNotActive(ILogger logger, string key);
 
-    [LoggerMessage(Level = LogLevel.Debug, Message = "Heartbeat task for {Key} completed with response length {Length}")]
-    private partial void LogHeartbeatTaskCompleted(string key, int length);
+        [LoggerMessage(Level = LogLevel.Debug, Message = "Heartbeat task for {Key} completed with response length {Length}")]
+        public static partial void HeartbeatTaskCompleted(ILogger logger, string key, int length);
 
-    [LoggerMessage(Level = LogLevel.Debug, Message = "Agent {Key} at max capacity, deferring heartbeat task")]
-    private partial void LogAgentAtMaxCapacity(string key);
+        [LoggerMessage(Level = LogLevel.Debug, Message = "Agent {Key} at max capacity, deferring heartbeat task")]
+        public static partial void AgentAtMaxCapacity(ILogger logger, string key);
 
-    [LoggerMessage(Level = LogLevel.Error, Message = "Heartbeat task failed for {Key}")]
-    private partial void LogHeartbeatTaskFailed(Exception ex, string key);
+        [LoggerMessage(Level = LogLevel.Error, Message = "Heartbeat task failed for {Key}")]
+        public static partial void HeartbeatTaskFailed(ILogger logger, Exception ex, string key);
 
-    [LoggerMessage(Level = LogLevel.Error, Message = "Heartbeat tick failed for {Key}")]
-    private partial void LogHeartbeatTickFailed(Exception ex, string key);
+        [LoggerMessage(Level = LogLevel.Error, Message = "Heartbeat tick failed for {Key}")]
+        public static partial void HeartbeatTickFailed(ILogger logger, Exception ex, string key);
+    }
 }

@@ -20,7 +20,7 @@ public sealed class CapabilityTemplateGrainTests
     private static CapabilityTemplateGrain CreateGrain(TemplateRegistryState? state = null)
     {
         var persistentState = CreatePersistentState(state);
-        return new CapabilityTemplateGrain(NullLogger<CapabilityTemplateGrain>.Instance, persistentState);
+        return new CapabilityTemplateGrain(TimeProvider.System, NullLogger<CapabilityTemplateGrain>.Instance, persistentState);
     }
 
     private static CapabilityTemplate CreateValidTemplate(string id = "tpl-1", string name = "Research Assistant") => new()

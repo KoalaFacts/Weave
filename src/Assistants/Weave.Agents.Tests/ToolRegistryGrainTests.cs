@@ -34,7 +34,8 @@ public sealed class ToolRegistryGrainTests
         var logger = Substitute.For<ILogger<ToolRegistryGrain>>();
         var tokenService = new CapabilityTokenService(
             Microsoft.Extensions.Options.Options.Create(
-                new CapabilityTokenOptions { SigningKey = "test-signing-key-that-is-at-least-32-chars-long" }));
+                new CapabilityTokenOptions { SigningKey = "test-signing-key-that-is-at-least-32-chars-long" }),
+            TimeProvider.System);
         var persistentState = CreatePersistentState();
 
         toolGrain.ConnectAsync(Arg.Any<ToolSpec>(), Arg.Any<CapabilityToken>())
@@ -60,7 +61,7 @@ public sealed class ToolRegistryGrainTests
         grainFactory.GetGrain<IToolGrain>(Arg.Any<string>(), null).Returns(toolGrain);
         grainFactory.GetGrain<ISecretProxyGrain>(Arg.Any<string>(), null).Returns(secretProxy);
 
-        var grain = new ToolRegistryGrain(grainFactory, tokenService, lifecycle, eventBus, logger, persistentState);
+        var grain = new ToolRegistryGrain(grainFactory, tokenService, lifecycle, eventBus, TimeProvider.System, logger, persistentState);
         return (grain, lifecycle, eventBus);
     }
 

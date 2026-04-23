@@ -1,3 +1,4 @@
+using System.Collections.Concurrent;
 using System.Diagnostics;
 using System.Text.Json;
 using System.Text.Json.Serialization;
@@ -9,7 +10,8 @@ namespace Weave.Tools.Connectors;
 
 public sealed partial class McpToolConnector(ILogger<McpToolConnector> logger) : IToolConnector
 {
-    private readonly Dictionary<string, Process> _processes = [];
+    private const int MaxStderrTailLines = 50;
+    private readonly Dictionary<string, McpConnection> _processes = [];
 
     public ToolType ToolType => ToolType.Mcp;
 
@@ -34,10 +36,27 @@ public sealed partial class McpToolConnector(ILogger<McpToolConnector> logger) :
             psi.Environment[key] = value;
 
         var process = new Process { StartInfo = psi };
+
+        // Ring buffer of recent stderr lines so a dead-process Invoke
+        // can attach diagnostic context. The pipe drainer below runs
+        // on a pool thread; without it, verbose MCP servers hang once
+        // the ~4 KB stderr buffer fills (see docs/best-practices.md —
+        // "If RedirectStandardError = true, drain stderr too").
+        var stderrTail = new ConcurrentQueue<string>();
+        process.ErrorDataReceived += (_, e) =>
+        {
+            if (e.Data is null)
+                return;
+            stderrTail.Enqueue(e.Data);
+            while (stderrTail.Count > MaxStderrTailLines)
+                stderrTail.TryDequeue(out string? _);
+        };
+
         process.Start();
+        process.BeginErrorReadLine();
 
         var connectionId = Guid.NewGuid().ToString("N");
-        _processes[connectionId] = process;
+        _processes[connectionId] = new McpConnection(process, stderrTail);
 
         LogMcpToolConnected(tool.Name, process.Id);
 
@@ -53,11 +72,11 @@ public sealed partial class McpToolConnector(ILogger<McpToolConnector> logger) :
 
     public Task DisconnectAsync(ToolHandle handle, CancellationToken ct = default)
     {
-        if (_processes.Remove(handle.ConnectionId, out var process))
+        if (_processes.Remove(handle.ConnectionId, out var connection))
         {
-            if (!process.HasExited)
-                process.Kill(entireProcessTree: true);
-            process.Dispose();
+            if (!connection.Process.HasExited)
+                connection.Process.Kill(entireProcessTree: true);
+            connection.Process.Dispose();
             LogMcpToolDisconnected(handle.ToolName);
         }
         return Task.CompletedTask;
@@ -65,13 +84,15 @@ public sealed partial class McpToolConnector(ILogger<McpToolConnector> logger) :
 
     public async Task<ToolResult> InvokeAsync(ToolHandle handle, ToolInvocation invocation, CancellationToken ct = default)
     {
-        if (!_processes.TryGetValue(handle.ConnectionId, out var process) || process.HasExited)
+        if (!_processes.TryGetValue(handle.ConnectionId, out var connection) || connection.Process.HasExited)
         {
             return new ToolResult
             {
                 Success = false,
                 ToolName = handle.ToolName,
-                Error = "MCP process not connected"
+                Error = connection is null
+                    ? "MCP process not connected"
+                    : $"MCP process exited (code {connection.Process.ExitCode}). {FormatStderrTail(connection.StderrTail)}"
             };
         }
 
@@ -85,15 +106,31 @@ public sealed partial class McpToolConnector(ILogger<McpToolConnector> logger) :
                 Params = invocation.Parameters
             }, McpJsonContext.Default.JsonRpcRequest);
 
-            await process.StandardInput.WriteLineAsync(request.AsMemory(), ct);
-            var response = await process.StandardOutput.ReadLineAsync(ct);
+            await connection.Process.StandardInput.WriteLineAsync(request.AsMemory(), ct);
+            var response = await connection.Process.StandardOutput.ReadLineAsync(ct);
             sw.Stop();
+
+            // Null response means the child closed stdout — usually a
+            // crash. Surface stderr tail instead of pretending the call
+            // succeeded with empty output.
+            if (response is null)
+            {
+                return new ToolResult
+                {
+                    Success = false,
+                    ToolName = handle.ToolName,
+                    Error = connection.Process.HasExited
+                        ? $"MCP process exited (code {connection.Process.ExitCode}) during invoke. {FormatStderrTail(connection.StderrTail)}"
+                        : $"MCP process closed stdout without a response. {FormatStderrTail(connection.StderrTail)}",
+                    Duration = sw.Elapsed
+                };
+            }
 
             return new ToolResult
             {
                 Success = true,
                 ToolName = handle.ToolName,
-                Output = response ?? string.Empty,
+                Output = response,
                 Duration = sw.Elapsed
             };
         }
@@ -104,11 +141,21 @@ public sealed partial class McpToolConnector(ILogger<McpToolConnector> logger) :
             {
                 Success = false,
                 ToolName = handle.ToolName,
-                Error = ex.Message,
+                Error = $"{ex.Message} {FormatStderrTail(connection.StderrTail)}",
                 Duration = sw.Elapsed
             };
         }
     }
+
+    private static string FormatStderrTail(ConcurrentQueue<string> stderrTail)
+    {
+        if (stderrTail.IsEmpty)
+            return string.Empty;
+        var lines = stderrTail.ToArray();
+        return $"stderr tail: {string.Join(" | ", lines[^Math.Min(5, lines.Length)..])}";
+    }
+
+    private sealed record McpConnection(Process Process, ConcurrentQueue<string> StderrTail);
 
     public Task<ToolSchema> DiscoverSchemaAsync(ToolHandle handle, CancellationToken ct = default)
     {

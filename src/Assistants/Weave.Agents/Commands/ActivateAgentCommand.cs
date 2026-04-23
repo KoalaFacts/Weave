@@ -14,13 +14,14 @@ public sealed class ActivateAgentHandler(IGrainFactory grainFactory)
 {
     public async Task<AgentState> HandleAsync(ActivateAgentCommand command, CancellationToken ct)
     {
+        var toolNames = command.Definition.Tools ?? [];
         var registry = grainFactory.GetGrain<IToolRegistryGrain>(command.WorkspaceId.ToString());
-        await registry.GrantAgentToolsAsync(command.AgentName, command.Definition.Tools);
+        await registry.GrantAgentToolsAsync(command.AgentName, toolNames);
 
         var grain = grainFactory.GetGrain<IAgentGrain>($"{command.WorkspaceId}/{command.AgentName}");
         var state = await grain.ActivateAgentAsync(command.WorkspaceId, command.Definition);
 
-        foreach (var toolName in command.Definition.Tools)
+        foreach (var toolName in toolNames)
             await grain.ConnectToolAsync(toolName);
 
         if (command.Definition.Heartbeat is not null)

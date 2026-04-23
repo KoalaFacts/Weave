@@ -1,0 +1,22 @@
+<Project Sdk="Microsoft.NET.Sdk">
+
+  <PropertyGroup>
+    <IsPackable>false</IsPackable>
+    <IsTestProject>true</IsTestProject>
+    <IsAotExcluded>true</IsAotExcluded>
+  </PropertyGroup>
+
+  <ItemGroup>
+    <ProjectReference Include="..\Weave.Silo\Weave.Silo.csproj" />
+    <ProjectReference Include="..\..\Foundation\Weave.Shared\Weave.Shared.csproj" />
+    <ProjectReference Include="..\..\Workspaces\Weave.Workspaces\Weave.Workspaces.csproj" />
+  </ItemGroup>
+
+  <ItemGroup>
+    <PackageReference Include="xunit.v3" />
+    <PackageReference Include="Shouldly" />
+    <PackageReference Include="NSubstitute" />
+    <PackageReference Include="Microsoft.AspNetCore.Mvc.Testing" />
+  </ItemGroup>
+
+</Project>

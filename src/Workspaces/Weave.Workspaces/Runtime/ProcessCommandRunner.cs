@@ -21,9 +21,18 @@ public sealed class ProcessCommandRunner : ICommandRunner
         using var process = Process.Start(startInfo)
             ?? throw new InvalidOperationException($"Failed to start process '{command}'.");
 
-        var stdout = await process.StandardOutput.ReadToEndAsync(ct);
-        var stderr = await process.StandardError.ReadToEndAsync(ct);
+        // Start both reads CONCURRENTLY. If the child writes a lot to stderr
+        // while stdout is idle, sequential reads would deadlock — we'd be
+        // awaiting stdout while the kernel blocks the child on a full
+        // stderr pipe.
+        var stdoutTask = process.StandardOutput.ReadToEndAsync(ct);
+        var stderrTask = process.StandardError.ReadToEndAsync(ct);
+
+        await Task.WhenAll(stdoutTask, stderrTask);
         await process.WaitForExitAsync(ct);
+
+        var stdout = await stdoutTask;
+        var stderr = await stderrTask;
 
         if (process.ExitCode != 0)
             throw new InvalidOperationException(

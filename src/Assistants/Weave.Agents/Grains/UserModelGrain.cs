@@ -10,6 +10,7 @@ namespace Weave.Agents.Grains;
 
 public sealed class UserModelGrain(
     IEventBus eventBus,
+    TimeProvider timeProvider,
     ILogger<UserModelGrain> logger,
     [PersistentState("user-model", "Default")] IPersistentState<UserProfileState> persistentState) : Grain, IUserModelGrain
 {
@@ -43,8 +44,9 @@ public sealed class UserModelGrain(
         }
 
         persistentState.State.TotalInteractions++;
-        persistentState.State.FirstSeenAt ??= DateTimeOffset.UtcNow;
-        persistentState.State.LastSeenAt = DateTimeOffset.UtcNow;
+        var now = timeProvider.GetUtcNow();
+        persistentState.State.FirstSeenAt ??= now;
+        persistentState.State.LastSeenAt = now;
 
         await persistentState.WriteStateAsync();
 

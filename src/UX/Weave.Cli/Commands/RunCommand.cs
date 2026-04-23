@@ -270,7 +270,16 @@ internal static class RunCommand
         if (cliConfig.RequireHttps)
             startInfo.ArgumentList.Add("--Weave:RequireHttps=true");
 
-        return Process.Start(startInfo);
+        var process = Process.Start(startInfo);
+        if (process is not null)
+        {
+            // Prevent Silo deadlock on a full stdout/stderr pipe by
+            // routing both into the shared silo.log file. Same reason
+            // as ServeCommand / UpCommand — we redirect to keep the
+            // CLI's own output clean, so we MUST drain the pipes.
+            WorkspaceServeCommand.AttachLogDrainer(process, WorkspaceUpCommand.GetSiloLogPath());
+        }
+        return process;
     }
 
     private static async Task<bool> IsReachableAsync(int port, CancellationToken ct)

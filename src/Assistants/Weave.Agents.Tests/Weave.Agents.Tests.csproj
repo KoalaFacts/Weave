@@ -8,12 +8,22 @@
 
   <ItemGroup>
     <ProjectReference Include="..\Weave.Agents\Weave.Agents.csproj" />
+    <!-- Required for Orleans TestCluster tests: Weave.Silo.Serialization owns the
+         branded-ID surrogates (WorkspaceIdSurrogate, AgentTaskIdSurrogate, …) that
+         Orleans' SerializerConfigurationValidator checks at silo startup. Without
+         this, TestCluster.Deploy() fails with CodecNotFoundException even for grain
+         methods the test doesn't call. Production test projects may reference across
+         the dependency graph — the flow rule in docs/best-practices.md applies to
+         source-project references, not test-project references. -->
+    <ProjectReference Include="..\..\Runtime\Weave.Silo\Weave.Silo.csproj" />
   </ItemGroup>
 
   <ItemGroup>
     <PackageReference Include="xunit.v3" />
     <PackageReference Include="Shouldly" />
     <PackageReference Include="NSubstitute" />
+    <PackageReference Include="Microsoft.Orleans.TestingHost" />
+    <PackageReference Include="Microsoft.Extensions.TimeProvider.Testing" />
   </ItemGroup>
 
 </Project>

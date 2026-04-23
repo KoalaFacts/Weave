@@ -200,6 +200,12 @@ public sealed partial class ToolGrain(
     {
         if (string.IsNullOrWhiteSpace(_workspaceId) || string.IsNullOrWhiteSpace(_toolName))
         {
+            // Real Orleans activation always returns a valid primary key.
+            // Tests that instantiate ToolGrain directly hit an NRE here —
+            // fall through to the token/definition resolution below so
+            // that unit tests still work WITHOUT silently accepting a
+            // wrong identity (previously defaulted to "unknown-workspace"
+            // which mis-scopes capability tokens).
             try
             {
                 var key = this.GetPrimaryKeyString();
@@ -209,14 +215,30 @@ public sealed partial class ToolGrain(
             }
             catch (NullReferenceException)
             {
+                // No Orleans identity available — callers must provide
+                // token + definition/invocation for identity resolution.
             }
         }
 
         if (string.IsNullOrWhiteSpace(_workspaceId))
-            _workspaceId = token?.WorkspaceId ?? "unknown-workspace";
+        {
+            if (token is null || string.IsNullOrWhiteSpace(token.WorkspaceId))
+                throw new InvalidOperationException(
+                    "ToolGrain identity cannot be established. Activate via Orleans "
+                    + "(real grain call) or provide a capability token whose WorkspaceId "
+                    + "identifies the workspace.");
+            _workspaceId = token.WorkspaceId;
+        }
 
         if (string.IsNullOrWhiteSpace(_toolName))
-            _toolName = definition?.Name ?? invocation?.ToolName ?? "tool";
+        {
+            var resolved = definition?.Name ?? invocation?.ToolName;
+            if (string.IsNullOrWhiteSpace(resolved))
+                throw new InvalidOperationException(
+                    "ToolGrain tool name cannot be established. Provide a ToolSpec "
+                    + "definition or a ToolInvocation.");
+            _toolName = resolved;
+        }
     }
 
     [LoggerMessage(Level = LogLevel.Information, Message = "Tool '{Tool}' connected in workspace '{Workspace}'")]

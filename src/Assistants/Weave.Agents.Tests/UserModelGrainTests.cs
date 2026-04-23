@@ -45,7 +45,7 @@ public sealed class UserModelGrainTests
         var logger = NullLogger<UserModelGrain>.Instance;
         var persistentState = CreatePersistentState();
 
-        var grain = new UserModelGrain(eventBus, logger, persistentState);
+        var grain = new UserModelGrain(eventBus, TimeProvider.System, logger, persistentState);
         return (grain, eventBus);
     }
 

@@ -57,35 +57,30 @@ public sealed class CapabilityTokenTests
     // --- IsExpired ---
 
     [Fact]
-    public void IsExpired_FutureExpiry_ReturnsFalse()
+    public void IsExpiredAt_NowBeforeExpiry_ReturnsFalse()
     {
-        var token = new CapabilityToken
-        {
-            ExpiresAt = DateTimeOffset.UtcNow.AddHours(1)
-        };
+        var now = new DateTimeOffset(2026, 4, 19, 12, 0, 0, TimeSpan.Zero);
+        var token = new CapabilityToken { ExpiresAt = now.AddHours(1) };
 
-        token.IsExpired.ShouldBeFalse();
+        token.IsExpiredAt(now).ShouldBeFalse();
     }
 
     [Fact]
-    public void IsExpired_PastExpiry_ReturnsTrue()
+    public void IsExpiredAt_NowAfterExpiry_ReturnsTrue()
     {
-        var token = new CapabilityToken
-        {
-            ExpiresAt = DateTimeOffset.UtcNow.AddHours(-1)
-        };
+        var now = new DateTimeOffset(2026, 4, 19, 12, 0, 0, TimeSpan.Zero);
+        var token = new CapabilityToken { ExpiresAt = now.AddHours(-1) };
 
-        token.IsExpired.ShouldBeTrue();
+        token.IsExpiredAt(now).ShouldBeTrue();
     }
 
     [Fact]
-    public void IsExpired_DefaultExpiry_IsExpired()
+    public void IsExpiredAt_DefaultExpiryIsEpoch_AnyNowIsExpired()
     {
-        // Default ExpiresAt is DateTimeOffset.MinValue equivalent (default)
+        // default(DateTimeOffset) is 0001-01-01 — always in the past for any realistic "now".
         var token = new CapabilityToken();
 
-        // default(DateTimeOffset) is epoch (0001-01-01) which is always in the past
-        token.IsExpired.ShouldBeTrue();
+        token.IsExpiredAt(DateTimeOffset.UnixEpoch).ShouldBeTrue();
     }
 
     // --- TokenId ---

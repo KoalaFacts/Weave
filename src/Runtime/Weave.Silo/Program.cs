@@ -146,6 +146,9 @@ static string DefaultSqlitePath()
 }
 
 // Shared kernel services
+// TimeProvider is injected into every grain / service that needs a clock.
+// Production pins the system clock; tests swap FakeTimeProvider via DI.
+builder.Services.AddSingleton(TimeProvider.System);
 builder.Services.AddSingleton<ILifecycleManager, LifecycleManager>();
 
 builder.Services.AddSingleton<ICommandRunner, ProcessCommandRunner>();
@@ -188,7 +191,7 @@ builder.Services.AddSingleton<ISecretProvider>(sp =>
 
 // Agent chat pipeline
 builder.Services.AddSingleton<IAgentCostLedger, AgentCostLedger>();
-builder.Services.AddSingleton<IAgentChatClientFactory, AgentChatClientFactory>();
+builder.Services.AddScoped<IAgentChatClientFactory, AgentChatClientFactory>();
 builder.Services.AddTransient<IAgentChatPipeline, AgentChatPipeline>();
 
 // Channel adapters
@@ -255,7 +258,7 @@ var app = builder.Build();
 if (builder.Configuration.GetValue<bool>("Weave:RequireHttps"))
     app.UseHttpsRedirection();
 
-app.UseAuditLog();
+app.UseAuditLog(auditOptions);
 app.UseApiAuth();
 
 app.UseExceptionHandler(error => error.Run(async context =>
@@ -346,3 +349,8 @@ app.MapMarketplaceEndpoints();
 app.MapTemplateEndpoints();
 
 app.Run();
+
+// Exposed for WebApplicationFactory<T> in Weave.Silo.Tests. Top-level
+// programs synthesise an internal Program class; this partial makes
+// the same class public so test hosts can bind to it.
+public partial class Program { }

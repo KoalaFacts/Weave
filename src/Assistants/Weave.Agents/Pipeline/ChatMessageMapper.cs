@@ -27,15 +27,17 @@ public static class ChatMessageMapper
 
     [UnconditionalSuppressMessage("AOT", "IL2026:RequiresUnreferencedCode", Justification = "Function call arguments are dynamic LLM outputs serialized for diagnostic logging only.")]
     [UnconditionalSuppressMessage("AOT", "IL3050:RequiresDynamicCode", Justification = "Function call arguments are dynamic LLM outputs serialized for diagnostic logging only.")]
-    public static IEnumerable<ConversationMessage> ToConversationMessages(ChatMessage message)
+    public static IEnumerable<ConversationMessage> ToConversationMessages(ChatMessage message, TimeProvider timeProvider)
     {
+        var fallback = message.CreatedAt ?? timeProvider.GetUtcNow();
+
         if (!string.IsNullOrWhiteSpace(message.Text))
         {
             yield return new ConversationMessage
             {
                 Role = message.Role.Value,
                 Content = message.Text,
-                Timestamp = message.CreatedAt ?? DateTimeOffset.UtcNow
+                Timestamp = fallback
             };
         }
 
@@ -48,7 +50,7 @@ public static class ChatMessageMapper
                     {
                         Role = "tool",
                         Content = $"Requested tool '{functionCall.Name}' with arguments: {JsonSerializer.Serialize(functionCall.Arguments, ToolInputJsonOptions)}",
-                        Timestamp = message.CreatedAt ?? DateTimeOffset.UtcNow
+                        Timestamp = fallback
                     };
                     break;
                 case FunctionResultContent functionResult:
@@ -56,7 +58,7 @@ public static class ChatMessageMapper
                     {
                         Role = "tool",
                         Content = $"Tool result: {functionResult.Result}",
-                        Timestamp = message.CreatedAt ?? DateTimeOffset.UtcNow
+                        Timestamp = fallback
                     };
                     break;
             }

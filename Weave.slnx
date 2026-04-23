@@ -39,6 +39,7 @@
     <Project Path="src/Runtime/Weave.AppHost/Weave.AppHost.csproj" />
     <Project Path="src/Runtime/Weave.ServiceDefaults/Weave.ServiceDefaults.csproj" />
     <Project Path="src/Runtime/Weave.Silo/Weave.Silo.csproj" />
+    <Project Path="src/Runtime/Weave.Silo.Tests/Weave.Silo.Tests.csproj" />
   </Folder>
   <Folder Name="/10 - UX/">
     <Project Path="src/UX/Weave.Cli/Weave.Cli.csproj" />

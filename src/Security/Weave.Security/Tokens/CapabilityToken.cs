@@ -7,11 +7,11 @@ public sealed record CapabilityToken
     [Id(1)] public string WorkspaceId { get; init; } = string.Empty;
     [Id(2)] public string IssuedTo { get; init; } = string.Empty;
     [Id(3)] public HashSet<string> Grants { get; init; } = [];
-    [Id(4)] public DateTimeOffset IssuedAt { get; init; } = DateTimeOffset.UtcNow;
+    [Id(4)] public DateTimeOffset IssuedAt { get; init; }
     [Id(5)] public DateTimeOffset ExpiresAt { get; init; }
     [Id(6)] public string Signature { get; init; } = string.Empty;
 
-    public bool IsExpired => DateTimeOffset.UtcNow >= ExpiresAt;
+    public bool IsExpiredAt(DateTimeOffset now) => now >= ExpiresAt;
 
     public bool HasGrant(string grant) =>
         Grants.Contains(grant) || Grants.Contains("*");

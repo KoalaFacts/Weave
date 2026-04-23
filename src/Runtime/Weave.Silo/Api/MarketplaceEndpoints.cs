@@ -169,7 +169,7 @@ public static class MarketplaceEndpoints
             await grain.DeprecateAsync(MarketplaceItemId.From(itemId));
             return Results.NoContent();
         }
-        catch (InvalidOperationException ex)
+        catch (KeyNotFoundException ex)
         {
             return ResultExtensions.NotFound(ex.Message);
         }

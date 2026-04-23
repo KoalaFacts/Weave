@@ -8,6 +8,7 @@ namespace Weave.Agents.Grains;
 
 public sealed class SkillMemoryGrain(
     IEventBus eventBus,
+    TimeProvider timeProvider,
     ILogger<SkillMemoryGrain> logger,
     [PersistentState("skill-memory", "Default")] IPersistentState<SkillMemoryState> persistentState) : Grain, ISkillMemoryGrain
 {
@@ -36,15 +37,13 @@ public sealed class SkillMemoryGrain(
     {
         if (persistentState.State.Skills.Count == 0)
         {
-            IReadOnlyList<SkillSearchResult> empty = [];
-            return Task.FromResult(empty);
+            return Task.FromResult<IReadOnlyList<SkillSearchResult>>(new List<SkillSearchResult>());
         }
 
         var queryTokens = Tokenize(query);
         if (queryTokens.Length == 0)
         {
-            IReadOnlyList<SkillSearchResult> empty = [];
-            return Task.FromResult(empty);
+            return Task.FromResult<IReadOnlyList<SkillSearchResult>>(new List<SkillSearchResult>());
         }
 
         var scored = new List<SkillSearchResult>();
@@ -77,7 +76,7 @@ public sealed class SkillMemoryGrain(
             return;
 
         skill.UseCount++;
-        skill.LastUsedAt = DateTimeOffset.UtcNow;
+        skill.LastUsedAt = timeProvider.GetUtcNow();
         skill.SuccessRate = (skill.SuccessRate * (skill.UseCount - 1) + (success ? 1.0 : 0.0)) / skill.UseCount;
 
         await persistentState.WriteStateAsync();

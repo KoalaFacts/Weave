@@ -10,8 +10,9 @@ public sealed class CapabilityTokenService : ICapabilityTokenService
     private readonly ConcurrentDictionary<string, DateTimeOffset> _revokedTokens = new();
     private readonly byte[] _signingKey;
     private readonly string _revocationDirectory;
+    private readonly TimeProvider _timeProvider;
 
-    public CapabilityTokenService(IOptions<CapabilityTokenOptions> options)
+    public CapabilityTokenService(IOptions<CapabilityTokenOptions> options, TimeProvider timeProvider)
     {
         var resolved = options.Value ?? throw new ArgumentNullException(nameof(options), "CapabilityTokenOptions must be configured.");
 
@@ -29,6 +30,7 @@ public sealed class CapabilityTokenService : ICapabilityTokenService
         _revocationDirectory = resolved.RevocationDirectory
             ?? Path.Combine(Path.GetTempPath(), "weave-capability-revocations");
         Directory.CreateDirectory(_revocationDirectory);
+        _timeProvider = timeProvider ?? throw new ArgumentNullException(nameof(timeProvider));
     }
 
     public CapabilityToken Mint(CapabilityTokenRequest request)
@@ -36,13 +38,14 @@ public sealed class CapabilityTokenService : ICapabilityTokenService
         ArgumentException.ThrowIfNullOrWhiteSpace(request.WorkspaceId);
         ArgumentException.ThrowIfNullOrWhiteSpace(request.IssuedTo);
 
+        var now = _timeProvider.GetUtcNow();
         var token = new CapabilityToken
         {
             WorkspaceId = request.WorkspaceId,
             IssuedTo = request.IssuedTo,
             Grants = request.Grants,
-            IssuedAt = DateTimeOffset.UtcNow,
-            ExpiresAt = DateTimeOffset.UtcNow.Add(request.Lifetime)
+            IssuedAt = now,
+            ExpiresAt = now.Add(request.Lifetime)
         };
 
         var signature = ComputeSignature(token);
@@ -51,7 +54,7 @@ public sealed class CapabilityTokenService : ICapabilityTokenService
 
     public bool Validate(CapabilityToken token)
     {
-        if (token.IsExpired)
+        if (token.ExpiresAt <= _timeProvider.GetUtcNow())
             return false;
 
         if (IsRevoked(token.TokenId))
@@ -65,8 +68,9 @@ public sealed class CapabilityTokenService : ICapabilityTokenService
 
     public void Revoke(string tokenId)
     {
-        _revokedTokens.TryAdd(tokenId, DateTimeOffset.UtcNow);
-        File.WriteAllText(GetRevocationPath(tokenId), DateTimeOffset.UtcNow.ToString("O", System.Globalization.CultureInfo.InvariantCulture));
+        var now = _timeProvider.GetUtcNow();
+        _revokedTokens.TryAdd(tokenId, now);
+        File.WriteAllText(GetRevocationPath(tokenId), now.ToString("O", System.Globalization.CultureInfo.InvariantCulture));
     }
 
     public bool IsRevoked(string tokenId)

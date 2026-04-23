@@ -61,7 +61,7 @@ public sealed class WorkspaceGrainTests
                     new ContainerHandle(ContainerId.From("c-2"), "redis", "redis:7-alpine", new Dictionary<int, int> { [WeavePorts.Redis] = WeavePorts.Redis })
                 ]));
 
-        var grain = new WorkspaceGrain(runtime, lifecycle, eventBus, logger, persistentState);
+        var grain = new WorkspaceGrain(runtime, lifecycle, eventBus, TimeProvider.System, logger, persistentState);
         return (grain, runtime, lifecycle, eventBus);
     }
 
@@ -207,7 +207,7 @@ public sealed class WorkspaceGrainTests
         runtime.ProvisionAsync(Arg.Any<WorkspaceManifest>(), Arg.Any<CancellationToken>())
             .Returns(Task.FromException<WorkspaceEnvironment>(new InvalidOperationException("Provisioning failed")));
 
-        var grain = new WorkspaceGrain(runtime, lifecycle, eventBus, logger, persistentState);
+        var grain = new WorkspaceGrain(runtime, lifecycle, eventBus, TimeProvider.System, logger, persistentState);
 
         await Should.ThrowAsync<InvalidOperationException>(() => grain.StartAsync(CreateManifest()));
 

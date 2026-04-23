@@ -32,8 +32,29 @@ public sealed class WeaveApiClient(HttpClient http)
             new SendMessageDto { Content = content, Role = "user" },
             DashboardJsonContext.Default.SendMessageDto,
             ct);
-        using var _ = response.EnsureSuccessStatusCode();
+        await EnsureSuccessOrThrowAsync(response, ct);
         return await response.Content.ReadFromJsonAsync(DashboardJsonContext.Default.AgentChatResponseDto, ct);
+    }
+
+    // Mirror the CLI's helper — read the ProblemDetails body before
+    // throwing so the Blazor error boundary sees the Silo's actual
+    // reason, not just "400 Bad Request". See
+    // docs/best-practices.md — "Never call EnsureSuccessStatusCode()".
+    private static async Task EnsureSuccessOrThrowAsync(HttpResponseMessage response, CancellationToken ct)
+    {
+        if (response.IsSuccessStatusCode)
+            return;
+
+        string body;
+        try
+        { body = await response.Content.ReadAsStringAsync(ct); }
+        catch { body = string.Empty; }
+
+        var detail = string.IsNullOrWhiteSpace(body) ? "(no response body)" : body.Trim();
+        throw new HttpRequestException(
+            $"HTTP {(int)response.StatusCode} {response.ReasonPhrase}: {detail}",
+            inner: null,
+            response.StatusCode);
     }
 
     // === Tools ===

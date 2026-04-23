@@ -12,7 +12,8 @@ public sealed class SecretProviderProxyTests
     private readonly PluginServiceBroker _broker = new(NullLogger<PluginServiceBroker>.Instance);
     private readonly CapabilityTokenService _tokenService = new(
         Microsoft.Extensions.Options.Options.Create(
-            new CapabilityTokenOptions { SigningKey = "test-signing-key-that-is-at-least-32-chars-long" }));
+            new CapabilityTokenOptions { SigningKey = "test-signing-key-that-is-at-least-32-chars-long" }),
+        TimeProvider.System);
 
     private CapabilityToken MintToken(string secretGrant = "secret:*") =>
         _tokenService.Mint(new CapabilityTokenRequest

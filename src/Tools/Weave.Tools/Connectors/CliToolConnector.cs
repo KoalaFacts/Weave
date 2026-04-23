@@ -90,9 +90,17 @@ public sealed partial class CliToolConnector(ILogger<CliToolConnector> logger) :
             AppendShellArguments(psi, cli.Shell, command);
 
             using var process = Process.Start(psi) ?? throw new InvalidOperationException("Failed to start CLI process.");
-            var output = await process.StandardOutput.ReadToEndAsync(ct);
-            var error = await process.StandardError.ReadToEndAsync(ct);
+
+            // Drain both pipes concurrently — sequential reads deadlock
+            // whenever stderr fills while we're awaiting stdout.
+            var outputTask = process.StandardOutput.ReadToEndAsync(ct);
+            var errorTask = process.StandardError.ReadToEndAsync(ct);
+
+            await Task.WhenAll(outputTask, errorTask);
             await process.WaitForExitAsync(ct);
+
+            var output = await outputTask;
+            var error = await errorTask;
             sw.Stop();
 
             return new ToolResult

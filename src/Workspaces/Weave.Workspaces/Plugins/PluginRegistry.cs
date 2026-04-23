@@ -209,10 +209,20 @@ public sealed partial class PluginRegistry : IPluginRegistry, IDisposable
         }
     }
 
-    public IReadOnlyList<PluginStatus> GetAll() => [.. _active.Values];
+    public IReadOnlyList<PluginStatus> GetAll()
+    {
+        // Materialize as a concrete List<T> — a plain collection expression
+        // assigned to IReadOnlyList<T> emits a synthesized <>z__ReadOnlyArray
+        // that some serializers (notably Orleans) have no codec for.
+        List<PluginStatus> statuses = [.. _active.Values];
+        return statuses;
+    }
 
-    public IReadOnlyList<PluginSchema> GetCatalog() =>
-        [.. _connectorsByType.Values.Select(c => c.Schema)];
+    public IReadOnlyList<PluginSchema> GetCatalog()
+    {
+        List<PluginSchema> schemas = [.. _connectorsByType.Values.Select(c => c.Schema)];
+        return schemas;
+    }
 
     public void Dispose() => _connectLock.Dispose();
 

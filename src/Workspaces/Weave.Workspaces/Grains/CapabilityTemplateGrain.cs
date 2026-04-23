@@ -5,6 +5,7 @@ using Weave.Workspaces.Models;
 namespace Weave.Workspaces.Grains;
 
 public sealed partial class CapabilityTemplateGrain(
+    TimeProvider timeProvider,
     ILogger<CapabilityTemplateGrain> logger,
     [PersistentState("capability-templates", "Default")] IPersistentState<TemplateRegistryState> persistentState)
     : Grain, ICapabilityTemplateGrain
@@ -35,7 +36,7 @@ public sealed partial class CapabilityTemplateGrain(
         if (results.TrueForAll(r => r.Passed))
         {
             template.Status = TemplateStatus.Published;
-            template.PublishedAt = DateTimeOffset.UtcNow;
+            template.PublishedAt = timeProvider.GetUtcNow();
             LogTemplatePublished(templateId, template.Name);
         }
 
@@ -53,12 +54,16 @@ public sealed partial class CapabilityTemplateGrain(
 
     public Task<IReadOnlyList<CapabilityTemplate>> ListPublishedAsync(int offset = 0, int limit = 50)
     {
-        IReadOnlyList<CapabilityTemplate> published = [.. persistentState.State.Templates.Values
+        // Assign to List<T> (not IReadOnlyList<T>) so the compiler emits
+        // a real List, not a synthesized <>z__ReadOnlyList wrapper that
+        // Orleans has no codec for. Same pattern applies to every grain
+        // method that returns a collection.
+        List<CapabilityTemplate> published = [.. persistentState.State.Templates.Values
             .Where(t => t.Status == TemplateStatus.Published)
             .OrderByDescending(t => t.PublishedAt)
             .Skip(offset)
             .Take(limit)];
-        return Task.FromResult(published);
+        return Task.FromResult<IReadOnlyList<CapabilityTemplate>>(published);
     }
 
     public Task<IReadOnlyList<CapabilityTemplate>> SearchAsync(string? query, int maxResults = 20)
@@ -75,8 +80,8 @@ public sealed partial class CapabilityTemplateGrain(
                 t.Tags.Any(tag => tag.Contains(k, StringComparison.OrdinalIgnoreCase))));
         }
 
-        IReadOnlyList<CapabilityTemplate> results = [.. candidates.Take(maxResults)];
-        return Task.FromResult(results);
+        List<CapabilityTemplate> results = [.. candidates.Take(maxResults)];
+        return Task.FromResult<IReadOnlyList<CapabilityTemplate>>(results);
     }
 
     public async Task DeprecateAsync(TemplateId templateId)

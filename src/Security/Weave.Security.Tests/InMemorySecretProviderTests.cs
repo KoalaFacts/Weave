@@ -7,7 +7,8 @@ public sealed class InMemorySecretProviderTests
 {
     private static readonly CapabilityTokenService _tokenService = new(
         Microsoft.Extensions.Options.Options.Create(
-            new CapabilityTokenOptions { SigningKey = "test-signing-key-that-is-at-least-32-chars-long" }));
+            new CapabilityTokenOptions { SigningKey = "test-signing-key-that-is-at-least-32-chars-long" }),
+        TimeProvider.System);
     private readonly InMemorySecretProvider _provider;
 
     public InMemorySecretProviderTests()

@@ -27,7 +27,7 @@ public sealed class MarketplaceGrainTests
         var eventBus = Substitute.For<IEventBus>();
         var persistentState = CreatePersistentState();
 
-        var grain = new MarketplaceGrain(logger, eventBus, persistentState);
+        var grain = new MarketplaceGrain(logger, eventBus, TimeProvider.System, persistentState);
         return (grain, eventBus);
     }
 

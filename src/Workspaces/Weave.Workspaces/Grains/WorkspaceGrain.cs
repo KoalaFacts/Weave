@@ -12,6 +12,7 @@ public sealed partial class WorkspaceGrain(
     IWorkspaceRuntime runtime,
     ILifecycleManager lifecycleManager,
     IEventBus eventBus,
+    TimeProvider timeProvider,
     ILogger<WorkspaceGrain> logger,
     [PersistentState("workspace", "Default")] IPersistentState<WorkspaceState> persistentState) : Grain, IWorkspaceGrain
 {
@@ -46,7 +47,7 @@ public sealed partial class WorkspaceGrain(
             var env = await runtime.ProvisionAsync(manifest, CancellationToken.None);
 
             persistentState.State.Status = WorkspaceStatus.Running;
-            persistentState.State.StartedAt = DateTimeOffset.UtcNow;
+            persistentState.State.StartedAt = timeProvider.GetUtcNow();
             persistentState.State.NetworkId = env.NetworkId;
             persistentState.State.Name = manifest.Name;
             persistentState.State.Containers.Clear();
@@ -112,7 +113,7 @@ public sealed partial class WorkspaceGrain(
             await runtime.TeardownAsync(persistentState.State.WorkspaceId, CancellationToken.None);
 
             persistentState.State.Status = WorkspaceStatus.Stopped;
-            persistentState.State.StoppedAt = DateTimeOffset.UtcNow;
+            persistentState.State.StoppedAt = timeProvider.GetUtcNow();
             persistentState.State.Containers.Clear();
             persistentState.State.ActiveAgents.Clear();
             persistentState.State.ActiveTools.Clear();

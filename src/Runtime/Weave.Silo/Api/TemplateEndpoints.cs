@@ -115,7 +115,7 @@ public static class TemplateEndpoints
 
             return Results.Ok(TemplateResponse.FromTemplate(template));
         }
-        catch (InvalidOperationException ex)
+        catch (KeyNotFoundException ex)
         {
             return ResultExtensions.NotFound(ex.Message);
         }
@@ -132,7 +132,7 @@ public static class TemplateEndpoints
             await grain.DeprecateAsync(TemplateId.From(templateId));
             return Results.NoContent();
         }
-        catch (InvalidOperationException ex)
+        catch (KeyNotFoundException ex)
         {
             return ResultExtensions.NotFound(ex.Message);
         }

@@ -39,7 +39,7 @@ public sealed class AgentChatPipelineTests
         var grainFactory = Substitute.For<IGrainFactory>();
         var logger = NullLogger<AgentChatPipeline>.Instance;
 
-        var pipeline = new AgentChatPipeline(grainFactory, chatClientFactory, logger);
+        var pipeline = new AgentChatPipeline(grainFactory, chatClientFactory, TimeProvider.System, logger);
         return (pipeline, chatClient);
     }
 
@@ -116,7 +116,7 @@ public sealed class AgentChatPipelineTests
         chatClientFactory.Create(Arg.Any<string>(), Arg.Any<string?>())
             .Returns(Substitute.For<IChatClient>());
         var grainFactory = Substitute.For<IGrainFactory>();
-        var pipeline = new AgentChatPipeline(grainFactory, chatClientFactory, NullLogger<AgentChatPipeline>.Instance);
+        var pipeline = new AgentChatPipeline(grainFactory, chatClientFactory, TimeProvider.System, NullLogger<AgentChatPipeline>.Instance);
 
         pipeline.Initialize("ws-1/researcher", "claude-sonnet-4-20250514");
 
@@ -162,7 +162,7 @@ public sealed class AgentChatPipelineTests
         var grainFactory = Substitute.For<IGrainFactory>();
         grainFactory.GetGrain<IToolRegistryGrain>(Arg.Any<string>(), Arg.Any<string?>()).Returns(registry);
 
-        var pipeline = new AgentChatPipeline(grainFactory, chatClientFactory, NullLogger<AgentChatPipeline>.Instance);
+        var pipeline = new AgentChatPipeline(grainFactory, chatClientFactory, TimeProvider.System, NullLogger<AgentChatPipeline>.Instance);
 
         var state = CreateActiveState();
         state.ConnectedTools.Add("code-search");
@@ -205,7 +205,7 @@ public sealed class AgentChatPipelineTests
         grainFactory.GetGrain<IUserModelGrain>("ws-1/user-42", null).Returns(userModelGrain);
         grainFactory.GetGrain<ISkillMemoryGrain>("ws-1", null).Returns(skillGrain);
 
-        var pipeline = new AgentChatPipeline(grainFactory, chatClientFactory, NullLogger<AgentChatPipeline>.Instance);
+        var pipeline = new AgentChatPipeline(grainFactory, chatClientFactory, TimeProvider.System, NullLogger<AgentChatPipeline>.Instance);
         var state = CreateActiveState();
 
         await pipeline.ExecuteAsync(state, new AgentMessage { Content = "Hello", UserId = "user-42" });
@@ -261,7 +261,7 @@ public sealed class AgentChatPipelineTests
         var grainFactory = Substitute.For<IGrainFactory>();
         grainFactory.GetGrain<ISkillMemoryGrain>("ws-1", null).Returns(skillGrain);
 
-        var pipeline = new AgentChatPipeline(grainFactory, chatClientFactory, NullLogger<AgentChatPipeline>.Instance);
+        var pipeline = new AgentChatPipeline(grainFactory, chatClientFactory, TimeProvider.System, NullLogger<AgentChatPipeline>.Instance);
         var state = CreateActiveState();
 
         await pipeline.ExecuteAsync(state, new AgentMessage { Content = "deploy to k8s" });

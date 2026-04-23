@@ -9,6 +9,7 @@ namespace Weave.Tools.Grains;
 public sealed class MarketplaceGrain(
     ILogger<MarketplaceGrain> logger,
     IEventBus eventBus,
+    TimeProvider timeProvider,
     [PersistentState("marketplace", "Default")] IPersistentState<MarketplaceState> persistentState) : Grain, IMarketplaceGrain
 {
     public async Task<MarketplaceItem> SubmitAsync(MarketplaceItem item)
@@ -42,7 +43,7 @@ public sealed class MarketplaceGrain(
             throw new InvalidOperationException("Cannot publish an item without an approved security review");
 
         item.Status = MarketplaceItemStatus.Published;
-        item.PublishedAt = DateTimeOffset.UtcNow;
+        item.PublishedAt = timeProvider.GetUtcNow();
         item.SecurityReview = review;
         await persistentState.WriteStateAsync();
 

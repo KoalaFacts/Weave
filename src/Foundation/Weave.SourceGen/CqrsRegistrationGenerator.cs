@@ -117,8 +117,8 @@ public sealed class CqrsRegistrationGenerator : IIncrementalGenerator
         sb.AppendLine("    public static global::Microsoft.Extensions.DependencyInjection.IServiceCollection AddGeneratedCqrsHandlers(");
         sb.AppendLine("        this global::Microsoft.Extensions.DependencyInjection.IServiceCollection services)");
         sb.AppendLine("    {");
-        sb.AppendLine("        services.AddSingleton<global::Weave.Shared.Cqrs.ICommandDispatcher, global::Weave.Shared.Cqrs.CommandDispatcher>();");
-        sb.AppendLine("        services.AddSingleton<global::Weave.Shared.Cqrs.IQueryDispatcher, global::Weave.Shared.Cqrs.QueryDispatcher>();");
+        sb.AppendLine("        services.AddScoped<global::Weave.Shared.Cqrs.ICommandDispatcher, global::Weave.Shared.Cqrs.CommandDispatcher>();");
+        sb.AppendLine("        services.AddScoped<global::Weave.Shared.Cqrs.IQueryDispatcher, global::Weave.Shared.Cqrs.QueryDispatcher>();");
 
         foreach (var h in handlers)
         {

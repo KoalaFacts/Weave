@@ -6,7 +6,8 @@ public sealed class CapabilityTokenServiceTests
 {
     private static CapabilityTokenService CreateService(string signingKey = "test-signing-key-that-is-at-least-32-chars-long") =>
         new(Microsoft.Extensions.Options.Options.Create(
-            new CapabilityTokenOptions { SigningKey = signingKey }));
+            new CapabilityTokenOptions { SigningKey = signingKey }),
+            TimeProvider.System);
 
     private readonly CapabilityTokenService _service = CreateService();
 
@@ -27,7 +28,7 @@ public sealed class CapabilityTokenServiceTests
         token.IssuedTo.ShouldBe("agent-1");
         token.Grants.ShouldContain("tool:web-search");
         token.Signature.ShouldNotBeNullOrEmpty();
-        token.IsExpired.ShouldBeFalse();
+        token.IsExpiredAt(DateTimeOffset.UtcNow).ShouldBeFalse();
     }
 
     [Fact]
@@ -385,7 +386,8 @@ public sealed class CapabilityTokenServiceTests
     {
         var act = () => new CapabilityTokenService(
             Microsoft.Extensions.Options.Options.Create(
-                new CapabilityTokenOptions { SigningKey = null }));
+                new CapabilityTokenOptions { SigningKey = null }),
+            TimeProvider.System);
 
         Should.Throw<InvalidOperationException>(act)
             .Message.ShouldContain("must be configured");
@@ -396,7 +398,8 @@ public sealed class CapabilityTokenServiceTests
     {
         var act = () => new CapabilityTokenService(
             Microsoft.Extensions.Options.Options.Create(
-                new CapabilityTokenOptions { SigningKey = "" }));
+                new CapabilityTokenOptions { SigningKey = "" }),
+            TimeProvider.System);
 
         Should.Throw<InvalidOperationException>(act)
             .Message.ShouldContain("must be configured");
@@ -407,7 +410,8 @@ public sealed class CapabilityTokenServiceTests
     {
         var act = () => new CapabilityTokenService(
             Microsoft.Extensions.Options.Options.Create(
-                new CapabilityTokenOptions { SigningKey = "too-short" }));
+                new CapabilityTokenOptions { SigningKey = "too-short" }),
+            TimeProvider.System);
 
         Should.Throw<InvalidOperationException>(act)
             .Message.ShouldContain("at least");

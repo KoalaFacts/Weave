@@ -33,7 +33,7 @@ public sealed class SkillMemoryGrainTests
         var logger = NullLogger<SkillMemoryGrain>.Instance;
         var persistentState = CreatePersistentState();
 
-        var grain = new SkillMemoryGrain(eventBus, logger, persistentState);
+        var grain = new SkillMemoryGrain(eventBus, TimeProvider.System, logger, persistentState);
         return (grain, eventBus);
     }
 

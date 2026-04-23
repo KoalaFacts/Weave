@@ -26,7 +26,11 @@ public sealed class WorkspaceRegistryGrain(
 
     public Task<IReadOnlyList<string>> GetWorkspaceIdsAsync()
     {
-        IReadOnlyList<string> workspaceIds = [.. persistentState.State.WorkspaceIds];
-        return Task.FromResult(workspaceIds);
+        // Assign to List<T> (not IReadOnlyList<T>) so the collection expression
+        // emits a real List, not a synthesized <>z__ReadOnlyArray that Orleans
+        // has no codec for. Same pattern as CapabilityTemplateGrain — see
+        // docs/best-practices.md "Every grain method that returns a collection".
+        List<string> workspaceIds = [.. persistentState.State.WorkspaceIds];
+        return Task.FromResult<IReadOnlyList<string>>(workspaceIds);
     }
 }

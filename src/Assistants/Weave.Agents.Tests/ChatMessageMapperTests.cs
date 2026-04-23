@@ -87,7 +87,7 @@ public sealed class ChatMessageMapperTests
     {
         var chatMsg = new ChatMessage(ChatRole.Assistant, "Hello world");
 
-        var results = ChatMessageMapper.ToConversationMessages(chatMsg).ToList();
+        var results = ChatMessageMapper.ToConversationMessages(chatMsg, TimeProvider.System).ToList();
 
         results.Count.ShouldBe(1);
         results[0].Role.ShouldBe("assistant");
@@ -101,7 +101,7 @@ public sealed class ChatMessageMapperTests
         var functionCall = new FunctionCallContent("call-1", "my-tool", args);
         var chatMsg = new ChatMessage(ChatRole.Assistant, [functionCall]);
 
-        var results = ChatMessageMapper.ToConversationMessages(chatMsg).ToList();
+        var results = ChatMessageMapper.ToConversationMessages(chatMsg, TimeProvider.System).ToList();
 
         results.Count.ShouldBe(1);
         results[0].Role.ShouldBe("tool");
@@ -114,7 +114,7 @@ public sealed class ChatMessageMapperTests
         var functionResult = new FunctionResultContent("call-1", "output data");
         var chatMsg = new ChatMessage(ChatRole.Tool, [functionResult]);
 
-        var results = ChatMessageMapper.ToConversationMessages(chatMsg).ToList();
+        var results = ChatMessageMapper.ToConversationMessages(chatMsg, TimeProvider.System).ToList();
 
         results.Count.ShouldBe(1);
         results[0].Role.ShouldBe("tool");
@@ -126,7 +126,7 @@ public sealed class ChatMessageMapperTests
     {
         var chatMsg = new ChatMessage(ChatRole.Assistant, "   ");
 
-        var results = ChatMessageMapper.ToConversationMessages(chatMsg).ToList();
+        var results = ChatMessageMapper.ToConversationMessages(chatMsg, TimeProvider.System).ToList();
 
         results.ShouldBeEmpty();
     }
@@ -137,7 +137,7 @@ public sealed class ChatMessageMapperTests
         var chatMsg = new ChatMessage(ChatRole.Assistant, "thinking...");
         chatMsg.Contents.Add(new FunctionCallContent("call-1", "my-tool"));
 
-        var results = ChatMessageMapper.ToConversationMessages(chatMsg).ToList();
+        var results = ChatMessageMapper.ToConversationMessages(chatMsg, TimeProvider.System).ToList();
 
         results.Count.ShouldBe(2);
     }
@@ -151,7 +151,7 @@ public sealed class ChatMessageMapperTests
             CreatedAt = timestamp
         };
 
-        var results = ChatMessageMapper.ToConversationMessages(chatMsg).ToList();
+        var results = ChatMessageMapper.ToConversationMessages(chatMsg, TimeProvider.System).ToList();
 
         results[0].Timestamp.ShouldBe(timestamp);
     }

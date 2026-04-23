@@ -58,11 +58,19 @@ internal static class WorkspaceServeCommand
                     return 1;
                 }
 
+                // Drain both pipes to the Silo log so the child doesn't
+                // block once its stdout/stderr buffer fills (verbose Orleans
+                // startup can hit ~4 KB in seconds). See
+                // docs/best-practices.md — "Background launchers must
+                // drain pipes or not redirect."
+                AttachLogDrainer(process, WorkspaceUpCommand.GetSiloLogPath());
+
                 await WaitForReadyAsync(port, cancellationToken);
 
                 CliTheme.WriteSuccess($"Weave running in background (PID {process.Id}, port {port}).");
                 CliTheme.WriteMuted("  Local mode \u2014 no external services required.");
                 CliTheme.WriteMuted($"  Stop with: weave serve stop or terminate PID {process.Id}.");
+                CliTheme.WriteMuted($"  Logs: {WorkspaceUpCommand.GetSiloLogPath()}");
                 return 0;
             }
 
@@ -177,4 +185,41 @@ internal static class WorkspaceServeCommand
     }
 
     private sealed record SiloArgs(string FileName, List<string> Arguments);
+
+    // Shared drainer used by any background silo launcher. Writes both
+    // stdout and stderr lines to the given log file so the Silo can
+    // emit as much as it wants without filling the OS pipe buffer.
+    internal static void AttachLogDrainer(Process process, string logPath)
+    {
+        try
+        { Directory.CreateDirectory(Path.GetDirectoryName(logPath)!); }
+        catch { /* best-effort — read-only home directory */ }
+
+        StreamWriter? writer = null;
+        try
+        { writer = new StreamWriter(logPath, append: true) { AutoFlush = true }; }
+        catch { /* log path unavailable — drop through and still drain */ }
+
+        var sink = writer;
+        var gate = new object();
+
+        void Append(string prefix, string? line)
+        {
+            if (line is null)
+                return;
+            if (sink is null)
+                return;
+            lock (gate)
+            {
+                try
+                { sink.WriteLine($"{DateTime.Now:HH:mm:ss} {prefix} {line}"); }
+                catch { /* writer disposed during shutdown */ }
+            }
+        }
+
+        process.OutputDataReceived += (_, e) => Append("OUT", e.Data);
+        process.ErrorDataReceived += (_, e) => Append("ERR", e.Data);
+        process.BeginOutputReadLine();
+        process.BeginErrorReadLine();
+    }
 }

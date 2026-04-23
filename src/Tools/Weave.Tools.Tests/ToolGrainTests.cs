@@ -25,7 +25,8 @@ public sealed class ToolGrainTests
         var leakScanner = new LeakScanner(Substitute.For<ILogger<LeakScanner>>());
         var tokenService = new CapabilityTokenService(
             Microsoft.Extensions.Options.Options.Create(
-                new CapabilityTokenOptions { SigningKey = "test-signing-key-that-is-at-least-32-chars-long" }));
+                new CapabilityTokenOptions { SigningKey = "test-signing-key-that-is-at-least-32-chars-long" }),
+            TimeProvider.System);
         var lifecycleManager = Substitute.For<ILifecycleManager>();
         var logger = Substitute.For<ILogger<ToolGrain>>();
         var eventBus = Substitute.For<IEventBus>();

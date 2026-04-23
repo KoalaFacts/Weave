@@ -10,6 +10,7 @@ namespace Weave.Agents.Pipeline;
 public sealed class AgentChatPipeline(
     IGrainFactory grainFactory,
     IAgentChatClientFactory chatClientFactory,
+    TimeProvider timeProvider,
     ILogger<AgentChatPipeline> logger) : IAgentChatPipeline
 {
     private IChatClient? _chatClient;
@@ -34,7 +35,7 @@ public sealed class AgentChatPipeline(
         {
             Role = string.IsNullOrWhiteSpace(message.Role) ? "user" : message.Role,
             Content = message.Content,
-            Timestamp = DateTimeOffset.UtcNow
+            Timestamp = timeProvider.GetUtcNow()
         };
         state.History.Add(userEntry);
         state.LastActive = userEntry.Timestamp;
@@ -70,14 +71,14 @@ public sealed class AgentChatPipeline(
         var newMessages = new List<ConversationMessage>();
         foreach (var responseMessage in response.Messages)
         {
-            foreach (var conversationMessage in ChatMessageMapper.ToConversationMessages(responseMessage))
+            foreach (var conversationMessage in ChatMessageMapper.ToConversationMessages(responseMessage, timeProvider))
             {
                 state.History.Add(conversationMessage);
                 newMessages.Add(conversationMessage);
             }
         }
 
-        state.LastActive = DateTimeOffset.UtcNow;
+        state.LastActive = timeProvider.GetUtcNow();
 
         return new AgentChatResponse
         {

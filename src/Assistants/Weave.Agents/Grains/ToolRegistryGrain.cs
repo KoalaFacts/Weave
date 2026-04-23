@@ -18,6 +18,7 @@ public sealed class ToolRegistryGrain(
     ICapabilityTokenService tokenService,
     ILifecycleManager lifecycleManager,
     IEventBus eventBus,
+    TimeProvider timeProvider,
     ILogger<ToolRegistryGrain> logger,
     [PersistentState("tool-registry", "Default")] IPersistentState<ToolRegistryState> persistentState) : Grain, IToolRegistryGrain
 {
@@ -63,7 +64,9 @@ public sealed class ToolRegistryGrain(
     public async Task GrantAgentToolsAsync(string agentName, IReadOnlyList<string> toolNames)
     {
         EnsureWorkspaceId();
-        persistentState.State.AgentToolAccess[agentName] = [.. toolNames.Distinct(StringComparer.Ordinal)];
+        persistentState.State.AgentToolAccess[agentName] = toolNames is null
+            ? []
+            : [.. toolNames.Distinct(StringComparer.Ordinal)];
         await persistentState.WriteStateAsync();
     }
 
@@ -125,8 +128,10 @@ public sealed class ToolRegistryGrain(
 
     public Task<IReadOnlyList<ToolConnection>> GetAllConnectionsAsync()
     {
-        IReadOnlyList<ToolConnection> result = [.. persistentState.State.Connections.Values];
-        return Task.FromResult(result);
+        // See CapabilityTemplateGrain — assign to List<T> so Orleans
+        // doesn't trip on the synthesized <>z__ReadOnlyArray type.
+        List<ToolConnection> result = [.. persistentState.State.Connections.Values];
+        return Task.FromResult<IReadOnlyList<ToolConnection>>(result);
     }
 
     public async Task<ToolResolution?> ResolveAsync(string agentName, string toolName)
@@ -209,7 +214,7 @@ public sealed class ToolRegistryGrain(
                 ToolName = toolName,
                 ToolType = definition.Type,
                 Status = ToolConnectionStatus.Connected,
-                ConnectedAt = DateTimeOffset.UtcNow,
+                ConnectedAt = timeProvider.GetUtcNow(),
                 Endpoint = ToolSpecMapper.ResolveEndpoint(resolvedDefinition)
             };
 

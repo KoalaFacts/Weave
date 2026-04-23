@@ -55,7 +55,7 @@ public sealed class AgentGrainTests
         var logger = Substitute.For<ILogger<AgentGrain>>();
         var persistentState = CreatePersistentState();
 
-        var grain = new AgentGrain(grainFactory, chatPipeline, lifecycle, eventBus, logger, persistentState);
+        var grain = new AgentGrain(grainFactory, chatPipeline, lifecycle, eventBus, TimeProvider.System, logger, persistentState);
         return (grain, lifecycle, eventBus, skillMemory);
     }
 

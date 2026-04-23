@@ -14,6 +14,7 @@ public sealed class AgentGrain(
     IAgentChatPipeline chatPipeline,
     ILifecycleManager lifecycleManager,
     IEventBus eventBus,
+    TimeProvider timeProvider,
     ILogger<AgentGrain> logger,
     [PersistentState("agent", "Default")] IPersistentState<AgentState> persistentState) : Grain, IAgentGrain
 {
@@ -59,7 +60,7 @@ public sealed class AgentGrain(
             chatPipeline.Initialize(persistentState.State.AgentId, definition.Model);
 
             persistentState.State.Status = AgentStatus.Active;
-            persistentState.State.ActivatedAt = DateTimeOffset.UtcNow;
+            persistentState.State.ActivatedAt = timeProvider.GetUtcNow();
             persistentState.State.DeactivatedAt = null;
             persistentState.State.ErrorMessage = null;
             persistentState.State.LastActive = persistentState.State.ActivatedAt;
@@ -127,7 +128,7 @@ public sealed class AgentGrain(
             chatPipeline.Reset();
 
             persistentState.State.Status = AgentStatus.Idle;
-            persistentState.State.DeactivatedAt = DateTimeOffset.UtcNow;
+            persistentState.State.DeactivatedAt = timeProvider.GetUtcNow();
             persistentState.State.ActiveTasks.Clear();
             persistentState.State.ConnectedTools.Clear();
 
