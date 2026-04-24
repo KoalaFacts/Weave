@@ -182,14 +182,14 @@ Coverage alone is a **trailing** indicator of test quality. A suite can hit 95% 
 
 ### Test coverage — hard rule, 90% minimum
 
-**Overall line coverage must be ≥ 90%. CI fails when it isn't.** No exceptions; no per-project carve-outs. Exclusions from the coverage number are narrow and justified in `coverage.runsettings` — source-generated code, Program.cs, DTO/record-only files, and actor state models. Everything else counts.
+**Every project's line coverage must be ≥ 90%. CI fails when any single project is below.** No exceptions; no per-project carve-outs. Exclusions from the coverage number are narrow and justified in `coverage.runsettings` — source-generated code, Program.cs, DTO/record-only files, and actor state models. Everything else counts.
 
 **How to run the gate locally:**
 ```
 dotnet test --solution Weave.slnx -c Release --collect:"XPlat Code Coverage" --settings coverage.runsettings
-powershell -File scripts/check-coverage.ps1 -Threshold 90
+dotnet run --project scripts/DevTool -- coverage --threshold 90
 ```
-Exit code 1 = below threshold. The script reports per-assembly line rates so the weakest project is obvious.
+Exit code 1 = any project below threshold. The tool reports per-assembly line rates and highlights failing projects in red.
 
 **Inner loop stays fast.** `dotnet test` without the `--collect` flag runs as usual — coverlet is wired into every test project via `Directory.Build.targets` but dormant until invoked. CI pipelines pass the flag; local runs don't have to.
 
