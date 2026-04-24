@@ -16,13 +16,15 @@ public sealed class AgentActor(
     IEventBus eventBus,
     TimeProvider timeProvider,
     ILogger<AgentActor> logger,
-    [PersistentState("agent", "Default")] IPersistentState<AgentState> persistentState) : VirtualActor, IAgentActor
+    IActorState<AgentState> persistentState) : IAgentActor
 {
-    public override async Task OnActivateAsync(CancellationToken cancellationToken)
+    private string? _key;
+
+    public async Task OnActivatedAsync(string? key, CancellationToken cancellationToken)
     {
+        _key = key;
         await persistentState.ReadStateAsync(cancellationToken);
 
-        var key = TryGetPrimaryKeyString();
         if (string.IsNullOrWhiteSpace(persistentState.State.AgentId))
         {
             ApplyIdentity(key, persistentState.State.WorkspaceId);
@@ -338,7 +340,7 @@ public sealed class AgentActor(
             return;
         }
 
-        ApplyIdentity(TryGetPrimaryKeyString(), workspaceId);
+        ApplyIdentity(_key, workspaceId);
     }
 
     private void ApplyIdentity(string? key, WorkspaceId workspaceId)
@@ -365,17 +367,5 @@ public sealed class AgentActor(
         return separatorIndex >= 0 && separatorIndex < agentId.Length - 1
             ? agentId[(separatorIndex + 1)..]
             : agentId;
-    }
-
-    private string? TryGetPrimaryKeyString()
-    {
-        try
-        {
-            return this.GetPrimaryKeyString();
-        }
-        catch (NullReferenceException)
-        {
-            return null;
-        }
     }
 }

@@ -3,7 +3,7 @@ using Weave.Workspaces.Models;
 
 namespace Weave.Agents.Actors;
 
-public interface IToolRegistryActor : IVirtualActorWithStringKey
+public interface IToolRegistryActor
 {
     Task ConnectToolsAsync(Dictionary<string, ToolDefinition> tools);
     Task ConfigureAccessAsync(Dictionary<string, List<string>> agentToolAccess);

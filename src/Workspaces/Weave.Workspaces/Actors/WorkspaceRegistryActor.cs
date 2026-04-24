@@ -3,10 +3,10 @@ using Weave.Workspaces.Models;
 namespace Weave.Workspaces.Actors;
 
 public sealed class WorkspaceRegistryActor(
-    [PersistentState("workspace-registry", "Default")] IPersistentState<WorkspaceRegistryState> persistentState)
-    : VirtualActor, IWorkspaceRegistryActor
+    IActorState<WorkspaceRegistryState> persistentState)
+    : IWorkspaceRegistryActor
 {
-    public override Task OnActivateAsync(CancellationToken cancellationToken) =>
+    public Task OnActivatedAsync(string? key, CancellationToken cancellationToken) =>
         persistentState.ReadStateAsync(cancellationToken);
 
     public async Task RegisterAsync(string workspaceId)

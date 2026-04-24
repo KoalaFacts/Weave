@@ -186,12 +186,12 @@ Coverage alone is a **trailing** indicator of test quality. A suite can hit 95% 
 
 **How to run the gate locally:**
 ```
-dotnet test --solution Weave.slnx -c Release -- --coverage --coverage-output-format cobertura
+dotnet test --solution Weave.slnx -c Release --collect:"XPlat Code Coverage" --settings coverage.runsettings
 powershell -File scripts/check-coverage.ps1 -Threshold 90
 ```
 Exit code 1 = below threshold. The script reports per-assembly line rates so the weakest project is obvious.
 
-**Inner loop stays fast.** `dotnet test` without the `-- --coverage` flag runs as usual — the coverage extension (`Microsoft.Testing.Extensions.CodeCoverage`) is wired into every test project via `Directory.Build.targets` but dormant until invoked. CI pipelines pass the flag; local runs don't have to.
+**Inner loop stays fast.** `dotnet test` without the `--collect` flag runs as usual — coverlet is wired into every test project via `Directory.Build.targets` but dormant until invoked. CI pipelines pass the flag; local runs don't have to.
 
 **Current baseline (captured at doc time):** overall **23.9%**. The 90% line is a target we're intentionally setting ABOVE current state — the enforcement gate is off in local dev until the gap closes. The gap is tracked as an item in `docs/audit-findings.md` and closes through real new tests, not coverage-gaming shortcuts.
 

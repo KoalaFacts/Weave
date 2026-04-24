@@ -3,7 +3,7 @@ using Weave.Workspaces.Models;
 
 namespace Weave.Workspaces.Actors;
 
-public interface ICapabilityTemplateActor : IVirtualActorWithStringKey
+public interface ICapabilityTemplateActor
 {
     Task<CapabilityTemplate> RegisterAsync(CapabilityTemplate template);
     Task<CapabilityTemplate> ValidateAndPublishAsync(TemplateId templateId);

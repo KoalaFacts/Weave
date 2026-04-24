@@ -2,7 +2,7 @@ using Weave.Workspaces.Models;
 
 namespace Weave.Workspaces.Actors;
 
-public interface IWorkspaceActor : IVirtualActorWithStringKey
+public interface IWorkspaceActor
 {
     Task<WorkspaceState> StartAsync(WorkspaceManifest manifest);
     Task StopAsync();

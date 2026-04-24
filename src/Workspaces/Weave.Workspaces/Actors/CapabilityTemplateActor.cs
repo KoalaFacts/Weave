@@ -7,10 +7,10 @@ namespace Weave.Workspaces.Actors;
 public sealed partial class CapabilityTemplateActor(
     TimeProvider timeProvider,
     ILogger<CapabilityTemplateActor> logger,
-    [PersistentState("capability-templates", "Default")] IPersistentState<TemplateRegistryState> persistentState)
-    : VirtualActor, ICapabilityTemplateActor
+    IActorState<TemplateRegistryState> persistentState)
+    : ICapabilityTemplateActor
 {
-    public override Task OnActivateAsync(CancellationToken cancellationToken) =>
+    public Task OnActivatedAsync(string? key, CancellationToken cancellationToken) =>
         persistentState.ReadStateAsync(cancellationToken);
 
     public async Task<CapabilityTemplate> RegisterAsync(CapabilityTemplate template)

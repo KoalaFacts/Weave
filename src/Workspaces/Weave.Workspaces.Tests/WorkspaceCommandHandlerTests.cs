@@ -25,7 +25,7 @@ public sealed class WorkspaceCommandHandlerTests
     [Fact]
     public async Task StartWorkspaceHandler_DelegatesToActor()
     {
-        var actorFactory = Substitute.For<IActorFactory>();
+        var actors = Substitute.For<IVirtualActorProvider>();
         var workspaceActor = Substitute.For<IWorkspaceActor>();
         var workspaceRegistry = Substitute.For<IWorkspaceRegistryActor>();
         var toolRegistry = Substitute.For<IToolRegistryActor>();
@@ -37,19 +37,19 @@ public sealed class WorkspaceCommandHandlerTests
             StartedAt = DateTimeOffset.UtcNow
         };
 
-        actorFactory.GetActor<IWorkspaceActor>(TestWorkspaceId.ToString(), null)
+        actors.GetActor<IWorkspaceActor>(Arg.Any<VirtualActorId>())
             .Returns(workspaceActor);
-        actorFactory.GetActor<IWorkspaceRegistryActor>("active", null)
+        actors.GetActor<IWorkspaceRegistryActor>(Arg.Any<VirtualActorId>())
             .Returns(workspaceRegistry);
-        actorFactory.GetActor<IToolRegistryActor>(TestWorkspaceId.ToString(), null)
+        actors.GetActor<IToolRegistryActor>(Arg.Any<VirtualActorId>())
             .Returns(toolRegistry);
-        actorFactory.GetActor<IAgentSupervisorActor>(TestWorkspaceId.ToString(), null)
+        actors.GetActor<IAgentSupervisorActor>(Arg.Any<VirtualActorId>())
             .Returns(supervisor);
         workspaceActor.StartAsync(Arg.Any<WorkspaceManifest>())
             .Returns(expectedState);
         workspaceActor.GetStateAsync().Returns(expectedState);
 
-        var handler = new StartWorkspaceHandler(new TestVirtualActorProvider(actorFactory));
+        var handler = new StartWorkspaceHandler(actors);
         var manifest = CreateManifest();
         var command = new StartWorkspaceCommand(TestWorkspaceId, manifest);
 
@@ -66,7 +66,7 @@ public sealed class WorkspaceCommandHandlerTests
     [Fact]
     public async Task StopWorkspaceHandler_DelegatesToActor()
     {
-        var actorFactory = Substitute.For<IActorFactory>();
+        var actors = Substitute.For<IVirtualActorProvider>();
         var workspaceActor = Substitute.For<IWorkspaceActor>();
         var workspaceRegistry = Substitute.For<IWorkspaceRegistryActor>();
         var toolRegistry = Substitute.For<IToolRegistryActor>();
@@ -78,16 +78,16 @@ public sealed class WorkspaceCommandHandlerTests
             ActiveAgents = []
         });
 
-        actorFactory.GetActor<IWorkspaceActor>(TestWorkspaceId.ToString(), null)
+        actors.GetActor<IWorkspaceActor>(Arg.Any<VirtualActorId>())
             .Returns(workspaceActor);
-        actorFactory.GetActor<IWorkspaceRegistryActor>("active", null)
+        actors.GetActor<IWorkspaceRegistryActor>(Arg.Any<VirtualActorId>())
             .Returns(workspaceRegistry);
-        actorFactory.GetActor<IToolRegistryActor>(TestWorkspaceId.ToString(), null)
+        actors.GetActor<IToolRegistryActor>(Arg.Any<VirtualActorId>())
             .Returns(toolRegistry);
-        actorFactory.GetActor<IAgentSupervisorActor>(TestWorkspaceId.ToString(), null)
+        actors.GetActor<IAgentSupervisorActor>(Arg.Any<VirtualActorId>())
             .Returns(supervisor);
 
-        var handler = new StopWorkspaceHandler(new TestVirtualActorProvider(actorFactory));
+        var handler = new StopWorkspaceHandler(actors);
         var command = new StopWorkspaceCommand(TestWorkspaceId);
 
         var result = await handler.HandleAsync(command, CancellationToken.None);
@@ -102,7 +102,7 @@ public sealed class WorkspaceCommandHandlerTests
     [Fact]
     public async Task GetAllWorkspaceStatesHandler_ReturnsWorkspaceStatesFromRegistry()
     {
-        var actorFactory = Substitute.For<IActorFactory>();
+        var actors = Substitute.For<IVirtualActorProvider>();
         var registry = Substitute.For<IWorkspaceRegistryActor>();
         var workspace1 = Substitute.For<IWorkspaceActor>();
         var workspace2 = Substitute.For<IWorkspaceActor>();
@@ -117,17 +117,17 @@ public sealed class WorkspaceCommandHandlerTests
             Status = WorkspaceStatus.Starting
         };
 
-        actorFactory.GetActor<IWorkspaceRegistryActor>("active", null)
+        actors.GetActor<IWorkspaceRegistryActor>(Arg.Any<VirtualActorId>())
             .Returns(registry);
-        actorFactory.GetActor<IWorkspaceActor>("ws-1", null)
+        actors.GetActor<IWorkspaceActor>(VirtualActorId.From("ws-1"))
             .Returns(workspace1);
-        actorFactory.GetActor<IWorkspaceActor>("ws-2", null)
+        actors.GetActor<IWorkspaceActor>(VirtualActorId.From("ws-2"))
             .Returns(workspace2);
         registry.GetWorkspaceIdsAsync().Returns(["ws-2", "ws-1"]);
         workspace1.GetStateAsync().Returns(workspace1State);
         workspace2.GetStateAsync().Returns(workspace2State);
 
-        var handler = new GetAllWorkspaceStatesHandler(new TestVirtualActorProvider(actorFactory));
+        var handler = new GetAllWorkspaceStatesHandler(actors);
 
         var result = await handler.HandleAsync(new GetAllWorkspaceStatesQuery(), CancellationToken.None);
 
@@ -139,7 +139,7 @@ public sealed class WorkspaceCommandHandlerTests
     [Fact]
     public async Task GetWorkspaceStateHandler_DelegatesToActor()
     {
-        var actorFactory = Substitute.For<IActorFactory>();
+        var actors = Substitute.For<IVirtualActorProvider>();
         var workspaceActor = Substitute.For<IWorkspaceActor>();
         var expectedState = new WorkspaceState
         {
@@ -149,11 +149,11 @@ public sealed class WorkspaceCommandHandlerTests
             ActiveAgents = ["researcher", "coder"]
         };
 
-        actorFactory.GetActor<IWorkspaceActor>(TestWorkspaceId.ToString(), null)
+        actors.GetActor<IWorkspaceActor>(Arg.Any<VirtualActorId>())
             .Returns(workspaceActor);
         workspaceActor.GetStateAsync().Returns(expectedState);
 
-        var handler = new GetWorkspaceStateHandler(new TestVirtualActorProvider(actorFactory));
+        var handler = new GetWorkspaceStateHandler(actors);
         var query = new GetWorkspaceStateQuery(TestWorkspaceId);
 
         var result = await handler.HandleAsync(query, CancellationToken.None);
@@ -166,7 +166,7 @@ public sealed class WorkspaceCommandHandlerTests
     [Fact]
     public async Task GetWorkspaceStateHandler_StoppedWorkspace_ReturnsStoppedState()
     {
-        var actorFactory = Substitute.For<IActorFactory>();
+        var actors = Substitute.For<IVirtualActorProvider>();
         var workspaceActor = Substitute.For<IWorkspaceActor>();
         var expectedState = new WorkspaceState
         {
@@ -174,11 +174,11 @@ public sealed class WorkspaceCommandHandlerTests
             Status = WorkspaceStatus.Stopped
         };
 
-        actorFactory.GetActor<IWorkspaceActor>(TestWorkspaceId.ToString(), null)
+        actors.GetActor<IWorkspaceActor>(Arg.Any<VirtualActorId>())
             .Returns(workspaceActor);
         workspaceActor.GetStateAsync().Returns(expectedState);
 
-        var handler = new GetWorkspaceStateHandler(new TestVirtualActorProvider(actorFactory));
+        var handler = new GetWorkspaceStateHandler(actors);
         var query = new GetWorkspaceStateQuery(TestWorkspaceId);
 
         var result = await handler.HandleAsync(query, CancellationToken.None);
@@ -190,24 +190,24 @@ public sealed class WorkspaceCommandHandlerTests
     [Fact]
     public async Task StartWorkspaceHandler_WhenActorThrows_Propagates()
     {
-        var actorFactory = Substitute.For<IActorFactory>();
+        var actors = Substitute.For<IVirtualActorProvider>();
         var workspaceActor = Substitute.For<IWorkspaceActor>();
         var workspaceRegistry = Substitute.For<IWorkspaceRegistryActor>();
         var toolRegistry = Substitute.For<IToolRegistryActor>();
         var supervisor = Substitute.For<IAgentSupervisorActor>();
 
-        actorFactory.GetActor<IWorkspaceActor>(TestWorkspaceId.ToString(), null)
+        actors.GetActor<IWorkspaceActor>(Arg.Any<VirtualActorId>())
             .Returns(workspaceActor);
-        actorFactory.GetActor<IWorkspaceRegistryActor>("active", null)
+        actors.GetActor<IWorkspaceRegistryActor>(Arg.Any<VirtualActorId>())
             .Returns(workspaceRegistry);
-        actorFactory.GetActor<IToolRegistryActor>(TestWorkspaceId.ToString(), null)
+        actors.GetActor<IToolRegistryActor>(Arg.Any<VirtualActorId>())
             .Returns(toolRegistry);
-        actorFactory.GetActor<IAgentSupervisorActor>(TestWorkspaceId.ToString(), null)
+        actors.GetActor<IAgentSupervisorActor>(Arg.Any<VirtualActorId>())
             .Returns(supervisor);
         workspaceActor.StartAsync(Arg.Any<WorkspaceManifest>())
             .Returns<WorkspaceState>(x => throw new InvalidOperationException("Provisioning failed"));
 
-        var handler = new StartWorkspaceHandler(new TestVirtualActorProvider(actorFactory));
+        var handler = new StartWorkspaceHandler(actors);
         var command = new StartWorkspaceCommand(TestWorkspaceId, CreateManifest());
 
         await Should.ThrowAsync<InvalidOperationException>(

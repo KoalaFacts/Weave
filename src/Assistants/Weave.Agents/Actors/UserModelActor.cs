@@ -12,13 +12,15 @@ public sealed class UserModelActor(
     IEventBus eventBus,
     TimeProvider timeProvider,
     ILogger<UserModelActor> logger,
-    [PersistentState("user-model", "Default")] IPersistentState<UserProfileState> persistentState) : VirtualActor, IUserModelActor
+    IActorState<UserProfileState> persistentState) : IUserModelActor
 {
-    public override async Task OnActivateAsync(CancellationToken cancellationToken)
+    private string? _key;
+
+    public async Task OnActivatedAsync(string? key, CancellationToken cancellationToken)
     {
+        _key = key;
         await persistentState.ReadStateAsync(cancellationToken);
 
-        var key = TryGetPrimaryKeyString();
         if (string.IsNullOrWhiteSpace(persistentState.State.UserId))
         {
             ApplyIdentity(key);
@@ -144,7 +146,7 @@ public sealed class UserModelActor(
         if (!string.IsNullOrWhiteSpace(persistentState.State.UserId))
             return;
 
-        ApplyIdentity(TryGetPrimaryKeyString());
+        ApplyIdentity(_key);
     }
 
     private void ApplyIdentity(string? key)
@@ -155,17 +157,5 @@ public sealed class UserModelActor(
         var parts = key.Split('/', 2);
         persistentState.State.WorkspaceId = parts.Length > 1 ? parts[0] : key;
         persistentState.State.UserId = parts.Length > 1 ? parts[1] : key;
-    }
-
-    private string? TryGetPrimaryKeyString()
-    {
-        try
-        {
-            return this.GetPrimaryKeyString();
-        }
-        catch (NullReferenceException)
-        {
-            return null;
-        }
     }
 }

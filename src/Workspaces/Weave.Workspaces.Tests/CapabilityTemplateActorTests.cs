@@ -7,13 +7,13 @@ namespace Weave.Workspaces.Tests;
 
 public sealed class CapabilityTemplateActorTests
 {
-    private static IPersistentState<TemplateRegistryState> CreatePersistentState(TemplateRegistryState? state = null)
+    private static IActorState<TemplateRegistryState> CreatePersistentState(TemplateRegistryState? state = null)
     {
-        var persistentState = Substitute.For<IPersistentState<TemplateRegistryState>>();
+        var persistentState = Substitute.For<IActorState<TemplateRegistryState>>();
         persistentState.State.Returns(state ?? new TemplateRegistryState());
         persistentState.ReadStateAsync(Arg.Any<CancellationToken>()).Returns(Task.CompletedTask);
         persistentState.WriteStateAsync(Arg.Any<CancellationToken>()).Returns(Task.CompletedTask);
-        persistentState.WriteStateAsync().Returns(Task.CompletedTask);
+        persistentState.WriteStateAsync(Arg.Any<CancellationToken>()).Returns(Task.CompletedTask);
         return persistentState;
     }
 

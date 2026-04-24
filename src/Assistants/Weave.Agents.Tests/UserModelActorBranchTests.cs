@@ -13,18 +13,18 @@ namespace Weave.Agents.Tests;
 /// </summary>
 public sealed class UserModelActorBranchTests
 {
-    private static IPersistentState<UserProfileState> EmptyState()
+    private static IActorState<UserProfileState> EmptyState()
     {
         var state = new UserProfileState();
-        var ps = Substitute.For<IPersistentState<UserProfileState>>();
+        var ps = Substitute.For<IActorState<UserProfileState>>();
         ps.State.Returns(state);
         ps.ReadStateAsync(Arg.Any<CancellationToken>()).Returns(Task.CompletedTask);
         ps.WriteStateAsync(Arg.Any<CancellationToken>()).Returns(Task.CompletedTask);
-        ps.WriteStateAsync().Returns(Task.CompletedTask);
+        ps.WriteStateAsync(Arg.Any<CancellationToken>()).Returns(Task.CompletedTask);
         return ps;
     }
 
-    private static UserModelActor CreateActor(IPersistentState<UserProfileState> ps) => new(
+    private static UserModelActor CreateActor(IActorState<UserProfileState> ps) => new(
         Substitute.For<IEventBus>(),
         TimeProvider.System,
         NullLogger<UserModelActor>.Instance,

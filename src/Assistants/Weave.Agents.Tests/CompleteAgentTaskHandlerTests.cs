@@ -19,11 +19,11 @@ public sealed class CompleteAgentTaskHandlerTests
     [Fact]
     public async Task HandleAsync_SubmitsProofAndReturnsAwaitingReview()
     {
-        var actorFactory = Substitute.For<IActorFactory>();
+        var actors = Substitute.For<IVirtualActorProvider>();
         var agentActor = Substitute.For<IAgentActor>();
         var proof = CreateProof();
 
-        actorFactory.GetActor<IAgentActor>($"{TestWorkspaceId}/researcher", null)
+        actors.GetActor<IAgentActor>(Arg.Any<VirtualActorId>())
             .Returns(agentActor);
 
         agentActor.GetStateAsync().Returns(new AgentState
@@ -43,7 +43,7 @@ public sealed class CompleteAgentTaskHandlerTests
             ]
         });
 
-        var handler = new CompleteAgentTaskHandler(new TestVirtualActorProvider(actorFactory));
+        var handler = new CompleteAgentTaskHandler(actors);
         var command = new CompleteAgentTaskCommand(TestWorkspaceId, "researcher", TestTaskId, true, proof);
 
         var result = await handler.HandleAsync(command, CancellationToken.None);
@@ -59,11 +59,11 @@ public sealed class CompleteAgentTaskHandlerTests
     [Fact]
     public async Task HandleAsync_FailsTaskWithProof()
     {
-        var actorFactory = Substitute.For<IActorFactory>();
+        var actors = Substitute.For<IVirtualActorProvider>();
         var agentActor = Substitute.For<IAgentActor>();
         var proof = CreateProof(ProofType.Custom, "error details");
 
-        actorFactory.GetActor<IAgentActor>($"{TestWorkspaceId}/researcher", null)
+        actors.GetActor<IAgentActor>(Arg.Any<VirtualActorId>())
             .Returns(agentActor);
 
         agentActor.GetStateAsync().Returns(new AgentState
@@ -83,7 +83,7 @@ public sealed class CompleteAgentTaskHandlerTests
             ]
         });
 
-        var handler = new CompleteAgentTaskHandler(new TestVirtualActorProvider(actorFactory));
+        var handler = new CompleteAgentTaskHandler(actors);
         var command = new CompleteAgentTaskCommand(TestWorkspaceId, "researcher", TestTaskId, false, proof);
 
         var result = await handler.HandleAsync(command, CancellationToken.None);
@@ -97,10 +97,10 @@ public sealed class CompleteAgentTaskHandlerTests
     [Fact]
     public async Task HandleAsync_WithMultipleProofItems_PassesAll()
     {
-        var actorFactory = Substitute.For<IActorFactory>();
+        var actors = Substitute.For<IVirtualActorProvider>();
         var agentActor = Substitute.For<IAgentActor>();
 
-        actorFactory.GetActor<IAgentActor>($"{TestWorkspaceId}/researcher", null)
+        actors.GetActor<IAgentActor>(Arg.Any<VirtualActorId>())
             .Returns(agentActor);
 
         var proof = new ProofOfWork
@@ -129,7 +129,7 @@ public sealed class CompleteAgentTaskHandlerTests
             ]
         });
 
-        var handler = new CompleteAgentTaskHandler(new TestVirtualActorProvider(actorFactory));
+        var handler = new CompleteAgentTaskHandler(actors);
         var command = new CompleteAgentTaskCommand(TestWorkspaceId, "researcher", TestTaskId, true, proof);
 
         var result = await handler.HandleAsync(command, CancellationToken.None);

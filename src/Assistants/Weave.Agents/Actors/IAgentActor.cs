@@ -4,7 +4,7 @@ using Weave.Workspaces.Models;
 
 namespace Weave.Agents.Actors;
 
-public interface IAgentActor : IVirtualActorWithStringKey
+public interface IAgentActor
 {
     Task<AgentState> ActivateAgentAsync(WorkspaceId workspaceId, AgentDefinition definition);
     Task DeactivateAsync();

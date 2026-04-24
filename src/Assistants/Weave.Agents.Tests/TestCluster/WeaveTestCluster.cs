@@ -1,9 +1,11 @@
+using Microsoft.Extensions.Configuration;
 using Microsoft.Extensions.DependencyInjection;
 using Microsoft.Extensions.Time.Testing;
 using Orleans.Serialization;
 using Orleans.TestingHost;
 using Weave.Shared.Events;
 using Weave.Shared.Lifecycle;
+using Weave.Silo.VirtualActors;
 
 namespace Weave.Agents.Tests.TestCluster;
 
@@ -25,7 +27,7 @@ public sealed class WeaveTestCluster : IAsyncLifetime
 {
     public Orleans.TestingHost.TestCluster Cluster { get; private set; } = null!;
 
-    public IActorFactory ActorFactory => Cluster.GrainFactory;
+    public IVirtualActorProvider ActorProvider { get; private set; } = null!;
 
     /// <summary>
     /// FakeTimeProvider shared across the cluster. Tests that need to advance
@@ -39,12 +41,14 @@ public sealed class WeaveTestCluster : IAsyncLifetime
     {
         var builder = new TestClusterBuilder();
         builder.AddSiloBuilderConfigurator<SiloConfigurator>();
+        builder.AddClientBuilderConfigurator<ClientConfigurator>();
         // Silo configurators must be public and have a parameterless constructor
         // for Orleans.TestingHost to serialize them across the silo boundary.
         // Share the FakeTimeProvider via a static field on SiloConfigurator.
         SiloConfigurator.SharedTime = Time;
         Cluster = builder.Build();
         Cluster.Deploy();
+        ActorProvider = new OrleansVirtualActorProvider(Cluster.GrainFactory);
         return ValueTask.CompletedTask;
     }
 
@@ -80,10 +84,17 @@ public sealed class WeaveTestCluster : IAsyncLifetime
             // serializer config validator throws CodecNotFoundException at startup
             // for every actor interface that returns or accepts a branded ID.
             siloBuilder.Services.AddSerializer(s =>
-                s.AddAssembly(typeof(Weave.Silo.Serialization.SerializationMarker).Assembly));
+            {
+                s.AddAssembly(typeof(Weave.Silo.Serialization.SerializationMarker).Assembly);
+                s.AddJsonSerializer(
+                    isSupported: type => type.Namespace?.StartsWith("Weave.", StringComparison.Ordinal) == true
+                        && !type.Namespace.StartsWith("Weave.Silo.", StringComparison.Ordinal));
+            });
 
             siloBuilder.ConfigureServices(services =>
             {
+                services.AddSingleton<IVirtualActorProvider>(sp =>
+                    new OrleansVirtualActorProvider(sp.GetRequiredService<Orleans.IGrainFactory>()));
                 services.AddSingleton<ILifecycleManager, LifecycleManager>();
                 services.AddSingleton<IEventBus, InProcessEventBus>();
                 // FakeTimeProvider-as-TimeProvider so actor code under test
@@ -92,6 +103,25 @@ public sealed class WeaveTestCluster : IAsyncLifetime
             });
         }
     }
+
+    /// <summary>
+    /// Configures the client side of the test cluster with JSON serializers
+    /// so grain proxy construction can resolve copiers for domain types.
+    /// </summary>
+    public sealed class ClientConfigurator : IClientBuilderConfigurator
+    {
+        public void Configure(IConfiguration configuration, IClientBuilder clientBuilder)
+        {
+            clientBuilder.Services.AddSerializer(s =>
+            {
+                s.AddAssembly(typeof(Weave.Silo.Serialization.SerializationMarker).Assembly);
+                s.AddJsonSerializer(
+                    isSupported: type => type.Namespace?.StartsWith("Weave.", StringComparison.Ordinal) == true
+                        && !type.Namespace.StartsWith("Weave.Silo.", StringComparison.Ordinal));
+            });
+        }
+    }
+
 }
 
 // xUnit requires the CollectionDefinition class to expose ICollectionFixture<T>;

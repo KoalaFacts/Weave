@@ -24,7 +24,7 @@ public sealed class AgentChatPipelineBranchTests
     {
         public IChatClient ChatClient { get; } = Substitute.For<IChatClient>();
         public IAgentChatClientFactory ChatClientFactory { get; } = Substitute.For<IAgentChatClientFactory>();
-        public IActorFactory ActorFactory { get; } = Substitute.For<IActorFactory>();
+        public IVirtualActorProvider ActorProvider { get; } = Substitute.For<IVirtualActorProvider>();
         public AgentChatPipeline Pipeline { get; }
 
         public Fixture(string responseText = "ok")
@@ -38,7 +38,7 @@ public sealed class AgentChatPipelineBranchTests
             ChatClientFactory.Create(Arg.Any<string>(), Arg.Any<string?>()).Returns(ChatClient);
 
             Pipeline = new AgentChatPipeline(
-                new TestVirtualActorProvider(ActorFactory),
+                ActorProvider,
                 ChatClientFactory,
                 TimeProvider.System,
                 NullLogger<AgentChatPipeline>.Instance);
@@ -99,7 +99,7 @@ public sealed class AgentChatPipelineBranchTests
         var fx = new Fixture();
         var userActor = Substitute.For<IUserModelActor>();
         userActor.GetContextSummaryAsync().Returns(Task.FromException<string>(new InvalidOperationException("user actor broken")));
-        fx.ActorFactory.GetActor<IUserModelActor>("ws-1/alice", null).Returns(userActor);
+        fx.ActorProvider.GetActor<IUserModelActor>(Arg.Any<VirtualActorId>()).Returns(userActor);
 
         var state = StateWith();
 
@@ -120,7 +120,7 @@ public sealed class AgentChatPipelineBranchTests
         var skillActor = Substitute.For<ISkillMemoryActor>();
         skillActor.SearchAsync(Arg.Any<string>(), Arg.Any<int>())
             .Returns(Task.FromException<IReadOnlyList<SkillSearchResult>>(new InvalidOperationException("skill actor broken")));
-        fx.ActorFactory.GetActor<ISkillMemoryActor>("ws-1", null).Returns(skillActor);
+        fx.ActorProvider.GetActor<ISkillMemoryActor>(Arg.Any<VirtualActorId>()).Returns(skillActor);
 
         var state = StateWith();
 
@@ -140,7 +140,7 @@ public sealed class AgentChatPipelineBranchTests
         var toolRegistry = Substitute.For<IToolRegistryActor>();
         toolRegistry.ResolveAsync(Arg.Any<string>(), Arg.Any<string>())
             .Returns((ToolResolution?)null);
-        fx.ActorFactory.GetActor<IToolRegistryActor>("ws-1", null).Returns(toolRegistry);
+        fx.ActorProvider.GetActor<IToolRegistryActor>(Arg.Any<VirtualActorId>()).Returns(toolRegistry);
 
         // State with a "connected" tool whose resolution returns null.
         var state = StateWith(null, "unavailable-tool");

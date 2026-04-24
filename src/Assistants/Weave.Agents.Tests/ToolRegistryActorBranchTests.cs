@@ -19,24 +19,24 @@ namespace Weave.Agents.Tests;
 /// </summary>
 public sealed class ToolRegistryActorBranchTests
 {
-    private static IPersistentState<ToolRegistryState> CreatePersistentState()
+    private static IActorState<ToolRegistryState> CreatePersistentState()
     {
-        var persistentState = Substitute.For<IPersistentState<ToolRegistryState>>();
+        var persistentState = Substitute.For<IActorState<ToolRegistryState>>();
         persistentState.State.Returns(new ToolRegistryState());
         persistentState.ReadStateAsync(Arg.Any<CancellationToken>()).Returns(Task.CompletedTask);
         persistentState.WriteStateAsync(Arg.Any<CancellationToken>()).Returns(Task.CompletedTask);
-        persistentState.WriteStateAsync().Returns(Task.CompletedTask);
+        persistentState.WriteStateAsync(Arg.Any<CancellationToken>()).Returns(Task.CompletedTask);
         return persistentState;
     }
 
     private sealed class Fixture
     {
-        public IActorFactory ActorFactory { get; } = Substitute.For<IActorFactory>();
+        public IVirtualActorProvider ActorProvider { get; } = Substitute.For<IVirtualActorProvider>();
         public IToolActor ToolActor { get; } = Substitute.For<IToolActor>();
         public ISecretProxyActor SecretProxy { get; } = Substitute.For<ISecretProxyActor>();
         public ILifecycleManager Lifecycle { get; } = Substitute.For<ILifecycleManager>();
         public IEventBus EventBus { get; } = Substitute.For<IEventBus>();
-        public IPersistentState<ToolRegistryState> State { get; } = CreatePersistentState();
+        public IActorState<ToolRegistryState> State { get; } = CreatePersistentState();
 
         public ToolRegistryActor Actor { get; }
 
@@ -72,11 +72,11 @@ public sealed class ToolRegistryActorBranchTests
             ToolActor.GetSchemaAsync().Returns(Task.FromResult(new ToolSchema { ToolName = "x", Description = "d" }));
             SecretProxy.SubstituteAsync(Arg.Any<string>()).Returns(ci => ci.Arg<string>());
 
-            ActorFactory.GetActor<IToolActor>(Arg.Any<string>(), null).Returns(ToolActor);
-            ActorFactory.GetActor<ISecretProxyActor>(Arg.Any<string>(), null).Returns(SecretProxy);
+            ActorProvider.GetActor<IToolActor>(Arg.Any<VirtualActorId>()).Returns(ToolActor);
+            ActorProvider.GetActor<ISecretProxyActor>(Arg.Any<VirtualActorId>()).Returns(SecretProxy);
 
             Actor = new ToolRegistryActor(
-                new TestVirtualActorProvider(ActorFactory), tokenService, Lifecycle, EventBus, TimeProvider.System,
+                ActorProvider, tokenService, Lifecycle, EventBus, TimeProvider.System,
                 Substitute.For<ILogger<ToolRegistryActor>>(), State);
         }
     }

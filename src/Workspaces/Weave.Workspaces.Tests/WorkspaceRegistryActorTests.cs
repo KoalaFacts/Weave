@@ -5,13 +5,13 @@ namespace Weave.Workspaces.Tests;
 
 public sealed class WorkspaceRegistryActorTests
 {
-    private static IPersistentState<WorkspaceRegistryState> CreatePersistentState(WorkspaceRegistryState? state = null)
+    private static IActorState<WorkspaceRegistryState> CreatePersistentState(WorkspaceRegistryState? state = null)
     {
-        var persistentState = Substitute.For<IPersistentState<WorkspaceRegistryState>>();
+        var persistentState = Substitute.For<IActorState<WorkspaceRegistryState>>();
         persistentState.State.Returns(state ?? new WorkspaceRegistryState());
         persistentState.ReadStateAsync(Arg.Any<CancellationToken>()).Returns(Task.CompletedTask);
         persistentState.WriteStateAsync(Arg.Any<CancellationToken>()).Returns(Task.CompletedTask);
-        persistentState.WriteStateAsync().Returns(Task.CompletedTask);
+        persistentState.WriteStateAsync(Arg.Any<CancellationToken>()).Returns(Task.CompletedTask);
         return persistentState;
     }
 

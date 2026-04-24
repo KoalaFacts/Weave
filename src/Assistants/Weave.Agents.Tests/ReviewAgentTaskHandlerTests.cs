@@ -13,10 +13,10 @@ public sealed class ReviewAgentTaskHandlerTests
     [Fact]
     public async Task HandleAsync_AcceptsTask()
     {
-        var actorFactory = Substitute.For<IActorFactory>();
+        var actors = Substitute.For<IVirtualActorProvider>();
         var agentActor = Substitute.For<IAgentActor>();
 
-        actorFactory.GetActor<IAgentActor>($"{TestWorkspaceId}/researcher", null)
+        actors.GetActor<IAgentActor>(Arg.Any<VirtualActorId>())
             .Returns(agentActor);
 
         agentActor.GetStateAsync().Returns(new AgentState
@@ -42,7 +42,7 @@ public sealed class ReviewAgentTaskHandlerTests
             ]
         });
 
-        var handler = new ReviewAgentTaskHandler(new TestVirtualActorProvider(actorFactory));
+        var handler = new ReviewAgentTaskHandler(actors);
         var command = new ReviewAgentTaskCommand(TestWorkspaceId, "researcher", TestTaskId, true, "LGTM");
 
         var result = await handler.HandleAsync(command, CancellationToken.None);
@@ -58,10 +58,10 @@ public sealed class ReviewAgentTaskHandlerTests
     [Fact]
     public async Task HandleAsync_RejectsTask()
     {
-        var actorFactory = Substitute.For<IActorFactory>();
+        var actors = Substitute.For<IVirtualActorProvider>();
         var agentActor = Substitute.For<IAgentActor>();
 
-        actorFactory.GetActor<IAgentActor>($"{TestWorkspaceId}/researcher", null)
+        actors.GetActor<IAgentActor>(Arg.Any<VirtualActorId>())
             .Returns(agentActor);
 
         agentActor.GetStateAsync().Returns(new AgentState
@@ -86,7 +86,7 @@ public sealed class ReviewAgentTaskHandlerTests
             ]
         });
 
-        var handler = new ReviewAgentTaskHandler(new TestVirtualActorProvider(actorFactory));
+        var handler = new ReviewAgentTaskHandler(actors);
         var command = new ReviewAgentTaskCommand(TestWorkspaceId, "researcher", TestTaskId, false, "Tests failing");
 
         var result = await handler.HandleAsync(command, CancellationToken.None);

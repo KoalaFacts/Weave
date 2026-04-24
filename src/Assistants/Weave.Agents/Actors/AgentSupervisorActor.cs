@@ -8,13 +8,15 @@ namespace Weave.Agents.Actors;
 public sealed class AgentSupervisorActor(
     IVirtualActorProvider actors,
     ILogger<AgentSupervisorActor> logger,
-    [PersistentState("agent-supervisor", "Default")] IPersistentState<AgentSupervisorState> persistentState) : VirtualActor, IAgentSupervisorActor
+    IActorState<AgentSupervisorState> persistentState) : IAgentSupervisorActor
 {
     private string _workspaceId = string.Empty;
 
-    public override async Task OnActivateAsync(CancellationToken cancellationToken)
+    public async Task OnActivatedAsync(string? key, CancellationToken cancellationToken)
     {
         await persistentState.ReadStateAsync(cancellationToken);
+        if (!string.IsNullOrWhiteSpace(key))
+            _workspaceId = key;
         EnsureWorkspaceId();
         if (!string.Equals(persistentState.State.WorkspaceId, _workspaceId, StringComparison.Ordinal))
         {
@@ -109,15 +111,8 @@ public sealed class AgentSupervisorActor(
         if (!string.IsNullOrWhiteSpace(_workspaceId))
             return;
 
-        try
-        {
-            _workspaceId = this.GetPrimaryKeyString();
-        }
-        catch (NullReferenceException)
-        {
-            _workspaceId = string.IsNullOrWhiteSpace(persistentState.State.WorkspaceId)
-                ? "unknown-workspace"
-                : persistentState.State.WorkspaceId;
-        }
+        _workspaceId = string.IsNullOrWhiteSpace(persistentState.State.WorkspaceId)
+            ? "unknown-workspace"
+            : persistentState.State.WorkspaceId;
     }
 }

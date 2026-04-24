@@ -16,18 +16,18 @@ namespace Weave.Workspaces.Tests;
 /// </summary>
 public sealed class WorkspaceActorBranchTests
 {
-    private static IPersistentState<WorkspaceState> CreateState(WorkspaceState? initial = null)
+    private static IActorState<WorkspaceState> CreateState(WorkspaceState? initial = null)
     {
-        var ps = Substitute.For<IPersistentState<WorkspaceState>>();
+        var ps = Substitute.For<IActorState<WorkspaceState>>();
         ps.State.Returns(initial ?? new WorkspaceState { WorkspaceId = WorkspaceId.From("ws-1") });
         ps.ReadStateAsync(Arg.Any<CancellationToken>()).Returns(Task.CompletedTask);
         ps.WriteStateAsync(Arg.Any<CancellationToken>()).Returns(Task.CompletedTask);
-        ps.WriteStateAsync().Returns(Task.CompletedTask);
+        ps.WriteStateAsync(Arg.Any<CancellationToken>()).Returns(Task.CompletedTask);
         return ps;
     }
 
     private static WorkspaceActor Create(
-        IPersistentState<WorkspaceState> state,
+        IActorState<WorkspaceState> state,
         IWorkspaceRuntime? runtime = null,
         ILifecycleManager? lifecycle = null,
         IEventBus? eventBus = null) => new(

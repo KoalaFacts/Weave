@@ -28,7 +28,7 @@ public sealed class ToolActorBranchTests
 
     private sealed class Fixture
     {
-        public IActorFactory ActorFactory { get; } = Substitute.For<IActorFactory>();
+        public IVirtualActorProvider ActorProvider { get; } = Substitute.For<IVirtualActorProvider>();
         public IToolDiscoveryService Discovery { get; } = Substitute.For<IToolDiscoveryService>();
         public IToolConnector Connector { get; } = Substitute.For<IToolConnector>();
         public LeakScanner Scanner { get; }
@@ -45,10 +45,10 @@ public sealed class ToolActorBranchTests
             Scanner = new LeakScanner(NullLogger<LeakScanner>.Instance);
             TokenService = CreateTokenService();
             SecretProxy.SubstituteAsync(Arg.Any<string>()).Returns(ci => ci.Arg<string>());
-            ActorFactory.GetActor<ISecretProxyActor>(Arg.Any<string>(), null).Returns(SecretProxy);
+            ActorProvider.GetActor<ISecretProxyActor>(Arg.Any<VirtualActorId>()).Returns(SecretProxy);
 
             Actor = new ToolActor(
-                new TestVirtualActorProvider(ActorFactory), Discovery, Scanner, TokenService, Lifecycle, EventBus,
+                ActorProvider, Discovery, Scanner, TokenService, Lifecycle, EventBus,
                 NullLogger<ToolActor>.Instance);
         }
     }

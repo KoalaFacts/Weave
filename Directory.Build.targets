@@ -36,16 +36,8 @@
     <Using Include="Shouldly" />
   </ItemGroup>
 
-  <!-- Coverage collection uses Microsoft's first-party extension
-       (Microsoft.Testing.Extensions.CodeCoverage) because xunit.v3
-       runs under Microsoft.Testing.Platform, which does not integrate
-       cleanly with coverlet's msbuild or settings hooks.
-
-       Invoke locally:   dotnet test -%%- -%%-coverage
-       CI enforcement:   dotnet test -%%- -%%-coverage -%%-coverage-threshold 90
-       (replace -%%- with double-dash; literal double-dash is not
-       permitted inside XML comments.)  -->
+  <!-- Coverage uses coverlet. CI enforcement via coverage.runsettings. -->
   <ItemGroup Condition="'$(IsTestProject)' == 'true'">
-    <PackageReference Include="Microsoft.Testing.Extensions.CodeCoverage" />
+    <PackageReference Include="coverlet.collector" />
   </ItemGroup>
 </Project>

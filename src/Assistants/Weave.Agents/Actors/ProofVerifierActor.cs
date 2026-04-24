@@ -10,7 +10,7 @@ public sealed class ProofVerifierActor(
     IVirtualActorProvider actors,
     IEventBus eventBus,
     ILogger<ProofVerifierActor> logger,
-    [PersistentState("verifier", "Default")] IPersistentState<VerifierState> persistentState) : VirtualActor, IProofVerifierActor
+    IActorState<VerifierState> persistentState) : IProofVerifierActor
 {
     internal static readonly List<VerificationCondition> DefaultConditions =
     [

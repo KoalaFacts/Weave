@@ -11,19 +11,19 @@ public sealed class SkillMemoryActorTests
 {
     private static readonly WorkspaceId TestWorkspaceId = WorkspaceId.From("ws-1");
 
-    private static IPersistentState<SkillMemoryState> CreatePersistentState()
+    private static IActorState<SkillMemoryState> CreatePersistentState()
     {
         var state = new SkillMemoryState
         {
             WorkspaceId = TestWorkspaceId.ToString()
         };
 
-        var persistentState = Substitute.For<IPersistentState<SkillMemoryState>>();
+        var persistentState = Substitute.For<IActorState<SkillMemoryState>>();
         persistentState.State.Returns(state);
         persistentState.ReadStateAsync(Arg.Any<CancellationToken>()).Returns(Task.CompletedTask);
         persistentState.WriteStateAsync(Arg.Any<CancellationToken>()).Returns(Task.CompletedTask);
-        persistentState.WriteStateAsync().Returns(Task.CompletedTask);
-        persistentState.ClearStateAsync().Returns(Task.CompletedTask);
+        persistentState.WriteStateAsync(Arg.Any<CancellationToken>()).Returns(Task.CompletedTask);
+        persistentState.ClearStateAsync(Arg.Any<CancellationToken>()).Returns(Task.CompletedTask);
         return persistentState;
     }
 

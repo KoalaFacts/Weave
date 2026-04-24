@@ -12,28 +12,28 @@ public sealed class ProofVerifierActorTests
     private static readonly WorkspaceId TestWorkspaceId = WorkspaceId.From("ws-1");
     private static readonly AgentTaskId TestTaskId = AgentTaskId.From("task-1");
 
-    private static IPersistentState<VerifierState> CreatePersistentState(VerifierState? state = null)
+    private static IActorState<VerifierState> CreatePersistentState(VerifierState? state = null)
     {
         state ??= new VerifierState();
-        var persistentState = Substitute.For<IPersistentState<VerifierState>>();
+        var persistentState = Substitute.For<IActorState<VerifierState>>();
         persistentState.State.Returns(state);
         persistentState.ReadStateAsync(Arg.Any<CancellationToken>()).Returns(Task.CompletedTask);
         persistentState.WriteStateAsync(Arg.Any<CancellationToken>()).Returns(Task.CompletedTask);
-        persistentState.WriteStateAsync().Returns(Task.CompletedTask);
+        persistentState.WriteStateAsync(Arg.Any<CancellationToken>()).Returns(Task.CompletedTask);
         return persistentState;
     }
 
-    private static (ProofVerifierActor Actor, IEventBus EventBus, IAgentActor AgentActor, IActorFactory ActorFactory) CreateVerifier(
+    private static (ProofVerifierActor Actor, IEventBus EventBus, IAgentActor AgentActor, IVirtualActorProvider Actors) CreateVerifier(
         VerifierState? state = null,
         Func<string, ProofOfWork, List<VerificationCondition>, string?, VerificationVote>? validatorBehavior = null)
     {
-        var actorFactory = Substitute.For<IActorFactory>();
+        var actors = Substitute.For<IVirtualActorProvider>();
         var eventBus = Substitute.For<IEventBus>();
         var logger = Substitute.For<ILogger<ProofVerifierActor>>();
         var agentActor = Substitute.For<IAgentActor>();
         var persistentState = CreatePersistentState(state);
 
-        actorFactory.GetActor<IAgentActor>($"{TestWorkspaceId}/researcher", null)
+        actors.GetActor<IAgentActor>(VirtualActorId.From("ws-1/researcher"))
             .Returns(agentActor);
 
         // Set up validator actors
@@ -56,12 +56,12 @@ public sealed class ProofVerifierActorTests
                         Reason = "All conditions satisfied."
                     };
                 });
-            actorFactory.GetActor<IProofValidatorActor>($"{TestWorkspaceId}/{validatorId}", null)
+            actors.GetActor<IProofValidatorActor>(VirtualActorId.From($"ws-1/{validatorId}"))
                 .Returns(validatorActor);
         }
 
-        var actor = new ProofVerifierActor(new TestVirtualActorProvider(actorFactory), eventBus, logger, persistentState);
-        return (actor, eventBus, agentActor, actorFactory);
+        var actor = new ProofVerifierActor(actors, eventBus, logger, persistentState);
+        return (actor, eventBus, agentActor, actors);
     }
 
     [Fact]

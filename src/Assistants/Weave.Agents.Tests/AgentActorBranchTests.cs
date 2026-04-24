@@ -20,7 +20,7 @@ public sealed class AgentActorBranchTests
     private static readonly WorkspaceId TestWorkspaceId = WorkspaceId.From("ws-1");
     private const string TestAgentName = "researcher";
 
-    private static IPersistentState<AgentState> CreatePersistentState()
+    private static IActorState<AgentState> CreatePersistentState()
     {
         var state = new AgentState
         {
@@ -28,32 +28,32 @@ public sealed class AgentActorBranchTests
             WorkspaceId = TestWorkspaceId,
             AgentName = TestAgentName
         };
-        var ps = Substitute.For<IPersistentState<AgentState>>();
+        var ps = Substitute.For<IActorState<AgentState>>();
         ps.State.Returns(state);
         ps.ReadStateAsync(Arg.Any<CancellationToken>()).Returns(Task.CompletedTask);
         ps.WriteStateAsync(Arg.Any<CancellationToken>()).Returns(Task.CompletedTask);
-        ps.WriteStateAsync().Returns(Task.CompletedTask);
+        ps.WriteStateAsync(Arg.Any<CancellationToken>()).Returns(Task.CompletedTask);
         return ps;
     }
 
     private sealed class Fixture
     {
-        public IActorFactory ActorFactory { get; } = Substitute.For<IActorFactory>();
+        public IVirtualActorProvider ActorProvider { get; } = Substitute.For<IVirtualActorProvider>();
         public IAgentChatPipeline ChatPipeline { get; } = Substitute.For<IAgentChatPipeline>();
         public ILifecycleManager Lifecycle { get; } = Substitute.For<ILifecycleManager>();
         public IEventBus EventBus { get; } = Substitute.For<IEventBus>();
-        public IPersistentState<AgentState> State { get; } = CreatePersistentState();
+        public IActorState<AgentState> State { get; } = CreatePersistentState();
         public AgentActor Actor { get; }
 
         public Fixture()
         {
-            ActorFactory.GetActor<ISkillMemoryActor>(Arg.Any<string>(), null)
+            ActorProvider.GetActor<ISkillMemoryActor>(Arg.Any<VirtualActorId>())
                 .Returns(Substitute.For<ISkillMemoryActor>());
-            ActorFactory.GetActor<IProofVerifierActor>(Arg.Any<string>(), null)
+            ActorProvider.GetActor<IProofVerifierActor>(Arg.Any<VirtualActorId>())
                 .Returns(Substitute.For<IProofVerifierActor>());
 
             Actor = new AgentActor(
-                new TestVirtualActorProvider(ActorFactory), ChatPipeline, Lifecycle, EventBus, TimeProvider.System,
+                ActorProvider, ChatPipeline, Lifecycle, EventBus, TimeProvider.System,
                 Substitute.For<ILogger<AgentActor>>(), State);
         }
     }
@@ -181,7 +181,7 @@ public sealed class AgentActorBranchTests
     {
         var fx = new Fixture();
         var skillActor = Substitute.For<ISkillMemoryActor>();
-        fx.ActorFactory.GetActor<ISkillMemoryActor>(Arg.Any<string>(), null).Returns(skillActor);
+        fx.ActorProvider.GetActor<ISkillMemoryActor>(Arg.Any<VirtualActorId>()).Returns(skillActor);
 
         await fx.Actor.ActivateAgentAsync(TestWorkspaceId, Def());
         var task = await fx.Actor.SubmitTaskAsync("multi-step task");
@@ -207,7 +207,7 @@ public sealed class AgentActorBranchTests
         var skillActor = Substitute.For<ISkillMemoryActor>();
         skillActor.StoreSkillAsync(Arg.Any<SkillDocument>())
             .Returns(Task.FromException<SkillDocument>(new InvalidOperationException("store broken")));
-        fx.ActorFactory.GetActor<ISkillMemoryActor>(Arg.Any<string>(), null).Returns(skillActor);
+        fx.ActorProvider.GetActor<ISkillMemoryActor>(Arg.Any<VirtualActorId>()).Returns(skillActor);
 
         await fx.Actor.ActivateAgentAsync(TestWorkspaceId, Def());
         var task = await fx.Actor.SubmitTaskAsync("multi-step task");

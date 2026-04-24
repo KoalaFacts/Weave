@@ -748,15 +748,6 @@
         "resolved": "10.0.6",
         "contentHash": "2Jafd4fdxxiwiQ08mcF+Lf3vqikkQZusGVThOKZNSmPDceGk4IwkjeHL7OEb9Ov8q9ICY5wofL98CS153K5VvQ=="
       },
-      "Microsoft.Extensions.Options": {
-        "type": "Transitive",
-        "resolved": "10.0.7",
-        "contentHash": "00SHUGTh2jSMvIr6x9Xwd2nE+B5/qFCO/9hDwUDhJsjYRDlADmaBZ7tqehXzBDsfjHSXJzuRHJzPYPPjphBQ7Q==",
-        "dependencies": {
-          "Microsoft.Extensions.DependencyInjection.Abstractions": "10.0.7",
-          "Microsoft.Extensions.Primitives": "10.0.7"
-        }
-      },
       "Microsoft.Extensions.Options.ConfigurationExtensions": {
         "type": "Transitive",
         "resolved": "10.0.7",
@@ -1321,8 +1312,6 @@
         "dependencies": {
           "Microsoft.Extensions.AI": "[10.5.0, )",
           "Microsoft.Extensions.AI.Abstractions": "[10.5.0, )",
-          "Microsoft.Orleans.Sdk": "[10.1.0, )",
-          "Microsoft.Orleans.Server": "[10.1.0, )",
           "System.Threading.RateLimiting": "[10.0.7, )",
           "Weave.Security": "[1.0.0, )",
           "Weave.Shared": "[1.0.0, )",
@@ -1356,7 +1345,7 @@
         "type": "Project",
         "dependencies": {
           "Microsoft.Extensions.Logging.Abstractions": "[10.0.7, )",
-          "Microsoft.Orleans.Sdk": "[10.1.0, )",
+          "Microsoft.Extensions.Options": "[10.0.7, )",
           "Weave.Shared": "[1.0.0, )"
         }
       },
@@ -1390,6 +1379,7 @@
           "Microsoft.Orleans.Clustering.Redis": "[10.1.0, )",
           "Microsoft.Orleans.Persistence.AdoNet": "[10.1.0, )",
           "Microsoft.Orleans.Persistence.Redis": "[10.1.0, )",
+          "Microsoft.Orleans.Serialization.SystemTextJson": "[10.1.0, )",
           "Microsoft.Orleans.Server": "[10.1.0, )",
           "Npgsql": "[10.0.2, )",
           "Scalar.AspNetCore": "[2.14.3, )",
@@ -1404,7 +1394,6 @@
         "type": "Project",
         "dependencies": {
           "Microsoft.Extensions.Logging.Abstractions": "[10.0.7, )",
-          "Microsoft.Orleans.Sdk": "[10.1.0, )",
           "Weave.Security": "[1.0.0, )",
           "Weave.Shared": "[1.0.0, )",
           "Weave.Workspaces": "[1.0.0, )"
@@ -1413,8 +1402,6 @@
       "weave.workspaces": {
         "type": "Project",
         "dependencies": {
-          "Microsoft.Orleans.Runtime": "[10.1.0, )",
-          "Microsoft.Orleans.Sdk": "[10.1.0, )",
           "Weave.Shared": "[1.0.0, )"
         }
       },
@@ -1508,6 +1495,16 @@
         "contentHash": "tIEcQ2gvERrH2KiCjdsVcHGhXt9lIsuDStfOIeZWr7/fP8IXhGiYfx0/80PNI7WPO2IYuFtlZLSlnTS8+/Mchw==",
         "dependencies": {
           "Microsoft.Extensions.DependencyInjection.Abstractions": "10.0.7"
+        }
+      },
+      "Microsoft.Extensions.Options": {
+        "type": "CentralTransitive",
+        "requested": "[10.0.7, )",
+        "resolved": "10.0.7",
+        "contentHash": "00SHUGTh2jSMvIr6x9Xwd2nE+B5/qFCO/9hDwUDhJsjYRDlADmaBZ7tqehXzBDsfjHSXJzuRHJzPYPPjphBQ7Q==",
+        "dependencies": {
+          "Microsoft.Extensions.DependencyInjection.Abstractions": "10.0.7",
+          "Microsoft.Extensions.Primitives": "10.0.7"
         }
       },
       "Microsoft.Extensions.ServiceDiscovery": {
@@ -1778,6 +1775,25 @@
           "Newtonsoft.Json": "13.0.4",
           "System.IO.Hashing": "10.0.3",
           "System.Memory.Data": "10.0.3"
+        }
+      },
+      "Microsoft.Orleans.Serialization.SystemTextJson": {
+        "type": "CentralTransitive",
+        "requested": "[10.1.0, )",
+        "resolved": "10.1.0",
+        "contentHash": "t2Xcu1eBD7dYzHrpK2hVxT1+D/3/4skqqgiBvkg3ZJlKQwyrVtY59/KVnOJj4iwS5vyy0AE5Bck2bRQAyI8p7g==",
+        "dependencies": {
+          "Microsoft.CodeAnalysis.Analyzers": "3.11.0",
+          "Microsoft.CodeAnalysis.Common": "5.0.0",
+          "Microsoft.CodeAnalysis.Workspaces.Common": "5.0.0",
+          "Microsoft.Extensions.DependencyInjection.Abstractions": "10.0.3",
+          "Microsoft.Extensions.DependencyModel": "10.0.3",
+          "Microsoft.Extensions.ObjectPool": "10.0.3",
+          "Microsoft.Extensions.Options": "10.0.3",
+          "Microsoft.Orleans.Analyzers": "10.1.0",
+          "Microsoft.Orleans.CodeGenerator": "10.1.0",
+          "Microsoft.Orleans.Serialization": "10.1.0",
+          "System.IO.Hashing": "10.0.3"
         }
       },
       "Microsoft.Orleans.Server": {

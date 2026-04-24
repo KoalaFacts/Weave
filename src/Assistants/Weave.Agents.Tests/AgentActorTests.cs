@@ -14,7 +14,7 @@ public sealed class AgentActorTests
     private static readonly WorkspaceId TestWorkspaceId = WorkspaceId.From("ws-1");
     private const string TestAgentName = "researcher";
 
-    private static IPersistentState<AgentState> CreatePersistentState()
+    private static IActorState<AgentState> CreatePersistentState()
     {
         var state = new AgentState
         {
@@ -23,12 +23,12 @@ public sealed class AgentActorTests
             AgentName = TestAgentName
         };
 
-        var persistentState = Substitute.For<IPersistentState<AgentState>>();
+        var persistentState = Substitute.For<IActorState<AgentState>>();
         persistentState.State.Returns(state);
         persistentState.ReadStateAsync(Arg.Any<CancellationToken>()).Returns(Task.CompletedTask);
         persistentState.WriteStateAsync(Arg.Any<CancellationToken>()).Returns(Task.CompletedTask);
-        persistentState.WriteStateAsync().Returns(Task.CompletedTask);
-        persistentState.ClearStateAsync().Returns(Task.CompletedTask);
+        persistentState.WriteStateAsync(Arg.Any<CancellationToken>()).Returns(Task.CompletedTask);
+        persistentState.ClearStateAsync(Arg.Any<CancellationToken>()).Returns(Task.CompletedTask);
         return persistentState;
     }
 
@@ -46,8 +46,8 @@ public sealed class AgentActorTests
         skillMemory.StoreSkillAsync(Arg.Any<SkillDocument>())
             .Returns(callInfo => Task.FromResult(callInfo.Arg<SkillDocument>()));
 
-        var actorFactory = Substitute.For<IActorFactory>();
-        actorFactory.GetActor<ISkillMemoryActor>(Arg.Any<string>(), null).Returns(skillMemory);
+        var actors = Substitute.For<IVirtualActorProvider>();
+        actors.GetActor<ISkillMemoryActor>(Arg.Any<VirtualActorId>()).Returns(skillMemory);
 
         var chatPipeline = Substitute.For<IAgentChatPipeline>();
         var lifecycle = Substitute.For<ILifecycleManager>();
@@ -55,7 +55,7 @@ public sealed class AgentActorTests
         var logger = Substitute.For<ILogger<AgentActor>>();
         var persistentState = CreatePersistentState();
 
-        var actor = new AgentActor(new TestVirtualActorProvider(actorFactory), chatPipeline, lifecycle, eventBus, TimeProvider.System, logger, persistentState);
+        var actor = new AgentActor(actors, chatPipeline, lifecycle, eventBus, TimeProvider.System, logger, persistentState);
         return (actor, lifecycle, eventBus, skillMemory);
     }
 

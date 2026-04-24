@@ -3,7 +3,7 @@ using Weave.Workspaces.Models;
 
 namespace Weave.Agents.Actors;
 
-public interface IAgentSupervisorActor : IVirtualActorWithStringKey
+public interface IAgentSupervisorActor
 {
     Task ActivateAllAsync(WorkspaceManifest manifest);
     Task DeactivateAllAsync();

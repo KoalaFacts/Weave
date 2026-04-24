@@ -20,12 +20,12 @@ public sealed class HeartbeatActorClusterTests
 
     public HeartbeatActorClusterTests(WeaveTestCluster cluster) => _cluster = cluster;
 
-    private static string NewActorKey() => $"ws-{Guid.NewGuid():N}/agent-{Guid.NewGuid():N}";
+    private static VirtualActorId NewActorKey() => VirtualActorId.From($"ws-{Guid.NewGuid():N}/agent-{Guid.NewGuid():N}");
 
     [Fact]
     public async Task StartAsync_EnabledConfig_NextRunMatchesFakeClock()
     {
-        var actor = _cluster.ActorFactory.GetActor<IHeartbeatActor>(NewActorKey());
+        var actor = _cluster.ActorProvider.GetActor<IHeartbeatActor>(NewActorKey());
         var config = new HeartbeatConfig
         {
             Enabled = true,
@@ -47,7 +47,7 @@ public sealed class HeartbeatActorClusterTests
     [Fact]
     public async Task StartAsync_DisabledConfig_DoesNotMarkRunning()
     {
-        var actor = _cluster.ActorFactory.GetActor<IHeartbeatActor>(NewActorKey());
+        var actor = _cluster.ActorProvider.GetActor<IHeartbeatActor>(NewActorKey());
         var config = new HeartbeatConfig { Enabled = false, Cron = "*/30 * * * *" };
 
         await actor.StartAsync(config);
@@ -60,7 +60,7 @@ public sealed class HeartbeatActorClusterTests
     [Fact]
     public async Task StartAsync_CalledTwice_SecondCallIsNoOp()
     {
-        var actor = _cluster.ActorFactory.GetActor<IHeartbeatActor>(NewActorKey());
+        var actor = _cluster.ActorProvider.GetActor<IHeartbeatActor>(NewActorKey());
         var config = new HeartbeatConfig { Enabled = true, Cron = "*/1440 * * * *" };
 
         await actor.StartAsync(config);
@@ -74,7 +74,7 @@ public sealed class HeartbeatActorClusterTests
     [Fact]
     public async Task StopAsync_AfterStart_ClearsRunningAndNextRun()
     {
-        var actor = _cluster.ActorFactory.GetActor<IHeartbeatActor>(NewActorKey());
+        var actor = _cluster.ActorProvider.GetActor<IHeartbeatActor>(NewActorKey());
         await actor.StartAsync(new HeartbeatConfig { Enabled = true, Cron = "*/1440 * * * *" });
 
         await actor.StopAsync();
@@ -87,7 +87,7 @@ public sealed class HeartbeatActorClusterTests
     [Fact]
     public async Task StopAsync_WithoutStart_IsSafe()
     {
-        var actor = _cluster.ActorFactory.GetActor<IHeartbeatActor>(NewActorKey());
+        var actor = _cluster.ActorProvider.GetActor<IHeartbeatActor>(NewActorKey());
 
         await actor.StopAsync();
         var state = await actor.GetStateAsync();
@@ -109,7 +109,7 @@ public sealed class HeartbeatActorTickTests
 {
     private sealed class Fixture
     {
-        public IActorFactory ActorFactory { get; } = Substitute.For<IActorFactory>();
+        public IVirtualActorProvider ActorProvider { get; } = Substitute.For<IVirtualActorProvider>();
         public IAgentActor AgentActor { get; } = Substitute.For<IAgentActor>();
         public Microsoft.Extensions.Time.Testing.FakeTimeProvider Time { get; } =
             new(new DateTimeOffset(2026, 4, 19, 12, 0, 0, TimeSpan.Zero));
@@ -134,11 +134,11 @@ public sealed class HeartbeatActorTickTests
                 ConversationId = "c1",
                 UsedTools = false
             });
-            ActorFactory.GetActor<IAgentActor>(Arg.Any<string>(), null).Returns(AgentActor);
+            ActorProvider.GetActor<IAgentActor>(Arg.Any<VirtualActorId>()).Returns(AgentActor);
         }
 
         public Task<HeartbeatState> PerformTickAsync(HeartbeatState state, string agentKey = "ws-1/agent-1")
-        => HeartbeatActor.PerformTickAsync(state, agentKey, new TestVirtualActorProvider(ActorFactory), Time, NullLogger<HeartbeatActor>.Instance, CancellationToken.None);
+        => HeartbeatActor.PerformTickAsync(state, agentKey, ActorProvider, Time, NullLogger<HeartbeatActor>.Instance, CancellationToken.None);
     }
 
     private static HeartbeatState RunningStateWithTasks(params string[] tasks) => new()
@@ -153,7 +153,7 @@ public sealed class HeartbeatActorTickTests
         var fx = new Fixture();
         var result = await fx.PerformTickAsync(RunningStateWithTasks("task"), agentKey: "unknown-agent");
 
-        fx.ActorFactory.DidNotReceive().GetActor<IAgentActor>(Arg.Any<string>(), null);
+        fx.ActorProvider.DidNotReceive().GetActor<IAgentActor>(Arg.Any<VirtualActorId>());
         result.ExecutionCount.ShouldBe(0);
     }
 

@@ -5,11 +5,12 @@ using Weave.Security.Vault;
 
 namespace Weave.Security.Actors;
 
-public sealed partial class SecretProxyActor : VirtualActor, ISecretProxyActor
+public sealed partial class SecretProxyActor : ISecretProxyActor
 {
     private readonly TransparentSecretProxy _proxy;
     private readonly ISecretProvider _secretProvider;
     private readonly ILogger<SecretProxyActor> _logger;
+    private string? _key;
 
     public SecretProxyActor(
         TransparentSecretProxy proxy,
@@ -19,6 +20,12 @@ public sealed partial class SecretProxyActor : VirtualActor, ISecretProxyActor
         _proxy = proxy;
         _secretProvider = secretProvider;
         _logger = logger;
+    }
+
+    public Task OnActivatedAsync(string? key, CancellationToken cancellationToken)
+    {
+        _key = key;
+        return Task.CompletedTask;
     }
 
     public async Task<string> RegisterSecretAsync(string secretPath, CapabilityToken token)
@@ -42,17 +49,7 @@ public sealed partial class SecretProxyActor : VirtualActor, ISecretProxyActor
         return Task.FromResult(result);
     }
 
-    private string GetWorkspaceKey(CapabilityToken token)
-    {
-        try
-        {
-            return this.GetPrimaryKeyString();
-        }
-        catch (NullReferenceException)
-        {
-            return token.WorkspaceId;
-        }
-    }
+    private string GetWorkspaceKey(CapabilityToken token) => _key ?? token.WorkspaceId;
 
     [LoggerMessage(Level = LogLevel.Information, Message = "Registered secret proxy for '{Path}' in workspace {Workspace}")]
     private partial void LogSecretRegistered(string path, string workspace);

@@ -20,13 +20,15 @@ public sealed class ToolRegistryActor(
     IEventBus eventBus,
     TimeProvider timeProvider,
     ILogger<ToolRegistryActor> logger,
-    [PersistentState("tool-registry", "Default")] IPersistentState<ToolRegistryState> persistentState) : VirtualActor, IToolRegistryActor
+    IActorState<ToolRegistryState> persistentState) : IToolRegistryActor
 {
     private string _workspaceId = "unset";
 
-    public override async Task OnActivateAsync(CancellationToken cancellationToken)
+    public async Task OnActivatedAsync(string? key, CancellationToken cancellationToken)
     {
         await persistentState.ReadStateAsync(cancellationToken);
+        if (!string.IsNullOrWhiteSpace(key))
+            _workspaceId = key;
         EnsureWorkspaceId();
         if (!string.Equals(persistentState.State.WorkspaceId, _workspaceId, StringComparison.Ordinal))
         {
@@ -328,18 +330,11 @@ public sealed class ToolRegistryActor(
 
     private void EnsureWorkspaceId()
     {
-        if (!string.IsNullOrWhiteSpace(_workspaceId))
+        if (!string.IsNullOrWhiteSpace(_workspaceId) && !string.Equals(_workspaceId, "unset", StringComparison.Ordinal))
             return;
 
-        try
-        {
-            _workspaceId = this.GetPrimaryKeyString();
-        }
-        catch (NullReferenceException)
-        {
-            _workspaceId = string.IsNullOrWhiteSpace(persistentState.State.WorkspaceId)
-                ? "unknown-workspace"
-                : persistentState.State.WorkspaceId;
-        }
+        _workspaceId = string.IsNullOrWhiteSpace(persistentState.State.WorkspaceId)
+            ? "unknown-workspace"
+            : persistentState.State.WorkspaceId;
     }
 }

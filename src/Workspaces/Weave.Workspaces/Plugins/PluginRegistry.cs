@@ -18,35 +18,29 @@ public interface IPluginConnector
     Task<PluginStatus> DisconnectAsync(string name);
     PluginStatus GetStatus(string name);
 }
-
-[GenerateSerializer]
 public sealed record PluginStatus
 {
-    [Id(0)] public required string Name { get; init; }
-    [Id(1)] public required string Type { get; init; }
-    [Id(2)] public bool IsConnected { get; init; }
-    [Id(3)] public string? Error { get; init; }
-    [Id(4)] public IReadOnlyDictionary<string, string> Info { get; init; } = new Dictionary<string, string>();
+    public required string Name { get; init; }
+    public required string Type { get; init; }
+    public bool IsConnected { get; init; }
+    public string? Error { get; init; }
+    public IReadOnlyDictionary<string, string> Info { get; init; } = new Dictionary<string, string>();
 }
-
-[GenerateSerializer]
 public sealed record PluginSchema
 {
-    [Id(0)] public required string Type { get; init; }
-    [Id(1)] public required string Description { get; init; }
-    [Id(2)] public required IReadOnlyList<string> Provides { get; init; }
-    [Id(3)] public required IReadOnlyList<PluginConfigField> Config { get; init; }
+    public required string Type { get; init; }
+    public required string Description { get; init; }
+    public required IReadOnlyList<string> Provides { get; init; }
+    public required IReadOnlyList<PluginConfigField> Config { get; init; }
 }
-
-[GenerateSerializer]
 public sealed record PluginConfigField
 {
-    [Id(0)] public required string Name { get; init; }
-    [Id(1)] public required string Description { get; init; }
-    [Id(2)] public bool Required { get; init; }
-    [Id(3)] public bool Secret { get; init; }
-    [Id(4)] public string? Default { get; init; }
-    [Id(5)] public string? EnvVar { get; init; }
+    public required string Name { get; init; }
+    public required string Description { get; init; }
+    public bool Required { get; init; }
+    public bool Secret { get; init; }
+    public string? Default { get; init; }
+    public string? EnvVar { get; init; }
 }
 
 // --- Registry ---

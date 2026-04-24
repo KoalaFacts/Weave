@@ -14,12 +14,14 @@ public sealed partial class WorkspaceActor(
     IEventBus eventBus,
     TimeProvider timeProvider,
     ILogger<WorkspaceActor> logger,
-    [PersistentState("workspace", "Default")] IPersistentState<WorkspaceState> persistentState) : VirtualActor, IWorkspaceActor
+    IActorState<WorkspaceState> persistentState) : IWorkspaceActor
 {
-    public override async Task OnActivateAsync(CancellationToken cancellationToken)
+    private string? _key;
+
+    public async Task OnActivatedAsync(string? key, CancellationToken cancellationToken)
     {
+        _key = key;
         await persistentState.ReadStateAsync(cancellationToken);
-        var key = TryGetPrimaryKeyString();
         if (persistentState.State.WorkspaceId.IsEmpty && !string.IsNullOrWhiteSpace(key))
         {
             persistentState.State.WorkspaceId = WorkspaceId.From(key!);
@@ -144,18 +146,6 @@ public sealed partial class WorkspaceActor(
     }
 
     public Task<WorkspaceState> GetStateAsync() => Task.FromResult(persistentState.State);
-
-    private string? TryGetPrimaryKeyString()
-    {
-        try
-        {
-            return this.GetPrimaryKeyString();
-        }
-        catch (NullReferenceException)
-        {
-            return null;
-        }
-    }
 
     [LoggerMessage(Level = LogLevel.Information, Message = "Workspace {WorkspaceId} started")]
     private partial void LogWorkspaceStarted(WorkspaceId workspaceId);

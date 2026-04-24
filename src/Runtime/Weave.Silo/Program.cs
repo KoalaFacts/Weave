@@ -43,8 +43,16 @@ builder.AddServiceDefaults();
 // Microsoft.Orleans.Sdk usually handles this, but explicit scan
 // guarantees the serializer config validator sees every converter
 // at startup.
+// Domain model types (AgentState, WorkspaceManifest, etc.) use
+// JSON serialization instead of Orleans code-gen, keeping domain
+// projects free of Orleans dependencies.
 builder.Services.AddSerializer(s =>
-    s.AddAssembly(typeof(Weave.Silo.Serialization.SerializationMarker).Assembly));
+{
+    s.AddAssembly(typeof(Weave.Silo.Serialization.SerializationMarker).Assembly);
+    s.AddJsonSerializer(
+        isSupported: type => type.Namespace?.StartsWith("Weave.", StringComparison.Ordinal) == true
+            && !type.Namespace.StartsWith("Weave.Silo.", StringComparison.Ordinal));
+});
 
 if (isLocalMode)
 {

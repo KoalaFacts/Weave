@@ -13,23 +13,23 @@ namespace Weave.Agents.Tests;
 /// </summary>
 public sealed class ChannelGatewayActorBranchTests
 {
-    private static IPersistentState<ChannelGatewayState> CreatePersistentState(ChannelGatewayState? initial = null)
+    private static IActorState<ChannelGatewayState> CreatePersistentState(ChannelGatewayState? initial = null)
     {
         var state = initial ?? new ChannelGatewayState { WorkspaceId = "ws-1" };
-        var ps = Substitute.For<IPersistentState<ChannelGatewayState>>();
+        var ps = Substitute.For<IActorState<ChannelGatewayState>>();
         ps.State.Returns(state);
         ps.ReadStateAsync(Arg.Any<CancellationToken>()).Returns(Task.CompletedTask);
         ps.WriteStateAsync(Arg.Any<CancellationToken>()).Returns(Task.CompletedTask);
-        ps.WriteStateAsync().Returns(Task.CompletedTask);
+        ps.WriteStateAsync(Arg.Any<CancellationToken>()).Returns(Task.CompletedTask);
         return ps;
     }
 
     private static ChannelGatewayActor CreateActor(
         ChannelGatewayState? initial = null,
-        IActorFactory? factory = null,
+        IVirtualActorProvider? actors = null,
         IEventBus? eventBus = null) =>
         new(
-            new TestVirtualActorProvider(factory ?? Substitute.For<IActorFactory>()),
+            actors ?? Substitute.For<IVirtualActorProvider>(),
             eventBus ?? Substitute.For<IEventBus>(),
             NullLogger<ChannelGatewayActor>.Instance,
             CreatePersistentState(initial));

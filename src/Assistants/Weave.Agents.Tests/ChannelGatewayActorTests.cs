@@ -13,19 +13,19 @@ public sealed class ChannelGatewayActorTests
     private static readonly WorkspaceId TestWorkspaceId = WorkspaceId.From("ws-1");
     private static readonly ChannelId TestChannelId = ChannelId.From("ch-slack-1");
 
-    private static IPersistentState<ChannelGatewayState> CreatePersistentState()
+    private static IActorState<ChannelGatewayState> CreatePersistentState()
     {
         var state = new ChannelGatewayState
         {
             WorkspaceId = TestWorkspaceId.ToString()
         };
 
-        var persistentState = Substitute.For<IPersistentState<ChannelGatewayState>>();
+        var persistentState = Substitute.For<IActorState<ChannelGatewayState>>();
         persistentState.State.Returns(state);
         persistentState.ReadStateAsync(Arg.Any<CancellationToken>()).Returns(Task.CompletedTask);
         persistentState.WriteStateAsync(Arg.Any<CancellationToken>()).Returns(Task.CompletedTask);
-        persistentState.WriteStateAsync().Returns(Task.CompletedTask);
-        persistentState.ClearStateAsync().Returns(Task.CompletedTask);
+        persistentState.WriteStateAsync(Arg.Any<CancellationToken>()).Returns(Task.CompletedTask);
+        persistentState.ClearStateAsync(Arg.Any<CancellationToken>()).Returns(Task.CompletedTask);
         return persistentState;
     }
 
@@ -52,18 +52,18 @@ public sealed class ChannelGatewayActorTests
             Content = "Hello agent"
         };
 
-    private static (ChannelGatewayActor Actor, IActorFactory ActorFactory, IEventBus EventBus) CreateActor()
+    private static (ChannelGatewayActor Actor, IVirtualActorProvider ActorProvider, IEventBus EventBus) CreateActor()
     {
-        var actorFactory = Substitute.For<IActorFactory>();
+        var actors = Substitute.For<IVirtualActorProvider>();
         var eventBus = Substitute.For<IEventBus>();
         var logger = NullLogger<ChannelGatewayActor>.Instance;
         var persistentState = CreatePersistentState();
 
-        var actor = new ChannelGatewayActor(new TestVirtualActorProvider(actorFactory), eventBus, logger, persistentState);
-        return (actor, actorFactory, eventBus);
+        var actor = new ChannelGatewayActor(actors, eventBus, logger, persistentState);
+        return (actor, actors, eventBus);
     }
 
-    private static void SetupAgentActor(IActorFactory actorFactory, string responseContent = "I can help!")
+    private static void SetupAgentActor(IVirtualActorProvider actors, string responseContent = "I can help!")
     {
         var agentActor = Substitute.For<IAgentActor>();
         agentActor.SendAsync(Arg.Any<AgentMessage>())
@@ -72,7 +72,7 @@ public sealed class ChannelGatewayActorTests
                 Content = responseContent,
                 ConversationId = "conv-1"
             }));
-        actorFactory.GetActor<IAgentActor>(Arg.Any<string>(), null).Returns(agentActor);
+        actors.GetActor<IAgentActor>(Arg.Any<VirtualActorId>()).Returns(agentActor);
     }
 
     [Fact]
@@ -117,7 +117,7 @@ public sealed class ChannelGatewayActorTests
         outbound.ShouldNotBeNull();
         outbound.Content.ShouldBe("Hello from agent!");
         outbound.ChannelId.ShouldBe(TestChannelId);
-        actorFactory.Received(1).GetActor<IAgentActor>($"{TestWorkspaceId}/researcher", null);
+        actorFactory.Received(1).GetActor<IAgentActor>(VirtualActorId.From($"{TestWorkspaceId}/researcher"));
     }
 
     [Fact]
@@ -132,7 +132,7 @@ public sealed class ChannelGatewayActorTests
 
         outbound.ShouldNotBeNull();
         outbound.Content.ShouldBe("Routed response");
-        actorFactory.Received(1).GetActor<IAgentActor>($"{TestWorkspaceId}/support-agent", null);
+        actorFactory.Received(1).GetActor<IAgentActor>(VirtualActorId.From($"{TestWorkspaceId}/support-agent"));
     }
 
     [Fact]
@@ -183,7 +183,7 @@ public sealed class ChannelGatewayActorTests
         var outbound = await actor.RouteInboundAsync(message);
         outbound.ShouldNotBeNull();
         outbound.Content.ShouldBe("Matched");
-        actorFactory.Received(1).GetActor<IAgentActor>($"{TestWorkspaceId}/greeting-agent", null);
+        actorFactory.Received(1).GetActor<IAgentActor>(VirtualActorId.From($"{TestWorkspaceId}/greeting-agent"));
     }
 
     [Fact]

@@ -13,20 +13,20 @@ namespace Weave.Agents.Tests;
 
 public sealed class ToolRegistryActorTests
 {
-    private static IPersistentState<ToolRegistryState> CreatePersistentState()
+    private static IActorState<ToolRegistryState> CreatePersistentState()
     {
-        var persistentState = Substitute.For<IPersistentState<ToolRegistryState>>();
+        var persistentState = Substitute.For<IActorState<ToolRegistryState>>();
         persistentState.State.Returns(new ToolRegistryState());
         persistentState.ReadStateAsync(Arg.Any<CancellationToken>()).Returns(Task.CompletedTask);
         persistentState.WriteStateAsync(Arg.Any<CancellationToken>()).Returns(Task.CompletedTask);
-        persistentState.WriteStateAsync().Returns(Task.CompletedTask);
-        persistentState.ClearStateAsync().Returns(Task.CompletedTask);
+        persistentState.WriteStateAsync(Arg.Any<CancellationToken>()).Returns(Task.CompletedTask);
+        persistentState.ClearStateAsync(Arg.Any<CancellationToken>()).Returns(Task.CompletedTask);
         return persistentState;
     }
 
     private static (ToolRegistryActor Actor, ILifecycleManager Lifecycle, IEventBus EventBus) CreateActor()
     {
-        var actorFactory = Substitute.For<IActorFactory>();
+        var actors = Substitute.For<IVirtualActorProvider>();
         var toolActor = Substitute.For<IToolActor>();
         var secretProxy = Substitute.For<ISecretProxyActor>();
         var lifecycle = Substitute.For<ILifecycleManager>();
@@ -58,10 +58,10 @@ public sealed class ToolRegistryActorTests
         }));
         secretProxy.SubstituteAsync(Arg.Any<string>()).Returns(callInfo => callInfo.Arg<string>());
 
-        actorFactory.GetActor<IToolActor>(Arg.Any<string>(), null).Returns(toolActor);
-        actorFactory.GetActor<ISecretProxyActor>(Arg.Any<string>(), null).Returns(secretProxy);
+        actors.GetActor<IToolActor>(Arg.Any<VirtualActorId>()).Returns(toolActor);
+        actors.GetActor<ISecretProxyActor>(Arg.Any<VirtualActorId>()).Returns(secretProxy);
 
-        var actor = new ToolRegistryActor(new TestVirtualActorProvider(actorFactory), tokenService, lifecycle, eventBus, TimeProvider.System, logger, persistentState);
+        var actor = new ToolRegistryActor(actors, tokenService, lifecycle, eventBus, TimeProvider.System, logger, persistentState);
         return (actor, lifecycle, eventBus);
     }
 

@@ -3,7 +3,7 @@ using Weave.Shared.Ids;
 
 namespace Weave.Agents.Actors;
 
-public interface ISkillMemoryActor : IVirtualActorWithStringKey
+public interface ISkillMemoryActor
 {
     Task<SkillDocument> StoreSkillAsync(SkillDocument skill);
     Task<IReadOnlyList<SkillSearchResult>> SearchAsync(string query, int maxResults = 5);

@@ -10,7 +10,7 @@ public sealed class SkillMemoryActor(
     IEventBus eventBus,
     TimeProvider timeProvider,
     ILogger<SkillMemoryActor> logger,
-    [PersistentState("skill-memory", "Default")] IPersistentState<SkillMemoryState> persistentState) : VirtualActor, ISkillMemoryActor
+    IActorState<SkillMemoryState> persistentState) : ISkillMemoryActor
 {
     public async Task<SkillDocument> StoreSkillAsync(SkillDocument skill)
     {

@@ -36,10 +36,10 @@ public sealed class AgentChatPipelineTests
         var chatClientFactory = Substitute.For<IAgentChatClientFactory>();
         chatClientFactory.Create(Arg.Any<string>(), Arg.Any<string?>()).Returns(chatClient);
 
-        var actorFactory = Substitute.For<IActorFactory>();
+        var actors = Substitute.For<IVirtualActorProvider>();
         var logger = NullLogger<AgentChatPipeline>.Instance;
 
-        var pipeline = new AgentChatPipeline(new TestVirtualActorProvider(actorFactory), chatClientFactory, TimeProvider.System, logger);
+        var pipeline = new AgentChatPipeline(actors, chatClientFactory, TimeProvider.System, logger);
         return (pipeline, chatClient);
     }
 
@@ -115,8 +115,8 @@ public sealed class AgentChatPipelineTests
         var chatClientFactory = Substitute.For<IAgentChatClientFactory>();
         chatClientFactory.Create(Arg.Any<string>(), Arg.Any<string?>())
             .Returns(Substitute.For<IChatClient>());
-        var actorFactory = Substitute.For<IActorFactory>();
-        var pipeline = new AgentChatPipeline(new TestVirtualActorProvider(actorFactory), chatClientFactory, TimeProvider.System, NullLogger<AgentChatPipeline>.Instance);
+        var actors = Substitute.For<IVirtualActorProvider>();
+        var pipeline = new AgentChatPipeline(actors, chatClientFactory, TimeProvider.System, NullLogger<AgentChatPipeline>.Instance);
 
         pipeline.Initialize("ws-1/researcher", "claude-sonnet-4-20250514");
 
@@ -159,10 +159,10 @@ public sealed class AgentChatPipelineTests
         registry.ResolveAsync("researcher", "code-search")
             .Returns(Task.FromResult<ToolResolution?>(null));
 
-        var actorFactory = Substitute.For<IActorFactory>();
-        actorFactory.GetActor<IToolRegistryActor>(Arg.Any<string>(), Arg.Any<string?>()).Returns(registry);
+        var actors = Substitute.For<IVirtualActorProvider>();
+        actors.GetActor<IToolRegistryActor>(Arg.Any<VirtualActorId>()).Returns(registry);
 
-        var pipeline = new AgentChatPipeline(new TestVirtualActorProvider(actorFactory), chatClientFactory, TimeProvider.System, NullLogger<AgentChatPipeline>.Instance);
+        var pipeline = new AgentChatPipeline(actors, chatClientFactory, TimeProvider.System, NullLogger<AgentChatPipeline>.Instance);
 
         var state = CreateActiveState();
         state.ConnectedTools.Add("code-search");
@@ -201,11 +201,11 @@ public sealed class AgentChatPipelineTests
         skillActor.SearchAsync(Arg.Any<string>(), Arg.Any<int>())
             .Returns(Task.FromResult<IReadOnlyList<SkillSearchResult>>([]));
 
-        var actorFactory = Substitute.For<IActorFactory>();
-        actorFactory.GetActor<IUserModelActor>("ws-1/user-42", null).Returns(userModelActor);
-        actorFactory.GetActor<ISkillMemoryActor>("ws-1", null).Returns(skillActor);
+        var actors = Substitute.For<IVirtualActorProvider>();
+        actors.GetActor<IUserModelActor>(Arg.Any<VirtualActorId>()).Returns(userModelActor);
+        actors.GetActor<ISkillMemoryActor>(Arg.Any<VirtualActorId>()).Returns(skillActor);
 
-        var pipeline = new AgentChatPipeline(new TestVirtualActorProvider(actorFactory), chatClientFactory, TimeProvider.System, NullLogger<AgentChatPipeline>.Instance);
+        var pipeline = new AgentChatPipeline(actors, chatClientFactory, TimeProvider.System, NullLogger<AgentChatPipeline>.Instance);
         var state = CreateActiveState();
 
         await pipeline.ExecuteAsync(state, new AgentMessage { Content = "Hello", UserId = "user-42" });
@@ -258,10 +258,10 @@ public sealed class AgentChatPipelineTests
                 new SkillSearchResult { Skill = skill, RelevanceScore = 5.0 }
             ]));
 
-        var actorFactory = Substitute.For<IActorFactory>();
-        actorFactory.GetActor<ISkillMemoryActor>("ws-1", null).Returns(skillActor);
+        var actors = Substitute.For<IVirtualActorProvider>();
+        actors.GetActor<ISkillMemoryActor>(Arg.Any<VirtualActorId>()).Returns(skillActor);
 
-        var pipeline = new AgentChatPipeline(new TestVirtualActorProvider(actorFactory), chatClientFactory, TimeProvider.System, NullLogger<AgentChatPipeline>.Instance);
+        var pipeline = new AgentChatPipeline(actors, chatClientFactory, TimeProvider.System, NullLogger<AgentChatPipeline>.Instance);
         var state = CreateActiveState();
 
         await pipeline.ExecuteAsync(state, new AgentMessage { Content = "deploy to k8s" });

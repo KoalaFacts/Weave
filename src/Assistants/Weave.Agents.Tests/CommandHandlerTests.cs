@@ -14,7 +14,7 @@ public sealed class CommandHandlerTests
     [Fact]
     public async Task ActivateAgentHandler_DelegatesToActor()
     {
-        var actorFactory = Substitute.For<IActorFactory>();
+        var actors = Substitute.For<IVirtualActorProvider>();
         var agentActor = Substitute.For<IAgentActor>();
         var expectedState = new AgentState
         {
@@ -25,12 +25,12 @@ public sealed class CommandHandlerTests
             Model = "claude-sonnet-4-20250514"
         };
 
-        actorFactory.GetActor<IAgentActor>($"{TestWorkspaceId}/researcher", null)
+        actors.GetActor<IAgentActor>(Arg.Any<VirtualActorId>())
             .Returns(agentActor);
         agentActor.ActivateAgentAsync(TestWorkspaceId, Arg.Any<AgentDefinition>())
             .Returns(expectedState);
 
-        var handler = new ActivateAgentHandler(new TestVirtualActorProvider(actorFactory));
+        var handler = new ActivateAgentHandler(actors);
         var definition = new AgentDefinition { Model = "claude-sonnet-4-20250514" };
         var command = new ActivateAgentCommand(TestWorkspaceId, "researcher", definition);
 
@@ -44,13 +44,13 @@ public sealed class CommandHandlerTests
     [Fact]
     public async Task DeactivateAgentHandler_DelegatesToActor()
     {
-        var actorFactory = Substitute.For<IActorFactory>();
+        var actors = Substitute.For<IVirtualActorProvider>();
         var agentActor = Substitute.For<IAgentActor>();
 
-        actorFactory.GetActor<IAgentActor>($"{TestWorkspaceId}/researcher", null)
+        actors.GetActor<IAgentActor>(Arg.Any<VirtualActorId>())
             .Returns(agentActor);
 
-        var handler = new DeactivateAgentHandler(new TestVirtualActorProvider(actorFactory));
+        var handler = new DeactivateAgentHandler(actors);
         var command = new DeactivateAgentCommand(TestWorkspaceId, "researcher");
 
         var result = await handler.HandleAsync(command, CancellationToken.None);
@@ -62,7 +62,7 @@ public sealed class CommandHandlerTests
     [Fact]
     public async Task SubmitAgentTaskHandler_DelegatesToActor()
     {
-        var actorFactory = Substitute.For<IActorFactory>();
+        var actors = Substitute.For<IVirtualActorProvider>();
         var agentActor = Substitute.For<IAgentActor>();
         var expectedTask = new AgentTaskInfo
         {
@@ -71,12 +71,12 @@ public sealed class CommandHandlerTests
             Status = AgentTaskStatus.Running
         };
 
-        actorFactory.GetActor<IAgentActor>($"{TestWorkspaceId}/researcher", null)
+        actors.GetActor<IAgentActor>(Arg.Any<VirtualActorId>())
             .Returns(agentActor);
         agentActor.SubmitTaskAsync("Fix the bug")
             .Returns(expectedTask);
 
-        var handler = new SubmitAgentTaskHandler(new TestVirtualActorProvider(actorFactory));
+        var handler = new SubmitAgentTaskHandler(actors);
         var command = new SubmitAgentTaskCommand(TestWorkspaceId, "researcher", "Fix the bug");
 
         var result = await handler.HandleAsync(command, CancellationToken.None);
@@ -89,7 +89,7 @@ public sealed class CommandHandlerTests
     [Fact]
     public async Task GetAgentStateHandler_DelegatesToActor()
     {
-        var actorFactory = Substitute.For<IActorFactory>();
+        var actors = Substitute.For<IVirtualActorProvider>();
         var agentActor = Substitute.For<IAgentActor>();
         var expectedState = new AgentState
         {
@@ -99,11 +99,11 @@ public sealed class CommandHandlerTests
             Status = AgentStatus.Busy
         };
 
-        actorFactory.GetActor<IAgentActor>($"{TestWorkspaceId}/researcher", null)
+        actors.GetActor<IAgentActor>(Arg.Any<VirtualActorId>())
             .Returns(agentActor);
         agentActor.GetStateAsync().Returns(expectedState);
 
-        var handler = new GetAgentStateHandler(new TestVirtualActorProvider(actorFactory));
+        var handler = new GetAgentStateHandler(actors);
         var query = new GetAgentStateQuery(TestWorkspaceId, "researcher");
 
         var result = await handler.HandleAsync(query, CancellationToken.None);
@@ -115,7 +115,7 @@ public sealed class CommandHandlerTests
     [Fact]
     public async Task GetAllAgentStatesHandler_DelegatesToSupervisor()
     {
-        var actorFactory = Substitute.For<IActorFactory>();
+        var actors = Substitute.For<IVirtualActorProvider>();
         var supervisor = Substitute.For<IAgentSupervisorActor>();
         IReadOnlyList<AgentState> expectedStates =
         [
@@ -123,11 +123,11 @@ public sealed class CommandHandlerTests
             new AgentState { AgentId = "ws-1/a2", WorkspaceId = TestWorkspaceId, AgentName = "a2", Status = AgentStatus.Busy }
         ];
 
-        actorFactory.GetActor<IAgentSupervisorActor>(TestWorkspaceId.ToString(), null)
+        actors.GetActor<IAgentSupervisorActor>(Arg.Any<VirtualActorId>())
             .Returns(supervisor);
         supervisor.GetAllAgentStatesAsync().Returns(expectedStates);
 
-        var handler = new GetAllAgentStatesHandler(new TestVirtualActorProvider(actorFactory));
+        var handler = new GetAllAgentStatesHandler(actors);
         var query = new GetAllAgentStatesQuery(TestWorkspaceId);
 
         var result = await handler.HandleAsync(query, CancellationToken.None);

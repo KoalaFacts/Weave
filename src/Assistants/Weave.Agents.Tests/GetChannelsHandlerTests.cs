@@ -15,10 +15,10 @@ public sealed class GetChannelsHandlerTests
     [Fact]
     public async Task HandleAsync_resolves_ChannelGatewayActor_by_workspace_id()
     {
-        var actorFactory = Substitute.For<IActorFactory>();
+        var actors = Substitute.For<IVirtualActorProvider>();
         var gateway = Substitute.For<IChannelGatewayActor>();
         var workspaceId = WorkspaceId.From("ws-1");
-        actorFactory.GetActor<IChannelGatewayActor>(workspaceId.ToString(), null).Returns(gateway);
+        actors.GetActor<IChannelGatewayActor>(Arg.Any<VirtualActorId>()).Returns(gateway);
 
         var expected = new List<ChannelConfig>
         {
@@ -27,22 +27,22 @@ public sealed class GetChannelsHandlerTests
         };
         gateway.GetChannelsAsync().Returns(expected);
 
-        var handler = new GetChannelsHandler(new TestVirtualActorProvider(actorFactory));
+        var handler = new GetChannelsHandler(actors);
         var result = await handler.HandleAsync(new GetChannelsQuery(workspaceId), CancellationToken.None);
 
         result.ShouldBe(expected);
-        actorFactory.Received(1).GetActor<IChannelGatewayActor>(workspaceId.ToString(), null);
+        actors.Received(1).GetActor<IChannelGatewayActor>(Arg.Any<VirtualActorId>());
     }
 
     [Fact]
     public async Task HandleAsync_with_empty_channel_list_returns_empty()
     {
-        var actorFactory = Substitute.For<IActorFactory>();
+        var actors = Substitute.For<IVirtualActorProvider>();
         var gateway = Substitute.For<IChannelGatewayActor>();
-        actorFactory.GetActor<IChannelGatewayActor>(Arg.Any<string>(), null).Returns(gateway);
+        actors.GetActor<IChannelGatewayActor>(Arg.Any<VirtualActorId>()).Returns(gateway);
         gateway.GetChannelsAsync().Returns(new List<ChannelConfig>());
 
-        var handler = new GetChannelsHandler(new TestVirtualActorProvider(actorFactory));
+        var handler = new GetChannelsHandler(actors);
         var result = await handler.HandleAsync(
             new GetChannelsQuery(WorkspaceId.From("empty-ws")), CancellationToken.None);
 

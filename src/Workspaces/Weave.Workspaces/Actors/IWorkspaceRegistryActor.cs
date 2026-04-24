@@ -1,6 +1,6 @@
 namespace Weave.Workspaces.Actors;
 
-public interface IWorkspaceRegistryActor : IVirtualActorWithStringKey
+public interface IWorkspaceRegistryActor
 {
     Task RegisterAsync(string workspaceId);
     Task UnregisterAsync(string workspaceId);

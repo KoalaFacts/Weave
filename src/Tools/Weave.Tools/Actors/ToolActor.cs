@@ -18,16 +18,21 @@ public sealed partial class ToolActor(
     ICapabilityTokenService tokenService,
     ILifecycleManager lifecycleManager,
     IEventBus eventBus,
-    ILogger<ToolActor> logger) : VirtualActor, IToolActor
+    ILogger<ToolActor> logger) : IToolActor
 {
     private ToolHandle? _handle;
     private ToolSpec? _definition;
     private string _workspaceId = string.Empty;
     private string _toolName = string.Empty;
 
-    public override Task OnActivateAsync(CancellationToken cancellationToken)
+    public Task OnActivatedAsync(string? key, CancellationToken cancellationToken)
     {
-        EnsureIdentity();
+        if (!string.IsNullOrWhiteSpace(key))
+        {
+            var parts = key.Split('/', 2);
+            _workspaceId = parts.Length > 1 ? parts[0] : key;
+            _toolName = parts.Length > 1 ? parts[1] : key;
+        }
         return Task.CompletedTask;
     }
 
@@ -198,33 +203,11 @@ public sealed partial class ToolActor(
 
     private void EnsureIdentity(ToolSpec? definition = null, CapabilityToken? token = null, ToolInvocation? invocation = null)
     {
-        if (string.IsNullOrWhiteSpace(_workspaceId) || string.IsNullOrWhiteSpace(_toolName))
-        {
-            // Real Orleans activation always returns a valid primary key.
-            // Tests that instantiate ToolActor directly hit an NRE here —
-            // fall through to the token/definition resolution below so
-            // that unit tests still work WITHOUT silently accepting a
-            // wrong identity (previously defaulted to "unknown-workspace"
-            // which mis-scopes capability tokens).
-            try
-            {
-                var key = this.GetPrimaryKeyString();
-                var parts = key.Split('/', 2);
-                _workspaceId = parts.Length > 1 ? parts[0] : key;
-                _toolName = parts.Length > 1 ? parts[1] : key;
-            }
-            catch (NullReferenceException)
-            {
-                // No Orleans identity available — callers must provide
-                // token + definition/invocation for identity resolution.
-            }
-        }
-
         if (string.IsNullOrWhiteSpace(_workspaceId))
         {
             if (token is null || string.IsNullOrWhiteSpace(token.WorkspaceId))
                 throw new InvalidOperationException(
-                    "ToolActor identity cannot be established. Activate via Orleans "
+                    "ToolActor identity cannot be established. Activate via the runtime "
                     + "(real actor call) or provide a capability token whose WorkspaceId "
                     + "identifies the workspace.");
             _workspaceId = token.WorkspaceId;

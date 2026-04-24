@@ -6,11 +6,19 @@ namespace Weave.Agents.Heartbeat;
 
 public sealed partial class HeartbeatActor(
     IVirtualActorProvider actors,
+    IActorTimerRegistry timerRegistry,
     TimeProvider timeProvider,
-    ILogger<HeartbeatActor> logger) : VirtualActor, IHeartbeatActor, IDisposable
+    ILogger<HeartbeatActor> logger) : IHeartbeatActor, IDisposable
 {
     private HeartbeatState _state = new();
     private IDisposable? _timer;
+    private string? _key;
+
+    public Task OnActivatedAsync(string? key, CancellationToken cancellationToken)
+    {
+        _key = key;
+        return Task.CompletedTask;
+    }
 
     public Task StartAsync(HeartbeatConfig config)
     {
@@ -27,7 +35,7 @@ public sealed partial class HeartbeatActor(
         };
 
         var interval = TimeSpan.FromMinutes(minutes);
-        _timer = this.RegisterGrainTimer(OnHeartbeatTick, interval, interval);
+        _timer = timerRegistry.RegisterTimer(OnHeartbeatTick, interval, interval);
 
         LogHeartbeatStarted(GetAgentKey(), interval);
 
@@ -172,17 +180,7 @@ public sealed partial class HeartbeatActor(
         _timer?.Dispose();
     }
 
-    private string GetAgentKey()
-    {
-        try
-        {
-            return this.GetPrimaryKeyString();
-        }
-        catch (NullReferenceException)
-        {
-            return "unknown-agent";
-        }
-    }
+    private string GetAgentKey() => _key ?? "unknown-agent";
 
     [LoggerMessage(Level = LogLevel.Information, Message = "Heartbeat started for {Key} with interval {Interval}")]
     private partial void LogHeartbeatStarted(string key, TimeSpan interval);

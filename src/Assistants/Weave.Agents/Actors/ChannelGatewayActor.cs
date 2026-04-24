@@ -10,13 +10,15 @@ public sealed class ChannelGatewayActor(
     IVirtualActorProvider actors,
     IEventBus eventBus,
     ILogger<ChannelGatewayActor> logger,
-    [PersistentState("channel-gateway", "Default")] IPersistentState<ChannelGatewayState> persistentState) : VirtualActor, IChannelGatewayActor
+    IActorState<ChannelGatewayState> persistentState) : IChannelGatewayActor
 {
-    public override async Task OnActivateAsync(CancellationToken cancellationToken)
+    private string? _key;
+
+    public async Task OnActivatedAsync(string? key, CancellationToken cancellationToken)
     {
+        _key = key;
         await persistentState.ReadStateAsync(cancellationToken);
 
-        var key = TryGetPrimaryKeyString();
         if (string.IsNullOrWhiteSpace(persistentState.State.WorkspaceId) && !string.IsNullOrWhiteSpace(key))
         {
             persistentState.State.WorkspaceId = key;
@@ -156,20 +158,8 @@ public sealed class ChannelGatewayActor(
         if (!string.IsNullOrWhiteSpace(persistentState.State.WorkspaceId))
             return;
 
-        var key = TryGetPrimaryKeyString();
+        var key = _key;
         if (!string.IsNullOrWhiteSpace(key))
             persistentState.State.WorkspaceId = key;
-    }
-
-    private string? TryGetPrimaryKeyString()
-    {
-        try
-        {
-            return this.GetPrimaryKeyString();
-        }
-        catch (NullReferenceException)
-        {
-            return null;
-        }
     }
 }

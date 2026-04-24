@@ -8,7 +8,7 @@ aggregate line-coverage rate across all test assemblies, and exits
 non-zero if the rate is below the -Threshold (default 90).
 
 Invoked by docs/best-practices.md workflow:
-    dotnet test --solution Weave.slnx -c Release -- --coverage --coverage-output-format cobertura
+    dotnet test --solution Weave.slnx -c Release --collect:"XPlat Code Coverage"
     pwsh ./scripts/check-coverage.ps1
 
 .PARAMETER Threshold
@@ -29,7 +29,7 @@ $ErrorActionPreference = 'Stop'
 $reports = Get-ChildItem -Path $SearchRoot -Recurse -Filter '*.cobertura.xml' -ErrorAction Ignore
 if (-not $reports) {
     Write-Host "No cobertura.xml files found under '$SearchRoot'. Did the test run collect coverage?" -ForegroundColor Yellow
-    Write-Host "  dotnet test --solution Weave.slnx -c Release -- --coverage --coverage-output-format cobertura"
+    Write-Host "  dotnet test --solution Weave.slnx -c Release --collect:\"XPlat Code Coverage\""
     exit 2
 }
 

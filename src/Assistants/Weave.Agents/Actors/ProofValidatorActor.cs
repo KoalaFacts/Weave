@@ -10,7 +10,7 @@ namespace Weave.Agents.Actors;
 
 public sealed class ProofValidatorActor(
     IAgentChatClientFactory chatClientFactory,
-    ILogger<ProofValidatorActor> logger) : VirtualActor, IProofValidatorActor
+    ILogger<ProofValidatorActor> logger) : IProofValidatorActor
 {
     private const string SystemPrompt = """
         You are an independent proof-of-work validator in a multi-agent system.

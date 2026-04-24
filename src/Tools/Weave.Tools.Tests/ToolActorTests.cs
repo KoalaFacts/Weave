@@ -15,7 +15,7 @@ public sealed class ToolActorTests
 {
     private static (ToolActor Actor, IToolConnector Connector, ICapabilityTokenService TokenService) CreateActor()
     {
-        var actorFactory = Substitute.For<IActorFactory>();
+        var actors = Substitute.For<IVirtualActorProvider>();
         var connector = Substitute.For<IToolConnector>();
         connector.ToolType.Returns(ToolType.Cli);
 
@@ -33,9 +33,9 @@ public sealed class ToolActorTests
         var secretProxy = Substitute.For<ISecretProxyActor>();
         secretProxy.SubstituteAsync(Arg.Any<string>()).Returns(callInfo => callInfo.Arg<string>());
 
-        actorFactory.GetActor<ISecretProxyActor>(Arg.Any<string>(), null).Returns(secretProxy);
+        actors.GetActor<ISecretProxyActor>(Arg.Any<VirtualActorId>()).Returns(secretProxy);
 
-        var actor = new ToolActor(new TestVirtualActorProvider(actorFactory), discovery, leakScanner, tokenService, lifecycleManager, eventBus, logger);
+        var actor = new ToolActor(actors, discovery, leakScanner, tokenService, lifecycleManager, eventBus, logger);
         return (actor, connector, tokenService);
     }
 

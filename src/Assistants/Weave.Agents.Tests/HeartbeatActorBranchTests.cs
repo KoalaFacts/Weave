@@ -15,9 +15,9 @@ public sealed class HeartbeatActorBranchTests
 {
     private static HeartbeatActor CreateActor()
     {
-        var actorFactory = Substitute.For<IActorFactory>();
+        var actors = Substitute.For<IVirtualActorProvider>();
         var logger = Substitute.For<ILogger<HeartbeatActor>>();
-        return new HeartbeatActor(new TestVirtualActorProvider(actorFactory), TimeProvider.System, logger);
+        return new HeartbeatActor(actors, Substitute.For<IActorTimerRegistry>(), TimeProvider.System, logger);
     }
 
     public sealed class StartAsync

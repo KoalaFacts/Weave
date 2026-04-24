@@ -11,7 +11,7 @@ public sealed class UserModelActorTests
     private static readonly WorkspaceId TestWorkspaceId = WorkspaceId.From("ws-1");
     private const string TestUserId = "user-42";
 
-    private static IPersistentState<UserProfileState> CreatePersistentState()
+    private static IActorState<UserProfileState> CreatePersistentState()
     {
         var state = new UserProfileState
         {
@@ -19,12 +19,12 @@ public sealed class UserModelActorTests
             UserId = TestUserId
         };
 
-        var persistentState = Substitute.For<IPersistentState<UserProfileState>>();
+        var persistentState = Substitute.For<IActorState<UserProfileState>>();
         persistentState.State.Returns(state);
         persistentState.ReadStateAsync(Arg.Any<CancellationToken>()).Returns(Task.CompletedTask);
         persistentState.WriteStateAsync(Arg.Any<CancellationToken>()).Returns(Task.CompletedTask);
-        persistentState.WriteStateAsync().Returns(Task.CompletedTask);
-        persistentState.ClearStateAsync().Returns(Task.CompletedTask);
+        persistentState.WriteStateAsync(Arg.Any<CancellationToken>()).Returns(Task.CompletedTask);
+        persistentState.ClearStateAsync(Arg.Any<CancellationToken>()).Returns(Task.CompletedTask);
         return persistentState;
     }
 

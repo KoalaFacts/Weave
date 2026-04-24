@@ -2,7 +2,7 @@ using Weave.Agents.Models;
 
 namespace Weave.Agents.Actors;
 
-public interface IUserModelActor : IVirtualActorWithStringKey
+public interface IUserModelActor
 {
     Task RecordInteractionAsync(InteractionRecord record);
     Task SetPreferenceAsync(string key, string value);

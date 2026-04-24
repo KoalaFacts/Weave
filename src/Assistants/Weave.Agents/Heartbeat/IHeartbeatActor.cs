@@ -5,7 +5,7 @@ namespace Weave.Agents.Heartbeat;
 /// Keyed by {workspaceId}/{agentName}.
 /// Wakes the agent periodically to check its task list and act.
 /// </summary>
-public interface IHeartbeatActor : IVirtualActorWithStringKey
+public interface IHeartbeatActor
 {
     Task StartAsync(HeartbeatConfig config);
     Task StopAsync();

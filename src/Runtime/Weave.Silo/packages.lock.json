@@ -120,6 +120,22 @@
           "System.Memory.Data": "10.0.3"
         }
       },
+      "Microsoft.Orleans.Serialization.SystemTextJson": {
+        "type": "Direct",
+        "requested": "[10.1.0, )",
+        "resolved": "10.1.0",
+        "contentHash": "t2Xcu1eBD7dYzHrpK2hVxT1+D/3/4skqqgiBvkg3ZJlKQwyrVtY59/KVnOJj4iwS5vyy0AE5Bck2bRQAyI8p7g==",
+        "dependencies": {
+          "Microsoft.CodeAnalysis.Analyzers": "3.11.0",
+          "Microsoft.CodeAnalysis.Common": "5.0.0",
+          "Microsoft.CodeAnalysis.Workspaces.Common": "5.0.0",
+          "Microsoft.Extensions.DependencyModel": "10.0.3",
+          "Microsoft.Orleans.Analyzers": "10.1.0",
+          "Microsoft.Orleans.CodeGenerator": "10.1.0",
+          "Microsoft.Orleans.Serialization": "10.1.0",
+          "System.IO.Hashing": "10.0.3"
+        }
+      },
       "Microsoft.Orleans.Server": {
         "type": "Direct",
         "requested": "[10.1.0, )",
@@ -614,8 +630,6 @@
         "dependencies": {
           "Microsoft.Extensions.AI": "[10.5.0, )",
           "Microsoft.Extensions.AI.Abstractions": "[10.5.0, )",
-          "Microsoft.Orleans.Sdk": "[10.1.0, )",
-          "Microsoft.Orleans.Server": "[10.1.0, )",
           "Weave.Security": "[1.0.0, )",
           "Weave.Shared": "[1.0.0, )",
           "Weave.Tools": "[1.0.0, )",
@@ -625,7 +639,6 @@
       "weave.security": {
         "type": "Project",
         "dependencies": {
-          "Microsoft.Orleans.Sdk": "[10.1.0, )",
           "Weave.Shared": "[1.0.0, )"
         }
       },
@@ -650,7 +663,6 @@
       "weave.tools": {
         "type": "Project",
         "dependencies": {
-          "Microsoft.Orleans.Sdk": "[10.1.0, )",
           "Weave.Security": "[1.0.0, )",
           "Weave.Shared": "[1.0.0, )",
           "Weave.Workspaces": "[1.0.0, )"
@@ -659,8 +671,6 @@
       "weave.workspaces": {
         "type": "Project",
         "dependencies": {
-          "Microsoft.Orleans.Runtime": "[10.1.0, )",
-          "Microsoft.Orleans.Sdk": "[10.1.0, )",
           "Weave.Shared": "[1.0.0, )"
         }
       },

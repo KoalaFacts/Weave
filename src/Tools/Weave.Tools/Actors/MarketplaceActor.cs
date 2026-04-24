@@ -10,7 +10,7 @@ public sealed class MarketplaceActor(
     ILogger<MarketplaceActor> logger,
     IEventBus eventBus,
     TimeProvider timeProvider,
-    [PersistentState("marketplace", "Default")] IPersistentState<MarketplaceState> persistentState) : VirtualActor, IMarketplaceActor
+    IActorState<MarketplaceState> persistentState) : IMarketplaceActor
 {
     public async Task<MarketplaceItem> SubmitAsync(MarketplaceItem item)
     {

@@ -3,7 +3,7 @@ using Weave.Shared.Ids;
 
 namespace Weave.Agents.Actors;
 
-public interface IChannelGatewayActor : IVirtualActorWithStringKey
+public interface IChannelGatewayActor
 {
     Task RegisterChannelAsync(ChannelConfig config);
     Task UnregisterChannelAsync(ChannelId channelId);

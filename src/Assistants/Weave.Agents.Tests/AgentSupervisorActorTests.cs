@@ -17,23 +17,23 @@ public sealed class AgentSupervisorActorTests
 {
     private static readonly WorkspaceId TestWorkspaceId = WorkspaceId.From("ws-1");
 
-    private static IPersistentState<AgentSupervisorState> CreatePersistentState(AgentSupervisorState? initial = null)
+    private static IActorState<AgentSupervisorState> CreatePersistentState(AgentSupervisorState? initial = null)
     {
         var state = initial ?? new AgentSupervisorState();
-        var persistentState = Substitute.For<IPersistentState<AgentSupervisorState>>();
+        var persistentState = Substitute.For<IActorState<AgentSupervisorState>>();
         persistentState.State.Returns(state);
         persistentState.ReadStateAsync(Arg.Any<CancellationToken>()).Returns(Task.CompletedTask);
         persistentState.WriteStateAsync(Arg.Any<CancellationToken>()).Returns(Task.CompletedTask);
-        persistentState.WriteStateAsync().Returns(Task.CompletedTask);
+        persistentState.WriteStateAsync(Arg.Any<CancellationToken>()).Returns(Task.CompletedTask);
         return persistentState;
     }
 
-    private static (AgentSupervisorActor Actor, IActorFactory Factory, IPersistentState<AgentSupervisorState> State) CreateActor(
+    private static (AgentSupervisorActor Actor, IVirtualActorProvider ActorProvider, IActorState<AgentSupervisorState> State) CreateActor(
         AgentSupervisorState? initial = null)
     {
-        var factory = Substitute.For<IActorFactory>();
+        var factory = Substitute.For<IVirtualActorProvider>();
         var state = CreatePersistentState(initial);
-        var actor = new AgentSupervisorActor(new TestVirtualActorProvider(factory), NullLogger<AgentSupervisorActor>.Instance, state);
+        var actor = new AgentSupervisorActor(factory, NullLogger<AgentSupervisorActor>.Instance, state);
         // AgentSupervisorActor calls GetPrimaryKeyString() internally; direct
         // instantiation throws NullReferenceException which the actor catches
         // and falls back to persistentState.State.WorkspaceId or "unknown-workspace".
@@ -64,7 +64,7 @@ public sealed class AgentSupervisorActorTests
         await actor.ActivateAllAsync(manifest);
 
         state.State.AgentNames.ShouldBeEmpty();
-        factory.DidNotReceive().GetActor<IAgentActor>(Arg.Any<string>());
+        factory.DidNotReceive().GetActor<IAgentActor>(Arg.Any<VirtualActorId>());
     }
 
     [Fact]
@@ -75,9 +75,9 @@ public sealed class AgentSupervisorActorTests
         var coder = Substitute.For<IAgentActor>();
         var tools = Substitute.For<IToolRegistryActor>();
 
-        factory.GetActor<IAgentActor>("ws-1/researcher", null).Returns(researcher);
-        factory.GetActor<IAgentActor>("ws-1/coder", null).Returns(coder);
-        factory.GetActor<IToolRegistryActor>("ws-1", null).Returns(tools);
+        factory.GetActor<IAgentActor>(VirtualActorId.From("ws-1/researcher")).Returns(researcher);
+        factory.GetActor<IAgentActor>(VirtualActorId.From("ws-1/coder")).Returns(coder);
+        factory.GetActor<IToolRegistryActor>(Arg.Any<VirtualActorId>()).Returns(tools);
         tools.GetConnectionAsync(Arg.Any<string>()).Returns((ToolConnection?)null);
 
         await actor.ActivateAllAsync(CreateManifest(("researcher", []), ("coder", [])));
@@ -94,8 +94,8 @@ public sealed class AgentSupervisorActorTests
         var agent = Substitute.For<IAgentActor>();
         var tools = Substitute.For<IToolRegistryActor>();
 
-        factory.GetActor<IAgentActor>("ws-1/researcher", null).Returns(agent);
-        factory.GetActor<IToolRegistryActor>("ws-1", null).Returns(tools);
+        factory.GetActor<IAgentActor>(Arg.Any<VirtualActorId>()).Returns(agent);
+        factory.GetActor<IToolRegistryActor>(Arg.Any<VirtualActorId>()).Returns(tools);
         tools.GetConnectionAsync("search").Returns(new ToolConnection { ToolName = "search", ToolType = "mcp", Status = ToolConnectionStatus.Connected });
         tools.GetConnectionAsync("offline").Returns(new ToolConnection { ToolName = "offline", ToolType = "mcp", Status = ToolConnectionStatus.Error });
 
@@ -110,7 +110,7 @@ public sealed class AgentSupervisorActorTests
     {
         var (actor, factory, _) = CreateActor();
         var agent = Substitute.For<IAgentActor>();
-        factory.GetActor<IAgentActor>("ws-1/researcher", null).Returns(agent);
+        factory.GetActor<IAgentActor>(Arg.Any<VirtualActorId>()).Returns(agent);
         agent.ActivateAgentAsync(Arg.Any<WorkspaceId>(), Arg.Any<AgentDefinition>())
             .Returns(Task.FromException<AgentState>(new InvalidOperationException("activation failed")));
 
@@ -128,8 +128,8 @@ public sealed class AgentSupervisorActorTests
         });
         var researcher = Substitute.For<IAgentActor>();
         var coder = Substitute.For<IAgentActor>();
-        factory.GetActor<IAgentActor>("ws-1/researcher", null).Returns(researcher);
-        factory.GetActor<IAgentActor>("ws-1/coder", null).Returns(coder);
+        factory.GetActor<IAgentActor>(VirtualActorId.From("ws-1/researcher")).Returns(researcher);
+        factory.GetActor<IAgentActor>(VirtualActorId.From("ws-1/coder")).Returns(coder);
 
         await actor.DeactivateAllAsync();
 
@@ -149,8 +149,8 @@ public sealed class AgentSupervisorActorTests
         var broken = Substitute.For<IAgentActor>();
         var survivor = Substitute.For<IAgentActor>();
         broken.DeactivateAsync().Returns(Task.FromException(new InvalidOperationException("boom")));
-        factory.GetActor<IAgentActor>("ws-1/broken", null).Returns(broken);
-        factory.GetActor<IAgentActor>("ws-1/survivor", null).Returns(survivor);
+        factory.GetActor<IAgentActor>(VirtualActorId.From("ws-1/broken")).Returns(broken);
+        factory.GetActor<IAgentActor>(VirtualActorId.From("ws-1/survivor")).Returns(survivor);
 
         await actor.DeactivateAllAsync();
 
@@ -170,8 +170,8 @@ public sealed class AgentSupervisorActorTests
         var bActor = Substitute.For<IAgentActor>();
         aActor.GetStateAsync().Returns(new AgentState { AgentId = "ws-1/a", WorkspaceId = TestWorkspaceId, AgentName = "a" });
         bActor.GetStateAsync().Returns(new AgentState { AgentId = "ws-1/b", WorkspaceId = TestWorkspaceId, AgentName = "b" });
-        factory.GetActor<IAgentActor>("ws-1/a", null).Returns(aActor);
-        factory.GetActor<IAgentActor>("ws-1/b", null).Returns(bActor);
+        factory.GetActor<IAgentActor>(VirtualActorId.From("ws-1/a")).Returns(aActor);
+        factory.GetActor<IAgentActor>(VirtualActorId.From("ws-1/b")).Returns(bActor);
 
         var states = await actor.GetAllAgentStatesAsync();
 
@@ -192,7 +192,7 @@ public sealed class AgentSupervisorActorTests
         var state = await actor.GetAgentStateAsync("nope");
 
         state.ShouldBeNull();
-        factory.DidNotReceive().GetActor<IAgentActor>("ws-1/nope", null);
+        factory.DidNotReceive().GetActor<IAgentActor>(Arg.Any<VirtualActorId>());
     }
 
     [Fact]
@@ -211,7 +211,7 @@ public sealed class AgentSupervisorActorTests
             AgentName = "known",
             Status = AgentStatus.Active
         });
-        factory.GetActor<IAgentActor>("ws-1/known", null).Returns(known);
+        factory.GetActor<IAgentActor>(Arg.Any<VirtualActorId>()).Returns(known);
 
         var state = await actor.GetAgentStateAsync("known");
 

@@ -8,16 +8,15 @@ namespace Weave.Tools.Tests;
 
 public sealed class MarketplaceActorTests
 {
-    private static IPersistentState<MarketplaceState> CreatePersistentState()
+    private static IActorState<MarketplaceState> CreatePersistentState()
     {
         var state = new MarketplaceState();
 
-        var persistentState = Substitute.For<IPersistentState<MarketplaceState>>();
+        var persistentState = Substitute.For<IActorState<MarketplaceState>>();
         persistentState.State.Returns(state);
         persistentState.ReadStateAsync(Arg.Any<CancellationToken>()).Returns(Task.CompletedTask);
         persistentState.WriteStateAsync(Arg.Any<CancellationToken>()).Returns(Task.CompletedTask);
-        persistentState.WriteStateAsync().Returns(Task.CompletedTask);
-        persistentState.ClearStateAsync().Returns(Task.CompletedTask);
+        persistentState.ClearStateAsync(Arg.Any<CancellationToken>()).Returns(Task.CompletedTask);
         return persistentState;
     }
 

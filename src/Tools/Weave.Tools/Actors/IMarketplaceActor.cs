@@ -7,7 +7,7 @@ namespace Weave.Tools.Actors;
 /// Actor that manages the curated tool/skill marketplace.
 /// Keyed by "global".
 /// </summary>
-public interface IMarketplaceActor : IVirtualActorWithStringKey
+public interface IMarketplaceActor
 {
     Task<MarketplaceItem> SubmitAsync(MarketplaceItem item);
     Task<MarketplaceItem> PublishAsync(MarketplaceItemId itemId, SecurityReview review);
