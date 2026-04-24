@@ -11,7 +11,7 @@ public interface IAgentChatClientFactory
 }
 
 /// <summary>
-/// Scoped factory — one instance per grain activation or HTTP request.
+/// Scoped factory — one instance per actor activation or HTTP request.
 /// The injected <see cref="IServiceProvider"/> is the consumer's own
 /// scope, so <see cref="ChatClientBuilder"/> middleware can resolve any
 /// scoped dependencies it pulls in.

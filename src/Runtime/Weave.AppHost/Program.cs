@@ -15,7 +15,7 @@ var orleans = builder.AddOrleans("weave-cluster")
 var stateStore = builder.AddDaprStateStore("statestore");
 var pubSub = builder.AddDaprPubSub("pubsub");
 
-// Silo — Orleans grain host with Dapr sidecar
+// Silo — Orleans actor host with Dapr sidecar
 var silo = builder.AddProject<Projects.Weave_Silo>("silo")
     .WithReference(orleans)
     .WaitFor(redis)

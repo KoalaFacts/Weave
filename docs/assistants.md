@@ -3,23 +3,23 @@
 > **Source**: `src/Assistants/` | **Depends on**: [Foundation](foundation.md), [Workspaces](workspaces.md), [Tools](tools.md), [Security](security.md) | **Depended on by**: [Runtime](runtime.md), [UX](ux.md)
 > **See also**: [index](index.md)
 
-The Assistants subsystem implements the AI agent framework — agent grains, supervisor, heartbeat scheduling, chat pipeline, task management, and proof-of-work verification.
+The Assistants subsystem implements the AI agent framework — agent actors, supervisor, heartbeat scheduling, chat pipeline, task management, and proof-of-work verification.
 
 ## Projects
 
 | Project | Purpose |
 |---------|---------|
-| `Weave.Agents` | Agent grains, supervisor, heartbeat, chat pipeline, commands, queries, events |
-| `Weave.Agents.Tests` | 15 test files covering grains, pipeline, commands, static helpers |
+| `Weave.Agents` | Agent actors, supervisor, heartbeat, chat pipeline, commands, queries, events |
+| `Weave.Agents.Tests` | 15 test files covering actors, pipeline, commands, static helpers |
 
-## Agent Grain
+## Agent Actor
 
 **Key**: `{workspaceId}/{agentName}` — **State**: `[PersistentState("agent", "Default")]`
 
 ### Interface
 
 ```csharp
-public interface IAgentGrain : IGrainWithStringKey
+public interface IAgentActor : IVirtualActorWithStringKey
 {
     Task ActivateAgentAsync(WorkspaceId workspaceId, AgentDefinition definition);
     Task DeactivateAsync();
@@ -61,14 +61,14 @@ AgentState {
 }
 ```
 
-## Supervisor Grain
+## Supervisor Actor
 
 **Key**: `{workspaceId}` — **State**: `[PersistentState("agent-supervisor", "Default")]`
 
 Manages agents as a group within a workspace.
 
 ```csharp
-public interface IAgentSupervisorGrain : IGrainWithStringKey
+public interface IAgentSupervisorActor : IVirtualActorWithStringKey
 {
     Task ActivateAllAsync(WorkspaceManifest manifest);
     Task DeactivateAllAsync();
@@ -77,7 +77,7 @@ public interface IAgentSupervisorGrain : IGrainWithStringKey
 }
 ```
 
-**Activation flow**: reads manifest → creates agent grains → resolves tool connections via `ToolRegistryGrain` → connects approved tools → stores agent names.
+**Activation flow**: reads manifest → creates agent actors → resolves tool connections via `ToolRegistryActor` → connects approved tools → stores agent names.
 
 ## Heartbeat
 
@@ -86,7 +86,7 @@ public interface IAgentSupervisorGrain : IGrainWithStringKey
 ### Interface
 
 ```csharp
-public interface IHeartbeatGrain : IGrainWithStringKey
+public interface IHeartbeatActor : IVirtualActorWithStringKey
 {
     Task StartAsync(HeartbeatConfig config);
     Task StopAsync();
@@ -96,7 +96,7 @@ public interface IHeartbeatGrain : IGrainWithStringKey
 
 ### Behavior
 
-- Uses Orleans `RegisterGrainTimer()` for scheduling.
+- Uses Orleans `actor timer scheduling` for scheduling.
 - Parses simple cron patterns (`*/N * * * *`), falls back to 30 minutes.
 - On each tick: verifies agent is active → submits tasks → sends messages → creates proof → completes tasks automatically.
 - Gracefully backs off on max capacity.
@@ -195,22 +195,22 @@ ProofOfWork {
 
 Multi-validator consensus system using LLM-based evaluation.
 
-### ProofVerifierGrain (Orchestrator)
+### ProofVerifierActor (Orchestrator)
 
 1. Configures 6 default verification conditions (ci-passing, tests-passing, pr-has-link, code-review-present, diff-present, custom-present)
-2. Dispatches N independent `ProofValidatorGrain` instances
+2. Dispatches N independent `ProofValidatorActor` instances
 3. Each validator evaluates proof independently
 4. Majority vote determines acceptance (> N/2)
-5. Calls `AgentGrain.ReviewTaskAsync()` with result
+5. Calls `AgentActor.ReviewTaskAsync()` with result
 
-### ProofValidatorGrain (Evaluator)
+### ProofValidatorActor (Evaluator)
 
 1. Builds markdown summary of proof items + conditions
 2. Uses LLM to evaluate each condition (JSON output)
 3. Adds strictness check: all proof items must have non-empty values
 4. Returns `VerificationVote` with condition results
 
-## Tool Registry Grain
+## Tool Registry Actor
 
 **Key**: `{workspaceId}` — **State**: `[PersistentState("tool-registry", "Default")]`
 
@@ -222,8 +222,8 @@ Manages per-workspace tool connections and agent-to-tool permissions.
 2. Retrieve tool definition from state
 3. Lazy-connect if not yet connected (lifecycle hooks + event)
 4. Mint capability token via `ICapabilityTokenService`
-5. Get tool schema from tool grain
-6. Return `ToolResolution` (grain key, token, schema)
+5. Get tool schema from tool actor
+6. Return `ToolResolution` (actor key, token, schema)
 
 ## Commands & Queries
 
@@ -231,10 +231,10 @@ Manages per-workspace tool connections and agent-to-tool permissions.
 
 | Command | Result | Behavior |
 |---------|--------|----------|
-| `ActivateAgentCommand` | `AgentState` | Grants tools, activates grain, starts heartbeat |
-| `DeactivateAgentCommand` | `bool` | Stops heartbeat, deactivates grain |
-| `SendAgentMessageCommand` | `AgentChatResponse` | Forwards to `IAgentGrain.SendAsync()` |
-| `SubmitAgentTaskCommand` | `AgentTaskInfo` | Creates task via grain |
+| `ActivateAgentCommand` | `AgentState` | Grants tools, activates actor, starts heartbeat |
+| `DeactivateAgentCommand` | `bool` | Stops heartbeat, deactivates actor |
+| `SendAgentMessageCommand` | `AgentChatResponse` | Forwards to `IAgentActor.SendAsync()` |
+| `SubmitAgentTaskCommand` | `AgentTaskInfo` | Creates task via actor |
 | `CompleteAgentTaskCommand` | `AgentTaskInfo` | Marks complete, triggers verification |
 | `ReviewAgentTaskCommand` | `AgentTaskInfo` | Finalizes with accept/reject |
 
@@ -263,7 +263,7 @@ Manages per-workspace tool connections and agent-to-tool permissions.
 ## Testing
 
 15 test files covering:
-- **Grain tests**: AgentGrain, SupervisorGrain, HeartbeatGrain, ProofVerifier, ProofValidator, ToolRegistry
+- **Actor tests**: AgentActor, SupervisorActor, HeartbeatActor, ProofVerifier, ProofValidator, ToolRegistry
 - **Command/query handler tests**: dispatch paths, orchestration flows
 - **Pipeline tests**: CostTracking, RateLimiting, FallbackChatClient
 - **Static method tests**: tool invocation parsing, tool description building, message conversion

@@ -6,7 +6,7 @@ namespace Weave.Silo.Tests;
 /// Smoke test: the Silo host must start cleanly. This is the thinnest
 /// possible integration test — it catches any regression that prevents
 /// the Silo from completing StartAsync (serializer config validator
-/// failures, grain registration errors, DI resolution failures, etc).
+/// failures, actor registration errors, DI resolution failures, etc).
 /// </summary>
 public sealed class BootTests : IClassFixture<SiloFactory>
 {

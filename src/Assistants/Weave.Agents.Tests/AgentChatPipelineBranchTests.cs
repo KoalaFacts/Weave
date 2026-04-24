@@ -1,10 +1,10 @@
 using Microsoft.Extensions.AI;
 using Microsoft.Extensions.Logging.Abstractions;
-using Weave.Agents.Grains;
+using Weave.Agents.Actors;
 using Weave.Agents.Models;
 using Weave.Agents.Pipeline;
 using Weave.Shared.Ids;
-using Weave.Tools.Grains;
+using Weave.Tools.Actors;
 using Weave.Tools.Models;
 using Weave.Workspaces.Models;
 
@@ -24,7 +24,7 @@ public sealed class AgentChatPipelineBranchTests
     {
         public IChatClient ChatClient { get; } = Substitute.For<IChatClient>();
         public IAgentChatClientFactory ChatClientFactory { get; } = Substitute.For<IAgentChatClientFactory>();
-        public IGrainFactory GrainFactory { get; } = Substitute.For<IGrainFactory>();
+        public IActorFactory ActorFactory { get; } = Substitute.For<IActorFactory>();
         public AgentChatPipeline Pipeline { get; }
 
         public Fixture(string responseText = "ok")
@@ -38,7 +38,10 @@ public sealed class AgentChatPipelineBranchTests
             ChatClientFactory.Create(Arg.Any<string>(), Arg.Any<string?>()).Returns(ChatClient);
 
             Pipeline = new AgentChatPipeline(
-                GrainFactory, ChatClientFactory, TimeProvider.System, NullLogger<AgentChatPipeline>.Instance);
+                new TestVirtualActorProvider(ActorFactory),
+                ChatClientFactory,
+                TimeProvider.System,
+                NullLogger<AgentChatPipeline>.Instance);
         }
     }
 
@@ -60,7 +63,7 @@ public sealed class AgentChatPipelineBranchTests
         var missingPath = Path.Combine(Path.GetTempPath(), $"weave-never-{Guid.NewGuid():N}.md");
         var state = StateWith(new AgentDefinition { Model = "test-model", SystemPromptFile = missingPath });
 
-        // Should not throw — the grain logs a warning and treats the prompt as empty.
+        // Should not throw — the actor logs a warning and treats the prompt as empty.
         var response = await fx.Pipeline.ExecuteAsync(state, new AgentMessage { Role = "user", Content = "hi" });
 
         response.ShouldNotBeNull();
@@ -91,12 +94,12 @@ public sealed class AgentChatPipelineBranchTests
     }
 
     [Fact]
-    public async Task ExecuteAsync_UserContextGrainThrows_SwallowsErrorAndContinues()
+    public async Task ExecuteAsync_UserContextActorThrows_SwallowsErrorAndContinues()
     {
         var fx = new Fixture();
-        var userGrain = Substitute.For<IUserModelGrain>();
-        userGrain.GetContextSummaryAsync().Returns(Task.FromException<string>(new InvalidOperationException("user grain broken")));
-        fx.GrainFactory.GetGrain<IUserModelGrain>("ws-1/alice", null).Returns(userGrain);
+        var userActor = Substitute.For<IUserModelActor>();
+        userActor.GetContextSummaryAsync().Returns(Task.FromException<string>(new InvalidOperationException("user actor broken")));
+        fx.ActorFactory.GetGrain<IUserModelActor>("ws-1/alice", null).Returns(userActor);
 
         var state = StateWith();
 
@@ -111,13 +114,13 @@ public sealed class AgentChatPipelineBranchTests
     }
 
     [Fact]
-    public async Task ExecuteAsync_SkillMemoryGrainThrows_SwallowsErrorAndContinues()
+    public async Task ExecuteAsync_SkillMemoryActorThrows_SwallowsErrorAndContinues()
     {
         var fx = new Fixture();
-        var skillGrain = Substitute.For<ISkillMemoryGrain>();
-        skillGrain.SearchAsync(Arg.Any<string>(), Arg.Any<int>())
-            .Returns(Task.FromException<IReadOnlyList<SkillSearchResult>>(new InvalidOperationException("skill grain broken")));
-        fx.GrainFactory.GetGrain<ISkillMemoryGrain>("ws-1", null).Returns(skillGrain);
+        var skillActor = Substitute.For<ISkillMemoryActor>();
+        skillActor.SearchAsync(Arg.Any<string>(), Arg.Any<int>())
+            .Returns(Task.FromException<IReadOnlyList<SkillSearchResult>>(new InvalidOperationException("skill actor broken")));
+        fx.ActorFactory.GetGrain<ISkillMemoryActor>("ws-1", null).Returns(skillActor);
 
         var state = StateWith();
 
@@ -134,10 +137,10 @@ public sealed class AgentChatPipelineBranchTests
     public async Task ExecuteAsync_ToolResolutionReturnsNull_SkipsToolInToolList()
     {
         var fx = new Fixture();
-        var toolRegistry = Substitute.For<IToolRegistryGrain>();
+        var toolRegistry = Substitute.For<IToolRegistryActor>();
         toolRegistry.ResolveAsync(Arg.Any<string>(), Arg.Any<string>())
             .Returns((ToolResolution?)null);
-        fx.GrainFactory.GetGrain<IToolRegistryGrain>("ws-1", null).Returns(toolRegistry);
+        fx.ActorFactory.GetGrain<IToolRegistryActor>("ws-1", null).Returns(toolRegistry);
 
         // State with a "connected" tool whose resolution returns null.
         var state = StateWith(null, "unavailable-tool");

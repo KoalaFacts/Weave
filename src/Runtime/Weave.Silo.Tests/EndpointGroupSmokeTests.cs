@@ -65,7 +65,7 @@ public sealed class EndpointGroupSmokeTests : IClassFixture<SiloFactory>
             "/api/workspaces/no-such-workspace/agents",
             TestContext.Current.CancellationToken);
 
-        // The current grain implementation activates on-demand and
+        // The current actor implementation activates on-demand and
         // returns an empty list for an unknown workspace — that's fine.
         // What we want to guarantee is that the endpoint does not
         // crash with a 500 (the actual failure shape the 409 session

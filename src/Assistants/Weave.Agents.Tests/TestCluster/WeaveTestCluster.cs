@@ -12,25 +12,25 @@ namespace Weave.Agents.Tests.TestCluster;
 /// once per test class. Use via <c>[Collection(nameof(WeaveClusterCollection))]</c>
 /// or <c>IClassFixture&lt;WeaveTestCluster&gt;</c>.
 ///
-/// The cluster mirrors the production Silo's grain configuration closely enough
+/// The cluster mirrors the production Silo's actor configuration closely enough
 /// to exercise: <c>[PersistentState(...,"Default")]</c> injection,
-/// <c>RegisterGrainTimer</c>, grain-to-grain calls via <see cref="IGrainFactory"/>,
-/// and real grain activation lifecycle (<c>OnActivateAsync</c>).
+/// the Orleans timer API, actor-to-actor calls via <see cref="IActorFactory"/>,
+/// and real actor activation lifecycle (<c>OnActivateAsync</c>).
 ///
 /// It does <em>not</em> boot the HTTP pipeline — that's what <c>SiloFactory</c>
-/// is for. Use this fixture for grain-internals tests; use <c>SiloFactory</c>
+/// is for. Use this fixture for actor-internals tests; use <c>SiloFactory</c>
 /// for endpoint integration tests.
 /// </summary>
 public sealed class WeaveTestCluster : IAsyncLifetime
 {
     public Orleans.TestingHost.TestCluster Cluster { get; private set; } = null!;
 
-    public IGrainFactory GrainFactory => Cluster.GrainFactory;
+    public IActorFactory ActorFactory => Cluster.ActorFactory;
 
     /// <summary>
     /// FakeTimeProvider shared across the cluster. Tests that need to advance
     /// virtual time call <c>cluster.Time.Advance(TimeSpan.FromMinutes(5))</c>
-    /// — grains that inject <see cref="TimeProvider"/> see the updated time
+    /// — actors that inject <see cref="TimeProvider"/> see the updated time
     /// without any wall-clock waits.
     /// </summary>
     public FakeTimeProvider Time { get; } = new(new DateTimeOffset(2026, 4, 19, 12, 0, 0, TimeSpan.Zero));
@@ -56,12 +56,12 @@ public sealed class WeaveTestCluster : IAsyncLifetime
 
     /// <summary>
     /// Registers the minimum set of services required by <c>Weave.Agents</c>
-    /// grains to activate. The production Silo registers these at the application
+    /// actors to activate. The production Silo registers these at the application
     /// root; here we register them per-silo inside the cluster.
     ///
-    /// Grains that depend on concrete production services not registered here
+    /// Actors that depend on concrete production services not registered here
     /// will fail activation with a clear DI resolution error — extend this
-    /// list when a new grain test needs a collaborator.
+    /// list when a new actor test needs a collaborator.
     /// </summary>
     public sealed class SiloConfigurator : ISiloConfigurator
     {
@@ -73,12 +73,12 @@ public sealed class WeaveTestCluster : IAsyncLifetime
 
         public void Configure(ISiloBuilder siloBuilder)
         {
-            siloBuilder.AddMemoryGrainStorageAsDefault();
+            siloBuilder.AddOrleans in-memory storageAsDefault();
 
             // Scan the Silo's serialization assembly so branded-ID converters
             // (AgentTaskIdSurrogate, etc.) register. Without this the Orleans
             // serializer config validator throws CodecNotFoundException at startup
-            // for every grain interface that returns or accepts a branded ID.
+            // for every actor interface that returns or accepts a branded ID.
             siloBuilder.Services.AddSerializer(s =>
                 s.AddAssembly(typeof(Weave.Silo.Serialization.SerializationMarker).Assembly));
 
@@ -86,7 +86,7 @@ public sealed class WeaveTestCluster : IAsyncLifetime
             {
                 services.AddSingleton<ILifecycleManager, LifecycleManager>();
                 services.AddSingleton<IEventBus, InProcessEventBus>();
-                // FakeTimeProvider-as-TimeProvider so grain code under test
+                // FakeTimeProvider-as-TimeProvider so actor code under test
                 // sees virtual time that tests can advance deterministically.
                 services.AddSingleton<TimeProvider>(SharedTime ?? new FakeTimeProvider());
             });

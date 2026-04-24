@@ -115,15 +115,15 @@ public sealed class InProcessRuntimeTests
     }
 
     [Fact]
-    public async Task WorkspaceGrain_StartsWithInProcessRuntime()
+    public async Task WorkspaceActor_StartsWithInProcessRuntime()
     {
-        // Verify InProcessRuntime works correctly with WorkspaceGrain
+        // Verify InProcessRuntime works correctly with WorkspaceActor
         var runtime = CreateRuntime();
         var manifest = CreateManifest();
 
         var env = await runtime.ProvisionAsync(manifest, CancellationToken.None);
 
-        // WorkspaceGrain stores containers from the environment — in-process has none
+        // WorkspaceActor stores containers from the environment — in-process has none
         env.Containers.Count.ShouldBe(0);
         // But the workspace is valid with agents and network
         env.WorkspaceId.ToString().ShouldNotBeNullOrEmpty();

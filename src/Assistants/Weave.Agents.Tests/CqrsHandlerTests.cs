@@ -1,5 +1,5 @@
 using Weave.Agents.Commands;
-using Weave.Agents.Grains;
+using Weave.Agents.Actors;
 using Weave.Agents.Models;
 using Weave.Agents.Queries;
 using Weave.Shared.Ids;
@@ -8,9 +8,9 @@ namespace Weave.Agents.Tests;
 
 /// <summary>
 /// Covers the thin command/query handlers in <c>Weave.Agents</c> that
-/// delegate to a grain. Each handler is one Arrange-Act-Assert: wire
-/// up a substituted grain via <see cref="IGrainFactory"/>, invoke the
-/// handler, assert the grain call was made with the right arguments
+/// delegate to a actor. Each handler is one Arrange-Act-Assert: wire
+/// up a substituted actor via <see cref="IActorFactory"/>, invoke the
+/// handler, assert the actor call was made with the right arguments
 /// and the returned value flows through.
 ///
 /// These handlers looked like coverage gaps because the Silo
@@ -23,15 +23,15 @@ public sealed class CqrsHandlerTests
     private static readonly WorkspaceId Ws = WorkspaceId.From("ws-1");
 
     [Fact]
-    public async Task SendAgentMessageHandler_DelegatesToAgentGrain()
+    public async Task SendAgentMessageHandler_DelegatesToAgentActor()
     {
-        var factory = Substitute.For<IGrainFactory>();
-        var agent = Substitute.For<IAgentGrain>();
+        var factory = Substitute.For<IActorFactory>();
+        var agent = Substitute.For<IAgentActor>();
         var expected = new AgentChatResponse { Content = "hi back", ConversationId = "c1", UsedTools = false };
-        factory.GetGrain<IAgentGrain>("ws-1/agent-a", null).Returns(agent);
+        factory.GetGrain<IAgentActor>("ws-1/agent-a", null).Returns(agent);
         agent.SendAsync(Arg.Any<AgentMessage>()).Returns(expected);
 
-        var handler = new SendAgentMessageHandler(factory);
+        var handler = new SendAgentMessageHandler(new TestVirtualActorProvider(factory));
         var response = await handler.HandleAsync(
             new SendAgentMessageCommand(Ws, "agent-a", new AgentMessage { Role = "user", Content = "hi" }),
             TestContext.Current.CancellationToken);
@@ -40,13 +40,13 @@ public sealed class CqrsHandlerTests
     }
 
     [Fact]
-    public async Task SetUserPreferenceHandler_CallsGrainSetPreferenceAndReturnsTrue()
+    public async Task SetUserPreferenceHandler_CallsActorSetPreferenceAndReturnsTrue()
     {
-        var factory = Substitute.For<IGrainFactory>();
-        var user = Substitute.For<IUserModelGrain>();
-        factory.GetGrain<IUserModelGrain>("ws-1/user-1", null).Returns(user);
+        var factory = Substitute.For<IActorFactory>();
+        var user = Substitute.For<IUserModelActor>();
+        factory.GetGrain<IUserModelActor>("ws-1/user-1", null).Returns(user);
 
-        var handler = new SetUserPreferenceHandler(factory);
+        var handler = new SetUserPreferenceHandler(new TestVirtualActorProvider(factory));
         var result = await handler.HandleAsync(
             new SetUserPreferenceCommand(Ws, "user-1", "theme", "dark"),
             TestContext.Current.CancellationToken);
@@ -56,10 +56,10 @@ public sealed class CqrsHandlerTests
     }
 
     [Fact]
-    public async Task StoreSkillHandler_DelegatesToSkillMemoryGrain()
+    public async Task StoreSkillHandler_DelegatesToSkillMemoryActor()
     {
-        var factory = Substitute.For<IGrainFactory>();
-        var memory = Substitute.For<ISkillMemoryGrain>();
+        var factory = Substitute.For<IActorFactory>();
+        var memory = Substitute.For<ISkillMemoryActor>();
         var skill = new SkillDocument
         {
             SkillId = SkillId.New(),
@@ -70,10 +70,10 @@ public sealed class CqrsHandlerTests
             ToolsUsed = [],
             CreatedByAgent = "agent-1"
         };
-        factory.GetGrain<ISkillMemoryGrain>("ws-1", null).Returns(memory);
+        factory.GetGrain<ISkillMemoryActor>("ws-1", null).Returns(memory);
         memory.StoreSkillAsync(skill).Returns(skill);
 
-        var handler = new StoreSkillHandler(factory);
+        var handler = new StoreSkillHandler(new TestVirtualActorProvider(factory));
         var stored = await handler.HandleAsync(
             new StoreSkillCommand(Ws, skill),
             TestContext.Current.CancellationToken);
@@ -82,11 +82,11 @@ public sealed class CqrsHandlerTests
     }
 
     [Fact]
-    public async Task RegisterChannelHandler_CallsGrainRegisterChannelAndReturnsTrue()
+    public async Task RegisterChannelHandler_CallsActorRegisterChannelAndReturnsTrue()
     {
-        var factory = Substitute.For<IGrainFactory>();
-        var gateway = Substitute.For<IChannelGatewayGrain>();
-        factory.GetGrain<IChannelGatewayGrain>("ws-1", null).Returns(gateway);
+        var factory = Substitute.For<IActorFactory>();
+        var gateway = Substitute.For<IChannelGatewayActor>();
+        factory.GetGrain<IChannelGatewayActor>("ws-1", null).Returns(gateway);
         var config = new ChannelConfig
         {
             ChannelId = ChannelId.New(),
@@ -94,7 +94,7 @@ public sealed class CqrsHandlerTests
             Name = "slack-main"
         };
 
-        var handler = new RegisterChannelHandler(factory);
+        var handler = new RegisterChannelHandler(new TestVirtualActorProvider(factory));
         var result = await handler.HandleAsync(
             new RegisterChannelCommand(Ws, config),
             TestContext.Current.CancellationToken);
@@ -104,15 +104,15 @@ public sealed class CqrsHandlerTests
     }
 
     [Fact]
-    public async Task RouteInboundMessageHandler_ReturnsOutboundMessageFromGrain()
+    public async Task RouteInboundMessageHandler_ReturnsOutboundMessageFromActor()
     {
-        var factory = Substitute.For<IGrainFactory>();
-        var gateway = Substitute.For<IChannelGatewayGrain>();
+        var factory = Substitute.For<IActorFactory>();
+        var gateway = Substitute.For<IChannelGatewayActor>();
         var outbound = new OutboundMessage { ChannelId = ChannelId.New(), Content = "response" };
-        factory.GetGrain<IChannelGatewayGrain>("ws-1", null).Returns(gateway);
+        factory.GetGrain<IChannelGatewayActor>("ws-1", null).Returns(gateway);
         gateway.RouteInboundAsync(Arg.Any<InboundMessage>()).Returns(outbound);
 
-        var handler = new RouteInboundMessageHandler(factory);
+        var handler = new RouteInboundMessageHandler(new TestVirtualActorProvider(factory));
         var result = await handler.HandleAsync(
             new RouteInboundMessageCommand(Ws, new InboundMessage
             {
@@ -130,8 +130,8 @@ public sealed class CqrsHandlerTests
     [Fact]
     public async Task GetSkillHandler_FoundSkill_ReturnsIt()
     {
-        var factory = Substitute.For<IGrainFactory>();
-        var memory = Substitute.For<ISkillMemoryGrain>();
+        var factory = Substitute.For<IActorFactory>();
+        var memory = Substitute.For<ISkillMemoryActor>();
         var skillId = SkillId.New();
         var skill = new SkillDocument
         {
@@ -143,10 +143,10 @@ public sealed class CqrsHandlerTests
             ToolsUsed = [],
             CreatedByAgent = "agent-1"
         };
-        factory.GetGrain<ISkillMemoryGrain>("ws-1", null).Returns(memory);
+        factory.GetGrain<ISkillMemoryActor>("ws-1", null).Returns(memory);
         memory.GetSkillAsync(skillId).Returns(skill);
 
-        var handler = new GetSkillHandler(factory);
+        var handler = new GetSkillHandler(new TestVirtualActorProvider(factory));
         var result = await handler.HandleAsync(
             new GetSkillQuery(Ws, skillId),
             TestContext.Current.CancellationToken);
@@ -157,27 +157,27 @@ public sealed class CqrsHandlerTests
     [Fact]
     public async Task GetSkillHandler_MissingSkill_ThrowsKeyNotFoundException()
     {
-        var factory = Substitute.For<IGrainFactory>();
-        var memory = Substitute.For<ISkillMemoryGrain>();
-        factory.GetGrain<ISkillMemoryGrain>("ws-1", null).Returns(memory);
+        var factory = Substitute.For<IActorFactory>();
+        var memory = Substitute.For<ISkillMemoryActor>();
+        factory.GetGrain<ISkillMemoryActor>("ws-1", null).Returns(memory);
         memory.GetSkillAsync(Arg.Any<SkillId>()).Returns((SkillDocument?)null);
 
-        var handler = new GetSkillHandler(factory);
+        var handler = new GetSkillHandler(new TestVirtualActorProvider(factory));
 
         await Should.ThrowAsync<KeyNotFoundException>(
             () => handler.HandleAsync(new GetSkillQuery(Ws, SkillId.New()), TestContext.Current.CancellationToken));
     }
 
     [Fact]
-    public async Task GetUserProfileHandler_ReturnsGrainProfile()
+    public async Task GetUserProfileHandler_ReturnsActorProfile()
     {
-        var factory = Substitute.For<IGrainFactory>();
-        var user = Substitute.For<IUserModelGrain>();
+        var factory = Substitute.For<IActorFactory>();
+        var user = Substitute.For<IUserModelActor>();
         var profile = new UserProfileState { UserId = "user-1", WorkspaceId = "ws-1" };
-        factory.GetGrain<IUserModelGrain>("ws-1/user-1", null).Returns(user);
+        factory.GetGrain<IUserModelActor>("ws-1/user-1", null).Returns(user);
         user.GetProfileAsync().Returns(profile);
 
-        var handler = new GetUserProfileHandler(factory);
+        var handler = new GetUserProfileHandler(new TestVirtualActorProvider(factory));
         var result = await handler.HandleAsync(
             new GetUserProfileQuery(Ws, "user-1"),
             TestContext.Current.CancellationToken);
@@ -186,18 +186,18 @@ public sealed class CqrsHandlerTests
     }
 
     [Fact]
-    public async Task SearchSkillsHandler_ReturnsGrainResults()
+    public async Task SearchSkillsHandler_ReturnsActorResults()
     {
-        var factory = Substitute.For<IGrainFactory>();
-        var memory = Substitute.For<ISkillMemoryGrain>();
+        var factory = Substitute.For<IActorFactory>();
+        var memory = Substitute.For<ISkillMemoryActor>();
         IReadOnlyList<SkillSearchResult> results =
         [
             new() { Skill = new SkillDocument { SkillId = SkillId.New(), Title = "t", Description = "d", Tags = [], Steps = [], ToolsUsed = [], CreatedByAgent = "a" }, RelevanceScore = 0.9 }
         ];
-        factory.GetGrain<ISkillMemoryGrain>("ws-1", null).Returns(memory);
+        factory.GetGrain<ISkillMemoryActor>("ws-1", null).Returns(memory);
         memory.SearchAsync("test", 5).Returns(results);
 
-        var handler = new SearchSkillsHandler(factory);
+        var handler = new SearchSkillsHandler(new TestVirtualActorProvider(factory));
         var result = await handler.HandleAsync(
             new SearchSkillsQuery(Ws, "test", 5),
             TestContext.Current.CancellationToken);

@@ -3,6 +3,7 @@ using Weave.Agents.Models;
 using Weave.Agents.Queries;
 using Weave.Shared.Cqrs;
 using Weave.Shared.Ids;
+using Weave.Shared.VirtualActors;
 
 namespace Weave.Silo.Api;
 
@@ -62,26 +63,26 @@ public static class UserEndpoints
         string workspaceId,
         string userId,
         SetDomainContextRequest request,
-        IGrainFactory grainFactory,
+        IVirtualActorProvider actors,
         CancellationToken ct)
     {
         var errors = ValidateKeyValue(request.Key, request.Value);
         if (errors is not null)
             return ResultExtensions.ValidationFailed(errors);
 
-        var grain = grainFactory.GetGrain<Agents.Grains.IUserModelGrain>($"{workspaceId}/{userId}");
-        await grain.SetDomainContextAsync(request.Key, request.Value);
+        var actor = actors.GetActor<Agents.Actors.IUserModelActor>(VirtualActorId.Combine(workspaceId, userId));
+        await actor.SetDomainContextAsync(request.Key, request.Value);
         return Results.NoContent();
     }
 
     private static async Task<IResult> ClearProfileAsync(
         string workspaceId,
         string userId,
-        IGrainFactory grainFactory,
+        IVirtualActorProvider actors,
         CancellationToken ct)
     {
-        var grain = grainFactory.GetGrain<Agents.Grains.IUserModelGrain>($"{workspaceId}/{userId}");
-        await grain.ClearAsync();
+        var actor = actors.GetActor<Agents.Actors.IUserModelActor>(VirtualActorId.Combine(workspaceId, userId));
+        await actor.ClearAsync();
         return Results.NoContent();
     }
 

@@ -14,8 +14,10 @@ using Weave.Shared.Events;
 using Weave.Shared.Lifecycle;
 using Weave.Shared.Plugins;
 using Weave.Silo.Api;
+using Weave.Silo.Configuration;
 using Weave.Silo.Plugins;
 using Weave.Silo.Security;
+using Weave.Silo.VirtualActors;
 using Weave.Tools.Connectors;
 using Weave.Tools.Discovery;
 using Weave.Workspaces.Models;
@@ -23,14 +25,14 @@ using Weave.Workspaces.Plugins;
 using Weave.Workspaces.Runtime;
 
 var builder = WebApplication.CreateBuilder(args);
+var weaveSettings = WeaveSettings.FromConfiguration(builder.Configuration);
 
 builder.Services.ConfigureHttpJsonOptions(options =>
 {
     options.SerializerOptions.TypeInfoResolverChain.Insert(0, SiloApiJsonContext.Default);
 });
 
-var isLocalMode = builder.Configuration.GetValue<bool>("Weave:LocalMode")
-    || builder.Configuration["Orleans:ClusterId"] is null;
+var isLocalMode = weaveSettings.IsLocalMode;
 
 builder.AddServiceDefaults();
 
@@ -49,7 +51,7 @@ if (isLocalMode)
     builder.Services.AddOrleans(siloBuilder =>
     {
         siloBuilder.UseLocalhostClustering();
-        ConfigureGrainStorage(siloBuilder, builder.Configuration);
+        ConfigureActorStorage(siloBuilder, weaveSettings.ActorStorage, builder.Configuration);
     });
 }
 else
@@ -57,18 +59,21 @@ else
     builder.UseOrleans();
 }
 
-// Configures grain storage based on Weave:Storage setting.
+// Configures virtual actor storage based on Weave actor storage settings.
 // Supported values: "memory" (default), "sqlite", "redis", "sqlserver", "postgresql"
-static void ConfigureGrainStorage(ISiloBuilder siloBuilder, IConfiguration configuration)
+static void ConfigureActorStorage(
+    ISiloBuilder siloBuilder,
+    WeaveSettings.ActorStorageSettings storageSettings,
+    IConfiguration configuration)
 {
-    var storage = configuration["Weave:Storage"]?.ToLowerInvariant() ?? "memory";
-    var schema = configuration["Weave:StorageSchema"];
-    var database = configuration["Weave:StorageDatabase"];
+    var storage = storageSettings.Provider.ToLowerInvariant();
+    var schema = storageSettings.Schema;
+    var database = storageSettings.Database;
 
     switch (storage)
     {
-        case "sqlite":
-            var sqliteConn = configuration.GetConnectionString("Sqlite")
+        case WeaveSettings.ActorStorageSettings.SqliteProvider:
+            var sqliteConn = configuration.GetConnectionString(WeaveSettings.ActorStorageSettings.SqliteConnectionName)
                 ?? DefaultSqlitePath();
             siloBuilder.AddAdoNetGrainStorageAsDefault(options =>
             {
@@ -77,9 +82,9 @@ static void ConfigureGrainStorage(ISiloBuilder siloBuilder, IConfiguration confi
             });
             break;
 
-        case "sqlserver":
-            var sqlConn = configuration.GetConnectionString("SqlServer")
-                ?? throw new InvalidOperationException("ConnectionStrings:SqlServer is required when Weave:Storage is 'sqlserver'.");
+        case WeaveSettings.ActorStorageSettings.SqlServerProvider:
+            var sqlConn = configuration.GetConnectionString(WeaveSettings.ActorStorageSettings.SqlServerConnectionName)
+                ?? throw new InvalidOperationException("ConnectionStrings:SqlServer is required when Weave actor storage provider is 'sqlserver'.");
             if (!string.IsNullOrWhiteSpace(database))
                 sqlConn = AppendIfMissing(sqlConn, $"Database={database}");
             else if (!string.IsNullOrWhiteSpace(schema))
@@ -96,9 +101,9 @@ static void ConfigureGrainStorage(ISiloBuilder siloBuilder, IConfiguration confi
             });
             break;
 
-        case "postgresql" or "postgres":
-            var pgConn = configuration.GetConnectionString("PostgreSql")
-                ?? throw new InvalidOperationException("ConnectionStrings:PostgreSql is required when Weave:Storage is 'postgresql'.");
+        case WeaveSettings.ActorStorageSettings.PostgreSqlProvider or WeaveSettings.ActorStorageSettings.PostgresProvider:
+            var pgConn = configuration.GetConnectionString(WeaveSettings.ActorStorageSettings.PostgreSqlConnectionName)
+                ?? throw new InvalidOperationException("ConnectionStrings:PostgreSql is required when Weave actor storage provider is 'postgresql'.");
             if (!string.IsNullOrWhiteSpace(database))
                 pgConn = AppendIfMissing(pgConn, $"Database={database}");
             if (!string.IsNullOrWhiteSpace(schema))
@@ -115,8 +120,8 @@ static void ConfigureGrainStorage(ISiloBuilder siloBuilder, IConfiguration confi
             });
             break;
 
-        case "redis":
-            var redisConn = configuration.GetConnectionString("Redis")
+        case WeaveSettings.ActorStorageSettings.RedisProvider:
+            var redisConn = configuration.GetConnectionString(WeaveSettings.ActorStorageSettings.RedisConnectionName)
                 ?? "localhost:6379";
             siloBuilder.AddRedisGrainStorageAsDefault(options =>
             {
@@ -147,10 +152,12 @@ static string DefaultSqlitePath()
 }
 
 // Shared kernel services
-// TimeProvider is injected into every grain / service that needs a clock.
+// TimeProvider is injected into every actor / service that needs a clock.
 // Production pins the system clock; tests swap FakeTimeProvider via DI.
 builder.Services.AddSingleton(TimeProvider.System);
 builder.Services.AddSingleton<ILifecycleManager, LifecycleManager>();
+builder.Services.AddSingleton(weaveSettings);
+builder.Services.AddSingleton<Weave.Shared.VirtualActors.IVirtualActorProvider, OrleansVirtualActorProvider>();
 
 builder.Services.AddSingleton<ICommandRunner, ProcessCommandRunner>();
 
@@ -160,7 +167,11 @@ if (isLocalMode)
 }
 else
 {
-    builder.Services.AddSingleton<IWorkspaceRuntime, PodmanRuntime>();
+    builder.Services.AddSingleton<IWorkspaceRuntime>(sp =>
+        new ContainerRuntime(
+            sp.GetRequiredService<ICommandRunner>(),
+            new ContainerRuntimeOptions { Engine = weaveSettings.ContainerRuntime.Engine },
+            sp.GetRequiredService<ILogger<ContainerRuntime>>()));
 }
 
 // Source-generated CQRS handler registration — no reflection
@@ -256,7 +267,7 @@ builder.Services.AddOpenApi();
 
 var app = builder.Build();
 
-if (builder.Configuration.GetValue<bool>("Weave:RequireHttps"))
+if (weaveSettings.RequireHttps)
     app.UseHttpsRedirection();
 
 app.UseAuditLog(auditOptions);
@@ -279,25 +290,21 @@ app.UseExceptionHandler(error => error.Run(async context =>
 var pluginRegistry = app.Services.GetRequiredService<IPluginRegistry>();
 
 // Environment-detected plugins (backward compat with DAPR_HTTP_PORT / Vault:Address)
-var daprPort = builder.Configuration["DAPR_HTTP_PORT"]
-    ?? Environment.GetEnvironmentVariable("DAPR_HTTP_PORT");
-if (daprPort is not null)
+if (weaveSettings.Dapr.HttpPort is not null)
 {
     await pluginRegistry.ConnectAsync("dapr", new PluginDefinition
     {
         Type = "dapr",
         Description = "Auto-detected Dapr sidecar",
-        Config = new Dictionary<string, string> { ["port"] = daprPort }
+        Config = new Dictionary<string, string> { ["port"] = weaveSettings.Dapr.HttpPort }
     });
 }
 
-var vaultAddress = builder.Configuration["Vault:Address"];
-if (vaultAddress is not null)
+if (weaveSettings.Vault.Address is not null)
 {
-    var vaultConfig = new Dictionary<string, string> { ["address"] = vaultAddress };
-    var vaultToken = builder.Configuration["Vault:Token"];
-    if (vaultToken is not null)
-        vaultConfig["token"] = vaultToken;
+    var vaultConfig = new Dictionary<string, string> { ["address"] = weaveSettings.Vault.Address };
+    if (weaveSettings.Vault.Token is not null)
+        vaultConfig["token"] = weaveSettings.Vault.Token;
 
     await pluginRegistry.ConnectAsync("vault", new PluginDefinition
     {
@@ -329,7 +336,7 @@ else
 if (auditOptions.Enabled)
     app.Logger.LogInformation("Audit logging: enabled");
 
-if (builder.Configuration.GetValue<bool>("Weave:RequireHttps"))
+if (weaveSettings.RequireHttps)
     app.Logger.LogInformation("HTTPS enforcement: enabled");
 
 app.MapDefaultEndpoints();

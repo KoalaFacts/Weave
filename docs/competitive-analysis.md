@@ -66,7 +66,7 @@ Weave occupies a distinct position in the AI agent landscape as a **.NET-native,
 | Capability | Weave | Hermes Agent | OpenClaw | Evlover |
 |---|---|---|---|---|
 | **Language / Runtime** | .NET 10 / Orleans | Python | Polyglot (single binary) | Python (sidecar) |
-| **Multi-agent orchestration** | Yes (supervisor, grains) | Limited (single-agent focus) | Limited (gateway-first) | Yes (evolution swarms) |
+| **Multi-agent orchestration** | Yes (supervisor, actors) | Limited (single-agent focus) | Limited (gateway-first) | Yes (evolution swarms) |
 | **Horizontal scaling** | Yes (Orleans silos, virtual actors) | Yes (Docker Compose/K8s) | No (single process) | Partial (sidecar per agent) |
 | **Tool protocol support** | MCP, CLI, OpenAPI, Dapr | MCP, 40+ built-in | 100+ AgentSkills, ClawHub | Gene fragments |
 | **Self-improving agents** | No | Yes (skill memory) | No | Yes (GEP evolution) |
@@ -84,7 +84,7 @@ Weave occupies a distinct position in the AI agent landscape as a **.NET-native,
 ## Where Weave Leads
 
 ### 1. Production-grade multi-agent orchestration
-Weave's Orleans foundation provides **virtual actor clustering, automatic grain placement, and fault tolerance** out of the box. No competitor offers anything close to this level of distributed systems maturity for multi-agent workloads. Hermes is single-agent-focused; OpenClaw is single-process; Evlover is a sidecar engine, not an orchestrator.
+Weave's Orleans foundation provides **virtual actor clustering, automatic actor placement, and fault tolerance** out of the box. No competitor offers anything close to this level of distributed systems maturity for multi-agent workloads. Hermes is single-agent-focused; OpenClaw is single-process; Evlover is a sidecar engine, not an orchestrator.
 
 ### 2. Security-first architecture
 Weave's **capability token model, leak scanning, secret proxy, and Vault integration** represent the most comprehensive security story in this space. OpenClaw's CVE history is a cautionary tale. Hermes relies on container isolation. Evlover has blast-radius controls but no credential management.
@@ -93,7 +93,7 @@ Weave's **capability token model, leak scanning, secret proxy, and Vault integra
 Orleans silos + Aspire + Dapr gives Weave a **cloud-native deployment story** that maps directly to how enterprises already run .NET services. This is a natural fit for organizations already invested in the .NET ecosystem.
 
 ### 4. Structured tool connectivity
-Supporting **MCP, CLI, OpenAPI, and Dapr HTTP** connectors with typed discovery and grain-based tool management is more architecturally sound than Hermes' flat tool list or OpenClaw's unvetted skill marketplace.
+Supporting **MCP, CLI, OpenAPI, and Dapr HTTP** connectors with typed discovery and actor-based tool management is more architecturally sound than Hermes' flat tool list or OpenClaw's unvetted skill marketplace.
 
 ### 5. CQRS + event-driven architecture
 The source-generated CQRS pipeline gives Weave a clean **audit trail and extensibility story** that competitors lack.
@@ -107,8 +107,8 @@ The source-generated CQRS pipeline gives Weave a clean **audit trail and extensi
 
 Both Hermes Agent and Evlover have made self-improvement their core differentiator. Hermes' skill memory system — where the agent autonomously creates structured skill documents after complex tasks — is compelling and measurably improves performance on recurring tasks.
 
-**Recommendation:** Implement a skill-memory system at the grain level:
-- Add a `SkillMemoryGrain` that captures successful multi-step task completions as structured skill documents.
+**Recommendation:** Implement a skill-memory system at the actor level:
+- Add a `SkillMemoryActor` that captures successful multi-step task completions as structured skill documents.
 - Index skills with embedding-based retrieval for similar future tasks.
 - This plays to Weave's strength: Orleans state management makes skill persistence and retrieval natural.
 
@@ -119,15 +119,15 @@ Hermes supports 15+ channels; OpenClaw supports 50+. Weave only has a CLI and Bl
 
 **Recommendation:** Prioritize a **channel gateway abstraction** in Weave:
 - Start with 3-5 high-value channels: Slack, Discord, Telegram, Microsoft Teams, Email.
-- Model channels as tool connectors or a new gateway grain.
-- The Orleans actor model naturally maps to per-channel or per-conversation grains.
+- Model channels as tool connectors or a new gateway actor.
+- The Orleans actor model naturally maps to per-channel or per-conversation actors.
 
 ### Gap 3: No user modeling / persistent memory (High)
 **Impact: High** | **Effort: Medium**
 
 Hermes' Honcho-based user modeling creates a deepening understanding of each user. Weave agents currently have no cross-session user context.
 
-**Recommendation:** Add a `UserProfileGrain` that accumulates preferences, interaction patterns, and domain context across sessions. This is a natural Orleans grain pattern.
+**Recommendation:** Add a `UserProfileActor` that accumulates preferences, interaction patterns, and domain context across sessions. This is a natural Orleans actor pattern.
 
 ### Gap 4: Limited community and ecosystem (High)
 **Impact: High** | **Effort: Ongoing**
@@ -144,7 +144,7 @@ OpenClaw's 247k stars and 44,000+ community skills vs. Weave's early-stage commu
 
 Hermes supports Modal and Daytona serverless backends. Weave's Orleans silo model assumes persistent infrastructure.
 
-**Recommendation:** Explore Orleans' existing grain activation/deactivation semantics for a "scale-to-zero" pattern, or provide a lightweight single-process mode for developer machines and edge scenarios.
+**Recommendation:** Explore Orleans' existing actor activation/deactivation semantics for a "scale-to-zero" pattern, or provide a lightweight single-process mode for developer machines and edge scenarios.
 
 ### Gap 6: No cross-agent capability inheritance (Medium)
 **Impact: Medium** | **Effort: High**
@@ -178,7 +178,7 @@ The AI/ML ecosystem overwhelmingly lives in Python. Hermes and Evlover are Pytho
 
 1. **Skill memory system** — neutralizes Hermes' biggest differentiator
 2. **Channel gateway** (Slack, Discord, Teams) — table-stakes for adoption
-3. **User modeling grain** — enables personalized agent behavior
+3. **User modeling actor** — enables personalized agent behavior
 4. **Curated skill/tool marketplace** — safe alternative to ClawHub
 5. **Capability templates** — lightweight response to Evlover's GEP
 

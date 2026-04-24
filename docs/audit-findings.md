@@ -8,7 +8,7 @@ Concrete debt found by the `code-auditor` + `silent-failure-hunter` adversarial 
 
 | # | Location | Finding | Status |
 |---|---|---|---|
-| 1 | [ToolGrain.cs:199-244](../src/Tools/Weave.Tools/Grains/ToolGrain.cs#L199-L244) | `catch (NullReferenceException) { }` silently fell through to `"unknown-workspace"`/`"tool"` identity — capability tokens mis-scoped. | ✅ Fixed — the catch remains (tests still need it as a bridge), but identity resolution now throws `InvalidOperationException` instead of defaulting to wrong values. |
+| 1 | [ToolActor.cs:199-244](../src/Tools/Weave.Tools/Actors/ToolActor.cs#L199-L244) | `catch (NullReferenceException) { }` silently fell through to `"unknown-workspace"`/`"tool"` identity — capability tokens mis-scoped. | ✅ Fixed — the catch remains (tests still need it as a bridge), but identity resolution now throws `InvalidOperationException` instead of defaulting to wrong values. |
 | 2 | [AgentChatClientFactory.cs](../src/Assistants/Weave.Agents/Pipeline/AgentChatClientFactory.cs) | Singleton holding `IServiceProvider`; same scope-leak class as `CommandDispatcher`. | ✅ Fixed — takes `IServiceScopeFactory` and opens a per-call scope. |
 | 3 | [AuditLogMiddleware.cs](../src/Runtime/Weave.Silo/Security/AuditLogMiddleware.cs) | `app.ApplicationServices.GetRequiredService<AuditOptions>()` — service-locator pattern at startup. | ✅ Fixed — `UseAuditLog(this IApplicationBuilder, AuditOptions)` takes options explicitly. |
 
@@ -27,9 +27,9 @@ Concrete debt found by the `code-auditor` + `silent-failure-hunter` adversarial 
 
 | # | Location | Finding | Status |
 |---|---|---|---|
-| 9b | `CapabilityTemplateGrain.ListPublishedAsync`, `SearchAsync` | `IReadOnlyList<T> x = [.. ...]` produced synthesized `<>z__ReadOnlyList<T>` that Orleans has no codec for. | ✅ Fixed — assign to `List<T>` explicitly; runtime type becomes `List<T>` which Orleans handles natively. |
-| 9c | `ToolRegistryGrain.GetAllConnectionsAsync` | Same synthesized-type trap. | ✅ Fixed. |
-| 9d | `SkillMemoryGrain.SearchAsync` | `IReadOnlyList<T> empty = [];` also emits the synthesized type. | ✅ Fixed — returns `new List<T>()` instead. |
+| 9b | `CapabilityTemplateActor.ListPublishedAsync`, `SearchAsync` | `IReadOnlyList<T> x = [.. ...]` produced synthesized `<>z__ReadOnlyList<T>` that Orleans has no codec for. | ✅ Fixed — assign to `List<T>` explicitly; runtime type becomes `List<T>` which Orleans handles natively. |
+| 9c | `ToolRegistryActor.GetAllConnectionsAsync` | Same synthesized-type trap. | ✅ Fixed. |
+| 9d | `SkillMemoryActor.SearchAsync` | `IReadOnlyList<T> empty = [];` also emits the synthesized type. | ✅ Fixed — returns `new List<T>()` instead. |
 
 ## Missing integration-test coverage
 
@@ -64,7 +64,7 @@ All still ⏳ — these are case-by-case fixes, not bulk-replaceable:
 |---|---|---|
 | 25 | [`DataCommands.cs:289, 306`](../src/UX/Weave.Cli/Commands/DataCommands.cs#L289) | `weave data import` silently eats per-item exceptions. |
 | 26 | [`VersionInfo.cs:107`](../src/UX/Weave.Cli/Commands/VersionInfo.cs#L107) | Fire-and-forget `Task.Run` with empty catch. |
-| 27 | [`AgentGrain.cs:221`](../src/Assistants/Weave.Agents/Grains/AgentGrain.cs#L221) | `_ = verifier.VerifyAsync(...)` — fire-and-forget **grain** call. |
+| 27 | [`AgentActor.cs:221`](../src/Assistants/Weave.Agents/Actors/AgentActor.cs#L221) | `_ = verifier.VerifyAsync(...)` — fire-and-forget **actor** call. |
 | 28 | [`RunCommand.cs:338`](../src/UX/Weave.Cli/Commands/RunCommand.cs#L338) | `TryKill(process)` empty catch. |
 | 29 | [`InitCommand.cs:172`](../src/UX/Weave.Cli/Commands/InitCommand.cs#L172) | `ResolveConnectionString` failure silently returns null. |
 | 30 | [`TuiApp.cs:673-676`](../src/UX/Weave.Cli/Tui/TuiApp.cs#L673-L676) | `FetchAgentNamesAsync` falls through to manifest on any exception. |

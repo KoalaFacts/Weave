@@ -12,7 +12,7 @@ namespace Weave.SourceGen;
 /// <see cref="System.ComponentModel.TypeConverter"/>, and a
 /// <see cref="System.Text.Json.Serialization.JsonConverter{T}"/>.
 ///
-/// Orleans cross-grain serialization adapters live in a separate
+/// Orleans cross-actor serialization adapters live in a separate
 /// assembly (<c>Weave.Shared.Orleans</c>) so this generator — and the
 /// <c>Weave.Shared</c> assembly itself — stay Orleans-free.
 /// </summary>

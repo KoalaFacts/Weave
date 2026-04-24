@@ -51,9 +51,9 @@ public sealed class ChannelEndpointHappyPathTests : IClassFixture<SiloFactory>
         using var client = _factory.CreateClient();
         var ws = $"ws-{Guid.NewGuid():N}";
 
-        // Activate the target agent first — ChannelGatewayGrain routes
-        // inbound messages to the agent via IAgentGrain.SendAsync, so the
-        // agent must be Active or the grain call throws.
+        // Activate the target agent first — ChannelGatewayActor routes
+        // inbound messages to the agent via IAgentActor.SendAsync, so the
+        // agent must be Active or the actor call throws.
         using var activateResponse = await client.PostAsJsonAsync(
             $"/api/workspaces/{ws}/agents/support/activate",
             new { Definition = new { Model = "gpt-4o-mini" } },

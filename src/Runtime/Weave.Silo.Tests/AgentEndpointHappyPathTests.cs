@@ -8,7 +8,7 @@ namespace Weave.Silo.Tests;
 /// Happy-path integration tests for <see cref="Api.AgentEndpoints"/>. The
 /// Silo's composition root wires <c>FallbackChatClient</c> as the default
 /// <c>IChatClient</c>, so these tests can drive the full chain —
-/// HTTP → CQRS → grain → chat pipeline → in-process LLM stub — without
+/// HTTP → CQRS → actor → chat pipeline → in-process LLM stub — without
 /// any external network calls or mocks.
 /// </summary>
 public sealed class AgentEndpointHappyPathTests : IClassFixture<SiloFactory>

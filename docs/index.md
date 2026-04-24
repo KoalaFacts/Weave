@@ -41,34 +41,34 @@ Weave.AppHost (Aspire orchestrator)
 | Document | Subsystem | Source Path | Key Concepts |
 |----------|-----------|-------------|--------------|
 | [foundation.md](foundation.md) | Shared + SourceGen | `src/Foundation/` | Branded IDs, CQRS dispatch, domain events, lifecycle hooks, SecretValue, source generators |
-| [workspaces.md](workspaces.md) | Workspaces | `src/Workspaces/` | Workspace manifest (JSONC), manifest parser/validator, runtime abstraction (InProcess/Podman), workspace grain, plugin registry |
-| [assistants.md](assistants.md) | Agents | `src/Assistants/` | Agent grain, supervisor, heartbeat scheduling, chat pipeline (rate limiting, cost tracking), task management, proof-of-work verification |
-| [tools.md](tools.md) | Tools | `src/Tools/` | Tool connectors (MCP, CLI, OpenAPI, Dapr, DirectHTTP), tool grain with security scanning, tool discovery service |
+| [workspaces.md](workspaces.md) | Workspaces | `src/Workspaces/` | Workspace manifest (JSONC), manifest parser/validator, runtime abstraction (InProcess/Podman), workspace actor, plugin registry |
+| [assistants.md](assistants.md) | Agents | `src/Assistants/` | Agent actor, supervisor, heartbeat scheduling, chat pipeline (rate limiting, cost tracking), task management, proof-of-work verification |
+| [tools.md](tools.md) | Tools | `src/Tools/` | Tool connectors (MCP, CLI, OpenAPI, Dapr, DirectHTTP), tool actor with security scanning, tool discovery service |
 | [security.md](security.md) | Security | `src/Security/` | Capability tokens (HMAC-SHA256), leak scanner (15 patterns + entropy), secret proxy, Vault/InMemory secret providers |
 | [deployment.md](deployment.md) | Deployment | `src/Deployment/` | Publishers: Docker Compose, Kubernetes, Nomad, Fly.io, GitHub Actions |
 | [runtime.md](runtime.md) | Runtime | `src/Runtime/` | Orleans Silo host, Aspire AppHost, plugin wiring (Dapr/Vault), REST API, CQRS handler registration |
 | [ux.md](ux.md) | CLI + Dashboard | `src/UX/` | CLI commands (System.CommandLine + Spectre.Console), Blazor dashboard (FluentUI), workspace presets |
-| [examples.md](examples.md) | Code Examples | (cross-cutting) | Manifest authoring, CLI usage, grains, CQRS handlers, tokens, events, lifecycle hooks, testing patterns |
+| [examples.md](examples.md) | Code Examples | (cross-cutting) | Manifest authoring, CLI usage, actors, CQRS handlers, tokens, events, lifecycle hooks, testing patterns |
 
 ## Cross-Subsystem Interactions
 
 ### Workspace Startup Flow
-`CLI/Dashboard` → `POST /api/workspaces` → `Silo (CQRS)` → `WorkspaceGrain.StartAsync()` → `Runtime.ProvisionAsync()` → `ToolRegistryGrain.ConnectToolsAsync()` → `AgentSupervisorGrain.ActivateAllAsync()` → `HeartbeatGrain.StartAsync()`
+`CLI/Dashboard` → `POST /api/workspaces` → `Silo (CQRS)` → `WorkspaceActor.StartAsync()` → `Runtime.ProvisionAsync()` → `ToolRegistryActor.ConnectToolsAsync()` → `AgentSupervisorActor.ActivateAllAsync()` → `HeartbeatActor.StartAsync()`
 
 ### Tool Invocation Security Flow
-`AgentGrain.SendAsync()` → `ToolRegistryGrain.ResolveAsync()` → validate `CapabilityToken` → `SecretProxyGrain.SubstituteAsync()` → `LeakScanner` (outbound) → `ToolConnector.InvokeAsync()` → `LeakScanner` (inbound) → result
+`AgentActor.SendAsync()` → `ToolRegistryActor.ResolveAsync()` → validate `CapabilityToken` → `SecretProxyActor.SubstituteAsync()` → `LeakScanner` (outbound) → `ToolConnector.InvokeAsync()` → `LeakScanner` (inbound) → result
 
 ### Plugin Hot-Swap Flow
 `POST /api/plugins` → `PluginRegistry.ConnectAsync()` → `PluginConnector.ConnectAsync()` → `PluginServiceBroker.Swap<T>()` → `EventBusProxy` replays subscriptions
 
 ### Secret Resolution Flow
-`{secret:path}` placeholder → `SecretProxyGrain.SubstituteAsync()` → `ISecretProvider.ResolveAsync()` (Vault or InMemory via `SecretProviderProxy`) → `TransparentSecretProxy.SubstitutePlaceholders()` → actual value injected
+`{secret:path}` placeholder → `SecretProxyActor.SubstituteAsync()` → `ISecretProvider.ResolveAsync()` (Vault or InMemory via `SecretProviderProxy`) → `TransparentSecretProxy.SubstitutePlaceholders()` → actual value injected
 
 ## Key Patterns
 
 | Pattern | Where Used | Purpose |
 |---------|-----------|---------|
-| Orleans Grains | Agents, Tools, Workspaces, Security | Distributed stateful actors |
+| Orleans Actors | Agents, Tools, Workspaces, Security | Distributed stateful actors |
 | CQRS | Foundation → Silo | Command/query separation with source-generated handlers |
 | Domain Events | All subsystems | Pub/sub via EventBus (InProcess, Dapr, or Webhook) |
 | Lifecycle Hooks | Workspaces, Tools, Agents | Extensible pre/post phase callbacks |
@@ -76,20 +76,20 @@ Weave.AppHost (Aspire orchestrator)
 | Plugin Hot-Swap | Runtime, Foundation | PluginServiceBroker enables runtime service replacement |
 | Source Generation | Foundation | Zero-reflection branded IDs and CQRS registration |
 
-## Grain Key Reference
+## Actor Key Reference
 
-| Grain | Key Format | Example |
+| Actor | Key Format | Example |
 |-------|-----------|---------|
-| WorkspaceGrain | `{workspaceId}` | `ws-abc123` |
-| WorkspaceRegistryGrain | `"active"` (singleton) | `active` |
-| AgentGrain | `{workspaceId}/{agentName}` | `ws-abc123/researcher` |
-| AgentSupervisorGrain | `{workspaceId}` | `ws-abc123` |
-| HeartbeatGrain | `{workspaceId}/{agentName}` | `ws-abc123/researcher` |
-| ToolGrain | `{workspaceId}/{toolName}` | `ws-abc123/web-search` |
-| ToolRegistryGrain | `{workspaceId}` | `ws-abc123` |
-| ProofVerifierGrain | `{workspaceId}` | `ws-abc123` |
-| ProofValidatorGrain | `{workspaceId}/validator-{n}` | `ws-abc123/validator-0` |
-| SecretProxyGrain | `{workspaceId}` | `ws-abc123` |
+| WorkspaceActor | `{workspaceId}` | `ws-abc123` |
+| WorkspaceRegistryActor | `"active"` (singleton) | `active` |
+| AgentActor | `{workspaceId}/{agentName}` | `ws-abc123/researcher` |
+| AgentSupervisorActor | `{workspaceId}` | `ws-abc123` |
+| HeartbeatActor | `{workspaceId}/{agentName}` | `ws-abc123/researcher` |
+| ToolActor | `{workspaceId}/{toolName}` | `ws-abc123/web-search` |
+| ToolRegistryActor | `{workspaceId}` | `ws-abc123` |
+| ProofVerifierActor | `{workspaceId}` | `ws-abc123` |
+| ProofValidatorActor | `{workspaceId}/validator-{n}` | `ws-abc123/validator-0` |
+| SecretProxyActor | `{workspaceId}` | `ws-abc123` |
 
 ## API Surface
 

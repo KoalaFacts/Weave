@@ -6,10 +6,10 @@ namespace Weave.Silo.Tests;
 
 /// <summary>
 /// End-to-end marketplace tests — submit → publish → rate → deprecate
-/// over real HTTP against a real grain. Covers every branch of
+/// over real HTTP against a real actor. Covers every branch of
 /// <c>MarketplaceEndpoints</c> including validation, search, and
 /// not-found paths. Each test uses unique item names to avoid
-/// cross-test contamination (the marketplace grain is singleton keyed "global").
+/// cross-test contamination (the marketplace actor is singleton keyed "global").
 /// </summary>
 public sealed class MarketplaceLifecycleTests : IClassFixture<SiloFactory>
 {

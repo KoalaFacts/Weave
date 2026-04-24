@@ -5,7 +5,7 @@ namespace Weave.Shared.Tests;
 
 /// <summary>
 /// Record behaviour for <see cref="LifecycleContext"/>. The context
-/// flows through lifecycle hooks and grain calls, so equality,
+/// flows through lifecycle hooks and actor calls, so equality,
 /// default values, and mutation semantics all matter.
 /// </summary>
 public sealed class LifecycleContextTests

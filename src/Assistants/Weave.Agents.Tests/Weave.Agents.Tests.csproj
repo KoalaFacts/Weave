@@ -11,7 +11,7 @@
     <!-- Required for Orleans TestCluster tests: Weave.Silo.Serialization owns the
          branded-ID surrogates (WorkspaceIdSurrogate, AgentTaskIdSurrogate, …) that
          Orleans' SerializerConfigurationValidator checks at silo startup. Without
-         this, TestCluster.Deploy() fails with CodecNotFoundException even for grain
+         this, TestCluster.Deploy() fails with CodecNotFoundException even for actor
          methods the test doesn't call. Production test projects may reference across
          the dependency graph — the flow rule in docs/best-practices.md applies to
          source-project references, not test-project references. -->

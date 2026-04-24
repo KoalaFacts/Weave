@@ -1,5 +1,6 @@
 using Weave.Shared.Ids;
-using Weave.Workspaces.Grains;
+using Weave.Shared.VirtualActors;
+using Weave.Workspaces.Actors;
 using Weave.Workspaces.Models;
 
 namespace Weave.Silo.Api;
@@ -41,32 +42,32 @@ public static class TemplateEndpoints
     private static async Task<IResult> ListPublishedAsync(
         int? offset,
         int? limit,
-        IGrainFactory grainFactory,
+        IVirtualActorProvider actors,
         CancellationToken ct)
     {
-        var grain = grainFactory.GetGrain<ICapabilityTemplateGrain>("global");
-        var templates = await grain.ListPublishedAsync(offset ?? 0, limit ?? 50);
+        var actor = GetTemplates(actors);
+        var templates = await actor.ListPublishedAsync(offset ?? 0, limit ?? 50);
         return Results.Ok(templates.Select(TemplateResponse.FromTemplate));
     }
 
     private static async Task<IResult> SearchAsync(
         string? q,
         int? max,
-        IGrainFactory grainFactory,
+        IVirtualActorProvider actors,
         CancellationToken ct)
     {
-        var grain = grainFactory.GetGrain<ICapabilityTemplateGrain>("global");
-        var templates = await grain.SearchAsync(q, max ?? 20);
+        var actor = GetTemplates(actors);
+        var templates = await actor.SearchAsync(q, max ?? 20);
         return Results.Ok(templates.Select(TemplateResponse.FromTemplate));
     }
 
     private static async Task<IResult> GetTemplateAsync(
         string templateId,
-        IGrainFactory grainFactory,
+        IVirtualActorProvider actors,
         CancellationToken ct)
     {
-        var grain = grainFactory.GetGrain<ICapabilityTemplateGrain>("global");
-        var template = await grain.GetAsync(TemplateId.From(templateId));
+        var actor = GetTemplates(actors);
+        var template = await actor.GetAsync(TemplateId.From(templateId));
         if (template is null)
             return ResultExtensions.NotFound($"Template '{templateId}' not found.");
 
@@ -75,7 +76,7 @@ public static class TemplateEndpoints
 
     private static async Task<IResult> RegisterAsync(
         RegisterTemplateRequest request,
-        IGrainFactory grainFactory,
+        IVirtualActorProvider actors,
         CancellationToken ct)
     {
         var errors = ValidateRegister(request);
@@ -96,20 +97,20 @@ public static class TemplateEndpoints
             DefaultParameters = request.DefaultParameters ?? []
         };
 
-        var grain = grainFactory.GetGrain<ICapabilityTemplateGrain>("global");
-        var stored = await grain.RegisterAsync(template);
+        var actor = GetTemplates(actors);
+        var stored = await actor.RegisterAsync(template);
         return Results.Created($"/api/templates/{stored.TemplateId}", TemplateResponse.FromTemplate(stored));
     }
 
     private static async Task<IResult> PublishAsync(
         string templateId,
-        IGrainFactory grainFactory,
+        IVirtualActorProvider actors,
         CancellationToken ct)
     {
         try
         {
-            var grain = grainFactory.GetGrain<ICapabilityTemplateGrain>("global");
-            var template = await grain.ValidateAndPublishAsync(TemplateId.From(templateId));
+            var actor = GetTemplates(actors);
+            var template = await actor.ValidateAndPublishAsync(TemplateId.From(templateId));
             if (template.Status != TemplateStatus.Published)
                 return ResultExtensions.UnprocessableEntity("Template validation failed. Check validationResults.");
 
@@ -123,13 +124,13 @@ public static class TemplateEndpoints
 
     private static async Task<IResult> DeprecateAsync(
         string templateId,
-        IGrainFactory grainFactory,
+        IVirtualActorProvider actors,
         CancellationToken ct)
     {
         try
         {
-            var grain = grainFactory.GetGrain<ICapabilityTemplateGrain>("global");
-            await grain.DeprecateAsync(TemplateId.From(templateId));
+            var actor = GetTemplates(actors);
+            await actor.DeprecateAsync(TemplateId.From(templateId));
             return Results.NoContent();
         }
         catch (KeyNotFoundException ex)
@@ -153,4 +154,7 @@ public static class TemplateEndpoints
 
         return errors;
     }
+
+    private static ICapabilityTemplateActor GetTemplates(IVirtualActorProvider actors) =>
+        actors.GetActor<ICapabilityTemplateActor>(VirtualActorId.From("global"));
 }

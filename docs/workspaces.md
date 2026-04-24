@@ -3,14 +3,14 @@
 > **Source**: `src/Workspaces/` | **Depends on**: [Foundation](foundation.md) | **Depended on by**: [Assistants](assistants.md), [Tools](tools.md), [Security](security.md), [Deployment](deployment.md), [Runtime](runtime.md), [UX](ux.md)
 > **See also**: [index](index.md)
 
-The Workspaces subsystem handles workspace manifest parsing, validation, runtime environment provisioning, and workspace lifecycle management through Orleans grains.
+The Workspaces subsystem handles workspace manifest parsing, validation, runtime environment provisioning, and workspace lifecycle management through Orleans actors.
 
 ## Projects
 
 | Project | Purpose |
 |---------|---------|
-| `Weave.Workspaces` | Manifest model, parser, runtime abstraction, grains, plugins |
-| `Weave.Workspaces.Tests` | Unit tests for parsing, grains, runtime, plugins, commands |
+| `Weave.Workspaces` | Manifest model, parser, runtime abstraction, actors, plugins |
+| `Weave.Workspaces.Tests` | Unit tests for parsing, actors, runtime, plugins, commands |
 
 ## Workspace Manifest
 
@@ -157,7 +157,19 @@ public interface IWorkspaceRuntime
 | Runtime | Name | Description |
 |---------|------|-------------|
 | `InProcessRuntime` | `in-process` | No containers. Returns empty environment. For development/testing. |
-| `PodmanRuntime` | `podman` | Uses Podman CLI for real container and network management with security defaults (read-only, drop all capabilities). |
+| `ContainerRuntime` | `podman` / `docker` | Uses the configured OCI-compatible CLI for real container and network management with security defaults (read-only, drop all capabilities). |
+
+The Silo distributed runtime uses `ContainerRuntime`. Select the engine with:
+
+```jsonc
+{
+  "Weave": {
+    "ContainerRuntime": {
+      "Engine": "docker" // or "podman"
+    }
+  }
+}
+```
 
 ### Container Spec
 
@@ -175,9 +187,9 @@ ContainerSpec {
 }
 ```
 
-## Grains
+## Actors
 
-### WorkspaceGrain
+### WorkspaceActor
 
 **Key**: `{workspaceId}` — **State**: `[PersistentState("workspace", "Default")]`
 
@@ -189,7 +201,7 @@ ContainerSpec {
 
 **State transitions**: `Stopped → Starting → Running → Stopping → Stopped` (or `Error` on failure).
 
-### WorkspaceRegistryGrain
+### WorkspaceRegistryActor
 
 **Key**: `"active"` (singleton) — **State**: `[PersistentState("workspace-registry", "Default")]`
 
@@ -214,9 +226,9 @@ WorkspaceState {
 
 | Type | Name | Handler Behavior |
 |------|------|-----------------|
-| Command | `StartWorkspaceCommand` | Starts grain → registers in registry → connects tools → configures access → activates agents → starts heartbeats |
-| Command | `StopWorkspaceCommand` | Stops heartbeats → deactivates agents → disconnects tools → stops grain → unregisters |
-| Query | `GetWorkspaceStateQuery` | Delegates to `WorkspaceGrain.GetStateAsync()` |
+| Command | `StartWorkspaceCommand` | Starts actor → registers in registry → connects tools → configures access → activates agents → starts heartbeats |
+| Command | `StopWorkspaceCommand` | Stops heartbeats → deactivates agents → disconnects tools → stops actor → unregisters |
+| Query | `GetWorkspaceStateQuery` | Delegates to `WorkspaceActor.GetStateAsync()` |
 | Query | `GetAllWorkspaceStatesQuery` | Queries registry → fetches all states → returns sorted |
 
 ## Events
@@ -257,8 +269,8 @@ public interface IPluginConnector
 Tests use xUnit v3, Shouldly, and NSubstitute. Key test files:
 
 - `ManifestParserTests` — 50+ tests: parsing, validation, JSONC, round-trip serialization
-- `WorkspaceGrainTests` — lifecycle transitions, error handling, hook invocation
-- `InProcessRuntimeTests` — runtime name, no-op operations, grain integration
-- `WorkspaceRegistryGrainTests` — idempotent register/unregister
+- `WorkspaceActorTests` — lifecycle transitions, error handling, hook invocation
+- `InProcessRuntimeTests` — runtime name, no-op operations, actor integration
+- `WorkspaceRegistryActorTests` — idempotent register/unregister
 - `PluginRegistryTests` — 30+ tests: connect/disconnect, hot-swap, config resolution, secret redaction
 - `WorkspaceCommandHandlerTests` — full orchestration flows for start/stop

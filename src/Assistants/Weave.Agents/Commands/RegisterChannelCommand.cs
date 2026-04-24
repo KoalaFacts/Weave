@@ -1,19 +1,20 @@
-using Weave.Agents.Grains;
+using Weave.Agents.Actors;
 using Weave.Agents.Models;
 using Weave.Shared.Cqrs;
 using Weave.Shared.Ids;
+using Weave.Shared.VirtualActors;
 
 namespace Weave.Agents.Commands;
 
 public sealed record RegisterChannelCommand(WorkspaceId WorkspaceId, ChannelConfig Config);
 
-public sealed class RegisterChannelHandler(IGrainFactory grainFactory)
+public sealed class RegisterChannelHandler(IVirtualActorProvider actors)
     : ICommandHandler<RegisterChannelCommand, bool>
 {
     public async Task<bool> HandleAsync(RegisterChannelCommand command, CancellationToken ct)
     {
-        var grain = grainFactory.GetGrain<IChannelGatewayGrain>(command.WorkspaceId.ToString());
-        await grain.RegisterChannelAsync(command.Config);
+        var actor = actors.GetActor<IChannelGatewayActor>(VirtualActorId.From(command.WorkspaceId.ToString()));
+        await actor.RegisterChannelAsync(command.Config);
         return true;
     }
 }

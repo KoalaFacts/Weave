@@ -7,7 +7,7 @@ namespace Weave.Silo.Tests;
 /// <summary>
 /// End-to-end capability template tests — register → get → publish →
 /// deprecate, plus validation and not-found paths. Templates are
-/// globally-scoped (grain key "global"), so each test uses unique
+/// globally-scoped (actor key "global"), so each test uses unique
 /// names and is tolerant of existing state.
 /// </summary>
 public sealed class TemplateLifecycleTests : IClassFixture<SiloFactory>

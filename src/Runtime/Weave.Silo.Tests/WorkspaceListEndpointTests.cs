@@ -4,7 +4,7 @@ namespace Weave.Silo.Tests;
 
 /// <summary>
 /// Dedicated isolated fixture for GET /api/workspaces. Builds its own
-/// <see cref="SiloFactory"/> per test run so grain contamination from
+/// <see cref="SiloFactory"/> per test run so actor contamination from
 /// other test classes (which share a <c>IClassFixture&lt;SiloFactory&gt;</c>)
 /// can't leak registered workspace IDs into the list handler and push it
 /// into a 500.

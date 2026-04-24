@@ -1,7 +1,7 @@
 <Project Sdk="Microsoft.NET.Sdk">
 
   <PropertyGroup>
-    <Description>Roslyn source generator for Weave — compile-time code generation for Orleans grains and serialization.</Description>
+    <Description>Roslyn source generator for Weave — compile-time code generation for Orleans actors and serialization.</Description>
     <TargetFramework>netstandard2.0</TargetFramework>
     <LangVersion>latest</LangVersion>
     <IsAotCompatible>false</IsAotCompatible>

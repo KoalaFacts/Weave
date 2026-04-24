@@ -12,7 +12,7 @@
 
   <ItemGroup>
     <!-- Weave.Shared is Orleans-free. Every type here that crosses
-         grain boundaries (DomainEvent, LifecycleContext, SecretValue,
+         actor boundaries (DomainEvent, LifecycleContext, SecretValue,
          branded IDs) has its Orleans serialization adapters in
          Weave.Shared.Orleans. -->
     <PackageReference Include="System.Text.Json" PrivateAssets="all" GeneratePathProperty="true" />

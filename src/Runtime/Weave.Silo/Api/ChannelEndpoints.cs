@@ -3,6 +3,7 @@ using Weave.Agents.Models;
 using Weave.Agents.Queries;
 using Weave.Shared.Cqrs;
 using Weave.Shared.Ids;
+using Weave.Shared.VirtualActors;
 
 namespace Weave.Silo.Api;
 
@@ -71,11 +72,11 @@ public static class ChannelEndpoints
     private static async Task<IResult> UnregisterChannelAsync(
         string workspaceId,
         string channelId,
-        IGrainFactory grainFactory,
+        IVirtualActorProvider actors,
         CancellationToken ct)
     {
-        var grain = grainFactory.GetGrain<Agents.Grains.IChannelGatewayGrain>(workspaceId);
-        await grain.UnregisterChannelAsync(ChannelId.From(channelId));
+        var actor = actors.GetActor<Agents.Actors.IChannelGatewayActor>(VirtualActorId.From(workspaceId));
+        await actor.UnregisterChannelAsync(ChannelId.From(channelId));
         return Results.NoContent();
     }
 

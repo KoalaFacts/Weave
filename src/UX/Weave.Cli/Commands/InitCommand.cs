@@ -188,7 +188,7 @@ internal static class InitCommand
                 if (storageKey is "postgresql" or "sqlserver")
                 {
                     AnsiConsole.WriteLine();
-                    CliTheme.WriteInfo("Orleans requires database tables for grain storage and clustering.");
+                    CliTheme.WriteInfo("Orleans requires database tables for actor storage and clustering.");
                     CliTheme.WriteMuted("  SQL scripts: https://learn.microsoft.com/dotnet/orleans/host/configuration-guide/adonet-configuration");
                     CliTheme.WriteMuted("  Run the Main and Persistence scripts for your database before starting.");
                 }

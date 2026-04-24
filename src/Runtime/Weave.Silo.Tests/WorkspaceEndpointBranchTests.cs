@@ -18,7 +18,7 @@ public sealed class WorkspaceEndpointBranchTests : IClassFixture<SiloFactory>
     [Fact]
     public async Task GetState_UnknownId_DoesNot500()
     {
-        // WorkspaceGrain auto-activates on any access, so unknown IDs won't
+        // WorkspaceActor auto-activates on any access, so unknown IDs won't
         // return 404 today. Document current behavior: endpoint must at least
         // not crash — a future fix (status/started-at check) should flip this
         // to explicit 404.

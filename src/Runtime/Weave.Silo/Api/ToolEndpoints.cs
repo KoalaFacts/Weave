@@ -1,4 +1,5 @@
-using Weave.Agents.Grains;
+using Weave.Agents.Actors;
+using Weave.Shared.VirtualActors;
 
 namespace Weave.Silo.Api;
 
@@ -24,22 +25,22 @@ public static class ToolEndpoints
 
     private static async Task<IResult> GetAllToolsAsync(
         string workspaceId,
-        IGrainFactory grainFactory,
+        IVirtualActorProvider actors,
         CancellationToken ct)
     {
-        var grain = grainFactory.GetGrain<IToolRegistryGrain>(workspaceId);
-        var connections = await grain.GetAllConnectionsAsync();
+        var actor = actors.GetActor<IToolRegistryActor>(VirtualActorId.From(workspaceId));
+        var connections = await actor.GetAllConnectionsAsync();
         return Results.Ok(connections.Select(ToolConnectionResponse.FromConnection));
     }
 
     private static async Task<IResult> GetToolAsync(
         string workspaceId,
         string toolName,
-        IGrainFactory grainFactory,
+        IVirtualActorProvider actors,
         CancellationToken ct)
     {
-        var grain = grainFactory.GetGrain<IToolRegistryGrain>(workspaceId);
-        var connection = await grain.GetConnectionAsync(toolName);
+        var actor = actors.GetActor<IToolRegistryActor>(VirtualActorId.From(workspaceId));
+        var connection = await actor.GetConnectionAsync(toolName);
         if (connection is null)
             return ResultExtensions.NotFound($"Tool '{toolName}' not found in workspace '{workspaceId}'.");
 

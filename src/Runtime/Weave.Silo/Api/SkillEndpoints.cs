@@ -3,6 +3,7 @@ using Weave.Agents.Models;
 using Weave.Agents.Queries;
 using Weave.Shared.Cqrs;
 using Weave.Shared.Ids;
+using Weave.Shared.VirtualActors;
 
 namespace Weave.Silo.Api;
 
@@ -113,11 +114,11 @@ public static class SkillEndpoints
     private static async Task<IResult> RemoveSkillAsync(
         string workspaceId,
         string skillId,
-        IGrainFactory grainFactory,
+        IVirtualActorProvider actors,
         CancellationToken ct)
     {
-        var grain = grainFactory.GetGrain<Agents.Grains.ISkillMemoryGrain>(workspaceId);
-        await grain.RemoveSkillAsync(SkillId.From(skillId));
+        var actor = actors.GetActor<Agents.Actors.ISkillMemoryActor>(VirtualActorId.From(workspaceId));
+        await actor.RemoveSkillAsync(SkillId.From(skillId));
         return Results.NoContent();
     }
 

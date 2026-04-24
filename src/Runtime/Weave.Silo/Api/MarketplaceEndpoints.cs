@@ -1,5 +1,6 @@
 using Weave.Shared.Ids;
-using Weave.Tools.Grains;
+using Weave.Shared.VirtualActors;
+using Weave.Tools.Actors;
 using Weave.Tools.Models;
 
 namespace Weave.Silo.Api;
@@ -45,11 +46,11 @@ public static class MarketplaceEndpoints
     private static async Task<IResult> GetPublishedAsync(
         int? offset,
         int? limit,
-        IGrainFactory grainFactory,
+        IVirtualActorProvider actors,
         CancellationToken ct)
     {
-        var grain = grainFactory.GetGrain<IMarketplaceGrain>("global");
-        var items = await grain.GetPublishedAsync(offset ?? 0, limit ?? 50);
+        var actor = GetMarketplace(actors);
+        var items = await actor.GetPublishedAsync(offset ?? 0, limit ?? 50);
         return Results.Ok(items.Select(MarketplaceItemResponse.FromItem));
     }
 
@@ -57,7 +58,7 @@ public static class MarketplaceEndpoints
         string? q,
         string? category,
         int? max,
-        IGrainFactory grainFactory,
+        IVirtualActorProvider actors,
         CancellationToken ct)
     {
         MarketplaceItemCategory? cat = null;
@@ -71,18 +72,18 @@ public static class MarketplaceEndpoints
             cat = parsed;
         }
 
-        var grain = grainFactory.GetGrain<IMarketplaceGrain>("global");
-        var items = await grain.SearchAsync(q, cat, max ?? 20);
+        var actor = GetMarketplace(actors);
+        var items = await actor.SearchAsync(q, cat, max ?? 20);
         return Results.Ok(items.Select(MarketplaceItemResponse.FromItem));
     }
 
     private static async Task<IResult> GetItemAsync(
         string itemId,
-        IGrainFactory grainFactory,
+        IVirtualActorProvider actors,
         CancellationToken ct)
     {
-        var grain = grainFactory.GetGrain<IMarketplaceGrain>("global");
-        var item = await grain.GetAsync(MarketplaceItemId.From(itemId));
+        var actor = GetMarketplace(actors);
+        var item = await actor.GetAsync(MarketplaceItemId.From(itemId));
         if (item is null)
             return ResultExtensions.NotFound($"Marketplace item '{itemId}' not found.");
 
@@ -91,7 +92,7 @@ public static class MarketplaceEndpoints
 
     private static async Task<IResult> SubmitAsync(
         SubmitMarketplaceItemRequest request,
-        IGrainFactory grainFactory,
+        IVirtualActorProvider actors,
         CancellationToken ct)
     {
         var errors = ValidateSubmit(request);
@@ -111,15 +112,15 @@ public static class MarketplaceEndpoints
             DocumentationUrl = request.DocumentationUrl
         };
 
-        var grain = grainFactory.GetGrain<IMarketplaceGrain>("global");
-        var stored = await grain.SubmitAsync(item);
+        var actor = GetMarketplace(actors);
+        var stored = await actor.SubmitAsync(item);
         return Results.Created($"/api/marketplace/{stored.ItemId}", MarketplaceItemResponse.FromItem(stored));
     }
 
     private static async Task<IResult> PublishAsync(
         string itemId,
         PublishMarketplaceItemRequest request,
-        IGrainFactory grainFactory,
+        IVirtualActorProvider actors,
         CancellationToken ct)
     {
         var review = new SecurityReview
@@ -131,8 +132,8 @@ public static class MarketplaceEndpoints
 
         try
         {
-            var grain = grainFactory.GetGrain<IMarketplaceGrain>("global");
-            var item = await grain.PublishAsync(MarketplaceItemId.From(itemId), review);
+            var actor = GetMarketplace(actors);
+            var item = await actor.PublishAsync(MarketplaceItemId.From(itemId), review);
             return Results.Ok(MarketplaceItemResponse.FromItem(item));
         }
         catch (InvalidOperationException ex)
@@ -144,7 +145,7 @@ public static class MarketplaceEndpoints
     private static async Task<IResult> RateAsync(
         string itemId,
         RateMarketplaceItemRequest request,
-        IGrainFactory grainFactory,
+        IVirtualActorProvider actors,
         CancellationToken ct)
     {
         if (request.Rating is < 0.0 or > 5.0)
@@ -153,20 +154,20 @@ public static class MarketplaceEndpoints
                 ["rating"] = ["Rating must be between 0.0 and 5.0."]
             });
 
-        var grain = grainFactory.GetGrain<IMarketplaceGrain>("global");
-        await grain.RateAsync(MarketplaceItemId.From(itemId), request.Rating);
+        var actor = GetMarketplace(actors);
+        await actor.RateAsync(MarketplaceItemId.From(itemId), request.Rating);
         return Results.NoContent();
     }
 
     private static async Task<IResult> DeprecateAsync(
         string itemId,
-        IGrainFactory grainFactory,
+        IVirtualActorProvider actors,
         CancellationToken ct)
     {
         try
         {
-            var grain = grainFactory.GetGrain<IMarketplaceGrain>("global");
-            await grain.DeprecateAsync(MarketplaceItemId.From(itemId));
+            var actor = GetMarketplace(actors);
+            await actor.DeprecateAsync(MarketplaceItemId.From(itemId));
             return Results.NoContent();
         }
         catch (KeyNotFoundException ex)
@@ -190,4 +191,7 @@ public static class MarketplaceEndpoints
 
         return errors;
     }
+
+    private static IMarketplaceActor GetMarketplace(IVirtualActorProvider actors) =>
+        actors.GetActor<IMarketplaceActor>(VirtualActorId.From("global"));
 }

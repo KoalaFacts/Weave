@@ -7,7 +7,7 @@ namespace Weave.Shared.Tests;
 /// <see cref="SecretValue.FromEnvelope"/>. The envelope is the wire
 /// format used by Orleans surrogates (see
 /// <c>Weave.Silo.Serialization.SecretValueSurrogateConverter</c>),
-/// so its behaviour is load-bearing across the grain boundary.
+/// so its behaviour is load-bearing across the actor boundary.
 /// </summary>
 public sealed class SecretValueEnvelopeTests
 {

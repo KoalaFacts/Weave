@@ -5,7 +5,7 @@ namespace Weave.Shared.Cqrs;
 /// <summary>
 /// Scoped command dispatcher. The dispatcher is stateless, so its
 /// lifetime matches the consumer's — HTTP endpoints get a request-
-/// scoped dispatcher, grains get a grain-scoped one. Handlers
+/// scoped dispatcher, actors get a actor-scoped one. Handlers
 /// registered as <see cref="ServiceLifetime.Scoped"/> resolve
 /// cleanly because <paramref name="serviceProvider"/> is the same
 /// scope the dispatcher was resolved from.

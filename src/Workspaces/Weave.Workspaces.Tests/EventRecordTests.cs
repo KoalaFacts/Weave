@@ -7,7 +7,7 @@ namespace Weave.Workspaces.Tests;
 /// Coverage for domain-event record types that have no behavior beyond
 /// property init — tests their construction + property plumbing so the
 /// coverage baseline reflects real production usage (these events are
-/// emitted by grains and consumed by subscribers).
+/// emitted by actors and consumed by subscribers).
 /// </summary>
 public sealed class EventRecordTests
 {

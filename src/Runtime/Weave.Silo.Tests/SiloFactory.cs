@@ -9,7 +9,7 @@ namespace Weave.Silo.Tests;
 /// tests. Uses local-mode defaults so we get:
 ///   - real Orleans cluster (UseLocalhostClustering)
 ///   - real InProcessRuntime (no Docker required)
-///   - real MemoryGrainStorage (in-memory but production code)
+///   - real Orleans in-memory storage (in-memory but production code)
 ///   - real CQRS dispatcher + all registered handlers
 ///   - real ASP.NET pipeline with every Silo endpoint
 ///

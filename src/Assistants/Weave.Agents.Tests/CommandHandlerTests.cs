@@ -1,5 +1,5 @@
 using Weave.Agents.Commands;
-using Weave.Agents.Grains;
+using Weave.Agents.Actors;
 using Weave.Agents.Models;
 using Weave.Agents.Queries;
 using Weave.Shared.Ids;
@@ -12,10 +12,10 @@ public sealed class CommandHandlerTests
     private static readonly WorkspaceId TestWorkspaceId = WorkspaceId.From("ws-1");
 
     [Fact]
-    public async Task ActivateAgentHandler_DelegatesToGrain()
+    public async Task ActivateAgentHandler_DelegatesToActor()
     {
-        var grainFactory = Substitute.For<IGrainFactory>();
-        var agentGrain = Substitute.For<IAgentGrain>();
+        var actorFactory = Substitute.For<IActorFactory>();
+        var agentActor = Substitute.For<IAgentActor>();
         var expectedState = new AgentState
         {
             AgentId = $"{TestWorkspaceId}/researcher",
@@ -25,12 +25,12 @@ public sealed class CommandHandlerTests
             Model = "claude-sonnet-4-20250514"
         };
 
-        grainFactory.GetGrain<IAgentGrain>($"{TestWorkspaceId}/researcher", null)
-            .Returns(agentGrain);
-        agentGrain.ActivateAgentAsync(TestWorkspaceId, Arg.Any<AgentDefinition>())
+        actorFactory.GetGrain<IAgentActor>($"{TestWorkspaceId}/researcher", null)
+            .Returns(agentActor);
+        agentActor.ActivateAgentAsync(TestWorkspaceId, Arg.Any<AgentDefinition>())
             .Returns(expectedState);
 
-        var handler = new ActivateAgentHandler(grainFactory);
+        var handler = new ActivateAgentHandler(new TestVirtualActorProvider(actorFactory));
         var definition = new AgentDefinition { Model = "claude-sonnet-4-20250514" };
         var command = new ActivateAgentCommand(TestWorkspaceId, "researcher", definition);
 
@@ -38,32 +38,32 @@ public sealed class CommandHandlerTests
 
         result.Status.ShouldBe(AgentStatus.Active);
         result.Model.ShouldBe("claude-sonnet-4-20250514");
-        await agentGrain.Received(1).ActivateAgentAsync(TestWorkspaceId, definition);
+        await agentActor.Received(1).ActivateAgentAsync(TestWorkspaceId, definition);
     }
 
     [Fact]
-    public async Task DeactivateAgentHandler_DelegatesToGrain()
+    public async Task DeactivateAgentHandler_DelegatesToActor()
     {
-        var grainFactory = Substitute.For<IGrainFactory>();
-        var agentGrain = Substitute.For<IAgentGrain>();
+        var actorFactory = Substitute.For<IActorFactory>();
+        var agentActor = Substitute.For<IAgentActor>();
 
-        grainFactory.GetGrain<IAgentGrain>($"{TestWorkspaceId}/researcher", null)
-            .Returns(agentGrain);
+        actorFactory.GetGrain<IAgentActor>($"{TestWorkspaceId}/researcher", null)
+            .Returns(agentActor);
 
-        var handler = new DeactivateAgentHandler(grainFactory);
+        var handler = new DeactivateAgentHandler(new TestVirtualActorProvider(actorFactory));
         var command = new DeactivateAgentCommand(TestWorkspaceId, "researcher");
 
         var result = await handler.HandleAsync(command, CancellationToken.None);
 
         result.ShouldBeTrue();
-        await agentGrain.Received(1).DeactivateAsync();
+        await agentActor.Received(1).DeactivateAsync();
     }
 
     [Fact]
-    public async Task SubmitAgentTaskHandler_DelegatesToGrain()
+    public async Task SubmitAgentTaskHandler_DelegatesToActor()
     {
-        var grainFactory = Substitute.For<IGrainFactory>();
-        var agentGrain = Substitute.For<IAgentGrain>();
+        var actorFactory = Substitute.For<IActorFactory>();
+        var agentActor = Substitute.For<IAgentActor>();
         var expectedTask = new AgentTaskInfo
         {
             TaskId = AgentTaskId.From("task-1"),
@@ -71,12 +71,12 @@ public sealed class CommandHandlerTests
             Status = AgentTaskStatus.Running
         };
 
-        grainFactory.GetGrain<IAgentGrain>($"{TestWorkspaceId}/researcher", null)
-            .Returns(agentGrain);
-        agentGrain.SubmitTaskAsync("Fix the bug")
+        actorFactory.GetGrain<IAgentActor>($"{TestWorkspaceId}/researcher", null)
+            .Returns(agentActor);
+        agentActor.SubmitTaskAsync("Fix the bug")
             .Returns(expectedTask);
 
-        var handler = new SubmitAgentTaskHandler(grainFactory);
+        var handler = new SubmitAgentTaskHandler(new TestVirtualActorProvider(actorFactory));
         var command = new SubmitAgentTaskCommand(TestWorkspaceId, "researcher", "Fix the bug");
 
         var result = await handler.HandleAsync(command, CancellationToken.None);
@@ -87,10 +87,10 @@ public sealed class CommandHandlerTests
     }
 
     [Fact]
-    public async Task GetAgentStateHandler_DelegatesToGrain()
+    public async Task GetAgentStateHandler_DelegatesToActor()
     {
-        var grainFactory = Substitute.For<IGrainFactory>();
-        var agentGrain = Substitute.For<IAgentGrain>();
+        var actorFactory = Substitute.For<IActorFactory>();
+        var agentActor = Substitute.For<IAgentActor>();
         var expectedState = new AgentState
         {
             AgentId = $"{TestWorkspaceId}/researcher",
@@ -99,11 +99,11 @@ public sealed class CommandHandlerTests
             Status = AgentStatus.Busy
         };
 
-        grainFactory.GetGrain<IAgentGrain>($"{TestWorkspaceId}/researcher", null)
-            .Returns(agentGrain);
-        agentGrain.GetStateAsync().Returns(expectedState);
+        actorFactory.GetGrain<IAgentActor>($"{TestWorkspaceId}/researcher", null)
+            .Returns(agentActor);
+        agentActor.GetStateAsync().Returns(expectedState);
 
-        var handler = new GetAgentStateHandler(grainFactory);
+        var handler = new GetAgentStateHandler(new TestVirtualActorProvider(actorFactory));
         var query = new GetAgentStateQuery(TestWorkspaceId, "researcher");
 
         var result = await handler.HandleAsync(query, CancellationToken.None);
@@ -115,19 +115,19 @@ public sealed class CommandHandlerTests
     [Fact]
     public async Task GetAllAgentStatesHandler_DelegatesToSupervisor()
     {
-        var grainFactory = Substitute.For<IGrainFactory>();
-        var supervisor = Substitute.For<IAgentSupervisorGrain>();
+        var actorFactory = Substitute.For<IActorFactory>();
+        var supervisor = Substitute.For<IAgentSupervisorActor>();
         IReadOnlyList<AgentState> expectedStates =
         [
             new AgentState { AgentId = "ws-1/a1", WorkspaceId = TestWorkspaceId, AgentName = "a1", Status = AgentStatus.Active },
             new AgentState { AgentId = "ws-1/a2", WorkspaceId = TestWorkspaceId, AgentName = "a2", Status = AgentStatus.Busy }
         ];
 
-        grainFactory.GetGrain<IAgentSupervisorGrain>(TestWorkspaceId.ToString(), null)
+        actorFactory.GetGrain<IAgentSupervisorActor>(TestWorkspaceId.ToString(), null)
             .Returns(supervisor);
         supervisor.GetAllAgentStatesAsync().Returns(expectedStates);
 
-        var handler = new GetAllAgentStatesHandler(grainFactory);
+        var handler = new GetAllAgentStatesHandler(new TestVirtualActorProvider(actorFactory));
         var query = new GetAllAgentStatesQuery(TestWorkspaceId);
 
         var result = await handler.HandleAsync(query, CancellationToken.None);

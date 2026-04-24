@@ -1,5 +1,5 @@
 using Weave.Agents.Commands;
-using Weave.Agents.Grains;
+using Weave.Agents.Actors;
 using Weave.Agents.Models;
 using Weave.Shared.Ids;
 
@@ -13,13 +13,13 @@ public sealed class ReviewAgentTaskHandlerTests
     [Fact]
     public async Task HandleAsync_AcceptsTask()
     {
-        var grainFactory = Substitute.For<IGrainFactory>();
-        var agentGrain = Substitute.For<IAgentGrain>();
+        var actorFactory = Substitute.For<IActorFactory>();
+        var agentActor = Substitute.For<IAgentActor>();
 
-        grainFactory.GetGrain<IAgentGrain>($"{TestWorkspaceId}/researcher", null)
-            .Returns(agentGrain);
+        actorFactory.GetGrain<IAgentActor>($"{TestWorkspaceId}/researcher", null)
+            .Returns(agentActor);
 
-        agentGrain.GetStateAsync().Returns(new AgentState
+        agentActor.GetStateAsync().Returns(new AgentState
         {
             AgentId = $"{TestWorkspaceId}/researcher",
             WorkspaceId = TestWorkspaceId,
@@ -42,7 +42,7 @@ public sealed class ReviewAgentTaskHandlerTests
             ]
         });
 
-        var handler = new ReviewAgentTaskHandler(grainFactory);
+        var handler = new ReviewAgentTaskHandler(new TestVirtualActorProvider(actorFactory));
         var command = new ReviewAgentTaskCommand(TestWorkspaceId, "researcher", TestTaskId, true, "LGTM");
 
         var result = await handler.HandleAsync(command, CancellationToken.None);
@@ -51,20 +51,20 @@ public sealed class ReviewAgentTaskHandlerTests
         result.Status.ShouldBe(AgentTaskStatus.Accepted);
         result.Proof.ShouldNotBeNull();
 #pragma warning disable xUnit1051
-        await agentGrain.Received(1).ReviewTaskAsync(TestTaskId, true, "LGTM");
+        await agentActor.Received(1).ReviewTaskAsync(TestTaskId, true, "LGTM");
 #pragma warning restore xUnit1051
     }
 
     [Fact]
     public async Task HandleAsync_RejectsTask()
     {
-        var grainFactory = Substitute.For<IGrainFactory>();
-        var agentGrain = Substitute.For<IAgentGrain>();
+        var actorFactory = Substitute.For<IActorFactory>();
+        var agentActor = Substitute.For<IAgentActor>();
 
-        grainFactory.GetGrain<IAgentGrain>($"{TestWorkspaceId}/researcher", null)
-            .Returns(agentGrain);
+        actorFactory.GetGrain<IAgentActor>($"{TestWorkspaceId}/researcher", null)
+            .Returns(agentActor);
 
-        agentGrain.GetStateAsync().Returns(new AgentState
+        agentActor.GetStateAsync().Returns(new AgentState
         {
             AgentId = $"{TestWorkspaceId}/researcher",
             WorkspaceId = TestWorkspaceId,
@@ -86,14 +86,14 @@ public sealed class ReviewAgentTaskHandlerTests
             ]
         });
 
-        var handler = new ReviewAgentTaskHandler(grainFactory);
+        var handler = new ReviewAgentTaskHandler(new TestVirtualActorProvider(actorFactory));
         var command = new ReviewAgentTaskCommand(TestWorkspaceId, "researcher", TestTaskId, false, "Tests failing");
 
         var result = await handler.HandleAsync(command, CancellationToken.None);
 
         result.Status.ShouldBe(AgentTaskStatus.Rejected);
 #pragma warning disable xUnit1051
-        await agentGrain.Received(1).ReviewTaskAsync(TestTaskId, false, "Tests failing");
+        await agentActor.Received(1).ReviewTaskAsync(TestTaskId, false, "Tests failing");
 #pragma warning restore xUnit1051
     }
 }

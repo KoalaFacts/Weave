@@ -26,7 +26,7 @@ public sealed record AgentChatResponse
 public sealed record ToolResolution
 {
     [Id(0)] public required string ToolName { get; init; }
-    [Id(1)] public required string GrainKey { get; init; }
+    [Id(1)] public required string ActorKey { get; init; }
     [Id(2)] public required CapabilityToken Token { get; init; }
     [Id(3)] public ToolSchema Schema { get; init; } = new();
 }

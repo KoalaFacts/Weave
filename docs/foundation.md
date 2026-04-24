@@ -9,7 +9,7 @@ The Foundation layer provides the core abstractions, utilities, and source gener
 
 | Project | Target | Purpose |
 |---------|--------|---------|
-| `Weave.Shared` | `net10.0` | Branded IDs, CQRS, events, lifecycle, plugins, secrets |
+| `Weave.Shared` | `net10.0` | Branded IDs, CQRS, virtual actor abstractions, events, lifecycle, plugins, secrets |
 | `Weave.SourceGen` | `netstandard2.0` | Roslyn incremental generators for branded IDs and CQRS registration |
 
 ## Branded IDs
@@ -93,6 +93,24 @@ Two approaches:
 
 1. **Reflection-based** (`AddCqrs(assemblies)`) — scans assemblies at startup. Marked `[RequiresUnreferencedCode]`.
 2. **Source-generated** (`AddGeneratedCqrsHandlers()`) — the `CqrsRegistrationGenerator` scans the compilation and all referenced assemblies, emitting explicit `AddScoped` calls. Zero runtime reflection, AOT-safe.
+
+## Virtual Actors
+
+Weave owns the virtual actor concept. Runtime providers are implementation details.
+
+Core abstractions:
+
+```csharp
+public readonly record struct VirtualActorId(string Value);
+
+public interface IVirtualActorProvider
+{
+    TActor GetActor<TActor>(VirtualActorId id)
+        where TActor : class;
+}
+```
+
+Application handlers, API endpoints, and non-actor services should depend on `IVirtualActorProvider`, not on a concrete actor runtime. The current Silo registers an Orleans-backed provider, but this keeps Weave-facing code aligned to the virtual actor model rather than directly to Orleans.
 
 ## Events
 
@@ -234,7 +252,7 @@ An exception type that automatically redacts sensitive data (password, secret, t
 
 | Package | Purpose |
 |---------|---------|
-| `Microsoft.Orleans.Sdk` | Grain and serialization attributes |
+| `Microsoft.Orleans.Sdk` | Actor and serialization attributes |
 | `Microsoft.Extensions.AI.Abstractions` | AI/ML abstractions |
 | `Microsoft.Extensions.DependencyInjection.Abstractions` | DI container |
 | `Microsoft.Extensions.Logging.Abstractions` | Structured logging |

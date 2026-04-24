@@ -8,7 +8,7 @@ namespace Weave.Silo.Tests;
 
 /// <summary>
 /// End-to-end tests for the workspace lifecycle HTTP surface. Uses the
-/// real InProcessRuntime (no Docker), real Orleans grains, real CQRS
+/// real InProcessRuntime (no Docker), real Orleans actors, real CQRS
 /// handlers. The POST body is the same <see cref="WorkspaceManifest"/>
 /// the CLI sends via <c>WorkspaceApiClient.StartWorkspaceAsync</c>.
 /// </summary>

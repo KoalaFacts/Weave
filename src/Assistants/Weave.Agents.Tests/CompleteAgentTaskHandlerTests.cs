@@ -1,5 +1,5 @@
 using Weave.Agents.Commands;
-using Weave.Agents.Grains;
+using Weave.Agents.Actors;
 using Weave.Agents.Models;
 using Weave.Shared.Ids;
 
@@ -19,14 +19,14 @@ public sealed class CompleteAgentTaskHandlerTests
     [Fact]
     public async Task HandleAsync_SubmitsProofAndReturnsAwaitingReview()
     {
-        var grainFactory = Substitute.For<IGrainFactory>();
-        var agentGrain = Substitute.For<IAgentGrain>();
+        var actorFactory = Substitute.For<IActorFactory>();
+        var agentActor = Substitute.For<IAgentActor>();
         var proof = CreateProof();
 
-        grainFactory.GetGrain<IAgentGrain>($"{TestWorkspaceId}/researcher", null)
-            .Returns(agentGrain);
+        actorFactory.GetGrain<IAgentActor>($"{TestWorkspaceId}/researcher", null)
+            .Returns(agentActor);
 
-        agentGrain.GetStateAsync().Returns(new AgentState
+        agentActor.GetStateAsync().Returns(new AgentState
         {
             AgentId = $"{TestWorkspaceId}/researcher",
             WorkspaceId = TestWorkspaceId,
@@ -43,7 +43,7 @@ public sealed class CompleteAgentTaskHandlerTests
             ]
         });
 
-        var handler = new CompleteAgentTaskHandler(grainFactory);
+        var handler = new CompleteAgentTaskHandler(new TestVirtualActorProvider(actorFactory));
         var command = new CompleteAgentTaskCommand(TestWorkspaceId, "researcher", TestTaskId, true, proof);
 
         var result = await handler.HandleAsync(command, CancellationToken.None);
@@ -52,21 +52,21 @@ public sealed class CompleteAgentTaskHandlerTests
         result.Status.ShouldBe(AgentTaskStatus.AwaitingReview);
         result.Proof.ShouldNotBeNull();
 #pragma warning disable xUnit1051
-        await agentGrain.Received(1).CompleteTaskAsync(TestTaskId, true, proof);
+        await agentActor.Received(1).CompleteTaskAsync(TestTaskId, true, proof);
 #pragma warning restore xUnit1051
     }
 
     [Fact]
     public async Task HandleAsync_FailsTaskWithProof()
     {
-        var grainFactory = Substitute.For<IGrainFactory>();
-        var agentGrain = Substitute.For<IAgentGrain>();
+        var actorFactory = Substitute.For<IActorFactory>();
+        var agentActor = Substitute.For<IAgentActor>();
         var proof = CreateProof(ProofType.Custom, "error details");
 
-        grainFactory.GetGrain<IAgentGrain>($"{TestWorkspaceId}/researcher", null)
-            .Returns(agentGrain);
+        actorFactory.GetGrain<IAgentActor>($"{TestWorkspaceId}/researcher", null)
+            .Returns(agentActor);
 
-        agentGrain.GetStateAsync().Returns(new AgentState
+        agentActor.GetStateAsync().Returns(new AgentState
         {
             AgentId = $"{TestWorkspaceId}/researcher",
             WorkspaceId = TestWorkspaceId,
@@ -83,25 +83,25 @@ public sealed class CompleteAgentTaskHandlerTests
             ]
         });
 
-        var handler = new CompleteAgentTaskHandler(grainFactory);
+        var handler = new CompleteAgentTaskHandler(new TestVirtualActorProvider(actorFactory));
         var command = new CompleteAgentTaskCommand(TestWorkspaceId, "researcher", TestTaskId, false, proof);
 
         var result = await handler.HandleAsync(command, CancellationToken.None);
 
         result.Status.ShouldBe(AgentTaskStatus.Failed);
 #pragma warning disable xUnit1051
-        await agentGrain.Received(1).CompleteTaskAsync(TestTaskId, false, proof);
+        await agentActor.Received(1).CompleteTaskAsync(TestTaskId, false, proof);
 #pragma warning restore xUnit1051
     }
 
     [Fact]
     public async Task HandleAsync_WithMultipleProofItems_PassesAll()
     {
-        var grainFactory = Substitute.For<IGrainFactory>();
-        var agentGrain = Substitute.For<IAgentGrain>();
+        var actorFactory = Substitute.For<IActorFactory>();
+        var agentActor = Substitute.For<IAgentActor>();
 
-        grainFactory.GetGrain<IAgentGrain>($"{TestWorkspaceId}/researcher", null)
-            .Returns(agentGrain);
+        actorFactory.GetGrain<IAgentActor>($"{TestWorkspaceId}/researcher", null)
+            .Returns(agentActor);
 
         var proof = new ProofOfWork
         {
@@ -112,7 +112,7 @@ public sealed class CompleteAgentTaskHandlerTests
             ]
         };
 
-        agentGrain.GetStateAsync().Returns(new AgentState
+        agentActor.GetStateAsync().Returns(new AgentState
         {
             AgentId = $"{TestWorkspaceId}/researcher",
             WorkspaceId = TestWorkspaceId,
@@ -129,7 +129,7 @@ public sealed class CompleteAgentTaskHandlerTests
             ]
         });
 
-        var handler = new CompleteAgentTaskHandler(grainFactory);
+        var handler = new CompleteAgentTaskHandler(new TestVirtualActorProvider(actorFactory));
         var command = new CompleteAgentTaskCommand(TestWorkspaceId, "researcher", TestTaskId, true, proof);
 
         var result = await handler.HandleAsync(command, CancellationToken.None);
@@ -138,7 +138,7 @@ public sealed class CompleteAgentTaskHandlerTests
         result.Proof.ShouldNotBeNull();
         result.Proof.Items.Count.ShouldBe(2);
 #pragma warning disable xUnit1051
-        await agentGrain.Received(1).CompleteTaskAsync(TestTaskId, true, proof);
+        await agentActor.Received(1).CompleteTaskAsync(TestTaskId, true, proof);
 #pragma warning restore xUnit1051
     }
 }

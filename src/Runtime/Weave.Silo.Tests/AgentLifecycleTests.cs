@@ -7,7 +7,7 @@ namespace Weave.Silo.Tests;
 /// <summary>
 /// End-to-end agent lifecycle tests — activate → get → submit task →
 /// complete → review, plus validation paths on every POST endpoint.
-/// Each test uses a unique workspace to isolate grain state.
+/// Each test uses a unique workspace to isolate actor state.
 /// </summary>
 public sealed class AgentLifecycleTests : IClassFixture<SiloFactory>
 {
@@ -111,7 +111,7 @@ public sealed class AgentLifecycleTests : IClassFixture<SiloFactory>
             content: null,
             TestContext.Current.CancellationToken);
 
-        // Deactivating an agent that was never active is a no-op in the grain,
+        // Deactivating an agent that was never active is a no-op in the actor,
         // which short-circuits on Idle state — the handler correctly surfaces
         // this as 204 rather than erroring, matching the lifecycle contract.
         response.StatusCode.ShouldBe(HttpStatusCode.NoContent);

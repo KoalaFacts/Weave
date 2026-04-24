@@ -1,6 +1,6 @@
 using Microsoft.Extensions.AI;
 using Microsoft.Extensions.Logging.Abstractions;
-using Weave.Agents.Grains;
+using Weave.Agents.Actors;
 using Weave.Agents.Models;
 using Weave.Agents.Pipeline;
 using Weave.Shared.Ids;
@@ -36,10 +36,10 @@ public sealed class AgentChatPipelineTests
         var chatClientFactory = Substitute.For<IAgentChatClientFactory>();
         chatClientFactory.Create(Arg.Any<string>(), Arg.Any<string?>()).Returns(chatClient);
 
-        var grainFactory = Substitute.For<IGrainFactory>();
+        var actorFactory = Substitute.For<IActorFactory>();
         var logger = NullLogger<AgentChatPipeline>.Instance;
 
-        var pipeline = new AgentChatPipeline(grainFactory, chatClientFactory, TimeProvider.System, logger);
+        var pipeline = new AgentChatPipeline(new TestVirtualActorProvider(actorFactory), chatClientFactory, TimeProvider.System, logger);
         return (pipeline, chatClient);
     }
 
@@ -115,8 +115,8 @@ public sealed class AgentChatPipelineTests
         var chatClientFactory = Substitute.For<IAgentChatClientFactory>();
         chatClientFactory.Create(Arg.Any<string>(), Arg.Any<string?>())
             .Returns(Substitute.For<IChatClient>());
-        var grainFactory = Substitute.For<IGrainFactory>();
-        var pipeline = new AgentChatPipeline(grainFactory, chatClientFactory, TimeProvider.System, NullLogger<AgentChatPipeline>.Instance);
+        var actorFactory = Substitute.For<IActorFactory>();
+        var pipeline = new AgentChatPipeline(new TestVirtualActorProvider(actorFactory), chatClientFactory, TimeProvider.System, NullLogger<AgentChatPipeline>.Instance);
 
         pipeline.Initialize("ws-1/researcher", "claude-sonnet-4-20250514");
 
@@ -155,14 +155,14 @@ public sealed class AgentChatPipelineTests
         var chatClientFactory = Substitute.For<IAgentChatClientFactory>();
         chatClientFactory.Create(Arg.Any<string>(), Arg.Any<string?>()).Returns(chatClient);
 
-        var registry = Substitute.For<IToolRegistryGrain>();
+        var registry = Substitute.For<IToolRegistryActor>();
         registry.ResolveAsync("researcher", "code-search")
             .Returns(Task.FromResult<ToolResolution?>(null));
 
-        var grainFactory = Substitute.For<IGrainFactory>();
-        grainFactory.GetGrain<IToolRegistryGrain>(Arg.Any<string>(), Arg.Any<string?>()).Returns(registry);
+        var actorFactory = Substitute.For<IActorFactory>();
+        actorFactory.GetGrain<IToolRegistryActor>(Arg.Any<string>(), Arg.Any<string?>()).Returns(registry);
 
-        var pipeline = new AgentChatPipeline(grainFactory, chatClientFactory, TimeProvider.System, NullLogger<AgentChatPipeline>.Instance);
+        var pipeline = new AgentChatPipeline(new TestVirtualActorProvider(actorFactory), chatClientFactory, TimeProvider.System, NullLogger<AgentChatPipeline>.Instance);
 
         var state = CreateActiveState();
         state.ConnectedTools.Add("code-search");
@@ -193,19 +193,19 @@ public sealed class AgentChatPipelineTests
         var chatClientFactory = Substitute.For<IAgentChatClientFactory>();
         chatClientFactory.Create(Arg.Any<string>(), Arg.Any<string?>()).Returns(chatClient);
 
-        var userModelGrain = Substitute.For<IUserModelGrain>();
-        userModelGrain.GetContextSummaryAsync()
+        var userModelActor = Substitute.For<IUserModelActor>();
+        userModelActor.GetContextSummaryAsync()
             .Returns(Task.FromResult("User preferences: lang=csharp. Interactions: 5 total."));
 
-        var skillGrain = Substitute.For<ISkillMemoryGrain>();
-        skillGrain.SearchAsync(Arg.Any<string>(), Arg.Any<int>())
+        var skillActor = Substitute.For<ISkillMemoryActor>();
+        skillActor.SearchAsync(Arg.Any<string>(), Arg.Any<int>())
             .Returns(Task.FromResult<IReadOnlyList<SkillSearchResult>>([]));
 
-        var grainFactory = Substitute.For<IGrainFactory>();
-        grainFactory.GetGrain<IUserModelGrain>("ws-1/user-42", null).Returns(userModelGrain);
-        grainFactory.GetGrain<ISkillMemoryGrain>("ws-1", null).Returns(skillGrain);
+        var actorFactory = Substitute.For<IActorFactory>();
+        actorFactory.GetGrain<IUserModelActor>("ws-1/user-42", null).Returns(userModelActor);
+        actorFactory.GetGrain<ISkillMemoryActor>("ws-1", null).Returns(skillActor);
 
-        var pipeline = new AgentChatPipeline(grainFactory, chatClientFactory, TimeProvider.System, NullLogger<AgentChatPipeline>.Instance);
+        var pipeline = new AgentChatPipeline(new TestVirtualActorProvider(actorFactory), chatClientFactory, TimeProvider.System, NullLogger<AgentChatPipeline>.Instance);
         var state = CreateActiveState();
 
         await pipeline.ExecuteAsync(state, new AgentMessage { Content = "Hello", UserId = "user-42" });
@@ -252,16 +252,16 @@ public sealed class AgentChatPipelineTests
             CreatedByAgent = "deployer"
         };
 
-        var skillGrain = Substitute.For<ISkillMemoryGrain>();
-        skillGrain.SearchAsync(Arg.Any<string>(), Arg.Any<int>())
+        var skillActor = Substitute.For<ISkillMemoryActor>();
+        skillActor.SearchAsync(Arg.Any<string>(), Arg.Any<int>())
             .Returns(Task.FromResult<IReadOnlyList<SkillSearchResult>>([
                 new SkillSearchResult { Skill = skill, RelevanceScore = 5.0 }
             ]));
 
-        var grainFactory = Substitute.For<IGrainFactory>();
-        grainFactory.GetGrain<ISkillMemoryGrain>("ws-1", null).Returns(skillGrain);
+        var actorFactory = Substitute.For<IActorFactory>();
+        actorFactory.GetGrain<ISkillMemoryActor>("ws-1", null).Returns(skillActor);
 
-        var pipeline = new AgentChatPipeline(grainFactory, chatClientFactory, TimeProvider.System, NullLogger<AgentChatPipeline>.Instance);
+        var pipeline = new AgentChatPipeline(new TestVirtualActorProvider(actorFactory), chatClientFactory, TimeProvider.System, NullLogger<AgentChatPipeline>.Instance);
         var state = CreateActiveState();
 
         await pipeline.ExecuteAsync(state, new AgentMessage { Content = "deploy to k8s" });

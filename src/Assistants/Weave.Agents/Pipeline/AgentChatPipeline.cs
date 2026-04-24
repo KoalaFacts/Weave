@@ -1,14 +1,15 @@
 using Microsoft.Extensions.AI;
 using Microsoft.Extensions.Logging;
-using Weave.Agents.Grains;
+using Weave.Agents.Actors;
 using Weave.Agents.Models;
+using Weave.Shared.VirtualActors;
 using Weave.Tools.Builders;
-using Weave.Tools.Grains;
+using Weave.Tools.Actors;
 
 namespace Weave.Agents.Pipeline;
 
 public sealed class AgentChatPipeline(
-    IGrainFactory grainFactory,
+    IVirtualActorProvider actors,
     IAgentChatClientFactory chatClientFactory,
     TimeProvider timeProvider,
     ILogger<AgentChatPipeline> logger) : IAgentChatPipeline
@@ -109,7 +110,7 @@ public sealed class AgentChatPipeline(
 
     private async Task<List<AITool>> BuildToolsAsync(AgentState state)
     {
-        var registry = grainFactory.GetGrain<IToolRegistryGrain>(state.WorkspaceId.ToString());
+        var registry = actors.GetActor<IToolRegistryActor>(VirtualActorId.From(state.WorkspaceId.ToString()));
         var tools = new List<AITool>(state.ConnectedTools.Count);
 
         foreach (var toolName in state.ConnectedTools)
@@ -134,13 +135,13 @@ public sealed class AgentChatPipeline(
 
     private async Task<string> InvokeToolAsync(AgentState state, string toolName, string input)
     {
-        var registry = grainFactory.GetGrain<IToolRegistryGrain>(state.WorkspaceId.ToString());
+        var registry = actors.GetActor<IToolRegistryActor>(VirtualActorId.From(state.WorkspaceId.ToString()));
         var resolution = await registry.ResolveAsync(state.AgentName, toolName)
             ?? throw new InvalidOperationException($"Tool '{toolName}' is not available to agent '{state.AgentName}'.");
 
-        var toolGrain = grainFactory.GetGrain<IToolGrain>(resolution.GrainKey);
+        var toolActor = actors.GetActor<IToolActor>(VirtualActorId.From(resolution.ActorKey));
         var invocation = ToolInvocationBuilder.FromInput(toolName, input);
-        var result = await toolGrain.InvokeAsync(invocation, resolution.Token);
+        var result = await toolActor.InvokeAsync(invocation, resolution.Token);
         return result.Success ? result.Output : $"Tool '{toolName}' failed: {result.Error}";
     }
 
@@ -151,8 +152,8 @@ public sealed class AgentChatPipeline(
 
         try
         {
-            var userGrain = grainFactory.GetGrain<IUserModelGrain>($"{state.WorkspaceId}/{message.UserId}");
-            var summary = await userGrain.GetContextSummaryAsync();
+            var userActor = actors.GetActor<IUserModelActor>(VirtualActorId.Combine(state.WorkspaceId, message.UserId));
+            var summary = await userActor.GetContextSummaryAsync();
             if (string.IsNullOrWhiteSpace(summary))
                 return prompt;
 
@@ -171,8 +172,8 @@ public sealed class AgentChatPipeline(
     {
         try
         {
-            var skillGrain = grainFactory.GetGrain<ISkillMemoryGrain>(state.WorkspaceId.ToString());
-            var results = await skillGrain.SearchAsync(message.Content, 3);
+            var skillActor = actors.GetActor<ISkillMemoryActor>(VirtualActorId.From(state.WorkspaceId.ToString()));
+            var results = await skillActor.SearchAsync(message.Content, 3);
             if (results.Count == 0)
                 return prompt;
 

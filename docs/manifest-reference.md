@@ -420,8 +420,8 @@ Lifecycle hooks run scripts or commands at key moments.
 
 | Hook | When it runs |
 |------|-------------|
-| `on_activated` | When the agent grain is activated |
-| `on_deactivated` | When the agent grain is deactivated |
+| `on_activated` | When the agent actor is activated |
+| `on_deactivated` | When the agent actor is deactivated |
 | `on_error` | When the agent encounters an error |
 
 ### Tool hooks

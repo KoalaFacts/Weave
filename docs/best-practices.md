@@ -10,15 +10,15 @@ The law of the repo. Every rule here is enforceable in review. Rules exist to pr
 
 **`IServiceScopeFactory` is reserved for services that legitimately outlive a request.** Background services (`IHostedService`), detached work (fire-and-forget that needs DI), and any singleton that must perform per-iteration scoped work. For those, the factory is correct; everywhere else it's a smell that should be challenged in review.
 
-**CQRS handlers are `Scoped`; dispatchers are `Scoped`.** The source-generated `AddGeneratedCqrsHandlers()` registers dispatchers and handlers as Scoped so the lifetime matches the caller's (HTTP request scope in endpoints, grain scope in Orleans). Don't override to `Singleton` — that's the bug we just retired.
+**CQRS handlers are `Scoped`; dispatchers are `Scoped`.** The source-generated `AddGeneratedCqrsHandlers()` registers dispatchers and handlers as Scoped so the lifetime matches the caller's (HTTP request scope in endpoints, actor scope in Orleans). Don't override to `Singleton` — that's the bug we just retired.
 
-**Grains receive dependencies through constructor injection only.** Do not pull services inline from `GrainContext` or a static accessor — it breaks the "tests may instantiate grains directly" rule in `CLAUDE.md`. Follow `src/Assistants/Weave.Agents/Grains/` for the shape.
+**Actors receive dependencies through constructor injection only.** Do not pull services inline from `provider runtime context` or a static accessor — it breaks the "tests may instantiate actors directly" rule in `CLAUDE.md`. Follow `src/Assistants/Weave.Agents/Actors/` for the shape.
 
 **Every service crossing a module boundary is programmed against an interface.** Concrete classes wrap third-party libraries; consumers never import them directly. Applies to `IToolConnector`, `ISecretProvider`, `IPublisher`. Tests substitute with `NSubstitute` without touching the real stack.
 
 **Middleware resolves per-request services from `HttpContext.RequestServices`, never from `app.ApplicationServices`.** `app.ApplicationServices` is the root provider — exactly the same trap that killed `CommandDispatcher`. Any middleware that pulls state from DI has to go through `HttpContext.RequestServices` or cache a singleton upfront. See `src/Runtime/Weave.Silo/Security/AuditLogMiddleware.cs:61` — the current `app.ApplicationServices.GetRequiredService<AuditOptions>()` call works today because the options are singleton, but it will break silently the first time someone registers request-scoped audit state.
 
-**Stateless factories are Scoped, not Singleton.** `AgentChatClientFactory` is Scoped so its injected `IServiceProvider` is the consumer's own scope (HTTP request or Orleans grain), and `ActivatorUtilities.CreateInstance` resolves any scoped middleware dependencies correctly. Making such a factory Singleton creates an asymmetry: the factory outlives the request, but the clients it constructs depend on scoped services — that's the same bug as the dispatcher's.
+**Stateless factories are Scoped, not Singleton.** `AgentChatClientFactory` is Scoped so its injected `IServiceProvider` is the consumer's own scope (HTTP request or Orleans actor), and `ActivatorUtilities.CreateInstance` resolves any scoped middleware dependencies correctly. Making such a factory Singleton creates an asymmetry: the factory outlives the request, but the clients it constructs depend on scoped services — that's the same bug as the dispatcher's.
 
 ### Error handling
 
@@ -28,9 +28,9 @@ The law of the repo. Every rule here is enforceable in review. Rules exist to pr
 
 **Fail closed on security-sensitive operations.** Secret scanning, capability validation, and proof validation must default to deny when anything is ambiguous. See the secret-redaction behavior in `src/Foundation/Weave.Shared/Secrets/SecretValue.cs` — `ToString()` returns `"***REDACTED***"`, not the value.
 
-**Swallow nothing silently.** Catch-and-log is acceptable only at a true boundary (HTTP handler, grain reminder, CLI command root). Inside a method, let it throw.
+**Swallow nothing silently.** Catch-and-log is acceptable only at a true boundary (HTTP handler, actor reminder, CLI command root). Inside a method, let it throw.
 
-**No bare `catch { }` or `catch (Exception) { }` in `src/`.** Every catch must satisfy both: (a) a specific exception type, and (b) a log at `Warning` or higher with context, or a rethrow. `OperationCanceledException` on cooperative shutdown is the only exempt case and must still be typed. Review blocker: any unexplained empty catch. The worst offender in the repo today is `src/Tools/Weave.Tools/Grains/ToolGrain.cs:210` which catches `NullReferenceException` and silently returns the wrong workspace identity — a capability-token scoping bug.
+**No bare `catch { }` or `catch (Exception) { }` in `src/`.** Every catch must satisfy both: (a) a specific exception type, and (b) a log at `Warning` or higher with context, or a rethrow. `OperationCanceledException` on cooperative shutdown is the only exempt case and must still be typed. Review blocker: any unexplained empty catch. The worst offender in the repo today is `src/Tools/Weave.Tools/Actors/ToolActor.cs:210` which catches `NullReferenceException` and silently returns the wrong workspace identity — a capability-token scoping bug.
 
 **Never `catch (NullReferenceException)`.** NREs from library code are bugs — silencing one always makes the real failure surface somewhere worse (wrong workspace, wrong user, wrong capability). Fix the null, don't catch it.
 
@@ -38,7 +38,7 @@ The law of the repo. Every rule here is enforceable in review. Rules exist to pr
 
 **Background tasks observe their own faults.** `_ = Task.Run(async () => { ... })` with no error handler is forbidden — a detached exception is unlogged and never surfaces. Use `await`, `task.ContinueWith(t => log, TaskContinuationOptions.OnlyOnFaulted)`, or a named helper `FireAndForgetAsync(task, logger, operationName)`. The canonical anti-pattern in the repo is `src/UX/Weave.Cli/Commands/VersionInfo.cs:107` — double-silent (detached `Task.Run` *and* empty catch).
 
-**Fire-and-forget grain calls are forbidden outright.** `_ = grain.SomeAsync()` discards an Orleans activation failure or serialization mismatch and leaves the caller wedged in a half-dispatched state. The case in `src/Assistants/Weave.Agents/Grains/AgentGrain.cs:221` (`_ = verifier.VerifyAsync(...)`) can silently drop proof-verification forever. Always `await`, or capture the task and observe completion elsewhere.
+**Fire-and-forget actor calls are forbidden outright.** `_ = actor.SomeAsync()` discards an Orleans activation failure or serialization mismatch and leaves the caller wedged in a half-dispatched state. The case in `src/Assistants/Weave.Agents/Actors/AgentActor.cs:221` (`_ = verifier.VerifyAsync(...)`) can silently drop proof-verification forever. Always `await`, or capture the task and observe completion elsewhere.
 
 ### Process management
 
@@ -56,13 +56,13 @@ The law of the repo. Every rule here is enforceable in review. Rules exist to pr
 
 ### Serialization adapters (Orleans)
 
-**Every branded ID or shared value type that crosses a grain boundary has a surrogate + `[RegisterConverter]`.** Orleans will throw `CodecNotFoundException` at Silo startup (or worse, at the first grain call) if you forget one. Add the pair in `src/Runtime/Weave.Silo/Serialization/BrandedIdSurrogates.cs` next to the existing entries; do not create a new assembly.
+**Every branded ID or shared value type that crosses a actor boundary has a surrogate + `[RegisterConverter]`.** Orleans will throw `CodecNotFoundException` at Silo startup (or worse, at the first actor call) if you forget one. Add the pair in `src/Runtime/Weave.Silo/Serialization/BrandedIdSurrogates.cs` next to the existing entries; do not create a new assembly.
 
 **Serialization adapters live in the consumer, not in Foundation.** `Weave.Silo.Serialization` owns them because the Silo is the only consumer. Do not recreate a `Weave.Shared.Orleans` project — adapters leak Orleans into Foundation and invert the dependency flow from `CLAUDE.md` (`Shared -> ... -> Silo`).
 
-**State models that live in grain storage use `[GenerateSerializer]` + `[Id(n)]` on every field.** Appending a new field without an `[Id]` breaks wire compatibility for existing state. Never renumber existing `[Id]` values — only append.
+**State models that live in actor storage use `[GenerateSerializer]` + `[Id(n)]` on every field.** Appending a new field without an `[Id]` breaks wire compatibility for existing state. Never renumber existing `[Id]` values — only append.
 
-**Grain interfaces accept and return branded IDs directly; grain keys remain `string`.** Convert to `string` only at the `IGrainFactory.GetGrain<T>(key)` call site, using the key shapes in `CLAUDE.md`. Mixing stringly-typed IDs in call arguments defeats the source generator.
+**Actor interfaces accept and return branded IDs directly; actor keys remain `string`.** Convert to `string` only at the `IActorFactory.GetActor<T>(key)` call site, using the key shapes in `CLAUDE.md`. Mixing stringly-typed IDs in call arguments defeats the source generator.
 
 ### AOT, trimming, and platform guards
 
@@ -82,7 +82,7 @@ The law of the repo. Every rule here is enforceable in review. Rules exist to pr
 
 **Dependencies flow `Shared -> Workspaces -> Agents/Tools/Security/Deploy -> Silo/Cli/Dashboard -> AppHost`.** New circular references are rejected. If a Foundation type needs an adapter, the adapter moves to the consumer — Foundation does not take a dependency on it.
 
-**Feature-based folders. No `Controllers/`, `Services/`, `Models/` at the top of a project.** Group by capability: `Workspaces/`, `Chat/`, `Heartbeat/`. See `src/Assistants/Weave.Agents/Grains/` — interface, implementation, and state model sit together.
+**Feature-based folders. No `Controllers/`, `Services/`, `Models/` at the top of a project.** Group by capability: `Workspaces/`, `Chat/`, `Heartbeat/`. See `src/Assistants/Weave.Agents/Actors/` — interface, implementation, and state model sit together.
 
 ### Naming and style
 
@@ -108,15 +108,15 @@ The law of the repo. Every rule here is enforceable in review. Rules exist to pr
 
 **Every production project has a sibling `.Tests` project.** No exceptions. If the project has no behavior worth testing, it probably shouldn't exist.
 
-**Three tiers: unit, component, integration.** Unit tests exercise one type with all peers substituted. Component tests exercise a grain or a CQRS handler against a real `IServiceProvider`. Integration tests boot a process boundary. The Silo bug in session notes escaped because no integration test booted the Silo — we now require at least one smoke-boot test per top-level host.
+**Three tiers: unit, component, integration.** Unit tests exercise one type with all peers substituted. Component tests exercise a actor or a CQRS handler against a real `IServiceProvider`. Integration tests boot a process boundary. The Silo bug in session notes escaped because no integration test booted the Silo — we now require at least one smoke-boot test per top-level host.
 
-**Silo-boot smoke test is non-optional.** `src/Runtime/Weave.Silo` must have a test that builds the host, starts it, pings one grain, and shuts it down. This would have caught the `AgentTaskId` `CodecNotFoundException` in CI, not in the TUI.
+**Silo-boot smoke test is non-optional.** `src/Runtime/Weave.Silo` must have a test that builds the host, starts it, pings one actor, and shuts it down. This would have caught the `AgentTaskId` `CodecNotFoundException` in CI, not in the TUI.
 
 **Every endpoint group mapped in `Program.cs` has at least one `SiloFactory`-based integration test.** The Silo currently exposes 9 groups (Workspace, Agent, Tool, Plugin, Skill, Channel, User, Marketplace, Template); today only Workspace has any endpoint coverage. New endpoint → new test in the same PR. The test hits one real URL per group and asserts either the happy-path shape or the canonical error code; this is what would have caught the `409` DI-scope leak. See `src/Runtime/Weave.Silo.Tests/WorkspaceLifecycleTests.cs` for the template.
 
 ### Real components for integration tests
 
-**Integration tests use real DI, real grain silo (in-memory `TestCluster`), real HTTP.** Mocking the host undermines the test. Use `Microsoft.Orleans.TestingHost` for Orleans, `WebApplicationFactory<T>` for the API.
+**Integration tests use real DI, real actor silo (in-memory `TestCluster`), real HTTP.** Mocking the host undermines the test. Use `Microsoft.Orleans.TestingHost` for Orleans, `WebApplicationFactory<T>` for the API.
 
 **CQRS integration tests resolve the handler through `ICommandDispatcher`, not by instantiating it.** This exercises registration, scope creation, and the dispatcher wiring — all three were broken in the scoped-handler incident.
 
@@ -124,7 +124,7 @@ The law of the repo. Every rule here is enforceable in review. Rules exist to pr
 
 ### Fixtures and isolation
 
-**Tests never share mutable grain state across classes.** Each test class owns its `TestCluster` or creates grains with unique keys. Cross-test contamination is the single most common flake source.
+**Tests never share mutable actor state across classes.** Each test class owns its `TestCluster` or creates actors with unique keys. Cross-test contamination is the single most common flake source.
 
 **No file-system side effects outside `Path.GetTempPath()`.** Writing into the repo or CWD breaks parallel test runs and pollutes the working tree. Clean up in `IAsyncDisposable.DisposeAsync`.
 
@@ -146,7 +146,7 @@ The law of the repo. Every rule here is enforceable in review. Rules exist to pr
 
 **`AITool` cannot be substituted** — create a concrete stub that overrides `Name`. Same applies to any sealed or non-virtual surface.
 
-**`private static` helpers that need direct testing are promoted to `internal static`.** Pattern: `ProofValidatorGrain`. Do not make them `public` to test them.
+**`private static` helpers that need direct testing are promoted to `internal static`.** Pattern: `ProofValidatorActor`. Do not make them `public` to test them.
 
 ### Categories and speed
 
@@ -174,7 +174,7 @@ Coverage alone is a **trailing** indicator of test quality. A suite can hit 95% 
 
 **Integration tests use real components (already enforced).** Unit tests are allowed mocks; **integration tests are not**. See the rule in "Real components for integration" above. The boundary between the two is: "does this test run against a real `SiloFactory` / `TestCluster` / `WebApplicationFactory`?" If yes, no mocks.
 
-**Tests never share mutable state.** Each test owns its fixture or creates grains with unique keys. Flakiness from test-to-test contamination is banned at the source, not retried around.
+**Tests never share mutable state.** Each test owns its fixture or creates actors with unique keys. Flakiness from test-to-test contamination is banned at the source, not retried around.
 
 **Fixtures reset environment variables in `finally`.** Plugins in this repo are env-detected (`DAPR_HTTP_PORT`, `Vault:Address`). Leaking one across tests turns a unit test into an integration test.
 
@@ -182,7 +182,7 @@ Coverage alone is a **trailing** indicator of test quality. A suite can hit 95% 
 
 ### Test coverage — hard rule, 90% minimum
 
-**Overall line coverage must be ≥ 90%. CI fails when it isn't.** No exceptions; no per-project carve-outs. Exclusions from the coverage number are narrow and justified in `coverage.runsettings` — source-generated code, Program.cs, DTO/record-only files, and grain state models. Everything else counts.
+**Overall line coverage must be ≥ 90%. CI fails when it isn't.** No exceptions; no per-project carve-outs. Exclusions from the coverage number are narrow and justified in `coverage.runsettings` — source-generated code, Program.cs, DTO/record-only files, and actor state models. Everything else counts.
 
 **How to run the gate locally:**
 ```
@@ -197,7 +197,7 @@ Exit code 1 = below threshold. The script reports per-assembly line rates so the
 
 **Coverage raised by assertion-free tests is rejected in review.** A PR that brings the number up by 2% while adding five tests that only call the SUT without asserting is worse than no change. The Test Quality rules above apply to every coverage-driven PR.
 
-**Mutation testing is the gold standard for coverage validity.** Aspirational today: `Stryker.NET` run quarterly on critical paths (Silo API, CQRS dispatchers, grain state machines). A mutant survival rate below 80% means the tests exercise lines without asserting outcomes — exactly the gaming pattern the rules above try to prevent.
+**Mutation testing is the gold standard for coverage validity.** Aspirational today: `Stryker.NET` run quarterly on critical paths (Silo API, CQRS dispatchers, actor state machines). A mutant survival rate below 80% means the tests exercise lines without asserting outcomes — exactly the gaming pattern the rules above try to prevent.
 
 ### Verification before claiming done
 
@@ -205,7 +205,7 @@ Exit code 1 = below threshold. The script reports per-assembly line rates so the
 
 **`dotnet format` runs clean before any PR.** Formatting diffs in a functional PR waste review time.
 
-**A change that touches grain interfaces, grain state, or serialization requires an Orleans boot test.** Unit tests alone will not catch missing surrogates. The Silo-boot smoke test described above is the minimum bar.
+**A change that touches actor interfaces, actor state, or serialization requires an Orleans boot test.** Unit tests alone will not catch missing surrogates. The Silo-boot smoke test described above is the minimum bar.
 
 ---
 

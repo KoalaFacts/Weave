@@ -77,7 +77,7 @@ What happens when you `weave workspace up support-team`:
 1. Both agents activate with their tools and security tokens
 2. The monitor agent starts checking health every 5 minutes
 3. Slack messages from users route to `support-bot`, which searches docs and creates tickets
-4. Each Slack user gets a `UserModelGrain` that tracks their preferences and frequent topics
+4. Each Slack user gets a `UserModelActor` that tracks their preferences and frequent topics
 5. When the support-bot successfully resolves a multi-step issue, a skill document is auto-extracted
 6. Next time a similar issue arrives, the agent retrieves the skill and resolves it faster
 
@@ -213,31 +213,31 @@ Implement the handler (in the Silo or domain project):
 
 ```csharp
 // Source: src/Runtime/Weave.Silo/Api/WorkspaceCommandHandlers.cs
-public sealed class StartWorkspaceHandler(IGrainFactory grainFactory)
+public sealed class StartWorkspaceHandler(IActorFactory actorFactory)
     : ICommandHandler<StartWorkspaceCommand, WorkspaceState>
 {
     public async Task<WorkspaceState> HandleAsync(StartWorkspaceCommand command, CancellationToken ct)
     {
-        var workspace = grainFactory.GetGrain<IWorkspaceGrain>(command.WorkspaceId.ToString());
+        var workspace = actorFactory.GetActor<IWorkspaceActor>(command.WorkspaceId.ToString());
         var state = await workspace.StartAsync(command.Manifest);
 
-        var registry = grainFactory.GetGrain<IWorkspaceRegistryGrain>("active");
+        var registry = actorFactory.GetActor<IWorkspaceRegistryActor>("active");
         await registry.RegisterAsync(command.WorkspaceId.ToString());
 
-        var toolRegistry = grainFactory.GetGrain<IToolRegistryGrain>(command.WorkspaceId.ToString());
+        var toolRegistry = actorFactory.GetActor<IToolRegistryActor>(command.WorkspaceId.ToString());
         await toolRegistry.ConnectToolsAsync(command.Manifest.Tools);
         await toolRegistry.ConfigureAccessAsync(command.Manifest.Agents.ToDictionary(
             static kvp => kvp.Key,
             static kvp => kvp.Value.Tools.ToList(),
             StringComparer.Ordinal));
 
-        var supervisor = grainFactory.GetGrain<IAgentSupervisorGrain>(command.WorkspaceId.ToString());
+        var supervisor = actorFactory.GetActor<IAgentSupervisorActor>(command.WorkspaceId.ToString());
         await supervisor.ActivateAllAsync(command.Manifest);
 
         foreach (var (agentName, definition) in command.Manifest.Agents)
         {
             if (definition.Heartbeat is null) continue;
-            var heartbeat = grainFactory.GetGrain<IHeartbeatGrain>($"{command.WorkspaceId}/{agentName}");
+            var heartbeat = actorFactory.GetActor<IHeartbeatActor>($"{command.WorkspaceId}/{agentName}");
             await heartbeat.StartAsync(new HeartbeatConfig
             {
                 Cron = definition.Heartbeat.Cron,
@@ -258,36 +258,36 @@ var result = await commandDispatcher.DispatchAsync<StartWorkspaceCommand, Worksp
     new StartWorkspaceCommand(workspaceId, manifest), ct);
 ```
 
-## Working with Orleans Grains
+## Working with Orleans Actors
 
-### Grain key conventions
+### Actor key conventions
 
 ```csharp
-// Workspace grain — keyed by workspaceId
-var workspace = grainFactory.GetGrain<IWorkspaceGrain>(workspaceId.ToString());
+// Workspace actor — keyed by workspaceId
+var workspace = actorFactory.GetActor<IWorkspaceActor>(workspaceId.ToString());
 
-// Agent grain — keyed by workspaceId/agentName
-var agent = grainFactory.GetGrain<IAgentGrain>($"{workspaceId}/{agentName}");
+// Agent actor — keyed by workspaceId/agentName
+var agent = actorFactory.GetActor<IAgentActor>($"{workspaceId}/{agentName}");
 
-// Tool grain — keyed by workspaceId/toolName
-var tool = grainFactory.GetGrain<IToolGrain>($"{workspaceId}/{toolName}");
+// Tool actor — keyed by workspaceId/toolName
+var tool = actorFactory.GetActor<IToolActor>($"{workspaceId}/{toolName}");
 
 // Singleton — fixed key
-var registry = grainFactory.GetGrain<IWorkspaceRegistryGrain>("active");
+var registry = actorFactory.GetActor<IWorkspaceRegistryActor>("active");
 ```
 
-### Implementing a grain with primary constructor DI
+### Implementing a actor with primary constructor DI
 
 ```csharp
-// Source: src/Tools/Weave.Tools/Grains/ToolGrain.cs
-public sealed partial class ToolGrain(
-    IGrainFactory grainFactory,
+// Source: src/Tools/Weave.Tools/Actors/ToolActor.cs
+public sealed partial class ToolActor(
+    IActorFactory actorFactory,
     IToolDiscoveryService discovery,
     ILeakScanner leakScanner,
     ICapabilityTokenService tokenService,
     ILifecycleManager lifecycleManager,
     IEventBus eventBus,
-    ILogger<ToolGrain> logger) : Grain, IToolGrain
+    ILogger<ToolActor> logger) : VirtualActor, IToolActor
 {
     private ToolHandle? _handle;
     private ToolSpec? _definition;
@@ -296,7 +296,7 @@ public sealed partial class ToolGrain(
 
     public override Task OnActivateAsync(CancellationToken cancellationToken)
     {
-        // Parse grain key: "workspaceId/toolName"
+        // Parse actor key: "workspaceId/toolName"
         EnsureIdentity();
         return Task.CompletedTask;
     }
@@ -357,7 +357,7 @@ tokenService.Revoke(token.TokenId);
 ## Publishing Domain Events
 
 ```csharp
-// Source: src/Assistants/Weave.Agents/Grains/AgentGrain.cs
+// Source: src/Assistants/Weave.Agents/Actors/AgentActor.cs
 
 // Publishing
 await eventBus.PublishAsync(new AgentActivatedEvent
@@ -408,14 +408,14 @@ await lifecycleManager.RunHooksAsync(LifecyclePhase.ToolConnected, context, ct);
 Pattern: NSubstitute for mocking + Shouldly for assertions.
 
 ```csharp
-// Source: src/Tools/Weave.Tools.Tests/ToolGrainTests.cs
+// Source: src/Tools/Weave.Tools.Tests/ToolActorTests.cs
 
-public sealed class ToolGrainTests
+public sealed class ToolActorTests
 {
-    // Factory method to create grain with mocked dependencies
-    private static (ToolGrain Grain, IToolConnector Connector, ICapabilityTokenService TokenService) CreateGrain()
+    // Factory method to create actor with mocked dependencies
+    private static (ToolActor Actor, IToolConnector Connector, ICapabilityTokenService TokenService) CreateActor()
     {
-        var grainFactory = Substitute.For<IGrainFactory>();
+        var actorFactory = Substitute.For<IActorFactory>();
         var connector = Substitute.For<IToolConnector>();
         connector.ToolType.Returns(ToolType.Cli);
 
@@ -426,13 +426,13 @@ public sealed class ToolGrainTests
         var tokenService = new CapabilityTokenService();
         var lifecycleManager = Substitute.For<ILifecycleManager>();
         var eventBus = Substitute.For<IEventBus>();
-        var secretProxy = Substitute.For<ISecretProxyGrain>();
+        var secretProxy = Substitute.For<ISecretProxyActor>();
         secretProxy.SubstituteAsync(Arg.Any<string>()).Returns(callInfo => callInfo.Arg<string>());
-        grainFactory.GetGrain<ISecretProxyGrain>(Arg.Any<string>(), null).Returns(secretProxy);
+        actorFactory.GetActor<ISecretProxyActor>(Arg.Any<string>(), null).Returns(secretProxy);
 
-        var grain = new ToolGrain(grainFactory, discovery, leakScanner, tokenService,
-            lifecycleManager, eventBus, Substitute.For<ILogger<ToolGrain>>());
-        return (grain, connector, tokenService);
+        var actor = new ToolActor(actorFactory, discovery, leakScanner, tokenService,
+            lifecycleManager, eventBus, Substitute.For<ILogger<ToolActor>>());
+        return (actor, connector, tokenService);
     }
 
     private static CapabilityToken CreateToken(ICapabilityTokenService svc) =>
@@ -447,14 +447,14 @@ public sealed class ToolGrainTests
     [Fact]
     public async Task ConnectAsync_WithValidToken_ReturnsHandle()
     {
-        var (grain, connector, tokenSvc) = CreateGrain();
+        var (actor, connector, tokenSvc) = CreateActor();
         var token = CreateToken(tokenSvc);
 
         connector.ConnectAsync(Arg.Any<ToolSpec>(), Arg.Any<CapabilityToken>(), Arg.Any<CancellationToken>())
             .Returns(new ToolHandle { ToolName = "test-tool", Type = ToolType.Cli, IsConnected = true });
 
         var spec = new ToolSpec { Name = "test-tool", Type = ToolType.Cli, Cli = new CliConfig() };
-        var handle = await grain.ConnectAsync(spec, token);
+        var handle = await actor.ConnectAsync(spec, token);
 
         handle.ShouldNotBeNull();
         handle.ToolName.ShouldBe("test-tool");
@@ -464,7 +464,7 @@ public sealed class ToolGrainTests
     [Fact]
     public async Task ConnectAsync_WithExpiredToken_Throws()
     {
-        var (grain, _, tokenSvc) = CreateGrain();
+        var (actor, _, tokenSvc) = CreateActor();
         var token = tokenSvc.Mint(new CapabilityTokenRequest
         {
             WorkspaceId = "test",
@@ -474,21 +474,21 @@ public sealed class ToolGrainTests
         });
 
         var spec = new ToolSpec { Name = "tool", Type = ToolType.Cli };
-        await Should.ThrowAsync<UnauthorizedAccessException>(() => grain.ConnectAsync(spec, token));
+        await Should.ThrowAsync<UnauthorizedAccessException>(() => actor.ConnectAsync(spec, token));
     }
 
     [Fact]
     public async Task InvokeAsync_WithSecretInPayload_BlocksInvocation()
     {
-        var (grain, connector, tokenSvc) = CreateGrain();
+        var (actor, connector, tokenSvc) = CreateActor();
         var token = CreateToken(tokenSvc);
 
         connector.ConnectAsync(Arg.Any<ToolSpec>(), Arg.Any<CapabilityToken>(), Arg.Any<CancellationToken>())
             .Returns(new ToolHandle { ToolName = "tool", Type = ToolType.Cli, IsConnected = true });
 
-        await grain.ConnectAsync(new ToolSpec { Name = "tool", Type = ToolType.Cli, Cli = new CliConfig() }, token);
+        await actor.ConnectAsync(new ToolSpec { Name = "tool", Type = ToolType.Cli, Cli = new CliConfig() }, token);
 
-        var result = await grain.InvokeAsync(new ToolInvocation
+        var result = await actor.InvokeAsync(new ToolInvocation
         {
             ToolName = "tool",
             Method = "exec",
@@ -519,7 +519,7 @@ Examples:
 - Use `NullLogger<T>.Instance` when NSubstitute can't mock `ILogger<T>` for internal types
 - `AITool` cannot be mocked — create a concrete stub that overrides `Name`
 - HTTP connectors: use `StubHandler : HttpMessageHandler` for test isolation
-- Grains: make `private static` helpers `internal static` for direct testing
+- Actors: make `private static` helpers `internal static` for direct testing
 
 ## Implementing a Tool Connector
 

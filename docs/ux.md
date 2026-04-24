@@ -147,5 +147,5 @@ Both CLI and Dashboard follow the same pattern:
 1. Read/create workspace manifest
 2. Send HTTP request to Silo API
 3. Silo dispatches CQRS commands/queries
-4. Orleans grains handle state and coordination
+4. Orleans actors handle state and coordination
 5. Response mapped to API contracts → UI display

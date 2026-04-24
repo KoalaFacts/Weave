@@ -3,13 +3,13 @@
 > **Source**: `src/Runtime/` | **Depends on**: [Foundation](foundation.md), [Workspaces](workspaces.md), [Assistants](assistants.md), [Tools](tools.md), [Security](security.md) | **Depended on by**: [UX](ux.md)
 > **See also**: [index](index.md)
 
-The Runtime subsystem is the hosting and orchestration layer: the Orleans grain host (Silo), .NET Aspire app host, and shared service defaults.
+The Runtime subsystem is the hosting and orchestration layer: the virtual actor host (currently Orleans-backed), .NET Aspire app host, and shared service defaults.
 
 ## Projects
 
 | Project | Purpose |
 |---------|---------|
-| `Weave.Silo` | Orleans grain host, REST API, plugin connectors, event bus implementations |
+| `Weave.Silo` | Virtual actor host, REST API, plugin connectors, event bus implementations |
 | `Weave.AppHost` | .NET Aspire orchestrator for local development |
 | `Weave.ServiceDefaults` | Shared observability, resilience, and health check configuration |
 
@@ -19,13 +19,16 @@ The Runtime subsystem is the hosting and orchestration layer: the Orleans grain 
 
 The silo bootstraps in this order:
 
-1. **Orleans configuration**
-   - **Local mode** (`Weave:LocalMode` or missing `Orleans:ClusterId`): localhost clustering + in-memory grain storage
-   - **Distributed mode**: Aspire Orleans extensions with Redis
+1. **Virtual actor runtime configuration**
+   - **Local mode** (`Weave:LocalMode` or missing runtime cluster id): localhost actor runtime + in-memory actor storage
+   - **Distributed mode**: Aspire-backed actor runtime with distributed clustering/storage
+   - The current provider is Orleans, registered behind `IVirtualActorProvider`.
 
 2. **Core services**
    - `ILifecycleManager` (singleton)
-   - `IWorkspaceRuntime` — `InProcessRuntime` (local) or `PodmanRuntime` (distributed)
+   - `IVirtualActorProvider` — resolves Weave virtual actors; current implementation is `OrleansVirtualActorProvider`
+   - `IWorkspaceRuntime` — `InProcessRuntime` (local) or `ContainerRuntime` (distributed)
+   - `ContainerRuntime` uses `Weave:ContainerRuntime:Engine` (`podman` by default, `docker` also supported)
 
 3. **CQRS** — `AddGeneratedCqrsHandlers()` (source-generated, zero reflection)
 
@@ -138,7 +141,7 @@ Redis (persistent)
     ↓
 Orleans Cluster ("weave-cluster")
     ├── Clustering: Redis
-    └── Grain Storage: Redis
+    └── Actor Storage: Redis
     ↓
 Silo ("weave-silo") × 2 replicas
     ├── References: Orleans, Redis
@@ -167,11 +170,12 @@ POST /api/workspaces { manifest }
     → StartWorkspaceCommand
       → ICommandDispatcher (source-generated)
         → StartWorkspaceHandler
-          → IWorkspaceGrain.StartAsync()
-          → IWorkspaceRegistryGrain.RegisterAsync()
-          → IToolRegistryGrain.ConnectToolsAsync()
-          → IAgentSupervisorGrain.ActivateAllAsync()
-          → IHeartbeatGrain.StartAsync()
+          → IVirtualActorProvider resolves workspace actor
+          → workspace actor StartAsync()
+          → registry actor RegisterAsync()
+          → tool registry actor ConnectToolsAsync()
+          → agent supervisor actor ActivateAllAsync()
+          → heartbeat actor StartAsync()
   ← WorkspaceResponse (201 Created)
 ```
 

@@ -9,7 +9,7 @@ The Security subsystem provides capability tokens, leak scanning, secret proxy, 
 
 | Project | Purpose |
 |---------|---------|
-| `Weave.Security` | Tokens, scanning, proxy, vault provider, grains |
+| `Weave.Security` | Tokens, scanning, proxy, vault provider, actors |
 | `Weave.Security.Tests` | Tests for all components |
 
 ## Capability Tokens
@@ -145,12 +145,12 @@ Task<ScanResult> ScanRequestAsync(string content, string workspaceId);
 - Delegates to `LeakScanner` for scanning.
 - Unregistered placeholders are left as-is (not replaced).
 
-### SecretProxyGrain
+### SecretProxyActor
 
-**Key**: `{workspaceId}` — Orleans grain for workspace-scoped secret management.
+**Key**: `{workspaceId}` — Orleans actor for workspace-scoped secret management.
 
 ```csharp
-public interface ISecretProxyGrain : IGrainWithStringKey
+public interface ISecretProxyActor : IVirtualActorWithStringKey
 {
     Task<string> RegisterSecretAsync(string secretPath, CapabilityToken token);
     Task UnregisterSecretAsync(string secretPath);
@@ -203,9 +203,9 @@ Plugin-aware delegation:
 ```
 Agent calls tool
     ↓
-ToolGrain.InvokeAsync()
+ToolActor.InvokeAsync()
     ├── Validate CapabilityToken (grants, expiry, signature)
-    ├── SubstituteAsync() via SecretProxyGrain ({secret:path} → real values)
+    ├── SubstituteAsync() via SecretProxyActor ({secret:path} → real values)
     ├── Scan outbound payload (LeakScanner)
     │   └── Block + publish ToolInvocationBlockedEvent if leak found
     ├── Execute tool via connector
@@ -231,4 +231,4 @@ ToolGrain.InvokeAsync()
 - **VaultSecretProviderTests**: HTTP mocking, token validation, path extraction
 - **InMemorySecretProviderTests**: CRUD operations, token validation
 - **SecretProviderProxyTests**: plugin delegation, fallback behavior
-- **SecretProxyGrainTests**: grain lifecycle, token validation
+- **SecretProxyActorTests**: actor lifecycle, token validation
