@@ -19,7 +19,11 @@ public sealed class DiscordChannelAdapter(HttpClient httpClient) : IChannelAdapt
         content.Headers.ContentType = new System.Net.Http.Headers.MediaTypeHeaderValue("application/json");
 
         var response = await httpClient.PostAsync(webhookUrl, content, ct);
-        response.EnsureSuccessStatusCode();
+        if (!response.IsSuccessStatusCode)
+        {
+            var errorBody = await response.Content.ReadAsStringAsync(ct);
+            throw new HttpRequestException($"Discord returned {(int)response.StatusCode}: {errorBody}");
+        }
     }
 
     public Task<bool> ValidateConfigAsync(Dictionary<string, string> config, CancellationToken ct)

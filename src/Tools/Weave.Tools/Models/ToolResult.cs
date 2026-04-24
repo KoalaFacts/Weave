@@ -14,6 +14,7 @@ public sealed record ToolInvocation
     public string Method { get; init; } = string.Empty;
     public Dictionary<string, string> Parameters { get; init; } = [];
     public string? RawInput { get; init; }
+    public string? ParseWarning { get; init; }
 }
 public sealed record ToolHandle
 {

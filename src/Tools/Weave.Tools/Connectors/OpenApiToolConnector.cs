@@ -94,7 +94,7 @@ public sealed partial class OpenApiToolConnector(HttpClient httpClient, ILogger<
                 Success = response.IsSuccessStatusCode,
                 ToolName = handle.ToolName,
                 Output = content,
-                Error = response.IsSuccessStatusCode ? null : $"HTTP {(int)response.StatusCode}",
+                Error = response.IsSuccessStatusCode ? null : $"HTTP {(int)response.StatusCode}: {content}",
                 Duration = sw.Elapsed
             };
         }

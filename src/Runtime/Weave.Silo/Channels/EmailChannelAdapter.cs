@@ -26,7 +26,11 @@ public sealed class EmailChannelAdapter(HttpClient httpClient) : IChannelAdapter
         content.Headers.ContentType = new System.Net.Http.Headers.MediaTypeHeaderValue("application/json");
 
         var response = await httpClient.PostAsync(relayUrl, content, ct);
-        response.EnsureSuccessStatusCode();
+        if (!response.IsSuccessStatusCode)
+        {
+            var errorBody = await response.Content.ReadAsStringAsync(ct);
+            throw new HttpRequestException($"Email relay returned {(int)response.StatusCode}: {errorBody}");
+        }
     }
 
     public Task<bool> ValidateConfigAsync(Dictionary<string, string> config, CancellationToken ct)

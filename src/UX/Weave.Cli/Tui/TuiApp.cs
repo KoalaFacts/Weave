@@ -782,7 +782,7 @@ internal static class TuiApp
                     return [.. live.Select(a => a.AgentName)];
                 }
             }
-            catch (Exception ex)
+            catch (Exception ex) when (ex is HttpRequestException or TaskCanceledException or OperationCanceledException)
             {
                 CliTheme.WriteMuted($"Could not reach Silo for agent list ({ex.Message}). Falling back to manifest.");
             }

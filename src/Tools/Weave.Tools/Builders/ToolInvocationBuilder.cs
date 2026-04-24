@@ -48,7 +48,7 @@ public static class ToolInvocationBuilder
             }
             catch (JsonException)
             {
-                // Fall through to fallback
+                // Malformed JSON — fall through to raw-input fallback with a diagnostic hint.
             }
         }
 
@@ -57,7 +57,8 @@ public static class ToolInvocationBuilder
             ToolName = toolName,
             Method = "invoke",
             RawInput = input,
-            Parameters = []
+            Parameters = [],
+            ParseWarning = input is not null ? "Tool call JSON could not be parsed; raw input was preserved." : null
         };
     }
 

@@ -169,7 +169,10 @@ internal static class InitCommand
                 string? resolvedConn = null;
                 try
                 { resolvedConn = CliConfigStore.ResolveConnectionString(connectionString); }
-                catch { }
+                catch (Exception ex)
+                {
+                    CliTheme.WriteWarning($"Could not resolve connection string: {ex.Message}");
+                }
 
                 if (!string.IsNullOrWhiteSpace(resolvedConn))
                 {

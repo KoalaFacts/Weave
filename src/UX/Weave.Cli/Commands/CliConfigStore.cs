@@ -56,7 +56,11 @@ internal static class CliConfigStore
         httpClient.DefaultRequestHeaders.Add("X-Vault-Token", vaultToken);
 
         using var response = httpClient.GetAsync($"/v1/{secretPath}").GetAwaiter().GetResult();
-        response.EnsureSuccessStatusCode();
+        if (!response.IsSuccessStatusCode)
+        {
+            var errorBody = response.Content.ReadAsStringAsync().GetAwaiter().GetResult();
+            throw new HttpRequestException($"Vault returned {(int)response.StatusCode}: {errorBody}");
+        }
 
         using var doc = System.Text.Json.JsonDocument.Parse(
             response.Content.ReadAsStringAsync().GetAwaiter().GetResult());

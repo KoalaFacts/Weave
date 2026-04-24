@@ -61,9 +61,10 @@ internal sealed class TuiSession
             var id = File.ReadAllText(statePath).Trim();
             return string.IsNullOrWhiteSpace(id) ? null : id;
         }
-        catch
+        catch (Exception ex) when (ex is IOException or UnauthorizedAccessException or FormatException)
         {
-            // Corrupt state — treated as not running. Warning surfaced via StateWarning.
+            // Corrupt or inaccessible state file — treated as not running.
+            // Warning surfaced via StateWarning property.
             return null;
         }
     }

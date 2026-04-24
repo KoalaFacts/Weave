@@ -29,7 +29,11 @@ public sealed class TelegramChannelAdapter(HttpClient httpClient) : IChannelAdap
         content.Headers.ContentType = new System.Net.Http.Headers.MediaTypeHeaderValue("application/json");
 
         var response = await httpClient.PostAsync(url, content, ct);
-        response.EnsureSuccessStatusCode();
+        if (!response.IsSuccessStatusCode)
+        {
+            var errorBody = await response.Content.ReadAsStringAsync(ct);
+            throw new HttpRequestException($"Telegram returned {(int)response.StatusCode}: {errorBody}");
+        }
     }
 
     public Task<bool> ValidateConfigAsync(Dictionary<string, string> config, CancellationToken ct)

@@ -85,4 +85,43 @@ public sealed class EndpointGroupSmokeTests : IClassFixture<SiloFactory>
         var body = await response.Content.ReadAsStringAsync(TestContext.Current.CancellationToken);
         ((int)response.StatusCode).ShouldBeLessThan(500, body);
     }
+
+    [Fact]
+    public async Task Skills_list_on_unknown_workspace_does_not_500()
+    {
+        using var client = _factory.CreateClient();
+
+        using var response = await client.GetAsync(
+            "/api/workspaces/no-such-workspace/skills",
+            TestContext.Current.CancellationToken);
+
+        var body = await response.Content.ReadAsStringAsync(TestContext.Current.CancellationToken);
+        ((int)response.StatusCode).ShouldBeLessThan(500, body);
+    }
+
+    [Fact]
+    public async Task Channels_list_on_unknown_workspace_does_not_500()
+    {
+        using var client = _factory.CreateClient();
+
+        using var response = await client.GetAsync(
+            "/api/workspaces/no-such-workspace/channels",
+            TestContext.Current.CancellationToken);
+
+        var body = await response.Content.ReadAsStringAsync(TestContext.Current.CancellationToken);
+        ((int)response.StatusCode).ShouldBeLessThan(500, body);
+    }
+
+    [Fact]
+    public async Task Users_profile_on_unknown_workspace_does_not_500()
+    {
+        using var client = _factory.CreateClient();
+
+        using var response = await client.GetAsync(
+            "/api/workspaces/no-such-workspace/users/test-user/profile",
+            TestContext.Current.CancellationToken);
+
+        var body = await response.Content.ReadAsStringAsync(TestContext.Current.CancellationToken);
+        ((int)response.StatusCode).ShouldBeLessThan(500, body);
+    }
 }

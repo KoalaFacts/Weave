@@ -112,9 +112,9 @@ internal static class VersionInfo
                 if (latest is not null)
                     SaveCache(new UpdateCache { LatestVersion = latest, CheckedAt = DateTimeOffset.UtcNow });
             }
-            catch
+            catch (Exception ex)
             {
-                // swallow — this runs detached
+                System.Diagnostics.Trace.TraceWarning($"Weave update check failed: {ex.Message}");
             }
         });
     }

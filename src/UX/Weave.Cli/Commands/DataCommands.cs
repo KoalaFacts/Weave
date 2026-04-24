@@ -279,6 +279,7 @@ internal static class DataCommands
                     if (export.Skills.Count > 0)
                     {
                         var restored = 0;
+                        var skillErrors = new List<string>();
                         foreach (var skill in export.Skills)
                         {
                             try
@@ -286,16 +287,22 @@ internal static class DataCommands
                                 await client.PostSkillAsync(response.WorkspaceId, skill, cancellationToken);
                                 restored++;
                             }
-                            catch { }
+                            catch (Exception ex)
+                            {
+                                skillErrors.Add(ex.Message);
+                            }
                         }
 
                         CliTheme.WriteInfo($"  Skills restored: {restored}/{export.Skills.Count}");
+                        foreach (var err in skillErrors)
+                            CliTheme.WriteWarning($"    Skill failed: {err}");
                     }
 
                     // Restore channels
                     if (export.Channels.Count > 0)
                     {
                         var restored = 0;
+                        var channelErrors = new List<string>();
                         foreach (var channel in export.Channels)
                         {
                             try
@@ -303,10 +310,15 @@ internal static class DataCommands
                                 await client.PostChannelAsync(response.WorkspaceId, channel, cancellationToken);
                                 restored++;
                             }
-                            catch { }
+                            catch (Exception ex)
+                            {
+                                channelErrors.Add(ex.Message);
+                            }
                         }
 
                         CliTheme.WriteInfo($"  Channels restored: {restored}/{export.Channels.Count}");
+                        foreach (var err in channelErrors)
+                            CliTheme.WriteWarning($"    Channel failed: {err}");
                     }
                 }
                 catch (Exception ex)

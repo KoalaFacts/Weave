@@ -25,8 +25,15 @@ public sealed partial class DaprEventBus(
             using var content = new ByteArrayContent(bytes);
             content.Headers.ContentType = new System.Net.Http.Headers.MediaTypeHeaderValue("application/json");
             using var response = await httpClient.PostAsync($"/v1.0/publish/{PubSubName}/{topicName}", content, ct);
-            response.EnsureSuccessStatusCode();
-            LogEventPublished(topicName, domainEvent.EventId, topicName);
+            if (!response.IsSuccessStatusCode)
+            {
+                var errorBody = await response.Content.ReadAsStringAsync(ct);
+                LogDaprPublishFailed(new HttpRequestException($"Dapr returned {(int)response.StatusCode}: {errorBody}"), topicName);
+            }
+            else
+            {
+                LogEventPublished(topicName, domainEvent.EventId, topicName);
+            }
         }
         catch (Exception ex)
         {

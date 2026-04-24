@@ -44,9 +44,15 @@ public sealed partial class DaprToolConnector(HttpClient httpClient, ILogger<Dap
             content.Headers.ContentType = new System.Net.Http.Headers.MediaTypeHeaderValue("application/json");
             using var response = await httpClient.PostAsync(
                 $"/v1.0/invoke/{appId}/method/{invocation.Method}", content, ct);
-            response.EnsureSuccessStatusCode();
             var output = await response.Content.ReadAsStringAsync(ct);
             sw.Stop();
+
+            if (!response.IsSuccessStatusCode)
+            {
+                LogDaprToolInvocationFailed(new HttpRequestException($"HTTP {(int)response.StatusCode}"), handle.ToolName);
+                return new ToolResult { Success = false, ToolName = handle.ToolName, Error = $"HTTP {(int)response.StatusCode}: {output}", Duration = sw.Elapsed };
+            }
+
             return new ToolResult { Success = true, ToolName = handle.ToolName, Output = output, Duration = sw.Elapsed };
         }
         catch (Exception ex)

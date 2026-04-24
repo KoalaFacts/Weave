@@ -344,6 +344,9 @@ internal static class RunCommand
             return;
         try
         { process.Kill(entireProcessTree: true); }
-        catch { }
+        catch (Exception ex) when (ex is InvalidOperationException or System.ComponentModel.Win32Exception)
+        {
+            // Process already exited between the HasExited check and Kill call — safe to ignore.
+        }
     }
 }

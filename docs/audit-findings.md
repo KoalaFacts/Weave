@@ -35,12 +35,12 @@ Concrete debt found by the `code-auditor` + `silent-failure-hunter` adversarial 
 
 | # | Group | Status |
 |---|---|---|
-| 10 | Agent (`POST /agents/{name}/messages` happy path) | ⏳ Only the 404/non-existent path covered by smoke test; happy-path chat test still to be written. |
+| 10 | Agent (`POST /agents/{name}/messages` happy path) | ✅ `Activate_ThenSendMessage_ReturnsChatResponse` integration test covers the full HTTP → CQRS → actor → chat pipeline path. |
 | 11 | Tool | ✅ Smoke test on `GET /tools` for unknown workspace added (covers the 500-crash-regression class). |
 | 12 | Plugin | ✅ Smoke test on `GET /api/plugins`. |
-| 13 | Skill | ⏳ No test yet. |
-| 14 | Channel | ⏳ No test yet. |
-| 15 | User | ⏳ No test yet. |
+| 13 | Skill | ✅ Smoke test on `GET /api/workspaces/{id}/skills` for unknown workspace. |
+| 14 | Channel | ✅ Smoke test on `GET /api/workspaces/{id}/channels` for unknown workspace. |
+| 15 | User | ✅ Smoke test on `GET /api/workspaces/{id}/users/{user}/profile` for unknown workspace. |
 | 16 | Marketplace | ✅ Smoke test on `GET /api/marketplace`. |
 | 17 | Template | ✅ Smoke test on `GET /api/templates` (caught the `CodecNotFoundException` for `<>z__ReadOnlyList<CapabilityTemplate>` the moment it was added). |
 
@@ -50,26 +50,26 @@ Concrete debt found by the `code-auditor` + `silent-failure-hunter` adversarial 
 |---|---|---|
 | 18 | [`WorkspaceApiClient`](../src/UX/Weave.Cli/Commands/WorkspaceApiClient.cs) — 14 call sites bypassing the helper | ✅ Fixed — every remaining `EnsureSuccessStatusCode()` replaced with `EnsureSuccessOrThrowAsync`. |
 | 19 | [`WeaveApiClient`](../src/UX/Weave.Dashboard/Services/WeaveApiClient.cs) (Dashboard chat) | ✅ Fixed — mirrors the CLI helper. |
-| 20 | `CliConfigStore.ResolveConnectionString` (Vault sync path) | ⏳ Still uses raw throw — scoped for later since it's sync-over-async already and needs a broader refactor. |
-| 21 | `VaultSecretProvider.cs` (`GetAsync`, `ListAsync`) | ⏳ Discards Vault error bodies. |
-| 22 | `DirectHttpToolConnector`, `DaprToolConnector`, `OpenApiToolConnector` | ⏳ Agents see only status codes, not broker reasons. |
-| 23 | `DaprEventBus`, `WebhookEventBus` | ⏳ Silent fallback to local-only dispatch on publish failure. |
-| 24 | Channel adapters (Slack, Discord, Telegram, Teams, Email) | ⏳ Each discards the channel-specific error payload. |
+| 20 | `CliConfigStore.ResolveConnectionString` (Vault sync path) | ✅ Fixed — reads Vault error body before throwing `HttpRequestException` with status code and body. Sync-over-async concern remains scoped for a broader refactor. |
+| 21 | `VaultSecretProvider.cs` (`GetAsync`, `ListAsync`) | ✅ Fixed — reads Vault error body before throwing, includes status code and body in `HttpRequestException`. |
+| 22 | `DirectHttpToolConnector`, `DaprToolConnector`, `OpenApiToolConnector` | ✅ Fixed — reads response body before checking status; returns `ToolResult` with error body on failure. |
+| 23 | `DaprEventBus`, `WebhookEventBus` | ✅ Fixed — reads response body before checking status; logs error with body on publish failure instead of swallowing. |
+| 24 | Channel adapters (Slack, Discord, Telegram, Teams, Email) | ✅ Fixed — reads response body before throwing; `HttpRequestException` includes channel name, status code, and error payload. |
 
 ## Silent catches and fire-and-forget
 
-All still ⏳ — these are case-by-case fixes, not bulk-replaceable:
+Case-by-case fixes — not bulk-replaceable:
 
 | # | Location | Finding |
 |---|---|---|
-| 25 | [`DataCommands.cs:289, 306`](../src/UX/Weave.Cli/Commands/DataCommands.cs#L289) | `weave data import` silently eats per-item exceptions. |
-| 26 | [`VersionInfo.cs:107`](../src/UX/Weave.Cli/Commands/VersionInfo.cs#L107) | Fire-and-forget `Task.Run` with empty catch. |
-| 27 | [`AgentActor.cs:221`](../src/Assistants/Weave.Agents/Actors/AgentActor.cs#L221) | `_ = verifier.VerifyAsync(...)` — fire-and-forget **actor** call. |
-| 28 | [`RunCommand.cs:338`](../src/UX/Weave.Cli/Commands/RunCommand.cs#L338) | `TryKill(process)` empty catch. |
-| 29 | [`InitCommand.cs:172`](../src/UX/Weave.Cli/Commands/InitCommand.cs#L172) | `ResolveConnectionString` failure silently returns null. |
-| 30 | [`TuiApp.cs:673-676`](../src/UX/Weave.Cli/Tui/TuiApp.cs#L673-L676) | `FetchAgentNamesAsync` falls through to manifest on any exception. |
-| 31 | [`TuiSession.cs:62-65`](../src/UX/Weave.Cli/Tui/TuiSession.cs#L62-L65) | Corrupt state file returns null silently. |
-| 32 | [`ToolInvocationBuilder.cs:49-52`](../src/Tools/Weave.Tools/Builders/ToolInvocationBuilder.cs#L49-L52) | Malformed tool-call JSON → opaque `Method="invoke"` with empty params. |
+| 25 | [`DataCommands.cs:289, 306`](../src/UX/Weave.Cli/Commands/DataCommands.cs#L289) | ✅ Fixed — collects per-item errors and surfaces via `CliTheme.WriteWarning`. |
+| 26 | [`VersionInfo.cs:107`](../src/UX/Weave.Cli/Commands/VersionInfo.cs#L107) | ✅ Fixed — catches `Exception ex` and traces a warning via `Trace.TraceWarning`. |
+| 27 | [`AgentActor.cs:221`](../src/Assistants/Weave.Agents/Actors/AgentActor.cs#L221) | ✅ Fixed — awaits `VerifyAsync` with try/catch that logs warning on failure. |
+| 28 | [`RunCommand.cs:338`](../src/UX/Weave.Cli/Commands/RunCommand.cs#L338) | ✅ Fixed — narrows catch to `InvalidOperationException`/`Win32Exception` (race between HasExited and Kill). |
+| 29 | [`InitCommand.cs:172`](../src/UX/Weave.Cli/Commands/InitCommand.cs#L172) | ✅ Fixed — surfaces `CliTheme.WriteWarning` with exception message on resolve failure. |
+| 30 | [`TuiApp.cs:673-676`](../src/UX/Weave.Cli/Tui/TuiApp.cs#L673-L676) | ✅ Fixed — narrows catch to `HttpRequestException`/`TaskCanceledException`/`OperationCanceledException`; unexpected exceptions propagate. |
+| 31 | [`TuiSession.cs:62-65`](../src/UX/Weave.Cli/Tui/TuiSession.cs#L62-L65) | ✅ Fixed — narrows catch to `IOException`/`UnauthorizedAccessException`/`FormatException`; other exceptions propagate. |
+| 32 | [`ToolInvocationBuilder.cs:49-52`](../src/Tools/Weave.Tools/Builders/ToolInvocationBuilder.cs#L49-L52) | ✅ Fixed — sets `ParseWarning` on the fallback `ToolInvocation` so callers know JSON was malformed. |
 
 ## Coverage gap (tracked as a single item)
 
@@ -90,7 +90,7 @@ All still ⏳ — these are case-by-case fixes, not bulk-replaceable:
 
 ## Summary
 
-- **16 of 32 items fixed** this pass (Phases A–D).
-- **0 regressions** — 846 tests pass (up from 841), 0 warnings.
+- **32 of 32 items fixed** across three passes (Phases A–G).
+- **0 regressions** — all tests pass, 0 warnings.
 - **3 additional bugs caught** during the fix pass (items 9b/9c/9d — `<>z__ReadOnlyList<T>` synthesized-type Orleans codec gaps — surfaced by the new endpoint smoke tests immediately after they were added).
-- **Remaining work:** 16 items — mostly Class D (plugin/channel HTTP body surfacing) and Class E (case-by-case silent catches). None block core CLI→Silo flows.
+- **Remaining work:** Coverage gap (see table above) — threshold not yet active in CI.

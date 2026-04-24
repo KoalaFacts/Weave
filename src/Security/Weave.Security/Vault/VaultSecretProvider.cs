@@ -26,7 +26,11 @@ public sealed partial class VaultSecretProvider(
 
         var mountPoint = $"weave/{token.WorkspaceId}";
         using var response = await httpClient.GetAsync($"/v1/{mountPoint}/data/{secretPath}", ct);
-        response.EnsureSuccessStatusCode();
+        if (!response.IsSuccessStatusCode)
+        {
+            var errorBody = await response.Content.ReadAsStringAsync(ct);
+            throw new HttpRequestException($"Vault returned {(int)response.StatusCode}: {errorBody}");
+        }
 
         using var doc = await JsonDocument.ParseAsync(await response.Content.ReadAsStreamAsync(ct), cancellationToken: ct);
         var data = doc.RootElement.GetProperty("data").GetProperty("data");
@@ -43,7 +47,11 @@ public sealed partial class VaultSecretProvider(
         var mountPoint = $"weave/{workspaceId}";
         using var request = new HttpRequestMessage(HttpMethod.Get, $"/v1/{mountPoint}/metadata/?list=true");
         using var response = await httpClient.SendAsync(request, ct);
-        response.EnsureSuccessStatusCode();
+        if (!response.IsSuccessStatusCode)
+        {
+            var errorBody = await response.Content.ReadAsStringAsync(ct);
+            throw new HttpRequestException($"Vault returned {(int)response.StatusCode}: {errorBody}");
+        }
 
         using var doc = await JsonDocument.ParseAsync(await response.Content.ReadAsStreamAsync(ct), cancellationToken: ct);
         var keys = doc.RootElement.GetProperty("data").GetProperty("keys");

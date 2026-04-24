@@ -79,10 +79,15 @@ public sealed partial class DirectHttpToolConnector(HttpClient httpClient, ILogg
                 request.Headers.TryAddWithoutValidation("Authorization", authHeader);
 
             using var response = await httpClient.SendAsync(request, ct);
-            response.EnsureSuccessStatusCode();
-
             var output = await response.Content.ReadAsStringAsync(ct);
             sw.Stop();
+
+            if (!response.IsSuccessStatusCode)
+            {
+                LogDirectHttpToolInvocationFailed(new HttpRequestException($"HTTP {(int)response.StatusCode}"), handle.ToolName);
+                return new ToolResult { Success = false, ToolName = handle.ToolName, Error = $"HTTP {(int)response.StatusCode}: {output}", Duration = sw.Elapsed };
+            }
+
             return new ToolResult { Success = true, ToolName = handle.ToolName, Output = output, Duration = sw.Elapsed };
         }
         catch (Exception ex)

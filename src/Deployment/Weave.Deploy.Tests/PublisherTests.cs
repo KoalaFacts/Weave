@@ -120,6 +120,32 @@ public static class PublisherTests
             var readonlyCount = content.Split("read_only: true").Length - 1;
             readonlyCount.ShouldBe(3);
         }
+
+        [Fact]
+        public async Task WorkspaceNameAppearsInEnvironment()
+        {
+            var publisher = new DockerComposePublisher();
+            var result = await publisher.PublishAsync(CreateTestManifest(), new PublishOptions { OutputPath = OutputDir }, TestContext.Current.CancellationToken);
+
+            var content = await File.ReadAllTextAsync(result.GeneratedFiles[0], TestContext.Current.CancellationToken);
+            content.ShouldContain("WEAVE_WORKSPACE=test-workspace");
+        }
+
+        [Fact]
+        public async Task EmptyToolsDictionary_OmitsToolSections()
+        {
+            var manifest = new WorkspaceManifest
+            {
+                Name = "empty-tools",
+                Version = "1.0",
+                Tools = new Dictionary<string, ToolDefinition>()
+            };
+            var publisher = new DockerComposePublisher();
+            var result = await publisher.PublishAsync(manifest, new PublishOptions { OutputPath = OutputDir }, TestContext.Current.CancellationToken);
+
+            var content = await File.ReadAllTextAsync(result.GeneratedFiles[0], TestContext.Current.CancellationToken);
+            content.ShouldNotContain("tool-");
+        }
     }
 
     // ── Kubernetes ─────────────────────────────────────────────────
@@ -201,6 +227,40 @@ public static class PublisherTests
             var siloFile = result.GeneratedFiles.First(f => f.Contains("silo-deployment"));
             var content = await File.ReadAllTextAsync(siloFile, TestContext.Current.CancellationToken);
             content.ShouldContain("replicas: 1");
+        }
+
+        [Fact]
+        public async Task NamespaceReferencesWorkspaceName()
+        {
+            var publisher = new KubernetesPublisher();
+            var result = await publisher.PublishAsync(CreateTestManifest(), new PublishOptions { OutputPath = OutputDir }, TestContext.Current.CancellationToken);
+
+            var nsFile = result.GeneratedFiles.First(f => f.Contains("namespace"));
+            var content = await File.ReadAllTextAsync(nsFile, TestContext.Current.CancellationToken);
+            content.ShouldContain("name: weave-test-workspace");
+        }
+
+        [Fact]
+        public async Task SiloDeployment_ContainsRedisConnectionEnv()
+        {
+            var publisher = new KubernetesPublisher();
+            var result = await publisher.PublishAsync(CreateTestManifest(), new PublishOptions { OutputPath = OutputDir }, TestContext.Current.CancellationToken);
+
+            var siloFile = result.GeneratedFiles.First(f => f.Contains("silo-deployment"));
+            var content = await File.ReadAllTextAsync(siloFile, TestContext.Current.CancellationToken);
+            content.ShouldContain("REDIS_CONNECTION");
+            content.ShouldContain("redis.weave-test-workspace.svc.cluster.local");
+        }
+
+        [Fact]
+        public async Task CustomRegistry_AppearsInSiloImage()
+        {
+            var publisher = new KubernetesPublisher();
+            var result = await publisher.PublishAsync(CreateTestManifest(), new PublishOptions { OutputPath = OutputDir, Registry = "myregistry.io/org" }, TestContext.Current.CancellationToken);
+
+            var siloFile = result.GeneratedFiles.First(f => f.Contains("silo-deployment"));
+            var content = await File.ReadAllTextAsync(siloFile, TestContext.Current.CancellationToken);
+            content.ShouldContain("myregistry.io/org/weave-silo:latest");
         }
     }
 
@@ -306,6 +366,25 @@ public static class PublisherTests
             content.ShouldContain("[[http_service.checks]]");
             content.ShouldContain("path = \"/health\"");
         }
+
+        [Fact]
+        public async Task NullScaling_UsesDefaults()
+        {
+            var manifest = CreateTestManifest() with
+            {
+                Targets = new Dictionary<string, TargetDefinition>
+                {
+                    ["production"] = new() { Runtime = "fly-io", Region = "lhr", Scaling = null }
+                }
+            };
+            var publisher = new FlyIoPublisher();
+            var result = await publisher.PublishAsync(manifest, new PublishOptions { OutputPath = OutputDir }, TestContext.Current.CancellationToken);
+
+            var content = await File.ReadAllTextAsync(result.GeneratedFiles[0], TestContext.Current.CancellationToken);
+            content.ShouldContain("primary_region = \"lhr\"");
+            content.ShouldContain("min_machines_running = 1");
+            content.ShouldContain("max_count = 10");
+        }
     }
 
     // ── GitHub Actions ─────────────────────────────────────────────
@@ -384,6 +463,25 @@ public static class PublisherTests
             content.ShouldContain("weave agent send coder");
             content.ShouldContain("weave agent send reviewer");
         }
+
+        [Fact]
+        public async Task WorkflowNameIncludesWorkspaceName()
+        {
+            var publisher = new GitHubActionsPublisher();
+            var result = await publisher.PublishAsync(CreateTestManifest(), new PublishOptions { OutputPath = OutputDir }, TestContext.Current.CancellationToken);
+
+            var content = await File.ReadAllTextAsync(result.GeneratedFiles[0], TestContext.Current.CancellationToken);
+            content.ShouldContain("name: Weave - test-workspace");
+        }
+
+        [Fact]
+        public async Task WorkflowFileNameIncludesWorkspaceName()
+        {
+            var publisher = new GitHubActionsPublisher();
+            var result = await publisher.PublishAsync(CreateTestManifest(), new PublishOptions { OutputPath = OutputDir }, TestContext.Current.CancellationToken);
+
+            result.GeneratedFiles[0].ShouldEndWith("weave-test-workspace.yml");
+        }
     }
 
     // ── Cross-publisher contracts ──────────────────────────────────
@@ -456,6 +554,62 @@ public static class PublisherTests
             result.TargetName.ShouldBe(publisher.TargetName);
             result.OutputPath.ShouldBe(OutputDir);
             result.GeneratedFiles.ShouldNotBeEmpty();
+        }
+
+        [Theory]
+        [MemberData(nameof(TargetNames))]
+        public async Task NullAgents_Succeeds(string name)
+        {
+            var manifest = new WorkspaceManifest { Name = "no-agents", Version = "1.0" };
+            var result = await Resolve(name).PublishAsync(manifest, new PublishOptions { OutputPath = OutputDir }, TestContext.Current.CancellationToken);
+
+            result.Success.ShouldBeTrue();
+            result.GeneratedFiles.ShouldNotBeEmpty();
+        }
+
+        [Theory]
+        [MemberData(nameof(TargetNames))]
+        public async Task NullTools_Succeeds(string name)
+        {
+            var manifest = new WorkspaceManifest { Name = "no-tools", Version = "1.0" };
+            var result = await Resolve(name).PublishAsync(manifest, new PublishOptions { OutputPath = OutputDir }, TestContext.Current.CancellationToken);
+
+            result.Success.ShouldBeTrue();
+            result.GeneratedFiles.ShouldNotBeEmpty();
+        }
+
+        [Theory]
+        [MemberData(nameof(TargetNames))]
+        public async Task NullTargets_Succeeds(string name)
+        {
+            var manifest = CreateTestManifest() with { Targets = null! };
+            var result = await Resolve(name).PublishAsync(manifest, new PublishOptions { OutputPath = OutputDir }, TestContext.Current.CancellationToken);
+
+            result.Success.ShouldBeTrue();
+        }
+
+        [Theory]
+        [MemberData(nameof(TargetNames))]
+        public async Task EmptyTargets_Succeeds(string name)
+        {
+            var manifest = CreateTestManifest() with { Targets = new Dictionary<string, TargetDefinition>() };
+            var result = await Resolve(name).PublishAsync(manifest, new PublishOptions { OutputPath = OutputDir }, TestContext.Current.CancellationToken);
+
+            result.Success.ShouldBeTrue();
+        }
+
+        [Theory]
+        [MemberData(nameof(TargetNames))]
+        public async Task WorkspaceNameAppearsInOutput(string name)
+        {
+            var manifest = CreateTestManifest();
+            var result = await Resolve(name).PublishAsync(manifest, new PublishOptions { OutputPath = OutputDir }, TestContext.Current.CancellationToken);
+
+            foreach (var file in result.GeneratedFiles)
+            {
+                var content = await File.ReadAllTextAsync(file, TestContext.Current.CancellationToken);
+                content.ShouldContain("test-workspace", customMessage: $"File {Path.GetFileName(file)} should reference the workspace name");
+            }
         }
     }
 }

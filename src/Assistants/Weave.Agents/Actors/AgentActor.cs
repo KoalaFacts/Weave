@@ -221,11 +221,23 @@ public sealed class AgentActor(
             proof.Items.Count);
 
         var verifier = actors.GetActor<IProofVerifierActor>(VirtualActorId.From(persistentState.State.WorkspaceId.ToString()));
-        _ = verifier.VerifyAsync(
-            persistentState.State.WorkspaceId,
-            persistentState.State.AgentName,
-            taskId,
-            proof);
+        // Fire-and-forget is intentional: VerifyAsync calls back into this grain via
+        // ReviewTaskAsync, so awaiting would deadlock (Orleans single-threaded reentrancy).
+        _ = Task.Run(async () =>
+        {
+            try
+            {
+                await verifier.VerifyAsync(
+                    persistentState.State.WorkspaceId,
+                    persistentState.State.AgentName,
+                    taskId,
+                    proof);
+            }
+            catch (Exception ex)
+            {
+                logger.LogWarning(ex, "Proof verification dispatch failed for task {TaskId} on agent {AgentName}", taskId, persistentState.State.AgentName);
+            }
+        });
     }
 
     public async Task ReviewTaskAsync(AgentTaskId taskId, bool accepted, string? feedback = null, VerificationRecord? verification = null)

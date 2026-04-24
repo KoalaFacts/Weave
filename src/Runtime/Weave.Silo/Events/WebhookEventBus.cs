@@ -33,8 +33,15 @@ public sealed partial class WebhookEventBus(
             content.Headers.ContentType = new System.Net.Http.Headers.MediaTypeHeaderValue("application/json");
             content.Headers.Add("X-Weave-Topic", topicName);
             using var response = await httpClient.PostAsync(webhookUrl, content, ct);
-            response.EnsureSuccessStatusCode();
-            LogWebhookPublished(topicName, domainEvent.EventId);
+            if (!response.IsSuccessStatusCode)
+            {
+                var errorBody = await response.Content.ReadAsStringAsync(ct);
+                LogWebhookPublishFailed(new HttpRequestException($"Webhook returned {(int)response.StatusCode}: {errorBody}"), topicName);
+            }
+            else
+            {
+                LogWebhookPublished(topicName, domainEvent.EventId);
+            }
         }
         catch (Exception ex)
         {
