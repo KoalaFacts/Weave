@@ -25,7 +25,7 @@ public sealed class WeaveTestCluster : IAsyncLifetime
 {
     public Orleans.TestingHost.TestCluster Cluster { get; private set; } = null!;
 
-    public IActorFactory ActorFactory => Cluster.ActorFactory;
+    public IActorFactory ActorFactory => Cluster.GrainFactory;
 
     /// <summary>
     /// FakeTimeProvider shared across the cluster. Tests that need to advance
@@ -73,7 +73,7 @@ public sealed class WeaveTestCluster : IAsyncLifetime
 
         public void Configure(ISiloBuilder siloBuilder)
         {
-            siloBuilder.AddOrleans in-memory storageAsDefault();
+            siloBuilder.AddMemoryGrainStorageAsDefault();
 
             // Scan the Silo's serialization assembly so branded-ID converters
             // (AgentTaskIdSurrogate, etc.) register. Without this the Orleans

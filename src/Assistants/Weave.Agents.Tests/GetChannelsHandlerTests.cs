@@ -18,7 +18,7 @@ public sealed class GetChannelsHandlerTests
         var actorFactory = Substitute.For<IActorFactory>();
         var gateway = Substitute.For<IChannelGatewayActor>();
         var workspaceId = WorkspaceId.From("ws-1");
-        actorFactory.GetGrain<IChannelGatewayActor>(workspaceId.ToString(), null).Returns(gateway);
+        actorFactory.GetActor<IChannelGatewayActor>(workspaceId.ToString(), null).Returns(gateway);
 
         var expected = new List<ChannelConfig>
         {
@@ -31,7 +31,7 @@ public sealed class GetChannelsHandlerTests
         var result = await handler.HandleAsync(new GetChannelsQuery(workspaceId), CancellationToken.None);
 
         result.ShouldBe(expected);
-        actorFactory.Received(1).GetGrain<IChannelGatewayActor>(workspaceId.ToString(), null);
+        actorFactory.Received(1).GetActor<IChannelGatewayActor>(workspaceId.ToString(), null);
     }
 
     [Fact]
@@ -39,7 +39,7 @@ public sealed class GetChannelsHandlerTests
     {
         var actorFactory = Substitute.For<IActorFactory>();
         var gateway = Substitute.For<IChannelGatewayActor>();
-        actorFactory.GetGrain<IChannelGatewayActor>(Arg.Any<string>(), null).Returns(gateway);
+        actorFactory.GetActor<IChannelGatewayActor>(Arg.Any<string>(), null).Returns(gateway);
         gateway.GetChannelsAsync().Returns(new List<ChannelConfig>());
 
         var handler = new GetChannelsHandler(new TestVirtualActorProvider(actorFactory));

@@ -13,7 +13,7 @@ namespace Weave.Agents.Tests;
 public sealed class HeartbeatActorDirectTests
 {
     private static HeartbeatActor CreateActor() => new(
-        Substitute.For<IActorFactory>(),
+        new TestVirtualActorProvider(Substitute.For<IActorFactory>()),
         TimeProvider.System,
         NullLogger<HeartbeatActor>.Instance);
 

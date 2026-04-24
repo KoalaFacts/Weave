@@ -99,7 +99,7 @@ public sealed class AgentChatPipelineBranchTests
         var fx = new Fixture();
         var userActor = Substitute.For<IUserModelActor>();
         userActor.GetContextSummaryAsync().Returns(Task.FromException<string>(new InvalidOperationException("user actor broken")));
-        fx.ActorFactory.GetGrain<IUserModelActor>("ws-1/alice", null).Returns(userActor);
+        fx.ActorFactory.GetActor<IUserModelActor>("ws-1/alice", null).Returns(userActor);
 
         var state = StateWith();
 
@@ -120,7 +120,7 @@ public sealed class AgentChatPipelineBranchTests
         var skillActor = Substitute.For<ISkillMemoryActor>();
         skillActor.SearchAsync(Arg.Any<string>(), Arg.Any<int>())
             .Returns(Task.FromException<IReadOnlyList<SkillSearchResult>>(new InvalidOperationException("skill actor broken")));
-        fx.ActorFactory.GetGrain<ISkillMemoryActor>("ws-1", null).Returns(skillActor);
+        fx.ActorFactory.GetActor<ISkillMemoryActor>("ws-1", null).Returns(skillActor);
 
         var state = StateWith();
 
@@ -140,7 +140,7 @@ public sealed class AgentChatPipelineBranchTests
         var toolRegistry = Substitute.For<IToolRegistryActor>();
         toolRegistry.ResolveAsync(Arg.Any<string>(), Arg.Any<string>())
             .Returns((ToolResolution?)null);
-        fx.ActorFactory.GetGrain<IToolRegistryActor>("ws-1", null).Returns(toolRegistry);
+        fx.ActorFactory.GetActor<IToolRegistryActor>("ws-1", null).Returns(toolRegistry);
 
         // State with a "connected" tool whose resolution returns null.
         var state = StateWith(null, "unavailable-tool");

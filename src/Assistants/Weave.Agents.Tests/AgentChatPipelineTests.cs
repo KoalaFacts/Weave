@@ -160,7 +160,7 @@ public sealed class AgentChatPipelineTests
             .Returns(Task.FromResult<ToolResolution?>(null));
 
         var actorFactory = Substitute.For<IActorFactory>();
-        actorFactory.GetGrain<IToolRegistryActor>(Arg.Any<string>(), Arg.Any<string?>()).Returns(registry);
+        actorFactory.GetActor<IToolRegistryActor>(Arg.Any<string>(), Arg.Any<string?>()).Returns(registry);
 
         var pipeline = new AgentChatPipeline(new TestVirtualActorProvider(actorFactory), chatClientFactory, TimeProvider.System, NullLogger<AgentChatPipeline>.Instance);
 
@@ -202,8 +202,8 @@ public sealed class AgentChatPipelineTests
             .Returns(Task.FromResult<IReadOnlyList<SkillSearchResult>>([]));
 
         var actorFactory = Substitute.For<IActorFactory>();
-        actorFactory.GetGrain<IUserModelActor>("ws-1/user-42", null).Returns(userModelActor);
-        actorFactory.GetGrain<ISkillMemoryActor>("ws-1", null).Returns(skillActor);
+        actorFactory.GetActor<IUserModelActor>("ws-1/user-42", null).Returns(userModelActor);
+        actorFactory.GetActor<ISkillMemoryActor>("ws-1", null).Returns(skillActor);
 
         var pipeline = new AgentChatPipeline(new TestVirtualActorProvider(actorFactory), chatClientFactory, TimeProvider.System, NullLogger<AgentChatPipeline>.Instance);
         var state = CreateActiveState();
@@ -259,7 +259,7 @@ public sealed class AgentChatPipelineTests
             ]));
 
         var actorFactory = Substitute.For<IActorFactory>();
-        actorFactory.GetGrain<ISkillMemoryActor>("ws-1", null).Returns(skillActor);
+        actorFactory.GetActor<ISkillMemoryActor>("ws-1", null).Returns(skillActor);
 
         var pipeline = new AgentChatPipeline(new TestVirtualActorProvider(actorFactory), chatClientFactory, TimeProvider.System, NullLogger<AgentChatPipeline>.Instance);
         var state = CreateActiveState();

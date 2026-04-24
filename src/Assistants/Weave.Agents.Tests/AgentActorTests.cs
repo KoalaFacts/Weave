@@ -47,7 +47,7 @@ public sealed class AgentActorTests
             .Returns(callInfo => Task.FromResult(callInfo.Arg<SkillDocument>()));
 
         var actorFactory = Substitute.For<IActorFactory>();
-        actorFactory.GetGrain<ISkillMemoryActor>(Arg.Any<string>(), null).Returns(skillMemory);
+        actorFactory.GetActor<ISkillMemoryActor>(Arg.Any<string>(), null).Returns(skillMemory);
 
         var chatPipeline = Substitute.For<IAgentChatPipeline>();
         var lifecycle = Substitute.For<ILifecycleManager>();

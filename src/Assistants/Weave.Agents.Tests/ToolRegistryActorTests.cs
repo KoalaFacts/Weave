@@ -58,8 +58,8 @@ public sealed class ToolRegistryActorTests
         }));
         secretProxy.SubstituteAsync(Arg.Any<string>()).Returns(callInfo => callInfo.Arg<string>());
 
-        actorFactory.GetGrain<IToolActor>(Arg.Any<string>(), null).Returns(toolActor);
-        actorFactory.GetGrain<ISecretProxyActor>(Arg.Any<string>(), null).Returns(secretProxy);
+        actorFactory.GetActor<IToolActor>(Arg.Any<string>(), null).Returns(toolActor);
+        actorFactory.GetActor<ISecretProxyActor>(Arg.Any<string>(), null).Returns(secretProxy);
 
         var actor = new ToolRegistryActor(new TestVirtualActorProvider(actorFactory), tokenService, lifecycle, eventBus, TimeProvider.System, logger, persistentState);
         return (actor, lifecycle, eventBus);

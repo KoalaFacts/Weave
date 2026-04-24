@@ -45,7 +45,7 @@ public sealed class ToolActorBranchTests
             Scanner = new LeakScanner(NullLogger<LeakScanner>.Instance);
             TokenService = CreateTokenService();
             SecretProxy.SubstituteAsync(Arg.Any<string>()).Returns(ci => ci.Arg<string>());
-            ActorFactory.GetGrain<ISecretProxyActor>(Arg.Any<string>(), null).Returns(SecretProxy);
+            ActorFactory.GetActor<ISecretProxyActor>(Arg.Any<string>(), null).Returns(SecretProxy);
 
             Actor = new ToolActor(
                 new TestVirtualActorProvider(ActorFactory), Discovery, Scanner, TokenService, Lifecycle, EventBus,

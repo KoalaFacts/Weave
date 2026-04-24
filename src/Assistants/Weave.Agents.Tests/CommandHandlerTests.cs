@@ -25,7 +25,7 @@ public sealed class CommandHandlerTests
             Model = "claude-sonnet-4-20250514"
         };
 
-        actorFactory.GetGrain<IAgentActor>($"{TestWorkspaceId}/researcher", null)
+        actorFactory.GetActor<IAgentActor>($"{TestWorkspaceId}/researcher", null)
             .Returns(agentActor);
         agentActor.ActivateAgentAsync(TestWorkspaceId, Arg.Any<AgentDefinition>())
             .Returns(expectedState);
@@ -47,7 +47,7 @@ public sealed class CommandHandlerTests
         var actorFactory = Substitute.For<IActorFactory>();
         var agentActor = Substitute.For<IAgentActor>();
 
-        actorFactory.GetGrain<IAgentActor>($"{TestWorkspaceId}/researcher", null)
+        actorFactory.GetActor<IAgentActor>($"{TestWorkspaceId}/researcher", null)
             .Returns(agentActor);
 
         var handler = new DeactivateAgentHandler(new TestVirtualActorProvider(actorFactory));
@@ -71,7 +71,7 @@ public sealed class CommandHandlerTests
             Status = AgentTaskStatus.Running
         };
 
-        actorFactory.GetGrain<IAgentActor>($"{TestWorkspaceId}/researcher", null)
+        actorFactory.GetActor<IAgentActor>($"{TestWorkspaceId}/researcher", null)
             .Returns(agentActor);
         agentActor.SubmitTaskAsync("Fix the bug")
             .Returns(expectedTask);
@@ -99,7 +99,7 @@ public sealed class CommandHandlerTests
             Status = AgentStatus.Busy
         };
 
-        actorFactory.GetGrain<IAgentActor>($"{TestWorkspaceId}/researcher", null)
+        actorFactory.GetActor<IAgentActor>($"{TestWorkspaceId}/researcher", null)
             .Returns(agentActor);
         agentActor.GetStateAsync().Returns(expectedState);
 
@@ -123,7 +123,7 @@ public sealed class CommandHandlerTests
             new AgentState { AgentId = "ws-1/a2", WorkspaceId = TestWorkspaceId, AgentName = "a2", Status = AgentStatus.Busy }
         ];
 
-        actorFactory.GetGrain<IAgentSupervisorActor>(TestWorkspaceId.ToString(), null)
+        actorFactory.GetActor<IAgentSupervisorActor>(TestWorkspaceId.ToString(), null)
             .Returns(supervisor);
         supervisor.GetAllAgentStatesAsync().Returns(expectedStates);
 

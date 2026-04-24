@@ -72,8 +72,8 @@ public sealed class ToolRegistryActorBranchTests
             ToolActor.GetSchemaAsync().Returns(Task.FromResult(new ToolSchema { ToolName = "x", Description = "d" }));
             SecretProxy.SubstituteAsync(Arg.Any<string>()).Returns(ci => ci.Arg<string>());
 
-            ActorFactory.GetGrain<IToolActor>(Arg.Any<string>(), null).Returns(ToolActor);
-            ActorFactory.GetGrain<ISecretProxyActor>(Arg.Any<string>(), null).Returns(SecretProxy);
+            ActorFactory.GetActor<IToolActor>(Arg.Any<string>(), null).Returns(ToolActor);
+            ActorFactory.GetActor<ISecretProxyActor>(Arg.Any<string>(), null).Returns(SecretProxy);
 
             Actor = new ToolRegistryActor(
                 new TestVirtualActorProvider(ActorFactory), tokenService, Lifecycle, EventBus, TimeProvider.System,

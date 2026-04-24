@@ -16,7 +16,7 @@ public sealed class ReviewAgentTaskHandlerTests
         var actorFactory = Substitute.For<IActorFactory>();
         var agentActor = Substitute.For<IAgentActor>();
 
-        actorFactory.GetGrain<IAgentActor>($"{TestWorkspaceId}/researcher", null)
+        actorFactory.GetActor<IAgentActor>($"{TestWorkspaceId}/researcher", null)
             .Returns(agentActor);
 
         agentActor.GetStateAsync().Returns(new AgentState
@@ -61,7 +61,7 @@ public sealed class ReviewAgentTaskHandlerTests
         var actorFactory = Substitute.For<IActorFactory>();
         var agentActor = Substitute.For<IAgentActor>();
 
-        actorFactory.GetGrain<IAgentActor>($"{TestWorkspaceId}/researcher", null)
+        actorFactory.GetActor<IAgentActor>($"{TestWorkspaceId}/researcher", null)
             .Returns(agentActor);
 
         agentActor.GetStateAsync().Returns(new AgentState

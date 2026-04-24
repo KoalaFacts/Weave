@@ -28,7 +28,7 @@ public sealed class CqrsHandlerTests
         var factory = Substitute.For<IActorFactory>();
         var agent = Substitute.For<IAgentActor>();
         var expected = new AgentChatResponse { Content = "hi back", ConversationId = "c1", UsedTools = false };
-        factory.GetGrain<IAgentActor>("ws-1/agent-a", null).Returns(agent);
+        factory.GetActor<IAgentActor>("ws-1/agent-a", null).Returns(agent);
         agent.SendAsync(Arg.Any<AgentMessage>()).Returns(expected);
 
         var handler = new SendAgentMessageHandler(new TestVirtualActorProvider(factory));
@@ -44,7 +44,7 @@ public sealed class CqrsHandlerTests
     {
         var factory = Substitute.For<IActorFactory>();
         var user = Substitute.For<IUserModelActor>();
-        factory.GetGrain<IUserModelActor>("ws-1/user-1", null).Returns(user);
+        factory.GetActor<IUserModelActor>("ws-1/user-1", null).Returns(user);
 
         var handler = new SetUserPreferenceHandler(new TestVirtualActorProvider(factory));
         var result = await handler.HandleAsync(
@@ -70,7 +70,7 @@ public sealed class CqrsHandlerTests
             ToolsUsed = [],
             CreatedByAgent = "agent-1"
         };
-        factory.GetGrain<ISkillMemoryActor>("ws-1", null).Returns(memory);
+        factory.GetActor<ISkillMemoryActor>("ws-1", null).Returns(memory);
         memory.StoreSkillAsync(skill).Returns(skill);
 
         var handler = new StoreSkillHandler(new TestVirtualActorProvider(factory));
@@ -86,7 +86,7 @@ public sealed class CqrsHandlerTests
     {
         var factory = Substitute.For<IActorFactory>();
         var gateway = Substitute.For<IChannelGatewayActor>();
-        factory.GetGrain<IChannelGatewayActor>("ws-1", null).Returns(gateway);
+        factory.GetActor<IChannelGatewayActor>("ws-1", null).Returns(gateway);
         var config = new ChannelConfig
         {
             ChannelId = ChannelId.New(),
@@ -109,7 +109,7 @@ public sealed class CqrsHandlerTests
         var factory = Substitute.For<IActorFactory>();
         var gateway = Substitute.For<IChannelGatewayActor>();
         var outbound = new OutboundMessage { ChannelId = ChannelId.New(), Content = "response" };
-        factory.GetGrain<IChannelGatewayActor>("ws-1", null).Returns(gateway);
+        factory.GetActor<IChannelGatewayActor>("ws-1", null).Returns(gateway);
         gateway.RouteInboundAsync(Arg.Any<InboundMessage>()).Returns(outbound);
 
         var handler = new RouteInboundMessageHandler(new TestVirtualActorProvider(factory));
@@ -143,7 +143,7 @@ public sealed class CqrsHandlerTests
             ToolsUsed = [],
             CreatedByAgent = "agent-1"
         };
-        factory.GetGrain<ISkillMemoryActor>("ws-1", null).Returns(memory);
+        factory.GetActor<ISkillMemoryActor>("ws-1", null).Returns(memory);
         memory.GetSkillAsync(skillId).Returns(skill);
 
         var handler = new GetSkillHandler(new TestVirtualActorProvider(factory));
@@ -159,7 +159,7 @@ public sealed class CqrsHandlerTests
     {
         var factory = Substitute.For<IActorFactory>();
         var memory = Substitute.For<ISkillMemoryActor>();
-        factory.GetGrain<ISkillMemoryActor>("ws-1", null).Returns(memory);
+        factory.GetActor<ISkillMemoryActor>("ws-1", null).Returns(memory);
         memory.GetSkillAsync(Arg.Any<SkillId>()).Returns((SkillDocument?)null);
 
         var handler = new GetSkillHandler(new TestVirtualActorProvider(factory));
@@ -174,7 +174,7 @@ public sealed class CqrsHandlerTests
         var factory = Substitute.For<IActorFactory>();
         var user = Substitute.For<IUserModelActor>();
         var profile = new UserProfileState { UserId = "user-1", WorkspaceId = "ws-1" };
-        factory.GetGrain<IUserModelActor>("ws-1/user-1", null).Returns(user);
+        factory.GetActor<IUserModelActor>("ws-1/user-1", null).Returns(user);
         user.GetProfileAsync().Returns(profile);
 
         var handler = new GetUserProfileHandler(new TestVirtualActorProvider(factory));
@@ -194,7 +194,7 @@ public sealed class CqrsHandlerTests
         [
             new() { Skill = new SkillDocument { SkillId = SkillId.New(), Title = "t", Description = "d", Tags = [], Steps = [], ToolsUsed = [], CreatedByAgent = "a" }, RelevanceScore = 0.9 }
         ];
-        factory.GetGrain<ISkillMemoryActor>("ws-1", null).Returns(memory);
+        factory.GetActor<ISkillMemoryActor>("ws-1", null).Returns(memory);
         memory.SearchAsync("test", 5).Returns(results);
 
         var handler = new SearchSkillsHandler(new TestVirtualActorProvider(factory));

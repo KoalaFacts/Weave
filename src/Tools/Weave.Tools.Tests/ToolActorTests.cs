@@ -33,7 +33,7 @@ public sealed class ToolActorTests
         var secretProxy = Substitute.For<ISecretProxyActor>();
         secretProxy.SubstituteAsync(Arg.Any<string>()).Returns(callInfo => callInfo.Arg<string>());
 
-        actorFactory.GetGrain<ISecretProxyActor>(Arg.Any<string>(), null).Returns(secretProxy);
+        actorFactory.GetActor<ISecretProxyActor>(Arg.Any<string>(), null).Returns(secretProxy);
 
         var actor = new ToolActor(new TestVirtualActorProvider(actorFactory), discovery, leakScanner, tokenService, lifecycleManager, eventBus, logger);
         return (actor, connector, tokenService);

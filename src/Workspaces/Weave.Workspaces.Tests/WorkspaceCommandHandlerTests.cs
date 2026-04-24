@@ -37,13 +37,13 @@ public sealed class WorkspaceCommandHandlerTests
             StartedAt = DateTimeOffset.UtcNow
         };
 
-        actorFactory.GetGrain<IWorkspaceActor>(TestWorkspaceId.ToString(), null)
+        actorFactory.GetActor<IWorkspaceActor>(TestWorkspaceId.ToString(), null)
             .Returns(workspaceActor);
-        actorFactory.GetGrain<IWorkspaceRegistryActor>("active", null)
+        actorFactory.GetActor<IWorkspaceRegistryActor>("active", null)
             .Returns(workspaceRegistry);
-        actorFactory.GetGrain<IToolRegistryActor>(TestWorkspaceId.ToString(), null)
+        actorFactory.GetActor<IToolRegistryActor>(TestWorkspaceId.ToString(), null)
             .Returns(toolRegistry);
-        actorFactory.GetGrain<IAgentSupervisorActor>(TestWorkspaceId.ToString(), null)
+        actorFactory.GetActor<IAgentSupervisorActor>(TestWorkspaceId.ToString(), null)
             .Returns(supervisor);
         workspaceActor.StartAsync(Arg.Any<WorkspaceManifest>())
             .Returns(expectedState);
@@ -78,13 +78,13 @@ public sealed class WorkspaceCommandHandlerTests
             ActiveAgents = []
         });
 
-        actorFactory.GetGrain<IWorkspaceActor>(TestWorkspaceId.ToString(), null)
+        actorFactory.GetActor<IWorkspaceActor>(TestWorkspaceId.ToString(), null)
             .Returns(workspaceActor);
-        actorFactory.GetGrain<IWorkspaceRegistryActor>("active", null)
+        actorFactory.GetActor<IWorkspaceRegistryActor>("active", null)
             .Returns(workspaceRegistry);
-        actorFactory.GetGrain<IToolRegistryActor>(TestWorkspaceId.ToString(), null)
+        actorFactory.GetActor<IToolRegistryActor>(TestWorkspaceId.ToString(), null)
             .Returns(toolRegistry);
-        actorFactory.GetGrain<IAgentSupervisorActor>(TestWorkspaceId.ToString(), null)
+        actorFactory.GetActor<IAgentSupervisorActor>(TestWorkspaceId.ToString(), null)
             .Returns(supervisor);
 
         var handler = new StopWorkspaceHandler(new TestVirtualActorProvider(actorFactory));
@@ -117,11 +117,11 @@ public sealed class WorkspaceCommandHandlerTests
             Status = WorkspaceStatus.Starting
         };
 
-        actorFactory.GetGrain<IWorkspaceRegistryActor>("active", null)
+        actorFactory.GetActor<IWorkspaceRegistryActor>("active", null)
             .Returns(registry);
-        actorFactory.GetGrain<IWorkspaceActor>("ws-1", null)
+        actorFactory.GetActor<IWorkspaceActor>("ws-1", null)
             .Returns(workspace1);
-        actorFactory.GetGrain<IWorkspaceActor>("ws-2", null)
+        actorFactory.GetActor<IWorkspaceActor>("ws-2", null)
             .Returns(workspace2);
         registry.GetWorkspaceIdsAsync().Returns(["ws-2", "ws-1"]);
         workspace1.GetStateAsync().Returns(workspace1State);
@@ -149,7 +149,7 @@ public sealed class WorkspaceCommandHandlerTests
             ActiveAgents = ["researcher", "coder"]
         };
 
-        actorFactory.GetGrain<IWorkspaceActor>(TestWorkspaceId.ToString(), null)
+        actorFactory.GetActor<IWorkspaceActor>(TestWorkspaceId.ToString(), null)
             .Returns(workspaceActor);
         workspaceActor.GetStateAsync().Returns(expectedState);
 
@@ -174,7 +174,7 @@ public sealed class WorkspaceCommandHandlerTests
             Status = WorkspaceStatus.Stopped
         };
 
-        actorFactory.GetGrain<IWorkspaceActor>(TestWorkspaceId.ToString(), null)
+        actorFactory.GetActor<IWorkspaceActor>(TestWorkspaceId.ToString(), null)
             .Returns(workspaceActor);
         workspaceActor.GetStateAsync().Returns(expectedState);
 
@@ -196,13 +196,13 @@ public sealed class WorkspaceCommandHandlerTests
         var toolRegistry = Substitute.For<IToolRegistryActor>();
         var supervisor = Substitute.For<IAgentSupervisorActor>();
 
-        actorFactory.GetGrain<IWorkspaceActor>(TestWorkspaceId.ToString(), null)
+        actorFactory.GetActor<IWorkspaceActor>(TestWorkspaceId.ToString(), null)
             .Returns(workspaceActor);
-        actorFactory.GetGrain<IWorkspaceRegistryActor>("active", null)
+        actorFactory.GetActor<IWorkspaceRegistryActor>("active", null)
             .Returns(workspaceRegistry);
-        actorFactory.GetGrain<IToolRegistryActor>(TestWorkspaceId.ToString(), null)
+        actorFactory.GetActor<IToolRegistryActor>(TestWorkspaceId.ToString(), null)
             .Returns(toolRegistry);
-        actorFactory.GetGrain<IAgentSupervisorActor>(TestWorkspaceId.ToString(), null)
+        actorFactory.GetActor<IAgentSupervisorActor>(TestWorkspaceId.ToString(), null)
             .Returns(supervisor);
         workspaceActor.StartAsync(Arg.Any<WorkspaceManifest>())
             .Returns<WorkspaceState>(x => throw new InvalidOperationException("Provisioning failed"));

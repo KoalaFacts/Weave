@@ -29,7 +29,7 @@ public sealed class ChannelGatewayActorBranchTests
         IActorFactory? factory = null,
         IEventBus? eventBus = null) =>
         new(
-            factory ?? Substitute.For<IActorFactory>(),
+            new TestVirtualActorProvider(factory ?? Substitute.For<IActorFactory>()),
             eventBus ?? Substitute.For<IEventBus>(),
             NullLogger<ChannelGatewayActor>.Instance,
             CreatePersistentState(initial));

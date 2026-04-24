@@ -47,9 +47,9 @@ public sealed class AgentActorBranchTests
 
         public Fixture()
         {
-            ActorFactory.GetGrain<ISkillMemoryActor>(Arg.Any<string>(), null)
+            ActorFactory.GetActor<ISkillMemoryActor>(Arg.Any<string>(), null)
                 .Returns(Substitute.For<ISkillMemoryActor>());
-            ActorFactory.GetGrain<IProofVerifierActor>(Arg.Any<string>(), null)
+            ActorFactory.GetActor<IProofVerifierActor>(Arg.Any<string>(), null)
                 .Returns(Substitute.For<IProofVerifierActor>());
 
             Actor = new AgentActor(
@@ -181,7 +181,7 @@ public sealed class AgentActorBranchTests
     {
         var fx = new Fixture();
         var skillActor = Substitute.For<ISkillMemoryActor>();
-        fx.ActorFactory.GetGrain<ISkillMemoryActor>(Arg.Any<string>(), null).Returns(skillActor);
+        fx.ActorFactory.GetActor<ISkillMemoryActor>(Arg.Any<string>(), null).Returns(skillActor);
 
         await fx.Actor.ActivateAgentAsync(TestWorkspaceId, Def());
         var task = await fx.Actor.SubmitTaskAsync("multi-step task");
@@ -207,7 +207,7 @@ public sealed class AgentActorBranchTests
         var skillActor = Substitute.For<ISkillMemoryActor>();
         skillActor.StoreSkillAsync(Arg.Any<SkillDocument>())
             .Returns(Task.FromException<SkillDocument>(new InvalidOperationException("store broken")));
-        fx.ActorFactory.GetGrain<ISkillMemoryActor>(Arg.Any<string>(), null).Returns(skillActor);
+        fx.ActorFactory.GetActor<ISkillMemoryActor>(Arg.Any<string>(), null).Returns(skillActor);
 
         await fx.Actor.ActivateAgentAsync(TestWorkspaceId, Def());
         var task = await fx.Actor.SubmitTaskAsync("multi-step task");

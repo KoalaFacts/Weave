@@ -23,7 +23,7 @@ public sealed class CompleteAgentTaskHandlerTests
         var agentActor = Substitute.For<IAgentActor>();
         var proof = CreateProof();
 
-        actorFactory.GetGrain<IAgentActor>($"{TestWorkspaceId}/researcher", null)
+        actorFactory.GetActor<IAgentActor>($"{TestWorkspaceId}/researcher", null)
             .Returns(agentActor);
 
         agentActor.GetStateAsync().Returns(new AgentState
@@ -63,7 +63,7 @@ public sealed class CompleteAgentTaskHandlerTests
         var agentActor = Substitute.For<IAgentActor>();
         var proof = CreateProof(ProofType.Custom, "error details");
 
-        actorFactory.GetGrain<IAgentActor>($"{TestWorkspaceId}/researcher", null)
+        actorFactory.GetActor<IAgentActor>($"{TestWorkspaceId}/researcher", null)
             .Returns(agentActor);
 
         agentActor.GetStateAsync().Returns(new AgentState
@@ -100,7 +100,7 @@ public sealed class CompleteAgentTaskHandlerTests
         var actorFactory = Substitute.For<IActorFactory>();
         var agentActor = Substitute.For<IAgentActor>();
 
-        actorFactory.GetGrain<IAgentActor>($"{TestWorkspaceId}/researcher", null)
+        actorFactory.GetActor<IAgentActor>($"{TestWorkspaceId}/researcher", null)
             .Returns(agentActor);
 
         var proof = new ProofOfWork

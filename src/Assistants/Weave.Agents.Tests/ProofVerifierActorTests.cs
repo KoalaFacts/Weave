@@ -33,7 +33,7 @@ public sealed class ProofVerifierActorTests
         var agentActor = Substitute.For<IAgentActor>();
         var persistentState = CreatePersistentState(state);
 
-        actorFactory.GetGrain<IAgentActor>($"{TestWorkspaceId}/researcher", null)
+        actorFactory.GetActor<IAgentActor>($"{TestWorkspaceId}/researcher", null)
             .Returns(agentActor);
 
         // Set up validator actors
@@ -56,7 +56,7 @@ public sealed class ProofVerifierActorTests
                         Reason = "All conditions satisfied."
                     };
                 });
-            actorFactory.GetGrain<IProofValidatorActor>($"{TestWorkspaceId}/{validatorId}", null)
+            actorFactory.GetActor<IProofValidatorActor>($"{TestWorkspaceId}/{validatorId}", null)
                 .Returns(validatorActor);
         }
 

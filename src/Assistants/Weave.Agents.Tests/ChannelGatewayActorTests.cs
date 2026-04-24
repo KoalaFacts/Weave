@@ -72,7 +72,7 @@ public sealed class ChannelGatewayActorTests
                 Content = responseContent,
                 ConversationId = "conv-1"
             }));
-        actorFactory.GetGrain<IAgentActor>(Arg.Any<string>(), null).Returns(agentActor);
+        actorFactory.GetActor<IAgentActor>(Arg.Any<string>(), null).Returns(agentActor);
     }
 
     [Fact]
@@ -117,7 +117,7 @@ public sealed class ChannelGatewayActorTests
         outbound.ShouldNotBeNull();
         outbound.Content.ShouldBe("Hello from agent!");
         outbound.ChannelId.ShouldBe(TestChannelId);
-        actorFactory.Received(1).GetGrain<IAgentActor>($"{TestWorkspaceId}/researcher", null);
+        actorFactory.Received(1).GetActor<IAgentActor>($"{TestWorkspaceId}/researcher", null);
     }
 
     [Fact]
@@ -132,7 +132,7 @@ public sealed class ChannelGatewayActorTests
 
         outbound.ShouldNotBeNull();
         outbound.Content.ShouldBe("Routed response");
-        actorFactory.Received(1).GetGrain<IAgentActor>($"{TestWorkspaceId}/support-agent", null);
+        actorFactory.Received(1).GetActor<IAgentActor>($"{TestWorkspaceId}/support-agent", null);
     }
 
     [Fact]
@@ -183,7 +183,7 @@ public sealed class ChannelGatewayActorTests
         var outbound = await actor.RouteInboundAsync(message);
         outbound.ShouldNotBeNull();
         outbound.Content.ShouldBe("Matched");
-        actorFactory.Received(1).GetGrain<IAgentActor>($"{TestWorkspaceId}/greeting-agent", null);
+        actorFactory.Received(1).GetActor<IAgentActor>($"{TestWorkspaceId}/greeting-agent", null);
     }
 
     [Fact]
