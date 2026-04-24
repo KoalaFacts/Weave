@@ -1,6 +1,6 @@
 using Microsoft.Extensions.Logging;
-using Weave.Agents.Events;
 using Weave.Agents.Actors;
+using Weave.Agents.Events;
 using Weave.Agents.Models;
 using Weave.Shared.Events;
 using Weave.Shared.Ids;

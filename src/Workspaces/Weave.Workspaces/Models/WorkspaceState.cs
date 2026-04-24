@@ -1,6 +1,7 @@
 using Weave.Shared.Ids;
 
 namespace Weave.Workspaces.Models;
+
 public sealed record WorkspaceState
 {
     public WorkspaceId WorkspaceId { get; set; } = WorkspaceId.Empty;

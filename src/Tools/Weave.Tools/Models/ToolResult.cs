@@ -1,4 +1,5 @@
 namespace Weave.Tools.Models;
+
 public sealed record ToolResult
 {
     public bool Success { get; init; }

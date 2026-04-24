@@ -1,4 +1,5 @@
 namespace Weave.Security.Scanning;
+
 public sealed record ScanResult
 {
     public bool HasLeaks { get; init; }

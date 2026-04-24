@@ -190,4 +190,54 @@ public sealed class ToolRegistryActorTests
             Arg.Any<Events.ToolDisconnectedEvent>(),
             Arg.Any<CancellationToken>());
     }
+
+    [Fact]
+    public async Task OnActivatedAsync_WithKey_SetsWorkspaceId()
+    {
+        var state = new ToolRegistryState();
+        var persistentState = Substitute.For<IActorState<ToolRegistryState>>();
+        persistentState.State.Returns(state);
+        persistentState.ReadStateAsync(Arg.Any<CancellationToken>()).Returns(Task.CompletedTask);
+        persistentState.WriteStateAsync(Arg.Any<CancellationToken>()).Returns(Task.CompletedTask);
+
+        var actors = Substitute.For<IVirtualActorProvider>();
+        var tokenService = new CapabilityTokenService(
+            Microsoft.Extensions.Options.Options.Create(
+                new CapabilityTokenOptions { SigningKey = "test-signing-key-that-is-at-least-32-chars-long" }),
+            TimeProvider.System);
+        var lifecycle = Substitute.For<ILifecycleManager>();
+        var eventBus = Substitute.For<IEventBus>();
+        var logger = Substitute.For<ILogger<ToolRegistryActor>>();
+
+        var actor = new ToolRegistryActor(actors, tokenService, lifecycle, eventBus, TimeProvider.System, logger, persistentState);
+        await actor.OnActivatedAsync("ws-test", TestContext.Current.CancellationToken);
+
+        state.WorkspaceId.ShouldBe("ws-test");
+        await persistentState.Received(1).WriteStateAsync(Arg.Any<CancellationToken>());
+    }
+
+    [Fact]
+    public async Task OnActivatedAsync_WithMatchingWorkspaceId_DoesNotWrite()
+    {
+        var state = new ToolRegistryState { WorkspaceId = "ws-test" };
+        var persistentState = Substitute.For<IActorState<ToolRegistryState>>();
+        persistentState.State.Returns(state);
+        persistentState.ReadStateAsync(Arg.Any<CancellationToken>()).Returns(Task.CompletedTask);
+        persistentState.WriteStateAsync(Arg.Any<CancellationToken>()).Returns(Task.CompletedTask);
+
+        var actors = Substitute.For<IVirtualActorProvider>();
+        var tokenService = new CapabilityTokenService(
+            Microsoft.Extensions.Options.Options.Create(
+                new CapabilityTokenOptions { SigningKey = "test-signing-key-that-is-at-least-32-chars-long" }),
+            TimeProvider.System);
+        var lifecycle = Substitute.For<ILifecycleManager>();
+        var eventBus = Substitute.For<IEventBus>();
+        var logger = Substitute.For<ILogger<ToolRegistryActor>>();
+
+        var actor = new ToolRegistryActor(actors, tokenService, lifecycle, eventBus, TimeProvider.System, logger, persistentState);
+        await actor.OnActivatedAsync("ws-test", TestContext.Current.CancellationToken);
+
+        // Already matches, no write needed
+        await persistentState.DidNotReceive().WriteStateAsync(Arg.Any<CancellationToken>());
+    }
 }

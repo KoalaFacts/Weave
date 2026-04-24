@@ -2,6 +2,7 @@ using Weave.Shared.Events;
 using Weave.Shared.Ids;
 
 namespace Weave.Workspaces.Events;
+
 public sealed record TemplateRegisteredEvent : DomainEvent
 {
     public required TemplateId TemplateId { get; init; }

@@ -1,4 +1,5 @@
 namespace Weave.Workspaces.Models;
+
 public sealed record RegistryEntry
 {
     public required string Name { get; init; }

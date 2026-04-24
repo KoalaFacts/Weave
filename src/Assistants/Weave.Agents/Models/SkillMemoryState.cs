@@ -1,6 +1,7 @@
 using Weave.Shared.Ids;
 
 namespace Weave.Agents.Models;
+
 public sealed record SkillDocument
 {
     public required SkillId SkillId { get; init; }

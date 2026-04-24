@@ -1,6 +1,7 @@
 using Weave.Workspaces.Models;
 
 namespace Weave.Agents.Models;
+
 public sealed record ToolRegistryState
 {
     public Dictionary<string, ToolDefinition> Definitions { get; init; } = [];

@@ -2,6 +2,7 @@ using Weave.Security.Tokens;
 using Weave.Tools.Models;
 
 namespace Weave.Agents.Models;
+
 public sealed record AgentMessage
 {
     public string Role { get; init; } = "user";

@@ -1,4 +1,5 @@
 namespace Weave.Security.Tokens;
+
 public sealed record CapabilityToken
 {
     public string TokenId { get; init; } = Guid.NewGuid().ToString("N");

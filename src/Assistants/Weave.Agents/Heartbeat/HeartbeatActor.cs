@@ -82,7 +82,7 @@ public sealed partial class HeartbeatActor(
             if (string.Equals(agentKey, "unknown-agent", StringComparison.Ordinal))
                 return state;
 
-        var agentActor = actors.GetActor<IAgentActor>(VirtualActorId.From(agentKey));
+            var agentActor = actors.GetActor<IAgentActor>(VirtualActorId.From(agentKey));
             var agentState = await agentActor.GetStateAsync();
 
             if (agentState.Status is not Models.AgentStatus.Active)

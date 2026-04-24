@@ -352,5 +352,193 @@ public static class PluginConnectorTests
 
             status.IsConnected.ShouldBeTrue();
         }
+
+        [Fact]
+        public async Task ConnectAsync_with_bearer_provider_returns_connected()
+        {
+            var connector = new AuthPluginConnector(CreateBroker(), Loggers());
+
+            var status = await connector.ConnectAsync("a1", new PluginDefinition
+            {
+                Type = "auth",
+                Config = new Dictionary<string, string>
+                {
+                    ["provider"] = "bearer",
+                    ["secret"] = "my-token"
+                }
+            });
+
+            status.IsConnected.ShouldBeTrue();
+            status.Info!["provider"].ShouldBe("bearer");
+        }
+
+        [Fact]
+        public async Task ConnectAsync_with_env_secret_resolves_from_environment()
+        {
+            const string varName = "WEAVE_TEST_AUTH_SECRET_E2E";
+            Environment.SetEnvironmentVariable(varName, "env-key-value");
+            try
+            {
+                var connector = new AuthPluginConnector(CreateBroker(), Loggers());
+
+                var status = await connector.ConnectAsync("a1", new PluginDefinition
+                {
+                    Type = "auth",
+                    Config = new Dictionary<string, string>
+                    {
+                        ["provider"] = "apikey",
+                        ["secret"] = $"env:{varName}"
+                    }
+                });
+
+                status.IsConnected.ShouldBeTrue();
+            }
+            finally
+            {
+                Environment.SetEnvironmentVariable(varName, null);
+            }
+        }
+
+        [Fact]
+        public async Task ConnectAsync_with_file_secret_resolves_from_file()
+        {
+            var tempFile = Path.GetTempFileName();
+            try
+            {
+                await File.WriteAllTextAsync(tempFile, "file-secret-value", TestContext.Current.CancellationToken);
+
+                var connector = new AuthPluginConnector(CreateBroker(), Loggers());
+
+                var status = await connector.ConnectAsync("a1", new PluginDefinition
+                {
+                    Type = "auth",
+                    Config = new Dictionary<string, string>
+                    {
+                        ["provider"] = "apikey",
+                        ["secret"] = $"file:{tempFile}"
+                    }
+                });
+
+                status.IsConnected.ShouldBeTrue();
+            }
+            finally
+            {
+                File.Delete(tempFile);
+            }
+        }
+
+        [Fact]
+        public async Task ConnectAsync_with_missing_file_secret_for_apikey_returns_not_connected()
+        {
+            var connector = new AuthPluginConnector(CreateBroker(), Loggers());
+
+            var status = await connector.ConnectAsync("a1", new PluginDefinition
+            {
+                Type = "auth",
+                Config = new Dictionary<string, string>
+                {
+                    ["provider"] = "apikey",
+                    ["secret"] = "file:/nonexistent/path/secret.txt"
+                }
+            });
+
+            status.IsConnected.ShouldBeFalse();
+            status.Error.ShouldNotBeNull();
+            status.Error.ShouldContain("required");
+        }
+
+        [Fact]
+        public async Task ConnectAsync_missing_secret_for_apikey_returns_not_connected()
+        {
+            var connector = new AuthPluginConnector(CreateBroker(), Loggers());
+
+            var status = await connector.ConnectAsync("a1", new PluginDefinition
+            {
+                Type = "auth",
+                Config = new Dictionary<string, string>
+                {
+                    ["provider"] = "apikey"
+                }
+            });
+
+            status.IsConnected.ShouldBeFalse();
+            status.Error.ShouldNotBeNull();
+            status.Error.ShouldContain("required");
+        }
+
+        [Fact]
+        public async Task ConnectAsync_missing_secret_for_bearer_returns_not_connected()
+        {
+            var connector = new AuthPluginConnector(CreateBroker(), Loggers());
+
+            var status = await connector.ConnectAsync("a1", new PluginDefinition
+            {
+                Type = "auth",
+                Config = new Dictionary<string, string>
+                {
+                    ["provider"] = "bearer"
+                }
+            });
+
+            status.IsConnected.ShouldBeFalse();
+            status.Error.ShouldNotBeNull();
+            status.Error.ShouldContain("required");
+        }
+
+        [Fact]
+        public async Task DisconnectAsync_clears_broker_provider()
+        {
+            var broker = CreateBroker();
+            var connector = new AuthPluginConnector(broker, Loggers());
+
+            await connector.ConnectAsync("a1", new PluginDefinition
+            {
+                Type = "auth",
+                Config = new Dictionary<string, string>
+                {
+                    ["provider"] = "apikey",
+                    ["secret"] = "test-key"
+                }
+            });
+
+            var status = await connector.DisconnectAsync("a1");
+
+            status.IsConnected.ShouldBeFalse();
+        }
+
+        [Fact]
+        public async Task GetStatus_reflects_connected_provider()
+        {
+            var broker = CreateBroker();
+            var connector = new AuthPluginConnector(broker, Loggers());
+
+            await connector.ConnectAsync("a1", new PluginDefinition
+            {
+                Type = "auth",
+                Config = new Dictionary<string, string>
+                {
+                    ["provider"] = "apikey",
+                    ["secret"] = "test-key"
+                }
+            });
+
+            var status = connector.GetStatus("a1");
+
+            status.IsConnected.ShouldBeTrue();
+            status.Info.ShouldNotBeNull();
+            status.Info.ShouldContainKey("provider");
+        }
+
+        [Fact]
+        public void GetStatus_when_not_connected_returns_disconnected()
+        {
+            var connector = new AuthPluginConnector(CreateBroker(), Loggers());
+
+            var status = connector.GetStatus("a1");
+
+            status.IsConnected.ShouldBeFalse();
+            status.Info.ShouldNotBeNull();
+            status.Info.ShouldBeEmpty();
+        }
     }
 }

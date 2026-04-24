@@ -1,7 +1,7 @@
 using Microsoft.Extensions.Logging;
 using Microsoft.Extensions.Logging.Abstractions;
-using Weave.Agents.Events;
 using Weave.Agents.Actors;
+using Weave.Agents.Events;
 using Weave.Agents.Models;
 using Weave.Shared.Events;
 using Weave.Shared.Ids;
@@ -245,5 +245,44 @@ public sealed class ChannelGatewayActorTests
         var ex = await Should.ThrowAsync<InvalidOperationException>(
             () => actor.RouteInboundAsync(CreateInboundMessage()));
         ex.Message.ShouldContain("disabled");
+    }
+
+    [Fact]
+    public async Task OnActivatedAsync_WithKey_SetsWorkspaceId()
+    {
+        var state = new ChannelGatewayState(); // blank WorkspaceId
+        var persistentState = Substitute.For<IActorState<ChannelGatewayState>>();
+        persistentState.State.Returns(state);
+        persistentState.ReadStateAsync(Arg.Any<CancellationToken>()).Returns(Task.CompletedTask);
+        persistentState.WriteStateAsync(Arg.Any<CancellationToken>()).Returns(Task.CompletedTask);
+
+        var actors = Substitute.For<IVirtualActorProvider>();
+        var eventBus = Substitute.For<IEventBus>();
+        var logger = NullLogger<ChannelGatewayActor>.Instance;
+
+        var actor = new ChannelGatewayActor(actors, eventBus, logger, persistentState);
+        await actor.OnActivatedAsync("ws-1", TestContext.Current.CancellationToken);
+
+        state.WorkspaceId.ShouldBe("ws-1");
+        await persistentState.Received(1).WriteStateAsync(Arg.Any<CancellationToken>());
+    }
+
+    [Fact]
+    public async Task OnActivatedAsync_WithExistingWorkspaceId_DoesNotOverwrite()
+    {
+        var state = new ChannelGatewayState { WorkspaceId = "existing-ws" };
+        var persistentState = Substitute.For<IActorState<ChannelGatewayState>>();
+        persistentState.State.Returns(state);
+        persistentState.ReadStateAsync(Arg.Any<CancellationToken>()).Returns(Task.CompletedTask);
+        persistentState.WriteStateAsync(Arg.Any<CancellationToken>()).Returns(Task.CompletedTask);
+
+        var actors = Substitute.For<IVirtualActorProvider>();
+        var eventBus = Substitute.For<IEventBus>();
+        var logger = NullLogger<ChannelGatewayActor>.Instance;
+
+        var actor = new ChannelGatewayActor(actors, eventBus, logger, persistentState);
+        await actor.OnActivatedAsync("different-ws", TestContext.Current.CancellationToken);
+
+        state.WorkspaceId.ShouldBe("existing-ws");
     }
 }

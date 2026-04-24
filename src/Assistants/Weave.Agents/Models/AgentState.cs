@@ -2,6 +2,7 @@ using Weave.Shared.Ids;
 using Weave.Workspaces.Models;
 
 namespace Weave.Agents.Models;
+
 public sealed record AgentState
 {
     public string AgentId { get; set; } = string.Empty;

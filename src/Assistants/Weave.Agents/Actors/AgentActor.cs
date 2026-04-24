@@ -268,7 +268,7 @@ public sealed class AgentActor(
 
         try
         {
-        var skillActor = actors.GetActor<ISkillMemoryActor>(VirtualActorId.From(persistentState.State.WorkspaceId.ToString()));
+            var skillActor = actors.GetActor<ISkillMemoryActor>(VirtualActorId.From(persistentState.State.WorkspaceId.ToString()));
             await skillActor.StoreSkillAsync(skill);
             logger.LogInformation(
                 "Auto-extracted skill '{Title}' from task {TaskId}",

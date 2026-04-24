@@ -1,4 +1,5 @@
 namespace Weave.Agents.Models;
+
 public sealed record UserProfileState
 {
     public string UserId { get; set; } = string.Empty;

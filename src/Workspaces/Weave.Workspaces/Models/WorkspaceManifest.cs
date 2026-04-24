@@ -1,4 +1,5 @@
 namespace Weave.Workspaces.Models;
+
 public sealed record WorkspaceManifest
 {
     public required string Version { get; init; }

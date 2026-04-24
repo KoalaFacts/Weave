@@ -457,6 +457,128 @@ public sealed class AgentActorTests
     }
 
     [Fact]
+    public async Task OnActivatedAsync_WithKey_SetsIdentityFromKey()
+    {
+        var state = new AgentState(); // blank AgentId
+        var persistentState = Substitute.For<IActorState<AgentState>>();
+        persistentState.State.Returns(state);
+        persistentState.ReadStateAsync(Arg.Any<CancellationToken>()).Returns(Task.CompletedTask);
+        persistentState.WriteStateAsync(Arg.Any<CancellationToken>()).Returns(Task.CompletedTask);
+
+        var actors = Substitute.For<IVirtualActorProvider>();
+        var chatPipeline = Substitute.For<IAgentChatPipeline>();
+        var lifecycle = Substitute.For<ILifecycleManager>();
+        var eventBus = Substitute.For<IEventBus>();
+        var logger = Substitute.For<ILogger<AgentActor>>();
+
+        var actor = new AgentActor(actors, chatPipeline, lifecycle, eventBus, TimeProvider.System, logger, persistentState);
+        await actor.OnActivatedAsync("ws-1/researcher", TestContext.Current.CancellationToken);
+
+        state.AgentId.ShouldBe("ws-1/researcher");
+        state.WorkspaceId.ShouldBe(WorkspaceId.From("ws-1"));
+        state.AgentName.ShouldBe("researcher");
+        await persistentState.Received(1).WriteStateAsync(Arg.Any<CancellationToken>());
+    }
+
+    [Fact]
+    public async Task OnActivatedAsync_WithExistingAgentId_DoesNotOverwrite()
+    {
+        var state = new AgentState { AgentId = "ws-1/existing", WorkspaceId = TestWorkspaceId, AgentName = "existing" };
+        var persistentState = Substitute.For<IActorState<AgentState>>();
+        persistentState.State.Returns(state);
+        persistentState.ReadStateAsync(Arg.Any<CancellationToken>()).Returns(Task.CompletedTask);
+        persistentState.WriteStateAsync(Arg.Any<CancellationToken>()).Returns(Task.CompletedTask);
+
+        var actors = Substitute.For<IVirtualActorProvider>();
+        var chatPipeline = Substitute.For<IAgentChatPipeline>();
+        var lifecycle = Substitute.For<ILifecycleManager>();
+        var eventBus = Substitute.For<IEventBus>();
+        var logger = Substitute.For<ILogger<AgentActor>>();
+
+        var actor = new AgentActor(actors, chatPipeline, lifecycle, eventBus, TimeProvider.System, logger, persistentState);
+        await actor.OnActivatedAsync("ws-2/different", TestContext.Current.CancellationToken);
+
+        state.AgentId.ShouldBe("ws-1/existing");
+        state.AgentName.ShouldBe("existing");
+    }
+
+    [Fact]
+    public async Task OnActivatedAsync_WithDefinition_InitializesPipeline()
+    {
+        var state = new AgentState
+        {
+            AgentId = "ws-1/researcher",
+            WorkspaceId = TestWorkspaceId,
+            AgentName = "researcher",
+            Model = "claude-sonnet-4-20250514",
+            Definition = CreateDefinition()
+        };
+
+        var persistentState = Substitute.For<IActorState<AgentState>>();
+        persistentState.State.Returns(state);
+        persistentState.ReadStateAsync(Arg.Any<CancellationToken>()).Returns(Task.CompletedTask);
+        persistentState.WriteStateAsync(Arg.Any<CancellationToken>()).Returns(Task.CompletedTask);
+
+        var actors = Substitute.For<IVirtualActorProvider>();
+        var chatPipeline = Substitute.For<IAgentChatPipeline>();
+        var lifecycle = Substitute.For<ILifecycleManager>();
+        var eventBus = Substitute.For<IEventBus>();
+        var logger = Substitute.For<ILogger<AgentActor>>();
+
+        var actor = new AgentActor(actors, chatPipeline, lifecycle, eventBus, TimeProvider.System, logger, persistentState);
+        await actor.OnActivatedAsync("ws-1/researcher", TestContext.Current.CancellationToken);
+
+        chatPipeline.Received(1).Initialize("ws-1/researcher", "claude-sonnet-4-20250514");
+    }
+
+    [Fact]
+    public async Task OnActivatedAsync_NullKey_UsesDefaultAgentName()
+    {
+        var state = new AgentState { WorkspaceId = TestWorkspaceId }; // blank AgentId, has WorkspaceId
+        var persistentState = Substitute.For<IActorState<AgentState>>();
+        persistentState.State.Returns(state);
+        persistentState.ReadStateAsync(Arg.Any<CancellationToken>()).Returns(Task.CompletedTask);
+        persistentState.WriteStateAsync(Arg.Any<CancellationToken>()).Returns(Task.CompletedTask);
+
+        var actors = Substitute.For<IVirtualActorProvider>();
+        var chatPipeline = Substitute.For<IAgentChatPipeline>();
+        var lifecycle = Substitute.For<ILifecycleManager>();
+        var eventBus = Substitute.For<IEventBus>();
+        var logger = Substitute.For<ILogger<AgentActor>>();
+
+        var actor = new AgentActor(actors, chatPipeline, lifecycle, eventBus, TimeProvider.System, logger, persistentState);
+        await actor.OnActivatedAsync(null, TestContext.Current.CancellationToken);
+
+        state.AgentName.ShouldBe("agent");
+        state.WorkspaceId.ShouldBe(TestWorkspaceId);
+    }
+
+    [Fact]
+    public async Task EnsureIdentity_WithAgentIdButEmptyWorkspace_SetsWorkspace()
+    {
+        var state = new AgentState { AgentId = "ws-1/researcher" }; // has AgentId, empty WorkspaceId
+        var persistentState = Substitute.For<IActorState<AgentState>>();
+        persistentState.State.Returns(state);
+        persistentState.ReadStateAsync(Arg.Any<CancellationToken>()).Returns(Task.CompletedTask);
+        persistentState.WriteStateAsync(Arg.Any<CancellationToken>()).Returns(Task.CompletedTask);
+
+        var actors = Substitute.For<IVirtualActorProvider>();
+        actors.GetActor<ISkillMemoryActor>(Arg.Any<VirtualActorId>()).Returns(Substitute.For<ISkillMemoryActor>());
+        var chatPipeline = Substitute.For<IAgentChatPipeline>();
+        var lifecycle = Substitute.For<ILifecycleManager>();
+        var eventBus = Substitute.For<IEventBus>();
+        var logger = Substitute.For<ILogger<AgentActor>>();
+
+        var actor = new AgentActor(actors, chatPipeline, lifecycle, eventBus, TimeProvider.System, logger, persistentState);
+
+        // EnsureIdentity is called via ActivateAgentAsync
+        var result = await actor.ActivateAgentAsync(WorkspaceId.From("ws-2"), CreateDefinition());
+
+        result.WorkspaceId.ShouldBe(WorkspaceId.From("ws-2"));
+        result.AgentName.ShouldBe("researcher");
+    }
+
+    [Fact]
     public async Task ReviewTaskAsync_Accepted_WithSingleProofItem_DoesNotExtractSkill()
     {
         var (actor, _, _, skillMemory) = CreateActor();

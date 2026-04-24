@@ -4,9 +4,9 @@ using Weave.Security.Scanning;
 using Weave.Security.Tokens;
 using Weave.Shared.Events;
 using Weave.Shared.Lifecycle;
+using Weave.Tools.Actors;
 using Weave.Tools.Connectors;
 using Weave.Tools.Discovery;
-using Weave.Tools.Actors;
 using Weave.Tools.Models;
 
 namespace Weave.Tools.Tests;
