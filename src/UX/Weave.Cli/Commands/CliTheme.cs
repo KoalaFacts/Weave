@@ -4,6 +4,11 @@ namespace Weave.Cli.Commands;
 
 internal static class CliTheme
 {
+    // ── NO_COLOR support (https://no-color.org) ────────────────────
+    // When the NO_COLOR env var is set (any value), disable color.
+    public static readonly bool NoColor =
+        Environment.GetEnvironmentVariable("NO_COLOR") is not null;
+
     // ── Brand palette ──────────────────────────────────────────────
     public static readonly Color Primary = new(0, 188, 212);      // Teal
     public static readonly Color Accent = new(179, 136, 255);     // Soft violet
@@ -37,9 +42,21 @@ internal static class CliTheme
     public const string IconBullet = "›";
     public const string IconBrand = "◆";
 
+    /// <summary>
+    /// If <c>NO_COLOR</c> is set, disables Spectre.Console color output.
+    /// Safe to call more than once — the profile is idempotent.
+    /// </summary>
+    public static void ApplyNoColor()
+    {
+        if (NoColor)
+            AnsiConsole.Profile.Capabilities.ColorSystem = ColorSystem.NoColors;
+    }
+
     // ── Banner ─────────────────────────────────────────────────────
     public static void WriteBanner()
     {
+        ApplyNoColor();
+
         AnsiConsole.Write(
             new FigletText("Weave")
                 .Color(Primary));

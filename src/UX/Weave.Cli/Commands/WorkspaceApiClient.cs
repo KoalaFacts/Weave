@@ -58,6 +58,19 @@ internal sealed class WorkspaceApiClient : IDisposable
             ?? throw new InvalidOperationException("Workspace API returned an empty payload for '/api/workspaces/{workspaceId}/tools'.");
     }
 
+    public async Task<IReadOnlyList<ApiTaskResponse>> GetTasksAsync(
+        string workspaceId,
+        string agentName,
+        CancellationToken cancellationToken)
+    {
+        using var response = await _httpClient.GetAsync(
+            $"/api/workspaces/{workspaceId}/agents/{Uri.EscapeDataString(agentName)}/tasks",
+            cancellationToken);
+        await EnsureSuccessOrThrowAsync(response, cancellationToken);
+        return (await response.Content.ReadFromJsonAsync(CliApiJsonContext.Default.ListApiTaskResponse, cancellationToken))
+            ?? throw new InvalidOperationException("Agent API returned an empty payload for tasks.");
+    }
+
     // --- Chat ---
 
     public async Task<ApiChatResponse> SendAgentMessageAsync(

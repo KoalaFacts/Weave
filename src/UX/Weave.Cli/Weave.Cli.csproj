@@ -18,6 +18,10 @@
   </PropertyGroup>
 
   <ItemGroup>
+    <InternalsVisibleTo Include="Weave.Cli.Tests" />
+  </ItemGroup>
+
+  <ItemGroup>
     <ProjectReference Include="..\..\Foundation\Weave.Shared\Weave.Shared.csproj" />
     <ProjectReference Include="..\..\Workspaces\Weave.Workspaces\Weave.Workspaces.csproj" />
     <ProjectReference Include="..\..\Deployment\Weave.Deploy\Weave.Deploy.csproj" />

@@ -43,6 +43,7 @@
   </Folder>
   <Folder Name="/10 - UX/">
     <Project Path="src/UX/Weave.Cli/Weave.Cli.csproj" />
+    <Project Path="src/UX/Weave.Cli.Tests/Weave.Cli.Tests.csproj" />
     <Project Path="src/UX/Weave.Dashboard/Weave.Dashboard.csproj" />
   </Folder>
 </Solution>

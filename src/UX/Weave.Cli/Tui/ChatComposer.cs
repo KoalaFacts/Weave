@@ -1,3 +1,4 @@
+using System.Globalization;
 using System.Text;
 using Spectre.Console;
 using Spectre.Console.Rendering;
@@ -20,6 +21,11 @@ internal sealed class ChatComposer
     private int _cursor;
     private bool _cursorOn = true;
 
+    // Test helpers — allow setting up buffer state without ReadAsync.
+    internal StringBuilder Buffer => _buffer;
+    internal int CursorPosition { get => _cursor; set => _cursor = value; }
+    internal bool ExitRequested => _exitRequested;
+
     // Poll loop ticks every 25 ms; 20 ticks ≈ 500 ms → classic
     // terminal blink rate. Counter resets on each keystroke so the
     // cursor stays solid while the user is actively typing.
@@ -30,12 +36,21 @@ internal sealed class ChatComposer
     // every render against the filtered list.
     private int _menuSelectedIndex;
 
+    // Input history for up/down arrow recall.
+    private readonly List<string> _inputHistory = [];
+    private int _historyIndex;
+    private const int MaxHistoryEntries = 50;
+
     // Double-Ctrl+C to exit: first press primes a 2 s window during
     // which a second press exits. Prevents accidental loss of work
     // if the user reflexively hits Ctrl+C.
     private static readonly TimeSpan ExitConfirmWindow = TimeSpan.FromSeconds(2);
     private DateTime? _exitHintUntil;
     private bool _exitRequested;
+
+    // Cache for MenuMatches() — invalidated when buffer or cursor changes.
+    private string _cachedMenuKey = string.Empty;
+    private List<(string Name, string Desc)> _cachedMenuResult = [];
 
     /// <summary>
     /// Commands shown in the autocomplete popup. Each entry has an
@@ -54,6 +69,13 @@ internal sealed class ChatComposer
         new("use",     "Pick the agent that receives messages",  s => s.HasWorkspace),
         new("agents",  "List agents in the current workspace",   s => s.HasWorkspace),
         new("watch",   "Live-refresh the current workspace",     s => s.IsRunning),
+        new("tools",   "List tools in the running workspace",    s => s.IsRunning),
+        new("tasks",   "List tasks for the active agent",        s => s.IsRunning && s.AgentName is not null),
+        new("history", "Show recent conversation messages",      s => s.AgentName is not null),
+        new("status",  "Show workspace status",                  s => s.HasWorkspace),
+        new("validate","Validate the workspace manifest",        s => s.HasWorkspace),
+        new("ports",   "Show port assignments",                  _ => true),
+        new("config",  "View CLI configuration",                 _ => true),
         new("refresh", "Re-render the dashboard",                _ => true),
         new("new",     "Hints for creating a workspace",         _ => true),
         new("presets", "Built-in workspace presets",             _ => true),
@@ -77,6 +99,7 @@ internal sealed class ChatComposer
     {
         _buffer.Clear();
         _cursor = 0;
+        _historyIndex = _inputHistory.Count;
 
         var status = ComposerStatus.Cancelled;
         var cursorRestore = TryHideTerminalCursor();
@@ -133,6 +156,13 @@ internal sealed class ChatComposer
 
                             if (submitted)
                             {
+                                var text = _buffer.ToString().Trim();
+                                if (text.Length > 0)
+                                {
+                                    if (_inputHistory.Count >= MaxHistoryEntries)
+                                        _inputHistory.RemoveAt(0);
+                                    _inputHistory.Add(text);
+                                }
                                 status = ComposerStatus.Submitted;
                                 return;
                             }
@@ -171,16 +201,16 @@ internal sealed class ChatComposer
         bool previous = false;
         try
         { previous = Console.TreatControlCAsInput; }
-        catch { /* platform quirk */ }
+        catch (Exception) { /* platform quirk */ }
         try
         { Console.TreatControlCAsInput = true; }
-        catch { /* ignore */ }
+        catch (Exception) { /* ignore */ }
 
         return () =>
         {
             try
             { Console.TreatControlCAsInput = previous; }
-            catch { /* ignore */ }
+            catch (Exception) { /* ignore */ }
         };
     }
 
@@ -196,13 +226,13 @@ internal sealed class ChatComposer
     {
         try
         { Console.CursorVisible = false; }
-        catch { /* redirected stdout etc. — ignore */ }
+        catch (IOException) { /* redirected stdout etc. — ignore */ }
 
         return () =>
         {
             try
             { Console.CursorVisible = true; }
-            catch { /* ignore */ }
+            catch (IOException) { /* ignore */ }
         };
     }
 
@@ -211,7 +241,7 @@ internal sealed class ChatComposer
     /// view needs to be repainted; <paramref name="submitted"/> is set
     /// when the user pressed Enter with non-empty content.
     /// </summary>
-    private bool HandleKey(ConsoleKeyInfo key, out bool submitted)
+    internal bool HandleKey(ConsoleKeyInfo key, out bool submitted)
     {
         submitted = false;
 
@@ -297,6 +327,13 @@ internal sealed class ChatComposer
                     var upMatches = MenuMatches();
                     _menuSelectedIndex = (_menuSelectedIndex - 1 + upMatches.Count) % upMatches.Count;
                 }
+                else if (!_buffer.ToString().Contains('\n') && _inputHistory.Count > 0 && _historyIndex > 0)
+                {
+                    _historyIndex--;
+                    _buffer.Clear();
+                    _buffer.Append(_inputHistory[_historyIndex]);
+                    _cursor = _buffer.Length;
+                }
                 else
                 {
                     MoveCursorLine(up: true);
@@ -308,6 +345,14 @@ internal sealed class ChatComposer
                 {
                     var downMatches = MenuMatches();
                     _menuSelectedIndex = (_menuSelectedIndex + 1) % downMatches.Count;
+                }
+                else if (!_buffer.ToString().Contains('\n') && _inputHistory.Count > 0 && _historyIndex < _inputHistory.Count)
+                {
+                    _historyIndex++;
+                    _buffer.Clear();
+                    if (_historyIndex < _inputHistory.Count)
+                        _buffer.Append(_inputHistory[_historyIndex]);
+                    _cursor = _buffer.Length;
                 }
                 else
                 {
@@ -334,6 +379,38 @@ internal sealed class ChatComposer
                 return false;
         }
 
+        // Ctrl+W: delete word before cursor
+        if (key.Key == ConsoleKey.W && (key.Modifiers & ConsoleModifiers.Control) != 0)
+        {
+            if (_cursor > 0)
+            {
+                var s = _buffer.ToString();
+                var end = _cursor;
+                // skip whitespace before cursor
+                while (_cursor > 0 && char.IsWhiteSpace(s[_cursor - 1]))
+                    _cursor--;
+                // skip word characters
+                while (_cursor > 0 && !char.IsWhiteSpace(s[_cursor - 1]))
+                    _cursor--;
+                _buffer.Remove(_cursor, end - _cursor);
+                return true;
+            }
+            return false;
+        }
+
+        // Ctrl+U: clear from cursor to start of line
+        if (key.Key == ConsoleKey.U && (key.Modifiers & ConsoleModifiers.Control) != 0)
+        {
+            if (_cursor > 0)
+            {
+                var start = LineStart(_cursor);
+                _buffer.Remove(start, _cursor - start);
+                _cursor = start;
+                return true;
+            }
+            return false;
+        }
+
         if (key.KeyChar != '\0' && !char.IsControl(key.KeyChar))
         {
             _buffer.Insert(_cursor, key.KeyChar);
@@ -344,7 +421,7 @@ internal sealed class ChatComposer
         return false;
     }
 
-    private int LineStart(int from)
+    internal int LineStart(int from)
     {
         var s = _buffer.ToString();
         var i = from - 1;
@@ -353,7 +430,7 @@ internal sealed class ChatComposer
         return i + 1;
     }
 
-    private int LineEnd(int from)
+    internal int LineEnd(int from)
     {
         var s = _buffer.ToString();
         var i = from;
@@ -421,16 +498,30 @@ internal sealed class ChatComposer
     /// Empty result means "don't show the popup" (no slash, cursor
     /// past the command word, or no prefix match).
     /// </summary>
-    private List<(string Name, string Desc)> MenuMatches()
+    internal List<(string Name, string Desc)> MenuMatches()
     {
         var text = _buffer.ToString();
+        // Build a key combining the text and cursor so we can skip
+        // recomputation when nothing changed since the last call.
+        var key = string.Create(CultureInfo.InvariantCulture, $"{text}|{_cursor}");
+        if (key == _cachedMenuKey)
+            return _cachedMenuResult;
+
+        _cachedMenuKey = key;
+
         if (text.Length == 0 || text[0] != '/')
-            return [];
+        {
+            _cachedMenuResult = [];
+            return _cachedMenuResult;
+        }
 
         var space = text.IndexOf(' ');
         var cursorInCommandWord = space < 0 || _cursor <= space;
         if (!cursorInCommandWord)
-            return [];
+        {
+            _cachedMenuResult = [];
+            return _cachedMenuResult;
+        }
 
         var prefix = space < 0 ? text[1..] : text[1..space];
         var session = _session;
@@ -442,12 +533,13 @@ internal sealed class ChatComposer
             ? available
             : available.Where(c => c.Name.StartsWith(prefix, StringComparison.OrdinalIgnoreCase));
 
-        return [.. filtered.Select(c => (c.Name, c.Desc))];
+        _cachedMenuResult = [.. filtered.Select(c => (c.Name, c.Desc))];
+        return _cachedMenuResult;
     }
 
-    private bool IsMenuActive() => MenuMatches().Count > 0;
+    internal bool IsMenuActive() => MenuMatches().Count > 0;
 
-    private void AcceptCompletion(string name)
+    internal void AcceptCompletion(string name)
     {
         _buffer.Clear();
         _buffer.Append('/').Append(name).Append(' ');
@@ -495,7 +587,7 @@ internal sealed class ChatComposer
         int innerWidth;
         try
         { innerWidth = Math.Max(8, Console.WindowWidth - 4); }
-        catch { innerWidth = 76; }
+        catch (IOException) { innerWidth = 76; }
 
         var dashes = new string('┄', innerWidth);
         return new Markup(
@@ -614,7 +706,7 @@ internal sealed class ChatComposer
     {
         try
         { return Console.KeyAvailable; }
-        catch { return false; }
+        catch (InvalidOperationException) { return false; }
     }
 }
 

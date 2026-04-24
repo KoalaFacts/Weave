@@ -1,7 +1,9 @@
 using System.Globalization;
+using System.Net.Http;
 using Spectre.Console;
 using Spectre.Console.Rendering;
 using Weave.Cli.Commands;
+using Weave.Shared;
 using Weave.Workspaces.Manifest;
 using Weave.Workspaces.Models;
 
@@ -99,13 +101,16 @@ internal static class TuiApp
     // Canonical list used for "did you mean?" suggestions on typos.
     private static readonly string[] KnownCommands =
     [
-        "open", "use", "agent", "agents", "watch", "up", "down",
-        "clear", "cls", "refresh", "new", "presets", "webui", "web",
-        "system", "sys", "version", "upgrade", "update", "help",
-        "quit", "exit"
+        "open", "use", "agent", "agents", "watch", "tools", "tasks",
+        "history", "status", "validate", "ports", "config",
+        "up", "down", "clear", "cls", "refresh", "new",
+        "presets", "webui", "web", "system", "sys", "version",
+        "upgrade", "update", "help", "quit", "exit"
     ];
 
-    private static string? SuggestCommand(string typed)
+    private static readonly ManifestParser Parser = new();
+
+    internal static string? SuggestCommand(string typed)
     {
         if (string.IsNullOrWhiteSpace(typed))
             return null;
@@ -130,7 +135,7 @@ internal static class TuiApp
         return best;
     }
 
-    private static int LevenshteinDistance(string a, string b)
+    internal static int LevenshteinDistance(string a, string b)
     {
         var n = a.Length;
         var m = b.Length;
@@ -211,6 +216,34 @@ internal static class TuiApp
                 await WatchSessionAsync(session, ct);
                 return DispatchResult.Continue;
 
+            case "tools":
+                await ListToolsAsync(session, ct);
+                return DispatchResult.Continue;
+
+            case "tasks":
+                await ListTasksAsync(session, ct);
+                return DispatchResult.Continue;
+
+            case "history":
+                ShowConversationHistory(session);
+                return DispatchResult.Continue;
+
+            case "status":
+                await ShowWorkspaceStatusAsync(session, ct);
+                return DispatchResult.Continue;
+
+            case "validate":
+                await ValidateManifestAsync(session, ct);
+                return DispatchResult.Continue;
+
+            case "ports":
+                ShowPorts();
+                return DispatchResult.Continue;
+
+            case "config":
+                ShowConfig();
+                return DispatchResult.Continue;
+
             case "up":
                 await StartWorkspaceInSessionAsync(session, ct);
                 return DispatchResult.Continue;
@@ -262,6 +295,8 @@ internal static class TuiApp
 
     // ── Chat flow ──────────────────────────────────────────────────
 
+    private static readonly List<ApiConversationMessage> ConversationHistory = [];
+
     private static async Task HandleChatAsync(
         TuiSession session,
         string message,
@@ -307,9 +342,33 @@ internal static class TuiApp
             });
 
         if (error is not null)
+        {
             CliTheme.WriteError($"Agent call failed: {error.Message}");
+        }
         else if (reply is not null)
+        {
+            // Track conversation history.
+            ConversationHistory.Add(new ApiConversationMessage { Role = "user", Content = message, Timestamp = DateTimeOffset.UtcNow });
+            ConversationHistory.Add(new ApiConversationMessage { Role = "assistant", Content = reply.Content, Timestamp = DateTimeOffset.UtcNow });
+            if (reply.Messages is { Count: > 0 })
+            {
+                // Replace with server-side history if provided.
+                ConversationHistory.Clear();
+                ConversationHistory.AddRange(reply.Messages);
+            }
+
+            // Show tool usage indicator.
+            if (reply.UsedTools)
+            {
+                CliTheme.WriteMuted("  Tools were used to generate this response.");
+            }
+
             CliTheme.WriteAgentReply(session.AgentName, reply.Content);
+
+            // Show model info.
+            if (!string.IsNullOrWhiteSpace(reply.Model))
+                CliTheme.WriteMuted($"  Model: {reply.Model}");
+        }
     }
 
     // ── Command handlers ──────────────────────────────────────────
@@ -357,7 +416,12 @@ internal static class TuiApp
             return;
         }
 
+        ConversationHistory.Clear();
         TryAutoSelectAgent(session);
+
+        if (session.StateWarning is not null)
+            CliTheme.WriteWarning(session.StateWarning);
+
         await PrintWorkspaceSummaryAsync(session, ct);
     }
 
@@ -400,6 +464,7 @@ internal static class TuiApp
         }
 
         session.AgentName = match;
+        ConversationHistory.Clear();
         CliTheme.WriteMuted($"Agent set to '{match}'.");
         RenderNextStepHint(session);
     }
@@ -412,6 +477,53 @@ internal static class TuiApp
             return;
         }
 
+        // Try live API first for rich status info.
+        if (session.IsRunning)
+        {
+            try
+            {
+                using var client = new WorkspaceApiClient();
+                if (await client.IsReachableAsync(ct))
+                {
+                    var live = await client.GetAgentsAsync(session.WorkspaceId!, ct);
+                    if (live.Count > 0)
+                    {
+                        var table = CliTheme.CreateTable($"Agents · {session.WorkspaceName}");
+                        table.AddColumn(CliTheme.StyledColumn(""));
+                        table.AddColumn(CliTheme.StyledColumn("Name"));
+                        table.AddColumn(CliTheme.StyledColumn("Status"));
+                        table.AddColumn(CliTheme.StyledColumn("Model"));
+                        table.AddColumn(CliTheme.StyledColumn("Tasks"));
+                        table.AddColumn(CliTheme.StyledColumn("Tools"));
+
+                        foreach (var agent in live.OrderBy(a => a.AgentName, StringComparer.Ordinal))
+                        {
+                            var marker = string.Equals(agent.AgentName, session.AgentName, StringComparison.Ordinal)
+                                ? ColorTag(CliTheme.Primary, "●")
+                                : " ";
+                            table.AddRow(
+                                marker,
+                                $"[bold white]{Markup.Escape(agent.AgentName)}[/]",
+                                ColorStatus(agent.Status),
+                                Markup.Escape(agent.Model ?? "—"),
+                                agent.ActiveTasks?.Count.ToString(CultureInfo.InvariantCulture) ?? "0",
+                                agent.ConnectedTools?.Count.ToString(CultureInfo.InvariantCulture) ?? "0");
+                        }
+
+                        AnsiConsole.Write(table);
+                        if (session.AgentName is null)
+                            CliTheme.WriteMuted("Pick one with: /use <name>");
+                        return;
+                    }
+                }
+            }
+            catch (HttpRequestException)
+            {
+                // Fall through to manifest-only view.
+            }
+        }
+
+        // Manifest-only fallback (workspace not running or Silo unreachable).
         var names = await FetchAgentNamesAsync(session, ct);
         if (names.Count == 0)
         {
@@ -419,19 +531,19 @@ internal static class TuiApp
             return;
         }
 
-        var table = CliTheme.CreateTable($"Agents · {session.WorkspaceName}");
-        table.AddColumn(CliTheme.StyledColumn(""));
-        table.AddColumn(CliTheme.StyledColumn("Name"));
+        var fallbackTable = CliTheme.CreateTable($"Agents · {session.WorkspaceName}");
+        fallbackTable.AddColumn(CliTheme.StyledColumn(""));
+        fallbackTable.AddColumn(CliTheme.StyledColumn("Name"));
 
         foreach (var name in names.OrderBy(n => n, StringComparer.Ordinal))
         {
             var marker = string.Equals(name, session.AgentName, StringComparison.Ordinal)
                 ? ColorTag(CliTheme.Primary, "●")
                 : " ";
-            table.AddRow(marker, $"[bold white]{Markup.Escape(name)}[/]");
+            fallbackTable.AddRow(marker, $"[bold white]{Markup.Escape(name)}[/]");
         }
 
-        AnsiConsole.Write(table);
+        AnsiConsole.Write(fallbackTable);
         if (session.AgentName is null)
             CliTheme.WriteMuted("Pick one with: /use <name>");
     }
@@ -454,7 +566,7 @@ internal static class TuiApp
         {
             var json = await File.ReadAllTextAsync(session.ManifestPath!, ct);
             manifest = WorkspaceApiClient.PrepareManifest(
-                new ManifestParser().Parse(json),
+                Parser.Parse(json),
                 Path.GetDirectoryName(Path.GetFullPath(session.ManifestPath!))
                     ?? Directory.GetCurrentDirectory());
         }
@@ -627,7 +739,7 @@ internal static class TuiApp
         try
         {
             var json = await File.ReadAllTextAsync(session.ManifestPath!, ct);
-            manifest = new ManifestParser().Parse(json);
+            manifest = Parser.Parse(json);
         }
         catch (Exception ex)
         {
@@ -647,13 +759,13 @@ internal static class TuiApp
 
         try
         {
-            var manifest = new ManifestParser().Parse(File.ReadAllText(session.ManifestPath));
+            var manifest = Parser.Parse(File.ReadAllText(session.ManifestPath));
             if (manifest.Agents is { Count: 1 } agents)
                 session.AgentName = agents.Keys.First();
         }
-        catch
+        catch (Exception ex)
         {
-            // best-effort — /use still available
+            CliTheme.WriteMuted($"Could not auto-select agent ({ex.Message}).");
         }
     }
 
@@ -670,9 +782,9 @@ internal static class TuiApp
                     return [.. live.Select(a => a.AgentName)];
                 }
             }
-            catch
+            catch (Exception ex)
             {
-                // fall through to manifest
+                CliTheme.WriteMuted($"Could not reach Silo for agent list ({ex.Message}). Falling back to manifest.");
             }
         }
 
@@ -681,11 +793,12 @@ internal static class TuiApp
 
         try
         {
-            var manifest = new ManifestParser().Parse(File.ReadAllText(session.ManifestPath));
+            var manifest = Parser.Parse(File.ReadAllText(session.ManifestPath));
             return manifest.Agents is null ? [] : [.. manifest.Agents.Keys];
         }
-        catch
+        catch (Exception ex)
         {
+            CliTheme.WriteMuted($"Could not read manifest for agent names ({ex.Message}).");
             return [];
         }
     }
@@ -699,7 +812,7 @@ internal static class TuiApp
         try
         {
             var json = await File.ReadAllTextAsync(session.ManifestPath, ct);
-            manifest = new ManifestParser().Parse(json);
+            manifest = Parser.Parse(json);
         }
         catch (Exception ex)
         {
@@ -714,6 +827,242 @@ internal static class TuiApp
 
         AnsiConsole.WriteLine();
         RenderNextStepHint(session);
+    }
+
+    // ── /tools, /tasks, /history command handlers ──────────────────
+
+    private static async Task ListToolsAsync(TuiSession session, CancellationToken ct)
+    {
+        if (!session.IsRunning)
+        {
+            CliTheme.WriteMuted("Workspace is not running. Start it with /up first.");
+            return;
+        }
+
+        IReadOnlyList<ApiToolResponse> tools;
+        try
+        {
+            using var client = new WorkspaceApiClient();
+            tools = await client.GetToolsAsync(session.WorkspaceId!, ct);
+        }
+        catch (Exception ex)
+        {
+            CliTheme.WriteError($"Failed to fetch tools: {ex.Message}");
+            return;
+        }
+
+        if (tools.Count == 0)
+        {
+            CliTheme.WriteMuted("No tools registered in this workspace.");
+            return;
+        }
+
+        var table = CliTheme.CreateTable($"Tools · {session.WorkspaceName}");
+        table.AddColumn(CliTheme.StyledColumn("Name"));
+        table.AddColumn(CliTheme.StyledColumn("Type"));
+        table.AddColumn(CliTheme.StyledColumn("Status"));
+        table.AddColumn(CliTheme.StyledColumn("Endpoint"));
+
+        foreach (var tool in tools.OrderBy(t => t.ToolName, StringComparer.Ordinal))
+        {
+            table.AddRow(
+                $"[bold white]{Markup.Escape(tool.ToolName)}[/]",
+                Markup.Escape(tool.ToolType ?? "—"),
+                ColorStatus(tool.Status),
+                Markup.Escape(tool.Endpoint ?? "—"));
+        }
+
+        AnsiConsole.Write(table);
+    }
+
+    private static async Task ListTasksAsync(TuiSession session, CancellationToken ct)
+    {
+        if (!session.IsRunning)
+        {
+            CliTheme.WriteMuted("Workspace is not running. Start it with /up first.");
+            return;
+        }
+
+        if (session.AgentName is null)
+        {
+            CliTheme.WriteMuted("No agent selected. Use /use <agent> first.");
+            return;
+        }
+
+        IReadOnlyList<ApiTaskResponse> tasks;
+        try
+        {
+            using var client = new WorkspaceApiClient();
+            tasks = await client.GetTasksAsync(session.WorkspaceId!, session.AgentName, ct);
+        }
+        catch (Exception ex)
+        {
+            CliTheme.WriteError($"Failed to fetch tasks: {ex.Message}");
+            return;
+        }
+
+        if (tasks.Count == 0)
+        {
+            CliTheme.WriteMuted($"No tasks for agent '{session.AgentName}'.");
+            return;
+        }
+
+        var table = CliTheme.CreateTable($"Tasks · {session.AgentName}");
+        table.AddColumn(CliTheme.StyledColumn("ID"));
+        table.AddColumn(CliTheme.StyledColumn("Description"));
+        table.AddColumn(CliTheme.StyledColumn("Status"));
+        table.AddColumn(CliTheme.StyledColumn("Created"));
+
+        foreach (var task in tasks)
+        {
+            table.AddRow(
+                Markup.Escape(task.TaskId),
+                Markup.Escape(task.Description),
+                ColorStatus(task.Status),
+                task.CreatedAt.ToString("g", CultureInfo.InvariantCulture));
+        }
+
+        AnsiConsole.Write(table);
+    }
+
+    private static void ShowConversationHistory(TuiSession session)
+    {
+        if (session.AgentName is null)
+        {
+            CliTheme.WriteMuted("No agent selected. Use /use <agent> first.");
+            return;
+        }
+
+        if (ConversationHistory.Count == 0)
+        {
+            CliTheme.WriteMuted("No conversation history yet. Send a message first.");
+            return;
+        }
+
+        CliTheme.WriteSection($"History · {session.AgentName}");
+        foreach (var msg in ConversationHistory)
+        {
+            var role = msg.Role ?? "unknown";
+            if (string.Equals(role, "user", StringComparison.OrdinalIgnoreCase))
+                CliTheme.WriteUserEcho(msg.Content ?? "");
+            else
+                CliTheme.WriteAgentReply(session.AgentName, msg.Content ?? "");
+        }
+    }
+
+    // ── /status, /validate, /ports, /config command handlers ──────
+
+    private static async Task ShowWorkspaceStatusAsync(TuiSession session, CancellationToken ct)
+    {
+        if (!session.HasWorkspace)
+        {
+            CliTheme.WriteMuted("No workspace open. Try: /open <workspace>");
+            return;
+        }
+
+        if (session.ManifestPath is null)
+            return;
+
+        WorkspaceManifest manifest;
+        try
+        {
+            var json = await File.ReadAllTextAsync(session.ManifestPath, ct);
+            manifest = Parser.Parse(json);
+        }
+        catch (Exception ex)
+        {
+            CliTheme.WriteError($"Failed to parse manifest: {ex.Message}");
+            return;
+        }
+
+        CliTheme.WriteSection($"Status · {manifest.Name}");
+        var liveRendered = await TryRenderLiveStatusOnceAsync(session.ManifestPath, manifest, ct);
+        if (!liveRendered)
+            RenderManifestView(manifest, session.ManifestPath);
+    }
+
+    private static async Task ValidateManifestAsync(TuiSession session, CancellationToken ct)
+    {
+        if (!session.HasWorkspace)
+        {
+            CliTheme.WriteMuted("No workspace open. Try: /open <workspace>");
+            return;
+        }
+
+        if (session.ManifestPath is null)
+            return;
+
+        try
+        {
+            var json = await File.ReadAllTextAsync(session.ManifestPath, ct);
+            var manifest = Parser.Parse(json);
+            var errors = Parser.Validate(manifest);
+
+            if (errors.Count > 0)
+            {
+                CliTheme.WriteError("Configuration invalid:");
+                foreach (var error in errors)
+                    CliTheme.WriteMuted($"  - {error}");
+                return;
+            }
+
+            CliTheme.WriteSuccess("Configuration valid.");
+            CliTheme.WriteKeyValue("Name", manifest.Name);
+            CliTheme.WriteKeyValue("Agents", manifest.Agents.Count.ToString(CultureInfo.InvariantCulture));
+            CliTheme.WriteKeyValue("Tools", manifest.Tools.Count.ToString(CultureInfo.InvariantCulture));
+            CliTheme.WriteKeyValue("Targets", manifest.Targets.Count.ToString(CultureInfo.InvariantCulture));
+        }
+        catch (Exception ex)
+        {
+            CliTheme.WriteError($"Configuration invalid: {ex.Message}");
+        }
+    }
+
+    private static void ShowPorts()
+    {
+        var table = CliTheme.CreateTable("Port Assignments");
+        table.AddColumn(CliTheme.StyledColumn("Port"));
+        table.AddColumn(CliTheme.StyledColumn("Name"));
+        table.AddColumn(CliTheme.StyledColumn("Description"));
+
+        foreach (var (name, port, description) in WeavePorts.All)
+        {
+            table.AddRow(
+                port.ToString(CultureInfo.InvariantCulture),
+                name,
+                description);
+        }
+
+        AnsiConsole.Write(table);
+
+        var config = CliConfigStore.Load();
+        if (config.DefaultPort != WeavePorts.SiloHttp)
+        {
+            AnsiConsole.WriteLine();
+            CliTheme.WriteInfo($"Config override: defaultPort = {config.DefaultPort.ToString(CultureInfo.InvariantCulture)}");
+        }
+    }
+
+    private static void ShowConfig()
+    {
+        var config = CliConfigStore.Load();
+
+        CliTheme.WriteSection("CLI Configuration");
+
+        var table = CliTheme.CreateTable();
+        table.AddColumn(CliTheme.StyledColumn("Key"));
+        table.AddColumn(CliTheme.StyledColumn("Value"));
+        table.AddRow("defaultPort", config.DefaultPort.ToString(CultureInfo.InvariantCulture));
+        table.AddRow("storage", Markup.Escape(config.Storage));
+        table.AddRow("authMode", Markup.Escape(config.AuthMode));
+        table.AddRow("requireHttps", config.RequireHttps ? "true" : "false");
+        table.AddRow("siloPath",
+            string.IsNullOrWhiteSpace(config.SiloPath)
+                ? $"[rgb({CliTheme.Muted.R},{CliTheme.Muted.G},{CliTheme.Muted.B})](auto-detect)[/]"
+                : Markup.Escape(config.SiloPath));
+
+        AnsiConsole.Write(table);
+        CliTheme.WriteMuted("Change settings with: weave config set <key> <value>");
     }
 
     private static void RenderNextStepHint(TuiSession session)
@@ -880,6 +1229,7 @@ internal static class TuiApp
             ("(type anything)", "", "Sends to the current agent"),
             ("/agents", "", "List agents in the current workspace"),
             ("/use <agent>", "/agent, /a", "Switch the current agent"),
+            ("/history", "", "Show recent conversation messages"),
         });
 
         RenderHelpGroup("Workspace", new (string Cmd, string Aliases, string Desc)[]
@@ -887,6 +1237,10 @@ internal static class TuiApp
             ("/up", "", "Start the current workspace"),
             ("/down", "", "Stop the current workspace"),
             ("/watch", "", "Live auto-refresh of the current workspace"),
+            ("/tools", "", "List tools in the running workspace"),
+            ("/tasks", "", "List tasks for the active agent"),
+            ("/status", "", "Show workspace status"),
+            ("/validate", "", "Validate the workspace manifest"),
         });
 
         RenderHelpGroup("Monitor", new (string Cmd, string Aliases, string Desc)[]
@@ -894,6 +1248,8 @@ internal static class TuiApp
             ("/refresh", "/r", "Re-render the dashboard"),
             ("/system", "/sys", "Silo + config info"),
             ("/webui", "/web, /w", "Open the web dashboard in a browser"),
+            ("/ports", "", "Show port assignments"),
+            ("/config", "", "View CLI configuration"),
         });
 
         RenderHelpGroup("About this CLI", new (string Cmd, string Aliases, string Desc)[]
@@ -1029,12 +1385,12 @@ internal static class TuiApp
             {
                 try
                 {
-                    var manifest = new ManifestParser().Parse(File.ReadAllText(manifestPath));
+                    var manifest = Parser.Parse(File.ReadAllText(manifestPath));
                     agents = manifest.Agents?.Count ?? 0;
                     tools = manifest.Tools?.Count ?? 0;
                     isolation = manifest.Workspace.Isolation.ToString().ToLowerInvariant();
                 }
-                catch
+                catch (Exception)
                 {
                     manifestOk = false;
                 }
@@ -1195,6 +1551,8 @@ internal static class TuiApp
         if (workspace.StartedAt is { } started)
             summary.AddRow("Started", started.ToLocalTime().ToString("u", CultureInfo.InvariantCulture));
         summary.AddRow("Manifest", Markup.Escape(manifestPath));
+        summary.AddRow("Refreshed",
+            DateTime.Now.ToString("T", CultureInfo.InvariantCulture));
 
         var rows = new List<IRenderable> { summary };
 
@@ -1204,16 +1562,20 @@ internal static class TuiApp
             agentTable.AddColumn(CliTheme.StyledColumn("Name"));
             agentTable.AddColumn(CliTheme.StyledColumn("Status"));
             agentTable.AddColumn(CliTheme.StyledColumn("Model"));
-            agentTable.AddColumn(CliTheme.StyledColumn("Active").RightAligned());
+            agentTable.AddColumn(CliTheme.StyledColumn("Active Tasks"));
             agentTable.AddColumn(CliTheme.StyledColumn("Tools"));
 
             foreach (var agent in agents.OrderBy(a => a.AgentName, StringComparer.Ordinal))
             {
+                var taskSummary = agent.ActiveTasks.Count == 0
+                    ? "—"
+                    : string.Join(", ", agent.ActiveTasks.Select(t => t.Description));
+
                 agentTable.AddRow(
                     $"[bold white]{Markup.Escape(agent.AgentName)}[/]",
                     ColorStatus(agent.Status),
                     Markup.Escape(agent.Model ?? string.Empty),
-                    agent.ActiveTasks.Count.ToString(CultureInfo.InvariantCulture),
+                    Markup.Escape(taskSummary),
                     Markup.Escape(string.Join(", ", agent.ConnectedTools)));
             }
 
@@ -1239,7 +1601,7 @@ internal static class TuiApp
         return new Rows(rows);
     }
 
-    private static string ColorStatus(string status)
+    internal static string ColorStatus(string status)
     {
         var lower = status.ToLowerInvariant();
         var tint = lower switch
@@ -1254,7 +1616,7 @@ internal static class TuiApp
         return ColorTag(tint, status);
     }
 
-    private static string ColorTag(Color tint, string text)
+    internal static string ColorTag(Color tint, string text)
         => $"[rgb({tint.R},{tint.G},{tint.B})]{Markup.Escape(text)}[/]";
 
     private static void RenderManifestView(WorkspaceManifest manifest, string manifestPath)
@@ -1415,7 +1777,11 @@ internal static class TuiApp
             using var client = new WorkspaceApiClient();
             return await client.IsReachableAsync(cancellationToken);
         }
-        catch
+        catch (HttpRequestException)
+        {
+            return false;
+        }
+        catch (TaskCanceledException)
         {
             return false;
         }
@@ -1432,7 +1798,7 @@ internal static class TuiApp
             var id = File.ReadAllText(statePath).Trim();
             return string.IsNullOrWhiteSpace(id) ? null : id;
         }
-        catch
+        catch (IOException)
         {
             return null;
         }
@@ -1444,7 +1810,7 @@ internal static class TuiApp
         {
             return Console.KeyAvailable;
         }
-        catch
+        catch (InvalidOperationException)
         {
             return false;
         }
@@ -1457,7 +1823,7 @@ internal static class TuiApp
             while (Console.KeyAvailable)
                 _ = Console.ReadKey(intercept: true);
         }
-        catch
+        catch (InvalidOperationException)
         {
             // stdin redirected — nothing to drain
         }

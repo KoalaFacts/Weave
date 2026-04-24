@@ -12,6 +12,7 @@ internal sealed class TuiSession
     public string? WorkspaceId { get; private set; }
     public string? ManifestPath { get; private set; }
     public string? AgentName { get; set; }
+    public string? StateWarning { get; private set; }
 
     public bool HasWorkspace => ManifestPath is not null;
     public bool IsRunning => WorkspaceId is not null;
@@ -36,6 +37,7 @@ internal sealed class TuiSession
         WorkspaceName = name;
         ManifestPath = manifestPath;
         WorkspaceId = TryReadWorkspaceId(manifestPath);
+        StateWarning = TryReadStateWarning(manifestPath);
         AgentName = null;
         return true;
     }
@@ -61,7 +63,27 @@ internal sealed class TuiSession
         }
         catch
         {
+            // Corrupt state — treated as not running. Warning surfaced via StateWarning.
             return null;
+        }
+    }
+
+    private static string? TryReadStateWarning(string manifestPath)
+    {
+        var statePath = WorkspaceApiClient.GetWorkspaceStatePath(manifestPath);
+        if (!File.Exists(statePath))
+            return null;
+
+        try
+        {
+            var id = File.ReadAllText(statePath).Trim();
+            return string.IsNullOrWhiteSpace(id)
+                ? "State file exists but is empty — workspace may have been interrupted."
+                : null;
+        }
+        catch (Exception ex)
+        {
+            return $"State file is corrupt ({ex.Message}) — treating workspace as not running.";
         }
     }
 }
