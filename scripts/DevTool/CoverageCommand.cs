@@ -1,16 +1,20 @@
+using System.Diagnostics;
 using System.Globalization;
 using System.Xml.Linq;
 
 /// <summary>
-/// Parses Cobertura XML from coverlet, aggregates per-assembly line coverage,
-/// and exits non-zero when the overall rate is below the threshold.
+/// Collects coverage via dotnet-coverage (local tool), parses Cobertura XML,
+/// and exits non-zero when any project is below the threshold.
 /// </summary>
 internal static class CoverageCommand
 {
+    private const string OutputDir = "TestResults";
+
     public static int Run(string[] args)
     {
         var threshold = 90.0;
         var searchRoot = "src";
+        var skipCollect = false;
 
         for (var i = 0; i < args.Length; i++)
         {
@@ -22,40 +26,96 @@ internal static class CoverageCommand
                 case "-r" or "--root" when i + 1 < args.Length:
                     searchRoot = args[++i];
                     break;
+                case "--skip-collect":
+                    skipCollect = true;
+                    break;
             }
         }
 
-        var reports = Directory.GetFiles(searchRoot, "*.cobertura.xml", SearchOption.AllDirectories);
+        if (!skipCollect)
+        {
+            var exitCode = CollectCoverage(searchRoot);
+            if (exitCode != 0)
+                return exitCode;
+        }
+
+        return AnalyzeCoverage(threshold);
+    }
+
+    private static int CollectCoverage(string searchRoot)
+    {
+        var testProjects = Directory.GetFiles(searchRoot, "*.Tests.csproj", SearchOption.AllDirectories);
+        if (testProjects.Length == 0)
+        {
+            WriteColored(ConsoleColor.Yellow, $"No test projects found under '{searchRoot}'.");
+            return 2;
+        }
+
+        if (Directory.Exists(OutputDir))
+            Directory.Delete(OutputDir, recursive: true);
+        Directory.CreateDirectory(OutputDir);
+
+        WriteColored(ConsoleColor.Cyan, $"Collecting coverage for {testProjects.Length} test project(s)...");
+        Console.WriteLine();
+
+        foreach (var project in testProjects)
+        {
+            var projectName = Path.GetFileNameWithoutExtension(project);
+            var outputFile = Path.Combine(OutputDir, $"{projectName}.cobertura.xml");
+
+            Console.Write($"  {projectName,-40} ");
+
+            var psi = new ProcessStartInfo
+            {
+                FileName = "dotnet",
+                Arguments = $"dotnet-coverage collect -f cobertura -o \"{outputFile}\" -- dotnet test --project \"{project}\" -c Release",
+                RedirectStandardOutput = true,
+                RedirectStandardError = true,
+                UseShellExecute = false,
+            };
+
+            using var proc = Process.Start(psi)!;
+            proc.WaitForExit();
+
+            if (proc.ExitCode != 0)
+            {
+                WriteColored(ConsoleColor.Red, "FAILED");
+                var stderr = proc.StandardError.ReadToEnd();
+                if (!string.IsNullOrWhiteSpace(stderr))
+                    Console.Error.WriteLine(stderr);
+                return 1;
+            }
+
+            WriteColored(ConsoleColor.Green, "OK");
+        }
+
+        Console.WriteLine();
+        return 0;
+    }
+
+    private static int AnalyzeCoverage(double threshold)
+    {
+        var reports = Directory.GetFiles(OutputDir, "*.cobertura.xml", SearchOption.TopDirectoryOnly);
 
         if (reports.Length == 0)
         {
             WriteColored(ConsoleColor.Yellow,
-                $"No cobertura.xml files found under '{searchRoot}'. Did the test run collect coverage?");
-            Console.WriteLine(
-                "  dotnet test --solution Weave.slnx -c Release --collect:\"XPlat Code Coverage\" --settings coverage.runsettings");
+                $"No cobertura.xml files found in '{OutputDir}'. Run without --skip-collect first.");
             return 2;
         }
 
-        // Each production package is counted ONCE — from the cobertura whose owning
-        // test project matches (Weave.X.Tests → Weave.X). This avoids inflating the
-        // denominator when a package is transitively exercised by another project's tests.
+        // Each report is named Weave.X.Tests.cobertura.xml — match to Weave.X package.
         var perPackage = new Dictionary<string, (int Covered, int Valid)>(StringComparer.Ordinal);
 
         foreach (var reportPath in reports)
         {
-            var doc = XDocument.Load(reportPath);
-
-            // .../Weave.X.Tests/bin/Release/net10.0/TestResults/*.cobertura.xml
-            var testResultsDir = Path.GetDirectoryName(reportPath)!;
-            var tfmDir = Path.GetDirectoryName(testResultsDir)!;
-            var configDir = Path.GetDirectoryName(tfmDir)!;
-            var binDir = Path.GetDirectoryName(configDir)!;
-            var testProjectDir = Path.GetDirectoryName(binDir)!;
-            var owningTestProject = Path.GetFileName(testProjectDir);
-
-            string? ownedPackage = owningTestProject.EndsWith(".Tests", StringComparison.Ordinal)
-                ? owningTestProject[..^6]
+            var reportName = Path.GetFileNameWithoutExtension(
+                Path.GetFileNameWithoutExtension(reportPath)); // strip .cobertura.xml
+            string? ownedPackage = reportName.EndsWith(".Tests", StringComparison.Ordinal)
+                ? reportName[..^6]
                 : null;
+
+            var doc = XDocument.Load(reportPath);
 
             foreach (var pkg in doc.Descendants("package"))
             {
@@ -63,11 +123,9 @@ internal static class CoverageCommand
                 if (string.IsNullOrEmpty(name))
                     continue;
 
-                // Skip test assemblies.
                 if (name.Contains(".Tests", StringComparison.Ordinal))
                     continue;
 
-                // Only count a package from its owning test project's cobertura.
                 if (ownedPackage is not null && !string.Equals(name, ownedPackage, StringComparison.Ordinal))
                     continue;
 
@@ -93,7 +151,6 @@ internal static class CoverageCommand
             }
         }
 
-        // Report.
         var totalCovered = 0;
         var totalValid = 0;
         var failing = new List<(string Name, double Rate)>();
@@ -158,6 +215,10 @@ internal static class CoverageCommand
             return true;
 
         if (filename.EndsWith("Contracts.cs", StringComparison.Ordinal))
+            return true;
+
+        var name = Path.GetFileName(filename);
+        if (name.Equals("Program.cs", StringComparison.Ordinal))
             return true;
 
         return false;

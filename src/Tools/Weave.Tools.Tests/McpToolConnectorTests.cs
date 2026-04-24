@@ -1,3 +1,4 @@
+using System.Collections.Concurrent;
 using Microsoft.Extensions.Logging;
 using Weave.Security.Tokens;
 using Weave.Tools.Connectors;
@@ -115,5 +116,133 @@ public sealed class McpToolConnectorTests
     public void ToolType_IsMcp()
     {
         CreateConnector().ToolType.ShouldBe(ToolType.Mcp);
+    }
+
+    // --- ConnectAsync with real process ---
+
+    [Fact]
+    public async Task ConnectAsync_WithArgsAndEnv_ReturnsHandle()
+    {
+        var connector = CreateConnector();
+        var spec = new ToolSpec
+        {
+            Name = "dotnet-ver",
+            Type = ToolType.Mcp,
+            Mcp = new McpConfig
+            {
+                Server = "dotnet",
+                Args = ["--version"],
+                Env = new Dictionary<string, string> { ["WEAVE_TEST_VAR"] = "1" }
+            }
+        };
+
+        var handle = await connector.ConnectAsync(spec, _testToken, TestContext.Current.CancellationToken);
+
+        handle.IsConnected.ShouldBeTrue();
+        handle.ToolName.ShouldBe("dotnet-ver");
+        handle.Type.ShouldBe(ToolType.Mcp);
+        handle.ConnectionId.ShouldNotBeNullOrEmpty();
+
+        // Clean up
+        await connector.DisconnectAsync(handle, TestContext.Current.CancellationToken);
+    }
+
+    // --- DisconnectAsync with connected process ---
+
+    [Fact]
+    public async Task DisconnectAsync_ConnectedProcess_CleansUp()
+    {
+        var connector = CreateConnector();
+        var spec = new ToolSpec
+        {
+            Name = "dotnet-ver",
+            Type = ToolType.Mcp,
+            Mcp = new McpConfig
+            {
+                Server = "dotnet",
+                Args = ["--version"],
+                Env = new Dictionary<string, string>()
+            }
+        };
+
+        var handle = await connector.ConnectAsync(spec, _testToken, TestContext.Current.CancellationToken);
+        await connector.DisconnectAsync(handle, TestContext.Current.CancellationToken);
+
+        // Second disconnect is a no-op (connection already removed)
+        await connector.DisconnectAsync(handle, TestContext.Current.CancellationToken);
+    }
+
+    // --- InvokeAsync with exited process ---
+
+    [Fact]
+    public async Task InvokeAsync_ProcessExited_ReturnsFailureWithExitCode()
+    {
+        var connector = CreateConnector();
+        var spec = new ToolSpec
+        {
+            Name = "dotnet-ver",
+            Type = ToolType.Mcp,
+            Mcp = new McpConfig
+            {
+                Server = "dotnet",
+                Args = ["--version"],
+                Env = new Dictionary<string, string>()
+            }
+        };
+
+        var handle = await connector.ConnectAsync(spec, _testToken, TestContext.Current.CancellationToken);
+
+        // Wait for dotnet --version to finish
+        await Task.Delay(2000, TestContext.Current.CancellationToken);
+
+        var result = await connector.InvokeAsync(handle,
+            new ToolInvocation { ToolName = "dotnet-ver", Method = "test", Parameters = [] },
+            TestContext.Current.CancellationToken);
+
+        result.Success.ShouldBeFalse();
+        result.Error!.ShouldContain("exited");
+
+        await connector.DisconnectAsync(handle, TestContext.Current.CancellationToken);
+    }
+
+    // --- FormatStderrTail ---
+
+    [Fact]
+    public void FormatStderrTail_EmptyQueue_ReturnsEmpty()
+    {
+        var queue = new ConcurrentQueue<string>();
+
+        McpToolConnector.FormatStderrTail(queue).ShouldBeEmpty();
+    }
+
+    [Fact]
+    public void FormatStderrTail_PopulatedQueue_ReturnsFormattedTail()
+    {
+        var queue = new ConcurrentQueue<string>();
+        queue.Enqueue("line1");
+        queue.Enqueue("line2");
+        queue.Enqueue("line3");
+
+        var result = McpToolConnector.FormatStderrTail(queue);
+
+        result.ShouldStartWith("stderr tail:");
+        result.ShouldContain("line1");
+        result.ShouldContain("line3");
+    }
+
+    [Fact]
+    public void FormatStderrTail_MoreThanFiveLines_ShowsOnlyLastFive()
+    {
+        var queue = new ConcurrentQueue<string>();
+        for (var i = 1; i <= 8; i++)
+            queue.Enqueue($"line{i}");
+
+        var result = McpToolConnector.FormatStderrTail(queue);
+
+        result.ShouldNotContain("line1");
+        result.ShouldNotContain("line2");
+        result.ShouldNotContain("line3");
+        result.ShouldContain("line4");
+        result.ShouldContain("line8");
     }
 }

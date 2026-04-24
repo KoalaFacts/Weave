@@ -324,4 +324,119 @@ public sealed class ToolActorTests
         var definition = new ToolSpec { Name = "tool", Type = ToolType.Cli };
         await Should.ThrowAsync<UnauthorizedAccessException>(() => actor.ConnectAsync(definition, token));
     }
+
+    // --- OnActivatedAsync ---
+
+    [Fact]
+    public async Task OnActivatedAsync_WithSlashKey_SplitsWorkspaceAndTool()
+    {
+        var (actor, connector, tokenSvc) = CreateActor();
+        await actor.OnActivatedAsync("my-ws/my-tool", TestContext.Current.CancellationToken);
+
+        // After activation with workspace/tool key, connect should work
+        connector.ConnectAsync(Arg.Any<ToolSpec>(), Arg.Any<CapabilityToken>(), Arg.Any<CancellationToken>())
+            .Returns(new ToolHandle { ToolName = "my-tool", Type = ToolType.Cli, IsConnected = true });
+
+        var token = CreateToken(tokenSvc);
+        var spec = new ToolSpec { Name = "my-tool", Type = ToolType.Cli, Cli = new Weave.Workspaces.Models.CliConfig() };
+        var handle = await actor.ConnectAsync(spec, token);
+        handle.ToolName.ShouldBe("my-tool");
+    }
+
+    [Fact]
+    public async Task OnActivatedAsync_WithSimpleKey_UsesAsWorkspaceAndTool()
+    {
+        var (actor, _, _) = CreateActor();
+        await actor.OnActivatedAsync("simple-key", TestContext.Current.CancellationToken);
+
+        // No slash — workspace = key, tool = key
+        var schema = await actor.GetSchemaAsync();
+        schema.ShouldNotBeNull();
+    }
+
+    [Fact]
+    public async Task OnActivatedAsync_NullKey_DoesNotThrow()
+    {
+        var (actor, _, _) = CreateActor();
+        await actor.OnActivatedAsync(null, TestContext.Current.CancellationToken);
+    }
+
+    // --- GetSchemaAsync ---
+
+    [Fact]
+    public async Task GetSchemaAsync_NotConnected_ReturnsDefaultSchema()
+    {
+        var (actor, _, _) = CreateActor();
+        await actor.OnActivatedAsync("ws/tool", TestContext.Current.CancellationToken);
+
+        var schema = await actor.GetSchemaAsync();
+        schema.ShouldNotBeNull();
+        schema.ToolName.ShouldBe("tool");
+        schema.Description.ShouldBe("Tool not connected");
+    }
+
+    // --- GetHandleAsync ---
+
+    [Fact]
+    public async Task GetHandleAsync_NotConnected_ReturnsNull()
+    {
+        var (actor, _, _) = CreateActor();
+        var handle = await actor.GetHandleAsync();
+        handle.ShouldBeNull();
+    }
+
+    // --- DisconnectAsync ---
+
+    [Fact]
+    public async Task DisconnectAsync_NeverActivated_DoesNotThrow()
+    {
+        var (actor, _, _) = CreateActor();
+        await actor.DisconnectAsync(); // Should not throw
+    }
+
+    [Fact]
+    public async Task DisconnectAsync_WhenConnected_ClearsHandle()
+    {
+        var (actor, connector, tokenSvc) = CreateActor();
+        await actor.OnActivatedAsync("ws/tool", TestContext.Current.CancellationToken);
+
+        connector.ConnectAsync(Arg.Any<ToolSpec>(), Arg.Any<CapabilityToken>(), Arg.Any<CancellationToken>())
+            .Returns(new ToolHandle { ToolName = "tool", Type = ToolType.Cli, IsConnected = true });
+
+        var token = CreateToken(tokenSvc);
+        var spec = new ToolSpec { Name = "tool", Type = ToolType.Cli, Cli = new Weave.Workspaces.Models.CliConfig() };
+        await actor.ConnectAsync(spec, token);
+
+        (await actor.GetHandleAsync()).ShouldNotBeNull();
+        await actor.DisconnectAsync();
+        (await actor.GetHandleAsync()).ShouldBeNull();
+    }
+
+    // --- EnsureIdentity fallback ---
+
+    [Fact]
+    public async Task ConnectAsync_NoActivation_UsesTokenWorkspaceId()
+    {
+        var (actor, connector, tokenSvc) = CreateActor();
+
+        connector.ConnectAsync(Arg.Any<ToolSpec>(), Arg.Any<CapabilityToken>(), Arg.Any<CancellationToken>())
+            .Returns(new ToolHandle { ToolName = "new-tool", Type = ToolType.Cli, IsConnected = true });
+
+        var token = CreateToken(tokenSvc);
+        var spec = new ToolSpec { Name = "new-tool", Type = ToolType.Cli, Cli = new Weave.Workspaces.Models.CliConfig() };
+        var handle = await actor.ConnectAsync(spec, token);
+        handle.ToolName.ShouldBe("new-tool");
+    }
+
+    [Fact]
+    public async Task InvokeAsync_ActivatedButNotConnected_Throws()
+    {
+        var (actor, _, tokenSvc) = CreateActor();
+        await actor.OnActivatedAsync("ws/tool", TestContext.Current.CancellationToken);
+
+        var token = CreateToken(tokenSvc);
+        var invocation = new ToolInvocation { ToolName = "tool", Method = "run", Parameters = [] };
+
+        await Should.ThrowAsync<InvalidOperationException>(() => actor.InvokeAsync(invocation, token));
+    }
 }

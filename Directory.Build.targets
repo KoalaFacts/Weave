@@ -36,8 +36,12 @@
     <Using Include="Shouldly" />
   </ItemGroup>
 
-  <!-- Coverage uses coverlet. CI enforcement via coverage.runsettings. -->
-  <ItemGroup Condition="'$(IsTestProject)' == 'true'">
-    <PackageReference Include="coverlet.collector" />
-  </ItemGroup>
+  <!--
+       Coverage uses the dotnet-coverage local tool (see .config/dotnet-tools.json)
+       which wraps externally around the test process. No in-process MTP extensions
+       needed, which avoids version conflicts between xunit.v3 and coverage packages.
+       Restore:  dotnet tool restore
+       Collect:  dotnet run - -project scripts/DevTool - - coverage - -threshold 90
+       See docs/best-practices.md for details.
+  -->
 </Project>

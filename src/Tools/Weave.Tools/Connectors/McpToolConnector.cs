@@ -147,7 +147,7 @@ public sealed partial class McpToolConnector(ILogger<McpToolConnector> logger) :
         }
     }
 
-    private static string FormatStderrTail(ConcurrentQueue<string> stderrTail)
+    internal static string FormatStderrTail(ConcurrentQueue<string> stderrTail)
     {
         if (stderrTail.IsEmpty)
             return string.Empty;

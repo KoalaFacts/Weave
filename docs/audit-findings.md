@@ -85,7 +85,7 @@ All still ⏳ — these are case-by-case fixes, not bulk-replaceable:
 | **Overall** | **23.9%** | **66.1 pp** |
 
 **Rule:** [best-practices.md](best-practices.md) — "Test coverage — hard rule, 90% minimum."
-**Enforcement mechanism:** `scripts/DevTool` (`coverage` command) invoked by CI after `dotnet test --collect:"XPlat Code Coverage"`.
+**Enforcement mechanism:** `scripts/DevTool` (`coverage` command) — runs `dotnet dotnet-coverage collect` per test project, then analyzes Cobertura XML.
 **Status:** ⏳ threshold not yet active in CI. Closing the gap is per-project work — start with Weave.Deploy.Tests and Weave.Agents.Tests where the deltas are largest and the code is most at-risk.
 
 ## Summary
