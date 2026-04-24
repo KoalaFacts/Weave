@@ -2,13 +2,17 @@
 
 ## Overview
 
-Weave agents are Orleans grains keyed by `{workspaceId}/{agentName}`. They own agent state, conversation history, active task tracking, tool connections, and the chat pipeline used to talk to an LLM provider.
+Weave agents are virtual actors keyed by `{workspaceId}/{agentName}`. They own agent state, conversation history, active task tracking, tool connections, and the chat pipeline used to talk to an LLM provider.
+
+Domain logic lives in plain actor interfaces (`IAgentActor`, `IToolRegistryActor`, etc.) inside `Weave.Agents`, `Weave.Tools`, `Weave.Workspaces`, and `Weave.Security`. The Orleans runtime wraps each actor interface via a thin grain bridge (`IAgentActorGrain : IAgentActor, IGrainWithStringKey`) defined in `Weave.Silo/VirtualActors/GrainInterfaces.cs`. This separation keeps domain code testable without an Orleans dependency.
 
 This document describes the current implementation in the repository. It intentionally separates implemented behavior from future expansion ideas.
 
-## Current Grain Topology
+## Current Actor Topology
 
-### `AgentGrain`
+### `AgentActor`
+
+Keyed by `{workspaceId}/{agentName}`.
 
 Primary responsibilities:
 
@@ -22,7 +26,7 @@ Primary responsibilities:
 Current interface shape:
 
 ```csharp
-public interface IAgentGrain : IGrainWithStringKey
+public interface IAgentActor
 {
     Task<AgentState> ActivateAgentAsync(WorkspaceId workspaceId, AgentDefinition definition);
     Task DeactivateAsync();
@@ -36,7 +40,7 @@ public interface IAgentGrain : IGrainWithStringKey
 }
 ```
 
-### `AgentSupervisorGrain`
+### `AgentSupervisorActor`
 
 Keyed by `{workspaceId}`.
 
@@ -45,18 +49,69 @@ Current responsibilities:
 - activate all agents from a workspace manifest
 - deactivate all agents in a workspace
 - return aggregate agent state snapshots
+- look up an individual agent's state by name
 
-### `ToolRegistryGrain`
+```csharp
+public interface IAgentSupervisorActor
+{
+    Task ActivateAllAsync(WorkspaceManifest manifest);
+    Task DeactivateAllAsync();
+    Task<IReadOnlyList<AgentState>> GetAllAgentStatesAsync();
+    Task<AgentState?> GetAgentStateAsync(string agentName);
+}
+```
+
+### `ToolRegistryActor`
 
 Keyed by `{workspaceId}`.
 
 Current responsibilities:
 
 - connect and track tools available within a workspace
+- configure per-agent tool access lists
+- grant tools to individual agents
 - resolve tool connections for agent use
 - return tool status to the API layer
 
-### `HeartbeatGrain`
+```csharp
+public interface IToolRegistryActor
+{
+    Task ConnectToolsAsync(Dictionary<string, ToolDefinition> tools);
+    Task ConfigureAccessAsync(Dictionary<string, List<string>> agentToolAccess);
+    Task GrantAgentToolsAsync(string agentName, IReadOnlyList<string> toolNames);
+    Task DisconnectAllAsync();
+    Task<ToolConnection?> GetConnectionAsync(string toolName);
+    Task<IReadOnlyList<ToolConnection>> GetAllConnectionsAsync();
+    Task<ToolResolution?> ResolveAsync(string agentName, string toolName);
+}
+```
+
+### `ToolActor`
+
+Keyed by `{workspaceId}/{toolName}`.
+
+Current responsibilities:
+
+- accept a `ToolSpec` and `CapabilityToken` to connect
+- validate capability tokens before invocation
+- perform outbound leak scanning before invocation
+- substitute secrets via `ISecretProxyActor`
+- dispatch to the appropriate `IToolConnector`
+- perform inbound leak scanning and redaction on responses
+- publish domain events for completed or blocked invocations
+
+```csharp
+public interface IToolActor
+{
+    Task<ToolHandle> ConnectAsync(ToolSpec definition, CapabilityToken token);
+    Task DisconnectAsync();
+    Task<ToolResult> InvokeAsync(ToolInvocation invocation, CapabilityToken token);
+    Task<ToolSchema> GetSchemaAsync();
+    Task<ToolHandle?> GetHandleAsync();
+}
+```
+
+### `HeartbeatActor`
 
 Keyed by `{workspaceId}/{agentName}`.
 
@@ -66,20 +121,29 @@ Current responsibilities:
 - track heartbeat state
 - submit configured tasks on a cron-like schedule
 
-### `ProofVerifierGrain`
+### `ProofVerifierActor`
 
 Keyed by `{workspaceId}`. Acts as the consensus coordinator (analogous to a BTC mining pool).
 
 Current responsibilities:
 
 - store configurable verification conditions and validator count in persistent state
-- dispatch proof to N independent `ProofValidatorGrain` instances in parallel
+- dispatch proof to N independent `ProofValidatorActor` instances in parallel
 - collect votes and determine consensus (majority must accept)
 - build a `VerificationRecord` audit trail with all individual votes
-- call back into the originating agent grain with the consensus result
+- call back into the originating agent actor with the consensus result
 - publish `ProofVerifiedEvent` with vote counts
 
-### `ProofValidatorGrain`
+```csharp
+public interface IProofVerifierActor
+{
+    Task VerifyAsync(WorkspaceId workspaceId, string agentName, AgentTaskId taskId, ProofOfWork proof);
+    Task ConfigureAsync(List<VerificationCondition> conditions, int requiredValidators, List<ValidatorConfig>? validatorConfigs = null);
+    Task<List<VerificationCondition>> GetConditionsAsync();
+}
+```
+
+### `ProofValidatorActor`
 
 Keyed by `{workspaceId}/validator-{index}`.
 
@@ -91,6 +155,184 @@ Current responsibilities:
 - return a `VerificationVote` with per-condition results and an overall accept/reject decision
 - each validator runs autonomously with its own model configuration — like an independent BTC miner
 - gracefully handle LLM failures (returns rejection with error detail rather than crashing)
+
+### `ChannelGatewayActor`
+
+Keyed by `{workspaceId}`.
+
+Current responsibilities:
+
+- register and unregister external channel connections (Slack, Discord, Telegram, Teams, Email)
+- route inbound messages to the correct agent based on routing rules
+- track active channel configurations
+
+```csharp
+public interface IChannelGatewayActor
+{
+    Task RegisterChannelAsync(ChannelConfig config);
+    Task UnregisterChannelAsync(ChannelId channelId);
+    Task<OutboundMessage> RouteInboundAsync(InboundMessage message);
+    Task<IReadOnlyList<ChannelConfig>> GetChannelsAsync();
+    Task SetRoutingRuleAsync(string pattern, string agentName);
+}
+```
+
+Channel adapters implement `IChannelAdapter` and live in `Weave.Silo/Channels/`:
+
+- `SlackChannelAdapter`
+- `DiscordChannelAdapter`
+- `TelegramChannelAdapter`
+- `TeamsChannelAdapter`
+- `EmailChannelAdapter`
+
+### `SkillMemoryActor`
+
+Keyed by `{workspaceId}`.
+
+Current responsibilities:
+
+- store and retrieve learned skills / knowledge for agents within a workspace
+- full-text search across skills
+- track usage statistics per skill
+
+```csharp
+public interface ISkillMemoryActor
+{
+    Task<SkillDocument> StoreSkillAsync(SkillDocument skill);
+    Task<IReadOnlyList<SkillSearchResult>> SearchAsync(string query, int maxResults = 5);
+    Task<SkillDocument?> GetSkillAsync(SkillId skillId);
+    Task RecordUsageAsync(SkillId skillId, bool success);
+    Task<IReadOnlyList<SkillDocument>> GetAllSkillsAsync();
+    Task RemoveSkillAsync(SkillId skillId);
+}
+```
+
+### `UserModelActor`
+
+Keyed by `{workspaceId}/{userId}`.
+
+Current responsibilities:
+
+- record user interaction history
+- store user preferences and domain context
+- provide a context summary for agent personalization
+
+```csharp
+public interface IUserModelActor
+{
+    Task RecordInteractionAsync(InteractionRecord record);
+    Task SetPreferenceAsync(string key, string value);
+    Task SetDomainContextAsync(string key, string value);
+    Task<UserProfileState> GetProfileAsync();
+    Task<string> GetContextSummaryAsync();
+    Task ClearAsync();
+}
+```
+
+### `MarketplaceActor`
+
+Keyed by `"global"`.
+
+Current responsibilities:
+
+- accept tool/skill submissions
+- publish items after security review
+- search and browse published items
+- track ratings and install counts
+- deprecate items
+
+```csharp
+public interface IMarketplaceActor
+{
+    Task<MarketplaceItem> SubmitAsync(MarketplaceItem item);
+    Task<MarketplaceItem> PublishAsync(MarketplaceItemId itemId, SecurityReview review);
+    Task<MarketplaceItem?> GetAsync(MarketplaceItemId itemId);
+    Task<IReadOnlyList<MarketplaceItem>> SearchAsync(string? query, MarketplaceItemCategory? category, int maxResults = 20);
+    Task<IReadOnlyList<MarketplaceItem>> GetPublishedAsync(int offset = 0, int limit = 50);
+    Task RateAsync(MarketplaceItemId itemId, double rating);
+    Task IncrementInstallCountAsync(MarketplaceItemId itemId);
+    Task DeprecateAsync(MarketplaceItemId itemId);
+}
+```
+
+### `WorkspaceActor`
+
+Keyed by `{workspaceId}`.
+
+Current responsibilities:
+
+- start a workspace from a manifest
+- stop a running workspace
+- return workspace state
+
+```csharp
+public interface IWorkspaceActor
+{
+    Task<WorkspaceState> StartAsync(WorkspaceManifest manifest);
+    Task StopAsync();
+    Task<WorkspaceState> GetStateAsync();
+}
+```
+
+### `WorkspaceRegistryActor`
+
+Keyed by `"global"`.
+
+Current responsibilities:
+
+- track all workspace IDs in the system
+- register and unregister workspaces
+
+```csharp
+public interface IWorkspaceRegistryActor
+{
+    Task RegisterAsync(string workspaceId);
+    Task UnregisterAsync(string workspaceId);
+    Task<IReadOnlyList<string>> GetWorkspaceIdsAsync();
+}
+```
+
+### `CapabilityTemplateActor`
+
+Keyed by `"global"`.
+
+Current responsibilities:
+
+- register reusable capability templates
+- validate and publish templates
+- search and browse published templates
+- track instantiation counts
+
+```csharp
+public interface ICapabilityTemplateActor
+{
+    Task<CapabilityTemplate> RegisterAsync(CapabilityTemplate template);
+    Task<CapabilityTemplate> ValidateAndPublishAsync(TemplateId templateId);
+    Task<CapabilityTemplate?> GetAsync(TemplateId templateId);
+    Task<IReadOnlyList<CapabilityTemplate>> ListPublishedAsync(int offset = 0, int limit = 50);
+    Task<IReadOnlyList<CapabilityTemplate>> SearchAsync(string? query, int maxResults = 20);
+    Task DeprecateAsync(TemplateId templateId);
+    Task IncrementInstantiationCountAsync(TemplateId templateId);
+}
+```
+
+### `SecretProxyActor`
+
+Keyed by `{workspaceId}`.
+
+Current responsibilities:
+
+- register and unregister secret paths
+- substitute secret placeholders in content before tool invocation
+
+```csharp
+public interface ISecretProxyActor
+{
+    Task<string> RegisterSecretAsync(string secretPath, CapabilityToken token);
+    Task UnregisterSecretAsync(string secretPath);
+    Task<string> SubstituteAsync(string content);
+}
+```
 
 ## Agent Lifecycle
 
@@ -136,38 +378,104 @@ Observed transitions:
 Agents use `Microsoft.Extensions.AI` through a small pipeline abstraction:
 
 ```text
-AgentGrain -> CostTrackingChatClient -> RateLimitingChatClient -> provider client
+AgentActor -> CostTrackingChatClient -> RateLimitingChatClient -> provider client
 ```
 
 Current pipeline components:
 
-- `CostTrackingChatClient` records usage and cost data per agent
+- `IAgentChatPipeline` / `AgentChatPipeline` — interface and implementation for the pipeline
+- `CostTrackingChatClient` records usage and cost data per agent (tracked by `AgentCostLedger`)
 - `RateLimitingChatClient` enforces request throttling
 - `AgentChatClientFactory` constructs the pipeline for a given agent and model
+- `ChatMessageMapper` adapts between domain and `Microsoft.Extensions.AI` message types
 
 ## Tool Invocation Model
 
 The current tool flow is:
 
 ```text
-AgentGrain -> ToolRegistryGrain -> ToolGrain -> IToolConnector
+AgentActor -> ToolRegistryActor -> ToolActor -> IToolConnector
 ```
 
 Implemented connector categories in the repo:
 
-- MCP
-- CLI
-- OpenAPI
-- Dapr (HTTP-based adapter in `Weave.Silo`, activated when `DAPR_HTTP_PORT` env var is detected)
+- MCP (`McpToolConnector`)
+- CLI (`CliToolConnector`)
+- OpenAPI (`OpenApiToolConnector`)
+- DirectHttp (`DirectHttpToolConnector`) — direct HTTP tool invocation
+- FileSystem (`FileSystemToolConnector`) — filesystem-based tools
 
-`ToolGrain` currently performs:
+Plugin-managed connectors (activated via the plugin registry):
+
+- Dapr (`DaprPluginConnector`) — activated when `DAPR_HTTP_PORT` env var is detected
+
+The `ToolType` enum tracks all connector types: `Mcp`, `Dapr`, `OpenApi`, `Cli`, `Library`, `DirectHttp`, `FileSystem`.
+
+`ToolActor` currently performs:
 
 - capability token validation
 - outbound leak scanning before invocation
-- secret substitution via `ISecretProxyGrain`
+- secret substitution via `ISecretProxyActor`
 - connector dispatch
 - inbound leak scanning and redaction on responses
 - domain event publication for completed or blocked invocations
+
+## Plugin System
+
+Plugins are optional integrations that swap service implementations at runtime through the `PluginServiceBroker`. The `IPluginRegistry` manages plugin lifecycle.
+
+Plugin connectors in `Weave.Silo/Plugins/`:
+
+- `DaprPluginConnector` — Dapr sidecar integration (event bus + tool connector)
+- `VaultPluginConnector` — HashiCorp Vault secret provider
+- `HttpPluginConnector` — generic HTTP plugin adapter
+- `AuthPluginConnector` — authentication provider plugin
+- `WebhookPluginConnector` — webhook delivery for events
+
+Proxy layers enable hot-swap without rebuilding the DI container:
+
+- `EventBusProxy` delegates to the broker's current event bus or falls back to `InProcessEventBus`
+- `SecretProviderProxy` delegates to the broker's current secret provider or falls back to `InMemorySecretProvider`
+
+Plugins are environment-detected at startup:
+
+```csharp
+// Dapr auto-detected
+if (weaveSettings.Dapr.HttpPort is not null)
+    await pluginRegistry.ConnectAsync("dapr", ...);
+
+// Vault auto-detected
+if (weaveSettings.Vault.Address is not null)
+    await pluginRegistry.ConnectAsync("vault", ...);
+```
+
+Plugins can also be declared in the workspace manifest `plugins` section.
+
+## Event System
+
+Domain events are published through `IEventBus`. Three implementations exist:
+
+- `InProcessEventBus` — default in-memory event bus
+- `DaprEventBus` — Dapr pub/sub (via `DaprPluginConnector`)
+- `WebhookEventBus` — HTTP webhook delivery (via `WebhookPluginConnector`)
+
+Events are organized by domain:
+
+**Agent events** (`Weave.Agents.Events`):
+- `AgentActivatedEvent`, `AgentDeactivatedEvent`, `AgentErrorEvent`
+- `AgentTaskCompletedEvent`, `AgentTaskAwaitingReviewEvent`, `AgentTaskReviewedEvent`
+- `ProofVerifiedEvent`, `SkillCreatedEvent`
+- `ChannelMessageReceivedEvent`, `ChannelMessageSentEvent`, `ChannelRegisteredEvent`
+- `ToolConnectedEvent`, `ToolDisconnectedEvent`, `ToolErrorEvent`
+- `UserInteractionRecordedEvent`
+
+**Tool events** (`Weave.Tools.Events`):
+- `ToolInvocationCompletedEvent`, `ToolInvocationBlockedEvent`
+- `MarketplaceItemSubmittedEvent`, `MarketplaceItemPublishedEvent`, `MarketplaceItemDeprecatedEvent`
+
+**Workspace events** (`Weave.Workspaces.Events`):
+- `WorkspaceStartedEvent`, `WorkspaceStoppedEvent`, `WorkspaceErrorEvent`
+- `TemplateRegisteredEvent`, `TemplatePublishedEvent`, `TemplateInstantiatedEvent`
 
 ## Security Boundaries
 
@@ -175,27 +483,61 @@ Current security controls around agents and tools include:
 
 - capability-token validation before tool access
 - leak scanning on both outbound input and inbound output
-- secret substitution through the secret proxy grain
+- secret substitution through `ISecretProxyActor`
 - redaction when a tool response appears to contain secrets
+- `SecretProviderProxy` for plugin hot-swap of secret backends
+- opt-in API authentication via `ApiAuthOptions` / `UseApiAuth()` middleware
+- audit logging via `AuditOptions` / `UseAuditLog()` middleware
 
 ## HTTP API Surface
 
-`Weave.Silo` exposes agent endpoints under:
+`Weave.Silo` exposes endpoints organized by domain:
 
+**Workspace endpoints** (`MapWorkspaceEndpoints`):
+- Standard workspace CRUD and lifecycle
+
+**Agent endpoints** (`MapAgentEndpoints`):
 - `GET /api/workspaces/{workspaceId}/agents`
 - `GET /api/workspaces/{workspaceId}/agents/{agentName}`
 - `POST /api/workspaces/{workspaceId}/agents/{agentName}/activate`
 - `POST /api/workspaces/{workspaceId}/agents/{agentName}/deactivate`
 - `POST /api/workspaces/{workspaceId}/agents/{agentName}/messages`
 - `POST /api/workspaces/{workspaceId}/agents/{agentName}/tasks`
+- `GET /api/workspaces/{workspaceId}/agents/{agentName}/tasks`
+- `GET /api/workspaces/{workspaceId}/agents/{agentName}/tasks/{taskId}`
 - `POST /api/workspaces/{workspaceId}/agents/{agentName}/tasks/{taskId}/complete`
 - `POST /api/workspaces/{workspaceId}/agents/{agentName}/tasks/{taskId}/review`
 
-The CLI currently consumes workspace-level endpoints for start, stop, and status. Agent-specific CLI commands are not implemented yet.
+**Channel endpoints** (`MapChannelEndpoints`):
+- `GET /api/workspaces/{workspaceId}/channels`
+- `POST /api/workspaces/{workspaceId}/channels`
+- `DELETE /api/workspaces/{workspaceId}/channels/{channelId}`
+- `POST /api/workspaces/{workspaceId}/channels/inbound` (webhook)
+
+**Skill endpoints** (`MapSkillEndpoints`):
+- `GET /api/workspaces/{workspaceId}/skills`
+- `GET /api/workspaces/{workspaceId}/skills/search`
+- `GET /api/workspaces/{workspaceId}/skills/{skillId}`
+- `POST /api/workspaces/{workspaceId}/skills`
+- `DELETE /api/workspaces/{workspaceId}/skills/{skillId}`
+
+**User endpoints** (`MapUserEndpoints`):
+- `GET /api/workspaces/{workspaceId}/users/{userId}/profile`
+- `PUT /api/workspaces/{workspaceId}/users/{userId}/preferences`
+- `PUT /api/workspaces/{workspaceId}/users/{userId}/context`
+- `DELETE /api/workspaces/{workspaceId}/users/{userId}`
+
+**Additional endpoint groups**:
+- `MapToolEndpoints` — tool management
+- `MapPluginEndpoints` — plugin lifecycle
+- `MapMarketplaceEndpoints` — marketplace operations
+- `MapTemplateEndpoints` — capability template management
+
+OpenAPI and Scalar API reference are also mapped for API documentation.
 
 ## Proof of Work
 
-Proof of work is mandatory. To complete a task successfully, an agent must provide verifiable evidence. Multiple independent validator grains evaluate the proof and must reach consensus before the task is accepted — similar to how BTC miners independently verify blocks.
+Proof of work is mandatory. To complete a task successfully, an agent must provide verifiable evidence. Multiple independent validator actors evaluate the proof and must reach consensus before the task is accepted — similar to how BTC miners independently verify blocks.
 
 ### Task Status Flow
 
@@ -226,7 +568,7 @@ Conditions are plain-language descriptions that AI validator agents can reason a
 - `Name` — unique condition identifier
 - `Description` — plain-language description of what the condition requires, written so an AI agent can evaluate it
 
-Conditions are configurable per workspace via `ProofVerifierGrain.ConfigureAsync`.
+Conditions are configurable per workspace via `ProofVerifierActor.ConfigureAsync`.
 
 Default conditions (used when none are configured):
 
@@ -241,7 +583,7 @@ All proof items must also have non-empty values regardless of conditions.
 
 ### Consensus Model
 
-The `ProofVerifierGrain` dispatches proof to N independent `ProofValidatorGrain` instances (default 2, configurable per workspace). Each validator is an AI agent that independently reasons about the proof using an LLM.
+The `ProofVerifierActor` dispatches proof to N independent `ProofValidatorActor` instances (default 2, configurable per workspace). Each validator is an AI agent that independently reasons about the proof using an LLM.
 
 Users can configure:
 
@@ -279,11 +621,11 @@ This record is persisted with the task and exposed through the API for full audi
 
 1. Agent calls `CompleteTaskAsync(taskId, success: true, proof)` with evidence attached
 2. Task transitions to `AwaitingReview` and publishes `AgentTaskAwaitingReviewEvent`
-3. `AgentGrain` dispatches to `ProofVerifierGrain` (fire-and-forget)
-4. Verifier loads conditions and dispatches to N `ProofValidatorGrain` instances in parallel
+3. `AgentActor` dispatches to `ProofVerifierActor` (fire-and-forget)
+4. Verifier loads conditions and dispatches to N `ProofValidatorActor` instances in parallel
 5. Each validator independently evaluates all conditions using its configured LLM, returns a `VerificationVote`
 6. Verifier collects votes and checks consensus (majority threshold)
-7. Verifier calls `ReviewTaskAsync` on the agent grain with the result and `VerificationRecord`
+7. Verifier calls `ReviewTaskAsync` on the agent actor with the result and `VerificationRecord`
 8. If accepted: task moves to `Accepted`, `TotalTasksCompleted` increments
 9. If rejected: task moves to `Rejected`, agent can rework and resubmit
 10. `AgentTaskReviewedEvent` and `ProofVerifiedEvent` (with vote counts) are published
@@ -380,15 +722,18 @@ Implements `IWorkspaceRuntime` for local mode. Behavior:
 
 This allows workspace grains to complete their full lifecycle without container infrastructure.
 
-### Storage Spectrum (Planned)
+### Storage Spectrum
 
 | Tier | Storage | Use Case |
 |------|---------|----------|
 | Ephemeral | Memory (current local default) | Development, quick experiments |
 | Local | SQLite via ADO.NET | Persistent local workspaces |
-| Distributed | Valkey / Garnet | Production multi-node clusters |
+| Enterprise | SQL Server / PostgreSQL via ADO.NET | Production, enterprise databases |
+| Distributed | Redis (or Valkey / Garnet) | Production multi-node clusters |
 
-Redis is avoided for new distributed work due to the RSALv2/SSPL licensing change (March 2024). Valkey (BSD, Linux Foundation) is the planned replacement.
+Storage is configured via `Weave:ActorStorage:Provider` (values: `memory`, `sqlite`, `sqlserver`, `postgresql`, `redis`).
+
+Redis is available for distributed clustering. Valkey (BSD, Linux Foundation) is the planned long-term replacement due to the RSALv2/SSPL licensing change (March 2024).
 
 ## Current Limitations
 

@@ -13,6 +13,9 @@ dotnet test --project src/Assistants/Weave.Agents.Tests
 dotnet test --project src/Security/Weave.Security.Tests
 dotnet test --project src/Tools/Weave.Tools.Tests
 dotnet test --project src/Deployment/Weave.Deploy.Tests
+dotnet test --project src/Runtime/Weave.Silo.Tests
+dotnet test --project src/Foundation/Weave.Shared.Tests
+dotnet test --project src/UX/Weave.Cli.Tests
 ```
 
 Most projects target `net10.0`. `Weave.SourceGen` targets `netstandard2.0`.
@@ -34,10 +37,10 @@ src/
   Foundation/
     Weave.Shared/        Shared abstractions, branded IDs, CQRS, events, lifecycle
     Weave.SourceGen/     Source generators: branded IDs, CQRS registration (`netstandard2.0`)
-  Workspaces/            Workspace manifest parsing (JSONC) and runtime abstraction
-  Assistants/            Assistant grains, supervisor, heartbeat, chat pipeline
-  Tools/                 Tool connectors (MCP, CLI, OpenAPI, Dapr HTTP), discovery, tool grain
-  Security/              Capability tokens, leak scanning, secret proxy, Vault HTTP provider
+  Workspaces/            Workspace manifest parsing (JSONC), runtime abstraction, plugin registry
+  Assistants/            Agent actors, supervisor, heartbeat, chat pipeline, channels, skills, user model
+  Tools/                 Tool connectors (MCP, CLI, OpenAPI, DirectHttp, FileSystem), discovery, marketplace
+  Security/              Capability tokens, leak scanning, secret proxy, provider proxies
   Deployment/            Deployment publishers
   Runtime/               Orleans host (Silo), Aspire app host, and shared service defaults
   UX/                    Spectre.Console CLI and Blazor dashboard
@@ -51,15 +54,16 @@ Dependency flow should stay roughly:
 
 ### Orleans
 
-- Grain interfaces live separately from grain implementations.
-- Grain keys are string-based.
+- Domain actor interfaces (`IAgentActor`, `IToolRegistryActor`, etc.) live in their domain projects.
+- Orleans grain bridges (`IAgentActorGrain : IAgentActor, IGrainWithStringKey`) live in `Weave.Silo/VirtualActors/GrainInterfaces.cs`.
+- Actor keys are string-based.
 - Common key shapes:
   - workspace: `{workspaceId}`
   - agent: `{workspaceId}/{agentName}`
   - tool: `{workspaceId}/{toolName}`
   - heartbeat: `{workspaceId}/{agentName}`
 - Grain state models use `[GenerateSerializer]` and `[Id(n)]`.
-- Tests may instantiate grains directly, so implementations should not rely exclusively on `OnActivateAsync` for safe defaults.
+- Tests may instantiate actors directly, so implementations should not rely exclusively on `OnActivateAsync` for safe defaults.
 
 ### CQRS and API Flow
 
@@ -123,18 +127,19 @@ Common test gotchas:
 - NSubstitute cannot mock `ILogger<T>` for `internal` types — use `NullLogger<T>.Instance`
 - `AITool` cannot be mocked — create a concrete stub that overrides `Name`
 - HTTP connectors accept `HttpClient` via constructor — use `StubHandler : HttpMessageHandler` for test isolation
-- `private static` helpers on grains should be `internal static` for direct testing (pattern: `ProofValidatorGrain`)
+- `private static` helpers on actors should be `internal static` for direct testing (pattern: `ProofValidatorActor`)
 
 ## Common Change Patterns
 
-### Add a new grain
+### Add a new actor
 
-1. Add the interface in `Grains/`.
-2. Add the implementation in `Grains/`.
-3. Add or extend the state model in `Models/`.
-4. Add commands, queries, or events if the grain is externally driven.
-5. Register any required services in `src/Runtime/Weave.Silo/Program.cs`.
-6. Add unit tests in the matching test project.
+1. Add the domain interface in `Actors/` of the appropriate domain project.
+2. Add the implementation in the same project.
+3. Add the Orleans grain bridge in `Weave.Silo/VirtualActors/GrainInterfaces.cs`.
+4. Add or extend the state model in `Models/`.
+5. Add commands, queries, or events if the actor is externally driven.
+6. Register any required services in `src/Runtime/Weave.Silo/Program.cs`.
+7. Add unit tests in the matching test project.
 
 ### Add a new tool connector
 

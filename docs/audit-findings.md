@@ -73,24 +73,24 @@ Case-by-case fixes — not bulk-replaceable:
 
 ## Coverage gap (tracked as a single item)
 
-| Project | Baseline line coverage | Gap to 90% |
+| Assembly | Line coverage | Status |
 |---|---|---|
-| Weave.Security.Tests | 61.8% | 28.2 pp |
-| Weave.Shared.Tests | 42.6% | 47.4 pp |
-| Weave.Silo.Tests | 33.5% | 56.5 pp |
-| Weave.Tools.Tests | 20.9% | 69.1 pp |
-| Weave.Workspaces.Tests | 18.3% | 71.7 pp |
-| Weave.Agents.Tests | 16.1% | 73.9 pp |
-| Weave.Deploy.Tests | 6.8% | 83.2 pp |
-| **Overall** | **23.9%** | **66.1 pp** |
+| Weave.Tools | 91.6% | ✅ |
+| Weave.Shared | 93.5% | ✅ |
+| Weave.Agents | 93.9% | ✅ |
+| Weave.Silo | 94.6% | ✅ |
+| Weave.Workspaces | 95.2% | ✅ |
+| Weave.Security | 98.9% | ✅ |
+| Weave.Deploy | 100.0% | ✅ |
+| **Overall** | **94.3%** | **✅** |
 
 **Rule:** [best-practices.md](best-practices.md) — "Test coverage — hard rule, 90% minimum."
 **Enforcement mechanism:** `scripts/DevTool` (`coverage` command) — runs `dotnet dotnet-coverage collect` per test project, then analyzes Cobertura XML.
-**Status:** ⏳ threshold not yet active in CI. Closing the gap is per-project work — start with Weave.Deploy.Tests and Weave.Agents.Tests where the deltas are largest and the code is most at-risk.
+**Status:** ✅ All assemblies above 90% threshold. Measured April 2026.
 
 ## Summary
 
 - **32 of 32 items fixed** across three passes (Phases A–G).
 - **0 regressions** — all tests pass, 0 warnings.
 - **3 additional bugs caught** during the fix pass (items 9b/9c/9d — `<>z__ReadOnlyList<T>` synthesized-type Orleans codec gaps — surfaced by the new endpoint smoke tests immediately after they were added).
-- **Remaining work:** Coverage gap (see table above) — threshold not yet active in CI.
+- **Coverage threshold met** — all assemblies above 90% (overall 94.3%).
