@@ -41,9 +41,9 @@
       },
       "Microsoft.NET.ILLink.Tasks": {
         "type": "Direct",
-        "requested": "[10.0.6, )",
-        "resolved": "10.0.6",
-        "contentHash": "QKuvS0LWX4fjFqeDkyM7Kqt8P3wYTiPD4nwU+9y59n0sCiG714fxDgbbN82vDnzq89AF/PiHl92TP2C4aFDUQA=="
+        "requested": "[10.0.5, )",
+        "resolved": "10.0.5",
+        "contentHash": "A+5ZuQ0f449tM+MQrhf6R9ZX7lYpjk/ODEwLYKrnF6111rtARx8fVsm4YznUnQiKnnXfaXNBqgxmil6RW3L3SA=="
       },
       "Microsoft.Orleans.Clustering.AdoNet": {
         "type": "Direct",
@@ -162,9 +162,9 @@
       },
       "Scalar.AspNetCore": {
         "type": "Direct",
-        "requested": "[2.14.3, )",
-        "resolved": "2.14.3",
-        "contentHash": "RUy9LiqIl8AY6j2veG2h5gLv31L/REoMMIYm2/7V73nEI/N0EnMpUjuz6FDNDrwhFi2hjqZGXYXA6Li8bZcilA=="
+        "requested": "[2.14.4, )",
+        "resolved": "2.14.4",
+        "contentHash": "PyuqLRi7JXyTJm/rh+IWCA4Fct1SlZuWrdYiui5hiaBuSY88+roc4eWKfYaE6zrupBIwnEP8pJLe4ifvU7HtZA=="
       },
       "Humanizer.Core": {
         "type": "Transitive",
