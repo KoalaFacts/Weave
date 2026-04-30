@@ -1,5 +1,7 @@
 using System.Text.Json.Serialization;
 using Microsoft.AspNetCore.Mvc;
+using Weave.Agents.Models;
+using Weave.Workspaces.Models;
 using Weave.Workspaces.Plugins;
 
 namespace Weave.Silo.Api;
@@ -10,8 +12,10 @@ namespace Weave.Silo.Api;
 [JsonSerializable(typeof(StartWorkspaceRequest))]
 [JsonSerializable(typeof(WorkspaceResponse))]
 [JsonSerializable(typeof(AgentResponse))]
+[JsonSerializable(typeof(AgentDefinition))]
 [JsonSerializable(typeof(TaskResponse))]
 [JsonSerializable(typeof(ToolConnectionResponse))]
+[JsonSerializable(typeof(ToolConnectionStatus))]
 [JsonSerializable(typeof(ActivateAgentRequest))]
 [JsonSerializable(typeof(SubmitTaskRequest))]
 [JsonSerializable(typeof(SendMessageRequest))]

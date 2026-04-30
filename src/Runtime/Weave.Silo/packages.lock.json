@@ -13,9 +13,9 @@
       },
       "Microsoft.Data.SqlClient": {
         "type": "Direct",
-        "requested": "[7.0.0, )",
-        "resolved": "7.0.0",
-        "contentHash": "/oolEwtHuDtpLKU8OItOTTxVJalgPtIkcNBwzXJ3YGyrkOAvLYqMtin9Z1jxqryJpds3PjuZBF5iKIYVVYVSvQ==",
+        "requested": "[7.0.1, )",
+        "resolved": "7.0.1",
+        "contentHash": "9jZFXAJ2ThNYK7lhj2RhH7klXVNaWSvZpQncq3bPIOjmHBrdjwgeO4c8wucUVxQwFT8rAA13Z2F2jzoYR7ICDw==",
         "dependencies": {
           "Microsoft.Bcl.Cryptography": "9.0.13",
           "Microsoft.Data.SqlClient.Extensions.Abstractions": "1.0.0",
@@ -162,9 +162,9 @@
       },
       "Scalar.AspNetCore": {
         "type": "Direct",
-        "requested": "[2.14.3, )",
-        "resolved": "2.14.3",
-        "contentHash": "RUy9LiqIl8AY6j2veG2h5gLv31L/REoMMIYm2/7V73nEI/N0EnMpUjuz6FDNDrwhFi2hjqZGXYXA6Li8bZcilA=="
+        "requested": "[2.14.8, )",
+        "resolved": "2.14.8",
+        "contentHash": "v9afCyheCy+t5zXQvAF5JMqXt6BMCEQuqxtBl/52eGiwan3xGeDKpuUNH+DdKyY+LrSjIecCwCCUGaPbdtiuwg=="
       },
       "Humanizer.Core": {
         "type": "Transitive",
