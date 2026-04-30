@@ -23,24 +23,7 @@ internal static class WebUiCommand
         {
             var url = parseResult.GetValue(urlOption) ?? DefaultUrl();
             var noOpen = parseResult.GetValue(noOpenOption);
-
-            CliTheme.WriteKeyValue("Web UI", url);
-
-            var reachable = await IsReachableAsync(url, cancellationToken);
-            if (reachable)
-                CliTheme.WriteSuccess("Dashboard is reachable.");
-            else
-                CliTheme.WriteWarning("Dashboard is not reachable yet. Start it with `weave run` or the AppHost.");
-
-            if (noOpen)
-                return 0;
-
-            if (TryOpenBrowser(url))
-                CliTheme.WriteMuted("Opened in your default browser.");
-            else
-                CliTheme.WriteMuted($"Could not open a browser automatically. Visit: {url}");
-
-            return 0;
+            return await new WebUiCliCommand().ExecuteAsync(new WebUiOptions(url, noOpen), cancellationToken);
         });
 
         return cmd;

@@ -228,15 +228,25 @@ internal static class TuiApp
                 return DispatchResult.Continue;
 
             case "status":
-                await ShowWorkspaceStatusAsync(session, ct);
+                if (!session.HasWorkspace)
+                {
+                    CliTheme.WriteMuted("No workspace open. Try: /open <workspace>");
+                    return DispatchResult.Continue;
+                }
+                await new WorkspaceStatusCliCommand().ExecuteAsync(new WorkspaceNameOptions(session.WorkspaceName), ct);
                 return DispatchResult.Continue;
 
             case "validate":
-                await ValidateManifestAsync(session, ct);
+                if (!session.HasWorkspace)
+                {
+                    CliTheme.WriteMuted("No workspace open. Try: /open <workspace>");
+                    return DispatchResult.Continue;
+                }
+                await new WorkspaceValidateCliCommand().ExecuteAsync(new WorkspaceNameOptions(session.WorkspaceName), ct);
                 return DispatchResult.Continue;
 
             case "ports":
-                ShowPorts();
+                await new PortsCliCommand().ExecuteAsync(new NoCliOptions(), ct);
                 return DispatchResult.Continue;
 
             case "config":
@@ -258,13 +268,13 @@ internal static class TuiApp
 
             case "presets":
             case "p":
-                ShowPresetsScreen();
+                await new WorkspacePresetsCliCommand().ExecuteAsync(new NoCliOptions(), ct);
                 return DispatchResult.Continue;
 
             case "webui":
             case "web":
             case "w":
-                await OpenWebUiAsync(ct);
+                await new WebUiCliCommand().ExecuteAsync(new WebUiOptions(), ct);
                 return DispatchResult.Continue;
 
             case "system":
@@ -274,12 +284,12 @@ internal static class TuiApp
 
             case "version":
             case "v":
-                ShowVersionScreen();
+                await new VersionCliCommand().ExecuteAsync(new NoCliOptions(), ct);
                 return DispatchResult.Continue;
 
             case "upgrade":
             case "update":
-                await CheckForUpgradeAsync(ct);
+                await new UpgradeCliCommand().ExecuteAsync(new NoCliOptions(), ct);
                 return DispatchResult.Continue;
 
             default:
@@ -688,37 +698,13 @@ internal static class TuiApp
             return;
         }
 
-        var workspaceId = session.WorkspaceId!;
-        Exception? error = null;
+        var command = new WorkspaceDownCliCommand();
+        var exitCode = await command.ExecuteAsync(
+            new WorkspaceDownOptions(session.WorkspaceName, session.ManifestPath, session.WorkspaceId),
+            ct);
 
-        await AnsiConsole.Status()
-            .Spinner(Spinner.Known.Dots)
-            .SpinnerStyle(CliTheme.AccentStyle)
-            .StartAsync($"Stopping '{session.WorkspaceName}'…", async _ =>
-            {
-                try
-                {
-                    using var client = new WorkspaceApiClient();
-                    await client.StopWorkspaceAsync(workspaceId, ct);
-
-                    var statePath = WorkspaceApiClient.GetWorkspaceStatePath(session.ManifestPath!);
-                    if (File.Exists(statePath))
-                        File.Delete(statePath);
-                }
-                catch (Exception ex)
-                {
-                    error = ex;
-                }
-            });
-
-        if (error is not null)
-        {
-            CliTheme.WriteError($"Failed to stop: {error.Message}");
-            return;
-        }
-
-        session.MarkStopped();
-        CliTheme.WriteSuccess($"Workspace '{session.WorkspaceName}' stopped.");
+        if (exitCode == 0)
+            session.MarkStopped();
     }
 
     private static async Task WatchSessionAsync(TuiSession session, CancellationToken ct)

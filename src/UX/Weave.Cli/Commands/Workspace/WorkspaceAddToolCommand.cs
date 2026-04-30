@@ -1,7 +1,4 @@
 using System.CommandLine;
-using Spectre.Console;
-using Weave.Workspaces.Manifest;
-using Weave.Workspaces.Models;
 
 namespace Weave.Cli.Commands;
 
@@ -25,35 +22,7 @@ internal static class WorkspaceAddToolCommand
             var workspace = parseResult.GetValue(workspaceArg)!;
             var toolName = parseResult.GetValue(nameOption);
             var type = parseResult.GetValue(typeOption)!;
-
-            var manifestPath = ManifestResolver.Resolve(workspace);
-            if (manifestPath is null)
-            {
-                CliTheme.WriteError($"No workspace.json found for '{workspace}'.");
-                return 1;
-            }
-
-            if (string.IsNullOrWhiteSpace(toolName))
-            {
-                toolName = AnsiConsole.Prompt(new TextPrompt<string>("Tool name:").Styled());
-            }
-
-            var parser = new ManifestParser();
-            var json = await File.ReadAllTextAsync(manifestPath, cancellationToken);
-            var manifest = parser.Parse(json);
-
-            if (manifest.Tools.ContainsKey(toolName))
-            {
-                CliTheme.WriteWarning($"Tool '{toolName}' already exists in the workspace.");
-                return 1;
-            }
-
-            manifest.Tools[toolName] = new ToolDefinition { Type = type };
-
-            await File.WriteAllTextAsync(manifestPath, parser.Serialize(manifest), cancellationToken);
-
-            CliTheme.WriteSuccess($"Tool '{toolName}' added to workspace '{workspace}'.");
-            return 0;
+            return await new WorkspaceAddToolCliCommand().ExecuteAsync(new WorkspaceAddToolOptions(workspace, toolName, type), cancellationToken);
         });
 
         return cmd;

@@ -12,23 +12,11 @@ internal static class ConfigSetCommand
         var valueArg = new Argument<string>("value") { Description = "Config value" };
 
         var cmd = new Command("set", "Update a configuration value") { keyArg, valueArg };
-        cmd.SetAction(parseResult =>
+        cmd.SetAction((parseResult, cancellationToken) =>
         {
             var key = parseResult.GetValue(keyArg)!;
             var value = parseResult.GetValue(valueArg)!;
-            var config = CliConfigStore.Load();
-
-            var updated = SetValue(config, key, value);
-            if (updated is null)
-            {
-                CliTheme.WriteError($"Unknown config key '{key}'.");
-                CliTheme.WriteMuted("  Valid keys: siloPath, defaultPort");
-                return 1;
-            }
-
-            CliConfigStore.Save(updated);
-            CliTheme.WriteSuccess($"{key} = {value}");
-            return 0;
+            return new ConfigSetCliCommand().ExecuteAsync(new ConfigSetOptions(key, value), cancellationToken);
         });
 
         return cmd;
