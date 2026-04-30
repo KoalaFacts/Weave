@@ -47,7 +47,11 @@ internal sealed class EpisodicMemoryPromptEnricher(
 
             return new EpisodicMemoryEnrichment(enrichedPrompt, episodeIds);
         }
-        catch (Exception ex)
+        catch (OperationCanceledException)
+        {
+            throw;
+        }
+        catch (Exception ex) when (ex is InvalidOperationException or TimeoutException)
         {
             logger.LogWarning(ex, "Failed to retrieve episodes for agent {AgentName}", agentName);
             return new EpisodicMemoryEnrichment(prompt, []);
@@ -68,7 +72,11 @@ internal sealed class EpisodicMemoryPromptEnricher(
             foreach (var episodeId in episodeIds)
                 await episodicActor.RecordRecallAsync(episodeId);
         }
-        catch (Exception ex)
+        catch (OperationCanceledException)
+        {
+            throw;
+        }
+        catch (Exception ex) when (ex is InvalidOperationException or TimeoutException)
         {
             logger.LogWarning(ex, "Failed to record episode recall for agent {AgentName}", agentName);
         }

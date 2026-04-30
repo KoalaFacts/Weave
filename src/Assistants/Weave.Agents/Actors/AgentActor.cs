@@ -321,7 +321,11 @@ public sealed class AgentActor(
                 episode.Title,
                 taskId);
         }
-        catch (Exception ex)
+        catch (OperationCanceledException)
+        {
+            throw;
+        }
+        catch (Exception ex) when (ex is InvalidOperationException or TimeoutException)
         {
             logger.LogWarning(ex, "Failed to store episode from task {TaskId}", taskId);
         }
@@ -344,7 +348,11 @@ public sealed class AgentActor(
                 episode.Title,
                 state.AgentName);
         }
-        catch (Exception ex)
+        catch (OperationCanceledException)
+        {
+            throw;
+        }
+        catch (Exception ex) when (ex is InvalidOperationException or TimeoutException)
         {
             logger.LogWarning(ex, "Failed to store session episode for agent {AgentName}", state.AgentName);
         }
