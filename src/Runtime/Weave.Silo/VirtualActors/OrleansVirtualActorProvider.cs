@@ -14,6 +14,7 @@ public sealed class OrleansVirtualActorProvider(IActorFactory actorFactory) : IV
         [typeof(IAgentActor)] = typeof(IAgentActorGrain),
         [typeof(IAgentSupervisorActor)] = typeof(IAgentSupervisorActorGrain),
         [typeof(IChannelGatewayActor)] = typeof(IChannelGatewayActorGrain),
+        [typeof(IEpisodicMemoryActor)] = typeof(IEpisodicMemoryActorGrain),
         [typeof(IHeartbeatActor)] = typeof(IHeartbeatActorGrain),
         [typeof(IProofValidatorActor)] = typeof(IProofValidatorActorGrain),
         [typeof(IProofVerifierActor)] = typeof(IProofVerifierActorGrain),
