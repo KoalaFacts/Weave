@@ -1,5 +1,6 @@
 using Weave.Agents.Actors;
 using Weave.Agents.Models;
+using Weave.Security.Scanning;
 using Weave.Shared.Events;
 using Weave.Shared.Ids;
 
@@ -11,11 +12,12 @@ public sealed class EpisodicMemoryActorGrain : Grain, IEpisodicMemoryActorGrain
 
     public EpisodicMemoryActorGrain(
         IEventBus eventBus,
+        ILeakScanner leakScanner,
         TimeProvider timeProvider,
         ILogger<EpisodicMemoryActor> logger,
         [PersistentState("episodic-memory", "Default")] IPersistentState<EpisodicMemoryState> state)
     {
-        _actor = new EpisodicMemoryActor(eventBus, timeProvider, logger,
+        _actor = new EpisodicMemoryActor(eventBus, leakScanner, timeProvider, logger,
             new OrleansActorState<EpisodicMemoryState>(state));
     }
 

@@ -11,7 +11,7 @@ public sealed record Episode
     public List<string> Tags { get; init; } = [];
     public List<EpisodeDecision> Decisions { get; init; } = [];
     public string? SourceTaskId { get; init; }
-    public List<string> SourceMessageIds { get; init; } = [];
+    public string? ReviewFeedback { get; init; }
     public DateTimeOffset OccurredAt { get; init; } = DateTimeOffset.UtcNow;
     public int RecallCount { get; set; }
     public DateTimeOffset? LastRecalledAt { get; set; }

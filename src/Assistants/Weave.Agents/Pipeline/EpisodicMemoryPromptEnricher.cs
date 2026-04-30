@@ -18,10 +18,12 @@ internal sealed class EpisodicMemoryPromptEnricher(
         try
         {
             var episodicActor = actors.GetActor<IEpisodicMemoryActor>(VirtualActorId.From(workspaceId.ToString()));
+            // Recall is workspace-wide so agents can learn from each other's past episodes,
+            // matching skill-memory behavior. Callers wanting per-agent scope pass AgentName themselves.
             var results = await episodicActor.RecallAsync(
                 messageContent,
                 3,
-                new EpisodeSearchOptions { AgentName = agentName, PreferRecent = true });
+                new EpisodeSearchOptions { PreferRecent = true });
             if (results.Count == 0)
                 return new EpisodicMemoryEnrichment(prompt, []);
 
@@ -30,10 +32,11 @@ internal sealed class EpisodicMemoryPromptEnricher(
                 var decisions = r.Episode.Decisions.Count == 0
                     ? string.Empty
                     : "\nDecisions: " + string.Join("; ", r.Episode.Decisions.Select(d =>
-                        string.IsNullOrWhiteSpace(d.Rationale)
-                            ? $"{d.Question} -> {d.ChosenOption}"
-                            : $"{d.Question} -> {d.ChosenOption} ({d.Rationale})"));
-                return $"### {r.Episode.Title} ({r.Episode.OccurredAt:yyyy-MM-dd}, relevance: {r.RelevanceScore:F1})\n{r.Episode.Narrative}{decisions}";
+                        $"{d.Question} -> {d.ChosenOption}"));
+                var review = string.IsNullOrWhiteSpace(r.Episode.ReviewFeedback)
+                    ? string.Empty
+                    : $"\nReview: {r.Episode.ReviewFeedback}";
+                return $"### {r.Episode.Title} ({r.Episode.OccurredAt:yyyy-MM-dd}, relevance: {r.RelevanceScore:F1})\n{r.Episode.Narrative}{decisions}{review}";
             }));
 
             var block = $"[Relevant past episodes]\n{section}";

@@ -1,4 +1,3 @@
-using System.Text;
 using Microsoft.Extensions.Logging;
 using Weave.Agents.Events;
 using Weave.Agents.Models;
@@ -305,10 +304,12 @@ public sealed class AgentActor(
         if (task is null)
             return;
 
-        var episode = ExtractEpisodeFromTask(task, persistentState.State, timeProvider.GetUtcNow());
+        var episode = EpisodeExtractor.FromTask(task, persistentState.State, timeProvider.GetUtcNow());
         if (episode is null)
             return;
 
+        // Storage and index update are bound: if storage throws we leave the index untouched and
+        // the same slice gets retried on the next accept (acceptable: at worst a duplicate episode).
         try
         {
             var episodicActor = actors.GetActor<IEpisodicMemoryActor>(VirtualActorId.From(persistentState.State.WorkspaceId.ToString()));
@@ -329,10 +330,7 @@ public sealed class AgentActor(
     private async Task TryExtractSessionEpisodeAsync()
     {
         var state = persistentState.State;
-        if (state.History.Count <= state.LastEpisodeHistoryIndex)
-            return;
-
-        var episode = ExtractEpisodeFromSession(state, timeProvider.GetUtcNow());
+        var episode = EpisodeExtractor.FromSession(state, timeProvider.GetUtcNow());
         if (episode is null)
             return;
 
@@ -350,106 +348,6 @@ public sealed class AgentActor(
         {
             logger.LogWarning(ex, "Failed to store session episode for agent {AgentName}", state.AgentName);
         }
-    }
-
-    internal static Episode? ExtractEpisodeFromTask(AgentTaskInfo task, AgentState state, DateTimeOffset occurredAt)
-    {
-        if (string.IsNullOrWhiteSpace(task.Description))
-            return null;
-
-        var historySlice = state.History.Skip(state.LastEpisodeHistoryIndex).ToList();
-        var narrative = BuildNarrative(historySlice, fallback: task.Description);
-        var decisions = BuildDecisionsFromProof(task.Proof);
-        var tags = BuildTags(task, state);
-
-        return new Episode
-        {
-            EpisodeId = Shared.Ids.EpisodeId.New(),
-            Title = task.Description.Length > 100 ? task.Description[..100] : task.Description,
-            Narrative = narrative,
-            AgentName = state.AgentName,
-            Tags = tags,
-            Decisions = decisions,
-            SourceTaskId = task.TaskId.ToString(),
-            SourceMessageIds = [],
-            OccurredAt = occurredAt
-        };
-    }
-
-    internal static Episode? ExtractEpisodeFromSession(AgentState state, DateTimeOffset occurredAt)
-    {
-        var historySlice = state.History.Skip(state.LastEpisodeHistoryIndex).ToList();
-        if (historySlice.Count == 0)
-            return null;
-
-        var firstUser = historySlice.FirstOrDefault(m => string.Equals(m.Role, "user", StringComparison.OrdinalIgnoreCase));
-        var title = (firstUser?.Content ?? historySlice[0].Content).Trim();
-        if (title.Length == 0)
-            title = $"Session with {state.AgentName}";
-        if (title.Length > 100)
-            title = title[..100];
-
-        return new Episode
-        {
-            EpisodeId = Shared.Ids.EpisodeId.New(),
-            Title = title,
-            Narrative = BuildNarrative(historySlice, fallback: title),
-            AgentName = state.AgentName,
-            Tags = [state.AgentName],
-            Decisions = [],
-            SourceTaskId = null,
-            SourceMessageIds = [],
-            OccurredAt = occurredAt
-        };
-    }
-
-    private static string BuildNarrative(List<ConversationMessage> messages, string fallback)
-    {
-        if (messages.Count == 0)
-            return fallback;
-
-        var builder = new StringBuilder();
-        foreach (var message in messages)
-        {
-            var content = message.Content.Length > 500 ? message.Content[..500] : message.Content;
-            if (string.IsNullOrWhiteSpace(content))
-                continue;
-            builder.Append(message.Role).Append(": ").AppendLine(content);
-        }
-
-        var narrative = builder.ToString().TrimEnd();
-        return narrative.Length == 0 ? fallback : narrative;
-    }
-
-    private static List<EpisodeDecision> BuildDecisionsFromProof(ProofOfWork? proof)
-    {
-        if (proof is null || proof.Items.Count == 0)
-            return [];
-
-        var decisionTypes = new[] { ProofType.PullRequest, ProofType.CodeReview, ProofType.Custom };
-        return proof.Items
-            .Where(p => decisionTypes.Contains(p.Type))
-            .Select(p => new EpisodeDecision
-            {
-                Question = $"{p.Type}: {p.Label}",
-                ChosenOption = p.Value.Length > 200 ? p.Value[..200] : p.Value,
-                Rationale = proof.ReviewFeedback
-            })
-            .ToList();
-    }
-
-    private static List<string> BuildTags(AgentTaskInfo task, AgentState state)
-    {
-        var tags = new HashSet<string>(StringComparer.OrdinalIgnoreCase) { state.AgentName };
-        if (task.Proof is not null)
-        {
-            foreach (var item in task.Proof.Items)
-            {
-                if (!string.IsNullOrWhiteSpace(item.Label))
-                    tags.Add(item.Label);
-            }
-        }
-        return tags.ToList();
     }
 
     internal static SkillDocument? ExtractSkillFromTask(AgentTaskInfo task, AgentState state)

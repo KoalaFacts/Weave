@@ -51,15 +51,15 @@ public sealed class EpisodicMemoryPromptEnricherTests
     }
 
     [Fact]
-    public async Task EnrichAsync_RendersDecisions_WhenPresent()
+    public async Task EnrichAsync_RendersDecisionsAndReviewFeedback_WhenPresent()
     {
         var (enricher, actor) = CreateEnricher();
-        var ep = CreateEpisode("ep-dec", title: "Architecture review");
-        ep = ep with
+        var ep = CreateEpisode("ep-dec", title: "Architecture review") with
         {
             Decisions = [
-                new EpisodeDecision { Question = "DB choice", ChosenOption = "Postgres", Rationale = "ops familiarity" }
-            ]
+                new EpisodeDecision { Question = "DB choice", ChosenOption = "Postgres" }
+            ],
+            ReviewFeedback = "ops familiarity outweighed perf concerns"
         };
         actor.RecallAsync(Arg.Any<string>(), Arg.Any<int>(), Arg.Any<EpisodeSearchOptions>())
             .Returns(Task.FromResult<IReadOnlyList<EpisodeSearchResult>>(
@@ -69,7 +69,8 @@ public sealed class EpisodicMemoryPromptEnricherTests
 
         result.Prompt.ShouldNotBeNull();
         result.Prompt.ShouldContain("Decisions:");
-        result.Prompt.ShouldContain("DB choice -> Postgres (ops familiarity)");
+        result.Prompt.ShouldContain("DB choice -> Postgres");
+        result.Prompt.ShouldContain("Review: ops familiarity outweighed perf concerns");
     }
 
     [Fact]
@@ -99,7 +100,7 @@ public sealed class EpisodicMemoryPromptEnricherTests
     }
 
     [Fact]
-    public async Task EnrichAsync_FiltersOnAgentNameAndPrefersRecent()
+    public async Task EnrichAsync_RecallsWorkspaceWideAndPrefersRecent()
     {
         var (enricher, actor) = CreateEnricher();
         actor.RecallAsync(Arg.Any<string>(), Arg.Any<int>(), Arg.Any<EpisodeSearchOptions>())
@@ -107,10 +108,11 @@ public sealed class EpisodicMemoryPromptEnricherTests
 
         await enricher.EnrichAsync(TestWorkspaceId, "researcher", "anything", null);
 
+        // Recall is workspace-wide (no AgentName filter) so agents share past episodes.
         await actor.Received(1).RecallAsync(
             "anything",
             3,
-            Arg.Is<EpisodeSearchOptions>(o => o.AgentName == "researcher" && o.PreferRecent));
+            Arg.Is<EpisodeSearchOptions>(o => o.AgentName == null && o.PreferRecent));
     }
 
     [Fact]

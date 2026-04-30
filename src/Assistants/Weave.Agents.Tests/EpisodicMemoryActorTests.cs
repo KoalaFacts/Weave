@@ -2,6 +2,7 @@ using Microsoft.Extensions.Logging.Abstractions;
 using Microsoft.Extensions.Time.Testing;
 using Weave.Agents.Actors;
 using Weave.Agents.Models;
+using Weave.Security.Scanning;
 using Weave.Shared.Events;
 using Weave.Shared.Ids;
 
@@ -26,13 +27,24 @@ public sealed class EpisodicMemoryActorTests
         return persistentState;
     }
 
-    private static (EpisodicMemoryActor Actor, IEventBus EventBus) CreateActor(TimeProvider? timeProvider = null)
+    private static (EpisodicMemoryActor Actor, IEventBus EventBus, ILeakScanner Scanner) CreateActor(
+        TimeProvider? timeProvider = null,
+        ILeakScanner? leakScanner = null)
     {
         var eventBus = Substitute.For<IEventBus>();
         var logger = NullLogger<EpisodicMemoryActor>.Instance;
         var persistentState = CreatePersistentState();
-        var actor = new EpisodicMemoryActor(eventBus, timeProvider ?? TimeProvider.System, logger, persistentState);
-        return (actor, eventBus);
+        var scanner = leakScanner ?? CreateCleanScanner();
+        var actor = new EpisodicMemoryActor(eventBus, scanner, timeProvider ?? TimeProvider.System, logger, persistentState);
+        return (actor, eventBus, scanner);
+    }
+
+    private static ILeakScanner CreateCleanScanner()
+    {
+        var scanner = Substitute.For<ILeakScanner>();
+        scanner.ScanStringAsync(Arg.Any<string>(), Arg.Any<ScanContext>(), Arg.Any<CancellationToken>())
+            .Returns(ScanResult.Clean);
+        return scanner;
     }
 
     private static Episode CreateEpisode(
@@ -63,7 +75,7 @@ public sealed class EpisodicMemoryActorTests
     [Fact]
     public async Task StoreEpisodeAsync_PersistsEpisode()
     {
-        var (actor, _) = CreateActor();
+        var (actor, _, _) = CreateActor();
         var episode = CreateEpisode(id: "ep-1");
 
         var result = await actor.StoreEpisodeAsync(episode);
@@ -78,7 +90,7 @@ public sealed class EpisodicMemoryActorTests
     [Fact]
     public async Task StoreEpisodeAsync_PublishesEpisodeStoredEvent()
     {
-        var (actor, eventBus) = CreateActor();
+        var (actor, eventBus, _) = CreateActor();
         var episode = CreateEpisode(id: "ep-evt", title: "Event");
 
         await actor.StoreEpisodeAsync(episode);
@@ -94,7 +106,7 @@ public sealed class EpisodicMemoryActorTests
     [Fact]
     public async Task RecallAsync_MatchesByTag()
     {
-        var (actor, _) = CreateActor();
+        var (actor, _, _) = CreateActor();
         var deploy = CreateEpisode(id: "deploy-ep", tags: ["deploy", "release"]);
         var billing = CreateEpisode(id: "billing-ep", title: "Refund flow", narrative: "Refund logic.", tags: ["billing"]);
         await actor.StoreEpisodeAsync(deploy);
@@ -110,7 +122,7 @@ public sealed class EpisodicMemoryActorTests
     [Fact]
     public async Task RecallAsync_MatchesByTitleKeywords()
     {
-        var (actor, _) = CreateActor();
+        var (actor, _, _) = CreateActor();
         var ep = CreateEpisode(id: "title-ep", title: "Database migration retry", tags: ["ops"]);
         await actor.StoreEpisodeAsync(ep);
 
@@ -123,7 +135,7 @@ public sealed class EpisodicMemoryActorTests
     [Fact]
     public async Task RecallAsync_MatchesByNarrative()
     {
-        var (actor, _) = CreateActor();
+        var (actor, _, _) = CreateActor();
         var ep = CreateEpisode(
             id: "narr-ep",
             title: "Sprint review",
@@ -140,7 +152,7 @@ public sealed class EpisodicMemoryActorTests
     [Fact]
     public async Task RecallAsync_ReturnsEmpty_WhenNoMatch()
     {
-        var (actor, _) = CreateActor();
+        var (actor, _, _) = CreateActor();
         await actor.StoreEpisodeAsync(CreateEpisode());
 
         var results = await actor.RecallAsync("quantum entanglement");
@@ -151,7 +163,7 @@ public sealed class EpisodicMemoryActorTests
     [Fact]
     public async Task RecallAsync_ReturnsEmpty_WhenStoreEmpty()
     {
-        var (actor, _) = CreateActor();
+        var (actor, _, _) = CreateActor();
 
         var results = await actor.RecallAsync("anything");
 
@@ -161,7 +173,7 @@ public sealed class EpisodicMemoryActorTests
     [Fact]
     public async Task RecallAsync_FiltersByAgentName()
     {
-        var (actor, _) = CreateActor();
+        var (actor, _, _) = CreateActor();
         await actor.StoreEpisodeAsync(CreateEpisode(id: "alice-ep", agentName: "alice", tags: ["deploy"]));
         await actor.StoreEpisodeAsync(CreateEpisode(id: "bob-ep", agentName: "bob", tags: ["deploy"]));
 
@@ -174,7 +186,7 @@ public sealed class EpisodicMemoryActorTests
     [Fact]
     public async Task RecallAsync_FiltersByTag()
     {
-        var (actor, _) = CreateActor();
+        var (actor, _, _) = CreateActor();
         await actor.StoreEpisodeAsync(CreateEpisode(id: "ops-ep", title: "kubernetes maintenance", tags: ["ops"]));
         await actor.StoreEpisodeAsync(CreateEpisode(id: "dev-ep", title: "kubernetes dev cluster", tags: ["dev"]));
 
@@ -187,7 +199,7 @@ public sealed class EpisodicMemoryActorTests
     [Fact]
     public async Task RecallAsync_FiltersBySinceDate()
     {
-        var (actor, _) = CreateActor();
+        var (actor, _, _) = CreateActor();
         var cutoff = new DateTimeOffset(2026, 4, 1, 0, 0, 0, TimeSpan.Zero);
         await actor.StoreEpisodeAsync(CreateEpisode(id: "old-ep", tags: ["deploy"], occurredAt: cutoff.AddDays(-30)));
         await actor.StoreEpisodeAsync(CreateEpisode(id: "new-ep", tags: ["deploy"], occurredAt: cutoff.AddDays(10)));
@@ -201,7 +213,7 @@ public sealed class EpisodicMemoryActorTests
     [Fact]
     public async Task RecallAsync_RanksHigherRecallCountFirst()
     {
-        var (actor, _) = CreateActor();
+        var (actor, _, _) = CreateActor();
         var seldom = CreateEpisode(id: "seldom", tags: ["deploy"], recallCount: 1);
         var often = CreateEpisode(id: "often", tags: ["deploy"], recallCount: 50);
         await actor.StoreEpisodeAsync(seldom);
@@ -219,7 +231,7 @@ public sealed class EpisodicMemoryActorTests
     {
         var now = new DateTimeOffset(2026, 4, 30, 12, 0, 0, TimeSpan.Zero);
         var fakeTime = new FakeTimeProvider(now);
-        var (actor, _) = CreateActor(fakeTime);
+        var (actor, _, _) = CreateActor(fakeTime);
         var stale = CreateEpisode(id: "stale-ep", tags: ["deploy"], occurredAt: now.AddDays(-60));
         var recent = CreateEpisode(id: "recent-ep", tags: ["deploy"], occurredAt: now.AddDays(-2));
         await actor.StoreEpisodeAsync(stale);
@@ -235,7 +247,7 @@ public sealed class EpisodicMemoryActorTests
     [Fact]
     public async Task RecallAsync_RespectsMaxResults()
     {
-        var (actor, _) = CreateActor();
+        var (actor, _, _) = CreateActor();
         for (var i = 0; i < 5; i++)
             await actor.StoreEpisodeAsync(CreateEpisode(id: $"ep-{i}", tags: ["deploy"]));
 
@@ -248,7 +260,7 @@ public sealed class EpisodicMemoryActorTests
     public async Task RecordRecallAsync_IncrementsCountAndStamps()
     {
         var now = new DateTimeOffset(2026, 4, 30, 12, 0, 0, TimeSpan.Zero);
-        var (actor, _) = CreateActor(new FakeTimeProvider(now));
+        var (actor, _, _) = CreateActor(new FakeTimeProvider(now));
         var ep = CreateEpisode(id: "ep-recall");
         await actor.StoreEpisodeAsync(ep);
 
@@ -263,7 +275,7 @@ public sealed class EpisodicMemoryActorTests
     [Fact]
     public async Task RecordRecallAsync_NoOpWhenMissing()
     {
-        var (actor, _) = CreateActor();
+        var (actor, _, _) = CreateActor();
 
         await actor.RecordRecallAsync(EpisodeId.From("missing"));
 
@@ -274,7 +286,7 @@ public sealed class EpisodicMemoryActorTests
     [Fact]
     public async Task ArchiveEpisodeAsync_ExcludesFromRecallAndList()
     {
-        var (actor, _) = CreateActor();
+        var (actor, _, _) = CreateActor();
         var ep = CreateEpisode(id: "archived-ep", title: "Archive deploy", tags: ["deploy"]);
         await actor.StoreEpisodeAsync(ep);
 
@@ -294,7 +306,7 @@ public sealed class EpisodicMemoryActorTests
     [Fact]
     public async Task ArchiveEpisodeAsync_ReturnsNull_WhenMissing()
     {
-        var (actor, _) = CreateActor();
+        var (actor, _, _) = CreateActor();
 
         var result = await actor.ArchiveEpisodeAsync(EpisodeId.From("missing"));
 
@@ -304,7 +316,7 @@ public sealed class EpisodicMemoryActorTests
     [Fact]
     public async Task RemoveEpisodeAsync_DeletesEpisode()
     {
-        var (actor, _) = CreateActor();
+        var (actor, _, _) = CreateActor();
         var ep = CreateEpisode(id: "ep-remove");
         await actor.StoreEpisodeAsync(ep);
 
@@ -317,7 +329,7 @@ public sealed class EpisodicMemoryActorTests
     [Fact]
     public async Task GetEpisodeAsync_ReturnsNull_WhenNotFound()
     {
-        var (actor, _) = CreateActor();
+        var (actor, _, _) = CreateActor();
 
         var result = await actor.GetEpisodeAsync(EpisodeId.From("never"));
 
@@ -325,9 +337,31 @@ public sealed class EpisodicMemoryActorTests
     }
 
     [Fact]
+    public async Task StoreEpisodeAsync_RedactsLeaksInNarrativeAndDecisions()
+    {
+        var scanner = new LeakScanner(NullLogger<LeakScanner>.Instance);
+        var (actor, _, _) = CreateActor(leakScanner: scanner);
+        var episode = CreateEpisode(
+            id: "leaky-ep",
+            title: "Routine deploy",
+            narrative: "Used token sk-ant-abcdef0123456789ZZZZ to call API.",
+            decisions:
+            [
+                new EpisodeDecision { Question = "Auth header", ChosenOption = "Bearer abcdefghijklmnopqrstuvwxyz0123456789" }
+            ]);
+
+        var stored = await actor.StoreEpisodeAsync(episode);
+
+        stored.Narrative.ShouldNotContain("sk-ant-abcdef0123456789ZZZZ");
+        stored.Narrative.ShouldContain("***REDACTED***");
+        stored.Decisions[0].ChosenOption.ShouldNotContain("abcdefghijklmnopqrstuvwxyz0123456789");
+        stored.Decisions[0].ChosenOption.ShouldContain("***REDACTED***");
+    }
+
+    [Fact]
     public async Task GetAllEpisodesAsync_ReturnsAllNonArchivedEpisodes()
     {
-        var (actor, _) = CreateActor();
+        var (actor, _, _) = CreateActor();
         await actor.StoreEpisodeAsync(CreateEpisode(id: "ep-a", title: "Alpha"));
         await actor.StoreEpisodeAsync(CreateEpisode(id: "ep-b", title: "Beta"));
         var archived = CreateEpisode(id: "ep-c", title: "Archived");
