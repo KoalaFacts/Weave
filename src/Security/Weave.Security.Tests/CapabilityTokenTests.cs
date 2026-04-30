@@ -103,4 +103,66 @@ public sealed class CapabilityTokenTests
 
         request.Lifetime.ShouldBe(TimeSpan.FromHours(24));
     }
+
+    // --- Exact expiry boundary ---
+
+    [Fact]
+    public void IsExpiredAt_ExactlyAtExpiry_ReturnsTrue()
+    {
+        var expiry = new DateTimeOffset(2026, 4, 19, 12, 0, 0, TimeSpan.Zero);
+        var token = new CapabilityToken { ExpiresAt = expiry };
+
+        // now == ExpiresAt => expired (uses >=)
+        token.IsExpiredAt(expiry).ShouldBeTrue();
+    }
+
+    [Fact]
+    public void IsExpiredAt_OneTickBeforeExpiry_ReturnsFalse()
+    {
+        var expiry = new DateTimeOffset(2026, 4, 19, 12, 0, 0, TimeSpan.Zero);
+        var token = new CapabilityToken { ExpiresAt = expiry };
+
+        token.IsExpiredAt(expiry.AddTicks(-1)).ShouldBeFalse();
+    }
+
+    // --- Default token ---
+
+    [Fact]
+    public void DefaultToken_HasEmptyFields()
+    {
+        var token = new CapabilityToken();
+
+        token.WorkspaceId.ShouldBe(string.Empty);
+        token.IssuedTo.ShouldBe(string.Empty);
+        token.Grants.ShouldBeEmpty();
+        token.Signature.ShouldBe(string.Empty);
+        token.TokenId.ShouldNotBeNullOrEmpty();
+    }
+
+    // --- HasGrant edge cases ---
+
+    [Fact]
+    public void HasGrant_EmptyString_WithWildcard_ReturnsTrue()
+    {
+        var token = new CapabilityToken { Grants = ["*"] };
+
+        token.HasGrant("").ShouldBeTrue();
+    }
+
+    [Fact]
+    public void HasGrant_EmptyString_WithoutWildcard_ReturnsFalse()
+    {
+        var token = new CapabilityToken { Grants = ["tool:my-tool"] };
+
+        token.HasGrant("").ShouldBeFalse();
+    }
+
+    [Fact]
+    public void HasGrant_CaseSensitive_DoesNotMatchDifferentCase()
+    {
+        var token = new CapabilityToken { Grants = ["Tool:MyTool"] };
+
+        token.HasGrant("tool:mytool").ShouldBeFalse();
+        token.HasGrant("Tool:MyTool").ShouldBeTrue();
+    }
 }

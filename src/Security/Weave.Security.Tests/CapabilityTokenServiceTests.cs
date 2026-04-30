@@ -1,3 +1,4 @@
+using Microsoft.Extensions.Time.Testing;
 using Weave.Security.Tokens;
 
 namespace Weave.Security.Tests;
@@ -415,5 +416,185 @@ public sealed class CapabilityTokenServiceTests
 
         Should.Throw<InvalidOperationException>(act)
             .Message.ShouldContain("at least");
+    }
+
+    // --- Exact expiry boundary with FakeTimeProvider ---
+
+    [Fact]
+    public void Validate_ExactlyAtExpiry_ReturnsFalse()
+    {
+        var fakeTime = new FakeTimeProvider(new DateTimeOffset(2026, 4, 19, 12, 0, 0, TimeSpan.Zero));
+        var service = new CapabilityTokenService(
+            Microsoft.Extensions.Options.Options.Create(
+                new CapabilityTokenOptions { SigningKey = "test-signing-key-that-is-at-least-32-chars-long" }),
+            fakeTime);
+
+        var token = service.Mint(new CapabilityTokenRequest
+        {
+            WorkspaceId = "ws",
+            IssuedTo = "agent",
+            Grants = ["*"],
+            Lifetime = TimeSpan.FromHours(1)
+        });
+
+        // Advance to exactly the expiry moment
+        fakeTime.Advance(TimeSpan.FromHours(1));
+
+        service.Validate(token).ShouldBeFalse();
+    }
+
+    [Fact]
+    public void Validate_OneTickBeforeExpiry_ReturnsTrue()
+    {
+        var fakeTime = new FakeTimeProvider(new DateTimeOffset(2026, 4, 19, 12, 0, 0, TimeSpan.Zero));
+        var service = new CapabilityTokenService(
+            Microsoft.Extensions.Options.Options.Create(
+                new CapabilityTokenOptions { SigningKey = "test-signing-key-that-is-at-least-32-chars-long" }),
+            fakeTime);
+
+        var token = service.Mint(new CapabilityTokenRequest
+        {
+            WorkspaceId = "ws",
+            IssuedTo = "agent",
+            Grants = ["*"],
+            Lifetime = TimeSpan.FromHours(1)
+        });
+
+        // Advance to one tick before expiry
+        fakeTime.Advance(TimeSpan.FromHours(1) - TimeSpan.FromTicks(1));
+
+        service.Validate(token).ShouldBeTrue();
+    }
+
+    // --- Tampered TokenId ---
+
+    [Fact]
+    public void Validate_TamperedTokenId_ReturnsFalse()
+    {
+        var token = _service.Mint(new CapabilityTokenRequest
+        {
+            WorkspaceId = "ws",
+            IssuedTo = "agent",
+            Grants = ["*"],
+            Lifetime = TimeSpan.FromHours(1)
+        });
+
+        var tampered = token with { TokenId = "completely-different-id" };
+
+        _service.Validate(tampered).ShouldBeFalse();
+    }
+
+    // --- Constructor null TimeProvider ---
+
+    [Fact]
+    public void Constructor_NullTimeProvider_Throws()
+    {
+        var act = () => new CapabilityTokenService(
+            Microsoft.Extensions.Options.Options.Create(
+                new CapabilityTokenOptions { SigningKey = "test-signing-key-that-is-at-least-32-chars-long" }),
+            null!);
+
+        Should.Throw<ArgumentNullException>(act);
+    }
+
+    // --- Constructor null Options ---
+
+    [Fact]
+    public void Constructor_NullOptions_Throws()
+    {
+        var act = () => new CapabilityTokenService(
+            Microsoft.Extensions.Options.Options.Create<CapabilityTokenOptions>(null!),
+            TimeProvider.System);
+
+        Should.Throw<ArgumentNullException>(act);
+    }
+
+    // --- Concurrent operations ---
+
+    [Fact]
+    public void Mint_Concurrent_ProducesUniqueTokens()
+    {
+        var tokens = new System.Collections.Concurrent.ConcurrentBag<CapabilityToken>();
+        var request = new CapabilityTokenRequest
+        {
+            WorkspaceId = "ws",
+            IssuedTo = "agent",
+            Grants = ["*"],
+            Lifetime = TimeSpan.FromHours(1)
+        };
+
+        Parallel.For(0, 50, _ => tokens.Add(_service.Mint(request)));
+
+        tokens.Select(t => t.TokenId).Distinct().Count().ShouldBe(50);
+        tokens.ShouldAllBe(t => _service.Validate(t));
+    }
+
+    [Fact]
+    public void Revoke_Concurrent_DifferentTokens_DoesNotThrow()
+    {
+        var tokens = Enumerable.Range(0, 10).Select(_ => _service.Mint(new CapabilityTokenRequest
+        {
+            WorkspaceId = "ws",
+            IssuedTo = "agent",
+            Grants = ["*"],
+            Lifetime = TimeSpan.FromHours(1)
+        })).ToList();
+
+        Should.NotThrow(() => Parallel.For(0, 10, i => _service.Revoke(tokens[i].TokenId)));
+        foreach (var token in tokens)
+            _service.IsRevoked(token.TokenId).ShouldBeTrue();
+    }
+
+    // --- Mint with whitespace-only values ---
+
+    [Fact]
+    public void Mint_WithWhitespaceWorkspaceId_Throws()
+    {
+        var act = () => _service.Mint(new CapabilityTokenRequest
+        {
+            WorkspaceId = "   ",
+            IssuedTo = "agent",
+            Grants = ["*"],
+            Lifetime = TimeSpan.FromHours(1)
+        });
+
+        Should.Throw<ArgumentException>(act);
+    }
+
+    [Fact]
+    public void Mint_WithWhitespaceIssuedTo_Throws()
+    {
+        var act = () => _service.Mint(new CapabilityTokenRequest
+        {
+            WorkspaceId = "ws",
+            IssuedTo = "   ",
+            Grants = ["*"],
+            Lifetime = TimeSpan.FromHours(1)
+        });
+
+        Should.Throw<ArgumentException>(act);
+    }
+
+    // --- Validate after revoke and re-mint with same fields ---
+
+    [Fact]
+    public void Validate_RevokedToken_NewMintWithSameFields_OnlyNewIsValid()
+    {
+        var request = new CapabilityTokenRequest
+        {
+            WorkspaceId = "ws",
+            IssuedTo = "agent",
+            Grants = ["tool:read"],
+            Lifetime = TimeSpan.FromHours(1)
+        };
+
+        var first = _service.Mint(request);
+        _service.Revoke(first.TokenId);
+
+        var second = _service.Mint(request);
+
+        _service.Validate(first).ShouldBeFalse();
+        _service.Validate(second).ShouldBeTrue();
+        first.TokenId.ShouldNotBe(second.TokenId);
     }
 }

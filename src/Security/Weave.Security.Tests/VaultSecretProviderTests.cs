@@ -195,6 +195,142 @@ public sealed class VaultSecretProviderTests
             () => provider.ListPathsAsync("ws-1", TestContext.Current.CancellationToken));
     }
 
+    // --- ResolveAsync: HTTP 500 ---
+
+    [Fact]
+    public async Task ResolveAsync_VaultReturnsServerError_ThrowsHttpRequestException()
+    {
+        var handler = new StubHandler("internal server error", HttpStatusCode.InternalServerError);
+        var provider = CreateProviderWithSharedTokenService(handler);
+        var token = MintToken();
+
+        await Should.ThrowAsync<HttpRequestException>(
+            () => provider.ResolveAsync("db-pass", token, TestContext.Current.CancellationToken));
+    }
+
+    // --- ResolveAsync: malformed JSON ---
+
+    [Fact]
+    public async Task ResolveAsync_VaultReturnsMalformedJson_ThrowsJsonException()
+    {
+        var handler = new StubHandler("not-json-at-all");
+        var provider = CreateProviderWithSharedTokenService(handler);
+        var token = MintToken();
+
+        await Should.ThrowAsync<System.Text.Json.JsonException>(
+            () => provider.ResolveAsync("db-pass", token, TestContext.Current.CancellationToken));
+    }
+
+    [Fact]
+    public async Task ResolveAsync_VaultReturnsMissingDataProperty_ThrowsKeyNotFoundException()
+    {
+        var handler = new StubHandler("""{"other":"stuff"}""");
+        var provider = CreateProviderWithSharedTokenService(handler);
+        var token = MintToken();
+
+        await Should.ThrowAsync<KeyNotFoundException>(
+            () => provider.ResolveAsync("db-pass", token, TestContext.Current.CancellationToken));
+    }
+
+    // --- ResolveAsync: expired token ---
+
+    [Fact]
+    public async Task ResolveAsync_ExpiredToken_ThrowsUnauthorized()
+    {
+        var handler = new StubHandler("""{"data":{"data":{"value":"x"}}}""");
+        var provider = CreateProviderWithSharedTokenService(handler);
+        var expiredToken = _tokenService.Mint(new CapabilityTokenRequest
+        {
+            WorkspaceId = "ws-1",
+            IssuedTo = "agent-1",
+            Grants = ["secret:*"],
+            Lifetime = TimeSpan.FromMilliseconds(-1)
+        });
+
+        await Should.ThrowAsync<UnauthorizedAccessException>(
+            () => provider.ResolveAsync("db-pass", expiredToken, TestContext.Current.CancellationToken));
+    }
+
+    // --- ResolveAsync: Vault 403 Forbidden ---
+
+    [Fact]
+    public async Task ResolveAsync_VaultReturnsForbidden_ThrowsHttpRequestException()
+    {
+        var handler = new StubHandler("permission denied", HttpStatusCode.Forbidden);
+        var provider = CreateProviderWithSharedTokenService(handler);
+        var token = MintToken();
+
+        var ex = await Should.ThrowAsync<HttpRequestException>(
+            () => provider.ResolveAsync("db-pass", token, TestContext.Current.CancellationToken));
+        ex.Message.ShouldContain("403");
+    }
+
+    // --- ResolveAsync: empty string value ---
+
+    [Fact]
+    public async Task ResolveAsync_VaultReturnsEmptyStringValue_ThrowsKeyNotFound()
+    {
+        var handler = new StubHandler("""{"data":{"data":{"value":""}}}""");
+        var provider = CreateProviderWithSharedTokenService(handler);
+        var token = MintToken();
+
+        await Should.ThrowAsync<KeyNotFoundException>(
+            () => provider.ResolveAsync("empty-value", token, TestContext.Current.CancellationToken));
+    }
+
+    // --- ResolveAsync: path traversal is normalized by Uri ---
+
+    [Fact]
+    public async Task ResolveAsync_PathTraversalInSecretPath_NormalizedByUri()
+    {
+        // .NET's Uri class normalizes "../" segments, so path traversal
+        // in the secret path is resolved before the HTTP request is sent.
+        var handler = new StubHandler("not found", HttpStatusCode.NotFound);
+        var provider = CreateProviderWithSharedTokenService(handler);
+        var token = MintToken();
+
+        await Should.ThrowAsync<HttpRequestException>(
+            () => provider.ResolveAsync("../../system/keys", token, TestContext.Current.CancellationToken));
+
+        handler.LastRequestUri.ShouldNotBeNull();
+        // Uri normalizes ".." segments — the literal traversal does not appear in the request
+        handler.LastRequestUri!.PathAndQuery.ShouldNotContain("..");
+    }
+
+    [Fact]
+    public async Task ResolveAsync_PathTraversalInWorkspaceId_NormalizedByUri()
+    {
+        var handler = new StubHandler("not found", HttpStatusCode.NotFound);
+        var traversalToken = _tokenService.Mint(new CapabilityTokenRequest
+        {
+            WorkspaceId = "../other-workspace",
+            IssuedTo = "agent-1",
+            Grants = ["secret:*"],
+            Lifetime = TimeSpan.FromHours(1)
+        });
+
+        var provider = CreateProviderWithSharedTokenService(handler);
+
+        await Should.ThrowAsync<HttpRequestException>(
+            () => provider.ResolveAsync("db-pass", traversalToken, TestContext.Current.CancellationToken));
+
+        handler.LastRequestUri.ShouldNotBeNull();
+        // Uri normalizes ".." segments
+        handler.LastRequestUri!.PathAndQuery.ShouldNotContain("..");
+    }
+
+    // --- ListPathsAsync: HTTP 500 ---
+
+    [Fact]
+    public async Task ListPathsAsync_VaultReturnsServerError_ThrowsHttpRequestException()
+    {
+        var handler = new StubHandler("error", HttpStatusCode.InternalServerError);
+        var provider = CreateProviderWithSharedTokenService(handler);
+
+        await Should.ThrowAsync<HttpRequestException>(
+            () => provider.ListPathsAsync("ws-1", TestContext.Current.CancellationToken));
+    }
+
     // --- Stub handler ---
 
     private sealed class StubHandler(string responseBody, HttpStatusCode statusCode = HttpStatusCode.OK) : HttpMessageHandler

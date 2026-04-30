@@ -140,4 +140,65 @@ public sealed class SecretProviderProxyTests
         var result = await proxy.ResolveAsync("key", token, TestContext.Current.CancellationToken);
         result.DecryptToString().ShouldBe("fallback");
     }
+
+    // --- Override throws: propagates to caller ---
+
+    [Fact]
+    public async Task ResolveAsync_OverrideThrows_PropagatesException()
+    {
+        var fallback = new InMemorySecretProvider(_tokenService);
+        fallback.SetSecret("key", "fallback-value");
+        var proxy = new SecretProviderProxy(_broker, fallback);
+
+        var throwingProvider = Substitute.For<ISecretProvider>();
+        throwingProvider.ResolveAsync("key", Arg.Any<CapabilityToken>(), Arg.Any<CancellationToken>())
+            .Returns<SecretValue>(_ => throw new InvalidOperationException("provider failure"));
+        _broker.Swap<ISecretProvider>(throwingProvider);
+
+        var token = MintToken();
+
+        await Should.ThrowAsync<InvalidOperationException>(
+            () => proxy.ResolveAsync("key", token, TestContext.Current.CancellationToken));
+    }
+
+    [Fact]
+    public async Task ListPathsAsync_OverrideThrows_PropagatesException()
+    {
+        var fallback = new InMemorySecretProvider(_tokenService);
+        var proxy = new SecretProviderProxy(_broker, fallback);
+
+        var throwingProvider = Substitute.For<ISecretProvider>();
+        throwingProvider.ListPathsAsync("ws-1", Arg.Any<CancellationToken>())
+            .Returns<IReadOnlyList<string>>(_ => throw new HttpRequestException("connection refused"));
+        _broker.Swap<ISecretProvider>(throwingProvider);
+
+        await Should.ThrowAsync<HttpRequestException>(
+            () => proxy.ListPathsAsync("ws-1", TestContext.Current.CancellationToken));
+    }
+
+    // --- Clear override then override again ---
+
+    [Fact]
+    public async Task ClearThenReSwap_UsesNewOverride()
+    {
+        var fallback = new InMemorySecretProvider(_tokenService);
+        fallback.SetSecret("key", "fallback");
+        var proxy = new SecretProviderProxy(_broker, fallback);
+        var token = MintToken();
+
+        var first = Substitute.For<ISecretProvider>();
+        first.ResolveAsync("key", Arg.Any<CapabilityToken>(), Arg.Any<CancellationToken>())
+            .Returns(Task.FromResult(new SecretValue("first")));
+        _broker.Swap<ISecretProvider>(first);
+
+        _broker.Swap<ISecretProvider>(null); // clear
+
+        var second = Substitute.For<ISecretProvider>();
+        second.ResolveAsync("key", Arg.Any<CapabilityToken>(), Arg.Any<CancellationToken>())
+            .Returns(Task.FromResult(new SecretValue("second")));
+        _broker.Swap<ISecretProvider>(second);
+
+        var result = await proxy.ResolveAsync("key", token, TestContext.Current.CancellationToken);
+        result.DecryptToString().ShouldBe("second");
+    }
 }

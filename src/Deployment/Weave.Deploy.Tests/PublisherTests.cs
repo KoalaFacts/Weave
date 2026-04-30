@@ -1,4 +1,6 @@
+using System.Globalization;
 using Weave.Deploy.Translators;
+using Weave.Shared;
 using Weave.Workspaces.Models;
 
 namespace Weave.Deploy.Tests;
@@ -610,6 +612,252 @@ public static class PublisherTests
                 var content = await File.ReadAllTextAsync(file, TestContext.Current.CancellationToken);
                 content.ShouldContain("test-workspace", customMessage: $"File {Path.GetFileName(file)} should reference the workspace name");
             }
+        }
+
+        [Theory]
+        [MemberData(nameof(TargetNames))]
+        public async Task PortConstants_AppearInOutput(string name)
+        {
+            var manifest = CreateTestManifest();
+            var result = await Resolve(name).PublishAsync(manifest, new PublishOptions { OutputPath = OutputDir }, TestContext.Current.CancellationToken);
+
+            var allContent = string.Join("\n", await Task.WhenAll(
+                result.GeneratedFiles.Select(f => File.ReadAllTextAsync(f, TestContext.Current.CancellationToken))));
+
+            // Every publisher should reference at least one WeavePorts constant.
+            var knownPorts = new[] { WeavePorts.SiloHttp, WeavePorts.OrleansSilo, WeavePorts.OrleansGateway, WeavePorts.Redis };
+            knownPorts.ShouldContain(
+                p => allContent.Contains(p.ToString(CultureInfo.InvariantCulture), StringComparison.Ordinal),
+                customMessage: $"{name}: should reference at least one WeavePorts constant");
+        }
+
+        [Theory]
+        [MemberData(nameof(TargetNames))]
+        public async Task RepublishToSameDirectory_OverwritesCleanly(string name)
+        {
+            var manifest = CreateTestManifest();
+            var opts = new PublishOptions { OutputPath = OutputDir };
+
+            var first = await Resolve(name).PublishAsync(manifest, opts, TestContext.Current.CancellationToken);
+            first.Success.ShouldBeTrue();
+
+            var second = await Resolve(name).PublishAsync(manifest, opts, TestContext.Current.CancellationToken);
+            second.Success.ShouldBeTrue();
+            second.GeneratedFiles.Count.ShouldBe(first.GeneratedFiles.Count);
+
+            foreach (var file in second.GeneratedFiles)
+                File.Exists(file).ShouldBeTrue();
+        }
+
+        [Theory]
+        [MemberData(nameof(TargetNames))]
+        public async Task RegistryIgnored_WhenPublisherDoesNotUseIt(string name)
+        {
+            // Kubernetes uses Registry, the others should produce consistent
+            // output regardless of the Registry option.
+            if (name == "kubernetes") return;
+
+            var manifest = CreateTestManifest();
+            var withoutRegistry = await Resolve(name).PublishAsync(manifest, new PublishOptions { OutputPath = Path.Combine(OutputDir, "a") }, TestContext.Current.CancellationToken);
+            var withRegistry = await Resolve(name).PublishAsync(manifest, new PublishOptions { OutputPath = Path.Combine(OutputDir, "b"), Registry = "custom.io/org" }, TestContext.Current.CancellationToken);
+
+            for (var i = 0; i < withoutRegistry.GeneratedFiles.Count; i++)
+            {
+                var a = await File.ReadAllTextAsync(withoutRegistry.GeneratedFiles[i], TestContext.Current.CancellationToken);
+                var b = await File.ReadAllTextAsync(withRegistry.GeneratedFiles[i], TestContext.Current.CancellationToken);
+                a.ShouldBe(b, customMessage: $"{name}: Registry should not affect output");
+            }
+        }
+    }
+
+    // ── Port constant consistency ──────────────────────────────────
+
+    public sealed class PortConsistency : PublisherTestBase
+    {
+        [Fact]
+        public async Task DockerCompose_EmitsSiloAndRedisPorts()
+        {
+            var result = await new DockerComposePublisher().PublishAsync(CreateTestManifest(), new PublishOptions { OutputPath = OutputDir }, TestContext.Current.CancellationToken);
+            var content = await File.ReadAllTextAsync(result.GeneratedFiles[0], TestContext.Current.CancellationToken);
+            content.ShouldContain($"{WeavePorts.SiloHttp}:{WeavePorts.SiloHttp}");
+            content.ShouldContain($"{WeavePorts.OrleansSilo}:{WeavePorts.OrleansSilo}");
+            content.ShouldContain($"{WeavePorts.OrleansGateway}:{WeavePorts.OrleansGateway}");
+            content.ShouldContain($"{WeavePorts.Redis}:{WeavePorts.Redis}");
+        }
+
+        [Fact]
+        public async Task Kubernetes_EmitsContainerPortsAndRedisConnection()
+        {
+            var result = await new KubernetesPublisher().PublishAsync(CreateTestManifest(), new PublishOptions { OutputPath = OutputDir }, TestContext.Current.CancellationToken);
+            var siloFile = result.GeneratedFiles.First(f => f.Contains("silo-deployment"));
+            var content = await File.ReadAllTextAsync(siloFile, TestContext.Current.CancellationToken);
+            content.ShouldContain($"containerPort: {WeavePorts.SiloHttp}");
+            content.ShouldContain($"containerPort: {WeavePorts.OrleansSilo}");
+            content.ShouldContain($"containerPort: {WeavePorts.OrleansGateway}");
+            content.ShouldContain($"redis.weave-test-workspace.svc.cluster.local:{WeavePorts.Redis}");
+        }
+
+        [Fact]
+        public async Task Nomad_EmitsStaticPortsAndDaprAppPort()
+        {
+            var result = await new NomadPublisher().PublishAsync(CreateTestManifest(), new PublishOptions { OutputPath = OutputDir }, TestContext.Current.CancellationToken);
+            var content = await File.ReadAllTextAsync(result.GeneratedFiles[0], TestContext.Current.CancellationToken);
+            content.ShouldContain($"static = {WeavePorts.SiloHttp}");
+            content.ShouldContain($"static = {WeavePorts.OrleansSilo}");
+            content.ShouldContain($"static = {WeavePorts.OrleansGateway}");
+            content.ShouldContain($"static = {WeavePorts.Redis}");
+            content.ShouldContain($"\"--app-port\", \"{WeavePorts.SiloHttp}\"");
+        }
+
+        [Fact]
+        public async Task FlyIo_EmitsInternalPort()
+        {
+            var result = await new FlyIoPublisher().PublishAsync(CreateTestManifest(), new PublishOptions { OutputPath = OutputDir }, TestContext.Current.CancellationToken);
+            var content = await File.ReadAllTextAsync(result.GeneratedFiles[0], TestContext.Current.CancellationToken);
+            content.ShouldContain($"internal_port = {WeavePorts.SiloHttp}");
+            content.ShouldContain("force_https = true");
+        }
+
+        [Fact]
+        public async Task GitHubActions_EmitsRedisPortMapping()
+        {
+            var result = await new GitHubActionsPublisher().PublishAsync(CreateTestManifest(), new PublishOptions { OutputPath = OutputDir }, TestContext.Current.CancellationToken);
+            var content = await File.ReadAllTextAsync(result.GeneratedFiles[0], TestContext.Current.CancellationToken);
+            content.ShouldContain($"{WeavePorts.Redis}:{WeavePorts.Redis}");
+            content.ShouldContain($"REDIS_CONNECTION: localhost:{WeavePorts.Redis}");
+        }
+    }
+
+    // ── Publisher-specific edge cases ──────────────────────────────
+
+    public sealed class NomadEdgeCases : PublisherTestBase
+    {
+        [Fact]
+        public async Task EmitsWorkspaceEnvironmentVariable()
+        {
+            var result = await new NomadPublisher().PublishAsync(CreateTestManifest(), new PublishOptions { OutputPath = OutputDir }, TestContext.Current.CancellationToken);
+            var content = await File.ReadAllTextAsync(result.GeneratedFiles[0], TestContext.Current.CancellationToken);
+            content.ShouldContain("WEAVE_WORKSPACE = \"test-workspace\"");
+        }
+
+        [Fact]
+        public async Task EmitsResourceLimits()
+        {
+            var result = await new NomadPublisher().PublishAsync(CreateTestManifest(), new PublishOptions { OutputPath = OutputDir }, TestContext.Current.CancellationToken);
+            var content = await File.ReadAllTextAsync(result.GeneratedFiles[0], TestContext.Current.CancellationToken);
+            content.ShouldContain("cpu    = 500");
+            content.ShouldContain("memory = 512");
+        }
+    }
+
+    public sealed class KubernetesEdgeCases : PublisherTestBase
+    {
+        [Fact]
+        public async Task ZeroReplicas_EmittedInOutput()
+        {
+            var manifest = CreateTestManifest() with
+            {
+                Targets = new Dictionary<string, TargetDefinition>
+                {
+                    ["staging"] = new() { Runtime = "kubernetes", Replicas = 0 }
+                }
+            };
+            var result = await new KubernetesPublisher().PublishAsync(manifest, new PublishOptions { OutputPath = OutputDir }, TestContext.Current.CancellationToken);
+            var content = await File.ReadAllTextAsync(result.GeneratedFiles.First(f => f.Contains("silo-deployment")), TestContext.Current.CancellationToken);
+            content.ShouldContain("replicas: 0");
+        }
+
+        [Fact]
+        public async Task RegistryWithTrailingSlash_ProducesValidImage()
+        {
+            var result = await new KubernetesPublisher().PublishAsync(
+                CreateTestManifest(),
+                new PublishOptions { OutputPath = OutputDir, Registry = "myregistry.io/" },
+                TestContext.Current.CancellationToken);
+            var content = await File.ReadAllTextAsync(result.GeneratedFiles.First(f => f.Contains("silo-deployment")), TestContext.Current.CancellationToken);
+            // Even with trailing slash, the image path should contain the registry.
+            content.ShouldContain("myregistry.io/");
+            content.ShouldContain("weave-silo:latest");
+        }
+
+        [Fact]
+        public async Task ServiceFile_ExposesAllOrleansPorts()
+        {
+            var result = await new KubernetesPublisher().PublishAsync(CreateTestManifest(), new PublishOptions { OutputPath = OutputDir }, TestContext.Current.CancellationToken);
+            var content = await File.ReadAllTextAsync(result.GeneratedFiles.First(f => f.Contains("silo-service")), TestContext.Current.CancellationToken);
+            content.ShouldContain($"port: {WeavePorts.SiloHttp}");
+            content.ShouldContain($"port: {WeavePorts.OrleansSilo}");
+            content.ShouldContain($"port: {WeavePorts.OrleansGateway}");
+        }
+    }
+
+    public sealed class GitHubActionsEdgeCases : PublisherTestBase
+    {
+        [Fact]
+        public async Task EmptyAgentsDictionary_OmitsAgentSteps()
+        {
+            var manifest = new WorkspaceManifest
+            {
+                Name = "empty-agents",
+                Version = "1.0",
+                Agents = new Dictionary<string, AgentDefinition>()
+            };
+            var result = await new GitHubActionsPublisher().PublishAsync(manifest, new PublishOptions { OutputPath = OutputDir }, TestContext.Current.CancellationToken);
+            var content = await File.ReadAllTextAsync(result.GeneratedFiles[0], TestContext.Current.CancellationToken);
+            content.ShouldNotContain("weave agent send");
+        }
+
+        [Fact]
+        public async Task DotNetVersionIsPresent()
+        {
+            var result = await new GitHubActionsPublisher().PublishAsync(CreateTestManifest(), new PublishOptions { OutputPath = OutputDir }, TestContext.Current.CancellationToken);
+            var content = await File.ReadAllTextAsync(result.GeneratedFiles[0], TestContext.Current.CancellationToken);
+            content.ShouldContain("dotnet-version: '10.0.x'");
+        }
+
+        [Fact]
+        public async Task WorkspaceStartStep_ReferencesManifestName()
+        {
+            var result = await new GitHubActionsPublisher().PublishAsync(CreateTestManifest(), new PublishOptions { OutputPath = OutputDir }, TestContext.Current.CancellationToken);
+            var content = await File.ReadAllTextAsync(result.GeneratedFiles[0], TestContext.Current.CancellationToken);
+            content.ShouldContain("--workspace=test-workspace");
+        }
+    }
+
+    public sealed class FlyIoEdgeCases : PublisherTestBase
+    {
+        [Fact]
+        public async Task EmitsDockerfileBuildBlock()
+        {
+            var result = await new FlyIoPublisher().PublishAsync(CreateTestManifest(), new PublishOptions { OutputPath = OutputDir }, TestContext.Current.CancellationToken);
+            var content = await File.ReadAllTextAsync(result.GeneratedFiles[0], TestContext.Current.CancellationToken);
+            content.ShouldContain("[build]");
+            content.ShouldContain("dockerfile = \"Dockerfile\"");
+        }
+
+        [Fact]
+        public async Task ZeroMinScale_EmittedInOutput()
+        {
+            var manifest = CreateTestManifest() with
+            {
+                Targets = new Dictionary<string, TargetDefinition>
+                {
+                    ["production"] = new() { Runtime = "fly-io", Scaling = new ScalingConfig { Min = 0, Max = 5 } }
+                }
+            };
+            var result = await new FlyIoPublisher().PublishAsync(manifest, new PublishOptions { OutputPath = OutputDir }, TestContext.Current.CancellationToken);
+            var content = await File.ReadAllTextAsync(result.GeneratedFiles[0], TestContext.Current.CancellationToken);
+            content.ShouldContain("min_machines_running = 0");
+            content.ShouldContain("min_count = 0");
+            content.ShouldContain("max_count = 5");
+        }
+
+        [Fact]
+        public async Task VmSizeIsPresent()
+        {
+            var result = await new FlyIoPublisher().PublishAsync(CreateTestManifest(), new PublishOptions { OutputPath = OutputDir }, TestContext.Current.CancellationToken);
+            var content = await File.ReadAllTextAsync(result.GeneratedFiles[0], TestContext.Current.CancellationToken);
+            content.ShouldContain("size = \"shared-cpu-2x\"");
         }
     }
 }

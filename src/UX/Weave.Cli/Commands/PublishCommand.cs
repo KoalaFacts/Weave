@@ -8,6 +8,16 @@ namespace Weave.Cli.Commands;
 
 internal static class WorkspacePublishCommand
 {
+    internal static IPublisher ResolvePublisher(string target) => target switch
+    {
+        "docker-compose" => new DockerComposePublisher(),
+        "kubernetes" or "k8s" => new KubernetesPublisher(),
+        "nomad" => new NomadPublisher(),
+        "fly-io" or "fly" => new FlyIoPublisher(),
+        "github-actions" or "gh-actions" => new GitHubActionsPublisher(),
+        _ => throw new ArgumentException($"Unknown target: {target}")
+    };
+
     public static Command Create()
     {
         var nameArg = new Argument<string>("name") { Description = "Workspace name" };
@@ -47,15 +57,7 @@ internal static class WorkspacePublishCommand
             var parser = new ManifestParser();
             var manifest = parser.Parse(yaml);
 
-            IPublisher publisher = target switch
-            {
-                "docker-compose" => new DockerComposePublisher(),
-                "kubernetes" or "k8s" => new KubernetesPublisher(),
-                "nomad" => new NomadPublisher(),
-                "fly-io" or "fly" => new FlyIoPublisher(),
-                "github-actions" or "gh-actions" => new GitHubActionsPublisher(),
-                _ => throw new ArgumentException($"Unknown target: {target}")
-            };
+            IPublisher publisher = ResolvePublisher(target);
 
             var options = new PublishOptions { OutputPath = output };
             var result = await publisher.PublishAsync(manifest, options, cancellationToken);

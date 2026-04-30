@@ -1,6 +1,6 @@
 # Weave — Development Guide
 
-> **Start here before writing code or tests:** [docs/best-practices.md](docs/best-practices.md) is the law of the repo. Known latent debt that the rules are designed to retire is tracked in [docs/audit-findings.md](docs/audit-findings.md) — check for overlap with your change and fix as a same-PR cleanup when cheap.
+> **Start here before writing code or tests:** [docs/best-practices.md](docs/best-practices.md) is the law of the repo.
 
 ## Build and Test
 

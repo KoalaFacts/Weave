@@ -285,4 +285,130 @@ public sealed class LeakScannerTests
         finding.Offset.ShouldBe(prefix.Length);
         finding.Length.ShouldBe(secret.Length);
     }
+
+    // --- High entropy boundary: tokens > 500 chars silently skipped ---
+
+    [Fact]
+    public async Task ScanStringAsync_HighEntropyTokenOver500Chars_SkippedSilently()
+    {
+        // Build a 501-char high-entropy string with 32 unique chars (entropy ≈ 5.0)
+        var chars = "aAbBcCdDeEfFgGhHiIjJkKlLmMnNoOpP";
+        var longToken = string.Concat(Enumerable.Repeat(chars, 20))[..501];
+        var entropy = LeakScanner.CalculateShannonEntropy(longToken);
+        entropy.ShouldBeGreaterThanOrEqualTo(4.5); // confirm it IS high entropy
+
+        var result = await _scanner.ScanStringAsync(longToken, DefaultScanContext, TestContext.Current.CancellationToken);
+
+        result.Findings.ShouldNotContain(f => f.PatternName == "high_entropy_string");
+    }
+
+    [Fact]
+    public async Task ScanStringAsync_HighEntropyTokenExactly500Chars_Detected()
+    {
+        var chars = "aAbBcCdDeEfFgGhHiIjJkKlLmMnNoOpP";
+        var token = string.Concat(Enumerable.Repeat(chars, 20))[..500];
+        var entropy = LeakScanner.CalculateShannonEntropy(token);
+        entropy.ShouldBeGreaterThanOrEqualTo(4.5);
+
+        var result = await _scanner.ScanStringAsync(token, DefaultScanContext, TestContext.Current.CancellationToken);
+
+        result.Findings.ShouldContain(f => f.PatternName == "high_entropy_string");
+    }
+
+    [Fact]
+    public async Task ScanStringAsync_TokenShorterThanMinLength_SkippedSilently()
+    {
+        // 19-char token — below MinHighEntropyLength of 20, so it's always skipped
+        var shortToken = "aB3xZ9mK2pL5nQ8wR7t";
+        shortToken.Length.ShouldBe(19);
+
+        var result = await _scanner.ScanStringAsync(shortToken, DefaultScanContext, TestContext.Current.CancellationToken);
+
+        result.Findings.ShouldNotContain(f => f.PatternName == "high_entropy_string");
+    }
+
+    [Fact]
+    public async Task ScanStringAsync_TokenExactly20Chars_BelowEntropyThreshold_NotDetected()
+    {
+        // 20 chars can have at most log2(20) ≈ 4.32 entropy, below 4.5 threshold
+        var token = "aB3xZ9mK2pL5nQ8wR7tY";
+        token.Length.ShouldBe(20);
+        var entropy = LeakScanner.CalculateShannonEntropy(token);
+        entropy.ShouldBeLessThan(4.5);
+
+        var result = await _scanner.ScanStringAsync(token, DefaultScanContext, TestContext.Current.CancellationToken);
+
+        result.Findings.ShouldNotContain(f => f.PatternName == "high_entropy_string");
+    }
+
+    // --- Overlapping patterns ---
+
+    [Fact]
+    public async Task ScanStringAsync_OpenAiAndAnthropicKeysInSameContent_BothDetected()
+    {
+        var content = "keys: sk-proj1234567890abcdefghij and sk-ant-abc123def456ghi789jkl012";
+
+        var result = await _scanner.ScanStringAsync(content, DefaultScanContext, TestContext.Current.CancellationToken);
+
+        result.HasLeaks.ShouldBeTrue();
+        result.Findings.ShouldContain(f => f.PatternName == "openai_key");
+        result.Findings.ShouldContain(f => f.PatternName == "anthropic_key");
+    }
+
+    [Fact]
+    public async Task ScanStringAsync_AnthropicKeyNotMatchedByOpenAiPattern()
+    {
+        // "sk-ant-..." has hyphens after "sk-" so OpenAI's [A-Za-z0-9]{20,} won't match
+        var content = "sk-ant-abc123def456ghi789jkl012";
+
+        var result = await _scanner.ScanStringAsync(content, DefaultScanContext, TestContext.Current.CancellationToken);
+
+        // Anthropic pattern matches (allows hyphens in character class)
+        result.Findings.ShouldContain(f => f.PatternName == "anthropic_key");
+        // OpenAI does NOT match because hyphen in "ant-abc..." breaks [A-Za-z0-9]{20,}
+        result.Findings.ShouldNotContain(f => f.PatternName == "openai_key");
+    }
+
+    // --- False positive control ---
+
+    [Fact]
+    public async Task ScanStringAsync_ShortAwsLikePrefix_NotDetected()
+    {
+        // "AKIA" followed by fewer than 16 uppercase chars = no match
+        var result = await _scanner.ScanStringAsync("AKIAIOSFODNN7EX", DefaultScanContext, TestContext.Current.CancellationToken);
+
+        result.Findings.ShouldNotContain(f => f.PatternName == "aws_access_key");
+    }
+
+    [Fact]
+    public async Task ScanStringAsync_NormalBase64_NotFlaggedAsSecret()
+    {
+        // Base64-encoded "Hello, World!" — should not trigger any pattern
+        var content = "SGVsbG8sIFdvcmxkIQ==";
+
+        var result = await _scanner.ScanStringAsync(content, DefaultScanContext, TestContext.Current.CancellationToken);
+
+        result.Findings.ShouldNotContain(f => f.PatternName == "azure_storage_key");
+        result.Findings.ShouldNotContain(f => f.PatternName == "basic_auth");
+    }
+
+    [Fact]
+    public async Task ScanStringAsync_EmptyString_ReturnsClean()
+    {
+        var result = await _scanner.ScanStringAsync("", DefaultScanContext, TestContext.Current.CancellationToken);
+
+        result.HasLeaks.ShouldBeFalse();
+        result.Findings.ShouldBeEmpty();
+    }
+
+    // --- ScanResult.Clean ---
+
+    [Fact]
+    public void ScanResult_Clean_HasNoLeaks()
+    {
+        var clean = ScanResult.Clean;
+
+        clean.HasLeaks.ShouldBeFalse();
+        clean.Findings.ShouldBeEmpty();
+    }
 }
