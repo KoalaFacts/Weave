@@ -1,6 +1,3 @@
-using Orleans;
-using Weave.Shared.VirtualActors;
-
 namespace Weave.Silo.VirtualActors;
 
 /// <summary>

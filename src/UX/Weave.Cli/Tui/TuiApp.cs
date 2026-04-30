@@ -1,5 +1,4 @@
 using System.Globalization;
-using System.Net.Http;
 using Spectre.Console;
 using Spectre.Console.Rendering;
 using Weave.Cli.Commands;
@@ -578,7 +577,7 @@ internal static class TuiApp
 
         ApiWorkspaceResponse? response = null;
         Exception? error = null;
-        WorkspaceUpCommand.AutoStartResult? siloFailure = null;
+        WorkspaceSiloStarter.AutoStartResult? siloFailure = null;
 
         await AnsiConsole.Status()
             .Spinner(Spinner.Known.Dots)
@@ -591,7 +590,7 @@ internal static class TuiApp
 
                     if (!await client.IsReachableAsync(ct))
                     {
-                        var siloPath = WorkspaceUpCommand.ResolveSiloPath();
+                        var siloPath = WorkspaceSiloStarter.ResolveSiloPath();
                         if (siloPath is null)
                         {
                             error = new InvalidOperationException(
@@ -602,7 +601,7 @@ internal static class TuiApp
                         }
 
                         ctx.Status($"Silo not running — launching from {siloPath}…");
-                        var outcome = await WorkspaceUpCommand.AutoStartServeWithDiagnosticsAsync(ct);
+                        var outcome = await WorkspaceSiloStarter.AutoStartServeWithDiagnosticsAsync(ct);
                         if (!outcome.Success)
                         {
                             siloFailure = outcome;

@@ -2,7 +2,6 @@ using Microsoft.Extensions.AI;
 using Microsoft.Extensions.Logging;
 using Weave.Agents.Actors;
 using Weave.Agents.Models;
-using Weave.Shared.VirtualActors;
 using Weave.Tools.Actors;
 using Weave.Tools.Builders;
 
@@ -16,6 +15,7 @@ public sealed class AgentChatPipeline(
 {
     private IChatClient? _chatClient;
     private string? _systemPrompt;
+    private readonly SkillMemoryPromptEnricher _skillMemory = new(actors, logger);
 
     public void Initialize(string agentId, string? model)
     {
@@ -43,7 +43,8 @@ public sealed class AgentChatPipeline(
 
         var prompt = await GetSystemPromptAsync(state);
         prompt = await EnrichWithUserContextAsync(state, message, prompt);
-        prompt = await EnrichWithSkillsAsync(state, message, prompt);
+        var skillMemory = await _skillMemory.EnrichAsync(state.WorkspaceId, state.AgentName, message.Content, prompt);
+        prompt = skillMemory.Prompt;
 
         var chatMessages = new List<ChatMessage>(state.History.Count + 1);
         if (!string.IsNullOrWhiteSpace(prompt))
@@ -80,6 +81,7 @@ public sealed class AgentChatPipeline(
         }
 
         state.LastActive = timeProvider.GetUtcNow();
+        await _skillMemory.RecordSuccessfulUsageAsync(state.WorkspaceId, state.AgentName, skillMemory.SkillIds);
 
         return new AgentChatResponse
         {
@@ -168,28 +170,4 @@ public sealed class AgentChatPipeline(
         }
     }
 
-    private async Task<string?> EnrichWithSkillsAsync(AgentState state, AgentMessage message, string? prompt)
-    {
-        try
-        {
-            var skillActor = actors.GetActor<ISkillMemoryActor>(VirtualActorId.From(state.WorkspaceId.ToString()));
-            var results = await skillActor.SearchAsync(message.Content, 3);
-            if (results.Count == 0)
-                return prompt;
-
-            var skillSection = string.Join("\n\n", results.Select(r =>
-                $"### {r.Skill.Title} (relevance: {r.RelevanceScore:F1})\n{r.Skill.Description}\nSteps: {string.Join(" -> ", r.Skill.Steps.OrderBy(s => s.Order).Select(s => s.Action))}"));
-
-            var block = $"[Relevant skills from memory]\n{skillSection}";
-
-            return string.IsNullOrWhiteSpace(prompt)
-                ? block
-                : $"{prompt}\n\n{block}";
-        }
-        catch (Exception ex)
-        {
-            logger.LogWarning(ex, "Failed to retrieve skills for agent {AgentName}", state.AgentName);
-            return prompt;
-        }
-    }
 }

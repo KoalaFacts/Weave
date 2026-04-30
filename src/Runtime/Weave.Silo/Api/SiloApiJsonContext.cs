@@ -43,8 +43,10 @@ namespace Weave.Silo.Api;
 [JsonSerializable(typeof(SkillStepRequest))]
 [JsonSerializable(typeof(SkillResponse))]
 [JsonSerializable(typeof(SkillSearchResultResponse))]
+[JsonSerializable(typeof(SkillSuggestionResponse))]
 [JsonSerializable(typeof(IEnumerable<SkillResponse>))]
 [JsonSerializable(typeof(IEnumerable<SkillSearchResultResponse>))]
+[JsonSerializable(typeof(IEnumerable<SkillSuggestionResponse>))]
 // Channel types
 [JsonSerializable(typeof(RegisterChannelRequest))]
 [JsonSerializable(typeof(InboundMessageRequest))]

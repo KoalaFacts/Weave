@@ -92,6 +92,8 @@ The law of the repo. Every rule here is enforceable in review. Rules exist to pr
 
 **Extension classes in .NET follow `ExtensionsToXXX`**, sit in the target type's namespace, and suppress the namespace-mismatch analyzer inline. Do not invent new naming — the convention is already set in `CLAUDE.md`.
 
+**Classes over 200 lines require a design check.** Before growing a class beyond 200 lines, consider whether responsibilities should be split into smaller focused types. Do not mix multiple production classes in one file unless they are tightly coupled private helpers; one public or internal production class per file is the default.
+
 **Console output uses text-presentation Unicode, not emoji-variant glyphs.** `✗` (U+2717) renders with color tags; `✖` (U+2716) triggers emoji fonts that ignore Spectre RGB colors. If you must use a dual-use glyph, append U+FE0E to force text presentation. Use helpers in `CliTheme` rather than raw `Console.WriteLine` or direct Spectre markup.
 
 ### Secrets and security

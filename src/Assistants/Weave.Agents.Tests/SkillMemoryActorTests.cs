@@ -1,5 +1,5 @@
-using Microsoft.Extensions.Logging;
 using Microsoft.Extensions.Logging.Abstractions;
+using Microsoft.Extensions.Time.Testing;
 using Weave.Agents.Actors;
 using Weave.Agents.Models;
 using Weave.Shared.Events;
@@ -27,13 +27,13 @@ public sealed class SkillMemoryActorTests
         return persistentState;
     }
 
-    private static (SkillMemoryActor Actor, IEventBus EventBus) CreateActor()
+    private static (SkillMemoryActor Actor, IEventBus EventBus) CreateActor(TimeProvider? timeProvider = null)
     {
         var eventBus = Substitute.For<IEventBus>();
         var logger = NullLogger<SkillMemoryActor>.Instance;
         var persistentState = CreatePersistentState();
 
-        var actor = new SkillMemoryActor(eventBus, TimeProvider.System, logger, persistentState);
+        var actor = new SkillMemoryActor(eventBus, timeProvider ?? TimeProvider.System, logger, persistentState);
         return (actor, eventBus);
     }
 
@@ -44,7 +44,8 @@ public sealed class SkillMemoryActorTests
         List<string>? tags = null,
         string createdByAgent = "researcher",
         int useCount = 0,
-        double successRate = 1.0)
+        double successRate = 1.0,
+        DateTimeOffset? lastUsedAt = null)
     {
         return new SkillDocument
         {
@@ -60,7 +61,8 @@ public sealed class SkillMemoryActorTests
             ToolsUsed = ["shell", "code-search"],
             CreatedByAgent = createdByAgent,
             UseCount = useCount,
-            SuccessRate = successRate
+            SuccessRate = successRate,
+            LastUsedAt = lastUsedAt
         };
     }
 
@@ -79,6 +81,135 @@ public sealed class SkillMemoryActorTests
         var retrieved = await actor.GetSkillAsync(skill.SkillId);
         retrieved.ShouldNotBeNull();
         retrieved.SkillId.ShouldBe(skill.SkillId);
+    }
+
+    [Fact]
+    public async Task SuggestSkillAsync_AddsPendingSuggestionWithoutSearchableSkill()
+    {
+        var (actor, _) = CreateActor();
+        var skill = CreateSkill(id: "suggested-skill", title: "Suggested deployment skill");
+
+        var suggestion = await actor.SuggestSkillAsync(skill, "task-1");
+
+        suggestion.Skill.SkillId.ShouldBe(skill.SkillId);
+        suggestion.SourceTaskId.ShouldBe("task-1");
+        var pending = await actor.GetSuggestedSkillsAsync();
+        pending.Count.ShouldBe(1);
+        var stored = await actor.GetSkillAsync(skill.SkillId);
+        stored.ShouldBeNull();
+    }
+
+    [Fact]
+    public async Task AcceptSuggestedSkillAsync_MovesSuggestionIntoSkills()
+    {
+        var (actor, _) = CreateActor();
+        var skill = CreateSkill(id: "accepted-suggestion", title: "Accepted skill");
+        await actor.SuggestSkillAsync(skill, "task-2");
+
+        var accepted = await actor.AcceptSuggestedSkillAsync(skill.SkillId);
+
+        accepted.ShouldNotBeNull();
+        accepted.SkillId.ShouldBe(skill.SkillId);
+        var pending = await actor.GetSuggestedSkillsAsync();
+        pending.ShouldBeEmpty();
+        var stored = await actor.GetSkillAsync(skill.SkillId);
+        stored.ShouldNotBeNull();
+    }
+
+    [Fact]
+    public async Task RejectSuggestedSkillAsync_RemovesSuggestionWithoutStoringSkill()
+    {
+        var (actor, _) = CreateActor();
+        var skill = CreateSkill(id: "rejected-suggestion", title: "Rejected skill");
+        await actor.SuggestSkillAsync(skill, "task-3");
+
+        var rejected = await actor.RejectSuggestedSkillAsync(skill.SkillId);
+
+        rejected.ShouldBeTrue();
+        var pending = await actor.GetSuggestedSkillsAsync();
+        pending.ShouldBeEmpty();
+        var stored = await actor.GetSkillAsync(skill.SkillId);
+        stored.ShouldBeNull();
+    }
+
+    [Fact]
+    public async Task AcceptSuggestedSkillAsync_ReturnsNull_WhenSuggestionIsMissing()
+    {
+        var (actor, _) = CreateActor();
+
+        var accepted = await actor.AcceptSuggestedSkillAsync(SkillId.From("missing-suggestion"));
+
+        accepted.ShouldBeNull();
+    }
+
+    [Fact]
+    public async Task RejectSuggestedSkillAsync_ReturnsFalse_WhenSuggestionIsMissing()
+    {
+        var (actor, _) = CreateActor();
+
+        var rejected = await actor.RejectSuggestedSkillAsync(SkillId.From("missing-suggestion"));
+
+        rejected.ShouldBeFalse();
+    }
+
+    [Fact]
+    public async Task ArchiveSkillAsync_MarksSkillArchivedAndExcludesFromSearchAndList()
+    {
+        var (actor, _) = CreateActor();
+        var skill = CreateSkill(id: "archived-skill", title: "Archive deployment skill", tags: ["archive"]);
+        await actor.StoreSkillAsync(skill);
+
+        var archived = await actor.ArchiveSkillAsync(skill.SkillId);
+
+        archived.ShouldNotBeNull();
+        archived.ArchivedAt.ShouldNotBeNull();
+        var searchResults = await actor.SearchAsync("archive");
+        searchResults.ShouldBeEmpty();
+        var allSkills = await actor.GetAllSkillsAsync();
+        allSkills.ShouldBeEmpty();
+        var direct = await actor.GetSkillAsync(skill.SkillId);
+        direct.ShouldNotBeNull();
+        direct.ArchivedAt.ShouldNotBeNull();
+    }
+
+    [Fact]
+    public async Task ArchiveSkillAsync_ReturnsNull_WhenSkillIsMissing()
+    {
+        var (actor, _) = CreateActor();
+
+        var archived = await actor.ArchiveSkillAsync(SkillId.From("missing-archive"));
+
+        archived.ShouldBeNull();
+    }
+
+    [Fact]
+    public async Task RestoreSkillAsync_ClearsArchiveAndIncludesInSearchAndList()
+    {
+        var (actor, _) = CreateActor();
+        var skill = CreateSkill(id: "restored-skill", title: "Restore deployment skill", tags: ["restore"]);
+        await actor.StoreSkillAsync(skill);
+        await actor.ArchiveSkillAsync(skill.SkillId);
+
+        var restored = await actor.RestoreSkillAsync(skill.SkillId);
+
+        restored.ShouldNotBeNull();
+        restored.ArchivedAt.ShouldBeNull();
+        var searchResults = await actor.SearchAsync("restore");
+        searchResults.Count.ShouldBe(1);
+        searchResults[0].Skill.SkillId.ShouldBe(skill.SkillId);
+        var allSkills = await actor.GetAllSkillsAsync();
+        allSkills.Count.ShouldBe(1);
+        allSkills[0].SkillId.ShouldBe(skill.SkillId);
+    }
+
+    [Fact]
+    public async Task RestoreSkillAsync_ReturnsNull_WhenSkillIsMissing()
+    {
+        var (actor, _) = CreateActor();
+
+        var restored = await actor.RestoreSkillAsync(SkillId.From("missing-restore"));
+
+        restored.ShouldBeNull();
     }
 
     [Fact]
@@ -147,6 +278,73 @@ public sealed class SkillMemoryActorTests
         results.Count.ShouldBeGreaterThanOrEqualTo(2);
         results[0].Skill.SkillId.ShouldBe(highUse.SkillId);
         results[0].RelevanceScore.ShouldBeGreaterThan(results[1].RelevanceScore);
+    }
+
+    [Fact]
+    public async Task SearchAsync_FiltersByMinimumSuccessRate()
+    {
+        var (actor, _) = CreateActor();
+        var reliable = CreateSkill(id: "reliable", title: "Deploy app", tags: ["deploy"], successRate: 0.95);
+        var unreliable = CreateSkill(id: "unreliable", title: "Deploy app", tags: ["deploy"], successRate: 0.5);
+        await actor.StoreSkillAsync(reliable);
+        await actor.StoreSkillAsync(unreliable);
+
+        var results = await actor.SearchAsync("deploy", options: new SkillSearchOptions { MinSuccessRate = 0.9 });
+
+        results.Count.ShouldBe(1);
+        results[0].Skill.SkillId.ShouldBe(reliable.SkillId);
+    }
+
+    [Fact]
+    public async Task SearchAsync_PreferRecentBoostsRecentlyUsedSkill()
+    {
+        var now = new DateTimeOffset(2026, 4, 30, 12, 0, 0, TimeSpan.Zero);
+        var fakeTime = new FakeTimeProvider(now);
+        var (actor, _) = CreateActor(fakeTime);
+        var stale = CreateSkill(
+            id: "stale",
+            title: "Deploy service",
+            tags: ["deploy"],
+            lastUsedAt: now.AddDays(-60));
+        var recent = CreateSkill(
+            id: "recent",
+            title: "Deploy service",
+            tags: ["deploy"],
+            lastUsedAt: now.AddDays(-2));
+        await actor.StoreSkillAsync(stale);
+        await actor.StoreSkillAsync(recent);
+
+        var results = await actor.SearchAsync("deploy", options: new SkillSearchOptions { PreferRecent = true });
+
+        results.Count.ShouldBe(2);
+        results[0].Skill.SkillId.ShouldBe(recent.SkillId);
+        results[0].RelevanceScore.ShouldBeGreaterThan(results[1].RelevanceScore);
+    }
+
+    [Fact]
+    public async Task SearchAsync_WithoutPreferRecentKeepsExistingTieOrder()
+    {
+        var now = new DateTimeOffset(2026, 4, 30, 12, 0, 0, TimeSpan.Zero);
+        var fakeTime = new FakeTimeProvider(now);
+        var (actor, _) = CreateActor(fakeTime);
+        var stale = CreateSkill(
+            id: "stale-default",
+            title: "Deploy service",
+            tags: ["deploy"],
+            lastUsedAt: now.AddDays(-60));
+        var recent = CreateSkill(
+            id: "recent-default",
+            title: "Deploy service",
+            tags: ["deploy"],
+            lastUsedAt: now.AddDays(-2));
+        await actor.StoreSkillAsync(stale);
+        await actor.StoreSkillAsync(recent);
+
+        var results = await actor.SearchAsync("deploy");
+
+        results.Count.ShouldBe(2);
+        results[0].Skill.SkillId.ShouldBe(stale.SkillId);
+        results[0].RelevanceScore.ShouldBe(results[1].RelevanceScore);
     }
 
     [Fact]

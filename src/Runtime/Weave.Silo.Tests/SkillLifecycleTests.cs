@@ -146,6 +146,129 @@ public sealed class SkillLifecycleTests : IClassFixture<SiloFactory>
     }
 
     [Fact]
+    public async Task Search_WithQualityOptions_Returns200()
+    {
+        using var client = _factory.CreateClient();
+        var ws = NewWorkspaceId();
+
+        using var response = await client.GetAsync(
+            $"/api/workspaces/{ws}/skills/search?q=test&max=3&minSuccessRate=0.75&preferRecent=true",
+            TestContext.Current.CancellationToken);
+
+        response.StatusCode.ShouldBe(HttpStatusCode.OK);
+    }
+
+    [Fact]
+    public async Task Suggestions_NewWorkspace_Returns200()
+    {
+        using var client = _factory.CreateClient();
+        var ws = NewWorkspaceId();
+
+        using var response = await client.GetAsync(
+            $"/api/workspaces/{ws}/skills/suggestions",
+            TestContext.Current.CancellationToken);
+
+        response.StatusCode.ShouldBe(HttpStatusCode.OK);
+    }
+
+    [Fact]
+    public async Task AcceptSuggestion_UnknownSuggestion_Returns404()
+    {
+        using var client = _factory.CreateClient();
+        var ws = NewWorkspaceId();
+
+        using var response = await client.PostAsync(
+            $"/api/workspaces/{ws}/skills/suggestions/skl_missing/accept",
+            content: null,
+            TestContext.Current.CancellationToken);
+
+        response.StatusCode.ShouldBe(HttpStatusCode.NotFound);
+    }
+
+    [Fact]
+    public async Task RejectSuggestion_UnknownSuggestion_Returns404()
+    {
+        using var client = _factory.CreateClient();
+        var ws = NewWorkspaceId();
+
+        using var response = await client.PostAsync(
+            $"/api/workspaces/{ws}/skills/suggestions/skl_missing/reject",
+            content: null,
+            TestContext.Current.CancellationToken);
+
+        response.StatusCode.ShouldBe(HttpStatusCode.NotFound);
+    }
+
+    [Fact]
+    public async Task Archive_AfterStore_ReturnsArchivedSkill()
+    {
+        using var client = _factory.CreateClient();
+        var ws = NewWorkspaceId();
+        var id = await StoreSkillAsync(client, ws);
+
+        using var response = await client.PostAsync(
+            $"/api/workspaces/{ws}/skills/{id}/archive",
+            content: null,
+            TestContext.Current.CancellationToken);
+        var body = await response.Content.ReadAsStringAsync(TestContext.Current.CancellationToken);
+
+        response.StatusCode.ShouldBe(HttpStatusCode.OK, body);
+        using var doc = JsonDocument.Parse(body);
+        doc.RootElement.GetProperty("archivedAt").GetString().ShouldNotBeNullOrWhiteSpace();
+    }
+
+    [Fact]
+    public async Task Archive_UnknownSkill_Returns404()
+    {
+        using var client = _factory.CreateClient();
+        var ws = NewWorkspaceId();
+
+        using var response = await client.PostAsync(
+            $"/api/workspaces/{ws}/skills/skl_missing/archive",
+            content: null,
+            TestContext.Current.CancellationToken);
+
+        response.StatusCode.ShouldBe(HttpStatusCode.NotFound);
+    }
+
+    [Fact]
+    public async Task Restore_AfterArchive_ReturnsActiveSkill()
+    {
+        using var client = _factory.CreateClient();
+        var ws = NewWorkspaceId();
+        var id = await StoreSkillAsync(client, ws);
+        using var archiveResponse = await client.PostAsync(
+            $"/api/workspaces/{ws}/skills/{id}/archive",
+            content: null,
+            TestContext.Current.CancellationToken);
+        archiveResponse.StatusCode.ShouldBe(HttpStatusCode.OK);
+
+        using var response = await client.PostAsync(
+            $"/api/workspaces/{ws}/skills/{id}/restore",
+            content: null,
+            TestContext.Current.CancellationToken);
+        var body = await response.Content.ReadAsStringAsync(TestContext.Current.CancellationToken);
+
+        response.StatusCode.ShouldBe(HttpStatusCode.OK, body);
+        using var doc = JsonDocument.Parse(body);
+        doc.RootElement.GetProperty("archivedAt").ValueKind.ShouldBe(JsonValueKind.Null);
+    }
+
+    [Fact]
+    public async Task Restore_UnknownSkill_Returns404()
+    {
+        using var client = _factory.CreateClient();
+        var ws = NewWorkspaceId();
+
+        using var response = await client.PostAsync(
+            $"/api/workspaces/{ws}/skills/skl_missing/restore",
+            content: null,
+            TestContext.Current.CancellationToken);
+
+        response.StatusCode.ShouldBe(HttpStatusCode.NotFound);
+    }
+
+    [Fact]
     public async Task Remove_AfterStore_Returns204()
     {
         using var client = _factory.CreateClient();

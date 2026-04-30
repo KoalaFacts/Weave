@@ -198,7 +198,7 @@ public sealed class AgentChatPipelineTests
             .Returns(Task.FromResult("User preferences: lang=csharp. Interactions: 5 total."));
 
         var skillActor = Substitute.For<ISkillMemoryActor>();
-        skillActor.SearchAsync(Arg.Any<string>(), Arg.Any<int>())
+        skillActor.SearchAsync(Arg.Any<string>(), Arg.Any<int>(), Arg.Any<SkillSearchOptions>())
             .Returns(Task.FromResult<IReadOnlyList<SkillSearchResult>>([]));
 
         var actors = Substitute.For<IVirtualActorProvider>();
@@ -253,7 +253,10 @@ public sealed class AgentChatPipelineTests
         };
 
         var skillActor = Substitute.For<ISkillMemoryActor>();
-        skillActor.SearchAsync(Arg.Any<string>(), Arg.Any<int>())
+        skillActor.SearchAsync(
+                Arg.Any<string>(),
+                Arg.Any<int>(),
+                Arg.Is<SkillSearchOptions>(options => options.MinSuccessRate == 0.5 && options.PreferRecent))
             .Returns(Task.FromResult<IReadOnlyList<SkillSearchResult>>([
                 new SkillSearchResult { Skill = skill, RelevanceScore = 5.0 }
             ]));
@@ -271,6 +274,50 @@ public sealed class AgentChatPipelineTests
         systemMsg.ShouldNotBeNull();
         systemMsg.Text.ShouldContain("Deploy to K8s");
         systemMsg.Text.ShouldContain("Build image");
+    }
+
+    [Fact]
+    public async Task ExecuteAsync_WithMatchingSkills_RecordsSuccessfulSkillUsage()
+    {
+        var chatClient = Substitute.For<IChatClient>();
+        chatClient.GetResponseAsync(
+                Arg.Any<IEnumerable<ChatMessage>>(),
+                Arg.Any<ChatOptions>(),
+                Arg.Any<CancellationToken>())
+            .Returns(new ChatResponse(new ChatMessage(ChatRole.Assistant, "Done"))
+            {
+                ModelId = "claude-sonnet-4-20250514"
+            });
+
+        var chatClientFactory = Substitute.For<IAgentChatClientFactory>();
+        chatClientFactory.Create(Arg.Any<string>(), Arg.Any<string?>()).Returns(chatClient);
+
+        var skill = new SkillDocument
+        {
+            SkillId = SkillId.From("deploy-skill"),
+            Title = "Deploy to K8s",
+            Description = "Steps to deploy a service to Kubernetes",
+            Tags = ["deploy", "k8s"],
+            Steps = [new SkillStep { Order = 0, Action = "Build image" }],
+            ToolsUsed = ["docker"],
+            CreatedByAgent = "deployer"
+        };
+
+        var skillActor = Substitute.For<ISkillMemoryActor>();
+        skillActor.SearchAsync(Arg.Any<string>(), Arg.Any<int>(), Arg.Any<SkillSearchOptions>())
+            .Returns(Task.FromResult<IReadOnlyList<SkillSearchResult>>([
+                new SkillSearchResult { Skill = skill, RelevanceScore = 5.0 }
+            ]));
+        skillActor.RecordUsageAsync(skill.SkillId, success: true).Returns(Task.CompletedTask);
+
+        var actors = Substitute.For<IVirtualActorProvider>();
+        actors.GetActor<ISkillMemoryActor>(Arg.Any<VirtualActorId>()).Returns(skillActor);
+
+        var pipeline = new AgentChatPipeline(actors, chatClientFactory, TimeProvider.System, NullLogger<AgentChatPipeline>.Instance);
+
+        await pipeline.ExecuteAsync(CreateActiveState(), new AgentMessage { Content = "deploy to k8s" });
+
+        await skillActor.Received(1).RecordUsageAsync(skill.SkillId, success: true);
     }
 
     [Fact]

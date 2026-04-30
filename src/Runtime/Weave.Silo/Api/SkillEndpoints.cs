@@ -3,7 +3,6 @@ using Weave.Agents.Models;
 using Weave.Agents.Queries;
 using Weave.Shared.Cqrs;
 using Weave.Shared.Ids;
-using Weave.Shared.VirtualActors;
 
 namespace Weave.Silo.Api;
 
@@ -20,8 +19,17 @@ public static class SkillEndpoints
         group.MapGet("/search", SearchSkillsAsync)
             .WithDescription("Search skills by keyword.")
             .Produces<IEnumerable<SkillSearchResultResponse>>();
+        SkillSuggestionEndpoints.Map(group);
         group.MapGet("/{skillId}", GetSkillAsync)
             .WithDescription("Get a single skill by ID.")
+            .Produces<SkillResponse>()
+            .ProducesProblem(404);
+        group.MapPost("/{skillId}/archive", ArchiveSkillAsync)
+            .WithDescription("Archive a skill so it no longer appears in list or search results.")
+            .Produces<SkillResponse>()
+            .ProducesProblem(404);
+        group.MapPost("/{skillId}/restore", RestoreSkillAsync)
+            .WithDescription("Restore an archived skill so it appears in list and search results again.")
             .Produces<SkillResponse>()
             .ProducesProblem(404);
         group.MapPost("/", StoreSkillAsync)
@@ -38,22 +46,30 @@ public static class SkillEndpoints
 
     private static async Task<IResult> GetAllSkillsAsync(
         string workspaceId,
-        IQueryDispatcher dispatcher,
+        IVirtualActorProvider actors,
         CancellationToken ct)
     {
-        var query = new SearchSkillsQuery(WorkspaceId.From(workspaceId), "", 1000);
-        var results = await dispatcher.DispatchAsync<SearchSkillsQuery, IReadOnlyList<SkillSearchResult>>(query, ct);
-        return Results.Ok(results.Select(r => SkillResponse.FromDocument(r.Skill)));
+        ct.ThrowIfCancellationRequested();
+        var actor = actors.GetActor<Agents.Actors.ISkillMemoryActor>(VirtualActorId.From(workspaceId));
+        var skills = await actor.GetAllSkillsAsync();
+        return Results.Ok(skills.Select(SkillResponse.FromDocument));
     }
 
     private static async Task<IResult> SearchSkillsAsync(
         string workspaceId,
         string? q,
         int? max,
+        double? minSuccessRate,
+        bool? preferRecent,
         IQueryDispatcher dispatcher,
         CancellationToken ct)
     {
-        var query = new SearchSkillsQuery(WorkspaceId.From(workspaceId), q ?? "", max ?? 5);
+        var options = new SkillSearchOptions
+        {
+            MinSuccessRate = minSuccessRate ?? 0,
+            PreferRecent = preferRecent ?? false
+        };
+        var query = new SearchSkillsQuery(WorkspaceId.From(workspaceId), q ?? "", max ?? 5, options);
         var results = await dispatcher.DispatchAsync<SearchSkillsQuery, IReadOnlyList<SkillSearchResult>>(query, ct);
         return Results.Ok(results.Select(SkillSearchResultResponse.FromResult));
     }
@@ -109,6 +125,34 @@ public static class SkillEndpoints
         return Results.Created(
             $"/api/workspaces/{workspaceId}/skills/{stored.SkillId}",
             SkillResponse.FromDocument(stored));
+    }
+
+    private static async Task<IResult> ArchiveSkillAsync(
+        string workspaceId,
+        string skillId,
+        IVirtualActorProvider actors,
+        CancellationToken ct)
+    {
+        ct.ThrowIfCancellationRequested();
+        var actor = actors.GetActor<Agents.Actors.ISkillMemoryActor>(VirtualActorId.From(workspaceId));
+        var archived = await actor.ArchiveSkillAsync(SkillId.From(skillId));
+        return archived is null
+            ? ResultExtensions.NotFound($"Skill '{skillId}' not found.")
+            : Results.Ok(SkillResponse.FromDocument(archived));
+    }
+
+    private static async Task<IResult> RestoreSkillAsync(
+        string workspaceId,
+        string skillId,
+        IVirtualActorProvider actors,
+        CancellationToken ct)
+    {
+        ct.ThrowIfCancellationRequested();
+        var actor = actors.GetActor<Agents.Actors.ISkillMemoryActor>(VirtualActorId.From(workspaceId));
+        var restored = await actor.RestoreSkillAsync(SkillId.From(skillId));
+        return restored is null
+            ? ResultExtensions.NotFound($"Skill '{skillId}' not found.")
+            : Results.Ok(SkillResponse.FromDocument(restored));
     }
 
     private static async Task<IResult> RemoveSkillAsync(

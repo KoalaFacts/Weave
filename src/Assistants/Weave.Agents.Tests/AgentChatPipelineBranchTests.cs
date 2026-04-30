@@ -4,8 +4,6 @@ using Weave.Agents.Actors;
 using Weave.Agents.Models;
 using Weave.Agents.Pipeline;
 using Weave.Shared.Ids;
-using Weave.Tools.Actors;
-using Weave.Tools.Models;
 using Weave.Workspaces.Models;
 
 namespace Weave.Agents.Tests;
@@ -118,7 +116,7 @@ public sealed class AgentChatPipelineBranchTests
     {
         var fx = new Fixture();
         var skillActor = Substitute.For<ISkillMemoryActor>();
-        skillActor.SearchAsync(Arg.Any<string>(), Arg.Any<int>())
+        skillActor.SearchAsync(Arg.Any<string>(), Arg.Any<int>(), Arg.Any<SkillSearchOptions>())
             .Returns(Task.FromException<IReadOnlyList<SkillSearchResult>>(new InvalidOperationException("skill actor broken")));
         fx.ActorProvider.GetActor<ISkillMemoryActor>(Arg.Any<VirtualActorId>()).Returns(skillActor);
 
@@ -128,6 +126,38 @@ public sealed class AgentChatPipelineBranchTests
         {
             Role = "user",
             Content = "tell me something"
+        });
+
+        response.Content.ShouldBe("ok");
+    }
+
+    [Fact]
+    public async Task ExecuteAsync_RecordSkillUsageThrows_SwallowsErrorAndContinues()
+    {
+        var fx = new Fixture();
+        var skill = new SkillDocument
+        {
+            SkillId = SkillId.From("unstable-skill"),
+            Title = "Useful memory",
+            Description = "A useful memory entry",
+            Tags = ["memory"],
+            Steps = [new SkillStep { Order = 0, Action = "Use memory" }],
+            ToolsUsed = [],
+            CreatedByAgent = "researcher"
+        };
+        var skillActor = Substitute.For<ISkillMemoryActor>();
+        skillActor.SearchAsync(Arg.Any<string>(), Arg.Any<int>(), Arg.Any<SkillSearchOptions>())
+            .Returns(Task.FromResult<IReadOnlyList<SkillSearchResult>>([
+                new SkillSearchResult { Skill = skill, RelevanceScore = 3.0 }
+            ]));
+        skillActor.RecordUsageAsync(skill.SkillId, success: true)
+            .Returns(Task.FromException(new InvalidOperationException("usage write failed")));
+        fx.ActorProvider.GetActor<ISkillMemoryActor>(Arg.Any<VirtualActorId>()).Returns(skillActor);
+
+        var response = await fx.Pipeline.ExecuteAsync(StateWith(), new AgentMessage
+        {
+            Role = "user",
+            Content = "use memory"
         });
 
         response.Content.ShouldBe("ok");

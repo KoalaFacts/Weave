@@ -1,6 +1,5 @@
 using Weave.Shared.Cqrs;
 using Weave.Shared.Ids;
-using Weave.Shared.VirtualActors;
 using Weave.Workspaces.Actors;
 using Weave.Workspaces.Models;
 

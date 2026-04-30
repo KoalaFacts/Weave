@@ -3,7 +3,6 @@ using Weave.Agents.Models;
 using Weave.Agents.Queries;
 using Weave.Shared.Cqrs;
 using Weave.Shared.Ids;
-using Weave.Shared.VirtualActors;
 
 namespace Weave.Silo.Api;
 

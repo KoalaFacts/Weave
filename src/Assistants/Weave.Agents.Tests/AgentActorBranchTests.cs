@@ -177,10 +177,16 @@ public sealed class AgentActorBranchTests
     }
 
     [Fact]
-    public async Task ReviewTaskAsync_AcceptedWithMultiStepProof_AttemptsSkillExtract()
+    public async Task ReviewTaskAsync_AcceptedWithMultiStepProof_SuggestsSkill()
     {
         var fx = new Fixture();
         var skillActor = Substitute.For<ISkillMemoryActor>();
+        skillActor.SuggestSkillAsync(Arg.Any<SkillDocument>(), Arg.Any<string?>())
+            .Returns(callInfo => Task.FromResult(new SkillSuggestion
+            {
+                Skill = callInfo.Arg<SkillDocument>(),
+                SourceTaskId = callInfo.ArgAt<string?>(1)
+            }));
         fx.ActorProvider.GetActor<ISkillMemoryActor>(Arg.Any<VirtualActorId>()).Returns(skillActor);
 
         await fx.Actor.ActivateAgentAsync(TestWorkspaceId, Def());
@@ -197,16 +203,17 @@ public sealed class AgentActorBranchTests
 
         await fx.Actor.ReviewTaskAsync(task.TaskId, accepted: true);
 
-        await skillActor.Received(1).StoreSkillAsync(Arg.Any<SkillDocument>());
+        await skillActor.Received(1).SuggestSkillAsync(Arg.Any<SkillDocument>(), task.TaskId.ToString());
+        await skillActor.DidNotReceive().StoreSkillAsync(Arg.Any<SkillDocument>());
     }
 
     [Fact]
-    public async Task ReviewTaskAsync_AcceptedAndSkillStoreThrows_LogsWarningAndDoesNotPropagate()
+    public async Task ReviewTaskAsync_AcceptedAndSkillSuggestionThrows_LogsWarningAndDoesNotPropagate()
     {
         var fx = new Fixture();
         var skillActor = Substitute.For<ISkillMemoryActor>();
-        skillActor.StoreSkillAsync(Arg.Any<SkillDocument>())
-            .Returns(Task.FromException<SkillDocument>(new InvalidOperationException("store broken")));
+        skillActor.SuggestSkillAsync(Arg.Any<SkillDocument>(), Arg.Any<string?>())
+            .Returns(Task.FromException<SkillSuggestion>(new InvalidOperationException("suggestion broken")));
         fx.ActorProvider.GetActor<ISkillMemoryActor>(Arg.Any<VirtualActorId>()).Returns(skillActor);
 
         await fx.Actor.ActivateAgentAsync(TestWorkspaceId, Def());

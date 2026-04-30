@@ -1,5 +1,4 @@
 using Weave.Agents.Actors;
-using Weave.Shared.VirtualActors;
 
 namespace Weave.Silo.Api;
 

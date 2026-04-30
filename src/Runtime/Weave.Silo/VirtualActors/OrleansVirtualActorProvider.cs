@@ -2,7 +2,6 @@ using System.Collections.Frozen;
 using Weave.Agents.Actors;
 using Weave.Agents.Heartbeat;
 using Weave.Security.Actors;
-using Weave.Shared.VirtualActors;
 using Weave.Tools.Actors;
 using Weave.Workspaces.Actors;
 

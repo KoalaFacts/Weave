@@ -1,7 +1,6 @@
 using System.Collections.Concurrent;
 using System.Diagnostics;
 using System.Text.Json;
-using System.Text.Json.Serialization;
 using Microsoft.Extensions.Logging;
 using Weave.Security.Tokens;
 using Weave.Tools.Models;
@@ -173,20 +172,3 @@ public sealed partial class McpToolConnector(ILogger<McpToolConnector> logger) :
     private partial void LogMcpToolDisconnected(string tool);
 }
 
-internal sealed record JsonRpcRequest
-{
-    [JsonPropertyName("jsonrpc")]
-    public string JsonRpc { get; init; } = "2.0";
-
-    [JsonPropertyName("id")]
-    public required string Id { get; init; }
-
-    [JsonPropertyName("method")]
-    public required string Method { get; init; }
-
-    [JsonPropertyName("params")]
-    public Dictionary<string, string>? Params { get; init; }
-}
-
-[JsonSerializable(typeof(JsonRpcRequest))]
-internal sealed partial class McpJsonContext : JsonSerializerContext;

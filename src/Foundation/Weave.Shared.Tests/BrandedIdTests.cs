@@ -1,7 +1,5 @@
 using System.ComponentModel;
 using System.Globalization;
-using System.Text.Json;
-using System.Text.Json.Serialization;
 using Weave.Shared.Ids;
 
 namespace Weave.Shared.Tests;

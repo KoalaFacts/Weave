@@ -1,5 +1,4 @@
 using System.Net;
-using System.Net.Http;
 using Weave.Agents.Models;
 using Weave.Shared.Ids;
 using Weave.Silo.Channels;

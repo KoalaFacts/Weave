@@ -281,15 +281,15 @@ public sealed class AgentActor(
         try
         {
             var skillActor = actors.GetActor<ISkillMemoryActor>(VirtualActorId.From(persistentState.State.WorkspaceId.ToString()));
-            await skillActor.StoreSkillAsync(skill);
+            await skillActor.SuggestSkillAsync(skill, taskId.ToString());
             logger.LogInformation(
-                "Auto-extracted skill '{Title}' from task {TaskId}",
+                "Suggested skill '{Title}' from task {TaskId}",
                 skill.Title,
                 taskId);
         }
         catch (Exception ex)
         {
-            logger.LogWarning(ex, "Failed to auto-extract skill from task {TaskId}", taskId);
+            logger.LogWarning(ex, "Failed to suggest skill from task {TaskId}", taskId);
         }
     }
 

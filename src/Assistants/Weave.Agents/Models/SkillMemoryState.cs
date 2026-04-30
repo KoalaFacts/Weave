@@ -16,6 +16,7 @@ public sealed record SkillDocument
     public DateTimeOffset? LastUsedAt { get; set; }
     public double SuccessRate { get; set; } = 1.0;
     public string? OriginTaskDescription { get; init; }
+    public DateTimeOffset? ArchivedAt { get; set; }
 }
 public sealed record SkillStep
 {
@@ -27,10 +28,24 @@ public sealed record SkillStep
 public sealed record SkillMemoryState
 {
     public Dictionary<string, SkillDocument> Skills { get; init; } = [];
+    public Dictionary<string, SkillSuggestion> SuggestedSkills { get; init; } = [];
     public string WorkspaceId { get; set; } = string.Empty;
 }
 public sealed record SkillSearchResult
 {
     public required SkillDocument Skill { get; init; }
     public required double RelevanceScore { get; init; }
+}
+
+public sealed record SkillSuggestion
+{
+    public required SkillDocument Skill { get; init; }
+    public string? SourceTaskId { get; init; }
+    public DateTimeOffset SuggestedAt { get; init; } = DateTimeOffset.UtcNow;
+}
+
+public sealed record SkillSearchOptions
+{
+    public double MinSuccessRate { get; init; }
+    public bool PreferRecent { get; init; }
 }

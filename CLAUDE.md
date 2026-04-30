@@ -27,6 +27,7 @@ The solution uses central package management through `Directory.Packages.props`.
 - Warnings are treated as errors.
 - Prefer minimal, targeted changes.
 - Match the existing code style in the touched project.
+- Classes over 200 lines require a design check; prefer one production class per file.
 - Keep the current dependency flow; do not introduce circular references.
 - Do not use `FluentAssertions`. Tests use `Shouldly`.
 

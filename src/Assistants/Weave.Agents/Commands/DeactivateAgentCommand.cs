@@ -2,7 +2,6 @@ using Weave.Agents.Actors;
 using Weave.Agents.Heartbeat;
 using Weave.Shared.Cqrs;
 using Weave.Shared.Ids;
-using Weave.Shared.VirtualActors;
 
 namespace Weave.Agents.Commands;
 

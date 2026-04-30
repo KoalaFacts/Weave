@@ -1,6 +1,5 @@
 using System.Text.Json.Serialization;
 using Weave.Agents.Models;
-using Weave.Shared.Ids;
 using Weave.Tools.Models;
 using Weave.Workspaces.Models;
 using Weave.Workspaces.Plugins;
@@ -277,6 +276,7 @@ public sealed record SkillResponse
     public int UseCount { get; init; }
     public double SuccessRate { get; init; }
     public string? OriginTaskDescription { get; init; }
+    public DateTimeOffset? ArchivedAt { get; init; }
 
     public static SkillResponse FromDocument(SkillDocument doc) => new()
     {
@@ -289,7 +289,8 @@ public sealed record SkillResponse
         CreatedAt = doc.CreatedAt,
         UseCount = doc.UseCount,
         SuccessRate = doc.SuccessRate,
-        OriginTaskDescription = doc.OriginTaskDescription
+        OriginTaskDescription = doc.OriginTaskDescription,
+        ArchivedAt = doc.ArchivedAt
     };
 }
 
@@ -302,6 +303,20 @@ public sealed record SkillSearchResultResponse
     {
         Skill = SkillResponse.FromDocument(result.Skill),
         RelevanceScore = result.RelevanceScore
+    };
+}
+
+public sealed record SkillSuggestionResponse
+{
+    public required SkillResponse Skill { get; init; }
+    public string? SourceTaskId { get; init; }
+    public required DateTimeOffset SuggestedAt { get; init; }
+
+    public static SkillSuggestionResponse FromSuggestion(SkillSuggestion suggestion) => new()
+    {
+        Skill = SkillResponse.FromDocument(suggestion.Skill),
+        SourceTaskId = suggestion.SourceTaskId,
+        SuggestedAt = suggestion.SuggestedAt
     };
 }
 

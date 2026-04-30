@@ -45,6 +45,12 @@ public sealed class AgentActorTests
         var skillMemory = Substitute.For<ISkillMemoryActor>();
         skillMemory.StoreSkillAsync(Arg.Any<SkillDocument>())
             .Returns(callInfo => Task.FromResult(callInfo.Arg<SkillDocument>()));
+        skillMemory.SuggestSkillAsync(Arg.Any<SkillDocument>(), Arg.Any<string?>())
+            .Returns(callInfo => Task.FromResult(new SkillSuggestion
+            {
+                Skill = callInfo.Arg<SkillDocument>(),
+                SourceTaskId = callInfo.ArgAt<string?>(1)
+            }));
 
         var verifier = Substitute.For<IProofVerifierActor>();
 
@@ -67,6 +73,12 @@ public sealed class AgentActorTests
         var skillMemory = Substitute.For<ISkillMemoryActor>();
         skillMemory.StoreSkillAsync(Arg.Any<SkillDocument>())
             .Returns(callInfo => Task.FromResult(callInfo.Arg<SkillDocument>()));
+        skillMemory.SuggestSkillAsync(Arg.Any<SkillDocument>(), Arg.Any<string?>())
+            .Returns(callInfo => Task.FromResult(new SkillSuggestion
+            {
+                Skill = callInfo.Arg<SkillDocument>(),
+                SourceTaskId = callInfo.ArgAt<string?>(1)
+            }));
 
         var verifier = Substitute.For<IProofVerifierActor>();
 
@@ -505,7 +517,7 @@ public sealed class AgentActorTests
     }
 
     [Fact]
-    public async Task ReviewTaskAsync_Accepted_WithMultiStepProof_ExtractsSkill()
+    public async Task ReviewTaskAsync_Accepted_WithMultiStepProof_SuggestsSkill()
     {
         var (actor, _, _, skillMemory) = CreateActor();
         await actor.ActivateAgentAsync(TestWorkspaceId, CreateDefinition());
@@ -523,9 +535,12 @@ public sealed class AgentActorTests
 
         await actor.ReviewTaskAsync(task.TaskId, accepted: true);
 
-        await skillMemory.Received(1).StoreSkillAsync(Arg.Is<SkillDocument>(s =>
-            s.Title == "Deploy the service" &&
-            s.Steps.Count == 3));
+        await skillMemory.Received(1).SuggestSkillAsync(
+            Arg.Is<SkillDocument>(s =>
+                s.Title == "Deploy the service" &&
+                s.Steps.Count == 3),
+            task.TaskId.ToString());
+        await skillMemory.DidNotReceive().StoreSkillAsync(Arg.Any<SkillDocument>());
     }
 
     [Fact]
@@ -664,7 +679,7 @@ public sealed class AgentActorTests
 
         await actor.ReviewTaskAsync(task.TaskId, accepted: true);
 
-        await skillMemory.DidNotReceive().StoreSkillAsync(Arg.Any<SkillDocument>());
+        await skillMemory.DidNotReceive().SuggestSkillAsync(Arg.Any<SkillDocument>(), Arg.Any<string?>());
     }
 
     [Fact]
@@ -685,7 +700,7 @@ public sealed class AgentActorTests
 
         await actor.ReviewTaskAsync(task.TaskId, accepted: false, "Needs more work");
 
-        await skillMemory.DidNotReceive().StoreSkillAsync(Arg.Any<SkillDocument>());
+        await skillMemory.DidNotReceive().SuggestSkillAsync(Arg.Any<SkillDocument>(), Arg.Any<string?>());
     }
 
     [Fact]

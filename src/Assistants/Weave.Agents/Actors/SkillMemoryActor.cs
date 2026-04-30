@@ -18,14 +18,7 @@ public sealed class SkillMemoryActor(
         persistentState.State.Skills[key] = skill;
         await persistentState.WriteStateAsync();
 
-        await eventBus.PublishAsync(new SkillCreatedEvent
-        {
-            SourceId = key,
-            WorkspaceId = WorkspaceId.From(persistentState.State.WorkspaceId),
-            SkillId = skill.SkillId,
-            Title = skill.Title,
-            CreatedByAgent = skill.CreatedByAgent
-        }, CancellationToken.None);
+        await PublishSkillCreatedAsync(skill, key);
 
         logger.LogInformation("Skill {SkillId} ({Title}) stored in workspace {WorkspaceId}",
             skill.SkillId, skill.Title, persistentState.State.WorkspaceId);
@@ -33,24 +26,94 @@ public sealed class SkillMemoryActor(
         return skill;
     }
 
-    public Task<IReadOnlyList<SkillSearchResult>> SearchAsync(string query, int maxResults = 5)
+    public async Task<SkillSuggestion> SuggestSkillAsync(SkillDocument skill, string? sourceTaskId = null)
+    {
+        var key = skill.SkillId.ToString();
+        var suggestion = new SkillSuggestion
+        {
+            Skill = skill,
+            SourceTaskId = sourceTaskId,
+            SuggestedAt = timeProvider.GetUtcNow()
+        };
+
+        persistentState.State.SuggestedSkills[key] = suggestion;
+        await persistentState.WriteStateAsync();
+
+        logger.LogInformation(
+            "Skill {SkillId} ({Title}) suggested in workspace {WorkspaceId}",
+            skill.SkillId,
+            skill.Title,
+            persistentState.State.WorkspaceId);
+
+        return suggestion;
+    }
+
+    public Task<IReadOnlyList<SkillSuggestion>> GetSuggestedSkillsAsync()
+    {
+        IReadOnlyList<SkillSuggestion> suggestions = persistentState.State.SuggestedSkills.Values
+            .OrderByDescending(s => s.SuggestedAt)
+            .ToList();
+        return Task.FromResult(suggestions);
+    }
+
+    public async Task<SkillDocument?> AcceptSuggestedSkillAsync(SkillId skillId)
+    {
+        var key = skillId.ToString();
+        if (!persistentState.State.SuggestedSkills.Remove(key, out var suggestion))
+            return null;
+
+        persistentState.State.Skills[key] = suggestion.Skill;
+        await persistentState.WriteStateAsync();
+        await PublishSkillCreatedAsync(suggestion.Skill, key);
+
+        logger.LogInformation(
+            "Skill suggestion {SkillId} accepted in workspace {WorkspaceId}",
+            skillId,
+            persistentState.State.WorkspaceId);
+
+        return suggestion.Skill;
+    }
+
+    public async Task<bool> RejectSuggestedSkillAsync(SkillId skillId)
+    {
+        var key = skillId.ToString();
+        if (!persistentState.State.SuggestedSkills.Remove(key))
+            return false;
+
+        await persistentState.WriteStateAsync();
+        logger.LogInformation(
+            "Skill suggestion {SkillId} rejected in workspace {WorkspaceId}",
+            skillId,
+            persistentState.State.WorkspaceId);
+        return true;
+    }
+
+    public Task<IReadOnlyList<SkillSearchResult>> SearchAsync(string query, int maxResults = 5, SkillSearchOptions? options = null)
     {
         if (persistentState.State.Skills.Count == 0)
         {
             return Task.FromResult<IReadOnlyList<SkillSearchResult>>(new List<SkillSearchResult>());
         }
 
-        var queryTokens = Tokenize(query);
+        var queryTokens = SkillSearchScorer.Tokenize(query);
         if (queryTokens.Length == 0)
         {
             return Task.FromResult<IReadOnlyList<SkillSearchResult>>(new List<SkillSearchResult>());
         }
 
         var scored = new List<SkillSearchResult>();
+        var effectiveOptions = options ?? new SkillSearchOptions();
+        var minSuccessRate = Math.Clamp(effectiveOptions.MinSuccessRate, 0, 1);
+        var now = timeProvider.GetUtcNow();
 
         foreach (var skill in persistentState.State.Skills.Values)
         {
-            var score = ComputeRelevanceScore(skill, queryTokens);
+            if (skill.ArchivedAt is not null)
+                continue;
+            if (skill.SuccessRate < minSuccessRate)
+                continue;
+
+            var score = SkillSearchScorer.ComputeRelevanceScore(skill, queryTokens, effectiveOptions, now);
             if (score > 0)
                 scored.Add(new SkillSearchResult { Skill = skill, RelevanceScore = score });
         }
@@ -84,8 +147,34 @@ public sealed class SkillMemoryActor(
 
     public Task<IReadOnlyList<SkillDocument>> GetAllSkillsAsync()
     {
-        IReadOnlyList<SkillDocument> skills = persistentState.State.Skills.Values.ToList();
+        IReadOnlyList<SkillDocument> skills = persistentState.State.Skills.Values
+            .Where(skill => skill.ArchivedAt is null)
+            .ToList();
         return Task.FromResult(skills);
+    }
+
+    public async Task<SkillDocument?> ArchiveSkillAsync(SkillId skillId)
+    {
+        var key = skillId.ToString();
+        if (!persistentState.State.Skills.TryGetValue(key, out var skill))
+            return null;
+
+        skill.ArchivedAt ??= timeProvider.GetUtcNow();
+        await persistentState.WriteStateAsync();
+        logger.LogInformation("Skill {SkillId} archived in workspace {WorkspaceId}", skillId, persistentState.State.WorkspaceId);
+        return skill;
+    }
+
+    public async Task<SkillDocument?> RestoreSkillAsync(SkillId skillId)
+    {
+        var key = skillId.ToString();
+        if (!persistentState.State.Skills.TryGetValue(key, out var skill))
+            return null;
+
+        skill.ArchivedAt = null;
+        await persistentState.WriteStateAsync();
+        logger.LogInformation("Skill {SkillId} restored in workspace {WorkspaceId}", skillId, persistentState.State.WorkspaceId);
+        return skill;
     }
 
     public async Task RemoveSkillAsync(SkillId skillId)
@@ -99,42 +188,13 @@ public sealed class SkillMemoryActor(
         }
     }
 
-    internal static double ComputeRelevanceScore(SkillDocument skill, string[] queryTokens)
-    {
-        var tagTokens = skill.Tags.SelectMany(t => Tokenize(t)).ToHashSet(StringComparer.OrdinalIgnoreCase);
-        var titleTokens = new HashSet<string>(Tokenize(skill.Title), StringComparer.OrdinalIgnoreCase);
-        var descriptionTokens = new HashSet<string>(Tokenize(skill.Description), StringComparer.OrdinalIgnoreCase);
-
-        double score = 0;
-
-        foreach (var token in queryTokens)
+    private Task PublishSkillCreatedAsync(SkillDocument skill, string key) =>
+        eventBus.PublishAsync(new SkillCreatedEvent
         {
-            if (tagTokens.Contains(token))
-                score += 3;
-            if (titleTokens.Contains(token))
-                score += 2;
-            if (descriptionTokens.Contains(token))
-                score += 1;
-        }
-
-        if (score <= 0)
-            return 0;
-
-        // Boost by usage (log2) and success rate
-        if (skill.UseCount > 0)
-            score += Math.Log2(skill.UseCount + 1);
-
-        score *= skill.SuccessRate;
-
-        return score;
-    }
-
-    internal static string[] Tokenize(string text)
-    {
-        return text.Split([' ', ',', '.', ';', ':', '-', '_', '/', '\\', '(', ')', '[', ']'],
-                StringSplitOptions.RemoveEmptyEntries | StringSplitOptions.TrimEntries)
-            .Select(t => t.ToLowerInvariant())
-            .Where(t => t.Length > 0)
-            .ToArray();
-    }
+            SourceId = key,
+            WorkspaceId = WorkspaceId.From(persistentState.State.WorkspaceId),
+            SkillId = skill.SkillId,
+            Title = skill.Title,
+            CreatedByAgent = skill.CreatedByAgent
+        }, CancellationToken.None);
 }

@@ -195,11 +195,15 @@ public sealed class CqrsHandlerTests
             new() { Skill = new SkillDocument { SkillId = SkillId.New(), Title = "t", Description = "d", Tags = [], Steps = [], ToolsUsed = [], CreatedByAgent = "a" }, RelevanceScore = 0.9 }
         ];
         factory.GetActor<ISkillMemoryActor>(Arg.Any<VirtualActorId>()).Returns(memory);
-        memory.SearchAsync("test", 5).Returns(results);
+        memory.SearchAsync(
+                "test",
+                5,
+                Arg.Is<SkillSearchOptions>(options => options.MinSuccessRate == 0.9 && options.PreferRecent))
+            .Returns(results);
 
         var handler = new SearchSkillsHandler(factory);
         var result = await handler.HandleAsync(
-            new SearchSkillsQuery(Ws, "test", 5),
+            new SearchSkillsQuery(Ws, "test", 5, new SkillSearchOptions { MinSuccessRate = 0.9, PreferRecent = true }),
             TestContext.Current.CancellationToken);
 
         result.Count.ShouldBe(1);

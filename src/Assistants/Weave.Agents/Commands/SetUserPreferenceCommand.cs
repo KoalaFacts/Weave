@@ -1,7 +1,6 @@
 using Weave.Agents.Actors;
 using Weave.Shared.Cqrs;
 using Weave.Shared.Ids;
-using Weave.Shared.VirtualActors;
 
 namespace Weave.Agents.Commands;
 

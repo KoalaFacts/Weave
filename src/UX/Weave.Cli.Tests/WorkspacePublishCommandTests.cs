@@ -1,5 +1,4 @@
 using Weave.Cli.Commands;
-using Weave.Deploy;
 using Weave.Deploy.Translators;
 
 namespace Weave.Cli.Tests;

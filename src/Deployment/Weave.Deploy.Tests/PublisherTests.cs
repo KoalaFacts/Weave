@@ -655,7 +655,8 @@ public static class PublisherTests
         {
             // Kubernetes uses Registry, the others should produce consistent
             // output regardless of the Registry option.
-            if (name == "kubernetes") return;
+            if (name == "kubernetes")
+                return;
 
             var manifest = CreateTestManifest();
             var withoutRegistry = await Resolve(name).PublishAsync(manifest, new PublishOptions { OutputPath = Path.Combine(OutputDir, "a") }, TestContext.Current.CancellationToken);

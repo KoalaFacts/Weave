@@ -1,5 +1,4 @@
 using Microsoft.AspNetCore.Mvc;
-using Microsoft.Extensions.DependencyInjection;
 using Orleans.Serialization;
 using Scalar.AspNetCore;
 using Weave.Agents.Pipeline;
@@ -71,7 +70,7 @@ else
 // Supported values: "memory" (default), "sqlite", "redis", "sqlserver", "postgresql"
 static void ConfigureActorStorage(
     ISiloBuilder siloBuilder,
-    WeaveSettings.ActorStorageSettings storageSettings,
+    ActorStorageSettings storageSettings,
     IConfiguration configuration)
 {
     var storage = storageSettings.Provider.ToLowerInvariant();
@@ -80,8 +79,8 @@ static void ConfigureActorStorage(
 
     switch (storage)
     {
-        case WeaveSettings.ActorStorageSettings.SqliteProvider:
-            var sqliteConn = configuration.GetConnectionString(WeaveSettings.ActorStorageSettings.SqliteConnectionName)
+        case ActorStorageSettings.SqliteProvider:
+            var sqliteConn = configuration.GetConnectionString(ActorStorageSettings.SqliteConnectionName)
                 ?? DefaultSqlitePath();
             siloBuilder.AddAdoNetGrainStorageAsDefault(options =>
             {
@@ -90,8 +89,8 @@ static void ConfigureActorStorage(
             });
             break;
 
-        case WeaveSettings.ActorStorageSettings.SqlServerProvider:
-            var sqlConn = configuration.GetConnectionString(WeaveSettings.ActorStorageSettings.SqlServerConnectionName)
+        case ActorStorageSettings.SqlServerProvider:
+            var sqlConn = configuration.GetConnectionString(ActorStorageSettings.SqlServerConnectionName)
                 ?? throw new InvalidOperationException("ConnectionStrings:SqlServer is required when Weave actor storage provider is 'sqlserver'.");
             if (!string.IsNullOrWhiteSpace(database))
                 sqlConn = AppendIfMissing(sqlConn, $"Database={database}");
@@ -109,8 +108,8 @@ static void ConfigureActorStorage(
             });
             break;
 
-        case WeaveSettings.ActorStorageSettings.PostgreSqlProvider or WeaveSettings.ActorStorageSettings.PostgresProvider:
-            var pgConn = configuration.GetConnectionString(WeaveSettings.ActorStorageSettings.PostgreSqlConnectionName)
+        case ActorStorageSettings.PostgreSqlProvider or ActorStorageSettings.PostgresProvider:
+            var pgConn = configuration.GetConnectionString(ActorStorageSettings.PostgreSqlConnectionName)
                 ?? throw new InvalidOperationException("ConnectionStrings:PostgreSql is required when Weave actor storage provider is 'postgresql'.");
             if (!string.IsNullOrWhiteSpace(database))
                 pgConn = AppendIfMissing(pgConn, $"Database={database}");
@@ -128,8 +127,8 @@ static void ConfigureActorStorage(
             });
             break;
 
-        case WeaveSettings.ActorStorageSettings.RedisProvider:
-            var redisConn = configuration.GetConnectionString(WeaveSettings.ActorStorageSettings.RedisConnectionName)
+        case ActorStorageSettings.RedisProvider:
+            var redisConn = configuration.GetConnectionString(ActorStorageSettings.RedisConnectionName)
                 ?? "localhost:6379";
             siloBuilder.AddRedisGrainStorageAsDefault(options =>
             {

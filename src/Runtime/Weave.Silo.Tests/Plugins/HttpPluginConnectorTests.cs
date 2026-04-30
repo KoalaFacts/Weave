@@ -1,9 +1,7 @@
 using Microsoft.Extensions.Logging.Abstractions;
-using NSubstitute;
 using Weave.Shared.Plugins;
 using Weave.Silo.Plugins;
 using Weave.Workspaces.Models;
-using Weave.Workspaces.Plugins;
 
 namespace Weave.Silo.Tests.Plugins;
 

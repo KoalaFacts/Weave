@@ -53,10 +53,3 @@ public sealed partial class CostTrackingChatClient : DelegatingChatClient
     private partial void LogTokenUsage(string agentId, long? input, long? output, string model);
 }
 
-public sealed class AgentCostSummary
-{
-    public long TotalInputTokens { get; set; }
-    public long TotalOutputTokens { get; set; }
-    public int RequestCount { get; set; }
-    public string LastModel { get; set; } = string.Empty;
-}
