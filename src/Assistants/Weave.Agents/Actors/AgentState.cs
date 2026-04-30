@@ -21,6 +21,7 @@ public sealed record AgentState
     public int TotalTasksCompleted { get; set; }
     public AgentDefinition? Definition { get; set; }
     public string? ConversationId { get; set; }
+    public int LastEpisodeHistoryIndex { get; set; }
 
     public int RunningTaskCount =>
         ActiveTasks.Count(task => task.Status is AgentTaskStatus.Running);
