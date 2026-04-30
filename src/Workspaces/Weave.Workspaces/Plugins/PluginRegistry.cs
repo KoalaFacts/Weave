@@ -4,60 +4,7 @@ using Weave.Workspaces.Models;
 
 namespace Weave.Workspaces.Plugins;
 
-// --- Plugin contract types (consolidated here — single source of truth) ---
-
-/// <summary>
-/// Connects a plugin definition from the workspace manifest to runtime services.
-/// Each connector handles one plugin <see cref="PluginDefinition.Type"/>.
-/// </summary>
-public interface IPluginConnector
-{
-    string PluginType { get; }
-    PluginSchema Schema { get; }
-    Task<PluginStatus> ConnectAsync(string name, PluginDefinition definition);
-    Task<PluginStatus> DisconnectAsync(string name);
-    PluginStatus GetStatus(string name);
-}
-public sealed record PluginStatus
-{
-    public required string Name { get; init; }
-    public required string Type { get; init; }
-    public bool IsConnected { get; init; }
-    public string? Error { get; init; }
-    public IReadOnlyDictionary<string, string> Info { get; init; } = new Dictionary<string, string>();
-}
-public sealed record PluginSchema
-{
-    public required string Type { get; init; }
-    public required string Description { get; init; }
-    public required IReadOnlyList<string> Provides { get; init; }
-    public required IReadOnlyList<PluginConfigField> Config { get; init; }
-}
-public sealed record PluginConfigField
-{
-    public required string Name { get; init; }
-    public required string Description { get; init; }
-    public bool Required { get; init; }
-    public bool Secret { get; init; }
-    public string? Default { get; init; }
-    public string? EnvVar { get; init; }
-}
-
 // --- Registry ---
-
-/// <summary>
-/// Manages plugin lifecycle — connects, disconnects, and hot-swaps plugins.
-/// Validates config against the connector's <see cref="PluginSchema"/> and
-/// auto-fills missing values from environment variables before connecting.
-/// </summary>
-public interface IPluginRegistry
-{
-    Task<IReadOnlyList<PluginStatus>> ConnectAllAsync(Dictionary<string, PluginDefinition> plugins);
-    Task<PluginStatus> ConnectAsync(string name, PluginDefinition definition);
-    Task<PluginStatus> DisconnectAsync(string name);
-    IReadOnlyList<PluginStatus> GetAll();
-    IReadOnlyList<PluginSchema> GetCatalog();
-}
 
 public sealed partial class PluginRegistry : IPluginRegistry, IDisposable
 {

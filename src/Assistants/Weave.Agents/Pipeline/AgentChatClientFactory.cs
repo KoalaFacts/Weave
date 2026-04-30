@@ -4,11 +4,6 @@ using Microsoft.Extensions.Logging;
 
 namespace Weave.Agents.Pipeline;
 
-public interface IAgentChatClientFactory
-{
-    IChatClient Create(string agentId, string? modelId = null);
-}
-
 /// <summary>
 /// Scoped factory — one instance per actor activation or HTTP request.
 /// The injected <see cref="IServiceProvider"/> is the consumer's own

@@ -15,10 +15,3 @@ public sealed record CapabilityToken
     public bool HasGrant(string grant) =>
         Grants.Contains(grant) || Grants.Contains("*");
 }
-public sealed record CapabilityTokenRequest
-{
-    public string WorkspaceId { get; init; } = string.Empty;
-    public string IssuedTo { get; init; } = string.Empty;
-    public HashSet<string> Grants { get; init; } = [];
-    public TimeSpan Lifetime { get; init; } = TimeSpan.FromHours(24);
-}

@@ -709,7 +709,3 @@ internal sealed class ChatComposer
         catch (InvalidOperationException) { return false; }
     }
 }
-
-internal enum ComposerStatus { Submitted, Cancelled }
-
-internal sealed record ComposerResult(ComposerStatus Status, string Text);

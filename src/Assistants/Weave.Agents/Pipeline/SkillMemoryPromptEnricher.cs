@@ -63,5 +63,3 @@ internal sealed class SkillMemoryPromptEnricher(
         }
     }
 }
-
-internal sealed record SkillMemoryEnrichment(string? Prompt, IReadOnlyList<SkillId> SkillIds);

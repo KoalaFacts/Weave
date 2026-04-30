@@ -8,9 +8,3 @@ public sealed record TargetDefinition
     public string? Region { get; init; }
     public ScalingConfig? Scaling { get; init; }
 }
-
-public sealed record ScalingConfig
-{
-    public int Min { get; init; } = 1;
-    public int Max { get; init; } = 1;
-}
