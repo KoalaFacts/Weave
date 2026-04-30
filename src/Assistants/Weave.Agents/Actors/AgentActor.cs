@@ -129,6 +129,8 @@ public sealed class AgentActor(
 
             chatPipeline.Reset();
 
+            await TryExtractSessionEpisodeAsync();
+
             persistentState.State.Status = AgentStatus.Idle;
             persistentState.State.DeactivatedAt = timeProvider.GetUtcNow();
             persistentState.State.ActiveTasks.Clear();
@@ -265,7 +267,10 @@ public sealed class AgentActor(
             accepted);
 
         if (accepted)
+        {
             await TryExtractSkillAsync(taskId);
+            await TryExtractEpisodeAsync(taskId);
+        }
     }
 
     private async Task TryExtractSkillAsync(AgentTaskId taskId)
@@ -290,6 +295,66 @@ public sealed class AgentActor(
         catch (Exception ex)
         {
             logger.LogWarning(ex, "Failed to suggest skill from task {TaskId}", taskId);
+        }
+    }
+
+    private async Task TryExtractEpisodeAsync(AgentTaskId taskId)
+    {
+        var task = persistentState.State.ActiveTasks.FirstOrDefault(t => t.TaskId == taskId);
+        if (task is null)
+            return;
+
+        var episode = EpisodeExtractor.FromTask(task, persistentState.State, timeProvider.GetUtcNow());
+        if (episode is null)
+            return;
+
+        // Storage and index update are bound: if storage throws we leave the index untouched and
+        // the same slice gets retried on the next accept (acceptable: at worst a duplicate episode).
+        try
+        {
+            var episodicActor = actors.GetActor<IEpisodicMemoryActor>(VirtualActorId.From(persistentState.State.WorkspaceId.ToString()));
+            await episodicActor.StoreEpisodeAsync(episode);
+            persistentState.State.LastEpisodeHistoryIndex = persistentState.State.History.Count;
+            await persistentState.WriteStateAsync();
+            logger.LogInformation(
+                "Stored episode '{Title}' from task {TaskId}",
+                episode.Title,
+                taskId);
+        }
+        catch (OperationCanceledException)
+        {
+            throw;
+        }
+        catch (Exception ex) when (ex is InvalidOperationException or TimeoutException)
+        {
+            logger.LogWarning(ex, "Failed to store episode from task {TaskId}", taskId);
+        }
+    }
+
+    private async Task TryExtractSessionEpisodeAsync()
+    {
+        var state = persistentState.State;
+        var episode = EpisodeExtractor.FromSession(state, timeProvider.GetUtcNow());
+        if (episode is null)
+            return;
+
+        try
+        {
+            var episodicActor = actors.GetActor<IEpisodicMemoryActor>(VirtualActorId.From(state.WorkspaceId.ToString()));
+            await episodicActor.StoreEpisodeAsync(episode);
+            state.LastEpisodeHistoryIndex = state.History.Count;
+            logger.LogInformation(
+                "Stored session episode '{Title}' for agent {AgentName}",
+                episode.Title,
+                state.AgentName);
+        }
+        catch (OperationCanceledException)
+        {
+            throw;
+        }
+        catch (Exception ex) when (ex is InvalidOperationException or TimeoutException)
+        {
+            logger.LogWarning(ex, "Failed to store session episode for agent {AgentName}", state.AgentName);
         }
     }
 

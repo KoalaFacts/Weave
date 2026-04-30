@@ -16,6 +16,7 @@ public sealed class AgentChatPipeline(
     private IChatClient? _chatClient;
     private string? _systemPrompt;
     private readonly SkillMemoryPromptEnricher _skillMemory = new(actors, logger);
+    private readonly EpisodicMemoryPromptEnricher _episodicMemory = new(actors, logger);
 
     public void Initialize(string agentId, string? model)
     {
@@ -45,6 +46,8 @@ public sealed class AgentChatPipeline(
         prompt = await EnrichWithUserContextAsync(state, message, prompt);
         var skillMemory = await _skillMemory.EnrichAsync(state.WorkspaceId, state.AgentName, message.Content, prompt);
         prompt = skillMemory.Prompt;
+        var episodicMemory = await _episodicMemory.EnrichAsync(state.WorkspaceId, state.AgentName, message.Content, prompt);
+        prompt = episodicMemory.Prompt;
 
         var chatMessages = new List<ChatMessage>(state.History.Count + 1);
         if (!string.IsNullOrWhiteSpace(prompt))
@@ -82,6 +85,7 @@ public sealed class AgentChatPipeline(
 
         state.LastActive = timeProvider.GetUtcNow();
         await _skillMemory.RecordSuccessfulUsageAsync(state.WorkspaceId, state.AgentName, skillMemory.SkillIds);
+        await _episodicMemory.RecordRecallAsync(state.WorkspaceId, state.AgentName, episodicMemory.EpisodeIds);
 
         return new AgentChatResponse
         {
