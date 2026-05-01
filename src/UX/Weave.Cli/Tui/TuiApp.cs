@@ -16,6 +16,9 @@ namespace Weave.Cli.Tui;
 internal static class TuiApp
 {
     private static readonly TuiWorkspaceDashboard Dashboard = new();
+    private static readonly TuiLiveStatusView LiveStatus = new();
+    private static readonly TuiManifestView ManifestView = new();
+    private static readonly TuiScreens Screens = new();
 
     public static async Task<int> RunAsync(CancellationToken cancellationToken)
     {
@@ -25,7 +28,7 @@ internal static class TuiApp
         CliTheme.WriteBanner();
         VersionInfo.KickOffRefreshIfStale();
         await Dashboard.RefreshAsync(cancellationToken);
-        RenderWelcomeHint();
+        Screens.RenderWelcomeHint();
 
         var composer = new ChatComposer();
 
@@ -92,7 +95,7 @@ internal static class TuiApp
 
             case "help":
             case "?":
-                RenderSlashHelp();
+                Screens.RenderSlashHelp();
                 return DispatchResult.Continue;
 
             case "quit":
@@ -165,7 +168,7 @@ internal static class TuiApp
                 return DispatchResult.Continue;
 
             case "config":
-                ShowConfig();
+                Screens.ShowConfig();
                 return DispatchResult.Continue;
 
             case "up":
@@ -178,7 +181,7 @@ internal static class TuiApp
 
             case "new":
             case "n":
-                ShowNewWorkspaceHint();
+                Screens.ShowNewWorkspaceHint();
                 return DispatchResult.Continue;
 
             case "presets":
@@ -194,7 +197,7 @@ internal static class TuiApp
 
             case "system":
             case "sys":
-                await ShowSystemScreenAsync(ct);
+                await Screens.ShowSystemAsync(ct);
                 return DispatchResult.Continue;
 
             case "version":
@@ -390,7 +393,7 @@ internal static class TuiApp
         session.AgentName = match;
         ConversationHistory.Clear();
         CliTheme.WriteMuted($"Agent set to '{match}'.");
-        RenderNextStepHint(session);
+        Screens.RenderNextStepHint(session);
     }
 
     private static async Task ListAgentsAsync(TuiSession session, CancellationToken ct)
@@ -570,7 +573,7 @@ internal static class TuiApp
         if (session.AgentName is null)
             TryAutoSelectAgent(session);
 
-        RenderNextStepHint(session);
+        Screens.RenderNextStepHint(session);
     }
 
     /// <summary>
@@ -647,7 +650,7 @@ internal static class TuiApp
             return;
         }
 
-        await Dashboard.WatchLiveStatusAsync(session.ManifestPath!, manifest, ct);
+        await LiveStatus.WatchAsync(session.ManifestPath!, manifest, ct);
     }
 
     // ── Helpers ───────────────────────────────────────────────────
@@ -721,12 +724,12 @@ internal static class TuiApp
         }
 
         CliTheme.WriteSection($"Workspace · {manifest.Name}");
-        var liveRendered = await Dashboard.TryRenderLiveStatusOnceAsync(session.ManifestPath, manifest, ct);
+        var liveRendered = await LiveStatus.TryRenderOnceAsync(session.ManifestPath, manifest, ct);
         if (!liveRendered)
-            Dashboard.RenderManifestView(manifest, session.ManifestPath);
+            ManifestView.Render(manifest, session.ManifestPath);
 
         AnsiConsole.WriteLine();
-        RenderNextStepHint(session);
+        Screens.RenderNextStepHint(session);
     }
 
     // ── /tools, /tasks, /history command handlers ──────────────────
@@ -847,441 +850,6 @@ internal static class TuiApp
                 CliTheme.WriteUserEcho(msg.Content ?? "");
             else
                 CliTheme.WriteAgentReply(session.AgentName, msg.Content ?? "");
-        }
-    }
-
-    // ── /status, /validate, /ports, /config command handlers ──────
-
-    private static async Task ShowWorkspaceStatusAsync(TuiSession session, CancellationToken ct)
-    {
-        if (!session.HasWorkspace)
-        {
-            CliTheme.WriteMuted("No workspace open. Try: /open <workspace>");
-            return;
-        }
-
-        if (session.ManifestPath is null)
-            return;
-
-        WorkspaceManifest manifest;
-        try
-        {
-            var json = await File.ReadAllTextAsync(session.ManifestPath, ct);
-            manifest = Parser.Parse(json);
-        }
-        catch (Exception ex)
-        {
-            CliTheme.WriteError($"Failed to parse manifest: {ex.Message}");
-            return;
-        }
-
-        CliTheme.WriteSection($"Status · {manifest.Name}");
-        var liveRendered = await Dashboard.TryRenderLiveStatusOnceAsync(session.ManifestPath, manifest, ct);
-        if (!liveRendered)
-            Dashboard.RenderManifestView(manifest, session.ManifestPath);
-    }
-
-    private static async Task ValidateManifestAsync(TuiSession session, CancellationToken ct)
-    {
-        if (!session.HasWorkspace)
-        {
-            CliTheme.WriteMuted("No workspace open. Try: /open <workspace>");
-            return;
-        }
-
-        if (session.ManifestPath is null)
-            return;
-
-        try
-        {
-            var json = await File.ReadAllTextAsync(session.ManifestPath, ct);
-            var manifest = Parser.Parse(json);
-            var errors = Parser.Validate(manifest);
-
-            if (errors.Count > 0)
-            {
-                CliTheme.WriteError("Configuration invalid:");
-                foreach (var error in errors)
-                    CliTheme.WriteMuted($"  - {error}");
-                return;
-            }
-
-            CliTheme.WriteSuccess("Configuration valid.");
-            CliTheme.WriteKeyValue("Name", manifest.Name);
-            CliTheme.WriteKeyValue("Agents", manifest.Agents.Count.ToString(CultureInfo.InvariantCulture));
-            CliTheme.WriteKeyValue("Tools", manifest.Tools.Count.ToString(CultureInfo.InvariantCulture));
-            CliTheme.WriteKeyValue("Targets", manifest.Targets.Count.ToString(CultureInfo.InvariantCulture));
-        }
-        catch (Exception ex)
-        {
-            CliTheme.WriteError($"Configuration invalid: {ex.Message}");
-        }
-    }
-
-    private static void ShowPorts()
-    {
-        var table = CliTheme.CreateTable("Port Assignments");
-        table.AddColumn(CliTheme.StyledColumn("Port"));
-        table.AddColumn(CliTheme.StyledColumn("Name"));
-        table.AddColumn(CliTheme.StyledColumn("Description"));
-
-        foreach (var (name, port, description) in WeavePorts.All)
-        {
-            table.AddRow(
-                port.ToString(CultureInfo.InvariantCulture),
-                name,
-                description);
-        }
-
-        AnsiConsole.Write(table);
-
-        var config = CliConfigStore.Load();
-        if (config.DefaultPort != WeavePorts.SiloHttp)
-        {
-            AnsiConsole.WriteLine();
-            CliTheme.WriteInfo($"Config override: defaultPort = {config.DefaultPort.ToString(CultureInfo.InvariantCulture)}");
-        }
-    }
-
-    private static void ShowConfig()
-    {
-        var config = CliConfigStore.Load();
-
-        CliTheme.WriteSection("CLI Configuration");
-
-        var table = CliTheme.CreateTable();
-        table.AddColumn(CliTheme.StyledColumn("Key"));
-        table.AddColumn(CliTheme.StyledColumn("Value"));
-        table.AddRow("defaultPort", config.DefaultPort.ToString(CultureInfo.InvariantCulture));
-        table.AddRow("storage", Markup.Escape(config.Storage));
-        table.AddRow("authMode", Markup.Escape(config.AuthMode));
-        table.AddRow("requireHttps", config.RequireHttps ? "true" : "false");
-        table.AddRow("siloPath",
-            string.IsNullOrWhiteSpace(config.SiloPath)
-                ? $"[rgb({CliTheme.Muted.R},{CliTheme.Muted.G},{CliTheme.Muted.B})](auto-detect)[/]"
-                : Markup.Escape(config.SiloPath));
-
-        AnsiConsole.Write(table);
-        CliTheme.WriteMuted("Change settings with: weave config set <key> <value>");
-    }
-
-    private static void RenderNextStepHint(TuiSession session)
-    {
-        if (!session.HasWorkspace)
-            return;
-
-        if (!session.IsRunning)
-        {
-            AnsiConsole.MarkupLine(
-                $"[bold rgb({CliTheme.Warning.R},{CliTheme.Warning.G},{CliTheme.Warning.B})]Next:[/] " +
-                $"workspace is not running. Start it right here:");
-            AnsiConsole.MarkupLine(
-                $"  [rgb({CliTheme.Accent.R},{CliTheme.Accent.G},{CliTheme.Accent.B})]/up[/]   " +
-                $"[rgb({CliTheme.Muted.R},{CliTheme.Muted.G},{CliTheme.Muted.B})]# starts '{Markup.Escape(session.WorkspaceName!)}' via the running Silo[/]");
-            return;
-        }
-
-        if (session.AgentName is null)
-        {
-            AnsiConsole.MarkupLine(
-                $"[bold rgb({CliTheme.Primary.R},{CliTheme.Primary.G},{CliTheme.Primary.B})]Next:[/] " +
-                $"pick an agent with " +
-                $"[rgb({CliTheme.Accent.R},{CliTheme.Accent.G},{CliTheme.Accent.B})]/agents[/] or " +
-                $"[rgb({CliTheme.Accent.R},{CliTheme.Accent.G},{CliTheme.Accent.B})]/use <name>[/].");
-            return;
-        }
-
-        AnsiConsole.MarkupLine(
-            $"[bold rgb({CliTheme.Success.R},{CliTheme.Success.G},{CliTheme.Success.B})]Ready.[/] " +
-            $"Type any message to send it to " +
-            $"[bold rgb({CliTheme.Accent.R},{CliTheme.Accent.G},{CliTheme.Accent.B})]{Markup.Escape(session.AgentName)}[/], " +
-            $"or [rgb({CliTheme.Accent.R},{CliTheme.Accent.G},{CliTheme.Accent.B})]/agents[/] to switch.");
-    }
-
-    private static void ShowVersionScreen()
-    {
-        CliTheme.WriteSection("Version");
-
-        var current = VersionInfo.Current();
-        var cache = VersionInfo.LoadCache();
-
-        var table = CliTheme.CreateTable();
-        table.AddColumn(CliTheme.StyledColumn("Key"));
-        table.AddColumn(CliTheme.StyledColumn("Value"));
-        table.AddRow("Installed", $"[bold white]v{Markup.Escape(current)}[/]");
-
-        if (cache is not null)
-        {
-            var newer = VersionInfo.IsNewer(cache.LatestVersion, current);
-            var latestCell = newer
-                ? $"[rgb({CliTheme.Warning.R},{CliTheme.Warning.G},{CliTheme.Warning.B})]v{Markup.Escape(cache.LatestVersion)} (newer)[/]"
-                : $"[rgb({CliTheme.Muted.R},{CliTheme.Muted.G},{CliTheme.Muted.B})]v{Markup.Escape(cache.LatestVersion)}[/]";
-            table.AddRow("Latest (cached)", latestCell);
-            table.AddRow("Last checked",
-                cache.CheckedAt.ToLocalTime().ToString("u", System.Globalization.CultureInfo.InvariantCulture));
-        }
-        else
-        {
-            table.AddRow("Latest (cached)",
-                $"[rgb({CliTheme.Muted.R},{CliTheme.Muted.G},{CliTheme.Muted.B})]not checked yet[/]");
-        }
-
-        AnsiConsole.Write(table);
-        CliTheme.WriteMuted("Run /upgrade to check NuGet now.");
-    }
-
-    private static async Task CheckForUpgradeAsync(CancellationToken ct)
-    {
-        CliTheme.WriteSection("Check for upgrade");
-
-        UpdateCheckResult? result = null;
-        await AnsiConsole.Status()
-            .Spinner(Spinner.Known.Dots)
-            .SpinnerStyle(CliTheme.AccentStyle)
-            .StartAsync("Querying NuGet…", async _ =>
-            {
-                result = await VersionInfo.CheckAsync(ct);
-            });
-
-        if (result is null)
-        {
-            CliTheme.WriteError("Upgrade check returned no result.");
-            return;
-        }
-
-        CliTheme.WriteKeyValue("Installed", $"v{result.Current}");
-        if (result.Latest is not null)
-            CliTheme.WriteKeyValue("Latest", $"v{result.Latest}");
-
-        if (result.UpdateAvailable && result.Latest is not null)
-        {
-            AnsiConsole.MarkupLine(
-                $"[rgb({CliTheme.Warning.R},{CliTheme.Warning.G},{CliTheme.Warning.B})]" +
-                $"↑ v{Markup.Escape(result.Latest)} is available.[/]");
-            CliTheme.WriteMuted($"  Upgrade:  {VersionInfo.UpgradeCommand}");
-        }
-        else if (result.Latest is not null)
-        {
-            CliTheme.WriteSuccess("You are on the latest version.");
-        }
-        else if (result.Note is not null)
-        {
-            CliTheme.WriteWarning(result.Note);
-        }
-    }
-
-    private static void RenderWelcomeHint()
-    {
-        var workspaceCount = WorkspaceRegistry.GetAll().Count;
-
-        if (workspaceCount == 0)
-        {
-            var content =
-                $"[bold white]1.[/] Create a workspace\n" +
-                $"   [rgb({CliTheme.Accent.R},{CliTheme.Accent.G},{CliTheme.Accent.B})]weave workspace new my-first[/]\n" +
-                $"   [rgb({CliTheme.Muted.R},{CliTheme.Muted.G},{CliTheme.Muted.B})]or type /new here for guidance, /presets for samples[/]\n\n" +
-                $"[bold white]2.[/] Start it\n" +
-                $"   [rgb({CliTheme.Accent.R},{CliTheme.Accent.G},{CliTheme.Accent.B})]weave up my-first[/]\n\n" +
-                $"[bold white]3.[/] Come back here and chat\n" +
-                $"   [rgb({CliTheme.Accent.R},{CliTheme.Accent.G},{CliTheme.Accent.B})]/open my-first[/] " +
-                $"[rgb({CliTheme.Muted.R},{CliTheme.Muted.G},{CliTheme.Muted.B})]→[/] " +
-                $"[rgb({CliTheme.Accent.R},{CliTheme.Accent.G},{CliTheme.Accent.B})]/use <agent>[/] " +
-                $"[rgb({CliTheme.Muted.R},{CliTheme.Muted.G},{CliTheme.Muted.B})]→ type any message[/]";
-
-            AnsiConsole.Write(CliTheme.CreatePanel(content, "Getting started"));
-            AnsiConsole.WriteLine();
-            CliTheme.WriteMuted("Type /help anytime to see every command grouped by task. Ctrl+C to exit.");
-        }
-        else
-        {
-            AnsiConsole.MarkupLine(
-                $"[rgb({CliTheme.Muted.R},{CliTheme.Muted.G},{CliTheme.Muted.B})]" +
-                $"Start with [bold]/open <workspace>[/], or type [bold]/help[/] to see commands.  " +
-                $"Ctrl+C to exit.[/]");
-        }
-        AnsiConsole.WriteLine();
-    }
-
-    private static void RenderSlashHelp()
-    {
-        CliTheme.WriteSection("Help");
-
-        RenderHelpGroup("Getting started", new (string Cmd, string Aliases, string Desc)[]
-        {
-            ("/help", "/?, help", "Show this help"),
-            ("/new", "/n", "Hints for creating a workspace"),
-            ("/presets", "/p", "Built-in workspace presets"),
-            ("/open <ws>", "/o", "Open a workspace for this session"),
-        });
-
-        RenderHelpGroup("Chat with an agent", new (string Cmd, string Aliases, string Desc)[]
-        {
-            ("(type anything)", "", "Sends to the current agent"),
-            ("/agents", "", "List agents in the current workspace"),
-            ("/use <agent>", "/agent, /a", "Switch the current agent"),
-            ("/history", "", "Show recent conversation messages"),
-        });
-
-        RenderHelpGroup("Workspace", new (string Cmd, string Aliases, string Desc)[]
-        {
-            ("/up", "", "Start the current workspace"),
-            ("/down", "", "Stop the current workspace"),
-            ("/watch", "", "Live auto-refresh of the current workspace"),
-            ("/tools", "", "List tools in the running workspace"),
-            ("/tasks", "", "List tasks for the active agent"),
-            ("/status", "", "Show workspace status"),
-            ("/validate", "", "Validate the workspace manifest"),
-        });
-
-        RenderHelpGroup("Monitor", new (string Cmd, string Aliases, string Desc)[]
-        {
-            ("/refresh", "/r", "Re-render the dashboard"),
-            ("/system", "/sys", "Silo + config info"),
-            ("/webui", "/web, /w", "Open the web dashboard in a browser"),
-            ("/ports", "", "Show port assignments"),
-            ("/config", "", "View CLI configuration"),
-        });
-
-        RenderHelpGroup("About this CLI", new (string Cmd, string Aliases, string Desc)[]
-        {
-            ("/version", "/v", "Installed version + cached update info"),
-            ("/upgrade", "/update", "Check NuGet for a newer release"),
-        });
-
-        RenderHelpGroup("Housekeeping", new (string Cmd, string Aliases, string Desc)[]
-        {
-            ("/clear", "/cls", "Clear the screen"),
-            ("/quit", "/exit, /q, quit", "Exit the TUI"),
-        });
-
-        AnsiConsole.WriteLine();
-        CliTheme.WriteMuted(
-            "Tip: anything without a leading slash is sent to the current agent. " +
-            "Unknown commands get a \"did you mean?\" suggestion.");
-    }
-
-    private static void RenderHelpGroup(string title, (string Cmd, string Aliases, string Desc)[] rows)
-    {
-        AnsiConsole.MarkupLine(
-            $"[bold rgb({CliTheme.Accent.R},{CliTheme.Accent.G},{CliTheme.Accent.B})]  {Markup.Escape(title)}[/]");
-
-        foreach (var (cmd, aliases, desc) in rows)
-        {
-            var cmdCell = $"[bold rgb({CliTheme.Primary.R},{CliTheme.Primary.G},{CliTheme.Primary.B})]{Markup.Escape(cmd),-20}[/]";
-            var aliasCell = string.IsNullOrEmpty(aliases)
-                ? new string(' ', 18)
-                : $"[rgb({CliTheme.Muted.R},{CliTheme.Muted.G},{CliTheme.Muted.B})]{Markup.Escape(aliases),-18}[/]";
-            AnsiConsole.MarkupLine($"    {cmdCell}  {aliasCell}  {Markup.Escape(desc)}");
-        }
-        AnsiConsole.WriteLine();
-    }
-
-
-    private static void ShowNewWorkspaceHint()
-    {
-        CliTheme.WriteSection("Create a new workspace");
-
-        AnsiConsole.Write(CliTheme.CreatePanel(
-            "Workspaces are created from the command line so the CLI can lay out "
-            + "the folder structure (prompts, .weave/, data) and register with the registry.",
-            "Why not inline?"));
-        AnsiConsole.WriteLine();
-
-        CliTheme.WriteInfo("Run:   weave workspace new <name>");
-        CliTheme.WriteMuted("         weave workspace new <name> --preset <preset>");
-        AnsiConsole.WriteLine();
-        CliTheme.WriteMuted("Tip: run with no arguments for a guided flow.");
-    }
-
-    private static void ShowPresetsScreen()
-    {
-        CliTheme.WriteSection("Workspace presets");
-
-        var table = CliTheme.CreateTable();
-        table.AddColumn(CliTheme.StyledColumn("Preset"));
-        table.AddColumn(CliTheme.StyledColumn("Description"));
-        table.AddColumn(CliTheme.StyledColumn("Model"));
-        table.AddColumn(CliTheme.StyledColumn("Tools"));
-
-        foreach (var (name, preset) in WorkspacePresets.All)
-        {
-            var toolsCell = preset.Tools.Count > 0
-                ? string.Join(", ", preset.Tools)
-                : TuiMarkup.ColorTag(CliTheme.Muted, "none");
-
-            table.AddRow(
-                $"[bold]{Markup.Escape(name)}[/]",
-                Markup.Escape(preset.Description),
-                Markup.Escape(preset.Model),
-                toolsCell);
-        }
-
-        AnsiConsole.Write(table);
-        CliTheme.WriteMuted("Use: weave workspace new <name> --preset <preset>");
-    }
-
-    private static async Task ShowSystemScreenAsync(CancellationToken cancellationToken)
-    {
-        CliTheme.WriteSection("System info");
-
-        var config = CliConfigStore.Load();
-        var reachable = await TuiRuntimeProbe.ProbeSiloAsync(cancellationToken);
-
-        var table = CliTheme.CreateTable();
-        table.AddColumn(CliTheme.StyledColumn("Key"));
-        table.AddColumn(CliTheme.StyledColumn("Value"));
-        table.AddRow("Silo API",
-            reachable
-                ? TuiMarkup.ColorTag(CliTheme.Success, $"online · http://localhost:{config.DefaultPort}")
-                : TuiMarkup.ColorTag(CliTheme.Muted, $"offline · http://localhost:{config.DefaultPort}"));
-        table.AddRow("Default port", config.DefaultPort.ToString(CultureInfo.InvariantCulture));
-        table.AddRow("Storage", Markup.Escape(config.Storage));
-        table.AddRow("Auth mode", Markup.Escape(config.AuthMode));
-        table.AddRow("Require HTTPS", config.RequireHttps ? "true" : "false");
-        table.AddRow("Silo path",
-            string.IsNullOrWhiteSpace(config.SiloPath)
-                ? TuiMarkup.ColorTag(CliTheme.Muted, "(auto-detect)")
-                : Markup.Escape(config.SiloPath));
-        table.AddRow("Weave home",
-            Markup.Escape(Path.Combine(
-                Environment.GetFolderPath(Environment.SpecialFolder.UserProfile), ".weave")));
-
-        AnsiConsole.Write(table);
-    }
-
-    private static async Task OpenWebUiAsync(CancellationToken cancellationToken)
-    {
-        CliTheme.WriteSection("Web UI");
-
-        var webUi = new WebUiRuntime();
-        var url = webUi.DefaultUrl();
-        CliTheme.WriteKeyValue("URL", url);
-
-        var reachable = await webUi.IsReachableAsync(url, cancellationToken);
-        if (reachable)
-            CliTheme.WriteSuccess("Dashboard is reachable.");
-        else
-            CliTheme.WriteWarning("Dashboard is not reachable yet. Start it with `weave run` or the AppHost.");
-
-        AnsiConsole.WriteLine();
-        var choice = AnsiConsole.Prompt(
-            new SelectionPrompt<string>()
-                .Title("What would you like to do?")
-                .Styled()
-                .AddChoices("Open in browser", "Copy URL (print)", "(cancel)"));
-
-        switch (choice)
-        {
-            case "Open in browser":
-                if (webUi.TryOpenBrowser(url))
-                    CliTheme.WriteMuted("Opened in your default browser.");
-                else
-                    CliTheme.WriteMuted($"Could not open a browser automatically. Visit: {url}");
-                break;
-
-            case "Copy URL (print)":
-                AnsiConsole.WriteLine(url);
-                break;
         }
     }
 

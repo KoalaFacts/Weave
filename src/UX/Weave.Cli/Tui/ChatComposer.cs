@@ -1,7 +1,6 @@
 using System.Globalization;
 using System.Text;
 using Spectre.Console;
-using Spectre.Console.Rendering;
 using Weave.Cli.Commands;
 
 namespace Weave.Cli.Tui;
@@ -18,6 +17,8 @@ namespace Weave.Cli.Tui;
 internal sealed class ChatComposer
 {
     private readonly StringBuilder _buffer = new();
+    private readonly ChatComposerRenderer _renderer = new();
+    private readonly ChatCommandCatalog _commandCatalog = new();
     private int _cursor;
     private bool _cursorOn = true;
 
@@ -51,43 +52,6 @@ internal sealed class ChatComposer
     // Cache for MenuMatches() — invalidated when buffer or cursor changes.
     private string _cachedMenuKey = string.Empty;
     private List<(string Name, string Desc)> _cachedMenuResult = [];
-
-    /// <summary>
-    /// Commands shown in the autocomplete popup. Each entry has an
-    /// <c>Available</c> predicate over the current <see cref="TuiSession"/>
-    /// so the menu hides commands that don't apply right now (e.g.
-    /// <c>/use</c> before a workspace is open, <c>/watch</c> before
-    /// the workspace is running). Keep this in sync with the
-    /// dispatcher in TuiApp.HandleSlashAsync.
-    /// </summary>
-    private static readonly CommandEntry[] CommandCatalog =
-    [
-        new("help",    "Show help grouped by task",              _ => true),
-        new("open",    "Open a workspace for this session",      _ => true),
-        new("up",      "Start the current workspace",            s => s.HasWorkspace && !s.IsRunning),
-        new("down",    "Stop the current workspace",             s => s.IsRunning),
-        new("use",     "Pick the agent that receives messages",  s => s.HasWorkspace),
-        new("agents",  "List agents in the current workspace",   s => s.HasWorkspace),
-        new("watch",   "Live-refresh the current workspace",     s => s.IsRunning),
-        new("tools",   "List tools in the running workspace",    s => s.IsRunning),
-        new("tasks",   "List tasks for the active agent",        s => s.IsRunning && s.AgentName is not null),
-        new("history", "Show recent conversation messages",      s => s.AgentName is not null),
-        new("status",  "Show workspace status",                  s => s.HasWorkspace),
-        new("validate","Validate the workspace manifest",        s => s.HasWorkspace),
-        new("ports",   "Show port assignments",                  _ => true),
-        new("config",  "View CLI configuration",                 _ => true),
-        new("refresh", "Re-render the dashboard",                _ => true),
-        new("new",     "Hints for creating a workspace",         _ => true),
-        new("presets", "Built-in workspace presets",             _ => true),
-        new("webui",   "Open the web dashboard in a browser",    _ => true),
-        new("system",  "Silo and CLI config info",               _ => true),
-        new("version", "Installed version + update info",        _ => true),
-        new("upgrade", "Check NuGet for a newer release",        _ => true),
-        new("clear",   "Clear the screen",                       _ => true),
-        new("quit",    "Exit the TUI",                           _ => true),
-    ];
-
-    private sealed record CommandEntry(string Name, string Desc, Func<TuiSession, bool> Available);
 
     // Session reference held only while ReadAsync is in flight so the
     // availability predicates can see the current workspace/agent.
@@ -473,24 +437,17 @@ internal sealed class ChatComposer
         else if (_menuSelectedIndex >= matches.Count)
             _menuSelectedIndex = matches.Count - 1;
 
-        var children = new List<IRenderable>();
-        if (matches.Count > 0)
-        {
-            children.Add(BuildMenu(matches));
-            children.Add(new Markup(string.Empty));
-        }
-        children.Add(BuildInputMarkup(focused));
-        children.Add(BuildDashedDivider());
         var exitArmed = _exitHintUntil is { } d && DateTime.UtcNow < d;
-        children.Add(BuildFooter(session, menuActive: matches.Count > 0, exitArmed));
-
-        var border = focused ? CliTheme.Accent : CliTheme.Muted;
-
-        return new Panel(new Rows(children))
-            .Border(BoxBorder.Rounded)
-            .BorderColor(border)
-            .Padding(1, 0, 1, 0)
-            .Expand();
+        return _renderer.Build(new ChatComposerRenderModel(
+            session,
+            _buffer.ToString(),
+            _cursor,
+            _cursorOn,
+            Placeholder,
+            focused,
+            exitArmed,
+            matches,
+            _menuSelectedIndex));
     }
 
     /// <summary>
@@ -509,31 +466,7 @@ internal sealed class ChatComposer
 
         _cachedMenuKey = key;
 
-        if (text.Length == 0 || text[0] != '/')
-        {
-            _cachedMenuResult = [];
-            return _cachedMenuResult;
-        }
-
-        var space = text.IndexOf(' ');
-        var cursorInCommandWord = space < 0 || _cursor <= space;
-        if (!cursorInCommandWord)
-        {
-            _cachedMenuResult = [];
-            return _cachedMenuResult;
-        }
-
-        var prefix = space < 0 ? text[1..] : text[1..space];
-        var session = _session;
-
-        var available = CommandCatalog
-            .Where(c => session is null || c.Available(session));
-
-        var filtered = prefix.Length == 0
-            ? available
-            : available.Where(c => c.Name.StartsWith(prefix, StringComparison.OrdinalIgnoreCase));
-
-        _cachedMenuResult = [.. filtered.Select(c => (c.Name, c.Desc))];
+        _cachedMenuResult = _commandCatalog.Match(text, _cursor, _session);
         return _cachedMenuResult;
     }
 
@@ -545,161 +478,6 @@ internal sealed class ChatComposer
         _buffer.Append('/').Append(name).Append(' ');
         _cursor = _buffer.Length;
         _menuSelectedIndex = 0;
-    }
-
-    private Grid BuildMenu(List<(string Name, string Desc)> matches)
-    {
-        var grid = new Grid()
-            .AddColumn(new GridColumn().NoWrap().Width(2))
-            .AddColumn(new GridColumn().NoWrap().PadRight(2))
-            .AddColumn(new GridColumn());
-
-        for (var i = 0; i < matches.Count; i++)
-        {
-            var selected = i == _menuSelectedIndex;
-
-            var indicator = selected
-                ? $"[bold rgb({CliTheme.Accent.R},{CliTheme.Accent.G},{CliTheme.Accent.B})]▸[/]"
-                : " ";
-
-            var name = selected
-                ? $"[bold rgb({CliTheme.Primary.R},{CliTheme.Primary.G},{CliTheme.Primary.B})]/{Markup.Escape(matches[i].Name)}[/]"
-                : $"[rgb({CliTheme.Muted.R},{CliTheme.Muted.G},{CliTheme.Muted.B})]/{Markup.Escape(matches[i].Name)}[/]";
-
-            var desc = selected
-                ? $"[rgb({CliTheme.Muted.R},{CliTheme.Muted.G},{CliTheme.Muted.B})]{Markup.Escape(matches[i].Desc)}[/]"
-                : $"[rgb({CliTheme.Divider.R},{CliTheme.Divider.G},{CliTheme.Divider.B})]{Markup.Escape(matches[i].Desc)}[/]";
-
-            grid.AddRow(new Markup(indicator), new Markup(name), new Markup(desc));
-        }
-
-        return grid;
-    }
-
-    /// <summary>
-    /// Dashed horizontal rule the width of the Panel's inner area.
-    /// Spectre's built-in <see cref="Rule"/> hard-codes the '─' glyph,
-    /// so we render our own with light-quadruple-dash (┄) in a dim
-    /// color that sits beneath Muted.
-    /// </summary>
-    private static Markup BuildDashedDivider()
-    {
-        int innerWidth;
-        try
-        { innerWidth = Math.Max(8, Console.WindowWidth - 4); }
-        catch (IOException) { innerWidth = 76; }
-
-        var dashes = new string('┄', innerWidth);
-        return new Markup(
-            $"[rgb({CliTheme.Divider.R},{CliTheme.Divider.G},{CliTheme.Divider.B})]{dashes}[/]");
-    }
-
-    private Markup BuildInputMarkup(bool focused)
-    {
-        string content;
-        if (_buffer.Length == 0)
-        {
-            var cursorGlyph = focused ? Cursor() : string.Empty;
-            var placeholder = $"[rgb({CliTheme.Divider.R},{CliTheme.Divider.G},{CliTheme.Divider.B})]{Markup.Escape(Placeholder)}[/]";
-            content = cursorGlyph + placeholder;
-        }
-        else
-        {
-            var text = _buffer.ToString();
-            var before = text[.._cursor];
-            var after = text[_cursor..];
-            content = $"{Markup.Escape(before)}{Cursor()}{Markup.Escape(after)}";
-        }
-
-        return new Markup(content);
-    }
-
-    private string Cursor()
-        => _cursorOn
-            ? $"[bold rgb({CliTheme.Accent.R},{CliTheme.Accent.G},{CliTheme.Accent.B})]▏[/]"
-            : " ";
-
-    private static Grid BuildFooter(TuiSession session, bool menuActive, bool exitArmed)
-    {
-        var sep = $"[rgb({CliTheme.Muted.R},{CliTheme.Muted.G},{CliTheme.Muted.B})]·[/]";
-
-        // Left-side label: exit-armed state takes priority, then the
-        // autocomplete hint, then the default "type / for commands".
-        string glyphs;
-        if (exitArmed)
-        {
-            glyphs =
-                $"[bold rgb({CliTheme.Warning.R},{CliTheme.Warning.G},{CliTheme.Warning.B})]⚠ Ctrl+C again to exit[/]";
-        }
-        else if (menuActive)
-        {
-            glyphs =
-                $"[rgb({CliTheme.Muted.R},{CliTheme.Muted.G},{CliTheme.Muted.B})]↑/↓ choose[/]  " +
-                $"[bold rgb({CliTheme.Accent.R},{CliTheme.Accent.G},{CliTheme.Accent.B})]Tab[/] " +
-                $"[rgb({CliTheme.Muted.R},{CliTheme.Muted.G},{CliTheme.Muted.B})]accept[/]";
-        }
-        else
-        {
-            glyphs =
-                $"[rgb({CliTheme.Muted.R},{CliTheme.Muted.G},{CliTheme.Muted.B})]type[/] " +
-                $"[bold rgb({CliTheme.Accent.R},{CliTheme.Accent.G},{CliTheme.Accent.B})]/[/] " +
-                $"[rgb({CliTheme.Muted.R},{CliTheme.Muted.G},{CliTheme.Muted.B})]for commands[/]";
-        }
-
-        // Context chip
-        string context;
-        if (session.WorkspaceName is null)
-        {
-            context = $"[rgb({CliTheme.Muted.R},{CliTheme.Muted.G},{CliTheme.Muted.B})]no workspace[/]";
-        }
-        else if (session.AgentName is null)
-        {
-            context =
-                $"[rgb({CliTheme.Primary.R},{CliTheme.Primary.G},{CliTheme.Primary.B})]{Markup.Escape(session.WorkspaceName)}[/] " +
-                $"[rgb({CliTheme.Muted.R},{CliTheme.Muted.G},{CliTheme.Muted.B})]· no agent[/]";
-        }
-        else
-        {
-            context =
-                $"[rgb({CliTheme.Primary.R},{CliTheme.Primary.G},{CliTheme.Primary.B})]{Markup.Escape(session.WorkspaceName)}[/]" +
-                $" {sep} " +
-                $"[rgb({CliTheme.Accent.R},{CliTheme.Accent.G},{CliTheme.Accent.B})]{Markup.Escape(session.AgentName)}[/]";
-        }
-
-        // Readiness badge — analogue of "Auto mode"
-        string badge;
-        if (session.IsRunning && session.AgentName is not null)
-        {
-            badge = $"[rgb({CliTheme.Accent.R},{CliTheme.Accent.G},{CliTheme.Accent.B})]⚡ Ready[/]";
-        }
-        else if (session.HasWorkspace && !session.IsRunning)
-        {
-            badge = $"[rgb({CliTheme.Warning.R},{CliTheme.Warning.G},{CliTheme.Warning.B})]◐ Stopped[/]";
-        }
-        else
-        {
-            badge = $"[rgb({CliTheme.Muted.R},{CliTheme.Muted.G},{CliTheme.Muted.B})]◯ Idle[/]";
-        }
-
-        var hint = $"[rgb({CliTheme.Muted.R},{CliTheme.Muted.G},{CliTheme.Muted.B})]↵ send  ·  Shift+↵ newline  ·  Ctrl+C exit[/]";
-
-        // Use a Grid so the left cluster hugs the left edge and the
-        // right cluster hugs the right — mirroring the screenshot.
-        var grid = new Grid()
-            .AddColumn(new GridColumn().NoWrap().PadRight(2))
-            .AddColumn(new GridColumn().NoWrap())
-            .AddColumn(new GridColumn())
-            .AddColumn(new GridColumn().NoWrap().PadLeft(2).RightAligned())
-            .AddColumn(new GridColumn().NoWrap().PadLeft(2).RightAligned());
-
-        grid.AddRow(
-            new Markup(glyphs),
-            new Markup(context),
-            new Markup(string.Empty),
-            new Markup(badge),
-            new Markup(hint));
-
-        return grid;
     }
 
     private static bool KeyAvailable()
