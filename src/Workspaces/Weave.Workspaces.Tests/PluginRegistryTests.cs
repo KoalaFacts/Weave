@@ -6,6 +6,8 @@ namespace Weave.Workspaces.Tests;
 
 public sealed class PluginRegistryTests
 {
+    private readonly PluginConfigResolver _configResolver = new();
+
     private static readonly PluginSchema TestSchema = new()
     {
         Type = "test",
@@ -297,7 +299,7 @@ public sealed class PluginRegistryTests
         };
 
         var def = new PluginDefinition { Type = "test" };
-        var resolved = PluginRegistry.ResolveConfig(def, schema);
+        var resolved = _configResolver.Resolve(def, schema);
 
         resolved.Config["timeout"].ShouldBe("30");
     }
@@ -318,7 +320,7 @@ public sealed class PluginRegistryTests
             Type = "test",
             Config = new Dictionary<string, string> { ["timeout"] = "60" }
         };
-        var resolved = PluginRegistry.ResolveConfig(def, schema);
+        var resolved = _configResolver.Resolve(def, schema);
 
         resolved.Config["timeout"].ShouldBe("60");
     }
@@ -339,7 +341,7 @@ public sealed class PluginRegistryTests
             };
 
             var def = new PluginDefinition { Type = "test" };
-            var resolved = PluginRegistry.ResolveConfig(def, schema);
+            var resolved = _configResolver.Resolve(def, schema);
 
             resolved.Config["addr"].ShouldBe("from-env");
         }
@@ -369,7 +371,7 @@ public sealed class PluginRegistryTests
                 Type = "test",
                 Config = new Dictionary<string, string> { ["addr"] = "explicit" }
             };
-            var resolved = PluginRegistry.ResolveConfig(def, schema);
+            var resolved = _configResolver.Resolve(def, schema);
 
             resolved.Config["addr"].ShouldBe("explicit");
         }
@@ -391,7 +393,7 @@ public sealed class PluginRegistryTests
         };
 
         var def = new PluginDefinition { Type = "test" };
-        var error = PluginRegistry.ValidateConfig(def, schema);
+        var error = _configResolver.Validate(def, schema);
 
         error.ShouldNotBeNull();
         error.ShouldContain("url");
@@ -413,7 +415,7 @@ public sealed class PluginRegistryTests
             Type = "test",
             Config = new Dictionary<string, string> { ["url"] = "http://localhost" }
         };
-        var error = PluginRegistry.ValidateConfig(def, schema);
+        var error = _configResolver.Validate(def, schema);
 
         error.ShouldBeNull();
     }
@@ -430,7 +432,7 @@ public sealed class PluginRegistryTests
         };
 
         var def = new PluginDefinition { Type = "test" };
-        var error = PluginRegistry.ValidateConfig(def, schema);
+        var error = _configResolver.Validate(def, schema);
 
         error.ShouldNotBeNull();
         error.ShouldContain("MY_ADDR");

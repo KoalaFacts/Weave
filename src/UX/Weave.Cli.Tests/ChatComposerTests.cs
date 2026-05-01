@@ -25,7 +25,7 @@ public class ChatComposerTests
     [Fact]
     public void LineStart_FirstLine_ReturnsZero()
     {
-        var c = new ChatComposer();
+        var c = new ChatTextBuffer();
         c.Buffer.Append("hello");
         c.LineStart(3).ShouldBe(0);
     }
@@ -33,7 +33,7 @@ public class ChatComposerTests
     [Fact]
     public void LineStart_SecondLine_ReturnsAfterNewline()
     {
-        var c = new ChatComposer();
+        var c = new ChatTextBuffer();
         c.Buffer.Append("first\nsecond");
         // cursor at 's' of "second" = index 6
         c.LineStart(8).ShouldBe(6);
@@ -42,7 +42,7 @@ public class ChatComposerTests
     [Fact]
     public void LineEnd_FirstLine_ReturnsNewlinePos()
     {
-        var c = new ChatComposer();
+        var c = new ChatTextBuffer();
         c.Buffer.Append("first\nsecond");
         c.LineEnd(0).ShouldBe(5);
     }
@@ -50,7 +50,7 @@ public class ChatComposerTests
     [Fact]
     public void LineEnd_LastLine_ReturnsLength()
     {
-        var c = new ChatComposer();
+        var c = new ChatTextBuffer();
         c.Buffer.Append("first\nsecond");
         c.LineEnd(6).ShouldBe(12);
     }
@@ -58,7 +58,7 @@ public class ChatComposerTests
     [Fact]
     public void LineStart_AtNewline_ReturnsStartOfCurrentLine()
     {
-        var c = new ChatComposer();
+        var c = new ChatTextBuffer();
         c.Buffer.Append("ab\ncd");
         // from = 3 → 'c', should return 3 (start of second line)
         c.LineStart(3).ShouldBe(3);
@@ -69,7 +69,7 @@ public class ChatComposerTests
     [Fact]
     public void HandleKey_PrintableChar_InsertsAtCursor()
     {
-        var c = new ChatComposer();
+        var c = new ChatComposerEditor();
         c.HandleKey(CharKey('h'), out var submitted);
         submitted.ShouldBeFalse();
         c.Buffer.ToString().ShouldBe("h");
@@ -79,7 +79,7 @@ public class ChatComposerTests
     [Fact]
     public void HandleKey_MultipleChars_BuildsString()
     {
-        var c = new ChatComposer();
+        var c = new ChatComposerEditor();
         c.HandleKey(CharKey('h'), out _);
         c.HandleKey(CharKey('i'), out _);
         c.Buffer.ToString().ShouldBe("hi");
@@ -91,7 +91,7 @@ public class ChatComposerTests
     [Fact]
     public void HandleKey_Backspace_DeletesPreviousChar()
     {
-        var c = new ChatComposer();
+        var c = new ChatComposerEditor();
         c.Buffer.Append("hi");
         c.CursorPosition = 2;
         c.HandleKey(SpecialKey(ConsoleKey.Backspace), out _);
@@ -102,7 +102,7 @@ public class ChatComposerTests
     [Fact]
     public void HandleKey_Backspace_AtStart_Noop()
     {
-        var c = new ChatComposer();
+        var c = new ChatComposerEditor();
         c.Buffer.Append("hi");
         c.CursorPosition = 0;
         c.HandleKey(SpecialKey(ConsoleKey.Backspace), out _);
@@ -115,7 +115,7 @@ public class ChatComposerTests
     [Fact]
     public void HandleKey_Delete_DeletesCharAtCursor()
     {
-        var c = new ChatComposer();
+        var c = new ChatComposerEditor();
         c.Buffer.Append("hi");
         c.CursorPosition = 0;
         c.HandleKey(SpecialKey(ConsoleKey.Delete), out _);
@@ -126,7 +126,7 @@ public class ChatComposerTests
     [Fact]
     public void HandleKey_Delete_AtEnd_Noop()
     {
-        var c = new ChatComposer();
+        var c = new ChatComposerEditor();
         c.Buffer.Append("hi");
         c.CursorPosition = 2;
         c.HandleKey(SpecialKey(ConsoleKey.Delete), out _);
@@ -138,7 +138,7 @@ public class ChatComposerTests
     [Fact]
     public void HandleKey_Home_MovesCursorToLineStart()
     {
-        var c = new ChatComposer();
+        var c = new ChatComposerEditor();
         c.Buffer.Append("hello");
         c.CursorPosition = 3;
         c.HandleKey(SpecialKey(ConsoleKey.Home), out _);
@@ -148,7 +148,7 @@ public class ChatComposerTests
     [Fact]
     public void HandleKey_End_MovesCursorToLineEnd()
     {
-        var c = new ChatComposer();
+        var c = new ChatComposerEditor();
         c.Buffer.Append("hello");
         c.CursorPosition = 1;
         c.HandleKey(SpecialKey(ConsoleKey.End), out _);
@@ -160,7 +160,7 @@ public class ChatComposerTests
     [Fact]
     public void HandleKey_LeftArrow_MovesCursorLeft()
     {
-        var c = new ChatComposer();
+        var c = new ChatComposerEditor();
         c.Buffer.Append("hi");
         c.CursorPosition = 2;
         c.HandleKey(SpecialKey(ConsoleKey.LeftArrow), out _);
@@ -170,7 +170,7 @@ public class ChatComposerTests
     [Fact]
     public void HandleKey_RightArrow_MovesCursorRight()
     {
-        var c = new ChatComposer();
+        var c = new ChatComposerEditor();
         c.Buffer.Append("hi");
         c.CursorPosition = 0;
         c.HandleKey(SpecialKey(ConsoleKey.RightArrow), out _);
@@ -180,7 +180,7 @@ public class ChatComposerTests
     [Fact]
     public void HandleKey_LeftArrow_AtStart_StaysAtZero()
     {
-        var c = new ChatComposer();
+        var c = new ChatComposerEditor();
         c.Buffer.Append("hi");
         c.CursorPosition = 0;
         c.HandleKey(SpecialKey(ConsoleKey.LeftArrow), out _);
@@ -190,7 +190,7 @@ public class ChatComposerTests
     [Fact]
     public void HandleKey_RightArrow_AtEnd_StaysAtEnd()
     {
-        var c = new ChatComposer();
+        var c = new ChatComposerEditor();
         c.Buffer.Append("hi");
         c.CursorPosition = 2;
         c.HandleKey(SpecialKey(ConsoleKey.RightArrow), out _);
@@ -202,7 +202,7 @@ public class ChatComposerTests
     [Fact]
     public void HandleKey_Enter_NonEmpty_Submits()
     {
-        var c = new ChatComposer();
+        var c = new ChatComposerEditor();
         c.Buffer.Append("hello");
         c.CursorPosition = 5;
         c.HandleKey(Key('\r', ConsoleKey.Enter), out var submitted);
@@ -212,7 +212,7 @@ public class ChatComposerTests
     [Fact]
     public void HandleKey_Enter_Empty_DoesNotSubmit()
     {
-        var c = new ChatComposer();
+        var c = new ChatComposerEditor();
         c.HandleKey(Key('\r', ConsoleKey.Enter), out var submitted);
         submitted.ShouldBeFalse();
     }
@@ -220,7 +220,7 @@ public class ChatComposerTests
     [Fact]
     public void HandleKey_ShiftEnter_InsertsNewline()
     {
-        var c = new ChatComposer();
+        var c = new ChatComposerEditor();
         c.Buffer.Append("line1");
         c.CursorPosition = 5;
         c.HandleKey(Key('\r', ConsoleKey.Enter, shift: true), out var submitted);
@@ -233,7 +233,7 @@ public class ChatComposerTests
     [Fact]
     public void HandleKey_Escape_ClearsBuffer()
     {
-        var c = new ChatComposer();
+        var c = new ChatComposerEditor();
         c.Buffer.Append("hello");
         c.CursorPosition = 5;
         c.HandleKey(SpecialKey(ConsoleKey.Escape), out _);
@@ -246,7 +246,7 @@ public class ChatComposerTests
     [Fact]
     public void HandleKey_CtrlW_DeletesLastWord()
     {
-        var c = new ChatComposer();
+        var c = new ChatComposerEditor();
         c.Buffer.Append("hello world");
         c.CursorPosition = 11;
         c.HandleKey(Key('\u0017', ConsoleKey.W, ctrl: true), out _);
@@ -256,7 +256,7 @@ public class ChatComposerTests
     [Fact]
     public void HandleKey_CtrlW_AtStart_Noop()
     {
-        var c = new ChatComposer();
+        var c = new ChatComposerEditor();
         c.Buffer.Append("hello");
         c.CursorPosition = 0;
         c.HandleKey(Key('\u0017', ConsoleKey.W, ctrl: true), out _);
@@ -267,7 +267,7 @@ public class ChatComposerTests
     [Fact]
     public void HandleKey_CtrlW_SingleWord_ClearsAll()
     {
-        var c = new ChatComposer();
+        var c = new ChatComposerEditor();
         c.Buffer.Append("hello");
         c.CursorPosition = 5;
         c.HandleKey(Key('\u0017', ConsoleKey.W, ctrl: true), out _);
@@ -280,7 +280,7 @@ public class ChatComposerTests
     [Fact]
     public void HandleKey_CtrlU_ClearsToLineStart()
     {
-        var c = new ChatComposer();
+        var c = new ChatComposerEditor();
         c.Buffer.Append("hello world");
         c.CursorPosition = 6;
         c.HandleKey(Key('\u0015', ConsoleKey.U, ctrl: true), out _);
@@ -291,7 +291,7 @@ public class ChatComposerTests
     [Fact]
     public void HandleKey_CtrlU_AtStart_Noop()
     {
-        var c = new ChatComposer();
+        var c = new ChatComposerEditor();
         c.Buffer.Append("hello");
         c.CursorPosition = 0;
         c.HandleKey(Key('\u0015', ConsoleKey.U, ctrl: true), out _);
@@ -304,7 +304,7 @@ public class ChatComposerTests
     [Fact]
     public void HandleKey_SingleCtrlC_DoesNotExit()
     {
-        var c = new ChatComposer();
+        var c = new ChatComposerEditor();
         c.HandleKey(Key('\u0003', ConsoleKey.C, ctrl: true), out _);
         c.ExitRequested.ShouldBeFalse();
     }
@@ -312,7 +312,7 @@ public class ChatComposerTests
     [Fact]
     public void HandleKey_DoubleCtrlC_SetsExitRequested()
     {
-        var c = new ChatComposer();
+        var c = new ChatComposerEditor();
         c.HandleKey(Key('\u0003', ConsoleKey.C, ctrl: true), out _);
         c.HandleKey(Key('\u0003', ConsoleKey.C, ctrl: true), out _);
         c.ExitRequested.ShouldBeTrue();
@@ -323,7 +323,7 @@ public class ChatComposerTests
     [Fact]
     public void AcceptCompletion_SetsBufferToSlashCommand()
     {
-        var c = new ChatComposer();
+        var c = new ChatComposerEditor();
         c.Buffer.Append("/he");
         c.CursorPosition = 3;
         c.AcceptCompletion("help");
@@ -334,7 +334,7 @@ public class ChatComposerTests
     [Fact]
     public void AcceptCompletion_ClearsPreviousContent()
     {
-        var c = new ChatComposer();
+        var c = new ChatComposerEditor();
         c.Buffer.Append("some random text");
         c.CursorPosition = 16;
         c.AcceptCompletion("open");
@@ -346,7 +346,7 @@ public class ChatComposerTests
     [Fact]
     public void HandleKey_InsertAtMidPosition_ShiftsRight()
     {
-        var c = new ChatComposer();
+        var c = new ChatComposerEditor();
         c.Buffer.Append("hllo");
         c.CursorPosition = 1;
         c.HandleKey(CharKey('e'), out _);
@@ -359,7 +359,7 @@ public class ChatComposerTests
     [Fact]
     public void HandleKey_UpArrow_EmptyHistory_Noop()
     {
-        var c = new ChatComposer();
+        var c = new ChatComposerEditor();
         c.Buffer.Append("test");
         c.CursorPosition = 4;
         // Up arrow should not change anything when there's no history

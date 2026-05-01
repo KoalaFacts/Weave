@@ -11,6 +11,7 @@ public sealed partial class PluginRegistry : IPluginRegistry, IDisposable
     private readonly Dictionary<string, IPluginConnector> _connectorsByType;
     private readonly ConcurrentDictionary<string, PluginStatus> _active = new(StringComparer.OrdinalIgnoreCase);
     private readonly SemaphoreSlim _connectLock = new(1, 1);
+    private readonly PluginConfigResolver _configResolver = new();
     private readonly ILogger<PluginRegistry> _logger;
 
     public PluginRegistry(IEnumerable<IPluginConnector> connectors, ILogger<PluginRegistry> logger)
@@ -54,8 +55,8 @@ public sealed partial class PluginRegistry : IPluginRegistry, IDisposable
         }
 
         // Auto-fill config from environment and validate against schema
-        var resolved = ResolveConfig(definition, connector.Schema);
-        var validationError = ValidateConfig(resolved, connector.Schema);
+        var resolved = _configResolver.Resolve(definition, connector.Schema);
+        var validationError = _configResolver.Validate(resolved, connector.Schema);
         if (validationError is not null)
         {
             var status = new PluginStatus
@@ -80,7 +81,7 @@ public sealed partial class PluginRegistry : IPluginRegistry, IDisposable
             // Redact secrets from the status info
             var status = connStatus with
             {
-                Info = RedactSecrets(connStatus.Info, connector.Schema)
+                Info = _configResolver.RedactSecrets(connStatus.Info, connector.Schema)
             };
 
             if (!status.IsConnected)
@@ -166,77 +167,6 @@ public sealed partial class PluginRegistry : IPluginRegistry, IDisposable
     }
 
     public void Dispose() => _connectLock.Dispose();
-
-    /// <summary>
-    /// Auto-fill missing config values from environment variables declared in the schema.
-    /// Returns a new <see cref="PluginDefinition"/> with resolved config.
-    /// </summary>
-    internal static PluginDefinition ResolveConfig(PluginDefinition definition, PluginSchema schema)
-    {
-        var resolved = new Dictionary<string, string>(definition.Config, StringComparer.OrdinalIgnoreCase);
-
-        foreach (var field in schema.Config)
-        {
-            if (resolved.ContainsKey(field.Name))
-                continue;
-
-            // Try environment variable
-            if (field.EnvVar is not null)
-            {
-                var envValue = Environment.GetEnvironmentVariable(field.EnvVar);
-                if (envValue is not null)
-                {
-                    resolved[field.Name] = envValue;
-                    continue;
-                }
-            }
-
-            // Apply default
-            if (field.Default is not null)
-                resolved[field.Name] = field.Default;
-        }
-
-        return definition with { Config = resolved };
-    }
-
-    /// <summary>
-    /// Validate that all required config fields are present.
-    /// Returns an error message, or null if valid.
-    /// </summary>
-    internal static string? ValidateConfig(PluginDefinition definition, PluginSchema schema)
-    {
-        var missing = new List<string>();
-        foreach (var field in schema.Config)
-        {
-            if (field.Required && !definition.Config.ContainsKey(field.Name))
-                missing.Add(field.EnvVar is not null
-                    ? $"'{field.Name}' (or set {field.EnvVar})"
-                    : $"'{field.Name}'");
-        }
-
-        return missing.Count > 0
-            ? $"Missing required config: {string.Join(", ", missing)}"
-            : null;
-    }
-
-    /// <summary>
-    /// Replace secret values in status info with "***".
-    /// </summary>
-    private static IReadOnlyDictionary<string, string> RedactSecrets(
-        IReadOnlyDictionary<string, string> info, PluginSchema schema)
-    {
-        var secretNames = new HashSet<string>(
-            schema.Config.Where(f => f.Secret).Select(f => f.Name),
-            StringComparer.OrdinalIgnoreCase);
-
-        if (secretNames.Count == 0)
-            return info;
-
-        return info.ToDictionary(
-            kvp => kvp.Key,
-            kvp => secretNames.Contains(kvp.Key) ? "***" : kvp.Value,
-            StringComparer.OrdinalIgnoreCase);
-    }
 
     [LoggerMessage(Level = LogLevel.Information, Message = "Plugin '{Name}' ({Type}) connected")]
     private partial void LogPluginConnected(string name, string type);
