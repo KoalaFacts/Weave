@@ -4,6 +4,8 @@ namespace Weave.Cli.Commands;
 
 internal sealed class VersionCliCommand : ICliCommand<NoCliOptions>
 {
+    private readonly VersionService _versionService = new();
+
     public string Name => "version";
 
     public IReadOnlyList<string> Aliases => ["v"];
@@ -12,8 +14,8 @@ internal sealed class VersionCliCommand : ICliCommand<NoCliOptions>
 
     public Task<int> ExecuteAsync(NoCliOptions options, CancellationToken ct)
     {
-        var current = VersionInfo.Current();
-        var cache = VersionInfo.LoadCache();
+        var current = _versionService.Current();
+        var cache = _versionService.LoadCache();
 
         AnsiConsole.MarkupLine(
             $"weave [bold rgb({CliTheme.Primary.R},{CliTheme.Primary.G},{CliTheme.Primary.B})]v{Markup.Escape(current)}[/]");
@@ -24,7 +26,7 @@ internal sealed class VersionCliCommand : ICliCommand<NoCliOptions>
             return Task.FromResult(0);
         }
 
-        var newer = VersionInfo.IsNewer(cache.LatestVersion, current);
+        var newer = _versionService.IsNewer(cache.LatestVersion, current);
         if (newer)
         {
             AnsiConsole.MarkupLine(
@@ -32,7 +34,7 @@ internal sealed class VersionCliCommand : ICliCommand<NoCliOptions>
                 $"↑ v{Markup.Escape(cache.LatestVersion)} is available[/] " +
                 $"[rgb({CliTheme.Muted.R},{CliTheme.Muted.G},{CliTheme.Muted.B})]" +
                 $"(checked {cache.CheckedAt.ToLocalTime():u})[/]");
-            CliTheme.WriteMuted($"  Upgrade:  {VersionInfo.UpgradeCommand}");
+            CliTheme.WriteMuted($"  Upgrade:  {VersionService.UpgradeCommand}");
         }
         else
         {

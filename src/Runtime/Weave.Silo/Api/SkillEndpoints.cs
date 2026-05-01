@@ -8,6 +8,9 @@ namespace Weave.Silo.Api;
 
 public static class SkillEndpoints
 {
+    private static readonly SkillRequestValidator Validator = new();
+    private static readonly SkillDocumentMapper DocumentMapper = new();
+
     public static RouteGroupBuilder MapSkillEndpoints(this IEndpointRouteBuilder routes)
     {
         var group = routes.MapGroup("/api/workspaces/{workspaceId}/skills")
@@ -98,29 +101,11 @@ public static class SkillEndpoints
         ICommandDispatcher dispatcher,
         CancellationToken ct)
     {
-        var errors = ValidateStoreSkill(request);
+        var errors = Validator.ValidateStoreSkill(request);
         if (errors is not null)
             return ResultExtensions.ValidationFailed(errors);
 
-        var skill = new SkillDocument
-        {
-            SkillId = SkillId.New(),
-            Title = request.Title,
-            Description = request.Description,
-            Tags = request.Tags,
-            Steps = request.Steps.Select((s, i) => new SkillStep
-            {
-                Order = i,
-                Action = s.Action,
-                ToolName = s.ToolName,
-                ExpectedOutcome = s.ExpectedOutcome
-            }).ToList(),
-            ToolsUsed = request.ToolsUsed,
-            CreatedByAgent = request.CreatedByAgent,
-            OriginTaskDescription = request.OriginTaskDescription
-        };
-
-        var command = new StoreSkillCommand(WorkspaceId.From(workspaceId), skill);
+        var command = new StoreSkillCommand(WorkspaceId.From(workspaceId), DocumentMapper.FromRequest(request));
         var stored = await dispatcher.DispatchAsync<StoreSkillCommand, SkillDocument>(command, ct);
         return Results.Created(
             $"/api/workspaces/{workspaceId}/skills/{stored.SkillId}",
@@ -166,19 +151,4 @@ public static class SkillEndpoints
         return Results.NoContent();
     }
 
-    private static Dictionary<string, string[]>? ValidateStoreSkill(StoreSkillRequest request)
-    {
-        Dictionary<string, string[]>? errors = null;
-
-        if (string.IsNullOrWhiteSpace(request.Title))
-            (errors ??= [])["title"] = ["Title is required."];
-        if (string.IsNullOrWhiteSpace(request.Description))
-            (errors ??= [])["description"] = ["Description is required."];
-        if (request.Steps is not { Count: > 0 })
-            (errors ??= [])["steps"] = ["At least one step is required."];
-        if (string.IsNullOrWhiteSpace(request.CreatedByAgent))
-            (errors ??= [])["createdByAgent"] = ["CreatedByAgent is required."];
-
-        return errors;
-    }
 }

@@ -37,7 +37,7 @@ internal sealed class TuiShell
 
         AnsiConsole.Clear();
         CliTheme.WriteBanner();
-        VersionInfo.KickOffRefreshIfStale();
+        new VersionService().KickOffRefreshIfStale();
         await _dashboard.RefreshAsync(cancellationToken);
         _welcomeScreen.Render();
 
