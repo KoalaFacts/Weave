@@ -97,13 +97,10 @@ public sealed class HeartbeatActorClusterTests
 }
 
 /// <summary>
-/// Exercises <see cref="HeartbeatActor.PerformTickAsync"/> directly against
+/// Exercises <see cref="HeartbeatTickRunner"/> directly against
 /// a fake agent actor. Covers every tick-path branch — active agent,
 /// inactive agent, max-concurrent retry, per-task failure, state update —
-/// without needing an Orleans actor runtime. The tick logic was factored
-/// into a pure static method per the repo's "promote private methods to
-/// internal for testability" convention (see <c>CLAUDE.md</c> and
-/// <c>ProofValidatorActor</c>).
+/// without needing an Orleans actor runtime.
 /// </summary>
 public sealed class HeartbeatActorTickTests
 {
@@ -113,9 +110,15 @@ public sealed class HeartbeatActorTickTests
         public IAgentActor AgentActor { get; } = Substitute.For<IAgentActor>();
         public Microsoft.Extensions.Time.Testing.FakeTimeProvider Time { get; } =
             new(new DateTimeOffset(2026, 4, 19, 12, 0, 0, TimeSpan.Zero));
+        public HeartbeatTickRunner Runner { get; }
 
         public Fixture(AgentStatus agentStatus = AgentStatus.Active)
         {
+            Runner = new HeartbeatTickRunner(
+                ActorProvider,
+                Time,
+                NullLogger<HeartbeatTickRunner>.Instance,
+                new HeartbeatSchedule());
             AgentActor.GetStateAsync().Returns(new AgentState
             {
                 AgentId = "ws-1/agent-1",
@@ -138,7 +141,7 @@ public sealed class HeartbeatActorTickTests
         }
 
         public Task<HeartbeatState> PerformTickAsync(HeartbeatState state, string agentKey = "ws-1/agent-1")
-        => HeartbeatActor.PerformTickAsync(state, agentKey, ActorProvider, Time, NullLogger<HeartbeatActor>.Instance, CancellationToken.None);
+            => Runner.ExecuteAsync(state, agentKey, CancellationToken.None);
     }
 
     private static HeartbeatState RunningStateWithTasks(params string[] tasks) => new()

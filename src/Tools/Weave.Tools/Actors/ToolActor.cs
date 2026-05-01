@@ -1,9 +1,8 @@
-using System.Text.Json;
 using Microsoft.Extensions.Logging;
-using Weave.Security.Actors;
 using Weave.Security.Scanning;
 using Weave.Security.Tokens;
 using Weave.Shared.Events;
+using Weave.Shared.Ids;
 using Weave.Shared.Lifecycle;
 using Weave.Tools.Discovery;
 using Weave.Tools.Events;
@@ -20,36 +19,32 @@ public sealed partial class ToolActor(
     IEventBus eventBus,
     ILogger<ToolActor> logger) : IToolActor
 {
+    private readonly ToolActorIdentity _identity = new();
+    private readonly ToolInvocationLeakGuard _leakGuard = new(leakScanner, eventBus, logger);
+    private readonly ToolSecretSubstitutor _secretSubstitutor = new(actors);
     private ToolHandle? _handle;
     private ToolSpec? _definition;
-    private string _workspaceId = string.Empty;
-    private string _toolName = string.Empty;
 
     public Task OnActivatedAsync(string? key, CancellationToken cancellationToken)
     {
-        if (!string.IsNullOrWhiteSpace(key))
-        {
-            var parts = key.Split('/', 2);
-            _workspaceId = parts.Length > 1 ? parts[0] : key;
-            _toolName = parts.Length > 1 ? parts[1] : key;
-        }
+        _identity.Activate(key);
         return Task.CompletedTask;
     }
 
     public async Task<ToolHandle> ConnectAsync(ToolSpec definition, CapabilityToken token)
     {
-        EnsureIdentity(definition, token);
+        _identity.Ensure(definition, token);
         if (!tokenService.Validate(token))
             throw new UnauthorizedAccessException("Invalid or expired capability token");
 
-        if (!token.HasGrant($"tool:{_toolName}") && !token.HasGrant("tool:*"))
-            throw new UnauthorizedAccessException($"Token does not grant access to tool '{_toolName}'");
+        if (!token.HasGrant($"tool:{_identity.ToolName}") && !token.HasGrant("tool:*"))
+            throw new UnauthorizedAccessException($"Token does not grant access to tool '{_identity.ToolName}'");
 
         _definition = definition;
 
         var context = new LifecycleContext
         {
-            WorkspaceId = Shared.Ids.WorkspaceId.From(_workspaceId),
+            WorkspaceId = WorkspaceId.From(_identity.WorkspaceId),
             Phase = LifecyclePhase.ToolConnecting
         };
 
@@ -63,7 +58,7 @@ public sealed partial class ToolActor(
             context with { Phase = LifecyclePhase.ToolConnected },
             CancellationToken.None);
 
-        LogToolConnected(_toolName, _workspaceId);
+        LogToolConnected(_identity.ToolName, _identity.WorkspaceId);
         return _handle;
     }
 
@@ -74,7 +69,7 @@ public sealed partial class ToolActor(
 
         var context = new LifecycleContext
         {
-            WorkspaceId = Shared.Ids.WorkspaceId.From(_workspaceId),
+            WorkspaceId = WorkspaceId.From(_identity.WorkspaceId),
             Phase = LifecyclePhase.ToolDisconnecting
         };
 
@@ -89,86 +84,32 @@ public sealed partial class ToolActor(
             CancellationToken.None);
 
         _handle = null;
-        LogToolDisconnected(_toolName, _workspaceId);
+        LogToolDisconnected(_identity.ToolName, _identity.WorkspaceId);
     }
 
     public async Task<ToolResult> InvokeAsync(ToolInvocation invocation, CapabilityToken token)
     {
-        EnsureIdentity(invocation: invocation, token: token);
+        _identity.Ensure(invocation: invocation, token: token);
         if (!tokenService.Validate(token))
             throw new UnauthorizedAccessException("Invalid or expired capability token");
 
         if (_handle is null || _definition is null)
-            throw new InvalidOperationException($"Tool '{_toolName}' is not connected");
+            throw new InvalidOperationException($"Tool '{_identity.ToolName}' is not connected");
 
-        var wsId = Shared.Ids.WorkspaceId.From(_workspaceId);
+        var blockedResult = await _leakGuard.BlockIfOutboundLeaksAsync(_identity.WorkspaceId, _identity.ToolName, invocation);
+        if (blockedResult is not null)
+            return blockedResult;
 
-        // Scan the original outbound request before placeholders are substituted at the network boundary.
-        var outboundPayload = invocation.RawInput ?? JsonSerializer.Serialize(invocation.Parameters, ToolJsonContext.Default.DictionaryStringString);
-        if (!string.IsNullOrWhiteSpace(outboundPayload))
-        {
-            var scanContext = new ScanContext
-            {
-                WorkspaceId = _workspaceId,
-                SourceComponent = $"tool:{_toolName}",
-                Direction = ScanDirection.Outbound
-            };
-            var scanResult = await leakScanner.ScanStringAsync(outboundPayload, scanContext);
-            if (scanResult.HasLeaks)
-            {
-                LogLeakDetectedBlocked(_toolName);
-
-                await eventBus.PublishAsync(new ToolInvocationBlockedEvent
-                {
-                    SourceId = $"{_workspaceId}/{_toolName}",
-                    ToolName = _toolName,
-                    WorkspaceId = wsId,
-                    Reason = "Secret leak detected in outbound payload"
-                }, CancellationToken.None);
-
-                return new ToolResult
-                {
-                    Success = false,
-                    ToolName = _toolName,
-                    Error = "Tool invocation blocked: potential secret leak detected in payload"
-                };
-            }
-        }
-
-        var effectiveInvocation = await SubstituteSecretsAsync(invocation);
+        var effectiveInvocation = await _secretSubstitutor.SubstituteAsync(_identity.WorkspaceId, invocation);
         var connector = discovery.GetConnector(_definition.Type);
         var result = await connector.InvokeAsync(_handle, effectiveInvocation);
-
-        if (result.Success && !string.IsNullOrEmpty(result.Output))
-        {
-            var responseScanContext = new ScanContext
-            {
-                WorkspaceId = _workspaceId,
-                SourceComponent = $"tool:{_toolName}",
-                Direction = ScanDirection.Inbound
-            };
-            var responseScan = await leakScanner.ScanStringAsync(result.Output, responseScanContext);
-            if (responseScan.HasLeaks)
-            {
-                LogLeakDetectedRedacted(_toolName);
-
-                await eventBus.PublishAsync(new ToolInvocationBlockedEvent
-                {
-                    SourceId = $"{_workspaceId}/{_toolName}",
-                    ToolName = _toolName,
-                    WorkspaceId = wsId,
-                    Reason = "Secret leak detected in inbound response"
-                }, CancellationToken.None);
-
-                return result with { Output = "***REDACTED: potential secret detected in response***" };
-            }
-        }
+        result = await _leakGuard.RedactIfInboundLeaksAsync(_identity.WorkspaceId, _identity.ToolName, result);
 
         await eventBus.PublishAsync(new ToolInvocationCompletedEvent
         {
-            SourceId = $"{_workspaceId}/{_toolName}",
-            ToolName = _toolName,
-            WorkspaceId = wsId,
+            SourceId = $"{_identity.WorkspaceId}/{_identity.ToolName}",
+            ToolName = _identity.ToolName,
+            WorkspaceId = WorkspaceId.From(_identity.WorkspaceId),
             Success = result.Success,
             Duration = result.Duration
         }, CancellationToken.None);
@@ -179,7 +120,7 @@ public sealed partial class ToolActor(
     public async Task<ToolSchema> GetSchemaAsync()
     {
         if (_handle is null || _definition is null)
-            return new ToolSchema { ToolName = _toolName, Description = "Tool not connected" };
+            return new ToolSchema { ToolName = _identity.ToolName, Description = "Tool not connected" };
 
         var connector = discovery.GetConnector(_definition.Type);
         return await connector.DiscoverSchemaAsync(_handle);
@@ -187,52 +128,10 @@ public sealed partial class ToolActor(
 
     public Task<ToolHandle?> GetHandleAsync() => Task.FromResult(_handle);
 
-    private async Task<ToolInvocation> SubstituteSecretsAsync(ToolInvocation invocation)
-    {
-        var proxy = actors.GetActor<ISecretProxyActor>(VirtualActorId.From(_workspaceId));
-        var parameters = new Dictionary<string, string>(invocation.Parameters.Count, StringComparer.Ordinal);
-        foreach (var (key, value) in invocation.Parameters)
-            parameters[key] = await proxy.SubstituteAsync(value);
-
-        return invocation with
-        {
-            Parameters = parameters,
-            RawInput = invocation.RawInput is null ? null : await proxy.SubstituteAsync(invocation.RawInput)
-        };
-    }
-
-    private void EnsureIdentity(ToolSpec? definition = null, CapabilityToken? token = null, ToolInvocation? invocation = null)
-    {
-        if (string.IsNullOrWhiteSpace(_workspaceId))
-        {
-            if (token is null || string.IsNullOrWhiteSpace(token.WorkspaceId))
-                throw new InvalidOperationException(
-                    "ToolActor identity cannot be established. Activate via the runtime "
-                    + "(real actor call) or provide a capability token whose WorkspaceId "
-                    + "identifies the workspace.");
-            _workspaceId = token.WorkspaceId;
-        }
-
-        if (string.IsNullOrWhiteSpace(_toolName))
-        {
-            var resolved = definition?.Name ?? invocation?.ToolName;
-            if (string.IsNullOrWhiteSpace(resolved))
-                throw new InvalidOperationException(
-                    "ToolActor tool name cannot be established. Provide a ToolSpec "
-                    + "definition or a ToolInvocation.");
-            _toolName = resolved;
-        }
-    }
-
     [LoggerMessage(Level = LogLevel.Information, Message = "Tool '{Tool}' connected in workspace '{Workspace}'")]
     private partial void LogToolConnected(string tool, string workspace);
 
     [LoggerMessage(Level = LogLevel.Information, Message = "Tool '{Tool}' disconnected from workspace '{Workspace}'")]
     private partial void LogToolDisconnected(string tool, string workspace);
 
-    [LoggerMessage(Level = LogLevel.Warning, Message = "Secret leak detected in tool invocation for '{Tool}' - blocked")]
-    private partial void LogLeakDetectedBlocked(string tool);
-
-    [LoggerMessage(Level = LogLevel.Warning, Message = "Secret leak detected in tool response from '{Tool}' - redacted")]
-    private partial void LogLeakDetectedRedacted(string tool);
 }
