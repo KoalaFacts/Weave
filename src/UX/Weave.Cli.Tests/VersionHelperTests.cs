@@ -14,7 +14,7 @@ public sealed class VersionHelperTests
     [InlineData("not-a-version", "1.0.0", false)]
     public void IsNewer_ParsesVersionStrings(string candidate, string baseline, bool expected)
     {
-        VersionComparer.IsNewer(candidate, baseline).ShouldBe(expected);
+        VersionService.IsNewer(candidate, baseline).ShouldBe(expected);
     }
 
     [Fact]
@@ -22,7 +22,6 @@ public sealed class VersionHelperTests
     {
         var testRoot = Path.Combine(Path.GetTempPath(), "weave-tests", Guid.NewGuid().ToString("N"));
         var cachePath = Path.Combine(testRoot, "update-cache.json");
-        var store = new VersionCacheStore(cachePath);
         var cache = new UpdateCache
         {
             LatestVersion = "1.2.3",
@@ -31,9 +30,9 @@ public sealed class VersionHelperTests
 
         try
         {
-            store.Save(cache);
+            VersionService.SaveCache(cachePath, cache);
 
-            var loaded = store.Load();
+            var loaded = VersionService.LoadCache(cachePath);
 
             loaded.ShouldNotBeNull();
             loaded!.LatestVersion.ShouldBe("1.2.3");
@@ -57,7 +56,7 @@ public sealed class VersionHelperTests
             Directory.CreateDirectory(Path.GetDirectoryName(cachePath)!);
             File.WriteAllText(cachePath, "not json");
 
-            new VersionCacheStore(cachePath).Load().ShouldBeNull();
+            VersionService.LoadCache(cachePath).ShouldBeNull();
         }
         finally
         {
@@ -69,11 +68,14 @@ public sealed class VersionHelperTests
     [Fact]
     public async Task Feed_FetchLatestAsync_ReturnsHighestStableVersion()
     {
-        var feed = CreateFeed("""
+        using var client = CreateClient("""
             { "versions": ["1.0.0", "1.1.0-beta.1", "1.0.2", "2.0.0"] }
             """);
 
-        var latest = await feed.FetchLatestAsync(TestContext.Current.CancellationToken);
+        var latest = await VersionService.FetchLatestAsync(
+            client,
+            new Uri("https://example.test/index.json"),
+            TestContext.Current.CancellationToken);
 
         latest.ShouldBe("2.0.0");
     }
@@ -81,18 +83,18 @@ public sealed class VersionHelperTests
     [Fact]
     public async Task Feed_FetchLatestAsync_NonSuccessStatus_ReturnsNull()
     {
-        var feed = CreateFeed("{}", HttpStatusCode.ServiceUnavailable);
+        using var client = CreateClient("{}", HttpStatusCode.ServiceUnavailable);
 
-        var latest = await feed.FetchLatestAsync(TestContext.Current.CancellationToken);
+        var latest = await VersionService.FetchLatestAsync(
+            client,
+            new Uri("https://example.test/index.json"),
+            TestContext.Current.CancellationToken);
 
         latest.ShouldBeNull();
     }
 
-    private static NuGetVersionFeed CreateFeed(string json, HttpStatusCode statusCode = HttpStatusCode.OK)
-    {
-        var client = new HttpClient(new StubHandler(statusCode, json));
-        return new NuGetVersionFeed(client, new Uri("https://example.test/index.json"));
-    }
+    private static HttpClient CreateClient(string json, HttpStatusCode statusCode = HttpStatusCode.OK) =>
+        new(new StubHandler(statusCode, json));
 
     private sealed class StubHandler(HttpStatusCode statusCode, string content) : HttpMessageHandler
     {

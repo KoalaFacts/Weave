@@ -1,14 +1,19 @@
 using System.Reflection;
+using System.Text.Json;
 
 namespace Weave.Cli.Commands;
 
 internal static class VersionService
 {
     public const string UpgradeCommand = "dotnet tool update --global Weave.Cli";
+    private const string NuGetIndexUrl = "https://api.nuget.org/v3-flatcontainer/weave.cli/index.json";
 
     private static readonly TimeSpan _cacheTtl = TimeSpan.FromHours(24);
-    private static readonly VersionCacheStore _cacheStore = new();
-    private static readonly NuGetVersionFeed _feed = new();
+    private static readonly TimeSpan _networkTimeout = TimeSpan.FromSeconds(3);
+    private static readonly string _weaveHome = Path.Combine(
+        Environment.GetFolderPath(Environment.SpecialFolder.UserProfile), ".weave");
+
+    private static readonly string _cachePath = Path.Combine(_weaveHome, "update-cache.json");
 
     public static string Current()
     {
@@ -30,16 +35,32 @@ internal static class VersionService
             || string.Equals(value, "true", StringComparison.OrdinalIgnoreCase));
     }
 
-    public static UpdateCache? LoadCache() => _cacheStore.Load();
+    public static UpdateCache? LoadCache() => LoadCache(_cachePath);
+
+    internal static UpdateCache? LoadCache(string cacheFilePath)
+    {
+        try
+        {
+            if (!File.Exists(cacheFilePath))
+                return null;
+
+            var json = File.ReadAllText(cacheFilePath);
+            return JsonSerializer.Deserialize(json, VersionJsonContext.Default.UpdateCache);
+        }
+        catch
+        {
+            return null;
+        }
+    }
 
     public static string? PendingUpdateFromCache()
     {
-        var cache = _cacheStore.Load();
+        var cache = LoadCache();
         if (cache is null || string.IsNullOrWhiteSpace(cache.LatestVersion))
             return null;
 
         var current = Current();
-        return VersionComparer.IsNewer(cache.LatestVersion, current) ? cache.LatestVersion : null;
+        return IsNewer(cache.LatestVersion, current) ? cache.LatestVersion : null;
     }
 
     public static void KickOffRefreshIfStale()
@@ -47,7 +68,7 @@ internal static class VersionService
         if (!IsEnabled())
             return;
 
-        var cache = _cacheStore.Load();
+        var cache = LoadCache();
         if (cache is not null && DateTimeOffset.UtcNow - cache.CheckedAt < _cacheTtl)
             return;
 
@@ -55,9 +76,10 @@ internal static class VersionService
         {
             try
             {
-                var latest = await _feed.FetchLatestAsync(CancellationToken.None);
+                using var client = CreateNuGetClient();
+                var latest = await FetchLatestAsync(client, new Uri(NuGetIndexUrl), CancellationToken.None);
                 if (latest is not null)
-                    _cacheStore.Save(new UpdateCache { LatestVersion = latest, CheckedAt = DateTimeOffset.UtcNow });
+                    SaveCache(_cachePath, new UpdateCache { LatestVersion = latest, CheckedAt = DateTimeOffset.UtcNow });
             }
             catch (Exception ex)
             {
@@ -67,6 +89,16 @@ internal static class VersionService
     }
 
     public static async Task<UpdateCheckResult> CheckAsync(CancellationToken ct)
+    {
+        using var client = CreateNuGetClient();
+        return await CheckAsync(_cachePath, client, new Uri(NuGetIndexUrl), ct);
+    }
+
+    internal static async Task<UpdateCheckResult> CheckAsync(
+        string cacheFilePath,
+        HttpClient client,
+        Uri indexUri,
+        CancellationToken ct)
     {
         var current = Current();
         if (!IsEnabled())
@@ -81,12 +113,12 @@ internal static class VersionService
 
         try
         {
-            var latest = await _feed.FetchLatestAsync(ct);
+            var latest = await FetchLatestAsync(client, indexUri, ct);
             if (latest is null)
                 return new UpdateCheckResult(current, null, DateTimeOffset.UtcNow, false, "Could not reach NuGet.");
 
-            _cacheStore.Save(new UpdateCache { LatestVersion = latest, CheckedAt = DateTimeOffset.UtcNow });
-            var newer = VersionComparer.IsNewer(latest, current);
+            SaveCache(cacheFilePath, new UpdateCache { LatestVersion = latest, CheckedAt = DateTimeOffset.UtcNow });
+            var newer = IsNewer(latest, current);
             return new UpdateCheckResult(current, latest, DateTimeOffset.UtcNow, newer, null);
         }
         catch (Exception ex)
@@ -96,5 +128,69 @@ internal static class VersionService
     }
 
     public static bool IsNewer(string candidate, string baseline) =>
-        VersionComparer.IsNewer(candidate, baseline);
+        Parse(candidate).CompareTo(Parse(baseline)) > 0;
+
+    internal static void SaveCache(string cacheFilePath, UpdateCache cache)
+    {
+        try
+        {
+            var directory = Path.GetDirectoryName(cacheFilePath);
+            if (!string.IsNullOrWhiteSpace(directory))
+                Directory.CreateDirectory(directory);
+
+            var json = JsonSerializer.Serialize(cache, VersionJsonContext.Default.UpdateCache);
+            File.WriteAllText(cacheFilePath, json);
+        }
+        catch
+        {
+            // best-effort cache writes must not break CLI startup
+        }
+    }
+
+    internal static async Task<string?> FetchLatestAsync(HttpClient client, Uri indexUri, CancellationToken ct)
+    {
+        using var response = await client.GetAsync(indexUri, ct);
+        if (!response.IsSuccessStatusCode)
+            return null;
+
+        await using var stream = await response.Content.ReadAsStreamAsync(ct);
+        using var document = await JsonDocument.ParseAsync(stream, cancellationToken: ct);
+
+        if (!document.RootElement.TryGetProperty("versions", out var versions)
+            || versions.ValueKind != JsonValueKind.Array)
+        {
+            return null;
+        }
+
+        string? latest = null;
+        foreach (var element in versions.EnumerateArray())
+        {
+            var version = element.GetString();
+            if (string.IsNullOrWhiteSpace(version))
+                continue;
+            if (version.Contains('-', StringComparison.Ordinal))
+                continue;
+
+            if (latest is null || IsNewer(version, latest))
+                latest = version;
+        }
+
+        return latest;
+    }
+
+    private static HttpClient CreateNuGetClient() => new() { Timeout = _networkTimeout };
+
+    private static Version Parse(string version)
+    {
+        var dash = version.IndexOf('-', StringComparison.Ordinal);
+        var plus = version.IndexOf('+', StringComparison.Ordinal);
+        var cut = -1;
+        if (dash >= 0)
+            cut = dash;
+        if (plus >= 0 && (cut == -1 || plus < cut))
+            cut = plus;
+
+        var numeric = cut >= 0 ? version[..cut] : version;
+        return Version.TryParse(numeric, out var parsed) ? parsed : new Version(0, 0, 0);
+    }
 }
