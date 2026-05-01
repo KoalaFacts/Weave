@@ -5,14 +5,6 @@ using Weave.Tools.Models;
 
 namespace Weave.Tools.Discovery;
 
-public interface IToolDiscoveryService
-{
-    IToolConnector GetConnector(ToolType type);
-    IReadOnlyList<ToolType> SupportedTypes { get; }
-    void Register(IToolConnector connector);
-    bool Unregister(ToolType type);
-}
-
 public sealed partial class ToolDiscoveryService : IToolDiscoveryService
 {
     private readonly FrozenDictionary<ToolType, IToolConnector> _builtIn;

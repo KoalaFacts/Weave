@@ -43,12 +43,3 @@ public sealed class ApiAuthOptions
         return reference;
     }
 }
-
-public static class ApiAuthExtensions
-{
-    public static IApplicationBuilder UseApiAuth(this IApplicationBuilder app)
-    {
-        app.UseMiddleware<ApiAuthMiddleware>();
-        return app;
-    }
-}
