@@ -3,11 +3,9 @@ using Weave.Workspaces.Models;
 namespace Weave.Cli.Commands;
 
 internal sealed class WorkspaceAddPluginCliCommand(
-    WorkspacePluginPrompt? prompt = null,
-    WorkspaceManifestFile? manifests = null) : ICliCommand<WorkspaceAddPluginOptions>
+    WorkspacePluginPrompt? prompt = null) : ICliCommand<WorkspaceAddPluginOptions>
 {
     private readonly WorkspacePluginPrompt _prompt = prompt ?? new WorkspacePluginPrompt();
-    private readonly WorkspaceManifestFile _manifests = manifests ?? new WorkspaceManifestFile();
 
     public string Name => "plugin";
 
@@ -26,9 +24,9 @@ internal sealed class WorkspaceAddPluginCliCommand(
         }
 
         var type = _prompt.SelectType(options.Type);
-        var pluginName = _prompt.SelectName(options.PluginName, type);
+        var pluginName = WorkspacePluginPrompt.SelectName(options.PluginName, type);
 
-        var manifest = await _manifests.ReadAsync(manifestPath, ct);
+        var manifest = await WorkspaceManifestFile.ReadAsync(manifestPath, ct);
 
         if (manifest.Plugins.ContainsKey(pluginName))
         {
@@ -45,7 +43,7 @@ internal sealed class WorkspaceAddPluginCliCommand(
             Config = configuration.Config
         };
 
-        await _manifests.WriteAsync(manifestPath, manifest, ct);
+        await WorkspaceManifestFile.WriteAsync(manifestPath, manifest, ct);
 
         CliTheme.WriteSuccess($"Plugin '{pluginName}' ({type}) added to workspace '{manifest.Name}'.");
         return 0;

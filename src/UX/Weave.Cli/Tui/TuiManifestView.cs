@@ -4,10 +4,9 @@ using Weave.Workspaces.Models;
 
 namespace Weave.Cli.Tui;
 
-[System.Diagnostics.CodeAnalysis.SuppressMessage("Performance", "CA1822:Mark members as static", Justification = "Instance collaborator is kept testable and replaceable from the TUI shell.")]
-internal sealed class TuiManifestView
+internal static class TuiManifestView
 {
-    public void Render(WorkspaceManifest manifest, string manifestPath)
+    public static void Render(WorkspaceManifest manifest, string manifestPath)
     {
         var table = CliTheme.CreateTable("Manifest");
         table.AddColumn(CliTheme.StyledColumn("Property"));

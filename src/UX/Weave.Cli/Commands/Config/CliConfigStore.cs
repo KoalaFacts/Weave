@@ -4,8 +4,6 @@ namespace Weave.Cli.Commands;
 
 internal static class CliConfigStore
 {
-    private static readonly CliSecretResolver SecretResolver = new();
-
     private static readonly string WeaveHome = Path.Combine(
         Environment.GetFolderPath(Environment.SpecialFolder.UserProfile), ".weave");
 
@@ -39,13 +37,13 @@ internal static class CliConfigStore
     ///   (plain value)         — used as-is (not recommended for production)
     /// </summary>
     public static string? ResolveConnectionString(string? reference)
-        => SecretResolver.ResolveReference(reference);
+        => CliSecretResolver.ResolveReference(reference);
 
     /// <summary>
     /// Wraps a raw connection string value as an env: reference and
     /// sets the environment variable hint.
     /// </summary>
     public static string ToEnvReference(string storageBackend)
-        => SecretResolver.ToEnvReference(storageBackend);
+        => CliSecretResolver.ToEnvReference(storageBackend);
 }
 

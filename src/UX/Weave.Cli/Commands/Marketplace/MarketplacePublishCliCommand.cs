@@ -1,9 +1,9 @@
+using Spectre.Console;
+
 namespace Weave.Cli.Commands;
 
-internal sealed class MarketplacePublishCliCommand(MarketplaceReviewPrompt? prompt = null) : ICliCommand<MarketplacePublishOptions>
+internal sealed class MarketplacePublishCliCommand : ICliCommand<MarketplacePublishOptions>
 {
-    private readonly MarketplaceReviewPrompt _prompt = prompt ?? new MarketplaceReviewPrompt();
-
     public string Name => "publish";
 
     public IReadOnlyList<string> Aliases => [];
@@ -26,7 +26,7 @@ internal sealed class MarketplacePublishCliCommand(MarketplaceReviewPrompt? prom
             return 0;
         }
 
-        var review = _prompt.Prompt();
+        var review = PromptReview();
 
         try
         {
@@ -49,5 +49,17 @@ internal sealed class MarketplacePublishCliCommand(MarketplaceReviewPrompt? prom
         }
 
         return 0;
+    }
+
+    private static MarketplaceReview PromptReview()
+    {
+        var reviewerId = AnsiConsole.Prompt(new TextPrompt<string>("Reviewer ID:").Styled());
+        var approved = AnsiConsole.Confirm("Approve for publishing?");
+        var notes = AnsiConsole.Prompt(new TextPrompt<string>("Review notes (optional):").Styled().AllowEmpty());
+
+        return new MarketplaceReview(
+            reviewerId,
+            approved,
+            string.IsNullOrWhiteSpace(notes) ? null : notes);
     }
 }

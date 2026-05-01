@@ -4,10 +4,9 @@ using Weave.Cli.Commands;
 
 namespace Weave.Cli.Tui;
 
-[System.Diagnostics.CodeAnalysis.SuppressMessage("Performance", "CA1822:Mark members as static", Justification = "Instance collaborator is kept testable and replaceable from the composer.")]
-internal sealed class ChatComposerRenderer
+internal static class ChatComposerRenderer
 {
-    public Panel Build(ChatComposerRenderModel model)
+    public static Panel Build(ChatComposerRenderModel model)
     {
         var children = new List<IRenderable>();
         if (model.Matches.Count > 0)

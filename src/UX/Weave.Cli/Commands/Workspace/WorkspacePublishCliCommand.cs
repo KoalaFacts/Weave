@@ -3,12 +3,8 @@ using Weave.Deploy;
 
 namespace Weave.Cli.Commands;
 
-internal sealed class WorkspacePublishCliCommand(
-    WorkspacePublisherFactory? publishers = null,
-    WorkspaceManifestFile? manifests = null) : ICliCommand<WorkspacePublishOptions>
+internal sealed class WorkspacePublishCliCommand : ICliCommand<WorkspacePublishOptions>
 {
-    private readonly WorkspacePublisherFactory _publishers = publishers ?? new WorkspacePublisherFactory();
-    private readonly WorkspaceManifestFile _manifests = manifests ?? new WorkspaceManifestFile();
 
     public string Name => "publish";
 
@@ -36,9 +32,9 @@ internal sealed class WorkspacePublishCliCommand(
                     .AddChoices("docker-compose", "kubernetes", "nomad", "fly-io", "github-actions"));
         }
 
-        var manifest = await _manifests.ReadAsync(manifestPath, ct);
+        var manifest = await WorkspaceManifestFile.ReadAsync(manifestPath, ct);
 
-        IPublisher publisher = _publishers.Resolve(target);
+        IPublisher publisher = WorkspacePublisherFactory.Resolve(target);
 
         var publishOptions = new PublishOptions { OutputPath = options.OutputPath };
         var result = await publisher.PublishAsync(manifest, publishOptions, ct);

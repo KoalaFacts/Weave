@@ -2,9 +2,8 @@ using Spectre.Console;
 
 namespace Weave.Cli.Commands;
 
-internal sealed class WorkspacePluginListCliCommand(WorkspaceManifestFile? manifests = null) : ICliCommand<WorkspaceNameOptions>
+internal sealed class WorkspacePluginListCliCommand : ICliCommand<WorkspaceNameOptions>
 {
-    private readonly WorkspaceManifestFile _manifests = manifests ?? new WorkspaceManifestFile();
 
     public string Name => "list";
 
@@ -22,7 +21,7 @@ internal sealed class WorkspacePluginListCliCommand(WorkspaceManifestFile? manif
             return 1;
         }
 
-        var manifest = await _manifests.ReadAsync(manifestPath, ct);
+        var manifest = await WorkspaceManifestFile.ReadAsync(manifestPath, ct);
 
         if (manifest.Plugins.Count == 0)
         {

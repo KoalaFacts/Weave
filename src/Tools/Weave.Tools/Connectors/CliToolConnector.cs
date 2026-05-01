@@ -3,14 +3,15 @@ using System.Diagnostics;
 using Microsoft.Extensions.Logging;
 using Weave.Security.Tokens;
 using Weave.Tools.Models;
+using Weave.Workspaces.Models;
 
 namespace Weave.Tools.Connectors;
 
 public sealed partial class CliToolConnector(ILogger<CliToolConnector> logger) : IToolConnector
 {
-    private readonly ConcurrentDictionary<string, Weave.Workspaces.Models.CliConfig> _configurations = new();
-    private readonly CliCommandPolicy _policy = new();
-    private readonly CliProcessRunner _processRunner = new();
+    private static readonly string[] ShellMetacharacters = [";", "|", "&&", "||", "`", "$(", "$((", "\n", "\r", ">>", ">&"];
+
+    private readonly ConcurrentDictionary<string, CliConfig> _configurations = new();
 
     public ToolType ToolType => ToolType.Cli;
 
@@ -52,7 +53,7 @@ public sealed partial class CliToolConnector(ILogger<CliToolConnector> logger) :
         var command = invocation.RawInput ?? string.Join(" ", invocation.Parameters.Values);
         var sw = Stopwatch.StartNew();
 
-        var policyResult = _policy.Evaluate(command, cli);
+        var policyResult = EvaluateCommandPolicy(command, cli);
         if (!policyResult.IsAllowed)
         {
             sw.Stop();
@@ -65,7 +66,7 @@ public sealed partial class CliToolConnector(ILogger<CliToolConnector> logger) :
             };
         }
 
-        return await _processRunner.RunAsync(handle.ToolName, cli, command, sw, ct);
+        return await RunProcessAsync(handle.ToolName, cli, command, sw, ct);
     }
 
     public Task<ToolSchema> DiscoverSchemaAsync(ToolHandle handle, CancellationToken ct = default)
@@ -89,4 +90,136 @@ public sealed partial class CliToolConnector(ILogger<CliToolConnector> logger) :
 
     [LoggerMessage(Level = LogLevel.Information, Message = "CLI tool '{Tool}' connected (shell: {Shell})")]
     private partial void LogCliToolConnected(string tool, string shell);
+
+    private static CliCommandPolicyResult EvaluateCommandPolicy(string command, CliConfig config)
+    {
+        if (ContainsShellMetacharacters(command))
+            return CliCommandPolicyResult.Blocked("Command contains prohibited shell metacharacters.");
+
+        if (!IsCommandAllowed(command, config))
+            return CliCommandPolicyResult.Blocked($"Command '{command}' is not permitted by the CLI tool policy.");
+
+        return CliCommandPolicyResult.Allowed;
+    }
+
+    private static bool ContainsShellMetacharacters(string command) =>
+        ShellMetacharacters.Any(meta => command.Contains(meta, StringComparison.Ordinal));
+
+    private static bool IsCommandAllowed(string command, CliConfig config)
+    {
+        if (config.DeniedCommands.Any(pattern => WildcardMatches(pattern, command)))
+            return false;
+
+        if (config.AllowedCommands.Count == 0)
+            return true;
+
+        return config.AllowedCommands.Any(pattern => WildcardMatches(pattern, command));
+    }
+
+    private static bool WildcardMatches(string pattern, string command)
+    {
+        if (pattern == "*")
+            return true;
+
+        var parts = pattern.Split('*', StringSplitOptions.None);
+        var currentIndex = 0;
+        var anchoredAtStart = !pattern.StartsWith('*');
+        var anchoredAtEnd = !pattern.EndsWith('*');
+
+        for (var index = 0; index < parts.Length; index++)
+        {
+            var part = parts[index];
+            if (part.Length == 0)
+                continue;
+
+            var matchIndex = command.IndexOf(part, currentIndex, StringComparison.OrdinalIgnoreCase);
+            if (matchIndex < 0)
+                return false;
+
+            if (index == 0 && anchoredAtStart && matchIndex != 0)
+                return false;
+
+            currentIndex = matchIndex + part.Length;
+        }
+
+        if (!anchoredAtEnd)
+            return true;
+
+        var lastPart = parts.LastOrDefault(static p => p.Length > 0) ?? string.Empty;
+        return command.EndsWith(lastPart, StringComparison.OrdinalIgnoreCase);
+    }
+
+    private static async Task<ToolResult> RunProcessAsync(
+        string toolName,
+        CliConfig config,
+        string command,
+        Stopwatch sw,
+        CancellationToken ct)
+    {
+        try
+        {
+            var processStart = new ProcessStartInfo
+            {
+                FileName = config.Shell,
+                RedirectStandardOutput = true,
+                RedirectStandardError = true,
+                UseShellExecute = false,
+                CreateNoWindow = true
+            };
+
+            AppendShellArguments(processStart, config.Shell, command);
+
+            using var process = Process.Start(processStart) ?? throw new InvalidOperationException("Failed to start CLI process.");
+            var outputTask = process.StandardOutput.ReadToEndAsync(ct);
+            var errorTask = process.StandardError.ReadToEndAsync(ct);
+
+            await Task.WhenAll(outputTask, errorTask);
+            await process.WaitForExitAsync(ct);
+
+            var output = await outputTask;
+            var error = await errorTask;
+            sw.Stop();
+
+            return new ToolResult
+            {
+                Success = process.ExitCode == 0,
+                ToolName = toolName,
+                Output = output,
+                Error = string.IsNullOrEmpty(error) ? null : error,
+                Duration = sw.Elapsed
+            };
+        }
+        catch (Exception ex)
+        {
+            sw.Stop();
+            return new ToolResult
+            {
+                Success = false,
+                ToolName = toolName,
+                Error = ex.Message,
+                Duration = sw.Elapsed
+            };
+        }
+    }
+
+    private static void AppendShellArguments(ProcessStartInfo processStart, string shell, string command)
+    {
+        if (shell.EndsWith("powershell", StringComparison.OrdinalIgnoreCase) ||
+            shell.EndsWith("pwsh", StringComparison.OrdinalIgnoreCase))
+        {
+            processStart.ArgumentList.Add("-Command");
+            processStart.ArgumentList.Add(command);
+            return;
+        }
+
+        processStart.ArgumentList.Add("-c");
+        processStart.ArgumentList.Add(command);
+    }
+
+    private readonly record struct CliCommandPolicyResult(bool IsAllowed, string? Error)
+    {
+        public static CliCommandPolicyResult Allowed { get; } = new(true, null);
+
+        public static CliCommandPolicyResult Blocked(string error) => new(false, error);
+    }
 }

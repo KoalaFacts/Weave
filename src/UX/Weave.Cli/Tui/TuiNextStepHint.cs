@@ -3,10 +3,9 @@ using Weave.Cli.Commands;
 
 namespace Weave.Cli.Tui;
 
-[System.Diagnostics.CodeAnalysis.SuppressMessage("Performance", "CA1822:Mark members as static", Justification = "Instance collaborator is kept testable and replaceable from the TUI shell.")]
-internal sealed class TuiNextStepHint
+internal static class TuiNextStepHint
 {
-    public void Render(TuiSession session)
+    public static void Render(TuiSession session)
     {
         if (!session.HasWorkspace)
             return;

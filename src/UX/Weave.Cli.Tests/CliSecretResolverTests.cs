@@ -4,12 +4,10 @@ namespace Weave.Cli.Tests;
 
 public sealed class CliSecretResolverTests
 {
-    private readonly CliSecretResolver _resolver = new();
-
     [Fact]
     public void ResolveReference_PlainValue_ReturnsValue()
     {
-        _resolver.ResolveReference("Host=localhost;Database=weave")
+        CliSecretResolver.ResolveReference("Host=localhost;Database=weave")
             .ShouldBe("Host=localhost;Database=weave");
     }
 
@@ -23,7 +21,7 @@ public sealed class CliSecretResolverTests
         {
             Environment.SetEnvironmentVariable(variableName, "Host=env;Database=weave");
 
-            _resolver.ResolveReference($"env:{variableName}")
+            CliSecretResolver.ResolveReference($"env:{variableName}")
                 .ShouldBe("Host=env;Database=weave");
         }
         finally
@@ -40,7 +38,7 @@ public sealed class CliSecretResolverTests
 
         try
         {
-            _resolver.ResolveReference($"file:{filePath}")
+            CliSecretResolver.ResolveReference($"file:{filePath}")
                 .ShouldBe("Host=file;Database=weave");
         }
         finally
@@ -58,6 +56,6 @@ public sealed class CliSecretResolverTests
     [InlineData("custom", "env:WEAVE_CONNECTION_STRING")]
     public void ToEnvReference_StorageBackend_ReturnsNamespacedVariable(string backend, string expected)
     {
-        _resolver.ToEnvReference(backend).ShouldBe(expected);
+        CliSecretResolver.ToEnvReference(backend).ShouldBe(expected);
     }
 }

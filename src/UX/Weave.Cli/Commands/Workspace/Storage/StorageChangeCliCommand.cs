@@ -19,7 +19,7 @@ internal sealed class StorageChangeCliCommand(
     {
         var currentConfig = CliConfigStore.Load();
 
-        var isRunning = await _storage.IsRunningAsync(currentConfig.DefaultPort, ct);
+        var isRunning = await StorageBackendService.IsRunningAsync(currentConfig.DefaultPort, ct);
         if (isRunning)
         {
             CliTheme.WriteError("Server is still running. Stop it first:");
@@ -46,7 +46,7 @@ internal sealed class StorageChangeCliCommand(
             return 0;
         }
 
-        var connectionStr = await _prompt.ResolveConnectionStringAsync(backend, options.ConnectionString, ct);
+        var connectionStr = await StorageChangePrompt.ResolveConnectionStringAsync(backend, options.ConnectionString, ct);
 
         var newConfig = currentConfig with
         {

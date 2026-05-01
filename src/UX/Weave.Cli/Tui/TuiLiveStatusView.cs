@@ -4,30 +4,14 @@ using Weave.Workspaces.Models;
 
 namespace Weave.Cli.Tui;
 
-[System.Diagnostics.CodeAnalysis.SuppressMessage("Performance", "CA1822:Mark members as static", Justification = "Instance collaborator is kept testable and replaceable from the TUI shell.")]
-internal sealed class TuiLiveStatusView
+internal static class TuiLiveStatusView
 {
-    private readonly TuiLiveStatusRenderer _renderer = new();
-    private readonly TuiWorkspaceStateReader _stateReader;
-    private readonly TuiLiveStatusWatcher _watcher;
-
-    public TuiLiveStatusView()
-        : this(new TuiWorkspaceStateReader())
-    {
-    }
-
-    internal TuiLiveStatusView(TuiWorkspaceStateReader stateReader)
-    {
-        _stateReader = stateReader;
-        _watcher = new TuiLiveStatusWatcher(stateReader);
-    }
-
-    public async Task<bool> TryRenderOnceAsync(
+    public static async Task<bool> TryRenderOnceAsync(
         string manifestPath,
         WorkspaceManifest manifest,
         CancellationToken cancellationToken)
     {
-        var workspaceId = _stateReader.ReadWorkspaceId(manifestPath);
+        var workspaceId = TuiWorkspaceStateReader.ReadWorkspaceId(manifestPath);
         if (workspaceId is null)
             return false;
 
@@ -41,7 +25,7 @@ internal sealed class TuiLiveStatusView
             var agents = await client.GetAgentsAsync(workspaceId, cancellationToken);
             var tools = await client.GetToolsAsync(workspaceId, cancellationToken);
 
-            AnsiConsole.Write(_renderer.Build(manifestPath, manifest, workspace, agents, tools));
+            AnsiConsole.Write(TuiLiveStatusRenderer.Build(manifestPath, manifest, workspace, agents, tools));
             return true;
         }
         catch (Exception ex)
@@ -51,9 +35,9 @@ internal sealed class TuiLiveStatusView
         }
     }
 
-    public async Task WatchAsync(
+    public static async Task WatchAsync(
         string manifestPath,
         WorkspaceManifest manifest,
         CancellationToken cancellationToken) =>
-        await _watcher.WatchAsync(manifestPath, manifest, cancellationToken);
+        await TuiLiveStatusWatcher.WatchAsync(manifestPath, manifest, cancellationToken);
 }

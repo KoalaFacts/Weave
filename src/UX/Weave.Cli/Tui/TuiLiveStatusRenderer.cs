@@ -6,10 +6,9 @@ using Weave.Workspaces.Models;
 
 namespace Weave.Cli.Tui;
 
-[System.Diagnostics.CodeAnalysis.SuppressMessage("Performance", "CA1822:Mark members as static", Justification = "Instance collaborator is kept testable and replaceable from live status views.")]
-internal sealed class TuiLiveStatusRenderer
+internal static class TuiLiveStatusRenderer
 {
-    public Rows Build(
+    public static Rows Build(
         string manifestPath,
         WorkspaceManifest manifest,
         ApiWorkspaceResponse workspace,

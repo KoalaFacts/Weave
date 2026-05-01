@@ -3,7 +3,6 @@ using Weave.Workspaces.Manifest;
 
 namespace Weave.Cli.Tui;
 
-[System.Diagnostics.CodeAnalysis.SuppressMessage("Performance", "CA1822:Mark members as static", Justification = "Instance collaborator is kept testable and replaceable from TUI agent views.")]
 internal sealed class TuiAgentNameSource
 {
     private readonly ManifestParser _parser = new();

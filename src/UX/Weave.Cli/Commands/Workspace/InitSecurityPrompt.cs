@@ -2,10 +2,9 @@ using Spectre.Console;
 
 namespace Weave.Cli.Commands;
 
-[System.Diagnostics.CodeAnalysis.SuppressMessage("Performance", "CA1822:Mark members as static", Justification = "Instance collaborator is injected for CLI testability.")]
-internal sealed class InitSecurityPrompt
+internal static class InitSecurityPrompt
 {
-    public InitSecuritySelection Prompt()
+    public static InitSecuritySelection Prompt()
     {
         AnsiConsole.WriteLine();
         CliTheme.WriteSection("Step 4 · Security");

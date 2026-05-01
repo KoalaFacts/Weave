@@ -9,12 +9,10 @@ internal sealed class TuiWorkspaceStarter
 {
     private readonly ManifestParser _parser = new();
     private readonly TuiAgentSelector _agentSelector;
-    private readonly TuiNextStepHint _nextStepHint;
 
-    public TuiWorkspaceStarter(TuiAgentSelector agentSelector, TuiNextStepHint nextStepHint)
+    public TuiWorkspaceStarter(TuiAgentSelector agentSelector)
     {
         _agentSelector = agentSelector;
-        _nextStepHint = nextStepHint;
     }
 
     public async Task StartAsync(TuiSession session, CancellationToken ct)
@@ -115,7 +113,7 @@ internal sealed class TuiWorkspaceStarter
         if (session.AgentName is null)
             _agentSelector.TrySelectOnlyAgent(session);
 
-        _nextStepHint.Render(session);
+        TuiNextStepHint.Render(session);
     }
 
     private static void RenderLogTail(string logPath, int lineCount)

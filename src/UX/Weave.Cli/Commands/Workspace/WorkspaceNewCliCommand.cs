@@ -3,9 +3,8 @@ using Weave.Workspaces.Models;
 
 namespace Weave.Cli.Commands;
 
-internal sealed class WorkspaceNewCliCommand(WorkspaceManifestFile? manifests = null) : ICliCommand<WorkspaceNewOptions>
+internal sealed class WorkspaceNewCliCommand : ICliCommand<WorkspaceNewOptions>
 {
-    private readonly WorkspaceManifestFile _manifests = manifests ?? new WorkspaceManifestFile();
 
     public string Name => "new";
 
@@ -71,7 +70,7 @@ internal sealed class WorkspaceNewCliCommand(WorkspaceManifestFile? manifests = 
             }
         };
 
-        await _manifests.WriteAsync(Path.Combine(basePath, "workspace.json"), manifest, ct);
+        await WorkspaceManifestFile.WriteAsync(Path.Combine(basePath, "workspace.json"), manifest, ct);
 
         foreach (var (fileName, content) in template.PromptFiles)
         {

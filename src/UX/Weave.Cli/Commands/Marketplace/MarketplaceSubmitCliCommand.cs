@@ -1,9 +1,9 @@
+using Spectre.Console;
+
 namespace Weave.Cli.Commands;
 
-internal sealed class MarketplaceSubmitCliCommand(MarketplaceSubmissionPrompt? prompt = null) : ICliCommand<NoCliOptions>
+internal sealed class MarketplaceSubmitCliCommand : ICliCommand<NoCliOptions>
 {
-    private readonly MarketplaceSubmissionPrompt _prompt = prompt ?? new MarketplaceSubmissionPrompt();
-
     public string Name => "submit";
 
     public IReadOnlyList<string> Aliases => [];
@@ -19,7 +19,7 @@ internal sealed class MarketplaceSubmitCliCommand(MarketplaceSubmissionPrompt? p
             return 1;
         }
 
-        var submission = _prompt.Prompt();
+        var submission = PromptSubmission();
         var item = await client.SubmitItemAsync(
             submission.Name,
             submission.Description,
@@ -32,5 +32,25 @@ internal sealed class MarketplaceSubmitCliCommand(MarketplaceSubmissionPrompt? p
         CliTheme.WriteSuccess($"Item '{item.Name}' submitted (ID: {item.ItemId}, status: {item.Status}).");
         CliTheme.WriteInfo("Submit a security review with 'weave marketplace publish' to make it available.");
         return 0;
+    }
+
+    private static MarketplaceSubmission PromptSubmission()
+    {
+        var name = AnsiConsole.Prompt(new TextPrompt<string>("Item name:").Styled());
+        var description = AnsiConsole.Prompt(new TextPrompt<string>("Description:").Styled());
+        var category = AnsiConsole.Prompt(
+            new SelectionPrompt<string>()
+                .Title("Category:")
+                .Styled()
+                .AddChoices("ToolConnector", "AgentSkill", "ToolChain", "Integration"));
+        var version = AnsiConsole.Prompt(new TextPrompt<string>("Version:").Styled().DefaultValue("1.0.0"));
+        var author = AnsiConsole.Prompt(new TextPrompt<string>("Author:").Styled());
+        var tagsInput = AnsiConsole.Prompt(new TextPrompt<string>("Tags (comma-separated):").Styled().AllowEmpty());
+
+        var tags = string.IsNullOrWhiteSpace(tagsInput)
+            ? Array.Empty<string>()
+            : tagsInput.Split(',', StringSplitOptions.RemoveEmptyEntries | StringSplitOptions.TrimEntries);
+
+        return new MarketplaceSubmission(name, description, category, version, author, tags);
     }
 }

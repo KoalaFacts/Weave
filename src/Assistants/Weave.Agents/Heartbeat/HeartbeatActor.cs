@@ -9,8 +9,7 @@ public sealed partial class HeartbeatActor(
     TimeProvider timeProvider,
     ILogger<HeartbeatActor> logger) : IHeartbeatActor, IDisposable
 {
-    private readonly HeartbeatSchedule _schedule = new();
-    private readonly HeartbeatTickRunner _tickRunner = new(actors, timeProvider, logger, new HeartbeatSchedule());
+    private readonly HeartbeatTickRunner _tickRunner = new(actors, timeProvider, logger);
     private HeartbeatState _state = new();
     private IDisposable? _timer;
     private string? _key;
@@ -26,7 +25,7 @@ public sealed partial class HeartbeatActor(
         if (_state.IsRunning || !config.Enabled)
             return Task.CompletedTask;
 
-        var minutes = _schedule.ParseMinutes(config.Cron);
+        var minutes = HeartbeatSchedule.ParseMinutes(config.Cron);
 
         _state = new HeartbeatState
         {

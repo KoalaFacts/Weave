@@ -9,20 +9,11 @@ internal sealed class TuiWorkspaceOpener
 {
     private readonly ManifestParser _parser = new();
     private readonly TuiAgentSelector _agentSelector;
-    private readonly TuiLiveStatusView _liveStatus;
-    private readonly TuiManifestView _manifestView;
-    private readonly TuiNextStepHint _nextStepHint;
 
     public TuiWorkspaceOpener(
-        TuiAgentSelector agentSelector,
-        TuiLiveStatusView liveStatus,
-        TuiManifestView manifestView,
-        TuiNextStepHint nextStepHint)
+        TuiAgentSelector agentSelector)
     {
         _agentSelector = agentSelector;
-        _liveStatus = liveStatus;
-        _manifestView = manifestView;
-        _nextStepHint = nextStepHint;
     }
 
     public async Task OpenAsync(
@@ -96,11 +87,11 @@ internal sealed class TuiWorkspaceOpener
         }
 
         CliTheme.WriteSection($"Workspace · {manifest.Name}");
-        var liveRendered = await _liveStatus.TryRenderOnceAsync(session.ManifestPath, manifest, ct);
+        var liveRendered = await TuiLiveStatusView.TryRenderOnceAsync(session.ManifestPath, manifest, ct);
         if (!liveRendered)
-            _manifestView.Render(manifest, session.ManifestPath);
+            TuiManifestView.Render(manifest, session.ManifestPath);
 
         AnsiConsole.WriteLine();
-        _nextStepHint.Render(session);
+        TuiNextStepHint.Render(session);
     }
 }

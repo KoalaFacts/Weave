@@ -2,9 +2,8 @@ using Spectre.Console;
 
 namespace Weave.Cli.Commands;
 
-internal sealed class WorkspacePluginRemoveCliCommand(WorkspaceManifestFile? manifests = null) : ICliCommand<WorkspacePluginRemoveOptions>
+internal sealed class WorkspacePluginRemoveCliCommand : ICliCommand<WorkspacePluginRemoveOptions>
 {
-    private readonly WorkspaceManifestFile _manifests = manifests ?? new WorkspaceManifestFile();
 
     public string Name => "remove";
 
@@ -22,7 +21,7 @@ internal sealed class WorkspacePluginRemoveCliCommand(WorkspaceManifestFile? man
             return 1;
         }
 
-        var manifest = await _manifests.ReadAsync(manifestPath, ct);
+        var manifest = await WorkspaceManifestFile.ReadAsync(manifestPath, ct);
 
         if (manifest.Plugins.Count == 0)
         {
@@ -46,7 +45,7 @@ internal sealed class WorkspacePluginRemoveCliCommand(WorkspaceManifestFile? man
             return 1;
         }
 
-        await _manifests.WriteAsync(manifestPath, manifest, ct);
+        await WorkspaceManifestFile.WriteAsync(manifestPath, manifest, ct);
 
         CliTheme.WriteSuccess($"Plugin '{pluginName}' removed from workspace '{manifest.Name}'.");
         return 0;

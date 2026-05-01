@@ -6,20 +6,6 @@ namespace Weave.Cli.Commands;
 
 internal sealed class InitCliCommand : ICliCommand<NoCliOptions>
 {
-    private readonly InitEnvironmentProbe _probe;
-    private readonly InitStoragePrompt _storagePrompt;
-    private readonly InitSecurityPrompt _securityPrompt;
-
-    public InitCliCommand(
-        InitEnvironmentProbe? probe = null,
-        InitStoragePrompt? storagePrompt = null,
-        InitSecurityPrompt? securityPrompt = null)
-    {
-        _probe = probe ?? new InitEnvironmentProbe();
-        _storagePrompt = storagePrompt ?? new InitStoragePrompt(_probe);
-        _securityPrompt = securityPrompt ?? new InitSecurityPrompt();
-    }
-
     public string Name => "init";
 
     public IReadOnlyList<string> Aliases => [];
@@ -47,7 +33,7 @@ internal sealed class InitCliCommand : ICliCommand<NoCliOptions>
             AnsiConsole.WriteLine();
         }
 
-        var storage = await _storagePrompt.PromptAsync(ct);
+        var storage = await InitStoragePrompt.PromptAsync(ct);
 
         // ── Step 2: Server port ──────────────────────────────────
         AnsiConsole.WriteLine();
@@ -62,7 +48,7 @@ internal sealed class InitCliCommand : ICliCommand<NoCliOptions>
         AnsiConsole.WriteLine();
         CliTheme.WriteSection("Step 3 · Runtime");
 
-        var detectedSilo = _probe.DetectSiloPath();
+        var detectedSilo = InitEnvironmentProbe.DetectSiloPath();
         string? siloPath;
 
         if (detectedSilo is not null)
@@ -70,15 +56,15 @@ internal sealed class InitCliCommand : ICliCommand<NoCliOptions>
             CliTheme.WriteInfo($"Detected runtime at: {detectedSilo}");
             siloPath = AnsiConsole.Confirm("Use this path?")
                 ? detectedSilo
-                : _probe.PromptSiloPath();
+                : InitEnvironmentProbe.PromptSiloPath();
         }
         else
         {
             CliTheme.WriteMuted("No runtime detected in the current directory.");
-            siloPath = _probe.PromptSiloPath();
+            siloPath = InitEnvironmentProbe.PromptSiloPath();
         }
 
-        var security = _securityPrompt.Prompt();
+        var security = InitSecurityPrompt.Prompt();
 
         // ── Save ─────────────────────────────────────────────────
         var config = new CliConfig

@@ -6,7 +6,6 @@ namespace Weave.Agents.Actors;
 
 internal sealed class AgentSkillSuggester(
     IVirtualActorProvider actors,
-    AgentSkillExtractor extractor,
     ILogger logger)
 {
     public async Task SuggestFromTaskAsync(AgentState state, AgentTaskId taskId)
@@ -15,7 +14,7 @@ internal sealed class AgentSkillSuggester(
         if (task?.Proof is null || task.Proof.Items.Count < 2)
             return;
 
-        var skill = extractor.ExtractFromTask(task, state);
+        var skill = AgentSkillExtractor.ExtractFromTask(task, state);
         if (skill is null)
             return;
 

@@ -3,9 +3,8 @@ using Weave.Workspaces.Models;
 
 namespace Weave.Cli.Commands;
 
-internal sealed class WorkspaceAddTargetCliCommand(WorkspaceManifestFile? manifests = null) : ICliCommand<WorkspaceAddTargetOptions>
+internal sealed class WorkspaceAddTargetCliCommand : ICliCommand<WorkspaceAddTargetOptions>
 {
-    private readonly WorkspaceManifestFile _manifests = manifests ?? new WorkspaceManifestFile();
 
     public string Name => "target";
 
@@ -27,7 +26,7 @@ internal sealed class WorkspaceAddTargetCliCommand(WorkspaceManifestFile? manife
         if (string.IsNullOrWhiteSpace(targetName))
             targetName = AnsiConsole.Prompt(new TextPrompt<string>("Target name:").Styled());
 
-        var manifest = await _manifests.ReadAsync(manifestPath, ct);
+        var manifest = await WorkspaceManifestFile.ReadAsync(manifestPath, ct);
 
         if (manifest.Targets.ContainsKey(targetName))
         {
@@ -36,7 +35,7 @@ internal sealed class WorkspaceAddTargetCliCommand(WorkspaceManifestFile? manife
         }
 
         manifest.Targets[targetName] = new TargetDefinition { Runtime = options.Runtime };
-        await _manifests.WriteAsync(manifestPath, manifest, ct);
+        await WorkspaceManifestFile.WriteAsync(manifestPath, manifest, ct);
 
         CliTheme.WriteSuccess($"Target '{targetName}' added to workspace '{manifest.Name}'.");
         return 0;

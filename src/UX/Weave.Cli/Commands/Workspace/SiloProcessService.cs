@@ -3,10 +3,9 @@ using System.Diagnostics;
 
 namespace Weave.Cli.Commands;
 
-[System.Diagnostics.CodeAnalysis.SuppressMessage("Performance", "CA1822:Mark members as static", Justification = "Instance collaborator is injected for CLI testability.")]
-internal sealed class SiloProcessService
+internal static class SiloProcessService
 {
-    public Process? StartSilo(string siloPath, int port, Weave.Workspaces.Models.StorageConfig? workspaceStorage = null)
+    public static Process? StartSilo(string siloPath, int port, Weave.Workspaces.Models.StorageConfig? workspaceStorage = null)
     {
         var startInfo = new ProcessStartInfo
         {
@@ -28,7 +27,7 @@ internal sealed class SiloProcessService
         return process;
     }
 
-    public async Task<bool> IsReachableAsync(int port, CancellationToken ct)
+    public static async Task<bool> IsReachableAsync(int port, CancellationToken ct)
     {
         try
         {
@@ -42,7 +41,7 @@ internal sealed class SiloProcessService
         }
     }
 
-    public async Task<bool> WaitForReadyAsync(int port, CancellationToken ct, int attempts = 60)
+    public static async Task<bool> WaitForReadyAsync(int port, CancellationToken ct, int attempts = 60)
     {
         for (var i = 0; i < attempts; i++)
         {
@@ -54,7 +53,7 @@ internal sealed class SiloProcessService
         return false;
     }
 
-    public SiloArgs BuildSiloArgs(string siloPath, int port)
+    public static SiloArgs BuildSiloArgs(string siloPath, int port)
     {
         if (siloPath.EndsWith(".csproj", StringComparison.OrdinalIgnoreCase) || Directory.Exists(siloPath))
         {
@@ -68,7 +67,7 @@ internal sealed class SiloProcessService
         return new SiloArgs("dotnet", [siloPath, "--Weave:LocalMode=true", $"--urls=http://localhost:{port}"]);
     }
 
-    public void TryKill(Process? process)
+    public static void TryKill(Process? process)
     {
         if (process is null || process.HasExited)
             return;
@@ -79,7 +78,7 @@ internal sealed class SiloProcessService
         }
     }
 
-    public void AttachLogDrainer(Process process, string logPath)
+    public static void AttachLogDrainer(Process process, string logPath)
     {
         try
         { Directory.CreateDirectory(Path.GetDirectoryName(logPath)!); }
@@ -111,7 +110,7 @@ internal sealed class SiloProcessService
         process.BeginErrorReadLine();
     }
 
-    private void AddSiloArguments(Collection<string> args, string siloPath, int port)
+    private static void AddSiloArguments(Collection<string> args, string siloPath, int port)
     {
         var siloArgs = BuildSiloArgs(siloPath, port);
         foreach (var arg in siloArgs.Arguments)

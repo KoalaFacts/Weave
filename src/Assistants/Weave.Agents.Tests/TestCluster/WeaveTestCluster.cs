@@ -11,7 +11,7 @@ namespace Weave.Agents.Tests.TestCluster;
 
 /// <summary>
 /// Shared xUnit fixture that boots an in-memory Orleans <see cref="TestCluster"/>
-/// once per test class. Use via <c>[Collection(nameof(WeaveClusterCollection))]</c>
+/// once per test class. Use via <c>[Collection(nameof(WeaveClusterFixtureDefinition))]</c>
 /// or <c>IClassFixture&lt;WeaveTestCluster&gt;</c>.
 ///
 /// The cluster mirrors the production Silo's actor configuration closely enough

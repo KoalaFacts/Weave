@@ -5,8 +5,6 @@ namespace Weave.Cli.Tests;
 
 public sealed class WorkspacePublishCommandTests
 {
-    private readonly WorkspacePublisherFactory _publishers = new();
-
     // ── Target resolution ──────────────────────────────────────────
 
     [Theory]
@@ -20,7 +18,7 @@ public sealed class WorkspacePublishCommandTests
     [InlineData("gh-actions", typeof(GitHubActionsPublisher))]
     public void ResolvePublisher_ValidTarget_ReturnsCorrectType(string target, Type expectedType)
     {
-        var publisher = _publishers.Resolve(target);
+        var publisher = WorkspacePublisherFactory.Resolve(target);
         publisher.ShouldBeOfType(expectedType);
     }
 
@@ -35,7 +33,7 @@ public sealed class WorkspacePublishCommandTests
     [InlineData("gh-actions", "github-actions")]
     public void ResolvePublisher_TargetName_MatchesExpected(string target, string expectedName)
     {
-        var publisher = _publishers.Resolve(target);
+        var publisher = WorkspacePublisherFactory.Resolve(target);
         publisher.TargetName.ShouldBe(expectedName);
     }
 
@@ -46,7 +44,7 @@ public sealed class WorkspacePublishCommandTests
     [InlineData("")]
     public void ResolvePublisher_UnknownTarget_ThrowsArgumentException(string target)
     {
-        var ex = Should.Throw<ArgumentException>(() => _publishers.Resolve(target));
+        var ex = Should.Throw<ArgumentException>(() => WorkspacePublisherFactory.Resolve(target));
         ex.Message.ShouldContain("Unknown target");
     }
 

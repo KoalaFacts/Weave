@@ -4,14 +4,8 @@ using Spectre.Console;
 
 namespace Weave.Cli.Commands;
 
-internal sealed class RunCliCommand(
-    SiloProcessService? silo = null,
-    RunWorkspaceSelector? workspaceSelector = null,
-    WorkspaceManifestFile? manifests = null) : ICliCommand<RunOptions>
+internal sealed class RunCliCommand : ICliCommand<RunOptions>
 {
-    private readonly SiloProcessService _silo = silo ?? new SiloProcessService();
-    private readonly RunWorkspaceSelector _workspaceSelector = workspaceSelector ?? new RunWorkspaceSelector();
-    private readonly WorkspaceManifestFile _manifests = manifests ?? new WorkspaceManifestFile();
 
     public string Name => "run";
 
@@ -22,7 +16,7 @@ internal sealed class RunCliCommand(
     public async Task<int> ExecuteAsync(RunOptions options, CancellationToken ct)
     {
         var port = options.Port;
-        var selection = _workspaceSelector.Select(options.Name);
+        var selection = SelectWorkspace(options.Name);
         if (!selection.ShouldRun)
             return selection.ExitCode;
 
@@ -30,7 +24,7 @@ internal sealed class RunCliCommand(
 
         CliTheme.WriteBanner();
 
-        var manifest = await _manifests.ReadPreparedAsync(manifestPath, ct);
+        var manifest = await WorkspaceManifestFile.ReadPreparedAsync(manifestPath, ct);
 
         CliTheme.WriteKeyValue("Workspace", manifest.Name);
         CliTheme.WriteKeyValue("Agents", manifest.Agents.Count.ToString(CultureInfo.InvariantCulture));
@@ -39,7 +33,7 @@ internal sealed class RunCliCommand(
             CliTheme.WriteKeyValue("Channels", manifest.Channels.Count.ToString(CultureInfo.InvariantCulture));
         AnsiConsole.WriteLine();
 
-        var serverAlreadyRunning = await _silo.IsReachableAsync(port, ct);
+        var serverAlreadyRunning = await SiloProcessService.IsReachableAsync(port, ct);
         Process? siloProcess = null;
 
         if (!serverAlreadyRunning)
@@ -54,18 +48,18 @@ internal sealed class RunCliCommand(
                 return 1;
             }
 
-            siloProcess = _silo.StartSilo(siloPath, port, manifest.Workspace.Storage);
+            siloProcess = SiloProcessService.StartSilo(siloPath, port, manifest.Workspace.Storage);
             if (siloProcess is null)
             {
                 CliTheme.WriteError("Failed to start server.");
                 return 1;
             }
 
-            var ready = await _silo.WaitForReadyAsync(port, ct);
+            var ready = await SiloProcessService.WaitForReadyAsync(port, ct);
             if (!ready)
             {
                 CliTheme.WriteError("Server did not become ready in time.");
-                _silo.TryKill(siloProcess);
+                SiloProcessService.TryKill(siloProcess);
                 return 1;
             }
 
@@ -106,14 +100,80 @@ internal sealed class RunCliCommand(
         catch (Exception ex)
         {
             CliTheme.WriteError($"Failed to start workspace: {ex.Message}");
-            _silo.TryKill(siloProcess);
+            SiloProcessService.TryKill(siloProcess);
             return 1;
         }
         finally
         {
-            _silo.TryKill(siloProcess);
+            SiloProcessService.TryKill(siloProcess);
         }
 
         return 0;
+    }
+
+    private static RunWorkspaceSelection SelectWorkspace(string? name)
+    {
+        var manifestPath = ManifestResolver.Resolve(name);
+        if (manifestPath is not null)
+            return RunWorkspaceSelection.Run(name, manifestPath);
+
+        CliTheme.WriteBanner();
+        var existing = WorkspaceRegistry.GetAll();
+        if (existing.Count > 0)
+            return SelectExistingWorkspace(name, existing);
+
+        SuggestNewWorkspace();
+        return RunWorkspaceSelection.Stop(0);
+    }
+
+    private static RunWorkspaceSelection SelectExistingWorkspace(string? name, IReadOnlyDictionary<string, string> existing)
+    {
+        CliTheme.WriteInfo(name is null
+            ? "No workspace.json found in the current directory."
+            : $"Workspace '{name}' not found.");
+        AnsiConsole.WriteLine();
+
+        var choices = existing.Select(w => w.Key).ToList();
+        choices.Add("Create a new workspace");
+
+        var picked = AnsiConsole.Prompt(
+            new SelectionPrompt<string>()
+                .Title("Which workspace would you like to run?")
+                .Styled()
+                .AddChoices(choices));
+
+        if (picked == "Create a new workspace")
+        {
+            CliTheme.WriteMuted("  Run: weave workspace new <name>");
+            return RunWorkspaceSelection.Stop(0);
+        }
+
+        var manifestPath = ManifestResolver.Resolve(picked);
+        if (manifestPath is not null)
+            return RunWorkspaceSelection.Run(picked, manifestPath);
+
+        CliTheme.WriteError($"Workspace '{picked}' exists but has no workspace.json.");
+        return RunWorkspaceSelection.Stop(1);
+    }
+
+    private static void SuggestNewWorkspace()
+    {
+        CliTheme.WriteInfo("No workspaces found. Let's create one.");
+        AnsiConsole.WriteLine();
+
+        var name = AnsiConsole.Prompt(
+            new TextPrompt<string>("Workspace name:")
+                .Styled()
+                .DefaultValue("my-workspace"));
+
+        var preset = AnsiConsole.Prompt(
+            new SelectionPrompt<string>()
+                .Title("Choose a preset:")
+                .Styled()
+                .AddChoices([.. WorkspacePresets.All.Keys]));
+
+        CliTheme.WriteMuted($"  Creating workspace '{name}' with preset '{preset}'...");
+        CliTheme.WriteMuted($"  Run: weave workspace new {name} --preset {preset}");
+        CliTheme.WriteMuted($"  Then: weave run {name}");
     }
 }

@@ -13,7 +13,7 @@ namespace Weave.Agents.Tests;
 /// to be unreachable (direct-instantiation tests couldn't hit
 /// the Orleans timer API / <c>OnHeartbeatTick</c>) are now deterministic.
 /// </summary>
-[Collection(nameof(WeaveClusterCollection))]
+[Collection(nameof(WeaveClusterFixtureDefinition))]
 public sealed class HeartbeatActorClusterTests
 {
     private readonly WeaveTestCluster _cluster;

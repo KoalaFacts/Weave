@@ -2,7 +2,6 @@ using Spectre.Console;
 
 namespace Weave.Cli.Commands;
 
-[System.Diagnostics.CodeAnalysis.SuppressMessage("Performance", "CA1822:Mark members as static", Justification = "Instance collaborator is injected for CLI testability.")]
 internal sealed class WorkspacePluginPrompt(PluginTemplateCatalog? catalog = null)
 {
     private readonly PluginTemplateCatalog _catalog = catalog ?? new PluginTemplateCatalog();
@@ -15,7 +14,7 @@ internal sealed class WorkspacePluginPrompt(PluginTemplateCatalog? catalog = nul
                 .Styled()
                 .AddChoices(_catalog.PluginTypes));
 
-    public string SelectName(string? pluginName, string type) => !string.IsNullOrWhiteSpace(pluginName)
+    public static string SelectName(string? pluginName, string type) => !string.IsNullOrWhiteSpace(pluginName)
         ? pluginName
         : AnsiConsole.Prompt(
             new TextPrompt<string>("Plugin name:")

@@ -2,10 +2,9 @@ using System.Text.Json;
 
 namespace Weave.Cli.Commands;
 
-[System.Diagnostics.CodeAnalysis.SuppressMessage("Performance", "CA1822:Mark members as static", Justification = "Instance collaborator is injected for CLI testability.")]
-internal sealed class CliSecretResolver
+internal static class CliSecretResolver
 {
-    public string? ResolveReference(string? reference)
+    public static string? ResolveReference(string? reference)
     {
         if (string.IsNullOrWhiteSpace(reference))
             return null;
@@ -22,7 +21,7 @@ internal sealed class CliSecretResolver
         return reference;
     }
 
-    public string ToEnvReference(string storageBackend)
+    public static string ToEnvReference(string storageBackend)
     {
         var varName = storageBackend.ToUpperInvariant() switch
         {

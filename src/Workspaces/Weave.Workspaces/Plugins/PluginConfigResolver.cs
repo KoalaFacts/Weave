@@ -2,10 +2,9 @@ using Weave.Workspaces.Models;
 
 namespace Weave.Workspaces.Plugins;
 
-internal sealed class PluginConfigResolver
+internal static class PluginConfigResolver
 {
-    [System.Diagnostics.CodeAnalysis.SuppressMessage("Performance", "CA1822:Mark members as static", Justification = "Instance collaborator is kept testable and replaceable from PluginRegistry.")]
-    public PluginDefinition Resolve(PluginDefinition definition, PluginSchema schema)
+    public static PluginDefinition Resolve(PluginDefinition definition, PluginSchema schema)
     {
         var resolved = new Dictionary<string, string>(definition.Config, StringComparer.OrdinalIgnoreCase);
 
@@ -31,8 +30,7 @@ internal sealed class PluginConfigResolver
         return definition with { Config = resolved };
     }
 
-    [System.Diagnostics.CodeAnalysis.SuppressMessage("Performance", "CA1822:Mark members as static", Justification = "Instance collaborator is kept testable and replaceable from PluginRegistry.")]
-    public string? Validate(PluginDefinition definition, PluginSchema schema)
+    public static string? Validate(PluginDefinition definition, PluginSchema schema)
     {
         var missing = new List<string>();
         foreach (var field in schema.Config)
@@ -48,8 +46,7 @@ internal sealed class PluginConfigResolver
             : null;
     }
 
-    [System.Diagnostics.CodeAnalysis.SuppressMessage("Performance", "CA1822:Mark members as static", Justification = "Instance collaborator is kept testable and replaceable from PluginRegistry.")]
-    public IReadOnlyDictionary<string, string> RedactSecrets(
+    public static IReadOnlyDictionary<string, string> RedactSecrets(
         IReadOnlyDictionary<string, string> info,
         PluginSchema schema)
     {

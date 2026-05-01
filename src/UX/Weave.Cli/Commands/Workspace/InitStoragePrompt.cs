@@ -2,11 +2,9 @@ using Spectre.Console;
 
 namespace Weave.Cli.Commands;
 
-internal sealed class InitStoragePrompt(InitEnvironmentProbe? probe = null)
+internal static class InitStoragePrompt
 {
-    private readonly InitEnvironmentProbe _probe = probe ?? new InitEnvironmentProbe();
-
-    public async Task<InitStorageSelection> PromptAsync(CancellationToken ct)
+    public static async Task<InitStorageSelection> PromptAsync(CancellationToken ct)
     {
         CliTheme.WriteSection("Step 1 · Storage");
         AnsiConsole.MarkupLine("Where should Weave store agent state, skills, and user profiles?");
@@ -43,7 +41,7 @@ internal sealed class InitStoragePrompt(InitEnvironmentProbe? probe = null)
         return $"Data Source={defaultDb}";
     }
 
-    private async Task<string?> ConfigureServerStorageAsync(string storageKey, CancellationToken ct)
+    private static async Task<string?> ConfigureServerStorageAsync(string storageKey, CancellationToken ct)
     {
         var secretMethod = AnsiConsole.Prompt(
             new SelectionPrompt<string>()
@@ -151,7 +149,7 @@ internal sealed class InitStoragePrompt(InitEnvironmentProbe? probe = null)
         return AnsiConsole.Prompt(new TextPrompt<string>("Connection string:").Styled().DefaultValue(defaultConn));
     }
 
-    private async Task TestConnectionAsync(string storageKey, string? connectionString, CancellationToken ct)
+    private static async Task TestConnectionAsync(string storageKey, string? connectionString, CancellationToken ct)
     {
         string? resolvedConn = null;
         try
@@ -169,7 +167,7 @@ internal sealed class InitStoragePrompt(InitEnvironmentProbe? probe = null)
         AnsiConsole.WriteLine();
         var reachable = await AnsiConsole.Status()
             .Spinner(Spinner.Known.Dots)
-            .StartAsync("Testing connectivity...", async _ => await _probe.TestConnectivityAsync(storageKey, resolvedConn, ct));
+            .StartAsync("Testing connectivity...", async _ => await InitEnvironmentProbe.TestConnectivityAsync(storageKey, resolvedConn, ct));
 
         if (reachable)
             CliTheme.WriteSuccess("Connection successful.");

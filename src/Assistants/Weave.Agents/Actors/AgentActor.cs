@@ -18,8 +18,7 @@ public sealed class AgentActor(
     ILogger<AgentActor> logger,
     IActorState<AgentState> persistentState) : IAgentActor
 {
-    private readonly AgentIdentity _identity = new();
-    private readonly AgentSkillSuggester _skillSuggester = new(actors, new AgentSkillExtractor(), logger);
+    private readonly AgentSkillSuggester _skillSuggester = new(actors, logger);
     private readonly AgentEpisodeRecorder _episodeRecorder = new(actors, timeProvider, logger);
     private readonly AgentLifecycle _lifecycle = new(
         chatPipeline,
@@ -38,7 +37,7 @@ public sealed class AgentActor(
 
         if (string.IsNullOrWhiteSpace(persistentState.State.AgentId))
         {
-            _identity.Apply(persistentState.State, key, persistentState.State.WorkspaceId);
+            ApplyIdentity(persistentState.State, key, persistentState.State.WorkspaceId);
             await persistentState.WriteStateAsync(cancellationToken);
         }
 
@@ -51,7 +50,7 @@ public sealed class AgentActor(
         if (persistentState.State.Status is AgentStatus.Active or AgentStatus.Busy)
             return persistentState.State;
 
-        _identity.Ensure(persistentState.State, _key, workspaceId);
+        EnsureIdentity(persistentState.State, _key, workspaceId);
         return await _lifecycle.ActivateAsync(workspaceId, definition);
     }
 
@@ -187,6 +186,48 @@ public sealed class AgentActor(
     {
         persistentState.State.ConnectedTools.Remove(toolName);
         await persistentState.WriteStateAsync();
+    }
+
+    private static void EnsureIdentity(AgentState state, string? key, WorkspaceId workspaceId)
+    {
+        if (!string.IsNullOrWhiteSpace(state.AgentId))
+        {
+            if (state.WorkspaceId.IsEmpty)
+                state.WorkspaceId = workspaceId;
+
+            if (string.IsNullOrWhiteSpace(state.AgentName))
+                state.AgentName = GetAgentName(state.AgentId);
+
+            return;
+        }
+
+        ApplyIdentity(state, key, workspaceId);
+    }
+
+    private static void ApplyIdentity(AgentState state, string? key, WorkspaceId workspaceId)
+    {
+        if (!string.IsNullOrWhiteSpace(key))
+        {
+            var parts = key.Split('/', 2);
+            state.AgentId = key;
+            state.WorkspaceId = WorkspaceId.From(parts.Length > 1 ? parts[0] : key);
+            state.AgentName = parts.Length > 1 ? parts[1] : key;
+            return;
+        }
+
+        state.WorkspaceId = workspaceId;
+        state.AgentName = string.IsNullOrWhiteSpace(state.AgentName)
+            ? "agent"
+            : state.AgentName;
+        state.AgentId = $"{workspaceId}/{state.AgentName}";
+    }
+
+    private static string GetAgentName(string agentId)
+    {
+        var separatorIndex = agentId.IndexOf('/', StringComparison.Ordinal);
+        return separatorIndex >= 0 && separatorIndex < agentId.Length - 1
+            ? agentId[(separatorIndex + 1)..]
+            : agentId;
     }
 
 }

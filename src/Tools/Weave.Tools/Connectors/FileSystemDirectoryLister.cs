@@ -4,13 +4,9 @@ using Weave.Tools.Models;
 
 namespace Weave.Tools.Connectors;
 
-internal sealed class FileSystemDirectoryLister
+internal static class FileSystemDirectoryLister
 {
-    private readonly FileSystemToolResultFactory _result;
-
-    public FileSystemDirectoryLister(FileSystemToolResultFactory result) => _result = result;
-
-    public ToolResult List(string toolName, FileSystemToolConfig config, ToolInvocation invocation, Stopwatch sw)
+    public static ToolResult List(string toolName, FileSystemToolConfig config, ToolInvocation invocation, Stopwatch sw)
     {
         invocation.Parameters.TryGetValue("path", out var relativePath);
         relativePath ??= string.Empty;
@@ -23,13 +19,13 @@ internal sealed class FileSystemDirectoryLister
                 : FileSystemPathGuard.ResolveSafePath(config.Root, relativePath, config.Sandbox);
         }
         catch (ArgumentException ex)
-        { return _result.Failure(toolName, ex.Message, sw); }
+        { return FileSystemToolResultFactory.Failure(toolName, ex.Message, sw); }
 
         if (!Directory.Exists(fullPath))
-            return _result.Failure(toolName, $"Directory not found: {relativePath}", sw);
+            return FileSystemToolResultFactory.Failure(toolName, $"Directory not found: {relativePath}", sw);
 
         var output = BuildListing(fullPath);
-        return _result.Success(toolName, output, sw);
+        return FileSystemToolResultFactory.Success(toolName, output, sw);
     }
 
     private static string BuildListing(string fullPath)

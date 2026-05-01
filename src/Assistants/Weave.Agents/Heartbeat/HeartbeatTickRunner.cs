@@ -7,8 +7,7 @@ namespace Weave.Agents.Heartbeat;
 internal sealed partial class HeartbeatTickRunner(
     IVirtualActorProvider actors,
     TimeProvider timeProvider,
-    ILogger logger,
-    HeartbeatSchedule schedule)
+    ILogger logger)
 {
     public async Task<HeartbeatState> ExecuteAsync(
         HeartbeatState state,
@@ -40,7 +39,7 @@ internal sealed partial class HeartbeatTickRunner(
             {
                 LastRun = tickNow,
                 ExecutionCount = state.ExecutionCount + 1,
-                NextRun = tickNow.AddMinutes(schedule.ParseMinutes(state.Config.Cron))
+                NextRun = tickNow.AddMinutes(HeartbeatSchedule.ParseMinutes(state.Config.Cron))
             };
         }
         catch (Exception ex)

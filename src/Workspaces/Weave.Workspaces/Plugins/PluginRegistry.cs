@@ -11,7 +11,6 @@ public sealed partial class PluginRegistry : IPluginRegistry, IDisposable
     private readonly Dictionary<string, IPluginConnector> _connectorsByType;
     private readonly ConcurrentDictionary<string, PluginStatus> _active = new(StringComparer.OrdinalIgnoreCase);
     private readonly SemaphoreSlim _connectLock = new(1, 1);
-    private readonly PluginConfigResolver _configResolver = new();
     private readonly ILogger<PluginRegistry> _logger;
 
     public PluginRegistry(IEnumerable<IPluginConnector> connectors, ILogger<PluginRegistry> logger)
@@ -55,8 +54,8 @@ public sealed partial class PluginRegistry : IPluginRegistry, IDisposable
         }
 
         // Auto-fill config from environment and validate against schema
-        var resolved = _configResolver.Resolve(definition, connector.Schema);
-        var validationError = _configResolver.Validate(resolved, connector.Schema);
+        var resolved = PluginConfigResolver.Resolve(definition, connector.Schema);
+        var validationError = PluginConfigResolver.Validate(resolved, connector.Schema);
         if (validationError is not null)
         {
             var status = new PluginStatus
@@ -81,7 +80,7 @@ public sealed partial class PluginRegistry : IPluginRegistry, IDisposable
             // Redact secrets from the status info
             var status = connStatus with
             {
-                Info = _configResolver.RedactSecrets(connStatus.Info, connector.Schema)
+                Info = PluginConfigResolver.RedactSecrets(connStatus.Info, connector.Schema)
             };
 
             if (!status.IsConnected)

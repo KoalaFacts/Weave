@@ -5,12 +5,10 @@ namespace Weave.Cli.Commands;
 
 internal sealed class WorkspaceStorageChangeCliCommand(
     WorkspaceStorageBackendService? storage = null,
-    WorkspaceStorageChangePrompt? prompt = null,
-    WorkspaceManifestFile? manifests = null) : ICliCommand<WorkspaceStorageChangeOptions>
+    WorkspaceStorageChangePrompt? prompt = null) : ICliCommand<WorkspaceStorageChangeOptions>
 {
     private readonly WorkspaceStorageBackendService _storage = storage ?? new WorkspaceStorageBackendService();
     private readonly WorkspaceStorageChangePrompt _prompt = prompt ?? new WorkspaceStorageChangePrompt(storage);
-    private readonly WorkspaceManifestFile _manifests = manifests ?? new WorkspaceManifestFile();
 
     public string Name => "change";
 
@@ -28,7 +26,7 @@ internal sealed class WorkspaceStorageChangeCliCommand(
             return 1;
         }
 
-        var manifest = await _manifests.ReadAsync(manifestPath, ct);
+        var manifest = await WorkspaceManifestFile.ReadAsync(manifestPath, ct);
         var workspaceName = manifest.Name;
         var currentStorage = manifest.Workspace.Storage;
 
@@ -48,15 +46,15 @@ internal sealed class WorkspaceStorageChangeCliCommand(
         }
 
         var database = options.Database ?? "weave";
-        var isolation = _prompt.ResolveIsolation(options.Isolation);
-        var connectionStr = _prompt.PromptConnectionString(options, manifestPath, backend, database);
+        var isolation = WorkspaceStorageChangePrompt.ResolveIsolation(options.Isolation);
+        var connectionStr = WorkspaceStorageChangePrompt.PromptConnectionString(options, manifestPath, backend, database);
 
         if (backend is "postgresql" or "sqlserver" or "sqlite" && !string.IsNullOrWhiteSpace(connectionStr))
         {
-            var dbExists = await _storage.CheckDatabaseExistsAsync(backend, connectionStr, database, ct);
+            var dbExists = await WorkspaceStorageBackendService.CheckDatabaseExistsAsync(backend, connectionStr, database, ct);
             if (dbExists)
             {
-                var outcome = _prompt.PromptDatabaseConflict(backend, connectionStr, database);
+                var outcome = WorkspaceStorageChangePrompt.PromptDatabaseConflict(backend, connectionStr, database);
                 if (outcome.Abort)
                     return 0;
 
@@ -65,7 +63,7 @@ internal sealed class WorkspaceStorageChangeCliCommand(
             }
         }
 
-        var schema = _prompt.PromptSchema(options.Schema, workspaceName, backend, isolation);
+        var schema = WorkspaceStorageChangePrompt.PromptSchema(options.Schema, workspaceName, backend, isolation);
 
         var newStorage = backend == "memory"
             ? null
@@ -79,7 +77,7 @@ internal sealed class WorkspaceStorageChangeCliCommand(
             };
 
         manifest = manifest with { Workspace = manifest.Workspace with { Storage = newStorage } };
-        await _manifests.WriteAsync(manifestPath, manifest, ct);
+        await WorkspaceManifestFile.WriteAsync(manifestPath, manifest, ct);
 
         AnsiConsole.WriteLine();
         if (newStorage is null)

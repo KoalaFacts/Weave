@@ -5,12 +5,11 @@ namespace Weave.Cli.Tui;
 
 internal sealed class TuiChatSession
 {
-    private readonly TuiConversationHistoryView _historyView = new();
     private readonly List<ApiConversationMessage> _history = [];
 
     public void Clear() => _history.Clear();
 
-    public void ShowHistory(TuiSession session) => _historyView.Render(session, _history);
+    public void ShowHistory(TuiSession session) => RenderHistory(session, _history);
 
     public async Task SendAsync(
         TuiSession session,
@@ -77,6 +76,33 @@ internal sealed class TuiChatSession
 
             if (!string.IsNullOrWhiteSpace(reply.Model))
                 CliTheme.WriteMuted($"  Model: {reply.Model}");
+        }
+    }
+
+    private static void RenderHistory(
+        TuiSession session,
+        List<ApiConversationMessage> conversationHistory)
+    {
+        if (session.AgentName is null)
+        {
+            CliTheme.WriteMuted("No agent selected. Use /use <agent> first.");
+            return;
+        }
+
+        if (conversationHistory.Count == 0)
+        {
+            CliTheme.WriteMuted("No conversation history yet. Send a message first.");
+            return;
+        }
+
+        CliTheme.WriteSection($"History · {session.AgentName}");
+        foreach (var msg in conversationHistory)
+        {
+            var role = msg.Role ?? "unknown";
+            if (string.Equals(role, "user", StringComparison.OrdinalIgnoreCase))
+                CliTheme.WriteUserEcho(msg.Content ?? "");
+            else
+                CliTheme.WriteAgentReply(session.AgentName, msg.Content ?? "");
         }
     }
 }

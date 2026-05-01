@@ -8,9 +8,6 @@ namespace Weave.Silo.Api;
 
 internal static class AgentTaskEndpoints
 {
-    private static readonly AgentTaskRequestValidator Validator = new();
-    private static readonly AgentTaskProofMapper ProofMapper = new();
-
     public static void Map(RouteGroupBuilder group)
     {
         group.MapGet("/{agentName}/tasks", GetTasksAsync)
@@ -93,7 +90,7 @@ internal static class AgentTaskEndpoints
         ICommandDispatcher dispatcher,
         CancellationToken ct)
     {
-        var errors = Validator.ValidateSubmitTask(request);
+        var errors = ValidateSubmitTask(request);
         if (errors is not null)
             return ResultExtensions.ValidationFailed(errors);
 
@@ -119,13 +116,13 @@ internal static class AgentTaskEndpoints
         ICommandDispatcher dispatcher,
         CancellationToken ct)
     {
-        var errors = Validator.ValidateCompleteTask(request);
+        var errors = ValidateCompleteTask(request);
         if (errors is not null)
             return ResultExtensions.ValidationFailed(errors);
 
         try
         {
-            var proof = ProofMapper.FromRequest(request);
+            var proof = ProofFromRequest(request);
 
             var command = new CompleteAgentTaskCommand(
                 WorkspaceId.From(workspaceId), agentName, AgentTaskId.From(taskId), request.Success, proof);
@@ -146,7 +143,7 @@ internal static class AgentTaskEndpoints
         ICommandDispatcher dispatcher,
         CancellationToken ct)
     {
-        var errors = Validator.ValidateReviewTask(request);
+        var errors = ValidateReviewTask(request);
         if (errors is not null)
             return ResultExtensions.ValidationFailed(errors);
 
@@ -161,6 +158,66 @@ internal static class AgentTaskEndpoints
         {
             return ResultExtensions.Conflict(ex.Message);
         }
+    }
+
+    private static Dictionary<string, string[]>? ValidateSubmitTask(SubmitTaskRequest request)
+    {
+        Dictionary<string, string[]>? errors = null;
+
+        if (string.IsNullOrWhiteSpace(request.Description))
+            (errors ??= [])["description"] = ["Description is required."];
+        else if (request.Description.Length > 1000)
+            (errors ??= [])["description"] = ["Description must be 1000 characters or fewer."];
+
+        return errors;
+    }
+
+    private static Dictionary<string, string[]>? ValidateCompleteTask(CompleteTaskRequest request)
+    {
+        Dictionary<string, string[]>? errors = null;
+
+        if (request.Proof is not { Count: > 0 })
+            (errors ??= [])["proof"] = ["At least one proof item is required."];
+        else
+            AddProofItemErrors(request, ref errors);
+
+        return errors;
+    }
+
+    private static Dictionary<string, string[]>? ValidateReviewTask(ReviewTaskRequest request)
+    {
+        Dictionary<string, string[]>? errors = null;
+
+        if (request.Feedback is { Length: > 5000 })
+            (errors ??= [])["feedback"] = ["Feedback must be 5000 characters or fewer."];
+
+        return errors;
+    }
+
+    private static void AddProofItemErrors(CompleteTaskRequest request, ref Dictionary<string, string[]>? errors)
+    {
+        for (var index = 0; index < request.Proof.Count; index++)
+        {
+            var item = request.Proof[index];
+            if (string.IsNullOrWhiteSpace(item.Label))
+                (errors ??= [])[$"proof[{index}].label"] = ["Label is required."];
+            if (string.IsNullOrWhiteSpace(item.Value))
+                (errors ??= [])[$"proof[{index}].value"] = ["Value is required."];
+        }
+    }
+
+    private static ProofOfWork ProofFromRequest(CompleteTaskRequest request)
+    {
+        return new ProofOfWork
+        {
+            Items = request.Proof.Select(p => new ProofItem
+            {
+                Type = p.Type,
+                Label = p.Label,
+                Value = p.Value,
+                Uri = p.Uri
+            }).ToList()
+        };
     }
 
 }

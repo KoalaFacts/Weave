@@ -4,9 +4,8 @@ using Weave.Workspaces.Models;
 
 namespace Weave.Cli.Commands;
 
-internal sealed class WorkspaceStatusCliCommand(WorkspaceManifestFile? manifests = null) : ICliCommand<WorkspaceNameOptions>
+internal sealed class WorkspaceStatusCliCommand : ICliCommand<WorkspaceNameOptions>
 {
-    private readonly WorkspaceManifestFile _manifests = manifests ?? new WorkspaceManifestFile();
 
     public string Name => "status";
 
@@ -24,7 +23,7 @@ internal sealed class WorkspaceStatusCliCommand(WorkspaceManifestFile? manifests
             return 1;
         }
 
-        var manifest = await _manifests.ReadAsync(manifestPath, ct);
+        var manifest = await WorkspaceManifestFile.ReadAsync(manifestPath, ct);
 
         var statePath = WorkspaceApiClient.GetWorkspaceStatePath(manifestPath);
         if (File.Exists(statePath))

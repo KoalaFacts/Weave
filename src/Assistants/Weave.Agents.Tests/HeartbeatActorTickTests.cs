@@ -28,8 +28,7 @@ public sealed class HeartbeatActorTickTests
             Runner = new HeartbeatTickRunner(
                 ActorProvider,
                 Time,
-                NullLogger<HeartbeatTickRunner>.Instance,
-                new HeartbeatSchedule());
+                NullLogger<HeartbeatTickRunner>.Instance);
             AgentActor.GetStateAsync().Returns(new AgentState
             {
                 AgentId = "ws-1/agent-1",

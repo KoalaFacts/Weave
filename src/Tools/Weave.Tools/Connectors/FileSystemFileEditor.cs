@@ -4,13 +4,9 @@ using Weave.Tools.Models;
 
 namespace Weave.Tools.Connectors;
 
-internal sealed class FileSystemFileEditor
+internal static class FileSystemFileEditor
 {
-    private readonly FileSystemToolResultFactory _result;
-
-    public FileSystemFileEditor(FileSystemToolResultFactory result) => _result = result;
-
-    public async Task<ToolResult> EditAsync(
+    public static async Task<ToolResult> EditAsync(
         string toolName,
         FileSystemToolConfig config,
         ToolInvocation invocation,
@@ -18,7 +14,7 @@ internal sealed class FileSystemFileEditor
         CancellationToken ct)
     {
         if (config.ReadOnly)
-            return _result.Failure(toolName, "FileSystem tool is configured as read-only", sw);
+            return FileSystemToolResultFactory.Failure(toolName, "FileSystem tool is configured as read-only", sw);
 
         if (!TryReadEditRequest(toolName, invocation, sw, out var request, out var failure))
             return failure;
@@ -27,33 +23,33 @@ internal sealed class FileSystemFileEditor
         try
         { fullPath = FileSystemPathGuard.ResolveSafePath(config.Root, request.RelativePath, config.Sandbox); }
         catch (ArgumentException ex)
-        { return _result.Failure(toolName, ex.Message, sw); }
+        { return FileSystemToolResultFactory.Failure(toolName, ex.Message, sw); }
 
         if (!File.Exists(fullPath))
-            return _result.Failure(toolName, $"File not found: {request.RelativePath}", sw);
+            return FileSystemToolResultFactory.Failure(toolName, $"File not found: {request.RelativePath}", sw);
 
         var maxRead = config.MaxReadBytes > 0 ? config.MaxReadBytes : 1_048_576;
         var fileSize = new FileInfo(fullPath).Length;
         if (fileSize > maxRead)
-            return _result.Failure(toolName, $"File size ({fileSize} bytes) exceeds the read limit ({maxRead} bytes)", sw);
+            return FileSystemToolResultFactory.Failure(toolName, $"File size ({fileSize} bytes) exceeds the read limit ({maxRead} bytes)", sw);
 
         var content = await File.ReadAllTextAsync(fullPath, Encoding.UTF8, ct);
         var occurrences = CountOccurrences(content, request.OldString);
         if (occurrences == 0)
-            return _result.Failure(toolName, "old_string not found in file", sw);
+            return FileSystemToolResultFactory.Failure(toolName, "old_string not found in file", sw);
 
         if (!request.ReplaceAll && occurrences > 1)
-            return _result.Failure(toolName, $"old_string found {occurrences} times. Set replace_all=true to replace all, or provide a more specific old_string.", sw);
+            return FileSystemToolResultFactory.Failure(toolName, $"old_string found {occurrences} times. Set replace_all=true to replace all, or provide a more specific old_string.", sw);
 
         var updated = request.ReplaceAll
             ? content.Replace(request.OldString, request.NewString, StringComparison.Ordinal)
             : ReplaceFirst(content, request.OldString, request.NewString);
 
         await File.WriteAllTextAsync(fullPath, updated, Encoding.UTF8, ct);
-        return _result.Success(toolName, $"Replaced {(request.ReplaceAll ? occurrences : 1)} occurrence(s) in {request.RelativePath}", sw);
+        return FileSystemToolResultFactory.Success(toolName, $"Replaced {(request.ReplaceAll ? occurrences : 1)} occurrence(s) in {request.RelativePath}", sw);
     }
 
-    private bool TryReadEditRequest(
+    private static bool TryReadEditRequest(
         string toolName,
         ToolInvocation invocation,
         Stopwatch sw,
@@ -64,19 +60,19 @@ internal sealed class FileSystemFileEditor
 
         if (!invocation.Parameters.TryGetValue("path", out var relativePath) || string.IsNullOrEmpty(relativePath))
         {
-            failure = _result.Failure(toolName, "Parameter 'path' is required for edit_file", sw);
+            failure = FileSystemToolResultFactory.Failure(toolName, "Parameter 'path' is required for edit_file", sw);
             return false;
         }
 
         if (!invocation.Parameters.TryGetValue("old_string", out var oldString) || string.IsNullOrEmpty(oldString))
         {
-            failure = _result.Failure(toolName, "Parameter 'old_string' is required for edit_file", sw);
+            failure = FileSystemToolResultFactory.Failure(toolName, "Parameter 'old_string' is required for edit_file", sw);
             return false;
         }
 
         if (!invocation.Parameters.TryGetValue("new_string", out var newString))
         {
-            failure = _result.Failure(toolName, "Parameter 'new_string' is required for edit_file", sw);
+            failure = FileSystemToolResultFactory.Failure(toolName, "Parameter 'new_string' is required for edit_file", sw);
             return false;
         }
 

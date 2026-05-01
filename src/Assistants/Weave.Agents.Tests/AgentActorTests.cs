@@ -716,7 +716,7 @@ public sealed class AgentActorTests
             }
         };
 
-        var result = new AgentSkillExtractor().ExtractFromTask(task, new AgentState());
+        var result = AgentSkillExtractor.ExtractFromTask(task, new AgentState());
         result.ShouldBeNull();
     }
 
@@ -743,7 +743,7 @@ public sealed class AgentActorTests
             ConnectedTools = ["docker", "kubectl"]
         };
 
-        var skill = new AgentSkillExtractor().ExtractFromTask(task, state);
+        var skill = AgentSkillExtractor.ExtractFromTask(task, state);
 
         skill.ShouldNotBeNull();
         skill.Title.ShouldBe("Build and deploy microservice");

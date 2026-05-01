@@ -5,27 +5,23 @@ using Weave.Tools.Models;
 
 namespace Weave.Tools.Connectors;
 
-internal sealed class FileSystemFileInspector
+internal static class FileSystemFileInspector
 {
-    private readonly FileSystemToolResultFactory _result;
-
-    public FileSystemFileInspector(FileSystemToolResultFactory result) => _result = result;
-
-    public ToolResult GetInfo(string toolName, FileSystemToolConfig config, ToolInvocation invocation, Stopwatch sw)
+    public static ToolResult GetInfo(string toolName, FileSystemToolConfig config, ToolInvocation invocation, Stopwatch sw)
     {
         if (!invocation.Parameters.TryGetValue("path", out var relativePath) || string.IsNullOrEmpty(relativePath))
-            return _result.Failure(toolName, "Parameter 'path' is required for file_info", sw);
+            return FileSystemToolResultFactory.Failure(toolName, "Parameter 'path' is required for file_info", sw);
 
         string fullPath;
         try
         { fullPath = FileSystemPathGuard.ResolveSafePath(config.Root, relativePath, config.Sandbox); }
         catch (ArgumentException ex)
-        { return _result.Failure(toolName, ex.Message, sw); }
+        { return FileSystemToolResultFactory.Failure(toolName, ex.Message, sw); }
 
         var fileExists = File.Exists(fullPath);
         var dirExists = Directory.Exists(fullPath);
         var output = BuildInfo(relativePath, fullPath, fileExists, dirExists);
-        return _result.Success(toolName, output, sw);
+        return FileSystemToolResultFactory.Success(toolName, output, sw);
     }
 
     private static string BuildInfo(string relativePath, string fullPath, bool fileExists, bool dirExists)

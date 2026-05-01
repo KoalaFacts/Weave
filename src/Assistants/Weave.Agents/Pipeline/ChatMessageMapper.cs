@@ -1,4 +1,3 @@
-using System.Diagnostics.CodeAnalysis;
 using System.Text.Json;
 using Microsoft.Extensions.AI;
 using Weave.Agents.Models;
@@ -7,8 +6,6 @@ namespace Weave.Agents.Pipeline;
 
 public static class ChatMessageMapper
 {
-    private static readonly JsonSerializerOptions ToolInputJsonOptions = new(JsonSerializerDefaults.Web);
-
     public static ChatMessage ToChatMessage(ConversationMessage historyMessage)
     {
         var role = historyMessage.Role.ToLowerInvariant() switch
@@ -25,8 +22,6 @@ public static class ChatMessageMapper
         };
     }
 
-    [UnconditionalSuppressMessage("AOT", "IL2026:RequiresUnreferencedCode", Justification = "Function call arguments are dynamic LLM outputs serialized for diagnostic logging only.")]
-    [UnconditionalSuppressMessage("AOT", "IL3050:RequiresDynamicCode", Justification = "Function call arguments are dynamic LLM outputs serialized for diagnostic logging only.")]
     public static IEnumerable<ConversationMessage> ToConversationMessages(ChatMessage message, TimeProvider timeProvider)
     {
         var fallback = message.CreatedAt ?? timeProvider.GetUtcNow();
@@ -49,7 +44,7 @@ public static class ChatMessageMapper
                     yield return new ConversationMessage
                     {
                         Role = "tool",
-                        Content = $"Requested tool '{functionCall.Name}' with arguments: {JsonSerializer.Serialize(functionCall.Arguments, ToolInputJsonOptions)}",
+                        Content = $"Requested tool '{functionCall.Name}' with arguments: {FormatToolArguments(functionCall.Arguments ?? new Dictionary<string, object?>())}",
                         Timestamp = fallback
                     };
                     break;
@@ -62,6 +57,57 @@ public static class ChatMessageMapper
                     };
                     break;
             }
+        }
+    }
+
+    private static string FormatToolArguments(IDictionary<string, object?> arguments)
+    {
+        using var stream = new MemoryStream();
+        using (var writer = new Utf8JsonWriter(stream))
+        {
+            writer.WriteStartObject();
+            foreach (var (name, value) in arguments)
+            {
+                writer.WritePropertyName(name);
+                WriteJsonValue(writer, value);
+            }
+            writer.WriteEndObject();
+        }
+
+        return System.Text.Encoding.UTF8.GetString(stream.ToArray());
+    }
+
+    private static void WriteJsonValue(Utf8JsonWriter writer, object? value)
+    {
+        switch (value)
+        {
+            case null:
+                writer.WriteNullValue();
+                break;
+            case string text:
+                writer.WriteStringValue(text);
+                break;
+            case bool flag:
+                writer.WriteBooleanValue(flag);
+                break;
+            case int number:
+                writer.WriteNumberValue(number);
+                break;
+            case long number:
+                writer.WriteNumberValue(number);
+                break;
+            case double number:
+                writer.WriteNumberValue(number);
+                break;
+            case decimal number:
+                writer.WriteNumberValue(number);
+                break;
+            case JsonElement element:
+                element.WriteTo(writer);
+                break;
+            default:
+                writer.WriteStringValue(value.ToString());
+                break;
         }
     }
 }

@@ -4,9 +4,8 @@ using Weave.Workspaces.Models;
 
 namespace Weave.Cli.Commands;
 
-internal sealed class WorkspaceAddAgentCliCommand(WorkspaceManifestFile? manifests = null) : ICliCommand<WorkspaceAddAgentOptions>
+internal sealed class WorkspaceAddAgentCliCommand : ICliCommand<WorkspaceAddAgentOptions>
 {
-    private readonly WorkspaceManifestFile _manifests = manifests ?? new WorkspaceManifestFile();
 
     public string Name => "agent";
 
@@ -28,7 +27,7 @@ internal sealed class WorkspaceAddAgentCliCommand(WorkspaceManifestFile? manifes
         if (string.IsNullOrWhiteSpace(agentName))
             agentName = AnsiConsole.Prompt(new TextPrompt<string>("Agent name:").Styled());
 
-        var manifest = await _manifests.ReadAsync(manifestPath, ct);
+        var manifest = await WorkspaceManifestFile.ReadAsync(manifestPath, ct);
 
         if (manifest.Agents.ContainsKey(agentName))
         {
@@ -43,7 +42,7 @@ internal sealed class WorkspaceAddAgentCliCommand(WorkspaceManifestFile? manifes
             MaxConcurrentTasks = 3
         };
 
-        await _manifests.WriteAsync(manifestPath, manifest, ct);
+        await WorkspaceManifestFile.WriteAsync(manifestPath, manifest, ct);
 
         var promptPath = Path.Combine(Path.GetDirectoryName(manifestPath)!, "prompts", $"{agentName}.md");
         Directory.CreateDirectory(Path.GetDirectoryName(promptPath)!);

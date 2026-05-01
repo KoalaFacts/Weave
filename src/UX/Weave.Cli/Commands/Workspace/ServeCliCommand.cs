@@ -3,10 +3,8 @@ using Spectre.Console;
 
 namespace Weave.Cli.Commands;
 
-internal sealed class ServeCliCommand(SiloProcessService? silo = null) : ICliCommand<ServeOptions>
+internal sealed class ServeCliCommand : ICliCommand<ServeOptions>
 {
-    private readonly SiloProcessService _silo = silo ?? new SiloProcessService();
-
     public string Name => "serve";
 
     public IReadOnlyList<string> Aliases => [];
@@ -18,7 +16,7 @@ internal sealed class ServeCliCommand(SiloProcessService? silo = null) : ICliCom
         var port = options.Port;
         var background = options.Background;
 
-        if (await _silo.IsReachableAsync(port, ct))
+        if (await SiloProcessService.IsReachableAsync(port, ct))
         {
             CliTheme.WriteWarning($"Weave is already running on port {port}.");
             return 0;
@@ -32,7 +30,7 @@ internal sealed class ServeCliCommand(SiloProcessService? silo = null) : ICliCom
             return 1;
         }
 
-        var args = _silo.BuildSiloArgs(siloPath, port);
+        var args = SiloProcessService.BuildSiloArgs(siloPath, port);
 
         if (background)
         {
@@ -60,9 +58,9 @@ internal sealed class ServeCliCommand(SiloProcessService? silo = null) : ICliCom
             // startup can hit ~4 KB in seconds). See
             // docs/best-practices.md — "Background launchers must
             // drain pipes or not redirect."
-            _silo.AttachLogDrainer(process, WorkspaceSiloPaths.GetSiloLogPath());
+            SiloProcessService.AttachLogDrainer(process, WorkspaceSiloPaths.GetSiloLogPath());
 
-            await _silo.WaitForReadyAsync(port, ct, attempts: 30);
+            await SiloProcessService.WaitForReadyAsync(port, ct, attempts: 30);
 
             CliTheme.WriteSuccess($"Weave running in background (PID {process.Id}, port {port}).");
             CliTheme.WriteMuted("  Local mode \u2014 no external services required.");

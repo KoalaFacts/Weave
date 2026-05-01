@@ -5,22 +5,14 @@ using Weave.Workspaces.Models;
 
 namespace Weave.Cli.Tui;
 
-internal sealed class TuiLiveStatusWatcher
+internal static class TuiLiveStatusWatcher
 {
-    private readonly TuiLiveStatusRenderer _renderer = new();
-    private readonly TuiWorkspaceStateReader _stateReader;
-
-    public TuiLiveStatusWatcher(TuiWorkspaceStateReader stateReader)
-    {
-        _stateReader = stateReader;
-    }
-
-    public async Task WatchAsync(
+    public static async Task WatchAsync(
         string manifestPath,
         WorkspaceManifest manifest,
         CancellationToken cancellationToken)
     {
-        var workspaceId = _stateReader.ReadWorkspaceId(manifestPath);
+        var workspaceId = TuiWorkspaceStateReader.ReadWorkspaceId(manifestPath);
         if (workspaceId is null)
         {
             CliTheme.WriteWarning("No workspace ID on disk — nothing to watch.");
@@ -46,7 +38,7 @@ internal sealed class TuiLiveStatusWatcher
         }
     }
 
-    private async Task WatchLoopAsync(
+    private static async Task WatchLoopAsync(
         LiveDisplayContext context,
         WorkspaceApiClient client,
         string workspaceId,
@@ -72,7 +64,7 @@ internal sealed class TuiLiveStatusWatcher
         }
     }
 
-    private async Task<IRenderable> BuildWatchFrameAsync(
+    private static async Task<IRenderable> BuildWatchFrameAsync(
         WorkspaceApiClient client,
         string workspaceId,
         string manifestPath,
@@ -91,7 +83,7 @@ internal sealed class TuiLiveStatusWatcher
             var workspace = await client.GetWorkspaceAsync(workspaceId, cancellationToken);
             var agents = await client.GetAgentsAsync(workspaceId, cancellationToken);
             var tools = await client.GetToolsAsync(workspaceId, cancellationToken);
-            return _renderer.Build(manifestPath, manifest, workspace, agents, tools);
+            return TuiLiveStatusRenderer.Build(manifestPath, manifest, workspace, agents, tools);
         }
         catch (OperationCanceledException)
         {

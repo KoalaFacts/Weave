@@ -2,19 +2,17 @@ using System.Net.Sockets;
 
 namespace Weave.Cli.Commands;
 
-[System.Diagnostics.CodeAnalysis.SuppressMessage("Performance", "CA1822:Mark members as static", Justification = "Instance collaborator is injected for CLI testability.")]
 internal sealed class WorkspaceStorageBackendService(StorageBackendService? storage = null)
 {
     private readonly StorageBackendService _storage = storage ?? new StorageBackendService();
-    private readonly StorageConnectionStrings _connectionStrings = new();
 
     public IReadOnlyList<string> SupportedBackends => _storage.SupportedBackends;
 
-    public async Task<bool> CheckDatabaseExistsAsync(string backend, string connectionString, string database, CancellationToken ct)
+    public static async Task<bool> CheckDatabaseExistsAsync(string backend, string connectionString, string database, CancellationToken ct)
     {
         if (backend == "sqlite")
         {
-            var dataSource = _connectionStrings.TryGetSqliteDataSource(connectionString);
+            var dataSource = StorageConnectionStrings.TryGetSqliteDataSource(connectionString);
             return dataSource is not null && File.Exists(dataSource);
         }
 
@@ -22,8 +20,8 @@ internal sealed class WorkspaceStorageBackendService(StorageBackendService? stor
         {
             var (host, port) = backend switch
             {
-                "postgresql" => _storage.ParseKvHostPort(connectionString, "Host", 5432),
-                "sqlserver" => _storage.ParseSqlServerHostPort(connectionString),
+                "postgresql" => StorageBackendService.ParseKvHostPort(connectionString, "Host", 5432),
+                "sqlserver" => StorageBackendService.ParseSqlServerHostPort(connectionString),
                 _ => (string.Empty, 0)
             };
 
@@ -44,15 +42,15 @@ internal sealed class WorkspaceStorageBackendService(StorageBackendService? stor
         }
     }
 
-    public string ReplaceDatabaseInConnectionString(string backend, string connectionString, string newDatabase)
+    public static string ReplaceDatabaseInConnectionString(string backend, string connectionString, string newDatabase)
     {
         if (backend == "sqlite")
         {
-            return _connectionStrings.ReplaceSqliteDataSource(connectionString, newDatabase);
+            return StorageConnectionStrings.ReplaceSqliteDataSource(connectionString, newDatabase);
         }
 
-        return _connectionStrings.ReplaceDatabaseName(connectionString, newDatabase);
+        return StorageConnectionStrings.ReplaceDatabaseName(connectionString, newDatabase);
     }
 
-    public string MaskPassword(string connStr) => _storage.MaskConnectionString(connStr);
+    public static string MaskPassword(string connStr) => StorageBackendService.MaskConnectionString(connStr);
 }

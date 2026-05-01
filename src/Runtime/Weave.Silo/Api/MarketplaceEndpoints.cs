@@ -6,9 +6,6 @@ namespace Weave.Silo.Api;
 
 public static class MarketplaceEndpoints
 {
-    private static readonly MarketplaceRequestValidator Validator = new();
-    private static readonly MarketplaceItemMapper Mapper = new();
-
     public static RouteGroupBuilder MapMarketplaceEndpoints(this IEndpointRouteBuilder routes)
     {
         var group = routes.MapGroup("/api/marketplace")
@@ -97,12 +94,12 @@ public static class MarketplaceEndpoints
         IVirtualActorProvider actors,
         CancellationToken ct)
     {
-        var errors = Validator.ValidateSubmit(request);
+        var errors = ValidateSubmit(request);
         if (errors is not null)
             return ResultExtensions.ValidationFailed(errors);
 
         var actor = GetMarketplace(actors);
-        var stored = await actor.SubmitAsync(Mapper.FromRequest(request));
+        var stored = await actor.SubmitAsync(ItemFromRequest(request));
         return Results.Created($"/api/marketplace/{stored.ItemId}", MarketplaceItemResponse.FromItem(stored));
     }
 
@@ -115,7 +112,7 @@ public static class MarketplaceEndpoints
         try
         {
             var actor = GetMarketplace(actors);
-            var item = await actor.PublishAsync(MarketplaceItemId.From(itemId), Mapper.ReviewFromRequest(request));
+            var item = await actor.PublishAsync(MarketplaceItemId.From(itemId), ReviewFromRequest(request));
             return Results.Ok(MarketplaceItemResponse.FromItem(item));
         }
         catch (InvalidOperationException ex)
@@ -130,7 +127,7 @@ public static class MarketplaceEndpoints
         IVirtualActorProvider actors,
         CancellationToken ct)
     {
-        var errors = Validator.ValidateRating(request);
+        var errors = ValidateRating(request);
         if (errors is not null)
             return ResultExtensions.ValidationFailed(errors);
 
@@ -158,4 +155,53 @@ public static class MarketplaceEndpoints
 
     private static IMarketplaceActor GetMarketplace(IVirtualActorProvider actors) =>
         actors.GetActor<IMarketplaceActor>(VirtualActorId.From("global"));
+
+    private static Dictionary<string, string[]>? ValidateSubmit(SubmitMarketplaceItemRequest request)
+    {
+        Dictionary<string, string[]>? errors = null;
+
+        if (string.IsNullOrWhiteSpace(request.Name))
+            (errors ??= [])["name"] = ["Name is required."];
+        if (string.IsNullOrWhiteSpace(request.Description))
+            (errors ??= [])["description"] = ["Description is required."];
+        if (string.IsNullOrWhiteSpace(request.Version))
+            (errors ??= [])["version"] = ["Version is required."];
+        if (string.IsNullOrWhiteSpace(request.Author))
+            (errors ??= [])["author"] = ["Author is required."];
+
+        return errors;
+    }
+
+    private static Dictionary<string, string[]>? ValidateRating(RateMarketplaceItemRequest request)
+    {
+        return request.Rating is < 0.0 or > 5.0
+            ? new Dictionary<string, string[]> { ["rating"] = ["Rating must be between 0.0 and 5.0."] }
+            : null;
+    }
+
+    private static MarketplaceItem ItemFromRequest(SubmitMarketplaceItemRequest request)
+    {
+        return new MarketplaceItem
+        {
+            ItemId = MarketplaceItemId.New(),
+            Name = request.Name,
+            Description = request.Description,
+            Category = request.Category,
+            Version = request.Version,
+            Author = request.Author,
+            Tags = request.Tags ?? [],
+            RequiredCapabilities = request.RequiredCapabilities ?? [],
+            DocumentationUrl = request.DocumentationUrl
+        };
+    }
+
+    private static SecurityReview ReviewFromRequest(PublishMarketplaceItemRequest request)
+    {
+        return new SecurityReview
+        {
+            ReviewerId = request.ReviewerId,
+            Approved = request.Approved,
+            Notes = request.Notes
+        };
+    }
 }

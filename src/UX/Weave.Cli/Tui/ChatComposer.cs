@@ -14,7 +14,6 @@ namespace Weave.Cli.Tui;
 internal sealed class ChatComposer
 {
     private readonly ChatComposerEditor _editor = new();
-    private readonly ChatComposerRenderer _renderer = new();
     private bool _cursorOn = true;
 
     // Poll loop ticks every 25 ms; 20 ticks ≈ 500 ms → classic
@@ -160,7 +159,7 @@ internal sealed class ChatComposer
         var matches = _editor.MenuMatches();
         _editor.NormalizeMenuSelection(matches);
 
-        return _renderer.Build(new ChatComposerRenderModel(
+        return ChatComposerRenderer.Build(new ChatComposerRenderModel(
             session,
             _editor.Text,
             _editor.CursorPosition,

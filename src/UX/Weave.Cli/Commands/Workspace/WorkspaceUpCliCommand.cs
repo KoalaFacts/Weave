@@ -2,9 +2,8 @@ using System.Globalization;
 
 namespace Weave.Cli.Commands;
 
-internal sealed class WorkspaceUpCliCommand(WorkspaceManifestFile? manifests = null) : ICliCommand<WorkspaceUpOptions>
+internal sealed class WorkspaceUpCliCommand : ICliCommand<WorkspaceUpOptions>
 {
-    private readonly WorkspaceManifestFile _manifests = manifests ?? new WorkspaceManifestFile();
 
     public string Name => "up";
 
@@ -24,7 +23,7 @@ internal sealed class WorkspaceUpCliCommand(WorkspaceManifestFile? manifests = n
 
         CliTheme.WriteInfo($"Starting workspace from {manifestPath} (target: {options.Target})...");
 
-        var manifest = await _manifests.ReadPreparedAsync(manifestPath, ct);
+        var manifest = await WorkspaceManifestFile.ReadPreparedAsync(manifestPath, ct);
 
         try
         {

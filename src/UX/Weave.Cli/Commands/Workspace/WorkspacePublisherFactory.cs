@@ -3,10 +3,9 @@ using Weave.Deploy.Translators;
 
 namespace Weave.Cli.Commands;
 
-[System.Diagnostics.CodeAnalysis.SuppressMessage("Performance", "CA1822:Mark members as static", Justification = "Instance collaborator is injected for CLI testability.")]
-internal sealed class WorkspacePublisherFactory
+internal static class WorkspacePublisherFactory
 {
-    public IPublisher Resolve(string target) => target switch
+    public static IPublisher Resolve(string target) => target switch
     {
         "docker-compose" => new DockerComposePublisher(),
         "kubernetes" or "k8s" => new KubernetesPublisher(),

@@ -9,8 +9,6 @@ namespace Weave.Tools.Connectors;
 public sealed partial class FileSystemToolConnector(ILogger<FileSystemToolConnector> logger) : IToolConnector
 {
     private readonly ConcurrentDictionary<string, FileSystemToolConfig> _configurations = new(StringComparer.Ordinal);
-    private readonly FileSystemToolInvoker _invoker = new();
-
     public ToolType ToolType => ToolType.FileSystem;
 
     public Task<ToolHandle> ConnectAsync(ToolSpec tool, CapabilityToken token, CancellationToken ct = default)
@@ -59,7 +57,7 @@ public sealed partial class FileSystemToolConnector(ILogger<FileSystemToolConnec
         var sw = Stopwatch.StartNew();
         try
         {
-            return await _invoker.InvokeAsync(handle.ToolName, config, invocation, sw, ct);
+            return await FileSystemToolInvoker.InvokeAsync(handle.ToolName, config, invocation, sw, ct);
         }
         catch (ArgumentException ex)
         {

@@ -2,10 +2,8 @@ using Spectre.Console;
 
 namespace Weave.Cli.Commands;
 
-internal sealed class ConfigSetCliCommand(ConfigValueAccessor? values = null) : ICliCommand<ConfigSetOptions>
+internal sealed class ConfigSetCliCommand : ICliCommand<ConfigSetOptions>
 {
-    private readonly ConfigValueAccessor _values = values ?? new ConfigValueAccessor();
-
     public string Name => "set";
 
     public IReadOnlyList<string> Aliases => [];
@@ -18,7 +16,7 @@ internal sealed class ConfigSetCliCommand(ConfigValueAccessor? values = null) : 
         var key = SelectKey(options.Key);
         var value = SelectValue(options.Value, key);
 
-        var updated = _values.SetValue(config, key, value);
+        var updated = ConfigValueAccessor.SetValue(config, key, value);
         if (updated is null)
         {
             CliTheme.WriteError($"Unknown config key '{key}'.");

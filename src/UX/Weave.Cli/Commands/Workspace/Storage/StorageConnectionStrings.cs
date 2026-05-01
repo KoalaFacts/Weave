@@ -3,10 +3,9 @@ using System.Text.RegularExpressions;
 
 namespace Weave.Cli.Commands;
 
-[System.Diagnostics.CodeAnalysis.SuppressMessage("Performance", "CA1822:Mark members as static", Justification = "Instance collaborator is injected for CLI testability.")]
-internal sealed partial class StorageConnectionStrings
+internal static partial class StorageConnectionStrings
 {
-    public (string host, int port) ParseHostPort(string connectionString, int defaultPort)
+    public static (string host, int port) ParseHostPort(string connectionString, int defaultPort)
     {
         var parts = connectionString.Split(',')[0].Split(':');
         var host = parts[0].Trim();
@@ -16,7 +15,7 @@ internal sealed partial class StorageConnectionStrings
         return (host, port);
     }
 
-    public (string host, int port) ParseKeyValueHostPort(string connectionString, string hostKey, int defaultPort)
+    public static (string host, int port) ParseKeyValueHostPort(string connectionString, string hostKey, int defaultPort)
     {
         var host = "localhost";
         var port = defaultPort;
@@ -38,7 +37,7 @@ internal sealed partial class StorageConnectionStrings
         return (host, port);
     }
 
-    public (string host, int port) ParseSqlServerHostPort(string connectionString)
+    public static (string host, int port) ParseSqlServerHostPort(string connectionString)
     {
         var host = "localhost";
         var port = 1433;
@@ -64,23 +63,23 @@ internal sealed partial class StorageConnectionStrings
         return (host, port);
     }
 
-    public string MaskSecret(string connectionString)
+    public static string MaskSecret(string connectionString)
     {
         return PasswordRegex().Replace(connectionString, match => match.Groups[1].Value + "***");
     }
 
-    public string? TryGetSqliteDataSource(string connectionString)
+    public static string? TryGetSqliteDataSource(string connectionString)
     {
         var match = DataSourceValueRegex().Match(connectionString);
         return match.Success ? match.Groups[1].Value.Trim() : null;
     }
 
-    public string ReplaceSqliteDataSource(string connectionString, string newDataSource)
+    public static string ReplaceSqliteDataSource(string connectionString, string newDataSource)
     {
         return DataSourceAssignmentRegex().Replace(connectionString, match => match.Groups[1].Value + newDataSource);
     }
 
-    public string ReplaceDatabaseName(string connectionString, string newDatabase)
+    public static string ReplaceDatabaseName(string connectionString, string newDatabase)
     {
         var result = DatabaseAssignmentRegex().Replace(connectionString, match => match.Groups[1].Value + newDatabase);
         return InitialCatalogAssignmentRegex().Replace(result, match => match.Groups[1].Value + newDatabase);

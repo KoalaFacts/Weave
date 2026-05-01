@@ -2,14 +2,11 @@ using System.Net.Sockets;
 
 namespace Weave.Cli.Commands;
 
-[System.Diagnostics.CodeAnalysis.SuppressMessage("Performance", "CA1822:Mark members as static", Justification = "Instance collaborator is injected for CLI testability.")]
-internal sealed class StorageBackendService(StorageConnectionStrings? connectionStrings = null)
+internal sealed class StorageBackendService
 {
-    private readonly StorageConnectionStrings _connectionStrings = connectionStrings ?? new StorageConnectionStrings();
-
     public IReadOnlyList<string> SupportedBackends { get; } = ["memory", "sqlite", "postgresql", "sqlserver", "redis"];
 
-    public async Task<bool> IsRunningAsync(int port, CancellationToken ct)
+    public static async Task<bool> IsRunningAsync(int port, CancellationToken ct)
     {
         try
         {
@@ -23,14 +20,14 @@ internal sealed class StorageBackendService(StorageConnectionStrings? connection
         }
     }
 
-    public async Task<bool> TestConnectivityAsync(string backend, string connectionString, CancellationToken ct)
+    public static async Task<bool> TestConnectivityAsync(string backend, string connectionString, CancellationToken ct)
     {
         try
         {
             var (host, port) = backend switch
             {
-                "redis" => _connectionStrings.ParseHostPort(connectionString, 6379),
-                "postgresql" => _connectionStrings.ParseKeyValueHostPort(connectionString, "Host", 5432),
+                "redis" => StorageConnectionStrings.ParseHostPort(connectionString, 6379),
+                "postgresql" => StorageConnectionStrings.ParseKeyValueHostPort(connectionString, "Host", 5432),
                 "sqlserver" => ParseSqlServerHostPort(connectionString),
                 _ => ("localhost", 0)
             };
@@ -50,18 +47,18 @@ internal sealed class StorageBackendService(StorageConnectionStrings? connection
         }
     }
 
-    public (string host, int port) ParseHostPort(string connStr, int defaultPort) =>
-        _connectionStrings.ParseHostPort(connStr, defaultPort);
+    public static (string host, int port) ParseHostPort(string connStr, int defaultPort) =>
+        StorageConnectionStrings.ParseHostPort(connStr, defaultPort);
 
-    public (string host, int port) ParseKvHostPort(string connStr, string hostKey, int defaultPort) =>
-        _connectionStrings.ParseKeyValueHostPort(connStr, hostKey, defaultPort);
+    public static (string host, int port) ParseKvHostPort(string connStr, string hostKey, int defaultPort) =>
+        StorageConnectionStrings.ParseKeyValueHostPort(connStr, hostKey, defaultPort);
 
-    public (string host, int port) ParseSqlServerHostPort(string connStr) =>
-        _connectionStrings.ParseSqlServerHostPort(connStr);
+    public static (string host, int port) ParseSqlServerHostPort(string connStr) =>
+        StorageConnectionStrings.ParseSqlServerHostPort(connStr);
 
-    public string MaskConnectionString(string connStr) => _connectionStrings.MaskSecret(connStr);
+    public static string MaskConnectionString(string connStr) => StorageConnectionStrings.MaskSecret(connStr);
 
-    public string DefaultSqlitePath()
+    public static string DefaultSqlitePath()
     {
         var weaveHome = Path.Combine(Environment.GetFolderPath(Environment.SpecialFolder.UserProfile), ".weave");
         return Path.Combine(weaveHome, "weave.db");

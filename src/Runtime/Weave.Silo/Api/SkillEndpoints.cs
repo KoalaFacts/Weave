@@ -8,9 +8,6 @@ namespace Weave.Silo.Api;
 
 public static class SkillEndpoints
 {
-    private static readonly SkillRequestValidator Validator = new();
-    private static readonly SkillDocumentMapper DocumentMapper = new();
-
     public static RouteGroupBuilder MapSkillEndpoints(this IEndpointRouteBuilder routes)
     {
         var group = routes.MapGroup("/api/workspaces/{workspaceId}/skills")
@@ -101,11 +98,11 @@ public static class SkillEndpoints
         ICommandDispatcher dispatcher,
         CancellationToken ct)
     {
-        var errors = Validator.ValidateStoreSkill(request);
+        var errors = ValidateStoreSkill(request);
         if (errors is not null)
             return ResultExtensions.ValidationFailed(errors);
 
-        var command = new StoreSkillCommand(WorkspaceId.From(workspaceId), DocumentMapper.FromRequest(request));
+        var command = new StoreSkillCommand(WorkspaceId.From(workspaceId), SkillFromRequest(request));
         var stored = await dispatcher.DispatchAsync<StoreSkillCommand, SkillDocument>(command, ct);
         return Results.Created(
             $"/api/workspaces/{workspaceId}/skills/{stored.SkillId}",
@@ -149,6 +146,43 @@ public static class SkillEndpoints
         var actor = actors.GetActor<Agents.Actors.ISkillMemoryActor>(VirtualActorId.From(workspaceId));
         await actor.RemoveSkillAsync(SkillId.From(skillId));
         return Results.NoContent();
+    }
+
+    private static Dictionary<string, string[]>? ValidateStoreSkill(StoreSkillRequest request)
+    {
+        Dictionary<string, string[]>? errors = null;
+
+        if (string.IsNullOrWhiteSpace(request.Title))
+            (errors ??= [])["title"] = ["Title is required."];
+        if (string.IsNullOrWhiteSpace(request.Description))
+            (errors ??= [])["description"] = ["Description is required."];
+        if (request.Steps is not { Count: > 0 })
+            (errors ??= [])["steps"] = ["At least one step is required."];
+        if (string.IsNullOrWhiteSpace(request.CreatedByAgent))
+            (errors ??= [])["createdByAgent"] = ["CreatedByAgent is required."];
+
+        return errors;
+    }
+
+    private static SkillDocument SkillFromRequest(StoreSkillRequest request)
+    {
+        return new SkillDocument
+        {
+            SkillId = SkillId.New(),
+            Title = request.Title,
+            Description = request.Description,
+            Tags = request.Tags,
+            Steps = request.Steps.Select((step, index) => new SkillStep
+            {
+                Order = index,
+                Action = step.Action,
+                ToolName = step.ToolName,
+                ExpectedOutcome = step.ExpectedOutcome
+            }).ToList(),
+            ToolsUsed = request.ToolsUsed,
+            CreatedByAgent = request.CreatedByAgent,
+            OriginTaskDescription = request.OriginTaskDescription
+        };
     }
 
 }

@@ -2,10 +2,9 @@ using Weave.Agents.Models;
 
 namespace Weave.Agents.Actors;
 
-internal sealed class AgentSkillExtractor
+internal static class AgentSkillExtractor
 {
-    [System.Diagnostics.CodeAnalysis.SuppressMessage("Performance", "CA1822:Mark members as static", Justification = "Instance collaborator is kept testable and replaceable from AgentActor.")]
-    public SkillDocument? ExtractFromTask(AgentTaskInfo task, AgentState state)
+    public static SkillDocument? ExtractFromTask(AgentTaskInfo task, AgentState state)
     {
         if (task.Proof is null || task.Proof.Items.Count < 2)
             return null;

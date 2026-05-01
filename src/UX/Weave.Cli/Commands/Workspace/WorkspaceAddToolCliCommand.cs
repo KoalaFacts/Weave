@@ -3,9 +3,8 @@ using Weave.Workspaces.Models;
 
 namespace Weave.Cli.Commands;
 
-internal sealed class WorkspaceAddToolCliCommand(WorkspaceManifestFile? manifests = null) : ICliCommand<WorkspaceAddToolOptions>
+internal sealed class WorkspaceAddToolCliCommand : ICliCommand<WorkspaceAddToolOptions>
 {
-    private readonly WorkspaceManifestFile _manifests = manifests ?? new WorkspaceManifestFile();
 
     public string Name => "tool";
 
@@ -27,7 +26,7 @@ internal sealed class WorkspaceAddToolCliCommand(WorkspaceManifestFile? manifest
         if (string.IsNullOrWhiteSpace(toolName))
             toolName = AnsiConsole.Prompt(new TextPrompt<string>("Tool name:").Styled());
 
-        var manifest = await _manifests.ReadAsync(manifestPath, ct);
+        var manifest = await WorkspaceManifestFile.ReadAsync(manifestPath, ct);
 
         if (manifest.Tools.ContainsKey(toolName))
         {
@@ -36,7 +35,7 @@ internal sealed class WorkspaceAddToolCliCommand(WorkspaceManifestFile? manifest
         }
 
         manifest.Tools[toolName] = new ToolDefinition { Type = options.Type };
-        await _manifests.WriteAsync(manifestPath, manifest, ct);
+        await WorkspaceManifestFile.WriteAsync(manifestPath, manifest, ct);
 
         CliTheme.WriteSuccess($"Tool '{toolName}' added to workspace '{manifest.Name}'.");
         return 0;

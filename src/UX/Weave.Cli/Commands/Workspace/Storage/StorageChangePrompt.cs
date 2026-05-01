@@ -2,7 +2,6 @@ using Spectre.Console;
 
 namespace Weave.Cli.Commands;
 
-[System.Diagnostics.CodeAnalysis.SuppressMessage("Performance", "CA1822:Mark members as static", Justification = "Instance collaborator is injected for CLI testability.")]
 internal sealed class StorageChangePrompt(StorageBackendService? storage = null)
 {
     private readonly StorageBackendService _storage = storage ?? new StorageBackendService();
@@ -15,11 +14,11 @@ internal sealed class StorageChangePrompt(StorageBackendService? storage = null)
                 .Styled()
                 .AddChoices(_storage.SupportedBackends));
 
-    public async Task<string?> ResolveConnectionStringAsync(string backend, string? connectionString, CancellationToken ct)
+    public static async Task<string?> ResolveConnectionStringAsync(string backend, string? connectionString, CancellationToken ct)
     {
         if (backend is "sqlite" && string.IsNullOrWhiteSpace(connectionString))
         {
-            var defaultPath = _storage.DefaultSqlitePath();
+            var defaultPath = StorageBackendService.DefaultSqlitePath();
             CliTheme.WriteInfo($"Database: {defaultPath}");
             return $"Data Source={defaultPath}";
         }
@@ -30,7 +29,7 @@ internal sealed class StorageChangePrompt(StorageBackendService? storage = null)
         return await PromptConnectionStringAsync(backend, connectionString, ct);
     }
 
-    private async Task<string?> PromptConnectionStringAsync(string backend, string? connectionString, CancellationToken ct)
+    private static async Task<string?> PromptConnectionStringAsync(string backend, string? connectionString, CancellationToken ct)
     {
         if (string.IsNullOrWhiteSpace(connectionString))
         {
@@ -51,7 +50,7 @@ internal sealed class StorageChangePrompt(StorageBackendService? storage = null)
         AnsiConsole.WriteLine();
         var reachable = await AnsiConsole.Status()
             .Spinner(Spinner.Known.Dots)
-            .StartAsync("Testing connectivity...", async _ => await _storage.TestConnectivityAsync(backend, connectionString, ct));
+            .StartAsync("Testing connectivity...", async _ => await StorageBackendService.TestConnectivityAsync(backend, connectionString, ct));
 
         if (reachable)
             CliTheme.WriteSuccess("Connection successful.");

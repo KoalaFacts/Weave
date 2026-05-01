@@ -1,11 +1,9 @@
 namespace Weave.Cli.Commands;
 
 internal sealed class WorkspaceStorageShowCliCommand(
-    WorkspaceStorageBackendService? storage = null,
-    WorkspaceManifestFile? manifests = null) : ICliCommand<WorkspaceNameOptions>
+    WorkspaceStorageBackendService? storage = null) : ICliCommand<WorkspaceNameOptions>
 {
     private readonly WorkspaceStorageBackendService _storage = storage ?? new WorkspaceStorageBackendService();
-    private readonly WorkspaceManifestFile _manifests = manifests ?? new WorkspaceManifestFile();
 
     public string Name => "show";
 
@@ -23,7 +21,7 @@ internal sealed class WorkspaceStorageShowCliCommand(
             return 1;
         }
 
-        var manifest = await _manifests.ReadAsync(manifestPath, ct);
+        var manifest = await WorkspaceManifestFile.ReadAsync(manifestPath, ct);
 
         CliTheme.WriteSection($"Storage — {manifest.Name}");
 
@@ -44,7 +42,7 @@ internal sealed class WorkspaceStorageShowCliCommand(
                 CliTheme.WriteKeyValue("Database", storage.Database);
 
             if (!string.IsNullOrWhiteSpace(storage.ConnectionString))
-                CliTheme.WriteKeyValue("Connection", _storage.MaskPassword(storage.ConnectionString));
+                CliTheme.WriteKeyValue("Connection", WorkspaceStorageBackendService.MaskPassword(storage.ConnectionString));
         }
 
         return 0;

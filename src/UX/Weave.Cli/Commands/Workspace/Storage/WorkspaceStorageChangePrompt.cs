@@ -3,7 +3,6 @@ using Weave.Workspaces.Models;
 
 namespace Weave.Cli.Commands;
 
-[System.Diagnostics.CodeAnalysis.SuppressMessage("Performance", "CA1822:Mark members as static", Justification = "Instance collaborator is injected for CLI testability.")]
 internal sealed class WorkspaceStorageChangePrompt(WorkspaceStorageBackendService? storage = null)
 {
     private readonly WorkspaceStorageBackendService _storage = storage ?? new WorkspaceStorageBackendService();
@@ -16,12 +15,12 @@ internal sealed class WorkspaceStorageChangePrompt(WorkspaceStorageBackendServic
                 .Styled()
                 .AddChoices(_storage.SupportedBackends));
 
-    public StorageIsolation ResolveIsolation(string? isolation) => !string.IsNullOrWhiteSpace(isolation) &&
+    public static StorageIsolation ResolveIsolation(string? isolation) => !string.IsNullOrWhiteSpace(isolation) &&
         isolation.Equals("schema", StringComparison.OrdinalIgnoreCase)
             ? StorageIsolation.Schema
             : StorageIsolation.Database;
 
-    public string? PromptConnectionString(WorkspaceStorageChangeOptions options, string manifestPath, string backend, string database)
+    public static string? PromptConnectionString(WorkspaceStorageChangeOptions options, string manifestPath, string backend, string database)
     {
         if (backend is "memory" || !string.IsNullOrWhiteSpace(options.ConnectionString))
             return options.ConnectionString;
@@ -41,7 +40,7 @@ internal sealed class WorkspaceStorageChangePrompt(WorkspaceStorageBackendServic
                 .DefaultValue(defaultConn));
     }
 
-    public string? PromptSchema(string? schema, string workspace, string backend, StorageIsolation isolation)
+    public static string? PromptSchema(string? schema, string workspace, string backend, StorageIsolation isolation)
     {
         if (backend is not ("postgresql" or "sqlserver") || isolation != StorageIsolation.Schema || !string.IsNullOrWhiteSpace(schema))
             return schema;
@@ -52,7 +51,7 @@ internal sealed class WorkspaceStorageChangePrompt(WorkspaceStorageBackendServic
                 .DefaultValue(workspace));
     }
 
-    public WorkspaceStorageConflictResolution PromptDatabaseConflict(string backend, string connectionString, string database)
+    public static WorkspaceStorageConflictResolution PromptDatabaseConflict(string backend, string connectionString, string database)
     {
         CliTheme.WriteWarning($"Database '{database}' already exists.");
         var action = AnsiConsole.Prompt(
@@ -77,6 +76,6 @@ internal sealed class WorkspaceStorageChangePrompt(WorkspaceStorageBackendServic
         return new WorkspaceStorageConflictResolution(
             false,
             newDatabase,
-            _storage.ReplaceDatabaseInConnectionString(backend, connectionString, newDatabase));
+            WorkspaceStorageBackendService.ReplaceDatabaseInConnectionString(backend, connectionString, newDatabase));
     }
 }

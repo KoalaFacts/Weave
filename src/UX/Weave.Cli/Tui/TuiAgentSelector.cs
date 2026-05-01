@@ -4,17 +4,14 @@ using Weave.Workspaces.Manifest;
 
 namespace Weave.Cli.Tui;
 
-[System.Diagnostics.CodeAnalysis.SuppressMessage("Performance", "CA1822:Mark members as static", Justification = "Instance collaborator is kept testable and replaceable from the TUI shell.")]
 internal sealed class TuiAgentSelector
 {
     private readonly ManifestParser _parser = new();
     private readonly TuiAgentNameSource _agentNameSource;
-    private readonly TuiNextStepHint _nextStepHint;
 
-    public TuiAgentSelector(TuiAgentNameSource agentNameSource, TuiNextStepHint nextStepHint)
+    public TuiAgentSelector(TuiAgentNameSource agentNameSource)
     {
         _agentNameSource = agentNameSource;
-        _nextStepHint = nextStepHint;
     }
 
     public async Task SelectAsync(
@@ -59,7 +56,7 @@ internal sealed class TuiAgentSelector
         session.AgentName = match;
         clearConversationHistory();
         CliTheme.WriteMuted($"Agent set to '{match}'.");
-        _nextStepHint.Render(session);
+        TuiNextStepHint.Render(session);
     }
 
     public void TrySelectOnlyAgent(TuiSession session)
