@@ -12,8 +12,6 @@ public sealed class SkillMemoryActor(
     ILogger<SkillMemoryActor> logger,
     IActorState<SkillMemoryState> persistentState) : ISkillMemoryActor
 {
-    private readonly SkillMemorySearcher _searcher = new();
-
     public async Task<SkillDocument> StoreSkillAsync(SkillDocument skill)
     {
         var key = skill.SkillId.ToString();
@@ -97,14 +95,14 @@ public sealed class SkillMemoryActor(
             return Task.FromResult<IReadOnlyList<SkillSearchResult>>(new List<SkillSearchResult>());
         }
 
-        var results = _searcher.Search(
+        var results = SearchSkills(
             persistentState.State.Skills.Values,
             query,
             maxResults,
             options,
             timeProvider.GetUtcNow());
 
-        return Task.FromResult(results);
+        return Task.FromResult<IReadOnlyList<SkillSearchResult>>(results);
     }
 
     public Task<SkillDocument?> GetSkillAsync(SkillId skillId)
@@ -178,4 +176,37 @@ public sealed class SkillMemoryActor(
             Title = skill.Title,
             CreatedByAgent = skill.CreatedByAgent
         }, CancellationToken.None);
+
+    private static List<SkillSearchResult> SearchSkills(
+        IEnumerable<SkillDocument> skills,
+        string query,
+        int maxResults,
+        SkillSearchOptions? options,
+        DateTimeOffset now)
+    {
+        var queryTokens = SkillSearchScorer.Tokenize(query);
+        if (queryTokens.Length == 0)
+            return [];
+
+        var scored = new List<SkillSearchResult>();
+        var effectiveOptions = options ?? new SkillSearchOptions();
+        var minSuccessRate = Math.Clamp(effectiveOptions.MinSuccessRate, 0, 1);
+
+        foreach (var skill in skills)
+        {
+            if (skill.ArchivedAt is not null)
+                continue;
+            if (skill.SuccessRate < minSuccessRate)
+                continue;
+
+            var score = SkillSearchScorer.ComputeRelevanceScore(skill, queryTokens, effectiveOptions, now);
+            if (score > 0)
+                scored.Add(new SkillSearchResult { Skill = skill, RelevanceScore = score });
+        }
+
+        return scored
+            .OrderByDescending(result => result.RelevanceScore)
+            .Take(maxResults)
+            .ToList();
+    }
 }

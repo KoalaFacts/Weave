@@ -1,9 +1,8 @@
 namespace Weave.Cli.Commands;
 
-[System.Diagnostics.CodeAnalysis.SuppressMessage("Performance", "CA1822:Mark members as static", Justification = "Instance collaborator is kept testable and replaceable from version services.")]
-internal sealed class VersionComparer
+internal static class VersionComparer
 {
-    public bool IsNewer(string candidate, string baseline) =>
+    public static bool IsNewer(string candidate, string baseline) =>
         Parse(candidate).CompareTo(Parse(baseline)) > 0;
 
     private static Version Parse(string version)

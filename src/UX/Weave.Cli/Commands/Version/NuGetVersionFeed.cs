@@ -7,22 +7,23 @@ internal sealed class NuGetVersionFeed
     private const string NuGetIndexUrl = "https://api.nuget.org/v3-flatcontainer/weave.cli/index.json";
     private static readonly TimeSpan _networkTimeout = TimeSpan.FromSeconds(3);
 
-    private readonly VersionComparer _comparer;
+    private readonly HttpClient _client;
+    private readonly Uri _indexUri;
 
     public NuGetVersionFeed()
-        : this(new VersionComparer())
+        : this(new HttpClient { Timeout = _networkTimeout }, new Uri(NuGetIndexUrl))
     {
     }
 
-    internal NuGetVersionFeed(VersionComparer comparer)
+    internal NuGetVersionFeed(HttpClient client, Uri indexUri)
     {
-        _comparer = comparer;
+        _client = client;
+        _indexUri = indexUri;
     }
 
     public async Task<string?> FetchLatestAsync(CancellationToken ct)
     {
-        using var client = new HttpClient { Timeout = _networkTimeout };
-        using var response = await client.GetAsync(NuGetIndexUrl, ct);
+        using var response = await _client.GetAsync(_indexUri, ct);
         if (!response.IsSuccessStatusCode)
             return null;
 
@@ -44,7 +45,7 @@ internal sealed class NuGetVersionFeed
             if (version.Contains('-', StringComparison.Ordinal))
                 continue;
 
-            if (latest is null || _comparer.IsNewer(version, latest))
+            if (latest is null || VersionComparer.IsNewer(version, latest))
                 latest = version;
         }
 

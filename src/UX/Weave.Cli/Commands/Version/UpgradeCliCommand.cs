@@ -4,8 +4,6 @@ namespace Weave.Cli.Commands;
 
 internal sealed class UpgradeCliCommand : ICliCommand<NoCliOptions>
 {
-    private readonly VersionService _versionService = new();
-
     public string Name => "upgrade";
 
     public IReadOnlyList<string> Aliases => ["update"];
@@ -14,7 +12,7 @@ internal sealed class UpgradeCliCommand : ICliCommand<NoCliOptions>
 
     public async Task<int> ExecuteAsync(NoCliOptions options, CancellationToken ct)
     {
-        var result = await _versionService.CheckAsync(ct);
+        var result = await VersionService.CheckAsync(ct);
 
         CliTheme.WriteKeyValue("Installed", $"v{result.Current}");
         if (result.Latest is not null)

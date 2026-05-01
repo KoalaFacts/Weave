@@ -1,16 +1,15 @@
 namespace Weave.Cli.Commands;
 
-[System.Diagnostics.CodeAnalysis.SuppressMessage("Performance", "CA1822:Mark members as static", Justification = "Instance collaborator is kept testable and replaceable from workspace startup commands.")]
-internal sealed class WorkspaceSiloPaths
+internal static class WorkspaceSiloPaths
 {
-    public string GetSiloLogPath()
+    public static string GetSiloLogPath()
     {
         var weaveHome = Path.Combine(
             Environment.GetFolderPath(Environment.SpecialFolder.UserProfile), ".weave");
         return Path.Combine(weaveHome, "silo.log");
     }
 
-    public string? ResolveSiloPath()
+    public static string? ResolveSiloPath()
     {
         var envPath = Environment.GetEnvironmentVariable("WEAVE_SILO_PATH");
         if (!string.IsNullOrWhiteSpace(envPath) && (File.Exists(envPath) || Directory.Exists(envPath)))

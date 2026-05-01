@@ -4,8 +4,6 @@ namespace Weave.Cli.Commands;
 
 internal sealed class VersionCliCommand : ICliCommand<NoCliOptions>
 {
-    private readonly VersionService _versionService = new();
-
     public string Name => "version";
 
     public IReadOnlyList<string> Aliases => ["v"];
@@ -14,8 +12,8 @@ internal sealed class VersionCliCommand : ICliCommand<NoCliOptions>
 
     public Task<int> ExecuteAsync(NoCliOptions options, CancellationToken ct)
     {
-        var current = _versionService.Current();
-        var cache = _versionService.LoadCache();
+        var current = VersionService.Current();
+        var cache = VersionService.LoadCache();
 
         AnsiConsole.MarkupLine(
             $"weave [bold rgb({CliTheme.Primary.R},{CliTheme.Primary.G},{CliTheme.Primary.B})]v{Markup.Escape(current)}[/]");
@@ -26,7 +24,7 @@ internal sealed class VersionCliCommand : ICliCommand<NoCliOptions>
             return Task.FromResult(0);
         }
 
-        var newer = _versionService.IsNewer(cache.LatestVersion, current);
+        var newer = VersionService.IsNewer(cache.LatestVersion, current);
         if (newer)
         {
             AnsiConsole.MarkupLine(

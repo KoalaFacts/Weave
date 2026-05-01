@@ -6,8 +6,6 @@ namespace Weave.Cli.Commands;
 [System.Diagnostics.CodeAnalysis.SuppressMessage("Performance", "CA1822:Mark members as static", Justification = "Instance collaborator is injected for CLI testability.")]
 internal sealed class SiloProcessService
 {
-    private readonly WorkspaceSiloPaths _paths = new();
-
     public Process? StartSilo(string siloPath, int port, Weave.Workspaces.Models.StorageConfig? workspaceStorage = null)
     {
         var startInfo = new ProcessStartInfo
@@ -25,7 +23,7 @@ internal sealed class SiloProcessService
 
         var process = Process.Start(startInfo);
         if (process is not null)
-            AttachLogDrainer(process, _paths.GetSiloLogPath());
+            AttachLogDrainer(process, WorkspaceSiloPaths.GetSiloLogPath());
 
         return process;
     }

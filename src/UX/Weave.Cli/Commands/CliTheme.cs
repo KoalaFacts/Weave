@@ -62,9 +62,8 @@ internal static class CliTheme
                 .Color(Primary));
         AnsiConsole.Write(new Rule().RuleStyle(MutedStyle));
 
-        var versionService = new VersionService();
-        var current = versionService.Current();
-        var pending = versionService.PendingUpdateFromCache();
+        var current = VersionService.Current();
+        var pending = VersionService.PendingUpdateFromCache();
         if (pending is not null)
         {
             AnsiConsole.MarkupLine(

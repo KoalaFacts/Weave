@@ -6,15 +6,13 @@ internal static class WorkspaceSiloStarter
 {
     internal sealed record AutoStartResult(bool Success, string LogPath, string? Reason);
 
-    private static readonly WorkspaceSiloPaths Paths = new();
-
     internal static async Task<bool> AutoStartServeAsync(CancellationToken ct)
         => (await AutoStartServeWithDiagnosticsAsync(ct)).Success;
 
     internal static async Task<AutoStartResult> AutoStartServeWithDiagnosticsAsync(CancellationToken ct)
     {
-        var logPath = Paths.GetSiloLogPath();
-        var siloPath = Paths.ResolveSiloPath();
+        var logPath = WorkspaceSiloPaths.GetSiloLogPath();
+        var siloPath = WorkspaceSiloPaths.ResolveSiloPath();
         if (siloPath is null)
             return new AutoStartResult(false, logPath, "Could not locate the Weave Silo on disk.");
 

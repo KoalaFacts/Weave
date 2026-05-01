@@ -2,30 +2,15 @@ using System.Reflection;
 
 namespace Weave.Cli.Commands;
 
-[System.Diagnostics.CodeAnalysis.SuppressMessage("Performance", "CA1822:Mark members as static", Justification = "Instance service keeps version behavior replaceable from CLI commands.")]
-internal sealed class VersionService
+internal static class VersionService
 {
     public const string UpgradeCommand = "dotnet tool update --global Weave.Cli";
 
     private static readonly TimeSpan _cacheTtl = TimeSpan.FromHours(24);
+    private static readonly VersionCacheStore _cacheStore = new();
+    private static readonly NuGetVersionFeed _feed = new();
 
-    private readonly VersionCacheStore _cacheStore;
-    private readonly NuGetVersionFeed _feed;
-    private readonly VersionComparer _comparer;
-
-    public VersionService()
-        : this(new VersionCacheStore(), new NuGetVersionFeed(), new VersionComparer())
-    {
-    }
-
-    internal VersionService(VersionCacheStore cacheStore, NuGetVersionFeed feed, VersionComparer comparer)
-    {
-        _cacheStore = cacheStore;
-        _feed = feed;
-        _comparer = comparer;
-    }
-
-    public string Current()
+    public static string Current()
     {
         var assembly = typeof(VersionService).Assembly;
         var info = assembly.GetCustomAttribute<AssemblyInformationalVersionAttribute>()?.InformationalVersion;
@@ -38,26 +23,26 @@ internal sealed class VersionService
         return assembly.GetName().Version?.ToString(3) ?? "0.0.0";
     }
 
-    public bool IsEnabled()
+    public static bool IsEnabled()
     {
         var value = Environment.GetEnvironmentVariable("WEAVE_NO_UPDATE_CHECK");
         return !(string.Equals(value, "1", StringComparison.Ordinal)
             || string.Equals(value, "true", StringComparison.OrdinalIgnoreCase));
     }
 
-    public UpdateCache? LoadCache() => _cacheStore.Load();
+    public static UpdateCache? LoadCache() => _cacheStore.Load();
 
-    public string? PendingUpdateFromCache()
+    public static string? PendingUpdateFromCache()
     {
         var cache = _cacheStore.Load();
         if (cache is null || string.IsNullOrWhiteSpace(cache.LatestVersion))
             return null;
 
         var current = Current();
-        return _comparer.IsNewer(cache.LatestVersion, current) ? cache.LatestVersion : null;
+        return VersionComparer.IsNewer(cache.LatestVersion, current) ? cache.LatestVersion : null;
     }
 
-    public void KickOffRefreshIfStale()
+    public static void KickOffRefreshIfStale()
     {
         if (!IsEnabled())
             return;
@@ -81,7 +66,7 @@ internal sealed class VersionService
         });
     }
 
-    public async Task<UpdateCheckResult> CheckAsync(CancellationToken ct)
+    public static async Task<UpdateCheckResult> CheckAsync(CancellationToken ct)
     {
         var current = Current();
         if (!IsEnabled())
@@ -101,7 +86,7 @@ internal sealed class VersionService
                 return new UpdateCheckResult(current, null, DateTimeOffset.UtcNow, false, "Could not reach NuGet.");
 
             _cacheStore.Save(new UpdateCache { LatestVersion = latest, CheckedAt = DateTimeOffset.UtcNow });
-            var newer = _comparer.IsNewer(latest, current);
+            var newer = VersionComparer.IsNewer(latest, current);
             return new UpdateCheckResult(current, latest, DateTimeOffset.UtcNow, newer, null);
         }
         catch (Exception ex)
@@ -110,5 +95,6 @@ internal sealed class VersionService
         }
     }
 
-    public bool IsNewer(string candidate, string baseline) => _comparer.IsNewer(candidate, baseline);
+    public static bool IsNewer(string candidate, string baseline) =>
+        VersionComparer.IsNewer(candidate, baseline);
 }

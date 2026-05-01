@@ -2,7 +2,6 @@ using System.Text.Json;
 
 namespace Weave.Cli.Commands;
 
-[System.Diagnostics.CodeAnalysis.SuppressMessage("Performance", "CA1822:Mark members as static", Justification = "Instance collaborator is kept testable and replaceable from version services.")]
 internal sealed class VersionCacheStore
 {
     private static readonly string _weaveHome = Path.Combine(
@@ -10,14 +9,26 @@ internal sealed class VersionCacheStore
 
     private static readonly string _cachePath = Path.Combine(_weaveHome, "update-cache.json");
 
+    private readonly string _cacheFilePath;
+
+    public VersionCacheStore()
+        : this(_cachePath)
+    {
+    }
+
+    internal VersionCacheStore(string cacheFilePath)
+    {
+        _cacheFilePath = cacheFilePath;
+    }
+
     public UpdateCache? Load()
     {
         try
         {
-            if (!File.Exists(_cachePath))
+            if (!File.Exists(_cacheFilePath))
                 return null;
 
-            var json = File.ReadAllText(_cachePath);
+            var json = File.ReadAllText(_cacheFilePath);
             return JsonSerializer.Deserialize(json, VersionJsonContext.Default.UpdateCache);
         }
         catch
@@ -30,9 +41,12 @@ internal sealed class VersionCacheStore
     {
         try
         {
-            Directory.CreateDirectory(_weaveHome);
+            var directory = Path.GetDirectoryName(_cacheFilePath);
+            if (!string.IsNullOrWhiteSpace(directory))
+                Directory.CreateDirectory(directory);
+
             var json = JsonSerializer.Serialize(cache, VersionJsonContext.Default.UpdateCache);
-            File.WriteAllText(_cachePath, json);
+            File.WriteAllText(_cacheFilePath, json);
         }
         catch
         {
