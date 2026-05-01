@@ -4,8 +4,10 @@ using Weave.Workspaces.Models;
 
 namespace Weave.Cli.Commands;
 
-internal sealed class WorkspaceStorageChangeCliCommand : ICliCommand<WorkspaceStorageChangeOptions>
+internal sealed class WorkspaceStorageChangeCliCommand(WorkspaceStorageBackendService? storage = null) : ICliCommand<WorkspaceStorageChangeOptions>
 {
+    private readonly WorkspaceStorageBackendService _storage = storage ?? new WorkspaceStorageBackendService();
+
     public string Name => "change";
 
     public IReadOnlyList<string> Aliases => [];
@@ -40,12 +42,12 @@ internal sealed class WorkspaceStorageChangeCliCommand : ICliCommand<WorkspaceSt
                 new SelectionPrompt<string>()
                     .Title("Backend:")
                     .Styled()
-                    .AddChoices(WorkspaceStorageCommands.SupportedBackends));
+                    .AddChoices(_storage.SupportedBackends));
         }
 
-        if (!WorkspaceStorageCommands.SupportedBackends.Contains(backend, StringComparer.OrdinalIgnoreCase))
+        if (!_storage.SupportedBackends.Contains(backend, StringComparer.OrdinalIgnoreCase))
         {
-            CliTheme.WriteError($"Unknown backend '{backend}'. Supported: {string.Join(", ", WorkspaceStorageCommands.SupportedBackends)}");
+            CliTheme.WriteError($"Unknown backend '{backend}'. Supported: {string.Join(", ", _storage.SupportedBackends)}");
             return 1;
         }
 
@@ -55,7 +57,7 @@ internal sealed class WorkspaceStorageChangeCliCommand : ICliCommand<WorkspaceSt
 
         if (backend is "postgresql" or "sqlserver" or "sqlite" && !string.IsNullOrWhiteSpace(connectionStr))
         {
-            var dbExists = await WorkspaceStorageCommands.CheckDatabaseExistsAsync(backend, connectionStr, database, ct);
+            var dbExists = await _storage.CheckDatabaseExistsAsync(backend, connectionStr, database, ct);
             if (dbExists)
             {
                 var outcome = PromptDatabaseConflict(backend, connectionStr, database);
@@ -138,7 +140,7 @@ internal sealed class WorkspaceStorageChangeCliCommand : ICliCommand<WorkspaceSt
                 .DefaultValue(defaultConn));
     }
 
-    private static (bool Abort, string Database, string ConnectionString) PromptDatabaseConflict(string backend, string connectionString, string database)
+    private (bool Abort, string Database, string ConnectionString) PromptDatabaseConflict(string backend, string connectionString, string database)
     {
         CliTheme.WriteWarning($"Database '{database}' already exists.");
         var action = AnsiConsole.Prompt(
@@ -160,6 +162,6 @@ internal sealed class WorkspaceStorageChangeCliCommand : ICliCommand<WorkspaceSt
             return (false, database, connectionString);
 
         var newDatabase = AnsiConsole.Prompt(new TextPrompt<string>("New database name:").Styled());
-        return (false, newDatabase, WorkspaceStorageCommands.ReplaceDatabaseInConnectionString(backend, connectionString, newDatabase));
+        return (false, newDatabase, _storage.ReplaceDatabaseInConnectionString(backend, connectionString, newDatabase));
     }
 }

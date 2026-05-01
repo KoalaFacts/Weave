@@ -12,7 +12,7 @@ internal sealed class MarketplacePublishCliCommand : ICliCommand<MarketplacePubl
 
     public async Task<int> ExecuteAsync(MarketplacePublishOptions options, CancellationToken ct)
     {
-        using var client = new WorkspaceApiClient();
+        using var client = new MarketplaceApiClient();
         if (!await client.IsReachableAsync(ct))
         {
             CliTheme.WriteError("Weave server is not running. Start it with 'weave serve'.");
@@ -25,7 +25,7 @@ internal sealed class MarketplacePublishCliCommand : ICliCommand<MarketplacePubl
 
         try
         {
-            var item = await client.PublishMarketplaceItemAsync(
+            var item = await client.PublishItemAsync(
                 options.ItemId,
                 reviewerId,
                 approved,

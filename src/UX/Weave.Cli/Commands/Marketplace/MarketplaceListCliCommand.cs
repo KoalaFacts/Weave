@@ -13,14 +13,14 @@ internal sealed class MarketplaceListCliCommand : ICliCommand<NoCliOptions>
 
     public async Task<int> ExecuteAsync(NoCliOptions options, CancellationToken ct)
     {
-        using var client = new WorkspaceApiClient();
+        using var client = new MarketplaceApiClient();
         if (!await client.IsReachableAsync(ct))
         {
             CliTheme.WriteError("Weave server is not running. Start it with 'weave serve'.");
             return 1;
         }
 
-        var items = await client.GetMarketplaceItemsAsync(ct);
+        var items = await client.GetItemsAsync(ct);
         if (items.Count == 0)
         {
             AnsiConsole.MarkupLine("[yellow]No published items in the marketplace.[/]");

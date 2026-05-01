@@ -3,8 +3,10 @@ using Spectre.Console;
 
 namespace Weave.Cli.Commands;
 
-internal sealed class ConfigGetCliCommand : ICliCommand<ConfigGetOptions>
+internal sealed class ConfigGetCliCommand(ConfigValueAccessor? values = null) : ICliCommand<ConfigGetOptions>
 {
+    private readonly ConfigValueAccessor _values = values ?? new ConfigValueAccessor();
+
     public string Name => "get";
 
     public IReadOnlyList<string> Aliases => [];
@@ -29,7 +31,7 @@ internal sealed class ConfigGetCliCommand : ICliCommand<ConfigGetOptions>
             return Task.FromResult(0);
         }
 
-        var value = ConfigGetCommand.GetValue(config, options.Key);
+        var value = _values.GetValue(config, options.Key);
         if (value is null)
         {
             CliTheme.WriteError($"Unknown config key '{options.Key}'.");

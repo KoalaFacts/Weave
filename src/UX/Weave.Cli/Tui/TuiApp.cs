@@ -1724,10 +1724,11 @@ internal static class TuiApp
     {
         CliTheme.WriteSection("Web UI");
 
-        var url = WebUiCommand.DefaultUrl();
+        var webUi = new WebUiRuntime();
+        var url = webUi.DefaultUrl();
         CliTheme.WriteKeyValue("URL", url);
 
-        var reachable = await WebUiCommand.IsReachableAsync(url, cancellationToken);
+        var reachable = await webUi.IsReachableAsync(url, cancellationToken);
         if (reachable)
             CliTheme.WriteSuccess("Dashboard is reachable.");
         else
@@ -1743,7 +1744,7 @@ internal static class TuiApp
         switch (choice)
         {
             case "Open in browser":
-                if (WebUiCommand.TryOpenBrowser(url))
+                if (webUi.TryOpenBrowser(url))
                     CliTheme.WriteMuted("Opened in your default browser.");
                 else
                     CliTheme.WriteMuted($"Could not open a browser automatically. Visit: {url}");

@@ -3,8 +3,10 @@ using Weave.Shared;
 
 namespace Weave.Cli.Commands;
 
-internal sealed class StorageShowCliCommand : ICliCommand<NoCliOptions>
+internal sealed class StorageShowCliCommand(StorageBackendService? storage = null) : ICliCommand<NoCliOptions>
 {
+    private readonly StorageBackendService _storage = storage ?? new StorageBackendService();
+
     public string Name => "show";
 
     public IReadOnlyList<string> Aliases => [];
@@ -27,7 +29,7 @@ internal sealed class StorageShowCliCommand : ICliCommand<NoCliOptions>
             else if (config.ConnectionString.StartsWith("vault:", StringComparison.OrdinalIgnoreCase))
                 CliTheme.WriteKeyValue("Connection", $"{config.ConnectionString} (from HashiCorp Vault)");
             else
-                CliTheme.WriteKeyValue("Connection", StorageCommands.MaskConnectionString(config.ConnectionString) + " [yellow](inline — not recommended)[/]");
+                CliTheme.WriteKeyValue("Connection", _storage.MaskConnectionString(config.ConnectionString) + " [yellow](inline — not recommended)[/]");
         }
         else
         {
@@ -35,7 +37,7 @@ internal sealed class StorageShowCliCommand : ICliCommand<NoCliOptions>
         }
 
         if (config.Storage == "sqlite" && string.IsNullOrWhiteSpace(config.ConnectionString))
-            CliTheme.WriteKeyValue("Default DB", StorageCommands.DefaultSqlitePath());
+            CliTheme.WriteKeyValue("Default DB", _storage.DefaultSqlitePath());
 
         AnsiConsole.WriteLine();
         CliTheme.WriteMuted("  Change with: weave storage change <backend>");

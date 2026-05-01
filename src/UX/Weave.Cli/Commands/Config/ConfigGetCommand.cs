@@ -1,5 +1,4 @@
 using System.CommandLine;
-using System.Globalization;
 
 namespace Weave.Cli.Commands;
 
@@ -23,12 +22,4 @@ internal static class ConfigGetCommand
 
         return cmd;
     }
-
-    internal static string? GetValue(CliConfig config, string key) => key.ToLowerInvariant() switch
-    {
-        "version" => config.Version,
-        "silopath" => config.SiloPath ?? "(not set)",
-        "defaultport" => config.DefaultPort.ToString(CultureInfo.InvariantCulture),
-        _ => null
-    };
 }

@@ -4,8 +4,10 @@ using Weave.Workspaces.Manifest;
 
 namespace Weave.Cli.Commands;
 
-internal sealed class WorkspacePublishCliCommand : ICliCommand<WorkspacePublishOptions>
+internal sealed class WorkspacePublishCliCommand(WorkspacePublisherFactory? publishers = null) : ICliCommand<WorkspacePublishOptions>
 {
+    private readonly WorkspacePublisherFactory _publishers = publishers ?? new WorkspacePublisherFactory();
+
     public string Name => "publish";
 
     public IReadOnlyList<string> Aliases => [];
@@ -35,7 +37,7 @@ internal sealed class WorkspacePublishCliCommand : ICliCommand<WorkspacePublishO
         var parser = new ManifestParser();
         var manifest = parser.Parse(yaml);
 
-        IPublisher publisher = WorkspacePublishCommand.ResolvePublisher(target);
+        IPublisher publisher = _publishers.Resolve(target);
 
         var publishOptions = new PublishOptions { OutputPath = options.OutputPath };
         var result = await publisher.PublishAsync(manifest, publishOptions, ct);

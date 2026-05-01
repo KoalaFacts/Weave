@@ -12,7 +12,7 @@ internal sealed class MarketplaceSubmitCliCommand : ICliCommand<NoCliOptions>
 
     public async Task<int> ExecuteAsync(NoCliOptions options, CancellationToken ct)
     {
-        using var client = new WorkspaceApiClient();
+        using var client = new MarketplaceApiClient();
         if (!await client.IsReachableAsync(ct))
         {
             CliTheme.WriteError("Weave server is not running. Start it with 'weave serve'.");
@@ -34,7 +34,7 @@ internal sealed class MarketplaceSubmitCliCommand : ICliCommand<NoCliOptions>
             ? Array.Empty<string>()
             : tagsInput.Split(',', StringSplitOptions.RemoveEmptyEntries | StringSplitOptions.TrimEntries);
 
-        var item = await client.SubmitMarketplaceItemAsync(name, description, category, version, author, tags, ct);
+        var item = await client.SubmitItemAsync(name, description, category, version, author, tags, ct);
 
         CliTheme.WriteSuccess($"Item '{item.Name}' submitted (ID: {item.ItemId}, status: {item.Status}).");
         CliTheme.WriteInfo("Submit a security review with 'weave marketplace publish' to make it available.");

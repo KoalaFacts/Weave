@@ -42,6 +42,7 @@ internal sealed class DataExportCliCommand : ICliCommand<DataExportOptions>
         var outputPath = options.Output ?? $"{workspace}-export.json";
 
         using var client = new WorkspaceApiClient();
+        using var marketplaceClient = new MarketplaceApiClient();
         if (!await client.IsReachableAsync(ct))
         {
             CliTheme.WriteError("Weave server is not running. Start it with 'weave run'.");
@@ -81,7 +82,7 @@ internal sealed class DataExportCliCommand : ICliCommand<DataExportOptions>
             await TryExportLiveDataAsync(client, export, workspaceId, ct);
         }
 
-        await TryExportGlobalDataAsync(client, export, ct);
+        await TryExportGlobalDataAsync(marketplaceClient, client, export, ct);
 
         var json = JsonSerializer.Serialize(export, DataJsonContext.Default.WorkspaceExport);
         await File.WriteAllTextAsync(outputPath, json, ct);
@@ -141,11 +142,11 @@ internal sealed class DataExportCliCommand : ICliCommand<DataExportOptions>
         }
     }
 
-    private static async Task TryExportGlobalDataAsync(WorkspaceApiClient client, WorkspaceExport export, CancellationToken ct)
+    private static async Task TryExportGlobalDataAsync(MarketplaceApiClient marketplaceClient, WorkspaceApiClient client, WorkspaceExport export, CancellationToken ct)
     {
         try
         {
-            var marketplace = await client.GetMarketplaceItemsAsync(ct);
+            var marketplace = await marketplaceClient.GetItemsAsync(ct);
             export.MarketplaceItems = marketplace;
             CliTheme.WriteInfo($"  Marketplace items: {marketplace.Count}");
         }

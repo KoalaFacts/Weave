@@ -4,8 +4,9 @@ namespace Weave.Cli.Commands;
 
 internal static class InitStoragePrompt
 {
-    public static async Task<InitStorageSelection> PromptAsync(CancellationToken ct)
+    public static async Task<InitStorageSelection> PromptAsync(CancellationToken ct, InitEnvironmentProbe? probe = null)
     {
+        probe ??= new InitEnvironmentProbe();
         CliTheme.WriteSection("Step 1 · Storage");
         AnsiConsole.MarkupLine("Where should Weave store agent state, skills, and user profiles?");
         AnsiConsole.WriteLine();
@@ -25,7 +26,7 @@ internal static class InitStoragePrompt
         var connectionString = storageKey switch
         {
             "sqlite" => ConfigureSqlite(),
-            "postgresql" or "sqlserver" or "redis" => await ConfigureServerStorageAsync(storageKey, ct),
+            "postgresql" or "sqlserver" or "redis" => await ConfigureServerStorageAsync(storageKey, probe, ct),
             _ => null
         };
 
@@ -41,7 +42,7 @@ internal static class InitStoragePrompt
         return $"Data Source={defaultDb}";
     }
 
-    private static async Task<string?> ConfigureServerStorageAsync(string storageKey, CancellationToken ct)
+    private static async Task<string?> ConfigureServerStorageAsync(string storageKey, InitEnvironmentProbe probe, CancellationToken ct)
     {
         var secretMethod = AnsiConsole.Prompt(
             new SelectionPrompt<string>()
@@ -62,7 +63,7 @@ internal static class InitStoragePrompt
             _ => ConfigureInlineConnection(storageKey)
         };
 
-        await TestConnectionAsync(storageKey, connectionString, ct);
+        await TestConnectionAsync(storageKey, connectionString, probe, ct);
         ShowSqlScriptReminder(storageKey);
         return connectionString;
     }
@@ -149,7 +150,7 @@ internal static class InitStoragePrompt
         return AnsiConsole.Prompt(new TextPrompt<string>("Connection string:").Styled().DefaultValue(defaultConn));
     }
 
-    private static async Task TestConnectionAsync(string storageKey, string? connectionString, CancellationToken ct)
+    private static async Task TestConnectionAsync(string storageKey, string? connectionString, InitEnvironmentProbe probe, CancellationToken ct)
     {
         string? resolvedConn = null;
         try
@@ -167,7 +168,7 @@ internal static class InitStoragePrompt
         AnsiConsole.WriteLine();
         var reachable = await AnsiConsole.Status()
             .Spinner(Spinner.Known.Dots)
-            .StartAsync("Testing connectivity...", async _ => await InitCommand.TestConnectivityAsync(storageKey, resolvedConn, ct));
+            .StartAsync("Testing connectivity...", async _ => await probe.TestConnectivityAsync(storageKey, resolvedConn, ct));
 
         if (reachable)
             CliTheme.WriteSuccess("Connection successful.");

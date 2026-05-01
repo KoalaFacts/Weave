@@ -2,8 +2,10 @@ using Weave.Workspaces.Manifest;
 
 namespace Weave.Cli.Commands;
 
-internal sealed class WorkspaceStorageShowCliCommand : ICliCommand<WorkspaceNameOptions>
+internal sealed class WorkspaceStorageShowCliCommand(WorkspaceStorageBackendService? storage = null) : ICliCommand<WorkspaceNameOptions>
 {
+    private readonly WorkspaceStorageBackendService _storage = storage ?? new WorkspaceStorageBackendService();
+
     public string Name => "show";
 
     public IReadOnlyList<string> Aliases => [];
@@ -42,7 +44,7 @@ internal sealed class WorkspaceStorageShowCliCommand : ICliCommand<WorkspaceName
                 CliTheme.WriteKeyValue("Database", storage.Database);
 
             if (!string.IsNullOrWhiteSpace(storage.ConnectionString))
-                CliTheme.WriteKeyValue("Connection", WorkspaceStorageCommands.MaskPassword(storage.ConnectionString));
+                CliTheme.WriteKeyValue("Connection", _storage.MaskPassword(storage.ConnectionString));
         }
 
         return 0;

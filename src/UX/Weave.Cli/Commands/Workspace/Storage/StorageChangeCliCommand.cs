@@ -2,8 +2,10 @@ using Spectre.Console;
 
 namespace Weave.Cli.Commands;
 
-internal sealed class StorageChangeCliCommand : ICliCommand<StorageChangeOptions>
+internal sealed class StorageChangeCliCommand(StorageBackendService? storage = null) : ICliCommand<StorageChangeOptions>
 {
+    private readonly StorageBackendService _storage = storage ?? new StorageBackendService();
+
     public string Name => "change";
 
     public IReadOnlyList<string> Aliases => [];
@@ -16,7 +18,7 @@ internal sealed class StorageChangeCliCommand : ICliCommand<StorageChangeOptions
         var connectionStr = options.ConnectionString;
         var currentConfig = CliConfigStore.Load();
 
-        var isRunning = await StorageCommands.IsRunningAsync(currentConfig.DefaultPort, ct);
+        var isRunning = await _storage.IsRunningAsync(currentConfig.DefaultPort, ct);
         if (isRunning)
         {
             CliTheme.WriteError("Server is still running. Stop it first:");
@@ -35,12 +37,12 @@ internal sealed class StorageChangeCliCommand : ICliCommand<StorageChangeOptions
                 new SelectionPrompt<string>()
                     .Title("New backend:")
                     .Styled()
-                    .AddChoices(StorageCommands.SupportedBackends));
+                    .AddChoices(_storage.SupportedBackends));
         }
 
-        if (!StorageCommands.SupportedBackends.Contains(backend, StringComparer.OrdinalIgnoreCase))
+        if (!_storage.SupportedBackends.Contains(backend, StringComparer.OrdinalIgnoreCase))
         {
-            CliTheme.WriteError($"Unknown backend '{backend}'. Supported: {string.Join(", ", StorageCommands.SupportedBackends)}");
+            CliTheme.WriteError($"Unknown backend '{backend}'. Supported: {string.Join(", ", _storage.SupportedBackends)}");
             return 1;
         }
 
@@ -52,8 +54,8 @@ internal sealed class StorageChangeCliCommand : ICliCommand<StorageChangeOptions
 
         if (backend is "sqlite" && string.IsNullOrWhiteSpace(connectionStr))
         {
-            connectionStr = $"Data Source={StorageCommands.DefaultSqlitePath()}";
-            CliTheme.WriteInfo($"Database: {StorageCommands.DefaultSqlitePath()}");
+            connectionStr = $"Data Source={_storage.DefaultSqlitePath()}";
+            CliTheme.WriteInfo($"Database: {_storage.DefaultSqlitePath()}");
         }
         else if (backend is "postgresql" or "sqlserver" or "redis")
         {
@@ -86,7 +88,7 @@ internal sealed class StorageChangeCliCommand : ICliCommand<StorageChangeOptions
         return 0;
     }
 
-    private static async Task<string?> PromptConnectionStringAsync(string backend, string? connectionStr, CancellationToken ct)
+    private async Task<string?> PromptConnectionStringAsync(string backend, string? connectionStr, CancellationToken ct)
     {
         if (string.IsNullOrWhiteSpace(connectionStr))
         {
@@ -107,7 +109,7 @@ internal sealed class StorageChangeCliCommand : ICliCommand<StorageChangeOptions
         AnsiConsole.WriteLine();
         var reachable = await AnsiConsole.Status()
             .Spinner(Spinner.Known.Dots)
-            .StartAsync("Testing connectivity...", async _ => await StorageCommands.TestConnectivityAsync(backend, connectionStr, ct));
+            .StartAsync("Testing connectivity...", async _ => await _storage.TestConnectivityAsync(backend, connectionStr, ct));
 
         if (reachable)
             CliTheme.WriteSuccess("Connection successful.");

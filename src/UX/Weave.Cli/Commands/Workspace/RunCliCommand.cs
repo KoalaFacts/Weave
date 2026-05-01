@@ -5,8 +5,10 @@ using Weave.Workspaces.Manifest;
 
 namespace Weave.Cli.Commands;
 
-internal sealed class RunCliCommand : ICliCommand<RunOptions>
+internal sealed class RunCliCommand(SiloProcessService? silo = null) : ICliCommand<RunOptions>
 {
+    private readonly SiloProcessService _silo = silo ?? new SiloProcessService();
+
     public string Name => "run";
 
     public IReadOnlyList<string> Aliases => [];
@@ -95,7 +97,7 @@ internal sealed class RunCliCommand : ICliCommand<RunOptions>
             CliTheme.WriteKeyValue("Channels", manifest.Channels.Count.ToString(CultureInfo.InvariantCulture));
         AnsiConsole.WriteLine();
 
-        var serverAlreadyRunning = await RunCommand.IsReachableAsync(port, ct);
+        var serverAlreadyRunning = await _silo.IsReachableAsync(port, ct);
         Process? siloProcess = null;
 
         if (!serverAlreadyRunning)
@@ -110,18 +112,18 @@ internal sealed class RunCliCommand : ICliCommand<RunOptions>
                 return 1;
             }
 
-            siloProcess = RunCommand.StartSilo(siloPath, port, manifest.Workspace.Storage);
+            siloProcess = _silo.StartSilo(siloPath, port, manifest.Workspace.Storage);
             if (siloProcess is null)
             {
                 CliTheme.WriteError("Failed to start server.");
                 return 1;
             }
 
-            var ready = await RunCommand.WaitForReadyAsync(port, ct);
+            var ready = await _silo.WaitForReadyAsync(port, ct);
             if (!ready)
             {
                 CliTheme.WriteError("Server did not become ready in time.");
-                RunCommand.TryKill(siloProcess);
+                _silo.TryKill(siloProcess);
                 return 1;
             }
 
@@ -162,12 +164,12 @@ internal sealed class RunCliCommand : ICliCommand<RunOptions>
         catch (Exception ex)
         {
             CliTheme.WriteError($"Failed to start workspace: {ex.Message}");
-            RunCommand.TryKill(siloProcess);
+            _silo.TryKill(siloProcess);
             return 1;
         }
         finally
         {
-            RunCommand.TryKill(siloProcess);
+            _silo.TryKill(siloProcess);
         }
 
         return 0;

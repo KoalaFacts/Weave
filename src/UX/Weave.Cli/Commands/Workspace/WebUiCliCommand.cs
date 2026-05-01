@@ -2,8 +2,10 @@ namespace Weave.Cli.Commands;
 
 internal sealed record WebUiOptions(string? Url = null, bool NoOpen = false);
 
-internal sealed class WebUiCliCommand : ICliCommand<WebUiOptions>
+internal sealed class WebUiCliCommand(WebUiRuntime? runtime = null) : ICliCommand<WebUiOptions>
 {
+    private readonly WebUiRuntime _runtime = runtime ?? new WebUiRuntime();
+
     public string Name => "webui";
 
     public IReadOnlyList<string> Aliases => ["web", "w"];
@@ -12,10 +14,10 @@ internal sealed class WebUiCliCommand : ICliCommand<WebUiOptions>
 
     public async Task<int> ExecuteAsync(WebUiOptions options, CancellationToken ct)
     {
-        var url = options.Url ?? WebUiCommand.DefaultUrl();
+        var url = options.Url ?? _runtime.DefaultUrl();
         CliTheme.WriteKeyValue("Web UI", url);
 
-        var reachable = await WebUiCommand.IsReachableAsync(url, ct);
+        var reachable = await _runtime.IsReachableAsync(url, ct);
         if (reachable)
             CliTheme.WriteSuccess("Dashboard is reachable.");
         else
@@ -24,7 +26,7 @@ internal sealed class WebUiCliCommand : ICliCommand<WebUiOptions>
         if (options.NoOpen)
             return 0;
 
-        if (WebUiCommand.TryOpenBrowser(url))
+        if (_runtime.TryOpenBrowser(url))
             CliTheme.WriteMuted("Opened in your default browser.");
         else
             CliTheme.WriteMuted($"Could not open a browser automatically. Visit: {url}");

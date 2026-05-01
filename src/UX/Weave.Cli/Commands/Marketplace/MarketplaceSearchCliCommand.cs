@@ -12,14 +12,14 @@ internal sealed class MarketplaceSearchCliCommand : ICliCommand<MarketplaceSearc
 
     public async Task<int> ExecuteAsync(MarketplaceSearchOptions options, CancellationToken ct)
     {
-        using var client = new WorkspaceApiClient();
+        using var client = new MarketplaceApiClient();
         if (!await client.IsReachableAsync(ct))
         {
             CliTheme.WriteError("Weave server is not running. Start it with 'weave serve'.");
             return 1;
         }
 
-        var items = await client.SearchMarketplaceAsync(options.Query, ct);
+        var items = await client.SearchAsync(options.Query, ct);
         if (items.Count == 0)
         {
             CliTheme.WriteWarning($"No marketplace items matching '{options.Query}'.");

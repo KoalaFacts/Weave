@@ -4,8 +4,10 @@ using Weave.Shared;
 
 namespace Weave.Cli.Commands;
 
-internal sealed class InitCliCommand : ICliCommand<NoCliOptions>
+internal sealed class InitCliCommand(InitEnvironmentProbe? probe = null) : ICliCommand<NoCliOptions>
 {
+    private readonly InitEnvironmentProbe _probe = probe ?? new InitEnvironmentProbe();
+
     public string Name => "init";
 
     public IReadOnlyList<string> Aliases => [];
@@ -33,7 +35,7 @@ internal sealed class InitCliCommand : ICliCommand<NoCliOptions>
             AnsiConsole.WriteLine();
         }
 
-        var storage = await InitStoragePrompt.PromptAsync(ct);
+        var storage = await InitStoragePrompt.PromptAsync(ct, _probe);
 
         // ── Step 2: Server port ──────────────────────────────────
         AnsiConsole.WriteLine();
@@ -48,7 +50,7 @@ internal sealed class InitCliCommand : ICliCommand<NoCliOptions>
         AnsiConsole.WriteLine();
         CliTheme.WriteSection("Step 3 · Runtime");
 
-        var detectedSilo = InitCommand.DetectSiloPath();
+        var detectedSilo = _probe.DetectSiloPath();
         string? siloPath;
 
         if (detectedSilo is not null)
@@ -56,12 +58,12 @@ internal sealed class InitCliCommand : ICliCommand<NoCliOptions>
             CliTheme.WriteInfo($"Detected runtime at: {detectedSilo}");
             siloPath = AnsiConsole.Confirm("Use this path?")
                 ? detectedSilo
-                : InitCommand.PromptSiloPath();
+                : _probe.PromptSiloPath();
         }
         else
         {
             CliTheme.WriteMuted("No runtime detected in the current directory.");
-            siloPath = InitCommand.PromptSiloPath();
+            siloPath = _probe.PromptSiloPath();
         }
 
         var security = InitSecurityPrompt.Prompt();

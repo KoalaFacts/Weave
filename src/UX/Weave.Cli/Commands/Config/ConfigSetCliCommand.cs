@@ -1,7 +1,9 @@
 namespace Weave.Cli.Commands;
 
-internal sealed class ConfigSetCliCommand : ICliCommand<ConfigSetOptions>
+internal sealed class ConfigSetCliCommand(ConfigValueAccessor? values = null) : ICliCommand<ConfigSetOptions>
 {
+    private readonly ConfigValueAccessor _values = values ?? new ConfigValueAccessor();
+
     public string Name => "set";
 
     public IReadOnlyList<string> Aliases => [];
@@ -12,7 +14,7 @@ internal sealed class ConfigSetCliCommand : ICliCommand<ConfigSetOptions>
     {
         var config = CliConfigStore.Load();
 
-        var updated = ConfigSetCommand.SetValue(config, options.Key, options.Value);
+        var updated = _values.SetValue(config, options.Key, options.Value);
         if (updated is null)
         {
             CliTheme.WriteError($"Unknown config key '{options.Key}'.");
