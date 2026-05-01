@@ -12,6 +12,10 @@ internal sealed class MarketplaceSearchCliCommand : ICliCommand<MarketplaceSearc
 
     public async Task<int> ExecuteAsync(MarketplaceSearchOptions options, CancellationToken ct)
     {
+        var query = options.Query;
+        if (string.IsNullOrWhiteSpace(query))
+            query = AnsiConsole.Prompt(new TextPrompt<string>("Search query:").Styled());
+
         using var client = new MarketplaceApiClient();
         if (!await client.IsReachableAsync(ct))
         {
@@ -19,14 +23,14 @@ internal sealed class MarketplaceSearchCliCommand : ICliCommand<MarketplaceSearc
             return 1;
         }
 
-        var items = await client.SearchAsync(options.Query, ct);
+        var items = await client.SearchAsync(query, ct);
         if (items.Count == 0)
         {
-            CliTheme.WriteWarning($"No marketplace items matching '{options.Query}'.");
+            CliTheme.WriteWarning($"No marketplace items matching '{query}'.");
             return 0;
         }
 
-        var table = CliTheme.CreateTable($"Results for \"{options.Query}\"");
+        var table = CliTheme.CreateTable($"Results for \"{query}\"");
         table.AddColumn(CliTheme.StyledColumn("Name"));
         table.AddColumn(CliTheme.StyledColumn("Category"));
         table.AddColumn(CliTheme.StyledColumn("Description"));

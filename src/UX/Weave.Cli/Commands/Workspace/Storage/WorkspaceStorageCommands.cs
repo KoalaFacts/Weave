@@ -16,13 +16,17 @@ internal static class WorkspaceStorageCommands
 
     private static Command CreateShowCommand()
     {
-        var workspaceArg = new Argument<string>("workspace") { Description = "Workspace name" };
+        var workspaceArg = new Argument<string?>("workspace")
+        {
+            Description = "Workspace name",
+            Arity = ArgumentArity.ZeroOrOne
+        };
         workspaceArg.CompletionSources.Add(CliCompletions.CompleteWorkspaceNames);
 
         var cmd = new Command("show", "Show workspace storage configuration") { workspaceArg };
         cmd.SetAction(async (parseResult, cancellationToken) =>
         {
-            var workspace = parseResult.GetValue(workspaceArg)!;
+            var workspace = parseResult.GetValue(workspaceArg);
             return await new WorkspaceStorageShowCliCommand().ExecuteAsync(new WorkspaceNameOptions(workspace), cancellationToken);
         });
 
@@ -31,7 +35,11 @@ internal static class WorkspaceStorageCommands
 
     private static Command CreateChangeCommand()
     {
-        var workspaceArg = new Argument<string>("workspace") { Description = "Workspace name" };
+        var workspaceArg = new Argument<string?>("workspace")
+        {
+            Description = "Workspace name",
+            Arity = ArgumentArity.ZeroOrOne
+        };
         workspaceArg.CompletionSources.Add(CliCompletions.CompleteWorkspaceNames);
         var backendArg = new Argument<string?>("backend")
         {
@@ -46,7 +54,7 @@ internal static class WorkspaceStorageCommands
         var cmd = new Command("change", "Change workspace storage backend") { workspaceArg, backendArg, connectionOption, schemaOption, databaseOption, isolationOption };
         cmd.SetAction(async (parseResult, cancellationToken) =>
         {
-            var workspace = parseResult.GetValue(workspaceArg)!;
+            var workspace = parseResult.GetValue(workspaceArg);
             var backend = parseResult.GetValue(backendArg);
             var connectionStr = parseResult.GetValue(connectionOption);
             var schema = parseResult.GetValue(schemaOption);

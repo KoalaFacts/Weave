@@ -20,17 +20,21 @@ internal sealed class WorkspaceStorageChangeCliCommand(
 
     public async Task<int> ExecuteAsync(WorkspaceStorageChangeOptions options, CancellationToken ct)
     {
-        var manifestPath = ManifestResolver.Resolve(options.Workspace);
+        var workspace = WorkspacePrompt.SelectName(options.Workspace, "Which workspace would you like to update?");
+        var manifestPath = ManifestResolver.Resolve(workspace);
         if (manifestPath is null)
         {
-            CliTheme.WriteError($"No workspace.json found for '{options.Workspace}'.");
+            CliTheme.WriteError(workspace is null
+                ? "No workspace.json found. Create one first with: weave workspace new"
+                : $"No workspace.json found for '{workspace}'.");
             return 1;
         }
 
         var manifest = await _manifests.ReadAsync(manifestPath, ct);
+        var workspaceName = manifest.Name;
         var currentStorage = manifest.Workspace.Storage;
 
-        CliTheme.WriteSection($"Change Storage — {options.Workspace}");
+        CliTheme.WriteSection($"Change Storage — {workspaceName}");
         if (currentStorage is not null)
             CliTheme.WriteKeyValue("Current", $"{currentStorage.Backend} ({currentStorage.Isolation.ToString().ToLowerInvariant()})");
         else
@@ -63,7 +67,7 @@ internal sealed class WorkspaceStorageChangeCliCommand(
             }
         }
 
-        var schema = _prompt.PromptSchema(options.Schema, options.Workspace, backend, isolation);
+        var schema = _prompt.PromptSchema(options.Schema, workspaceName, backend, isolation);
 
         var newStorage = backend == "memory"
             ? null
@@ -82,18 +86,18 @@ internal sealed class WorkspaceStorageChangeCliCommand(
         AnsiConsole.WriteLine();
         if (newStorage is null)
         {
-            CliTheme.WriteSuccess($"Workspace '{options.Workspace}' reset to global default storage.");
+            CliTheme.WriteSuccess($"Workspace '{workspaceName}' reset to global default storage.");
         }
         else
         {
-            CliTheme.WriteSuccess($"Workspace '{options.Workspace}' storage set to {backend}.");
+            CliTheme.WriteSuccess($"Workspace '{workspaceName}' storage set to {backend}.");
             CliTheme.WriteKeyValue("Database", database);
             CliTheme.WriteKeyValue("Isolation", isolation.ToString().ToLowerInvariant());
             if (isolation == StorageIsolation.Schema && !string.IsNullOrWhiteSpace(schema))
                 CliTheme.WriteKeyValue("Schema", schema);
         }
 
-        CliTheme.WriteMuted("  Start with: weave run " + options.Workspace);
+        CliTheme.WriteMuted("  Start with: weave run " + workspaceName);
         return 0;
     }
 }

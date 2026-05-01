@@ -1,3 +1,3 @@
 namespace Weave.Cli.Commands;
 
-internal sealed record MarketplaceInfoOptions(string ItemId);
+internal sealed record MarketplaceInfoOptions(string? ItemId);

@@ -1,7 +1,7 @@
 namespace Weave.Cli.Commands;
 
 internal sealed record WorkspaceStorageChangeOptions(
-    string Workspace,
+    string? Workspace,
     string? Backend,
     string? ConnectionString,
     string? Schema,

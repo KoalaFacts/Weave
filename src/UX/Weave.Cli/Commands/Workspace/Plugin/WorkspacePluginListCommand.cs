@@ -6,13 +6,17 @@ internal static class WorkspacePluginListCommand
 {
     public static Command Create()
     {
-        var workspaceArg = new Argument<string>("workspace") { Description = "Workspace name" };
+        var workspaceArg = new Argument<string?>("workspace")
+        {
+            Description = "Workspace name",
+            Arity = ArgumentArity.ZeroOrOne
+        };
         workspaceArg.CompletionSources.Add(CliCompletions.CompleteWorkspaceNames);
 
         var cmd = new Command("list", "List configured plugins") { workspaceArg };
         cmd.SetAction(async (parseResult, cancellationToken) =>
         {
-            var workspace = parseResult.GetValue(workspaceArg)!;
+            var workspace = parseResult.GetValue(workspaceArg);
             return await new WorkspacePluginListCliCommand().ExecuteAsync(new WorkspaceNameOptions(workspace), cancellationToken);
         });
 

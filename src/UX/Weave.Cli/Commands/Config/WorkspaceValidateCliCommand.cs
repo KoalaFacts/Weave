@@ -13,10 +13,13 @@ internal sealed class WorkspaceValidateCliCommand : ICliCommand<WorkspaceNameOpt
 
     public async Task<int> ExecuteAsync(WorkspaceNameOptions options, CancellationToken ct)
     {
-        var manifestPath = ManifestResolver.Resolve(options.Name);
+        var name = WorkspacePrompt.SelectName(options.Name, "Which workspace would you like to validate?");
+        var manifestPath = ManifestResolver.Resolve(name);
         if (manifestPath is null)
         {
-            CliTheme.WriteError($"No workspace.json found for '{options.Name}'.");
+            CliTheme.WriteError(name is null
+                ? "No workspace.json found. Create one first with: weave workspace new"
+                : $"No workspace.json found for '{name}'.");
             return 1;
         }
 

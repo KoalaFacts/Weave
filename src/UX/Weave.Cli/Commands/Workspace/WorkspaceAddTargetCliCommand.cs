@@ -16,10 +16,13 @@ internal sealed class WorkspaceAddTargetCliCommand(WorkspaceManifestFile? manife
     public async Task<int> ExecuteAsync(WorkspaceAddTargetOptions options, CancellationToken ct)
     {
         var targetName = options.TargetName;
-        var manifestPath = ManifestResolver.Resolve(options.Workspace);
+        var workspace = WorkspacePrompt.SelectName(options.Workspace, "Which workspace would you like to update?");
+        var manifestPath = ManifestResolver.Resolve(workspace);
         if (manifestPath is null)
         {
-            CliTheme.WriteError($"No workspace.json found for '{options.Workspace}'.");
+            CliTheme.WriteError(workspace is null
+                ? "No workspace.json found. Create one first with: weave workspace new"
+                : $"No workspace.json found for '{workspace}'.");
             return 1;
         }
 
@@ -37,7 +40,7 @@ internal sealed class WorkspaceAddTargetCliCommand(WorkspaceManifestFile? manife
         manifest.Targets[targetName] = new TargetDefinition { Runtime = options.Runtime };
         await _manifests.WriteAsync(manifestPath, manifest, ct);
 
-        CliTheme.WriteSuccess($"Target '{targetName}' added to workspace '{options.Workspace}'.");
+        CliTheme.WriteSuccess($"Target '{targetName}' added to workspace '{manifest.Name}'.");
         return 0;
     }
 }

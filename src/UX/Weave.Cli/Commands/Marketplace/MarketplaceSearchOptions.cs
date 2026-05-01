@@ -1,3 +1,3 @@
 namespace Weave.Cli.Commands;
 
-internal sealed record MarketplaceSearchOptions(string Query);
+internal sealed record MarketplaceSearchOptions(string? Query);

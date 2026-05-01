@@ -27,12 +27,16 @@ internal static class MarketplaceCommands
 
     private static Command CreateSearchCommand()
     {
-        var queryArg = new Argument<string>("query") { Description = "Search query" };
+        var queryArg = new Argument<string?>("query")
+        {
+            Description = "Search query",
+            Arity = ArgumentArity.ZeroOrOne
+        };
 
         var cmd = new Command("search", "Search marketplace items") { queryArg };
         cmd.SetAction(async (parseResult, cancellationToken) =>
         {
-            var query = parseResult.GetValue(queryArg)!;
+            var query = parseResult.GetValue(queryArg);
             return await new MarketplaceSearchCliCommand().ExecuteAsync(new MarketplaceSearchOptions(query), cancellationToken);
         });
 
@@ -49,11 +53,15 @@ internal static class MarketplaceCommands
 
     private static Command CreatePublishCommand()
     {
-        var itemIdArg = new Argument<string>("item-id") { Description = "Marketplace item ID" };
+        var itemIdArg = new Argument<string?>("item-id")
+        {
+            Description = "Marketplace item ID",
+            Arity = ArgumentArity.ZeroOrOne
+        };
         var cmd = new Command("publish", "Publish an item after security review") { itemIdArg };
         cmd.SetAction(async (parseResult, cancellationToken) =>
         {
-            var itemId = parseResult.GetValue(itemIdArg)!;
+            var itemId = parseResult.GetValue(itemIdArg);
             return await new MarketplacePublishCliCommand().ExecuteAsync(new MarketplacePublishOptions(itemId), cancellationToken);
         });
 
@@ -62,11 +70,15 @@ internal static class MarketplaceCommands
 
     private static Command CreateInfoCommand()
     {
-        var itemIdArg = new Argument<string>("item-id") { Description = "Marketplace item ID" };
+        var itemIdArg = new Argument<string?>("item-id")
+        {
+            Description = "Marketplace item ID",
+            Arity = ArgumentArity.ZeroOrOne
+        };
         var cmd = new Command("info", "Show details for a marketplace item") { itemIdArg };
         cmd.SetAction(async (parseResult, cancellationToken) =>
         {
-            var itemId = parseResult.GetValue(itemIdArg)!;
+            var itemId = parseResult.GetValue(itemIdArg);
             return await new MarketplaceInfoCliCommand().ExecuteAsync(new MarketplaceInfoOptions(itemId), cancellationToken);
         });
 

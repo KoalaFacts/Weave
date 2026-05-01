@@ -6,7 +6,11 @@ internal static class WorkspaceAddPluginCommand
 {
     public static Command Create()
     {
-        var workspaceArg = new Argument<string>("workspace") { Description = "Workspace name" };
+        var workspaceArg = new Argument<string?>("workspace")
+        {
+            Description = "Workspace name",
+            Arity = ArgumentArity.ZeroOrOne
+        };
         workspaceArg.CompletionSources.Add(CliCompletions.CompleteWorkspaceNames);
         var nameOption = new Option<string?>("--name") { Description = "Plugin name" };
         var typeOption = new Option<string?>("--type") { Description = "Plugin type (dapr, vault, http, custom)" };
@@ -17,7 +21,7 @@ internal static class WorkspaceAddPluginCommand
         cmd.Aliases.Add("add");
         cmd.SetAction(async (parseResult, cancellationToken) =>
         {
-            var workspace = parseResult.GetValue(workspaceArg)!;
+            var workspace = parseResult.GetValue(workspaceArg);
             var pluginName = parseResult.GetValue(nameOption);
             var type = parseResult.GetValue(typeOption);
             return await new WorkspaceAddPluginCliCommand().ExecuteAsync(new WorkspaceAddPluginOptions(workspace, pluginName, type), cancellationToken);

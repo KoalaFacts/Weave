@@ -813,14 +813,14 @@ public sealed class FileSystemToolConnectorTests : IDisposable
     public void ResolveSafePath_AlternateDataStream_Throws()
     {
         Should.Throw<ArgumentException>(() =>
-            FileSystemToolConnector.ResolveSafePath(_tempRoot, "file.txt:hidden_stream"));
+            FileSystemPathGuard.ResolveSafePath(_tempRoot, "file.txt:hidden_stream"));
     }
 
     [Fact]
     public void ResolveSafePath_ColonInSubdirectory_Throws()
     {
         Should.Throw<ArgumentException>(() =>
-            FileSystemToolConnector.ResolveSafePath(_tempRoot, "subdir/file.txt:$DATA"));
+            FileSystemPathGuard.ResolveSafePath(_tempRoot, "subdir/file.txt:$DATA"));
     }
 
     [Fact]
@@ -1335,7 +1335,7 @@ public sealed class FileSystemToolConnectorTests : IDisposable
     [Fact]
     public void ResolveSafePath_ValidRelativePath_ReturnsFullPath()
     {
-        var result = FileSystemToolConnector.ResolveSafePath(_tempRoot, "subdir/file.txt");
+        var result = FileSystemPathGuard.ResolveSafePath(_tempRoot, "subdir/file.txt");
 
         result.ShouldBe(Path.Combine(_tempRoot, "subdir", "file.txt"));
     }
@@ -1344,27 +1344,27 @@ public sealed class FileSystemToolConnectorTests : IDisposable
     public void ResolveSafePath_DotDotTraversal_Throws()
     {
         Should.Throw<ArgumentException>(() =>
-            FileSystemToolConnector.ResolveSafePath(_tempRoot, "../../../etc/passwd"));
+            FileSystemPathGuard.ResolveSafePath(_tempRoot, "../../../etc/passwd"));
     }
 
     [Fact]
     public void ResolveSafePath_AbsolutePathUnix_Throws()
     {
         Should.Throw<ArgumentException>(() =>
-            FileSystemToolConnector.ResolveSafePath(_tempRoot, "/etc/passwd"));
+            FileSystemPathGuard.ResolveSafePath(_tempRoot, "/etc/passwd"));
     }
 
     [Fact]
     public void ResolveSafePath_AbsolutePathWindows_Throws()
     {
         Should.Throw<ArgumentException>(() =>
-            FileSystemToolConnector.ResolveSafePath(_tempRoot, @"C:\Windows"));
+            FileSystemPathGuard.ResolveSafePath(_tempRoot, @"C:\Windows"));
     }
 
     [Fact]
     public void ResolveSafePath_EmptyPath_ReturnsRoot()
     {
-        var result = FileSystemToolConnector.ResolveSafePath(_tempRoot, "");
+        var result = FileSystemPathGuard.ResolveSafePath(_tempRoot, "");
 
         result.ShouldBe(_tempRoot);
     }
@@ -1373,20 +1373,20 @@ public sealed class FileSystemToolConnectorTests : IDisposable
     public void ResolveSafePath_UrlScheme_Throws()
     {
         Should.Throw<ArgumentException>(() =>
-            FileSystemToolConnector.ResolveSafePath(_tempRoot, "http://evil.com/payload"));
+            FileSystemPathGuard.ResolveSafePath(_tempRoot, "http://evil.com/payload"));
     }
 
     [Fact]
     public void ResolveSafePath_NullByte_Throws()
     {
         Should.Throw<ArgumentException>(() =>
-            FileSystemToolConnector.ResolveSafePath(_tempRoot, "file\0.txt"));
+            FileSystemPathGuard.ResolveSafePath(_tempRoot, "file\0.txt"));
     }
 
     [Fact]
     public void ResolveSafePath_NestedSubdirectory_ReturnsCorrectPath()
     {
-        var result = FileSystemToolConnector.ResolveSafePath(_tempRoot, "a/b/c/file.txt");
+        var result = FileSystemPathGuard.ResolveSafePath(_tempRoot, "a/b/c/file.txt");
 
         result.ShouldBe(Path.Combine(_tempRoot, "a", "b", "c", "file.txt"));
     }
@@ -1434,7 +1434,7 @@ public sealed class FileSystemToolConnectorTests : IDisposable
             Directory.CreateSymbolicLink(linkPath, outsideDir);
 
             Should.Throw<ArgumentException>(() =>
-                FileSystemToolConnector.ResolveSafePath(_tempRoot, "escape-link/secret.txt", sandbox: true));
+                FileSystemPathGuard.ResolveSafePath(_tempRoot, "escape-link/secret.txt", sandbox: true));
         }
         finally
         {
@@ -1454,7 +1454,7 @@ public sealed class FileSystemToolConnectorTests : IDisposable
         var linkPath = Path.Combine(_tempRoot, "safe-link");
         Directory.CreateSymbolicLink(linkPath, targetDir);
 
-        var result = FileSystemToolConnector.ResolveSafePath(_tempRoot, "safe-link/ok.txt", sandbox: true);
+        var result = FileSystemPathGuard.ResolveSafePath(_tempRoot, "safe-link/ok.txt", sandbox: true);
 
         result.ShouldNotBeNullOrEmpty();
     }
@@ -1473,7 +1473,7 @@ public sealed class FileSystemToolConnectorTests : IDisposable
             Directory.CreateSymbolicLink(linkPath, outsideDir);
 
             Should.NotThrow(() =>
-                FileSystemToolConnector.ResolveSafePath(_tempRoot, "escape-link", sandbox: false));
+                FileSystemPathGuard.ResolveSafePath(_tempRoot, "escape-link", sandbox: false));
         }
         finally
         {

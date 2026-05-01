@@ -15,16 +15,19 @@ internal sealed class WorkspaceStorageShowCliCommand(
 
     public async Task<int> ExecuteAsync(WorkspaceNameOptions options, CancellationToken ct)
     {
-        var manifestPath = ManifestResolver.Resolve(options.Name);
+        var name = WorkspacePrompt.SelectName(options.Name, "Which workspace would you like to inspect?");
+        var manifestPath = ManifestResolver.Resolve(name);
         if (manifestPath is null)
         {
-            CliTheme.WriteError($"No workspace.json found for '{options.Name}'.");
+            CliTheme.WriteError(name is null
+                ? "No workspace.json found. Create one first with: weave workspace new"
+                : $"No workspace.json found for '{name}'.");
             return 1;
         }
 
         var manifest = await _manifests.ReadAsync(manifestPath, ct);
 
-        CliTheme.WriteSection($"Storage — {options.Name}");
+        CliTheme.WriteSection($"Storage — {manifest.Name}");
 
         var storage = manifest.Workspace.Storage;
         if (storage is null)

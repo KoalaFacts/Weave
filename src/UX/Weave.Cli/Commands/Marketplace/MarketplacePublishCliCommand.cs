@@ -19,15 +19,22 @@ internal sealed class MarketplacePublishCliCommand(MarketplaceReviewPrompt? prom
             return 1;
         }
 
+        var itemId = await MarketplaceItemPrompt.SelectItemIdAsync(client, options.ItemId, "Which marketplace item would you like to review?", ct);
+        if (itemId is null)
+        {
+            CliTheme.WriteWarning("No marketplace items found.");
+            return 0;
+        }
+
         var review = _prompt.Prompt();
 
         try
         {
             var item = await client.PublishItemAsync(
-                options.ItemId,
-            review.ReviewerId,
-            review.Approved,
-            review.Notes,
+                itemId,
+                review.ReviewerId,
+                review.Approved,
+                review.Notes,
                 ct);
 
             if (item.Status == "Published")

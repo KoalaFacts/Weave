@@ -15,10 +15,13 @@ internal sealed class WorkspaceDownCliCommand(IWorkspaceDownDependencies depende
 
     public async Task<int> ExecuteAsync(WorkspaceDownOptions options, CancellationToken ct)
     {
-        var manifestPath = options.ManifestPath ?? dependencies.ResolveManifestPath(options.Name);
+        var name = WorkspacePrompt.SelectName(options.Name, "Which workspace would you like to stop?");
+        var manifestPath = options.ManifestPath ?? dependencies.ResolveManifestPath(name);
         if (manifestPath is null)
         {
-            CliTheme.WriteError($"No workspace.json found for '{options.Name}'.");
+            CliTheme.WriteError(name is null
+                ? "No workspace.json found. Create one first with: weave workspace new"
+                : $"No workspace.json found for '{name}'.");
             return 1;
         }
 

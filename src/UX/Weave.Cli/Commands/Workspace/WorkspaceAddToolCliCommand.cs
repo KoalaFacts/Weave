@@ -16,10 +16,13 @@ internal sealed class WorkspaceAddToolCliCommand(WorkspaceManifestFile? manifest
     public async Task<int> ExecuteAsync(WorkspaceAddToolOptions options, CancellationToken ct)
     {
         var toolName = options.ToolName;
-        var manifestPath = ManifestResolver.Resolve(options.Workspace);
+        var workspace = WorkspacePrompt.SelectName(options.Workspace, "Which workspace would you like to update?");
+        var manifestPath = ManifestResolver.Resolve(workspace);
         if (manifestPath is null)
         {
-            CliTheme.WriteError($"No workspace.json found for '{options.Workspace}'.");
+            CliTheme.WriteError(workspace is null
+                ? "No workspace.json found. Create one first with: weave workspace new"
+                : $"No workspace.json found for '{workspace}'.");
             return 1;
         }
 
@@ -37,7 +40,7 @@ internal sealed class WorkspaceAddToolCliCommand(WorkspaceManifestFile? manifest
         manifest.Tools[toolName] = new ToolDefinition { Type = options.Type };
         await _manifests.WriteAsync(manifestPath, manifest, ct);
 
-        CliTheme.WriteSuccess($"Tool '{toolName}' added to workspace '{options.Workspace}'.");
+        CliTheme.WriteSuccess($"Tool '{toolName}' added to workspace '{manifest.Name}'.");
         return 0;
     }
 }

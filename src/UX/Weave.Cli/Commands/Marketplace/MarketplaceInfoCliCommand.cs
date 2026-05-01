@@ -19,10 +19,17 @@ internal sealed class MarketplaceInfoCliCommand : ICliCommand<MarketplaceInfoOpt
             return 1;
         }
 
-        var item = await client.GetItemAsync(options.ItemId, ct);
+        var itemId = await MarketplaceItemPrompt.SelectItemIdAsync(client, options.ItemId, "Which marketplace item would you like to inspect?", ct);
+        if (itemId is null)
+        {
+            CliTheme.WriteWarning("No marketplace items found.");
+            return 0;
+        }
+
+        var item = await client.GetItemAsync(itemId, ct);
         if (item is null)
         {
-            CliTheme.WriteError($"Item '{options.ItemId}' not found.");
+            CliTheme.WriteError($"Item '{itemId}' not found.");
             return 1;
         }
 

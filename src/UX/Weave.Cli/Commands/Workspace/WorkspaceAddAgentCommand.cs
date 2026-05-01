@@ -6,7 +6,11 @@ internal static class WorkspaceAddAgentCommand
 {
     public static Command Create()
     {
-        var workspaceArg = new Argument<string>("workspace") { Description = "Workspace name" };
+        var workspaceArg = new Argument<string?>("workspace")
+        {
+            Description = "Workspace name",
+            Arity = ArgumentArity.ZeroOrOne
+        };
         workspaceArg.CompletionSources.Add(CliCompletions.CompleteWorkspaceNames);
         var nameOption = new Option<string?>("--name") { Description = "Agent name" };
         var modelOption = new Option<string>("--model")
@@ -18,7 +22,7 @@ internal static class WorkspaceAddAgentCommand
         var cmd = new Command("agent", "Add an assistant") { workspaceArg, nameOption, modelOption };
         cmd.SetAction(async (parseResult, cancellationToken) =>
         {
-            var workspace = parseResult.GetValue(workspaceArg)!;
+            var workspace = parseResult.GetValue(workspaceArg);
             var agentName = parseResult.GetValue(nameOption);
             var model = parseResult.GetValue(modelOption)!;
             return await new WorkspaceAddAgentCliCommand().ExecuteAsync(new WorkspaceAddAgentOptions(workspace, agentName, model), cancellationToken);

@@ -14,10 +14,13 @@ internal sealed class WorkspacePluginListCliCommand(WorkspaceManifestFile? manif
 
     public async Task<int> ExecuteAsync(WorkspaceNameOptions options, CancellationToken ct)
     {
-        var manifestPath = ManifestResolver.Resolve(options.Name);
+        var workspaceName = WorkspacePrompt.SelectName(options.Name, "Which workspace would you like to inspect?");
+        var manifestPath = ManifestResolver.Resolve(workspaceName);
         if (manifestPath is null)
         {
-            CliTheme.WriteError($"No workspace.json found for '{options.Name}'.");
+            CliTheme.WriteError(workspaceName is null
+                ? "No workspace.json found. Create one first with: weave workspace new"
+                : $"No workspace.json found for '{workspaceName}'.");
             return 1;
         }
 

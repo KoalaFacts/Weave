@@ -14,10 +14,13 @@ internal sealed class WorkspacePluginRemoveCliCommand(WorkspaceManifestFile? man
 
     public async Task<int> ExecuteAsync(WorkspacePluginRemoveOptions options, CancellationToken ct)
     {
-        var manifestPath = ManifestResolver.Resolve(options.Workspace);
+        var workspace = WorkspacePrompt.SelectName(options.Workspace, "Which workspace would you like to update?");
+        var manifestPath = ManifestResolver.Resolve(workspace);
         if (manifestPath is null)
         {
-            CliTheme.WriteError($"No workspace.json found for '{options.Workspace}'.");
+            CliTheme.WriteError(workspace is null
+                ? "No workspace.json found. Create one first with: weave workspace new"
+                : $"No workspace.json found for '{workspace}'.");
             return 1;
         }
 
@@ -47,7 +50,7 @@ internal sealed class WorkspacePluginRemoveCliCommand(WorkspaceManifestFile? man
 
         await _manifests.WriteAsync(manifestPath, manifest, ct);
 
-        CliTheme.WriteSuccess($"Plugin '{pluginName}' removed from workspace '{options.Workspace}'.");
+        CliTheme.WriteSuccess($"Plugin '{pluginName}' removed from workspace '{manifest.Name}'.");
         return 0;
     }
 }
