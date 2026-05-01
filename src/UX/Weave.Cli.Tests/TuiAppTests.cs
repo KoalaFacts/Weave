@@ -9,7 +9,7 @@ public class TuiAppTests
     [Fact]
     public void ParseCommand_SimpleCommand_ReturnsNameNoArgs()
     {
-        var (name, args) = TuiApp.ParseCommand("open");
+        var (name, args) = TuiCommandParser.Parse("open");
         name.ShouldBe("open");
         args.ShouldBeNull();
     }
@@ -17,7 +17,7 @@ public class TuiAppTests
     [Fact]
     public void ParseCommand_CommandWithArgs_SplitsCorrectly()
     {
-        var (name, args) = TuiApp.ParseCommand("open my-workspace");
+        var (name, args) = TuiCommandParser.Parse("open my-workspace");
         name.ShouldBe("open");
         args.ShouldBe("my-workspace");
     }
@@ -27,7 +27,7 @@ public class TuiAppTests
     {
         // ParseCommand receives the already-stripped text (no slash).
         // If called with a slash, it treats the whole thing as the name.
-        var (name, args) = TuiApp.ParseCommand("/open");
+        var (name, args) = TuiCommandParser.Parse("/open");
         name.ShouldBe("/open");
         args.ShouldBeNull();
     }
@@ -35,7 +35,7 @@ public class TuiAppTests
     [Fact]
     public void ParseCommand_EmptyInput_ReturnsEmptyName()
     {
-        var (name, args) = TuiApp.ParseCommand("");
+        var (name, args) = TuiCommandParser.Parse("");
         name.ShouldBe(string.Empty);
         args.ShouldBeNull();
     }
@@ -43,7 +43,7 @@ public class TuiAppTests
     [Fact]
     public void ParseCommand_WhitespaceOnly_ReturnsEmptyName()
     {
-        var (name, args) = TuiApp.ParseCommand("   ");
+        var (name, args) = TuiCommandParser.Parse("   ");
         name.ShouldBe(string.Empty);
         args.ShouldBeNull();
     }
@@ -51,7 +51,7 @@ public class TuiAppTests
     [Fact]
     public void ParseCommand_ArgsWithSpaces_PreservesFullArgString()
     {
-        var (name, args) = TuiApp.ParseCommand("use my cool agent");
+        var (name, args) = TuiCommandParser.Parse("use my cool agent");
         name.ShouldBe("use");
         args.ShouldBe("my cool agent");
     }
@@ -59,14 +59,14 @@ public class TuiAppTests
     [Fact]
     public void ParseCommand_UpperCase_NormalizesToLower()
     {
-        var (name, _) = TuiApp.ParseCommand("OPEN");
+        var (name, _) = TuiCommandParser.Parse("OPEN");
         name.ShouldBe("open");
     }
 
     [Fact]
     public void ParseCommand_TrailingSpaces_TrimmedArgs()
     {
-        var (name, args) = TuiApp.ParseCommand("open   workspace   ");
+        var (name, args) = TuiCommandParser.Parse("open   workspace   ");
         name.ShouldBe("open");
         args.ShouldBe("workspace");
     }
@@ -76,39 +76,39 @@ public class TuiAppTests
     [Fact]
     public void LevenshteinDistance_IdenticalStrings_ReturnsZero()
     {
-        TuiApp.LevenshteinDistance("open", "open").ShouldBe(0);
+        TuiCommandParser.LevenshteinDistance("open", "open").ShouldBe(0);
     }
 
     [Fact]
     public void LevenshteinDistance_EmptyAndNonEmpty_ReturnsLength()
     {
-        TuiApp.LevenshteinDistance("", "abc").ShouldBe(3);
-        TuiApp.LevenshteinDistance("abc", "").ShouldBe(3);
+        TuiCommandParser.LevenshteinDistance("", "abc").ShouldBe(3);
+        TuiCommandParser.LevenshteinDistance("abc", "").ShouldBe(3);
     }
 
     [Fact]
     public void LevenshteinDistance_BothEmpty_ReturnsZero()
     {
-        TuiApp.LevenshteinDistance("", "").ShouldBe(0);
+        TuiCommandParser.LevenshteinDistance("", "").ShouldBe(0);
     }
 
     [Fact]
     public void LevenshteinDistance_SingleSubstitution_ReturnsOne()
     {
-        TuiApp.LevenshteinDistance("cat", "bat").ShouldBe(1);
+        TuiCommandParser.LevenshteinDistance("cat", "bat").ShouldBe(1);
     }
 
     [Fact]
     public void LevenshteinDistance_SingleInsertion_ReturnsOne()
     {
-        TuiApp.LevenshteinDistance("open", "ope").ShouldBe(1);
+        TuiCommandParser.LevenshteinDistance("open", "ope").ShouldBe(1);
     }
 
     [Fact]
     public void LevenshteinDistance_CaseInsensitive_MatchesMixed()
     {
         // The implementation lowercases before comparing.
-        TuiApp.LevenshteinDistance("Open", "open").ShouldBe(0);
+        TuiCommandParser.LevenshteinDistance("Open", "open").ShouldBe(0);
     }
 
     [Theory]
@@ -117,7 +117,7 @@ public class TuiAppTests
     [InlineData("flaw", "lawn", 2)]
     public void LevenshteinDistance_KnownPairs_MatchExpected(string a, string b, int expected)
     {
-        TuiApp.LevenshteinDistance(a, b).ShouldBe(expected);
+        TuiCommandParser.LevenshteinDistance(a, b).ShouldBe(expected);
     }
 
     // ── SuggestCommand ─────────────────────────────────────────────
@@ -125,39 +125,39 @@ public class TuiAppTests
     [Fact]
     public void SuggestCommand_ExactPrefix_ReturnsMatch()
     {
-        TuiApp.SuggestCommand("ope").ShouldBe("open");
+        TuiCommandParser.Suggest("ope").ShouldBe("open");
     }
 
     [Fact]
     public void SuggestCommand_Typo_ReturnsClosest()
     {
         // "hlep" → Levenshtein 2 from "help"
-        TuiApp.SuggestCommand("hlep").ShouldBe("help");
+        TuiCommandParser.Suggest("hlep").ShouldBe("help");
     }
 
     [Fact]
     public void SuggestCommand_Empty_ReturnsNull()
     {
-        TuiApp.SuggestCommand("").ShouldBeNull();
+        TuiCommandParser.Suggest("").ShouldBeNull();
     }
 
     [Fact]
     public void SuggestCommand_Whitespace_ReturnsNull()
     {
-        TuiApp.SuggestCommand("   ").ShouldBeNull();
+        TuiCommandParser.Suggest("   ").ShouldBeNull();
     }
 
     [Fact]
     public void SuggestCommand_TooFar_ReturnsNull()
     {
         // "zzzzz" has no match within Levenshtein distance 2.
-        TuiApp.SuggestCommand("zzzzz").ShouldBeNull();
+        TuiCommandParser.Suggest("zzzzz").ShouldBeNull();
     }
 
     [Fact]
     public void SuggestCommand_ExactMatch_ReturnsCommand()
     {
-        TuiApp.SuggestCommand("help").ShouldBe("help");
+        TuiCommandParser.Suggest("help").ShouldBe("help");
     }
 
     [Theory]
@@ -167,7 +167,7 @@ public class TuiAppTests
     [InlineData("ag", "agent")]
     public void SuggestCommand_Prefixes_ReturnExpected(string typed, string expected)
     {
-        TuiApp.SuggestCommand(typed).ShouldBe(expected);
+        TuiCommandParser.Suggest(typed).ShouldBe(expected);
     }
 
     // ── ColorStatus ────────────────────────────────────────────────
@@ -180,7 +180,7 @@ public class TuiAppTests
     [InlineData("healthy")]
     public void ColorStatus_SuccessStatuses_ContainStatusText(string status)
     {
-        var result = TuiApp.ColorStatus(status);
+        var result = TuiMarkup.ColorStatus(status);
         result.ShouldContain(status);
         result.ShouldStartWith("[rgb(");
         result.ShouldEndWith("[/]");
@@ -192,21 +192,21 @@ public class TuiAppTests
     [InlineData("disconnected")]
     public void ColorStatus_InactiveStatuses_ContainStatusText(string status)
     {
-        var result = TuiApp.ColorStatus(status);
+        var result = TuiMarkup.ColorStatus(status);
         result.ShouldContain(status);
     }
 
     [Fact]
     public void ColorStatus_ErrorStatus_ContainStatusText()
     {
-        var result = TuiApp.ColorStatus("error");
+        var result = TuiMarkup.ColorStatus("error");
         result.ShouldContain("error");
     }
 
     [Fact]
     public void ColorStatus_CaseInsensitive_Works()
     {
-        var result = TuiApp.ColorStatus("RUNNING");
+        var result = TuiMarkup.ColorStatus("RUNNING");
         result.ShouldContain("RUNNING");
         result.ShouldStartWith("[rgb(");
     }
@@ -216,14 +216,14 @@ public class TuiAppTests
     [Fact]
     public void ColorTag_ProducesValidMarkup()
     {
-        var result = TuiApp.ColorTag(new Spectre.Console.Color(255, 0, 128), "test");
+        var result = TuiMarkup.ColorTag(new Spectre.Console.Color(255, 0, 128), "test");
         result.ShouldBe("[rgb(255,0,128)]test[/]");
     }
 
     [Fact]
     public void ColorTag_EscapesMarkupCharacters()
     {
-        var result = TuiApp.ColorTag(new Spectre.Console.Color(0, 0, 0), "[bold]text[/]");
+        var result = TuiMarkup.ColorTag(new Spectre.Console.Color(0, 0, 0), "[bold]text[/]");
         result.ShouldContain("[[bold]]");
     }
 }

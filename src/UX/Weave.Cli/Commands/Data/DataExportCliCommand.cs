@@ -2,10 +2,12 @@ namespace Weave.Cli.Commands;
 
 internal sealed class DataExportCliCommand(
     WorkspaceDataExporter? exporter = null,
-    DataExportWorkspaceSelector? selector = null) : ICliCommand<DataExportOptions>
+    DataExportWorkspaceSelector? selector = null,
+    WorkspaceManifestFile? manifests = null) : ICliCommand<DataExportOptions>
 {
     private readonly WorkspaceDataExporter _exporter = exporter ?? new WorkspaceDataExporter();
     private readonly DataExportWorkspaceSelector _selector = selector ?? new DataExportWorkspaceSelector();
+    private readonly WorkspaceManifestFile _manifests = manifests ?? new WorkspaceManifestFile();
 
     public string Name => "export";
 
@@ -16,17 +18,19 @@ internal sealed class DataExportCliCommand(
     public async Task<int> ExecuteAsync(DataExportOptions options, CancellationToken ct)
     {
         var workspace = _selector.SelectWorkspace(options.Workspace);
-        if (workspace is null)
-        {
-            CliTheme.WriteError("No workspaces found. Create one first with: weave workspace new");
-            return 1;
-        }
-
         var manifestPath = _selector.ResolveManifestPath(workspace);
         if (manifestPath is null)
         {
-            CliTheme.WriteError($"No workspace.json found for '{workspace}'.");
+            CliTheme.WriteError(workspace is null
+                ? "No workspace.json found. Create one first with: weave workspace new"
+                : $"No workspace.json found for '{workspace}'.");
             return 1;
+        }
+
+        if (workspace is null)
+        {
+            var manifest = await _manifests.ReadAsync(manifestPath, ct);
+            workspace = manifest.Name;
         }
 
         var outputPath = options.Output ?? $"{workspace}-export.json";

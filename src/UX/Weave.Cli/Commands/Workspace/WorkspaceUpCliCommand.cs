@@ -1,5 +1,4 @@
 using System.Globalization;
-using Spectre.Console;
 
 namespace Weave.Cli.Commands;
 
@@ -15,37 +14,13 @@ internal sealed class WorkspaceUpCliCommand(WorkspaceManifestFile? manifests = n
 
     public async Task<int> ExecuteAsync(WorkspaceUpOptions options, CancellationToken ct)
     {
-        var name = options.Name;
-
-        if (string.IsNullOrWhiteSpace(name))
-        {
-            var manifestHere = ManifestResolver.Resolve(null);
-            if (manifestHere is not null)
-            {
-                name = Path.GetFileName(Path.GetDirectoryName(Path.GetFullPath(manifestHere)));
-            }
-            else
-            {
-                var all = WorkspaceRegistry.GetAll();
-                if (all.Count == 0)
-                {
-                    CliTheme.WriteError("No workspaces found. Create one first:");
-                    CliTheme.WriteMuted("  weave workspace new");
-                    return 1;
-                }
-
-                name = AnsiConsole.Prompt(
-                    new SelectionPrompt<string>()
-                        .Title("Which workspace would you like to start?")
-                        .Styled()
-                        .AddChoices(all.Keys));
-            }
-        }
-
+        var name = WorkspacePrompt.SelectName(options.Name, "Which workspace would you like to start?");
         var manifestPath = ManifestResolver.Resolve(name);
         if (manifestPath is null)
         {
-            CliTheme.WriteError($"No workspace.json found for '{name}'.");
+            CliTheme.WriteError(name is null
+                ? "No workspace.json found. Create one first with: weave workspace new"
+                : $"No workspace.json found for '{name}'.");
             return 1;
         }
 
