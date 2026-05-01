@@ -1,8 +1,5 @@
-using System.Globalization;
 using Spectre.Console;
-using Spectre.Console.Rendering;
 using Weave.Cli.Commands;
-using Weave.Shared;
 using Weave.Workspaces.Manifest;
 using Weave.Workspaces.Models;
 
@@ -18,7 +15,18 @@ internal static class TuiApp
     private static readonly TuiWorkspaceDashboard Dashboard = new();
     private static readonly TuiLiveStatusView LiveStatus = new();
     private static readonly TuiManifestView ManifestView = new();
-    private static readonly TuiScreens Screens = new();
+    private static readonly TuiWelcomeScreen WelcomeScreen = new();
+    private static readonly TuiHelpScreen HelpScreen = new();
+    private static readonly TuiConfigScreen ConfigScreen = new();
+    private static readonly TuiNextStepHint NextStepHint = new();
+    private static readonly TuiNewWorkspaceHint NewWorkspaceHint = new();
+    private static readonly TuiSystemScreen SystemScreen = new();
+    private static readonly TuiAgentNameSource AgentNameSource = new();
+    private static readonly TuiAgentSelector AgentSelector = new(AgentNameSource, NextStepHint);
+    private static readonly TuiAgentListView AgentListView = new(AgentNameSource);
+    private static readonly TuiToolListView ToolListView = new();
+    private static readonly TuiTaskListView TaskListView = new();
+    private static readonly TuiConversationHistoryView ConversationHistoryView = new();
 
     public static async Task<int> RunAsync(CancellationToken cancellationToken)
     {
@@ -28,7 +36,7 @@ internal static class TuiApp
         CliTheme.WriteBanner();
         VersionInfo.KickOffRefreshIfStale();
         await Dashboard.RefreshAsync(cancellationToken);
-        Screens.RenderWelcomeHint();
+        WelcomeScreen.Render();
 
         var composer = new ChatComposer();
 
@@ -95,7 +103,7 @@ internal static class TuiApp
 
             case "help":
             case "?":
-                Screens.RenderSlashHelp();
+                HelpScreen.Render();
                 return DispatchResult.Continue;
 
             case "quit":
@@ -122,11 +130,11 @@ internal static class TuiApp
             case "use":
             case "agent":
             case "a":
-                await UseAgentAsync(session, args, ct);
+                await AgentSelector.SelectAsync(session, args, ConversationHistory.Clear, ct);
                 return DispatchResult.Continue;
 
             case "agents":
-                await ListAgentsAsync(session, ct);
+                await AgentListView.RenderAsync(session, ct);
                 return DispatchResult.Continue;
 
             case "watch":
@@ -134,15 +142,15 @@ internal static class TuiApp
                 return DispatchResult.Continue;
 
             case "tools":
-                await ListToolsAsync(session, ct);
+                await ToolListView.RenderAsync(session, ct);
                 return DispatchResult.Continue;
 
             case "tasks":
-                await ListTasksAsync(session, ct);
+                await TaskListView.RenderAsync(session, ct);
                 return DispatchResult.Continue;
 
             case "history":
-                ShowConversationHistory(session);
+                ConversationHistoryView.Render(session, ConversationHistory);
                 return DispatchResult.Continue;
 
             case "status":
@@ -168,7 +176,7 @@ internal static class TuiApp
                 return DispatchResult.Continue;
 
             case "config":
-                Screens.ShowConfig();
+                ConfigScreen.Show();
                 return DispatchResult.Continue;
 
             case "up":
@@ -181,7 +189,7 @@ internal static class TuiApp
 
             case "new":
             case "n":
-                Screens.ShowNewWorkspaceHint();
+                NewWorkspaceHint.Show();
                 return DispatchResult.Continue;
 
             case "presets":
@@ -197,7 +205,7 @@ internal static class TuiApp
 
             case "system":
             case "sys":
-                await Screens.ShowSystemAsync(ct);
+                await SystemScreen.ShowAsync(ct);
                 return DispatchResult.Continue;
 
             case "version":
@@ -344,135 +352,12 @@ internal static class TuiApp
         }
 
         ConversationHistory.Clear();
-        TryAutoSelectAgent(session);
+        AgentSelector.TrySelectOnlyAgent(session);
 
         if (session.StateWarning is not null)
             CliTheme.WriteWarning(session.StateWarning);
 
         await PrintWorkspaceSummaryAsync(session, ct);
-    }
-
-    private static async Task UseAgentAsync(
-        TuiSession session,
-        string? arg,
-        CancellationToken ct)
-    {
-        if (!session.HasWorkspace)
-        {
-            CliTheme.WriteMuted("No workspace open. Try: /open <workspace>");
-            return;
-        }
-
-        var agents = await FetchAgentNamesAsync(session, ct);
-        if (agents.Count == 0)
-        {
-            CliTheme.WriteWarning("No agents available for this workspace.");
-            return;
-        }
-
-        string? target = arg;
-        if (string.IsNullOrWhiteSpace(target))
-        {
-            target = AnsiConsole.Prompt(
-                new SelectionPrompt<string>()
-                    .Title("Use which agent?")
-                    .Styled()
-                    .AddChoices([.. agents, "(cancel)"]));
-
-            if (target == "(cancel)")
-                return;
-        }
-
-        var match = agents.FirstOrDefault(a => string.Equals(a, target, StringComparison.OrdinalIgnoreCase));
-        if (match is null)
-        {
-            CliTheme.WriteError($"Agent '{target}' not found in '{session.WorkspaceName}'.");
-            return;
-        }
-
-        session.AgentName = match;
-        ConversationHistory.Clear();
-        CliTheme.WriteMuted($"Agent set to '{match}'.");
-        Screens.RenderNextStepHint(session);
-    }
-
-    private static async Task ListAgentsAsync(TuiSession session, CancellationToken ct)
-    {
-        if (!session.HasWorkspace)
-        {
-            CliTheme.WriteMuted("No workspace open. Try: /open <workspace>");
-            return;
-        }
-
-        // Try live API first for rich status info.
-        if (session.IsRunning)
-        {
-            try
-            {
-                using var client = new WorkspaceApiClient();
-                if (await client.IsReachableAsync(ct))
-                {
-                    var live = await client.GetAgentsAsync(session.WorkspaceId!, ct);
-                    if (live.Count > 0)
-                    {
-                        var table = CliTheme.CreateTable($"Agents · {session.WorkspaceName}");
-                        table.AddColumn(CliTheme.StyledColumn(""));
-                        table.AddColumn(CliTheme.StyledColumn("Name"));
-                        table.AddColumn(CliTheme.StyledColumn("Status"));
-                        table.AddColumn(CliTheme.StyledColumn("Model"));
-                        table.AddColumn(CliTheme.StyledColumn("Tasks"));
-                        table.AddColumn(CliTheme.StyledColumn("Tools"));
-
-                        foreach (var agent in live.OrderBy(a => a.AgentName, StringComparer.Ordinal))
-                        {
-                            var marker = string.Equals(agent.AgentName, session.AgentName, StringComparison.Ordinal)
-                                ? TuiMarkup.ColorTag(CliTheme.Primary, "●")
-                                : " ";
-                            table.AddRow(
-                                marker,
-                                $"[bold white]{Markup.Escape(agent.AgentName)}[/]",
-                                TuiMarkup.ColorStatus(agent.Status),
-                                Markup.Escape(agent.Model ?? "—"),
-                                agent.ActiveTasks?.Count.ToString(CultureInfo.InvariantCulture) ?? "0",
-                                agent.ConnectedTools?.Count.ToString(CultureInfo.InvariantCulture) ?? "0");
-                        }
-
-                        AnsiConsole.Write(table);
-                        if (session.AgentName is null)
-                            CliTheme.WriteMuted("Pick one with: /use <name>");
-                        return;
-                    }
-                }
-            }
-            catch (HttpRequestException)
-            {
-                // Fall through to manifest-only view.
-            }
-        }
-
-        // Manifest-only fallback (workspace not running or Silo unreachable).
-        var names = await FetchAgentNamesAsync(session, ct);
-        if (names.Count == 0)
-        {
-            CliTheme.WriteWarning("No agents available.");
-            return;
-        }
-
-        var fallbackTable = CliTheme.CreateTable($"Agents · {session.WorkspaceName}");
-        fallbackTable.AddColumn(CliTheme.StyledColumn(""));
-        fallbackTable.AddColumn(CliTheme.StyledColumn("Name"));
-
-        foreach (var name in names.OrderBy(n => n, StringComparer.Ordinal))
-        {
-            var marker = string.Equals(name, session.AgentName, StringComparison.Ordinal)
-                ? TuiMarkup.ColorTag(CliTheme.Primary, "●")
-                : " ";
-            fallbackTable.AddRow(marker, $"[bold white]{Markup.Escape(name)}[/]");
-        }
-
-        AnsiConsole.Write(fallbackTable);
-        if (session.AgentName is null)
-            CliTheme.WriteMuted("Pick one with: /use <name>");
     }
 
     private static async Task StartWorkspaceInSessionAsync(TuiSession session, CancellationToken ct)
@@ -571,9 +456,9 @@ internal static class TuiApp
         CliTheme.WriteKeyValue("Status", response.Status);
 
         if (session.AgentName is null)
-            TryAutoSelectAgent(session);
+            AgentSelector.TrySelectOnlyAgent(session);
 
-        Screens.RenderNextStepHint(session);
+        NextStepHint.Render(session);
     }
 
     /// <summary>
@@ -655,57 +540,6 @@ internal static class TuiApp
 
     // ── Helpers ───────────────────────────────────────────────────
 
-    private static void TryAutoSelectAgent(TuiSession session)
-    {
-        if (session.ManifestPath is null)
-            return;
-
-        try
-        {
-            var manifest = Parser.Parse(File.ReadAllText(session.ManifestPath));
-            if (manifest.Agents is { Count: 1 } agents)
-                session.AgentName = agents.Keys.First();
-        }
-        catch (Exception ex)
-        {
-            CliTheme.WriteMuted($"Could not auto-select agent ({ex.Message}).");
-        }
-    }
-
-    private static async Task<List<string>> FetchAgentNamesAsync(TuiSession session, CancellationToken ct)
-    {
-        if (session.IsRunning)
-        {
-            try
-            {
-                using var client = new WorkspaceApiClient();
-                if (await client.IsReachableAsync(ct))
-                {
-                    var live = await client.GetAgentsAsync(session.WorkspaceId!, ct);
-                    return [.. live.Select(a => a.AgentName)];
-                }
-            }
-            catch (Exception ex) when (ex is HttpRequestException or TaskCanceledException or OperationCanceledException)
-            {
-                CliTheme.WriteMuted($"Could not reach Silo for agent list ({ex.Message}). Falling back to manifest.");
-            }
-        }
-
-        if (session.ManifestPath is null)
-            return [];
-
-        try
-        {
-            var manifest = Parser.Parse(File.ReadAllText(session.ManifestPath));
-            return manifest.Agents is null ? [] : [.. manifest.Agents.Keys];
-        }
-        catch (Exception ex)
-        {
-            CliTheme.WriteMuted($"Could not read manifest for agent names ({ex.Message}).");
-            return [];
-        }
-    }
-
     private static async Task PrintWorkspaceSummaryAsync(TuiSession session, CancellationToken ct)
     {
         if (session.ManifestPath is null)
@@ -729,128 +563,7 @@ internal static class TuiApp
             ManifestView.Render(manifest, session.ManifestPath);
 
         AnsiConsole.WriteLine();
-        Screens.RenderNextStepHint(session);
-    }
-
-    // ── /tools, /tasks, /history command handlers ──────────────────
-
-    private static async Task ListToolsAsync(TuiSession session, CancellationToken ct)
-    {
-        if (!session.IsRunning)
-        {
-            CliTheme.WriteMuted("Workspace is not running. Start it with /up first.");
-            return;
-        }
-
-        IReadOnlyList<ApiToolResponse> tools;
-        try
-        {
-            using var client = new WorkspaceApiClient();
-            tools = await client.GetToolsAsync(session.WorkspaceId!, ct);
-        }
-        catch (Exception ex)
-        {
-            CliTheme.WriteError($"Failed to fetch tools: {ex.Message}");
-            return;
-        }
-
-        if (tools.Count == 0)
-        {
-            CliTheme.WriteMuted("No tools registered in this workspace.");
-            return;
-        }
-
-        var table = CliTheme.CreateTable($"Tools · {session.WorkspaceName}");
-        table.AddColumn(CliTheme.StyledColumn("Name"));
-        table.AddColumn(CliTheme.StyledColumn("Type"));
-        table.AddColumn(CliTheme.StyledColumn("Status"));
-        table.AddColumn(CliTheme.StyledColumn("Endpoint"));
-
-        foreach (var tool in tools.OrderBy(t => t.ToolName, StringComparer.Ordinal))
-        {
-            table.AddRow(
-                $"[bold white]{Markup.Escape(tool.ToolName)}[/]",
-                Markup.Escape(tool.ToolType ?? "—"),
-                TuiMarkup.ColorStatus(tool.Status),
-                Markup.Escape(tool.Endpoint ?? "—"));
-        }
-
-        AnsiConsole.Write(table);
-    }
-
-    private static async Task ListTasksAsync(TuiSession session, CancellationToken ct)
-    {
-        if (!session.IsRunning)
-        {
-            CliTheme.WriteMuted("Workspace is not running. Start it with /up first.");
-            return;
-        }
-
-        if (session.AgentName is null)
-        {
-            CliTheme.WriteMuted("No agent selected. Use /use <agent> first.");
-            return;
-        }
-
-        IReadOnlyList<ApiTaskResponse> tasks;
-        try
-        {
-            using var client = new WorkspaceApiClient();
-            tasks = await client.GetTasksAsync(session.WorkspaceId!, session.AgentName, ct);
-        }
-        catch (Exception ex)
-        {
-            CliTheme.WriteError($"Failed to fetch tasks: {ex.Message}");
-            return;
-        }
-
-        if (tasks.Count == 0)
-        {
-            CliTheme.WriteMuted($"No tasks for agent '{session.AgentName}'.");
-            return;
-        }
-
-        var table = CliTheme.CreateTable($"Tasks · {session.AgentName}");
-        table.AddColumn(CliTheme.StyledColumn("ID"));
-        table.AddColumn(CliTheme.StyledColumn("Description"));
-        table.AddColumn(CliTheme.StyledColumn("Status"));
-        table.AddColumn(CliTheme.StyledColumn("Created"));
-
-        foreach (var task in tasks)
-        {
-            table.AddRow(
-                Markup.Escape(task.TaskId),
-                Markup.Escape(task.Description),
-                TuiMarkup.ColorStatus(task.Status),
-                task.CreatedAt.ToString("g", CultureInfo.InvariantCulture));
-        }
-
-        AnsiConsole.Write(table);
-    }
-
-    private static void ShowConversationHistory(TuiSession session)
-    {
-        if (session.AgentName is null)
-        {
-            CliTheme.WriteMuted("No agent selected. Use /use <agent> first.");
-            return;
-        }
-
-        if (ConversationHistory.Count == 0)
-        {
-            CliTheme.WriteMuted("No conversation history yet. Send a message first.");
-            return;
-        }
-
-        CliTheme.WriteSection($"History · {session.AgentName}");
-        foreach (var msg in ConversationHistory)
-        {
-            var role = msg.Role ?? "unknown";
-            if (string.Equals(role, "user", StringComparison.OrdinalIgnoreCase))
-                CliTheme.WriteUserEcho(msg.Content ?? "");
-            else
-                CliTheme.WriteAgentReply(session.AgentName, msg.Content ?? "");
-        }
+        NextStepHint.Render(session);
     }
 
 }
