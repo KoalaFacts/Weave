@@ -6,6 +6,7 @@ namespace Weave.Cli.Commands;
 internal sealed class ServeCliCommand(SiloProcessService? silo = null) : ICliCommand<ServeOptions>
 {
     private readonly SiloProcessService _silo = silo ?? new SiloProcessService();
+    private readonly WorkspaceSiloPaths _paths = new();
 
     public string Name => "serve";
 
@@ -24,7 +25,7 @@ internal sealed class ServeCliCommand(SiloProcessService? silo = null) : ICliCom
             return 0;
         }
 
-        var siloPath = WorkspaceSiloStarter.ResolveSiloPath();
+        var siloPath = _paths.ResolveSiloPath();
         if (siloPath is null)
         {
             CliTheme.WriteError("Could not locate the Weave silo.");
@@ -60,14 +61,14 @@ internal sealed class ServeCliCommand(SiloProcessService? silo = null) : ICliCom
             // startup can hit ~4 KB in seconds). See
             // docs/best-practices.md — "Background launchers must
             // drain pipes or not redirect."
-            _silo.AttachLogDrainer(process, WorkspaceSiloStarter.GetSiloLogPath());
+            _silo.AttachLogDrainer(process, _paths.GetSiloLogPath());
 
             await _silo.WaitForReadyAsync(port, ct, attempts: 30);
 
             CliTheme.WriteSuccess($"Weave running in background (PID {process.Id}, port {port}).");
             CliTheme.WriteMuted("  Local mode \u2014 no external services required.");
             CliTheme.WriteMuted($"  Stop with: weave serve stop or terminate PID {process.Id}.");
-            CliTheme.WriteMuted($"  Logs: {WorkspaceSiloStarter.GetSiloLogPath()}");
+            CliTheme.WriteMuted($"  Logs: {_paths.GetSiloLogPath()}");
             return 0;
         }
 

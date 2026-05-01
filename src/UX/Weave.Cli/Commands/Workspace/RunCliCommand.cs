@@ -10,6 +10,7 @@ internal sealed class RunCliCommand(
     WorkspaceManifestFile? manifests = null) : ICliCommand<RunOptions>
 {
     private readonly SiloProcessService _silo = silo ?? new SiloProcessService();
+    private readonly WorkspaceSiloPaths _paths = new();
     private readonly RunWorkspaceSelector _workspaceSelector = workspaceSelector ?? new RunWorkspaceSelector();
     private readonly WorkspaceManifestFile _manifests = manifests ?? new WorkspaceManifestFile();
 
@@ -46,7 +47,7 @@ internal sealed class RunCliCommand(
         {
             CliTheme.WriteInfo($"Starting server on port {port}...");
 
-            var siloPath = WorkspaceSiloStarter.ResolveSiloPath();
+            var siloPath = _paths.ResolveSiloPath();
             if (siloPath is null)
             {
                 CliTheme.WriteError("Could not locate the Weave silo.");

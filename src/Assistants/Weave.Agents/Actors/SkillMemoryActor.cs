@@ -12,6 +12,8 @@ public sealed class SkillMemoryActor(
     ILogger<SkillMemoryActor> logger,
     IActorState<SkillMemoryState> persistentState) : ISkillMemoryActor
 {
+    private readonly SkillMemorySearcher _searcher = new();
+
     public async Task<SkillDocument> StoreSkillAsync(SkillDocument skill)
     {
         var key = skill.SkillId.ToString();
@@ -95,33 +97,12 @@ public sealed class SkillMemoryActor(
             return Task.FromResult<IReadOnlyList<SkillSearchResult>>(new List<SkillSearchResult>());
         }
 
-        var queryTokens = SkillSearchScorer.Tokenize(query);
-        if (queryTokens.Length == 0)
-        {
-            return Task.FromResult<IReadOnlyList<SkillSearchResult>>(new List<SkillSearchResult>());
-        }
-
-        var scored = new List<SkillSearchResult>();
-        var effectiveOptions = options ?? new SkillSearchOptions();
-        var minSuccessRate = Math.Clamp(effectiveOptions.MinSuccessRate, 0, 1);
-        var now = timeProvider.GetUtcNow();
-
-        foreach (var skill in persistentState.State.Skills.Values)
-        {
-            if (skill.ArchivedAt is not null)
-                continue;
-            if (skill.SuccessRate < minSuccessRate)
-                continue;
-
-            var score = SkillSearchScorer.ComputeRelevanceScore(skill, queryTokens, effectiveOptions, now);
-            if (score > 0)
-                scored.Add(new SkillSearchResult { Skill = skill, RelevanceScore = score });
-        }
-
-        IReadOnlyList<SkillSearchResult> results = scored
-            .OrderByDescending(r => r.RelevanceScore)
-            .Take(maxResults)
-            .ToList();
+        var results = _searcher.Search(
+            persistentState.State.Skills.Values,
+            query,
+            maxResults,
+            options,
+            timeProvider.GetUtcNow());
 
         return Task.FromResult(results);
     }

@@ -6,20 +6,15 @@ internal static class WorkspaceSiloStarter
 {
     internal sealed record AutoStartResult(bool Success, string LogPath, string? Reason);
 
-    internal static string GetSiloLogPath()
-    {
-        var weaveHome = Path.Combine(
-            Environment.GetFolderPath(Environment.SpecialFolder.UserProfile), ".weave");
-        return Path.Combine(weaveHome, "silo.log");
-    }
+    private static readonly WorkspaceSiloPaths Paths = new();
 
     internal static async Task<bool> AutoStartServeAsync(CancellationToken ct)
         => (await AutoStartServeWithDiagnosticsAsync(ct)).Success;
 
     internal static async Task<AutoStartResult> AutoStartServeWithDiagnosticsAsync(CancellationToken ct)
     {
-        var logPath = GetSiloLogPath();
-        var siloPath = ResolveSiloPath();
+        var logPath = Paths.GetSiloLogPath();
+        var siloPath = Paths.ResolveSiloPath();
         if (siloPath is null)
             return new AutoStartResult(false, logPath, "Could not locate the Weave Silo on disk.");
 
@@ -157,32 +152,5 @@ internal static class WorkspaceSiloStarter
             false,
             logPath,
             "Silo did not respond to /health within 60s.");
-    }
-
-    internal static string? ResolveSiloPath()
-    {
-        var envPath = Environment.GetEnvironmentVariable("WEAVE_SILO_PATH");
-        if (!string.IsNullOrWhiteSpace(envPath) && (File.Exists(envPath) || Directory.Exists(envPath)))
-            return envPath;
-
-        var config = CliConfigStore.Load();
-        if (!string.IsNullOrWhiteSpace(config.SiloPath) && (File.Exists(config.SiloPath) || Directory.Exists(config.SiloPath)))
-            return config.SiloPath;
-
-        var candidates = new[]
-        {
-            Path.Combine("src", "Runtime", "Weave.Silo"),
-            Path.Combine("src", "Runtime", "Weave.Silo", "Weave.Silo.csproj")
-        };
-
-        foreach (var candidate in candidates)
-        {
-            if (File.Exists(candidate) || Directory.Exists(candidate))
-                return Path.GetFullPath(candidate);
-        }
-
-        var exeDir = AppContext.BaseDirectory;
-        var siloDll = Path.Combine(exeDir, "Weave.Silo.dll");
-        return File.Exists(siloDll) ? siloDll : null;
     }
 }

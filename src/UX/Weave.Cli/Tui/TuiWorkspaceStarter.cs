@@ -8,6 +8,7 @@ namespace Weave.Cli.Tui;
 internal sealed class TuiWorkspaceStarter
 {
     private readonly ManifestParser _parser = new();
+    private readonly WorkspaceSiloPaths _paths = new();
     private readonly TuiAgentSelector _agentSelector;
     private readonly TuiNextStepHint _nextStepHint;
 
@@ -60,7 +61,7 @@ internal sealed class TuiWorkspaceStarter
 
                     if (!await client.IsReachableAsync(ct))
                     {
-                        var siloPath = WorkspaceSiloStarter.ResolveSiloPath();
+                        var siloPath = _paths.ResolveSiloPath();
                         if (siloPath is null)
                         {
                             error = new InvalidOperationException(
