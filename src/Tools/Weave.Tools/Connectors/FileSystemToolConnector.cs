@@ -9,7 +9,7 @@ namespace Weave.Tools.Connectors;
 public sealed partial class FileSystemToolConnector(ILogger<FileSystemToolConnector> logger) : IToolConnector
 {
     private readonly ConcurrentDictionary<string, FileSystemToolConfig> _configurations = new(StringComparer.Ordinal);
-    private readonly FileSystemToolOperations _operations = new();
+    private readonly FileSystemToolInvoker _invoker = new();
 
     public ToolType ToolType => ToolType.FileSystem;
 
@@ -59,35 +59,7 @@ public sealed partial class FileSystemToolConnector(ILogger<FileSystemToolConnec
         var sw = Stopwatch.StartNew();
         try
         {
-            if (invocation.Method.Equals("read_file", StringComparison.OrdinalIgnoreCase))
-                return await _operations.ReadFileAsync(handle.ToolName, config, invocation, sw, ct);
-
-            if (invocation.Method.Equals("write_file", StringComparison.OrdinalIgnoreCase))
-                return await _operations.WriteFileAsync(handle.ToolName, config, invocation, sw, ct);
-
-            if (invocation.Method.Equals("list_directory", StringComparison.OrdinalIgnoreCase))
-                return _operations.ListDirectory(handle.ToolName, config, invocation, sw);
-
-            if (invocation.Method.Equals("search_files", StringComparison.OrdinalIgnoreCase))
-                return _operations.SearchFiles(handle.ToolName, config, invocation, sw);
-
-            if (invocation.Method.Equals("file_info", StringComparison.OrdinalIgnoreCase))
-                return _operations.GetFileInfo(handle.ToolName, config, invocation, sw);
-
-            if (invocation.Method.Equals("edit_file", StringComparison.OrdinalIgnoreCase))
-                return await _operations.EditFileAsync(handle.ToolName, config, invocation, sw, ct);
-
-            if (invocation.Method.Equals("grep", StringComparison.OrdinalIgnoreCase))
-                return await _operations.GrepAsync(handle.ToolName, config, invocation, sw, ct);
-
-            sw.Stop();
-            return new ToolResult
-            {
-                Success = false,
-                ToolName = handle.ToolName,
-                Error = $"Unknown method '{invocation.Method}'. Supported methods: read_file, write_file, edit_file, list_directory, search_files, grep, file_info",
-                Duration = sw.Elapsed
-            };
+            return await _invoker.InvokeAsync(handle.ToolName, config, invocation, sw, ct);
         }
         catch (ArgumentException ex)
         {
