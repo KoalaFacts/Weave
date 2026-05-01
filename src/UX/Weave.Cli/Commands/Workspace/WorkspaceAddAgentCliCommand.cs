@@ -21,9 +21,7 @@ internal sealed class WorkspaceAddAgentCliCommand(WorkspaceManifestFile? manifes
         var manifestPath = ManifestResolver.Resolve(workspace);
         if (manifestPath is null)
         {
-            CliTheme.WriteError(workspace is null
-                ? "No workspace.json found. Create one first with: weave workspace new"
-                : $"No workspace.json found for '{workspace}'.");
+            WorkspacePrompt.WriteManifestNotFound(workspace);
             return 1;
         }
 

@@ -30,4 +30,11 @@ internal static class WorkspacePrompt
                 .Styled()
                 .AddChoices(workspaces.Keys));
     }
+
+    public static void WriteManifestNotFound(string? name)
+    {
+        CliTheme.WriteError(name is null
+            ? "No workspace.json found. Create one first with: weave workspace new"
+            : $"No workspace.json found for '{name}'.");
+    }
 }

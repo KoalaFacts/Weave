@@ -18,9 +18,7 @@ internal sealed class WorkspaceUpCliCommand(WorkspaceManifestFile? manifests = n
         var manifestPath = ManifestResolver.Resolve(name);
         if (manifestPath is null)
         {
-            CliTheme.WriteError(name is null
-                ? "No workspace.json found. Create one first with: weave workspace new"
-                : $"No workspace.json found for '{name}'.");
+            WorkspacePrompt.WriteManifestNotFound(name);
             return 1;
         }
 
