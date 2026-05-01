@@ -5,10 +5,12 @@ namespace Weave.Tools.Tests;
 
 public sealed class ToolInvocationBuilderTests
 {
+    private readonly ToolInvocationBuilder _builder = new();
+
     [Fact]
     public void FromInput_ValidJson_ParsesMethodAndParams()
     {
-        var result = ToolInvocationBuilder.FromInput("tool1", """{"method": "search", "query": "hello", "limit": "10"}""");
+        var result = _builder.FromInput("tool1", """{"method": "search", "query": "hello", "limit": "10"}""");
 
         result.Method.ShouldBe("search");
         result.Parameters.ShouldContainKey("query");
@@ -21,7 +23,7 @@ public sealed class ToolInvocationBuilderTests
     [Fact]
     public void FromInput_JsonWithRawInput_ExtractsRawInput()
     {
-        var result = ToolInvocationBuilder.FromInput("tool1", """{"method": "execute", "rawInput": "SELECT * FROM users"}""");
+        var result = _builder.FromInput("tool1", """{"method": "execute", "rawInput": "SELECT * FROM users"}""");
 
         result.Method.ShouldBe("execute");
         result.RawInput.ShouldBe("SELECT * FROM users");
@@ -30,7 +32,7 @@ public sealed class ToolInvocationBuilderTests
     [Fact]
     public void FromInput_JsonWithoutMethod_DefaultsToInvoke()
     {
-        var result = ToolInvocationBuilder.FromInput("tool1", """{"key": "value"}""");
+        var result = _builder.FromInput("tool1", """{"key": "value"}""");
 
         result.Method.ShouldBe("invoke");
         result.Parameters.ShouldContainKey("key");
@@ -40,7 +42,7 @@ public sealed class ToolInvocationBuilderTests
     [Fact]
     public void FromInput_NonStringJsonValue_UsesRawText()
     {
-        var result = ToolInvocationBuilder.FromInput("tool1", """{"count": 42, "nested": {"a": 1}}""");
+        var result = _builder.FromInput("tool1", """{"count": 42, "nested": {"a": 1}}""");
 
         result.Parameters["count"].ShouldBe("42");
         result.Parameters["nested"].ShouldContain("\"a\"");
@@ -49,7 +51,7 @@ public sealed class ToolInvocationBuilderTests
     [Fact]
     public void FromInput_PlainTextInput_FallsBackToRawInput()
     {
-        var result = ToolInvocationBuilder.FromInput("tool1", "just plain text");
+        var result = _builder.FromInput("tool1", "just plain text");
 
         result.Method.ShouldBe("invoke");
         result.RawInput.ShouldBe("just plain text");
@@ -59,7 +61,7 @@ public sealed class ToolInvocationBuilderTests
     [Fact]
     public void FromInput_MalformedJson_FallsBackToRawInput()
     {
-        var result = ToolInvocationBuilder.FromInput("tool1", "{invalid json");
+        var result = _builder.FromInput("tool1", "{invalid json");
 
         result.Method.ShouldBe("invoke");
         result.RawInput.ShouldBe("{invalid json");
@@ -68,7 +70,7 @@ public sealed class ToolInvocationBuilderTests
     [Fact]
     public void FromInput_EmptyString_FallsBackToRawInput()
     {
-        var result = ToolInvocationBuilder.FromInput("tool1", "");
+        var result = _builder.FromInput("tool1", "");
 
         result.Method.ShouldBe("invoke");
         result.RawInput.ShouldBe("");
@@ -77,7 +79,7 @@ public sealed class ToolInvocationBuilderTests
     [Fact]
     public void FromInput_NullInput_FallsBackToRawInput()
     {
-        var result = ToolInvocationBuilder.FromInput("tool1", null);
+        var result = _builder.FromInput("tool1", null);
 
         result.Method.ShouldBe("invoke");
         result.RawInput.ShouldBeNull();
@@ -86,7 +88,7 @@ public sealed class ToolInvocationBuilderTests
     [Fact]
     public void FromInput_JsonArray_FallsBackToRawInput()
     {
-        var result = ToolInvocationBuilder.FromInput("tool1", "[1, 2, 3]");
+        var result = _builder.FromInput("tool1", "[1, 2, 3]");
 
         result.Method.ShouldBe("invoke");
         result.RawInput.ShouldBe("[1, 2, 3]");
@@ -95,7 +97,7 @@ public sealed class ToolInvocationBuilderTests
     [Fact]
     public void FromInput_WhitespaceBeforeJson_StillParsed()
     {
-        var result = ToolInvocationBuilder.FromInput("tool1", """   {"method": "fetch"}""");
+        var result = _builder.FromInput("tool1", """   {"method": "fetch"}""");
 
         result.Method.ShouldBe("fetch");
     }
@@ -110,7 +112,7 @@ public sealed class ToolInvocationBuilderTests
             Parameters = []
         };
 
-        var result = ToolInvocationBuilder.DescribeSchema(schema);
+        var result = _builder.DescribeSchema(schema);
 
         result.ShouldBe("A test tool");
     }
@@ -134,7 +136,7 @@ public sealed class ToolInvocationBuilderTests
             ]
         };
 
-        var result = ToolInvocationBuilder.DescribeSchema(schema);
+        var result = _builder.DescribeSchema(schema);
 
         result.ShouldContain("query");
         result.ShouldContain("string");
@@ -161,7 +163,7 @@ public sealed class ToolInvocationBuilderTests
             ]
         };
 
-        var result = ToolInvocationBuilder.DescribeSchema(schema);
+        var result = _builder.DescribeSchema(schema);
 
         result.ShouldContain("limit");
         result.ShouldNotContain("int, required");
@@ -193,7 +195,7 @@ public sealed class ToolInvocationBuilderTests
             ]
         };
 
-        var result = ToolInvocationBuilder.DescribeSchema(schema);
+        var result = _builder.DescribeSchema(schema);
 
         result.ShouldContain(";");
         result.ShouldContain("JSON object");

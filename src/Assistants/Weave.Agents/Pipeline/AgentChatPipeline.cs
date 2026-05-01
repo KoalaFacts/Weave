@@ -15,6 +15,8 @@ public sealed class AgentChatPipeline(
 {
     private IChatClient? _chatClient;
     private string? _systemPrompt;
+    private readonly ChatMessageMapper _messageMapper = new();
+    private readonly ToolInvocationBuilder _toolInvocationBuilder = new();
     private readonly SkillMemoryPromptEnricher _skillMemory = new(actors, logger);
     private readonly EpisodicMemoryPromptEnricher _episodicMemory = new(actors, logger);
 
@@ -54,7 +56,7 @@ public sealed class AgentChatPipeline(
             chatMessages.Add(new ChatMessage(ChatRole.System, prompt));
 
         foreach (var historyMessage in state.History)
-            chatMessages.Add(ChatMessageMapper.ToChatMessage(historyMessage));
+            chatMessages.Add(_messageMapper.ToChatMessage(historyMessage));
 
         var tools = await BuildToolsAsync(state);
         var options = new ChatOptions
@@ -76,7 +78,7 @@ public sealed class AgentChatPipeline(
         var newMessages = new List<ConversationMessage>();
         foreach (var responseMessage in response.Messages)
         {
-            foreach (var conversationMessage in ChatMessageMapper.ToConversationMessages(responseMessage, timeProvider))
+            foreach (var conversationMessage in _messageMapper.ToConversationMessages(responseMessage, timeProvider))
             {
                 state.History.Add(conversationMessage);
                 newMessages.Add(conversationMessage);
@@ -131,7 +133,7 @@ public sealed class AgentChatPipeline(
                 new AIFunctionFactoryOptions
                 {
                     Name = toolName,
-                    Description = ToolInvocationBuilder.DescribeSchema(resolution.Schema)
+                    Description = _toolInvocationBuilder.DescribeSchema(resolution.Schema)
                 });
             tools.Add(function);
         }
@@ -146,7 +148,7 @@ public sealed class AgentChatPipeline(
             ?? throw new InvalidOperationException($"Tool '{toolName}' is not available to agent '{state.AgentName}'.");
 
         var toolActor = actors.GetActor<IToolActor>(VirtualActorId.From(resolution.ActorKey));
-        var invocation = ToolInvocationBuilder.FromInput(toolName, input);
+        var invocation = _toolInvocationBuilder.FromInput(toolName, input);
         var result = await toolActor.InvokeAsync(invocation, resolution.Token);
         return result.Success ? result.Output : $"Tool '{toolName}' failed: {result.Error}";
     }

@@ -4,9 +4,16 @@ using Weave.Tools.Models;
 
 namespace Weave.Tools.Builders;
 
-public static class ToolInvocationBuilder
+public interface IToolInvocationBuilder
 {
-    public static ToolInvocation FromInput(string toolName, string? input)
+    ToolInvocation FromInput(string toolName, string? input);
+
+    string DescribeSchema(ToolSchema schema);
+}
+
+public sealed class ToolInvocationBuilder : IToolInvocationBuilder
+{
+    public ToolInvocation FromInput(string toolName, string? input)
     {
         if (!string.IsNullOrEmpty(input) && input.AsSpan().TrimStart().StartsWith("{".AsSpan(), StringComparison.Ordinal))
         {
@@ -62,7 +69,7 @@ public static class ToolInvocationBuilder
         };
     }
 
-    public static string DescribeSchema(ToolSchema schema)
+    public string DescribeSchema(ToolSchema schema)
     {
         if (schema.Parameters.Count == 0)
         {

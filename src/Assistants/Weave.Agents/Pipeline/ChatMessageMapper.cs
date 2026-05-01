@@ -4,9 +4,16 @@ using Weave.Agents.Models;
 
 namespace Weave.Agents.Pipeline;
 
-public static class ChatMessageMapper
+public interface IChatMessageMapper
 {
-    public static ChatMessage ToChatMessage(ConversationMessage historyMessage)
+    ChatMessage ToChatMessage(ConversationMessage historyMessage);
+
+    IEnumerable<ConversationMessage> ToConversationMessages(ChatMessage message, TimeProvider timeProvider);
+}
+
+public sealed class ChatMessageMapper : IChatMessageMapper
+{
+    public ChatMessage ToChatMessage(ConversationMessage historyMessage)
     {
         var role = historyMessage.Role.ToLowerInvariant() switch
         {
@@ -22,7 +29,7 @@ public static class ChatMessageMapper
         };
     }
 
-    public static IEnumerable<ConversationMessage> ToConversationMessages(ChatMessage message, TimeProvider timeProvider)
+    public IEnumerable<ConversationMessage> ToConversationMessages(ChatMessage message, TimeProvider timeProvider)
     {
         var fallback = message.CreatedAt ?? timeProvider.GetUtcNow();
 
