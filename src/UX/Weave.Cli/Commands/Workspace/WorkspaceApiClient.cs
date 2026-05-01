@@ -114,28 +114,28 @@ internal sealed class WorkspaceApiClient : IDisposable
         throw new HttpRequestException(message, inner: null, response.StatusCode);
     }
 
-        private static string FormatHttpError(int statusCode, string? reason, string body)
+    private static string FormatHttpError(int statusCode, string? reason, string body)
+    {
+        if (string.IsNullOrWhiteSpace(body))
+            return $"HTTP {statusCode} {reason}";
+
+        try
         {
-            if (string.IsNullOrWhiteSpace(body))
-                return $"HTTP {statusCode} {reason}";
-
-            try
-            {
-                using var doc = JsonDocument.Parse(body);
-                // RFC 7807 ProblemDetails: extract 'detail' field for cleaner messages
-                if (doc.RootElement.TryGetProperty("detail", out var detail))
-                    return detail.GetString() ?? body.Trim();
-                // Fallback to 'title' if 'detail' not present
-                if (doc.RootElement.TryGetProperty("title", out var title))
-                    return title.GetString() ?? body.Trim();
-            }
-            catch
-            {
-                // If JSON parsing fails, fall back to raw body
-            }
-
-            return body.Trim();
+            using var doc = JsonDocument.Parse(body);
+            // RFC 7807 ProblemDetails: extract 'detail' field for cleaner messages
+            if (doc.RootElement.TryGetProperty("detail", out var detail))
+                return detail.GetString() ?? body.Trim();
+            // Fallback to 'title' if 'detail' not present
+            if (doc.RootElement.TryGetProperty("title", out var title))
+                return title.GetString() ?? body.Trim();
         }
+        catch
+        {
+            // If JSON parsing fails, fall back to raw body
+        }
+
+        return body.Trim();
+    }
 
     public void Dispose() => _httpClient.Dispose();
 

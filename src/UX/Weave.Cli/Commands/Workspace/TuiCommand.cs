@@ -1,6 +1,4 @@
 using System.CommandLine;
-using Weave.Cli.Tui;
-
 namespace Weave.Cli.Commands;
 
 internal static class TuiCommand
@@ -8,7 +6,7 @@ internal static class TuiCommand
     public static Command Create()
     {
         var cmd = new Command("tui", "Launch the interactive terminal UI");
-        cmd.SetAction((_, cancellationToken) => TuiApp.RunAsync(cancellationToken));
+        cmd.SetAction((_, cancellationToken) => new TuiCliCommand().ExecuteAsync(new NoCliOptions(), cancellationToken));
         return cmd;
     }
 }

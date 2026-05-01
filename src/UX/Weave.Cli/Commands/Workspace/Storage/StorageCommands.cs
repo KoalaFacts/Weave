@@ -7,7 +7,7 @@ namespace Weave.Cli.Commands;
 
 internal static class StorageCommands
 {
-    private static readonly string[] SupportedBackends = ["memory", "sqlite", "postgresql", "sqlserver", "redis"];
+    internal static readonly string[] SupportedBackends = ["memory", "sqlite", "postgresql", "sqlserver", "redis"];
 
     public static Command Create()
     {
@@ -22,39 +22,7 @@ internal static class StorageCommands
     private static Command CreateShowCommand()
     {
         var cmd = new Command("show", "Show the current storage configuration");
-        cmd.SetAction(_ =>
-        {
-            var config = CliConfigStore.Load();
-
-            CliTheme.WriteSection("Storage Configuration");
-            CliTheme.WriteKeyValue("Backend", config.Storage);
-
-            if (!string.IsNullOrWhiteSpace(config.ConnectionString))
-            {
-                if (config.ConnectionString.StartsWith("env:", StringComparison.OrdinalIgnoreCase))
-                    CliTheme.WriteKeyValue("Connection", $"{config.ConnectionString} (from environment variable)");
-                else if (config.ConnectionString.StartsWith("file:", StringComparison.OrdinalIgnoreCase))
-                    CliTheme.WriteKeyValue("Connection", $"{config.ConnectionString} (from secret file)");
-                else if (config.ConnectionString.StartsWith("vault:", StringComparison.OrdinalIgnoreCase))
-                    CliTheme.WriteKeyValue("Connection", $"{config.ConnectionString} (from HashiCorp Vault)");
-                else
-                    CliTheme.WriteKeyValue("Connection", MaskConnectionString(config.ConnectionString) + " [yellow](inline — not recommended)[/]");
-            }
-            else
-            {
-                CliTheme.WriteKeyValue("Connection", config.Storage == "memory" ? "(none — in-memory)" : "(not configured)");
-            }
-
-            if (config.Storage == "sqlite" && string.IsNullOrWhiteSpace(config.ConnectionString))
-            {
-                var defaultDb = DefaultSqlitePath();
-                CliTheme.WriteKeyValue("Default DB", defaultDb);
-            }
-
-            AnsiConsole.WriteLine();
-            CliTheme.WriteMuted("  Change with: weave storage change <backend>");
-            return 0;
-        });
+        cmd.SetAction((_, cancellationToken) => new StorageShowCliCommand().ExecuteAsync(new NoCliOptions(), cancellationToken));
 
         return cmd;
     }
@@ -75,119 +43,13 @@ internal static class StorageCommands
             var backend = parseResult.GetValue(backendArg);
             var connectionStr = parseResult.GetValue(connectionOption);
             var migrate = parseResult.GetValue(migrateOption);
-
-            var currentConfig = CliConfigStore.Load();
-
-            // Check if server is running
-            var isRunning = await IsRunningAsync(currentConfig.DefaultPort, cancellationToken);
-            if (isRunning)
-            {
-                CliTheme.WriteError("Server is still running. Stop it first:");
-                CliTheme.WriteMuted("  weave workspace down <name>");
-                CliTheme.WriteMuted("  Then re-run: weave storage change");
-                return 1;
-            }
-
-            CliTheme.WriteSection("Change Storage Backend");
-            CliTheme.WriteKeyValue("Current", currentConfig.Storage);
-            AnsiConsole.WriteLine();
-
-            if (string.IsNullOrWhiteSpace(backend))
-            {
-                backend = AnsiConsole.Prompt(
-                    new SelectionPrompt<string>()
-                        .Title("New backend:")
-                        .Styled()
-                        .AddChoices(SupportedBackends));
-            }
-
-            if (!SupportedBackends.Contains(backend, StringComparer.OrdinalIgnoreCase))
-            {
-                CliTheme.WriteError($"Unknown backend '{backend}'. Supported: {string.Join(", ", SupportedBackends)}");
-                return 1;
-            }
-
-            if (string.Equals(backend, currentConfig.Storage, StringComparison.OrdinalIgnoreCase))
-            {
-                CliTheme.WriteWarning($"Already using '{backend}'.");
-                return 0;
-            }
-
-            // Connection string
-            if (backend is "sqlite" && string.IsNullOrWhiteSpace(connectionStr))
-            {
-                connectionStr = $"Data Source={DefaultSqlitePath()}";
-                CliTheme.WriteInfo($"Database: {DefaultSqlitePath()}");
-            }
-            else if (backend is "postgresql" or "sqlserver" or "redis")
-            {
-                if (string.IsNullOrWhiteSpace(connectionStr))
-                {
-                    var defaultConn = backend switch
-                    {
-                        "postgresql" => "Host=localhost;Database=weave;Username=;Password=",
-                        "sqlserver" => "Server=localhost;Database=weave;Trusted_Connection=true;TrustServerCertificate=true",
-                        "redis" => "localhost:6379",
-                        _ => ""
-                    };
-
-                    connectionStr = AnsiConsole.Prompt(
-                        new TextPrompt<string>("Connection string:")
-                            .Styled()
-                            .DefaultValue(defaultConn));
-                }
-
-                // Test connectivity
-                AnsiConsole.WriteLine();
-                var reachable = await AnsiConsole.Status()
-                    .Spinner(Spinner.Known.Dots)
-                    .StartAsync("Testing connectivity...", async _ =>
-                        await TestConnectivityAsync(backend, connectionStr, cancellationToken));
-
-                if (reachable)
-                    CliTheme.WriteSuccess("Connection successful.");
-                else
-                    CliTheme.WriteWarning("Could not connect — saving anyway.");
-
-                if (backend is "postgresql" or "sqlserver")
-                {
-                    AnsiConsole.WriteLine();
-                    CliTheme.WriteInfo("Run the Orleans SQL scripts before starting:");
-                    CliTheme.WriteMuted("  https://learn.microsoft.com/dotnet/orleans/host/configuration-guide/adonet-configuration");
-                }
-            }
-
-            // Save
-            var newConfig = currentConfig with
-            {
-                Storage = backend,
-                ConnectionString = backend == "memory" ? null : connectionStr
-            };
-            CliConfigStore.Save(newConfig);
-
-            AnsiConsole.WriteLine();
-            CliTheme.WriteSuccess($"Storage changed: {currentConfig.Storage} → {backend}");
-
-            if (migrate)
-            {
-                AnsiConsole.WriteLine();
-                CliTheme.WriteInfo("Use 'weave data import' to restore your exported data on the new backend.");
-            }
-            else if (currentConfig.Storage != "memory")
-            {
-                AnsiConsole.WriteLine();
-                CliTheme.WriteMuted("  To migrate existing data:");
-                CliTheme.WriteMuted("  1. weave data export <workspace> -o backup.json  (before changing)");
-                CliTheme.WriteMuted("  2. weave data import backup.json                 (after changing)");
-            }
-
-            return 0;
+            return await new StorageChangeCliCommand().ExecuteAsync(new StorageChangeOptions(backend, connectionStr, migrate), cancellationToken);
         });
 
         return cmd;
     }
 
-    private static async Task<bool> IsRunningAsync(int port, CancellationToken ct)
+    internal static async Task<bool> IsRunningAsync(int port, CancellationToken ct)
     {
         try
         {
@@ -201,7 +63,7 @@ internal static class StorageCommands
         }
     }
 
-    private static async Task<bool> TestConnectivityAsync(string backend, string connectionString, CancellationToken ct)
+    internal static async Task<bool> TestConnectivityAsync(string backend, string connectionString, CancellationToken ct)
     {
         try
         {
@@ -284,7 +146,7 @@ internal static class StorageCommands
         return (host, port);
     }
 
-    private static string MaskConnectionString(string connStr)
+    internal static string MaskConnectionString(string connStr)
     {
         if (connStr.Contains("Password", StringComparison.OrdinalIgnoreCase))
             return System.Text.RegularExpressions.Regex.Replace(
@@ -292,7 +154,7 @@ internal static class StorageCommands
         return connStr;
     }
 
-    private static string DefaultSqlitePath()
+    internal static string DefaultSqlitePath()
     {
         var weaveHome = Path.Combine(
             Environment.GetFolderPath(Environment.SpecialFolder.UserProfile), ".weave");
