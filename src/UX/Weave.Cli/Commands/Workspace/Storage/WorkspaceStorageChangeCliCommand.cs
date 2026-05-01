@@ -1,12 +1,16 @@
 using Spectre.Console;
-using Weave.Workspaces.Manifest;
 using Weave.Workspaces.Models;
 
 namespace Weave.Cli.Commands;
 
-internal sealed class WorkspaceStorageChangeCliCommand(WorkspaceStorageBackendService? storage = null) : ICliCommand<WorkspaceStorageChangeOptions>
+internal sealed class WorkspaceStorageChangeCliCommand(
+    WorkspaceStorageBackendService? storage = null,
+    WorkspaceStorageChangePrompt? prompt = null,
+    WorkspaceManifestFile? manifests = null) : ICliCommand<WorkspaceStorageChangeOptions>
 {
     private readonly WorkspaceStorageBackendService _storage = storage ?? new WorkspaceStorageBackendService();
+    private readonly WorkspaceStorageChangePrompt _prompt = prompt ?? new WorkspaceStorageChangePrompt(storage);
+    private readonly WorkspaceManifestFile _manifests = manifests ?? new WorkspaceManifestFile();
 
     public string Name => "change";
 
@@ -23,9 +27,7 @@ internal sealed class WorkspaceStorageChangeCliCommand(WorkspaceStorageBackendSe
             return 1;
         }
 
-        var parser = new ManifestParser();
-        var json = await File.ReadAllTextAsync(manifestPath, ct);
-        var manifest = parser.Parse(json);
+        var manifest = await _manifests.ReadAsync(manifestPath, ct);
         var currentStorage = manifest.Workspace.Storage;
 
         CliTheme.WriteSection($"Change Storage — {options.Workspace}");
@@ -35,15 +37,7 @@ internal sealed class WorkspaceStorageChangeCliCommand(WorkspaceStorageBackendSe
             CliTheme.WriteKeyValue("Current", "(global default)");
         AnsiConsole.WriteLine();
 
-        var backend = options.Backend;
-        if (string.IsNullOrWhiteSpace(backend))
-        {
-            backend = AnsiConsole.Prompt(
-                new SelectionPrompt<string>()
-                    .Title("Backend:")
-                    .Styled()
-                    .AddChoices(_storage.SupportedBackends));
-        }
+        var backend = _prompt.SelectBackend(options.Backend);
 
         if (!_storage.SupportedBackends.Contains(backend, StringComparer.OrdinalIgnoreCase))
         {
@@ -52,15 +46,15 @@ internal sealed class WorkspaceStorageChangeCliCommand(WorkspaceStorageBackendSe
         }
 
         var database = options.Database ?? "weave";
-        var isolation = ResolveIsolation(options.Isolation);
-        var connectionStr = PromptConnectionString(options, manifestPath, backend, database);
+        var isolation = _prompt.ResolveIsolation(options.Isolation);
+        var connectionStr = _prompt.PromptConnectionString(options, manifestPath, backend, database);
 
         if (backend is "postgresql" or "sqlserver" or "sqlite" && !string.IsNullOrWhiteSpace(connectionStr))
         {
             var dbExists = await _storage.CheckDatabaseExistsAsync(backend, connectionStr, database, ct);
             if (dbExists)
             {
-                var outcome = PromptDatabaseConflict(backend, connectionStr, database);
+                var outcome = _prompt.PromptDatabaseConflict(backend, connectionStr, database);
                 if (outcome.Abort)
                     return 0;
 
@@ -69,14 +63,7 @@ internal sealed class WorkspaceStorageChangeCliCommand(WorkspaceStorageBackendSe
             }
         }
 
-        var schema = options.Schema;
-        if (backend is "postgresql" or "sqlserver" && isolation == StorageIsolation.Schema && string.IsNullOrWhiteSpace(schema))
-        {
-            schema = AnsiConsole.Prompt(
-                new TextPrompt<string>("Schema name:")
-                    .Styled()
-                    .DefaultValue(options.Workspace));
-        }
+        var schema = _prompt.PromptSchema(options.Schema, options.Workspace, backend, isolation);
 
         var newStorage = backend == "memory"
             ? null
@@ -90,7 +77,7 @@ internal sealed class WorkspaceStorageChangeCliCommand(WorkspaceStorageBackendSe
             };
 
         manifest = manifest with { Workspace = manifest.Workspace with { Storage = newStorage } };
-        await File.WriteAllTextAsync(manifestPath, parser.Serialize(manifest), ct);
+        await _manifests.WriteAsync(manifestPath, manifest, ct);
 
         AnsiConsole.WriteLine();
         if (newStorage is null)
@@ -108,60 +95,5 @@ internal sealed class WorkspaceStorageChangeCliCommand(WorkspaceStorageBackendSe
 
         CliTheme.WriteMuted("  Start with: weave run " + options.Workspace);
         return 0;
-    }
-
-    private static StorageIsolation ResolveIsolation(string? isolationStr)
-    {
-        if (!string.IsNullOrWhiteSpace(isolationStr))
-            return isolationStr.Equals("schema", StringComparison.OrdinalIgnoreCase)
-                ? StorageIsolation.Schema
-                : StorageIsolation.Database;
-
-        return StorageIsolation.Database;
-    }
-
-    private static string? PromptConnectionString(WorkspaceStorageChangeOptions options, string manifestPath, string backend, string database)
-    {
-        if (backend is "memory" || !string.IsNullOrWhiteSpace(options.ConnectionString))
-            return options.ConnectionString;
-
-        var defaultConn = backend switch
-        {
-            "sqlite" => $"Data Source={Path.Combine(Path.GetDirectoryName(manifestPath)!, ".weave", "workspace.db")}",
-            "postgresql" => $"Host=localhost;Database={database};Username=weave;Password=weave",
-            "sqlserver" => $"Server=localhost;Database={database};Trusted_Connection=true;TrustServerCertificate=true",
-            "redis" => "localhost:6379",
-            _ => ""
-        };
-
-        return AnsiConsole.Prompt(
-            new TextPrompt<string>("Connection string:")
-                .Styled()
-                .DefaultValue(defaultConn));
-    }
-
-    private (bool Abort, string Database, string ConnectionString) PromptDatabaseConflict(string backend, string connectionString, string database)
-    {
-        CliTheme.WriteWarning($"Database '{database}' already exists.");
-        var action = AnsiConsole.Prompt(
-            new SelectionPrompt<string>()
-                .Title("What would you like to do?")
-                .Styled()
-                .AddChoices(
-                    "stop     — abort, do not change storage",
-                    "override — use the existing database (data may conflict)",
-                    "rename   — choose a different database name"));
-
-        if (action.StartsWith("stop", StringComparison.OrdinalIgnoreCase))
-        {
-            CliTheme.WriteInfo("Aborted. No changes made.");
-            return (true, database, connectionString);
-        }
-
-        if (!action.StartsWith("rename", StringComparison.OrdinalIgnoreCase))
-            return (false, database, connectionString);
-
-        var newDatabase = AnsiConsole.Prompt(new TextPrompt<string>("New database name:").Styled());
-        return (false, newDatabase, _storage.ReplaceDatabaseInConnectionString(backend, connectionString, newDatabase));
     }
 }

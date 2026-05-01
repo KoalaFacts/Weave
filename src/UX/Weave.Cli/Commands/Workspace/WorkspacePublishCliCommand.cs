@@ -1,12 +1,14 @@
 using Spectre.Console;
 using Weave.Deploy;
-using Weave.Workspaces.Manifest;
 
 namespace Weave.Cli.Commands;
 
-internal sealed class WorkspacePublishCliCommand(WorkspacePublisherFactory? publishers = null) : ICliCommand<WorkspacePublishOptions>
+internal sealed class WorkspacePublishCliCommand(
+    WorkspacePublisherFactory? publishers = null,
+    WorkspaceManifestFile? manifests = null) : ICliCommand<WorkspacePublishOptions>
 {
     private readonly WorkspacePublisherFactory _publishers = publishers ?? new WorkspacePublisherFactory();
+    private readonly WorkspaceManifestFile _manifests = manifests ?? new WorkspaceManifestFile();
 
     public string Name => "publish";
 
@@ -33,9 +35,7 @@ internal sealed class WorkspacePublishCliCommand(WorkspacePublisherFactory? publ
                     .AddChoices("docker-compose", "kubernetes", "nomad", "fly-io", "github-actions"));
         }
 
-        var yaml = await File.ReadAllTextAsync(manifestPath, ct);
-        var parser = new ManifestParser();
-        var manifest = parser.Parse(yaml);
+        var manifest = await _manifests.ReadAsync(manifestPath, ct);
 
         IPublisher publisher = _publishers.Resolve(target);
 

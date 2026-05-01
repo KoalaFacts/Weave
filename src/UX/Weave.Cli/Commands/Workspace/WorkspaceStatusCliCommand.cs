@@ -1,12 +1,13 @@
 using System.Globalization;
 using Spectre.Console;
-using Weave.Workspaces.Manifest;
 using Weave.Workspaces.Models;
 
 namespace Weave.Cli.Commands;
 
-internal sealed class WorkspaceStatusCliCommand : ICliCommand<WorkspaceNameOptions>
+internal sealed class WorkspaceStatusCliCommand(WorkspaceManifestFile? manifests = null) : ICliCommand<WorkspaceNameOptions>
 {
+    private readonly WorkspaceManifestFile _manifests = manifests ?? new WorkspaceManifestFile();
+
     public string Name => "status";
 
     public IReadOnlyList<string> Aliases => [];
@@ -22,9 +23,7 @@ internal sealed class WorkspaceStatusCliCommand : ICliCommand<WorkspaceNameOptio
             return 1;
         }
 
-        var json = await File.ReadAllTextAsync(manifestPath, ct);
-        var parser = new ManifestParser();
-        var manifest = parser.Parse(json);
+        var manifest = await _manifests.ReadAsync(manifestPath, ct);
 
         var statePath = WorkspaceApiClient.GetWorkspaceStatePath(manifestPath);
         if (File.Exists(statePath))

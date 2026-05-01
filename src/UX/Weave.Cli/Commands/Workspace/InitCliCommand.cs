@@ -4,9 +4,21 @@ using Weave.Shared;
 
 namespace Weave.Cli.Commands;
 
-internal sealed class InitCliCommand(InitEnvironmentProbe? probe = null) : ICliCommand<NoCliOptions>
+internal sealed class InitCliCommand : ICliCommand<NoCliOptions>
 {
-    private readonly InitEnvironmentProbe _probe = probe ?? new InitEnvironmentProbe();
+    private readonly InitEnvironmentProbe _probe;
+    private readonly InitStoragePrompt _storagePrompt;
+    private readonly InitSecurityPrompt _securityPrompt;
+
+    public InitCliCommand(
+        InitEnvironmentProbe? probe = null,
+        InitStoragePrompt? storagePrompt = null,
+        InitSecurityPrompt? securityPrompt = null)
+    {
+        _probe = probe ?? new InitEnvironmentProbe();
+        _storagePrompt = storagePrompt ?? new InitStoragePrompt(_probe);
+        _securityPrompt = securityPrompt ?? new InitSecurityPrompt();
+    }
 
     public string Name => "init";
 
@@ -35,7 +47,7 @@ internal sealed class InitCliCommand(InitEnvironmentProbe? probe = null) : ICliC
             AnsiConsole.WriteLine();
         }
 
-        var storage = await InitStoragePrompt.PromptAsync(ct, _probe);
+        var storage = await _storagePrompt.PromptAsync(ct);
 
         // ── Step 2: Server port ──────────────────────────────────
         AnsiConsole.WriteLine();
@@ -66,7 +78,7 @@ internal sealed class InitCliCommand(InitEnvironmentProbe? probe = null) : ICliC
             siloPath = _probe.PromptSiloPath();
         }
 
-        var security = InitSecurityPrompt.Prompt();
+        var security = _securityPrompt.Prompt();
 
         // ── Save ─────────────────────────────────────────────────
         var config = new CliConfig

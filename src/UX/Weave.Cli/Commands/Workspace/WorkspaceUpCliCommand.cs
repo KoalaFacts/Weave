@@ -1,11 +1,12 @@
 using System.Globalization;
 using Spectre.Console;
-using Weave.Workspaces.Manifest;
 
 namespace Weave.Cli.Commands;
 
-internal sealed class WorkspaceUpCliCommand : ICliCommand<WorkspaceUpOptions>
+internal sealed class WorkspaceUpCliCommand(WorkspaceManifestFile? manifests = null) : ICliCommand<WorkspaceUpOptions>
 {
+    private readonly WorkspaceManifestFile _manifests = manifests ?? new WorkspaceManifestFile();
+
     public string Name => "up";
 
     public IReadOnlyList<string> Aliases => [];
@@ -50,11 +51,7 @@ internal sealed class WorkspaceUpCliCommand : ICliCommand<WorkspaceUpOptions>
 
         CliTheme.WriteInfo($"Starting workspace from {manifestPath} (target: {options.Target})...");
 
-        var json = await File.ReadAllTextAsync(manifestPath, ct);
-        var parser = new ManifestParser();
-        var manifest = WorkspaceApiClient.PrepareManifest(
-            parser.Parse(json),
-            Path.GetDirectoryName(Path.GetFullPath(manifestPath)) ?? Directory.GetCurrentDirectory());
+        var manifest = await _manifests.ReadPreparedAsync(manifestPath, ct);
 
         try
         {

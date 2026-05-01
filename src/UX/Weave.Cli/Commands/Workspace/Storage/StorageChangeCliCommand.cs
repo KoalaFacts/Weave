@@ -2,9 +2,12 @@ using Spectre.Console;
 
 namespace Weave.Cli.Commands;
 
-internal sealed class StorageChangeCliCommand(StorageBackendService? storage = null) : ICliCommand<StorageChangeOptions>
+internal sealed class StorageChangeCliCommand(
+    StorageBackendService? storage = null,
+    StorageChangePrompt? prompt = null) : ICliCommand<StorageChangeOptions>
 {
     private readonly StorageBackendService _storage = storage ?? new StorageBackendService();
+    private readonly StorageChangePrompt _prompt = prompt ?? new StorageChangePrompt(storage);
 
     public string Name => "change";
 
@@ -14,8 +17,6 @@ internal sealed class StorageChangeCliCommand(StorageBackendService? storage = n
 
     public async Task<int> ExecuteAsync(StorageChangeOptions options, CancellationToken ct)
     {
-        var backend = options.Backend;
-        var connectionStr = options.ConnectionString;
         var currentConfig = CliConfigStore.Load();
 
         var isRunning = await _storage.IsRunningAsync(currentConfig.DefaultPort, ct);
@@ -31,14 +32,7 @@ internal sealed class StorageChangeCliCommand(StorageBackendService? storage = n
         CliTheme.WriteKeyValue("Current", currentConfig.Storage);
         AnsiConsole.WriteLine();
 
-        if (string.IsNullOrWhiteSpace(backend))
-        {
-            backend = AnsiConsole.Prompt(
-                new SelectionPrompt<string>()
-                    .Title("New backend:")
-                    .Styled()
-                    .AddChoices(_storage.SupportedBackends));
-        }
+        var backend = _prompt.SelectBackend(options.Backend);
 
         if (!_storage.SupportedBackends.Contains(backend, StringComparer.OrdinalIgnoreCase))
         {
@@ -52,15 +46,7 @@ internal sealed class StorageChangeCliCommand(StorageBackendService? storage = n
             return 0;
         }
 
-        if (backend is "sqlite" && string.IsNullOrWhiteSpace(connectionStr))
-        {
-            connectionStr = $"Data Source={_storage.DefaultSqlitePath()}";
-            CliTheme.WriteInfo($"Database: {_storage.DefaultSqlitePath()}");
-        }
-        else if (backend is "postgresql" or "sqlserver" or "redis")
-        {
-            connectionStr = await PromptConnectionStringAsync(backend, connectionStr, ct);
-        }
+        var connectionStr = await _prompt.ResolveConnectionStringAsync(backend, options.ConnectionString, ct);
 
         var newConfig = currentConfig with
         {
@@ -86,43 +72,5 @@ internal sealed class StorageChangeCliCommand(StorageBackendService? storage = n
         }
 
         return 0;
-    }
-
-    private async Task<string?> PromptConnectionStringAsync(string backend, string? connectionStr, CancellationToken ct)
-    {
-        if (string.IsNullOrWhiteSpace(connectionStr))
-        {
-            var defaultConn = backend switch
-            {
-                "postgresql" => "Host=localhost;Database=weave;Username=;Password=",
-                "sqlserver" => "Server=localhost;Database=weave;Trusted_Connection=true;TrustServerCertificate=true",
-                "redis" => "localhost:6379",
-                _ => ""
-            };
-
-            connectionStr = AnsiConsole.Prompt(
-                new TextPrompt<string>("Connection string:")
-                    .Styled()
-                    .DefaultValue(defaultConn));
-        }
-
-        AnsiConsole.WriteLine();
-        var reachable = await AnsiConsole.Status()
-            .Spinner(Spinner.Known.Dots)
-            .StartAsync("Testing connectivity...", async _ => await _storage.TestConnectivityAsync(backend, connectionStr, ct));
-
-        if (reachable)
-            CliTheme.WriteSuccess("Connection successful.");
-        else
-            CliTheme.WriteWarning("Could not connect — saving anyway.");
-
-        if (backend is "postgresql" or "sqlserver")
-        {
-            AnsiConsole.WriteLine();
-            CliTheme.WriteInfo("Run the Orleans SQL scripts before starting:");
-            CliTheme.WriteMuted("  https://learn.microsoft.com/dotnet/orleans/host/configuration-guide/adonet-configuration");
-        }
-
-        return connectionStr;
     }
 }

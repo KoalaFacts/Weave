@@ -1,10 +1,11 @@
-using Weave.Workspaces.Manifest;
-
 namespace Weave.Cli.Commands;
 
-internal sealed class WorkspaceStorageShowCliCommand(WorkspaceStorageBackendService? storage = null) : ICliCommand<WorkspaceNameOptions>
+internal sealed class WorkspaceStorageShowCliCommand(
+    WorkspaceStorageBackendService? storage = null,
+    WorkspaceManifestFile? manifests = null) : ICliCommand<WorkspaceNameOptions>
 {
     private readonly WorkspaceStorageBackendService _storage = storage ?? new WorkspaceStorageBackendService();
+    private readonly WorkspaceManifestFile _manifests = manifests ?? new WorkspaceManifestFile();
 
     public string Name => "show";
 
@@ -21,9 +22,7 @@ internal sealed class WorkspaceStorageShowCliCommand(WorkspaceStorageBackendServ
             return 1;
         }
 
-        var json = await File.ReadAllTextAsync(manifestPath, ct);
-        var parser = new ManifestParser();
-        var manifest = parser.Parse(json);
+        var manifest = await _manifests.ReadAsync(manifestPath, ct);
 
         CliTheme.WriteSection($"Storage — {options.Name}");
 

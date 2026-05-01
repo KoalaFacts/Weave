@@ -1,11 +1,12 @@
 using Spectre.Console;
-using Weave.Workspaces.Manifest;
 using Weave.Workspaces.Models;
 
 namespace Weave.Cli.Commands;
 
-internal sealed class WorkspaceNewCliCommand : ICliCommand<WorkspaceNewOptions>
+internal sealed class WorkspaceNewCliCommand(WorkspaceManifestFile? manifests = null) : ICliCommand<WorkspaceNewOptions>
 {
+    private readonly WorkspaceManifestFile _manifests = manifests ?? new WorkspaceManifestFile();
+
     public string Name => "new";
 
     public IReadOnlyList<string> Aliases => [];
@@ -70,8 +71,7 @@ internal sealed class WorkspaceNewCliCommand : ICliCommand<WorkspaceNewOptions>
             }
         };
 
-        var parser = new ManifestParser();
-        await File.WriteAllTextAsync(Path.Combine(basePath, "workspace.json"), parser.Serialize(manifest), ct);
+        await _manifests.WriteAsync(Path.Combine(basePath, "workspace.json"), manifest, ct);
 
         foreach (var (fileName, content) in template.PromptFiles)
         {

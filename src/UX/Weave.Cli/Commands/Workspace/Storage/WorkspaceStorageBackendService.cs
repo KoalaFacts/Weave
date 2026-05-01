@@ -6,6 +6,7 @@ namespace Weave.Cli.Commands;
 internal sealed class WorkspaceStorageBackendService(StorageBackendService? storage = null)
 {
     private readonly StorageBackendService _storage = storage ?? new StorageBackendService();
+    private readonly StorageConnectionStrings _connectionStrings = new();
 
     public IReadOnlyList<string> SupportedBackends => _storage.SupportedBackends;
 
@@ -13,9 +14,8 @@ internal sealed class WorkspaceStorageBackendService(StorageBackendService? stor
     {
         if (backend == "sqlite")
         {
-            var match = System.Text.RegularExpressions.Regex.Match(
-                connectionString, @"Data Source\s*=\s*([^;]+)", System.Text.RegularExpressions.RegexOptions.IgnoreCase);
-            return match.Success && File.Exists(match.Groups[1].Value.Trim());
+            var dataSource = _connectionStrings.TryGetSqliteDataSource(connectionString);
+            return dataSource is not null && File.Exists(dataSource);
         }
 
         try
@@ -48,18 +48,10 @@ internal sealed class WorkspaceStorageBackendService(StorageBackendService? stor
     {
         if (backend == "sqlite")
         {
-            return System.Text.RegularExpressions.Regex.Replace(
-                connectionString, @"(Data Source\s*=\s*)[^;]+",
-                $"$1{newDatabase}", System.Text.RegularExpressions.RegexOptions.IgnoreCase);
+            return _connectionStrings.ReplaceSqliteDataSource(connectionString, newDatabase);
         }
 
-        var result = System.Text.RegularExpressions.Regex.Replace(
-            connectionString, @"(Database\s*=\s*)[^;]+",
-            $"$1{newDatabase}", System.Text.RegularExpressions.RegexOptions.IgnoreCase);
-
-        return System.Text.RegularExpressions.Regex.Replace(
-            result, @"(Initial Catalog\s*=\s*)[^;]+",
-            $"$1{newDatabase}", System.Text.RegularExpressions.RegexOptions.IgnoreCase);
+        return _connectionStrings.ReplaceDatabaseName(connectionString, newDatabase);
     }
 
     public string MaskPassword(string connStr) => _storage.MaskConnectionString(connStr);

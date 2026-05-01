@@ -1,11 +1,12 @@
 using Spectre.Console;
-using Weave.Workspaces.Manifest;
 using Weave.Workspaces.Models;
 
 namespace Weave.Cli.Commands;
 
-internal sealed class WorkspaceAddToolCliCommand : ICliCommand<WorkspaceAddToolOptions>
+internal sealed class WorkspaceAddToolCliCommand(WorkspaceManifestFile? manifests = null) : ICliCommand<WorkspaceAddToolOptions>
 {
+    private readonly WorkspaceManifestFile _manifests = manifests ?? new WorkspaceManifestFile();
+
     public string Name => "tool";
 
     public IReadOnlyList<string> Aliases => [];
@@ -25,9 +26,7 @@ internal sealed class WorkspaceAddToolCliCommand : ICliCommand<WorkspaceAddToolO
         if (string.IsNullOrWhiteSpace(toolName))
             toolName = AnsiConsole.Prompt(new TextPrompt<string>("Tool name:").Styled());
 
-        var parser = new ManifestParser();
-        var json = await File.ReadAllTextAsync(manifestPath, ct);
-        var manifest = parser.Parse(json);
+        var manifest = await _manifests.ReadAsync(manifestPath, ct);
 
         if (manifest.Tools.ContainsKey(toolName))
         {
@@ -36,7 +35,7 @@ internal sealed class WorkspaceAddToolCliCommand : ICliCommand<WorkspaceAddToolO
         }
 
         manifest.Tools[toolName] = new ToolDefinition { Type = options.Type };
-        await File.WriteAllTextAsync(manifestPath, parser.Serialize(manifest), ct);
+        await _manifests.WriteAsync(manifestPath, manifest, ct);
 
         CliTheme.WriteSuccess($"Tool '{toolName}' added to workspace '{options.Workspace}'.");
         return 0;

@@ -1,13 +1,17 @@
 using System.Diagnostics;
 using System.Globalization;
 using Spectre.Console;
-using Weave.Workspaces.Manifest;
 
 namespace Weave.Cli.Commands;
 
-internal sealed class RunCliCommand(SiloProcessService? silo = null) : ICliCommand<RunOptions>
+internal sealed class RunCliCommand(
+    SiloProcessService? silo = null,
+    RunWorkspaceSelector? workspaceSelector = null,
+    WorkspaceManifestFile? manifests = null) : ICliCommand<RunOptions>
 {
     private readonly SiloProcessService _silo = silo ?? new SiloProcessService();
+    private readonly RunWorkspaceSelector _workspaceSelector = workspaceSelector ?? new RunWorkspaceSelector();
+    private readonly WorkspaceManifestFile _manifests = manifests ?? new WorkspaceManifestFile();
 
     public string Name => "run";
 
@@ -17,78 +21,16 @@ internal sealed class RunCliCommand(SiloProcessService? silo = null) : ICliComma
 
     public async Task<int> ExecuteAsync(RunOptions options, CancellationToken ct)
     {
-        var name = options.Name;
         var port = options.Port;
+        var selection = _workspaceSelector.Select(options.Name);
+        if (!selection.ShouldRun)
+            return selection.ExitCode;
 
-        var manifestPath = ManifestResolver.Resolve(name);
-
-        // Guided mode: no workspace found — help the user pick or create one
-        if (manifestPath is null)
-        {
-            CliTheme.WriteBanner();
-
-            var existing = WorkspaceRegistry.GetAll();
-            if (existing.Count > 0)
-            {
-                CliTheme.WriteInfo(name is null
-                    ? "No workspace.json found in the current directory."
-                    : $"Workspace '{name}' not found.");
-                AnsiConsole.WriteLine();
-
-                var choices = existing.Select(w => w.Key).ToList();
-                choices.Add("Create a new workspace");
-
-                var picked = AnsiConsole.Prompt(
-                    new SelectionPrompt<string>()
-                        .Title("Which workspace would you like to run?")
-                        .Styled()
-                        .AddChoices(choices));
-
-                if (picked == "Create a new workspace")
-                {
-                    CliTheme.WriteMuted("  Run: weave workspace new <name>");
-                    return 0;
-                }
-
-                name = picked;
-                manifestPath = ManifestResolver.Resolve(name);
-            }
-            else
-            {
-                CliTheme.WriteInfo("No workspaces found. Let's create one.");
-                AnsiConsole.WriteLine();
-
-                var wsName = AnsiConsole.Prompt(
-                    new TextPrompt<string>("Workspace name:")
-                        .Styled()
-                        .DefaultValue("my-workspace"));
-
-                var preset = AnsiConsole.Prompt(
-                    new SelectionPrompt<string>()
-                        .Title("Choose a preset:")
-                        .Styled()
-                        .AddChoices([.. WorkspacePresets.All.Keys]));
-
-                CliTheme.WriteMuted($"  Creating workspace '{wsName}' with preset '{preset}'...");
-                CliTheme.WriteMuted($"  Run: weave workspace new {wsName} --preset {preset}");
-                CliTheme.WriteMuted($"  Then: weave run {wsName}");
-                return 0;
-            }
-
-            if (manifestPath is null)
-            {
-                CliTheme.WriteError($"Workspace '{name}' exists but has no workspace.json.");
-                return 1;
-            }
-        }
+        var manifestPath = selection.ManifestPath!;
 
         CliTheme.WriteBanner();
 
-        var json = await File.ReadAllTextAsync(manifestPath, ct);
-        var parser = new ManifestParser();
-        var manifest = WorkspaceApiClient.PrepareManifest(
-            parser.Parse(json),
-            Path.GetDirectoryName(Path.GetFullPath(manifestPath)) ?? Directory.GetCurrentDirectory());
+        var manifest = await _manifests.ReadPreparedAsync(manifestPath, ct);
 
         CliTheme.WriteKeyValue("Workspace", manifest.Name);
         CliTheme.WriteKeyValue("Agents", manifest.Agents.Count.ToString(CultureInfo.InvariantCulture));

@@ -1,12 +1,13 @@
 using System.Globalization;
 using Spectre.Console;
-using Weave.Workspaces.Manifest;
 using Weave.Workspaces.Models;
 
 namespace Weave.Cli.Commands;
 
-internal sealed class WorkspaceAddAgentCliCommand : ICliCommand<WorkspaceAddAgentOptions>
+internal sealed class WorkspaceAddAgentCliCommand(WorkspaceManifestFile? manifests = null) : ICliCommand<WorkspaceAddAgentOptions>
 {
+    private readonly WorkspaceManifestFile _manifests = manifests ?? new WorkspaceManifestFile();
+
     public string Name => "agent";
 
     public IReadOnlyList<string> Aliases => [];
@@ -26,9 +27,7 @@ internal sealed class WorkspaceAddAgentCliCommand : ICliCommand<WorkspaceAddAgen
         if (string.IsNullOrWhiteSpace(agentName))
             agentName = AnsiConsole.Prompt(new TextPrompt<string>("Agent name:").Styled());
 
-        var parser = new ManifestParser();
-        var json = await File.ReadAllTextAsync(manifestPath, ct);
-        var manifest = parser.Parse(json);
+        var manifest = await _manifests.ReadAsync(manifestPath, ct);
 
         if (manifest.Agents.ContainsKey(agentName))
         {
@@ -43,7 +42,7 @@ internal sealed class WorkspaceAddAgentCliCommand : ICliCommand<WorkspaceAddAgen
             MaxConcurrentTasks = 3
         };
 
-        await File.WriteAllTextAsync(manifestPath, parser.Serialize(manifest), ct);
+        await _manifests.WriteAsync(manifestPath, manifest, ct);
 
         var promptPath = Path.Combine(Path.GetDirectoryName(manifestPath)!, "prompts", $"{agentName}.md");
         Directory.CreateDirectory(Path.GetDirectoryName(promptPath)!);
