@@ -171,5 +171,3 @@ internal sealed class SiloProcessService
         _ => "Default"
     };
 }
-
-internal sealed record SiloArgs(string FileName, List<string> Arguments);

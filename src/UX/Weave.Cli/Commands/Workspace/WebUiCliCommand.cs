@@ -1,7 +1,5 @@
 namespace Weave.Cli.Commands;
 
-internal sealed record WebUiOptions(string? Url = null, bool NoOpen = false);
-
 internal sealed class WebUiCliCommand(WebUiRuntime? runtime = null) : ICliCommand<WebUiOptions>
 {
     private readonly WebUiRuntime _runtime = runtime ?? new WebUiRuntime();
