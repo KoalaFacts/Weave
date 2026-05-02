@@ -47,11 +47,27 @@ public sealed class AgentVerificationDispatcher : IAgentVerificationDispatcher
             {
                 throw;
             }
-            catch (Exception ex)
+            catch (InvalidOperationException ex)
             {
                 _logger.LogWarning(
                     ex,
                     "Proof verification failed for task {TaskId} on agent {AgentName}",
+                    request.TaskId,
+                    request.AgentName);
+            }
+            catch (ArgumentException ex)
+            {
+                _logger.LogWarning(
+                    ex,
+                    "Proof verification failed for task {TaskId} on agent {AgentName}",
+                    request.TaskId,
+                    request.AgentName);
+            }
+            catch (TimeoutException ex)
+            {
+                _logger.LogWarning(
+                    ex,
+                    "Proof verification timed out for task {TaskId} on agent {AgentName}",
                     request.TaskId,
                     request.AgentName);
             }
