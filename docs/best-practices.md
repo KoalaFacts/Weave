@@ -30,7 +30,7 @@ The law of the repo. Every rule here is enforceable in review. Rules exist to pr
 
 **Swallow nothing silently.** Catch-and-log is acceptable only at a true boundary (HTTP handler, actor reminder, CLI command root). Inside a method, let it throw.
 
-**No bare `catch { }` or `catch (Exception) { }` in `src/`.** Every catch must satisfy both: (a) a specific exception type, and (b) a log at `Warning` or higher with context, or a rethrow. `OperationCanceledException` on cooperative shutdown is the only exempt case and must still be typed. Review blocker: any unexplained empty catch. The worst offender in the repo today is `src/Tools/Weave.Tools/Actors/ToolActor.cs:210` which catches `NullReferenceException` and silently returns the wrong workspace identity — a capability-token scoping bug.
+**No bare `catch { }` or `catch (Exception) { }` in `src/`.** Every catch must satisfy both: (a) a specific exception type, and (b) a log at `Warning` or higher with context, or a rethrow. `OperationCanceledException` on cooperative shutdown is the only exempt case and must still be typed. Review blocker: any unexplained empty catch.
 
 **Never `catch (NullReferenceException)`.** NREs from library code are bugs — silencing one always makes the real failure surface somewhere worse (wrong workspace, wrong user, wrong capability). Fix the null, don't catch it.
 
