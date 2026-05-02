@@ -2,6 +2,7 @@ using Microsoft.Extensions.Logging;
 using Weave.Agents.Actors;
 using Weave.Agents.Models;
 using Weave.Agents.Pipeline;
+using Weave.Agents.Verification;
 using Weave.Shared.Events;
 using Weave.Shared.Ids;
 using Weave.Shared.Lifecycle;
@@ -53,6 +54,7 @@ public sealed class AgentActorEpisodeWiringTests
                 Substitute.For<IAgentChatPipeline>(),
                 Substitute.For<ILifecycleManager>(),
                 Substitute.For<IEventBus>(),
+                Substitute.For<IAgentVerificationDispatcher>(),
                 TimeProvider.System,
                 Substitute.For<ILogger<AgentActor>>(),
                 PersistentState);

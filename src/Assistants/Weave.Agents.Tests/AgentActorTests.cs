@@ -2,6 +2,7 @@ using Microsoft.Extensions.Logging;
 using Weave.Agents.Actors;
 using Weave.Agents.Models;
 using Weave.Agents.Pipeline;
+using Weave.Agents.Verification;
 using Weave.Shared.Events;
 using Weave.Shared.Ids;
 using Weave.Shared.Lifecycle;
@@ -64,11 +65,11 @@ public sealed class AgentActorTests
         var logger = Substitute.For<ILogger<AgentActor>>();
         var persistentState = CreatePersistentState();
 
-        var actor = new AgentActor(actors, chatPipeline, lifecycle, eventBus, TimeProvider.System, logger, persistentState);
+        var actor = new AgentActor(actors, chatPipeline, lifecycle, eventBus, Substitute.For<IAgentVerificationDispatcher>(), TimeProvider.System, logger, persistentState);
         return (actor, lifecycle, eventBus, skillMemory);
     }
 
-    private static (AgentActor Actor, IProofVerifierActor Verifier) CreateActorWithVerifier()
+    private static (AgentActor Actor, IAgentVerificationDispatcher Dispatcher) CreateActorWithDispatcher()
     {
         var skillMemory = Substitute.For<ISkillMemoryActor>();
         skillMemory.StoreSkillAsync(Arg.Any<SkillDocument>())
@@ -80,20 +81,18 @@ public sealed class AgentActorTests
                 SourceTaskId = callInfo.ArgAt<string?>(1)
             }));
 
-        var verifier = Substitute.For<IProofVerifierActor>();
-
         var actors = Substitute.For<IVirtualActorProvider>();
         actors.GetActor<ISkillMemoryActor>(Arg.Any<VirtualActorId>()).Returns(skillMemory);
-        actors.GetActor<IProofVerifierActor>(Arg.Any<VirtualActorId>()).Returns(verifier);
 
         var chatPipeline = Substitute.For<IAgentChatPipeline>();
         var lifecycle = Substitute.For<ILifecycleManager>();
         var eventBus = Substitute.For<IEventBus>();
+        var dispatcher = Substitute.For<IAgentVerificationDispatcher>();
         var logger = Substitute.For<ILogger<AgentActor>>();
         var persistentState = CreatePersistentState();
 
-        var actor = new AgentActor(actors, chatPipeline, lifecycle, eventBus, TimeProvider.System, logger, persistentState);
-        return (actor, verifier);
+        var actor = new AgentActor(actors, chatPipeline, lifecycle, eventBus, dispatcher, TimeProvider.System, logger, persistentState);
+        return (actor, dispatcher);
     }
 
     [Fact]
@@ -337,9 +336,9 @@ public sealed class AgentActorTests
     }
 
     [Fact]
-    public async Task CompleteTaskAsync_WithProof_DispatchesVerification()
+    public async Task CompleteTaskAsync_WithProof_EnqueuesVerification()
     {
-        var (actor, verifier) = CreateActorWithVerifier();
+        var (actor, dispatcher) = CreateActorWithDispatcher();
         await actor.ActivateAgentAsync(TestWorkspaceId, CreateDefinition());
         var task = await actor.SubmitTaskAsync("Implement feature");
         var proof = new ProofOfWork
@@ -349,38 +348,12 @@ public sealed class AgentActorTests
 
         await actor.CompleteTaskAsync(task.TaskId, success: true, proof);
 
-        // Verification is dispatched via Task.Run (fire-and-forget to avoid grain reentrancy).
-        // Give the background task a moment to complete.
-        await Task.Delay(100, TestContext.Current.CancellationToken);
-
-        await verifier.Received(1).VerifyAsync(
-            TestWorkspaceId,
-            Arg.Any<string>(),
-            task.TaskId,
-            proof);
-    }
-
-    [Fact]
-    public async Task CompleteTaskAsync_VerifierThrows_DoesNotPropagate()
-    {
-        var (actor, verifier) = CreateActorWithVerifier();
-        verifier.VerifyAsync(Arg.Any<WorkspaceId>(), Arg.Any<string>(), Arg.Any<AgentTaskId>(), Arg.Any<ProofOfWork>())
-            .Returns(Task.FromException(new InvalidOperationException("verifier down")));
-
-        await actor.ActivateAgentAsync(TestWorkspaceId, CreateDefinition());
-        var task = await actor.SubmitTaskAsync("Implement feature");
-        var proof = new ProofOfWork
-        {
-            Items = [new ProofItem { Type = ProofType.TestResults, Label = "Tests", Value = "42 passed" }]
-        };
-
-        // Should not throw — the failure is logged inside Task.Run, not propagated.
-        await actor.CompleteTaskAsync(task.TaskId, success: true, proof);
-        await Task.Delay(100, TestContext.Current.CancellationToken);
-
-        var state = await actor.GetStateAsync();
-        var taskInfo = state.ActiveTasks.First(t => t.TaskId == task.TaskId);
-        taskInfo.Status.ShouldBe(AgentTaskStatus.AwaitingReview);
+        await dispatcher.Received(1).EnqueueAsync(
+            Arg.Is<AgentVerificationRequest>(r =>
+                r.WorkspaceId == TestWorkspaceId &&
+                r.TaskId == task.TaskId &&
+                r.Proof == proof),
+            Arg.Any<CancellationToken>());
     }
 
     [Fact]
@@ -558,7 +531,7 @@ public sealed class AgentActorTests
         var eventBus = Substitute.For<IEventBus>();
         var logger = Substitute.For<ILogger<AgentActor>>();
 
-        var actor = new AgentActor(actors, chatPipeline, lifecycle, eventBus, TimeProvider.System, logger, persistentState);
+        var actor = new AgentActor(actors, chatPipeline, lifecycle, eventBus, Substitute.For<IAgentVerificationDispatcher>(), TimeProvider.System, logger, persistentState);
         await actor.OnActivatedAsync("ws-1/researcher", TestContext.Current.CancellationToken);
 
         state.AgentId.ShouldBe("ws-1/researcher");
@@ -582,7 +555,7 @@ public sealed class AgentActorTests
         var eventBus = Substitute.For<IEventBus>();
         var logger = Substitute.For<ILogger<AgentActor>>();
 
-        var actor = new AgentActor(actors, chatPipeline, lifecycle, eventBus, TimeProvider.System, logger, persistentState);
+        var actor = new AgentActor(actors, chatPipeline, lifecycle, eventBus, Substitute.For<IAgentVerificationDispatcher>(), TimeProvider.System, logger, persistentState);
         await actor.OnActivatedAsync("ws-2/different", TestContext.Current.CancellationToken);
 
         state.AgentId.ShouldBe("ws-1/existing");
@@ -612,7 +585,7 @@ public sealed class AgentActorTests
         var eventBus = Substitute.For<IEventBus>();
         var logger = Substitute.For<ILogger<AgentActor>>();
 
-        var actor = new AgentActor(actors, chatPipeline, lifecycle, eventBus, TimeProvider.System, logger, persistentState);
+        var actor = new AgentActor(actors, chatPipeline, lifecycle, eventBus, Substitute.For<IAgentVerificationDispatcher>(), TimeProvider.System, logger, persistentState);
         await actor.OnActivatedAsync("ws-1/researcher", TestContext.Current.CancellationToken);
 
         chatPipeline.Received(1).Initialize("ws-1/researcher", "claude-sonnet-4-20250514");
@@ -633,7 +606,7 @@ public sealed class AgentActorTests
         var eventBus = Substitute.For<IEventBus>();
         var logger = Substitute.For<ILogger<AgentActor>>();
 
-        var actor = new AgentActor(actors, chatPipeline, lifecycle, eventBus, TimeProvider.System, logger, persistentState);
+        var actor = new AgentActor(actors, chatPipeline, lifecycle, eventBus, Substitute.For<IAgentVerificationDispatcher>(), TimeProvider.System, logger, persistentState);
         await actor.OnActivatedAsync(null, TestContext.Current.CancellationToken);
 
         state.AgentName.ShouldBe("agent");
@@ -656,7 +629,7 @@ public sealed class AgentActorTests
         var eventBus = Substitute.For<IEventBus>();
         var logger = Substitute.For<ILogger<AgentActor>>();
 
-        var actor = new AgentActor(actors, chatPipeline, lifecycle, eventBus, TimeProvider.System, logger, persistentState);
+        var actor = new AgentActor(actors, chatPipeline, lifecycle, eventBus, Substitute.For<IAgentVerificationDispatcher>(), TimeProvider.System, logger, persistentState);
 
         // EnsureIdentity is called via ActivateAgentAsync
         var result = await actor.ActivateAgentAsync(WorkspaceId.From("ws-2"), CreateDefinition());

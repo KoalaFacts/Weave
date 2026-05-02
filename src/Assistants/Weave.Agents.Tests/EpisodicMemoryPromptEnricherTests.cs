@@ -119,7 +119,7 @@ public sealed class EpisodicMemoryPromptEnricherTests
     public async Task RecordRecallAsync_CallsActorPerEpisode()
     {
         var (enricher, actor) = CreateEnricher();
-        var ids = new[] { EpisodeId.From("a"), EpisodeId.From("b") };
+        EpisodeId[] ids = [EpisodeId.From("a"), EpisodeId.From("b")];
 
         await enricher.RecordRecallAsync(TestWorkspaceId, "researcher", ids);
 

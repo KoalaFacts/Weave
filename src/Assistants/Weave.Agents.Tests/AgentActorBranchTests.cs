@@ -3,6 +3,7 @@ using Weave.Agents.Actors;
 using Weave.Agents.Events;
 using Weave.Agents.Models;
 using Weave.Agents.Pipeline;
+using Weave.Agents.Verification;
 using Weave.Shared.Events;
 using Weave.Shared.Ids;
 using Weave.Shared.Lifecycle;
@@ -53,7 +54,8 @@ public sealed class AgentActorBranchTests
                 .Returns(Substitute.For<IProofVerifierActor>());
 
             Actor = new AgentActor(
-                ActorProvider, ChatPipeline, Lifecycle, EventBus, TimeProvider.System,
+                ActorProvider, ChatPipeline, Lifecycle, EventBus,
+                Substitute.For<IAgentVerificationDispatcher>(), TimeProvider.System,
                 Substitute.For<ILogger<AgentActor>>(), State);
         }
     }

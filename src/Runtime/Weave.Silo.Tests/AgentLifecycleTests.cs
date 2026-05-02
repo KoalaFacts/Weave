@@ -302,4 +302,39 @@ public sealed class AgentLifecycleTests : IClassFixture<SiloFactory>
         var body = await response.Content.ReadAsStringAsync(TestContext.Current.CancellationToken);
         body.ShouldStartWith("[");
     }
+
+    [Fact]
+    public async Task CompleteTask_ValidProof_Returns200WithAwaitingReview()
+    {
+        using var client = _factory.CreateClient();
+        var ws = NewWorkspaceId();
+        await ActivateAsync(client, ws, "agent-c");
+
+        using var submit = await client.PostAsJsonAsync(
+            $"/api/workspaces/{ws}/agents/agent-c/tasks",
+            new { Description = "Implement feature" },
+            TestContext.Current.CancellationToken);
+        var submitBody = await submit.Content.ReadAsStringAsync(TestContext.Current.CancellationToken);
+        submit.StatusCode.ShouldBe(HttpStatusCode.Created, submitBody);
+        using var submitDoc = JsonDocument.Parse(submitBody);
+        var taskId = submitDoc.RootElement.GetProperty("taskId").GetString();
+        taskId.ShouldNotBeNullOrWhiteSpace();
+
+        using var complete = await client.PostAsJsonAsync(
+            $"/api/workspaces/{ws}/agents/agent-c/tasks/{taskId}/complete",
+            new
+            {
+                Success = true,
+                Proof = new[]
+                {
+                    new { Type = "CiStatus", Label = "CI", Value = "passed" }
+                }
+            },
+            TestContext.Current.CancellationToken);
+        var completeBody = await complete.Content.ReadAsStringAsync(TestContext.Current.CancellationToken);
+
+        complete.StatusCode.ShouldBe(HttpStatusCode.OK, completeBody);
+        using var completeDoc = JsonDocument.Parse(completeBody);
+        completeDoc.RootElement.GetProperty("status").GetString().ShouldBe("AwaitingReview");
+    }
 }

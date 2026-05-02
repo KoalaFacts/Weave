@@ -2,6 +2,8 @@
 
 **Date:** April 2026
 
+> **Roadmap note:** The *Recommendations* and *Priority roadmap to close gaps* sections of this doc are superseded by [unique-agent-strategy.md](unique-agent-strategy.md). The competitor profiles, feature matrix, and source links below remain valid as market context.
+
 ---
 
 ## Executive Summary
