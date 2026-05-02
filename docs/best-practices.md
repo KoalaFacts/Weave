@@ -16,7 +16,7 @@ The law of the repo. Every rule here is enforceable in review. Rules exist to pr
 
 **Every service crossing a module boundary is programmed against an interface.** Concrete classes wrap third-party libraries; consumers never import them directly. Applies to `IToolConnector`, `ISecretProvider`, `IPublisher`. Tests substitute with `NSubstitute` without touching the real stack.
 
-**Middleware resolves per-request services from `HttpContext.RequestServices`, never from `app.ApplicationServices`.** `app.ApplicationServices` is the root provider — exactly the same trap that killed `CommandDispatcher`. Any middleware that pulls state from DI has to go through `HttpContext.RequestServices` or cache a singleton upfront. See `src/Runtime/Weave.Silo/Security/AuditLogMiddleware.cs:61` — the current `app.ApplicationServices.GetRequiredService<AuditOptions>()` call works today because the options are singleton, but it will break silently the first time someone registers request-scoped audit state.
+**Middleware resolves per-request services from `HttpContext.RequestServices`, never from `app.ApplicationServices`.** `app.ApplicationServices` is the root provider — exactly the same trap that killed `CommandDispatcher`. Any middleware that pulls state from DI has to go through `HttpContext.RequestServices` or cache a singleton upfront.
 
 **Stateless factories are Scoped, not Singleton.** `AgentChatClientFactory` is Scoped so its injected `IServiceProvider` is the consumer's own scope (HTTP request or Orleans actor), and `ActivatorUtilities.CreateInstance` resolves any scoped middleware dependencies correctly. Making such a factory Singleton creates an asymmetry: the factory outlives the request, but the clients it constructs depend on scoped services — that's the same bug as the dispatcher's.
 
@@ -36,9 +36,9 @@ The law of the repo. Every rule here is enforceable in review. Rules exist to pr
 
 **Probe helpers catch only network-layer exceptions.** `IsReachableAsync`, readiness loops, health pollers — the only catch list is `HttpRequestException`, `TaskCanceledException` (timeout), `SocketException`. Bare `Exception` masks `UriFormatException` from a bad config and makes "silo not running" indistinguishable from "your cert chain is broken". Log the captured exception at `Debug` so operators running with verbose logs can diagnose.
 
-**Background tasks observe their own faults.** `_ = Task.Run(async () => { ... })` with no error handler is forbidden — a detached exception is unlogged and never surfaces. Use `await`, `task.ContinueWith(t => log, TaskContinuationOptions.OnlyOnFaulted)`, or a named helper `FireAndForgetAsync(task, logger, operationName)`. The canonical anti-pattern in the repo is `src/UX/Weave.Cli/Commands/VersionInfo.cs:107` — double-silent (detached `Task.Run` *and* empty catch).
+**Background tasks observe their own faults.** `_ = Task.Run(async () => { ... })` with no error handler is forbidden — a detached exception is unlogged and never surfaces. Use `await`, `task.ContinueWith(t => log, TaskContinuationOptions.OnlyOnFaulted)`, or a named helper `FireAndForgetAsync(task, logger, operationName)`.
 
-**Fire-and-forget actor calls are forbidden outright.** `_ = actor.SomeAsync()` discards an Orleans activation failure or serialization mismatch and leaves the caller wedged in a half-dispatched state. The case in `src/Assistants/Weave.Agents/Actors/AgentActor.cs:221` (`_ = verifier.VerifyAsync(...)`) can silently drop proof-verification forever. Always `await`, or capture the task and observe completion elsewhere.
+**Fire-and-forget actor calls are forbidden by default.** `_ = actor.SomeAsync()` discards an Orleans activation failure or serialization mismatch and leaves the caller wedged in a half-dispatched state. Always `await`, or capture the task and observe completion elsewhere. The narrow exception is reentrancy (an actor calling back into itself would deadlock under Orleans's single-threaded model); when that applies, wrap in `Task.Run` with an explicit `try/catch` *and* a code comment naming the reentrancy reason — see `src/Assistants/Weave.Agents/Actors/AgentActor.cs` for the worked example.
 
 ### Process management
 
@@ -46,17 +46,17 @@ The law of the repo. Every rule here is enforceable in review. Rules exist to pr
 
 **Redirect child-process output to a log file on disk, not into memory.** If the CLI wants to show tail on demand, tail the file. Buffering indefinite output into a `StringBuilder` is a memory leak on the happy path.
 
-**If `RedirectStandardError = true`, drain stderr too.** Same pipe-buffer rule as stdout, but easier to miss because tests rarely cover verbose-stderr scenarios. `src/Tools/Weave.Tools/Connectors/McpToolConnector.cs:24-25` redirects stderr and never reads it — any MCP server that writes more than ~4 KB of diagnostic output to stderr will hang. Every connector that spawns a process must wire both pipes.
+**If `RedirectStandardError = true`, drain stderr too.** Same pipe-buffer rule as stdout, but easier to miss because tests rarely cover verbose-stderr scenarios. Every connector that spawns a process must wire both pipes — `src/Tools/Weave.Tools/Connectors/McpToolConnector.cs` is the worked example, calling `process.BeginErrorReadLine()` after `RedirectStandardError = true`.
 
-**When using `ReadToEndAsync` on both pipes, start both reads before awaiting either.** Sequential reads deadlock: if the child fills stderr while stdout is empty, you sit on `ReadToEndAsync(stdout)` forever. Use `Task.WhenAll(stdoutTask, stderrTask)` and then `WaitForExit`. Current offenders: `src/Workspaces/Weave.Workspaces/Runtime/ProcessCommandRunner.cs:24-26` and `src/Tools/Weave.Tools/Connectors/CliToolConnector.cs:93-95`.
+**When using `ReadToEndAsync` on both pipes, start both reads before awaiting either.** Sequential reads deadlock: if the child fills stderr while stdout is empty, you sit on `ReadToEndAsync(stdout)` forever. Use `Task.WhenAll(stdoutTask, stderrTask)` and then `WaitForExit`. The pattern is in `src/Workspaces/Weave.Workspaces/Runtime/ProcessCommandRunner.cs` — copy it.
 
-**Background launchers (`weave serve --background`, `weave run --background`) must drain pipes or not redirect.** The `UpCommand` auto-start handler gets this right; `src/UX/Weave.Cli/Commands/ServeCommand.cs:47-48` and `src/UX/Weave.Cli/Commands/RunCommand.cs:197-198` currently don't and will deadlock the Silo as soon as its startup log exceeds the pipe buffer.
+**Background launchers (`weave serve --background`, `weave run --background`) must drain pipes or not redirect.** The Silo auto-start handler in `src/UX/Weave.Cli/Commands/Workspace/SiloProcessService.cs` is the worked example — it wires `OutputDataReceived` and `ErrorDataReceived` and calls `BeginOutputReadLine` / `BeginErrorReadLine` before the process produces output.
 
 **Respect the `CancellationToken` at every async boundary.** `await foo(ct)`, `await Task.Delay(d, ct)`, `HttpClient.SendAsync(req, ct)`. CLI commands must cancel cleanly on Ctrl+C.
 
 ### Serialization adapters (Orleans)
 
-**Every branded ID or shared value type that crosses a actor boundary has a surrogate + `[RegisterConverter]`.** Orleans will throw `CodecNotFoundException` at Silo startup (or worse, at the first actor call) if you forget one. Add the pair in `src/Runtime/Weave.Silo/Serialization/BrandedIdSurrogates.cs` next to the existing entries; do not create a new assembly.
+**Every branded ID or shared value type that crosses a actor boundary has a surrogate + `[RegisterConverter]`.** Orleans will throw `CodecNotFoundException` at Silo startup (or worse, at the first actor call) if you forget one. Add the pair in `src/Runtime/Weave.Silo/Serialization/` next to the existing per-type surrogate files (`AgentIdSurrogates.cs`, `WorkspaceIdSurrogates.cs`, etc.); do not create a new assembly.
 
 **Serialization adapters live in the consumer, not in Foundation.** `Weave.Silo.Serialization` owns them because the Silo is the only consumer. Do not recreate a `Weave.Shared.Orleans` project — adapters leak Orleans into Foundation and invert the dependency flow from `CLAUDE.md` (`Shared -> ... -> Silo`).
 
@@ -72,7 +72,7 @@ The law of the repo. Every rule here is enforceable in review. Rules exist to pr
 
 **Prefer source-generated JSON, regex, and logging.** AOT-friendly and fail-fast at compile. Use `ManifestJsonContext` (workspace manifests), `SiloApiJsonContext` (HTTP API), `CliApiJsonContext` (CLI), and `[GeneratedRegex]` for all regex. A raw `new Regex("...")` in a hot path is a review blocker.
 
-**Use `JsonSerializer.SerializeToUtf8Bytes` + `ByteArrayContent`, not `PostAsJsonAsync` with reflection overloads.** Dapr and Vault adapters follow this; see `src/Security/Weave.Security/Secrets/VaultSecretProvider.cs`.
+**Use `JsonSerializer.SerializeToUtf8Bytes` + `ByteArrayContent`, not `PostAsJsonAsync` with reflection overloads.** This keeps adapters AOT- and trimming-safe; reflection overloads break under both.
 
 ### Namespace hygiene and project layout
 
