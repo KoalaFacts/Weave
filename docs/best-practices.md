@@ -38,7 +38,7 @@ The law of the repo. Every rule here is enforceable in review. Rules exist to pr
 
 **Background tasks observe their own faults.** `_ = Task.Run(async () => { ... })` with no error handler is forbidden — a detached exception is unlogged and never surfaces. Use `await`, `task.ContinueWith(t => log, TaskContinuationOptions.OnlyOnFaulted)`, or a named helper `FireAndForgetAsync(task, logger, operationName)`.
 
-**Fire-and-forget actor calls are forbidden by default.** `_ = actor.SomeAsync()` discards an Orleans activation failure or serialization mismatch and leaves the caller wedged in a half-dispatched state. Always `await`, or capture the task and observe completion elsewhere. The narrow exception is reentrancy (an actor calling back into itself would deadlock under Orleans's single-threaded model); when that applies, wrap in `Task.Run` with an explicit `try/catch` *and* a code comment naming the reentrancy reason — see `src/Assistants/Weave.Agents/Actors/AgentActor.cs` for the worked example.
+**Fire-and-forget actor calls are forbidden outright.** `_ = actor.SomeAsync()` discards an Orleans activation failure or serialization mismatch and leaves the caller wedged in a half-dispatched state. Always `await`, or capture the task and observe completion elsewhere. Reentrancy concerns (an actor calling back into itself) are not a license to fire-and-forget — use `[AlwaysInterleave]` on the inner method, restructure so the callback target is a different grain, or hand the work to a hosted background service. The current offender is `src/Assistants/Weave.Agents/Actors/AgentActor.cs` (search `_ = Task.Run`); fix it, do not codify it.
 
 ### Process management
 
