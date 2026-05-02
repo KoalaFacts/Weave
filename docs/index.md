@@ -50,6 +50,13 @@ Weave.AppHost (Aspire orchestrator)
 | [ux.md](ux.md) | CLI + Dashboard | `src/UX/` | CLI commands (System.CommandLine + Spectre.Console), Blazor dashboard (FluentUI), workspace presets |
 | [examples.md](examples.md) | Code Examples | (cross-cutting) | Manifest authoring, CLI usage, actors, CQRS handlers, tokens, events, lifecycle hooks, testing patterns |
 
+## Strategy & Direction
+
+| Document | Purpose |
+|----------|---------|
+| [unique-agent-strategy.md](unique-agent-strategy.md) | Capability-first positioning, what we compete on, what we do not, and roadmap implications |
+| [competitive-analysis.md](competitive-analysis.md) | Market context: Hermes Agent, OpenClaw, Evlover. Recommendations sections superseded by `unique-agent-strategy.md` |
+
 ## Cross-Subsystem Interactions
 
 ### Workspace Startup Flow
