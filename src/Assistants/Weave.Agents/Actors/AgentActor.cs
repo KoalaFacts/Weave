@@ -2,6 +2,7 @@ using Microsoft.Extensions.Logging;
 using Weave.Agents.Events;
 using Weave.Agents.Models;
 using Weave.Agents.Pipeline;
+using Weave.Agents.Verification;
 using Weave.Shared.Events;
 using Weave.Shared.Ids;
 using Weave.Shared.Lifecycle;
@@ -14,6 +15,7 @@ public sealed class AgentActor(
     IAgentChatPipeline chatPipeline,
     ILifecycleManager lifecycleManager,
     IEventBus eventBus,
+    IAgentVerificationDispatcher verificationDispatcher,
     TimeProvider timeProvider,
     ILogger<AgentActor> logger,
     IActorState<AgentState> persistentState) : IAgentActor
@@ -122,24 +124,13 @@ public sealed class AgentActor(
             persistentState.State.AgentName,
             proof.Items.Count);
 
-        var verifier = actors.GetActor<IProofVerifierActor>(VirtualActorId.From(persistentState.State.WorkspaceId.ToString()));
-        // Fire-and-forget is intentional: VerifyAsync calls back into this grain via
-        // ReviewTaskAsync, so awaiting would deadlock (Orleans single-threaded reentrancy).
-        _ = Task.Run(async () =>
-        {
-            try
-            {
-                await verifier.VerifyAsync(
-                    persistentState.State.WorkspaceId,
-                    persistentState.State.AgentName,
-                    taskId,
-                    proof);
-            }
-            catch (Exception ex)
-            {
-                logger.LogWarning(ex, "Proof verification dispatch failed for task {TaskId} on agent {AgentName}", taskId, persistentState.State.AgentName);
-            }
-        });
+        await verificationDispatcher.EnqueueAsync(
+            new AgentVerificationRequest(
+                persistentState.State.WorkspaceId,
+                persistentState.State.AgentName,
+                taskId,
+                proof),
+            CancellationToken.None);
     }
 
     public async Task ReviewTaskAsync(AgentTaskId taskId, bool accepted, string? feedback = null, VerificationRecord? verification = null)
