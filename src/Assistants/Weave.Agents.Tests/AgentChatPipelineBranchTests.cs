@@ -1,8 +1,10 @@
 using Microsoft.Extensions.AI;
 using Microsoft.Extensions.Logging.Abstractions;
+using Microsoft.Extensions.Options;
 using Weave.Agents.Actors;
 using Weave.Agents.Models;
 using Weave.Agents.Pipeline;
+using Weave.Security.Tokens;
 using Weave.Shared.Ids;
 using Weave.Workspaces.Models;
 
@@ -38,6 +40,9 @@ public sealed class AgentChatPipelineBranchTests
             Pipeline = new AgentChatPipeline(
                 ActorProvider,
                 ChatClientFactory,
+                new CapabilityTokenService(
+                    Options.Create(new CapabilityTokenOptions { SigningKey = "test-signing-key-that-is-at-least-32-chars-long" }),
+                    TimeProvider.System),
                 TimeProvider.System,
                 NullLogger<AgentChatPipeline>.Instance);
         }
@@ -116,7 +121,7 @@ public sealed class AgentChatPipelineBranchTests
     {
         var fx = new Fixture();
         var skillActor = Substitute.For<ISkillMemoryActor>();
-        skillActor.SearchAsync(Arg.Any<string>(), Arg.Any<int>(), Arg.Any<SkillSearchOptions>())
+        skillActor.SearchAsync(Arg.Any<string>(), Arg.Any<CapabilityToken>(), Arg.Any<int>(), Arg.Any<SkillSearchOptions>())
             .Returns(Task.FromException<IReadOnlyList<SkillSearchResult>>(new InvalidOperationException("skill actor broken")));
         fx.ActorProvider.GetActor<ISkillMemoryActor>(Arg.Any<VirtualActorId>()).Returns(skillActor);
 
@@ -146,11 +151,11 @@ public sealed class AgentChatPipelineBranchTests
             CreatedByAgent = "researcher"
         };
         var skillActor = Substitute.For<ISkillMemoryActor>();
-        skillActor.SearchAsync(Arg.Any<string>(), Arg.Any<int>(), Arg.Any<SkillSearchOptions>())
+        skillActor.SearchAsync(Arg.Any<string>(), Arg.Any<CapabilityToken>(), Arg.Any<int>(), Arg.Any<SkillSearchOptions>())
             .Returns(Task.FromResult<IReadOnlyList<SkillSearchResult>>([
                 new SkillSearchResult { Skill = skill, RelevanceScore = 3.0 }
             ]));
-        skillActor.RecordUsageAsync(skill.SkillId, success: true)
+        skillActor.RecordUsageAsync(skill.SkillId, success: true, Arg.Any<CapabilityToken>())
             .Returns(Task.FromException(new InvalidOperationException("usage write failed")));
         fx.ActorProvider.GetActor<ISkillMemoryActor>(Arg.Any<VirtualActorId>()).Returns(skillActor);
 

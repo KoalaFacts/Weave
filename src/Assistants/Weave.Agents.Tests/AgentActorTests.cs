@@ -1,8 +1,10 @@
 using Microsoft.Extensions.Logging;
+using Microsoft.Extensions.Options;
 using Weave.Agents.Actors;
 using Weave.Agents.Models;
 using Weave.Agents.Pipeline;
 using Weave.Agents.Verification;
+using Weave.Security.Tokens;
 using Weave.Shared.Events;
 using Weave.Shared.Ids;
 using Weave.Shared.Lifecycle;
@@ -41,16 +43,21 @@ public sealed class AgentActorTests
             Tools = ["code-search", "shell"]
         };
 
+    private static CapabilityTokenService CreateTokenService() =>
+        new CapabilityTokenService(
+            Options.Create(new CapabilityTokenOptions { SigningKey = "test-signing-key-that-is-at-least-32-chars-long" }),
+            TimeProvider.System);
+
     private static (AgentActor Actor, ILifecycleManager Lifecycle, IEventBus EventBus, ISkillMemoryActor SkillMemory) CreateActor()
     {
         var skillMemory = Substitute.For<ISkillMemoryActor>();
-        skillMemory.StoreSkillAsync(Arg.Any<SkillDocument>())
+        skillMemory.StoreSkillAsync(Arg.Any<SkillDocument>(), Arg.Any<CapabilityToken>())
             .Returns(callInfo => Task.FromResult(callInfo.Arg<SkillDocument>()));
-        skillMemory.SuggestSkillAsync(Arg.Any<SkillDocument>(), Arg.Any<string?>())
+        skillMemory.SuggestSkillAsync(Arg.Any<SkillDocument>(), Arg.Any<CapabilityToken>(), Arg.Any<string?>())
             .Returns(callInfo => Task.FromResult(new SkillSuggestion
             {
                 Skill = callInfo.Arg<SkillDocument>(),
-                SourceTaskId = callInfo.ArgAt<string?>(1)
+                SourceTaskId = callInfo.ArgAt<string?>(2)
             }));
 
         var verifier = Substitute.For<IProofVerifierActor>();
@@ -65,20 +72,20 @@ public sealed class AgentActorTests
         var logger = Substitute.For<ILogger<AgentActor>>();
         var persistentState = CreatePersistentState();
 
-        var actor = new AgentActor(actors, chatPipeline, lifecycle, eventBus, Substitute.For<IAgentVerificationDispatcher>(), TimeProvider.System, logger, persistentState);
+        var actor = new AgentActor(actors, chatPipeline, lifecycle, eventBus, Substitute.For<IAgentVerificationDispatcher>(), CreateTokenService(), TimeProvider.System, logger, persistentState);
         return (actor, lifecycle, eventBus, skillMemory);
     }
 
     private static (AgentActor Actor, IAgentVerificationDispatcher Dispatcher) CreateActorWithDispatcher()
     {
         var skillMemory = Substitute.For<ISkillMemoryActor>();
-        skillMemory.StoreSkillAsync(Arg.Any<SkillDocument>())
+        skillMemory.StoreSkillAsync(Arg.Any<SkillDocument>(), Arg.Any<CapabilityToken>())
             .Returns(callInfo => Task.FromResult(callInfo.Arg<SkillDocument>()));
-        skillMemory.SuggestSkillAsync(Arg.Any<SkillDocument>(), Arg.Any<string?>())
+        skillMemory.SuggestSkillAsync(Arg.Any<SkillDocument>(), Arg.Any<CapabilityToken>(), Arg.Any<string?>())
             .Returns(callInfo => Task.FromResult(new SkillSuggestion
             {
                 Skill = callInfo.Arg<SkillDocument>(),
-                SourceTaskId = callInfo.ArgAt<string?>(1)
+                SourceTaskId = callInfo.ArgAt<string?>(2)
             }));
 
         var actors = Substitute.For<IVirtualActorProvider>();
@@ -91,7 +98,7 @@ public sealed class AgentActorTests
         var logger = Substitute.For<ILogger<AgentActor>>();
         var persistentState = CreatePersistentState();
 
-        var actor = new AgentActor(actors, chatPipeline, lifecycle, eventBus, dispatcher, TimeProvider.System, logger, persistentState);
+        var actor = new AgentActor(actors, chatPipeline, lifecycle, eventBus, dispatcher, CreateTokenService(), TimeProvider.System, logger, persistentState);
         return (actor, dispatcher);
     }
 
@@ -512,8 +519,9 @@ public sealed class AgentActorTests
             Arg.Is<SkillDocument>(s =>
                 s.Title == "Deploy the service" &&
                 s.Steps.Count == 3),
+            Arg.Any<CapabilityToken>(),
             task.TaskId.ToString());
-        await skillMemory.DidNotReceive().StoreSkillAsync(Arg.Any<SkillDocument>());
+        await skillMemory.DidNotReceive().StoreSkillAsync(Arg.Any<SkillDocument>(), Arg.Any<CapabilityToken>());
     }
 
     [Fact]
@@ -531,7 +539,7 @@ public sealed class AgentActorTests
         var eventBus = Substitute.For<IEventBus>();
         var logger = Substitute.For<ILogger<AgentActor>>();
 
-        var actor = new AgentActor(actors, chatPipeline, lifecycle, eventBus, Substitute.For<IAgentVerificationDispatcher>(), TimeProvider.System, logger, persistentState);
+        var actor = new AgentActor(actors, chatPipeline, lifecycle, eventBus, Substitute.For<IAgentVerificationDispatcher>(), CreateTokenService(), TimeProvider.System, logger, persistentState);
         await actor.OnActivatedAsync("ws-1/researcher", TestContext.Current.CancellationToken);
 
         state.AgentId.ShouldBe("ws-1/researcher");
@@ -555,7 +563,7 @@ public sealed class AgentActorTests
         var eventBus = Substitute.For<IEventBus>();
         var logger = Substitute.For<ILogger<AgentActor>>();
 
-        var actor = new AgentActor(actors, chatPipeline, lifecycle, eventBus, Substitute.For<IAgentVerificationDispatcher>(), TimeProvider.System, logger, persistentState);
+        var actor = new AgentActor(actors, chatPipeline, lifecycle, eventBus, Substitute.For<IAgentVerificationDispatcher>(), CreateTokenService(), TimeProvider.System, logger, persistentState);
         await actor.OnActivatedAsync("ws-2/different", TestContext.Current.CancellationToken);
 
         state.AgentId.ShouldBe("ws-1/existing");
@@ -585,7 +593,7 @@ public sealed class AgentActorTests
         var eventBus = Substitute.For<IEventBus>();
         var logger = Substitute.For<ILogger<AgentActor>>();
 
-        var actor = new AgentActor(actors, chatPipeline, lifecycle, eventBus, Substitute.For<IAgentVerificationDispatcher>(), TimeProvider.System, logger, persistentState);
+        var actor = new AgentActor(actors, chatPipeline, lifecycle, eventBus, Substitute.For<IAgentVerificationDispatcher>(), CreateTokenService(), TimeProvider.System, logger, persistentState);
         await actor.OnActivatedAsync("ws-1/researcher", TestContext.Current.CancellationToken);
 
         chatPipeline.Received(1).Initialize("ws-1/researcher", "claude-sonnet-4-20250514");
@@ -606,7 +614,7 @@ public sealed class AgentActorTests
         var eventBus = Substitute.For<IEventBus>();
         var logger = Substitute.For<ILogger<AgentActor>>();
 
-        var actor = new AgentActor(actors, chatPipeline, lifecycle, eventBus, Substitute.For<IAgentVerificationDispatcher>(), TimeProvider.System, logger, persistentState);
+        var actor = new AgentActor(actors, chatPipeline, lifecycle, eventBus, Substitute.For<IAgentVerificationDispatcher>(), CreateTokenService(), TimeProvider.System, logger, persistentState);
         await actor.OnActivatedAsync(null, TestContext.Current.CancellationToken);
 
         state.AgentName.ShouldBe("agent");
@@ -629,7 +637,7 @@ public sealed class AgentActorTests
         var eventBus = Substitute.For<IEventBus>();
         var logger = Substitute.For<ILogger<AgentActor>>();
 
-        var actor = new AgentActor(actors, chatPipeline, lifecycle, eventBus, Substitute.For<IAgentVerificationDispatcher>(), TimeProvider.System, logger, persistentState);
+        var actor = new AgentActor(actors, chatPipeline, lifecycle, eventBus, Substitute.For<IAgentVerificationDispatcher>(), CreateTokenService(), TimeProvider.System, logger, persistentState);
 
         // EnsureIdentity is called via ActivateAgentAsync
         var result = await actor.ActivateAgentAsync(WorkspaceId.From("ws-2"), CreateDefinition());
@@ -652,7 +660,7 @@ public sealed class AgentActorTests
 
         await actor.ReviewTaskAsync(task.TaskId, accepted: true);
 
-        await skillMemory.DidNotReceive().SuggestSkillAsync(Arg.Any<SkillDocument>(), Arg.Any<string?>());
+        await skillMemory.DidNotReceive().SuggestSkillAsync(Arg.Any<SkillDocument>(), Arg.Any<CapabilityToken>(), Arg.Any<string?>());
     }
 
     [Fact]
@@ -673,7 +681,7 @@ public sealed class AgentActorTests
 
         await actor.ReviewTaskAsync(task.TaskId, accepted: false, "Needs more work");
 
-        await skillMemory.DidNotReceive().SuggestSkillAsync(Arg.Any<SkillDocument>(), Arg.Any<string?>());
+        await skillMemory.DidNotReceive().SuggestSkillAsync(Arg.Any<SkillDocument>(), Arg.Any<CapabilityToken>(), Arg.Any<string?>());
     }
 
     [Fact]

@@ -1,6 +1,7 @@
 using Weave.Agents.Commands;
 using Weave.Agents.Models;
 using Weave.Agents.Queries;
+using Weave.Security.Tokens;
 using Weave.Shared.Cqrs;
 using Weave.Shared.Ids;
 
@@ -47,11 +48,12 @@ public static class SkillEndpoints
     private static async Task<IResult> GetAllSkillsAsync(
         string workspaceId,
         IVirtualActorProvider actors,
+        ICapabilityTokenService tokenService,
         CancellationToken ct)
     {
         ct.ThrowIfCancellationRequested();
         var actor = actors.GetActor<Agents.Actors.ISkillMemoryActor>(VirtualActorId.From(workspaceId));
-        var skills = await actor.GetAllSkillsAsync();
+        var skills = await actor.GetAllSkillsAsync(SkillTokenFactory.MintRead(tokenService, workspaceId));
         return Results.Ok(skills.Select(SkillResponse.FromDocument));
     }
 
@@ -62,6 +64,7 @@ public static class SkillEndpoints
         double? minSuccessRate,
         bool? preferRecent,
         IQueryDispatcher dispatcher,
+        ICapabilityTokenService tokenService,
         CancellationToken ct)
     {
         var options = new SkillSearchOptions
@@ -69,7 +72,12 @@ public static class SkillEndpoints
             MinSuccessRate = minSuccessRate ?? 0,
             PreferRecent = preferRecent ?? false
         };
-        var query = new SearchSkillsQuery(WorkspaceId.From(workspaceId), q ?? "", max ?? 5, options);
+        var query = new SearchSkillsQuery(
+            WorkspaceId.From(workspaceId),
+            q ?? "",
+            SkillTokenFactory.MintRead(tokenService, workspaceId),
+            max ?? 5,
+            options);
         var results = await dispatcher.DispatchAsync<SearchSkillsQuery, IReadOnlyList<SkillSearchResult>>(query, ct);
         return Results.Ok(results.Select(SkillSearchResultResponse.FromResult));
     }
@@ -78,11 +86,15 @@ public static class SkillEndpoints
         string workspaceId,
         string skillId,
         IQueryDispatcher dispatcher,
+        ICapabilityTokenService tokenService,
         CancellationToken ct)
     {
         try
         {
-            var query = new GetSkillQuery(WorkspaceId.From(workspaceId), SkillId.From(skillId));
+            var query = new GetSkillQuery(
+                WorkspaceId.From(workspaceId),
+                SkillId.From(skillId),
+                SkillTokenFactory.MintRead(tokenService, workspaceId));
             var skill = await dispatcher.DispatchAsync<GetSkillQuery, SkillDocument>(query, ct);
             return Results.Ok(SkillResponse.FromDocument(skill));
         }
@@ -96,13 +108,17 @@ public static class SkillEndpoints
         string workspaceId,
         StoreSkillRequest request,
         ICommandDispatcher dispatcher,
+        ICapabilityTokenService tokenService,
         CancellationToken ct)
     {
         var errors = ValidateStoreSkill(request);
         if (errors is not null)
             return ResultExtensions.ValidationFailed(errors);
 
-        var command = new StoreSkillCommand(WorkspaceId.From(workspaceId), SkillFromRequest(request));
+        var command = new StoreSkillCommand(
+            WorkspaceId.From(workspaceId),
+            SkillFromRequest(request),
+            SkillTokenFactory.MintWrite(tokenService, workspaceId));
         var stored = await dispatcher.DispatchAsync<StoreSkillCommand, SkillDocument>(command, ct);
         return Results.Created(
             $"/api/workspaces/{workspaceId}/skills/{stored.SkillId}",
@@ -113,11 +129,12 @@ public static class SkillEndpoints
         string workspaceId,
         string skillId,
         IVirtualActorProvider actors,
+        ICapabilityTokenService tokenService,
         CancellationToken ct)
     {
         ct.ThrowIfCancellationRequested();
         var actor = actors.GetActor<Agents.Actors.ISkillMemoryActor>(VirtualActorId.From(workspaceId));
-        var archived = await actor.ArchiveSkillAsync(SkillId.From(skillId));
+        var archived = await actor.ArchiveSkillAsync(SkillId.From(skillId), SkillTokenFactory.MintWrite(tokenService, workspaceId));
         return archived is null
             ? ResultExtensions.NotFound($"Skill '{skillId}' not found.")
             : Results.Ok(SkillResponse.FromDocument(archived));
@@ -127,11 +144,12 @@ public static class SkillEndpoints
         string workspaceId,
         string skillId,
         IVirtualActorProvider actors,
+        ICapabilityTokenService tokenService,
         CancellationToken ct)
     {
         ct.ThrowIfCancellationRequested();
         var actor = actors.GetActor<Agents.Actors.ISkillMemoryActor>(VirtualActorId.From(workspaceId));
-        var restored = await actor.RestoreSkillAsync(SkillId.From(skillId));
+        var restored = await actor.RestoreSkillAsync(SkillId.From(skillId), SkillTokenFactory.MintWrite(tokenService, workspaceId));
         return restored is null
             ? ResultExtensions.NotFound($"Skill '{skillId}' not found.")
             : Results.Ok(SkillResponse.FromDocument(restored));
@@ -141,10 +159,11 @@ public static class SkillEndpoints
         string workspaceId,
         string skillId,
         IVirtualActorProvider actors,
+        ICapabilityTokenService tokenService,
         CancellationToken ct)
     {
         var actor = actors.GetActor<Agents.Actors.ISkillMemoryActor>(VirtualActorId.From(workspaceId));
-        await actor.RemoveSkillAsync(SkillId.From(skillId));
+        await actor.RemoveSkillAsync(SkillId.From(skillId), SkillTokenFactory.MintWrite(tokenService, workspaceId));
         return Results.NoContent();
     }
 

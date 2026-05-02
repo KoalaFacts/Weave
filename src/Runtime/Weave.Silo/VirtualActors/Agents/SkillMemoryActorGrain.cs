@@ -1,5 +1,6 @@
 using Weave.Agents.Actors;
 using Weave.Agents.Models;
+using Weave.Security.Tokens;
 using Weave.Shared.Events;
 using Weave.Shared.Ids;
 
@@ -12,25 +13,36 @@ public sealed class SkillMemoryActorGrain : Grain, ISkillMemoryActorGrain
     public SkillMemoryActorGrain(
         IEventBus eventBus,
         TimeProvider timeProvider,
+        ICapabilityTokenService tokenService,
         ILogger<SkillMemoryActor> logger,
         [PersistentState("skill-memory", "Default")] IPersistentState<SkillMemoryState> state)
     {
-        _actor = new SkillMemoryActor(eventBus, timeProvider, logger,
+        _actor = new SkillMemoryActor(eventBus, timeProvider, tokenService, logger,
             new OrleansActorState<SkillMemoryState>(state));
     }
 
-    public Task<SkillDocument> StoreSkillAsync(SkillDocument skill) => _actor.StoreSkillAsync(skill);
-    public Task<SkillSuggestion> SuggestSkillAsync(SkillDocument skill, string? sourceTaskId = null) =>
-        _actor.SuggestSkillAsync(skill, sourceTaskId);
-    public Task<IReadOnlyList<SkillSuggestion>> GetSuggestedSkillsAsync() => _actor.GetSuggestedSkillsAsync();
-    public Task<SkillDocument?> AcceptSuggestedSkillAsync(SkillId skillId) => _actor.AcceptSuggestedSkillAsync(skillId);
-    public Task<bool> RejectSuggestedSkillAsync(SkillId skillId) => _actor.RejectSuggestedSkillAsync(skillId);
-    public Task<IReadOnlyList<SkillSearchResult>> SearchAsync(string query, int maxResults = 5, SkillSearchOptions? options = null) =>
-        _actor.SearchAsync(query, maxResults, options);
-    public Task<SkillDocument?> GetSkillAsync(SkillId skillId) => _actor.GetSkillAsync(skillId);
-    public Task RecordUsageAsync(SkillId skillId, bool success) => _actor.RecordUsageAsync(skillId, success);
-    public Task<IReadOnlyList<SkillDocument>> GetAllSkillsAsync() => _actor.GetAllSkillsAsync();
-    public Task<SkillDocument?> ArchiveSkillAsync(SkillId skillId) => _actor.ArchiveSkillAsync(skillId);
-    public Task<SkillDocument?> RestoreSkillAsync(SkillId skillId) => _actor.RestoreSkillAsync(skillId);
-    public Task RemoveSkillAsync(SkillId skillId) => _actor.RemoveSkillAsync(skillId);
+    public Task<SkillDocument> StoreSkillAsync(SkillDocument skill, CapabilityToken token) =>
+        _actor.StoreSkillAsync(skill, token);
+    public Task<SkillSuggestion> SuggestSkillAsync(SkillDocument skill, CapabilityToken token, string? sourceTaskId = null) =>
+        _actor.SuggestSkillAsync(skill, token, sourceTaskId);
+    public Task<IReadOnlyList<SkillSuggestion>> GetSuggestedSkillsAsync(CapabilityToken token) =>
+        _actor.GetSuggestedSkillsAsync(token);
+    public Task<SkillDocument?> AcceptSuggestedSkillAsync(SkillId skillId, CapabilityToken token) =>
+        _actor.AcceptSuggestedSkillAsync(skillId, token);
+    public Task<bool> RejectSuggestedSkillAsync(SkillId skillId, CapabilityToken token) =>
+        _actor.RejectSuggestedSkillAsync(skillId, token);
+    public Task<IReadOnlyList<SkillSearchResult>> SearchAsync(string query, CapabilityToken token, int maxResults = 5, SkillSearchOptions? options = null) =>
+        _actor.SearchAsync(query, token, maxResults, options);
+    public Task<SkillDocument?> GetSkillAsync(SkillId skillId, CapabilityToken token) =>
+        _actor.GetSkillAsync(skillId, token);
+    public Task RecordUsageAsync(SkillId skillId, bool success, CapabilityToken token) =>
+        _actor.RecordUsageAsync(skillId, success, token);
+    public Task<IReadOnlyList<SkillDocument>> GetAllSkillsAsync(CapabilityToken token) =>
+        _actor.GetAllSkillsAsync(token);
+    public Task<SkillDocument?> ArchiveSkillAsync(SkillId skillId, CapabilityToken token) =>
+        _actor.ArchiveSkillAsync(skillId, token);
+    public Task<SkillDocument?> RestoreSkillAsync(SkillId skillId, CapabilityToken token) =>
+        _actor.RestoreSkillAsync(skillId, token);
+    public Task RemoveSkillAsync(SkillId skillId, CapabilityToken token) =>
+        _actor.RemoveSkillAsync(skillId, token);
 }

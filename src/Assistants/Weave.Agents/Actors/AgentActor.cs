@@ -3,6 +3,7 @@ using Weave.Agents.Events;
 using Weave.Agents.Models;
 using Weave.Agents.Pipeline;
 using Weave.Agents.Verification;
+using Weave.Security.Tokens;
 using Weave.Shared.Events;
 using Weave.Shared.Ids;
 using Weave.Shared.Lifecycle;
@@ -16,11 +17,12 @@ public sealed class AgentActor(
     ILifecycleManager lifecycleManager,
     IEventBus eventBus,
     IAgentVerificationDispatcher verificationDispatcher,
+    ICapabilityTokenService tokenService,
     TimeProvider timeProvider,
     ILogger<AgentActor> logger,
     IActorState<AgentState> persistentState) : IAgentActor
 {
-    private readonly AgentSkillSuggester _skillSuggester = new(actors, logger);
+    private readonly AgentSkillSuggester _skillSuggester = new(actors, tokenService, logger);
     private readonly AgentEpisodeRecorder _episodeRecorder = new(actors, timeProvider, logger);
     private readonly AgentLifecycle _lifecycle = new(
         chatPipeline,

@@ -1,11 +1,13 @@
 using Microsoft.Extensions.Logging;
 using Weave.Agents.Models;
+using Weave.Security.Tokens;
 using Weave.Shared.Ids;
 
 namespace Weave.Agents.Actors;
 
 internal sealed class AgentSkillSuggester(
     IVirtualActorProvider actors,
+    ICapabilityTokenService tokenService,
     ILogger logger)
 {
     public async Task SuggestFromTaskAsync(AgentState state, AgentTaskId taskId)
@@ -21,7 +23,14 @@ internal sealed class AgentSkillSuggester(
         try
         {
             var skillActor = actors.GetActor<ISkillMemoryActor>(VirtualActorId.From(state.WorkspaceId.ToString()));
-            await skillActor.SuggestSkillAsync(skill, taskId.ToString());
+            var token = tokenService.Mint(new CapabilityTokenRequest
+            {
+                WorkspaceId = state.WorkspaceId.ToString(),
+                IssuedTo = $"{state.WorkspaceId}/{state.AgentName}",
+                Grants = ["skill:write"],
+                Lifetime = TimeSpan.FromMinutes(1)
+            });
+            await skillActor.SuggestSkillAsync(skill, token, taskId.ToString());
             logger.LogInformation(
                 "Suggested skill '{Title}' from task {TaskId}",
                 skill.Title,

@@ -1,8 +1,10 @@
 using Microsoft.Extensions.Logging;
+using Microsoft.Extensions.Options;
 using Weave.Agents.Actors;
 using Weave.Agents.Models;
 using Weave.Agents.Pipeline;
 using Weave.Agents.Verification;
+using Weave.Security.Tokens;
 using Weave.Shared.Events;
 using Weave.Shared.Ids;
 using Weave.Shared.Lifecycle;
@@ -37,11 +39,11 @@ public sealed class AgentActorEpisodeWiringTests
 
             EpisodicMemory.StoreEpisodeAsync(Arg.Any<Episode>())
                 .Returns(call => Task.FromResult(call.Arg<Episode>()));
-            SkillMemory.SuggestSkillAsync(Arg.Any<SkillDocument>(), Arg.Any<string?>())
+            SkillMemory.SuggestSkillAsync(Arg.Any<SkillDocument>(), Arg.Any<CapabilityToken>(), Arg.Any<string?>())
                 .Returns(call => Task.FromResult(new SkillSuggestion
                 {
                     Skill = call.Arg<SkillDocument>(),
-                    SourceTaskId = call.ArgAt<string?>(1)
+                    SourceTaskId = call.ArgAt<string?>(2)
                 }));
 
             var actors = Substitute.For<IVirtualActorProvider>();
@@ -55,6 +57,9 @@ public sealed class AgentActorEpisodeWiringTests
                 Substitute.For<ILifecycleManager>(),
                 Substitute.For<IEventBus>(),
                 Substitute.For<IAgentVerificationDispatcher>(),
+                new CapabilityTokenService(
+                    Options.Create(new CapabilityTokenOptions { SigningKey = "test-signing-key-that-is-at-least-32-chars-long" }),
+                    TimeProvider.System),
                 TimeProvider.System,
                 Substitute.For<ILogger<AgentActor>>(),
                 PersistentState);
