@@ -63,7 +63,7 @@ public sealed class ToolRegistryActor(
     {
         try
         {
-            await ConnectOneAsync(toolName, definition);
+            await _connector.ConnectAsync(_workspaceId, toolName, definition);
         }
         catch (Exception ex) when (ex is InvalidOperationException or TimeoutException or IOException or HttpRequestException)
         {
