@@ -291,7 +291,7 @@ public sealed class AgentChatPipelineTests
     }
 
     [Fact]
-    public async Task ExecuteAsync_WithoutSkillReadCapability_SkipsSkillEnrichment()
+    public async Task ExecuteAsync_WithoutSkillReadCapability_DoesNotEnrichSystemPrompt()
     {
         var chatClient = Substitute.For<IChatClient>();
         IEnumerable<ChatMessage>? capturedMessages = null;
@@ -311,7 +311,23 @@ public sealed class AgentChatPipelineTests
         var chatClientFactory = Substitute.For<IAgentChatClientFactory>();
         chatClientFactory.Create(Arg.Any<string>(), Arg.Any<string?>()).Returns(chatClient);
 
+        // Skill actor would happily return a skill if asked — the gate must
+        // prevent the call so the skill never reaches the system prompt.
+        var matchingSkill = new SkillDocument
+        {
+            SkillId = SkillId.New(),
+            Title = "Deploy to K8s",
+            Description = "Steps to deploy",
+            Tags = ["deploy"],
+            Steps = [new SkillStep { Order = 0, Action = "Build image" }],
+            ToolsUsed = ["docker"],
+            CreatedByAgent = "deployer"
+        };
         var skillActor = Substitute.For<ISkillMemoryActor>();
+        skillActor.SearchAsync(Arg.Any<string>(), Arg.Any<CapabilityToken>(), Arg.Any<int>(), Arg.Any<SkillSearchOptions>())
+            .Returns(Task.FromResult<IReadOnlyList<SkillSearchResult>>([
+                new SkillSearchResult { Skill = matchingSkill, RelevanceScore = 5.0 }
+            ]));
         var actors = Substitute.For<IVirtualActorProvider>();
         actors.GetActor<ISkillMemoryActor>(Arg.Any<VirtualActorId>()).Returns(skillActor);
 
@@ -320,11 +336,10 @@ public sealed class AgentChatPipelineTests
 
         await pipeline.ExecuteAsync(state, new AgentMessage { Content = "deploy to k8s" });
 
-        await skillActor.DidNotReceive().SearchAsync(
-            Arg.Any<string>(),
-            Arg.Any<CapabilityToken>(),
-            Arg.Any<int>(),
-            Arg.Any<SkillSearchOptions>());
+        capturedMessages.ShouldNotBeNull();
+        var systemText = capturedMessages.FirstOrDefault(m => m.Role == ChatRole.System)?.Text ?? string.Empty;
+        systemText.ShouldNotContain("Deploy to K8s");
+        systemText.ShouldNotContain("Build image");
     }
 
     [Fact]
