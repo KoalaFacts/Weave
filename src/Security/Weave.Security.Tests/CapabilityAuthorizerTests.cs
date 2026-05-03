@@ -1,3 +1,4 @@
+using System.Diagnostics.Metrics;
 using Microsoft.Extensions.Logging.Abstractions;
 using Microsoft.Extensions.Options;
 using Weave.Security.Events;
@@ -271,5 +272,104 @@ public sealed class CapabilityAuthorizerTests
 
         public IDisposable Subscribe<TEvent>(Func<TEvent, CancellationToken, Task> handler) where TEvent : IDomainEvent =>
             throw new NotSupportedException();
+    }
+
+    private sealed class CapturedMeasurement
+    {
+        public required long Value { get; init; }
+        public required KeyValuePair<string, object?>[] Tags { get; init; }
+    }
+
+    private static MeterListener StartCounterListener(System.Collections.Concurrent.ConcurrentQueue<CapturedMeasurement> sink)
+    {
+        var listener = new MeterListener
+        {
+            InstrumentPublished = (instrument, l) =>
+            {
+                if (instrument.Meter.Name == CapabilityAuthorizer.MeterName
+                    && instrument.Name == CapabilityAuthorizer.CounterName)
+                {
+                    l.EnableMeasurementEvents(instrument);
+                }
+            }
+        };
+        listener.SetMeasurementEventCallback<long>((_, value, tags, _) =>
+            sink.Enqueue(new CapturedMeasurement { Value = value, Tags = tags.ToArray() }));
+        listener.Start();
+        return listener;
+    }
+
+    // The Meter/Counter is static (idiomatic for System.Diagnostics.Metrics), so
+    // parallel test classes in this assembly that exercise CapabilityAuthorizer
+    // also publish into the same counter while any of these tests' MeterListener
+    // is active. We therefore assert "delta contains the expected measurement"
+    // rather than "exactly one", and gate by a per-test grant string so we can
+    // pick our own measurement out of any concurrent traffic.
+    private static bool HasTag(KeyValuePair<string, object?>[] tags, string key, string value) =>
+        tags.Any(t => t.Key == key && (string?)t.Value == value);
+
+    [Fact]
+    public async Task AuthorizeAsync_OnAllow_IncrementsCounterWithAllowOutcomeTag()
+    {
+        var measurements = new System.Collections.Concurrent.ConcurrentQueue<CapturedMeasurement>();
+        using var listener = StartCounterListener(measurements);
+        var (authorizer, svc, _) = CreateAuthorizer();
+        var token = Mint(svc, ["tool:metric-allow"]);
+
+        await authorizer.AuthorizeAsync(token, "tool:metric-allow", TestWorkspace, "Test.Allow.Metric");
+
+        // ConcurrentQueue snapshot — other parallel test classes also publish into
+        // the static counter, so we only assert that our allow measurement appears.
+        var snapshot = measurements.ToArray();
+        snapshot.ShouldContain(m => m.Value == 1L
+            && HasTag(m.Tags, "outcome", "allow")
+            && !m.Tags.Any(t => t.Key == "reason"));
+    }
+
+    [Fact]
+    public async Task AuthorizeAsync_OnDeny_IncrementsCounterWithDenyOutcomeAndReasonTag()
+    {
+        var measurements = new System.Collections.Concurrent.ConcurrentQueue<CapturedMeasurement>();
+        using var listener = StartCounterListener(measurements);
+        var (authorizer, svc, _) = CreateAuthorizer();
+        var token = Mint(svc, ["tool:metric-other"]);
+
+        await Should.ThrowAsync<UnauthorizedAccessException>(
+            () => authorizer.AuthorizeAsync(token, "tool:metric-deny", TestWorkspace, "Test.Deny.Metric"));
+
+        var snapshot = measurements.ToArray();
+        snapshot.ShouldContain(m => m.Value == 1L
+            && HasTag(m.Tags, "outcome", "deny")
+            && HasTag(m.Tags, "reason", "grant-missing"));
+    }
+
+    [Fact]
+    public async Task AuthorizeAsync_OnInvalidToken_TagsCounterWithInvalidTokenReason()
+    {
+        var measurements = new System.Collections.Concurrent.ConcurrentQueue<CapturedMeasurement>();
+        using var listener = StartCounterListener(measurements);
+        var (authorizer, svc, _) = CreateAuthorizer();
+        var expired = Mint(svc, ["tool:metric-expired"], lifetime: TimeSpan.FromMilliseconds(-1));
+
+        await Should.ThrowAsync<UnauthorizedAccessException>(
+            () => authorizer.AuthorizeAsync(expired, "tool:metric-expired", TestWorkspace, "Test.InvalidToken.Metric"));
+
+        var snapshot = measurements.ToArray();
+        snapshot.ShouldContain(m => HasTag(m.Tags, "reason", "invalid-or-expired-token"));
+    }
+
+    [Fact]
+    public async Task AuthorizeAsync_OnWorkspaceMismatch_TagsCounterWithWorkspaceMismatchReason()
+    {
+        var measurements = new System.Collections.Concurrent.ConcurrentQueue<CapturedMeasurement>();
+        using var listener = StartCounterListener(measurements);
+        var (authorizer, svc, _) = CreateAuthorizer();
+        var token = Mint(svc, ["tool:metric-mismatch"], workspaceId: "other-ws");
+
+        await Should.ThrowAsync<UnauthorizedAccessException>(
+            () => authorizer.AuthorizeAsync(token, "tool:metric-mismatch", TestWorkspace, "Test.WorkspaceMismatch.Metric"));
+
+        var snapshot = measurements.ToArray();
+        snapshot.ShouldContain(m => HasTag(m.Tags, "reason", "workspace-mismatch"));
     }
 }

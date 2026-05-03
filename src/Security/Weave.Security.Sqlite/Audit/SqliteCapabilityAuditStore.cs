@@ -1,13 +1,14 @@
 using System.Globalization;
 using Microsoft.Data.Sqlite;
 using Microsoft.Extensions.Options;
+using Weave.Security.Audit;
 using Weave.Security.Events;
 
-namespace Weave.Security.Audit;
+namespace Weave.Security.Sqlite;
 
 /// <summary>
 /// SQLite-backed <see cref="ICapabilityAuditStore"/>. Survives silo restart
-/// and process recycle, unlike <see cref="InMemoryCapabilityAuditStore"/>.
+/// and process recycle, unlike <c>InMemoryCapabilityAuditStore</c>.
 /// One shared connection guarded by a single lock — write/query rates for
 /// an audit log stay well below contention thresholds, and SQLite's own
 /// default journaling handles durability.

@@ -1058,11 +1058,25 @@
       "weave.security": {
         "type": "Project",
         "dependencies": {
-          "Microsoft.Data.Sqlite": "[10.0.7, )",
           "Microsoft.Extensions.Logging.Abstractions": "[10.0.7, )",
           "Microsoft.Extensions.Options": "[10.0.7, )",
-          "Npgsql": "[10.0.2, )",
           "Weave.Shared": "[1.0.0, )"
+        }
+      },
+      "weave.security.postgres": {
+        "type": "Project",
+        "dependencies": {
+          "Microsoft.Extensions.Options": "[10.0.7, )",
+          "Npgsql": "[10.0.2, )",
+          "Weave.Security": "[1.0.0, )"
+        }
+      },
+      "weave.security.sqlite": {
+        "type": "Project",
+        "dependencies": {
+          "Microsoft.Data.Sqlite": "[10.0.7, )",
+          "Microsoft.Extensions.Options": "[10.0.7, )",
+          "Weave.Security": "[1.0.0, )"
         }
       },
       "weave.servicedefaults": {
@@ -1101,6 +1115,8 @@
           "Scalar.AspNetCore": "[2.14.8, )",
           "Weave.Agents": "[1.0.0, )",
           "Weave.Security": "[1.0.0, )",
+          "Weave.Security.Postgres": "[1.0.0, )",
+          "Weave.Security.Sqlite": "[1.0.0, )",
           "Weave.ServiceDefaults": "[1.0.0, )",
           "Weave.Tools": "[1.0.0, )",
           "Weave.Workspaces": "[1.0.0, )"

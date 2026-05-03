@@ -639,9 +639,21 @@
       "weave.security": {
         "type": "Project",
         "dependencies": {
-          "Microsoft.Data.Sqlite": "[10.0.7, )",
-          "Npgsql": "[10.0.2, )",
           "Weave.Shared": "[1.0.0, )"
+        }
+      },
+      "weave.security.postgres": {
+        "type": "Project",
+        "dependencies": {
+          "Npgsql": "[10.0.2, )",
+          "Weave.Security": "[1.0.0, )"
+        }
+      },
+      "weave.security.sqlite": {
+        "type": "Project",
+        "dependencies": {
+          "Microsoft.Data.Sqlite": "[10.0.7, )",
+          "Weave.Security": "[1.0.0, )"
         }
       },
       "weave.servicedefaults": {

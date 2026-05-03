@@ -8,6 +8,8 @@
 
   <ItemGroup>
     <ProjectReference Include="..\Weave.Security\Weave.Security.csproj" />
+    <ProjectReference Include="..\Weave.Security.Sqlite\Weave.Security.Sqlite.csproj" />
+    <ProjectReference Include="..\Weave.Security.Postgres\Weave.Security.Postgres.csproj" />
   </ItemGroup>
 
   <ItemGroup>

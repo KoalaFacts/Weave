@@ -42,6 +42,10 @@ src/
   Assistants/            Agent actors, supervisor, heartbeat, chat pipeline, channels, skills, user model
   Tools/                 Tool connectors (MCP, CLI, OpenAPI, DirectHttp, FileSystem), discovery, marketplace
   Security/              Capability tokens, leak scanning, secret proxy, provider proxies
+                         (Weave.Security holds abstractions + in-memory backends;
+                          Weave.Security.Sqlite / Weave.Security.Postgres host the
+                          storage-provider impls so the abstractions stay free of
+                          Microsoft.Data.Sqlite / Npgsql)
   Deployment/            Deployment publishers
   Runtime/               Orleans host (Silo), Aspire app host, and shared service defaults
   UX/                    Spectre.Console CLI and Blazor dashboard

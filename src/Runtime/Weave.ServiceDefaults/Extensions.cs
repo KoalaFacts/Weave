@@ -39,7 +39,10 @@ public static class Extensions
             {
                 metrics.AddAspNetCoreInstrumentation()
                     .AddHttpClientInstrumentation()
-                    .AddRuntimeInstrumentation();
+                    .AddRuntimeInstrumentation()
+                    // CapabilityAuthorizer.MeterName — kept as a literal so
+                    // ServiceDefaults stays free of a Weave.Security project ref.
+                    .AddMeter("Weave.Security.Capability");
             })
             .WithTracing(tracing =>
             {

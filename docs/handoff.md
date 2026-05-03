@@ -1,4 +1,4 @@
-# Handoff — Capability Replay/Debugger
+# Handoff — Capability Metrics + Storage Provider Split
 
 > **Live state only.** The contract — principles, vocabulary table, roadmap — lives in [unique-agent-strategy.md](unique-agent-strategy.md). This file records the current shape of the system and what to pick up next.
 >
@@ -18,7 +18,7 @@ The capability vocabulary is 6 verbs, all enforced through one shared authorizer
 | `plugin:invoke:<plugin>` | yes | `CapabilityAuthorizer` from `src/Runtime/Weave.Silo/Plugins/PluginRegistry.cs` |
 | `marketplace:install` | not implemented — see Next work | — |
 
-Tests: 1857 total — 1848 passed, 9 skipped when Docker is unavailable. The 9 cover `PostgresCapabilityAuditStore` against a Testcontainers-managed Postgres; the fixture probes Docker by attempting to start the container and self-skips each test with the captured reason on Docker-less hosts.
+Tests: 1861 total — 1852 passed, 9 skipped when Docker is unavailable. The 9 cover `PostgresCapabilityAuditStore` against a Testcontainers-managed Postgres; the fixture probes Docker by attempting to start the container and self-skips each test with the captured reason on Docker-less hosts.
 
 ### How a verb is wired today
 
@@ -29,6 +29,7 @@ Six sites that previously held a private `Authorize(...)` method (or, in the cas
 3. **Grant-checks** via `CapabilityToken.HasGrant` (segment-wise wildcards).
 4. **Publishes** `CapabilityAuthorizationEvent` ([CapabilityAuthorizationEvent.cs](../src/Security/Weave.Security/Events/CapabilityAuthorizationEvent.cs)) on every call (allow OR deny) keyed by `tokenId`, `grant`, `workspaceId`, `issuedTo`, `outcome`, `actionContext`, and `reason` on denies (`"invalid-or-expired-token"` / `"workspace-mismatch"` / `"grant-missing"`).
 5. **Throws** `UnauthorizedAccessException` on deny.
+6. **Increments** a `System.Diagnostics.Metrics.Counter<long>` (`weave.security.capability.authorizations`) on every call, tagged with `outcome` (`"allow"`/`"deny"`) and, on deny, `reason`. Meter name `Weave.Security.Capability` is registered in `Weave.ServiceDefaults.Extensions.ConfigureOpenTelemetry` so the existing OTLP pipeline exports it without any per-host wiring.
 
 Call sites pass `actionContext` as a literal string (e.g. `"ChannelGatewayActor.RouteInbound:receive"`) or default to `[CallerMemberName]`.
 
@@ -38,11 +39,11 @@ DI registration lives in `src/Runtime/Weave.Silo/Startup/SiloServiceRegistrar.cs
 
 Roadmap #3 ships as a thin pipeline on top of the audit event. No producer-side changes:
 
-1. **Store** — singleton, capacity-bounded, FIFO eviction at `CapabilityAudit:Capacity` (default 10,000). Three backends, selected by `CapabilityAudit:Backend`:
+1. **Store** — singleton, capacity-bounded, FIFO eviction at `CapabilityAudit:Capacity` (default 10,000). Three backends, selected by `CapabilityAudit:Backend`. **Each backend lives in its own project so `Weave.Security` itself stays free of storage-provider dependencies** (the in-memory store ships there because it has no third-party dep):
    - `"memory"` (default) — [`InMemoryCapabilityAuditStore.cs`](../src/Security/Weave.Security/Audit/InMemoryCapabilityAuditStore.cs); LinkedList behind a `Lock`. Evicts on silo restart.
-   - `"sqlite"` — [`SqliteCapabilityAuditStore.cs`](../src/Security/Weave.Security/Audit/SqliteCapabilityAuditStore.cs); single-connection SQLite at `CapabilityAudit:ConnectionString` (default `~/.weave/audit.db`). Single-silo durability.
-   - `"postgresql"` / `"postgres"` — [`PostgresCapabilityAuditStore.cs`](../src/Security/Weave.Security/Audit/PostgresCapabilityAuditStore.cs); pooled `NpgsqlConnection` at the required `CapabilityAudit:ConnectionString`. Multi-silo durability — every silo writes into one shared `capability_audit` table.
-   All three implement `ICapabilityAuditStore`; the selector lives in `SiloServiceRegistrar.RegisterCapabilityAuditStore()`. SQL backends auto-apply the schema on construction and use trim-on-insert to keep the same FIFO bound. `GetByToken(tokenId)` filters chronologically; `GetRecent(limit)` walks newest-first.
+   - `"sqlite"` — [`SqliteCapabilityAuditStore.cs`](../src/Security/Weave.Security.Sqlite/Audit/SqliteCapabilityAuditStore.cs) in `Weave.Security.Sqlite` (drags `Microsoft.Data.Sqlite`); single-connection SQLite at `CapabilityAudit:ConnectionString` (default `~/.weave/audit.db`). Single-silo durability.
+   - `"postgresql"` / `"postgres"` — [`PostgresCapabilityAuditStore.cs`](../src/Security/Weave.Security.Postgres/Audit/PostgresCapabilityAuditStore.cs) in `Weave.Security.Postgres` (drags `Npgsql`); pooled `NpgsqlConnection` at the required `CapabilityAudit:ConnectionString`. Multi-silo durability — every silo writes into one shared `capability_audit` table.
+   All three implement `ICapabilityAuditStore` (defined in `Weave.Security`); the selector lives in `SiloServiceRegistrar.RegisterCapabilityAuditStore()`. The Silo references both `Weave.Security.Sqlite` and `Weave.Security.Postgres` directly — they are wired by configuration, not discovered. SQL backends auto-apply the schema on construction and use trim-on-insert to keep the same FIFO bound. `GetByToken(tokenId)` filters chronologically; `GetRecent(limit)` walks newest-first.
 2. **Subscriber** ([`CapabilityAuditSubscriberHostedService.cs`](../src/Runtime/Weave.Silo/Audit/CapabilityAuditSubscriberHostedService.cs)) — `IHostedService` that subscribes to `IEventBus` for `CapabilityAuthorizationEvent` in `StartAsync` and disposes in `StopAsync`. Single forward-to-store handler.
 3. **Queries** — `GetCapabilityAuditByTokenQuery(tokenId)` and `GetRecentCapabilityAuditQuery(limit)` in `src/Security/Weave.Security/Queries/`. Picked up by source-generated CQRS registration like every other query handler.
 4. **HTTP** — `GET /api/audit/capability/{tokenId}` and `GET /api/audit/capability?limit=N` ([`AuditEndpoints.cs`](../src/Runtime/Weave.Silo/Api/AuditEndpoints.cs)). Returns `CapabilityAuditEntryResponse[]` (`outcome` as string for stability).
@@ -57,18 +58,16 @@ Acceptance bar from the strategy doc's *Measurement* section is met:
 
 **Don't pursue `marketplace:install` yet** — `IMarketplaceActor.IncrementInstallCountAsync` is a counter, not an install path. Gating an action that doesn't exist is empty ceremony. Wait until someone wires real marketplace-to-workspace installation, then gate it through the same authorizer.
 
-The capability vocabulary, audit pipeline, and storage backends now line up — there are no outstanding follow-ups in this stream. The natural next stream is **operational hardening** of the audit chain. Three concrete candidates, ordered by leverage:
+#1 (allow/deny metrics) shipped this session. The two remaining operational-hardening candidates, in order of leverage:
 
-1. **Allow/deny metrics for dashboards.** *Highest leverage / lowest risk.* The audit log is queryable but there's no counter to alert on deny spikes. Add a `System.Diagnostics.Metrics.Meter` in `CapabilityAuthorizer` (counter tagged by `outcome`/`reason`) so the existing OpenTelemetry pipeline picks it up. Purely additive — no behavior change, immediately useful for ops. Files: `src/Security/Weave.Security/Tokens/CapabilityAuthorizer.cs` (instrument), maybe `src/Runtime/Weave.ServiceDefaults` to register the meter name. Test surface: assert the counter increments on allow + deny via `MeterListener`.
-
-2. **Audit-row durability under failure.** `CapabilityAuditSubscriberHostedService` calls `store.Record` synchronously; if a SQLite/Postgres write throws, the row is dropped and the publisher's `await` returns to the authorizer that already returned `Allow`. Two reasonable shapes:
+1. **Audit-row durability under failure.** `CapabilityAuditSubscriberHostedService` calls `store.Record` synchronously; if a SQLite/Postgres write throws, the row is dropped and the publisher's `await` returns to the authorizer that already returned `Allow`. Two reasonable shapes:
    - Polly-style retry with jitter inside the subscriber (cheapest, but synchronous failures still drop).
    - Bounded in-memory queue between subscriber and store with a drain loop and a fail-open dead-letter log (more code, no rows lost on transient failure).
-   Files: `src/Runtime/Weave.Silo/Audit/CapabilityAuditSubscriberHostedService.cs`. Test surface: a stub `ICapabilityAuditStore` that throws once and verifies eventual persistence.
+   Files: `src/Runtime/Weave.Silo/Audit/CapabilityAuditSubscriberHostedService.cs`. Test surface: a stub `ICapabilityAuditStore` that throws once and verifies eventual persistence. **Now that deny rate is on a metric** (`weave.security.capability.authorizations` tagged `outcome=deny`), a paired metric for "audit-store write failures" would close the observability loop — alert when writes drop without denies dropping.
 
-3. **Token signing key rotation.** `CapabilityTokenOptions.SigningKey` is single-keyed; rotating it invalidates every live token. Accept a `PreviousSigningKey` for verification only — `CapabilityTokenService.Validate` tries the current key, then the previous; `Mint` always uses the current. Lets ops rotate without a flush. Files: `src/Security/Weave.Security/Tokens/CapabilityTokenOptions.cs`, `CapabilityTokenService.cs`. Test surface: mint with old key, rotate, verify still validates; mint after rotation, verify uses new key only.
+2. **Token signing key rotation.** `CapabilityTokenOptions.SigningKey` is single-keyed; rotating it invalidates every live token. Accept a `PreviousSigningKey` for verification only — `CapabilityTokenService.Validate` tries the current key, then the previous; `Mint` always uses the current. Lets ops rotate without a flush. Files: `src/Security/Weave.Security/Tokens/CapabilityTokenOptions.cs`, `CapabilityTokenService.cs`. Test surface: mint with old key, rotate, verify still validates; mint after rotation, verify uses new key only.
 
-`#1` is the highest-leverage / lowest-risk place to start the next stream.
+`#1` is the natural follow-up — it builds directly on the metric scaffolding shipped this session.
 
 ## Cross-cutting follow-ups
 
@@ -96,6 +95,8 @@ For the next vocabulary entry (or any follow-up that touches the audit pipeline)
 
 ## History
 
+- **2026-05-03** (`claude/continue-handoff-work-r25U1`) — storage-provider split: extracted `SqliteCapabilityAuditStore` into `Weave.Security.Sqlite` and `PostgresCapabilityAuditStore` into `Weave.Security.Postgres`. `Weave.Security.csproj` no longer pulls `Microsoft.Data.Sqlite` or `Npgsql` — anything that only needs the abstractions (`ICapabilityAuditStore`, `ICapabilityAuthorizer`, `ICapabilityTokenService`) gets a clean dependency graph. The Silo references both new projects directly (no plugin discovery — backends are wired by `CapabilityAudit:Backend` config). Namespaces: `Weave.Security.Sqlite` and `Weave.Security.Postgres`; `ICapabilityAuditStore` and `CapabilityAuditOptions` stay in `Weave.Security.Audit`. Tests still 1861.
+- **2026-05-03** (`claude/continue-handoff-work-r25U1`) — allow/deny metrics: `CapabilityAuthorizer` increments a `Counter<long>` named `weave.security.capability.authorizations` on every authorize call (allow or deny) tagged with `outcome` and, on deny, `reason` (one of `invalid-or-expired-token` / `workspace-mismatch` / `grant-missing`). Static `Meter` named `Weave.Security.Capability` is registered in `Weave.ServiceDefaults.Extensions.ConfigureOpenTelemetry` so the existing OTLP pipeline exports it. `MeterListener`-based unit tests verify both outcome paths and all three deny reasons. Tests 1857 → 1861.
 - **2026-05-03** (`claude/implement-next-task-vSX6x`) — Testcontainers integration coverage for `PostgresCapabilityAuditStore`: `PostgresContainerFixture` boots a real `postgres:16-alpine` per test class; mirrors the full SQLite test matrix against the Postgres backend (chronological order, FIFO eviction, `GetRecent` with limit, all-fields preservation, durability across store instances). The fixture probes Docker by attempting to start the container; self-skips with the captured Docker error when the daemon isn't reachable, so Docker-less local boxes and restricted CI runners see Pass + Skip rather than Fail. Tests 1848 → 1857 (1848 + 9 skip-on-no-docker)
 - **2026-05-03** (`claude/implement-next-task-vSX6x`) — Postgres-backed audit store: `PostgresCapabilityAuditStore` selected via `CapabilityAudit:Backend = "postgresql"` (or `"postgres"`); `ConnectionString` required; pooled `NpgsqlConnection` per operation; same trim-on-insert FIFO bound. Targets multi-silo deployments where every silo writes into one shared `capability_audit` table. Config-validation unit tests cover the bootstrap surface. Tests 1845 → 1848
 - **2026-05-03** (`claude/implement-next-task-vSX6x`) — durable audit store: `SqliteCapabilityAuditStore` selected via `CapabilityAudit:Backend` (`"memory"` default, `"sqlite"` opt-in); auto-applies schema, FIFO trim-on-insert preserves the existing `Capacity` bound, default file `~/.weave/audit.db`. Selector wired in `SiloServiceRegistrar.RegisterCapabilityAuditStore()`. Tests 1835 → 1845

@@ -28,6 +28,8 @@
     <Project Path="src/Tools/Weave.Tools/Weave.Tools.csproj" />
   </Folder>
   <Folder Name="/07 - Security/">
+    <Project Path="src/Security/Weave.Security.Postgres/Weave.Security.Postgres.csproj" />
+    <Project Path="src/Security/Weave.Security.Sqlite/Weave.Security.Sqlite.csproj" />
     <Project Path="src/Security/Weave.Security.Tests/Weave.Security.Tests.csproj" />
     <Project Path="src/Security/Weave.Security/Weave.Security.csproj" />
   </Folder>

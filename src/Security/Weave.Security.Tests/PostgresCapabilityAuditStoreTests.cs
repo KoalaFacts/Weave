@@ -1,5 +1,6 @@
 using Microsoft.Extensions.Options;
 using Weave.Security.Audit;
+using Weave.Security.Postgres;
 
 namespace Weave.Security.Tests;
 
