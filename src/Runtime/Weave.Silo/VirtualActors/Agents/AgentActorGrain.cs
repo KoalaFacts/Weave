@@ -2,6 +2,7 @@ using Weave.Agents.Actors;
 using Weave.Agents.Models;
 using Weave.Agents.Pipeline;
 using Weave.Agents.Verification;
+using Weave.Security.Tokens;
 using Weave.Shared.Events;
 using Weave.Shared.Ids;
 using Weave.Shared.Lifecycle;
@@ -19,12 +20,13 @@ public sealed class AgentActorGrain : Grain, IAgentActorGrain
         ILifecycleManager lifecycleManager,
         IEventBus eventBus,
         IAgentVerificationDispatcher verificationDispatcher,
+        ICapabilityTokenService tokenService,
         TimeProvider timeProvider,
         ILogger<AgentActor> logger,
         [PersistentState("agent", "Default")] IPersistentState<AgentState> state)
     {
         _actor = new AgentActor(actors, chatPipeline, lifecycleManager, eventBus, verificationDispatcher,
-            timeProvider, logger, new OrleansActorState<AgentState>(state));
+            tokenService, timeProvider, logger, new OrleansActorState<AgentState>(state));
     }
 
     public override Task OnActivateAsync(CancellationToken cancellationToken) =>

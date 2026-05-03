@@ -2,6 +2,7 @@ using Microsoft.Extensions.AI;
 using Microsoft.Extensions.Logging;
 using Weave.Agents.Actors;
 using Weave.Agents.Models;
+using Weave.Security.Tokens;
 using Weave.Tools.Actors;
 using Weave.Tools.Builders;
 
@@ -10,12 +11,13 @@ namespace Weave.Agents.Pipeline;
 public sealed class AgentChatPipeline(
     IVirtualActorProvider actors,
     IAgentChatClientFactory chatClientFactory,
+    ICapabilityTokenService tokenService,
     TimeProvider timeProvider,
     ILogger<AgentChatPipeline> logger) : IAgentChatPipeline
 {
     private IChatClient? _chatClient;
     private string? _systemPrompt;
-    private readonly SkillMemoryPromptEnricher _skillMemory = new(actors, logger);
+    private readonly SkillMemoryPromptEnricher _skillMemory = new(actors, tokenService, logger);
     private readonly EpisodicMemoryPromptEnricher _episodicMemory = new(actors, logger);
 
     public void Initialize(string agentId, string? model)

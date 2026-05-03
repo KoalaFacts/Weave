@@ -1,3 +1,4 @@
+using Weave.Security.Tokens;
 using Weave.Shared.Ids;
 
 namespace Weave.Silo.Api;
@@ -22,11 +23,12 @@ internal static class SkillSuggestionEndpoints
     private static async Task<IResult> GetSuggestedSkillsAsync(
         string workspaceId,
         IVirtualActorProvider actors,
+        ICapabilityTokenService tokenService,
         CancellationToken ct)
     {
         ct.ThrowIfCancellationRequested();
         var actor = actors.GetActor<Agents.Actors.ISkillMemoryActor>(VirtualActorId.From(workspaceId));
-        var suggestions = await actor.GetSuggestedSkillsAsync();
+        var suggestions = await actor.GetSuggestedSkillsAsync(SkillTokenFactory.MintRead(tokenService, workspaceId));
         return Results.Ok(suggestions.Select(SkillSuggestionResponse.FromSuggestion));
     }
 
@@ -34,11 +36,12 @@ internal static class SkillSuggestionEndpoints
         string workspaceId,
         string skillId,
         IVirtualActorProvider actors,
+        ICapabilityTokenService tokenService,
         CancellationToken ct)
     {
         ct.ThrowIfCancellationRequested();
         var actor = actors.GetActor<Agents.Actors.ISkillMemoryActor>(VirtualActorId.From(workspaceId));
-        var skill = await actor.AcceptSuggestedSkillAsync(SkillId.From(skillId));
+        var skill = await actor.AcceptSuggestedSkillAsync(SkillId.From(skillId), SkillTokenFactory.MintWrite(tokenService, workspaceId));
         return skill is null
             ? ResultExtensions.NotFound($"Skill suggestion '{skillId}' not found.")
             : Results.Ok(SkillResponse.FromDocument(skill));
@@ -48,11 +51,12 @@ internal static class SkillSuggestionEndpoints
         string workspaceId,
         string skillId,
         IVirtualActorProvider actors,
+        ICapabilityTokenService tokenService,
         CancellationToken ct)
     {
         ct.ThrowIfCancellationRequested();
         var actor = actors.GetActor<Agents.Actors.ISkillMemoryActor>(VirtualActorId.From(workspaceId));
-        var rejected = await actor.RejectSuggestedSkillAsync(SkillId.From(skillId));
+        var rejected = await actor.RejectSuggestedSkillAsync(SkillId.From(skillId), SkillTokenFactory.MintWrite(tokenService, workspaceId));
         return rejected
             ? Results.NoContent()
             : ResultExtensions.NotFound($"Skill suggestion '{skillId}' not found.");

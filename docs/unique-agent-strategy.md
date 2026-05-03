@@ -103,7 +103,7 @@ The grant strings in `CapabilityToken.Grants` are the runtime's user interface f
 | `secret:<path>` | Secret proxy resolve | Today (see [security.md:155-171](security.md)) |
 | `channel:send:<channel>` | Outbound channel message | Direction |
 | `channel:receive:<channel>` | Webhook ingress for a channel | Direction |
-| `skill:write` / `skill:read` | Skill-memory persistence | Direction |
+| `skill:write` / `skill:read` | Skill-memory persistence | Today (enforced at [SkillMemoryActor.cs](../src/Assistants/Weave.Agents/Actors/SkillMemoryActor.cs)) |
 | `user:read:<userId>` / `user:write:<userId>` | User-profile access | Direction |
 | `plugin:invoke:<plugin>` | Hot-swap plugin call (Dapr, Vault, webhook) | Direction |
 | `marketplace:install` | Installing a marketplace item | Direction |

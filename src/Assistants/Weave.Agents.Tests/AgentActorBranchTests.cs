@@ -1,9 +1,11 @@
 using Microsoft.Extensions.Logging;
+using Microsoft.Extensions.Options;
 using Weave.Agents.Actors;
 using Weave.Agents.Events;
 using Weave.Agents.Models;
 using Weave.Agents.Pipeline;
 using Weave.Agents.Verification;
+using Weave.Security.Tokens;
 using Weave.Shared.Events;
 using Weave.Shared.Ids;
 using Weave.Shared.Lifecycle;
@@ -55,10 +57,15 @@ public sealed class AgentActorBranchTests
 
             Actor = new AgentActor(
                 ActorProvider, ChatPipeline, Lifecycle, EventBus,
-                Substitute.For<IAgentVerificationDispatcher>(), TimeProvider.System,
+                Substitute.For<IAgentVerificationDispatcher>(), CreateTokenService(), TimeProvider.System,
                 Substitute.For<ILogger<AgentActor>>(), State);
         }
     }
+
+    private static CapabilityTokenService CreateTokenService() =>
+        new CapabilityTokenService(
+            Options.Create(new CapabilityTokenOptions { SigningKey = "test-signing-key-that-is-at-least-32-chars-long" }),
+            TimeProvider.System);
 
     private static AgentDefinition Def() => new()
     {
@@ -183,11 +190,11 @@ public sealed class AgentActorBranchTests
     {
         var fx = new Fixture();
         var skillActor = Substitute.For<ISkillMemoryActor>();
-        skillActor.SuggestSkillAsync(Arg.Any<SkillDocument>(), Arg.Any<string?>())
+        skillActor.SuggestSkillAsync(Arg.Any<SkillDocument>(), Arg.Any<CapabilityToken>(), Arg.Any<string?>())
             .Returns(callInfo => Task.FromResult(new SkillSuggestion
             {
                 Skill = callInfo.Arg<SkillDocument>(),
-                SourceTaskId = callInfo.ArgAt<string?>(1)
+                SourceTaskId = callInfo.ArgAt<string?>(2)
             }));
         fx.ActorProvider.GetActor<ISkillMemoryActor>(Arg.Any<VirtualActorId>()).Returns(skillActor);
 
@@ -205,8 +212,8 @@ public sealed class AgentActorBranchTests
 
         await fx.Actor.ReviewTaskAsync(task.TaskId, accepted: true);
 
-        await skillActor.Received(1).SuggestSkillAsync(Arg.Any<SkillDocument>(), task.TaskId.ToString());
-        await skillActor.DidNotReceive().StoreSkillAsync(Arg.Any<SkillDocument>());
+        await skillActor.Received(1).SuggestSkillAsync(Arg.Any<SkillDocument>(), Arg.Any<CapabilityToken>(), task.TaskId.ToString());
+        await skillActor.DidNotReceive().StoreSkillAsync(Arg.Any<SkillDocument>(), Arg.Any<CapabilityToken>());
     }
 
     [Fact]
@@ -214,7 +221,7 @@ public sealed class AgentActorBranchTests
     {
         var fx = new Fixture();
         var skillActor = Substitute.For<ISkillMemoryActor>();
-        skillActor.SuggestSkillAsync(Arg.Any<SkillDocument>(), Arg.Any<string?>())
+        skillActor.SuggestSkillAsync(Arg.Any<SkillDocument>(), Arg.Any<CapabilityToken>(), Arg.Any<string?>())
             .Returns(Task.FromException<SkillSuggestion>(new InvalidOperationException("suggestion broken")));
         fx.ActorProvider.GetActor<ISkillMemoryActor>(Arg.Any<VirtualActorId>()).Returns(skillActor);
 

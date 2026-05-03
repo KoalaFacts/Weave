@@ -1,8 +1,10 @@
 using Microsoft.Extensions.AI;
 using Microsoft.Extensions.Logging.Abstractions;
+using Microsoft.Extensions.Options;
 using Weave.Agents.Actors;
 using Weave.Agents.Models;
 using Weave.Agents.Pipeline;
+using Weave.Security.Tokens;
 using Weave.Shared.Ids;
 
 namespace Weave.Agents.Tests;
@@ -10,6 +12,11 @@ namespace Weave.Agents.Tests;
 public sealed class AgentChatPipelineEpisodicMemoryTests
 {
     private static readonly WorkspaceId TestWorkspaceId = WorkspaceId.From("ws-1");
+
+    private static CapabilityTokenService CreateTokenService() =>
+        new CapabilityTokenService(
+            Options.Create(new CapabilityTokenOptions { SigningKey = "test-signing-key-that-is-at-least-32-chars-long" }),
+            TimeProvider.System);
 
     private static AgentState CreateActiveState() =>
         new()
@@ -54,6 +61,7 @@ public sealed class AgentChatPipelineEpisodicMemoryTests
         var pipeline = new AgentChatPipeline(
             actors,
             chatClientFactory,
+            CreateTokenService(),
             TimeProvider.System,
             NullLogger<AgentChatPipeline>.Instance);
         return (pipeline, chatClient, episodic, captured);
@@ -127,7 +135,7 @@ public sealed class AgentChatPipelineEpisodicMemoryTests
         var actors = Substitute.For<IVirtualActorProvider>();
         actors.GetActor<IEpisodicMemoryActor>(Arg.Any<VirtualActorId>()).Returns(episodic);
 
-        var pipeline = new AgentChatPipeline(actors, chatClientFactory, TimeProvider.System, NullLogger<AgentChatPipeline>.Instance);
+        var pipeline = new AgentChatPipeline(actors, chatClientFactory, CreateTokenService(), TimeProvider.System, NullLogger<AgentChatPipeline>.Instance);
 
         var response = await pipeline.ExecuteAsync(CreateActiveState(), new AgentMessage { Content = "anything" });
 

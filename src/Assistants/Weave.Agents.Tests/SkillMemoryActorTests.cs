@@ -1,7 +1,9 @@
 using Microsoft.Extensions.Logging.Abstractions;
+using Microsoft.Extensions.Options;
 using Microsoft.Extensions.Time.Testing;
 using Weave.Agents.Actors;
 using Weave.Agents.Models;
+using Weave.Security.Tokens;
 using Weave.Shared.Events;
 using Weave.Shared.Ids;
 
@@ -27,14 +29,29 @@ public sealed class SkillMemoryActorTests
         return persistentState;
     }
 
-    private static (SkillMemoryActor Actor, IEventBus EventBus) CreateActor(TimeProvider? timeProvider = null)
+    private static CapabilityTokenService CreateTokenService(TimeProvider? timeProvider = null) =>
+        new CapabilityTokenService(
+            Options.Create(new CapabilityTokenOptions { SigningKey = "test-signing-key-that-is-at-least-32-chars-long" }),
+            timeProvider ?? TimeProvider.System);
+
+    private static CapabilityToken Token(CapabilityTokenService svc, params string[] grants) =>
+        svc.Mint(new CapabilityTokenRequest
+        {
+            WorkspaceId = TestWorkspaceId.ToString(),
+            IssuedTo = "test",
+            Grants = [.. grants],
+            Lifetime = TimeSpan.FromHours(1)
+        });
+
+    private static (SkillMemoryActor Actor, IEventBus EventBus, CapabilityToken Token) CreateActor(TimeProvider? timeProvider = null)
     {
         var eventBus = Substitute.For<IEventBus>();
         var logger = NullLogger<SkillMemoryActor>.Instance;
         var persistentState = CreatePersistentState();
+        var tokenService = CreateTokenService(timeProvider);
 
-        var actor = new SkillMemoryActor(eventBus, timeProvider ?? TimeProvider.System, logger, persistentState);
-        return (actor, eventBus);
+        var actor = new SkillMemoryActor(eventBus, timeProvider ?? TimeProvider.System, tokenService, logger, persistentState);
+        return (actor, eventBus, Token(tokenService, "skill:read", "skill:write"));
     }
 
     private static SkillDocument CreateSkill(
@@ -69,16 +86,16 @@ public sealed class SkillMemoryActorTests
     [Fact]
     public async Task StoreSkillAsync_PersistsSkill()
     {
-        var (actor, _) = CreateActor();
+        var (actor, _, token) = CreateActor();
         var skill = CreateSkill(id: "skill-1");
 
-        var result = await actor.StoreSkillAsync(skill);
+        var result = await actor.StoreSkillAsync(skill, token);
 
         result.ShouldNotBeNull();
         result.SkillId.ShouldBe(skill.SkillId);
         result.Title.ShouldBe("Deploy to Kubernetes");
 
-        var retrieved = await actor.GetSkillAsync(skill.SkillId);
+        var retrieved = await actor.GetSkillAsync(skill.SkillId, token);
         retrieved.ShouldNotBeNull();
         retrieved.SkillId.ShouldBe(skill.SkillId);
     }
@@ -86,58 +103,58 @@ public sealed class SkillMemoryActorTests
     [Fact]
     public async Task SuggestSkillAsync_AddsPendingSuggestionWithoutSearchableSkill()
     {
-        var (actor, _) = CreateActor();
+        var (actor, _, token) = CreateActor();
         var skill = CreateSkill(id: "suggested-skill", title: "Suggested deployment skill");
 
-        var suggestion = await actor.SuggestSkillAsync(skill, "task-1");
+        var suggestion = await actor.SuggestSkillAsync(skill, token, "task-1");
 
         suggestion.Skill.SkillId.ShouldBe(skill.SkillId);
         suggestion.SourceTaskId.ShouldBe("task-1");
-        var pending = await actor.GetSuggestedSkillsAsync();
+        var pending = await actor.GetSuggestedSkillsAsync(token);
         pending.Count.ShouldBe(1);
-        var stored = await actor.GetSkillAsync(skill.SkillId);
+        var stored = await actor.GetSkillAsync(skill.SkillId, token);
         stored.ShouldBeNull();
     }
 
     [Fact]
     public async Task AcceptSuggestedSkillAsync_MovesSuggestionIntoSkills()
     {
-        var (actor, _) = CreateActor();
+        var (actor, _, token) = CreateActor();
         var skill = CreateSkill(id: "accepted-suggestion", title: "Accepted skill");
-        await actor.SuggestSkillAsync(skill, "task-2");
+        await actor.SuggestSkillAsync(skill, token, "task-2");
 
-        var accepted = await actor.AcceptSuggestedSkillAsync(skill.SkillId);
+        var accepted = await actor.AcceptSuggestedSkillAsync(skill.SkillId, token);
 
         accepted.ShouldNotBeNull();
         accepted.SkillId.ShouldBe(skill.SkillId);
-        var pending = await actor.GetSuggestedSkillsAsync();
+        var pending = await actor.GetSuggestedSkillsAsync(token);
         pending.ShouldBeEmpty();
-        var stored = await actor.GetSkillAsync(skill.SkillId);
+        var stored = await actor.GetSkillAsync(skill.SkillId, token);
         stored.ShouldNotBeNull();
     }
 
     [Fact]
     public async Task RejectSuggestedSkillAsync_RemovesSuggestionWithoutStoringSkill()
     {
-        var (actor, _) = CreateActor();
+        var (actor, _, token) = CreateActor();
         var skill = CreateSkill(id: "rejected-suggestion", title: "Rejected skill");
-        await actor.SuggestSkillAsync(skill, "task-3");
+        await actor.SuggestSkillAsync(skill, token, "task-3");
 
-        var rejected = await actor.RejectSuggestedSkillAsync(skill.SkillId);
+        var rejected = await actor.RejectSuggestedSkillAsync(skill.SkillId, token);
 
         rejected.ShouldBeTrue();
-        var pending = await actor.GetSuggestedSkillsAsync();
+        var pending = await actor.GetSuggestedSkillsAsync(token);
         pending.ShouldBeEmpty();
-        var stored = await actor.GetSkillAsync(skill.SkillId);
+        var stored = await actor.GetSkillAsync(skill.SkillId, token);
         stored.ShouldBeNull();
     }
 
     [Fact]
     public async Task AcceptSuggestedSkillAsync_ReturnsNull_WhenSuggestionIsMissing()
     {
-        var (actor, _) = CreateActor();
+        var (actor, _, token) = CreateActor();
 
-        var accepted = await actor.AcceptSuggestedSkillAsync(SkillId.From("missing-suggestion"));
+        var accepted = await actor.AcceptSuggestedSkillAsync(SkillId.From("missing-suggestion"), token);
 
         accepted.ShouldBeNull();
     }
@@ -145,9 +162,9 @@ public sealed class SkillMemoryActorTests
     [Fact]
     public async Task RejectSuggestedSkillAsync_ReturnsFalse_WhenSuggestionIsMissing()
     {
-        var (actor, _) = CreateActor();
+        var (actor, _, token) = CreateActor();
 
-        var rejected = await actor.RejectSuggestedSkillAsync(SkillId.From("missing-suggestion"));
+        var rejected = await actor.RejectSuggestedSkillAsync(SkillId.From("missing-suggestion"), token);
 
         rejected.ShouldBeFalse();
     }
@@ -155,19 +172,19 @@ public sealed class SkillMemoryActorTests
     [Fact]
     public async Task ArchiveSkillAsync_MarksSkillArchivedAndExcludesFromSearchAndList()
     {
-        var (actor, _) = CreateActor();
+        var (actor, _, token) = CreateActor();
         var skill = CreateSkill(id: "archived-skill", title: "Archive deployment skill", tags: ["archive"]);
-        await actor.StoreSkillAsync(skill);
+        await actor.StoreSkillAsync(skill, token);
 
-        var archived = await actor.ArchiveSkillAsync(skill.SkillId);
+        var archived = await actor.ArchiveSkillAsync(skill.SkillId, token);
 
         archived.ShouldNotBeNull();
         archived.ArchivedAt.ShouldNotBeNull();
-        var searchResults = await actor.SearchAsync("archive");
+        var searchResults = await actor.SearchAsync("archive", token);
         searchResults.ShouldBeEmpty();
-        var allSkills = await actor.GetAllSkillsAsync();
+        var allSkills = await actor.GetAllSkillsAsync(token);
         allSkills.ShouldBeEmpty();
-        var direct = await actor.GetSkillAsync(skill.SkillId);
+        var direct = await actor.GetSkillAsync(skill.SkillId, token);
         direct.ShouldNotBeNull();
         direct.ArchivedAt.ShouldNotBeNull();
     }
@@ -175,9 +192,9 @@ public sealed class SkillMemoryActorTests
     [Fact]
     public async Task ArchiveSkillAsync_ReturnsNull_WhenSkillIsMissing()
     {
-        var (actor, _) = CreateActor();
+        var (actor, _, token) = CreateActor();
 
-        var archived = await actor.ArchiveSkillAsync(SkillId.From("missing-archive"));
+        var archived = await actor.ArchiveSkillAsync(SkillId.From("missing-archive"), token);
 
         archived.ShouldBeNull();
     }
@@ -185,19 +202,19 @@ public sealed class SkillMemoryActorTests
     [Fact]
     public async Task RestoreSkillAsync_ClearsArchiveAndIncludesInSearchAndList()
     {
-        var (actor, _) = CreateActor();
+        var (actor, _, token) = CreateActor();
         var skill = CreateSkill(id: "restored-skill", title: "Restore deployment skill", tags: ["restore"]);
-        await actor.StoreSkillAsync(skill);
-        await actor.ArchiveSkillAsync(skill.SkillId);
+        await actor.StoreSkillAsync(skill, token);
+        await actor.ArchiveSkillAsync(skill.SkillId, token);
 
-        var restored = await actor.RestoreSkillAsync(skill.SkillId);
+        var restored = await actor.RestoreSkillAsync(skill.SkillId, token);
 
         restored.ShouldNotBeNull();
         restored.ArchivedAt.ShouldBeNull();
-        var searchResults = await actor.SearchAsync("restore");
+        var searchResults = await actor.SearchAsync("restore", token);
         searchResults.Count.ShouldBe(1);
         searchResults[0].Skill.SkillId.ShouldBe(skill.SkillId);
-        var allSkills = await actor.GetAllSkillsAsync();
+        var allSkills = await actor.GetAllSkillsAsync(token);
         allSkills.Count.ShouldBe(1);
         allSkills[0].SkillId.ShouldBe(skill.SkillId);
     }
@@ -205,9 +222,9 @@ public sealed class SkillMemoryActorTests
     [Fact]
     public async Task RestoreSkillAsync_ReturnsNull_WhenSkillIsMissing()
     {
-        var (actor, _) = CreateActor();
+        var (actor, _, token) = CreateActor();
 
-        var restored = await actor.RestoreSkillAsync(SkillId.From("missing-restore"));
+        var restored = await actor.RestoreSkillAsync(SkillId.From("missing-restore"), token);
 
         restored.ShouldBeNull();
     }
@@ -215,11 +232,11 @@ public sealed class SkillMemoryActorTests
     [Fact]
     public async Task SearchAsync_MatchesByTags()
     {
-        var (actor, _) = CreateActor();
+        var (actor, _, token) = CreateActor();
         var skill = CreateSkill(tags: ["deploy", "kubernetes", "containers"]);
-        await actor.StoreSkillAsync(skill);
+        await actor.StoreSkillAsync(skill, token);
 
-        var results = await actor.SearchAsync("kubernetes");
+        var results = await actor.SearchAsync("kubernetes", token);
 
         results.ShouldNotBeEmpty();
         results[0].Skill.SkillId.ShouldBe(skill.SkillId);
@@ -229,11 +246,11 @@ public sealed class SkillMemoryActorTests
     [Fact]
     public async Task SearchAsync_MatchesByTitleKeywords()
     {
-        var (actor, _) = CreateActor();
+        var (actor, _, token) = CreateActor();
         var skill = CreateSkill(title: "Automated database migration");
-        await actor.StoreSkillAsync(skill);
+        await actor.StoreSkillAsync(skill, token);
 
-        var results = await actor.SearchAsync("database migration");
+        var results = await actor.SearchAsync("database migration", token);
 
         results.ShouldNotBeEmpty();
         results[0].Skill.SkillId.ShouldBe(skill.SkillId);
@@ -242,14 +259,14 @@ public sealed class SkillMemoryActorTests
     [Fact]
     public async Task SearchAsync_ReturnsEmpty_WhenNoMatch()
     {
-        var (actor, _) = CreateActor();
+        var (actor, _, token) = CreateActor();
         var skill = CreateSkill(
             title: "Deploy to Kubernetes",
             description: "Kubernetes deployment steps",
             tags: ["deploy", "kubernetes"]);
-        await actor.StoreSkillAsync(skill);
+        await actor.StoreSkillAsync(skill, token);
 
-        var results = await actor.SearchAsync("quantum entanglement");
+        var results = await actor.SearchAsync("quantum entanglement", token);
 
         results.ShouldBeEmpty();
     }
@@ -257,7 +274,7 @@ public sealed class SkillMemoryActorTests
     [Fact]
     public async Task SearchAsync_RanksHigherUseCountFirst()
     {
-        var (actor, _) = CreateActor();
+        var (actor, _, token) = CreateActor();
 
         var lowUse = CreateSkill(
             id: "low-use",
@@ -270,10 +287,10 @@ public sealed class SkillMemoryActorTests
             tags: ["deploy"],
             useCount: 50);
 
-        await actor.StoreSkillAsync(lowUse);
-        await actor.StoreSkillAsync(highUse);
+        await actor.StoreSkillAsync(lowUse, token);
+        await actor.StoreSkillAsync(highUse, token);
 
-        var results = await actor.SearchAsync("deploy");
+        var results = await actor.SearchAsync("deploy", token);
 
         results.Count.ShouldBeGreaterThanOrEqualTo(2);
         results[0].Skill.SkillId.ShouldBe(highUse.SkillId);
@@ -283,13 +300,13 @@ public sealed class SkillMemoryActorTests
     [Fact]
     public async Task SearchAsync_FiltersByMinimumSuccessRate()
     {
-        var (actor, _) = CreateActor();
+        var (actor, _, token) = CreateActor();
         var reliable = CreateSkill(id: "reliable", title: "Deploy app", tags: ["deploy"], successRate: 0.95);
         var unreliable = CreateSkill(id: "unreliable", title: "Deploy app", tags: ["deploy"], successRate: 0.5);
-        await actor.StoreSkillAsync(reliable);
-        await actor.StoreSkillAsync(unreliable);
+        await actor.StoreSkillAsync(reliable, token);
+        await actor.StoreSkillAsync(unreliable, token);
 
-        var results = await actor.SearchAsync("deploy", options: new SkillSearchOptions { MinSuccessRate = 0.9 });
+        var results = await actor.SearchAsync("deploy", token, options: new SkillSearchOptions { MinSuccessRate = 0.9 });
 
         results.Count.ShouldBe(1);
         results[0].Skill.SkillId.ShouldBe(reliable.SkillId);
@@ -300,7 +317,7 @@ public sealed class SkillMemoryActorTests
     {
         var now = new DateTimeOffset(2026, 4, 30, 12, 0, 0, TimeSpan.Zero);
         var fakeTime = new FakeTimeProvider(now);
-        var (actor, _) = CreateActor(fakeTime);
+        var (actor, _, token) = CreateActor(fakeTime);
         var stale = CreateSkill(
             id: "stale",
             title: "Deploy service",
@@ -311,10 +328,10 @@ public sealed class SkillMemoryActorTests
             title: "Deploy service",
             tags: ["deploy"],
             lastUsedAt: now.AddDays(-2));
-        await actor.StoreSkillAsync(stale);
-        await actor.StoreSkillAsync(recent);
+        await actor.StoreSkillAsync(stale, token);
+        await actor.StoreSkillAsync(recent, token);
 
-        var results = await actor.SearchAsync("deploy", options: new SkillSearchOptions { PreferRecent = true });
+        var results = await actor.SearchAsync("deploy", token, options: new SkillSearchOptions { PreferRecent = true });
 
         results.Count.ShouldBe(2);
         results[0].Skill.SkillId.ShouldBe(recent.SkillId);
@@ -326,7 +343,7 @@ public sealed class SkillMemoryActorTests
     {
         var now = new DateTimeOffset(2026, 4, 30, 12, 0, 0, TimeSpan.Zero);
         var fakeTime = new FakeTimeProvider(now);
-        var (actor, _) = CreateActor(fakeTime);
+        var (actor, _, token) = CreateActor(fakeTime);
         var stale = CreateSkill(
             id: "stale-default",
             title: "Deploy service",
@@ -337,10 +354,10 @@ public sealed class SkillMemoryActorTests
             title: "Deploy service",
             tags: ["deploy"],
             lastUsedAt: now.AddDays(-2));
-        await actor.StoreSkillAsync(stale);
-        await actor.StoreSkillAsync(recent);
+        await actor.StoreSkillAsync(stale, token);
+        await actor.StoreSkillAsync(recent, token);
 
-        var results = await actor.SearchAsync("deploy");
+        var results = await actor.SearchAsync("deploy", token);
 
         results.Count.ShouldBe(2);
         results[0].Skill.SkillId.ShouldBe(stale.SkillId);
@@ -350,13 +367,13 @@ public sealed class SkillMemoryActorTests
     [Fact]
     public async Task RecordUsageAsync_IncrementsCount()
     {
-        var (actor, _) = CreateActor();
+        var (actor, _, token) = CreateActor();
         var skill = CreateSkill(id: "skill-usage");
-        await actor.StoreSkillAsync(skill);
+        await actor.StoreSkillAsync(skill, token);
 
-        await actor.RecordUsageAsync(skill.SkillId, success: true);
+        await actor.RecordUsageAsync(skill.SkillId, success: true, token);
 
-        var updated = await actor.GetSkillAsync(skill.SkillId);
+        var updated = await actor.GetSkillAsync(skill.SkillId, token);
         updated.ShouldNotBeNull();
         updated.UseCount.ShouldBe(1);
         updated.LastUsedAt.ShouldNotBeNull();
@@ -365,19 +382,19 @@ public sealed class SkillMemoryActorTests
     [Fact]
     public async Task RecordUsageAsync_UpdatesSuccessRate()
     {
-        var (actor, _) = CreateActor();
+        var (actor, _, token) = CreateActor();
         var skill = CreateSkill(id: "skill-rate", useCount: 0, successRate: 1.0);
-        await actor.StoreSkillAsync(skill);
+        await actor.StoreSkillAsync(skill, token);
 
         // First usage: success -> rate = (1.0 * 0 + 1.0) / 1 = 1.0
-        await actor.RecordUsageAsync(skill.SkillId, success: true);
-        var afterFirst = await actor.GetSkillAsync(skill.SkillId);
+        await actor.RecordUsageAsync(skill.SkillId, success: true, token);
+        var afterFirst = await actor.GetSkillAsync(skill.SkillId, token);
         afterFirst.ShouldNotBeNull();
         afterFirst.SuccessRate.ShouldBe(1.0);
 
         // Second usage: failure -> rate = (1.0 * 1 + 0.0) / 2 = 0.5
-        await actor.RecordUsageAsync(skill.SkillId, success: false);
-        var afterSecond = await actor.GetSkillAsync(skill.SkillId);
+        await actor.RecordUsageAsync(skill.SkillId, success: false, token);
+        var afterSecond = await actor.GetSkillAsync(skill.SkillId, token);
         afterSecond.ShouldNotBeNull();
         afterSecond.SuccessRate.ShouldBe(0.5, 0.001);
     }
@@ -385,22 +402,22 @@ public sealed class SkillMemoryActorTests
     [Fact]
     public async Task RemoveSkillAsync_DeletesSkill()
     {
-        var (actor, _) = CreateActor();
+        var (actor, _, token) = CreateActor();
         var skill = CreateSkill(id: "skill-remove");
-        await actor.StoreSkillAsync(skill);
+        await actor.StoreSkillAsync(skill, token);
 
-        await actor.RemoveSkillAsync(skill.SkillId);
+        await actor.RemoveSkillAsync(skill.SkillId, token);
 
-        var result = await actor.GetSkillAsync(skill.SkillId);
+        var result = await actor.GetSkillAsync(skill.SkillId, token);
         result.ShouldBeNull();
     }
 
     [Fact]
     public async Task GetSkillAsync_ReturnsNull_WhenNotFound()
     {
-        var (actor, _) = CreateActor();
+        var (actor, _, token) = CreateActor();
 
-        var result = await actor.GetSkillAsync(SkillId.From("nonexistent"));
+        var result = await actor.GetSkillAsync(SkillId.From("nonexistent"), token);
 
         result.ShouldBeNull();
     }
@@ -408,16 +425,130 @@ public sealed class SkillMemoryActorTests
     [Fact]
     public async Task GetAllSkillsAsync_ReturnsAllSkills()
     {
-        var (actor, _) = CreateActor();
+        var (actor, _, token) = CreateActor();
         var skill1 = CreateSkill(id: "skill-a", title: "First Skill");
         var skill2 = CreateSkill(id: "skill-b", title: "Second Skill");
-        await actor.StoreSkillAsync(skill1);
-        await actor.StoreSkillAsync(skill2);
+        await actor.StoreSkillAsync(skill1, token);
+        await actor.StoreSkillAsync(skill2, token);
 
-        var all = await actor.GetAllSkillsAsync();
+        var all = await actor.GetAllSkillsAsync(token);
 
         all.Count.ShouldBe(2);
         all.ShouldContain(s => s.SkillId == skill1.SkillId);
         all.ShouldContain(s => s.SkillId == skill2.SkillId);
+    }
+
+    [Fact]
+    public async Task GetSuggestedSkillsAsync_OrdersByMostRecentlySuggestedFirst()
+    {
+        var now = new DateTimeOffset(2026, 4, 30, 12, 0, 0, TimeSpan.Zero);
+        var fakeTime = new FakeTimeProvider(now);
+        var (actor, _, token) = CreateActor(fakeTime);
+
+        await actor.SuggestSkillAsync(CreateSkill(id: "older", title: "Older suggestion"), token, "task-older");
+        fakeTime.Advance(TimeSpan.FromMinutes(5));
+        await actor.SuggestSkillAsync(CreateSkill(id: "newer", title: "Newer suggestion"), token, "task-newer");
+
+        var suggestions = await actor.GetSuggestedSkillsAsync(token);
+
+        suggestions.Count.ShouldBe(2);
+        suggestions[0].Skill.SkillId.ToString().ShouldBe("newer");
+        suggestions[1].Skill.SkillId.ToString().ShouldBe("older");
+    }
+
+    [Fact]
+    public async Task RecordUsageAsync_OnMissingSkill_DoesNotThrow()
+    {
+        var (actor, _, token) = CreateActor();
+
+        // The skill was never stored — should silently no-op.
+        await actor.RecordUsageAsync(SkillId.From("never-stored"), success: true, token);
+
+        var found = await actor.GetSkillAsync(SkillId.From("never-stored"), token);
+        found.ShouldBeNull();
+    }
+
+    [Fact]
+    public async Task SearchAsync_WithEmptyQueryAfterTokenization_ReturnsEmpty()
+    {
+        var (actor, _, token) = CreateActor();
+        await actor.StoreSkillAsync(CreateSkill(id: "any", title: "Anything"), token);
+
+        var results = await actor.SearchAsync("   ", token);
+
+        results.ShouldBeEmpty();
+    }
+
+    // --- Capability check tests ---
+
+    [Fact]
+    public async Task StoreSkillAsync_WithoutSkillWriteGrant_Throws()
+    {
+        var tokenService = CreateTokenService();
+        var actor = new SkillMemoryActor(
+            Substitute.For<IEventBus>(),
+            TimeProvider.System,
+            tokenService,
+            NullLogger<SkillMemoryActor>.Instance,
+            CreatePersistentState());
+        var readOnlyToken = Token(tokenService, "skill:read");
+
+        await Should.ThrowAsync<UnauthorizedAccessException>(() =>
+            actor.StoreSkillAsync(CreateSkill(), readOnlyToken));
+    }
+
+    [Fact]
+    public async Task SearchAsync_WithoutSkillReadGrant_Throws()
+    {
+        var tokenService = CreateTokenService();
+        var actor = new SkillMemoryActor(
+            Substitute.For<IEventBus>(),
+            TimeProvider.System,
+            tokenService,
+            NullLogger<SkillMemoryActor>.Instance,
+            CreatePersistentState());
+        var writeOnlyToken = Token(tokenService, "skill:write");
+
+        await Should.ThrowAsync<UnauthorizedAccessException>(() =>
+            actor.SearchAsync("anything", writeOnlyToken));
+    }
+
+    [Fact]
+    public async Task StoreSkillAsync_WithExpiredToken_Throws()
+    {
+        var tokenService = CreateTokenService();
+        var actor = new SkillMemoryActor(
+            Substitute.For<IEventBus>(),
+            TimeProvider.System,
+            tokenService,
+            NullLogger<SkillMemoryActor>.Instance,
+            CreatePersistentState());
+        var expired = tokenService.Mint(new CapabilityTokenRequest
+        {
+            WorkspaceId = TestWorkspaceId.ToString(),
+            IssuedTo = "test",
+            Grants = ["skill:write"],
+            Lifetime = TimeSpan.FromMilliseconds(-1)
+        });
+
+        await Should.ThrowAsync<UnauthorizedAccessException>(() =>
+            actor.StoreSkillAsync(CreateSkill(), expired));
+    }
+
+    [Fact]
+    public async Task GetSkillAsync_WithWildcardGrant_Allowed()
+    {
+        var tokenService = CreateTokenService();
+        var actor = new SkillMemoryActor(
+            Substitute.For<IEventBus>(),
+            TimeProvider.System,
+            tokenService,
+            NullLogger<SkillMemoryActor>.Instance,
+            CreatePersistentState());
+        var wildcard = Token(tokenService, "*");
+
+        var result = await actor.GetSkillAsync(SkillId.From("anything"), wildcard);
+
+        result.ShouldBeNull();
     }
 }
