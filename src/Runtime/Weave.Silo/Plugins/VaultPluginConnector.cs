@@ -1,8 +1,8 @@
 using Weave.Security.Tokens;
 using Weave.Security.Vault;
 using Weave.Shared.Plugins;
-using Weave.Workspaces.Models;
 using Weave.Silo.Plugins;
+using Weave.Workspaces.Models;
 
 namespace Weave.Silo.Plugins;
 

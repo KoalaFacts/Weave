@@ -90,8 +90,14 @@ public sealed class CapabilityTokenService : ICapabilityTokenService
 
         if (_liveSources.TryRemove(tokenId, out var cts))
         {
-            try { cts.Cancel(); }
-            catch (ObjectDisposedException) { /* source already disposed */ }
+            try
+            {
+                cts.Cancel();
+            }
+            catch (ObjectDisposedException)
+            {
+                // source already disposed
+            }
         }
     }
 
