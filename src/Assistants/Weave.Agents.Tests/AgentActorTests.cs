@@ -38,7 +38,7 @@ public sealed class AgentActorTests
     private static AgentDefinition CreateDefinition(
         string model = "claude-sonnet-4-20250514",
         int maxTasks = 2,
-        List<string>? capabilities = null) =>
+        IReadOnlyList<string>? capabilities = null) =>
         new()
         {
             Model = model,

@@ -19,7 +19,7 @@ public sealed class AgentChatPipelineTests
             Options.Create(new CapabilityTokenOptions { SigningKey = "test-signing-key-that-is-at-least-32-chars-long" }),
             TimeProvider.System);
 
-    private static AgentState CreateActiveState(List<string>? capabilities = null) =>
+    private static AgentState CreateActiveState(IReadOnlyList<string>? capabilities = null) =>
         new()
         {
             AgentId = "ws-1/researcher",

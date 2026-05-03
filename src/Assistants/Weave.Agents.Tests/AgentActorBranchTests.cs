@@ -67,7 +67,7 @@ public sealed class AgentActorBranchTests
             Options.Create(new CapabilityTokenOptions { SigningKey = "test-signing-key-that-is-at-least-32-chars-long" }),
             TimeProvider.System);
 
-    private static AgentDefinition Def(List<string>? capabilities = null) => new()
+    private static AgentDefinition Def(IReadOnlyList<string>? capabilities = null) => new()
     {
         Model = "test-model",
         MaxConcurrentTasks = 2,
