@@ -12,7 +12,7 @@ internal sealed class UpgradeCliCommand : ICliCommand<NoCliOptions>
 
     public async Task<int> ExecuteAsync(NoCliOptions options, CancellationToken ct)
     {
-        var result = await VersionService.CheckAsync(ct);
+        var result = await VersionService.CheckAsync(TimeProvider.System, ct);
 
         CliTheme.WriteKeyValue("Installed", $"v{result.Current}");
         if (result.Latest is not null)

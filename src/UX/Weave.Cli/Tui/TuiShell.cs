@@ -30,11 +30,11 @@ internal sealed class TuiShell
 
         AnsiConsole.Clear();
         CliTheme.WriteBanner();
-        VersionService.KickOffRefreshIfStale();
+        VersionService.KickOffRefreshIfStale(TimeProvider.System);
         await _dashboard.RefreshAsync(cancellationToken);
         RenderWelcome();
 
-        var composer = new ChatComposer();
+        var composer = new ChatComposer(TimeProvider.System);
 
         while (!cancellationToken.IsCancellationRequested)
         {

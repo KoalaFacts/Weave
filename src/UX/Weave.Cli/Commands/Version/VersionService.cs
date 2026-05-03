@@ -63,13 +63,13 @@ internal static class VersionService
         return IsNewer(cache.LatestVersion, current) ? cache.LatestVersion : null;
     }
 
-    public static void KickOffRefreshIfStale()
+    public static void KickOffRefreshIfStale(TimeProvider timeProvider)
     {
         if (!IsEnabled())
             return;
 
         var cache = LoadCache();
-        if (cache is not null && DateTimeOffset.UtcNow - cache.CheckedAt < _cacheTtl)
+        if (cache is not null && timeProvider.GetUtcNow() - cache.CheckedAt < _cacheTtl)
             return;
 
         _ = Task.Run(async () =>
@@ -79,7 +79,7 @@ internal static class VersionService
                 using var client = CreateNuGetClient();
                 var latest = await FetchLatestAsync(client, new Uri(NuGetIndexUrl), CancellationToken.None);
                 if (latest is not null)
-                    SaveCache(_cachePath, new UpdateCache { LatestVersion = latest, CheckedAt = DateTimeOffset.UtcNow });
+                    SaveCache(_cachePath, new UpdateCache { LatestVersion = latest, CheckedAt = timeProvider.GetUtcNow() });
             }
             catch (Exception ex) when (ex is HttpRequestException or TaskCanceledException or System.Net.Sockets.SocketException or System.Text.Json.JsonException or IOException)
             {
@@ -88,25 +88,27 @@ internal static class VersionService
         });
     }
 
-    public static async Task<UpdateCheckResult> CheckAsync(CancellationToken ct)
+    public static async Task<UpdateCheckResult> CheckAsync(TimeProvider timeProvider, CancellationToken ct)
     {
         using var client = CreateNuGetClient();
-        return await CheckAsync(_cachePath, client, new Uri(NuGetIndexUrl), ct);
+        return await CheckAsync(_cachePath, client, new Uri(NuGetIndexUrl), timeProvider, ct);
     }
 
     internal static async Task<UpdateCheckResult> CheckAsync(
         string cacheFilePath,
         HttpClient client,
         Uri indexUri,
+        TimeProvider timeProvider,
         CancellationToken ct)
     {
         var current = Current();
+        var now = timeProvider.GetUtcNow();
         if (!IsEnabled())
         {
             return new UpdateCheckResult(
                 current,
                 null,
-                DateTimeOffset.UtcNow,
+                now,
                 false,
                 "Update checks are disabled (WEAVE_NO_UPDATE_CHECK).");
         }
@@ -115,15 +117,15 @@ internal static class VersionService
         {
             var latest = await FetchLatestAsync(client, indexUri, ct);
             if (latest is null)
-                return new UpdateCheckResult(current, null, DateTimeOffset.UtcNow, false, "Could not reach NuGet.");
+                return new UpdateCheckResult(current, null, now, false, "Could not reach NuGet.");
 
-            SaveCache(cacheFilePath, new UpdateCache { LatestVersion = latest, CheckedAt = DateTimeOffset.UtcNow });
+            SaveCache(cacheFilePath, new UpdateCache { LatestVersion = latest, CheckedAt = now });
             var newer = IsNewer(latest, current);
-            return new UpdateCheckResult(current, latest, DateTimeOffset.UtcNow, newer, null);
+            return new UpdateCheckResult(current, latest, now, newer, null);
         }
         catch (Exception ex) when (ex is HttpRequestException or TaskCanceledException or System.Net.Sockets.SocketException or System.Text.Json.JsonException or IOException)
         {
-            return new UpdateCheckResult(current, null, DateTimeOffset.UtcNow, false, ex.Message);
+            return new UpdateCheckResult(current, null, now, false, ex.Message);
         }
     }
 

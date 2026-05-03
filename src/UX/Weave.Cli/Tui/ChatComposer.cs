@@ -11,9 +11,9 @@ namespace Weave.Cli.Tui;
 /// cursor, repaint the panel on every keystroke, and support
 /// Shift+Enter for newlines.
 /// </summary>
-internal sealed class ChatComposer
+internal sealed class ChatComposer(TimeProvider timeProvider)
 {
-    private readonly ChatComposerEditor _editor = new();
+    private readonly ChatComposerEditor _editor = new(timeProvider);
     private bool _cursorOn = true;
 
     // Poll loop ticks every 25 ms; 20 ticks ≈ 500 ms → classic

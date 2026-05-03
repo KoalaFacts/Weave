@@ -1,13 +1,13 @@
 namespace Weave.Cli.Tui;
 
-internal sealed class ChatExitConfirmation
+internal sealed class ChatExitConfirmation(TimeProvider timeProvider)
 {
     private static readonly TimeSpan ConfirmWindow = TimeSpan.FromSeconds(2);
-    private DateTime? _hintUntil;
+    private DateTimeOffset? _hintUntil;
 
     internal bool ExitRequested { get; private set; }
-    internal bool IsArmed => _hintUntil is { } deadline && DateTime.UtcNow < deadline;
-    internal bool HasExpiredHint => _hintUntil is { } deadline && DateTime.UtcNow >= deadline;
+    internal bool IsArmed => _hintUntil is { } deadline && timeProvider.GetUtcNow() < deadline;
+    internal bool HasExpiredHint => _hintUntil is { } deadline && timeProvider.GetUtcNow() >= deadline;
 
     internal void Reset()
     {
@@ -22,7 +22,7 @@ internal sealed class ChatExitConfirmation
 
     internal bool Press()
     {
-        var now = DateTime.UtcNow;
+        var now = timeProvider.GetUtcNow();
         if (_hintUntil is { } deadline && now < deadline)
         {
             ExitRequested = true;

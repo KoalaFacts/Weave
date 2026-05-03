@@ -30,7 +30,7 @@ public sealed record AgentState
         ActiveTasks.FirstOrDefault(task => task.TaskId == taskId)
         ?? throw new InvalidOperationException($"Task {taskId} not found.");
 
-    public AgentTaskInfo SubmitTask(string description)
+    public AgentTaskInfo SubmitTask(string description, DateTimeOffset now)
     {
         if (RunningTaskCount >= MaxConcurrentTasks)
             throw new InvalidOperationException($"Max concurrent tasks ({MaxConcurrentTasks}) reached.");
@@ -44,52 +44,52 @@ public sealed record AgentState
 
         ActiveTasks.Add(task);
         Status = AgentStatus.Busy;
-        LastActive = DateTimeOffset.UtcNow;
+        LastActive = now;
         return task;
     }
 
-    public void FailTask(AgentTaskId taskId, ProofOfWork proof)
+    public void FailTask(AgentTaskId taskId, ProofOfWork proof, DateTimeOffset now)
     {
         var task = GetTask(taskId);
         task.Status = AgentTaskStatus.Failed;
-        task.CompletedAt = DateTimeOffset.UtcNow;
+        task.CompletedAt = now;
         task.Proof = proof;
         RefreshBusyStatus();
-        LastActive = DateTimeOffset.UtcNow;
+        LastActive = now;
     }
 
-    public void SetAwaitingReview(AgentTaskId taskId, ProofOfWork proof)
+    public void SetAwaitingReview(AgentTaskId taskId, ProofOfWork proof, DateTimeOffset now)
     {
         var task = GetTask(taskId);
         task.Status = AgentTaskStatus.AwaitingReview;
         task.Proof = proof;
-        LastActive = DateTimeOffset.UtcNow;
+        LastActive = now;
     }
 
-    public void AcceptTask(AgentTaskId taskId, string? feedback, VerificationRecord? verification)
+    public void AcceptTask(AgentTaskId taskId, string? feedback, VerificationRecord? verification, DateTimeOffset now)
     {
         var task = GetTask(taskId);
         if (task.Status is not AgentTaskStatus.AwaitingReview)
             throw new InvalidOperationException($"Task {taskId} is not awaiting review (status: {task.Status}).");
 
-        ApplyReviewMetadata(task, feedback, verification);
+        ApplyReviewMetadata(task, feedback, verification, now);
         task.Status = AgentTaskStatus.Accepted;
-        task.CompletedAt = DateTimeOffset.UtcNow;
+        task.CompletedAt = now;
         TotalTasksCompleted++;
         RefreshBusyStatus();
-        LastActive = DateTimeOffset.UtcNow;
+        LastActive = now;
     }
 
-    public void RejectTask(AgentTaskId taskId, string? feedback, VerificationRecord? verification)
+    public void RejectTask(AgentTaskId taskId, string? feedback, VerificationRecord? verification, DateTimeOffset now)
     {
         var task = GetTask(taskId);
         if (task.Status is not AgentTaskStatus.AwaitingReview)
             throw new InvalidOperationException($"Task {taskId} is not awaiting review (status: {task.Status}).");
 
-        ApplyReviewMetadata(task, feedback, verification);
+        ApplyReviewMetadata(task, feedback, verification, now);
         task.Status = AgentTaskStatus.Rejected;
         RefreshBusyStatus();
-        LastActive = DateTimeOffset.UtcNow;
+        LastActive = now;
     }
 
     public void RefreshBusyStatus()
@@ -98,13 +98,13 @@ public sealed record AgentState
             Status = AgentStatus.Active;
     }
 
-    private static void ApplyReviewMetadata(AgentTaskInfo task, string? feedback, VerificationRecord? verification)
+    private static void ApplyReviewMetadata(AgentTaskInfo task, string? feedback, VerificationRecord? verification, DateTimeOffset now)
     {
         if (task.Proof is null)
             return;
 
         task.Proof.ReviewFeedback = feedback;
-        task.Proof.ReviewedAt = DateTimeOffset.UtcNow;
+        task.Proof.ReviewedAt = now;
         if (verification is not null)
             task.Proof.Verification = verification;
     }

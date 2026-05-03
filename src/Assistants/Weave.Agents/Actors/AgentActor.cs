@@ -122,7 +122,7 @@ public sealed class AgentActor(
         if (persistentState.State.Status is not (AgentStatus.Active or AgentStatus.Busy))
             throw new InvalidOperationException($"Agent {persistentState.State.AgentName} is not active (status: {persistentState.State.Status}).");
 
-        var task = persistentState.State.SubmitTask(description);
+        var task = persistentState.State.SubmitTask(description, timeProvider.GetUtcNow());
         await persistentState.WriteStateAsync();
 
         logger.LogInformation("Task {TaskId} submitted to agent {AgentName}", task.TaskId, persistentState.State.AgentName);
@@ -133,7 +133,7 @@ public sealed class AgentActor(
     {
         if (!success)
         {
-            persistentState.State.FailTask(taskId, proof);
+            persistentState.State.FailTask(taskId, proof, timeProvider.GetUtcNow());
             await persistentState.WriteStateAsync();
 
             await eventBus.PublishAsync(new AgentTaskCompletedEvent
@@ -148,7 +148,7 @@ public sealed class AgentActor(
             return;
         }
 
-        persistentState.State.SetAwaitingReview(taskId, proof);
+        persistentState.State.SetAwaitingReview(taskId, proof, timeProvider.GetUtcNow());
         await persistentState.WriteStateAsync();
 
         await eventBus.PublishAsync(new AgentTaskAwaitingReviewEvent
@@ -176,10 +176,11 @@ public sealed class AgentActor(
 
     public async Task ReviewTaskAsync(AgentTaskId taskId, bool accepted, string? feedback = null, VerificationRecord? verification = null)
     {
+        var now = timeProvider.GetUtcNow();
         if (accepted)
-            persistentState.State.AcceptTask(taskId, feedback, verification);
+            persistentState.State.AcceptTask(taskId, feedback, verification, now);
         else
-            persistentState.State.RejectTask(taskId, feedback, verification);
+            persistentState.State.RejectTask(taskId, feedback, verification, now);
 
         await persistentState.WriteStateAsync();
 
