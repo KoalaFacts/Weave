@@ -1,4 +1,4 @@
-# Handoff — Capability Metrics + Storage Provider Split
+# Handoff — Capability Metrics + Provider Splits + Rule Codification
 
 > **Live state only.** The contract — principles, vocabulary table, roadmap — lives in [unique-agent-strategy.md](unique-agent-strategy.md). This file records the current shape of the system and what to pick up next.
 >
@@ -18,7 +18,7 @@ The capability vocabulary is 6 verbs, all enforced through one shared authorizer
 | `plugin:invoke:<plugin>` | yes | `CapabilityAuthorizer` from `src/Runtime/Weave.Silo/Plugins/PluginRegistry.cs` |
 | `marketplace:install` | not implemented — see Next work | — |
 
-Tests: 1861 total — 1852 passed, 9 skipped when Docker is unavailable. The 9 cover `PostgresCapabilityAuditStore` against a Testcontainers-managed Postgres; the fixture probes Docker by attempting to start the container and self-skips each test with the captured reason on Docker-less hosts.
+Tests: 1852 total — 1843 passed, 9 skipped when Docker is unavailable. The 9 cover `PostgresCapabilityAuditStore` against a Testcontainers-managed Postgres; the fixture probes Docker by attempting to start the container and self-skips each test with the captured reason on Docker-less hosts. (Down from 1861: removed 8 reflection-based `AddCqrs` tests when the dead helper was deleted; added 4 `MeterListener` tests when allow/deny metrics shipped, and dropped 1 redundant `[InlineData("postgres", ...)]` row when the alias was removed.)
 
 ### How a verb is wired today
 
@@ -76,6 +76,21 @@ These remain real gaps. None blocks the *Next work* items above.
 - **`ToolRegistryConnector` self-mints `[$"tool:{toolName}", "secret:*"]`** without consulting the agent's manifest. The connector is workspace-scoped (no `AgentDefinition` in scope), so the manifest-gate fix is less obvious. Likely shape: pass the requesting agent's capabilities through, or treat tool registration as a workspace-admin verb gated by a separate grant.
 - **`channel:send:*` requires both grants today** because `RouteInboundAsync` does both ingress and reply atomically. The double `Authorize` call now lives at the call site (lines 74–75 of ChannelGatewayActor) with distinct `actionContext` strings (`":receive"` / `":send"`), so the audit log distinguishes them. If a webhook adapter ever needs receive-only, split the actor surface.
 
+## Hygiene queue (surfaced during rule codification)
+
+Each item is a known violation of a rule in `docs/best-practices.md`, called out by the `check-rules` skill. None blocks the *Next work* items but each is a contained, mostly mechanical refactor. Run `/check-rules` to confirm the list is current before picking one up.
+
+- **Vertical-slice splits (highest leverage):**
+  - `Weave.Agents/{Actors,Commands,Queries,Events}/` → split into `{Agents,Channels,Memory,Proof,Skills,Tools,Users}/`. 36 files in `Actors/` alone mixing 7 unrelated capabilities; biggest single offender.
+  - `Weave.Tools/{Actors,Events}/` → fold into `Connectors/`, `Discovery/`, `Marketplace/` (which already model the right pattern).
+  - `Weave.Workspaces/{Actors,Commands,Queries,Events}/` → fold into existing `Workspaces/` and `Templates/` slices.
+  - `Weave.Dashboard/Services/` → `Api/` for `WeaveApiClient`; DTOs co-locate with the consuming Razor page.
+- **`TimeProvider` injection:** `Weave.Agents/Actors/AgentState.cs` (7 mutating writes), `Weave.Cli/Tui/ChatExitConfirmation.cs` (3 time-window checks), `Weave.Cli/Commands/Version/VersionService.cs` (cache TTL) — each calls `DateTimeOffset.UtcNow` directly in behavior-deciding logic and is therefore unfakable in tests.
+- **File size:** `Weave.Cli/Tui/TuiSlashCommandDispatcher.cs` (422 lines) is the only production file over the 200-line design-check threshold.
+- **AOT-unsafe JSON:** `Weave.Silo/Channels/{Teams,Discord}ChannelAdapter.cs` use anonymous types (`new { text = ... }`) in `JsonSerializer.SerializeToUtf8Bytes`, which fall back to runtime reflection. Fix shape: typed `record` payloads + `[JsonSerializable]` entries on a context.
+- **Catch-clause ceremony:** `Weave.Cli/Tui/ChatComposer.cs` lines 122/125/131 use `catch (Exception ex) when (ex is X or Y)` for single-type swallows — simpler `catch (X)` form is correct (and the same file uses it correctly on 147/153).
+- **Verbose XML doc summaries** worth eyeballing during related work: `CommandDispatcher.cs` (13 lines), `PluginServiceBroker.cs` (10), `AgentChatClientFactory.cs` (10). `CapabilityAuditSubscriberHostedService.cs` (14) earns its length — the `<remarks>` block documents a real startup-ordering hazard.
+
 ## Template to mirror
 
 For the next vocabulary entry (or any follow-up that touches the audit pipeline):
@@ -95,6 +110,9 @@ For the next vocabulary entry (or any follow-up that touches the audit pipeline)
 
 ## History
 
+- **2026-05-03** (`claude/continue-handoff-work-r25U1`) — rule codification + dead-code removal: shipped a `check-rules` skill at `.claude/skills/check-rules/SKILL.md` that walks 16 audit categories with concrete `grep`/`find` commands and a `BLOCK`/`WARN`/`NOTE` punch-list output. Proactively invoked before claiming any code task done and on PR review. Codified rules in `docs/best-practices.md` for: pre-1.0 no back-compat shims (drop `Legacy*` constants, dual config keys, deprecated synonyms — already actioned in this branch); refactor-as-no-op discipline; force-regen lockfiles after graph changes; vertical slices with named violators; file/class size thresholds; `TimeProvider` injection; catch-clause hygiene; static-helpers-vs-DI; comment discipline; source-gen over reflection; dead-code attention; meaningful tests over verify-nothing. Acted on the source-gen rule in the same commit by deleting the dead `ServiceCollectionExtensions.AddCqrs` (`[RequiresUnreferencedCode]`, zero production callers, only its own tests referenced it). Tests 1860 → 1852.
+- **2026-05-03** (`claude/continue-handoff-work-r25U1`) — `"postgres"` alias dropped: canonical is `"postgresql"`. Removed the `PostgresProvider`/`PostgresBackend` constants and 5 consumer switches that paired the alias with the canonical (`SiloBuilderConfigurator`, `SiloServiceRegistrar`, `CliSecretResolver`, `SiloProcessService`, `WorkspaceSiloStarter`). Tests 1861 → 1860 (removed redundant `[InlineData("postgres", ...)]` row).
+- **2026-05-03** (`claude/continue-handoff-work-r25U1`) — `Legacy*` config-key fallbacks dropped: `ActorStorageSettings`, `ContainerRuntimeSettings`, and `RuntimeSettings` no longer accept `Weave:Storage`/`Weave:StorageSchema`/`Weave:StorageDatabase`/`Weave:GrainStorage`/`Weave:Runtime:ContainerEngine`/`Orleans:ClusterId` shims. `SiloProcessService` (the only emitter) updated to use the modern `Weave:ActorStorage:{Provider,Schema,Database}` shape. Tests still 1861.
 - **2026-05-03** (`claude/continue-handoff-work-r25U1`) — Orleans clustering/persistence split: each backend now ships in its own project — `Weave.Silo.Clustering.Redis`, `Weave.Silo.Clustering.Sqlite`, `Weave.Silo.Clustering.SqlServer`, `Weave.Silo.Clustering.Postgres`. Each exposes a single `siloBuilder.AddXxxActorStorage(connectionString)` extension. `Weave.Silo.csproj` no longer directly references `Microsoft.Orleans.Persistence.{Redis,AdoNet}`, `Microsoft.Orleans.Clustering.{Redis,AdoNet}`, `Microsoft.Data.SqlClient`, `Npgsql`, or `Microsoft.Data.Sqlite` — they flow in via the 4 backend project refs. The default Silo build still bundles all backends (the `ConfigureActorStorage` switch in `SiloBuilderConfigurator` covers all 4 + memory), but anyone wanting a slim host can fork Weave.Silo, drop a backend ProjectReference, remove the matching switch case, and ship without those deps. Tests still 1861.
 - **2026-05-03** (`claude/continue-handoff-work-r25U1`) — storage-provider split: extracted `SqliteCapabilityAuditStore` into `Weave.Security.Sqlite` and `PostgresCapabilityAuditStore` into `Weave.Security.Postgres`. `Weave.Security.csproj` no longer pulls `Microsoft.Data.Sqlite` or `Npgsql` — anything that only needs the abstractions (`ICapabilityAuditStore`, `ICapabilityAuthorizer`, `ICapabilityTokenService`) gets a clean dependency graph. The Silo references both new projects directly (no plugin discovery — backends are wired by `CapabilityAudit:Backend` config). Namespaces: `Weave.Security.Sqlite` and `Weave.Security.Postgres`; `ICapabilityAuditStore` and `CapabilityAuditOptions` stay in `Weave.Security.Audit`. Tests still 1861.
 - **2026-05-03** (`claude/continue-handoff-work-r25U1`) — allow/deny metrics: `CapabilityAuthorizer` increments a `Counter<long>` named `weave.security.capability.authorizations` on every authorize call (allow or deny) tagged with `outcome` and, on deny, `reason` (one of `invalid-or-expired-token` / `workspace-mismatch` / `grant-missing`). Static `Meter` named `Weave.Security.Capability` is registered in `Weave.ServiceDefaults.Extensions.ConfigureOpenTelemetry` so the existing OTLP pipeline exports it. `MeterListener`-based unit tests verify both outcome paths and all three deny reasons. Tests 1857 → 1861.
