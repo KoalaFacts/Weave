@@ -1,0 +1,15 @@
+<Project Sdk="Microsoft.NET.Sdk">
+
+  <PropertyGroup>
+    <IsAotExcluded>true</IsAotExcluded>
+    <Description>Orleans ADO.NET clustering + grain storage on PostgreSQL for Weave.Silo. Reference this project from a Silo host to make `Weave:ActorStorage:Provider=postgresql` available.</Description>
+  </PropertyGroup>
+
+  <ItemGroup>
+    <PackageReference Include="Microsoft.Orleans.Server" />
+    <PackageReference Include="Microsoft.Orleans.Persistence.AdoNet" />
+    <PackageReference Include="Microsoft.Orleans.Clustering.AdoNet" />
+    <PackageReference Include="Npgsql" />
+  </ItemGroup>
+
+</Project>

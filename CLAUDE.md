@@ -48,6 +48,9 @@ src/
                           Microsoft.Data.Sqlite / Npgsql)
   Deployment/            Deployment publishers
   Runtime/               Orleans host (Silo), Aspire app host, and shared service defaults
+                         (Weave.Silo references Weave.Silo.Clustering.{Redis,Sqlite,
+                          SqlServer,Postgres} so each Orleans backend is its own
+                          opt-in dep — drop a project ref to ship a slim host)
   UX/                    Spectre.Console CLI and Blazor dashboard
 ```
 
