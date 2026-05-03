@@ -78,7 +78,7 @@ internal sealed class MarketplaceApiClient : IDisposable
             var response = await _httpClient.GetAsync("/health", cts.Token);
             return response.IsSuccessStatusCode;
         }
-        catch
+        catch (Exception ex) when (ex is HttpRequestException or TaskCanceledException or System.Net.Sockets.SocketException)
         {
             return false;
         }

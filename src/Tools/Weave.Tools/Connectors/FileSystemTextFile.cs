@@ -20,7 +20,7 @@ internal static class FileSystemTextFile
     {
         try
         { return !await IsBinaryFileAsync(fullPath, ct); }
-        catch
+        catch (Exception ex) when (ex is IOException or UnauthorizedAccessException)
         { return false; }
     }
 }

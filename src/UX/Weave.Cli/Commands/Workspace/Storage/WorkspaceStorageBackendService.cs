@@ -36,7 +36,7 @@ internal sealed class WorkspaceStorageBackendService(StorageBackendService? stor
             return connectionString.Contains($"Database={database}", StringComparison.OrdinalIgnoreCase)
                 || connectionString.Contains($"Initial Catalog={database}", StringComparison.OrdinalIgnoreCase);
         }
-        catch
+        catch (Exception ex) when (ex is SocketException or TaskCanceledException or IOException or ArgumentException or FormatException)
         {
             return false;
         }

@@ -48,7 +48,7 @@ public sealed class WeaveApiClient(HttpClient http)
         string body;
         try
         { body = await response.Content.ReadAsStringAsync(ct); }
-        catch { body = string.Empty; }
+        catch (Exception ex) when (ex is HttpRequestException or IOException or TaskCanceledException) { body = string.Empty; }
 
         var detail = string.IsNullOrWhiteSpace(body) ? "(no response body)" : body.Trim();
         throw new HttpRequestException(

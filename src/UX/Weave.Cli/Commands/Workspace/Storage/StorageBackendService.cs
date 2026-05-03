@@ -14,7 +14,7 @@ internal sealed class StorageBackendService
             var response = await http.GetAsync($"http://localhost:{port}/health", ct);
             return response.IsSuccessStatusCode;
         }
-        catch
+        catch (Exception ex) when (ex is HttpRequestException or TaskCanceledException or SocketException)
         {
             return false;
         }
@@ -41,7 +41,7 @@ internal sealed class StorageBackendService
             await tcp.ConnectAsync(host, port, cts.Token);
             return true;
         }
-        catch
+        catch (Exception ex) when (ex is SocketException or TaskCanceledException or IOException or ArgumentException or FormatException)
         {
             return false;
         }

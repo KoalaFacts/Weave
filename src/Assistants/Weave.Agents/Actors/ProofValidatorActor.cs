@@ -150,7 +150,7 @@ public sealed class ProofValidatorActor(
                 Detail = dto.Detail
             }).ToList();
         }
-        catch
+        catch (Exception ex) when (ex is JsonException or NotSupportedException)
         {
             return [];
         }

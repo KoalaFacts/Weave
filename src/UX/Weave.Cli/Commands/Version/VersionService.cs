@@ -47,7 +47,7 @@ internal static class VersionService
             var json = File.ReadAllText(cacheFilePath);
             return JsonSerializer.Deserialize(json, VersionJsonContext.Default.UpdateCache);
         }
-        catch
+        catch (Exception ex) when (ex is IOException or UnauthorizedAccessException or JsonException)
         {
             return null;
         }
@@ -141,7 +141,7 @@ internal static class VersionService
             var json = JsonSerializer.Serialize(cache, VersionJsonContext.Default.UpdateCache);
             File.WriteAllText(cacheFilePath, json);
         }
-        catch
+        catch (Exception ex) when (ex is IOException or UnauthorizedAccessException)
         {
             // best-effort cache writes must not break CLI startup
         }

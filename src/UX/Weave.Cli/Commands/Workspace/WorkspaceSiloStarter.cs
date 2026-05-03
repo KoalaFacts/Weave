@@ -110,7 +110,7 @@ internal static class WorkspaceSiloStarter
                     {
                         logWriter.WriteLine($"{DateTime.Now:HH:mm:ss} {prefix} {line}");
                     }
-                    catch
+                    catch (Exception ex) when (ex is IOException or ObjectDisposedException)
                     {
                         // writer may be disposed on exit
                     }
@@ -140,7 +140,7 @@ internal static class WorkspaceSiloStarter
                 if (response.IsSuccessStatusCode)
                     return new AutoStartResult(true, logPath, null);
             }
-            catch
+            catch (Exception ex) when (ex is HttpRequestException or TaskCanceledException or System.Net.Sockets.SocketException)
             {
                 // expected while the Silo is still warming up
             }

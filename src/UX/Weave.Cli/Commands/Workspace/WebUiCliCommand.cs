@@ -56,7 +56,7 @@ internal sealed class WebUiCliCommand : ICliCommand<WebUiOptions>
             var response = await http.GetAsync(url, HttpCompletionOption.ResponseHeadersRead, cancellationToken);
             return response.IsSuccessStatusCode || (int)response.StatusCode < 500;
         }
-        catch
+        catch (Exception ex) when (ex is HttpRequestException or TaskCanceledException or System.Net.Sockets.SocketException)
         {
             return false;
         }
@@ -84,7 +84,7 @@ internal sealed class WebUiCliCommand : ICliCommand<WebUiOptions>
                 return true;
             }
         }
-        catch
+        catch (Exception ex) when (ex is InvalidOperationException or System.ComponentModel.Win32Exception or IOException)
         {
             return false;
         }

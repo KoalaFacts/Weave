@@ -55,7 +55,7 @@ internal static class FileSystemToolInvoker
             var resolvedFile = Path.GetFullPath(file);
             try
             { FileSystemPathGuard.VerifyContainment(config.Root, resolvedFile); }
-            catch
+            catch (ArgumentException)
             { continue; }
 
             results.Add(Path.GetRelativePath(config.Root, resolvedFile));
@@ -109,7 +109,7 @@ internal static class FileSystemToolInvoker
             var resolvedFile = Path.GetFullPath(file);
             try
             { FileSystemPathGuard.VerifyContainment(config.Root, resolvedFile); }
-            catch
+            catch (ArgumentException)
             { continue; }
 
             if (!await FileSystemTextFile.CanReadAsTextAsync(resolvedFile, ct))
