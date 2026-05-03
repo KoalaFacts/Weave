@@ -16,8 +16,11 @@ namespace Weave.Security.Tests;
 /// Each test drops and re-creates the table so they don't bleed into each
 /// other; the container is shared across the class for speed.
 ///
-/// If Docker isn't available, every test self-skips with a clear reason
-/// rather than failing.
+/// Opt-in: skipped by default. Set
+/// <see cref="PostgresContainerFixture.OptInEnvironmentVariable"/> = 1
+/// before <c>dotnet test</c> to run the suite. Without the opt-in, or if
+/// Docker isn't available with the opt-in set, every test self-skips with
+/// a clear reason rather than failing.
 /// </summary>
 public sealed class PostgresCapabilityAuditStoreIntegrationTests : IClassFixture<PostgresContainerFixture>
 {
