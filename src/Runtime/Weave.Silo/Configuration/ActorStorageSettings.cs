@@ -9,7 +9,6 @@ public sealed class ActorStorageSettings
     public const string RedisProvider = "redis";
     public const string SqlServerProvider = "sqlserver";
     public const string PostgreSqlProvider = "postgresql";
-    public const string PostgresProvider = "postgres";
 
     public const string SqliteConnectionName = "Sqlite";
     public const string RedisConnectionName = "Redis";

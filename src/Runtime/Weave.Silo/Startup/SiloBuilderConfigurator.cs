@@ -90,7 +90,7 @@ internal sealed class SiloBuilderConfigurator
                     BuildSqlServerConnectionString(configuration, schema, database));
                 break;
 
-            case ActorStorageSettings.PostgreSqlProvider or ActorStorageSettings.PostgresProvider:
+            case ActorStorageSettings.PostgreSqlProvider:
                 siloBuilder.AddPostgresActorStorage(
                     BuildPostgresConnectionString(configuration, schema, database));
                 break;

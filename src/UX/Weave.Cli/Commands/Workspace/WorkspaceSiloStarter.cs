@@ -55,7 +55,7 @@ internal static class WorkspaceSiloStarter
             {
                 var connKey = config.Storage switch
                 {
-                    "postgresql" or "postgres" => "PostgreSql",
+                    "postgresql" => "PostgreSql",
                     "sqlserver" => "SqlServer",
                     "redis" => "Redis",
                     _ => "Default"

@@ -173,7 +173,7 @@ internal static class SiloProcessService
 
     private static string ConnectionName(string storageBackend) => storageBackend switch
     {
-        "postgresql" or "postgres" => "PostgreSql",
+        "postgresql" => "PostgreSql",
         "sqlserver" => "SqlServer",
         "redis" => "Redis",
         "sqlite" => "Sqlite",
