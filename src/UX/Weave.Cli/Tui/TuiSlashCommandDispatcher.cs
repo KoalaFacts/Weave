@@ -12,6 +12,7 @@ internal sealed class TuiSlashCommandDispatcher
     private readonly TuiWorkspaceOpener _workspaceOpener;
     private readonly TuiWorkspaceStarter _workspaceStarter;
     private readonly TuiWorkspaceWatcher _workspaceWatcher;
+    private readonly UpgradeCliCommand _upgradeCommand;
 
     public TuiSlashCommandDispatcher(
         TuiWorkspaceDashboard dashboard,
@@ -20,7 +21,8 @@ internal sealed class TuiSlashCommandDispatcher
         TuiAgentListView agentListView,
         TuiWorkspaceOpener workspaceOpener,
         TuiWorkspaceStarter workspaceStarter,
-        TuiWorkspaceWatcher workspaceWatcher)
+        TuiWorkspaceWatcher workspaceWatcher,
+        UpgradeCliCommand upgradeCommand)
     {
         _dashboard = dashboard;
         _chatSession = chatSession;
@@ -29,6 +31,7 @@ internal sealed class TuiSlashCommandDispatcher
         _workspaceOpener = workspaceOpener;
         _workspaceStarter = workspaceStarter;
         _workspaceWatcher = workspaceWatcher;
+        _upgradeCommand = upgradeCommand;
     }
 
     public async Task<TuiDispatchResult> DispatchAsync(
@@ -150,7 +153,7 @@ internal sealed class TuiSlashCommandDispatcher
 
             case "upgrade":
             case "update":
-                await new UpgradeCliCommand().ExecuteAsync(new NoCliOptions(), ct);
+                await _upgradeCommand.ExecuteAsync(new NoCliOptions(), ct);
                 return TuiDispatchResult.Continue;
 
             default:

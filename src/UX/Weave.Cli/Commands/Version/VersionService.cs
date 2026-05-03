@@ -3,7 +3,7 @@ using System.Text.Json;
 
 namespace Weave.Cli.Commands;
 
-internal static class VersionService
+internal sealed class VersionService(TimeProvider timeProvider)
 {
     public const string UpgradeCommand = "dotnet tool update --global Weave.Cli";
     private const string NuGetIndexUrl = "https://api.nuget.org/v3-flatcontainer/weave.cli/index.json";
@@ -63,7 +63,7 @@ internal static class VersionService
         return IsNewer(cache.LatestVersion, current) ? cache.LatestVersion : null;
     }
 
-    public static void KickOffRefreshIfStale(TimeProvider timeProvider)
+    public void KickOffRefreshIfStale()
     {
         if (!IsEnabled())
             return;
@@ -88,17 +88,16 @@ internal static class VersionService
         });
     }
 
-    public static async Task<UpdateCheckResult> CheckAsync(TimeProvider timeProvider, CancellationToken ct)
+    public async Task<UpdateCheckResult> CheckAsync(CancellationToken ct)
     {
         using var client = CreateNuGetClient();
-        return await CheckAsync(_cachePath, client, new Uri(NuGetIndexUrl), timeProvider, ct);
+        return await CheckAsync(_cachePath, client, new Uri(NuGetIndexUrl), ct);
     }
 
-    internal static async Task<UpdateCheckResult> CheckAsync(
+    internal async Task<UpdateCheckResult> CheckAsync(
         string cacheFilePath,
         HttpClient client,
         Uri indexUri,
-        TimeProvider timeProvider,
         CancellationToken ct)
     {
         var current = Current();
