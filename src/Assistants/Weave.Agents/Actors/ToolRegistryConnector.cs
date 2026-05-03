@@ -38,70 +38,44 @@ internal sealed class ToolRegistryConnector(
             Endpoint = ToolSpecMapper.ResolveEndpoint(definition)
         };
 
-        try
+        await lifecycleManager.RunHooksAsync(LifecyclePhase.ToolConnecting, context, CancellationToken.None);
+
+        var resolvedDefinition = await secretResolver.ResolveAsync(workspaceId, definition);
+        var toolSpec = ToolSpecMapper.FromDefinition(toolName, resolvedDefinition);
+        using var source = tokenService.MintLinked(new CapabilityTokenRequest
         {
-            await lifecycleManager.RunHooksAsync(LifecyclePhase.ToolConnecting, context, CancellationToken.None);
+            WorkspaceId = workspaceId,
+            IssuedTo = $"{workspaceId}/{toolName}",
+            Grants = [$"tool:{toolName}", "secret:*"],
+            Lifetime = TimeSpan.FromHours(1)
+        }, CancellationToken.None);
 
-            var resolvedDefinition = await secretResolver.ResolveAsync(workspaceId, definition);
-            var toolSpec = ToolSpecMapper.FromDefinition(toolName, resolvedDefinition);
-            using var source = tokenService.MintLinked(new CapabilityTokenRequest
-            {
-                WorkspaceId = workspaceId,
-                IssuedTo = $"{workspaceId}/{toolName}",
-                Grants = [$"tool:{toolName}", "secret:*"],
-                Lifetime = TimeSpan.FromHours(1)
-            }, CancellationToken.None);
+        var toolActor = actors.GetActor<IToolActor>(VirtualActorId.From($"{workspaceId}/{toolName}"));
+        await toolActor.ConnectAsync(toolSpec, source.Token);
 
-            var toolActor = actors.GetActor<IToolActor>(VirtualActorId.From($"{workspaceId}/{toolName}"));
-            await toolActor.ConnectAsync(toolSpec, source.Token);
-
-            persistentState.State.Connections[toolName] = new ToolConnection
-            {
-                ToolName = toolName,
-                ToolType = definition.Type,
-                Status = ToolConnectionStatus.Connected,
-                ConnectedAt = timeProvider.GetUtcNow(),
-                Endpoint = ToolSpecMapper.ResolveEndpoint(resolvedDefinition)
-            };
-
-            await lifecycleManager.RunHooksAsync(
-                LifecyclePhase.ToolConnected,
-                context with { Phase = LifecyclePhase.ToolConnected },
-                CancellationToken.None);
-
-            await eventBus.PublishAsync(new ToolConnectedEvent
-            {
-                SourceId = $"{workspaceId}/{toolName}",
-                ToolName = toolName,
-                WorkspaceId = WorkspaceId.From(workspaceId),
-                ToolType = definition.Type
-            }, CancellationToken.None);
-
-            await persistentState.WriteStateAsync();
-        }
-        catch (Exception ex) when (ex is InvalidOperationException or TimeoutException or IOException or HttpRequestException)
+        persistentState.State.Connections[toolName] = new ToolConnection
         {
-            persistentState.State.Connections[toolName] = new ToolConnection
-            {
-                ToolName = toolName,
-                ToolType = definition.Type,
-                Status = ToolConnectionStatus.Error,
-                Endpoint = ToolSpecMapper.ResolveEndpoint(definition),
-                ErrorMessage = ex.Message
-            };
+            ToolName = toolName,
+            ToolType = definition.Type,
+            Status = ToolConnectionStatus.Connected,
+            ConnectedAt = timeProvider.GetUtcNow(),
+            Endpoint = ToolSpecMapper.ResolveEndpoint(resolvedDefinition)
+        };
 
-            await eventBus.PublishAsync(new ToolErrorEvent
-            {
-                SourceId = $"{workspaceId}/{toolName}",
-                ToolName = toolName,
-                WorkspaceId = WorkspaceId.From(workspaceId),
-                ErrorMessage = ex.Message
-            }, CancellationToken.None);
+        await lifecycleManager.RunHooksAsync(
+            LifecyclePhase.ToolConnected,
+            context with { Phase = LifecyclePhase.ToolConnected },
+            CancellationToken.None);
 
-            logger.LogError(ex, "Failed to connect tool {ToolName}", toolName);
-            await persistentState.WriteStateAsync();
-            throw;
-        }
+        await eventBus.PublishAsync(new ToolConnectedEvent
+        {
+            SourceId = $"{workspaceId}/{toolName}",
+            ToolName = toolName,
+            WorkspaceId = WorkspaceId.From(workspaceId),
+            ToolType = definition.Type
+        }, CancellationToken.None);
+
+        await persistentState.WriteStateAsync();
     }
 
     public async Task DisconnectAllAsync(string workspaceId)

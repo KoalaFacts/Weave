@@ -1,10 +1,12 @@
 using Microsoft.Extensions.Logging;
+using Weave.Agents.Events;
 using Weave.Agents.Models;
 using Weave.Security.Tokens;
 using Weave.Shared.Events;
 using Weave.Shared.Ids;
 using Weave.Shared.Lifecycle;
 using Weave.Tools.Actors;
+using Weave.Tools.Mapping;
 using Weave.Workspaces.Models;
 
 namespace Weave.Agents.Actors;
@@ -51,10 +53,41 @@ public sealed class ToolRegistryActor(
         foreach (var (toolName, definition) in tools)
         {
             persistentState.State.Definitions[toolName] = definition;
-            await _connector.ConnectAsync(_workspaceId, toolName, definition);
+            await ConnectOneAsync(toolName, definition);
         }
 
         await persistentState.WriteStateAsync();
+    }
+
+    private async Task ConnectOneAsync(string toolName, ToolDefinition definition)
+    {
+        try
+        {
+            await ConnectOneAsync(toolName, definition);
+        }
+        catch (Exception ex) when (ex is InvalidOperationException or TimeoutException or IOException or HttpRequestException)
+        {
+            persistentState.State.Connections[toolName] = new ToolConnection
+            {
+                ToolName = toolName,
+                ToolType = definition.Type,
+                Status = ToolConnectionStatus.Error,
+                Endpoint = ToolSpecMapper.ResolveEndpoint(definition),
+                ErrorMessage = ex.Message
+            };
+
+            await eventBus.PublishAsync(new ToolErrorEvent
+            {
+                SourceId = $"{_workspaceId}/{toolName}",
+                ToolName = toolName,
+                WorkspaceId = WorkspaceId.From(_workspaceId),
+                ErrorMessage = ex.Message
+            }, CancellationToken.None);
+
+            logger.LogError(ex, "Failed to connect tool {ToolName}", toolName);
+            await persistentState.WriteStateAsync();
+            throw;
+        }
     }
 
     public async Task ConfigureAccessAsync(Dictionary<string, List<string>> agentToolAccess)
@@ -110,7 +143,7 @@ public sealed class ToolRegistryActor(
         if (!persistentState.State.Connections.TryGetValue(toolName, out var connection) ||
             connection.Status is not ToolConnectionStatus.Connected)
         {
-            await _connector.ConnectAsync(_workspaceId, toolName, definition);
+            await ConnectOneAsync(toolName, definition);
             connection = persistentState.State.Connections[toolName];
         }
 
@@ -118,7 +151,7 @@ public sealed class ToolRegistryActor(
         var toolActor = actors.GetActor<IToolActor>(VirtualActorId.From(actorKey));
         if (await toolActor.GetHandleAsync() is null)
         {
-            await _connector.ConnectAsync(_workspaceId, toolName, definition);
+            await ConnectOneAsync(toolName, definition);
         }
 
         var token = tokenService.Mint(new CapabilityTokenRequest

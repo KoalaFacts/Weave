@@ -55,7 +55,15 @@ public sealed class AgentActor(
             return persistentState.State;
 
         EnsureIdentity(persistentState.State, _key, workspaceId);
-        return await _lifecycle.ActivateAsync(workspaceId, definition);
+        try
+        {
+            return await _lifecycle.ActivateAsync(workspaceId, definition);
+        }
+        catch (Exception ex) when (ex is InvalidOperationException or TimeoutException or IOException or HttpRequestException)
+        {
+            await MarkErrorAndPublishAsync(ex, workspaceId);
+            throw;
+        }
     }
 
     public async Task DeactivateAsync()
@@ -63,7 +71,38 @@ public sealed class AgentActor(
         if (persistentState.State.Status is AgentStatus.Idle or AgentStatus.Deactivating)
             return;
 
-        await _lifecycle.DeactivateAsync();
+        try
+        {
+            await _lifecycle.DeactivateAsync();
+        }
+        catch (Exception ex) when (ex is InvalidOperationException or TimeoutException or IOException or HttpRequestException)
+        {
+            await MarkErrorStateAsync(ex);
+            logger.LogError(ex, "Failed to deactivate agent {AgentName}", persistentState.State.AgentName);
+            throw;
+        }
+    }
+
+    private async Task MarkErrorAndPublishAsync(Exception ex, WorkspaceId workspaceId)
+    {
+        await MarkErrorStateAsync(ex);
+
+        await eventBus.PublishAsync(new AgentErrorEvent
+        {
+            SourceId = persistentState.State.AgentId,
+            AgentName = persistentState.State.AgentName,
+            WorkspaceId = workspaceId,
+            ErrorMessage = ex.Message
+        }, CancellationToken.None);
+
+        logger.LogError(ex, "Failed to activate agent {AgentName}", persistentState.State.AgentName);
+    }
+
+    private async Task MarkErrorStateAsync(Exception ex)
+    {
+        persistentState.State.Status = AgentStatus.Error;
+        persistentState.State.ErrorMessage = ex.Message;
+        await persistentState.WriteStateAsync();
     }
 
     public Task<AgentState> GetStateAsync() => Task.FromResult(persistentState.State);
