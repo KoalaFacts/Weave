@@ -1,6 +1,6 @@
 using Microsoft.AspNetCore.Components;
 using Microsoft.FluentUI.AspNetCore.Components;
-using Weave.Dashboard.Services;
+using Weave.Dashboard.Api;
 
 namespace Weave.Dashboard.Pages;
 

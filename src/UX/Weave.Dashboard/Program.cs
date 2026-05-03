@@ -1,6 +1,6 @@
 using Microsoft.FluentUI.AspNetCore.Components;
 using Weave.Dashboard.Components;
-using Weave.Dashboard.Services;
+using Weave.Dashboard.Api;
 using Weave.ServiceDefaults;
 
 var builder = WebApplication.CreateBuilder(args);

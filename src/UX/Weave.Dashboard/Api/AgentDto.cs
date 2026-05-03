@@ -1,4 +1,4 @@
-namespace Weave.Dashboard.Services;
+namespace Weave.Dashboard.Api;
 
 public sealed record AgentDto
 {
