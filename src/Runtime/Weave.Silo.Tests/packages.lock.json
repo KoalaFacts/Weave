@@ -1077,6 +1077,7 @@
           "Microsoft.Data.Sqlite": "[10.0.7, )",
           "Microsoft.Extensions.Logging.Abstractions": "[10.0.7, )",
           "Microsoft.Extensions.Options": "[10.0.7, )",
+          "Npgsql": "[10.0.2, )",
           "Weave.Shared": "[1.0.0, )"
         }
       },

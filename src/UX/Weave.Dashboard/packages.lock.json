@@ -370,6 +370,7 @@
         "type": "Project",
         "dependencies": {
           "Microsoft.Data.Sqlite": "[10.0.7, )",
+          "Npgsql": "[10.0.2, )",
           "Weave.Shared": "[1.0.0, )"
         }
       },
@@ -468,6 +469,12 @@
           "System.IO.Hashing": "10.0.3",
           "System.Memory.Data": "10.0.3"
         }
+      },
+      "Npgsql": {
+        "type": "CentralTransitive",
+        "requested": "[10.0.2, )",
+        "resolved": "10.0.2",
+        "contentHash": "q5RfBI+wywJSFUNDE1L4ZbHEHCFTblo8Uf6A6oe4feOUFYiUQXyAf9GBh5qEZpvJaHiEbpBPkQumjEhXCJxdrg=="
       },
       "OpenTelemetry.Exporter.OpenTelemetryProtocol": {
         "type": "CentralTransitive",

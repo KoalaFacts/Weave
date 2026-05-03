@@ -6,6 +6,8 @@ public sealed class CapabilityAuditOptions
 
     public const string MemoryBackend = "memory";
     public const string SqliteBackend = "sqlite";
+    public const string PostgreSqlBackend = "postgresql";
+    public const string PostgresBackend = "postgres";
 
     /// <summary>
     /// Maximum number of events held by the audit store. When exceeded the
@@ -15,18 +17,19 @@ public sealed class CapabilityAuditOptions
     public int Capacity { get; init; } = 10_000;
 
     /// <summary>
-    /// Selects the <see cref="ICapabilityAuditStore"/> implementation. One of
-    /// <c>"memory"</c> (default — in-process, evicts on silo restart) or
-    /// <c>"sqlite"</c> (persists to a SQLite file under <c>~/.weave/</c>;
-    /// connection string overridable via <see cref="ConnectionString"/>).
+    /// Selects the <see cref="ICapabilityAuditStore"/> implementation. One of:
+    /// <c>"memory"</c> (default — in-process, evicts on silo restart);
+    /// <c>"sqlite"</c> (persists to a SQLite file under <c>~/.weave/</c>; single-silo);
+    /// <c>"postgresql"</c> / <c>"postgres"</c> (shared backend for multi-silo
+    /// deployments; <see cref="ConnectionString"/> required).
     /// </summary>
     public string Backend { get; init; } = MemoryBackend;
 
     /// <summary>
-    /// Optional connection string for backends that need one. Today only
-    /// <c>"sqlite"</c> uses it; if blank, a default file under
-    /// <c>~/.weave/audit.db</c> is used. Set to <c>"Data Source=:memory:"</c>
-    /// for ephemeral in-process SQLite (tests).
+    /// Connection string for backends that need one. Required for
+    /// <c>"postgresql"</c>. Optional for <c>"sqlite"</c> (defaults to
+    /// <c>~/.weave/audit.db</c>; set to <c>"Data Source=:memory:"</c> for
+    /// ephemeral in-process SQLite). Ignored for <c>"memory"</c>.
     /// </summary>
     public string? ConnectionString { get; init; }
 }

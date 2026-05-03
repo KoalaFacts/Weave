@@ -102,6 +102,9 @@ internal sealed class SiloServiceRegistrar
             case CapabilityAuditOptions.SqliteBackend:
                 _services.AddSingleton<ICapabilityAuditStore, SqliteCapabilityAuditStore>();
                 break;
+            case CapabilityAuditOptions.PostgreSqlBackend or CapabilityAuditOptions.PostgresBackend:
+                _services.AddSingleton<ICapabilityAuditStore, PostgresCapabilityAuditStore>();
+                break;
             default:
                 _services.AddSingleton<ICapabilityAuditStore, InMemoryCapabilityAuditStore>();
                 break;
