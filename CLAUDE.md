@@ -32,6 +32,7 @@ The solution uses central package management through `Directory.Packages.props`.
 - Do not use `FluentAssertions`. Tests use `Shouldly`.
 - **Pre-1.0: no backward-compat shims.** No `Legacy*` constants, no dual config keys, no deprecated synonyms, no fallback reads. When a contract changes, change the call sites. See [docs/best-practices.md → Versioning and breaking changes](docs/best-practices.md).
 - **One opt-in project per storage/transport provider.** Abstractions projects pull zero provider packages; impls live in `Weave.X.{Sqlite,Postgres,Redis,...}` siblings. Same doc.
+- **Run the `check-rules` skill before claiming a code task is done, and when reviewing a diff/PR.** It walks the catalog in `docs/best-practices.md` and reports a punch list. Defined in `.claude/skills/check-rules/SKILL.md`.
 
 ## Project Layout
 
