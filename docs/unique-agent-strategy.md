@@ -101,14 +101,13 @@ The grant strings in `CapabilityToken.Grants` are the runtime's user interface f
 | `tool:<name>` | Connector invoke and connect | Today |
 | `tool:*` | Any tool | Today |
 | `secret:<path>` | Secret proxy resolve | Today (see [security.md:155-171](security.md)) |
-| `channel:send:<channel>` | Outbound channel message | Direction |
-| `channel:receive:<channel>` | Webhook ingress for a channel | Direction |
+| `channel:send:<channel>` / `channel:receive:<channel>` | Channel routing (inbound + reply) | Today (enforced at [ChannelGatewayActor.cs](../src/Assistants/Weave.Agents/Actors/ChannelGatewayActor.cs)) |
 | `skill:write` / `skill:read` | Skill-memory persistence | Today (enforced at [SkillMemoryActor.cs](../src/Assistants/Weave.Agents/Actors/SkillMemoryActor.cs)) |
 | `user:read:<userId>` / `user:write:<userId>` | User-profile access | Direction |
 | `plugin:invoke:<plugin>` | Hot-swap plugin call (Dapr, Vault, webhook) | Direction |
 | `marketplace:install` | Installing a marketplace item | Direction |
 
-Wildcards work the same way at every level (`channel:send:*`, `user:*:alice`). Adding a new action class is a vocabulary entry, not a new permission system.
+Trailing-segment wildcards (`tool:*`, `channel:send:*`, `*`) match through one shared predicate in [`CapabilityGrants`](../src/Security/Weave.Security/Tokens/CapabilityGrants.cs); validation, workspace match, grant check, and deny-logging route through one [`CapabilityAuthorizer`](../src/Security/Weave.Security/Tokens/CapabilityAuthorizer.cs). Mid-segment patterns like `user:*:alice` are still ahead of us.
 
 ## Decision rules for PR review
 

@@ -35,12 +35,16 @@ public sealed class AgentActorTests
         return persistentState;
     }
 
-    private static AgentDefinition CreateDefinition(string model = "claude-sonnet-4-20250514", int maxTasks = 2) =>
+    private static AgentDefinition CreateDefinition(
+        string model = "claude-sonnet-4-20250514",
+        int maxTasks = 2,
+        List<string>? capabilities = null) =>
         new()
         {
             Model = model,
             MaxConcurrentTasks = maxTasks,
-            Tools = ["code-search", "shell"]
+            Tools = ["code-search", "shell"],
+            Capabilities = capabilities ?? ["skill:read", "skill:write"]
         };
 
     private static CapabilityTokenService CreateTokenService() =>
@@ -707,6 +711,27 @@ public sealed class AgentActorTests
         await actor.CompleteTaskAsync(task.TaskId, success: true, proof);
 
         await actor.ReviewTaskAsync(task.TaskId, accepted: false, "Needs more work");
+
+        await skillMemory.DidNotReceive().SuggestSkillAsync(Arg.Any<SkillDocument>(), Arg.Any<CapabilityToken>(), Arg.Any<string?>());
+    }
+
+    [Fact]
+    public async Task ReviewTaskAsync_Accepted_WithoutSkillWriteCapability_SkipsSuggestion()
+    {
+        var (actor, _, _, skillMemory) = CreateActor();
+        await actor.ActivateAgentAsync(TestWorkspaceId, CreateDefinition(capabilities: ["tool:*"]));
+        var task = await actor.SubmitTaskAsync("Deploy a service");
+        var proof = new ProofOfWork
+        {
+            Items =
+            [
+                new ProofItem { Type = ProofType.CiStatus, Label = "CI", Value = "passed" },
+                new ProofItem { Type = ProofType.DiffSummary, Label = "Diff", Value = "+50 -10" }
+            ]
+        };
+        await actor.CompleteTaskAsync(task.TaskId, success: true, proof);
+
+        await actor.ReviewTaskAsync(task.TaskId, accepted: true);
 
         await skillMemory.DidNotReceive().SuggestSkillAsync(Arg.Any<SkillDocument>(), Arg.Any<CapabilityToken>(), Arg.Any<string?>());
     }

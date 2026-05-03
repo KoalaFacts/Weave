@@ -6,44 +6,52 @@
 
 ## Last session (2026-05-03)
 
-**Shipped: `skill:read` / `skill:write`** — first verb of [unique-agent-strategy.md §"Roadmap implications"](unique-agent-strategy.md#roadmap-implications) item #1.
+**Shipped: `channel:send` / `channel:receive`** — second verb of [unique-agent-strategy.md §"Roadmap implications"](unique-agent-strategy.md#roadmap-implications) item #1. Plus the four PR #40 follow-ups, lifted before the vocabulary expanded further.
 
-- PR: [#40](https://github.com/KoalaFacts/Weave/pull/40) — branch `claude/review-agent-strategy-qwb2x`, head `6ac7528`
-- CI: all 10 checks green
-- Tests: 1766 passed, 0 failed
-- Coverage: 100% on every PR-touched file (682 / 682 lines)
-- Strategy doc: `skill:write` / `skill:read` row moved Direction → Today; `SkillMemoryActor.cs` cited
+- Branch `claude/continue-agent-strategy-yS2Z1`
+- Tests: 1778 passed, 0 failed (was 1766 — 12 new tests)
+- Strategy doc: `channel:send` / `channel:receive` row moved Direction → Today; `ChannelGatewayActor.cs` cited; wildcard rule grounded in `CapabilityGrants` and `CapabilityAuthorizer`
+
+### Cross-cutting follow-ups (lifted in this session)
+
+1. **Cross-workspace token check** — added in `CapabilityAuthorizer.Authorize`; covered by tests in `SkillMemoryActorTests`, `ToolActorTests`, `ChannelGatewayActorTests`. `SkillMemoryActor` now also bootstraps state.WorkspaceId from the grain key (`OnActivatedAsync`); `SkillMemoryActorGrain` wired to call it.
+2. **Manifest-derived grants** — `AgentSkillSuggester` and `SkillMemoryPromptEnricher` now consult `state.Definition?.Capabilities` (via `CapabilityGrants.Matches`) before minting; covered by `ReviewTaskAsync_Accepted_WithoutSkillWriteCapability_SkipsSuggestion` and `ExecuteAsync_WithoutSkillReadCapability_SkipsSkillEnrichment`.
+3. **Denial-path logging** — every deny path emits a `LogWarning` from one place (`CapabilityAuthorizer`).
+4. **`AgentSkillSuggester` null-forgiving** — removed; `ExtractFromTask`'s null contract is the only precondition now.
+
+### De-duplication
+
+The follow-up work surfaced three separate copies of the same Authorize logic and two copies of wildcard-walking. Both consolidated:
+
+- One predicate: `CapabilityGrants.Matches(grants, requested)` — used by both `CapabilityToken.HasGrant` and the manifest check. `tool:*`, `channel:send:*`, and `*` all match through it.
+- One authorizer: `CapabilityAuthorizer.Authorize(...)` — validate, workspace-match, grant-check, log-deny, throw. Called by `SkillMemoryActor`, `ChannelGatewayActor`, `ToolActor`. `ToolActor` lost its three per-instance LoggerMessage helpers and the explicit `tool:*` second-check (now handled by `HasGrant`).
 
 ## Next work
 
 Pick the next verb from the [vocabulary table](unique-agent-strategy.md#capability-vocabulary). Recommended order (cheapest first):
 
-1. **`channel:send` / `channel:receive`** — `ChannelGatewayActor` + channel webhooks. Same shape as `skill:*`. Bounded scope (5 channels).
-2. **`user:read:<userId>` / `user:write:<userId>`** — `UserModelActor`. Decision needed on `user:*:alice` pattern matching (the strategy doc already promises it works).
-3. **`plugin:invoke:<plugin>`** — `DaprToolConnector`, `VaultSecretProvider`, future webhook plugins. Lower priority (not LLM-reachable).
-4. **`marketplace:install`** — when the install path materializes.
+1. **`user:read:<userId>` / `user:write:<userId>`** — `UserModelActor`. The `user:*:alice` mid-segment wildcard is still unimplemented; `CapabilityGrants.Matches` only handles trailing wildcards. Decision: extend `CapabilityGrants` or scope the user verb to trailing wildcards only.
+2. **`plugin:invoke:<plugin>`** — `DaprToolConnector`, `VaultSecretProvider`, future webhook plugins. Lower priority (not LLM-reachable).
+3. **`marketplace:install`** — when the install path materializes.
 
-**Branch off `main`** for the next verb. Don't reuse `claude/review-agent-strategy-qwb2x` (that's PR #40).
+**Branch off `main`** for the next verb.
 
-## Cross-cutting follow-ups (apply to every existing verb)
+## Cross-cutting follow-ups still open
 
-Surfaced by PR #40's review. Lift these before the vocabulary expands further — they compound with each new verb.
-
-1. **Cross-workspace token check.** `Authorize` validates signature + grant but doesn't verify `token.WorkspaceId` matches the actor's workspace. A valid token for workspace A authorizes actions on B's actor today. Same gap in `ToolActor.cs:34-41`. One-line fix in both.
-2. **Manifest-derived grants.** `AgentSkillSuggester` and `SkillMemoryPromptEnricher` mint tokens with hard-coded grants. The strategy doc's principle 3 says the manifest is the source of truth — runtime mints regardless. `ToolRegistryConnector` has the same pattern. Fix: route through `AgentDefinition.Capabilities` before minting.
-3. **Denial-path logging.** `Authorize` throws but doesn't log. Strategy doc principle 2 mandates audit emission on every deny. Until item #2 of the roadmap (full audit log) lands, a `LogWarning(...)` per deny path makes operations visible.
-4. **`AgentSkillSuggester` null-forgiving operator.** `var skill = AgentSkillExtractor.ExtractFromTask(task, state)!;` couples to the caller's precondition implicitly. Either tighten `ExtractFromTask` to return non-null, or add a one-line comment naming the contract.
+- **`ToolRegistryConnector` self-mints `[$"tool:{toolName}", "secret:*"]`** without consulting the agent's manifest. The connector is workspace-scoped (no `AgentDefinition` in scope), so the routing-through-capabilities fix is less obvious here than it was for the per-agent sites. Likely fix: pass the requesting agent's capabilities through, or treat tool registration as a workspace-admin verb gated by a separate grant.
+- **`channel:send:*` semantics today require a token to hold both `channel:receive:<id>` and `channel:send:<id>`** because `RouteInboundAsync` does both ingress and reply atomically. If a webhook adapter ever needs receive-only (forward to a queue, no reply), the actor surface must split.
 
 ## Template to mirror
 
 For the next verb, copy the shape of:
-- **Actor + grant check**: `src/Assistants/Weave.Agents/Actors/SkillMemoryActor.cs` (`Authorize` helper)
-- **Per-request token mint at API**: `src/Runtime/Weave.Silo/Api/SkillTokenFactory.cs`
-- **CQRS record carrying token**: `src/Assistants/Weave.Agents/Commands/StoreSkillCommand.cs`
-- **Internal mint at runtime call site**: `src/Assistants/Weave.Agents/Actors/AgentSkillSuggester.cs`
-- **Capability tests**: the four `_WithoutXGrant_Throws` / `_WithExpiredToken_Throws` / `_WithWildcardGrant_Allowed` cases in `src/Assistants/Weave.Agents.Tests/SkillMemoryActorTests.cs`
+- **Actor + grant check via `CapabilityAuthorizer`**: `src/Assistants/Weave.Agents/Actors/ChannelGatewayActor.cs` (`Authorize` helper is one line)
+- **Per-request token mint at API**: `src/Runtime/Weave.Silo/Api/ChannelTokenFactory.cs` (mirrors `SkillTokenFactory`)
+- **CQRS record carrying token**: `src/Assistants/Weave.Agents/Commands/RouteInboundMessageCommand.cs`
+- **Internal mint at runtime call site (with manifest gate)**: `src/Assistants/Weave.Agents/Actors/AgentSkillSuggester.cs`
+- **Capability tests**: the six `_Without*Grant_Throws` / `_WithExpiredToken_Throws` / `_WithCrossWorkspaceToken_Throws` / `_WithReceiveSendWildcardGrants_Allowed` / `_WithChannelSpecificGrants_AllowsOnlyMatchingChannel` cases in `src/Assistants/Weave.Agents.Tests/ChannelGatewayActorTests.cs`
 
 ## History
 
+- **2026-05-03** — `channel:send` / `channel:receive` shipped + four PR #40 follow-ups + helper consolidation
 - **2026-05-03** — `skill:read` / `skill:write` shipped (PR #40)
 - **2026-05-03** — Strategy doc + best-practices audit (PR #39)

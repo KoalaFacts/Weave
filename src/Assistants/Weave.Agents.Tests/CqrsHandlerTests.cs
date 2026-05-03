@@ -112,7 +112,7 @@ public sealed class CqrsHandlerTests
         var gateway = Substitute.For<IChannelGatewayActor>();
         var outbound = new OutboundMessage { ChannelId = ChannelId.New(), Content = "response" };
         factory.GetActor<IChannelGatewayActor>(Arg.Any<VirtualActorId>()).Returns(gateway);
-        gateway.RouteInboundAsync(Arg.Any<InboundMessage>()).Returns(outbound);
+        gateway.RouteInboundAsync(Arg.Any<InboundMessage>(), Arg.Any<CapabilityToken>()).Returns(outbound);
 
         var handler = new RouteInboundMessageHandler(factory);
         var result = await handler.HandleAsync(
@@ -123,7 +123,7 @@ public sealed class CqrsHandlerTests
                 SenderId = "u1",
                 SenderName = "alice",
                 Content = "hi"
-            }),
+            }, StubToken),
             TestContext.Current.CancellationToken);
 
         result.ShouldBe(outbound);

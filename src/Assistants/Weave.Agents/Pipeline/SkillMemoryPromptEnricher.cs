@@ -11,16 +11,16 @@ internal sealed class SkillMemoryPromptEnricher(
     ICapabilityTokenService tokenService,
     ILogger logger)
 {
-    public async Task<SkillMemoryEnrichment> EnrichAsync(
-        WorkspaceId workspaceId,
-        string agentName,
-        string messageContent,
-        string? prompt)
+    public async Task<SkillMemoryEnrichment> EnrichAsync(AgentState state, string messageContent, string? prompt)
     {
+        var manifestCapabilities = state.Definition?.Capabilities;
+        if (manifestCapabilities is null || !CapabilityGrants.Matches(manifestCapabilities, "skill:read"))
+            return new SkillMemoryEnrichment(prompt, []);
+
         try
         {
-            var skillActor = actors.GetActor<ISkillMemoryActor>(VirtualActorId.From(workspaceId.ToString()));
-            var token = MintToken(workspaceId, agentName, "skill:read");
+            var skillActor = actors.GetActor<ISkillMemoryActor>(VirtualActorId.From(state.WorkspaceId.ToString()));
+            var token = MintToken(state.WorkspaceId, state.AgentName, "skill:read");
             var results = await skillActor.SearchAsync(
                 messageContent,
                 token,
@@ -42,29 +42,30 @@ internal sealed class SkillMemoryPromptEnricher(
         }
         catch (Exception ex)
         {
-            logger.LogWarning(ex, "Failed to retrieve skills for agent {AgentName}", agentName);
+            logger.LogWarning(ex, "Failed to retrieve skills for agent {AgentName}", state.AgentName);
             return new SkillMemoryEnrichment(prompt, []);
         }
     }
 
-    public async Task RecordSuccessfulUsageAsync(
-        WorkspaceId workspaceId,
-        string agentName,
-        IReadOnlyList<SkillId> skillIds)
+    public async Task RecordSuccessfulUsageAsync(AgentState state, IReadOnlyList<SkillId> skillIds)
     {
         if (skillIds.Count == 0)
             return;
 
+        var manifestCapabilities = state.Definition?.Capabilities;
+        if (manifestCapabilities is null || !CapabilityGrants.Matches(manifestCapabilities, "skill:write"))
+            return;
+
         try
         {
-            var skillActor = actors.GetActor<ISkillMemoryActor>(VirtualActorId.From(workspaceId.ToString()));
-            var token = MintToken(workspaceId, agentName, "skill:write");
+            var skillActor = actors.GetActor<ISkillMemoryActor>(VirtualActorId.From(state.WorkspaceId.ToString()));
+            var token = MintToken(state.WorkspaceId, state.AgentName, "skill:write");
             foreach (var skillId in skillIds)
                 await skillActor.RecordUsageAsync(skillId, success: true, token);
         }
         catch (Exception ex)
         {
-            logger.LogWarning(ex, "Failed to record skill memory usage for agent {AgentName}", agentName);
+            logger.LogWarning(ex, "Failed to record skill memory usage for agent {AgentName}", state.AgentName);
         }
     }
 

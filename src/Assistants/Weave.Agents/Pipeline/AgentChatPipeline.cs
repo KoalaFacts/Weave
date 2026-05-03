@@ -46,7 +46,7 @@ public sealed class AgentChatPipeline(
 
         var prompt = await GetSystemPromptAsync(state);
         prompt = await EnrichWithUserContextAsync(state, message, prompt);
-        var skillMemory = await _skillMemory.EnrichAsync(state.WorkspaceId, state.AgentName, message.Content, prompt);
+        var skillMemory = await _skillMemory.EnrichAsync(state, message.Content, prompt);
         prompt = skillMemory.Prompt;
         var episodicMemory = await _episodicMemory.EnrichAsync(state.WorkspaceId, state.AgentName, message.Content, prompt);
         prompt = episodicMemory.Prompt;
@@ -86,7 +86,7 @@ public sealed class AgentChatPipeline(
         }
 
         state.LastActive = timeProvider.GetUtcNow();
-        await _skillMemory.RecordSuccessfulUsageAsync(state.WorkspaceId, state.AgentName, skillMemory.SkillIds);
+        await _skillMemory.RecordSuccessfulUsageAsync(state, skillMemory.SkillIds);
         await _episodicMemory.RecordRecallAsync(state.WorkspaceId, state.AgentName, episodicMemory.EpisodeIds);
 
         return new AgentChatResponse

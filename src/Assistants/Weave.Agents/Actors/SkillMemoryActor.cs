@@ -17,6 +17,17 @@ public sealed class SkillMemoryActor(
     private const string SkillRead = "skill:read";
     private const string SkillWrite = "skill:write";
 
+    public async Task OnActivatedAsync(string? key, CancellationToken cancellationToken)
+    {
+        await persistentState.ReadStateAsync(cancellationToken);
+
+        if (string.IsNullOrWhiteSpace(persistentState.State.WorkspaceId) && !string.IsNullOrWhiteSpace(key))
+        {
+            persistentState.State.WorkspaceId = key;
+            await persistentState.WriteStateAsync(cancellationToken);
+        }
+    }
+
     public async Task<SkillDocument> StoreSkillAsync(SkillDocument skill, CapabilityToken token)
     {
         Authorize(token, SkillWrite);
@@ -196,14 +207,8 @@ public sealed class SkillMemoryActor(
         }
     }
 
-    private void Authorize(CapabilityToken token, string grant)
-    {
-        if (!tokenService.Validate(token))
-            throw new UnauthorizedAccessException("Invalid or expired capability token");
-
-        if (!token.HasGrant(grant))
-            throw new UnauthorizedAccessException($"Token does not grant '{grant}'");
-    }
+    private void Authorize(CapabilityToken token, string grant) =>
+        CapabilityAuthorizer.Authorize(tokenService, token, persistentState.State.WorkspaceId, grant, logger, "Skill");
 
     private Task PublishSkillCreatedAsync(SkillDocument skill, string key) =>
         eventBus.PublishAsync(new SkillCreatedEvent

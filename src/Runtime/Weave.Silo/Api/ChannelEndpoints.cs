@@ -1,6 +1,7 @@
 using Weave.Agents.Commands;
 using Weave.Agents.Models;
 using Weave.Agents.Queries;
+using Weave.Security.Tokens;
 using Weave.Shared.Cqrs;
 using Weave.Shared.Ids;
 
@@ -83,6 +84,7 @@ public static class ChannelEndpoints
         string workspaceId,
         InboundMessageRequest request,
         ICommandDispatcher dispatcher,
+        ICapabilityTokenService tokenService,
         CancellationToken ct)
     {
         var errors = ValidateInboundMessage(request);
@@ -100,7 +102,10 @@ public static class ChannelEndpoints
             Metadata = request.Metadata ?? []
         };
 
-        var command = new RouteInboundMessageCommand(WorkspaceId.From(workspaceId), message);
+        var command = new RouteInboundMessageCommand(
+            WorkspaceId.From(workspaceId),
+            message,
+            ChannelTokenFactory.MintInbound(tokenService, workspaceId, request.ChannelId));
         var outbound = await dispatcher.DispatchAsync<RouteInboundMessageCommand, OutboundMessage>(command, ct);
         return Results.Ok(OutboundMessageResponse.FromMessage(outbound));
     }

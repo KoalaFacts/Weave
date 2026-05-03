@@ -43,14 +43,28 @@ public sealed class CapabilityTokenTests
     }
 
     [Fact]
-    public void HasGrant_PartialWildcard_DoesNotMatch()
+    public void HasGrant_PrefixWildcard_MatchesScopedGrants()
     {
-        // "tool:*" is NOT a wildcard match (only "*" is)
         var token = new CapabilityToken { Grants = ["tool:*"] };
 
-        // "tool:*" literally matches "tool:*"
         token.HasGrant("tool:*").ShouldBeTrue();
-        // but does NOT match "tool:my-tool" (no wildcard expansion)
+        token.HasGrant("tool:my-tool").ShouldBeTrue();
+    }
+
+    [Fact]
+    public void HasGrant_NestedPrefixWildcard_MatchesDeeperScopes()
+    {
+        var token = new CapabilityToken { Grants = ["channel:send:*"] };
+
+        token.HasGrant("channel:send:slack-1").ShouldBeTrue();
+        token.HasGrant("channel:receive:slack-1").ShouldBeFalse();
+    }
+
+    [Fact]
+    public void HasGrant_DifferentPrefix_DoesNotMatch()
+    {
+        var token = new CapabilityToken { Grants = ["channel:send:*"] };
+
         token.HasGrant("tool:my-tool").ShouldBeFalse();
     }
 

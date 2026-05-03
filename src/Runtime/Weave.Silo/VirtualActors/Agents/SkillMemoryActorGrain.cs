@@ -21,6 +21,9 @@ public sealed class SkillMemoryActorGrain : Grain, ISkillMemoryActorGrain
             new OrleansActorState<SkillMemoryState>(state));
     }
 
+    public override Task OnActivateAsync(CancellationToken cancellationToken) =>
+        _actor.OnActivatedAsync(this.GetPrimaryKeyString(), cancellationToken);
+
     public Task<SkillDocument> StoreSkillAsync(SkillDocument skill, CapabilityToken token) =>
         _actor.StoreSkillAsync(skill, token);
     public Task<SkillSuggestion> SuggestSkillAsync(SkillDocument skill, CapabilityToken token, string? sourceTaskId = null) =>

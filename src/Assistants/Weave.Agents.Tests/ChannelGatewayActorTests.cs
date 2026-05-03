@@ -1,7 +1,9 @@
 using Microsoft.Extensions.Logging.Abstractions;
+using Microsoft.Extensions.Options;
 using Weave.Agents.Actors;
 using Weave.Agents.Events;
 using Weave.Agents.Models;
+using Weave.Security.Tokens;
 using Weave.Shared.Events;
 using Weave.Shared.Ids;
 
@@ -28,6 +30,23 @@ public sealed class ChannelGatewayActorTests
         return persistentState;
     }
 
+    private static CapabilityTokenService CreateTokenService() =>
+        new(
+            Options.Create(new CapabilityTokenOptions { SigningKey = "test-signing-key-that-is-at-least-32-chars-long" }),
+            TimeProvider.System);
+
+    private static CapabilityToken Token(CapabilityTokenService svc, ChannelId channelId, string workspaceId) =>
+        svc.Mint(new CapabilityTokenRequest
+        {
+            WorkspaceId = workspaceId,
+            IssuedTo = "test",
+            Grants = [$"channel:receive:{channelId}", $"channel:send:{channelId}"],
+            Lifetime = TimeSpan.FromHours(1)
+        });
+
+    private static CapabilityToken FullToken(CapabilityTokenService svc) =>
+        Token(svc, TestChannelId, TestWorkspaceId.ToString());
+
     private static ChannelConfig CreateChannelConfig(
         ChannelId? channelId = null,
         string? targetAgent = null,
@@ -51,15 +70,16 @@ public sealed class ChannelGatewayActorTests
             Content = "Hello agent"
         };
 
-    private static (ChannelGatewayActor Actor, IVirtualActorProvider ActorProvider, IEventBus EventBus) CreateActor()
+    private static (ChannelGatewayActor Actor, IVirtualActorProvider ActorProvider, IEventBus EventBus, CapabilityToken Token) CreateActor()
     {
         var actors = Substitute.For<IVirtualActorProvider>();
         var eventBus = Substitute.For<IEventBus>();
         var logger = NullLogger<ChannelGatewayActor>.Instance;
         var persistentState = CreatePersistentState();
+        var tokenService = CreateTokenService();
 
-        var actor = new ChannelGatewayActor(actors, eventBus, logger, persistentState);
-        return (actor, actors, eventBus);
+        var actor = new ChannelGatewayActor(actors, eventBus, tokenService, logger, persistentState);
+        return (actor, actors, eventBus, FullToken(tokenService));
     }
 
     private static void SetupAgentActor(IVirtualActorProvider actors, string responseContent = "I can help!")
@@ -77,7 +97,7 @@ public sealed class ChannelGatewayActorTests
     [Fact]
     public async Task RegisterChannelAsync_PersistsConfig()
     {
-        var (actor, _, _) = CreateActor();
+        var (actor, _, _, _) = CreateActor();
         var config = CreateChannelConfig(targetAgent: "researcher");
 
         await actor.RegisterChannelAsync(config);
@@ -95,7 +115,7 @@ public sealed class ChannelGatewayActorTests
     [Fact]
     public async Task UnregisterChannelAsync_RemovesChannel()
     {
-        var (actor, _, _) = CreateActor();
+        var (actor, _, _, _) = CreateActor();
         await actor.RegisterChannelAsync(CreateChannelConfig(targetAgent: "researcher"));
 
         await actor.UnregisterChannelAsync(TestChannelId);
@@ -107,11 +127,11 @@ public sealed class ChannelGatewayActorTests
     [Fact]
     public async Task RouteInboundAsync_RoutesToTargetAgent()
     {
-        var (actor, actorFactory, _) = CreateActor();
+        var (actor, actorFactory, _, token) = CreateActor();
         SetupAgentActor(actorFactory, "Hello from agent!");
         await actor.RegisterChannelAsync(CreateChannelConfig(targetAgent: "researcher"));
 
-        var outbound = await actor.RouteInboundAsync(CreateInboundMessage());
+        var outbound = await actor.RouteInboundAsync(CreateInboundMessage(), token);
 
         outbound.ShouldNotBeNull();
         outbound.Content.ShouldBe("Hello from agent!");
@@ -122,12 +142,12 @@ public sealed class ChannelGatewayActorTests
     [Fact]
     public async Task RouteInboundAsync_UsesRoutingRules_WhenNoTargetAgent()
     {
-        var (actor, actorFactory, _) = CreateActor();
+        var (actor, actorFactory, _, token) = CreateActor();
         SetupAgentActor(actorFactory, "Routed response");
         await actor.RegisterChannelAsync(CreateChannelConfig(targetAgent: null));
         await actor.SetRoutingRuleAsync("user-123", "support-agent");
 
-        var outbound = await actor.RouteInboundAsync(CreateInboundMessage());
+        var outbound = await actor.RouteInboundAsync(CreateInboundMessage(), token);
 
         outbound.ShouldNotBeNull();
         outbound.Content.ShouldBe("Routed response");
@@ -137,18 +157,18 @@ public sealed class ChannelGatewayActorTests
     [Fact]
     public async Task RouteInboundAsync_ThrowsWhenNoRouteFound()
     {
-        var (actor, _, _) = CreateActor();
+        var (actor, _, _, token) = CreateActor();
         await actor.RegisterChannelAsync(CreateChannelConfig(targetAgent: null));
 
         var ex = await Should.ThrowAsync<InvalidOperationException>(
-            () => actor.RouteInboundAsync(CreateInboundMessage()));
+            () => actor.RouteInboundAsync(CreateInboundMessage(), token));
         ex.Message.ShouldContain("No route found");
     }
 
     [Fact]
     public async Task GetChannelsAsync_ReturnsAllChannels()
     {
-        var (actor, _, _) = CreateActor();
+        var (actor, _, _, _) = CreateActor();
         var channel1 = ChannelId.From("ch-1");
         var channel2 = ChannelId.From("ch-2");
         var channel3 = ChannelId.From("ch-3");
@@ -164,7 +184,7 @@ public sealed class ChannelGatewayActorTests
     [Fact]
     public async Task SetRoutingRuleAsync_PersistsRule()
     {
-        var (actor, actorFactory, _) = CreateActor();
+        var (actor, actorFactory, _, token) = CreateActor();
         SetupAgentActor(actorFactory, "Matched");
         await actor.RegisterChannelAsync(CreateChannelConfig(targetAgent: null));
 
@@ -179,7 +199,7 @@ public sealed class ChannelGatewayActorTests
             Content = "Hello there!"
         };
 
-        var outbound = await actor.RouteInboundAsync(message);
+        var outbound = await actor.RouteInboundAsync(message, token);
         outbound.ShouldNotBeNull();
         outbound.Content.ShouldBe("Matched");
         actorFactory.Received(1).GetActor<IAgentActor>(VirtualActorId.From($"{TestWorkspaceId}/greeting-agent"));
@@ -188,7 +208,7 @@ public sealed class ChannelGatewayActorTests
     [Fact]
     public async Task RegisterChannelAsync_PublishesChannelRegisteredEvent()
     {
-        var (actor, _, eventBus) = CreateActor();
+        var (actor, _, eventBus, _) = CreateActor();
         var config = CreateChannelConfig(targetAgent: "researcher");
 
         await actor.RegisterChannelAsync(config);
@@ -204,11 +224,11 @@ public sealed class ChannelGatewayActorTests
     [Fact]
     public async Task RouteInboundAsync_PublishesReceivedAndSentEvents()
     {
-        var (actor, actorFactory, eventBus) = CreateActor();
+        var (actor, actorFactory, eventBus, token) = CreateActor();
         SetupAgentActor(actorFactory);
         await actor.RegisterChannelAsync(CreateChannelConfig(targetAgent: "researcher"));
 
-        await actor.RouteInboundAsync(CreateInboundMessage());
+        await actor.RouteInboundAsync(CreateInboundMessage(), token);
 
         await eventBus.Received(1).PublishAsync(
             Arg.Is<ChannelMessageReceivedEvent>(e =>
@@ -227,22 +247,24 @@ public sealed class ChannelGatewayActorTests
     [Fact]
     public async Task RouteInboundAsync_ThrowsWhenChannelNotRegistered()
     {
-        var (actor, _, _) = CreateActor();
+        var (actor, _, _, _) = CreateActor();
         var unknownChannel = ChannelId.From("ch-unknown");
+        var tokenService = CreateTokenService();
+        var unknownToken = Token(tokenService, unknownChannel, TestWorkspaceId.ToString());
 
         var ex = await Should.ThrowAsync<InvalidOperationException>(
-            () => actor.RouteInboundAsync(CreateInboundMessage(channelId: unknownChannel)));
+            () => actor.RouteInboundAsync(CreateInboundMessage(channelId: unknownChannel), unknownToken));
         ex.Message.ShouldContain("not registered");
     }
 
     [Fact]
     public async Task RouteInboundAsync_ThrowsWhenChannelDisabled()
     {
-        var (actor, _, _) = CreateActor();
+        var (actor, _, _, token) = CreateActor();
         await actor.RegisterChannelAsync(CreateChannelConfig(targetAgent: "researcher", enabled: false));
 
         var ex = await Should.ThrowAsync<InvalidOperationException>(
-            () => actor.RouteInboundAsync(CreateInboundMessage()));
+            () => actor.RouteInboundAsync(CreateInboundMessage(), token));
         ex.Message.ShouldContain("disabled");
     }
 
@@ -259,7 +281,7 @@ public sealed class ChannelGatewayActorTests
         var eventBus = Substitute.For<IEventBus>();
         var logger = NullLogger<ChannelGatewayActor>.Instance;
 
-        var actor = new ChannelGatewayActor(actors, eventBus, logger, persistentState);
+        var actor = new ChannelGatewayActor(actors, eventBus, CreateTokenService(), logger, persistentState);
         await actor.OnActivatedAsync("ws-1", TestContext.Current.CancellationToken);
 
         state.WorkspaceId.ShouldBe("ws-1");
@@ -279,9 +301,127 @@ public sealed class ChannelGatewayActorTests
         var eventBus = Substitute.For<IEventBus>();
         var logger = NullLogger<ChannelGatewayActor>.Instance;
 
-        var actor = new ChannelGatewayActor(actors, eventBus, logger, persistentState);
+        var actor = new ChannelGatewayActor(actors, eventBus, CreateTokenService(), logger, persistentState);
         await actor.OnActivatedAsync("different-ws", TestContext.Current.CancellationToken);
 
         state.WorkspaceId.ShouldBe("existing-ws");
+    }
+
+    // --- Capability check tests ---
+
+    private static (ChannelGatewayActor Actor, IVirtualActorProvider ActorProvider, CapabilityTokenService TokenService) CreateActorWithService()
+    {
+        var actors = Substitute.For<IVirtualActorProvider>();
+        var eventBus = Substitute.For<IEventBus>();
+        var logger = NullLogger<ChannelGatewayActor>.Instance;
+        var persistentState = CreatePersistentState();
+        var tokenService = CreateTokenService();
+
+        var actor = new ChannelGatewayActor(actors, eventBus, tokenService, logger, persistentState);
+        SetupAgentActor(actors);
+        return (actor, actors, tokenService);
+    }
+
+    [Fact]
+    public async Task RouteInboundAsync_WithoutChannelReceiveGrant_Throws()
+    {
+        var (actor, _, tokenService) = CreateActorWithService();
+        await actor.RegisterChannelAsync(CreateChannelConfig(targetAgent: "researcher"));
+        var sendOnlyToken = tokenService.Mint(new CapabilityTokenRequest
+        {
+            WorkspaceId = TestWorkspaceId.ToString(),
+            IssuedTo = "test",
+            Grants = [$"channel:send:{TestChannelId}"],
+            Lifetime = TimeSpan.FromHours(1)
+        });
+
+        await Should.ThrowAsync<UnauthorizedAccessException>(
+            () => actor.RouteInboundAsync(CreateInboundMessage(), sendOnlyToken));
+    }
+
+    [Fact]
+    public async Task RouteInboundAsync_WithoutChannelSendGrant_Throws()
+    {
+        var (actor, _, tokenService) = CreateActorWithService();
+        await actor.RegisterChannelAsync(CreateChannelConfig(targetAgent: "researcher"));
+        var receiveOnlyToken = tokenService.Mint(new CapabilityTokenRequest
+        {
+            WorkspaceId = TestWorkspaceId.ToString(),
+            IssuedTo = "test",
+            Grants = [$"channel:receive:{TestChannelId}"],
+            Lifetime = TimeSpan.FromHours(1)
+        });
+
+        await Should.ThrowAsync<UnauthorizedAccessException>(
+            () => actor.RouteInboundAsync(CreateInboundMessage(), receiveOnlyToken));
+    }
+
+    [Fact]
+    public async Task RouteInboundAsync_WithExpiredToken_Throws()
+    {
+        var (actor, _, tokenService) = CreateActorWithService();
+        await actor.RegisterChannelAsync(CreateChannelConfig(targetAgent: "researcher"));
+        var expired = tokenService.Mint(new CapabilityTokenRequest
+        {
+            WorkspaceId = TestWorkspaceId.ToString(),
+            IssuedTo = "test",
+            Grants = [$"channel:receive:{TestChannelId}", $"channel:send:{TestChannelId}"],
+            Lifetime = TimeSpan.FromMilliseconds(-1)
+        });
+
+        await Should.ThrowAsync<UnauthorizedAccessException>(
+            () => actor.RouteInboundAsync(CreateInboundMessage(), expired));
+    }
+
+    [Fact]
+    public async Task RouteInboundAsync_WithCrossWorkspaceToken_Throws()
+    {
+        var (actor, _, tokenService) = CreateActorWithService();
+        await actor.RegisterChannelAsync(CreateChannelConfig(targetAgent: "researcher"));
+        var foreignToken = tokenService.Mint(new CapabilityTokenRequest
+        {
+            WorkspaceId = "other-workspace",
+            IssuedTo = "test",
+            Grants = [$"channel:receive:{TestChannelId}", $"channel:send:{TestChannelId}"],
+            Lifetime = TimeSpan.FromHours(1)
+        });
+
+        await Should.ThrowAsync<UnauthorizedAccessException>(
+            () => actor.RouteInboundAsync(CreateInboundMessage(), foreignToken));
+    }
+
+    [Fact]
+    public async Task RouteInboundAsync_WithReceiveSendWildcardGrants_Allowed()
+    {
+        var (actor, _, tokenService) = CreateActorWithService();
+        await actor.RegisterChannelAsync(CreateChannelConfig(targetAgent: "researcher"));
+        var wildcard = tokenService.Mint(new CapabilityTokenRequest
+        {
+            WorkspaceId = TestWorkspaceId.ToString(),
+            IssuedTo = "test",
+            Grants = ["channel:receive:*", "channel:send:*"],
+            Lifetime = TimeSpan.FromHours(1)
+        });
+
+        var outbound = await actor.RouteInboundAsync(CreateInboundMessage(), wildcard);
+
+        outbound.ShouldNotBeNull();
+    }
+
+    [Fact]
+    public async Task RouteInboundAsync_WithChannelSpecificGrants_AllowsOnlyMatchingChannel()
+    {
+        var (actor, _, tokenService) = CreateActorWithService();
+        await actor.RegisterChannelAsync(CreateChannelConfig(targetAgent: "researcher"));
+        var otherChannelToken = tokenService.Mint(new CapabilityTokenRequest
+        {
+            WorkspaceId = TestWorkspaceId.ToString(),
+            IssuedTo = "test",
+            Grants = ["channel:receive:other-channel", "channel:send:other-channel"],
+            Lifetime = TimeSpan.FromHours(1)
+        });
+
+        await Should.ThrowAsync<UnauthorizedAccessException>(
+            () => actor.RouteInboundAsync(CreateInboundMessage(), otherChannelToken));
     }
 }

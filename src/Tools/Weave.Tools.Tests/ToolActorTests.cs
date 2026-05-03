@@ -39,10 +39,10 @@ public sealed class ToolActorTests
         return (actor, connector, tokenService);
     }
 
-    private static CapabilityToken CreateToken(ICapabilityTokenService svc) =>
+    private static CapabilityToken CreateToken(ICapabilityTokenService svc, string workspaceId = "test") =>
         svc.Mint(new CapabilityTokenRequest
         {
-            WorkspaceId = "test",
+            WorkspaceId = workspaceId,
             IssuedTo = "agent",
             Grants = ["tool:*", "secret:*"],
             Lifetime = TimeSpan.FromHours(1)
@@ -337,7 +337,7 @@ public sealed class ToolActorTests
         connector.ConnectAsync(Arg.Any<ToolSpec>(), Arg.Any<CapabilityToken>(), Arg.Any<CancellationToken>())
             .Returns(new ToolHandle { ToolName = "my-tool", Type = ToolType.Cli, IsConnected = true });
 
-        var token = CreateToken(tokenSvc);
+        var token = CreateToken(tokenSvc, workspaceId: "my-ws");
         var spec = new ToolSpec { Name = "my-tool", Type = ToolType.Cli, Cli = new Weave.Workspaces.Models.CliConfig() };
         var handle = await actor.ConnectAsync(spec, token);
         handle.ToolName.ShouldBe("my-tool");
@@ -403,7 +403,7 @@ public sealed class ToolActorTests
         connector.ConnectAsync(Arg.Any<ToolSpec>(), Arg.Any<CapabilityToken>(), Arg.Any<CancellationToken>())
             .Returns(new ToolHandle { ToolName = "tool", Type = ToolType.Cli, IsConnected = true });
 
-        var token = CreateToken(tokenSvc);
+        var token = CreateToken(tokenSvc, workspaceId: "ws");
         var spec = new ToolSpec { Name = "tool", Type = ToolType.Cli, Cli = new Weave.Workspaces.Models.CliConfig() };
         await actor.ConnectAsync(spec, token);
 
@@ -434,9 +434,21 @@ public sealed class ToolActorTests
         var (actor, _, tokenSvc) = CreateActor();
         await actor.OnActivatedAsync("ws/tool", TestContext.Current.CancellationToken);
 
-        var token = CreateToken(tokenSvc);
+        var token = CreateToken(tokenSvc, workspaceId: "ws");
         var invocation = new ToolInvocation { ToolName = "tool", Method = "run", Parameters = [] };
 
         await Should.ThrowAsync<InvalidOperationException>(() => actor.InvokeAsync(invocation, token));
+    }
+
+    [Fact]
+    public async Task ConnectAsync_WithCrossWorkspaceToken_Throws()
+    {
+        var (actor, _, tokenSvc) = CreateActor();
+        await actor.OnActivatedAsync("ws-a/tool", TestContext.Current.CancellationToken);
+
+        var foreignToken = CreateToken(tokenSvc, workspaceId: "ws-b");
+        var spec = new ToolSpec { Name = "tool", Type = ToolType.Cli, Cli = new Weave.Workspaces.Models.CliConfig() };
+
+        await Should.ThrowAsync<UnauthorizedAccessException>(() => actor.ConnectAsync(spec, foreignToken));
     }
 }

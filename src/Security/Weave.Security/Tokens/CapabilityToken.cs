@@ -12,6 +12,5 @@ public sealed record CapabilityToken
 
     public bool IsExpiredAt(DateTimeOffset now) => now >= ExpiresAt;
 
-    public bool HasGrant(string grant) =>
-        Grants.Contains(grant) || Grants.Contains("*");
+    public bool HasGrant(string grant) => CapabilityGrants.Matches(Grants, grant);
 }

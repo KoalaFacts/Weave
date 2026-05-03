@@ -1,6 +1,7 @@
 using Microsoft.Extensions.Logging;
 using Weave.Agents.Events;
 using Weave.Agents.Models;
+using Weave.Security.Tokens;
 using Weave.Shared.Events;
 using Weave.Shared.Ids;
 
@@ -9,9 +10,13 @@ namespace Weave.Agents.Actors;
 public sealed class ChannelGatewayActor(
     IVirtualActorProvider actors,
     IEventBus eventBus,
+    ICapabilityTokenService tokenService,
     ILogger<ChannelGatewayActor> logger,
     IActorState<ChannelGatewayState> persistentState) : IChannelGatewayActor
 {
+    private const string ChannelReceivePrefix = "channel:receive:";
+    private const string ChannelSendPrefix = "channel:send:";
+
     private string? _key;
 
     public async Task OnActivatedAsync(string? key, CancellationToken cancellationToken)
@@ -62,9 +67,12 @@ public sealed class ChannelGatewayActor(
             persistentState.State.WorkspaceId);
     }
 
-    public async Task<OutboundMessage> RouteInboundAsync(InboundMessage message)
+    public async Task<OutboundMessage> RouteInboundAsync(InboundMessage message, CapabilityToken token)
     {
         var channelKey = message.ChannelId.ToString();
+
+        Authorize(token, ChannelReceivePrefix + channelKey);
+        Authorize(token, ChannelSendPrefix + channelKey);
 
         if (!persistentState.State.Channels.TryGetValue(channelKey, out var channel))
             throw new InvalidOperationException($"Channel {message.ChannelId} is not registered.");
@@ -162,4 +170,7 @@ public sealed class ChannelGatewayActor(
         if (!string.IsNullOrWhiteSpace(key))
             persistentState.State.WorkspaceId = key;
     }
+
+    private void Authorize(CapabilityToken token, string grant) =>
+        CapabilityAuthorizer.Authorize(tokenService, token, persistentState.State.WorkspaceId, grant, logger, "Channel");
 }

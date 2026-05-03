@@ -13,10 +13,22 @@ internal sealed class AgentSkillSuggester(
     public async Task SuggestFromTaskAsync(AgentState state, AgentTaskId taskId)
     {
         var task = state.ActiveTasks.FirstOrDefault(t => t.TaskId == taskId);
-        if (task?.Proof is null || task.Proof.Items.Count < 2)
+        if (task is null)
             return;
 
-        var skill = AgentSkillExtractor.ExtractFromTask(task, state)!;
+        var skill = AgentSkillExtractor.ExtractFromTask(task, state);
+        if (skill is null)
+            return;
+
+        var manifestCapabilities = state.Definition?.Capabilities;
+        if (manifestCapabilities is null || !CapabilityGrants.Matches(manifestCapabilities, "skill:write"))
+        {
+            logger.LogInformation(
+                "Skipping skill suggestion from task {TaskId}: agent '{AgentName}' manifest does not declare 'skill:write'",
+                taskId,
+                state.AgentName);
+            return;
+        }
 
         try
         {

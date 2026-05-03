@@ -6,6 +6,7 @@ using Weave.Agents.Models;
 using Weave.Agents.Pipeline;
 using Weave.Security.Tokens;
 using Weave.Shared.Ids;
+using Weave.Workspaces.Models;
 
 namespace Weave.Agents.Tests;
 
@@ -18,14 +19,19 @@ public sealed class AgentChatPipelineTests
             Options.Create(new CapabilityTokenOptions { SigningKey = "test-signing-key-that-is-at-least-32-chars-long" }),
             TimeProvider.System);
 
-    private static AgentState CreateActiveState() =>
+    private static AgentState CreateActiveState(List<string>? capabilities = null) =>
         new()
         {
             AgentId = "ws-1/researcher",
             WorkspaceId = TestWorkspaceId,
             AgentName = "researcher",
             Status = AgentStatus.Active,
-            Model = "claude-sonnet-4-20250514"
+            Model = "claude-sonnet-4-20250514",
+            Definition = new AgentDefinition
+            {
+                Model = "claude-sonnet-4-20250514",
+                Capabilities = capabilities ?? ["skill:read", "skill:write"]
+            }
         };
 
     private static (AgentChatPipeline Pipeline, IChatClient ChatClient) CreatePipeline()
@@ -282,6 +288,43 @@ public sealed class AgentChatPipelineTests
         systemMsg.ShouldNotBeNull();
         systemMsg.Text.ShouldContain("Deploy to K8s");
         systemMsg.Text.ShouldContain("Build image");
+    }
+
+    [Fact]
+    public async Task ExecuteAsync_WithoutSkillReadCapability_SkipsSkillEnrichment()
+    {
+        var chatClient = Substitute.For<IChatClient>();
+        IEnumerable<ChatMessage>? capturedMessages = null;
+        chatClient.GetResponseAsync(
+                Arg.Any<IEnumerable<ChatMessage>>(),
+                Arg.Any<ChatOptions>(),
+                Arg.Any<CancellationToken>())
+            .Returns(callInfo =>
+            {
+                capturedMessages = callInfo.Arg<IEnumerable<ChatMessage>>().ToList();
+                return new ChatResponse(new ChatMessage(ChatRole.Assistant, "Done"))
+                {
+                    ModelId = "claude-sonnet-4-20250514"
+                };
+            });
+
+        var chatClientFactory = Substitute.For<IAgentChatClientFactory>();
+        chatClientFactory.Create(Arg.Any<string>(), Arg.Any<string?>()).Returns(chatClient);
+
+        var skillActor = Substitute.For<ISkillMemoryActor>();
+        var actors = Substitute.For<IVirtualActorProvider>();
+        actors.GetActor<ISkillMemoryActor>(Arg.Any<VirtualActorId>()).Returns(skillActor);
+
+        var pipeline = new AgentChatPipeline(actors, chatClientFactory, CreateTokenService(), TimeProvider.System, NullLogger<AgentChatPipeline>.Instance);
+        var state = CreateActiveState(capabilities: ["tool:*"]);
+
+        await pipeline.ExecuteAsync(state, new AgentMessage { Content = "deploy to k8s" });
+
+        await skillActor.DidNotReceive().SearchAsync(
+            Arg.Any<string>(),
+            Arg.Any<CapabilityToken>(),
+            Arg.Any<int>(),
+            Arg.Any<SkillSearchOptions>());
     }
 
     [Fact]

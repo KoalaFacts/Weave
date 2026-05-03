@@ -34,11 +34,7 @@ public sealed partial class ToolActor(
     public async Task<ToolHandle> ConnectAsync(ToolSpec definition, CapabilityToken token)
     {
         _identity.Ensure(definition, token);
-        if (!tokenService.Validate(token))
-            throw new UnauthorizedAccessException("Invalid or expired capability token");
-
-        if (!token.HasGrant($"tool:{_identity.ToolName}") && !token.HasGrant("tool:*"))
-            throw new UnauthorizedAccessException($"Token does not grant access to tool '{_identity.ToolName}'");
+        CapabilityAuthorizer.Authorize(tokenService, token, _identity.WorkspaceId, $"tool:{_identity.ToolName}", logger, "Tool");
 
         _definition = definition;
 
@@ -90,8 +86,7 @@ public sealed partial class ToolActor(
     public async Task<ToolResult> InvokeAsync(ToolInvocation invocation, CapabilityToken token)
     {
         _identity.Ensure(invocation: invocation, token: token);
-        if (!tokenService.Validate(token))
-            throw new UnauthorizedAccessException("Invalid or expired capability token");
+        CapabilityAuthorizer.Authorize(tokenService, token, _identity.WorkspaceId, $"tool:{_identity.ToolName}", logger, "Tool");
 
         if (_handle is null || _definition is null)
             throw new InvalidOperationException($"Tool '{_identity.ToolName}' is not connected");
@@ -133,5 +128,4 @@ public sealed partial class ToolActor(
 
     [LoggerMessage(Level = LogLevel.Information, Message = "Tool '{Tool}' disconnected from workspace '{Workspace}'")]
     private partial void LogToolDisconnected(string tool, string workspace);
-
 }
