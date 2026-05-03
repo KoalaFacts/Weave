@@ -132,6 +132,10 @@ The law of the repo. Every rule here is enforceable in review. Rules exist to pr
 
 **Audit on fresh state.** Before reporting "I checked X and it's clean," regenerate any cached/derived artifact you read from — lockfiles, generated source, build outputs, test reports. Stale derived state will tell you "all good" when the underlying change hasn't propagated. The same audit twice (once on stale lockfiles, once after `dotnet restore --force`) gave opposite answers in this session.
 
+**Dead code is a sign you stopped paying attention.** When you remove a caller, the called code may have become orphaned. When you remove a config key, its constants and the helpers that read it are next. When you replace a reflection path with source-gen, the reflection helpers are dead. After any deletion or contract change, grep for the removed name and the immediate neighbours — symbols whose only caller was what you just removed are now garbage. Examples from this branch: deleting `Legacy*` constants left `LegacyOrleansStorageSectionName` references in `RuntimeSettings` until a follow-up scan; the source-gen rule landed only when `ServiceCollectionExtensions.AddCqrs` (`[RequiresUnreferencedCode]`, zero production callers, only its own tests referenced it) was finally noticed and deleted. Dead code accumulates until someone refactors blind, can't tell which path is real, and breaks the live one. Delete in the same commit that orphans it.
+
+**False-positive watchlist for "unused" greps.** Some callers don't show up in `grep -r`: `System.CommandLine` command builders are referenced by `Program.cs` `Command` tree composition; CQRS handlers are wired by source-generated `AddGeneratedCqrsHandlers()`; Razor event handlers are called from `@onclick="@MethodName"` in the matching `.razor` file (not the `.razor.cs`); Orleans grain bridges are resolved by the cluster client from `IGrainWithStringKey` keys; `[JsonSerializable]`-attributed types are dispatched at runtime through the context. When marking something orphan, check those vectors before deletion.
+
 ### Naming and style
 
 **Async production methods end in `Async`.** Enforced by the editorconfig. Exceptions: `Main`, expression-bodied event handlers, `IDisposable` patterns. Tests do not require the suffix, but consistency is preferred.
@@ -249,6 +253,21 @@ Coverage alone is a **trailing** indicator of test quality. A suite can hit 95% 
 **Arrange-Act-Assert, visible.** Each test is three sections: setup, the one call you're testing, and assertions. No interleaving. If you can't tell where Act ends and Assert begins, the test is testing too much.
 
 **No `try/catch` in tests.** Use `Should.Throw<T>()` for expected exceptions. A `try/catch` that swallows an exception + continues IS a test that silently passes under failure conditions.
+
+**Tests use real-shaped inputs, not the simplest values that compile.** `new AgentDefinition { Name = "a", Capabilities = [] }` proves nothing — every nullable is empty, the happy path runs straight through, no edge inside the SUT is exercised. Use a minimum representative payload: a real agent name, real capability strings (`"tool:git"`, `"skill:read"`), values long enough to hit any length-based branches. Helper factories (`AgentDefinitionFactory.Default()` then customize per test) keep this readable. The bar: if I changed the SUT to `return default`, would your assertions fire?
+
+**A "verify-nothing" test is one whose assertions would still pass on a broken implementation.** Common shapes:
+- `result.ShouldNotBeNull()` is the only assertion, but the SUT can never return null (it would throw first). The check encodes nothing.
+- `result.Items.Count.ShouldBeGreaterThan(0)` when *any* implementation that returned a non-empty list would pass — including one that returned the wrong items.
+- `(await Should.NotThrowAsync(() => sut.DoX()))` with no follow-up read of state. "Didn't throw" is not a postcondition for any feature this repo ships.
+- Round-trip tests on records (`new Foo { X = 1 }.X.ShouldBe(1)`) — the C# compiler already guarantees this; you're testing the language.
+- Mock-heavy tests where `substitute.GetValue().Returns(42)` then `result.ShouldBe(42)` — the test passed a value through a stub and read it back; nothing in the SUT was exercised.
+
+For each test, ask: "what bug in the SUT would this catch?" If you can't name one, the test is verifying nothing.
+
+**Mock the boundary, exercise the body.** A unit test mocks the SUT's *dependencies* and runs the SUT for real. If you find yourself `Substitute.For<TheSUT>()` and stubbing the very method you claim to test, you've inverted the harness. The result will pass on any implementation, including one that does nothing.
+
+**Theory cases must be different.** `[Theory] [InlineData(1)] [InlineData(2)] [InlineData(3)]` over a method that doesn't branch on the value is one test, not three. Use `[InlineData]` to cover *distinct branches* (boundary values, empty/single/many, valid/invalid, fast-path/slow-path). The redundant-row check: removing one of the rows — does any branch in the SUT lose coverage? If no, the row was decoration.
 
 **Mock only what you must.** A test with five `Substitute.For<T>()` calls is probably testing wiring that should be integration-tested instead. The smell threshold in this repo: more than 2 mocks per test = needs scrutiny.
 

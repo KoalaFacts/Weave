@@ -1,6 +1,6 @@
 ---
 name: check-rules
-description: Audit code or a diff against Weave's repo rules in docs/best-practices.md. INVOKE THIS — proactively, without being asked — before claiming any task is done that adds or modifies C#, csproj, manifest, or settings files; when reviewing a branch, PR, or review comment; and after pulling changes you didn't write. Catches the recurring smells codified on this repo: horizontal-cut folders (Models/Services/Helpers/etc.), multi-class files, oversized files, DateTime.UtcNow in behavior logic, Legacy* / dual config keys / deprecated synonyms, third-party packages leaking through abstractions, stale packages.lock.json after a graph change, List<T>+exact-count assertions on process-global Meter/ActivitySource, swallowed/verbose catch clauses, static-class service-locator patterns, and over-verbose XML doc / narrating comments. Reports violations as a punch list with file:line references and the fix shape — does not auto-fix.
+description: Audit code or a diff against Weave's repo rules in docs/best-practices.md. INVOKE THIS — proactively, without being asked — before claiming any task is done that adds or modifies C#, csproj, manifest, or settings files; when reviewing a branch, PR, or review comment; and after pulling changes you didn't write. Catches the recurring smells codified on this repo: horizontal-cut folders, multi-class files, oversized files, DateTime.UtcNow in behavior logic, Legacy* / dual config keys / deprecated synonyms, third-party packages leaking through abstractions, stale packages.lock.json after a graph change, List<T>+exact-count assertions on process-global Meter/ActivitySource, swallowed/verbose catch clauses, static-class service-locator patterns, over-verbose XML doc / narrating comments, reflection where source-gen is available, dead/orphan code after refactors, and verify-nothing tests. Reports violations as a punch list with file:line references and the fix shape — does not auto-fix.
 ---
 
 # check-rules — Weave repo rule auditor
@@ -244,7 +244,69 @@ grep -rn "\[RequiresUnreferencedCode" src --include="*.cs" \
 
 If a feature has a source generator (STJ, `[GeneratedRegex]`, `[LoggerMessage]`, the repo's `BrandedIdGenerator` / `CqrsRegistrationGenerator`), use it. Anonymous types in `JsonSerializer.Serialize` are the most common smell — they bypass any registered context. Fix shape: define a `record FooPayload(...)` and add `[JsonSerializable(typeof(FooPayload))]` to the relevant context. Reflection-based DI registration is dead code in this repo (production uses source-gen) — delete on sight per the no-back-compat rule.
 
-### 13. Test discipline (NOTE) — see also categories 8, 9
+### 13. Dead / orphan code (BLOCK on obviously orphaned types after a refactor)
+
+After any deletion or contract change, search for symbols whose only caller was what you just removed. Look at the diff first — every `-` removal is a candidate to leave something orphaned.
+
+```bash
+# Anything still mentioning Legacy* (after the legacy-key removal we did)
+grep -rn "Legacy" src --include="*.cs" | grep -v "/bin/\|/obj/"
+
+# RequiresUnreferencedCode in production = reflection path that should have a
+# source-gen replacement, OR is dead. Both are red flags after a source-gen migration.
+grep -rn "\[RequiresUnreferencedCode" src --include="*.cs" | grep -v "/bin/" | grep -vE "Test\.cs|Tests\.cs"
+
+# Internal types with zero refs outside their defining file
+for f in $(find src -name "*.cs" -not -path "*/bin/*" -not -path "*/obj/*" -not -path "*Test*"); do
+  for sym in $(grep -oE "^internal (sealed |abstract |static |partial )*(class|record|interface) \w+" "$f" | awk '{print $NF}' | sort -u); do
+    count=$(grep -rE "\b${sym}\b" src --include="*.cs" 2>/dev/null | grep -v "/bin/\|/obj/" | grep -v "$f:" | wc -l)
+    [ "$count" -eq 0 ] && echo "$f -> $sym (zero external refs)"
+  done
+done
+```
+
+False positives to verify before deleting (these don't show up in `grep -r`):
+- `System.CommandLine` command builders are referenced via the `Command` tree wired in `Program.cs`.
+- CQRS handlers are wired by source-generated `AddGeneratedCqrsHandlers()` (output in `obj/`).
+- Razor event handlers are called from `@onclick="@MethodName"` in the matching `.razor` file (not the `.razor.cs`). Add `--include="*.razor"` to the grep.
+- Orleans grain bridges are resolved by the cluster client via `IGrainWithStringKey` keys, not direct refs.
+- `[JsonSerializable]`-attributed types are dispatched through the context at runtime.
+
+When auditing a diff: any deletion (`git diff --diff-filter=D`) is a trigger to scan whether the removed callers leave anything orphaned downstream.
+
+### 14. Meaningful tests (BLOCK on verify-nothing patterns)
+
+```bash
+# Tests whose only assertion is ShouldNotBeNull / NotThrow — likely verify-nothing
+grep -rnE "ShouldNotBeNull|NotThrowAsync" src --include="*Test*.cs" \
+  | grep -v "/bin/" | head
+
+# For each candidate test method, count its Should* assertions:
+#   1 assertion AND that assertion is ShouldNotBeNull/NotThrow → verify-nothing
+#   review the test body manually
+
+# Round-trip tests on records — compiler guarantees this
+grep -rnE "new \w+ \{[^}]+\}\.\w+\.ShouldBe" src --include="*Test*.cs" | grep -v "/bin/" | head
+
+# Mock-heavy tests asserting a stubbed return value (passes nothing through SUT)
+grep -rnE "\.Returns\(.*\);.*ShouldBe\(" src --include="*Test*.cs" | grep -v "/bin/" | head
+
+# .Received(N) assertions — locking implementation, not behaviour
+grep -rnE "\.Received\(\d+\)\.|\.Received\(\)\." src --include="*Test*.cs" | grep -v "/bin/" | head
+
+# Theory rows that don't branch (heuristic — find Theories with > 5 rows on a method
+# that has no value-dependent branching; manual review)
+grep -rcE "\[InlineData" src --include="*Test*.cs" | grep -v ":0$" | sort -t: -k2 -rn | head
+```
+
+For each candidate, ask:
+- "What bug would this test catch?" If "the SUT throws an NRE" is the only answer, the test is decoration.
+- "If I rewrote the SUT to `return default`, would the assertions fire?" If no, the test verifies nothing.
+- For `.Received(N)`: is the count meaningful (you're asserting "called exactly once" because more would be a bug), or is it "I happen to know my impl calls it 3 times"? Latter → behavioural assertion instead.
+
+Today's signals to look for: bare `await Should.NotThrowAsync(...)` with no follow-up read of state; `.ShouldNotBeNull()` as the only assertion on a method that throws on null inputs; `[InlineData]` rows that walk through values for a branchless method.
+
+### 15. Test discipline (NOTE) — see also categories 8, 9
 
 Quick scans for known test smells:
 
@@ -260,7 +322,7 @@ grep -rn "Environment\.SetEnvironmentVariable" src --include="*Test*.cs" | grep 
 # For each: verify there's a finally block that resets it.
 ```
 
-### 14. Build and test gate (BLOCK)
+### 16. Build and test gate (BLOCK)
 
 ```bash
 dotnet build Weave.slnx 2>&1 | tail -5      # 0 warnings, 0 errors
