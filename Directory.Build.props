@@ -19,7 +19,7 @@
   <!-- NuGet package metadata -->
   <PropertyGroup>
     <Authors>KoalaFacts</Authors>
-    <PackageLicenseExpression>MIT</PackageLicenseExpression>
+    <PackageLicenseExpression>MIT OR AGPL-3.0-or-later</PackageLicenseExpression>
     <PackageProjectUrl>https://github.com/KoalaFacts/Weave</PackageProjectUrl>
     <RepositoryUrl>https://github.com/KoalaFacts/Weave</RepositoryUrl>
     <RepositoryType>git</RepositoryType>
