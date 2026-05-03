@@ -47,15 +47,7 @@ public sealed class AgentVerificationDispatcher : IAgentVerificationDispatcher
             {
                 throw;
             }
-            catch (InvalidOperationException ex)
-            {
-                _logger.LogWarning(
-                    ex,
-                    "Proof verification failed for task {TaskId} on agent {AgentName}",
-                    request.TaskId,
-                    request.AgentName);
-            }
-            catch (ArgumentException ex)
+            catch (Exception ex) when (ex is InvalidOperationException or ArgumentException)
             {
                 _logger.LogWarning(
                     ex,
