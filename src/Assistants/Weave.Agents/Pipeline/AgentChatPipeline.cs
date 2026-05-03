@@ -158,10 +158,21 @@ public sealed class AgentChatPipeline(
         if (string.IsNullOrWhiteSpace(message.UserId))
             return prompt;
 
+        var grant = $"user:read:{message.UserId}";
+        if (state.Definition?.Capabilities?.Contains(grant) is not true)
+            return prompt;
+
         try
         {
             var userActor = actors.GetActor<IUserModelActor>(VirtualActorId.Combine(state.WorkspaceId, message.UserId));
-            var summary = await userActor.GetContextSummaryAsync();
+            var token = tokenService.Mint(new CapabilityTokenRequest
+            {
+                WorkspaceId = state.WorkspaceId.ToString(),
+                IssuedTo = $"{state.WorkspaceId}/{state.AgentName}",
+                Grants = [grant],
+                Lifetime = TimeSpan.FromMinutes(1)
+            });
+            var summary = await userActor.GetContextSummaryAsync(token);
             if (string.IsNullOrWhiteSpace(summary))
                 return prompt;
 

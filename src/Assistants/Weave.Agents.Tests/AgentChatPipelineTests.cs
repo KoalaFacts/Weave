@@ -207,7 +207,7 @@ public sealed class AgentChatPipelineTests
         chatClientFactory.Create(Arg.Any<string>(), Arg.Any<string?>()).Returns(chatClient);
 
         var userModelActor = Substitute.For<IUserModelActor>();
-        userModelActor.GetContextSummaryAsync()
+        userModelActor.GetContextSummaryAsync(Arg.Any<CapabilityToken>())
             .Returns(Task.FromResult("User preferences: lang=csharp. Interactions: 5 total."));
 
         var skillActor = Substitute.For<ISkillMemoryActor>();
@@ -219,7 +219,7 @@ public sealed class AgentChatPipelineTests
         actors.GetActor<ISkillMemoryActor>(Arg.Any<VirtualActorId>()).Returns(skillActor);
 
         var pipeline = new AgentChatPipeline(actors, chatClientFactory, CreateTokenService(), TimeProvider.System, NullLogger<AgentChatPipeline>.Instance);
-        var state = CreateActiveState();
+        var state = CreateActiveState(capabilities: ["skill:read", "skill:write", "user:read:user-42"]);
 
         await pipeline.ExecuteAsync(state, new AgentMessage { Content = "Hello", UserId = "user-42" });
 

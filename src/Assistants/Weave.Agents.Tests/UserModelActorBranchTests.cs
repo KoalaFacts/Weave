@@ -1,6 +1,8 @@
 using Microsoft.Extensions.Logging.Abstractions;
+using Microsoft.Extensions.Options;
 using Weave.Agents.Actors;
 using Weave.Agents.Models;
+using Weave.Security.Tokens;
 using Weave.Shared.Events;
 
 namespace Weave.Agents.Tests;
@@ -24,11 +26,31 @@ public sealed class UserModelActorBranchTests
         return ps;
     }
 
-    private static UserModelActor CreateActor(IActorState<UserProfileState> ps) => new(
-        Substitute.For<IEventBus>(),
-        TimeProvider.System,
-        NullLogger<UserModelActor>.Instance,
-        ps);
+    private static CapabilityTokenService CreateTokenService() =>
+        new(
+            Options.Create(new CapabilityTokenOptions { SigningKey = "test-signing-key-that-is-at-least-32-chars-long" }),
+            TimeProvider.System);
+
+    private static CapabilityToken Token(CapabilityTokenService svc, string workspaceId = "ws-default", string userId = "") =>
+        svc.Mint(new CapabilityTokenRequest
+        {
+            WorkspaceId = workspaceId,
+            IssuedTo = "test",
+            Grants = [$"user:read:{userId}", $"user:write:{userId}"],
+            Lifetime = TimeSpan.FromHours(1)
+        });
+
+    private static (UserModelActor Actor, CapabilityTokenService TokenService) CreateActor(IActorState<UserProfileState> ps)
+    {
+        var tokenService = CreateTokenService();
+        var actor = new UserModelActor(
+            Substitute.For<IEventBus>(),
+            TimeProvider.System,
+            tokenService,
+            NullLogger<UserModelActor>.Instance,
+            ps);
+        return (actor, tokenService);
+    }
 
     [Fact]
     public async Task SetPreferenceAsync_EmptyState_NoKey_LeavesStateEmptyIdentity()
@@ -37,9 +59,10 @@ public sealed class UserModelActorBranchTests
         // throws NRE which the actor catches and returns null → ApplyIdentity
         // early-returns without mutating state.
         var ps = EmptyState();
-        var actor = CreateActor(ps);
+        var (actor, tokenService) = CreateActor(ps);
 
-        await actor.SetPreferenceAsync("theme", "dark");
+        // Empty WorkspaceId on the actor side means cross-workspace check is skipped.
+        await actor.SetPreferenceAsync("theme", "dark", Token(tokenService));
 
         // Identity was never applied (no key), but the preference still lands.
         ps.State.WorkspaceId.ShouldBe(string.Empty);
@@ -53,9 +76,9 @@ public sealed class UserModelActorBranchTests
         var ps = EmptyState();
         ps.State.WorkspaceId = "ws-1";
         ps.State.UserId = "user-1";
-        var actor = CreateActor(ps);
+        var (actor, tokenService) = CreateActor(ps);
 
-        await actor.SetDomainContextAsync("language", "C#");
+        await actor.SetDomainContextAsync("language", "C#", Token(tokenService, "ws-1", "user-1"));
 
         ps.State.DomainContext["language"].ShouldBe("C#");
     }
@@ -67,9 +90,9 @@ public sealed class UserModelActorBranchTests
         ps.State.WorkspaceId = "ws-1";
         ps.State.UserId = "user-1";
         ps.State.DomainContext["team"] = "old-team";
-        var actor = CreateActor(ps);
+        var (actor, tokenService) = CreateActor(ps);
 
-        await actor.SetDomainContextAsync("team", "new-team");
+        await actor.SetDomainContextAsync("team", "new-team", Token(tokenService, "ws-1", "user-1"));
 
         ps.State.DomainContext["team"].ShouldBe("new-team");
     }
@@ -87,9 +110,9 @@ public sealed class UserModelActorBranchTests
         ps.State.FirstSeenAt = DateTimeOffset.UtcNow.AddDays(-10);
         ps.State.LastSeenAt = DateTimeOffset.UtcNow;
 
-        var actor = CreateActor(ps);
+        var (actor, tokenService) = CreateActor(ps);
 
-        await actor.ClearAsync();
+        await actor.ClearAsync(Token(tokenService, "ws-1", "user-1"));
 
         ps.State.TotalInteractions.ShouldBe(0);
         ps.State.PreferredModel.ShouldBeNull();
@@ -110,9 +133,9 @@ public sealed class UserModelActorBranchTests
         ps.State.TopicFrequency["orleans"] = 3;
         ps.State.TopicFrequency["testing"] = 2;
 
-        var actor = CreateActor(ps);
+        var (actor, tokenService) = CreateActor(ps);
 
-        var summary = await actor.GetContextSummaryAsync();
+        var summary = await actor.GetContextSummaryAsync(Token(tokenService, "ws-1", "user-1"));
 
         summary.ShouldContain("Top topics:");
         summary.ShouldContain("dotnet (5)");
@@ -128,9 +151,9 @@ public sealed class UserModelActorBranchTests
         ps.State.UserId = "user-1";
         ps.State.TotalInteractions = 42;
 
-        var actor = CreateActor(ps);
+        var (actor, tokenService) = CreateActor(ps);
 
-        var summary = await actor.GetContextSummaryAsync();
+        var summary = await actor.GetContextSummaryAsync(Token(tokenService, "ws-1", "user-1"));
 
         summary.ShouldContain("Interactions: 42 total.");
     }

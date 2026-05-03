@@ -1,6 +1,7 @@
 using Weave.Agents.Commands;
 using Weave.Agents.Models;
 using Weave.Agents.Queries;
+using Weave.Security.Tokens;
 using Weave.Shared.Cqrs;
 using Weave.Shared.Ids;
 
@@ -35,9 +36,13 @@ public static class UserEndpoints
         string workspaceId,
         string userId,
         IQueryDispatcher dispatcher,
+        ICapabilityTokenService tokenService,
         CancellationToken ct)
     {
-        var query = new GetUserProfileQuery(WorkspaceId.From(workspaceId), userId);
+        var query = new GetUserProfileQuery(
+            WorkspaceId.From(workspaceId),
+            userId,
+            UserTokenFactory.MintRead(tokenService, workspaceId, userId));
         var profile = await dispatcher.DispatchAsync<GetUserProfileQuery, UserProfileState>(query, ct);
         return Results.Ok(UserProfileResponse.FromState(profile));
     }
@@ -47,13 +52,19 @@ public static class UserEndpoints
         string userId,
         SetPreferenceRequest request,
         ICommandDispatcher dispatcher,
+        ICapabilityTokenService tokenService,
         CancellationToken ct)
     {
         var errors = ValidateKeyValue(request.Key, request.Value);
         if (errors is not null)
             return ResultExtensions.ValidationFailed(errors);
 
-        var command = new SetUserPreferenceCommand(WorkspaceId.From(workspaceId), userId, request.Key, request.Value);
+        var command = new SetUserPreferenceCommand(
+            WorkspaceId.From(workspaceId),
+            userId,
+            request.Key,
+            request.Value,
+            UserTokenFactory.MintWrite(tokenService, workspaceId, userId));
         await dispatcher.DispatchAsync<SetUserPreferenceCommand, bool>(command, ct);
         return Results.NoContent();
     }
@@ -63,6 +74,7 @@ public static class UserEndpoints
         string userId,
         SetDomainContextRequest request,
         IVirtualActorProvider actors,
+        ICapabilityTokenService tokenService,
         CancellationToken ct)
     {
         var errors = ValidateKeyValue(request.Key, request.Value);
@@ -70,7 +82,10 @@ public static class UserEndpoints
             return ResultExtensions.ValidationFailed(errors);
 
         var actor = actors.GetActor<Agents.Actors.IUserModelActor>(VirtualActorId.Combine(workspaceId, userId));
-        await actor.SetDomainContextAsync(request.Key, request.Value);
+        await actor.SetDomainContextAsync(
+            request.Key,
+            request.Value,
+            UserTokenFactory.MintWrite(tokenService, workspaceId, userId));
         return Results.NoContent();
     }
 
@@ -78,10 +93,11 @@ public static class UserEndpoints
         string workspaceId,
         string userId,
         IVirtualActorProvider actors,
+        ICapabilityTokenService tokenService,
         CancellationToken ct)
     {
         var actor = actors.GetActor<Agents.Actors.IUserModelActor>(VirtualActorId.Combine(workspaceId, userId));
-        await actor.ClearAsync();
+        await actor.ClearAsync(UserTokenFactory.MintWrite(tokenService, workspaceId, userId));
         return Results.NoContent();
     }
 

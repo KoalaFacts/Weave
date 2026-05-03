@@ -50,11 +50,11 @@ public sealed class CqrsHandlerTests
 
         var handler = new SetUserPreferenceHandler(factory);
         var result = await handler.HandleAsync(
-            new SetUserPreferenceCommand(Ws, "user-1", "theme", "dark"),
+            new SetUserPreferenceCommand(Ws, "user-1", "theme", "dark", StubToken),
             TestContext.Current.CancellationToken);
 
         result.ShouldBeTrue();
-        await user.Received(1).SetPreferenceAsync("theme", "dark");
+        await user.Received(1).SetPreferenceAsync("theme", "dark", StubToken);
     }
 
     [Fact]
@@ -177,11 +177,11 @@ public sealed class CqrsHandlerTests
         var user = Substitute.For<IUserModelActor>();
         var profile = new UserProfileState { UserId = "user-1", WorkspaceId = "ws-1" };
         factory.GetActor<IUserModelActor>(Arg.Any<VirtualActorId>()).Returns(user);
-        user.GetProfileAsync().Returns(profile);
+        user.GetProfileAsync(Arg.Any<CapabilityToken>()).Returns(profile);
 
         var handler = new GetUserProfileHandler(factory);
         var result = await handler.HandleAsync(
-            new GetUserProfileQuery(Ws, "user-1"),
+            new GetUserProfileQuery(Ws, "user-1", StubToken),
             TestContext.Current.CancellationToken);
 
         result.UserId.ShouldBe("user-1");
