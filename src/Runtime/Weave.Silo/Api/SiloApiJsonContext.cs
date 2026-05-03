@@ -2,7 +2,7 @@ using System.Text.Json.Serialization;
 using Microsoft.AspNetCore.Mvc;
 using Weave.Agents.Models;
 using Weave.Workspaces.Models;
-using Weave.Workspaces.Plugins;
+using Weave.Silo.Plugins;
 
 namespace Weave.Silo.Api;
 

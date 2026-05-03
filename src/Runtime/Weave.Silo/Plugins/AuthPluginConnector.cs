@@ -1,7 +1,7 @@
 using Weave.Shared.Plugins;
 using Weave.Silo.Security;
 using Weave.Workspaces.Models;
-using Weave.Workspaces.Plugins;
+using Weave.Silo.Plugins;
 
 namespace Weave.Silo.Plugins;
 

@@ -9,12 +9,28 @@
 **Shipped:**
 - `channel:send` / `channel:receive` — second verb of [unique-agent-strategy.md §"Roadmap implications"](unique-agent-strategy.md#roadmap-implications)
 - `user:read:<userId>` / `user:write:<userId>` — third verb
+- `plugin:invoke:<plugin>` — fourth verb (gates plugin connect/disconnect at the registry)
 - `IReadOnlyList<T>` cleanup across immutable manifest + event collections
 - Four PR #40 cross-cutting follow-ups (cross-workspace token check, manifest-derived grants, denial-path logging, null-forgiving fix)
 - **Capability cancellation linkage**: `CapabilityToken.CancellationToken` + `CapabilityTokenSource` + revocation registry. In-flight operations now cancel when the parent request aborts, the token expires, or the token is revoked.
 - **Mid-segment wildcards** in token grants: `user:*:alice` matches `user:read:alice` and `user:write:alice`; trailing `*` still covers one-or-more segments.
 
-Branch: `claude/continue-agent-strategy-yS2Z1`. Tests: 1786 passed, 0 failed.
+Branch: `claude/continue-agent-strategy-yS2Z1`. Tests: 1790 passed, 0 failed.
+
+### Plugin verb (and the move that made it possible)
+
+`IPluginRegistry` and friends moved from `Weave.Workspaces.Plugins` to `Weave.Silo.Plugins` (along with the test file, which moved to `Weave.Silo.Tests`). The dependency flow `Shared → Workspaces → Security → ...` had blocked adding a `CapabilityToken` parameter to the registry interface — Workspaces sits before Security and can't import from it. Moving to Silo (downstream of Security) lets the interface take a token.
+
+After the move:
+- `IPluginRegistry.ConnectAsync` / `DisconnectAsync` / `ConnectAllAsync` take a `CapabilityToken`
+- `PluginRegistry.Authorize(token, pluginName)` validates signature + grant of `plugin:invoke:<name>`
+- `PluginTokenFactory.MintInvoke(svc, name, ct)` mirrors `SkillTokenFactory` / `ChannelTokenFactory` / `UserTokenFactory`
+- `PluginEndpoints` mints a per-request token via `using var source = ...` and passes `source.Token`
+- `SiloPluginActivator` mints a startup-scoped token (workspace `silo`, issued-to `silo/plugin-activator`) per plugin name during boot
+
+Cross-workspace check is intentionally NOT part of the plugin Authorize: the registry is silo-singleton, not workspace-scoped. The token's workspace is for audit context only.
+
+`InternalsVisibleTo("Weave.Silo.Tests")` was added to `Weave.Silo.csproj` so the `PluginConfigResolver` tests (which use `internal` resolver helpers) work in their new home.
 
 ### Capability cancellation linkage (Option C)
 
@@ -36,10 +52,11 @@ The per-actor `Authorize` private method (validate, workspace-match, grant-check
 
 ## Next work
 
-Pick the next verb from the [vocabulary table](unique-agent-strategy.md#capability-vocabulary). Recommended order:
+Only one vocabulary entry remains: **`marketplace:install`**. Wait until an actual install path is built — `IMarketplaceActor.IncrementInstallCountAsync` is just a counter today, not a real installation flow. Gating an action that doesn't exist is empty ceremony.
 
-1. **`plugin:invoke:<plugin>`** — `DaprToolConnector`, `VaultSecretProvider`, future webhook plugins. Lower priority (not LLM-reachable).
-2. **`marketplace:install`** — when the install path materializes.
+After that, the vocabulary table is fully Today. Future work shifts to:
+- The capability-bound audit log (#2 on the roadmap)
+- The capability replay/debugger (#3 on the roadmap)
 
 ## Cross-cutting follow-ups still open
 

@@ -6,6 +6,10 @@
   </PropertyGroup>
 
   <ItemGroup>
+    <InternalsVisibleTo Include="Weave.Silo.Tests" />
+  </ItemGroup>
+
+  <ItemGroup>
     <ProjectReference Include="..\Weave.ServiceDefaults\Weave.ServiceDefaults.csproj" />
     <ProjectReference Include="..\..\Workspaces\Weave.Workspaces\Weave.Workspaces.csproj" />
     <ProjectReference Include="..\..\Assistants\Weave.Agents\Weave.Agents.csproj" />

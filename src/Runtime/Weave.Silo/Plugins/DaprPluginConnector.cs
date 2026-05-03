@@ -4,7 +4,7 @@ using Weave.Silo.Events;
 using Weave.Tools.Connectors;
 using Weave.Tools.Discovery;
 using Weave.Workspaces.Models;
-using Weave.Workspaces.Plugins;
+using Weave.Silo.Plugins;
 
 namespace Weave.Silo.Plugins;
 

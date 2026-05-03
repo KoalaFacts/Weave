@@ -2,7 +2,7 @@ using Weave.Shared.Events;
 using Weave.Shared.Plugins;
 using Weave.Silo.Events;
 using Weave.Workspaces.Models;
-using Weave.Workspaces.Plugins;
+using Weave.Silo.Plugins;
 
 namespace Weave.Silo.Plugins;
 

@@ -18,7 +18,6 @@ using Weave.Silo.Security;
 using Weave.Silo.VirtualActors;
 using Weave.Tools.Connectors;
 using Weave.Tools.Discovery;
-using Weave.Workspaces.Plugins;
 using Weave.Workspaces.Runtime;
 
 namespace Weave.Silo.Startup;
