@@ -83,15 +83,23 @@ public sealed partial class McpToolConnector(ILogger<McpToolConnector> logger) :
 
     public async Task<ToolResult> InvokeAsync(ToolHandle handle, ToolInvocation invocation, CancellationToken ct = default)
     {
-        if (!_processes.TryGetValue(handle.ConnectionId, out var connection) || connection.Process.HasExited)
+        if (!_processes.TryGetValue(handle.ConnectionId, out var connection))
         {
             return new ToolResult
             {
                 Success = false,
                 ToolName = handle.ToolName,
-                Error = connection is null
-                    ? "MCP process not connected"
-                    : $"MCP process exited (code {connection.Process.ExitCode}). {FormatStderrTail(connection.StderrTail)}"
+                Error = "MCP process not connected"
+            };
+        }
+
+        if (connection.Process.HasExited)
+        {
+            return new ToolResult
+            {
+                Success = false,
+                ToolName = handle.ToolName,
+                Error = $"MCP process exited (code {connection.Process.ExitCode}). {FormatStderrTail(connection.StderrTail)}"
             };
         }
 
