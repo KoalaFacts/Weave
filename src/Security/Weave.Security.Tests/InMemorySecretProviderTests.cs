@@ -1,5 +1,7 @@
+using Microsoft.Extensions.Logging.Abstractions;
 using Weave.Security.Tokens;
 using Weave.Security.Vault;
+using Weave.Shared.Events;
 
 namespace Weave.Security.Tests;
 
@@ -9,11 +11,13 @@ public sealed class InMemorySecretProviderTests
         Microsoft.Extensions.Options.Options.Create(
             new CapabilityTokenOptions { SigningKey = "test-signing-key-that-is-at-least-32-chars-long" }),
         TimeProvider.System);
+    private static readonly CapabilityAuthorizer _authorizer = new(
+        _tokenService, Substitute.For<IEventBus>(), NullLogger<CapabilityAuthorizer>.Instance);
     private readonly InMemorySecretProvider _provider;
 
     public InMemorySecretProviderTests()
     {
-        _provider = new InMemorySecretProvider(_tokenService);
+        _provider = new InMemorySecretProvider(_authorizer);
     }
 
     private static CapabilityToken MintToken(

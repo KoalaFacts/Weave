@@ -157,7 +157,7 @@ internal sealed class SiloServiceRegistrar
             new VaultPluginConnector(
                 sp.GetRequiredService<PluginServiceBroker>(),
                 sp.GetRequiredService<IHttpClientFactory>(),
-                sp.GetRequiredService<ICapabilityTokenService>(),
+                sp.GetRequiredService<ICapabilityAuthorizer>(),
                 sp.GetRequiredService<ILoggerFactory>()));
         _services.AddSingleton<IPluginConnector>(sp =>
             new HttpPluginConnector(

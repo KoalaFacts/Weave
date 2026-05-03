@@ -11,18 +11,18 @@ The capability vocabulary is 6 verbs, all enforced through one shared authorizer
 | Verb | Manifest declaration | Runtime enforcement |
 |---|---|---|
 | `tool:<name>` / `tool:*` | yes | `CapabilityAuthorizer` from `src/Tools/Weave.Tools/Actors/ToolActor.cs` |
-| `secret:<path>` | yes | `src/Security/Weave.Security/Actors/SecretProxyActor.cs` (still inline — see follow-ups) |
+| `secret:<path>` | yes | `CapabilityAuthorizer` from `src/Security/Weave.Security/Vault/VaultSecretProvider.cs` and `InMemorySecretProvider.cs` |
 | `skill:read` / `skill:write` | yes | `CapabilityAuthorizer` from `src/Assistants/Weave.Agents/Actors/SkillMemoryActor.cs` |
 | `channel:send:<id>` / `channel:receive:<id>` | yes | `CapabilityAuthorizer` from `src/Assistants/Weave.Agents/Actors/ChannelGatewayActor.cs` |
 | `user:read:<userId>` / `user:write:<userId>` | yes | `CapabilityAuthorizer` from `src/Assistants/Weave.Agents/Actors/UserModelActor.cs` |
 | `plugin:invoke:<plugin>` | yes | `CapabilityAuthorizer` from `src/Runtime/Weave.Silo/Plugins/PluginRegistry.cs` |
 | `marketplace:install` | not implemented — see Next work | — |
 
-Tests: 1820 passed.
+Tests: 1827 passed.
 
 ### How a verb is wired today
 
-Five sites that previously held a private `Authorize(...)` method now share `ICapabilityAuthorizer` ([CapabilityAuthorizer.cs](../src/Security/Weave.Security/Tokens/CapabilityAuthorizer.cs)). The authorizer:
+Six sites that previously held a private `Authorize(...)` method (or, in the case of the secret providers, an inline `Validate` + `HasGrant` pair) now share `ICapabilityAuthorizer` ([CapabilityAuthorizer.cs](../src/Security/Weave.Security/Tokens/CapabilityAuthorizer.cs)). The authorizer:
 
 1. **Validates** signature, expiry, revocation via `ICapabilityTokenService.Validate`.
 2. **Workspace-matches** when `actorWorkspaceId` is non-empty (PluginRegistry passes `null` since plugins are silo-wide).
@@ -46,7 +46,7 @@ Roadmap #3 ships as a thin pipeline on top of the audit event. No producer-side 
 
 Acceptance bar from the strategy doc's *Measurement* section is met:
 - **Audit completeness** — every Authorize call (allow + deny) publishes a row carrying capability, grant, actor, reason. Verified by the per-actor smoke tests added in roadmap #2 + the end-to-end `CapabilityAuditEndpointTests`.
-- **Coverage of action types** — 5/5 actor sites publish through the shared authorizer; only `secret:<path>` (VaultSecretProvider) is still inline (cross-cutting follow-up).
+- **Coverage of action types** — 6/6 actor sites publish through the shared authorizer.
 
 ## Next work
 
@@ -54,7 +54,6 @@ Acceptance bar from the strategy doc's *Measurement* section is met:
 
 Natural next moves, in order of leverage:
 
-- **Wire `secret:<path>` through `CapabilityAuthorizer`** so the audit log covers Vault reads. The cheapest fix is to call `authorizer.AuthorizeAsync(token, $"secret:{path}", token.WorkspaceId, ...)` at `VaultSecretProvider.cs:17-23`, replacing the inline `Validate` + `HasGrant`. After this, *Coverage of action types* hits 100% per the strategy doc.
 - **Manifest-side wildcard matching.** Runtime mint sites still use literal `.Contains(grant)` against `state.Definition.Capabilities`. A manifest declaring `skill:*` doesn't grant `skill:read`/`skill:write` for the manifest gate. Plug `CapabilityToken.HasGrant`-style segment matching into the manifest check.
 - **Durable audit store.** The in-memory store is fine for replay/debug but evicts under load. A SQLite or Postgres-backed `ICapabilityAuditStore` (selected via `CapabilityAuditOptions.Backend`) is a small, mechanical follow-up.
 - **Dashboard view.** A Blazor page that hits `/api/audit/capability` and renders the same table the CLI shows. No backend work required.
@@ -63,7 +62,6 @@ Natural next moves, in order of leverage:
 
 These remain real gaps. None blocks the *Next work* items above.
 
-- **`secret:<path>` enforcement is still inline in `VaultSecretProvider.cs:17-23`** — listed under *Next work* above as the highest-leverage follow-up.
 - **`ToolRegistryConnector` self-mints `[$"tool:{toolName}", "secret:*"]`** without consulting the agent's manifest. The connector is workspace-scoped (no `AgentDefinition` in scope), so the manifest-gate fix is less obvious. Likely shape: pass the requesting agent's capabilities through, or treat tool registration as a workspace-admin verb gated by a separate grant.
 - **`channel:send:*` requires both grants today** because `RouteInboundAsync` does both ingress and reply atomically. The double `Authorize` call now lives at the call site (lines 74–75 of ChannelGatewayActor) with distinct `actionContext` strings (`":receive"` / `":send"`), so the audit log distinguishes them. If a webhook adapter ever needs receive-only, split the actor surface.
 
@@ -86,6 +84,7 @@ For the next vocabulary entry (or any follow-up that touches the audit pipeline)
 
 ## History
 
+- **2026-05-03** (`claude/implement-next-task-vSX6x`) — `secret:<path>` enforcement moved out of `VaultSecretProvider` / `InMemorySecretProvider` into the shared `CapabilityAuthorizer`; allow + deny rows now flow through the audit pipeline, closing the last *Coverage of action types* gap (5/6 → 6/6); tests 1820 → 1827
 - **2026-05-03** (`claude/competitor-analysis-handoff-Qn9jh`) — capability replay/debugger shipped; in-memory `ICapabilityAuditStore` (capacity-bounded) fed by a subscriber hosted service; `GET /api/audit/capability/{tokenId}` and `?limit=N` over CQRS query handlers; `weave audit replay [tokenId]` CLI with guided + advanced modes; tests 1807 → 1820
 - **2026-05-03** (`claude/competitor-analysis-handoff-Qn9jh`) — capability-bound audit log shipped; five `Authorize` copies consolidated into `ICapabilityAuthorizer`; allow + deny rows publish `CapabilityAuthorizationEvent` keyed by tokenId/grant/workspaceId/issuedTo/outcome/reason/actionContext; tests 1790 → 1807
 - **2026-05-03** (`claude/continue-agent-strategy-yS2Z1`) — `channel:*`, `user:*`, `plugin:invoke:*` shipped; capability cancellation linkage; mid-segment wildcards; `IReadOnlyList<T>` manifest cleanup; four PR #40 follow-ups; plugin types moved Workspaces → Silo to enable the verb

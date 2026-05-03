@@ -2,6 +2,7 @@ using Microsoft.Extensions.Logging.Abstractions;
 using Weave.Security.Plugins;
 using Weave.Security.Tokens;
 using Weave.Security.Vault;
+using Weave.Shared.Events;
 using Weave.Shared.Plugins;
 using Weave.Shared.Secrets;
 
@@ -14,6 +15,12 @@ public sealed class SecretProviderProxyTests
         Microsoft.Extensions.Options.Options.Create(
             new CapabilityTokenOptions { SigningKey = "test-signing-key-that-is-at-least-32-chars-long" }),
         TimeProvider.System);
+    private readonly CapabilityAuthorizer _authorizer;
+
+    public SecretProviderProxyTests()
+    {
+        _authorizer = new CapabilityAuthorizer(_tokenService, Substitute.For<IEventBus>(), NullLogger<CapabilityAuthorizer>.Instance);
+    }
 
     private CapabilityToken MintToken(string secretGrant = "secret:*") =>
         _tokenService.Mint(new CapabilityTokenRequest
@@ -26,7 +33,7 @@ public sealed class SecretProviderProxyTests
     [Fact]
     public async Task ResolveAsync_NoOverride_DelegatesToFallback()
     {
-        var fallback = new InMemorySecretProvider(_tokenService);
+        var fallback = new InMemorySecretProvider(_authorizer);
         fallback.SetSecret("db-pass", "s3cret");
         var proxy = new SecretProviderProxy(_broker, fallback);
         var token = MintToken();
@@ -39,7 +46,7 @@ public sealed class SecretProviderProxyTests
     [Fact]
     public async Task ResolveAsync_WithOverride_DelegatesToOverride()
     {
-        var fallback = new InMemorySecretProvider(_tokenService);
+        var fallback = new InMemorySecretProvider(_authorizer);
         fallback.SetSecret("db-pass", "fallback-value");
         var proxy = new SecretProviderProxy(_broker, fallback);
 
@@ -57,7 +64,7 @@ public sealed class SecretProviderProxyTests
     [Fact]
     public async Task ResolveAsync_AfterClear_RevertsToFallback()
     {
-        var fallback = new InMemorySecretProvider(_tokenService);
+        var fallback = new InMemorySecretProvider(_authorizer);
         fallback.SetSecret("db-pass", "fallback-value");
         var proxy = new SecretProviderProxy(_broker, fallback);
 
@@ -74,7 +81,7 @@ public sealed class SecretProviderProxyTests
     [Fact]
     public async Task ListPathsAsync_NoOverride_DelegatesToFallback()
     {
-        var fallback = new InMemorySecretProvider(_tokenService);
+        var fallback = new InMemorySecretProvider(_authorizer);
         fallback.SetSecret("key-1", "val");
         fallback.SetSecret("key-2", "val");
         var proxy = new SecretProviderProxy(_broker, fallback);
@@ -87,7 +94,7 @@ public sealed class SecretProviderProxyTests
     [Fact]
     public async Task ListPathsAsync_WithOverride_DelegatesToOverride()
     {
-        var fallback = new InMemorySecretProvider(_tokenService);
+        var fallback = new InMemorySecretProvider(_authorizer);
         var proxy = new SecretProviderProxy(_broker, fallback);
 
         var mockProvider = Substitute.For<ISecretProvider>();
@@ -104,7 +111,7 @@ public sealed class SecretProviderProxyTests
     [Fact]
     public async Task HotSwap_OverrideToOverride_UsesLatest()
     {
-        var fallback = new InMemorySecretProvider(_tokenService);
+        var fallback = new InMemorySecretProvider(_authorizer);
         var proxy = new SecretProviderProxy(_broker, fallback);
         var token = MintToken();
 
@@ -128,7 +135,7 @@ public sealed class SecretProviderProxyTests
     [Fact]
     public async Task HotSwap_OverrideToOverrideToClear_RevertsToFallback()
     {
-        var fallback = new InMemorySecretProvider(_tokenService);
+        var fallback = new InMemorySecretProvider(_authorizer);
         fallback.SetSecret("key", "fallback");
         var proxy = new SecretProviderProxy(_broker, fallback);
         var token = MintToken();
@@ -146,7 +153,7 @@ public sealed class SecretProviderProxyTests
     [Fact]
     public async Task ResolveAsync_OverrideThrows_PropagatesException()
     {
-        var fallback = new InMemorySecretProvider(_tokenService);
+        var fallback = new InMemorySecretProvider(_authorizer);
         fallback.SetSecret("key", "fallback-value");
         var proxy = new SecretProviderProxy(_broker, fallback);
 
@@ -164,7 +171,7 @@ public sealed class SecretProviderProxyTests
     [Fact]
     public async Task ListPathsAsync_OverrideThrows_PropagatesException()
     {
-        var fallback = new InMemorySecretProvider(_tokenService);
+        var fallback = new InMemorySecretProvider(_authorizer);
         var proxy = new SecretProviderProxy(_broker, fallback);
 
         var throwingProvider = Substitute.For<ISecretProvider>();
@@ -181,7 +188,7 @@ public sealed class SecretProviderProxyTests
     [Fact]
     public async Task ClearThenReSwap_UsesNewOverride()
     {
-        var fallback = new InMemorySecretProvider(_tokenService);
+        var fallback = new InMemorySecretProvider(_authorizer);
         fallback.SetSecret("key", "fallback");
         var proxy = new SecretProviderProxy(_broker, fallback);
         var token = MintToken();

@@ -13,7 +13,7 @@ namespace Weave.Silo.Plugins;
 public sealed partial class VaultPluginConnector(
     PluginServiceBroker broker,
     IHttpClientFactory httpClientFactory,
-    ICapabilityTokenService tokenService,
+    ICapabilityAuthorizer authorizer,
     ILoggerFactory loggerFactory) : IPluginConnector
 {
     private readonly ILogger<VaultPluginConnector> _logger = loggerFactory.CreateLogger<VaultPluginConnector>();
@@ -57,7 +57,7 @@ public sealed partial class VaultPluginConnector(
 
         var provider = new VaultSecretProvider(
             httpClient,
-            tokenService,
+            authorizer,
             loggerFactory.CreateLogger<VaultSecretProvider>());
 
         // Don't dispose previous — in-flight ResolveAsync calls may still reference it.

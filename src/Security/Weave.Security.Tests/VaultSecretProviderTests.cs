@@ -1,8 +1,10 @@
 using System.Net;
 using System.Text;
 using Microsoft.Extensions.Logging;
+using Microsoft.Extensions.Logging.Abstractions;
 using Weave.Security.Tokens;
 using Weave.Security.Vault;
+using Weave.Shared.Events;
 
 namespace Weave.Security.Tests;
 
@@ -20,16 +22,13 @@ public sealed class VaultSecretProviderTests
             Grants = [grant]
         });
 
-    private static VaultSecretProvider CreateProvider(HttpMessageHandler handler) =>
-        new(
-            new HttpClient(handler) { BaseAddress = new Uri("http://vault:8200") },
-            new CapabilityTokenService(Microsoft.Extensions.Options.Options.Create(_tokenOptions), TimeProvider.System),
-            Substitute.For<ILogger<VaultSecretProvider>>());
+    private static CapabilityAuthorizer CreateAuthorizer(ICapabilityTokenService tokenService) =>
+        new(tokenService, Substitute.For<IEventBus>(), NullLogger<CapabilityAuthorizer>.Instance);
 
     private VaultSecretProvider CreateProviderWithSharedTokenService(HttpMessageHandler handler) =>
         new(
             new HttpClient(handler) { BaseAddress = new Uri("http://vault:8200") },
-            _tokenService,
+            CreateAuthorizer(_tokenService),
             Substitute.For<ILogger<VaultSecretProvider>>());
 
     // --- ResolveAsync: success ---

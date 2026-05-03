@@ -11,16 +11,12 @@ namespace Weave.Security.Vault;
 /// </summary>
 public sealed partial class VaultSecretProvider(
     HttpClient httpClient,
-    ICapabilityTokenService tokenService,
+    ICapabilityAuthorizer authorizer,
     ILogger<VaultSecretProvider> logger) : ISecretProvider
 {
     public async Task<SecretValue> ResolveAsync(string secretPath, CapabilityToken token, CancellationToken ct = default)
     {
-        if (!tokenService.Validate(token))
-            throw new UnauthorizedAccessException($"Invalid or expired capability token for secret '{secretPath}'");
-
-        if (!token.HasGrant($"secret:{secretPath}") && !token.HasGrant("secret:*"))
-            throw new UnauthorizedAccessException($"Token does not grant access to secret '{secretPath}'");
+        await authorizer.AuthorizeAsync(token, $"secret:{secretPath}", token.WorkspaceId);
 
         LogResolvingSecret(secretPath, token.IssuedTo, token.WorkspaceId);
 
