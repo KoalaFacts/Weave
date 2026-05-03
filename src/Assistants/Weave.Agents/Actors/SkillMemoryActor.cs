@@ -10,7 +10,7 @@ namespace Weave.Agents.Actors;
 public sealed class SkillMemoryActor(
     IEventBus eventBus,
     TimeProvider timeProvider,
-    ICapabilityTokenService tokenService,
+    ICapabilityAuthorizer authorizer,
     ILogger<SkillMemoryActor> logger,
     IActorState<SkillMemoryState> persistentState) : ISkillMemoryActor
 {
@@ -30,7 +30,7 @@ public sealed class SkillMemoryActor(
 
     public async Task<SkillDocument> StoreSkillAsync(SkillDocument skill, CapabilityToken token)
     {
-        Authorize(token, SkillWrite);
+        await authorizer.AuthorizeAsync(token, SkillWrite, persistentState.State.WorkspaceId);
 
         var key = skill.SkillId.ToString();
         persistentState.State.Skills[key] = skill;
@@ -46,7 +46,7 @@ public sealed class SkillMemoryActor(
 
     public async Task<SkillSuggestion> SuggestSkillAsync(SkillDocument skill, CapabilityToken token, string? sourceTaskId = null)
     {
-        Authorize(token, SkillWrite);
+        await authorizer.AuthorizeAsync(token, SkillWrite, persistentState.State.WorkspaceId);
 
         var key = skill.SkillId.ToString();
         var suggestion = new SkillSuggestion
@@ -68,19 +68,19 @@ public sealed class SkillMemoryActor(
         return suggestion;
     }
 
-    public Task<IReadOnlyList<SkillSuggestion>> GetSuggestedSkillsAsync(CapabilityToken token)
+    public async Task<IReadOnlyList<SkillSuggestion>> GetSuggestedSkillsAsync(CapabilityToken token)
     {
-        Authorize(token, SkillRead);
+        await authorizer.AuthorizeAsync(token, SkillRead, persistentState.State.WorkspaceId);
 
         IReadOnlyList<SkillSuggestion> suggestions = persistentState.State.SuggestedSkills.Values
             .OrderByDescending(s => s.SuggestedAt)
             .ToList();
-        return Task.FromResult(suggestions);
+        return suggestions;
     }
 
     public async Task<SkillDocument?> AcceptSuggestedSkillAsync(SkillId skillId, CapabilityToken token)
     {
-        Authorize(token, SkillWrite);
+        await authorizer.AuthorizeAsync(token, SkillWrite, persistentState.State.WorkspaceId);
 
         var key = skillId.ToString();
         if (!persistentState.State.SuggestedSkills.Remove(key, out var suggestion))
@@ -100,7 +100,7 @@ public sealed class SkillMemoryActor(
 
     public async Task<bool> RejectSuggestedSkillAsync(SkillId skillId, CapabilityToken token)
     {
-        Authorize(token, SkillWrite);
+        await authorizer.AuthorizeAsync(token, SkillWrite, persistentState.State.WorkspaceId);
 
         var key = skillId.ToString();
         if (!persistentState.State.SuggestedSkills.Remove(key))
@@ -114,36 +114,34 @@ public sealed class SkillMemoryActor(
         return true;
     }
 
-    public Task<IReadOnlyList<SkillSearchResult>> SearchAsync(string query, CapabilityToken token, int maxResults = 5, SkillSearchOptions? options = null)
+    public async Task<IReadOnlyList<SkillSearchResult>> SearchAsync(string query, CapabilityToken token, int maxResults = 5, SkillSearchOptions? options = null)
     {
-        Authorize(token, SkillRead);
+        await authorizer.AuthorizeAsync(token, SkillRead, persistentState.State.WorkspaceId);
 
         if (persistentState.State.Skills.Count == 0)
         {
-            return Task.FromResult<IReadOnlyList<SkillSearchResult>>(new List<SkillSearchResult>());
+            return new List<SkillSearchResult>();
         }
 
-        var results = SearchSkills(
+        return SearchSkills(
             persistentState.State.Skills.Values,
             query,
             maxResults,
             options,
             timeProvider.GetUtcNow());
-
-        return Task.FromResult<IReadOnlyList<SkillSearchResult>>(results);
     }
 
-    public Task<SkillDocument?> GetSkillAsync(SkillId skillId, CapabilityToken token)
+    public async Task<SkillDocument?> GetSkillAsync(SkillId skillId, CapabilityToken token)
     {
-        Authorize(token, SkillRead);
+        await authorizer.AuthorizeAsync(token, SkillRead, persistentState.State.WorkspaceId);
 
         persistentState.State.Skills.TryGetValue(skillId.ToString(), out var skill);
-        return Task.FromResult(skill);
+        return skill;
     }
 
     public async Task RecordUsageAsync(SkillId skillId, bool success, CapabilityToken token)
     {
-        Authorize(token, SkillWrite);
+        await authorizer.AuthorizeAsync(token, SkillWrite, persistentState.State.WorkspaceId);
 
         var key = skillId.ToString();
         if (!persistentState.State.Skills.TryGetValue(key, out var skill))
@@ -156,19 +154,19 @@ public sealed class SkillMemoryActor(
         await persistentState.WriteStateAsync(token.CancellationToken);
     }
 
-    public Task<IReadOnlyList<SkillDocument>> GetAllSkillsAsync(CapabilityToken token)
+    public async Task<IReadOnlyList<SkillDocument>> GetAllSkillsAsync(CapabilityToken token)
     {
-        Authorize(token, SkillRead);
+        await authorizer.AuthorizeAsync(token, SkillRead, persistentState.State.WorkspaceId);
 
         IReadOnlyList<SkillDocument> skills = persistentState.State.Skills.Values
             .Where(skill => skill.ArchivedAt is null)
             .ToList();
-        return Task.FromResult(skills);
+        return skills;
     }
 
     public async Task<SkillDocument?> ArchiveSkillAsync(SkillId skillId, CapabilityToken token)
     {
-        Authorize(token, SkillWrite);
+        await authorizer.AuthorizeAsync(token, SkillWrite, persistentState.State.WorkspaceId);
 
         var key = skillId.ToString();
         if (!persistentState.State.Skills.TryGetValue(key, out var skill))
@@ -182,7 +180,7 @@ public sealed class SkillMemoryActor(
 
     public async Task<SkillDocument?> RestoreSkillAsync(SkillId skillId, CapabilityToken token)
     {
-        Authorize(token, SkillWrite);
+        await authorizer.AuthorizeAsync(token, SkillWrite, persistentState.State.WorkspaceId);
 
         var key = skillId.ToString();
         if (!persistentState.State.Skills.TryGetValue(key, out var skill))
@@ -196,7 +194,7 @@ public sealed class SkillMemoryActor(
 
     public async Task RemoveSkillAsync(SkillId skillId, CapabilityToken token)
     {
-        Authorize(token, SkillWrite);
+        await authorizer.AuthorizeAsync(token, SkillWrite, persistentState.State.WorkspaceId);
 
         var key = skillId.ToString();
         if (persistentState.State.Skills.Remove(key))
@@ -204,33 +202,6 @@ public sealed class SkillMemoryActor(
             await persistentState.WriteStateAsync(token.CancellationToken);
             logger.LogInformation("Skill {SkillId} removed from workspace {WorkspaceId}",
                 skillId, persistentState.State.WorkspaceId);
-        }
-    }
-
-    private void Authorize(CapabilityToken token, string grant)
-    {
-        if (!tokenService.Validate(token))
-        {
-            logger.LogWarning("Skill capability denied: invalid or expired token for grant '{Grant}' on workspace {WorkspaceId}",
-                grant, persistentState.State.WorkspaceId);
-            throw new UnauthorizedAccessException("Invalid or expired capability token");
-        }
-
-        var actorWorkspaceId = persistentState.State.WorkspaceId;
-        if (!string.IsNullOrWhiteSpace(actorWorkspaceId)
-            && !string.Equals(token.WorkspaceId, actorWorkspaceId, StringComparison.Ordinal))
-        {
-            logger.LogWarning("Skill capability denied: token workspace '{TokenWorkspaceId}' does not match actor workspace '{ActorWorkspaceId}'",
-                token.WorkspaceId, actorWorkspaceId);
-            throw new UnauthorizedAccessException(
-                $"Token workspace '{token.WorkspaceId}' does not match actor workspace '{actorWorkspaceId}'");
-        }
-
-        if (!token.HasGrant(grant))
-        {
-            logger.LogWarning("Skill capability denied: token issued to '{IssuedTo}' does not grant '{Grant}'",
-                token.IssuedTo, grant);
-            throw new UnauthorizedAccessException($"Token does not grant '{grant}'");
         }
     }
 

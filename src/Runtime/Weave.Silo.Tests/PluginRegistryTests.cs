@@ -1,6 +1,8 @@
 using Microsoft.Extensions.Logging.Abstractions;
 using Microsoft.Extensions.Options;
+using Weave.Security.Events;
 using Weave.Security.Tokens;
+using Weave.Shared.Events;
 using Weave.Silo.Plugins;
 using Weave.Workspaces.Models;
 
@@ -43,8 +45,29 @@ public sealed class PluginRegistryTests
         Lifetime = TimeSpan.FromHours(1)
     });
 
+    private sealed class CapturingEventBus : IEventBus
+    {
+        public List<CapabilityAuthorizationEvent> CapabilityEvents { get; } = [];
+
+        public Task PublishAsync<TEvent>(TEvent domainEvent, CancellationToken ct) where TEvent : IDomainEvent
+        {
+            if (domainEvent is CapabilityAuthorizationEvent capabilityEvent)
+                CapabilityEvents.Add(capabilityEvent);
+            return Task.CompletedTask;
+        }
+
+        public IDisposable Subscribe<TEvent>(Func<TEvent, CancellationToken, Task> handler) where TEvent : IDomainEvent =>
+            throw new NotSupportedException();
+    }
+
+    private static CapabilityAuthorizer CreateAuthorizer(IEventBus? bus = null) =>
+        new(TokenService, bus ?? Substitute.For<IEventBus>(), NullLogger<CapabilityAuthorizer>.Instance);
+
     private static PluginRegistry CreateRegistry(params IPluginConnector[] connectors) =>
-        new(connectors, TokenService, NullLogger<PluginRegistry>.Instance);
+        new(connectors, CreateAuthorizer(), NullLogger<PluginRegistry>.Instance);
+
+    private static PluginRegistry CreateRegistry(IEventBus bus, params IPluginConnector[] connectors) =>
+        new(connectors, CreateAuthorizer(bus), NullLogger<PluginRegistry>.Instance);
 
     [Fact]
     public async Task ConnectAsync_KnownType_ReturnsConnected()
@@ -553,6 +576,50 @@ public sealed class PluginRegistryTests
 
         await Should.ThrowAsync<UnauthorizedAccessException>(() =>
             registry.DisconnectAsync("my-dapr", wrongGrant));
+    }
+
+    [Fact]
+    public async Task ConnectAsync_OnDeny_PublishesCapabilityAuthorizationEvent()
+    {
+        var bus = new CapturingEventBus();
+        var registry = CreateRegistry(bus, new FakePluginConnector("dapr", connected: true, schema: TestSchema));
+        var wrongGrant = TokenService.Mint(new CapabilityTokenRequest
+        {
+            WorkspaceId = "test",
+            IssuedTo = "test",
+            Grants = ["tool:*"],
+            Lifetime = TimeSpan.FromHours(1)
+        });
+
+        await Should.ThrowAsync<UnauthorizedAccessException>(() =>
+            registry.ConnectAsync("my-dapr", new PluginDefinition { Type = "dapr" }, wrongGrant));
+
+        bus.CapabilityEvents.Count.ShouldBe(1);
+        var evt = bus.CapabilityEvents[0];
+        evt.Outcome.ShouldBe(CapabilityAuthorizationOutcome.Deny);
+        evt.Reason.ShouldBe("grant-missing");
+        evt.Grant.ShouldBe("plugin:invoke:my-dapr");
+        evt.ActionContext.ShouldBe("ConnectAsync");
+    }
+
+    [Fact]
+    public async Task ConnectAsync_OnAllow_PublishesCapabilityAuthorizationEvent()
+    {
+        var bus = new CapturingEventBus();
+        var registry = CreateRegistry(bus, new FakePluginConnector("dapr", connected: true, schema: TestSchema));
+
+        await registry.ConnectAsync("my-dapr", new PluginDefinition
+        {
+            Type = "dapr",
+            Config = new Dictionary<string, string> { ["port"] = "3500" }
+        }, AnyPlugin);
+
+        bus.CapabilityEvents.Count.ShouldBe(1);
+        var evt = bus.CapabilityEvents[0];
+        evt.Outcome.ShouldBe(CapabilityAuthorizationOutcome.Allow);
+        evt.Reason.ShouldBeNull();
+        evt.Grant.ShouldBe("plugin:invoke:my-dapr");
+        evt.ActionContext.ShouldBe("ConnectAsync");
     }
 
     private sealed class ThrowingPluginConnector(string type) : IPluginConnector

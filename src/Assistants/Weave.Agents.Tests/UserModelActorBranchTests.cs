@@ -43,10 +43,12 @@ public sealed class UserModelActorBranchTests
     private static (UserModelActor Actor, CapabilityTokenService TokenService) CreateActor(IActorState<UserProfileState> ps)
     {
         var tokenService = CreateTokenService();
+        var bus = Substitute.For<IEventBus>();
+        var authorizer = new CapabilityAuthorizer(tokenService, bus, NullLogger<CapabilityAuthorizer>.Instance);
         var actor = new UserModelActor(
-            Substitute.For<IEventBus>(),
+            bus,
             TimeProvider.System,
-            tokenService,
+            authorizer,
             NullLogger<UserModelActor>.Instance,
             ps);
         return (actor, tokenService);

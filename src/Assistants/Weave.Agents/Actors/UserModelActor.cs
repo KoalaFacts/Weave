@@ -12,7 +12,7 @@ namespace Weave.Agents.Actors;
 public sealed class UserModelActor(
     IEventBus eventBus,
     TimeProvider timeProvider,
-    ICapabilityTokenService tokenService,
+    ICapabilityAuthorizer authorizer,
     ILogger<UserModelActor> logger,
     IActorState<UserProfileState> persistentState) : IUserModelActor
 {
@@ -33,7 +33,7 @@ public sealed class UserModelActor(
     public async Task RecordInteractionAsync(InteractionRecord record, CapabilityToken token)
     {
         EnsureIdentity();
-        Authorize(token, write: true);
+        await authorizer.AuthorizeAsync(token, BuildGrant(write: true), persistentState.State.WorkspaceId);
 
         if (persistentState.State.RecentInteractions.Count >= persistentState.State.MaxRecentInteractions)
             persistentState.State.RecentInteractions.RemoveAt(0);
@@ -72,7 +72,7 @@ public sealed class UserModelActor(
     public async Task SetPreferenceAsync(string key, string value, CapabilityToken token)
     {
         EnsureIdentity();
-        Authorize(token, write: true);
+        await authorizer.AuthorizeAsync(token, BuildGrant(write: true), persistentState.State.WorkspaceId);
         persistentState.State.Preferences[key] = value;
         await persistentState.WriteStateAsync(token.CancellationToken);
     }
@@ -80,27 +80,27 @@ public sealed class UserModelActor(
     public async Task SetDomainContextAsync(string key, string value, CapabilityToken token)
     {
         EnsureIdentity();
-        Authorize(token, write: true);
+        await authorizer.AuthorizeAsync(token, BuildGrant(write: true), persistentState.State.WorkspaceId);
         persistentState.State.DomainContext[key] = value;
         await persistentState.WriteStateAsync(token.CancellationToken);
     }
 
-    public Task<UserProfileState> GetProfileAsync(CapabilityToken token)
+    public async Task<UserProfileState> GetProfileAsync(CapabilityToken token)
     {
         EnsureIdentity();
-        Authorize(token, write: false);
-        return Task.FromResult(persistentState.State);
+        await authorizer.AuthorizeAsync(token, BuildGrant(write: false), persistentState.State.WorkspaceId);
+        return persistentState.State;
     }
 
-    public Task<string> GetContextSummaryAsync(CapabilityToken token)
+    public async Task<string> GetContextSummaryAsync(CapabilityToken token)
     {
         EnsureIdentity();
-        Authorize(token, write: false);
+        await authorizer.AuthorizeAsync(token, BuildGrant(write: false), persistentState.State.WorkspaceId);
         if (persistentState.State.TotalInteractions == 0
             && persistentState.State.Preferences.Count == 0
             && persistentState.State.DomainContext.Count == 0)
         {
-            return Task.FromResult(string.Empty);
+            return string.Empty;
         }
 
         var sb = new StringBuilder();
@@ -133,13 +133,13 @@ public sealed class UserModelActor(
 
         sb.Append(CultureInfo.InvariantCulture, $"Interactions: {persistentState.State.TotalInteractions} total.");
 
-        return Task.FromResult(sb.ToString());
+        return sb.ToString();
     }
 
     public async Task ClearAsync(CapabilityToken token)
     {
         EnsureIdentity();
-        Authorize(token, write: true);
+        await authorizer.AuthorizeAsync(token, BuildGrant(write: true), persistentState.State.WorkspaceId);
         var state = persistentState.State;
         state.Preferences.Clear();
         state.RecentInteractions.Clear();
@@ -173,33 +173,6 @@ public sealed class UserModelActor(
         persistentState.State.UserId = parts.Length > 1 ? parts[1] : key;
     }
 
-    private void Authorize(CapabilityToken token, bool write)
-    {
-        var verb = write ? "write" : "read";
-        var grant = $"user:{verb}:{persistentState.State.UserId}";
-
-        if (!tokenService.Validate(token))
-        {
-            logger.LogWarning("User capability denied: invalid or expired token for grant '{Grant}' on workspace {WorkspaceId}",
-                grant, persistentState.State.WorkspaceId);
-            throw new UnauthorizedAccessException("Invalid or expired capability token");
-        }
-
-        var actorWorkspaceId = persistentState.State.WorkspaceId;
-        if (!string.IsNullOrWhiteSpace(actorWorkspaceId)
-            && !string.Equals(token.WorkspaceId, actorWorkspaceId, StringComparison.Ordinal))
-        {
-            logger.LogWarning("User capability denied: token workspace '{TokenWorkspaceId}' does not match actor workspace '{ActorWorkspaceId}'",
-                token.WorkspaceId, actorWorkspaceId);
-            throw new UnauthorizedAccessException(
-                $"Token workspace '{token.WorkspaceId}' does not match actor workspace '{actorWorkspaceId}'");
-        }
-
-        if (!token.HasGrant(grant))
-        {
-            logger.LogWarning("User capability denied: token issued to '{IssuedTo}' does not grant '{Grant}'",
-                token.IssuedTo, grant);
-            throw new UnauthorizedAccessException($"Token does not grant '{grant}'");
-        }
-    }
+    private string BuildGrant(bool write) =>
+        $"user:{(write ? "write" : "read")}:{persistentState.State.UserId}";
 }

@@ -3,6 +3,7 @@ using Microsoft.Extensions.Options;
 using Weave.Agents.Actors;
 using Weave.Agents.Events;
 using Weave.Agents.Models;
+using Weave.Security.Events;
 using Weave.Security.Tokens;
 using Weave.Shared.Events;
 using Weave.Shared.Ids;
@@ -82,8 +83,9 @@ public sealed class ChannelGatewayActorTests
         var logger = NullLogger<ChannelGatewayActor>.Instance;
         var persistentState = CreatePersistentState();
         var tokenService = CreateTokenService();
+        var authorizer = new CapabilityAuthorizer(tokenService, eventBus, NullLogger<CapabilityAuthorizer>.Instance);
 
-        var actor = new ChannelGatewayActor(actors, eventBus, tokenService, logger, persistentState);
+        var actor = new ChannelGatewayActor(actors, eventBus, authorizer, logger, persistentState);
         return (actor, actors, eventBus, tokenService);
     }
 
@@ -286,7 +288,9 @@ public sealed class ChannelGatewayActorTests
         var eventBus = Substitute.For<IEventBus>();
         var logger = NullLogger<ChannelGatewayActor>.Instance;
 
-        var actor = new ChannelGatewayActor(actors, eventBus, CreateTokenService(), logger, persistentState);
+        var tokenService = CreateTokenService();
+        var authorizer = new CapabilityAuthorizer(tokenService, eventBus, NullLogger<CapabilityAuthorizer>.Instance);
+        var actor = new ChannelGatewayActor(actors, eventBus, authorizer, logger, persistentState);
         await actor.OnActivatedAsync("ws-1", TestContext.Current.CancellationToken);
 
         state.WorkspaceId.ShouldBe("ws-1");
@@ -306,7 +310,9 @@ public sealed class ChannelGatewayActorTests
         var eventBus = Substitute.For<IEventBus>();
         var logger = NullLogger<ChannelGatewayActor>.Instance;
 
-        var actor = new ChannelGatewayActor(actors, eventBus, CreateTokenService(), logger, persistentState);
+        var tokenService = CreateTokenService();
+        var authorizer = new CapabilityAuthorizer(tokenService, eventBus, NullLogger<CapabilityAuthorizer>.Instance);
+        var actor = new ChannelGatewayActor(actors, eventBus, authorizer, logger, persistentState);
         await actor.OnActivatedAsync("different-ws", TestContext.Current.CancellationToken);
 
         state.WorkspaceId.ShouldBe("existing-ws");
@@ -382,5 +388,44 @@ public sealed class ChannelGatewayActorTests
 
         await Should.ThrowAsync<UnauthorizedAccessException>(
             () => actor.RouteInboundAsync(CreateInboundMessage(), otherChannelToken));
+    }
+
+    [Fact]
+    public async Task RouteInboundAsync_OnDeniedReceive_PublishesEventWithChannelReceiveGrant()
+    {
+        var actors = Substitute.For<IVirtualActorProvider>();
+        var eventBus = new CapabilityCapturingEventBus();
+        var persistentState = CreatePersistentState();
+        var tokenService = CreateTokenService();
+        var authorizer = new CapabilityAuthorizer(tokenService, eventBus, NullLogger<CapabilityAuthorizer>.Instance);
+        var actor = new ChannelGatewayActor(actors, eventBus, authorizer, NullLogger<ChannelGatewayActor>.Instance, persistentState);
+
+        await actor.RegisterChannelAsync(CreateChannelConfig(targetAgent: "researcher"));
+        var sendOnlyToken = InboundToken(tokenService, grants: [$"channel:send:{TestChannelId}"]);
+
+        await Should.ThrowAsync<UnauthorizedAccessException>(
+            () => actor.RouteInboundAsync(CreateInboundMessage(), sendOnlyToken));
+
+        eventBus.CapabilityEvents.Count.ShouldBe(1);
+        var evt = eventBus.CapabilityEvents[0];
+        evt.Outcome.ShouldBe(CapabilityAuthorizationOutcome.Deny);
+        evt.Reason.ShouldBe("grant-missing");
+        evt.Grant.ShouldBe($"channel:receive:{TestChannelId}");
+        evt.ActionContext.ShouldBe("ChannelGatewayActor.RouteInbound:receive");
+    }
+
+    private sealed class CapabilityCapturingEventBus : IEventBus
+    {
+        public List<CapabilityAuthorizationEvent> CapabilityEvents { get; } = [];
+
+        public Task PublishAsync<TEvent>(TEvent domainEvent, CancellationToken ct) where TEvent : IDomainEvent
+        {
+            if (domainEvent is CapabilityAuthorizationEvent capabilityEvent)
+                CapabilityEvents.Add(capabilityEvent);
+            return Task.CompletedTask;
+        }
+
+        public IDisposable Subscribe<TEvent>(Func<TEvent, CancellationToken, Task> handler) where TEvent : IDomainEvent =>
+            throw new NotSupportedException();
     }
 }

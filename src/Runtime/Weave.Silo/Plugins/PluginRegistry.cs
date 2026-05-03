@@ -12,15 +12,15 @@ public sealed partial class PluginRegistry : IPluginRegistry, IDisposable
     private readonly Dictionary<string, IPluginConnector> _connectorsByType;
     private readonly ConcurrentDictionary<string, PluginStatus> _active = new(StringComparer.OrdinalIgnoreCase);
     private readonly SemaphoreSlim _connectLock = new(1, 1);
-    private readonly ICapabilityTokenService _tokenService;
+    private readonly ICapabilityAuthorizer _authorizer;
     private readonly ILogger<PluginRegistry> _logger;
 
     public PluginRegistry(
         IEnumerable<IPluginConnector> connectors,
-        ICapabilityTokenService tokenService,
+        ICapabilityAuthorizer authorizer,
         ILogger<PluginRegistry> logger)
     {
-        _tokenService = tokenService;
+        _authorizer = authorizer;
         _logger = logger;
         var byType = new Dictionary<string, IPluginConnector>(StringComparer.OrdinalIgnoreCase);
         foreach (var connector in connectors)
@@ -45,7 +45,7 @@ public sealed partial class PluginRegistry : IPluginRegistry, IDisposable
 
     public async Task<PluginStatus> ConnectAsync(string name, PluginDefinition definition, CapabilityToken token)
     {
-        Authorize(token, name);
+        await _authorizer.AuthorizeAsync(token, $"plugin:invoke:{name}", actorWorkspaceId: null);
 
         if (!_connectorsByType.TryGetValue(definition.Type, out var connector))
         {
@@ -129,7 +129,7 @@ public sealed partial class PluginRegistry : IPluginRegistry, IDisposable
 
     public async Task<PluginStatus> DisconnectAsync(string name, CapabilityToken token)
     {
-        Authorize(token, name);
+        await _authorizer.AuthorizeAsync(token, $"plugin:invoke:{name}", actorWorkspaceId: null);
 
         await _connectLock.WaitAsync();
         try
@@ -176,24 +176,6 @@ public sealed partial class PluginRegistry : IPluginRegistry, IDisposable
     }
 
     public void Dispose() => _connectLock.Dispose();
-
-    private void Authorize(CapabilityToken token, string pluginName)
-    {
-        var grant = $"plugin:invoke:{pluginName}";
-
-        if (!_tokenService.Validate(token))
-        {
-            _logger.LogWarning("Plugin capability denied: invalid or expired token for grant '{Grant}'", grant);
-            throw new UnauthorizedAccessException("Invalid or expired capability token");
-        }
-
-        if (!token.HasGrant(grant))
-        {
-            _logger.LogWarning("Plugin capability denied: token issued to '{IssuedTo}' does not grant '{Grant}'",
-                token.IssuedTo, grant);
-            throw new UnauthorizedAccessException($"Token does not grant '{grant}'");
-        }
-    }
 
     [LoggerMessage(Level = LogLevel.Information, Message = "Plugin '{Name}' ({Type}) connected")]
     private partial void LogPluginConnected(string name, string type);

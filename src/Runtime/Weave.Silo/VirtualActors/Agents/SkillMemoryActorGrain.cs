@@ -13,11 +13,11 @@ public sealed class SkillMemoryActorGrain : Grain, ISkillMemoryActorGrain
     public SkillMemoryActorGrain(
         IEventBus eventBus,
         TimeProvider timeProvider,
-        ICapabilityTokenService tokenService,
+        ICapabilityAuthorizer authorizer,
         ILogger<SkillMemoryActor> logger,
         [PersistentState("skill-memory", "Default")] IPersistentState<SkillMemoryState> state)
     {
-        _actor = new SkillMemoryActor(eventBus, timeProvider, tokenService, logger,
+        _actor = new SkillMemoryActor(eventBus, timeProvider, authorizer, logger,
             new OrleansActorState<SkillMemoryState>(state));
     }
 

@@ -12,11 +12,11 @@ public sealed class UserModelActorGrain : Grain, IUserModelActorGrain
     public UserModelActorGrain(
         IEventBus eventBus,
         TimeProvider timeProvider,
-        ICapabilityTokenService tokenService,
+        ICapabilityAuthorizer authorizer,
         ILogger<UserModelActor> logger,
         [PersistentState("user-model", "Default")] IPersistentState<UserProfileState> state)
     {
-        _actor = new UserModelActor(eventBus, timeProvider, tokenService, logger,
+        _actor = new UserModelActor(eventBus, timeProvider, authorizer, logger,
             new OrleansActorState<UserProfileState>(state));
     }
 

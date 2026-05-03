@@ -2,6 +2,7 @@ using Microsoft.Extensions.Logging.Abstractions;
 using Microsoft.Extensions.Options;
 using Weave.Agents.Actors;
 using Weave.Agents.Models;
+using Weave.Security.Events;
 using Weave.Security.Tokens;
 using Weave.Shared.Events;
 using Weave.Shared.Ids;
@@ -61,8 +62,9 @@ public sealed class UserModelActorTests
         var logger = NullLogger<UserModelActor>.Instance;
         var persistentState = CreatePersistentState();
         var tokenService = CreateTokenService();
+        var authorizer = new CapabilityAuthorizer(tokenService, eventBus, NullLogger<CapabilityAuthorizer>.Instance);
 
-        var actor = new UserModelActor(eventBus, TimeProvider.System, tokenService, logger, persistentState);
+        var actor = new UserModelActor(eventBus, TimeProvider.System, authorizer, logger, persistentState);
         return (actor, eventBus, Token(tokenService, $"user:read:{TestUserId}", $"user:write:{TestUserId}"));
     }
 
@@ -231,5 +233,41 @@ public sealed class UserModelActorTests
         profile.TotalInteractions.ShouldBe(0);
         profile.FirstSeenAt.ShouldBeNull();
         profile.LastSeenAt.ShouldBeNull();
+    }
+
+    [Fact]
+    public async Task SetPreferenceAsync_OnDeniedWrite_PublishesEventWithUserWriteGrant()
+    {
+        var bus = new UserCapabilityCapturingEventBus();
+        var tokenService = CreateTokenService();
+        var authorizer = new CapabilityAuthorizer(tokenService, bus, NullLogger<CapabilityAuthorizer>.Instance);
+        var persistentState = CreatePersistentState();
+        var actor = new UserModelActor(bus, TimeProvider.System, authorizer, NullLogger<UserModelActor>.Instance, persistentState);
+        var readOnlyToken = Token(tokenService, $"user:read:{TestUserId}");
+
+        await Should.ThrowAsync<UnauthorizedAccessException>(
+            () => actor.SetPreferenceAsync("theme", "dark", readOnlyToken));
+
+        bus.CapabilityEvents.Count.ShouldBe(1);
+        var evt = bus.CapabilityEvents[0];
+        evt.Outcome.ShouldBe(CapabilityAuthorizationOutcome.Deny);
+        evt.Reason.ShouldBe("grant-missing");
+        evt.Grant.ShouldBe($"user:write:{TestUserId}");
+        evt.ActionContext.ShouldBe("SetPreferenceAsync");
+    }
+
+    private sealed class UserCapabilityCapturingEventBus : IEventBus
+    {
+        public List<CapabilityAuthorizationEvent> CapabilityEvents { get; } = [];
+
+        public Task PublishAsync<TEvent>(TEvent domainEvent, CancellationToken ct) where TEvent : IDomainEvent
+        {
+            if (domainEvent is CapabilityAuthorizationEvent capabilityEvent)
+                CapabilityEvents.Add(capabilityEvent);
+            return Task.CompletedTask;
+        }
+
+        public IDisposable Subscribe<TEvent>(Func<TEvent, CancellationToken, Task> handler) where TEvent : IDomainEvent =>
+            throw new NotSupportedException();
     }
 }

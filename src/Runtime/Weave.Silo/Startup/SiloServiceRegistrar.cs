@@ -83,6 +83,7 @@ internal sealed class SiloServiceRegistrar
         _services.Configure<CapabilityTokenOptions>(
             _configuration.GetSection(CapabilityTokenOptions.ConfigurationSectionName));
         _services.AddSingleton<ICapabilityTokenService, CapabilityTokenService>();
+        _services.AddSingleton<ICapabilityAuthorizer, CapabilityAuthorizer>();
         _services.AddSingleton<ILeakScanner, LeakScanner>();
         _services.AddSingleton<TransparentSecretProxy>();
     }

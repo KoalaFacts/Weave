@@ -16,12 +16,12 @@ public sealed class ToolActorGrain : Grain, IToolActorGrain
         IVirtualActorProvider actors,
         IToolDiscoveryService discovery,
         ILeakScanner leakScanner,
-        ICapabilityTokenService tokenService,
+        ICapabilityAuthorizer authorizer,
         ILifecycleManager lifecycleManager,
         IEventBus eventBus,
         ILogger<ToolActor> logger)
     {
-        _actor = new ToolActor(actors, discovery, leakScanner, tokenService, lifecycleManager, eventBus, logger);
+        _actor = new ToolActor(actors, discovery, leakScanner, authorizer, lifecycleManager, eventBus, logger);
     }
 
     public override Task OnActivateAsync(CancellationToken cancellationToken) =>
