@@ -27,6 +27,15 @@
           "EmptyFiles": "4.4.0"
         }
       },
+      "Testcontainers.PostgreSql": {
+        "type": "Direct",
+        "requested": "[4.7.0, )",
+        "resolved": "4.7.0",
+        "contentHash": "RwR8cZIWaZLFYtXtIlwjMbGwUcbdQqcJj6zuUNN+RQooDmkbAlrp5WpPwVkMDSdNTi4BF3wiMnsw62j20OI6FA==",
+        "dependencies": {
+          "Testcontainers": "4.7.0"
+        }
+      },
       "xunit.v3": {
         "type": "Direct",
         "requested": "[3.2.2, )",
@@ -35,6 +44,11 @@
         "dependencies": {
           "xunit.v3.mtp-v1": "[3.2.2]"
         }
+      },
+      "BouncyCastle.Cryptography": {
+        "type": "Transitive",
+        "resolved": "2.4.0",
+        "contentHash": "SwXsAV3sMvAU/Nn31pbjhWurYSjJ+/giI/0n6tCrYoupEK34iIHCuk3STAd9fx8yudM85KkLSVdn951vTng/vQ=="
       },
       "Castle.Core": {
         "type": "Transitive",
@@ -53,6 +67,22 @@
           "System.Management": "6.0.1"
         }
       },
+      "Docker.DotNet.Enhanced": {
+        "type": "Transitive",
+        "resolved": "3.128.5",
+        "contentHash": "RmhcxDmS/zEuWhV9XA5M/xwFinfGe8IRyyNuEu/7EmnLam35dxlIXabi1Kp/MeEWr1fNPjPFrgxKieZfPeOOqw==",
+        "dependencies": {
+          "Microsoft.Extensions.Logging.Abstractions": "8.0.3"
+        }
+      },
+      "Docker.DotNet.Enhanced.X509": {
+        "type": "Transitive",
+        "resolved": "3.128.5",
+        "contentHash": "ofHQIPpv5HillvBZwk66wEGzHjV/G/771Ta1HjbOtcG8+Lv3bKNH19+fa+hgMzO4sZQCWGDIXygyDralePOKQA==",
+        "dependencies": {
+          "Docker.DotNet.Enhanced": "3.128.5"
+        }
+      },
       "EmptyFiles": {
         "type": "Transitive",
         "resolved": "4.4.0",
@@ -67,6 +97,14 @@
         "type": "Transitive",
         "resolved": "6.0.0",
         "contentHash": "UcSjPsst+DfAdJGVDsu346FX0ci0ah+lw3WRtn18NUwEqRt70HaOQ7lI72vy3+1LxtqI3T5GWwV39rQSrCzAeg=="
+      },
+      "Microsoft.Data.Sqlite.Core": {
+        "type": "Transitive",
+        "resolved": "10.0.7",
+        "contentHash": "xVrtBg3M1wJlBDkoT0dXEYB/wSc8bIHJPYtw/bu1AqpWgF79uPSs87DAhERR/Ilumre6TKZa1cjMg3VUUObVLA==",
+        "dependencies": {
+          "SQLitePCLRaw.core": "2.1.11"
+        }
       },
       "Microsoft.Extensions.Primitives": {
         "type": "Transitive",
@@ -108,6 +146,46 @@
         "resolved": "5.0.0",
         "contentHash": "dDoKi0PnDz31yAyETfRntsLArTlVAVzUzCIvvEDsDsucrl33Dl8pIJG06ePTJTI3tGpeyHS9Cq7Foc/s4EeKcg=="
       },
+      "SharpZipLib": {
+        "type": "Transitive",
+        "resolved": "1.4.2",
+        "contentHash": "yjj+3zgz8zgXpiiC3ZdF/iyTBbz2fFvMxZFEBPUcwZjIvXOf37Ylm+K58hqMfIBt5JgU/Z2uoUS67JmTLe973A=="
+      },
+      "SQLitePCLRaw.bundle_e_sqlite3": {
+        "type": "Transitive",
+        "resolved": "2.1.11",
+        "contentHash": "DC4nA7yWnf4UZdgJDF+9Mus4/cb0Y3Sfgi3gDnAoKNAIBwzkskNAbNbyu+u4atT0ruVlZNJfwZmwiEwE5oz9LQ==",
+        "dependencies": {
+          "SQLitePCLRaw.lib.e_sqlite3": "2.1.11",
+          "SQLitePCLRaw.provider.e_sqlite3": "2.1.11"
+        }
+      },
+      "SQLitePCLRaw.core": {
+        "type": "Transitive",
+        "resolved": "2.1.11",
+        "contentHash": "PK0GLFkfhZzLQeR3PJf71FmhtHox+U3vcY6ZtswoMjrefkB9k6ErNJEnwXqc5KgXDSjige2XXrezqS39gkpQKA=="
+      },
+      "SQLitePCLRaw.lib.e_sqlite3": {
+        "type": "Transitive",
+        "resolved": "2.1.11",
+        "contentHash": "Ev2ytaXiOlWZ4b3R67GZBsemTINslLD1DCJr2xiacpn4tbapu0Q4dHEzSvZSMnVWeE5nlObU3VZN2p81q3XOYQ=="
+      },
+      "SQLitePCLRaw.provider.e_sqlite3": {
+        "type": "Transitive",
+        "resolved": "2.1.11",
+        "contentHash": "Y/0ZkR+r0Cg3DQFuCl1RBnv/tmxpIZRU3HUvelPw6MVaKHwYYR8YNvgs0vuNuXCMvlyJ+Fh88U1D4tah1tt6qw==",
+        "dependencies": {
+          "SQLitePCLRaw.core": "2.1.11"
+        }
+      },
+      "SSH.NET": {
+        "type": "Transitive",
+        "resolved": "2024.2.0",
+        "contentHash": "9r+4UF2P51lTztpd+H7SJywk7WgmlWB//Cm2o96c6uGVZU5r58ys2/cD9pCgTk0zCdSkfflWL1WtqQ9I4IVO9Q==",
+        "dependencies": {
+          "BouncyCastle.Cryptography": "2.4.0"
+        }
+      },
       "System.CodeDom": {
         "type": "Transitive",
         "resolved": "6.0.0",
@@ -124,6 +202,18 @@
         "contentHash": "10J1D0h/lioojphfJ4Fuh5ZUThT/xOVHdV9roGBittKKNP2PMjrvibEdbVTGZcPra1399Ja3tqIJLyQrc5Wmhg==",
         "dependencies": {
           "System.CodeDom": "6.0.0"
+        }
+      },
+      "Testcontainers": {
+        "type": "Transitive",
+        "resolved": "4.7.0",
+        "contentHash": "Nx4HR4e7XcKV5BVIqYdCpF8PAYFpukZ8QpoBe+sY9FL5q0RDtsy81MElVXIJVO4Wg3Q6j2f39QaF7i+2jf6YjA==",
+        "dependencies": {
+          "Docker.DotNet.Enhanced": "3.128.5",
+          "Docker.DotNet.Enhanced.X509": "3.128.5",
+          "Microsoft.Extensions.Logging.Abstractions": "8.0.3",
+          "SSH.NET": "2024.2.0",
+          "SharpZipLib": "1.4.2"
         }
       },
       "xunit.analyzers": {
@@ -196,8 +286,10 @@
       "weave.security": {
         "type": "Project",
         "dependencies": {
+          "Microsoft.Data.Sqlite": "[10.0.7, )",
           "Microsoft.Extensions.Logging.Abstractions": "[10.0.7, )",
           "Microsoft.Extensions.Options": "[10.0.7, )",
+          "Npgsql": "[10.0.2, )",
           "Weave.Shared": "[1.0.0, )"
         }
       },
@@ -207,6 +299,17 @@
           "Microsoft.Extensions.AI.Abstractions": "[10.5.0, )",
           "Microsoft.Extensions.DependencyInjection.Abstractions": "[10.0.7, )",
           "Microsoft.Extensions.Logging.Abstractions": "[10.0.7, )"
+        }
+      },
+      "Microsoft.Data.Sqlite": {
+        "type": "CentralTransitive",
+        "requested": "[10.0.7, )",
+        "resolved": "10.0.7",
+        "contentHash": "DZ6G2QuyPrsh5VS+wfiZbNBtYT6p+CkxXjD0aZHF04xso7QsG/uk0JpG30hzYlK6u/wtTzta1Dqfgbc/Sl2sDA==",
+        "dependencies": {
+          "Microsoft.Data.Sqlite.Core": "10.0.7",
+          "SQLitePCLRaw.bundle_e_sqlite3": "2.1.11",
+          "SQLitePCLRaw.core": "2.1.11"
         }
       },
       "Microsoft.Extensions.AI.Abstractions": {
@@ -238,6 +341,15 @@
         "dependencies": {
           "Microsoft.Extensions.DependencyInjection.Abstractions": "10.0.7",
           "Microsoft.Extensions.Primitives": "10.0.7"
+        }
+      },
+      "Npgsql": {
+        "type": "CentralTransitive",
+        "requested": "[10.0.2, )",
+        "resolved": "10.0.2",
+        "contentHash": "q5RfBI+wywJSFUNDE1L4ZbHEHCFTblo8Uf6A6oe4feOUFYiUQXyAf9GBh5qEZpvJaHiEbpBPkQumjEhXCJxdrg==",
+        "dependencies": {
+          "Microsoft.Extensions.Logging.Abstractions": "10.0.0"
         }
       }
     }

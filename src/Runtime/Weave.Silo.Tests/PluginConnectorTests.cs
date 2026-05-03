@@ -145,10 +145,13 @@ public static class PluginConnectorTests
 
     public sealed class Vault
     {
-        private static CapabilityTokenService CreateTokenService() =>
-            new(Options.Create(
-                new CapabilityTokenOptions { SigningKey = "test-signing-key-at-least-32-chars-long!" }),
+        private static CapabilityAuthorizer CreateAuthorizer()
+        {
+            var tokenService = new CapabilityTokenService(
+                Options.Create(new CapabilityTokenOptions { SigningKey = "test-signing-key-at-least-32-chars-long!" }),
                 TimeProvider.System);
+            return new CapabilityAuthorizer(tokenService, Substitute.For<IEventBus>(), NullLogger<CapabilityAuthorizer>.Instance);
+        }
 
         [Fact]
         public void Schema_advertises_address_as_required()
@@ -156,7 +159,7 @@ public static class PluginConnectorTests
             var connector = new VaultPluginConnector(
                 CreateBroker(),
                 CreateHttpClientFactory(),
-                CreateTokenService(),
+                CreateAuthorizer(),
                 Loggers());
 
             connector.PluginType.ShouldBe("vault");
@@ -170,7 +173,7 @@ public static class PluginConnectorTests
             var connector = new VaultPluginConnector(
                 CreateBroker(),
                 CreateHttpClientFactory(),
-                CreateTokenService(),
+                CreateAuthorizer(),
                 Loggers());
 
             var status = await connector.ConnectAsync("v1", new PluginDefinition { Type = "vault" });
@@ -184,7 +187,7 @@ public static class PluginConnectorTests
         {
             var broker = CreateBroker();
             var connector = new VaultPluginConnector(
-                broker, CreateHttpClientFactory(), CreateTokenService(), Loggers());
+                broker, CreateHttpClientFactory(), CreateAuthorizer(), Loggers());
 
             var def = new PluginDefinition
             {
@@ -203,7 +206,7 @@ public static class PluginConnectorTests
         {
             var broker = CreateBroker();
             var connector = new VaultPluginConnector(
-                broker, CreateHttpClientFactory(), CreateTokenService(), Loggers());
+                broker, CreateHttpClientFactory(), CreateAuthorizer(), Loggers());
 
             connector.GetStatus("v1").IsConnected.ShouldBeFalse();
 

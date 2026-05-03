@@ -214,4 +214,62 @@ public sealed class CapabilityTokenTests
         token.HasGrant("tool:mytool").ShouldBeFalse();
         token.HasGrant("Tool:MyTool").ShouldBeTrue();
     }
+
+    // --- Static HasGrant(IEnumerable<string>, string) — manifest-side wildcard match ---
+
+    [Fact]
+    public void HasGrant_Static_ExactMatch_ReturnsTrue()
+    {
+        string[] owned = ["skill:read", "skill:write"];
+
+        CapabilityToken.HasGrant(owned, "skill:read").ShouldBeTrue();
+        CapabilityToken.HasGrant(owned, "skill:write").ShouldBeTrue();
+    }
+
+    [Fact]
+    public void HasGrant_Static_PrefixWildcard_MatchesScopedRequest()
+    {
+        // The bug this overload exists to fix: a manifest declaring `skill:*`
+        // must grant `skill:read` and `skill:write` for the gate, the same
+        // way a token does.
+        string[] owned = ["skill:*"];
+
+        CapabilityToken.HasGrant(owned, "skill:read").ShouldBeTrue();
+        CapabilityToken.HasGrant(owned, "skill:write").ShouldBeTrue();
+    }
+
+    [Fact]
+    public void HasGrant_Static_MidSegmentWildcard_MatchesAcrossSegment()
+    {
+        string[] owned = ["user:*:alice"];
+
+        CapabilityToken.HasGrant(owned, "user:read:alice").ShouldBeTrue();
+        CapabilityToken.HasGrant(owned, "user:write:alice").ShouldBeTrue();
+        CapabilityToken.HasGrant(owned, "user:read:bob").ShouldBeFalse();
+    }
+
+    [Fact]
+    public void HasGrant_Static_NoMatch_ReturnsFalse()
+    {
+        string[] owned = ["tool:git", "skill:read"];
+
+        CapabilityToken.HasGrant(owned, "skill:write").ShouldBeFalse();
+        CapabilityToken.HasGrant(owned, "tool:other").ShouldBeFalse();
+    }
+
+    [Fact]
+    public void HasGrant_Static_EmptyOwned_ReturnsFalse()
+    {
+        CapabilityToken.HasGrant([], "skill:read").ShouldBeFalse();
+    }
+
+    [Fact]
+    public void HasGrant_Static_AcceptsAnyEnumerable()
+    {
+        // IReadOnlyList<string> is what AgentDefinition.Capabilities exposes —
+        // this overload must accept it without a copy.
+        IReadOnlyList<string> owned = ["secret:*"];
+
+        CapabilityToken.HasGrant(owned, "secret:db-pass").ShouldBeTrue();
+    }
 }

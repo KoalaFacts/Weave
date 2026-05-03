@@ -10,11 +10,11 @@ namespace Weave.Security.Vault;
 public sealed class InMemorySecretProvider : ISecretProvider
 {
     private readonly ConcurrentDictionary<string, SecretValue> _secrets = new();
-    private readonly ICapabilityTokenService _tokenService;
+    private readonly ICapabilityAuthorizer _authorizer;
 
-    public InMemorySecretProvider(ICapabilityTokenService tokenService)
+    public InMemorySecretProvider(ICapabilityAuthorizer authorizer)
     {
-        _tokenService = tokenService;
+        _authorizer = authorizer;
     }
 
     public void SetSecret(string path, string value)
@@ -22,16 +22,12 @@ public sealed class InMemorySecretProvider : ISecretProvider
         _secrets[path] = new SecretValue(value);
     }
 
-    public Task<SecretValue> ResolveAsync(string secretPath, CapabilityToken token, CancellationToken ct = default)
+    public async Task<SecretValue> ResolveAsync(string secretPath, CapabilityToken token, CancellationToken ct = default)
     {
-        if (!_tokenService.Validate(token))
-            throw new UnauthorizedAccessException("Invalid or expired capability token");
-
-        if (!token.HasGrant($"secret:{secretPath}") && !token.HasGrant("secret:*"))
-            throw new UnauthorizedAccessException($"Token does not grant access to secret '{secretPath}'");
+        await _authorizer.AuthorizeAsync(token, $"secret:{secretPath}", token.WorkspaceId);
 
         return _secrets.TryGetValue(secretPath, out var value)
-            ? Task.FromResult(value)
+            ? value
             : throw new KeyNotFoundException($"Secret '{secretPath}' not found");
     }
 

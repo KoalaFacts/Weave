@@ -1,9 +1,11 @@
 using Microsoft.Extensions.Logging;
+using Microsoft.Extensions.Logging.Abstractions;
 using Weave.Security.Actors;
 using Weave.Security.Proxy;
 using Weave.Security.Scanning;
 using Weave.Security.Tokens;
 using Weave.Security.Vault;
+using Weave.Shared.Events;
 
 namespace Weave.Security.Tests;
 
@@ -13,6 +15,9 @@ public sealed class SecretProxyActorTests
         Microsoft.Extensions.Options.Options.Create(
             new CapabilityTokenOptions { SigningKey = "test-signing-key-that-is-at-least-32-chars-long" }),
         TimeProvider.System);
+
+    private static readonly CapabilityAuthorizer Authorizer = new(
+        TokenService, Substitute.For<IEventBus>(), NullLogger<CapabilityAuthorizer>.Instance);
 
     private static CapabilityToken MintToken() =>
         TokenService.Mint(new CapabilityTokenRequest
@@ -25,7 +30,7 @@ public sealed class SecretProxyActorTests
 
     private static (SecretProxyActor Actor, InMemorySecretProvider Provider) CreateActor()
     {
-        var provider = new InMemorySecretProvider(TokenService);
+        var provider = new InMemorySecretProvider(Authorizer);
         var scanner = new LeakScanner(Substitute.For<ILogger<LeakScanner>>());
         var proxy = new TransparentSecretProxy(scanner, Substitute.For<ILogger<TransparentSecretProxy>>());
         var actor = new SecretProxyActor(proxy, provider, Substitute.For<ILogger<SecretProxyActor>>());

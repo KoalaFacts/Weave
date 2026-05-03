@@ -159,7 +159,7 @@ public sealed class AgentChatPipeline(
             return prompt;
 
         var grant = $"user:read:{message.UserId}";
-        if (state.Definition?.Capabilities?.Contains(grant) is not true)
+        if (state.Definition?.Capabilities is not { } capabilities || !CapabilityToken.HasGrant(capabilities, grant))
             return prompt;
 
         try
