@@ -400,4 +400,105 @@ public sealed class AgentChatPipelineTests
             Arg.Any<ChatOptions>(),
             Arg.Any<CancellationToken>());
     }
+
+    // --- Manifest-side wildcard matching ---
+    // A manifest declaring a wildcard grant must satisfy the manifest gate
+    // for any concrete grant within that wildcard, the same way a token does.
+
+    [Fact]
+    public async Task ExecuteAsync_ManifestDeclaresUserReadWildcard_LoadsUserContext()
+    {
+        var chatClient = Substitute.For<IChatClient>();
+        IEnumerable<ChatMessage>? capturedMessages = null;
+        chatClient.GetResponseAsync(
+                Arg.Any<IEnumerable<ChatMessage>>(),
+                Arg.Any<ChatOptions>(),
+                Arg.Any<CancellationToken>())
+            .Returns(callInfo =>
+            {
+                capturedMessages = callInfo.Arg<IEnumerable<ChatMessage>>().ToList();
+                return new ChatResponse(new ChatMessage(ChatRole.Assistant, "Hi"))
+                {
+                    ModelId = "claude-sonnet-4-20250514"
+                };
+            });
+
+        var chatClientFactory = Substitute.For<IAgentChatClientFactory>();
+        chatClientFactory.Create(Arg.Any<string>(), Arg.Any<string?>()).Returns(chatClient);
+
+        var userModelActor = Substitute.For<IUserModelActor>();
+        userModelActor.GetContextSummaryAsync(Arg.Any<CapabilityToken>())
+            .Returns(Task.FromResult("User preferences: lang=csharp."));
+
+        var skillActor = Substitute.For<ISkillMemoryActor>();
+        skillActor.SearchAsync(Arg.Any<string>(), Arg.Any<CapabilityToken>(), Arg.Any<int>(), Arg.Any<SkillSearchOptions>())
+            .Returns(Task.FromResult<IReadOnlyList<SkillSearchResult>>([]));
+
+        var actors = Substitute.For<IVirtualActorProvider>();
+        actors.GetActor<IUserModelActor>(Arg.Any<VirtualActorId>()).Returns(userModelActor);
+        actors.GetActor<ISkillMemoryActor>(Arg.Any<VirtualActorId>()).Returns(skillActor);
+
+        var pipeline = new AgentChatPipeline(actors, chatClientFactory, CreateTokenService(), TimeProvider.System, NullLogger<AgentChatPipeline>.Instance);
+
+        // Manifest declares the wildcard `user:read:*` — must grant `user:read:user-42`.
+        var state = CreateActiveState(capabilities: ["skill:read", "user:read:*"]);
+
+        await pipeline.ExecuteAsync(state, new AgentMessage { Content = "Hello", UserId = "user-42" });
+
+        await userModelActor.Received(1).GetContextSummaryAsync(Arg.Any<CapabilityToken>());
+        capturedMessages.ShouldNotBeNull();
+        var systemMsg = capturedMessages.FirstOrDefault(m => m.Role == ChatRole.System);
+        systemMsg.ShouldNotBeNull();
+        systemMsg.Text.ShouldContain("User preferences: lang=csharp");
+    }
+
+    [Fact]
+    public async Task ExecuteAsync_ManifestDeclaresSkillWildcard_EnrichesPromptWithSkills()
+    {
+        var chatClient = Substitute.For<IChatClient>();
+        chatClient.GetResponseAsync(
+                Arg.Any<IEnumerable<ChatMessage>>(),
+                Arg.Any<ChatOptions>(),
+                Arg.Any<CancellationToken>())
+            .Returns(new ChatResponse(new ChatMessage(ChatRole.Assistant, "Done"))
+            {
+                ModelId = "claude-sonnet-4-20250514"
+            });
+
+        var chatClientFactory = Substitute.For<IAgentChatClientFactory>();
+        chatClientFactory.Create(Arg.Any<string>(), Arg.Any<string?>()).Returns(chatClient);
+
+        var skill = new SkillDocument
+        {
+            SkillId = SkillId.New(),
+            Title = "Deploy",
+            Description = "How to deploy",
+            Tags = ["deploy"],
+            Steps = [new SkillStep { Order = 0, Action = "Build" }],
+            ToolsUsed = ["docker"],
+            CreatedByAgent = "deployer"
+        };
+
+        var skillActor = Substitute.For<ISkillMemoryActor>();
+        skillActor.SearchAsync(Arg.Any<string>(), Arg.Any<CapabilityToken>(), Arg.Any<int>(), Arg.Any<SkillSearchOptions>())
+            .Returns(Task.FromResult<IReadOnlyList<SkillSearchResult>>([
+                new SkillSearchResult { Skill = skill, RelevanceScore = 5.0 }
+            ]));
+
+        var actors = Substitute.For<IVirtualActorProvider>();
+        actors.GetActor<ISkillMemoryActor>(Arg.Any<VirtualActorId>()).Returns(skillActor);
+
+        var pipeline = new AgentChatPipeline(actors, chatClientFactory, CreateTokenService(), TimeProvider.System, NullLogger<AgentChatPipeline>.Instance);
+
+        // Manifest declares only the wildcard — must grant both `skill:read` (search) and `skill:write` (record-usage).
+        var state = CreateActiveState(capabilities: ["skill:*"]);
+
+        await pipeline.ExecuteAsync(state, new AgentMessage { Content = "Tell me about deployment" });
+
+        // skill:read gate passed: SearchAsync was called.
+        await skillActor.Received(1).SearchAsync(
+            Arg.Any<string>(), Arg.Any<CapabilityToken>(), Arg.Any<int>(), Arg.Any<SkillSearchOptions>());
+        // skill:write gate passed: RecordUsageAsync was called for the matched skill.
+        await skillActor.Received(1).RecordUsageAsync(skill.SkillId, success: true, Arg.Any<CapabilityToken>());
+    }
 }

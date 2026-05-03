@@ -18,7 +18,7 @@ The capability vocabulary is 6 verbs, all enforced through one shared authorizer
 | `plugin:invoke:<plugin>` | yes | `CapabilityAuthorizer` from `src/Runtime/Weave.Silo/Plugins/PluginRegistry.cs` |
 | `marketplace:install` | not implemented — see Next work | — |
 
-Tests: 1827 passed.
+Tests: 1835 passed.
 
 ### How a verb is wired today
 
@@ -54,7 +54,6 @@ Acceptance bar from the strategy doc's *Measurement* section is met:
 
 Natural next moves, in order of leverage:
 
-- **Manifest-side wildcard matching.** Runtime mint sites still use literal `.Contains(grant)` against `state.Definition.Capabilities`. A manifest declaring `skill:*` doesn't grant `skill:read`/`skill:write` for the manifest gate. Plug `CapabilityToken.HasGrant`-style segment matching into the manifest check.
 - **Durable audit store.** The in-memory store is fine for replay/debug but evicts under load. A SQLite or Postgres-backed `ICapabilityAuditStore` (selected via `CapabilityAuditOptions.Backend`) is a small, mechanical follow-up.
 - **Dashboard view.** A Blazor page that hits `/api/audit/capability` and renders the same table the CLI shows. No backend work required.
 
@@ -84,6 +83,7 @@ For the next vocabulary entry (or any follow-up that touches the audit pipeline)
 
 ## History
 
+- **2026-05-03** (`claude/implement-next-task-vSX6x`) — manifest-side wildcard matching: added static `CapabilityToken.HasGrant(IEnumerable<string>, string)`; replaced the four `state.Definition.Capabilities.Contains(grant)` literal checks (`AgentChatPipeline.EnrichWithUserContextAsync`, `SkillMemoryPromptEnricher.EnrichAsync` / `RecordSuccessfulUsageAsync`, `AgentSkillSuggester.SuggestFromTaskAsync`) with the segment-wise wildcard match. A manifest declaring `skill:*` now grants `skill:read`/`skill:write` for the manifest gate; tests 1827 → 1835
 - **2026-05-03** (`claude/implement-next-task-vSX6x`) — `secret:<path>` enforcement moved out of `VaultSecretProvider` / `InMemorySecretProvider` into the shared `CapabilityAuthorizer`; allow + deny rows now flow through the audit pipeline, closing the last *Coverage of action types* gap (5/6 → 6/6); tests 1820 → 1827
 - **2026-05-03** (`claude/competitor-analysis-handoff-Qn9jh`) — capability replay/debugger shipped; in-memory `ICapabilityAuditStore` (capacity-bounded) fed by a subscriber hosted service; `GET /api/audit/capability/{tokenId}` and `?limit=N` over CQRS query handlers; `weave audit replay [tokenId]` CLI with guided + advanced modes; tests 1807 → 1820
 - **2026-05-03** (`claude/competitor-analysis-handoff-Qn9jh`) — capability-bound audit log shipped; five `Authorize` copies consolidated into `ICapabilityAuthorizer`; allow + deny rows publish `CapabilityAuthorizationEvent` keyed by tokenId/grant/workspaceId/issuedTo/outcome/reason/actionContext; tests 1790 → 1807

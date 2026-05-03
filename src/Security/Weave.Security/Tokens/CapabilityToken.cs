@@ -35,6 +35,25 @@ public sealed record CapabilityToken
     }
 
     /// <summary>
+    /// Segment-wise wildcard match against an arbitrary collection of owned grants.
+    /// Use this at manifest-gate sites (e.g. <c>AgentDefinition.Capabilities</c>)
+    /// so a manifest declaring <c>skill:*</c> grants <c>skill:read</c>/<c>skill:write</c>
+    /// the same way a token declaring <c>skill:*</c> does.
+    /// </summary>
+    public static bool HasGrant(IEnumerable<string> owned, string requested)
+    {
+        ArgumentNullException.ThrowIfNull(owned);
+        ArgumentNullException.ThrowIfNull(requested);
+
+        foreach (var o in owned)
+        {
+            if (o == requested || Matches(o, requested))
+                return true;
+        }
+        return false;
+    }
+
+    /// <summary>
     /// Segment-wise match. Each <c>*</c> in <paramref name="owned"/> matches one
     /// requested segment, except a trailing <c>*</c> which matches one or more
     /// trailing segments. Examples: <c>user:*:alice</c> matches <c>user:read:alice</c>;
