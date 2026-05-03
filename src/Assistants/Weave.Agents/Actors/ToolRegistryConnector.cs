@@ -79,7 +79,7 @@ internal sealed class ToolRegistryConnector(
 
             await persistentState.WriteStateAsync();
         }
-        catch (Exception ex)
+        catch (Exception ex) when (ex is InvalidOperationException or TimeoutException or IOException or HttpRequestException)
         {
             persistentState.State.Connections[toolName] = new ToolConnection
             {
@@ -152,7 +152,7 @@ internal sealed class ToolRegistryConnector(
                 WorkspaceId = WorkspaceId.From(workspaceId)
             }, CancellationToken.None);
         }
-        catch (Exception ex)
+        catch (Exception ex) when (ex is InvalidOperationException or TimeoutException or IOException or HttpRequestException)
         {
             logger.LogError(ex, "Failed to disconnect tool {ToolName}", toolName);
         }

@@ -54,7 +54,7 @@ internal sealed class WorkspaceStatusCliCommand : ICliCommand<WorkspaceNameOptio
 
                 return 0;
             }
-            catch (Exception ex)
+            catch (Exception ex) when (ex is HttpRequestException or TaskCanceledException or System.Net.Sockets.SocketException or System.Text.Json.JsonException or IOException)
             {
                 AnsiConsole.MarkupLine($"[rgb({CliTheme.Warning.R},{CliTheme.Warning.G},{CliTheme.Warning.B})]{CliTheme.IconWarning} Live status unavailable: {Markup.Escape(ex.Message)}. Falling back to manifest data.[/]");
             }

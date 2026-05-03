@@ -46,7 +46,7 @@ internal sealed class WorkspaceDownCliCommand(IWorkspaceDownDependencies depende
             CliTheme.WriteSuccess($"Workspace '{workspaceId}' stopped.");
             return 0;
         }
-        catch (Exception ex)
+        catch (Exception ex) when (ex is HttpRequestException or TaskCanceledException or System.Net.Sockets.SocketException or System.Text.Json.JsonException or IOException or UnauthorizedAccessException)
         {
             CliTheme.WriteError($"Failed to stop workspace: {ex.Message}");
             return 1;

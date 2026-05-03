@@ -110,7 +110,7 @@ public sealed partial class PluginRegistry : IPluginRegistry, IDisposable
             LogPluginConnected(name, definition.Type);
             return status;
         }
-        catch (Exception ex)
+        catch (Exception ex) when (ex is HttpRequestException or TaskCanceledException or System.Net.Sockets.SocketException or IOException or InvalidOperationException or System.Text.Json.JsonException)
         {
             var status = new PluginStatus
             {

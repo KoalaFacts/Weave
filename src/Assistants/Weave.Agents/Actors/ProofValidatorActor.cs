@@ -94,7 +94,7 @@ public sealed class ProofValidatorActor(
                 ConditionResults = results
             };
         }
-        catch (Exception ex)
+        catch (Exception ex) when (ex is HttpRequestException or TaskCanceledException or System.Net.Sockets.SocketException or System.Text.Json.JsonException or InvalidOperationException)
         {
             logger.LogError(ex, "Validator {ValidatorId} failed to evaluate proof", validatorId);
 

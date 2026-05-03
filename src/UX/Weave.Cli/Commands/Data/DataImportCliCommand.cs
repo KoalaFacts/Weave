@@ -116,7 +116,7 @@ internal sealed class DataImportCliCommand : ICliCommand<DataImportOptions>
             await RestoreSkillsAsync(client, export, response.WorkspaceId, ct);
             await RestoreChannelsAsync(client, export, response.WorkspaceId, ct);
         }
-        catch (Exception ex)
+        catch (Exception ex) when (ex is HttpRequestException or TaskCanceledException or System.Net.Sockets.SocketException or System.Text.Json.JsonException or IOException or UnauthorizedAccessException)
         {
             CliTheme.WriteWarning($"  Could not start workspace: {ex.Message}");
             CliTheme.WriteMuted("  Files are restored — start manually with: weave run " + name);
@@ -137,7 +137,7 @@ internal sealed class DataImportCliCommand : ICliCommand<DataImportOptions>
                 await client.PostSkillAsync(workspaceId, skill, ct);
                 restored++;
             }
-            catch (Exception ex)
+            catch (Exception ex) when (ex is HttpRequestException or TaskCanceledException or System.Net.Sockets.SocketException or System.Text.Json.JsonException or IOException)
             {
                 skillErrors.Add(ex.Message);
             }
@@ -162,7 +162,7 @@ internal sealed class DataImportCliCommand : ICliCommand<DataImportOptions>
                 await client.PostChannelAsync(workspaceId, channel, ct);
                 restored++;
             }
-            catch (Exception ex)
+            catch (Exception ex) when (ex is HttpRequestException or TaskCanceledException or System.Net.Sockets.SocketException or System.Text.Json.JsonException or IOException)
             {
                 channelErrors.Add(ex.Message);
             }

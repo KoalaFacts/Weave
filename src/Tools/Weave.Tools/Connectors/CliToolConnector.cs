@@ -66,7 +66,7 @@ public sealed partial class CliToolConnector(ILogger<CliToolConnector> logger) :
             };
         }
 
-        return await RunProcessAsync(handle.ToolName, cli, command, sw, ct);
+        return await RunProcessAsync(logger, handle.ToolName, cli, command, sw, ct);
     }
 
     public Task<ToolSchema> DiscoverSchemaAsync(ToolHandle handle, CancellationToken ct = default)
@@ -90,6 +90,9 @@ public sealed partial class CliToolConnector(ILogger<CliToolConnector> logger) :
 
     [LoggerMessage(Level = LogLevel.Information, Message = "CLI tool '{Tool}' connected (shell: {Shell})")]
     private partial void LogCliToolConnected(string tool, string shell);
+
+    [LoggerMessage(Level = LogLevel.Warning, Message = "CLI tool invocation failed for '{Tool}'")]
+    private static partial void LogCliToolInvocationFailed(ILogger logger, Exception ex, string tool);
 
     private static CliCommandPolicyResult EvaluateCommandPolicy(string command, CliConfig config)
     {
@@ -150,6 +153,7 @@ public sealed partial class CliToolConnector(ILogger<CliToolConnector> logger) :
     }
 
     private static async Task<ToolResult> RunProcessAsync(
+        ILogger logger,
         string toolName,
         CliConfig config,
         string command,
@@ -189,9 +193,10 @@ public sealed partial class CliToolConnector(ILogger<CliToolConnector> logger) :
                 Duration = sw.Elapsed
             };
         }
-        catch (Exception ex)
+        catch (Exception ex) when (ex is InvalidOperationException or System.ComponentModel.Win32Exception or IOException or ObjectDisposedException)
         {
             sw.Stop();
+            LogCliToolInvocationFailed(logger, ex, toolName);
             return new ToolResult
             {
                 Success = false,

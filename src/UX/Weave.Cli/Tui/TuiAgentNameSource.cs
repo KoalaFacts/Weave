@@ -34,7 +34,7 @@ internal sealed class TuiAgentNameSource
             var manifest = _parser.Parse(File.ReadAllText(session.ManifestPath));
             return manifest.Agents is null ? [] : [.. manifest.Agents.Keys];
         }
-        catch (Exception ex)
+        catch (Exception ex) when (ex is IOException or UnauthorizedAccessException or System.Text.Json.JsonException or FormatException)
         {
             CliTheme.WriteMuted($"Could not read manifest for agent names ({ex.Message}).");
             return [];

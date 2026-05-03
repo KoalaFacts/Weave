@@ -104,7 +104,7 @@ public sealed class ProofVerifierActor(
         {
             await agentActor.ReviewTaskAsync(taskId, accepted, feedback, verification);
         }
-        catch (Exception ex)
+        catch (Exception ex) when (ex is InvalidOperationException or TimeoutException)
         {
             logger.LogError(ex, "Failed to deliver review for task {TaskId} on agent {AgentName}", taskId, agentName);
         }

@@ -51,7 +51,7 @@ public sealed class AgentSupervisorActor(
 
                 logger.LogInformation("Agent {AgentName} activated in workspace {WorkspaceId}", agentName, _workspaceId);
             }
-            catch (Exception ex)
+            catch (Exception ex) when (ex is InvalidOperationException or TimeoutException or IOException or HttpRequestException)
             {
                 logger.LogError(ex, "Failed to activate agent {AgentName} in workspace {WorkspaceId}", agentName, _workspaceId);
                 throw;
@@ -73,7 +73,7 @@ public sealed class AgentSupervisorActor(
             {
                 await agentActor.DeactivateAsync();
             }
-            catch (Exception ex)
+            catch (Exception ex) when (ex is InvalidOperationException or TimeoutException or IOException or HttpRequestException)
             {
                 logger.LogError(ex, "Failed to deactivate agent {AgentName}", agentName);
             }

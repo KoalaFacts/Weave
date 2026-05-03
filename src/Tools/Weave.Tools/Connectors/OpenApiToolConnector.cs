@@ -98,9 +98,10 @@ public sealed partial class OpenApiToolConnector(HttpClient httpClient, ILogger<
                 Duration = sw.Elapsed
             };
         }
-        catch (Exception ex)
+        catch (Exception ex) when (ex is HttpRequestException or TaskCanceledException or System.Net.Sockets.SocketException or IOException or InvalidOperationException or ArgumentException)
         {
             sw.Stop();
+            LogOpenApiToolInvocationFailed(ex, handle.ToolName);
             return new ToolResult
             {
                 Success = false,
@@ -127,4 +128,7 @@ public sealed partial class OpenApiToolConnector(HttpClient httpClient, ILogger<
 
     [LoggerMessage(Level = LogLevel.Information, Message = "OpenAPI tool '{Tool}' connected to '{Spec}'")]
     private partial void LogOpenApiToolConnected(string tool, string spec);
+
+    [LoggerMessage(Level = LogLevel.Warning, Message = "OpenAPI tool invocation failed for '{Tool}'")]
+    private partial void LogOpenApiToolInvocationFailed(Exception ex, string tool);
 }

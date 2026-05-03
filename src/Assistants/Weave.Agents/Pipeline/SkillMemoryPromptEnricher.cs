@@ -39,7 +39,7 @@ internal sealed class SkillMemoryPromptEnricher(
 
             return new SkillMemoryEnrichment(enrichedPrompt, skillIds);
         }
-        catch (Exception ex)
+        catch (Exception ex) when (ex is InvalidOperationException or TimeoutException or UnauthorizedAccessException)
         {
             logger.LogWarning(ex, "Failed to retrieve skills for agent {AgentName}", state.AgentName);
             return new SkillMemoryEnrichment(prompt, []);
@@ -61,7 +61,7 @@ internal sealed class SkillMemoryPromptEnricher(
             foreach (var skillId in skillIds)
                 await skillActor.RecordUsageAsync(skillId, success: true, source.Token);
         }
-        catch (Exception ex)
+        catch (Exception ex) when (ex is InvalidOperationException or TimeoutException or UnauthorizedAccessException)
         {
             logger.LogWarning(ex, "Failed to record skill memory usage for agent {AgentName}", state.AgentName);
         }

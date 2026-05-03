@@ -67,7 +67,7 @@ internal sealed class AgentLifecycle(
                 state.AgentName,
                 workspaceId);
         }
-        catch (Exception ex)
+        catch (Exception ex) when (ex is InvalidOperationException or TimeoutException or IOException or HttpRequestException)
         {
             state.Status = AgentStatus.Error;
             state.ErrorMessage = ex.Message;
@@ -129,7 +129,7 @@ internal sealed class AgentLifecycle(
 
             logger.LogInformation("Agent {AgentName} deactivated", state.AgentName);
         }
-        catch (Exception ex)
+        catch (Exception ex) when (ex is InvalidOperationException or TimeoutException or IOException or HttpRequestException)
         {
             state.Status = AgentStatus.Error;
             state.ErrorMessage = ex.Message;

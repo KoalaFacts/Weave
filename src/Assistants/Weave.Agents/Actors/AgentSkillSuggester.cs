@@ -45,7 +45,7 @@ internal sealed class AgentSkillSuggester(
                 skill.Title,
                 taskId);
         }
-        catch (Exception ex)
+        catch (Exception ex) when (ex is InvalidOperationException or TimeoutException or UnauthorizedAccessException)
         {
             logger.LogWarning(ex, "Failed to suggest skill from task {TaskId}", taskId);
         }

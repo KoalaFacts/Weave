@@ -180,7 +180,7 @@ public sealed class AgentChatPipeline(
                 ? $"[User context]\n{summary}"
                 : $"{prompt}\n\n[User context]\n{summary}";
         }
-        catch (Exception ex)
+        catch (Exception ex) when (ex is InvalidOperationException or TimeoutException or UnauthorizedAccessException)
         {
             logger.LogWarning(ex, "Failed to retrieve user context for {UserId}", message.UserId);
             return prompt;

@@ -55,7 +55,7 @@ internal sealed class WorkspaceUpCliCommand : ICliCommand<WorkspaceUpOptions>
             CliTheme.WriteKeyValue("Tools", manifest.Tools.Count.ToString(CultureInfo.InvariantCulture));
             CliTheme.WriteSuccess("Workspace started successfully.");
         }
-        catch (Exception ex)
+        catch (Exception ex) when (ex is HttpRequestException or TaskCanceledException or System.Net.Sockets.SocketException or System.Text.Json.JsonException or IOException or UnauthorizedAccessException)
         {
             CliTheme.WriteError($"Failed to start workspace: {ex.Message}");
             return 1;

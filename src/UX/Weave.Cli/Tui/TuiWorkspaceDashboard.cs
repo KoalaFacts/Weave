@@ -62,8 +62,9 @@ internal sealed class TuiWorkspaceDashboard
                 tools = manifest.Tools?.Count ?? 0;
                 isolation = manifest.Workspace.Isolation.ToString().ToLowerInvariant();
             }
-            catch (Exception)
+            catch (Exception ex) when (ex is IOException or UnauthorizedAccessException or System.Text.Json.JsonException or FormatException)
             {
+                CliTheme.WriteMuted($"  (skipped invalid manifest at {manifestPath}: {ex.Message})");
                 manifestOk = false;
             }
         }
