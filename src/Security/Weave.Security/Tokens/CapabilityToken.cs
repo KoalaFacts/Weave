@@ -1,3 +1,4 @@
+using System.Linq;
 using System.Text.Json.Serialization;
 
 namespace Weave.Security.Tokens;
@@ -30,13 +31,7 @@ public sealed record CapabilityToken
         if (Grants.Contains(grant))
             return true;
 
-        foreach (var owned in Grants)
-        {
-            if (Matches(owned, grant))
-                return true;
-        }
-
-        return false;
+        return Grants.Any(owned => Matches(owned, grant));
     }
 
     /// <summary>
