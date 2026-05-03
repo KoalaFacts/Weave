@@ -46,8 +46,9 @@ public sealed class ToolActorBranchTests
             SecretProxy.SubstituteAsync(Arg.Any<string>()).Returns(ci => ci.Arg<string>());
             ActorProvider.GetActor<ISecretProxyActor>(Arg.Any<VirtualActorId>()).Returns(SecretProxy);
 
+            var authorizer = new CapabilityAuthorizer(TokenService, EventBus, NullLogger<CapabilityAuthorizer>.Instance);
             Actor = new ToolActor(
-                ActorProvider, Discovery, Scanner, TokenService, Lifecycle, EventBus,
+                ActorProvider, Discovery, Scanner, authorizer, Lifecycle, EventBus,
                 NullLogger<ToolActor>.Instance);
         }
     }

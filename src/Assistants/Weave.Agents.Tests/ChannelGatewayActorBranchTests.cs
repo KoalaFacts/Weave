@@ -44,13 +44,20 @@ public sealed class ChannelGatewayActorBranchTests
         ChannelGatewayState? initial = null,
         IVirtualActorProvider? actors = null,
         IEventBus? eventBus = null,
-        ICapabilityTokenService? tokenService = null) =>
-        new(
-            actors ?? Substitute.For<IVirtualActorProvider>(),
-            eventBus ?? Substitute.For<IEventBus>(),
+        ICapabilityTokenService? tokenService = null)
+    {
+        var bus = eventBus ?? Substitute.For<IEventBus>();
+        var authorizer = new CapabilityAuthorizer(
             tokenService ?? CreateTokenService(),
+            bus,
+            NullLogger<CapabilityAuthorizer>.Instance);
+        return new ChannelGatewayActor(
+            actors ?? Substitute.For<IVirtualActorProvider>(),
+            bus,
+            authorizer,
             NullLogger<ChannelGatewayActor>.Instance,
             CreatePersistentState(initial));
+    }
 
     private static ChannelConfig BuildChannel(
         bool enabled = true,

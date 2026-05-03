@@ -43,14 +43,18 @@ public sealed class SkillMemoryActorTests
             Lifetime = TimeSpan.FromHours(1)
         });
 
+    private static CapabilityAuthorizer CreateAuthorizer(CapabilityTokenService tokenService, IEventBus bus) =>
+        new(tokenService, bus, NullLogger<CapabilityAuthorizer>.Instance);
+
     private static (SkillMemoryActor Actor, IEventBus EventBus, CapabilityToken Token) CreateActor(TimeProvider? timeProvider = null)
     {
         var eventBus = Substitute.For<IEventBus>();
         var logger = NullLogger<SkillMemoryActor>.Instance;
         var persistentState = CreatePersistentState();
         var tokenService = CreateTokenService(timeProvider);
+        var authorizer = CreateAuthorizer(tokenService, eventBus);
 
-        var actor = new SkillMemoryActor(eventBus, timeProvider ?? TimeProvider.System, tokenService, logger, persistentState);
+        var actor = new SkillMemoryActor(eventBus, timeProvider ?? TimeProvider.System, authorizer, logger, persistentState);
         return (actor, eventBus, Token(tokenService, "skill:read", "skill:write"));
     }
 
@@ -481,16 +485,23 @@ public sealed class SkillMemoryActorTests
 
     // --- Capability check tests ---
 
+    private static SkillMemoryActor BuildActor(CapabilityTokenService tokenService, IEventBus? bus = null)
+    {
+        var eventBus = bus ?? Substitute.For<IEventBus>();
+        var authorizer = CreateAuthorizer(tokenService, eventBus);
+        return new SkillMemoryActor(
+            eventBus,
+            TimeProvider.System,
+            authorizer,
+            NullLogger<SkillMemoryActor>.Instance,
+            CreatePersistentState());
+    }
+
     [Fact]
     public async Task StoreSkillAsync_WithoutSkillWriteGrant_Throws()
     {
         var tokenService = CreateTokenService();
-        var actor = new SkillMemoryActor(
-            Substitute.For<IEventBus>(),
-            TimeProvider.System,
-            tokenService,
-            NullLogger<SkillMemoryActor>.Instance,
-            CreatePersistentState());
+        var actor = BuildActor(tokenService);
         var readOnlyToken = Token(tokenService, "skill:read");
 
         await Should.ThrowAsync<UnauthorizedAccessException>(() =>
@@ -501,12 +512,7 @@ public sealed class SkillMemoryActorTests
     public async Task SearchAsync_WithoutSkillReadGrant_Throws()
     {
         var tokenService = CreateTokenService();
-        var actor = new SkillMemoryActor(
-            Substitute.For<IEventBus>(),
-            TimeProvider.System,
-            tokenService,
-            NullLogger<SkillMemoryActor>.Instance,
-            CreatePersistentState());
+        var actor = BuildActor(tokenService);
         var writeOnlyToken = Token(tokenService, "skill:write");
 
         await Should.ThrowAsync<UnauthorizedAccessException>(() =>
@@ -517,12 +523,7 @@ public sealed class SkillMemoryActorTests
     public async Task StoreSkillAsync_WithExpiredToken_Throws()
     {
         var tokenService = CreateTokenService();
-        var actor = new SkillMemoryActor(
-            Substitute.For<IEventBus>(),
-            TimeProvider.System,
-            tokenService,
-            NullLogger<SkillMemoryActor>.Instance,
-            CreatePersistentState());
+        var actor = BuildActor(tokenService);
         var expired = tokenService.Mint(new CapabilityTokenRequest
         {
             WorkspaceId = TestWorkspaceId.ToString(),
@@ -539,12 +540,7 @@ public sealed class SkillMemoryActorTests
     public async Task GetSkillAsync_WithWildcardGrant_Allowed()
     {
         var tokenService = CreateTokenService();
-        var actor = new SkillMemoryActor(
-            Substitute.For<IEventBus>(),
-            TimeProvider.System,
-            tokenService,
-            NullLogger<SkillMemoryActor>.Instance,
-            CreatePersistentState());
+        var actor = BuildActor(tokenService);
         var wildcard = Token(tokenService, "*");
 
         var result = await actor.GetSkillAsync(SkillId.From("anything"), wildcard);
@@ -556,12 +552,7 @@ public sealed class SkillMemoryActorTests
     public async Task StoreSkillAsync_WithCrossWorkspaceToken_Throws()
     {
         var tokenService = CreateTokenService();
-        var actor = new SkillMemoryActor(
-            Substitute.For<IEventBus>(),
-            TimeProvider.System,
-            tokenService,
-            NullLogger<SkillMemoryActor>.Instance,
-            CreatePersistentState());
+        var actor = BuildActor(tokenService);
         var foreignToken = tokenService.Mint(new CapabilityTokenRequest
         {
             WorkspaceId = "other-workspace",
@@ -572,5 +563,39 @@ public sealed class SkillMemoryActorTests
 
         await Should.ThrowAsync<UnauthorizedAccessException>(() =>
             actor.StoreSkillAsync(CreateSkill(), foreignToken));
+    }
+
+    [Fact]
+    public async Task StoreSkillAsync_OnDeniedWrite_PublishesEventWithSkillWriteGrant()
+    {
+        var tokenService = CreateTokenService();
+        var bus = new SkillCapabilityCapturingEventBus();
+        var actor = BuildActor(tokenService, bus);
+        var readOnlyToken = Token(tokenService, "skill:read");
+
+        await Should.ThrowAsync<UnauthorizedAccessException>(() =>
+            actor.StoreSkillAsync(CreateSkill(), readOnlyToken));
+
+        bus.CapabilityEvents.Count.ShouldBe(1);
+        var evt = bus.CapabilityEvents[0];
+        evt.Outcome.ShouldBe(Weave.Security.Events.CapabilityAuthorizationOutcome.Deny);
+        evt.Reason.ShouldBe("grant-missing");
+        evt.Grant.ShouldBe("skill:write");
+        evt.ActionContext.ShouldBe("StoreSkillAsync");
+    }
+
+    private sealed class SkillCapabilityCapturingEventBus : IEventBus
+    {
+        public List<Weave.Security.Events.CapabilityAuthorizationEvent> CapabilityEvents { get; } = [];
+
+        public Task PublishAsync<TEvent>(TEvent domainEvent, CancellationToken ct) where TEvent : IDomainEvent
+        {
+            if (domainEvent is Weave.Security.Events.CapabilityAuthorizationEvent capabilityEvent)
+                CapabilityEvents.Add(capabilityEvent);
+            return Task.CompletedTask;
+        }
+
+        public IDisposable Subscribe<TEvent>(Func<TEvent, CancellationToken, Task> handler) where TEvent : IDomainEvent =>
+            throw new NotSupportedException();
     }
 }

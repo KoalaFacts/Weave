@@ -1,4 +1,4 @@
-# Handoff — Capability Vocabulary Expansion
+# Handoff — Capability Replay/Debugger
 
 > **Live state only.** The contract — principles, vocabulary table, roadmap — lives in [unique-agent-strategy.md](unique-agent-strategy.md). This file records the current shape of the system and what to pick up next.
 >
@@ -6,63 +6,88 @@
 
 ## Current state
 
-The capability vocabulary is 4-of-5 Today:
+The capability vocabulary is 6 verbs, all enforced through one shared authorizer:
 
-| Verb | Enforced at |
-|---|---|
-| `tool:<name>` / `tool:*` | `src/Tools/Weave.Tools/Actors/ToolActor.cs` |
-| `secret:<path>` | `src/Security/Weave.Security/Actors/SecretProxyActor.cs` |
-| `skill:read` / `skill:write` | `src/Assistants/Weave.Agents/Actors/SkillMemoryActor.cs` |
-| `channel:send:<id>` / `channel:receive:<id>` | `src/Assistants/Weave.Agents/Actors/ChannelGatewayActor.cs` |
-| `user:read:<userId>` / `user:write:<userId>` | `src/Assistants/Weave.Agents/Actors/UserModelActor.cs` |
-| `plugin:invoke:<plugin>` | `src/Runtime/Weave.Silo/Plugins/PluginRegistry.cs` |
-| `marketplace:install` | not implemented — see Next work |
+| Verb | Manifest declaration | Runtime enforcement |
+|---|---|---|
+| `tool:<name>` / `tool:*` | yes | `CapabilityAuthorizer` from `src/Tools/Weave.Tools/Actors/ToolActor.cs` |
+| `secret:<path>` | yes | `src/Security/Weave.Security/Actors/SecretProxyActor.cs` (still inline — see follow-ups) |
+| `skill:read` / `skill:write` | yes | `CapabilityAuthorizer` from `src/Assistants/Weave.Agents/Actors/SkillMemoryActor.cs` |
+| `channel:send:<id>` / `channel:receive:<id>` | yes | `CapabilityAuthorizer` from `src/Assistants/Weave.Agents/Actors/ChannelGatewayActor.cs` |
+| `user:read:<userId>` / `user:write:<userId>` | yes | `CapabilityAuthorizer` from `src/Assistants/Weave.Agents/Actors/UserModelActor.cs` |
+| `plugin:invoke:<plugin>` | yes | `CapabilityAuthorizer` from `src/Runtime/Weave.Silo/Plugins/PluginRegistry.cs` |
+| `marketplace:install` | not implemented — see Next work | — |
 
-Tests: 1790 passed. Branch (in flight): `claude/continue-agent-strategy-yS2Z1`.
+Tests: 1820 passed.
 
 ### How a verb is wired today
 
-1. **Authorize at the boundary.** A private `Authorize(token, …)` method on the actor / registry validates signature, workspace match, and grant. Logs the deny with `LogWarning` and throws `UnauthorizedAccessException`. Five copies live in `ToolActor`, `SkillMemoryActor`, `ChannelGatewayActor`, `UserModelActor`, `PluginRegistry` — all near-identical (see "Cross-cutting" below).
-2. **Per-request token at the API.** `XxxTokenFactory.MintXxx(svc, ws, ct)` returns a `CapabilityTokenSource`. Endpoints do `using var source = ...; pass source.Token`. Internal mint sites (e.g., `AgentSkillSuggester`) use the same shape with `MintLinked(req, CancellationToken.None)`.
-3. **Cancellation propagates.** `CapabilityToken.CancellationToken` fires when the parent CT cancels, the token expires, or `tokenService.Revoke(tokenId)` is called. Token-gated actor methods pass `token.CancellationToken` to `eventBus.PublishAsync`, `persistentState.WriteStateAsync`, and lifecycle hooks.
-4. **Manifest gate for runtime mints.** `AgentSkillSuggester` and `SkillMemoryPromptEnricher` check `state.Definition?.Capabilities?.Contains(grant)` before minting — runtime can't elevate beyond what the manifest declares (principle 3).
-5. **Wildcards.** `CapabilityToken.HasGrant` matches segment-wise: `*` covers one segment; trailing `*` covers one-or-more. So `tool:*` matches `tool:foo` and `tool:foo:bar`; `user:*:alice` matches `user:read:alice` and `user:write:alice`; `*` matches anything.
+Five sites that previously held a private `Authorize(...)` method now share `ICapabilityAuthorizer` ([CapabilityAuthorizer.cs](../src/Security/Weave.Security/Tokens/CapabilityAuthorizer.cs)). The authorizer:
+
+1. **Validates** signature, expiry, revocation via `ICapabilityTokenService.Validate`.
+2. **Workspace-matches** when `actorWorkspaceId` is non-empty (PluginRegistry passes `null` since plugins are silo-wide).
+3. **Grant-checks** via `CapabilityToken.HasGrant` (segment-wise wildcards).
+4. **Publishes** `CapabilityAuthorizationEvent` ([CapabilityAuthorizationEvent.cs](../src/Security/Weave.Security/Events/CapabilityAuthorizationEvent.cs)) on every call (allow OR deny) keyed by `tokenId`, `grant`, `workspaceId`, `issuedTo`, `outcome`, `actionContext`, and `reason` on denies (`"invalid-or-expired-token"` / `"workspace-mismatch"` / `"grant-missing"`).
+5. **Throws** `UnauthorizedAccessException` on deny.
+
+Call sites pass `actionContext` as a literal string (e.g. `"ChannelGatewayActor.RouteInbound:receive"`) or default to `[CallerMemberName]`.
+
+DI registration lives in `src/Runtime/Weave.Silo/Startup/SiloServiceRegistrar.cs` `RegisterSecurity()`. Per-request token minting at the API boundary, manifest-gated runtime mints, and cancellation propagation are unchanged.
+
+### How replay/debugger is wired today
+
+Roadmap #3 ships as a thin pipeline on top of the audit event. No producer-side changes:
+
+1. **Store** ([`InMemoryCapabilityAuditStore.cs`](../src/Security/Weave.Security/Audit/InMemoryCapabilityAuditStore.cs)) — singleton, capacity-bounded LinkedList behind a `Lock`. FIFO eviction at `CapabilityAudit:Capacity` (default 10,000). `GetByToken(tokenId)` filters chronologically; `GetRecent(limit)` walks newest-first.
+2. **Subscriber** ([`CapabilityAuditSubscriberHostedService.cs`](../src/Runtime/Weave.Silo/Audit/CapabilityAuditSubscriberHostedService.cs)) — `IHostedService` that subscribes to `IEventBus` for `CapabilityAuthorizationEvent` in `StartAsync` and disposes in `StopAsync`. Single forward-to-store handler.
+3. **Queries** — `GetCapabilityAuditByTokenQuery(tokenId)` and `GetRecentCapabilityAuditQuery(limit)` in `src/Security/Weave.Security/Queries/`. Picked up by source-generated CQRS registration like every other query handler.
+4. **HTTP** — `GET /api/audit/capability/{tokenId}` and `GET /api/audit/capability?limit=N` ([`AuditEndpoints.cs`](../src/Runtime/Weave.Silo/Api/AuditEndpoints.cs)). Returns `CapabilityAuditEntryResponse[]` (`outcome` as string for stability).
+5. **CLI** — `weave audit replay [tokenId]` ([`AuditReplayCliCommand.cs`](../src/UX/Weave.Cli/Commands/Audit/AuditReplayCliCommand.cs)). Guided mode: zero-arg invocation lists distinct recent tokens via Spectre `SelectionPrompt`; advanced mode: pass the tokenId. Renders allow/deny trace as a Spectre table coloured by outcome.
+
+Acceptance bar from the strategy doc's *Measurement* section is met:
+- **Audit completeness** — every Authorize call (allow + deny) publishes a row carrying capability, grant, actor, reason. Verified by the per-actor smoke tests added in roadmap #2 + the end-to-end `CapabilityAuditEndpointTests`.
+- **Coverage of action types** — 5/5 actor sites publish through the shared authorizer; only `secret:<path>` (VaultSecretProvider) is still inline (cross-cutting follow-up).
 
 ## Next work
 
-**Don't pursue `marketplace:install` yet** — `IMarketplaceActor.IncrementInstallCountAsync` is a counter, not an install path. Gating an action that doesn't exist is empty ceremony. Wait until someone wires real marketplace-to-workspace installation, then gate it.
+**Don't pursue `marketplace:install` yet** — `IMarketplaceActor.IncrementInstallCountAsync` is a counter, not an install path. Gating an action that doesn't exist is empty ceremony. Wait until someone wires real marketplace-to-workspace installation, then gate it through the same authorizer.
 
-The vocabulary phase is effectively done. Roadmap items #2 and #3 are the natural next moves:
+Natural next moves, in order of leverage:
 
-- **#2 Capability-bound audit log.** Every Authorize call (allow OR deny) emits a structured row keyed by `tokenId`, `grant`, `workspaceId`, `issuedTo`, `outcome`. The deny-side logging exists in five places already (`LogWarning`); the allow-side doesn't. Consolidating both into one audit sink makes principle 2 ("fail closed, log loud") measurable and is a natural place to deduplicate the five `Authorize` copies.
-- **#3 Capability replay/debugger.** Given a `tokenId`, surface the action it authorized + the deny/allow trace. Depends on #2 landing first.
+- **Wire `secret:<path>` through `CapabilityAuthorizer`** so the audit log covers Vault reads. The cheapest fix is to call `authorizer.AuthorizeAsync(token, $"secret:{path}", token.WorkspaceId, ...)` at `VaultSecretProvider.cs:17-23`, replacing the inline `Validate` + `HasGrant`. After this, *Coverage of action types* hits 100% per the strategy doc.
+- **Manifest-side wildcard matching.** Runtime mint sites still use literal `.Contains(grant)` against `state.Definition.Capabilities`. A manifest declaring `skill:*` doesn't grant `skill:read`/`skill:write` for the manifest gate. Plug `CapabilityToken.HasGrant`-style segment matching into the manifest check.
+- **Durable audit store.** The in-memory store is fine for replay/debug but evicts under load. A SQLite or Postgres-backed `ICapabilityAuditStore` (selected via `CapabilityAuditOptions.Backend`) is a small, mechanical follow-up.
+- **Dashboard view.** A Blazor page that hits `/api/audit/capability` and renders the same table the CLI shows. No backend work required.
 
 ## Cross-cutting follow-ups
 
-These are real gaps. Lifting them as a single PR before the next vocabulary entry is cheap; afterwards they compound.
+These remain real gaps. None blocks the *Next work* items above.
 
-- **Five `Authorize` copies past the abstraction threshold.** CLAUDE.md says three similar lines is fine; five copies of ~15 lines is not. The natural shape is a shared `CapabilityAuthorizer` (which I extracted earlier in this session and reverted at three copies). At five, it's the right call. **Couple this with item #2** — the audit-log work has to touch every Authorize site anyway.
+- **`secret:<path>` enforcement is still inline in `VaultSecretProvider.cs:17-23`** — listed under *Next work* above as the highest-leverage follow-up.
 - **`ToolRegistryConnector` self-mints `[$"tool:{toolName}", "secret:*"]`** without consulting the agent's manifest. The connector is workspace-scoped (no `AgentDefinition` in scope), so the manifest-gate fix is less obvious. Likely shape: pass the requesting agent's capabilities through, or treat tool registration as a workspace-admin verb gated by a separate grant.
-- **`channel:send:*` requires both grants today** because `RouteInboundAsync` does both ingress and reply atomically. If a webhook adapter ever needs receive-only (forward to a queue, no reply), split the actor surface.
-- **Manifest-side wildcards.** Runtime mint sites use literal `.Contains(grant)` against `state.Definition.Capabilities`. A manifest declaring `skill:*` doesn't grant `skill:read`/`skill:write` for the runtime gate — the manifest check ignores wildcards. Wire `CapabilityToken`-style segment matching into the manifest check when needed.
+- **`channel:send:*` requires both grants today** because `RouteInboundAsync` does both ingress and reply atomically. The double `Authorize` call now lives at the call site (lines 74–75 of ChannelGatewayActor) with distinct `actionContext` strings (`":receive"` / `":send"`), so the audit log distinguishes them. If a webhook adapter ever needs receive-only, split the actor surface.
 
 ## Template to mirror
 
-For the next verb (or whoever consolidates Authorize):
+For the next vocabulary entry (or any follow-up that touches the audit pipeline):
 
 | What | Where |
 |---|---|
-| Actor + private `Authorize` | `src/Assistants/Weave.Agents/Actors/ChannelGatewayActor.cs` |
-| Per-request token at API | `src/Runtime/Weave.Silo/Api/ChannelTokenFactory.cs` |
-| CQRS record carrying token | `src/Assistants/Weave.Agents/Commands/RouteInboundMessageCommand.cs` |
-| Endpoint shape | `using var source = XxxTokenFactory.MintXxx(svc, ws, ct);` then pass `source.Token` |
-| Internal mint with manifest gate + linked CT | `src/Assistants/Weave.Agents/Actors/AgentSkillSuggester.cs` |
-| Threading `token.CancellationToken` | `src/Assistants/Weave.Agents/Actors/SkillMemoryActor.cs` |
-| Capability test cases | `ChannelGatewayActorTests`: `_Without*Grant_Throws`, `_WithExpiredToken_Throws`, `_WithCrossWorkspaceToken_Throws`, `_WithReceiveSendWildcardGrants_Allowed`, `_WithChannelSpecificGrants_AllowsOnlyMatchingChannel` |
-| Cancellation-linkage tests | `CapabilityTokenServiceTests`: `MintLinked_*` |
+| Single authorizer with Authorize signature | `src/Security/Weave.Security/Tokens/CapabilityAuthorizer.cs` |
+| Audit event record | `src/Security/Weave.Security/Events/CapabilityAuthorizationEvent.cs` |
+| In-memory audit store + bounded options | `src/Security/Weave.Security/Audit/InMemoryCapabilityAuditStore.cs` |
+| Subscriber hosted service | `src/Runtime/Weave.Silo/Audit/CapabilityAuditSubscriberHostedService.cs` |
+| Per-actor call-site shape | `await authorizer.AuthorizeAsync(token, grant, actorWorkspaceId, actionContext);` |
+| DI seam | `SiloServiceRegistrar.RegisterSecurity()` (store) + `RegisterAgentPipeline()` (hosted service) |
+| Query records + handlers | `src/Security/Weave.Security/Queries/Get*CapabilityAuditQuery.cs` |
+| HTTP endpoint group | `src/Runtime/Weave.Silo/Api/AuditEndpoints.cs` (mapped in `SiloApplicationConfigurator.MapEndpoints`) |
+| CLI command pair | `src/UX/Weave.Cli/Commands/Audit/AuditReplayCliCommand.cs` + `AuditReplayCommand.cs` (wired in `Program.cs`) |
+| End-to-end audit test | `src/Runtime/Weave.Silo.Tests/Audit/CapabilityAuditEndpointTests.cs` |
 
 ## History
 
+- **2026-05-03** (`claude/competitor-analysis-handoff-Qn9jh`) — capability replay/debugger shipped; in-memory `ICapabilityAuditStore` (capacity-bounded) fed by a subscriber hosted service; `GET /api/audit/capability/{tokenId}` and `?limit=N` over CQRS query handlers; `weave audit replay [tokenId]` CLI with guided + advanced modes; tests 1807 → 1820
+- **2026-05-03** (`claude/competitor-analysis-handoff-Qn9jh`) — capability-bound audit log shipped; five `Authorize` copies consolidated into `ICapabilityAuthorizer`; allow + deny rows publish `CapabilityAuthorizationEvent` keyed by tokenId/grant/workspaceId/issuedTo/outcome/reason/actionContext; tests 1790 → 1807
 - **2026-05-03** (`claude/continue-agent-strategy-yS2Z1`) — `channel:*`, `user:*`, `plugin:invoke:*` shipped; capability cancellation linkage; mid-segment wildcards; `IReadOnlyList<T>` manifest cleanup; four PR #40 follow-ups; plugin types moved Workspaces → Silo to enable the verb
 - **2026-05-03** — `skill:read` / `skill:write` shipped (PR #40)
 - **2026-05-03** — Strategy doc + best-practices audit (PR #39)

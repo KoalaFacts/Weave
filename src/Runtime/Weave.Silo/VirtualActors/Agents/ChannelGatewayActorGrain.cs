@@ -13,11 +13,11 @@ public sealed class ChannelGatewayActorGrain : Grain, IChannelGatewayActorGrain
     public ChannelGatewayActorGrain(
         IVirtualActorProvider actors,
         IEventBus eventBus,
-        ICapabilityTokenService tokenService,
+        ICapabilityAuthorizer authorizer,
         ILogger<ChannelGatewayActor> logger,
         [PersistentState("channel-gateway", "Default")] IPersistentState<ChannelGatewayState> state)
     {
-        _actor = new ChannelGatewayActor(actors, eventBus, tokenService, logger,
+        _actor = new ChannelGatewayActor(actors, eventBus, authorizer, logger,
             new OrleansActorState<ChannelGatewayState>(state));
     }
 

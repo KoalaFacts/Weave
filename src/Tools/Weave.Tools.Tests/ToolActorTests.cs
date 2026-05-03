@@ -1,5 +1,6 @@
 using Microsoft.Extensions.Logging;
 using Weave.Security.Actors;
+using Weave.Security.Events;
 using Weave.Security.Scanning;
 using Weave.Security.Tokens;
 using Weave.Shared.Events;
@@ -13,7 +14,7 @@ namespace Weave.Tools.Tests;
 
 public sealed class ToolActorTests
 {
-    private static (ToolActor Actor, IToolConnector Connector, ICapabilityTokenService TokenService) CreateActor()
+    private static (ToolActor Actor, IToolConnector Connector, ICapabilityTokenService TokenService) CreateActor(IEventBus? eventBusOverride = null)
     {
         var actors = Substitute.For<IVirtualActorProvider>();
         var connector = Substitute.For<IToolConnector>();
@@ -29,13 +30,14 @@ public sealed class ToolActorTests
             TimeProvider.System);
         var lifecycleManager = Substitute.For<ILifecycleManager>();
         var logger = Substitute.For<ILogger<ToolActor>>();
-        var eventBus = Substitute.For<IEventBus>();
+        var eventBus = eventBusOverride ?? Substitute.For<IEventBus>();
+        var authorizer = new CapabilityAuthorizer(tokenService, eventBus, Microsoft.Extensions.Logging.Abstractions.NullLogger<CapabilityAuthorizer>.Instance);
         var secretProxy = Substitute.For<ISecretProxyActor>();
         secretProxy.SubstituteAsync(Arg.Any<string>()).Returns(callInfo => callInfo.Arg<string>());
 
         actors.GetActor<ISecretProxyActor>(Arg.Any<VirtualActorId>()).Returns(secretProxy);
 
-        var actor = new ToolActor(actors, discovery, leakScanner, tokenService, lifecycleManager, eventBus, logger);
+        var actor = new ToolActor(actors, discovery, leakScanner, authorizer, lifecycleManager, eventBus, logger);
         return (actor, connector, tokenService);
     }
 
@@ -450,5 +452,39 @@ public sealed class ToolActorTests
         var spec = new ToolSpec { Name = "tool", Type = ToolType.Cli, Cli = new Weave.Workspaces.Models.CliConfig() };
 
         await Should.ThrowAsync<UnauthorizedAccessException>(() => actor.ConnectAsync(spec, foreignToken));
+    }
+
+    [Fact]
+    public async Task ConnectAsync_OnDeniedTokenWorkspace_PublishesEventWithReasonWorkspaceMismatch()
+    {
+        var bus = new ToolCapabilityCapturingEventBus();
+        var (actor, _, tokenSvc) = CreateActor(bus);
+        await actor.OnActivatedAsync("ws-a/git", TestContext.Current.CancellationToken);
+        var foreignToken = CreateToken(tokenSvc, workspaceId: "ws-other");
+        var spec = new ToolSpec { Name = "git", Type = ToolType.Cli, Cli = new Weave.Workspaces.Models.CliConfig() };
+
+        await Should.ThrowAsync<UnauthorizedAccessException>(() => actor.ConnectAsync(spec, foreignToken));
+
+        bus.CapabilityEvents.Count.ShouldBe(1);
+        var evt = bus.CapabilityEvents[0];
+        evt.Outcome.ShouldBe(CapabilityAuthorizationOutcome.Deny);
+        evt.Reason.ShouldBe("workspace-mismatch");
+        evt.Grant.ShouldBe("tool:git");
+        evt.ActionContext.ShouldBe("ConnectAsync");
+    }
+
+    private sealed class ToolCapabilityCapturingEventBus : IEventBus
+    {
+        public List<CapabilityAuthorizationEvent> CapabilityEvents { get; } = [];
+
+        public Task PublishAsync<TEvent>(TEvent domainEvent, CancellationToken ct) where TEvent : IDomainEvent
+        {
+            if (domainEvent is CapabilityAuthorizationEvent capabilityEvent)
+                CapabilityEvents.Add(capabilityEvent);
+            return Task.CompletedTask;
+        }
+
+        public IDisposable Subscribe<TEvent>(Func<TEvent, CancellationToken, Task> handler) where TEvent : IDomainEvent =>
+            throw new NotSupportedException();
     }
 }
