@@ -90,6 +90,18 @@ The law of the repo. Every rule here is enforceable in review. Rules exist to pr
 
 **Pre-1.0: no backward-compat shims.** No `Legacy*` constants, no dual config keys for the same setting, no deprecated synonyms (`"postgres"` aliasing `"postgresql"`), no fallback property reads, no compatibility ctor overloads. When a key/type/contract changes, change the call sites and move on. Half the codebase is still under construction; carrying shims for an unreleased product is dead weight that hides which surface is the real one. Re-introduce migration shims only after a 1.0 release.
 
+**When you remove a config value, grep the literal across the whole repo before claiming done.** Test fixtures (`[InlineData(...)]`), docs, sample configs, and CLI emit-side switches all hold copies of the string that the type-checker won't catch. `grep -rn '"the-removed-value"' .` is the floor.
+
+### Refactoring discipline
+
+**A refactor is a strict no-op for runtime behavior.** Moving code, splitting projects, renaming types — none of those should change what the running system does. If you catch yourself adding `RegisterFactory(...)`, an extra `?? defaultValue`, or "improvements" while moving code, stop and revert. Those are separate commits at minimum. The Silo clustering split nearly shipped three unintended `DbProviderFactories.RegisterFactory` calls disguised as part of the refactor — caught only because the original code clearly didn't have them.
+
+**After any package or project graph change, force-regen every consumer's `packages.lock.json` from a clean restore.** `dotnet restore --force` only re-restores the requested project; downstream consumers stay on the old graph. The floor is `find src -name packages.lock.json -delete; find src -name obj -type d -prune -exec rm -rf {} +; dotnet restore Weave.slnx --force`. Stale lockfiles after the security split made an audit report "all clean" while 225 lines of `Sqlite/Npgsql/SQLitePCLRaw` pins still sat in 4 downstream lockfiles.
+
+**When a rule applies, apply it everywhere it fits.** "But this is the composition root," "this only ships once," "this is just hygiene" — those are the rule talking back, not exceptions. The per-provider-project rule was applied to `Weave.Security` then carved out for `Weave.Silo` on the grounds that "no upstream domain project gets polluted" — until the user pushed back and the same mechanical refactor landed cleanly. Carve-outs accumulate into "rules nobody actually follows."
+
+**Audit on fresh state.** Before reporting "I checked X and it's clean," regenerate any cached/derived artifact you read from — lockfiles, generated source, build outputs, test reports. Stale derived state will tell you "all good" when the underlying change hasn't propagated. The same audit twice (once on stale lockfiles, once after `dotnet restore --force`) gave opposite answers in this session.
+
 ### Naming and style
 
 **Async production methods end in `Async`.** Enforced by the editorconfig. Exceptions: `Main`, expression-bodied event handlers, `IDisposable` patterns. Tests do not require the suffix, but consistency is preferred.
@@ -137,6 +149,8 @@ The law of the repo. Every rule here is enforceable in review. Rules exist to pr
 **No file-system side effects outside `Path.GetTempPath()`.** Writing into the repo or CWD breaks parallel test runs and pollutes the working tree. Clean up in `IAsyncDisposable.DisposeAsync`.
 
 **Environment variables set in tests are scoped and restored.** Use `IDisposable`-backed helpers — never mutate `Environment.SetEnvironmentVariable` without a `finally` that resets it. Environment-detected plugins (Dapr when `DAPR_HTTP_PORT` is set) make this especially important.
+
+**Tests against process-global instruments (`Meter`, `ActivitySource`, static counters) use thread-safe sinks and `ShouldContain`, never exact counts.** A static `Meter` is shared across the entire test assembly; any parallel test class that triggers the same instrument will land in your `MeterListener` callback. Use `ConcurrentQueue<T>` (the publisher fires on the call-site thread, racing your test thread — `List<T>.Add` corrupts under contention and produces cryptic Shouldly errors) and assert "snapshot contains the expected tag set" rather than "snapshot has exactly N items." See `CapabilityAuthorizerTests`'s metric tests for the pattern.
 
 ### Assertions and libraries
 
