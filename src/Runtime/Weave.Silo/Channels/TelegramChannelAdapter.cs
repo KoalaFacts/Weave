@@ -38,8 +38,8 @@ public sealed class TelegramChannelAdapter(HttpClient httpClient) : IChannelAdap
 
     public Task<bool> ValidateConfigAsync(Dictionary<string, string> config, CancellationToken ct)
     {
-        var valid = config.ContainsKey("bot_token") && !string.IsNullOrWhiteSpace(config["bot_token"])
-            && config.ContainsKey("chat_id") && !string.IsNullOrWhiteSpace(config["chat_id"]);
+        var valid = config.TryGetValue("bot_token", out var botToken) && !string.IsNullOrWhiteSpace(botToken)
+            && config.TryGetValue("chat_id", out var chatId) && !string.IsNullOrWhiteSpace(chatId);
         return Task.FromResult(valid);
     }
 }
