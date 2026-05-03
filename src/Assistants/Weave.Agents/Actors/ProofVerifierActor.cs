@@ -100,14 +100,7 @@ public sealed class ProofVerifierActor(
 
         var agentActor = actors.GetActor<IAgentActor>(VirtualActorId.From($"{workspaceId}/{agentName}"));
 
-        try
-        {
-            await agentActor.ReviewTaskAsync(taskId, accepted, feedback, verification);
-        }
-        catch (Exception ex) when (ex is InvalidOperationException or TimeoutException)
-        {
-            logger.LogError(ex, "Failed to deliver review for task {TaskId} on agent {AgentName}", taskId, agentName);
-        }
+        await agentActor.ReviewTaskAsync(taskId, accepted, feedback, verification);
 
         await eventBus.PublishAsync(new ProofVerifiedEvent
         {

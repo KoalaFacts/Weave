@@ -1,3 +1,4 @@
+using System.Text.Json;
 using Microsoft.Extensions.AI;
 using Microsoft.Extensions.Logging;
 using Weave.Agents.Actors;
@@ -223,11 +224,11 @@ public sealed class ProofValidatorActorTests
     }
 
     [Fact]
-    public void ParseConditionResults_InvalidJson_ReturnsEmpty()
+    public void ParseConditionResults_InvalidJson_ThrowsJsonException()
     {
-        var results = ProofValidatorActor.ParseConditionResults("this is not json");
-
-        results.ShouldBeEmpty();
+        // Parser does not swallow malformed model output; the outer
+        // EvaluateAsync boundary turns it into a "Validation error" vote.
+        Should.Throw<JsonException>(() => ProofValidatorActor.ParseConditionResults("this is not json"));
     }
 
     [Fact]
@@ -251,9 +252,9 @@ public sealed class ProofValidatorActorTests
     // --- ParseConditionResults edge cases ---
 
     [Fact]
-    public void ParseConditionResults_EmptyString_ReturnsEmpty()
+    public void ParseConditionResults_EmptyString_ThrowsJsonException()
     {
-        ProofValidatorActor.ParseConditionResults("").ShouldBeEmpty();
+        Should.Throw<JsonException>(() => ProofValidatorActor.ParseConditionResults(""));
     }
 
     [Fact]

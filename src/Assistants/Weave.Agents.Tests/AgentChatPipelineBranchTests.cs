@@ -99,7 +99,7 @@ public sealed class AgentChatPipelineBranchTests
     }
 
     [Fact]
-    public async Task ExecuteAsync_UserContextActorThrows_SwallowsErrorAndContinues()
+    public async Task ExecuteAsync_UserContextActorThrows_PropagatesToCaller()
     {
         var fx = new Fixture();
         var userActor = Substitute.For<IUserModelActor>();
@@ -113,18 +113,19 @@ public sealed class AgentChatPipelineBranchTests
             Capabilities = ["user:read:alice"]
         });
 
-        var response = await fx.Pipeline.ExecuteAsync(state, new AgentMessage
+        // Best-practice: enrichers don't catch — failure surfaces to the
+        // actor-call boundary instead of being silently downgraded to
+        // "send the message without user context."
+        await Should.ThrowAsync<InvalidOperationException>(() => fx.Pipeline.ExecuteAsync(state, new AgentMessage
         {
             Role = "user",
             Content = "hi",
             UserId = "alice"
-        });
-
-        response.Content.ShouldBe("ok", "user-context failures must not break the main chat flow");
+        }));
     }
 
     [Fact]
-    public async Task ExecuteAsync_SkillMemoryActorThrows_SwallowsErrorAndContinues()
+    public async Task ExecuteAsync_SkillMemoryActorThrows_PropagatesToCaller()
     {
         var fx = new Fixture();
         var skillActor = Substitute.For<ISkillMemoryActor>();
@@ -132,15 +133,17 @@ public sealed class AgentChatPipelineBranchTests
             .Returns(Task.FromException<IReadOnlyList<SkillSearchResult>>(new InvalidOperationException("skill actor broken")));
         fx.ActorProvider.GetActor<ISkillMemoryActor>(Arg.Any<VirtualActorId>()).Returns(skillActor);
 
-        var state = StateWith();
+        var state = StateWith(new AgentDefinition
+        {
+            Model = "test-model",
+            Capabilities = ["skill:read"]
+        });
 
-        var response = await fx.Pipeline.ExecuteAsync(state, new AgentMessage
+        await Should.ThrowAsync<InvalidOperationException>(() => fx.Pipeline.ExecuteAsync(state, new AgentMessage
         {
             Role = "user",
             Content = "tell me something"
-        });
-
-        response.Content.ShouldBe("ok");
+        }));
     }
 
     [Fact]

@@ -17,7 +17,7 @@ public sealed class AgentChatPipeline(
 {
     private IChatClient? _chatClient;
     private string? _systemPrompt;
-    private readonly SkillMemoryPromptEnricher _skillMemory = new(actors, tokenService, logger);
+    private readonly SkillMemoryPromptEnricher _skillMemory = new(actors, tokenService);
     private readonly EpisodicMemoryPromptEnricher _episodicMemory = new(actors, logger);
 
     public void Initialize(string agentId, string? model)
@@ -162,29 +162,21 @@ public sealed class AgentChatPipeline(
         if (state.Definition?.Capabilities is not { } capabilities || !CapabilityToken.HasGrant(capabilities, grant))
             return prompt;
 
-        try
+        var userActor = actors.GetActor<IUserModelActor>(VirtualActorId.Combine(state.WorkspaceId, message.UserId));
+        using var source = tokenService.MintLinked(new CapabilityTokenRequest
         {
-            var userActor = actors.GetActor<IUserModelActor>(VirtualActorId.Combine(state.WorkspaceId, message.UserId));
-            using var source = tokenService.MintLinked(new CapabilityTokenRequest
-            {
-                WorkspaceId = state.WorkspaceId.ToString(),
-                IssuedTo = $"{state.WorkspaceId}/{state.AgentName}",
-                Grants = [grant],
-                Lifetime = TimeSpan.FromMinutes(1)
-            }, CancellationToken.None);
-            var summary = await userActor.GetContextSummaryAsync(source.Token);
-            if (string.IsNullOrWhiteSpace(summary))
-                return prompt;
-
-            return string.IsNullOrWhiteSpace(prompt)
-                ? $"[User context]\n{summary}"
-                : $"{prompt}\n\n[User context]\n{summary}";
-        }
-        catch (Exception ex) when (ex is InvalidOperationException or TimeoutException or UnauthorizedAccessException)
-        {
-            logger.LogWarning(ex, "Failed to retrieve user context for {UserId}", message.UserId);
+            WorkspaceId = state.WorkspaceId.ToString(),
+            IssuedTo = $"{state.WorkspaceId}/{state.AgentName}",
+            Grants = [grant],
+            Lifetime = TimeSpan.FromMinutes(1)
+        }, CancellationToken.None);
+        var summary = await userActor.GetContextSummaryAsync(source.Token);
+        if (string.IsNullOrWhiteSpace(summary))
             return prompt;
-        }
+
+        return string.IsNullOrWhiteSpace(prompt)
+            ? $"[User context]\n{summary}"
+            : $"{prompt}\n\n[User context]\n{summary}";
     }
 
 }

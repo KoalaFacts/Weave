@@ -36,26 +36,18 @@ public sealed class AgentSupervisorActor(
         {
             var agentActor = actors.GetActor<IAgentActor>(VirtualActorId.From($"{_workspaceId}/{agentName}"));
 
-            try
-            {
-                await agentActor.ActivateAgentAsync(WorkspaceId.From(_workspaceId), definition);
-                persistentState.State.AgentNames.Add(agentName);
+            await agentActor.ActivateAgentAsync(WorkspaceId.From(_workspaceId), definition);
+            persistentState.State.AgentNames.Add(agentName);
 
-                foreach (var toolName in definition.Tools)
-                {
-                    var toolActor = actors.GetActor<IToolRegistryActor>(VirtualActorId.From(_workspaceId));
-                    var connection = await toolActor.GetConnectionAsync(toolName);
-                    if (connection is { Status: ToolConnectionStatus.Connected })
-                        await agentActor.ConnectToolAsync(toolName);
-                }
-
-                logger.LogInformation("Agent {AgentName} activated in workspace {WorkspaceId}", agentName, _workspaceId);
-            }
-            catch (Exception ex) when (ex is InvalidOperationException or TimeoutException or IOException or HttpRequestException)
+            foreach (var toolName in definition.Tools)
             {
-                logger.LogError(ex, "Failed to activate agent {AgentName} in workspace {WorkspaceId}", agentName, _workspaceId);
-                throw;
+                var toolActor = actors.GetActor<IToolRegistryActor>(VirtualActorId.From(_workspaceId));
+                var connection = await toolActor.GetConnectionAsync(toolName);
+                if (connection is { Status: ToolConnectionStatus.Connected })
+                    await agentActor.ConnectToolAsync(toolName);
             }
+
+            logger.LogInformation("Agent {AgentName} activated in workspace {WorkspaceId}", agentName, _workspaceId);
         }
 
         await persistentState.WriteStateAsync();
