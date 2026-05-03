@@ -184,17 +184,92 @@ public sealed class CapabilityAuthorizerTests
     }
 
     [Fact]
-    public async Task AuthorizeAsync_OnAllow_SourceIdFallsBackToTokenIdWhenWorkspaceEmpty()
+    public async Task AuthorizeAsync_OnAllow_SourceIdComposesWorkspaceAndToken()
     {
-        var tokenService = CreateTokenService();
-        var bus = new CapturingEventBus();
-        var authorizer = new CapabilityAuthorizer(tokenService, bus, NullLogger<CapabilityAuthorizer>.Instance);
-        // Mint cannot accept empty workspace, so simulate a hand-built token by using
-        // a workspace then re-asserting SourceId composition. The empty-workspace path
-        // is exercised by the publish helper's branch only when token.WorkspaceId is empty.
-        var token = Mint(tokenService, ["tool:git"], workspaceId: "ws-x");
+        var (authorizer, svc, bus) = CreateAuthorizer();
+        var token = Mint(svc, ["tool:git"], workspaceId: "ws-x");
+
         await authorizer.AuthorizeAsync(token, "tool:git", "ws-x", "Test.SourceId");
 
         bus.Events[0].SourceId.ShouldBe($"ws-x/{token.TokenId}");
+    }
+
+    [Fact]
+    public async Task AuthorizeAsync_WithValidGrantButMismatchedWorkspace_PublishesDenyWithWorkspaceReason()
+    {
+        // Defends against an order-of-checks regression: the workspace check
+        // must run BEFORE the grant check. Without this test, a future refactor
+        // that flipped the order would still pass AuthorizeAsync_WithMismatchedWorkspace_*
+        // because that fixture happens to mint with a non-matching grant.
+        var (authorizer, svc, bus) = CreateAuthorizer();
+        var token = Mint(svc, ["tool:git"], workspaceId: "other-ws");
+
+        await Should.ThrowAsync<UnauthorizedAccessException>(
+            () => authorizer.AuthorizeAsync(token, "tool:git", TestWorkspace, "Test.WorkspaceBeforeGrant"));
+
+        bus.Events.Count.ShouldBe(1);
+        bus.Events[0].Reason.ShouldBe("workspace-mismatch");
+    }
+
+    [Fact]
+    public async Task AuthorizeAsync_TruncatesActionContextToMaxLength()
+    {
+        var (authorizer, svc, bus) = CreateAuthorizer();
+        var token = Mint(svc, ["tool:git"]);
+        var oversized = new string('x', CapabilityAuthorizer.MaxActionContextLength + 50);
+
+        await authorizer.AuthorizeAsync(token, "tool:git", TestWorkspace, oversized);
+
+        bus.Events[0].ActionContext.Length.ShouldBe(CapabilityAuthorizer.MaxActionContextLength);
+    }
+
+    [Fact]
+    public async Task AuthorizeAsync_StripsControlCharsFromActionContext()
+    {
+        var (authorizer, svc, bus) = CreateAuthorizer();
+        var token = Mint(svc, ["tool:git"]);
+
+        await authorizer.AuthorizeAsync(token, "tool:git", TestWorkspace, "evil\n\u001b[31mctx\t!");
+
+        bus.Events[0].ActionContext.ShouldNotContain('\n');
+        bus.Events[0].ActionContext.ShouldNotContain('\t');
+        bus.Events[0].ActionContext.ShouldNotContain('\u001b');
+        bus.Events[0].ActionContext.ShouldContain("ctx");
+        bus.Events[0].ActionContext.ShouldContain("!");
+    }
+
+    [Fact]
+    public async Task AuthorizeAsync_PassesTokenCancellationTokenToEventBus()
+    {
+        var tokenService = CreateTokenService();
+        using var parentCts = new CancellationTokenSource();
+        using var source = tokenService.MintLinked(new CapabilityTokenRequest
+        {
+            WorkspaceId = TestWorkspace,
+            IssuedTo = "agent-1",
+            Grants = ["tool:git"],
+            Lifetime = TimeSpan.FromHours(1)
+        }, parentCts.Token);
+
+        var bus = new CtCapturingEventBus();
+        var authorizer = new CapabilityAuthorizer(tokenService, bus, NullLogger<CapabilityAuthorizer>.Instance);
+
+        await authorizer.AuthorizeAsync(source.Token, "tool:git", TestWorkspace, "Test.Ct");
+
+        bus.LastCancellationToken.ShouldBe(source.Token.CancellationToken);
+    }
+
+    private sealed class CtCapturingEventBus : IEventBus
+    {
+        public CancellationToken LastCancellationToken { get; private set; }
+
+        public Task PublishAsync<TEvent>(TEvent domainEvent, CancellationToken ct) where TEvent : IDomainEvent
+        {
+            LastCancellationToken = ct;
+            return Task.CompletedTask;
+        }
+
+        public IDisposable Subscribe<TEvent>(Func<TEvent, CancellationToken, Task> handler) where TEvent : IDomainEvent =>
+            throw new NotSupportedException();
     }
 }

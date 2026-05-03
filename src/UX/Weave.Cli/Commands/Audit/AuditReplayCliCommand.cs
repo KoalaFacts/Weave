@@ -74,19 +74,25 @@ internal sealed class AuditReplayCliCommand : ICliCommand<AuditReplayOptions>
             })
             .ToList();
 
+        // Visible labels show only the token id prefix — keeps full ids out of
+        // shoulder-surf range and reduces visual noise. The full id stays in
+        // the lookup map so the user picks unambiguously.
+        var labels = distinctTokens
+            .ToDictionary(
+                t => $"{ShortId(t.TokenId)}  ({t.IssuedTo} @ {t.Workspace}, {t.Count} rows)",
+                t => t.TokenId);
+
         var selection = AnsiConsole.Prompt(
             new SelectionPrompt<string>()
                 .Title("Pick a capability token to replay:")
-                .AddChoices(distinctTokens.Select(t => $"{t.TokenId}  ({t.IssuedTo} @ {t.Workspace}, {t.Count} rows)")));
+                .AddChoices(labels.Keys));
 
-        return distinctTokens
-            .First(t => selection.StartsWith(t.TokenId, StringComparison.Ordinal))
-            .TokenId;
+        return labels[selection];
     }
 
     private static void RenderTable(string tokenId, IReadOnlyList<ApiCapabilityAuditEntry> rows)
     {
-        var table = CliTheme.CreateTable($"Capability replay — {tokenId}");
+        var table = CliTheme.CreateTable($"Capability replay — {ShortId(tokenId)}");
         table.AddColumn(CliTheme.StyledColumn("Time"));
         table.AddColumn(CliTheme.StyledColumn("Outcome"));
         table.AddColumn(CliTheme.StyledColumn("Grant"));
@@ -112,7 +118,10 @@ internal sealed class AuditReplayCliCommand : ICliCommand<AuditReplayOptions>
         AnsiConsole.Write(table);
         AnsiConsole.WriteLine();
         var first = rows[0];
-        CliTheme.WriteMuted($"Token issued to {first.IssuedTo} in workspace {first.WorkspaceId}.");
+        CliTheme.WriteMuted($"Token {ShortId(tokenId)} issued to {first.IssuedTo} in workspace {first.WorkspaceId}.");
         CliTheme.WriteMuted($"{rows.Count} row(s).");
     }
+
+    private static string ShortId(string tokenId) =>
+        tokenId.Length <= 8 ? tokenId : $"{tokenId[..8]}…";
 }

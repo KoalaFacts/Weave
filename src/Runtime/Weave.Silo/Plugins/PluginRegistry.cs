@@ -13,6 +13,7 @@ public sealed partial class PluginRegistry : IPluginRegistry, IDisposable
     private readonly ConcurrentDictionary<string, PluginStatus> _active = new(StringComparer.OrdinalIgnoreCase);
     private readonly SemaphoreSlim _connectLock = new(1, 1);
     private readonly ICapabilityAuthorizer _authorizer;
+    // Consumed by the source-generated [LoggerMessage] partial methods below.
     private readonly ILogger<PluginRegistry> _logger;
 
     public PluginRegistry(

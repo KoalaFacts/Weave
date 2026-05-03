@@ -28,6 +28,10 @@ public interface ICapabilityAuthorizer
     /// Caller-provided context string describing the call site
     /// (e.g. <c>"ToolActor.InvokeAsync"</c>). Defaults to the calling member name.
     /// Recorded on every audit row so the replay path can group by action.
+    /// Truncated to <see cref="CapabilityAuthorizer.MaxActionContextLength"/>
+    /// characters and stripped of control chars before being logged or stored —
+    /// callers should not pass user-controlled strings here without their own
+    /// validation.
     /// </param>
     /// <exception cref="UnauthorizedAccessException">
     /// Thrown on invalid/expired token, workspace mismatch, or missing grant.
@@ -49,36 +53,46 @@ public sealed partial class CapabilityAuthorizer(
     private const string ReasonWorkspaceMismatch = "workspace-mismatch";
     private const string ReasonGrantMissing = "grant-missing";
 
+    /// <summary>
+    /// Maximum characters of <c>actionContext</c> recorded on the audit row
+    /// or written to the structured log. Today every call site passes a
+    /// short literal, but the cap defends against a future caller plumbing
+    /// user input through.
+    /// </summary>
+    public const int MaxActionContextLength = 200;
+
     public async Task AuthorizeAsync(
         CapabilityToken token,
         string grant,
         string? actorWorkspaceId,
         [CallerMemberName] string actionContext = "")
     {
+        var safeActionContext = SanitizeActionContext(actionContext);
+
         if (!tokenService.Validate(token))
         {
-            LogDenyInvalidToken(grant, actorWorkspaceId ?? string.Empty, actionContext);
-            await PublishAsync(token, grant, actionContext, CapabilityAuthorizationOutcome.Deny, ReasonInvalidToken);
+            LogDenyInvalidToken(grant, actorWorkspaceId ?? string.Empty, safeActionContext);
+            await PublishAsync(token, grant, safeActionContext, CapabilityAuthorizationOutcome.Deny, ReasonInvalidToken);
             throw new UnauthorizedAccessException("Invalid or expired capability token");
         }
 
         if (!string.IsNullOrWhiteSpace(actorWorkspaceId)
             && !string.Equals(token.WorkspaceId, actorWorkspaceId, StringComparison.Ordinal))
         {
-            LogDenyWorkspaceMismatch(token.WorkspaceId, actorWorkspaceId, grant, actionContext);
-            await PublishAsync(token, grant, actionContext, CapabilityAuthorizationOutcome.Deny, ReasonWorkspaceMismatch);
+            LogDenyWorkspaceMismatch(token.WorkspaceId, actorWorkspaceId, grant, safeActionContext);
+            await PublishAsync(token, grant, safeActionContext, CapabilityAuthorizationOutcome.Deny, ReasonWorkspaceMismatch);
             throw new UnauthorizedAccessException(
                 $"Token workspace '{token.WorkspaceId}' does not match actor workspace '{actorWorkspaceId}'");
         }
 
         if (!token.HasGrant(grant))
         {
-            LogDenyGrantMissing(token.IssuedTo, grant, actionContext);
-            await PublishAsync(token, grant, actionContext, CapabilityAuthorizationOutcome.Deny, ReasonGrantMissing);
+            LogDenyGrantMissing(token.IssuedTo, grant, safeActionContext);
+            await PublishAsync(token, grant, safeActionContext, CapabilityAuthorizationOutcome.Deny, ReasonGrantMissing);
             throw new UnauthorizedAccessException($"Token does not grant '{grant}'");
         }
 
-        await PublishAsync(token, grant, actionContext, CapabilityAuthorizationOutcome.Allow, reason: null);
+        await PublishAsync(token, grant, safeActionContext, CapabilityAuthorizationOutcome.Allow, reason: null);
     }
 
     private Task PublishAsync(
@@ -88,9 +102,9 @@ public sealed partial class CapabilityAuthorizer(
         CapabilityAuthorizationOutcome outcome,
         string? reason)
     {
-        var sourceId = string.IsNullOrEmpty(token.WorkspaceId)
-            ? token.TokenId
-            : $"{token.WorkspaceId}/{token.TokenId}";
+        // CapabilityTokenService.Mint rejects empty WorkspaceId, so this is
+        // always "{ws}/{tokenId}" in practice; no fallback branch is needed.
+        var sourceId = $"{token.WorkspaceId}/{token.TokenId}";
 
         return eventBus.PublishAsync(new CapabilityAuthorizationEvent
         {
@@ -103,6 +117,35 @@ public sealed partial class CapabilityAuthorizer(
             Outcome = outcome,
             Reason = reason
         }, token.CancellationToken);
+    }
+
+    private static string SanitizeActionContext(string? input)
+    {
+        if (string.IsNullOrEmpty(input))
+            return string.Empty;
+
+        var trimmed = input.Length > MaxActionContextLength
+            ? input[..MaxActionContextLength]
+            : input;
+
+        var hasControl = false;
+        foreach (var c in trimmed)
+        {
+            if (char.IsControl(c))
+            {
+                hasControl = true;
+                break;
+            }
+        }
+
+        if (!hasControl)
+            return trimmed;
+
+        return string.Create(trimmed.Length, trimmed, static (span, src) =>
+        {
+            for (var i = 0; i < src.Length; i++)
+                span[i] = char.IsControl(src[i]) ? '?' : src[i];
+        });
     }
 
     [LoggerMessage(Level = LogLevel.Warning,

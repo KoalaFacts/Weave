@@ -16,7 +16,10 @@ public static class AuditEndpoints
             .Produces<IEnumerable<CapabilityAuditEntryResponse>>();
 
         group.MapGet("/{tokenId}", GetByTokenAsync)
-            .WithDescription("Replay every authorization decision (allow + deny) for a given capability token, in chronological order.")
+            .WithDescription(
+                "Replay every authorization decision (allow + deny) for a given capability token, "
+                + "in chronological order. Returns 200 + an empty array for unknown tokens or for tokens "
+                + "whose rows have been evicted (the store is bounded and FIFO).")
             .Produces<IEnumerable<CapabilityAuditEntryResponse>>();
 
         return group;
