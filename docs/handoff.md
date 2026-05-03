@@ -12,8 +12,9 @@
 - `IReadOnlyList<T>` cleanup across immutable manifest + event collections
 - Four PR #40 cross-cutting follow-ups (cross-workspace token check, manifest-derived grants, denial-path logging, null-forgiving fix)
 - **Capability cancellation linkage**: `CapabilityToken.CancellationToken` + `CapabilityTokenSource` + revocation registry. In-flight operations now cancel when the parent request aborts, the token expires, or the token is revoked.
+- **Mid-segment wildcards** in token grants: `user:*:alice` matches `user:read:alice` and `user:write:alice`; trailing `*` still covers one-or-more segments.
 
-Branch: `claude/continue-agent-strategy-yS2Z1`. Tests: 1782 passed, 0 failed.
+Branch: `claude/continue-agent-strategy-yS2Z1`. Tests: 1786 passed, 0 failed.
 
 ### Capability cancellation linkage (Option C)
 
@@ -27,9 +28,11 @@ Coverage: four new tests in `CapabilityTokenServiceTests` for parent-cancel, rev
 
 ### Wildcard handling
 
-Trailing-segment wildcards (`tool:*`, `channel:send:*`, `*`) live inside `CapabilityToken.HasGrant`. `ToolActor` dropped its old explicit `tool:*` second-check.
+Segment-wise wildcards in `CapabilityToken.HasGrant`. Each `*` covers one segment; trailing `*` covers one-or-more. Examples: `tool:*` matches any depth under `tool`; `user:*:alice` matches `user:read:alice` and `user:write:alice`; the bare `*` matches anything. `ToolActor` dropped its explicit `tool:*` second-check long ago.
 
-The per-actor `Authorize` private method (validate, workspace-match, grant-check, log-deny, throw) is duplicated across `SkillMemoryActor`, `ChannelGatewayActor`, `UserModelActor`, `ToolActor`. ~12 lines each. Earlier in the session I extracted a shared `CapabilityAuthorizer`; reverted because three private copies follows the existing pattern (and CLAUDE.md: "Three similar lines is better than a premature abstraction"). Four copies now — still under the abstraction threshold, but worth flagging if a fifth verb arrives.
+Manifest-side wildcards (e.g., a manifest declaring `skill:*` to grant both `skill:read` and `skill:write` to the runtime mint sites) are NOT supported yet — `AgentSkillSuggester` and `SkillMemoryPromptEnricher` use literal `.Contains(grant)`. Add when a use case requires it.
+
+The per-actor `Authorize` private method (validate, workspace-match, grant-check, log-deny, throw) is duplicated across `SkillMemoryActor`, `ChannelGatewayActor`, `UserModelActor`, `ToolActor`. ~12 lines each. Four copies now — still under the abstraction threshold, but worth flagging if a fifth verb arrives.
 
 ## Next work
 
@@ -37,13 +40,12 @@ Pick the next verb from the [vocabulary table](unique-agent-strategy.md#capabili
 
 1. **`plugin:invoke:<plugin>`** — `DaprToolConnector`, `VaultSecretProvider`, future webhook plugins. Lower priority (not LLM-reachable).
 2. **`marketplace:install`** — when the install path materializes.
-3. **Mid-segment wildcards** (`user:*:alice`) — promised in the strategy doc, not implemented. `CapabilityToken.HasGrant` handles trailing wildcards only. Add when a use case appears.
 
 ## Cross-cutting follow-ups still open
 
 - **`ToolRegistryConnector` self-mints `[$"tool:{toolName}", "secret:*"]`** without consulting the agent's manifest. The connector is workspace-scoped (no `AgentDefinition` in scope), so the routing-through-capabilities fix is less obvious. Likely fix: pass the requesting agent's capabilities through, or treat tool registration as a workspace-admin verb gated by a separate grant.
 - **`channel:send:*` requires both grants today** because `RouteInboundAsync` does both ingress and reply atomically. If a webhook adapter ever needs receive-only (forward to a queue, no reply), split the actor surface.
-- **Mid-segment wildcards** as noted above.
+- **Manifest-side wildcards** — runtime mint sites use literal `.Contains(grant)` against `state.Definition.Capabilities`. If the manifest ever declares `skill:*`, that doesn't currently grant `skill:read`/`skill:write` for the runtime gate. Wire `CapabilityToken`-style segment matching into the manifest check when needed.
 
 ## Template to mirror
 

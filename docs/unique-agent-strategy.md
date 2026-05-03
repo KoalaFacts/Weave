@@ -107,7 +107,7 @@ The grant strings in `CapabilityToken.Grants` are the runtime's user interface f
 | `plugin:invoke:<plugin>` | Hot-swap plugin call (Dapr, Vault, webhook) | Direction |
 | `marketplace:install` | Installing a marketplace item | Direction |
 
-Trailing-segment wildcards (`tool:*`, `channel:send:*`, `*`) live in [`CapabilityToken.HasGrant`](../src/Security/Weave.Security/Tokens/CapabilityToken.cs). Mid-segment patterns like `user:*:alice` and manifest-side wildcards are still ahead of us.
+Wildcards live in [`CapabilityToken.HasGrant`](../src/Security/Weave.Security/Tokens/CapabilityToken.cs) and match segment-wise: each `*` covers one segment, except a trailing `*` which covers one or more. `tool:*` matches any depth under `tool`; `user:*:alice` matches both `user:read:alice` and `user:write:alice`; the bare `*` matches anything. Manifest-side wildcards (when the manifest declares `skill:*` instead of `skill:read`) are still ahead of us — runtime checks against the manifest use direct `.Contains(grant)` today.
 
 ## Decision rules for PR review
 

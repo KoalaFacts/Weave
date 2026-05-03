@@ -68,6 +68,41 @@ public sealed class CapabilityTokenTests
         token.HasGrant("tool:my-tool").ShouldBeFalse();
     }
 
+    [Fact]
+    public void HasGrant_MidSegmentWildcard_MatchesAcrossThatSegment()
+    {
+        var token = new CapabilityToken { Grants = ["user:*:alice"] };
+
+        token.HasGrant("user:read:alice").ShouldBeTrue();
+        token.HasGrant("user:write:alice").ShouldBeTrue();
+    }
+
+    [Fact]
+    public void HasGrant_MidSegmentWildcard_DoesNotMatchDifferentTrailingSegment()
+    {
+        var token = new CapabilityToken { Grants = ["user:*:alice"] };
+
+        token.HasGrant("user:read:bob").ShouldBeFalse();
+    }
+
+    [Fact]
+    public void HasGrant_MidSegmentWildcard_OnlyMatchesSameSegmentCount()
+    {
+        var token = new CapabilityToken { Grants = ["user:*:alice"] };
+
+        token.HasGrant("user:read:alice:extra").ShouldBeFalse();
+        token.HasGrant("user:alice").ShouldBeFalse();
+    }
+
+    [Fact]
+    public void HasGrant_TrailingWildcard_MatchesAnyDepth()
+    {
+        var token = new CapabilityToken { Grants = ["tool:*"] };
+
+        token.HasGrant("tool:foo").ShouldBeTrue();
+        token.HasGrant("tool:foo:bar").ShouldBeTrue();
+    }
+
     // --- IsExpired ---
 
     [Fact]
