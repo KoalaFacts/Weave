@@ -25,6 +25,9 @@ public sealed class AgentVerificationDispatcher : IAgentVerificationDispatcher
         _logger = logger;
     }
 
+    private static VirtualActorId GetProofVerifierActorId(object workspaceId) =>
+        VirtualActorId.From(workspaceId.ToString()!);
+
     public ValueTask EnqueueAsync(AgentVerificationRequest request, CancellationToken ct) =>
         _channel.Writer.WriteAsync(request, ct);
 
@@ -35,7 +38,7 @@ public sealed class AgentVerificationDispatcher : IAgentVerificationDispatcher
             try
             {
                 var verifier = _actors.GetActor<IProofVerifierActor>(
-                    VirtualActorId.From(request.WorkspaceId.ToString()));
+                    GetProofVerifierActorId(request.WorkspaceId));
 
                 await verifier.VerifyAsync(
                     request.WorkspaceId,
@@ -47,15 +50,7 @@ public sealed class AgentVerificationDispatcher : IAgentVerificationDispatcher
             {
                 throw;
             }
-            catch (InvalidOperationException ex)
-            {
-                _logger.LogWarning(
-                    ex,
-                    "Proof verification failed for task {TaskId} on agent {AgentName}",
-                    request.TaskId,
-                    request.AgentName);
-            }
-            catch (ArgumentException ex)
+            catch (Exception ex) when (ex is InvalidOperationException or ArgumentException)
             {
                 _logger.LogWarning(
                     ex,
