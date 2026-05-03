@@ -20,6 +20,8 @@ The law of the repo. Every rule here is enforceable in review. Rules exist to pr
 
 **Stateless factories are Scoped, not Singleton.** `AgentChatClientFactory` is Scoped so its injected `IServiceProvider` is the consumer's own scope (HTTP request or Orleans actor), and `ActivatorUtilities.CreateInstance` resolves any scoped middleware dependencies correctly. Making such a factory Singleton creates an asymmetry: the factory outlives the request, but the clients it constructs depend on scoped services — that's the same bug as the dispatcher's.
 
+**Static classes are for constants, pure functions, extension methods, and codegen — not for things that should take dependencies.** Acceptable: `WeavePorts` (port constants), `CliTheme` (markup helpers), `TuiCommandParser` (pure parsing), C# extension methods (forced by the language), source-generator output. Wrong: a `static class FooCommand { public static Task ExecuteAsync(IServiceProvider sp, ...) }` whose every call does `sp.GetRequiredService<...>()` — that's service-locator with extra steps. Register `FooCommand` as a class, take dependencies via constructor, expose an instance method. Today's CLI uses `static class XCommand { Create() }` to *build* a `System.CommandLine.Command` tree, which is fine — but the action body the `Create()` returns must inject through the parser's `IServiceProvider`, not via static helpers underneath.
+
 ### Error handling
 
 **Never call `EnsureSuccessStatusCode()` on an `HttpResponseMessage` whose body may contain `ProblemDetails`.** It throws with only the status code, discarding the server's reason. Use the `EnsureSuccessOrThrowAsync` + `FormatHttpError` helper in `src/UX/Weave.Cli/Commands/WorkspaceApiClient.cs` so the user sees the actual 409 conflict reason, not "409 Conflict" alone.
@@ -39,6 +41,10 @@ The law of the repo. Every rule here is enforceable in review. Rules exist to pr
 **Background tasks observe their own faults.** `_ = Task.Run(async () => { ... })` with no error handler is forbidden — a detached exception is unlogged and never surfaces. Use `await`, `task.ContinueWith(t => log, TaskContinuationOptions.OnlyOnFaulted)`, or a named helper `FireAndForgetAsync(task, logger, operationName)`.
 
 **Fire-and-forget actor calls are forbidden outright.** `_ = actor.SomeAsync()` discards an Orleans activation failure or serialization mismatch and leaves the caller wedged in a half-dispatched state. Always `await`, or capture the task and observe completion elsewhere. Reentrancy concerns (an actor calling back into itself) are not a license to fire-and-forget — use `[AlwaysInterleave]` on the inner method, restructure so the callback target is a different grain, or hand the work to a hosted background service. The current offender is `src/Assistants/Weave.Agents/Actors/AgentActor.cs` (search `_ = Task.Run`); fix it, do not codify it.
+
+**Catch the simplest form that expresses intent.** `catch (IOException)` beats `catch (Exception ex) when (ex is IOException)` for a single type — same behavior, less ceremony. The `Exception ex when (...)` form is reserved for genuine multi-type filters where listing each `catch` block would duplicate the body. Today's worst offender: `src/UX/Weave.Cli/Tui/ChatComposer.cs` lines 122/125/131 use the verbose form for single-type swallows; same file lines 147/153 already use the simpler form for the same intent.
+
+**Drop the bind variable when you don't use it.** `catch (IOException) { /* platform quirk */ }` is the form when there's nothing to log — naming `ex` and then ignoring it (`catch (IOException ex) { /* ignore */ }`) is dead code that compilers used to warn about. If you have a reason to keep the binding (future logging, debugger inspection), add a one-line `LogDebug` and lose the `/* ignore */`. Don't keep the binding "just in case."
 
 ### Process management
 
@@ -125,6 +131,18 @@ The law of the repo. Every rule here is enforceable in review. Rules exist to pr
 **Async production methods end in `Async`.** Enforced by the editorconfig. Exceptions: `Main`, expression-bodied event handlers, `IDisposable` patterns. Tests do not require the suffix, but consistency is preferred.
 
 **Interface names drop the `I` prefix in TypeScript code only; .NET keeps the `I`** (`IToolConnector`, `IPublisher`). The no-`I` rule in global CLAUDE.md is a TS convention — do not apply it to .NET.
+
+### Comments
+
+**Default to no comments.** The variable name, method name, and type name should carry the meaning. A comment is justified only when the *why* is non-obvious — a hidden constraint, a subtle invariant, a workaround for a specific bug, behavior that would surprise a reader. If removing the comment wouldn't confuse a future reader, don't write it.
+
+**Don't narrate what the next line does.** `// Get the user`, `// Loop through items`, `// Construct the request`, `// Returns the workspace` — these restate the code. Delete them; rename the symbol if it's still unclear.
+
+**Don't reference the current task, fix, or callers** — "added for the X flow," "used by Y," "fixes #123." That context belongs in the PR description and rots as the codebase evolves. The exception: a comment that names a specific external bug (`// Workaround for dotnet/runtime#12345`) is durable because the link is permanent.
+
+**XML doc summaries on public surfaces stay under 3 lines.** They explain *contract* — what params mean, what's returned, what's thrown, what side-effects exist — not implementation. A summary that runs into paragraphs usually means the type is doing too much; split before lengthening the doc. The current outliers worth reviewing: `Weave.Silo/Audit/CapabilityAuditSubscriberHostedService.cs` (14-line block — but the `<remarks>` documents a real startup-ordering hazard, so this one earns its length), `Weave.Shared/Cqrs/CommandDispatcher.cs` (13 lines), `Weave.Shared/Plugins/PluginServiceBroker.cs` (10 lines), `Weave.Agents/Pipeline/AgentChatClientFactory.cs` (10 lines).
+
+**`<remarks>` is the right tool for non-obvious context** (startup ordering, threading model, lifetime quirks, why a seemingly redundant call is necessary). It's distinct from `<summary>` precisely so `<summary>` can stay short. Use it when you'd otherwise feel pulled to make `<summary>` longer.
 
 **Extension classes in .NET follow `ExtensionsToXXX`**, sit in the target type's namespace, and suppress the namespace-mismatch analyzer inline. Do not invent new naming — the convention is already set in `CLAUDE.md`.
 

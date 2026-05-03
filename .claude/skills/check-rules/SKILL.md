@@ -1,6 +1,6 @@
 ---
 name: check-rules
-description: Audit code or a diff against Weave's repo rules in docs/best-practices.md. INVOKE THIS — proactively, without being asked — before claiming any task is done that adds or modifies C#, csproj, manifest, or settings files; when reviewing a branch, PR, or review comment; and after pulling changes you didn't write. Catches the recurring smells codified on this repo: horizontal-cut folders (Models/Services/Helpers/etc.), multi-class files, oversized files, DateTime.UtcNow in behavior logic, Legacy* / dual config keys / deprecated synonyms, third-party packages leaking through abstractions, stale packages.lock.json after a graph change, and List<T>+exact-count assertions on process-global Meter/ActivitySource. Reports violations as a punch list with file:line references and the fix shape — does not auto-fix.
+description: Audit code or a diff against Weave's repo rules in docs/best-practices.md. INVOKE THIS — proactively, without being asked — before claiming any task is done that adds or modifies C#, csproj, manifest, or settings files; when reviewing a branch, PR, or review comment; and after pulling changes you didn't write. Catches the recurring smells codified on this repo: horizontal-cut folders (Models/Services/Helpers/etc.), multi-class files, oversized files, DateTime.UtcNow in behavior logic, Legacy* / dual config keys / deprecated synonyms, third-party packages leaking through abstractions, stale packages.lock.json after a graph change, List<T>+exact-count assertions on process-global Meter/ActivitySource, swallowed/verbose catch clauses, static-class service-locator patterns, and over-verbose XML doc / narrating comments. Reports violations as a punch list with file:line references and the fix shape — does not auto-fix.
 ---
 
 # check-rules — Weave repo rule auditor
@@ -156,7 +156,70 @@ grep -rnE "measurements\.Count\.ShouldBe\(\d|\.Count.ShouldBe\(1\)" src --includ
 
 If a test reads from a static instrument and uses `List<T>` instead of `ConcurrentQueue<T>`, or asserts exact counts instead of `ShouldContain`: BLOCK. Pattern lives in `src/Security/Weave.Security.Tests/CapabilityAuthorizerTests.cs`.
 
-### 9. Test discipline (NOTE)
+### 9. Catch-clause hygiene (BLOCK on swallowed catches; WARN on verbose form)
+
+```bash
+# Bare catch / catch (Exception) without a `when` filter
+grep -rnE "catch\s*\{|catch\s*\(\s*Exception\s+\w+\s*\)\s*\{" src --include="*.cs" \
+  | grep -v "/bin/\|/obj/" | grep -vE "Test\.cs|Tests\.cs"
+
+# Swallowed catch — empty body or only a /* ignore */ comment
+grep -rnE "catch.*\{\s*(/\*[^*]*\*/\s*)?\}" src --include="*.cs" \
+  | grep -v "/bin/\|/obj/"
+
+# Verbose form for a single type: catch (Exception ex) when (ex is X)
+grep -rnE "catch\s*\(\s*Exception\s+\w+\s*\)\s*when\s*\(\s*\w+\s+is\s+\w+\s*\)" src --include="*.cs" \
+  | grep -v "/bin/"
+
+# Catch with named bind variable that's never used in the body
+# (rough heuristic — verify by reading)
+grep -rnE "catch\s*\(\s*\w+(Exception)\s+(ex|e)\s*\).*\{\s*/\*" src --include="*.cs" \
+  | grep -v "/bin/"
+```
+
+For each:
+- Empty/swallowed: BLOCK unless the body has a real reason (terminal capability probe etc.). At minimum log at `Debug`.
+- Verbose form for a single type → WARN: simplify to `catch (X)`.
+- Named bind variable never read → WARN: drop the variable, use `catch (X)`.
+
+### 10. Static helpers vs DI (WARN)
+
+```bash
+# Static classes whose methods take IServiceProvider — service locator smell
+grep -rn "public static.*IServiceProvider\|internal static.*IServiceProvider" src --include="*.cs" \
+  | grep -v "/bin/" | grep -vE "Test\.cs|Tests\.cs"
+
+# Static class with mutable state (static field that's not const/readonly Meter/etc.)
+grep -rnE "(public|internal) static class" src --include="*.cs" -A 5 \
+  | grep -B 2 "static \w+ \w+\s*=\|static \w+\? \w+;" | grep -v "/bin/"
+```
+
+Static is acceptable for: constants, pure functions, extension methods, source-generator output, `System.CommandLine` command-tree builders. Static is wrong when methods take `IServiceProvider` to do `GetRequiredService<>` (register the class, take deps via ctor) or when the class holds mutable state.
+
+### 11. Comment discipline (NOTE)
+
+```bash
+# XML doc summary blocks > 5 lines
+for f in $(find src -name "*.cs" -not -path "*/bin/*" -not -path "*/obj/*" | grep -v Test); do
+  longest=$(awk '/^\s*\/\/\//{c++; if (c>m) m=c} !/^\s*\/\/\//{c=0} END{print m+0}' "$f")
+  [ "$longest" -gt 5 ] && echo "$longest  $f"
+done | sort -rn | head
+
+# Comments that narrate (Get/Set/Returns/Adds/Loops)
+grep -rnE "^\s*//\s+(Get|Set|Return|Add|Create|Initialize|Construct|Build|Loop|Iterate) " src --include="*.cs" \
+  | grep -v "/bin/" | grep -vE "Test\.cs|Tests\.cs"
+
+# Comments referencing tasks/PRs/dates that will rot
+grep -rnE "^\s*//.*(TODO|FIXME|XXX|added for|fixes #|see PR|as of [0-9]{4})" src --include="*.cs" \
+  | grep -v "/bin/" | grep -vE "Test\.cs|Tests\.cs"
+```
+
+For each finding:
+- 5+ line `<summary>`: WARN — split the type, or move detail to `<remarks>`. The `<remarks>` form is fine when documenting non-obvious context (startup ordering, threading, lifetime quirks).
+- Narrating comments: NOTE — delete; rename the symbol if needed.
+- Task/PR/date references: NOTE — that context belongs in the PR description, not the code. Exception: external bug links (`// Workaround for dotnet/runtime#12345`) are durable.
+
+### 12. Test discipline (NOTE) — see also categories 8, 9
 
 Quick scans for known test smells:
 
@@ -172,7 +235,7 @@ grep -rn "Environment\.SetEnvironmentVariable" src --include="*Test*.cs" | grep 
 # For each: verify there's a finally block that resets it.
 ```
 
-### 10. Build and test gate (BLOCK)
+### 13. Build and test gate (BLOCK)
 
 ```bash
 dotnet build Weave.slnx 2>&1 | tail -5      # 0 warnings, 0 errors
