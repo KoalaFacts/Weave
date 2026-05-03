@@ -30,6 +30,8 @@ The solution uses central package management through `Directory.Packages.props`.
 - Classes over 200 lines require a design check; prefer one production class per file.
 - Keep the current dependency flow; do not introduce circular references.
 - Do not use `FluentAssertions`. Tests use `Shouldly`.
+- **Pre-1.0: no backward-compat shims.** No `Legacy*` constants, no dual config keys, no deprecated synonyms, no fallback reads. When a contract changes, change the call sites. See [docs/best-practices.md → Versioning and breaking changes](docs/best-practices.md).
+- **One opt-in project per storage/transport provider.** Abstractions projects pull zero provider packages; impls live in `Weave.X.{Sqlite,Postgres,Redis,...}` siblings. Same doc.
 
 ## Project Layout
 

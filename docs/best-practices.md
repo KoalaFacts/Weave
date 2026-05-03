@@ -82,7 +82,13 @@ The law of the repo. Every rule here is enforceable in review. Rules exist to pr
 
 **Dependencies flow `Shared -> Workspaces -> Agents/Tools/Security/Deploy -> Silo/Cli/Dashboard -> AppHost`.** New circular references are rejected. If a Foundation type needs an adapter, the adapter moves to the consumer — Foundation does not take a dependency on it.
 
+**Each storage/transport provider lives in its own opt-in project.** When an abstraction has multiple implementations that pull different third-party packages, each impl gets its own project (`Weave.Security.{Sqlite,Postgres}`, `Weave.Silo.Clustering.{Redis,Sqlite,SqlServer,Postgres}`). The abstractions project pulls zero provider packages — anyone wanting only one backend should be able to drop the other project refs and ship without those deps. After adding/removing a provider package anywhere in the graph, regenerate every consumer's `packages.lock.json` from a clean restore — central transitive pinning leaves stale entries that hide the win.
+
 **Feature-based folders. No `Controllers/`, `Services/`, `Models/` at the top of a project.** Group by capability: `Workspaces/`, `Chat/`, `Heartbeat/`. See `src/Assistants/Weave.Agents/Actors/` — interface, implementation, and state model sit together.
+
+### Versioning and breaking changes
+
+**Pre-1.0: no backward-compat shims.** No `Legacy*` constants, no dual config keys for the same setting, no deprecated synonyms (`"postgres"` aliasing `"postgresql"`), no fallback property reads, no compatibility ctor overloads. When a key/type/contract changes, change the call sites and move on. Half the codebase is still under construction; carrying shims for an unreleased product is dead weight that hides which surface is the real one. Re-introduce migration shims only after a 1.0 release.
 
 ### Naming and style
 
