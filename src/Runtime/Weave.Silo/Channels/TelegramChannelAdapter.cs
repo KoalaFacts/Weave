@@ -18,12 +18,9 @@ public sealed class TelegramChannelAdapter(HttpClient httpClient) : IChannelAdap
             throw new InvalidOperationException("Telegram channel config must include 'chat_id'.");
 
         var url = $"{TelegramApiBase}/bot{botToken}/sendMessage";
-        var payload = JsonSerializer.SerializeToUtf8Bytes(new
-        {
-            chat_id = chatId,
-            text = message.Content,
-            reply_to_message_id = message.ThreadId
-        });
+        var payload = JsonSerializer.SerializeToUtf8Bytes(
+            new TelegramPayload(chatId, message.Content, message.ThreadId),
+            ChannelPayloadJsonContext.Default.TelegramPayload);
 
         using var content = new ByteArrayContent(payload);
         content.Headers.ContentType = new System.Net.Http.Headers.MediaTypeHeaderValue("application/json");

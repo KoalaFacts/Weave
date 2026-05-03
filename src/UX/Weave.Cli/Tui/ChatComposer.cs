@@ -117,18 +117,19 @@ internal sealed class ChatComposer
     private static Action TryCaptureCtrlC()
     {
         bool previous = false;
-        try
-        { previous = Console.TreatControlCAsInput; }
-        catch (Exception ex) when (ex is IOException or PlatformNotSupportedException) { /* platform quirk */ }
-        try
-        { Console.TreatControlCAsInput = true; }
-        catch (Exception ex) when (ex is IOException or PlatformNotSupportedException) { /* ignore */ }
+        try { previous = Console.TreatControlCAsInput; }
+        catch (IOException) { }
+        catch (PlatformNotSupportedException) { }
+
+        try { Console.TreatControlCAsInput = true; }
+        catch (IOException) { }
+        catch (PlatformNotSupportedException) { }
 
         return () =>
         {
-            try
-            { Console.TreatControlCAsInput = previous; }
-            catch (Exception ex) when (ex is IOException or PlatformNotSupportedException) { /* ignore */ }
+            try { Console.TreatControlCAsInput = previous; }
+            catch (IOException) { }
+            catch (PlatformNotSupportedException) { }
         };
     }
 
