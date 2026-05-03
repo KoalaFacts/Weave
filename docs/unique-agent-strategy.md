@@ -107,7 +107,7 @@ The grant strings in `CapabilityToken.Grants` are the runtime's user interface f
 | `plugin:invoke:<plugin>` | Hot-swap plugin call (Dapr, Vault, webhook) | Direction |
 | `marketplace:install` | Installing a marketplace item | Direction |
 
-Trailing-segment wildcards (`tool:*`, `channel:send:*`, `*`) match through one shared predicate in [`CapabilityGrants`](../src/Security/Weave.Security/Tokens/CapabilityGrants.cs); validation, workspace match, grant check, and deny-logging route through one [`CapabilityAuthorizer`](../src/Security/Weave.Security/Tokens/CapabilityAuthorizer.cs). Mid-segment patterns like `user:*:alice` are still ahead of us.
+Trailing-segment wildcards (`tool:*`, `channel:send:*`, `*`) live in [`CapabilityToken.HasGrant`](../src/Security/Weave.Security/Tokens/CapabilityToken.cs). Mid-segment patterns like `user:*:alice` and manifest-side wildcards are still ahead of us.
 
 ## Decision rules for PR review
 

@@ -171,6 +171,30 @@ public sealed class ChannelGatewayActor(
             persistentState.State.WorkspaceId = key;
     }
 
-    private void Authorize(CapabilityToken token, string grant) =>
-        CapabilityAuthorizer.Authorize(tokenService, token, persistentState.State.WorkspaceId, grant, logger, "Channel");
+    private void Authorize(CapabilityToken token, string grant)
+    {
+        if (!tokenService.Validate(token))
+        {
+            logger.LogWarning("Channel capability denied: invalid or expired token for grant '{Grant}' on workspace {WorkspaceId}",
+                grant, persistentState.State.WorkspaceId);
+            throw new UnauthorizedAccessException("Invalid or expired capability token");
+        }
+
+        var actorWorkspaceId = persistentState.State.WorkspaceId;
+        if (!string.IsNullOrWhiteSpace(actorWorkspaceId)
+            && !string.Equals(token.WorkspaceId, actorWorkspaceId, StringComparison.Ordinal))
+        {
+            logger.LogWarning("Channel capability denied: token workspace '{TokenWorkspaceId}' does not match actor workspace '{ActorWorkspaceId}'",
+                token.WorkspaceId, actorWorkspaceId);
+            throw new UnauthorizedAccessException(
+                $"Token workspace '{token.WorkspaceId}' does not match actor workspace '{actorWorkspaceId}'");
+        }
+
+        if (!token.HasGrant(grant))
+        {
+            logger.LogWarning("Channel capability denied: token issued to '{IssuedTo}' does not grant '{Grant}'",
+                token.IssuedTo, grant);
+            throw new UnauthorizedAccessException($"Token does not grant '{grant}'");
+        }
+    }
 }

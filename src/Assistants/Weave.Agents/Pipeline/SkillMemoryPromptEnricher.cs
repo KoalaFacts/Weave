@@ -13,8 +13,7 @@ internal sealed class SkillMemoryPromptEnricher(
 {
     public async Task<SkillMemoryEnrichment> EnrichAsync(AgentState state, string messageContent, string? prompt)
     {
-        var manifestCapabilities = state.Definition?.Capabilities;
-        if (manifestCapabilities is null || !CapabilityGrants.Matches(manifestCapabilities, "skill:read"))
+        if (state.Definition?.Capabilities?.Contains("skill:read") is not true)
             return new SkillMemoryEnrichment(prompt, []);
 
         try
@@ -52,8 +51,7 @@ internal sealed class SkillMemoryPromptEnricher(
         if (skillIds.Count == 0)
             return;
 
-        var manifestCapabilities = state.Definition?.Capabilities;
-        if (manifestCapabilities is null || !CapabilityGrants.Matches(manifestCapabilities, "skill:write"))
+        if (state.Definition?.Capabilities?.Contains("skill:write") is not true)
             return;
 
         try

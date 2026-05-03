@@ -20,8 +20,7 @@ internal sealed class AgentSkillSuggester(
         if (skill is null)
             return;
 
-        var manifestCapabilities = state.Definition?.Capabilities;
-        if (manifestCapabilities is null || !CapabilityGrants.Matches(manifestCapabilities, "skill:write"))
+        if (state.Definition?.Capabilities?.Contains("skill:write") is not true)
         {
             logger.LogInformation(
                 "Skipping skill suggestion from task {TaskId}: agent '{AgentName}' manifest does not declare 'skill:write'",

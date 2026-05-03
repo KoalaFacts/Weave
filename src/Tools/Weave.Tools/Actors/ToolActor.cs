@@ -34,7 +34,7 @@ public sealed partial class ToolActor(
     public async Task<ToolHandle> ConnectAsync(ToolSpec definition, CapabilityToken token)
     {
         _identity.Ensure(definition, token);
-        CapabilityAuthorizer.Authorize(tokenService, token, _identity.WorkspaceId, $"tool:{_identity.ToolName}", logger, "Tool");
+        Authorize(token);
 
         _definition = definition;
 
@@ -86,7 +86,7 @@ public sealed partial class ToolActor(
     public async Task<ToolResult> InvokeAsync(ToolInvocation invocation, CapabilityToken token)
     {
         _identity.Ensure(invocation: invocation, token: token);
-        CapabilityAuthorizer.Authorize(tokenService, token, _identity.WorkspaceId, $"tool:{_identity.ToolName}", logger, "Tool");
+        Authorize(token);
 
         if (_handle is null || _definition is null)
             throw new InvalidOperationException($"Tool '{_identity.ToolName}' is not connected");
@@ -122,6 +122,33 @@ public sealed partial class ToolActor(
     }
 
     public Task<ToolHandle?> GetHandleAsync() => Task.FromResult(_handle);
+
+    private void Authorize(CapabilityToken token)
+    {
+        var grant = $"tool:{_identity.ToolName}";
+
+        if (!tokenService.Validate(token))
+        {
+            logger.LogWarning("Tool capability denied: invalid or expired token for grant '{Grant}' on workspace {WorkspaceId}",
+                grant, _identity.WorkspaceId);
+            throw new UnauthorizedAccessException("Invalid or expired capability token");
+        }
+
+        if (!string.Equals(token.WorkspaceId, _identity.WorkspaceId, StringComparison.Ordinal))
+        {
+            logger.LogWarning("Tool capability denied: token workspace '{TokenWorkspaceId}' does not match actor workspace '{ActorWorkspaceId}'",
+                token.WorkspaceId, _identity.WorkspaceId);
+            throw new UnauthorizedAccessException(
+                $"Token workspace '{token.WorkspaceId}' does not match actor workspace '{_identity.WorkspaceId}'");
+        }
+
+        if (!token.HasGrant(grant))
+        {
+            logger.LogWarning("Tool capability denied: token issued to '{IssuedTo}' does not grant '{Grant}'",
+                token.IssuedTo, grant);
+            throw new UnauthorizedAccessException($"Token does not grant access to tool '{_identity.ToolName}'");
+        }
+    }
 
     [LoggerMessage(Level = LogLevel.Information, Message = "Tool '{Tool}' connected in workspace '{Workspace}'")]
     private partial void LogToolConnected(string tool, string workspace);

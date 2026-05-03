@@ -19,12 +19,11 @@
 3. **Denial-path logging** — every deny path emits a `LogWarning` from one place (`CapabilityAuthorizer`).
 4. **`AgentSkillSuggester` null-forgiving** — removed; `ExtractFromTask`'s null contract is the only precondition now.
 
-### De-duplication
+### Wildcard handling
 
-The follow-up work surfaced three separate copies of the same Authorize logic and two copies of wildcard-walking. Both consolidated:
+Trailing-segment wildcards (`tool:*`, `channel:send:*`, `*`) now live inside `CapabilityToken.HasGrant`. `ToolActor` dropped its old explicit `tool:*` second-check.
 
-- One predicate: `CapabilityGrants.Matches(grants, requested)` — used by both `CapabilityToken.HasGrant` and the manifest check. `tool:*`, `channel:send:*`, and `*` all match through it.
-- One authorizer: `CapabilityAuthorizer.Authorize(...)` — validate, workspace-match, grant-check, log-deny, throw. Called by `SkillMemoryActor`, `ChannelGatewayActor`, `ToolActor`. `ToolActor` lost its three per-instance LoggerMessage helpers and the explicit `tool:*` second-check (now handled by `HasGrant`).
+The per-actor `Authorize` private method (validate, workspace-match, grant-check, log-deny, throw) is duplicated across `SkillMemoryActor`, `ChannelGatewayActor`, `ToolActor`. ~12 lines each. Earlier in the session I extracted a shared `CapabilityAuthorizer`; reverted because three private copies follows the existing pattern (and CLAUDE.md: "Three similar lines is better than a premature abstraction"). If a fourth verb arrives, revisit.
 
 ## Next work
 
