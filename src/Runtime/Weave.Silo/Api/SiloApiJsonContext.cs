@@ -72,6 +72,8 @@ namespace Weave.Silo.Api;
 [JsonSerializable(typeof(TemplateResponse))]
 [JsonSerializable(typeof(TemplateValidationResultResponse))]
 [JsonSerializable(typeof(IEnumerable<TemplateResponse>))]
+[JsonSerializable(typeof(CapabilityAuditEntryResponse))]
+[JsonSerializable(typeof(IEnumerable<CapabilityAuditEntryResponse>))]
 [JsonSerializable(typeof(ProblemDetails))]
 [JsonSerializable(typeof(HttpValidationProblemDetails))]
 internal sealed partial class SiloApiJsonContext : JsonSerializerContext;

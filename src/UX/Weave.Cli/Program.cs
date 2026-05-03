@@ -55,6 +55,7 @@ root.Subcommands.Add(PortsCommand.Create());
 root.Subcommands.Add(MarketplaceCommands.Create());
 root.Subcommands.Add(StorageCommands.Create());
 root.Subcommands.Add(DataCommands.Create());
+root.Subcommands.Add(AuditCommands.Create());
 root.Subcommands.Add(VersionCommand.Create());
 root.Subcommands.Add(UpgradeCommand.Create());
 

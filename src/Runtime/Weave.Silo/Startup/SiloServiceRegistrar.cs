@@ -2,6 +2,7 @@ using System.Diagnostics.CodeAnalysis;
 using Weave.Agents.Channels;
 using Weave.Agents.Pipeline;
 using Weave.Agents.Verification;
+using Weave.Security.Audit;
 using Weave.Security.Plugins;
 using Weave.Security.Proxy;
 using Weave.Security.Scanning;
@@ -11,6 +12,7 @@ using Weave.Shared.Cqrs;
 using Weave.Shared.Events;
 using Weave.Shared.Lifecycle;
 using Weave.Shared.Plugins;
+using Weave.Silo.Audit;
 using Weave.Silo.Channels;
 using Weave.Silo.Configuration;
 using Weave.Silo.Plugins;
@@ -82,8 +84,11 @@ internal sealed class SiloServiceRegistrar
     {
         _services.Configure<CapabilityTokenOptions>(
             _configuration.GetSection(CapabilityTokenOptions.ConfigurationSectionName));
+        _services.Configure<CapabilityAuditOptions>(
+            _configuration.GetSection(CapabilityAuditOptions.ConfigurationSectionName));
         _services.AddSingleton<ICapabilityTokenService, CapabilityTokenService>();
         _services.AddSingleton<ICapabilityAuthorizer, CapabilityAuthorizer>();
+        _services.AddSingleton<ICapabilityAuditStore, InMemoryCapabilityAuditStore>();
         _services.AddSingleton<ILeakScanner, LeakScanner>();
         _services.AddSingleton<TransparentSecretProxy>();
     }
@@ -109,6 +114,7 @@ internal sealed class SiloServiceRegistrar
         _services.AddSingleton<IAgentVerificationDispatcher>(sp =>
             sp.GetRequiredService<AgentVerificationDispatcher>());
         _services.AddHostedService<AgentVerificationHostedService>();
+        _services.AddHostedService<CapabilityAuditSubscriberHostedService>();
     }
 
     private void RegisterChannelAdapters()
