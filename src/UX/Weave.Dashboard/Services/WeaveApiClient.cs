@@ -64,4 +64,18 @@ public sealed class WeaveApiClient(HttpClient http)
         var result = await http.GetFromJsonAsync($"/api/workspaces/{workspaceId}/tools", DashboardJsonContext.Default.ListToolConnectionDto, ct);
         return result ?? [];
     }
+
+    // === Capability audit ===
+
+    public async Task<List<CapabilityAuditEntryDto>> GetRecentCapabilityAuditAsync(int limit = 200, CancellationToken ct = default)
+    {
+        var result = await http.GetFromJsonAsync($"/api/audit/capability?limit={limit}", DashboardJsonContext.Default.ListCapabilityAuditEntryDto, ct);
+        return result ?? [];
+    }
+
+    public async Task<List<CapabilityAuditEntryDto>> GetCapabilityAuditByTokenAsync(string tokenId, CancellationToken ct = default)
+    {
+        var result = await http.GetFromJsonAsync($"/api/audit/capability/{Uri.EscapeDataString(tokenId)}", DashboardJsonContext.Default.ListCapabilityAuditEntryDto, ct);
+        return result ?? [];
+    }
 }

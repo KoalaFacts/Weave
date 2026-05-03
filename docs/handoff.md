@@ -43,6 +43,7 @@ Roadmap #3 ships as a thin pipeline on top of the audit event. No producer-side 
 3. **Queries** — `GetCapabilityAuditByTokenQuery(tokenId)` and `GetRecentCapabilityAuditQuery(limit)` in `src/Security/Weave.Security/Queries/`. Picked up by source-generated CQRS registration like every other query handler.
 4. **HTTP** — `GET /api/audit/capability/{tokenId}` and `GET /api/audit/capability?limit=N` ([`AuditEndpoints.cs`](../src/Runtime/Weave.Silo/Api/AuditEndpoints.cs)). Returns `CapabilityAuditEntryResponse[]` (`outcome` as string for stability).
 5. **CLI** — `weave audit replay [tokenId]` ([`AuditReplayCliCommand.cs`](../src/UX/Weave.Cli/Commands/Audit/AuditReplayCliCommand.cs)). Guided mode: zero-arg invocation lists distinct recent tokens via Spectre `SelectionPrompt`; advanced mode: pass the tokenId. Renders allow/deny trace as a Spectre table coloured by outcome.
+6. **Dashboard** — `/audit` and `/audit/{tokenId}` ([`Audit.razor`](../src/UX/Weave.Dashboard/Pages/Audit.razor)). Defaults to recent rows; deep links to per-token replay; token cells link back to the per-token view. Uses `WeaveApiClient.GetRecentCapabilityAuditAsync` / `GetCapabilityAuditByTokenAsync` so any future backend swap (durable store) is invisible to the page.
 
 Acceptance bar from the strategy doc's *Measurement* section is met:
 - **Audit completeness** — every Authorize call (allow + deny) publishes a row carrying capability, grant, actor, reason. Verified by the per-actor smoke tests added in roadmap #2 + the end-to-end `CapabilityAuditEndpointTests`.
@@ -55,7 +56,6 @@ Acceptance bar from the strategy doc's *Measurement* section is met:
 Natural next moves, in order of leverage:
 
 - **Durable audit store.** The in-memory store is fine for replay/debug but evicts under load. A SQLite or Postgres-backed `ICapabilityAuditStore` (selected via `CapabilityAuditOptions.Backend`) is a small, mechanical follow-up.
-- **Dashboard view.** A Blazor page that hits `/api/audit/capability` and renders the same table the CLI shows. No backend work required.
 
 ## Cross-cutting follow-ups
 
@@ -83,6 +83,7 @@ For the next vocabulary entry (or any follow-up that touches the audit pipeline)
 
 ## History
 
+- **2026-05-03** (`claude/implement-next-task-vSX6x`) — capability audit dashboard view: `/audit` (recent rows) and `/audit/{tokenId}` (per-token replay) Blazor pages, fed by new `WeaveApiClient.GetRecentCapabilityAuditAsync` / `GetCapabilityAuditByTokenAsync` over the existing `/api/audit/capability` endpoints. Token cells deep-link to per-token replay. No backend changes; tests still 1835
 - **2026-05-03** (`claude/implement-next-task-vSX6x`) — manifest-side wildcard matching: added static `CapabilityToken.HasGrant(IEnumerable<string>, string)`; replaced the four `state.Definition.Capabilities.Contains(grant)` literal checks (`AgentChatPipeline.EnrichWithUserContextAsync`, `SkillMemoryPromptEnricher.EnrichAsync` / `RecordSuccessfulUsageAsync`, `AgentSkillSuggester.SuggestFromTaskAsync`) with the segment-wise wildcard match. A manifest declaring `skill:*` now grants `skill:read`/`skill:write` for the manifest gate; tests 1827 → 1835
 - **2026-05-03** (`claude/implement-next-task-vSX6x`) — `secret:<path>` enforcement moved out of `VaultSecretProvider` / `InMemorySecretProvider` into the shared `CapabilityAuthorizer`; allow + deny rows now flow through the audit pipeline, closing the last *Coverage of action types* gap (5/6 → 6/6); tests 1820 → 1827
 - **2026-05-03** (`claude/competitor-analysis-handoff-Qn9jh`) — capability replay/debugger shipped; in-memory `ICapabilityAuditStore` (capacity-bounded) fed by a subscriber hosted service; `GET /api/audit/capability/{tokenId}` and `?limit=N` over CQRS query handlers; `weave audit replay [tokenId]` CLI with guided + advanced modes; tests 1807 → 1820

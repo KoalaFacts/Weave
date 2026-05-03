@@ -13,7 +13,9 @@ namespace Weave.Dashboard.Services;
 [JsonSerializable(typeof(ConversationMessageDto))]
 [JsonSerializable(typeof(ToolConnectionDto))]
 [JsonSerializable(typeof(SendMessageDto))]
+[JsonSerializable(typeof(CapabilityAuditEntryDto))]
 [JsonSerializable(typeof(List<WorkspaceDto>))]
 [JsonSerializable(typeof(List<AgentDto>))]
 [JsonSerializable(typeof(List<ToolConnectionDto>))]
+[JsonSerializable(typeof(List<CapabilityAuditEntryDto>))]
 public sealed partial class DashboardJsonContext : JsonSerializerContext;
