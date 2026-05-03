@@ -102,10 +102,11 @@ public static class ChannelEndpoints
             Metadata = request.Metadata ?? []
         };
 
+        using var source = ChannelTokenFactory.MintInbound(tokenService, workspaceId, request.ChannelId, ct);
         var command = new RouteInboundMessageCommand(
             WorkspaceId.From(workspaceId),
             message,
-            ChannelTokenFactory.MintInbound(tokenService, workspaceId, request.ChannelId));
+            source.Token);
         var outbound = await dispatcher.DispatchAsync<RouteInboundMessageCommand, OutboundMessage>(command, ct);
         return Results.Ok(OutboundMessageResponse.FromMessage(outbound));
     }

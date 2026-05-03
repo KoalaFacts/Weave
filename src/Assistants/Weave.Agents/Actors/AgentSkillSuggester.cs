@@ -32,14 +32,14 @@ internal sealed class AgentSkillSuggester(
         try
         {
             var skillActor = actors.GetActor<ISkillMemoryActor>(VirtualActorId.From(state.WorkspaceId.ToString()));
-            var token = tokenService.Mint(new CapabilityTokenRequest
+            using var source = tokenService.MintLinked(new CapabilityTokenRequest
             {
                 WorkspaceId = state.WorkspaceId.ToString(),
                 IssuedTo = $"{state.WorkspaceId}/{state.AgentName}",
                 Grants = ["skill:write"],
                 Lifetime = TimeSpan.FromMinutes(1)
-            });
-            await skillActor.SuggestSkillAsync(skill, token, taskId.ToString());
+            }, CancellationToken.None);
+            await skillActor.SuggestSkillAsync(skill, source.Token, taskId.ToString());
             logger.LogInformation(
                 "Suggested skill '{Title}' from task {TaskId}",
                 skill.Title,

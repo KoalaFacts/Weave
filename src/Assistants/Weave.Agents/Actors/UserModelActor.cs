@@ -53,7 +53,7 @@ public sealed class UserModelActor(
         persistentState.State.FirstSeenAt ??= now;
         persistentState.State.LastSeenAt = now;
 
-        await persistentState.WriteStateAsync();
+        await persistentState.WriteStateAsync(token.CancellationToken);
 
         await eventBus.PublishAsync(new UserInteractionRecordedEvent
         {
@@ -61,7 +61,7 @@ public sealed class UserModelActor(
             WorkspaceId = WorkspaceId.From(persistentState.State.WorkspaceId),
             UserId = persistentState.State.UserId,
             AgentName = record.AgentName
-        }, CancellationToken.None);
+        }, token.CancellationToken);
 
         logger.LogInformation(
             "Recorded interaction for user {UserId} with agent {AgentName}",
@@ -74,7 +74,7 @@ public sealed class UserModelActor(
         EnsureIdentity();
         Authorize(token, write: true);
         persistentState.State.Preferences[key] = value;
-        await persistentState.WriteStateAsync();
+        await persistentState.WriteStateAsync(token.CancellationToken);
     }
 
     public async Task SetDomainContextAsync(string key, string value, CapabilityToken token)
@@ -82,7 +82,7 @@ public sealed class UserModelActor(
         EnsureIdentity();
         Authorize(token, write: true);
         persistentState.State.DomainContext[key] = value;
-        await persistentState.WriteStateAsync();
+        await persistentState.WriteStateAsync(token.CancellationToken);
     }
 
     public Task<UserProfileState> GetProfileAsync(CapabilityToken token)
@@ -152,7 +152,7 @@ public sealed class UserModelActor(
         state.PreferredLanguage = null;
         state.MaxRecentInteractions = 100;
 
-        await persistentState.WriteStateAsync();
+        await persistentState.WriteStateAsync(token.CancellationToken);
     }
 
     private void EnsureIdentity()

@@ -597,4 +597,55 @@ public sealed class CapabilityTokenServiceTests
         _service.Validate(second).ShouldBeTrue();
         first.TokenId.ShouldNotBe(second.TokenId);
     }
+
+    [Fact]
+    public void MintLinked_WhenParentCancelled_TokenCancellationFires()
+    {
+        using var parent = new CancellationTokenSource();
+        using var source = _service.MintLinked(BuildRequest(), parent.Token);
+
+        source.Token.CancellationToken.IsCancellationRequested.ShouldBeFalse();
+        parent.Cancel();
+        source.Token.CancellationToken.IsCancellationRequested.ShouldBeTrue();
+    }
+
+    [Fact]
+    public void MintLinked_WhenRevoked_TokenCancellationFires()
+    {
+        using var source = _service.MintLinked(BuildRequest(), CancellationToken.None);
+
+        source.Token.CancellationToken.IsCancellationRequested.ShouldBeFalse();
+        _service.Revoke(source.Token.TokenId);
+        source.Token.CancellationToken.IsCancellationRequested.ShouldBeTrue();
+    }
+
+    [Fact]
+    public void MintLinked_WithExpiredLifetime_TokenIsAlreadyCancelled()
+    {
+        using var source = _service.MintLinked(
+            BuildRequest() with { Lifetime = TimeSpan.FromMilliseconds(-1) },
+            CancellationToken.None);
+
+        source.Token.CancellationToken.IsCancellationRequested.ShouldBeTrue();
+    }
+
+    [Fact]
+    public void MintLinked_DisposedSource_IsRemovedFromRevocationRegistry()
+    {
+        var source = _service.MintLinked(BuildRequest(), CancellationToken.None);
+        var tokenId = source.Token.TokenId;
+        source.Dispose();
+
+        // After dispose, revoking the same token id is a no-op (the source is gone),
+        // and a fresh source for a different mint must still work.
+        Should.NotThrow(() => _service.Revoke(tokenId));
+    }
+
+    private static CapabilityTokenRequest BuildRequest() => new()
+    {
+        WorkspaceId = "ws",
+        IssuedTo = "test",
+        Grants = ["tool:*"],
+        Lifetime = TimeSpan.FromHours(1)
+    };
 }

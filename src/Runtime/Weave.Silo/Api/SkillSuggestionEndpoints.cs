@@ -26,9 +26,9 @@ internal static class SkillSuggestionEndpoints
         ICapabilityTokenService tokenService,
         CancellationToken ct)
     {
-        ct.ThrowIfCancellationRequested();
+        using var source = SkillTokenFactory.MintRead(tokenService, workspaceId, ct);
         var actor = actors.GetActor<Agents.Actors.ISkillMemoryActor>(VirtualActorId.From(workspaceId));
-        var suggestions = await actor.GetSuggestedSkillsAsync(SkillTokenFactory.MintRead(tokenService, workspaceId));
+        var suggestions = await actor.GetSuggestedSkillsAsync(source.Token);
         return Results.Ok(suggestions.Select(SkillSuggestionResponse.FromSuggestion));
     }
 
@@ -39,9 +39,9 @@ internal static class SkillSuggestionEndpoints
         ICapabilityTokenService tokenService,
         CancellationToken ct)
     {
-        ct.ThrowIfCancellationRequested();
+        using var source = SkillTokenFactory.MintWrite(tokenService, workspaceId, ct);
         var actor = actors.GetActor<Agents.Actors.ISkillMemoryActor>(VirtualActorId.From(workspaceId));
-        var skill = await actor.AcceptSuggestedSkillAsync(SkillId.From(skillId), SkillTokenFactory.MintWrite(tokenService, workspaceId));
+        var skill = await actor.AcceptSuggestedSkillAsync(SkillId.From(skillId), source.Token);
         return skill is null
             ? ResultExtensions.NotFound($"Skill suggestion '{skillId}' not found.")
             : Results.Ok(SkillResponse.FromDocument(skill));
@@ -54,9 +54,9 @@ internal static class SkillSuggestionEndpoints
         ICapabilityTokenService tokenService,
         CancellationToken ct)
     {
-        ct.ThrowIfCancellationRequested();
+        using var source = SkillTokenFactory.MintWrite(tokenService, workspaceId, ct);
         var actor = actors.GetActor<Agents.Actors.ISkillMemoryActor>(VirtualActorId.From(workspaceId));
-        var rejected = await actor.RejectSuggestedSkillAsync(SkillId.From(skillId), SkillTokenFactory.MintWrite(tokenService, workspaceId));
+        var rejected = await actor.RejectSuggestedSkillAsync(SkillId.From(skillId), source.Token);
         return rejected
             ? Results.NoContent()
             : ResultExtensions.NotFound($"Skill suggestion '{skillId}' not found.");

@@ -34,9 +34,9 @@ public sealed class SkillMemoryActor(
 
         var key = skill.SkillId.ToString();
         persistentState.State.Skills[key] = skill;
-        await persistentState.WriteStateAsync();
+        await persistentState.WriteStateAsync(token.CancellationToken);
 
-        await PublishSkillCreatedAsync(skill, key);
+        await PublishSkillCreatedAsync(skill, key, token.CancellationToken);
 
         logger.LogInformation("Skill {SkillId} ({Title}) stored in workspace {WorkspaceId}",
             skill.SkillId, skill.Title, persistentState.State.WorkspaceId);
@@ -57,7 +57,7 @@ public sealed class SkillMemoryActor(
         };
 
         persistentState.State.SuggestedSkills[key] = suggestion;
-        await persistentState.WriteStateAsync();
+        await persistentState.WriteStateAsync(token.CancellationToken);
 
         logger.LogInformation(
             "Skill {SkillId} ({Title}) suggested in workspace {WorkspaceId}",
@@ -87,8 +87,8 @@ public sealed class SkillMemoryActor(
             return null;
 
         persistentState.State.Skills[key] = suggestion.Skill;
-        await persistentState.WriteStateAsync();
-        await PublishSkillCreatedAsync(suggestion.Skill, key);
+        await persistentState.WriteStateAsync(token.CancellationToken);
+        await PublishSkillCreatedAsync(suggestion.Skill, key, token.CancellationToken);
 
         logger.LogInformation(
             "Skill suggestion {SkillId} accepted in workspace {WorkspaceId}",
@@ -106,7 +106,7 @@ public sealed class SkillMemoryActor(
         if (!persistentState.State.SuggestedSkills.Remove(key))
             return false;
 
-        await persistentState.WriteStateAsync();
+        await persistentState.WriteStateAsync(token.CancellationToken);
         logger.LogInformation(
             "Skill suggestion {SkillId} rejected in workspace {WorkspaceId}",
             skillId,
@@ -153,7 +153,7 @@ public sealed class SkillMemoryActor(
         skill.LastUsedAt = timeProvider.GetUtcNow();
         skill.SuccessRate = (skill.SuccessRate * (skill.UseCount - 1) + (success ? 1.0 : 0.0)) / skill.UseCount;
 
-        await persistentState.WriteStateAsync();
+        await persistentState.WriteStateAsync(token.CancellationToken);
     }
 
     public Task<IReadOnlyList<SkillDocument>> GetAllSkillsAsync(CapabilityToken token)
@@ -175,7 +175,7 @@ public sealed class SkillMemoryActor(
             return null;
 
         skill.ArchivedAt ??= timeProvider.GetUtcNow();
-        await persistentState.WriteStateAsync();
+        await persistentState.WriteStateAsync(token.CancellationToken);
         logger.LogInformation("Skill {SkillId} archived in workspace {WorkspaceId}", skillId, persistentState.State.WorkspaceId);
         return skill;
     }
@@ -189,7 +189,7 @@ public sealed class SkillMemoryActor(
             return null;
 
         skill.ArchivedAt = null;
-        await persistentState.WriteStateAsync();
+        await persistentState.WriteStateAsync(token.CancellationToken);
         logger.LogInformation("Skill {SkillId} restored in workspace {WorkspaceId}", skillId, persistentState.State.WorkspaceId);
         return skill;
     }
@@ -201,7 +201,7 @@ public sealed class SkillMemoryActor(
         var key = skillId.ToString();
         if (persistentState.State.Skills.Remove(key))
         {
-            await persistentState.WriteStateAsync();
+            await persistentState.WriteStateAsync(token.CancellationToken);
             logger.LogInformation("Skill {SkillId} removed from workspace {WorkspaceId}",
                 skillId, persistentState.State.WorkspaceId);
         }
@@ -234,7 +234,7 @@ public sealed class SkillMemoryActor(
         }
     }
 
-    private Task PublishSkillCreatedAsync(SkillDocument skill, string key) =>
+    private Task PublishSkillCreatedAsync(SkillDocument skill, string key, CancellationToken cancellationToken) =>
         eventBus.PublishAsync(new SkillCreatedEvent
         {
             SourceId = key,
@@ -242,7 +242,7 @@ public sealed class SkillMemoryActor(
             SkillId = skill.SkillId,
             Title = skill.Title,
             CreatedByAgent = skill.CreatedByAgent
-        }, CancellationToken.None);
+        }, cancellationToken);
 
     private static List<SkillSearchResult> SearchSkills(
         IEnumerable<SkillDocument> skills,

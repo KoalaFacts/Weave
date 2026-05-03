@@ -39,10 +39,8 @@ public static class UserEndpoints
         ICapabilityTokenService tokenService,
         CancellationToken ct)
     {
-        var query = new GetUserProfileQuery(
-            WorkspaceId.From(workspaceId),
-            userId,
-            UserTokenFactory.MintRead(tokenService, workspaceId, userId));
+        using var source = UserTokenFactory.MintRead(tokenService, workspaceId, userId, ct);
+        var query = new GetUserProfileQuery(WorkspaceId.From(workspaceId), userId, source.Token);
         var profile = await dispatcher.DispatchAsync<GetUserProfileQuery, UserProfileState>(query, ct);
         return Results.Ok(UserProfileResponse.FromState(profile));
     }
@@ -59,12 +57,13 @@ public static class UserEndpoints
         if (errors is not null)
             return ResultExtensions.ValidationFailed(errors);
 
+        using var source = UserTokenFactory.MintWrite(tokenService, workspaceId, userId, ct);
         var command = new SetUserPreferenceCommand(
             WorkspaceId.From(workspaceId),
             userId,
             request.Key,
             request.Value,
-            UserTokenFactory.MintWrite(tokenService, workspaceId, userId));
+            source.Token);
         await dispatcher.DispatchAsync<SetUserPreferenceCommand, bool>(command, ct);
         return Results.NoContent();
     }
@@ -81,11 +80,9 @@ public static class UserEndpoints
         if (errors is not null)
             return ResultExtensions.ValidationFailed(errors);
 
+        using var source = UserTokenFactory.MintWrite(tokenService, workspaceId, userId, ct);
         var actor = actors.GetActor<Agents.Actors.IUserModelActor>(VirtualActorId.Combine(workspaceId, userId));
-        await actor.SetDomainContextAsync(
-            request.Key,
-            request.Value,
-            UserTokenFactory.MintWrite(tokenService, workspaceId, userId));
+        await actor.SetDomainContextAsync(request.Key, request.Value, source.Token);
         return Results.NoContent();
     }
 
@@ -96,8 +93,9 @@ public static class UserEndpoints
         ICapabilityTokenService tokenService,
         CancellationToken ct)
     {
+        using var source = UserTokenFactory.MintWrite(tokenService, workspaceId, userId, ct);
         var actor = actors.GetActor<Agents.Actors.IUserModelActor>(VirtualActorId.Combine(workspaceId, userId));
-        await actor.ClearAsync(UserTokenFactory.MintWrite(tokenService, workspaceId, userId));
+        await actor.ClearAsync(source.Token);
         return Results.NoContent();
     }
 

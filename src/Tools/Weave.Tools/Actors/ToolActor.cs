@@ -44,7 +44,7 @@ public sealed partial class ToolActor(
             Phase = LifecyclePhase.ToolConnecting
         };
 
-        await lifecycleManager.RunHooksAsync(LifecyclePhase.ToolConnecting, context, CancellationToken.None);
+        await lifecycleManager.RunHooksAsync(LifecyclePhase.ToolConnecting, context, token.CancellationToken);
 
         var connector = discovery.GetConnector(definition.Type);
         _handle = await connector.ConnectAsync(definition, token);
@@ -52,7 +52,7 @@ public sealed partial class ToolActor(
         await lifecycleManager.RunHooksAsync(
             LifecyclePhase.ToolConnected,
             context with { Phase = LifecyclePhase.ToolConnected },
-            CancellationToken.None);
+            token.CancellationToken);
 
         LogToolConnected(_identity.ToolName, _identity.WorkspaceId);
         return _handle;
@@ -107,7 +107,7 @@ public sealed partial class ToolActor(
             WorkspaceId = WorkspaceId.From(_identity.WorkspaceId),
             Success = result.Success,
             Duration = result.Duration
-        }, CancellationToken.None);
+        }, token.CancellationToken);
 
         return result;
     }

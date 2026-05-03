@@ -92,7 +92,7 @@ public sealed class ChannelGatewayActor(
             ChannelId = message.ChannelId,
             SenderId = message.SenderId,
             AgentName = agentName
-        }, CancellationToken.None);
+        }, token.CancellationToken);
 
         var agentActor = actors.GetActor<IAgentActor>(VirtualActorId.From($"{persistentState.State.WorkspaceId}/{agentName}"));
         var response = await agentActor.SendAsync(new AgentMessage
@@ -116,7 +116,7 @@ public sealed class ChannelGatewayActor(
             WorkspaceId = workspaceId,
             ChannelId = message.ChannelId,
             AgentName = agentName
-        }, CancellationToken.None);
+        }, token.CancellationToken);
 
         logger.LogInformation(
             "Routed message from {SenderId} on channel {ChannelId} to agent {AgentName}",

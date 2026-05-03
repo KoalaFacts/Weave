@@ -19,10 +19,10 @@ internal sealed class SkillMemoryPromptEnricher(
         try
         {
             var skillActor = actors.GetActor<ISkillMemoryActor>(VirtualActorId.From(state.WorkspaceId.ToString()));
-            var token = MintToken(state.WorkspaceId, state.AgentName, "skill:read");
+            using var source = MintToken(state.WorkspaceId, state.AgentName, "skill:read");
             var results = await skillActor.SearchAsync(
                 messageContent,
-                token,
+                source.Token,
                 3,
                 new SkillSearchOptions { MinSuccessRate = 0.5, PreferRecent = true });
             if (results.Count == 0)
@@ -57,9 +57,9 @@ internal sealed class SkillMemoryPromptEnricher(
         try
         {
             var skillActor = actors.GetActor<ISkillMemoryActor>(VirtualActorId.From(state.WorkspaceId.ToString()));
-            var token = MintToken(state.WorkspaceId, state.AgentName, "skill:write");
+            using var source = MintToken(state.WorkspaceId, state.AgentName, "skill:write");
             foreach (var skillId in skillIds)
-                await skillActor.RecordUsageAsync(skillId, success: true, token);
+                await skillActor.RecordUsageAsync(skillId, success: true, source.Token);
         }
         catch (Exception ex)
         {
@@ -67,12 +67,12 @@ internal sealed class SkillMemoryPromptEnricher(
         }
     }
 
-    private CapabilityToken MintToken(WorkspaceId workspaceId, string agentName, string grant) =>
-        tokenService.Mint(new CapabilityTokenRequest
+    private CapabilityTokenSource MintToken(WorkspaceId workspaceId, string agentName, string grant) =>
+        tokenService.MintLinked(new CapabilityTokenRequest
         {
             WorkspaceId = workspaceId.ToString(),
             IssuedTo = $"{workspaceId}/{agentName}",
             Grants = [grant],
             Lifetime = TimeSpan.FromMinutes(1)
-        });
+        }, CancellationToken.None);
 }
