@@ -63,7 +63,9 @@ public sealed class PostgresCapabilityAuditStore : ICapabilityAuditStore
 
         // FIFO eviction beyond capacity. Same trim shape as SQLite — single
         // statement so the trim is atomic with the insert under the
-        // surrounding transaction.
+        // surrounding transaction. ORDER BY row_id DESC + OFFSET @capacity
+        // skips the @capacity newest rows and returns the older overflow,
+        // which is what we want to delete.
         using (var trim = connection.CreateCommand())
         {
             trim.Transaction = transaction;
@@ -71,7 +73,7 @@ public sealed class PostgresCapabilityAuditStore : ICapabilityAuditStore
                 DELETE FROM capability_audit
                 WHERE row_id IN (
                     SELECT row_id FROM capability_audit
-                    ORDER BY row_id ASC
+                    ORDER BY row_id DESC
                     OFFSET @capacity
                 );
                 """;
