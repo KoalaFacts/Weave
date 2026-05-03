@@ -88,9 +88,24 @@ internal sealed class SiloServiceRegistrar
             _configuration.GetSection(CapabilityAuditOptions.ConfigurationSectionName));
         _services.AddSingleton<ICapabilityTokenService, CapabilityTokenService>();
         _services.AddSingleton<ICapabilityAuthorizer, CapabilityAuthorizer>();
-        _services.AddSingleton<ICapabilityAuditStore, InMemoryCapabilityAuditStore>();
+        RegisterCapabilityAuditStore();
         _services.AddSingleton<ILeakScanner, LeakScanner>();
         _services.AddSingleton<TransparentSecretProxy>();
+    }
+
+    private void RegisterCapabilityAuditStore()
+    {
+        var backend = _configuration[$"{CapabilityAuditOptions.ConfigurationSectionName}:{nameof(CapabilityAuditOptions.Backend)}"]
+            ?? CapabilityAuditOptions.MemoryBackend;
+        switch (backend.ToLowerInvariant())
+        {
+            case CapabilityAuditOptions.SqliteBackend:
+                _services.AddSingleton<ICapabilityAuditStore, SqliteCapabilityAuditStore>();
+                break;
+            default:
+                _services.AddSingleton<ICapabilityAuditStore, InMemoryCapabilityAuditStore>();
+                break;
+        }
     }
 
     private void RegisterPluginBroker()
