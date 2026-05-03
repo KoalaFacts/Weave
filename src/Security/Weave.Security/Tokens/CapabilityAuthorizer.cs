@@ -128,17 +128,7 @@ public sealed partial class CapabilityAuthorizer(
             ? input[..MaxActionContextLength]
             : input;
 
-        var hasControl = false;
-        foreach (var c in trimmed)
-        {
-            if (char.IsControl(c))
-            {
-                hasControl = true;
-                break;
-            }
-        }
-
-        if (!hasControl)
+        if (!trimmed.Any(char.IsControl))
             return trimmed;
 
         return string.Create(trimmed.Length, trimmed, static (span, src) =>
