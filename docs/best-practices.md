@@ -114,6 +114,22 @@ The law of the repo. Every rule here is enforceable in review. Rules exist to pr
 
 **Console output uses text-presentation Unicode, not emoji-variant glyphs.** `✗` (U+2717) renders with color tags; `✖` (U+2716) triggers emoji fonts that ignore Spectre RGB colors. If you must use a dual-use glyph, append U+FE0E to force text presentation. Use helpers in `CliTheme` rather than raw `Console.WriteLine` or direct Spectre markup.
 
+### File and class size
+
+**Production files: one public/internal type per file, classes ≤ 200 lines.** The 200-line threshold is a design check trigger, not a hard cap — but every file above it should have a paragraph in its PR description explaining why it didn't split. Today's only production violator is `src/UX/Weave.Cli/Tui/TuiSlashCommandDispatcher.cs` (422 lines) — slated for extraction into per-command handlers.
+
+**Tightly-coupled type pairs may share a file when neither is meaningful alone.** The codified pattern is the CQRS shape: a `*Query` record plus its `*Handler` class in the same file (`GetRecentCapabilityAuditQuery.cs`). The handler is private to the query in practice, even though both are `public`. Two unrelated types that just happen to live in the same namespace do not qualify.
+
+**Test files: keep under ~500 lines per type under test.** When a test file passes 600 lines it almost always means the production class is doing too much — split the production type first, the tests follow. Today's outliers (`FileSystemToolConnectorTests.cs` at 1575, `PublisherTests.cs` at 864, `AgentActorTests.cs` at 789) are honest signals about their respective production classes.
+
+### Time and clocks
+
+**Inject `TimeProvider`; never call `DateTime.UtcNow` / `DateTimeOffset.UtcNow` from logic that decides behavior.** "Logic that decides behavior" = anything with time-dependent control flow (cache TTL, token expiry, retry backoff, debounce windows, hint timeouts). Tests need `FakeTimeProvider` to drive these without `Thread.Sleep`. The pattern: `CapabilityTokenService` takes `TimeProvider` in its constructor and calls `_timeProvider.GetUtcNow()`; tests pass a `FakeTimeProvider` and call `Advance(TimeSpan)`.
+
+**Default property initializers on data records (`= DateTimeOffset.UtcNow`) are the only acceptable direct call.** They exist purely so the field has a value when nobody set one. The writer (actor, command handler) should normally supply an explicit timestamp from its injected `TimeProvider`. Today's violators where logic depends on the wall clock and tests can't fake it: `Weave.Agents/Actors/AgentState.cs` (7 mutating writes), `Weave.Cli/Tui/ChatExitConfirmation.cs` (3 time-window checks), `Weave.Cli/Commands/Version/VersionService.cs` (cache TTL). Each should take a `TimeProvider`.
+
+**Logging/display timestamps in CLI/TUI may use `DateTime.Now` directly.** They are not behavior — `SiloProcessService`'s log prefix and `TuiLiveStatusRenderer`'s "Refreshed" line do not feed any branching logic.
+
 ### Secrets and security
 
 **Never log a `SecretValue.DecryptToString()` result.** Logs default to `.ToString()` which returns `"***REDACTED***"`. If you need the cleartext, you are inside a crypto boundary and should not be writing a log line there.
