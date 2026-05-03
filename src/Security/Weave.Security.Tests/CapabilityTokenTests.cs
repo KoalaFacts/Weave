@@ -43,15 +43,64 @@ public sealed class CapabilityTokenTests
     }
 
     [Fact]
-    public void HasGrant_PartialWildcard_DoesNotMatch()
+    public void HasGrant_PrefixWildcard_MatchesScopedGrants()
     {
-        // "tool:*" is NOT a wildcard match (only "*" is)
         var token = new CapabilityToken { Grants = ["tool:*"] };
 
-        // "tool:*" literally matches "tool:*"
         token.HasGrant("tool:*").ShouldBeTrue();
-        // but does NOT match "tool:my-tool" (no wildcard expansion)
+        token.HasGrant("tool:my-tool").ShouldBeTrue();
+    }
+
+    [Fact]
+    public void HasGrant_NestedPrefixWildcard_MatchesDeeperScopes()
+    {
+        var token = new CapabilityToken { Grants = ["channel:send:*"] };
+
+        token.HasGrant("channel:send:slack-1").ShouldBeTrue();
+        token.HasGrant("channel:receive:slack-1").ShouldBeFalse();
+    }
+
+    [Fact]
+    public void HasGrant_DifferentPrefix_DoesNotMatch()
+    {
+        var token = new CapabilityToken { Grants = ["channel:send:*"] };
+
         token.HasGrant("tool:my-tool").ShouldBeFalse();
+    }
+
+    [Fact]
+    public void HasGrant_MidSegmentWildcard_MatchesAcrossThatSegment()
+    {
+        var token = new CapabilityToken { Grants = ["user:*:alice"] };
+
+        token.HasGrant("user:read:alice").ShouldBeTrue();
+        token.HasGrant("user:write:alice").ShouldBeTrue();
+    }
+
+    [Fact]
+    public void HasGrant_MidSegmentWildcard_DoesNotMatchDifferentTrailingSegment()
+    {
+        var token = new CapabilityToken { Grants = ["user:*:alice"] };
+
+        token.HasGrant("user:read:bob").ShouldBeFalse();
+    }
+
+    [Fact]
+    public void HasGrant_MidSegmentWildcard_OnlyMatchesSameSegmentCount()
+    {
+        var token = new CapabilityToken { Grants = ["user:*:alice"] };
+
+        token.HasGrant("user:read:alice:extra").ShouldBeFalse();
+        token.HasGrant("user:alice").ShouldBeFalse();
+    }
+
+    [Fact]
+    public void HasGrant_TrailingWildcard_MatchesAnyDepth()
+    {
+        var token = new CapabilityToken { Grants = ["tool:*"] };
+
+        token.HasGrant("tool:foo").ShouldBeTrue();
+        token.HasGrant("tool:foo:bar").ShouldBeTrue();
     }
 
     // --- IsExpired ---

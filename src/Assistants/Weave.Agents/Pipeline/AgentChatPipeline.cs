@@ -46,7 +46,7 @@ public sealed class AgentChatPipeline(
 
         var prompt = await GetSystemPromptAsync(state);
         prompt = await EnrichWithUserContextAsync(state, message, prompt);
-        var skillMemory = await _skillMemory.EnrichAsync(state.WorkspaceId, state.AgentName, message.Content, prompt);
+        var skillMemory = await _skillMemory.EnrichAsync(state, message.Content, prompt);
         prompt = skillMemory.Prompt;
         var episodicMemory = await _episodicMemory.EnrichAsync(state.WorkspaceId, state.AgentName, message.Content, prompt);
         prompt = episodicMemory.Prompt;
@@ -86,7 +86,7 @@ public sealed class AgentChatPipeline(
         }
 
         state.LastActive = timeProvider.GetUtcNow();
-        await _skillMemory.RecordSuccessfulUsageAsync(state.WorkspaceId, state.AgentName, skillMemory.SkillIds);
+        await _skillMemory.RecordSuccessfulUsageAsync(state, skillMemory.SkillIds);
         await _episodicMemory.RecordRecallAsync(state.WorkspaceId, state.AgentName, episodicMemory.EpisodeIds);
 
         return new AgentChatResponse
@@ -158,10 +158,21 @@ public sealed class AgentChatPipeline(
         if (string.IsNullOrWhiteSpace(message.UserId))
             return prompt;
 
+        var grant = $"user:read:{message.UserId}";
+        if (state.Definition?.Capabilities?.Contains(grant) is not true)
+            return prompt;
+
         try
         {
             var userActor = actors.GetActor<IUserModelActor>(VirtualActorId.Combine(state.WorkspaceId, message.UserId));
-            var summary = await userActor.GetContextSummaryAsync();
+            using var source = tokenService.MintLinked(new CapabilityTokenRequest
+            {
+                WorkspaceId = state.WorkspaceId.ToString(),
+                IssuedTo = $"{state.WorkspaceId}/{state.AgentName}",
+                Grants = [grant],
+                Lifetime = TimeSpan.FromMinutes(1)
+            }, CancellationToken.None);
+            var summary = await userActor.GetContextSummaryAsync(source.Token);
             if (string.IsNullOrWhiteSpace(summary))
                 return prompt;
 

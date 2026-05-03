@@ -44,16 +44,16 @@ internal sealed class ToolRegistryConnector(
 
             var resolvedDefinition = await secretResolver.ResolveAsync(workspaceId, definition);
             var toolSpec = ToolSpecMapper.FromDefinition(toolName, resolvedDefinition);
-            var token = tokenService.Mint(new CapabilityTokenRequest
+            using var source = tokenService.MintLinked(new CapabilityTokenRequest
             {
                 WorkspaceId = workspaceId,
                 IssuedTo = $"{workspaceId}/{toolName}",
                 Grants = [$"tool:{toolName}", "secret:*"],
                 Lifetime = TimeSpan.FromHours(1)
-            });
+            }, CancellationToken.None);
 
             var toolActor = actors.GetActor<IToolActor>(VirtualActorId.From($"{workspaceId}/{toolName}"));
-            await toolActor.ConnectAsync(toolSpec, token);
+            await toolActor.ConnectAsync(toolSpec, source.Token);
 
             persistentState.State.Connections[toolName] = new ToolConnection
             {

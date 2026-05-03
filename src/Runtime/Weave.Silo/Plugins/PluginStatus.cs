@@ -1,4 +1,4 @@
-namespace Weave.Workspaces.Plugins;
+namespace Weave.Silo.Plugins;
 
 public sealed record PluginStatus
 {

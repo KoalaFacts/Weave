@@ -6,18 +6,24 @@ internal static class SkillTokenFactory
 {
     private static readonly TimeSpan ApiTokenLifetime = TimeSpan.FromMinutes(1);
 
-    public static CapabilityToken MintRead(ICapabilityTokenService tokenService, string workspaceId) =>
-        Mint(tokenService, workspaceId, "skill:read");
+    public static CapabilityTokenSource MintRead(ICapabilityTokenService tokenService, string workspaceId, CancellationToken parentCt) =>
+        Mint(tokenService, workspaceId, "skill:read", parentCt);
 
-    public static CapabilityToken MintWrite(ICapabilityTokenService tokenService, string workspaceId) =>
-        Mint(tokenService, workspaceId, "skill:write");
+    public static CapabilityTokenSource MintWrite(ICapabilityTokenService tokenService, string workspaceId, CancellationToken parentCt) =>
+        Mint(tokenService, workspaceId, "skill:write", parentCt);
 
-    private static CapabilityToken Mint(ICapabilityTokenService tokenService, string workspaceId, string grant) =>
-        tokenService.Mint(new CapabilityTokenRequest
-        {
-            WorkspaceId = workspaceId,
-            IssuedTo = $"api/{workspaceId}",
-            Grants = [grant],
-            Lifetime = ApiTokenLifetime
-        });
+    private static CapabilityTokenSource Mint(
+        ICapabilityTokenService tokenService,
+        string workspaceId,
+        string grant,
+        CancellationToken parentCt) =>
+        tokenService.MintLinked(
+            new CapabilityTokenRequest
+            {
+                WorkspaceId = workspaceId,
+                IssuedTo = $"api/{workspaceId}",
+                Grants = [grant],
+                Lifetime = ApiTokenLifetime
+            },
+            parentCt);
 }

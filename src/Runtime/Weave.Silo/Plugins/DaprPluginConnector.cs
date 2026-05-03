@@ -1,10 +1,10 @@
 using Weave.Shared.Events;
 using Weave.Shared.Plugins;
 using Weave.Silo.Events;
+using Weave.Silo.Plugins;
 using Weave.Tools.Connectors;
 using Weave.Tools.Discovery;
 using Weave.Workspaces.Models;
-using Weave.Workspaces.Plugins;
 
 namespace Weave.Silo.Plugins;
 

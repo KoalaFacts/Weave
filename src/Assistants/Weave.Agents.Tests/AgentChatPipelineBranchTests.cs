@@ -103,10 +103,15 @@ public sealed class AgentChatPipelineBranchTests
     {
         var fx = new Fixture();
         var userActor = Substitute.For<IUserModelActor>();
-        userActor.GetContextSummaryAsync().Returns(Task.FromException<string>(new InvalidOperationException("user actor broken")));
+        userActor.GetContextSummaryAsync(Arg.Any<CapabilityToken>())
+            .Returns(Task.FromException<string>(new InvalidOperationException("user actor broken")));
         fx.ActorProvider.GetActor<IUserModelActor>(Arg.Any<VirtualActorId>()).Returns(userActor);
 
-        var state = StateWith();
+        var state = StateWith(new AgentDefinition
+        {
+            Model = "test-model",
+            Capabilities = ["user:read:alice"]
+        });
 
         var response = await fx.Pipeline.ExecuteAsync(state, new AgentMessage
         {

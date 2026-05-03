@@ -50,11 +50,11 @@ public sealed class CqrsHandlerTests
 
         var handler = new SetUserPreferenceHandler(factory);
         var result = await handler.HandleAsync(
-            new SetUserPreferenceCommand(Ws, "user-1", "theme", "dark"),
+            new SetUserPreferenceCommand(Ws, "user-1", "theme", "dark", StubToken),
             TestContext.Current.CancellationToken);
 
         result.ShouldBeTrue();
-        await user.Received(1).SetPreferenceAsync("theme", "dark");
+        await user.Received(1).SetPreferenceAsync("theme", "dark", StubToken);
     }
 
     [Fact]
@@ -112,7 +112,7 @@ public sealed class CqrsHandlerTests
         var gateway = Substitute.For<IChannelGatewayActor>();
         var outbound = new OutboundMessage { ChannelId = ChannelId.New(), Content = "response" };
         factory.GetActor<IChannelGatewayActor>(Arg.Any<VirtualActorId>()).Returns(gateway);
-        gateway.RouteInboundAsync(Arg.Any<InboundMessage>()).Returns(outbound);
+        gateway.RouteInboundAsync(Arg.Any<InboundMessage>(), Arg.Any<CapabilityToken>()).Returns(outbound);
 
         var handler = new RouteInboundMessageHandler(factory);
         var result = await handler.HandleAsync(
@@ -123,7 +123,7 @@ public sealed class CqrsHandlerTests
                 SenderId = "u1",
                 SenderName = "alice",
                 Content = "hi"
-            }),
+            }, StubToken),
             TestContext.Current.CancellationToken);
 
         result.ShouldBe(outbound);
@@ -177,11 +177,11 @@ public sealed class CqrsHandlerTests
         var user = Substitute.For<IUserModelActor>();
         var profile = new UserProfileState { UserId = "user-1", WorkspaceId = "ws-1" };
         factory.GetActor<IUserModelActor>(Arg.Any<VirtualActorId>()).Returns(user);
-        user.GetProfileAsync().Returns(profile);
+        user.GetProfileAsync(Arg.Any<CapabilityToken>()).Returns(profile);
 
         var handler = new GetUserProfileHandler(factory);
         var result = await handler.HandleAsync(
-            new GetUserProfileQuery(Ws, "user-1"),
+            new GetUserProfileQuery(Ws, "user-1", StubToken),
             TestContext.Current.CancellationToken);
 
         result.UserId.ShouldBe("user-1");

@@ -1,6 +1,6 @@
 using Weave.Shared.Plugins;
+using Weave.Silo.Plugins;
 using Weave.Workspaces.Models;
-using Weave.Workspaces.Plugins;
 
 namespace Weave.Silo.Plugins;
 

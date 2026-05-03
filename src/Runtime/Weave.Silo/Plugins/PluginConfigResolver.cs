@@ -1,6 +1,6 @@
 using Weave.Workspaces.Models;
 
-namespace Weave.Workspaces.Plugins;
+namespace Weave.Silo.Plugins;
 
 internal static class PluginConfigResolver
 {

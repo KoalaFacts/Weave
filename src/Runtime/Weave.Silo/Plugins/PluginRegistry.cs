@@ -1,8 +1,9 @@
 using System.Collections.Concurrent;
 using Microsoft.Extensions.Logging;
+using Weave.Security.Tokens;
 using Weave.Workspaces.Models;
 
-namespace Weave.Workspaces.Plugins;
+namespace Weave.Silo.Plugins;
 
 // --- Registry ---
 
@@ -11,10 +12,15 @@ public sealed partial class PluginRegistry : IPluginRegistry, IDisposable
     private readonly Dictionary<string, IPluginConnector> _connectorsByType;
     private readonly ConcurrentDictionary<string, PluginStatus> _active = new(StringComparer.OrdinalIgnoreCase);
     private readonly SemaphoreSlim _connectLock = new(1, 1);
+    private readonly ICapabilityTokenService _tokenService;
     private readonly ILogger<PluginRegistry> _logger;
 
-    public PluginRegistry(IEnumerable<IPluginConnector> connectors, ILogger<PluginRegistry> logger)
+    public PluginRegistry(
+        IEnumerable<IPluginConnector> connectors,
+        ICapabilityTokenService tokenService,
+        ILogger<PluginRegistry> logger)
     {
+        _tokenService = tokenService;
         _logger = logger;
         var byType = new Dictionary<string, IPluginConnector>(StringComparer.OrdinalIgnoreCase);
         foreach (var connector in connectors)
@@ -27,18 +33,20 @@ public sealed partial class PluginRegistry : IPluginRegistry, IDisposable
         _connectorsByType = byType;
     }
 
-    public async Task<IReadOnlyList<PluginStatus>> ConnectAllAsync(Dictionary<string, PluginDefinition> plugins)
+    public async Task<IReadOnlyList<PluginStatus>> ConnectAllAsync(Dictionary<string, PluginDefinition> plugins, CapabilityToken token)
     {
         var results = new List<PluginStatus>(plugins.Count);
         foreach (var (name, definition) in plugins)
         {
-            results.Add(await ConnectAsync(name, definition));
+            results.Add(await ConnectAsync(name, definition, token));
         }
         return results;
     }
 
-    public async Task<PluginStatus> ConnectAsync(string name, PluginDefinition definition)
+    public async Task<PluginStatus> ConnectAsync(string name, PluginDefinition definition, CapabilityToken token)
     {
+        Authorize(token, name);
+
         if (!_connectorsByType.TryGetValue(definition.Type, out var connector))
         {
             var status = new PluginStatus
@@ -119,8 +127,10 @@ public sealed partial class PluginRegistry : IPluginRegistry, IDisposable
         }
     }
 
-    public async Task<PluginStatus> DisconnectAsync(string name)
+    public async Task<PluginStatus> DisconnectAsync(string name, CapabilityToken token)
     {
+        Authorize(token, name);
+
         await _connectLock.WaitAsync();
         try
         {
@@ -166,6 +176,24 @@ public sealed partial class PluginRegistry : IPluginRegistry, IDisposable
     }
 
     public void Dispose() => _connectLock.Dispose();
+
+    private void Authorize(CapabilityToken token, string pluginName)
+    {
+        var grant = $"plugin:invoke:{pluginName}";
+
+        if (!_tokenService.Validate(token))
+        {
+            _logger.LogWarning("Plugin capability denied: invalid or expired token for grant '{Grant}'", grant);
+            throw new UnauthorizedAccessException("Invalid or expired capability token");
+        }
+
+        if (!token.HasGrant(grant))
+        {
+            _logger.LogWarning("Plugin capability denied: token issued to '{IssuedTo}' does not grant '{Grant}'",
+                token.IssuedTo, grant);
+            throw new UnauthorizedAccessException($"Token does not grant '{grant}'");
+        }
+    }
 
     [LoggerMessage(Level = LogLevel.Information, Message = "Plugin '{Name}' ({Type}) connected")]
     private partial void LogPluginConnected(string name, string type);

@@ -8,6 +8,7 @@ namespace Weave.Security.Tokens;
 public sealed class CapabilityTokenService : ICapabilityTokenService
 {
     private readonly ConcurrentDictionary<string, DateTimeOffset> _revokedTokens = new();
+    private readonly ConcurrentDictionary<string, CancellationTokenSource> _liveSources = new();
     private readonly byte[] _signingKey;
     private readonly string _revocationDirectory;
     private readonly TimeProvider _timeProvider;
@@ -52,6 +53,21 @@ public sealed class CapabilityTokenService : ICapabilityTokenService
         return token with { Signature = signature };
     }
 
+    public CapabilityTokenSource MintLinked(CapabilityTokenRequest request, CancellationToken parentCt)
+    {
+        var token = Mint(request);
+        var cts = CancellationTokenSource.CreateLinkedTokenSource(parentCt);
+
+        var remaining = token.ExpiresAt - _timeProvider.GetUtcNow();
+        if (remaining > TimeSpan.Zero)
+            cts.CancelAfter(remaining);
+        else
+            cts.Cancel();
+
+        _liveSources[token.TokenId] = cts;
+        return new CapabilityTokenSource(token, cts, () => _liveSources.TryRemove(token.TokenId, out _));
+    }
+
     public bool Validate(CapabilityToken token)
     {
         if (token.ExpiresAt <= _timeProvider.GetUtcNow())
@@ -71,6 +87,18 @@ public sealed class CapabilityTokenService : ICapabilityTokenService
         var now = _timeProvider.GetUtcNow();
         _revokedTokens.TryAdd(tokenId, now);
         File.WriteAllText(GetRevocationPath(tokenId), now.ToString("O", System.Globalization.CultureInfo.InvariantCulture));
+
+        if (_liveSources.TryRemove(tokenId, out var cts))
+        {
+            try
+            {
+                cts.Cancel();
+            }
+            catch (ObjectDisposedException)
+            {
+                // source already disposed
+            }
+        }
     }
 
     public bool IsRevoked(string tokenId)

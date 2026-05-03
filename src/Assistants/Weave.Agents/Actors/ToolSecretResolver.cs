@@ -13,23 +13,23 @@ internal sealed class ToolSecretResolver(
     public async Task<ToolDefinition> ResolveAsync(string workspaceId, ToolDefinition definition)
     {
         var proxy = actors.GetActor<ISecretProxyActor>(VirtualActorId.From(workspaceId));
-        var secretToken = tokenService.Mint(new CapabilityTokenRequest
+        using var source = tokenService.MintLinked(new CapabilityTokenRequest
         {
             WorkspaceId = workspaceId,
             IssuedTo = $"{workspaceId}/tool-registry",
             Grants = ["secret:*"],
             Lifetime = TimeSpan.FromHours(1)
-        });
+        }, CancellationToken.None);
 
         var mcpEnv = definition.Mcp is null
             ? null
-            : await ResolveAsync(definition.Mcp.Env, proxy, secretToken);
+            : await ResolveAsync(definition.Mcp.Env, proxy, source.Token);
         var authToken = definition.OpenApi?.Auth?.Token;
         if (!string.IsNullOrWhiteSpace(authToken))
         {
             foreach (var secretPath in SecretPlaceholderParser.EnumeratePaths(authToken))
             {
-                await proxy.RegisterSecretAsync(secretPath, secretToken);
+                await proxy.RegisterSecretAsync(secretPath, source.Token);
             }
 
             authToken = await proxy.SubstituteAsync(authToken);

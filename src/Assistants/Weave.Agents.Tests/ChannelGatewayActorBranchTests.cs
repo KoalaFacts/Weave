@@ -1,6 +1,8 @@
 using Microsoft.Extensions.Logging.Abstractions;
+using Microsoft.Extensions.Options;
 using Weave.Agents.Actors;
 using Weave.Agents.Models;
+using Weave.Security.Tokens;
 using Weave.Shared.Events;
 using Weave.Shared.Ids;
 
@@ -24,13 +26,29 @@ public sealed class ChannelGatewayActorBranchTests
         return ps;
     }
 
+    private static CapabilityTokenService CreateTokenService() =>
+        new(
+            Options.Create(new CapabilityTokenOptions { SigningKey = "test-signing-key-that-is-at-least-32-chars-long" }),
+            TimeProvider.System);
+
+    private static CapabilityToken Token(CapabilityTokenService svc, string channelId = "channel-1", string workspaceId = "ws-1") =>
+        svc.Mint(new CapabilityTokenRequest
+        {
+            WorkspaceId = workspaceId,
+            IssuedTo = "test",
+            Grants = [$"channel:receive:{channelId}", $"channel:send:{channelId}"],
+            Lifetime = TimeSpan.FromHours(1)
+        });
+
     private static ChannelGatewayActor CreateActor(
         ChannelGatewayState? initial = null,
         IVirtualActorProvider? actors = null,
-        IEventBus? eventBus = null) =>
+        IEventBus? eventBus = null,
+        ICapabilityTokenService? tokenService = null) =>
         new(
             actors ?? Substitute.For<IVirtualActorProvider>(),
             eventBus ?? Substitute.For<IEventBus>(),
+            tokenService ?? CreateTokenService(),
             NullLogger<ChannelGatewayActor>.Instance,
             CreatePersistentState(initial));
 
@@ -65,10 +83,11 @@ public sealed class ChannelGatewayActorBranchTests
             WorkspaceId = "ws-1",
             Channels = { ["channel-1"] = BuildChannel(enabled: false, targetAgent: "agent-a") }
         };
-        var actor = CreateActor(state);
+        var tokenService = CreateTokenService();
+        var actor = CreateActor(state, tokenService: tokenService);
 
         await Should.ThrowAsync<InvalidOperationException>(
-            () => actor.RouteInboundAsync(BuildMessage()));
+            () => actor.RouteInboundAsync(BuildMessage(), Token(tokenService)));
     }
 
     [Fact]

@@ -551,4 +551,26 @@ public sealed class SkillMemoryActorTests
 
         result.ShouldBeNull();
     }
+
+    [Fact]
+    public async Task StoreSkillAsync_WithCrossWorkspaceToken_Throws()
+    {
+        var tokenService = CreateTokenService();
+        var actor = new SkillMemoryActor(
+            Substitute.For<IEventBus>(),
+            TimeProvider.System,
+            tokenService,
+            NullLogger<SkillMemoryActor>.Instance,
+            CreatePersistentState());
+        var foreignToken = tokenService.Mint(new CapabilityTokenRequest
+        {
+            WorkspaceId = "other-workspace",
+            IssuedTo = "attacker",
+            Grants = ["skill:write"],
+            Lifetime = TimeSpan.FromHours(1)
+        });
+
+        await Should.ThrowAsync<UnauthorizedAccessException>(() =>
+            actor.StoreSkillAsync(CreateSkill(), foreignToken));
+    }
 }

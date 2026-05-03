@@ -6,6 +6,7 @@ using Weave.Agents.Models;
 using Weave.Agents.Pipeline;
 using Weave.Security.Tokens;
 using Weave.Shared.Ids;
+using Weave.Workspaces.Models;
 
 namespace Weave.Agents.Tests;
 
@@ -18,14 +19,19 @@ public sealed class AgentChatPipelineTests
             Options.Create(new CapabilityTokenOptions { SigningKey = "test-signing-key-that-is-at-least-32-chars-long" }),
             TimeProvider.System);
 
-    private static AgentState CreateActiveState() =>
+    private static AgentState CreateActiveState(IReadOnlyList<string>? capabilities = null) =>
         new()
         {
             AgentId = "ws-1/researcher",
             WorkspaceId = TestWorkspaceId,
             AgentName = "researcher",
             Status = AgentStatus.Active,
-            Model = "claude-sonnet-4-20250514"
+            Model = "claude-sonnet-4-20250514",
+            Definition = new AgentDefinition
+            {
+                Model = "claude-sonnet-4-20250514",
+                Capabilities = capabilities ?? ["skill:read", "skill:write"]
+            }
         };
 
     private static (AgentChatPipeline Pipeline, IChatClient ChatClient) CreatePipeline()
@@ -201,7 +207,7 @@ public sealed class AgentChatPipelineTests
         chatClientFactory.Create(Arg.Any<string>(), Arg.Any<string?>()).Returns(chatClient);
 
         var userModelActor = Substitute.For<IUserModelActor>();
-        userModelActor.GetContextSummaryAsync()
+        userModelActor.GetContextSummaryAsync(Arg.Any<CapabilityToken>())
             .Returns(Task.FromResult("User preferences: lang=csharp. Interactions: 5 total."));
 
         var skillActor = Substitute.For<ISkillMemoryActor>();
@@ -213,7 +219,7 @@ public sealed class AgentChatPipelineTests
         actors.GetActor<ISkillMemoryActor>(Arg.Any<VirtualActorId>()).Returns(skillActor);
 
         var pipeline = new AgentChatPipeline(actors, chatClientFactory, CreateTokenService(), TimeProvider.System, NullLogger<AgentChatPipeline>.Instance);
-        var state = CreateActiveState();
+        var state = CreateActiveState(capabilities: ["skill:read", "skill:write", "user:read:user-42"]);
 
         await pipeline.ExecuteAsync(state, new AgentMessage { Content = "Hello", UserId = "user-42" });
 
@@ -282,6 +288,58 @@ public sealed class AgentChatPipelineTests
         systemMsg.ShouldNotBeNull();
         systemMsg.Text.ShouldContain("Deploy to K8s");
         systemMsg.Text.ShouldContain("Build image");
+    }
+
+    [Fact]
+    public async Task ExecuteAsync_WithoutSkillReadCapability_DoesNotEnrichSystemPrompt()
+    {
+        var chatClient = Substitute.For<IChatClient>();
+        IEnumerable<ChatMessage>? capturedMessages = null;
+        chatClient.GetResponseAsync(
+                Arg.Any<IEnumerable<ChatMessage>>(),
+                Arg.Any<ChatOptions>(),
+                Arg.Any<CancellationToken>())
+            .Returns(callInfo =>
+            {
+                capturedMessages = callInfo.Arg<IEnumerable<ChatMessage>>().ToList();
+                return new ChatResponse(new ChatMessage(ChatRole.Assistant, "Done"))
+                {
+                    ModelId = "claude-sonnet-4-20250514"
+                };
+            });
+
+        var chatClientFactory = Substitute.For<IAgentChatClientFactory>();
+        chatClientFactory.Create(Arg.Any<string>(), Arg.Any<string?>()).Returns(chatClient);
+
+        // Skill actor would happily return a skill if asked — the gate must
+        // prevent the call so the skill never reaches the system prompt.
+        var matchingSkill = new SkillDocument
+        {
+            SkillId = SkillId.New(),
+            Title = "Deploy to K8s",
+            Description = "Steps to deploy",
+            Tags = ["deploy"],
+            Steps = [new SkillStep { Order = 0, Action = "Build image" }],
+            ToolsUsed = ["docker"],
+            CreatedByAgent = "deployer"
+        };
+        var skillActor = Substitute.For<ISkillMemoryActor>();
+        skillActor.SearchAsync(Arg.Any<string>(), Arg.Any<CapabilityToken>(), Arg.Any<int>(), Arg.Any<SkillSearchOptions>())
+            .Returns(Task.FromResult<IReadOnlyList<SkillSearchResult>>([
+                new SkillSearchResult { Skill = matchingSkill, RelevanceScore = 5.0 }
+            ]));
+        var actors = Substitute.For<IVirtualActorProvider>();
+        actors.GetActor<ISkillMemoryActor>(Arg.Any<VirtualActorId>()).Returns(skillActor);
+
+        var pipeline = new AgentChatPipeline(actors, chatClientFactory, CreateTokenService(), TimeProvider.System, NullLogger<AgentChatPipeline>.Instance);
+        var state = CreateActiveState(capabilities: ["tool:*"]);
+
+        await pipeline.ExecuteAsync(state, new AgentMessage { Content = "deploy to k8s" });
+
+        capturedMessages.ShouldNotBeNull();
+        var systemText = capturedMessages.FirstOrDefault(m => m.Role == ChatRole.System)?.Text ?? string.Empty;
+        systemText.ShouldNotContain("Deploy to K8s");
+        systemText.ShouldNotContain("Build image");
     }
 
     [Fact]

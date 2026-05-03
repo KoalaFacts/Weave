@@ -3,6 +3,7 @@ using System.Text;
 using Microsoft.Extensions.Logging;
 using Weave.Agents.Events;
 using Weave.Agents.Models;
+using Weave.Security.Tokens;
 using Weave.Shared.Events;
 using Weave.Shared.Ids;
 
@@ -11,6 +12,7 @@ namespace Weave.Agents.Actors;
 public sealed class UserModelActor(
     IEventBus eventBus,
     TimeProvider timeProvider,
+    ICapabilityTokenService tokenService,
     ILogger<UserModelActor> logger,
     IActorState<UserProfileState> persistentState) : IUserModelActor
 {
@@ -28,9 +30,10 @@ public sealed class UserModelActor(
         }
     }
 
-    public async Task RecordInteractionAsync(InteractionRecord record)
+    public async Task RecordInteractionAsync(InteractionRecord record, CapabilityToken token)
     {
         EnsureIdentity();
+        Authorize(token, write: true);
 
         if (persistentState.State.RecentInteractions.Count >= persistentState.State.MaxRecentInteractions)
             persistentState.State.RecentInteractions.RemoveAt(0);
@@ -50,7 +53,7 @@ public sealed class UserModelActor(
         persistentState.State.FirstSeenAt ??= now;
         persistentState.State.LastSeenAt = now;
 
-        await persistentState.WriteStateAsync();
+        await persistentState.WriteStateAsync(token.CancellationToken);
 
         await eventBus.PublishAsync(new UserInteractionRecordedEvent
         {
@@ -58,7 +61,7 @@ public sealed class UserModelActor(
             WorkspaceId = WorkspaceId.From(persistentState.State.WorkspaceId),
             UserId = persistentState.State.UserId,
             AgentName = record.AgentName
-        }, CancellationToken.None);
+        }, token.CancellationToken);
 
         logger.LogInformation(
             "Recorded interaction for user {UserId} with agent {AgentName}",
@@ -66,24 +69,33 @@ public sealed class UserModelActor(
             record.AgentName);
     }
 
-    public async Task SetPreferenceAsync(string key, string value)
+    public async Task SetPreferenceAsync(string key, string value, CapabilityToken token)
     {
         EnsureIdentity();
+        Authorize(token, write: true);
         persistentState.State.Preferences[key] = value;
-        await persistentState.WriteStateAsync();
+        await persistentState.WriteStateAsync(token.CancellationToken);
     }
 
-    public async Task SetDomainContextAsync(string key, string value)
+    public async Task SetDomainContextAsync(string key, string value, CapabilityToken token)
     {
         EnsureIdentity();
+        Authorize(token, write: true);
         persistentState.State.DomainContext[key] = value;
-        await persistentState.WriteStateAsync();
+        await persistentState.WriteStateAsync(token.CancellationToken);
     }
 
-    public Task<UserProfileState> GetProfileAsync() => Task.FromResult(persistentState.State);
-
-    public Task<string> GetContextSummaryAsync()
+    public Task<UserProfileState> GetProfileAsync(CapabilityToken token)
     {
+        EnsureIdentity();
+        Authorize(token, write: false);
+        return Task.FromResult(persistentState.State);
+    }
+
+    public Task<string> GetContextSummaryAsync(CapabilityToken token)
+    {
+        EnsureIdentity();
+        Authorize(token, write: false);
         if (persistentState.State.TotalInteractions == 0
             && persistentState.State.Preferences.Count == 0
             && persistentState.State.DomainContext.Count == 0)
@@ -124,8 +136,10 @@ public sealed class UserModelActor(
         return Task.FromResult(sb.ToString());
     }
 
-    public async Task ClearAsync()
+    public async Task ClearAsync(CapabilityToken token)
     {
+        EnsureIdentity();
+        Authorize(token, write: true);
         var state = persistentState.State;
         state.Preferences.Clear();
         state.RecentInteractions.Clear();
@@ -138,7 +152,7 @@ public sealed class UserModelActor(
         state.PreferredLanguage = null;
         state.MaxRecentInteractions = 100;
 
-        await persistentState.WriteStateAsync();
+        await persistentState.WriteStateAsync(token.CancellationToken);
     }
 
     private void EnsureIdentity()
@@ -157,5 +171,35 @@ public sealed class UserModelActor(
         var parts = key.Split('/', 2);
         persistentState.State.WorkspaceId = parts.Length > 1 ? parts[0] : key;
         persistentState.State.UserId = parts.Length > 1 ? parts[1] : key;
+    }
+
+    private void Authorize(CapabilityToken token, bool write)
+    {
+        var verb = write ? "write" : "read";
+        var grant = $"user:{verb}:{persistentState.State.UserId}";
+
+        if (!tokenService.Validate(token))
+        {
+            logger.LogWarning("User capability denied: invalid or expired token for grant '{Grant}' on workspace {WorkspaceId}",
+                grant, persistentState.State.WorkspaceId);
+            throw new UnauthorizedAccessException("Invalid or expired capability token");
+        }
+
+        var actorWorkspaceId = persistentState.State.WorkspaceId;
+        if (!string.IsNullOrWhiteSpace(actorWorkspaceId)
+            && !string.Equals(token.WorkspaceId, actorWorkspaceId, StringComparison.Ordinal))
+        {
+            logger.LogWarning("User capability denied: token workspace '{TokenWorkspaceId}' does not match actor workspace '{ActorWorkspaceId}'",
+                token.WorkspaceId, actorWorkspaceId);
+            throw new UnauthorizedAccessException(
+                $"Token workspace '{token.WorkspaceId}' does not match actor workspace '{actorWorkspaceId}'");
+        }
+
+        if (!token.HasGrant(grant))
+        {
+            logger.LogWarning("User capability denied: token issued to '{IssuedTo}' does not grant '{Grant}'",
+                token.IssuedTo, grant);
+            throw new UnauthorizedAccessException($"Token does not grant '{grant}'");
+        }
     }
 }

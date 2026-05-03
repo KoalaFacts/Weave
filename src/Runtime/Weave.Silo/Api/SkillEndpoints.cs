@@ -51,9 +51,9 @@ public static class SkillEndpoints
         ICapabilityTokenService tokenService,
         CancellationToken ct)
     {
-        ct.ThrowIfCancellationRequested();
+        using var source = SkillTokenFactory.MintRead(tokenService, workspaceId, ct);
         var actor = actors.GetActor<Agents.Actors.ISkillMemoryActor>(VirtualActorId.From(workspaceId));
-        var skills = await actor.GetAllSkillsAsync(SkillTokenFactory.MintRead(tokenService, workspaceId));
+        var skills = await actor.GetAllSkillsAsync(source.Token);
         return Results.Ok(skills.Select(SkillResponse.FromDocument));
     }
 
@@ -72,10 +72,11 @@ public static class SkillEndpoints
             MinSuccessRate = minSuccessRate ?? 0,
             PreferRecent = preferRecent ?? false
         };
+        using var source = SkillTokenFactory.MintRead(tokenService, workspaceId, ct);
         var query = new SearchSkillsQuery(
             WorkspaceId.From(workspaceId),
             q ?? "",
-            SkillTokenFactory.MintRead(tokenService, workspaceId),
+            source.Token,
             max ?? 5,
             options);
         var results = await dispatcher.DispatchAsync<SearchSkillsQuery, IReadOnlyList<SkillSearchResult>>(query, ct);
@@ -91,10 +92,11 @@ public static class SkillEndpoints
     {
         try
         {
+            using var source = SkillTokenFactory.MintRead(tokenService, workspaceId, ct);
             var query = new GetSkillQuery(
                 WorkspaceId.From(workspaceId),
                 SkillId.From(skillId),
-                SkillTokenFactory.MintRead(tokenService, workspaceId));
+                source.Token);
             var skill = await dispatcher.DispatchAsync<GetSkillQuery, SkillDocument>(query, ct);
             return Results.Ok(SkillResponse.FromDocument(skill));
         }
@@ -115,10 +117,11 @@ public static class SkillEndpoints
         if (errors is not null)
             return ResultExtensions.ValidationFailed(errors);
 
+        using var source = SkillTokenFactory.MintWrite(tokenService, workspaceId, ct);
         var command = new StoreSkillCommand(
             WorkspaceId.From(workspaceId),
             SkillFromRequest(request),
-            SkillTokenFactory.MintWrite(tokenService, workspaceId));
+            source.Token);
         var stored = await dispatcher.DispatchAsync<StoreSkillCommand, SkillDocument>(command, ct);
         return Results.Created(
             $"/api/workspaces/{workspaceId}/skills/{stored.SkillId}",
@@ -132,9 +135,9 @@ public static class SkillEndpoints
         ICapabilityTokenService tokenService,
         CancellationToken ct)
     {
-        ct.ThrowIfCancellationRequested();
+        using var source = SkillTokenFactory.MintWrite(tokenService, workspaceId, ct);
         var actor = actors.GetActor<Agents.Actors.ISkillMemoryActor>(VirtualActorId.From(workspaceId));
-        var archived = await actor.ArchiveSkillAsync(SkillId.From(skillId), SkillTokenFactory.MintWrite(tokenService, workspaceId));
+        var archived = await actor.ArchiveSkillAsync(SkillId.From(skillId), source.Token);
         return archived is null
             ? ResultExtensions.NotFound($"Skill '{skillId}' not found.")
             : Results.Ok(SkillResponse.FromDocument(archived));
@@ -147,9 +150,9 @@ public static class SkillEndpoints
         ICapabilityTokenService tokenService,
         CancellationToken ct)
     {
-        ct.ThrowIfCancellationRequested();
+        using var source = SkillTokenFactory.MintWrite(tokenService, workspaceId, ct);
         var actor = actors.GetActor<Agents.Actors.ISkillMemoryActor>(VirtualActorId.From(workspaceId));
-        var restored = await actor.RestoreSkillAsync(SkillId.From(skillId), SkillTokenFactory.MintWrite(tokenService, workspaceId));
+        var restored = await actor.RestoreSkillAsync(SkillId.From(skillId), source.Token);
         return restored is null
             ? ResultExtensions.NotFound($"Skill '{skillId}' not found.")
             : Results.Ok(SkillResponse.FromDocument(restored));
@@ -162,8 +165,9 @@ public static class SkillEndpoints
         ICapabilityTokenService tokenService,
         CancellationToken ct)
     {
+        using var source = SkillTokenFactory.MintWrite(tokenService, workspaceId, ct);
         var actor = actors.GetActor<Agents.Actors.ISkillMemoryActor>(VirtualActorId.From(workspaceId));
-        await actor.RemoveSkillAsync(SkillId.From(skillId), SkillTokenFactory.MintWrite(tokenService, workspaceId));
+        await actor.RemoveSkillAsync(SkillId.From(skillId), source.Token);
         return Results.NoContent();
     }
 

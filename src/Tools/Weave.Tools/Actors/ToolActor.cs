@@ -34,11 +34,7 @@ public sealed partial class ToolActor(
     public async Task<ToolHandle> ConnectAsync(ToolSpec definition, CapabilityToken token)
     {
         _identity.Ensure(definition, token);
-        if (!tokenService.Validate(token))
-            throw new UnauthorizedAccessException("Invalid or expired capability token");
-
-        if (!token.HasGrant($"tool:{_identity.ToolName}") && !token.HasGrant("tool:*"))
-            throw new UnauthorizedAccessException($"Token does not grant access to tool '{_identity.ToolName}'");
+        Authorize(token);
 
         _definition = definition;
 
@@ -48,7 +44,7 @@ public sealed partial class ToolActor(
             Phase = LifecyclePhase.ToolConnecting
         };
 
-        await lifecycleManager.RunHooksAsync(LifecyclePhase.ToolConnecting, context, CancellationToken.None);
+        await lifecycleManager.RunHooksAsync(LifecyclePhase.ToolConnecting, context, token.CancellationToken);
 
         var connector = discovery.GetConnector(definition.Type);
         _handle = await connector.ConnectAsync(definition, token);
@@ -56,7 +52,7 @@ public sealed partial class ToolActor(
         await lifecycleManager.RunHooksAsync(
             LifecyclePhase.ToolConnected,
             context with { Phase = LifecyclePhase.ToolConnected },
-            CancellationToken.None);
+            token.CancellationToken);
 
         LogToolConnected(_identity.ToolName, _identity.WorkspaceId);
         return _handle;
@@ -90,8 +86,7 @@ public sealed partial class ToolActor(
     public async Task<ToolResult> InvokeAsync(ToolInvocation invocation, CapabilityToken token)
     {
         _identity.Ensure(invocation: invocation, token: token);
-        if (!tokenService.Validate(token))
-            throw new UnauthorizedAccessException("Invalid or expired capability token");
+        Authorize(token);
 
         if (_handle is null || _definition is null)
             throw new InvalidOperationException($"Tool '{_identity.ToolName}' is not connected");
@@ -112,7 +107,7 @@ public sealed partial class ToolActor(
             WorkspaceId = WorkspaceId.From(_identity.WorkspaceId),
             Success = result.Success,
             Duration = result.Duration
-        }, CancellationToken.None);
+        }, token.CancellationToken);
 
         return result;
     }
@@ -128,10 +123,36 @@ public sealed partial class ToolActor(
 
     public Task<ToolHandle?> GetHandleAsync() => Task.FromResult(_handle);
 
+    private void Authorize(CapabilityToken token)
+    {
+        var grant = $"tool:{_identity.ToolName}";
+
+        if (!tokenService.Validate(token))
+        {
+            logger.LogWarning("Tool capability denied: invalid or expired token for grant '{Grant}' on workspace {WorkspaceId}",
+                grant, _identity.WorkspaceId);
+            throw new UnauthorizedAccessException("Invalid or expired capability token");
+        }
+
+        if (!string.Equals(token.WorkspaceId, _identity.WorkspaceId, StringComparison.Ordinal))
+        {
+            logger.LogWarning("Tool capability denied: token workspace '{TokenWorkspaceId}' does not match actor workspace '{ActorWorkspaceId}'",
+                token.WorkspaceId, _identity.WorkspaceId);
+            throw new UnauthorizedAccessException(
+                $"Token workspace '{token.WorkspaceId}' does not match actor workspace '{_identity.WorkspaceId}'");
+        }
+
+        if (!token.HasGrant(grant))
+        {
+            logger.LogWarning("Tool capability denied: token issued to '{IssuedTo}' does not grant '{Grant}'",
+                token.IssuedTo, grant);
+            throw new UnauthorizedAccessException($"Token does not grant access to tool '{_identity.ToolName}'");
+        }
+    }
+
     [LoggerMessage(Level = LogLevel.Information, Message = "Tool '{Tool}' connected in workspace '{Workspace}'")]
     private partial void LogToolConnected(string tool, string workspace);
 
     [LoggerMessage(Level = LogLevel.Information, Message = "Tool '{Tool}' disconnected from workspace '{Workspace}'")]
     private partial void LogToolDisconnected(string tool, string workspace);
-
 }

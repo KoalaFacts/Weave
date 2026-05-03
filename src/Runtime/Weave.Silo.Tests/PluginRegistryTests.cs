@@ -1,8 +1,10 @@
 using Microsoft.Extensions.Logging.Abstractions;
+using Microsoft.Extensions.Options;
+using Weave.Security.Tokens;
+using Weave.Silo.Plugins;
 using Weave.Workspaces.Models;
-using Weave.Workspaces.Plugins;
 
-namespace Weave.Workspaces.Tests;
+namespace Weave.Silo.Tests;
 
 public sealed class PluginRegistryTests
 {
@@ -29,8 +31,20 @@ public sealed class PluginRegistryTests
         ]
     };
 
+    private static readonly CapabilityTokenService TokenService = new(
+        Options.Create(new CapabilityTokenOptions { SigningKey = "test-signing-key-that-is-at-least-32-chars-long" }),
+        TimeProvider.System);
+
+    private static readonly CapabilityToken AnyPlugin = TokenService.Mint(new CapabilityTokenRequest
+    {
+        WorkspaceId = "test",
+        IssuedTo = "test",
+        Grants = ["plugin:invoke:*"],
+        Lifetime = TimeSpan.FromHours(1)
+    });
+
     private static PluginRegistry CreateRegistry(params IPluginConnector[] connectors) =>
-        new(connectors, NullLogger<PluginRegistry>.Instance);
+        new(connectors, TokenService, NullLogger<PluginRegistry>.Instance);
 
     [Fact]
     public async Task ConnectAsync_KnownType_ReturnsConnected()
@@ -42,7 +56,7 @@ public sealed class PluginRegistryTests
         {
             Type = "dapr",
             Config = new Dictionary<string, string> { ["port"] = "3500" }
-        });
+        }, AnyPlugin);
 
         status.IsConnected.ShouldBeTrue();
         status.Name.ShouldBe("my-dapr");
@@ -54,7 +68,7 @@ public sealed class PluginRegistryTests
     {
         var registry = CreateRegistry();
 
-        var status = await registry.ConnectAsync("mystery", new PluginDefinition { Type = "alien" });
+        var status = await registry.ConnectAsync("mystery", new PluginDefinition { Type = "alien" }, AnyPlugin);
 
         status.IsConnected.ShouldBeFalse();
         status.Error!.ShouldContain("alien");
@@ -77,7 +91,7 @@ public sealed class PluginRegistryTests
             }
         };
 
-        var results = await registry.ConnectAllAsync(plugins);
+        var results = await registry.ConnectAllAsync(plugins, AnyPlugin);
 
         results.Count.ShouldBe(2);
         results.ShouldAllBe(s => s.IsConnected);
@@ -89,10 +103,10 @@ public sealed class PluginRegistryTests
         var connector = new FakePluginConnector("dapr", connected: true, schema: TestSchema);
         var registry = CreateRegistry(connector);
 
-        await registry.ConnectAsync("dapr-1", new PluginDefinition { Type = "dapr" });
+        await registry.ConnectAsync("dapr-1", new PluginDefinition { Type = "dapr" }, AnyPlugin);
         registry.GetAll().Count.ShouldBe(1);
 
-        var status = await registry.DisconnectAsync("dapr-1");
+        var status = await registry.DisconnectAsync("dapr-1", AnyPlugin);
         status.IsConnected.ShouldBeFalse();
         registry.GetAll().ShouldBeEmpty();
     }
@@ -102,7 +116,7 @@ public sealed class PluginRegistryTests
     {
         var registry = CreateRegistry();
 
-        var status = await registry.DisconnectAsync("nonexistent");
+        var status = await registry.DisconnectAsync("nonexistent", AnyPlugin);
 
         status.IsConnected.ShouldBeFalse();
         status.Error!.ShouldContain("not active");
@@ -114,8 +128,8 @@ public sealed class PluginRegistryTests
         var connector = new FakePluginConnector("http", connected: true, schema: TestSchema);
         var registry = CreateRegistry(connector);
 
-        await registry.ConnectAsync("api-1", new PluginDefinition { Type = "http" });
-        await registry.ConnectAsync("api-2", new PluginDefinition { Type = "http" });
+        await registry.ConnectAsync("api-1", new PluginDefinition { Type = "http" }, AnyPlugin);
+        await registry.ConnectAsync("api-2", new PluginDefinition { Type = "http" }, AnyPlugin);
 
         registry.GetAll().Count.ShouldBe(2);
     }
@@ -130,13 +144,13 @@ public sealed class PluginRegistryTests
         {
             Type = "dapr",
             Config = new Dictionary<string, string> { ["port"] = "3500" }
-        });
+        }, AnyPlugin);
 
         await registry.ConnectAsync("my-dapr", new PluginDefinition
         {
             Type = "dapr",
             Config = new Dictionary<string, string> { ["port"] = "3501" }
-        });
+        }, AnyPlugin);
 
         registry.GetAll().Count.ShouldBe(1);
         connector.DisconnectCount.ShouldBe(1);
@@ -149,8 +163,8 @@ public sealed class PluginRegistryTests
         var webhook = new FakePluginConnector("webhook", connected: true, schema: TestSchema);
         var registry = CreateRegistry(dapr, webhook);
 
-        await registry.ConnectAsync("events", new PluginDefinition { Type = "dapr" });
-        await registry.ConnectAsync("events", new PluginDefinition { Type = "webhook" });
+        await registry.ConnectAsync("events", new PluginDefinition { Type = "dapr" }, AnyPlugin);
+        await registry.ConnectAsync("events", new PluginDefinition { Type = "webhook" }, AnyPlugin);
 
         registry.GetAll().Count.ShouldBe(1);
         registry.GetAll()[0].Type.ShouldBe("webhook");
@@ -163,7 +177,7 @@ public sealed class PluginRegistryTests
         var connector = new ThrowingPluginConnector("dapr");
         var registry = CreateRegistry(connector);
 
-        var status = await registry.ConnectAsync("bad", new PluginDefinition { Type = "dapr" });
+        var status = await registry.ConnectAsync("bad", new PluginDefinition { Type = "dapr" }, AnyPlugin);
 
         status.IsConnected.ShouldBeFalse();
         status.Error!.ShouldContain("boom");
@@ -182,7 +196,7 @@ public sealed class PluginRegistryTests
             ["bad"] = new PluginDefinition { Type = "vault" },
         };
 
-        var results = await registry.ConnectAllAsync(plugins);
+        var results = await registry.ConnectAllAsync(plugins, AnyPlugin);
 
         results.Count.ShouldBe(2);
         results[0].IsConnected.ShouldBeTrue();
@@ -201,11 +215,11 @@ public sealed class PluginRegistryTests
         var registry = CreateRegistry(working, failing);
 
         // Connect working plugin
-        var first = await registry.ConnectAsync("events", new PluginDefinition { Type = "dapr" });
+        var first = await registry.ConnectAsync("events", new PluginDefinition { Type = "dapr" }, AnyPlugin);
         first.IsConnected.ShouldBeTrue();
 
         // Try to hot-swap with a connector that reports IsConnected = false
-        var second = await registry.ConnectAsync("events", new PluginDefinition { Type = "webhook" });
+        var second = await registry.ConnectAsync("events", new PluginDefinition { Type = "webhook" }, AnyPlugin);
         second.IsConnected.ShouldBeFalse();
 
         // Old plugin should NOT have been disconnected (make-before-break)
@@ -219,9 +233,9 @@ public sealed class PluginRegistryTests
         var throwing = new ThrowingPluginConnector("webhook");
         var registry = CreateRegistry(working, throwing);
 
-        await registry.ConnectAsync("events", new PluginDefinition { Type = "dapr" });
+        await registry.ConnectAsync("events", new PluginDefinition { Type = "dapr" }, AnyPlugin);
 
-        var result = await registry.ConnectAsync("events", new PluginDefinition { Type = "webhook" });
+        var result = await registry.ConnectAsync("events", new PluginDefinition { Type = "webhook" }, AnyPlugin);
         result.IsConnected.ShouldBeFalse();
 
         // Old plugin still active — never disconnected, still in registry
@@ -241,7 +255,7 @@ public sealed class PluginRegistryTests
         var registry = CreateRegistry(connector);
 
         // Missing required "address"
-        var status = await registry.ConnectAsync("secrets", new PluginDefinition { Type = "vault" });
+        var status = await registry.ConnectAsync("secrets", new PluginDefinition { Type = "vault" }, AnyPlugin);
 
         status.IsConnected.ShouldBeFalse();
         status.Error!.ShouldContain("address");
@@ -262,7 +276,7 @@ public sealed class PluginRegistryTests
         {
             Type = "vault",
             Config = new Dictionary<string, string> { ["address"] = "http://vault:8200" }
-        });
+        }, AnyPlugin);
 
         status.IsConnected.ShouldBeTrue();
         status.Info["address"].ShouldBe("http://vault:8200");
@@ -472,6 +486,73 @@ public sealed class PluginRegistryTests
 
         public PluginStatus GetStatus(string name) =>
             new() { Name = name, Type = type, IsConnected = connected };
+    }
+
+    // --- Capability check tests ---
+
+    [Fact]
+    public async Task ConnectAsync_WithoutPluginInvokeGrant_Throws()
+    {
+        var registry = CreateRegistry(new FakePluginConnector("dapr", connected: true, schema: TestSchema));
+        var wrongGrant = TokenService.Mint(new CapabilityTokenRequest
+        {
+            WorkspaceId = "test",
+            IssuedTo = "test",
+            Grants = ["tool:*"],
+            Lifetime = TimeSpan.FromHours(1)
+        });
+
+        await Should.ThrowAsync<UnauthorizedAccessException>(() =>
+            registry.ConnectAsync("my-dapr", new PluginDefinition { Type = "dapr" }, wrongGrant));
+    }
+
+    [Fact]
+    public async Task ConnectAsync_WithExpiredToken_Throws()
+    {
+        var registry = CreateRegistry(new FakePluginConnector("dapr", connected: true, schema: TestSchema));
+        var expired = TokenService.Mint(new CapabilityTokenRequest
+        {
+            WorkspaceId = "test",
+            IssuedTo = "test",
+            Grants = ["plugin:invoke:my-dapr"],
+            Lifetime = TimeSpan.FromMilliseconds(-1)
+        });
+
+        await Should.ThrowAsync<UnauthorizedAccessException>(() =>
+            registry.ConnectAsync("my-dapr", new PluginDefinition { Type = "dapr" }, expired));
+    }
+
+    [Fact]
+    public async Task ConnectAsync_WithSpecificPluginGrant_OnlyMatchesThatPlugin()
+    {
+        var registry = CreateRegistry(new FakePluginConnector("dapr", connected: true, schema: TestSchema));
+        var daprOnly = TokenService.Mint(new CapabilityTokenRequest
+        {
+            WorkspaceId = "test",
+            IssuedTo = "test",
+            Grants = ["plugin:invoke:my-dapr"],
+            Lifetime = TimeSpan.FromHours(1)
+        });
+
+        await Should.ThrowAsync<UnauthorizedAccessException>(() =>
+            registry.ConnectAsync("not-my-dapr", new PluginDefinition { Type = "dapr" }, daprOnly));
+    }
+
+    [Fact]
+    public async Task DisconnectAsync_WithoutPluginInvokeGrant_Throws()
+    {
+        var registry = CreateRegistry(new FakePluginConnector("dapr", connected: true, schema: TestSchema));
+        await registry.ConnectAsync("my-dapr", new PluginDefinition { Type = "dapr" }, AnyPlugin);
+        var wrongGrant = TokenService.Mint(new CapabilityTokenRequest
+        {
+            WorkspaceId = "test",
+            IssuedTo = "test",
+            Grants = ["tool:*"],
+            Lifetime = TimeSpan.FromHours(1)
+        });
+
+        await Should.ThrowAsync<UnauthorizedAccessException>(() =>
+            registry.DisconnectAsync("my-dapr", wrongGrant));
     }
 
     private sealed class ThrowingPluginConnector(string type) : IPluginConnector

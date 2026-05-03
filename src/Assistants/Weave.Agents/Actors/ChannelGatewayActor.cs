@@ -1,6 +1,7 @@
 using Microsoft.Extensions.Logging;
 using Weave.Agents.Events;
 using Weave.Agents.Models;
+using Weave.Security.Tokens;
 using Weave.Shared.Events;
 using Weave.Shared.Ids;
 
@@ -9,9 +10,13 @@ namespace Weave.Agents.Actors;
 public sealed class ChannelGatewayActor(
     IVirtualActorProvider actors,
     IEventBus eventBus,
+    ICapabilityTokenService tokenService,
     ILogger<ChannelGatewayActor> logger,
     IActorState<ChannelGatewayState> persistentState) : IChannelGatewayActor
 {
+    private const string ChannelReceivePrefix = "channel:receive:";
+    private const string ChannelSendPrefix = "channel:send:";
+
     private string? _key;
 
     public async Task OnActivatedAsync(string? key, CancellationToken cancellationToken)
@@ -62,9 +67,12 @@ public sealed class ChannelGatewayActor(
             persistentState.State.WorkspaceId);
     }
 
-    public async Task<OutboundMessage> RouteInboundAsync(InboundMessage message)
+    public async Task<OutboundMessage> RouteInboundAsync(InboundMessage message, CapabilityToken token)
     {
         var channelKey = message.ChannelId.ToString();
+
+        Authorize(token, ChannelReceivePrefix + channelKey);
+        Authorize(token, ChannelSendPrefix + channelKey);
 
         if (!persistentState.State.Channels.TryGetValue(channelKey, out var channel))
             throw new InvalidOperationException($"Channel {message.ChannelId} is not registered.");
@@ -84,7 +92,7 @@ public sealed class ChannelGatewayActor(
             ChannelId = message.ChannelId,
             SenderId = message.SenderId,
             AgentName = agentName
-        }, CancellationToken.None);
+        }, token.CancellationToken);
 
         var agentActor = actors.GetActor<IAgentActor>(VirtualActorId.From($"{persistentState.State.WorkspaceId}/{agentName}"));
         var response = await agentActor.SendAsync(new AgentMessage
@@ -108,7 +116,7 @@ public sealed class ChannelGatewayActor(
             WorkspaceId = workspaceId,
             ChannelId = message.ChannelId,
             AgentName = agentName
-        }, CancellationToken.None);
+        }, token.CancellationToken);
 
         logger.LogInformation(
             "Routed message from {SenderId} on channel {ChannelId} to agent {AgentName}",
@@ -161,5 +169,32 @@ public sealed class ChannelGatewayActor(
         var key = _key;
         if (!string.IsNullOrWhiteSpace(key))
             persistentState.State.WorkspaceId = key;
+    }
+
+    private void Authorize(CapabilityToken token, string grant)
+    {
+        if (!tokenService.Validate(token))
+        {
+            logger.LogWarning("Channel capability denied: invalid or expired token for grant '{Grant}' on workspace {WorkspaceId}",
+                grant, persistentState.State.WorkspaceId);
+            throw new UnauthorizedAccessException("Invalid or expired capability token");
+        }
+
+        var actorWorkspaceId = persistentState.State.WorkspaceId;
+        if (!string.IsNullOrWhiteSpace(actorWorkspaceId)
+            && !string.Equals(token.WorkspaceId, actorWorkspaceId, StringComparison.Ordinal))
+        {
+            logger.LogWarning("Channel capability denied: token workspace '{TokenWorkspaceId}' does not match actor workspace '{ActorWorkspaceId}'",
+                token.WorkspaceId, actorWorkspaceId);
+            throw new UnauthorizedAccessException(
+                $"Token workspace '{token.WorkspaceId}' does not match actor workspace '{actorWorkspaceId}'");
+        }
+
+        if (!token.HasGrant(grant))
+        {
+            logger.LogWarning("Channel capability denied: token issued to '{IssuedTo}' does not grant '{Grant}'",
+                token.IssuedTo, grant);
+            throw new UnauthorizedAccessException($"Token does not grant '{grant}'");
+        }
     }
 }
