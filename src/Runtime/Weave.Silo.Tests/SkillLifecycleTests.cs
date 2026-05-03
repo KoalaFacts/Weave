@@ -93,6 +93,46 @@ public sealed class SkillLifecycleTests : IClassFixture<SiloFactory>
     }
 
     [Fact]
+    public async Task Store_MissingDescription_Returns400()
+    {
+        using var client = _factory.CreateClient();
+        var ws = NewWorkspaceId();
+
+        using var response = await client.PostAsJsonAsync(
+            $"/api/workspaces/{ws}/skills",
+            new
+            {
+                Title = "t",
+                Description = "",
+                Steps = new[] { new { Action = "a" } },
+                CreatedByAgent = "agent-1"
+            },
+            TestContext.Current.CancellationToken);
+
+        response.StatusCode.ShouldBe(HttpStatusCode.BadRequest);
+    }
+
+    [Fact]
+    public async Task Store_MissingCreatedByAgent_Returns400()
+    {
+        using var client = _factory.CreateClient();
+        var ws = NewWorkspaceId();
+
+        using var response = await client.PostAsJsonAsync(
+            $"/api/workspaces/{ws}/skills",
+            new
+            {
+                Title = "t",
+                Description = "d",
+                Steps = new[] { new { Action = "a" } },
+                CreatedByAgent = ""
+            },
+            TestContext.Current.CancellationToken);
+
+        response.StatusCode.ShouldBe(HttpStatusCode.BadRequest);
+    }
+
+    [Fact]
     public async Task Get_UnknownSkill_Returns404()
     {
         using var client = _factory.CreateClient();

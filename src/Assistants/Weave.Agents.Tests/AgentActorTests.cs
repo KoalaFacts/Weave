@@ -647,6 +647,33 @@ public sealed class AgentActorTests
     }
 
     [Fact]
+    public async Task EnsureIdentity_WithEmptyAgentId_AppliesIdentityFromWorkspace()
+    {
+        // No AgentId, no key, no WorkspaceId — exercises EnsureIdentity's fallthrough
+        // to ApplyIdentity, which derives AgentId from workspaceId/"agent" defaults.
+        var state = new AgentState();
+        var persistentState = Substitute.For<IActorState<AgentState>>();
+        persistentState.State.Returns(state);
+        persistentState.ReadStateAsync(Arg.Any<CancellationToken>()).Returns(Task.CompletedTask);
+        persistentState.WriteStateAsync(Arg.Any<CancellationToken>()).Returns(Task.CompletedTask);
+
+        var actors = Substitute.For<IVirtualActorProvider>();
+        actors.GetActor<ISkillMemoryActor>(Arg.Any<VirtualActorId>()).Returns(Substitute.For<ISkillMemoryActor>());
+        var chatPipeline = Substitute.For<IAgentChatPipeline>();
+        var lifecycle = Substitute.For<ILifecycleManager>();
+        var eventBus = Substitute.For<IEventBus>();
+        var logger = Substitute.For<ILogger<AgentActor>>();
+
+        var actor = new AgentActor(actors, chatPipeline, lifecycle, eventBus, Substitute.For<IAgentVerificationDispatcher>(), CreateTokenService(), TimeProvider.System, logger, persistentState);
+
+        var result = await actor.ActivateAgentAsync(WorkspaceId.From("ws-3"), CreateDefinition());
+
+        result.WorkspaceId.ShouldBe(WorkspaceId.From("ws-3"));
+        result.AgentName.ShouldNotBeNullOrWhiteSpace();
+        result.AgentId.ShouldNotBeNullOrWhiteSpace();
+    }
+
+    [Fact]
     public async Task ReviewTaskAsync_Accepted_WithSingleProofItem_DoesNotExtractSkill()
     {
         var (actor, _, _, skillMemory) = CreateActor();

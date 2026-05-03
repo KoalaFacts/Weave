@@ -40,7 +40,7 @@ public sealed class SkillMemoryActorTests
             WorkspaceId = TestWorkspaceId.ToString(),
             IssuedTo = "test",
             Grants = [.. grants],
-            Lifetime = TimeSpan.FromMinutes(5)
+            Lifetime = TimeSpan.FromHours(1)
         });
 
     private static (SkillMemoryActor Actor, IEventBus EventBus, CapabilityToken Token) CreateActor(TimeProvider? timeProvider = null)
@@ -436,6 +436,47 @@ public sealed class SkillMemoryActorTests
         all.Count.ShouldBe(2);
         all.ShouldContain(s => s.SkillId == skill1.SkillId);
         all.ShouldContain(s => s.SkillId == skill2.SkillId);
+    }
+
+    [Fact]
+    public async Task GetSuggestedSkillsAsync_OrdersByMostRecentlySuggestedFirst()
+    {
+        var now = new DateTimeOffset(2026, 4, 30, 12, 0, 0, TimeSpan.Zero);
+        var fakeTime = new FakeTimeProvider(now);
+        var (actor, _, token) = CreateActor(fakeTime);
+
+        await actor.SuggestSkillAsync(CreateSkill(id: "older", title: "Older suggestion"), token, "task-older");
+        fakeTime.Advance(TimeSpan.FromMinutes(5));
+        await actor.SuggestSkillAsync(CreateSkill(id: "newer", title: "Newer suggestion"), token, "task-newer");
+
+        var suggestions = await actor.GetSuggestedSkillsAsync(token);
+
+        suggestions.Count.ShouldBe(2);
+        suggestions[0].Skill.SkillId.ToString().ShouldBe("newer");
+        suggestions[1].Skill.SkillId.ToString().ShouldBe("older");
+    }
+
+    [Fact]
+    public async Task RecordUsageAsync_OnMissingSkill_DoesNotThrow()
+    {
+        var (actor, _, token) = CreateActor();
+
+        // The skill was never stored — should silently no-op.
+        await actor.RecordUsageAsync(SkillId.From("never-stored"), success: true, token);
+
+        var found = await actor.GetSkillAsync(SkillId.From("never-stored"), token);
+        found.ShouldBeNull();
+    }
+
+    [Fact]
+    public async Task SearchAsync_WithEmptyQueryAfterTokenization_ReturnsEmpty()
+    {
+        var (actor, _, token) = CreateActor();
+        await actor.StoreSkillAsync(CreateSkill(id: "any", title: "Anything"), token);
+
+        var results = await actor.SearchAsync("   ", token);
+
+        results.ShouldBeEmpty();
     }
 
     // --- Capability check tests ---

@@ -16,9 +16,7 @@ internal sealed class AgentSkillSuggester(
         if (task?.Proof is null || task.Proof.Items.Count < 2)
             return;
 
-        var skill = AgentSkillExtractor.ExtractFromTask(task, state);
-        if (skill is null)
-            return;
+        var skill = AgentSkillExtractor.ExtractFromTask(task, state)!;
 
         try
         {
