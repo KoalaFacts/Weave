@@ -80,6 +80,12 @@ The law of the repo. Every rule here is enforceable in review. Rules exist to pr
 
 **Use `JsonSerializer.SerializeToUtf8Bytes` + `ByteArrayContent`, not `PostAsJsonAsync` with reflection overloads.** This keeps adapters AOT- and trimming-safe; reflection overloads break under both.
 
+**Source generation over reflection — everywhere it's available.** STJ source-gen for serialization, `[GeneratedRegex]` for regex, `[LoggerMessage]` for structured logs, the repo's own `BrandedIdGenerator` for branded IDs and `CqrsRegistrationGenerator` for handler registration. The reflection equivalents (`JsonSerializer.Serialize<T>(value)`, `new Regex(pattern)`, `logger.LogInformation(...)`, `assembly.GetTypes().Where(...)`) all break under NativeAOT trimming and are slower under JIT. If a feature has a source generator, use it; if a hot path doesn't have one yet, either add one or annotate the call with `[RequiresUnreferencedCode]` so AOT consumers see the warning.
+
+**Anonymous types in `JsonSerializer.Serialize` calls are reflection-only.** They cannot be added to a `JsonSerializerContext`, so every site using `JsonSerializer.SerializeToUtf8Bytes(new { text = ... })` falls back to runtime reflection. Today's offenders: `Weave.Silo/Channels/{Teams,Discord}ChannelAdapter.cs` (single-field payloads). Fix shape: a typed `record TeamsPayload(string Text)` plus a `[JsonSerializable(typeof(TeamsPayload))]` entry on `SiloApiJsonContext` (or a per-adapter context).
+
+**Reflection-based DI registration is dead code.** `Weave.Shared/Cqrs/ServiceCollectionExtensions.cs::AddCqrs` carries `[RequiresUnreferencedCode]` and scans assemblies via `GetTypes()` — it has zero callers; production wires CQRS through the source-generated `AddGeneratedCqrsHandlers()`. Delete the reflection path per the pre-1.0 no-back-compat rule.
+
 ### Namespace hygiene and project layout
 
 **One reason to exist per project.** If a project wraps adapters for a single consumer, it belongs *in* that consumer or as a folder under it. `Weave.Shared.Orleans` as a standalone Foundation project was wrong; its one consumer was the Silo, and it now lives at `src/Runtime/Weave.Silo/Serialization/`.

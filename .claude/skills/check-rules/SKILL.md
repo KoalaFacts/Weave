@@ -219,7 +219,32 @@ For each finding:
 - Narrating comments: NOTE — delete; rename the symbol if needed.
 - Task/PR/date references: NOTE — that context belongs in the PR description, not the code. Exception: external bug links (`// Workaround for dotnet/runtime#12345`) are durable.
 
-### 12. Test discipline (NOTE) — see also categories 8, 9
+### 12. Source generation over reflection (BLOCK on new reflection paths)
+
+```bash
+# Anonymous-type JSON serialization (cannot be added to a JsonSerializerContext)
+grep -rnE "JsonSerializer\.(Serialize|SerializeToUtf8Bytes)\(\s*new\s*\{" src --include="*.cs" \
+  | grep -v "/bin/\|/obj/" | grep -vE "Test\.cs|Tests\.cs"
+
+# JsonSerializer.Serialize<T>(value) without a passed JsonTypeInfo / context
+grep -rnE "JsonSerializer\.(Serialize|Deserialize)<\w+>\([^)]*\)" src --include="*.cs" \
+  | grep -v "/bin/\|/obj/" | grep -vE "JsonContext|JsonTypeInfo|Test\.cs|Tests\.cs"
+
+# Raw `new Regex("...")` in production
+grep -rnE "new Regex\(" src --include="*.cs" | grep -v "/bin/" | grep -vE "Test\.cs|Tests\.cs"
+
+# Reflection-based DI scanning
+grep -rnE "assembly\.GetTypes\(\)|Assembly\.GetExecutingAssembly\(\)\.GetTypes" src --include="*.cs" \
+  | grep -v "/bin/" | grep -vE "Test\.cs|Tests\.cs"
+
+# RequiresUnreferencedCode in production code (has-to-go list)
+grep -rn "\[RequiresUnreferencedCode" src --include="*.cs" \
+  | grep -v "/bin/" | grep -vE "Test\.cs|Tests\.cs"
+```
+
+If a feature has a source generator (STJ, `[GeneratedRegex]`, `[LoggerMessage]`, the repo's `BrandedIdGenerator` / `CqrsRegistrationGenerator`), use it. Anonymous types in `JsonSerializer.Serialize` are the most common smell — they bypass any registered context. Fix shape: define a `record FooPayload(...)` and add `[JsonSerializable(typeof(FooPayload))]` to the relevant context. Reflection-based DI registration is dead code in this repo (production uses source-gen) — delete on sight per the no-back-compat rule.
+
+### 13. Test discipline (NOTE) — see also categories 8, 9
 
 Quick scans for known test smells:
 
@@ -235,7 +260,7 @@ grep -rn "Environment\.SetEnvironmentVariable" src --include="*Test*.cs" | grep 
 # For each: verify there's a finally block that resets it.
 ```
 
-### 13. Build and test gate (BLOCK)
+### 14. Build and test gate (BLOCK)
 
 ```bash
 dotnet build Weave.slnx 2>&1 | tail -5      # 0 warnings, 0 errors
