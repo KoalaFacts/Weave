@@ -18,7 +18,7 @@ The capability vocabulary is 6 verbs, all enforced through one shared authorizer
 | `plugin:invoke:<plugin>` | yes | `CapabilityAuthorizer` from `src/Runtime/Weave.Silo/Plugins/PluginRegistry.cs` |
 | `marketplace:install` | not implemented — see Next work | — |
 
-Tests: 1848 passed.
+Tests: 1857 total — 1848 passed, 9 skipped when Docker is unavailable. The 9 cover `PostgresCapabilityAuditStore` against a Testcontainers-managed Postgres and self-skip with the captured reason on Docker-less hosts.
 
 ### How a verb is wired today
 
@@ -57,9 +57,7 @@ Acceptance bar from the strategy doc's *Measurement* section is met:
 
 **Don't pursue `marketplace:install` yet** — `IMarketplaceActor.IncrementInstallCountAsync` is a counter, not an install path. Gating an action that doesn't exist is empty ceremony. Wait until someone wires real marketplace-to-workspace installation, then gate it through the same authorizer.
 
-Natural next moves, in order of leverage:
-
-- **Container-backed Postgres integration test.** Today's coverage of `PostgresCapabilityAuditStore` stops at config validation — the SQL is exercised only at deployment. Adding a Testcontainers fixture that boots a real Postgres lets the same test matrix the SQLite suite uses run against the Postgres backend, catching SQL-dialect drift (e.g. the SERIAL/AUTOINCREMENT column rename, the OFFSET-based trim) before it hits production. New test dependency, but isolated to the audit suite.
+No durably outstanding follow-ups in this stream — the capability vocabulary, audit pipeline, and storage backends all line up. Future work would be new vocabulary (e.g. when marketplace-to-workspace install lands, gate `marketplace:install` through the same authorizer) or operational hardening orthogonal to the audit chain.
 
 ## Cross-cutting follow-ups
 
@@ -87,7 +85,8 @@ For the next vocabulary entry (or any follow-up that touches the audit pipeline)
 
 ## History
 
-- **2026-05-03** (`claude/implement-next-task-vSX6x`) — Postgres-backed audit store: `PostgresCapabilityAuditStore` selected via `CapabilityAudit:Backend = "postgresql"` (or `"postgres"`); `ConnectionString` required; pooled `NpgsqlConnection` per operation; same trim-on-insert FIFO bound. Targets multi-silo deployments where every silo writes into one shared `capability_audit` table. SQL is exercised only at deployment — config-validation unit tests cover the bootstrap surface; a Testcontainers integration is the next follow-up. Tests 1845 → 1848
+- **2026-05-03** (`claude/implement-next-task-vSX6x`) — Testcontainers integration coverage for `PostgresCapabilityAuditStore`: `PostgresContainerFixture` boots a real `postgres:16-alpine` per test class; mirrors the full SQLite test matrix against the Postgres backend (chronological order, FIFO eviction, `GetRecent` with limit, all-fields preservation, durability across store instances). Self-skips with the captured Docker error when the daemon isn't reachable, so Docker-less local boxes and restricted CI runners see Pass + Skip rather than Fail. Tests 1848 → 1857 (1848 + 9 skip-on-no-docker)
+- **2026-05-03** (`claude/implement-next-task-vSX6x`) — Postgres-backed audit store: `PostgresCapabilityAuditStore` selected via `CapabilityAudit:Backend = "postgresql"` (or `"postgres"`); `ConnectionString` required; pooled `NpgsqlConnection` per operation; same trim-on-insert FIFO bound. Targets multi-silo deployments where every silo writes into one shared `capability_audit` table. Config-validation unit tests cover the bootstrap surface. Tests 1845 → 1848
 - **2026-05-03** (`claude/implement-next-task-vSX6x`) — durable audit store: `SqliteCapabilityAuditStore` selected via `CapabilityAudit:Backend` (`"memory"` default, `"sqlite"` opt-in); auto-applies schema, FIFO trim-on-insert preserves the existing `Capacity` bound, default file `~/.weave/audit.db`. Selector wired in `SiloServiceRegistrar.RegisterCapabilityAuditStore()`. Tests 1835 → 1845
 - **2026-05-03** (`claude/implement-next-task-vSX6x`) — capability audit dashboard view: `/audit` (recent rows) and `/audit/{tokenId}` (per-token replay) Blazor pages, fed by new `WeaveApiClient.GetRecentCapabilityAuditAsync` / `GetCapabilityAuditByTokenAsync` over the existing `/api/audit/capability` endpoints. Token cells deep-link to per-token replay. No backend changes; tests still 1835
 - **2026-05-03** (`claude/implement-next-task-vSX6x`) — manifest-side wildcard matching: added static `CapabilityToken.HasGrant(IEnumerable<string>, string)`; replaced the four `state.Definition.Capabilities.Contains(grant)` literal checks (`AgentChatPipeline.EnrichWithUserContextAsync`, `SkillMemoryPromptEnricher.EnrichAsync` / `RecordSuccessfulUsageAsync`, `AgentSkillSuggester.SuggestFromTaskAsync`) with the segment-wise wildcard match. A manifest declaring `skill:*` now grants `skill:read`/`skill:write` for the manifest gate; tests 1827 → 1835
