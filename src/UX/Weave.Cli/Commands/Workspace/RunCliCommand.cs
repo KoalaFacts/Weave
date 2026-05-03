@@ -97,7 +97,7 @@ internal sealed class RunCliCommand : ICliCommand<RunOptions>
             AnsiConsole.WriteLine();
             CliTheme.WriteInfo("Shutting down...");
         }
-        catch (Exception ex)
+        catch (Exception ex) when (ex is HttpRequestException or TaskCanceledException or System.Net.Sockets.SocketException or System.Text.Json.JsonException or IOException or UnauthorizedAccessException or InvalidOperationException)
         {
             CliTheme.WriteError($"Failed to start workspace: {ex.Message}");
             SiloProcessService.TryKill(siloProcess);

@@ -35,7 +35,7 @@ internal static class SiloProcessService
             var response = await http.GetAsync($"http://localhost:{port}/health", ct);
             return response.IsSuccessStatusCode;
         }
-        catch
+        catch (Exception ex) when (ex is HttpRequestException or TaskCanceledException or System.Net.Sockets.SocketException)
         {
             return false;
         }
@@ -82,12 +82,18 @@ internal static class SiloProcessService
     {
         try
         { Directory.CreateDirectory(Path.GetDirectoryName(logPath)!); }
-        catch { }
+        catch (Exception ex) when (ex is IOException or UnauthorizedAccessException)
+        {
+            Console.Error.WriteLine($"(silo log directory unavailable: {ex.Message})");
+        }
 
         StreamWriter? writer = null;
         try
         { writer = new StreamWriter(logPath, append: true) { AutoFlush = true }; }
-        catch { }
+        catch (Exception ex) when (ex is IOException or UnauthorizedAccessException)
+        {
+            Console.Error.WriteLine($"(silo log file unavailable: {ex.Message})");
+        }
 
         var sink = writer;
         var gate = new object();
@@ -100,7 +106,11 @@ internal static class SiloProcessService
             {
                 try
                 { sink.WriteLine($"{DateTime.Now:HH:mm:ss} {prefix} {line}"); }
-                catch { }
+                catch (Exception ex) when (ex is IOException or ObjectDisposedException)
+                {
+                    // Log sink is dead — continue draining the pipe so
+                    // the child process doesn't block on a full buffer.
+                }
             }
         }
 

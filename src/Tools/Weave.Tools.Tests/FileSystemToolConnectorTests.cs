@@ -1415,7 +1415,7 @@ public sealed class FileSystemToolConnectorTests : IDisposable
         {
             try
             { Directory.Delete(testDir, recursive: true); }
-            catch { /* best effort */ }
+            catch (Exception ex) when (ex is IOException or UnauthorizedAccessException) { /* best effort */ }
         }
     }
 

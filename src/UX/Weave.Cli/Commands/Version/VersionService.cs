@@ -47,7 +47,7 @@ internal static class VersionService
             var json = File.ReadAllText(cacheFilePath);
             return JsonSerializer.Deserialize(json, VersionJsonContext.Default.UpdateCache);
         }
-        catch
+        catch (Exception ex) when (ex is IOException or UnauthorizedAccessException or JsonException)
         {
             return null;
         }
@@ -81,7 +81,7 @@ internal static class VersionService
                 if (latest is not null)
                     SaveCache(_cachePath, new UpdateCache { LatestVersion = latest, CheckedAt = DateTimeOffset.UtcNow });
             }
-            catch (Exception ex)
+            catch (Exception ex) when (ex is HttpRequestException or TaskCanceledException or System.Net.Sockets.SocketException or System.Text.Json.JsonException or IOException)
             {
                 System.Diagnostics.Trace.TraceWarning($"Weave update check failed: {ex.Message}");
             }
@@ -121,7 +121,7 @@ internal static class VersionService
             var newer = IsNewer(latest, current);
             return new UpdateCheckResult(current, latest, DateTimeOffset.UtcNow, newer, null);
         }
-        catch (Exception ex)
+        catch (Exception ex) when (ex is HttpRequestException or TaskCanceledException or System.Net.Sockets.SocketException or System.Text.Json.JsonException or IOException)
         {
             return new UpdateCheckResult(current, null, DateTimeOffset.UtcNow, false, ex.Message);
         }
@@ -141,7 +141,7 @@ internal static class VersionService
             var json = JsonSerializer.Serialize(cache, VersionJsonContext.Default.UpdateCache);
             File.WriteAllText(cacheFilePath, json);
         }
-        catch
+        catch (Exception ex) when (ex is IOException or UnauthorizedAccessException)
         {
             // best-effort cache writes must not break CLI startup
         }

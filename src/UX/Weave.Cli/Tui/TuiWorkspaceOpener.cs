@@ -80,7 +80,7 @@ internal sealed class TuiWorkspaceOpener
             var json = await File.ReadAllTextAsync(session.ManifestPath, ct);
             manifest = _parser.Parse(json);
         }
-        catch (Exception ex)
+        catch (Exception ex) when (ex is IOException or UnauthorizedAccessException or System.Text.Json.JsonException or FormatException)
         {
             CliTheme.WriteError($"Failed to parse manifest: {ex.Message}");
             return;

@@ -49,7 +49,7 @@ internal sealed class TuiChatSession
                     reply = await client.SendAgentMessageAsync(
                         session.WorkspaceId!, session.AgentName, message, ct);
                 }
-                catch (Exception ex)
+                catch (Exception ex) when (ex is HttpRequestException or TaskCanceledException or System.Net.Sockets.SocketException or System.Text.Json.JsonException or IOException)
                 {
                     error = ex;
                 }

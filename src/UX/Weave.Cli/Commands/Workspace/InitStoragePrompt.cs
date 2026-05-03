@@ -156,7 +156,7 @@ internal static class InitStoragePrompt
         {
             resolvedConn = CliConfigStore.ResolveConnectionString(connectionString);
         }
-        catch (Exception ex)
+        catch (Exception ex) when (ex is FormatException or ArgumentException or InvalidOperationException or IOException)
         {
             CliTheme.WriteWarning($"Could not resolve connection string: {ex.Message}");
         }

@@ -28,7 +28,7 @@ internal static class TuiLiveStatusView
             AnsiConsole.Write(TuiLiveStatusRenderer.Build(manifestPath, manifest, workspace, agents, tools));
             return true;
         }
-        catch (Exception ex)
+        catch (Exception ex) when (ex is HttpRequestException or TaskCanceledException or System.Net.Sockets.SocketException or System.Text.Json.JsonException or IOException)
         {
             CliTheme.WriteWarning($"Live status unavailable: {ex.Message}. Showing manifest instead.");
             return false;

@@ -218,7 +218,7 @@ public sealed class AgentActorBranchTests
     }
 
     [Fact]
-    public async Task ReviewTaskAsync_AcceptedAndSkillSuggestionThrows_LogsWarningAndDoesNotPropagate()
+    public async Task ReviewTaskAsync_AcceptedAndSkillSuggestionThrows_PropagatesToCaller()
     {
         var fx = new Fixture();
         var skillActor = Substitute.For<ISkillMemoryActor>();
@@ -237,7 +237,9 @@ public sealed class AgentActorBranchTests
             ]
         });
 
-        // Should not throw — skill extraction failures are logged, not propagated.
-        await fx.Actor.ReviewTaskAsync(task.TaskId, accepted: true);
+        // Best-practice: inner methods don't catch — the failure propagates to the
+        // actor-call boundary so the caller can decide what to do with it.
+        await Should.ThrowAsync<InvalidOperationException>(
+            () => fx.Actor.ReviewTaskAsync(task.TaskId, accepted: true));
     }
 }

@@ -141,9 +141,10 @@ public sealed partial class McpToolConnector(ILogger<McpToolConnector> logger) :
                 Duration = sw.Elapsed
             };
         }
-        catch (Exception ex)
+        catch (Exception ex) when (ex is IOException or InvalidOperationException or JsonException or ObjectDisposedException)
         {
             sw.Stop();
+            LogMcpToolInvocationFailed(ex, handle.ToolName);
             return new ToolResult
             {
                 Success = false,
@@ -178,5 +179,8 @@ public sealed partial class McpToolConnector(ILogger<McpToolConnector> logger) :
 
     [LoggerMessage(Level = LogLevel.Information, Message = "MCP tool '{Tool}' disconnected")]
     private partial void LogMcpToolDisconnected(string tool);
+
+    [LoggerMessage(Level = LogLevel.Warning, Message = "MCP tool '{Tool}' invocation failed")]
+    private partial void LogMcpToolInvocationFailed(Exception ex, string tool);
 }
 

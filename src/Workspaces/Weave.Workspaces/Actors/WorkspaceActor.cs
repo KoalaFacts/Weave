@@ -84,7 +84,7 @@ public sealed partial class WorkspaceActor(
 
             LogWorkspaceStarted(persistentState.State.WorkspaceId);
         }
-        catch (Exception ex)
+        catch (Exception ex) when (ex is InvalidOperationException or TimeoutException or IOException or HttpRequestException or System.ComponentModel.Win32Exception)
         {
             persistentState.State.Status = WorkspaceStatus.Error;
             persistentState.State.ErrorMessage = ex.Message;
@@ -135,7 +135,7 @@ public sealed partial class WorkspaceActor(
 
             LogWorkspaceStopped(persistentState.State.WorkspaceId);
         }
-        catch (Exception ex)
+        catch (Exception ex) when (ex is InvalidOperationException or TimeoutException or IOException or HttpRequestException or System.ComponentModel.Win32Exception)
         {
             persistentState.State.Status = WorkspaceStatus.Error;
             persistentState.State.ErrorMessage = ex.Message;

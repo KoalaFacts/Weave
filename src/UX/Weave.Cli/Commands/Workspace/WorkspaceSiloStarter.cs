@@ -73,7 +73,7 @@ internal static class WorkspaceSiloStarter
             logWriter.WriteLine($"    cwd: {Environment.CurrentDirectory}");
             logWriter.WriteLine($"    args: {string.Join(' ', startInfo.ArgumentList)}");
         }
-        catch (Exception ex)
+        catch (Exception ex) when (ex is IOException or UnauthorizedAccessException)
         {
             logWriter?.Dispose();
             logWriter = null;
@@ -85,7 +85,7 @@ internal static class WorkspaceSiloStarter
         {
             process = Process.Start(startInfo);
         }
-        catch (Exception ex)
+        catch (Exception ex) when (ex is InvalidOperationException or System.ComponentModel.Win32Exception or IOException)
         {
             logWriter?.Dispose();
             return new AutoStartResult(false, logPath, $"Failed to launch dotnet: {ex.Message}");
@@ -110,7 +110,7 @@ internal static class WorkspaceSiloStarter
                     {
                         logWriter.WriteLine($"{DateTime.Now:HH:mm:ss} {prefix} {line}");
                     }
-                    catch
+                    catch (Exception ex) when (ex is IOException or ObjectDisposedException)
                     {
                         // writer may be disposed on exit
                     }
@@ -140,7 +140,7 @@ internal static class WorkspaceSiloStarter
                 if (response.IsSuccessStatusCode)
                     return new AutoStartResult(true, logPath, null);
             }
-            catch
+            catch (Exception ex) when (ex is HttpRequestException or TaskCanceledException or System.Net.Sockets.SocketException)
             {
                 // expected while the Silo is still warming up
             }

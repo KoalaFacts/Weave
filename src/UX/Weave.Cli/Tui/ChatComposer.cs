@@ -119,16 +119,16 @@ internal sealed class ChatComposer
         bool previous = false;
         try
         { previous = Console.TreatControlCAsInput; }
-        catch (Exception) { /* platform quirk */ }
+        catch (Exception ex) when (ex is IOException or PlatformNotSupportedException) { /* platform quirk */ }
         try
         { Console.TreatControlCAsInput = true; }
-        catch (Exception) { /* ignore */ }
+        catch (Exception ex) when (ex is IOException or PlatformNotSupportedException) { /* ignore */ }
 
         return () =>
         {
             try
             { Console.TreatControlCAsInput = previous; }
-            catch (Exception) { /* ignore */ }
+            catch (Exception ex) when (ex is IOException or PlatformNotSupportedException) { /* ignore */ }
         };
     }
 

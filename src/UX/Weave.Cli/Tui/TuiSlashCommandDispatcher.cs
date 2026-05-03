@@ -273,7 +273,7 @@ internal sealed class TuiSlashCommandDispatcher
             using var client = new WorkspaceApiClient();
             tools = await client.GetToolsAsync(session.WorkspaceId!, ct);
         }
-        catch (Exception ex)
+        catch (Exception ex) when (ex is HttpRequestException or TaskCanceledException or System.Net.Sockets.SocketException or System.Text.Json.JsonException or IOException)
         {
             CliTheme.WriteError($"Failed to fetch tools: {ex.Message}");
             return;
@@ -323,7 +323,7 @@ internal sealed class TuiSlashCommandDispatcher
             using var client = new WorkspaceApiClient();
             tasks = await client.GetTasksAsync(session.WorkspaceId!, session.AgentName, ct);
         }
-        catch (Exception ex)
+        catch (Exception ex) when (ex is HttpRequestException or TaskCanceledException or System.Net.Sockets.SocketException or System.Text.Json.JsonException or IOException)
         {
             CliTheme.WriteError($"Failed to fetch tasks: {ex.Message}");
             return;

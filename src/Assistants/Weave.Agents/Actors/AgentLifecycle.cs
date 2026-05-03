@@ -33,57 +33,37 @@ internal sealed class AgentLifecycle(
             Phase = LifecyclePhase.AgentActivating
         };
 
-        try
+        await lifecycleManager.RunHooksAsync(LifecyclePhase.AgentActivating, context, CancellationToken.None);
+
+        chatPipeline.Reset();
+        chatPipeline.Initialize(state.AgentId, definition.Model);
+
+        state.Status = AgentStatus.Active;
+        state.ActivatedAt = timeProvider.GetUtcNow();
+        state.DeactivatedAt = null;
+        state.ErrorMessage = null;
+        state.LastActive = state.ActivatedAt;
+
+        await persistentState.WriteStateAsync();
+
+        await lifecycleManager.RunHooksAsync(
+            LifecyclePhase.AgentActivated,
+            context with { Phase = LifecyclePhase.AgentActivated },
+            CancellationToken.None);
+
+        await eventBus.PublishAsync(new AgentActivatedEvent
         {
-            await lifecycleManager.RunHooksAsync(LifecyclePhase.AgentActivating, context, CancellationToken.None);
+            SourceId = state.AgentId,
+            AgentName = state.AgentName,
+            WorkspaceId = workspaceId,
+            Model = definition.Model,
+            Tools = definition.Tools
+        }, CancellationToken.None);
 
-            chatPipeline.Reset();
-            chatPipeline.Initialize(state.AgentId, definition.Model);
-
-            state.Status = AgentStatus.Active;
-            state.ActivatedAt = timeProvider.GetUtcNow();
-            state.DeactivatedAt = null;
-            state.ErrorMessage = null;
-            state.LastActive = state.ActivatedAt;
-
-            await persistentState.WriteStateAsync();
-
-            await lifecycleManager.RunHooksAsync(
-                LifecyclePhase.AgentActivated,
-                context with { Phase = LifecyclePhase.AgentActivated },
-                CancellationToken.None);
-
-            await eventBus.PublishAsync(new AgentActivatedEvent
-            {
-                SourceId = state.AgentId,
-                AgentName = state.AgentName,
-                WorkspaceId = workspaceId,
-                Model = definition.Model,
-                Tools = definition.Tools
-            }, CancellationToken.None);
-
-            logger.LogInformation(
-                "Agent {AgentName} activated in workspace {WorkspaceId}",
-                state.AgentName,
-                workspaceId);
-        }
-        catch (Exception ex)
-        {
-            state.Status = AgentStatus.Error;
-            state.ErrorMessage = ex.Message;
-            await persistentState.WriteStateAsync();
-
-            await eventBus.PublishAsync(new AgentErrorEvent
-            {
-                SourceId = state.AgentId,
-                AgentName = state.AgentName,
-                WorkspaceId = workspaceId,
-                ErrorMessage = ex.Message
-            }, CancellationToken.None);
-
-            logger.LogError(ex, "Failed to activate agent {AgentName}", state.AgentName);
-            throw;
-        }
+        logger.LogInformation(
+            "Agent {AgentName} activated in workspace {WorkspaceId}",
+            state.AgentName,
+            workspaceId);
 
         return state;
     }
@@ -100,42 +80,31 @@ internal sealed class AgentLifecycle(
             Phase = LifecyclePhase.AgentDeactivating
         };
 
-        try
+        await lifecycleManager.RunHooksAsync(LifecyclePhase.AgentDeactivating, context, CancellationToken.None);
+
+        chatPipeline.Reset();
+
+        await episodeRecorder.StoreSessionEpisodeAsync(state);
+
+        state.Status = AgentStatus.Idle;
+        state.DeactivatedAt = timeProvider.GetUtcNow();
+        state.ActiveTasks.Clear();
+        state.ConnectedTools.Clear();
+
+        await persistentState.WriteStateAsync();
+
+        await lifecycleManager.RunHooksAsync(
+            LifecyclePhase.AgentDeactivated,
+            context with { Phase = LifecyclePhase.AgentDeactivated },
+            CancellationToken.None);
+
+        await eventBus.PublishAsync(new AgentDeactivatedEvent
         {
-            await lifecycleManager.RunHooksAsync(LifecyclePhase.AgentDeactivating, context, CancellationToken.None);
+            SourceId = state.AgentId,
+            AgentName = state.AgentName,
+            WorkspaceId = state.WorkspaceId
+        }, CancellationToken.None);
 
-            chatPipeline.Reset();
-
-            await episodeRecorder.StoreSessionEpisodeAsync(state);
-
-            state.Status = AgentStatus.Idle;
-            state.DeactivatedAt = timeProvider.GetUtcNow();
-            state.ActiveTasks.Clear();
-            state.ConnectedTools.Clear();
-
-            await persistentState.WriteStateAsync();
-
-            await lifecycleManager.RunHooksAsync(
-                LifecyclePhase.AgentDeactivated,
-                context with { Phase = LifecyclePhase.AgentDeactivated },
-                CancellationToken.None);
-
-            await eventBus.PublishAsync(new AgentDeactivatedEvent
-            {
-                SourceId = state.AgentId,
-                AgentName = state.AgentName,
-                WorkspaceId = state.WorkspaceId
-            }, CancellationToken.None);
-
-            logger.LogInformation("Agent {AgentName} deactivated", state.AgentName);
-        }
-        catch (Exception ex)
-        {
-            state.Status = AgentStatus.Error;
-            state.ErrorMessage = ex.Message;
-            await persistentState.WriteStateAsync();
-            logger.LogError(ex, "Failed to deactivate agent {AgentName}", state.AgentName);
-            throw;
-        }
+        logger.LogInformation("Agent {AgentName} deactivated", state.AgentName);
     }
 }

@@ -70,7 +70,7 @@ internal sealed class TuiAgentSelector
             if (manifest.Agents is { Count: 1 } agents)
                 session.AgentName = agents.Keys.First();
         }
-        catch (Exception ex)
+        catch (Exception ex) when (ex is IOException or UnauthorizedAccessException or System.Text.Json.JsonException or FormatException)
         {
             CliTheme.WriteMuted($"Could not auto-select agent ({ex.Message}).");
         }

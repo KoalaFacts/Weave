@@ -35,7 +35,7 @@ public sealed partial class DaprEventBus(
                 LogEventPublished(topicName, domainEvent.EventId, topicName);
             }
         }
-        catch (Exception ex)
+        catch (Exception ex) when (ex is HttpRequestException or TaskCanceledException or System.Net.Sockets.SocketException or JsonException or IOException)
         {
             LogDaprPublishFailed(ex, topicName);
         }
@@ -60,7 +60,7 @@ public sealed partial class DaprEventBus(
         {
             try
             { await ((Func<TEvent, CancellationToken, Task>)handler)(domainEvent, ct); }
-            catch (Exception ex) { LogEventHandlerError(ex, typeof(TEvent).Name, domainEvent.EventId); }
+            catch (Exception ex) when (ex is not OperationCanceledException) { LogEventHandlerError(ex, typeof(TEvent).Name, domainEvent.EventId); }
         }
     }
 

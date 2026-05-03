@@ -37,7 +37,7 @@ internal sealed class TuiWorkspaceStarter
                 Path.GetDirectoryName(Path.GetFullPath(session.ManifestPath!))
                     ?? Directory.GetCurrentDirectory());
         }
-        catch (Exception ex)
+        catch (Exception ex) when (ex is IOException or UnauthorizedAccessException or System.Text.Json.JsonException or FormatException or ArgumentException)
         {
             CliTheme.WriteError($"Failed to read manifest: {ex.Message}");
             return;
@@ -84,7 +84,7 @@ internal sealed class TuiWorkspaceStarter
                     Directory.CreateDirectory(Path.GetDirectoryName(statePath)!);
                     await File.WriteAllTextAsync(statePath, response.WorkspaceId, ct);
                 }
-                catch (Exception ex)
+                catch (Exception ex) when (ex is HttpRequestException or TaskCanceledException or System.Net.Sockets.SocketException or System.Text.Json.JsonException or IOException or UnauthorizedAccessException or InvalidOperationException)
                 {
                     error = ex;
                 }
@@ -126,7 +126,7 @@ internal sealed class TuiWorkspaceStarter
         {
             lines = File.ReadAllLines(logPath);
         }
-        catch (Exception ex)
+        catch (Exception ex) when (ex is IOException or UnauthorizedAccessException)
         {
             CliTheme.WriteMuted($"  (could not read log: {ex.Message})");
             return;

@@ -42,7 +42,7 @@ internal sealed partial class HeartbeatTickRunner(
                 NextRun = tickNow.AddMinutes(HeartbeatSchedule.ParseMinutes(state.Config.Cron))
             };
         }
-        catch (Exception ex)
+        catch (Exception ex) when (ex is InvalidOperationException or TimeoutException or FormatException)
         {
             LogHeartbeatTickFailed(logger, ex, agentKey);
             return state;
@@ -70,7 +70,7 @@ internal sealed partial class HeartbeatTickRunner(
             LogAgentAtMaxCapacity(logger, agentKey);
             return false;
         }
-        catch (Exception ex)
+        catch (Exception ex) when (ex is InvalidOperationException or TimeoutException or HttpRequestException or TaskCanceledException)
         {
             if (taskInfo is not null)
                 await agentActor.CompleteTaskAsync(taskInfo.TaskId, success: false, BuildFailureProof(ex));

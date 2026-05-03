@@ -119,9 +119,9 @@ internal sealed class DataExportCliCommand : ICliCommand<DataExportOptions>
             export.Agents = agents;
             CliTheme.WriteInfo($"  Agents: {agents.Count}");
         }
-        catch
+        catch (Exception ex) when (ex is HttpRequestException or TaskCanceledException or System.Net.Sockets.SocketException or System.Text.Json.JsonException or IOException)
         {
-            CliTheme.WriteMuted("  Agents: (not available)");
+            CliTheme.WriteMuted($"  Agents: (not available: {ex.Message})");
         }
 
         try
@@ -130,9 +130,9 @@ internal sealed class DataExportCliCommand : ICliCommand<DataExportOptions>
             export.Tools = tools;
             CliTheme.WriteInfo($"  Tools: {tools.Count}");
         }
-        catch
+        catch (Exception ex) when (ex is HttpRequestException or TaskCanceledException or System.Net.Sockets.SocketException or System.Text.Json.JsonException or IOException)
         {
-            CliTheme.WriteMuted("  Tools: (not available)");
+            CliTheme.WriteMuted($"  Tools: (not available: {ex.Message})");
         }
 
         try
@@ -141,9 +141,9 @@ internal sealed class DataExportCliCommand : ICliCommand<DataExportOptions>
             export.Skills = skills;
             CliTheme.WriteInfo($"  Skills: {skills.Count}");
         }
-        catch
+        catch (Exception ex) when (ex is HttpRequestException or TaskCanceledException or System.Net.Sockets.SocketException or System.Text.Json.JsonException or IOException)
         {
-            CliTheme.WriteMuted("  Skills: (not available)");
+            CliTheme.WriteMuted($"  Skills: (not available: {ex.Message})");
         }
 
         try
@@ -152,9 +152,9 @@ internal sealed class DataExportCliCommand : ICliCommand<DataExportOptions>
             export.Channels = channels;
             CliTheme.WriteInfo($"  Channels: {channels.Count}");
         }
-        catch
+        catch (Exception ex) when (ex is HttpRequestException or TaskCanceledException or System.Net.Sockets.SocketException or System.Text.Json.JsonException or IOException)
         {
-            CliTheme.WriteMuted("  Channels: (not available)");
+            CliTheme.WriteMuted($"  Channels: (not available: {ex.Message})");
         }
     }
 
@@ -166,9 +166,9 @@ internal sealed class DataExportCliCommand : ICliCommand<DataExportOptions>
             export.MarketplaceItems = marketplace;
             CliTheme.WriteInfo($"  Marketplace items: {marketplace.Count}");
         }
-        catch
+        catch (Exception ex) when (ex is HttpRequestException or TaskCanceledException or System.Net.Sockets.SocketException or System.Text.Json.JsonException or IOException)
         {
-            CliTheme.WriteMuted("  Marketplace: (not available)");
+            CliTheme.WriteMuted($"  Marketplace: (not available: {ex.Message})");
         }
 
         try
@@ -177,9 +177,9 @@ internal sealed class DataExportCliCommand : ICliCommand<DataExportOptions>
             export.Templates = templates;
             CliTheme.WriteInfo($"  Templates: {templates.Count}");
         }
-        catch
+        catch (Exception ex) when (ex is HttpRequestException or TaskCanceledException or System.Net.Sockets.SocketException or System.Text.Json.JsonException or IOException)
         {
-            CliTheme.WriteMuted("  Templates: (not available)");
+            CliTheme.WriteMuted($"  Templates: (not available: {ex.Message})");
         }
     }
 }

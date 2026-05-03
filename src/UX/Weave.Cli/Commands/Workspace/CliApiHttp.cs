@@ -16,7 +16,7 @@ internal static class CliApiHttp
         string body;
         try
         { body = await response.Content.ReadAsStringAsync(ct); }
-        catch { body = string.Empty; }
+        catch (Exception ex) when (ex is HttpRequestException or IOException or TaskCanceledException) { body = string.Empty; }
 
         var message = FormatHttpError((int)response.StatusCode, response.ReasonPhrase, body);
         throw new HttpRequestException(message, inner: null, response.StatusCode);
@@ -35,8 +35,9 @@ internal static class CliApiHttp
             if (doc.RootElement.TryGetProperty("title", out var title))
                 return title.GetString() ?? body.Trim();
         }
-        catch
+        catch (JsonException)
         {
+            // Body is not RFC 7807 JSON — fall through to raw text below.
         }
 
         return body.Trim();

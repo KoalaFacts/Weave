@@ -44,7 +44,7 @@ internal sealed class WorkspaceValidateCliCommand : ICliCommand<WorkspaceNameOpt
             CliTheme.WriteKeyValue("Targets", (manifest.Targets?.Count ?? 0).ToString(CultureInfo.InvariantCulture));
             return 0;
         }
-        catch (Exception ex)
+        catch (Exception ex) when (ex is IOException or UnauthorizedAccessException or System.Text.Json.JsonException or FormatException)
         {
             CliTheme.WriteError($"Configuration invalid: {ex.Message}");
             return 1;

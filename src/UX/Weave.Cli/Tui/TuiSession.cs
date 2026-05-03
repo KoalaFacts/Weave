@@ -82,7 +82,7 @@ internal sealed class TuiSession
                 ? "State file exists but is empty — workspace may have been interrupted."
                 : null;
         }
-        catch (Exception ex)
+        catch (Exception ex) when (ex is IOException or UnauthorizedAccessException)
         {
             return $"State file is corrupt ({ex.Message}) — treating workspace as not running.";
         }

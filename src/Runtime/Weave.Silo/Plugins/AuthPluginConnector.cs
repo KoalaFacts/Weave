@@ -37,8 +37,9 @@ public sealed partial class AuthPluginConnector(
             {
                 resolvedSecret = ResolveSecret(secret);
             }
-            catch (Exception ex)
+            catch (Exception ex) when (ex is IOException or UnauthorizedAccessException or System.Security.SecurityException or ArgumentException)
             {
+                LogAuthSecretResolutionFailed(ex, name);
                 return Task.FromResult(new PluginStatus
                 {
                     Name = name,
@@ -134,4 +135,7 @@ public sealed partial class AuthPluginConnector(
 
     [LoggerMessage(Level = LogLevel.Information, Message = "Auth plugin '{Name}' disconnected")]
     private partial void LogAuthDisconnected(string name);
+
+    [LoggerMessage(Level = LogLevel.Warning, Message = "Auth plugin '{Name}' failed to resolve secret reference")]
+    private partial void LogAuthSecretResolutionFailed(Exception ex, string name);
 }

@@ -43,7 +43,7 @@ public sealed partial class WebhookEventBus(
                 LogWebhookPublished(topicName, domainEvent.EventId);
             }
         }
-        catch (Exception ex)
+        catch (Exception ex) when (ex is HttpRequestException or TaskCanceledException or System.Net.Sockets.SocketException or JsonException or IOException)
         {
             LogWebhookPublishFailed(ex, topicName);
         }
@@ -70,7 +70,7 @@ public sealed partial class WebhookEventBus(
         {
             try
             { await ((Func<TEvent, CancellationToken, Task>)handler)(domainEvent, ct); }
-            catch (Exception ex) { LogEventHandlerError(ex, typeof(TEvent).Name, domainEvent.EventId); }
+            catch (Exception ex) when (ex is not OperationCanceledException) { LogEventHandlerError(ex, typeof(TEvent).Name, domainEvent.EventId); }
         }
     }
 

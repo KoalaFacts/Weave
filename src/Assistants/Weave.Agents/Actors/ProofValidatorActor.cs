@@ -94,7 +94,7 @@ public sealed class ProofValidatorActor(
                 ConditionResults = results
             };
         }
-        catch (Exception ex)
+        catch (Exception ex) when (ex is HttpRequestException or TaskCanceledException or System.Net.Sockets.SocketException or System.Text.Json.JsonException or InvalidOperationException)
         {
             logger.LogError(ex, "Validator {ValidatorId} failed to evaluate proof", validatorId);
 
@@ -131,28 +131,21 @@ public sealed class ProofValidatorActor(
 
     internal static List<ConditionResult> ParseConditionResults(string responseText)
     {
-        try
-        {
-            var json = responseText;
-            var startIdx = json.IndexOf('[');
-            var endIdx = json.LastIndexOf(']');
-            if (startIdx >= 0 && endIdx > startIdx)
-                json = json[startIdx..(endIdx + 1)];
+        var json = responseText;
+        var startIdx = json.IndexOf('[');
+        var endIdx = json.LastIndexOf(']');
+        if (startIdx >= 0 && endIdx > startIdx)
+            json = json[startIdx..(endIdx + 1)];
 
-            var parsed = JsonSerializer.Deserialize(json, ProofValidatorJsonContext.Default.ListProofConditionResultDto);
-            if (parsed is null)
-                return [];
-
-            return parsed.Select(dto => new ConditionResult
-            {
-                ConditionName = dto.ConditionName ?? "unknown",
-                Passed = dto.Passed,
-                Detail = dto.Detail
-            }).ToList();
-        }
-        catch
-        {
+        var parsed = JsonSerializer.Deserialize(json, ProofValidatorJsonContext.Default.ListProofConditionResultDto);
+        if (parsed is null)
             return [];
-        }
+
+        return parsed.Select(dto => new ConditionResult
+        {
+            ConditionName = dto.ConditionName ?? "unknown",
+            Passed = dto.Passed,
+            Detail = dto.Detail
+        }).ToList();
     }
 }
