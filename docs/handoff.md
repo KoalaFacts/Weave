@@ -57,7 +57,18 @@ Acceptance bar from the strategy doc's *Measurement* section is met:
 
 **Don't pursue `marketplace:install` yet** — `IMarketplaceActor.IncrementInstallCountAsync` is a counter, not an install path. Gating an action that doesn't exist is empty ceremony. Wait until someone wires real marketplace-to-workspace installation, then gate it through the same authorizer.
 
-No durably outstanding follow-ups in this stream — the capability vocabulary, audit pipeline, and storage backends all line up. Future work would be new vocabulary (e.g. when marketplace-to-workspace install lands, gate `marketplace:install` through the same authorizer) or operational hardening orthogonal to the audit chain.
+The capability vocabulary, audit pipeline, and storage backends now line up — there are no outstanding follow-ups in this stream. The natural next stream is **operational hardening** of the audit chain. Three concrete candidates, ordered by leverage:
+
+1. **Allow/deny metrics for dashboards.** *Highest leverage / lowest risk.* The audit log is queryable but there's no counter to alert on deny spikes. Add a `System.Diagnostics.Metrics.Meter` in `CapabilityAuthorizer` (counter tagged by `outcome`/`reason`) so the existing OpenTelemetry pipeline picks it up. Purely additive — no behavior change, immediately useful for ops. Files: `src/Security/Weave.Security/Tokens/CapabilityAuthorizer.cs` (instrument), maybe `src/Runtime/Weave.ServiceDefaults` to register the meter name. Test surface: assert the counter increments on allow + deny via `MeterListener`.
+
+2. **Audit-row durability under failure.** `CapabilityAuditSubscriberHostedService` calls `store.Record` synchronously; if a SQLite/Postgres write throws, the row is dropped and the publisher's `await` returns to the authorizer that already returned `Allow`. Two reasonable shapes:
+   - Polly-style retry with jitter inside the subscriber (cheapest, but synchronous failures still drop).
+   - Bounded in-memory queue between subscriber and store with a drain loop and a fail-open dead-letter log (more code, no rows lost on transient failure).
+   Files: `src/Runtime/Weave.Silo/Audit/CapabilityAuditSubscriberHostedService.cs`. Test surface: a stub `ICapabilityAuditStore` that throws once and verifies eventual persistence.
+
+3. **Token signing key rotation.** `CapabilityTokenOptions.SigningKey` is single-keyed; rotating it invalidates every live token. Accept a `PreviousSigningKey` for verification only — `CapabilityTokenService.Validate` tries the current key, then the previous; `Mint` always uses the current. Lets ops rotate without a flush. Files: `src/Security/Weave.Security/Tokens/CapabilityTokenOptions.cs`, `CapabilityTokenService.cs`. Test surface: mint with old key, rotate, verify still validates; mint after rotation, verify uses new key only.
+
+`#1` is the highest-leverage / lowest-risk place to start the next stream.
 
 ## Cross-cutting follow-ups
 
