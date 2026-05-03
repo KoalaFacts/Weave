@@ -1,0 +1,67 @@
+using System.Text.Json;
+using Microsoft.Extensions.Logging;
+using Weave.Security.Tokens;
+using Weave.Shared.Secrets;
+
+namespace Weave.Security.Vault;
+
+/// <summary>
+/// HTTP-based HashiCorp Vault secret provider — no VaultSharp SDK required.
+/// Calls the Vault HTTP API directly. Activated when a "vault" plugin is configured.
+/// </summary>
+public sealed partial class VaultSecretProvider(
+    HttpClient httpClient,
+    ICapabilityAuthorizer authorizer,
+    ILogger<VaultSecretProvider> logger) : ISecretProvider
+{
+    public async Task<SecretValue> ResolveAsync(string secretPath, CapabilityToken token, CancellationToken ct = default)
+    {
+        await authorizer.AuthorizeAsync(token, $"secret:{secretPath}", token.WorkspaceId);
+
+        LogResolvingSecret(secretPath, token.IssuedTo, token.WorkspaceId);
+
+        var mountPoint = $"weave/{token.WorkspaceId}";
+        using var response = await httpClient.GetAsync($"/v1/{mountPoint}/data/{secretPath}", ct);
+        if (!response.IsSuccessStatusCode)
+        {
+            var errorBody = await response.Content.ReadAsStringAsync(ct);
+            throw new HttpRequestException($"Vault returned {(int)response.StatusCode}: {errorBody}");
+        }
+
+        using var doc = await JsonDocument.ParseAsync(await response.Content.ReadAsStreamAsync(ct), cancellationToken: ct);
+        var data = doc.RootElement.GetProperty("data").GetProperty("data");
+
+        var value = data.TryGetProperty("value", out var v) ? v.GetString() : null;
+
+        return string.IsNullOrEmpty(value)
+            ? throw new KeyNotFoundException($"Secret '{secretPath}' not found or has no value")
+            : new SecretValue(value);
+    }
+
+    public async Task<IReadOnlyList<string>> ListPathsAsync(string workspaceId, CancellationToken ct = default)
+    {
+        var mountPoint = $"weave/{workspaceId}";
+        using var request = new HttpRequestMessage(HttpMethod.Get, $"/v1/{mountPoint}/metadata/?list=true");
+        using var response = await httpClient.SendAsync(request, ct);
+        if (!response.IsSuccessStatusCode)
+        {
+            var errorBody = await response.Content.ReadAsStringAsync(ct);
+            throw new HttpRequestException($"Vault returned {(int)response.StatusCode}: {errorBody}");
+        }
+
+        using var doc = await JsonDocument.ParseAsync(await response.Content.ReadAsStreamAsync(ct), cancellationToken: ct);
+        var keys = doc.RootElement.GetProperty("data").GetProperty("keys");
+
+        var paths = new List<string>();
+        foreach (var key in keys.EnumerateArray())
+        {
+            if (key.GetString() is { } k)
+                paths.Add(k);
+        }
+
+        return paths;
+    }
+
+    [LoggerMessage(Level = LogLevel.Information, Message = "Resolving secret '{Path}' for {IssuedTo} in workspace {Workspace}")]
+    private partial void LogResolvingSecret(string path, string issuedTo, string workspace);
+}

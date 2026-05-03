@@ -1,0 +1,31 @@
+@page "/workspaces"
+
+<PageTitle>Workspaces - Weave</PageTitle>
+
+<FluentLabel Typo="Typography.H4" Style="margin-bottom: 1rem;">Workspaces</FluentLabel>
+
+@if (_loading)
+{
+    <FluentProgressRing />
+}
+else if (_error is not null)
+{
+    <FluentMessageBar Intent="MessageIntent.Error">@_error</FluentMessageBar>
+}
+else
+{
+    <FluentDataGrid Items="@_workspaces" GridTemplateColumns="1fr 1fr 120px 80px 160px 160px">
+        <TemplateColumn Title="Name">
+            <FluentAnchor Href="@($"/workspaces/{context.WorkspaceId}")" Appearance="Appearance.Hypertext">
+                @(context.Name ?? context.WorkspaceId)
+            </FluentAnchor>
+        </TemplateColumn>
+        <PropertyColumn Property="@(w => w.WorkspaceId)" Title="Workspace ID" />
+        <TemplateColumn Title="Status">
+            <FluentBadge Appearance="@GetStatusAppearance(context.Status)">@context.Status</FluentBadge>
+        </TemplateColumn>
+        <PropertyColumn Property="@(w => w.ContainerCount)" Title="Containers" />
+        <PropertyColumn Property="@(w => w.StartedAt)" Title="Started" Format="g" />
+        <PropertyColumn Property="@(w => w.StoppedAt)" Title="Stopped" Format="g" />
+    </FluentDataGrid>
+}

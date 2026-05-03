@@ -1,0 +1,59 @@
+@page "/audit"
+@page "/audit/{TokenId}"
+
+<PageTitle>Capability Audit - Weave</PageTitle>
+
+<FluentLabel Typo="Typography.H4" Style="margin-bottom: 1rem;">Capability Audit</FluentLabel>
+
+<FluentStack Orientation="Orientation.Horizontal" HorizontalGap="8" Style="margin-bottom: 1rem;">
+    <FluentTextField @bind-Value="_filterTokenId" Placeholder="Token ID — leave blank for recent rows"
+                     Style="flex: 1; max-width: 540px;" />
+    <FluentButton Appearance="Appearance.Accent" OnClick="LoadAsync" Disabled="@_loading">
+        @(_loading ? "Loading…" : "Load")
+    </FluentButton>
+    @if (!string.IsNullOrWhiteSpace(_filterTokenId))
+    {
+        <FluentButton Appearance="Appearance.Stealth" OnClick="ClearFilter" Disabled="@_loading">Clear</FluentButton>
+    }
+</FluentStack>
+
+@if (_loading)
+{
+    <FluentProgressRing />
+}
+else if (_error is not null)
+{
+    <FluentMessageBar Intent="MessageIntent.Error">@_error</FluentMessageBar>
+}
+else if (_rows.Count == 0)
+{
+    <FluentLabel Typo="Typography.Body">
+        @(string.IsNullOrWhiteSpace(_filterTokenId)
+            ? "No capability authorization rows on this silo yet."
+            : "No audit rows recorded for this token. Either it never authorized through this silo, or its rows have been evicted (the in-memory store is bounded and FIFO).")
+    </FluentLabel>
+}
+else
+{
+    <FluentLabel Typo="Typography.Body" Style="margin-bottom: 0.5rem; color: var(--neutral-foreground-hint);">
+        @_rows.Count row(s)@(string.IsNullOrWhiteSpace(_filterTokenId) ? " — newest first" : $" for token {ShortId(_filterTokenId!)}")
+    </FluentLabel>
+
+    <FluentDataGrid Items="@_rows.AsQueryable()" GridTemplateColumns="160px 80px 1fr 200px 1fr 1fr 160px">
+        <PropertyColumn Property="@(r => r.Timestamp)" Title="Time" Format="u" />
+        <TemplateColumn Title="Outcome">
+            <FluentBadge Appearance="@GetOutcomeAppearance(context.Outcome)">@context.Outcome</FluentBadge>
+        </TemplateColumn>
+        <PropertyColumn Property="@(r => r.Grant)" Title="Grant" />
+        <PropertyColumn Property="@(r => r.ActionContext)" Title="Action" />
+        <TemplateColumn Title="Reason">
+            @(string.IsNullOrEmpty(context.Reason) ? "—" : context.Reason)
+        </TemplateColumn>
+        <PropertyColumn Property="@(r => r.IssuedTo)" Title="Issued To" />
+        <TemplateColumn Title="Token">
+            <FluentAnchor Href="@($"/audit/{context.TokenId}")" Appearance="Appearance.Hypertext">
+                @ShortId(context.TokenId)
+            </FluentAnchor>
+        </TemplateColumn>
+    </FluentDataGrid>
+}

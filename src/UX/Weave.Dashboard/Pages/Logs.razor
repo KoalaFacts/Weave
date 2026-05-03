@@ -1,0 +1,36 @@
+@page "/logs"
+
+<PageTitle>Logs - Weave</PageTitle>
+
+<FluentLabel Typo="Typography.H4" Style="margin-bottom: 1rem;">Logs</FluentLabel>
+
+<FluentCard Style="padding: 1rem; margin-bottom: 1.5rem; max-width: 600px; background: var(--neutral-layer-2);">
+    <FluentLabel Typo="Typography.Body">
+        Structured logging from Orleans grains and the chat pipeline is available through the Aspire dashboard.
+        This page will aggregate log views in a future update.
+    </FluentLabel>
+</FluentCard>
+
+<FluentLabel Typo="Typography.Subject" Style="margin-bottom: 0.5rem;">Log Sources</FluentLabel>
+<FluentCard Style="padding: 1rem; max-width: 500px; margin-bottom: 1.5rem;">
+    <FluentStack Orientation="Orientation.Vertical" VerticalGap="8">
+        <FluentLabel Typo="Typography.Body">&#x2022; Workspace grain lifecycle events</FluentLabel>
+        <FluentLabel Typo="Typography.Body">&#x2022; Agent activation, deactivation, and chat messages</FluentLabel>
+        <FluentLabel Typo="Typography.Body">&#x2022; Tool connector invocations and security blocks</FluentLabel>
+        <FluentLabel Typo="Typography.Body">&#x2022; Heartbeat scheduling and task submission</FluentLabel>
+        <FluentLabel Typo="Typography.Body">&#x2022; Secret proxy and leak scanner diagnostics</FluentLabel>
+    </FluentStack>
+</FluentCard>
+
+<FluentLabel Typo="Typography.Subject" Style="margin-bottom: 0.5rem;">Aspire Dashboard</FluentLabel>
+<FluentCard Style="padding: 1rem; max-width: 500px;">
+    <FluentStack Orientation="Orientation.Vertical" VerticalGap="8">
+        <FluentLabel Typo="Typography.Body">
+            When running through <code>Weave.AppHost</code>, the Aspire dashboard provides structured log viewing,
+            distributed traces, and metric dashboards out of the box.
+        </FluentLabel>
+        <FluentLabel Typo="Typography.Body">
+            Access it at the URL printed by <code>dotnet run --project src/Runtime/Weave.AppHost</code>.
+        </FluentLabel>
+    </FluentStack>
+</FluentCard>

@@ -1,0 +1,42 @@
+@page "/monitoring"
+
+<PageTitle>Monitoring - Weave</PageTitle>
+
+<FluentLabel Typo="Typography.H4" Style="margin-bottom: 1rem;">Monitoring</FluentLabel>
+
+<FluentCard Style="padding: 1rem; margin-bottom: 1.5rem; max-width: 600px; background: var(--neutral-layer-2);">
+    <FluentLabel Typo="Typography.Body">
+        Monitoring data will surface workspace, agent, and tool health from the Orleans silo.
+        This page is under active development.
+    </FluentLabel>
+</FluentCard>
+
+<FluentStack Orientation="Orientation.Horizontal" Wrap="true" HorizontalGap="16" Style="margin-bottom: 1.5rem;">
+    <FluentCard Style="width: 200px; padding: 1rem;">
+        <FluentLabel Typo="Typography.Subject">Silo Status</FluentLabel>
+        <FluentLabel Typo="Typography.H2" Color="Color.Accent">—</FluentLabel>
+        <FluentLabel Typo="Typography.Body">Pending</FluentLabel>
+    </FluentCard>
+
+    <FluentCard Style="width: 200px; padding: 1rem;">
+        <FluentLabel Typo="Typography.Subject">Heartbeats</FluentLabel>
+        <FluentLabel Typo="Typography.H2" Color="Color.Accent">—</FluentLabel>
+        <FluentLabel Typo="Typography.Body">Pending</FluentLabel>
+    </FluentCard>
+
+    <FluentCard Style="width: 200px; padding: 1rem;">
+        <FluentLabel Typo="Typography.Subject">Rate Limits</FluentLabel>
+        <FluentLabel Typo="Typography.H2" Color="Color.Accent">—</FluentLabel>
+        <FluentLabel Typo="Typography.Body">Pending</FluentLabel>
+    </FluentCard>
+</FluentStack>
+
+<FluentLabel Typo="Typography.Subject" Style="margin-bottom: 0.5rem;">Available Observability</FluentLabel>
+<FluentCard Style="padding: 1rem; max-width: 500px;">
+    <FluentStack Orientation="Orientation.Vertical" VerticalGap="8">
+        <FluentLabel Typo="Typography.Body">&#x2022; OpenTelemetry tracing and metrics via Aspire service defaults</FluentLabel>
+        <FluentLabel Typo="Typography.Body">&#x2022; Agent heartbeat tracking per workspace</FluentLabel>
+        <FluentLabel Typo="Typography.Body">&#x2022; Cost tracking through the chat pipeline</FluentLabel>
+        <FluentLabel Typo="Typography.Body">&#x2022; Rate limiting diagnostics per agent</FluentLabel>
+    </FluentStack>
+</FluentCard>
