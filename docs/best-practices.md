@@ -84,7 +84,25 @@ The law of the repo. Every rule here is enforceable in review. Rules exist to pr
 
 **Each storage/transport provider lives in its own opt-in project.** When an abstraction has multiple implementations that pull different third-party packages, each impl gets its own project (`Weave.Security.{Sqlite,Postgres}`, `Weave.Silo.Clustering.{Redis,Sqlite,SqlServer,Postgres}`). The abstractions project pulls zero provider packages — anyone wanting only one backend should be able to drop the other project refs and ship without those deps. After adding/removing a provider package anywhere in the graph, regenerate every consumer's `packages.lock.json` from a clean restore — central transitive pinning leaves stale entries that hide the win.
 
-**Feature-based folders. No `Controllers/`, `Services/`, `Models/` at the top of a project.** Group by capability: `Workspaces/`, `Chat/`, `Heartbeat/`. See `src/Assistants/Weave.Agents/Actors/` — interface, implementation, and state model sit together.
+**Feature-based folders. No `Controllers/`, `Services/`, `Models/` at the top of a project.** Group by capability: `Workspaces/`, `Chat/`, `Heartbeat/`. See `src/Security/Weave.Security/{Tokens,Audit,Vault,Scanning}/` for the right shape — each folder owns its interface, implementation, state, options, and any helpers as a single vertical slice.
+
+### Vertical slices and code organization
+
+**Default to vertical slices: group by capability, not by technical role.** A feature folder owns its actor, state, commands, queries, events, and supporting types. Horizontal cuts (`Actors/`, `Queries/`, `Commands/`, `Events/`, `Models/`, `Services/`) collect every feature's slice of one technical role into a basket that grows monotonically and forces every feature owner to touch the same N folders. The exemplar is `Weave.Security/{Tokens,Audit,Vault,Scanning}/` — adding a new security capability adds one folder, not five entries spread across five baskets.
+
+**Today's biggest horizontal-cut violators, in priority order for cleanup:**
+- `Weave.Agents/{Actors,Commands,Queries,Events}/` — 36 files in `Actors/` alone, mixing 7 unrelated capabilities (agent, channel gateway, episodic memory, proof verifier/validator, skill memory, tool registry, user model). Should split into `Weave.Agents/{Agents,Channels,Memory,Proof,Skills,Tools,Users}/`, each owning its own actor + state + commands + queries + events.
+- `Weave.Tools/{Actors,Events}/` — same shape, smaller scale. `Connectors/`, `Discovery/`, and `Marketplace/` already model the right pattern within this project.
+- `Weave.Workspaces/{Actors,Commands,Queries,Events}/` — same shape; the slices are `Workspaces` and `Templates`, both already have folders that should absorb the rest.
+- `Weave.Dashboard/Services/` — mixes `WeaveApiClient` with 8 DTOs. The client moves to `Api/`; each DTO co-locates with the Razor page that consumes it.
+
+**Pluralized type-name folders are smells: `Models/`, `Services/`, `Helpers/`, `Utils/`, `Common/`, `Shared/` (inside a project), `Misc/`, `Managers/`, `DTOs/`.** Each one says "I didn't decide what this code is about." `Weave.Dashboard/Services/` is the only top-level offender today — others would be rejected on review.
+
+**Composition-root infrastructure is the legitimate horizontal exception.** `Startup/`, `Api/`, `Configuration/`, `VirtualActors/`, `Serialization/` in `Weave.Silo` exist because the Silo wires every feature — they are not capabilities, they are wiring layers. The test for "is this exception OK": does this folder *have* to know about every feature in the project? If yes, horizontal is correct. If no, it's masking missing slices.
+
+**Inside a feature folder, the triple — interface, implementation, and state model — sits together.** `IFooActor.cs` + `FooActor.cs` + `FooState.cs` next to each other. This is what's already done well *within* `Weave.Agents/Actors/`; the work is to lift the same per-feature grouping one level up so each capability is its own folder.
+
+**A new feature adds one folder.** If adding "skill recommendations" requires touching `Actors/`, `Commands/`, `Queries/`, `Events/`, *and* `Models/`, the project is shaped wrong — a future change to that feature will sprawl across all five. The PR diff should be biased toward "many lines in one folder," not "one line in each of many folders."
 
 ### Versioning and breaking changes
 
