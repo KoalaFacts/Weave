@@ -2,6 +2,7 @@ using Microsoft.Extensions.Options;
 using Npgsql;
 using Weave.Security.Audit;
 using Weave.Security.Events;
+using Weave.Security.Postgres;
 
 namespace Weave.Security.Tests;
 

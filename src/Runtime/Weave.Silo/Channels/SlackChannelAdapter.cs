@@ -13,11 +13,9 @@ public sealed class SlackChannelAdapter(HttpClient httpClient) : IChannelAdapter
         if (!config.Config.TryGetValue("webhook_url", out var webhookUrl) || string.IsNullOrWhiteSpace(webhookUrl))
             throw new InvalidOperationException("Slack channel config must include 'webhook_url'.");
 
-        var payload = JsonSerializer.SerializeToUtf8Bytes(new
-        {
-            text = message.Content,
-            thread_ts = message.ThreadId
-        });
+        var payload = JsonSerializer.SerializeToUtf8Bytes(
+            new SlackPayload(message.Content, message.ThreadId),
+            ChannelPayloadJsonContext.Default.SlackPayload);
 
         using var content = new ByteArrayContent(payload);
         content.Headers.ContentType = new System.Net.Http.Headers.MediaTypeHeaderValue("application/json");

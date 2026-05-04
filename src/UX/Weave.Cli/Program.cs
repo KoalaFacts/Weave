@@ -1,6 +1,10 @@
 using System.CommandLine;
+using Microsoft.Extensions.DependencyInjection;
+using Weave.Cli;
 using Weave.Cli.Commands;
 using Weave.Cli.Tui;
+
+var services = CliServiceCollection.Build();
 
 // Zero-args, interactive terminal → launch the TUI.
 if (args.Length == 0 && !Console.IsInputRedirected && !Console.IsOutputRedirected)
@@ -12,7 +16,7 @@ if (args.Length == 0 && !Console.IsInputRedirected && !Console.IsOutputRedirecte
         tuiCts.Cancel();
     };
 
-    return await TuiApp.RunAsync(tuiCts.Token);
+    return await TuiApp.RunAsync(services, tuiCts.Token);
 }
 
 var root = new RootCommand("weave — set up AI assistants with guardrails you control.");
@@ -48,7 +52,7 @@ workspace.Subcommands.Add(plugin);
 
 root.Subcommands.Add(WorkspaceServeCommand.Create());
 root.Subcommands.Add(RunCommand.Create());
-root.Subcommands.Add(TuiCommand.Create());
+root.Subcommands.Add(TuiCommand.Create(services.GetRequiredService<TuiCliCommand>()));
 root.Subcommands.Add(WebUiCommand.Create());
 root.Subcommands.Add(InitCommand.Create());
 root.Subcommands.Add(PortsCommand.Create());
@@ -57,7 +61,7 @@ root.Subcommands.Add(StorageCommands.Create());
 root.Subcommands.Add(DataCommands.Create());
 root.Subcommands.Add(AuditCommands.Create());
 root.Subcommands.Add(VersionCommand.Create());
-root.Subcommands.Add(UpgradeCommand.Create());
+root.Subcommands.Add(UpgradeCommand.Create(services.GetRequiredService<UpgradeCliCommand>()));
 
 var config = new Command("config", "Manage CLI configuration");
 config.Subcommands.Add(ConfigGetCommand.Create());

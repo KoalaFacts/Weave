@@ -1,3 +1,5 @@
+using Microsoft.Extensions.DependencyInjection;
+
 namespace Weave.Cli.Tui;
 
 /// <summary>
@@ -7,8 +9,8 @@ namespace Weave.Cli.Tui;
 /// </summary>
 internal static class TuiApp
 {
-    public static async Task<int> RunAsync(CancellationToken cancellationToken)
+    public static async Task<int> RunAsync(IServiceProvider services, CancellationToken cancellationToken)
     {
-        return await new TuiShell().RunAsync(cancellationToken);
+        return await services.GetRequiredService<TuiShell>().RunAsync(cancellationToken);
     }
 }

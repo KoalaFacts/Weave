@@ -147,13 +147,13 @@ internal static class SiloProcessService
         if (string.IsNullOrWhiteSpace(storageBackend) || storageBackend == "memory")
             return;
 
-        args.Add($"--Weave:Storage={storageBackend}");
+        args.Add($"--Weave:ActorStorage:Provider={storageBackend}");
         if (!string.IsNullOrWhiteSpace(storageConn))
             args.Add($"--ConnectionStrings:{ConnectionName(storageBackend)}={storageConn}");
         if (!string.IsNullOrWhiteSpace(storageSchema))
-            args.Add($"--Weave:StorageSchema={storageSchema}");
+            args.Add($"--Weave:ActorStorage:Schema={storageSchema}");
         if (!string.IsNullOrWhiteSpace(workspaceStorage?.Database))
-            args.Add($"--Weave:StorageDatabase={workspaceStorage.Database}");
+            args.Add($"--Weave:ActorStorage:Database={workspaceStorage.Database}");
     }
 
     private static void AddAuthArguments(Collection<string> args)
@@ -173,7 +173,7 @@ internal static class SiloProcessService
 
     private static string ConnectionName(string storageBackend) => storageBackend switch
     {
-        "postgresql" or "postgres" => "PostgreSql",
+        "postgresql" => "PostgreSql",
         "sqlserver" => "SqlServer",
         "redis" => "Redis",
         "sqlite" => "Sqlite",

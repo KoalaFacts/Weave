@@ -1,3 +1,4 @@
+using System.Diagnostics.Metrics;
 using System.Runtime.CompilerServices;
 using Microsoft.Extensions.Logging;
 using Weave.Security.Events;
@@ -61,6 +62,27 @@ public sealed partial class CapabilityAuthorizer(
     /// </summary>
     public const int MaxActionContextLength = 200;
 
+    /// <summary>
+    /// Meter name for OpenTelemetry pickup. Registered in
+    /// <c>Weave.ServiceDefaults.Extensions.ConfigureOpenTelemetry</c> via
+    /// <c>AddMeter</c> so the existing OTLP pipeline exports
+    /// <see cref="CounterName"/>.
+    /// </summary>
+    public const string MeterName = "Weave.Security.Capability";
+
+    /// <summary>
+    /// Counter name. Tagged with <c>outcome</c> (<c>"allow"</c>/<c>"deny"</c>)
+    /// and, on deny, <c>reason</c> (one of <c>"invalid-or-expired-token"</c>,
+    /// <c>"workspace-mismatch"</c>, <c>"grant-missing"</c>).
+    /// </summary>
+    public const string CounterName = "weave.security.capability.authorizations";
+
+    private static readonly Meter Meter = new(MeterName);
+    private static readonly Counter<long> AuthorizationCounter = Meter.CreateCounter<long>(
+        CounterName,
+        unit: "{authorization}",
+        description: "Capability authorization decisions, tagged by outcome and (on deny) reason.");
+
     public async Task AuthorizeAsync(
         CapabilityToken token,
         string grant,
@@ -106,6 +128,8 @@ public sealed partial class CapabilityAuthorizer(
         // always "{ws}/{tokenId}" in practice; no fallback branch is needed.
         var sourceId = $"{token.WorkspaceId}/{token.TokenId}";
 
+        RecordMetric(outcome, reason);
+
         return eventBus.PublishAsync(new CapabilityAuthorizationEvent
         {
             SourceId = sourceId,
@@ -117,6 +141,20 @@ public sealed partial class CapabilityAuthorizer(
             Outcome = outcome,
             Reason = reason
         }, token.CancellationToken);
+    }
+
+    private static void RecordMetric(CapabilityAuthorizationOutcome outcome, string? reason)
+    {
+        if (outcome == CapabilityAuthorizationOutcome.Allow)
+        {
+            AuthorizationCounter.Add(1, new KeyValuePair<string, object?>("outcome", "allow"));
+            return;
+        }
+
+        AuthorizationCounter.Add(
+            1,
+            new KeyValuePair<string, object?>("outcome", "deny"),
+            new KeyValuePair<string, object?>("reason", reason ?? "unknown"));
     }
 
     private static string SanitizeActionContext(string? input)

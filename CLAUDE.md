@@ -30,6 +30,9 @@ The solution uses central package management through `Directory.Packages.props`.
 - Classes over 200 lines require a design check; prefer one production class per file.
 - Keep the current dependency flow; do not introduce circular references.
 - Do not use `FluentAssertions`. Tests use `Shouldly`.
+- **Pre-1.0: no backward-compat shims.** No `Legacy*` constants, no dual config keys, no deprecated synonyms, no fallback reads. When a contract changes, change the call sites. See [docs/best-practices.md → Versioning and breaking changes](docs/best-practices.md).
+- **One opt-in project per storage/transport provider.** Abstractions projects pull zero provider packages; impls live in `Weave.X.{Sqlite,Postgres,Redis,...}` siblings. Same doc.
+- **Run the `check-rules` skill before claiming a code task is done, and when reviewing a diff/PR.** It walks the catalog in `docs/best-practices.md` and reports a punch list. Defined in `.claude/skills/check-rules/SKILL.md`.
 
 ## Project Layout
 
@@ -42,8 +45,15 @@ src/
   Assistants/            Agent actors, supervisor, heartbeat, chat pipeline, channels, skills, user model
   Tools/                 Tool connectors (MCP, CLI, OpenAPI, DirectHttp, FileSystem), discovery, marketplace
   Security/              Capability tokens, leak scanning, secret proxy, provider proxies
+                         (Weave.Security holds abstractions + in-memory backends;
+                          Weave.Security.Sqlite / Weave.Security.Postgres host the
+                          storage-provider impls so the abstractions stay free of
+                          Microsoft.Data.Sqlite / Npgsql)
   Deployment/            Deployment publishers
   Runtime/               Orleans host (Silo), Aspire app host, and shared service defaults
+                         (Weave.Silo references Weave.Silo.Clustering.{Redis,Sqlite,
+                          SqlServer,Postgres} so each Orleans backend is its own
+                          opt-in dep — drop a project ref to ship a slim host)
   UX/                    Spectre.Console CLI and Blazor dashboard
 ```
 

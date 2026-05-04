@@ -14,7 +14,13 @@
     <ProjectReference Include="..\..\Workspaces\Weave.Workspaces\Weave.Workspaces.csproj" />
     <ProjectReference Include="..\..\Assistants\Weave.Agents\Weave.Agents.csproj" />
     <ProjectReference Include="..\..\Security\Weave.Security\Weave.Security.csproj" />
+    <ProjectReference Include="..\..\Security\Weave.Security.Sqlite\Weave.Security.Sqlite.csproj" />
+    <ProjectReference Include="..\..\Security\Weave.Security.Postgres\Weave.Security.Postgres.csproj" />
     <ProjectReference Include="..\..\Tools\Weave.Tools\Weave.Tools.csproj" />
+    <ProjectReference Include="..\Weave.Silo.Clustering.Redis\Weave.Silo.Clustering.Redis.csproj" />
+    <ProjectReference Include="..\Weave.Silo.Clustering.Sqlite\Weave.Silo.Clustering.Sqlite.csproj" />
+    <ProjectReference Include="..\Weave.Silo.Clustering.SqlServer\Weave.Silo.Clustering.SqlServer.csproj" />
+    <ProjectReference Include="..\Weave.Silo.Clustering.Postgres\Weave.Silo.Clustering.Postgres.csproj" />
     <ProjectReference Include="..\..\Foundation\Weave.SourceGen\Weave.SourceGen.csproj" OutputItemType="Analyzer" ReferenceOutputAssembly="false" />
   </ItemGroup>
 
@@ -22,13 +28,6 @@
     <PackageReference Include="Microsoft.AspNetCore.OpenApi" />
     <PackageReference Include="Microsoft.Orleans.Server" />
     <PackageReference Include="Microsoft.Orleans.Serialization.SystemTextJson" />
-    <PackageReference Include="Microsoft.Orleans.Persistence.Redis" />
-    <PackageReference Include="Microsoft.Orleans.Clustering.Redis" />
-    <PackageReference Include="Microsoft.Orleans.Persistence.AdoNet" />
-    <PackageReference Include="Microsoft.Orleans.Clustering.AdoNet" />
-    <PackageReference Include="Microsoft.Data.SqlClient" />
-    <PackageReference Include="Npgsql" />
-    <PackageReference Include="Microsoft.Data.Sqlite" />
     <PackageReference Include="Scalar.AspNetCore" />
   </ItemGroup>
 

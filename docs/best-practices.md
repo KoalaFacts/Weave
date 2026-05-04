@@ -20,6 +20,8 @@ The law of the repo. Every rule here is enforceable in review. Rules exist to pr
 
 **Stateless factories are Scoped, not Singleton.** `AgentChatClientFactory` is Scoped so its injected `IServiceProvider` is the consumer's own scope (HTTP request or Orleans actor), and `ActivatorUtilities.CreateInstance` resolves any scoped middleware dependencies correctly. Making such a factory Singleton creates an asymmetry: the factory outlives the request, but the clients it constructs depend on scoped services — that's the same bug as the dispatcher's.
 
+**Static classes are for constants, pure functions, extension methods, and codegen — not for things that should take dependencies.** Acceptable: `WeavePorts` (port constants), `CliTheme` (markup helpers), `TuiCommandParser` (pure parsing), C# extension methods (forced by the language), source-generator output. Wrong: a `static class FooCommand { public static Task ExecuteAsync(IServiceProvider sp, ...) }` whose every call does `sp.GetRequiredService<...>()` — that's service-locator with extra steps. Register `FooCommand` as a class, take dependencies via constructor, expose an instance method. Today's CLI uses `static class XCommand { Create() }` to *build* a `System.CommandLine.Command` tree, which is fine — but the action body the `Create()` returns must inject through the parser's `IServiceProvider`, not via static helpers underneath.
+
 ### Error handling
 
 **Never call `EnsureSuccessStatusCode()` on an `HttpResponseMessage` whose body may contain `ProblemDetails`.** It throws with only the status code, discarding the server's reason. Use the `EnsureSuccessOrThrowAsync` + `FormatHttpError` helper in `src/UX/Weave.Cli/Commands/WorkspaceApiClient.cs` so the user sees the actual 409 conflict reason, not "409 Conflict" alone.
@@ -39,6 +41,10 @@ The law of the repo. Every rule here is enforceable in review. Rules exist to pr
 **Background tasks observe their own faults.** `_ = Task.Run(async () => { ... })` with no error handler is forbidden — a detached exception is unlogged and never surfaces. Use `await`, `task.ContinueWith(t => log, TaskContinuationOptions.OnlyOnFaulted)`, or a named helper `FireAndForgetAsync(task, logger, operationName)`.
 
 **Fire-and-forget actor calls are forbidden outright.** `_ = actor.SomeAsync()` discards an Orleans activation failure or serialization mismatch and leaves the caller wedged in a half-dispatched state. Always `await`, or capture the task and observe completion elsewhere. Reentrancy concerns (an actor calling back into itself) are not a license to fire-and-forget — use `[AlwaysInterleave]` on the inner method, restructure so the callback target is a different grain, or hand the work to a hosted background service. The current offender is `src/Assistants/Weave.Agents/Actors/AgentActor.cs` (search `_ = Task.Run`); fix it, do not codify it.
+
+**Catch the simplest form that expresses intent.** `catch (IOException)` beats `catch (Exception ex) when (ex is IOException)` for a single type — same behavior, less ceremony. The `Exception ex when (...)` form is reserved for genuine multi-type filters where listing each `catch` block would duplicate the body. Today's worst offender: `src/UX/Weave.Cli/Tui/ChatComposer.cs` lines 122/125/131 use the verbose form for single-type swallows; same file lines 147/153 already use the simpler form for the same intent.
+
+**Drop the bind variable when you don't use it.** `catch (IOException) { /* platform quirk */ }` is the form when there's nothing to log — naming `ex` and then ignoring it (`catch (IOException ex) { /* ignore */ }`) is dead code that compilers used to warn about. If you have a reason to keep the binding (future logging, debugger inspection), add a one-line `LogDebug` and lose the `/* ignore */`. Don't keep the binding "just in case."
 
 ### Process management
 
@@ -74,6 +80,12 @@ The law of the repo. Every rule here is enforceable in review. Rules exist to pr
 
 **Use `JsonSerializer.SerializeToUtf8Bytes` + `ByteArrayContent`, not `PostAsJsonAsync` with reflection overloads.** This keeps adapters AOT- and trimming-safe; reflection overloads break under both.
 
+**Source generation over reflection — everywhere it's available.** STJ source-gen for serialization, `[GeneratedRegex]` for regex, `[LoggerMessage]` for structured logs, the repo's own `BrandedIdGenerator` for branded IDs and `CqrsRegistrationGenerator` for handler registration. The reflection equivalents (`JsonSerializer.Serialize<T>(value)`, `new Regex(pattern)`, `logger.LogInformation(...)`, `assembly.GetTypes().Where(...)`) all break under NativeAOT trimming and are slower under JIT. If a feature has a source generator, use it; if a hot path doesn't have one yet, either add one or annotate the call with `[RequiresUnreferencedCode]` so AOT consumers see the warning.
+
+**Anonymous types in `JsonSerializer.Serialize` calls are reflection-only.** They cannot be added to a `JsonSerializerContext`, so every site using `JsonSerializer.SerializeToUtf8Bytes(new { text = ... })` falls back to runtime reflection. Today's offenders: `Weave.Silo/Channels/{Teams,Discord}ChannelAdapter.cs` (single-field payloads). Fix shape: a typed `record TeamsPayload(string Text)` plus a `[JsonSerializable(typeof(TeamsPayload))]` entry on `SiloApiJsonContext` (or a per-adapter context).
+
+**Reflection-based DI registration is dead code.** `Weave.Shared/Cqrs/ServiceCollectionExtensions.cs::AddCqrs` carries `[RequiresUnreferencedCode]` and scans assemblies via `GetTypes()` — it has zero callers; production wires CQRS through the source-generated `AddGeneratedCqrsHandlers()`. Delete the reflection path per the pre-1.0 no-back-compat rule.
+
 ### Namespace hygiene and project layout
 
 **One reason to exist per project.** If a project wraps adapters for a single consumer, it belongs *in* that consumer or as a folder under it. `Weave.Shared.Orleans` as a standalone Foundation project was wrong; its one consumer was the Silo, and it now lives at `src/Runtime/Weave.Silo/Serialization/`.
@@ -82,7 +94,47 @@ The law of the repo. Every rule here is enforceable in review. Rules exist to pr
 
 **Dependencies flow `Shared -> Workspaces -> Agents/Tools/Security/Deploy -> Silo/Cli/Dashboard -> AppHost`.** New circular references are rejected. If a Foundation type needs an adapter, the adapter moves to the consumer — Foundation does not take a dependency on it.
 
-**Feature-based folders. No `Controllers/`, `Services/`, `Models/` at the top of a project.** Group by capability: `Workspaces/`, `Chat/`, `Heartbeat/`. See `src/Assistants/Weave.Agents/Actors/` — interface, implementation, and state model sit together.
+**Each storage/transport provider lives in its own opt-in project.** When an abstraction has multiple implementations that pull different third-party packages, each impl gets its own project (`Weave.Security.{Sqlite,Postgres}`, `Weave.Silo.Clustering.{Redis,Sqlite,SqlServer,Postgres}`). The abstractions project pulls zero provider packages — anyone wanting only one backend should be able to drop the other project refs and ship without those deps. After adding/removing a provider package anywhere in the graph, regenerate every consumer's `packages.lock.json` from a clean restore — central transitive pinning leaves stale entries that hide the win.
+
+**Feature-based folders. No `Controllers/`, `Services/`, `Models/` at the top of a project.** Group by capability: `Workspaces/`, `Chat/`, `Heartbeat/`. See `src/Security/Weave.Security/{Tokens,Audit,Vault,Scanning}/` for the right shape — each folder owns its interface, implementation, state, options, and any helpers as a single vertical slice.
+
+### Vertical slices and code organization
+
+**Default to vertical slices: group by capability, not by technical role.** A feature folder owns its actor, state, commands, queries, events, and supporting types. Horizontal cuts (`Actors/`, `Queries/`, `Commands/`, `Events/`, `Models/`, `Services/`) collect every feature's slice of one technical role into a basket that grows monotonically and forces every feature owner to touch the same N folders. The exemplar is `Weave.Security/{Tokens,Audit,Vault,Scanning}/` — adding a new security capability adds one folder, not five entries spread across five baskets.
+
+**Today's biggest horizontal-cut violators, in priority order for cleanup:**
+- `Weave.Agents/{Actors,Commands,Queries,Events}/` — 36 files in `Actors/` alone, mixing 7 unrelated capabilities (agent, channel gateway, episodic memory, proof verifier/validator, skill memory, tool registry, user model). Should split into `Weave.Agents/{Agents,Channels,Memory,Proof,Skills,Tools,Users}/`, each owning its own actor + state + commands + queries + events.
+- `Weave.Tools/{Actors,Events}/` — same shape, smaller scale. `Connectors/`, `Discovery/`, and `Marketplace/` already model the right pattern within this project.
+- `Weave.Workspaces/{Actors,Commands,Queries,Events}/` — same shape; the slices are `Workspaces` and `Templates`, both already have folders that should absorb the rest.
+- `Weave.Dashboard/Services/` — mixes `WeaveApiClient` with 8 DTOs. The client moves to `Api/`; each DTO co-locates with the Razor page that consumes it.
+
+**Pluralized type-name folders are smells: `Models/`, `Services/`, `Helpers/`, `Utils/`, `Common/`, `Shared/` (inside a project), `Misc/`, `Managers/`, `DTOs/`.** Each one says "I didn't decide what this code is about." `Weave.Dashboard/Services/` is the only top-level offender today — others would be rejected on review.
+
+**Composition-root infrastructure is the legitimate horizontal exception.** `Startup/`, `Api/`, `Configuration/`, `VirtualActors/`, `Serialization/` in `Weave.Silo` exist because the Silo wires every feature — they are not capabilities, they are wiring layers. The test for "is this exception OK": does this folder *have* to know about every feature in the project? If yes, horizontal is correct. If no, it's masking missing slices.
+
+**Inside a feature folder, the triple — interface, implementation, and state model — sits together.** `IFooActor.cs` + `FooActor.cs` + `FooState.cs` next to each other. This is what's already done well *within* `Weave.Agents/Actors/`; the work is to lift the same per-feature grouping one level up so each capability is its own folder.
+
+**A new feature adds one folder.** If adding "skill recommendations" requires touching `Actors/`, `Commands/`, `Queries/`, `Events/`, *and* `Models/`, the project is shaped wrong — a future change to that feature will sprawl across all five. The PR diff should be biased toward "many lines in one folder," not "one line in each of many folders."
+
+### Versioning and breaking changes
+
+**Pre-1.0: no backward-compat shims.** No `Legacy*` constants, no dual config keys for the same setting, no deprecated synonyms (`"postgres"` aliasing `"postgresql"`), no fallback property reads, no compatibility ctor overloads. When a key/type/contract changes, change the call sites and move on. Half the codebase is still under construction; carrying shims for an unreleased product is dead weight that hides which surface is the real one. Re-introduce migration shims only after a 1.0 release.
+
+**When you remove a config value, grep the literal across the whole repo before claiming done.** Test fixtures (`[InlineData(...)]`), docs, sample configs, and CLI emit-side switches all hold copies of the string that the type-checker won't catch. `grep -rn '"the-removed-value"' .` is the floor.
+
+### Refactoring discipline
+
+**A refactor is a strict no-op for runtime behavior.** Moving code, splitting projects, renaming types — none of those should change what the running system does. If you catch yourself adding `RegisterFactory(...)`, an extra `?? defaultValue`, or "improvements" while moving code, stop and revert. Those are separate commits at minimum. The Silo clustering split nearly shipped three unintended `DbProviderFactories.RegisterFactory` calls disguised as part of the refactor — caught only because the original code clearly didn't have them.
+
+**After any package or project graph change, force-regen every consumer's `packages.lock.json` from a clean restore.** `dotnet restore --force` only re-restores the requested project; downstream consumers stay on the old graph. The floor is `find src -name packages.lock.json -delete; find src -name obj -type d -prune -exec rm -rf {} +; dotnet restore Weave.slnx --force`. Stale lockfiles after the security split made an audit report "all clean" while 225 lines of `Sqlite/Npgsql/SQLitePCLRaw` pins still sat in 4 downstream lockfiles.
+
+**When a rule applies, apply it everywhere it fits.** "But this is the composition root," "this only ships once," "this is just hygiene" — those are the rule talking back, not exceptions. The per-provider-project rule was applied to `Weave.Security` then carved out for `Weave.Silo` on the grounds that "no upstream domain project gets polluted" — until the user pushed back and the same mechanical refactor landed cleanly. Carve-outs accumulate into "rules nobody actually follows."
+
+**Audit on fresh state.** Before reporting "I checked X and it's clean," regenerate any cached/derived artifact you read from — lockfiles, generated source, build outputs, test reports. Stale derived state will tell you "all good" when the underlying change hasn't propagated. The same audit twice (once on stale lockfiles, once after `dotnet restore --force`) gave opposite answers in this session.
+
+**Dead code is a sign you stopped paying attention.** When you remove a caller, the called code may have become orphaned. When you remove a config key, its constants and the helpers that read it are next. When you replace a reflection path with source-gen, the reflection helpers are dead. After any deletion or contract change, grep for the removed name and the immediate neighbours — symbols whose only caller was what you just removed are now garbage. Examples from this branch: deleting `Legacy*` constants left `LegacyOrleansStorageSectionName` references in `RuntimeSettings` until a follow-up scan; the source-gen rule landed only when `ServiceCollectionExtensions.AddCqrs` (`[RequiresUnreferencedCode]`, zero production callers, only its own tests referenced it) was finally noticed and deleted. Dead code accumulates until someone refactors blind, can't tell which path is real, and breaks the live one. Delete in the same commit that orphans it.
+
+**False-positive watchlist for "unused" greps.** Some callers don't show up in `grep -r`: `System.CommandLine` command builders are referenced by `Program.cs` `Command` tree composition; CQRS handlers are wired by source-generated `AddGeneratedCqrsHandlers()`; Razor event handlers are called from `@onclick="@MethodName"` in the matching `.razor` file (not the `.razor.cs`); Orleans grain bridges are resolved by the cluster client from `IGrainWithStringKey` keys; `[JsonSerializable]`-attributed types are dispatched at runtime through the context. When marking something orphan, check those vectors before deletion.
 
 ### Naming and style
 
@@ -90,11 +142,39 @@ The law of the repo. Every rule here is enforceable in review. Rules exist to pr
 
 **Interface names drop the `I` prefix in TypeScript code only; .NET keeps the `I`** (`IToolConnector`, `IPublisher`). The no-`I` rule in global CLAUDE.md is a TS convention — do not apply it to .NET.
 
+### Comments
+
+**Default to no comments.** The variable name, method name, and type name should carry the meaning. A comment is justified only when the *why* is non-obvious — a hidden constraint, a subtle invariant, a workaround for a specific bug, behavior that would surprise a reader. If removing the comment wouldn't confuse a future reader, don't write it.
+
+**Don't narrate what the next line does.** `// Get the user`, `// Loop through items`, `// Construct the request`, `// Returns the workspace` — these restate the code. Delete them; rename the symbol if it's still unclear.
+
+**Don't reference the current task, fix, or callers** — "added for the X flow," "used by Y," "fixes #123." That context belongs in the PR description and rots as the codebase evolves. The exception: a comment that names a specific external bug (`// Workaround for dotnet/runtime#12345`) is durable because the link is permanent.
+
+**XML doc summaries on public surfaces stay under 3 lines.** They explain *contract* — what params mean, what's returned, what's thrown, what side-effects exist — not implementation. A summary that runs into paragraphs usually means the type is doing too much; split before lengthening the doc. The current outliers worth reviewing: `Weave.Silo/Audit/CapabilityAuditSubscriberHostedService.cs` (14-line block — but the `<remarks>` documents a real startup-ordering hazard, so this one earns its length), `Weave.Shared/Cqrs/CommandDispatcher.cs` (13 lines), `Weave.Shared/Plugins/PluginServiceBroker.cs` (10 lines), `Weave.Agents/Pipeline/AgentChatClientFactory.cs` (10 lines).
+
+**`<remarks>` is the right tool for non-obvious context** (startup ordering, threading model, lifetime quirks, why a seemingly redundant call is necessary). It's distinct from `<summary>` precisely so `<summary>` can stay short. Use it when you'd otherwise feel pulled to make `<summary>` longer.
+
 **Extension classes in .NET follow `ExtensionsToXXX`**, sit in the target type's namespace, and suppress the namespace-mismatch analyzer inline. Do not invent new naming — the convention is already set in `CLAUDE.md`.
 
 **Classes over 200 lines require a design check.** Before growing a class beyond 200 lines, consider whether responsibilities should be split into smaller focused types. Do not mix multiple production classes in one file unless they are tightly coupled private helpers; one public or internal production class per file is the default.
 
 **Console output uses text-presentation Unicode, not emoji-variant glyphs.** `✗` (U+2717) renders with color tags; `✖` (U+2716) triggers emoji fonts that ignore Spectre RGB colors. If you must use a dual-use glyph, append U+FE0E to force text presentation. Use helpers in `CliTheme` rather than raw `Console.WriteLine` or direct Spectre markup.
+
+### File and class size
+
+**Production files: one public/internal type per file, classes ≤ 200 lines.** The 200-line threshold is a design check trigger, not a hard cap — but every file above it should have a paragraph in its PR description explaining why it didn't split. Today's only production violator is `src/UX/Weave.Cli/Tui/TuiSlashCommandDispatcher.cs` (422 lines) — slated for extraction into per-command handlers.
+
+**Tightly-coupled type pairs may share a file when neither is meaningful alone.** The codified pattern is the CQRS shape: a `*Query` record plus its `*Handler` class in the same file (`GetRecentCapabilityAuditQuery.cs`). The handler is private to the query in practice, even though both are `public`. Two unrelated types that just happen to live in the same namespace do not qualify.
+
+**Test files: keep under ~500 lines per type under test.** When a test file passes 600 lines it almost always means the production class is doing too much — split the production type first, the tests follow. Today's outliers (`FileSystemToolConnectorTests.cs` at 1575, `PublisherTests.cs` at 864, `AgentActorTests.cs` at 789) are honest signals about their respective production classes.
+
+### Time and clocks
+
+**Inject `TimeProvider`; never call `DateTime.UtcNow` / `DateTimeOffset.UtcNow` from logic that decides behavior.** "Logic that decides behavior" = anything with time-dependent control flow (cache TTL, token expiry, retry backoff, debounce windows, hint timeouts). Tests need `FakeTimeProvider` to drive these without `Thread.Sleep`. The pattern: `CapabilityTokenService` takes `TimeProvider` in its constructor and calls `_timeProvider.GetUtcNow()`; tests pass a `FakeTimeProvider` and call `Advance(TimeSpan)`.
+
+**Default property initializers on data records (`= DateTimeOffset.UtcNow`) are the only acceptable direct call.** They exist purely so the field has a value when nobody set one. The writer (actor, command handler) should normally supply an explicit timestamp from its injected `TimeProvider`. Today's violators where logic depends on the wall clock and tests can't fake it: `Weave.Agents/Actors/AgentState.cs` (7 mutating writes), `Weave.Cli/Tui/ChatExitConfirmation.cs` (3 time-window checks), `Weave.Cli/Commands/Version/VersionService.cs` (cache TTL). Each should take a `TimeProvider`.
+
+**Logging/display timestamps in CLI/TUI may use `DateTime.Now` directly.** They are not behavior — `SiloProcessService`'s log prefix and `TuiLiveStatusRenderer`'s "Refreshed" line do not feed any branching logic.
 
 ### Secrets and security
 
@@ -131,6 +211,8 @@ The law of the repo. Every rule here is enforceable in review. Rules exist to pr
 **No file-system side effects outside `Path.GetTempPath()`.** Writing into the repo or CWD breaks parallel test runs and pollutes the working tree. Clean up in `IAsyncDisposable.DisposeAsync`.
 
 **Environment variables set in tests are scoped and restored.** Use `IDisposable`-backed helpers — never mutate `Environment.SetEnvironmentVariable` without a `finally` that resets it. Environment-detected plugins (Dapr when `DAPR_HTTP_PORT` is set) make this especially important.
+
+**Tests against process-global instruments (`Meter`, `ActivitySource`, static counters) use thread-safe sinks and `ShouldContain`, never exact counts.** A static `Meter` is shared across the entire test assembly; any parallel test class that triggers the same instrument will land in your `MeterListener` callback. Use `ConcurrentQueue<T>` (the publisher fires on the call-site thread, racing your test thread — `List<T>.Add` corrupts under contention and produces cryptic Shouldly errors) and assert "snapshot contains the expected tag set" rather than "snapshot has exactly N items." See `CapabilityAuthorizerTests`'s metric tests for the pattern.
 
 ### Assertions and libraries
 
@@ -171,6 +253,21 @@ Coverage alone is a **trailing** indicator of test quality. A suite can hit 95% 
 **Arrange-Act-Assert, visible.** Each test is three sections: setup, the one call you're testing, and assertions. No interleaving. If you can't tell where Act ends and Assert begins, the test is testing too much.
 
 **No `try/catch` in tests.** Use `Should.Throw<T>()` for expected exceptions. A `try/catch` that swallows an exception + continues IS a test that silently passes under failure conditions.
+
+**Tests use real-shaped inputs, not the simplest values that compile.** `new AgentDefinition { Name = "a", Capabilities = [] }` proves nothing — every nullable is empty, the happy path runs straight through, no edge inside the SUT is exercised. Use a minimum representative payload: a real agent name, real capability strings (`"tool:git"`, `"skill:read"`), values long enough to hit any length-based branches. Helper factories (`AgentDefinitionFactory.Default()` then customize per test) keep this readable. The bar: if I changed the SUT to `return default`, would your assertions fire?
+
+**A "verify-nothing" test is one whose assertions would still pass on a broken implementation.** Common shapes:
+- `result.ShouldNotBeNull()` is the only assertion, but the SUT can never return null (it would throw first). The check encodes nothing.
+- `result.Items.Count.ShouldBeGreaterThan(0)` when *any* implementation that returned a non-empty list would pass — including one that returned the wrong items.
+- `(await Should.NotThrowAsync(() => sut.DoX()))` with no follow-up read of state. "Didn't throw" is not a postcondition for any feature this repo ships.
+- Round-trip tests on records (`new Foo { X = 1 }.X.ShouldBe(1)`) — the C# compiler already guarantees this; you're testing the language.
+- Mock-heavy tests where `substitute.GetValue().Returns(42)` then `result.ShouldBe(42)` — the test passed a value through a stub and read it back; nothing in the SUT was exercised.
+
+For each test, ask: "what bug in the SUT would this catch?" If you can't name one, the test is verifying nothing.
+
+**Mock the boundary, exercise the body.** A unit test mocks the SUT's *dependencies* and runs the SUT for real. If you find yourself `Substitute.For<TheSUT>()` and stubbing the very method you claim to test, you've inverted the harness. The result will pass on any implementation, including one that does nothing.
+
+**Theory cases must be different.** `[Theory] [InlineData(1)] [InlineData(2)] [InlineData(3)]` over a method that doesn't branch on the value is one test, not three. Use `[InlineData]` to cover *distinct branches* (boundary values, empty/single/many, valid/invalid, fast-path/slow-path). The redundant-row check: removing one of the rows — does any branch in the SUT lose coverage? If no, the row was decoration.
 
 **Mock only what you must.** A test with five `Substitute.For<T>()` calls is probably testing wiring that should be integration-tested instead. The smell threshold in this repo: more than 2 mocks per test = needs scrutiny.
 

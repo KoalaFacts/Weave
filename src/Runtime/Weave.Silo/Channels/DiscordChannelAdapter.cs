@@ -13,7 +13,9 @@ public sealed class DiscordChannelAdapter(HttpClient httpClient) : IChannelAdapt
         if (!config.Config.TryGetValue("webhook_url", out var webhookUrl) || string.IsNullOrWhiteSpace(webhookUrl))
             throw new InvalidOperationException("Discord channel config must include 'webhook_url'.");
 
-        var payload = JsonSerializer.SerializeToUtf8Bytes(new { content = message.Content });
+        var payload = JsonSerializer.SerializeToUtf8Bytes(
+            new DiscordPayload(message.Content),
+            ChannelPayloadJsonContext.Default.DiscordPayload);
 
         using var content = new ByteArrayContent(payload);
         content.Headers.ContentType = new System.Net.Http.Headers.MediaTypeHeaderValue("application/json");

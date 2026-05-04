@@ -190,6 +190,7 @@
       "weave.cli": {
         "type": "Project",
         "dependencies": {
+          "Microsoft.Extensions.DependencyInjection": "[10.0.7, )",
           "Spectre.Console": "[0.55.2, )",
           "System.CommandLine": "[2.0.7, )",
           "Weave.Deploy": "[1.0.0, )",
@@ -223,6 +224,15 @@
         "requested": "[10.5.0, )",
         "resolved": "10.5.0",
         "contentHash": "bb2wQ1HGatf5zdBxE28zrN4jaEVmpC+IJYChcqABTfu77YtFcJe/A4ZChjVZ0V1OF+UPYSOY8mUDI/fwEljcIA=="
+      },
+      "Microsoft.Extensions.DependencyInjection": {
+        "type": "CentralTransitive",
+        "requested": "[10.0.7, )",
+        "resolved": "10.0.7",
+        "contentHash": "91F/o3emPV/+xY/ip3s2LqDNF14kjttlVtq0BXgg6p4MnCzeSZxnUJm+t6WRrtD3JdGo88/oX+z7OwK4y8PZuw==",
+        "dependencies": {
+          "Microsoft.Extensions.DependencyInjection.Abstractions": "10.0.7"
+        }
       },
       "Microsoft.Extensions.DependencyInjection.Abstractions": {
         "type": "CentralTransitive",

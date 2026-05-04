@@ -1,6 +1,6 @@
 using System.Text.Json.Serialization;
 
-namespace Weave.Dashboard.Services;
+namespace Weave.Dashboard.Api;
 
 [JsonSourceGenerationOptions(
     PropertyNamingPolicy = JsonKnownNamingPolicy.CamelCase,

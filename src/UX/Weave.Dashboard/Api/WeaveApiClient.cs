@@ -1,4 +1,4 @@
-namespace Weave.Dashboard.Services;
+namespace Weave.Dashboard.Api;
 
 public sealed class WeaveApiClient(HttpClient http)
 {

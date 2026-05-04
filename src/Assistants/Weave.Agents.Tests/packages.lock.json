@@ -1137,11 +1137,25 @@
       "weave.security": {
         "type": "Project",
         "dependencies": {
-          "Microsoft.Data.Sqlite": "[10.0.7, )",
           "Microsoft.Extensions.Logging.Abstractions": "[10.0.7, )",
           "Microsoft.Extensions.Options": "[10.0.7, )",
-          "Npgsql": "[10.0.2, )",
           "Weave.Shared": "[1.0.0, )"
+        }
+      },
+      "weave.security.postgres": {
+        "type": "Project",
+        "dependencies": {
+          "Microsoft.Extensions.Options": "[10.0.7, )",
+          "Npgsql": "[10.0.2, )",
+          "Weave.Security": "[1.0.0, )"
+        }
+      },
+      "weave.security.sqlite": {
+        "type": "Project",
+        "dependencies": {
+          "Microsoft.Data.Sqlite": "[10.0.7, )",
+          "Microsoft.Extensions.Options": "[10.0.7, )",
+          "Weave.Security": "[1.0.0, )"
         }
       },
       "weave.servicedefaults": {
@@ -1168,21 +1182,54 @@
         "type": "Project",
         "dependencies": {
           "Microsoft.AspNetCore.OpenApi": "[10.0.7, )",
-          "Microsoft.Data.SqlClient": "[7.0.1, )",
-          "Microsoft.Data.Sqlite": "[10.0.7, )",
-          "Microsoft.Orleans.Clustering.AdoNet": "[10.1.0, )",
-          "Microsoft.Orleans.Clustering.Redis": "[10.1.0, )",
-          "Microsoft.Orleans.Persistence.AdoNet": "[10.1.0, )",
-          "Microsoft.Orleans.Persistence.Redis": "[10.1.0, )",
           "Microsoft.Orleans.Serialization.SystemTextJson": "[10.1.0, )",
           "Microsoft.Orleans.Server": "[10.1.0, )",
-          "Npgsql": "[10.0.2, )",
           "Scalar.AspNetCore": "[2.14.8, )",
           "Weave.Agents": "[1.0.0, )",
           "Weave.Security": "[1.0.0, )",
+          "Weave.Security.Postgres": "[1.0.0, )",
+          "Weave.Security.Sqlite": "[1.0.0, )",
           "Weave.ServiceDefaults": "[1.0.0, )",
+          "Weave.Silo.Clustering.Postgres": "[1.0.0, )",
+          "Weave.Silo.Clustering.Redis": "[1.0.0, )",
+          "Weave.Silo.Clustering.SqlServer": "[1.0.0, )",
+          "Weave.Silo.Clustering.Sqlite": "[1.0.0, )",
           "Weave.Tools": "[1.0.0, )",
           "Weave.Workspaces": "[1.0.0, )"
+        }
+      },
+      "weave.silo.clustering.postgres": {
+        "type": "Project",
+        "dependencies": {
+          "Microsoft.Orleans.Clustering.AdoNet": "[10.1.0, )",
+          "Microsoft.Orleans.Persistence.AdoNet": "[10.1.0, )",
+          "Microsoft.Orleans.Server": "[10.1.0, )",
+          "Npgsql": "[10.0.2, )"
+        }
+      },
+      "weave.silo.clustering.redis": {
+        "type": "Project",
+        "dependencies": {
+          "Microsoft.Orleans.Clustering.Redis": "[10.1.0, )",
+          "Microsoft.Orleans.Persistence.Redis": "[10.1.0, )",
+          "Microsoft.Orleans.Server": "[10.1.0, )"
+        }
+      },
+      "weave.silo.clustering.sqlite": {
+        "type": "Project",
+        "dependencies": {
+          "Microsoft.Data.Sqlite": "[10.0.7, )",
+          "Microsoft.Orleans.Persistence.AdoNet": "[10.1.0, )",
+          "Microsoft.Orleans.Server": "[10.1.0, )"
+        }
+      },
+      "weave.silo.clustering.sqlserver": {
+        "type": "Project",
+        "dependencies": {
+          "Microsoft.Data.SqlClient": "[7.0.1, )",
+          "Microsoft.Orleans.Clustering.AdoNet": "[10.1.0, )",
+          "Microsoft.Orleans.Persistence.AdoNet": "[10.1.0, )",
+          "Microsoft.Orleans.Server": "[10.1.0, )"
         }
       },
       "weave.tools": {

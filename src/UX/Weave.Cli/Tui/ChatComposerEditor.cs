@@ -6,12 +6,13 @@ internal sealed class ChatComposerEditor
 {
     private readonly ChatTextBuffer _text = new();
     private readonly ChatInputHistory _history = new();
-    private readonly ChatExitConfirmation _exit = new();
+    private readonly ChatExitConfirmation _exit;
     private readonly ChatCommandMenu _menu = new();
     private readonly ChatComposerKeyHandler _keyHandler;
 
-    internal ChatComposerEditor()
+    internal ChatComposerEditor(TimeProvider timeProvider)
     {
+        _exit = new ChatExitConfirmation(timeProvider);
         _keyHandler = new ChatComposerKeyHandler(_text, _history, _exit, _menu);
     }
 

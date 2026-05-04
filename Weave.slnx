@@ -28,6 +28,8 @@
     <Project Path="src/Tools/Weave.Tools/Weave.Tools.csproj" />
   </Folder>
   <Folder Name="/07 - Security/">
+    <Project Path="src/Security/Weave.Security.Postgres/Weave.Security.Postgres.csproj" />
+    <Project Path="src/Security/Weave.Security.Sqlite/Weave.Security.Sqlite.csproj" />
     <Project Path="src/Security/Weave.Security.Tests/Weave.Security.Tests.csproj" />
     <Project Path="src/Security/Weave.Security/Weave.Security.csproj" />
   </Folder>
@@ -39,6 +41,10 @@
     <Project Path="src/Runtime/Weave.AppHost/Weave.AppHost.csproj" />
     <Project Path="src/Runtime/Weave.ServiceDefaults/Weave.ServiceDefaults.csproj" />
     <Project Path="src/Runtime/Weave.Silo/Weave.Silo.csproj" />
+    <Project Path="src/Runtime/Weave.Silo.Clustering.Postgres/Weave.Silo.Clustering.Postgres.csproj" />
+    <Project Path="src/Runtime/Weave.Silo.Clustering.Redis/Weave.Silo.Clustering.Redis.csproj" />
+    <Project Path="src/Runtime/Weave.Silo.Clustering.Sqlite/Weave.Silo.Clustering.Sqlite.csproj" />
+    <Project Path="src/Runtime/Weave.Silo.Clustering.SqlServer/Weave.Silo.Clustering.SqlServer.csproj" />
     <Project Path="src/Runtime/Weave.Silo.Tests/Weave.Silo.Tests.csproj" />
   </Folder>
   <Folder Name="/10 - UX/">

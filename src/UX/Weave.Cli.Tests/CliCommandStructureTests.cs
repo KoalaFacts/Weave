@@ -1,4 +1,6 @@
 using System.CommandLine;
+using Microsoft.Extensions.DependencyInjection;
+using Weave.Cli;
 using Weave.Cli.Commands;
 
 namespace Weave.Cli.Tests;
@@ -50,7 +52,8 @@ public sealed class CliCommandStructureTests
         yield return workspace;
         yield return WorkspaceServeCommand.Create();
         yield return RunCommand.Create();
-        yield return TuiCommand.Create();
+        var services = CliServiceCollection.Build();
+        yield return TuiCommand.Create(services.GetRequiredService<TuiCliCommand>());
         yield return WebUiCommand.Create();
         yield return InitCommand.Create();
         yield return PortsCommand.Create();
@@ -58,7 +61,7 @@ public sealed class CliCommandStructureTests
         yield return StorageCommands.Create();
         yield return DataCommands.Create();
         yield return VersionCommand.Create();
-        yield return UpgradeCommand.Create();
+        yield return UpgradeCommand.Create(services.GetRequiredService<UpgradeCliCommand>());
 
         var config = new Command("config", "Manage CLI configuration");
         config.Subcommands.Add(ConfigGetCommand.Create());

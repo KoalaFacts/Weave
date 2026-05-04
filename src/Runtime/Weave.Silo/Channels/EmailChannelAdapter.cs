@@ -15,12 +15,12 @@ public sealed class EmailChannelAdapter(HttpClient httpClient) : IChannelAdapter
         if (!config.Config.TryGetValue("to", out var to) || string.IsNullOrWhiteSpace(to))
             throw new InvalidOperationException("Email channel config must include 'to'.");
 
-        var payload = JsonSerializer.SerializeToUtf8Bytes(new
-        {
-            to,
-            subject = config.Config.GetValueOrDefault("subject", "Weave Agent Response"),
-            body = message.Content
-        });
+        var payload = JsonSerializer.SerializeToUtf8Bytes(
+            new EmailPayload(
+                to,
+                config.Config.GetValueOrDefault("subject", "Weave Agent Response"),
+                message.Content),
+            ChannelPayloadJsonContext.Default.EmailPayload);
 
         using var content = new ByteArrayContent(payload);
         content.Headers.ContentType = new System.Net.Http.Headers.MediaTypeHeaderValue("application/json");

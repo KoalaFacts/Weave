@@ -25,7 +25,7 @@ internal static class CliSecretResolver
     {
         var varName = storageBackend.ToUpperInvariant() switch
         {
-            "POSTGRESQL" or "POSTGRES" => "WEAVE_PG_CONNECTION",
+            "POSTGRESQL" => "WEAVE_PG_CONNECTION",
             "SQLSERVER" => "WEAVE_SQL_CONNECTION",
             "REDIS" => "WEAVE_REDIS_CONNECTION",
             "SQLITE" => "WEAVE_SQLITE_CONNECTION",

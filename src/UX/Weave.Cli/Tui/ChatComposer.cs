@@ -11,9 +11,9 @@ namespace Weave.Cli.Tui;
 /// cursor, repaint the panel on every keystroke, and support
 /// Shift+Enter for newlines.
 /// </summary>
-internal sealed class ChatComposer
+internal sealed class ChatComposer(TimeProvider timeProvider)
 {
-    private readonly ChatComposerEditor _editor = new();
+    private readonly ChatComposerEditor _editor = new(timeProvider);
     private bool _cursorOn = true;
 
     // Poll loop ticks every 25 ms; 20 ticks ≈ 500 ms → classic
@@ -119,16 +119,20 @@ internal sealed class ChatComposer
         bool previous = false;
         try
         { previous = Console.TreatControlCAsInput; }
-        catch (Exception ex) when (ex is IOException or PlatformNotSupportedException) { /* platform quirk */ }
+        catch (IOException) { /* console redirected — ignore */ }
+        catch (PlatformNotSupportedException) { /* unsupported terminal — ignore */ }
+
         try
         { Console.TreatControlCAsInput = true; }
-        catch (Exception ex) when (ex is IOException or PlatformNotSupportedException) { /* ignore */ }
+        catch (IOException) { /* console redirected — ignore */ }
+        catch (PlatformNotSupportedException) { /* unsupported terminal — ignore */ }
 
         return () =>
         {
             try
             { Console.TreatControlCAsInput = previous; }
-            catch (Exception ex) when (ex is IOException or PlatformNotSupportedException) { /* ignore */ }
+            catch (IOException) { /* console redirected — ignore */ }
+            catch (PlatformNotSupportedException) { /* unsupported terminal — ignore */ }
         };
     }
 

@@ -4,8 +4,10 @@ using Weave.Agents.Pipeline;
 using Weave.Agents.Verification;
 using Weave.Security.Audit;
 using Weave.Security.Plugins;
+using Weave.Security.Postgres;
 using Weave.Security.Proxy;
 using Weave.Security.Scanning;
+using Weave.Security.Sqlite;
 using Weave.Security.Tokens;
 using Weave.Security.Vault;
 using Weave.Shared.Cqrs;
@@ -102,7 +104,7 @@ internal sealed class SiloServiceRegistrar
             case CapabilityAuditOptions.SqliteBackend:
                 _services.AddSingleton<ICapabilityAuditStore, SqliteCapabilityAuditStore>();
                 break;
-            case CapabilityAuditOptions.PostgreSqlBackend or CapabilityAuditOptions.PostgresBackend:
+            case CapabilityAuditOptions.PostgreSqlBackend:
                 _services.AddSingleton<ICapabilityAuditStore, PostgresCapabilityAuditStore>();
                 break;
             default:

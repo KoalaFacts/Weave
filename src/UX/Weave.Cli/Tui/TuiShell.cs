@@ -8,9 +8,14 @@ internal sealed class TuiShell
     private readonly TuiWorkspaceDashboard _dashboard = new();
     private readonly TuiChatSession _chatSession = new();
     private readonly TuiSlashCommandDispatcher _dispatcher;
+    private readonly VersionService _versionService;
+    private readonly ChatComposer _composer;
 
-    public TuiShell()
+    public TuiShell(VersionService versionService, ChatComposer composer, UpgradeCliCommand upgradeCommand)
     {
+        _versionService = versionService;
+        _composer = composer;
+
         var agentNameSource = new TuiAgentNameSource();
         var agentSelector = new TuiAgentSelector(agentNameSource);
 
@@ -21,7 +26,8 @@ internal sealed class TuiShell
             new TuiAgentListView(agentNameSource),
             new TuiWorkspaceOpener(agentSelector),
             new TuiWorkspaceStarter(agentSelector),
-                new TuiWorkspaceWatcher());
+            new TuiWorkspaceWatcher(),
+            upgradeCommand);
     }
 
     public async Task<int> RunAsync(CancellationToken cancellationToken)
@@ -30,18 +36,16 @@ internal sealed class TuiShell
 
         AnsiConsole.Clear();
         CliTheme.WriteBanner();
-        VersionService.KickOffRefreshIfStale();
+        _versionService.KickOffRefreshIfStale();
         await _dashboard.RefreshAsync(cancellationToken);
         RenderWelcome();
-
-        var composer = new ChatComposer();
 
         while (!cancellationToken.IsCancellationRequested)
         {
             ComposerResult composed;
             try
             {
-                composed = await composer.ReadAsync(session, cancellationToken);
+                composed = await _composer.ReadAsync(session, cancellationToken);
             }
             catch (OperationCanceledException)
             {

@@ -7,7 +7,6 @@ public sealed class CapabilityAuditOptions
     public const string MemoryBackend = "memory";
     public const string SqliteBackend = "sqlite";
     public const string PostgreSqlBackend = "postgresql";
-    public const string PostgresBackend = "postgres";
 
     /// <summary>
     /// Maximum number of events held by the audit store. When exceeded the
@@ -20,8 +19,8 @@ public sealed class CapabilityAuditOptions
     /// Selects the <see cref="ICapabilityAuditStore"/> implementation. One of:
     /// <c>"memory"</c> (default — in-process, evicts on silo restart);
     /// <c>"sqlite"</c> (persists to a SQLite file under <c>~/.weave/</c>; single-silo);
-    /// <c>"postgresql"</c> / <c>"postgres"</c> (shared backend for multi-silo
-    /// deployments; <see cref="ConnectionString"/> required).
+    /// <c>"postgresql"</c> (shared backend for multi-silo deployments;
+    /// <see cref="ConnectionString"/> required).
     /// </summary>
     public string Backend { get; init; } = MemoryBackend;
 

@@ -2,7 +2,7 @@ using Weave.Cli.Tui;
 
 namespace Weave.Cli.Commands;
 
-internal sealed class TuiCliCommand : ICliCommand<NoCliOptions>
+internal sealed class TuiCliCommand(IServiceProvider services) : ICliCommand<NoCliOptions>
 {
     public string Name => "tui";
 
@@ -10,5 +10,5 @@ internal sealed class TuiCliCommand : ICliCommand<NoCliOptions>
 
     public string Description => "Launch the interactive terminal UI";
 
-    public Task<int> ExecuteAsync(NoCliOptions options, CancellationToken ct) => TuiApp.RunAsync(ct);
+    public Task<int> ExecuteAsync(NoCliOptions options, CancellationToken ct) => TuiApp.RunAsync(services, ct);
 }

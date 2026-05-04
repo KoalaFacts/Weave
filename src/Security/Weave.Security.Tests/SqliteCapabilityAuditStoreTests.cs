@@ -2,6 +2,7 @@ using Microsoft.Data.Sqlite;
 using Microsoft.Extensions.Options;
 using Weave.Security.Audit;
 using Weave.Security.Events;
+using Weave.Security.Sqlite;
 
 namespace Weave.Security.Tests;
 

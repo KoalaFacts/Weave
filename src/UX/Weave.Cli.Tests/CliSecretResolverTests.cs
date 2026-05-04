@@ -49,7 +49,6 @@ public sealed class CliSecretResolverTests
 
     [Theory]
     [InlineData("postgresql", "env:WEAVE_PG_CONNECTION")]
-    [InlineData("postgres", "env:WEAVE_PG_CONNECTION")]
     [InlineData("sqlserver", "env:WEAVE_SQL_CONNECTION")]
     [InlineData("redis", "env:WEAVE_REDIS_CONNECTION")]
     [InlineData("sqlite", "env:WEAVE_SQLITE_CONNECTION")]
