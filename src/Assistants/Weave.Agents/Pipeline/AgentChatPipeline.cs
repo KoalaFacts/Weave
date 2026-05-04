@@ -1,10 +1,18 @@
 using Microsoft.Extensions.AI;
 using Microsoft.Extensions.Logging;
-using Weave.Agents.Actors;
+using Weave.Agents.Channels;
+using Weave.Agents.Lifecycle;
+using Weave.Agents.Memory;
 using Weave.Agents.Models;
+using Weave.Agents.Skills;
+using Weave.Agents.ToolRegistry;
+using Weave.Agents.Users;
+using Weave.Agents.Verification;
 using Weave.Security.Tokens;
-using Weave.Tools.Actors;
+using Weave.Shared.Capabilities;
 using Weave.Tools.Builders;
+using Weave.Tools.Marketplace;
+using Weave.Tools.Tool;
 
 namespace Weave.Agents.Pipeline;
 
@@ -159,7 +167,7 @@ public sealed class AgentChatPipeline(
             return prompt;
 
         var grant = $"user:read:{message.UserId}";
-        if (state.Definition?.Capabilities is not { } capabilities || !CapabilityToken.HasGrant(capabilities, grant))
+        if (state.Definition?.Capabilities is not { } capabilities || !CapabilityGrantMatcher.HasGrant(capabilities, grant))
             return prompt;
 
         var userActor = actors.GetActor<IUserModelActor>(VirtualActorId.Combine(state.WorkspaceId, message.UserId));

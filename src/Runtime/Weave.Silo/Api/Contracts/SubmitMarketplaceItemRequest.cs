@@ -14,4 +14,5 @@ public sealed record SubmitMarketplaceItemRequest
     public List<string>? Tags { get; init; }
     public List<string>? RequiredCapabilities { get; init; }
     public string? DocumentationUrl { get; init; }
+    public string? TemplateId { get; init; }
 }

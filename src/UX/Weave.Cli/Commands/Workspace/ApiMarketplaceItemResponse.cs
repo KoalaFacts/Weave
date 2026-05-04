@@ -14,4 +14,23 @@ internal sealed record ApiMarketplaceItemResponse
     public int InstallCount { get; init; }
     public double Rating { get; init; }
     public int RatingCount { get; init; }
+    public string? TemplateId { get; init; }
+}
+
+internal sealed record ApiMarketplaceInstallResponse
+{
+    public required ApiMarketplaceItemResponse Item { get; init; }
+    public required ApiMarketplaceInstallTemplate Template { get; init; }
+}
+
+internal sealed record ApiMarketplaceInstallTemplate
+{
+    public required string TemplateId { get; init; }
+    public required string Name { get; init; }
+    public required string Description { get; init; }
+    public required string Version { get; init; }
+    public required string Author { get; init; }
+    public required string Status { get; init; }
+    public List<string> Tags { get; init; } = [];
+    public int InstantiationCount { get; init; }
 }

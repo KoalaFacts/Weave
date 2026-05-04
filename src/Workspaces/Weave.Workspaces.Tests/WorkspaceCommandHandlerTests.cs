@@ -1,10 +1,16 @@
-using Weave.Agents.Actors;
+using Weave.Agents.Channels;
+using Weave.Agents.Lifecycle;
+using Weave.Agents.Memory;
+using Weave.Agents.Skills;
+using Weave.Agents.ToolRegistry;
+using Weave.Agents.Users;
+using Weave.Agents.Verification;
 using Weave.Shared.Ids;
 using Weave.Silo.Api;
-using Weave.Workspaces.Actors;
-using Weave.Workspaces.Commands;
+using Weave.Workspaces.Lifecycle;
 using Weave.Workspaces.Models;
-using Weave.Workspaces.Queries;
+using Weave.Workspaces.Registry;
+using Weave.Workspaces.Templates;
 
 namespace Weave.Workspaces.Tests;
 

@@ -13,6 +13,8 @@ namespace Weave.Silo.Tests;
 /// </summary>
 public sealed class MarketplaceLifecycleTests : IClassFixture<SiloFactory>
 {
+    private static readonly string[] TestTags = ["test"];
+
     private readonly SiloFactory _factory;
 
     public MarketplaceLifecycleTests(SiloFactory factory) => _factory = factory;
@@ -195,5 +197,101 @@ public sealed class MarketplaceLifecycleTests : IClassFixture<SiloFactory>
         response.StatusCode.ShouldBe(HttpStatusCode.OK);
         var body = await response.Content.ReadAsStringAsync(TestContext.Current.CancellationToken);
         body.ShouldStartWith("[");
+    }
+
+    [Fact]
+    public async Task Install_PublishedItemWithLinkedTemplate_Returns200WithResolvedTemplate()
+    {
+        using var client = _factory.CreateClient();
+
+        // The seeder publishes BuiltInTemplates at silo startup; pick one as the
+        // install target. Submit + publish a marketplace item linked to it.
+        var templateId = "tpl-built-in-coding-assistant";
+        var name = $"mkt-install-{Guid.NewGuid():N}";
+
+        using var submitResponse = await client.PostAsJsonAsync(
+            "/api/marketplace",
+            new
+            {
+                Name = name,
+                Description = "links to coding-assistant",
+                Category = "ToolConnector",
+                Version = "1.0.0",
+                Author = "tests",
+                Tags = TestTags,
+                RequiredCapabilities = Array.Empty<string>(),
+                TemplateId = templateId
+            },
+            TestContext.Current.CancellationToken);
+        submitResponse.StatusCode.ShouldBe(HttpStatusCode.Created);
+        using var submitDoc = JsonDocument.Parse(
+            await submitResponse.Content.ReadAsStringAsync(TestContext.Current.CancellationToken));
+        var itemId = submitDoc.RootElement.GetProperty("itemId").GetString()!;
+
+        using var publishResponse = await client.PostAsJsonAsync(
+            $"/api/marketplace/{itemId}/publish",
+            new { ReviewerId = "reviewer", Approved = true, Notes = "ok" },
+            TestContext.Current.CancellationToken);
+        publishResponse.StatusCode.ShouldBe(HttpStatusCode.OK);
+
+        using var installResponse = await client.PostAsync(
+            $"/api/marketplace/{itemId}/install",
+            content: null,
+            TestContext.Current.CancellationToken);
+        var installBody = await installResponse.Content.ReadAsStringAsync(TestContext.Current.CancellationToken);
+        installResponse.StatusCode.ShouldBe(HttpStatusCode.OK, installBody);
+
+        using var doc = JsonDocument.Parse(installBody);
+        doc.RootElement.GetProperty("item").GetProperty("itemId").GetString().ShouldBe(itemId);
+        doc.RootElement.GetProperty("item").GetProperty("installCount").GetInt32().ShouldBe(1);
+        doc.RootElement.GetProperty("template").GetProperty("templateId").GetString().ShouldBe(templateId);
+        doc.RootElement.GetProperty("template").GetProperty("name").GetString().ShouldBe("coding-assistant");
+    }
+
+    [Fact]
+    public async Task Install_DraftItem_Returns409()
+    {
+        using var client = _factory.CreateClient();
+        var itemId = await SubmitItemAsync(client);  // submitted, not published
+
+        using var response = await client.PostAsync(
+            $"/api/marketplace/{itemId}/install",
+            content: null,
+            TestContext.Current.CancellationToken);
+
+        response.StatusCode.ShouldBe(HttpStatusCode.Conflict);
+    }
+
+    [Fact]
+    public async Task Install_UnknownItem_Returns404()
+    {
+        using var client = _factory.CreateClient();
+
+        using var response = await client.PostAsync(
+            "/api/marketplace/mkt_install_missing/install",
+            content: null,
+            TestContext.Current.CancellationToken);
+
+        response.StatusCode.ShouldBe(HttpStatusCode.NotFound);
+    }
+
+    [Fact]
+    public async Task Install_PublishedItemWithoutTemplate_Returns409()
+    {
+        using var client = _factory.CreateClient();
+        var itemId = await SubmitItemAsync(client);
+
+        using var publishResponse = await client.PostAsJsonAsync(
+            $"/api/marketplace/{itemId}/publish",
+            new { ReviewerId = "reviewer", Approved = true, Notes = "ok" },
+            TestContext.Current.CancellationToken);
+        publishResponse.StatusCode.ShouldBe(HttpStatusCode.OK);
+
+        using var response = await client.PostAsync(
+            $"/api/marketplace/{itemId}/install",
+            content: null,
+            TestContext.Current.CancellationToken);
+
+        response.StatusCode.ShouldBe(HttpStatusCode.Conflict);
     }
 }

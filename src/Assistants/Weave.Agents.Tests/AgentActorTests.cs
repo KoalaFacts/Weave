@@ -1,8 +1,13 @@
 using Microsoft.Extensions.Logging;
 using Microsoft.Extensions.Options;
-using Weave.Agents.Actors;
+using Weave.Agents.Channels;
+using Weave.Agents.Lifecycle;
+using Weave.Agents.Memory;
 using Weave.Agents.Models;
 using Weave.Agents.Pipeline;
+using Weave.Agents.Skills;
+using Weave.Agents.ToolRegistry;
+using Weave.Agents.Users;
 using Weave.Agents.Verification;
 using Weave.Security.Tokens;
 using Weave.Shared.Events;
@@ -145,7 +150,7 @@ public sealed class AgentActorTests
         await actor.ActivateAgentAsync(TestWorkspaceId, CreateDefinition());
 
         await eventBus.Received(1).PublishAsync(
-            Arg.Is<Events.AgentActivatedEvent>(e =>
+            Arg.Is<Lifecycle.AgentActivatedEvent>(e =>
                 e.WorkspaceId == TestWorkspaceId &&
                 e.Model == "claude-sonnet-4-20250514"),
             Arg.Any<CancellationToken>());
@@ -187,7 +192,7 @@ public sealed class AgentActorTests
         await actor.DeactivateAsync();
 
         await eventBus.Received(1).PublishAsync(
-            Arg.Is<Events.AgentDeactivatedEvent>(e => e.WorkspaceId == TestWorkspaceId),
+            Arg.Is<Lifecycle.AgentDeactivatedEvent>(e => e.WorkspaceId == TestWorkspaceId),
             Arg.Any<CancellationToken>());
     }
 
@@ -340,7 +345,7 @@ public sealed class AgentActorTests
         await actor.CompleteTaskAsync(task.TaskId, success: true, proof);
 
         await eventBus.Received(1).PublishAsync(
-            Arg.Is<Events.AgentTaskAwaitingReviewEvent>(e =>
+            Arg.Is<Lifecycle.AgentTaskAwaitingReviewEvent>(e =>
                 e.TaskId == task.TaskId &&
                 e.WorkspaceId == TestWorkspaceId),
             Arg.Any<CancellationToken>());
@@ -427,7 +432,7 @@ public sealed class AgentActorTests
         await actor.ReviewTaskAsync(task.TaskId, accepted: true);
 
         await eventBus.Received(1).PublishAsync(
-            Arg.Is<Events.AgentTaskReviewedEvent>(e =>
+            Arg.Is<Lifecycle.AgentTaskReviewedEvent>(e =>
                 e.TaskId == task.TaskId &&
                 e.Accepted &&
                 e.WorkspaceId == TestWorkspaceId),

@@ -1,9 +1,15 @@
 using Microsoft.Extensions.AI;
 using Microsoft.Extensions.Logging.Abstractions;
 using Microsoft.Extensions.Options;
-using Weave.Agents.Actors;
+using Weave.Agents.Channels;
+using Weave.Agents.Lifecycle;
+using Weave.Agents.Memory;
 using Weave.Agents.Models;
 using Weave.Agents.Pipeline;
+using Weave.Agents.Skills;
+using Weave.Agents.ToolRegistry;
+using Weave.Agents.Users;
+using Weave.Agents.Verification;
 using Weave.Security.Tokens;
 using Weave.Shared.Ids;
 

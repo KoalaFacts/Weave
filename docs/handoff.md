@@ -1,4 +1,4 @@
-# Handoff — Token Rotation, Audit-Row Durability, Provider Splits, Rule Codification
+# Handoff — Vocabulary Closed + Wave 5 Drained
 
 > **Live state only.** The contract — principles, vocabulary table, roadmap — lives in [unique-agent-strategy.md](unique-agent-strategy.md). This file records the current shape of the system and what to pick up next.
 >
@@ -6,7 +6,7 @@
 
 ## Current state
 
-The capability vocabulary is 6 verbs, all enforced through one shared authorizer:
+The capability vocabulary is 7 verbs, all enforced through one shared authorizer:
 
 | Verb | Manifest declaration | Runtime enforcement |
 |---|---|---|
@@ -16,9 +16,9 @@ The capability vocabulary is 6 verbs, all enforced through one shared authorizer
 | `channel:send:<id>` / `channel:receive:<id>` | yes | `CapabilityAuthorizer` from `src/Assistants/Weave.Agents/Actors/ChannelGatewayActor.cs` |
 | `user:read:<userId>` / `user:write:<userId>` | yes | `CapabilityAuthorizer` from `src/Assistants/Weave.Agents/Actors/UserModelActor.cs` |
 | `plugin:invoke:<plugin>` | yes | `CapabilityAuthorizer` from `src/Runtime/Weave.Silo/Plugins/PluginRegistry.cs` |
-| `marketplace:install` | not implemented — see Next work | — |
+| `marketplace:install` | n/a (silo-wide; minted at API boundary) | `CapabilityAuthorizer` from `src/Tools/Weave.Tools/Actors/MarketplaceActor.cs` |
 
-Tests: 1866 total — 1857 passed, 9 skipped when Docker is unavailable. The 9 cover `PostgresCapabilityAuditStore` against a Testcontainers-managed Postgres; the fixture probes Docker by attempting to start the container and self-skips each test with the captured reason on Docker-less hosts. (1852 → 1855 → 1861 → 1866: +3 retry/drop tests when the audit-subscriber retry loop shipped, +6 rotation tests when the previous-signing-key path shipped, +5 secret-grant scoping tests when `secret:*` was narrowed to per-path grants.)
+Tests: 1904 total — 1895 passed, 9 skipped when Docker is unavailable. The 9 cover `PostgresCapabilityAuditStore` against a Testcontainers-managed Postgres; the fixture probes Docker by attempting to start the container and self-skips each test with the captured reason on Docker-less hosts. (1852 → 1855 → 1861 → 1866 → 1879 → 1899 → 1895: each step explained in History; the −4 in this session reflects collapsing the 5-row drift-detector theory into a single reference-equality assertion now that `BuiltInTemplates` and `WorkspacePresets` share one object instead of two coordinated structs.)
 
 ### How a verb is wired today
 
@@ -54,17 +54,62 @@ Acceptance bar from the strategy doc's *Measurement* section is met:
 - **Audit completeness** — every Authorize call (allow + deny) publishes a row carrying capability, grant, actor, reason. Verified by the per-actor smoke tests added in roadmap #2 + the end-to-end `CapabilityAuditEndpointTests`.
 - **Coverage of action types** — 6/6 actor sites publish through the shared authorizer.
 
+### How capability templates are wired today
+
+The strategy doc named capability templates as the promoted roadmap item ("they already are pre-validated capability bundles. Lean in."). This session cashed that claim in two halves:
+
+1. **Preset hydration** — every workspace preset in `src/UX/Weave.Cli/Commands/Workspace/WorkspacePresets.cs` now declares a `Capabilities` array that covers the tools (and channels/skill memory/user model, where the preset wires them). `WorkspaceNewSelection` carries the list through the prompt; `WorkspaceNewTemplateFactory.{CreateSingleAgent,CreateMultiAgent,CreateSupportTeam}` assigns it to the emitted `AgentDefinition.Capabilities`. The custom flow (no preset) derives a baseline `tool:<name>` grant per chosen tool so the manifest is self-coherent on creation. Today's preset → grant mapping:
+   - `starter` → `[]`
+   - `coding-assistant` → `["tool:git", "tool:files"]`
+   - `research` → `["tool:web-search", "tool:files"]`
+   - `multi-agent` → `["tool:git", "tool:files", "tool:web-search"]` (both supervisor + worker)
+   - `support-team` → support-bot gets `["tool:web-search", "tool:files", "channel:send:slack", "channel:receive:slack", "skill:read", "skill:write", "user:read:*", "user:write:*"]`; the hard-coded monitor agent gets `["tool:web-search"]`
+
+2. **Validator coherence** — `CapabilityTemplateActor.Validate` ([CapabilityTemplateActor.cs:110](../src/Workspaces/Weave.Workspaces/Actors/CapabilityTemplateActor.cs)) now emits a `ToolCapabilityGranted:<tool>` check for every tool the agent references and refuses to publish a template where the grant is missing. The same loop walks `RequiredCapabilities` and emits a `RequiredCapabilityGranted:<grant>` check. Both checks coalesce a null `AgentDefinition.Capabilities` to `[]` (STJ/Orleans round-trip can drop the init-only initializer), so the validator fails closed instead of throwing. A wildcard like `tool:*` covers every tool — same segment-wise rule the runtime uses.
+
+The matcher itself moved down: `CapabilityGrantMatcher.HasGrant(IEnumerable<string>, string)` now lives in `Weave.Shared/Capabilities/` so both `Weave.Workspaces` (validator) and `Weave.Agents` (manifest gates) call it without `Weave.Workspaces` having to depend on `Weave.Security`. The instance method `CapabilityToken.HasGrant(string)` is a one-liner delegate to the matcher; the static `CapabilityToken.HasGrant(IEnumerable<string>, string)` and its private `Matches` helper are gone (replaced wholesale, no shim — the four `Weave.Agents` call sites and the six `Weave.Security.Tests` cases moved to the new home).
+
+### How curated templates ship today
+
+Five pre-validated templates (`tpl-built-in-{starter,coding-assistant,research,multi-agent-supervisor,support-bot}`) live in [`BuiltInTemplates`](../src/Workspaces/Weave.Workspaces/Templates/BuiltInTemplates.cs) in `Weave.Workspaces`. Each is exposed as a named `CapabilityTemplate` field (`BuiltInTemplates.Starter`, `.CodingAssistant`, `.Research`, `.MultiAgentSupervisor`, `.SupportBot`) and aggregated into `BuiltInTemplates.All`. Author `"weave"`, version `"1.0.0"`, tagged `["built-in", "weave"]`. One entry per primary agent shape — multi-agent workers and the support-team monitor stay in CLI preset definitions because they're composition concerns, not template concerns.
+
+Seeding is a hosted service, [`BuiltInTemplateSeeder`](../src/Runtime/Weave.Silo/Templates/BuiltInTemplateSeeder.cs), registered next to `CapabilityAuditSubscriberHostedService` in `SiloServiceRegistrar.RegisterAgentPipeline()`. On `StartAsync` it walks `BuiltInTemplates.All`, queries each `TemplateId` via `ICapabilityTemplateActor.GetAsync("global")`, and for any missing entry calls `RegisterAsync` + `ValidateAndPublishAsync`. Idempotent — a second silo start (or a persistent template backend across restarts) skips every entry. Validation failures log at `Error` and continue past the offending template rather than faulting silo startup.
+
+The CLI's [`PresetDefinition`](../src/UX/Weave.Cli/Commands/Workspace/PresetDefinition.cs) wraps a `CapabilityTemplate PrimaryTemplate` and exposes `Model`, `Tools`, `ToolDefinitions`, `Capabilities` as computed properties that delegate to the template. `WorkspacePresets.All` constructs each entry by passing `BuiltInTemplates.X` directly (`PrimaryTemplate: BuiltInTemplates.CodingAssistant` etc.), so the agent-shape data is one object referenced from two surfaces — not two coordinated copies. The five-row drift-detector theory is gone, replaced by a one-line `ShouldBeSameAs` reference-equality check per preset.
+
+### How `marketplace:install` is wired today
+
+`MarketplaceItem` carries an optional `TemplateId? TemplateId` that links the item to a published template ([MarketplaceItem.cs](../src/Tools/Weave.Tools/Marketplace/MarketplaceItem.cs)). `IMarketplaceActor.InstallAsync(itemId, token)` ([MarketplaceActor.cs](../src/Tools/Weave.Tools/Actors/MarketplaceActor.cs)) is the install action: authorizes `marketplace:install` (workspace-scope `null` since marketplace is silo-wide, like `plugin:invoke`); refuses non-Published items (409) and items without a linked template (409); resolves the linked `CapabilityTemplate` via `ICapabilityTemplateActor.GetAsync` (404 if the template was deprecated); increments both `MarketplaceItem.InstallCount` and `CapabilityTemplate.InstantiationCount`; returns a `MarketplaceInstallResult` carrying the resolved template.
+
+Token mint at the API boundary: [`MarketplaceTokenFactory.MintInstall`](../src/Runtime/Weave.Silo/Api/MarketplaceTokenFactory.cs) is the silo-wide equivalent of `PluginTokenFactory.MintInvoke` — 1-minute lifetime, single-grant `marketplace:install`, `WorkspaceId="silo"`. The HTTP endpoint `POST /api/marketplace/{itemId}/install` ([MarketplaceEndpoints.cs](../src/Runtime/Weave.Silo/Api/MarketplaceEndpoints.cs)) mints, calls the actor, and returns `MarketplaceInstallResponse` (item + template).
+
+CLI: `weave marketplace install [item-id]` ([MarketplaceInstallCliCommand.cs](../src/UX/Weave.Cli/Commands/Marketplace/MarketplaceInstallCliCommand.cs)). Guided mode picks from a Spectre selector via `MarketplaceItemPrompt`; advanced mode passes the id. Prints item + resolved template summary; doesn't yet scaffold a workspace from the template (see Next work).
+
+### Wave 5 vertical slices: drained
+
+The three domain projects that previously held horizontal `Actors/`, `Commands/`, `Queries/`, `Events/` folders now organize by capability:
+
+- **`Weave.Workspaces`**: `Lifecycle/`, `Registry/`, `Templates/` — the `Actors/Commands/Queries/Events/` folders are gone.
+- **`Weave.Tools`**: `Tool/`, `Marketplace/` — the `Actors/Events/` folders are gone.
+- **`Weave.Agents`**: `Lifecycle/`, `ToolRegistry/`, `Channels/`, `Memory/`, `Skills/`, `Users/`, `Verification/` — the `Actors/Commands/Queries/Events/` folders are gone.
+
+Behaviour-namespaces (the actor/command/query/event ones) renamed to feature-matching equivalents (e.g. `Weave.Agents.Actors` → `Weave.Agents.Lifecycle` / `Weave.Agents.ToolRegistry` / etc.). Data-class files (state, status, info) keep their `Weave.X.Models` namespaces unchanged — collapsing those into feature namespaces is a separate consistency pass.
+
 ## Next work
 
-**Don't pursue `marketplace:install` yet** — `IMarketplaceActor.IncrementInstallCountAsync` is a counter, not an install path. Gating an action that doesn't exist is empty ceremony. Wait until someone wires real marketplace-to-workspace installation, then gate it through the same authorizer.
+The capability vocabulary is closed (7/7 verbs implemented; *Coverage of action types* at 100%) and the Wave 5 hygiene queue is drained. Two items remain, both blocked on production signal:
 
-All three operational-hardening candidates from the prior handoff shipped: allow/deny metrics, audit-row retry + drop metric, and signing-key rotation. There is no queued capability-pipeline work — the next session should drive from the strategy doc's roadmap rather than this file.
+1. **Scaffold a workspace from a marketplace install.** `weave marketplace install` today records the install and prints the resolved template but doesn't materialize a workspace on disk. Natural extension: a `WorkspaceManifestFromTemplate.Create(template, workspaceName, isolation)` static that produces a `WorkspaceManifest`, called by both `MarketplaceInstallCliCommand` and the existing `WorkspaceNewCliCommand`'s preset path so they share one composition primitive. ~3 new files.
 
-Two second-order follow-ups remain visible but should wait for production signal before being acted on:
+2. **Operator runbook for rotation.** The signing-key rotation plumbing is still documented only in the XML doc on `CapabilityTokenOptions.PreviousSigningKey`. Promote to `docs/security.md` once a real rotation is exercised end-to-end.
 
-1. **Audit-row dead-letter shape.** The retry loop is bounded; if `weave.silo.audit.write_failures{outcome="dropped"}` ever fires in production a row is gone for good. The bounded-queue + dead-letter log shape called out in the original handoff is still the right move *if* the dropped-rate metric proves non-zero in real use. Wait for the signal before implementing — until then the simpler retry pays for itself.
+3. **Audit-row dead-letter shape.** Still waiting on `weave.silo.audit.write_failures{outcome="dropped"}` to fire in production.
 
-2. **Operator runbook for rotation.** The plumbing now allows a non-disruptive rotation, but the ops procedure ("set `PreviousSigningKey` to outgoing value, replace `SigningKey`, restart silo, drop `PreviousSigningKey` after the longest live-token lifetime has elapsed") lives only in the XML doc on `CapabilityTokenOptions.PreviousSigningKey`. Worth promoting to `docs/security.md` once a real rotation is exercised end-to-end.
+4. **Models-namespace consistency pass.** Data-class files in `Templates/`, `Registry/`, `Lifecycle/` etc. still declare `Weave.X.Models`. Renaming them to match their folder is a one-shot cleanup; not blocking.
+
+One second-order follow-up still waiting on production signal:
+
+- **Audit-row dead-letter shape.** The retry loop is bounded; if `weave.silo.audit.write_failures{outcome="dropped"}` ever fires in production a row is gone for good. The bounded-queue + dead-letter log shape called out in earlier handoffs is still the right move *if* the dropped-rate metric proves non-zero in real use. Wait for the signal before implementing — until then the simpler retry pays for itself.
 
 ## Cross-cutting follow-ups
 
@@ -72,17 +117,9 @@ These remain real gaps. None blocks the *Next work* items above.
 
 - **`channel:send:*` requires both grants today** because `RouteInboundAsync` does both ingress and reply atomically. The double `Authorize` call now lives at the call site (lines 74–75 of ChannelGatewayActor) with distinct `actionContext` strings (`":receive"` / `":send"`), so the audit log distinguishes them. If a webhook adapter ever needs receive-only, split the actor surface.
 
-## Hygiene queue → drained on this branch except Wave 5
+## Hygiene queue
 
-The smaller hygiene items called out in earlier passes shipped this session (see History). What's left is one focused unit of work:
-
-**Wave 5 — vertical-slice splits across three domain projects.** Each project owns its own PR; doing them inline on this branch would more than double its size. The shape, in priority order:
-
-- **`Weave.Agents/{Actors,Commands,Queries,Events}/`** — biggest single offender. `Actors/` alone has 36 files mixing 7 unrelated capabilities (agent, channel gateway, episodic memory, proof verifier/validator, skill memory, tool registry, user model). Existing feature folders (`Channels/`, `Memory/`, `Skills/`, `Users/`, `Verification/`) absorb the contents; new folders for the Agent-itself slice and Tool-registry slice. ~70 file moves; ~80 consumer files to update.
-- **`Weave.Tools/{Actors,Events}/`** — fold into the existing `Connectors/`, `Discovery/`, and `Marketplace/` folders that already model the right pattern. ~19 file moves; ~30 consumer files.
-- **`Weave.Workspaces/{Actors,Commands,Queries,Events}/`** — fold into existing `Templates/` and `Registry/`, plus a new lifecycle folder for the workspace itself. ~22 file moves; ~26 consumer files.
-
-Each split is mechanically simple but breaks any consumer with a stale `using` directive — best done one project per PR with the build re-verified after each move. The existing tests pin behaviour, so the refactor is contained.
+Wave 5 vertical-slice splits drained this session (see History). Items remaining:
 
 **Also surfaced and *not* on the immediate path** — only do these when CLI commands accrue real DI dependencies:
 - `Weave.Cli/Tui/TuiToolsView.cs` and `TuiTasksView.cs` use `new WorkspaceApiClient()` inline. Hidden-dependency smell. Right shape: register `WorkspaceApiClient` via `IHttpClientFactory`, inject into the views (or the dispatcher that constructs them).
@@ -108,6 +145,11 @@ For the next vocabulary entry (or any follow-up that touches the audit pipeline)
 
 ## History
 
+- **2026-05-04** (`claude/continue-handoff-tsEMD`) — Wave 5 vertical-slice splits, all three domains: `Weave.Workspaces` `Actors/Commands/Queries/Events/` → `Lifecycle/`, `Registry/`, `Templates/` (21 file moves, 24 consumers); `Weave.Tools` `Actors/Events/` → `Tool/`, `Marketplace/` (19 file moves, 19 consumers); `Weave.Agents` `Actors/Commands/Queries/Events/` → `Lifecycle/`, `ToolRegistry/`, `Channels/`, `Memory/`, `Skills/`, `Users/`, `Verification/` (62 file moves, 91 consumers — the biggest of the three). Behaviour namespaces (`Weave.X.Actors` etc.) renamed to feature-matching forms; data-class namespaces (`Weave.X.Models`) left alone for a separate consistency pass. Tests stable at 1904 across all three commits — pure organizational refactor, no behaviour change.
+- **2026-05-04** (`claude/continue-handoff-tsEMD`) — `marketplace:install` shipped, vocabulary 6/6 → 7/7: `MarketplaceItem` gains an optional `TemplateId? TemplateId` linking the item to a published template. `IMarketplaceActor.InstallAsync(itemId, token)` is the install action — authorizes `marketplace:install` via the shared `CapabilityAuthorizer` (workspace-scope `null`, same as `plugin:invoke`), refuses non-Published items and items without a linked template (both 409), resolves the linked `CapabilityTemplate` via the global template actor, increments both install and instantiation counters, and returns a `MarketplaceInstallResult`. New `MarketplaceTokenFactory.MintInstall` mirrors the plugin token factory at the API boundary; new endpoint `POST /api/marketplace/{itemId}/install` returns `MarketplaceInstallResponse` (item + template). CLI `weave marketplace install [item-id]` follows the existing thin-API-wrapper pattern with guided + advanced modes. Tests 1895 → 1904 (+9: 5 new actor unit tests covering authorize / not-published / no-template / not-found / template-missing branches, 4 new integration tests covering happy path + draft-409 + 404 + no-template-409). Workspace scaffolding from the install response is queued as next work.
+- **2026-05-04** (`claude/continue-handoff-tsEMD`) — preset/template duplication collapsed: `BuiltInTemplates` now exposes each template as a named `CapabilityTemplate` field (`Starter`, `CodingAssistant`, `Research`, `MultiAgentSupervisor`, `SupportBot`); `BuiltInTemplates.All` aggregates them. `PresetDefinition` (in `Weave.Cli`) is now a thin wrapper around a `CapabilityTemplate PrimaryTemplate` field, exposing `Model`, `Tools`, `ToolDefinitions`, and `Capabilities` as computed properties that delegate to the template's `AgentDefinition` and `RequiredTools`. `WorkspacePresets.All` constructs each entry by passing `BuiltInTemplates.X` directly, so the same object is referenced from both surfaces — edits land in one place. The 5-row drift-detector theory is gone, replaced by `EveryPreset_PrimaryTemplate_IsTheBuiltInTemplate` which makes the same guarantee via `ShouldBeSameAs`. `WorkspaceNewSelectionPrompt` and `WorkspaceNewTemplateFactory` had `?? []` and `?.ToolDefinitions is not null` defenses that became dead code (the wrapped properties are non-nullable); cleaned up. Tests 1899 → 1895 (−4: removed 5 InlineData rows from the old drift detector, added 1 reference-equality test).
+- **2026-05-04** (`claude/continue-handoff-tsEMD`) — curated starter set + silo seeding: five `CapabilityTemplate` instances now ship in-repo as `BuiltInTemplates.All` (`Weave.Workspaces/Templates/BuiltInTemplates.cs`), one per primary agent shape (`starter`, `coding-assistant`, `research`, `multi-agent-supervisor`, `support-bot`). `BuiltInTemplateSeeder` (`Weave.Silo/Templates/BuiltInTemplateSeeder.cs`) is an `IHostedService` registered next to the audit subscriber that, on `StartAsync`, queries each `TemplateId` via the global `ICapabilityTemplateActor` and registers + publishes any missing entry. Idempotent — second runs and persistent backends skip every entry; validation failures log at `Error` and continue past the offending template rather than faulting startup. The CLI's `WorkspacePresets` retain the multi-agent and support-team composition data (worker, monitor, slack channel) — collapsing the preset/template duplication is the next session's work. A drift detector at `WorkspacePresetCapabilitiesTests.EveryPreset_PrimaryAgentShape_MatchesItsBuiltInTemplate` ratchets `Model`, `Tools`, and `Capabilities` together for all five preset/template pairs. Tests 1879 → 1899 (+20: 12 `BuiltInTemplatesTests` rows, 3 `BuiltInTemplateSeederTests`, 5 drift-detector theory rows).
+- **2026-05-04** (`claude/continue-handoff-tsEMD`) — capability templates, lean-in pass: every workspace preset (`starter`, `coding-assistant`, `research`, `multi-agent`, `support-team`) now declares a coherent `Capabilities` array that flows through `WorkspaceNewSelection` → `WorkspaceNewTemplateFactory` → `AgentDefinition.Capabilities` in the emitted manifest, so `weave workspace new --preset coding-assistant` now produces a manifest where every tool the agent gets is matched by a `tool:<name>` grant. Custom flow (no preset) derives the same baseline from the chosen tool list. `CapabilityTemplateActor.Validate` tightened to emit `ToolCapabilityGranted:<tool>` per referenced tool plus `RequiredCapabilityGranted:<grant>` per `RequiredCapabilities` entry, both via segment-wise wildcard match (so `tool:*` covers any tool); null `AgentDefinition.Capabilities` coalesces to `[]` so the validator fails closed instead of throwing on an STJ/Orleans round-trip that drops the init-only initializer. The matcher itself moved down: the static `CapabilityToken.HasGrant(IEnumerable<string>, string)` + private `Matches` helper became `CapabilityGrantMatcher.HasGrant` in `Weave.Shared/Capabilities/`, so `Weave.Workspaces` (the validator) can call it without depending on `Weave.Security`. The instance `CapabilityToken.HasGrant(string)` stays on the token as a one-liner delegate; four `Weave.Agents` call sites updated, six `Weave.Security.Tests` static-method cases moved to `Weave.Shared.Tests/CapabilityGrantMatcherTests.cs`. Tests 1866 → 1879.
 - **2026-05-04** (`claude/continue-handoff-work-U1Z7b`) — `secret:*` self-mint dropped: `ToolSecretResolver` now walks the tool definition first, collects the exact secret paths referenced in `Mcp.Env` values and `OpenApi.Auth.Token`, dedupes, and mints `[secret:p1, secret:p2, ...]` instead of `[secret:*]`. A definition with no secret refs skips the mint entirely. `ToolRegistryConnector.ConnectAsync` no longer adds `secret:*` to its mint — the token only needs `tool:{toolName}` (no concrete `IToolConnector` ever authorized against the secret grant; secret resolution happens before the connect token is minted, so the wildcard was dead grant). Tests: 4 focused `ToolSecretResolverTests` + 1 `ToolRegistryActorTests` end-to-end mint assertion verifying the connect token only carries `tool:{name}`. Tests 1861 → 1866.
 - **2026-05-04** (`claude/continue-handoff-work-U1Z7b`) — signing-key rotation: `CapabilityTokenOptions.PreviousSigningKey` is a verify-only second key. `CapabilityTokenService.Validate` tries the current `SigningKey` first; on mismatch and only when `PreviousSigningKey` is configured, retries the same payload under the previous key. `Mint` always signs with the current key — the previous-key path is reachable only by tokens minted before the swap. Both keys carry the same minimum-length validation; whitespace `PreviousSigningKey` is treated as absent. `ComputeSignature` is now a static `(token, key) → base64` helper; the constructor stores `_previousSigningKey: byte[]?` only when configured. New tests: pre-rotation token validates post-rotation, post-rotation token only validates under current key, no-previous-key-configured rejects mismatched signatures, tampered grants still rejected even with rotation, short `PreviousSigningKey` throws, whitespace `PreviousSigningKey` falls through to "no previous key." Tests 1855 → 1861.
 - **2026-05-04** (`claude/continue-handoff-work-U1Z7b`) — audit-row durability: `CapabilityAuditSubscriberHostedService` now wraps `store.Record` in a bounded retry loop (`MaxAttempts = 3`, exponential backoff with full jitter, `BaseDelay = 50ms`, `MaxDelay = 500ms`) using the injected `TimeProvider` so transient SQLite/Postgres write failures no longer drop the row. The subscriber's `_stopping` CTS short-circuits in-flight retries on `StopAsync`. New static `Counter<long>` `weave.silo.audit.write_failures` (meter `Weave.Silo.Audit`, registered in `Weave.ServiceDefaults.Extensions.ConfigureOpenTelemetry`) tags every failure with `outcome` (`"retried"` or `"dropped"`); pair its `dropped`-rate with `weave.security.capability.authorizations{outcome="deny"}` to alert when audit writes drop without denies dropping. New tests: `ThrowingStore` stub that fails N times then succeeds — covers eventual persistence + retried-counter, exhaustion-drops + dropped-counter, and the no-failure-no-metric case. Tests 1852 → 1855.

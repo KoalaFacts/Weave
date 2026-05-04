@@ -19,6 +19,7 @@ public sealed record MarketplaceItemResponse
     public int InstallCount { get; init; }
     public double Rating { get; init; }
     public int RatingCount { get; init; }
+    public string? TemplateId { get; init; }
 
     public static MarketplaceItemResponse FromItem(MarketplaceItem item) => new()
     {
@@ -33,6 +34,7 @@ public sealed record MarketplaceItemResponse
         PublishedAt = item.PublishedAt,
         InstallCount = item.InstallCount,
         Rating = item.Rating,
-        RatingCount = item.RatingCount
+        RatingCount = item.RatingCount,
+        TemplateId = item.TemplateId?.ToString()
     };
 }

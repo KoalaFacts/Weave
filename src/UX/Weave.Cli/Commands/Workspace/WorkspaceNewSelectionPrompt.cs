@@ -19,7 +19,7 @@ internal static class WorkspaceNewSelectionPrompt
 
             model = presetDef.Model;
             tools = [.. presetDef.Tools];
-            return new WorkspaceNewSelection(model, tools, selectedPresetName, isolation);
+            return new WorkspaceNewSelection(model, tools, selectedPresetName, isolation, presetDef.Capabilities);
         }
 
         var presetChoice = AnsiConsole.Prompt(
@@ -34,7 +34,7 @@ internal static class WorkspaceNewSelectionPrompt
             selectedPresetName = presetChoice;
             model = selectedPreset.Model;
             tools = [.. selectedPreset.Tools];
-            return new WorkspaceNewSelection(model, tools, selectedPresetName, isolation);
+            return new WorkspaceNewSelection(model, tools, selectedPresetName, isolation, selectedPreset.Capabilities);
         }
 
         model = AnsiConsole.Prompt(
@@ -66,6 +66,11 @@ internal static class WorkspaceNewSelectionPrompt
             _ => IsolationLevel.Full
         };
 
-        return new WorkspaceNewSelection(model, tools, selectedPresetName, isolation);
+        // Custom flow: derive a baseline tool:<name> grant for each chosen tool so
+        // the emitted manifest is internally coherent. Users editing the manifest
+        // post-creation can refine these (or move to wildcards) by hand.
+        var capabilities = tools.Select(t => $"tool:{t}").ToList();
+
+        return new WorkspaceNewSelection(model, tools, selectedPresetName, isolation, capabilities);
     }
 }
