@@ -117,17 +117,20 @@ internal sealed class ChatComposer(TimeProvider timeProvider)
     private static Action TryCaptureCtrlC()
     {
         bool previous = false;
-        try { previous = Console.TreatControlCAsInput; }
+        try
+        { previous = Console.TreatControlCAsInput; }
         catch (IOException) { }
         catch (PlatformNotSupportedException) { }
 
-        try { Console.TreatControlCAsInput = true; }
+        try
+        { Console.TreatControlCAsInput = true; }
         catch (IOException) { }
         catch (PlatformNotSupportedException) { }
 
         return () =>
         {
-            try { Console.TreatControlCAsInput = previous; }
+            try
+            { Console.TreatControlCAsInput = previous; }
             catch (IOException) { }
             catch (PlatformNotSupportedException) { }
         };

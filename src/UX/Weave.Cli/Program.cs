@@ -1,5 +1,5 @@
-using Microsoft.Extensions.DependencyInjection;
 using System.CommandLine;
+using Microsoft.Extensions.DependencyInjection;
 using Weave.Cli;
 using Weave.Cli.Commands;
 using Weave.Cli.Tui;
