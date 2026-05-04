@@ -648,4 +648,96 @@ public sealed class CapabilityTokenServiceTests
         Grants = ["tool:*"],
         Lifetime = TimeSpan.FromHours(1)
     };
+
+    // --- Signing key rotation ---
+
+    private const string OldKey = "old-signing-key-that-is-at-least-32-chars-long";
+    private const string NewKey = "new-signing-key-that-is-at-least-32-chars-long";
+
+    private static CapabilityTokenService CreateRotationService(string current, string? previous = null) =>
+        new(Microsoft.Extensions.Options.Options.Create(new CapabilityTokenOptions
+        {
+            SigningKey = current,
+            PreviousSigningKey = previous
+        }), TimeProvider.System);
+
+    [Fact]
+    public void Validate_AfterRotation_TokenMintedWithPreviousKey_StillValidates()
+    {
+        var preRotation = CreateRotationService(OldKey);
+        var token = preRotation.Mint(BuildRequest());
+
+        var postRotation = CreateRotationService(current: NewKey, previous: OldKey);
+
+        postRotation.Validate(token).ShouldBeTrue();
+    }
+
+    [Fact]
+    public void Validate_AfterRotation_TokenMintedWithNewKey_ValidatesUnderCurrentKeyOnly()
+    {
+        var postRotation = CreateRotationService(current: NewKey, previous: OldKey);
+        var token = postRotation.Mint(BuildRequest());
+
+        postRotation.Validate(token).ShouldBeTrue();
+
+        var oldKeyOnly = CreateRotationService(OldKey);
+        oldKeyOnly.Validate(token).ShouldBeFalse();
+    }
+
+    [Fact]
+    public void Validate_NoPreviousKeyConfigured_TokenSignedWithDifferentKey_ReturnsFalse()
+    {
+        var oldService = CreateRotationService(OldKey);
+        var token = oldService.Mint(BuildRequest());
+
+        var newService = CreateRotationService(NewKey);
+
+        newService.Validate(token).ShouldBeFalse();
+    }
+
+    [Fact]
+    public void Validate_AfterRotation_TamperedTokenStillRejected()
+    {
+        var preRotation = CreateRotationService(OldKey);
+        var token = preRotation.Mint(BuildRequest());
+        var tampered = token with { Grants = [.. token.Grants, "tool:smuggled"] };
+
+        var postRotation = CreateRotationService(current: NewKey, previous: OldKey);
+
+        postRotation.Validate(tampered).ShouldBeFalse();
+    }
+
+    [Fact]
+    public void Constructor_ShortPreviousSigningKey_Throws()
+    {
+        var act = () => new CapabilityTokenService(
+            Microsoft.Extensions.Options.Options.Create(new CapabilityTokenOptions
+            {
+                SigningKey = NewKey,
+                PreviousSigningKey = "too-short"
+            }),
+            TimeProvider.System);
+
+        Should.Throw<InvalidOperationException>(act)
+            .Message.ShouldContain("PreviousSigningKey");
+    }
+
+    [Fact]
+    public void Constructor_WhitespacePreviousSigningKey_TreatedAsAbsent()
+    {
+        var service = new CapabilityTokenService(
+            Microsoft.Extensions.Options.Options.Create(new CapabilityTokenOptions
+            {
+                SigningKey = NewKey,
+                PreviousSigningKey = "   "
+            }),
+            TimeProvider.System);
+
+        var token = service.Mint(BuildRequest());
+        service.Validate(token).ShouldBeTrue();
+
+        var oldService = CreateRotationService(OldKey);
+        var oldToken = oldService.Mint(BuildRequest());
+        service.Validate(oldToken).ShouldBeFalse();
+    }
 }
