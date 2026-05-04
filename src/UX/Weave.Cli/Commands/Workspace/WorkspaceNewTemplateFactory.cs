@@ -25,7 +25,7 @@ internal static class WorkspaceNewTemplateFactory
             ? presetRef
             : null;
 
-        return activePreset?.ToolDefinitions is not null
+        return activePreset is not null
             ? new Dictionary<string, ToolDefinition>(activePreset.ToolDefinitions)
             : selection.Tools.ToDictionary(t => t, _ => new ToolDefinition { Type = "mcp" });
     }

@@ -8,53 +8,43 @@ public class WorkspacePresetCapabilitiesTests
     [Fact]
     public void CodingAssistantPreset_DeclaresToolGrants()
     {
-        var preset = WorkspacePresets.All["coding-assistant"];
-
-        preset.Capabilities.ShouldNotBeNull();
-        preset.Capabilities.ShouldBe(["tool:git", "tool:files"]);
+        WorkspacePresets.All["coding-assistant"].Capabilities
+            .ShouldBe(["tool:git", "tool:files"]);
     }
 
     [Fact]
     public void ResearchPreset_DeclaresToolGrants()
     {
-        var preset = WorkspacePresets.All["research"];
-
-        preset.Capabilities.ShouldNotBeNull();
-        preset.Capabilities.ShouldBe(["tool:web-search", "tool:files"]);
+        WorkspacePresets.All["research"].Capabilities
+            .ShouldBe(["tool:web-search", "tool:files"]);
     }
 
     [Fact]
     public void MultiAgentPreset_DeclaresToolGrants()
     {
-        var preset = WorkspacePresets.All["multi-agent"];
-
-        preset.Capabilities.ShouldNotBeNull();
-        preset.Capabilities.ShouldBe(["tool:git", "tool:files", "tool:web-search"]);
+        WorkspacePresets.All["multi-agent"].Capabilities
+            .ShouldBe(["tool:git", "tool:files", "tool:web-search"]);
     }
 
     [Fact]
     public void SupportTeamPreset_DeclaresToolChannelSkillAndUserGrants()
     {
-        var preset = WorkspacePresets.All["support-team"];
+        var capabilities = WorkspacePresets.All["support-team"].Capabilities;
 
-        preset.Capabilities.ShouldNotBeNull();
-        preset.Capabilities.ShouldContain("tool:web-search");
-        preset.Capabilities.ShouldContain("tool:files");
-        preset.Capabilities.ShouldContain("channel:send:slack");
-        preset.Capabilities.ShouldContain("channel:receive:slack");
-        preset.Capabilities.ShouldContain("skill:read");
-        preset.Capabilities.ShouldContain("skill:write");
-        preset.Capabilities.ShouldContain("user:read:*");
-        preset.Capabilities.ShouldContain("user:write:*");
+        capabilities.ShouldContain("tool:web-search");
+        capabilities.ShouldContain("tool:files");
+        capabilities.ShouldContain("channel:send:slack");
+        capabilities.ShouldContain("channel:receive:slack");
+        capabilities.ShouldContain("skill:read");
+        capabilities.ShouldContain("skill:write");
+        capabilities.ShouldContain("user:read:*");
+        capabilities.ShouldContain("user:write:*");
     }
 
     [Fact]
     public void StarterPreset_DeclaresEmptyCapabilities()
     {
-        var preset = WorkspacePresets.All["starter"];
-
-        preset.Capabilities.ShouldNotBeNull();
-        preset.Capabilities.ShouldBeEmpty();
+        WorkspacePresets.All["starter"].Capabilities.ShouldBeEmpty();
     }
 
     [Fact]
@@ -66,11 +56,10 @@ public class WorkspacePresetCapabilitiesTests
         // future preset addition can't drop coherence by accident.
         foreach (var (name, preset) in WorkspacePresets.All)
         {
-            var owned = preset.Capabilities ?? [];
             foreach (var tool in preset.Tools)
             {
                 Weave.Shared.Capabilities.CapabilityGrantMatcher
-                    .HasGrant(owned, $"tool:{tool}")
+                    .HasGrant(preset.Capabilities, $"tool:{tool}")
                     .ShouldBeTrue($"preset '{name}' declares tool '{tool}' but no capability grant covers 'tool:{tool}'");
             }
         }
@@ -84,35 +73,13 @@ public class WorkspacePresetCapabilitiesTests
             preset.Model,
             [.. preset.Tools],
             "coding-assistant",
-            Weave.Workspaces.Models.IsolationLevel.Full,
-            preset.Capabilities ?? []);
+            IsolationLevel.Full,
+            preset.Capabilities);
 
         var template = WorkspaceNewTemplateFactory.Create(selection);
 
         template.Agents.ShouldContainKey("assistant");
         template.Agents["assistant"].Capabilities.ShouldBe(["tool:git", "tool:files"]);
-    }
-
-    [Theory]
-    [InlineData("starter", "tpl-built-in-starter")]
-    [InlineData("coding-assistant", "tpl-built-in-coding-assistant")]
-    [InlineData("research", "tpl-built-in-research")]
-    [InlineData("multi-agent", "tpl-built-in-multi-agent-supervisor")]
-    [InlineData("support-team", "tpl-built-in-support-bot")]
-    public void EveryPreset_PrimaryAgentShape_MatchesItsBuiltInTemplate(string presetName, string templateId)
-    {
-        // Drift detector: the CLI preset and the runtime BuiltInTemplate carry
-        // duplicate data today. They must agree on Model, Tools, and Capabilities
-        // for the primary agent — otherwise `weave workspace new --preset X`
-        // and `GET /api/templates` would describe different shapes for the
-        // "same" curated bundle. Until the two surfaces collapse into one
-        // (see handoff Next work), this theory ratchets them together.
-        var preset = WorkspacePresets.All[presetName];
-        var template = BuiltInTemplates.All.First(t => t.TemplateId.ToString() == templateId);
-
-        template.AgentDefinition.Model.ShouldBe(preset.Model);
-        template.AgentDefinition.Tools.ShouldBe(preset.Tools);
-        template.AgentDefinition.Capabilities.ShouldBe(preset.Capabilities ?? []);
     }
 
     [Fact]
@@ -123,8 +90,8 @@ public class WorkspacePresetCapabilitiesTests
             preset.Model,
             [.. preset.Tools],
             "support-team",
-            Weave.Workspaces.Models.IsolationLevel.Full,
-            preset.Capabilities ?? []);
+            IsolationLevel.Full,
+            preset.Capabilities);
 
         var template = WorkspaceNewTemplateFactory.Create(selection);
 
@@ -136,5 +103,19 @@ public class WorkspacePresetCapabilitiesTests
         // hard-coded grant so the emitted manifest is internally coherent.
         template.Agents.ShouldContainKey("monitor");
         template.Agents["monitor"].Capabilities.ShouldBe(["tool:web-search"]);
+    }
+
+    [Fact]
+    public void EveryPreset_PrimaryTemplate_IsTheBuiltInTemplate()
+    {
+        // Sanity check that each preset is wired to the matching BuiltInTemplate
+        // by reference — not a duplicate. Reference equality is the property
+        // the previous drift-detector theory was approximating with structural
+        // assertions, now collapsed since the two surfaces share one object.
+        WorkspacePresets.All["starter"].PrimaryTemplate.ShouldBeSameAs(BuiltInTemplates.Starter);
+        WorkspacePresets.All["coding-assistant"].PrimaryTemplate.ShouldBeSameAs(BuiltInTemplates.CodingAssistant);
+        WorkspacePresets.All["research"].PrimaryTemplate.ShouldBeSameAs(BuiltInTemplates.Research);
+        WorkspacePresets.All["multi-agent"].PrimaryTemplate.ShouldBeSameAs(BuiltInTemplates.MultiAgentSupervisor);
+        WorkspacePresets.All["support-team"].PrimaryTemplate.ShouldBeSameAs(BuiltInTemplates.SupportBot);
     }
 }

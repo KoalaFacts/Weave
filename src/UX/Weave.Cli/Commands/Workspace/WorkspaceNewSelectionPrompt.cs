@@ -19,7 +19,7 @@ internal static class WorkspaceNewSelectionPrompt
 
             model = presetDef.Model;
             tools = [.. presetDef.Tools];
-            return new WorkspaceNewSelection(model, tools, selectedPresetName, isolation, presetDef.Capabilities ?? []);
+            return new WorkspaceNewSelection(model, tools, selectedPresetName, isolation, presetDef.Capabilities);
         }
 
         var presetChoice = AnsiConsole.Prompt(
@@ -34,7 +34,7 @@ internal static class WorkspaceNewSelectionPrompt
             selectedPresetName = presetChoice;
             model = selectedPreset.Model;
             tools = [.. selectedPreset.Tools];
-            return new WorkspaceNewSelection(model, tools, selectedPresetName, isolation, selectedPreset.Capabilities ?? []);
+            return new WorkspaceNewSelection(model, tools, selectedPresetName, isolation, selectedPreset.Capabilities);
         }
 
         model = AnsiConsole.Prompt(
