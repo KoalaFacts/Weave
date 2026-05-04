@@ -1,4 +1,4 @@
-# Handoff — Audit-Row Durability, Provider Splits, Rule Codification, CLI DI
+# Handoff — Token Rotation, Audit-Row Durability, Provider Splits, Rule Codification
 
 > **Live state only.** The contract — principles, vocabulary table, roadmap — lives in [unique-agent-strategy.md](unique-agent-strategy.md). This file records the current shape of the system and what to pick up next.
 >
@@ -18,13 +18,13 @@ The capability vocabulary is 6 verbs, all enforced through one shared authorizer
 | `plugin:invoke:<plugin>` | yes | `CapabilityAuthorizer` from `src/Runtime/Weave.Silo/Plugins/PluginRegistry.cs` |
 | `marketplace:install` | not implemented — see Next work | — |
 
-Tests: 1855 total — 1846 passed, 9 skipped when Docker is unavailable. The 9 cover `PostgresCapabilityAuditStore` against a Testcontainers-managed Postgres; the fixture probes Docker by attempting to start the container and self-skips each test with the captured reason on Docker-less hosts. (1852 → 1855: added 3 retry/drop tests when the audit-subscriber retry loop shipped.)
+Tests: 1861 total — 1852 passed, 9 skipped when Docker is unavailable. The 9 cover `PostgresCapabilityAuditStore` against a Testcontainers-managed Postgres; the fixture probes Docker by attempting to start the container and self-skips each test with the captured reason on Docker-less hosts. (1852 → 1855 → 1861: +3 retry/drop tests when the audit-subscriber retry loop shipped, +6 rotation tests when the previous-signing-key path shipped.)
 
 ### How a verb is wired today
 
 Six sites that previously held a private `Authorize(...)` method (or, in the case of the secret providers, an inline `Validate` + `HasGrant` pair) now share `ICapabilityAuthorizer` ([CapabilityAuthorizer.cs](../src/Security/Weave.Security/Tokens/CapabilityAuthorizer.cs)). The authorizer:
 
-1. **Validates** signature, expiry, revocation via `ICapabilityTokenService.Validate`.
+1. **Validates** signature, expiry, revocation via `ICapabilityTokenService.Validate`. Validate accepts signatures under either `CapabilityTokens:SigningKey` or — when configured — the verify-only `CapabilityTokens:PreviousSigningKey`, so a rotation can swap keys without invalidating in-flight tokens.
 2. **Workspace-matches** when `actorWorkspaceId` is non-empty (PluginRegistry passes `null` since plugins are silo-wide).
 3. **Grant-checks** via `CapabilityToken.HasGrant` (segment-wise wildcards).
 4. **Publishes** `CapabilityAuthorizationEvent` ([CapabilityAuthorizationEvent.cs](../src/Security/Weave.Security/Events/CapabilityAuthorizationEvent.cs)) on every call (allow OR deny) keyed by `tokenId`, `grant`, `workspaceId`, `issuedTo`, `outcome`, `actionContext`, and `reason` on denies (`"invalid-or-expired-token"` / `"workspace-mismatch"` / `"grant-missing"`).
@@ -58,11 +58,13 @@ Acceptance bar from the strategy doc's *Measurement* section is met:
 
 **Don't pursue `marketplace:install` yet** — `IMarketplaceActor.IncrementInstallCountAsync` is a counter, not an install path. Gating an action that doesn't exist is empty ceremony. Wait until someone wires real marketplace-to-workspace installation, then gate it through the same authorizer.
 
-Item #1 (allow/deny metrics) and #2 (audit-row durability with retry + drop metric) both shipped this session. One operational-hardening candidate remains:
+All three operational-hardening candidates from the prior handoff shipped: allow/deny metrics, audit-row retry + drop metric, and signing-key rotation. There is no queued capability-pipeline work — the next session should drive from the strategy doc's roadmap rather than this file.
 
-1. **Token signing key rotation.** `CapabilityTokenOptions.SigningKey` is single-keyed; rotating it invalidates every live token. Accept a `PreviousSigningKey` for verification only — `CapabilityTokenService.Validate` tries the current key, then the previous; `Mint` always uses the current. Lets ops rotate without a flush. Files: `src/Security/Weave.Security/Tokens/CapabilityTokenOptions.cs`, `CapabilityTokenService.cs`. Test surface: mint with old key, rotate, verify still validates; mint after rotation, verify uses new key only.
+Two second-order follow-ups remain visible but should wait for production signal before being acted on:
 
-A second-order follow-up enabled by the new drop metric: the retry loop is bounded; if `outcome="dropped"` ever fires in production a row is gone for good. The bounded-queue + dead-letter log shape called out in the original handoff is still the right move *if* the dropped-rate metric proves non-zero in real use. Wait for signal before implementing — until then the simpler retry pays for itself.
+1. **Audit-row dead-letter shape.** The retry loop is bounded; if `weave.silo.audit.write_failures{outcome="dropped"}` ever fires in production a row is gone for good. The bounded-queue + dead-letter log shape called out in the original handoff is still the right move *if* the dropped-rate metric proves non-zero in real use. Wait for the signal before implementing — until then the simpler retry pays for itself.
+
+2. **Operator runbook for rotation.** The plumbing now allows a non-disruptive rotation, but the ops procedure ("set `PreviousSigningKey` to outgoing value, replace `SigningKey`, restart silo, drop `PreviousSigningKey` after the longest live-token lifetime has elapsed") lives only in the XML doc on `CapabilityTokenOptions.PreviousSigningKey`. Worth promoting to `docs/security.md` once a real rotation is exercised end-to-end.
 
 ## Cross-cutting follow-ups
 
@@ -107,6 +109,7 @@ For the next vocabulary entry (or any follow-up that touches the audit pipeline)
 
 ## History
 
+- **2026-05-04** (`claude/continue-handoff-work-U1Z7b`) — signing-key rotation: `CapabilityTokenOptions.PreviousSigningKey` is a verify-only second key. `CapabilityTokenService.Validate` tries the current `SigningKey` first; on mismatch and only when `PreviousSigningKey` is configured, retries the same payload under the previous key. `Mint` always signs with the current key — the previous-key path is reachable only by tokens minted before the swap. Both keys carry the same minimum-length validation; whitespace `PreviousSigningKey` is treated as absent. `ComputeSignature` is now a static `(token, key) → base64` helper; the constructor stores `_previousSigningKey: byte[]?` only when configured. New tests: pre-rotation token validates post-rotation, post-rotation token only validates under current key, no-previous-key-configured rejects mismatched signatures, tampered grants still rejected even with rotation, short `PreviousSigningKey` throws, whitespace `PreviousSigningKey` falls through to "no previous key." Tests 1855 → 1861.
 - **2026-05-04** (`claude/continue-handoff-work-U1Z7b`) — audit-row durability: `CapabilityAuditSubscriberHostedService` now wraps `store.Record` in a bounded retry loop (`MaxAttempts = 3`, exponential backoff with full jitter, `BaseDelay = 50ms`, `MaxDelay = 500ms`) using the injected `TimeProvider` so transient SQLite/Postgres write failures no longer drop the row. The subscriber's `_stopping` CTS short-circuits in-flight retries on `StopAsync`. New static `Counter<long>` `weave.silo.audit.write_failures` (meter `Weave.Silo.Audit`, registered in `Weave.ServiceDefaults.Extensions.ConfigureOpenTelemetry`) tags every failure with `outcome` (`"retried"` or `"dropped"`); pair its `dropped`-rate with `weave.security.capability.authorizations{outcome="deny"}` to alert when audit writes drop without denies dropping. New tests: `ThrowingStore` stub that fails N times then succeeds — covers eventual persistence + retried-counter, exhaustion-drops + dropped-counter, and the no-failure-no-metric case. Tests 1852 → 1855.
 - **2026-05-03** (`claude/continue-handoff-work-r25U1`) — CLI DI: introduced `Microsoft.Extensions.DependencyInjection` to `Weave.Cli` and a `CliServiceCollection.Build()` that registers the surfaces previously shaped as static-class-with-deps. `VersionService` is now an instance class (`TimeProvider` via ctor; pure helpers like `Current`, `IsNewer`, `LoadCache` stay static). `ChatExitConfirmation`, `ChatComposerEditor`, `ChatComposer`, `TuiShell`, `UpgradeCliCommand`, and `TuiCliCommand` are registered and resolved through the provider. `Program.cs` builds the provider once and passes it to `TuiApp.RunAsync` and to the `*Command.Create(handler)` factories at the composition root. Other CLI commands keep their existing static-factory pattern and migrate in here as they pick up real dependencies. Tests still 1852.
 - **2026-05-03** (`claude/continue-handoff-work-r25U1`) — hygiene wave 4: split `TuiSlashCommandDispatcher.cs` from 422 → 185 lines by extracting six per-responsibility view helpers (`TuiHelpView`, `TuiToolsView`, `TuiTasksView`, `TuiConfigView`, `TuiSystemView`, `TuiNewWorkspaceHint`). Dispatcher keeps the slash-command switch + two dispatcher-specific helpers. Each new file is ≤ 80 lines.
