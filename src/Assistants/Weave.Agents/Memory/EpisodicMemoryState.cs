@@ -5,7 +5,7 @@ public sealed record EpisodicMemoryState
     public Dictionary<string, Episode> Episodes { get; init; } = [];
     public string WorkspaceId { get; set; } = string.Empty;
 
-    public List<EpisodeSearchResult> Recall(string query, int maxResults, EpisodeSearchOptions? options, DateTimeOffset now)
+    public IReadOnlyList<EpisodeSearchResult> Recall(string query, int maxResults, EpisodeSearchOptions? options, DateTimeOffset now)
     {
         var queryTokens = Tokenize(query);
         if (queryTokens.Length == 0)

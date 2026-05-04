@@ -6,7 +6,7 @@ public sealed record SkillMemoryState
     public Dictionary<string, SkillSuggestion> SuggestedSkills { get; init; } = [];
     public string WorkspaceId { get; set; } = string.Empty;
 
-    public List<SkillSearchResult> Search(string query, int maxResults, SkillSearchOptions? options, DateTimeOffset now)
+    public IReadOnlyList<SkillSearchResult> Search(string query, int maxResults, SkillSearchOptions? options, DateTimeOffset now)
     {
         var queryTokens = Tokenize(query);
         if (queryTokens.Length == 0)

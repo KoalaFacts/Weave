@@ -3,7 +3,6 @@ using Weave.Agents.Channels;
 using Weave.Agents.Lifecycle;
 using Weave.Agents.Memory;
 using Weave.Agents.Models;
-using Weave.Agents.Skills;
 using Weave.Agents.ToolRegistry;
 using Weave.Agents.Users;
 using Weave.Agents.Verification;
@@ -50,11 +49,8 @@ public sealed class EpisodicMemoryActor(
     public Task<IReadOnlyList<EpisodeSearchResult>> RecallAsync(
         string query,
         int maxResults = 3,
-        EpisodeSearchOptions? options = null)
-    {
-        IReadOnlyList<EpisodeSearchResult> results = persistentState.State.Recall(query, maxResults, options, timeProvider.GetUtcNow());
-        return Task.FromResult(results);
-    }
+        EpisodeSearchOptions? options = null) =>
+        Task.FromResult(persistentState.State.Recall(query, maxResults, options, timeProvider.GetUtcNow()));
 
     public Task<Episode?> GetEpisodeAsync(EpisodeId episodeId)
     {
