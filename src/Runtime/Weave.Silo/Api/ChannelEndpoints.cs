@@ -1,6 +1,11 @@
-using Weave.Agents.Commands;
+using Weave.Agents.Lifecycle;
+using Weave.Agents.Channels;
+using Weave.Agents.Memory;
+using Weave.Agents.Skills;
+using Weave.Agents.Users;
+using Weave.Agents.Verification;
+using Weave.Agents.ToolRegistry;
 using Weave.Agents.Models;
-using Weave.Agents.Queries;
 using Weave.Security.Tokens;
 using Weave.Shared.Cqrs;
 using Weave.Shared.Ids;
@@ -75,7 +80,7 @@ public static class ChannelEndpoints
         IVirtualActorProvider actors,
         CancellationToken ct)
     {
-        var actor = actors.GetActor<Agents.Actors.IChannelGatewayActor>(VirtualActorId.From(workspaceId));
+        var actor = actors.GetActor<Agents.Channels.IChannelGatewayActor>(VirtualActorId.From(workspaceId));
         await actor.UnregisterChannelAsync(ChannelId.From(channelId));
         return Results.NoContent();
     }

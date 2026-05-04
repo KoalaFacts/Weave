@@ -1,4 +1,4 @@
-# Handoff — `marketplace:install` Closes the Vocabulary Gap
+# Handoff — Vocabulary Closed + Wave 5 Drained
 
 > **Live state only.** The contract — principles, vocabulary table, roadmap — lives in [unique-agent-strategy.md](unique-agent-strategy.md). This file records the current shape of the system and what to pick up next.
 >
@@ -85,15 +85,27 @@ Token mint at the API boundary: [`MarketplaceTokenFactory.MintInstall`](../src/R
 
 CLI: `weave marketplace install [item-id]` ([MarketplaceInstallCliCommand.cs](../src/UX/Weave.Cli/Commands/Marketplace/MarketplaceInstallCliCommand.cs)). Guided mode picks from a Spectre selector via `MarketplaceItemPrompt`; advanced mode passes the id. Prints item + resolved template summary; doesn't yet scaffold a workspace from the template (see Next work).
 
+### Wave 5 vertical slices: drained
+
+The three domain projects that previously held horizontal `Actors/`, `Commands/`, `Queries/`, `Events/` folders now organize by capability:
+
+- **`Weave.Workspaces`**: `Lifecycle/`, `Registry/`, `Templates/` — the `Actors/Commands/Queries/Events/` folders are gone.
+- **`Weave.Tools`**: `Tool/`, `Marketplace/` — the `Actors/Events/` folders are gone.
+- **`Weave.Agents`**: `Lifecycle/`, `ToolRegistry/`, `Channels/`, `Memory/`, `Skills/`, `Users/`, `Verification/` — the `Actors/Commands/Queries/Events/` folders are gone.
+
+Behaviour-namespaces (the actor/command/query/event ones) renamed to feature-matching equivalents (e.g. `Weave.Agents.Actors` → `Weave.Agents.Lifecycle` / `Weave.Agents.ToolRegistry` / etc.). Data-class files (state, status, info) keep their `Weave.X.Models` namespaces unchanged — collapsing those into feature namespaces is a separate consistency pass.
+
 ## Next work
 
-The capability vocabulary is closed: 7/7 verbs implemented; the strategy doc's *Coverage of action types* metric is at 100%. Three queued items in priority order:
+The capability vocabulary is closed (7/7 verbs implemented; *Coverage of action types* at 100%) and the Wave 5 hygiene queue is drained. Two items remain, both blocked on production signal:
 
-1. **Scaffold a workspace from a marketplace install.** `weave marketplace install` today records the install and prints the resolved template; it doesn't materialize a workspace on disk. The natural extension: a `WorkspaceManifestFromTemplate.Create(template, workspaceName, isolation)` static that produces a `WorkspaceManifest`, called by both `MarketplaceInstallCliCommand` and the existing `WorkspaceNewCliCommand`'s preset path so they share one composition primitive. Roughly 2-3 new files plus ~30 lines on the install command.
+1. **Scaffold a workspace from a marketplace install.** `weave marketplace install` today records the install and prints the resolved template but doesn't materialize a workspace on disk. Natural extension: a `WorkspaceManifestFromTemplate.Create(template, workspaceName, isolation)` static that produces a `WorkspaceManifest`, called by both `MarketplaceInstallCliCommand` and the existing `WorkspaceNewCliCommand`'s preset path so they share one composition primitive. ~3 new files.
 
-2. **Operator runbook for rotation.** Three sessions on, the signing-key rotation plumbing is still documented only in the XML doc on `CapabilityTokenOptions.PreviousSigningKey`. Worth promoting to `docs/security.md` once a real rotation is exercised end-to-end.
+2. **Operator runbook for rotation.** The signing-key rotation plumbing is still documented only in the XML doc on `CapabilityTokenOptions.PreviousSigningKey`. Promote to `docs/security.md` once a real rotation is exercised end-to-end.
 
-3. **Audit-row dead-letter shape.** Still waiting on `weave.silo.audit.write_failures{outcome="dropped"}` to fire in production. If it ever does, the bounded-queue + dead-letter log shape is the right move; until then the bounded retry pays for itself.
+3. **Audit-row dead-letter shape.** Still waiting on `weave.silo.audit.write_failures{outcome="dropped"}` to fire in production.
+
+4. **Models-namespace consistency pass.** Data-class files in `Templates/`, `Registry/`, `Lifecycle/` etc. still declare `Weave.X.Models`. Renaming them to match their folder is a one-shot cleanup; not blocking.
 
 One second-order follow-up still waiting on production signal:
 
@@ -105,17 +117,9 @@ These remain real gaps. None blocks the *Next work* items above.
 
 - **`channel:send:*` requires both grants today** because `RouteInboundAsync` does both ingress and reply atomically. The double `Authorize` call now lives at the call site (lines 74–75 of ChannelGatewayActor) with distinct `actionContext` strings (`":receive"` / `":send"`), so the audit log distinguishes them. If a webhook adapter ever needs receive-only, split the actor surface.
 
-## Hygiene queue → drained on this branch except Wave 5
+## Hygiene queue
 
-The smaller hygiene items called out in earlier passes shipped this session (see History). What's left is one focused unit of work:
-
-**Wave 5 — vertical-slice splits across three domain projects.** Each project owns its own PR; doing them inline on this branch would more than double its size. The shape, in priority order:
-
-- **`Weave.Agents/{Actors,Commands,Queries,Events}/`** — biggest single offender. `Actors/` alone has 36 files mixing 7 unrelated capabilities (agent, channel gateway, episodic memory, proof verifier/validator, skill memory, tool registry, user model). Existing feature folders (`Channels/`, `Memory/`, `Skills/`, `Users/`, `Verification/`) absorb the contents; new folders for the Agent-itself slice and Tool-registry slice. ~70 file moves; ~80 consumer files to update.
-- **`Weave.Tools/{Actors,Events}/`** — fold into the existing `Connectors/`, `Discovery/`, and `Marketplace/` folders that already model the right pattern. ~19 file moves; ~30 consumer files.
-- **`Weave.Workspaces/{Actors,Commands,Queries,Events}/`** — fold into existing `Templates/` and `Registry/`, plus a new lifecycle folder for the workspace itself. ~22 file moves; ~26 consumer files.
-
-Each split is mechanically simple but breaks any consumer with a stale `using` directive — best done one project per PR with the build re-verified after each move. The existing tests pin behaviour, so the refactor is contained.
+Wave 5 vertical-slice splits drained this session (see History). Items remaining:
 
 **Also surfaced and *not* on the immediate path** — only do these when CLI commands accrue real DI dependencies:
 - `Weave.Cli/Tui/TuiToolsView.cs` and `TuiTasksView.cs` use `new WorkspaceApiClient()` inline. Hidden-dependency smell. Right shape: register `WorkspaceApiClient` via `IHttpClientFactory`, inject into the views (or the dispatcher that constructs them).
@@ -141,6 +145,7 @@ For the next vocabulary entry (or any follow-up that touches the audit pipeline)
 
 ## History
 
+- **2026-05-04** (`claude/continue-handoff-tsEMD`) — Wave 5 vertical-slice splits, all three domains: `Weave.Workspaces` `Actors/Commands/Queries/Events/` → `Lifecycle/`, `Registry/`, `Templates/` (21 file moves, 24 consumers); `Weave.Tools` `Actors/Events/` → `Tool/`, `Marketplace/` (19 file moves, 19 consumers); `Weave.Agents` `Actors/Commands/Queries/Events/` → `Lifecycle/`, `ToolRegistry/`, `Channels/`, `Memory/`, `Skills/`, `Users/`, `Verification/` (62 file moves, 91 consumers — the biggest of the three). Behaviour namespaces (`Weave.X.Actors` etc.) renamed to feature-matching forms; data-class namespaces (`Weave.X.Models`) left alone for a separate consistency pass. Tests stable at 1904 across all three commits — pure organizational refactor, no behaviour change.
 - **2026-05-04** (`claude/continue-handoff-tsEMD`) — `marketplace:install` shipped, vocabulary 6/6 → 7/7: `MarketplaceItem` gains an optional `TemplateId? TemplateId` linking the item to a published template. `IMarketplaceActor.InstallAsync(itemId, token)` is the install action — authorizes `marketplace:install` via the shared `CapabilityAuthorizer` (workspace-scope `null`, same as `plugin:invoke`), refuses non-Published items and items without a linked template (both 409), resolves the linked `CapabilityTemplate` via the global template actor, increments both install and instantiation counters, and returns a `MarketplaceInstallResult`. New `MarketplaceTokenFactory.MintInstall` mirrors the plugin token factory at the API boundary; new endpoint `POST /api/marketplace/{itemId}/install` returns `MarketplaceInstallResponse` (item + template). CLI `weave marketplace install [item-id]` follows the existing thin-API-wrapper pattern with guided + advanced modes. Tests 1895 → 1904 (+9: 5 new actor unit tests covering authorize / not-published / no-template / not-found / template-missing branches, 4 new integration tests covering happy path + draft-409 + 404 + no-template-409). Workspace scaffolding from the install response is queued as next work.
 - **2026-05-04** (`claude/continue-handoff-tsEMD`) — preset/template duplication collapsed: `BuiltInTemplates` now exposes each template as a named `CapabilityTemplate` field (`Starter`, `CodingAssistant`, `Research`, `MultiAgentSupervisor`, `SupportBot`); `BuiltInTemplates.All` aggregates them. `PresetDefinition` (in `Weave.Cli`) is now a thin wrapper around a `CapabilityTemplate PrimaryTemplate` field, exposing `Model`, `Tools`, `ToolDefinitions`, and `Capabilities` as computed properties that delegate to the template's `AgentDefinition` and `RequiredTools`. `WorkspacePresets.All` constructs each entry by passing `BuiltInTemplates.X` directly, so the same object is referenced from both surfaces — edits land in one place. The 5-row drift-detector theory is gone, replaced by `EveryPreset_PrimaryTemplate_IsTheBuiltInTemplate` which makes the same guarantee via `ShouldBeSameAs`. `WorkspaceNewSelectionPrompt` and `WorkspaceNewTemplateFactory` had `?? []` and `?.ToolDefinitions is not null` defenses that became dead code (the wrapped properties are non-nullable); cleaned up. Tests 1899 → 1895 (−4: removed 5 InlineData rows from the old drift detector, added 1 reference-equality test).
 - **2026-05-04** (`claude/continue-handoff-tsEMD`) — curated starter set + silo seeding: five `CapabilityTemplate` instances now ship in-repo as `BuiltInTemplates.All` (`Weave.Workspaces/Templates/BuiltInTemplates.cs`), one per primary agent shape (`starter`, `coding-assistant`, `research`, `multi-agent-supervisor`, `support-bot`). `BuiltInTemplateSeeder` (`Weave.Silo/Templates/BuiltInTemplateSeeder.cs`) is an `IHostedService` registered next to the audit subscriber that, on `StartAsync`, queries each `TemplateId` via the global `ICapabilityTemplateActor` and registers + publishes any missing entry. Idempotent — second runs and persistent backends skip every entry; validation failures log at `Error` and continue past the offending template rather than faulting startup. The CLI's `WorkspacePresets` retain the multi-agent and support-team composition data (worker, monitor, slack channel) — collapsing the preset/template duplication is the next session's work. A drift detector at `WorkspacePresetCapabilitiesTests.EveryPreset_PrimaryAgentShape_MatchesItsBuiltInTemplate` ratchets `Model`, `Tools`, and `Capabilities` together for all five preset/template pairs. Tests 1879 → 1899 (+20: 12 `BuiltInTemplatesTests` rows, 3 `BuiltInTemplateSeederTests`, 5 drift-detector theory rows).

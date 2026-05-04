@@ -1,6 +1,11 @@
 using Microsoft.Extensions.Logging;
-using Weave.Agents.Actors;
-using Weave.Agents.Events;
+using Weave.Agents.Lifecycle;
+using Weave.Agents.Channels;
+using Weave.Agents.Memory;
+using Weave.Agents.Skills;
+using Weave.Agents.Users;
+using Weave.Agents.Verification;
+using Weave.Agents.ToolRegistry;
 using Weave.Agents.Models;
 using Weave.Shared.Events;
 using Weave.Shared.Ids;

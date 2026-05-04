@@ -1,6 +1,11 @@
-using Weave.Agents.Commands;
+using Weave.Agents.Lifecycle;
+using Weave.Agents.Channels;
+using Weave.Agents.Memory;
+using Weave.Agents.Skills;
+using Weave.Agents.Users;
+using Weave.Agents.Verification;
+using Weave.Agents.ToolRegistry;
 using Weave.Agents.Models;
-using Weave.Agents.Queries;
 using Weave.Security.Tokens;
 using Weave.Shared.Cqrs;
 using Weave.Shared.Ids;
@@ -81,7 +86,7 @@ public static class UserEndpoints
             return ResultExtensions.ValidationFailed(errors);
 
         using var source = UserTokenFactory.MintWrite(tokenService, workspaceId, userId, ct);
-        var actor = actors.GetActor<Agents.Actors.IUserModelActor>(VirtualActorId.Combine(workspaceId, userId));
+        var actor = actors.GetActor<Agents.Users.IUserModelActor>(VirtualActorId.Combine(workspaceId, userId));
         await actor.SetDomainContextAsync(request.Key, request.Value, source.Token);
         return Results.NoContent();
     }
@@ -94,7 +99,7 @@ public static class UserEndpoints
         CancellationToken ct)
     {
         using var source = UserTokenFactory.MintWrite(tokenService, workspaceId, userId, ct);
-        var actor = actors.GetActor<Agents.Actors.IUserModelActor>(VirtualActorId.Combine(workspaceId, userId));
+        var actor = actors.GetActor<Agents.Users.IUserModelActor>(VirtualActorId.Combine(workspaceId, userId));
         await actor.ClearAsync(source.Token);
         return Results.NoContent();
     }

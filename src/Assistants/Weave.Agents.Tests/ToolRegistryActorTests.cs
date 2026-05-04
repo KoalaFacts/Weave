@@ -1,5 +1,11 @@
 using Microsoft.Extensions.Logging;
-using Weave.Agents.Actors;
+using Weave.Agents.Lifecycle;
+using Weave.Agents.Channels;
+using Weave.Agents.Memory;
+using Weave.Agents.Skills;
+using Weave.Agents.Users;
+using Weave.Agents.Verification;
+using Weave.Agents.ToolRegistry;
 using Weave.Agents.Models;
 using Weave.Security.Actors;
 using Weave.Security.Tokens;
@@ -135,7 +141,7 @@ public sealed class ToolRegistryActorTests
         await actor.ConnectToolsAsync(CreateTools());
 
         await eventBus.Received(2).PublishAsync(
-            Arg.Any<Events.ToolConnectedEvent>(),
+            Arg.Any<ToolRegistry.ToolConnectedEvent>(),
             Arg.Any<CancellationToken>());
     }
 
@@ -230,7 +236,7 @@ public sealed class ToolRegistryActorTests
         await actor.DisconnectAllAsync();
 
         await eventBus.Received(2).PublishAsync(
-            Arg.Any<Events.ToolDisconnectedEvent>(),
+            Arg.Any<ToolRegistry.ToolDisconnectedEvent>(),
             Arg.Any<CancellationToken>());
     }
 

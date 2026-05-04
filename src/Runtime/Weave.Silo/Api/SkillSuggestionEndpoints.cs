@@ -27,7 +27,7 @@ internal static class SkillSuggestionEndpoints
         CancellationToken ct)
     {
         using var source = SkillTokenFactory.MintRead(tokenService, workspaceId, ct);
-        var actor = actors.GetActor<Agents.Actors.ISkillMemoryActor>(VirtualActorId.From(workspaceId));
+        var actor = actors.GetActor<Agents.Skills.ISkillMemoryActor>(VirtualActorId.From(workspaceId));
         var suggestions = await actor.GetSuggestedSkillsAsync(source.Token);
         return Results.Ok(suggestions.Select(SkillSuggestionResponse.FromSuggestion));
     }
@@ -40,7 +40,7 @@ internal static class SkillSuggestionEndpoints
         CancellationToken ct)
     {
         using var source = SkillTokenFactory.MintWrite(tokenService, workspaceId, ct);
-        var actor = actors.GetActor<Agents.Actors.ISkillMemoryActor>(VirtualActorId.From(workspaceId));
+        var actor = actors.GetActor<Agents.Skills.ISkillMemoryActor>(VirtualActorId.From(workspaceId));
         var skill = await actor.AcceptSuggestedSkillAsync(SkillId.From(skillId), source.Token);
         return skill is null
             ? ResultExtensions.NotFound($"Skill suggestion '{skillId}' not found.")
@@ -55,7 +55,7 @@ internal static class SkillSuggestionEndpoints
         CancellationToken ct)
     {
         using var source = SkillTokenFactory.MintWrite(tokenService, workspaceId, ct);
-        var actor = actors.GetActor<Agents.Actors.ISkillMemoryActor>(VirtualActorId.From(workspaceId));
+        var actor = actors.GetActor<Agents.Skills.ISkillMemoryActor>(VirtualActorId.From(workspaceId));
         var rejected = await actor.RejectSuggestedSkillAsync(SkillId.From(skillId), source.Token);
         return rejected
             ? Results.NoContent()

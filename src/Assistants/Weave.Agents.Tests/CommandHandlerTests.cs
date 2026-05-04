@@ -1,7 +1,11 @@
-using Weave.Agents.Actors;
-using Weave.Agents.Commands;
+using Weave.Agents.Lifecycle;
+using Weave.Agents.Channels;
+using Weave.Agents.Memory;
+using Weave.Agents.Skills;
+using Weave.Agents.Users;
+using Weave.Agents.Verification;
+using Weave.Agents.ToolRegistry;
 using Weave.Agents.Models;
-using Weave.Agents.Queries;
 using Weave.Shared.Ids;
 using Weave.Workspaces.Models;
 

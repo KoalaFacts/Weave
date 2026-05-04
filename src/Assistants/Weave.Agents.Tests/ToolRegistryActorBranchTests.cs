@@ -1,5 +1,11 @@
 using Microsoft.Extensions.Logging;
-using Weave.Agents.Actors;
+using Weave.Agents.Lifecycle;
+using Weave.Agents.Channels;
+using Weave.Agents.Memory;
+using Weave.Agents.Skills;
+using Weave.Agents.Users;
+using Weave.Agents.Verification;
+using Weave.Agents.ToolRegistry;
 using Weave.Agents.Models;
 using Weave.Security.Actors;
 using Weave.Security.Tokens;
@@ -192,7 +198,7 @@ public sealed class ToolRegistryActorBranchTests
         connection!.Status.ShouldBe(ToolConnectionStatus.Error);
         connection.ErrorMessage.ShouldNotBeNull();
         connection.ErrorMessage.ShouldContain("tool unreachable");
-        await fx.EventBus.Received().PublishAsync(Arg.Any<Events.ToolErrorEvent>(), Arg.Any<CancellationToken>());
+        await fx.EventBus.Received().PublishAsync(Arg.Any<ToolRegistry.ToolErrorEvent>(), Arg.Any<CancellationToken>());
     }
 
     [Fact]

@@ -1,6 +1,11 @@
-using Weave.Agents.Commands;
+using Weave.Agents.Lifecycle;
+using Weave.Agents.Channels;
+using Weave.Agents.Memory;
+using Weave.Agents.Skills;
+using Weave.Agents.Users;
+using Weave.Agents.Verification;
+using Weave.Agents.ToolRegistry;
 using Weave.Agents.Models;
-using Weave.Agents.Queries;
 using Weave.Security.Tokens;
 using Weave.Shared.Cqrs;
 using Weave.Shared.Ids;
@@ -52,7 +57,7 @@ public static class SkillEndpoints
         CancellationToken ct)
     {
         using var source = SkillTokenFactory.MintRead(tokenService, workspaceId, ct);
-        var actor = actors.GetActor<Agents.Actors.ISkillMemoryActor>(VirtualActorId.From(workspaceId));
+        var actor = actors.GetActor<Agents.Skills.ISkillMemoryActor>(VirtualActorId.From(workspaceId));
         var skills = await actor.GetAllSkillsAsync(source.Token);
         return Results.Ok(skills.Select(SkillResponse.FromDocument));
     }
@@ -136,7 +141,7 @@ public static class SkillEndpoints
         CancellationToken ct)
     {
         using var source = SkillTokenFactory.MintWrite(tokenService, workspaceId, ct);
-        var actor = actors.GetActor<Agents.Actors.ISkillMemoryActor>(VirtualActorId.From(workspaceId));
+        var actor = actors.GetActor<Agents.Skills.ISkillMemoryActor>(VirtualActorId.From(workspaceId));
         var archived = await actor.ArchiveSkillAsync(SkillId.From(skillId), source.Token);
         return archived is null
             ? ResultExtensions.NotFound($"Skill '{skillId}' not found.")
@@ -151,7 +156,7 @@ public static class SkillEndpoints
         CancellationToken ct)
     {
         using var source = SkillTokenFactory.MintWrite(tokenService, workspaceId, ct);
-        var actor = actors.GetActor<Agents.Actors.ISkillMemoryActor>(VirtualActorId.From(workspaceId));
+        var actor = actors.GetActor<Agents.Skills.ISkillMemoryActor>(VirtualActorId.From(workspaceId));
         var restored = await actor.RestoreSkillAsync(SkillId.From(skillId), source.Token);
         return restored is null
             ? ResultExtensions.NotFound($"Skill '{skillId}' not found.")
@@ -166,7 +171,7 @@ public static class SkillEndpoints
         CancellationToken ct)
     {
         using var source = SkillTokenFactory.MintWrite(tokenService, workspaceId, ct);
-        var actor = actors.GetActor<Agents.Actors.ISkillMemoryActor>(VirtualActorId.From(workspaceId));
+        var actor = actors.GetActor<Agents.Skills.ISkillMemoryActor>(VirtualActorId.From(workspaceId));
         await actor.RemoveSkillAsync(SkillId.From(skillId), source.Token);
         return Results.NoContent();
     }
