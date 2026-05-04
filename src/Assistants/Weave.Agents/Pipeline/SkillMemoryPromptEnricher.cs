@@ -1,6 +1,7 @@
 using Weave.Agents.Actors;
 using Weave.Agents.Models;
 using Weave.Security.Tokens;
+using Weave.Shared.Capabilities;
 using Weave.Shared.Ids;
 
 namespace Weave.Agents.Pipeline;
@@ -11,7 +12,7 @@ internal sealed class SkillMemoryPromptEnricher(
 {
     public async Task<SkillMemoryEnrichment> EnrichAsync(AgentState state, string messageContent, string? prompt)
     {
-        if (state.Definition?.Capabilities is not { } capabilities || !CapabilityToken.HasGrant(capabilities, "skill:read"))
+        if (state.Definition?.Capabilities is not { } capabilities || !CapabilityGrantMatcher.HasGrant(capabilities, "skill:read"))
             return new SkillMemoryEnrichment(prompt, []);
 
         var skillActor = actors.GetActor<ISkillMemoryActor>(VirtualActorId.From(state.WorkspaceId.ToString()));
@@ -41,7 +42,7 @@ internal sealed class SkillMemoryPromptEnricher(
         if (skillIds.Count == 0)
             return;
 
-        if (state.Definition?.Capabilities is not { } capabilities || !CapabilityToken.HasGrant(capabilities, "skill:write"))
+        if (state.Definition?.Capabilities is not { } capabilities || !CapabilityGrantMatcher.HasGrant(capabilities, "skill:write"))
             return;
 
         var skillActor = actors.GetActor<ISkillMemoryActor>(VirtualActorId.From(state.WorkspaceId.ToString()));

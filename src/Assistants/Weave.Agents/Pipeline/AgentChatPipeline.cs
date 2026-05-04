@@ -3,6 +3,7 @@ using Microsoft.Extensions.Logging;
 using Weave.Agents.Actors;
 using Weave.Agents.Models;
 using Weave.Security.Tokens;
+using Weave.Shared.Capabilities;
 using Weave.Tools.Actors;
 using Weave.Tools.Builders;
 
@@ -159,7 +160,7 @@ public sealed class AgentChatPipeline(
             return prompt;
 
         var grant = $"user:read:{message.UserId}";
-        if (state.Definition?.Capabilities is not { } capabilities || !CapabilityToken.HasGrant(capabilities, grant))
+        if (state.Definition?.Capabilities is not { } capabilities || !CapabilityGrantMatcher.HasGrant(capabilities, grant))
             return prompt;
 
         var userActor = actors.GetActor<IUserModelActor>(VirtualActorId.Combine(state.WorkspaceId, message.UserId));

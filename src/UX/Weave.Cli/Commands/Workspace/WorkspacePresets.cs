@@ -9,7 +9,8 @@ internal static class WorkspacePresets
         {
             ["starter"] = new("starter",
                 "One assistant, no tools — the simplest possible workspace.",
-                "claude-sonnet-4-20250514", []),
+                "claude-sonnet-4-20250514", [],
+                Capabilities: []),
 
             ["coding-assistant"] = new("coding-assistant",
                 "An assistant with git and file tools, ready for code tasks.",
@@ -31,7 +32,8 @@ internal static class WorkspacePresets
                         Type = "filesystem",
                         FileSystem = new Weave.Workspaces.Models.FileSystemToolConfig { Root = "./workspace-data", Sandbox = true }
                     }
-                }),
+                },
+                Capabilities: ["tool:git", "tool:files"]),
 
             ["research"] = new("research",
                 "An assistant with web search and file tools for gathering information.",
@@ -48,7 +50,8 @@ internal static class WorkspacePresets
                         Type = "filesystem",
                         FileSystem = new Weave.Workspaces.Models.FileSystemToolConfig { Root = "./workspace-data", Sandbox = true }
                     }
-                }),
+                },
+                Capabilities: ["tool:web-search", "tool:files"]),
 
             ["multi-agent"] = new("multi-agent",
                 "A supervisor and worker assistants for complex workflows.",
@@ -76,7 +79,8 @@ internal static class WorkspacePresets
                         Mcp = new McpConfig { Server = "npx", Args = ["-y", "@anthropic/mcp-server-web-search"] }
                     }
                 },
-                IsMultiAgent: true),
+                IsMultiAgent: true,
+                Capabilities: ["tool:git", "tool:files", "tool:web-search"]),
 
             ["support-team"] = new("support-team",
                 "A support bot on Slack with skill memory, user modeling, and a health monitor.",
@@ -105,6 +109,20 @@ internal static class WorkspacePresets
                             ["webhook_url"] = "https://hooks.slack.com/services/YOUR/WEBHOOK/URL"
                         }
                     }
-                }),
+                },
+                // Capabilities here describe the primary agent (support-bot). The
+                // health-monitor agent's capabilities are hard-coded in the factory
+                // alongside its hard-coded tool list — see
+                // WorkspaceNewTemplateFactory.CreateSupportTeam.
+                Capabilities: [
+                    "tool:web-search",
+                    "tool:files",
+                    "channel:send:slack",
+                    "channel:receive:slack",
+                    "skill:read",
+                    "skill:write",
+                    "user:read:*",
+                    "user:write:*"
+                ]),
         };
 }

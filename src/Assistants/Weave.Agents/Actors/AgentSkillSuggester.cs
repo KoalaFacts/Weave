@@ -1,6 +1,7 @@
 using Microsoft.Extensions.Logging;
 using Weave.Agents.Models;
 using Weave.Security.Tokens;
+using Weave.Shared.Capabilities;
 using Weave.Shared.Ids;
 
 namespace Weave.Agents.Actors;
@@ -20,7 +21,7 @@ internal sealed class AgentSkillSuggester(
         if (skill is null)
             return;
 
-        if (state.Definition?.Capabilities is not { } capabilities || !CapabilityToken.HasGrant(capabilities, "skill:write"))
+        if (state.Definition?.Capabilities is not { } capabilities || !CapabilityGrantMatcher.HasGrant(capabilities, "skill:write"))
         {
             logger.LogInformation(
                 "Skipping skill suggestion from task {TaskId}: agent '{AgentName}' manifest does not declare 'skill:write'",

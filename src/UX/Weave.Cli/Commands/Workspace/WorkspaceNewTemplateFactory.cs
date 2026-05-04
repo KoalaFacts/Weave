@@ -50,7 +50,8 @@ internal static class WorkspaceNewTemplateFactory
                 Model = selection.Model,
                 SystemPromptFile = "./prompts/support-bot.md",
                 MaxConcurrentTasks = 5,
-                Tools = selection.Tools
+                Tools = selection.Tools,
+                Capabilities = selection.Capabilities
             },
             ["monitor"] = new AgentDefinition
             {
@@ -58,6 +59,7 @@ internal static class WorkspaceNewTemplateFactory
                 SystemPromptFile = "./prompts/monitor.md",
                 MaxConcurrentTasks = 1,
                 Tools = ["web-search"],
+                Capabilities = ["tool:web-search"],
                 Heartbeat = new HeartbeatConfig
                 {
                     Cron = "*/5 * * * *",
@@ -83,14 +85,16 @@ internal static class WorkspaceNewTemplateFactory
                 Model = selection.Model,
                 SystemPromptFile = "./prompts/supervisor.md",
                 MaxConcurrentTasks = 5,
-                Tools = selection.Tools
+                Tools = selection.Tools,
+                Capabilities = selection.Capabilities
             },
             ["worker"] = new AgentDefinition
             {
                 Model = selection.Model,
                 SystemPromptFile = "./prompts/worker.md",
                 MaxConcurrentTasks = 3,
-                Tools = selection.Tools
+                Tools = selection.Tools,
+                Capabilities = selection.Capabilities
             }
         };
 
@@ -111,7 +115,8 @@ internal static class WorkspaceNewTemplateFactory
                 Model = selection.Model,
                 SystemPromptFile = "./prompts/assistant.md",
                 MaxConcurrentTasks = 3,
-                Tools = selection.Tools
+                Tools = selection.Tools,
+                Capabilities = selection.Capabilities
             }
         };
 

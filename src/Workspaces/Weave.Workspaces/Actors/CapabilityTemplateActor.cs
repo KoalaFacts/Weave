@@ -1,4 +1,5 @@
 using Microsoft.Extensions.Logging;
+using Weave.Shared.Capabilities;
 using Weave.Shared.Ids;
 using Weave.Workspaces.Models;
 
@@ -118,6 +119,12 @@ public sealed partial class CapabilityTemplateActor(
             Detail = hasModel ? null : "Agent definition must specify a Model."
         });
 
+        // STJ/Orleans round-trips can leave init-only collection properties as
+        // null when the wire payload omits the field, so coalesce defensively.
+        // Null means "no grants declared" — the same as an empty list — and
+        // we want validation to fail closed, not throw.
+        var ownedGrants = template.AgentDefinition.Capabilities ?? [];
+
         foreach (var toolRef in template.AgentDefinition.Tools)
         {
             var found = template.RequiredTools.ContainsKey(toolRef);
@@ -126,6 +133,30 @@ public sealed partial class CapabilityTemplateActor(
                 Check = $"ToolPresent:{toolRef}",
                 Passed = found,
                 Detail = found ? null : $"Tool '{toolRef}' is referenced by the agent but not present in RequiredTools."
+            });
+
+            // A template that hands an agent a tool but no grant covering it is
+            // incoherent: the runtime will deny every invocation. Validation
+            // refuses to publish such a template — this is the contract the
+            // strategy doc names ("pre-validated capability bundles").
+            var grant = $"tool:{toolRef}";
+            var granted = CapabilityGrantMatcher.HasGrant(ownedGrants, grant);
+            results.Add(new TemplateValidationResult
+            {
+                Check = $"ToolCapabilityGranted:{toolRef}",
+                Passed = granted,
+                Detail = granted ? null : $"Agent references tool '{toolRef}' but no capability grant covers '{grant}'. Add it (or a wildcard like 'tool:*') to AgentDefinition.Capabilities."
+            });
+        }
+
+        foreach (var required in template.RequiredCapabilities)
+        {
+            var granted = CapabilityGrantMatcher.HasGrant(ownedGrants, required);
+            results.Add(new TemplateValidationResult
+            {
+                Check = $"RequiredCapabilityGranted:{required}",
+                Passed = granted,
+                Detail = granted ? null : $"Template declares required capability '{required}' but no grant in AgentDefinition.Capabilities covers it."
             });
         }
 

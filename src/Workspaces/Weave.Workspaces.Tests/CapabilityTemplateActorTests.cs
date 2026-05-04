@@ -33,7 +33,8 @@ public sealed class CapabilityTemplateActorTests
         AgentDefinition = new AgentDefinition
         {
             Model = "claude-sonnet-4-20250514",
-            Tools = ["web-search"]
+            Tools = ["web-search"],
+            Capabilities = ["tool:web-search"]
         },
         RequiredTools = new Dictionary<string, ToolDefinition>
         {
@@ -124,6 +125,94 @@ public sealed class CapabilityTemplateActorTests
 
         result.Status.ShouldBe(TemplateStatus.Draft);
         result.ValidationResults.ShouldContain(r => r.Check == "ToolPresent:code-runner" && !r.Passed);
+    }
+
+    [Fact]
+    public async Task ValidateAndPublishAsync_FailsWhenToolGrantMissing()
+    {
+        var actor = CreateActor();
+        var template = new CapabilityTemplate
+        {
+            TemplateId = TemplateId.From("tpl-nograntformcp"),
+            Name = "No Grant For MCP",
+            Description = "Tool present in RequiredTools but no capability grant covers it",
+            Version = "1.0.0",
+            Author = "test-author",
+            AgentDefinition = new AgentDefinition
+            {
+                Model = "claude-sonnet-4-20250514",
+                Tools = ["web-search"],
+                Capabilities = []
+            },
+            RequiredTools = new Dictionary<string, ToolDefinition>
+            {
+                ["web-search"] = new() { Type = "mcp" }
+            }
+        };
+        await actor.RegisterAsync(template);
+
+        var result = await actor.ValidateAndPublishAsync(template.TemplateId);
+
+        result.Status.ShouldBe(TemplateStatus.Draft);
+        result.ValidationResults.ShouldContain(r => r.Check == "ToolCapabilityGranted:web-search" && !r.Passed);
+    }
+
+    [Fact]
+    public async Task ValidateAndPublishAsync_AcceptsToolWildcardGrant()
+    {
+        var actor = CreateActor();
+        var template = new CapabilityTemplate
+        {
+            TemplateId = TemplateId.From("tpl-wildcard"),
+            Name = "Wildcard Grant",
+            Description = "tool:* covers every tool the agent references",
+            Version = "1.0.0",
+            Author = "test-author",
+            AgentDefinition = new AgentDefinition
+            {
+                Model = "claude-sonnet-4-20250514",
+                Tools = ["web-search", "files"],
+                Capabilities = ["tool:*"]
+            },
+            RequiredTools = new Dictionary<string, ToolDefinition>
+            {
+                ["web-search"] = new() { Type = "mcp" },
+                ["files"] = new() { Type = "filesystem" }
+            }
+        };
+        await actor.RegisterAsync(template);
+
+        var result = await actor.ValidateAndPublishAsync(template.TemplateId);
+
+        result.Status.ShouldBe(TemplateStatus.Published);
+        result.ValidationResults.ShouldAllBe(r => r.Passed);
+    }
+
+    [Fact]
+    public async Task ValidateAndPublishAsync_FailsWhenRequiredCapabilityNotGranted()
+    {
+        var actor = CreateActor();
+        var template = new CapabilityTemplate
+        {
+            TemplateId = TemplateId.From("tpl-missingrequired"),
+            Name = "Missing Required Capability",
+            Description = "Template declares it needs skill:write but the agent has no covering grant",
+            Version = "1.0.0",
+            Author = "test-author",
+            AgentDefinition = new AgentDefinition
+            {
+                Model = "claude-sonnet-4-20250514",
+                Tools = [],
+                Capabilities = ["skill:read"]
+            },
+            RequiredCapabilities = ["skill:write"]
+        };
+        await actor.RegisterAsync(template);
+
+        var result = await actor.ValidateAndPublishAsync(template.TemplateId);
+
+        result.Status.ShouldBe(TemplateStatus.Draft);
+        result.ValidationResults.ShouldContain(r => r.Check == "RequiredCapabilityGranted:skill:write" && !r.Passed);
     }
 
     [Fact]

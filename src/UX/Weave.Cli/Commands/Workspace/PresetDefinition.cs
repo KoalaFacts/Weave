@@ -9,4 +9,5 @@ internal sealed record PresetDefinition(
     IReadOnlyList<string> Tools,
     IReadOnlyDictionary<string, ToolDefinition>? ToolDefinitions = null,
     IReadOnlyDictionary<string, ChannelDefinition>? Channels = null,
-    bool IsMultiAgent = false);
+    bool IsMultiAgent = false,
+    IReadOnlyList<string>? Capabilities = null);
