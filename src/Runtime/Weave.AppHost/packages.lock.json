@@ -118,9 +118,9 @@
       },
       "Microsoft.NET.ILLink.Tasks": {
         "type": "Direct",
-        "requested": "[10.0.7, )",
-        "resolved": "10.0.7",
-        "contentHash": "AA/yhzFHNtQZXLdqjzujPy25G8EWwGWsAnxOE2zYSBoT/8QHP6ketN3CToD3DFreO653ipUwnKHo22B8AlBMCw=="
+        "requested": "[10.0.5, )",
+        "resolved": "10.0.5",
+        "contentHash": "A+5ZuQ0f449tM+MQrhf6R9ZX7lYpjk/ODEwLYKrnF6111rtARx8fVsm4YznUnQiKnnXfaXNBqgxmil6RW3L3SA=="
       },
       "Aspire.Hosting": {
         "type": "Transitive",
@@ -1391,7 +1391,7 @@
           "Microsoft.AspNetCore.OpenApi": "[10.0.7, )",
           "Microsoft.Orleans.Serialization.SystemTextJson": "[10.1.0, )",
           "Microsoft.Orleans.Server": "[10.1.0, )",
-          "Scalar.AspNetCore": "[2.14.8, )",
+          "Scalar.AspNetCore": "[2.14.9, )",
           "Weave.Agents": "[1.0.0, )",
           "Weave.Security": "[1.0.0, )",
           "Weave.Security.Postgres": "[1.0.0, )",
@@ -1938,9 +1938,9 @@
       },
       "Scalar.AspNetCore": {
         "type": "CentralTransitive",
-        "requested": "[2.14.8, )",
-        "resolved": "2.14.8",
-        "contentHash": "v9afCyheCy+t5zXQvAF5JMqXt6BMCEQuqxtBl/52eGiwan3xGeDKpuUNH+DdKyY+LrSjIecCwCCUGaPbdtiuwg=="
+        "requested": "[2.14.9, )",
+        "resolved": "2.14.9",
+        "contentHash": "bDc8NjI2JSIAX0C1+02WO11zCJ1SJQhWdMC0s7yi2Nh2atoNRpNRPiYeyIhWSerkc1SkDdJVOeU9QSY6jb0/zQ=="
       },
       "System.Threading.RateLimiting": {
         "type": "CentralTransitive",
