@@ -149,6 +149,48 @@ public sealed class ToolRegistryActorTests
     }
 
     [Fact]
+    public async Task ConnectToolsAsync_TokenPassedToToolActor_GrantsToolNameOnly_NoSecretWildcard()
+    {
+        var actors = Substitute.For<IVirtualActorProvider>();
+        var toolActor = Substitute.For<IToolActor>();
+        var secretProxy = Substitute.For<ISecretProxyActor>();
+        var lifecycle = Substitute.For<ILifecycleManager>();
+        var eventBus = Substitute.For<IEventBus>();
+        var logger = Substitute.For<ILogger<ToolRegistryActor>>();
+        var tokenService = new CapabilityTokenService(
+            Microsoft.Extensions.Options.Options.Create(
+                new CapabilityTokenOptions { SigningKey = "test-signing-key-that-is-at-least-32-chars-long" }),
+            TimeProvider.System);
+        var persistentState = CreatePersistentState();
+
+        var captured = new List<CapabilityToken>();
+        toolActor.ConnectAsync(Arg.Any<ToolSpec>(), Arg.Do<CapabilityToken>(captured.Add))
+            .Returns(ci => Task.FromResult(new ToolHandle
+            {
+                ToolName = ci.Arg<ToolSpec>().Name,
+                Type = ci.Arg<ToolSpec>().Type,
+                IsConnected = true
+            }));
+        secretProxy.SubstituteAsync(Arg.Any<string>()).Returns(ci => ci.Arg<string>());
+        actors.GetActor<IToolActor>(Arg.Any<VirtualActorId>()).Returns(toolActor);
+        actors.GetActor<ISecretProxyActor>(Arg.Any<VirtualActorId>()).Returns(secretProxy);
+
+        var actor = new ToolRegistryActor(actors, tokenService, lifecycle, eventBus, TimeProvider.System, logger, persistentState);
+        await actor.ConnectToolsAsync(new Dictionary<string, ToolDefinition>
+        {
+            ["shell"] = new ToolDefinition
+            {
+                Type = "cli",
+                Cli = new CliConfig { Shell = "/bin/bash", AllowedCommands = ["ls"] }
+            }
+        });
+
+        captured.Count.ShouldBe(1);
+        captured[0].Grants.ShouldBe(["tool:shell"]);
+        captured[0].Grants.ShouldNotContain("secret:*");
+    }
+
+    [Fact]
     public async Task DisconnectAllAsync_ClearsAllConnections()
     {
         var (actor, _, _) = CreateActor();

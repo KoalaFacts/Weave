@@ -10,6 +10,7 @@ public sealed class CapabilityTokenService : ICapabilityTokenService
     private readonly ConcurrentDictionary<string, DateTimeOffset> _revokedTokens = new();
     private readonly ConcurrentDictionary<string, CancellationTokenSource> _liveSources = new();
     private readonly byte[] _signingKey;
+    private readonly byte[]? _previousSigningKey;
     private readonly string _revocationDirectory;
     private readonly TimeProvider _timeProvider;
 
@@ -28,6 +29,17 @@ public sealed class CapabilityTokenService : ICapabilityTokenService
                 $"Current length: {resolved.SigningKey.Length}.");
 
         _signingKey = SHA256.HashData(Encoding.UTF8.GetBytes(resolved.SigningKey));
+
+        if (!string.IsNullOrWhiteSpace(resolved.PreviousSigningKey))
+        {
+            if (resolved.PreviousSigningKey.Length < CapabilityTokenOptions.MinimumSigningKeyLength)
+                throw new InvalidOperationException(
+                    $"CapabilityTokens:PreviousSigningKey must be at least {CapabilityTokenOptions.MinimumSigningKeyLength} characters. " +
+                    $"Current length: {resolved.PreviousSigningKey.Length}.");
+
+            _previousSigningKey = SHA256.HashData(Encoding.UTF8.GetBytes(resolved.PreviousSigningKey));
+        }
+
         _revocationDirectory = resolved.RevocationDirectory
             ?? Path.Combine(Path.GetTempPath(), "weave-capability-revocations");
         Directory.CreateDirectory(_revocationDirectory);
@@ -49,7 +61,7 @@ public sealed class CapabilityTokenService : ICapabilityTokenService
             ExpiresAt = now.Add(request.Lifetime)
         };
 
-        var signature = ComputeSignature(token);
+        var signature = ComputeSignature(token, _signingKey);
         return token with { Signature = signature };
     }
 
@@ -76,10 +88,19 @@ public sealed class CapabilityTokenService : ICapabilityTokenService
         if (IsRevoked(token.TokenId))
             return false;
 
-        var expected = ComputeSignature(token);
-        return CryptographicOperations.FixedTimeEquals(
-            Encoding.UTF8.GetBytes(token.Signature),
-            Encoding.UTF8.GetBytes(expected));
+        var presented = Encoding.UTF8.GetBytes(token.Signature);
+
+        if (SignatureMatches(token, _signingKey, presented))
+            return true;
+
+        return _previousSigningKey is not null
+            && SignatureMatches(token, _previousSigningKey, presented);
+    }
+
+    private static bool SignatureMatches(CapabilityToken token, byte[] key, byte[] presented)
+    {
+        var expected = Encoding.UTF8.GetBytes(ComputeSignature(token, key));
+        return CryptographicOperations.FixedTimeEquals(presented, expected);
     }
 
     public void Revoke(string tokenId)
@@ -106,10 +127,10 @@ public sealed class CapabilityTokenService : ICapabilityTokenService
         return _revokedTokens.ContainsKey(tokenId) || File.Exists(GetRevocationPath(tokenId));
     }
 
-    private string ComputeSignature(CapabilityToken token)
+    private static string ComputeSignature(CapabilityToken token, byte[] key)
     {
         var payload = $"{token.TokenId}:{token.WorkspaceId}:{token.IssuedTo}:{token.IssuedAt.ToUnixTimeSeconds()}:{token.ExpiresAt.ToUnixTimeSeconds()}:{string.Join(',', token.Grants.Order())}";
-        var hash = HMACSHA256.HashData(_signingKey, Encoding.UTF8.GetBytes(payload));
+        var hash = HMACSHA256.HashData(key, Encoding.UTF8.GetBytes(payload));
         return Convert.ToBase64String(hash);
     }
 

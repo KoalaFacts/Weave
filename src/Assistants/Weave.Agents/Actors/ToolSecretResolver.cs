@@ -12,12 +12,16 @@ internal sealed class ToolSecretResolver(
 {
     public async Task<ToolDefinition> ResolveAsync(string workspaceId, ToolDefinition definition)
     {
+        var paths = EnumerateAllSecretPaths(definition).Distinct(StringComparer.Ordinal).ToList();
+        if (paths.Count == 0)
+            return definition;
+
         var proxy = actors.GetActor<ISecretProxyActor>(VirtualActorId.From(workspaceId));
         using var source = tokenService.MintLinked(new CapabilityTokenRequest
         {
             WorkspaceId = workspaceId,
             IssuedTo = $"{workspaceId}/tool-registry",
-            Grants = ["secret:*"],
+            Grants = [.. paths.Select(p => $"secret:{p}")],
             Lifetime = TimeSpan.FromHours(1)
         }, CancellationToken.None);
 
@@ -47,6 +51,22 @@ internal sealed class ToolSecretResolver(
                         : definition.OpenApi.Auth with { Token = authToken }
                 }
         };
+    }
+
+    private static IEnumerable<string> EnumerateAllSecretPaths(ToolDefinition definition)
+    {
+        if (definition.Mcp is not null)
+        {
+            foreach (var (_, value) in definition.Mcp.Env)
+                foreach (var path in SecretPlaceholderParser.EnumeratePaths(value))
+                    yield return path;
+        }
+
+        if (definition.OpenApi?.Auth?.Token is { Length: > 0 } authToken)
+        {
+            foreach (var path in SecretPlaceholderParser.EnumeratePaths(authToken))
+                yield return path;
+        }
     }
 
     private static async Task<Dictionary<string, string>> ResolveAsync(

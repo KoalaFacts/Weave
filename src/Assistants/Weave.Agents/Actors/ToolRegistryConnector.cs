@@ -46,7 +46,7 @@ internal sealed class ToolRegistryConnector(
         {
             WorkspaceId = workspaceId,
             IssuedTo = $"{workspaceId}/{toolName}",
-            Grants = [$"tool:{toolName}", "secret:*"],
+            Grants = [$"tool:{toolName}"],
             Lifetime = TimeSpan.FromHours(1)
         }, CancellationToken.None);
 
