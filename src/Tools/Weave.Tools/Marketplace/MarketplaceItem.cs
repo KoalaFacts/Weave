@@ -20,4 +20,11 @@ public sealed record MarketplaceItem
     public List<string> RequiredCapabilities { get; init; } = [];
     public string? DocumentationUrl { get; init; }
     public SecurityReview? SecurityReview { get; set; }
+
+    /// <summary>
+    /// Optional handle to a published <c>CapabilityTemplate</c>. When set,
+    /// <c>InstallAsync</c> resolves the template and returns it as the install
+    /// result so callers can compose a workspace from it.
+    /// </summary>
+    public TemplateId? TemplateId { get; init; }
 }

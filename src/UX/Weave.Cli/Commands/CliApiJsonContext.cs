@@ -19,6 +19,7 @@ namespace Weave.Cli.Commands;
 [JsonSerializable(typeof(List<ApiMarketplaceItemResponse>))]
 [JsonSerializable(typeof(ApiSubmitMarketplaceRequest))]
 [JsonSerializable(typeof(ApiPublishMarketplaceRequest))]
+[JsonSerializable(typeof(ApiMarketplaceInstallResponse))]
 [JsonSerializable(typeof(ApiSendMessageRequest))]
 [JsonSerializable(typeof(ApiChatResponse))]
 [JsonSerializable(typeof(ApiCapabilityAuditEntry))]

@@ -1,8 +1,10 @@
 using Microsoft.Extensions.Logging;
+using Weave.Security.Tokens;
 using Weave.Shared.Events;
 using Weave.Shared.Ids;
 using Weave.Tools.Events;
 using Weave.Tools.Models;
+using Weave.Workspaces.Actors;
 
 namespace Weave.Tools.Actors;
 
@@ -10,7 +12,9 @@ public sealed class MarketplaceActor(
     ILogger<MarketplaceActor> logger,
     IEventBus eventBus,
     TimeProvider timeProvider,
-    IActorState<MarketplaceState> persistentState) : IMarketplaceActor
+    IActorState<MarketplaceState> persistentState,
+    ICapabilityAuthorizer authorizer,
+    IVirtualActorProvider actors) : IMarketplaceActor
 {
     public async Task<MarketplaceItem> SubmitAsync(MarketplaceItem item)
     {
@@ -127,6 +131,42 @@ public sealed class MarketplaceActor(
 
         item.InstallCount++;
         await persistentState.WriteStateAsync();
+    }
+
+    public async Task<MarketplaceInstallResult> InstallAsync(MarketplaceItemId itemId, CapabilityToken token)
+    {
+        // Marketplace install is silo-wide (not workspace-scoped) — pass null
+        // workspaceId so the authorizer skips the workspace match step like
+        // plugin:invoke does. The grant is `marketplace:install` (or any
+        // wildcard covering it).
+        await authorizer.AuthorizeAsync(token, "marketplace:install", actorWorkspaceId: null);
+
+        var key = itemId.ToString();
+        if (!persistentState.State.Items.TryGetValue(key, out var item))
+            throw new KeyNotFoundException($"Marketplace item '{itemId}' not found");
+
+        if (item.Status != MarketplaceItemStatus.Published)
+            throw new InvalidOperationException(
+                $"Marketplace item '{itemId}' is {item.Status}; only Published items can be installed.");
+
+        if (item.TemplateId is not { } templateId)
+            throw new InvalidOperationException(
+                $"Marketplace item '{itemId}' has no linked CapabilityTemplate; nothing to install.");
+
+        var templateActor = actors.GetActor<ICapabilityTemplateActor>(VirtualActorId.From("global"));
+        var template = await templateActor.GetAsync(templateId)
+            ?? throw new KeyNotFoundException(
+                $"Marketplace item '{itemId}' references template '{templateId}' which is not registered.");
+
+        item.InstallCount++;
+        await persistentState.WriteStateAsync();
+        await templateActor.IncrementInstantiationCountAsync(templateId);
+
+        logger.LogInformation(
+            "Marketplace item {ItemId} ({Name}) installed; template {TemplateId} resolved (install count {InstallCount})",
+            itemId, item.Name, templateId, item.InstallCount);
+
+        return new MarketplaceInstallResult { Item = item, Template = template };
     }
 
     public async Task DeprecateAsync(MarketplaceItemId itemId)

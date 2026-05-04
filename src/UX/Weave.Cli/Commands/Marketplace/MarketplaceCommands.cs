@@ -13,6 +13,24 @@ internal static class MarketplaceCommands
         cmd.Subcommands.Add(CreateSubmitCommand());
         cmd.Subcommands.Add(CreatePublishCommand());
         cmd.Subcommands.Add(CreateInfoCommand());
+        cmd.Subcommands.Add(CreateInstallCommand());
+
+        return cmd;
+    }
+
+    private static Command CreateInstallCommand()
+    {
+        var itemIdArg = new Argument<string?>("item-id")
+        {
+            Description = "Marketplace item ID",
+            Arity = ArgumentArity.ZeroOrOne
+        };
+        var cmd = new Command("install", "Install a marketplace item (capability-gated)") { itemIdArg };
+        cmd.SetAction(async (parseResult, cancellationToken) =>
+        {
+            var itemId = parseResult.GetValue(itemIdArg);
+            return await new MarketplaceInstallCliCommand().ExecuteAsync(new MarketplaceInstallOptions(itemId), cancellationToken);
+        });
 
         return cmd;
     }

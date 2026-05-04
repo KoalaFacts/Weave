@@ -1,3 +1,4 @@
+using Weave.Security.Tokens;
 using Weave.Shared.Ids;
 using Weave.Tools.Models;
 
@@ -17,4 +18,13 @@ public interface IMarketplaceActor
     Task RateAsync(MarketplaceItemId itemId, double rating);
     Task IncrementInstallCountAsync(MarketplaceItemId itemId);
     Task DeprecateAsync(MarketplaceItemId itemId);
+
+    /// <summary>
+    /// Capability-gated install path: validates the <c>marketplace:install</c>
+    /// grant on <paramref name="token"/>, resolves the linked template, and
+    /// records the install + instantiation on both the marketplace item and
+    /// the template. Returns the resolved <see cref="CapabilityTemplate"/> for
+    /// the caller to compose a workspace from.
+    /// </summary>
+    Task<MarketplaceInstallResult> InstallAsync(MarketplaceItemId itemId, CapabilityToken token);
 }

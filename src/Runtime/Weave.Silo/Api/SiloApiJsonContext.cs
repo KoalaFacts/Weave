@@ -67,6 +67,7 @@ namespace Weave.Silo.Api;
 [JsonSerializable(typeof(RateMarketplaceItemRequest))]
 [JsonSerializable(typeof(MarketplaceItemResponse))]
 [JsonSerializable(typeof(IEnumerable<MarketplaceItemResponse>))]
+[JsonSerializable(typeof(MarketplaceInstallResponse))]
 // Template types
 [JsonSerializable(typeof(RegisterTemplateRequest))]
 [JsonSerializable(typeof(TemplateResponse))]

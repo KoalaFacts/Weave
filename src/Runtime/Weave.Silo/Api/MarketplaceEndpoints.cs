@@ -1,3 +1,4 @@
+using Weave.Security.Tokens;
 using Weave.Shared.Ids;
 using Weave.Tools.Actors;
 using Weave.Tools.Models;
@@ -38,6 +39,11 @@ public static class MarketplaceEndpoints
             .WithDescription("Deprecate a marketplace item.")
             .Produces(204)
             .ProducesProblem(404);
+        group.MapPost("/{itemId}/install", InstallAsync)
+            .WithDescription("Install a marketplace item — resolves the linked capability template.")
+            .Produces<MarketplaceInstallResponse>()
+            .ProducesProblem(404)
+            .ProducesProblem(409);
 
         return group;
     }
@@ -153,6 +159,29 @@ public static class MarketplaceEndpoints
         }
     }
 
+    private static async Task<IResult> InstallAsync(
+        string itemId,
+        IVirtualActorProvider actors,
+        ICapabilityTokenService tokenService,
+        CancellationToken ct)
+    {
+        try
+        {
+            using var source = MarketplaceTokenFactory.MintInstall(tokenService, ct);
+            var actor = GetMarketplace(actors);
+            var result = await actor.InstallAsync(MarketplaceItemId.From(itemId), source.Token);
+            return Results.Ok(MarketplaceInstallResponse.FromResult(result));
+        }
+        catch (KeyNotFoundException ex)
+        {
+            return ResultExtensions.NotFound(ex.Message);
+        }
+        catch (InvalidOperationException ex)
+        {
+            return ResultExtensions.Conflict(ex.Message);
+        }
+    }
+
     private static IMarketplaceActor GetMarketplace(IVirtualActorProvider actors) =>
         actors.GetActor<IMarketplaceActor>(VirtualActorId.From("global"));
 
@@ -191,7 +220,10 @@ public static class MarketplaceEndpoints
             Author = request.Author,
             Tags = request.Tags ?? [],
             RequiredCapabilities = request.RequiredCapabilities ?? [],
-            DocumentationUrl = request.DocumentationUrl
+            DocumentationUrl = request.DocumentationUrl,
+            TemplateId = string.IsNullOrWhiteSpace(request.TemplateId)
+                ? null
+                : Weave.Shared.Ids.TemplateId.From(request.TemplateId)
         };
     }
 

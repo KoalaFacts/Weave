@@ -1,4 +1,5 @@
 using Microsoft.Extensions.Logging.Abstractions;
+using Weave.Security.Tokens;
 using Weave.Shared.Events;
 using Weave.Shared.Ids;
 using Weave.Tools.Actors;
@@ -20,14 +21,16 @@ public sealed class MarketplaceActorTests
         return persistentState;
     }
 
-    private static (MarketplaceActor Actor, IEventBus EventBus) CreateActor()
+    private static (MarketplaceActor Actor, IEventBus EventBus, ICapabilityAuthorizer Authorizer, IVirtualActorProvider Actors) CreateActor()
     {
         var logger = NullLogger<MarketplaceActor>.Instance;
         var eventBus = Substitute.For<IEventBus>();
         var persistentState = CreatePersistentState();
+        var authorizer = Substitute.For<ICapabilityAuthorizer>();
+        var actors = Substitute.For<IVirtualActorProvider>();
 
-        var actor = new MarketplaceActor(logger, eventBus, TimeProvider.System, persistentState);
-        return (actor, eventBus);
+        var actor = new MarketplaceActor(logger, eventBus, TimeProvider.System, persistentState, authorizer, actors);
+        return (actor, eventBus, authorizer, actors);
     }
 
     private static MarketplaceItem CreateItem(
@@ -74,7 +77,7 @@ public sealed class MarketplaceActorTests
     [Fact]
     public async Task SubmitAsync_StoresAsDraft()
     {
-        var (actor, _) = CreateActor();
+        var (actor, _, _, _) = CreateActor();
         var item = CreateItem(id: "item-1");
 
         var result = await actor.SubmitAsync(item);
@@ -92,7 +95,7 @@ public sealed class MarketplaceActorTests
     [Fact]
     public async Task PublishAsync_SetsPublishedStatus_WhenReviewApproved()
     {
-        var (actor, _) = CreateActor();
+        var (actor, _, _, _) = CreateActor();
         var item = CreateItem(id: "item-pub");
         await actor.SubmitAsync(item);
 
@@ -108,7 +111,7 @@ public sealed class MarketplaceActorTests
     [Fact]
     public async Task PublishAsync_ThrowsWhenReviewNotApproved()
     {
-        var (actor, _) = CreateActor();
+        var (actor, _, _, _) = CreateActor();
         var item = CreateItem(id: "item-rej");
         await actor.SubmitAsync(item);
 
@@ -119,7 +122,7 @@ public sealed class MarketplaceActorTests
     [Fact]
     public async Task SearchAsync_FindsByNameKeywords()
     {
-        var (actor, _) = CreateActor();
+        var (actor, _, _, _) = CreateActor();
         await SubmitAndPublishAsync(actor, CreateItem(id: "item-s1", name: "Kubernetes Deploy Tool"));
 
         var results = await actor.SearchAsync("kubernetes", null);
@@ -131,7 +134,7 @@ public sealed class MarketplaceActorTests
     [Fact]
     public async Task SearchAsync_FiltersByCategory()
     {
-        var (actor, _) = CreateActor();
+        var (actor, _, _, _) = CreateActor();
         await SubmitAndPublishAsync(actor, CreateItem(
             id: "item-cat1", category: MarketplaceItemCategory.ToolConnector, name: "Connector A"));
         await SubmitAndPublishAsync(actor, CreateItem(
@@ -146,7 +149,7 @@ public sealed class MarketplaceActorTests
     [Fact]
     public async Task SearchAsync_OnlyReturnsPublished()
     {
-        var (actor, _) = CreateActor();
+        var (actor, _, _, _) = CreateActor();
         // Submit but do not publish
         await actor.SubmitAsync(CreateItem(id: "item-draft", name: "Draft Item"));
         // Submit and publish
@@ -161,7 +164,7 @@ public sealed class MarketplaceActorTests
     [Fact]
     public async Task RateAsync_UpdatesRunningAverage()
     {
-        var (actor, _) = CreateActor();
+        var (actor, _, _, _) = CreateActor();
         var item = CreateItem(id: "item-rate");
         await actor.SubmitAsync(item);
 
@@ -181,7 +184,7 @@ public sealed class MarketplaceActorTests
     [Fact]
     public async Task IncrementInstallCountAsync_IncrementsCount()
     {
-        var (actor, _) = CreateActor();
+        var (actor, _, _, _) = CreateActor();
         var item = CreateItem(id: "item-install");
         await actor.SubmitAsync(item);
 
@@ -196,7 +199,7 @@ public sealed class MarketplaceActorTests
     [Fact]
     public async Task DeprecateAsync_SetsDeprecatedStatus()
     {
-        var (actor, _) = CreateActor();
+        var (actor, _, _, _) = CreateActor();
         var item = await SubmitAndPublishAsync(actor, CreateItem(id: "item-dep"));
 
         await actor.DeprecateAsync(item.ItemId);
@@ -209,7 +212,7 @@ public sealed class MarketplaceActorTests
     [Fact]
     public async Task GetPublishedAsync_ReturnsPaginated()
     {
-        var (actor, _) = CreateActor();
+        var (actor, _, _, _) = CreateActor();
         for (var i = 0; i < 5; i++)
             await SubmitAndPublishAsync(actor, CreateItem(id: $"item-page-{i}", name: $"Tool {i}"));
 
@@ -223,10 +226,98 @@ public sealed class MarketplaceActorTests
     [Fact]
     public async Task GetAsync_ReturnsNull_WhenNotFound()
     {
-        var (actor, _) = CreateActor();
+        var (actor, _, _, _) = CreateActor();
 
         var result = await actor.GetAsync(MarketplaceItemId.From("nonexistent"));
 
         result.ShouldBeNull();
+    }
+
+    [Fact]
+    public async Task InstallAsync_AuthorizesMarketplaceInstall_AndIncrementsCounters()
+    {
+        var (actor, _, authorizer, actors) = CreateActor();
+        var templateId = TemplateId.From("tpl-install-1");
+
+        var item = await SubmitAndPublishAsync(actor,
+            CreateItem(id: "item-install-ok") with { TemplateId = templateId });
+
+        var template = new Weave.Workspaces.Models.CapabilityTemplate
+        {
+            TemplateId = templateId,
+            Name = "demo",
+            Description = "demo",
+            Version = "1.0.0",
+            Author = "weave",
+            AgentDefinition = new Weave.Workspaces.Models.AgentDefinition { Model = "claude-sonnet-4-20250514" }
+        };
+        var templateActor = Substitute.For<Weave.Workspaces.Actors.ICapabilityTemplateActor>();
+        templateActor.GetAsync(templateId).Returns(template);
+        actors.GetActor<Weave.Workspaces.Actors.ICapabilityTemplateActor>(Arg.Any<VirtualActorId>())
+            .Returns(templateActor);
+
+        var token = new CapabilityToken { Grants = ["marketplace:install"] };
+
+        var result = await actor.InstallAsync(item.ItemId, token);
+
+        await authorizer.Received(1).AuthorizeAsync(
+            Arg.Is(token),
+            Arg.Is("marketplace:install"),
+            Arg.Is<string?>(s => s == null),
+            Arg.Any<string>());
+        await templateActor.Received(1).IncrementInstantiationCountAsync(templateId);
+        result.Template.ShouldBeSameAs(template);
+
+        var stored = await actor.GetAsync(item.ItemId);
+        stored.ShouldNotBeNull();
+        stored!.InstallCount.ShouldBe(1);
+    }
+
+    [Fact]
+    public async Task InstallAsync_ThrowsWhenItemNotPublished()
+    {
+        var (actor, _, _, _) = CreateActor();
+        var draft = await actor.SubmitAsync(
+            CreateItem(id: "item-install-draft") with { TemplateId = TemplateId.From("tpl-x") });
+
+        await Should.ThrowAsync<InvalidOperationException>(
+            () => actor.InstallAsync(draft.ItemId, new CapabilityToken { Grants = ["marketplace:install"] }));
+    }
+
+    [Fact]
+    public async Task InstallAsync_ThrowsWhenItemHasNoLinkedTemplate()
+    {
+        var (actor, _, _, _) = CreateActor();
+        var item = await SubmitAndPublishAsync(actor, CreateItem(id: "item-no-template"));
+
+        await Should.ThrowAsync<InvalidOperationException>(
+            () => actor.InstallAsync(item.ItemId, new CapabilityToken { Grants = ["marketplace:install"] }));
+    }
+
+    [Fact]
+    public async Task InstallAsync_ThrowsWhenItemNotFound()
+    {
+        var (actor, _, _, _) = CreateActor();
+
+        await Should.ThrowAsync<KeyNotFoundException>(
+            () => actor.InstallAsync(MarketplaceItemId.From("missing"), new CapabilityToken { Grants = ["marketplace:install"] }));
+    }
+
+    [Fact]
+    public async Task InstallAsync_ThrowsWhenLinkedTemplateMissing()
+    {
+        var (actor, _, _, actors) = CreateActor();
+        var templateId = TemplateId.From("tpl-missing");
+
+        var item = await SubmitAndPublishAsync(actor,
+            CreateItem(id: "item-tpl-gone") with { TemplateId = templateId });
+
+        var templateActor = Substitute.For<Weave.Workspaces.Actors.ICapabilityTemplateActor>();
+        templateActor.GetAsync(templateId).Returns((Weave.Workspaces.Models.CapabilityTemplate?)null);
+        actors.GetActor<Weave.Workspaces.Actors.ICapabilityTemplateActor>(Arg.Any<VirtualActorId>())
+            .Returns(templateActor);
+
+        await Should.ThrowAsync<KeyNotFoundException>(
+            () => actor.InstallAsync(item.ItemId, new CapabilityToken { Grants = ["marketplace:install"] }));
     }
 }

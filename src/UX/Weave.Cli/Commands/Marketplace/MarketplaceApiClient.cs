@@ -69,6 +69,24 @@ internal sealed class MarketplaceApiClient : IDisposable
             ?? throw new InvalidOperationException("Marketplace API returned an empty response.");
     }
 
+    public async Task<ApiMarketplaceInstallResponse?> InstallAsync(string itemId, CancellationToken cancellationToken)
+    {
+        using var response = await _httpClient.PostAsync(
+            $"/api/marketplace/{Uri.EscapeDataString(itemId)}/install",
+            content: null,
+            cancellationToken);
+
+        if (response.StatusCode == System.Net.HttpStatusCode.NotFound)
+            return null;
+        if (response.StatusCode == System.Net.HttpStatusCode.Conflict)
+            throw new InvalidOperationException(
+                await response.Content.ReadAsStringAsync(cancellationToken));
+
+        await CliApiHttp.EnsureSuccessOrThrowAsync(response, cancellationToken);
+        return await response.Content.ReadFromJsonAsync(
+            CliApiJsonContext.Default.ApiMarketplaceInstallResponse, cancellationToken);
+    }
+
     public async Task<bool> IsReachableAsync(CancellationToken cancellationToken)
     {
         try
