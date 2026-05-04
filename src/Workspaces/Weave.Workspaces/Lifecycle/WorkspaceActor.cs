@@ -2,11 +2,12 @@ using Microsoft.Extensions.Logging;
 using Weave.Shared.Events;
 using Weave.Shared.Ids;
 using Weave.Shared.Lifecycle;
-using Weave.Workspaces.Events;
+using Weave.Workspaces.Lifecycle;
+using Weave.Workspaces.Templates;
 using Weave.Workspaces.Models;
 using Weave.Workspaces.Runtime;
 
-namespace Weave.Workspaces.Actors;
+namespace Weave.Workspaces.Lifecycle;
 
 public sealed partial class WorkspaceActor(
     IWorkspaceRuntime runtime,

@@ -1,7 +1,7 @@
 using Weave.Shared.Events;
 using Weave.Shared.Ids;
 
-namespace Weave.Workspaces.Events;
+namespace Weave.Workspaces.Templates;
 
 public sealed record TemplatePublishedEvent : DomainEvent
 {

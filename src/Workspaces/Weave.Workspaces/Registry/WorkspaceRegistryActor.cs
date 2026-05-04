@@ -1,6 +1,6 @@
 using Weave.Workspaces.Models;
 
-namespace Weave.Workspaces.Actors;
+namespace Weave.Workspaces.Registry;
 
 public sealed class WorkspaceRegistryActor(
     IActorState<WorkspaceRegistryState> persistentState)

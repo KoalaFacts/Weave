@@ -3,7 +3,9 @@ using Weave.Agents.Actors;
 using Weave.Agents.Heartbeat;
 using Weave.Security.Actors;
 using Weave.Tools.Actors;
-using Weave.Workspaces.Actors;
+using Weave.Workspaces.Lifecycle;
+using Weave.Workspaces.Registry;
+using Weave.Workspaces.Templates;
 
 namespace Weave.Silo.VirtualActors;
 

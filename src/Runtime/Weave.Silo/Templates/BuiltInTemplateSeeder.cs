@@ -1,7 +1,9 @@
 using Microsoft.Extensions.Hosting;
 using Microsoft.Extensions.Logging;
 using Weave.Shared.Ids;
-using Weave.Workspaces.Actors;
+using Weave.Workspaces.Lifecycle;
+using Weave.Workspaces.Registry;
+using Weave.Workspaces.Templates;
 using Weave.Workspaces.Models;
 
 namespace Weave.Silo.Templates;

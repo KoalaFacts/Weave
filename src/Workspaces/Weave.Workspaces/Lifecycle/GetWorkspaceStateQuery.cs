@@ -1,9 +1,11 @@
 using Weave.Shared.Cqrs;
 using Weave.Shared.Ids;
-using Weave.Workspaces.Actors;
+using Weave.Workspaces.Lifecycle;
+using Weave.Workspaces.Registry;
+using Weave.Workspaces.Templates;
 using Weave.Workspaces.Models;
 
-namespace Weave.Workspaces.Queries;
+namespace Weave.Workspaces.Lifecycle;
 
 public sealed record GetWorkspaceStateQuery(WorkspaceId WorkspaceId);
 

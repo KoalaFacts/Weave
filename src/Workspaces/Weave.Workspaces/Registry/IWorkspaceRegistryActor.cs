@@ -1,4 +1,4 @@
-namespace Weave.Workspaces.Actors;
+namespace Weave.Workspaces.Registry;
 
 public interface IWorkspaceRegistryActor
 {

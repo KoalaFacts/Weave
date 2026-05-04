@@ -1,8 +1,9 @@
 using Weave.Agents.Actors;
 using Weave.Agents.Heartbeat;
 using Weave.Shared.Cqrs;
-using Weave.Workspaces.Actors;
-using Weave.Workspaces.Commands;
+using Weave.Workspaces.Lifecycle;
+using Weave.Workspaces.Registry;
+using Weave.Workspaces.Templates;
 
 namespace Weave.Silo.Api;
 

@@ -251,9 +251,9 @@ public sealed class MarketplaceActorTests
             Author = "weave",
             AgentDefinition = new Weave.Workspaces.Models.AgentDefinition { Model = "claude-sonnet-4-20250514" }
         };
-        var templateActor = Substitute.For<Weave.Workspaces.Actors.ICapabilityTemplateActor>();
+        var templateActor = Substitute.For<Weave.Workspaces.Templates.ICapabilityTemplateActor>();
         templateActor.GetAsync(templateId).Returns(template);
-        actors.GetActor<Weave.Workspaces.Actors.ICapabilityTemplateActor>(Arg.Any<VirtualActorId>())
+        actors.GetActor<Weave.Workspaces.Templates.ICapabilityTemplateActor>(Arg.Any<VirtualActorId>())
             .Returns(templateActor);
 
         var token = new CapabilityToken { Grants = ["marketplace:install"] };
@@ -312,9 +312,9 @@ public sealed class MarketplaceActorTests
         var item = await SubmitAndPublishAsync(actor,
             CreateItem(id: "item-tpl-gone") with { TemplateId = templateId });
 
-        var templateActor = Substitute.For<Weave.Workspaces.Actors.ICapabilityTemplateActor>();
+        var templateActor = Substitute.For<Weave.Workspaces.Templates.ICapabilityTemplateActor>();
         templateActor.GetAsync(templateId).Returns((Weave.Workspaces.Models.CapabilityTemplate?)null);
-        actors.GetActor<Weave.Workspaces.Actors.ICapabilityTemplateActor>(Arg.Any<VirtualActorId>())
+        actors.GetActor<Weave.Workspaces.Templates.ICapabilityTemplateActor>(Arg.Any<VirtualActorId>())
             .Returns(templateActor);
 
         await Should.ThrowAsync<KeyNotFoundException>(

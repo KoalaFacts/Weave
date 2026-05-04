@@ -4,7 +4,9 @@ using Weave.Shared.Events;
 using Weave.Shared.Ids;
 using Weave.Tools.Events;
 using Weave.Tools.Models;
-using Weave.Workspaces.Actors;
+using Weave.Workspaces.Lifecycle;
+using Weave.Workspaces.Registry;
+using Weave.Workspaces.Templates;
 
 namespace Weave.Tools.Actors;
 

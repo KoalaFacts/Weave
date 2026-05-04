@@ -1,6 +1,6 @@
 using Weave.Workspaces.Models;
 
-namespace Weave.Workspaces.Actors;
+namespace Weave.Workspaces.Lifecycle;
 
 public interface IWorkspaceActor
 {

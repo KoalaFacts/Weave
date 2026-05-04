@@ -3,7 +3,7 @@ using Weave.Shared.Capabilities;
 using Weave.Shared.Ids;
 using Weave.Workspaces.Models;
 
-namespace Weave.Workspaces.Actors;
+namespace Weave.Workspaces.Templates;
 
 public sealed partial class CapabilityTemplateActor(
     TimeProvider timeProvider,

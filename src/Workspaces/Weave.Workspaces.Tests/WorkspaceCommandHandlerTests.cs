@@ -1,10 +1,10 @@
 using Weave.Agents.Actors;
 using Weave.Shared.Ids;
 using Weave.Silo.Api;
-using Weave.Workspaces.Actors;
-using Weave.Workspaces.Commands;
+using Weave.Workspaces.Lifecycle;
+using Weave.Workspaces.Registry;
+using Weave.Workspaces.Templates;
 using Weave.Workspaces.Models;
-using Weave.Workspaces.Queries;
 
 namespace Weave.Workspaces.Tests;
 

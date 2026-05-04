@@ -2,7 +2,9 @@ using Microsoft.Extensions.Logging.Abstractions;
 using Weave.Shared.Events;
 using Weave.Shared.Ids;
 using Weave.Shared.Lifecycle;
-using Weave.Workspaces.Actors;
+using Weave.Workspaces.Lifecycle;
+using Weave.Workspaces.Registry;
+using Weave.Workspaces.Templates;
 using Weave.Workspaces.Models;
 using Weave.Workspaces.Runtime;
 

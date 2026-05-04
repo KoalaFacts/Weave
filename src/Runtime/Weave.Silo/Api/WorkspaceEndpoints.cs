@@ -1,8 +1,7 @@
 using Weave.Shared.Cqrs;
 using Weave.Shared.Ids;
-using Weave.Workspaces.Commands;
+using Weave.Workspaces.Lifecycle;
 using Weave.Workspaces.Models;
-using Weave.Workspaces.Queries;
 
 namespace Weave.Silo.Api;
 
