@@ -1,18 +1,18 @@
 using Microsoft.Extensions.AI;
 using Microsoft.Extensions.Logging;
-using Weave.Agents.Lifecycle;
 using Weave.Agents.Channels;
+using Weave.Agents.Lifecycle;
 using Weave.Agents.Memory;
+using Weave.Agents.Models;
 using Weave.Agents.Skills;
+using Weave.Agents.ToolRegistry;
 using Weave.Agents.Users;
 using Weave.Agents.Verification;
-using Weave.Agents.ToolRegistry;
-using Weave.Agents.Models;
 using Weave.Security.Tokens;
 using Weave.Shared.Capabilities;
-using Weave.Tools.Tool;
-using Weave.Tools.Marketplace;
 using Weave.Tools.Builders;
+using Weave.Tools.Marketplace;
+using Weave.Tools.Tool;
 
 namespace Weave.Agents.Pipeline;
 

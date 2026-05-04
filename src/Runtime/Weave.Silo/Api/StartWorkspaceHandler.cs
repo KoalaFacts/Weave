@@ -1,16 +1,16 @@
-using Weave.Agents.Lifecycle;
 using Weave.Agents.Channels;
+using Weave.Agents.Heartbeat;
+using Weave.Agents.Lifecycle;
 using Weave.Agents.Memory;
 using Weave.Agents.Skills;
+using Weave.Agents.ToolRegistry;
 using Weave.Agents.Users;
 using Weave.Agents.Verification;
-using Weave.Agents.ToolRegistry;
-using Weave.Agents.Heartbeat;
 using Weave.Shared.Cqrs;
 using Weave.Workspaces.Lifecycle;
+using Weave.Workspaces.Models;
 using Weave.Workspaces.Registry;
 using Weave.Workspaces.Templates;
-using Weave.Workspaces.Models;
 
 namespace Weave.Silo.Api;
 

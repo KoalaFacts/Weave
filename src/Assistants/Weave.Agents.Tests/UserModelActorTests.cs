@@ -1,13 +1,13 @@
 using Microsoft.Extensions.Logging.Abstractions;
 using Microsoft.Extensions.Options;
-using Weave.Agents.Lifecycle;
 using Weave.Agents.Channels;
+using Weave.Agents.Lifecycle;
 using Weave.Agents.Memory;
+using Weave.Agents.Models;
 using Weave.Agents.Skills;
+using Weave.Agents.ToolRegistry;
 using Weave.Agents.Users;
 using Weave.Agents.Verification;
-using Weave.Agents.ToolRegistry;
-using Weave.Agents.Models;
 using Weave.Security.Events;
 using Weave.Security.Tokens;
 using Weave.Shared.Events;

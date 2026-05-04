@@ -3,9 +3,9 @@ using Weave.Shared.Events;
 using Weave.Shared.Ids;
 using Weave.Shared.Lifecycle;
 using Weave.Workspaces.Lifecycle;
-using Weave.Workspaces.Templates;
 using Weave.Workspaces.Models;
 using Weave.Workspaces.Runtime;
+using Weave.Workspaces.Templates;
 
 namespace Weave.Workspaces.Lifecycle;
 

@@ -2,9 +2,9 @@ using Microsoft.Extensions.Logging.Abstractions;
 using Weave.Security.Tokens;
 using Weave.Shared.Events;
 using Weave.Shared.Ids;
-using Weave.Tools.Tool;
 using Weave.Tools.Marketplace;
 using Weave.Tools.Models;
+using Weave.Tools.Tool;
 
 namespace Weave.Tools.Tests;
 
