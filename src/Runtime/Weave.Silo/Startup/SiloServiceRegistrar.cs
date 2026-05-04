@@ -19,6 +19,7 @@ using Weave.Silo.Channels;
 using Weave.Silo.Configuration;
 using Weave.Silo.Plugins;
 using Weave.Silo.Security;
+using Weave.Silo.Templates;
 using Weave.Silo.VirtualActors;
 using Weave.Tools.Connectors;
 using Weave.Tools.Discovery;
@@ -135,6 +136,7 @@ internal sealed class SiloServiceRegistrar
             sp.GetRequiredService<AgentVerificationDispatcher>());
         _services.AddHostedService<AgentVerificationHostedService>();
         _services.AddHostedService<CapabilityAuditSubscriberHostedService>();
+        _services.AddHostedService<BuiltInTemplateSeeder>();
     }
 
     private void RegisterChannelAdapters()

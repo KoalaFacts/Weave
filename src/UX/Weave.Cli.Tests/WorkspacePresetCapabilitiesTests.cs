@@ -1,4 +1,5 @@
 using Weave.Cli.Commands;
+using Weave.Workspaces.Models;
 
 namespace Weave.Cli.Tests;
 
@@ -90,6 +91,28 @@ public class WorkspacePresetCapabilitiesTests
 
         template.Agents.ShouldContainKey("assistant");
         template.Agents["assistant"].Capabilities.ShouldBe(["tool:git", "tool:files"]);
+    }
+
+    [Theory]
+    [InlineData("starter", "tpl-built-in-starter")]
+    [InlineData("coding-assistant", "tpl-built-in-coding-assistant")]
+    [InlineData("research", "tpl-built-in-research")]
+    [InlineData("multi-agent", "tpl-built-in-multi-agent-supervisor")]
+    [InlineData("support-team", "tpl-built-in-support-bot")]
+    public void EveryPreset_PrimaryAgentShape_MatchesItsBuiltInTemplate(string presetName, string templateId)
+    {
+        // Drift detector: the CLI preset and the runtime BuiltInTemplate carry
+        // duplicate data today. They must agree on Model, Tools, and Capabilities
+        // for the primary agent — otherwise `weave workspace new --preset X`
+        // and `GET /api/templates` would describe different shapes for the
+        // "same" curated bundle. Until the two surfaces collapse into one
+        // (see handoff Next work), this theory ratchets them together.
+        var preset = WorkspacePresets.All[presetName];
+        var template = BuiltInTemplates.All.First(t => t.TemplateId.ToString() == templateId);
+
+        template.AgentDefinition.Model.ShouldBe(preset.Model);
+        template.AgentDefinition.Tools.ShouldBe(preset.Tools);
+        template.AgentDefinition.Capabilities.ShouldBe(preset.Capabilities ?? []);
     }
 
     [Fact]
