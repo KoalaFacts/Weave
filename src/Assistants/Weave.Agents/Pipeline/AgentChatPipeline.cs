@@ -4,7 +4,8 @@ using Weave.Agents.Actors;
 using Weave.Agents.Models;
 using Weave.Security.Tokens;
 using Weave.Shared.Capabilities;
-using Weave.Tools.Actors;
+using Weave.Tools.Tool;
+using Weave.Tools.Marketplace;
 using Weave.Tools.Builders;
 
 namespace Weave.Agents.Pipeline;

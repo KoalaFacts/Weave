@@ -1,7 +1,7 @@
 using Weave.Shared.Events;
 using Weave.Shared.Ids;
 
-namespace Weave.Tools.Events;
+namespace Weave.Tools.Tool;
 
 public sealed record ToolInvocationCompletedEvent : DomainEvent
 {

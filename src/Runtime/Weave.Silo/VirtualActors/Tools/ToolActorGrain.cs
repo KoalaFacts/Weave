@@ -2,7 +2,8 @@ using Weave.Security.Scanning;
 using Weave.Security.Tokens;
 using Weave.Shared.Events;
 using Weave.Shared.Lifecycle;
-using Weave.Tools.Actors;
+using Weave.Tools.Tool;
+using Weave.Tools.Marketplace;
 using Weave.Tools.Discovery;
 using Weave.Tools.Models;
 

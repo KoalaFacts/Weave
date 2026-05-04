@@ -1,5 +1,6 @@
 using Weave.Shared.Ids;
-using Weave.Tools.Events;
+using Weave.Tools.Tool;
+using Weave.Tools.Marketplace;
 using Weave.Tools.Models;
 
 namespace Weave.Tools.Tests;

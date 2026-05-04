@@ -3,10 +3,11 @@ using Microsoft.Extensions.Logging;
 using Weave.Security.Scanning;
 using Weave.Shared.Events;
 using Weave.Shared.Ids;
-using Weave.Tools.Events;
+using Weave.Tools.Tool;
+using Weave.Tools.Marketplace;
 using Weave.Tools.Models;
 
-namespace Weave.Tools.Actors;
+namespace Weave.Tools.Tool;
 
 internal sealed partial class ToolInvocationLeakGuard(
     ILeakScanner leakScanner,

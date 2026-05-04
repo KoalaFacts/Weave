@@ -1,7 +1,7 @@
 using Weave.Security.Actors;
 using Weave.Tools.Models;
 
-namespace Weave.Tools.Actors;
+namespace Weave.Tools.Tool;
 
 internal sealed class ToolSecretSubstitutor
 {

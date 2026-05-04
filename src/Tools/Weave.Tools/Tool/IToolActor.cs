@@ -1,7 +1,7 @@
 using Weave.Security.Tokens;
 using Weave.Tools.Models;
 
-namespace Weave.Tools.Actors;
+namespace Weave.Tools.Tool;
 
 /// <summary>
 /// Actor that manages a single tool instance within a workspace.

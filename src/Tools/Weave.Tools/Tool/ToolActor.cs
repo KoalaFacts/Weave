@@ -5,10 +5,11 @@ using Weave.Shared.Events;
 using Weave.Shared.Ids;
 using Weave.Shared.Lifecycle;
 using Weave.Tools.Discovery;
-using Weave.Tools.Events;
+using Weave.Tools.Tool;
+using Weave.Tools.Marketplace;
 using Weave.Tools.Models;
 
-namespace Weave.Tools.Actors;
+namespace Weave.Tools.Tool;
 
 public sealed partial class ToolActor(
     IVirtualActorProvider actors,

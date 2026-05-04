@@ -6,7 +6,8 @@ using Weave.Agents.Models;
 using Weave.Agents.Pipeline;
 using Weave.Security.Tokens;
 using Weave.Shared.Ids;
-using Weave.Tools.Actors;
+using Weave.Tools.Tool;
+using Weave.Tools.Marketplace;
 using Weave.Tools.Models;
 using Weave.Workspaces.Models;
 

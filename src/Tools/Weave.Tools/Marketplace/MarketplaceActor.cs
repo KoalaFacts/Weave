@@ -2,13 +2,14 @@ using Microsoft.Extensions.Logging;
 using Weave.Security.Tokens;
 using Weave.Shared.Events;
 using Weave.Shared.Ids;
-using Weave.Tools.Events;
+using Weave.Tools.Tool;
+using Weave.Tools.Marketplace;
 using Weave.Tools.Models;
 using Weave.Workspaces.Lifecycle;
 using Weave.Workspaces.Registry;
 using Weave.Workspaces.Templates;
 
-namespace Weave.Tools.Actors;
+namespace Weave.Tools.Marketplace;
 
 public sealed class MarketplaceActor(
     ILogger<MarketplaceActor> logger,

@@ -2,7 +2,7 @@ using Weave.Security.Tokens;
 using Weave.Shared.Ids;
 using Weave.Tools.Models;
 
-namespace Weave.Tools.Actors;
+namespace Weave.Tools.Marketplace;
 
 /// <summary>
 /// Actor that manages the curated tool/skill marketplace.
