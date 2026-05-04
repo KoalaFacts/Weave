@@ -104,6 +104,34 @@ done | sort -rn
 
 For multi-class files: it's only a smell if the types are *not* tightly coupled. The codified exception is the CQRS shape (`*Query` record + `*Handler` class in the same file). Two unrelated public types do not qualify.
 
+```bash
+# Production *classes* with > 4 ctor seams. Filters to `class` only —
+# `record` types are value objects and their primary-ctor parameters are
+# data fields, not deps. Strips ILogger<T>, TimeProvider, IOptions<T>
+# (cross-cutting infra, not seams).
+for f in $(find src -name "*.cs" -not -path "*/bin/*" -not -path "*/obj/*" -not -path "*Test*"); do
+  awk '
+    /^(public|internal) (sealed |abstract |partial )*class [A-Za-z_][A-Za-z0-9_]*\s*\(/ {
+      capture=1; buf=$0; next
+    }
+    capture { buf=buf" "$0 }
+    capture && /\)/ {
+      capture=0
+      paren=substr(buf, index(buf,"(")+1)
+      paren=substr(paren, 1, index(paren,")")-1)
+      gsub(/ILogger<[^>]+>[^,]*,?/, "", paren)
+      gsub(/TimeProvider[^,]*,?/, "", paren)
+      gsub(/IOptions<[^>]+>[^,]*,?/, "", paren)
+      n=split(paren, a, ",")
+      count=0; for (i=1;i<=n;i++) if (a[i] ~ /[A-Za-z]/) count++
+      if (count > 4) printf "%d  %s\n", count, FILENAME
+    }
+  ' "$f"
+done | sort -rn
+```
+
+For each hit: confirm by reading. The class is doing too much when the deps split cleanly into two groups that don't talk to each other (e.g. one set used only in `MethodA`, another only in `MethodB`) — that's two responsibilities. Acceptable when the deps form one coherent pipeline (every method touches most of them). Orleans grain bridges that forward N domain deps to a single inner domain class are exempt — the bridge owns no behaviour. Today's known outliers (don't re-flag, but call out if the diff makes them worse, e.g. adds a 6th seam to a 5-seam class): `ToolRegistryConnector` (7), `AgentActor` (7), `ToolActor` (6), `AgentLifecycle` (6), `ToolRegistryActor` (5). All sit in the Wave 5 split scope, so the dep-count and vertical-slice rules point at the same SRP violations. Use BLOCK only when the class also exceeds 200 lines or is being touched by the diff under review; otherwise WARN.
+
 ### 6. Time and clocks (BLOCK on behavior, NOTE on display)
 
 ```bash
