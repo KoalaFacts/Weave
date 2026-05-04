@@ -4,9 +4,6 @@ namespace Weave.Agents.Skills;
 
 internal static class SkillSearchScorer
 {
-    internal static double ComputeRelevanceScore(SkillDocument skill, string[] queryTokens) =>
-        ComputeRelevanceScore(skill, queryTokens, new SkillSearchOptions(), DateTimeOffset.UtcNow);
-
     internal static double ComputeRelevanceScore(
         SkillDocument skill,
         string[] queryTokens,
