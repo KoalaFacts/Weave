@@ -29,7 +29,7 @@ internal static class TuiSystemView
                 ? TuiMarkup.ColorTag(CliTheme.Muted, "(auto-detect)")
                 : Markup.Escape(config.SiloPath));
         table.AddRow("Weave home",
-            Markup.Escape(Path.Combine(
+            Markup.Escape(Path.Join(
                 Environment.GetFolderPath(Environment.SpecialFolder.UserProfile), ".weave")));
 
         AnsiConsole.Write(table);

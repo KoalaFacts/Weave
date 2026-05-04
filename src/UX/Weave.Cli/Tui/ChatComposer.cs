@@ -119,20 +119,20 @@ internal sealed class ChatComposer(TimeProvider timeProvider)
         bool previous = false;
         try
         { previous = Console.TreatControlCAsInput; }
-        catch (IOException) { }
-        catch (PlatformNotSupportedException) { }
+        catch (IOException) { /* console redirected — ignore */ }
+        catch (PlatformNotSupportedException) { /* unsupported terminal — ignore */ }
 
         try
         { Console.TreatControlCAsInput = true; }
-        catch (IOException) { }
-        catch (PlatformNotSupportedException) { }
+        catch (IOException) { /* console redirected — ignore */ }
+        catch (PlatformNotSupportedException) { /* unsupported terminal — ignore */ }
 
         return () =>
         {
             try
             { Console.TreatControlCAsInput = previous; }
-            catch (IOException) { }
-            catch (PlatformNotSupportedException) { }
+            catch (IOException) { /* console redirected — ignore */ }
+            catch (PlatformNotSupportedException) { /* unsupported terminal — ignore */ }
         };
     }
 
