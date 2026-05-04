@@ -17,12 +17,7 @@ public static class CapabilityGrantMatcher
         ArgumentNullException.ThrowIfNull(owned);
         ArgumentNullException.ThrowIfNull(requested);
 
-        foreach (var o in owned)
-        {
-            if (o == requested || Matches(o, requested))
-                return true;
-        }
-        return false;
+        return owned.Any(o => o == requested || Matches(o, requested));
     }
 
     private static bool Matches(string owned, string requested)
