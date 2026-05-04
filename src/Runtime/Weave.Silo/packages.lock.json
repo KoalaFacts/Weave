@@ -13,9 +13,9 @@
       },
       "Microsoft.NET.ILLink.Tasks": {
         "type": "Direct",
-        "requested": "[10.0.7, )",
-        "resolved": "10.0.7",
-        "contentHash": "AA/yhzFHNtQZXLdqjzujPy25G8EWwGWsAnxOE2zYSBoT/8QHP6ketN3CToD3DFreO653ipUwnKHo22B8AlBMCw=="
+        "requested": "[10.0.5, )",
+        "resolved": "10.0.5",
+        "contentHash": "A+5ZuQ0f449tM+MQrhf6R9ZX7lYpjk/ODEwLYKrnF6111rtARx8fVsm4YznUnQiKnnXfaXNBqgxmil6RW3L3SA=="
       },
       "Microsoft.Orleans.Serialization.SystemTextJson": {
         "type": "Direct",
@@ -520,7 +520,7 @@
         "type": "Project",
         "dependencies": {
           "Microsoft.Extensions.AI": "[10.5.0, )",
-          "Microsoft.Extensions.AI.Abstractions": "[10.5.0, )",
+          "Microsoft.Extensions.AI.Abstractions": "[10.5.1, )",
           "Weave.Security": "[1.0.0, )",
           "Weave.Shared": "[1.0.0, )",
           "Weave.Tools": "[1.0.0, )",
@@ -562,7 +562,7 @@
       "weave.shared": {
         "type": "Project",
         "dependencies": {
-          "Microsoft.Extensions.AI.Abstractions": "[10.5.0, )"
+          "Microsoft.Extensions.AI.Abstractions": "[10.5.1, )"
         }
       },
       "weave.silo.clustering.postgres": {
@@ -653,9 +653,9 @@
       },
       "Microsoft.Extensions.AI.Abstractions": {
         "type": "CentralTransitive",
-        "requested": "[10.5.0, )",
-        "resolved": "10.5.0",
-        "contentHash": "bb2wQ1HGatf5zdBxE28zrN4jaEVmpC+IJYChcqABTfu77YtFcJe/A4ZChjVZ0V1OF+UPYSOY8mUDI/fwEljcIA=="
+        "requested": "[10.5.1, )",
+        "resolved": "10.5.1",
+        "contentHash": "nB0l3IlsVbNeUxsE7nZNb9GY8rP1OSeqpj0pseORPejt474HNKEauTWTLdSJPkSvPlRMxowZNMo6nyp7APAiSg=="
       },
       "Microsoft.Extensions.Http.Resilience": {
         "type": "CentralTransitive",

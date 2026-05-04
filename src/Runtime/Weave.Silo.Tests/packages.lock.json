@@ -1063,7 +1063,7 @@
         "type": "Project",
         "dependencies": {
           "Microsoft.Extensions.AI": "[10.5.0, )",
-          "Microsoft.Extensions.AI.Abstractions": "[10.5.0, )",
+          "Microsoft.Extensions.AI.Abstractions": "[10.5.1, )",
           "System.Threading.RateLimiting": "[10.0.7, )",
           "Weave.Security": "[1.0.0, )",
           "Weave.Shared": "[1.0.0, )",
@@ -1110,7 +1110,7 @@
       "weave.shared": {
         "type": "Project",
         "dependencies": {
-          "Microsoft.Extensions.AI.Abstractions": "[10.5.0, )",
+          "Microsoft.Extensions.AI.Abstractions": "[10.5.1, )",
           "Microsoft.Extensions.DependencyInjection.Abstractions": "[10.0.7, )",
           "Microsoft.Extensions.Logging.Abstractions": "[10.0.7, )"
         }
@@ -1237,9 +1237,9 @@
       },
       "Microsoft.Extensions.AI.Abstractions": {
         "type": "CentralTransitive",
-        "requested": "[10.5.0, )",
-        "resolved": "10.5.0",
-        "contentHash": "bb2wQ1HGatf5zdBxE28zrN4jaEVmpC+IJYChcqABTfu77YtFcJe/A4ZChjVZ0V1OF+UPYSOY8mUDI/fwEljcIA=="
+        "requested": "[10.5.1, )",
+        "resolved": "10.5.1",
+        "contentHash": "nB0l3IlsVbNeUxsE7nZNb9GY8rP1OSeqpj0pseORPejt474HNKEauTWTLdSJPkSvPlRMxowZNMo6nyp7APAiSg=="
       },
       "Microsoft.Extensions.DependencyInjection": {
         "type": "CentralTransitive",
