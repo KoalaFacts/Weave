@@ -120,7 +120,7 @@ public sealed class SkillMemoryActor(
         if (persistentState.State.Skills.Count == 0)
             return [];
 
-        return SkillSearcher.Rank(
+        return SkillSearchScorer.Rank(
             persistentState.State.Skills.Values,
             query,
             maxResults,
