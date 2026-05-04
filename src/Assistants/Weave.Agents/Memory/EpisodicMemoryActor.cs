@@ -52,38 +52,7 @@ public sealed class EpisodicMemoryActor(
         int maxResults = 3,
         EpisodeSearchOptions? options = null)
     {
-        if (persistentState.State.Episodes.Count == 0)
-            return Task.FromResult<IReadOnlyList<EpisodeSearchResult>>(new List<EpisodeSearchResult>());
-
-        var queryTokens = SkillSearchScorer.Tokenize(query);
-        if (queryTokens.Length == 0)
-            return Task.FromResult<IReadOnlyList<EpisodeSearchResult>>(new List<EpisodeSearchResult>());
-
-        var effectiveOptions = options ?? new EpisodeSearchOptions();
-        var now = timeProvider.GetUtcNow();
-        var scored = new List<EpisodeSearchResult>();
-
-        foreach (var episode in persistentState.State.Episodes.Values)
-        {
-            if (episode.ArchivedAt is not null)
-                continue;
-            if (effectiveOptions.AgentName is { } agentName && !string.Equals(episode.AgentName, agentName, StringComparison.OrdinalIgnoreCase))
-                continue;
-            if (effectiveOptions.Tag is { } tag && !episode.Tags.Contains(tag, StringComparer.OrdinalIgnoreCase))
-                continue;
-            if (effectiveOptions.Since is { } since && episode.OccurredAt < since)
-                continue;
-
-            var score = EpisodeSearchScorer.ComputeRelevanceScore(episode, queryTokens, effectiveOptions, now);
-            if (score > 0)
-                scored.Add(new EpisodeSearchResult { Episode = episode, RelevanceScore = score });
-        }
-
-        IReadOnlyList<EpisodeSearchResult> results = scored
-            .OrderByDescending(r => r.RelevanceScore)
-            .Take(maxResults)
-            .ToList();
-
+        IReadOnlyList<EpisodeSearchResult> results = persistentState.State.Recall(query, maxResults, options, timeProvider.GetUtcNow());
         return Task.FromResult(results);
     }
 

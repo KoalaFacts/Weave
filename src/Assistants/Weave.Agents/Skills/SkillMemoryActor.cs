@@ -116,16 +116,7 @@ public sealed class SkillMemoryActor(
     public async Task<IReadOnlyList<SkillSearchResult>> SearchAsync(string query, CapabilityToken token, int maxResults = 5, SkillSearchOptions? options = null)
     {
         await authorizer.AuthorizeAsync(token, SkillRead, persistentState.State.WorkspaceId);
-
-        if (persistentState.State.Skills.Count == 0)
-            return [];
-
-        return SkillSearchScorer.Rank(
-            persistentState.State.Skills.Values,
-            query,
-            maxResults,
-            options,
-            timeProvider.GetUtcNow());
+        return persistentState.State.Search(query, maxResults, options, timeProvider.GetUtcNow());
     }
 
     public async Task<SkillDocument?> GetSkillAsync(SkillId skillId, CapabilityToken token)
