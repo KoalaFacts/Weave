@@ -48,6 +48,8 @@
     <Project Path="src/Runtime/Weave.Silo.Tests/Weave.Silo.Tests.csproj" />
   </Folder>
   <Folder Name="/10 - UX/">
+    <Project Path="src/UX/Weave.Actions/Weave.Actions.csproj" />
+    <Project Path="src/UX/Weave.Actions.Tests/Weave.Actions.Tests.csproj" />
     <Project Path="src/UX/Weave.Cli/Weave.Cli.csproj" />
     <Project Path="src/UX/Weave.Cli.Tests/Weave.Cli.Tests.csproj" />
     <Project Path="src/UX/Weave.Dashboard/Weave.Dashboard.csproj" />

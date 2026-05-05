@@ -37,6 +37,12 @@
         "resolved": "0.55.2",
         "contentHash": "tN3KEJQQZwLW9HJnG5YTSAxfBwxsmg1wVuGvhGG2rM+pbl+NGaHU8pDcNofPlOXlgpkbpBMxI5t9o9qPfy3sHQ=="
       },
+      "weave.actions": {
+        "type": "Project",
+        "dependencies": {
+          "Weave.Shared": "[1.0.0, )"
+        }
+      },
       "weave.deploy": {
         "type": "Project",
         "dependencies": {

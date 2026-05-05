@@ -1,9 +1,10 @@
 using System.Net.Http.Json;
 using System.Text.Json;
+using Weave.Actions;
 using Weave.Workspaces.Manifest;
 namespace Weave.Cli.Commands;
 
-internal sealed class WorkspaceApiClient : IDisposable
+internal sealed class WorkspaceApiClient : IDisposable, ISiloProbe
 {
     private readonly HttpClient _httpClient;
 

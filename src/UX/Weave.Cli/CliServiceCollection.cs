@@ -1,4 +1,8 @@
 using Microsoft.Extensions.DependencyInjection;
+using Weave.Actions;
+using Weave.Actions.Context;
+using Weave.Actions.System;
+using Weave.Cli.ActionContext;
 using Weave.Cli.Commands;
 using Weave.Cli.Tui;
 
@@ -45,6 +49,18 @@ internal static class CliServiceCollection
         services.AddSingleton<WorkspaceApiClient>();
         services.AddTransient<TuiToolsView>();
         services.AddTransient<TuiTasksView>();
+
+        // Shape C — Phase 0: action context primitives + the pilot
+        // GetSystemInfoAction wired through `weave system`. WorkspaceApiClient
+        // implements ISiloProbe so the action depends on the seam, not the
+        // concrete client. The TUI's /system slash still uses the legacy
+        // TuiSystemView path; it migrates in a later phase.
+        services.AddSingleton<IActionPrompter, ConsoleActionPrompter>();
+        services.AddSingleton<IActionReporter, ConsoleActionReporter>();
+        services.AddSingleton<ISiloProbe>(sp => sp.GetRequiredService<WorkspaceApiClient>());
+        services.AddSingleton<ISystemConfigSource, CliSystemConfigSource>();
+        services.AddTransient<GetSystemInfoAction>();
+        services.AddTransient<SystemCliCommand>();
 
         return services.BuildServiceProvider();
     }
