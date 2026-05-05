@@ -1,10 +1,11 @@
 using System.Net.Http.Json;
 using System.Text.Json;
 using Weave.Actions;
+using Weave.Actions.Agent;
 using Weave.Workspaces.Manifest;
 namespace Weave.Cli.Commands;
 
-internal sealed class WorkspaceApiClient : IDisposable, ISiloProbe
+internal sealed class WorkspaceApiClient : IDisposable, ISiloApi
 {
     private readonly HttpClient _httpClient;
 
@@ -132,6 +133,29 @@ internal sealed class WorkspaceApiClient : IDisposable, ISiloProbe
         await CliApiHttp.EnsureSuccessOrThrowAsync(response, cancellationToken);
         return (await response.Content.ReadFromJsonAsync(CliApiJsonContext.Default.ListJsonElement, cancellationToken))
             ?? [];
+    }
+
+    // ── Action-layer adapters (Weave.Actions.ISiloApi) ──────────────
+    // Translate internal API DTOs to frontend-friendly summaries so the
+    // action layer never sees the wire shape.
+
+    public async Task<IReadOnlyList<AgentSummary>> ListAgentsAsync(string workspaceId, CancellationToken cancellationToken)
+    {
+        var responses = await GetAgentsAsync(workspaceId, cancellationToken);
+        var summaries = new AgentSummary[responses.Count];
+        for (var i = 0; i < responses.Count; i++)
+        {
+            var r = responses[i];
+            summaries[i] = new AgentSummary
+            {
+                AgentName = r.AgentName,
+                Status = r.Status,
+                Model = r.Model,
+                ActiveTasksCount = r.ActiveTasks?.Count ?? 0,
+                ConnectedToolsCount = r.ConnectedTools?.Count ?? 0
+            };
+        }
+        return summaries;
     }
 
     public async Task<bool> IsReachableAsync(CancellationToken cancellationToken)

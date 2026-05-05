@@ -1,5 +1,6 @@
 using Microsoft.Extensions.DependencyInjection;
 using Weave.Actions;
+using Weave.Actions.Agent;
 using Weave.Actions.Context;
 using Weave.Actions.System;
 using Weave.Cli.ActionContext;
@@ -50,17 +51,20 @@ internal static class CliServiceCollection
         services.AddTransient<TuiToolsView>();
         services.AddTransient<TuiTasksView>();
 
-        // Shape C — Phase 0: action context primitives + the pilot
-        // GetSystemInfoAction wired through `weave system`. WorkspaceApiClient
-        // implements ISiloProbe so the action depends on the seam, not the
-        // concrete client. The TUI's /system slash still uses the legacy
-        // TuiSystemView path; it migrates in a later phase.
+        // Shape C action context + actions. WorkspaceApiClient implements
+        // ISiloApi so actions depend on the seam, not the concrete client;
+        // ISiloApi grows verb-by-verb as Phase 1 read-only verbs land. The
+        // legacy /system slash in the TUI still uses TuiSystemView until its
+        // own migration; the new `weave agents` CLI surface and the
+        // migrated /agents slash are the first cross-frontend consumers.
         services.AddSingleton<IActionPrompter, ConsoleActionPrompter>();
         services.AddSingleton<IActionReporter, ConsoleActionReporter>();
-        services.AddSingleton<ISiloProbe>(sp => sp.GetRequiredService<WorkspaceApiClient>());
+        services.AddSingleton<ISiloApi>(sp => sp.GetRequiredService<WorkspaceApiClient>());
         services.AddSingleton<ISystemConfigSource, CliSystemConfigSource>();
         services.AddTransient<GetSystemInfoAction>();
+        services.AddTransient<ListAgentsAction>();
         services.AddTransient<SystemCliCommand>();
+        services.AddTransient<AgentsCliCommand>();
 
         return services.BuildServiceProvider();
     }

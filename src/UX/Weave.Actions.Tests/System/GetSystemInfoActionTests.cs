@@ -12,7 +12,7 @@ public sealed class GetSystemInfoActionTests
         var configSource = Substitute.For<ISystemConfigSource>();
         configSource.Load().Returns(snapshot);
 
-        var probe = Substitute.For<ISiloProbe>();
+        var probe = Substitute.For<ISiloApi>();
         probe.IsReachableAsync(Arg.Any<CancellationToken>()).Returns(true);
 
         var action = new GetSystemInfoAction(configSource, probe);
@@ -36,7 +36,7 @@ public sealed class GetSystemInfoActionTests
         var configSource = Substitute.For<ISystemConfigSource>();
         configSource.Load().Returns(snapshot);
 
-        var probe = Substitute.For<ISiloProbe>();
+        var probe = Substitute.For<ISiloApi>();
         probe.IsReachableAsync(Arg.Any<CancellationToken>()).Returns(false);
 
         var action = new GetSystemInfoAction(configSource, probe);
@@ -53,7 +53,7 @@ public sealed class GetSystemInfoActionTests
         using var cts = new CancellationTokenSource();
         var configSource = Substitute.For<ISystemConfigSource>();
         configSource.Load().Returns(NewSnapshot());
-        var probe = Substitute.For<ISiloProbe>();
+        var probe = Substitute.For<ISiloApi>();
         probe.IsReachableAsync(cts.Token).Returns(true);
 
         var action = new GetSystemInfoAction(configSource, probe);
@@ -67,7 +67,7 @@ public sealed class GetSystemInfoActionTests
     {
         var action = new GetSystemInfoAction(
             Substitute.For<ISystemConfigSource>(),
-            Substitute.For<ISiloProbe>());
+            Substitute.For<ISiloApi>());
 
         await Should.ThrowAsync<ArgumentNullException>(
             () => action.ExecuteAsync(null!, CancellationToken.None));

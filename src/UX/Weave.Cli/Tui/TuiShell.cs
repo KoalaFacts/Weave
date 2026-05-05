@@ -1,4 +1,5 @@
 using Spectre.Console;
+using Weave.Actions.Agent;
 using Weave.Cli.Commands;
 
 namespace Weave.Cli.Tui;
@@ -16,6 +17,7 @@ internal sealed class TuiShell
         ChatComposer composer,
         TuiToolsView toolsView,
         TuiTasksView tasksView,
+        ListAgentsAction listAgentsAction,
         UpgradeCliCommand upgradeCommand)
     {
         _versionService = versionService;
@@ -28,7 +30,7 @@ internal sealed class TuiShell
             _dashboard,
             _chatSession,
             agentSelector,
-            new TuiAgentListView(agentNameSource),
+            new TuiAgentListView(agentNameSource, listAgentsAction),
             new TuiWorkspaceOpener(agentSelector),
             new TuiWorkspaceStarter(agentSelector),
             new TuiWorkspaceWatcher(),
