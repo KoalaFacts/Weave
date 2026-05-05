@@ -5,7 +5,7 @@ namespace Weave.Cli.Commands;
 
 internal static class SiloProcessService
 {
-    public static Process? StartSilo(string siloPath, int port, Weave.Workspaces.Models.StorageConfig? workspaceStorage = null)
+    public static Process? StartSilo(string siloPath, int port, Weave.Workspaces.Manifest.StorageConfig? workspaceStorage = null)
     {
         var startInfo = new ProcessStartInfo
         {
@@ -127,7 +127,7 @@ internal static class SiloProcessService
             args.Add(arg);
     }
 
-    private static void AddStorageArguments(Collection<string> args, Weave.Workspaces.Models.StorageConfig? workspaceStorage)
+    private static void AddStorageArguments(Collection<string> args, Weave.Workspaces.Manifest.StorageConfig? workspaceStorage)
     {
         var storageBackend = workspaceStorage?.Backend;
         var storageConn = workspaceStorage?.ConnectionString;

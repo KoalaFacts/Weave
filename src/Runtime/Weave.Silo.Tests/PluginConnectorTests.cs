@@ -7,8 +7,7 @@ using Weave.Shared.Plugins;
 using Weave.Silo.Events;
 using Weave.Silo.Plugins;
 using Weave.Tools.Discovery;
-using Weave.Workspaces.Models;
-
+using Weave.Workspaces.Manifest;
 namespace Weave.Silo.Tests;
 
 /// <summary>

@@ -1,8 +1,7 @@
 using System.Collections.Frozen;
 using Microsoft.Extensions.Logging;
 using Weave.Tools.Connectors;
-using Weave.Tools.Models;
-
+using Weave.Tools.Tool;
 namespace Weave.Tools.Discovery;
 
 public sealed partial class ToolDiscoveryService : IToolDiscoveryService

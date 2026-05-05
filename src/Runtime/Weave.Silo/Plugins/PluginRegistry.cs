@@ -1,8 +1,7 @@
 using System.Collections.Concurrent;
 using Microsoft.Extensions.Logging;
 using Weave.Security.Tokens;
-using Weave.Workspaces.Models;
-
+using Weave.Workspaces.Manifest;
 namespace Weave.Silo.Plugins;
 
 // --- Registry ---

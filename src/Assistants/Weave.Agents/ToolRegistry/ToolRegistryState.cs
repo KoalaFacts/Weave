@@ -1,6 +1,5 @@
-using Weave.Workspaces.Models;
-
-namespace Weave.Agents.Models;
+using Weave.Workspaces.Manifest;
+namespace Weave.Agents.ToolRegistry;
 
 public sealed record ToolRegistryState
 {

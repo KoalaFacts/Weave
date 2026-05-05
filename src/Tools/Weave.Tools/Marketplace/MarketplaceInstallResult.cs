@@ -1,6 +1,5 @@
-using Weave.Workspaces.Models;
-
-namespace Weave.Tools.Models;
+using Weave.Workspaces.Templates;
+namespace Weave.Tools.Marketplace;
 
 /// <summary>
 /// Outcome of a successful <c>marketplace:install</c>. Carries the resolved

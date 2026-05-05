@@ -1,8 +1,6 @@
 using Weave.Shared.Cqrs;
 using Weave.Shared.Ids;
 using Weave.Workspaces.Lifecycle;
-using Weave.Workspaces.Models;
-
 namespace Weave.Silo.Api;
 
 public static class WorkspaceEndpoints

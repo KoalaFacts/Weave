@@ -1,5 +1,3 @@
-using Weave.Workspaces.Models;
-
 namespace Weave.Workspaces.Registry;
 
 public sealed class WorkspaceRegistryActor(

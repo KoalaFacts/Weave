@@ -1,5 +1,5 @@
 using Microsoft.Extensions.AI;
-using Weave.Agents.Models;
+using Weave.Agents.Chat;
 using Weave.Agents.Pipeline;
 
 namespace Weave.Agents.Tests;

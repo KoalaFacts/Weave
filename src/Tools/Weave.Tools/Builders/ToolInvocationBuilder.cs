@@ -1,7 +1,6 @@
 using System.Text.Json;
 
-using Weave.Tools.Models;
-
+using Weave.Tools.Tool;
 namespace Weave.Tools.Builders;
 
 public static class ToolInvocationBuilder

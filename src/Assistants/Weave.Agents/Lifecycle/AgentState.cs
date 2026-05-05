@@ -1,7 +1,8 @@
+using Weave.Agents.Chat;
+using Weave.Agents.Verification;
 using Weave.Shared.Ids;
-using Weave.Workspaces.Models;
-
-namespace Weave.Agents.Models;
+using Weave.Workspaces.Manifest;
+namespace Weave.Agents.Lifecycle;
 
 public sealed record AgentState
 {

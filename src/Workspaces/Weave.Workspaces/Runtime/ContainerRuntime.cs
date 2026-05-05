@@ -1,7 +1,6 @@
 using Microsoft.Extensions.Logging;
 using Weave.Shared.Ids;
-using Weave.Workspaces.Models;
-
+using Weave.Workspaces.Manifest;
 namespace Weave.Workspaces.Runtime;
 
 public sealed partial class ContainerRuntime(

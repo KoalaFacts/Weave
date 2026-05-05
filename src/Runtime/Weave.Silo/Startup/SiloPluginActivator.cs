@@ -1,8 +1,7 @@
 using Weave.Security.Tokens;
 using Weave.Silo.Configuration;
 using Weave.Silo.Plugins;
-using Weave.Workspaces.Models;
-
+using Weave.Workspaces.Manifest;
 namespace Weave.Silo.Startup;
 
 internal sealed class SiloPluginActivator

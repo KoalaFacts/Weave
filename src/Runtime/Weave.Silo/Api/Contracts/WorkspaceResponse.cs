@@ -1,6 +1,5 @@
 using System.Text.Json.Serialization;
-using Weave.Workspaces.Models;
-
+using Weave.Workspaces.Lifecycle;
 namespace Weave.Silo.Api;
 
 public sealed record WorkspaceResponse

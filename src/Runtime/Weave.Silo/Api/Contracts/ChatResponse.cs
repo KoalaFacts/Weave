@@ -1,5 +1,4 @@
-using Weave.Agents.Models;
-
+using Weave.Agents.Chat;
 namespace Weave.Silo.Api;
 
 public sealed record ChatResponse

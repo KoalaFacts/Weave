@@ -1,9 +1,8 @@
 using System.Text.Json.Serialization;
 using Microsoft.AspNetCore.Mvc;
-using Weave.Agents.Models;
+using Weave.Agents.ToolRegistry;
 using Weave.Silo.Plugins;
-using Weave.Workspaces.Models;
-
+using Weave.Workspaces.Manifest;
 namespace Weave.Silo.Api;
 
 [JsonSourceGenerationOptions(

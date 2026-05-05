@@ -1,4 +1,4 @@
-namespace Weave.Tools.Models;
+namespace Weave.Tools.Tool;
 
 public sealed record ToolInvocation
 {

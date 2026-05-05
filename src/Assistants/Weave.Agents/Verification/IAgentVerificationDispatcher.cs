@@ -1,4 +1,3 @@
-using Weave.Agents.Models;
 using Weave.Shared.Ids;
 
 namespace Weave.Agents.Verification;

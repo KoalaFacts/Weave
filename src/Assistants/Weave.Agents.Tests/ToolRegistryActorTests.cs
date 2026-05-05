@@ -2,7 +2,6 @@ using Microsoft.Extensions.Logging;
 using Weave.Agents.Channels;
 using Weave.Agents.Lifecycle;
 using Weave.Agents.Memory;
-using Weave.Agents.Models;
 using Weave.Agents.Skills;
 using Weave.Agents.ToolRegistry;
 using Weave.Agents.Users;
@@ -12,10 +11,8 @@ using Weave.Security.Tokens;
 using Weave.Shared.Events;
 using Weave.Shared.Lifecycle;
 using Weave.Tools.Marketplace;
-using Weave.Tools.Models;
 using Weave.Tools.Tool;
-using Weave.Workspaces.Models;
-
+using Weave.Workspaces.Manifest;
 namespace Weave.Agents.Tests;
 
 public sealed class ToolRegistryActorTests

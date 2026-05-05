@@ -3,7 +3,6 @@ using Weave.Shared.Ids;
 using Weave.Shared.VirtualActors;
 using Weave.Silo.Templates;
 using Weave.Workspaces.Lifecycle;
-using Weave.Workspaces.Models;
 using Weave.Workspaces.Registry;
 using Weave.Workspaces.Templates;
 

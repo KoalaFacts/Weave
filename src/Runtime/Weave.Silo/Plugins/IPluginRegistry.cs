@@ -1,6 +1,5 @@
 using Weave.Security.Tokens;
-using Weave.Workspaces.Models;
-
+using Weave.Workspaces.Manifest;
 namespace Weave.Silo.Plugins;
 
 /// <summary>

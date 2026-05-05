@@ -3,7 +3,6 @@ using Microsoft.Extensions.Options;
 using Weave.Agents.Channels;
 using Weave.Agents.Lifecycle;
 using Weave.Agents.Memory;
-using Weave.Agents.Models;
 using Weave.Agents.Pipeline;
 using Weave.Agents.Skills;
 using Weave.Agents.ToolRegistry;
@@ -13,8 +12,7 @@ using Weave.Security.Tokens;
 using Weave.Shared.Events;
 using Weave.Shared.Ids;
 using Weave.Shared.Lifecycle;
-using Weave.Workspaces.Models;
-
+using Weave.Workspaces.Manifest;
 namespace Weave.Agents.Tests;
 
 public sealed class AgentActorTests

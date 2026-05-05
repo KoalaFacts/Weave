@@ -2,8 +2,7 @@ using System.Globalization;
 using Spectre.Console;
 using Spectre.Console.Rendering;
 using Weave.Cli.Commands;
-using Weave.Workspaces.Models;
-
+using Weave.Workspaces.Manifest;
 namespace Weave.Cli.Tui;
 
 internal static class TuiLiveStatusRenderer

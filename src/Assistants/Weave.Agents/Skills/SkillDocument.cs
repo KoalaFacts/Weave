@@ -1,6 +1,6 @@
 using Weave.Shared.Ids;
 
-namespace Weave.Agents.Models;
+namespace Weave.Agents.Skills;
 
 public sealed record SkillDocument
 {

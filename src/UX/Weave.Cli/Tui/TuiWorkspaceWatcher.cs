@@ -1,7 +1,5 @@
 using Weave.Cli.Commands;
 using Weave.Workspaces.Manifest;
-using Weave.Workspaces.Models;
-
 namespace Weave.Cli.Tui;
 
 internal sealed class TuiWorkspaceWatcher

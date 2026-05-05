@@ -1,6 +1,4 @@
 using Weave.Workspaces.Manifest;
-using Weave.Workspaces.Models;
-
 namespace Weave.Workspaces.Tests;
 
 public sealed class ManifestParserTests

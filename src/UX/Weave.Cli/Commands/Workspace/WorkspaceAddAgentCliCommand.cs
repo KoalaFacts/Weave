@@ -1,7 +1,6 @@
 using System.Globalization;
 using Spectre.Console;
-using Weave.Workspaces.Models;
-
+using Weave.Workspaces.Manifest;
 namespace Weave.Cli.Commands;
 
 internal sealed class WorkspaceAddAgentCliCommand : ICliCommand<WorkspaceAddAgentOptions>

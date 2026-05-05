@@ -1,5 +1,5 @@
-using Weave.Agents.Models;
-
+using Weave.Agents.Lifecycle;
+using Weave.Agents.Verification;
 namespace Weave.Agents.Skills;
 
 internal static class AgentSkillExtractor

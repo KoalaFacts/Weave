@@ -1,7 +1,5 @@
 using Weave.Security.Tokens;
 using Weave.Shared.Ids;
-using Weave.Tools.Models;
-
 namespace Weave.Tools.Marketplace;
 
 /// <summary>

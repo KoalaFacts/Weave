@@ -3,7 +3,6 @@ using Weave.Security.Tokens;
 using Weave.Shared.Events;
 using Weave.Shared.Ids;
 using Weave.Tools.Marketplace;
-using Weave.Tools.Models;
 using Weave.Tools.Tool;
 
 namespace Weave.Tools.Tests;
@@ -243,14 +242,14 @@ public sealed class MarketplaceActorTests
         var item = await SubmitAndPublishAsync(actor,
             CreateItem(id: "item-install-ok") with { TemplateId = templateId });
 
-        var template = new Weave.Workspaces.Models.CapabilityTemplate
+        var template = new Weave.Workspaces.Templates.CapabilityTemplate
         {
             TemplateId = templateId,
             Name = "demo",
             Description = "demo",
             Version = "1.0.0",
             Author = "weave",
-            AgentDefinition = new Weave.Workspaces.Models.AgentDefinition { Model = "claude-sonnet-4-20250514" }
+            AgentDefinition = new Weave.Workspaces.Manifest.AgentDefinition { Model = "claude-sonnet-4-20250514" }
         };
         var templateActor = Substitute.For<Weave.Workspaces.Templates.ICapabilityTemplateActor>();
         templateActor.GetAsync(templateId).Returns(template);
@@ -314,7 +313,7 @@ public sealed class MarketplaceActorTests
             CreateItem(id: "item-tpl-gone") with { TemplateId = templateId });
 
         var templateActor = Substitute.For<Weave.Workspaces.Templates.ICapabilityTemplateActor>();
-        templateActor.GetAsync(templateId).Returns((Weave.Workspaces.Models.CapabilityTemplate?)null);
+        templateActor.GetAsync(templateId).Returns((Weave.Workspaces.Templates.CapabilityTemplate?)null);
         actors.GetActor<Weave.Workspaces.Templates.ICapabilityTemplateActor>(Arg.Any<VirtualActorId>())
             .Returns(templateActor);
 

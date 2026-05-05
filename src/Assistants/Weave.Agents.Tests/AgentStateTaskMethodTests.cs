@@ -1,4 +1,5 @@
-using Weave.Agents.Models;
+using Weave.Agents.Lifecycle;
+using Weave.Agents.Verification;
 using Weave.Shared.Ids;
 
 namespace Weave.Agents.Tests;

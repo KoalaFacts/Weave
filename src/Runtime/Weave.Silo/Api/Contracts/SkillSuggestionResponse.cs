@@ -1,5 +1,4 @@
-using Weave.Agents.Models;
-
+using Weave.Agents.Skills;
 namespace Weave.Silo.Api;
 
 public sealed record SkillSuggestionResponse

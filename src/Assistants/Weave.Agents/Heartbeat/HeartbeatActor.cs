@@ -1,6 +1,4 @@
 using Microsoft.Extensions.Logging;
-using Weave.Agents.Models;
-
 namespace Weave.Agents.Heartbeat;
 
 public sealed partial class HeartbeatActor(

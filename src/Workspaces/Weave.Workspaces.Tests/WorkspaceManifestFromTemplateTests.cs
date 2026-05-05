@@ -1,5 +1,5 @@
-using Weave.Workspaces.Models;
-
+using Weave.Workspaces.Manifest;
+using Weave.Workspaces.Templates;
 namespace Weave.Workspaces.Tests;
 
 public sealed class WorkspaceManifestFromTemplateTests

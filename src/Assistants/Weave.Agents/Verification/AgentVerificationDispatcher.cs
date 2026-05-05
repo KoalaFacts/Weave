@@ -6,7 +6,6 @@ using Weave.Agents.Memory;
 using Weave.Agents.Skills;
 using Weave.Agents.ToolRegistry;
 using Weave.Agents.Users;
-using Weave.Agents.Verification;
 using Weave.Shared.VirtualActors;
 
 namespace Weave.Agents.Verification;

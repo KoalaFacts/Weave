@@ -1,6 +1,5 @@
 using Weave.Workspaces.Manifest;
-using Weave.Workspaces.Models;
-
+using Weave.Workspaces.Templates;
 namespace Weave.Cli.Commands;
 
 internal static class WorkspaceNewTemplateFactory

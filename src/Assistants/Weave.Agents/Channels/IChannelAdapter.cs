@@ -1,5 +1,3 @@
-using Weave.Agents.Models;
-
 namespace Weave.Agents.Channels;
 
 public interface IChannelAdapter

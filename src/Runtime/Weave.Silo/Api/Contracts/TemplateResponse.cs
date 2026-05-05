@@ -1,6 +1,6 @@
 using System.Text.Json.Serialization;
-using Weave.Workspaces.Models;
-
+using Weave.Workspaces.Manifest;
+using Weave.Workspaces.Templates;
 namespace Weave.Silo.Api;
 
 public sealed record TemplateResponse

@@ -2,9 +2,9 @@ using Microsoft.Extensions.AI;
 using Microsoft.Extensions.Logging.Abstractions;
 using Microsoft.Extensions.Options;
 using Weave.Agents.Channels;
+using Weave.Agents.Chat;
 using Weave.Agents.Lifecycle;
 using Weave.Agents.Memory;
-using Weave.Agents.Models;
 using Weave.Agents.Pipeline;
 using Weave.Agents.Skills;
 using Weave.Agents.ToolRegistry;
@@ -13,10 +13,8 @@ using Weave.Agents.Verification;
 using Weave.Security.Tokens;
 using Weave.Shared.Ids;
 using Weave.Tools.Marketplace;
-using Weave.Tools.Models;
 using Weave.Tools.Tool;
-using Weave.Workspaces.Models;
-
+using Weave.Workspaces.Manifest;
 namespace Weave.Agents.Tests;
 
 /// <summary>

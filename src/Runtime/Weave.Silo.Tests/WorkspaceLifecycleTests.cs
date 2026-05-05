@@ -1,8 +1,8 @@
 using System.Net;
 using System.Net.Http.Json;
 using System.Text.Json;
-using Weave.Workspaces.Models;
-using HeartbeatConfig = Weave.Workspaces.Models.HeartbeatConfig;
+using Weave.Workspaces.Manifest;
+using HeartbeatConfig = Weave.Workspaces.Manifest.HeartbeatConfig;
 
 namespace Weave.Silo.Tests;
 

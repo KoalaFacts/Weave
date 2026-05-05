@@ -1,6 +1,4 @@
-using Weave.Agents.Models;
-using Weave.Workspaces.Models;
-
+using Weave.Workspaces.Manifest;
 namespace Weave.Agents.ToolRegistry;
 
 public interface IToolRegistryActor

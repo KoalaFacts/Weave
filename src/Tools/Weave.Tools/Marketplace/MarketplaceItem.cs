@@ -1,6 +1,6 @@
 using Weave.Shared.Ids;
 
-namespace Weave.Tools.Models;
+namespace Weave.Tools.Marketplace;
 
 public sealed record MarketplaceItem
 {

@@ -1,7 +1,6 @@
 using Weave.Security.Tokens;
 using Weave.Silo.Plugins;
-using Weave.Workspaces.Models;
-
+using Weave.Workspaces.Manifest;
 namespace Weave.Silo.Api;
 
 public static class PluginEndpoints

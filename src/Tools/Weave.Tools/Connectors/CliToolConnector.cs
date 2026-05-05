@@ -2,9 +2,8 @@ using System.Collections.Concurrent;
 using System.Diagnostics;
 using Microsoft.Extensions.Logging;
 using Weave.Security.Tokens;
-using Weave.Tools.Models;
-using Weave.Workspaces.Models;
-
+using Weave.Tools.Tool;
+using Weave.Workspaces.Manifest;
 namespace Weave.Tools.Connectors;
 
 public sealed partial class CliToolConnector(ILogger<CliToolConnector> logger) : IToolConnector

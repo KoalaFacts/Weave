@@ -1,5 +1,3 @@
-using Weave.Agents.Models;
-
 namespace Weave.Agents.Verification;
 
 public interface IProofValidatorActor

@@ -1,4 +1,3 @@
-using Weave.Agents.Models;
 using Weave.Security.Scanning;
 
 namespace Weave.Agents.Memory;

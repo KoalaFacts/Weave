@@ -1,6 +1,4 @@
 using Weave.Security.Tokens;
-using Weave.Tools.Models;
-
 namespace Weave.Tools.Tool;
 
 internal sealed class ToolActorIdentity

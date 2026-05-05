@@ -2,8 +2,7 @@ using System.Collections.Concurrent;
 using System.Diagnostics;
 using Microsoft.Extensions.Logging;
 using Weave.Security.Tokens;
-using Weave.Tools.Models;
-
+using Weave.Tools.Tool;
 namespace Weave.Tools.Connectors;
 
 public sealed partial class FileSystemToolConnector(ILogger<FileSystemToolConnector> logger) : IToolConnector

@@ -1,5 +1,5 @@
-using Weave.Agents.Models;
-
+using Weave.Agents.Chat;
+using Weave.Agents.Lifecycle;
 namespace Weave.Agents.Pipeline;
 
 public interface IAgentChatPipeline

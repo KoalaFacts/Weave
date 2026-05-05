@@ -1,7 +1,6 @@
 using Weave.Agents.Channels;
 using Weave.Agents.Lifecycle;
 using Weave.Agents.Memory;
-using Weave.Agents.Models;
 using Weave.Agents.Pipeline;
 using Weave.Agents.Skills;
 using Weave.Agents.ToolRegistry;

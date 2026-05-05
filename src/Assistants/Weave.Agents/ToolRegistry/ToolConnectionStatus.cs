@@ -1,4 +1,4 @@
-namespace Weave.Agents.Models;
+namespace Weave.Agents.ToolRegistry;
 
 public enum ToolConnectionStatus
 {

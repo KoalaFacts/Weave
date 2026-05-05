@@ -4,8 +4,7 @@ using Weave.Security.Events;
 using Weave.Security.Tokens;
 using Weave.Shared.Events;
 using Weave.Silo.Plugins;
-using Weave.Workspaces.Models;
-
+using Weave.Workspaces.Manifest;
 namespace Weave.Silo.Tests;
 
 public sealed class PluginRegistryTests

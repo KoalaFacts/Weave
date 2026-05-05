@@ -1,6 +1,6 @@
 using Weave.Cli.Commands;
-using Weave.Workspaces.Models;
-
+using Weave.Workspaces.Manifest;
+using Weave.Workspaces.Templates;
 namespace Weave.Cli.Tests;
 
 public class WorkspacePresetCapabilitiesTests

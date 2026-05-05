@@ -1,5 +1,4 @@
-using Weave.Workspaces.Models;
-
+using Weave.Workspaces.Manifest;
 namespace Weave.Deploy;
 
 public interface IPublisher

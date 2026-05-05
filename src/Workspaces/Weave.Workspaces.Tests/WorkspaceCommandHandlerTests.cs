@@ -8,7 +8,7 @@ using Weave.Agents.Verification;
 using Weave.Shared.Ids;
 using Weave.Silo.Api;
 using Weave.Workspaces.Lifecycle;
-using Weave.Workspaces.Models;
+using Weave.Workspaces.Manifest;
 using Weave.Workspaces.Registry;
 using Weave.Workspaces.Templates;
 

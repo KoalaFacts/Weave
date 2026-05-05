@@ -1,4 +1,4 @@
-namespace Weave.Tools.Models;
+namespace Weave.Tools.Connectors;
 
 public sealed record DaprToolConfig
 {

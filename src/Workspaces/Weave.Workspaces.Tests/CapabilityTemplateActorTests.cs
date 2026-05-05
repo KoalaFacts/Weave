@@ -1,7 +1,7 @@
 using Microsoft.Extensions.Logging.Abstractions;
 using Weave.Shared.Ids;
 using Weave.Workspaces.Lifecycle;
-using Weave.Workspaces.Models;
+using Weave.Workspaces.Manifest;
 using Weave.Workspaces.Registry;
 using Weave.Workspaces.Templates;
 

@@ -1,6 +1,6 @@
+using Weave.Agents.Verification;
 using Weave.Shared.Ids;
-
-namespace Weave.Agents.Models;
+namespace Weave.Agents.Lifecycle;
 
 public sealed record AgentTaskInfo
 {

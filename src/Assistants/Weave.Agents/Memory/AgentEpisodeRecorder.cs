@@ -1,5 +1,5 @@
 using Microsoft.Extensions.Logging;
-using Weave.Agents.Models;
+using Weave.Agents.Lifecycle;
 using Weave.Shared.Ids;
 
 namespace Weave.Agents.Memory;

@@ -1,7 +1,5 @@
 using System.Collections.Frozen;
 using System.Text.Json;
-using Weave.Workspaces.Models;
-
 namespace Weave.Workspaces.Manifest;
 
 public sealed class ManifestParser : IManifestParser
