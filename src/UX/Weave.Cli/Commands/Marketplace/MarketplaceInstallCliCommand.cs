@@ -100,18 +100,18 @@ internal sealed class MarketplaceInstallCliCommand : ICliCommand<MarketplaceInst
             capabilityTemplate, workspaceName, IsolationLevel.Full);
 
         Directory.CreateDirectory(basePath);
-        Directory.CreateDirectory(Path.Combine(basePath, "prompts"));
-        Directory.CreateDirectory(Path.Combine(basePath, "data"));
-        Directory.CreateDirectory(Path.Combine(basePath, ".weave"));
+        Directory.CreateDirectory(Path.Join(basePath, "prompts"));
+        Directory.CreateDirectory(Path.Join(basePath, "data"));
+        Directory.CreateDirectory(Path.Join(basePath, ".weave"));
 
         WorkspaceRegistry.Register(workspaceName, basePath);
 
         await WorkspaceManifestFile.WriteAsync(
-            Path.Combine(basePath, "workspace.json"), manifest, ct);
+            Path.Join(basePath, "workspace.json"), manifest, ct);
 
         var promptContent = $"# {template.Name}\n\n{template.Description}\n";
         await File.WriteAllTextAsync(
-            Path.Combine(basePath, "prompts", $"{WorkspaceManifestFromTemplate.DefaultAgentName}.md"),
+            Path.Join(basePath, "prompts", $"{WorkspaceManifestFromTemplate.DefaultAgentName}.md"),
             promptContent,
             ct);
     }
