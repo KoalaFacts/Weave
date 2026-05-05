@@ -107,20 +107,75 @@ Both behaviour-namespaces (the actor/command/query/event ones) and data-namespac
 
 ## Next work
 
-The capability vocabulary is closed (7/7 verbs implemented; *Coverage of action types* at 100%), Wave 5 hygiene is drained, the Models-namespace consistency pass is done, and the marketplace install path now scaffolds a workspace through the same composition primitive the preset flow uses. Two items remain:
+**Highest priority — Shape C: shared Actions layer for CLI/TUI/Web frontends.** A step-back review of the TUI piece (during PR #62) concluded its structure is wrong: 23 slash commands duplicate ~22 CLI commands, both reach into `WorkspaceApiClient` directly, the TUI helpers (`TuiWorkspaceOpener`, `TuiAgentSelector`, etc.) couple Spectre prompts inline so no other frontend can reuse the orchestration. A future web dashboard, LSP integration, or any non-Spectre frontend would have to rewrite all of it. The fix is to extract a shared **Actions layer** between the silo HTTP API and the frontends — both CLI and TUI become consumers of the same actions, neither hosts the other.
+
+### What an "Action" is
+
+A unit of frontend orchestration: gather input, call the silo HTTP API, render the result. **Not** business logic — that lives in silo CQRS handlers and actors. Actions are the layer above those, the layer **below** any specific frontend.
+
+```text
+Input  — typed record, what the caller already knows
+Context — IActionPrompter (ask user) + IActionReporter (progress) + IActionLogger
+         — frontends provide concrete impls; actions never know which
+Result — typed record OR ActionFailure with a structured reason
+```
+
+An action **never** writes to `Console`, **never** uses `AnsiConsole`, **never** reaches into a session, **never** knows whether it's running inside a CLI invocation or a TUI slash command. It calls `WorkspaceApiClient`, asks the prompter for missing input, reports progress through the reporter, and returns data.
+
+### Project layout
+
+```
+src/UX/
+├── Weave.Actions/                    NEW — frontend actions, no I/O for prompts/rendering
+│   ├── Context/                      IActionPrompter, IActionReporter, IActionLogger, ActionResult<T>, ActionFailure
+│   ├── Workspace/                    Start, Stop, Open, Watch, Validate, GetStatus, Dashboard
+│   ├── Agent/                        Select, ListAgents, ListTools, ListTasks, SendMessage
+│   └── System/                       GetSystemInfo, GetConfig, SetConfig
+├── Weave.Cli/                        consumes Weave.Actions
+│   ├── ActionContext/                ConsoleActionPrompter, ConsoleActionReporter (Spectre + batch-mode default)
+│   └── Commands/                     each CLI command: build input, resolve action, render result
+├── Weave.Cli.Tui/                    NEW project, split out from Weave.Cli (Phase 3)
+│   ├── ActionContext/                TuiActionPrompter, TuiActionReporter (Spectre.Status spinner)
+│   ├── Shell/                        loop, composer, session
+│   ├── Dispatch/                     parser, dispatcher, single generic /verb-to-action adapter
+│   └── Rendering/                    TUI-specific result renderers
+└── Weave.Dashboard/                  eventually consumes Weave.Actions in-process
+```
+
+### Migration sequence
+
+1. **Phase 0 (1 PR) — Foundation.** New `Weave.Actions` project with `IActionPrompter`, `IActionReporter`, `IActionLogger`, `ActionResult<T>`, `ActionFailure`. One pilot action implemented end-to-end (`GetSystemInfoAction` is the simplest — one HTTP probe). `Weave.Cli` gains `ConsoleActionPrompter` + the `weave system` command starts using it. No TUI changes yet.
+
+2. **Phase 1 (2-3 PRs) — Read-only verbs.** Migrate `GetWorkspaceStatusAction`, `ListAgentsAction`, `ListToolsAction`, `ListTasksAction`, `GetConfigAction`, `DashboardAction`, `ValidateWorkspaceAction`. Each PR moves one verb's logic into an action; both CLI and TUI consume it; old code paths deleted.
+
+3. **Phase 2 (2-3 PRs) — Write verbs.** `OpenWorkspaceAction`, `SelectAgentAction`, `StartWorkspaceAction`, `StopWorkspaceAction`, `WatchWorkspaceAction`, `SendMessageAction`, `SetConfigAction`. The prompting-heavy cases where `IActionPrompter` earns its keep.
+
+4. **Phase 3 (1 PR) — Split `Weave.Cli.Tui` from `Weave.Cli`.** Forces the action contract as the only legal seam between the two projects.
+
+5. **Phase 4 (1-2 PRs) — Drain residue.** Delete the per-verb TUI helper classes (replaced by a single generic `/verb` → action adapter). Drain the remaining inline `new WorkspaceApiClient()` callsites — by this point all action-using code paths get the singleton via DI.
+
+### Decisions to lock before Phase 0
+
+1. **Three injected services (`IActionPrompter`/`IActionReporter`/`IActionLogger`) vs one bundle (`IActionContext`).** Recommended: three separate. More DI-idiomatic; each frontend can swap one without touching the others.
+2. **Typed result `ActionResult<TResult>` vs untyped `ActionResult`.** Recommended: typed.
+3. **Action method signature: `Task<ActionResult<T>> ExecuteAsync(TInput input, CancellationToken ct)`.** Context comes via DI on the action class, not as a method parameter.
+4. **`Weave.Cli.Tui` stays a folder until Phase 3** — splitting projects mid-migration adds friction.
+5. **Silo CQRS handlers stay separately named** (server-side); frontend actions are a different layer despite similar shapes.
+
+### What's already on disk
+
+PR #62 shipped the original handoff item (the two `TuiToolsView`/`TuiTasksView` hidden-dep fix) but **deliberately did not** continue the larger TUI refactor it explored. Five exploratory commits (dispatcher one-interface refactor + 23 command classes + 10 helper interfaces + WorkspaceApiClient Singleton) were force-rolled-back as wrong-direction once Shape C was identified. Don't re-attempt that path; start fresh with Shape C Phase 0.
+
+### Pre-existing items, both blocked on production signal
 
 1. **Operator runbook for rotation.** The signing-key rotation plumbing is still documented only in the XML doc on `CapabilityTokenOptions.PreviousSigningKey`. Promote to `docs/security.md` once a real rotation is exercised end-to-end.
 
-2. **Audit-row dead-letter shape.** Still waiting on `weave.silo.audit.write_failures{outcome="dropped"}` to fire in production.
+2. **Audit-row dead-letter shape.** The retry loop is bounded; if `weave.silo.audit.write_failures{outcome="dropped"}` ever fires in production a row is gone for good. The bounded-queue + dead-letter log shape called out in earlier handoffs is still the right move *if* the dropped-rate metric proves non-zero in real use. Wait for the signal before implementing.
 
-Two follow-ups surfaced by this session, both small and not blocking:
+### Small follow-ups, not blocking
 
 - **`weave marketplace install --no-scaffold` / `--workspace-name X` flags.** Today scaffolding is unconditional once install succeeds, with the workspace name prompted (default = template name). When marketplace install grows into a script-friendly path (CI, fleet automation), expose `--no-scaffold` to record the install only and `--workspace-name` to bypass the prompt. Until a real script needs it, the prompt-only flow is fine.
 - **Custom-flow path through the primitive.** `WorkspaceNewTemplateFactory.CreateCustom` still builds the `assistant` agent inline (no template to compose from). If we ever invent a "naked template" for the no-preset case, we could route the custom flow through the same primitive too — but that's invented work, wait until a real shape forces it.
-
-One second-order follow-up still waiting on production signal:
-
-- **Audit-row dead-letter shape.** The retry loop is bounded; if `weave.silo.audit.write_failures{outcome="dropped"}` ever fires in production a row is gone for good. The bounded-queue + dead-letter log shape called out in earlier handoffs is still the right move *if* the dropped-rate metric proves non-zero in real use. Wait for the signal before implementing — until then the simpler retry pays for itself.
 
 ## Cross-cutting follow-ups
 
@@ -134,9 +189,11 @@ These remain real gaps. None blocks the *Next work* items above.
 
 Wave 5 vertical-slice splits drained this session (see History). Items remaining:
 
-**Also surfaced and *not* on the immediate path** — only do these when CLI commands accrue real DI dependencies:
-- `Weave.Cli/Tui/TuiToolsView.cs` and `TuiTasksView.cs` use `new WorkspaceApiClient()` inline. Hidden-dependency smell. Right shape: register `WorkspaceApiClient` via `IHttpClientFactory`, inject into the views (or the dispatcher that constructs them).
-- `Weave.Cli/Commands/Workspace/*Command.cs` (15+ files) all use the `static class XCommand { Create() }` pattern with `cmd.SetAction((_, ct) => new XCliCommand().ExecuteAsync(...))`. The CLI now has DI; new commands taking dependencies should follow the `UpgradeCommand.Create(handler)` shape.
+**Subsumed by Shape C migration** — don't drain piecemeal:
+- The 13 inline `new WorkspaceApiClient()` callsites previously enumerated here (`TuiAgentNameSource`, `TuiAgentListView`, `TuiWorkspaceStarter`, `TuiChatSession`, `TuiLiveStatusWatcher`, `TuiLiveStatusView`, `TuiAgentNameSource`, `TuiRuntimeProbe`, `Commands/Workspace/{Run,DefaultWorkspaceDownDependencies,WorkspaceUp,WorkspaceStatus}CliCommand.cs`, `Commands/Data/{DataExport,DataImport}CliCommand.cs`) all get drained as their consumers move into Actions in Phases 1-2. The two original handoff-listed views (`TuiToolsView`, `TuiTasksView`) shipped in PR #62 as the minimal fix and are now ctor-inject + DI-resolved; the others wait.
+- `Weave.Cli/Commands/Workspace/*Command.cs` (15+ files) all use the `static class XCommand { Create() }` pattern with `cmd.SetAction((_, ct) => new XCliCommand().ExecuteAsync(...))`. These get drained as their CLI logic moves into Actions in Phases 1-2.
+
+**Independent of Shape C:**
 - Verbose XML doc summaries worth eyeballing during related work: `PluginServiceBroker.cs` (10), `AgentChatClientFactory.cs` (10). `CapabilityAuditSubscriberHostedService.cs` (14) earns its length — the `<remarks>` block documents a real startup-ordering hazard. (`CommandDispatcher.cs` was split into `<summary>` + `<remarks>` in PR #58.)
 
 ## Template to mirror
@@ -158,6 +215,7 @@ For the next vocabulary entry (or any follow-up that touches the audit pipeline)
 
 ## History
 
+- **2026-05-05** (`claude/review-handoff-task-nBUNT`, [PR #62](https://github.com/KoalaFacts/Weave/pull/62)) — TUI hidden-dep fix shipped (the original handoff item) + Shape C migration plan recorded as next-work top priority. The two named views (`TuiToolsView`, `TuiTasksView`) are now `internal sealed class TuiXxxView(WorkspaceApiClient client)` instead of `internal static class` with `using var client = new WorkspaceApiClient();` inline; both registered Transient in `CliServiceCollection`, threaded through `TuiShell` → `TuiSlashCommandDispatcher`. `WorkspaceApiClient` is registered Singleton (Microsoft's HttpClient guidance is one-per-application, not one-per-call). The other 13 inline `new WorkspaceApiClient()` callsites stay — they get drained as part of the Shape C migration. The session also explored a much larger TUI refactor (one-interface + keyed-DI dispatcher + 23 command classes + 10 helper interfaces) across five exploratory commits; a step-back review concluded the structure was already wrong (TUI duplicates CLI command surface, helpers couple Spectre prompts inline, no path for non-Spectre frontends). All exploratory commits force-rolled-back; only the original two-file fix retained. Tests stable at 1942 + 9 Docker-skipped.
 - **2026-05-05** (`claude/job-handoff-continuation-cYEva`) — direct state-method test coverage for the Tell-don't-ask refactor from PR #58. Two new test files in `src/Assistants/Weave.Agents.Tests/`: `SkillMemoryStateTests.cs` (16 tests) and `EpisodicMemoryStateTests.cs` (14 tests), 30 total. They drive `SkillMemoryState.Search` and `EpisodicMemoryState.Recall` directly — no actor, no `CapabilityAuthorizer`, no `IEventBus`, no `ILogger`, no `ILeakScanner`, no `IActorState<T>` — so each scoring boundary lands a single hit. Coverage added: empty-/whitespace-/punctuation-only query early-return; tag &gt; title &gt; description/narrative score-weight ordering; archived-filter at the state level; recency-boost edges pinned to the second (`Now-7d` boosts, `Now-7d-1s` does not; same shape at 30 days); future-dated `LastUsedAt`/`LastRecalledAt`/`OccurredAt` skips the boost (negative age path); `PreferRecent=false` and null `LastUsedAt` both skip the boost; `LastRecalledAt` takes precedence over `OccurredAt` as the recency anchor; `MinSuccessRate` clamps above 1 (filters everything below 1.0) and below 0 (lets everything through); `SuccessRate` multiplies the score 1:1 (4× difference in success rate produces 4× score gap); `RecallCount` boost shape verified to match `Math.Log2(count + 1)` to `1e-9`; agent-name and tag filters confirmed case-insensitive; `Since` filter inclusive at the cutoff; `MaxResults` truncates after ranking. No production code touched — pure test addition. Build clean (0 warnings, 0 errors); full suite 1912 → 1942 passed (+30) + 9 Docker-skipped.
 - **2026-05-05** (`claude/next-handoff-job-a5xsa`) — Models-namespace consistency pass: the 97 data-class files that still declared `Weave.{Workspaces,Tools,Agents}.Models` now declare `Weave.X.<Folder>` matching the folder they live in (`Weave.Workspaces.{Lifecycle,Manifest,Registry,Templates}`, `Weave.Tools.{Connectors,Marketplace,Tool}`, `Weave.Agents.{Channels,Chat,Lifecycle,Memory,Skills,ToolRegistry,Users,Verification}`). 270 consumer files updated: `using Weave.X.Models;` collapsed into the precise set of folder usings based on which types each consumer references; fully-qualified `Weave.X.Models.TypeName` refs rewritten in place. Files that previously sat in the flat `Models` namespace now use explicit cross-folder usings within the same domain. Self-namespace usings stripped (76 files); duplicate usings deduped (82 files). Pure organizational refactor: tests stable at 1921 (1912 + 9 Docker-skipped) — same numbers as the previous session. The Wave 5 vertical-slice goal is now fully realized: every namespace under `Weave.{Workspaces,Tools,Agents}` matches its folder, with no horizontal-cut `Models/Services/Helpers/Utils/...` namespaces remaining in the three domain projects.
 - **2026-05-05** (`claude/stabilization-work-xM6Z0`) — marketplace install scaffolds a workspace. New shared primitive `WorkspaceManifestFromTemplate.Create(template, workspaceName, isolation, agentName = "assistant")` ([WorkspaceManifestFromTemplate.cs](../src/Workspaces/Weave.Workspaces/Templates/WorkspaceManifestFromTemplate.cs)) produces a single-agent `WorkspaceManifest` from a `CapabilityTemplate` — the agent inherits the template's model/tools/capabilities, gets `SystemPromptFile = "./prompts/{agentName}.md"`, and the manifest carries `template.RequiredTools`, a `weave-{workspaceName}` network, env-secrets, and a default `local`/`podman` target. `MarketplaceInstallCliCommand` now prompts for a workspace name (default = template name) after a successful install API call, refuses to scaffold over a non-empty directory, and writes `workspace.json` + a `./prompts/assistant.md` derived from the template description. `WorkspaceNewTemplateFactory` was refactored so every preset path uses the primitive as the base: single-agent presets bottom out at it; `multi-agent` calls it with `agentName = "supervisor"` and layers a `worker`; `support-team` calls it with `agentName = "support-bot"` and layers a `monitor`. `TemplateResponse` (silo) and `ApiMarketplaceInstallTemplate` (CLI) both gained `AgentDefinition` + `Dictionary<string, ToolDefinition> RequiredTools` so the install response carries the full template config. Tests 1895 → 1912 (+17 focused unit tests on the primitive). The `WorkspacePresetCapabilitiesTests` suite was unchanged — the refactor is a behaviour-preserving move: every preset still emits the same agent keys, model, tools, and capabilities as before.

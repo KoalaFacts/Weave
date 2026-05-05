@@ -36,6 +36,16 @@ internal static class CliServiceCollection
         services.AddTransient<ChatComposer>();
         services.AddTransient<TuiShell>();
 
+        // TUI views that talk to the workspace API. WorkspaceApiClient is
+        // singleton — Microsoft's HttpClient guidance is one-per-application,
+        // not one-per-call; the prior `using var client = new WorkspaceApiClient();`
+        // pattern in these views violated that. The two views consume the singleton
+        // via primary-ctor injection. The other 13 inline `new WorkspaceApiClient()`
+        // call sites in the CLI remain — see the Shape C plan in docs/handoff.md.
+        services.AddSingleton<WorkspaceApiClient>();
+        services.AddTransient<TuiToolsView>();
+        services.AddTransient<TuiTasksView>();
+
         return services.BuildServiceProvider();
     }
 }

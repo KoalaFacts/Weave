@@ -12,6 +12,8 @@ internal sealed class TuiSlashCommandDispatcher
     private readonly TuiWorkspaceOpener _workspaceOpener;
     private readonly TuiWorkspaceStarter _workspaceStarter;
     private readonly TuiWorkspaceWatcher _workspaceWatcher;
+    private readonly TuiToolsView _toolsView;
+    private readonly TuiTasksView _tasksView;
     private readonly UpgradeCliCommand _upgradeCommand;
 
     public TuiSlashCommandDispatcher(
@@ -22,6 +24,8 @@ internal sealed class TuiSlashCommandDispatcher
         TuiWorkspaceOpener workspaceOpener,
         TuiWorkspaceStarter workspaceStarter,
         TuiWorkspaceWatcher workspaceWatcher,
+        TuiToolsView toolsView,
+        TuiTasksView tasksView,
         UpgradeCliCommand upgradeCommand)
     {
         _dashboard = dashboard;
@@ -31,6 +35,8 @@ internal sealed class TuiSlashCommandDispatcher
         _workspaceOpener = workspaceOpener;
         _workspaceStarter = workspaceStarter;
         _workspaceWatcher = workspaceWatcher;
+        _toolsView = toolsView;
+        _tasksView = tasksView;
         _upgradeCommand = upgradeCommand;
     }
 
@@ -86,11 +92,11 @@ internal sealed class TuiSlashCommandDispatcher
                 return TuiDispatchResult.Continue;
 
             case "tools":
-                await TuiToolsView.RenderAsync(session, ct);
+                await _toolsView.RenderAsync(session, ct);
                 return TuiDispatchResult.Continue;
 
             case "tasks":
-                await TuiTasksView.RenderAsync(session, ct);
+                await _tasksView.RenderAsync(session, ct);
                 return TuiDispatchResult.Continue;
 
             case "history":

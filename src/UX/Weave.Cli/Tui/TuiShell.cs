@@ -11,7 +11,12 @@ internal sealed class TuiShell
     private readonly VersionService _versionService;
     private readonly ChatComposer _composer;
 
-    public TuiShell(VersionService versionService, ChatComposer composer, UpgradeCliCommand upgradeCommand)
+    public TuiShell(
+        VersionService versionService,
+        ChatComposer composer,
+        TuiToolsView toolsView,
+        TuiTasksView tasksView,
+        UpgradeCliCommand upgradeCommand)
     {
         _versionService = versionService;
         _composer = composer;
@@ -27,6 +32,8 @@ internal sealed class TuiShell
             new TuiWorkspaceOpener(agentSelector),
             new TuiWorkspaceStarter(agentSelector),
             new TuiWorkspaceWatcher(),
+            toolsView,
+            tasksView,
             upgradeCommand);
     }
 
