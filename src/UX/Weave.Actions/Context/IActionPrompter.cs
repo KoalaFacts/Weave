@@ -19,7 +19,6 @@ public interface IActionPrompter
     Task<string> PromptSelectionAsync(
         string message,
         IReadOnlyList<string> choices,
-        string? defaultValue = null,
         CancellationToken cancellationToken = default);
 
     Task<bool> PromptConfirmAsync(

@@ -50,6 +50,10 @@ public sealed class ListAgentsAction
 
             return ActionResult.Success(new ListAgentsResult(summaries));
         }
+        catch (OperationCanceledException) when (cancellationToken.IsCancellationRequested)
+        {
+            return ActionResult.Failed<ListAgentsResult>(ActionFailure.Cancelled());
+        }
         catch (HttpRequestException ex)
         {
             return ActionResult.Failed<ListAgentsResult>(

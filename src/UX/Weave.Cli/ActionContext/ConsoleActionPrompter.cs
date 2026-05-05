@@ -24,7 +24,6 @@ internal sealed class ConsoleActionPrompter : IActionPrompter
     public Task<string> PromptSelectionAsync(
         string message,
         IReadOnlyList<string> choices,
-        string? defaultValue = null,
         CancellationToken cancellationToken = default)
     {
         var prompt = new SelectionPrompt<string>()

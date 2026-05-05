@@ -55,7 +55,7 @@ public sealed class GetSystemInfoAction
         }
         catch (Exception ex) when (ex is HttpRequestException
                                        or TaskCanceledException
-                                       or global::System.Net.Sockets.SocketException)
+                                       or System.Net.Sockets.SocketException)
         {
             return false;
         }

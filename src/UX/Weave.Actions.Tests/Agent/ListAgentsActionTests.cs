@@ -46,6 +46,26 @@ public sealed class ListAgentsActionTests
     }
 
     [Fact]
+    public async Task ExecuteAsync_CancellationRequested_ReturnsCancelled()
+    {
+        using var cts = new CancellationTokenSource();
+        // Stub handler that throws OperationCanceledException once the token is signalled.
+        var handler = new StubHttpMessageHandler((_, _) =>
+        {
+            cts.Cancel();
+            throw new OperationCanceledException(cts.Token);
+        });
+        using var client = new HttpClient(handler) { BaseAddress = new Uri("http://example.test") };
+        var action = new ListAgentsAction(client);
+
+        var result = await action.ExecuteAsync(new ListAgentsInput("ws-1"), cts.Token);
+
+        result.IsSuccess.ShouldBeFalse();
+        result.Failure.ShouldNotBeNull();
+        result.Failure.Reason.ShouldBe(ActionFailureReason.Cancelled);
+    }
+
+    [Fact]
     public async Task ExecuteAsync_HttpRequestException_ReturnsSiloUnreachable()
     {
         using var client = HttpClientThrowing(new HttpRequestException("connection refused"));
