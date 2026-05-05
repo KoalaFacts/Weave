@@ -1,7 +1,5 @@
 using System.Text.Json;
 using System.Text.Json.Serialization;
-using Weave.Workspaces.Models;
-
 namespace Weave.Workspaces.Manifest;
 
 [JsonSourceGenerationOptions(

@@ -1,6 +1,6 @@
 using Weave.Shared.Ids;
 
-namespace Weave.Workspaces.Models;
+namespace Weave.Workspaces.Lifecycle;
 
 public sealed record ContainerInfo
 {

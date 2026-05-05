@@ -1,7 +1,7 @@
-using Weave.Agents.Models;
+using Weave.Agents.Chat;
+using Weave.Agents.Verification;
 using Weave.Shared.Ids;
-using Weave.Workspaces.Models;
-
+using Weave.Workspaces.Manifest;
 namespace Weave.Agents.Lifecycle;
 
 public interface IAgentActor

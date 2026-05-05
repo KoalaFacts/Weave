@@ -1,4 +1,6 @@
-namespace Weave.Workspaces.Models;
+using Weave.Workspaces.Manifest;
+
+namespace Weave.Workspaces.Templates;
 
 /// <summary>
 /// Composes a single-agent <see cref="WorkspaceManifest"/> from a curated

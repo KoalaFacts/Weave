@@ -2,8 +2,7 @@ using Microsoft.Extensions.Logging;
 using Weave.Shared.Events;
 using Weave.Shared.Ids;
 using Weave.Shared.Lifecycle;
-using Weave.Workspaces.Lifecycle;
-using Weave.Workspaces.Models;
+using Weave.Workspaces.Manifest;
 using Weave.Workspaces.Runtime;
 using Weave.Workspaces.Templates;
 
@@ -65,7 +64,7 @@ public sealed partial class WorkspaceActor(
                     ContainerId = container.ContainerId,
                     Name = container.Name,
                     Image = container.Image,
-                    Status = Models.ContainerStatus.Running
+                    Status = ContainerStatus.Running
                 });
             }
 

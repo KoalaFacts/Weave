@@ -1,7 +1,6 @@
 using System.Text.Json.Serialization;
-using Weave.Agents.Models;
-using Weave.Tools.Models;
-
+using Weave.Agents.ToolRegistry;
+using Weave.Tools.Tool;
 namespace Weave.Silo.Api;
 
 public sealed record ToolConnectionResponse

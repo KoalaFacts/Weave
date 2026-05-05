@@ -1,9 +1,7 @@
 using Microsoft.Extensions.Logging;
-using Weave.Agents.Models;
 using Weave.Agents.ToolRegistry;
 using Weave.Shared.Ids;
-using Weave.Workspaces.Models;
-
+using Weave.Workspaces.Manifest;
 namespace Weave.Agents.Lifecycle;
 
 public sealed class AgentSupervisorActor(

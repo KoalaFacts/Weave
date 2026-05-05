@@ -3,7 +3,6 @@ using System.Text;
 using System.Text.Json;
 using Microsoft.Extensions.AI;
 using Microsoft.Extensions.Logging;
-using Weave.Agents.Models;
 using Weave.Agents.Pipeline;
 
 namespace Weave.Agents.Verification;

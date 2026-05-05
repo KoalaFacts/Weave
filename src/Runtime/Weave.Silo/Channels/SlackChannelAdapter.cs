@@ -1,7 +1,5 @@
 using System.Text.Json;
 using Weave.Agents.Channels;
-using Weave.Agents.Models;
-
 namespace Weave.Silo.Channels;
 
 public sealed class SlackChannelAdapter(HttpClient httpClient) : IChannelAdapter

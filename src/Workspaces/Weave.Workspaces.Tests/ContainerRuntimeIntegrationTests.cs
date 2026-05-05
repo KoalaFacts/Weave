@@ -1,5 +1,5 @@
 using Microsoft.Extensions.Logging.Abstractions;
-using Weave.Workspaces.Models;
+using Weave.Workspaces.Manifest;
 using Weave.Workspaces.Runtime;
 
 namespace Weave.Workspaces.Tests;

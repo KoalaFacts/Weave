@@ -1,5 +1,5 @@
 using System.Net;
-using Weave.Agents.Models;
+using Weave.Agents.Channels;
 using Weave.Shared.Ids;
 using Weave.Silo.Channels;
 using static Weave.Silo.Tests.Channels.ChannelAdapterTestHelpers;

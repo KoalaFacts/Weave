@@ -1,5 +1,4 @@
-using Weave.Tools.Models;
-
+using Weave.Tools.Marketplace;
 namespace Weave.Silo.Api;
 
 public sealed record MarketplaceInstallResponse

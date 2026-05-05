@@ -1,6 +1,6 @@
-using Weave.Tools.Models;
-using Weave.Workspaces.Models;
-
+using Weave.Tools.Connectors;
+using Weave.Tools.Tool;
+using Weave.Workspaces.Manifest;
 namespace Weave.Tools.Mapping;
 
 public static class ToolSpecMapper
@@ -57,12 +57,12 @@ public static class ToolSpecMapper
         };
     }
 
-    private static Weave.Tools.Models.FileSystemToolConfig? MapFileSystem(Weave.Workspaces.Models.FileSystemToolConfig? config)
+    private static Weave.Tools.Connectors.FileSystemToolConfig? MapFileSystem(Weave.Workspaces.Manifest.FileSystemToolConfig? config)
     {
         if (config is null)
             return null;
 
-        return new Weave.Tools.Models.FileSystemToolConfig
+        return new Weave.Tools.Connectors.FileSystemToolConfig
         {
             Root = config.Root,
             ReadOnly = config.ReadOnly,

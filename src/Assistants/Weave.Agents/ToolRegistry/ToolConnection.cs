@@ -1,7 +1,7 @@
 using System.Text.Json.Serialization;
 using Weave.Shared.Ids;
 
-namespace Weave.Agents.Models;
+namespace Weave.Agents.ToolRegistry;
 
 public sealed record ToolConnection
 {

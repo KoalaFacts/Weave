@@ -1,4 +1,6 @@
-namespace Weave.Workspaces.Models;
+using Weave.Workspaces.Lifecycle;
+
+namespace Weave.Workspaces.Registry;
 
 public sealed record RegistryEntry
 {

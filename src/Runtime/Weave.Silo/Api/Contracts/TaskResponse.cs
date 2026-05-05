@@ -1,6 +1,5 @@
 using System.Text.Json.Serialization;
-using Weave.Agents.Models;
-
+using Weave.Agents.Lifecycle;
 namespace Weave.Silo.Api;
 
 public sealed record TaskResponse

@@ -1,5 +1,4 @@
-using Weave.Workspaces.Models;
-
+using Weave.Workspaces.Manifest;
 namespace Weave.Cli.Commands;
 
 internal sealed class WorkspaceAddPluginCliCommand(

@@ -1,5 +1,5 @@
 using Microsoft.Extensions.Logging;
-using Weave.Agents.Models;
+using Weave.Agents.Lifecycle;
 using Weave.Security.Tokens;
 using Weave.Shared.Capabilities;
 using Weave.Shared.Ids;

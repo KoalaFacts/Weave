@@ -1,8 +1,8 @@
 using System.Globalization;
 using Spectre.Console;
 using Weave.Shared.Ids;
-using Weave.Workspaces.Models;
-
+using Weave.Workspaces.Manifest;
+using Weave.Workspaces.Templates;
 namespace Weave.Cli.Commands;
 
 internal sealed class MarketplaceInstallCliCommand : ICliCommand<MarketplaceInstallOptions>

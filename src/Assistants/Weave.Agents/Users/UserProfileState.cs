@@ -1,4 +1,4 @@
-namespace Weave.Agents.Models;
+namespace Weave.Agents.Users;
 
 public sealed record UserProfileState
 {

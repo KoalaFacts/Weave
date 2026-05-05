@@ -1,7 +1,7 @@
 using Weave.Tools.Mapping;
-using Weave.Tools.Models;
-using Weave.Workspaces.Models;
-
+using Weave.Tools.Connectors;
+using Weave.Tools.Tool;
+using Weave.Workspaces.Manifest;
 namespace Weave.Tools.Tests;
 
 public sealed class ToolSpecMapperTests
@@ -114,7 +114,7 @@ public sealed class ToolSpecMapperTests
         var definition = new ToolDefinition
         {
             Type = "filesystem",
-            FileSystem = new Weave.Workspaces.Models.FileSystemToolConfig { Root = "/data/workspace", ReadOnly = true, MaxReadBytes = 512 }
+            FileSystem = new Weave.Workspaces.Manifest.FileSystemToolConfig { Root = "/data/workspace", ReadOnly = true, MaxReadBytes = 512 }
         };
 
         var spec = ToolSpecMapper.FromDefinition("fs-tool", definition);
@@ -131,7 +131,7 @@ public sealed class ToolSpecMapperTests
         var definition = new ToolDefinition
         {
             Type = "filesystem",
-            FileSystem = new Weave.Workspaces.Models.FileSystemToolConfig { Root = "/data/workspace" }
+            FileSystem = new Weave.Workspaces.Manifest.FileSystemToolConfig { Root = "/data/workspace" }
         };
 
         ToolSpecMapper.ResolveEndpoint(definition).ShouldBe("/data/workspace");

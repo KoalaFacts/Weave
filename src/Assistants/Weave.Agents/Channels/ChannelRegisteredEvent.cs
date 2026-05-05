@@ -1,4 +1,3 @@
-using Weave.Agents.Models;
 using Weave.Shared.Events;
 using Weave.Shared.Ids;
 

@@ -1,7 +1,6 @@
 using Weave.Security.Tokens;
-using Weave.Tools.Models;
-
-namespace Weave.Agents.Models;
+using Weave.Tools.Tool;
+namespace Weave.Agents.ToolRegistry;
 
 public sealed record ToolResolution
 {

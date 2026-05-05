@@ -1,6 +1,6 @@
 using Microsoft.Extensions.Logging;
 using Weave.Shared.Ids;
-using Weave.Workspaces.Models;
+using Weave.Workspaces.Manifest;
 using Weave.Workspaces.Runtime;
 
 namespace Weave.Workspaces.Tests;

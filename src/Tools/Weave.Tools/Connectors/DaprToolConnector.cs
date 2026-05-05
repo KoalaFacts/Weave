@@ -2,8 +2,7 @@ using System.Diagnostics;
 using System.Text.Json;
 using Microsoft.Extensions.Logging;
 using Weave.Security.Tokens;
-using Weave.Tools.Models;
-
+using Weave.Tools.Tool;
 namespace Weave.Tools.Connectors;
 
 /// <summary>

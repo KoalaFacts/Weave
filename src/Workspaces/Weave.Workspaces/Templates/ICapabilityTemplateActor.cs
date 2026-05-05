@@ -1,6 +1,4 @@
 using Weave.Shared.Ids;
-using Weave.Workspaces.Models;
-
 namespace Weave.Workspaces.Templates;
 
 public interface ICapabilityTemplateActor

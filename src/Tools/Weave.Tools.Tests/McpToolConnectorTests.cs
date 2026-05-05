@@ -2,9 +2,8 @@ using System.Collections.Concurrent;
 using Microsoft.Extensions.Logging;
 using Weave.Security.Tokens;
 using Weave.Tools.Connectors;
-using Weave.Tools.Models;
-using Weave.Workspaces.Models;
-
+using Weave.Tools.Tool;
+using Weave.Workspaces.Manifest;
 namespace Weave.Tools.Tests;
 
 public sealed class McpToolConnectorTests

@@ -8,8 +8,7 @@ using Weave.Agents.Verification;
 using Weave.Security.Actors;
 using Weave.Security.Tokens;
 using Weave.Shared.Ids;
-using Weave.Workspaces.Models;
-
+using Weave.Workspaces.Manifest;
 namespace Weave.Agents.Tests;
 
 public sealed class ToolSecretResolverTests

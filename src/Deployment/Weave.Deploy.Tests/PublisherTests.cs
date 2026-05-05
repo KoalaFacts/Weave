@@ -1,8 +1,7 @@
 using System.Globalization;
 using Weave.Deploy.Translators;
 using Weave.Shared;
-using Weave.Workspaces.Models;
-
+using Weave.Workspaces.Manifest;
 namespace Weave.Deploy.Tests;
 
 /// <summary>

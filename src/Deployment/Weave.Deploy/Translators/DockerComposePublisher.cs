@@ -1,8 +1,7 @@
 using System.Globalization;
 using System.Text;
 using Weave.Shared;
-using Weave.Workspaces.Models;
-
+using Weave.Workspaces.Manifest;
 namespace Weave.Deploy.Translators;
 
 public sealed class DockerComposePublisher : IPublisher

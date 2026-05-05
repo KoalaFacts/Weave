@@ -1,4 +1,4 @@
-namespace Weave.Workspaces.Models;
+namespace Weave.Workspaces.Templates;
 
 public sealed record TemplateValidationResult
 {
