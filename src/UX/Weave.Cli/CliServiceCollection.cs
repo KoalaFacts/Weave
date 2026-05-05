@@ -1,8 +1,7 @@
 using Microsoft.Extensions.DependencyInjection;
 using Weave.Actions;
-using Weave.Actions.Agent;
 using Weave.Actions.Context;
-using Weave.Actions.System;
+using Weave.Actions.SystemInfo;
 using Weave.Cli.ActionContext;
 using Weave.Cli.Commands;
 using Weave.Cli.Tui;
@@ -41,28 +40,21 @@ internal static class CliServiceCollection
         services.AddTransient<ChatComposer>();
         services.AddTransient<TuiShell>();
 
-        // TUI views that talk to the workspace API. WorkspaceApiClient is
-        // singleton — Microsoft's HttpClient guidance is one-per-application,
-        // not one-per-call; the prior `using var client = new WorkspaceApiClient();`
-        // pattern in these views violated that. The two views consume the singleton
-        // via primary-ctor injection. The other 13 inline `new WorkspaceApiClient()`
-        // call sites in the CLI remain — see the Shape C plan in docs/handoff.md.
+        // Legacy WorkspaceApiClient — still used by the unmigrated CLI/TUI
+        // surfaces. Shrinks as Phase 1 verbs migrate to actions; the action
+        // layer does NOT depend on it (each action takes its own typed
+        // HttpClient via Weave.Actions' AddSiloActions registration below).
         services.AddSingleton<WorkspaceApiClient>();
         services.AddTransient<TuiToolsView>();
         services.AddTransient<TuiTasksView>();
 
-        // Shape C action context + actions. WorkspaceApiClient implements
-        // ISiloApi so actions depend on the seam, not the concrete client;
-        // ISiloApi grows verb-by-verb as Phase 1 read-only verbs land. The
-        // legacy /system slash in the TUI still uses TuiSystemView until its
-        // own migration; the new `weave agents` CLI surface and the
-        // migrated /agents slash are the first cross-frontend consumers.
+        // Shape C action layer — frontend-supplied prompter/reporter, plus
+        // typed HttpClients per action keyed off the silo base URL. Actions
+        // own their HTTP and DTOs; no shared silo-client abstraction.
         services.AddSingleton<IActionPrompter, ConsoleActionPrompter>();
         services.AddSingleton<IActionReporter, ConsoleActionReporter>();
-        services.AddSingleton<ISiloApi>(sp => sp.GetRequiredService<WorkspaceApiClient>());
         services.AddSingleton<ISystemConfigSource, CliSystemConfigSource>();
-        services.AddTransient<GetSystemInfoAction>();
-        services.AddTransient<ListAgentsAction>();
+        services.AddSiloActions(client => client.BaseAddress = new Uri(CliApiHttp.ResolveBaseUrl()));
         services.AddTransient<SystemCliCommand>();
         services.AddTransient<AgentsCliCommand>();
 

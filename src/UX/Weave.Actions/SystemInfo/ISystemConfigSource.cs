@@ -1,4 +1,4 @@
-namespace Weave.Actions.System;
+namespace Weave.Actions.SystemInfo;
 
 /// <summary>
 /// Frontend-supplied seam that returns the static snapshot of local config

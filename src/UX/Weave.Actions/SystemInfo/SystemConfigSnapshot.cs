@@ -1,4 +1,4 @@
-namespace Weave.Actions.System;
+namespace Weave.Actions.SystemInfo;
 
 /// <summary>
 /// Static facts about the local Weave installation that the

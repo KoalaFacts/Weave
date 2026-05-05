@@ -1,6 +1,6 @@
 using System.Globalization;
 using Spectre.Console;
-using Weave.Actions.System;
+using Weave.Actions.SystemInfo;
 using Weave.Cli.Tui;
 
 namespace Weave.Cli.Commands;

@@ -1,4 +1,4 @@
-namespace Weave.Actions.System;
+namespace Weave.Actions.SystemInfo;
 
 /// <summary>
 /// Result of <see cref="GetSystemInfoAction"/>: the local snapshot stitched

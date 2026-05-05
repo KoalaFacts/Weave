@@ -1,4 +1,4 @@
-using Weave.Actions.System;
+using Weave.Actions.SystemInfo;
 
 namespace Weave.Cli.Commands;
 

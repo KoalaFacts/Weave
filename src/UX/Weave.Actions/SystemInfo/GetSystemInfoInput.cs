@@ -1,4 +1,4 @@
-namespace Weave.Actions.System;
+namespace Weave.Actions.SystemInfo;
 
 /// <summary>
 /// Input shape for <see cref="GetSystemInfoAction"/>. Empty today — the action
