@@ -1,4 +1,7 @@
 using System.Globalization;
+using Spectre.Console;
+using Weave.Shared.Ids;
+using Weave.Workspaces.Models;
 
 namespace Weave.Cli.Commands;
 
@@ -8,7 +11,7 @@ internal sealed class MarketplaceInstallCliCommand : ICliCommand<MarketplaceInst
 
     public IReadOnlyList<string> Aliases => [];
 
-    public string Description => "Install a marketplace item — capability-gated; resolves the linked template.";
+    public string Description => "Install a marketplace item — capability-gated; resolves the linked template and scaffolds a workspace.";
 
     public async Task<int> ExecuteAsync(MarketplaceInstallOptions options, CancellationToken ct)
     {
@@ -54,9 +57,62 @@ internal sealed class MarketplaceInstallCliCommand : ICliCommand<MarketplaceInst
         if (result.Template.Tags.Count > 0)
             CliTheme.WriteKeyValue("Tags", string.Join(", ", result.Template.Tags));
 
-        CliTheme.WriteMuted(string.Empty);
-        CliTheme.WriteMuted($"  The capability check passed; the template registry recorded the install. To scaffold");
-        CliTheme.WriteMuted($"  a workspace from this template locally, run 'weave workspace new --preset <name>'.");
+        var workspaceName = AnsiConsole.Prompt(
+            new TextPrompt<string>("Workspace name:")
+                .Styled()
+                .DefaultValue(result.Template.Name));
+
+        var basePath = Path.GetFullPath(workspaceName);
+        if (Directory.Exists(basePath) && Directory.EnumerateFileSystemEntries(basePath).Any())
+        {
+            CliTheme.WriteError($"Cannot scaffold: directory '{basePath}' already exists and is not empty.");
+            return 1;
+        }
+
+        await ScaffoldWorkspaceAsync(result.Template, workspaceName, basePath, ct);
+
+        CliTheme.WriteSuccess($"Workspace \"{workspaceName}\" scaffolded at {basePath}.");
+        CliTheme.WriteMuted($"  Run `weave workspace up {workspaceName}` to start.");
         return 0;
+    }
+
+    private static async Task ScaffoldWorkspaceAsync(
+        ApiMarketplaceInstallTemplate template,
+        string workspaceName,
+        string basePath,
+        CancellationToken ct)
+    {
+        var capabilityTemplate = new CapabilityTemplate
+        {
+            TemplateId = TemplateId.From(template.TemplateId),
+            Name = template.Name,
+            Description = template.Description,
+            Version = template.Version,
+            Author = template.Author,
+            Status = TemplateStatus.Published,
+            AgentDefinition = template.AgentDefinition,
+            RequiredTools = new Dictionary<string, ToolDefinition>(template.RequiredTools),
+            Tags = [.. template.Tags],
+            InstantiationCount = template.InstantiationCount
+        };
+
+        var manifest = WorkspaceManifestFromTemplate.Create(
+            capabilityTemplate, workspaceName, IsolationLevel.Full);
+
+        Directory.CreateDirectory(basePath);
+        Directory.CreateDirectory(Path.Combine(basePath, "prompts"));
+        Directory.CreateDirectory(Path.Combine(basePath, "data"));
+        Directory.CreateDirectory(Path.Combine(basePath, ".weave"));
+
+        WorkspaceRegistry.Register(workspaceName, basePath);
+
+        await WorkspaceManifestFile.WriteAsync(
+            Path.Combine(basePath, "workspace.json"), manifest, ct);
+
+        var promptContent = $"# {template.Name}\n\n{template.Description}\n";
+        await File.WriteAllTextAsync(
+            Path.Combine(basePath, "prompts", $"{WorkspaceManifestFromTemplate.DefaultAgentName}.md"),
+            promptContent,
+            ct);
     }
 }
