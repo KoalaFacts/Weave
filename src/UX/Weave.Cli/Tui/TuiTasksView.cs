@@ -4,9 +4,9 @@ using Weave.Cli.Commands;
 
 namespace Weave.Cli.Tui;
 
-internal static class TuiTasksView
+internal sealed class TuiTasksView(WorkspaceApiClient client)
 {
-    internal static async Task RenderAsync(TuiSession session, CancellationToken ct)
+    public async Task RenderAsync(TuiSession session, CancellationToken ct)
     {
         if (!session.IsRunning)
         {
@@ -23,7 +23,6 @@ internal static class TuiTasksView
         IReadOnlyList<ApiTaskResponse> tasks;
         try
         {
-            using var client = new WorkspaceApiClient();
             tasks = await client.GetTasksAsync(session.WorkspaceId!, session.AgentName, ct);
         }
         catch (Exception ex) when (ex is HttpRequestException or TaskCanceledException or System.Net.Sockets.SocketException or System.Text.Json.JsonException or IOException)

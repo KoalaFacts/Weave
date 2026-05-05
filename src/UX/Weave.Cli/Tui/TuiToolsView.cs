@@ -3,9 +3,9 @@ using Weave.Cli.Commands;
 
 namespace Weave.Cli.Tui;
 
-internal static class TuiToolsView
+internal sealed class TuiToolsView(WorkspaceApiClient client)
 {
-    internal static async Task RenderAsync(TuiSession session, CancellationToken ct)
+    public async Task RenderAsync(TuiSession session, CancellationToken ct)
     {
         if (!session.IsRunning)
         {
@@ -16,7 +16,6 @@ internal static class TuiToolsView
         IReadOnlyList<ApiToolResponse> tools;
         try
         {
-            using var client = new WorkspaceApiClient();
             tools = await client.GetToolsAsync(session.WorkspaceId!, ct);
         }
         catch (Exception ex) when (ex is HttpRequestException or TaskCanceledException or System.Net.Sockets.SocketException or System.Text.Json.JsonException or IOException)
