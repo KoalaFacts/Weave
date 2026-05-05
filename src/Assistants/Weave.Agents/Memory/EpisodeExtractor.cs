@@ -1,9 +1,8 @@
 using System.Text;
-using Weave.Shared.Ids;
-
 using Weave.Agents.Chat;
 using Weave.Agents.Lifecycle;
 using Weave.Agents.Verification;
+using Weave.Shared.Ids;
 namespace Weave.Agents.Memory;
 
 internal static class EpisodeExtractor

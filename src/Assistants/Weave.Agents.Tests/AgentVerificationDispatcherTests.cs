@@ -2,10 +2,10 @@ using Microsoft.Extensions.Logging.Abstractions;
 using Weave.Agents.Channels;
 using Weave.Agents.Lifecycle;
 using Weave.Agents.Memory;
-using Weave.Agents.Verification;
 using Weave.Agents.Skills;
 using Weave.Agents.ToolRegistry;
 using Weave.Agents.Users;
+using Weave.Agents.Verification;
 using Weave.Shared.Ids;
 
 namespace Weave.Agents.Tests;

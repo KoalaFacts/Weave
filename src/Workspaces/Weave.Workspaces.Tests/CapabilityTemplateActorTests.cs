@@ -2,8 +2,8 @@ using Microsoft.Extensions.Logging.Abstractions;
 using Weave.Shared.Ids;
 using Weave.Workspaces.Lifecycle;
 using Weave.Workspaces.Manifest;
-using Weave.Workspaces.Templates;
 using Weave.Workspaces.Registry;
+using Weave.Workspaces.Templates;
 
 namespace Weave.Workspaces.Tests;
 

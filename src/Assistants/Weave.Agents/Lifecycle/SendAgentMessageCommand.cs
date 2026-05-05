@@ -1,6 +1,6 @@
 using Weave.Agents.Channels;
-using Weave.Agents.Memory;
 using Weave.Agents.Chat;
+using Weave.Agents.Memory;
 using Weave.Agents.Skills;
 using Weave.Agents.ToolRegistry;
 using Weave.Agents.Users;
