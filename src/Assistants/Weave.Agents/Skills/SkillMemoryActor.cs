@@ -65,11 +65,8 @@ public sealed class SkillMemoryActor(
         persistentState.State.SuggestedSkills[key] = suggestion;
         await persistentState.WriteStateAsync(token.CancellationToken);
 
-        logger.LogInformation(
-            "Skill {SkillId} ({Title}) suggested in workspace {WorkspaceId}",
-            skill.SkillId,
-            skill.Title,
-            persistentState.State.WorkspaceId);
+        logger.LogInformation("Skill {SkillId} ({Title}) suggested in workspace {WorkspaceId}",
+            skill.SkillId, skill.Title, persistentState.State.WorkspaceId);
 
         return suggestion;
     }
@@ -96,10 +93,8 @@ public sealed class SkillMemoryActor(
         await persistentState.WriteStateAsync(token.CancellationToken);
         await PublishSkillCreatedAsync(suggestion.Skill, key, token.CancellationToken);
 
-        logger.LogInformation(
-            "Skill suggestion {SkillId} accepted in workspace {WorkspaceId}",
-            skillId,
-            persistentState.State.WorkspaceId);
+        logger.LogInformation("Skill suggestion {SkillId} accepted in workspace {WorkspaceId}",
+            skillId, persistentState.State.WorkspaceId);
 
         return suggestion.Skill;
     }
@@ -113,28 +108,15 @@ public sealed class SkillMemoryActor(
             return false;
 
         await persistentState.WriteStateAsync(token.CancellationToken);
-        logger.LogInformation(
-            "Skill suggestion {SkillId} rejected in workspace {WorkspaceId}",
-            skillId,
-            persistentState.State.WorkspaceId);
+        logger.LogInformation("Skill suggestion {SkillId} rejected in workspace {WorkspaceId}",
+            skillId, persistentState.State.WorkspaceId);
         return true;
     }
 
     public async Task<IReadOnlyList<SkillSearchResult>> SearchAsync(string query, CapabilityToken token, int maxResults = 5, SkillSearchOptions? options = null)
     {
         await authorizer.AuthorizeAsync(token, SkillRead, persistentState.State.WorkspaceId);
-
-        if (persistentState.State.Skills.Count == 0)
-        {
-            return new List<SkillSearchResult>();
-        }
-
-        return SearchSkills(
-            persistentState.State.Skills.Values,
-            query,
-            maxResults,
-            options,
-            timeProvider.GetUtcNow());
+        return persistentState.State.Search(query, maxResults, options, timeProvider.GetUtcNow());
     }
 
     public async Task<SkillDocument?> GetSkillAsync(SkillId skillId, CapabilityToken token)
@@ -220,37 +202,4 @@ public sealed class SkillMemoryActor(
             Title = skill.Title,
             CreatedByAgent = skill.CreatedByAgent
         }, cancellationToken);
-
-    private static List<SkillSearchResult> SearchSkills(
-        IEnumerable<SkillDocument> skills,
-        string query,
-        int maxResults,
-        SkillSearchOptions? options,
-        DateTimeOffset now)
-    {
-        var queryTokens = SkillSearchScorer.Tokenize(query);
-        if (queryTokens.Length == 0)
-            return [];
-
-        var scored = new List<SkillSearchResult>();
-        var effectiveOptions = options ?? new SkillSearchOptions();
-        var minSuccessRate = Math.Clamp(effectiveOptions.MinSuccessRate, 0, 1);
-
-        foreach (var skill in skills)
-        {
-            if (skill.ArchivedAt is not null)
-                continue;
-            if (skill.SuccessRate < minSuccessRate)
-                continue;
-
-            var score = SkillSearchScorer.ComputeRelevanceScore(skill, queryTokens, effectiveOptions, now);
-            if (score > 0)
-                scored.Add(new SkillSearchResult { Skill = skill, RelevanceScore = score });
-        }
-
-        return scored
-            .OrderByDescending(result => result.RelevanceScore)
-            .Take(maxResults)
-            .ToList();
-    }
 }

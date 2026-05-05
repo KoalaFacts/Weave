@@ -43,7 +43,6 @@ public sealed class GitHubActionsPublisher : IPublisher
         sb.AppendLine("        env:");
         sb.AppendLine(CultureInfo.InvariantCulture, $"          REDIS_CONNECTION: localhost:{WeavePorts.Redis}");
 
-        // Add agent-specific steps
         if (manifest.Agents is { Count: > 0 })
         {
             foreach (var (name, _) in manifest.Agents)

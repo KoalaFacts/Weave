@@ -122,6 +122,41 @@ The law of the repo. Every rule here is enforceable in review. Rules exist to pr
 
 **When you remove a config value, grep the literal across the whole repo before claiming done.** Test fixtures (`[InlineData(...)]`), docs, sample configs, and CLI emit-side switches all hold copies of the string that the type-checker won't catch. `grep -rn '"the-removed-value"' .` is the floor.
 
+### Split, merge, refactor
+
+**Drive these decisions by observable principles, not by feel.** "It feels like two concerns" is not a justification — neither is "this class is too big." The rules below produce the same answer regardless of who applies them. If you cannot answer a principle's test with concrete evidence, you do not have grounds to act.
+
+**Split a unit into multiple units when at least one is true:**
+
+- **Different change rates.** Git history shows the parts evolve at different cadences, or a named upcoming change touches one but not the other. Not "feels different" — measurable.
+- **Different consumers.** The parts are called from different sites, or one is a public contract while the other is an internal step.
+- **Real replaceability.** The part is meant to be swapped (strategy, plugin, provider). Either ≥2 implementations exist today, or a named one is on the roadmap.
+- **Different testability profile.** One is pure and unit-testable, the other needs heavy mocks or integration. Splitting unblocks tests that the merged form cannot have.
+
+**Merge units into one when all are true:**
+
+- **Co-change.** Every modification to one part touches the other (history, not speculation).
+- **Single caller, single implementation.** One consumer, one impl, no roadmap for more.
+- **No testability gain.** Splitting would not unlock any test the merged form blocks.
+
+**Refactor the shape of code when either is true:**
+
+- **Real duplication at N ≥ 3.** Identical (not coincidentally similar) logic in three or more places. Two is coincidence; three is a pattern.
+- **Current shape blocks a named upcoming change.** The change is on the roadmap, not hypothetical.
+
+**Anti-principles — these alone do not justify split, merge, or refactor:**
+
+- Line count alone. ">200 lines" is a smell to investigate, not a trigger to act — investigate against the principles above.
+- "Feels like two concerns" without git evidence or a named upcoming consumer.
+- "Future flexibility" with no named caller.
+- "While I'm here" cleanups inside an unrelated change — those are separate commits at minimum (see *Refactoring discipline* below).
+
+**When the principles disagree or the evidence is weak, do not act.** The default is to leave the existing shape alone. A speculative split costs less to add later than to remove from a live codebase.
+
+**`*Helpers`, `*Utilities`, `*Common`, `*Manager` classes are an anti-pattern.** They mark a class with no identity beyond "place where things go" — a junk drawer that accumulates orphan methods until nobody can refactor around it. Before reaching for one, ask in order: (a) can this inline at the call site? (b) is there a `private static` home in the one class that needs it? (c) is this an extension method on its operand's type? (d) is there a missing domain type whose behavior this actually is? "Make it a helper class" is the symptom of skipping that question. The same suspicion applies to a `static class FooScorer` / `FooCalculator` / `FooProcessor` whose entire surface is loose `static` methods called from one or two places — those are helpers in disguise. The narrow exception is verb-shaped pure-function modules with ≥3 distinct domain consumers; below that bar, inline or attach to a real owner.
+
+**Return types and properties default to the immutable form.** `IReadOnlyList<T>` over `List<T>`, `IReadOnlyDictionary<K,V>` over `Dictionary<K,V>`, `IReadOnlyCollection<T>` / `IReadOnlySet<T>` over their mutable bases, `init`-only over `set`. The mutable concrete type is acceptable in two narrow places: (a) private fields and local variables where ownership is unambiguous, and (b) Orleans-state record properties that the actor mutates in place before `WriteStateAsync` (the in-place pattern is the storage contract, not an API leak). Anywhere a caller reads — method return types, public properties on non-state types, DTOs crossing a module boundary — defaults to the immutable view. A caller that needs to mutate constructs a new value; it does not modify what it received.
+
 ### Refactoring discipline
 
 **A refactor is a strict no-op for runtime behavior.** Moving code, splitting projects, renaming types — none of those should change what the running system does. If you catch yourself adding `RegisterFactory(...)`, an extra `?? defaultValue`, or "improvements" while moving code, stop and revert. Those are separate commits at minimum. The Silo clustering split nearly shipped three unintended `DbProviderFactories.RegisterFactory` calls disguised as part of the refactor — caught only because the original code clearly didn't have them.
