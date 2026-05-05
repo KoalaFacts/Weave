@@ -1,3 +1,5 @@
+using Weave.Workspaces.Models;
+
 namespace Weave.Cli.Commands;
 
 internal sealed record ApiMarketplaceItemResponse
@@ -33,4 +35,6 @@ internal sealed record ApiMarketplaceInstallTemplate
     public required string Status { get; init; }
     public List<string> Tags { get; init; } = [];
     public int InstantiationCount { get; init; }
+    public required AgentDefinition AgentDefinition { get; init; }
+    public Dictionary<string, ToolDefinition> RequiredTools { get; init; } = [];
 }
