@@ -1,3 +1,4 @@
+using System.Net;
 using System.Net.Http.Json;
 using Weave.Actions.Context;
 
@@ -33,14 +34,36 @@ public sealed class ValidateWorkspaceAction
                 ActionFailure.NotFound($"Manifest not found at '{input.ManifestPath}'."));
         }
 
-        string json;
         try
         {
-            json = await File.ReadAllTextAsync(input.ManifestPath, cancellationToken);
+            var json = await File.ReadAllTextAsync(input.ManifestPath, cancellationToken);
+
+            using var response = await _httpClient.PostAsJsonAsync(
+                "/api/workspaces/validate",
+                new ValidateWorkspaceWire { ManifestJson = json },
+                ValidateWorkspaceJsonContext.Default.ValidateWorkspaceWire,
+                cancellationToken);
+
+            return response.StatusCode switch
+            {
+                HttpStatusCode.OK => await ReadSuccessAsync(response, cancellationToken),
+                HttpStatusCode.BadRequest => await ReadValidationFailureAsync(response, cancellationToken),
+                HttpStatusCode.Unauthorized or HttpStatusCode.Forbidden => ActionResult.Failed<ValidateWorkspaceResult>(
+                    ActionFailure.Unauthorized($"Silo refused the validate request ({(int)response.StatusCode}).")),
+                _ when (int)response.StatusCode >= 500 => ActionResult.Failed<ValidateWorkspaceResult>(
+                    ActionFailure.Internal($"Silo error validating manifest ({(int)response.StatusCode}).")),
+                _ => ActionResult.Failed<ValidateWorkspaceResult>(
+                    ActionFailure.Internal($"Unexpected silo response ({(int)response.StatusCode}).")),
+            };
         }
         catch (OperationCanceledException) when (cancellationToken.IsCancellationRequested)
         {
             return ActionResult.Failed<ValidateWorkspaceResult>(ActionFailure.Cancelled());
+        }
+        catch (HttpRequestException ex)
+        {
+            return ActionResult.Failed<ValidateWorkspaceResult>(
+                ActionFailure.SiloUnreachable($"Silo unreachable: {ex.Message}"));
         }
         catch (IOException ex)
         {
@@ -52,65 +75,50 @@ public sealed class ValidateWorkspaceAction
             return ActionResult.Failed<ValidateWorkspaceResult>(
                 ActionFailure.Unauthorized($"Could not read manifest: {ex.Message}"));
         }
+    }
 
-        try
-        {
-            using var response = await _httpClient.PostAsJsonAsync(
-                "/api/workspaces/validate",
-                new ValidateWorkspaceWire(json),
-                ValidateWorkspaceJsonContext.Default.ValidateWorkspaceWire,
-                cancellationToken);
+    private static async Task<ActionResult<ValidateWorkspaceResult>> ReadSuccessAsync(
+        HttpResponseMessage response,
+        CancellationToken cancellationToken)
+    {
+        var wire = await response.Content.ReadFromJsonAsync(
+            ValidateWorkspaceJsonContext.Default.ValidateWorkspaceResultWire,
+            cancellationToken);
 
-            if (response.StatusCode == System.Net.HttpStatusCode.BadRequest)
-            {
-                var problem = await response.Content.ReadFromJsonAsync(
-                    ValidateWorkspaceJsonContext.Default.ProblemWire,
-                    cancellationToken);
-                var message = ExtractProblemMessage(problem) ?? "Manifest is not valid JSON.";
-                return ActionResult.Failed<ValidateWorkspaceResult>(
-                    ActionFailure.ValidationFailed(message));
-            }
-
-            response.EnsureSuccessStatusCode();
-
-            var wire = await response.Content.ReadFromJsonAsync(
-                ValidateWorkspaceJsonContext.Default.ValidateWorkspaceResultWire,
-                cancellationToken);
-
-            if (wire is null)
-            {
-                return ActionResult.Failed<ValidateWorkspaceResult>(
-                    ActionFailure.Internal("Silo returned an empty validation payload."));
-            }
-
-            return ActionResult.Success(new ValidateWorkspaceResult(
-                Name: wire.Name,
-                AgentCount: wire.AgentCount,
-                ToolCount: wire.ToolCount,
-                TargetCount: wire.TargetCount,
-                Errors: wire.Errors ?? []));
-        }
-        catch (OperationCanceledException) when (cancellationToken.IsCancellationRequested)
-        {
-            return ActionResult.Failed<ValidateWorkspaceResult>(ActionFailure.Cancelled());
-        }
-        catch (HttpRequestException ex)
+        if (wire is null)
         {
             return ActionResult.Failed<ValidateWorkspaceResult>(
-                ActionFailure.SiloUnreachable($"Silo unreachable: {ex.Message}"));
+                ActionFailure.Internal("Silo returned an empty validation payload."));
         }
+
+        return ActionResult.Success(new ValidateWorkspaceResult(
+            Name: wire.Name,
+            AgentCount: wire.AgentCount,
+            ToolCount: wire.ToolCount,
+            TargetCount: wire.TargetCount,
+            Errors: wire.Errors));
     }
 
-    private static string? ExtractProblemMessage(ProblemWire? problem)
+    private static async Task<ActionResult<ValidateWorkspaceResult>> ReadValidationFailureAsync(
+        HttpResponseMessage response,
+        CancellationToken cancellationToken)
     {
-        if (problem?.Errors is { Count: > 0 } errors)
-        {
-            foreach (var entry in errors.Values)
-            {
-                if (entry is { Length: > 0 })
-                    return entry[0];
-            }
-        }
-        return problem?.Detail ?? problem?.Title;
+        var problem = await response.Content.ReadFromJsonAsync(
+            ValidateWorkspaceJsonContext.Default.ProblemWire,
+            cancellationToken);
+        var message = ManifestJsonError(problem) ?? "Manifest is invalid JSON.";
+        return ActionResult.Failed<ValidateWorkspaceResult>(
+            ActionFailure.ValidationFailed(message));
     }
+
+    // The silo's only 400-emitting code path on /validate writes a single
+    // "manifestJson" key into the standard ProblemDetails errors map. Pull
+    // that first message; everything else is over-engineering for a private
+    // CLI/silo contract.
+    private static string? ManifestJsonError(ProblemWire? problem)
+        => problem?.Errors is { } errors
+            && errors.TryGetValue("manifestJson", out var messages)
+            && messages.Length > 0
+                ? messages[0]
+                : null;
 }

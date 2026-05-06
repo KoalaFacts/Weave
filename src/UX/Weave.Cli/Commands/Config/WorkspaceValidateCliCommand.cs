@@ -37,10 +37,23 @@ internal sealed class WorkspaceValidateCliCommand : ICliCommand<WorkspaceNameOpt
         var result = await _action.ExecuteAsync(new ValidateWorkspaceInput(manifestPath), ct);
         if (!result.IsSuccess)
         {
-            if (result.Failure.Reason == ActionFailureReason.Cancelled)
-                return 130;
-            CliTheme.WriteError($"Configuration invalid: {result.Failure.Message}");
-            return 1;
+            switch (result.Failure.Reason)
+            {
+                case ActionFailureReason.Cancelled:
+                    return 130;
+                case ActionFailureReason.ValidationFailed:
+                    CliTheme.WriteError($"Configuration invalid: {result.Failure.Message}");
+                    return 1;
+                case ActionFailureReason.SiloUnreachable:
+                    CliTheme.WriteWarning(result.Failure.Message);
+                    return 1;
+                case ActionFailureReason.NotFound:
+                    CliTheme.WriteError(result.Failure.Message);
+                    return 1;
+                default:
+                    CliTheme.WriteError(result.Failure.Message);
+                    return 1;
+            }
         }
 
         if (!result.Value.IsValid)

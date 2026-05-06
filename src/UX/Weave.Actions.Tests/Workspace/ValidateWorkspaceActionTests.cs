@@ -73,12 +73,15 @@ public sealed class ValidateWorkspaceActionTests
     }
 
     [Fact]
-    public async Task ExecuteAsync_SiloReturns400_MapsToValidationFailed()
+    public async Task ExecuteAsync_SiloReturns400_MapsToValidationFailedWithExtractedMessage()
     {
+        // The test asserts against a marker only present in the stubbed
+        // ProblemDetails errors map — so it actually exercises ManifestJsonError
+        // rather than coincidentally matching the fallback default.
         const string problem = """
         {
           "title": "One or more validation errors occurred.",
-          "errors": { "manifestJson": ["Manifest is not valid JSON: Expected `:`"] }
+          "errors": { "manifestJson": ["Manifest is not valid JSON: <<MARKER-FROM-SILO>>"] }
         }
         """;
         using var temp = TempFile.With("{ this is not json");
@@ -90,7 +93,51 @@ public sealed class ValidateWorkspaceActionTests
         result.IsSuccess.ShouldBeFalse();
         result.Failure.ShouldNotBeNull();
         result.Failure.Reason.ShouldBe(ActionFailureReason.ValidationFailed);
-        result.Failure.Message.ShouldContain("not valid JSON");
+        result.Failure.Message.ShouldContain("<<MARKER-FROM-SILO>>");
+    }
+
+    [Fact]
+    public async Task ExecuteAsync_SiloReturns400_WithoutManifestJsonKey_FallsBackToDefault()
+    {
+        // When the silo's 400 ProblemDetails doesn't carry the expected
+        // "manifestJson" key (e.g. some other error path we don't anticipate),
+        // ManifestJsonError returns null and the action surfaces the default.
+        const string problem = """{ "title": "Bad request", "errors": { "other": ["nope"] } }""";
+        using var temp = TempFile.With("{}");
+        using var client = HttpClientReturning(HttpStatusCode.BadRequest, problem);
+        var action = new ValidateWorkspaceAction(client);
+
+        var result = await action.ExecuteAsync(new ValidateWorkspaceInput(temp.Path), CancellationToken.None);
+
+        result.IsSuccess.ShouldBeFalse();
+        result.Failure.Reason.ShouldBe(ActionFailureReason.ValidationFailed);
+        result.Failure.Message.ShouldBe("Manifest is invalid JSON.");
+    }
+
+    [Fact]
+    public async Task ExecuteAsync_SiloReturns401_MapsToUnauthorized()
+    {
+        using var temp = TempFile.With("{}");
+        using var client = HttpClientReturning(HttpStatusCode.Unauthorized, "");
+        var action = new ValidateWorkspaceAction(client);
+
+        var result = await action.ExecuteAsync(new ValidateWorkspaceInput(temp.Path), CancellationToken.None);
+
+        result.IsSuccess.ShouldBeFalse();
+        result.Failure.Reason.ShouldBe(ActionFailureReason.Unauthorized);
+    }
+
+    [Fact]
+    public async Task ExecuteAsync_SiloReturns500_MapsToInternal()
+    {
+        using var temp = TempFile.With("{}");
+        using var client = HttpClientReturning(HttpStatusCode.InternalServerError, "");
+        var action = new ValidateWorkspaceAction(client);
+
+        var result = await action.ExecuteAsync(new ValidateWorkspaceInput(temp.Path), CancellationToken.None);
+
+        result.IsSuccess.ShouldBeFalse();
+        result.Failure.Reason.ShouldBe(ActionFailureReason.Internal);
     }
 
     [Fact]

@@ -26,7 +26,7 @@ public static class WorkspaceEndpoints
             .ProducesProblem(409);
         group.MapPost("/validate", ValidateManifestAsync)
             .WithDescription("Parse and structurally validate a workspace manifest. Returns the per-error list inside a 200 response; only parse failures return 400.")
-            .Produces<ValidateWorkspaceManifestResponse>()
+            .Produces<ValidateWorkspaceManifestResult>()
             .ProducesValidationProblem();
         group.MapDelete("/{workspaceId}", StopWorkspaceAsync)
             .WithDescription("Stop a workspace.")
@@ -102,20 +102,13 @@ public static class WorkspaceEndpoints
         {
             var query = new ValidateWorkspaceManifestQuery(request.ManifestJson);
             var result = await dispatcher.DispatchAsync<ValidateWorkspaceManifestQuery, ValidateWorkspaceManifestResult>(query, ct);
-            return Results.Ok(ValidateWorkspaceManifestResponse.FromResult(result));
+            return Results.Ok(result);
         }
         catch (JsonException ex)
         {
             return ResultExtensions.ValidationFailed(new Dictionary<string, string[]>
             {
                 ["manifestJson"] = [$"Manifest is not valid JSON: {ex.Message}"]
-            });
-        }
-        catch (FormatException ex)
-        {
-            return ResultExtensions.ValidationFailed(new Dictionary<string, string[]>
-            {
-                ["manifestJson"] = [$"Manifest format error: {ex.Message}"]
             });
         }
     }
