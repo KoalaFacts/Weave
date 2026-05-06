@@ -33,6 +33,8 @@ internal sealed class TuiAgentListView
                     CliTheme.WriteMuted("Pick one with: /use <name>");
                 return;
             }
+            if (!result.IsSuccess && result.Failure.Reason == ActionFailureReason.Cancelled)
+                return;
             // Either silo unreachable or zero live agents — fall through to
             // manifest-only view (the TUI's UX concession).
         }

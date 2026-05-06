@@ -54,6 +54,9 @@ internal sealed class AgentsCliCommand : ICliCommand<WorkspaceNameOptions>
                 return 0;
             }
 
+            if (result.Failure.Reason == ActionFailureReason.Cancelled)
+                return 130;
+
             if (result.Failure.Reason == ActionFailureReason.SiloUnreachable)
                 CliTheme.WriteWarning($"{result.Failure.Message} Falling back to manifest data.");
             else

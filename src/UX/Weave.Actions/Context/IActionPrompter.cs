@@ -7,22 +7,16 @@ namespace Weave.Actions.Context;
 /// </summary>
 /// <remarks>
 /// Actions never instantiate prompts inline — they call this seam so the same
-/// orchestration runs in any frontend.
+/// orchestration runs in any frontend. No <c>CancellationToken</c> on these
+/// methods: the canonical CLI impl wraps Spectre.Console which blocks
+/// synchronously on stdin and cannot be cancelled mid-prompt. If a future
+/// frontend wires up async prompting, add the parameter then.
 /// </remarks>
 public interface IActionPrompter
 {
-    Task<string> PromptTextAsync(
-        string message,
-        string? defaultValue = null,
-        CancellationToken cancellationToken = default);
+    Task<string> PromptTextAsync(string message, string? defaultValue = null);
 
-    Task<string> PromptSelectionAsync(
-        string message,
-        IReadOnlyList<string> choices,
-        CancellationToken cancellationToken = default);
+    Task<string> PromptSelectionAsync(string message, IReadOnlyList<string> choices);
 
-    Task<bool> PromptConfirmAsync(
-        string message,
-        bool defaultValue = false,
-        CancellationToken cancellationToken = default);
+    Task<bool> PromptConfirmAsync(string message, bool defaultValue = false);
 }

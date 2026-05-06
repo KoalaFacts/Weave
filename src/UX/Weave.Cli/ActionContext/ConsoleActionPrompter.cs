@@ -10,10 +10,7 @@ namespace Weave.Cli.ActionContext;
 /// </summary>
 internal sealed class ConsoleActionPrompter : IActionPrompter
 {
-    public Task<string> PromptTextAsync(
-        string message,
-        string? defaultValue = null,
-        CancellationToken cancellationToken = default)
+    public Task<string> PromptTextAsync(string message, string? defaultValue = null)
     {
         var prompt = new TextPrompt<string>(message);
         if (defaultValue is not null)
@@ -21,10 +18,7 @@ internal sealed class ConsoleActionPrompter : IActionPrompter
         return Task.FromResult(AnsiConsole.Prompt(prompt));
     }
 
-    public Task<string> PromptSelectionAsync(
-        string message,
-        IReadOnlyList<string> choices,
-        CancellationToken cancellationToken = default)
+    public Task<string> PromptSelectionAsync(string message, IReadOnlyList<string> choices)
     {
         var prompt = new SelectionPrompt<string>()
             .Title(message)
@@ -32,10 +26,7 @@ internal sealed class ConsoleActionPrompter : IActionPrompter
         return Task.FromResult(AnsiConsole.Prompt(prompt));
     }
 
-    public Task<bool> PromptConfirmAsync(
-        string message,
-        bool defaultValue = false,
-        CancellationToken cancellationToken = default)
+    public Task<bool> PromptConfirmAsync(string message, bool defaultValue = false)
     {
         return Task.FromResult(AnsiConsole.Confirm(message, defaultValue));
     }
