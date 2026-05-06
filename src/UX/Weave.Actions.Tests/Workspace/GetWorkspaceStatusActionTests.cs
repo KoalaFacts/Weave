@@ -32,7 +32,7 @@ public sealed class GetWorkspaceStatusActionTests
         result.Value.Workspace.Name.ShouldBe("demo");
         result.Value.Workspace.Status.ShouldBe("Running");
         result.Value.Workspace.ContainerCount.ShouldBe(3);
-        result.Value.Workspace.StartedAt.ShouldNotBeNull();
+        result.Value.Workspace.StartedAt.ShouldBe(new DateTimeOffset(2026, 5, 6, 10, 0, 0, TimeSpan.Zero));
         result.Value.Workspace.NetworkId.ShouldBe("weave-demo");
     }
 

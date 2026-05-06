@@ -27,7 +27,7 @@ public sealed class ListToolsActionTests
         result.Value.Tools[0].ToolType.ShouldBe("Cli");
         result.Value.Tools[0].Status.ShouldBe("Connected");
         result.Value.Tools[0].Endpoint.ShouldBe("/usr/bin/git");
-        result.Value.Tools[0].ConnectedAt.ShouldNotBeNull();
+        result.Value.Tools[0].ConnectedAt.ShouldBe(new DateTimeOffset(2026, 5, 6, 10, 0, 0, TimeSpan.Zero));
         result.Value.Tools[1].ToolName.ShouldBe("files");
         result.Value.Tools[1].Endpoint.ShouldBeNull();
         result.Value.Tools[1].ConnectedAt.ShouldBeNull();

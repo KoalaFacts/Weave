@@ -29,7 +29,8 @@ public sealed class ListTasksActionTests
         result.Value.Tasks[0].CompletedAt.ShouldBeNull();
         result.Value.Tasks[1].TaskId.ShouldBe("t-2");
         result.Value.Tasks[1].Status.ShouldBe("AwaitingReview");
-        result.Value.Tasks[1].CompletedAt.ShouldNotBeNull();
+        result.Value.Tasks[1].CreatedAt.ShouldBe(new DateTimeOffset(2026, 5, 6, 11, 0, 0, TimeSpan.Zero));
+        result.Value.Tasks[1].CompletedAt.ShouldBe(new DateTimeOffset(2026, 5, 6, 11, 30, 0, TimeSpan.Zero));
     }
 
     [Fact]
