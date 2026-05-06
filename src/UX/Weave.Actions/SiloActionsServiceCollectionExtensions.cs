@@ -1,6 +1,8 @@
 using Microsoft.Extensions.DependencyInjection;
 using Weave.Actions.Agent;
+using Weave.Actions.AgentTask;
 using Weave.Actions.SystemInfo;
+using Weave.Actions.Tool;
 
 namespace Weave.Actions;
 
@@ -24,6 +26,8 @@ public static class SiloActionsServiceCollectionExtensions
 
         services.AddHttpClient<GetSystemInfoAction>(configureSiloClient);
         services.AddHttpClient<ListAgentsAction>(configureSiloClient);
+        services.AddHttpClient<ListToolsAction>(configureSiloClient);
+        services.AddHttpClient<ListTasksAction>(configureSiloClient);
 
         return services;
     }
