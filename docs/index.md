@@ -28,6 +28,8 @@ Weave.Workspaces
 ↓
 Weave.Silo (Runtime — composes everything)
     ↓
+Weave.Actions (UX — frontend-agnostic action layer)
+    ↓
 ┌───────────────┬───────────────┐
 │ Weave.Cli     │ Weave.Dashboard│
 │ (UX)          │ (UX)           │
@@ -48,6 +50,7 @@ Weave.AppHost (Aspire orchestrator)
 | [deployment.md](deployment.md) | Deployment | `src/Deployment/` | Publishers: Docker Compose, Kubernetes, Nomad, Fly.io, GitHub Actions |
 | [runtime.md](runtime.md) | Runtime | `src/Runtime/` | Orleans Silo host, Aspire AppHost, plugin wiring (Dapr/Vault), REST API, CQRS handler registration |
 | [ux.md](ux.md) | CLI + Dashboard | `src/UX/` | CLI commands (System.CommandLine + Spectre.Console), Blazor dashboard (FluentUI), workspace presets |
+| [handoff.md](handoff.md) | Action Layer (Shape C) | `src/UX/Weave.Actions/` | Frontend-agnostic actions, `IActionPrompter`/`IActionReporter`, `ActionResult<T>`, typed `HttpClient` per action via `AddSiloActions(...)` |
 | [examples.md](examples.md) | Code Examples | (cross-cutting) | Manifest authoring, CLI usage, actors, CQRS handlers, tokens, events, lifecycle hooks, testing patterns |
 
 ## Strategy & Direction
@@ -70,6 +73,63 @@ Weave.AppHost (Aspire orchestrator)
 
 ### Secret Resolution Flow
 `{secret:path}` placeholder → `SecretProxyActor.SubstituteAsync()` → `ISecretProvider.ResolveAsync()` (Vault or InMemory via `SecretProviderProxy`) → `TransparentSecretProxy.SubstitutePlaceholders()` → actual value injected
+
+### Frontend Action Flow (Shape C, Phase 1)
+`weave agents <ws>` (CLI) / `/agents` (TUI) → `AgentsCliCommand` or `TuiAgentListView` → `ListAgentsAction.ExecuteAsync()` → typed `HttpClient` → `GET /api/workspaces/{id}/agents` (silo) → CQRS `GetAgentsQuery` → `IAgentActorGrain.GetStatusAsync()` → `AgentState` → `ApiAgentResponse[]` JSON → `AgentWire[]` (deserialized via `AgentJsonContext`) → `AgentSummary[]` (curated) → `ActionResult<ListAgentsResult>` → shared `AgentsRenderer` (Spectre table)
+
+## Frontend Action Layer (Shape C)
+
+The action layer is the shared seam between the silo HTTP API and the frontends (CLI, TUI, future Web UI). Each action is a self-contained verb: takes a typed `HttpClient` (BaseAddress configured by the frontend's DI registration), calls one or two silo endpoints, returns an `ActionResult<T>` carrying a curated frontend DTO. No shared "silo client" abstraction; each action owns its HTTP and translates wire shapes locally.
+
+```
+┌────────────────────────────────────────────────────────────────────┐
+│                     User-facing surfaces                           │
+│   ┌─────────────┐   ┌─────────────┐   ┌─────────────┐              │
+│   │  CLI commands│  │  TUI slashes│   │  Dashboard  │              │
+│   │  weave system│  │  /system    │   │  /agents    │              │
+│   │  weave agents│  │  /agents    │   │   ...       │              │
+│   └──────┬──────┘   └──────┬──────┘   └──────┬──────┘              │
+└──────────│─────────────────│─────────────────│────────────────────┘
+           │                 │                 │
+           └────────┬────────┴────────┬────────┘
+                    ▼                 ▼
+       ┌────────────────────────────────────────────┐
+       │            Weave.Actions                   │
+       │                                            │
+       │   Context/   IActionPrompter,              │
+       │              IActionReporter,              │
+       │              ActionResult<T>,              │
+       │              ActionFailure                 │
+       │                                            │
+       │   <Verb>/    Action class + Input/Result   │
+       │              + per-feature wire DTO        │
+       │              + per-feature JsonContext     │
+       │                                            │
+       │   AddSiloActions(c => c.BaseAddress=...)   │
+       │   ─── typed HttpClient per action via DI ──│
+       └────────────────────│───────────────────────┘
+                            │  HTTP (one call per action)
+                            ▼
+                  ┌──────────────────────┐
+                  │      Weave.Silo      │
+                  │  HTTP → CQRS → grain │
+                  │       → state        │
+                  └──────────────────────┘
+```
+
+| Piece | Shape | Lives in |
+|---|---|---|
+| `IActionPrompter` / `IActionReporter` | frontend-supplied interfaces (Spectre / Blazor / test fakes) | `Weave.Actions/Context/` |
+| `ActionResult<T>` + `ActionFailure` | typed success-or-failure envelope; reasons enumerated for stable UX branching | `Weave.Actions/Context/` |
+| Per-feature action class | takes typed `HttpClient` via DI; owns its wire DTO + `JsonSerializerContext` | `Weave.Actions/<Verb>/` |
+| `AddSiloActions(...)` | composition extension; registers `HttpClient<TAction>` per verb | `Weave.Actions/SiloActionsServiceCollectionExtensions.cs` |
+| Frontend bindings | `ConsoleActionPrompter`/`ConsoleActionReporter` (CLI); future Web UI bindings | `Weave.Cli/ActionContext/` |
+
+**Migration status (see [handoff.md](handoff.md) for Phase 1 plan):**
+- **Phase 0 ✓** — Foundation + `GetSystemInfoAction` pilot wired through `weave system`.
+- **Phase 1 first verb ✓** — `ListAgentsAction` consumed by both `weave agents` (new CLI command) and the migrated TUI `/agents` slash via a shared `AgentsRenderer`.
+- **Phase 1 verbs 2-7** (pending) — `ListToolsAction`, `ListTasksAction`, `GetWorkspaceStatusAction`, `GetConfigAction`, `DashboardAction`, `ValidateWorkspaceAction`. Each follows the same template.
+- **Legacy paths** — unmigrated CLI/TUI surfaces still go through `WorkspaceApiClient` (in `Weave.Cli`); these drain as their consumers migrate.
 
 ## Key Patterns
 
