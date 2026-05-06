@@ -2,21 +2,30 @@ namespace Weave.Actions.Context;
 
 /// <summary>
 /// Asks the user for missing input. Frontend-supplied: the CLI uses Spectre
-/// prompts; a Web UI rejects every prompt (web frontends pre-fill inputs);
-/// test fakes return canned answers.
+/// prompts; a Web UI would honor cancellation when a modal closes or a
+/// websocket drops; test fakes return canned answers.
 /// </summary>
 /// <remarks>
 /// Actions never instantiate prompts inline — they call this seam so the same
-/// orchestration runs in any frontend. No <c>CancellationToken</c> on these
-/// methods: the canonical CLI impl wraps Spectre.Console which blocks
-/// synchronously on stdin and cannot be cancelled mid-prompt. If a future
-/// frontend wires up async prompting, add the parameter then.
+/// orchestration runs in any frontend. Cancellation honor is impl-shaped: the
+/// canonical Spectre/CLI impl checks the token before each prompt but cannot
+/// interrupt a synchronous stdin read mid-prompt; a future Web UI impl can
+/// honor cancellation fully.
 /// </remarks>
 public interface IActionPrompter
 {
-    Task<string> PromptTextAsync(string message, string? defaultValue = null);
+    Task<string> PromptTextAsync(
+        string message,
+        string? defaultValue = null,
+        CancellationToken cancellationToken = default);
 
-    Task<string> PromptSelectionAsync(string message, IReadOnlyList<string> choices);
+    Task<string> PromptSelectionAsync(
+        string message,
+        IReadOnlyList<string> choices,
+        CancellationToken cancellationToken = default);
 
-    Task<bool> PromptConfirmAsync(string message, bool defaultValue = false);
+    Task<bool> PromptConfirmAsync(
+        string message,
+        bool defaultValue = false,
+        CancellationToken cancellationToken = default);
 }
