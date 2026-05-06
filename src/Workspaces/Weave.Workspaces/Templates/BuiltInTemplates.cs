@@ -44,6 +44,7 @@ public static class BuiltInTemplates
             ["git"] = new ToolDefinition
             {
                 Type = "cli",
+                Version = Version,
                 Cli = new CliConfig
                 {
                     Shell = "/bin/bash",
@@ -54,6 +55,7 @@ public static class BuiltInTemplates
             ["files"] = new ToolDefinition
             {
                 Type = "filesystem",
+                Version = Version,
                 FileSystem = new FileSystemToolConfig { Root = "./workspace-data", Sandbox = true }
             }
         },
@@ -78,11 +80,13 @@ public static class BuiltInTemplates
             ["web-search"] = new ToolDefinition
             {
                 Type = "mcp",
+                Version = Version,
                 Mcp = new McpConfig { Server = "npx", Args = ["-y", "@anthropic/mcp-server-web-search"] }
             },
             ["files"] = new ToolDefinition
             {
                 Type = "filesystem",
+                Version = Version,
                 FileSystem = new FileSystemToolConfig { Root = "./workspace-data", Sandbox = true }
             }
         },
@@ -107,6 +111,7 @@ public static class BuiltInTemplates
             ["git"] = new ToolDefinition
             {
                 Type = "cli",
+                Version = Version,
                 Cli = new CliConfig
                 {
                     Shell = "/bin/bash",
@@ -117,11 +122,13 @@ public static class BuiltInTemplates
             ["files"] = new ToolDefinition
             {
                 Type = "filesystem",
+                Version = Version,
                 FileSystem = new FileSystemToolConfig { Root = "./workspace-data", Sandbox = true }
             },
             ["web-search"] = new ToolDefinition
             {
                 Type = "mcp",
+                Version = Version,
                 Mcp = new McpConfig { Server = "npx", Args = ["-y", "@anthropic/mcp-server-web-search"] }
             }
         },
@@ -156,11 +163,13 @@ public static class BuiltInTemplates
             ["web-search"] = new ToolDefinition
             {
                 Type = "mcp",
+                Version = Version,
                 Mcp = new McpConfig { Server = "npx", Args = ["-y", "@anthropic/mcp-server-web-search"] }
             },
             ["files"] = new ToolDefinition
             {
                 Type = "filesystem",
+                Version = Version,
                 FileSystem = new FileSystemToolConfig { Root = "./workspace-data", Sandbox = true, ReadOnly = true }
             }
         },

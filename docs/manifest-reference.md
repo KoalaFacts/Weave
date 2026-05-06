@@ -139,6 +139,13 @@ Each key is the agent name. Agents are the AI assistants that do work on your be
 
 Each key is the tool name. The `type` field determines which configuration block is required.
 
+### Common fields
+
+| Field | Type | Required | Description |
+|-------|------|----------|-------------|
+| `type` | string | Yes | One of `mcp`, `openapi`, `cli`, `direct_http`, `dapr`, `filesystem`, `library` (see below). |
+| `version` | string | No | Optional version pin for the tool. Marketplace-installed tools record their resolved version here; manifests authored by hand can omit it. The version is metadata — capability grants (`tool:<name>`) match by name, not by version. |
+
 ### Tool types
 
 | Type | Description | Config block |
