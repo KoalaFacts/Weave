@@ -14,6 +14,8 @@ internal sealed class TuiSlashCommandDispatcher
     private readonly TuiWorkspaceWatcher _workspaceWatcher;
     private readonly TuiToolsView _toolsView;
     private readonly TuiTasksView _tasksView;
+    private readonly WorkspaceStatusCliCommand _statusCommand;
+    private readonly WorkspaceValidateCliCommand _validateCommand;
     private readonly UpgradeCliCommand _upgradeCommand;
 
     public TuiSlashCommandDispatcher(
@@ -26,6 +28,8 @@ internal sealed class TuiSlashCommandDispatcher
         TuiWorkspaceWatcher workspaceWatcher,
         TuiToolsView toolsView,
         TuiTasksView tasksView,
+        WorkspaceStatusCliCommand statusCommand,
+        WorkspaceValidateCliCommand validateCommand,
         UpgradeCliCommand upgradeCommand)
     {
         _dashboard = dashboard;
@@ -37,6 +41,8 @@ internal sealed class TuiSlashCommandDispatcher
         _workspaceWatcher = workspaceWatcher;
         _toolsView = toolsView;
         _tasksView = tasksView;
+        _statusCommand = statusCommand;
+        _validateCommand = validateCommand;
         _upgradeCommand = upgradeCommand;
     }
 
@@ -106,13 +112,13 @@ internal sealed class TuiSlashCommandDispatcher
             case "status":
                 return await RunWorkspaceCommandAsync(
                     session,
-                    options => new WorkspaceStatusCliCommand().ExecuteAsync(options, ct),
+                    options => _statusCommand.ExecuteAsync(options, ct),
                     ct);
 
             case "validate":
                 return await RunWorkspaceCommandAsync(
                     session,
-                    options => new WorkspaceValidateCliCommand().ExecuteAsync(options, ct),
+                    options => _validateCommand.ExecuteAsync(options, ct),
                     ct);
 
             case "ports":

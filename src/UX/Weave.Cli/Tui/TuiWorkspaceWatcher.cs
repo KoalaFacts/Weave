@@ -5,6 +5,12 @@ namespace Weave.Cli.Tui;
 internal sealed class TuiWorkspaceWatcher
 {
     private readonly ManifestParser _parser = new();
+    private readonly TuiLiveStatusView _liveStatus;
+
+    public TuiWorkspaceWatcher(TuiLiveStatusView liveStatus)
+    {
+        _liveStatus = liveStatus;
+    }
 
     public async Task WatchAsync(TuiSession session, CancellationToken ct)
     {
@@ -31,6 +37,6 @@ internal sealed class TuiWorkspaceWatcher
             return;
         }
 
-        await TuiLiveStatusView.WatchAsync(session.ManifestPath!, manifest, ct);
+        await _liveStatus.WatchAsync(session.ManifestPath!, manifest, ct);
     }
 }

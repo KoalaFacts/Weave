@@ -29,9 +29,9 @@ workspace.Subcommands.Add(WorkspaceListCommand.Create());
 workspace.Subcommands.Add(WorkspaceRemoveCommand.Create());
 workspace.Subcommands.Add(WorkspaceUpCommand.Create());
 workspace.Subcommands.Add(WorkspaceDownCommand.Create());
-workspace.Subcommands.Add(WorkspaceStatusCommand.Create());
+workspace.Subcommands.Add(WorkspaceStatusCommand.Create(services.GetRequiredService<WorkspaceStatusCliCommand>()));
 workspace.Subcommands.Add(WorkspaceShowCommand.Create());
-workspace.Subcommands.Add(WorkspaceValidateCommand.Create());
+workspace.Subcommands.Add(WorkspaceValidateCommand.Create(services.GetRequiredService<WorkspaceValidateCliCommand>()));
 workspace.Subcommands.Add(WorkspacePublishCommand.Create());
 workspace.Subcommands.Add(WorkspacePresetsCommand.Create());
 

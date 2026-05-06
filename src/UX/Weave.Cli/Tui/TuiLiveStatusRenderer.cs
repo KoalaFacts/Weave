@@ -1,8 +1,12 @@
 using System.Globalization;
 using Spectre.Console;
 using Spectre.Console.Rendering;
+using Weave.Actions.Agent;
+using Weave.Actions.Tool;
+using Weave.Actions.Workspace;
 using Weave.Cli.Commands;
 using Weave.Workspaces.Manifest;
+
 namespace Weave.Cli.Tui;
 
 internal static class TuiLiveStatusRenderer
@@ -10,9 +14,9 @@ internal static class TuiLiveStatusRenderer
     public static Rows Build(
         string manifestPath,
         WorkspaceManifest manifest,
-        ApiWorkspaceResponse workspace,
-        IReadOnlyList<ApiAgentResponse> agents,
-        IReadOnlyList<ApiToolResponse> tools)
+        WorkspaceStatusSummary workspace,
+        IReadOnlyList<AgentSummary> agents,
+        IReadOnlyList<ToolSummary> tools)
     {
         var summary = CliTheme.CreateTable("Live Status");
         summary.AddColumn(CliTheme.StyledColumn("Property"));
@@ -32,7 +36,7 @@ internal static class TuiLiveStatusRenderer
         return new Rows(rows);
     }
 
-    private static void AddAgentStatusTable(List<IRenderable> rows, IReadOnlyList<ApiAgentResponse> agents)
+    private static void AddAgentStatusTable(List<IRenderable> rows, IReadOnlyList<AgentSummary> agents)
     {
         if (agents.Count == 0)
             return;
@@ -46,22 +50,18 @@ internal static class TuiLiveStatusRenderer
 
         foreach (var agent in agents.OrderBy(agent => agent.AgentName, StringComparer.Ordinal))
         {
-            var taskSummary = agent.ActiveTasks.Count == 0
-                ? "—"
-                : string.Join(", ", agent.ActiveTasks.Select(task => task.Description));
-
             agentTable.AddRow(
                 $"[bold white]{Markup.Escape(agent.AgentName)}[/]",
                 TuiMarkup.ColorStatus(agent.Status),
                 Markup.Escape(agent.Model ?? string.Empty),
-                Markup.Escape(taskSummary),
-                Markup.Escape(string.Join(", ", agent.ConnectedTools)));
+                agent.ActiveTasksCount.ToString(CultureInfo.InvariantCulture),
+                agent.ConnectedToolsCount.ToString(CultureInfo.InvariantCulture));
         }
 
         rows.Add(agentTable);
     }
 
-    private static void AddToolStatusTable(List<IRenderable> rows, IReadOnlyList<ApiToolResponse> tools)
+    private static void AddToolStatusTable(List<IRenderable> rows, IReadOnlyList<ToolSummary> tools)
     {
         if (tools.Count == 0)
             return;

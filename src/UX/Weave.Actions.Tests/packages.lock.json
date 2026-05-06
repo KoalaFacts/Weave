@@ -258,7 +258,8 @@
         "type": "Project",
         "dependencies": {
           "Microsoft.Extensions.Http": "[10.0.7, )",
-          "Weave.Shared": "[1.0.0, )"
+          "Weave.Shared": "[1.0.0, )",
+          "Weave.Workspaces": "[1.0.0, )"
         }
       },
       "weave.shared": {
@@ -267,6 +268,12 @@
           "Microsoft.Extensions.AI.Abstractions": "[10.5.0, )",
           "Microsoft.Extensions.DependencyInjection.Abstractions": "[10.0.7, )",
           "Microsoft.Extensions.Logging.Abstractions": "[10.0.7, )"
+        }
+      },
+      "weave.workspaces": {
+        "type": "Project",
+        "dependencies": {
+          "Weave.Shared": "[1.0.0, )"
         }
       },
       "Microsoft.Extensions.AI.Abstractions": {

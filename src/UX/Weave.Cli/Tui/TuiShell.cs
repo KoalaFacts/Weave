@@ -17,7 +17,10 @@ internal sealed class TuiShell
         ChatComposer composer,
         TuiToolsView toolsView,
         TuiTasksView tasksView,
+        TuiLiveStatusView liveStatusView,
         ListAgentsAction listAgentsAction,
+        WorkspaceStatusCliCommand statusCommand,
+        WorkspaceValidateCliCommand validateCommand,
         UpgradeCliCommand upgradeCommand)
     {
         _versionService = versionService;
@@ -31,11 +34,13 @@ internal sealed class TuiShell
             _chatSession,
             agentSelector,
             new TuiAgentListView(agentNameSource, listAgentsAction),
-            new TuiWorkspaceOpener(agentSelector),
+            new TuiWorkspaceOpener(agentSelector, liveStatusView),
             new TuiWorkspaceStarter(agentSelector),
-            new TuiWorkspaceWatcher(),
+            new TuiWorkspaceWatcher(liveStatusView),
             toolsView,
             tasksView,
+            statusCommand,
+            validateCommand,
             upgradeCommand);
     }
 

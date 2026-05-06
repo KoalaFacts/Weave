@@ -1,10 +1,34 @@
 using System.Globalization;
 using Spectre.Console;
+using Weave.Actions.Agent;
+using Weave.Actions.Context;
+using Weave.Actions.Tool;
+using Weave.Actions.Workspace;
 using Weave.Workspaces.Manifest;
+
 namespace Weave.Cli.Commands;
 
+/// <summary>
+/// Phase 1 read-only verb on the CLI side. Composes
+/// <see cref="GetWorkspaceStatusAction"/> + <see cref="ListAgentsAction"/>
+/// + <see cref="ListToolsAction"/> for the live view, and falls back to the
+/// manifest when the workspace isn't running or the silo can't be reached.
+/// </summary>
 internal sealed class WorkspaceStatusCliCommand : ICliCommand<WorkspaceNameOptions>
 {
+    private readonly GetWorkspaceStatusAction _statusAction;
+    private readonly ListAgentsAction _agentsAction;
+    private readonly ListToolsAction _toolsAction;
+
+    public WorkspaceStatusCliCommand(
+        GetWorkspaceStatusAction statusAction,
+        ListAgentsAction agentsAction,
+        ListToolsAction toolsAction)
+    {
+        _statusAction = statusAction;
+        _agentsAction = agentsAction;
+        _toolsAction = toolsAction;
+    }
 
     public string Name => "status";
 
@@ -28,42 +52,46 @@ internal sealed class WorkspaceStatusCliCommand : ICliCommand<WorkspaceNameOptio
         if (File.Exists(statePath))
         {
             var workspaceId = (await File.ReadAllTextAsync(statePath, ct)).Trim();
-            try
+            var statusResult = await _statusAction.ExecuteAsync(new GetWorkspaceStatusInput(workspaceId), ct);
+            if (statusResult.IsSuccess)
             {
-                using var client = new WorkspaceApiClient();
-                var workspace = await client.GetWorkspaceAsync(workspaceId, ct);
-                var agents = await client.GetAgentsAsync(workspaceId, ct);
-                var tools = await client.GetToolsAsync(workspaceId, ct);
+                RenderStatusTable(manifest.Name, statusResult.Value.Workspace, manifestPath);
 
-                var table = CliTheme.CreateTable();
-                table.AddColumn(CliTheme.StyledColumn("Property"));
-                table.AddColumn(CliTheme.StyledColumn("Value"));
-                table.AddRow("Workspace", $"[bold white]{manifest.Name}[/]");
-                table.AddRow("Workspace ID", workspace.WorkspaceId);
-                table.AddRow("Status", workspace.Status);
-                table.AddRow("Manifest", manifestPath);
-                table.AddRow("Containers", workspace.ContainerCount.ToString(CultureInfo.InvariantCulture));
-                AnsiConsole.Write(table);
+                var agentsResult = await _agentsAction.ExecuteAsync(new ListAgentsInput(workspaceId), ct);
+                if (agentsResult.IsSuccess && agentsResult.Value.Agents.Count > 0)
+                    RenderAgents(agentsResult.Value.Agents);
 
-                if (agents.Count > 0)
-                    RenderAgents(agents);
-
-                if (tools.Count > 0)
-                    RenderTools(tools);
+                var toolsResult = await _toolsAction.ExecuteAsync(new ListToolsInput(workspaceId), ct);
+                if (toolsResult.IsSuccess && toolsResult.Value.Tools.Count > 0)
+                    RenderTools(toolsResult.Value.Tools);
 
                 return 0;
             }
-            catch (Exception ex) when (ex is HttpRequestException or TaskCanceledException or System.Net.Sockets.SocketException or System.Text.Json.JsonException or IOException)
-            {
-                AnsiConsole.MarkupLine($"[rgb({CliTheme.Warning.R},{CliTheme.Warning.G},{CliTheme.Warning.B})]{CliTheme.IconWarning} Live status unavailable: {Markup.Escape(ex.Message)}. Falling back to manifest data.[/]");
-            }
+
+            if (statusResult.Failure.Reason == ActionFailureReason.Cancelled)
+                return 130;
+
+            CliTheme.WriteWarning($"{statusResult.Failure.Message} Falling back to manifest data.");
         }
 
         RenderManifestStatus(manifest, manifestPath);
         return 0;
     }
 
-    private static void RenderAgents(IReadOnlyList<ApiAgentResponse> agents)
+    private static void RenderStatusTable(string workspaceName, WorkspaceStatusSummary workspace, string manifestPath)
+    {
+        var table = CliTheme.CreateTable();
+        table.AddColumn(CliTheme.StyledColumn("Property"));
+        table.AddColumn(CliTheme.StyledColumn("Value"));
+        table.AddRow("Workspace", $"[bold white]{Markup.Escape(workspaceName)}[/]");
+        table.AddRow("Workspace ID", Markup.Escape(workspace.WorkspaceId));
+        table.AddRow("Status", Markup.Escape(workspace.Status));
+        table.AddRow("Manifest", Markup.Escape(manifestPath));
+        table.AddRow("Containers", workspace.ContainerCount.ToString(CultureInfo.InvariantCulture));
+        AnsiConsole.Write(table);
+    }
+
+    private static void RenderAgents(IReadOnlyList<AgentSummary> agents)
     {
         CliTheme.WriteSection("Agents");
         var agentTable = CliTheme.CreateTable();
@@ -75,16 +103,16 @@ internal sealed class WorkspaceStatusCliCommand : ICliCommand<WorkspaceNameOptio
         foreach (var agent in agents.OrderBy(a => a.AgentName, StringComparer.Ordinal))
         {
             agentTable.AddRow(
-                agent.AgentName,
-                agent.Status,
-                agent.Model ?? string.Empty,
-                string.Join(", ", agent.ConnectedTools));
+                Markup.Escape(agent.AgentName),
+                Markup.Escape(agent.Status),
+                Markup.Escape(agent.Model ?? string.Empty),
+                agent.ConnectedToolsCount.ToString(CultureInfo.InvariantCulture));
         }
 
         AnsiConsole.Write(agentTable);
     }
 
-    private static void RenderTools(IReadOnlyList<ApiToolResponse> tools)
+    private static void RenderTools(IReadOnlyList<ToolSummary> tools)
     {
         CliTheme.WriteSection("Tools");
         var toolTable = CliTheme.CreateTable();
@@ -93,7 +121,7 @@ internal sealed class WorkspaceStatusCliCommand : ICliCommand<WorkspaceNameOptio
         toolTable.AddColumn(CliTheme.StyledColumn("Status"));
 
         foreach (var tool in tools.OrderBy(t => t.ToolName, StringComparer.Ordinal))
-            toolTable.AddRow(tool.ToolName, tool.ToolType, tool.Status);
+            toolTable.AddRow(Markup.Escape(tool.ToolName), Markup.Escape(tool.ToolType), Markup.Escape(tool.Status));
 
         AnsiConsole.Write(toolTable);
     }

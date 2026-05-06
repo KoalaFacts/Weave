@@ -1,8 +1,11 @@
 using Microsoft.Extensions.DependencyInjection;
+using Microsoft.Extensions.DependencyInjection.Extensions;
 using Weave.Actions.Agent;
 using Weave.Actions.AgentTask;
 using Weave.Actions.SystemInfo;
 using Weave.Actions.Tool;
+using Weave.Actions.Workspace;
+using Weave.Workspaces.Manifest;
 
 namespace Weave.Actions;
 
@@ -28,6 +31,11 @@ public static class SiloActionsServiceCollectionExtensions
         services.AddHttpClient<ListAgentsAction>(configureSiloClient);
         services.AddHttpClient<ListToolsAction>(configureSiloClient);
         services.AddHttpClient<ListTasksAction>(configureSiloClient);
+        services.AddHttpClient<GetWorkspaceStatusAction>(configureSiloClient);
+
+        // Local-only actions (no silo HTTP) — no typed HttpClient needed.
+        services.TryAddSingleton<IManifestParser, ManifestParser>();
+        services.AddTransient<ValidateWorkspaceAction>();
 
         return services;
     }

@@ -46,6 +46,8 @@ internal static class CliServiceCollection
         // actions in Phases 1-2.
         services.AddTransient<TuiToolsView>();
         services.AddTransient<TuiTasksView>();
+        services.AddTransient<TuiLiveStatusWatcher>();
+        services.AddTransient<TuiLiveStatusView>();
 
         // Shape C action layer — frontend-supplied prompter/reporter, plus
         // typed HttpClients per action keyed off the silo base URL. Actions
@@ -58,6 +60,8 @@ internal static class CliServiceCollection
         services.AddTransient<AgentsCliCommand>();
         services.AddTransient<ToolsCliCommand>();
         services.AddTransient<TasksCliCommand>();
+        services.AddTransient<WorkspaceStatusCliCommand>();
+        services.AddTransient<WorkspaceValidateCliCommand>();
 
         return services.BuildServiceProvider();
     }

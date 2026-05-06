@@ -1,11 +1,33 @@
 using Spectre.Console;
+using Weave.Actions.Agent;
+using Weave.Actions.Context;
+using Weave.Actions.Tool;
+using Weave.Actions.Workspace;
 using Weave.Cli.Commands;
 using Weave.Workspaces.Manifest;
+
 namespace Weave.Cli.Tui;
 
-internal static class TuiLiveStatusView
+internal sealed class TuiLiveStatusView
 {
-    public static async Task<bool> TryRenderOnceAsync(
+    private readonly GetWorkspaceStatusAction _statusAction;
+    private readonly ListAgentsAction _agentsAction;
+    private readonly ListToolsAction _toolsAction;
+    private readonly TuiLiveStatusWatcher _watcher;
+
+    public TuiLiveStatusView(
+        GetWorkspaceStatusAction statusAction,
+        ListAgentsAction agentsAction,
+        ListToolsAction toolsAction,
+        TuiLiveStatusWatcher watcher)
+    {
+        _statusAction = statusAction;
+        _agentsAction = agentsAction;
+        _toolsAction = toolsAction;
+        _watcher = watcher;
+    }
+
+    public async Task<bool> TryRenderOnceAsync(
         string manifestPath,
         WorkspaceManifest manifest,
         CancellationToken cancellationToken)
@@ -14,29 +36,27 @@ internal static class TuiLiveStatusView
         if (workspaceId is null)
             return false;
 
-        try
+        var statusResult = await _statusAction.ExecuteAsync(new GetWorkspaceStatusInput(workspaceId), cancellationToken);
+        if (!statusResult.IsSuccess)
         {
-            using var client = new WorkspaceApiClient();
-            if (!await client.IsReachableAsync(cancellationToken))
+            if (statusResult.Failure.Reason == ActionFailureReason.Cancelled)
                 return false;
-
-            var workspace = await client.GetWorkspaceAsync(workspaceId, cancellationToken);
-            var agents = await client.GetAgentsAsync(workspaceId, cancellationToken);
-            var tools = await client.GetToolsAsync(workspaceId, cancellationToken);
-
-            AnsiConsole.Write(TuiLiveStatusRenderer.Build(manifestPath, manifest, workspace, agents, tools));
-            return true;
-        }
-        catch (Exception ex) when (ex is HttpRequestException or TaskCanceledException or System.Net.Sockets.SocketException or System.Text.Json.JsonException or IOException)
-        {
-            CliTheme.WriteWarning($"Live status unavailable: {ex.Message}. Showing manifest instead.");
+            CliTheme.WriteWarning($"Live status unavailable: {statusResult.Failure.Message}. Showing manifest instead.");
             return false;
         }
+
+        var agentsResult = await _agentsAction.ExecuteAsync(new ListAgentsInput(workspaceId), cancellationToken);
+        var toolsResult = await _toolsAction.ExecuteAsync(new ListToolsInput(workspaceId), cancellationToken);
+        var agents = agentsResult.IsSuccess ? agentsResult.Value.Agents : [];
+        var tools = toolsResult.IsSuccess ? toolsResult.Value.Tools : [];
+
+        AnsiConsole.Write(TuiLiveStatusRenderer.Build(manifestPath, manifest, statusResult.Value.Workspace, agents, tools));
+        return true;
     }
 
-    public static async Task WatchAsync(
+    public Task WatchAsync(
         string manifestPath,
         WorkspaceManifest manifest,
         CancellationToken cancellationToken) =>
-        await TuiLiveStatusWatcher.WatchAsync(manifestPath, manifest, cancellationToken);
+        _watcher.WatchAsync(manifestPath, manifest, cancellationToken);
 }

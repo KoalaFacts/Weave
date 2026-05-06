@@ -1,12 +1,31 @@
 using Spectre.Console;
 using Spectre.Console.Rendering;
+using Weave.Actions.Agent;
+using Weave.Actions.Context;
+using Weave.Actions.Tool;
+using Weave.Actions.Workspace;
 using Weave.Cli.Commands;
 using Weave.Workspaces.Manifest;
+
 namespace Weave.Cli.Tui;
 
-internal static class TuiLiveStatusWatcher
+internal sealed class TuiLiveStatusWatcher
 {
-    public static async Task WatchAsync(
+    private readonly GetWorkspaceStatusAction _statusAction;
+    private readonly ListAgentsAction _agentsAction;
+    private readonly ListToolsAction _toolsAction;
+
+    public TuiLiveStatusWatcher(
+        GetWorkspaceStatusAction statusAction,
+        ListAgentsAction agentsAction,
+        ListToolsAction toolsAction)
+    {
+        _statusAction = statusAction;
+        _agentsAction = agentsAction;
+        _toolsAction = toolsAction;
+    }
+
+    public async Task WatchAsync(
         string manifestPath,
         WorkspaceManifest manifest,
         CancellationToken cancellationToken)
@@ -23,23 +42,21 @@ internal static class TuiLiveStatusWatcher
         var placeholder = new Markup(
             $"[rgb({CliTheme.Muted.R},{CliTheme.Muted.G},{CliTheme.Muted.B})]Loading…[/]");
 
-        using var client = new WorkspaceApiClient();
         using var lifetime = CancellationTokenSource.CreateLinkedTokenSource(cancellationToken);
 
         try
         {
             await AnsiConsole.Live(placeholder)
                 .AutoClear(false)
-                .StartAsync(async context => await WatchLoopAsync(context, client, workspaceId, manifestPath, manifest, lifetime));
+                .StartAsync(async context => await WatchLoopAsync(context, workspaceId, manifestPath, manifest, lifetime));
         }
         catch (OperationCanceledException)
         {
         }
     }
 
-    private static async Task WatchLoopAsync(
+    private async Task WatchLoopAsync(
         LiveDisplayContext context,
-        WorkspaceApiClient client,
         string workspaceId,
         string manifestPath,
         WorkspaceManifest manifest,
@@ -47,7 +64,7 @@ internal static class TuiLiveStatusWatcher
     {
         while (!lifetime.IsCancellationRequested)
         {
-            context.UpdateTarget(await BuildWatchFrameAsync(client, workspaceId, manifestPath, manifest, lifetime.Token));
+            context.UpdateTarget(await BuildWatchFrameAsync(workspaceId, manifestPath, manifest, lifetime.Token));
 
             for (var index = 0; index < 20 && !lifetime.IsCancellationRequested; index++)
             {
@@ -63,37 +80,31 @@ internal static class TuiLiveStatusWatcher
         }
     }
 
-    private static async Task<IRenderable> BuildWatchFrameAsync(
-        WorkspaceApiClient client,
+    private async Task<IRenderable> BuildWatchFrameAsync(
         string workspaceId,
         string manifestPath,
         WorkspaceManifest manifest,
         CancellationToken cancellationToken)
     {
-        try
+        var statusResult = await _statusAction.ExecuteAsync(new GetWorkspaceStatusInput(workspaceId), cancellationToken);
+        if (!statusResult.IsSuccess)
         {
-            if (!await client.IsReachableAsync(cancellationToken))
-            {
-                return new Markup(
-                    $"[rgb({CliTheme.Warning.R},{CliTheme.Warning.G},{CliTheme.Warning.B})]" +
-                    "Silo is not reachable. Retrying…[/]");
-            }
+            if (statusResult.Failure.Reason == ActionFailureReason.Cancelled)
+                throw new OperationCanceledException(cancellationToken);
 
-            var workspace = await client.GetWorkspaceAsync(workspaceId, cancellationToken);
-            var agents = await client.GetAgentsAsync(workspaceId, cancellationToken);
-            var tools = await client.GetToolsAsync(workspaceId, cancellationToken);
-            return TuiLiveStatusRenderer.Build(manifestPath, manifest, workspace, agents, tools);
-        }
-        catch (OperationCanceledException)
-        {
-            throw;
-        }
-        catch (Exception ex) when (ex is HttpRequestException or TaskCanceledException or System.Net.Sockets.SocketException or System.Text.Json.JsonException or IOException)
-        {
+            var color = statusResult.Failure.Reason == ActionFailureReason.SiloUnreachable
+                ? "Silo is not reachable. Retrying…"
+                : $"Live status error: {Markup.Escape(statusResult.Failure.Message)}";
             return new Markup(
-                $"[rgb({CliTheme.Warning.R},{CliTheme.Warning.G},{CliTheme.Warning.B})]" +
-                $"Live status error: {Markup.Escape(ex.Message)}[/]");
+                $"[rgb({CliTheme.Warning.R},{CliTheme.Warning.G},{CliTheme.Warning.B})]{color}[/]");
         }
+
+        var agentsResult = await _agentsAction.ExecuteAsync(new ListAgentsInput(workspaceId), cancellationToken);
+        var toolsResult = await _toolsAction.ExecuteAsync(new ListToolsInput(workspaceId), cancellationToken);
+        var agents = agentsResult.IsSuccess ? agentsResult.Value.Agents : [];
+        var tools = toolsResult.IsSuccess ? toolsResult.Value.Tools : [];
+
+        return TuiLiveStatusRenderer.Build(manifestPath, manifest, statusResult.Value.Workspace, agents, tools);
     }
 
     private static void RenderWatchHeader(string workspaceName)
