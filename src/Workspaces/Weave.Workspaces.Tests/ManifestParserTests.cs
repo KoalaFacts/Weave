@@ -54,6 +54,7 @@ public sealed class ManifestParserTests
           "tools": {
             "web-search": {
               "type": "mcp",
+              "version": "1.2.0",
               "mcp": {
                 "server": "npx",
                 "args": ["-y", "@anthropic/mcp-server-web-search"],
@@ -113,11 +114,13 @@ public sealed class ManifestParserTests
 
         var mcpTool = manifest.Tools["web-search"];
         mcpTool.Type.ShouldBe("mcp");
+        mcpTool.Version.ShouldBe("1.2.0");
         mcpTool.Mcp!.Server.ShouldBe("npx");
         mcpTool.Mcp.Args.ShouldContain("-y");
 
         var cliTool = manifest.Tools["terminal"];
         cliTool.Type.ShouldBe("cli");
+        cliTool.Version.ShouldBeNull();
         cliTool.Cli!.Shell.ShouldBe("/bin/bash");
         cliTool.Cli.AllowedCommands.ShouldContain("git *");
         cliTool.Cli.DeniedCommands.ShouldContain("rm -rf /");

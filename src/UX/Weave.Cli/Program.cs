@@ -60,6 +60,8 @@ root.Subcommands.Add(MarketplaceCommands.Create());
 root.Subcommands.Add(StorageCommands.Create());
 root.Subcommands.Add(DataCommands.Create());
 root.Subcommands.Add(AuditCommands.Create());
+root.Subcommands.Add(AgentsCommand.Create(services.GetRequiredService<AgentsCliCommand>()));
+root.Subcommands.Add(SystemCommand.Create(services.GetRequiredService<SystemCliCommand>()));
 root.Subcommands.Add(VersionCommand.Create());
 root.Subcommands.Add(UpgradeCommand.Create(services.GetRequiredService<UpgradeCliCommand>()));
 

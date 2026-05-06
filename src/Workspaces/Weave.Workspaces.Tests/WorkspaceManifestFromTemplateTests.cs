@@ -60,6 +60,16 @@ public sealed class WorkspaceManifestFromTemplateTests
     }
 
     [Fact]
+    public void Create_PreservesToolVersionFromTemplate()
+    {
+        var manifest = WorkspaceManifestFromTemplate.Create(
+            BuiltInTemplates.CodingAssistant, "my-app", IsolationLevel.Full);
+
+        manifest.Tools["git"].Version.ShouldBe(BuiltInTemplates.Version);
+        manifest.Tools["files"].Version.ShouldBe(BuiltInTemplates.Version);
+    }
+
+    [Fact]
     public void Create_NetworkNameIsNamespacedByWorkspaceName()
     {
         var manifest = WorkspaceManifestFromTemplate.Create(
