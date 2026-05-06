@@ -1,7 +1,7 @@
-using NSubstitute;
+using System.Net;
 using Weave.Actions.Context;
+using Weave.Actions.Tests.Helpers;
 using Weave.Actions.Workspace;
-using Weave.Workspaces.Manifest;
 
 namespace Weave.Actions.Tests.Workspace;
 
@@ -10,25 +10,18 @@ public sealed class ValidateWorkspaceActionTests
     [Fact]
     public async Task ExecuteAsync_ValidManifest_ReturnsSummaryWithEmptyErrors()
     {
-        const string json = """
+        const string siloResponse = """
         {
-          "version": "1.0",
           "name": "demo",
-          "agents": {
-            "alpha": {
-              "model": "gpt",
-              "system_prompt_file": "./prompts/alpha.md",
-              "tools": ["git"]
-            }
-          },
-          "tools": {
-            "git": { "type": "cli", "cli": { "shell": "/bin/bash" } }
-          },
-          "targets": { "local": { "runtime": "podman" } }
+          "agentCount": 1,
+          "toolCount": 1,
+          "targetCount": 1,
+          "errors": []
         }
         """;
-        using var temp = TempFile.With(json);
-        var action = new ValidateWorkspaceAction(new ManifestParser());
+        using var temp = TempFile.With("{ \"name\": \"demo\" }");
+        using var client = HttpClientReturning(HttpStatusCode.OK, siloResponse);
+        var action = new ValidateWorkspaceAction(client);
 
         var result = await action.ExecuteAsync(new ValidateWorkspaceInput(temp.Path), CancellationToken.None);
 
@@ -44,13 +37,18 @@ public sealed class ValidateWorkspaceActionTests
     [Fact]
     public async Task ExecuteAsync_StructurallyInvalidManifest_ReturnsErrorsInResult()
     {
-        var parser = Substitute.For<IManifestParser>();
-        var manifest = new WorkspaceManifest { Name = "bad", Version = "1" };
-        parser.Parse(Arg.Any<string>()).Returns(manifest);
-        parser.Validate(manifest).Returns(["agent 'alpha' references unknown tool 'git'"]);
-
-        using var temp = TempFile.With("{ }");
-        var action = new ValidateWorkspaceAction(parser);
+        const string siloResponse = """
+        {
+          "name": "bad",
+          "agentCount": 0,
+          "toolCount": 0,
+          "targetCount": 0,
+          "errors": ["agent 'alpha' references unknown tool 'git'"]
+        }
+        """;
+        using var temp = TempFile.With("{ \"name\": \"bad\" }");
+        using var client = HttpClientReturning(HttpStatusCode.OK, siloResponse);
+        var action = new ValidateWorkspaceAction(client);
 
         var result = await action.ExecuteAsync(new ValidateWorkspaceInput(temp.Path), CancellationToken.None);
 
@@ -64,7 +62,8 @@ public sealed class ValidateWorkspaceActionTests
     public async Task ExecuteAsync_MissingFile_ReturnsNotFound()
     {
         var path = Path.Combine(Path.GetTempPath(), $"weave-missing-{Guid.NewGuid():N}.json");
-        var action = new ValidateWorkspaceAction(new ManifestParser());
+        using var client = HttpClientReturning(HttpStatusCode.OK, "{}");
+        var action = new ValidateWorkspaceAction(client);
 
         var result = await action.ExecuteAsync(new ValidateWorkspaceInput(path), CancellationToken.None);
 
@@ -74,22 +73,59 @@ public sealed class ValidateWorkspaceActionTests
     }
 
     [Fact]
-    public async Task ExecuteAsync_InvalidJson_ReturnsValidationFailed()
+    public async Task ExecuteAsync_SiloReturns400_MapsToValidationFailed()
     {
+        const string problem = """
+        {
+          "title": "One or more validation errors occurred.",
+          "errors": { "manifestJson": ["Manifest is not valid JSON: Expected `:`"] }
+        }
+        """;
         using var temp = TempFile.With("{ this is not json");
-        var action = new ValidateWorkspaceAction(new ManifestParser());
+        using var client = HttpClientReturning(HttpStatusCode.BadRequest, problem);
+        var action = new ValidateWorkspaceAction(client);
 
         var result = await action.ExecuteAsync(new ValidateWorkspaceInput(temp.Path), CancellationToken.None);
 
         result.IsSuccess.ShouldBeFalse();
         result.Failure.ShouldNotBeNull();
         result.Failure.Reason.ShouldBe(ActionFailureReason.ValidationFailed);
+        result.Failure.Message.ShouldContain("not valid JSON");
+    }
+
+    [Fact]
+    public async Task ExecuteAsync_HttpRequestException_ReturnsSiloUnreachable()
+    {
+        using var temp = TempFile.With("{ \"name\": \"demo\" }");
+        using var client = HttpClientThrowing(new HttpRequestException("connection refused"));
+        var action = new ValidateWorkspaceAction(client);
+
+        var result = await action.ExecuteAsync(new ValidateWorkspaceInput(temp.Path), CancellationToken.None);
+
+        result.IsSuccess.ShouldBeFalse();
+        result.Failure.ShouldNotBeNull();
+        result.Failure.Reason.ShouldBe(ActionFailureReason.SiloUnreachable);
+    }
+
+    [Fact]
+    public async Task ExecuteAsync_TargetsValidateEndpoint()
+    {
+        var handler = StubHttpMessageHandler.Returns(HttpStatusCode.OK,
+            """{"name":"demo","agentCount":0,"toolCount":0,"targetCount":0,"errors":[]}""");
+        using var client = new HttpClient(handler) { BaseAddress = new Uri("http://example.test") };
+        using var temp = TempFile.With("{ \"name\": \"demo\" }");
+        var action = new ValidateWorkspaceAction(client);
+
+        await action.ExecuteAsync(new ValidateWorkspaceInput(temp.Path), CancellationToken.None);
+
+        handler.LastRequestUri!.AbsolutePath.ShouldBe("/api/workspaces/validate");
     }
 
     [Fact]
     public async Task ExecuteAsync_NullInput_Throws()
     {
-        var action = new ValidateWorkspaceAction(new ManifestParser());
+        using var client = HttpClientReturning(HttpStatusCode.OK, "{}");
+        var action = new ValidateWorkspaceAction(client);
 
         await Should.ThrowAsync<ArgumentNullException>(
             () => action.ExecuteAsync(null!, CancellationToken.None));
@@ -100,17 +136,21 @@ public sealed class ValidateWorkspaceActionTests
     [InlineData("   ")]
     public async Task ExecuteAsync_BlankPath_Throws(string path)
     {
-        var action = new ValidateWorkspaceAction(new ManifestParser());
+        using var client = HttpClientReturning(HttpStatusCode.OK, "{}");
+        var action = new ValidateWorkspaceAction(client);
 
         await Should.ThrowAsync<ArgumentException>(
             () => action.ExecuteAsync(new ValidateWorkspaceInput(path), CancellationToken.None));
     }
 
+    private static HttpClient HttpClientReturning(HttpStatusCode status, string body)
+        => new(StubHttpMessageHandler.Returns(status, body)) { BaseAddress = new Uri("http://example.test") };
+
+    private static HttpClient HttpClientThrowing(Exception ex)
+        => new(StubHttpMessageHandler.Throws(ex)) { BaseAddress = new Uri("http://example.test") };
+
     /// <summary>
-    /// Disposable temp file for tests that need a real on-disk manifest. The
-    /// action reads from disk; tests that drive parse/validate happy paths
-    /// avoid mocking <see cref="IManifestParser"/> and instead exercise the
-    /// real parser against a known-good or known-bad JSON document.
+    /// Disposable temp file for tests that need a real on-disk manifest.
     /// </summary>
     private sealed class TempFile : IDisposable
     {

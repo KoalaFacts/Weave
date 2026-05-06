@@ -102,12 +102,6 @@
           "Microsoft.Extensions.Logging.Abstractions": "[10.0.7, )"
         }
       },
-      "weave.workspaces": {
-        "type": "Project",
-        "dependencies": {
-          "Weave.Shared": "[1.0.0, )"
-        }
-      },
       "Microsoft.Extensions.AI.Abstractions": {
         "type": "CentralTransitive",
         "requested": "[10.5.0, )",

@@ -14,7 +14,6 @@
 
   <ItemGroup>
     <ProjectReference Include="..\..\Foundation\Weave.Shared\Weave.Shared.csproj" />
-    <ProjectReference Include="..\..\Workspaces\Weave.Workspaces\Weave.Workspaces.csproj" />
   </ItemGroup>
 
 </Project>

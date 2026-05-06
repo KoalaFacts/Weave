@@ -23,6 +23,7 @@ using Weave.Silo.Templates;
 using Weave.Silo.VirtualActors;
 using Weave.Tools.Connectors;
 using Weave.Tools.Discovery;
+using Weave.Workspaces.Manifest;
 using Weave.Workspaces.Runtime;
 
 namespace Weave.Silo.Startup;
@@ -65,6 +66,7 @@ internal sealed class SiloServiceRegistrar
         _services.AddSingleton(_weaveSettings);
         _services.AddSingleton<Weave.Shared.VirtualActors.IVirtualActorProvider, OrleansVirtualActorProvider>();
         _services.AddSingleton<ICommandRunner, ProcessCommandRunner>();
+        _services.AddSingleton<IManifestParser, ManifestParser>();
         _services.AddGeneratedCqrsHandlers();
     }
 
