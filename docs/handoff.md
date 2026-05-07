@@ -137,6 +137,19 @@ Tests ([src/UX/Weave.Actions.Tests/](../src/UX/Weave.Actions.Tests/)): 101 total
 
 **Phase 3 — three-project split. Shipped.** `Weave.Cli` is now three projects: `Weave.Cli.Shell` (shared shell primitives — theme, config readers/writers, workspace registry, version service, action-consuming `*CliCommand` handlers that both `weave …` invocations and the TUI dispatch through), `Weave.Cli.Tui` (interactive TUI shell + slash dispatcher + composer + per-verb views), and `Weave.Cli` (System.CommandLine command tree + `Program.cs` + composition root + non-shared CLI handlers). Project ref direction: `Weave.Cli.Tui → Weave.Cli.Shell + Weave.Actions`; `Weave.Cli → Weave.Cli.Shell + Weave.Cli.Tui + Weave.Actions`. The action contract is now the only legal seam between CLI invocations and the TUI in the build graph.
 
+**Phase 3.5 — services masquerading as static helpers (named, queued).** Phase 3 propagated ~6 pre-existing static classes through the project move without questioning them; they're services pretending to be static helpers and fail the codified `check-rules` category 10 test ("verb-shaped pure-function with ≥3 distinct domain consumers"):
+
+| Class | What it really is | Smell |
+|---|---|---|
+| `CliConfigStore` | A file-backed config store at `~/.weave/config.json` | Hidden path, file I/O behind `Load()`/`Save()`, hard to test, no replaceability |
+| `WorkspaceRegistry` | A file-backed registry at `~/.weave/workspaces.json` | Same shape — `Load/Save/Register/Resolve` is service surface |
+| `ManifestResolver` | A filesystem walker (CWD walk + `WorkspaceRegistry.Resolve`) | Reads filesystem, depends on another static |
+| `WorkspaceSiloStarter` | A process manager (spawns silo subprocesses, polls health) | Clearly service-shaped — process state, polling cadence |
+| `CliSecretResolver` | An env/file/Vault dispatcher | Reads from multiple sources, dispatch logic |
+| `WorkspaceSiloPaths` | An env+fs reader for the silo binary path | Borderline — small enough that pure-static is defensible |
+
+Fix shape: define `IConfigStore`, `IWorkspaceRegistry`, `IManifestResolver`, `ISiloLauncher`, `ISecretResolver` interfaces in Shell; implement each as an instance class registered in DI; constructor-inject everywhere. The classes that pass the codified test (pure-function, ≥3 consumers) stay static: `WorkspaceManifestPaths` (path math), `StatusMarkup` (string formatting), `CliTheme` (constants + formatters). One focused PR; mechanical-ish but touches every CLI command handler. Should land before Phase 4 so the dependency injection surface is cleaner when the per-verb TUI helpers get replaced by the generic `/verb` adapter.
+
 **Phase 4 — drain residue.** Delete the per-verb TUI helper classes (replaced by a single generic `/verb` → action adapter; the dispatcher's switch shrinks to a one-liner). Drain the remaining two inline `new WorkspaceApiClient()` callsites in `DataExport` / `DataImport` by adding action verbs for `Skills`, `Channels`, `Templates`, `Marketplace` listing/posting; the seam class self-deletes when the last instance callsite migrates.
 
 **Phase 3 — split `Weave.Cli.Tui` from `Weave.Cli`.** Once Phase 2 ships, the action contract is the only legal seam between the two; carve out the project to enforce it in the build graph.
