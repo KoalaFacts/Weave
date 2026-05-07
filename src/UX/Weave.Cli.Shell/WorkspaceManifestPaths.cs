@@ -30,7 +30,10 @@ internal static class WorkspaceManifestPaths
     {
         var directory = Path.GetDirectoryName(Path.GetFullPath(manifestPath))
             ?? throw new InvalidOperationException("Unable to determine the workspace directory.");
-        return Path.Combine(directory, ".weave", "workspace-id");
+        // Path.Join (string concat) instead of Path.Combine (root-aware drop)
+        // — every segment here is a relative literal, so Combine's drop-on-
+        // absolute behaviour is dead code that CodeQL flags as a foot-gun.
+        return Path.Join(directory, ".weave", "workspace-id");
     }
 
     private static string? ResolvePath(string manifestDirectory, string? path)
@@ -38,6 +41,9 @@ internal static class WorkspaceManifestPaths
         if (string.IsNullOrWhiteSpace(path) || Path.IsPathRooted(path))
             return path;
 
-        return Path.GetFullPath(Path.Combine(manifestDirectory, path));
+        // path is guaranteed non-rooted by the guard above, so Path.Join
+        // (string concat) is correct — and avoids the Path.Combine
+        // drop-on-absolute foot-gun CodeQL flags.
+        return Path.GetFullPath(Path.Join(manifestDirectory, path));
     }
 }

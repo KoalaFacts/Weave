@@ -157,21 +157,14 @@ public sealed class SendMessageActionTests
     [Fact]
     public async Task ExecuteAsync_UsesPostVerb()
     {
-        HttpMethod? captured = null;
-        var handler = new StubHttpMessageHandler((request, _) =>
-        {
-            captured = request.Method;
-            return Task.FromResult(new HttpResponseMessage(HttpStatusCode.OK)
-            {
-                Content = new StringContent("""{"content":"x","conversationId":"c","usedTools":false,"messages":[]}""", System.Text.Encoding.UTF8, "application/json")
-            });
-        });
+        const string body = """{"content":"x","conversationId":"c","usedTools":false,"messages":[]}""";
+        var handler = StubHttpMessageHandler.Returns(HttpStatusCode.OK, body);
         using var client = new HttpClient(handler) { BaseAddress = new Uri("http://example.test") };
         var action = new SendMessageAction(client);
 
         await action.ExecuteAsync(new SendMessageInput("ws-1", "alpha", "hi"), CancellationToken.None);
 
-        captured.ShouldBe(HttpMethod.Post);
+        handler.LastRequestMethod.ShouldBe(HttpMethod.Post);
     }
 
     [Fact]

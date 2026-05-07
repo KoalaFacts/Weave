@@ -101,18 +101,13 @@ public sealed class StopWorkspaceActionTests
     [Fact]
     public async Task ExecuteAsync_UsesDeleteVerb()
     {
-        HttpMethod? capturedMethod = null;
-        var handler = new StubHttpMessageHandler((request, _) =>
-        {
-            capturedMethod = request.Method;
-            return Task.FromResult(new HttpResponseMessage(HttpStatusCode.NoContent));
-        });
+        var handler = StubHttpMessageHandler.Returns(HttpStatusCode.NoContent, body: null);
         using var client = new HttpClient(handler) { BaseAddress = new Uri("http://example.test") };
         var action = new StopWorkspaceAction(client);
 
         await action.ExecuteAsync(new StopWorkspaceInput("ws-1"), CancellationToken.None);
 
-        capturedMethod.ShouldBe(HttpMethod.Delete);
+        handler.LastRequestMethod.ShouldBe(HttpMethod.Delete);
     }
 
     [Fact]
