@@ -64,6 +64,7 @@ internal static class CliServiceCollection
         services.AddTransient<WorkspaceStatusCliCommand>();
         services.AddTransient<WorkspaceValidateCliCommand>();
         services.AddTransient<ConfigGetCliCommand>();
+        services.AddTransient<WebUiCliCommand>();
 
         return services.BuildServiceProvider();
     }

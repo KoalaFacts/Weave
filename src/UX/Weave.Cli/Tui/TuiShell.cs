@@ -22,6 +22,7 @@ internal sealed class TuiShell
         ListAgentsAction listAgentsAction,
         WorkspaceStatusCliCommand statusCommand,
         WorkspaceValidateCliCommand validateCommand,
+        WebUiCliCommand webUiCommand,
         UpgradeCliCommand upgradeCommand)
     {
         _versionService = versionService;
@@ -43,6 +44,7 @@ internal sealed class TuiShell
             configView,
             statusCommand,
             validateCommand,
+            webUiCommand,
             upgradeCommand);
     }
 

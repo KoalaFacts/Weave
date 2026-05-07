@@ -54,7 +54,7 @@ public sealed class CliCommandStructureTests
         yield return WorkspaceServeCommand.Create();
         yield return RunCommand.Create();
         yield return TuiCommand.Create(services.GetRequiredService<TuiCliCommand>());
-        yield return WebUiCommand.Create();
+        yield return WebUiCommand.Create(services.GetRequiredService<WebUiCliCommand>());
         yield return InitCommand.Create();
         yield return PortsCommand.Create();
         yield return MarketplaceCommands.Create();

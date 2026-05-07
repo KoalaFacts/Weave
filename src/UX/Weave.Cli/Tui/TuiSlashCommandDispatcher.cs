@@ -17,6 +17,7 @@ internal sealed class TuiSlashCommandDispatcher
     private readonly TuiConfigView _configView;
     private readonly WorkspaceStatusCliCommand _statusCommand;
     private readonly WorkspaceValidateCliCommand _validateCommand;
+    private readonly WebUiCliCommand _webUiCommand;
     private readonly UpgradeCliCommand _upgradeCommand;
 
     public TuiSlashCommandDispatcher(
@@ -32,6 +33,7 @@ internal sealed class TuiSlashCommandDispatcher
         TuiConfigView configView,
         WorkspaceStatusCliCommand statusCommand,
         WorkspaceValidateCliCommand validateCommand,
+        WebUiCliCommand webUiCommand,
         UpgradeCliCommand upgradeCommand)
     {
         _dashboard = dashboard;
@@ -46,6 +48,7 @@ internal sealed class TuiSlashCommandDispatcher
         _configView = configView;
         _statusCommand = statusCommand;
         _validateCommand = validateCommand;
+        _webUiCommand = webUiCommand;
         _upgradeCommand = upgradeCommand;
     }
 
@@ -153,7 +156,7 @@ internal sealed class TuiSlashCommandDispatcher
             case "webui":
             case "web":
             case "w":
-                await new WebUiCliCommand().ExecuteAsync(new WebUiOptions(), ct);
+                await _webUiCommand.ExecuteAsync(new WebUiOptions(), ct);
                 return TuiDispatchResult.Continue;
 
             case "system":
