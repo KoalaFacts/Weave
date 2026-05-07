@@ -1,4 +1,4 @@
-using Weave.Cli.Tui;
+
 
 namespace Weave.Cli.Tests;
 
@@ -180,7 +180,7 @@ public class TuiAppTests
     [InlineData("healthy")]
     public void ColorStatus_SuccessStatuses_ContainStatusText(string status)
     {
-        var result = TuiMarkup.ColorStatus(status);
+        var result = StatusMarkup.ColorStatus(status);
         result.ShouldContain(status);
         result.ShouldStartWith("[rgb(");
         result.ShouldEndWith("[/]");
@@ -192,21 +192,21 @@ public class TuiAppTests
     [InlineData("disconnected")]
     public void ColorStatus_InactiveStatuses_ContainStatusText(string status)
     {
-        var result = TuiMarkup.ColorStatus(status);
+        var result = StatusMarkup.ColorStatus(status);
         result.ShouldContain(status);
     }
 
     [Fact]
     public void ColorStatus_ErrorStatus_ContainStatusText()
     {
-        var result = TuiMarkup.ColorStatus("error");
+        var result = StatusMarkup.ColorStatus("error");
         result.ShouldContain("error");
     }
 
     [Fact]
     public void ColorStatus_CaseInsensitive_Works()
     {
-        var result = TuiMarkup.ColorStatus("RUNNING");
+        var result = StatusMarkup.ColorStatus("RUNNING");
         result.ShouldContain("RUNNING");
         result.ShouldStartWith("[rgb(");
     }
@@ -216,14 +216,14 @@ public class TuiAppTests
     [Fact]
     public void ColorTag_ProducesValidMarkup()
     {
-        var result = TuiMarkup.ColorTag(new Spectre.Console.Color(255, 0, 128), "test");
+        var result = StatusMarkup.ColorTag(new Spectre.Console.Color(255, 0, 128), "test");
         result.ShouldBe("[rgb(255,0,128)]test[/]");
     }
 
     [Fact]
     public void ColorTag_EscapesMarkupCharacters()
     {
-        var result = TuiMarkup.ColorTag(new Spectre.Console.Color(0, 0, 0), "[bold]text[/]");
+        var result = StatusMarkup.ColorTag(new Spectre.Console.Color(0, 0, 0), "[bold]text[/]");
         result.ShouldContain("[[bold]]");
     }
 }

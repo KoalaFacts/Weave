@@ -2,7 +2,6 @@ using Microsoft.Extensions.DependencyInjection;
 using Weave.Actions;
 using Weave.Actions.Context;
 using Weave.Actions.SystemInfo;
-using Weave.Cli.ActionContext;
 using Weave.Cli.Commands;
 using Weave.Cli.Tui;
 

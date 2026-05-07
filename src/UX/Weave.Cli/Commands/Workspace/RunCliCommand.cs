@@ -97,7 +97,7 @@ internal sealed class RunCliCommand : ICliCommand<RunOptions>
             }
 
             var workspace = result.Value.Workspace;
-            var statePath = WorkspaceApiClient.GetWorkspaceStatePath(manifestPath);
+            var statePath = WorkspaceManifestPaths.GetStatePath(manifestPath);
             Directory.CreateDirectory(Path.GetDirectoryName(statePath)!);
             await File.WriteAllTextAsync(statePath, workspace.WorkspaceId, ct);
 

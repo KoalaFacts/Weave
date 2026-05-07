@@ -1,4 +1,6 @@
 using System.CommandLine;
+using Weave.Cli.Tui;
+
 namespace Weave.Cli.Commands;
 
 internal static class TuiCommand

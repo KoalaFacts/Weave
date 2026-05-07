@@ -1,0 +1,30 @@
+<Project Sdk="Microsoft.NET.Sdk">
+
+  <PropertyGroup>
+    <Description>Interactive TUI shell for the Weave CLI: composer, slash dispatcher, live status loop, and per-verb views. All silo interactions go through Weave.Actions; shared infrastructure (theme, config, registry, version service) lives in Weave.Cli.Shell.</Description>
+  </PropertyGroup>
+
+  <ItemGroup>
+    <InternalsVisibleTo Include="weave" />
+    <InternalsVisibleTo Include="Weave.Cli.Tests" />
+  </ItemGroup>
+
+  <ItemGroup>
+    <ProjectReference Include="..\..\Foundation\Weave.Shared\Weave.Shared.csproj" />
+    <ProjectReference Include="..\..\Workspaces\Weave.Workspaces\Weave.Workspaces.csproj" />
+    <ProjectReference Include="..\Weave.Actions\Weave.Actions.csproj" />
+    <ProjectReference Include="..\Weave.Cli.Shell\Weave.Cli.Shell.csproj" />
+  </ItemGroup>
+
+  <ItemGroup>
+    <PackageReference Include="Microsoft.Extensions.DependencyInjection.Abstractions" />
+    <PackageReference Include="Spectre.Console" />
+  </ItemGroup>
+
+  <!-- Implicit using for shared shell primitives so consumers don't repeat
+       `using Weave.Cli.Shell;` in every file. -->
+  <ItemGroup>
+    <Using Include="Weave.Cli.Shell" />
+  </ItemGroup>
+
+</Project>
