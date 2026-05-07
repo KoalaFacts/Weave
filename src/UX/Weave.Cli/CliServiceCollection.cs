@@ -2,7 +2,6 @@ using Microsoft.Extensions.DependencyInjection;
 using Weave.Actions;
 using Weave.Actions.Context;
 using Weave.Actions.SystemInfo;
-using Weave.Cli.ActionContext;
 using Weave.Cli.Commands;
 using Weave.Cli.Tui;
 
@@ -39,6 +38,9 @@ internal static class CliServiceCollection
         services.AddTransient<ChatComposerEditor>();
         services.AddTransient<ChatComposer>();
         services.AddTransient<TuiShell>();
+        services.AddTransient<TuiAgentNameSource>();
+        services.AddTransient<TuiAgentSelector>();
+        services.AddTransient<TuiChatSession>();
 
         // Migrated TUI views — consume actions through DI (no shared
         // WorkspaceApiClient seam). The remaining inline `new
@@ -58,6 +60,8 @@ internal static class CliServiceCollection
         services.AddSingleton<IActionPrompter, ConsoleActionPrompter>();
         services.AddSingleton<IActionReporter, ConsoleActionReporter>();
         services.AddSingleton<ISystemConfigSource, CliSystemConfigSource>();
+        services.AddSingleton<Weave.Actions.Config.ISystemConfigWriter, CliSystemConfigWriter>();
+        services.AddSingleton<Weave.Actions.Workspace.IWorkspaceLocator, CliWorkspaceLocator>();
         services.AddSiloActions(client => client.BaseAddress = new Uri(CliApiHttp.ResolveBaseUrl()));
         services.AddTransient<SystemCliCommand>();
         services.AddTransient<AgentsCliCommand>();
@@ -65,7 +69,11 @@ internal static class CliServiceCollection
         services.AddTransient<TasksCliCommand>();
         services.AddTransient<WorkspaceStatusCliCommand>();
         services.AddTransient<WorkspaceValidateCliCommand>();
+        services.AddTransient<WorkspaceUpCliCommand>();
+        services.AddTransient<WorkspaceDownCliCommand>();
+        services.AddTransient<IWorkspaceDownDependencies, DefaultWorkspaceDownDependencies>();
         services.AddTransient<ConfigGetCliCommand>();
+        services.AddTransient<ConfigSetCliCommand>();
         services.AddTransient<WebUiCliCommand>();
 
         return services.BuildServiceProvider();

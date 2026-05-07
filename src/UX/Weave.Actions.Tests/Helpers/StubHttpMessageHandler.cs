@@ -7,7 +7,9 @@ namespace Weave.Actions.Tests.Helpers;
 /// Test-only HTTP message handler that returns a canned response (or throws a
 /// canned exception) for whatever request the action sends. Used in place of
 /// a real network call when driving an action under test. Captures the last
-/// request URL so tests can assert what the action asked for.
+/// request's URL and method so tests can assert what the action asked for
+/// without inlining a fresh <see cref="HttpResponseMessage"/> lambda (which
+/// CodeQL flags as an undisposed local).
 /// </summary>
 internal sealed class StubHttpMessageHandler : HttpMessageHandler
 {
@@ -19,6 +21,8 @@ internal sealed class StubHttpMessageHandler : HttpMessageHandler
     }
 
     public Uri? LastRequestUri { get; private set; }
+
+    public HttpMethod? LastRequestMethod { get; private set; }
 
     public static StubHttpMessageHandler Returns(HttpStatusCode status, string? body = null)
         => new((_, _) => Task.FromResult(new HttpResponseMessage(status)
@@ -34,6 +38,7 @@ internal sealed class StubHttpMessageHandler : HttpMessageHandler
         CancellationToken cancellationToken)
     {
         LastRequestUri = request.RequestUri;
+        LastRequestMethod = request.Method;
         return await _handle(request, cancellationToken);
     }
 }

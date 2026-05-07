@@ -148,32 +148,4 @@ internal sealed class WorkspaceApiClient : IDisposable
         }
     }
 
-    public static WorkspaceManifest PrepareManifest(WorkspaceManifest manifest, string manifestDirectory)
-    {
-        return manifest with
-        {
-            Agents = manifest.Agents.ToDictionary(
-                static kvp => kvp.Key,
-                kvp => kvp.Value with
-                {
-                    SystemPromptFile = ResolvePath(manifestDirectory, kvp.Value.SystemPromptFile)
-                },
-                StringComparer.Ordinal)
-        };
-    }
-
-    public static string GetWorkspaceStatePath(string manifestPath)
-    {
-        var directory = Path.GetDirectoryName(Path.GetFullPath(manifestPath))
-            ?? throw new InvalidOperationException("Unable to determine the workspace directory.");
-        return Path.Combine(directory, ".weave", "workspace-id");
-    }
-
-    private static string? ResolvePath(string manifestDirectory, string? path)
-    {
-        if (string.IsNullOrWhiteSpace(path) || Path.IsPathRooted(path))
-            return path;
-
-        return Path.GetFullPath(Path.Combine(manifestDirectory, path));
-    }
 }

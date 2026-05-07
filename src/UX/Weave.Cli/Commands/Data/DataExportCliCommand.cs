@@ -99,7 +99,7 @@ internal sealed class DataExportCliCommand : ICliCommand<DataExportOptions>
 
     private static async Task ExportLiveDataAsync(WorkspaceExport export, string manifestPath, WorkspaceApiClient client, CancellationToken ct)
     {
-        var statePath = WorkspaceApiClient.GetWorkspaceStatePath(manifestPath);
+        var statePath = WorkspaceManifestPaths.GetStatePath(manifestPath);
         var workspaceId = File.Exists(statePath)
             ? (await File.ReadAllTextAsync(statePath, ct)).Trim()
             : null;

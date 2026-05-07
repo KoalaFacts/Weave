@@ -27,8 +27,8 @@ public sealed class CliCommandStructureTests
         workspace.Subcommands.Add(WorkspaceNewCommand.Create());
         workspace.Subcommands.Add(WorkspaceListCommand.Create());
         workspace.Subcommands.Add(WorkspaceRemoveCommand.Create());
-        workspace.Subcommands.Add(WorkspaceUpCommand.Create());
-        workspace.Subcommands.Add(WorkspaceDownCommand.Create());
+        workspace.Subcommands.Add(WorkspaceUpCommand.Create(services.GetRequiredService<WorkspaceUpCliCommand>()));
+        workspace.Subcommands.Add(WorkspaceDownCommand.Create(services.GetRequiredService<WorkspaceDownCliCommand>()));
         workspace.Subcommands.Add(WorkspaceStatusCommand.Create(services.GetRequiredService<WorkspaceStatusCliCommand>()));
         workspace.Subcommands.Add(WorkspaceShowCommand.Create());
         workspace.Subcommands.Add(WorkspaceValidateCommand.Create(services.GetRequiredService<WorkspaceValidateCliCommand>()));
@@ -65,7 +65,7 @@ public sealed class CliCommandStructureTests
 
         var config = new Command("config", "Manage CLI configuration");
         config.Subcommands.Add(ConfigGetCommand.Create(services.GetRequiredService<ConfigGetCliCommand>()));
-        config.Subcommands.Add(ConfigSetCommand.Create());
+        config.Subcommands.Add(ConfigSetCommand.Create(services.GetRequiredService<ConfigSetCliCommand>()));
         yield return config;
     }
 

@@ -117,6 +117,27 @@
           "Weave.Workspaces": "[1.0.0, )"
         }
       },
+      "weave.cli.shell": {
+        "type": "Project",
+        "dependencies": {
+          "Microsoft.Extensions.DependencyInjection.Abstractions": "[10.0.7, )",
+          "Spectre.Console": "[0.55.2, )",
+          "Weave.Actions": "[1.0.0, )",
+          "Weave.Shared": "[1.0.0, )",
+          "Weave.Workspaces": "[1.0.0, )"
+        }
+      },
+      "weave.cli.tui": {
+        "type": "Project",
+        "dependencies": {
+          "Microsoft.Extensions.DependencyInjection.Abstractions": "[10.0.7, )",
+          "Spectre.Console": "[0.55.2, )",
+          "Weave.Actions": "[1.0.0, )",
+          "Weave.Cli.Shell": "[1.0.0, )",
+          "Weave.Shared": "[1.0.0, )",
+          "Weave.Workspaces": "[1.0.0, )"
+        }
+      },
       "weave.deploy": {
         "type": "Project",
         "dependencies": {

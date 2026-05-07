@@ -38,7 +38,7 @@ internal sealed class AgentsCliCommand : ICliCommand<WorkspaceNameOptions>
         }
 
         var manifest = await WorkspaceManifestFile.ReadAsync(manifestPath, ct);
-        var statePath = WorkspaceApiClient.GetWorkspaceStatePath(manifestPath);
+        var statePath = WorkspaceManifestPaths.GetStatePath(manifestPath);
         if (File.Exists(statePath))
         {
             var workspaceId = (await File.ReadAllTextAsync(statePath, ct)).Trim();

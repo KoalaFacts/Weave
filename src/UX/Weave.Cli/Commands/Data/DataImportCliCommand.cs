@@ -107,7 +107,7 @@ internal sealed class DataImportCliCommand : ICliCommand<DataImportOptions>
         try
         {
             var parser = new ManifestParser();
-            var manifest = WorkspaceApiClient.PrepareManifest(parser.Parse(export.Manifest ?? "{}"), basePath);
+            var manifest = WorkspaceManifestPaths.PrepareForSilo(parser.Parse(export.Manifest ?? "{}"), basePath);
             var response = await client.StartWorkspaceAsync(manifest, ct);
             var statePath = Path.Combine(basePath, ".weave", "workspace-id");
             await File.WriteAllTextAsync(statePath, response.WorkspaceId, ct);

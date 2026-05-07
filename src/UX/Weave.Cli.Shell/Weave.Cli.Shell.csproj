@@ -1,0 +1,27 @@
+<Project Sdk="Microsoft.NET.Sdk">
+
+  <PropertyGroup>
+    <Description>Shared shell primitives for the Weave CLI: theme, config readers/writers, workspace registry, version service, and the action-consuming CLI command handlers that both `weave …` invocations and the interactive TUI dispatch through.</Description>
+  </PropertyGroup>
+
+  <!-- InternalsVisibleTo targets assembly names: Weave.Cli's csproj sets
+       AssemblyName=weave (the dotnet tool command name), so IVT references
+       it by that name. -->
+  <ItemGroup>
+    <InternalsVisibleTo Include="weave" />
+    <InternalsVisibleTo Include="Weave.Cli.Tui" />
+    <InternalsVisibleTo Include="Weave.Cli.Tests" />
+  </ItemGroup>
+
+  <ItemGroup>
+    <ProjectReference Include="..\..\Foundation\Weave.Shared\Weave.Shared.csproj" />
+    <ProjectReference Include="..\..\Workspaces\Weave.Workspaces\Weave.Workspaces.csproj" />
+    <ProjectReference Include="..\Weave.Actions\Weave.Actions.csproj" />
+  </ItemGroup>
+
+  <ItemGroup>
+    <PackageReference Include="Microsoft.Extensions.DependencyInjection.Abstractions" />
+    <PackageReference Include="Spectre.Console" />
+  </ItemGroup>
+
+</Project>

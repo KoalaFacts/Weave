@@ -29,18 +29,28 @@ public static class SiloActionsServiceCollectionExtensions
 
         services.AddHttpClient<GetSystemInfoAction>(configureSiloClient);
         services.AddHttpClient<ListAgentsAction>(configureSiloClient);
+        services.AddHttpClient<SendMessageAction>(configureSiloClient);
         services.AddHttpClient<ListToolsAction>(configureSiloClient);
         services.AddHttpClient<ListTasksAction>(configureSiloClient);
         services.AddHttpClient<GetWorkspaceStatusAction>(configureSiloClient);
         services.AddHttpClient<ValidateWorkspaceAction>(configureSiloClient);
+        services.AddHttpClient<StartWorkspaceAction>(configureSiloClient);
+        services.AddHttpClient<StopWorkspaceAction>(configureSiloClient);
 
         // The dashboard URL is not the silo URL — the action passes absolute
         // URIs to GetAsync so the BaseAddress here is unused but harmless.
         services.AddHttpClient<GetDashboardStatusAction>(configureSiloClient);
 
         // Config-only actions don't talk to the silo; registered as transient
-        // because they depend only on frontend-supplied snapshots.
+        // because they depend only on frontend-supplied snapshots / writers.
         services.AddTransient<GetConfigAction>();
+        services.AddTransient<SetConfigAction>();
+
+        // Local-only verbs that compose other actions / use frontend-supplied
+        // seams (locator + prompter). No HTTP client of their own.
+        services.AddTransient<OpenWorkspaceAction>();
+        services.AddTransient<SelectAgentAction>();
+        services.AddTransient<WatchWorkspaceAction>();
 
         return services;
     }

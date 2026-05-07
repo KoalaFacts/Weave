@@ -45,7 +45,7 @@ internal sealed class TasksCliCommand : ICliCommand<TasksOptions>
             return 1;
         }
 
-        var statePath = WorkspaceApiClient.GetWorkspaceStatePath(manifestPath);
+        var statePath = WorkspaceManifestPaths.GetStatePath(manifestPath);
         if (!File.Exists(statePath))
         {
             CliTheme.WriteWarning("Workspace is not running. Start it with: weave workspace up");

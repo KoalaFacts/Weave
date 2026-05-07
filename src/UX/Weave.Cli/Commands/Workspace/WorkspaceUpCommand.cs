@@ -4,7 +4,7 @@ namespace Weave.Cli.Commands;
 
 internal static class WorkspaceUpCommand
 {
-    public static Command Create()
+    public static Command Create(WorkspaceUpCliCommand handler)
     {
         var nameArg = new Argument<string?>("name")
         {
@@ -24,7 +24,7 @@ internal static class WorkspaceUpCommand
         {
             var name = parseResult.GetValue(nameArg);
             var target = parseResult.GetValue(targetOption)!;
-            return await new WorkspaceUpCliCommand().ExecuteAsync(new WorkspaceUpOptions(name, target), cancellationToken);
+            return await handler.ExecuteAsync(new WorkspaceUpOptions(name, target), cancellationToken);
         });
 
         return cmd;
