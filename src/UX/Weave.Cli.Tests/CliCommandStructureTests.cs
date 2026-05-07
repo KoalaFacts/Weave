@@ -64,7 +64,7 @@ public sealed class CliCommandStructureTests
         yield return UpgradeCommand.Create(services.GetRequiredService<UpgradeCliCommand>());
 
         var config = new Command("config", "Manage CLI configuration");
-        config.Subcommands.Add(ConfigGetCommand.Create());
+        config.Subcommands.Add(ConfigGetCommand.Create(services.GetRequiredService<ConfigGetCliCommand>()));
         config.Subcommands.Add(ConfigSetCommand.Create());
         yield return config;
     }

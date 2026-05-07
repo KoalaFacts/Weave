@@ -46,6 +46,7 @@ internal static class CliServiceCollection
         // actions in Phases 1-2.
         services.AddTransient<TuiToolsView>();
         services.AddTransient<TuiTasksView>();
+        services.AddTransient<TuiConfigView>();
         services.AddTransient<TuiLiveStatusWatcher>();
         services.AddTransient<TuiLiveStatusView>();
 
@@ -62,6 +63,7 @@ internal static class CliServiceCollection
         services.AddTransient<TasksCliCommand>();
         services.AddTransient<WorkspaceStatusCliCommand>();
         services.AddTransient<WorkspaceValidateCliCommand>();
+        services.AddTransient<ConfigGetCliCommand>();
 
         return services.BuildServiceProvider();
     }

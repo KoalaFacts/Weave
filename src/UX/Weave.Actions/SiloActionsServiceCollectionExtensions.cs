@@ -1,6 +1,7 @@
 using Microsoft.Extensions.DependencyInjection;
 using Weave.Actions.Agent;
 using Weave.Actions.AgentTask;
+using Weave.Actions.Config;
 using Weave.Actions.SystemInfo;
 using Weave.Actions.Tool;
 using Weave.Actions.Workspace;
@@ -31,6 +32,10 @@ public static class SiloActionsServiceCollectionExtensions
         services.AddHttpClient<ListTasksAction>(configureSiloClient);
         services.AddHttpClient<GetWorkspaceStatusAction>(configureSiloClient);
         services.AddHttpClient<ValidateWorkspaceAction>(configureSiloClient);
+
+        // Config-only actions don't talk to the silo; registered as transient
+        // because they depend only on frontend-supplied snapshots.
+        services.AddTransient<GetConfigAction>();
 
         return services;
     }

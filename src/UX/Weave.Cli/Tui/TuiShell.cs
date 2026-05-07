@@ -17,6 +17,7 @@ internal sealed class TuiShell
         ChatComposer composer,
         TuiToolsView toolsView,
         TuiTasksView tasksView,
+        TuiConfigView configView,
         TuiLiveStatusView liveStatusView,
         ListAgentsAction listAgentsAction,
         WorkspaceStatusCliCommand statusCommand,
@@ -39,6 +40,7 @@ internal sealed class TuiShell
             new TuiWorkspaceWatcher(liveStatusView),
             toolsView,
             tasksView,
+            configView,
             statusCommand,
             validateCommand,
             upgradeCommand);
