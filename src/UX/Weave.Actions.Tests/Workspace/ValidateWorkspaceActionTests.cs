@@ -61,7 +61,7 @@ public sealed class ValidateWorkspaceActionTests
     [Fact]
     public async Task ExecuteAsync_MissingFile_ReturnsNotFound()
     {
-        var path = Path.Combine(Path.GetTempPath(), $"weave-missing-{Guid.NewGuid():N}.json");
+        var path = Path.Join(Path.GetTempPath(), $"weave-missing-{Guid.NewGuid():N}.json");
         using var client = HttpClientReturning(HttpStatusCode.OK, "{}");
         var action = new ValidateWorkspaceAction(client);
 
@@ -207,7 +207,7 @@ public sealed class ValidateWorkspaceActionTests
 
         public static TempFile With(string content)
         {
-            var path = System.IO.Path.Combine(System.IO.Path.GetTempPath(), $"weave-test-{Guid.NewGuid():N}.json");
+            var path = System.IO.Path.Join(System.IO.Path.GetTempPath(), $"weave-test-{Guid.NewGuid():N}.json");
             File.WriteAllText(path, content);
             return new TempFile(path);
         }
