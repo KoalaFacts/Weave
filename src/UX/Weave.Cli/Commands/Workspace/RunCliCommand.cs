@@ -1,6 +1,8 @@
 using System.Diagnostics;
 using System.Globalization;
 using Spectre.Console;
+using Weave.Actions.Context;
+using Weave.Actions.Workspace;
 
 namespace Weave.Cli.Commands;
 
@@ -72,16 +74,36 @@ internal sealed class RunCliCommand : ICliCommand<RunOptions>
 
         try
         {
-            using var client = new WorkspaceApiClient($"http://localhost:{port}");
-            var response = await client.StartWorkspaceAsync(manifest, ct);
+            // RunCliCommand picks a port at runtime (--port arg) so it can't
+            // share the DI'd typed HttpClient (which is configured at Build()
+            // with the default silo URL). One-shot run-and-block lifetime
+            // makes inline HttpClient construction fine.
+            using var httpClient = new HttpClient { BaseAddress = new Uri($"http://localhost:{port}", UriKind.Absolute) };
+            var startAction = new StartWorkspaceAction(httpClient);
 
+            var result = await startAction.ExecuteAsync(new StartWorkspaceInput(manifest), ct);
+            if (!result.IsSuccess)
+            {
+                if (result.Failure.Reason == ActionFailureReason.Cancelled)
+                {
+                    AnsiConsole.WriteLine();
+                    CliTheme.WriteInfo("Shutting down...");
+                    return 0;
+                }
+
+                CliTheme.WriteError($"Failed to start workspace: {result.Failure.Message}");
+                SiloProcessService.TryKill(siloProcess);
+                return 1;
+            }
+
+            var workspace = result.Value.Workspace;
             var statePath = WorkspaceApiClient.GetWorkspaceStatePath(manifestPath);
             Directory.CreateDirectory(Path.GetDirectoryName(statePath)!);
-            await File.WriteAllTextAsync(statePath, response.WorkspaceId, ct);
+            await File.WriteAllTextAsync(statePath, workspace.WorkspaceId, ct);
 
             AnsiConsole.WriteLine();
             CliTheme.WriteSuccess($"Workspace \"{manifest.Name}\" is running.");
-            CliTheme.WriteKeyValue("Workspace ID", response.WorkspaceId);
+            CliTheme.WriteKeyValue("Workspace ID", workspace.WorkspaceId);
             CliTheme.WriteKeyValue("API", $"http://localhost:{port}");
             CliTheme.WriteKeyValue("Dashboard", $"http://localhost:{port + 1}");
             AnsiConsole.WriteLine();
@@ -96,12 +118,6 @@ internal sealed class RunCliCommand : ICliCommand<RunOptions>
         {
             AnsiConsole.WriteLine();
             CliTheme.WriteInfo("Shutting down...");
-        }
-        catch (Exception ex) when (ex is HttpRequestException or TaskCanceledException or System.Net.Sockets.SocketException or System.Text.Json.JsonException or IOException or UnauthorizedAccessException or InvalidOperationException)
-        {
-            CliTheme.WriteError($"Failed to start workspace: {ex.Message}");
-            SiloProcessService.TryKill(siloProcess);
-            return 1;
         }
         finally
         {
