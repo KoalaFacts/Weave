@@ -1,18 +1,24 @@
 using Spectre.Console;
+using Weave.Actions.Context;
+using Weave.Actions.Workspace;
 using Weave.Cli.Commands;
 using Weave.Workspaces.Manifest;
+
 namespace Weave.Cli.Tui;
 
 internal sealed class TuiWorkspaceOpener
 {
     private readonly ManifestParser _parser = new();
+    private readonly OpenWorkspaceAction _openAction;
     private readonly TuiAgentSelector _agentSelector;
     private readonly TuiLiveStatusView _liveStatus;
 
     public TuiWorkspaceOpener(
+        OpenWorkspaceAction openAction,
         TuiAgentSelector agentSelector,
         TuiLiveStatusView liveStatus)
     {
+        _openAction = openAction;
         _agentSelector = agentSelector;
         _liveStatus = liveStatus;
     }
@@ -23,39 +29,25 @@ internal sealed class TuiWorkspaceOpener
         Action clearConversationHistory,
         CancellationToken ct)
     {
-        var workspaces = WorkspaceRegistry.GetAll();
-        if (workspaces.Count == 0)
+        var result = await _openAction.ExecuteAsync(new OpenWorkspaceInput(arg), ct);
+        if (!result.IsSuccess)
         {
-            CliTheme.WriteWarning("No workspaces registered. Try /new for hints.");
+            if (result.Failure.Reason == ActionFailureReason.Cancelled)
+                return;
+
+            // "Workspace 'foo' not found" when the user explicitly typed a name
+            // is an error; "No workspaces registered" (returned when arg is
+            // empty and the registry is empty) is just a state hint — preserve
+            // the original UX writer split, since the action layer collapses
+            // both into NotFound.
+            if (result.Failure.Reason == ActionFailureReason.NotFound && string.IsNullOrWhiteSpace(arg))
+                CliTheme.WriteWarning(result.Failure.Message);
+            else
+                CliTheme.WriteError(result.Failure.Message);
             return;
         }
 
-        var target = arg;
-        if (string.IsNullOrWhiteSpace(target))
-        {
-            target = AnsiConsole.Prompt(
-                new SelectionPrompt<string>()
-                    .Title("Open which workspace?")
-                    .Styled()
-                    .AddChoices([.. workspaces.Keys, "(cancel)"]));
-
-            if (target == "(cancel)")
-                return;
-        }
-
-        if (!workspaces.ContainsKey(target))
-        {
-            var match = workspaces.Keys
-                .FirstOrDefault(k => string.Equals(k, target, StringComparison.OrdinalIgnoreCase));
-            if (match is null)
-            {
-                CliTheme.WriteError($"Workspace '{target}' not found.");
-                return;
-            }
-            target = match;
-        }
-
-        if (!session.TryOpen(target, out var error))
+        if (!session.TryOpen(result.Value.Name, out var error))
         {
             CliTheme.WriteError(error ?? "Failed to open workspace.");
             return;

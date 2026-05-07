@@ -61,6 +61,8 @@ internal static class CliServiceCollection
         services.AddSingleton<IActionPrompter, ConsoleActionPrompter>();
         services.AddSingleton<IActionReporter, ConsoleActionReporter>();
         services.AddSingleton<ISystemConfigSource, CliSystemConfigSource>();
+        services.AddSingleton<Weave.Actions.Config.ISystemConfigWriter, CliSystemConfigWriter>();
+        services.AddSingleton<Weave.Actions.Workspace.IWorkspaceLocator, CliWorkspaceLocator>();
         services.AddSiloActions(client => client.BaseAddress = new Uri(CliApiHttp.ResolveBaseUrl()));
         services.AddTransient<SystemCliCommand>();
         services.AddTransient<AgentsCliCommand>();
@@ -72,6 +74,7 @@ internal static class CliServiceCollection
         services.AddTransient<WorkspaceDownCliCommand>();
         services.AddTransient<IWorkspaceDownDependencies, DefaultWorkspaceDownDependencies>();
         services.AddTransient<ConfigGetCliCommand>();
+        services.AddTransient<ConfigSetCliCommand>();
         services.AddTransient<WebUiCliCommand>();
 
         return services.BuildServiceProvider();

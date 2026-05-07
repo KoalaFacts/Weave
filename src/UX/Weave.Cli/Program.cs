@@ -69,7 +69,7 @@ root.Subcommands.Add(UpgradeCommand.Create(services.GetRequiredService<UpgradeCl
 
 var config = new Command("config", "Manage CLI configuration");
 config.Subcommands.Add(ConfigGetCommand.Create(services.GetRequiredService<ConfigGetCliCommand>()));
-config.Subcommands.Add(ConfigSetCommand.Create());
+config.Subcommands.Add(ConfigSetCommand.Create(services.GetRequiredService<ConfigSetCliCommand>()));
 root.Subcommands.Add(config);
 
 return root.Parse(args).Invoke();

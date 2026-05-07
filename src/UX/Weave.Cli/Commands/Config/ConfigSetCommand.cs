@@ -4,7 +4,7 @@ namespace Weave.Cli.Commands;
 
 internal static class ConfigSetCommand
 {
-    public static Command Create()
+    public static Command Create(ConfigSetCliCommand handler)
     {
         var keyArg = new Argument<string?>("key")
         {
@@ -23,7 +23,7 @@ internal static class ConfigSetCommand
         {
             var key = parseResult.GetValue(keyArg);
             var value = parseResult.GetValue(valueArg);
-            return new ConfigSetCliCommand().ExecuteAsync(new ConfigSetOptions(key, value), cancellationToken);
+            return handler.ExecuteAsync(new ConfigSetOptions(key, value), cancellationToken);
         });
 
         return cmd;

@@ -1,8 +1,6 @@
 using Spectre.Console;
 using Spectre.Console.Rendering;
-using Weave.Actions.Agent;
 using Weave.Actions.Context;
-using Weave.Actions.Tool;
 using Weave.Actions.Workspace;
 using Weave.Cli.Commands;
 using Weave.Workspaces.Manifest;
@@ -11,18 +9,11 @@ namespace Weave.Cli.Tui;
 
 internal sealed class TuiLiveStatusWatcher
 {
-    private readonly GetWorkspaceStatusAction _statusAction;
-    private readonly ListAgentsAction _agentsAction;
-    private readonly ListToolsAction _toolsAction;
+    private readonly WatchWorkspaceAction _watchAction;
 
-    public TuiLiveStatusWatcher(
-        GetWorkspaceStatusAction statusAction,
-        ListAgentsAction agentsAction,
-        ListToolsAction toolsAction)
+    public TuiLiveStatusWatcher(WatchWorkspaceAction watchAction)
     {
-        _statusAction = statusAction;
-        _agentsAction = agentsAction;
-        _toolsAction = toolsAction;
+        _watchAction = watchAction;
     }
 
     public async Task WatchAsync(
@@ -86,25 +77,21 @@ internal sealed class TuiLiveStatusWatcher
         WorkspaceManifest manifest,
         CancellationToken cancellationToken)
     {
-        var statusResult = await _statusAction.ExecuteAsync(new GetWorkspaceStatusInput(workspaceId), cancellationToken);
-        if (!statusResult.IsSuccess)
+        var watch = await _watchAction.ExecuteAsync(new WatchWorkspaceInput(workspaceId), cancellationToken);
+        if (!watch.IsSuccess)
         {
-            if (statusResult.Failure.Reason == ActionFailureReason.Cancelled)
+            if (watch.Failure.Reason == ActionFailureReason.Cancelled)
                 throw new OperationCanceledException(cancellationToken);
 
-            var color = statusResult.Failure.Reason == ActionFailureReason.SiloUnreachable
+            var color = watch.Failure.Reason == ActionFailureReason.SiloUnreachable
                 ? "Silo is not reachable. Retrying…"
-                : $"Live status error: {Markup.Escape(statusResult.Failure.Message)}";
+                : $"Live status error: {Markup.Escape(watch.Failure.Message)}";
             return new Markup(
                 $"[rgb({CliTheme.Warning.R},{CliTheme.Warning.G},{CliTheme.Warning.B})]{color}[/]");
         }
 
-        var agentsResult = await _agentsAction.ExecuteAsync(new ListAgentsInput(workspaceId), cancellationToken);
-        var toolsResult = await _toolsAction.ExecuteAsync(new ListToolsInput(workspaceId), cancellationToken);
-        var agents = agentsResult.IsSuccess ? agentsResult.Value.Agents : [];
-        var tools = toolsResult.IsSuccess ? toolsResult.Value.Tools : [];
-
-        return TuiLiveStatusRenderer.Build(manifestPath, manifest, statusResult.Value.Workspace, agents, tools);
+        return TuiLiveStatusRenderer.Build(
+            manifestPath, manifest, watch.Value.Workspace, watch.Value.Agents, watch.Value.Tools);
     }
 
     private static void RenderWatchHeader(string workspaceName)

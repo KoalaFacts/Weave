@@ -1,4 +1,5 @@
-using Spectre.Console;
+using Weave.Actions.Agent;
+using Weave.Actions.Context;
 using Weave.Cli.Commands;
 using Weave.Workspaces.Manifest;
 
@@ -8,10 +9,12 @@ internal sealed class TuiAgentSelector
 {
     private readonly ManifestParser _parser = new();
     private readonly TuiAgentNameSource _agentNameSource;
+    private readonly SelectAgentAction _selectAction;
 
-    public TuiAgentSelector(TuiAgentNameSource agentNameSource)
+    public TuiAgentSelector(TuiAgentNameSource agentNameSource, SelectAgentAction selectAction)
     {
         _agentNameSource = agentNameSource;
+        _selectAction = selectAction;
     }
 
     public async Task SelectAsync(
@@ -27,35 +30,28 @@ internal sealed class TuiAgentSelector
         }
 
         var agents = await _agentNameSource.FetchAsync(session, ct);
-        if (agents.Count == 0)
+        var result = await _selectAction.ExecuteAsync(new SelectAgentInput(agents, arg), ct);
+        if (!result.IsSuccess)
         {
-            CliTheme.WriteWarning("No agents available for this workspace.");
-            return;
+            switch (result.Failure.Reason)
+            {
+                case ActionFailureReason.Cancelled:
+                    return;
+                case ActionFailureReason.NotFound when agents.Count == 0:
+                    CliTheme.WriteWarning(result.Failure.Message);
+                    return;
+                case ActionFailureReason.NotFound:
+                    CliTheme.WriteError($"{result.Failure.Message.TrimEnd('.')} in '{session.WorkspaceName}'.");
+                    return;
+                default:
+                    CliTheme.WriteError(result.Failure.Message);
+                    return;
+            }
         }
 
-        string? target = arg;
-        if (string.IsNullOrWhiteSpace(target))
-        {
-            target = AnsiConsole.Prompt(
-                new SelectionPrompt<string>()
-                    .Title("Use which agent?")
-                    .Styled()
-                    .AddChoices([.. agents, "(cancel)"]));
-
-            if (target == "(cancel)")
-                return;
-        }
-
-        var match = agents.FirstOrDefault(a => string.Equals(a, target, StringComparison.OrdinalIgnoreCase));
-        if (match is null)
-        {
-            CliTheme.WriteError($"Agent '{target}' not found in '{session.WorkspaceName}'.");
-            return;
-        }
-
-        session.AgentName = match;
+        session.AgentName = result.Value.AgentName;
         clearConversationHistory();
-        CliTheme.WriteMuted($"Agent set to '{match}'.");
+        CliTheme.WriteMuted($"Agent set to '{result.Value.AgentName}'.");
         TuiNextStepHint.Render(session);
     }
 

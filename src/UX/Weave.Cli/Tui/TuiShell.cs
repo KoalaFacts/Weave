@@ -3,6 +3,9 @@ using Weave.Actions.Agent;
 using Weave.Actions.SystemInfo;
 using Weave.Actions.Workspace;
 using Weave.Cli.Commands;
+// (TuiAgentSelector now ctor-takes SelectAgentAction via DI; TuiAgentNameSource
+// is supplied from DI too. TuiWorkspaceOpener picks up OpenWorkspaceAction from
+// DI; the inline new TuiWorkspaceOpener(...) below threads it through.)
 
 namespace Weave.Cli.Tui;
 
@@ -27,6 +30,7 @@ internal sealed class TuiShell
         TuiAgentSelector agentSelector,
         TuiChatSession chatSession,
         ListAgentsAction listAgentsAction,
+        OpenWorkspaceAction openWorkspaceAction,
         StartWorkspaceAction startWorkspaceAction,
         GetSystemInfoAction systemInfoAction,
         WorkspaceStatusCliCommand statusCommand,
@@ -45,7 +49,7 @@ internal sealed class TuiShell
             _chatSession,
             agentSelector,
             new TuiAgentListView(agentNameSource, listAgentsAction),
-            new TuiWorkspaceOpener(agentSelector, liveStatusView),
+            new TuiWorkspaceOpener(openWorkspaceAction, agentSelector, liveStatusView),
             new TuiWorkspaceStarter(agentSelector, startWorkspaceAction, systemInfoAction),
             new TuiWorkspaceStopper(downCommand),
             new TuiWorkspaceWatcher(liveStatusView),

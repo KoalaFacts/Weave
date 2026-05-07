@@ -1,43 +1,46 @@
-using Spectre.Console;
+using Weave.Actions.Config;
+using Weave.Actions.Context;
 
 namespace Weave.Cli.Commands;
 
 internal sealed class ConfigSetCliCommand : ICliCommand<ConfigSetOptions>
 {
+    private readonly SetConfigAction _action;
+    private readonly IActionPrompter _prompter;
+
+    public ConfigSetCliCommand(SetConfigAction action, IActionPrompter prompter)
+    {
+        _action = action;
+        _prompter = prompter;
+    }
+
     public string Name => "set";
 
     public IReadOnlyList<string> Aliases => [];
 
     public string Description => "Update a configuration value";
 
-    public Task<int> ExecuteAsync(ConfigSetOptions options, CancellationToken ct)
+    public async Task<int> ExecuteAsync(ConfigSetOptions options, CancellationToken ct)
     {
-        var config = CliConfigStore.Load();
-        var key = SelectKey(options.Key);
-        var value = SelectValue(options.Value, key);
+        var key = string.IsNullOrWhiteSpace(options.Key)
+            ? await _prompter.PromptSelectionAsync("Which config value would you like to update?", ConfigKeys.Writable, ct)
+            : options.Key;
 
-        var updated = ConfigValueAccessor.SetValue(config, key, value);
-        if (updated is null)
+        var value = string.IsNullOrWhiteSpace(options.Value)
+            ? await _prompter.PromptTextAsync($"{key}:", cancellationToken: ct)
+            : options.Value;
+
+        var result = await _action.ExecuteAsync(new SetConfigInput(key, value), ct);
+        if (!result.IsSuccess)
         {
-            CliTheme.WriteError($"Unknown config key '{key}'.");
-            CliTheme.WriteMuted("  Valid keys: siloPath, defaultPort");
-            return Task.FromResult(1);
+            if (result.Failure.Reason == ActionFailureReason.Cancelled)
+                return 130;
+
+            CliTheme.WriteError(result.Failure.Message);
+            return 1;
         }
 
-        CliConfigStore.Save(updated);
-        CliTheme.WriteSuccess($"{key} = {value}");
-        return Task.FromResult(0);
+        CliTheme.WriteSuccess($"{result.Value.Key} = {result.Value.Value}");
+        return 0;
     }
-
-    private static string SelectKey(string? key) => !string.IsNullOrWhiteSpace(key)
-        ? key
-        : AnsiConsole.Prompt(
-            new SelectionPrompt<string>()
-                .Title("Which config value would you like to update?")
-                .Styled()
-                .AddChoices("siloPath", "defaultPort"));
-
-    private static string SelectValue(string? value, string key) => !string.IsNullOrWhiteSpace(value)
-        ? value
-        : AnsiConsole.Prompt(new TextPrompt<string>($"{key}:").Styled());
 }
