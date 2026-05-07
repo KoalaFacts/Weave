@@ -11,6 +11,7 @@ internal sealed class TuiSlashCommandDispatcher
     private readonly TuiAgentListView _agentListView;
     private readonly TuiWorkspaceOpener _workspaceOpener;
     private readonly TuiWorkspaceStarter _workspaceStarter;
+    private readonly TuiWorkspaceStopper _workspaceStopper;
     private readonly TuiWorkspaceWatcher _workspaceWatcher;
     private readonly TuiToolsView _toolsView;
     private readonly TuiTasksView _tasksView;
@@ -28,6 +29,7 @@ internal sealed class TuiSlashCommandDispatcher
         TuiAgentListView agentListView,
         TuiWorkspaceOpener workspaceOpener,
         TuiWorkspaceStarter workspaceStarter,
+        TuiWorkspaceStopper workspaceStopper,
         TuiWorkspaceWatcher workspaceWatcher,
         TuiToolsView toolsView,
         TuiTasksView tasksView,
@@ -44,6 +46,7 @@ internal sealed class TuiSlashCommandDispatcher
         _agentListView = agentListView;
         _workspaceOpener = workspaceOpener;
         _workspaceStarter = workspaceStarter;
+        _workspaceStopper = workspaceStopper;
         _workspaceWatcher = workspaceWatcher;
         _toolsView = toolsView;
         _tasksView = tasksView;
@@ -143,7 +146,7 @@ internal sealed class TuiSlashCommandDispatcher
                 return TuiDispatchResult.Continue;
 
             case "down":
-                await TuiWorkspaceStopper.StopAsync(session, ct);
+                await _workspaceStopper.StopAsync(session, ct);
                 return TuiDispatchResult.Continue;
 
             case "new":

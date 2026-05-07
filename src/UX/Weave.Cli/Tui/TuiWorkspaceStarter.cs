@@ -1,16 +1,27 @@
 using Spectre.Console;
+using Weave.Actions.Context;
+using Weave.Actions.SystemInfo;
+using Weave.Actions.Workspace;
 using Weave.Cli.Commands;
 using Weave.Workspaces.Manifest;
+
 namespace Weave.Cli.Tui;
 
 internal sealed class TuiWorkspaceStarter
 {
     private readonly ManifestParser _parser = new();
     private readonly TuiAgentSelector _agentSelector;
+    private readonly StartWorkspaceAction _startAction;
+    private readonly GetSystemInfoAction _systemInfoAction;
 
-    public TuiWorkspaceStarter(TuiAgentSelector agentSelector)
+    public TuiWorkspaceStarter(
+        TuiAgentSelector agentSelector,
+        StartWorkspaceAction startAction,
+        GetSystemInfoAction systemInfoAction)
     {
         _agentSelector = agentSelector;
+        _startAction = startAction;
+        _systemInfoAction = systemInfoAction;
     }
 
     public async Task StartAsync(TuiSession session, CancellationToken ct)
@@ -41,8 +52,7 @@ internal sealed class TuiWorkspaceStarter
             return;
         }
 
-        ApiWorkspaceResponse? response = null;
-        Exception? error = null;
+        ActionResult<StartWorkspaceResult> startResult = default;
         WorkspaceSiloStarter.AutoStartResult? siloFailure = null;
 
         await AnsiConsole.Status()
@@ -50,41 +60,36 @@ internal sealed class TuiWorkspaceStarter
             .SpinnerStyle(CliTheme.AccentStyle)
             .StartAsync($"Starting '{manifest.Name}'…", async ctx =>
             {
-                try
+                var systemInfo = await _systemInfoAction.ExecuteAsync(new GetSystemInfoInput(), ct);
+                if (systemInfo.IsSuccess && !systemInfo.Value.Reachable)
                 {
-                    using var client = new WorkspaceApiClient();
-
-                    if (!await client.IsReachableAsync(ct))
+                    var siloPath = WorkspaceSiloPaths.ResolveSiloPath();
+                    if (siloPath is null)
                     {
-                        var siloPath = WorkspaceSiloPaths.ResolveSiloPath();
-                        if (siloPath is null)
-                        {
-                            error = new InvalidOperationException(
-                                "Could not locate the Weave Silo on disk. " +
-                                "Set WEAVE_SILO_PATH, run `weave config set silo-path <path>`, " +
-                                "or start the TUI from the repo root.");
-                            return;
-                        }
-
-                        ctx.Status($"Silo not running — launching from {siloPath}…");
-                        var outcome = await WorkspaceSiloStarter.AutoStartServeWithDiagnosticsAsync(ct);
-                        if (!outcome.Success)
-                        {
-                            siloFailure = outcome;
-                            return;
-                        }
-                        ctx.Status($"Silo ready — starting '{manifest.Name}'…");
+                        startResult = ActionResult.Failed<StartWorkspaceResult>(ActionFailure.Internal(
+                            "Could not locate the Weave Silo on disk. " +
+                            "Set WEAVE_SILO_PATH, run `weave config set silo-path <path>`, " +
+                            "or start the TUI from the repo root."));
+                        return;
                     }
 
-                    response = await client.StartWorkspaceAsync(manifest, ct);
+                    ctx.Status($"Silo not running — launching from {siloPath}…");
+                    var outcome = await WorkspaceSiloStarter.AutoStartServeWithDiagnosticsAsync(ct);
+                    if (!outcome.Success)
+                    {
+                        siloFailure = outcome;
+                        return;
+                    }
+                    ctx.Status($"Silo ready — starting '{manifest.Name}'…");
+                }
 
+                startResult = await _startAction.ExecuteAsync(new StartWorkspaceInput(manifest), ct);
+
+                if (startResult.IsSuccess)
+                {
                     var statePath = WorkspaceApiClient.GetWorkspaceStatePath(session.ManifestPath!);
                     Directory.CreateDirectory(Path.GetDirectoryName(statePath)!);
-                    await File.WriteAllTextAsync(statePath, response.WorkspaceId, ct);
-                }
-                catch (Exception ex) when (ex is HttpRequestException or TaskCanceledException or System.Net.Sockets.SocketException or System.Text.Json.JsonException or IOException or UnauthorizedAccessException or InvalidOperationException)
-                {
-                    error = ex;
+                    await File.WriteAllTextAsync(statePath, startResult.Value.Workspace.WorkspaceId, ct);
                 }
             });
 
@@ -95,18 +100,17 @@ internal sealed class TuiWorkspaceStarter
             RenderLogTail(siloFailure.LogPath, lineCount: 15);
             return;
         }
-        if (error is not null)
+        if (!startResult.IsSuccess)
         {
-            CliTheme.WriteError($"Failed to start: {error.Message}");
+            CliTheme.WriteError($"Failed to start: {startResult.Failure.Message}");
             return;
         }
-        if (response is null)
-            return;
 
-        session.MarkRunning(response.WorkspaceId);
+        var workspace = startResult.Value.Workspace;
+        session.MarkRunning(workspace.WorkspaceId);
         CliTheme.WriteSuccess($"Workspace '{manifest.Name}' started.");
-        CliTheme.WriteKeyValue("Workspace ID", response.WorkspaceId);
-        CliTheme.WriteKeyValue("Status", response.Status);
+        CliTheme.WriteKeyValue("Workspace ID", workspace.WorkspaceId);
+        CliTheme.WriteKeyValue("Status", workspace.Status);
 
         if (session.AgentName is null)
             _agentSelector.TrySelectOnlyAgent(session);

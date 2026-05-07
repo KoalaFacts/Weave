@@ -1,5 +1,7 @@
 using Spectre.Console;
 using Weave.Actions.Agent;
+using Weave.Actions.SystemInfo;
+using Weave.Actions.Workspace;
 using Weave.Cli.Commands;
 
 namespace Weave.Cli.Tui;
@@ -22,8 +24,11 @@ internal sealed class TuiShell
         TuiSystemView systemView,
         TuiLiveStatusView liveStatusView,
         ListAgentsAction listAgentsAction,
+        StartWorkspaceAction startWorkspaceAction,
+        GetSystemInfoAction systemInfoAction,
         WorkspaceStatusCliCommand statusCommand,
         WorkspaceValidateCliCommand validateCommand,
+        WorkspaceDownCliCommand downCommand,
         WebUiCliCommand webUiCommand,
         UpgradeCliCommand upgradeCommand)
     {
@@ -40,7 +45,8 @@ internal sealed class TuiShell
             agentSelector,
             new TuiAgentListView(agentNameSource, listAgentsAction),
             new TuiWorkspaceOpener(agentSelector, liveStatusView),
-            new TuiWorkspaceStarter(agentSelector),
+            new TuiWorkspaceStarter(agentSelector, startWorkspaceAction, systemInfoAction),
+            new TuiWorkspaceStopper(downCommand),
             new TuiWorkspaceWatcher(liveStatusView),
             toolsView,
             tasksView,

@@ -4,7 +4,7 @@ namespace Weave.Cli.Commands;
 
 internal static class WorkspaceDownCommand
 {
-    public static Command Create()
+    public static Command Create(WorkspaceDownCliCommand handler)
     {
         var nameArg = new Argument<string?>("name")
         {
@@ -17,7 +17,7 @@ internal static class WorkspaceDownCommand
         cmd.SetAction(async (parseResult, cancellationToken) =>
         {
             var name = parseResult.GetValue(nameArg);
-            return await new WorkspaceDownCliCommand().ExecuteAsync(new WorkspaceDownOptions(name), cancellationToken);
+            return await handler.ExecuteAsync(new WorkspaceDownOptions(name), cancellationToken);
         });
 
         return cmd;

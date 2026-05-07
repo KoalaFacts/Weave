@@ -2,11 +2,6 @@ namespace Weave.Cli.Commands;
 
 internal sealed class WorkspaceDownCliCommand(IWorkspaceDownDependencies dependencies) : ICliCommand<WorkspaceDownOptions>
 {
-    public WorkspaceDownCliCommand()
-        : this(new DefaultWorkspaceDownDependencies())
-    {
-    }
-
     public string Name => "down";
 
     public IReadOnlyList<string> Aliases => [];
@@ -46,7 +41,7 @@ internal sealed class WorkspaceDownCliCommand(IWorkspaceDownDependencies depende
             CliTheme.WriteSuccess($"Workspace '{workspaceId}' stopped.");
             return 0;
         }
-        catch (Exception ex) when (ex is HttpRequestException or TaskCanceledException or System.Net.Sockets.SocketException or System.Text.Json.JsonException or IOException or UnauthorizedAccessException)
+        catch (Exception ex) when (ex is HttpRequestException or TaskCanceledException or System.Net.Sockets.SocketException or System.Text.Json.JsonException or IOException or UnauthorizedAccessException or InvalidOperationException)
         {
             CliTheme.WriteError($"Failed to stop workspace: {ex.Message}");
             return 1;

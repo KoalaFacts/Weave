@@ -33,6 +33,8 @@ public static class SiloActionsServiceCollectionExtensions
         services.AddHttpClient<ListTasksAction>(configureSiloClient);
         services.AddHttpClient<GetWorkspaceStatusAction>(configureSiloClient);
         services.AddHttpClient<ValidateWorkspaceAction>(configureSiloClient);
+        services.AddHttpClient<StartWorkspaceAction>(configureSiloClient);
+        services.AddHttpClient<StopWorkspaceAction>(configureSiloClient);
 
         // The dashboard URL is not the silo URL — the action passes absolute
         // URIs to GetAsync so the BaseAddress here is unused but harmless.

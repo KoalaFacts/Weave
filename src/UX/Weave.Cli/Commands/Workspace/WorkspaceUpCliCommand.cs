@@ -1,9 +1,22 @@
 using System.Globalization;
+using Weave.Actions.Context;
+using Weave.Actions.SystemInfo;
+using Weave.Actions.Workspace;
 
 namespace Weave.Cli.Commands;
 
 internal sealed class WorkspaceUpCliCommand : ICliCommand<WorkspaceUpOptions>
 {
+    private readonly StartWorkspaceAction _startAction;
+    private readonly GetSystemInfoAction _systemInfoAction;
+
+    public WorkspaceUpCliCommand(
+        StartWorkspaceAction startAction,
+        GetSystemInfoAction systemInfoAction)
+    {
+        _startAction = startAction;
+        _systemInfoAction = systemInfoAction;
+    }
 
     public string Name => "up";
 
@@ -25,41 +38,42 @@ internal sealed class WorkspaceUpCliCommand : ICliCommand<WorkspaceUpOptions>
 
         var manifest = await WorkspaceManifestFile.ReadPreparedAsync(manifestPath, ct);
 
-        try
+        var systemInfo = await _systemInfoAction.ExecuteAsync(new GetSystemInfoInput(), ct);
+        if (systemInfo.IsSuccess && !systemInfo.Value.Reachable)
         {
-            using var client = new WorkspaceApiClient();
-
-            if (!await client.IsReachableAsync(ct))
+            CliTheme.WriteInfo("Server not running — starting automatically...");
+            var started = await WorkspaceSiloStarter.AutoStartServeAsync(ct);
+            if (!started)
             {
-                CliTheme.WriteInfo("Server not running — starting automatically...");
-                var started = await WorkspaceSiloStarter.AutoStartServeAsync(ct);
-                if (!started)
-                {
-                    CliTheme.WriteError("Could not start the Weave server.");
-                    CliTheme.WriteMuted("  Start it manually with: weave serve");
-                    return 1;
-                }
-
-                CliTheme.WriteSuccess("Server ready.");
+                CliTheme.WriteError("Could not start the Weave server.");
+                CliTheme.WriteMuted("  Start it manually with: weave serve");
+                return 1;
             }
 
-            var response = await client.StartWorkspaceAsync(manifest, ct);
-            var statePath = WorkspaceApiClient.GetWorkspaceStatePath(manifestPath);
-            Directory.CreateDirectory(Path.GetDirectoryName(statePath)!);
-            await File.WriteAllTextAsync(statePath, response.WorkspaceId, ct);
-
-            CliTheme.WriteKeyValue("Workspace", manifest.Name);
-            CliTheme.WriteKeyValue("Workspace ID", response.WorkspaceId);
-            CliTheme.WriteKeyValue("Status", response.Status);
-            CliTheme.WriteKeyValue("Agents", manifest.Agents.Count.ToString(CultureInfo.InvariantCulture));
-            CliTheme.WriteKeyValue("Tools", manifest.Tools.Count.ToString(CultureInfo.InvariantCulture));
-            CliTheme.WriteSuccess("Workspace started successfully.");
+            CliTheme.WriteSuccess("Server ready.");
         }
-        catch (Exception ex) when (ex is HttpRequestException or TaskCanceledException or System.Net.Sockets.SocketException or System.Text.Json.JsonException or IOException or UnauthorizedAccessException)
+
+        var result = await _startAction.ExecuteAsync(new StartWorkspaceInput(manifest), ct);
+        if (!result.IsSuccess)
         {
-            CliTheme.WriteError($"Failed to start workspace: {ex.Message}");
+            if (result.Failure.Reason == ActionFailureReason.Cancelled)
+                return 130;
+
+            CliTheme.WriteError($"Failed to start workspace: {result.Failure.Message}");
             return 1;
         }
+
+        var workspace = result.Value.Workspace;
+        var statePath = WorkspaceApiClient.GetWorkspaceStatePath(manifestPath);
+        Directory.CreateDirectory(Path.GetDirectoryName(statePath)!);
+        await File.WriteAllTextAsync(statePath, workspace.WorkspaceId, ct);
+
+        CliTheme.WriteKeyValue("Workspace", manifest.Name);
+        CliTheme.WriteKeyValue("Workspace ID", workspace.WorkspaceId);
+        CliTheme.WriteKeyValue("Status", workspace.Status);
+        CliTheme.WriteKeyValue("Agents", manifest.Agents.Count.ToString(CultureInfo.InvariantCulture));
+        CliTheme.WriteKeyValue("Tools", manifest.Tools.Count.ToString(CultureInfo.InvariantCulture));
+        CliTheme.WriteSuccess("Workspace started successfully.");
 
         return 0;
     }

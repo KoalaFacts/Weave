@@ -65,6 +65,9 @@ internal static class CliServiceCollection
         services.AddTransient<TasksCliCommand>();
         services.AddTransient<WorkspaceStatusCliCommand>();
         services.AddTransient<WorkspaceValidateCliCommand>();
+        services.AddTransient<WorkspaceUpCliCommand>();
+        services.AddTransient<WorkspaceDownCliCommand>();
+        services.AddTransient<IWorkspaceDownDependencies, DefaultWorkspaceDownDependencies>();
         services.AddTransient<ConfigGetCliCommand>();
         services.AddTransient<WebUiCliCommand>();
 

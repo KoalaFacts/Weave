@@ -2,9 +2,16 @@ using Weave.Cli.Commands;
 
 namespace Weave.Cli.Tui;
 
-internal static class TuiWorkspaceStopper
+internal sealed class TuiWorkspaceStopper
 {
-    public static async Task StopAsync(TuiSession session, CancellationToken ct)
+    private readonly WorkspaceDownCliCommand _downCommand;
+
+    public TuiWorkspaceStopper(WorkspaceDownCliCommand downCommand)
+    {
+        _downCommand = downCommand;
+    }
+
+    public async Task StopAsync(TuiSession session, CancellationToken ct)
     {
         if (!session.IsRunning)
         {
@@ -12,8 +19,7 @@ internal static class TuiWorkspaceStopper
             return;
         }
 
-        var command = new WorkspaceDownCliCommand();
-        var exitCode = await command.ExecuteAsync(
+        var exitCode = await _downCommand.ExecuteAsync(
             new WorkspaceDownOptions(session.WorkspaceName, session.ManifestPath, session.WorkspaceId),
             ct);
 
