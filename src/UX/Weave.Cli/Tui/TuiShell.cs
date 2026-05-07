@@ -9,7 +9,7 @@ namespace Weave.Cli.Tui;
 internal sealed class TuiShell
 {
     private readonly TuiWorkspaceDashboard _dashboard;
-    private readonly TuiChatSession _chatSession = new();
+    private readonly TuiChatSession _chatSession;
     private readonly TuiSlashCommandDispatcher _dispatcher;
     private readonly VersionService _versionService;
     private readonly ChatComposer _composer;
@@ -23,6 +23,9 @@ internal sealed class TuiShell
         TuiConfigView configView,
         TuiSystemView systemView,
         TuiLiveStatusView liveStatusView,
+        TuiAgentNameSource agentNameSource,
+        TuiAgentSelector agentSelector,
+        TuiChatSession chatSession,
         ListAgentsAction listAgentsAction,
         StartWorkspaceAction startWorkspaceAction,
         GetSystemInfoAction systemInfoAction,
@@ -35,9 +38,7 @@ internal sealed class TuiShell
         _versionService = versionService;
         _composer = composer;
         _dashboard = dashboard;
-
-        var agentNameSource = new TuiAgentNameSource();
-        var agentSelector = new TuiAgentSelector(agentNameSource);
+        _chatSession = chatSession;
 
         _dispatcher = new TuiSlashCommandDispatcher(
             _dashboard,

@@ -1,11 +1,19 @@
 using Spectre.Console;
+using Weave.Actions.Agent;
+using Weave.Actions.Context;
 using Weave.Cli.Commands;
 
 namespace Weave.Cli.Tui;
 
 internal sealed class TuiChatSession
 {
-    private readonly List<ApiConversationMessage> _history = [];
+    private readonly SendMessageAction _sendMessageAction;
+    private readonly List<ConversationMessage> _history = [];
+
+    public TuiChatSession(SendMessageAction sendMessageAction)
+    {
+        _sendMessageAction = sendMessageAction;
+    }
 
     public void Clear() => _history.Clear();
 
@@ -35,53 +43,47 @@ internal sealed class TuiChatSession
 
         CliTheme.WriteUserEcho(message);
 
-        ApiChatResponse? reply = null;
-        Exception? error = null;
+        ActionResult<SendMessageResult> result = default;
 
         await AnsiConsole.Status()
             .Spinner(Spinner.Known.Dots)
             .SpinnerStyle(CliTheme.AccentStyle)
             .StartAsync($"{session.AgentName} is thinking…", async _ =>
             {
-                try
-                {
-                    using var client = new WorkspaceApiClient();
-                    reply = await client.SendAgentMessageAsync(
-                        session.WorkspaceId!, session.AgentName, message, ct);
-                }
-                catch (Exception ex) when (ex is HttpRequestException or TaskCanceledException or System.Net.Sockets.SocketException or System.Text.Json.JsonException or IOException)
-                {
-                    error = ex;
-                }
+                result = await _sendMessageAction.ExecuteAsync(
+                    new SendMessageInput(session.WorkspaceId!, session.AgentName, message),
+                    ct);
             });
 
-        if (error is not null)
+        if (!result.IsSuccess)
         {
-            CliTheme.WriteError($"Agent call failed: {error.Message}");
+            // User-initiated cancellation (Ctrl-C) shouldn't render as an error.
+            if (result.Failure.Reason != ActionFailureReason.Cancelled)
+                CliTheme.WriteError($"Agent call failed: {result.Failure.Message}");
+            return;
         }
-        else if (reply is not null)
+
+        var reply = result.Value;
+        _history.Add(new ConversationMessage { Role = "user", Content = message, Timestamp = DateTimeOffset.UtcNow });
+        _history.Add(new ConversationMessage { Role = "assistant", Content = reply.Content, Timestamp = DateTimeOffset.UtcNow });
+        if (reply.Messages is { Count: > 0 })
         {
-            _history.Add(new ApiConversationMessage { Role = "user", Content = message, Timestamp = DateTimeOffset.UtcNow });
-            _history.Add(new ApiConversationMessage { Role = "assistant", Content = reply.Content, Timestamp = DateTimeOffset.UtcNow });
-            if (reply.Messages is { Count: > 0 })
-            {
-                _history.Clear();
-                _history.AddRange(reply.Messages);
-            }
-
-            if (reply.UsedTools)
-                CliTheme.WriteMuted("  Tools were used to generate this response.");
-
-            CliTheme.WriteAgentReply(session.AgentName, reply.Content);
-
-            if (!string.IsNullOrWhiteSpace(reply.Model))
-                CliTheme.WriteMuted($"  Model: {reply.Model}");
+            _history.Clear();
+            _history.AddRange(reply.Messages);
         }
+
+        if (reply.UsedTools)
+            CliTheme.WriteMuted("  Tools were used to generate this response.");
+
+        CliTheme.WriteAgentReply(session.AgentName, reply.Content);
+
+        if (!string.IsNullOrWhiteSpace(reply.Model))
+            CliTheme.WriteMuted($"  Model: {reply.Model}");
     }
 
     private static void RenderHistory(
         TuiSession session,
-        List<ApiConversationMessage> conversationHistory)
+        List<ConversationMessage> conversationHistory)
     {
         if (session.AgentName is null)
         {
@@ -98,11 +100,10 @@ internal sealed class TuiChatSession
         CliTheme.WriteSection($"History · {session.AgentName}");
         foreach (var msg in conversationHistory)
         {
-            var role = msg.Role ?? "unknown";
-            if (string.Equals(role, "user", StringComparison.OrdinalIgnoreCase))
-                CliTheme.WriteUserEcho(msg.Content ?? "");
+            if (string.Equals(msg.Role, "user", StringComparison.OrdinalIgnoreCase))
+                CliTheme.WriteUserEcho(msg.Content);
             else
-                CliTheme.WriteAgentReply(session.AgentName, msg.Content ?? "");
+                CliTheme.WriteAgentReply(session.AgentName, msg.Content);
         }
     }
 }

@@ -1,3 +1,5 @@
+using Weave.Actions.Agent;
+using Weave.Actions.Context;
 using Weave.Cli.Commands;
 using Weave.Workspaces.Manifest;
 
@@ -6,24 +8,28 @@ namespace Weave.Cli.Tui;
 internal sealed class TuiAgentNameSource
 {
     private readonly ManifestParser _parser = new();
+    private readonly ListAgentsAction _listAgentsAction;
+
+    public TuiAgentNameSource(ListAgentsAction listAgentsAction)
+    {
+        _listAgentsAction = listAgentsAction;
+    }
 
     public async Task<List<string>> FetchAsync(TuiSession session, CancellationToken ct)
     {
         if (session.IsRunning)
         {
-            try
-            {
-                using var client = new WorkspaceApiClient();
-                if (await client.IsReachableAsync(ct))
-                {
-                    var live = await client.GetAgentsAsync(session.WorkspaceId!, ct);
-                    return [.. live.Select(a => a.AgentName)];
-                }
-            }
-            catch (Exception ex) when (ex is HttpRequestException or TaskCanceledException or OperationCanceledException)
-            {
-                CliTheme.WriteMuted($"Could not reach Silo for agent list ({ex.Message}). Falling back to manifest.");
-            }
+            var result = await _listAgentsAction.ExecuteAsync(
+                new ListAgentsInput(session.WorkspaceId!),
+                ct);
+
+            if (result.IsSuccess)
+                return [.. result.Value.Agents.Select(a => a.AgentName)];
+
+            if (result.Failure.Reason == ActionFailureReason.SiloUnreachable)
+                CliTheme.WriteMuted($"Could not reach Silo for agent list ({result.Failure.Message}). Falling back to manifest.");
+            else if (result.Failure.Reason != ActionFailureReason.Cancelled)
+                CliTheme.WriteMuted($"Silo agent list failed ({result.Failure.Message}). Falling back to manifest.");
         }
 
         if (session.ManifestPath is null)

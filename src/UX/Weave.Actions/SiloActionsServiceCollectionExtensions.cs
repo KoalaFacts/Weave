@@ -29,6 +29,7 @@ public static class SiloActionsServiceCollectionExtensions
 
         services.AddHttpClient<GetSystemInfoAction>(configureSiloClient);
         services.AddHttpClient<ListAgentsAction>(configureSiloClient);
+        services.AddHttpClient<SendMessageAction>(configureSiloClient);
         services.AddHttpClient<ListToolsAction>(configureSiloClient);
         services.AddHttpClient<ListTasksAction>(configureSiloClient);
         services.AddHttpClient<GetWorkspaceStatusAction>(configureSiloClient);

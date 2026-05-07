@@ -39,6 +39,9 @@ internal static class CliServiceCollection
         services.AddTransient<ChatComposerEditor>();
         services.AddTransient<ChatComposer>();
         services.AddTransient<TuiShell>();
+        services.AddTransient<TuiAgentNameSource>();
+        services.AddTransient<TuiAgentSelector>();
+        services.AddTransient<TuiChatSession>();
 
         // Migrated TUI views — consume actions through DI (no shared
         // WorkspaceApiClient seam). The remaining inline `new
