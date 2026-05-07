@@ -1,10 +1,20 @@
 using System.Text.Json;
 using Spectre.Console;
+using Weave.Actions.Channel;
+using Weave.Actions.Context;
+using Weave.Actions.Skill;
+using Weave.Actions.SystemInfo;
+using Weave.Actions.Workspace;
 using Weave.Workspaces.Manifest;
 
 namespace Weave.Cli.Commands;
 
-internal sealed class DataImportCliCommand(IWorkspaceRegistry registry) : ICliCommand<DataImportOptions>
+internal sealed class DataImportCliCommand(
+    IWorkspaceRegistry registry,
+    GetSystemInfoAction systemInfoAction,
+    StartWorkspaceAction startAction,
+    PostSkillAction postSkillAction,
+    PostChannelAction postChannelAction) : ICliCommand<DataImportOptions>
 {
     public string Name => "import";
 
@@ -34,9 +44,9 @@ internal sealed class DataImportCliCommand(IWorkspaceRegistry registry) : ICliCo
 
         var basePath = await RestoreFilesAsync(export, name, ct);
 
-        using var client = new WorkspaceApiClient();
-        if (await client.IsReachableAsync(ct))
-            await TryStartImportedWorkspaceAsync(client, export, name, basePath, ct);
+        var systemInfo = await systemInfoAction.ExecuteAsync(new GetSystemInfoInput(), ct);
+        if (systemInfo.IsSuccess && systemInfo.Value.Reachable)
+            await TryStartImportedWorkspaceAsync(export, name, basePath, ct);
         else
             CliTheme.WriteMuted("  Server not running — files restored, start with: weave run " + name);
 
@@ -97,33 +107,43 @@ internal sealed class DataImportCliCommand(IWorkspaceRegistry registry) : ICliCo
         return basePath;
     }
 
-    private static async Task TryStartImportedWorkspaceAsync(
-        WorkspaceApiClient client,
+    private async Task TryStartImportedWorkspaceAsync(
         WorkspaceExport export,
         string name,
         string basePath,
         CancellationToken ct)
     {
+        WorkspaceManifest manifest;
         try
         {
             var parser = new ManifestParser();
-            var manifest = WorkspaceManifestPaths.PrepareForSilo(parser.Parse(export.Manifest ?? "{}"), basePath);
-            var response = await client.StartWorkspaceAsync(manifest, ct);
-            var statePath = Path.Combine(basePath, ".weave", "workspace-id");
-            await File.WriteAllTextAsync(statePath, response.WorkspaceId, ct);
-            CliTheme.WriteInfo($"  Workspace started (ID: {response.WorkspaceId}).");
-
-            await RestoreSkillsAsync(client, export, response.WorkspaceId, ct);
-            await RestoreChannelsAsync(client, export, response.WorkspaceId, ct);
+            manifest = WorkspaceManifestPaths.PrepareForSilo(parser.Parse(export.Manifest ?? "{}"), basePath);
         }
-        catch (Exception ex) when (ex is HttpRequestException or TaskCanceledException or System.Net.Sockets.SocketException or System.Text.Json.JsonException or IOException or UnauthorizedAccessException)
+        catch (Exception ex) when (ex is JsonException or FormatException or ArgumentException)
         {
-            CliTheme.WriteWarning($"  Could not start workspace: {ex.Message}");
+            CliTheme.WriteWarning($"  Could not parse manifest: {ex.Message}");
             CliTheme.WriteMuted("  Files are restored — start manually with: weave run " + name);
+            return;
         }
+
+        var startResult = await startAction.ExecuteAsync(new StartWorkspaceInput(manifest), ct);
+        if (!startResult.IsSuccess)
+        {
+            CliTheme.WriteWarning($"  Could not start workspace: {startResult.Failure.Message}");
+            CliTheme.WriteMuted("  Files are restored — start manually with: weave run " + name);
+            return;
+        }
+
+        var workspaceId = startResult.Value.Workspace.WorkspaceId;
+        var statePath = Path.Combine(basePath, ".weave", "workspace-id");
+        await File.WriteAllTextAsync(statePath, workspaceId, ct);
+        CliTheme.WriteInfo($"  Workspace started (ID: {workspaceId}).");
+
+        await RestoreSkillsAsync(export, workspaceId, ct);
+        await RestoreChannelsAsync(export, workspaceId, ct);
     }
 
-    private static async Task RestoreSkillsAsync(WorkspaceApiClient client, WorkspaceExport export, string workspaceId, CancellationToken ct)
+    private async Task RestoreSkillsAsync(WorkspaceExport export, string workspaceId, CancellationToken ct)
     {
         if (export.Skills.Count == 0)
             return;
@@ -132,15 +152,11 @@ internal sealed class DataImportCliCommand(IWorkspaceRegistry registry) : ICliCo
         var skillErrors = new List<string>();
         foreach (var skill in export.Skills)
         {
-            try
-            {
-                await client.PostSkillAsync(workspaceId, skill, ct);
+            var result = await postSkillAction.ExecuteAsync(new PostSkillInput(workspaceId, skill), ct);
+            if (result.IsSuccess)
                 restored++;
-            }
-            catch (Exception ex) when (ex is HttpRequestException or TaskCanceledException or System.Net.Sockets.SocketException or System.Text.Json.JsonException or IOException)
-            {
-                skillErrors.Add(ex.Message);
-            }
+            else
+                skillErrors.Add(result.Failure.Message);
         }
 
         CliTheme.WriteInfo($"  Skills restored: {restored}/{export.Skills.Count}");
@@ -148,7 +164,7 @@ internal sealed class DataImportCliCommand(IWorkspaceRegistry registry) : ICliCo
             CliTheme.WriteWarning($"    Skill failed: {err}");
     }
 
-    private static async Task RestoreChannelsAsync(WorkspaceApiClient client, WorkspaceExport export, string workspaceId, CancellationToken ct)
+    private async Task RestoreChannelsAsync(WorkspaceExport export, string workspaceId, CancellationToken ct)
     {
         if (export.Channels.Count == 0)
             return;
@@ -157,15 +173,11 @@ internal sealed class DataImportCliCommand(IWorkspaceRegistry registry) : ICliCo
         var channelErrors = new List<string>();
         foreach (var channel in export.Channels)
         {
-            try
-            {
-                await client.PostChannelAsync(workspaceId, channel, ct);
+            var result = await postChannelAction.ExecuteAsync(new PostChannelInput(workspaceId, channel), ct);
+            if (result.IsSuccess)
                 restored++;
-            }
-            catch (Exception ex) when (ex is HttpRequestException or TaskCanceledException or System.Net.Sockets.SocketException or System.Text.Json.JsonException or IOException)
-            {
-                channelErrors.Add(ex.Message);
-            }
+            else
+                channelErrors.Add(result.Failure.Message);
         }
 
         CliTheme.WriteInfo($"  Channels restored: {restored}/{export.Channels.Count}");

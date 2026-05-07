@@ -1,9 +1,13 @@
 using Microsoft.Extensions.DependencyInjection;
 using Weave.Actions.Agent;
 using Weave.Actions.AgentTask;
+using Weave.Actions.Channel;
 using Weave.Actions.Config;
 using Weave.Actions.Dashboard;
+using Weave.Actions.Marketplace;
+using Weave.Actions.Skill;
 using Weave.Actions.SystemInfo;
+using Weave.Actions.Template;
 using Weave.Actions.Tool;
 using Weave.Actions.Workspace;
 
@@ -36,6 +40,15 @@ public static class SiloActionsServiceCollectionExtensions
         services.AddHttpClient<ValidateWorkspaceAction>(configureSiloClient);
         services.AddHttpClient<StartWorkspaceAction>(configureSiloClient);
         services.AddHttpClient<StopWorkspaceAction>(configureSiloClient);
+
+        // Phase 4b — workspace data-roundtrip verbs. Return opaque JsonElement
+        // for wire fidelity; the only callers today are workspace export/import.
+        services.AddHttpClient<ListSkillsAction>(configureSiloClient);
+        services.AddHttpClient<PostSkillAction>(configureSiloClient);
+        services.AddHttpClient<ListChannelsAction>(configureSiloClient);
+        services.AddHttpClient<PostChannelAction>(configureSiloClient);
+        services.AddHttpClient<ListTemplatesAction>(configureSiloClient);
+        services.AddHttpClient<ListMarketplaceItemsAction>(configureSiloClient);
 
         // The dashboard URL is not the silo URL — the action passes absolute
         // URIs to GetAsync so the BaseAddress here is unused but harmless.
