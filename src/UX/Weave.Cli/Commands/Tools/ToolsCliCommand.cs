@@ -11,15 +11,11 @@ namespace Weave.Cli.Commands;
 /// back to manifest-only rendering when the workspace isn't running or the
 /// silo can't be reached.
 /// </summary>
-internal sealed class ToolsCliCommand : ICliCommand<WorkspaceNameOptions>
+internal sealed class ToolsCliCommand(
+    ListToolsAction action,
+    IManifestResolver manifestResolver,
+    WorkspacePrompt workspacePrompt) : ICliCommand<WorkspaceNameOptions>
 {
-    private readonly ListToolsAction _action;
-
-    public ToolsCliCommand(ListToolsAction action)
-    {
-        _action = action;
-    }
-
     public string Name => "tools";
 
     public IReadOnlyList<string> Aliases => [];
@@ -28,8 +24,8 @@ internal sealed class ToolsCliCommand : ICliCommand<WorkspaceNameOptions>
 
     public async Task<int> ExecuteAsync(WorkspaceNameOptions options, CancellationToken ct)
     {
-        var name = WorkspacePrompt.SelectName(options.Name, "Which workspace would you like to inspect?");
-        var manifestPath = ManifestResolver.Resolve(name);
+        var name = workspacePrompt.SelectName(options.Name, "Which workspace would you like to inspect?");
+        var manifestPath = manifestResolver.Resolve(name);
         if (manifestPath is null)
         {
             WorkspacePrompt.WriteManifestNotFound(name);
@@ -41,7 +37,7 @@ internal sealed class ToolsCliCommand : ICliCommand<WorkspaceNameOptions>
         if (File.Exists(statePath))
         {
             var workspaceId = (await File.ReadAllTextAsync(statePath, ct)).Trim();
-            var result = await _action.ExecuteAsync(new ListToolsInput(workspaceId), ct);
+            var result = await action.ExecuteAsync(new ListToolsInput(workspaceId), ct);
             if (result.IsSuccess)
             {
                 if (result.Value.Tools.Count > 0)

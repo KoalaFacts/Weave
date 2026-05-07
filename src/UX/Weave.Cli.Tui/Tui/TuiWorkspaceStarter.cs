@@ -13,15 +13,18 @@ internal sealed class TuiWorkspaceStarter
     private readonly TuiAgentSelector _agentSelector;
     private readonly StartWorkspaceAction _startAction;
     private readonly GetSystemInfoAction _systemInfoAction;
+    private readonly ISiloLauncher _siloLauncher;
 
     public TuiWorkspaceStarter(
         TuiAgentSelector agentSelector,
         StartWorkspaceAction startAction,
-        GetSystemInfoAction systemInfoAction)
+        GetSystemInfoAction systemInfoAction,
+        ISiloLauncher siloLauncher)
     {
         _agentSelector = agentSelector;
         _startAction = startAction;
         _systemInfoAction = systemInfoAction;
+        _siloLauncher = siloLauncher;
     }
 
     public async Task StartAsync(TuiSession session, CancellationToken ct)
@@ -53,7 +56,7 @@ internal sealed class TuiWorkspaceStarter
         }
 
         ActionResult<StartWorkspaceResult> startResult = default;
-        WorkspaceSiloStarter.AutoStartResult? siloFailure = null;
+        SiloAutoStartResult? siloFailure = null;
 
         await AnsiConsole.Status()
             .Spinner(Spinner.Known.Dots)
@@ -63,7 +66,7 @@ internal sealed class TuiWorkspaceStarter
                 var systemInfo = await _systemInfoAction.ExecuteAsync(new GetSystemInfoInput(), ct);
                 if (systemInfo.IsSuccess && !systemInfo.Value.Reachable)
                 {
-                    var siloPath = WorkspaceSiloPaths.ResolveSiloPath();
+                    var siloPath = _siloLauncher.ResolveSiloPath();
                     if (siloPath is null)
                     {
                         startResult = ActionResult.Failed<StartWorkspaceResult>(ActionFailure.Internal(
@@ -74,7 +77,7 @@ internal sealed class TuiWorkspaceStarter
                     }
 
                     ctx.Status($"Silo not running — launching from {siloPath}…");
-                    var outcome = await WorkspaceSiloStarter.AutoStartServeWithDiagnosticsAsync(ct);
+                    var outcome = await _siloLauncher.AutoStartServeWithDiagnosticsAsync(ct);
                     if (!outcome.Success)
                     {
                         siloFailure = outcome;

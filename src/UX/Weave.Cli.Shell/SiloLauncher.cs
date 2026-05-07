@@ -2,21 +2,46 @@ using System.Diagnostics;
 
 namespace Weave.Cli.Shell;
 
-internal static class WorkspaceSiloStarter
+internal sealed class SiloLauncher(IConfigStore configStore, ISecretResolver secretResolver) : ISiloLauncher
 {
-    internal sealed record AutoStartResult(bool Success, string LogPath, string? Reason);
+    public string? ResolveSiloPath()
+    {
+        var envPath = Environment.GetEnvironmentVariable("WEAVE_SILO_PATH");
+        if (!string.IsNullOrWhiteSpace(envPath) && (File.Exists(envPath) || Directory.Exists(envPath)))
+            return envPath;
 
-    internal static async Task<bool> AutoStartServeAsync(CancellationToken ct)
+        var config = configStore.Load();
+        if (!string.IsNullOrWhiteSpace(config.SiloPath) && (File.Exists(config.SiloPath) || Directory.Exists(config.SiloPath)))
+            return config.SiloPath;
+
+        var candidates = new[]
+        {
+            Path.Combine("src", "Runtime", "Weave.Silo"),
+            Path.Combine("src", "Runtime", "Weave.Silo", "Weave.Silo.csproj")
+        };
+
+        foreach (var candidate in candidates)
+        {
+            if (File.Exists(candidate) || Directory.Exists(candidate))
+                return Path.GetFullPath(candidate);
+        }
+
+        var exeDir = AppContext.BaseDirectory;
+        var siloDll = Path.Combine(exeDir, "Weave.Silo.dll");
+        return File.Exists(siloDll) ? siloDll : null;
+    }
+
+    public async Task<bool> AutoStartServeAsync(CancellationToken ct)
         => (await AutoStartServeWithDiagnosticsAsync(ct)).Success;
 
-    internal static async Task<AutoStartResult> AutoStartServeWithDiagnosticsAsync(CancellationToken ct)
+    public async Task<SiloAutoStartResult> AutoStartServeWithDiagnosticsAsync(CancellationToken ct)
     {
         var logPath = WorkspaceSiloPaths.GetSiloLogPath();
-        var siloPath = WorkspaceSiloPaths.ResolveSiloPath();
+        var siloPath = ResolveSiloPath();
         if (siloPath is null)
-            return new AutoStartResult(false, logPath, "Could not locate the Weave Silo on disk.");
+            return new SiloAutoStartResult(false, logPath, "Could not locate the Weave Silo on disk.");
 
-        var config = CliConfigStore.Load();
+        var config = configStore.Load();
         var port = config.DefaultPort;
 
         var startInfo = new ProcessStartInfo
@@ -50,7 +75,7 @@ internal static class WorkspaceSiloStarter
         {
             startInfo.ArgumentList.Add($"--Weave:Storage={config.Storage}");
 
-            var resolvedConn = CliConfigStore.ResolveConnectionString(config.ConnectionString);
+            var resolvedConn = secretResolver.ResolveReference(config.ConnectionString);
             if (!string.IsNullOrWhiteSpace(resolvedConn))
             {
                 var connKey = config.Storage switch
@@ -88,13 +113,13 @@ internal static class WorkspaceSiloStarter
         catch (Exception ex) when (ex is InvalidOperationException or System.ComponentModel.Win32Exception or IOException)
         {
             logWriter?.Dispose();
-            return new AutoStartResult(false, logPath, $"Failed to launch dotnet: {ex.Message}");
+            return new SiloAutoStartResult(false, logPath, $"Failed to launch dotnet: {ex.Message}");
         }
 
         if (process is null)
         {
             logWriter?.Dispose();
-            return new AutoStartResult(false, logPath, "Process.Start returned null.");
+            return new SiloAutoStartResult(false, logPath, "Process.Start returned null.");
         }
 
         if (logWriter is not null)
@@ -129,7 +154,7 @@ internal static class WorkspaceSiloStarter
             await Task.Delay(500, ct);
 
             if (process.HasExited)
-                return new AutoStartResult(
+                return new SiloAutoStartResult(
                     false,
                     logPath,
                     $"Silo process exited with code {process.ExitCode} during startup.");
@@ -138,7 +163,7 @@ internal static class WorkspaceSiloStarter
             {
                 var response = await http.GetAsync($"http://localhost:{port}/health", ct);
                 if (response.IsSuccessStatusCode)
-                    return new AutoStartResult(true, logPath, null);
+                    return new SiloAutoStartResult(true, logPath, null);
             }
             catch (Exception ex) when (ex is HttpRequestException or TaskCanceledException or System.Net.Sockets.SocketException)
             {
@@ -146,7 +171,7 @@ internal static class WorkspaceSiloStarter
             }
         }
 
-        return new AutoStartResult(
+        return new SiloAutoStartResult(
             false,
             logPath,
             "Silo did not respond to /health within 60s.");

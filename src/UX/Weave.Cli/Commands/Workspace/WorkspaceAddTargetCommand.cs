@@ -4,14 +4,14 @@ namespace Weave.Cli.Commands;
 
 internal static class WorkspaceAddTargetCommand
 {
-    public static Command Create()
+    public static Command Create(WorkspaceAddTargetCliCommand handler, WorkspaceCompletions completions)
     {
         var workspaceArg = new Argument<string?>("workspace")
         {
             Description = "Workspace name",
             Arity = ArgumentArity.ZeroOrOne
         };
-        workspaceArg.CompletionSources.Add(CliCompletions.CompleteWorkspaceNames);
+        workspaceArg.CompletionSources.Add(completions.CompleteWorkspaceNames);
         var nameOption = new Option<string?>("--name") { Description = "Target name" };
         var runtimeOption = new Option<string>("--runtime")
         {
@@ -26,7 +26,7 @@ internal static class WorkspaceAddTargetCommand
             var workspace = parseResult.GetValue(workspaceArg);
             var targetName = parseResult.GetValue(nameOption);
             var runtime = parseResult.GetValue(runtimeOption)!;
-            return await new WorkspaceAddTargetCliCommand().ExecuteAsync(new WorkspaceAddTargetOptions(workspace, targetName, runtime), cancellationToken);
+            return await handler.ExecuteAsync(new WorkspaceAddTargetOptions(workspace, targetName, runtime), cancellationToken);
         });
 
         return cmd;

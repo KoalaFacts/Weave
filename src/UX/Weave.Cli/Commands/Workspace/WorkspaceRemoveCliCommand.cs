@@ -1,6 +1,6 @@
 namespace Weave.Cli.Commands;
 
-internal sealed class WorkspaceRemoveCliCommand : ICliCommand<WorkspaceRemoveOptions>
+internal sealed class WorkspaceRemoveCliCommand(IWorkspaceRegistry registry, WorkspacePrompt workspacePrompt) : ICliCommand<WorkspaceRemoveOptions>
 {
     public string Name => "remove";
 
@@ -10,21 +10,21 @@ internal sealed class WorkspaceRemoveCliCommand : ICliCommand<WorkspaceRemoveOpt
 
     public Task<int> ExecuteAsync(WorkspaceRemoveOptions options, CancellationToken ct)
     {
-        var name = WorkspacePrompt.SelectRegisteredName(options.Name, "Which workspace would you like to remove?");
+        var name = workspacePrompt.SelectRegisteredName(options.Name, "Which workspace would you like to remove?");
         if (string.IsNullOrWhiteSpace(name))
         {
             CliTheme.WriteError("No workspaces found. Create one first with: weave workspace new");
             return Task.FromResult(1);
         }
 
-        var path = WorkspaceRegistry.Resolve(name);
+        var path = registry.Resolve(name);
         if (path is null)
         {
             CliTheme.WriteError($"Workspace '{name}' not found in registry.");
             return Task.FromResult(1);
         }
 
-        WorkspaceRegistry.Unregister(name);
+        registry.Unregister(name);
 
         if (options.Purge && Directory.Exists(path))
         {

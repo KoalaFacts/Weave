@@ -4,14 +4,14 @@ namespace Weave.Cli.Commands;
 
 internal static class WorkspaceAddPluginCommand
 {
-    public static Command Create()
+    public static Command Create(WorkspaceAddPluginCliCommand handler, WorkspaceCompletions completions)
     {
         var workspaceArg = new Argument<string?>("workspace")
         {
             Description = "Workspace name",
             Arity = ArgumentArity.ZeroOrOne
         };
-        workspaceArg.CompletionSources.Add(CliCompletions.CompleteWorkspaceNames);
+        workspaceArg.CompletionSources.Add(completions.CompleteWorkspaceNames);
         var nameOption = new Option<string?>("--name") { Description = "Plugin name" };
         var typeOption = new Option<string?>("--type") { Description = "Plugin type (dapr, vault, http, custom)" };
         typeOption.CompletionSources.Add(CliCompletions.CompletePluginTypes);
@@ -24,7 +24,7 @@ internal static class WorkspaceAddPluginCommand
             var workspace = parseResult.GetValue(workspaceArg);
             var pluginName = parseResult.GetValue(nameOption);
             var type = parseResult.GetValue(typeOption);
-            return await new WorkspaceAddPluginCliCommand().ExecuteAsync(new WorkspaceAddPluginOptions(workspace, pluginName, type), cancellationToken);
+            return await handler.ExecuteAsync(new WorkspaceAddPluginOptions(workspace, pluginName, type), cancellationToken);
         });
 
         return cmd;

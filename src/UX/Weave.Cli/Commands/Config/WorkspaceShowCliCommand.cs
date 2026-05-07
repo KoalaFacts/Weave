@@ -2,7 +2,7 @@ using Spectre.Console;
 
 namespace Weave.Cli.Commands;
 
-internal sealed class WorkspaceShowCliCommand : ICliCommand<WorkspaceNameOptions>
+internal sealed class WorkspaceShowCliCommand(IManifestResolver manifestResolver, WorkspacePrompt workspacePrompt) : ICliCommand<WorkspaceNameOptions>
 {
     public string Name => "show";
 
@@ -12,8 +12,8 @@ internal sealed class WorkspaceShowCliCommand : ICliCommand<WorkspaceNameOptions
 
     public async Task<int> ExecuteAsync(WorkspaceNameOptions options, CancellationToken ct)
     {
-        var name = WorkspacePrompt.SelectName(options.Name, "Which workspace would you like to show?");
-        var manifestPath = ManifestResolver.Resolve(name);
+        var name = workspacePrompt.SelectName(options.Name, "Which workspace would you like to show?");
+        var manifestPath = manifestResolver.Resolve(name);
         if (manifestPath is null)
         {
             WorkspacePrompt.WriteManifestNotFound(name);

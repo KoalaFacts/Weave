@@ -5,7 +5,7 @@ using Weave.Workspaces.Manifest;
 using Weave.Workspaces.Templates;
 namespace Weave.Cli.Commands;
 
-internal sealed class MarketplaceInstallCliCommand : ICliCommand<MarketplaceInstallOptions>
+internal sealed class MarketplaceInstallCliCommand(IWorkspaceRegistry registry) : ICliCommand<MarketplaceInstallOptions>
 {
     public string Name => "install";
 
@@ -76,7 +76,7 @@ internal sealed class MarketplaceInstallCliCommand : ICliCommand<MarketplaceInst
         return 0;
     }
 
-    private static async Task ScaffoldWorkspaceAsync(
+    private async Task ScaffoldWorkspaceAsync(
         ApiMarketplaceInstallTemplate template,
         string workspaceName,
         string basePath,
@@ -104,7 +104,7 @@ internal sealed class MarketplaceInstallCliCommand : ICliCommand<MarketplaceInst
         Directory.CreateDirectory(Path.Join(basePath, "data"));
         Directory.CreateDirectory(Path.Join(basePath, ".weave"));
 
-        WorkspaceRegistry.Register(workspaceName, basePath);
+        registry.Register(workspaceName, basePath);
 
         await WorkspaceManifestFile.WriteAsync(
             Path.Join(basePath, "workspace.json"), manifest, ct);

@@ -4,14 +4,14 @@ namespace Weave.Cli.Commands;
 
 internal static class WorkspaceDownCommand
 {
-    public static Command Create(WorkspaceDownCliCommand handler)
+    public static Command Create(WorkspaceDownCliCommand handler, WorkspaceCompletions completions)
     {
         var nameArg = new Argument<string?>("name")
         {
             Description = "Workspace name",
             Arity = ArgumentArity.ZeroOrOne
         };
-        nameArg.CompletionSources.Add(CliCompletions.CompleteWorkspaceNames);
+        nameArg.CompletionSources.Add(completions.CompleteWorkspaceNames);
 
         var cmd = new Command("down", "Stop a workspace") { nameArg };
         cmd.SetAction(async (parseResult, cancellationToken) =>

@@ -3,9 +3,9 @@ using System.Diagnostics;
 
 namespace Weave.Cli.Commands;
 
-internal static class SiloProcessService
+internal sealed class SiloProcessService(IConfigStore configStore, ISecretResolver secretResolver)
 {
-    public static Process? StartSilo(string siloPath, int port, Weave.Workspaces.Manifest.StorageConfig? workspaceStorage = null)
+    public Process? StartSilo(string siloPath, int port, Weave.Workspaces.Manifest.StorageConfig? workspaceStorage = null)
     {
         var startInfo = new ProcessStartInfo
         {
@@ -127,21 +127,21 @@ internal static class SiloProcessService
             args.Add(arg);
     }
 
-    private static void AddStorageArguments(Collection<string> args, Weave.Workspaces.Manifest.StorageConfig? workspaceStorage)
+    private void AddStorageArguments(Collection<string> args, Weave.Workspaces.Manifest.StorageConfig? workspaceStorage)
     {
         var storageBackend = workspaceStorage?.Backend;
         var storageConn = workspaceStorage?.ConnectionString;
         var storageSchema = workspaceStorage?.Schema;
-        var cliConfig = CliConfigStore.Load();
+        var cliConfig = configStore.Load();
 
         if (string.IsNullOrWhiteSpace(storageBackend))
         {
             storageBackend = cliConfig.Storage;
-            storageConn = CliConfigStore.ResolveConnectionString(cliConfig.ConnectionString);
+            storageConn = secretResolver.ResolveReference(cliConfig.ConnectionString);
         }
         else if (!string.IsNullOrWhiteSpace(storageConn))
         {
-            storageConn = CliConfigStore.ResolveConnectionString(storageConn);
+            storageConn = secretResolver.ResolveReference(storageConn);
         }
 
         if (string.IsNullOrWhiteSpace(storageBackend) || storageBackend == "memory")
@@ -156,13 +156,13 @@ internal static class SiloProcessService
             args.Add($"--Weave:ActorStorage:Database={workspaceStorage.Database}");
     }
 
-    private static void AddAuthArguments(Collection<string> args)
+    private void AddAuthArguments(Collection<string> args)
     {
-        var cliConfig = CliConfigStore.Load();
+        var cliConfig = configStore.Load();
         if (!string.IsNullOrWhiteSpace(cliConfig.AuthMode) && cliConfig.AuthMode != "none")
         {
             args.Add($"--Weave:Auth:Mode={cliConfig.AuthMode}");
-            var resolvedAuth = CliConfigStore.ResolveConnectionString(cliConfig.AuthSecret);
+            var resolvedAuth = secretResolver.ResolveReference(cliConfig.AuthSecret);
             if (!string.IsNullOrWhiteSpace(resolvedAuth))
                 args.Add($"--Weave:Auth:Secret={resolvedAuth}");
         }

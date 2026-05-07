@@ -3,6 +3,7 @@ using Spectre.Console;
 namespace Weave.Cli.Commands;
 
 internal sealed class StorageChangeCliCommand(
+    IConfigStore configStore,
     StorageBackendService? storage = null,
     StorageChangePrompt? prompt = null) : ICliCommand<StorageChangeOptions>
 {
@@ -17,7 +18,7 @@ internal sealed class StorageChangeCliCommand(
 
     public async Task<int> ExecuteAsync(StorageChangeOptions options, CancellationToken ct)
     {
-        var currentConfig = CliConfigStore.Load();
+        var currentConfig = configStore.Load();
 
         var isRunning = await StorageBackendService.IsRunningAsync(currentConfig.DefaultPort, ct);
         if (isRunning)
@@ -53,7 +54,7 @@ internal sealed class StorageChangeCliCommand(
             Storage = backend,
             ConnectionString = backend == "memory" ? null : connectionStr
         };
-        CliConfigStore.Save(newConfig);
+        configStore.Save(newConfig);
 
         AnsiConsole.WriteLine();
         CliTheme.WriteSuccess($"Storage changed: {currentConfig.Storage} → {backend}");

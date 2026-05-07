@@ -4,7 +4,7 @@ namespace Weave.Cli.Commands;
 
 internal static class DataImportCommand
 {
-    public static Command Create()
+    public static Command Create(DataImportCliCommand handler)
     {
         var fileArg = new Argument<string?>("file")
         {
@@ -18,7 +18,7 @@ internal static class DataImportCommand
         {
             var filePath = parseResult.GetValue(fileArg);
             var overrideName = parseResult.GetValue(workspaceOption);
-            return await new DataImportCliCommand().ExecuteAsync(new DataImportOptions(filePath, overrideName), cancellationToken);
+            return await handler.ExecuteAsync(new DataImportOptions(filePath, overrideName), cancellationToken);
         });
 
         return cmd;

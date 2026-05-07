@@ -2,7 +2,7 @@ using System.Text.Json;
 
 namespace Weave.Cli.Commands;
 
-internal sealed class DataExportCliCommand : ICliCommand<DataExportOptions>
+internal sealed class DataExportCliCommand(IManifestResolver manifestResolver, WorkspacePrompt workspacePrompt) : ICliCommand<DataExportOptions>
 {
 
     public string Name => "export";
@@ -13,8 +13,8 @@ internal sealed class DataExportCliCommand : ICliCommand<DataExportOptions>
 
     public async Task<int> ExecuteAsync(DataExportOptions options, CancellationToken ct)
     {
-        var workspace = SelectWorkspace(options.Workspace);
-        var manifestPath = ResolveManifestPath(workspace);
+        var workspace = workspacePrompt.SelectName(options.Workspace, "Which workspace would you like to export?");
+        var manifestPath = manifestResolver.Resolve(workspace);
         if (manifestPath is null)
         {
             WorkspacePrompt.WriteManifestNotFound(workspace);
@@ -49,11 +49,6 @@ internal sealed class DataExportCliCommand : ICliCommand<DataExportOptions>
 
         return 0;
     }
-
-    private static string? SelectWorkspace(string? workspace)
-        => WorkspacePrompt.SelectName(workspace, "Which workspace would you like to export?");
-
-    private static string? ResolveManifestPath(string? workspace) => ManifestResolver.Resolve(workspace);
 
     private static async Task<WorkspaceExport> BuildExportAsync(
         string workspace,

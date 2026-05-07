@@ -4,14 +4,14 @@ namespace Weave.Cli.Commands;
 
 internal static class WorkspaceValidateCommand
 {
-    public static Command Create(WorkspaceValidateCliCommand handler)
+    public static Command Create(WorkspaceValidateCliCommand handler, WorkspaceCompletions completions)
     {
         var nameArg = new Argument<string?>("name")
         {
             Description = "Workspace name",
             Arity = ArgumentArity.ZeroOrOne
         };
-        nameArg.CompletionSources.Add(CliCompletions.CompleteWorkspaceNames);
+        nameArg.CompletionSources.Add(completions.CompleteWorkspaceNames);
 
         var cmd = new Command("validate", "Validate workspace configuration") { nameArg };
         cmd.SetAction((parseResult, ct) =>

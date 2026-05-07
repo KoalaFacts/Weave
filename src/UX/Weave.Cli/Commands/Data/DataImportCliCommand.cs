@@ -4,7 +4,7 @@ using Weave.Workspaces.Manifest;
 
 namespace Weave.Cli.Commands;
 
-internal sealed class DataImportCliCommand : ICliCommand<DataImportOptions>
+internal sealed class DataImportCliCommand(IWorkspaceRegistry registry) : ICliCommand<DataImportOptions>
 {
     public string Name => "import";
 
@@ -73,7 +73,7 @@ internal sealed class DataImportCliCommand : ICliCommand<DataImportOptions>
         return JsonSerializer.Deserialize(json, DataJsonContext.Default.WorkspaceExport);
     }
 
-    private static async Task<string> RestoreFilesAsync(WorkspaceExport export, string name, CancellationToken ct)
+    private async Task<string> RestoreFilesAsync(WorkspaceExport export, string name, CancellationToken ct)
     {
         var basePath = Path.GetFullPath(name);
         Directory.CreateDirectory(basePath);
@@ -93,7 +93,7 @@ internal sealed class DataImportCliCommand : ICliCommand<DataImportOptions>
         if (export.PromptFiles.Count > 0)
             CliTheme.WriteInfo($"  Prompt files: {export.PromptFiles.Count}");
 
-        WorkspaceRegistry.Register(name, basePath);
+        registry.Register(name, basePath);
         return basePath;
     }
 

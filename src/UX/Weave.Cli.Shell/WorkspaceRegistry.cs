@@ -3,41 +3,41 @@ using System.Text.Json;
 namespace Weave.Cli.Shell;
 
 /// <summary>
-/// Manages a mapping of workspace names to their folder paths.
-/// Stored at ~/.weave/workspaces.json so workspaces can live anywhere on disk.
+/// File-backed mapping of workspace names to folder paths at
+/// <c>~/.weave/workspaces.json</c>, so workspaces can live anywhere on disk.
 /// </summary>
-internal static class WorkspaceRegistry
+internal sealed class WorkspaceRegistry : IWorkspaceRegistry
 {
     private static readonly string WeaveHome = Path.Combine(
         Environment.GetFolderPath(Environment.SpecialFolder.UserProfile), ".weave");
 
     private static readonly string RegistryPath = Path.Combine(WeaveHome, "workspaces.json");
 
-    public static void Register(string name, string absolutePath)
+    public void Register(string name, string absolutePath)
     {
-        var entries = Load();
+        var entries = LoadEntries();
         entries[name] = absolutePath;
         Save(entries);
     }
 
-    public static void Unregister(string name)
+    public void Unregister(string name)
     {
-        var entries = Load();
+        var entries = LoadEntries();
         entries.Remove(name);
         Save(entries);
     }
 
-    public static string? Resolve(string name)
+    public string? Resolve(string name)
     {
-        var entries = Load();
+        var entries = LoadEntries();
         return entries.TryGetValue(name, out var path) ? path : null;
     }
 
-    public static IReadOnlyDictionary<string, string> GetAll() => Load();
+    public IReadOnlyDictionary<string, string> GetAll() => LoadEntries();
 
-    public static IEnumerable<string> GetNames() => Load().Keys;
+    public IEnumerable<string> GetNames() => LoadEntries().Keys;
 
-    private static Dictionary<string, string> Load()
+    private static Dictionary<string, string> LoadEntries()
     {
         if (!File.Exists(RegistryPath))
             return new Dictionary<string, string>(StringComparer.Ordinal);
@@ -54,4 +54,3 @@ internal static class WorkspaceRegistry
         File.WriteAllText(RegistryPath, json);
     }
 }
-

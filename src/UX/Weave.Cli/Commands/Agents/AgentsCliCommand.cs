@@ -12,15 +12,11 @@ namespace Weave.Cli.Commands;
 /// Falls back to manifest-only rendering when the workspace isn't running or
 /// the silo can't be reached.
 /// </summary>
-internal sealed class AgentsCliCommand : ICliCommand<WorkspaceNameOptions>
+internal sealed class AgentsCliCommand(
+    ListAgentsAction action,
+    IManifestResolver manifestResolver,
+    WorkspacePrompt workspacePrompt) : ICliCommand<WorkspaceNameOptions>
 {
-    private readonly ListAgentsAction _action;
-
-    public AgentsCliCommand(ListAgentsAction action)
-    {
-        _action = action;
-    }
-
     public string Name => "agents";
 
     public IReadOnlyList<string> Aliases => [];
@@ -29,8 +25,8 @@ internal sealed class AgentsCliCommand : ICliCommand<WorkspaceNameOptions>
 
     public async Task<int> ExecuteAsync(WorkspaceNameOptions options, CancellationToken ct)
     {
-        var name = WorkspacePrompt.SelectName(options.Name, "Which workspace would you like to inspect?");
-        var manifestPath = ManifestResolver.Resolve(name);
+        var name = workspacePrompt.SelectName(options.Name, "Which workspace would you like to inspect?");
+        var manifestPath = manifestResolver.Resolve(name);
         if (manifestPath is null)
         {
             WorkspacePrompt.WriteManifestNotFound(name);
@@ -42,7 +38,7 @@ internal sealed class AgentsCliCommand : ICliCommand<WorkspaceNameOptions>
         if (File.Exists(statePath))
         {
             var workspaceId = (await File.ReadAllTextAsync(statePath, ct)).Trim();
-            var result = await _action.ExecuteAsync(new ListAgentsInput(workspaceId), ct);
+            var result = await action.ExecuteAsync(new ListAgentsInput(workspaceId), ct);
             if (result.IsSuccess)
             {
                 if (result.Value.Agents.Count > 0)

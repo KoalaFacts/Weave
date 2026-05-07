@@ -4,7 +4,7 @@ namespace Weave.Cli.Commands;
 
 internal static class InitStoragePrompt
 {
-    public static async Task<InitStorageSelection> PromptAsync(CancellationToken ct)
+    public static async Task<InitStorageSelection> PromptAsync(ISecretResolver secretResolver, CancellationToken ct)
     {
         CliTheme.WriteSection("Step 1 · Storage");
         AnsiConsole.MarkupLine("Where should Weave store agent state, skills, and user profiles?");
@@ -25,7 +25,7 @@ internal static class InitStoragePrompt
         var connectionString = storageKey switch
         {
             "sqlite" => ConfigureSqlite(),
-            "postgresql" or "sqlserver" or "redis" => await ConfigureServerStorageAsync(storageKey, ct),
+            "postgresql" or "sqlserver" or "redis" => await ConfigureServerStorageAsync(secretResolver, storageKey, ct),
             _ => null
         };
 
@@ -41,7 +41,7 @@ internal static class InitStoragePrompt
         return $"Data Source={defaultDb}";
     }
 
-    private static async Task<string?> ConfigureServerStorageAsync(string storageKey, CancellationToken ct)
+    private static async Task<string?> ConfigureServerStorageAsync(ISecretResolver secretResolver, string storageKey, CancellationToken ct)
     {
         var secretMethod = AnsiConsole.Prompt(
             new SelectionPrompt<string>()
@@ -56,20 +56,20 @@ internal static class InitStoragePrompt
         var method = secretMethod.Split(' ')[0].Trim();
         var connectionString = method switch
         {
-            "env" => ConfigureEnvConnection(storageKey),
+            "env" => ConfigureEnvConnection(secretResolver, storageKey),
             "file" => ConfigureFileConnection(),
             "vault" => ConfigureVaultConnection(),
             _ => ConfigureInlineConnection(storageKey)
         };
 
-        await TestConnectionAsync(storageKey, connectionString, ct);
+        await TestConnectionAsync(secretResolver, storageKey, connectionString, ct);
         ShowSqlScriptReminder(storageKey);
         return connectionString;
     }
 
-    private static string ConfigureEnvConnection(string storageKey)
+    private static string ConfigureEnvConnection(ISecretResolver secretResolver, string storageKey)
     {
-        var envRef = CliConfigStore.ToEnvReference(storageKey);
+        var envRef = secretResolver.ToEnvReference(storageKey);
         var envVar = envRef[4..];
         var currentValue = Environment.GetEnvironmentVariable(envVar);
         if (!string.IsNullOrWhiteSpace(currentValue))
@@ -149,12 +149,12 @@ internal static class InitStoragePrompt
         return AnsiConsole.Prompt(new TextPrompt<string>("Connection string:").Styled().DefaultValue(defaultConn));
     }
 
-    private static async Task TestConnectionAsync(string storageKey, string? connectionString, CancellationToken ct)
+    private static async Task TestConnectionAsync(ISecretResolver secretResolver, string storageKey, string? connectionString, CancellationToken ct)
     {
         string? resolvedConn = null;
         try
         {
-            resolvedConn = CliConfigStore.ResolveConnectionString(connectionString);
+            resolvedConn = secretResolver.ResolveReference(connectionString);
         }
         catch (Exception ex) when (ex is FormatException or ArgumentException or InvalidOperationException or IOException)
         {

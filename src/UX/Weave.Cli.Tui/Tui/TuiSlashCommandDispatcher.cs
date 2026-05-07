@@ -21,6 +21,7 @@ internal sealed class TuiSlashCommandDispatcher
     private readonly WorkspaceValidateCliCommand _validateCommand;
     private readonly WebUiCliCommand _webUiCommand;
     private readonly UpgradeCliCommand _upgradeCommand;
+    private readonly PortsCliCommand _portsCommand;
 
     public TuiSlashCommandDispatcher(
         TuiWorkspaceDashboard dashboard,
@@ -38,7 +39,8 @@ internal sealed class TuiSlashCommandDispatcher
         WorkspaceStatusCliCommand statusCommand,
         WorkspaceValidateCliCommand validateCommand,
         WebUiCliCommand webUiCommand,
-        UpgradeCliCommand upgradeCommand)
+        UpgradeCliCommand upgradeCommand,
+        PortsCliCommand portsCommand)
     {
         _dashboard = dashboard;
         _chatSession = chatSession;
@@ -56,6 +58,7 @@ internal sealed class TuiSlashCommandDispatcher
         _validateCommand = validateCommand;
         _webUiCommand = webUiCommand;
         _upgradeCommand = upgradeCommand;
+        _portsCommand = portsCommand;
     }
 
     public async Task<TuiDispatchResult> DispatchAsync(
@@ -134,7 +137,7 @@ internal sealed class TuiSlashCommandDispatcher
                     ct);
 
             case "ports":
-                await new PortsCliCommand().ExecuteAsync(new NoCliOptions(), ct);
+                await _portsCommand.ExecuteAsync(new NoCliOptions(), ct);
                 return TuiDispatchResult.Continue;
 
             case "config":

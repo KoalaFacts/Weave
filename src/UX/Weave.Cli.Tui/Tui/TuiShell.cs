@@ -16,6 +16,8 @@ internal sealed class TuiShell
     private readonly TuiSlashCommandDispatcher _dispatcher;
     private readonly VersionService _versionService;
     private readonly ChatComposer _composer;
+    private readonly IWorkspaceRegistry _registry;
+    private readonly IManifestResolver _manifestResolver;
 
     public TuiShell(
         VersionService versionService,
@@ -33,16 +35,22 @@ internal sealed class TuiShell
         OpenWorkspaceAction openWorkspaceAction,
         StartWorkspaceAction startWorkspaceAction,
         GetSystemInfoAction systemInfoAction,
+        ISiloLauncher siloLauncher,
         WorkspaceStatusCliCommand statusCommand,
         WorkspaceValidateCliCommand validateCommand,
         WorkspaceDownCliCommand downCommand,
         WebUiCliCommand webUiCommand,
-        UpgradeCliCommand upgradeCommand)
+        UpgradeCliCommand upgradeCommand,
+        PortsCliCommand portsCommand,
+        IWorkspaceRegistry registry,
+        IManifestResolver manifestResolver)
     {
         _versionService = versionService;
         _composer = composer;
         _dashboard = dashboard;
         _chatSession = chatSession;
+        _registry = registry;
+        _manifestResolver = manifestResolver;
 
         _dispatcher = new TuiSlashCommandDispatcher(
             _dashboard,
@@ -50,7 +58,7 @@ internal sealed class TuiShell
             agentSelector,
             new TuiAgentListView(agentNameSource, listAgentsAction),
             new TuiWorkspaceOpener(openWorkspaceAction, agentSelector, liveStatusView),
-            new TuiWorkspaceStarter(agentSelector, startWorkspaceAction, systemInfoAction),
+            new TuiWorkspaceStarter(agentSelector, startWorkspaceAction, systemInfoAction, siloLauncher),
             new TuiWorkspaceStopper(downCommand),
             new TuiWorkspaceWatcher(liveStatusView),
             toolsView,
@@ -60,12 +68,13 @@ internal sealed class TuiShell
             statusCommand,
             validateCommand,
             webUiCommand,
-            upgradeCommand);
+            upgradeCommand,
+            portsCommand);
     }
 
     public async Task<int> RunAsync(CancellationToken cancellationToken)
     {
-        var session = new TuiSession();
+        var session = new TuiSession(_manifestResolver);
 
         AnsiConsole.Clear();
         CliTheme.WriteBanner();
@@ -116,9 +125,9 @@ internal sealed class TuiShell
         return raw.StartsWith('/') || TuiCommandParser.IsBareCommand(firstToken);
     }
 
-    private static void RenderWelcome()
+    private void RenderWelcome()
     {
-        var workspaceCount = WorkspaceRegistry.GetAll().Count;
+        var workspaceCount = _registry.GetAll().Count;
 
         if (workspaceCount == 0)
         {

@@ -4,14 +4,14 @@ namespace Weave.Cli.Commands;
 
 internal static class WorkspaceRemoveCommand
 {
-    public static Command Create()
+    public static Command Create(WorkspaceRemoveCliCommand handler, WorkspaceCompletions completions)
     {
         var nameArg = new Argument<string?>("name")
         {
             Description = "Workspace name",
             Arity = ArgumentArity.ZeroOrOne
         };
-        nameArg.CompletionSources.Add(CliCompletions.CompleteWorkspaceNames);
+        nameArg.CompletionSources.Add(completions.CompleteWorkspaceNames);
         var purgeOption = new Option<bool>("--purge") { Description = "Delete workspace folder" };
 
         var cmd = new Command("remove", "Remove a workspace") { nameArg, purgeOption };
@@ -19,7 +19,7 @@ internal static class WorkspaceRemoveCommand
         {
             var name = parseResult.GetValue(nameArg);
             var purge = parseResult.GetValue(purgeOption);
-            return await new WorkspaceRemoveCliCommand().ExecuteAsync(new WorkspaceRemoveOptions(name, purge), cancellationToken);
+            return await handler.ExecuteAsync(new WorkspaceRemoveOptions(name, purge), cancellationToken);
         });
 
         return cmd;

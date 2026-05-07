@@ -4,7 +4,7 @@ using Weave.Shared;
 
 namespace Weave.Cli.Commands;
 
-internal sealed class InitCliCommand : ICliCommand<NoCliOptions>
+internal sealed class InitCliCommand(IConfigStore configStore, ISecretResolver secretResolver) : ICliCommand<NoCliOptions>
 {
     public string Name => "init";
 
@@ -18,9 +18,9 @@ internal sealed class InitCliCommand : ICliCommand<NoCliOptions>
         AnsiConsole.MarkupLine("[bold]Setting up Weave on this machine.[/]");
         AnsiConsole.WriteLine();
 
-        if (CliConfigStore.Exists())
+        if (configStore.Exists())
         {
-            var existing = CliConfigStore.Load();
+            var existing = configStore.Load();
             CliTheme.WriteInfo("Existing configuration found:");
             CliTheme.WriteKeyValue("Storage", existing.Storage);
             CliTheme.WriteKeyValue("Port", existing.DefaultPort.ToString(CultureInfo.InvariantCulture));
@@ -33,7 +33,7 @@ internal sealed class InitCliCommand : ICliCommand<NoCliOptions>
             AnsiConsole.WriteLine();
         }
 
-        var storage = await InitStoragePrompt.PromptAsync(ct);
+        var storage = await InitStoragePrompt.PromptAsync(secretResolver, ct);
 
         // ── Step 2: Server port ──────────────────────────────────
         AnsiConsole.WriteLine();
@@ -78,7 +78,7 @@ internal sealed class InitCliCommand : ICliCommand<NoCliOptions>
             RequireHttps = security.RequireHttps
         };
 
-        CliConfigStore.Save(config);
+        configStore.Save(config);
 
         AnsiConsole.WriteLine();
         CliTheme.WriteSuccess("Environment configured.");
