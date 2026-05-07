@@ -15,6 +15,7 @@ internal sealed class TuiSlashCommandDispatcher
     private readonly TuiToolsView _toolsView;
     private readonly TuiTasksView _tasksView;
     private readonly TuiConfigView _configView;
+    private readonly TuiSystemView _systemView;
     private readonly WorkspaceStatusCliCommand _statusCommand;
     private readonly WorkspaceValidateCliCommand _validateCommand;
     private readonly WebUiCliCommand _webUiCommand;
@@ -31,6 +32,7 @@ internal sealed class TuiSlashCommandDispatcher
         TuiToolsView toolsView,
         TuiTasksView tasksView,
         TuiConfigView configView,
+        TuiSystemView systemView,
         WorkspaceStatusCliCommand statusCommand,
         WorkspaceValidateCliCommand validateCommand,
         WebUiCliCommand webUiCommand,
@@ -46,6 +48,7 @@ internal sealed class TuiSlashCommandDispatcher
         _toolsView = toolsView;
         _tasksView = tasksView;
         _configView = configView;
+        _systemView = systemView;
         _statusCommand = statusCommand;
         _validateCommand = validateCommand;
         _webUiCommand = webUiCommand;
@@ -161,7 +164,7 @@ internal sealed class TuiSlashCommandDispatcher
 
             case "system":
             case "sys":
-                await TuiSystemView.ShowAsync(ct);
+                await _systemView.ShowAsync(ct);
                 return TuiDispatchResult.Continue;
 
             case "version":

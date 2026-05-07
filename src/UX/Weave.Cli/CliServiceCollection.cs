@@ -47,6 +47,8 @@ internal static class CliServiceCollection
         services.AddTransient<TuiToolsView>();
         services.AddTransient<TuiTasksView>();
         services.AddTransient<TuiConfigView>();
+        services.AddTransient<TuiSystemView>();
+        services.AddTransient<TuiWorkspaceDashboard>();
         services.AddTransient<TuiLiveStatusWatcher>();
         services.AddTransient<TuiLiveStatusView>();
 
