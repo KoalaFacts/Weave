@@ -40,13 +40,17 @@ internal static class CliServiceCollection
         services.AddTransient<ChatComposer>();
         services.AddTransient<TuiShell>();
 
-        // Legacy WorkspaceApiClient — still used by the unmigrated CLI/TUI
-        // surfaces. Shrinks as Phase 1 verbs migrate to actions; the action
-        // layer does NOT depend on it (each action takes its own typed
-        // HttpClient via Weave.Actions' AddSiloActions registration below).
-        services.AddSingleton<WorkspaceApiClient>();
+        // Migrated TUI views — consume actions through DI (no shared
+        // WorkspaceApiClient seam). The remaining inline `new
+        // WorkspaceApiClient()` callsites drain as their consumers move into
+        // actions in Phases 1-2.
         services.AddTransient<TuiToolsView>();
         services.AddTransient<TuiTasksView>();
+        services.AddTransient<TuiConfigView>();
+        services.AddTransient<TuiSystemView>();
+        services.AddTransient<TuiWorkspaceDashboard>();
+        services.AddTransient<TuiLiveStatusWatcher>();
+        services.AddTransient<TuiLiveStatusView>();
 
         // Shape C action layer — frontend-supplied prompter/reporter, plus
         // typed HttpClients per action keyed off the silo base URL. Actions
@@ -57,6 +61,12 @@ internal static class CliServiceCollection
         services.AddSiloActions(client => client.BaseAddress = new Uri(CliApiHttp.ResolveBaseUrl()));
         services.AddTransient<SystemCliCommand>();
         services.AddTransient<AgentsCliCommand>();
+        services.AddTransient<ToolsCliCommand>();
+        services.AddTransient<TasksCliCommand>();
+        services.AddTransient<WorkspaceStatusCliCommand>();
+        services.AddTransient<WorkspaceValidateCliCommand>();
+        services.AddTransient<ConfigGetCliCommand>();
+        services.AddTransient<WebUiCliCommand>();
 
         return services.BuildServiceProvider();
     }

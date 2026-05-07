@@ -1,10 +1,23 @@
 using System.Globalization;
-using Weave.Workspaces.Manifest;
+using Weave.Actions.Context;
+using Weave.Actions.Workspace;
 
 namespace Weave.Cli.Commands;
 
+/// <summary>
+/// Phase 1 read-only verb on the CLI side. Resolves the manifest path via
+/// the standard guided/advanced prompt pattern, then delegates parsing +
+/// validation to <see cref="ValidateWorkspaceAction"/>.
+/// </summary>
 internal sealed class WorkspaceValidateCliCommand : ICliCommand<WorkspaceNameOptions>
 {
+    private readonly ValidateWorkspaceAction _action;
+
+    public WorkspaceValidateCliCommand(ValidateWorkspaceAction action)
+    {
+        _action = action;
+    }
+
     public string Name => "validate";
 
     public IReadOnlyList<string> Aliases => [];
@@ -21,33 +34,41 @@ internal sealed class WorkspaceValidateCliCommand : ICliCommand<WorkspaceNameOpt
             return 1;
         }
 
-        try
+        var result = await _action.ExecuteAsync(new ValidateWorkspaceInput(manifestPath), ct);
+        if (!result.IsSuccess)
         {
-            var json = await File.ReadAllTextAsync(manifestPath, ct);
-            var parser = new ManifestParser();
-            var manifest = parser.Parse(json);
-            var errors = parser.Validate(manifest);
-
-            if (errors.Count > 0)
+            switch (result.Failure.Reason)
             {
-                CliTheme.WriteError("Configuration invalid:");
-                foreach (var error in errors)
-                    CliTheme.WriteMuted($"  - {error}");
-
-                return 1;
+                case ActionFailureReason.Cancelled:
+                    return 130;
+                case ActionFailureReason.ValidationFailed:
+                    CliTheme.WriteError($"Configuration invalid: {result.Failure.Message}");
+                    return 1;
+                case ActionFailureReason.SiloUnreachable:
+                    CliTheme.WriteWarning(result.Failure.Message);
+                    return 1;
+                case ActionFailureReason.NotFound:
+                    CliTheme.WriteError(result.Failure.Message);
+                    return 1;
+                default:
+                    CliTheme.WriteError(result.Failure.Message);
+                    return 1;
             }
-
-            CliTheme.WriteSuccess("Configuration valid.");
-            CliTheme.WriteKeyValue("Name", manifest.Name);
-            CliTheme.WriteKeyValue("Agents", (manifest.Agents?.Count ?? 0).ToString(CultureInfo.InvariantCulture));
-            CliTheme.WriteKeyValue("Tools", (manifest.Tools?.Count ?? 0).ToString(CultureInfo.InvariantCulture));
-            CliTheme.WriteKeyValue("Targets", (manifest.Targets?.Count ?? 0).ToString(CultureInfo.InvariantCulture));
-            return 0;
         }
-        catch (Exception ex) when (ex is IOException or UnauthorizedAccessException or System.Text.Json.JsonException or FormatException)
+
+        if (!result.Value.IsValid)
         {
-            CliTheme.WriteError($"Configuration invalid: {ex.Message}");
+            CliTheme.WriteError("Configuration invalid:");
+            foreach (var error in result.Value.Errors)
+                CliTheme.WriteMuted($"  - {error}");
             return 1;
         }
+
+        CliTheme.WriteSuccess("Configuration valid.");
+        CliTheme.WriteKeyValue("Name", result.Value.Name);
+        CliTheme.WriteKeyValue("Agents", result.Value.AgentCount.ToString(CultureInfo.InvariantCulture));
+        CliTheme.WriteKeyValue("Tools", result.Value.ToolCount.ToString(CultureInfo.InvariantCulture));
+        CliTheme.WriteKeyValue("Targets", result.Value.TargetCount.ToString(CultureInfo.InvariantCulture));
+        return 0;
     }
 }

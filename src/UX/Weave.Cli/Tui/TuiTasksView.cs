@@ -1,11 +1,18 @@
-using System.Globalization;
-using Spectre.Console;
+using Weave.Actions.AgentTask;
+using Weave.Actions.Context;
 using Weave.Cli.Commands;
 
 namespace Weave.Cli.Tui;
 
-internal sealed class TuiTasksView(WorkspaceApiClient client)
+internal sealed class TuiTasksView
 {
+    private readonly ListTasksAction _action;
+
+    public TuiTasksView(ListTasksAction action)
+    {
+        _action = action;
+    }
+
     public async Task RenderAsync(TuiSession session, CancellationToken ct)
     {
         if (!session.IsRunning)
@@ -20,38 +27,21 @@ internal sealed class TuiTasksView(WorkspaceApiClient client)
             return;
         }
 
-        IReadOnlyList<ApiTaskResponse> tasks;
-        try
+        var result = await _action.ExecuteAsync(new ListTasksInput(session.WorkspaceId!, session.AgentName), ct);
+        if (!result.IsSuccess)
         {
-            tasks = await client.GetTasksAsync(session.WorkspaceId!, session.AgentName, ct);
-        }
-        catch (Exception ex) when (ex is HttpRequestException or TaskCanceledException or System.Net.Sockets.SocketException or System.Text.Json.JsonException or IOException)
-        {
-            CliTheme.WriteError($"Failed to fetch tasks: {ex.Message}");
+            if (result.Failure.Reason == ActionFailureReason.Cancelled)
+                return;
+            CliTheme.WriteError($"Failed to fetch tasks: {result.Failure.Message}");
             return;
         }
 
-        if (tasks.Count == 0)
+        if (result.Value.Tasks.Count == 0)
         {
             CliTheme.WriteMuted($"No tasks for agent '{session.AgentName}'.");
             return;
         }
 
-        var table = CliTheme.CreateTable($"Tasks · {session.AgentName}");
-        table.AddColumn(CliTheme.StyledColumn("ID"));
-        table.AddColumn(CliTheme.StyledColumn("Description"));
-        table.AddColumn(CliTheme.StyledColumn("Status"));
-        table.AddColumn(CliTheme.StyledColumn("Created"));
-
-        foreach (var task in tasks)
-        {
-            table.AddRow(
-                Markup.Escape(task.TaskId),
-                Markup.Escape(task.Description),
-                TuiMarkup.ColorStatus(task.Status),
-                task.CreatedAt.ToString("g", CultureInfo.InvariantCulture));
-        }
-
-        AnsiConsole.Write(table);
+        TasksRenderer.RenderLive(session.AgentName, result.Value.Tasks);
     }
 }

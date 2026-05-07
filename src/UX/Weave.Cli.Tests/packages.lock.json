@@ -263,7 +263,8 @@
         "type": "Project",
         "dependencies": {
           "Microsoft.Extensions.Http": "[10.0.7, )",
-          "Weave.Shared": "[1.0.0, )"
+          "Weave.Shared": "[1.0.0, )",
+          "Weave.Workspaces": "[1.0.0, )"
         }
       },
       "weave.cli": {

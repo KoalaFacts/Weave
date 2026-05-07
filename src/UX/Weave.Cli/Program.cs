@@ -29,9 +29,9 @@ workspace.Subcommands.Add(WorkspaceListCommand.Create());
 workspace.Subcommands.Add(WorkspaceRemoveCommand.Create());
 workspace.Subcommands.Add(WorkspaceUpCommand.Create());
 workspace.Subcommands.Add(WorkspaceDownCommand.Create());
-workspace.Subcommands.Add(WorkspaceStatusCommand.Create());
+workspace.Subcommands.Add(WorkspaceStatusCommand.Create(services.GetRequiredService<WorkspaceStatusCliCommand>()));
 workspace.Subcommands.Add(WorkspaceShowCommand.Create());
-workspace.Subcommands.Add(WorkspaceValidateCommand.Create());
+workspace.Subcommands.Add(WorkspaceValidateCommand.Create(services.GetRequiredService<WorkspaceValidateCliCommand>()));
 workspace.Subcommands.Add(WorkspacePublishCommand.Create());
 workspace.Subcommands.Add(WorkspacePresetsCommand.Create());
 
@@ -53,7 +53,7 @@ workspace.Subcommands.Add(plugin);
 root.Subcommands.Add(WorkspaceServeCommand.Create());
 root.Subcommands.Add(RunCommand.Create());
 root.Subcommands.Add(TuiCommand.Create(services.GetRequiredService<TuiCliCommand>()));
-root.Subcommands.Add(WebUiCommand.Create());
+root.Subcommands.Add(WebUiCommand.Create(services.GetRequiredService<WebUiCliCommand>()));
 root.Subcommands.Add(InitCommand.Create());
 root.Subcommands.Add(PortsCommand.Create());
 root.Subcommands.Add(MarketplaceCommands.Create());
@@ -61,12 +61,14 @@ root.Subcommands.Add(StorageCommands.Create());
 root.Subcommands.Add(DataCommands.Create());
 root.Subcommands.Add(AuditCommands.Create());
 root.Subcommands.Add(AgentsCommand.Create(services.GetRequiredService<AgentsCliCommand>()));
+root.Subcommands.Add(ToolsCommand.Create(services.GetRequiredService<ToolsCliCommand>()));
+root.Subcommands.Add(TasksCommand.Create(services.GetRequiredService<TasksCliCommand>()));
 root.Subcommands.Add(SystemCommand.Create(services.GetRequiredService<SystemCliCommand>()));
 root.Subcommands.Add(VersionCommand.Create());
 root.Subcommands.Add(UpgradeCommand.Create(services.GetRequiredService<UpgradeCliCommand>()));
 
 var config = new Command("config", "Manage CLI configuration");
-config.Subcommands.Add(ConfigGetCommand.Create());
+config.Subcommands.Add(ConfigGetCommand.Create(services.GetRequiredService<ConfigGetCliCommand>()));
 config.Subcommands.Add(ConfigSetCommand.Create());
 root.Subcommands.Add(config);
 

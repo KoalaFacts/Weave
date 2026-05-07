@@ -9,6 +9,7 @@ namespace Weave.Actions.SystemInfo;
 /// </summary>
 public sealed record SystemConfigSnapshot
 {
+    public required string Version { get; init; }
     public required string BaseUrl { get; init; }
     public required int DefaultPort { get; init; }
     public required string Storage { get; init; }

@@ -1,5 +1,6 @@
 using System.Globalization;
 using Spectre.Console;
+using Weave.Actions.SystemInfo;
 using Weave.Cli.Commands;
 using Weave.Workspaces.Manifest;
 
@@ -8,13 +9,20 @@ namespace Weave.Cli.Tui;
 internal sealed class TuiWorkspaceDashboard
 {
     private readonly ManifestParser _parser = new();
+    private readonly GetSystemInfoAction _systemInfoAction;
+
+    public TuiWorkspaceDashboard(GetSystemInfoAction systemInfoAction)
+    {
+        _systemInfoAction = systemInfoAction;
+    }
 
     public async Task RefreshAsync(CancellationToken ct)
     {
         var workspaces = WorkspaceRegistry.GetAll()
             .OrderBy(kvp => kvp.Key, StringComparer.Ordinal)
             .ToArray();
-        var siloReachable = await TuiRuntimeProbe.ProbeSiloAsync(ct);
+        var systemInfo = await _systemInfoAction.ExecuteAsync(new GetSystemInfoInput(), ct);
+        var siloReachable = systemInfo.IsSuccess && systemInfo.Value.Reachable;
         RenderDashboardStats(workspaces, siloReachable);
         RenderWorkspacesTable(workspaces);
     }

@@ -14,6 +14,7 @@ internal sealed class CliSystemConfigSource : ISystemConfigSource
         var config = CliConfigStore.Load();
         return new SystemConfigSnapshot
         {
+            Version = config.Version,
             BaseUrl = CliApiHttp.ResolveBaseUrl(),
             DefaultPort = config.DefaultPort,
             Storage = config.Storage,

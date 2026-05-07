@@ -4,7 +4,7 @@ namespace Weave.Cli.Commands;
 
 internal static class WorkspaceStatusCommand
 {
-    public static Command Create()
+    public static Command Create(WorkspaceStatusCliCommand handler)
     {
         var nameArg = new Argument<string?>("name")
         {
@@ -14,11 +14,8 @@ internal static class WorkspaceStatusCommand
         nameArg.CompletionSources.Add(CliCompletions.CompleteWorkspaceNames);
 
         var cmd = new Command("status", "Show workspace status") { nameArg };
-        cmd.SetAction(async (parseResult, cancellationToken) =>
-        {
-            var name = parseResult.GetValue(nameArg);
-            return await new WorkspaceStatusCliCommand().ExecuteAsync(new WorkspaceNameOptions(name), cancellationToken);
-        });
+        cmd.SetAction((parseResult, ct) =>
+            handler.ExecuteAsync(new WorkspaceNameOptions(parseResult.GetValue(nameArg)), ct));
 
         return cmd;
     }

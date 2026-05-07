@@ -22,15 +22,16 @@ public sealed class CliCommandStructureTests
 
     private static IEnumerable<Command> AllCommands()
     {
+        var services = CliServiceCollection.Build();
         var workspace = new Command("workspace", "Manage workspaces");
         workspace.Subcommands.Add(WorkspaceNewCommand.Create());
         workspace.Subcommands.Add(WorkspaceListCommand.Create());
         workspace.Subcommands.Add(WorkspaceRemoveCommand.Create());
         workspace.Subcommands.Add(WorkspaceUpCommand.Create());
         workspace.Subcommands.Add(WorkspaceDownCommand.Create());
-        workspace.Subcommands.Add(WorkspaceStatusCommand.Create());
+        workspace.Subcommands.Add(WorkspaceStatusCommand.Create(services.GetRequiredService<WorkspaceStatusCliCommand>()));
         workspace.Subcommands.Add(WorkspaceShowCommand.Create());
-        workspace.Subcommands.Add(WorkspaceValidateCommand.Create());
+        workspace.Subcommands.Add(WorkspaceValidateCommand.Create(services.GetRequiredService<WorkspaceValidateCliCommand>()));
         workspace.Subcommands.Add(WorkspacePublishCommand.Create());
         workspace.Subcommands.Add(WorkspacePresetsCommand.Create());
 
@@ -52,9 +53,8 @@ public sealed class CliCommandStructureTests
         yield return workspace;
         yield return WorkspaceServeCommand.Create();
         yield return RunCommand.Create();
-        var services = CliServiceCollection.Build();
         yield return TuiCommand.Create(services.GetRequiredService<TuiCliCommand>());
-        yield return WebUiCommand.Create();
+        yield return WebUiCommand.Create(services.GetRequiredService<WebUiCliCommand>());
         yield return InitCommand.Create();
         yield return PortsCommand.Create();
         yield return MarketplaceCommands.Create();
@@ -64,7 +64,7 @@ public sealed class CliCommandStructureTests
         yield return UpgradeCommand.Create(services.GetRequiredService<UpgradeCliCommand>());
 
         var config = new Command("config", "Manage CLI configuration");
-        config.Subcommands.Add(ConfigGetCommand.Create());
+        config.Subcommands.Add(ConfigGetCommand.Create(services.GetRequiredService<ConfigGetCliCommand>()));
         config.Subcommands.Add(ConfigSetCommand.Create());
         yield return config;
     }

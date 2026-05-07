@@ -9,6 +9,8 @@ namespace Weave.Silo.Api;
     PropertyNamingPolicy = JsonKnownNamingPolicy.CamelCase,
     DefaultIgnoreCondition = JsonIgnoreCondition.WhenWritingNull)]
 [JsonSerializable(typeof(StartWorkspaceRequest))]
+[JsonSerializable(typeof(ValidateWorkspaceManifestRequest))]
+[JsonSerializable(typeof(ValidateWorkspaceManifestResult))]
 [JsonSerializable(typeof(WorkspaceResponse))]
 [JsonSerializable(typeof(AgentResponse))]
 [JsonSerializable(typeof(AgentDefinition))]

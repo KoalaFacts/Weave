@@ -6,7 +6,7 @@ namespace Weave.Cli.Tui;
 
 internal sealed class TuiShell
 {
-    private readonly TuiWorkspaceDashboard _dashboard = new();
+    private readonly TuiWorkspaceDashboard _dashboard;
     private readonly TuiChatSession _chatSession = new();
     private readonly TuiSlashCommandDispatcher _dispatcher;
     private readonly VersionService _versionService;
@@ -15,13 +15,21 @@ internal sealed class TuiShell
     public TuiShell(
         VersionService versionService,
         ChatComposer composer,
+        TuiWorkspaceDashboard dashboard,
         TuiToolsView toolsView,
         TuiTasksView tasksView,
+        TuiConfigView configView,
+        TuiSystemView systemView,
+        TuiLiveStatusView liveStatusView,
         ListAgentsAction listAgentsAction,
+        WorkspaceStatusCliCommand statusCommand,
+        WorkspaceValidateCliCommand validateCommand,
+        WebUiCliCommand webUiCommand,
         UpgradeCliCommand upgradeCommand)
     {
         _versionService = versionService;
         _composer = composer;
+        _dashboard = dashboard;
 
         var agentNameSource = new TuiAgentNameSource();
         var agentSelector = new TuiAgentSelector(agentNameSource);
@@ -31,11 +39,16 @@ internal sealed class TuiShell
             _chatSession,
             agentSelector,
             new TuiAgentListView(agentNameSource, listAgentsAction),
-            new TuiWorkspaceOpener(agentSelector),
+            new TuiWorkspaceOpener(agentSelector, liveStatusView),
             new TuiWorkspaceStarter(agentSelector),
-            new TuiWorkspaceWatcher(),
+            new TuiWorkspaceWatcher(liveStatusView),
             toolsView,
             tasksView,
+            configView,
+            systemView,
+            statusCommand,
+            validateCommand,
+            webUiCommand,
             upgradeCommand);
     }
 

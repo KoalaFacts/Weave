@@ -1,6 +1,11 @@
 using Microsoft.Extensions.DependencyInjection;
 using Weave.Actions.Agent;
+using Weave.Actions.AgentTask;
+using Weave.Actions.Config;
+using Weave.Actions.Dashboard;
 using Weave.Actions.SystemInfo;
+using Weave.Actions.Tool;
+using Weave.Actions.Workspace;
 
 namespace Weave.Actions;
 
@@ -24,6 +29,18 @@ public static class SiloActionsServiceCollectionExtensions
 
         services.AddHttpClient<GetSystemInfoAction>(configureSiloClient);
         services.AddHttpClient<ListAgentsAction>(configureSiloClient);
+        services.AddHttpClient<ListToolsAction>(configureSiloClient);
+        services.AddHttpClient<ListTasksAction>(configureSiloClient);
+        services.AddHttpClient<GetWorkspaceStatusAction>(configureSiloClient);
+        services.AddHttpClient<ValidateWorkspaceAction>(configureSiloClient);
+
+        // The dashboard URL is not the silo URL — the action passes absolute
+        // URIs to GetAsync so the BaseAddress here is unused but harmless.
+        services.AddHttpClient<GetDashboardStatusAction>(configureSiloClient);
+
+        // Config-only actions don't talk to the silo; registered as transient
+        // because they depend only on frontend-supplied snapshots.
+        services.AddTransient<GetConfigAction>();
 
         return services;
     }

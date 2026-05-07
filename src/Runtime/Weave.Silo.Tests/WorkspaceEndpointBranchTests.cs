@@ -71,6 +71,89 @@ public sealed class WorkspaceEndpointBranchTests : IClassFixture<SiloFactory>
     }
 
     [Fact]
+    public async Task Validate_ValidManifest_Returns200WithEmptyErrors()
+    {
+        using var client = _factory.CreateClient();
+        const string manifestJson = """
+        {
+          "version": "1.0",
+          "name": "demo",
+          "agents": {
+            "alpha": { "model": "gpt", "system_prompt_file": "./prompts/alpha.md", "tools": ["git"] }
+          },
+          "tools": { "git": { "type": "cli", "cli": { "shell": "/bin/bash" } } },
+          "targets": { "local": { "runtime": "podman" } }
+        }
+        """;
+
+        using var response = await client.PostAsJsonAsync(
+            "/api/workspaces/validate",
+            new { manifestJson },
+            TestContext.Current.CancellationToken);
+
+        response.StatusCode.ShouldBe(HttpStatusCode.OK);
+        using var doc = System.Text.Json.JsonDocument.Parse(
+            await response.Content.ReadAsStringAsync(TestContext.Current.CancellationToken));
+        doc.RootElement.GetProperty("name").GetString().ShouldBe("demo");
+        doc.RootElement.GetProperty("agentCount").GetInt32().ShouldBe(1);
+        doc.RootElement.GetProperty("toolCount").GetInt32().ShouldBe(1);
+        doc.RootElement.GetProperty("targetCount").GetInt32().ShouldBe(1);
+        doc.RootElement.GetProperty("errors").GetArrayLength().ShouldBe(0);
+    }
+
+    [Fact]
+    public async Task Validate_StructurallyInvalidManifest_Returns200WithErrors()
+    {
+        using var client = _factory.CreateClient();
+        // Agent references a tool not declared in tools — should produce a structural error.
+        const string manifestJson = """
+        {
+          "version": "1.0",
+          "name": "bad",
+          "agents": {
+            "alpha": { "model": "gpt", "system_prompt_file": "./p.md", "tools": ["missing"] }
+          }
+        }
+        """;
+
+        using var response = await client.PostAsJsonAsync(
+            "/api/workspaces/validate",
+            new { manifestJson },
+            TestContext.Current.CancellationToken);
+
+        response.StatusCode.ShouldBe(HttpStatusCode.OK);
+        using var doc = System.Text.Json.JsonDocument.Parse(
+            await response.Content.ReadAsStringAsync(TestContext.Current.CancellationToken));
+        doc.RootElement.GetProperty("errors").GetArrayLength().ShouldBeGreaterThan(0);
+    }
+
+    [Fact]
+    public async Task Validate_InvalidJson_Returns400()
+    {
+        using var client = _factory.CreateClient();
+
+        using var response = await client.PostAsJsonAsync(
+            "/api/workspaces/validate",
+            new { manifestJson = "{ not actually json" },
+            TestContext.Current.CancellationToken);
+
+        response.StatusCode.ShouldBe(HttpStatusCode.BadRequest);
+    }
+
+    [Fact]
+    public async Task Validate_BlankBody_Returns400()
+    {
+        using var client = _factory.CreateClient();
+
+        using var response = await client.PostAsJsonAsync(
+            "/api/workspaces/validate",
+            new { manifestJson = "" },
+            TestContext.Current.CancellationToken);
+
+        response.StatusCode.ShouldBe(HttpStatusCode.BadRequest);
+    }
+
+    [Fact]
     public async Task GetState_AfterStart_ReturnsWorkspace()
     {
         using var client = _factory.CreateClient();

@@ -14,6 +14,11 @@ internal sealed class TuiSlashCommandDispatcher
     private readonly TuiWorkspaceWatcher _workspaceWatcher;
     private readonly TuiToolsView _toolsView;
     private readonly TuiTasksView _tasksView;
+    private readonly TuiConfigView _configView;
+    private readonly TuiSystemView _systemView;
+    private readonly WorkspaceStatusCliCommand _statusCommand;
+    private readonly WorkspaceValidateCliCommand _validateCommand;
+    private readonly WebUiCliCommand _webUiCommand;
     private readonly UpgradeCliCommand _upgradeCommand;
 
     public TuiSlashCommandDispatcher(
@@ -26,6 +31,11 @@ internal sealed class TuiSlashCommandDispatcher
         TuiWorkspaceWatcher workspaceWatcher,
         TuiToolsView toolsView,
         TuiTasksView tasksView,
+        TuiConfigView configView,
+        TuiSystemView systemView,
+        WorkspaceStatusCliCommand statusCommand,
+        WorkspaceValidateCliCommand validateCommand,
+        WebUiCliCommand webUiCommand,
         UpgradeCliCommand upgradeCommand)
     {
         _dashboard = dashboard;
@@ -37,6 +47,11 @@ internal sealed class TuiSlashCommandDispatcher
         _workspaceWatcher = workspaceWatcher;
         _toolsView = toolsView;
         _tasksView = tasksView;
+        _configView = configView;
+        _systemView = systemView;
+        _statusCommand = statusCommand;
+        _validateCommand = validateCommand;
+        _webUiCommand = webUiCommand;
         _upgradeCommand = upgradeCommand;
     }
 
@@ -106,13 +121,13 @@ internal sealed class TuiSlashCommandDispatcher
             case "status":
                 return await RunWorkspaceCommandAsync(
                     session,
-                    options => new WorkspaceStatusCliCommand().ExecuteAsync(options, ct),
+                    options => _statusCommand.ExecuteAsync(options, ct),
                     ct);
 
             case "validate":
                 return await RunWorkspaceCommandAsync(
                     session,
-                    options => new WorkspaceValidateCliCommand().ExecuteAsync(options, ct),
+                    options => _validateCommand.ExecuteAsync(options, ct),
                     ct);
 
             case "ports":
@@ -120,7 +135,7 @@ internal sealed class TuiSlashCommandDispatcher
                 return TuiDispatchResult.Continue;
 
             case "config":
-                TuiConfigView.Show();
+                await _configView.ShowAsync(ct);
                 return TuiDispatchResult.Continue;
 
             case "up":
@@ -144,12 +159,12 @@ internal sealed class TuiSlashCommandDispatcher
             case "webui":
             case "web":
             case "w":
-                await new WebUiCliCommand().ExecuteAsync(new WebUiOptions(), ct);
+                await _webUiCommand.ExecuteAsync(new WebUiOptions(), ct);
                 return TuiDispatchResult.Continue;
 
             case "system":
             case "sys":
-                await TuiSystemView.ShowAsync(ct);
+                await _systemView.ShowAsync(ct);
                 return TuiDispatchResult.Continue;
 
             case "version":

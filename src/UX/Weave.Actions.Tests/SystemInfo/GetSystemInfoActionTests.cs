@@ -92,6 +92,7 @@ public sealed class GetSystemInfoActionTests
 
     private static SystemConfigSnapshot NewSnapshot() => new()
     {
+        Version = "1.0",
         BaseUrl = "http://localhost:9401",
         DefaultPort = 9401,
         Storage = "memory",

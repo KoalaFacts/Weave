@@ -28,9 +28,7 @@ public sealed class PostgresContainerFixture : IAsyncLifetime
     {
         try
         {
-            _container = new PostgreSqlBuilder()
-                .WithImage(ImageTag)
-                .Build();
+            _container = new PostgreSqlBuilder(ImageTag).Build();
             await _container.StartAsync();
             ConnectionString = _container.GetConnectionString();
         }
