@@ -4,6 +4,7 @@ using Weave.Actions.Context;
 using Weave.Actions.SystemInfo;
 using Weave.Cli.Commands;
 using Weave.Cli.Tui;
+using Weave.Cli.Tui.Verbs;
 
 namespace Weave.Cli;
 
@@ -78,18 +79,42 @@ internal static class CliServiceCollection
         services.AddTransient<ChatComposerEditor>();
         services.AddTransient<ChatComposer>();
         services.AddTransient<TuiShell>();
+        services.AddTransient<TuiSlashCommandDispatcher>();
         services.AddTransient<TuiAgentNameSource>();
-        services.AddTransient<TuiAgentSelector>();
         services.AddTransient<TuiChatSession>();
-
-        // Migrated TUI views — consume actions through DI.
-        services.AddTransient<TuiToolsView>();
-        services.AddTransient<TuiTasksView>();
-        services.AddTransient<TuiConfigView>();
-        services.AddTransient<TuiSystemView>();
-        services.AddTransient<TuiWorkspaceDashboard>();
         services.AddTransient<TuiLiveStatusWatcher>();
         services.AddTransient<TuiLiveStatusView>();
+
+        // TUI helpers also referenced by other helpers (not just as verbs).
+        services.AddTransient<TuiAgentSelector>();
+        services.AddTransient<TuiWorkspaceDashboard>();
+
+        // ITuiVerb registry. Helpers that already do real per-verb work
+        // implement ITuiVerb directly; bare ICliCommand handlers get a thin
+        // wrapper. Phase 4a's verb registry collapses the dispatcher's 19
+        // ctor seams to 2 (TuiChatSession + IEnumerable<ITuiVerb>).
+        // TuiAgentSelector and TuiWorkspaceDashboard are already concretely
+        // registered above; alias each as ITuiVerb so the dispatcher picks them
+        // up from IEnumerable<ITuiVerb>. RefreshVerb is a thin wrapper around
+        // the dashboard so /refresh and the startup refresh share state.
+        services.AddTransient<ITuiVerb>(sp => sp.GetRequiredService<TuiAgentSelector>());
+        services.AddTransient<ITuiVerb, RefreshVerb>();
+        services.AddTransient<ITuiVerb, TuiAgentListView>();
+        services.AddTransient<ITuiVerb, TuiWorkspaceOpener>();
+        services.AddTransient<ITuiVerb, TuiWorkspaceStarter>();
+        services.AddTransient<ITuiVerb, TuiWorkspaceWatcher>();
+        services.AddTransient<ITuiVerb, TuiToolsView>();
+        services.AddTransient<ITuiVerb, TuiTasksView>();
+        services.AddTransient<ITuiVerb, TuiConfigView>();
+        services.AddTransient<ITuiVerb, TuiSystemView>();
+        services.AddTransient<ITuiVerb, StatusVerb>();
+        services.AddTransient<ITuiVerb, ValidateVerb>();
+        services.AddTransient<ITuiVerb, DownVerb>();
+        services.AddTransient<ITuiVerb, WebUiVerb>();
+        services.AddTransient<ITuiVerb, UpgradeVerb>();
+        services.AddTransient<ITuiVerb, PortsVerb>();
+        services.AddTransient<ITuiVerb, VersionVerb>();
+        services.AddTransient<ITuiVerb, PresetsVerb>();
 
         // Shape C action layer — frontend-supplied prompter/reporter, plus
         // typed HttpClients per action keyed off the silo base URL.

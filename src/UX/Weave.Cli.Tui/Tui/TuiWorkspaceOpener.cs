@@ -1,35 +1,29 @@
 using Spectre.Console;
 using Weave.Actions.Context;
 using Weave.Actions.Workspace;
-
+using Weave.Cli.Tui.Verbs;
 using Weave.Workspaces.Manifest;
 
 namespace Weave.Cli.Tui;
 
-internal sealed class TuiWorkspaceOpener
+internal sealed class TuiWorkspaceOpener(
+    OpenWorkspaceAction openAction,
+    TuiAgentSelector agentSelector,
+    TuiLiveStatusView liveStatus) : ITuiVerb
 {
     private readonly ManifestParser _parser = new();
-    private readonly OpenWorkspaceAction _openAction;
-    private readonly TuiAgentSelector _agentSelector;
-    private readonly TuiLiveStatusView _liveStatus;
 
-    public TuiWorkspaceOpener(
-        OpenWorkspaceAction openAction,
-        TuiAgentSelector agentSelector,
-        TuiLiveStatusView liveStatus)
-    {
-        _openAction = openAction;
-        _agentSelector = agentSelector;
-        _liveStatus = liveStatus;
-    }
+    public string Name => "open";
 
-    public async Task OpenAsync(
-        TuiSession session,
-        string? arg,
-        Action clearConversationHistory,
-        CancellationToken ct)
+    public IReadOnlyList<string> Aliases => ["o"];
+
+    public async Task DispatchAsync(TuiVerbContext context, CancellationToken ct)
     {
-        var result = await _openAction.ExecuteAsync(new OpenWorkspaceInput(arg), ct);
+        var session = context.Session;
+        var arg = context.Args;
+        var clearConversationHistory = context.ClearChatHistory;
+
+        var result = await openAction.ExecuteAsync(new OpenWorkspaceInput(arg), ct);
         if (!result.IsSuccess)
         {
             if (result.Failure.Reason == ActionFailureReason.Cancelled)
@@ -54,7 +48,7 @@ internal sealed class TuiWorkspaceOpener
         }
 
         clearConversationHistory();
-        _agentSelector.TrySelectOnlyAgent(session);
+        agentSelector.TrySelectOnlyAgent(session);
 
         if (session.StateWarning is not null)
             CliTheme.WriteWarning(session.StateWarning);
@@ -80,7 +74,7 @@ internal sealed class TuiWorkspaceOpener
         }
 
         CliTheme.WriteSection($"Workspace · {manifest.Name}");
-        var liveRendered = await _liveStatus.TryRenderOnceAsync(session.ManifestPath, manifest, ct);
+        var liveRendered = await liveStatus.TryRenderOnceAsync(session.ManifestPath, manifest, ct);
         if (!liveRendered)
             TuiManifestView.Render(manifest, session.ManifestPath);
 

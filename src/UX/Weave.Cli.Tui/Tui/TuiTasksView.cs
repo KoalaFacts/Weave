@@ -1,20 +1,18 @@
 using Weave.Actions.AgentTask;
 using Weave.Actions.Context;
-
+using Weave.Cli.Tui.Verbs;
 
 namespace Weave.Cli.Tui;
 
-internal sealed class TuiTasksView
+internal sealed class TuiTasksView(ListTasksAction action) : ITuiVerb
 {
-    private readonly ListTasksAction _action;
+    public string Name => "tasks";
 
-    public TuiTasksView(ListTasksAction action)
-    {
-        _action = action;
-    }
+    public IReadOnlyList<string> Aliases => [];
 
-    public async Task RenderAsync(TuiSession session, CancellationToken ct)
+    public async Task DispatchAsync(TuiVerbContext context, CancellationToken ct)
     {
+        var session = context.Session;
         if (!session.IsRunning)
         {
             CliTheme.WriteMuted("Workspace is not running. Start it with /up first.");
@@ -27,7 +25,7 @@ internal sealed class TuiTasksView
             return;
         }
 
-        var result = await _action.ExecuteAsync(new ListTasksInput(session.WorkspaceId!, session.AgentName), ct);
+        var result = await action.ExecuteAsync(new ListTasksInput(session.WorkspaceId!, session.AgentName), ct);
         if (!result.IsSuccess)
         {
             if (result.Failure.Reason == ActionFailureReason.Cancelled)

@@ -1,27 +1,25 @@
 using Weave.Actions.Context;
 using Weave.Actions.Tool;
-
+using Weave.Cli.Tui.Verbs;
 
 namespace Weave.Cli.Tui;
 
-internal sealed class TuiToolsView
+internal sealed class TuiToolsView(ListToolsAction action) : ITuiVerb
 {
-    private readonly ListToolsAction _action;
+    public string Name => "tools";
 
-    public TuiToolsView(ListToolsAction action)
-    {
-        _action = action;
-    }
+    public IReadOnlyList<string> Aliases => [];
 
-    public async Task RenderAsync(TuiSession session, CancellationToken ct)
+    public async Task DispatchAsync(TuiVerbContext context, CancellationToken ct)
     {
+        var session = context.Session;
         if (!session.IsRunning)
         {
             CliTheme.WriteMuted("Workspace is not running. Start it with /up first.");
             return;
         }
 
-        var result = await _action.ExecuteAsync(new ListToolsInput(session.WorkspaceId!), ct);
+        var result = await action.ExecuteAsync(new ListToolsInput(session.WorkspaceId!), ct);
         if (!result.IsSuccess)
         {
             if (result.Failure.Reason == ActionFailureReason.Cancelled)

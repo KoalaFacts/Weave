@@ -1,36 +1,34 @@
 using Weave.Actions.Agent;
 using Weave.Actions.Context;
-
+using Weave.Cli.Tui.Verbs;
 using Weave.Workspaces.Manifest;
 
 namespace Weave.Cli.Tui;
 
-internal sealed class TuiAgentSelector
+internal sealed class TuiAgentSelector(
+    TuiAgentNameSource agentNameSource,
+    SelectAgentAction selectAction) : ITuiVerb
 {
     private readonly ManifestParser _parser = new();
-    private readonly TuiAgentNameSource _agentNameSource;
-    private readonly SelectAgentAction _selectAction;
 
-    public TuiAgentSelector(TuiAgentNameSource agentNameSource, SelectAgentAction selectAction)
-    {
-        _agentNameSource = agentNameSource;
-        _selectAction = selectAction;
-    }
+    public string Name => "use";
 
-    public async Task SelectAsync(
-        TuiSession session,
-        string? arg,
-        Action clearConversationHistory,
-        CancellationToken ct)
+    public IReadOnlyList<string> Aliases => ["agent", "a"];
+
+    public async Task DispatchAsync(TuiVerbContext context, CancellationToken ct)
     {
+        var session = context.Session;
+        var arg = context.Args;
+        var clearConversationHistory = context.ClearChatHistory;
+
         if (!session.HasWorkspace)
         {
             CliTheme.WriteMuted("No workspace open. Try: /open <workspace>");
             return;
         }
 
-        var agents = await _agentNameSource.FetchAsync(session, ct);
-        var result = await _selectAction.ExecuteAsync(new SelectAgentInput(agents, arg), ct);
+        var agents = await agentNameSource.FetchAsync(session, ct);
+        var result = await selectAction.ExecuteAsync(new SelectAgentInput(agents, arg), ct);
         if (!result.IsSuccess)
         {
             switch (result.Failure.Reason)

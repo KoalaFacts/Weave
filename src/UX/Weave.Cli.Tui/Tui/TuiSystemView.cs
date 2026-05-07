@@ -1,20 +1,17 @@
 using Weave.Actions.SystemInfo;
-
+using Weave.Cli.Tui.Verbs;
 
 namespace Weave.Cli.Tui;
 
-internal sealed class TuiSystemView
+internal sealed class TuiSystemView(GetSystemInfoAction action) : ITuiVerb
 {
-    private readonly GetSystemInfoAction _action;
+    public string Name => "system";
 
-    public TuiSystemView(GetSystemInfoAction action)
-    {
-        _action = action;
-    }
+    public IReadOnlyList<string> Aliases => ["sys"];
 
-    public async Task ShowAsync(CancellationToken cancellationToken)
+    public async Task DispatchAsync(TuiVerbContext context, CancellationToken ct)
     {
-        var result = await _action.ExecuteAsync(new GetSystemInfoInput(), cancellationToken);
+        var result = await action.ExecuteAsync(new GetSystemInfoInput(), ct);
         if (!result.IsSuccess)
         {
             CliTheme.WriteError(result.Failure.Message);

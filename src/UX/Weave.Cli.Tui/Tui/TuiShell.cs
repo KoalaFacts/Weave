@@ -1,11 +1,4 @@
 using Spectre.Console;
-using Weave.Actions.Agent;
-using Weave.Actions.SystemInfo;
-using Weave.Actions.Workspace;
-
-// (TuiAgentSelector now ctor-takes SelectAgentAction via DI; TuiAgentNameSource
-// is supplied from DI too. TuiWorkspaceOpener picks up OpenWorkspaceAction from
-// DI; the inline new TuiWorkspaceOpener(...) below threads it through.)
 
 namespace Weave.Cli.Tui;
 
@@ -23,25 +16,8 @@ internal sealed class TuiShell
         VersionService versionService,
         ChatComposer composer,
         TuiWorkspaceDashboard dashboard,
-        TuiToolsView toolsView,
-        TuiTasksView tasksView,
-        TuiConfigView configView,
-        TuiSystemView systemView,
-        TuiLiveStatusView liveStatusView,
-        TuiAgentNameSource agentNameSource,
-        TuiAgentSelector agentSelector,
         TuiChatSession chatSession,
-        ListAgentsAction listAgentsAction,
-        OpenWorkspaceAction openWorkspaceAction,
-        StartWorkspaceAction startWorkspaceAction,
-        GetSystemInfoAction systemInfoAction,
-        ISiloLauncher siloLauncher,
-        WorkspaceStatusCliCommand statusCommand,
-        WorkspaceValidateCliCommand validateCommand,
-        WorkspaceDownCliCommand downCommand,
-        WebUiCliCommand webUiCommand,
-        UpgradeCliCommand upgradeCommand,
-        PortsCliCommand portsCommand,
+        TuiSlashCommandDispatcher dispatcher,
         IWorkspaceRegistry registry,
         IManifestResolver manifestResolver)
     {
@@ -49,27 +25,9 @@ internal sealed class TuiShell
         _composer = composer;
         _dashboard = dashboard;
         _chatSession = chatSession;
+        _dispatcher = dispatcher;
         _registry = registry;
         _manifestResolver = manifestResolver;
-
-        _dispatcher = new TuiSlashCommandDispatcher(
-            _dashboard,
-            _chatSession,
-            agentSelector,
-            new TuiAgentListView(agentNameSource, listAgentsAction),
-            new TuiWorkspaceOpener(openWorkspaceAction, agentSelector, liveStatusView),
-            new TuiWorkspaceStarter(agentSelector, startWorkspaceAction, systemInfoAction, siloLauncher),
-            new TuiWorkspaceStopper(downCommand),
-            new TuiWorkspaceWatcher(liveStatusView),
-            toolsView,
-            tasksView,
-            configView,
-            systemView,
-            statusCommand,
-            validateCommand,
-            webUiCommand,
-            upgradeCommand,
-            portsCommand);
     }
 
     public async Task<int> RunAsync(CancellationToken cancellationToken)
