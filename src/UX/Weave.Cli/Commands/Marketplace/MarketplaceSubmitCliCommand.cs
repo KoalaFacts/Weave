@@ -1,8 +1,13 @@
 using Spectre.Console;
+using Weave.Actions.Context;
+using Weave.Actions.Marketplace;
+using Weave.Actions.SystemInfo;
 
 namespace Weave.Cli.Commands;
 
-internal sealed class MarketplaceSubmitCliCommand : ICliCommand<NoCliOptions>
+internal sealed class MarketplaceSubmitCliCommand(
+    GetSystemInfoAction systemInfoAction,
+    SubmitMarketplaceItemAction submitAction) : ICliCommand<NoCliOptions>
 {
     public string Name => "submit";
 
@@ -12,23 +17,33 @@ internal sealed class MarketplaceSubmitCliCommand : ICliCommand<NoCliOptions>
 
     public async Task<int> ExecuteAsync(NoCliOptions options, CancellationToken ct)
     {
-        using var client = new MarketplaceApiClient();
-        if (!await client.IsReachableAsync(ct))
+        var systemInfo = await systemInfoAction.ExecuteAsync(new GetSystemInfoInput(), ct);
+        if (!systemInfo.IsSuccess || !systemInfo.Value.Reachable)
         {
             CliTheme.WriteError("Weave server is not running. Start it with 'weave serve'.");
             return 1;
         }
 
         var submission = PromptSubmission();
-        var item = await client.SubmitItemAsync(
-            submission.Name,
-            submission.Description,
-            submission.Category,
-            submission.Version,
-            submission.Author,
-            submission.Tags,
+        var result = await submitAction.ExecuteAsync(
+            new SubmitMarketplaceItemInput(
+                submission.Name,
+                submission.Description,
+                submission.Category,
+                submission.Version,
+                submission.Author,
+                submission.Tags),
             ct);
 
+        if (!result.IsSuccess)
+        {
+            if (result.Failure.Reason == ActionFailureReason.Cancelled)
+                return 130;
+            CliTheme.WriteError(result.Failure.Message);
+            return 1;
+        }
+
+        var item = result.Value.Item;
         CliTheme.WriteSuccess($"Item '{item.Name}' submitted (ID: {item.ItemId}, status: {item.Status}).");
         CliTheme.WriteInfo("Submit a security review with 'weave marketplace publish' to make it available.");
         return 0;

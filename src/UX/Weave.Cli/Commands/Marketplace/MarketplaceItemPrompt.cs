@@ -1,19 +1,24 @@
 using Spectre.Console;
+using Weave.Actions.Marketplace;
 
 namespace Weave.Cli.Commands;
 
 internal static class MarketplaceItemPrompt
 {
-    public static async Task<string?> SelectItemIdAsync(MarketplaceApiClient client, string? itemId, string title, CancellationToken ct)
+    public static async Task<string?> SelectItemIdAsync(
+        BrowseMarketplaceItemsAction browseAction,
+        string? itemId,
+        string title,
+        CancellationToken ct)
     {
         if (!string.IsNullOrWhiteSpace(itemId))
             return itemId;
 
-        var items = await client.GetItemsAsync(ct);
-        if (items.Count == 0)
+        var result = await browseAction.ExecuteAsync(new BrowseMarketplaceItemsInput(), ct);
+        if (!result.IsSuccess || result.Value.Items.Count == 0)
             return null;
 
-        var choices = items.ToDictionary(
+        var choices = result.Value.Items.ToDictionary(
             item => $"{item.Name} ({item.ItemId})",
             item => item.ItemId,
             StringComparer.Ordinal);

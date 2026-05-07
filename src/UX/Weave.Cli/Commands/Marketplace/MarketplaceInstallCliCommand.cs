@@ -1,11 +1,19 @@
 using System.Globalization;
 using Spectre.Console;
+using Weave.Actions.Context;
+using Weave.Actions.Marketplace;
+using Weave.Actions.SystemInfo;
 using Weave.Shared.Ids;
 using Weave.Workspaces.Manifest;
 using Weave.Workspaces.Templates;
+
 namespace Weave.Cli.Commands;
 
-internal sealed class MarketplaceInstallCliCommand(IWorkspaceRegistry registry) : ICliCommand<MarketplaceInstallOptions>
+internal sealed class MarketplaceInstallCliCommand(
+    IWorkspaceRegistry registry,
+    GetSystemInfoAction systemInfoAction,
+    BrowseMarketplaceItemsAction browseAction,
+    InstallMarketplaceItemAction installAction) : ICliCommand<MarketplaceInstallOptions>
 {
     public string Name => "install";
 
@@ -15,52 +23,53 @@ internal sealed class MarketplaceInstallCliCommand(IWorkspaceRegistry registry) 
 
     public async Task<int> ExecuteAsync(MarketplaceInstallOptions options, CancellationToken ct)
     {
-        using var client = new MarketplaceApiClient();
-        if (!await client.IsReachableAsync(ct))
+        var systemInfo = await systemInfoAction.ExecuteAsync(new GetSystemInfoInput(), ct);
+        if (!systemInfo.IsSuccess || !systemInfo.Value.Reachable)
         {
             CliTheme.WriteError("Weave server is not running. Start it with 'weave serve'.");
             return 1;
         }
 
         var itemId = await MarketplaceItemPrompt.SelectItemIdAsync(
-            client, options.ItemId, "Which marketplace item would you like to install?", ct);
+            browseAction, options.ItemId, "Which marketplace item would you like to install?", ct);
         if (itemId is null)
         {
             CliTheme.WriteWarning("No marketplace items found.");
             return 0;
         }
 
-        ApiMarketplaceInstallResponse? result;
-        try
+        var result = await installAction.ExecuteAsync(new InstallMarketplaceItemInput(itemId), ct);
+        if (!result.IsSuccess)
         {
-            result = await client.InstallAsync(itemId, ct);
-        }
-        catch (InvalidOperationException ex)
-        {
-            CliTheme.WriteError($"Install rejected: {ex.Message}");
-            return 1;
+            switch (result.Failure.Reason)
+            {
+                case ActionFailureReason.Cancelled:
+                    return 130;
+                case ActionFailureReason.Conflict:
+                    CliTheme.WriteError($"Install rejected: {result.Failure.Message}");
+                    return 1;
+                default:
+                    CliTheme.WriteError(result.Failure.Message);
+                    return 1;
+            }
         }
 
-        if (result is null)
-        {
-            CliTheme.WriteError($"Item '{itemId}' not found.");
-            return 1;
-        }
+        var item = result.Value.Item;
+        var template = result.Value.Template;
+        CliTheme.WriteSuccess($"Installed: {item.Name}");
+        CliTheme.WriteKeyValue("Item ID", item.ItemId);
+        CliTheme.WriteKeyValue("Install count", item.InstallCount.ToString(CultureInfo.InvariantCulture));
+        CliTheme.WriteKeyValue("Resolved template", $"{template.Name} ({template.TemplateId})");
+        CliTheme.WriteKeyValue("Template version", template.Version);
+        CliTheme.WriteKeyValue("Template instantiations", template.InstantiationCount.ToString(CultureInfo.InvariantCulture));
 
-        CliTheme.WriteSuccess($"Installed: {result.Item.Name}");
-        CliTheme.WriteKeyValue("Item ID", result.Item.ItemId);
-        CliTheme.WriteKeyValue("Install count", result.Item.InstallCount.ToString(CultureInfo.InvariantCulture));
-        CliTheme.WriteKeyValue("Resolved template", $"{result.Template.Name} ({result.Template.TemplateId})");
-        CliTheme.WriteKeyValue("Template version", result.Template.Version);
-        CliTheme.WriteKeyValue("Template instantiations", result.Template.InstantiationCount.ToString(CultureInfo.InvariantCulture));
-
-        if (result.Template.Tags.Count > 0)
-            CliTheme.WriteKeyValue("Tags", string.Join(", ", result.Template.Tags));
+        if (template.Tags.Count > 0)
+            CliTheme.WriteKeyValue("Tags", string.Join(", ", template.Tags));
 
         var workspaceName = AnsiConsole.Prompt(
             new TextPrompt<string>("Workspace name:")
                 .Styled()
-                .DefaultValue(result.Template.Name));
+                .DefaultValue(template.Name));
 
         var basePath = Path.GetFullPath(workspaceName);
         if (Directory.Exists(basePath) && Directory.EnumerateFileSystemEntries(basePath).Any())
@@ -69,7 +78,7 @@ internal sealed class MarketplaceInstallCliCommand(IWorkspaceRegistry registry) 
             return 1;
         }
 
-        await ScaffoldWorkspaceAsync(result.Template, workspaceName, basePath, ct);
+        await ScaffoldWorkspaceAsync(template, workspaceName, basePath, ct);
 
         CliTheme.WriteSuccess($"Workspace \"{workspaceName}\" scaffolded at {basePath}.");
         CliTheme.WriteMuted($"  Run `weave workspace up {workspaceName}` to start.");
@@ -77,7 +86,7 @@ internal sealed class MarketplaceInstallCliCommand(IWorkspaceRegistry registry) 
     }
 
     private async Task ScaffoldWorkspaceAsync(
-        ApiMarketplaceInstallTemplate template,
+        InstalledMarketplaceTemplate template,
         string workspaceName,
         string basePath,
         CancellationToken ct)

@@ -1,6 +1,7 @@
 using Microsoft.Extensions.DependencyInjection;
 using Weave.Actions.Agent;
 using Weave.Actions.AgentTask;
+using Weave.Actions.Audit;
 using Weave.Actions.Channel;
 using Weave.Actions.Config;
 using Weave.Actions.Dashboard;
@@ -49,6 +50,20 @@ public static class SiloActionsServiceCollectionExtensions
         services.AddHttpClient<PostChannelAction>(configureSiloClient);
         services.AddHttpClient<ListTemplatesAction>(configureSiloClient);
         services.AddHttpClient<ListMarketplaceItemsAction>(configureSiloClient);
+
+        // Phase 4c — typed marketplace verbs (parallel to the Phase 4b opaque
+        // ListMarketplaceItemsAction; user-facing browse/search/info/submit/
+        // publish/install operations get curated MarketplaceItemSummary).
+        services.AddHttpClient<BrowseMarketplaceItemsAction>(configureSiloClient);
+        services.AddHttpClient<SearchMarketplaceAction>(configureSiloClient);
+        services.AddHttpClient<GetMarketplaceItemAction>(configureSiloClient);
+        services.AddHttpClient<SubmitMarketplaceItemAction>(configureSiloClient);
+        services.AddHttpClient<PublishMarketplaceItemAction>(configureSiloClient);
+        services.AddHttpClient<InstallMarketplaceItemAction>(configureSiloClient);
+
+        // Phase 4c — audit replay queries.
+        services.AddHttpClient<GetCapabilityAuditByTokenAction>(configureSiloClient);
+        services.AddHttpClient<GetRecentCapabilityAuditAction>(configureSiloClient);
 
         // The dashboard URL is not the silo URL — the action passes absolute
         // URIs to GetAsync so the BaseAddress here is unused but harmless.
