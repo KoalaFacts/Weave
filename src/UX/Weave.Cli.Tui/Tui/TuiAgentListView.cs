@@ -1,22 +1,20 @@
 using Weave.Actions.Agent;
 using Weave.Actions.Context;
-
+using Weave.Cli.Tui.Verbs;
 
 namespace Weave.Cli.Tui;
 
-internal sealed class TuiAgentListView
+internal sealed class TuiAgentListView(
+    TuiAgentNameSource agentNameSource,
+    ListAgentsAction action) : ITuiVerb
 {
-    private readonly TuiAgentNameSource _agentNameSource;
-    private readonly ListAgentsAction _action;
+    public string Name => "agents";
 
-    public TuiAgentListView(TuiAgentNameSource agentNameSource, ListAgentsAction action)
-    {
-        _agentNameSource = agentNameSource;
-        _action = action;
-    }
+    public IReadOnlyList<string> Aliases => [];
 
-    public async Task RenderAsync(TuiSession session, CancellationToken ct)
+    public async Task DispatchAsync(TuiVerbContext context, CancellationToken ct)
     {
+        var session = context.Session;
         if (!session.HasWorkspace)
         {
             CliTheme.WriteMuted("No workspace open. Try: /open <workspace>");
@@ -25,7 +23,7 @@ internal sealed class TuiAgentListView
 
         if (session.IsRunning)
         {
-            var result = await _action.ExecuteAsync(new ListAgentsInput(session.WorkspaceId!), ct);
+            var result = await action.ExecuteAsync(new ListAgentsInput(session.WorkspaceId!), ct);
             if (result.IsSuccess && result.Value.Agents.Count > 0)
             {
                 AgentsRenderer.RenderLive(session.WorkspaceName!, result.Value.Agents, session.AgentName);
@@ -39,7 +37,7 @@ internal sealed class TuiAgentListView
             // manifest-only view (the TUI's UX concession).
         }
 
-        var names = await _agentNameSource.FetchAsync(session, ct);
+        var names = await agentNameSource.FetchAsync(session, ct);
         if (names.Count == 0)
         {
             CliTheme.WriteWarning("No agents available.");

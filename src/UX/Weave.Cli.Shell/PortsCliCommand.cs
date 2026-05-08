@@ -4,7 +4,7 @@ using Weave.Shared;
 
 namespace Weave.Cli.Shell;
 
-internal sealed class PortsCliCommand : ICliCommand<NoCliOptions>
+internal sealed class PortsCliCommand(IConfigStore configStore) : ICliCommand<NoCliOptions>
 {
     public string Name => "ports";
 
@@ -29,7 +29,7 @@ internal sealed class PortsCliCommand : ICliCommand<NoCliOptions>
 
         AnsiConsole.Write(table);
 
-        var config = CliConfigStore.Load();
+        var config = configStore.Load();
         if (config.DefaultPort != WeavePorts.SiloHttp)
         {
             AnsiConsole.WriteLine();

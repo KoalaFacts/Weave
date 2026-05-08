@@ -6,22 +6,16 @@ using Weave.Workspaces.Manifest;
 
 namespace Weave.Cli.Tui;
 
-internal sealed class TuiWorkspaceDashboard
+internal sealed class TuiWorkspaceDashboard(GetSystemInfoAction systemInfoAction, IWorkspaceRegistry registry)
 {
     private readonly ManifestParser _parser = new();
-    private readonly GetSystemInfoAction _systemInfoAction;
-
-    public TuiWorkspaceDashboard(GetSystemInfoAction systemInfoAction)
-    {
-        _systemInfoAction = systemInfoAction;
-    }
 
     public async Task RefreshAsync(CancellationToken ct)
     {
-        var workspaces = WorkspaceRegistry.GetAll()
+        var workspaces = registry.GetAll()
             .OrderBy(kvp => kvp.Key, StringComparer.Ordinal)
             .ToArray();
-        var systemInfo = await _systemInfoAction.ExecuteAsync(new GetSystemInfoInput(), ct);
+        var systemInfo = await systemInfoAction.ExecuteAsync(new GetSystemInfoInput(), ct);
         var siloReachable = systemInfo.IsSuccess && systemInfo.Value.Reachable;
         RenderDashboardStats(workspaces, siloReachable);
         RenderWorkspacesTable(workspaces);

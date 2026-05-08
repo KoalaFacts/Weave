@@ -2,25 +2,25 @@ using Spectre.Console;
 
 namespace Weave.Cli.Shell;
 
-internal static class WorkspacePrompt
+internal sealed class WorkspacePrompt(IWorkspaceRegistry registry, IManifestResolver manifestResolver)
 {
-    public static string? SelectName(string? name, string title)
+    public string? SelectName(string? name, string title)
     {
         if (!string.IsNullOrWhiteSpace(name))
             return name;
 
-        if (ManifestResolver.Resolve(null) is not null)
+        if (manifestResolver.Resolve(null) is not null)
             return null;
 
         return SelectRegisteredName(null, title);
     }
 
-    public static string? SelectRegisteredName(string? name, string title)
+    public string? SelectRegisteredName(string? name, string title)
     {
         if (!string.IsNullOrWhiteSpace(name))
             return name;
 
-        var workspaces = WorkspaceRegistry.GetAll();
+        var workspaces = registry.GetAll();
         if (workspaces.Count == 0)
             return null;
 

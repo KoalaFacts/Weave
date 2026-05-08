@@ -227,10 +227,18 @@ Static is acceptable for: constants, pure functions, extension methods, source-g
 ### 11. Comment discipline (NOTE)
 
 ```bash
-# XML doc summary blocks > 5 lines
+# XML doc summary blocks > 5 lines (counts content INSIDE
+# <summary>...</summary> only — legitimate <remarks> blocks
+# don't inflate the count).
 for f in $(find src -name "*.cs" -not -path "*/bin/*" -not -path "*/obj/*" | grep -v Test); do
-  longest=$(awk '/^\s*\/\/\//{c++; if (c>m) m=c} !/^\s*\/\/\//{c=0} END{print m+0}' "$f")
-  [ "$longest" -gt 5 ] && echo "$longest  $f"
+  awk '
+    /\/\/\/[[:space:]]*<summary>/ { in_sum=1; lines=0; loc=NR; next }
+    /\/\/\/[[:space:]]*<\/summary>/ {
+      if (in_sum && lines > 5) printf "%d  %s:%d\n", lines, FILENAME, loc
+      in_sum=0; next
+    }
+    in_sum && /\/\/\// { lines++ }
+  ' "$f"
 done | sort -rn | head
 
 # Comments that narrate (Get/Set/Returns/Adds/Loops)

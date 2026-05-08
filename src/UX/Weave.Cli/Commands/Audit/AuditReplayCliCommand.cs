@@ -1,8 +1,12 @@
 using Spectre.Console;
+using Weave.Actions.Audit;
+using Weave.Actions.Context;
 
 namespace Weave.Cli.Commands;
 
-internal sealed class AuditReplayCliCommand : ICliCommand<AuditReplayOptions>
+internal sealed class AuditReplayCliCommand(
+    GetCapabilityAuditByTokenAction getByTokenAction,
+    GetRecentCapabilityAuditAction getRecentAction) : ICliCommand<AuditReplayOptions>
 {
     public string Name => "replay";
 
@@ -12,51 +16,46 @@ internal sealed class AuditReplayCliCommand : ICliCommand<AuditReplayOptions>
 
     public async Task<int> ExecuteAsync(AuditReplayOptions options, CancellationToken ct)
     {
-        using var client = new AuditApiClient();
-
         var tokenId = options.TokenId;
         if (string.IsNullOrWhiteSpace(tokenId))
         {
-            tokenId = await PromptForTokenIdAsync(client, options.Limit, ct);
+            tokenId = await PromptForTokenIdAsync(options.Limit, ct);
             if (string.IsNullOrWhiteSpace(tokenId))
                 return 0;
         }
 
-        IReadOnlyList<ApiCapabilityAuditEntry> rows;
-        try
+        var result = await getByTokenAction.ExecuteAsync(new GetCapabilityAuditByTokenInput(tokenId), ct);
+        if (!result.IsSuccess)
         {
-            rows = await client.GetByTokenAsync(tokenId, ct);
-        }
-        catch (HttpRequestException ex)
-        {
-            CliTheme.WriteError($"Failed to query the silo: {ex.Message}");
+            if (result.Failure.Reason == ActionFailureReason.Cancelled)
+                return 130;
+            CliTheme.WriteError($"Failed to query the silo: {result.Failure.Message}");
             return 1;
         }
 
-        if (rows.Count == 0)
+        if (result.Value.Entries.Count == 0)
         {
             CliTheme.WriteWarning($"No audit rows recorded for token '{tokenId}'.");
             CliTheme.WriteMuted("Either the token never authorized through this silo, or its rows have been evicted (capacity bound).");
             return 0;
         }
 
-        RenderTable(tokenId, rows);
+        RenderTable(tokenId, result.Value.Entries);
         return 0;
     }
 
-    private static async Task<string?> PromptForTokenIdAsync(AuditApiClient client, int limit, CancellationToken ct)
+    private async Task<string?> PromptForTokenIdAsync(int limit, CancellationToken ct)
     {
-        IReadOnlyList<ApiCapabilityAuditEntry> recent;
-        try
+        var result = await getRecentAction.ExecuteAsync(new GetRecentCapabilityAuditInput(limit), ct);
+        if (!result.IsSuccess)
         {
-            recent = await client.GetRecentAsync(limit, ct);
-        }
-        catch (HttpRequestException ex)
-        {
-            CliTheme.WriteError($"Failed to query the silo: {ex.Message}");
+            if (result.Failure.Reason == ActionFailureReason.Cancelled)
+                return null;
+            CliTheme.WriteError($"Failed to query the silo: {result.Failure.Message}");
             return null;
         }
 
+        var recent = result.Value.Entries;
         if (recent.Count == 0)
         {
             CliTheme.WriteWarning("No capability authorization rows on this silo yet.");
@@ -90,7 +89,7 @@ internal sealed class AuditReplayCliCommand : ICliCommand<AuditReplayOptions>
         return labels[selection];
     }
 
-    private static void RenderTable(string tokenId, IReadOnlyList<ApiCapabilityAuditEntry> rows)
+    private static void RenderTable(string tokenId, IReadOnlyList<CapabilityAuditEntry> rows)
     {
         var table = CliTheme.CreateTable($"Capability replay — {ShortId(tokenId)}");
         table.AddColumn(CliTheme.StyledColumn("Time"));

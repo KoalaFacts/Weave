@@ -1,5 +1,3 @@
-using System.Globalization;
-using System.Text;
 using Microsoft.Extensions.Logging;
 using Weave.Agents.Channels;
 using Weave.Agents.Lifecycle;
@@ -39,24 +37,7 @@ public sealed class UserModelActor(
         EnsureIdentity();
         await authorizer.AuthorizeAsync(token, BuildGrant(write: true), persistentState.State.WorkspaceId);
 
-        if (persistentState.State.RecentInteractions.Count >= persistentState.State.MaxRecentInteractions)
-            persistentState.State.RecentInteractions.RemoveAt(0);
-
-        persistentState.State.RecentInteractions.Add(record);
-
-        foreach (var topic in record.Topics)
-        {
-            if (persistentState.State.TopicFrequency.TryGetValue(topic, out var count))
-                persistentState.State.TopicFrequency[topic] = count + 1;
-            else
-                persistentState.State.TopicFrequency[topic] = 1;
-        }
-
-        persistentState.State.TotalInteractions++;
-        var now = timeProvider.GetUtcNow();
-        persistentState.State.FirstSeenAt ??= now;
-        persistentState.State.LastSeenAt = now;
-
+        persistentState.State.RecordInteraction(record, timeProvider.GetUtcNow());
         await persistentState.WriteStateAsync(token.CancellationToken);
 
         await eventBus.PublishAsync(new UserInteractionRecordedEvent
@@ -100,62 +81,14 @@ public sealed class UserModelActor(
     {
         EnsureIdentity();
         await authorizer.AuthorizeAsync(token, BuildGrant(write: false), persistentState.State.WorkspaceId);
-        if (persistentState.State.TotalInteractions == 0
-            && persistentState.State.Preferences.Count == 0
-            && persistentState.State.DomainContext.Count == 0)
-        {
-            return string.Empty;
-        }
-
-        var sb = new StringBuilder();
-
-        if (persistentState.State.Preferences.Count > 0)
-        {
-            sb.Append("User preferences: ");
-            sb.Append(string.Join(", ", persistentState.State.Preferences.Select(kv => $"{kv.Key}={kv.Value}")));
-            sb.Append(". ");
-        }
-
-        if (persistentState.State.TopicFrequency.Count > 0)
-        {
-            var topTopics = persistentState.State.TopicFrequency
-                .OrderByDescending(kv => kv.Value)
-                .Take(5)
-                .Select(kv => $"{kv.Key} ({kv.Value})");
-
-            sb.Append("Top topics: ");
-            sb.Append(string.Join(", ", topTopics));
-            sb.Append(". ");
-        }
-
-        if (persistentState.State.DomainContext.Count > 0)
-        {
-            sb.Append("Domain context: ");
-            sb.Append(string.Join(", ", persistentState.State.DomainContext.Select(kv => $"{kv.Key}={kv.Value}")));
-            sb.Append(". ");
-        }
-
-        sb.Append(CultureInfo.InvariantCulture, $"Interactions: {persistentState.State.TotalInteractions} total.");
-
-        return sb.ToString();
+        return persistentState.State.BuildContextSummary();
     }
 
     public async Task ClearAsync(CapabilityToken token)
     {
         EnsureIdentity();
         await authorizer.AuthorizeAsync(token, BuildGrant(write: true), persistentState.State.WorkspaceId);
-        var state = persistentState.State;
-        state.Preferences.Clear();
-        state.RecentInteractions.Clear();
-        state.TopicFrequency.Clear();
-        state.DomainContext.Clear();
-        state.TotalInteractions = 0;
-        state.FirstSeenAt = null;
-        state.LastSeenAt = null;
-        state.PreferredModel = null;
-        state.PreferredLanguage = null;
-        state.MaxRecentInteractions = 100;
-
+        persistentState.State.Clear();
         await persistentState.WriteStateAsync(token.CancellationToken);
     }
 

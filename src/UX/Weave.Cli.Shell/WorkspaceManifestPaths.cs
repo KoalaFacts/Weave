@@ -4,12 +4,15 @@ namespace Weave.Cli.Shell;
 
 /// <summary>
 /// Frontend-orchestration helpers for relating a manifest on disk to the
-/// silo's view of it. <see cref="PrepareForSilo"/> rewrites relative
-/// <c>SystemPromptFile</c> paths to absolute (the silo runs in a separate
-/// process and sees no relative paths); <see cref="GetStatePath"/> locates
-/// the per-workspace <c>.weave/workspace-id</c> sidecar that records which
-/// silo workspace ID maps to a given manifest.
+/// silo's view of it.
 /// </summary>
+/// <remarks>
+/// <see cref="PrepareForSilo"/> rewrites relative <c>SystemPromptFile</c>
+/// paths to absolute (the silo runs in a separate process and sees no
+/// relative paths); <see cref="GetStatePath"/> locates the per-workspace
+/// <c>.weave/workspace-id</c> sidecar that records which silo workspace ID
+/// maps to a given manifest.
+/// </remarks>
 internal static class WorkspaceManifestPaths
 {
     public static WorkspaceManifest PrepareForSilo(WorkspaceManifest manifest, string manifestDirectory)

@@ -4,7 +4,7 @@ namespace Weave.Cli.Commands;
 
 internal static class RunCommand
 {
-    public static Command Create()
+    public static Command Create(RunCliCommand handler, IConfigStore configStore)
     {
         var nameArg = new Argument<string?>("name")
         {
@@ -15,7 +15,7 @@ internal static class RunCommand
         var portOption = new Option<int>("--port")
         {
             Description = "Server port",
-            DefaultValueFactory = _ => CliConfigStore.Load().DefaultPort
+            DefaultValueFactory = _ => configStore.Load().DefaultPort
         };
 
         var cmd = new Command("run", "Start the server and workspace in one command") { nameArg, portOption };
@@ -23,7 +23,7 @@ internal static class RunCommand
         {
             var name = parseResult.GetValue(nameArg);
             var port = parseResult.GetValue(portOption);
-            return await new RunCliCommand().ExecuteAsync(new RunOptions(name, port), cancellationToken);
+            return await handler.ExecuteAsync(new RunOptions(name, port), cancellationToken);
         });
 
         return cmd;

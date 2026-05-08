@@ -4,14 +4,14 @@ namespace Weave.Cli.Commands;
 
 internal static class WorkspaceUpCommand
 {
-    public static Command Create(WorkspaceUpCliCommand handler)
+    public static Command Create(WorkspaceUpCliCommand handler, WorkspaceCompletions completions)
     {
         var nameArg = new Argument<string?>("name")
         {
             Description = "Workspace name",
             Arity = ArgumentArity.ZeroOrOne
         };
-        nameArg.CompletionSources.Add(CliCompletions.CompleteWorkspaceNames);
+        nameArg.CompletionSources.Add(completions.CompleteWorkspaceNames);
         var targetOption = new Option<string>("--target")
         {
             Description = "Deployment target",

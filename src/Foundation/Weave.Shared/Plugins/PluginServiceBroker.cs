@@ -5,14 +5,15 @@ namespace Weave.Shared.Plugins;
 
 /// <summary>
 /// Holds mutable service slots that plugin connectors can swap at runtime.
+/// </summary>
+/// <remarks>
 /// Registered as a singleton in DI. Proxy services (e.g., <see cref="EventBusProxy"/>)
 /// delegate to the current backing instance from this broker, decoupling the frozen
-/// DI container from dynamic plugin lifecycle.
-///
-/// Typed services (_services) are guarded by _lock for both reads and writes —
-/// Get and Swap are consistent. Named services (_named) use ConcurrentDictionary
+/// DI container from dynamic plugin lifecycle. Typed services (<c>_services</c>) are
+/// guarded by <c>_lock</c> for both reads and writes — Get and Swap are consistent.
+/// Named services (<c>_named</c>) use <see cref="ConcurrentDictionary{TKey,TValue}"/>
 /// since they have no callback mechanism.
-/// </summary>
+/// </remarks>
 public sealed partial class PluginServiceBroker(ILogger<PluginServiceBroker> logger)
 {
     private readonly Lock _lock = new();

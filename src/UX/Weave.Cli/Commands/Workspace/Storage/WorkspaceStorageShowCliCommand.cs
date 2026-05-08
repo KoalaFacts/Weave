@@ -1,6 +1,8 @@
 namespace Weave.Cli.Commands;
 
 internal sealed class WorkspaceStorageShowCliCommand(
+    IManifestResolver manifestResolver,
+    WorkspacePrompt workspacePrompt,
     WorkspaceStorageBackendService? storage = null) : ICliCommand<WorkspaceNameOptions>
 {
     private readonly WorkspaceStorageBackendService _storage = storage ?? new WorkspaceStorageBackendService();
@@ -13,8 +15,8 @@ internal sealed class WorkspaceStorageShowCliCommand(
 
     public async Task<int> ExecuteAsync(WorkspaceNameOptions options, CancellationToken ct)
     {
-        var name = WorkspacePrompt.SelectName(options.Name, "Which workspace would you like to inspect?");
-        var manifestPath = ManifestResolver.Resolve(name);
+        var name = workspacePrompt.SelectName(options.Name, "Which workspace would you like to inspect?");
+        var manifestPath = manifestResolver.Resolve(name);
         if (manifestPath is null)
         {
             WorkspacePrompt.WriteManifestNotFound(name);

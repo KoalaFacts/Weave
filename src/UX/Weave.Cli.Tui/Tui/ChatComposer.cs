@@ -5,12 +5,13 @@ namespace Weave.Cli.Tui;
 /// <summary>
 /// Multi-line chat composer rendered inside a rounded panel, with a
 /// context-aware footer (workspace · agent · mode · Ctrl+C hint).
-///
+/// </summary>
+/// <remarks>
 /// Input is hand-rolled on <see cref="Console.ReadKey(bool)"/> rather
 /// than <c>Spectre.Console.TextPrompt</c> so we can: show a custom
 /// cursor, repaint the panel on every keystroke, and support
 /// Shift+Enter for newlines.
-/// </summary>
+/// </remarks>
 internal sealed class ChatComposer(TimeProvider timeProvider)
 {
     private readonly ChatComposerEditor _editor = new(timeProvider);
@@ -137,13 +138,13 @@ internal sealed class ChatComposer(TimeProvider timeProvider)
     }
 
     /// <summary>
-    /// Hides the terminal's blinking text cursor for the composer
-    /// session (otherwise it flashes over our custom glyph). Returns
-    /// a restore action that's safe to call in a <c>finally</c>.
-    /// The getter for <see cref="Console.CursorVisible"/> is Windows-
-    /// only, so we don't read the previous state — default back to
-    /// visible on exit.
+    /// Hides the terminal's blinking text cursor for the composer session
+    /// and returns a restore action safe to call in a <c>finally</c>.
     /// </summary>
+    /// <remarks>
+    /// The getter for <see cref="Console.CursorVisible"/> is Windows-only,
+    /// so we don't read the previous state — default back to visible on exit.
+    /// </remarks>
     private static Action TryHideTerminalCursor()
     {
         try

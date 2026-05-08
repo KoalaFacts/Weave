@@ -97,21 +97,14 @@ public sealed class ToolRegistryActor(
     public async Task ConfigureAccessAsync(Dictionary<string, List<string>> agentToolAccess)
     {
         EnsureWorkspaceId();
-        persistentState.State.AgentToolAccess.Clear();
-        foreach (var (agentName, toolNames) in agentToolAccess)
-        {
-            persistentState.State.AgentToolAccess[agentName] = [.. toolNames.Distinct(StringComparer.Ordinal)];
-        }
-
+        persistentState.State.ConfigureAccess(agentToolAccess);
         await persistentState.WriteStateAsync();
     }
 
     public async Task GrantAgentToolsAsync(string agentName, IReadOnlyList<string> toolNames)
     {
         EnsureWorkspaceId();
-        persistentState.State.AgentToolAccess[agentName] = toolNames is null
-            ? []
-            : [.. toolNames.Distinct(StringComparer.Ordinal)];
+        persistentState.State.GrantTools(agentName, toolNames);
         await persistentState.WriteStateAsync();
     }
 
@@ -138,7 +131,7 @@ public sealed class ToolRegistryActor(
     public async Task<ToolResolution?> ResolveAsync(string agentName, string toolName)
     {
         EnsureWorkspaceId();
-        if (!IsToolAllowed(agentName, toolName))
+        if (!persistentState.State.IsToolAllowed(agentName, toolName))
             return null;
 
         if (!persistentState.State.Definitions.TryGetValue(toolName, out var definition))
@@ -174,14 +167,6 @@ public sealed class ToolRegistryActor(
             Token = token,
             Schema = schema
         };
-    }
-
-    private bool IsToolAllowed(string agentName, string toolName)
-    {
-        if (!persistentState.State.AgentToolAccess.TryGetValue(agentName, out var allowed))
-            return false;
-
-        return allowed.Contains(toolName, StringComparer.Ordinal);
     }
 
     private void EnsureWorkspaceId()

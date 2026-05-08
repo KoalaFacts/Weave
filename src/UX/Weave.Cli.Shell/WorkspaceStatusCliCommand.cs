@@ -14,22 +14,13 @@ namespace Weave.Cli.Shell;
 /// + <see cref="ListToolsAction"/> for the live view, and falls back to the
 /// manifest when the workspace isn't running or the silo can't be reached.
 /// </summary>
-internal sealed class WorkspaceStatusCliCommand : ICliCommand<WorkspaceNameOptions>
+internal sealed class WorkspaceStatusCliCommand(
+    GetWorkspaceStatusAction statusAction,
+    ListAgentsAction agentsAction,
+    ListToolsAction toolsAction,
+    IManifestResolver manifestResolver,
+    WorkspacePrompt workspacePrompt) : ICliCommand<WorkspaceNameOptions>
 {
-    private readonly GetWorkspaceStatusAction _statusAction;
-    private readonly ListAgentsAction _agentsAction;
-    private readonly ListToolsAction _toolsAction;
-
-    public WorkspaceStatusCliCommand(
-        GetWorkspaceStatusAction statusAction,
-        ListAgentsAction agentsAction,
-        ListToolsAction toolsAction)
-    {
-        _statusAction = statusAction;
-        _agentsAction = agentsAction;
-        _toolsAction = toolsAction;
-    }
-
     public string Name => "status";
 
     public IReadOnlyList<string> Aliases => [];
@@ -38,8 +29,8 @@ internal sealed class WorkspaceStatusCliCommand : ICliCommand<WorkspaceNameOptio
 
     public async Task<int> ExecuteAsync(WorkspaceNameOptions options, CancellationToken ct)
     {
-        var name = WorkspacePrompt.SelectName(options.Name, "Which workspace would you like to inspect?");
-        var manifestPath = ManifestResolver.Resolve(name);
+        var name = workspacePrompt.SelectName(options.Name, "Which workspace would you like to inspect?");
+        var manifestPath = manifestResolver.Resolve(name);
         if (manifestPath is null)
         {
             WorkspacePrompt.WriteManifestNotFound(name);
@@ -52,16 +43,16 @@ internal sealed class WorkspaceStatusCliCommand : ICliCommand<WorkspaceNameOptio
         if (File.Exists(statePath))
         {
             var workspaceId = (await File.ReadAllTextAsync(statePath, ct)).Trim();
-            var statusResult = await _statusAction.ExecuteAsync(new GetWorkspaceStatusInput(workspaceId), ct);
+            var statusResult = await statusAction.ExecuteAsync(new GetWorkspaceStatusInput(workspaceId), ct);
             if (statusResult.IsSuccess)
             {
                 RenderStatusTable(manifest.Name, statusResult.Value.Workspace, manifestPath);
 
-                var agentsResult = await _agentsAction.ExecuteAsync(new ListAgentsInput(workspaceId), ct);
+                var agentsResult = await agentsAction.ExecuteAsync(new ListAgentsInput(workspaceId), ct);
                 if (agentsResult.IsSuccess && agentsResult.Value.Agents.Count > 0)
                     RenderAgents(agentsResult.Value.Agents);
 
-                var toolsResult = await _toolsAction.ExecuteAsync(new ListToolsInput(workspaceId), ct);
+                var toolsResult = await toolsAction.ExecuteAsync(new ListToolsInput(workspaceId), ct);
                 if (toolsResult.IsSuccess && toolsResult.Value.Tools.Count > 0)
                     RenderTools(toolsResult.Value.Tools);
 

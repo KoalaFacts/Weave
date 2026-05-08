@@ -4,14 +4,14 @@ namespace Weave.Cli.Shell;
 
 /// <summary>
 /// CLI binding for <see cref="ISystemConfigSource"/>: reads
-/// <c>~/.weave/config.json</c> via <see cref="CliConfigStore"/> and folds in the
+/// <c>~/.weave/config.json</c> via <see cref="IConfigStore"/> and folds in the
 /// resolved silo base URL plus the conventional Weave home directory.
 /// </summary>
-internal sealed class CliSystemConfigSource : ISystemConfigSource
+internal sealed class CliSystemConfigSource(IConfigStore configStore) : ISystemConfigSource
 {
     public SystemConfigSnapshot Load()
     {
-        var config = CliConfigStore.Load();
+        var config = configStore.Load();
         return new SystemConfigSnapshot
         {
             Version = config.Version,

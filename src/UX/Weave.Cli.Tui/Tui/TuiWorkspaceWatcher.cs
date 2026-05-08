@@ -1,19 +1,19 @@
-
+using Weave.Cli.Tui.Verbs;
 using Weave.Workspaces.Manifest;
+
 namespace Weave.Cli.Tui;
 
-internal sealed class TuiWorkspaceWatcher
+internal sealed class TuiWorkspaceWatcher(TuiLiveStatusView liveStatus) : ITuiVerb
 {
     private readonly ManifestParser _parser = new();
-    private readonly TuiLiveStatusView _liveStatus;
 
-    public TuiWorkspaceWatcher(TuiLiveStatusView liveStatus)
-    {
-        _liveStatus = liveStatus;
-    }
+    public string Name => "watch";
 
-    public async Task WatchAsync(TuiSession session, CancellationToken ct)
+    public IReadOnlyList<string> Aliases => [];
+
+    public async Task DispatchAsync(TuiVerbContext context, CancellationToken ct)
     {
+        var session = context.Session;
         if (!session.HasWorkspace)
         {
             CliTheme.WriteMuted("No workspace open. Try: /open <workspace>");
@@ -37,6 +37,6 @@ internal sealed class TuiWorkspaceWatcher
             return;
         }
 
-        await _liveStatus.WatchAsync(session.ManifestPath!, manifest, ct);
+        await liveStatus.WatchAsync(session.ManifestPath!, manifest, ct);
     }
 }

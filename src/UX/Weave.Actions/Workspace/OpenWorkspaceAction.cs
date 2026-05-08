@@ -5,11 +5,14 @@ namespace Weave.Actions.Workspace;
 /// <summary>
 /// Phase 2 write verb. Resolves a (possibly null) workspace name into a
 /// (canonical name, manifest path) pair via the frontend-supplied
-/// <see cref="IWorkspaceLocator"/>; prompts the user for a selection
-/// through <see cref="IActionPrompter"/> when the name is missing.
-/// Frontends use the result to open their session / load the manifest;
-/// the action itself doesn't read the manifest body.
+/// <see cref="IWorkspaceLocator"/>.
 /// </summary>
+/// <remarks>
+/// Prompts the user for a selection through <see cref="IActionPrompter"/>
+/// when the name is missing. Frontends use the result to open their
+/// session / load the manifest; the action itself doesn't read the
+/// manifest body.
+/// </remarks>
 public sealed class OpenWorkspaceAction
 {
     private const string CancelChoice = "(cancel)";

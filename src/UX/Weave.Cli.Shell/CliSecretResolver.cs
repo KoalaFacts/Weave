@@ -2,9 +2,9 @@ using System.Text.Json;
 
 namespace Weave.Cli.Shell;
 
-internal static class CliSecretResolver
+internal sealed class CliSecretResolver : ISecretResolver
 {
-    public static string? ResolveReference(string? reference)
+    public string? ResolveReference(string? reference)
     {
         if (string.IsNullOrWhiteSpace(reference))
             return null;
@@ -21,7 +21,7 @@ internal static class CliSecretResolver
         return reference;
     }
 
-    public static string ToEnvReference(string storageBackend)
+    public string ToEnvReference(string storageBackend)
     {
         var varName = storageBackend.ToUpperInvariant() switch
         {

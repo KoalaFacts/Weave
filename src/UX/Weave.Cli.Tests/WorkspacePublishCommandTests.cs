@@ -1,3 +1,5 @@
+using Microsoft.Extensions.DependencyInjection;
+using Weave.Cli;
 using Weave.Cli.Commands;
 using Weave.Deploy.Translators;
 
@@ -53,7 +55,10 @@ public sealed class WorkspacePublishCommandTests
     [Fact]
     public void Create_ReturnsCommandWithExpectedName()
     {
-        var cmd = WorkspacePublishCommand.Create();
+        var services = CliServiceCollection.Build();
+        var cmd = WorkspacePublishCommand.Create(
+            services.GetRequiredService<WorkspacePublishCliCommand>(),
+            services.GetRequiredService<WorkspaceCompletions>());
         cmd.Name.ShouldBe("publish");
     }
 }

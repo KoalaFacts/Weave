@@ -9,15 +9,11 @@ namespace Weave.Cli.Shell;
 /// the standard guided/advanced prompt pattern, then delegates parsing +
 /// validation to <see cref="ValidateWorkspaceAction"/>.
 /// </summary>
-internal sealed class WorkspaceValidateCliCommand : ICliCommand<WorkspaceNameOptions>
+internal sealed class WorkspaceValidateCliCommand(
+    ValidateWorkspaceAction action,
+    IManifestResolver manifestResolver,
+    WorkspacePrompt workspacePrompt) : ICliCommand<WorkspaceNameOptions>
 {
-    private readonly ValidateWorkspaceAction _action;
-
-    public WorkspaceValidateCliCommand(ValidateWorkspaceAction action)
-    {
-        _action = action;
-    }
-
     public string Name => "validate";
 
     public IReadOnlyList<string> Aliases => [];
@@ -26,15 +22,15 @@ internal sealed class WorkspaceValidateCliCommand : ICliCommand<WorkspaceNameOpt
 
     public async Task<int> ExecuteAsync(WorkspaceNameOptions options, CancellationToken ct)
     {
-        var name = WorkspacePrompt.SelectName(options.Name, "Which workspace would you like to validate?");
-        var manifestPath = ManifestResolver.Resolve(name);
+        var name = workspacePrompt.SelectName(options.Name, "Which workspace would you like to validate?");
+        var manifestPath = manifestResolver.Resolve(name);
         if (manifestPath is null)
         {
             WorkspacePrompt.WriteManifestNotFound(name);
             return 1;
         }
 
-        var result = await _action.ExecuteAsync(new ValidateWorkspaceInput(manifestPath), ct);
+        var result = await action.ExecuteAsync(new ValidateWorkspaceInput(manifestPath), ct);
         if (!result.IsSuccess)
         {
             switch (result.Failure.Reason)

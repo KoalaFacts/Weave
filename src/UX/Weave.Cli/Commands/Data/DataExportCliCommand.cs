@@ -1,10 +1,22 @@
 using System.Text.Json;
+using Weave.Actions.Channel;
+using Weave.Actions.Context;
+using Weave.Actions.Marketplace;
+using Weave.Actions.Skill;
+using Weave.Actions.SystemInfo;
+using Weave.Actions.Template;
 
 namespace Weave.Cli.Commands;
 
-internal sealed class DataExportCliCommand : ICliCommand<DataExportOptions>
+internal sealed class DataExportCliCommand(
+    IManifestResolver manifestResolver,
+    WorkspacePrompt workspacePrompt,
+    GetSystemInfoAction systemInfoAction,
+    ListSkillsAction listSkillsAction,
+    ListChannelsAction listChannelsAction,
+    ListTemplatesAction listTemplatesAction,
+    ListMarketplaceItemsAction listMarketplaceAction) : ICliCommand<DataExportOptions>
 {
-
     public string Name => "export";
 
     public IReadOnlyList<string> Aliases => [];
@@ -13,8 +25,8 @@ internal sealed class DataExportCliCommand : ICliCommand<DataExportOptions>
 
     public async Task<int> ExecuteAsync(DataExportOptions options, CancellationToken ct)
     {
-        var workspace = SelectWorkspace(options.Workspace);
-        var manifestPath = ResolveManifestPath(workspace);
+        var workspace = workspacePrompt.SelectName(options.Workspace, "Which workspace would you like to export?");
+        var manifestPath = manifestResolver.Resolve(workspace);
         if (manifestPath is null)
         {
             WorkspacePrompt.WriteManifestNotFound(workspace);
@@ -29,9 +41,8 @@ internal sealed class DataExportCliCommand : ICliCommand<DataExportOptions>
 
         var outputPath = options.Output ?? $"{workspace}-export.json";
 
-        using var client = new WorkspaceApiClient();
-        using var marketplaceClient = new MarketplaceApiClient();
-        if (!await client.IsReachableAsync(ct))
+        var systemInfo = await systemInfoAction.ExecuteAsync(new GetSystemInfoInput(), ct);
+        if (!systemInfo.IsSuccess || !systemInfo.Value.Reachable)
         {
             CliTheme.WriteError("Weave server is not running. Start it with 'weave run'.");
             return 1;
@@ -39,7 +50,7 @@ internal sealed class DataExportCliCommand : ICliCommand<DataExportOptions>
 
         CliTheme.WriteInfo($"Exporting workspace '{workspace}'...");
 
-        var export = await BuildExportAsync(workspace, manifestPath, client, marketplaceClient, ct);
+        var export = await BuildExportAsync(workspace, manifestPath, ct);
         await WriteAsync(export, outputPath, ct);
 
         Spectre.Console.AnsiConsole.WriteLine();
@@ -50,16 +61,9 @@ internal sealed class DataExportCliCommand : ICliCommand<DataExportOptions>
         return 0;
     }
 
-    private static string? SelectWorkspace(string? workspace)
-        => WorkspacePrompt.SelectName(workspace, "Which workspace would you like to export?");
-
-    private static string? ResolveManifestPath(string? workspace) => ManifestResolver.Resolve(workspace);
-
-    private static async Task<WorkspaceExport> BuildExportAsync(
+    private async Task<WorkspaceExport> BuildExportAsync(
         string workspace,
         string manifestPath,
-        WorkspaceApiClient client,
-        MarketplaceApiClient marketplaceClient,
         CancellationToken ct)
     {
         var manifestDir = Path.GetDirectoryName(Path.GetFullPath(manifestPath))!;
@@ -72,8 +76,8 @@ internal sealed class DataExportCliCommand : ICliCommand<DataExportOptions>
         };
 
         await ExportPromptFilesAsync(export, manifestDir, ct);
-        await ExportLiveDataAsync(export, manifestPath, client, ct);
-        await ExportGlobalDataAsync(export, marketplaceClient, client, ct);
+        await ExportLiveDataAsync(export, manifestPath, ct);
+        await ExportGlobalDataAsync(export, ct);
         return export;
     }
 
@@ -97,89 +101,63 @@ internal sealed class DataExportCliCommand : ICliCommand<DataExportOptions>
         }
     }
 
-    private static async Task ExportLiveDataAsync(WorkspaceExport export, string manifestPath, WorkspaceApiClient client, CancellationToken ct)
+    private async Task ExportLiveDataAsync(WorkspaceExport export, string manifestPath, CancellationToken ct)
     {
         var statePath = WorkspaceManifestPaths.GetStatePath(manifestPath);
-        var workspaceId = File.Exists(statePath)
-            ? (await File.ReadAllTextAsync(statePath, ct)).Trim()
-            : null;
+        if (!File.Exists(statePath))
+            return;
 
-        if (workspaceId is null)
+        var workspaceId = (await File.ReadAllTextAsync(statePath, ct)).Trim();
+        if (string.IsNullOrWhiteSpace(workspaceId))
             return;
 
         export.WorkspaceId = workspaceId;
-        await TryExportLiveDataAsync(client, export, workspaceId, ct);
-    }
 
-    private static async Task TryExportLiveDataAsync(WorkspaceApiClient client, WorkspaceExport export, string workspaceId, CancellationToken ct)
-    {
-        try
+        var skills = await listSkillsAction.ExecuteAsync(new ListSkillsInput(workspaceId), ct);
+        if (skills.IsSuccess)
         {
-            var agents = await client.GetAgentsAsync(workspaceId, ct);
-            export.Agents = agents;
-            CliTheme.WriteInfo($"  Agents: {agents.Count}");
+            export.Skills = skills.Value.Skills;
+            CliTheme.WriteInfo($"  Skills: {skills.Value.Skills.Count}");
         }
-        catch (Exception ex) when (ex is HttpRequestException or TaskCanceledException or System.Net.Sockets.SocketException or System.Text.Json.JsonException or IOException)
+        else if (skills.Failure.Reason != ActionFailureReason.Cancelled)
         {
-            CliTheme.WriteMuted($"  Agents: (not available: {ex.Message})");
+            CliTheme.WriteMuted($"  Skills: (not available: {skills.Failure.Message})");
         }
 
-        try
+        var channels = await listChannelsAction.ExecuteAsync(new ListChannelsInput(workspaceId), ct);
+        if (channels.IsSuccess)
         {
-            var tools = await client.GetToolsAsync(workspaceId, ct);
-            export.Tools = tools;
-            CliTheme.WriteInfo($"  Tools: {tools.Count}");
+            export.Channels = channels.Value.Channels;
+            CliTheme.WriteInfo($"  Channels: {channels.Value.Channels.Count}");
         }
-        catch (Exception ex) when (ex is HttpRequestException or TaskCanceledException or System.Net.Sockets.SocketException or System.Text.Json.JsonException or IOException)
+        else if (channels.Failure.Reason != ActionFailureReason.Cancelled)
         {
-            CliTheme.WriteMuted($"  Tools: (not available: {ex.Message})");
-        }
-
-        try
-        {
-            var skills = await client.GetSkillsAsync(workspaceId, ct);
-            export.Skills = skills;
-            CliTheme.WriteInfo($"  Skills: {skills.Count}");
-        }
-        catch (Exception ex) when (ex is HttpRequestException or TaskCanceledException or System.Net.Sockets.SocketException or System.Text.Json.JsonException or IOException)
-        {
-            CliTheme.WriteMuted($"  Skills: (not available: {ex.Message})");
-        }
-
-        try
-        {
-            var channels = await client.GetChannelsAsync(workspaceId, ct);
-            export.Channels = channels;
-            CliTheme.WriteInfo($"  Channels: {channels.Count}");
-        }
-        catch (Exception ex) when (ex is HttpRequestException or TaskCanceledException or System.Net.Sockets.SocketException or System.Text.Json.JsonException or IOException)
-        {
-            CliTheme.WriteMuted($"  Channels: (not available: {ex.Message})");
+            CliTheme.WriteMuted($"  Channels: (not available: {channels.Failure.Message})");
         }
     }
 
-    private static async Task ExportGlobalDataAsync(WorkspaceExport export, MarketplaceApiClient marketplaceClient, WorkspaceApiClient client, CancellationToken ct)
+    private async Task ExportGlobalDataAsync(WorkspaceExport export, CancellationToken ct)
     {
-        try
+        var marketplace = await listMarketplaceAction.ExecuteAsync(new ListMarketplaceItemsInput(), ct);
+        if (marketplace.IsSuccess)
         {
-            var marketplace = await marketplaceClient.GetItemsAsync(ct);
-            export.MarketplaceItems = marketplace;
-            CliTheme.WriteInfo($"  Marketplace items: {marketplace.Count}");
+            export.MarketplaceItems = marketplace.Value.Items;
+            CliTheme.WriteInfo($"  Marketplace items: {marketplace.Value.Items.Count}");
         }
-        catch (Exception ex) when (ex is HttpRequestException or TaskCanceledException or System.Net.Sockets.SocketException or System.Text.Json.JsonException or IOException)
+        else if (marketplace.Failure.Reason != ActionFailureReason.Cancelled)
         {
-            CliTheme.WriteMuted($"  Marketplace: (not available: {ex.Message})");
+            CliTheme.WriteMuted($"  Marketplace: (not available: {marketplace.Failure.Message})");
         }
 
-        try
+        var templates = await listTemplatesAction.ExecuteAsync(new ListTemplatesInput(), ct);
+        if (templates.IsSuccess)
         {
-            var templates = await client.GetTemplatesAsync(ct);
-            export.Templates = templates;
-            CliTheme.WriteInfo($"  Templates: {templates.Count}");
+            export.Templates = templates.Value.Templates;
+            CliTheme.WriteInfo($"  Templates: {templates.Value.Templates.Count}");
         }
-        catch (Exception ex) when (ex is HttpRequestException or TaskCanceledException or System.Net.Sockets.SocketException or System.Text.Json.JsonException or IOException)
+        else if (templates.Failure.Reason != ActionFailureReason.Cancelled)
         {
-            CliTheme.WriteMuted($"  Templates: (not available: {ex.Message})");
+            CliTheme.WriteMuted($"  Templates: (not available: {templates.Failure.Message})");
         }
     }
 }

@@ -8,12 +8,13 @@ namespace Weave.Security.Postgres;
 /// <summary>
 /// PostgreSQL-backed <see cref="ICapabilityAuditStore"/> for multi-silo
 /// deployments where every silo writes into one shared audit log.
-/// Mirrors <c>SqliteCapabilityAuditStore</c>: same schema shape,
-/// same FIFO trim-on-insert, same query semantics. Connections are taken
-/// from Npgsql's built-in pool per operation rather than held open —
-/// matches the idiomatic ADO.NET pattern and keeps the store stateless
-/// after construction.
 /// </summary>
+/// <remarks>
+/// Mirrors <c>SqliteCapabilityAuditStore</c>: same schema shape, same FIFO
+/// trim-on-insert, same query semantics. Connections are taken from Npgsql's
+/// built-in pool per operation rather than held open — matches the idiomatic
+/// ADO.NET pattern and keeps the store stateless after construction.
+/// </remarks>
 public sealed class PostgresCapabilityAuditStore : ICapabilityAuditStore
 {
     private readonly string _connectionString;

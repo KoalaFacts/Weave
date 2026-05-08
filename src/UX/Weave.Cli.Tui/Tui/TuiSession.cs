@@ -6,7 +6,7 @@ namespace Weave.Cli.Tui;
 /// In-memory REPL state: which workspace is "open" and which agent the
 /// next free-form message should be routed to.
 /// </summary>
-internal sealed class TuiSession
+internal sealed class TuiSession(IManifestResolver manifestResolver)
 {
     public string? WorkspaceName { get; private set; }
     public string? WorkspaceId { get; private set; }
@@ -27,7 +27,7 @@ internal sealed class TuiSession
     {
         error = null;
 
-        var manifestPath = ManifestResolver.Resolve(name);
+        var manifestPath = manifestResolver.Resolve(name);
         if (manifestPath is null)
         {
             error = $"No workspace.json found for '{name}'.";

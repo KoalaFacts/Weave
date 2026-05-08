@@ -2,7 +2,7 @@ using Spectre.Console;
 using Weave.Workspaces.Manifest;
 namespace Weave.Cli.Commands;
 
-internal sealed class WorkspaceNewCliCommand : ICliCommand<WorkspaceNewOptions>
+internal sealed class WorkspaceNewCliCommand(IWorkspaceRegistry registry) : ICliCommand<WorkspaceNewOptions>
 {
 
     public string Name => "new";
@@ -46,7 +46,7 @@ internal sealed class WorkspaceNewCliCommand : ICliCommand<WorkspaceNewOptions>
         Directory.CreateDirectory(Path.Combine(basePath, "prompts"));
         Directory.CreateDirectory(Path.Combine(basePath, "data"));
         Directory.CreateDirectory(Path.Combine(basePath, ".weave"));
-        WorkspaceRegistry.Register(name, basePath);
+        registry.Register(name, basePath);
 
         var template = WorkspaceNewTemplateFactory.Create(selection);
 

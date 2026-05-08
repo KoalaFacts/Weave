@@ -1,22 +1,19 @@
 using Weave.Actions.Config;
-
+using Weave.Cli.Tui.Verbs;
 
 namespace Weave.Cli.Tui;
 
-internal sealed class TuiConfigView
+internal sealed class TuiConfigView(GetConfigAction action) : ITuiVerb
 {
-    private readonly GetConfigAction _action;
+    public string Name => "config";
 
-    public TuiConfigView(GetConfigAction action)
-    {
-        _action = action;
-    }
+    public IReadOnlyList<string> Aliases => [];
 
-    public async Task ShowAsync(CancellationToken cancellationToken)
+    public async Task DispatchAsync(TuiVerbContext context, CancellationToken ct)
     {
         CliTheme.WriteSection("CLI Configuration");
 
-        var result = await _action.ExecuteAsync(new GetConfigInput(), cancellationToken);
+        var result = await action.ExecuteAsync(new GetConfigInput(), ct);
         if (!result.IsSuccess)
         {
             CliTheme.WriteError(result.Failure.Message);

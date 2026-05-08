@@ -1,6 +1,6 @@
 namespace Weave.Cli.Shell;
 
-internal sealed class WorkspaceDownCliCommand(IWorkspaceDownDependencies dependencies) : ICliCommand<WorkspaceDownOptions>
+internal sealed class WorkspaceDownCliCommand(IWorkspaceDownDependencies dependencies, WorkspacePrompt workspacePrompt) : ICliCommand<WorkspaceDownOptions>
 {
     public string Name => "down";
 
@@ -10,7 +10,7 @@ internal sealed class WorkspaceDownCliCommand(IWorkspaceDownDependencies depende
 
     public async Task<int> ExecuteAsync(WorkspaceDownOptions options, CancellationToken ct)
     {
-        var name = WorkspacePrompt.SelectName(options.Name, "Which workspace would you like to stop?");
+        var name = workspacePrompt.SelectName(options.Name, "Which workspace would you like to stop?");
         var manifestPath = options.ManifestPath ?? dependencies.ResolveManifestPath(name);
         if (manifestPath is null)
         {

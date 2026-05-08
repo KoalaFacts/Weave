@@ -6,7 +6,11 @@ using Weave.Actions.Workspace;
 
 namespace Weave.Cli.Commands;
 
-internal sealed class RunCliCommand : ICliCommand<RunOptions>
+internal sealed class RunCliCommand(
+    IManifestResolver manifestResolver,
+    IWorkspaceRegistry registry,
+    ISiloLauncher siloLauncher,
+    SiloProcessService siloProcessService) : ICliCommand<RunOptions>
 {
 
     public string Name => "run";
@@ -36,13 +40,13 @@ internal sealed class RunCliCommand : ICliCommand<RunOptions>
         AnsiConsole.WriteLine();
 
         var serverAlreadyRunning = await SiloProcessService.IsReachableAsync(port, ct);
-        Process? siloProcess = null;
+        Process? siloProc = null;
 
         if (!serverAlreadyRunning)
         {
             CliTheme.WriteInfo($"Starting server on port {port}...");
 
-            var siloPath = WorkspaceSiloPaths.ResolveSiloPath();
+            var siloPath = siloLauncher.ResolveSiloPath();
             if (siloPath is null)
             {
                 CliTheme.WriteError("Could not locate the Weave silo.");
@@ -50,8 +54,8 @@ internal sealed class RunCliCommand : ICliCommand<RunOptions>
                 return 1;
             }
 
-            siloProcess = SiloProcessService.StartSilo(siloPath, port, manifest.Workspace.Storage);
-            if (siloProcess is null)
+            siloProc = siloProcessService.StartSilo(siloPath, port, manifest.Workspace.Storage);
+            if (siloProc is null)
             {
                 CliTheme.WriteError("Failed to start server.");
                 return 1;
@@ -61,7 +65,7 @@ internal sealed class RunCliCommand : ICliCommand<RunOptions>
             if (!ready)
             {
                 CliTheme.WriteError("Server did not become ready in time.");
-                SiloProcessService.TryKill(siloProcess);
+                SiloProcessService.TryKill(siloProc);
                 return 1;
             }
 
@@ -92,7 +96,7 @@ internal sealed class RunCliCommand : ICliCommand<RunOptions>
                 }
 
                 CliTheme.WriteError($"Failed to start workspace: {result.Failure.Message}");
-                SiloProcessService.TryKill(siloProcess);
+                SiloProcessService.TryKill(siloProc);
                 return 1;
             }
 
@@ -109,8 +113,8 @@ internal sealed class RunCliCommand : ICliCommand<RunOptions>
             AnsiConsole.WriteLine();
             CliTheme.WriteMuted("  Press Ctrl+C to stop.");
 
-            if (siloProcess is not null)
-                await siloProcess.WaitForExitAsync(ct);
+            if (siloProc is not null)
+                await siloProc.WaitForExitAsync(ct);
             else
                 await Task.Delay(Timeout.Infinite, ct);
         }
@@ -121,20 +125,20 @@ internal sealed class RunCliCommand : ICliCommand<RunOptions>
         }
         finally
         {
-            SiloProcessService.TryKill(siloProcess);
+            SiloProcessService.TryKill(siloProc);
         }
 
         return 0;
     }
 
-    private static RunWorkspaceSelection SelectWorkspace(string? name)
+    private RunWorkspaceSelection SelectWorkspace(string? name)
     {
-        var manifestPath = ManifestResolver.Resolve(name);
+        var manifestPath = manifestResolver.Resolve(name);
         if (manifestPath is not null)
             return RunWorkspaceSelection.Run(name, manifestPath);
 
         CliTheme.WriteBanner();
-        var existing = WorkspaceRegistry.GetAll();
+        var existing = registry.GetAll();
         if (existing.Count > 0)
             return SelectExistingWorkspace(name, existing);
 
@@ -142,7 +146,7 @@ internal sealed class RunCliCommand : ICliCommand<RunOptions>
         return RunWorkspaceSelection.Stop(0);
     }
 
-    private static RunWorkspaceSelection SelectExistingWorkspace(string? name, IReadOnlyDictionary<string, string> existing)
+    private RunWorkspaceSelection SelectExistingWorkspace(string? name, IReadOnlyDictionary<string, string> existing)
     {
         CliTheme.WriteInfo(name is null
             ? "No workspace.json found in the current directory."
@@ -164,7 +168,7 @@ internal sealed class RunCliCommand : ICliCommand<RunOptions>
             return RunWorkspaceSelection.Stop(0);
         }
 
-        var manifestPath = ManifestResolver.Resolve(picked);
+        var manifestPath = manifestResolver.Resolve(picked);
         if (manifestPath is not null)
             return RunWorkspaceSelection.Run(picked, manifestPath);
 

@@ -4,25 +4,25 @@ namespace Weave.Cli.Commands;
 
 internal static class StorageCommands
 {
-    public static Command Create()
+    public static Command Create(StorageShowCliCommand showHandler, StorageChangeCliCommand changeHandler)
     {
         var cmd = new Command("storage", "View and change the storage backend");
 
-        cmd.Subcommands.Add(CreateShowCommand());
-        cmd.Subcommands.Add(CreateChangeCommand());
+        cmd.Subcommands.Add(CreateShowCommand(showHandler));
+        cmd.Subcommands.Add(CreateChangeCommand(changeHandler));
 
         return cmd;
     }
 
-    private static Command CreateShowCommand()
+    private static Command CreateShowCommand(StorageShowCliCommand handler)
     {
         var cmd = new Command("show", "Show the current storage configuration");
-        cmd.SetAction((_, cancellationToken) => new StorageShowCliCommand().ExecuteAsync(new NoCliOptions(), cancellationToken));
+        cmd.SetAction((_, cancellationToken) => handler.ExecuteAsync(new NoCliOptions(), cancellationToken));
 
         return cmd;
     }
 
-    private static Command CreateChangeCommand()
+    private static Command CreateChangeCommand(StorageChangeCliCommand handler)
     {
         var backendArg = new Argument<string?>("backend")
         {
@@ -38,7 +38,7 @@ internal static class StorageCommands
             var backend = parseResult.GetValue(backendArg);
             var connectionStr = parseResult.GetValue(connectionOption);
             var migrate = parseResult.GetValue(migrateOption);
-            return await new StorageChangeCliCommand().ExecuteAsync(new StorageChangeOptions(backend, connectionStr, migrate), cancellationToken);
+            return await handler.ExecuteAsync(new StorageChangeOptions(backend, connectionStr, migrate), cancellationToken);
         });
 
         return cmd;

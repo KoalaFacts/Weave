@@ -85,7 +85,7 @@ public sealed class ChannelGatewayActor(
         if (!channel.Enabled)
             throw new InvalidOperationException($"Channel {message.ChannelId} is disabled.");
 
-        var agentName = ResolveAgentWithRules(channel, message);
+        var agentName = persistentState.State.ResolveAgent(channel, message);
 
         EnsureWorkspaceId();
         var workspaceId = WorkspaceId.From(persistentState.State.WorkspaceId);
@@ -148,22 +148,6 @@ public sealed class ChannelGatewayActor(
             pattern,
             agentName,
             persistentState.State.WorkspaceId);
-    }
-
-    internal string ResolveAgentWithRules(ChannelConfig channel, InboundMessage message)
-    {
-        if (!string.IsNullOrWhiteSpace(channel.TargetAgent))
-            return channel.TargetAgent;
-
-        foreach (var (pattern, agentName) in persistentState.State.RoutingRules)
-        {
-            if (message.SenderId.Contains(pattern, StringComparison.OrdinalIgnoreCase) ||
-                message.Content.StartsWith(pattern, StringComparison.OrdinalIgnoreCase))
-                return agentName;
-        }
-
-        throw new InvalidOperationException(
-            $"No route found for message from {message.SenderId} on channel {message.ChannelId}.");
     }
 
     private void EnsureWorkspaceId()

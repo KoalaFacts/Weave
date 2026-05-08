@@ -3,7 +3,7 @@ using Spectre.Console;
 
 namespace Weave.Cli.Commands;
 
-internal sealed class ServeCliCommand : ICliCommand<ServeOptions>
+internal sealed class ServeCliCommand(ISiloLauncher siloLauncher) : ICliCommand<ServeOptions>
 {
     public string Name => "serve";
 
@@ -22,7 +22,7 @@ internal sealed class ServeCliCommand : ICliCommand<ServeOptions>
             return 0;
         }
 
-        var siloPath = WorkspaceSiloPaths.ResolveSiloPath();
+        var siloPath = siloLauncher.ResolveSiloPath();
         if (siloPath is null)
         {
             CliTheme.WriteError("Could not locate the Weave silo.");

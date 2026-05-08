@@ -12,15 +12,11 @@ namespace Weave.Cli.Commands;
 /// Tasks are an agent-level concept — they only exist in the running silo, so
 /// there's no manifest fallback.
 /// </summary>
-internal sealed class TasksCliCommand : ICliCommand<TasksOptions>
+internal sealed class TasksCliCommand(
+    ListTasksAction action,
+    IManifestResolver manifestResolver,
+    WorkspacePrompt workspacePrompt) : ICliCommand<TasksOptions>
 {
-    private readonly ListTasksAction _action;
-
-    public TasksCliCommand(ListTasksAction action)
-    {
-        _action = action;
-    }
-
     public string Name => "tasks";
 
     public IReadOnlyList<string> Aliases => [];
@@ -29,8 +25,8 @@ internal sealed class TasksCliCommand : ICliCommand<TasksOptions>
 
     public async Task<int> ExecuteAsync(TasksOptions options, CancellationToken ct)
     {
-        var name = WorkspacePrompt.SelectName(options.Workspace, "Which workspace would you like to inspect?");
-        var manifestPath = ManifestResolver.Resolve(name);
+        var name = workspacePrompt.SelectName(options.Workspace, "Which workspace would you like to inspect?");
+        var manifestPath = manifestResolver.Resolve(name);
         if (manifestPath is null)
         {
             WorkspacePrompt.WriteManifestNotFound(name);
@@ -53,7 +49,7 @@ internal sealed class TasksCliCommand : ICliCommand<TasksOptions>
         }
 
         var workspaceId = (await File.ReadAllTextAsync(statePath, ct)).Trim();
-        var result = await _action.ExecuteAsync(new ListTasksInput(workspaceId, agentName), ct);
+        var result = await action.ExecuteAsync(new ListTasksInput(workspaceId, agentName), ct);
         if (result.IsSuccess)
         {
             if (result.Value.Tasks.Count > 0)

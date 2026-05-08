@@ -1,11 +1,4 @@
 using Spectre.Console;
-using Weave.Actions.Agent;
-using Weave.Actions.SystemInfo;
-using Weave.Actions.Workspace;
-
-// (TuiAgentSelector now ctor-takes SelectAgentAction via DI; TuiAgentNameSource
-// is supplied from DI too. TuiWorkspaceOpener picks up OpenWorkspaceAction from
-// DI; the inline new TuiWorkspaceOpener(...) below threads it through.)
 
 namespace Weave.Cli.Tui;
 
@@ -16,56 +9,30 @@ internal sealed class TuiShell
     private readonly TuiSlashCommandDispatcher _dispatcher;
     private readonly VersionService _versionService;
     private readonly ChatComposer _composer;
+    private readonly IWorkspaceRegistry _registry;
+    private readonly IManifestResolver _manifestResolver;
 
     public TuiShell(
         VersionService versionService,
         ChatComposer composer,
         TuiWorkspaceDashboard dashboard,
-        TuiToolsView toolsView,
-        TuiTasksView tasksView,
-        TuiConfigView configView,
-        TuiSystemView systemView,
-        TuiLiveStatusView liveStatusView,
-        TuiAgentNameSource agentNameSource,
-        TuiAgentSelector agentSelector,
         TuiChatSession chatSession,
-        ListAgentsAction listAgentsAction,
-        OpenWorkspaceAction openWorkspaceAction,
-        StartWorkspaceAction startWorkspaceAction,
-        GetSystemInfoAction systemInfoAction,
-        WorkspaceStatusCliCommand statusCommand,
-        WorkspaceValidateCliCommand validateCommand,
-        WorkspaceDownCliCommand downCommand,
-        WebUiCliCommand webUiCommand,
-        UpgradeCliCommand upgradeCommand)
+        TuiSlashCommandDispatcher dispatcher,
+        IWorkspaceRegistry registry,
+        IManifestResolver manifestResolver)
     {
         _versionService = versionService;
         _composer = composer;
         _dashboard = dashboard;
         _chatSession = chatSession;
-
-        _dispatcher = new TuiSlashCommandDispatcher(
-            _dashboard,
-            _chatSession,
-            agentSelector,
-            new TuiAgentListView(agentNameSource, listAgentsAction),
-            new TuiWorkspaceOpener(openWorkspaceAction, agentSelector, liveStatusView),
-            new TuiWorkspaceStarter(agentSelector, startWorkspaceAction, systemInfoAction),
-            new TuiWorkspaceStopper(downCommand),
-            new TuiWorkspaceWatcher(liveStatusView),
-            toolsView,
-            tasksView,
-            configView,
-            systemView,
-            statusCommand,
-            validateCommand,
-            webUiCommand,
-            upgradeCommand);
+        _dispatcher = dispatcher;
+        _registry = registry;
+        _manifestResolver = manifestResolver;
     }
 
     public async Task<int> RunAsync(CancellationToken cancellationToken)
     {
-        var session = new TuiSession();
+        var session = new TuiSession(_manifestResolver);
 
         AnsiConsole.Clear();
         CliTheme.WriteBanner();
@@ -116,9 +83,9 @@ internal sealed class TuiShell
         return raw.StartsWith('/') || TuiCommandParser.IsBareCommand(firstToken);
     }
 
-    private static void RenderWelcome()
+    private void RenderWelcome()
     {
-        var workspaceCount = WorkspaceRegistry.GetAll().Count;
+        var workspaceCount = _registry.GetAll().Count;
 
         if (workspaceCount == 0)
         {

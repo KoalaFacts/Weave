@@ -1,12 +1,12 @@
 namespace Weave.Cli.Shell;
 
-internal static class ManifestResolver
+internal sealed class ManifestResolver(IWorkspaceRegistry registry) : IManifestResolver
 {
-    public static string? Resolve(string? workspace)
+    public string? Resolve(string? workspace)
     {
         if (workspace is not null)
         {
-            var registeredPath = WorkspaceRegistry.Resolve(workspace);
+            var registeredPath = registry.Resolve(workspace);
             if (registeredPath is not null)
             {
                 var manifestPath = Path.Combine(registeredPath, "workspace.json");

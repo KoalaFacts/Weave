@@ -5,13 +5,16 @@ using Weave.Actions.Context;
 namespace Weave.Actions.Workspace;
 
 /// <summary>
-/// Phase 1 read-only verb. Reads the manifest from disk (frontend
-/// orchestration: the CLI has the path; the Dashboard has the upload), then
-/// POSTs the JSON(C) text to the silo's <c>/api/workspaces/validate</c>
-/// endpoint, which owns parsing + structural validation. The silo is the
-/// single source of truth for what counts as a valid manifest; CLI / TUI /
-/// Dashboard / LSP all converge here without duplicating the parser.
+/// Phase 1 read-only verb. Reads the manifest from disk and POSTs the
+/// JSON(C) text to the silo's <c>/api/workspaces/validate</c> endpoint,
+/// which owns parsing + structural validation.
 /// </summary>
+/// <remarks>
+/// Frontend orchestration: the CLI has the path; the Dashboard has the
+/// upload. The silo is the single source of truth for what counts as a
+/// valid manifest; CLI / TUI / Dashboard / LSP all converge here without
+/// duplicating the parser.
+/// </remarks>
 public sealed class ValidateWorkspaceAction
 {
     private readonly HttpClient _httpClient;

@@ -2,30 +2,26 @@ using Spectre.Console;
 using Weave.Actions.Context;
 using Weave.Actions.SystemInfo;
 using Weave.Actions.Workspace;
-
+using Weave.Cli.Tui.Verbs;
 using Weave.Workspaces.Manifest;
 
 namespace Weave.Cli.Tui;
 
-internal sealed class TuiWorkspaceStarter
+internal sealed class TuiWorkspaceStarter(
+    TuiAgentSelector agentSelector,
+    StartWorkspaceAction startAction,
+    GetSystemInfoAction systemInfoAction,
+    ISiloLauncher siloLauncher) : ITuiVerb
 {
     private readonly ManifestParser _parser = new();
-    private readonly TuiAgentSelector _agentSelector;
-    private readonly StartWorkspaceAction _startAction;
-    private readonly GetSystemInfoAction _systemInfoAction;
 
-    public TuiWorkspaceStarter(
-        TuiAgentSelector agentSelector,
-        StartWorkspaceAction startAction,
-        GetSystemInfoAction systemInfoAction)
-    {
-        _agentSelector = agentSelector;
-        _startAction = startAction;
-        _systemInfoAction = systemInfoAction;
-    }
+    public string Name => "up";
 
-    public async Task StartAsync(TuiSession session, CancellationToken ct)
+    public IReadOnlyList<string> Aliases => [];
+
+    public async Task DispatchAsync(TuiVerbContext context, CancellationToken ct)
     {
+        var session = context.Session;
         if (!session.HasWorkspace)
         {
             CliTheme.WriteMuted("No workspace open. Try: /open <workspace>");
@@ -53,17 +49,17 @@ internal sealed class TuiWorkspaceStarter
         }
 
         ActionResult<StartWorkspaceResult> startResult = default;
-        WorkspaceSiloStarter.AutoStartResult? siloFailure = null;
+        SiloAutoStartResult? siloFailure = null;
 
         await AnsiConsole.Status()
             .Spinner(Spinner.Known.Dots)
             .SpinnerStyle(CliTheme.AccentStyle)
             .StartAsync($"Starting '{manifest.Name}'…", async ctx =>
             {
-                var systemInfo = await _systemInfoAction.ExecuteAsync(new GetSystemInfoInput(), ct);
+                var systemInfo = await systemInfoAction.ExecuteAsync(new GetSystemInfoInput(), ct);
                 if (systemInfo.IsSuccess && !systemInfo.Value.Reachable)
                 {
-                    var siloPath = WorkspaceSiloPaths.ResolveSiloPath();
+                    var siloPath = siloLauncher.ResolveSiloPath();
                     if (siloPath is null)
                     {
                         startResult = ActionResult.Failed<StartWorkspaceResult>(ActionFailure.Internal(
@@ -74,7 +70,7 @@ internal sealed class TuiWorkspaceStarter
                     }
 
                     ctx.Status($"Silo not running — launching from {siloPath}…");
-                    var outcome = await WorkspaceSiloStarter.AutoStartServeWithDiagnosticsAsync(ct);
+                    var outcome = await siloLauncher.AutoStartServeWithDiagnosticsAsync(ct);
                     if (!outcome.Success)
                     {
                         siloFailure = outcome;
@@ -83,7 +79,7 @@ internal sealed class TuiWorkspaceStarter
                     ctx.Status($"Silo ready — starting '{manifest.Name}'…");
                 }
 
-                startResult = await _startAction.ExecuteAsync(new StartWorkspaceInput(manifest), ct);
+                startResult = await startAction.ExecuteAsync(new StartWorkspaceInput(manifest), ct);
 
                 if (startResult.IsSuccess)
                 {
@@ -113,7 +109,7 @@ internal sealed class TuiWorkspaceStarter
         CliTheme.WriteKeyValue("Status", workspace.Status);
 
         if (session.AgentName is null)
-            _agentSelector.TrySelectOnlyAgent(session);
+            agentSelector.TrySelectOnlyAgent(session);
 
         TuiNextStepHint.Render(session);
     }
