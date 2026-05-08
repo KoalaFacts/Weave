@@ -32,16 +32,22 @@ internal sealed class WorkspaceDownCliCommand(IWorkspaceDownDependencies depende
             return 1;
         }
 
+        var result = await dependencies.StopWorkspaceAsync(workspaceId, ct);
+        if (!result.IsSuccess)
+        {
+            CliTheme.WriteError($"Failed to stop workspace: {result.Failure.Message}");
+            return 1;
+        }
+
         try
         {
-            await dependencies.StopWorkspaceAsync(workspaceId, ct);
             if (dependencies.FileExists(statePath))
                 dependencies.DeleteFile(statePath);
 
             CliTheme.WriteSuccess($"Workspace '{workspaceId}' stopped.");
             return 0;
         }
-        catch (Exception ex) when (ex is HttpRequestException or TaskCanceledException or System.Net.Sockets.SocketException or System.Text.Json.JsonException or IOException or UnauthorizedAccessException or InvalidOperationException)
+        catch (Exception ex) when (ex is IOException or UnauthorizedAccessException)
         {
             CliTheme.WriteError($"Failed to stop workspace: {ex.Message}");
             return 1;

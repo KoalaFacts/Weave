@@ -1,3 +1,5 @@
+using Weave.Actions.Context;
+using Weave.Actions.Workspace;
 using Weave.Cli.Commands;
 using Weave.Cli.Shell;
 
@@ -90,6 +92,26 @@ public class WorkspaceDownCliCommandTests
         dependencies.DeletedPath.ShouldBe("workspace.state");
     }
 
+    [Fact]
+    public async Task ExecuteAsync_StopActionFails_ReturnsFailureAndLeavesStateFileIntact()
+    {
+        var dependencies = new TestWorkspaceDownDependencies
+        {
+            ManifestPath = "workspace.json",
+            StateExists = true,
+            WorkspaceIdText = "workspace-from-state",
+            StopResult = ActionResult.Failed<StopWorkspaceResult>(
+                ActionFailure.Conflict("Workspace is in a transitional state."))
+        };
+        var command = new WorkspaceDownCliCommand(dependencies, Prompt);
+
+        var result = await command.ExecuteAsync(new WorkspaceDownOptions("demo"), TestContext.Current.CancellationToken);
+
+        result.ShouldBe(1);
+        dependencies.StoppedWorkspaceId.ShouldBe("workspace-from-state");
+        dependencies.DeletedPath.ShouldBeNull();
+    }
+
     private sealed class EmptyRegistry : IWorkspaceRegistry
     {
         public void Register(string name, string absolutePath) { }
@@ -112,6 +134,9 @@ public class WorkspaceDownCliCommandTests
 
         public string WorkspaceIdText { get; init; } = string.Empty;
 
+        public ActionResult<StopWorkspaceResult> StopResult { get; init; } =
+            ActionResult.Success(new StopWorkspaceResult());
+
         public int StopCalls { get; private set; }
 
         public string? StoppedWorkspaceId { get; private set; }
@@ -126,11 +151,11 @@ public class WorkspaceDownCliCommandTests
 
         public Task<string> ReadAllTextAsync(string path, CancellationToken ct) => Task.FromResult(WorkspaceIdText);
 
-        public Task StopWorkspaceAsync(string workspaceId, CancellationToken ct)
+        public Task<ActionResult<StopWorkspaceResult>> StopWorkspaceAsync(string workspaceId, CancellationToken ct)
         {
             StopCalls++;
             StoppedWorkspaceId = workspaceId;
-            return Task.CompletedTask;
+            return Task.FromResult(StopResult);
         }
 
         public void DeleteFile(string path) => DeletedPath = path;

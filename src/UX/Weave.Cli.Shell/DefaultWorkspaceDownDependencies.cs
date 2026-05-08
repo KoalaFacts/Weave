@@ -13,17 +13,8 @@ internal sealed class DefaultWorkspaceDownDependencies(StopWorkspaceAction stopA
 
     public Task<string> ReadAllTextAsync(string path, CancellationToken ct) => File.ReadAllTextAsync(path, ct);
 
-    public async Task StopWorkspaceAsync(string workspaceId, CancellationToken ct)
-    {
-        var result = await stopAction.ExecuteAsync(new StopWorkspaceInput(workspaceId), ct);
-        if (result.IsSuccess)
-            return;
-
-        // Translate the typed failure back into an exception so the calling
-        // CLI command keeps its existing catch shape; the message carries the
-        // silo's detail (Conflict/SiloUnreachable/etc.) verbatim.
-        throw new InvalidOperationException(result.Failure.Message);
-    }
+    public Task<ActionResult<StopWorkspaceResult>> StopWorkspaceAsync(string workspaceId, CancellationToken ct) =>
+        stopAction.ExecuteAsync(new StopWorkspaceInput(workspaceId), ct);
 
     public void DeleteFile(string path) => File.Delete(path);
 }

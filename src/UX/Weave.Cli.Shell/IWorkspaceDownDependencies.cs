@@ -1,3 +1,6 @@
+using Weave.Actions.Context;
+using Weave.Actions.Workspace;
+
 namespace Weave.Cli.Shell;
 
 internal interface IWorkspaceDownDependencies
@@ -10,7 +13,7 @@ internal interface IWorkspaceDownDependencies
 
     Task<string> ReadAllTextAsync(string path, CancellationToken ct);
 
-    Task StopWorkspaceAsync(string workspaceId, CancellationToken ct);
+    Task<ActionResult<StopWorkspaceResult>> StopWorkspaceAsync(string workspaceId, CancellationToken ct);
 
     void DeleteFile(string path);
 }
