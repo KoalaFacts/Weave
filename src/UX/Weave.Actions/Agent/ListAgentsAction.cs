@@ -4,13 +4,15 @@ using Weave.Actions.Context;
 namespace Weave.Actions.Agent;
 
 /// <summary>
-/// Phase 1 read-only verb. Self-contained: takes a typed <see cref="HttpClient"/>
-/// (BaseAddress configured by the frontend's DI registration), calls the silo's
-/// agents endpoint, and translates the wire shape into the curated
-/// <see cref="AgentSummary"/>. No shared silo-client abstraction; if a future
-/// action needs the same wire shape, it duplicates 5 lines rather than coupling
-/// to a growing seam.
+/// Phase 1 read-only verb. Calls the silo's agents endpoint and translates
+/// the wire shape into the curated <see cref="AgentSummary"/>.
 /// </summary>
+/// <remarks>
+/// Self-contained: takes a typed <see cref="HttpClient"/> (BaseAddress
+/// configured by the frontend's DI registration). No shared silo-client
+/// abstraction; if a future action needs the same wire shape, it
+/// duplicates 5 lines rather than coupling to a growing seam.
+/// </remarks>
 public sealed class ListAgentsAction
 {
     private readonly HttpClient _httpClient;

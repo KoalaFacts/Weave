@@ -14,13 +14,16 @@ public sealed record CapabilityToken
     public string Signature { get; init; } = string.Empty;
 
     /// <summary>
-    /// Local-process cancellation tied to this token's lifetime: fires on parent
-    /// request cancellation, expiry, or revocation. Not serialized — crossing a
-    /// grain boundary loses the linkage and defaults to <see cref="CancellationToken.None"/>
-    /// on the receiving side. Most actors are co-located, so cancellation propagates
-    /// normally; cross-silo calls lose live cancellation but signature/expiry/revocation
-    /// still gate via <see cref="ICapabilityTokenService.Validate"/>.
+    /// Local-process cancellation tied to this token's lifetime: fires on
+    /// parent request cancellation, expiry, or revocation.
     /// </summary>
+    /// <remarks>
+    /// Not serialized — crossing a grain boundary loses the linkage and
+    /// defaults to <see cref="CancellationToken.None"/> on the receiving
+    /// side. Most actors are co-located, so cancellation propagates normally;
+    /// cross-silo calls lose live cancellation but signature/expiry/revocation
+    /// still gate via <see cref="ICapabilityTokenService.Validate"/>.
+    /// </remarks>
     [JsonIgnore]
     public CancellationToken CancellationToken { get; init; } = CancellationToken.None;
 

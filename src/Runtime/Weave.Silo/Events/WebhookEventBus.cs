@@ -6,13 +6,14 @@ namespace Weave.Silo.Events;
 
 /// <summary>
 /// HTTP webhook event bus — publishes domain events to configured webhook URLs
-/// via plain HTTP POST. No sidecar, no message broker, no external infrastructure.
-/// A lightweight alternative to <see cref="DaprEventBus"/> for local and simple deployments.
-///
-/// The event type name is sent in the <c>X-Weave-Topic</c> header; the body contains
-/// the event serialized as UTF-8 JSON. This avoids an envelope type that would require
-/// reflection-based serialization.
+/// via plain HTTP POST. A lightweight alternative to <see cref="DaprEventBus"/>
+/// for local and simple deployments with no sidecar or message broker.
 /// </summary>
+/// <remarks>
+/// The event type name is sent in the <c>X-Weave-Topic</c> header; the body
+/// contains the event serialized as UTF-8 JSON. This avoids an envelope type
+/// that would require reflection-based serialization.
+/// </remarks>
 public sealed partial class WebhookEventBus(
     HttpClient httpClient,
     Uri webhookUrl,

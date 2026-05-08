@@ -6,14 +6,14 @@ namespace Weave.Agents.Pipeline;
 
 /// <summary>
 /// Scoped factory — one instance per actor activation or HTTP request.
-/// The injected <see cref="IServiceProvider"/> is the consumer's own
-/// scope, so <see cref="ChatClientBuilder"/> middleware can resolve any
-/// scoped dependencies it pulls in.
-///
-/// No <c>IServiceScopeFactory</c>: reaching for one would mean the
-/// factory was registered with the wrong lifetime. See
-/// docs/best-practices.md — "Prefer Scoped over Singleton+ScopeFactory".
 /// </summary>
+/// <remarks>
+/// The injected <see cref="IServiceProvider"/> is the consumer's own scope,
+/// so <see cref="ChatClientBuilder"/> middleware can resolve any scoped
+/// dependencies it pulls in. No <c>IServiceScopeFactory</c>: reaching for
+/// one would mean the factory was registered with the wrong lifetime.
+/// See docs/best-practices.md — "Prefer Scoped over Singleton+ScopeFactory".
+/// </remarks>
 public sealed class AgentChatClientFactory(
     IServiceProvider services,
     IAgentCostLedger costLedger,

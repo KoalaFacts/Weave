@@ -7,14 +7,15 @@ using Weave.Shared.Events;
 namespace Weave.Security.Tokens;
 
 /// <summary>
-/// Single enforcement point for capability checks. Replaces the per-actor
-/// private <c>Authorize</c> copies that previously lived in <c>ToolActor</c>,
-/// <c>SkillMemoryActor</c>, <c>ChannelGatewayActor</c>, <c>UserModelActor</c>,
-/// and <c>PluginRegistry</c>. Validates token signature/expiry/revocation,
-/// optional workspace match, and the requested grant. Emits a
-/// <see cref="CapabilityAuthorizationEvent"/> on every call (allow or deny)
-/// so audit log + future replay/debugger can read one stream.
+/// Single enforcement point for capability checks: validates token
+/// signature/expiry/revocation, optional workspace match, and the
+/// requested grant.
 /// </summary>
+/// <remarks>
+/// Emits a <see cref="CapabilityAuthorizationEvent"/> on every call
+/// (allow or deny) so audit log and future replay/debugger can read
+/// one stream.
+/// </remarks>
 public interface ICapabilityAuthorizer
 {
     /// <param name="token">The capability token presented by the caller.</param>

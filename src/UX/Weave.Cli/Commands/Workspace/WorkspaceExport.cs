@@ -4,6 +4,8 @@ namespace Weave.Cli.Commands;
 
 /// <summary>
 /// Snapshot of a workspace, written as JSON for export/import roundtrips.
+/// </summary>
+/// <remarks>
 /// Live data lists are stored as opaque <see cref="JsonElement"/> for wire
 /// fidelity — re-import consumes <see cref="Manifest"/>,
 /// <see cref="PromptFiles"/>, <see cref="Skills"/>, and
@@ -11,7 +13,7 @@ namespace Weave.Cli.Commands;
 /// <see cref="Templates"/> are diagnostic and round-trip unchanged through
 /// any future silo schema bump. Agents and tools are runtime state that the
 /// silo regenerates from the manifest on re-import, so they're not stored.
-/// </summary>
+/// </remarks>
 internal sealed record WorkspaceExport
 {
     public DateTimeOffset ExportedAt { get; init; } = DateTimeOffset.UtcNow;
