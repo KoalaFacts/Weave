@@ -27,11 +27,24 @@ internal sealed class WorkspaceDownCliCommand(IWorkspaceDownDependencies depende
             return 1;
         }
 
-        var workspaceId = options.WorkspaceId ?? (await dependencies.ReadAllTextAsync(statePath, ct)).Trim();
-        if (string.IsNullOrWhiteSpace(workspaceId))
+        string workspaceId;
+        if (options.WorkspaceId is not null)
         {
-            CliTheme.WriteError("Workspace state file is empty.");
-            return 1;
+            workspaceId = options.WorkspaceId;
+            if (string.IsNullOrWhiteSpace(workspaceId))
+            {
+                CliTheme.WriteError("--workspace-id is empty.");
+                return 1;
+            }
+        }
+        else
+        {
+            workspaceId = (await dependencies.ReadAllTextAsync(statePath, ct)).Trim();
+            if (string.IsNullOrWhiteSpace(workspaceId))
+            {
+                CliTheme.WriteError($"Workspace state file '{statePath}' is empty.");
+                return 1;
+            }
         }
 
         var result = await dependencies.StopWorkspaceAsync(workspaceId, ct);

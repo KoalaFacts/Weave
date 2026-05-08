@@ -23,6 +23,9 @@ internal sealed class MarketplaceInstallCliCommand(
 
     public async Task<int> ExecuteAsync(MarketplaceInstallOptions options, CancellationToken ct)
     {
+        if (options.NoScaffold && !string.IsNullOrWhiteSpace(options.WorkspaceName))
+            CliTheme.WriteWarning("--workspace-name is ignored when --no-scaffold is set.");
+
         var systemInfo = await systemInfoAction.ExecuteAsync(new GetSystemInfoInput(), ct);
         if (!systemInfo.IsSuccess || !systemInfo.Value.Reachable)
         {
@@ -69,10 +72,12 @@ internal sealed class MarketplaceInstallCliCommand(
         if (options.NoScaffold)
             return 0;
 
-        var workspaceName = options.WorkspaceName ?? AnsiConsole.Prompt(
-            new TextPrompt<string>("Workspace name:")
-                .Styled()
-                .DefaultValue(template.Name));
+        var workspaceName = string.IsNullOrWhiteSpace(options.WorkspaceName)
+            ? AnsiConsole.Prompt(
+                new TextPrompt<string>("Workspace name:")
+                    .Styled()
+                    .DefaultValue(template.Name))
+            : options.WorkspaceName;
 
         var basePath = Path.GetFullPath(workspaceName);
         if (Directory.Exists(basePath) && Directory.EnumerateFileSystemEntries(basePath).Any())

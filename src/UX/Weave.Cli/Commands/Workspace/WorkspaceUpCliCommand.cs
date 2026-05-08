@@ -39,6 +39,9 @@ internal sealed class WorkspaceUpCliCommand(
             var started = await siloLauncher.AutoStartServeAsync(ct);
             if (!started)
             {
+                if (ct.IsCancellationRequested)
+                    return 130;
+
                 CliTheme.WriteError("Could not start the Weave server.");
                 CliTheme.WriteMuted("  Start it manually with: weave serve");
                 return 1;

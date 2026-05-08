@@ -54,6 +54,27 @@ public class WorkspaceDownCliCommandTests
         dependencies.StopCalls.ShouldBe(0);
     }
 
+    [Theory]
+    [InlineData("")]
+    [InlineData("   ")]
+    public async Task ExecuteAsync_WithWhitespaceWorkspaceId_ReturnsFailureWithoutReadingStateFile(string blankId)
+    {
+        var dependencies = new TestWorkspaceDownDependencies
+        {
+            ManifestPath = "workspace.json",
+            StateExists = true,
+            WorkspaceIdText = "from-state-not-read"
+        };
+        var command = new WorkspaceDownCliCommand(dependencies, Prompt);
+
+        var result = await command.ExecuteAsync(
+            new WorkspaceDownOptions("demo", "workspace.json", blankId),
+            TestContext.Current.CancellationToken);
+
+        result.ShouldBe(1);
+        dependencies.StopCalls.ShouldBe(0);
+    }
+
     [Fact]
     public async Task ExecuteAsync_WithWorkspaceId_StopsWorkspaceAndDeletesStateFile()
     {
