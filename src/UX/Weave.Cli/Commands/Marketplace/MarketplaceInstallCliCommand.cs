@@ -66,7 +66,10 @@ internal sealed class MarketplaceInstallCliCommand(
         if (template.Tags.Count > 0)
             CliTheme.WriteKeyValue("Tags", string.Join(", ", template.Tags));
 
-        var workspaceName = AnsiConsole.Prompt(
+        if (options.NoScaffold)
+            return 0;
+
+        var workspaceName = options.WorkspaceName ?? AnsiConsole.Prompt(
             new TextPrompt<string>("Workspace name:")
                 .Styled()
                 .DefaultValue(template.Name));
