@@ -103,64 +103,60 @@ public sealed class ChannelGatewayActorBranchTests
     }
 
     [Fact]
-    public void ResolveAgentWithRules_MatchesOnContentPrefix()
+    public void ResolveAgent_MatchesOnContentPrefix()
     {
         var state = new ChannelGatewayState
         {
             WorkspaceId = "ws-1",
             RoutingRules = { ["/help"] = "support-bot" }
         };
-        var actor = CreateActor(state);
         var channel = BuildChannel(targetAgent: null);
 
-        var agent = actor.ResolveAgentWithRules(channel, BuildMessage(content: "/help my order broke"));
+        var agent = state.ResolveAgent(channel, BuildMessage(content: "/help my order broke"));
 
         agent.ShouldBe("support-bot");
     }
 
     [Fact]
-    public void ResolveAgentWithRules_MatchesOnSenderId()
+    public void ResolveAgent_MatchesOnSenderId()
     {
         var state = new ChannelGatewayState
         {
             WorkspaceId = "ws-1",
             RoutingRules = { ["vip-"] = "priority-bot" }
         };
-        var actor = CreateActor(state);
         var channel = BuildChannel(targetAgent: null);
 
-        var agent = actor.ResolveAgentWithRules(channel, BuildMessage(senderId: "vip-customer-42"));
+        var agent = state.ResolveAgent(channel, BuildMessage(senderId: "vip-customer-42"));
 
         agent.ShouldBe("priority-bot");
     }
 
     [Fact]
-    public void ResolveAgentWithRules_NoMatch_Throws()
+    public void ResolveAgent_NoMatch_Throws()
     {
         var state = new ChannelGatewayState
         {
             WorkspaceId = "ws-1",
             RoutingRules = { ["something-else"] = "bot" }
         };
-        var actor = CreateActor(state);
         var channel = BuildChannel(targetAgent: null);
 
         Should.Throw<InvalidOperationException>(
-            () => actor.ResolveAgentWithRules(channel, BuildMessage(content: "nothing matches", senderId: "u-1")));
+            () => state.ResolveAgent(channel, BuildMessage(content: "nothing matches", senderId: "u-1")));
     }
 
     [Fact]
-    public void ResolveAgentWithRules_TargetAgentSet_UsesTargetRegardlessOfRules()
+    public void ResolveAgent_TargetAgentSet_UsesTargetRegardlessOfRules()
     {
         var state = new ChannelGatewayState
         {
             WorkspaceId = "ws-1",
             RoutingRules = { ["prefix"] = "other-bot" }
         };
-        var actor = CreateActor(state);
         var channel = BuildChannel(targetAgent: "preferred-bot");
 
-        var agent = actor.ResolveAgentWithRules(channel, BuildMessage(content: "prefix-matched"));
+        var agent = state.ResolveAgent(channel, BuildMessage(content: "prefix-matched"));
 
         agent.ShouldBe("preferred-bot", "channel.TargetAgent takes precedence over routing rules");
     }
