@@ -19,7 +19,7 @@
     <PackageReference Include="Microsoft.Extensions.AI" />
     <PackageReference Include="Microsoft.Extensions.AI.Abstractions" />
     <PackageReference Include="Microsoft.Extensions.AI.OpenAI" />
-    <PackageReference Include="Anthropic.SDK" />
+    <PackageReference Include="Microsoft.Extensions.Http" />
     <PackageReference Include="System.Threading.RateLimiting" />
   </ItemGroup>
 

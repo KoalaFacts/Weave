@@ -353,11 +353,6 @@
         "resolved": "10.0.7",
         "contentHash": "2R5OttDx1xwxcjp4Mhm/egEFtQBJq7haSX5L32QF7Q0wTN/PBdqEpuJoBnlvVVuph9gYz5jtWh2wpzz1tIFltg=="
       },
-      "Microsoft.Bcl.AsyncInterfaces": {
-        "type": "Transitive",
-        "resolved": "10.0.3",
-        "contentHash": "TV62UsrJZPX6gbt3c4WrtXh7bmaDIcMqf9uft1cc4L6gJXOU07hDGEh+bFQh/L2Az0R1WVOkiT66lFqS6G2NmA=="
-      },
       "Microsoft.Bcl.Cryptography": {
         "type": "Transitive",
         "resolved": "9.0.13",
@@ -1321,10 +1316,10 @@
       "weave.agents": {
         "type": "Project",
         "dependencies": {
-          "Anthropic.SDK": "[5.10.0, )",
           "Microsoft.Extensions.AI": "[10.5.0, )",
           "Microsoft.Extensions.AI.Abstractions": "[10.5.0, )",
           "Microsoft.Extensions.AI.OpenAI": "[10.5.0, )",
+          "Microsoft.Extensions.Http": "[10.0.7, )",
           "System.Threading.RateLimiting": "[10.0.7, )",
           "Weave.Security": "[1.0.0, )",
           "Weave.Shared": "[1.0.0, )",
@@ -1465,16 +1460,6 @@
         "type": "Project",
         "dependencies": {
           "Weave.Shared": "[1.0.0, )"
-        }
-      },
-      "Anthropic.SDK": {
-        "type": "CentralTransitive",
-        "requested": "[5.10.0, )",
-        "resolved": "5.10.0",
-        "contentHash": "UQyZsDMcFy5pBNfEQXwNS5916dogqKSO76J4aynmdtR2q0QB3Ey/vB3vwll9/neAmH7IpKH7KpbzQ+SaYncxyQ==",
-        "dependencies": {
-          "Microsoft.Bcl.AsyncInterfaces": "10.0.3",
-          "Microsoft.Extensions.AI.Abstractions": "10.3.0"
         }
       },
       "Microsoft.AspNetCore.OpenApi": {

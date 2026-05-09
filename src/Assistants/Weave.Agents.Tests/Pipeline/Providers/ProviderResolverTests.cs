@@ -1,3 +1,4 @@
+using Microsoft.Extensions.DependencyInjection;
 using Microsoft.Extensions.Logging.Abstractions;
 using Weave.Agents.Pipeline;
 using Weave.Agents.Pipeline.Providers;
@@ -147,8 +148,16 @@ public class ProviderResolverTests
         providerLookups.ShouldBe(["openai"]);
     }
 
-    private static ProviderResolver CreateResolver(Func<string, string?> credentialBehavior) =>
-        new(new SpyCredentialStore(credentialBehavior), NullLoggerFactory.Instance);
+    private static ProviderResolver CreateResolver(Func<string, string?> credentialBehavior)
+    {
+        var services = new ServiceCollection();
+        services.AddHttpClient();
+        var httpClientFactory = services.BuildServiceProvider().GetRequiredService<IHttpClientFactory>();
+        return new(
+            new SpyCredentialStore(credentialBehavior),
+            httpClientFactory,
+            NullLoggerFactory.Instance);
+    }
 
     private sealed class SpyCredentialStore(Func<string, string?> behavior) : IAgentCredentialStore
     {
