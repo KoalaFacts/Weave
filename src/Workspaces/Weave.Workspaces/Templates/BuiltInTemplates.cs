@@ -13,7 +13,7 @@ public static class BuiltInTemplates
     public const string Author = "weave";
     public const string Version = "1.0.0";
     public static readonly IReadOnlyList<string> Tags = ["built-in", "weave"];
-    private const string Model = "claude-sonnet-4-20250514";
+    private const string Model = "gpt-4o-mini";
 
     public static readonly CapabilityTemplate Starter = new()
     {
