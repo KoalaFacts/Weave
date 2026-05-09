@@ -36,6 +36,7 @@ public sealed class ProviderResolver(
     ILoggerFactory loggerFactory) : IProviderResolver
 {
     private const string AnthropicHttpClientName = "anthropic";
+    private readonly ILogger<ProviderResolver> _logger = loggerFactory.CreateLogger<ProviderResolver>();
 
     public async Task<IChatClient> ResolveAsync(
         string agentId,
@@ -46,20 +47,37 @@ public sealed class ProviderResolver(
         if (modelId is null)
             return Fallback(modelId);
 
-        var providerName = definition?.Provider ?? InferProvider(modelId);
-        if (providerName is null)
+        var explicitProvider = definition?.Provider;
+        var inferredProvider = InferProvider(modelId);
+        var providerName = explicitProvider ?? inferredProvider;
+
+        if (providerName is not "openai" and not "anthropic")
             return Fallback(modelId);
+
+        if (explicitProvider is not null
+            && inferredProvider is not null
+            && explicitProvider != inferredProvider)
+        {
+            _logger.LogWarning(
+                "Agent {AgentId}: manifest provider={Explicit} disagrees with model id {ModelId} (infers {Inferred}); dispatching as configured.",
+                agentId, explicitProvider, modelId, inferredProvider);
+        }
+
+        var baseUrl = definition?.BaseUrl;
+        if (baseUrl is not null && !IsHttps(baseUrl))
+        {
+            _logger.LogWarning(
+                "Agent {AgentId}: base_url={BaseUrl} is not HTTPS; the API key will travel in cleartext.",
+                agentId, baseUrl);
+        }
 
         var apiKey = await ResolveApiKeyAsync(providerName, definition?.ApiKeyRef, ct).ConfigureAwait(false);
         if (apiKey is null)
             return Fallback(modelId);
 
-        return providerName switch
-        {
-            "openai" => BuildOpenAi(modelId, apiKey, definition?.BaseUrl),
-            "anthropic" => BuildAnthropic(modelId, apiKey, definition?.BaseUrl),
-            _ => Fallback(modelId)
-        };
+        return providerName == "openai"
+            ? BuildOpenAi(modelId, apiKey, baseUrl)
+            : BuildAnthropic(modelId, apiKey, baseUrl);
     }
 
     private Task<string?> ResolveApiKeyAsync(string providerName, string? apiKeyRef, CancellationToken ct) =>
@@ -98,4 +116,8 @@ public sealed class ProviderResolver(
 
     private static bool IsAnthropicModel(string modelId) =>
         modelId.StartsWith("claude-", StringComparison.Ordinal);
+
+    private static bool IsHttps(string baseUrl) =>
+        Uri.TryCreate(baseUrl, UriKind.Absolute, out var uri)
+        && uri.Scheme == Uri.UriSchemeHttps;
 }

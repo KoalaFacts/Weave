@@ -1,3 +1,4 @@
+using Microsoft.Extensions.AI;
 using Microsoft.Extensions.DependencyInjection;
 using Microsoft.Extensions.Logging.Abstractions;
 using Weave.Agents.Pipeline;
@@ -261,6 +262,93 @@ public class ProviderResolverTests
         var client = await resolver.ResolveAsync("agent-1", definition, TestContext.Current.CancellationToken);
 
         resolverCalls.ShouldBe(["{secret:env/MISSING_VAR}"]);
+        providerLookups.ShouldBeEmpty();
+        client.ShouldBeOfType<FallbackChatClient>();
+    }
+
+    [Fact]
+    public async Task ResolveAsync_AnthropicWithBaseUrl_ThreadsToClientMetadata()
+    {
+        var resolver = CreateResolver(name => name == "anthropic" ? "sk-ant-test" : null);
+
+        var client = await resolver.ResolveAsync(
+            "agent-1",
+            new AgentDefinition
+            {
+                Model = "claude-sonnet-4-20250514",
+                BaseUrl = "https://anthropic.example.test"
+            },
+            TestContext.Current.CancellationToken);
+
+        var metadata = client.GetService(typeof(ChatClientMetadata)) as ChatClientMetadata;
+        metadata.ShouldNotBeNull();
+        metadata.ProviderUri.ShouldNotBeNull();
+        metadata.ProviderUri!.AbsoluteUri.ShouldBe("https://anthropic.example.test/");
+    }
+
+    [Fact]
+    public async Task ResolveAsync_AnthropicWithoutBaseUrl_DefaultsToAnthropicCom()
+    {
+        var resolver = CreateResolver(name => name == "anthropic" ? "sk-ant-test" : null);
+
+        var client = await resolver.ResolveAsync(
+            "agent-1",
+            new AgentDefinition { Model = "claude-sonnet-4-20250514" },
+            TestContext.Current.CancellationToken);
+
+        var metadata = client.GetService(typeof(ChatClientMetadata)) as ChatClientMetadata;
+        metadata.ShouldNotBeNull();
+        metadata.ProviderUri!.AbsoluteUri.ShouldBe("https://api.anthropic.com/");
+    }
+
+    [Fact]
+    public async Task ResolveAsync_NonHttpsBaseUrl_StillResolves_AndAppliesUrl()
+    {
+        var resolver = CreateResolver(name => name == "anthropic" ? "sk-ant-test" : null);
+
+        var client = await resolver.ResolveAsync(
+            "agent-1",
+            new AgentDefinition
+            {
+                Model = "claude-sonnet-4-20250514",
+                BaseUrl = "http://internal.example.test"
+            },
+            TestContext.Current.CancellationToken);
+
+        client.ShouldNotBeOfType<FallbackChatClient>();
+        var metadata = client.GetService(typeof(ChatClientMetadata)) as ChatClientMetadata;
+        metadata.ShouldNotBeNull();
+        metadata.ProviderUri!.AbsoluteUri.ShouldBe("http://internal.example.test/");
+    }
+
+    [Fact]
+    public async Task ResolveAsync_UnknownProviderOverride_FallsBackBeforeResolvingSecret()
+    {
+        var resolverCalls = new List<string?>();
+        var stubSecretResolver = new StubSecretResolver(p =>
+        {
+            resolverCalls.Add(p);
+            return "sk-from-resolver";
+        });
+        var providerLookups = new List<string>();
+        var resolver = CreateResolver(
+            credentialBehavior: name =>
+            {
+                providerLookups.Add(name);
+                return null;
+            },
+            secretResolver: stubSecretResolver);
+
+        var definition = new AgentDefinition
+        {
+            Model = "claude-sonnet-4-20250514",
+            Provider = "ollama",
+            ApiKeyRef = "{secret:env/SOME_KEY}"
+        };
+
+        var client = await resolver.ResolveAsync("agent-1", definition, TestContext.Current.CancellationToken);
+
+        resolverCalls.ShouldBeEmpty();
         providerLookups.ShouldBeEmpty();
         client.ShouldBeOfType<FallbackChatClient>();
     }
