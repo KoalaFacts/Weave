@@ -1,3 +1,5 @@
+using Weave.Actions.Context;
+
 namespace Weave.Cli.Shell;
 
 internal sealed class WorkspaceDownCliCommand(IWorkspaceDownDependencies dependencies, WorkspacePrompt workspacePrompt) : ICliCommand<WorkspaceDownOptions>
@@ -25,32 +27,49 @@ internal sealed class WorkspaceDownCliCommand(IWorkspaceDownDependencies depende
             return 1;
         }
 
-        var workspaceId = options.WorkspaceId ?? (await dependencies.ReadAllTextAsync(statePath, ct)).Trim();
-        if (string.IsNullOrWhiteSpace(workspaceId))
+        string workspaceId;
+        if (options.WorkspaceId is not null)
         {
-            CliTheme.WriteError("Workspace state file is empty.");
-            return 1;
+            workspaceId = options.WorkspaceId;
+            if (string.IsNullOrWhiteSpace(workspaceId))
+            {
+                CliTheme.WriteError("--workspace-id is empty.");
+                return 1;
+            }
+        }
+        else
+        {
+            workspaceId = (await dependencies.ReadAllTextAsync(statePath, ct)).Trim();
+            if (string.IsNullOrWhiteSpace(workspaceId))
+            {
+                CliTheme.WriteError($"Workspace state file '{statePath}' is empty.");
+                return 1;
+            }
         }
 
         var result = await dependencies.StopWorkspaceAsync(workspaceId, ct);
         if (!result.IsSuccess)
         {
+            if (result.Failure.Reason == ActionFailureReason.Cancelled)
+                return 130;
+
             CliTheme.WriteError($"Failed to stop workspace: {result.Failure.Message}");
             return 1;
         }
+
+        CliTheme.WriteSuccess($"Workspace '{workspaceId}' stopped.");
 
         try
         {
             if (dependencies.FileExists(statePath))
                 dependencies.DeleteFile(statePath);
 
-            CliTheme.WriteSuccess($"Workspace '{workspaceId}' stopped.");
             return 0;
         }
         catch (Exception ex) when (ex is IOException or UnauthorizedAccessException)
         {
-            CliTheme.WriteError($"Failed to stop workspace: {ex.Message}");
-            return 1;
+            CliTheme.WriteWarning($"Could not remove local state file '{statePath}': {ex.Message}");
+            return 0;
         }
     }
 }

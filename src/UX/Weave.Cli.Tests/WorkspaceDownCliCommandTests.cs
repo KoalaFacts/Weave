@@ -54,6 +54,27 @@ public class WorkspaceDownCliCommandTests
         dependencies.StopCalls.ShouldBe(0);
     }
 
+    [Theory]
+    [InlineData("")]
+    [InlineData("   ")]
+    public async Task ExecuteAsync_WithWhitespaceWorkspaceId_ReturnsFailureWithoutReadingStateFile(string blankId)
+    {
+        var dependencies = new TestWorkspaceDownDependencies
+        {
+            ManifestPath = "workspace.json",
+            StateExists = true,
+            WorkspaceIdText = "from-state-not-read"
+        };
+        var command = new WorkspaceDownCliCommand(dependencies, Prompt);
+
+        var result = await command.ExecuteAsync(
+            new WorkspaceDownOptions("demo", "workspace.json", blankId),
+            TestContext.Current.CancellationToken);
+
+        result.ShouldBe(1);
+        dependencies.StopCalls.ShouldBe(0);
+    }
+
     [Fact]
     public async Task ExecuteAsync_WithWorkspaceId_StopsWorkspaceAndDeletesStateFile()
     {
@@ -112,6 +133,44 @@ public class WorkspaceDownCliCommandTests
         dependencies.DeletedPath.ShouldBeNull();
     }
 
+    [Fact]
+    public async Task ExecuteAsync_StopActionCancelled_Returns130AndLeavesStateFileIntact()
+    {
+        var dependencies = new TestWorkspaceDownDependencies
+        {
+            ManifestPath = "workspace.json",
+            StateExists = true,
+            WorkspaceIdText = "workspace-from-state",
+            StopResult = ActionResult.Failed<StopWorkspaceResult>(ActionFailure.Cancelled())
+        };
+        var command = new WorkspaceDownCliCommand(dependencies, Prompt);
+
+        var result = await command.ExecuteAsync(new WorkspaceDownOptions("demo"), TestContext.Current.CancellationToken);
+
+        result.ShouldBe(130);
+        dependencies.StoppedWorkspaceId.ShouldBe("workspace-from-state");
+        dependencies.DeletedPath.ShouldBeNull();
+    }
+
+    [Fact]
+    public async Task ExecuteAsync_DeleteFileFails_ReturnsSuccessSinceSiloStopSucceeded()
+    {
+        var dependencies = new TestWorkspaceDownDependencies
+        {
+            ManifestPath = "workspace.json",
+            StateExists = true,
+            WorkspaceIdText = "workspace-from-state",
+            DeleteFileException = new IOException("file is locked")
+        };
+        var command = new WorkspaceDownCliCommand(dependencies, Prompt);
+
+        var result = await command.ExecuteAsync(new WorkspaceDownOptions("demo"), TestContext.Current.CancellationToken);
+
+        result.ShouldBe(0);
+        dependencies.StoppedWorkspaceId.ShouldBe("workspace-from-state");
+        dependencies.DeletedPath.ShouldBeNull();
+    }
+
     private sealed class EmptyRegistry : IWorkspaceRegistry
     {
         public void Register(string name, string absolutePath) { }
@@ -137,6 +196,8 @@ public class WorkspaceDownCliCommandTests
         public ActionResult<StopWorkspaceResult> StopResult { get; init; } =
             ActionResult.Success(new StopWorkspaceResult());
 
+        public Exception? DeleteFileException { get; init; }
+
         public int StopCalls { get; private set; }
 
         public string? StoppedWorkspaceId { get; private set; }
@@ -158,6 +219,11 @@ public class WorkspaceDownCliCommandTests
             return Task.FromResult(StopResult);
         }
 
-        public void DeleteFile(string path) => DeletedPath = path;
+        public void DeleteFile(string path)
+        {
+            if (DeleteFileException is not null)
+                throw DeleteFileException;
+            DeletedPath = path;
+        }
     }
 }

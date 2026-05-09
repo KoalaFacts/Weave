@@ -12,12 +12,13 @@ namespace Weave.Silo.Tests;
 ///   - real Orleans in-memory storage (in-memory but production code)
 ///   - real CQRS dispatcher + all registered handlers
 ///   - real ASP.NET pipeline with every Silo endpoint
-///
-/// Nothing is mocked. If the Silo fails to start — e.g. an
-/// Orleans serializer config validator crash like the recent
+/// </summary>
+/// <remarks>
+/// Nothing is mocked. If the Silo fails to start — e.g. an Orleans
+/// serializer config validator crash like the recent
 /// CodecNotFoundException for AgentTaskId — these tests fail fast
 /// instead of leaking through to the TUI.
-/// </summary>
+/// </remarks>
 public sealed class SiloFactory : WebApplicationFactory<Program>
 {
     protected override void ConfigureWebHost(IWebHostBuilder builder)

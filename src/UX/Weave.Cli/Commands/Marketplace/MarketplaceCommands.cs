@@ -31,11 +31,28 @@ internal static class MarketplaceCommands
             Description = "Marketplace item ID",
             Arity = ArgumentArity.ZeroOrOne
         };
-        var cmd = new Command("install", "Install a marketplace item (capability-gated)") { itemIdArg };
+        var noScaffoldOption = new Option<bool>("--no-scaffold")
+        {
+            Description = "Record the install but skip scaffolding a workspace"
+        };
+        var workspaceNameOption = new Option<string?>("--workspace-name")
+        {
+            Description = "Workspace name to scaffold (skips the prompt; defaults to the template name)"
+        };
+        var cmd = new Command("install", "Install a marketplace item (capability-gated)")
+        {
+            itemIdArg,
+            noScaffoldOption,
+            workspaceNameOption
+        };
         cmd.SetAction(async (parseResult, cancellationToken) =>
         {
             var itemId = parseResult.GetValue(itemIdArg);
-            return await handler.ExecuteAsync(new MarketplaceInstallOptions(itemId), cancellationToken);
+            var noScaffold = parseResult.GetValue(noScaffoldOption);
+            var workspaceName = parseResult.GetValue(workspaceNameOption);
+            return await handler.ExecuteAsync(
+                new MarketplaceInstallOptions(itemId, noScaffold, workspaceName),
+                cancellationToken);
         });
 
         return cmd;

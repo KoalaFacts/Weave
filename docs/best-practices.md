@@ -285,6 +285,8 @@ The law of the repo. Every rule here is enforceable in review. Rules exist to pr
 
 **Flaky tests are quarantined, not retried.** Retry hides the bug. Mark with `[Fact(Skip = "tracking: <issue>")]` and fix within the sprint.
 
+**CI exit-code mismatch is a Microsoft.Testing.Platform shutdown crash, not a failed test.** When the GitHub `Build & Test` job exits non-zero but the `Test Results` check shows every test passed (e.g. "All 2184 tests pass" + `Process completed with exit code 2` on the parent step), the orchestrator is propagating a crash that happened on a worker's *disposal* — the TRX has already been published, so the run is functionally green, but `dotnet test --solution X -- --report-xunit-trx …` inherits the worker's non-zero exit. Likely culprit: an in-process integration host (`SiloFactory : WebApplicationFactory<Program>`) whose Orleans cluster, ASP.NET host, or `IChatClient` background tasks fail to settle within the platform's shutdown window. **Diagnostic signal**: the `Test Results` published-test-result check (or the uploaded TRX artifact) shows zero failures; only the parent step's exit code is non-zero. **Action**: re-run the job before treating the diff as the cause. Don't hide it with `--ignore-exit-code` — if it fires repeatedly, audit the offending fixture's `IAsyncDisposable.DisposeAsync` to ensure every spun-up host (silo, web app, chat client, plugin host) is awaited to completion before the test class tears down.
+
 ### Test quality — rules that prevent gaming coverage
 
 Coverage alone is a **trailing** indicator of test quality. A suite can hit 95% line coverage while catching none of the bugs that actually ship. The rules below are what stop the number from lying.
