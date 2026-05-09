@@ -13,6 +13,7 @@ using Weave.Shared.Capabilities;
 using Weave.Tools.Builders;
 using Weave.Tools.Marketplace;
 using Weave.Tools.Tool;
+using Weave.Workspaces.Manifest;
 
 namespace Weave.Agents.Pipeline;
 
@@ -28,9 +29,9 @@ public sealed class AgentChatPipeline(
     private readonly SkillMemoryPromptEnricher _skillMemory = new(actors, tokenService);
     private readonly EpisodicMemoryPromptEnricher _episodicMemory = new(actors, logger);
 
-    public void Initialize(string agentId, string? model)
+    public async Task InitializeAsync(string agentId, AgentDefinition? definition, CancellationToken ct = default)
     {
-        _chatClient = chatClientFactory.Create(agentId, model);
+        _chatClient = await chatClientFactory.CreateAsync(agentId, definition, ct);
     }
 
     public void Reset()
@@ -41,7 +42,7 @@ public sealed class AgentChatPipeline(
 
     public async Task<AgentChatResponse> ExecuteAsync(AgentState state, AgentMessage message)
     {
-        _chatClient ??= chatClientFactory.Create(state.AgentId, state.Model);
+        _chatClient ??= await chatClientFactory.CreateAsync(state.AgentId, state.Definition);
 
         var userEntry = new ConversationMessage
         {

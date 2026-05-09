@@ -20,17 +20,28 @@ namespace Weave.Agents.Pipeline.Providers.Anthropic;
 /// — streaming today returns a single <see cref="ChatResponseUpdate"/>
 /// covering the full response.</para>
 /// </remarks>
-internal sealed class AnthropicChatClient(
-    HttpClient httpClient,
-    string modelId,
-    string apiKey) : IChatClient
+internal sealed class AnthropicChatClient : IChatClient
 {
-    private const string MessagesEndpoint = "https://api.anthropic.com/v1/messages";
+    private const string DefaultBaseUrl = "https://api.anthropic.com";
+    private const string MessagesPath = "/v1/messages";
     private const string AnthropicApiVersion = "2023-06-01";
     private const int DefaultMaxTokens = 4096;
 
-    private readonly ChatClientMetadata _metadata =
-        new("anthropic", new Uri("https://api.anthropic.com/"), modelId);
+    private readonly HttpClient _httpClient;
+    private readonly string _modelId;
+    private readonly string _apiKey;
+    private readonly string _messagesEndpoint;
+    private readonly ChatClientMetadata _metadata;
+
+    public AnthropicChatClient(HttpClient httpClient, string modelId, string apiKey, string? baseUrl = null)
+    {
+        _httpClient = httpClient;
+        _modelId = modelId;
+        _apiKey = apiKey;
+        var origin = (baseUrl ?? DefaultBaseUrl).TrimEnd('/');
+        _messagesEndpoint = origin + MessagesPath;
+        _metadata = new ChatClientMetadata("anthropic", new Uri(origin + "/"), modelId);
+    }
 
     public async Task<ChatResponse> GetResponseAsync(
         IEnumerable<ChatMessage> messages,
@@ -42,14 +53,14 @@ internal sealed class AnthropicChatClient(
         var (system, conversation) = SplitSystemAndConversation(messages);
         var requestBody = new AnthropicMessagesRequest
         {
-            Model = options?.ModelId ?? modelId,
+            Model = options?.ModelId ?? _modelId,
             MaxTokens = options?.MaxOutputTokens ?? DefaultMaxTokens,
             System = system,
             Messages = conversation
         };
 
         using var httpRequest = BuildRequest(requestBody);
-        using var httpResponse = await httpClient.SendAsync(httpRequest, cancellationToken).ConfigureAwait(false);
+        using var httpResponse = await _httpClient.SendAsync(httpRequest, cancellationToken).ConfigureAwait(false);
         httpResponse.EnsureSuccessStatusCode();
 
         await using var stream = await httpResponse.Content.ReadAsStreamAsync(cancellationToken).ConfigureAwait(false);
@@ -95,11 +106,11 @@ internal sealed class AnthropicChatClient(
         var content = new ByteArrayContent(bytes);
         content.Headers.ContentType = new MediaTypeHeaderValue("application/json");
 
-        var request = new HttpRequestMessage(HttpMethod.Post, MessagesEndpoint)
+        var request = new HttpRequestMessage(HttpMethod.Post, _messagesEndpoint)
         {
             Content = content
         };
-        request.Headers.Add("x-api-key", apiKey);
+        request.Headers.Add("x-api-key", _apiKey);
         request.Headers.Add("anthropic-version", AnthropicApiVersion);
         return request;
     }
@@ -138,7 +149,7 @@ internal sealed class AnthropicChatClient(
         return new ChatResponse(assistant)
         {
             ResponseId = parsed.Id,
-            ModelId = parsed.Model ?? modelId,
+            ModelId = parsed.Model ?? _modelId,
             FinishReason = MapFinishReason(parsed.StopReason),
             Usage = parsed.Usage is null
                 ? null

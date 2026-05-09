@@ -603,7 +603,10 @@ public sealed class AgentActorTests
         var actor = new AgentActor(actors, chatPipeline, lifecycle, eventBus, Substitute.For<IAgentVerificationDispatcher>(), CreateTokenService(), TimeProvider.System, logger, persistentState);
         await actor.OnActivatedAsync("ws-1/researcher", TestContext.Current.CancellationToken);
 
-        chatPipeline.Received(1).Initialize("ws-1/researcher", "claude-sonnet-4-20250514");
+        await chatPipeline.Received(1).InitializeAsync(
+            "ws-1/researcher",
+            state.Definition,
+            Arg.Any<CancellationToken>());
     }
 
     [Fact]

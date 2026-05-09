@@ -52,7 +52,7 @@ public sealed class AgentChatPipelineTests
             });
 
         var chatClientFactory = Substitute.For<IAgentChatClientFactory>();
-        chatClientFactory.Create(Arg.Any<string>(), Arg.Any<string?>()).Returns(chatClient);
+        chatClientFactory.CreateAsync(Arg.Any<string>(), Arg.Any<AgentDefinition?>(), Arg.Any<CancellationToken>()).Returns(chatClient);
 
         var actors = Substitute.For<IVirtualActorProvider>();
         var logger = NullLogger<AgentChatPipeline>.Instance;
@@ -128,17 +128,20 @@ public sealed class AgentChatPipelineTests
     }
 
     [Fact]
-    public void Initialize_CreatesChatClient()
+    public async Task InitializeAsync_CreatesChatClient()
     {
         var chatClientFactory = Substitute.For<IAgentChatClientFactory>();
-        chatClientFactory.Create(Arg.Any<string>(), Arg.Any<string?>())
+        chatClientFactory.CreateAsync(Arg.Any<string>(), Arg.Any<AgentDefinition?>(), Arg.Any<CancellationToken>())
             .Returns(Substitute.For<IChatClient>());
         var actors = Substitute.For<IVirtualActorProvider>();
         var pipeline = new AgentChatPipeline(actors, chatClientFactory, CreateTokenService(), TimeProvider.System, NullLogger<AgentChatPipeline>.Instance);
 
-        pipeline.Initialize("ws-1/researcher", "claude-sonnet-4-20250514");
+        await pipeline.InitializeAsync("ws-1/researcher", new AgentDefinition { Model = "claude-sonnet-4-20250514" }, TestContext.Current.CancellationToken);
 
-        chatClientFactory.Received(1).Create("ws-1/researcher", "claude-sonnet-4-20250514");
+        await chatClientFactory.Received(1).CreateAsync(
+            "ws-1/researcher",
+            Arg.Is<AgentDefinition?>(d => d != null && d.Model == "claude-sonnet-4-20250514"),
+            Arg.Any<CancellationToken>());
     }
 
     [Fact]
@@ -147,7 +150,7 @@ public sealed class AgentChatPipelineTests
         var (pipeline, chatClient) = CreatePipeline();
         var state = CreateActiveState();
 
-        pipeline.Initialize("ws-1/researcher", "claude-sonnet-4-20250514");
+        await pipeline.InitializeAsync("ws-1/researcher", new AgentDefinition { Model = "claude-sonnet-4-20250514" }, TestContext.Current.CancellationToken);
         pipeline.Reset();
         await pipeline.ExecuteAsync(state, new AgentMessage { Content = "Hello" });
 
@@ -171,7 +174,7 @@ public sealed class AgentChatPipelineTests
             });
 
         var chatClientFactory = Substitute.For<IAgentChatClientFactory>();
-        chatClientFactory.Create(Arg.Any<string>(), Arg.Any<string?>()).Returns(chatClient);
+        chatClientFactory.CreateAsync(Arg.Any<string>(), Arg.Any<AgentDefinition?>(), Arg.Any<CancellationToken>()).Returns(chatClient);
 
         var registry = Substitute.For<IToolRegistryActor>();
         registry.ResolveAsync("researcher", "code-search")
@@ -209,7 +212,7 @@ public sealed class AgentChatPipelineTests
             });
 
         var chatClientFactory = Substitute.For<IAgentChatClientFactory>();
-        chatClientFactory.Create(Arg.Any<string>(), Arg.Any<string?>()).Returns(chatClient);
+        chatClientFactory.CreateAsync(Arg.Any<string>(), Arg.Any<AgentDefinition?>(), Arg.Any<CancellationToken>()).Returns(chatClient);
 
         var userModelActor = Substitute.For<IUserModelActor>();
         userModelActor.GetContextSummaryAsync(Arg.Any<CapabilityToken>())
@@ -253,7 +256,7 @@ public sealed class AgentChatPipelineTests
             });
 
         var chatClientFactory = Substitute.For<IAgentChatClientFactory>();
-        chatClientFactory.Create(Arg.Any<string>(), Arg.Any<string?>()).Returns(chatClient);
+        chatClientFactory.CreateAsync(Arg.Any<string>(), Arg.Any<AgentDefinition?>(), Arg.Any<CancellationToken>()).Returns(chatClient);
 
         var skill = new SkillDocument
         {
@@ -314,7 +317,7 @@ public sealed class AgentChatPipelineTests
             });
 
         var chatClientFactory = Substitute.For<IAgentChatClientFactory>();
-        chatClientFactory.Create(Arg.Any<string>(), Arg.Any<string?>()).Returns(chatClient);
+        chatClientFactory.CreateAsync(Arg.Any<string>(), Arg.Any<AgentDefinition?>(), Arg.Any<CancellationToken>()).Returns(chatClient);
 
         // Skill actor would happily return a skill if asked — the gate must
         // prevent the call so the skill never reaches the system prompt.
@@ -361,7 +364,7 @@ public sealed class AgentChatPipelineTests
             });
 
         var chatClientFactory = Substitute.For<IAgentChatClientFactory>();
-        chatClientFactory.Create(Arg.Any<string>(), Arg.Any<string?>()).Returns(chatClient);
+        chatClientFactory.CreateAsync(Arg.Any<string>(), Arg.Any<AgentDefinition?>(), Arg.Any<CancellationToken>()).Returns(chatClient);
 
         var skill = new SkillDocument
         {
@@ -429,7 +432,7 @@ public sealed class AgentChatPipelineTests
             });
 
         var chatClientFactory = Substitute.For<IAgentChatClientFactory>();
-        chatClientFactory.Create(Arg.Any<string>(), Arg.Any<string?>()).Returns(chatClient);
+        chatClientFactory.CreateAsync(Arg.Any<string>(), Arg.Any<AgentDefinition?>(), Arg.Any<CancellationToken>()).Returns(chatClient);
 
         var userModelActor = Substitute.For<IUserModelActor>();
         userModelActor.GetContextSummaryAsync(Arg.Any<CapabilityToken>())
@@ -471,7 +474,7 @@ public sealed class AgentChatPipelineTests
             });
 
         var chatClientFactory = Substitute.For<IAgentChatClientFactory>();
-        chatClientFactory.Create(Arg.Any<string>(), Arg.Any<string?>()).Returns(chatClient);
+        chatClientFactory.CreateAsync(Arg.Any<string>(), Arg.Any<AgentDefinition?>(), Arg.Any<CancellationToken>()).Returns(chatClient);
 
         var skill = new SkillDocument
         {

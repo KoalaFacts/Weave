@@ -39,7 +39,7 @@ internal sealed class AgentLifecycle(
         await lifecycleManager.RunHooksAsync(LifecyclePhase.AgentActivating, context, CancellationToken.None);
 
         chatPipeline.Reset();
-        chatPipeline.Initialize(state.AgentId, definition.Model);
+        await chatPipeline.InitializeAsync(state.AgentId, definition);
 
         state.Status = AgentStatus.Active;
         state.ActivatedAt = timeProvider.GetUtcNow();

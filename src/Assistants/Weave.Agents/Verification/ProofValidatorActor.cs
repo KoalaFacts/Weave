@@ -4,6 +4,7 @@ using System.Text.Json;
 using Microsoft.Extensions.AI;
 using Microsoft.Extensions.Logging;
 using Weave.Agents.Pipeline;
+using Weave.Workspaces.Manifest;
 
 namespace Weave.Agents.Verification;
 
@@ -47,7 +48,8 @@ public sealed class ProofValidatorActor(
 
         try
         {
-            var chatClient = chatClientFactory.Create($"validator-{validatorId}", modelId);
+            var validatorDefinition = modelId is null ? null : new AgentDefinition { Model = modelId };
+            var chatClient = await chatClientFactory.CreateAsync($"validator-{validatorId}", validatorDefinition);
             var userMessage = BuildUserMessage(proof, conditions);
 
             var messages = new List<ChatMessage>

@@ -42,7 +42,7 @@ public sealed class AgentChatPipelineBranchTests
                 {
                     ModelId = "test-model"
                 });
-            ChatClientFactory.Create(Arg.Any<string>(), Arg.Any<string?>()).Returns(ChatClient);
+            ChatClientFactory.CreateAsync(Arg.Any<string>(), Arg.Any<AgentDefinition?>(), Arg.Any<CancellationToken>()).Returns(ChatClient);
 
             Pipeline = new AgentChatPipeline(
                 ActorProvider,
