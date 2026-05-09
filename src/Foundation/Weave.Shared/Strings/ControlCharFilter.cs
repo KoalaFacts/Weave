@@ -12,9 +12,12 @@ namespace Weave.Shared.Strings;
 /// </remarks>
 public static class ControlCharFilter
 {
+    /// <summary>Replaces every control character with <c>?</c>; returns the input unchanged when it contains none.</summary>
     public static string ReplaceControlChars(string value)
     {
-        if (string.IsNullOrEmpty(value) || !value.Any(char.IsControl))
+        ArgumentNullException.ThrowIfNull(value);
+
+        if (!ContainsControl(value))
             return value;
 
         return string.Create(value.Length, value, static (span, source) =>
@@ -22,5 +25,15 @@ public static class ControlCharFilter
             for (var i = 0; i < source.Length; i++)
                 span[i] = char.IsControl(source[i]) ? '?' : source[i];
         });
+    }
+
+    private static bool ContainsControl(string value)
+    {
+        for (var i = 0; i < value.Length; i++)
+        {
+            if (char.IsControl(value[i]))
+                return true;
+        }
+        return false;
     }
 }

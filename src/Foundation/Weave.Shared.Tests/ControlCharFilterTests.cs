@@ -26,4 +26,8 @@ public class ControlCharFilterTests
     [Fact]
     public void ReplaceControlChars_PreservesNonControlAfterReplacement() =>
         ControlCharFilter.ReplaceControlChars("\u0001hello\u0002world").ShouldBe("?hello?world");
+
+    [Fact]
+    public void ReplaceControlChars_ThrowsOnNull() =>
+        Should.Throw<ArgumentNullException>(() => ControlCharFilter.ReplaceControlChars(null!));
 }
