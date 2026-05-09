@@ -81,7 +81,7 @@ internal sealed class MarketplaceInstallCliCommand(
 
         if (!IsSafeWorkspaceName(workspaceName))
         {
-            CliTheme.WriteError($"Invalid workspace name '{workspaceName}': must not contain path separators or '..'.");
+            CliTheme.WriteError($"Invalid workspace name '{SanitizeForEcho(workspaceName)}': must not contain path separators, '..', or reserved device names.");
             return 1;
         }
 
@@ -139,8 +139,39 @@ internal sealed class MarketplaceInstallCliCommand(
             ct);
     }
 
-    internal static bool IsSafeWorkspaceName(string workspaceName) =>
-        workspaceName.IndexOfAny(['/', '\\']) < 0
-        && workspaceName != "."
-        && workspaceName != "..";
+    private static readonly HashSet<string> WindowsReservedNames = new(StringComparer.OrdinalIgnoreCase)
+    {
+        "CON", "PRN", "AUX", "NUL",
+        "COM1", "COM2", "COM3", "COM4", "COM5", "COM6", "COM7", "COM8", "COM9",
+        "LPT1", "LPT2", "LPT3", "LPT4", "LPT5", "LPT6", "LPT7", "LPT8", "LPT9"
+    };
+
+    internal static bool IsSafeWorkspaceName(string workspaceName)
+    {
+        if (Path.IsPathRooted(workspaceName)
+            || workspaceName.IndexOfAny(['/', '\\', ':']) >= 0
+            || workspaceName == "."
+            || workspaceName == "..")
+        {
+            return false;
+        }
+
+        // Windows reserves names like CON / NUL / COM1 even with extensions,
+        // matching against the part before the FIRST dot (e.g. CON.tar.gz).
+        var dotIndex = workspaceName.IndexOf('.');
+        var stem = dotIndex < 0 ? workspaceName : workspaceName[..dotIndex];
+        return !WindowsReservedNames.Contains(stem);
+    }
+
+    internal static string SanitizeForEcho(string value)
+    {
+        if (!value.Any(char.IsControl))
+            return value;
+
+        return string.Create(value.Length, value, static (span, source) =>
+        {
+            for (var i = 0; i < source.Length; i++)
+                span[i] = char.IsControl(source[i]) ? '?' : source[i];
+        });
+    }
 }

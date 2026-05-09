@@ -29,8 +29,59 @@ public class MarketplaceInstallCliCommandTests
     [InlineData("../foo")]
     [InlineData("foo/..")]
     [InlineData("foo/../bar")]
+    [InlineData("C:foo")]
+    [InlineData("C:")]
+    [InlineData("D:..\\evil")]
+    [InlineData("foo:bar")]
     public void IsSafeWorkspaceName_PathTraversalShapes_AreRejected(string name) =>
         MarketplaceInstallCliCommand.IsSafeWorkspaceName(name).ShouldBeFalse();
+
+    [Theory]
+    [InlineData("CON")]
+    [InlineData("PRN")]
+    [InlineData("AUX")]
+    [InlineData("NUL")]
+    [InlineData("COM1")]
+    [InlineData("COM9")]
+    [InlineData("LPT1")]
+    [InlineData("LPT9")]
+    [InlineData("con")]
+    [InlineData("Nul")]
+    [InlineData("CON.txt")]
+    [InlineData("nul.tar.gz")]
+    public void IsSafeWorkspaceName_WindowsReservedNames_AreRejected(string name) =>
+        MarketplaceInstallCliCommand.IsSafeWorkspaceName(name).ShouldBeFalse();
+
+    [Fact]
+    public void SanitizeForEcho_LeavesPrintableUnchanged()
+    {
+        MarketplaceInstallCliCommand.SanitizeForEcho("plain text 123").ShouldBe("plain text 123");
+        MarketplaceInstallCliCommand.SanitizeForEcho("a-b_c.d").ShouldBe("a-b_c.d");
+    }
+
+    [Fact]
+    public void SanitizeForEcho_ReplacesAnsiEscapeSequences()
+    {
+        var input = "\u001b[31mred\u001b[0m";
+
+        MarketplaceInstallCliCommand.SanitizeForEcho(input).ShouldBe("?[31mred?[0m");
+    }
+
+    [Fact]
+    public void SanitizeForEcho_ReplacesNewlineAndTabAndBel()
+    {
+        var input = "line1\nline2\there\u0007done";
+
+        MarketplaceInstallCliCommand.SanitizeForEcho(input).ShouldBe("line1?line2?here?done");
+    }
+
+    [Fact]
+    public void SanitizeForEcho_ReplacesDelChar()
+    {
+        var input = "before\u007fafter";
+
+        MarketplaceInstallCliCommand.SanitizeForEcho(input).ShouldBe("before?after");
+    }
 
     [Fact]
     public void InstallCommand_ExposesNoScaffoldFlag()
