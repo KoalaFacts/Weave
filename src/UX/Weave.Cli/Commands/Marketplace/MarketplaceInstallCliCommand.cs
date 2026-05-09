@@ -4,6 +4,7 @@ using Weave.Actions.Context;
 using Weave.Actions.Marketplace;
 using Weave.Actions.SystemInfo;
 using Weave.Shared.Ids;
+using Weave.Shared.Strings;
 using Weave.Workspaces.Manifest;
 using Weave.Workspaces.Templates;
 
@@ -163,15 +164,6 @@ internal sealed class MarketplaceInstallCliCommand(
         return !WindowsReservedNames.Contains(stem);
     }
 
-    internal static string SanitizeForEcho(string value)
-    {
-        if (!value.Any(char.IsControl))
-            return value;
-
-        return string.Create(value.Length, value, static (span, source) =>
-        {
-            for (var i = 0; i < source.Length; i++)
-                span[i] = char.IsControl(source[i]) ? '?' : source[i];
-        });
-    }
+    internal static string SanitizeForEcho(string value) =>
+        ControlCharFilter.ReplaceControlChars(value);
 }

@@ -3,6 +3,7 @@ using System.Runtime.CompilerServices;
 using Microsoft.Extensions.Logging;
 using Weave.Security.Events;
 using Weave.Shared.Events;
+using Weave.Shared.Strings;
 
 namespace Weave.Security.Tokens;
 
@@ -167,14 +168,7 @@ public sealed partial class CapabilityAuthorizer(
             ? input[..MaxActionContextLength]
             : input;
 
-        if (!trimmed.Any(char.IsControl))
-            return trimmed;
-
-        return string.Create(trimmed.Length, trimmed, static (span, src) =>
-        {
-            for (var i = 0; i < src.Length; i++)
-                span[i] = char.IsControl(src[i]) ? '?' : src[i];
-        });
+        return ControlCharFilter.ReplaceControlChars(trimmed);
     }
 
     [LoggerMessage(Level = LogLevel.Warning,
