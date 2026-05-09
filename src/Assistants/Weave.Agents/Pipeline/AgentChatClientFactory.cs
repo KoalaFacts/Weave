@@ -1,6 +1,7 @@
 using Microsoft.Extensions.AI;
 using Microsoft.Extensions.DependencyInjection;
 using Microsoft.Extensions.Logging;
+using Weave.Agents.Pipeline.Providers;
 
 namespace Weave.Agents.Pipeline;
 
@@ -13,17 +14,19 @@ namespace Weave.Agents.Pipeline;
 /// dependencies it pulls in. No <c>IServiceScopeFactory</c>: reaching for
 /// one would mean the factory was registered with the wrong lifetime.
 /// See docs/best-practices.md — "Prefer Scoped over Singleton+ScopeFactory".
+/// Provider selection is delegated to <see cref="IProviderResolver"/>; the
+/// rate-limiting / cost-tracking / function-invocation wrappers stay
+/// provider-agnostic.
 /// </remarks>
 public sealed class AgentChatClientFactory(
     IServiceProvider services,
     IAgentCostLedger costLedger,
+    IProviderResolver providerResolver,
     ILoggerFactory loggerFactory) : IAgentChatClientFactory
 {
     public IChatClient Create(string agentId, string? modelId = null)
     {
-        var baseClient = new FallbackChatClient(
-            modelId,
-            services.GetRequiredService<ILogger<FallbackChatClient>>());
+        var baseClient = providerResolver.Resolve(agentId, modelId);
         var rateLimited = new RateLimitingChatClient(
             baseClient,
             maxRequestsPerMinute: 60,

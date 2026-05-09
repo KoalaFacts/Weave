@@ -53,6 +53,7 @@
   <ItemGroup Label="Microsoft.Extensions.AI">
     <PackageVersion Include="Microsoft.Extensions.AI" Version="10.5.0" />
     <PackageVersion Include="Microsoft.Extensions.AI.Abstractions" Version="10.5.0" />
+    <PackageVersion Include="Microsoft.Extensions.AI.OpenAI" Version="10.5.0" />
   </ItemGroup>
   <ItemGroup Label="CLI">
     <PackageVersion Include="Spectre.Console" Version="0.55.2" />

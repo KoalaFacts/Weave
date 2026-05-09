@@ -1,6 +1,7 @@
 using Microsoft.Extensions.AI;
 using Microsoft.Extensions.DependencyInjection;
 using Weave.Agents.Pipeline;
+using Weave.Agents.Pipeline.Providers;
 
 namespace Weave.Agents.Tests;
 
@@ -16,7 +17,10 @@ public sealed class AgentChatClientFactoryTests
     {
         var services = new ServiceCollection();
         services.AddLogging(); // registers ILoggerFactory + ILogger<T>
+        services.AddHttpClient(); // registers IHttpClientFactory for ProviderResolver
         services.AddSingleton<IAgentCostLedger, AgentCostLedger>();
+        services.AddSingleton<IAgentCredentialStore, EnvironmentAgentCredentialStore>();
+        services.AddScoped<IProviderResolver, ProviderResolver>();
         services.AddScoped<IAgentChatClientFactory, AgentChatClientFactory>();
         var provider = services.BuildServiceProvider();
 

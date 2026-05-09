@@ -1,6 +1,7 @@
 using System.Diagnostics.CodeAnalysis;
 using Weave.Agents.Channels;
 using Weave.Agents.Pipeline;
+using Weave.Agents.Pipeline.Providers;
 using Weave.Agents.Verification;
 using Weave.Security.Audit;
 using Weave.Security.Plugins;
@@ -131,6 +132,8 @@ internal sealed class SiloServiceRegistrar
     private void RegisterAgentPipeline()
     {
         _services.AddSingleton<IAgentCostLedger, AgentCostLedger>();
+        _services.AddSingleton<IAgentCredentialStore, EnvironmentAgentCredentialStore>();
+        _services.AddScoped<IProviderResolver, ProviderResolver>();
         _services.AddScoped<IAgentChatClientFactory, AgentChatClientFactory>();
         _services.AddTransient<IAgentChatPipeline, AgentChatPipeline>();
         _services.AddSingleton<AgentVerificationDispatcher>();
