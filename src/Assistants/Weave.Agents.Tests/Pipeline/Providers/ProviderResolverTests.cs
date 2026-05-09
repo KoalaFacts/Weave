@@ -1,4 +1,3 @@
-using Microsoft.Extensions.AI;
 using Microsoft.Extensions.Logging.Abstractions;
 using Weave.Agents.Pipeline;
 using Weave.Agents.Pipeline.Providers;
@@ -44,9 +43,27 @@ public class ProviderResolverTests
 
     [Theory]
     [InlineData("claude-sonnet-4-20250514")]
+    [InlineData("claude-3-5-sonnet-20241022")]
+    [InlineData("claude-opus-4-20250514")]
+    public void Resolve_AnthropicPrefix_WithKey_ConsultsAnthropicCredentialStore(string modelId)
+    {
+        var providerLookups = new List<string>();
+        var resolver = CreateResolver(name =>
+        {
+            providerLookups.Add(name);
+            return name == "anthropic" ? "sk-ant-test" : null;
+        });
+
+        resolver.Resolve("agent-1", modelId);
+
+        providerLookups.ShouldContain("anthropic");
+    }
+
+    [Theory]
     [InlineData("anything-else")]
+    [InlineData("llama-3-1")]
     [InlineData(null)]
-    public void Resolve_NonOpenAiOrUnknownModel_DoesNotConsultCredentialStore(string? modelId)
+    public void Resolve_UnknownModel_DoesNotConsultCredentialStore(string? modelId)
     {
         var providerLookups = new List<string>();
         var resolver = CreateResolver(name =>
@@ -78,6 +95,56 @@ public class ProviderResolverTests
         var client = resolver.Resolve("agent-1", "gpt-4o-mini");
 
         client.ShouldNotBeOfType<FallbackChatClient>();
+    }
+
+    [Fact]
+    public void Resolve_AnthropicPrefix_NoKey_FallsBackToEchoClient()
+    {
+        var resolver = CreateResolver(_ => null);
+
+        var client = resolver.Resolve("agent-1", "claude-sonnet-4-20250514");
+
+        client.ShouldBeOfType<FallbackChatClient>();
+    }
+
+    [Fact]
+    public void Resolve_AnthropicPrefix_WithKey_ReturnsRealAnthropicClient()
+    {
+        var resolver = CreateResolver(name => name == "anthropic" ? "sk-ant-test" : null);
+
+        var client = resolver.Resolve("agent-1", "claude-sonnet-4-20250514");
+
+        client.ShouldNotBeOfType<FallbackChatClient>();
+    }
+
+    [Fact]
+    public void Resolve_AnthropicPrefix_OnlyConsultsAnthropic_NotOpenAi()
+    {
+        var providerLookups = new List<string>();
+        var resolver = CreateResolver(name =>
+        {
+            providerLookups.Add(name);
+            return null;
+        });
+
+        resolver.Resolve("agent-1", "claude-sonnet-4-20250514");
+
+        providerLookups.ShouldBe(["anthropic"]);
+    }
+
+    [Fact]
+    public void Resolve_OpenAiPrefix_OnlyConsultsOpenAi_NotAnthropic()
+    {
+        var providerLookups = new List<string>();
+        var resolver = CreateResolver(name =>
+        {
+            providerLookups.Add(name);
+            return null;
+        });
+
+        resolver.Resolve("agent-1", "gpt-4o-mini");
+
+        providerLookups.ShouldBe(["openai"]);
     }
 
     private static ProviderResolver CreateResolver(Func<string, string?> credentialBehavior) =>
