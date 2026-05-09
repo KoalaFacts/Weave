@@ -82,7 +82,7 @@ internal sealed class MarketplaceInstallCliCommand(
 
         if (!IsSafeWorkspaceName(workspaceName))
         {
-            CliTheme.WriteError($"Invalid workspace name '{SanitizeForEcho(workspaceName)}': must not contain path separators, '..', or reserved device names.");
+            CliTheme.WriteError($"Invalid workspace name '{ControlCharFilter.ReplaceControlChars(workspaceName)}': must not contain path separators, '..', or reserved device names.");
             return 1;
         }
 
@@ -163,7 +163,4 @@ internal sealed class MarketplaceInstallCliCommand(
         var stem = dotIndex < 0 ? workspaceName : workspaceName[..dotIndex];
         return !WindowsReservedNames.Contains(stem);
     }
-
-    internal static string SanitizeForEcho(string value) =>
-        ControlCharFilter.ReplaceControlChars(value);
 }

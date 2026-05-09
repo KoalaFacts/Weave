@@ -1,3 +1,4 @@
+using System.CommandLine;
 using Microsoft.Extensions.DependencyInjection;
 using Weave.Cli;
 using Weave.Cli.Commands;
@@ -6,6 +7,8 @@ namespace Weave.Cli.Tests;
 
 public class MarketplaceInstallCliCommandTests
 {
+    private static readonly Lazy<Command> InstallCommand = new(BuildInstallCommand);
+
     [Theory]
     [InlineData("starter")]
     [InlineData("my-workspace")]
@@ -53,58 +56,17 @@ public class MarketplaceInstallCliCommandTests
         MarketplaceInstallCliCommand.IsSafeWorkspaceName(name).ShouldBeFalse();
 
     [Fact]
-    public void SanitizeForEcho_LeavesPrintableUnchanged()
-    {
-        MarketplaceInstallCliCommand.SanitizeForEcho("plain text 123").ShouldBe("plain text 123");
-        MarketplaceInstallCliCommand.SanitizeForEcho("a-b_c.d").ShouldBe("a-b_c.d");
-    }
+    public void InstallCommand_ExposesNoScaffoldFlag() =>
+        InstallCommand.Value.Options.ShouldContain(o => o.Name == "--no-scaffold");
 
     [Fact]
-    public void SanitizeForEcho_ReplacesAnsiEscapeSequences()
-    {
-        var input = "\u001b[31mred\u001b[0m";
-
-        MarketplaceInstallCliCommand.SanitizeForEcho(input).ShouldBe("?[31mred?[0m");
-    }
-
-    [Fact]
-    public void SanitizeForEcho_ReplacesNewlineAndTabAndBel()
-    {
-        var input = "line1\nline2\there\u0007done";
-
-        MarketplaceInstallCliCommand.SanitizeForEcho(input).ShouldBe("line1?line2?here?done");
-    }
-
-    [Fact]
-    public void SanitizeForEcho_ReplacesDelChar()
-    {
-        var input = "before\u007fafter";
-
-        MarketplaceInstallCliCommand.SanitizeForEcho(input).ShouldBe("before?after");
-    }
-
-    [Fact]
-    public void InstallCommand_ExposesNoScaffoldFlag()
-    {
-        var install = ResolveInstallCommand();
-
-        install.Options.ShouldContain(o => o.Name == "--no-scaffold");
-    }
-
-    [Fact]
-    public void InstallCommand_ExposesWorkspaceNameOption()
-    {
-        var install = ResolveInstallCommand();
-
-        install.Options.ShouldContain(o => o.Name == "--workspace-name");
-    }
+    public void InstallCommand_ExposesWorkspaceNameOption() =>
+        InstallCommand.Value.Options.ShouldContain(o => o.Name == "--workspace-name");
 
     [Fact]
     public void InstallCommand_ItemIdArgumentIsOptional()
     {
-        var install = ResolveInstallCommand();
-
-        var itemIdArg = install.Arguments.ShouldHaveSingleItem();
+        var itemIdArg = InstallCommand.Value.Arguments.ShouldHaveSingleItem();
         itemIdArg.Name.ShouldBe("item-id");
         itemIdArg.Arity.MinimumNumberOfValues.ShouldBe(0);
     }
@@ -112,39 +74,29 @@ public class MarketplaceInstallCliCommandTests
     [Fact]
     public void InstallCommand_ParsesNoScaffoldFlag()
     {
-        var install = ResolveInstallCommand();
+        var result = InstallCommand.Value.Parse("--no-scaffold item-1");
 
-        var result = install.Parse("--no-scaffold item-1");
-
-        var noScaffoldOption = install.Options.Single(o => o.Name == "--no-scaffold");
-        result.GetValue<bool>(noScaffoldOption.Name).ShouldBeTrue();
+        result.GetValue<bool>("--no-scaffold").ShouldBeTrue();
     }
 
     [Fact]
     public void InstallCommand_ParsesWorkspaceNameOption()
     {
-        var install = ResolveInstallCommand();
+        var result = InstallCommand.Value.Parse("--workspace-name custom-name item-1");
 
-        var result = install.Parse("--workspace-name custom-name item-1");
-
-        var workspaceNameOption = install.Options.Single(o => o.Name == "--workspace-name");
-        result.GetValue<string?>(workspaceNameOption.Name).ShouldBe("custom-name");
+        result.GetValue<string?>("--workspace-name").ShouldBe("custom-name");
     }
 
     [Fact]
     public void InstallCommand_DefaultsNoScaffoldToFalseAndWorkspaceNameToNull()
     {
-        var install = ResolveInstallCommand();
+        var result = InstallCommand.Value.Parse("item-1");
 
-        var result = install.Parse("item-1");
-
-        var noScaffoldOption = install.Options.Single(o => o.Name == "--no-scaffold");
-        var workspaceNameOption = install.Options.Single(o => o.Name == "--workspace-name");
-        result.GetValue<bool>(noScaffoldOption.Name).ShouldBeFalse();
-        result.GetValue<string?>(workspaceNameOption.Name).ShouldBeNull();
+        result.GetValue<bool>("--no-scaffold").ShouldBeFalse();
+        result.GetValue<string?>("--workspace-name").ShouldBeNull();
     }
 
-    private static System.CommandLine.Command ResolveInstallCommand()
+    private static Command BuildInstallCommand()
     {
         var services = CliServiceCollection.Build();
         var marketplace = MarketplaceCommands.Create(
