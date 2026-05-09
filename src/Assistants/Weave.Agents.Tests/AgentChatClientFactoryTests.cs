@@ -2,6 +2,7 @@ using Microsoft.Extensions.AI;
 using Microsoft.Extensions.DependencyInjection;
 using Weave.Agents.Pipeline;
 using Weave.Agents.Pipeline.Providers;
+using Weave.Workspaces.Manifest;
 
 namespace Weave.Agents.Tests;
 
@@ -16,10 +17,11 @@ public sealed class AgentChatClientFactoryTests
     private static AgentChatClientFactory CreateFactory()
     {
         var services = new ServiceCollection();
-        services.AddLogging(); // registers ILoggerFactory + ILogger<T>
-        services.AddHttpClient(); // registers IHttpClientFactory for ProviderResolver
+        services.AddLogging();
+        services.AddHttpClient();
         services.AddSingleton<IAgentCostLedger, AgentCostLedger>();
         services.AddSingleton<IAgentCredentialStore, EnvironmentAgentCredentialStore>();
+        services.AddSingleton<IAgentSecretResolver, AgentSecretResolver>();
         services.AddScoped<IProviderResolver, ProviderResolver>();
         services.AddScoped<IAgentChatClientFactory, AgentChatClientFactory>();
         var provider = services.BuildServiceProvider();
@@ -28,20 +30,26 @@ public sealed class AgentChatClientFactoryTests
     }
 
     [Fact]
-    public void Create_ReturnsNonNullChatClient()
+    public async Task CreateAsync_ReturnsNonNullChatClient()
     {
         var factory = CreateFactory();
 
-        var client = factory.Create("agent-1", "gpt-4o-mini");
+        var client = await factory.CreateAsync(
+            "agent-1",
+            new AgentDefinition { Model = "gpt-4o-mini" },
+            TestContext.Current.CancellationToken);
 
         client.ShouldNotBeNull();
     }
 
     [Fact]
-    public async Task Create_ResultingClient_ExecutesEndToEnd()
+    public async Task CreateAsync_ResultingClient_ExecutesEndToEnd()
     {
         var factory = CreateFactory();
-        var client = factory.Create("agent-1", "gpt-4o-mini");
+        var client = await factory.CreateAsync(
+            "agent-1",
+            new AgentDefinition { Model = "gpt-4o-mini" },
+            TestContext.Current.CancellationToken);
 
         var response = await client.GetResponseAsync(
             [new ChatMessage(ChatRole.User, "hello")],
@@ -53,24 +61,23 @@ public sealed class AgentChatClientFactoryTests
     }
 
     [Fact]
-    public void Create_ModelId_PassesDownToBaseClientMetadata()
+    public async Task CreateAsync_NullDefinition_FallsBackCleanly()
     {
         var factory = CreateFactory();
 
-        var client = factory.Create("agent-2", "my-model");
+        var client = await factory.CreateAsync("agent-2", null, TestContext.Current.CancellationToken);
 
-        // ChatClientMetadata surfaces the default model via GetService.
-        // UseFunctionInvocation wraps our chain and usually exposes it too.
         client.ShouldNotBeNull();
     }
 
     [Fact]
-    public async Task Create_ProducesIndependentClientsPerAgent()
+    public async Task CreateAsync_ProducesIndependentClientsPerAgent()
     {
         var factory = CreateFactory();
+        var def = new AgentDefinition { Model = "gpt-4o-mini" };
 
-        var client1 = factory.Create("agent-a", "gpt-4o-mini");
-        var client2 = factory.Create("agent-b", "gpt-4o-mini");
+        var client1 = await factory.CreateAsync("agent-a", def, TestContext.Current.CancellationToken);
+        var client2 = await factory.CreateAsync("agent-b", def, TestContext.Current.CancellationToken);
 
         client1.ShouldNotBeSameAs(client2);
         var r1 = await client1.GetResponseAsync(

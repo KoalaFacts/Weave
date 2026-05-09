@@ -49,7 +49,7 @@ public sealed class AgentActor(
         }
 
         if (persistentState.State.Definition is not null)
-            chatPipeline.Initialize(persistentState.State.AgentId, persistentState.State.Model);
+            await chatPipeline.InitializeAsync(persistentState.State.AgentId, persistentState.State.Definition, cancellationToken);
     }
 
     public async Task<AgentState> ActivateAgentAsync(WorkspaceId workspaceId, AgentDefinition definition)

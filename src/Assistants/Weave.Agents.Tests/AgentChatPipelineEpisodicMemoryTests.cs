@@ -12,6 +12,7 @@ using Weave.Agents.Users;
 using Weave.Agents.Verification;
 using Weave.Security.Tokens;
 using Weave.Shared.Ids;
+using Weave.Workspaces.Manifest;
 
 namespace Weave.Agents.Tests;
 
@@ -52,7 +53,7 @@ public sealed class AgentChatPipelineEpisodicMemoryTests
             });
 
         var chatClientFactory = Substitute.For<IAgentChatClientFactory>();
-        chatClientFactory.Create(Arg.Any<string>(), Arg.Any<string?>()).Returns(chatClient);
+        chatClientFactory.CreateAsync(Arg.Any<string>(), Arg.Any<AgentDefinition?>(), Arg.Any<CancellationToken>()).Returns(chatClient);
 
         var episodic = Substitute.For<IEpisodicMemoryActor>();
         var hits = recallHit is null
@@ -136,7 +137,7 @@ public sealed class AgentChatPipelineEpisodicMemoryTests
         chatClient.GetResponseAsync(Arg.Any<IEnumerable<ChatMessage>>(), Arg.Any<ChatOptions>(), Arg.Any<CancellationToken>())
             .Returns(new ChatResponse(new ChatMessage(ChatRole.Assistant, "ok")) { ModelId = "test-model" });
         var chatClientFactory = Substitute.For<IAgentChatClientFactory>();
-        chatClientFactory.Create(Arg.Any<string>(), Arg.Any<string?>()).Returns(chatClient);
+        chatClientFactory.CreateAsync(Arg.Any<string>(), Arg.Any<AgentDefinition?>(), Arg.Any<CancellationToken>()).Returns(chatClient);
 
         var actors = Substitute.For<IVirtualActorProvider>();
         actors.GetActor<IEpisodicMemoryActor>(Arg.Any<VirtualActorId>()).Returns(episodic);

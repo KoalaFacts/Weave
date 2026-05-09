@@ -133,6 +133,7 @@ internal sealed class SiloServiceRegistrar
     {
         _services.AddSingleton<IAgentCostLedger, AgentCostLedger>();
         _services.AddSingleton<IAgentCredentialStore, EnvironmentAgentCredentialStore>();
+        _services.AddSingleton<IAgentSecretResolver, AgentSecretResolver>();
         _services.AddScoped<IProviderResolver, ProviderResolver>();
         _services.AddScoped<IAgentChatClientFactory, AgentChatClientFactory>();
         _services.AddTransient<IAgentChatPipeline, AgentChatPipeline>();

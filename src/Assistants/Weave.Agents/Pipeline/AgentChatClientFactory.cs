@@ -2,6 +2,7 @@ using Microsoft.Extensions.AI;
 using Microsoft.Extensions.DependencyInjection;
 using Microsoft.Extensions.Logging;
 using Weave.Agents.Pipeline.Providers;
+using Weave.Workspaces.Manifest;
 
 namespace Weave.Agents.Pipeline;
 
@@ -24,9 +25,12 @@ public sealed class AgentChatClientFactory(
     IProviderResolver providerResolver,
     ILoggerFactory loggerFactory) : IAgentChatClientFactory
 {
-    public IChatClient Create(string agentId, string? modelId = null)
+    public async Task<IChatClient> CreateAsync(
+        string agentId,
+        AgentDefinition? definition,
+        CancellationToken ct = default)
     {
-        var baseClient = providerResolver.Resolve(agentId, modelId);
+        var baseClient = await providerResolver.ResolveAsync(agentId, definition, ct).ConfigureAwait(false);
         var rateLimited = new RateLimitingChatClient(
             baseClient,
             maxRequestsPerMinute: 60,

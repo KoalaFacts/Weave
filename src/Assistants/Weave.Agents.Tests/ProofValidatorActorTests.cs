@@ -9,6 +9,7 @@ using Weave.Agents.Skills;
 using Weave.Agents.ToolRegistry;
 using Weave.Agents.Users;
 using Weave.Agents.Verification;
+using Weave.Workspaces.Manifest;
 
 namespace Weave.Agents.Tests;
 
@@ -18,7 +19,7 @@ public sealed class ProofValidatorActorTests
     {
         var factory = Substitute.For<IAgentChatClientFactory>();
         var client = chatClient ?? CreateAcceptingChatClient();
-        factory.Create(Arg.Any<string>(), Arg.Any<string?>()).Returns(client);
+        factory.CreateAsync(Arg.Any<string>(), Arg.Any<AgentDefinition?>(), Arg.Any<CancellationToken>()).Returns(client);
         var logger = Substitute.For<ILogger<ProofValidatorActor>>();
         return new ProofValidatorActor(factory, logger);
     }
@@ -27,7 +28,7 @@ public sealed class ProofValidatorActorTests
     {
         factory = Substitute.For<IAgentChatClientFactory>();
         var client = CreateAcceptingChatClient();
-        factory.Create(Arg.Any<string>(), Arg.Any<string?>()).Returns(client);
+        factory.CreateAsync(Arg.Any<string>(), Arg.Any<AgentDefinition?>(), Arg.Any<CancellationToken>()).Returns(client);
         var logger = Substitute.For<ILogger<ProofValidatorActor>>();
         return new ProofValidatorActor(factory, logger);
     }
@@ -159,11 +160,14 @@ public sealed class ProofValidatorActorTests
 
         await validator.ValidateAsync("validator-0", proof, DefaultConditions(), "gpt-4o");
 
-        factory.Received(1).Create("validator-validator-0", "gpt-4o");
+        await factory.Received(1).CreateAsync(
+            "validator-validator-0",
+            Arg.Is<AgentDefinition?>(d => d != null && d.Model == "gpt-4o"),
+            Arg.Any<CancellationToken>());
     }
 
     [Fact]
-    public async Task ValidateAsync_NullModelId_PassesNullToFactory()
+    public async Task ValidateAsync_NullModelId_PassesNullDefinitionToFactory()
     {
         var validator = CreateValidatorWithFactory(out var factory);
         var proof = new ProofOfWork
@@ -173,7 +177,10 @@ public sealed class ProofValidatorActorTests
 
         await validator.ValidateAsync("validator-0", proof, DefaultConditions());
 
-        factory.Received(1).Create("validator-validator-0", null);
+        await factory.Received(1).CreateAsync(
+            "validator-validator-0",
+            Arg.Is<AgentDefinition?>(d => d == null),
+            Arg.Any<CancellationToken>());
     }
 
     [Fact]
