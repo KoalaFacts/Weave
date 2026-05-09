@@ -33,6 +33,9 @@ internal sealed class WorkspaceUpCliCommand(
         var manifest = await WorkspaceManifestFile.ReadPreparedAsync(manifestPath, ct);
 
         var systemInfo = await systemInfoAction.ExecuteAsync(new GetSystemInfoInput(), ct);
+        if (ct.IsCancellationRequested)
+            return 130;
+
         if (systemInfo.IsSuccess && !systemInfo.Value.Reachable)
         {
             CliTheme.WriteInfo("Server not running — starting automatically...");
@@ -63,7 +66,7 @@ internal sealed class WorkspaceUpCliCommand(
         var workspace = result.Value.Workspace;
         var statePath = WorkspaceManifestPaths.GetStatePath(manifestPath);
         Directory.CreateDirectory(Path.GetDirectoryName(statePath)!);
-        await File.WriteAllTextAsync(statePath, workspace.WorkspaceId, ct);
+        await File.WriteAllTextAsync(statePath, workspace.WorkspaceId, CancellationToken.None);
 
         CliTheme.WriteKeyValue("Workspace", manifest.Name);
         CliTheme.WriteKeyValue("Workspace ID", workspace.WorkspaceId);

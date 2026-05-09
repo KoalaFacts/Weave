@@ -79,6 +79,12 @@ internal sealed class MarketplaceInstallCliCommand(
                     .DefaultValue(template.Name))
             : options.WorkspaceName;
 
+        if (!IsSafeWorkspaceName(workspaceName))
+        {
+            CliTheme.WriteError($"Invalid workspace name '{workspaceName}': must not contain path separators or '..'.");
+            return 1;
+        }
+
         var basePath = Path.GetFullPath(workspaceName);
         if (Directory.Exists(basePath) && Directory.EnumerateFileSystemEntries(basePath).Any())
         {
@@ -132,4 +138,9 @@ internal sealed class MarketplaceInstallCliCommand(
             promptContent,
             ct);
     }
+
+    private static bool IsSafeWorkspaceName(string workspaceName) =>
+        workspaceName.IndexOfAny(['/', '\\']) < 0
+        && workspaceName != "."
+        && workspaceName != "..";
 }
