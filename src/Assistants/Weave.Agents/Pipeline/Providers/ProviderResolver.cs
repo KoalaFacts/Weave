@@ -43,11 +43,11 @@ public sealed class ProviderResolver(
         AgentDefinition? definition,
         CancellationToken ct = default)
     {
-        var modelId = definition?.Model;
-        if (modelId is null)
-            return Fallback(modelId);
+        if (definition is null)
+            return Fallback(modelId: null);
 
-        var explicitProvider = definition?.Provider;
+        var modelId = definition.Model;
+        var explicitProvider = definition.Provider;
         var inferredProvider = InferProvider(modelId);
         var providerName = explicitProvider ?? inferredProvider;
 
@@ -63,7 +63,7 @@ public sealed class ProviderResolver(
                 agentId, explicitProvider, modelId, inferredProvider);
         }
 
-        var baseUrl = definition?.BaseUrl;
+        var baseUrl = definition.BaseUrl;
         if (baseUrl is not null && !IsHttps(baseUrl))
         {
             _logger.LogWarning(
@@ -71,7 +71,7 @@ public sealed class ProviderResolver(
                 agentId, baseUrl);
         }
 
-        var apiKey = await ResolveApiKeyAsync(providerName, definition?.ApiKeyRef, ct).ConfigureAwait(false);
+        var apiKey = await ResolveApiKeyAsync(providerName, definition.ApiKeyRef, ct).ConfigureAwait(false);
         if (apiKey is null)
             return Fallback(modelId);
 

@@ -282,8 +282,7 @@ public class ProviderResolverTests
 
         var metadata = client.GetService(typeof(ChatClientMetadata)) as ChatClientMetadata;
         metadata.ShouldNotBeNull();
-        metadata.ProviderUri.ShouldNotBeNull();
-        metadata.ProviderUri!.AbsoluteUri.ShouldBe("https://anthropic.example.test/");
+        metadata!.ProviderUri!.AbsoluteUri.ShouldBe("https://anthropic.example.test/");
     }
 
     [Fact]
@@ -298,7 +297,7 @@ public class ProviderResolverTests
 
         var metadata = client.GetService(typeof(ChatClientMetadata)) as ChatClientMetadata;
         metadata.ShouldNotBeNull();
-        metadata.ProviderUri!.AbsoluteUri.ShouldBe("https://api.anthropic.com/");
+        metadata!.ProviderUri!.AbsoluteUri.ShouldBe("https://api.anthropic.com/");
     }
 
     [Fact]
@@ -318,7 +317,7 @@ public class ProviderResolverTests
         client.ShouldNotBeOfType<FallbackChatClient>();
         var metadata = client.GetService(typeof(ChatClientMetadata)) as ChatClientMetadata;
         metadata.ShouldNotBeNull();
-        metadata.ProviderUri!.AbsoluteUri.ShouldBe("http://internal.example.test/");
+        metadata!.ProviderUri!.AbsoluteUri.ShouldBe("http://internal.example.test/");
     }
 
     [Fact]
