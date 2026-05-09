@@ -139,7 +139,7 @@ internal sealed class MarketplaceInstallCliCommand(
             ct);
     }
 
-    private static bool IsSafeWorkspaceName(string workspaceName) =>
+    internal static bool IsSafeWorkspaceName(string workspaceName) =>
         workspaceName.IndexOfAny(['/', '\\']) < 0
         && workspaceName != "."
         && workspaceName != "..";
