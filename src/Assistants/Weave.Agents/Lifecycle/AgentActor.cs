@@ -120,6 +120,24 @@ public sealed class AgentActor(
         return response;
     }
 
+    public async IAsyncEnumerable<AgentChatStreamingFrame> SendStreamingAsync(
+        AgentMessage message,
+        [System.Runtime.CompilerServices.EnumeratorCancellation] CancellationToken ct = default)
+    {
+        if (persistentState.State.Status is not (AgentStatus.Active or AgentStatus.Busy))
+            throw new InvalidOperationException($"Agent {persistentState.State.AgentName} is not active (status: {persistentState.State.Status}).");
+
+        await foreach (var frame in chatPipeline.ExecuteStreamingAsync(persistentState.State, message, ct).ConfigureAwait(false))
+        {
+            yield return frame;
+        }
+
+        // Persist with CancellationToken.None — if the caller cancelled mid-stream the
+        // pipeline already mutated state.History (user message, partial assistant message),
+        // and that mutation must be flushed regardless of caller-side cancellation.
+        await persistentState.WriteStateAsync(CancellationToken.None);
+    }
+
     public async Task<AgentTaskInfo> SubmitTaskAsync(string description)
     {
         if (persistentState.State.Status is not (AgentStatus.Active or AgentStatus.Busy))

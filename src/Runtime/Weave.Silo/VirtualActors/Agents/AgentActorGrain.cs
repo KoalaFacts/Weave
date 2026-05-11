@@ -42,6 +42,9 @@ public sealed class AgentActorGrain : Grain, IAgentActorGrain
     public Task DeactivateAsync() => _actor.DeactivateAsync();
     public Task<AgentState> GetStateAsync() => _actor.GetStateAsync();
     public Task<AgentChatResponse> SendAsync(AgentMessage message) => _actor.SendAsync(message);
+
+    public IAsyncEnumerable<AgentChatStreamingFrame> SendStreamingAsync(AgentMessage message, CancellationToken ct = default) =>
+        _actor.SendStreamingAsync(message, ct);
     public Task<AgentTaskInfo> SubmitTaskAsync(string description) => _actor.SubmitTaskAsync(description);
 
     public Task CompleteTaskAsync(AgentTaskId taskId, bool success, ProofOfWork proof) =>

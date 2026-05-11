@@ -100,8 +100,7 @@ public sealed class ProviderResolver(
             apiKey,
             baseUrl);
 
-    private FallbackChatClient Fallback(string? modelId) =>
-        new(modelId, loggerFactory.CreateLogger<FallbackChatClient>());
+    private static FallbackChatClient Fallback(string? modelId) => new(modelId);
 
     private static string? InferProvider(string modelId) =>
         IsOpenAiModel(modelId) ? "openai"

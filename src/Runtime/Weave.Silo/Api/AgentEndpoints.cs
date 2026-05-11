@@ -39,6 +39,10 @@ public static class AgentEndpoints
             .Produces<ChatResponse>()
             .ProducesValidationProblem()
             .ProducesProblem(409);
+        group.MapPost("/{agentName}/messages/stream", SendMessageStreamEndpoint.HandleAsync)
+            .WithDescription("Send a message to an agent and stream the response as Server-Sent Events.")
+            .ProducesValidationProblem()
+            .ProducesProblem(409);
         AgentTaskEndpoints.Map(group);
 
         return group;
