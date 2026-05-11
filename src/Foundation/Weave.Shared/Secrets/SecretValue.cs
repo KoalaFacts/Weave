@@ -6,13 +6,15 @@ using System.Text.Json.Serialization;
 namespace Weave.Shared.Secrets;
 
 /// <summary>
-/// Authenticated-encryption envelope for secrets in-memory. The
-/// plaintext never leaves this struct. External code (including
-/// Orleans surrogates, custom serializers, or plugin-authored
-/// adapters) should round-trip SecretValues via
-/// <see cref="ToEnvelope"/> / <see cref="FromEnvelope"/>, which
-/// expose only the already-encrypted bytes.
+/// Authenticated-encryption envelope for secrets in-memory. The plaintext
+/// never leaves this struct.
 /// </summary>
+/// <remarks>
+/// External code (including Orleans surrogates, custom serializers, or
+/// plugin-authored adapters) should round-trip <see cref="SecretValue"/>
+/// via <see cref="ToEnvelope"/> / <see cref="FromEnvelope"/>, which expose
+/// only the already-encrypted bytes.
+/// </remarks>
 [DebuggerDisplay("SecretValue(REDACTED)")]
 [JsonConverter(typeof(SecretValueJsonConverter))]
 public readonly struct SecretValue : IEquatable<SecretValue>, IDisposable

@@ -3,7 +3,7 @@ using Weave.Deploy;
 
 namespace Weave.Cli.Commands;
 
-internal sealed class WorkspacePublishCliCommand : ICliCommand<WorkspacePublishOptions>
+internal sealed class WorkspacePublishCliCommand(IManifestResolver manifestResolver, WorkspacePrompt workspacePrompt) : ICliCommand<WorkspacePublishOptions>
 {
 
     public string Name => "publish";
@@ -15,8 +15,8 @@ internal sealed class WorkspacePublishCliCommand : ICliCommand<WorkspacePublishO
     public async Task<int> ExecuteAsync(WorkspacePublishOptions options, CancellationToken ct)
     {
         var target = options.Target;
-        var name = WorkspacePrompt.SelectName(options.Name, "Which workspace would you like to publish?");
-        var manifestPath = ManifestResolver.Resolve(name);
+        var name = workspacePrompt.SelectName(options.Name, "Which workspace would you like to publish?");
+        var manifestPath = manifestResolver.Resolve(name);
         if (manifestPath is null)
         {
             WorkspacePrompt.WriteManifestNotFound(name);

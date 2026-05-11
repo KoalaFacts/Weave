@@ -2,7 +2,7 @@
 
 ## Project Guidelines
 - Do not use FluentAssertions as it has a commercial license. Use Shouldly instead for test assertions.
-- Emphasize permissive licensing (MIT or Apache 2.0) — freedom for users matters.
+- The project is dual-licensed under MIT or AGPL v3. Users pick MIT for permissive use or AGPL v3 for network-copyleft. Avoid suggesting we change to commercial-only or single-permissive licensing.
 
 ## Code Style
 - Blazor pages should use code-behind (.razor.cs) files instead of inline @code blocks.

@@ -1,9 +1,10 @@
 using Spectre.Console;
-using Weave.Workspaces.Models;
-
+using Weave.Workspaces.Manifest;
 namespace Weave.Cli.Commands;
 
 internal sealed class WorkspaceStorageChangeCliCommand(
+    IManifestResolver manifestResolver,
+    WorkspacePrompt workspacePrompt,
     WorkspaceStorageBackendService? storage = null,
     WorkspaceStorageChangePrompt? prompt = null) : ICliCommand<WorkspaceStorageChangeOptions>
 {
@@ -18,8 +19,8 @@ internal sealed class WorkspaceStorageChangeCliCommand(
 
     public async Task<int> ExecuteAsync(WorkspaceStorageChangeOptions options, CancellationToken ct)
     {
-        var workspace = WorkspacePrompt.SelectName(options.Workspace, "Which workspace would you like to update?");
-        var manifestPath = ManifestResolver.Resolve(workspace);
+        var workspace = workspacePrompt.SelectName(options.Workspace, "Which workspace would you like to update?");
+        var manifestPath = manifestResolver.Resolve(workspace);
         if (manifestPath is null)
         {
             WorkspacePrompt.WriteManifestNotFound(workspace);

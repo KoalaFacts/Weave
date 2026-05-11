@@ -22,7 +22,7 @@ public sealed partial class InProcessEventBus(ILogger<InProcessEventBus> logger)
             {
                 await ((Func<TEvent, CancellationToken, Task>)handler)(domainEvent, ct);
             }
-            catch (Exception ex)
+            catch (Exception ex) when (ex is not OperationCanceledException)
             {
                 LogEventHandlerError(ex, typeof(TEvent).Name, domainEvent.EventId);
             }

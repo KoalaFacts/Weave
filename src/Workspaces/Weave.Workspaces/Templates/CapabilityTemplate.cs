@@ -1,6 +1,7 @@
 using Weave.Shared.Ids;
 
-namespace Weave.Workspaces.Models;
+using Weave.Workspaces.Manifest;
+namespace Weave.Workspaces.Templates;
 
 public sealed record CapabilityTemplate
 {

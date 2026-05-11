@@ -4,43 +4,43 @@ namespace Weave.Cli.Commands;
 
 internal static class WorkspaceStorageCommands
 {
-    public static Command Create()
+    public static Command Create(WorkspaceStorageShowCliCommand showHandler, WorkspaceStorageChangeCliCommand changeHandler, WorkspaceCompletions completions)
     {
         var cmd = new Command("storage", "View and change workspace-level storage");
 
-        cmd.Subcommands.Add(CreateShowCommand());
-        cmd.Subcommands.Add(CreateChangeCommand());
+        cmd.Subcommands.Add(CreateShowCommand(showHandler, completions));
+        cmd.Subcommands.Add(CreateChangeCommand(changeHandler, completions));
 
         return cmd;
     }
 
-    private static Command CreateShowCommand()
+    private static Command CreateShowCommand(WorkspaceStorageShowCliCommand handler, WorkspaceCompletions completions)
     {
         var workspaceArg = new Argument<string?>("workspace")
         {
             Description = "Workspace name",
             Arity = ArgumentArity.ZeroOrOne
         };
-        workspaceArg.CompletionSources.Add(CliCompletions.CompleteWorkspaceNames);
+        workspaceArg.CompletionSources.Add(completions.CompleteWorkspaceNames);
 
         var cmd = new Command("show", "Show workspace storage configuration") { workspaceArg };
         cmd.SetAction(async (parseResult, cancellationToken) =>
         {
             var workspace = parseResult.GetValue(workspaceArg);
-            return await new WorkspaceStorageShowCliCommand().ExecuteAsync(new WorkspaceNameOptions(workspace), cancellationToken);
+            return await handler.ExecuteAsync(new WorkspaceNameOptions(workspace), cancellationToken);
         });
 
         return cmd;
     }
 
-    private static Command CreateChangeCommand()
+    private static Command CreateChangeCommand(WorkspaceStorageChangeCliCommand handler, WorkspaceCompletions completions)
     {
         var workspaceArg = new Argument<string?>("workspace")
         {
             Description = "Workspace name",
             Arity = ArgumentArity.ZeroOrOne
         };
-        workspaceArg.CompletionSources.Add(CliCompletions.CompleteWorkspaceNames);
+        workspaceArg.CompletionSources.Add(completions.CompleteWorkspaceNames);
         var backendArg = new Argument<string?>("backend")
         {
             Description = "Target backend (memory, sqlite, postgresql, sqlserver, redis)",
@@ -60,7 +60,7 @@ internal static class WorkspaceStorageCommands
             var schema = parseResult.GetValue(schemaOption);
             var database = parseResult.GetValue(databaseOption);
             var isolationStr = parseResult.GetValue(isolationOption);
-            return await new WorkspaceStorageChangeCliCommand().ExecuteAsync(
+            return await handler.ExecuteAsync(
                 new WorkspaceStorageChangeOptions(workspace, backend, connectionStr, schema, database, isolationStr),
                 cancellationToken);
         });

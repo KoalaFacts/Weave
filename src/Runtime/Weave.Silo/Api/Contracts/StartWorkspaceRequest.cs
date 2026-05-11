@@ -1,5 +1,4 @@
-using Weave.Workspaces.Models;
-
+using Weave.Workspaces.Manifest;
 namespace Weave.Silo.Api;
 
 public sealed record StartWorkspaceRequest

@@ -2,6 +2,10 @@ using Orleans.Hosting;
 using Orleans.Serialization;
 using Weave.ServiceDefaults;
 using Weave.Silo.Api;
+using Weave.Silo.Clustering.Postgres;
+using Weave.Silo.Clustering.Redis;
+using Weave.Silo.Clustering.Sqlite;
+using Weave.Silo.Clustering.SqlServer;
 using Weave.Silo.Configuration;
 
 namespace Weave.Silo.Startup;
@@ -78,28 +82,23 @@ internal sealed class SiloBuilderConfigurator
             case ActorStorageSettings.SqliteProvider:
                 var sqliteConn = configuration.GetConnectionString(ActorStorageSettings.SqliteConnectionName)
                     ?? DefaultSqlitePath();
-                siloBuilder.AddAdoNetGrainStorageAsDefault(options =>
-                {
-                    options.ConnectionString = sqliteConn;
-                    options.Invariant = "Microsoft.Data.Sqlite";
-                });
+                siloBuilder.AddSqliteActorStorage(sqliteConn);
                 break;
 
             case ActorStorageSettings.SqlServerProvider:
-                ConfigureSqlServer(siloBuilder, configuration, schema, database);
+                siloBuilder.AddSqlServerActorStorage(
+                    BuildSqlServerConnectionString(configuration, schema, database));
                 break;
 
-            case ActorStorageSettings.PostgreSqlProvider or ActorStorageSettings.PostgresProvider:
-                ConfigurePostgreSql(siloBuilder, configuration, schema, database);
+            case ActorStorageSettings.PostgreSqlProvider:
+                siloBuilder.AddPostgresActorStorage(
+                    BuildPostgresConnectionString(configuration, schema, database));
                 break;
 
             case ActorStorageSettings.RedisProvider:
                 var redisConn = configuration.GetConnectionString(ActorStorageSettings.RedisConnectionName)
                     ?? "localhost:6379";
-                siloBuilder.AddRedisGrainStorageAsDefault(options =>
-                {
-                    options.ConfigurationOptions = StackExchange.Redis.ConfigurationOptions.Parse(redisConn);
-                });
+                siloBuilder.AddRedisActorStorage(redisConn);
                 break;
 
             default:
@@ -108,8 +107,7 @@ internal sealed class SiloBuilderConfigurator
         }
     }
 
-    private static void ConfigureSqlServer(
-        ISiloBuilder siloBuilder,
+    private static string BuildSqlServerConnectionString(
         IConfiguration configuration,
         string? schema,
         string? database)
@@ -120,21 +118,10 @@ internal sealed class SiloBuilderConfigurator
             sqlConn = AppendIfMissing(sqlConn, $"Database={database}");
         else if (!string.IsNullOrWhiteSpace(schema))
             sqlConn = AppendIfMissing(sqlConn, $"Initial Catalog={schema}");
-
-        siloBuilder.AddAdoNetGrainStorageAsDefault(options =>
-        {
-            options.ConnectionString = sqlConn;
-            options.Invariant = "Microsoft.Data.SqlClient";
-        });
-        siloBuilder.UseAdoNetClustering(options =>
-        {
-            options.ConnectionString = sqlConn;
-            options.Invariant = "Microsoft.Data.SqlClient";
-        });
+        return sqlConn;
     }
 
-    private static void ConfigurePostgreSql(
-        ISiloBuilder siloBuilder,
+    private static string BuildPostgresConnectionString(
         IConfiguration configuration,
         string? schema,
         string? database)
@@ -145,17 +132,7 @@ internal sealed class SiloBuilderConfigurator
             pgConn = AppendIfMissing(pgConn, $"Database={database}");
         if (!string.IsNullOrWhiteSpace(schema))
             pgConn = AppendIfMissing(pgConn, $"SearchPath={schema}");
-
-        siloBuilder.AddAdoNetGrainStorageAsDefault(options =>
-        {
-            options.ConnectionString = pgConn;
-            options.Invariant = "Npgsql";
-        });
-        siloBuilder.UseAdoNetClustering(options =>
-        {
-            options.ConnectionString = pgConn;
-            options.Invariant = "Npgsql";
-        });
+        return pgConn;
     }
 
     private static string AppendIfMissing(string connectionString, string kvPair)

@@ -1,5 +1,6 @@
 using Weave.Shared.Ids;
-using Weave.Workspaces.Events;
+using Weave.Workspaces.Lifecycle;
+using Weave.Workspaces.Templates;
 
 namespace Weave.Workspaces.Tests;
 

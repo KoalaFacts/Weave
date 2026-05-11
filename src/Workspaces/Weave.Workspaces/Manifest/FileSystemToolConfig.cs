@@ -1,4 +1,4 @@
-namespace Weave.Workspaces.Models;
+namespace Weave.Workspaces.Manifest;
 
 public sealed record FileSystemToolConfig
 {

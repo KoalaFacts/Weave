@@ -1,43 +1,45 @@
-using System.Globalization;
 using Spectre.Console;
+using Weave.Actions.Config;
 
 namespace Weave.Cli.Commands;
 
+/// <summary>
+/// Phase 1 read-only verb on the CLI side. Delegates the data load to
+/// <see cref="GetConfigAction"/>; the command file holds only the Spectre
+/// rendering. Single-key path prints just the value; whole-snapshot path
+/// prints the curated table.
+/// </summary>
 internal sealed class ConfigGetCliCommand : ICliCommand<ConfigGetOptions>
 {
+    private readonly GetConfigAction _action;
+
+    public ConfigGetCliCommand(GetConfigAction action)
+    {
+        _action = action;
+    }
+
     public string Name => "get";
 
     public IReadOnlyList<string> Aliases => [];
 
     public string Description => "Show configuration values";
 
-    public Task<int> ExecuteAsync(ConfigGetOptions options, CancellationToken ct)
+    public async Task<int> ExecuteAsync(ConfigGetOptions options, CancellationToken ct)
     {
-        var config = CliConfigStore.Load();
-
-        if (options.Key is null)
+        var result = await _action.ExecuteAsync(new GetConfigInput(options.Key), ct);
+        if (!result.IsSuccess)
         {
-            var table = CliTheme.CreateTable("Configuration");
-            table.AddColumn(CliTheme.StyledColumn("Key"));
-            table.AddColumn(CliTheme.StyledColumn("Value"));
-
-            table.AddRow("version", config.Version);
-            table.AddRow("siloPath", config.SiloPath ?? "(not set)");
-            table.AddRow("defaultPort", config.DefaultPort.ToString(CultureInfo.InvariantCulture));
-
-            AnsiConsole.Write(table);
-            return Task.FromResult(0);
+            CliTheme.WriteError(result.Failure.Message);
+            return 1;
         }
 
-        var value = ConfigValueAccessor.GetValue(config, options.Key);
-        if (value is null)
+        if (result.Value.RequestedValue is { } value)
         {
-            CliTheme.WriteError($"Unknown config key '{options.Key}'.");
-            CliTheme.WriteMuted("  Valid keys: version, siloPath, defaultPort");
-            return Task.FromResult(1);
+            AnsiConsole.WriteLine(value);
+            return 0;
         }
 
-        AnsiConsole.WriteLine(value);
-        return Task.FromResult(0);
+        ConfigSummaryRenderer.Render(result.Value.Summary);
+        return 0;
     }
 }

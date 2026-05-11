@@ -1,6 +1,5 @@
 using Weave.Tools.Builders;
-using Weave.Tools.Models;
-
+using Weave.Tools.Tool;
 namespace Weave.Tools.Tests;
 
 public sealed class ToolInvocationBuilderTests

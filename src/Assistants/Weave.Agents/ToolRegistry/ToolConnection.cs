@@ -1,0 +1,16 @@
+using System.Text.Json.Serialization;
+using Weave.Shared.Ids;
+
+namespace Weave.Agents.ToolRegistry;
+
+public sealed record ToolConnection
+{
+    public required string ToolName { get; init; }
+    public required string ToolType { get; init; }
+    [JsonConverter(typeof(JsonStringEnumConverter<ToolConnectionStatus>))]
+    public ToolConnectionStatus Status { get; set; } = ToolConnectionStatus.Disconnected;
+    public string? Endpoint { get; set; }
+    public ContainerId? ContainerId { get; set; }
+    public DateTimeOffset? ConnectedAt { get; set; }
+    public string? ErrorMessage { get; set; }
+}

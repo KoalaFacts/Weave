@@ -7,15 +7,16 @@ namespace Weave.SourceGen;
 
 /// <summary>
 /// Emits strongly-typed identifier structs for every partial readonly
-/// record struct decorated with <c>[BrandedId]</c>. Each ID gets a
-/// <c>Value</c> property, factory/parse helpers, string conversions,
-/// <see cref="System.ComponentModel.TypeConverter"/>, and a
-/// <see cref="System.Text.Json.Serialization.JsonConverter{T}"/>.
-///
-/// Orleans cross-actor serialization adapters live in a separate
-/// assembly (<c>Weave.Shared.Orleans</c>) so this generator — and the
-/// <c>Weave.Shared</c> assembly itself — stay Orleans-free.
+/// record struct decorated with <c>[BrandedId]</c>.
 /// </summary>
+/// <remarks>
+/// Each ID gets a <c>Value</c> property, factory/parse helpers, string
+/// conversions, <see cref="System.ComponentModel.TypeConverter"/>, and a
+/// <see cref="System.Text.Json.Serialization.JsonConverter{T}"/>. Orleans
+/// cross-actor serialization adapters live in a separate assembly
+/// (<c>Weave.Shared.Orleans</c>) so this generator — and the
+/// <c>Weave.Shared</c> assembly itself — stay Orleans-free.
+/// </remarks>
 [Generator]
 public sealed class BrandedIdGenerator : IIncrementalGenerator
 {

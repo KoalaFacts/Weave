@@ -4,7 +4,7 @@ namespace Weave.Cli.Commands;
 
 internal static class WebUiCommand
 {
-    public static Command Create()
+    public static Command Create(WebUiCliCommand handler)
     {
         var urlOption = new Option<string?>("--url")
         {
@@ -20,7 +20,7 @@ internal static class WebUiCommand
         {
             var url = parseResult.GetValue(urlOption);
             var noOpen = parseResult.GetValue(noOpenOption);
-            return await new WebUiCliCommand().ExecuteAsync(new WebUiOptions(url, noOpen), cancellationToken);
+            return await handler.ExecuteAsync(new WebUiOptions(url, noOpen), cancellationToken);
         });
 
         return cmd;

@@ -1,15 +1,29 @@
 using Microsoft.Extensions.AI;
 using Microsoft.Extensions.Logging.Abstractions;
-using Weave.Agents.Actors;
-using Weave.Agents.Models;
+using Microsoft.Extensions.Options;
+using Weave.Agents.Channels;
+using Weave.Agents.Chat;
+using Weave.Agents.Lifecycle;
+using Weave.Agents.Memory;
 using Weave.Agents.Pipeline;
+using Weave.Agents.Skills;
+using Weave.Agents.ToolRegistry;
+using Weave.Agents.Users;
+using Weave.Agents.Verification;
+using Weave.Security.Tokens;
 using Weave.Shared.Ids;
+using Weave.Workspaces.Manifest;
 
 namespace Weave.Agents.Tests;
 
 public sealed class AgentChatPipelineEpisodicMemoryTests
 {
     private static readonly WorkspaceId TestWorkspaceId = WorkspaceId.From("ws-1");
+
+    private static CapabilityTokenService CreateTokenService() =>
+        new CapabilityTokenService(
+            Options.Create(new CapabilityTokenOptions { SigningKey = "test-signing-key-that-is-at-least-32-chars-long" }),
+            TimeProvider.System);
 
     private static AgentState CreateActiveState() =>
         new()
@@ -39,7 +53,7 @@ public sealed class AgentChatPipelineEpisodicMemoryTests
             });
 
         var chatClientFactory = Substitute.For<IAgentChatClientFactory>();
-        chatClientFactory.Create(Arg.Any<string>(), Arg.Any<string?>()).Returns(chatClient);
+        chatClientFactory.CreateAsync(Arg.Any<string>(), Arg.Any<AgentDefinition?>(), Arg.Any<CancellationToken>()).Returns(chatClient);
 
         var episodic = Substitute.For<IEpisodicMemoryActor>();
         var hits = recallHit is null
@@ -54,6 +68,7 @@ public sealed class AgentChatPipelineEpisodicMemoryTests
         var pipeline = new AgentChatPipeline(
             actors,
             chatClientFactory,
+            CreateTokenService(),
             TimeProvider.System,
                 NullLogger<AgentChatPipeline>.Instance);
         return (pipeline, chatClient, episodic, captured);
@@ -122,12 +137,12 @@ public sealed class AgentChatPipelineEpisodicMemoryTests
         chatClient.GetResponseAsync(Arg.Any<IEnumerable<ChatMessage>>(), Arg.Any<ChatOptions>(), Arg.Any<CancellationToken>())
             .Returns(new ChatResponse(new ChatMessage(ChatRole.Assistant, "ok")) { ModelId = "test-model" });
         var chatClientFactory = Substitute.For<IAgentChatClientFactory>();
-        chatClientFactory.Create(Arg.Any<string>(), Arg.Any<string?>()).Returns(chatClient);
+        chatClientFactory.CreateAsync(Arg.Any<string>(), Arg.Any<AgentDefinition?>(), Arg.Any<CancellationToken>()).Returns(chatClient);
 
         var actors = Substitute.For<IVirtualActorProvider>();
         actors.GetActor<IEpisodicMemoryActor>(Arg.Any<VirtualActorId>()).Returns(episodic);
 
-        var pipeline = new AgentChatPipeline(actors, chatClientFactory, TimeProvider.System, NullLogger<AgentChatPipeline>.Instance);
+        var pipeline = new AgentChatPipeline(actors, chatClientFactory, CreateTokenService(), TimeProvider.System, NullLogger<AgentChatPipeline>.Instance);
 
         var response = await pipeline.ExecuteAsync(CreateActiveState(), new AgentMessage { Content = "anything" });
 

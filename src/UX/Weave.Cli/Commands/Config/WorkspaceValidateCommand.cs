@@ -4,21 +4,18 @@ namespace Weave.Cli.Commands;
 
 internal static class WorkspaceValidateCommand
 {
-    public static Command Create()
+    public static Command Create(WorkspaceValidateCliCommand handler, WorkspaceCompletions completions)
     {
         var nameArg = new Argument<string?>("name")
         {
             Description = "Workspace name",
             Arity = ArgumentArity.ZeroOrOne
         };
-        nameArg.CompletionSources.Add(CliCompletions.CompleteWorkspaceNames);
+        nameArg.CompletionSources.Add(completions.CompleteWorkspaceNames);
 
         var cmd = new Command("validate", "Validate workspace configuration") { nameArg };
-        cmd.SetAction(async (parseResult, cancellationToken) =>
-        {
-            var name = parseResult.GetValue(nameArg);
-            return await new WorkspaceValidateCliCommand().ExecuteAsync(new WorkspaceNameOptions(name), cancellationToken);
-        });
+        cmd.SetAction((parseResult, ct) =>
+            handler.ExecuteAsync(new WorkspaceNameOptions(parseResult.GetValue(nameArg)), ct));
 
         return cmd;
     }

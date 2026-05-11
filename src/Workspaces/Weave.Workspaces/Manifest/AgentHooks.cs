@@ -1,8 +1,8 @@
-namespace Weave.Workspaces.Models;
+namespace Weave.Workspaces.Manifest;
 
 public sealed record AgentHooks
 {
-    public List<string> OnActivated { get; init; } = [];
-    public List<string> OnDeactivated { get; init; } = [];
-    public List<string> OnError { get; init; } = [];
+    public IReadOnlyList<string> OnActivated { get; init; } = [];
+    public IReadOnlyList<string> OnDeactivated { get; init; } = [];
+    public IReadOnlyList<string> OnError { get; init; } = [];
 }

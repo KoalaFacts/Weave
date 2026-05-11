@@ -3,9 +3,9 @@ using System.Diagnostics;
 
 namespace Weave.Cli.Commands;
 
-internal static class SiloProcessService
+internal sealed class SiloProcessService(IConfigStore configStore, ISecretResolver secretResolver)
 {
-    public static Process? StartSilo(string siloPath, int port, Weave.Workspaces.Models.StorageConfig? workspaceStorage = null)
+    public Process? StartSilo(string siloPath, int port, Weave.Workspaces.Manifest.StorageConfig? workspaceStorage = null)
     {
         var startInfo = new ProcessStartInfo
         {
@@ -35,7 +35,7 @@ internal static class SiloProcessService
             var response = await http.GetAsync($"http://localhost:{port}/health", ct);
             return response.IsSuccessStatusCode;
         }
-        catch
+        catch (Exception ex) when (ex is HttpRequestException or TaskCanceledException or System.Net.Sockets.SocketException)
         {
             return false;
         }
@@ -82,12 +82,18 @@ internal static class SiloProcessService
     {
         try
         { Directory.CreateDirectory(Path.GetDirectoryName(logPath)!); }
-        catch { }
+        catch (Exception ex) when (ex is IOException or UnauthorizedAccessException)
+        {
+            Console.Error.WriteLine($"(silo log directory unavailable: {ex.Message})");
+        }
 
         StreamWriter? writer = null;
         try
         { writer = new StreamWriter(logPath, append: true) { AutoFlush = true }; }
-        catch { }
+        catch (Exception ex) when (ex is IOException or UnauthorizedAccessException)
+        {
+            Console.Error.WriteLine($"(silo log file unavailable: {ex.Message})");
+        }
 
         var sink = writer;
         var gate = new object();
@@ -100,7 +106,11 @@ internal static class SiloProcessService
             {
                 try
                 { sink.WriteLine($"{DateTime.Now:HH:mm:ss} {prefix} {line}"); }
-                catch { }
+                catch (Exception ex) when (ex is IOException or ObjectDisposedException)
+                {
+                    // Log sink is dead — continue draining the pipe so
+                    // the child process doesn't block on a full buffer.
+                }
             }
         }
 
@@ -117,42 +127,42 @@ internal static class SiloProcessService
             args.Add(arg);
     }
 
-    private static void AddStorageArguments(Collection<string> args, Weave.Workspaces.Models.StorageConfig? workspaceStorage)
+    private void AddStorageArguments(Collection<string> args, Weave.Workspaces.Manifest.StorageConfig? workspaceStorage)
     {
         var storageBackend = workspaceStorage?.Backend;
         var storageConn = workspaceStorage?.ConnectionString;
         var storageSchema = workspaceStorage?.Schema;
-        var cliConfig = CliConfigStore.Load();
+        var cliConfig = configStore.Load();
 
         if (string.IsNullOrWhiteSpace(storageBackend))
         {
             storageBackend = cliConfig.Storage;
-            storageConn = CliConfigStore.ResolveConnectionString(cliConfig.ConnectionString);
+            storageConn = secretResolver.ResolveReference(cliConfig.ConnectionString);
         }
         else if (!string.IsNullOrWhiteSpace(storageConn))
         {
-            storageConn = CliConfigStore.ResolveConnectionString(storageConn);
+            storageConn = secretResolver.ResolveReference(storageConn);
         }
 
         if (string.IsNullOrWhiteSpace(storageBackend) || storageBackend == "memory")
             return;
 
-        args.Add($"--Weave:Storage={storageBackend}");
+        args.Add($"--Weave:ActorStorage:Provider={storageBackend}");
         if (!string.IsNullOrWhiteSpace(storageConn))
             args.Add($"--ConnectionStrings:{ConnectionName(storageBackend)}={storageConn}");
         if (!string.IsNullOrWhiteSpace(storageSchema))
-            args.Add($"--Weave:StorageSchema={storageSchema}");
+            args.Add($"--Weave:ActorStorage:Schema={storageSchema}");
         if (!string.IsNullOrWhiteSpace(workspaceStorage?.Database))
-            args.Add($"--Weave:StorageDatabase={workspaceStorage.Database}");
+            args.Add($"--Weave:ActorStorage:Database={workspaceStorage.Database}");
     }
 
-    private static void AddAuthArguments(Collection<string> args)
+    private void AddAuthArguments(Collection<string> args)
     {
-        var cliConfig = CliConfigStore.Load();
+        var cliConfig = configStore.Load();
         if (!string.IsNullOrWhiteSpace(cliConfig.AuthMode) && cliConfig.AuthMode != "none")
         {
             args.Add($"--Weave:Auth:Mode={cliConfig.AuthMode}");
-            var resolvedAuth = CliConfigStore.ResolveConnectionString(cliConfig.AuthSecret);
+            var resolvedAuth = secretResolver.ResolveReference(cliConfig.AuthSecret);
             if (!string.IsNullOrWhiteSpace(resolvedAuth))
                 args.Add($"--Weave:Auth:Secret={resolvedAuth}");
         }
@@ -163,7 +173,7 @@ internal static class SiloProcessService
 
     private static string ConnectionName(string storageBackend) => storageBackend switch
     {
-        "postgresql" or "postgres" => "PostgreSql",
+        "postgresql" => "PostgreSql",
         "sqlserver" => "SqlServer",
         "redis" => "Redis",
         "sqlite" => "Sqlite",

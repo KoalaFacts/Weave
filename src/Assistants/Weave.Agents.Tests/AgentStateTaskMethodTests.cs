@@ -1,10 +1,13 @@
-using Weave.Agents.Models;
+using Weave.Agents.Lifecycle;
+using Weave.Agents.Verification;
 using Weave.Shared.Ids;
 
 namespace Weave.Agents.Tests;
 
 public sealed class AgentStateTaskMethodTests
 {
+    private static readonly DateTimeOffset Now = DateTimeOffset.UtcNow;
+
     private static AgentState CreateActiveState(int maxTasks = 2) =>
         new()
         {
@@ -27,7 +30,7 @@ public sealed class AgentStateTaskMethodTests
     public void GetTask_ExistingId_ReturnsTask()
     {
         var state = CreateActiveState();
-        var submitted = state.SubmitTask("Fix bug");
+        var submitted = state.SubmitTask("Fix bug", Now);
 
         var found = state.GetTask(submitted.TaskId);
 
@@ -50,7 +53,7 @@ public sealed class AgentStateTaskMethodTests
     {
         var state = CreateActiveState();
 
-        var task = state.SubmitTask("Fix bug");
+        var task = state.SubmitTask("Fix bug", Now);
 
         task.TaskId.IsEmpty.ShouldBeFalse();
         task.Description.ShouldBe("Fix bug");
@@ -62,7 +65,7 @@ public sealed class AgentStateTaskMethodTests
     {
         var state = CreateActiveState();
 
-        state.SubmitTask("Fix bug");
+        state.SubmitTask("Fix bug", Now);
 
         state.Status.ShouldBe(AgentStatus.Busy);
     }
@@ -71,9 +74,9 @@ public sealed class AgentStateTaskMethodTests
     public void SubmitTask_AtCapacity_Throws()
     {
         var state = CreateActiveState(maxTasks: 1);
-        state.SubmitTask("Task 1");
+        state.SubmitTask("Task 1", Now);
 
-        var ex = Should.Throw<InvalidOperationException>(() => state.SubmitTask("Task 2"));
+        var ex = Should.Throw<InvalidOperationException>(() => state.SubmitTask("Task 2", Now));
         ex.Message.ShouldContain("Max concurrent");
     }
 
@@ -83,9 +86,9 @@ public sealed class AgentStateTaskMethodTests
     public void FailTask_SetsFailedStatus()
     {
         var state = CreateActiveState();
-        var task = state.SubmitTask("Fix bug");
+        var task = state.SubmitTask("Fix bug", Now);
 
-        state.FailTask(task.TaskId, CreateProof());
+        state.FailTask(task.TaskId, CreateProof(), Now);
 
         var updated = state.GetTask(task.TaskId);
         updated.Status.ShouldBe(AgentTaskStatus.Failed);
@@ -97,9 +100,9 @@ public sealed class AgentStateTaskMethodTests
     public void FailTask_NoRunningTasks_RefreshesToActive()
     {
         var state = CreateActiveState();
-        var task = state.SubmitTask("Fix bug");
+        var task = state.SubmitTask("Fix bug", Now);
 
-        state.FailTask(task.TaskId, CreateProof());
+        state.FailTask(task.TaskId, CreateProof(), Now);
 
         state.Status.ShouldBe(AgentStatus.Active);
     }
@@ -110,9 +113,9 @@ public sealed class AgentStateTaskMethodTests
     public void SetAwaitingReview_SetsStatusAndProof()
     {
         var state = CreateActiveState();
-        var task = state.SubmitTask("Fix bug");
+        var task = state.SubmitTask("Fix bug", Now);
 
-        state.SetAwaitingReview(task.TaskId, CreateProof());
+        state.SetAwaitingReview(task.TaskId, CreateProof(), Now);
 
         var updated = state.GetTask(task.TaskId);
         updated.Status.ShouldBe(AgentTaskStatus.AwaitingReview);
@@ -125,10 +128,10 @@ public sealed class AgentStateTaskMethodTests
     public void AcceptTask_SetsAcceptedAndCompletedAt()
     {
         var state = CreateActiveState();
-        var task = state.SubmitTask("Fix bug");
-        state.SetAwaitingReview(task.TaskId, CreateProof());
+        var task = state.SubmitTask("Fix bug", Now);
+        state.SetAwaitingReview(task.TaskId, CreateProof(), Now);
 
-        state.AcceptTask(task.TaskId, "Looks good", null);
+        state.AcceptTask(task.TaskId, "Looks good", null, Now);
 
         var updated = state.GetTask(task.TaskId);
         updated.Status.ShouldBe(AgentTaskStatus.Accepted);
@@ -139,10 +142,10 @@ public sealed class AgentStateTaskMethodTests
     public void AcceptTask_IncrementsTotalCompleted()
     {
         var state = CreateActiveState();
-        var task = state.SubmitTask("Fix bug");
-        state.SetAwaitingReview(task.TaskId, CreateProof());
+        var task = state.SubmitTask("Fix bug", Now);
+        state.SetAwaitingReview(task.TaskId, CreateProof(), Now);
 
-        state.AcceptTask(task.TaskId, null, null);
+        state.AcceptTask(task.TaskId, null, null, Now);
 
         state.TotalTasksCompleted.ShouldBe(1);
     }
@@ -151,9 +154,9 @@ public sealed class AgentStateTaskMethodTests
     public void AcceptTask_WhenNotAwaitingReview_Throws()
     {
         var state = CreateActiveState();
-        var task = state.SubmitTask("Fix bug");
+        var task = state.SubmitTask("Fix bug", Now);
 
-        var ex = Should.Throw<InvalidOperationException>(() => state.AcceptTask(task.TaskId, null, null));
+        var ex = Should.Throw<InvalidOperationException>(() => state.AcceptTask(task.TaskId, null, null, Now));
         ex.Message.ShouldContain("not awaiting review");
     }
 
@@ -161,10 +164,10 @@ public sealed class AgentStateTaskMethodTests
     public void AcceptTask_AppliesReviewMetadata()
     {
         var state = CreateActiveState();
-        var task = state.SubmitTask("Fix bug");
-        state.SetAwaitingReview(task.TaskId, CreateProof());
+        var task = state.SubmitTask("Fix bug", Now);
+        state.SetAwaitingReview(task.TaskId, CreateProof(), Now);
 
-        state.AcceptTask(task.TaskId, "LGTM", null);
+        state.AcceptTask(task.TaskId, "LGTM", null, Now);
 
         var updated = state.GetTask(task.TaskId);
         updated.Proof.ShouldNotBeNull();
@@ -178,10 +181,10 @@ public sealed class AgentStateTaskMethodTests
     public void RejectTask_SetsRejectedStatus()
     {
         var state = CreateActiveState();
-        var task = state.SubmitTask("Fix bug");
-        state.SetAwaitingReview(task.TaskId, CreateProof());
+        var task = state.SubmitTask("Fix bug", Now);
+        state.SetAwaitingReview(task.TaskId, CreateProof(), Now);
 
-        state.RejectTask(task.TaskId, "CI is red", null);
+        state.RejectTask(task.TaskId, "CI is red", null, Now);
 
         var updated = state.GetTask(task.TaskId);
         updated.Status.ShouldBe(AgentTaskStatus.Rejected);
@@ -192,9 +195,9 @@ public sealed class AgentStateTaskMethodTests
     public void RejectTask_WhenNotAwaitingReview_Throws()
     {
         var state = CreateActiveState();
-        var task = state.SubmitTask("Fix bug");
+        var task = state.SubmitTask("Fix bug", Now);
 
-        var ex = Should.Throw<InvalidOperationException>(() => state.RejectTask(task.TaskId, null, null));
+        var ex = Should.Throw<InvalidOperationException>(() => state.RejectTask(task.TaskId, null, null, Now));
         ex.Message.ShouldContain("not awaiting review");
     }
 
@@ -204,8 +207,8 @@ public sealed class AgentStateTaskMethodTests
     public void RunningTaskCount_ReturnsCorrectCount()
     {
         var state = CreateActiveState(maxTasks: 3);
-        state.SubmitTask("Task 1");
-        state.SubmitTask("Task 2");
+        state.SubmitTask("Task 1", Now);
+        state.SubmitTask("Task 2", Now);
 
         state.RunningTaskCount.ShouldBe(2);
     }
@@ -216,8 +219,8 @@ public sealed class AgentStateTaskMethodTests
     public void RefreshBusyStatus_NoRunning_SetsActive()
     {
         var state = CreateActiveState();
-        var task = state.SubmitTask("Task");
-        state.FailTask(task.TaskId, CreateProof());
+        var task = state.SubmitTask("Task", Now);
+        state.FailTask(task.TaskId, CreateProof(), Now);
 
         state.Status.ShouldBe(AgentStatus.Active);
     }
@@ -226,9 +229,9 @@ public sealed class AgentStateTaskMethodTests
     public void RefreshBusyStatus_HasRunning_StaysBusy()
     {
         var state = CreateActiveState(maxTasks: 2);
-        state.SubmitTask("Task 1");
-        var task2 = state.SubmitTask("Task 2");
-        state.FailTask(task2.TaskId, CreateProof());
+        state.SubmitTask("Task 1", Now);
+        var task2 = state.SubmitTask("Task 2", Now);
+        state.FailTask(task2.TaskId, CreateProof(), Now);
 
         state.Status.ShouldBe(AgentStatus.Busy);
     }

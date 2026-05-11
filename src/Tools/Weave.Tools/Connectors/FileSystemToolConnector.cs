@@ -2,8 +2,7 @@ using System.Collections.Concurrent;
 using System.Diagnostics;
 using Microsoft.Extensions.Logging;
 using Weave.Security.Tokens;
-using Weave.Tools.Models;
-
+using Weave.Tools.Tool;
 namespace Weave.Tools.Connectors;
 
 public sealed partial class FileSystemToolConnector(ILogger<FileSystemToolConnector> logger) : IToolConnector
@@ -70,7 +69,7 @@ public sealed partial class FileSystemToolConnector(ILogger<FileSystemToolConnec
                 Duration = sw.Elapsed
             };
         }
-        catch (Exception ex)
+        catch (Exception ex) when (ex is IOException or UnauthorizedAccessException or NotSupportedException or System.Security.SecurityException)
         {
             sw.Stop();
             // Sanitize: strip root path from error messages to avoid leaking host filesystem layout

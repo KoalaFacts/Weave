@@ -1,10 +1,8 @@
-using Weave.Agents.Actors;
-using Weave.Agents.Models;
-using Weave.Security.Scanning;
+using Weave.Agents.ToolRegistry;
 using Weave.Security.Tokens;
 using Weave.Shared.Events;
 using Weave.Shared.Lifecycle;
-using Weave.Workspaces.Models;
+using Weave.Workspaces.Manifest;
 
 namespace Weave.Silo.VirtualActors;
 

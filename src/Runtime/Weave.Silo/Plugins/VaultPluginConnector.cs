@@ -1,9 +1,7 @@
 using Weave.Security.Tokens;
 using Weave.Security.Vault;
 using Weave.Shared.Plugins;
-using Weave.Workspaces.Models;
-using Weave.Workspaces.Plugins;
-
+using Weave.Workspaces.Manifest;
 namespace Weave.Silo.Plugins;
 
 /// <summary>
@@ -13,7 +11,7 @@ namespace Weave.Silo.Plugins;
 public sealed partial class VaultPluginConnector(
     PluginServiceBroker broker,
     IHttpClientFactory httpClientFactory,
-    ICapabilityTokenService tokenService,
+    ICapabilityAuthorizer authorizer,
     ILoggerFactory loggerFactory) : IPluginConnector
 {
     private readonly ILogger<VaultPluginConnector> _logger = loggerFactory.CreateLogger<VaultPluginConnector>();
@@ -57,7 +55,7 @@ public sealed partial class VaultPluginConnector(
 
         var provider = new VaultSecretProvider(
             httpClient,
-            tokenService,
+            authorizer,
             loggerFactory.CreateLogger<VaultSecretProvider>());
 
         // Don't dispose previous — in-flight ResolveAsync calls may still reference it.

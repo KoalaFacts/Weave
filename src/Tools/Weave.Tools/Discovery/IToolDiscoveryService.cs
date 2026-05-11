@@ -1,6 +1,5 @@
 using Weave.Tools.Connectors;
-using Weave.Tools.Models;
-
+using Weave.Tools.Tool;
 namespace Weave.Tools.Discovery;
 
 public interface IToolDiscoveryService

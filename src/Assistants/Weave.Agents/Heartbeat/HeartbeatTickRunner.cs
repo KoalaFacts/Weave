@@ -1,6 +1,12 @@
 using Microsoft.Extensions.Logging;
-using Weave.Agents.Actors;
-using Weave.Agents.Models;
+using Weave.Agents.Channels;
+using Weave.Agents.Chat;
+using Weave.Agents.Lifecycle;
+using Weave.Agents.Memory;
+using Weave.Agents.Skills;
+using Weave.Agents.ToolRegistry;
+using Weave.Agents.Users;
+using Weave.Agents.Verification;
 
 namespace Weave.Agents.Heartbeat;
 
@@ -42,7 +48,7 @@ internal sealed partial class HeartbeatTickRunner(
                 NextRun = tickNow.AddMinutes(HeartbeatSchedule.ParseMinutes(state.Config.Cron))
             };
         }
-        catch (Exception ex)
+        catch (Exception ex) when (ex is InvalidOperationException or TimeoutException or FormatException)
         {
             LogHeartbeatTickFailed(logger, ex, agentKey);
             return state;
@@ -70,7 +76,7 @@ internal sealed partial class HeartbeatTickRunner(
             LogAgentAtMaxCapacity(logger, agentKey);
             return false;
         }
-        catch (Exception ex)
+        catch (Exception ex) when (ex is InvalidOperationException or TimeoutException or HttpRequestException or TaskCanceledException)
         {
             if (taskInfo is not null)
                 await agentActor.CompleteTaskAsync(taskInfo.TaskId, success: false, BuildFailureProof(ex));

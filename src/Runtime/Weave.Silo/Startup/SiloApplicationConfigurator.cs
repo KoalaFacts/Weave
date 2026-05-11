@@ -83,5 +83,6 @@ internal sealed class SiloApplicationConfigurator
         _app.MapUserEndpoints();
         _app.MapMarketplaceEndpoints();
         _app.MapTemplateEndpoints();
+        _app.MapAuditEndpoints();
     }
 }

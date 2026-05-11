@@ -1,7 +1,7 @@
-namespace Weave.Workspaces.Models;
+namespace Weave.Workspaces.Manifest;
 
 public sealed record FilesystemConfig
 {
     public string? Root { get; init; }
-    public List<MountConfig> Mounts { get; init; } = [];
+    public IReadOnlyList<MountConfig> Mounts { get; init; } = [];
 }

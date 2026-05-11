@@ -1,6 +1,5 @@
 using Weave.Security.Tokens;
-using Weave.Tools.Models;
-
+using Weave.Tools.Tool;
 namespace Weave.Tools.Connectors;
 
 public interface IToolConnector

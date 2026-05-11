@@ -8,6 +8,8 @@
 
   <ItemGroup>
     <ProjectReference Include="..\Weave.Security\Weave.Security.csproj" />
+    <ProjectReference Include="..\Weave.Security.Sqlite\Weave.Security.Sqlite.csproj" />
+    <ProjectReference Include="..\Weave.Security.Postgres\Weave.Security.Postgres.csproj" />
   </ItemGroup>
 
   <ItemGroup>
@@ -15,6 +17,7 @@
     <PackageReference Include="xunit.v3" />
     <PackageReference Include="NSubstitute" />
     <PackageReference Include="Shouldly" />
+    <PackageReference Include="Testcontainers.PostgreSql" />
   </ItemGroup>
 
 </Project>

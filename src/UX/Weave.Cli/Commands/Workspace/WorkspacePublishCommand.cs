@@ -4,14 +4,14 @@ namespace Weave.Cli.Commands;
 
 internal static class WorkspacePublishCommand
 {
-    public static Command Create()
+    public static Command Create(WorkspacePublishCliCommand handler, WorkspaceCompletions completions)
     {
         var nameArg = new Argument<string?>("name")
         {
             Description = "Workspace name",
             Arity = ArgumentArity.ZeroOrOne
         };
-        nameArg.CompletionSources.Add(CliCompletions.CompleteWorkspaceNames);
+        nameArg.CompletionSources.Add(completions.CompleteWorkspaceNames);
         var targetOption = new Option<string?>("--target") { Description = "Deployment target (docker-compose, kubernetes, nomad, fly-io, github-actions)" };
         targetOption.CompletionSources.Add(CliCompletions.CompleteDeployTargets);
         var outputOption = new Option<string>("--output")
@@ -26,7 +26,7 @@ internal static class WorkspacePublishCommand
             var name = parseResult.GetValue(nameArg);
             var target = parseResult.GetValue(targetOption);
             var output = parseResult.GetValue(outputOption)!;
-            return await new WorkspacePublishCliCommand().ExecuteAsync(new WorkspacePublishOptions(name, target, output), cancellationToken);
+            return await handler.ExecuteAsync(new WorkspacePublishOptions(name, target, output), cancellationToken);
         });
 
         return cmd;

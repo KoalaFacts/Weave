@@ -4,12 +4,12 @@ namespace Weave.Cli.Commands;
 
 internal static class WorkspaceServeCommand
 {
-    public static Command Create()
+    public static Command Create(ServeCliCommand handler, IConfigStore configStore)
     {
         var portOption = new Option<int>("--port")
         {
             Description = "Port to listen on",
-            DefaultValueFactory = _ => CliConfigStore.Load().DefaultPort
+            DefaultValueFactory = _ => configStore.Load().DefaultPort
         };
         var backgroundOption = new Option<bool>("--background") { Description = "Run in the background" };
 
@@ -18,7 +18,7 @@ internal static class WorkspaceServeCommand
         {
             var port = parseResult.GetValue(portOption);
             var background = parseResult.GetValue(backgroundOption);
-            return await new ServeCliCommand().ExecuteAsync(new ServeOptions(port, background), cancellationToken);
+            return await handler.ExecuteAsync(new ServeOptions(port, background), cancellationToken);
         });
 
         return cmd;

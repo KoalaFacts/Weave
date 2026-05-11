@@ -1,8 +1,8 @@
 using System.Net;
 using System.Net.Http.Json;
 using System.Text.Json;
-using Weave.Workspaces.Models;
-using HeartbeatConfig = Weave.Workspaces.Models.HeartbeatConfig;
+using Weave.Workspaces.Manifest;
+using HeartbeatConfig = Weave.Workspaces.Manifest.HeartbeatConfig;
 
 namespace Weave.Silo.Tests;
 
@@ -10,7 +10,7 @@ namespace Weave.Silo.Tests;
 /// End-to-end tests for the workspace lifecycle HTTP surface. Uses the
 /// real InProcessRuntime (no Docker), real Orleans actors, real CQRS
 /// handlers. The POST body is the same <see cref="WorkspaceManifest"/>
-/// the CLI sends via <c>WorkspaceApiClient.StartWorkspaceAsync</c>.
+/// the CLI sends via <c>StartWorkspaceAction</c>.
 /// </summary>
 public sealed class WorkspaceLifecycleTests : IClassFixture<SiloFactory>
 {

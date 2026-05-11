@@ -1,8 +1,7 @@
 using Microsoft.Extensions.Logging;
 using Weave.Security.Tokens;
 using Weave.Tools.Connectors;
-using Weave.Tools.Models;
-
+using Weave.Tools.Tool;
 namespace Weave.Tools.Tests;
 
 public sealed class FileSystemToolConnectorTests : IDisposable
@@ -1415,7 +1414,7 @@ public sealed class FileSystemToolConnectorTests : IDisposable
         {
             try
             { Directory.Delete(testDir, recursive: true); }
-            catch { /* best effort */ }
+            catch (Exception ex) when (ex is IOException or UnauthorizedAccessException) { /* best effort */ }
         }
     }
 

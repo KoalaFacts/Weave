@@ -2,7 +2,7 @@ using Spectre.Console;
 
 namespace Weave.Cli.Commands;
 
-internal sealed class WorkspacePluginRemoveCliCommand : ICliCommand<WorkspacePluginRemoveOptions>
+internal sealed class WorkspacePluginRemoveCliCommand(IManifestResolver manifestResolver, WorkspacePrompt workspacePrompt) : ICliCommand<WorkspacePluginRemoveOptions>
 {
 
     public string Name => "remove";
@@ -13,8 +13,8 @@ internal sealed class WorkspacePluginRemoveCliCommand : ICliCommand<WorkspacePlu
 
     public async Task<int> ExecuteAsync(WorkspacePluginRemoveOptions options, CancellationToken ct)
     {
-        var workspace = WorkspacePrompt.SelectName(options.Workspace, "Which workspace would you like to update?");
-        var manifestPath = ManifestResolver.Resolve(workspace);
+        var workspace = workspacePrompt.SelectName(options.Workspace, "Which workspace would you like to update?");
+        var manifestPath = manifestResolver.Resolve(workspace);
         if (manifestPath is null)
         {
             WorkspacePrompt.WriteManifestNotFound(workspace);

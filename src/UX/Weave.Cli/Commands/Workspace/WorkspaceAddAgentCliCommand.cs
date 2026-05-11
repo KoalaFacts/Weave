@@ -1,10 +1,9 @@
 using System.Globalization;
 using Spectre.Console;
-using Weave.Workspaces.Models;
-
+using Weave.Workspaces.Manifest;
 namespace Weave.Cli.Commands;
 
-internal sealed class WorkspaceAddAgentCliCommand : ICliCommand<WorkspaceAddAgentOptions>
+internal sealed class WorkspaceAddAgentCliCommand(IManifestResolver manifestResolver, WorkspacePrompt workspacePrompt) : ICliCommand<WorkspaceAddAgentOptions>
 {
 
     public string Name => "agent";
@@ -16,8 +15,8 @@ internal sealed class WorkspaceAddAgentCliCommand : ICliCommand<WorkspaceAddAgen
     public async Task<int> ExecuteAsync(WorkspaceAddAgentOptions options, CancellationToken ct)
     {
         var agentName = options.AgentName;
-        var workspace = WorkspacePrompt.SelectName(options.Workspace, "Which workspace would you like to update?");
-        var manifestPath = ManifestResolver.Resolve(workspace);
+        var workspace = workspacePrompt.SelectName(options.Workspace, "Which workspace would you like to update?");
+        var manifestPath = manifestResolver.Resolve(workspace);
         if (manifestPath is null)
         {
             WorkspacePrompt.WriteManifestNotFound(workspace);

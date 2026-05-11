@@ -1,8 +1,7 @@
 using System.Globalization;
 using System.Text;
 using Weave.Shared;
-using Weave.Workspaces.Models;
-
+using Weave.Workspaces.Manifest;
 namespace Weave.Deploy.Translators;
 
 public sealed class GitHubActionsPublisher : IPublisher
@@ -43,7 +42,6 @@ public sealed class GitHubActionsPublisher : IPublisher
         sb.AppendLine("        env:");
         sb.AppendLine(CultureInfo.InvariantCulture, $"          REDIS_CONNECTION: localhost:{WeavePorts.Redis}");
 
-        // Add agent-specific steps
         if (manifest.Agents is { Count: > 0 })
         {
             foreach (var (name, _) in manifest.Agents)

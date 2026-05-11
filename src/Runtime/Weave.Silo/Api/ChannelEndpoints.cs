@@ -1,6 +1,11 @@
-using Weave.Agents.Commands;
-using Weave.Agents.Models;
-using Weave.Agents.Queries;
+using Weave.Agents.Channels;
+using Weave.Agents.Lifecycle;
+using Weave.Agents.Memory;
+using Weave.Agents.Skills;
+using Weave.Agents.ToolRegistry;
+using Weave.Agents.Users;
+using Weave.Agents.Verification;
+using Weave.Security.Tokens;
 using Weave.Shared.Cqrs;
 using Weave.Shared.Ids;
 
@@ -74,7 +79,7 @@ public static class ChannelEndpoints
         IVirtualActorProvider actors,
         CancellationToken ct)
     {
-        var actor = actors.GetActor<Agents.Actors.IChannelGatewayActor>(VirtualActorId.From(workspaceId));
+        var actor = actors.GetActor<Agents.Channels.IChannelGatewayActor>(VirtualActorId.From(workspaceId));
         await actor.UnregisterChannelAsync(ChannelId.From(channelId));
         return Results.NoContent();
     }
@@ -83,6 +88,7 @@ public static class ChannelEndpoints
         string workspaceId,
         InboundMessageRequest request,
         ICommandDispatcher dispatcher,
+        ICapabilityTokenService tokenService,
         CancellationToken ct)
     {
         var errors = ValidateInboundMessage(request);
@@ -100,7 +106,11 @@ public static class ChannelEndpoints
             Metadata = request.Metadata ?? []
         };
 
-        var command = new RouteInboundMessageCommand(WorkspaceId.From(workspaceId), message);
+        using var source = ChannelTokenFactory.MintInbound(tokenService, workspaceId, request.ChannelId, ct);
+        var command = new RouteInboundMessageCommand(
+            WorkspaceId.From(workspaceId),
+            message,
+            source.Token);
         var outbound = await dispatcher.DispatchAsync<RouteInboundMessageCommand, OutboundMessage>(command, ct);
         return Results.Ok(OutboundMessageResponse.FromMessage(outbound));
     }

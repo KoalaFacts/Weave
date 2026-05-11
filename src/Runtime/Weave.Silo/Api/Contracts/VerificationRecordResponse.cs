@@ -1,5 +1,4 @@
-using Weave.Agents.Models;
-
+using Weave.Agents.Verification;
 namespace Weave.Silo.Api;
 
 public sealed record VerificationRecordResponse

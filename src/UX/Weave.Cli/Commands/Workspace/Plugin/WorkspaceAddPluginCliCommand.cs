@@ -1,8 +1,9 @@
-using Weave.Workspaces.Models;
-
+using Weave.Workspaces.Manifest;
 namespace Weave.Cli.Commands;
 
 internal sealed class WorkspaceAddPluginCliCommand(
+    IManifestResolver manifestResolver,
+    WorkspacePrompt workspacePrompt,
     WorkspacePluginPrompt? prompt = null) : ICliCommand<WorkspaceAddPluginOptions>
 {
     private readonly WorkspacePluginPrompt _prompt = prompt ?? new WorkspacePluginPrompt();
@@ -15,8 +16,8 @@ internal sealed class WorkspaceAddPluginCliCommand(
 
     public async Task<int> ExecuteAsync(WorkspaceAddPluginOptions options, CancellationToken ct)
     {
-        var workspace = WorkspacePrompt.SelectName(options.Workspace, "Which workspace would you like to update?");
-        var manifestPath = ManifestResolver.Resolve(workspace);
+        var workspace = workspacePrompt.SelectName(options.Workspace, "Which workspace would you like to update?");
+        var manifestPath = manifestResolver.Resolve(workspace);
         if (manifestPath is null)
         {
             WorkspacePrompt.WriteManifestNotFound(workspace);

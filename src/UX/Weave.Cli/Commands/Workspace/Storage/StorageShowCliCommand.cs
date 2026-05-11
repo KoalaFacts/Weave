@@ -3,7 +3,7 @@ using Weave.Shared;
 
 namespace Weave.Cli.Commands;
 
-internal sealed class StorageShowCliCommand(StorageBackendService? storage = null) : ICliCommand<NoCliOptions>
+internal sealed class StorageShowCliCommand(IConfigStore configStore, StorageBackendService? storage = null) : ICliCommand<NoCliOptions>
 {
     private readonly StorageBackendService _storage = storage ?? new StorageBackendService();
 
@@ -15,7 +15,7 @@ internal sealed class StorageShowCliCommand(StorageBackendService? storage = nul
 
     public Task<int> ExecuteAsync(NoCliOptions options, CancellationToken ct)
     {
-        var config = CliConfigStore.Load();
+        var config = configStore.Load();
 
         CliTheme.WriteSection("Storage Configuration");
         CliTheme.WriteKeyValue("Backend", config.Storage);

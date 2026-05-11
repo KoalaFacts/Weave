@@ -1,6 +1,6 @@
 using System.Text.Json.Serialization;
-using Weave.Workspaces.Models;
-
+using Weave.Workspaces.Manifest;
+using Weave.Workspaces.Templates;
 namespace Weave.Silo.Api;
 
 public sealed record TemplateResponse
@@ -16,6 +16,8 @@ public sealed record TemplateResponse
     public List<string> Tags { get; init; } = [];
     public int InstantiationCount { get; init; }
     public List<TemplateValidationResultResponse> ValidationResults { get; init; } = [];
+    public required AgentDefinition AgentDefinition { get; init; }
+    public Dictionary<string, ToolDefinition> RequiredTools { get; init; } = [];
 
     public static TemplateResponse FromTemplate(CapabilityTemplate t) => new()
     {
@@ -33,6 +35,8 @@ public sealed record TemplateResponse
             Check = r.Check,
             Passed = r.Passed,
             Detail = r.Detail
-        }).ToList()
+        }).ToList(),
+        AgentDefinition = t.AgentDefinition,
+        RequiredTools = new Dictionary<string, ToolDefinition>(t.RequiredTools)
     };
 }

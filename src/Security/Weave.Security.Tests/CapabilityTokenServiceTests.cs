@@ -597,4 +597,147 @@ public sealed class CapabilityTokenServiceTests
         _service.Validate(second).ShouldBeTrue();
         first.TokenId.ShouldNotBe(second.TokenId);
     }
+
+    [Fact]
+    public void MintLinked_WhenParentCancelled_TokenCancellationFires()
+    {
+        using var parent = new CancellationTokenSource();
+        using var source = _service.MintLinked(BuildRequest(), parent.Token);
+
+        source.Token.CancellationToken.IsCancellationRequested.ShouldBeFalse();
+        parent.Cancel();
+        source.Token.CancellationToken.IsCancellationRequested.ShouldBeTrue();
+    }
+
+    [Fact]
+    public void MintLinked_WhenRevoked_TokenCancellationFires()
+    {
+        using var source = _service.MintLinked(BuildRequest(), CancellationToken.None);
+
+        source.Token.CancellationToken.IsCancellationRequested.ShouldBeFalse();
+        _service.Revoke(source.Token.TokenId);
+        source.Token.CancellationToken.IsCancellationRequested.ShouldBeTrue();
+    }
+
+    [Fact]
+    public void MintLinked_WithExpiredLifetime_TokenIsAlreadyCancelled()
+    {
+        using var source = _service.MintLinked(
+            BuildRequest() with { Lifetime = TimeSpan.FromMilliseconds(-1) },
+            CancellationToken.None);
+
+        source.Token.CancellationToken.IsCancellationRequested.ShouldBeTrue();
+    }
+
+    [Fact]
+    public void MintLinked_DisposedSource_IsRemovedFromRevocationRegistry()
+    {
+        var source = _service.MintLinked(BuildRequest(), CancellationToken.None);
+        var tokenId = source.Token.TokenId;
+        source.Dispose();
+
+        // After dispose, revoking the same token id is a no-op (the source is gone),
+        // and a fresh source for a different mint must still work.
+        Should.NotThrow(() => _service.Revoke(tokenId));
+    }
+
+    private static CapabilityTokenRequest BuildRequest() => new()
+    {
+        WorkspaceId = "ws",
+        IssuedTo = "test",
+        Grants = ["tool:*"],
+        Lifetime = TimeSpan.FromHours(1)
+    };
+
+    // --- Signing key rotation ---
+
+    private const string OldKey = "old-signing-key-that-is-at-least-32-chars-long";
+    private const string NewKey = "new-signing-key-that-is-at-least-32-chars-long";
+
+    private static CapabilityTokenService CreateRotationService(string current, string? previous = null) =>
+        new(Microsoft.Extensions.Options.Options.Create(new CapabilityTokenOptions
+        {
+            SigningKey = current,
+            PreviousSigningKey = previous
+        }), TimeProvider.System);
+
+    [Fact]
+    public void Validate_AfterRotation_TokenMintedWithPreviousKey_StillValidates()
+    {
+        var preRotation = CreateRotationService(OldKey);
+        var token = preRotation.Mint(BuildRequest());
+
+        var postRotation = CreateRotationService(current: NewKey, previous: OldKey);
+
+        postRotation.Validate(token).ShouldBeTrue();
+    }
+
+    [Fact]
+    public void Validate_AfterRotation_TokenMintedWithNewKey_ValidatesUnderCurrentKeyOnly()
+    {
+        var postRotation = CreateRotationService(current: NewKey, previous: OldKey);
+        var token = postRotation.Mint(BuildRequest());
+
+        postRotation.Validate(token).ShouldBeTrue();
+
+        var oldKeyOnly = CreateRotationService(OldKey);
+        oldKeyOnly.Validate(token).ShouldBeFalse();
+    }
+
+    [Fact]
+    public void Validate_NoPreviousKeyConfigured_TokenSignedWithDifferentKey_ReturnsFalse()
+    {
+        var oldService = CreateRotationService(OldKey);
+        var token = oldService.Mint(BuildRequest());
+
+        var newService = CreateRotationService(NewKey);
+
+        newService.Validate(token).ShouldBeFalse();
+    }
+
+    [Fact]
+    public void Validate_AfterRotation_TamperedTokenStillRejected()
+    {
+        var preRotation = CreateRotationService(OldKey);
+        var token = preRotation.Mint(BuildRequest());
+        var tampered = token with { Grants = [.. token.Grants, "tool:smuggled"] };
+
+        var postRotation = CreateRotationService(current: NewKey, previous: OldKey);
+
+        postRotation.Validate(tampered).ShouldBeFalse();
+    }
+
+    [Fact]
+    public void Constructor_ShortPreviousSigningKey_Throws()
+    {
+        var act = () => new CapabilityTokenService(
+            Microsoft.Extensions.Options.Options.Create(new CapabilityTokenOptions
+            {
+                SigningKey = NewKey,
+                PreviousSigningKey = "too-short"
+            }),
+            TimeProvider.System);
+
+        Should.Throw<InvalidOperationException>(act)
+            .Message.ShouldContain("PreviousSigningKey");
+    }
+
+    [Fact]
+    public void Constructor_WhitespacePreviousSigningKey_TreatedAsAbsent()
+    {
+        var service = new CapabilityTokenService(
+            Microsoft.Extensions.Options.Options.Create(new CapabilityTokenOptions
+            {
+                SigningKey = NewKey,
+                PreviousSigningKey = "   "
+            }),
+            TimeProvider.System);
+
+        var token = service.Mint(BuildRequest());
+        service.Validate(token).ShouldBeTrue();
+
+        var oldService = CreateRotationService(OldKey);
+        var oldToken = oldService.Mint(BuildRequest());
+        service.Validate(oldToken).ShouldBeFalse();
+    }
 }

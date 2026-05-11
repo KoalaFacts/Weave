@@ -1,6 +1,6 @@
-using Weave.Workspaces.Models;
-using Weave.Workspaces.Plugins;
-
+using Weave.Security.Tokens;
+using Weave.Silo.Plugins;
+using Weave.Workspaces.Manifest;
 namespace Weave.Silo.Api;
 
 public static class PluginEndpoints
@@ -51,6 +51,7 @@ public static class PluginEndpoints
     private static async Task<IResult> ConnectPluginAsync(
         ConnectPluginRequest request,
         IPluginRegistry registry,
+        ICapabilityTokenService tokenService,
         CancellationToken ct)
     {
         var errors = ValidateConnectPlugin(request);
@@ -71,7 +72,8 @@ public static class PluginEndpoints
                 Config = request.Config is not null ? new(request.Config) : []
             };
 
-            var status = await registry.ConnectAsync(request.Name, definition);
+            using var source = PluginTokenFactory.MintInvoke(tokenService, request.Name, ct);
+            var status = await registry.ConnectAsync(request.Name, definition, source.Token);
             if (!status.IsConnected)
                 return ResultExtensions.UnprocessableEntity(status.Error ?? "Plugin connection failed.");
 
@@ -88,9 +90,11 @@ public static class PluginEndpoints
     private static async Task<IResult> DisconnectPluginAsync(
         string name,
         IPluginRegistry registry,
+        ICapabilityTokenService tokenService,
         CancellationToken ct)
     {
-        var status = await registry.DisconnectAsync(name);
+        using var source = PluginTokenFactory.MintInvoke(tokenService, name, ct);
+        var status = await registry.DisconnectAsync(name, source.Token);
         if (status.Error is not null)
             return ResultExtensions.NotFound($"Plugin '{name}' not found.");
 

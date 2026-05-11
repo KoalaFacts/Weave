@@ -1,4 +1,4 @@
-using Weave.Workspaces.Plugins;
+using Weave.Silo.Plugins;
 
 namespace Weave.Silo.Api;
 

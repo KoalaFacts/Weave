@@ -1,8 +1,7 @@
 using Microsoft.Extensions.Logging;
 using Weave.Tools.Connectors;
 using Weave.Tools.Discovery;
-using Weave.Tools.Models;
-
+using Weave.Tools.Tool;
 namespace Weave.Tools.Tests;
 
 public sealed class ToolDiscoveryServiceTests

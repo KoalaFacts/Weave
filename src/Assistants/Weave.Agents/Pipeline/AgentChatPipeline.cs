@@ -1,26 +1,37 @@
 using Microsoft.Extensions.AI;
 using Microsoft.Extensions.Logging;
-using Weave.Agents.Actors;
-using Weave.Agents.Models;
-using Weave.Tools.Actors;
+using Weave.Agents.Channels;
+using Weave.Agents.Chat;
+using Weave.Agents.Lifecycle;
+using Weave.Agents.Memory;
+using Weave.Agents.Skills;
+using Weave.Agents.ToolRegistry;
+using Weave.Agents.Users;
+using Weave.Agents.Verification;
+using Weave.Security.Tokens;
+using Weave.Shared.Capabilities;
 using Weave.Tools.Builders;
+using Weave.Tools.Marketplace;
+using Weave.Tools.Tool;
+using Weave.Workspaces.Manifest;
 
 namespace Weave.Agents.Pipeline;
 
 public sealed class AgentChatPipeline(
     IVirtualActorProvider actors,
     IAgentChatClientFactory chatClientFactory,
+    ICapabilityTokenService tokenService,
     TimeProvider timeProvider,
     ILogger<AgentChatPipeline> logger) : IAgentChatPipeline
 {
     private IChatClient? _chatClient;
     private string? _systemPrompt;
-    private readonly SkillMemoryPromptEnricher _skillMemory = new(actors, logger);
+    private readonly SkillMemoryPromptEnricher _skillMemory = new(actors, tokenService);
     private readonly EpisodicMemoryPromptEnricher _episodicMemory = new(actors, logger);
 
-    public void Initialize(string agentId, string? model)
+    public async Task InitializeAsync(string agentId, AgentDefinition? definition, CancellationToken ct = default)
     {
-        _chatClient = chatClientFactory.Create(agentId, model);
+        _chatClient = await chatClientFactory.CreateAsync(agentId, definition, ct);
     }
 
     public void Reset()
@@ -31,7 +42,7 @@ public sealed class AgentChatPipeline(
 
     public async Task<AgentChatResponse> ExecuteAsync(AgentState state, AgentMessage message)
     {
-        _chatClient ??= chatClientFactory.Create(state.AgentId, state.Model);
+        _chatClient ??= await chatClientFactory.CreateAsync(state.AgentId, state.Definition);
 
         var userEntry = new ConversationMessage
         {
@@ -44,7 +55,7 @@ public sealed class AgentChatPipeline(
 
         var prompt = await GetSystemPromptAsync(state);
         prompt = await EnrichWithUserContextAsync(state, message, prompt);
-        var skillMemory = await _skillMemory.EnrichAsync(state.WorkspaceId, state.AgentName, message.Content, prompt);
+        var skillMemory = await _skillMemory.EnrichAsync(state, message.Content, prompt);
         prompt = skillMemory.Prompt;
         var episodicMemory = await _episodicMemory.EnrichAsync(state.WorkspaceId, state.AgentName, message.Content, prompt);
         prompt = episodicMemory.Prompt;
@@ -84,7 +95,7 @@ public sealed class AgentChatPipeline(
         }
 
         state.LastActive = timeProvider.GetUtcNow();
-        await _skillMemory.RecordSuccessfulUsageAsync(state.WorkspaceId, state.AgentName, skillMemory.SkillIds);
+        await _skillMemory.RecordSuccessfulUsageAsync(state, skillMemory.SkillIds);
         await _episodicMemory.RecordRecallAsync(state.WorkspaceId, state.AgentName, episodicMemory.EpisodeIds);
 
         return new AgentChatResponse
@@ -156,22 +167,25 @@ public sealed class AgentChatPipeline(
         if (string.IsNullOrWhiteSpace(message.UserId))
             return prompt;
 
-        try
-        {
-            var userActor = actors.GetActor<IUserModelActor>(VirtualActorId.Combine(state.WorkspaceId, message.UserId));
-            var summary = await userActor.GetContextSummaryAsync();
-            if (string.IsNullOrWhiteSpace(summary))
-                return prompt;
-
-            return string.IsNullOrWhiteSpace(prompt)
-                ? $"[User context]\n{summary}"
-                : $"{prompt}\n\n[User context]\n{summary}";
-        }
-        catch (Exception ex)
-        {
-            logger.LogWarning(ex, "Failed to retrieve user context for {UserId}", message.UserId);
+        var grant = $"user:read:{message.UserId}";
+        if (state.Definition?.Capabilities is not { } capabilities || !CapabilityGrantMatcher.HasGrant(capabilities, grant))
             return prompt;
-        }
+
+        var userActor = actors.GetActor<IUserModelActor>(VirtualActorId.Combine(state.WorkspaceId, message.UserId));
+        using var source = tokenService.MintLinked(new CapabilityTokenRequest
+        {
+            WorkspaceId = state.WorkspaceId.ToString(),
+            IssuedTo = $"{state.WorkspaceId}/{state.AgentName}",
+            Grants = [grant],
+            Lifetime = TimeSpan.FromMinutes(1)
+        }, CancellationToken.None);
+        var summary = await userActor.GetContextSummaryAsync(source.Token);
+        if (string.IsNullOrWhiteSpace(summary))
+            return prompt;
+
+        return string.IsNullOrWhiteSpace(prompt)
+            ? $"[User context]\n{summary}"
+            : $"{prompt}\n\n[User context]\n{summary}";
     }
 
 }

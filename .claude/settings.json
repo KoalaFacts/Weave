@@ -9,6 +9,29 @@
           }
         ]
       }
+    ],
+    "PreToolUse": [
+      {
+        "matcher": "mcp__github__create_pull_request",
+        "hooks": [
+          {
+            "type": "command",
+            "command": "$CLAUDE_PROJECT_DIR/.claude/hooks/pre-pr-format-check.sh",
+            "timeout": 180,
+            "statusMessage": "Verifying dotnet format before opening PR"
+          }
+        ]
+      },
+      {
+        "matcher": "Bash",
+        "hooks": [
+          {
+            "type": "command",
+            "command": "$CLAUDE_PROJECT_DIR/.claude/hooks/require-adversarial-review.sh",
+            "statusMessage": "Verifying adversarial-review marker for staged diff"
+          }
+        ]
+      }
     ]
   }
 }

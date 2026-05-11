@@ -4,14 +4,14 @@ namespace Weave.Cli.Commands;
 
 internal static class WorkspaceAddAgentCommand
 {
-    public static Command Create()
+    public static Command Create(WorkspaceAddAgentCliCommand handler, WorkspaceCompletions completions)
     {
         var workspaceArg = new Argument<string?>("workspace")
         {
             Description = "Workspace name",
             Arity = ArgumentArity.ZeroOrOne
         };
-        workspaceArg.CompletionSources.Add(CliCompletions.CompleteWorkspaceNames);
+        workspaceArg.CompletionSources.Add(completions.CompleteWorkspaceNames);
         var nameOption = new Option<string?>("--name") { Description = "Agent name" };
         var modelOption = new Option<string>("--model")
         {
@@ -25,7 +25,7 @@ internal static class WorkspaceAddAgentCommand
             var workspace = parseResult.GetValue(workspaceArg);
             var agentName = parseResult.GetValue(nameOption);
             var model = parseResult.GetValue(modelOption)!;
-            return await new WorkspaceAddAgentCliCommand().ExecuteAsync(new WorkspaceAddAgentOptions(workspace, agentName, model), cancellationToken);
+            return await handler.ExecuteAsync(new WorkspaceAddAgentOptions(workspace, agentName, model), cancellationToken);
         });
 
         return cmd;

@@ -1,7 +1,5 @@
 using System.Text.Json;
 using Weave.Agents.Channels;
-using Weave.Agents.Models;
-
 namespace Weave.Silo.Channels;
 
 public sealed class TelegramChannelAdapter(HttpClient httpClient) : IChannelAdapter
@@ -18,12 +16,9 @@ public sealed class TelegramChannelAdapter(HttpClient httpClient) : IChannelAdap
             throw new InvalidOperationException("Telegram channel config must include 'chat_id'.");
 
         var url = $"{TelegramApiBase}/bot{botToken}/sendMessage";
-        var payload = JsonSerializer.SerializeToUtf8Bytes(new
-        {
-            chat_id = chatId,
-            text = message.Content,
-            reply_to_message_id = message.ThreadId
-        });
+        var payload = JsonSerializer.SerializeToUtf8Bytes(
+            new TelegramPayload(chatId, message.Content, message.ThreadId),
+            ChannelPayloadJsonContext.Default.TelegramPayload);
 
         using var content = new ByteArrayContent(payload);
         content.Headers.ContentType = new System.Net.Http.Headers.MediaTypeHeaderValue("application/json");
@@ -38,8 +33,8 @@ public sealed class TelegramChannelAdapter(HttpClient httpClient) : IChannelAdap
 
     public Task<bool> ValidateConfigAsync(Dictionary<string, string> config, CancellationToken ct)
     {
-        var valid = config.ContainsKey("bot_token") && !string.IsNullOrWhiteSpace(config["bot_token"])
-            && config.ContainsKey("chat_id") && !string.IsNullOrWhiteSpace(config["chat_id"]);
+        var valid = config.TryGetValue("bot_token", out var botToken) && !string.IsNullOrWhiteSpace(botToken)
+            && config.TryGetValue("chat_id", out var chatId) && !string.IsNullOrWhiteSpace(chatId);
         return Task.FromResult(valid);
     }
 }

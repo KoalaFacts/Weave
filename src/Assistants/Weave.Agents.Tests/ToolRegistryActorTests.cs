@@ -1,14 +1,18 @@
 using Microsoft.Extensions.Logging;
-using Weave.Agents.Actors;
-using Weave.Agents.Models;
+using Weave.Agents.Channels;
+using Weave.Agents.Lifecycle;
+using Weave.Agents.Memory;
+using Weave.Agents.Skills;
+using Weave.Agents.ToolRegistry;
+using Weave.Agents.Users;
+using Weave.Agents.Verification;
 using Weave.Security.Actors;
 using Weave.Security.Tokens;
 using Weave.Shared.Events;
 using Weave.Shared.Lifecycle;
-using Weave.Tools.Actors;
-using Weave.Tools.Models;
-using Weave.Workspaces.Models;
-
+using Weave.Tools.Marketplace;
+using Weave.Tools.Tool;
+using Weave.Workspaces.Manifest;
 namespace Weave.Agents.Tests;
 
 public sealed class ToolRegistryActorTests
@@ -134,7 +138,7 @@ public sealed class ToolRegistryActorTests
         await actor.ConnectToolsAsync(CreateTools());
 
         await eventBus.Received(2).PublishAsync(
-            Arg.Any<Events.ToolConnectedEvent>(),
+            Arg.Any<ToolRegistry.ToolConnectedEvent>(),
             Arg.Any<CancellationToken>());
     }
 
@@ -146,6 +150,48 @@ public sealed class ToolRegistryActorTests
         var result = await actor.GetConnectionAsync("nonexistent");
 
         result.ShouldBeNull();
+    }
+
+    [Fact]
+    public async Task ConnectToolsAsync_TokenPassedToToolActor_GrantsToolNameOnly_NoSecretWildcard()
+    {
+        var actors = Substitute.For<IVirtualActorProvider>();
+        var toolActor = Substitute.For<IToolActor>();
+        var secretProxy = Substitute.For<ISecretProxyActor>();
+        var lifecycle = Substitute.For<ILifecycleManager>();
+        var eventBus = Substitute.For<IEventBus>();
+        var logger = Substitute.For<ILogger<ToolRegistryActor>>();
+        var tokenService = new CapabilityTokenService(
+            Microsoft.Extensions.Options.Options.Create(
+                new CapabilityTokenOptions { SigningKey = "test-signing-key-that-is-at-least-32-chars-long" }),
+            TimeProvider.System);
+        var persistentState = CreatePersistentState();
+
+        var captured = new List<CapabilityToken>();
+        toolActor.ConnectAsync(Arg.Any<ToolSpec>(), Arg.Do<CapabilityToken>(captured.Add))
+            .Returns(ci => Task.FromResult(new ToolHandle
+            {
+                ToolName = ci.Arg<ToolSpec>().Name,
+                Type = ci.Arg<ToolSpec>().Type,
+                IsConnected = true
+            }));
+        secretProxy.SubstituteAsync(Arg.Any<string>()).Returns(ci => ci.Arg<string>());
+        actors.GetActor<IToolActor>(Arg.Any<VirtualActorId>()).Returns(toolActor);
+        actors.GetActor<ISecretProxyActor>(Arg.Any<VirtualActorId>()).Returns(secretProxy);
+
+        var actor = new ToolRegistryActor(actors, tokenService, lifecycle, eventBus, TimeProvider.System, logger, persistentState);
+        await actor.ConnectToolsAsync(new Dictionary<string, ToolDefinition>
+        {
+            ["shell"] = new ToolDefinition
+            {
+                Type = "cli",
+                Cli = new CliConfig { Shell = "/bin/bash", AllowedCommands = ["ls"] }
+            }
+        });
+
+        captured.Count.ShouldBe(1);
+        captured[0].Grants.ShouldBe(["tool:shell"]);
+        captured[0].Grants.ShouldNotContain("secret:*");
     }
 
     [Fact]
@@ -187,7 +233,7 @@ public sealed class ToolRegistryActorTests
         await actor.DisconnectAllAsync();
 
         await eventBus.Received(2).PublishAsync(
-            Arg.Any<Events.ToolDisconnectedEvent>(),
+            Arg.Any<ToolRegistry.ToolDisconnectedEvent>(),
             Arg.Any<CancellationToken>());
     }
 

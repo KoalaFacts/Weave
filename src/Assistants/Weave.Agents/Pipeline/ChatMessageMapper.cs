@@ -1,7 +1,6 @@
 using System.Text.Json;
 using Microsoft.Extensions.AI;
-using Weave.Agents.Models;
-
+using Weave.Agents.Chat;
 namespace Weave.Agents.Pipeline;
 
 internal static class ChatMessageMapper

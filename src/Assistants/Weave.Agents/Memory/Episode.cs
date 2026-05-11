@@ -1,6 +1,6 @@
 using Weave.Shared.Ids;
 
-namespace Weave.Agents.Models;
+namespace Weave.Agents.Memory;
 
 public sealed record Episode
 {

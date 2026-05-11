@@ -1,7 +1,5 @@
 using System.Text.Json;
 using Weave.Agents.Channels;
-using Weave.Agents.Models;
-
 namespace Weave.Silo.Channels;
 
 public sealed class TeamsChannelAdapter(HttpClient httpClient) : IChannelAdapter
@@ -13,7 +11,9 @@ public sealed class TeamsChannelAdapter(HttpClient httpClient) : IChannelAdapter
         if (!config.Config.TryGetValue("webhook_url", out var webhookUrl) || string.IsNullOrWhiteSpace(webhookUrl))
             throw new InvalidOperationException("Teams channel config must include 'webhook_url'.");
 
-        var payload = JsonSerializer.SerializeToUtf8Bytes(new { text = message.Content });
+        var payload = JsonSerializer.SerializeToUtf8Bytes(
+            new TeamsPayload(message.Content),
+            ChannelPayloadJsonContext.Default.TeamsPayload);
 
         using var content = new ByteArrayContent(payload);
         content.Headers.ContentType = new System.Net.Http.Headers.MediaTypeHeaderValue("application/json");

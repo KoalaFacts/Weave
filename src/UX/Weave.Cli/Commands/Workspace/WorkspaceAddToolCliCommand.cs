@@ -1,9 +1,8 @@
 using Spectre.Console;
-using Weave.Workspaces.Models;
-
+using Weave.Workspaces.Manifest;
 namespace Weave.Cli.Commands;
 
-internal sealed class WorkspaceAddToolCliCommand : ICliCommand<WorkspaceAddToolOptions>
+internal sealed class WorkspaceAddToolCliCommand(IManifestResolver manifestResolver, WorkspacePrompt workspacePrompt) : ICliCommand<WorkspaceAddToolOptions>
 {
 
     public string Name => "tool";
@@ -15,8 +14,8 @@ internal sealed class WorkspaceAddToolCliCommand : ICliCommand<WorkspaceAddToolO
     public async Task<int> ExecuteAsync(WorkspaceAddToolOptions options, CancellationToken ct)
     {
         var toolName = options.ToolName;
-        var workspace = WorkspacePrompt.SelectName(options.Workspace, "Which workspace would you like to update?");
-        var manifestPath = ManifestResolver.Resolve(workspace);
+        var workspace = workspacePrompt.SelectName(options.Workspace, "Which workspace would you like to update?");
+        var manifestPath = manifestResolver.Resolve(workspace);
         if (manifestPath is null)
         {
             WorkspacePrompt.WriteManifestNotFound(workspace);

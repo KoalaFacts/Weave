@@ -3,8 +3,7 @@ using System.Diagnostics;
 using System.Text.Json;
 using Microsoft.Extensions.Logging;
 using Weave.Security.Tokens;
-using Weave.Tools.Models;
-
+using Weave.Tools.Tool;
 namespace Weave.Tools.Connectors;
 
 /// <summary>
@@ -90,7 +89,7 @@ public sealed partial class DirectHttpToolConnector(HttpClient httpClient, ILogg
 
             return new ToolResult { Success = true, ToolName = handle.ToolName, Output = output, Duration = sw.Elapsed };
         }
-        catch (Exception ex)
+        catch (Exception ex) when (ex is HttpRequestException or TaskCanceledException or System.Net.Sockets.SocketException or JsonException or IOException or UriFormatException or ArgumentException)
         {
             sw.Stop();
             LogDirectHttpToolInvocationFailed(ex, handle.ToolName);

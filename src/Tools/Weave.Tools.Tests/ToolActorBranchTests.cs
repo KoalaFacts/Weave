@@ -4,11 +4,10 @@ using Weave.Security.Scanning;
 using Weave.Security.Tokens;
 using Weave.Shared.Events;
 using Weave.Shared.Lifecycle;
-using Weave.Tools.Actors;
 using Weave.Tools.Connectors;
 using Weave.Tools.Discovery;
-using Weave.Tools.Events;
-using Weave.Tools.Models;
+using Weave.Tools.Marketplace;
+using Weave.Tools.Tool;
 
 namespace Weave.Tools.Tests;
 
@@ -46,8 +45,9 @@ public sealed class ToolActorBranchTests
             SecretProxy.SubstituteAsync(Arg.Any<string>()).Returns(ci => ci.Arg<string>());
             ActorProvider.GetActor<ISecretProxyActor>(Arg.Any<VirtualActorId>()).Returns(SecretProxy);
 
+            var authorizer = new CapabilityAuthorizer(TokenService, EventBus, NullLogger<CapabilityAuthorizer>.Instance);
             Actor = new ToolActor(
-                ActorProvider, Discovery, Scanner, TokenService, Lifecycle, EventBus,
+                ActorProvider, Discovery, Scanner, authorizer, Lifecycle, EventBus,
                 NullLogger<ToolActor>.Instance);
         }
     }

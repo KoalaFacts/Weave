@@ -3,8 +3,7 @@ using System.Diagnostics;
 using System.Text.Json;
 using Microsoft.Extensions.Logging;
 using Weave.Security.Tokens;
-using Weave.Tools.Models;
-
+using Weave.Tools.Tool;
 namespace Weave.Tools.Connectors;
 
 public sealed partial class McpToolConnector(ILogger<McpToolConnector> logger) : IToolConnector
@@ -83,15 +82,23 @@ public sealed partial class McpToolConnector(ILogger<McpToolConnector> logger) :
 
     public async Task<ToolResult> InvokeAsync(ToolHandle handle, ToolInvocation invocation, CancellationToken ct = default)
     {
-        if (!_processes.TryGetValue(handle.ConnectionId, out var connection) || connection.Process.HasExited)
+        if (!_processes.TryGetValue(handle.ConnectionId, out var connection))
         {
             return new ToolResult
             {
                 Success = false,
                 ToolName = handle.ToolName,
-                Error = connection is null
-                    ? "MCP process not connected"
-                    : $"MCP process exited (code {connection.Process.ExitCode}). {FormatStderrTail(connection.StderrTail)}"
+                Error = "MCP process not connected"
+            };
+        }
+
+        if (connection.Process.HasExited)
+        {
+            return new ToolResult
+            {
+                Success = false,
+                ToolName = handle.ToolName,
+                Error = $"MCP process exited (code {connection.Process.ExitCode}). {FormatStderrTail(connection.StderrTail)}"
             };
         }
 
@@ -133,9 +140,10 @@ public sealed partial class McpToolConnector(ILogger<McpToolConnector> logger) :
                 Duration = sw.Elapsed
             };
         }
-        catch (Exception ex)
+        catch (Exception ex) when (ex is IOException or InvalidOperationException or JsonException or ObjectDisposedException)
         {
             sw.Stop();
+            LogMcpToolInvocationFailed(ex, handle.ToolName);
             return new ToolResult
             {
                 Success = false,
@@ -170,5 +178,8 @@ public sealed partial class McpToolConnector(ILogger<McpToolConnector> logger) :
 
     [LoggerMessage(Level = LogLevel.Information, Message = "MCP tool '{Tool}' disconnected")]
     private partial void LogMcpToolDisconnected(string tool);
+
+    [LoggerMessage(Level = LogLevel.Warning, Message = "MCP tool '{Tool}' invocation failed")]
+    private partial void LogMcpToolInvocationFailed(Exception ex, string tool);
 }
 

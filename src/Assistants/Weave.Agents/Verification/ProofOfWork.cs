@@ -1,4 +1,4 @@
-namespace Weave.Agents.Models;
+namespace Weave.Agents.Verification;
 
 public sealed record ProofOfWork
 {

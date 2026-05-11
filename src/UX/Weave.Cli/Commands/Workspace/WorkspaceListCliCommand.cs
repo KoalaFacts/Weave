@@ -2,7 +2,7 @@ using Spectre.Console;
 
 namespace Weave.Cli.Commands;
 
-internal sealed class WorkspaceListCliCommand : ICliCommand<NoCliOptions>
+internal sealed class WorkspaceListCliCommand(IWorkspaceRegistry registry) : ICliCommand<NoCliOptions>
 {
     public string Name => "list";
 
@@ -12,7 +12,7 @@ internal sealed class WorkspaceListCliCommand : ICliCommand<NoCliOptions>
 
     public Task<int> ExecuteAsync(NoCliOptions options, CancellationToken ct)
     {
-        var workspaces = WorkspaceRegistry.GetAll();
+        var workspaces = registry.GetAll();
         if (workspaces.Count == 0)
         {
             CliTheme.WriteWarning("No workspaces found.");

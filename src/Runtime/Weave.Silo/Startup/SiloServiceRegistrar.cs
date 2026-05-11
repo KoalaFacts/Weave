@@ -1,23 +1,30 @@
 using System.Diagnostics.CodeAnalysis;
 using Weave.Agents.Channels;
 using Weave.Agents.Pipeline;
+using Weave.Agents.Pipeline.Providers;
+using Weave.Agents.Verification;
+using Weave.Security.Audit;
 using Weave.Security.Plugins;
+using Weave.Security.Postgres;
 using Weave.Security.Proxy;
 using Weave.Security.Scanning;
+using Weave.Security.Sqlite;
 using Weave.Security.Tokens;
 using Weave.Security.Vault;
 using Weave.Shared.Cqrs;
 using Weave.Shared.Events;
 using Weave.Shared.Lifecycle;
 using Weave.Shared.Plugins;
+using Weave.Silo.Audit;
 using Weave.Silo.Channels;
 using Weave.Silo.Configuration;
 using Weave.Silo.Plugins;
 using Weave.Silo.Security;
+using Weave.Silo.Templates;
 using Weave.Silo.VirtualActors;
 using Weave.Tools.Connectors;
 using Weave.Tools.Discovery;
-using Weave.Workspaces.Plugins;
+using Weave.Workspaces.Manifest;
 using Weave.Workspaces.Runtime;
 
 namespace Weave.Silo.Startup;
@@ -60,6 +67,7 @@ internal sealed class SiloServiceRegistrar
         _services.AddSingleton(_weaveSettings);
         _services.AddSingleton<Weave.Shared.VirtualActors.IVirtualActorProvider, OrleansVirtualActorProvider>();
         _services.AddSingleton<ICommandRunner, ProcessCommandRunner>();
+        _services.AddSingleton<IManifestParser, ManifestParser>();
         _services.AddGeneratedCqrsHandlers();
     }
 
@@ -82,9 +90,31 @@ internal sealed class SiloServiceRegistrar
     {
         _services.Configure<CapabilityTokenOptions>(
             _configuration.GetSection(CapabilityTokenOptions.ConfigurationSectionName));
+        _services.Configure<CapabilityAuditOptions>(
+            _configuration.GetSection(CapabilityAuditOptions.ConfigurationSectionName));
         _services.AddSingleton<ICapabilityTokenService, CapabilityTokenService>();
+        _services.AddSingleton<ICapabilityAuthorizer, CapabilityAuthorizer>();
+        RegisterCapabilityAuditStore();
         _services.AddSingleton<ILeakScanner, LeakScanner>();
         _services.AddSingleton<TransparentSecretProxy>();
+    }
+
+    private void RegisterCapabilityAuditStore()
+    {
+        var backend = _configuration[$"{CapabilityAuditOptions.ConfigurationSectionName}:{nameof(CapabilityAuditOptions.Backend)}"]
+            ?? CapabilityAuditOptions.MemoryBackend;
+        switch (backend.ToLowerInvariant())
+        {
+            case CapabilityAuditOptions.SqliteBackend:
+                _services.AddSingleton<ICapabilityAuditStore, SqliteCapabilityAuditStore>();
+                break;
+            case CapabilityAuditOptions.PostgreSqlBackend:
+                _services.AddSingleton<ICapabilityAuditStore, PostgresCapabilityAuditStore>();
+                break;
+            default:
+                _services.AddSingleton<ICapabilityAuditStore, InMemoryCapabilityAuditStore>();
+                break;
+        }
     }
 
     private void RegisterPluginBroker()
@@ -102,8 +132,17 @@ internal sealed class SiloServiceRegistrar
     private void RegisterAgentPipeline()
     {
         _services.AddSingleton<IAgentCostLedger, AgentCostLedger>();
+        _services.AddSingleton<IAgentCredentialStore, EnvironmentAgentCredentialStore>();
+        _services.AddSingleton<IAgentSecretResolver, AgentSecretResolver>();
+        _services.AddScoped<IProviderResolver, ProviderResolver>();
         _services.AddScoped<IAgentChatClientFactory, AgentChatClientFactory>();
         _services.AddTransient<IAgentChatPipeline, AgentChatPipeline>();
+        _services.AddSingleton<AgentVerificationDispatcher>();
+        _services.AddSingleton<IAgentVerificationDispatcher>(sp =>
+            sp.GetRequiredService<AgentVerificationDispatcher>());
+        _services.AddHostedService<AgentVerificationHostedService>();
+        _services.AddHostedService<CapabilityAuditSubscriberHostedService>();
+        _services.AddHostedService<BuiltInTemplateSeeder>();
     }
 
     private void RegisterChannelAdapters()
@@ -146,7 +185,7 @@ internal sealed class SiloServiceRegistrar
             new VaultPluginConnector(
                 sp.GetRequiredService<PluginServiceBroker>(),
                 sp.GetRequiredService<IHttpClientFactory>(),
-                sp.GetRequiredService<ICapabilityTokenService>(),
+                sp.GetRequiredService<ICapabilityAuthorizer>(),
                 sp.GetRequiredService<ILoggerFactory>()));
         _services.AddSingleton<IPluginConnector>(sp =>
             new HttpPluginConnector(

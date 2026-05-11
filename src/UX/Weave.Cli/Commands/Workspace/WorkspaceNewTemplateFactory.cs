@@ -1,6 +1,5 @@
 using Weave.Workspaces.Manifest;
-using Weave.Workspaces.Models;
-
+using Weave.Workspaces.Templates;
 namespace Weave.Cli.Commands;
 
 internal static class WorkspaceNewTemplateFactory
@@ -13,10 +12,13 @@ internal static class WorkspaceNewTemplateFactory
         var isMultiAgent = activePreset?.IsMultiAgent ?? false;
         var isSupportTeam = string.Equals(selection.SelectedPresetName, "support-team", StringComparison.OrdinalIgnoreCase);
 
-        if (isSupportTeam)
-            return CreateSupportTeam(selection);
+        if (activePreset is null)
+            return CreateCustom(selection);
 
-        return isMultiAgent ? CreateMultiAgent(selection) : CreateSingleAgent(selection);
+        if (isSupportTeam)
+            return CreateSupportTeam(activePreset);
+
+        return isMultiAgent ? CreateMultiAgent(activePreset) : CreateSingleAgent(activePreset);
     }
 
     public static Dictionary<string, ToolDefinition> CreateTools(WorkspaceNewSelection selection)
@@ -25,7 +27,7 @@ internal static class WorkspaceNewTemplateFactory
             ? presetRef
             : null;
 
-        return activePreset?.ToolDefinitions is not null
+        return activePreset is not null
             ? new Dictionary<string, ToolDefinition>(activePreset.ToolDefinitions)
             : selection.Tools.ToDictionary(t => t, _ => new ToolDefinition { Type = "mcp" });
     }
@@ -41,23 +43,22 @@ internal static class WorkspaceNewTemplateFactory
             : [];
     }
 
-    private static WorkspaceNewTemplate CreateSupportTeam(WorkspaceNewSelection selection)
+    private static WorkspaceNewTemplate CreateSupportTeam(PresetDefinition preset)
     {
-        var agents = new Dictionary<string, AgentDefinition>
+        // Primary agent ("support-bot") comes from the curated template via the
+        // shared primitive; the monitor is a hard-coded composition extra.
+        var manifest = WorkspaceManifestFromTemplate.Create(
+            preset.PrimaryTemplate, "scratch", IsolationLevel.Full, agentName: "support-bot");
+
+        var agents = new Dictionary<string, AgentDefinition>(manifest.Agents)
         {
-            ["support-bot"] = new AgentDefinition
-            {
-                Model = selection.Model,
-                SystemPromptFile = "./prompts/support-bot.md",
-                MaxConcurrentTasks = 5,
-                Tools = selection.Tools
-            },
             ["monitor"] = new AgentDefinition
             {
                 Model = "claude-haiku-4-5-20251001",
                 SystemPromptFile = "./prompts/monitor.md",
                 MaxConcurrentTasks = 1,
                 Tools = ["web-search"],
+                Capabilities = ["tool:web-search"],
                 Heartbeat = new HeartbeatConfig
                 {
                     Cron = "*/5 * * * *",
@@ -74,23 +75,23 @@ internal static class WorkspaceNewTemplateFactory
             ]);
     }
 
-    private static WorkspaceNewTemplate CreateMultiAgent(WorkspaceNewSelection selection)
+    private static WorkspaceNewTemplate CreateMultiAgent(PresetDefinition preset)
     {
-        var agents = new Dictionary<string, AgentDefinition>
+        // Primary agent ("supervisor") comes from the curated template via the
+        // shared primitive; the worker is a hard-coded composition extra that
+        // mirrors the supervisor's tool/capability set.
+        var manifest = WorkspaceManifestFromTemplate.Create(
+            preset.PrimaryTemplate, "scratch", IsolationLevel.Full, agentName: "supervisor");
+
+        var agents = new Dictionary<string, AgentDefinition>(manifest.Agents)
         {
-            ["supervisor"] = new AgentDefinition
-            {
-                Model = selection.Model,
-                SystemPromptFile = "./prompts/supervisor.md",
-                MaxConcurrentTasks = 5,
-                Tools = selection.Tools
-            },
             ["worker"] = new AgentDefinition
             {
-                Model = selection.Model,
+                Model = preset.Model,
                 SystemPromptFile = "./prompts/worker.md",
                 MaxConcurrentTasks = 3,
-                Tools = selection.Tools
+                Tools = preset.Tools,
+                Capabilities = preset.Capabilities
             }
         };
 
@@ -102,8 +103,20 @@ internal static class WorkspaceNewTemplateFactory
             ]);
     }
 
-    private static WorkspaceNewTemplate CreateSingleAgent(WorkspaceNewSelection selection)
+    private static WorkspaceNewTemplate CreateSingleAgent(PresetDefinition preset)
     {
+        var manifest = WorkspaceManifestFromTemplate.Create(
+            preset.PrimaryTemplate, "scratch", IsolationLevel.Full);
+
+        return new WorkspaceNewTemplate(
+            new Dictionary<string, AgentDefinition>(manifest.Agents),
+            [("assistant.md", "# Assistant\n\nYou are a helpful AI assistant.\n")]);
+    }
+
+    private static WorkspaceNewTemplate CreateCustom(WorkspaceNewSelection selection)
+    {
+        // Custom flow (no preset). Builds an "assistant" agent directly from the
+        // user's selection — no template to compose from.
         var agents = new Dictionary<string, AgentDefinition>
         {
             ["assistant"] = new AgentDefinition
@@ -111,7 +124,8 @@ internal static class WorkspaceNewTemplateFactory
                 Model = selection.Model,
                 SystemPromptFile = "./prompts/assistant.md",
                 MaxConcurrentTasks = 3,
-                Tools = selection.Tools
+                Tools = selection.Tools,
+                Capabilities = selection.Capabilities
             }
         };
 

@@ -1,6 +1,6 @@
-namespace Weave.Workspaces.Models;
+namespace Weave.Workspaces.Manifest;
 
 public sealed record TargetSelector
 {
-    public List<string> Labels { get; init; } = [];
+    public IReadOnlyList<string> Labels { get; init; } = [];
 }

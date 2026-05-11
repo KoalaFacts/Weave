@@ -1,12 +1,19 @@
 using Microsoft.Extensions.Logging;
-using Weave.Agents.Actors;
-using Weave.Agents.Models;
+using Microsoft.Extensions.Options;
+using Weave.Agents.Channels;
+using Weave.Agents.Chat;
+using Weave.Agents.Lifecycle;
+using Weave.Agents.Memory;
 using Weave.Agents.Pipeline;
+using Weave.Agents.Skills;
+using Weave.Agents.ToolRegistry;
+using Weave.Agents.Users;
+using Weave.Agents.Verification;
+using Weave.Security.Tokens;
 using Weave.Shared.Events;
 using Weave.Shared.Ids;
 using Weave.Shared.Lifecycle;
-using Weave.Workspaces.Models;
-
+using Weave.Workspaces.Manifest;
 namespace Weave.Agents.Tests;
 
 public sealed class AgentActorEpisodeWiringTests
@@ -36,11 +43,11 @@ public sealed class AgentActorEpisodeWiringTests
 
             EpisodicMemory.StoreEpisodeAsync(Arg.Any<Episode>())
                 .Returns(call => Task.FromResult(call.Arg<Episode>()));
-            SkillMemory.SuggestSkillAsync(Arg.Any<SkillDocument>(), Arg.Any<string?>())
+            SkillMemory.SuggestSkillAsync(Arg.Any<SkillDocument>(), Arg.Any<CapabilityToken>(), Arg.Any<string?>())
                 .Returns(call => Task.FromResult(new SkillSuggestion
                 {
                     Skill = call.Arg<SkillDocument>(),
-                    SourceTaskId = call.ArgAt<string?>(1)
+                    SourceTaskId = call.ArgAt<string?>(2)
                 }));
 
             var actors = Substitute.For<IVirtualActorProvider>();
@@ -53,6 +60,10 @@ public sealed class AgentActorEpisodeWiringTests
                 Substitute.For<IAgentChatPipeline>(),
                 Substitute.For<ILifecycleManager>(),
                 Substitute.For<IEventBus>(),
+                Substitute.For<IAgentVerificationDispatcher>(),
+                new CapabilityTokenService(
+                    Options.Create(new CapabilityTokenOptions { SigningKey = "test-signing-key-that-is-at-least-32-chars-long" }),
+                    TimeProvider.System),
                 TimeProvider.System,
                 Substitute.For<ILogger<AgentActor>>(),
                 PersistentState);

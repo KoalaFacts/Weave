@@ -509,4 +509,6 @@ The dashboard provides a live view of workspace status, agent activity, tool con
 
 ## License
 
-Licensed under either of [Apache License, Version 2.0](LICENSE-APACHE) or [MIT License](LICENSE-MIT), at your option.
+Dual-licensed under your choice of [MIT License](LICENSE-MIT) or [GNU Affero General Public License v3.0](LICENSE-AGPL).
+
+SPDX: `MIT OR AGPL-3.0-or-later`.

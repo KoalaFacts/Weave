@@ -1,15 +1,16 @@
 using System.Text.Json.Serialization;
 using Microsoft.AspNetCore.Mvc;
-using Weave.Agents.Models;
-using Weave.Workspaces.Models;
-using Weave.Workspaces.Plugins;
-
+using Weave.Agents.ToolRegistry;
+using Weave.Silo.Plugins;
+using Weave.Workspaces.Manifest;
 namespace Weave.Silo.Api;
 
 [JsonSourceGenerationOptions(
     PropertyNamingPolicy = JsonKnownNamingPolicy.CamelCase,
     DefaultIgnoreCondition = JsonIgnoreCondition.WhenWritingNull)]
 [JsonSerializable(typeof(StartWorkspaceRequest))]
+[JsonSerializable(typeof(ValidateWorkspaceManifestRequest))]
+[JsonSerializable(typeof(ValidateWorkspaceManifestResult))]
 [JsonSerializable(typeof(WorkspaceResponse))]
 [JsonSerializable(typeof(AgentResponse))]
 [JsonSerializable(typeof(AgentDefinition))]
@@ -67,11 +68,14 @@ namespace Weave.Silo.Api;
 [JsonSerializable(typeof(RateMarketplaceItemRequest))]
 [JsonSerializable(typeof(MarketplaceItemResponse))]
 [JsonSerializable(typeof(IEnumerable<MarketplaceItemResponse>))]
+[JsonSerializable(typeof(MarketplaceInstallResponse))]
 // Template types
 [JsonSerializable(typeof(RegisterTemplateRequest))]
 [JsonSerializable(typeof(TemplateResponse))]
 [JsonSerializable(typeof(TemplateValidationResultResponse))]
 [JsonSerializable(typeof(IEnumerable<TemplateResponse>))]
+[JsonSerializable(typeof(CapabilityAuditEntryResponse))]
+[JsonSerializable(typeof(IEnumerable<CapabilityAuditEntryResponse>))]
 [JsonSerializable(typeof(ProblemDetails))]
 [JsonSerializable(typeof(HttpValidationProblemDetails))]
 internal sealed partial class SiloApiJsonContext : JsonSerializerContext;

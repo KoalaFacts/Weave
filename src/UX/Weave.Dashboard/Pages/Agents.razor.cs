@@ -1,5 +1,5 @@
 using Microsoft.AspNetCore.Components;
-using Weave.Dashboard.Services;
+using Weave.Dashboard.Api;
 
 namespace Weave.Dashboard.Pages;
 

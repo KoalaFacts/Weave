@@ -1,13 +1,19 @@
 using Microsoft.Extensions.Logging;
-using Weave.Agents.Actors;
-using Weave.Agents.Events;
-using Weave.Agents.Models;
+using Microsoft.Extensions.Options;
+using Weave.Agents.Channels;
+using Weave.Agents.Chat;
+using Weave.Agents.Lifecycle;
+using Weave.Agents.Memory;
 using Weave.Agents.Pipeline;
+using Weave.Agents.Skills;
+using Weave.Agents.ToolRegistry;
+using Weave.Agents.Users;
+using Weave.Agents.Verification;
+using Weave.Security.Tokens;
 using Weave.Shared.Events;
 using Weave.Shared.Ids;
 using Weave.Shared.Lifecycle;
-using Weave.Workspaces.Models;
-
+using Weave.Workspaces.Manifest;
 namespace Weave.Agents.Tests;
 
 /// <summary>
@@ -53,16 +59,23 @@ public sealed class AgentActorBranchTests
                 .Returns(Substitute.For<IProofVerifierActor>());
 
             Actor = new AgentActor(
-                ActorProvider, ChatPipeline, Lifecycle, EventBus, TimeProvider.System,
+                ActorProvider, ChatPipeline, Lifecycle, EventBus,
+                Substitute.For<IAgentVerificationDispatcher>(), CreateTokenService(), TimeProvider.System,
                 Substitute.For<ILogger<AgentActor>>(), State);
         }
     }
 
-    private static AgentDefinition Def() => new()
+    private static CapabilityTokenService CreateTokenService() =>
+        new CapabilityTokenService(
+            Options.Create(new CapabilityTokenOptions { SigningKey = "test-signing-key-that-is-at-least-32-chars-long" }),
+            TimeProvider.System);
+
+    private static AgentDefinition Def(IReadOnlyList<string>? capabilities = null) => new()
     {
         Model = "test-model",
         MaxConcurrentTasks = 2,
-        Tools = []
+        Tools = [],
+        Capabilities = capabilities ?? ["skill:read", "skill:write"]
     };
 
     [Fact]
@@ -181,11 +194,11 @@ public sealed class AgentActorBranchTests
     {
         var fx = new Fixture();
         var skillActor = Substitute.For<ISkillMemoryActor>();
-        skillActor.SuggestSkillAsync(Arg.Any<SkillDocument>(), Arg.Any<string?>())
+        skillActor.SuggestSkillAsync(Arg.Any<SkillDocument>(), Arg.Any<CapabilityToken>(), Arg.Any<string?>())
             .Returns(callInfo => Task.FromResult(new SkillSuggestion
             {
                 Skill = callInfo.Arg<SkillDocument>(),
-                SourceTaskId = callInfo.ArgAt<string?>(1)
+                SourceTaskId = callInfo.ArgAt<string?>(2)
             }));
         fx.ActorProvider.GetActor<ISkillMemoryActor>(Arg.Any<VirtualActorId>()).Returns(skillActor);
 
@@ -203,16 +216,16 @@ public sealed class AgentActorBranchTests
 
         await fx.Actor.ReviewTaskAsync(task.TaskId, accepted: true);
 
-        await skillActor.Received(1).SuggestSkillAsync(Arg.Any<SkillDocument>(), task.TaskId.ToString());
-        await skillActor.DidNotReceive().StoreSkillAsync(Arg.Any<SkillDocument>());
+        await skillActor.Received(1).SuggestSkillAsync(Arg.Any<SkillDocument>(), Arg.Any<CapabilityToken>(), task.TaskId.ToString());
+        await skillActor.DidNotReceive().StoreSkillAsync(Arg.Any<SkillDocument>(), Arg.Any<CapabilityToken>());
     }
 
     [Fact]
-    public async Task ReviewTaskAsync_AcceptedAndSkillSuggestionThrows_LogsWarningAndDoesNotPropagate()
+    public async Task ReviewTaskAsync_AcceptedAndSkillSuggestionThrows_PropagatesToCaller()
     {
         var fx = new Fixture();
         var skillActor = Substitute.For<ISkillMemoryActor>();
-        skillActor.SuggestSkillAsync(Arg.Any<SkillDocument>(), Arg.Any<string?>())
+        skillActor.SuggestSkillAsync(Arg.Any<SkillDocument>(), Arg.Any<CapabilityToken>(), Arg.Any<string?>())
             .Returns(Task.FromException<SkillSuggestion>(new InvalidOperationException("suggestion broken")));
         fx.ActorProvider.GetActor<ISkillMemoryActor>(Arg.Any<VirtualActorId>()).Returns(skillActor);
 
@@ -227,7 +240,9 @@ public sealed class AgentActorBranchTests
             ]
         });
 
-        // Should not throw — skill extraction failures are logged, not propagated.
-        await fx.Actor.ReviewTaskAsync(task.TaskId, accepted: true);
+        // Best-practice: inner methods don't catch — the failure propagates to the
+        // actor-call boundary so the caller can decide what to do with it.
+        await Should.ThrowAsync<InvalidOperationException>(
+            () => fx.Actor.ReviewTaskAsync(task.TaskId, accepted: true));
     }
 }

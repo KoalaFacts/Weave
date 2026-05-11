@@ -3,9 +3,8 @@ using Weave.Shared.Plugins;
 using Weave.Silo.Events;
 using Weave.Tools.Connectors;
 using Weave.Tools.Discovery;
-using Weave.Workspaces.Models;
-using Weave.Workspaces.Plugins;
-
+using Weave.Tools.Tool;
+using Weave.Workspaces.Manifest;
 namespace Weave.Silo.Plugins;
 
 /// <summary>
@@ -86,7 +85,7 @@ public sealed partial class DaprPluginConnector(
         if (broker.Get<IEventBus>() is DaprEventBus)
             broker.Swap<IEventBus>(null);
 
-        toolDiscovery.Unregister(Tools.Models.ToolType.Dapr);
+        toolDiscovery.Unregister(ToolType.Dapr);
 
         LogDaprDisconnected(name);
         return Task.FromResult(new PluginStatus { Name = name, Type = PluginType, IsConnected = false });

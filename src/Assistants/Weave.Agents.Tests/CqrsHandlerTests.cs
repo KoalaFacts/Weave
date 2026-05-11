@@ -1,7 +1,12 @@
-using Weave.Agents.Actors;
-using Weave.Agents.Commands;
-using Weave.Agents.Models;
-using Weave.Agents.Queries;
+using Weave.Agents.Channels;
+using Weave.Agents.Chat;
+using Weave.Agents.Lifecycle;
+using Weave.Agents.Memory;
+using Weave.Agents.Skills;
+using Weave.Agents.ToolRegistry;
+using Weave.Agents.Users;
+using Weave.Agents.Verification;
+using Weave.Security.Tokens;
 using Weave.Shared.Ids;
 
 namespace Weave.Agents.Tests;
@@ -21,6 +26,7 @@ namespace Weave.Agents.Tests;
 public sealed class CqrsHandlerTests
 {
     private static readonly WorkspaceId Ws = WorkspaceId.From("ws-1");
+    private static readonly CapabilityToken StubToken = new() { Grants = ["*"] };
 
     [Fact]
     public async Task SendAgentMessageHandler_DelegatesToAgentActor()
@@ -48,11 +54,11 @@ public sealed class CqrsHandlerTests
 
         var handler = new SetUserPreferenceHandler(factory);
         var result = await handler.HandleAsync(
-            new SetUserPreferenceCommand(Ws, "user-1", "theme", "dark"),
+            new SetUserPreferenceCommand(Ws, "user-1", "theme", "dark", StubToken),
             TestContext.Current.CancellationToken);
 
         result.ShouldBeTrue();
-        await user.Received(1).SetPreferenceAsync("theme", "dark");
+        await user.Received(1).SetPreferenceAsync("theme", "dark", StubToken);
     }
 
     [Fact]
@@ -71,11 +77,11 @@ public sealed class CqrsHandlerTests
             CreatedByAgent = "agent-1"
         };
         factory.GetActor<ISkillMemoryActor>(Arg.Any<VirtualActorId>()).Returns(memory);
-        memory.StoreSkillAsync(skill).Returns(skill);
+        memory.StoreSkillAsync(skill, Arg.Any<CapabilityToken>()).Returns(skill);
 
         var handler = new StoreSkillHandler(factory);
         var stored = await handler.HandleAsync(
-            new StoreSkillCommand(Ws, skill),
+            new StoreSkillCommand(Ws, skill, StubToken),
             TestContext.Current.CancellationToken);
 
         stored.SkillId.ShouldBe(skill.SkillId);
@@ -110,7 +116,7 @@ public sealed class CqrsHandlerTests
         var gateway = Substitute.For<IChannelGatewayActor>();
         var outbound = new OutboundMessage { ChannelId = ChannelId.New(), Content = "response" };
         factory.GetActor<IChannelGatewayActor>(Arg.Any<VirtualActorId>()).Returns(gateway);
-        gateway.RouteInboundAsync(Arg.Any<InboundMessage>()).Returns(outbound);
+        gateway.RouteInboundAsync(Arg.Any<InboundMessage>(), Arg.Any<CapabilityToken>()).Returns(outbound);
 
         var handler = new RouteInboundMessageHandler(factory);
         var result = await handler.HandleAsync(
@@ -121,7 +127,7 @@ public sealed class CqrsHandlerTests
                 SenderId = "u1",
                 SenderName = "alice",
                 Content = "hi"
-            }),
+            }, StubToken),
             TestContext.Current.CancellationToken);
 
         result.ShouldBe(outbound);
@@ -144,11 +150,11 @@ public sealed class CqrsHandlerTests
             CreatedByAgent = "agent-1"
         };
         factory.GetActor<ISkillMemoryActor>(Arg.Any<VirtualActorId>()).Returns(memory);
-        memory.GetSkillAsync(skillId).Returns(skill);
+        memory.GetSkillAsync(skillId, Arg.Any<CapabilityToken>()).Returns(skill);
 
         var handler = new GetSkillHandler(factory);
         var result = await handler.HandleAsync(
-            new GetSkillQuery(Ws, skillId),
+            new GetSkillQuery(Ws, skillId, StubToken),
             TestContext.Current.CancellationToken);
 
         result.SkillId.ShouldBe(skillId);
@@ -160,12 +166,12 @@ public sealed class CqrsHandlerTests
         var factory = Substitute.For<IVirtualActorProvider>();
         var memory = Substitute.For<ISkillMemoryActor>();
         factory.GetActor<ISkillMemoryActor>(Arg.Any<VirtualActorId>()).Returns(memory);
-        memory.GetSkillAsync(Arg.Any<SkillId>()).Returns((SkillDocument?)null);
+        memory.GetSkillAsync(Arg.Any<SkillId>(), Arg.Any<CapabilityToken>()).Returns((SkillDocument?)null);
 
         var handler = new GetSkillHandler(factory);
 
         await Should.ThrowAsync<KeyNotFoundException>(
-            () => handler.HandleAsync(new GetSkillQuery(Ws, SkillId.New()), TestContext.Current.CancellationToken));
+            () => handler.HandleAsync(new GetSkillQuery(Ws, SkillId.New(), StubToken), TestContext.Current.CancellationToken));
     }
 
     [Fact]
@@ -175,11 +181,11 @@ public sealed class CqrsHandlerTests
         var user = Substitute.For<IUserModelActor>();
         var profile = new UserProfileState { UserId = "user-1", WorkspaceId = "ws-1" };
         factory.GetActor<IUserModelActor>(Arg.Any<VirtualActorId>()).Returns(user);
-        user.GetProfileAsync().Returns(profile);
+        user.GetProfileAsync(Arg.Any<CapabilityToken>()).Returns(profile);
 
         var handler = new GetUserProfileHandler(factory);
         var result = await handler.HandleAsync(
-            new GetUserProfileQuery(Ws, "user-1"),
+            new GetUserProfileQuery(Ws, "user-1", StubToken),
             TestContext.Current.CancellationToken);
 
         result.UserId.ShouldBe("user-1");
@@ -197,13 +203,14 @@ public sealed class CqrsHandlerTests
         factory.GetActor<ISkillMemoryActor>(Arg.Any<VirtualActorId>()).Returns(memory);
         memory.SearchAsync(
                 "test",
+                Arg.Any<CapabilityToken>(),
                 5,
                 Arg.Is<SkillSearchOptions>(options => options.MinSuccessRate == 0.9 && options.PreferRecent))
             .Returns(results);
 
         var handler = new SearchSkillsHandler(factory);
         var result = await handler.HandleAsync(
-            new SearchSkillsQuery(Ws, "test", 5, new SkillSearchOptions { MinSuccessRate = 0.9, PreferRecent = true }),
+            new SearchSkillsQuery(Ws, "test", StubToken, 5, new SkillSearchOptions { MinSuccessRate = 0.9, PreferRecent = true }),
             TestContext.Current.CancellationToken);
 
         result.Count.ShouldBe(1);

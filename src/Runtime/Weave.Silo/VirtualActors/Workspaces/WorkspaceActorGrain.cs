@@ -1,8 +1,10 @@
 using Weave.Shared.Events;
 using Weave.Shared.Lifecycle;
-using Weave.Workspaces.Actors;
-using Weave.Workspaces.Models;
+using Weave.Workspaces.Lifecycle;
+using Weave.Workspaces.Manifest;
+using Weave.Workspaces.Registry;
 using Weave.Workspaces.Runtime;
+using Weave.Workspaces.Templates;
 
 namespace Weave.Silo.VirtualActors;
 

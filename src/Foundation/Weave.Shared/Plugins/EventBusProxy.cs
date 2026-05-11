@@ -1,26 +1,31 @@
+using Microsoft.Extensions.Logging;
+using Microsoft.Extensions.Logging.Abstractions;
 using Weave.Shared.Events;
 
 namespace Weave.Shared.Plugins;
 
 /// <summary>
 /// Proxy <see cref="IEventBus"/> registered as the singleton in DI.
-/// Owns the subscription list — when the backing bus is hot-swapped, all active
-/// subscriptions are disposed on the old bus and re-created on the new one.
-///
+/// Owns the subscription list — when the backing bus is hot-swapped, all
+/// active subscriptions are disposed on the old bus and re-created on the new one.
+/// </summary>
+/// <remarks>
 /// Uses <see cref="ReaderWriterLockSlim"/>: publishes take a read lock (concurrent),
 /// swaps take a write lock (exclusive, waits for in-flight publishes to drain).
-/// </summary>
-public sealed class EventBusProxy : IEventBus, IDisposable
+/// </remarks>
+public sealed partial class EventBusProxy : IEventBus, IDisposable
 {
     private readonly PluginServiceBroker _broker;
     private readonly InProcessEventBus _fallback;
+    private readonly ILogger<EventBusProxy> _logger;
     private readonly ReaderWriterLockSlim _rwLock = new();
     private readonly List<SubscriptionRecord> _subscriptions = [];
 
-    public EventBusProxy(PluginServiceBroker broker, InProcessEventBus fallback)
+    public EventBusProxy(PluginServiceBroker broker, InProcessEventBus fallback, ILogger<EventBusProxy>? logger = null)
     {
         _broker = broker;
         _fallback = fallback;
+        _logger = logger ?? NullLogger<EventBusProxy>.Instance;
         _broker.OnSwap<IEventBus>(ReplaySubscriptions);
     }
 
@@ -92,11 +97,12 @@ public sealed class EventBusProxy : IEventBus, IDisposable
                     record.InnerSubscription = record.SubscribeFactory(bus);
                     oldSub.Dispose();
                 }
-                catch (Exception)
+                catch (Exception ex) when (ex is InvalidOperationException or ObjectDisposedException)
                 {
                     // If re-subscribe fails, keep the old subscription reference
                     // so that Unsubscribe can still dispose it cleanly.
                     record.InnerSubscription = oldSub;
+                    LogReplayFailed(ex);
                 }
             }
         }
@@ -126,4 +132,7 @@ public sealed class EventBusProxy : IEventBus, IDisposable
                 proxy.Unsubscribe(record);
         }
     }
+
+    [LoggerMessage(Level = LogLevel.Warning, Message = "Failed to replay event bus subscription after hot-swap; keeping previous subscription")]
+    private partial void LogReplayFailed(Exception ex);
 }

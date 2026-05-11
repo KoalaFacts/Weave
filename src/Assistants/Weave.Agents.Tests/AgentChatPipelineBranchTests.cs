@@ -1,11 +1,20 @@
 using Microsoft.Extensions.AI;
 using Microsoft.Extensions.Logging.Abstractions;
-using Weave.Agents.Actors;
-using Weave.Agents.Models;
+using Microsoft.Extensions.Options;
+using Weave.Agents.Channels;
+using Weave.Agents.Chat;
+using Weave.Agents.Lifecycle;
+using Weave.Agents.Memory;
 using Weave.Agents.Pipeline;
+using Weave.Agents.Skills;
+using Weave.Agents.ToolRegistry;
+using Weave.Agents.Users;
+using Weave.Agents.Verification;
+using Weave.Security.Tokens;
 using Weave.Shared.Ids;
-using Weave.Workspaces.Models;
-
+using Weave.Tools.Marketplace;
+using Weave.Tools.Tool;
+using Weave.Workspaces.Manifest;
 namespace Weave.Agents.Tests;
 
 /// <summary>
@@ -33,11 +42,14 @@ public sealed class AgentChatPipelineBranchTests
                 {
                     ModelId = "test-model"
                 });
-            ChatClientFactory.Create(Arg.Any<string>(), Arg.Any<string?>()).Returns(ChatClient);
+            ChatClientFactory.CreateAsync(Arg.Any<string>(), Arg.Any<AgentDefinition?>(), Arg.Any<CancellationToken>()).Returns(ChatClient);
 
             Pipeline = new AgentChatPipeline(
                 ActorProvider,
                 ChatClientFactory,
+                new CapabilityTokenService(
+                    Options.Create(new CapabilityTokenOptions { SigningKey = "test-signing-key-that-is-at-least-32-chars-long" }),
+                    TimeProvider.System),
                 TimeProvider.System,
                 NullLogger<AgentChatPipeline>.Instance);
         }
@@ -92,43 +104,51 @@ public sealed class AgentChatPipelineBranchTests
     }
 
     [Fact]
-    public async Task ExecuteAsync_UserContextActorThrows_SwallowsErrorAndContinues()
+    public async Task ExecuteAsync_UserContextActorThrows_PropagatesToCaller()
     {
         var fx = new Fixture();
         var userActor = Substitute.For<IUserModelActor>();
-        userActor.GetContextSummaryAsync().Returns(Task.FromException<string>(new InvalidOperationException("user actor broken")));
+        userActor.GetContextSummaryAsync(Arg.Any<CapabilityToken>())
+            .Returns(Task.FromException<string>(new InvalidOperationException("user actor broken")));
         fx.ActorProvider.GetActor<IUserModelActor>(Arg.Any<VirtualActorId>()).Returns(userActor);
 
-        var state = StateWith();
+        var state = StateWith(new AgentDefinition
+        {
+            Model = "test-model",
+            Capabilities = ["user:read:alice"]
+        });
 
-        var response = await fx.Pipeline.ExecuteAsync(state, new AgentMessage
+        // Best-practice: enrichers don't catch — failure surfaces to the
+        // actor-call boundary instead of being silently downgraded to
+        // "send the message without user context."
+        await Should.ThrowAsync<InvalidOperationException>(() => fx.Pipeline.ExecuteAsync(state, new AgentMessage
         {
             Role = "user",
             Content = "hi",
             UserId = "alice"
-        });
-
-        response.Content.ShouldBe("ok", "user-context failures must not break the main chat flow");
+        }));
     }
 
     [Fact]
-    public async Task ExecuteAsync_SkillMemoryActorThrows_SwallowsErrorAndContinues()
+    public async Task ExecuteAsync_SkillMemoryActorThrows_PropagatesToCaller()
     {
         var fx = new Fixture();
         var skillActor = Substitute.For<ISkillMemoryActor>();
-        skillActor.SearchAsync(Arg.Any<string>(), Arg.Any<int>(), Arg.Any<SkillSearchOptions>())
+        skillActor.SearchAsync(Arg.Any<string>(), Arg.Any<CapabilityToken>(), Arg.Any<int>(), Arg.Any<SkillSearchOptions>())
             .Returns(Task.FromException<IReadOnlyList<SkillSearchResult>>(new InvalidOperationException("skill actor broken")));
         fx.ActorProvider.GetActor<ISkillMemoryActor>(Arg.Any<VirtualActorId>()).Returns(skillActor);
 
-        var state = StateWith();
+        var state = StateWith(new AgentDefinition
+        {
+            Model = "test-model",
+            Capabilities = ["skill:read"]
+        });
 
-        var response = await fx.Pipeline.ExecuteAsync(state, new AgentMessage
+        await Should.ThrowAsync<InvalidOperationException>(() => fx.Pipeline.ExecuteAsync(state, new AgentMessage
         {
             Role = "user",
             Content = "tell me something"
-        });
-
-        response.Content.ShouldBe("ok");
+        }));
     }
 
     [Fact]
@@ -146,11 +166,11 @@ public sealed class AgentChatPipelineBranchTests
             CreatedByAgent = "researcher"
         };
         var skillActor = Substitute.For<ISkillMemoryActor>();
-        skillActor.SearchAsync(Arg.Any<string>(), Arg.Any<int>(), Arg.Any<SkillSearchOptions>())
+        skillActor.SearchAsync(Arg.Any<string>(), Arg.Any<CapabilityToken>(), Arg.Any<int>(), Arg.Any<SkillSearchOptions>())
             .Returns(Task.FromResult<IReadOnlyList<SkillSearchResult>>([
                 new SkillSearchResult { Skill = skill, RelevanceScore = 3.0 }
             ]));
-        skillActor.RecordUsageAsync(skill.SkillId, success: true)
+        skillActor.RecordUsageAsync(skill.SkillId, success: true, Arg.Any<CapabilityToken>())
             .Returns(Task.FromException(new InvalidOperationException("usage write failed")));
         fx.ActorProvider.GetActor<ISkillMemoryActor>(Arg.Any<VirtualActorId>()).Returns(skillActor);
 
@@ -186,5 +206,144 @@ public sealed class AgentChatPipelineBranchTests
         // list of 0, we verify the happy-path response still comes through.
         response.Content.ShouldBe("ok");
         await toolRegistry.Received().ResolveAsync("researcher", "unavailable-tool");
+    }
+
+    [Fact]
+    public async Task ExecuteAsync_ResolvedTool_AppearsInChatOptionsAndIsInvokable()
+    {
+        // Captures the ChatOptions.Tools list passed to the chat client so we
+        // can verify that BuildToolsAsync attaches the resolved tool, and so
+        // we can invoke the registered AIFunction directly to exercise
+        // InvokeToolAsync.
+        var fx = new Fixture();
+        ChatOptions? capturedOptions = null;
+        fx.ChatClient
+            .GetResponseAsync(Arg.Any<IEnumerable<ChatMessage>>(), Arg.Any<ChatOptions>(), Arg.Any<CancellationToken>())
+            .Returns(call =>
+            {
+                capturedOptions = call.Arg<ChatOptions>();
+                return new ChatResponse(new ChatMessage(ChatRole.Assistant, "ok"))
+                {
+                    ModelId = "test-model"
+                };
+            });
+
+        var resolution = new ToolResolution
+        {
+            ToolName = "echo-tool",
+            ActorKey = "ws-1/echo-tool",
+            Token = new CapabilityToken { Grants = ["tool:*"] },
+            Schema = new ToolSchema { ToolName = "echo-tool", Description = "Echoes the input" }
+        };
+        var toolRegistry = Substitute.For<IToolRegistryActor>();
+        toolRegistry.ResolveAsync("researcher", "echo-tool").Returns(resolution);
+        fx.ActorProvider.GetActor<IToolRegistryActor>(Arg.Any<VirtualActorId>()).Returns(toolRegistry);
+
+        var toolActor = Substitute.For<IToolActor>();
+        toolActor.InvokeAsync(Arg.Any<ToolInvocation>(), Arg.Any<CapabilityToken>())
+            .Returns(new ToolResult { Success = true, Output = "echoed: hello" });
+        fx.ActorProvider.GetActor<IToolActor>(Arg.Any<VirtualActorId>()).Returns(toolActor);
+
+        var state = StateWith(null, "echo-tool");
+        await fx.Pipeline.ExecuteAsync(state, new AgentMessage { Role = "user", Content = "hi" });
+
+        capturedOptions.ShouldNotBeNull();
+        capturedOptions.Tools.ShouldNotBeNull();
+        capturedOptions.Tools!.Count.ShouldBe(1);
+
+        var function = (AIFunction)capturedOptions.Tools[0];
+        function.Name.ShouldBe("echo-tool");
+
+        // Invoking the registered function exercises InvokeToolAsync end-to-end.
+        var invokeResult = await function.InvokeAsync(
+            new AIFunctionArguments { ["input"] = "hello" },
+            CancellationToken.None);
+        invokeResult.ShouldNotBeNull();
+        invokeResult!.ToString()!.ShouldContain("echoed: hello");
+    }
+
+    [Fact]
+    public async Task ExecuteAsync_InvokedToolReturnsFailure_PropagatesErrorMessage()
+    {
+        // Same shape as the happy-path test but the tool actor returns success=false,
+        // exercising the failure branch of InvokeToolAsync.
+        var fx = new Fixture();
+        ChatOptions? capturedOptions = null;
+        fx.ChatClient
+            .GetResponseAsync(Arg.Any<IEnumerable<ChatMessage>>(), Arg.Any<ChatOptions>(), Arg.Any<CancellationToken>())
+            .Returns(call =>
+            {
+                capturedOptions = call.Arg<ChatOptions>();
+                return new ChatResponse(new ChatMessage(ChatRole.Assistant, "ok"))
+                {
+                    ModelId = "test-model"
+                };
+            });
+
+        var resolution = new ToolResolution
+        {
+            ToolName = "broken-tool",
+            ActorKey = "ws-1/broken-tool",
+            Token = new CapabilityToken { Grants = ["tool:*"] },
+            Schema = new ToolSchema { ToolName = "broken-tool", Description = "Always fails" }
+        };
+        var toolRegistry = Substitute.For<IToolRegistryActor>();
+        toolRegistry.ResolveAsync("researcher", "broken-tool").Returns(resolution);
+        fx.ActorProvider.GetActor<IToolRegistryActor>(Arg.Any<VirtualActorId>()).Returns(toolRegistry);
+
+        var toolActor = Substitute.For<IToolActor>();
+        toolActor.InvokeAsync(Arg.Any<ToolInvocation>(), Arg.Any<CapabilityToken>())
+            .Returns(new ToolResult { Success = false, Error = "boom" });
+        fx.ActorProvider.GetActor<IToolActor>(Arg.Any<VirtualActorId>()).Returns(toolActor);
+
+        var state = StateWith(null, "broken-tool");
+        await fx.Pipeline.ExecuteAsync(state, new AgentMessage { Role = "user", Content = "hi" });
+
+        var function = (AIFunction)capturedOptions!.Tools![0];
+        var invokeResult = await function.InvokeAsync(
+            new AIFunctionArguments { ["input"] = "anything" },
+            CancellationToken.None);
+        invokeResult.ShouldNotBeNull();
+        invokeResult!.ToString()!.ShouldContain("boom");
+    }
+
+    [Fact]
+    public async Task InvokeToolAsync_AfterRegistryResolutionDisappears_Throws()
+    {
+        // The two-call shape: BuildToolsAsync resolves once (succeeds), then
+        // InvokeToolAsync resolves again (returns null) — must throw.
+        var fx = new Fixture();
+        ChatOptions? capturedOptions = null;
+        fx.ChatClient
+            .GetResponseAsync(Arg.Any<IEnumerable<ChatMessage>>(), Arg.Any<ChatOptions>(), Arg.Any<CancellationToken>())
+            .Returns(call =>
+            {
+                capturedOptions = call.Arg<ChatOptions>();
+                return new ChatResponse(new ChatMessage(ChatRole.Assistant, "ok"))
+                {
+                    ModelId = "test-model"
+                };
+            });
+
+        var resolution = new ToolResolution
+        {
+            ToolName = "vanishing-tool",
+            ActorKey = "ws-1/vanishing-tool",
+            Token = new CapabilityToken { Grants = ["tool:*"] },
+            Schema = new ToolSchema { ToolName = "vanishing-tool" }
+        };
+        var toolRegistry = Substitute.For<IToolRegistryActor>();
+        toolRegistry.ResolveAsync("researcher", "vanishing-tool")
+            .Returns(resolution, (ToolResolution?)null);
+        fx.ActorProvider.GetActor<IToolRegistryActor>(Arg.Any<VirtualActorId>()).Returns(toolRegistry);
+
+        var state = StateWith(null, "vanishing-tool");
+        await fx.Pipeline.ExecuteAsync(state, new AgentMessage { Role = "user", Content = "hi" });
+
+        var function = (AIFunction)capturedOptions!.Tools![0];
+        await Should.ThrowAsync<InvalidOperationException>(() =>
+            function.InvokeAsync(
+                new AIFunctionArguments { ["input"] = "anything" },
+                CancellationToken.None).AsTask());
     }
 }

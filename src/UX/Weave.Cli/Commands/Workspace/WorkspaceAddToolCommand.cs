@@ -4,14 +4,14 @@ namespace Weave.Cli.Commands;
 
 internal static class WorkspaceAddToolCommand
 {
-    public static Command Create()
+    public static Command Create(WorkspaceAddToolCliCommand handler, WorkspaceCompletions completions)
     {
         var workspaceArg = new Argument<string?>("workspace")
         {
             Description = "Workspace name",
             Arity = ArgumentArity.ZeroOrOne
         };
-        workspaceArg.CompletionSources.Add(CliCompletions.CompleteWorkspaceNames);
+        workspaceArg.CompletionSources.Add(completions.CompleteWorkspaceNames);
         var nameOption = new Option<string?>("--name") { Description = "Tool name" };
         var typeOption = new Option<string>("--type")
         {
@@ -26,7 +26,7 @@ internal static class WorkspaceAddToolCommand
             var workspace = parseResult.GetValue(workspaceArg);
             var toolName = parseResult.GetValue(nameOption);
             var type = parseResult.GetValue(typeOption)!;
-            return await new WorkspaceAddToolCliCommand().ExecuteAsync(new WorkspaceAddToolOptions(workspace, toolName, type), cancellationToken);
+            return await handler.ExecuteAsync(new WorkspaceAddToolOptions(workspace, toolName, type), cancellationToken);
         });
 
         return cmd;

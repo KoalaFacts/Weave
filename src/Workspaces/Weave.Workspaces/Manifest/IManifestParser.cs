@@ -1,5 +1,3 @@
-using Weave.Workspaces.Models;
-
 namespace Weave.Workspaces.Manifest;
 
 public interface IManifestParser

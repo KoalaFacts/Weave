@@ -1,8 +1,7 @@
 using System.Diagnostics;
 using System.Text;
 using System.Text.RegularExpressions;
-using Weave.Tools.Models;
-
+using Weave.Tools.Tool;
 namespace Weave.Tools.Connectors;
 
 internal static class FileSystemToolInvoker
@@ -55,7 +54,7 @@ internal static class FileSystemToolInvoker
             var resolvedFile = Path.GetFullPath(file);
             try
             { FileSystemPathGuard.VerifyContainment(config.Root, resolvedFile); }
-            catch
+            catch (ArgumentException)
             { continue; }
 
             results.Add(Path.GetRelativePath(config.Root, resolvedFile));
@@ -109,7 +108,7 @@ internal static class FileSystemToolInvoker
             var resolvedFile = Path.GetFullPath(file);
             try
             { FileSystemPathGuard.VerifyContainment(config.Root, resolvedFile); }
-            catch
+            catch (ArgumentException)
             { continue; }
 
             if (!await FileSystemTextFile.CanReadAsTextAsync(resolvedFile, ct))

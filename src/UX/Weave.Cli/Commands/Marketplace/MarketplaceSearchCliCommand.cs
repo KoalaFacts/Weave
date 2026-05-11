@@ -1,8 +1,13 @@
 using Spectre.Console;
+using Weave.Actions.Context;
+using Weave.Actions.Marketplace;
+using Weave.Actions.SystemInfo;
 
 namespace Weave.Cli.Commands;
 
-internal sealed class MarketplaceSearchCliCommand : ICliCommand<MarketplaceSearchOptions>
+internal sealed class MarketplaceSearchCliCommand(
+    GetSystemInfoAction systemInfoAction,
+    SearchMarketplaceAction searchAction) : ICliCommand<MarketplaceSearchOptions>
 {
     public string Name => "search";
 
@@ -16,15 +21,23 @@ internal sealed class MarketplaceSearchCliCommand : ICliCommand<MarketplaceSearc
         if (string.IsNullOrWhiteSpace(query))
             query = AnsiConsole.Prompt(new TextPrompt<string>("Search query:").Styled());
 
-        using var client = new MarketplaceApiClient();
-        if (!await client.IsReachableAsync(ct))
+        var systemInfo = await systemInfoAction.ExecuteAsync(new GetSystemInfoInput(), ct);
+        if (!systemInfo.IsSuccess || !systemInfo.Value.Reachable)
         {
             CliTheme.WriteError("Weave server is not running. Start it with 'weave serve'.");
             return 1;
         }
 
-        var items = await client.SearchAsync(query, ct);
-        if (items.Count == 0)
+        var result = await searchAction.ExecuteAsync(new SearchMarketplaceInput(query), ct);
+        if (!result.IsSuccess)
+        {
+            if (result.Failure.Reason == ActionFailureReason.Cancelled)
+                return 130;
+            CliTheme.WriteError(result.Failure.Message);
+            return 1;
+        }
+
+        if (result.Value.Items.Count == 0)
         {
             CliTheme.WriteWarning($"No marketplace items matching '{query}'.");
             return 0;
@@ -36,7 +49,7 @@ internal sealed class MarketplaceSearchCliCommand : ICliCommand<MarketplaceSearc
         table.AddColumn(CliTheme.StyledColumn("Description"));
         table.AddColumn(CliTheme.StyledColumn("Author"));
 
-        foreach (var item in items)
+        foreach (var item in result.Value.Items)
         {
             var desc = item.Description.Length > 60 ? item.Description[..57] + "..." : item.Description;
             table.AddRow(Markup.Escape(item.Name), Markup.Escape(item.Category), Markup.Escape(desc), Markup.Escape(item.Author));

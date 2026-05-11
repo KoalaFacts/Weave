@@ -1,9 +1,8 @@
+using System.Text.Json;
 using Weave.Shared.Cqrs;
 using Weave.Shared.Ids;
-using Weave.Workspaces.Commands;
-using Weave.Workspaces.Models;
-using Weave.Workspaces.Queries;
-
+using Weave.Workspaces.Lifecycle;
+using Weave.Workspaces.Manifest;
 namespace Weave.Silo.Api;
 
 public static class WorkspaceEndpoints
@@ -25,6 +24,10 @@ public static class WorkspaceEndpoints
             .Produces<WorkspaceResponse>(201)
             .ProducesValidationProblem()
             .ProducesProblem(409);
+        group.MapPost("/validate", ValidateManifestAsync)
+            .WithDescription("Parse and structurally validate a workspace manifest. Returns the per-error list inside a 200 response; only parse failures return 400.")
+            .Produces<ValidateWorkspaceManifestResult>()
+            .ProducesValidationProblem();
         group.MapDelete("/{workspaceId}", StopWorkspaceAsync)
             .WithDescription("Stop a workspace.")
             .Produces(204)
@@ -79,6 +82,34 @@ public static class WorkspaceEndpoints
         catch (InvalidOperationException ex)
         {
             return ResultExtensions.Conflict(ex.Message);
+        }
+    }
+
+    private static async Task<IResult> ValidateManifestAsync(
+        ValidateWorkspaceManifestRequest request,
+        IQueryDispatcher dispatcher,
+        CancellationToken ct)
+    {
+        if (string.IsNullOrWhiteSpace(request.ManifestJson))
+        {
+            return ResultExtensions.ValidationFailed(new Dictionary<string, string[]>
+            {
+                ["manifestJson"] = ["Manifest JSON is required."]
+            });
+        }
+
+        try
+        {
+            var query = new ValidateWorkspaceManifestQuery(request.ManifestJson);
+            var result = await dispatcher.DispatchAsync<ValidateWorkspaceManifestQuery, ValidateWorkspaceManifestResult>(query, ct);
+            return Results.Ok(result);
+        }
+        catch (JsonException ex)
+        {
+            return ResultExtensions.ValidationFailed(new Dictionary<string, string[]>
+            {
+                ["manifestJson"] = [$"Manifest is not valid JSON: {ex.Message}"]
+            });
         }
     }
 

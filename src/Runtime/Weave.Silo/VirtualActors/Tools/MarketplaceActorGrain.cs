@@ -1,7 +1,8 @@
+using Weave.Security.Tokens;
 using Weave.Shared.Events;
 using Weave.Shared.Ids;
-using Weave.Tools.Actors;
-using Weave.Tools.Models;
+using Weave.Tools.Marketplace;
+using Weave.Tools.Tool;
 
 namespace Weave.Silo.VirtualActors;
 
@@ -13,10 +14,14 @@ public sealed class MarketplaceActorGrain : Grain, IMarketplaceActorGrain
         ILogger<MarketplaceActor> logger,
         IEventBus eventBus,
         TimeProvider timeProvider,
+        ICapabilityAuthorizer authorizer,
+        IVirtualActorProvider actors,
         [PersistentState("marketplace", "Default")] IPersistentState<MarketplaceState> state)
     {
         _actor = new MarketplaceActor(logger, eventBus, timeProvider,
-            new OrleansActorState<MarketplaceState>(state));
+            new OrleansActorState<MarketplaceState>(state),
+            authorizer,
+            actors);
     }
 
     public Task<MarketplaceItem> SubmitAsync(MarketplaceItem item) => _actor.SubmitAsync(item);
@@ -35,4 +40,7 @@ public sealed class MarketplaceActorGrain : Grain, IMarketplaceActorGrain
     public Task RateAsync(MarketplaceItemId itemId, double rating) => _actor.RateAsync(itemId, rating);
     public Task IncrementInstallCountAsync(MarketplaceItemId itemId) => _actor.IncrementInstallCountAsync(itemId);
     public Task DeprecateAsync(MarketplaceItemId itemId) => _actor.DeprecateAsync(itemId);
+
+    public Task<MarketplaceInstallResult> InstallAsync(MarketplaceItemId itemId, CapabilityToken token) =>
+        _actor.InstallAsync(itemId, token);
 }

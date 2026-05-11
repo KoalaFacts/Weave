@@ -1,6 +1,5 @@
 using System.Text.Json.Serialization;
-using Weave.Agents.Models;
-
+using Weave.Agents.Channels;
 namespace Weave.Silo.Api;
 
 public sealed record ChannelResponse

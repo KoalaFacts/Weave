@@ -1,7 +1,12 @@
 using Microsoft.Extensions.Logging.Abstractions;
-using Weave.Agents.Actors;
-using Weave.Agents.Models;
+using Weave.Agents.Channels;
+using Weave.Agents.Lifecycle;
+using Weave.Agents.Memory;
 using Weave.Agents.Pipeline;
+using Weave.Agents.Skills;
+using Weave.Agents.ToolRegistry;
+using Weave.Agents.Users;
+using Weave.Agents.Verification;
 using Weave.Shared.Ids;
 
 namespace Weave.Agents.Tests;
@@ -119,7 +124,7 @@ public sealed class EpisodicMemoryPromptEnricherTests
     public async Task RecordRecallAsync_CallsActorPerEpisode()
     {
         var (enricher, actor) = CreateEnricher();
-        var ids = new[] { EpisodeId.From("a"), EpisodeId.From("b") };
+        EpisodeId[] ids = [EpisodeId.From("a"), EpisodeId.From("b")];
 
         await enricher.RecordRecallAsync(TestWorkspaceId, "researcher", ids);
 

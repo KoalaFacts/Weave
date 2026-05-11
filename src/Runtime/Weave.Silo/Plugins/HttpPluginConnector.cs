@@ -1,7 +1,5 @@
 using Weave.Shared.Plugins;
-using Weave.Workspaces.Models;
-using Weave.Workspaces.Plugins;
-
+using Weave.Workspaces.Manifest;
 namespace Weave.Silo.Plugins;
 
 /// <summary>
