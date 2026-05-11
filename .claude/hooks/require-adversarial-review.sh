@@ -15,16 +15,23 @@ if [ "${WEAVE_SKIP_ADVERSARIAL_REVIEW:-}" = "1" ]; then
   exit 0
 fi
 
+input=$(cat)
+
+# Fast path: if the input doesn't even mention `git commit`, this isn't a
+# commit and we don't need to parse JSON. Sidesteps the jq dependency for
+# every non-commit Bash call. Anything that *does* look like a commit but
+# can't be validated below still fails closed.
+if ! printf '%s' "$input" | grep -q 'git commit'; then
+  exit 0
+fi
+
 if ! command -v jq >/dev/null 2>&1; then
-  echo "adversarial-review hook: jq not installed; cannot parse hook input. Install jq or set WEAVE_SKIP_ADVERSARIAL_REVIEW=1." >&2
+  echo "adversarial-review hook: jq not installed; cannot parse hook input for a command that mentions 'git commit'. Install jq or set WEAVE_SKIP_ADVERSARIAL_REVIEW=1." >&2
   exit 2
 fi
 
-input=$(cat)
 command=$(printf '%s' "$input" | jq -r '.tool_input.command // empty')
 
-# Defensive: the `if: Bash(git commit*)` already filters, but if this
-# hook is wired without that filter, only act on git commit.
 case "$command" in
   git\ commit*) ;;
   *) exit 0 ;;
