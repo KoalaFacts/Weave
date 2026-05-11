@@ -1,3 +1,4 @@
+using System.Runtime.CompilerServices;
 using Microsoft.Extensions.AI;
 using Microsoft.Extensions.Logging;
 using Weave.Agents.Channels;
@@ -10,6 +11,7 @@ using Weave.Agents.Users;
 using Weave.Agents.Verification;
 using Weave.Security.Tokens;
 using Weave.Shared.Capabilities;
+using Weave.Shared.Ids;
 using Weave.Tools.Builders;
 using Weave.Tools.Marketplace;
 using Weave.Tools.Tool;
@@ -41,6 +43,36 @@ public sealed class AgentChatPipeline(
     }
 
     public async Task<AgentChatResponse> ExecuteAsync(AgentState state, AgentMessage message)
+    {
+        var request = await BuildRequestAsync(state, message);
+        var response = await _chatClient!.GetResponseAsync(request.Messages, request.Options, CancellationToken.None);
+        return await FinishAsync(state, response, request.SkillIds, request.EpisodeIds);
+    }
+
+    public async IAsyncEnumerable<AgentChatStreamingFrame> ExecuteStreamingAsync(
+        AgentState state,
+        AgentMessage message,
+        [EnumeratorCancellation] CancellationToken ct = default)
+    {
+        var request = await BuildRequestAsync(state, message);
+
+        var updates = new List<ChatResponseUpdate>();
+        await foreach (var update in _chatClient!.GetStreamingResponseAsync(request.Messages, request.Options, ct).ConfigureAwait(false))
+        {
+            updates.Add(update);
+            foreach (var content in update.Contents)
+            {
+                if (content is TextContent { Text: { Length: > 0 } text })
+                    yield return new AgentChatTextFrame(text);
+            }
+        }
+
+        var response = updates.ToChatResponse();
+        var final = await FinishAsync(state, response, request.SkillIds, request.EpisodeIds);
+        yield return new AgentChatCompleteFrame(final);
+    }
+
+    private async Task<ChatRequest> BuildRequestAsync(AgentState state, AgentMessage message)
     {
         _chatClient ??= await chatClientFactory.CreateAsync(state.AgentId, state.Definition);
 
@@ -81,7 +113,15 @@ public sealed class AgentChatPipeline(
         if (tools.Count > 0)
             options.Tools = tools;
 
-        var response = await _chatClient.GetResponseAsync(chatMessages, options, CancellationToken.None);
+        return new ChatRequest(chatMessages, options, skillMemory.SkillIds, episodicMemory.EpisodeIds);
+    }
+
+    private async Task<AgentChatResponse> FinishAsync(
+        AgentState state,
+        ChatResponse response,
+        IReadOnlyList<SkillId> skillIds,
+        IReadOnlyList<EpisodeId> episodeIds)
+    {
         state.ConversationId = response.ConversationId ?? state.ConversationId;
 
         var newMessages = new List<ConversationMessage>();
@@ -95,8 +135,8 @@ public sealed class AgentChatPipeline(
         }
 
         state.LastActive = timeProvider.GetUtcNow();
-        await _skillMemory.RecordSuccessfulUsageAsync(state, skillMemory.SkillIds);
-        await _episodicMemory.RecordRecallAsync(state.WorkspaceId, state.AgentName, episodicMemory.EpisodeIds);
+        await _skillMemory.RecordSuccessfulUsageAsync(state, skillIds);
+        await _episodicMemory.RecordRecallAsync(state.WorkspaceId, state.AgentName, episodeIds);
 
         return new AgentChatResponse
         {
@@ -107,6 +147,12 @@ public sealed class AgentChatPipeline(
             Model = response.ModelId ?? state.Model
         };
     }
+
+    private sealed record ChatRequest(
+        IReadOnlyList<ChatMessage> Messages,
+        ChatOptions Options,
+        IReadOnlyList<SkillId> SkillIds,
+        IReadOnlyList<EpisodeId> EpisodeIds);
 
     private async Task<string?> GetSystemPromptAsync(AgentState state)
     {
