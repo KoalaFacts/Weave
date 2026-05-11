@@ -177,7 +177,8 @@ public sealed class SendMessageStreamingActionTests
 
         await Should.ThrowAsync<ArgumentNullException>(async () =>
         {
-            await foreach (var _ in action.StreamAsync(null!, CancellationToken.None)) { }
+            await foreach (var _ in action.StreamAsync(null!, CancellationToken.None))
+            { }
         });
     }
 
@@ -191,7 +192,8 @@ public sealed class SendMessageStreamingActionTests
 
         await Should.ThrowAsync<ArgumentException>(async () =>
         {
-            await foreach (var _ in action.StreamAsync(new SendMessageInput(workspaceId, agentName, "hi"), CancellationToken.None)) { }
+            await foreach (var _ in action.StreamAsync(new SendMessageInput(workspaceId, agentName, "hi"), CancellationToken.None))
+            { }
         });
     }
 
