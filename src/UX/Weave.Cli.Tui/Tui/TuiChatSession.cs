@@ -77,7 +77,7 @@ internal sealed class TuiChatSession
         {
             // User-initiated cancellation (Ctrl-C) shouldn't render as an error.
             if (failure.Reason != ActionFailureReason.Cancelled)
-                CliTheme.WriteError($"Agent call failed: {failure.Message}");
+                CliTheme.WriteError($"{FailureLabel(failure.Reason)}: {failure.Message}");
             return;
         }
 
@@ -99,6 +99,17 @@ internal sealed class TuiChatSession
         if (!string.IsNullOrWhiteSpace(reply.Model))
             CliTheme.WriteMuted($"  Model: {reply.Model}");
     }
+
+    private static string FailureLabel(ActionFailureReason reason) => reason switch
+    {
+        ActionFailureReason.ValidationFailed => "Message rejected",
+        ActionFailureReason.SiloUnreachable => "Silo unreachable",
+        ActionFailureReason.Conflict => "Agent unavailable",
+        ActionFailureReason.Unauthorized => "Silo refused the request",
+        ActionFailureReason.NotFound => "Not found",
+        ActionFailureReason.Internal => "Silo error",
+        _ => "Agent call failed",
+    };
 
     private static void RenderHistory(
         TuiSession session,

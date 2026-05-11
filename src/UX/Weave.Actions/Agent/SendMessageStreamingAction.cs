@@ -7,16 +7,17 @@ using Weave.Actions.Context;
 namespace Weave.Actions.Agent;
 
 /// <summary>
-/// Streaming counterpart to <see cref="SendMessageAction"/>. POSTs to
-/// <c>POST /api/workspaces/{id}/agents/{name}/messages/stream</c> and yields one
-/// chunk per <c>text/event-stream</c> frame.
+/// POSTs to <c>POST /api/workspaces/{id}/agents/{name}/messages/stream</c> and
+/// yields one chunk per <c>text/event-stream</c> frame.
 /// </summary>
 /// <remarks>
 /// <para>Failure paths surface as a terminal <see cref="SendMessageErrorChunk"/> — 400
 /// → <see cref="ActionFailureReason.ValidationFailed"/>, 409 → <c>Conflict</c>,
 /// 401/403 → <c>Unauthorized</c>, 5xx and unexpected → <c>Internal</c>,
 /// <see cref="HttpRequestException"/> → <c>SiloUnreachable</c>, caller-side
-/// cancellation → <c>Cancelled</c>. After yielding an error chunk the action
+/// cancellation → <c>Cancelled</c>. Failure messages carry the FACT only (no
+/// categorical verb prefix) — the frontend pairs <see cref="ActionFailureReason"/>
+/// with its own verb at render time. After yielding an error chunk the action
 /// stops the underlying SSE read.</para>
 ///
 /// <para>A successful stream emits zero or more <see cref="SendMessageTextChunk"/>
@@ -73,8 +74,7 @@ public sealed class SendMessageStreamingAction
             }
             catch (HttpRequestException ex)
             {
-                prelude = new SendMessageErrorChunk(
-                    ActionFailure.SiloUnreachable($"Silo unreachable: {ex.Message}"));
+                prelude = new SendMessageErrorChunk(ActionFailure.SiloUnreachable(ex.Message));
             }
 
             if (prelude is not null)
@@ -97,7 +97,7 @@ public sealed class SendMessageStreamingAction
             }
 
             yield return new SendMessageErrorChunk(
-                ActionFailure.Internal("Silo closed the stream without a complete event."));
+                ActionFailure.Internal("stream closed without a complete event"));
         }
         finally
         {
@@ -118,7 +118,7 @@ public sealed class SendMessageStreamingAction
         catch (HttpRequestException ex)
         {
             openError = new SendMessageErrorChunk(
-                ActionFailure.SiloUnreachable($"Silo unreachable while reading stream: {ex.Message}"));
+                ActionFailure.SiloUnreachable($"while reading stream: {ex.Message}"));
         }
 
         if (openError is not null)
@@ -148,7 +148,7 @@ public sealed class SendMessageStreamingAction
                 catch (JsonException ex)
                 {
                     return new SendMessageErrorChunk(
-                        ActionFailure.Internal($"Silo emitted unreadable text frame: {ex.Message}"));
+                        ActionFailure.Internal($"unreadable text frame: {ex.Message}"));
                 }
                 return textWire is null
                     ? null
@@ -163,10 +163,10 @@ public sealed class SendMessageStreamingAction
                 catch (JsonException ex)
                 {
                     return new SendMessageErrorChunk(
-                        ActionFailure.Internal($"Silo emitted unreadable complete frame: {ex.Message}"));
+                        ActionFailure.Internal($"unreadable complete frame: {ex.Message}"));
                 }
                 return completeWire is null
-                    ? new SendMessageErrorChunk(ActionFailure.Internal("Silo emitted empty complete frame."))
+                    ? new SendMessageErrorChunk(ActionFailure.Internal("empty complete frame"))
                     : new SendMessageCompleteChunk(ToResult(completeWire));
 
             default:
@@ -196,7 +196,7 @@ public sealed class SendMessageStreamingAction
         {
             var problem = await response.Content.ReadFromJsonAsync(
                 AgentJsonContext.Default.AgentProblemWire, cancellationToken).ConfigureAwait(false);
-            var message = FormatValidationErrors(problem) ?? "Message rejected by the silo.";
+            var message = FormatValidationErrors(problem) ?? "rejected by the silo";
             return new SendMessageErrorChunk(ActionFailure.ValidationFailed(message));
         }
 
@@ -206,24 +206,24 @@ public sealed class SendMessageStreamingAction
                 AgentJsonContext.Default.AgentProblemWire, cancellationToken).ConfigureAwait(false);
             var detail = problem?.Detail;
             return new SendMessageErrorChunk(ActionFailure.Conflict(string.IsNullOrWhiteSpace(detail)
-                ? "Agent could not handle the message in its current state."
+                ? "agent could not handle the message in its current state"
                 : detail));
         }
 
         if (response.StatusCode is HttpStatusCode.Unauthorized or HttpStatusCode.Forbidden)
         {
             return new SendMessageErrorChunk(
-                ActionFailure.Unauthorized($"Silo refused the chat request ({(int)response.StatusCode})."));
+                ActionFailure.Unauthorized($"HTTP {(int)response.StatusCode}"));
         }
 
         if ((int)response.StatusCode >= 500)
         {
             return new SendMessageErrorChunk(
-                ActionFailure.Internal($"Silo error sending message ({(int)response.StatusCode})."));
+                ActionFailure.Internal($"HTTP {(int)response.StatusCode}"));
         }
 
         return new SendMessageErrorChunk(
-            ActionFailure.Internal($"Unexpected silo response ({(int)response.StatusCode})."));
+            ActionFailure.Internal($"unexpected response (HTTP {(int)response.StatusCode})"));
     }
 
     private static string? FormatValidationErrors(AgentProblemWire? problem)
