@@ -1,3 +1,4 @@
+using System.Runtime.CompilerServices;
 using Microsoft.Extensions.AI;
 using Microsoft.Extensions.Logging;
 
@@ -43,6 +44,35 @@ public sealed partial class CostTrackingChatClient : DelegatingChatClient
         }
 
         return response;
+    }
+
+    public override async IAsyncEnumerable<ChatResponseUpdate> GetStreamingResponseAsync(
+        IEnumerable<ChatMessage> messages,
+        ChatOptions? options = null,
+        [EnumeratorCancellation] CancellationToken cancellationToken = default)
+    {
+        UsageDetails? lastUsage = null;
+        string? observedModelId = null;
+
+        await foreach (var update in base.GetStreamingResponseAsync(messages, options, cancellationToken).ConfigureAwait(false))
+        {
+            observedModelId ??= update.ModelId;
+            foreach (var content in update.Contents)
+            {
+                if (content is UsageContent usageContent)
+                    lastUsage = usageContent.Details;
+            }
+
+            yield return update;
+        }
+
+        if (lastUsage is null)
+            yield break;
+
+        var agentId = options?.AdditionalProperties?.GetValueOrDefault("agentId")?.ToString() ?? "unknown";
+        var modelId = observedModelId ?? "unknown";
+        _ledger.RecordUsage(agentId, modelId, lastUsage.InputTokenCount ?? 0, lastUsage.OutputTokenCount ?? 0);
+        LogTokenUsage(agentId, lastUsage.InputTokenCount, lastUsage.OutputTokenCount, modelId);
     }
 
     public AgentCostSummary? GetCostSummary(string agentId) => _ledger.GetCostSummary(agentId);
