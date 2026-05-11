@@ -172,4 +172,22 @@ internal static class CliTheme
             $"[bold rgb({Primary.R},{Primary.G},{Primary.B})]{Markup.Escape(agentName)}[/] " +
             $"[rgb({Muted.R},{Muted.G},{Muted.B})]·[/] {Markup.Escape(text)}");
     }
+
+    /// <summary>
+    /// Streaming chat counterpart to <see cref="WriteAgentReply"/>. Writes the agent
+    /// header (<c>{name} · </c>) with no trailing newline, leaving the cursor at the
+    /// position where streamed text chunks will be appended via
+    /// <see cref="WriteAgentReplyChunk"/>. Finalize with <see cref="WriteAgentReplyEnd"/>.
+    /// </summary>
+    public static void WriteAgentReplyBegin(string agentName)
+    {
+        AnsiConsole.Markup(
+            $"[bold rgb({Primary.R},{Primary.G},{Primary.B})]{Markup.Escape(agentName)}[/] " +
+            $"[rgb({Muted.R},{Muted.G},{Muted.B})]·[/] ");
+    }
+
+    public static void WriteAgentReplyChunk(string text)
+        => AnsiConsole.Markup(Markup.Escape(text));
+
+    public static void WriteAgentReplyEnd() => AnsiConsole.WriteLine();
 }
