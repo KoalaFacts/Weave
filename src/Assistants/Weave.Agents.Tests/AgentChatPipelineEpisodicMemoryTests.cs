@@ -55,7 +55,7 @@ public sealed class AgentChatPipelineEpisodicMemoryTests
             actors,
             chatClientFactory,
             TimeProvider.System,
-            NullLogger<AgentChatPipeline>.Instance);
+                NullLogger<AgentChatPipeline>.Instance);
         return (pipeline, chatClient, episodic, captured);
     }
 

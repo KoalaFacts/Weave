@@ -6,6 +6,7 @@
 
   <ItemGroup>
     <InternalsVisibleTo Include="Weave.Tools.Tests" />
+    <InternalsVisibleTo Include="Weave.Agents" />
   </ItemGroup>
 
   <ItemGroup>

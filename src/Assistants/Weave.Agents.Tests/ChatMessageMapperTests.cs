@@ -6,8 +6,6 @@ namespace Weave.Agents.Tests;
 
 public sealed class ChatMessageMapperTests
 {
-    private readonly ChatMessageMapper _mapper = new();
-
     // --- ToChatMessage ---
 
     [Fact]
@@ -15,7 +13,7 @@ public sealed class ChatMessageMapperTests
     {
         var msg = new ConversationMessage { Role = "user", Content = "Hello" };
 
-        var chatMsg = _mapper.ToChatMessage(msg);
+        var chatMsg = ChatMessageMapper.ToChatMessage(msg);
 
         chatMsg.Role.ShouldBe(ChatRole.User);
         chatMsg.Text.ShouldBe("Hello");
@@ -26,7 +24,7 @@ public sealed class ChatMessageMapperTests
     {
         var msg = new ConversationMessage { Role = "assistant", Content = "Hi there" };
 
-        var chatMsg = _mapper.ToChatMessage(msg);
+        var chatMsg = ChatMessageMapper.ToChatMessage(msg);
 
         chatMsg.Role.ShouldBe(ChatRole.Assistant);
     }
@@ -36,7 +34,7 @@ public sealed class ChatMessageMapperTests
     {
         var msg = new ConversationMessage { Role = "system", Content = "You are a bot" };
 
-        var chatMsg = _mapper.ToChatMessage(msg);
+        var chatMsg = ChatMessageMapper.ToChatMessage(msg);
 
         chatMsg.Role.ShouldBe(ChatRole.System);
     }
@@ -46,7 +44,7 @@ public sealed class ChatMessageMapperTests
     {
         var msg = new ConversationMessage { Role = "tool", Content = "result" };
 
-        var chatMsg = _mapper.ToChatMessage(msg);
+        var chatMsg = ChatMessageMapper.ToChatMessage(msg);
 
         chatMsg.Role.ShouldBe(ChatRole.Tool);
     }
@@ -56,7 +54,7 @@ public sealed class ChatMessageMapperTests
     {
         var msg = new ConversationMessage { Role = "something-else", Content = "test" };
 
-        var chatMsg = _mapper.ToChatMessage(msg);
+        var chatMsg = ChatMessageMapper.ToChatMessage(msg);
 
         chatMsg.Role.ShouldBe(ChatRole.User);
     }
@@ -66,7 +64,7 @@ public sealed class ChatMessageMapperTests
     {
         var msg = new ConversationMessage { Role = "ASSISTANT", Content = "test" };
 
-        var chatMsg = _mapper.ToChatMessage(msg);
+        var chatMsg = ChatMessageMapper.ToChatMessage(msg);
 
         chatMsg.Role.ShouldBe(ChatRole.Assistant);
     }
@@ -77,7 +75,7 @@ public sealed class ChatMessageMapperTests
         var timestamp = new DateTimeOffset(2025, 6, 15, 12, 0, 0, TimeSpan.Zero);
         var msg = new ConversationMessage { Role = "user", Content = "test", Timestamp = timestamp };
 
-        var chatMsg = _mapper.ToChatMessage(msg);
+        var chatMsg = ChatMessageMapper.ToChatMessage(msg);
 
         chatMsg.CreatedAt.ShouldBe(timestamp);
     }
@@ -89,7 +87,7 @@ public sealed class ChatMessageMapperTests
     {
         var chatMsg = new ChatMessage(ChatRole.Assistant, "Hello world");
 
-        var results = _mapper.ToConversationMessages(chatMsg, TimeProvider.System).ToList();
+        var results = ChatMessageMapper.ToConversationMessages(chatMsg, TimeProvider.System).ToList();
 
         results.Count.ShouldBe(1);
         results[0].Role.ShouldBe("assistant");
@@ -103,7 +101,7 @@ public sealed class ChatMessageMapperTests
         var functionCall = new FunctionCallContent("call-1", "my-tool", args);
         var chatMsg = new ChatMessage(ChatRole.Assistant, [functionCall]);
 
-        var results = _mapper.ToConversationMessages(chatMsg, TimeProvider.System).ToList();
+        var results = ChatMessageMapper.ToConversationMessages(chatMsg, TimeProvider.System).ToList();
 
         results.Count.ShouldBe(1);
         results[0].Role.ShouldBe("tool");
@@ -116,7 +114,7 @@ public sealed class ChatMessageMapperTests
         var functionResult = new FunctionResultContent("call-1", "output data");
         var chatMsg = new ChatMessage(ChatRole.Tool, [functionResult]);
 
-        var results = _mapper.ToConversationMessages(chatMsg, TimeProvider.System).ToList();
+        var results = ChatMessageMapper.ToConversationMessages(chatMsg, TimeProvider.System).ToList();
 
         results.Count.ShouldBe(1);
         results[0].Role.ShouldBe("tool");
@@ -128,7 +126,7 @@ public sealed class ChatMessageMapperTests
     {
         var chatMsg = new ChatMessage(ChatRole.Assistant, "   ");
 
-        var results = _mapper.ToConversationMessages(chatMsg, TimeProvider.System).ToList();
+        var results = ChatMessageMapper.ToConversationMessages(chatMsg, TimeProvider.System).ToList();
 
         results.ShouldBeEmpty();
     }
@@ -139,7 +137,7 @@ public sealed class ChatMessageMapperTests
         var chatMsg = new ChatMessage(ChatRole.Assistant, "thinking...");
         chatMsg.Contents.Add(new FunctionCallContent("call-1", "my-tool"));
 
-        var results = _mapper.ToConversationMessages(chatMsg, TimeProvider.System).ToList();
+        var results = ChatMessageMapper.ToConversationMessages(chatMsg, TimeProvider.System).ToList();
 
         results.Count.ShouldBe(2);
     }
@@ -153,7 +151,7 @@ public sealed class ChatMessageMapperTests
             CreatedAt = timestamp
         };
 
-        var results = _mapper.ToConversationMessages(chatMsg, TimeProvider.System).ToList();
+        var results = ChatMessageMapper.ToConversationMessages(chatMsg, TimeProvider.System).ToList();
 
         results[0].Timestamp.ShouldBe(timestamp);
     }

@@ -3,7 +3,7 @@ using Weave.Workspaces.Models;
 
 namespace Weave.Tools.Mapping;
 
-public static class ToolSpecMapper
+internal static class ToolSpecMapper
 {
     public static ToolSpec FromDefinition(string toolName, ToolDefinition definition)
     {

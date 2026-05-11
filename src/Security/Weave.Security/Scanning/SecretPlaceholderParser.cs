@@ -2,7 +2,7 @@ using System.Text;
 
 namespace Weave.Security.Scanning;
 
-public static class SecretPlaceholderParser
+internal static class SecretPlaceholderParser
 {
     private const string Prefix = "{secret:";
 

@@ -1,5 +1,6 @@
 using Weave.Agents.Actors;
 using Weave.Agents.Models;
+using Weave.Security.Scanning;
 using Weave.Security.Tokens;
 using Weave.Shared.Events;
 using Weave.Shared.Lifecycle;

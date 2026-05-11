@@ -5,6 +5,7 @@ using Weave.Shared.Events;
 using Weave.Shared.Ids;
 using Weave.Shared.Lifecycle;
 using Weave.Tools.Actors;
+using Weave.Tools.Mapping;
 using Weave.Workspaces.Models;
 
 namespace Weave.Agents.Actors;
