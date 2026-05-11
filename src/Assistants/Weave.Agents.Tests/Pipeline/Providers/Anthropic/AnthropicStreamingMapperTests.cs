@@ -126,6 +126,7 @@ public sealed class AnthropicStreamingMapperTests
         {
             await foreach (var _ in AnthropicStreamingMapper.MapEventsAsync(events, "m", TestContext.Current.CancellationToken))
             {
+                // Drain — the assertion is on the thrown exception's message.
             }
         });
         ex.Message.ShouldContain("<<MARKER-ERROR>>");

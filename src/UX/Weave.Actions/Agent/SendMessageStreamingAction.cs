@@ -52,57 +52,52 @@ public sealed class SendMessageStreamingAction
         SendMessageStreamingChunk? prelude = null;
         try
         {
-            try
+            using var request = new HttpRequestMessage(
+                HttpMethod.Post,
+                $"/api/workspaces/{Uri.EscapeDataString(input.WorkspaceId)}/agents/{Uri.EscapeDataString(input.AgentName)}/messages/stream")
             {
-                using var request = new HttpRequestMessage(
-                    HttpMethod.Post,
-                    $"/api/workspaces/{Uri.EscapeDataString(input.WorkspaceId)}/agents/{Uri.EscapeDataString(input.AgentName)}/messages/stream")
-                {
-                    Content = JsonContent.Create(
-                        new SendMessageWire { Content = input.Content },
-                        AgentJsonContext.Default.SendMessageWire)
-                };
+                Content = JsonContent.Create(
+                    new SendMessageWire { Content = input.Content },
+                    AgentJsonContext.Default.SendMessageWire)
+            };
 
-                response = await _httpClient.SendAsync(
-                    request,
-                    HttpCompletionOption.ResponseHeadersRead,
-                    cancellationToken).ConfigureAwait(false);
-            }
-            catch (OperationCanceledException) when (cancellationToken.IsCancellationRequested)
-            {
-                prelude = new SendMessageErrorChunk(ActionFailure.Cancelled());
-            }
-            catch (HttpRequestException ex)
-            {
-                prelude = new SendMessageErrorChunk(ActionFailure.SiloUnreachable(ex.Message));
-            }
-
-            if (prelude is not null)
-            {
-                yield return prelude;
-                yield break;
-            }
-
-            if (response!.StatusCode != HttpStatusCode.OK)
-            {
-                yield return await ReadFailureAsync(response, cancellationToken).ConfigureAwait(false);
-                yield break;
-            }
-
-            await foreach (var chunk in ReadStreamAsync(response, cancellationToken).ConfigureAwait(false))
-            {
-                yield return chunk;
-                if (chunk is SendMessageErrorChunk or SendMessageCompleteChunk)
-                    yield break;
-            }
-
-            yield return new SendMessageErrorChunk(
-                ActionFailure.Internal("stream closed without a complete event"));
+            response = await _httpClient.SendAsync(
+                request,
+                HttpCompletionOption.ResponseHeadersRead,
+                cancellationToken).ConfigureAwait(false);
         }
-        finally
+        catch (OperationCanceledException) when (cancellationToken.IsCancellationRequested)
         {
-            response?.Dispose();
+            prelude = new SendMessageErrorChunk(ActionFailure.Cancelled());
         }
+        catch (HttpRequestException ex)
+        {
+            prelude = new SendMessageErrorChunk(ActionFailure.SiloUnreachable(ex.Message));
+        }
+
+        if (prelude is not null)
+        {
+            yield return prelude;
+            yield break;
+        }
+
+        using var owned = response!;
+
+        if (owned.StatusCode != HttpStatusCode.OK)
+        {
+            yield return await ReadFailureAsync(owned, cancellationToken).ConfigureAwait(false);
+            yield break;
+        }
+
+        await foreach (var chunk in ReadStreamAsync(owned, cancellationToken).ConfigureAwait(false))
+        {
+            yield return chunk;
+            if (chunk is SendMessageErrorChunk or SendMessageCompleteChunk)
+                yield break;
+        }
+
+        yield return new SendMessageErrorChunk(
+            ActionFailure.Internal("stream closed without a complete event"));
     }
 
     private static async IAsyncEnumerable<SendMessageStreamingChunk> ReadStreamAsync(

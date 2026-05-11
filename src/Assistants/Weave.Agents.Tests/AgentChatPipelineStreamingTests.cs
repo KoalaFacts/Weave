@@ -146,7 +146,7 @@ public sealed class AgentChatPipelineStreamingTests
 
         duringStreaming.ShouldNotBeNull();
         state.LastActive.ShouldNotBeNull();
-        state.LastActive!.Value.ShouldBeGreaterThan(duringStreaming.Value);
+        state.LastActive!.Value.ShouldBeGreaterThan(duringStreaming!.Value);
     }
 
     [Fact]

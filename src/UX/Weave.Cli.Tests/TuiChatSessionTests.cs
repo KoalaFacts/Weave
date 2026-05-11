@@ -178,11 +178,11 @@ public sealed class TuiChatSessionTests
             CancellationToken cancellationToken)
         {
             RequestCount++;
-            var response = new HttpResponseMessage(_status)
+            // Ownership of the returned HttpResponseMessage transfers to the caller (HttpClient).
+            return Task.FromResult(new HttpResponseMessage(_status)
             {
                 Content = new StringContent(_body, Encoding.UTF8, _contentType)
-            };
-            return Task.FromResult(response);
+            });
         }
     }
 }

@@ -55,6 +55,7 @@ public sealed class RateLimitingChatClientStreamingTests
             null,
             ct))
         {
+            // Drain — caller doesn't need the updates; the stream is consumed to release the rate-limit lease.
         }
     }
 }

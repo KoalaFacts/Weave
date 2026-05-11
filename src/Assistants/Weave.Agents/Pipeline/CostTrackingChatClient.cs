@@ -57,11 +57,8 @@ public sealed partial class CostTrackingChatClient : DelegatingChatClient
         await foreach (var update in base.GetStreamingResponseAsync(messages, options, cancellationToken).ConfigureAwait(false))
         {
             observedModelId ??= update.ModelId;
-            foreach (var content in update.Contents)
-            {
-                if (content is UsageContent usageContent)
-                    lastUsage = usageContent.Details;
-            }
+            foreach (var usage in update.Contents.OfType<UsageContent>())
+                lastUsage = usage.Details;
 
             yield return update;
         }

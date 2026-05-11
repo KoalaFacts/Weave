@@ -178,7 +178,9 @@ public sealed class SendMessageStreamingActionTests
         await Should.ThrowAsync<ArgumentNullException>(async () =>
         {
             await foreach (var _ in action.StreamAsync(null!, CancellationToken.None))
-            { }
+            {
+                // Drain — enumeration is required to trigger the argument-validation throw.
+            }
         });
     }
 
@@ -193,7 +195,9 @@ public sealed class SendMessageStreamingActionTests
         await Should.ThrowAsync<ArgumentException>(async () =>
         {
             await foreach (var _ in action.StreamAsync(new SendMessageInput(workspaceId, agentName, "hi"), CancellationToken.None))
-            { }
+            {
+                // Drain — enumeration is required to trigger the argument-validation throw.
+            }
         });
     }
 
@@ -234,11 +238,11 @@ public sealed class SendMessageStreamingActionTests
         {
             LastRequestUri = request.RequestUri;
             LastRequestMethod = request.Method;
-            var response = new HttpResponseMessage(HttpStatusCode.OK)
+            // Ownership of the returned HttpResponseMessage transfers to the caller (HttpClient).
+            return Task.FromResult(new HttpResponseMessage(HttpStatusCode.OK)
             {
                 Content = new StringContent(_body, Encoding.UTF8, "text/event-stream")
-            };
-            return Task.FromResult(response);
+            });
         }
     }
 }

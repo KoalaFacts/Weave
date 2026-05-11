@@ -70,6 +70,7 @@ public sealed class AnthropicChatClientStreamingTests
         {
             await foreach (var _ in client.GetStreamingResponseAsync(null!, cancellationToken: TestContext.Current.CancellationToken))
             {
+                // Drain — enumeration is required to trigger the argument-validation throw.
             }
         });
     }

@@ -60,9 +60,9 @@ public sealed class AgentChatPipeline(
         await foreach (var update in _chatClient!.GetStreamingResponseAsync(request.Messages, request.Options, ct).ConfigureAwait(false))
         {
             updates.Add(update);
-            foreach (var content in update.Contents)
+            foreach (var textContent in update.Contents.OfType<TextContent>())
             {
-                if (content is TextContent { Text: { Length: > 0 } text })
+                if (textContent.Text is { Length: > 0 } text)
                     yield return new AgentChatTextFrame(text);
             }
         }
