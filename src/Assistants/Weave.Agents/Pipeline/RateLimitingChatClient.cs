@@ -1,3 +1,4 @@
+using System.Runtime.CompilerServices;
 using System.Threading.RateLimiting;
 using Microsoft.Extensions.AI;
 using Microsoft.Extensions.Logging;
@@ -41,6 +42,24 @@ public sealed partial class RateLimitingChatClient : DelegatingChatClient
         }
 
         return await base.GetResponseAsync(messages, options, cancellationToken);
+    }
+
+    public override async IAsyncEnumerable<ChatResponseUpdate> GetStreamingResponseAsync(
+        IEnumerable<ChatMessage> messages,
+        ChatOptions? options = null,
+        [EnumeratorCancellation] CancellationToken cancellationToken = default)
+    {
+        using var lease = await _limiter.AcquireAsync(1, cancellationToken).ConfigureAwait(false);
+        if (!lease.IsAcquired)
+        {
+            LogRateLimitExceeded();
+            throw new InvalidOperationException("LLM rate limit exceeded. Please try again later.");
+        }
+
+        await foreach (var update in base.GetStreamingResponseAsync(messages, options, cancellationToken).ConfigureAwait(false))
+        {
+            yield return update;
+        }
     }
 
     [LoggerMessage(Level = LogLevel.Warning, Message = "Rate limit exceeded for LLM request")]

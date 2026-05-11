@@ -63,6 +63,15 @@ internal sealed record AgentProblemWire
 }
 
 /// <summary>
+/// Wire shape for the silo's <c>event: text</c> SSE frames on the streaming-chat
+/// endpoint. Mirrors <c>Weave.Silo.Api.TextEventWire</c>.
+/// </summary>
+internal sealed record StreamingTextWire
+{
+    public string Text { get; init; } = string.Empty;
+}
+
+/// <summary>
 /// Per-feature source-gen JSON context for the agent verbs. Each Phase 1 verb
 /// folder owns its own context so the source-gen surface stays local and
 /// silo response-shape changes don't ripple across the action layer.
@@ -77,5 +86,6 @@ internal sealed record AgentProblemWire
 [JsonSerializable(typeof(SendMessageWire))]
 [JsonSerializable(typeof(ChatResponseWire))]
 [JsonSerializable(typeof(AgentProblemWire))]
+[JsonSerializable(typeof(StreamingTextWire))]
 [JsonSerializable(typeof(JsonElement))]
 internal sealed partial class AgentJsonContext : JsonSerializerContext;

@@ -10,6 +10,7 @@ public interface IAgentActor
     Task DeactivateAsync();
     Task<AgentState> GetStateAsync();
     Task<AgentChatResponse> SendAsync(AgentMessage message);
+    IAsyncEnumerable<AgentChatStreamingFrame> SendStreamingAsync(AgentMessage message, CancellationToken ct = default);
     Task<AgentTaskInfo> SubmitTaskAsync(string description);
     Task CompleteTaskAsync(AgentTaskId taskId, bool success, ProofOfWork proof);
     Task ReviewTaskAsync(AgentTaskId taskId, bool accepted, string? feedback = null, VerificationRecord? verification = null);

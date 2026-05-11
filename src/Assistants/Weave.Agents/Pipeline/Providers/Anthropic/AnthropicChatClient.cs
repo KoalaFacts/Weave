@@ -15,10 +15,9 @@ namespace Weave.Agents.Pipeline.Providers.Anthropic;
 /// to <see cref="ChatResponse"/>, keeping the abstractions on Microsoft's
 /// surface and the wire shape under our own control.
 ///
-/// <para>First cut: text-only multi-turn chat. Tool use, image content,
-/// and incremental streaming are deferred until a real consumer needs them
-/// — streaming today returns a single <see cref="ChatResponseUpdate"/>
-/// covering the full response.</para>
+/// <para>Streaming is wired through <see cref="AnthropicSseParser"/> +
+/// <see cref="AnthropicStreamingMapper"/>; tool use and image content are
+/// deferred until a consumer needs them.</para>
 /// </remarks>
 internal sealed class AnthropicChatClient : IChatClient
 {
@@ -79,15 +78,31 @@ internal sealed class AnthropicChatClient : IChatClient
         ChatOptions? options = null,
         [EnumeratorCancellation] CancellationToken cancellationToken = default)
     {
-        var response = await GetResponseAsync(messages, options, cancellationToken).ConfigureAwait(false);
-        var text = response.Text;
-        yield return new ChatResponseUpdate
+        ArgumentNullException.ThrowIfNull(messages);
+
+        var (system, conversation) = SplitSystemAndConversation(messages);
+        var requestBody = new AnthropicMessagesRequest
         {
-            Role = ChatRole.Assistant,
-            Contents = [new TextContent(text)],
-            ModelId = response.ModelId,
-            ResponseId = response.ResponseId
+            Model = options?.ModelId ?? _modelId,
+            MaxTokens = options?.MaxOutputTokens ?? DefaultMaxTokens,
+            System = system,
+            Messages = conversation,
+            Stream = true
         };
+
+        using var httpRequest = BuildRequest(requestBody);
+        using var httpResponse = await _httpClient
+            .SendAsync(httpRequest, HttpCompletionOption.ResponseHeadersRead, cancellationToken)
+            .ConfigureAwait(false);
+        httpResponse.EnsureSuccessStatusCode();
+
+        await using var stream = await httpResponse.Content.ReadAsStreamAsync(cancellationToken).ConfigureAwait(false);
+        var events = AnthropicSseParser.ReadEventsAsync(stream, cancellationToken);
+
+        await foreach (var update in AnthropicStreamingMapper.MapEventsAsync(events, _modelId, cancellationToken).ConfigureAwait(false))
+        {
+            yield return update;
+        }
     }
 
     public object? GetService(Type serviceType, object? serviceKey = null) =>
@@ -150,7 +165,7 @@ internal sealed class AnthropicChatClient : IChatClient
         {
             ResponseId = parsed.Id,
             ModelId = parsed.Model ?? _modelId,
-            FinishReason = MapFinishReason(parsed.StopReason),
+            FinishReason = AnthropicStreamingMapper.MapFinishReason(parsed.StopReason),
             Usage = parsed.Usage is null
                 ? null
                 : new UsageDetails
@@ -174,13 +189,4 @@ internal sealed class AnthropicChatClient : IChatClient
         }
         return builder.ToString();
     }
-
-    private static ChatFinishReason? MapFinishReason(string? stopReason) => stopReason switch
-    {
-        "end_turn" => ChatFinishReason.Stop,
-        "max_tokens" => ChatFinishReason.Length,
-        "stop_sequence" => ChatFinishReason.Stop,
-        "tool_use" => ChatFinishReason.ToolCalls,
-        _ => null
-    };
 }

@@ -1,12 +1,9 @@
 using System.Text.Json;
 using Microsoft.Extensions.AI;
-using Microsoft.Extensions.Logging;
 
 namespace Weave.Agents.Pipeline;
 
-internal sealed partial class FallbackChatClient(
-    string? defaultModelId,
-    ILogger<FallbackChatClient> logger) : IChatClient
+internal sealed class FallbackChatClient(string? defaultModelId) : IChatClient
 {
     private readonly ChatClientMetadata _metadata = new("weave-fallback", new Uri("https://weave.local/"), defaultModelId ?? "weave-local");
 
@@ -64,17 +61,34 @@ internal sealed partial class FallbackChatClient(
         [System.Runtime.CompilerServices.EnumeratorCancellation] CancellationToken cancellationToken = default)
     {
         var response = await GetResponseAsync(messages, options, cancellationToken);
-        LogStreamingNotSupported(response.ModelId);
-        yield break;
+        var text = response.Text;
+        if (!string.IsNullOrEmpty(text))
+        {
+            yield return new ChatResponseUpdate
+            {
+                Role = ChatRole.Assistant,
+                Contents = [new TextContent(text)],
+                ModelId = response.ModelId,
+                ResponseId = response.ResponseId
+            };
+        }
+        if (response.Usage is { } usage)
+        {
+            yield return new ChatResponseUpdate
+            {
+                Role = ChatRole.Assistant,
+                Contents = [new UsageContent(usage)],
+                ModelId = response.ModelId,
+                ResponseId = response.ResponseId,
+                FinishReason = response.FinishReason
+            };
+        }
     }
 
     public object? GetService(Type serviceType, object? serviceKey = null) =>
         serviceType == typeof(ChatClientMetadata) ? _metadata : null;
 
     public void Dispose() { }
-
-    [LoggerMessage(Level = LogLevel.Debug, Message = "Fallback chat client does not support incremental streaming; returning no updates for {ModelId}")]
-    private partial void LogStreamingNotSupported(string? modelId);
 
     private static FunctionResultContent? FindLastFunctionResult(IEnumerable<ChatMessage> messages)
     {

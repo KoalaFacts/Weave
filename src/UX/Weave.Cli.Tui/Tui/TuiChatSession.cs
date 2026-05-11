@@ -1,4 +1,4 @@
-using Spectre.Console;
+using System.Text;
 using Weave.Actions.Agent;
 using Weave.Actions.Context;
 
@@ -7,13 +7,18 @@ namespace Weave.Cli.Tui;
 
 internal sealed class TuiChatSession
 {
-    private readonly SendMessageAction _sendMessageAction;
+    private readonly SendMessageStreamingAction _streamingAction;
+    private readonly TimeProvider _timeProvider;
     private readonly List<ConversationMessage> _history = [];
 
-    public TuiChatSession(SendMessageAction sendMessageAction)
+    public TuiChatSession(SendMessageStreamingAction streamingAction, TimeProvider timeProvider)
     {
-        _sendMessageAction = sendMessageAction;
+        _streamingAction = streamingAction;
+        _timeProvider = timeProvider;
     }
+
+    /// <summary>Test seam — read-only view of the conversation history.</summary>
+    internal IReadOnlyList<ConversationMessage> History => _history;
 
     public void Clear() => _history.Clear();
 
@@ -42,30 +47,46 @@ internal sealed class TuiChatSession
         }
 
         CliTheme.WriteUserEcho(message);
+        CliTheme.WriteAgentReplyBegin(session.AgentName);
 
-        ActionResult<SendMessageResult> result = default;
+        var assembled = new StringBuilder();
+        SendMessageResult? completed = null;
+        ActionFailure? failure = null;
 
-        await AnsiConsole.Status()
-            .Spinner(Spinner.Known.Dots)
-            .SpinnerStyle(CliTheme.AccentStyle)
-            .StartAsync($"{session.AgentName} is thinking…", async _ =>
+        await foreach (var chunk in _streamingAction.StreamAsync(
+            new SendMessageInput(session.WorkspaceId!, session.AgentName, message), ct))
+        {
+            switch (chunk)
             {
-                result = await _sendMessageAction.ExecuteAsync(
-                    new SendMessageInput(session.WorkspaceId!, session.AgentName, message),
-                    ct);
-            });
+                case SendMessageTextChunk text:
+                    CliTheme.WriteAgentReplyChunk(text.Text);
+                    assembled.Append(text.Text);
+                    break;
+                case SendMessageCompleteChunk done:
+                    completed = done.Result;
+                    break;
+                case SendMessageErrorChunk error:
+                    failure = error.Failure;
+                    break;
+            }
+        }
 
-        if (!result.IsSuccess)
+        CliTheme.WriteAgentReplyEnd();
+
+        if (failure is not null)
         {
             // User-initiated cancellation (Ctrl-C) shouldn't render as an error.
-            if (result.Failure.Reason != ActionFailureReason.Cancelled)
-                CliTheme.WriteError($"Agent call failed: {result.Failure.Message}");
+            if (failure.Reason != ActionFailureReason.Cancelled)
+                CliTheme.WriteError($"{FailureLabel(failure.Reason)}: {failure.Message}");
             return;
         }
 
-        var reply = result.Value;
-        _history.Add(new ConversationMessage { Role = "user", Content = message, Timestamp = DateTimeOffset.UtcNow });
-        _history.Add(new ConversationMessage { Role = "assistant", Content = reply.Content, Timestamp = DateTimeOffset.UtcNow });
+        // SendMessageStreamingAction's terminal-error invariant guarantees one of
+        // {failure, completed} is set when the loop exits — failure handled above.
+        var reply = completed!;
+        var now = _timeProvider.GetUtcNow();
+        _history.Add(new ConversationMessage { Role = "user", Content = message, Timestamp = now });
+        _history.Add(new ConversationMessage { Role = "assistant", Content = reply.Content, Timestamp = now });
         if (reply.Messages is { Count: > 0 })
         {
             _history.Clear();
@@ -75,11 +96,20 @@ internal sealed class TuiChatSession
         if (reply.UsedTools)
             CliTheme.WriteMuted("  Tools were used to generate this response.");
 
-        CliTheme.WriteAgentReply(session.AgentName, reply.Content);
-
         if (!string.IsNullOrWhiteSpace(reply.Model))
             CliTheme.WriteMuted($"  Model: {reply.Model}");
     }
+
+    private static string FailureLabel(ActionFailureReason reason) => reason switch
+    {
+        ActionFailureReason.ValidationFailed => "Message rejected",
+        ActionFailureReason.SiloUnreachable => "Silo unreachable",
+        ActionFailureReason.Conflict => "Agent unavailable",
+        ActionFailureReason.Unauthorized => "Silo refused the request",
+        ActionFailureReason.NotFound => "Not found",
+        ActionFailureReason.Internal => "Silo error",
+        _ => "Agent call failed",
+    };
 
     private static void RenderHistory(
         TuiSession session,

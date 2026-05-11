@@ -6,7 +6,7 @@ namespace Weave.Agents.Tests;
 
 public sealed class FallbackChatClientTests : IDisposable
 {
-    private readonly FallbackChatClient _client = new("test-model", NullLogger<FallbackChatClient>.Instance);
+    private readonly FallbackChatClient _client = new("test-model");
 
     public void Dispose() => _client.Dispose();
 
@@ -196,9 +196,9 @@ public sealed class FallbackChatClientTests : IDisposable
     // --- GetStreamingResponseAsync ---
 
     [Fact]
-    public async Task GetStreamingResponseAsync_ReturnsEmpty()
+    public async Task GetStreamingResponseAsync_YieldsTextAndUsageUpdates()
     {
-        var messages = new List<ChatMessage> { new(ChatRole.User, "test") };
+        var messages = new List<ChatMessage> { new(ChatRole.User, "test-input") };
 
         var updates = new List<ChatResponseUpdate>();
         await foreach (var update in _client.GetStreamingResponseAsync(messages, cancellationToken: TestContext.Current.CancellationToken))
@@ -206,7 +206,9 @@ public sealed class FallbackChatClientTests : IDisposable
             updates.Add(update);
         }
 
-        updates.ShouldBeEmpty();
+        updates.Count.ShouldBe(2);
+        updates[0].Contents.OfType<TextContent>().Single().Text.ShouldContain("test-input");
+        updates[1].Contents.OfType<UsageContent>().ShouldNotBeEmpty();
     }
 
     // --- GetService ---
@@ -249,7 +251,7 @@ public sealed class FallbackChatClientTests : IDisposable
     [Fact]
     public void Constructor_NullModelId_FallsBackToDefault()
     {
-        using var client = new FallbackChatClient(null, NullLogger<FallbackChatClient>.Instance);
+        using var client = new FallbackChatClient(null);
         var metadata = client.GetService(typeof(ChatClientMetadata)) as ChatClientMetadata;
 
         metadata.ShouldNotBeNull();

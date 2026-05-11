@@ -30,6 +30,7 @@ namespace Weave.Silo.Api;
 [JsonSerializable(typeof(ConditionResultResponse))]
 [JsonSerializable(typeof(ChatResponse))]
 [JsonSerializable(typeof(ConversationMessageResponse))]
+[JsonSerializable(typeof(TextEventWire))]
 [JsonSerializable(typeof(ConnectPluginRequest))]
 [JsonSerializable(typeof(ConnectPluginResponse))]
 [JsonSerializable(typeof(PluginStatus))]
