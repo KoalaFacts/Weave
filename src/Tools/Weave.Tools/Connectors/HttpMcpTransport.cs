@@ -5,15 +5,16 @@ using Weave.Workspaces.Manifest;
 
 namespace Weave.Tools.Connectors;
 
-// Streamable HTTP transport for MCP (spec rev 2025-03-26), synchronous-JSON
-// subset. Each request is POSTed; the JSON response is enqueued so the
-// McpConnection's read loop can pick it up unchanged. Notifications (no
-// `id`) POST and expect 204 No Content — nothing enqueued.
+// Streamable HTTP transport for MCP (spec rev 2025-03-26). The client
+// advertises `Accept: application/json, text/event-stream` as the spec
+// requires; the server picks. For JSON responses we enqueue the body
+// verbatim. For `text/event-stream` we parse SSE frames and enqueue each
+// `data:` payload as its own message — the McpConnection read loop then
+// dispatches them in order (notifications are logged-and-dropped, the
+// final response matches the pending request id).
 //
-// Out of scope today: consuming server-sent SSE streams on POST responses,
-// the optional GET /mcp server-initiated SSE channel, session ID headers.
-// The echo-mcp HTTP server exposes those for forward compatibility, but
-// Weave's connector doesn't drive them yet.
+// Out of scope today: the optional GET /mcp server-initiated SSE channel
+// and MCP session-id headers.
 internal sealed class HttpMcpTransport : IMcpTransport
 {
     private readonly HttpClient _httpClient;
@@ -61,9 +62,11 @@ internal sealed class HttpMcpTransport : IMcpTransport
             {
                 Content = new StringContent(json, Encoding.UTF8, "application/json")
             };
+            // Spec: client MUST advertise both content types.
             request.Headers.Accept.Add(new MediaTypeWithQualityHeaderValue("application/json"));
+            request.Headers.Accept.Add(new MediaTypeWithQualityHeaderValue("text/event-stream"));
 
-            response = await _httpClient.SendAsync(request, ct);
+            response = await _httpClient.SendAsync(request, HttpCompletionOption.ResponseHeadersRead, ct);
         }
         catch (HttpRequestException ex)
         {
@@ -83,15 +86,57 @@ internal sealed class HttpMcpTransport : IMcpTransport
             }
 
             var contentType = response.Content.Headers.ContentType?.MediaType;
-            if (!string.Equals(contentType, "application/json", StringComparison.OrdinalIgnoreCase))
+            if (string.Equals(contentType, "application/json", StringComparison.OrdinalIgnoreCase))
             {
-                _lastDiagnostic = $"unexpected Content-Type '{contentType}' (this transport only consumes application/json today)";
-                throw new IOException(_lastDiagnostic);
+                var body = await response.Content.ReadAsStringAsync(ct);
+                await _incoming.Writer.WriteAsync(body, ct);
+                return;
+            }
+            if (string.Equals(contentType, "text/event-stream", StringComparison.OrdinalIgnoreCase))
+            {
+                await ConsumeEventStreamAsync(response, ct);
+                return;
             }
 
-            var body = await response.Content.ReadAsStringAsync(ct);
-            await _incoming.Writer.WriteAsync(body, ct);
+            _lastDiagnostic = $"unexpected Content-Type '{contentType}' (expected application/json or text/event-stream)";
+            throw new IOException(_lastDiagnostic);
         }
+    }
+
+    private async Task ConsumeEventStreamAsync(HttpResponseMessage response, CancellationToken ct)
+    {
+        await using var stream = await response.Content.ReadAsStreamAsync(ct);
+        using var reader = new StreamReader(stream, Encoding.UTF8);
+        var dataBuf = new StringBuilder();
+        while (true)
+        {
+            var line = await reader.ReadLineAsync(ct);
+            if (line is null)
+                break;
+
+            if (line.Length == 0)
+            {
+                if (dataBuf.Length > 0)
+                {
+                    await _incoming.Writer.WriteAsync(dataBuf.ToString(), ct);
+                    dataBuf.Clear();
+                }
+                continue;
+            }
+
+            if (line.StartsWith("data:", StringComparison.Ordinal))
+            {
+                // Per SSE spec: strip exactly one optional leading space after the colon.
+                var payload = line.Length > 5 && line[5] == ' ' ? line.AsSpan(6) : line.AsSpan(5);
+                if (dataBuf.Length > 0) dataBuf.Append('\n');
+                dataBuf.Append(payload);
+            }
+            // Other SSE fields (event:, id:, retry:, : comments) ignored — MCP only uses data:.
+        }
+
+        // Flush a trailing event terminated by EOF rather than a blank line.
+        if (dataBuf.Length > 0)
+            await _incoming.Writer.WriteAsync(dataBuf.ToString(), ct);
     }
 
     public async Task<string?> ReceiveAsync(CancellationToken ct)

@@ -81,6 +81,53 @@ public sealed class EchoMcpHttpTransportSmokeTests : IDisposable
     }
 
     [Fact]
+    public async Task ExampleServer_HttpMode_SseResponse_DeliversFinalResultThroughTransport()
+    {
+        var python = LocatePython();
+        Assert.SkipWhen(python is null, "python3 required for echo-mcp SSE smoke test");
+
+        var scriptPath = LocateServerScript();
+        Assert.SkipWhen(scriptPath is null, "examples/echo-mcp/server.py not found relative to repo root");
+
+        _port = FindFreePort();
+        _server = StartServer(python!, scriptPath!, _port);
+        await WaitForListenerAsync(_port, TestContext.Current.CancellationToken);
+
+        var connector = new McpToolConnector(NullLogger<McpToolConnector>.Instance);
+        var spec = new ToolSpec
+        {
+            Name = "echo-server-http-sse",
+            Type = ToolType.Mcp,
+            Mcp = new McpConfig { Url = $"http://127.0.0.1:{_port}/mcp" }
+        };
+
+        var handle = await connector.ConnectAsync(spec, _token, TestContext.Current.CancellationToken);
+        try
+        {
+            // chunk_size > 0 makes the echo server respond with text/event-stream:
+            // N progress notifications followed by a final result frame. The
+            // transport must parse SSE frames and the McpConnection must
+            // log-and-drop the notifications while matching the final result
+            // to the pending request id.
+            var result = await connector.InvokeAsync(handle,
+                new ToolInvocation
+                {
+                    ToolName = "echo-server-http-sse",
+                    Method = "echo",
+                    Parameters = new() { ["text"] = "stream-me", ["chunk_size"] = "2" }
+                },
+                TestContext.Current.CancellationToken);
+
+            result.Success.ShouldBeTrue();
+            result.Output.ShouldBe("stream-me");
+        }
+        finally
+        {
+            await connector.DisconnectAsync(handle, TestContext.Current.CancellationToken);
+        }
+    }
+
+    [Fact]
     public async Task ConnectAsync_UnreachableUrl_SurfacesAsToolResultFailure()
     {
         var freePort = FindFreePort();
