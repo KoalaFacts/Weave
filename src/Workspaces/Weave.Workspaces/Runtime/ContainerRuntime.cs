@@ -25,12 +25,12 @@ public sealed partial class ContainerRuntime(
         }, ct);
 
         var containers = new List<ContainerHandle>();
-        foreach (var (toolName, tool) in manifest.Tools.Where(static kvp => kvp.Value.Type is "mcp" && kvp.Value.Mcp is not null))
+        foreach (var (toolName, tool) in manifest.Tools.Where(static kvp => kvp.Value.Type is "mcp" && kvp.Value.Mcp is not null && !string.IsNullOrEmpty(kvp.Value.Mcp.Server)))
         {
             var container = await StartContainerAsync(new ContainerSpec
             {
                 Name = $"weave-{workspaceId}-{toolName}",
-                Image = tool.Mcp!.Server,
+                Image = tool.Mcp!.Server!,
                 Environment = tool.Mcp.Env,
                 NetworkId = network.NetworkId,
                 Command = tool.Mcp.Args

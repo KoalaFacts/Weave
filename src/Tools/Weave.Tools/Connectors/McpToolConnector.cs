@@ -1,15 +1,44 @@
 using System.Collections.Concurrent;
 using System.Diagnostics;
+using System.Text;
 using System.Text.Json;
+using System.Text.Json.Nodes;
 using Microsoft.Extensions.Logging;
 using Weave.Security.Tokens;
 using Weave.Tools.Tool;
+using Weave.Workspaces.Manifest;
+
 namespace Weave.Tools.Connectors;
 
-public sealed partial class McpToolConnector(ILogger<McpToolConnector> logger) : IToolConnector
+public sealed partial class McpToolConnector : IToolConnector
 {
-    private const int MaxStderrTailLines = 50;
-    private readonly Dictionary<string, McpConnection> _processes = [];
+    private readonly Func<McpConfig, CancellationToken, Task<IMcpTransport>> _transportFactory;
+    private readonly ILogger<McpToolConnector> _logger;
+    private readonly ConcurrentDictionary<string, McpConnection> _connections = new(StringComparer.Ordinal);
+
+    public McpToolConnector(ILogger<McpToolConnector> logger)
+        : this(SelectTransport, logger) { }
+
+    private static Task<IMcpTransport> SelectTransport(McpConfig config, CancellationToken ct)
+    {
+        var hasUrl = !string.IsNullOrWhiteSpace(config.Url);
+        var hasServer = !string.IsNullOrWhiteSpace(config.Server);
+
+        if (hasUrl && hasServer)
+            throw new InvalidOperationException("McpConfig must set exactly one of 'server' (stdio) or 'url' (http) — not both.");
+        if (!hasUrl && !hasServer)
+            throw new InvalidOperationException("McpConfig must set either 'server' (stdio) or 'url' (http).");
+
+        return hasUrl ? HttpMcpTransport.ConnectAsync(config, ct) : StdioMcpTransport.ConnectAsync(config, ct);
+    }
+
+    internal McpToolConnector(
+        Func<McpConfig, CancellationToken, Task<IMcpTransport>> transportFactory,
+        ILogger<McpToolConnector> logger)
+    {
+        _transportFactory = transportFactory;
+        _logger = logger;
+    }
 
     public ToolType ToolType => ToolType.Mcp;
 
@@ -17,48 +46,24 @@ public sealed partial class McpToolConnector(ILogger<McpToolConnector> logger) :
     {
         var mcp = tool.Mcp ?? throw new InvalidOperationException($"Tool '{tool.Name}' has no MCP configuration");
 
-        var psi = new ProcessStartInfo
+        var transport = await _transportFactory(mcp, ct);
+        var connection = new McpConnection(transport, tool.Name, _logger);
+
+        try
         {
-            FileName = mcp.Server,
-            RedirectStandardInput = true,
-            RedirectStandardOutput = true,
-            RedirectStandardError = true,
-            UseShellExecute = false,
-            CreateNoWindow = true
-        };
-
-        foreach (var arg in mcp.Args)
-            psi.ArgumentList.Add(arg);
-
-        foreach (var (key, value) in mcp.Env)
-            psi.Environment[key] = value;
-
-        var process = new Process { StartInfo = psi };
-
-        // Ring buffer of recent stderr lines so a dead-process Invoke
-        // can attach diagnostic context. The pipe drainer below runs
-        // on a pool thread; without it, verbose MCP servers hang once
-        // the ~4 KB stderr buffer fills (see docs/best-practices.md —
-        // "If RedirectStandardError = true, drain stderr too").
-        var stderrTail = new ConcurrentQueue<string>();
-        process.ErrorDataReceived += (_, e) =>
+            await connection.InitializeAsync(ct);
+        }
+        catch
         {
-            if (e.Data is null)
-                return;
-            stderrTail.Enqueue(e.Data);
-            while (stderrTail.Count > MaxStderrTailLines)
-                stderrTail.TryDequeue(out string? _);
-        };
-
-        process.Start();
-        process.BeginErrorReadLine();
+            await connection.DisposeAsync();
+            throw;
+        }
 
         var connectionId = Guid.NewGuid().ToString("N");
-        _processes[connectionId] = new McpConnection(process, stderrTail);
+        _connections[connectionId] = connection;
 
-        LogMcpToolConnected(tool.Name, process.Id);
+        LogMcpToolConnected(tool.Name);
 
-        await Task.CompletedTask;
         return new ToolHandle
         {
             ToolName = tool.Name,
@@ -68,79 +73,51 @@ public sealed partial class McpToolConnector(ILogger<McpToolConnector> logger) :
         };
     }
 
-    public Task DisconnectAsync(ToolHandle handle, CancellationToken ct = default)
+    public async Task DisconnectAsync(ToolHandle handle, CancellationToken ct = default)
     {
-        if (_processes.Remove(handle.ConnectionId, out var connection))
+        if (_connections.TryRemove(handle.ConnectionId, out var connection))
         {
-            if (!connection.Process.HasExited)
-                connection.Process.Kill(entireProcessTree: true);
-            connection.Process.Dispose();
+            await connection.DisposeAsync();
             LogMcpToolDisconnected(handle.ToolName);
         }
-        return Task.CompletedTask;
     }
 
     public async Task<ToolResult> InvokeAsync(ToolHandle handle, ToolInvocation invocation, CancellationToken ct = default)
     {
-        if (!_processes.TryGetValue(handle.ConnectionId, out var connection))
+        if (!_connections.TryGetValue(handle.ConnectionId, out var connection))
         {
-            return new ToolResult
-            {
-                Success = false,
-                ToolName = handle.ToolName,
-                Error = "MCP process not connected"
-            };
+            return new ToolResult { Success = false, ToolName = handle.ToolName, Error = "MCP process not connected" };
         }
 
-        if (connection.Process.HasExited)
+        if (connection.HasExited)
         {
             return new ToolResult
             {
                 Success = false,
                 ToolName = handle.ToolName,
-                Error = $"MCP process exited (code {connection.Process.ExitCode}). {FormatStderrTail(connection.StderrTail)}"
+                Error = $"MCP process exited. {connection.DiagnosticTail()}"
             };
         }
 
         var sw = Stopwatch.StartNew();
         try
         {
-            var request = JsonSerializer.Serialize(new JsonRpcRequest
-            {
-                Id = Guid.NewGuid().ToString("N"),
-                Method = invocation.Method,
-                Params = invocation.Parameters
-            }, McpJsonContext.Default.JsonRpcRequest);
-
-            await connection.Process.StandardInput.WriteLineAsync(request.AsMemory(), ct);
-            var response = await connection.Process.StandardOutput.ReadLineAsync(ct);
+            var arguments = BuildArguments(invocation);
+            var result = await connection.CallToolAsync(invocation.Method, arguments, ct);
             sw.Stop();
 
-            // Null response means the child closed stdout — usually a
-            // crash. Surface stderr tail instead of pretending the call
-            // succeeded with empty output.
-            if (response is null)
-            {
-                return new ToolResult
-                {
-                    Success = false,
-                    ToolName = handle.ToolName,
-                    Error = connection.Process.HasExited
-                        ? $"MCP process exited (code {connection.Process.ExitCode}) during invoke. {FormatStderrTail(connection.StderrTail)}"
-                        : $"MCP process closed stdout without a response. {FormatStderrTail(connection.StderrTail)}",
-                    Duration = sw.Elapsed
-                };
-            }
+            var output = JoinTextContent(result.Content);
 
             return new ToolResult
             {
-                Success = true,
+                Success = !result.IsError,
                 ToolName = handle.ToolName,
-                Output = response,
+                Output = output,
+                Error = result.IsError ? (output.Length == 0 ? "MCP tool reported error" : output) : null,
                 Duration = sw.Elapsed
             };
         }
-        catch (Exception ex) when (ex is IOException or InvalidOperationException or JsonException or ObjectDisposedException)
+        catch (Exception ex) when (ex is IOException or InvalidOperationException or JsonException or ObjectDisposedException or TaskCanceledException)
         {
             sw.Stop();
             LogMcpToolInvocationFailed(ex, handle.ToolName);
@@ -148,38 +125,117 @@ public sealed partial class McpToolConnector(ILogger<McpToolConnector> logger) :
             {
                 Success = false,
                 ToolName = handle.ToolName,
-                Error = $"{ex.Message} {FormatStderrTail(connection.StderrTail)}",
+                Error = ex.Message,
                 Duration = sw.Elapsed
             };
         }
     }
 
-    internal static string FormatStderrTail(ConcurrentQueue<string> stderrTail)
+    public async Task<ToolSchema> DiscoverSchemaAsync(ToolHandle handle, CancellationToken ct = default)
     {
-        if (stderrTail.IsEmpty)
-            return string.Empty;
-        var lines = stderrTail.ToArray();
-        return $"stderr tail: {string.Join(" | ", lines[^Math.Min(5, lines.Length)..])}";
-    }
-
-    private sealed record McpConnection(Process Process, ConcurrentQueue<string> StderrTail);
-
-    public Task<ToolSchema> DiscoverSchemaAsync(ToolHandle handle, CancellationToken ct = default)
-    {
-        return Task.FromResult(new ToolSchema
+        if (!_connections.TryGetValue(handle.ConnectionId, out var connection))
         {
-            ToolName = handle.ToolName,
-            Description = $"MCP tool: {handle.ToolName}"
-        });
+            return new ToolSchema { ToolName = handle.ToolName, Description = "MCP tool not connected" };
+        }
+
+        try
+        {
+            var tools = await connection.ListToolsAsync(ct);
+            return new ToolSchema
+            {
+                ToolName = handle.ToolName,
+                Description = FormatMenu(handle.ToolName, tools),
+                Parameters =
+                [
+                    new ToolParameter
+                    {
+                        Name = "method",
+                        Type = "string",
+                        Description = $"Name of the MCP tool to invoke. Available: {string.Join(", ", tools.Select(t => t.Name))}",
+                        Required = true
+                    }
+                ]
+            };
+        }
+        catch (Exception ex) when (ex is IOException or InvalidOperationException or JsonException or ObjectDisposedException or TaskCanceledException)
+        {
+            LogMcpToolSchemaDiscoveryFailed(ex, handle.ToolName);
+            return new ToolSchema { ToolName = handle.ToolName, Description = $"MCP tool: {handle.ToolName} (schema discovery failed: {ex.Message})" };
+        }
     }
 
-    [LoggerMessage(Level = LogLevel.Information, Message = "MCP tool '{Tool}' connected (pid: {Pid})")]
-    private partial void LogMcpToolConnected(string tool, int pid);
+    private static JsonObject BuildArguments(ToolInvocation invocation)
+    {
+        // The agent's ToolInvocationBuilder stringifies non-string values as raw JSON;
+        // round-trip those back into nodes so the MCP server sees proper types.
+        var args = new JsonObject();
+        foreach (var (key, value) in invocation.Parameters)
+        {
+            args[key] = TryParseJsonNode(value);
+        }
+        return args;
+    }
+
+    private static JsonNode TryParseJsonNode(string raw)
+    {
+        if (string.IsNullOrEmpty(raw))
+            return JsonValue.Create(raw);
+
+        var trimmed = raw.AsSpan().TrimStart();
+        if (trimmed.Length == 0 || (trimmed[0] != '{' && trimmed[0] != '[' && trimmed[0] != '"'
+            && !char.IsDigit(trimmed[0]) && trimmed[0] != '-' && trimmed[0] != 't' && trimmed[0] != 'f' && trimmed[0] != 'n'))
+        {
+            return JsonValue.Create(raw);
+        }
+
+        try
+        { return JsonNode.Parse(raw) ?? JsonValue.Create(raw); }
+        catch (JsonException) { return JsonValue.Create(raw); }
+    }
+
+    private static string JoinTextContent(IReadOnlyList<McpContentBlock> blocks)
+    {
+        if (blocks.Count == 0)
+            return string.Empty;
+
+        var sb = new StringBuilder();
+        foreach (var block in blocks.Where(b => b.Type == "text" && b.Text is not null))
+        {
+            if (sb.Length > 0)
+                sb.Append('\n');
+            sb.Append(block.Text);
+        }
+        return sb.ToString();
+    }
+
+    private static string FormatMenu(string handleName, IReadOnlyList<McpTool> tools)
+    {
+        if (tools.Count == 0)
+            return $"MCP tool '{handleName}' exposes no tools.";
+
+        var sb = new StringBuilder();
+        sb.Append("MCP tool '").Append(handleName).Append("' exposes: ");
+        for (var i = 0; i < tools.Count; i++)
+        {
+            if (i > 0)
+                sb.Append("; ");
+            sb.Append(tools[i].Name);
+            if (!string.IsNullOrEmpty(tools[i].Description))
+                sb.Append(" — ").Append(tools[i].Description);
+        }
+        sb.Append('.');
+        return sb.ToString();
+    }
+
+    [LoggerMessage(Level = LogLevel.Information, Message = "MCP tool '{Tool}' connected")]
+    private partial void LogMcpToolConnected(string tool);
 
     [LoggerMessage(Level = LogLevel.Information, Message = "MCP tool '{Tool}' disconnected")]
     private partial void LogMcpToolDisconnected(string tool);
 
     [LoggerMessage(Level = LogLevel.Warning, Message = "MCP tool '{Tool}' invocation failed")]
     private partial void LogMcpToolInvocationFailed(Exception ex, string tool);
-}
 
+    [LoggerMessage(Level = LogLevel.Warning, Message = "MCP tool '{Tool}' schema discovery failed")]
+    private partial void LogMcpToolSchemaDiscoveryFailed(Exception ex, string tool);
+}

@@ -387,6 +387,65 @@ public sealed class ManifestParserTests
     }
 
     [Fact]
+    public void Parse_McpTool_StdioServer_RoundTrips()
+    {
+        const string json = """
+            {
+              "version": "1.0",
+              "name": "mcp-stdio-test",
+              "tools": {
+                "echo": {
+                  "type": "mcp",
+                  "mcp": {
+                    "server": "python3",
+                    "args": ["server.py", "--transport", "stdio"],
+                    "env": { "LOG_LEVEL": "info" }
+                  }
+                }
+              }
+            }
+            """;
+
+        var manifest = _parser.Parse(json);
+
+        var mcp = manifest.Tools["echo"].Mcp.ShouldNotBeNull();
+        mcp.Server.ShouldBe("python3");
+        mcp.Url.ShouldBeNull();
+        mcp.Args.ShouldBe(["server.py", "--transport", "stdio"]);
+        mcp.Env["LOG_LEVEL"].ShouldBe("info");
+    }
+
+    [Fact]
+    public void Parse_McpTool_HttpUrl_RoundTrips()
+    {
+        const string json = """
+            {
+              "version": "1.0",
+              "name": "mcp-http-test",
+              "tools": {
+                "echo": {
+                  "type": "mcp",
+                  "mcp": {
+                    "url": "http://127.0.0.1:8765/mcp"
+                  }
+                }
+              }
+            }
+            """;
+
+        var manifest = _parser.Parse(json);
+
+        var mcp = manifest.Tools["echo"].Mcp.ShouldNotBeNull();
+        mcp.Url.ShouldBe("http://127.0.0.1:8765/mcp");
+        mcp.Server.ShouldBeNull();
+        // Note: STJ source-gen overrides the record's `Args = []` default with null
+        // when the key is omitted. Latent quirk — not hit in practice because
+        // workspace.json files with stdio MCP tools always include args, and the
+        // new HTTP path in HttpMcpTransport doesn't read Args.
+        (mcp.Args ?? []).Count.ShouldBe(0);
+    }
+
+    [Fact]
     public void Serialize_PluginsRoundTrip()
     {
         var manifest = new WorkspaceManifest

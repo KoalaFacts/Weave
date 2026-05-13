@@ -1,5 +1,6 @@
-using System.Collections.Concurrent;
-using Microsoft.Extensions.Logging;
+using System.Text.Json;
+using System.Threading.Channels;
+using Microsoft.Extensions.Logging.Abstractions;
 using Weave.Security.Tokens;
 using Weave.Tools.Connectors;
 using Weave.Tools.Tool;
@@ -8,240 +9,340 @@ namespace Weave.Tools.Tests;
 
 public sealed class McpToolConnectorTests
 {
-    private static readonly CapabilityToken _testToken = new()
+    private static readonly CapabilityToken _token = new()
     {
         TokenId = "test-token",
         WorkspaceId = "ws-1",
-        Grants = ["tool:mcp-tool"]
+        Grants = ["tool:test"]
     };
 
-    private static McpToolConnector CreateConnector() =>
-        new(Substitute.For<ILogger<McpToolConnector>>());
-
-    // --- ConnectAsync ---
+    private static ToolSpec NewSpec() => new()
+    {
+        Name = "test-mcp",
+        Type = ToolType.Mcp,
+        Mcp = new McpConfig { Server = "stub", Args = [], Env = [] }
+    };
 
     [Fact]
     public async Task ConnectAsync_NullMcpConfig_Throws()
     {
-        var connector = CreateConnector();
+        var (connector, _) = NewConnector();
         var spec = new ToolSpec { Name = "bad", Type = ToolType.Mcp };
 
-        await Should.ThrowAsync<InvalidOperationException>(
-            () => connector.ConnectAsync(spec, _testToken));
+        await Should.ThrowAsync<InvalidOperationException>(() => connector.ConnectAsync(spec, _token));
     }
 
     [Fact]
-    public async Task ConnectAsync_NonexistentServer_Throws()
+    public async Task ConnectAsync_PerformsInitializeHandshakeThenSendsInitializedNotification()
     {
-        var connector = CreateConnector();
-        var spec = new ToolSpec
+        var transport = new StubMcpTransport();
+        var (connector, _) = NewConnector(transport);
+
+        var connectTask = connector.ConnectAsync(NewSpec(), _token, TestContext.Current.CancellationToken);
+
+        var initRequest = await transport.ReadClientFrameAsync();
+        using (var initDoc = JsonDocument.Parse(initRequest))
         {
-            Name = "bad",
-            Type = ToolType.Mcp,
-            Mcp = new McpConfig
-            {
-                Server = "this-binary-does-not-exist-weave-test",
-                Args = [],
-                Env = new Dictionary<string, string>()
-            }
-        };
+            initDoc.RootElement.GetProperty("method").GetString().ShouldBe("initialize");
+            initDoc.RootElement.GetProperty("params").GetProperty("protocolVersion").GetString().ShouldBe("2024-11-05");
+            initDoc.RootElement.GetProperty("params").GetProperty("clientInfo").GetProperty("name").GetString().ShouldBe("weave");
 
-        // Process.Start throws Win32Exception for nonexistent binaries
-        await Should.ThrowAsync<Exception>(
-            () => connector.ConnectAsync(spec, _testToken));
-    }
+            var id = initDoc.RootElement.GetProperty("id").GetInt64();
+            await transport.WriteServerFrameAsync(Reply(id, """{"protocolVersion":"2024-11-05","serverInfo":{"name":"stub","version":"1.0"}}"""));
+        }
 
-    // --- DisconnectAsync ---
-
-    [Fact]
-    public async Task DisconnectAsync_UnknownConnectionId_DoesNotThrow()
-    {
-        var connector = CreateConnector();
-        var handle = new ToolHandle
+        var initialized = await transport.ReadClientFrameAsync();
+        using (var notifDoc = JsonDocument.Parse(initialized))
         {
-            ToolName = "test",
-            Type = ToolType.Mcp,
-            ConnectionId = "nonexistent-id",
-            IsConnected = true
-        };
+            notifDoc.RootElement.GetProperty("method").GetString().ShouldBe("notifications/initialized");
+            notifDoc.RootElement.TryGetProperty("id", out _).ShouldBeFalse();
+        }
 
-        // Should not throw even for unknown connection
+        var handle = await connectTask;
+        handle.IsConnected.ShouldBeTrue();
+        handle.Type.ShouldBe(ToolType.Mcp);
+
         await connector.DisconnectAsync(handle, TestContext.Current.CancellationToken);
     }
 
-    // --- InvokeAsync ---
+    [Fact]
+    public async Task ConnectAsync_InitializeError_DisposesTransport()
+    {
+        var transport = new StubMcpTransport();
+        var (connector, _) = NewConnector(transport);
+
+        var connectTask = connector.ConnectAsync(NewSpec(), _token, TestContext.Current.CancellationToken);
+
+        var initRequest = await transport.ReadClientFrameAsync();
+        using var doc = JsonDocument.Parse(initRequest);
+        var id = doc.RootElement.GetProperty("id").GetInt64();
+        await transport.WriteServerFrameAsync(ReplyError(id, -32601, "protocol mismatch"));
+
+        await Should.ThrowAsync<InvalidOperationException>(() => connectTask);
+        transport.Disposed.ShouldBeTrue();
+    }
+
+    [Fact]
+    public async Task DiscoverSchemaAsync_SendsToolsListAndReturnsMenu()
+    {
+        var (connector, transport) = await ConnectAsync();
+
+        var schemaTask = connector.DiscoverSchemaAsync(new ToolHandle
+        {
+            ToolName = "test-mcp",
+            Type = ToolType.Mcp,
+            ConnectionId = transport.HandleId!,
+            IsConnected = true
+        }, TestContext.Current.CancellationToken);
+
+        var listRequest = await transport.ReadClientFrameAsync();
+        using (var doc = JsonDocument.Parse(listRequest))
+        {
+            doc.RootElement.GetProperty("method").GetString().ShouldBe("tools/list");
+            var id = doc.RootElement.GetProperty("id").GetInt64();
+            await transport.WriteServerFrameAsync(Reply(id, """{"tools":[{"name":"search","description":"Search the web","inputSchema":{"type":"object","properties":{"q":{"type":"string"}},"required":["q"]}},{"name":"echo","description":"Echo text"}]}"""));
+        }
+
+        var schema = await schemaTask;
+        schema.ToolName.ShouldBe("test-mcp");
+        schema.Description.ShouldContain("search");
+        schema.Description.ShouldContain("Search the web");
+        schema.Description.ShouldContain("echo");
+        schema.Parameters.Count.ShouldBe(1);
+        schema.Parameters[0].Name.ShouldBe("method");
+        schema.Parameters[0].Required.ShouldBeTrue();
+        schema.Parameters[0].Description.ShouldContain("search");
+
+        await connector.DisconnectAsync(new ToolHandle { ConnectionId = transport.HandleId!, ToolName = "test-mcp", Type = ToolType.Mcp }, TestContext.Current.CancellationToken);
+    }
+
+    [Fact]
+    public async Task DiscoverSchemaAsync_CachesToolsList_SecondCallDoesNotResendRequest()
+    {
+        var (connector, transport) = await ConnectAsync();
+        var handle = new ToolHandle { ToolName = "test-mcp", Type = ToolType.Mcp, ConnectionId = transport.HandleId!, IsConnected = true };
+
+        var firstTask = connector.DiscoverSchemaAsync(handle, TestContext.Current.CancellationToken);
+        var listRequest = await transport.ReadClientFrameAsync();
+        using (var doc = JsonDocument.Parse(listRequest))
+        {
+            var id = doc.RootElement.GetProperty("id").GetInt64();
+            await transport.WriteServerFrameAsync(Reply(id, """{"tools":[{"name":"x"}]}"""));
+        }
+        await firstTask;
+
+        var secondSchema = await connector.DiscoverSchemaAsync(handle, TestContext.Current.CancellationToken);
+        secondSchema.Description.ShouldContain("x");
+
+        transport.HasPendingClientFrame.ShouldBeFalse();
+
+        await connector.DisconnectAsync(handle, TestContext.Current.CancellationToken);
+    }
+
+    [Fact]
+    public async Task InvokeAsync_SendsToolsCallWithArgumentsAndReturnsTextContent()
+    {
+        var (connector, transport) = await ConnectAsync();
+        var handle = new ToolHandle { ToolName = "test-mcp", Type = ToolType.Mcp, ConnectionId = transport.HandleId!, IsConnected = true };
+
+        var invocation = new ToolInvocation
+        {
+            ToolName = "test-mcp",
+            Method = "search",
+            Parameters = new() { ["q"] = "weave", ["limit"] = "5" }
+        };
+
+        var invokeTask = connector.InvokeAsync(handle, invocation, TestContext.Current.CancellationToken);
+
+        var callRequest = await transport.ReadClientFrameAsync();
+        using (var doc = JsonDocument.Parse(callRequest))
+        {
+            doc.RootElement.GetProperty("method").GetString().ShouldBe("tools/call");
+            doc.RootElement.GetProperty("params").GetProperty("name").GetString().ShouldBe("search");
+            var args = doc.RootElement.GetProperty("params").GetProperty("arguments");
+            args.GetProperty("q").GetString().ShouldBe("weave");
+            args.GetProperty("limit").GetInt32().ShouldBe(5);
+
+            var id = doc.RootElement.GetProperty("id").GetInt64();
+            await transport.WriteServerFrameAsync(Reply(id, """{"content":[{"type":"text","text":"hit1"},{"type":"text","text":"hit2"}],"isError":false}"""));
+        }
+
+        var result = await invokeTask;
+        result.Success.ShouldBeTrue();
+        result.Output.ShouldBe("hit1\nhit2");
+
+        await connector.DisconnectAsync(handle, TestContext.Current.CancellationToken);
+    }
+
+    [Fact]
+    public async Task InvokeAsync_IsErrorTrue_ReturnsFailureWithErrorText()
+    {
+        var (connector, transport) = await ConnectAsync();
+        var handle = new ToolHandle { ToolName = "test-mcp", Type = ToolType.Mcp, ConnectionId = transport.HandleId!, IsConnected = true };
+
+        var invokeTask = connector.InvokeAsync(handle, new ToolInvocation { ToolName = "test-mcp", Method = "boom" }, TestContext.Current.CancellationToken);
+
+        var callRequest = await transport.ReadClientFrameAsync();
+        using (var doc = JsonDocument.Parse(callRequest))
+        {
+            var id = doc.RootElement.GetProperty("id").GetInt64();
+            await transport.WriteServerFrameAsync(Reply(id, """{"content":[{"type":"text","text":"server explosion"}],"isError":true}"""));
+        }
+
+        var result = await invokeTask;
+        result.Success.ShouldBeFalse();
+        result.Error.ShouldBe("server explosion");
+
+        await connector.DisconnectAsync(handle, TestContext.Current.CancellationToken);
+    }
+
+    [Fact]
+    public async Task InvokeAsync_JsonRpcError_ReturnsFailureWithErrorMessage()
+    {
+        var (connector, transport) = await ConnectAsync();
+        var handle = new ToolHandle { ToolName = "test-mcp", Type = ToolType.Mcp, ConnectionId = transport.HandleId!, IsConnected = true };
+
+        var invokeTask = connector.InvokeAsync(handle, new ToolInvocation { ToolName = "test-mcp", Method = "missing" }, TestContext.Current.CancellationToken);
+
+        var callRequest = await transport.ReadClientFrameAsync();
+        using (var doc = JsonDocument.Parse(callRequest))
+        {
+            var id = doc.RootElement.GetProperty("id").GetInt64();
+            await transport.WriteServerFrameAsync(ReplyError(id, -32601, "Unknown tool"));
+        }
+
+        var result = await invokeTask;
+        result.Success.ShouldBeFalse();
+        result.Error!.ShouldContain("Unknown tool");
+
+        await connector.DisconnectAsync(handle, TestContext.Current.CancellationToken);
+    }
 
     [Fact]
     public async Task InvokeAsync_NotConnected_ReturnsFailure()
     {
-        var connector = CreateConnector();
-        var handle = new ToolHandle
-        {
-            ToolName = "test",
-            Type = ToolType.Mcp,
-            ConnectionId = "nonexistent",
-            IsConnected = true
-        };
-        var invocation = new ToolInvocation { ToolName = "test", Method = "run", Parameters = [] };
+        var (connector, _) = NewConnector();
+        var handle = new ToolHandle { ToolName = "test", Type = ToolType.Mcp, ConnectionId = "nope", IsConnected = true };
 
-        var result = await connector.InvokeAsync(handle, invocation, TestContext.Current.CancellationToken);
+        var result = await connector.InvokeAsync(handle,
+            new ToolInvocation { ToolName = "test", Method = "x" },
+            TestContext.Current.CancellationToken);
 
         result.Success.ShouldBeFalse();
         result.Error!.ShouldContain("not connected");
-        result.ToolName.ShouldBe("test");
     }
 
-    // --- DiscoverSchemaAsync ---
+    [Fact]
+    public async Task InvokeAsync_TransportClosedMidFlight_PendingRequestFailsCleanly()
+    {
+        var (connector, transport) = await ConnectAsync();
+        var handle = new ToolHandle { ToolName = "test-mcp", Type = ToolType.Mcp, ConnectionId = transport.HandleId!, IsConnected = true };
+
+        var invokeTask = connector.InvokeAsync(handle, new ToolInvocation { ToolName = "test-mcp", Method = "x" }, TestContext.Current.CancellationToken);
+
+        await transport.ReadClientFrameAsync();
+        transport.CloseServerSide();
+
+        var result = await invokeTask;
+        result.Success.ShouldBeFalse();
+        result.Error!.ShouldContain("closed");
+
+        await connector.DisconnectAsync(handle, TestContext.Current.CancellationToken);
+    }
 
     [Fact]
-    public async Task DiscoverSchemaAsync_ReturnsDescription()
+    public async Task DisconnectAsync_DisposesTransport()
     {
-        var connector = CreateConnector();
-        var handle = new ToolHandle
-        {
-            ToolName = "my-mcp",
-            Type = ToolType.Mcp,
-            ConnectionId = "some-id",
-            IsConnected = true
-        };
+        var (connector, transport) = await ConnectAsync();
+        var handle = new ToolHandle { ToolName = "test-mcp", Type = ToolType.Mcp, ConnectionId = transport.HandleId!, IsConnected = true };
 
-        var schema = await connector.DiscoverSchemaAsync(handle, TestContext.Current.CancellationToken);
+        await connector.DisconnectAsync(handle, TestContext.Current.CancellationToken);
 
-        schema.ToolName.ShouldBe("my-mcp");
-        schema.Description.ShouldContain("my-mcp");
+        transport.Disposed.ShouldBeTrue();
+    }
+
+    [Fact]
+    public async Task DisconnectAsync_UnknownConnectionId_DoesNotThrow()
+    {
+        var (connector, _) = NewConnector();
+        var handle = new ToolHandle { ToolName = "test", Type = ToolType.Mcp, ConnectionId = "unknown", IsConnected = true };
+
+        await connector.DisconnectAsync(handle, TestContext.Current.CancellationToken);
     }
 
     [Fact]
     public void ToolType_IsMcp()
     {
-        CreateConnector().ToolType.ShouldBe(ToolType.Mcp);
+        NewConnector().connector.ToolType.ShouldBe(ToolType.Mcp);
     }
 
-    // --- ConnectAsync with real process ---
+    private static string Reply(long id, string resultJson) =>
+        "{\"jsonrpc\":\"2.0\",\"id\":" + id + ",\"result\":" + resultJson + "}";
 
-    [Fact]
-    public async Task ConnectAsync_WithArgsAndEnv_ReturnsHandle()
+    private static string ReplyError(long id, int code, string message) =>
+        "{\"jsonrpc\":\"2.0\",\"id\":" + id + ",\"error\":{\"code\":" + code + ",\"message\":\"" + message + "\"}}";
+
+    private static (McpToolConnector connector, StubMcpTransport transport) NewConnector(StubMcpTransport? transport = null)
     {
-        var connector = CreateConnector();
-        var spec = new ToolSpec
+        var captured = transport ?? new StubMcpTransport();
+        var connector = new McpToolConnector((_, _) => Task.FromResult<IMcpTransport>(captured), NullLogger<McpToolConnector>.Instance);
+        return (connector, captured);
+    }
+
+    private static async Task<(McpToolConnector connector, StubMcpTransport transport)> ConnectAsync()
+    {
+        var (connector, transport) = NewConnector();
+        var connectTask = connector.ConnectAsync(NewSpec(), _token, TestContext.Current.CancellationToken);
+
+        var initRequest = await transport.ReadClientFrameAsync();
+        using (var doc = JsonDocument.Parse(initRequest))
         {
-            Name = "dotnet-ver",
-            Type = ToolType.Mcp,
-            Mcp = new McpConfig
-            {
-                Server = "dotnet",
-                Args = ["--version"],
-                Env = new Dictionary<string, string> { ["WEAVE_TEST_VAR"] = "1" }
-            }
-        };
+            var id = doc.RootElement.GetProperty("id").GetInt64();
+            await transport.WriteServerFrameAsync(Reply(id, """{"protocolVersion":"2024-11-05","serverInfo":{"name":"stub"}}"""));
+        }
 
-        var handle = await connector.ConnectAsync(spec, _testToken, TestContext.Current.CancellationToken);
+        await transport.ReadClientFrameAsync();
 
-        handle.IsConnected.ShouldBeTrue();
-        handle.ToolName.ShouldBe("dotnet-ver");
-        handle.Type.ShouldBe(ToolType.Mcp);
-        handle.ConnectionId.ShouldNotBeNullOrEmpty();
+        var handle = await connectTask;
+        transport.HandleId = handle.ConnectionId;
+        return (connector, transport);
+    }
+}
 
-        // Clean up
-        await connector.DisconnectAsync(handle, TestContext.Current.CancellationToken);
+internal sealed class StubMcpTransport : IMcpTransport
+{
+    private readonly Channel<string> _clientToServer = Channel.CreateUnbounded<string>();
+    private readonly Channel<string> _serverToClient = Channel.CreateUnbounded<string>();
+
+    public bool Disposed { get; private set; }
+    public bool HasExited => Disposed;
+    public int? ExitCode => Disposed ? 0 : null;
+    public bool HasPendingClientFrame => _clientToServer.Reader.Count > 0;
+    public string? HandleId { get; set; }
+
+    public Task SendAsync(string json, CancellationToken ct) =>
+        _clientToServer.Writer.WriteAsync(json, ct).AsTask();
+
+    public async Task<string?> ReceiveAsync(CancellationToken ct)
+    {
+        try
+        { return await _serverToClient.Reader.ReadAsync(ct); }
+        catch (ChannelClosedException) { return null; }
     }
 
-    // --- DisconnectAsync with connected process ---
+    public Task<string> ReadClientFrameAsync() => _clientToServer.Reader.ReadAsync().AsTask();
 
-    [Fact]
-    public async Task DisconnectAsync_ConnectedProcess_CleansUp()
+    public Task WriteServerFrameAsync(string json) => _serverToClient.Writer.WriteAsync(json).AsTask();
+
+    public void CloseServerSide() => _serverToClient.Writer.TryComplete();
+
+    public string FormatDiagnosticTail() => "stub transport";
+
+    public ValueTask DisposeAsync()
     {
-        var connector = CreateConnector();
-        var spec = new ToolSpec
-        {
-            Name = "dotnet-ver",
-            Type = ToolType.Mcp,
-            Mcp = new McpConfig
-            {
-                Server = "dotnet",
-                Args = ["--version"],
-                Env = new Dictionary<string, string>()
-            }
-        };
-
-        var handle = await connector.ConnectAsync(spec, _testToken, TestContext.Current.CancellationToken);
-        await connector.DisconnectAsync(handle, TestContext.Current.CancellationToken);
-
-        // Second disconnect is a no-op (connection already removed)
-        await connector.DisconnectAsync(handle, TestContext.Current.CancellationToken);
-    }
-
-    // --- InvokeAsync with exited process ---
-
-    [Fact]
-    public async Task InvokeAsync_ProcessExited_ReturnsFailureWithExitCode()
-    {
-        var connector = CreateConnector();
-        var spec = new ToolSpec
-        {
-            Name = "dotnet-ver",
-            Type = ToolType.Mcp,
-            Mcp = new McpConfig
-            {
-                Server = "dotnet",
-                Args = ["--version"],
-                Env = new Dictionary<string, string>()
-            }
-        };
-
-        var handle = await connector.ConnectAsync(spec, _testToken, TestContext.Current.CancellationToken);
-
-        // Wait for dotnet --version to finish
-        await Task.Delay(2000, TestContext.Current.CancellationToken);
-
-        var result = await connector.InvokeAsync(handle,
-            new ToolInvocation { ToolName = "dotnet-ver", Method = "test", Parameters = [] },
-            TestContext.Current.CancellationToken);
-
-        result.Success.ShouldBeFalse();
-        result.Error!.ShouldContain("exited");
-
-        await connector.DisconnectAsync(handle, TestContext.Current.CancellationToken);
-    }
-
-    // --- FormatStderrTail ---
-
-    [Fact]
-    public void FormatStderrTail_EmptyQueue_ReturnsEmpty()
-    {
-        var queue = new ConcurrentQueue<string>();
-
-        McpToolConnector.FormatStderrTail(queue).ShouldBeEmpty();
-    }
-
-    [Fact]
-    public void FormatStderrTail_PopulatedQueue_ReturnsFormattedTail()
-    {
-        var queue = new ConcurrentQueue<string>();
-        queue.Enqueue("line1");
-        queue.Enqueue("line2");
-        queue.Enqueue("line3");
-
-        var result = McpToolConnector.FormatStderrTail(queue);
-
-        result.ShouldStartWith("stderr tail:");
-        result.ShouldContain("line1");
-        result.ShouldContain("line3");
-    }
-
-    [Fact]
-    public void FormatStderrTail_MoreThanFiveLines_ShowsOnlyLastFive()
-    {
-        var queue = new ConcurrentQueue<string>();
-        for (var i = 1; i <= 8; i++)
-            queue.Enqueue($"line{i}");
-
-        var result = McpToolConnector.FormatStderrTail(queue);
-
-        result.ShouldNotContain("line1");
-        result.ShouldNotContain("line2");
-        result.ShouldNotContain("line3");
-        result.ShouldContain("line4");
-        result.ShouldContain("line8");
+        Disposed = true;
+        _serverToClient.Writer.TryComplete();
+        _clientToServer.Writer.TryComplete();
+        return ValueTask.CompletedTask;
     }
 }
