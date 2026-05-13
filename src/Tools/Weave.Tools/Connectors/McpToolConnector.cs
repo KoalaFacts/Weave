@@ -198,13 +198,10 @@ public sealed partial class McpToolConnector : IToolConnector
             return string.Empty;
 
         var sb = new StringBuilder();
-        foreach (var block in blocks)
+        foreach (var block in blocks.Where(b => b.Type == "text" && b.Text is not null))
         {
-            if (block.Type == "text" && block.Text is not null)
-            {
-                if (sb.Length > 0) sb.Append('\n');
-                sb.Append(block.Text);
-            }
+            if (sb.Length > 0) sb.Append('\n');
+            sb.Append(block.Text);
         }
         return sb.ToString();
     }

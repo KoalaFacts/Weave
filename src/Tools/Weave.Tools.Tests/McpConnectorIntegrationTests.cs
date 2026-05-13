@@ -80,7 +80,7 @@ public sealed class McpConnectorIntegrationTests : IDisposable
 
     public McpConnectorIntegrationTests()
     {
-        _scriptPath = Path.Combine(Path.GetTempPath(), $"weave-mcp-stub-{Guid.NewGuid():N}.py");
+        _scriptPath = Path.Join(Path.GetTempPath(), $"weave-mcp-stub-{Guid.NewGuid():N}.py");
         File.WriteAllText(_scriptPath, PythonServer);
     }
 
@@ -143,9 +143,8 @@ public sealed class McpConnectorIntegrationTests : IDisposable
         {
             var pathEnv = Environment.GetEnvironmentVariable("PATH");
             if (pathEnv is null) continue;
-            foreach (var dir in pathEnv.Split(Path.PathSeparator))
+            foreach (var candidate in pathEnv.Split(Path.PathSeparator).Select(dir => Path.Join(dir, name)))
             {
-                var candidate = Path.Combine(dir, name);
                 if (File.Exists(candidate))
                     return candidate;
             }

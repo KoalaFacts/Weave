@@ -65,11 +65,8 @@ internal static class OpenApiInvoker
         HashSet<string> consumed)
     {
         var path = operation.PathTemplate;
-        foreach (var param in operation.Parameters)
+        foreach (var param in operation.Parameters.Where(p => p.In.Equals("path", StringComparison.OrdinalIgnoreCase)))
         {
-            if (!param.In.Equals("path", StringComparison.OrdinalIgnoreCase))
-                continue;
-
             if (!invocation.Parameters.TryGetValue(param.Name, out var value))
             {
                 if (param.Required)
@@ -93,10 +90,8 @@ internal static class OpenApiInvoker
         HashSet<string> consumed)
     {
         var parts = new List<string>();
-        foreach (var param in operation.Parameters)
+        foreach (var param in operation.Parameters.Where(p => p.In.Equals("query", StringComparison.OrdinalIgnoreCase)))
         {
-            if (!param.In.Equals("query", StringComparison.OrdinalIgnoreCase))
-                continue;
             if (!invocation.Parameters.TryGetValue(param.Name, out var value))
                 continue;
 
@@ -112,10 +107,8 @@ internal static class OpenApiInvoker
         HashSet<string> consumed,
         HttpRequestMessage request)
     {
-        foreach (var param in operation.Parameters)
+        foreach (var param in operation.Parameters.Where(p => p.In.Equals("header", StringComparison.OrdinalIgnoreCase)))
         {
-            if (!param.In.Equals("header", StringComparison.OrdinalIgnoreCase))
-                continue;
             if (!invocation.Parameters.TryGetValue(param.Name, out var value))
                 continue;
 

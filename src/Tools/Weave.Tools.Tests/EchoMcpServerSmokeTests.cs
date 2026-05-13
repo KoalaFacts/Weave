@@ -65,9 +65,8 @@ public sealed class EchoMcpServerSmokeTests
         {
             var pathEnv = Environment.GetEnvironmentVariable("PATH");
             if (pathEnv is null) continue;
-            foreach (var dir in pathEnv.Split(Path.PathSeparator))
+            foreach (var candidate in pathEnv.Split(Path.PathSeparator).Select(dir => Path.Join(dir, name)))
             {
-                var candidate = Path.Join(dir, name);
                 if (File.Exists(candidate))
                     return candidate;
             }

@@ -226,11 +226,10 @@ public sealed class EchoMcpHttpTransportSmokeTests : IDisposable
         {
             var pathEnv = Environment.GetEnvironmentVariable("PATH");
             if (pathEnv is null) continue;
-            foreach (var dir in pathEnv.Split(Path.PathSeparator))
+            // Path.Join (not Combine) — Combine silently drops `dir` if `name` were
+            // accidentally rooted; Join concatenates regardless.
+            foreach (var candidate in pathEnv.Split(Path.PathSeparator).Select(dir => Path.Join(dir, name)))
             {
-                // Path.Join (not Combine) — Combine silently drops `dir` if `name` were
-                // accidentally rooted; Join concatenates regardless.
-                var candidate = Path.Join(dir, name);
                 if (File.Exists(candidate))
                     return candidate;
             }
