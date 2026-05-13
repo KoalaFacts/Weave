@@ -81,17 +81,40 @@ In a production server this channel carries server-pushed notifications.
 ## Use with Weave
 
 The companion [`workspace.json`](./workspace.json) wires this server into a Weave
-workspace via stdio. From the repo root:
+workspace. Weave supports both stdio and HTTP transports for MCP:
+
+```jsonc
+// stdio: Weave spawns the server as a subprocess
+"echo-server": {
+  "type": "mcp",
+  "mcp": {
+    "server": "python3",
+    "args": ["examples/echo-mcp/server.py", "--transport", "stdio"]
+  }
+}
+
+// http: server runs separately, Weave connects via Streamable HTTP
+"echo-server": {
+  "type": "mcp",
+  "mcp": { "url": "http://127.0.0.1:8765/mcp" }
+}
+```
+
+For the HTTP variant, start the server first:
 
 ```bash
-# Boot the workspace (silo + tool registration)
+python3 examples/echo-mcp/server.py --transport http --port 8765
+```
+
+Then boot the workspace:
+
+```bash
 dotnet run --project src/UX/Weave.Cli -- workspace up examples/echo-mcp/workspace.json
 ```
 
-Weave today connects to MCP servers via **stdio only**. The HTTP transport in
-this demo is reachable by any MCP-compliant client (e.g. the official `mcp`
-inspector tool); it's exercised here as a forward-compatibility example for
-when Weave's connector grows an HTTP transport.
+Weave's HTTP transport today consumes only `application/json` responses — the
+SSE-streaming response variant and the GET /mcp server-initiated SSE channel
+are protocol-complete in this server but not yet wired into Weave's connector.
 
 ## Files
 

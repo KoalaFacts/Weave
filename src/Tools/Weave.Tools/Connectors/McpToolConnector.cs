@@ -17,7 +17,20 @@ public sealed partial class McpToolConnector : IToolConnector
     private readonly ConcurrentDictionary<string, McpConnection> _connections = new(StringComparer.Ordinal);
 
     public McpToolConnector(ILogger<McpToolConnector> logger)
-        : this(StdioMcpTransport.ConnectAsync, logger) { }
+        : this(SelectTransport, logger) { }
+
+    private static Task<IMcpTransport> SelectTransport(McpConfig config, CancellationToken ct)
+    {
+        var hasUrl = !string.IsNullOrWhiteSpace(config.Url);
+        var hasServer = !string.IsNullOrWhiteSpace(config.Server);
+
+        if (hasUrl && hasServer)
+            throw new InvalidOperationException("McpConfig must set exactly one of 'server' (stdio) or 'url' (http) — not both.");
+        if (!hasUrl && !hasServer)
+            throw new InvalidOperationException("McpConfig must set either 'server' (stdio) or 'url' (http).");
+
+        return hasUrl ? HttpMcpTransport.ConnectAsync(config, ct) : StdioMcpTransport.ConnectAsync(config, ct);
+    }
 
     internal McpToolConnector(
         Func<McpConfig, CancellationToken, Task<IMcpTransport>> transportFactory,

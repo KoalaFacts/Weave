@@ -26,10 +26,20 @@
     "echo-server": {
       "type": "mcp",
       "mcp": {
+        // Stdio variant: Weave spawns the server as a subprocess.
         "server": "python3",
         "args": ["examples/echo-mcp/server.py", "--transport", "stdio"]
       }
     }
+    // HTTP variant — uncomment to point at a separately-running HTTP server
+    // started with:  python3 examples/echo-mcp/server.py --transport http --port 8765
+    //
+    // "echo-server": {
+    //   "type": "mcp",
+    //   "mcp": {
+    //     "url": "http://127.0.0.1:8765/mcp"
+    //   }
+    // }
   },
 
   "workspace": {
