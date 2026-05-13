@@ -64,20 +64,29 @@ internal static class HttpMcpUrlValidator
         if (ip.AddressFamily == AddressFamily.InterNetwork)
         {
             var b = ip.GetAddressBytes();
-            if (b[0] == 0) return true;
-            if (b[0] == 10) return true;
-            if (b[0] == 100 && (b[1] & 0xC0) == 64) return true;
-            if (b[0] == 169 && b[1] == 254) return true;
-            if (b[0] == 172 && (b[1] & 0xF0) == 16) return true;
-            if (b[0] == 192 && b[1] == 168) return true;
-            if (b[0] >= 224) return true;
+            if (b[0] == 0)
+                return true;
+            if (b[0] == 10)
+                return true;
+            if (b[0] == 100 && (b[1] & 0xC0) == 64)
+                return true;
+            if (b[0] == 169 && b[1] == 254)
+                return true;
+            if (b[0] == 172 && (b[1] & 0xF0) == 16)
+                return true;
+            if (b[0] == 192 && b[1] == 168)
+                return true;
+            if (b[0] >= 224)
+                return true;
             return false;
         }
         if (ip.AddressFamily == AddressFamily.InterNetworkV6)
         {
             var b = ip.GetAddressBytes();
-            if ((b[0] & 0xFE) == 0xFC) return true;
-            if (b[0] == 0xFE && (b[1] & 0xC0) == 0x80) return true;
+            if ((b[0] & 0xFE) == 0xFC)
+                return true;
+            if (b[0] == 0xFE && (b[1] & 0xC0) == 0x80)
+                return true;
             return false;
         }
         return false;

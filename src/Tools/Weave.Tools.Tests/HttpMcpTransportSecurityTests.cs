@@ -148,7 +148,8 @@ public sealed class HttpMcpTransportSecurityTests
     {
         // Many small data: frames that individually fit MaxFrameBytes but cumulatively blow MaxResponseBytes.
         var sb = new StringBuilder();
-        for (var i = 0; i < 1000; i++) sb.Append("data: x\n\n");
+        for (var i = 0; i < 1000; i++)
+            sb.Append("data: x\n\n");
         var handler = new StubHandler(_ => Sse(sb.ToString()));
         var transport = HttpMcpTransport.CreateForTesting(new HttpClient(handler),
             new McpConfig
@@ -261,7 +262,8 @@ public sealed class HttpMcpTransportSecurityTests
         public override int Read(byte[] buffer, int offset, int count)
         {
             var n = Math.Min(count, data.Length - _pos);
-            if (n <= 0) return 0;
+            if (n <= 0)
+                return 0;
             Array.Copy(data, _pos, buffer, offset, n);
             _pos += n;
             return n;

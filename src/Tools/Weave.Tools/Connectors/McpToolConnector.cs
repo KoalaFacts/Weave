@@ -188,7 +188,8 @@ public sealed partial class McpToolConnector : IToolConnector
             return JsonValue.Create(raw);
         }
 
-        try { return JsonNode.Parse(raw) ?? JsonValue.Create(raw); }
+        try
+        { return JsonNode.Parse(raw) ?? JsonValue.Create(raw); }
         catch (JsonException) { return JsonValue.Create(raw); }
     }
 
@@ -200,7 +201,8 @@ public sealed partial class McpToolConnector : IToolConnector
         var sb = new StringBuilder();
         foreach (var block in blocks.Where(b => b.Type == "text" && b.Text is not null))
         {
-            if (sb.Length > 0) sb.Append('\n');
+            if (sb.Length > 0)
+                sb.Append('\n');
             sb.Append(block.Text);
         }
         return sb.ToString();
@@ -215,7 +217,8 @@ public sealed partial class McpToolConnector : IToolConnector
         sb.Append("MCP tool '").Append(handleName).Append("' exposes: ");
         for (var i = 0; i < tools.Count; i++)
         {
-            if (i > 0) sb.Append("; ");
+            if (i > 0)
+                sb.Append("; ");
             sb.Append(tools[i].Name);
             if (!string.IsNullOrEmpty(tools[i].Description))
                 sb.Append(" — ").Append(tools[i].Description);

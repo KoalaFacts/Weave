@@ -197,7 +197,8 @@ internal sealed class HttpMcpTransport : IMcpTransport
                 throw new IOException(_lastDiagnostic);
             }
 
-            if (line is null) break;
+            if (line is null)
+                break;
 
             totalBytes += line.Length;
             if (totalBytes > _maxResponseBytes)
@@ -224,7 +225,8 @@ internal sealed class HttpMcpTransport : IMcpTransport
                     _lastDiagnostic = $"SSE data frame exceeded limit {_maxFrameBytes}";
                     throw new IOException(_lastDiagnostic);
                 }
-                if (dataBuf.Length > 0) dataBuf.Append('\n');
+                if (dataBuf.Length > 0)
+                    dataBuf.Append('\n');
                 dataBuf.Append(payload);
             }
         }
@@ -235,7 +237,8 @@ internal sealed class HttpMcpTransport : IMcpTransport
 
     public async Task<string?> ReceiveAsync(CancellationToken ct)
     {
-        try { return await _incoming.Reader.ReadAsync(ct); }
+        try
+        { return await _incoming.Reader.ReadAsync(ct); }
         catch (ChannelClosedException) { return null; }
     }
 

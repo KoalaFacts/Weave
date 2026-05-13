@@ -98,7 +98,8 @@ internal sealed partial class McpConnection : IAsyncDisposable
             var json = JsonSerializer.Serialize(request, McpJsonContext.Default.McpJsonRpcRequest);
 
             await _writeLock.WaitAsync(ct);
-            try { await _transport.SendAsync(json, ct); }
+            try
+            { await _transport.SendAsync(json, ct); }
             finally { _writeLock.Release(); }
 
             using var registration = ct.Register(static state =>
@@ -121,7 +122,8 @@ internal sealed partial class McpConnection : IAsyncDisposable
         var json = JsonSerializer.Serialize(notification, McpJsonContext.Default.McpJsonRpcNotification);
 
         await _writeLock.WaitAsync(ct);
-        try { await _transport.SendAsync(json, ct); }
+        try
+        { await _transport.SendAsync(json, ct); }
         finally { _writeLock.Release(); }
     }
 
@@ -132,7 +134,8 @@ internal sealed partial class McpConnection : IAsyncDisposable
             while (!ct.IsCancellationRequested)
             {
                 string? line;
-                try { line = await _transport.ReceiveAsync(ct); }
+                try
+                { line = await _transport.ReceiveAsync(ct); }
                 catch (OperationCanceledException) { break; }
                 catch (Exception ex) when (ex is IOException or InvalidOperationException or ObjectDisposedException)
                 {
@@ -161,7 +164,8 @@ internal sealed partial class McpConnection : IAsyncDisposable
     private void Dispatch(string line)
     {
         JsonDocument doc;
-        try { doc = JsonDocument.Parse(line); }
+        try
+        { doc = JsonDocument.Parse(line); }
         catch (JsonException ex)
         {
             LogMcpDispatchParseFailed(ex, _toolName, Truncate(line));

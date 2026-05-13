@@ -104,9 +104,12 @@ internal static class OpenApiSpecParser
         var parameters = new List<OpenApiParameter>();
         foreach (var param in paramsArray.EnumerateArray())
         {
-            if (param.ValueKind != JsonValueKind.Object) continue;
-            if (!param.TryGetProperty("name", out var nameEl) || nameEl.ValueKind != JsonValueKind.String) continue;
-            if (!param.TryGetProperty("in", out var inEl) || inEl.ValueKind != JsonValueKind.String) continue;
+            if (param.ValueKind != JsonValueKind.Object)
+                continue;
+            if (!param.TryGetProperty("name", out var nameEl) || nameEl.ValueKind != JsonValueKind.String)
+                continue;
+            if (!param.TryGetProperty("in", out var inEl) || inEl.ValueKind != JsonValueKind.String)
+                continue;
 
             parameters.Add(new OpenApiParameter
             {

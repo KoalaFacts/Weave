@@ -16,7 +16,8 @@ public sealed class OpenApiToolConnectorTests : IDisposable
 
     public void Dispose()
     {
-        foreach (var c in _httpClients) c.Dispose();
+        foreach (var c in _httpClients)
+            c.Dispose();
     }
 
     private const string SpecUrl = "http://api.example.test/openapi.json";

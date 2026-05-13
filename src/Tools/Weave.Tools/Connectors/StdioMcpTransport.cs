@@ -81,7 +81,8 @@ internal sealed class StdioMcpTransport : IMcpTransport
     {
         if (!_process.HasExited)
         {
-            try { _process.Kill(entireProcessTree: true); }
+            try
+            { _process.Kill(entireProcessTree: true); }
             catch (InvalidOperationException) { /* already exited */ }
         }
         _process.Dispose();

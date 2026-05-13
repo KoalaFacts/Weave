@@ -130,13 +130,15 @@ public sealed class OpenApiConnectorIntegrationTests
             while (!ct.IsCancellationRequested)
             {
                 HttpListenerContext context;
-                try { context = await _listener.GetContextAsync(); }
+                try
+                { context = await _listener.GetContextAsync(); }
                 catch (HttpListenerException) { return; }
                 catch (ObjectDisposedException) { return; }
 
                 // Filtered to swallow only shutdown-time races; real handler bugs
                 // bubble up and fail the test instead of being silenced.
-                try { await HandleAsync(context, ct); }
+                try
+                { await HandleAsync(context, ct); }
                 catch (OperationCanceledException) when (ct.IsCancellationRequested) { return; }
                 catch (ObjectDisposedException) when (ct.IsCancellationRequested) { return; }
             }
@@ -202,7 +204,8 @@ public sealed class OpenApiConnectorIntegrationTests
             _cts.Cancel();
             _listener.Stop();
             _listener.Close();
-            try { _loop.Wait(TimeSpan.FromSeconds(2)); }
+            try
+            { _loop.Wait(TimeSpan.FromSeconds(2)); }
             catch (AggregateException) { /* expected */ }
             _cts.Dispose();
         }

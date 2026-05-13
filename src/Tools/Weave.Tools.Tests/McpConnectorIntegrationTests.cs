@@ -86,7 +86,8 @@ public sealed class McpConnectorIntegrationTests : IDisposable
 
     public void Dispose()
     {
-        try { File.Delete(_scriptPath); }
+        try
+        { File.Delete(_scriptPath); }
         catch (IOException) { /* best-effort cleanup */ }
     }
 
@@ -142,7 +143,8 @@ public sealed class McpConnectorIntegrationTests : IDisposable
         foreach (var name in new[] { "python3", "python" })
         {
             var pathEnv = Environment.GetEnvironmentVariable("PATH");
-            if (pathEnv is null) continue;
+            if (pathEnv is null)
+                continue;
             foreach (var candidate in pathEnv.Split(Path.PathSeparator).Select(dir => Path.Join(dir, name)))
             {
                 if (File.Exists(candidate))

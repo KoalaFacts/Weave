@@ -64,7 +64,8 @@ public sealed class EchoMcpServerSmokeTests
         foreach (var name in new[] { "python3", "python" })
         {
             var pathEnv = Environment.GetEnvironmentVariable("PATH");
-            if (pathEnv is null) continue;
+            if (pathEnv is null)
+                continue;
             foreach (var candidate in pathEnv.Split(Path.PathSeparator).Select(dir => Path.Join(dir, name)))
             {
                 if (File.Exists(candidate))

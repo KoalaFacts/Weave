@@ -24,7 +24,8 @@ public sealed class EchoMcpHttpTransportSmokeTests : IDisposable
 
     public void Dispose()
     {
-        if (_server is null) return;
+        if (_server is null)
+            return;
         try
         {
             if (!_server.HasExited)
@@ -225,7 +226,8 @@ public sealed class EchoMcpHttpTransportSmokeTests : IDisposable
         foreach (var name in new[] { "python3", "python" })
         {
             var pathEnv = Environment.GetEnvironmentVariable("PATH");
-            if (pathEnv is null) continue;
+            if (pathEnv is null)
+                continue;
             // Path.Join (not Combine) — Combine silently drops `dir` if `name` were
             // accidentally rooted; Join concatenates regardless.
             foreach (var candidate in pathEnv.Split(Path.PathSeparator).Select(dir => Path.Join(dir, name)))

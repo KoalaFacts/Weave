@@ -325,7 +325,8 @@ internal sealed class StubMcpTransport : IMcpTransport
 
     public async Task<string?> ReceiveAsync(CancellationToken ct)
     {
-        try { return await _serverToClient.Reader.ReadAsync(ct); }
+        try
+        { return await _serverToClient.Reader.ReadAsync(ct); }
         catch (ChannelClosedException) { return null; }
     }
 
