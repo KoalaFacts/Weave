@@ -24,7 +24,8 @@ public sealed class OpenApiConnectorIntegrationTests
     public async Task ConnectInvokeRoundTrip_RealHttpServer_WorksEndToEnd()
     {
         using var server = await PetStoreServer.StartAsync(TestContext.Current.CancellationToken);
-        var connector = new OpenApiToolConnector(new HttpClient(), NullLogger<OpenApiToolConnector>.Instance);
+        using var httpClient = new HttpClient();
+        var connector = new OpenApiToolConnector(httpClient, NullLogger<OpenApiToolConnector>.Instance);
 
         var spec = new ToolSpec
         {
@@ -119,11 +120,9 @@ public sealed class OpenApiConnectorIntegrationTests
 
         private static int FindFreePort()
         {
-            var probe = new System.Net.Sockets.TcpListener(System.Net.IPAddress.Loopback, 0);
+            using var probe = new System.Net.Sockets.TcpListener(System.Net.IPAddress.Loopback, 0);
             probe.Start();
-            var port = ((System.Net.IPEndPoint)probe.LocalEndpoint).Port;
-            probe.Stop();
-            return port;
+            return ((System.Net.IPEndPoint)probe.LocalEndpoint).Port;
         }
 
         private async Task RunAsync(CancellationToken ct)
@@ -135,8 +134,11 @@ public sealed class OpenApiConnectorIntegrationTests
                 catch (HttpListenerException) { return; }
                 catch (ObjectDisposedException) { return; }
 
+                // Filtered to swallow only shutdown-time races; real handler bugs
+                // bubble up and fail the test instead of being silenced.
                 try { await HandleAsync(context, ct); }
-                catch (Exception) { /* test server — surface via assertion mismatches */ }
+                catch (OperationCanceledException) when (ct.IsCancellationRequested) { return; }
+                catch (ObjectDisposedException) when (ct.IsCancellationRequested) { return; }
             }
         }
 

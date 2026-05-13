@@ -215,11 +215,9 @@ public sealed class EchoMcpHttpTransportSmokeTests : IDisposable
 
     private static int FindFreePort()
     {
-        var probe = new TcpListener(System.Net.IPAddress.Loopback, 0);
+        using var probe = new TcpListener(System.Net.IPAddress.Loopback, 0);
         probe.Start();
-        var port = ((System.Net.IPEndPoint)probe.LocalEndpoint).Port;
-        probe.Stop();
-        return port;
+        return ((System.Net.IPEndPoint)probe.LocalEndpoint).Port;
     }
 
     private static string? LocatePython()
@@ -230,7 +228,9 @@ public sealed class EchoMcpHttpTransportSmokeTests : IDisposable
             if (pathEnv is null) continue;
             foreach (var dir in pathEnv.Split(Path.PathSeparator))
             {
-                var candidate = Path.Combine(dir, name);
+                // Path.Join (not Combine) — Combine silently drops `dir` if `name` were
+                // accidentally rooted; Join concatenates regardless.
+                var candidate = Path.Join(dir, name);
                 if (File.Exists(candidate))
                     return candidate;
             }
@@ -243,7 +243,7 @@ public sealed class EchoMcpHttpTransportSmokeTests : IDisposable
         var dir = AppContext.BaseDirectory;
         for (var i = 0; i < 10 && dir is not null; i++)
         {
-            var candidate = Path.Combine(dir, "examples", "echo-mcp", "server.py");
+            var candidate = Path.Join(dir, "examples", "echo-mcp", "server.py");
             if (File.Exists(candidate))
                 return candidate;
             dir = Path.GetDirectoryName(dir);

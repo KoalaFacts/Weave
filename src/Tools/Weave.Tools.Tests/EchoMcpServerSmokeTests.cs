@@ -67,7 +67,7 @@ public sealed class EchoMcpServerSmokeTests
             if (pathEnv is null) continue;
             foreach (var dir in pathEnv.Split(Path.PathSeparator))
             {
-                var candidate = Path.Combine(dir, name);
+                var candidate = Path.Join(dir, name);
                 if (File.Exists(candidate))
                     return candidate;
             }
@@ -80,7 +80,7 @@ public sealed class EchoMcpServerSmokeTests
         var dir = AppContext.BaseDirectory;
         for (var i = 0; i < 10 && dir is not null; i++)
         {
-            var candidate = Path.Combine(dir, "examples", "echo-mcp", "server.py");
+            var candidate = Path.Join(dir, "examples", "echo-mcp", "server.py");
             if (File.Exists(candidate))
                 return candidate;
             dir = Path.GetDirectoryName(dir);

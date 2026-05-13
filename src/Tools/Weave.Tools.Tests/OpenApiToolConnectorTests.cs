@@ -7,8 +7,18 @@ using Weave.Tools.Tool;
 using Weave.Workspaces.Manifest;
 namespace Weave.Tools.Tests;
 
-public sealed class OpenApiToolConnectorTests
+public sealed class OpenApiToolConnectorTests : IDisposable
 {
+    // Tracks HttpClients minted by NewConnector so they're disposed at test end
+    // (xunit.v3 spins a fresh instance per test). Avoids 17 inline `using var`
+    // edits across this file while still satisfying deterministic-cleanup.
+    private readonly List<HttpClient> _httpClients = [];
+
+    public void Dispose()
+    {
+        foreach (var c in _httpClients) c.Dispose();
+    }
+
     private const string SpecUrl = "http://api.example.test/openapi.json";
 
     private const string SampleSpec = """
@@ -64,8 +74,12 @@ public sealed class OpenApiToolConnectorTests
         OpenApi = new OpenApiConfig { SpecUrl = SpecUrl, Auth = auth }
     };
 
-    private static OpenApiToolConnector NewConnector(RouterHandler handler) =>
-        new(new HttpClient(handler), NullLogger<OpenApiToolConnector>.Instance);
+    private OpenApiToolConnector NewConnector(RouterHandler handler)
+    {
+        var client = new HttpClient(handler);
+        _httpClients.Add(client);
+        return new(client, NullLogger<OpenApiToolConnector>.Instance);
+    }
 
     [Fact]
     public async Task ConnectAsync_FetchesAndParsesSpec()

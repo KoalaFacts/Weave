@@ -145,7 +145,7 @@ internal sealed class HttpMcpTransport : IMcpTransport
 
         await using var stream = await response.Content.ReadAsStreamAsync(ct);
         var buffer = ArrayPool<byte>.Shared.Rent(8192);
-        var sink = new MemoryStream();
+        using var sink = new MemoryStream();
         try
         {
             int read;
