@@ -112,9 +112,30 @@ Then boot the workspace:
 dotnet run --project src/UX/Weave.Cli -- workspace up examples/echo-mcp/workspace.json
 ```
 
-Weave's HTTP transport today consumes only `application/json` responses — the
-SSE-streaming response variant and the GET /mcp server-initiated SSE channel
-are protocol-complete in this server but not yet wired into Weave's connector.
+### Security defaults
+
+The HTTP transport is hostile-peer aware:
+
+- **SSRF defense.** URLs targeting loopback (127.x, ::1, localhost), private
+  ranges (10/8, 172.16/12, 192.168/16, 100.64/10, fc00::/7), link-local
+  (169.254/16, fe80::/10), or reserved ranges are **rejected by default**.
+  For local development, set `allow_private_endpoints: true` in the manifest.
+  URLs with userinfo (`http://user:pass@…`) or fragments are always rejected.
+- **Resource caps.** `max_response_bytes` (default 16 MiB) bounds total bytes
+  consumed per request. `max_frame_bytes` (default 1 MiB) bounds a single
+  JSON body or SSE `data:` value. `max_queued_frames` (default 1024) bounds
+  the in-memory channel for SSE streams.
+- **Timeouts.** `request_timeout_seconds` (default 300) caps the entire
+  request including streaming response. `idle_timeout_seconds` (default 30)
+  caps the gap between SSE frames — a slow-loris dripping one byte every
+  29s won't keep the connection alive indefinitely.
+- **Diagnostics never include raw server bodies** — only status codes,
+  truncated reasons, and counts.
+
+Out of scope: `GET /mcp` server-initiated SSE channel, `Mcp-Session-Id`
+headers, and `Authorization` header pass-through. The echo server emits
+those for any spec-compliant client; Weave's connector doesn't drive them
+yet.
 
 ## Files
 

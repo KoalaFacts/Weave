@@ -53,7 +53,7 @@ public sealed class EchoMcpHttpTransportSmokeTests : IDisposable
         {
             Name = "echo-server-http",
             Type = ToolType.Mcp,
-            Mcp = new McpConfig { Url = $"http://127.0.0.1:{_port}/mcp" }
+            Mcp = new McpConfig { Url = $"http://127.0.0.1:{_port}/mcp", AllowPrivateEndpoints = true }
         };
 
         var handle = await connector.ConnectAsync(spec, _token, TestContext.Current.CancellationToken);
@@ -98,7 +98,7 @@ public sealed class EchoMcpHttpTransportSmokeTests : IDisposable
         {
             Name = "echo-server-http-sse",
             Type = ToolType.Mcp,
-            Mcp = new McpConfig { Url = $"http://127.0.0.1:{_port}/mcp" }
+            Mcp = new McpConfig { Url = $"http://127.0.0.1:{_port}/mcp", AllowPrivateEndpoints = true }
         };
 
         var handle = await connector.ConnectAsync(spec, _token, TestContext.Current.CancellationToken);
@@ -137,7 +137,7 @@ public sealed class EchoMcpHttpTransportSmokeTests : IDisposable
         {
             Name = "unreachable",
             Type = ToolType.Mcp,
-            Mcp = new McpConfig { Url = $"http://127.0.0.1:{freePort}/mcp" }
+            Mcp = new McpConfig { Url = $"http://127.0.0.1:{freePort}/mcp", AllowPrivateEndpoints = true }
         };
 
         // ConnectAsync itself fails during initialize handshake because the send fails.

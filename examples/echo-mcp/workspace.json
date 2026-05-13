@@ -34,10 +34,16 @@
     // HTTP variant — uncomment to point at a separately-running HTTP server
     // started with:  python3 examples/echo-mcp/server.py --transport http --port 8765
     //
+    // NOTE: HTTP transport rejects loopback / private / link-local / reserved
+    // IPs by default (SSRF defense). For local development, opt in with
+    // `allow_private_endpoints: true`. Production manifests pointing at public
+    // DNS hostnames don't need the opt-in.
+    //
     // "echo-server": {
     //   "type": "mcp",
     //   "mcp": {
-    //     "url": "http://127.0.0.1:8765/mcp"
+    //     "url": "http://127.0.0.1:8765/mcp",
+    //     "allow_private_endpoints": true
     //   }
     // }
   },
