@@ -13,9 +13,9 @@
       },
       "Microsoft.NET.ILLink.Tasks": {
         "type": "Direct",
-        "requested": "[10.0.7, )",
-        "resolved": "10.0.7",
-        "contentHash": "AA/yhzFHNtQZXLdqjzujPy25G8EWwGWsAnxOE2zYSBoT/8QHP6ketN3CToD3DFreO653ipUwnKHo22B8AlBMCw=="
+        "requested": "[10.0.5, )",
+        "resolved": "10.0.5",
+        "contentHash": "A+5ZuQ0f449tM+MQrhf6R9ZX7lYpjk/ODEwLYKrnF6111rtARx8fVsm4YznUnQiKnnXfaXNBqgxmil6RW3L3SA=="
       },
       "Microsoft.Orleans.Serialization.SystemTextJson": {
         "type": "Direct",
@@ -229,11 +229,6 @@
         "dependencies": {
           "Microsoft.IdentityModel.Logging": "8.16.0"
         }
-      },
-      "Microsoft.OpenApi": {
-        "type": "Transitive",
-        "resolved": "2.0.0",
-        "contentHash": "GGYLfzV/G/ct80OZ45JxnWP7NvMX1BCugn/lX7TH5o0lcVaviavsLMTxmFV2AybXWjbi3h6FF1vgZiTK6PXndw=="
       },
       "Microsoft.Orleans.Analyzers": {
         "type": "Transitive",
@@ -702,6 +697,12 @@
         "dependencies": {
           "Microsoft.Extensions.ServiceDiscovery.Abstractions": "10.5.0"
         }
+      },
+      "Microsoft.OpenApi": {
+        "type": "CentralTransitive",
+        "requested": "[2.7.5, )",
+        "resolved": "2.7.5",
+        "contentHash": "0FA67RSnRM4tcBKqiqVu/HPdZ9+QOKbmeRjxRUGTCjPU4C0bmUhd97Dso7Yild5P7nOV6GxJ2xrK0Kv/O9xp0w=="
       },
       "Microsoft.Orleans.Clustering.AdoNet": {
         "type": "CentralTransitive",
