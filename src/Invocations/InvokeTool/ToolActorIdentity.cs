@@ -29,9 +29,9 @@ internal sealed class ToolActorIdentity
             WorkspaceId = token.WorkspaceId;
         }
 
+        var resolved = definition?.Name ?? invocation?.ToolName;
         if (string.IsNullOrWhiteSpace(ToolName))
         {
-            var resolved = definition?.Name ?? invocation?.ToolName;
             if (string.IsNullOrWhiteSpace(resolved))
                 throw new InvalidOperationException(
                     "ToolActor tool name cannot be established. Provide a ToolSpec "
@@ -39,5 +39,7 @@ internal sealed class ToolActorIdentity
 
             ToolName = resolved;
         }
+        else if (!string.Equals(resolved, ToolName, StringComparison.Ordinal))
+            throw new UnauthorizedAccessException("Tool request does not match actor identity.");
     }
 }

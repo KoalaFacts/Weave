@@ -84,16 +84,21 @@ public sealed partial class ToolActor(
     public async Task<ToolResult> InvokeAsync(ToolInvocation invocation, CapabilityToken token)
     {
         _identity.Ensure(invocation: invocation, token: token);
+        // Snapshot caller-owned parameters before authorization yields.
+        var request = invocation with
+        {
+            Parameters = new Dictionary<string, string>(invocation.Parameters, StringComparer.Ordinal)
+        };
         await authorizer.AuthorizeAsync(token, $"tool:{_identity.ToolName}", _identity.WorkspaceId);
 
         if (_handle is null || _definition is null)
             throw new InvalidOperationException($"Tool '{_identity.ToolName}' is not connected");
 
-        var blockedResult = await _leakGuard.BlockIfOutboundLeaksAsync(_identity.WorkspaceId, _identity.ToolName, invocation);
+        var blockedResult = await _leakGuard.BlockIfOutboundLeaksAsync(_identity.WorkspaceId, _identity.ToolName, request);
         if (blockedResult is not null)
             return blockedResult;
 
-        var effectiveInvocation = await _secretSubstitutor.SubstituteAsync(_identity.WorkspaceId, invocation);
+        var effectiveInvocation = await _secretSubstitutor.SubstituteAsync(_identity.WorkspaceId, request);
         var connector = discovery.GetConnector(_definition.Type);
         var result = await connector.InvokeAsync(_handle, effectiveInvocation);
         result = await _leakGuard.RedactIfInboundLeaksAsync(_identity.WorkspaceId, _identity.ToolName, result);
