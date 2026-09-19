@@ -1,6 +1,6 @@
 using Weave.Security.Tokens;
 using Weave.Shared.VirtualActors;
-using Weave.Tools.Tool;
+using Weave.Silo.VirtualActors;
 
 namespace Weave.Silo.Invocations;
 
@@ -15,8 +15,8 @@ internal static class GetApprovalEndpoint
             return InvocationHttp.Error(400, "invalid-invocation-id");
         try
         {
-            var actor = actors.GetActor<IToolActor>(VirtualActorId.From(workspaceId + "/" + toolName));
-            var approval = await actor.GetApprovalAsync(id, token);
+            var actor = actors.GetActor<IToolActorGrain>(VirtualActorId.From(workspaceId + "/" + toolName));
+            var approval = await actor.GetApprovalWithCancellationAsync(id, token, context.RequestAborted);
             return approval is null ? InvocationHttp.Error(404, "approval-not-found")
                 : Results.Json(new ApprovalHttpStatus(approval.InvocationId.ToString(), approval.State, approval.ExpiresAt),
                     InvocationHttpJsonContext.Default.ApprovalHttpStatus);

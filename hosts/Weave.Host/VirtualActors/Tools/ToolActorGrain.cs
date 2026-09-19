@@ -50,6 +50,18 @@ public sealed class ToolActorGrain : Grain, IToolActorGrain
         string planDigest, InvocationApprovalDecision decision, CapabilityToken token) =>
         _actor.DecideApprovalAsync(invocationId, planDigest, decision, token);
 
+    public Task<ToolResult> InvokeWithCancellationAsync(ToolInvocation invocation, CapabilityToken token,
+        CancellationToken cancellationToken) =>
+        _actor.InvokeAsync(invocation, token with { CancellationToken = cancellationToken });
+
+    public Task<InvocationRecord?> GetInvocationWithCancellationAsync(InvocationId invocationId, CapabilityToken token,
+        CancellationToken cancellationToken) =>
+        _actor.GetInvocationAsync(invocationId, token with { CancellationToken = cancellationToken });
+
+    public Task<InvocationApproval?> GetApprovalWithCancellationAsync(InvocationId invocationId, CapabilityToken token,
+        CancellationToken cancellationToken) =>
+        _actor.GetApprovalAsync(invocationId, token with { CancellationToken = cancellationToken });
+
     public Task<ToolSchema> GetSchemaAsync() => _actor.GetSchemaAsync();
     public Task<ToolHandle?> GetHandleAsync() => _actor.GetHandleAsync();
 }
