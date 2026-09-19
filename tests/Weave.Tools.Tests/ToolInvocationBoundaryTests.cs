@@ -64,7 +64,9 @@ public sealed class ToolInvocationBoundaryTests
         (await fx.Actor.GetHandleAsync()).ShouldBeSameAs(original);
         var result = await fx.Actor.InvokeAsync(new ToolInvocation
         {
-            ToolName = "notes", Method = "read_file", Parameters = new() { ["path"] = "original.txt" }
+            ToolName = "notes",
+            Method = "read_file",
+            Parameters = new() { ["path"] = "original.txt" }
         }, fx.Token);
         result.Success.ShouldBeTrue();
         result.Output.ShouldBe("original.txt");
@@ -79,7 +81,9 @@ public sealed class ToolInvocationBoundaryTests
         await fx.ConnectAsync();
         var input = new ToolInvocation
         {
-            ToolName = "notes", Method = "read_file", Parameters = new() { ["path"] = "original.txt" }
+            ToolName = "notes",
+            Method = "read_file",
+            Parameters = new() { ["path"] = "original.txt" }
         };
         var release = new TaskCompletionSource(TaskCreationOptions.RunContinuationsAsynchronously);
         fx.Events.PublishAsync(Arg.Any<CapabilityAuthorizationEvent>(), Arg.Any<CancellationToken>())
@@ -108,7 +112,8 @@ public sealed class ToolInvocationBoundaryTests
         await fx.ConnectAsync();
         var input = new ToolInvocation
         {
-            ToolName = "notes", Method = "write_file",
+            ToolName = "notes",
+            Method = "write_file",
             Parameters = new() { ["path"] = "AKIAIOSFODNN7EXAMPLE" }
         };
         var release = new TaskCompletionSource(TaskCreationOptions.RunContinuationsAsynchronously);
@@ -137,7 +142,9 @@ public sealed class ToolInvocationBoundaryTests
             .Returns(new ToolResult { ToolName = "notes", Success = true, Output = "AKIAIOSFODNN7EXAMPLE" });
         var input = new ToolInvocation
         {
-            ToolName = "notes", Method = "read_file", Parameters = new() { ["path"] = "${secrets.note_path}" }
+            ToolName = "notes",
+            Method = "read_file",
+            Parameters = new() { ["path"] = "${secrets.note_path}" }
         };
 
         var result = await fx.Actor.InvokeAsync(input, fx.Token);
@@ -192,7 +199,8 @@ public sealed class ToolInvocationBoundaryTests
             Connector.InvokeAsync(Arg.Any<ToolHandle>(), Arg.Any<ToolInvocation>(), Arg.Any<CancellationToken>())
                 .Returns(c => new ToolResult
                 {
-                    ToolName = "notes", Success = true,
+                    ToolName = "notes",
+                    Success = true,
                     Output = c.Arg<ToolInvocation>().Parameters.GetValueOrDefault("path", "no-path")
                 });
             Token = Mint("ws");
@@ -203,7 +211,9 @@ public sealed class ToolInvocationBoundaryTests
 
         public CapabilityToken Mint(string workspaceId) => Tokens.Mint(new CapabilityTokenRequest
         {
-            WorkspaceId = workspaceId, IssuedTo = "test-agent", Grants = ["tool:notes"],
+            WorkspaceId = workspaceId,
+            IssuedTo = "test-agent",
+            Grants = ["tool:notes"],
             Lifetime = TimeSpan.FromHours(1)
         });
 
