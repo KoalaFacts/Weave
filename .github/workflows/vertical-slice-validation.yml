@@ -18,73 +18,16 @@ env:
   DOTNET_CLI_TELEMETRY_OPTOUT: true
 
 jobs:
-  prepare:
-    if: github.ref == 'refs/heads/refactor/vertical-slice-foundation'
-    runs-on: ubuntu-latest
-    timeout-minutes: 5
-    permissions:
-      contents: write
-    outputs:
-      source-sha: ${{ steps.source.outputs.sha }}
-    steps:
-      - name: Checkout isolated branch
-        uses: actions/checkout@de0fac2e4500dabe0009e67214ff5f5447ce83dd # v6
-        with:
-          fetch-depth: 1
-
-      - name: Apply reviewed migration once
-        shell: bash
-        run: |
-          set -euo pipefail
-          mkdir -p artifacts
-          if [ ! -f src/Weave.csproj ]; then
-            python3 scripts/refactor_flat_source.py
-          fi
-          python3 -m unittest discover -s scripts/tests -v
-          git diff --check
-          git diff -- .github > artifacts/workflow-paths.patch
-
-      - name: Commit source only to the isolated branch
-        id: source
-        env:
-          EXPECTED_SHA: ${{ github.sha }}
-        shell: bash
-        run: |
-          set -euo pipefail
-          test "$GITHUB_REF" = refs/heads/refactor/vertical-slice-foundation
-          git fetch origin refactor/vertical-slice-foundation
-          test "$(git rev-parse FETCH_HEAD)" = "$EXPECTED_SHA"
-          git add -A -- src hosts extensions tools tests scripts docs .claude README.md CLAUDE.md AGENTS.md Weave.slnx .gitignore
-          git diff --cached --check
-          if ! git diff --cached --quiet; then
-            git config user.name 'github-actions[bot]'
-            git config user.email '41898282+github-actions[bot]@users.noreply.github.com'
-            git commit -m 'refactor: flatten feature source and isolate hosts, adapters, runtime and tests'
-            git push origin HEAD:refs/heads/refactor/vertical-slice-foundation
-          fi
-          echo "sha=$(git rev-parse HEAD)" >> "$GITHUB_OUTPUT"
-          git archive --format=tar HEAD -o artifacts/source-snapshot.tar
-          git status --short > artifacts/remaining-worktree-changes.txt
-
-      - name: Upload source and migration evidence
-        if: always()
-        uses: actions/upload-artifact@043fb46d1a93c77aae656e7c1c64a875d1fc6a0a # v7
-        with:
-          name: migrated-source
-          path: artifacts/
-          retention-days: 7
-
   validate:
-    needs: prepare
     runs-on: ubuntu-latest
     timeout-minutes: 30
-    permissions:
-      contents: read
+    outputs:
+      build-result: ${{ steps.build.outcome }}
+      test-result: ${{ steps.test.outcome }}
     steps:
-      - name: Checkout exact migrated commit
+      - name: Checkout exact source commit
         uses: actions/checkout@de0fac2e4500dabe0009e67214ff5f5447ce83dd # v6
         with:
-          ref: ${{ needs.prepare.outputs.source-sha }}
           persist-credentials: false
 
       - name: Setup pinned .NET SDK
@@ -125,11 +68,11 @@ jobs:
           set -o pipefail
           dotnet test --solution Weave.slnx --no-build -c Release -- --report-xunit-trx --results-directory ./test-results |& tee artifacts/test.log
 
-      - name: Capture lockfile changes and result summary
+      - name: Capture resolved lockfiles and result summary
         if: always()
         shell: bash
         env:
-          SOURCE_SHA: ${{ needs.prepare.outputs.source-sha }}
+          SOURCE_SHA: ${{ github.sha }}
           AUDIT_RESULT: ${{ steps.audit.outcome }}
           BUILD_RESULT: ${{ steps.build.outcome }}
           TEST_RESULT: ${{ steps.test.outcome }}
@@ -137,6 +80,7 @@ jobs:
           mkdir -p artifacts
           git diff -- '**/packages.lock.json' > artifacts/lockfile-updates.patch
           find src hosts extensions tools tests -name packages.lock.json -print0 | tar --null -T - -czf artifacts/lockfiles.tar.gz
+          git archive --format=tar HEAD -o artifacts/source-snapshot.tar
           printf 'source=%s\naudit=%s\nbuild=%s\ntests=%s\n' "$SOURCE_SHA" "$AUDIT_RESULT" "$BUILD_RESULT" "$TEST_RESULT" | tee artifacts/result.txt >> "$GITHUB_STEP_SUMMARY"
 
       - name: Upload validation evidence
@@ -149,8 +93,82 @@ jobs:
             test-results/**/*.trx
           retention-days: 7
 
+      - name: Upload resolved lockfiles
+        if: always() && steps.build.outcome == 'success' && steps.test.outcome == 'success'
+        uses: actions/upload-artifact@043fb46d1a93c77aae656e7c1c64a875d1fc6a0a # v7
+        with:
+          name: resolved-lockfiles
+          path: artifacts/lockfiles.tar.gz
+          retention-days: 3
+
       - name: Enforce strict audit outcome
         if: always() && steps.audit.outcome != 'success'
         run: |
           echo '::error::Strict dependency audit failed. Diagnostic compilation/tests do not make this branch release-ready.'
           exit 1
+
+  record-lockfiles:
+    needs: validate
+    if: always() && github.ref == 'refs/heads/refactor/vertical-slice-foundation' && needs.validate.outputs.build-result == 'success' && needs.validate.outputs.test-result == 'success'
+    runs-on: ubuntu-latest
+    timeout-minutes: 5
+    permissions:
+      contents: write
+    steps:
+      - name: Checkout verified source
+        uses: actions/checkout@de0fac2e4500dabe0009e67214ff5f5447ce83dd # v6
+        with:
+          ref: ${{ github.sha }}
+
+      - name: Download lockfiles from this run
+        uses: actions/download-artifact@3e5f45b2cfb9172054b4087a40e8e0b5a5461e7c # v8
+        with:
+          name: resolved-lockfiles
+          path: .verified-locks
+
+      - name: Restore only validated project lockfiles
+        shell: python
+        run: |
+          import json
+          from pathlib import Path
+          import subprocess
+          import tarfile
+          root = Path.cwd()
+          allowed = {p.parent.relative_to(root).as_posix() + '/packages.lock.json'
+                     for area in ('src', 'hosts', 'extensions', 'tools', 'tests')
+                     for p in (root / area).rglob('*.csproj')}
+          seen = set()
+          with tarfile.open('.verified-locks/lockfiles.tar.gz') as archive:
+              for item in archive.getmembers():
+                  if not item.isfile() or item.name not in allowed or item.name in seen or item.size > 5000000:
+                      raise SystemExit('Invalid lockfile archive entry: ' + item.name)
+                  data = archive.extractfile(item).read()
+                  parsed = json.loads(data)
+                  if parsed.get('version') != 1 or not isinstance(parsed.get('dependencies'), dict):
+                      raise SystemExit('Invalid NuGet lockfile: ' + item.name)
+                  (root / item.name).write_bytes(data)
+                  seen.add(item.name)
+          if seen != allowed:
+              raise SystemExit('Resolved lockfiles do not cover the current project graph.')
+          subprocess.run(['git', 'add', '--', *sorted(seen)], check=True)
+
+      - name: Record lockfiles only if branch has not advanced
+        env:
+          EXPECTED_SHA: ${{ github.sha }}
+        shell: bash
+        run: |
+          set -euo pipefail
+          test "$GITHUB_REF" = refs/heads/refactor/vertical-slice-foundation
+          git fetch origin refactor/vertical-slice-foundation
+          if [ "$(git rev-parse FETCH_HEAD)" != "$EXPECTED_SHA" ]; then
+            echo 'Branch advanced; leaving its newer work untouched.' >> "$GITHUB_STEP_SUMMARY"
+            exit 0
+          fi
+          git diff --cached --check
+          if ! git diff --cached --quiet; then
+            git config user.name 'github-actions[bot]'
+            git config user.email '41898282+github-actions[bot]@users.noreply.github.com'
+            git commit -m 'build: regenerate lockfiles for the verified flat project graph'
+            git push origin HEAD:refs/heads/refactor/vertical-slice-foundation
+          fi
+          echo "Recorded lockfile head: $(git rev-parse HEAD)" >> "$GITHUB_STEP_SUMMARY"
