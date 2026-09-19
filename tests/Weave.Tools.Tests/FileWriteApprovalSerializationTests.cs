@@ -17,5 +17,9 @@ public sealed class FileWriteApprovalSerializationTests
         identity.ValueKind.ShouldBe(JsonValueKind.String,
             "The JSON generator must not treat a separately generated branded ID as an empty struct.");
         identity.GetString().ShouldBe(id.ToString());
+        var recovered = JsonSerializer.Deserialize(serialized, ApprovalPlanJsonContext.ForStorage.FileWriteApprovalPlan)
+            .ShouldNotBeNull();
+        recovered.ShouldBe(plan);
+        FileWritePlanBinding.Digest(recovered).ShouldBe(FileWritePlanBinding.Digest(plan));
     }
 }

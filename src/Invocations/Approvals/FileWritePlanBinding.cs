@@ -35,7 +35,7 @@ internal static class FileWritePlanBinding
     }
 
     public static string Serialize(FileWriteApprovalPlan plan) =>
-        JsonSerializer.Serialize(plan, ApprovalPlanJsonContext.Default.FileWriteApprovalPlan);
+        JsonSerializer.Serialize(plan, ApprovalPlanJsonContext.ForStorage.FileWriteApprovalPlan);
 
     public static string Digest(FileWriteApprovalPlan plan) =>
         Convert.ToHexString(SHA256.HashData(Encoding.UTF8.GetBytes(Serialize(plan))));

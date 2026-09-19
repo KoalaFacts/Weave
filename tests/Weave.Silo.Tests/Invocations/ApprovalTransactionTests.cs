@@ -131,7 +131,8 @@ public sealed class ApprovalTransactionTests
         public InvocationRecord Candidate(ApprovalRecord record) => new(record.InvocationId, "ws", "writer", "files", "write_file",
             record.InputDigest, "writer-token", "tool:files:invoke:write_file", Clock.Now,
             new InvocationAttempt(InvocationAttemptId.From(Guid.NewGuid().ToString("N")), Clock.Now,
-                InvocationOutcome.OutcomeUnknown, null, TimeSpan.Zero)) { ApprovalPlanDigest = record.PlanDigest };
+                InvocationOutcome.OutcomeUnknown, null, TimeSpan.Zero))
+        { ApprovalPlanDigest = record.PlanDigest };
         public void Dispose() => Directory.Delete(_root, recursive: true);
     }
 

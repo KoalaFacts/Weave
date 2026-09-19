@@ -60,7 +60,7 @@ public sealed partial class FileWriteApprovalService(
     private FileWriteApprovalPlan Unprotect(ApprovalRecord record)
     {
         var json = protector.Unprotect(record.WorkspaceId, record.InvocationId, record.ProtectedPlan);
-        var plan = JsonSerializer.Deserialize(json, ApprovalPlanJsonContext.Default.FileWriteApprovalPlan)
+        var plan = JsonSerializer.Deserialize(json, ApprovalPlanJsonContext.ForStorage.FileWriteApprovalPlan)
             ?? throw new CryptographicException("Approval plan could not be recovered.");
         if (plan.InvocationId != record.InvocationId || plan.WorkspaceId != record.WorkspaceId
             || plan.Subject != record.Subject || plan.ToolName != record.ToolName
