@@ -77,6 +77,7 @@ public sealed class ToolApprovalBoundaryTests
 
     private sealed class Fixture : IDisposable
     {
+        private static readonly string[] RequiredGrants = ["tool:files:invoke:write_file"];
         private readonly string _root = Path.Combine(Path.GetTempPath(), $"weave-approval-{Guid.NewGuid():N}");
         private readonly CapabilityTokenService _tokens = new(Options.Create(new CapabilityTokenOptions
         {
@@ -98,7 +99,7 @@ public sealed class ToolApprovalBoundaryTests
             var options = JsonSerializer.Deserialize<InvocationJournalOptions>(JsonSerializer.Serialize(new
             {
                 DatabasePath = Path.Combine(_root, "journal.db"),
-                ApprovalRequiredGrants = new[] { "tool:files:invoke:write_file" },
+                ApprovalRequiredGrants = RequiredGrants,
                 ApprovalLifetime = "00:05:00"
             }))!;
             return new SqliteInvocationJournal(Options.Create(options));
@@ -136,7 +137,7 @@ public sealed class ToolApprovalBoundaryTests
         {
             InvocationId = InvocationId.From(Guid.NewGuid().ToString("N")),
             ToolName = "files", Method = "write_file",
-            Parameters = new() { ["path"] = "document.txt" }, RawInput = "updated"
+            Parameters = new() { ["path"] = Path.GetFileName(Target) }, RawInput = "updated"
         };
 
         public void Dispose() => Directory.Delete(_root, recursive: true);
