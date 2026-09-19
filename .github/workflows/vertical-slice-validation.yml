@@ -18,44 +18,139 @@ env:
   DOTNET_CLI_TELEMETRY_OPTOUT: true
 
 jobs:
-  validate:
+  prepare:
+    if: github.ref == 'refs/heads/refactor/vertical-slice-foundation'
     runs-on: ubuntu-latest
-    timeout-minutes: 30
+    timeout-minutes: 5
+    permissions:
+      contents: write
+    outputs:
+      source-sha: ${{ steps.source.outputs.sha }}
     steps:
-      - name: Checkout
+      - name: Checkout isolated branch
         uses: actions/checkout@de0fac2e4500dabe0009e67214ff5f5447ce83dd # v6
         with:
-          persist-credentials: false
+          fetch-depth: 1
 
-      - name: Export tracked source for review
-        run: git archive --format=tar HEAD -o source-snapshot.tar
+      - name: Apply reviewed migration once
+        shell: bash
+        run: |
+          set -euo pipefail
+          mkdir -p artifacts
+          if [ ! -f src/Weave.csproj ]; then
+            python3 scripts/refactor_flat_source.py
+          fi
+          python3 -m unittest discover -s scripts/tests -v
+          git diff --check
+          git diff -- .github > artifacts/workflow-paths.patch
 
-      - name: Upload source snapshot
-        uses: actions/upload-artifact@043fb46d1a93c77aae656e7c1c64a875d1fc6a0a # v7
-        with:
-          name: source-snapshot
-          path: source-snapshot.tar
-          retention-days: 3
+      - name: Commit source only to the isolated branch
+        id: source
+        env:
+          EXPECTED_SHA: ${{ github.sha }}
+        shell: bash
+        run: |
+          set -euo pipefail
+          test "$GITHUB_REF" = refs/heads/refactor/vertical-slice-foundation
+          git fetch origin refactor/vertical-slice-foundation
+          test "$(git rev-parse FETCH_HEAD)" = "$EXPECTED_SHA"
+          git add -A -- src hosts extensions tools tests scripts docs .claude README.md CLAUDE.md AGENTS.md Weave.slnx .gitignore
+          git diff --cached --check
+          if ! git diff --cached --quiet; then
+            git config user.name 'github-actions[bot]'
+            git config user.email '41898282+github-actions[bot]@users.noreply.github.com'
+            git commit -m 'refactor: flatten feature source and isolate hosts, adapters, runtime and tests'
+            git push origin HEAD:refs/heads/refactor/vertical-slice-foundation
+          fi
+          echo "sha=$(git rev-parse HEAD)" >> "$GITHUB_OUTPUT"
+          git archive --format=tar HEAD -o artifacts/source-snapshot.tar
+          git status --short > artifacts/remaining-worktree-changes.txt
 
-      - name: Setup .NET
-        uses: ./.github/actions/setup-dotnet
-
-      - name: Restore
-        run: dotnet restore Weave.slnx
-
-      - name: Build
-        run: dotnet build Weave.slnx --no-restore -c Release
-
-      - name: Test
-        run: >-
-          dotnet test --solution Weave.slnx --no-build -c Release
-          -- --report-xunit-trx --results-directory ./test-results
-
-      - name: Upload validation results
+      - name: Upload source and migration evidence
         if: always()
         uses: actions/upload-artifact@043fb46d1a93c77aae656e7c1c64a875d1fc6a0a # v7
         with:
-          name: vertical-slice-test-results
-          path: ./test-results/**/*.trx
-          if-no-files-found: warn
+          name: migrated-source
+          path: artifacts/
           retention-days: 7
+
+  validate:
+    needs: prepare
+    runs-on: ubuntu-latest
+    timeout-minutes: 30
+    permissions:
+      contents: read
+    steps:
+      - name: Checkout exact migrated commit
+        uses: actions/checkout@de0fac2e4500dabe0009e67214ff5f5447ce83dd # v6
+        with:
+          ref: ${{ needs.prepare.outputs.source-sha }}
+          persist-credentials: false
+
+      - name: Setup pinned .NET SDK
+        uses: ./.github/actions/setup-dotnet
+        with:
+          dotnet-version: '10.0.201'
+          dotnet-quality: 'ga'
+
+      - name: Architecture checks
+        run: python3 -m unittest discover -s scripts/tests -v
+
+      - name: Strict dependency audit gate
+        id: audit
+        continue-on-error: true
+        shell: bash
+        run: |
+          set -o pipefail
+          mkdir -p artifacts
+          dotnet restore Weave.slnx --force-evaluate |& tee artifacts/strict-restore.log
+
+      - name: Diagnostic restore with audit warnings visible
+        shell: bash
+        run: |
+          set -o pipefail
+          dotnet restore Weave.slnx --force-evaluate -p:WarningsNotAsErrors=NU1902%3BNU1903 |& tee artifacts/diagnostic-restore.log
+
+      - name: Diagnostic build (does not waive audit gate)
+        id: build
+        shell: bash
+        run: |
+          set -o pipefail
+          dotnet build Weave.slnx --no-restore -c Release -p:WarningsNotAsErrors=NU1902%3BNU1903 |& tee artifacts/build.log
+
+      - name: Test
+        id: test
+        shell: bash
+        run: |
+          set -o pipefail
+          dotnet test --solution Weave.slnx --no-build -c Release -- --report-xunit-trx --results-directory ./test-results |& tee artifacts/test.log
+
+      - name: Capture lockfile changes and result summary
+        if: always()
+        shell: bash
+        env:
+          SOURCE_SHA: ${{ needs.prepare.outputs.source-sha }}
+          AUDIT_RESULT: ${{ steps.audit.outcome }}
+          BUILD_RESULT: ${{ steps.build.outcome }}
+          TEST_RESULT: ${{ steps.test.outcome }}
+        run: |
+          mkdir -p artifacts
+          git diff -- '**/packages.lock.json' > artifacts/lockfile-updates.patch
+          find src hosts extensions tools tests -name packages.lock.json -print0 | tar --null -T - -czf artifacts/lockfiles.tar.gz
+          printf 'source=%s\naudit=%s\nbuild=%s\ntests=%s\n' "$SOURCE_SHA" "$AUDIT_RESULT" "$BUILD_RESULT" "$TEST_RESULT" | tee artifacts/result.txt >> "$GITHUB_STEP_SUMMARY"
+
+      - name: Upload validation evidence
+        if: always()
+        uses: actions/upload-artifact@043fb46d1a93c77aae656e7c1c64a875d1fc6a0a # v7
+        with:
+          name: validation-evidence
+          path: |
+            artifacts/
+            test-results/**/*.trx
+          retention-days: 7
+
+      - name: Enforce strict audit outcome
+        if: always() && steps.audit.outcome != 'success'
+        run: |
+          echo '::error::Strict dependency audit failed. Diagnostic compilation/tests do not make this branch release-ready.'
+          exit 1
