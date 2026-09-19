@@ -1,16 +1,19 @@
 name: Publish to NuGet
-run-name: ${{ github.event_name == 'workflow_dispatch' && format('Publish NuGet v{0}', inputs.version) || 'Publish NuGet' }}
 
 on:
   workflow_run:
-    workflows: ["Create Release"]
+    workflows: [Create Release]
     types: [completed]
     branches: [main]
   workflow_dispatch:
     inputs:
       version:
-        description: 'Package version (e.g., 0.1.0) — only for emergency republishing'
-        required: false
+        description: 'Exact version to republish from a successful Create Release run'
+        required: true
+        type: string
+      release_run_id:
+        description: 'Successful main-branch Create Release workflow run ID (not the latest release)'
+        required: true
         type: string
 
 concurrency:
@@ -18,9 +21,8 @@ concurrency:
   cancel-in-progress: false
 
 permissions:
-  id-token: write
   contents: read
-  attestations: write
+  actions: read
 
 env:
   DOTNET_NOLOGO: true
@@ -28,128 +30,88 @@ env:
   DOTNET_CLI_TELEMETRY_OPTOUT: true
 
 jobs:
-  get-version:
-    name: Determine Version
+  verify-source:
+    name: Verify exact release source
     runs-on: ubuntu-latest
-    if: github.event_name == 'workflow_dispatch' || github.event.workflow_run.conclusion == 'success'
+    timeout-minutes: 5
+    if: github.ref == 'refs/heads/main' && (github.event_name == 'workflow_dispatch' || github.event.workflow_run.conclusion == 'success')
     outputs:
-      version: ${{ steps.version.outputs.VERSION }}
-
-    env:
-      INPUT_VERSION: ${{ inputs.version }}
-
+      version: ${{ steps.source.outputs.version }}
+      run_id: ${{ steps.source.outputs.run_id }}
+      artifact_id: ${{ steps.source.outputs.artifact_id }}
+      source_sha: ${{ steps.source.outputs.source_sha }}
     steps:
-      - name: Determine version
-        id: version
-        run: |
-          if [ "${{ github.event_name }}" == "workflow_run" ]; then
-            TAG=$(gh api repos/${{ github.repository }}/releases \
-              --jq '.[0].tag_name' | head -n 1)
-            if [ -z "$TAG" ] || [ "$TAG" = "null" ]; then
-              echo "::error::Could not find any releases"
-              exit 1
-            fi
-            VERSION="${TAG#v}"
-            echo "Using latest release: $TAG"
-          elif [ -n "${INPUT_VERSION}" ]; then
-            VERSION="${INPUT_VERSION}"
-          else
-            echo "::error::No version specified"
-            exit 1
-          fi
+      - name: Checkout trusted validation code
+        uses: actions/checkout@de0fac2e4500dabe0009e67214ff5f5447ce83dd # v6
+        with:
+          ref: ${{ github.workflow_sha }}
+          sparse-checkout: scripts/release
+          persist-credentials: false
 
-          echo "VERSION=$VERSION" >> $GITHUB_OUTPUT
-          echo "Publishing version: $VERSION"
+      - name: Verify successful same-repository build, artifact, and tag
+        id: source
         env:
-          GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+          GH_TOKEN: ${{ github.token }}
+          RELEASE_RUN_ID: ${{ github.event_name == 'workflow_run' && github.event.workflow_run.id || inputs.release_run_id }}
+          INPUT_VERSION: ${{ inputs.version }}
+        run: python3 scripts/release/guard.py resolve
 
   publish:
-    name: Publish v${{ needs.get-version.outputs.version }}
-    needs: get-version
+    name: Publish verified v${{ needs.verify-source.outputs.version }}
+    needs: verify-source
     runs-on: ubuntu-latest
+    timeout-minutes: 10
     environment:
       name: nuget
-      url: https://www.nuget.org/packages/Weave.Cli/${{ needs.get-version.outputs.version }}
-
+      url: https://www.nuget.org/packages/Weave.Cli/${{ needs.verify-source.outputs.version }}
+    env:
+      VERSION: ${{ needs.verify-source.outputs.version }}
+      SOURCE_SHA: ${{ needs.verify-source.outputs.source_sha }}
+      RELEASE_RUN_ID: ${{ needs.verify-source.outputs.run_id }}
     steps:
-      - name: Checkout
+      - name: Checkout trusted validation code only
         uses: actions/checkout@de0fac2e4500dabe0009e67214ff5f5447ce83dd # v6
+        with:
+          ref: ${{ github.workflow_sha }}
+          sparse-checkout: scripts/release
+          persist-credentials: false
 
-      - name: Setup .NET
-        uses: ./.github/actions/setup-dotnet
+      - name: Setup pinned publishing SDK
+        uses: actions/setup-dotnet@67a3573c9a986a3f9c594539f4ab511d57bb3ce9 # v4
+        with:
+          dotnet-version: '10.0.201'
+          dotnet-quality: 'ga'
 
-      - name: Download packages from release
-        run: |
-          VERSION="${{ needs.get-version.outputs.version }}"
-          TAG="v${VERSION}"
-          mkdir -p packages
+      - name: Download only the verified immutable artifact
+        uses: actions/download-artifact@3e5f45b2cfb9172054b4087a40e8e0b5a5461e7c # v8
+        with:
+          artifact-ids: ${{ needs.verify-source.outputs.artifact_id }}
+          run-id: ${{ needs.verify-source.outputs.run_id }}
+          github-token: ${{ github.token }}
+          path: packages
+          merge-multiple: true
+          digest-mismatch: error
 
-          # Try downloading from release artifacts first
-          gh release download "$TAG" --pattern "*.nupkg" --dir packages 2>/dev/null || true
-          gh release download "$TAG" --pattern "*.snupkg" --dir packages 2>/dev/null || true
-
-          # If no packages attached to release, build from source
-          NUPKG_COUNT=$(ls -1 packages/*.nupkg 2>/dev/null | wc -l)
-          if [ "$NUPKG_COUNT" -eq 0 ]; then
-            echo "No packages found in release, building from source..."
-            dotnet restore Weave.slnx
-            dotnet build Weave.slnx --no-restore -c Release
-
-            dotnet pack hosts/Weave.Cli/Weave.Cli.csproj \
-              -c Release --no-build \
-              -p:Version=$VERSION \
-              -p:IncludeSymbols=true \
-              -p:SymbolPackageFormat=snupkg \
-              -o packages
-          fi
-
-          echo "Packages to publish:"
-          ls -lh packages/
-        env:
-          GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
-
-      - name: Validate packages
-        run: |
-          NUPKG_COUNT=$(ls -1 packages/*.nupkg 2>/dev/null | wc -l)
-          if [ "$NUPKG_COUNT" -eq 0 ]; then
-            echo "::error::No packages were created"
-            exit 1
-          fi
-          echo "Found $NUPKG_COUNT package(s) to publish"
+      - name: Verify package identity and version before exposing the publish key
+        run: python3 scripts/release/guard.py validate-packages
 
       - name: Publish to NuGet.org
+        env:
+          NUGET_API_KEY: ${{ secrets.NUGET_API_KEY }}
+        shell: bash
         run: |
+          set -euo pipefail
+          test -n "$NUGET_API_KEY" || { echo '::error::Publishing credential is missing.'; exit 1; }
           for pkg in packages/*.nupkg packages/*.snupkg; do
             if [ -f "$pkg" ]; then
-              echo "Publishing $(basename $pkg)..."
               dotnet nuget push "$pkg" \
                 --source https://api.nuget.org/v3/index.json \
-                --api-key ${{ secrets.NUGET_API_KEY }} \
+                --api-key "$NUGET_API_KEY" \
                 --skip-duplicate
             fi
           done
 
-      - name: Upload package artifacts
-        if: always()
-        uses: actions/upload-artifact@043fb46d1a93c77aae656e7c1c64a875d1fc6a0a # v7
-        with:
-          name: nuget-packages-v${{ needs.get-version.outputs.version }}
-          path: |
-            packages/*.nupkg
-            packages/*.snupkg
-          retention-days: 90
-
-      - name: Publish summary
-        if: success()
+      - name: Publish evidence
         run: |
-          VERSION="${{ needs.get-version.outputs.version }}"
-          echo "## NuGet Package Published" >> $GITHUB_STEP_SUMMARY
-          echo "" >> $GITHUB_STEP_SUMMARY
-          echo "**Version**: $VERSION" >> $GITHUB_STEP_SUMMARY
-          echo "**Package**: [Weave.Cli](https://www.nuget.org/packages/Weave.Cli/$VERSION)" >> $GITHUB_STEP_SUMMARY
-          echo "" >> $GITHUB_STEP_SUMMARY
-          echo '```bash' >> $GITHUB_STEP_SUMMARY
-          echo "dotnet tool install -g Weave.Cli --version $VERSION" >> $GITHUB_STEP_SUMMARY
-          echo '```' >> $GITHUB_STEP_SUMMARY
-          echo "" >> $GITHUB_STEP_SUMMARY
-          echo "Package will be available on NuGet.org within 5-10 minutes." >> $GITHUB_STEP_SUMMARY
+          printf 'Published version: %s\nSource commit: %s\nRelease run: %s\n' \
+            "$VERSION" "$SOURCE_SHA" "$RELEASE_RUN_ID" >> "$GITHUB_STEP_SUMMARY"

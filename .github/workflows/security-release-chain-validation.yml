@@ -1,0 +1,197 @@
+name: Security Release Chain Validation
+
+on:
+  push:
+    branches: [security/release-chain-hardening]
+  workflow_dispatch:
+
+permissions:
+  contents: read
+
+concurrency:
+  group: security-release-chain-${{ github.ref }}
+  cancel-in-progress: true
+
+env:
+  DOTNET_NOLOGO: true
+  DOTNET_SKIP_FIRST_TIME_EXPERIENCE: true
+  DOTNET_CLI_TELEMETRY_OPTOUT: true
+
+jobs:
+  validate:
+    runs-on: ubuntu-latest
+    timeout-minutes: 30
+    steps:
+      - name: Checkout exact source commit
+        uses: actions/checkout@de0fac2e4500dabe0009e67214ff5f5447ce83dd # v6
+        with:
+          persist-credentials: false
+
+      - name: Setup pinned .NET SDK
+        uses: ./.github/actions/setup-dotnet
+        with:
+          dotnet-version: '10.0.201'
+          dotnet-quality: 'ga'
+
+      - name: Architecture checks
+        run: python3 -m unittest discover -s scripts/tests -v
+
+      - name: Strict dependency restore and audit
+        id: audit
+        shell: bash
+        run: |
+          set -euo pipefail
+          mkdir -p artifacts
+          dotnet restore Weave.slnx --force-evaluate -p:NuGetAudit=true -p:NuGetAuditMode=all -p:NuGetAuditLevel=low |& tee artifacts/strict-restore.log
+
+      - name: Scan direct and transitive dependencies
+        id: scan
+        shell: bash
+        run: |
+          set -euo pipefail
+          dotnet package list --project Weave.slnx --include-transitive --vulnerable --no-restore --format json --output-version 1 > artifacts/dependency-audit.json
+          python3 - <<'PY'
+          import json
+          from pathlib import Path
+          report = json.loads(Path('artifacts/dependency-audit.json').read_text())
+          if report.get('version') != 1 or not isinstance(report.get('projects'), list) or not report['projects']:
+              raise SystemExit('Missing or unsupported dependency audit report')
+          def check(node):
+              if isinstance(node, dict):
+                  if node.get('vulnerabilities'):
+                      raise SystemExit('Dependency vulnerabilities remain: ' + str(node.get('id', 'unknown package')))
+                  if str(node.get('level', '')).lower() in ('error', 'warning'):
+                      raise SystemExit('Dependency audit did not complete cleanly')
+                  for value in node.values():
+                      check(value)
+              elif isinstance(node, list):
+                  for value in node:
+                      check(value)
+          check(report)
+          print(f"No reported vulnerabilities across {len(report['projects'])} projects.")
+          PY
+
+      - name: Verify regenerated dependency graph is locked
+        run: dotnet restore Weave.slnx --locked-mode
+
+      - name: Strict Release build
+        id: build
+        shell: bash
+        run: |
+          set -euo pipefail
+          dotnet build Weave.slnx --no-restore -c Release |& tee artifacts/build.log
+
+      - name: Full test suite
+        id: test
+        shell: bash
+        run: |
+          set -euo pipefail
+          dotnet test --solution Weave.slnx --no-build -c Release -- --report-xunit-trx --results-directory ./test-results |& tee artifacts/test.log
+
+      - name: Pack and validate real tool packages without publishing
+        env:
+          VERSION: 0.0.0-security-validation
+        run: |
+          dotnet pack hosts/Weave.Cli/Weave.Cli.csproj -c Release --no-build \
+            "-p:Version=$VERSION" -p:IncludeSymbols=true -p:SymbolPackageFormat=snupkg -o packages
+          python3 scripts/release/guard.py validate-packages
+
+      - name: Capture resolved lockfiles and result summary
+        if: always()
+        shell: bash
+        env:
+          SOURCE_SHA: ${{ github.sha }}
+          AUDIT_RESULT: ${{ steps.audit.outcome }}
+          SCAN_RESULT: ${{ steps.scan.outcome }}
+          BUILD_RESULT: ${{ steps.build.outcome }}
+          TEST_RESULT: ${{ steps.test.outcome }}
+        run: |
+          mkdir -p artifacts
+          git diff -- '**/packages.lock.json' > artifacts/lockfile-updates.patch
+          find src hosts extensions tools tests -name packages.lock.json -print0 | tar --null -T - -czf artifacts/lockfiles.tar.gz
+          git archive --format=tar HEAD -o artifacts/source-snapshot.tar
+          printf 'source=%s\naudit=%s\nscan=%s\nbuild=%s\ntests=%s\n' "$SOURCE_SHA" "$AUDIT_RESULT" "$SCAN_RESULT" "$BUILD_RESULT" "$TEST_RESULT" | tee artifacts/result.txt >> "$GITHUB_STEP_SUMMARY"
+
+      - name: Upload validation evidence
+        if: always()
+        uses: actions/upload-artifact@043fb46d1a93c77aae656e7c1c64a875d1fc6a0a # v7
+        with:
+          name: validation-evidence
+          path: |
+            artifacts/
+            test-results/**/*.trx
+          retention-days: 7
+
+      - name: Upload resolved lockfiles
+        if: success() && steps.audit.outcome == 'success' && steps.scan.outcome == 'success' && steps.build.outcome == 'success' && steps.test.outcome == 'success'
+        uses: actions/upload-artifact@043fb46d1a93c77aae656e7c1c64a875d1fc6a0a # v7
+        with:
+          name: resolved-lockfiles
+          path: artifacts/lockfiles.tar.gz
+          retention-days: 3
+
+  record-lockfiles:
+    needs: validate
+    if: success() && github.ref == 'refs/heads/security/release-chain-hardening'
+    runs-on: ubuntu-latest
+    timeout-minutes: 5
+    permissions:
+      contents: write
+    steps:
+      - name: Checkout verified source
+        uses: actions/checkout@de0fac2e4500dabe0009e67214ff5f5447ce83dd # v6
+        with:
+          ref: ${{ github.sha }}
+
+      - name: Download lockfiles from this run
+        uses: actions/download-artifact@3e5f45b2cfb9172054b4087a40e8e0b5a5461e7c # v8
+        with:
+          name: resolved-lockfiles
+          path: .verified-locks
+
+      - name: Restore only validated project lockfiles
+        shell: python
+        run: |
+          import json
+          from pathlib import Path
+          import subprocess
+          import tarfile
+          root = Path.cwd()
+          allowed = {p.parent.relative_to(root).as_posix() + '/packages.lock.json'
+                     for area in ('src', 'hosts', 'extensions', 'tools', 'tests')
+                     for p in (root / area).rglob('*.csproj')}
+          seen = set()
+          with tarfile.open('.verified-locks/lockfiles.tar.gz') as archive:
+              for item in archive.getmembers():
+                  if not item.isfile() or item.name not in allowed or item.name in seen or item.size > 5000000:
+                      raise SystemExit('Invalid lockfile archive entry: ' + item.name)
+                  data = archive.extractfile(item).read()
+                  parsed = json.loads(data)
+                  if parsed.get('version') not in (1, 2) or not isinstance(parsed.get('dependencies'), dict):
+                      raise SystemExit('Invalid NuGet lockfile: ' + item.name)
+                  (root / item.name).write_bytes(data)
+                  seen.add(item.name)
+          if seen != allowed:
+              raise SystemExit('Resolved lockfiles do not cover the current project graph.')
+          subprocess.run(['git', 'add', '--', *sorted(seen)], check=True)
+
+      - name: Record lockfiles only if branch has not advanced
+        env:
+          EXPECTED_SHA: ${{ github.sha }}
+        shell: bash
+        run: |
+          set -euo pipefail
+          test "$GITHUB_REF" = refs/heads/security/release-chain-hardening
+          git fetch origin security/release-chain-hardening
+          if [ "$(git rev-parse FETCH_HEAD)" != "$EXPECTED_SHA" ]; then
+            echo 'Branch advanced; leaving its newer work untouched.' >> "$GITHUB_STEP_SUMMARY"
+            exit 0
+          fi
+          git diff --cached --check
+          if ! git diff --cached --quiet; then
+            git config user.name 'github-actions[bot]'
+            git config user.email '41898282+github-actions[bot]@users.noreply.github.com'
+            git commit -m 'security: record strictly audited and tested dependency locks'
+            git push origin HEAD:refs/heads/security/release-chain-hardening
+          fi
+          echo "Recorded lockfile head: $(git rev-parse HEAD)" >> "$GITHUB_STEP_SUMMARY"

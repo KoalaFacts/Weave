@@ -4,11 +4,11 @@ inputs:
   dotnet-version:
     description: '.NET SDK version to install'
     required: false
-    default: '10.0.x'
+    default: '10.0.201'
   dotnet-quality:
     description: 'SDK quality channel (ga, preview)'
     required: false
-    default: 'preview'
+    default: 'ga'
   cache:
     description: 'Enable NuGet package caching'
     required: false
@@ -22,4 +22,4 @@ runs:
         dotnet-version: ${{ inputs.dotnet-version }}
         dotnet-quality: ${{ inputs.dotnet-quality }}
         cache: ${{ inputs.cache }}
-        cache-dependency-path: '**/*.csproj'
+        cache-dependency-path: '**/packages.lock.json'
