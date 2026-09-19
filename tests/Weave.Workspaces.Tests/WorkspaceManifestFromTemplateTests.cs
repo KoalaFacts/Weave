@@ -25,7 +25,7 @@ public sealed class WorkspaceManifestFromTemplateTests
         var agent = manifest.Agents["assistant"];
         agent.Model.ShouldBe(BuiltInTemplates.CodingAssistant.AgentDefinition.Model);
         agent.Tools.ShouldBe(["git", "files"]);
-        agent.Capabilities.ShouldBe(["tool:git", "tool:files"]);
+        agent.Capabilities.ShouldBe(["tool:git:invoke:exec", "tool:files:invoke:*"]);
     }
 
     [Fact]

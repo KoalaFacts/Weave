@@ -17,6 +17,8 @@ public sealed partial class DirectHttpToolConnector(HttpClient httpClient, ILogg
 
     public ToolType ToolType => ToolType.DirectHttp;
 
+    public ToolInvocation NormalizeInvocation(ToolInvocation invocation) => invocation with { Method = invocation.Method.TrimStart('/') };
+
     public Task<ToolHandle> ConnectAsync(ToolSpec tool, CapabilityToken token, CancellationToken ct = default)
     {
         var config = tool.DirectHttp ?? throw new InvalidOperationException($"Tool '{tool.Name}' has no DirectHttp configuration");

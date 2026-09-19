@@ -1,4 +1,5 @@
 using Spectre.Console;
+using Weave.Security.Tokens;
 using Weave.Workspaces.Manifest;
 namespace Weave.Cli.Commands;
 
@@ -65,10 +66,14 @@ internal static class WorkspaceNewSelectionPrompt
             _ => IsolationLevel.Full
         };
 
-        // Custom flow: derive a baseline tool:<name> grant for each chosen tool so
-        // the emitted manifest is internally coherent. Users editing the manifest
-        // post-creation can refine these (or move to wildcards) by hand.
-        var capabilities = tools.Select(t => $"tool:{t}").ToList();
+        // Availability is not authority. Broad invocation permission requires a separate choice.
+        List<string> permittedTools = tools.Count == 0 ? [] : AnsiConsole.Prompt(
+            new MultiSelectionPrompt<string>()
+                .Title("Allow ALL operations for which tools? Leave empty to grant none; edit exact grants in the manifest.")
+                .Styled()
+                .NotRequired()
+                .AddChoices(tools));
+        var capabilities = permittedTools.Select(ToolCapability.InvokeAll).ToList();
 
         return new WorkspaceNewSelection(model, tools, selectedPresetName, isolation, capabilities);
     }

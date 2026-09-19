@@ -22,6 +22,7 @@ public sealed partial class ToolActor(
     private readonly ToolSecretSubstitutor _secretSubstitutor = new(actors);
     private ToolHandle? _handle;
     private ToolSpec? _definition;
+    private long _connectionVersion;
 
     public Task OnActivatedAsync(string? key, CancellationToken cancellationToken)
     {
@@ -32,8 +33,11 @@ public sealed partial class ToolActor(
     public async Task<ToolHandle> ConnectAsync(ToolSpec definition, CapabilityToken token)
     {
         _identity.Ensure(definition, token);
-        await authorizer.AuthorizeAsync(token, $"tool:{_identity.ToolName}", _identity.WorkspaceId);
+        token = token with { Grants = new HashSet<string>(token.Grants, StringComparer.Ordinal) };
+        token.CancellationToken.ThrowIfCancellationRequested();
+        await authorizer.AuthorizeAsync(token, ToolCapability.Connect(_identity.ToolName), _identity.WorkspaceId);
 
+        _connectionVersion++;
         _definition = definition;
 
         var context = new LifecycleContext
@@ -45,7 +49,8 @@ public sealed partial class ToolActor(
         await lifecycleManager.RunHooksAsync(LifecyclePhase.ToolConnecting, context, token.CancellationToken);
 
         var connector = discovery.GetConnector(definition.Type);
-        _handle = await connector.ConnectAsync(definition, token);
+        token.CancellationToken.ThrowIfCancellationRequested();
+        _handle = await connector.ConnectAsync(definition, token, token.CancellationToken);
 
         await lifecycleManager.RunHooksAsync(
             LifecyclePhase.ToolConnected,
@@ -61,6 +66,7 @@ public sealed partial class ToolActor(
         if (_handle is null || _definition is null)
             return;
 
+        _connectionVersion++;
         var context = new LifecycleContext
         {
             WorkspaceId = WorkspaceId.From(_identity.WorkspaceId),
@@ -89,18 +95,36 @@ public sealed partial class ToolActor(
         {
             Parameters = new Dictionary<string, string>(invocation.Parameters, StringComparer.Ordinal)
         };
-        await authorizer.AuthorizeAsync(token, $"tool:{_identity.ToolName}", _identity.WorkspaceId);
+        token = token with { Grants = new HashSet<string>(token.Grants, StringComparer.Ordinal) };
+        token.CancellationToken.ThrowIfCancellationRequested();
+        var handle = _handle;
+        var definition = _definition;
+        var connectionVersion = _connectionVersion;
+        var connector = definition is null ? null : discovery.GetConnector(definition.Type);
+        if (connector is not null)
+            request = connector.NormalizeInvocation(request);
+        _identity.Ensure(invocation: request, token: token);
+        if (string.IsNullOrWhiteSpace(request.Method))
+            throw new UnauthorizedAccessException("A concrete tool operation is required.");
+        var grant = ToolCapability.Invoke(_identity.ToolName, request.Method);
+        await authorizer.AuthorizeAsync(token, grant, _identity.WorkspaceId);
 
-        if (_handle is null || _definition is null)
+        if (handle is null || definition is null || connector is null)
             throw new InvalidOperationException($"Tool '{_identity.ToolName}' is not connected");
+        if (!string.Equals(handle.ToolName, _identity.ToolName, StringComparison.Ordinal) || handle.Type != definition.Type)
+            throw new UnauthorizedAccessException("Tool connection does not match actor identity.");
 
         var blockedResult = await _leakGuard.BlockIfOutboundLeaksAsync(_identity.WorkspaceId, _identity.ToolName, request);
         if (blockedResult is not null)
             return blockedResult;
 
         var effectiveInvocation = await _secretSubstitutor.SubstituteAsync(_identity.WorkspaceId, request);
-        var connector = discovery.GetConnector(_definition.Type);
-        var result = await connector.InvokeAsync(_handle, effectiveInvocation);
+        // Secret resolution can yield; do not dispatch using expired or revoked authority.
+        await authorizer.AuthorizeAsync(token, grant, _identity.WorkspaceId);
+        token.CancellationToken.ThrowIfCancellationRequested();
+        if (connectionVersion != _connectionVersion || !ReferenceEquals(handle, _handle) || !ReferenceEquals(definition, _definition))
+            throw new UnauthorizedAccessException("Tool connection changed during authorization.");
+        var result = await connector.InvokeAsync(handle, effectiveInvocation, token.CancellationToken);
         result = await _leakGuard.RedactIfInboundLeaksAsync(_identity.WorkspaceId, _identity.ToolName, result);
 
         await eventBus.PublishAsync(new ToolInvocationCompletedEvent

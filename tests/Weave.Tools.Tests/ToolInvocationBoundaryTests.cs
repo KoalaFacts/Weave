@@ -194,6 +194,7 @@ public sealed class ToolInvocationBoundaryTests
             Secrets.SubstituteAsync(Arg.Any<string>()).Returns(c => c.Arg<string>());
             var discovery = Substitute.For<IToolDiscoveryService>();
             discovery.GetConnector(ToolType.FileSystem).Returns(Connector);
+            Connector.NormalizeInvocation(Arg.Any<ToolInvocation>()).Returns(ci => ci.Arg<ToolInvocation>());
             Connector.ConnectAsync(Arg.Any<ToolSpec>(), Arg.Any<CapabilityToken>(), Arg.Any<CancellationToken>())
                 .Returns(new ToolHandle { ToolName = "notes", Type = ToolType.FileSystem, IsConnected = true });
             Connector.InvokeAsync(Arg.Any<ToolHandle>(), Arg.Any<ToolInvocation>(), Arg.Any<CancellationToken>())
@@ -213,7 +214,7 @@ public sealed class ToolInvocationBoundaryTests
         {
             WorkspaceId = workspaceId,
             IssuedTo = "test-agent",
-            Grants = ["tool:notes"],
+            Grants = ["tool:notes:connect", "tool:notes:invoke:read_file", "tool:notes:invoke:write_file"],
             Lifetime = TimeSpan.FromHours(1)
         });
 

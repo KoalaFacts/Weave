@@ -19,7 +19,7 @@ public sealed class ActivateAgentHandler(IVirtualActorProvider actors)
     {
         var toolNames = command.Definition.Tools ?? [];
         var registry = actors.GetActor<IToolRegistryActor>(VirtualActorId.From(command.WorkspaceId.ToString()));
-        await registry.GrantAgentToolsAsync(command.AgentName, toolNames);
+        await registry.GrantAgentToolsAsync(command.AgentName, toolNames, command.Definition.Capabilities ?? []);
 
         var actor = actors.GetActor<IAgentActor>(VirtualActorId.Combine(command.WorkspaceId, command.AgentName));
         var state = await actor.ActivateAgentAsync(command.WorkspaceId, command.Definition);
