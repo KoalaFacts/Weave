@@ -62,11 +62,11 @@ jobs:
         run: dotnet build Weave.slnx --no-restore -c Release
 
       - name: Test
-        run: dotnet test Weave.slnx --no-build -c Release
+        run: dotnet test --solution Weave.slnx --no-build -c Release
 
       - name: Pack .NET tool
         run: >-
-          dotnet pack src/UX/Weave.Cli/Weave.Cli.csproj
+          dotnet pack hosts/Weave.Cli/Weave.Cli.csproj
           -c Release --no-build
           -p:Version=${{ env.VERSION }}
           -p:IncludeSymbols=true
@@ -144,7 +144,7 @@ jobs:
 
       - name: Publish self-contained
         run: >-
-          dotnet publish src/UX/Weave.Cli/Weave.Cli.csproj
+          dotnet publish hosts/Weave.Cli/Weave.Cli.csproj
           -c Release
           -r ${{ matrix.rid }}
           --self-contained true
