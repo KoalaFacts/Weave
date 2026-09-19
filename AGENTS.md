@@ -14,7 +14,7 @@ This is the canonical repository instruction file for coding assistants. Human c
 
 Weave is an **Agent Control Plane**. The first profile is **Governed Tools** for existing agents and integrations. A Weave-hosted reasoning loop is not a product requirement. Do not make marketplaces, broad provider catalogues, model routing, email/SMS infrastructure, or a universal workflow engine prerequisites for a concrete governed use case.
 
-Current Agent actor keys remain `{workspaceId}/{agentName}`; `src/Invocations/InvokeTool/ToolActor.cs` authorizes `tool:<name>`. The current host still uses Orleans and the existing Agent Runtime. Portable Agent identity, Tenant/Room authority, exact-operation grants, durable approval/attempts, and generalized resource reconciliation remain target work. A directory, interface, or DTO does not implement those guarantees.
+Current Agent actor keys remain `{workspaceId}/{agentName}`. `src/Invocations/InvokeTool/ToolActor.cs` now authorizes adapter-normalized `tool:<name>:invoke:<operation>` scopes separately from connection permission; the registry derives invocation grants from explicit Capabilities, not tool availability. The current host still uses Orleans and the existing Agent Runtime. Portable Agent identity, Tenant/Room authority, resource/installation revision constraints, durable approval/attempts, and generalized reconciliation remain target work. Read the [operation-authority migration record](docs/implementation/2026-09-19-exact-tool-operations.md); do not restore implicit grants or automatically broaden old `tool:<name>` entries.
 
 For a replacement, record what is preserved, deliberately changed, or removed. Start with one complete, tested path rather than scaffolding every architectural noun.
 

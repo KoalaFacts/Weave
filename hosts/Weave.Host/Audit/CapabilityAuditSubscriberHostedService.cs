@@ -48,29 +48,82 @@ public sealed partial class CapabilityAuditSubscriberHostedService(
         unit: "{failure}",
         description: "Capability audit-store write failures, tagged by outcome (retried|dropped).");
 
-    private readonly CancellationTokenSource _stopping = new();
+    private readonly object _lifecycleGate = new();
+    private CancellationTokenSource? _stopping = new();
     private IDisposable? _subscription;
+    private bool _disposed;
 
     public Task StartAsync(CancellationToken cancellationToken)
     {
-        _subscription = eventBus.Subscribe<CapabilityAuthorizationEvent>((evt, ct) =>
-            RecordWithRetryAsync(evt, ct));
+        lock (_lifecycleGate)
+        {
+            ObjectDisposedException.ThrowIf(_disposed, this);
+            if (_stopping is null)
+                throw new InvalidOperationException("A stopped audit subscriber cannot be restarted.");
+            _subscription ??= eventBus.Subscribe<CapabilityAuthorizationEvent>(RecordAsync);
+        }
         return Task.CompletedTask;
     }
 
     public Task StopAsync(CancellationToken cancellationToken)
     {
-        _subscription?.Dispose();
-        _subscription = null;
-        _stopping.Cancel();
+        StopSubscription();
         return Task.CompletedTask;
     }
 
-    public void Dispose() => _stopping.Dispose();
-
-    private async Task RecordWithRetryAsync(CapabilityAuthorizationEvent evt, CancellationToken ct)
+    public void Dispose()
     {
-        using var linked = CancellationTokenSource.CreateLinkedTokenSource(ct, _stopping.Token);
+        lock (_lifecycleGate)
+        {
+            _disposed = true;
+        }
+        StopSubscription();
+    }
+
+    private void StopSubscription()
+    {
+        CancellationTokenSource stopping;
+        IDisposable? subscription;
+        lock (_lifecycleGate)
+        {
+            if (_stopping is null)
+                return;
+            stopping = _stopping;
+            _stopping = null;
+            subscription = _subscription;
+            _subscription = null;
+        }
+
+        // Only this caller owns cleanup. Do not run cancellation callbacks under the gate.
+        using (stopping)
+        {
+            try
+            {
+                stopping.Cancel();
+            }
+            finally
+            {
+                subscription?.Dispose();
+            }
+        }
+    }
+
+    private Task RecordAsync(CapabilityAuthorizationEvent evt, CancellationToken ct)
+    {
+        CancellationTokenSource linked;
+        lock (_lifecycleGate)
+        {
+            // A publisher may still hold a subscription snapshot after shutdown.
+            if (_disposed || _stopping is null)
+                return Task.CompletedTask;
+            linked = CancellationTokenSource.CreateLinkedTokenSource(ct, _stopping.Token);
+        }
+        return RecordWithRetryAsync(evt, linked);
+    }
+
+    private async Task RecordWithRetryAsync(CapabilityAuthorizationEvent evt, CancellationTokenSource linked)
+    {
+        using var lifetime = linked;
         Exception? lastError = null;
 
         for (var attempt = 1; attempt <= MaxAttempts; attempt++)

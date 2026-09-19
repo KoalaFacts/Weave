@@ -58,7 +58,7 @@ internal static class WorkspaceNewTemplateFactory
                 SystemPromptFile = "./prompts/monitor.md",
                 MaxConcurrentTasks = 1,
                 Tools = ["web-search"],
-                Capabilities = ["tool:web-search"],
+                Capabilities = ["tool:web-search:invoke:*"],
                 Heartbeat = new HeartbeatConfig
                 {
                     Cron = "*/5 * * * *",

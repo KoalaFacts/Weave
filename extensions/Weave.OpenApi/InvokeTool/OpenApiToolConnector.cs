@@ -13,6 +13,8 @@ public sealed partial class OpenApiToolConnector(HttpClient httpClient, ILogger<
 
     public ToolType ToolType => ToolType.OpenApi;
 
+    public ToolInvocation NormalizeInvocation(ToolInvocation invocation) => invocation;
+
     public async Task<ToolHandle> ConnectAsync(ToolSpec tool, CapabilityToken token, CancellationToken ct = default)
     {
         var openApi = tool.OpenApi ?? throw new InvalidOperationException($"Tool '{tool.Name}' has no OpenAPI configuration");

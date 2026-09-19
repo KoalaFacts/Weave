@@ -190,7 +190,7 @@ public sealed class ToolRegistryActorTests
         });
 
         captured.Count.ShouldBe(1);
-        captured[0].Grants.ShouldBe(["tool:shell"]);
+        captured[0].Grants.ShouldBe(["tool:shell:connect"]);
         captured[0].Grants.ShouldNotContain("secret:*");
     }
 

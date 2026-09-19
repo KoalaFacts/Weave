@@ -19,6 +19,7 @@ public sealed class ToolActorTests
         var actors = Substitute.For<IVirtualActorProvider>();
         var connector = Substitute.For<IToolConnector>();
         connector.ToolType.Returns(ToolType.Cli);
+        connector.NormalizeInvocation(Arg.Any<ToolInvocation>()).Returns(ci => ci.Arg<ToolInvocation>());
 
         var discovery = Substitute.For<IToolDiscoveryService>();
         discovery.GetConnector(ToolType.Cli).Returns(connector);
@@ -469,7 +470,7 @@ public sealed class ToolActorTests
         var evt = bus.CapabilityEvents[0];
         evt.Outcome.ShouldBe(CapabilityAuthorizationOutcome.Deny);
         evt.Reason.ShouldBe("workspace-mismatch");
-        evt.Grant.ShouldBe("tool:git");
+        evt.Grant.ShouldBe("tool:git:connect");
         evt.ActionContext.ShouldBe("ConnectAsync");
     }
 

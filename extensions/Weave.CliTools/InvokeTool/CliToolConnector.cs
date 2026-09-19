@@ -14,6 +14,8 @@ public sealed partial class CliToolConnector(ILogger<CliToolConnector> logger) :
 
     public ToolType ToolType => ToolType.Cli;
 
+    public ToolInvocation NormalizeInvocation(ToolInvocation invocation) => invocation with { Method = "exec" };
+
     public Task<ToolHandle> ConnectAsync(ToolSpec tool, CapabilityToken token, CancellationToken ct = default)
     {
         var cli = tool.Cli ?? throw new InvalidOperationException($"Tool '{tool.Name}' has no CLI configuration");

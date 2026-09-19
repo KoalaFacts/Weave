@@ -39,6 +39,7 @@ public sealed class ToolActorBranchTests
         public Fixture()
         {
             Connector.ToolType.Returns(ToolType.Cli);
+            Connector.NormalizeInvocation(Arg.Any<ToolInvocation>()).Returns(ci => ci.Arg<ToolInvocation>());
             Discovery.GetConnector(Arg.Any<ToolType>()).Returns(Connector);
             Scanner = new LeakScanner(NullLogger<LeakScanner>.Instance);
             TokenService = CreateTokenService();
@@ -55,7 +56,9 @@ public sealed class ToolActorBranchTests
     private static CapabilityToken Mint(CapabilityTokenService tokenService, string toolName, bool wildcard = false)
     {
         var grants = new HashSet<string>(StringComparer.Ordinal);
-        grants.Add(wildcard ? "tool:*" : $"tool:{toolName}");
+        grants.Add(wildcard ? "tool:*" : ToolCapability.Connect(toolName));
+        if (!wildcard)
+            grants.Add(ToolCapability.InvokeAll(toolName));
         return tokenService.Mint(new CapabilityTokenRequest
         {
             WorkspaceId = "ws-1",

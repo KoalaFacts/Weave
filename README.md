@@ -37,12 +37,14 @@ The current code is the starting point for the control plane, not an empty scaff
 | Area | Current implementation | Boundary to keep in mind |
 | --- | --- | --- |
 | Workspaces and agents | Manifest-based configuration, a CLI, and an Orleans-backed host/runtime. | Agent actor keys remain `{workspaceId}/{agentName}`. Portable identity is not implemented by moving files. |
-| Tool execution | `ToolActor` checks workspace identity and `tool:<name>` grants, applies secret substitution and leak checks, then dispatches a connector. | Authorization is still tool-level, not the exact-operation approval model below. |
+| Tool execution | `ToolActor` separates connection permission from `tool:<name>:invoke:<operation>` grants, normalizes adapter selectors, and rechecks authority before dispatch. Agent tool availability alone does not mint execution rights. | This is operation selection within the current workspace/tool model, not resource/account constraints, installation revisions, or durable approval. |
 | Connectors | MCP over stdio and HTTP/SSE, CLI, filesystem, OpenAPI, Direct HTTP, and Dapr extension projects. | An outbound MCP connector is not an inbound MCP governance server. Protocol coverage and security controls differ by adapter. |
 | Authentication and credentials | Signed capability tokens, revocation handling, secret-protection code, and API authentication that rejects broken enabled configurations. | API auth defaults to `none`. The built-in bearer mode is a shared token, not a complete OAuth/OIDC or tenant identity system. |
 | Verification | Automated tests, dependency auditing, CI, and release-source/package validation. | Passing checks does not establish complete tenant isolation, durable approvals, or a sandbox for untrusted code. |
 
 Relevant implementation: [tool dispatch](src/Invocations/InvokeTool/ToolActor.cs), [token service](src/Authority/Tokens/CapabilityTokenService.cs), [API authentication](hosts/Weave.Host/Security/ApiAuthOptions.cs), and [delivery records](docs/implementation/).
+
+**Grant migration:** bare `tool:<name>` grants no longer authorize execution. Configure explicit `AgentDefinition.Capabilities`; for example, `tool:files:invoke:read_file` does not grant `write_file`. CLI execution requires `exec` authority, not a caller-supplied read-only label. Read the [operation-authority migration notes](docs/implementation/2026-09-19-exact-tool-operations.md) before upgrading existing workspaces or custom connectors.
 
 The existing Agent Runtime, memory, skills, channels, and other features remain in the repository. They are not prerequisites for the new Governed Tools profile. The current executable host still composes the existing runtime; extracting an extension does not, by itself, deliver every proposed deployment profile.
 

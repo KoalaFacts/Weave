@@ -36,7 +36,7 @@ public sealed class CapabilityTemplateActorTests
         {
             Model = "claude-sonnet-4-20250514",
             Tools = ["web-search"],
-            Capabilities = ["tool:web-search"]
+            Capabilities = ["tool:web-search:invoke:*"]
         },
         RequiredTools = new Dictionary<string, ToolDefinition>
         {

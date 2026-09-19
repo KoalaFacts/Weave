@@ -50,7 +50,7 @@ internal sealed class ToolRegistryConnector(
         {
             WorkspaceId = workspaceId,
             IssuedTo = $"{workspaceId}/{toolName}",
-            Grants = [$"tool:{toolName}"],
+            Grants = [ToolCapability.Connect(toolName)],
             Lifetime = TimeSpan.FromHours(1)
         }, CancellationToken.None);
 
@@ -93,6 +93,7 @@ internal sealed class ToolRegistryConnector(
         persistentState.State.Connections.Clear();
         persistentState.State.Definitions.Clear();
         persistentState.State.AgentToolAccess.Clear();
+        persistentState.State.AgentCapabilities.Clear();
         await persistentState.WriteStateAsync();
     }
 
