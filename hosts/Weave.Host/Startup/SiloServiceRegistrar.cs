@@ -3,6 +3,7 @@ using Weave.Agents.Channels;
 using Weave.Agents.Pipeline;
 using Weave.Agents.Pipeline.Providers;
 using Weave.Agents.Verification;
+using Weave.Invocations;
 using Weave.Security.Audit;
 using Weave.Security.Plugins;
 using Weave.Security.Postgres;
@@ -50,6 +51,7 @@ internal sealed class SiloServiceRegistrar
         RegisterKernel();
         RegisterRuntime();
         RegisterSecurity();
+        RegisterInvocationJournal();
         RegisterPluginBroker();
         RegisterAgentPipeline();
         RegisterChannelAdapters();
@@ -97,6 +99,14 @@ internal sealed class SiloServiceRegistrar
         RegisterCapabilityAuditStore();
         _services.AddSingleton<ILeakScanner, LeakScanner>();
         _services.AddSingleton<TransparentSecretProxy>();
+    }
+
+    private void RegisterInvocationJournal()
+    {
+        _services.Configure<InvocationJournalOptions>(
+            _configuration.GetSection(InvocationJournalOptions.ConfigurationSectionName));
+        _services.AddSingleton<IInvocationJournal, SqliteInvocationJournal>();
+        _services.AddHostedService<InvocationJournalStartup>();
     }
 
     private void RegisterCapabilityAuditStore()

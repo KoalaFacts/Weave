@@ -199,7 +199,8 @@ public sealed class ToolOperationAuthorizationTests
             var discovery = new ToolDiscoveryService([connector], NullLogger<ToolDiscoveryService>.Instance);
             Actor = new ToolActor(actors, discovery, new LeakScanner(NullLogger<LeakScanner>.Instance),
                 new CapabilityAuthorizer(Tokens, events, NullLogger<CapabilityAuthorizer>.Instance),
-                new LifecycleManager(NullLogger<LifecycleManager>.Instance), events, NullLogger<ToolActor>.Instance);
+                new LifecycleManager(NullLogger<LifecycleManager>.Instance), events, NullLogger<ToolActor>.Instance,
+                new TestInvocationJournal(), TimeProvider.System);
             Spec = new ToolSpec
             {
                 Name = cli ? "shell" : "files",

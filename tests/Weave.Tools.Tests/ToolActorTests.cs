@@ -38,7 +38,8 @@ public sealed class ToolActorTests
 
         actors.GetActor<ISecretProxyActor>(Arg.Any<VirtualActorId>()).Returns(secretProxy);
 
-        var actor = new ToolActor(actors, discovery, leakScanner, authorizer, lifecycleManager, eventBus, logger);
+        var actor = new ToolActor(actors, discovery, leakScanner, authorizer, lifecycleManager, eventBus, logger,
+            new TestInvocationJournal(), TimeProvider.System);
         return (actor, connector, tokenService);
     }
 
