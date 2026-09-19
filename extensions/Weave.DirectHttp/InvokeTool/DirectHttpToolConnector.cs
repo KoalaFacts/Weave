@@ -13,7 +13,7 @@ namespace Weave.Tools.Connectors;
 /// </summary>
 public sealed partial class DirectHttpToolConnector(HttpClient httpClient, ILogger<DirectHttpToolConnector> logger) : IToolConnector
 {
-    private readonly ConcurrentDictionary<string, string> _authHeaders = new(StringComparer.Ordinal);
+    private readonly ConcurrentDictionary<string, (ToolHandle Handle, DirectHttpToolConfig Config)> _connections = new(StringComparer.Ordinal);
 
     public ToolType ToolType => ToolType.DirectHttp;
 
@@ -26,37 +26,46 @@ public sealed partial class DirectHttpToolConnector(HttpClient httpClient, ILogg
         if (string.IsNullOrWhiteSpace(config.BaseUrl))
             throw new InvalidOperationException($"Tool '{tool.Name}': DirectHttp 'base_url' is required");
 
-        // Store auth per-tool, applied per-request in InvokeAsync.
-        // Never use DefaultRequestHeaders — the HttpClient is shared across tools.
-        if (!string.IsNullOrWhiteSpace(config.AuthHeader))
-            _authHeaders[tool.Name] = config.AuthHeader;
-        else
-            _authHeaders.TryRemove(tool.Name, out _);
-
-        LogDirectHttpToolConnected(tool.Name, config.BaseUrl);
-
-        return Task.FromResult(new ToolHandle
+        var handle = new ToolHandle
         {
             ToolName = tool.Name,
             Type = ToolType.DirectHttp,
-            ConnectionId = config.BaseUrl,
+            ConnectionId = $"http:{Guid.NewGuid():N}",
             IsConnected = true
-        });
+        };
+        // A display name or endpoint is not a connection identity. Keep the
+        // immutable destination and credential together for the handle's lifetime.
+        _connections[handle.ConnectionId] = (handle, config);
+        LogDirectHttpToolConnected(tool.Name, config.BaseUrl);
+        return Task.FromResult(handle);
     }
 
     public Task DisconnectAsync(ToolHandle handle, CancellationToken ct = default)
     {
-        _authHeaders.TryRemove(handle.ToolName, out _);
-        LogDirectHttpToolDisconnected(handle.ToolName);
+        if (_connections.TryGetValue(handle.ConnectionId, out var connection)
+            && connection.Handle == handle
+            && _connections.TryRemove(handle.ConnectionId, out _))
+            LogDirectHttpToolDisconnected(handle.ToolName);
         return Task.CompletedTask;
     }
 
     public async Task<ToolResult> InvokeAsync(ToolHandle handle, ToolInvocation invocation, CancellationToken ct = default)
     {
         var sw = Stopwatch.StartNew();
+        if (!_connections.TryGetValue(handle.ConnectionId, out var connection)
+            || connection.Handle != handle
+            || !string.Equals(invocation.ToolName, connection.Handle.ToolName, StringComparison.Ordinal))
+            return new ToolResult
+            {
+                Success = false,
+                ToolName = handle.ToolName,
+                ErrorCode = "invalid-tool-connection",
+                Error = "Direct HTTP connection is missing, disconnected, or does not match the requested tool."
+            };
+
         try
         {
-            var baseUrl = handle.ConnectionId.TrimEnd('/');
+            var baseUrl = connection.Config.BaseUrl.TrimEnd('/');
             var method = invocation.Method.TrimStart('/');
 
             // Reject path traversal, absolute URLs, and encoded variants to prevent SSRF
@@ -76,8 +85,8 @@ public sealed partial class DirectHttpToolConnector(HttpClient httpClient, ILogg
             request.Content = new ByteArrayContent(bytes);
             request.Content.Headers.ContentType = new System.Net.Http.Headers.MediaTypeHeaderValue("application/json");
 
-            if (_authHeaders.TryGetValue(handle.ToolName, out var authHeader))
-                request.Headers.TryAddWithoutValidation("Authorization", authHeader);
+            if (!string.IsNullOrWhiteSpace(connection.Config.AuthHeader))
+                request.Headers.TryAddWithoutValidation("Authorization", connection.Config.AuthHeader);
 
             using var response = await httpClient.SendAsync(request, ct);
             var output = await response.Content.ReadAsStringAsync(ct);
