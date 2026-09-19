@@ -9,25 +9,32 @@ public sealed class ApiAuthOptions
 
     public static ApiAuthOptions FromConfiguration(IConfiguration configuration)
     {
-        var mode = configuration[$"{ConfigSection}:Mode"]?.ToLowerInvariant() ?? "none";
+        var mode = configuration[$"{ConfigSection}:Mode"]?.Trim().ToLowerInvariant() ?? "none";
+        if (mode == "none")
+            return new ApiAuthOptions { Mode = mode };
+
+        if (mode is not ("apikey" or "bearer"))
+            throw new InvalidOperationException("Weave:Auth:Mode must be none, apikey, or bearer.");
+
         var secret = configuration[$"{ConfigSection}:Secret"];
+        if (string.IsNullOrWhiteSpace(secret))
+            throw new InvalidOperationException("Weave:Auth:Secret is required when authentication is enabled.");
 
-        string? resolved = null;
-        if (mode != "none" && !string.IsNullOrWhiteSpace(secret))
-            resolved = ResolveSecret(secret);
+        var resolved = ResolveSecret(secret);
+        if (string.IsNullOrWhiteSpace(resolved))
+            throw new InvalidOperationException("Weave:Auth:Secret did not resolve to a non-empty secret.");
 
-        IApiAuthProvider? provider = mode switch
-        {
-            "apikey" when resolved is not null => new ApiKeyAuthProvider(resolved),
-            "bearer" when resolved is not null => new BearerAuthProvider(resolved),
-            _ => null
-        };
-
+        IApiAuthProvider provider = mode == "apikey"
+            ? new ApiKeyAuthProvider(resolved)
+            : new BearerAuthProvider(resolved);
         return new ApiAuthOptions { Provider = provider, Mode = mode };
     }
 
-    private static string? ResolveSecret(string reference)
+    internal static string? ResolveSecret(string reference)
     {
+        if (reference.StartsWith("vault:", StringComparison.OrdinalIgnoreCase))
+            throw new InvalidOperationException("Vault references are not supported by built-in API authentication; use env: or file:.");
+
         if (reference.StartsWith("env:", StringComparison.OrdinalIgnoreCase))
         {
             var varName = reference[4..].Trim();
