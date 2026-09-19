@@ -54,7 +54,8 @@ public sealed class InvocationExecution(IInvocationJournal journal, TimeProvider
             {
                 var recorded = RecordOutcome(record, InvocationOutcome.Denied, TimeSpan.Zero);
                 return Failure(record, InvocationOutcome.Denied, "approval-expired",
-                    "The approval is no longer valid. This attempt was not dispatched.") with { OutcomeRecorded = recorded };
+                    "The approval is no longer valid. This attempt was not dispatched.")
+                with { OutcomeRecorded = recorded };
             }
         }
         catch (OperationCanceledException)
