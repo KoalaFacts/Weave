@@ -20,17 +20,17 @@ internal static class GetInvocationEndpoint
             var record = await actor.GetInvocationAsync(id, token);
             if (record is null)
                 return InvocationHttp.Error(404, "invocation-not-found");
-            var result = new ToolResult
+            var result = new InvocationHttpResult
             {
-                InvocationId = record.InvocationId,
+                InvocationId = record.InvocationId.ToString(),
                 ToolName = record.ToolName,
-                AttemptId = record.Attempt.AttemptId,
+                AttemptId = record.Attempt.AttemptId.ToString(),
                 Success = record.Attempt.Outcome == InvocationOutcome.Succeeded,
                 Outcome = record.Attempt.Outcome,
                 OutcomeRecorded = record.Attempt.CompletedAt is not null,
                 Duration = record.Attempt.Duration
             };
-            return Results.Json(result, InvocationHttpJsonContext.Default.ToolResult);
+            return Results.Json(result, InvocationHttpJsonContext.Default.InvocationHttpResult);
         }
         catch (UnauthorizedAccessException)
         {

@@ -31,20 +31,28 @@ internal static class InvokeToolEndpoint
                     return InvocationHttp.Error(413, "request-too-large");
             }
             var request = JsonSerializer.Deserialize(body.GetBuffer().AsSpan(0, checked((int)body.Length)),
-                InvocationHttpJsonContext.Default.ToolInvocation);
+                InvocationHttpJsonContext.Default.InvokeToolHttpRequest);
             if (request is null || request.InvocationId is null
-                || !InvocationHttp.TryInvocationId(request.InvocationId.Value.ToString(), out var id)
+                || !InvocationHttp.TryInvocationId(request.InvocationId, out var id)
                 || !string.Equals(request.ToolName, toolName, StringComparison.Ordinal)
                 || string.IsNullOrWhiteSpace(request.Method) || request.Parameters is null
                 || request.Parameters.Any(p => p.Value is null))
                 return InvocationHttp.Error(400, "invalid-invocation");
 
             var actor = actors.GetActor<IToolActor>(VirtualActorId.From(workspaceId + "/" + toolName));
-            var result = await actor.InvokeAsync(request with { InvocationId = id }, token);
+            var result = await actor.InvokeAsync(new ToolInvocation
+            {
+                InvocationId = id,
+                ToolName = toolName,
+                Method = request.Method,
+                Parameters = request.Parameters,
+                RawInput = request.RawInput
+            }, token);
             var status = Status(result);
             if (status == 202)
                 context.Response.Headers.Location = $"{context.Request.PathBase}{context.Request.Path}/{id}/approval";
-            return Results.Json(result, InvocationHttpJsonContext.Default.ToolResult, statusCode: status);
+            return Results.Json(InvocationHttpResult.FromResult(result),
+                InvocationHttpJsonContext.Default.InvocationHttpResult, statusCode: status);
         }
         catch (JsonException)
         {

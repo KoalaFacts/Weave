@@ -1,6 +1,5 @@
 using System.Text.Json.Serialization;
 using Weave.Security.Tokens;
-using Weave.Tools.Tool;
 
 namespace Weave.Silo.Invocations;
 
@@ -10,8 +9,8 @@ namespace Weave.Silo.Invocations;
     DefaultIgnoreCondition = JsonIgnoreCondition.WhenWritingNull,
     UseStringEnumConverter = true)]
 [JsonSerializable(typeof(CapabilityToken))]
-[JsonSerializable(typeof(ToolInvocation))]
-[JsonSerializable(typeof(ToolResult))]
+[JsonSerializable(typeof(InvokeToolHttpRequest))]
+[JsonSerializable(typeof(InvocationHttpResult))]
 [JsonSerializable(typeof(ApprovalHttpStatus))]
 [JsonSerializable(typeof(InvocationHttpError))]
 internal sealed partial class InvocationHttpJsonContext : JsonSerializerContext;
