@@ -144,7 +144,7 @@ jobs:
                       raise SystemExit('Invalid lockfile archive entry: ' + item.name)
                   data = archive.extractfile(item).read()
                   parsed = json.loads(data)
-                  if parsed.get('version') != 1 or not isinstance(parsed.get('dependencies'), dict):
+                  if parsed.get('version') not in (1, 2) or not isinstance(parsed.get('dependencies'), dict):
                       raise SystemExit('Invalid NuGet lockfile: ' + item.name)
                   (root / item.name).write_bytes(data)
                   seen.add(item.name)
