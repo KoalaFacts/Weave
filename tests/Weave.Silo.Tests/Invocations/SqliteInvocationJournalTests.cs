@@ -16,11 +16,8 @@ public sealed class SqliteInvocationJournalTests
         using var fx = new Fixture();
         fx.ExecuteSql("CREATE TRIGGER reject_attempt BEFORE INSERT ON invocation_attempts BEGIN SELECT RAISE(ABORT, 'private database detail'); END;");
         var record = Candidate();
-        var execution = fx.Execution();
-
-        var result = await execution.ExecuteAsync(record, TestContext.Current.CancellationToken,
-            () => Task.CompletedTask, fx.WriteAsync);
-
+        var result = await fx.Execution().ExecuteAsync(record, () => Task.CompletedTask, fx.WriteAsync,
+            TestContext.Current.CancellationToken);
         result.Success.ShouldBeFalse();
         result.Outcome.ShouldBe(InvocationOutcome.NotDispatched);
         result.ErrorCode.ShouldBe("journal-write-failed");
@@ -36,8 +33,8 @@ public sealed class SqliteInvocationJournalTests
         using var fx = new Fixture();
         fx.ExecuteSql("CREATE TRIGGER reject_completion BEFORE UPDATE ON invocation_attempts BEGIN SELECT RAISE(ABORT, 'private completion detail'); END;");
         var record = Candidate();
-        var result = await fx.Execution().ExecuteAsync(record, TestContext.Current.CancellationToken,
-            () => Task.CompletedTask, fx.WriteAsync);
+        var result = await fx.Execution().ExecuteAsync(record, () => Task.CompletedTask, fx.WriteAsync,
+            TestContext.Current.CancellationToken);
         File.ReadAllText(fx.EffectPath).ShouldBe("one effect");
         result.Success.ShouldBeFalse();
         result.Outcome.ShouldBe(InvocationOutcome.OutcomeUnknown);
@@ -49,8 +46,8 @@ public sealed class SqliteInvocationJournalTests
         var stored = restarted.Find(record.WorkspaceId, record.InvocationId, TestContext.Current.CancellationToken).ShouldNotBeNull();
         stored.Attempt.Outcome.ShouldBe(InvocationOutcome.OutcomeUnknown);
         stored.Attempt.CompletedAt.ShouldBeNull();
-        var replay = await fx.Execution(restarted).ExecuteAsync(record, TestContext.Current.CancellationToken,
-            () => Task.CompletedTask, fx.WriteAsync);
+        var replay = await fx.Execution(restarted).ExecuteAsync(record, () => Task.CompletedTask, fx.WriteAsync,
+            TestContext.Current.CancellationToken);
         replay.IsReplay.ShouldBeTrue();
         replay.Success.ShouldBeFalse();
         File.ReadAllText(fx.EffectPath).ShouldBe("one effect");
@@ -74,8 +71,8 @@ public sealed class SqliteInvocationJournalTests
                 _ => new IOException("private upstream response")
             };
         }
-        var result = await fx.Execution().ExecuteAsync(record, TestContext.Current.CancellationToken,
-            () => Task.CompletedTask, LoseResponseAsync);
+        var result = await fx.Execution().ExecuteAsync(record, () => Task.CompletedTask, LoseResponseAsync,
+            TestContext.Current.CancellationToken);
         result.Outcome.ShouldBe(InvocationOutcome.OutcomeUnknown);
         result.OutcomeRecorded.ShouldBeTrue();
         result.Error.ShouldNotContain("private upstream response");
@@ -83,8 +80,8 @@ public sealed class SqliteInvocationJournalTests
         var stored = reopened.Find(record.WorkspaceId, record.InvocationId, TestContext.Current.CancellationToken).ShouldNotBeNull();
         stored.Attempt.CompletedAt.ShouldNotBeNull();
         stored.Attempt.Outcome.ShouldBe(InvocationOutcome.OutcomeUnknown);
-        var replay = await fx.Execution(reopened).ExecuteAsync(record, TestContext.Current.CancellationToken,
-            () => Task.CompletedTask, fx.WriteAsync);
+        var replay = await fx.Execution(reopened).ExecuteAsync(record, () => Task.CompletedTask, fx.WriteAsync,
+            TestContext.Current.CancellationToken);
         replay.IsReplay.ShouldBeTrue();
         File.ReadAllText(fx.EffectPath).ShouldBe("one effect");
     }
@@ -95,12 +92,12 @@ public sealed class SqliteInvocationJournalTests
         using var fx = new Fixture();
         using var caller = new CancellationTokenSource();
         var record = Candidate();
-        var result = await fx.Execution().ExecuteAsync(record, caller.Token, () => Task.CompletedTask, async () =>
+        var result = await fx.Execution().ExecuteAsync(record, () => Task.CompletedTask, async () =>
         {
             var response = await fx.WriteAsync();
             await caller.CancelAsync();
             return response;
-        });
+        }, caller.Token);
         result.Success.ShouldBeTrue();
         result.OutcomeRecorded.ShouldBeTrue();
         var stored = fx.Reopen().Find(record.WorkspaceId, record.InvocationId, TestContext.Current.CancellationToken).ShouldNotBeNull();
@@ -114,9 +111,14 @@ public sealed class SqliteInvocationJournalTests
     {
         using var fx = new Fixture();
         var record = Candidate();
+        Task RevalidateAsync()
+        {
+            if (cancelled)
+                throw new OperationCanceledException();
+            throw new UnauthorizedAccessException();
+        }
         var exception = await Record.ExceptionAsync(() => fx.Execution().ExecuteAsync(record,
-            TestContext.Current.CancellationToken,
-            () => throw cancelled ? new OperationCanceledException() : new UnauthorizedAccessException(), fx.WriteAsync));
+            RevalidateAsync, fx.WriteAsync, TestContext.Current.CancellationToken));
         if (cancelled)
             exception.ShouldBeOfType<OperationCanceledException>();
         else
@@ -150,8 +152,8 @@ public sealed class SqliteInvocationJournalTests
         var record = Candidate();
         fx.Journal.TryStart(record, TestContext.Current.CancellationToken).Created.ShouldBeTrue();
         // Models the crash window after durable admission, before an observed result.
-        var result = await fx.Execution(fx.Reopen()).ExecuteAsync(record, TestContext.Current.CancellationToken,
-            () => Task.CompletedTask, fx.WriteAsync);
+        var result = await fx.Execution(fx.Reopen()).ExecuteAsync(record, () => Task.CompletedTask, fx.WriteAsync,
+            TestContext.Current.CancellationToken);
         result.IsReplay.ShouldBeTrue();
         result.Outcome.ShouldBe(InvocationOutcome.OutcomeUnknown);
         result.OutcomeRecorded.ShouldBeFalse();
@@ -205,8 +207,9 @@ public sealed class SqliteInvocationJournalTests
     {
         using var fx = new Fixture();
         var record = Candidate();
-        var result = await fx.Execution().ExecuteAsync(record, TestContext.Current.CancellationToken,
-            () => Task.CompletedTask, () => Task.FromResult(new ToolResult { Success = false, Outcome = InvocationOutcome.Failed }));
+        var result = await fx.Execution().ExecuteAsync(record, () => Task.CompletedTask,
+            () => Task.FromResult(new ToolResult { Success = false, Outcome = InvocationOutcome.Failed }),
+            TestContext.Current.CancellationToken);
         result.Outcome.ShouldBe(InvocationOutcome.Failed);
         fx.Reopen().Find(record.WorkspaceId, record.InvocationId, TestContext.Current.CancellationToken)
             .ShouldNotBeNull().Attempt.Outcome.ShouldBe(InvocationOutcome.Failed);
@@ -216,8 +219,8 @@ public sealed class SqliteInvocationJournalTests
     public async Task ExecuteAsync_UnclassifiedAdapterFailure_RemainsUnknown()
     {
         using var fx = new Fixture();
-        var result = await fx.Execution().ExecuteAsync(Candidate(), TestContext.Current.CancellationToken,
-            () => Task.CompletedTask, () => Task.FromResult(new ToolResult { Success = false }));
+        var result = await fx.Execution().ExecuteAsync(Candidate(), () => Task.CompletedTask,
+            () => Task.FromResult(new ToolResult { Success = false }), TestContext.Current.CancellationToken);
         result.Outcome.ShouldBe(InvocationOutcome.OutcomeUnknown);
         result.OutcomeRecorded.ShouldBeTrue();
     }

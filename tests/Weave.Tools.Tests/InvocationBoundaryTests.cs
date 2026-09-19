@@ -157,13 +157,13 @@ public sealed class InvocationBoundaryTests
             var replay = await fx.Actor.InvokeAsync(request, fx.Token);
             replay.IsReplay.ShouldBeTrue();
             replay.Outcome.ShouldBe(InvocationOutcome.OutcomeUnknown);
-            await fx.Connector.Received(1).InvokeAsync(Arg.Any<ToolHandle>(), Arg.Any<ToolInvocation>(), Arg.Any<CancellationToken>());
         }
         finally
         {
             release.TrySetResult(new ToolResult { Success = true });
             await first;
         }
+        await fx.Connector.Received(1).InvokeAsync(Arg.Any<ToolHandle>(), Arg.Any<ToolInvocation>(), Arg.Any<CancellationToken>());
     }
 
     private static ToolInvocation Request() => new()

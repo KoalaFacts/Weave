@@ -6,8 +6,8 @@ namespace Weave.Invocations;
 /// <summary>One claimed attempt. No connector retries, background replay or response-body cache.</summary>
 public sealed class InvocationExecution(IInvocationJournal journal, TimeProvider timeProvider, ILogger logger)
 {
-    public async Task<ToolResult> ExecuteAsync(InvocationRecord candidate, CancellationToken cancellationToken,
-        Func<Task> revalidate, Func<Task<ToolResult>> dispatch)
+    public async Task<ToolResult> ExecuteAsync(InvocationRecord candidate, Func<Task> revalidate,
+        Func<Task<ToolResult>> dispatch, CancellationToken cancellationToken)
     {
         InvocationClaim claim;
         try

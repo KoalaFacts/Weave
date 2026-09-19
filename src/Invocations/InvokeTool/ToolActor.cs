@@ -133,11 +133,11 @@ public sealed partial class ToolActor(
             };
         var effectiveInvocation = await _secretSubstitutor.SubstituteAsync(_identity.WorkspaceId, request);
         await RevalidateAsync();
-        var result = await _execution.ExecuteAsync(candidate, token.CancellationToken, RevalidateAsync, async () =>
+        var result = await _execution.ExecuteAsync(candidate, RevalidateAsync, async () =>
         {
             var response = await connector.InvokeAsync(handle, effectiveInvocation, token.CancellationToken);
             return await _leakGuard.RedactIfInboundLeaksAsync(_identity.WorkspaceId, _identity.ToolName, response);
-        });
+        }, token.CancellationToken);
 
         if (!result.IsReplay && result.OutcomeRecorded)
             await eventBus.PublishAsync(new ToolInvocationCompletedEvent
