@@ -88,6 +88,16 @@ class ReleaseWorkflowTests(unittest.TestCase):
         release = (ROOT / '.github/workflows/release.yml').read_text()
         self.assertNotIn('artifacts/*.snupkg', release)
 
+    def test_ci_reports_checks_without_requesting_pr_comment_writes(self):
+        content = (ROOT / '.github/workflows/ci.yml').read_text()
+        build = content.split('  build-and-test:', 1)[1].split('  code-quality:', 1)[0]
+        reporter = build.split('      - name: Publish test results', 1)[1].split('      - name:', 1)[0]
+        self.assertIn("comment_mode: 'off'", reporter)
+        self.assertIn('checks: write', build)
+        self.assertNotIn('pull-requests: write', build)
+        self.assertNotIn('issues: write', build)
+        self.assertNotIn('continue-on-error:', reporter)
+
     def test_messagepack_security_patch_is_pinned(self):
         packages = ET.parse(ROOT / 'Directory.Packages.props')
         version = packages.find('.//PackageVersion[@Include="MessagePack"]').attrib['Version']

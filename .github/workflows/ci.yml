@@ -58,6 +58,7 @@ jobs:
         with:
           files: test-results/**/*.trx
           check_name: 'Test Results'
+          comment_mode: 'off'
 
       - name: Upload test results
         if: always()
