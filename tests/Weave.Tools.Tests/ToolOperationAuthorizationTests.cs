@@ -21,9 +21,7 @@ public sealed class ToolOperationAuthorizationTests
         using var fx = new Fixture();
         await fx.ConnectAsync();
         var token = fx.Token("tool:files:invoke:read_file");
-
         var result = await fx.Actor.InvokeAsync(fx.Read(), token);
-
         result.Success.ShouldBeTrue();
         result.Output.ShouldBe("original");
         fx.Decisions.ShouldContain(e => e.Grant == "tool:files:invoke:read_file"
@@ -39,9 +37,7 @@ public sealed class ToolOperationAuthorizationTests
     {
         using var fx = new Fixture();
         await fx.ConnectAsync();
-
         await Should.ThrowAsync<UnauthorizedAccessException>(() => fx.Actor.InvokeAsync(fx.Write(), fx.Token(grant)));
-
         File.ReadAllText(fx.Target).ShouldBe("original");
     }
 
@@ -50,9 +46,7 @@ public sealed class ToolOperationAuthorizationTests
     {
         using var fx = new Fixture();
         await fx.ConnectAsync();
-
         var result = await fx.Actor.InvokeAsync(fx.Write(), fx.Token("tool:files:invoke:*"));
-
         result.Success.ShouldBeTrue();
         File.ReadAllText(fx.Target).ShouldBe("updated");
     }
@@ -62,9 +56,7 @@ public sealed class ToolOperationAuthorizationTests
     {
         using var fx = new Fixture();
         var token = fx.Token("tool:files:connect");
-
         var handle = await fx.Actor.ConnectAsync(fx.Spec, token);
-
         handle.IsConnected.ShouldBeTrue();
         await Should.ThrowAsync<UnauthorizedAccessException>(() => fx.Actor.InvokeAsync(fx.Write(), token));
         File.ReadAllText(fx.Target).ShouldBe("original");
@@ -75,10 +67,8 @@ public sealed class ToolOperationAuthorizationTests
     {
         using var fx = new Fixture();
         await fx.ConnectAsync();
-
         await Should.ThrowAsync<UnauthorizedAccessException>(() => fx.Actor.InvokeAsync(
             fx.Write() with { ToolName = "another-installation" }, fx.Token("tool:*")));
-
         File.ReadAllText(fx.Target).ShouldBe("original");
     }
 
@@ -87,10 +77,8 @@ public sealed class ToolOperationAuthorizationTests
     {
         using var fx = new Fixture();
         var connected = await fx.ConnectAsync();
-
         await Should.ThrowAsync<UnauthorizedAccessException>(() => fx.Actor.ConnectAsync(
             fx.Spec with { Name = "another-installation" }, fx.Token("tool:*")));
-
         (await fx.Actor.GetHandleAsync()).ShouldBe(connected);
     }
 
@@ -105,9 +93,7 @@ public sealed class ToolOperationAuthorizationTests
             fx.Tokens.Revoke(token.TokenId);
             return ci.Arg<string>();
         });
-
         await Should.ThrowAsync<UnauthorizedAccessException>(() => fx.Actor.InvokeAsync(fx.Write(), token));
-
         File.ReadAllText(fx.Target).ShouldBe("original");
     }
 
@@ -122,9 +108,7 @@ public sealed class ToolOperationAuthorizationTests
             invocation.Parameters["content"] = "changed-after-authorization";
             return ci.Arg<string>();
         });
-
         var result = await fx.Actor.InvokeAsync(invocation, fx.Token("tool:*"));
-
         result.Success.ShouldBeTrue();
         File.ReadAllText(fx.Target).ShouldBe("updated");
     }
@@ -137,9 +121,7 @@ public sealed class ToolOperationAuthorizationTests
         using var cancelled = new CancellationTokenSource();
         await cancelled.CancelAsync();
         var token = fx.Token("tool:*") with { CancellationToken = cancelled.Token };
-
         await Should.ThrowAsync<OperationCanceledException>(() => fx.Actor.InvokeAsync(fx.Write(), token));
-
         File.ReadAllText(fx.Target).ShouldBe("original");
     }
 
@@ -149,10 +131,8 @@ public sealed class ToolOperationAuthorizationTests
         using var fx = new Fixture(cli: true);
         await fx.ConnectAsync();
         var invocation = new ToolInvocation { ToolName = "shell", Method = "read_file", RawInput = Fixture.ShellCommand };
-
         await Should.ThrowAsync<UnauthorizedAccessException>(() => fx.Actor.InvokeAsync(
             invocation, fx.Token("tool:shell:invoke:read_file")));
-
         fx.Decisions.ShouldNotContain(e => e.Grant == "tool:shell:invoke:exec"
             && e.Outcome == CapabilityAuthorizationOutcome.Allow);
     }
@@ -163,9 +143,7 @@ public sealed class ToolOperationAuthorizationTests
         using var fx = new Fixture(cli: true);
         await fx.ConnectAsync();
         var invocation = new ToolInvocation { ToolName = "shell", Method = "invoke", RawInput = Fixture.ShellCommand };
-
         var result = await fx.Actor.InvokeAsync(invocation, fx.Token("tool:shell:invoke:exec"));
-
         result.Success.ShouldBeTrue();
         result.Output.TrimEnd().ShouldBe("harmless");
     }
@@ -223,8 +201,8 @@ public sealed class ToolOperationAuthorizationTests
         });
 
         public Task<ToolHandle> ConnectAsync() => Actor.ConnectAsync(Spec, Token("tool:*"));
-        public ToolInvocation Read() => new() { ToolName = "files", Method = "read_file", Parameters = new() { ["path"] = "document.txt" } };
-        public ToolInvocation Write() => new() { ToolName = "files", Method = "write_file", Parameters = new() { ["path"] = "document.txt", ["content"] = "updated" } };
+        public ToolInvocation Read() => new() { ToolName = Spec.Name, Method = "read_file", Parameters = new() { ["path"] = "document.txt" } };
+        public ToolInvocation Write() => new() { ToolName = Spec.Name, Method = "write_file", Parameters = new() { ["path"] = "document.txt", ["content"] = "updated" } };
 
         public void Dispose()
         {
