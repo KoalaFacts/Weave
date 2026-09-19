@@ -15,14 +15,15 @@ namespace Weave.Tools.Tests;
 
 public sealed class ToolOperationAuthorizationTests
 {
-    [Fact]
-    public async Task InvokeAsync_ExactReadGrant_ReturnsRealFileContents()
+    [Theory]
+    [InlineData("read_file")]
+    [InlineData("READ_FILE")]
+    public async Task InvokeAsync_ExactReadGrant_ReturnsRealFileContents(string method)
     {
         using var fx = new Fixture();
         await fx.ConnectAsync();
-        var token = fx.Token("tool:files:invoke:read_file");
-        var result = await fx.Actor.InvokeAsync(fx.Read(), token);
-        result.Success.ShouldBeTrue();
+        var result = await fx.Actor.InvokeAsync(fx.Read() with { Method = method }, fx.Token("tool:files:invoke:read_file"));
+        result.Success.ShouldBeTrue(result.Error);
         result.Output.ShouldBe("original");
         fx.Decisions.ShouldContain(e => e.Grant == "tool:files:invoke:read_file"
             && e.Outcome == CapabilityAuthorizationOutcome.Allow);
@@ -41,13 +42,16 @@ public sealed class ToolOperationAuthorizationTests
         File.ReadAllText(fx.Target).ShouldBe("original");
     }
 
-    [Fact]
-    public async Task InvokeAsync_ExplicitOperationWildcard_AllowsWrite()
+    [Theory]
+    [InlineData("tool:files:invoke:write_file")]
+    [InlineData("tool:files:invoke:*")]
+    [InlineData("tool:*")]
+    public async Task InvokeAsync_ExplicitWriteAuthority_ChangesRealFile(string grant)
     {
         using var fx = new Fixture();
         await fx.ConnectAsync();
-        var result = await fx.Actor.InvokeAsync(fx.Write(), fx.Token("tool:files:invoke:*"));
-        result.Success.ShouldBeTrue();
+        var result = await fx.Actor.InvokeAsync(fx.Write(), fx.Token(grant));
+        result.Success.ShouldBeTrue(result.Error);
         File.ReadAllText(fx.Target).ShouldBe("updated");
     }
 
@@ -105,12 +109,13 @@ public sealed class ToolOperationAuthorizationTests
         var invocation = fx.Write();
         fx.Proxy.SubstituteAsync(Arg.Any<string>()).Returns(ci =>
         {
-            invocation.Parameters["content"] = "changed-after-authorization";
+            invocation.Parameters["path"] = "different.txt";
             return ci.Arg<string>();
         });
         var result = await fx.Actor.InvokeAsync(invocation, fx.Token("tool:*"));
-        result.Success.ShouldBeTrue();
+        result.Success.ShouldBeTrue(result.Error);
         File.ReadAllText(fx.Target).ShouldBe("updated");
+        File.Exists(Path.Combine(Path.GetDirectoryName(fx.Target)!, "different.txt")).ShouldBeFalse();
     }
 
     [Fact]
@@ -130,7 +135,12 @@ public sealed class ToolOperationAuthorizationTests
     {
         using var fx = new Fixture(cli: true);
         await fx.ConnectAsync();
-        var invocation = new ToolInvocation { ToolName = "shell", Method = "read_file", RawInput = Fixture.ShellCommand };
+        var invocation = new ToolInvocation
+        {
+            ToolName = "shell",
+            Method = "read_file",
+            RawInput = Fixture.ShellCommand
+        };
         await Should.ThrowAsync<UnauthorizedAccessException>(() => fx.Actor.InvokeAsync(
             invocation, fx.Token("tool:shell:invoke:read_file")));
         fx.Decisions.ShouldNotContain(e => e.Grant == "tool:shell:invoke:exec"
@@ -142,9 +152,14 @@ public sealed class ToolOperationAuthorizationTests
     {
         using var fx = new Fixture(cli: true);
         await fx.ConnectAsync();
-        var invocation = new ToolInvocation { ToolName = "shell", Method = "invoke", RawInput = Fixture.ShellCommand };
+        var invocation = new ToolInvocation
+        {
+            ToolName = "shell",
+            Method = "invoke",
+            RawInput = Fixture.ShellCommand
+        };
         var result = await fx.Actor.InvokeAsync(invocation, fx.Token("tool:shell:invoke:exec"));
-        result.Success.ShouldBeTrue();
+        result.Success.ShouldBeTrue(result.Error);
         result.Output.TrimEnd().ShouldBe("harmless");
     }
 
@@ -190,19 +205,36 @@ public sealed class ToolOperationAuthorizationTests
                 Name = cli ? "shell" : "files",
                 Type = connector.ToolType,
                 FileSystem = new Weave.Tools.Connectors.FileSystemToolConfig { Root = _directory },
-                Cli = new CliConfig { Shell = OperatingSystem.IsWindows() ? "powershell" : "/bin/sh", AllowedCommands = ["printf *", "Write-Output *"] }
+                Cli = new CliConfig
+                {
+                    Shell = OperatingSystem.IsWindows() ? "powershell" : "/bin/sh",
+                    AllowedCommands = ["printf *", "Write-Output *"]
+                }
             };
         }
 
         public CapabilityToken Token(params string[] grants) => Tokens.Mint(new CapabilityTokenRequest
         {
-            WorkspaceId = "workspace-a", IssuedTo = "workspace-a/reader",
-            Grants = [.. grants], Lifetime = TimeSpan.FromMinutes(5)
+            WorkspaceId = "workspace-a",
+            IssuedTo = "workspace-a/reader",
+            Grants = [.. grants],
+            Lifetime = TimeSpan.FromMinutes(5)
         });
 
         public Task<ToolHandle> ConnectAsync() => Actor.ConnectAsync(Spec, Token("tool:*"));
-        public ToolInvocation Read() => new() { ToolName = Spec.Name, Method = "read_file", Parameters = new() { ["path"] = "document.txt" } };
-        public ToolInvocation Write() => new() { ToolName = Spec.Name, Method = "write_file", Parameters = new() { ["path"] = "document.txt", ["content"] = "updated" } };
+        public ToolInvocation Read() => new()
+        {
+            ToolName = Spec.Name,
+            Method = "read_file",
+            Parameters = new() { ["path"] = "document.txt" }
+        };
+        public ToolInvocation Write() => new()
+        {
+            ToolName = Spec.Name,
+            Method = "write_file",
+            Parameters = new() { ["path"] = "document.txt" },
+            RawInput = "updated"
+        };
 
         public void Dispose()
         {
