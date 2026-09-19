@@ -265,12 +265,20 @@
           "xunit.v3.runner.common": "[3.2.2]"
         }
       },
+      "weave": {
+        "type": "Project",
+        "dependencies": {
+          "Microsoft.Extensions.AI.Abstractions": "[10.5.0, )",
+          "Microsoft.Extensions.DependencyInjection.Abstractions": "[10.0.7, )",
+          "Microsoft.Extensions.Logging.Abstractions": "[10.0.7, )",
+          "Microsoft.Extensions.Options": "[10.0.7, )"
+        }
+      },
       "weave.actions": {
         "type": "Project",
         "dependencies": {
           "Microsoft.Extensions.Http": "[10.0.7, )",
-          "Weave.Shared": "[1.0.0, )",
-          "Weave.Workspaces": "[1.0.0, )"
+          "Weave": "[1.0.0, )"
         }
       },
       "weave.cli": {
@@ -279,12 +287,11 @@
           "Microsoft.Extensions.DependencyInjection": "[10.0.7, )",
           "Spectre.Console": "[0.55.2, )",
           "System.CommandLine": "[2.0.7, )",
+          "Weave": "[1.0.0, )",
           "Weave.Actions": "[1.0.0, )",
           "Weave.Cli.Shell": "[1.0.0, )",
           "Weave.Cli.Tui": "[1.0.0, )",
-          "Weave.Deploy": "[1.0.0, )",
-          "Weave.Shared": "[1.0.0, )",
-          "Weave.Workspaces": "[1.0.0, )"
+          "Weave.Deploy": "[1.0.0, )"
         }
       },
       "weave.cli.shell": {
@@ -292,9 +299,8 @@
         "dependencies": {
           "Microsoft.Extensions.DependencyInjection.Abstractions": "[10.0.7, )",
           "Spectre.Console": "[0.55.2, )",
-          "Weave.Actions": "[1.0.0, )",
-          "Weave.Shared": "[1.0.0, )",
-          "Weave.Workspaces": "[1.0.0, )"
+          "Weave": "[1.0.0, )",
+          "Weave.Actions": "[1.0.0, )"
         }
       },
       "weave.cli.tui": {
@@ -302,31 +308,15 @@
         "dependencies": {
           "Microsoft.Extensions.DependencyInjection.Abstractions": "[10.0.7, )",
           "Spectre.Console": "[0.55.2, )",
+          "Weave": "[1.0.0, )",
           "Weave.Actions": "[1.0.0, )",
-          "Weave.Cli.Shell": "[1.0.0, )",
-          "Weave.Shared": "[1.0.0, )",
-          "Weave.Workspaces": "[1.0.0, )"
+          "Weave.Cli.Shell": "[1.0.0, )"
         }
       },
       "weave.deploy": {
         "type": "Project",
         "dependencies": {
-          "Weave.Shared": "[1.0.0, )",
-          "Weave.Workspaces": "[1.0.0, )"
-        }
-      },
-      "weave.shared": {
-        "type": "Project",
-        "dependencies": {
-          "Microsoft.Extensions.AI.Abstractions": "[10.5.0, )",
-          "Microsoft.Extensions.DependencyInjection.Abstractions": "[10.0.7, )",
-          "Microsoft.Extensions.Logging.Abstractions": "[10.0.7, )"
-        }
-      },
-      "weave.workspaces": {
-        "type": "Project",
-        "dependencies": {
-          "Weave.Shared": "[1.0.0, )"
+          "Weave": "[1.0.0, )"
         }
       },
       "Microsoft.Extensions.AI.Abstractions": {

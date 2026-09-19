@@ -10,9 +10,9 @@
       },
       "Microsoft.NET.ILLink.Tasks": {
         "type": "Direct",
-        "requested": "[10.0.7, )",
-        "resolved": "10.0.7",
-        "contentHash": "AA/yhzFHNtQZXLdqjzujPy25G8EWwGWsAnxOE2zYSBoT/8QHP6ketN3CToD3DFreO653ipUwnKHo22B8AlBMCw=="
+        "requested": "[10.0.8, )",
+        "resolved": "10.0.8",
+        "contentHash": "dVbSXGIFNR5nZcv2tOLoWI+a9T4jtFd77IYjuND+QVe360qWgAF7H0WtoopYhRw/+SgpGUTyrkrh+65+ClNnfw=="
       },
       "Spectre.Console": {
         "type": "Direct",
@@ -100,12 +100,20 @@
         "resolved": "0.55.2",
         "contentHash": "tN3KEJQQZwLW9HJnG5YTSAxfBwxsmg1wVuGvhGG2rM+pbl+NGaHU8pDcNofPlOXlgpkbpBMxI5t9o9qPfy3sHQ=="
       },
+      "weave": {
+        "type": "Project",
+        "dependencies": {
+          "Microsoft.Extensions.AI.Abstractions": "[10.5.0, )",
+          "Microsoft.Extensions.DependencyInjection.Abstractions": "[10.0.7, )",
+          "Microsoft.Extensions.Logging.Abstractions": "[10.0.7, )",
+          "Microsoft.Extensions.Options": "[10.0.7, )"
+        }
+      },
       "weave.actions": {
         "type": "Project",
         "dependencies": {
           "Microsoft.Extensions.Http": "[10.0.7, )",
-          "Weave.Shared": "[1.0.0, )",
-          "Weave.Workspaces": "[1.0.0, )"
+          "Weave": "[1.0.0, )"
         }
       },
       "weave.cli.shell": {
@@ -113,23 +121,8 @@
         "dependencies": {
           "Microsoft.Extensions.DependencyInjection.Abstractions": "[10.0.7, )",
           "Spectre.Console": "[0.55.2, )",
-          "Weave.Actions": "[1.0.0, )",
-          "Weave.Shared": "[1.0.0, )",
-          "Weave.Workspaces": "[1.0.0, )"
-        }
-      },
-      "weave.shared": {
-        "type": "Project",
-        "dependencies": {
-          "Microsoft.Extensions.AI.Abstractions": "[10.5.0, )",
-          "Microsoft.Extensions.DependencyInjection.Abstractions": "[10.0.7, )",
-          "Microsoft.Extensions.Logging.Abstractions": "[10.0.7, )"
-        }
-      },
-      "weave.workspaces": {
-        "type": "Project",
-        "dependencies": {
-          "Weave.Shared": "[1.0.0, )"
+          "Weave": "[1.0.0, )",
+          "Weave.Actions": "[1.0.0, )"
         }
       },
       "Microsoft.Extensions.AI.Abstractions": {

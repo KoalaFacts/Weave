@@ -284,12 +284,13 @@
           "xunit.v3.runner.common": "[3.2.2]"
         }
       },
-      "weave.security": {
+      "weave": {
         "type": "Project",
         "dependencies": {
+          "Microsoft.Extensions.AI.Abstractions": "[10.5.0, )",
+          "Microsoft.Extensions.DependencyInjection.Abstractions": "[10.0.7, )",
           "Microsoft.Extensions.Logging.Abstractions": "[10.0.7, )",
-          "Microsoft.Extensions.Options": "[10.0.7, )",
-          "Weave.Shared": "[1.0.0, )"
+          "Microsoft.Extensions.Options": "[10.0.7, )"
         }
       },
       "weave.security.postgres": {
@@ -297,7 +298,7 @@
         "dependencies": {
           "Microsoft.Extensions.Options": "[10.0.7, )",
           "Npgsql": "[10.0.2, )",
-          "Weave.Security": "[1.0.0, )"
+          "Weave": "[1.0.0, )"
         }
       },
       "weave.security.sqlite": {
@@ -305,15 +306,7 @@
         "dependencies": {
           "Microsoft.Data.Sqlite": "[10.0.7, )",
           "Microsoft.Extensions.Options": "[10.0.7, )",
-          "Weave.Security": "[1.0.0, )"
-        }
-      },
-      "weave.shared": {
-        "type": "Project",
-        "dependencies": {
-          "Microsoft.Extensions.AI.Abstractions": "[10.5.0, )",
-          "Microsoft.Extensions.DependencyInjection.Abstractions": "[10.0.7, )",
-          "Microsoft.Extensions.Logging.Abstractions": "[10.0.7, )"
+          "Weave": "[1.0.0, )"
         }
       },
       "Microsoft.Data.Sqlite": {
