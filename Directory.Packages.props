@@ -12,7 +12,7 @@
     <PackageVersion Include="SQLitePCLRaw.lib.e_sqlite3" Version="3.53.3" />
   </ItemGroup>
   <ItemGroup Label="Aspire">
-    <PackageVersion Include="Aspire.Hosting.AppHost" Version="13.2.4" />
+    <PackageVersion Include="Aspire.Hosting.AppHost" Version="13.3.0" />
     <PackageVersion Include="Aspire.Hosting.Orleans" Version="13.2.4" />
     <PackageVersion Include="Aspire.Hosting.Redis" Version="13.2.4" />
     <PackageVersion Include="CommunityToolkit.Aspire.Hosting.Dapr" Version="13.0.0" />
