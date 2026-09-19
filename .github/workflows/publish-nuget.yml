@@ -42,7 +42,7 @@ jobs:
       source_sha: ${{ steps.source.outputs.source_sha }}
     steps:
       - name: Checkout trusted validation code
-        uses: actions/checkout@de0fac2e4500dabe0009e67214ff5f5447ce83dd # v6
+        uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v6
         with:
           ref: ${{ github.workflow_sha }}
           sparse-checkout: scripts/release
@@ -70,7 +70,7 @@ jobs:
       RELEASE_RUN_ID: ${{ needs.verify-source.outputs.run_id }}
     steps:
       - name: Checkout trusted validation code only
-        uses: actions/checkout@de0fac2e4500dabe0009e67214ff5f5447ce83dd # v6
+        uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v6
         with:
           ref: ${{ github.workflow_sha }}
           sparse-checkout: scripts/release
