@@ -102,7 +102,7 @@ public sealed class ToolRegistryActor(
         await persistentState.WriteStateAsync();
     }
 
-    public async Task GrantAgentToolsAsync(string agentName, IReadOnlyList<string> toolNames, IReadOnlyList<string> capabilities)
+    public async Task GrantAgentToolsAsync(string agentName, List<string> toolNames, List<string> capabilities)
     {
         EnsureWorkspaceId();
         persistentState.State.GrantTools(agentName, toolNames, capabilities);

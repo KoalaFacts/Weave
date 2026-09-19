@@ -5,7 +5,7 @@ public interface IToolRegistryActor
 {
     Task ConnectToolsAsync(Dictionary<string, ToolDefinition> tools);
     Task ConfigureAccessAsync(Dictionary<string, List<string>> agentToolAccess, Dictionary<string, List<string>> agentCapabilities);
-    Task GrantAgentToolsAsync(string agentName, IReadOnlyList<string> toolNames, IReadOnlyList<string> capabilities);
+    Task GrantAgentToolsAsync(string agentName, List<string> toolNames, List<string> capabilities);
     Task DisconnectAllAsync();
     Task<ToolConnection?> GetConnectionAsync(string toolName);
     Task<IReadOnlyList<ToolConnection>> GetAllConnectionsAsync();
