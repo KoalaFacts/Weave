@@ -20,22 +20,28 @@ public sealed class ApiAuthMiddleware(
     public async Task InvokeAsync(HttpContext context)
     {
         var provider = broker.Get<IApiAuthProvider>() ?? options.Provider;
+        var path = context.Request.Path.Value ?? "";
+        if (BypassPaths.Any(bp => path.StartsWith(bp, StringComparison.OrdinalIgnoreCase))
+            || !path.StartsWith("/api", StringComparison.OrdinalIgnoreCase))
+        {
+            await next(context);
+            return;
+        }
+
+        if (provider is UnavailableApiAuthProvider || (provider is null && options.Mode != "none"))
+        {
+            logger.LogWarning("API authentication is unavailable; rejecting protected request");
+            context.Response.StatusCode = StatusCodes.Status503ServiceUnavailable;
+            await context.Response.WriteAsJsonAsync(new ProblemDetails
+            {
+                Status = StatusCodes.Status503ServiceUnavailable,
+                Title = "Authentication unavailable",
+                Detail = "An administrator must restore the configured authentication provider."
+            }, SiloApiJsonContext.Default.ProblemDetails);
+            return;
+        }
 
         if (provider is null)
-        {
-            await next(context);
-            return;
-        }
-
-        var path = context.Request.Path.Value ?? "";
-
-        if (BypassPaths.Any(bp => path.StartsWith(bp, StringComparison.OrdinalIgnoreCase)))
-        {
-            await next(context);
-            return;
-        }
-
-        if (!path.StartsWith("/api", StringComparison.OrdinalIgnoreCase))
         {
             await next(context);
             return;
@@ -62,4 +68,3 @@ public sealed class ApiAuthMiddleware(
         await next(context);
     }
 }
-
