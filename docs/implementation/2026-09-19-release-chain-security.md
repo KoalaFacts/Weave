@@ -2,7 +2,9 @@
 
 ## Scope and base
 
-This increment is stacked on PR #89 at `deaca1b61f2e6bd382ccdfb499c1949a12b42f70`.
+This increment started on PR #89 at `deaca1b61f2e6bd382ccdfb499c1949a12b42f70`.
+PR #89 was subsequently squash-merged by the maintainer. PR #90 targets main and preserves
+the action updates through `e8931f0d8e81c2a19f331b463e325c29c05932b6`.
 It preserves the flat source layout and the token/authentication fixes already on that branch.
 It neither merges nor publishes nor modifies production keys, persisted data or repository settings.
 
@@ -66,7 +68,7 @@ dotnet test --solution Weave.slnx --no-build -c Release
 ```
 
 The dedicated `Security Release Chain Validation` workflow also scans all direct/transitive
-NuGet dependencies and builds actual `.nupkg`/`.snupkg` tool packages, validating them without
+NuGet dependencies and builds the actual `.nupkg` tool package, validating it without
 publishing. It records only allowlisted lockfiles after all mandatory steps succeed and only while
 the branch still has the expected head. Exact run IDs, source hashes and counts belong in the PR
 verification record; a previous run's success must not be claimed for a new commit.
@@ -75,3 +77,18 @@ Live NuGet publication, all six native release targets, environment approvals an
 release creation are not exercised by this security validation. The implementation is author-reviewed,
 not independently penetration-tested. Full tenant/admin authorization, plugin isolation, fine-grained
 operation grants and other product security boundaries remain separate work described in PR #89.
+
+## Packaging correction discovered by validation
+
+Run 35435813655 produced the tool `.nupkg` but then failed with NU5017 while attempting to
+create an empty standalone symbol package. The repository already sets `DebugType=embedded`,
+so there are no standalone PDBs to package. Both production release and validation now use
+`IncludeSymbols=false`, retain embedded symbols, and do not attach nonexistent `.snupkg` assets.
+This is a configuration correction, not error suppression. A regression test failed before
+the change and passed afterward. The full local Python suite now has 34 passing tests.
+
+The earlier run 35435452495 passed audit/build but had one failure in the pre-existing
+`EchoMcpHttpTransportSmokeTests.ExampleServer_HttpMode_SseResponse_DeliversFinalResultThroughTransport`
+test (2,399 passed, 1 failed). Its root cause is not established by this patch. Neither that test
+nor its assertion has been removed, skipped or relaxed. See PR #90 for subsequent exact-commit
+verification results rather than treating an earlier partial run as a complete pass.
