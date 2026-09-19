@@ -133,7 +133,16 @@ public sealed partial class ToolActor(
             };
         request = request with { InvocationId = candidate.InvocationId };
         var effectiveInvocation = await _secretSubstitutor.SubstituteAsync(_identity.WorkspaceId, request);
+        var binding = connector as IApprovalTargetBinding;
+        var adapterTarget = binding?.GetApprovalTargetDigest(handle);
+        if (binding is not null)
+        {
+            var effective = InvocationFingerprint.Prepare(effectiveInvocation, token, definition.Type.ToString(), candidate.CreatedAt);
+            candidate = candidate with { ApprovalTargetDigest = InvocationApprovalPlan.BindTarget(adapterTarget, effective?.InputDigest) };
+        }
         await RevalidateAsync();
+        var admittedAt = timeProvider.GetUtcNow();
+        candidate = candidate with { CreatedAt = admittedAt, Attempt = candidate.Attempt with { StartedAt = admittedAt } };
         var result = await _execution.ExecuteAsync(candidate, RevalidateAsync, async () =>
         {
             var response = await connector.InvokeAsync(handle, effectiveInvocation, token.CancellationToken);
@@ -168,6 +177,8 @@ public sealed partial class ToolActor(
             token.CancellationToken.ThrowIfCancellationRequested();
             if (connectionVersion != _connectionVersion || !ReferenceEquals(handle, _handle) || !ReferenceEquals(definition, _definition))
                 throw new UnauthorizedAccessException("Tool connection changed during authorization.");
+            if (binding is not null && !string.Equals(adapterTarget, binding.GetApprovalTargetDigest(handle), StringComparison.Ordinal))
+                throw new UnauthorizedAccessException("Tool approval target changed during authorization.");
         }
     }
 

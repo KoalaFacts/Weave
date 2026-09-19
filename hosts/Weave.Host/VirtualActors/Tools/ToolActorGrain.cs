@@ -43,6 +43,13 @@ public sealed class ToolActorGrain : Grain, IToolActorGrain
     public Task<InvocationRecord?> GetInvocationAsync(InvocationId invocationId, CapabilityToken token) =>
         _actor.GetInvocationAsync(invocationId, token);
 
+    public Task<InvocationApproval?> GetApprovalAsync(InvocationId invocationId, CapabilityToken token) =>
+        _actor.GetApprovalAsync(invocationId, token);
+
+    public Task<InvocationApprovalDecisionResult> DecideApprovalAsync(InvocationId invocationId,
+        string planDigest, InvocationApprovalDecision decision, CapabilityToken token) =>
+        _actor.DecideApprovalAsync(invocationId, planDigest, decision, token);
+
     public Task<ToolSchema> GetSchemaAsync() => _actor.GetSchemaAsync();
     public Task<ToolHandle?> GetHandleAsync() => _actor.GetHandleAsync();
 }

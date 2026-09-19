@@ -39,6 +39,8 @@ public sealed class InvocationExecution(IInvocationJournal journal, TimeProvider
             || record.Operation != candidate.Operation || record.InputDigest != candidate.InputDigest)
             return Failure(candidate, InvocationOutcome.NotDispatched, "invocation-id-conflict",
                 "This invocation ID is already in use for a different request.");
+        if (claim.BlockingReason is not null)
+            return ApprovalBlocked(candidate, claim);
         if (!claim.Created)
             return Replay(record);
 
@@ -47,6 +49,13 @@ public sealed class InvocationExecution(IInvocationJournal journal, TimeProvider
             // Journal I/O is a boundary too: authority may expire/revoke while it waits.
             await revalidate();
             cancellationToken.ThrowIfCancellationRequested();
+            if (claim.Approval is { } approval &&
+                (approval.State != InvocationApprovalState.Consumed || timeProvider.GetUtcNow() >= approval.ExpiresAt))
+            {
+                var recorded = RecordOutcome(record, InvocationOutcome.Denied, TimeSpan.Zero);
+                return Failure(record, InvocationOutcome.Denied, "approval-expired",
+                    "The approval is no longer valid. This attempt was not dispatched.") with { OutcomeRecorded = recorded };
+            }
         }
         catch (OperationCanceledException)
         {
@@ -101,7 +110,10 @@ public sealed class InvocationExecution(IInvocationJournal journal, TimeProvider
             Outcome = outcome,
             OutcomeRecorded = true,
             IsReplay = false,
-            Duration = elapsed
+            Duration = elapsed,
+            ApprovalState = claim.Approval?.State,
+            ApprovalPlanDigest = claim.Approval?.PlanDigest,
+            ApprovalExpiresAt = claim.Approval?.ExpiresAt
         };
     }
 
@@ -125,6 +137,18 @@ public sealed class InvocationExecution(IInvocationJournal journal, TimeProvider
     private void LogRecordingFailure(InvocationRecord record, Exception error) =>
         logger.LogWarning("Invocation {InvocationId} journal write failed ({ErrorType})",
             record.InvocationId, error.GetType().Name);
+
+    private static ToolResult ApprovalBlocked(InvocationRecord candidate, InvocationClaim claim) => new()
+    {
+        ToolName = candidate.ToolName,
+        InvocationId = candidate.InvocationId,
+        Outcome = InvocationOutcome.NotDispatched,
+        ErrorCode = claim.BlockingReason,
+        Error = "This request has not satisfied its approval requirements. No attempt was started.",
+        ApprovalState = claim.Approval?.State,
+        ApprovalPlanDigest = claim.Approval?.PlanDigest,
+        ApprovalExpiresAt = claim.Approval?.ExpiresAt
+    };
 
     private static ToolResult Replay(InvocationRecord record) => new()
     {

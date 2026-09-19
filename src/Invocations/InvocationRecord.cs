@@ -16,4 +16,7 @@ public sealed record InvocationRecord(
     string TokenId,
     string AuthorizedGrant,
     DateTimeOffset CreatedAt,
-    InvocationAttempt Attempt);
+    InvocationAttempt Attempt)
+{
+    public string? ApprovalTargetDigest { get; init; }
+}
