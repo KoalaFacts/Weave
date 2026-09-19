@@ -313,7 +313,7 @@ public sealed class ApiAuthMiddlewareTests
     }
 
     [Fact]
-    public void FromConfiguration_FileSecretReference_MissingFile_ResolvesToNoProvider()
+    public void FromConfiguration_FileSecretReference_MissingFile_Throws()
     {
         var config = BuildConfig(new()
         {
@@ -321,13 +321,11 @@ public sealed class ApiAuthMiddlewareTests
             ["Weave:Auth:Secret"] = "file:C:/does/not/exist/xyz.txt"
         });
 
-        var options = ApiAuthOptions.FromConfiguration(config);
-
-        options.Provider.ShouldBeNull();
+        Should.Throw<InvalidOperationException>(() => ApiAuthOptions.FromConfiguration(config));
     }
 
     [Fact]
-    public void FromConfiguration_ModeNotEmpty_SecretEmpty_ReturnsNullProvider()
+    public void FromConfiguration_ModeNotEmpty_SecretEmpty_Throws()
     {
         var config = BuildConfig(new()
         {
@@ -335,9 +333,7 @@ public sealed class ApiAuthMiddlewareTests
             ["Weave:Auth:Secret"] = ""
         });
 
-        var options = ApiAuthOptions.FromConfiguration(config);
-
-        options.Provider.ShouldBeNull();
+        Should.Throw<InvalidOperationException>(() => ApiAuthOptions.FromConfiguration(config));
     }
 
     private static IConfiguration BuildConfig(Dictionary<string, string?> values) =>
