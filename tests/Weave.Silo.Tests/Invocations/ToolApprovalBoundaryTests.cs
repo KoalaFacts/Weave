@@ -122,7 +122,8 @@ public sealed class ToolApprovalBoundaryTests
             await actor.OnActivatedAsync("workspace/files", TestContext.Current.CancellationToken);
             await actor.ConnectAsync(new ToolSpec
             {
-                Name = "files", Type = ToolType.FileSystem,
+                Name = "files",
+                Type = ToolType.FileSystem,
                 FileSystem = new FileSystemToolConfig { Root = _root }
             }, Token("tool:files:connect"));
             return actor;
@@ -130,14 +131,19 @@ public sealed class ToolApprovalBoundaryTests
 
         public CapabilityToken Token(string grant) => _tokens.Mint(new CapabilityTokenRequest
         {
-            WorkspaceId = "workspace", IssuedTo = "writer", Grants = [grant], Lifetime = TimeSpan.FromHours(1)
+            WorkspaceId = "workspace",
+            IssuedTo = "writer",
+            Grants = [grant],
+            Lifetime = TimeSpan.FromHours(1)
         });
 
         public ToolInvocation Write() => new()
         {
             InvocationId = InvocationId.From(Guid.NewGuid().ToString("N")),
-            ToolName = "files", Method = "write_file",
-            Parameters = new() { ["path"] = Path.GetFileName(Target) }, RawInput = "updated"
+            ToolName = "files",
+            Method = "write_file",
+            Parameters = new() { ["path"] = Path.GetFileName(Target) },
+            RawInput = "updated"
         };
 
         public void Dispose() => Directory.Delete(_root, recursive: true);
