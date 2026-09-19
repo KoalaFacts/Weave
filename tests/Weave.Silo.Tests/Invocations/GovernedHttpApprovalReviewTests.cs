@@ -111,7 +111,8 @@ public sealed partial class GovernedHttpEntryTests
         Directory.CreateDirectory(otherRoot);
         await fx.Tool.ConnectAsync(new ToolSpec
         {
-            Name = "files", Type = ToolType.FileSystem,
+            Name = "files",
+            Type = ToolType.FileSystem,
             FileSystem = new Weave.Tools.Connectors.FileSystemToolConfig { Root = otherRoot }
         }, fx.Token(grants: ["tool:files:connect"]));
         using var response = await fx.SendAsync(HttpMethod.Post, ReviewRoute(fx, request), request,

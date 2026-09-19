@@ -22,6 +22,7 @@ public sealed class GovernedHttpCancellationTests
     [InlineData("invoke")]
     [InlineData("outcome")]
     [InlineData("approval")]
+    [InlineData("review")]
     public async Task SendAsync_CancelledWhileGrainAuthorizes_ObservesCancellationBeforeAdmission(string operation)
     {
         var root = Path.Combine(Path.GetTempPath(), $"weave-http-cancellation-{Guid.NewGuid():N}");
@@ -66,11 +67,18 @@ public sealed class GovernedHttpCancellationTests
             }, Token("setup", ["tool:files:connect"]));
             var id = InvocationId.From(Guid.NewGuid().ToString("N"));
             var route = "/api/workspaces/workspace/tools/files/invocations";
-            var suffix = operation == "invoke" ? "" : "/" + id + (operation == "approval" ? "/approval" : "");
-            using var message = new HttpRequestMessage(operation == "invoke" ? HttpMethod.Post : HttpMethod.Get, route + suffix);
+            var suffix = operation switch
+            {
+                "invoke" => "",
+                "approval" => "/" + id + "/approval",
+                "review" => "/" + id + "/approval/review",
+                _ => "/" + id
+            };
+            var hasBody = operation is "invoke" or "review";
+            using var message = new HttpRequestMessage(hasBody ? HttpMethod.Post : HttpMethod.Get, route + suffix);
             var credential = Token("cancellation-probe", ["tool:files:invoke:write_file", "invocation:read"]);
             message.Headers.Add("X-Weave-Capability", WebEncoders.Base64UrlEncode(JsonSerializer.SerializeToUtf8Bytes(credential, JsonOptions)));
-            if (operation == "invoke")
+            if (hasBody)
                 message.Content = JsonContent.Create(new ToolInvocation
                 {
                     InvocationId = id,
