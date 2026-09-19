@@ -19,12 +19,16 @@ public sealed partial class AuthPluginConnector(
         Config =
         [
             new() { Name = "provider", Description = "Auth provider: apikey, bearer", Required = true },
-            new() { Name = "secret", Description = "Auth secret (use env:, file:, or vault: reference)", Secret = true, EnvVar = "WEAVE_API_SECRET" },
+            new() { Name = "secret", Description = "Auth secret (use env: or file: reference)", Secret = true, EnvVar = "WEAVE_API_SECRET" },
         ]
     };
 
     public Task<PluginStatus> ConnectAsync(string name, PluginDefinition definition)
     {
+        // Selecting authentication must never fall back to anonymous access on failure.
+        if (broker.Get<IApiAuthProvider>() is null)
+            broker.Swap<IApiAuthProvider>(new UnavailableApiAuthProvider());
+
         var providerName = definition.Config.GetValueOrDefault("provider")?.ToLowerInvariant();
         var secret = definition.Config.GetValueOrDefault("secret");
 
@@ -33,9 +37,9 @@ public sealed partial class AuthPluginConnector(
         {
             try
             {
-                resolvedSecret = ResolveSecret(secret);
+                resolvedSecret = ApiAuthOptions.ResolveSecret(secret);
             }
-            catch (Exception ex) when (ex is IOException or UnauthorizedAccessException or System.Security.SecurityException or ArgumentException)
+            catch (Exception ex) when (ex is IOException or UnauthorizedAccessException or System.Security.SecurityException or ArgumentException or InvalidOperationException)
             {
                 LogAuthSecretResolutionFailed(ex, name);
                 return Task.FromResult(new PluginStatus
@@ -55,7 +59,7 @@ public sealed partial class AuthPluginConnector(
                 Name = name,
                 Type = PluginType,
                 IsConnected = false,
-                Error = "Auth secret is required for apikey/bearer providers. Use env:, file:, or vault: reference."
+                Error = "Auth secret is required for apikey/bearer providers. Use env: or file: reference."
             });
         }
 
@@ -86,7 +90,7 @@ public sealed partial class AuthPluginConnector(
 
     public Task<PluginStatus> DisconnectAsync(string name)
     {
-        broker.Swap<IApiAuthProvider>(null);
+        broker.Swap<IApiAuthProvider>(new UnavailableApiAuthProvider());
         LogAuthDisconnected(name);
 
         return Task.FromResult(new PluginStatus
@@ -100,6 +104,8 @@ public sealed partial class AuthPluginConnector(
     public PluginStatus GetStatus(string name)
     {
         var active = broker.Get<IApiAuthProvider>();
+        if (active is UnavailableApiAuthProvider)
+            active = null;
         return new PluginStatus
         {
             Name = name,
@@ -109,23 +115,6 @@ public sealed partial class AuthPluginConnector(
                 ? new Dictionary<string, string> { ["provider"] = active.Name }
                 : new Dictionary<string, string>()
         };
-    }
-
-    private static string? ResolveSecret(string reference)
-    {
-        if (reference.StartsWith("env:", StringComparison.OrdinalIgnoreCase))
-        {
-            var varName = reference[4..].Trim();
-            return Environment.GetEnvironmentVariable(varName);
-        }
-
-        if (reference.StartsWith("file:", StringComparison.OrdinalIgnoreCase))
-        {
-            var path = reference[5..].Trim();
-            return File.Exists(path) ? File.ReadAllText(path).Trim() : null;
-        }
-
-        return reference;
     }
 
     [LoggerMessage(Level = LogLevel.Information, Message = "Auth plugin '{Name}' connected: provider={Provider}")]
