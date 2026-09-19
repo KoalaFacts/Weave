@@ -7,4 +7,5 @@ public sealed record ToolInvocation
     public Dictionary<string, string> Parameters { get; init; } = [];
     public string? RawInput { get; init; }
     public string? ParseWarning { get; init; }
+    public Guid InvocationId { get; init; }
 }
