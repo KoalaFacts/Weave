@@ -14,6 +14,9 @@ public interface IToolActor
     Task DisconnectAsync();
     Task<ToolResult> InvokeAsync(ToolInvocation invocation, CapabilityToken token);
     Task<InvocationRecord?> GetInvocationAsync(InvocationId invocationId, CapabilityToken token);
+    Task<FileWriteApproval?> GetApprovalAsync(InvocationId id, CapabilityToken token);
+    Task<ApprovalDecisionResult> DecideApprovalAsync(InvocationId id, string expectedDigest, ApprovalDecision decision, CapabilityToken token);
+    Task<ToolResult> ResumeApprovedAsync(InvocationId id, CapabilityToken token);
     Task<ToolSchema> GetSchemaAsync();
     Task<ToolHandle?> GetHandleAsync();
 }

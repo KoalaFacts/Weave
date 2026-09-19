@@ -23,10 +23,11 @@ public sealed class ToolActorGrain : Grain, IToolActorGrain
         IEventBus eventBus,
         ILogger<ToolActor> logger,
         IInvocationJournal journal,
-        TimeProvider timeProvider)
+        TimeProvider timeProvider,
+        FileWriteApprovalService approvals)
     {
         _actor = new ToolActor(actors, discovery, leakScanner, authorizer, lifecycleManager, eventBus, logger,
-            journal, timeProvider);
+            journal, timeProvider, approvals);
     }
 
     public override Task OnActivateAsync(CancellationToken cancellationToken) =>
@@ -42,6 +43,15 @@ public sealed class ToolActorGrain : Grain, IToolActorGrain
 
     public Task<InvocationRecord?> GetInvocationAsync(InvocationId invocationId, CapabilityToken token) =>
         _actor.GetInvocationAsync(invocationId, token);
+
+    public Task<FileWriteApproval?> GetApprovalAsync(InvocationId id, CapabilityToken token) =>
+        _actor.GetApprovalAsync(id, token);
+
+    public Task<ApprovalDecisionResult> DecideApprovalAsync(InvocationId id, string expectedDigest, ApprovalDecision decision, CapabilityToken token) =>
+        _actor.DecideApprovalAsync(id, expectedDigest, decision, token);
+
+    public Task<ToolResult> ResumeApprovedAsync(InvocationId id, CapabilityToken token) =>
+        _actor.ResumeApprovedAsync(id, token);
 
     public Task<ToolSchema> GetSchemaAsync() => _actor.GetSchemaAsync();
     public Task<ToolHandle?> GetHandleAsync() => _actor.GetHandleAsync();

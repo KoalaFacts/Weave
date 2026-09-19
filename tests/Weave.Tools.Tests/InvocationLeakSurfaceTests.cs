@@ -154,7 +154,7 @@ public sealed class InvocationLeakSurfaceTests
             Actor = new ToolActor(actors, discovery, new LeakScanner(NullLogger<LeakScanner>.Instance),
                 new CapabilityAuthorizer(tokens, events, NullLogger<CapabilityAuthorizer>.Instance),
                 new LifecycleManager(NullLogger<LifecycleManager>.Instance), events, NullLogger<ToolActor>.Instance,
-                new TestInvocationJournal(), clock);
+                new TestInvocationJournal(), clock, TestFileWriteApprovals.Create());
         }
 
         public Task<ToolHandle> ConnectAsync() => Actor.ConnectAsync(

@@ -16,4 +16,5 @@ public sealed record ToolResult
     public bool OutcomeRecorded { get; init; }
     public bool IsReplay { get; init; }
     public string? ErrorCode { get; init; }
+    public ApprovalState? ApprovalState { get; init; }
 }

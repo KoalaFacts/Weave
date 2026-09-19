@@ -7,12 +7,14 @@ using Weave.Shared.Ids;
 namespace Weave.Security.Sqlite;
 
 /// <summary>On-disk journal. Short SQLite transactions claim one attempt; none span dispatch.</summary>
-public sealed class SqliteInvocationJournal : IInvocationJournal
+public sealed partial class SqliteInvocationJournal : IInvocationJournal
 {
     private readonly string _connectionString;
+    private readonly TimeProvider _approvalTime;
 
-    public SqliteInvocationJournal(IOptions<InvocationJournalOptions> options)
+    public SqliteInvocationJournal(IOptions<InvocationJournalOptions> options, TimeProvider? timeProvider = null)
     {
+        _approvalTime = timeProvider ?? TimeProvider.System;
         var path = options.Value.DatabasePath ?? Path.Combine(
             Environment.GetFolderPath(Environment.SpecialFolder.UserProfile), ".weave", "invocations.db");
         if (string.IsNullOrWhiteSpace(path) || path.Equals(":memory:", StringComparison.OrdinalIgnoreCase)
@@ -49,6 +51,7 @@ public sealed class SqliteInvocationJournal : IInvocationJournal
             );
             """;
         schema.ExecuteNonQuery();
+        InitializeApprovals(connection);
     }
 
     public InvocationClaim TryStart(InvocationRecord candidate, CancellationToken cancellationToken)
@@ -59,6 +62,12 @@ public sealed class SqliteInvocationJournal : IInvocationJournal
         cancellationToken.ThrowIfCancellationRequested();
         using var connection = Open();
         using var transaction = connection.BeginTransaction();
+        var previous = Read(connection, transaction, candidate.WorkspaceId, candidate.InvocationId);
+        if (previous is not null)
+            return new InvocationClaim(false, previous);
+        var rejection = ConsumeApproval(connection, transaction, candidate);
+        if (rejection is not null)
+            return new InvocationClaim(false, candidate) { Rejection = rejection };
         using var insert = connection.CreateCommand();
         insert.Transaction = transaction;
         insert.CommandText = """

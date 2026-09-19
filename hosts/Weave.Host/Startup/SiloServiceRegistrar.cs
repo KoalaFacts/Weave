@@ -19,6 +19,7 @@ using Weave.Shared.Plugins;
 using Weave.Silo.Audit;
 using Weave.Silo.Channels;
 using Weave.Silo.Configuration;
+using Weave.Silo.Invocations;
 using Weave.Silo.Plugins;
 using Weave.Silo.Security;
 using Weave.Silo.Templates;
@@ -105,7 +106,13 @@ internal sealed class SiloServiceRegistrar
     {
         _services.Configure<InvocationJournalOptions>(
             _configuration.GetSection(InvocationJournalOptions.ConfigurationSectionName));
-        _services.AddSingleton<IInvocationJournal, SqliteInvocationJournal>();
+        _services.AddSingleton<SqliteInvocationJournal>();
+        _services.AddSingleton<IInvocationJournal>(sp => sp.GetRequiredService<SqliteInvocationJournal>());
+        _services.AddSingleton<IInvocationApprovalStore>(sp => sp.GetRequiredService<SqliteInvocationJournal>());
+        _services.Configure<InvocationApprovalOptions>(
+            _configuration.GetSection(InvocationApprovalOptions.ConfigurationSectionName));
+        _services.AddSingleton<IApprovalPlanProtector, ApprovalPlanProtector>();
+        _services.AddSingleton<FileWriteApprovalService>();
         _services.AddHostedService<InvocationJournalStartup>();
     }
 
@@ -146,7 +153,7 @@ internal sealed class SiloServiceRegistrar
         _services.AddSingleton<IAgentSecretResolver, AgentSecretResolver>();
         _services.AddScoped<IProviderResolver, ProviderResolver>();
         _services.AddScoped<IAgentChatClientFactory, AgentChatClientFactory>();
-        _services.AddTransient<IAgentChatPipeline, AgentChatPipeline>();
+        _services.AddScoped<IAgentChatPipeline, AgentChatPipeline>();
         _services.AddSingleton<AgentVerificationDispatcher>();
         _services.AddSingleton<IAgentVerificationDispatcher>(sp =>
             sp.GetRequiredService<AgentVerificationDispatcher>());

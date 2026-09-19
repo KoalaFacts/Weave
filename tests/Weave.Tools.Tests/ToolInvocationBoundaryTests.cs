@@ -208,7 +208,7 @@ public sealed class ToolInvocationBoundaryTests
             Actor = new ToolActor(actors, discovery, new LeakScanner(NullLogger<LeakScanner>.Instance),
                 new CapabilityAuthorizer(Tokens, Events, NullLogger<CapabilityAuthorizer>.Instance),
                 Substitute.For<ILifecycleManager>(), Events, NullLogger<ToolActor>.Instance,
-                new TestInvocationJournal(), TimeProvider.System);
+                new TestInvocationJournal(), TimeProvider.System, TestFileWriteApprovals.Create());
         }
 
         public CapabilityToken Mint(string workspaceId) => Tokens.Mint(new CapabilityTokenRequest

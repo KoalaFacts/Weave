@@ -26,6 +26,13 @@ public sealed class InvocationExecution(IInvocationJournal journal, TimeProvider
                 "Execution did not start because its durable intent could not be recorded.");
         }
 
+        if (claim.Rejection is not null)
+        {
+            var failure = Failure(candidate, InvocationOutcome.NotDispatched, claim.Rejection,
+                "Required approval is missing, expired, or does not match this plan.");
+            return failure with { AttemptId = null };
+        }
+
         if (!claim.Created)
         {
             // Returning persisted metadata requires live authority too. A denied

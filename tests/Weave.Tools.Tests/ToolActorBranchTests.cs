@@ -49,7 +49,7 @@ public sealed class ToolActorBranchTests
             var authorizer = new CapabilityAuthorizer(TokenService, EventBus, NullLogger<CapabilityAuthorizer>.Instance);
             Actor = new ToolActor(
                 ActorProvider, Discovery, Scanner, authorizer, Lifecycle, EventBus,
-                NullLogger<ToolActor>.Instance, new TestInvocationJournal(), TimeProvider.System);
+                NullLogger<ToolActor>.Instance, new TestInvocationJournal(), TimeProvider.System, TestFileWriteApprovals.Create());
         }
     }
 

@@ -226,7 +226,7 @@ public sealed class InvocationBoundaryTests
             Actor = new ToolActor(actors, discovery, new LeakScanner(NullLogger<LeakScanner>.Instance),
                 new CapabilityAuthorizer(Tokens, Events, NullLogger<CapabilityAuthorizer>.Instance),
                 new LifecycleManager(NullLogger<LifecycleManager>.Instance), Events, NullLogger<ToolActor>.Instance,
-                Journal, TimeProvider.System);
+                Journal, TimeProvider.System, TestFileWriteApprovals.Create());
         }
 
         public Task<ToolHandle> ConnectAsync() => Actor.ConnectAsync(new ToolSpec { Name = "files", Type = ToolType.FileSystem }, Token);

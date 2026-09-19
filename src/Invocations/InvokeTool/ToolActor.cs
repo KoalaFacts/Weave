@@ -18,7 +18,8 @@ public sealed partial class ToolActor(
     IEventBus eventBus,
     ILogger<ToolActor> logger,
     IInvocationJournal journal,
-    TimeProvider timeProvider) : IToolActor
+    TimeProvider timeProvider,
+    FileWriteApprovalService approvals) : IToolActor
 {
     private readonly ToolActorIdentity _identity = new();
     private readonly ToolInvocationLeakGuard _leakGuard = new(leakScanner, eventBus, logger);
@@ -91,7 +92,10 @@ public sealed partial class ToolActor(
         LogToolDisconnected(_identity.ToolName, _identity.WorkspaceId);
     }
 
-    public async Task<ToolResult> InvokeAsync(ToolInvocation invocation, CapabilityToken token)
+    public Task<ToolResult> InvokeAsync(ToolInvocation invocation, CapabilityToken token) =>
+        InvokeCoreAsync(invocation, token, null);
+
+    private async Task<ToolResult> InvokeCoreAsync(ToolInvocation invocation, CapabilityToken token, ApprovalRecord? approval)
     {
         _identity.Ensure(invocation: invocation, token: token);
         var request = invocation with
@@ -132,7 +136,26 @@ public sealed partial class ToolActor(
                 Error = "Use a nonempty 32-hex invocation ID and at most 1048576 input characters with non-null parameter values."
             };
         request = request with { InvocationId = candidate.InvocationId };
-        var effectiveInvocation = await _secretSubstitutor.SubstituteAsync(_identity.WorkspaceId, request);
+        await RevalidateAsync();
+        if (approval is null && approvals.RequiresApproval(definition, request))
+        {
+            try
+            {
+                return approvals.Propose(candidate, definition, request, token.CancellationToken);
+            }
+            catch (OperationCanceledException) { throw; }
+            catch (Exception error)
+            {
+                LogApprovalRecordingFailure(candidate.InvocationId, error.GetType().Name);
+                return FileWriteApprovalService.Block(candidate.InvocationId, _identity.ToolName, "approval-recording-failed");
+            }
+        }
+        if (approval is not null)
+            candidate = candidate with { ApprovalPlanDigest = approval.PlanDigest };
+        // Approved notes contain no secret references. Never substitute or alter
+        // the reviewed content on resume; other operations retain their existing path.
+        var effectiveInvocation = approval is not null ? request
+            : await _secretSubstitutor.SubstituteAsync(_identity.WorkspaceId, request);
         await RevalidateAsync();
         var result = await _execution.ExecuteAsync(candidate, RevalidateAsync, async () =>
         {
@@ -168,6 +191,8 @@ public sealed partial class ToolActor(
             token.CancellationToken.ThrowIfCancellationRequested();
             if (connectionVersion != _connectionVersion || !ReferenceEquals(handle, _handle) || !ReferenceEquals(definition, _definition))
                 throw new UnauthorizedAccessException("Tool connection changed during authorization.");
+            if (approval is not null)
+                await approvals.ValidateResumeAsync(approval, candidate!, definition!, request, token);
         }
     }
 
@@ -181,6 +206,9 @@ public sealed partial class ToolActor(
     }
 
     public Task<ToolHandle?> GetHandleAsync() => Task.FromResult(_handle);
+
+    [LoggerMessage(Level = LogLevel.Warning, Message = "Approval {InvocationId} was not recorded ({ErrorType})")]
+    private partial void LogApprovalRecordingFailure(InvocationId invocationId, string errorType);
 
     [LoggerMessage(Level = LogLevel.Information, Message = "Tool '{Tool}' connected in workspace '{Workspace}'")]
     private partial void LogToolConnected(string tool, string workspace);
