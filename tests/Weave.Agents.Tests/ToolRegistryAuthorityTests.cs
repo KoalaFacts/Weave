@@ -19,7 +19,7 @@ public sealed class ToolRegistryAuthorityTests
         {
             WorkspaceId = "workspace-a",
             Definitions = new() { ["files"] = new ToolDefinition { Type = "filesystem" } },
-            Connections = new() { ["files"] = new ToolConnection { ToolName = "files", Status = ToolConnectionStatus.Connected } },
+            Connections = new() { ["files"] = new ToolConnection { ToolName = "files", ToolType = "filesystem", Status = ToolConnectionStatus.Connected } },
             AgentToolAccess = new() { ["reader"] = ["files"] }
         });
         var actors = Substitute.For<IVirtualActorProvider>();
