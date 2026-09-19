@@ -72,6 +72,7 @@ public sealed class EchoMcpHttpTransportSmokeTests : IDisposable
                 },
                 TestContext.Current.CancellationToken);
 
+            result.Error.ShouldBeNull();
             result.Success.ShouldBeTrue();
             result.Output.ShouldBe("hello over http");
         }
@@ -119,6 +120,7 @@ public sealed class EchoMcpHttpTransportSmokeTests : IDisposable
                 },
                 TestContext.Current.CancellationToken);
 
+            result.Error.ShouldBeNull();
             result.Success.ShouldBeTrue();
             result.Output.ShouldBe("stream-me");
         }
