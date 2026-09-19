@@ -95,7 +95,7 @@ jobs:
             dotnet restore Weave.slnx
             dotnet build Weave.slnx --no-restore -c Release
 
-            dotnet pack src/UX/Weave.Cli/Weave.Cli.csproj \
+            dotnet pack hosts/Weave.Cli/Weave.Cli.csproj \
               -c Release --no-build \
               -p:Version=$VERSION \
               -p:IncludeSymbols=true \
@@ -112,7 +112,7 @@ jobs:
         run: |
           NUPKG_COUNT=$(ls -1 packages/*.nupkg 2>/dev/null | wc -l)
           if [ "$NUPKG_COUNT" -eq 0 ]; then
-            echo "::error::No .nupkg files found"
+            echo "::error::No packages were created"
             exit 1
           fi
           echo "Found $NUPKG_COUNT package(s) to publish"

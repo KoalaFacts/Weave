@@ -33,6 +33,9 @@ jobs:
         with:
           fetch-depth: 0
 
+      - name: Architecture checks
+        run: python3 -m unittest discover -s scripts/tests -v
+
       - name: Setup .NET
         uses: ./.github/actions/setup-dotnet
 
@@ -87,7 +90,24 @@ jobs:
       - name: Check formatting
         run: >-
           dotnet format Weave.slnx --no-restore --verify-no-changes --verbosity diagnostic
-          --exclude src/Foundation/Weave.Shared/
+          --exclude src/Authority/CapabilityGrantMatcher.cs
+          src/Composition/Cqrs/CommandDispatcher.cs src/Composition/Cqrs/ICommandDispatcher.cs
+          src/Composition/Cqrs/ICommandHandler.cs src/Composition/Cqrs/IQueryDispatcher.cs
+          src/Composition/Cqrs/IQueryHandler.cs src/Composition/Cqrs/QueryDispatcher.cs
+          src/Composition/Events/DomainEvent.cs src/Composition/Events/IDomainEvent.cs
+          src/Composition/Events/IEventBus.cs src/Composition/Events/InProcessEventBus.cs
+          src/Agents/AgentId.cs src/Agents/AgentTaskId.cs src/Channels/ChannelId.cs
+          src/Resources/ContainerId.cs src/Memory/EpisodeId.cs src/Plugins/Catalog/MarketplaceItemId.cs
+          src/Resources/NetworkId.cs src/Skills/SkillId.cs src/Workspaces/Templates/TemplateId.cs
+          src/Users/UserId.cs src/Workspaces/WorkspaceId.cs
+          src/Composition/Lifecycle/ILifecycleHook.cs src/Composition/Lifecycle/ILifecycleManager.cs
+          src/Composition/Lifecycle/LifecycleContext.cs src/Composition/Lifecycle/LifecycleManager.cs
+          src/Composition/Lifecycle/LifecyclePhase.cs src/Plugins/EventBusProxy.cs
+          src/Plugins/PluginServiceBroker.cs src/Credentials/SecretSafeException.cs
+          src/Credentials/SecretValue.cs src/Credentials/SecretValueJsonConverter.cs
+          src/Composition/Text/ControlCharFilter.cs src/Composition/VirtualActors/IActorState.cs
+          src/Composition/VirtualActors/IActorTimerRegistry.cs src/Composition/VirtualActors/IVirtualActorProvider.cs
+          src/Composition/VirtualActors/VirtualActorId.cs src/Composition/WeavePorts.cs
 
   dependency-review:
     name: Dependency Review

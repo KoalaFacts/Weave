@@ -56,10 +56,10 @@ dotnet build Weave.slnx
 dotnet test --solution Weave.slnx
 
 # Run the CLI directly without installing
-dotnet run --project src/UX/Weave.Cli -- --help
+dotnet run --project hosts/Weave.Cli -- --help
 
 # Install as a global tool from source
-dotnet pack src/UX/Weave.Cli -c Release -o ./artifacts
+dotnet pack hosts/Weave.Cli -c Release -o ./artifacts
 dotnet tool install --global --add-source ./artifacts Weave.Cli
 
 # Launch the interactive TUI (or any other subcommand)

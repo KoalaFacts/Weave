@@ -55,7 +55,7 @@ Abstractions projects pull zero third-party provider packages. Each storage/tran
 grep -rnE "PackageReference Include=\"(Microsoft\.Data\.Sqlite|Microsoft\.Data\.SqlClient|Npgsql|StackExchange\.Redis|Microsoft\.Orleans\.(Persistence|Clustering)\.(Redis|AdoNet))\"" src --include="*.csproj"
 
 # Verify the abstractions project (e.g. Weave.Security) doesn't pull any
-grep -E "PackageReference" src/Security/Weave.Security/Weave.Security.csproj
+grep -E "PackageReference" src/Weave.csproj
 ```
 
 If a domain project (Weave.Security, Weave.Tools, Weave.Agents, Weave.Workspaces, Weave.Deploy) lists any of those packages: BLOCK — extract into a sibling impl project. If `Weave.Silo` lists them directly (as opposed to via a `Weave.Silo.Clustering.X` project): WARN.
@@ -182,7 +182,7 @@ grep -rnE "measurements\.Count\.ShouldBe\(\d|\.Count.ShouldBe\(1\)" src --includ
   | grep -v "/bin/"
 ```
 
-If a test reads from a static instrument and uses `List<T>` instead of `ConcurrentQueue<T>`, or asserts exact counts instead of `ShouldContain`: BLOCK. Pattern lives in `src/Security/Weave.Security.Tests/CapabilityAuthorizerTests.cs`.
+If a test reads from a static instrument and uses `List<T>` instead of `ConcurrentQueue<T>`, or asserts exact counts instead of `ShouldContain`: BLOCK. Pattern lives in `tests/Weave.Security.Tests/CapabilityAuthorizerTests.cs`.
 
 ### 9. Catch-clause hygiene (BLOCK on swallowed catches; WARN on verbose form)
 

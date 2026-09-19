@@ -69,3 +69,8 @@ nul
 NUL
 superpowers/
 .claude/.adversarial-review-marker
+
+# Local verification artifacts
+/artifacts/
+__pycache__/
+*.pyc

@@ -1,226 +1,82 @@
 # Weave — Development Guide
 
-> **Start here before writing code or tests:** [docs/best-practices.md](docs/best-practices.md) is the law of the repo.
+Read [ARCHITECTURE.md](ARCHITECTURE.md) and [docs/best-practices.md](docs/best-practices.md) before changing code. The approved architecture supersedes older project-layout/dependency-layer examples in historical documentation; the security, error-handling, DI, testing and review requirements still apply.
 
-## Build and Test
-
-```bash
-dotnet build Weave.slnx
-dotnet test --solution Weave.slnx
-
-dotnet test --project src/Workspaces/Weave.Workspaces.Tests
-dotnet test --project src/Assistants/Weave.Agents.Tests
-dotnet test --project src/Security/Weave.Security.Tests
-dotnet test --project src/Tools/Weave.Tools.Tests
-dotnet test --project src/Deployment/Weave.Deploy.Tests
-dotnet test --project src/Runtime/Weave.Silo.Tests
-dotnet test --project src/Foundation/Weave.Shared.Tests
-dotnet test --project src/UX/Weave.Cli.Tests
-```
-
-Most projects target `net10.0`. `Weave.SourceGen` targets `netstandard2.0`.
-
-The solution uses central package management through `Directory.Packages.props`. Add package versions there unless the project already opts out, such as `Weave.SourceGen`.
-
-## Repository Rules
-
-- Warnings are treated as errors.
-- Prefer minimal, targeted changes.
-- Match the existing code style in the touched project.
-- Classes over 200 lines require a design check; prefer one production class per file.
-- Keep the current dependency flow; do not introduce circular references.
-- Do not use `FluentAssertions`. Tests use `Shouldly`.
-- **Pre-1.0: no backward-compat shims.** No `Legacy*` constants, no dual config keys, no deprecated synonyms, no fallback reads. When a contract changes, change the call sites. See [docs/best-practices.md → Versioning and breaking changes](docs/best-practices.md).
-- **One opt-in project per storage/transport provider.** Abstractions projects pull zero provider packages; impls live in `Weave.X.{Sqlite,Postgres,Redis,...}` siblings. Same doc.
-- **Run the `check-rules` skill before claiming a code task is done, and when reviewing a diff/PR.** It walks the catalog in `docs/best-practices.md` and reports a punch list. Defined in `.claude/skills/check-rules/SKILL.md`.
-- **Run the `adversarial-review` skill before every `git commit` that touches `src/`.** `check-rules` catches what `grep` can find; `adversarial-review` catches what it can't — dead branches, conflated UX messages, defensive nulls on contracts you control, tests that pass for the wrong reason, redundant DTO chains, style drift inside one file, over-engineering for private contracts. Both must come back clean before commit. Defined in `.claude/skills/adversarial-review/SKILL.md`.
-
-## Project Layout
-
-```text
-src/
-  Foundation/
-    Weave.Shared/        Shared abstractions, branded IDs, CQRS, events, lifecycle
-    Weave.SourceGen/     Source generators: branded IDs, CQRS registration (`netstandard2.0`)
-  Workspaces/            Workspace manifest parsing (JSONC), runtime abstraction, plugin registry
-  Assistants/            Agent actors, supervisor, heartbeat, chat pipeline, channels, skills, user model
-  Tools/                 Tool connectors (MCP, CLI, OpenAPI, DirectHttp, FileSystem), discovery, marketplace
-  Security/              Capability tokens, leak scanning, secret proxy, provider proxies
-                         (Weave.Security holds abstractions + in-memory backends;
-                          Weave.Security.Sqlite / Weave.Security.Postgres host the
-                          storage-provider impls so the abstractions stay free of
-                          Microsoft.Data.Sqlite / Npgsql)
-  Deployment/            Deployment publishers
-  Runtime/               Orleans host (Silo), Aspire app host, and shared service defaults
-                         (Weave.Silo references Weave.Silo.Clustering.{Redis,Sqlite,
-                          SqlServer,Postgres} so each Orleans backend is its own
-                          opt-in dep — drop a project ref to ship a slim host)
-  UX/                    Spectre.Console CLI and Blazor dashboard
-```
-
-Dependency flow should stay roughly:
-
-`Shared -> Workspaces -> Agents/Tools/Security/Deploy -> Silo/Cli/Dashboard -> AppHost`
-
-## Architecture Conventions
-
-### Orleans
-
-- Domain actor interfaces (`IAgentActor`, `IToolRegistryActor`, etc.) live in their domain projects.
-- Orleans grain bridges (`IAgentActorGrain : IAgentActor, IGrainWithStringKey`) live in `Weave.Silo/VirtualActors/GrainInterfaces.cs`.
-- Actor keys are string-based.
-- Common key shapes:
-  - workspace: `{workspaceId}`
-  - agent: `{workspaceId}/{agentName}`
-  - tool: `{workspaceId}/{toolName}`
-  - heartbeat: `{workspaceId}/{agentName}`
-- Grain state models use `[GenerateSerializer]` and `[Id(n)]`.
-- Tests may instantiate actors directly, so implementations should not rely exclusively on `OnActivateAsync` for safe defaults.
-
-### CQRS and API Flow
-
-- Commands and queries live with their domain.
-- `Weave.Silo` wires handlers through source-generated `AddGeneratedCqrsHandlers()` (from `CqrsRegistrationGenerator`).
-- HTTP endpoints in `src/Runtime/Weave.Silo/Api` are thin adapters over CQRS dispatch.
-
-### Branded IDs
-
-- Strongly typed IDs are declared in `Weave.Shared/Ids/BrandedIds.cs`.
-- The source generator in `Weave.SourceGen` expands `[BrandedId]` declarations.
-- Use branded IDs inside domain code and convert to `string` only at grain or API boundaries.
-
-## Implementation Notes
-
-### AOT and trimming
-
-The repo defaults to AOT-friendly settings in `Directory.Build.props`, but several projects are explicitly marked with `<IsAotExcluded>true</IsAotExcluded>`. Keep new code trimming-aware where practical, but do not assume every project is currently NativeAOT-ready.
-
-### Serialization and source generation
-
-- Prefer source-generated patterns already used in the repo.
-- Use `[GeneratedRegex]` for regex definitions.
-- Use Orleans serializers on models that cross grain boundaries.
-- Workspace manifests use `ManifestJsonContext` (STJ source gen) with JSONC support (comments + trailing commas).
-
-### Plugins (JSON-configured, environment-detected)
-
-- Optional integrations (Dapr, Vault) are JSON-configured in the workspace manifest `plugins` section and environment-detected by the Silo at startup.
-- No compiled plugin assemblies — the Silo is the control plane "brain" that wires HTTP-based adapters.
-- Dapr: activated when `DAPR_HTTP_PORT` env var is set. Registers `DaprEventBus` and `DaprToolConnector` which call the Dapr sidecar HTTP API directly.
-- Vault: activated when `Vault:Address` config is set. Registers `VaultSecretProvider` which calls the Vault HTTP API directly.
-- All adapters use `HttpClient` with AOT-friendly serialization (`JsonSerializer.SerializeToUtf8Bytes` + `ByteArrayContent`, `JsonDocument` for response parsing).
-
-### Performance
-
-- Prefer straightforward code first.
-- Follow existing low-allocation patterns in hot paths.
-- Avoid speculative micro-optimizations unless the code path is clearly performance-sensitive.
-
-## Testing Guidance
-
-Tests use `xunit.v3`, `Shouldly`, and `NSubstitute`.
-
-Global test usings are configured in `Directory.Build.targets`, so `Xunit`, `Shouldly`, and `NSubstitute` are already available.
-
-Preferred test naming:
-
-- `MethodName_Condition_ExpectedResult`
-
-When adding or changing behavior:
-
-- update or add focused unit tests in the nearest test project
-- keep assertions in `Shouldly`
-- avoid introducing new test libraries unless necessary
-
-Common test gotchas:
-
-- Warnings are errors: use `ShouldNotBeNull()` or `!` before asserting on `string?` / nullable properties
-- `SecretValue.ToString()` returns `"***REDACTED***"` — use `.DecryptToString()` for actual values
-- NSubstitute cannot mock `ILogger<T>` for `internal` types — use `NullLogger<T>.Instance`
-- `AITool` cannot be mocked — create a concrete stub that overrides `Name`
-- HTTP connectors accept `HttpClient` via constructor — use `StubHandler : HttpMessageHandler` for test isolation
-- `private static` helpers on actors should be `internal static` for direct testing (pattern: `ProofValidatorActor`)
-
-## Common Change Patterns
-
-### Add a new actor
-
-1. Add the domain interface in `Actors/` of the appropriate domain project.
-2. Add the implementation in the same project.
-3. Add the Orleans grain bridge in `Weave.Silo/VirtualActors/GrainInterfaces.cs`.
-4. Add or extend the state model in `Models/`.
-5. Add commands, queries, or events if the actor is externally driven.
-6. Register any required services in `src/Runtime/Weave.Silo/Program.cs`.
-7. Add unit tests in the matching test project.
-
-### Add a new tool connector
-
-1. Implement `IToolConnector` in `Weave.Tools/Connectors/`.
-2. Extend `ToolType` when required.
-3. Update discovery and Silo registrations.
-4. Extend the workspace manifest model if the connector needs new config.
-5. Add tests in `src/Tools/Weave.Tools.Tests/`.
-
-### Add a new deploy publisher
-
-1. Implement `IPublisher` in `Weave.Deploy/Translators/`.
-2. Wire the target into `src/UX/Weave.Cli/Commands/PublishCommand.cs`.
-3. Add tests in `src/Deployment/Weave.Deploy.Tests/`.
-
-## CLI UX Philosophy
-
-Every CLI command must work in two modes:
-
-### Guided mode (zero arguments)
-When a user runs a command with no arguments, the CLI asks questions to fill in the gaps. Missing info is expected — resolve it by prompting, not by erroring. Help the user make the best choices with sensible defaults and clear descriptions.
+## Build and test
 
 ```bash
-# All of these should work with zero arguments:
-weave run                    # detect workspace or show list to pick from
-weave workspace new          # ask for name, pick preset interactively
-weave data export            # list workspaces, let user pick
-weave workspace up           # detect or pick workspace
-weave storage change         # pick backend, prompt for connection
-weave marketplace submit     # walk through name, description, category
+python3 -m unittest discover -s scripts/tests -v
+dotnet restore Weave.slnx
+dotnet build Weave.slnx --no-restore -c Release
+dotnet test --solution Weave.slnx --no-build -c Release
+
+dotnet test --project tests/Weave.Workspaces.Tests
+dotnet test --project tests/Weave.Agents.Tests
+dotnet test --project tests/Weave.Security.Tests
+dotnet test --project tests/Weave.Tools.Tests
+dotnet test --project tests/Weave.Deploy.Tests
+dotnet test --project tests/Weave.Silo.Tests
+dotnet test --project tests/Weave.Shared.Tests
+dotnet test --project tests/Weave.Cli.Tests
 ```
 
-### Advanced mode (all arguments)
-Power users and scripts pass all arguments to skip prompts:
+Use the SDK selected by `global.json`. Most projects target net10.0; `tools/Weave.SourceGen` targets netstandard2.0. Package versions are centralized in Directory.Packages.props except the explicitly opted-out generator project. Regenerate lockfiles after dependency graph changes.
 
-```bash
-weave run my-app --port 8080
-weave workspace new my-app --preset coding-assistant
-weave data export my-app -o backup.json
-weave storage change postgresql --connection "Host=..."
-```
+## Layout and composition
 
-### Rules for new commands
+- `src/Weave.csproj` is the product library. Its feature folders are directly under `src/`—no Weave/Features wrapper and no mandatory Core/Kernel layers.
+- `src/Authority`, `src/Invocations`, `src/Plugins`, `src/Credentials`, `src/Audit`, `src/Workspaces` and other real features own their contracts and behavior.
+- `src/Composition` contains existing composition/dispatch collaborators, not every feature's model or service.
+- `hosts/Weave.Host/Weave.Host.csproj` is the current Orleans/HTTP executable; its assembly name remains Weave.Silo.
+- Other hosts are CLI, Dashboard and Aspire AppHost. Hosts compose; they do not define business policy.
+- `extensions/Weave.AgentRuntime` contains the optional current reasoning runtime and model-provider integration; its assembly name remains Weave.Agents.
+- MCP, CLI, OpenAPI, Direct HTTP, filesystem and Dapr executors are opt-in extension projects. Provider-specific storage/clustering remains opt-in too.
+- Source generators live under `tools/`; tests under `tests/`. Existing test assembly names are retained during structural migration.
+- The product assembly is Weave.Product, avoiding the existing `weave` CLI assembly collision. The CLI command remains `weave`.
 
-1. All positional arguments must be optional (`Arity = ArgumentArity.ZeroOrOne`)
-2. When a required value is missing, prompt for it — never print "error: missing argument"
-3. Selection prompts (`SelectionPrompt`) for lists, text prompts for free-form input
-4. Always provide sensible defaults in prompts (`.DefaultValue(...)`)
-5. When an operation might conflict (e.g. database already exists), offer choices: stop, override, or fix
-6. Use `CliTheme.WriteInfo/WriteSuccess/WriteWarning` for feedback, not raw `Console.WriteLine`
-7. Show next steps after completion (`CliTheme.WriteMuted`)
+A feature owns related requests, results, handlers, state, data access and entry-point adapters. Do not create project-wide Models/Services/Controllers/Commands/Actors baskets or duplicate Domain/Application/Infrastructure folders inside every feature. Separate projects need a real packaging, dependency or isolation reason.
 
-## Default Naming Conventions
+Public contracts stay with their owning features. Components use constructor/method injection and explicit registration; ordinary handlers do not receive IServiceProvider as a service locator. Cross-feature callers must not write neighboring state or depend on private handlers.
 
-All defaults must be namespaced to avoid collisions with common applications:
+## Current migration boundaries
 
-| Resource | Default | Rationale |
-|----------|---------|-----------|
-| HTTP port | `9401` | 94xx range avoids ASP.NET 5000, Node 3000, K8s 30000+ |
-| Database name | `weave` | Distinctive enough, user provides their own credentials |
-| SQLite file | `~/.weave/weave.db` | Namespaced in `.weave/` directory |
-| Network name | `weave-{name}` | Prefixed to avoid Docker/Podman collisions |
-| Config directory | `~/.weave/` | Dot-prefixed, unique name |
+This branch first changes code placement/build composition, not authority semantics. Existing namespaces, workspace-bound actor keys and tool-level token behavior remain where explicitly retained. Do not describe that as implemented Room portability or operation-level approval.
 
-Never invent default credentials (usernames, passwords, tokens). Connection strings should template the structure with empty credential fields (`Username=;Password=`) so the user fills in their own. Avoid generic names like `app`, `data`, `default`, `main` for resources we name.
+Future identity, authorization, persistence or wire changes require their own tests and explicit migration/reset decision. Never silently reset production data, external bindings or audit history. See [implementation record](docs/implementation/2026-09-19-flat-source-foundation.md).
 
-## Security Notes
+## Rules that remain mandatory
 
-- Never add secrets to source control.
-- Capability tokens gate tool access.
-- Tool input and output may be scanned for leaks.
-- Keep redaction and fail-closed behavior intact when changing security-sensitive flows.
+- Warnings are errors. Keep NuGet audit enabled. A diagnostic build with audit warnings is not a passing security gate or release approval.
+- No secrets in source, logs, manifests, tool payloads or test fixtures. SecretValue.ToString() remains redacted.
+- Keep token validation, context checks, leakage scanning and redaction intact unless a tested replacement is explicitly implemented.
+- Fail closed on ambiguous authorization, credential or proof checks. Discovery is not permission.
+- Preserve typed failure outcomes; do not swallow exceptions or report failed/unknown operations as success.
+- Respect cancellation at async boundaries. Drain redirected stdout and stderr concurrently and bound retained output.
+- Pick correct DI lifetimes. Scoped handlers/dispatchers cannot be captured by singletons. Actors receive dependencies through constructors and remain directly testable.
+- Use TimeProvider for behavioral time, existing branded IDs internally, and source-generated serialization/registration where supported.
+- Pre-1.0 changes update call sites directly: no Legacy classes, dual configuration keys or compatibility shims invented for this refactor.
+- Prefer focused classes. A production class over 200 lines needs a design check; do not invent an interface/base class merely to satisfy a template.
+
+## Source generation and actors
+
+Branded ID declarations are physically co-located with owning features. Their current namespaces remain unchanged in the structural increment. Serialization bridges stay with the Orleans host rather than leaking Orleans into the public product protocol.
+
+The product sets `GenerateCqrsRegistration=false` through a compiler-visible property. It still runs branded-ID generation. The executable Host emits the CQRS registry across its complete referenced feature graph; do not accidentally emit duplicate public registries in both assemblies.
+
+Persisted Orleans field IDs are append-only, never renumbered. Namespace/assembly moves are not proof of stored-state compatibility. Native AOT is per-host; some current hosts are excluded and arbitrary runtime DLL loading is not promised.
+
+## Tests and reviews
+
+Use xunit.v3, Shouldly and NSubstitute; do not introduce FluentAssertions or a second .NET test framework. Test naming remains Method_Condition_ExpectedResult, supported by tests/.editorconfig. Python unittest here checks build/layout tooling only.
+
+Add a failing behavior/architecture test before a change, then run the affected tests and full solution as applicable. Shared-assembly boundaries also need namespace/reference checks. Mocks do not prove external side effects, persistence or concurrency.
+
+Run `.claude/skills/check-rules/SKILL.md` and `.claude/skills/adversarial-review/SKILL.md` before source commits and report the reviewed scope. No independent review or successful test run may be claimed without evidence. Separate pre-existing audit failures from regressions introduced by the refactor.
+
+## CLI and defaults
+
+Preserve guided zero-argument mode and explicit scriptable mode. Prompt for missing interactive input; keep helpful defaults and typed failure messages. Retain the command `weave`, the namespaced configuration directory `~/.weave/`, the 94xx local ports and current storage defaults. Never invent default credentials.
+
+## Deployment
+
+Work on feature branches. Do not merge, publish packages, deploy, rewrite production state or force-push main as part of a source-layout task. The target architecture is not itself evidence that a deployment implements its guarantees.
