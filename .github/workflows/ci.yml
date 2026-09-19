@@ -92,6 +92,10 @@ jobs:
       - name: Build (warnings as errors)
         run: dotnet build Weave.slnx --no-restore -c Release /p:TreatWarningsAsErrors=true
 
+      # dotnet format loads the Debug design-time graph; build its analyzer reference too.
+      - name: Build source generator for formatting
+        run: dotnet build tools/Weave.SourceGen/Weave.SourceGen.csproj --no-restore -c Debug /p:TreatWarningsAsErrors=true
+
       - name: Check formatting
         run: >-
           dotnet format Weave.slnx --no-restore --verify-no-changes --verbosity diagnostic

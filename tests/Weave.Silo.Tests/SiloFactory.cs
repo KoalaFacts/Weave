@@ -5,26 +5,19 @@ using Microsoft.Extensions.Configuration;
 namespace Weave.Silo.Tests;
 
 /// <summary>
-/// Boots the real Silo host (Program.cs) in-process for integration
-/// tests. Uses local-mode defaults so we get:
-///   - real Orleans cluster (UseLocalhostClustering)
-///   - real InProcessRuntime (no Docker required)
-///   - real Orleans in-memory storage (in-memory but production code)
-///   - real CQRS dispatcher + all registered handlers
-///   - real ASP.NET pipeline with every Silo endpoint
+/// Boots the real host, Orleans, CQRS dispatcher and HTTP pipeline. Actor state
+/// uses memory; mandatory invocation recording uses a real, isolated SQLite file.
+/// No external services, Docker or model credentials are required.
 /// </summary>
-/// <remarks>
-/// Nothing is mocked. If the Silo fails to start — e.g. an Orleans
-/// serializer config validator crash like the recent
-/// CodecNotFoundException for AgentTaskId — these tests fail fast
-/// instead of leaking through to the TUI.
-/// </remarks>
 public sealed class SiloFactory : WebApplicationFactory<Program>
 {
+    private readonly string _journalDirectory = Path.Combine(Path.GetTempPath(), $"weave-host-journal-{Guid.NewGuid():N}");
+
     protected override void ConfigureWebHost(IWebHostBuilder builder)
     {
         builder.UseSetting("Weave:LocalMode", "true");
         builder.UseSetting("Weave:Storage", "memory");
+        builder.UseSetting("Weave:Invocations:DatabasePath", Path.Combine(_journalDirectory, "invocations.db"));
 
         // Bind to an ephemeral port so parallel fixtures don't collide.
         builder.UseSetting("urls", "http://127.0.0.1:0");
@@ -32,8 +25,14 @@ public sealed class SiloFactory : WebApplicationFactory<Program>
         builder.ConfigureAppConfiguration(cfg => cfg.AddInMemoryCollection(
             new Dictionary<string, string?>
             {
-                // Silences the launchSettings prompt during tests.
                 ["ASPNETCORE_ENVIRONMENT"] = "Development"
             }));
+    }
+
+    public override async ValueTask DisposeAsync()
+    {
+        await base.DisposeAsync();
+        if (Directory.Exists(_journalDirectory))
+            Directory.Delete(_journalDirectory, recursive: true);
     }
 }

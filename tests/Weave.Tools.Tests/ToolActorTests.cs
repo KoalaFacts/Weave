@@ -38,7 +38,8 @@ public sealed class ToolActorTests
 
         actors.GetActor<ISecretProxyActor>(Arg.Any<VirtualActorId>()).Returns(secretProxy);
 
-        var actor = new ToolActor(actors, discovery, leakScanner, authorizer, lifecycleManager, eventBus, logger);
+        var actor = new ToolActor(actors, discovery, leakScanner, authorizer, lifecycleManager, eventBus, logger,
+            new TestInvocationJournal(), TimeProvider.System);
         return (actor, connector, tokenService);
     }
 
@@ -287,7 +288,7 @@ public sealed class ToolActorTests
         result.Output.ShouldNotContain("AKIAIOSFODNN7EXAMPLE");
     }
 
-    // --- InvokeAsync: failed response redaction preserves failure ---
+    // --- InvokeAsync: failed results retain failure while redacting secrets ---
 
     [Fact]
     public async Task InvokeAsync_FailedResult_RedactsOutputAndPreservesFailure()
@@ -463,7 +464,7 @@ public sealed class ToolActorTests
         var (actor, _, tokenSvc) = CreateActor(bus);
         await actor.OnActivatedAsync("ws-a/git", TestContext.Current.CancellationToken);
         var foreignToken = CreateToken(tokenSvc, workspaceId: "ws-other");
-        var spec = new ToolSpec { Name = "git", Type = ToolType.Cli, Cli = new Weave.Workspaces.Manifest.CliConfig() };
+        var spec = new ToolSpec { Name = "git", Type = ToolType.Cli };
 
         await Should.ThrowAsync<UnauthorizedAccessException>(() => actor.ConnectAsync(spec, foreignToken));
 

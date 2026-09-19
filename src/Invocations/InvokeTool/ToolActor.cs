@@ -1,4 +1,5 @@
 using Microsoft.Extensions.Logging;
+using Weave.Invocations;
 using Weave.Security.Scanning;
 using Weave.Security.Tokens;
 using Weave.Shared.Events;
@@ -15,11 +16,14 @@ public sealed partial class ToolActor(
     ICapabilityAuthorizer authorizer,
     ILifecycleManager lifecycleManager,
     IEventBus eventBus,
-    ILogger<ToolActor> logger) : IToolActor
+    ILogger<ToolActor> logger,
+    IInvocationJournal journal,
+    TimeProvider timeProvider) : IToolActor
 {
     private readonly ToolActorIdentity _identity = new();
     private readonly ToolInvocationLeakGuard _leakGuard = new(leakScanner, eventBus, logger);
     private readonly ToolSecretSubstitutor _secretSubstitutor = new(actors);
+    private readonly InvocationExecution _execution = new(journal, timeProvider, logger);
     private ToolHandle? _handle;
     private ToolSpec? _definition;
     private long _connectionVersion;
@@ -90,7 +94,6 @@ public sealed partial class ToolActor(
     public async Task<ToolResult> InvokeAsync(ToolInvocation invocation, CapabilityToken token)
     {
         _identity.Ensure(invocation: invocation, token: token);
-        // Snapshot caller-owned parameters before authorization yields.
         var request = invocation with
         {
             Parameters = new Dictionary<string, string>(invocation.Parameters, StringComparer.Ordinal)
@@ -118,25 +121,54 @@ public sealed partial class ToolActor(
         if (blockedResult is not null)
             return blockedResult;
 
+        var candidate = InvocationFingerprint.Prepare(request, token, definition.Type.ToString(), timeProvider.GetUtcNow());
+        if (candidate is null)
+            return new ToolResult
+            {
+                ToolName = _identity.ToolName,
+                InvocationId = request.InvocationId,
+                Outcome = InvocationOutcome.NotDispatched,
+                ErrorCode = "invalid-invocation",
+                Error = "Use a nonempty 32-hex invocation ID and at most 1048576 input characters with non-null parameter values."
+            };
+        request = request with { InvocationId = candidate.InvocationId };
         var effectiveInvocation = await _secretSubstitutor.SubstituteAsync(_identity.WorkspaceId, request);
-        // Secret resolution can yield; do not dispatch using expired or revoked authority.
-        await authorizer.AuthorizeAsync(token, grant, _identity.WorkspaceId);
-        token.CancellationToken.ThrowIfCancellationRequested();
-        if (connectionVersion != _connectionVersion || !ReferenceEquals(handle, _handle) || !ReferenceEquals(definition, _definition))
-            throw new UnauthorizedAccessException("Tool connection changed during authorization.");
-        var result = await connector.InvokeAsync(handle, effectiveInvocation, token.CancellationToken);
-        result = await _leakGuard.RedactIfInboundLeaksAsync(_identity.WorkspaceId, _identity.ToolName, result);
-
-        await eventBus.PublishAsync(new ToolInvocationCompletedEvent
+        await RevalidateAsync();
+        var result = await _execution.ExecuteAsync(candidate, RevalidateAsync, async () =>
         {
-            SourceId = $"{_identity.WorkspaceId}/{_identity.ToolName}",
-            ToolName = _identity.ToolName,
-            WorkspaceId = WorkspaceId.From(_identity.WorkspaceId),
-            Success = result.Success,
-            Duration = result.Duration
+            var response = await connector.InvokeAsync(handle, effectiveInvocation, token.CancellationToken);
+            return await _leakGuard.RedactIfInboundLeaksAsync(_identity.WorkspaceId, _identity.ToolName, response);
         }, token.CancellationToken);
 
+        if (!result.IsReplay && result.OutcomeRecorded)
+        {
+            try
+            {
+                await eventBus.PublishAsync(new ToolInvocationCompletedEvent
+                {
+                    SourceId = $"{_identity.WorkspaceId}/{_identity.ToolName}",
+                    ToolName = _identity.ToolName,
+                    WorkspaceId = WorkspaceId.From(_identity.WorkspaceId),
+                    Success = result.Success,
+                    Duration = result.Duration
+                }, token.CancellationToken);
+            }
+            catch (Exception error)
+            {
+                // The journal is authoritative; this notification is not an outbox.
+                LogCompletionNotificationFailure(result.InvocationId, error.GetType().Name);
+            }
+        }
+
         return result;
+
+        async Task RevalidateAsync()
+        {
+            await authorizer.AuthorizeAsync(token, grant, _identity.WorkspaceId);
+            token.CancellationToken.ThrowIfCancellationRequested();
+            if (connectionVersion != _connectionVersion || !ReferenceEquals(handle, _handle) || !ReferenceEquals(definition, _definition))
+                throw new UnauthorizedAccessException("Tool connection changed during authorization.");
+        }
     }
 
     public async Task<ToolSchema> GetSchemaAsync()
@@ -155,4 +187,7 @@ public sealed partial class ToolActor(
 
     [LoggerMessage(Level = LogLevel.Information, Message = "Tool '{Tool}' disconnected from workspace '{Workspace}'")]
     private partial void LogToolDisconnected(string tool, string workspace);
+
+    [LoggerMessage(Level = LogLevel.Warning, Message = "Invocation {InvocationId} was recorded but its completion notification failed ({ErrorType})")]
+    private partial void LogCompletionNotificationFailure(InvocationId? invocationId, string errorType);
 }

@@ -146,9 +146,15 @@ public sealed class InvocationLeakSurfaceTests
                 Grants = ["tool:files:connect", "tool:files:invoke:read_file"],
                 Lifetime = TimeSpan.FromMinutes(10)
             });
+            // The journal now owns elapsed duration. Keep the exact 42ms assertion deterministic.
+            var clock = Substitute.For<TimeProvider>();
+            clock.GetUtcNow().Returns(new DateTimeOffset(2026, 9, 19, 0, 0, 0, TimeSpan.Zero));
+            clock.TimestampFrequency.Returns(TimeSpan.TicksPerSecond);
+            clock.GetTimestamp().Returns(0L, TimeSpan.FromMilliseconds(42).Ticks);
             Actor = new ToolActor(actors, discovery, new LeakScanner(NullLogger<LeakScanner>.Instance),
                 new CapabilityAuthorizer(tokens, events, NullLogger<CapabilityAuthorizer>.Instance),
-                new LifecycleManager(NullLogger<LifecycleManager>.Instance), events, NullLogger<ToolActor>.Instance);
+                new LifecycleManager(NullLogger<LifecycleManager>.Instance), events, NullLogger<ToolActor>.Instance,
+                new TestInvocationJournal(), clock);
         }
 
         public Task<ToolHandle> ConnectAsync() => Actor.ConnectAsync(
