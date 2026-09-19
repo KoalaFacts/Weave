@@ -36,14 +36,12 @@ for item in changes:
     if hashlib.sha256(result).hexdigest() != item['after']:
         raise SystemExit('Result digest mismatch: ' + name)
     prepared[name] = result
-# Verify everything before writing a single source file.
 for name, result in prepared.items():
     path = root / name
     path.parent.mkdir(parents=True, exist_ok=True)
     path.write_bytes(result)
-workflow = '.github/workflows/operation-authority-validation.yml'
-(root / workflow).write_bytes((root / '.operation-changes/final-workflow.yml').read_bytes())
+# This job has contents permission only. Workflow cleanup is a separate authorized connector write.
 shutil.rmtree(root / '.operation-changes')
-subprocess.run(['git', 'add', '--', *prepared, workflow, '.operation-changes'], check=True)
+subprocess.run(['git', 'add', '--', *prepared, '.operation-changes'], check=True)
 subprocess.run(['git', 'diff', '--cached', '--check'], check=True)
-print('Applied all 33 verified files; removed temporary write-capable preparation.')
+print('Applied all 33 verified files without changing workflows.')
