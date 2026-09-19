@@ -13,7 +13,7 @@ using Weave.Tools.Tool;
 
 namespace Weave.Silo.Tests.Invocations;
 
-public sealed class GovernedHttpEntryTests
+public sealed partial class GovernedHttpEntryTests
 {
     private static readonly JsonSerializerOptions JsonOptions = new(JsonSerializerDefaults.Web);
 
@@ -178,6 +178,10 @@ public sealed class GovernedHttpEntryTests
         var payload = JsonSerializer.SerializeToUtf8Bytes(Request() with { RawInput = new string('x', 1_048_577) }, JsonOptions);
         using HttpContent content = chunked ? new UnknownLengthContent(payload) : new ByteArrayContent(payload);
         content.Headers.ContentType = new("application/json");
+        if (chunked)
+            content.Headers.ContentLength.ShouldBeNull();
+        else
+            content.Headers.ContentLength.ShouldBe(payload.Length);
         using var response = await fx.SendAsync(HttpMethod.Post, fx.Route, content, fx.Token());
         response.StatusCode.ShouldBe(HttpStatusCode.RequestEntityTooLarge);
         File.ReadAllText(fx.Target).ShouldBe("original");
@@ -221,24 +225,32 @@ public sealed class GovernedHttpEntryTests
         public string Workspace { get; } = "http-" + Guid.NewGuid().ToString("N");
         public string Route => $"/api/workspaces/{Workspace}/tools/files/invocations";
         public string Target => Path.Combine(_root, "tools", "note.txt");
+        public string DatabasePath => Path.Combine(_root, "journal.db");
+        public string GlobalApiSecret { get; } = "test-api-" + Guid.NewGuid().ToString("N");
         public ICapabilityTokenService Tokens => _host.Services.GetRequiredService<ICapabilityTokenService>();
         public IToolActor Tool => _host.Services.GetRequiredService<IVirtualActorProvider>()
             .GetActor<IToolActor>(VirtualActorId.From(Workspace + "/files"));
 
-        public Fixture(bool enabled = true, bool requireApproval = false)
+        public Fixture(bool enabled = true, bool requireApproval = false, bool useKestrel = false, bool globalAuthentication = false)
         {
             Directory.CreateDirectory(Path.Combine(_root, "tools"));
             File.WriteAllText(Target, "original");
             _host = _parent.WithWebHostBuilder(builder =>
             {
-                builder.UseSetting("Weave:Auth:Mode", "none");
+                builder.UseSetting("Weave:Auth:Mode", globalAuthentication ? "bearer" : "none");
+                if (globalAuthentication)
+                    builder.UseSetting("Weave:Auth:Secret", GlobalApiSecret);
+                builder.UseSetting("CapabilityTokens:SigningKey", "test-http-" + Guid.NewGuid().ToString("N"));
+                builder.UseSetting("CapabilityTokens:RevocationDirectory", Path.Combine(_root, "revocations"));
                 builder.UseSetting("Weave:Invocations:Http:Enabled", enabled ? "true" : "false");
                 builder.ConfigureServices(services => services.PostConfigure<InvocationJournalOptions>(options =>
                 {
-                    options.DatabasePath = Path.Combine(_root, "journal.db");
+                    options.DatabasePath = DatabasePath;
                     options.ApprovalRequiredGrants = requireApproval ? ["tool:files:invoke:write_file"] : [];
                 }));
             });
+            if (useKestrel)
+                _host.UseKestrel(0);
             Client = _host.CreateClient();
         }
 
