@@ -19,7 +19,7 @@ public sealed class InvocationApprovalPolicy
         foreach (var grant in _grants)
         {
             var parts = grant?.Split(':');
-            if (parts is not { Length: 4 } || parts[0] != "tool" || parts[2] != "invoke"
+            if (grant is null || parts is not { Length: 4 } || parts[0] != "tool" || parts[2] != "invoke"
                 || string.IsNullOrWhiteSpace(parts[1]) || string.IsNullOrWhiteSpace(parts[3])
                 || !string.Equals(grant, grant.Trim(), StringComparison.Ordinal))
                 throw new ArgumentException("Approval requirements must use tool:<name>:invoke:<operation> scopes.", nameof(options));
