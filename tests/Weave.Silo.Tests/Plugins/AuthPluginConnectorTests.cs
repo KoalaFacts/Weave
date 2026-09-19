@@ -6,11 +6,8 @@ using Weave.Workspaces.Manifest;
 namespace Weave.Silo.Tests.Plugins;
 
 /// <summary>
-/// Unit tests for <see cref="AuthPluginConnector"/> — the broker-swappable
-/// authentication plugin. Covers every ConnectAsync branch (apikey / bearer /
-/// unknown / missing secret / secret resolution failure), plus Disconnect
-/// and GetStatus. Uses a real <see cref="PluginServiceBroker"/> — swapping
-/// is the contract under test.
+/// Tests the authentication connector against its real mutable service broker.
+/// Failed activation or disconnect keeps authentication required.
 /// </summary>
 public sealed class AuthPluginConnectorTests
 {
@@ -68,7 +65,7 @@ public sealed class AuthPluginConnectorTests
     }
 
     [Fact]
-    public async Task ConnectAsync_ApiKey_MissingSecret_ReturnsErrorWithoutSwapping()
+    public async Task ConnectAsync_ApiKey_MissingSecret_LeavesAuthenticationUnavailable()
     {
         var (connector, broker) = CreateConnector();
 
@@ -77,18 +74,18 @@ public sealed class AuthPluginConnectorTests
         status.IsConnected.ShouldBeFalse();
         status.Error.ShouldNotBeNull();
         status.Error.ShouldContain("Auth secret is required");
-        broker.Get<IApiAuthProvider>().ShouldBeNull();
+        broker.Get<IApiAuthProvider>().ShouldNotBeNull().Name.ShouldBe("unavailable");
     }
 
     [Fact]
-    public async Task ConnectAsync_UnknownProvider_ThrowsAndLeavesBrokerUnchanged()
+    public async Task ConnectAsync_UnknownProvider_ThrowsAndLeavesAuthenticationUnavailable()
     {
         var (connector, broker) = CreateConnector();
 
         await Should.ThrowAsync<InvalidOperationException>(
             () => connector.ConnectAsync("my-auth", Def(provider: "oauth-2.0", secret: "x")));
 
-        broker.Get<IApiAuthProvider>().ShouldBeNull();
+        broker.Get<IApiAuthProvider>().ShouldNotBeNull().Name.ShouldBe("unavailable");
     }
 
     [Fact]
@@ -136,18 +133,17 @@ public sealed class AuthPluginConnectorTests
     {
         var (connector, broker) = CreateConnector();
         var envVar = $"WEAVE_AUTH_UNSET_{Guid.NewGuid():N}";
-        // Intentionally do NOT set the env var.
 
         var status = await connector.ConnectAsync("my-auth", Def(provider: "apikey", secret: $"env:{envVar}"));
 
         status.IsConnected.ShouldBeFalse();
         status.Error.ShouldNotBeNull();
         status.Error.ShouldContain("Auth secret is required");
-        broker.Get<IApiAuthProvider>().ShouldBeNull();
+        broker.Get<IApiAuthProvider>().ShouldNotBeNull().Name.ShouldBe("unavailable");
     }
 
     [Fact]
-    public async Task DisconnectAsync_ClearsBrokerSlot()
+    public async Task DisconnectAsync_KeepsAuthenticationRequired()
     {
         var (connector, broker) = CreateConnector();
         await connector.ConnectAsync("my-auth", Def(provider: "apikey", secret: "k"));
@@ -156,7 +152,7 @@ public sealed class AuthPluginConnectorTests
         var status = await connector.DisconnectAsync("my-auth");
 
         status.IsConnected.ShouldBeFalse();
-        broker.Get<IApiAuthProvider>().ShouldBeNull();
+        broker.Get<IApiAuthProvider>().ShouldNotBeNull().Name.ShouldBe("unavailable");
     }
 
     [Fact]
@@ -175,8 +171,8 @@ public sealed class AuthPluginConnectorTests
     public async Task GetStatus_Connected_IncludesProviderName()
     {
         var (connector, _) = CreateConnector();
-        await connector.ConnectAsync("my-auth", Def(provider: "bearer", secret: "t"));
 
+        await connector.ConnectAsync("my-auth", Def(provider: "bearer", secret: "t"));
         var status = connector.GetStatus("my-auth");
 
         status.IsConnected.ShouldBeTrue();
