@@ -1,4 +1,4 @@
-using Weave.Shared.Ids;
+using Weave.Invocations;
 
 namespace Weave.Tools.Tool;
 

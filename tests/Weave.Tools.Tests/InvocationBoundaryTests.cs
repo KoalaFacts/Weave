@@ -203,7 +203,8 @@ public sealed class InvocationBoundaryTests
             }), TimeProvider.System);
             Token = Tokens.Mint(new CapabilityTokenRequest
             {
-                WorkspaceId = "ws", IssuedTo = "writer",
+                WorkspaceId = "ws",
+                IssuedTo = "writer",
                 Grants = ["tool:files:connect", "tool:files:invoke:write_file", "invocation:read"],
                 Lifetime = TimeSpan.FromMinutes(5)
             });

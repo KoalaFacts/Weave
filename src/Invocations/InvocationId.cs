@@ -1,4 +1,6 @@
-namespace Weave.Shared.Ids;
+using Weave.Shared.Ids;
+
+namespace Weave.Invocations;
 
 [BrandedId]
 public readonly partial record struct InvocationId;

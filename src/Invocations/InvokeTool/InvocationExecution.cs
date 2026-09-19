@@ -76,9 +76,9 @@ public sealed class InvocationExecution(IInvocationJournal journal, TimeProvider
             logger.LogWarning("Invocation {InvocationId} has an unconfirmed dispatch outcome ({ErrorType})",
                 record.InvocationId, error.GetType().Name);
             var recorded = RecordOutcome(record, InvocationOutcome.OutcomeUnknown, duration);
-            return Failure(record, InvocationOutcome.OutcomeUnknown, "outcome-unknown",
-                "The tool outcome is unconfirmed. Query this invocation; do not retry with a new ID.")
-                with { Duration = duration, OutcomeRecorded = recorded };
+            var failure = Failure(record, InvocationOutcome.OutcomeUnknown, "outcome-unknown",
+                "The tool outcome is unconfirmed. Query this invocation; do not retry with a new ID.");
+            return failure with { Duration = duration, OutcomeRecorded = recorded };
         }
 
         // Older adapters flatten transport failures into Success=false. Do not invent
@@ -88,9 +88,11 @@ public sealed class InvocationExecution(IInvocationJournal journal, TimeProvider
             : InvocationOutcome.OutcomeUnknown;
         var elapsed = timeProvider.GetElapsedTime(started);
         if (!RecordOutcome(record, outcome, elapsed))
-            return Failure(record, InvocationOutcome.OutcomeUnknown, "outcome-not-recorded",
-                "The tool returned, but its outcome could not be durably recorded. Query this ID; do not retry.")
-                with { Duration = elapsed };
+        {
+            var failure = Failure(record, InvocationOutcome.OutcomeUnknown, "outcome-not-recorded",
+                "The tool returned, but its outcome could not be durably recorded. Query this ID; do not retry.");
+            return failure with { Duration = elapsed };
+        }
 
         return result with
         {
