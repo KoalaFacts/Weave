@@ -1,5 +1,4 @@
 using System.Text.Json;
-using System.Text.Json.Serialization;
 using Microsoft.Extensions.Logging.Abstractions;
 using Microsoft.Extensions.Options;
 using Weave.Agents.ToolRegistry;
@@ -84,14 +83,13 @@ public sealed class ToolRegistryAuthorityTests
     [Fact]
     public void Deserialize_OldStateWithoutCapabilities_DoesNotInventGrants()
     {
-        var restored = JsonSerializer.Deserialize(
-            "{\"WorkspaceId\":\"workspace-a\",\"AgentToolAccess\":{\"reader\":[\"files\"]}}",
-            RegistryAuthorityJsonContext.Default.ToolRegistryState);
+        var restored = JsonSerializer.Deserialize<ToolRegistryState>(
+            "{\"WorkspaceId\":\"workspace-a\",\"AgentToolAccess\":{\"reader\":[\"files\"]}}");
         restored.ShouldNotBeNull();
         restored.GetInvocationGrants("reader", "files").ShouldBeEmpty();
         restored.GrantTools("reader", ["files"], ["tool:files:invoke:read_file"]);
-        var json = JsonSerializer.Serialize(restored, RegistryAuthorityJsonContext.Default.ToolRegistryState);
-        var roundTrip = JsonSerializer.Deserialize(json, RegistryAuthorityJsonContext.Default.ToolRegistryState);
+        var json = JsonSerializer.Serialize(restored);
+        var roundTrip = JsonSerializer.Deserialize<ToolRegistryState>(json);
         roundTrip.ShouldNotBeNull();
         roundTrip.GetInvocationGrants("reader", "files").ShouldBe(["tool:files:invoke:read_file"]);
     }
@@ -136,9 +134,4 @@ public sealed class ToolRegistryAuthorityTests
                 Substitute.For<IEventBus>(), TimeProvider.System, NullLogger<ToolRegistryActor>.Instance, state);
         }
     }
-}
-
-[JsonSerializable(typeof(ToolRegistryState))]
-internal partial class RegistryAuthorityJsonContext : JsonSerializerContext
-{
 }
