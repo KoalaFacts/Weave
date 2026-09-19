@@ -1,0 +1,91 @@
+name: PR Backlog Integration
+
+on:
+  push:
+    branches: [integration/pr-backlog-2026-09-19]
+  workflow_dispatch:
+
+permissions:
+  contents: read
+  pull-requests: read
+  checks: read
+
+concurrency:
+  group: pr-backlog-integration
+  cancel-in-progress: false
+
+jobs:
+  inventory:
+    runs-on: ubuntu-latest
+    timeout-minutes: 10
+    steps:
+      - name: Checkout isolated integration branch
+        uses: actions/checkout@de0fac2e4500dabe0009e67214ff5f5447ce83dd
+        with:
+          fetch-depth: 0
+          persist-credentials: false
+      - name: Inventory exact PR contents and review state
+        env:
+          GH_TOKEN: ${{ github.token }}
+        shell: python
+        run: |
+          import json, subprocess
+          from pathlib import Path
+          repo = 'KoalaFacts/Weave'
+          root = Path('integration-evidence')
+          root.mkdir()
+          def api(path):
+              return json.loads(subprocess.check_output(['gh', 'api', 'repos/' + repo + '/' + path], text=True))
+          def save(name, data):
+              (root / name).write_text(json.dumps(data, indent=2) + '\n')
+          base = api('git/ref/heads/main')['object']['sha']
+          save('base.json', {'main': base, 'inventory': subprocess.check_output(['git', 'rev-parse', 'HEAD'], text=True).strip()})
+          pulls = api('pulls?state=open&per_page=100')
+          save('open-pulls.json', pulls)
+          expected = [72, 73, 74, 75, 77, 82, 84, 85, 86, 87]
+          if sorted(p['number'] for p in pulls) != expected:
+              raise SystemExit('Open PR set changed; inspect inventory before proceeding.')
+          summary = []
+          for n in expected:
+              p = api(f'pulls/{n}')
+              save(f'pr-{n}.json', p)
+              if p['head']['repo']['full_name'] != repo or p['base']['ref'] != 'main':
+                  raise SystemExit('Unexpected PR repository/base.')
+              files = []
+              page = 1
+              while True:
+                  batch = api(f'pulls/{n}/files?per_page=100&page={page}')
+                  files.extend(batch)
+                  if len(batch) < 100:
+                      break
+                  page += 1
+              save(f'files-{n}.json', files)
+              save(f'reviews-{n}.json', api(f'pulls/{n}/reviews?per_page=100'))
+              save(f'review-comments-{n}.json', api(f'pulls/{n}/comments?per_page=100'))
+              save(f'checks-{n}.json', api(f'commits/{p["head"]["sha"]}/check-runs?per_page=100'))
+              save(f'status-{n}.json', api(f'commits/{p["head"]["sha"]}/status'))
+              subprocess.run(['git', 'fetch', '--no-tags', 'origin', f'refs/pull/{n}/head:refs/remotes/backlog/pr-{n}'], check=True)
+              actual = subprocess.check_output(['git', 'rev-parse', f'refs/remotes/backlog/pr-{n}'], text=True).strip()
+              if actual != p['head']['sha']:
+                  raise SystemExit('PR head changed during inventory.')
+              merge_base = subprocess.check_output(['git', 'merge-base', base, actual], text=True).strip()
+              patch = subprocess.check_output(['git', 'diff', merge_base, actual], text=True)
+              (root / f'pr-{n}.patch').write_text(patch)
+              summary.append({'number': n, 'title': p['title'], 'head': actual, 'branch': p['head']['ref'], 'base': merge_base, 'mergeable': p['mergeable'], 'mergeable_state': p['mergeable_state'], 'files': [f['filename'] for f in files]})
+          save('summary.json', summary)
+          save('rulesets.json', api('rulesets'))
+          for ruleset in api('rulesets'):
+              save(f'ruleset-{ruleset["id"]}.json', api(f'rulesets/{ruleset["id"]}'))
+          subprocess.run(['git', 'archive', '--format=tar', base, '-o', str(root / 'main-source.tar')], check=True)
+          with Path(__import__('os').environ['GITHUB_STEP_SUMMARY']).open('a') as out:
+              out.write('| PR | Mergeable | Files | Head |\n|---|---|---|---|\n')
+              for p in summary:
+                  out.write(f'| #{p["number"]} | {p["mergeable_state"]} | {len(p["files"])} | {p["head"][:12]} |\n')
+      - name: Upload review evidence
+        if: always()
+        uses: actions/upload-artifact@043fb46d1a93c77aae656e7c1c64a875d1fc6a0a
+        with:
+          name: backlog-inventory
+          path: integration-evidence/
+          retention-days: 7
+          if-no-files-found: error
