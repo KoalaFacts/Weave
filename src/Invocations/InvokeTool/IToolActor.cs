@@ -15,6 +15,7 @@ public interface IToolActor
     Task<ToolResult> InvokeAsync(ToolInvocation invocation, CapabilityToken token);
     Task<InvocationRecord?> GetInvocationAsync(InvocationId invocationId, CapabilityToken token);
     Task<InvocationApproval?> GetApprovalAsync(InvocationId invocationId, CapabilityToken token);
+    Task<InvocationApprovalReviewResult> ReviewApprovalAsync(ToolInvocation invocation, CapabilityToken token);
     Task<InvocationApprovalDecisionResult> DecideApprovalAsync(InvocationId invocationId,
         string planDigest, InvocationApprovalDecision decision, CapabilityToken token);
     Task<ToolSchema> GetSchemaAsync();

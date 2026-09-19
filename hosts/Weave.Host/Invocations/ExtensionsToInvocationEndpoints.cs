@@ -22,5 +22,6 @@ public static class ExtensionsToInvocationEndpoints
         group.MapPost("", InvokeToolEndpoint.HandleAsync);
         group.MapGet("/{invocationId}", GetInvocationEndpoint.HandleAsync);
         group.MapGet("/{invocationId}/approval", GetApprovalEndpoint.HandleAsync);
+        group.MapPost("/{invocationId}/approval/review", ReviewApprovalEndpoint.HandleAsync);
     }
 }

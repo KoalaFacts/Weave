@@ -10,4 +10,7 @@ namespace Weave.Invocations;
 public interface IApprovalTargetBinding
 {
     string? GetApprovalTargetDigest(ToolHandle handle);
+
+    /// <summary>Plain-text description of that registered target, or null when review is unsupported.</summary>
+    string? GetApprovalTargetDescription(ToolHandle handle) => null;
 }
