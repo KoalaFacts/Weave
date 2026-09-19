@@ -3,92 +3,205 @@ name: PR Backlog Integration
 on:
   push:
     branches: [integration/pr-backlog-2026-09-19]
+    paths: [.github/workflows/pr-backlog-integration.yml]
   workflow_dispatch:
 
 permissions:
   contents: read
-  pull-requests: read
-  checks: read
 
 concurrency:
   group: pr-backlog-integration
   cancel-in-progress: false
 
+env:
+  DOTNET_NOLOGO: true
+  DOTNET_CLI_TELEMETRY_OPTOUT: true
+
 jobs:
-  inventory:
+  prepare:
     runs-on: ubuntu-latest
     timeout-minutes: 10
+    permissions:
+      contents: write
+      pull-requests: read
+    outputs:
+      sha: ${{ steps.merge.outputs.sha }}
     steps:
-      - name: Checkout isolated integration branch
+      - name: Checkout isolated branch
         uses: actions/checkout@de0fac2e4500dabe0009e67214ff5f5447ce83dd
         with:
           fetch-depth: 0
-          persist-credentials: false
-      - name: Inventory exact PR contents and review state
+          ref: integration/pr-backlog-2026-09-19
+      - name: Verify reviewed heads and integrate without touching main
+        id: merge
         env:
           GH_TOKEN: ${{ github.token }}
+          EXPECTED_SHA: ${{ github.sha }}
         shell: python
         run: |
-          import json, subprocess
+          import importlib.util, json, os, subprocess
           from pathlib import Path
-          repo = 'KoalaFacts/Weave'
-          root = Path('integration-evidence')
-          root.mkdir()
-          def api(path):
-              return json.loads(subprocess.check_output(['gh', 'api', 'repos/' + repo + '/' + path], text=True))
-          def save(name, data):
-              (root / name).write_text(json.dumps(data, indent=2) + '\n')
-          base = api('git/ref/heads/main')['object']['sha']
-          save('base.json', {'main': base, 'inventory': subprocess.check_output(['git', 'rev-parse', 'HEAD'], text=True).strip()})
-          pulls = api('pulls?state=open&per_page=100')
-          save('open-pulls.json', pulls)
-          expected = [72, 73, 74, 75, 77, 82, 86, 87]
-          if sorted(p['number'] for p in pulls) != expected:
-              raise SystemExit('Open PR set changed; inspect inventory before proceeding.')
-          summary = []
-          for n in expected:
-              p = api(f'pulls/{n}')
-              save(f'pr-{n}.json', p)
-              if p['head']['repo']['full_name'] != repo or p['base']['ref'] != 'main':
-                  raise SystemExit('Unexpected PR repository/base.')
-              files = []
-              page = 1
-              while True:
-                  batch = api(f'pulls/{n}/files?per_page=100&page={page}')
-                  files.extend(batch)
-                  if len(batch) < 100:
-                      break
-                  page += 1
-              save(f'files-{n}.json', files)
-              save(f'reviews-{n}.json', api(f'pulls/{n}/reviews?per_page=100'))
-              save(f'review-comments-{n}.json', api(f'pulls/{n}/comments?per_page=100'))
-              save(f'checks-{n}.json', api(f'commits/{p["head"]["sha"]}/check-runs?per_page=100'))
-              save(f'status-{n}.json', api(f'commits/{p["head"]["sha"]}/status'))
-              subprocess.run(['git', 'fetch', '--no-tags', 'origin', f'refs/pull/{n}/head:refs/remotes/backlog/pr-{n}'], check=True)
-              actual = subprocess.check_output(['git', 'rev-parse', f'refs/remotes/backlog/pr-{n}'], text=True).strip()
-              if actual != p['head']['sha']:
-                  raise SystemExit('PR head changed during inventory.')
-              merge_base = subprocess.check_output(['git', 'merge-base', base, actual], text=True).strip()
-              patch = subprocess.check_output(['git', 'diff', merge_base, actual], text=True)
-              (root / f'pr-{n}.patch').write_text(patch)
-              summary.append({'number': n, 'title': p['title'], 'head': actual, 'branch': p['head']['ref'], 'base': merge_base, 'mergeable': p['mergeable'], 'mergeable_state': p['mergeable_state'], 'files': [f['filename'] for f in files]})
-          save('summary.json', summary)
-          save('rulesets.json', api('rulesets'))
-          for ruleset in api('rulesets'):
-              save(f'ruleset-{ruleset["id"]}.json', api(f'rulesets/{ruleset["id"]}'))
-          for n in (84, 85, 89):
-              save(f'previously-merged-{n}.json', api(f'pulls/{n}'))
-          subprocess.run(['git', 'archive', '--format=tar', base, '-o', str(root / 'main-source.tar')], check=True)
-          subprocess.run(['git', 'bundle', 'create', str(root / 'review.bundle'), '--all'], check=True)
-          with Path(__import__('os').environ['GITHUB_STEP_SUMMARY']).open('a') as out:
-              out.write('| PR | Mergeable | Files | Head |\n|---|---|---|---|\n')
-              for p in summary:
-                  out.write(f'| #{p["number"]} | {p["mergeable_state"]} | {len(p["files"])} | {p["head"][:12]} |\n')
-      - name: Upload review evidence
+          branch = 'integration/pr-backlog-2026-09-19'
+          def git(*args):
+              return subprocess.check_output(['git', *args], text=True).strip()
+          if git('rev-parse', 'HEAD') != os.environ['EXPECTED_SHA']:
+              raise SystemExit('Branch advanced before checkout.')
+          spec = importlib.util.spec_from_file_location('merge_backlog', 'scripts/integrate_dependency_backlog.py')
+          module = importlib.util.module_from_spec(spec)
+          spec.loader.exec_module(module)
+          main = json.loads(subprocess.check_output(['gh', 'api', 'repos/KoalaFacts/Weave/git/ref/heads/main'], text=True))['object']['sha']
+          if main != module.MAIN:
+              raise SystemExit('Main advanced; require a new merge review.')
+          changed = set(git('diff', '--name-only', module.MAIN, 'HEAD').splitlines())
+          if not changed <= {'.github/workflows/pr-backlog-integration.yml', 'scripts/integrate_dependency_backlog.py'}:
+              raise SystemExit('Unreviewed integration branch changes.')
+          for number, sha, _ in module.PULLS:
+              pr = json.loads(subprocess.check_output(['gh', 'api', f'repos/KoalaFacts/Weave/pulls/{number}'], text=True))
+              if pr['state'] != 'open' or pr['head']['sha'] != sha or pr['base']['ref'] != 'main' or pr['head']['repo']['full_name'] != 'KoalaFacts/Weave':
+                  raise SystemExit('PR changed after review: ' + str(number))
+              subprocess.run(['git', 'fetch', '--no-tags', 'origin', f'refs/pull/{number}/head:refs/remotes/backlog/pr-{number}'], check=True)
+              if git('rev-parse', f'refs/remotes/backlog/pr-{number}') != sha:
+                  raise SystemExit('PR changed during fetch.')
+          git('config', 'user.name', 'github-actions[bot]')
+          git('config', 'user.email', '41898282+github-actions[bot]@users.noreply.github.com')
+          module.integrate()
+          if git('diff', '--name-only', os.environ['EXPECTED_SHA'], 'HEAD') != 'Directory.Packages.props':
+              raise SystemExit('Unexpected integrated content changes.')
+          remote = git('ls-remote', 'origin', 'refs/heads/' + branch).split()[0]
+          if remote != os.environ['EXPECTED_SHA']:
+              raise SystemExit('Integration branch advanced; not pushing.')
+          subprocess.run(['git', 'push', 'origin', 'HEAD:refs/heads/' + branch], check=True)
+          with Path(os.environ['GITHUB_OUTPUT']).open('a') as out:
+              out.write('sha=' + git('rev-parse', 'HEAD') + '\n')
+      - name: Upload merge-resolution record
         if: always()
         uses: actions/upload-artifact@043fb46d1a93c77aae656e7c1c64a875d1fc6a0a
         with:
-          name: backlog-inventory
-          path: integration-evidence/
+          name: merge-resolution
+          path: /tmp/weave-backlog-merges.json
           retention-days: 7
-          if-no-files-found: error
+          if-no-files-found: warn
+
+  validate:
+    needs: prepare
+    runs-on: ubuntu-latest
+    timeout-minutes: 30
+    steps:
+      - name: Checkout exact integrated tree without write credentials
+        uses: actions/checkout@de0fac2e4500dabe0009e67214ff5f5447ce83dd
+        with:
+          ref: ${{ needs.prepare.outputs.sha }}
+          persist-credentials: false
+      - name: Setup pinned SDK
+        uses: ./.github/actions/setup-dotnet
+        with:
+          dotnet-version: '10.0.201'
+          dotnet-quality: ga
+      - name: Architecture checks
+        run: python3 -m unittest discover -s scripts/tests -v
+      - name: Strict restore and all-dependency audit
+        shell: bash
+        run: |
+          set -euo pipefail
+          mkdir -p artifacts
+          dotnet restore Weave.slnx --force-evaluate -p:NuGetAudit=true -p:NuGetAuditMode=all -p:NuGetAuditLevel=low |& tee artifacts/restore.log
+          dotnet list Weave.slnx package --vulnerable --include-transitive --format json > artifacts/vulnerabilities.json
+          python3 - <<'PY'
+          import json
+          from pathlib import Path
+          data = json.loads(Path('artifacts/vulnerabilities.json').read_text())
+          if not data.get('projects') or data.get('problems'):
+              raise SystemExit('Dependency report incomplete.')
+          findings = [(p['path'], a['id']) for p in data['projects'] for f in p.get('frameworks', []) for k in ('topLevelPackages', 'transitivePackages') for a in f.get(k, []) if a.get('vulnerabilities')]
+          if findings:
+              raise SystemExit(str(findings))
+          print('No reported vulnerable packages across', len(data['projects']), 'projects.')
+          PY
+      - name: Strict Release build
+        shell: bash
+        run: |
+          set -euo pipefail
+          dotnet build Weave.slnx --no-restore -c Release |& tee artifacts/build.log
+      - name: Full test suite
+        shell: bash
+        run: |
+          set -euo pipefail
+          dotnet test --solution Weave.slnx --no-build -c Release -- --report-xunit-trx --results-directory ./test-results |& tee artifacts/test.log
+      - name: Capture evidence and resolved locks
+        if: always()
+        env:
+          SOURCE_SHA: ${{ needs.prepare.outputs.sha }}
+        shell: bash
+        run: |
+          mkdir -p artifacts
+          printf '%s\n' "$SOURCE_SHA" > artifacts/source-sha.txt
+          git archive --format=tar HEAD -o artifacts/source.tar
+          find src hosts extensions tools tests -name packages.lock.json -print0 | tar --null -T - -czf artifacts/lockfiles.tar.gz
+          git diff -- '**/packages.lock.json' > artifacts/lockfiles.patch
+      - name: Upload validation evidence
+        if: always()
+        uses: actions/upload-artifact@043fb46d1a93c77aae656e7c1c64a875d1fc6a0a
+        with:
+          name: backlog-validation
+          path: |
+            artifacts/
+            test-results/**/*.trx
+          retention-days: 7
+      - name: Upload verified lockfiles
+        uses: actions/upload-artifact@043fb46d1a93c77aae656e7c1c64a875d1fc6a0a
+        with:
+          name: backlog-lockfiles
+          path: artifacts/lockfiles.tar.gz
+          retention-days: 7
+
+  record-lockfiles:
+    needs: [prepare, validate]
+    runs-on: ubuntu-latest
+    timeout-minutes: 5
+    permissions:
+      contents: write
+    steps:
+      - name: Checkout verified tree
+        uses: actions/checkout@de0fac2e4500dabe0009e67214ff5f5447ce83dd
+        with:
+          ref: ${{ needs.prepare.outputs.sha }}
+      - name: Download verified lockfiles from this run
+        uses: actions/download-artifact@3e5f45b2cfb9172054b4087a40e8e0b5a5461e7c
+        with:
+          name: backlog-lockfiles
+          path: .verified-locks
+      - name: Record only allowlisted locks on the unchanged integration branch
+        env:
+          EXPECTED_SHA: ${{ needs.prepare.outputs.sha }}
+        shell: python
+        run: |
+          import json, os, subprocess, tarfile
+          from pathlib import Path
+          root = Path.cwd()
+          allowed = {p.parent.relative_to(root).as_posix() + '/packages.lock.json' for area in ('src', 'hosts', 'extensions', 'tools', 'tests') for p in (root / area).rglob('*.csproj')}
+          payloads = {}
+          with tarfile.open('.verified-locks/lockfiles.tar.gz') as archive:
+              for item in archive.getmembers():
+                  if not item.isfile() or item.name not in allowed or item.name in payloads or item.size > 5000000:
+                      raise SystemExit('Invalid archive entry: ' + item.name)
+                  data = archive.extractfile(item).read()
+                  value = json.loads(data)
+                  if value.get('version') not in (1, 2) or not isinstance(value.get('dependencies'), dict):
+                      raise SystemExit('Invalid lockfile: ' + item.name)
+                  payloads[item.name] = data
+          if set(payloads) != allowed:
+              raise SystemExit('Incomplete resolved project graph.')
+          for name, data in payloads.items():
+              (root / name).write_bytes(data)
+          subprocess.run(['git', 'add', '--', *sorted(allowed)], check=True)
+          subprocess.run(['git', 'diff', '--cached', '--check'], check=True)
+          branch = 'refs/heads/integration/pr-backlog-2026-09-19'
+          remote = subprocess.check_output(['git', 'ls-remote', 'origin', branch], text=True).split()[0]
+          if remote != os.environ['EXPECTED_SHA']:
+              raise SystemExit('Branch advanced; not overwriting newer work.')
+          if subprocess.run(['git', 'diff', '--cached', '--quiet']).returncode:
+              subprocess.run(['git', 'config', 'user.name', 'github-actions[bot]'], check=True)
+              subprocess.run(['git', 'config', 'user.email', '41898282+github-actions[bot]@users.noreply.github.com'], check=True)
+              subprocess.run(['git', 'commit', '-m', 'build: record strictly validated dependency locks for merged PRs'], check=True)
+              subprocess.run(['git', 'push', 'origin', 'HEAD:' + branch], check=True)
+          print('Final candidate:', subprocess.check_output(['git', 'rev-parse', 'HEAD'], text=True).strip())
