@@ -22,7 +22,7 @@ public sealed class ApprovalAdmissionRegressionTests
     {
         using var fx = new Fixture();
         var actor = await fx.ConnectAsync();
-        var request = fx.Write() with { Method = "WRITE_FILE" };
+        var request = Fixture.Write() with { Method = "WRITE_FILE" };
 
         var result = await actor.InvokeAsync(request, fx.Token());
 
@@ -40,7 +40,7 @@ public sealed class ApprovalAdmissionRegressionTests
     {
         using var fx = new Fixture();
         var actor = await fx.ConnectAsync();
-        var request = fx.Write();
+        var request = Fixture.Write();
         AssertPending(await actor.InvokeAsync(request, fx.Token()), request);
         fx.AssertUnchanged();
         var changed = change switch
@@ -65,7 +65,7 @@ public sealed class ApprovalAdmissionRegressionTests
     public async Task InvokeAsync_PendingIdAfterFilesystemRootChange_RejectsNewTarget()
     {
         using var fx = new Fixture();
-        var request = fx.Write();
+        var request = Fixture.Write();
         var actor = await fx.ConnectAsync();
         AssertPending(await actor.InvokeAsync(request, fx.Token()), request);
         fx.AssertUnchanged();
@@ -82,7 +82,7 @@ public sealed class ApprovalAdmissionRegressionTests
     public async Task InvokeAsync_PendingIdAfterApprovalPolicyRemoval_DoesNotBypassStoredRequirement()
     {
         using var fx = new Fixture();
-        var request = fx.Write();
+        var request = Fixture.Write();
         var actor = await fx.ConnectAsync();
         AssertPending(await actor.InvokeAsync(request, fx.Token()), request);
         fx.AssertUnchanged();
@@ -102,9 +102,9 @@ public sealed class ApprovalAdmissionRegressionTests
     {
         using var fx = new Fixture();
         var actor = await fx.ConnectAsync();
-        var write = fx.Write();
+        var write = Fixture.Write();
         AssertPending(await actor.InvokeAsync(write, fx.Token()), write);
-        var read = fx.Write() with { Method = "read_file", RawInput = null };
+        var read = Fixture.Write() with { Method = "read_file", RawInput = null };
 
         var result = await actor.InvokeAsync(read, fx.Token());
 
@@ -199,7 +199,7 @@ public sealed class ApprovalAdmissionRegressionTests
             Lifetime = TimeSpan.FromMinutes(5)
         });
 
-        public ToolInvocation Write() => new()
+        public static ToolInvocation Write() => new()
         {
             InvocationId = InvocationId.From(Guid.NewGuid().ToString("N")),
             ToolName = "files",
