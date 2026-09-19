@@ -3,6 +3,7 @@ using Scalar.AspNetCore;
 using Weave.ServiceDefaults;
 using Weave.Silo.Api;
 using Weave.Silo.Configuration;
+using Weave.Silo.Invocations;
 using Weave.Silo.Security;
 
 namespace Weave.Silo.Startup;
@@ -77,6 +78,7 @@ internal sealed class SiloApplicationConfigurator
         _app.MapWorkspaceEndpoints();
         _app.MapAgentEndpoints();
         _app.MapToolEndpoints();
+        _app.MapGovernedInvocationEndpoints();
         _app.MapPluginEndpoints();
         _app.MapSkillEndpoints();
         _app.MapChannelEndpoints();
