@@ -133,7 +133,8 @@ public sealed class SqliteApprovalAtomicityTests
         return new InvocationRecord(InvocationId.From(Guid.NewGuid().ToString("N")), "workspace", "writer", "files",
             "write_file", "synthetic-input-digest", "request-token", "tool:files:invoke:write_file", now,
             new InvocationAttempt(InvocationAttemptId.From(Guid.NewGuid().ToString("N")), now,
-                InvocationOutcome.OutcomeUnknown, null, TimeSpan.Zero)) { ApprovalTargetDigest = "synthetic-target-digest" };
+                InvocationOutcome.OutcomeUnknown, null, TimeSpan.Zero))
+        { ApprovalTargetDigest = "synthetic-target-digest" };
     }
 
     private static void Approve(ApprovalScenario fx, InvocationRecord candidate)
