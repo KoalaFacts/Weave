@@ -21,7 +21,7 @@ public sealed class SqliteInvocationJournalTests
         result.Success.ShouldBeFalse();
         result.Outcome.ShouldBe(InvocationOutcome.NotDispatched);
         result.ErrorCode.ShouldBe("journal-write-failed");
-        result.Error.ShouldNotContain("private database detail");
+        result.Error.ShouldNotBeNull().ShouldNotContain("private database detail");
         File.Exists(fx.EffectPath).ShouldBeFalse();
         fx.Scalar("SELECT COUNT(*) FROM invocations;").ShouldBe(0L);
         fx.Scalar("SELECT COUNT(*) FROM invocation_attempts;").ShouldBe(0L);
@@ -75,7 +75,7 @@ public sealed class SqliteInvocationJournalTests
             TestContext.Current.CancellationToken);
         result.Outcome.ShouldBe(InvocationOutcome.OutcomeUnknown);
         result.OutcomeRecorded.ShouldBeTrue();
-        result.Error.ShouldNotContain("private upstream response");
+        result.Error.ShouldNotBeNull().ShouldNotContain("private upstream response");
         var reopened = fx.Reopen();
         var stored = reopened.Find(record.WorkspaceId, record.InvocationId, TestContext.Current.CancellationToken).ShouldNotBeNull();
         stored.Attempt.CompletedAt.ShouldNotBeNull();
