@@ -26,6 +26,13 @@ public sealed class InvocationExecution(IInvocationJournal journal, TimeProvider
                 "Execution did not start because its durable intent could not be recorded.");
         }
 
+        if (!claim.Created)
+        {
+            // Returning persisted metadata requires live authority too. A denied
+            // duplicate must not overwrite the original attempt's recorded outcome.
+            await revalidate();
+            cancellationToken.ThrowIfCancellationRequested();
+        }
         var record = claim.Record;
         if (record.InvocationId != candidate.InvocationId || record.WorkspaceId != candidate.WorkspaceId
             || record.Subject != candidate.Subject || record.ToolName != candidate.ToolName
@@ -91,7 +98,8 @@ public sealed class InvocationExecution(IInvocationJournal journal, TimeProvider
             AttemptId = record.Attempt.AttemptId,
             Outcome = outcome,
             OutcomeRecorded = true,
-            IsReplay = false
+            IsReplay = false,
+            Duration = elapsed
         };
     }
 

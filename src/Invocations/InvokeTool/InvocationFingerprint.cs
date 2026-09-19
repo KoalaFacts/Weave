@@ -17,6 +17,7 @@ internal static class InvocationFingerprint
         var id = request.InvocationId ?? InvocationId.From(Guid.NewGuid().ToString("N"));
         if (!Guid.TryParseExact(id.ToString(), "N", out var guid) || guid == Guid.Empty)
             return null;
+        id = InvocationId.From(guid.ToString("N"));
         long length = request.RawInput?.Length ?? 0;
         foreach (var pair in request.Parameters)
         {

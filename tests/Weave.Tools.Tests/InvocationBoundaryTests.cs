@@ -22,12 +22,13 @@ public sealed class InvocationBoundaryTests
         await fx.ConnectAsync();
         var request = Request() with { InvocationId = InvocationId.From("abcdef0123456789abcdef0123456789") };
         (await fx.Actor.InvokeAsync(request, fx.Token)).Success.ShouldBeTrue();
-        var replay = await fx.Actor.InvokeAsync(request with
-        {
-            InvocationId = InvocationId.From("ABCDEF0123456789ABCDEF0123456789")
-        }, fx.Token);
+        var upperId = InvocationId.From("ABCDEF0123456789ABCDEF0123456789");
+        var replay = await fx.Actor.InvokeAsync(request with { InvocationId = upperId }, fx.Token);
         replay.IsReplay.ShouldBeTrue();
         fx.Calls.ShouldBe(1);
+        var stored = (await fx.Actor.GetInvocationAsync(upperId, fx.Token)).ShouldNotBeNull();
+        stored.InvocationId.ShouldBe(request.InvocationId!.Value);
+        stored.Attempt.Outcome.ShouldBe(InvocationOutcome.Succeeded);
     }
 
     [Fact]
@@ -37,9 +38,15 @@ public sealed class InvocationBoundaryTests
         await fx.ConnectAsync();
         var request = Request();
         (await fx.Actor.InvokeAsync(request, fx.Token)).Success.ShouldBeTrue();
-        fx.Journal.AfterFind = () => fx.Tokens.Revoke(fx.Token.TokenId);
+        var readOccurred = false;
+        fx.Journal.AfterFind = () =>
+        {
+            readOccurred = true;
+            fx.Tokens.Revoke(fx.Token.TokenId);
+        };
 
         await Should.ThrowAsync<UnauthorizedAccessException>(() => fx.Actor.GetInvocationAsync(request.InvocationId!.Value, fx.Token));
+        readOccurred.ShouldBeTrue("An unrelated rejection before journal I/O does not prove post-read reauthorization.");
     }
 
     [Fact]

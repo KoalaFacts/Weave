@@ -131,6 +131,7 @@ public sealed partial class ToolActor(
                 ErrorCode = "invalid-invocation",
                 Error = "Use a nonempty 32-hex invocation ID and at most 1048576 input characters with non-null parameter values."
             };
+        request = request with { InvocationId = candidate.InvocationId };
         var effectiveInvocation = await _secretSubstitutor.SubstituteAsync(_identity.WorkspaceId, request);
         await RevalidateAsync();
         var result = await _execution.ExecuteAsync(candidate, RevalidateAsync, async () =>
@@ -140,14 +141,24 @@ public sealed partial class ToolActor(
         }, token.CancellationToken);
 
         if (!result.IsReplay && result.OutcomeRecorded)
-            await eventBus.PublishAsync(new ToolInvocationCompletedEvent
+        {
+            try
             {
-                SourceId = $"{_identity.WorkspaceId}/{_identity.ToolName}",
-                ToolName = _identity.ToolName,
-                WorkspaceId = WorkspaceId.From(_identity.WorkspaceId),
-                Success = result.Success,
-                Duration = result.Duration
-            }, token.CancellationToken);
+                await eventBus.PublishAsync(new ToolInvocationCompletedEvent
+                {
+                    SourceId = $"{_identity.WorkspaceId}/{_identity.ToolName}",
+                    ToolName = _identity.ToolName,
+                    WorkspaceId = WorkspaceId.From(_identity.WorkspaceId),
+                    Success = result.Success,
+                    Duration = result.Duration
+                }, token.CancellationToken);
+            }
+            catch (Exception error)
+            {
+                // The journal is authoritative; this notification is not an outbox.
+                LogCompletionNotificationFailure(result.InvocationId, error.GetType().Name);
+            }
+        }
 
         return result;
 
@@ -176,4 +187,7 @@ public sealed partial class ToolActor(
 
     [LoggerMessage(Level = LogLevel.Information, Message = "Tool '{Tool}' disconnected from workspace '{Workspace}'")]
     private partial void LogToolDisconnected(string tool, string workspace);
+
+    [LoggerMessage(Level = LogLevel.Warning, Message = "Invocation {InvocationId} was recorded but its completion notification failed ({ErrorType})")]
+    private partial void LogCompletionNotificationFailure(InvocationId? invocationId, string errorType);
 }

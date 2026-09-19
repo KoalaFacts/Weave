@@ -13,11 +13,18 @@ public sealed partial class ToolActor
     /// </summary>
     public async Task<InvocationRecord?> GetInvocationAsync(InvocationId invocationId, CapabilityToken token)
     {
-        _identity.Ensure(token: token);
+        // A query has no ToolSpec/ToolInvocation to resolve. Use only the identity
+        // already established by runtime activation or a previous connection.
+        if (string.IsNullOrWhiteSpace(_identity.WorkspaceId) || string.IsNullOrWhiteSpace(_identity.ToolName))
+            throw new InvalidOperationException("Tool identity must be established before querying invocations.");
         token = token with { Grants = new HashSet<string>(token.Grants, StringComparer.Ordinal) };
         token.CancellationToken.ThrowIfCancellationRequested();
         await authorizer.AuthorizeAsync(token, "invocation:read", _identity.WorkspaceId);
-        var record = journal.Find(_identity.WorkspaceId, invocationId, token.CancellationToken);
+        if (!Guid.TryParseExact(invocationId.ToString(), "N", out var guid) || guid == Guid.Empty)
+            return null;
+        var record = journal.Find(_identity.WorkspaceId, InvocationId.From(guid.ToString("N")), token.CancellationToken);
+        await authorizer.AuthorizeAsync(token, "invocation:read", _identity.WorkspaceId);
+        token.CancellationToken.ThrowIfCancellationRequested();
         return record is not null
             && string.Equals(record.Subject, token.IssuedTo, StringComparison.Ordinal)
             && string.Equals(record.ToolName, _identity.ToolName, StringComparison.Ordinal)
