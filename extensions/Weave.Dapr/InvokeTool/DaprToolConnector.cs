@@ -13,6 +13,8 @@ public sealed partial class DaprToolConnector(HttpClient httpClient, ILogger<Dap
 {
     public ToolType ToolType => ToolType.Dapr;
 
+    public ToolInvocation NormalizeInvocation(ToolInvocation invocation) => invocation;
+
     public Task<ToolHandle> ConnectAsync(ToolSpec tool, CapabilityToken token, CancellationToken ct = default)
     {
         var dapr = tool.Dapr ?? throw new InvalidOperationException($"Tool '{tool.Name}' has no Dapr configuration");

@@ -95,17 +95,17 @@ public sealed class ToolRegistryActor(
         }
     }
 
-    public async Task ConfigureAccessAsync(Dictionary<string, List<string>> agentToolAccess)
+    public async Task ConfigureAccessAsync(Dictionary<string, List<string>> agentToolAccess, Dictionary<string, List<string>> agentCapabilities)
     {
         EnsureWorkspaceId();
-        persistentState.State.ConfigureAccess(agentToolAccess);
+        persistentState.State.ConfigureAccess(agentToolAccess, agentCapabilities);
         await persistentState.WriteStateAsync();
     }
 
-    public async Task GrantAgentToolsAsync(string agentName, IReadOnlyList<string> toolNames)
+    public async Task GrantAgentToolsAsync(string agentName, IReadOnlyList<string> toolNames, IReadOnlyList<string> capabilities)
     {
         EnsureWorkspaceId();
-        persistentState.State.GrantTools(agentName, toolNames);
+        persistentState.State.GrantTools(agentName, toolNames, capabilities);
         await persistentState.WriteStateAsync();
     }
 
@@ -132,7 +132,7 @@ public sealed class ToolRegistryActor(
     public async Task<ToolResolution?> ResolveAsync(string agentName, string toolName)
     {
         EnsureWorkspaceId();
-        if (!persistentState.State.IsToolAllowed(agentName, toolName))
+        if (persistentState.State.InvocationGrants(agentName, toolName).Count == 0)
             return null;
 
         if (!persistentState.State.Definitions.TryGetValue(toolName, out var definition))
@@ -152,15 +152,23 @@ public sealed class ToolRegistryActor(
             await ConnectOneAsync(toolName, definition);
         }
 
+        var schema = await toolActor.GetSchemaAsync();
+        var grants = persistentState.State.InvocationGrants(agentName, toolName);
+        if (grants.Count == 0
+            || !persistentState.State.Definitions.TryGetValue(toolName, out var currentDefinition)
+            || !ReferenceEquals(definition, currentDefinition)
+            || !persistentState.State.Connections.TryGetValue(toolName, out var currentConnection)
+            || currentConnection.Status != ToolConnectionStatus.Connected)
+            return null;
+
         var token = tokenService.Mint(new CapabilityTokenRequest
         {
             WorkspaceId = _workspaceId,
             IssuedTo = $"{_workspaceId}/{agentName}",
-            Grants = [$"tool:{toolName}"],
+            Grants = [.. grants],
             Lifetime = TimeSpan.FromHours(1)
         });
 
-        var schema = await toolActor.GetSchemaAsync();
         return new ToolResolution
         {
             ToolName = toolName,

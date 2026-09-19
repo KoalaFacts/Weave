@@ -37,7 +37,7 @@ public static class BuiltInTemplates
         {
             Model = Model,
             Tools = ["git", "files"],
-            Capabilities = ["tool:git", "tool:files"]
+            Capabilities = ["tool:git:invoke:*", "tool:files:invoke:*"]
         },
         RequiredTools =
         {
@@ -73,7 +73,7 @@ public static class BuiltInTemplates
         {
             Model = Model,
             Tools = ["web-search", "files"],
-            Capabilities = ["tool:web-search", "tool:files"]
+            Capabilities = ["tool:web-search:invoke:*", "tool:files:invoke:*"]
         },
         RequiredTools =
         {
@@ -104,7 +104,7 @@ public static class BuiltInTemplates
         {
             Model = Model,
             Tools = ["git", "files", "web-search"],
-            Capabilities = ["tool:git", "tool:files", "tool:web-search"]
+            Capabilities = ["tool:git:invoke:*", "tool:files:invoke:*", "tool:web-search:invoke:*"]
         },
         RequiredTools =
         {
@@ -148,8 +148,8 @@ public static class BuiltInTemplates
             Tools = ["web-search", "files"],
             Capabilities =
             [
-                "tool:web-search",
-                "tool:files",
+                "tool:web-search:invoke:*",
+                "tool:files:invoke:*",
                 "channel:send:slack",
                 "channel:receive:slack",
                 "skill:read",

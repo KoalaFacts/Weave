@@ -10,6 +10,8 @@ public sealed partial class FileSystemToolConnector(ILogger<FileSystemToolConnec
     private readonly ConcurrentDictionary<string, FileSystemToolConfig> _configurations = new(StringComparer.Ordinal);
     public ToolType ToolType => ToolType.FileSystem;
 
+    public ToolInvocation NormalizeInvocation(ToolInvocation invocation) => invocation with { Method = invocation.Method.ToLowerInvariant() };
+
     public Task<ToolHandle> ConnectAsync(ToolSpec tool, CapabilityToken token, CancellationToken ct = default)
     {
         var config = tool.FileSystem ?? throw new InvalidOperationException($"Tool '{tool.Name}' has no FileSystem configuration");

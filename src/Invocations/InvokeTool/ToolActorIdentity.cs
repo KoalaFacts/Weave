@@ -39,5 +39,9 @@ internal sealed class ToolActorIdentity
 
             ToolName = resolved;
         }
+
+        var requestedName = definition?.Name ?? invocation?.ToolName;
+        if (!string.Equals(ToolName, requestedName, StringComparison.Ordinal))
+            throw new UnauthorizedAccessException("Requested tool does not match the addressed tool actor.");
     }
 }

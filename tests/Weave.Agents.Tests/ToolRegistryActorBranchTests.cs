@@ -100,7 +100,7 @@ public sealed class ToolRegistryActorBranchTests
             ["coder"] = ["shell"]
         };
 
-        await fx.Actor.ConfigureAccessAsync(access);
+        await fx.Actor.ConfigureAccessAsync(access, new());
 
         fx.State.State.AgentToolAccess["researcher"].ShouldBe(["search", "shell"]);
         fx.State.State.AgentToolAccess["coder"].ShouldBe(["shell"]);
@@ -111,8 +111,8 @@ public sealed class ToolRegistryActorBranchTests
     {
         var fx = new Fixture();
 
-        await fx.Actor.GrantAgentToolsAsync("agent-a", ["t1", "t1", "t2"]);
-        await fx.Actor.GrantAgentToolsAsync("agent-a", ["t3"]);
+        await fx.Actor.GrantAgentToolsAsync("agent-a", ["t1", "t1", "t2"], ["tool:shell:invoke:exec"]);
+        await fx.Actor.GrantAgentToolsAsync("agent-a", ["t3"], ["tool:shell:invoke:exec"]);
 
         fx.State.State.AgentToolAccess["agent-a"].ShouldBe(["t3"], "a subsequent grant replaces, not appends");
     }
@@ -133,7 +133,7 @@ public sealed class ToolRegistryActorBranchTests
     {
         var fx = new Fixture();
         await fx.Actor.ConnectToolsAsync(SingleTool());
-        await fx.Actor.GrantAgentToolsAsync("agent-a", ["different-tool"]);
+        await fx.Actor.GrantAgentToolsAsync("agent-a", ["different-tool"], ["tool:shell:invoke:exec"]);
 
         var result = await fx.Actor.ResolveAsync("agent-a", "shell");
 
@@ -144,7 +144,7 @@ public sealed class ToolRegistryActorBranchTests
     public async Task ResolveAsync_ToolDefinitionMissing_ReturnsNull()
     {
         var fx = new Fixture();
-        await fx.Actor.GrantAgentToolsAsync("agent-a", ["ghost-tool"]);
+        await fx.Actor.GrantAgentToolsAsync("agent-a", ["ghost-tool"], ["tool:shell:invoke:exec"]);
 
         var result = await fx.Actor.ResolveAsync("agent-a", "ghost-tool");
 
@@ -156,13 +156,13 @@ public sealed class ToolRegistryActorBranchTests
     {
         var fx = new Fixture();
         await fx.Actor.ConnectToolsAsync(SingleTool());
-        await fx.Actor.GrantAgentToolsAsync("agent-a", ["shell"]);
+        await fx.Actor.GrantAgentToolsAsync("agent-a", ["shell"], ["tool:shell:invoke:exec"]);
 
         var result = await fx.Actor.ResolveAsync("agent-a", "shell");
 
         result.ShouldNotBeNull();
         result!.ToolName.ShouldBe("shell");
-        result.Token.Grants.ShouldContain("tool:shell");
+        result.Token.Grants.ShouldContain("tool:shell:invoke:exec");
         result.Schema.ToolName.ShouldBe("x");
     }
 
@@ -171,7 +171,7 @@ public sealed class ToolRegistryActorBranchTests
     {
         var fx = new Fixture();
         await fx.Actor.ConnectToolsAsync(SingleTool());
-        await fx.Actor.GrantAgentToolsAsync("agent-a", ["shell"]);
+        await fx.Actor.GrantAgentToolsAsync("agent-a", ["shell"], ["tool:shell:invoke:exec"]);
         fx.ToolActor.ClearReceivedCalls();
         // Simulate a stale handle: actor reports null, so ResolveAsync must re-call ConnectAsync.
         fx.ToolActor.GetHandleAsync().Returns(Task.FromResult<ToolHandle?>(null));
@@ -216,7 +216,7 @@ public sealed class ToolRegistryActorBranchTests
             ToolType = "cli",
             Status = ToolConnectionStatus.Error
         };
-        await fx.Actor.GrantAgentToolsAsync("agent-a", ["shell"]);
+        await fx.Actor.GrantAgentToolsAsync("agent-a", ["shell"], ["tool:shell:invoke:exec"]);
         fx.ToolActor.ClearReceivedCalls();
 
         var result = await fx.Actor.ResolveAsync("agent-a", "shell");

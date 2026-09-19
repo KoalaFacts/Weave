@@ -42,6 +42,8 @@ public sealed partial class McpToolConnector : IToolConnector
 
     public ToolType ToolType => ToolType.Mcp;
 
+    public ToolInvocation NormalizeInvocation(ToolInvocation invocation) => invocation;
+
     public async Task<ToolHandle> ConnectAsync(ToolSpec tool, CapabilityToken token, CancellationToken ct = default)
     {
         var mcp = tool.Mcp ?? throw new InvalidOperationException($"Tool '{tool.Name}' has no MCP configuration");

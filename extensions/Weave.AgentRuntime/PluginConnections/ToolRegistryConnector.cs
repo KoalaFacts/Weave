@@ -5,6 +5,7 @@ using Weave.Agents.Memory;
 using Weave.Agents.Skills;
 using Weave.Agents.Users;
 using Weave.Agents.Verification;
+using Weave.Authority;
 using Weave.Security.Tokens;
 using Weave.Shared.Events;
 using Weave.Shared.Ids;
@@ -50,7 +51,7 @@ internal sealed class ToolRegistryConnector(
         {
             WorkspaceId = workspaceId,
             IssuedTo = $"{workspaceId}/{toolName}",
-            Grants = [$"tool:{toolName}"],
+            Grants = [ToolCapability.Connect(toolName)],
             Lifetime = TimeSpan.FromHours(1)
         }, CancellationToken.None);
 
@@ -93,6 +94,7 @@ internal sealed class ToolRegistryConnector(
         persistentState.State.Connections.Clear();
         persistentState.State.Definitions.Clear();
         persistentState.State.AgentToolAccess.Clear();
+        persistentState.State.AgentCapabilities.Clear();
         await persistentState.WriteStateAsync();
     }
 

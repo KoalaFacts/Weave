@@ -9,21 +9,21 @@ public class WorkspacePresetCapabilitiesTests
     public void CodingAssistantPreset_DeclaresToolGrants()
     {
         WorkspacePresets.All["coding-assistant"].Capabilities
-            .ShouldBe(["tool:git", "tool:files"]);
+            .ShouldBe(["tool:git:invoke:*", "tool:files:invoke:*"]);
     }
 
     [Fact]
     public void ResearchPreset_DeclaresToolGrants()
     {
         WorkspacePresets.All["research"].Capabilities
-            .ShouldBe(["tool:web-search", "tool:files"]);
+            .ShouldBe(["tool:web-search:invoke:*", "tool:files:invoke:*"]);
     }
 
     [Fact]
     public void MultiAgentPreset_DeclaresToolGrants()
     {
         WorkspacePresets.All["multi-agent"].Capabilities
-            .ShouldBe(["tool:git", "tool:files", "tool:web-search"]);
+            .ShouldBe(["tool:git:invoke:*", "tool:files:invoke:*", "tool:web-search:invoke:*"]);
     }
 
     [Fact]
@@ -31,8 +31,8 @@ public class WorkspacePresetCapabilitiesTests
     {
         var capabilities = WorkspacePresets.All["support-team"].Capabilities;
 
-        capabilities.ShouldContain("tool:web-search");
-        capabilities.ShouldContain("tool:files");
+        capabilities.ShouldContain("tool:web-search:invoke:*");
+        capabilities.ShouldContain("tool:files:invoke:*");
         capabilities.ShouldContain("channel:send:slack");
         capabilities.ShouldContain("channel:receive:slack");
         capabilities.ShouldContain("skill:read");
@@ -59,7 +59,7 @@ public class WorkspacePresetCapabilitiesTests
             foreach (var tool in preset.Tools)
             {
                 Weave.Shared.Capabilities.CapabilityGrantMatcher
-                    .HasGrant(preset.Capabilities, $"tool:{tool}")
+                    .HasGrant(preset.Capabilities, $"tool:{tool}:invoke:operation")
                     .ShouldBeTrue($"preset '{name}' declares tool '{tool}' but no capability grant covers 'tool:{tool}'");
             }
         }
@@ -79,7 +79,7 @@ public class WorkspacePresetCapabilitiesTests
         var template = WorkspaceNewTemplateFactory.Create(selection);
 
         template.Agents.ShouldContainKey("assistant");
-        template.Agents["assistant"].Capabilities.ShouldBe(["tool:git", "tool:files"]);
+        template.Agents["assistant"].Capabilities.ShouldBe(["tool:git:invoke:*", "tool:files:invoke:*"]);
     }
 
     [Fact]
@@ -102,7 +102,7 @@ public class WorkspacePresetCapabilitiesTests
         // Monitor's hard-coded tool list (web-search only) gets a matching
         // hard-coded grant so the emitted manifest is internally coherent.
         template.Agents.ShouldContainKey("monitor");
-        template.Agents["monitor"].Capabilities.ShouldBe(["tool:web-search"]);
+        template.Agents["monitor"].Capabilities.ShouldBe(["tool:web-search:invoke:*"]);
     }
 
     [Fact]

@@ -1,4 +1,5 @@
 using Microsoft.Extensions.Logging;
+using Weave.Authority;
 using Weave.Shared.Capabilities;
 using Weave.Shared.Ids;
 using Weave.Workspaces.Manifest;
@@ -138,13 +139,13 @@ public sealed partial class CapabilityTemplateActor(
             // incoherent: the runtime will deny every invocation. Validation
             // refuses to publish such a template — this is the contract the
             // strategy doc names ("pre-validated capability bundles").
-            var grant = $"tool:{toolRef}";
-            var granted = CapabilityGrantMatcher.HasGrant(ownedGrants, grant);
+            var grant = ToolCapability.Invoke(toolRef, "operation");
+            var granted = ToolCapability.ConstrainInvocations(ownedGrants, toolRef).Count > 0;
             results.Add(new TemplateValidationResult
             {
                 Check = $"ToolCapabilityGranted:{toolRef}",
                 Passed = granted,
-                Detail = granted ? null : $"Agent references tool '{toolRef}' but no capability grant covers '{grant}'. Add it (or a wildcard like 'tool:*') to AgentDefinition.Capabilities."
+                Detail = granted ? null : $"Agent references tool '{toolRef}' but no invocation capability is granted (for example '{grant}'). Add the required operations to AgentDefinition.Capabilities."
             });
         }
 

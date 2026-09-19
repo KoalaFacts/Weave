@@ -105,12 +105,13 @@ public sealed class ToolOperationAuthorizationTests
         var invocation = fx.Write();
         fx.Proxy.SubstituteAsync(Arg.Any<string>()).Returns(ci =>
         {
-            invocation.Parameters["content"] = "changed-after-authorization";
+            invocation.Parameters["path"] = "alternate.txt";
             return ci.Arg<string>();
         });
         var result = await fx.Actor.InvokeAsync(invocation, fx.Token("tool:*"));
-        result.Success.ShouldBeTrue();
+        result.Success.ShouldBeTrue(result.Error);
         File.ReadAllText(fx.Target).ShouldBe("updated");
+        File.ReadAllText(fx.AlternateTarget).ShouldBe("untouched");
     }
 
     [Fact]
@@ -157,6 +158,7 @@ public sealed class ToolOperationAuthorizationTests
         public ToolActor Actor { get; }
         public ToolSpec Spec { get; }
         public string Target => Path.Combine(_directory, "document.txt");
+        public string AlternateTarget => Path.Combine(_directory, "alternate.txt");
         public List<CapabilityAuthorizationEvent> Decisions { get; } = [];
         public static string ShellCommand => OperatingSystem.IsWindows() ? "Write-Output harmless" : "printf harmless";
 
@@ -164,6 +166,7 @@ public sealed class ToolOperationAuthorizationTests
         {
             Directory.CreateDirectory(_directory);
             File.WriteAllText(Target, "original");
+            File.WriteAllText(AlternateTarget, "untouched");
             Tokens = new CapabilityTokenService(Options.Create(new CapabilityTokenOptions
             {
                 SigningKey = "test-signing-key-that-is-at-least-32-chars-long",
@@ -202,7 +205,9 @@ public sealed class ToolOperationAuthorizationTests
 
         public Task<ToolHandle> ConnectAsync() => Actor.ConnectAsync(Spec, Token("tool:*"));
         public ToolInvocation Read() => new() { ToolName = Spec.Name, Method = "read_file", Parameters = new() { ["path"] = "document.txt" } };
-        public ToolInvocation Write() => new() { ToolName = Spec.Name, Method = "write_file", Parameters = new() { ["path"] = "document.txt", ["content"] = "updated" } };
+        // Resolve a harmless extra parameter first, so the mutation callback runs
+        // before the original path is enumerated by the secret substitutor.
+        public ToolInvocation Write() => new() { ToolName = Spec.Name, Method = "write_file", RawInput = "updated", Parameters = new() { ["label"] = "document", ["path"] = "document.txt" } };
 
         public void Dispose()
         {
