@@ -1,0 +1,61 @@
+name: Vertical Slice Validation
+
+on:
+  push:
+    branches: [refactor/vertical-slice-foundation]
+  workflow_dispatch:
+
+permissions:
+  contents: read
+
+concurrency:
+  group: vertical-slice-${{ github.ref }}
+  cancel-in-progress: true
+
+env:
+  DOTNET_NOLOGO: true
+  DOTNET_SKIP_FIRST_TIME_EXPERIENCE: true
+  DOTNET_CLI_TELEMETRY_OPTOUT: true
+
+jobs:
+  validate:
+    runs-on: ubuntu-latest
+    timeout-minutes: 30
+    steps:
+      - name: Checkout
+        uses: actions/checkout@de0fac2e4500dabe0009e67214ff5f5447ce83dd # v6
+        with:
+          persist-credentials: false
+
+      - name: Export tracked source for review
+        run: git archive --format=tar HEAD -o source-snapshot.tar
+
+      - name: Upload source snapshot
+        uses: actions/upload-artifact@043fb46d1a93c77aae656e7c1c64a875d1fc6a0a # v7
+        with:
+          name: source-snapshot
+          path: source-snapshot.tar
+          retention-days: 3
+
+      - name: Setup .NET
+        uses: ./.github/actions/setup-dotnet
+
+      - name: Restore
+        run: dotnet restore Weave.slnx
+
+      - name: Build
+        run: dotnet build Weave.slnx --no-restore -c Release
+
+      - name: Test
+        run: >-
+          dotnet test --solution Weave.slnx --no-build -c Release
+          -- --report-xunit-trx --results-directory ./test-results
+
+      - name: Upload validation results
+        if: always()
+        uses: actions/upload-artifact@043fb46d1a93c77aae656e7c1c64a875d1fc6a0a # v7
+        with:
+          name: vertical-slice-test-results
+          path: ./test-results/**/*.trx
+          if-no-files-found: warn
+          retention-days: 7
