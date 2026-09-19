@@ -29,10 +29,10 @@ public sealed class StartWorkspaceHandler(IVirtualActorProvider actors)
         await toolRegistry.ConnectToolsAsync(command.Manifest.Tools);
         await toolRegistry.ConfigureAccessAsync(command.Manifest.Agents.ToDictionary(
             static kvp => kvp.Key,
-            static kvp => kvp.Value.Tools.ToList(),
+            static kvp => kvp.Value.Tools?.ToList() ?? [],
             StringComparer.Ordinal), command.Manifest.Agents.ToDictionary(
             static kvp => kvp.Key,
-            static kvp => kvp.Value.Capabilities.ToList(),
+            static kvp => kvp.Value.Capabilities?.ToList() ?? [],
             StringComparer.Ordinal));
 
         var supervisor = actors.GetActor<IAgentSupervisorActor>(VirtualActorId.From(command.WorkspaceId.ToString()));

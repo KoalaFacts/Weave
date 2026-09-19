@@ -32,7 +32,8 @@ public sealed class DirectHttpToolConnectorTests
         handle.IsConnected.ShouldBeTrue();
         handle.ToolName.ShouldBe("my-api");
         handle.Type.ShouldBe(ToolType.DirectHttp);
-        handle.ConnectionId.ShouldBe("http://localhost:8080");
+        handle.ConnectionId.ShouldStartWith("http:");
+        handle.ConnectionId.ShouldNotBe("http://localhost:8080");
     }
 
     [Fact]
@@ -64,13 +65,11 @@ public sealed class DirectHttpToolConnectorTests
     public async Task DisconnectAsync_ReturnsCompleted()
     {
         var connector = CreateConnector();
-        var handle = new ToolHandle
+        var handle = await connector.ConnectAsync(new ToolSpec
         {
-            ToolName = "test",
-            Type = ToolType.DirectHttp,
-            ConnectionId = "http://localhost:8080",
-            IsConnected = true
-        };
+            Name = "test", Type = ToolType.DirectHttp,
+            DirectHttp = new DirectHttpToolConfig { BaseUrl = "http://localhost:8080" }
+        }, _testToken, TestContext.Current.CancellationToken);
 
         await connector.DisconnectAsync(handle, TestContext.Current.CancellationToken);
     }
@@ -79,13 +78,11 @@ public sealed class DirectHttpToolConnectorTests
     public async Task InvokeAsync_NetworkError_ReturnsFailure()
     {
         var connector = CreateConnector();
-        var handle = new ToolHandle
+        var handle = await connector.ConnectAsync(new ToolSpec
         {
-            ToolName = "unreachable",
-            Type = ToolType.DirectHttp,
-            ConnectionId = "http://localhost:1",
-            IsConnected = true
-        };
+            Name = "unreachable", Type = ToolType.DirectHttp,
+            DirectHttp = new DirectHttpToolConfig { BaseUrl = "http://localhost:1" }
+        }, _testToken, TestContext.Current.CancellationToken);
         var invocation = new ToolInvocation
         {
             ToolName = "unreachable",
@@ -118,13 +115,11 @@ public sealed class DirectHttpToolConnectorTests
     public async Task InvokeAsync_PathTraversal_RejectsUnsafePaths(string maliciousMethod)
     {
         var connector = CreateConnector();
-        var handle = new ToolHandle
+        var handle = await connector.ConnectAsync(new ToolSpec
         {
-            ToolName = "test",
-            Type = ToolType.DirectHttp,
-            ConnectionId = "http://localhost:8080",
-            IsConnected = true
-        };
+            Name = "test", Type = ToolType.DirectHttp,
+            DirectHttp = new DirectHttpToolConfig { BaseUrl = "http://localhost:8080" }
+        }, _testToken, TestContext.Current.CancellationToken);
         var invocation = new ToolInvocation
         {
             ToolName = "test",
@@ -194,13 +189,11 @@ public sealed class DirectHttpToolConnectorTests
     public async Task InvokeAsync_LeadingSlash_NormalizedCorrectly(string method)
     {
         var connector = CreateConnector();
-        var handle = new ToolHandle
+        var handle = await connector.ConnectAsync(new ToolSpec
         {
-            ToolName = "test",
-            Type = ToolType.DirectHttp,
-            ConnectionId = "http://localhost:1",
-            IsConnected = true
-        };
+            Name = "test", Type = ToolType.DirectHttp,
+            DirectHttp = new DirectHttpToolConfig { BaseUrl = "http://localhost:1" }
+        }, _testToken, TestContext.Current.CancellationToken);
         var invocation = new ToolInvocation { ToolName = "test", Method = method, Parameters = [] };
 
         // Will fail with connection error but validates path construction doesn't throw
@@ -384,6 +377,49 @@ public sealed class DirectHttpToolConnectorTests
         await connector.InvokeAsync(handle2, invocation, TestContext.Current.CancellationToken);
 
         handler.LastAuthorizationHeader.ShouldBeNull();
+    }
+
+    [Fact]
+    public async Task InvokeAsync_SameNameConnections_KeepIndependentAuthentication()
+    {
+        var handler = new StubHandler("{}");
+        using var client = new HttpClient(handler);
+        var connector = CreateConnector(client);
+        var first = await connector.ConnectAsync(new ToolSpec
+        {
+            Name = "api", Type = ToolType.DirectHttp,
+            DirectHttp = new DirectHttpToolConfig { BaseUrl = "https://same.test", AuthHeader = "Bearer first" }
+        }, _testToken, TestContext.Current.CancellationToken);
+        var second = await connector.ConnectAsync(new ToolSpec
+        {
+            Name = "api", Type = ToolType.DirectHttp,
+            DirectHttp = new DirectHttpToolConfig { BaseUrl = "https://same.test", AuthHeader = "Bearer second" }
+        }, _testToken, TestContext.Current.CancellationToken);
+        first.ConnectionId.ShouldNotBe(second.ConnectionId);
+        var invocation = new ToolInvocation { ToolName = "api", Method = "echo" };
+        (await connector.InvokeAsync(first, invocation, TestContext.Current.CancellationToken)).Success.ShouldBeTrue();
+        handler.LastAuthorizationHeader.ShouldBe("Bearer first");
+        await connector.DisconnectAsync(first, TestContext.Current.CancellationToken);
+        (await connector.InvokeAsync(second, invocation, TestContext.Current.CancellationToken)).Success.ShouldBeTrue();
+        handler.LastAuthorizationHeader.ShouldBe("Bearer second");
+    }
+
+    [Fact]
+    public async Task InvokeAsync_DisconnectedHandle_DoesNotFallBackToAnonymousHttp()
+    {
+        var handler = new StubHandler("{}");
+        using var client = new HttpClient(handler);
+        var connector = CreateConnector(client);
+        var handle = await connector.ConnectAsync(new ToolSpec
+        {
+            Name = "api", Type = ToolType.DirectHttp,
+            DirectHttp = new DirectHttpToolConfig { BaseUrl = "https://api.test", AuthHeader = "Bearer secret" }
+        }, _testToken, TestContext.Current.CancellationToken);
+        await connector.DisconnectAsync(handle, TestContext.Current.CancellationToken);
+        var result = await connector.InvokeAsync(handle,
+            new ToolInvocation { ToolName = "api", Method = "echo" }, TestContext.Current.CancellationToken);
+        result.Success.ShouldBeFalse();
+        handler.LastRequestUri.ShouldBeNull();
     }
 
     // --- Stub handler ---

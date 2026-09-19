@@ -13,7 +13,7 @@ namespace Weave.Tools.Connectors;
 /// </summary>
 public sealed partial class DirectHttpToolConnector(HttpClient httpClient, ILogger<DirectHttpToolConnector> logger) : IToolConnector
 {
-    private readonly ConcurrentDictionary<string, string> _authHeaders = new(StringComparer.Ordinal);
+    private readonly ConcurrentDictionary<string, DirectHttpConnection> _connections = new(StringComparer.Ordinal);
 
     public ToolType ToolType => ToolType.DirectHttp;
 
@@ -26,12 +26,9 @@ public sealed partial class DirectHttpToolConnector(HttpClient httpClient, ILogg
         if (string.IsNullOrWhiteSpace(config.BaseUrl))
             throw new InvalidOperationException($"Tool '{tool.Name}': DirectHttp 'base_url' is required");
 
-        // Store auth per-tool, applied per-request in InvokeAsync.
-        // Never use DefaultRequestHeaders — the HttpClient is shared across tools.
-        if (!string.IsNullOrWhiteSpace(config.AuthHeader))
-            _authHeaders[tool.Name] = config.AuthHeader;
-        else
-            _authHeaders.TryRemove(tool.Name, out _);
+        // Connection identity, not a reusable tool name, owns endpoint and credentials.
+        var connectionId = $"http:{Guid.NewGuid():N}";
+        _connections[connectionId] = new DirectHttpConnection(tool.Name, config.BaseUrl, config.AuthHeader);
 
         LogDirectHttpToolConnected(tool.Name, config.BaseUrl);
 
@@ -39,14 +36,14 @@ public sealed partial class DirectHttpToolConnector(HttpClient httpClient, ILogg
         {
             ToolName = tool.Name,
             Type = ToolType.DirectHttp,
-            ConnectionId = config.BaseUrl,
+            ConnectionId = connectionId,
             IsConnected = true
         });
     }
 
     public Task DisconnectAsync(ToolHandle handle, CancellationToken ct = default)
     {
-        _authHeaders.TryRemove(handle.ToolName, out _);
+        _connections.TryRemove(handle.ConnectionId, out _);
         LogDirectHttpToolDisconnected(handle.ToolName);
         return Task.CompletedTask;
     }
@@ -56,7 +53,11 @@ public sealed partial class DirectHttpToolConnector(HttpClient httpClient, ILogg
         var sw = Stopwatch.StartNew();
         try
         {
-            var baseUrl = handle.ConnectionId.TrimEnd('/');
+            if (!_connections.TryGetValue(handle.ConnectionId, out var connection)
+                || !string.Equals(connection.ToolName, handle.ToolName, StringComparison.Ordinal))
+                return new ToolResult { Success = false, ToolName = handle.ToolName, Error = "HTTP tool connection is unavailable.", Duration = sw.Elapsed };
+
+            var baseUrl = connection.BaseUrl.TrimEnd('/');
             var method = invocation.Method.TrimStart('/');
 
             // Reject path traversal, absolute URLs, and encoded variants to prevent SSRF
@@ -76,8 +77,8 @@ public sealed partial class DirectHttpToolConnector(HttpClient httpClient, ILogg
             request.Content = new ByteArrayContent(bytes);
             request.Content.Headers.ContentType = new System.Net.Http.Headers.MediaTypeHeaderValue("application/json");
 
-            if (_authHeaders.TryGetValue(handle.ToolName, out var authHeader))
-                request.Headers.TryAddWithoutValidation("Authorization", authHeader);
+            if (!string.IsNullOrWhiteSpace(connection.AuthHeader))
+                request.Headers.TryAddWithoutValidation("Authorization", connection.AuthHeader);
 
             using var response = await httpClient.SendAsync(request, ct);
             var output = await response.Content.ReadAsStringAsync(ct);

@@ -96,22 +96,27 @@ jobs:
         run: |
           dotnet restore Weave.slnx --locked-mode
           dotnet build Weave.slnx --no-restore -c Release
-      - name: Prove corrected assertions fail before implementation
+      - name: Run the corrected fixture against the old implementation
+        shell: bash
+        run: |
+          mkdir -p red-evidence
+          set +e
+          dotnet test --solution Weave.slnx --no-build -c Release -- --report-xunit-trx --results-directory ./red-evidence > red-evidence/test.log 2>&1
+          code=$?
+          set -e
+          printf '%s\n' "$code" > red-evidence/exit-code.txt
+          test "$code" -ne 0
+      - name: Require actual expected pre-fix test failures
         shell: python
         run: |
           from pathlib import Path
-          import subprocess
           import xml.etree.ElementTree as ET
-          Path('red-evidence').mkdir()
-          with open('red-evidence/test.log', 'w') as log:
-              result = subprocess.run(['dotnet', 'test', '--solution', 'Weave.slnx', '--no-build', '-c', 'Release', '--', '--report-xunit-trx', '--results-directory', './red-evidence'], stdout=log, stderr=subprocess.STDOUT)
           files = list(Path('red-evidence').rglob('*.trx'))
           assert files, 'No actual test evidence'
           failures = [r for f in files for r in ET.parse(f).iter() if r.tag.endswith('UnitTestResult') and r.get('outcome') == 'Failed']
           names = '\n'.join(r.get('testName', '') for r in failures)
           for expected in ['CallerMutatesParametersDuringAwait', 'TokenRevokedDuringSecretResolution', 'NoWriteGrant', 'ExactReadGrant']:
               assert expected in names, 'Missing expected pre-fix failure: ' + expected
-          assert result.returncode != 0
           print(names)
       - uses: actions/upload-artifact@043fb46d1a93c77aae656e7c1c64a875d1fc6a0a
         if: always()
