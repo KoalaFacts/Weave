@@ -6,6 +6,7 @@ public static class ToolCapability
     public static string Connect(string toolName) => $"tool:{Escape(toolName)}:connect";
     public static string Invoke(string toolName, string operation) => $"{Prefix(toolName)}{Escape(operation)}";
     public static string InvokeAll(string toolName) => $"{Prefix(toolName)}*";
+    public static string Approve(string toolName, string operation) => $"tool:{Escape(toolName)}:approve:{Escape(operation)}";
 
     public static HashSet<string> ConstrainInvocations(string toolName, IEnumerable<string> grants)
     {

@@ -7,12 +7,14 @@ using Weave.Shared.Ids;
 namespace Weave.Security.Sqlite;
 
 /// <summary>On-disk journal. Short SQLite transactions claim one attempt; none span dispatch.</summary>
-public sealed class SqliteInvocationJournal : IInvocationJournal
+public sealed partial class SqliteInvocationJournal : IInvocationApprovalJournal
 {
     private readonly string _connectionString;
+    private readonly InvocationApprovalPolicy _approvalPolicy;
 
     public SqliteInvocationJournal(IOptions<InvocationJournalOptions> options)
     {
+        _approvalPolicy = new InvocationApprovalPolicy(options.Value);
         var path = options.Value.DatabasePath ?? Path.Combine(
             Environment.GetFolderPath(Environment.SpecialFolder.UserProfile), ".weave", "invocations.db");
         if (string.IsNullOrWhiteSpace(path) || path.Equals(":memory:", StringComparison.OrdinalIgnoreCase)
@@ -47,7 +49,7 @@ public sealed class SqliteInvocationJournal : IInvocationJournal
                 PRIMARY KEY(workspace_id, invocation_id),
                 FOREIGN KEY(workspace_id, invocation_id) REFERENCES invocations(workspace_id, invocation_id)
             );
-            """;
+            """ + ApprovalSchema;
         schema.ExecuteNonQuery();
     }
 
@@ -58,7 +60,17 @@ public sealed class SqliteInvocationJournal : IInvocationJournal
             throw new ArgumentException("A new attempt must have an unconfirmed outcome.", nameof(candidate));
         cancellationToken.ThrowIfCancellationRequested();
         using var connection = Open();
-        using var transaction = connection.BeginTransaction();
+        using var transaction = connection.BeginTransaction(deferred: false);
+        var recorded = Read(connection, transaction, candidate.WorkspaceId, candidate.InvocationId);
+        if (recorded is not null)
+            return new InvocationClaim(false, recorded);
+        var admission = AdmitApproval(connection, transaction, candidate);
+        if (admission?.BlockingReason is not null)
+        {
+            cancellationToken.ThrowIfCancellationRequested();
+            transaction.Commit();
+            return admission;
+        }
         using var insert = connection.CreateCommand();
         insert.Transaction = transaction;
         insert.CommandText = """
@@ -94,7 +106,7 @@ public sealed class SqliteInvocationJournal : IInvocationJournal
         attempt.ExecuteNonQuery();
         cancellationToken.ThrowIfCancellationRequested();
         transaction.Commit();
-        return new InvocationClaim(true, candidate);
+        return admission ?? new InvocationClaim(true, candidate);
     }
 
     public InvocationRecord? Find(string workspaceId, InvocationId invocationId, CancellationToken cancellationToken)
