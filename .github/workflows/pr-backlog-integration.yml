@@ -42,7 +42,7 @@ jobs:
           save('base.json', {'main': base, 'inventory': subprocess.check_output(['git', 'rev-parse', 'HEAD'], text=True).strip()})
           pulls = api('pulls?state=open&per_page=100')
           save('open-pulls.json', pulls)
-          expected = [72, 73, 74, 75, 77, 82, 84, 85, 86, 87]
+          expected = [72, 73, 74, 75, 77, 82, 86, 87]
           if sorted(p['number'] for p in pulls) != expected:
               raise SystemExit('Open PR set changed; inspect inventory before proceeding.')
           summary = []
@@ -76,7 +76,10 @@ jobs:
           save('rulesets.json', api('rulesets'))
           for ruleset in api('rulesets'):
               save(f'ruleset-{ruleset["id"]}.json', api(f'rulesets/{ruleset["id"]}'))
+          for n in (84, 85, 89):
+              save(f'previously-merged-{n}.json', api(f'pulls/{n}'))
           subprocess.run(['git', 'archive', '--format=tar', base, '-o', str(root / 'main-source.tar')], check=True)
+          subprocess.run(['git', 'bundle', 'create', str(root / 'review.bundle'), '--all'], check=True)
           with Path(__import__('os').environ['GITHUB_STEP_SUMMARY']).open('a') as out:
               out.write('| PR | Mergeable | Files | Head |\n|---|---|---|---|\n')
               for p in summary:
