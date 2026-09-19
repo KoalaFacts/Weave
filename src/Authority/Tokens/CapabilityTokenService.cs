@@ -48,6 +48,8 @@ public sealed class CapabilityTokenService : ICapabilityTokenService
 
     public CapabilityToken Mint(CapabilityTokenRequest request)
     {
+        ArgumentNullException.ThrowIfNull(request);
+        ArgumentNullException.ThrowIfNull(request.Grants);
         ArgumentException.ThrowIfNullOrWhiteSpace(request.WorkspaceId);
         ArgumentException.ThrowIfNullOrWhiteSpace(request.IssuedTo);
 
@@ -56,10 +58,13 @@ public sealed class CapabilityTokenService : ICapabilityTokenService
         {
             WorkspaceId = request.WorkspaceId,
             IssuedTo = request.IssuedTo,
-            Grants = request.Grants,
+            Grants = new HashSet<string>(request.Grants, StringComparer.Ordinal),
             IssuedAt = now,
             ExpiresAt = now.Add(request.Lifetime)
         };
+
+        if (!CapabilityTokenPayload.HasValidFields(token))
+            throw new ArgumentException("Token fields exceed the supported limits or contain invalid values.", nameof(request));
 
         var signature = ComputeSignature(token, _signingKey);
         return token with { Signature = signature };
@@ -82,29 +87,42 @@ public sealed class CapabilityTokenService : ICapabilityTokenService
 
     public bool Validate(CapabilityToken token)
     {
-        if (token.ExpiresAt <= _timeProvider.GetUtcNow())
+        if (!CapabilityTokenPayload.HasValidFields(token)
+            || token.Signature is not { Length: 44 }
+            || token.ExpiresAt <= _timeProvider.GetUtcNow())
             return false;
 
-        if (IsRevoked(token.TokenId))
+        Span<byte> presented = stackalloc byte[32];
+        if (!Convert.TryFromBase64String(token.Signature, presented, out var written) || written != presented.Length)
             return false;
 
-        var presented = Encoding.UTF8.GetBytes(token.Signature);
+        byte[] payload;
+        try
+        {
+            payload = CapabilityTokenPayload.Encode(token);
+        }
+        catch (EncoderFallbackException)
+        {
+            // Ill-formed untrusted Unicode is an invalid token, not replacement text to authenticate.
+            return false;
+        }
 
-        if (SignatureMatches(token, _signingKey, presented))
-            return true;
-
-        return _previousSigningKey is not null
-            && SignatureMatches(token, _previousSigningKey, presented);
+        var authenticated = SignatureMatches(payload, _signingKey, presented)
+            || (_previousSigningKey is not null && SignatureMatches(payload, _previousSigningKey, presented));
+        return authenticated && !IsRevoked(token.TokenId);
     }
 
-    private static bool SignatureMatches(CapabilityToken token, byte[] key, byte[] presented)
+    private static bool SignatureMatches(byte[] payload, byte[] key, ReadOnlySpan<byte> presented)
     {
-        var expected = Encoding.UTF8.GetBytes(ComputeSignature(token, key));
+        var expected = HMACSHA256.HashData(key, payload);
         return CryptographicOperations.FixedTimeEquals(presented, expected);
     }
 
     public void Revoke(string tokenId)
     {
+        if (!CapabilityTokenPayload.HasValidTokenId(tokenId))
+            throw new ArgumentException("A canonical token identifier is required.", nameof(tokenId));
+
         var now = _timeProvider.GetUtcNow();
         _revokedTokens.TryAdd(tokenId, now);
         File.WriteAllText(GetRevocationPath(tokenId), now.ToString("O", System.Globalization.CultureInfo.InvariantCulture));
@@ -124,13 +142,13 @@ public sealed class CapabilityTokenService : ICapabilityTokenService
 
     public bool IsRevoked(string tokenId)
     {
-        return _revokedTokens.ContainsKey(tokenId) || File.Exists(GetRevocationPath(tokenId));
+        return CapabilityTokenPayload.HasValidTokenId(tokenId)
+            && (_revokedTokens.ContainsKey(tokenId) || File.Exists(GetRevocationPath(tokenId)));
     }
 
     private static string ComputeSignature(CapabilityToken token, byte[] key)
     {
-        var payload = $"{token.TokenId}:{token.WorkspaceId}:{token.IssuedTo}:{token.IssuedAt.ToUnixTimeSeconds()}:{token.ExpiresAt.ToUnixTimeSeconds()}:{string.Join(',', token.Grants.Order())}";
-        var hash = HMACSHA256.HashData(key, Encoding.UTF8.GetBytes(payload));
+        var hash = HMACSHA256.HashData(key, CapabilityTokenPayload.Encode(token));
         return Convert.ToBase64String(hash);
     }
 
