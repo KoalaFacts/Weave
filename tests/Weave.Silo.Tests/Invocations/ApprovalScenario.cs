@@ -61,7 +61,8 @@ internal sealed class ApprovalScenario : IDisposable
         await actor.OnActivatedAsync("workspace/files", TestContext.Current.CancellationToken);
         await actor.ConnectAsync(new ToolSpec
         {
-            Name = "files", Type = ToolType.FileSystem,
+            Name = "files",
+            Type = ToolType.FileSystem,
             FileSystem = new FileSystemToolConfig { Root = root ?? Root }
         }, Token("operator", "tool:files:connect"));
         return actor;
@@ -69,7 +70,10 @@ internal sealed class ApprovalScenario : IDisposable
 
     public CapabilityToken Token(string subject, params string[] grants) => Tokens.Mint(new CapabilityTokenRequest
     {
-        WorkspaceId = "workspace", IssuedTo = subject, Grants = [.. grants], Lifetime = TimeSpan.FromHours(1)
+        WorkspaceId = "workspace",
+        IssuedTo = subject,
+        Grants = [.. grants],
+        Lifetime = TimeSpan.FromHours(1)
     });
 
     public CapabilityToken Approver() => Token("approver", "approval:decide", "tool:files:approve:write_file", "invocation:read");
@@ -78,8 +82,10 @@ internal sealed class ApprovalScenario : IDisposable
     public ToolInvocation Write() => new()
     {
         InvocationId = InvocationId.From(Guid.NewGuid().ToString("N")),
-        ToolName = "files", Method = "write_file",
-        Parameters = new() { ["path"] = Path.GetFileName(Target) }, RawInput = "updated"
+        ToolName = "files",
+        Method = "write_file",
+        Parameters = new() { ["path"] = Path.GetFileName(Target) },
+        RawInput = "updated"
     };
 
     public async Task<InvocationApproval> WaitAsync(ToolActor actor, ToolInvocation request)
