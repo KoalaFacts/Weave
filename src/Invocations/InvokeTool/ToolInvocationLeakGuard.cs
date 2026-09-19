@@ -11,23 +11,22 @@ internal sealed partial class ToolInvocationLeakGuard(
     IEventBus eventBus,
     ILogger<ToolActor> logger)
 {
+    private const string RedactedResponse = "***REDACTED: potential secret detected in response***";
+
     public async Task<ToolResult?> BlockIfOutboundLeaksAsync(
         string workspaceId,
         string toolName,
         ToolInvocation invocation)
     {
-        var outboundPayload = invocation.RawInput ?? JsonSerializer.Serialize(invocation.Parameters, ToolJsonContext.Default.DictionaryStringString);
-        if (string.IsNullOrWhiteSpace(outboundPayload))
-            return null;
-
-        var scanResult = await leakScanner.ScanStringAsync(outboundPayload, new ScanContext
+        var context = new ScanContext
         {
             WorkspaceId = workspaceId,
             SourceComponent = $"tool:{toolName}",
             Direction = ScanDirection.Outbound
-        });
+        };
 
-        if (!scanResult.HasLeaks)
+        if (!await HasLeaksAsync(invocation.RawInput, context)
+            && !await HasLeaksAsync(JsonSerializer.Serialize(invocation.Parameters, ToolJsonContext.Default.DictionaryStringString), context))
             return null;
 
         LogLeakDetectedBlocked(toolName);
@@ -52,17 +51,15 @@ internal sealed partial class ToolInvocationLeakGuard(
         string toolName,
         ToolResult result)
     {
-        if (!result.Success || string.IsNullOrEmpty(result.Output))
-            return result;
-
-        var responseScan = await leakScanner.ScanStringAsync(result.Output, new ScanContext
+        var context = new ScanContext
         {
             WorkspaceId = workspaceId,
             SourceComponent = $"tool:{toolName}",
             Direction = ScanDirection.Inbound
-        });
-
-        if (!responseScan.HasLeaks)
+        };
+        var outputLeaks = await HasLeaksAsync(result.Output, context);
+        var errorLeaks = await HasLeaksAsync(result.Error, context);
+        if (!outputLeaks && !errorLeaks)
             return result;
 
         LogLeakDetectedRedacted(toolName);
@@ -74,7 +71,19 @@ internal sealed partial class ToolInvocationLeakGuard(
             Reason = "Secret leak detected in inbound response"
         }, CancellationToken.None);
 
-        return result with { Output = "***REDACTED: potential secret detected in response***" };
+        return result with
+        {
+            Output = outputLeaks ? RedactedResponse : result.Output,
+            Error = errorLeaks ? RedactedResponse : result.Error
+        };
+    }
+
+    private async Task<bool> HasLeaksAsync(string? payload, ScanContext context)
+    {
+        if (string.IsNullOrWhiteSpace(payload))
+            return false;
+
+        return (await leakScanner.ScanStringAsync(payload, context)).HasLeaks;
     }
 
     [LoggerMessage(Level = LogLevel.Warning, Message = "Secret leak detected in tool invocation for '{Tool}' - blocked")]
