@@ -1,78 +1,134 @@
 name: Operation Authority Validation
-
 on:
   push:
     branches: [feature/operation-authority]
-  workflow_dispatch:
-
 permissions:
   contents: read
-
 concurrency:
   group: operation-authority-${{ github.ref }}
-  cancel-in-progress: true
-
+  cancel-in-progress: false
 env:
   DOTNET_NOLOGO: true
   DOTNET_SKIP_FIRST_TIME_EXPERIENCE: true
   DOTNET_CLI_TELEMETRY_OPTOUT: true
-
 jobs:
+  prepare:
+    if: github.ref == 'refs/heads/feature/operation-authority'
+    runs-on: ubuntu-latest
+    timeout-minutes: 5
+    permissions:
+      contents: write
+    outputs:
+      source: ${{ steps.apply.outputs.source }}
+    steps:
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1
+        with:
+          ref: ${{ github.sha }}
+      - name: Apply only the reviewed hash-checked edits and remove preparation code
+        id: apply
+        env:
+          EXPECTED_SHA: ${{ github.sha }}
+        run: |
+          set -euo pipefail
+          test "$GITHUB_REF" = refs/heads/feature/operation-authority
+          python3 .operation-changes/apply.py
+          git fetch origin feature/operation-authority
+          test "$(git rev-parse FETCH_HEAD)" = "$EXPECTED_SHA"
+          git config user.name 'github-actions[bot]'
+          git config user.email '41898282+github-actions[bot]@users.noreply.github.com'
+          git commit -m 'feat: enforce explicit operation authority through tool and agent execution'
+          git push origin HEAD:refs/heads/feature/operation-authority
+          echo "source=$(git rev-parse HEAD)" >> "$GITHUB_OUTPUT"
   validate:
+    needs: prepare
     runs-on: ubuntu-latest
     timeout-minutes: 30
     steps:
-      - name: Checkout exact source
-        uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v6
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1
         with:
+          ref: ${{ needs.prepare.outputs.source }}
           persist-credentials: false
-
-      - name: Export source evidence
+      - name: Export exact prepared source
         run: |
           mkdir -p artifacts
           git archive --format=tar HEAD -o artifacts/source-snapshot.tar
           git rev-parse HEAD > artifacts/source-sha.txt
-
-      - name: Upload source evidence
-        uses: actions/upload-artifact@043fb46d1a93c77aae656e7c1c64a875d1fc6a0a # v7
+      - uses: actions/upload-artifact@043fb46d1a93c77aae656e7c1c64a875d1fc6a0a
         with:
           name: operation-authority-source
           path: artifacts/source-*
           retention-days: 7
-
-      - name: Setup .NET
-        uses: ./.github/actions/setup-dotnet
-
-      - name: Architecture and release security checks
+      - uses: ./.github/actions/setup-dotnet
+      - name: Architecture and release checks
         run: python3 -m unittest discover -s scripts/tests -v
-
-      - name: Strict locked restore and audit
-        shell: bash
+      - name: Strict restore
         run: |
           set -euo pipefail
           dotnet restore Weave.slnx --locked-mode -p:NuGetAudit=true -p:NuGetAuditMode=all -p:NuGetAuditLevel=low |& tee artifacts/restore.log
-
-      - name: Strict Release build
-        shell: bash
+      - name: Strict build
         run: |
           set -euo pipefail
           dotnet build Weave.slnx --no-restore -c Release |& tee artifacts/build.log
-
-      - name: Full test suite
-        shell: bash
+      - name: Full suite
         run: |
           set -euo pipefail
           dotnet test --solution Weave.slnx --no-build -c Release -- --report-xunit-trx --results-directory ./test-results |& tee artifacts/test.log
-
-      - name: Check formatting
-        run: dotnet format Weave.slnx --no-restore --verify-no-changes --verbosity minimal
-
-      - name: Upload validation evidence
+      - name: Formatting with main CI baseline exclusions
+        shell: python
+        run: |
+          from pathlib import Path
+          import subprocess
+          excluded = Path('.github/workflows/ci.yml').read_text().split('--exclude ', 1)[1].split('\n\n', 1)[0].split()
+          assert excluded and all(p.endswith('.cs') for p in excluded)
+          subprocess.run(['dotnet', 'format', 'Weave.slnx', '--no-restore', '--verify-no-changes', '--verbosity', 'minimal', '--exclude', *excluded], check=True)
+      - uses: actions/upload-artifact@043fb46d1a93c77aae656e7c1c64a875d1fc6a0a
         if: always()
-        uses: actions/upload-artifact@043fb46d1a93c77aae656e7c1c64a875d1fc6a0a # v7
         with:
           name: operation-authority-validation
           path: |
             artifacts/
             test-results/**/*.trx
+          retention-days: 7
+  corrected-regression-proof:
+    needs: prepare
+    runs-on: ubuntu-latest
+    timeout-minutes: 20
+    steps:
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1
+        with:
+          ref: 0f80116bafe4593674c31da6e67f3dbe73836715
+          fetch-depth: 0
+          persist-credentials: false
+      - name: Use corrected file-side-effect fixture on old implementation
+        env:
+          PREPARED_SHA: ${{ needs.prepare.outputs.source }}
+        run: |
+          git show "$PREPARED_SHA:tests/Weave.Tools.Tests/ToolOperationAuthorizationTests.cs" > tests/Weave.Tools.Tests/ToolOperationAuthorizationTests.cs
+      - uses: ./.github/actions/setup-dotnet
+      - name: Strict restore and build of old code
+        run: |
+          dotnet restore Weave.slnx --locked-mode
+          dotnet build tests/Weave.Tools.Tests/Weave.Tools.Tests.csproj --no-restore -c Release
+      - name: Prove corrected assertions fail before implementation
+        shell: python
+        run: |
+          from pathlib import Path
+          import subprocess
+          import xml.etree.ElementTree as ET
+          Path('red-evidence').mkdir()
+          with open('red-evidence/test.log', 'w') as log:
+              result = subprocess.run(['dotnet', 'test', '--project', 'tests/Weave.Tools.Tests/Weave.Tools.Tests.csproj', '--no-build', '-c', 'Release', '--', '--report-xunit-trx', '--results-directory', './red-evidence'], stdout=log, stderr=subprocess.STDOUT)
+          files = list(Path('red-evidence').rglob('*.trx'))
+          assert files, 'No actual test evidence'
+          failures = [r for f in files for r in ET.parse(f).iter() if r.tag.endswith('UnitTestResult') and r.get('outcome') == 'Failed']
+          names = '\n'.join(r.get('testName', '') for r in failures)
+          for expected in ['CallerMutatesParametersDuringAwait', 'TokenRevokedDuringSecretResolution', 'NoWriteGrant', 'ExactReadGrant']:
+              assert expected in names, 'Missing expected pre-fix failure: ' + expected
+          assert result.returncode != 0
+          print(names)
+      - uses: actions/upload-artifact@043fb46d1a93c77aae656e7c1c64a875d1fc6a0a
+        if: always()
+        with:
+          name: corrected-regression-proof
+          path: red-evidence/
           retention-days: 7
