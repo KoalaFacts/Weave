@@ -46,15 +46,12 @@ internal sealed class FileWriteApprovalScenario : IAsyncDisposable
         _parent = new SiloFactory();
         _host = _parent.WithWebHostBuilder(builder => builder
             .UseSetting("Weave:Approvals:RequireFileWriteApproval", "true")
+            .UseSetting("CapabilityTokens:SigningKey", "test-signing-key-that-is-at-least-32-chars-long")
+            .UseSetting("CapabilityTokens:RevocationDirectory", Path.Combine(Root, "revocations"))
             .ConfigureServices(services =>
             {
                 services.PostConfigure<InvocationJournalOptions>(o => o.DatabasePath = Database);
                 services.PostConfigure<InvocationApprovalOptions>(o => o.Lifetime = TimeSpan.FromMinutes(10));
-                services.PostConfigure<CapabilityTokenOptions>(o =>
-                {
-                    o.SigningKey = "test-signing-key-that-is-at-least-32-chars-long";
-                    o.RevocationDirectory = Path.Combine(Root, "revocations");
-                });
                 services.RemoveAll<TimeProvider>();
                 services.AddSingleton<TimeProvider>(_clock);
             }));
