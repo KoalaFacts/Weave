@@ -2,6 +2,7 @@ using System.Text.Json;
 using Weave.Invocations;
 using Weave.Security.Tokens;
 using Weave.Shared.VirtualActors;
+using Weave.Silo.VirtualActors;
 using Weave.Tools.Tool;
 
 namespace Weave.Silo.Invocations;
@@ -39,18 +40,18 @@ internal static class InvokeToolEndpoint
                 || request.Parameters.Any(p => p.Value is null))
                 return InvocationHttp.Error(400, "invalid-invocation");
 
-            var actor = actors.GetActor<IToolActor>(VirtualActorId.From(workspaceId + "/" + toolName));
-            var result = await actor.InvokeAsync(new ToolInvocation
+            var actor = actors.GetActor<IToolActorGrain>(VirtualActorId.From(workspaceId + "/" + toolName));
+            var result = await actor.InvokeWithCancellationAsync(new ToolInvocation
             {
                 InvocationId = id,
                 ToolName = toolName,
                 Method = request.Method,
                 Parameters = request.Parameters,
                 RawInput = request.RawInput
-            }, token);
+            }, token, context.RequestAborted);
             var status = Status(result);
             if (status == 202)
-                context.Response.Headers.Location = $"{context.Request.PathBase}{context.Request.Path}/{id}/approval";
+                context.Response.Headers.Location = $"{context.Request.PathBase}/api/workspaces/{workspaceId}/tools/{toolName}/invocations/{id}/approval";
             return Results.Json(InvocationHttpResult.FromResult(result),
                 InvocationHttpJsonContext.Default.InvocationHttpResult, statusCode: status);
         }

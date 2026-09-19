@@ -1,7 +1,7 @@
 using Weave.Invocations;
 using Weave.Security.Tokens;
 using Weave.Shared.VirtualActors;
-using Weave.Tools.Tool;
+using Weave.Silo.VirtualActors;
 
 namespace Weave.Silo.Invocations;
 
@@ -16,8 +16,8 @@ internal static class GetInvocationEndpoint
             return InvocationHttp.Error(400, "invalid-invocation-id");
         try
         {
-            var actor = actors.GetActor<IToolActor>(VirtualActorId.From(workspaceId + "/" + toolName));
-            var record = await actor.GetInvocationAsync(id, token);
+            var actor = actors.GetActor<IToolActorGrain>(VirtualActorId.From(workspaceId + "/" + toolName));
+            var record = await actor.GetInvocationWithCancellationAsync(id, token, context.RequestAborted);
             if (record is null)
                 return InvocationHttp.Error(404, "invocation-not-found");
             var result = new InvocationHttpResult
