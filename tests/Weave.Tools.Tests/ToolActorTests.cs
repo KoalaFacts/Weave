@@ -287,10 +287,10 @@ public sealed class ToolActorTests
         result.Output.ShouldNotContain("AKIAIOSFODNN7EXAMPLE");
     }
 
-    // --- InvokeAsync: failed result with clean output skips response scan ---
+    // --- InvokeAsync: failed response redaction preserves failure ---
 
     [Fact]
-    public async Task InvokeAsync_FailedResult_DoesNotScanResponse()
+    public async Task InvokeAsync_FailedResult_RedactsOutputAndPreservesFailure()
     {
         var (actor, connector, tokenSvc) = CreateActor();
         var token = CreateToken(tokenSvc);
@@ -305,9 +305,10 @@ public sealed class ToolActorTests
         var invocation = new ToolInvocation { ToolName = "tool", Method = "run", RawInput = "safe", Parameters = [] };
         var result = await actor.InvokeAsync(invocation, token);
 
-        // Failed results skip response scanning — the leak in output is NOT redacted
         result.Success.ShouldBeFalse();
-        result.Output.ShouldContain("AKIAIOSFODNN7EXAMPLE");
+        result.Output.ShouldBe("***REDACTED: potential secret detected in response***");
+        result.Output.ShouldNotContain("AKIAIOSFODNN7EXAMPLE");
+        result.Error.ShouldBe("process failed");
     }
 
     // --- ConnectAsync: token without tool grant ---
