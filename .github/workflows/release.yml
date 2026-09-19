@@ -71,8 +71,7 @@ jobs:
           dotnet pack hosts/Weave.Cli/Weave.Cli.csproj \
             -c Release --no-build \
             "-p:Version=$VERSION" \
-            -p:IncludeSymbols=true \
-            -p:SymbolPackageFormat=snupkg \
+            -p:IncludeSymbols=false \
             -o packages
 
       - name: Verify package identity and version
@@ -89,7 +88,6 @@ jobs:
           name: nuget-packages-v${{ env.VERSION }}
           path: |
             packages/*.nupkg
-            packages/*.snupkg
           retention-days: 90
 
   publish-binaries:
@@ -216,7 +214,7 @@ jobs:
             --generate-notes \
             --notes-file release-footer.md \
             artifacts/weave-${VERSION}-*.zip artifacts/weave-${VERSION}-*.tar.gz \
-            artifacts/*.nupkg artifacts/*.snupkg \
+            artifacts/*.nupkg \
             scripts/install.sh scripts/install.ps1
         env:
           GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}

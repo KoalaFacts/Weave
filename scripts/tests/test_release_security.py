@@ -77,6 +77,17 @@ class ReleaseWorkflowTests(unittest.TestCase):
         self.assertIn('--target "$GITHUB_SHA"', content)
         self.assertIn("github.ref == 'refs/heads/main'", content)
 
+    def test_embedded_symbols_do_not_request_an_empty_symbol_package(self):
+        props = ET.parse(ROOT / 'Directory.Build.props')
+        self.assertEqual(props.find('.//DebugType').text, 'embedded')
+        for name in ('release.yml', 'security-release-chain-validation.yml'):
+            content = (ROOT / '.github/workflows' / name).read_text()
+            self.assertNotIn('IncludeSymbols=true', content)
+            self.assertNotIn('SymbolPackageFormat=snupkg', content)
+            self.assertIn('IncludeSymbols=false', content)
+        release = (ROOT / '.github/workflows/release.yml').read_text()
+        self.assertNotIn('artifacts/*.snupkg', release)
+
     def test_messagepack_security_patch_is_pinned(self):
         packages = ET.parse(ROOT / 'Directory.Packages.props')
         version = packages.find('.//PackageVersion[@Include="MessagePack"]').attrib['Version']
