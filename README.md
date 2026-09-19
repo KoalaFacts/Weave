@@ -39,7 +39,9 @@ The current code is the starting point for the control plane, not an empty scaff
 | Workspaces and agents | Manifest-based configuration, a CLI, and an Orleans-backed host/runtime. | Agent actor keys remain `{workspaceId}/{agentName}`. Portable identity is not implemented by moving files. |
 | Tool execution | `ToolActor` separates connection permission from `tool:<name>:invoke:<operation>` grants, normalizes adapter selectors, and rechecks authority before dispatch. Agent tool availability alone does not mint execution rights. | This is operation selection within the current workspace/tool model, not generalized resource/account constraints or installation revisions. |
 | Invocation recording | The host requires an on-disk SQLite journal. Intent, authorization evidence and a distinct attempt are committed before dispatch; recording failure blocks the call. Stable IDs prevent repeat dispatch against that journal, and owner-scoped outcome lookup works after Host restart. | Single-host/preserved-file scope, metadata rather than response-body storage, no automatic unknown-outcome recovery or cluster-wide guarantee. |
-| Durable approval | Configured filesystem operations wait for an independently authorized, exact-plan decision. Approval is consumed atomically with attempt admission; the original request must be resubmitted with current authority. | Backend/operator actor API, not an approval UI or public HTTP/MCP ingress. Filesystem is the first target-binding adapter; unsupported required targets fail closed. |
+| Durable approval | Configured filesystem operations wait for an independently authorized, exact-plan decision. Approval is consumed atomically with attempt admission; the original request must be resubmitted with current authority. | Decisions remain backend/operator-only. Filesystem is the first target-binding adapter; unsupported required targets fail closed. |
+| Governed HTTP entry | Opt-in routes submit invocations and query outcomes/approval status using already signed capability tokens. | Not public token issuance or self-service onboarding. Global API auth remains separate; restrict exposure to the governed routes. |
+| Verified approval review | An independent reviewer submits the retained request; a read-only endpoint returns readable inputs and registered-target information only when they match the pending plan. | JSON review data, not an operator UI or approval receipt. No reviewer-side secret resolution; unsupported or changed effective inputs fail closed. |
 | Connectors | MCP over stdio and HTTP/SSE, CLI, filesystem, OpenAPI, Direct HTTP, and Dapr extension projects. | An outbound MCP connector is not an inbound MCP governance server. Protocol coverage and security controls differ by adapter. |
 | Authentication and credentials | Signed capability tokens, revocation handling, secret-protection code, and API authentication that rejects broken enabled configurations. | API auth defaults to `none`. The built-in bearer mode is a shared token, not a complete OAuth/OIDC or tenant identity system. |
 | Verification | Automated tests, dependency auditing, CI, and release-source/package validation. | Passing checks does not establish complete tenant isolation, generalized provider approval coverage, or a sandbox for untrusted code. |
@@ -48,9 +50,11 @@ Relevant implementation: [tool dispatch](src/Invocations/InvokeTool/ToolActor.cs
 
 **Grant migration:** bare `tool:<name>` grants no longer authorize execution. Configure explicit `AgentDefinition.Capabilities`; for example, `tool:files:invoke:read_file` does not grant `write_file`. CLI execution requires `exec` authority, not a caller-supplied read-only label. Read the [operation-authority migration notes](docs/implementation/2026-09-19-exact-tool-operations.md) before upgrading existing workspaces or custom connectors.
 
-**Invocation recording:** the host defaults to `~/.weave/invocations.db`; configure `Weave:Invocations:DatabasePath` for a persistent local path. There is no production in-memory fallback. Retain a caller-generated `InvocationId` before sending when response-loss recovery matters: omitted IDs create new logical calls. `IToolActor.GetInvocationAsync` requires separate `invocation:read` authority and the original workspace, tool and token subject. Queries and duplicate submissions return outcome metadata, not the original response body. Unknown outcomes must not be retried under a fresh ID. Read the [journal scope, query and migration notes](docs/implementation/2026-09-19-durable-invocations.md); separate silo-local files do not provide distributed deduplication, and no public HTTP query route is added by this increment.
+**Invocation recording:** the host defaults to `~/.weave/invocations.db`; configure `Weave:Invocations:DatabasePath` for a persistent local path. There is no production in-memory fallback. Retain a caller-generated `InvocationId` before sending when response-loss recovery matters: omitted IDs create new logical calls. `IToolActor.GetInvocationAsync` requires separate `invocation:read` authority and the original workspace, tool and token subject. Queries and duplicate submissions return outcome metadata, not the original response body. Unknown outcomes must not be retried under a fresh ID. Read the [journal scope, query and migration notes](docs/implementation/2026-09-19-durable-invocations.md); separate silo-local files do not provide distributed deduplication.
 
-**Durable approval:** configure `Weave:Invocations:ApprovalRequiredGrants` explicitly; its default is empty. The operator uses `IToolActor.GetApprovalAsync` and `DecideApprovalAsync`; approval does not itself dispatch or grant execution permission. An approver needs `approval:decide` and the exact tool-operation approval grant, and cannot approve its own request. The original caller resumes by resubmitting the same ID and request. Read the [approval configuration, decision and restart guide](docs/implementation/2026-09-20-durable-approval.md) before using it. Review the original inputs through a trusted channel—stored digests are not a readable approval preview. Keep the journal outside agent-readable or writable tool roots and protect its files; it is not encrypted or tamper-proof audit storage.
+**Durable approval:** configure `Weave:Invocations:ApprovalRequiredGrants` explicitly; its default is empty. The operator uses `IToolActor.GetApprovalAsync` and `DecideApprovalAsync`; approval does not itself dispatch or grant execution permission. An approver needs `approval:decide` and the exact tool-operation approval grant, and cannot approve its own request. The original caller resumes by resubmitting the same ID and request. Read the [approval configuration, decision and restart guide](docs/implementation/2026-09-20-durable-approval.md) before using it. Keep the journal outside agent-readable or writable tool roots and protect its files; it is not encrypted or tamper-proof audit storage.
+
+**HTTP and readable review:** see the [capability-authenticated ingress guide](docs/implementation/2026-09-20-governed-http-entry.md) and [verified review contract](docs/implementation/2026-09-20-verified-approval-review.md). Review matches the retained original request and current target before returning content; it neither approves nor executes. Render the response as plain text and bind any subsequent decision to its exact plan digest. The journal does not supply a lost request body, and an old preview cannot override later changes or expiry. A complete human review UI and public decision flow remain future work.
 
 The existing Agent Runtime, memory, skills, channels, and other features remain in the repository. They are not prerequisites for the new Governed Tools profile. The current executable host still composes the existing runtime; extracting an extension does not, by itself, deliver every proposed deployment profile.
 
@@ -89,17 +93,17 @@ dotnet test --project tests/Weave.Tools.Tests/Weave.Tools.Tests.csproj --no-buil
 
 That suite includes a round trip through the real MCP connector and the repository's [Python echo server](examples/echo-mcp/server.py). Some tests require platform facilities such as symlink creation; inspect skipped tests as well as failures. These connector tests are not evidence of the target end-to-end authorization and approval path.
 
-To exercise the host-level journal and approval scenarios, including complete Host recreation against the same SQLite file:
+To exercise the host-level journal, approval and HTTP review scenarios, including complete Host recreation against the same SQLite file:
 
 ```bash
 dotnet test --project tests/Weave.Silo.Tests/Weave.Silo.Tests.csproj --no-build -c Release
 ```
 
-The [approval restart test](tests/Weave.Silo.Tests/Invocations/ApprovalHostRestartTests.cs) demonstrates waiting without writing, restarting, an independent decision, explicit resubmission, and duplicate protection through the actual Orleans actor interface. It is an executable developer example, not a shipped approval screen or external-agent onboarding flow.
+The [approval restart test](tests/Weave.Silo.Tests/Invocations/ApprovalHostRestartTests.cs) demonstrates waiting without writing, restarting, an independent decision, explicit resubmission, and duplicate protection through the actual Orleans actor interface. The [HTTP review tests](tests/Weave.Silo.Tests/Invocations/GovernedHttpApprovalReviewTests.cs) verify readable content before a separately authorized decision. These are executable developer examples, not a shipped approval screen or self-service onboarding flow.
 
 For the current manifest format, see the [Manifest Reference](docs/manifest-reference.md). Older examples may retain pre-refactor paths; use `hosts/Weave.Cli/Weave.Cli.csproj` and the current CLI help. [Release history](https://github.com/KoalaFacts/Weave/releases) describes published versions separately from this development branch.
 
-**Local evaluation is not a production deployment.** Keep unauthenticated development endpoints private. Before exposing a host, configure authentication and transport protection, restrict credentials and network access, and assess the deployment's actual isolation boundaries.
+**Local evaluation is not a production deployment.** Keep unauthenticated development endpoints private. Before exposing a host, configure authentication and transport protection, restrict credentials and network access, and assess the deployment's actual isolation boundaries. Exposing the new governed routes does not secure the host's unrelated administrative endpoints.
 
 ## The model we are building
 
@@ -155,7 +159,7 @@ Operation identity must retain its provider/installation context and contract re
 
 ## What comes next
 
-The next useful milestone is to make the implemented authorization, journal and bounded approval path accessible to an external agent and a human operator without direct actor access. That needs an authenticated ingress and a reviewable original plan, not just an approval button over an opaque digest. Generalized target/resource constraints and safe recovery from uncertain results remain explicit work.
+The invocation ingress and verified review data are available; the next user-facing milestone is a trustworthy operator experience that displays complete verified content and makes a separately authorized exact-plan decision. It must not turn an unexplained digest, stale preview or self-issued identity into approval. Generalized target/resource constraints and safe recovery from uncertain results remain explicit work.
 
 Then bring existing MCP/CLI/HTTP operations through the same path, add imported resource bindings and constrained credentials, and expand provisioning/reconciliation only for concrete workflows. A marketplace, hosted reasoning service, universal scheduler, or email/SMS infrastructure is not a prerequisite.
 
@@ -169,7 +173,7 @@ The detailed semantics and acceptance cases live in [ARCHITECTURE.md](ARCHITECTU
 src/Weave.csproj   Product library; feature folders are directly under src/
 src/Agents/       Identity-related behavior retained from the current runtime
 src/Authority/    Grants and authorization
-src/Invocations/  Tool execution, durable approval/admission and outcome queries
+src/Invocations/  Tool execution, durable approval/admission and verified review
 src/Plugins/      Plugin/discovery behavior
 src/Resources/    Existing identifiers; generalized resource lifecycle is a target
 hosts/            Executable hosts and their composition
