@@ -70,7 +70,10 @@ public sealed class ToolOperationIntegrationTests(SiloFactory factory) : IClassF
             await Should.ThrowAsync<UnauthorizedAccessException>(() => tool.InvokeAsync(write, resolution.Token));
             File.ReadAllText(path).ShouldBe("original");
 
-            await registry.GrantAgentToolsAsync("coder", ["fs-src"], ["tool:fs-src:invoke:write_file"]);
+            // Keep concrete wire collections; compiler-synthesized IReadOnlyList types lack Orleans codecs.
+            List<string> tools = ["fs-src"];
+            List<string> capabilities = ["tool:fs-src:invoke:write_file"];
+            await registry.GrantAgentToolsAsync("coder", tools, capabilities);
             var writer = await registry.ResolveAsync("coder", "fs-src");
             writer.ShouldNotBeNull();
             (await tool.InvokeAsync(write, writer.Token)).Success.ShouldBeTrue();
