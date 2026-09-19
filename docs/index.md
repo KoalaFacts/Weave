@@ -50,7 +50,7 @@ Weave.AppHost (Aspire orchestrator)
 | [deployment.md](deployment.md) | Deployment | `src/Deployment/` | Publishers: Docker Compose, Kubernetes, Nomad, Fly.io, GitHub Actions |
 | [runtime.md](runtime.md) | Runtime | `src/Runtime/` | Orleans Silo host, Aspire AppHost, plugin wiring (Dapr/Vault), REST API, CQRS handler registration |
 | [ux.md](ux.md) | CLI + Dashboard | `src/UX/` | CLI commands (System.CommandLine + Spectre.Console), Blazor dashboard (FluentUI), workspace presets |
-| [handoff.md](handoff.md) | Action Layer (Shape C) | `src/UX/Weave.Actions/` | Frontend-agnostic actions, `IActionPrompter`/`IActionReporter`, `ActionResult<T>`, typed `HttpClient` per action via `AddSiloActions(...)` |
+| [handoff.md](handoff.md) | Action Layer (Shape C) | `extensions/Weave.Actions/` | Frontend-agnostic actions, `IActionPrompter`/`IActionReporter`, `ActionResult<T>`, typed `HttpClient` per action via `AddSiloActions(...)` |
 | [examples.md](examples.md) | Code Examples | (cross-cutting) | Manifest authoring, CLI usage, actors, CQRS handlers, tokens, events, lifecycle hooks, testing patterns |
 
 ## Strategy & Direction

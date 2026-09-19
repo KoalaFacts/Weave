@@ -1,0 +1,27 @@
+<Project Sdk="Microsoft.NET.Sdk">
+  <PropertyGroup>
+    <AssemblyName>Weave.Product</AssemblyName>
+    <RootNamespace>Weave</RootNamespace>
+    <PackageId>Weave</PackageId>
+    <Description>Composable Weave features, organized as vertical slices.</Description>
+    <GenerateCqrsRegistration>false</GenerateCqrsRegistration>
+    <NoWarn>$(NoWarn);NU1510</NoWarn>
+  </PropertyGroup>
+  <ItemGroup>
+    <PackageReference Include="Microsoft.Extensions.AI.Abstractions" />
+    <PackageReference Include="Microsoft.Extensions.DependencyInjection.Abstractions" />
+    <PackageReference Include="Microsoft.Extensions.Logging.Abstractions" />
+    <PackageReference Include="Microsoft.Extensions.Options" />
+    <PackageReference Include="System.Text.Json" PrivateAssets="all" GeneratePathProperty="true" />
+  </ItemGroup>
+  <ItemGroup>
+    <InternalsVisibleTo Include="Weave.Agents" />
+    <InternalsVisibleTo Include="Weave.Security.Tests" />
+    <InternalsVisibleTo Include="Weave.Tools.Tests" />
+    <InternalsVisibleTo Include="Weave.Workspaces.Tests" />
+  </ItemGroup>
+  <ItemGroup>
+    <CompilerVisibleProperty Include="GenerateCqrsRegistration" />
+    <ProjectReference Include="../tools/Weave.SourceGen/Weave.SourceGen.csproj" OutputItemType="Analyzer" ReferenceOutputAssembly="false" GlobalPropertiesToRemove="PublishTrimmed;PublishAot;PublishSingleFile;PublishReadyToRun;SelfContained;RuntimeIdentifier" />
+  </ItemGroup>
+</Project>

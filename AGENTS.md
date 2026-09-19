@@ -687,7 +687,7 @@ Configuration:
 Starting locally:
 
 ```bash
-dotnet run --project src/Runtime/Weave.Silo -- --Weave:LocalMode=true
+dotnet run --project hosts/Weave.Host -- --Weave:LocalMode=true
 ```
 
 Or via the CLI:

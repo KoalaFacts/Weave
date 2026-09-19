@@ -8,14 +8,14 @@
 dotnet build Weave.slnx
 dotnet test --solution Weave.slnx
 
-dotnet test --project src/Workspaces/Weave.Workspaces.Tests
-dotnet test --project src/Assistants/Weave.Agents.Tests
-dotnet test --project src/Security/Weave.Security.Tests
-dotnet test --project src/Tools/Weave.Tools.Tests
-dotnet test --project src/Deployment/Weave.Deploy.Tests
-dotnet test --project src/Runtime/Weave.Silo.Tests
-dotnet test --project src/Foundation/Weave.Shared.Tests
-dotnet test --project src/UX/Weave.Cli.Tests
+dotnet test --project tests/Weave.Workspaces.Tests
+dotnet test --project tests/Weave.Agents.Tests
+dotnet test --project tests/Weave.Security.Tests
+dotnet test --project tests/Weave.Tools.Tests
+dotnet test --project tests/Weave.Deploy.Tests
+dotnet test --project tests/Weave.Silo.Tests
+dotnet test --project tests/Weave.Shared.Tests
+dotnet test --project tests/Weave.Cli.Tests
 ```
 
 Most projects target `net10.0`. `Weave.SourceGen` targets `netstandard2.0`.
@@ -81,7 +81,7 @@ Dependency flow should stay roughly:
 
 - Commands and queries live with their domain.
 - `Weave.Silo` wires handlers through source-generated `AddGeneratedCqrsHandlers()` (from `CqrsRegistrationGenerator`).
-- HTTP endpoints in `src/Runtime/Weave.Silo/Api` are thin adapters over CQRS dispatch.
+- HTTP endpoints in `hosts/Weave.Host/Api` are thin adapters over CQRS dispatch.
 
 ### Branded IDs
 
@@ -150,7 +150,7 @@ Common test gotchas:
 3. Add the Orleans grain bridge in `Weave.Silo/VirtualActors/GrainInterfaces.cs`.
 4. Add or extend the state model in `Models/`.
 5. Add commands, queries, or events if the actor is externally driven.
-6. Register any required services in `src/Runtime/Weave.Silo/Program.cs`.
+6. Register any required services in `hosts/Weave.Host/Program.cs`.
 7. Add unit tests in the matching test project.
 
 ### Add a new tool connector
@@ -159,13 +159,13 @@ Common test gotchas:
 2. Extend `ToolType` when required.
 3. Update discovery and Silo registrations.
 4. Extend the workspace manifest model if the connector needs new config.
-5. Add tests in `src/Tools/Weave.Tools.Tests/`.
+5. Add tests in `tests/Weave.Tools.Tests/`.
 
 ### Add a new deploy publisher
 
 1. Implement `IPublisher` in `Weave.Deploy/Translators/`.
-2. Wire the target into `src/UX/Weave.Cli/Commands/PublishCommand.cs`.
-3. Add tests in `src/Deployment/Weave.Deploy.Tests/`.
+2. Wire the target into `hosts/Weave.Cli/Commands/PublishCommand.cs`.
+3. Add tests in `tests/Weave.Deploy.Tests/`.
 
 ## CLI UX Philosophy
 

@@ -6,13 +6,13 @@ The law of the repo. Every rule here is enforceable in review. Rules exist to pr
 
 ### DI and lifetimes
 
-**Pick the right lifetime before reaching for `IServiceScopeFactory`.** If you feel pulled toward a scope factory, the service is almost certainly registered with the wrong lifetime. Service-locator patterns (`scopeFactory.CreateScope()` + `GetRequiredService`) hide real dependencies from the compiler and turn runtime errors into design drift. In this repo the default for stateless routers (dispatchers, factories) is **`Scoped`**, so the injected `IServiceProvider` is the consumer's own scope — see `src/Foundation/Weave.Shared/Cqrs/CommandDispatcher.cs` and `QueryDispatcher.cs` (both scoped, no scope factory).
+**Pick the right lifetime before reaching for `IServiceScopeFactory`.** If you feel pulled toward a scope factory, the service is almost certainly registered with the wrong lifetime. Service-locator patterns (`scopeFactory.CreateScope()` + `GetRequiredService`) hide real dependencies from the compiler and turn runtime errors into design drift. In this repo the default for stateless routers (dispatchers, factories) is **`Scoped`**, so the injected `IServiceProvider` is the consumer's own scope — see `src/Composition/Cqrs/CommandDispatcher.cs` and `QueryDispatcher.cs` (both scoped, no scope factory).
 
 **`IServiceScopeFactory` is reserved for services that legitimately outlive a request.** Background services (`IHostedService`), detached work (fire-and-forget that needs DI), and any singleton that must perform per-iteration scoped work. For those, the factory is correct; everywhere else it's a smell that should be challenged in review.
 
 **CQRS handlers are `Scoped`; dispatchers are `Scoped`.** The source-generated `AddGeneratedCqrsHandlers()` registers dispatchers and handlers as Scoped so the lifetime matches the caller's (HTTP request scope in endpoints, actor scope in Orleans). Don't override to `Singleton` — that's the bug we just retired.
 
-**Actors receive dependencies through constructor injection only.** Do not pull services inline from `provider runtime context` or a static accessor — it breaks the "tests may instantiate actors directly" rule in `CLAUDE.md`. Follow `src/Assistants/Weave.Agents/Actors/` for the shape.
+**Actors receive dependencies through constructor injection only.** Do not pull services inline from `provider runtime context` or a static accessor — it breaks the "tests may instantiate actors directly" rule in `CLAUDE.md`. Follow `extensions/Weave.AgentRuntime/Actors/` for the shape.
 
 **Every service crossing a module boundary is programmed against an interface.** Concrete classes wrap third-party libraries; consumers never import them directly. Applies to `IToolConnector`, `ISecretProvider`, `IPublisher`. Tests substitute with `NSubstitute` without touching the real stack.
 
@@ -24,11 +24,11 @@ The law of the repo. Every rule here is enforceable in review. Rules exist to pr
 
 ### Error handling
 
-**Never call `EnsureSuccessStatusCode()` on an `HttpResponseMessage` whose body may contain `ProblemDetails`.** It throws with only the status code, discarding the server's reason. Use the `EnsureSuccessOrThrowAsync` + `FormatHttpError` helper in `src/UX/Weave.Cli/Commands/WorkspaceApiClient.cs` so the user sees the actual 409 conflict reason, not "409 Conflict" alone.
+**Never call `EnsureSuccessStatusCode()` on an `HttpResponseMessage` whose body may contain `ProblemDetails`.** It throws with only the status code, discarding the server's reason. Use the `EnsureSuccessOrThrowAsync` + `FormatHttpError` helper in `hosts/Weave.Cli/Commands/WorkspaceApiClient.cs` so the user sees the actual 409 conflict reason, not "409 Conflict" alone.
 
-**HTTP clients read ProblemDetails on failure and surface the `title`, `detail`, and `errors` fields.** The Silo emits RFC 7807 problem responses from `src/Runtime/Weave.Silo/Api/ResultExtensions.cs`; the CLI must parse them. If you add a new API client, copy the helper shape — do not reimplement.
+**HTTP clients read ProblemDetails on failure and surface the `title`, `detail`, and `errors` fields.** The Silo emits RFC 7807 problem responses from `hosts/Weave.Host/Api/ResultExtensions.cs`; the CLI must parse them. If you add a new API client, copy the helper shape — do not reimplement.
 
-**Fail closed on security-sensitive operations.** Secret scanning, capability validation, and proof validation must default to deny when anything is ambiguous. See the secret-redaction behavior in `src/Foundation/Weave.Shared/Secrets/SecretValue.cs` — `ToString()` returns `"***REDACTED***"`, not the value.
+**Fail closed on security-sensitive operations.** Secret scanning, capability validation, and proof validation must default to deny when anything is ambiguous. See the secret-redaction behavior in `src/Credentials/SecretValue.cs` — `ToString()` returns `"***REDACTED***"`, not the value.
 
 **Swallow nothing silently.** Catch-and-log is acceptable only at a true boundary (HTTP handler, actor reminder, CLI command root). Inside a method, let it throw.
 
@@ -40,29 +40,29 @@ The law of the repo. Every rule here is enforceable in review. Rules exist to pr
 
 **Background tasks observe their own faults.** `_ = Task.Run(async () => { ... })` with no error handler is forbidden — a detached exception is unlogged and never surfaces. Use `await`, `task.ContinueWith(t => log, TaskContinuationOptions.OnlyOnFaulted)`, or a named helper `FireAndForgetAsync(task, logger, operationName)`.
 
-**Fire-and-forget actor calls are forbidden outright.** `_ = actor.SomeAsync()` discards an Orleans activation failure or serialization mismatch and leaves the caller wedged in a half-dispatched state. Always `await`, or capture the task and observe completion elsewhere. Reentrancy concerns (an actor calling back into itself) are not a license to fire-and-forget — use `[AlwaysInterleave]` on the inner method, restructure so the callback target is a different grain, or hand the work to a hosted background service. The current offender is `src/Assistants/Weave.Agents/Actors/AgentActor.cs` (search `_ = Task.Run`); fix it, do not codify it.
+**Fire-and-forget actor calls are forbidden outright.** `_ = actor.SomeAsync()` discards an Orleans activation failure or serialization mismatch and leaves the caller wedged in a half-dispatched state. Always `await`, or capture the task and observe completion elsewhere. Reentrancy concerns (an actor calling back into itself) are not a license to fire-and-forget — use `[AlwaysInterleave]` on the inner method, restructure so the callback target is a different grain, or hand the work to a hosted background service. The current offender is `extensions/Weave.AgentRuntime/Actors/AgentActor.cs` (search `_ = Task.Run`); fix it, do not codify it.
 
-**Catch the simplest form that expresses intent.** `catch (IOException)` beats `catch (Exception ex) when (ex is IOException)` for a single type — same behavior, less ceremony. The `Exception ex when (...)` form is reserved for genuine multi-type filters where listing each `catch` block would duplicate the body. Today's worst offender: `src/UX/Weave.Cli/Tui/ChatComposer.cs` lines 122/125/131 use the verbose form for single-type swallows; same file lines 147/153 already use the simpler form for the same intent.
+**Catch the simplest form that expresses intent.** `catch (IOException)` beats `catch (Exception ex) when (ex is IOException)` for a single type — same behavior, less ceremony. The `Exception ex when (...)` form is reserved for genuine multi-type filters where listing each `catch` block would duplicate the body. Today's worst offender: `hosts/Weave.Cli/Tui/ChatComposer.cs` lines 122/125/131 use the verbose form for single-type swallows; same file lines 147/153 already use the simpler form for the same intent.
 
 **Drop the bind variable when you don't use it.** `catch (IOException) { /* platform quirk */ }` is the form when there's nothing to log — naming `ex` and then ignoring it (`catch (IOException ex) { /* ignore */ }`) is dead code that compilers used to warn about. If you have a reason to keep the binding (future logging, debugger inspection), add a one-line `LogDebug` and lose the `/* ignore */`. Don't keep the binding "just in case."
 
 ### Process management
 
-**Never set `RedirectStandardOutput = true` (or `RedirectStandardError = true`) on a `Process` without draining the pipe.** A child that writes more than ~4 KB without a reader blocks forever. Use `BeginOutputReadLine` / `BeginErrorReadLine` plus `OutputDataReceived` / `ErrorDataReceived` handlers, and call `Start()` only after wiring them. The Silo auto-start in `src/UX/Weave.Cli/Commands/UpCommand.cs` follows this pattern — copy it.
+**Never set `RedirectStandardOutput = true` (or `RedirectStandardError = true`) on a `Process` without draining the pipe.** A child that writes more than ~4 KB without a reader blocks forever. Use `BeginOutputReadLine` / `BeginErrorReadLine` plus `OutputDataReceived` / `ErrorDataReceived` handlers, and call `Start()` only after wiring them. The Silo auto-start in `hosts/Weave.Cli/Commands/UpCommand.cs` follows this pattern — copy it.
 
 **Redirect child-process output to a log file on disk, not into memory.** If the CLI wants to show tail on demand, tail the file. Buffering indefinite output into a `StringBuilder` is a memory leak on the happy path.
 
-**If `RedirectStandardError = true`, drain stderr too.** Same pipe-buffer rule as stdout, but easier to miss because tests rarely cover verbose-stderr scenarios. Every connector that spawns a process must wire both pipes — `src/Tools/Weave.Tools/Connectors/McpToolConnector.cs` is the worked example, calling `process.BeginErrorReadLine()` after `RedirectStandardError = true`.
+**If `RedirectStandardError = true`, drain stderr too.** Same pipe-buffer rule as stdout, but easier to miss because tests rarely cover verbose-stderr scenarios. Every connector that spawns a process must wire both pipes — `extensions/Weave.Mcp/InvokeTool/McpToolConnector.cs` is the worked example, calling `process.BeginErrorReadLine()` after `RedirectStandardError = true`.
 
-**When using `ReadToEndAsync` on both pipes, start both reads before awaiting either.** Sequential reads deadlock: if the child fills stderr while stdout is empty, you sit on `ReadToEndAsync(stdout)` forever. Use `Task.WhenAll(stdoutTask, stderrTask)` and then `WaitForExit`. The pattern is in `src/Workspaces/Weave.Workspaces/Runtime/ProcessCommandRunner.cs` — copy it.
+**When using `ReadToEndAsync` on both pipes, start both reads before awaiting either.** Sequential reads deadlock: if the child fills stderr while stdout is empty, you sit on `ReadToEndAsync(stdout)` forever. Use `Task.WhenAll(stdoutTask, stderrTask)` and then `WaitForExit`. The pattern is in `src/Workspaces/Runtime/ProcessCommandRunner.cs` — copy it.
 
-**Background launchers (`weave serve --background`, `weave run --background`) must drain pipes or not redirect.** The Silo auto-start handler in `src/UX/Weave.Cli/Commands/Workspace/SiloProcessService.cs` is the worked example — it wires `OutputDataReceived` and `ErrorDataReceived` and calls `BeginOutputReadLine` / `BeginErrorReadLine` before the process produces output.
+**Background launchers (`weave serve --background`, `weave run --background`) must drain pipes or not redirect.** The Silo auto-start handler in `hosts/Weave.Cli/Commands/Workspace/SiloProcessService.cs` is the worked example — it wires `OutputDataReceived` and `ErrorDataReceived` and calls `BeginOutputReadLine` / `BeginErrorReadLine` before the process produces output.
 
 **Respect the `CancellationToken` at every async boundary.** `await foo(ct)`, `await Task.Delay(d, ct)`, `HttpClient.SendAsync(req, ct)`. CLI commands must cancel cleanly on Ctrl+C.
 
 ### Serialization adapters (Orleans)
 
-**Every branded ID or shared value type that crosses a actor boundary has a surrogate + `[RegisterConverter]`.** Orleans will throw `CodecNotFoundException` at Silo startup (or worse, at the first actor call) if you forget one. Add the pair in `src/Runtime/Weave.Silo/Serialization/` next to the existing per-type surrogate files (`AgentIdSurrogates.cs`, `WorkspaceIdSurrogates.cs`, etc.); do not create a new assembly.
+**Every branded ID or shared value type that crosses a actor boundary has a surrogate + `[RegisterConverter]`.** Orleans will throw `CodecNotFoundException` at Silo startup (or worse, at the first actor call) if you forget one. Add the pair in `hosts/Weave.Host/Serialization/` next to the existing per-type surrogate files (`AgentIdSurrogates.cs`, `WorkspaceIdSurrogates.cs`, etc.); do not create a new assembly.
 
 **Serialization adapters live in the consumer, not in Foundation.** `Weave.Silo.Serialization` owns them because the Silo is the only consumer. Do not recreate a `Weave.Shared.Orleans` project — adapters leak Orleans into Foundation and invert the dependency flow from `CLAUDE.md` (`Shared -> ... -> Silo`).
 
@@ -72,7 +72,7 @@ The law of the repo. Every rule here is enforceable in review. Rules exist to pr
 
 ### AOT, trimming, and platform guards
 
-**Do not read `Console.CursorVisible`.** The getter is Windows-only and CA1416 fails the build on Linux/macOS. Only set it. See the console handling in `src/UX/Weave.Cli/Tui/TuiApp.cs`.
+**Do not read `Console.CursorVisible`.** The getter is Windows-only and CA1416 fails the build on Linux/macOS. Only set it. See the console handling in `hosts/Weave.Cli/Tui/TuiApp.cs`.
 
 **Guard any P/Invoke or OS-specific API with `OperatingSystem.IsWindows()` / `IsLinux()` / `IsMacOS()`.** CA1416 is a warning-as-error in this repo. Pair platform-specific code with an `[SupportedOSPlatform]` attribute when appropriate.
 
@@ -88,7 +88,7 @@ The law of the repo. Every rule here is enforceable in review. Rules exist to pr
 
 ### Namespace hygiene and project layout
 
-**One reason to exist per project.** If a project wraps adapters for a single consumer, it belongs *in* that consumer or as a folder under it. `Weave.Shared.Orleans` as a standalone Foundation project was wrong; its one consumer was the Silo, and it now lives at `src/Runtime/Weave.Silo/Serialization/`.
+**One reason to exist per project.** If a project wraps adapters for a single consumer, it belongs *in* that consumer or as a folder under it. `Weave.Shared.Orleans` as a standalone Foundation project was wrong; its one consumer was the Silo, and it now lives at `hosts/Weave.Host/Serialization/`.
 
 **Never name a project with a derivative suffix (`.Orleans`, `.Abstractions`, `.Core`) unless it carries weight across three or more consumers.** Derivative names signal an architectural gap, not a real module.
 
@@ -197,7 +197,7 @@ The law of the repo. Every rule here is enforceable in review. Rules exist to pr
 
 ### File and class size
 
-**Production files: one public/internal type per file, classes ≤ 200 lines.** The 200-line threshold is a design check trigger, not a hard cap — but every file above it should have a paragraph in its PR description explaining why it didn't split. Today's only production violator is `src/UX/Weave.Cli/Tui/TuiSlashCommandDispatcher.cs` (422 lines) — slated for extraction into per-command handlers.
+**Production files: one public/internal type per file, classes ≤ 200 lines.** The 200-line threshold is a design check trigger, not a hard cap — but every file above it should have a paragraph in its PR description explaining why it didn't split. Today's only production violator is `hosts/Weave.Cli/Tui/TuiSlashCommandDispatcher.cs` (422 lines) — slated for extraction into per-command handlers.
 
 **Tightly-coupled type pairs may share a file when neither is meaningful alone.** The codified pattern is the CQRS shape: a `*Query` record plus its `*Handler` class in the same file (`GetRecentCapabilityAuditQuery.cs`). The handler is private to the query in practice, even though both are `public`. Two unrelated types that just happen to live in the same namespace do not qualify.
 
@@ -237,9 +237,9 @@ The law of the repo. Every rule here is enforceable in review. Rules exist to pr
 
 **Three tiers: unit, component, integration.** Unit tests exercise one type with all peers substituted. Component tests exercise a actor or a CQRS handler against a real `IServiceProvider`. Integration tests boot a process boundary. The Silo bug in session notes escaped because no integration test booted the Silo — we now require at least one smoke-boot test per top-level host.
 
-**Silo-boot smoke test is non-optional.** `src/Runtime/Weave.Silo` must have a test that builds the host, starts it, pings one actor, and shuts it down. This would have caught the `AgentTaskId` `CodecNotFoundException` in CI, not in the TUI.
+**Silo-boot smoke test is non-optional.** `hosts/Weave.Host` must have a test that builds the host, starts it, pings one actor, and shuts it down. This would have caught the `AgentTaskId` `CodecNotFoundException` in CI, not in the TUI.
 
-**Every endpoint group mapped in `Program.cs` has at least one `SiloFactory`-based integration test.** The Silo currently exposes 9 groups (Workspace, Agent, Tool, Plugin, Skill, Channel, User, Marketplace, Template); today only Workspace has any endpoint coverage. New endpoint → new test in the same PR. The test hits one real URL per group and asserts either the happy-path shape or the canonical error code; this is what would have caught the `409` DI-scope leak. See `src/Runtime/Weave.Silo.Tests/WorkspaceLifecycleTests.cs` for the template.
+**Every endpoint group mapped in `Program.cs` has at least one `SiloFactory`-based integration test.** The Silo currently exposes 9 groups (Workspace, Agent, Tool, Plugin, Skill, Channel, User, Marketplace, Template); today only Workspace has any endpoint coverage. New endpoint → new test in the same PR. The test hits one real URL per group and asserts either the happy-path shape or the canonical error code; this is what would have caught the `409` DI-scope leak. See `tests/Weave.Silo.Tests/WorkspaceLifecycleTests.cs` for the template.
 
 ### Real components for integration tests
 
@@ -247,7 +247,7 @@ The law of the repo. Every rule here is enforceable in review. Rules exist to pr
 
 **CQRS integration tests resolve the handler through `ICommandDispatcher`, not by instantiating it.** This exercises registration, scope creation, and the dispatcher wiring — all three were broken in the scoped-handler incident.
 
-**HTTP clients under test use a `StubHandler : HttpMessageHandler`, not a mocked `HttpClient`.** `HttpClient` itself cannot be faked cleanly; its handler can. See the pattern in `src/Tools/Weave.Tools.Tests/` for connector tests.
+**HTTP clients under test use a `StubHandler : HttpMessageHandler`, not a mocked `HttpClient`.** `HttpClient` itself cannot be faked cleanly; its handler can. See the pattern in `tests/Weave.Tools.Tests/` for connector tests.
 
 ### Fixtures and isolation
 
@@ -357,13 +357,13 @@ The DevTool finds all test projects, runs `dotnet dotnet-coverage collect` per p
 
 Relevant file paths referenced above:
 
-- `c:\projects\BeingCiteable\Weave\src\Foundation\Weave.Shared\Cqrs\CommandDispatcher.cs`
-- `c:\projects\BeingCiteable\Weave\src\Foundation\Weave.Shared\Cqrs\QueryDispatcher.cs`
-- `c:\projects\BeingCiteable\Weave\src\Foundation\Weave.Shared\Secrets\SecretValue.cs`
+- `c:\projects\BeingCiteable\Weave\src\Composition\Cqrs\CommandDispatcher.cs`
+- `c:\projects\BeingCiteable\Weave\src\Composition\Cqrs\QueryDispatcher.cs`
+- `c:\projects\BeingCiteable\Weave\src\Credentials\SecretValue.cs`
 - `c:\projects\BeingCiteable\Weave\src\Foundation\Weave.Shared\Ids\BrandedIds.cs`
-- `c:\projects\BeingCiteable\Weave\src\Runtime\Weave.Silo\Serialization\BrandedIdSurrogates.cs`
-- `c:\projects\BeingCiteable\Weave\src\Runtime\Weave.Silo\Serialization\SharedTypeSurrogates.cs`
-- `c:\projects\BeingCiteable\Weave\src\Runtime\Weave.Silo\Api\ResultExtensions.cs`
-- `c:\projects\BeingCiteable\Weave\src\UX\Weave.Cli\Commands\WorkspaceApiClient.cs`
-- `c:\projects\BeingCiteable\Weave\src\UX\Weave.Cli\Commands\UpCommand.cs`
-- `c:\projects\BeingCiteable\Weave\src\UX\Weave.Cli\Tui\TuiApp.cs`
+- `c:\projects\BeingCiteable\Weave\hosts\Weave.Host\Serialization\BrandedIdSurrogates.cs`
+- `c:\projects\BeingCiteable\Weave\hosts\Weave.Host\Serialization\SharedTypeSurrogates.cs`
+- `c:\projects\BeingCiteable\Weave\hosts\Weave.Host\Api\ResultExtensions.cs`
+- `c:\projects\BeingCiteable\Weave\hosts\Weave.Cli\Commands\WorkspaceApiClient.cs`
+- `c:\projects\BeingCiteable\Weave\hosts\Weave.Cli\Commands\UpCommand.cs`
+- `c:\projects\BeingCiteable\Weave\hosts\Weave.Cli\Tui\TuiApp.cs`

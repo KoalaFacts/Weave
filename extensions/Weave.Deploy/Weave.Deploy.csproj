@@ -1,0 +1,9 @@
+<Project Sdk="Microsoft.NET.Sdk">
+  <PropertyGroup>
+    <Description>Deployment publishers for Weave — generate Docker Compose, Kubernetes, Nomad, Fly.io, and GitHub Actions configs.</Description>
+    <RootNamespace>Weave.Deploy</RootNamespace>
+  </PropertyGroup>
+  <ItemGroup>
+    <ProjectReference Include="../../src/Weave.csproj" />
+  </ItemGroup>
+</Project>

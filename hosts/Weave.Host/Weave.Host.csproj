@@ -1,0 +1,37 @@
+<Project Sdk="Microsoft.NET.Sdk.Web">
+  <PropertyGroup>
+    <OutputType>Exe</OutputType>
+    <IsAotExcluded>true</IsAotExcluded>
+    <RootNamespace>Weave.Silo</RootNamespace>
+    <AssemblyName>Weave.Silo</AssemblyName>
+  </PropertyGroup>
+  <ItemGroup>
+    <InternalsVisibleTo Include="Weave.Silo.Tests" />
+  </ItemGroup>
+  <ItemGroup>
+    <ProjectReference Include="../Weave.ServiceDefaults/Weave.ServiceDefaults.csproj" />
+    <ProjectReference Include="../../src/Weave.csproj" />
+    <ProjectReference Include="../../extensions/Weave.AgentRuntime/Weave.AgentRuntime.csproj" />
+    <ProjectReference Include="../../extensions/Weave.Security.Sqlite/Weave.Security.Sqlite.csproj" />
+    <ProjectReference Include="../../extensions/Weave.Security.Postgres/Weave.Security.Postgres.csproj" />
+    <ProjectReference Include="../../extensions/Weave.Silo.Clustering.Redis/Weave.Silo.Clustering.Redis.csproj" />
+    <ProjectReference Include="../../extensions/Weave.Silo.Clustering.Sqlite/Weave.Silo.Clustering.Sqlite.csproj" />
+    <ProjectReference Include="../../extensions/Weave.Silo.Clustering.SqlServer/Weave.Silo.Clustering.SqlServer.csproj" />
+    <ProjectReference Include="../../extensions/Weave.Silo.Clustering.Postgres/Weave.Silo.Clustering.Postgres.csproj" />
+    <ProjectReference Include="../../tools/Weave.SourceGen/Weave.SourceGen.csproj" OutputItemType="Analyzer" ReferenceOutputAssembly="false" />
+  </ItemGroup>
+  <ItemGroup>
+    <PackageReference Include="Microsoft.AspNetCore.OpenApi" />
+    <PackageReference Include="Microsoft.Orleans.Server" />
+    <PackageReference Include="Microsoft.Orleans.Serialization.SystemTextJson" />
+    <PackageReference Include="Scalar.AspNetCore" />
+  </ItemGroup>
+  <ItemGroup>
+    <ProjectReference Include="../../extensions/Weave.Mcp/Weave.Mcp.csproj" />
+    <ProjectReference Include="../../extensions/Weave.CliTools/Weave.CliTools.csproj" />
+    <ProjectReference Include="../../extensions/Weave.OpenApi/Weave.OpenApi.csproj" />
+    <ProjectReference Include="../../extensions/Weave.DirectHttp/Weave.DirectHttp.csproj" />
+    <ProjectReference Include="../../extensions/Weave.FileSystem/Weave.FileSystem.csproj" />
+    <ProjectReference Include="../../extensions/Weave.Dapr/Weave.Dapr.csproj" />
+  </ItemGroup>
+</Project>
