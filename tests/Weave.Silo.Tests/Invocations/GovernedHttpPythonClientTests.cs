@@ -71,7 +71,8 @@ public sealed partial class GovernedHttpEntryTests
             if (!process.HasExited)
             {
                 process.Kill(entireProcessTree: true);
-                await process.WaitForExitAsync(CancellationToken.None).WaitAsync(TimeSpan.FromSeconds(5));
+                using var cleanup = new CancellationTokenSource(TimeSpan.FromSeconds(5));
+                await process.WaitForExitAsync(cleanup.Token);
             }
         }
     }
