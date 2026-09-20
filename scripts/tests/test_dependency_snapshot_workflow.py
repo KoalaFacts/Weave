@@ -1,6 +1,5 @@
 """Snapshot production must be separate from read-only dependency policy review."""
 from pathlib import Path
-import re
 import unittest
 
 ROOT = Path(__file__).resolve().parents[2]
