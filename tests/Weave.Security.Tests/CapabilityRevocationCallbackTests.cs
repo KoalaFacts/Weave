@@ -34,7 +34,7 @@ public sealed class CapabilityRevocationCallbackTests : IDisposable
         causes.Count.ShouldBe(3);
         causes.ShouldContain(first);
         causes.ShouldContain(second);
-        causes.ShouldContain(e => e is IOException or UnauthorizedAccessException);
+        causes.Any(e => e is IOException or UnauthorizedAccessException).ShouldBeTrue();
         linked.Token.CancellationToken.IsCancellationRequested.ShouldBeTrue();
         healthyCalls.ShouldBe(1);
         service.Validate(linked.Token).ShouldBeFalse();
