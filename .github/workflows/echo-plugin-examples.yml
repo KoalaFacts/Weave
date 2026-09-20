@@ -3,21 +3,97 @@ name: Echo Plugin Examples
 on:
   pull_request:
     branches: [main]
+    paths:
+      - 'examples/plugins/echo/**'
+      - 'src/**'
+      - 'extensions/Weave.Mcp/**'
+      - 'extensions/Weave.Security.Sqlite/**'
+      - 'tests/Weave.Silo.Tests/**'
+      - 'Directory.*'
+      - 'global.json'
+      - '.github/actions/setup-dotnet/**'
+      - '.github/workflows/echo-plugin-examples.yml'
+  push:
+    branches: [main]
+    paths:
+      - 'examples/plugins/echo/**'
+      - 'src/**'
+      - 'extensions/Weave.Mcp/**'
+      - 'extensions/Weave.Security.Sqlite/**'
+      - 'tests/Weave.Silo.Tests/**'
+      - 'Directory.*'
+      - 'global.json'
+      - '.github/actions/setup-dotnet/**'
+      - '.github/workflows/echo-plugin-examples.yml'
   workflow_dispatch:
 
 permissions:
   contents: read
 
+concurrency:
+  group: echo-plugins-${{ github.ref }}
+  cancel-in-progress: true
+
 jobs:
-  baseline:
-    name: Echo stdio contract (test-first baseline)
+  sample:
+    name: Echo (${{ matrix.language }})
     runs-on: ubuntu-latest
-    timeout-minutes: 5
+    timeout-minutes: 15
+    strategy:
+      fail-fast: false
+      matrix:
+        language: [python, typescript, rust, java]
+    env:
+      EchoPluginExamples: 'true'
+      WEAVE_ECHO_SPEC: examples/plugins/echo/${{ matrix.language }}/tool.json
+      DOTNET_NOLOGO: 'true'
+      DOTNET_CLI_TELEMETRY_OPTOUT: 'true'
     steps:
       - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1
         with:
           persist-credentials: false
-      - name: Exercise the existing sample before changing behavior
+      - name: Check selected runtime
+        env:
+          LANGUAGE: ${{ matrix.language }}
         run: |
-          printf '%s\n' '{"mcp":{"server":"python3","args":["examples/echo-mcp/server.py","--transport","stdio"]}}' > /tmp/echo-baseline.json
-          python3 examples/plugins/echo/tests/verify_stdio.py /tmp/echo-baseline.json
+          case "$LANGUAGE" in
+            python) python3 --version ;;
+            typescript) node --version; node -e 'if (+process.versions.node.split(".")[0] < 22) process.exit(1)' ;;
+            rust) rustc --version; cargo --version ;;
+            java) java --version; mvn --version ;;
+          esac
+      - name: Build Rust sample
+        if: matrix.language == 'rust'
+        run: |
+          cargo fmt --manifest-path examples/plugins/echo/rust/Cargo.toml
+          cargo build --manifest-path examples/plugins/echo/rust/Cargo.toml
+          cargo clippy --manifest-path examples/plugins/echo/rust/Cargo.toml -- -D warnings
+      - name: Build Java sample
+        if: matrix.language == 'java'
+        run: mvn -B -q -f examples/plugins/echo/java/pom.xml compile dependency:copy-dependencies
+      - name: Check real stdio process and EOF exit
+        run: |
+          mkdir -p example-results
+          python3 examples/plugins/echo/tests/verify_stdio.py "$WEAVE_ECHO_SPEC" 2>&1 | tee example-results/stdio.log
+      - name: Setup .NET for Weave boundary check
+        uses: ./.github/actions/setup-dotnet
+      - name: Build opt-in governance check
+        run: |
+          dotnet restore tests/Weave.Silo.Tests/Weave.Silo.Tests.csproj --locked-mode
+          dotnet build tests/Weave.Silo.Tests/Weave.Silo.Tests.csproj --no-restore -c Release /p:TreatWarningsAsErrors=true
+      - name: Verify real governed invocation and no dispatch without permission
+        run: >-
+          dotnet test --project tests/Weave.Silo.Tests/Weave.Silo.Tests.csproj --no-build -c Release
+          -- --filter-class Weave.Silo.Tests.Invocations.EchoPluginTests
+          --report-xunit-trx --results-directory ./example-results
+      - name: Upload verification evidence
+        if: always()
+        uses: actions/upload-artifact@043fb46d1a93c77aae656e7c1c64a875d1fc6a0a
+        with:
+          name: echo-${{ matrix.language }}-results
+          path: |
+            example-results/
+            examples/plugins/echo/rust/Cargo.lock
+            examples/plugins/echo/rust/src/main.rs
+          retention-days: 7
+          if-no-files-found: error

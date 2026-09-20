@@ -1,0 +1,8 @@
+{
+  "name": "echo-sample",
+  "type": "mcp",
+  "mcp": {
+    "server": "examples/plugins/echo/rust/target/debug/weave-echo-plugin-example",
+    "args": []
+  }
+}

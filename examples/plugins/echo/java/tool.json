@@ -1,0 +1,12 @@
+{
+  "name": "echo-sample",
+  "type": "mcp",
+  "mcp": {
+    "server": "java",
+    "args": [
+      "-cp",
+      "examples/plugins/echo/java/target/classes:examples/plugins/echo/java/target/dependency/*",
+      "EchoServer"
+    ]
+  }
+}
