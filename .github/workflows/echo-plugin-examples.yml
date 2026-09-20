@@ -1,0 +1,23 @@
+name: Echo Plugin Examples
+
+on:
+  pull_request:
+    branches: [main]
+  workflow_dispatch:
+
+permissions:
+  contents: read
+
+jobs:
+  baseline:
+    name: Echo stdio contract (test-first baseline)
+    runs-on: ubuntu-latest
+    timeout-minutes: 5
+    steps:
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1
+        with:
+          persist-credentials: false
+      - name: Exercise the existing sample before changing behavior
+        run: |
+          printf '%s\n' '{"mcp":{"server":"python3","args":["examples/echo-mcp/server.py","--transport","stdio"]}}' > /tmp/echo-baseline.json
+          python3 examples/plugins/echo/tests/verify_stdio.py /tmp/echo-baseline.json
