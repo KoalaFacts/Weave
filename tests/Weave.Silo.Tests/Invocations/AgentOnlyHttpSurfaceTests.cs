@@ -27,7 +27,7 @@ public sealed class AgentOnlyHttpSurfaceTests
         var routes = fx.Host.Services.GetRequiredService<EndpointDataSource>().Endpoints
             .OfType<RouteEndpoint>().Select(e => e.RoutePattern.RawText!).ToArray();
         routes.Where(r => r.StartsWith("/api", StringComparison.Ordinal)).Order().ToArray()
-            .ShouldBe(new[] { Pattern, Pattern + "/{invocationId}", Pattern + "/{invocationId}/approval" }.Order().ToArray());
+            .ShouldBe(new[] { Pattern + "/", Pattern + "/{invocationId}", Pattern + "/{invocationId}/approval" }.Order().ToArray());
         routes.ShouldNotContain(r => r.Contains("openapi", StringComparison.OrdinalIgnoreCase)
             || r.Contains("scalar", StringComparison.OrdinalIgnoreCase));
     }
