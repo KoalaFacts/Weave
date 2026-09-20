@@ -156,7 +156,9 @@ public sealed class ToolRegistryActor(
         // Reconnect/schema discovery can yield. Use current, separately configured authority.
         var grants = persistentState.State.GetInvocationGrants(agentName, toolName);
         if (grants.Count == 0 || !persistentState.State.Definitions.TryGetValue(toolName, out var currentDefinition)
-            || !ReferenceEquals(definition, currentDefinition))
+            || !ReferenceEquals(definition, currentDefinition)
+            || !persistentState.State.Connections.TryGetValue(toolName, out var currentConnection)
+            || currentConnection.Status is not ToolConnectionStatus.Connected)
             return null;
         var token = tokenService.Mint(new CapabilityTokenRequest
         {
