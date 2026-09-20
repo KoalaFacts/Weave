@@ -28,4 +28,13 @@ public sealed partial class FileSystemToolConnector : IApprovalTargetBinding
         return "filesystem-v2:" + Convert.ToHexString(SHA256.HashData(
             buffer.GetBuffer().AsSpan(0, checked((int)buffer.Length))));
     }
+
+    public string? GetApprovalTargetDescription(ToolHandle handle)
+    {
+        if (handle.Type != ToolType.FileSystem || !handle.IsConnected
+            || !_configurations.TryGetValue(handle.ConnectionId, out var config))
+            return null;
+        return FormattableString.Invariant(
+            $"FileSystem v2; root={config.Root}; sandbox={config.Sandbox}; readOnly={config.ReadOnly}; maxReadBytes={config.MaxReadBytes}");
+    }
 }
