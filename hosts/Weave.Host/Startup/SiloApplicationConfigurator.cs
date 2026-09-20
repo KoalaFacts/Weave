@@ -73,12 +73,18 @@ internal sealed class SiloApplicationConfigurator
     private void MapEndpoints()
     {
         _app.MapDefaultEndpoints();
+        _app.MapGovernedInvocationEndpoints();
+        if (_app.Configuration.GetValue<bool>("Weave:Invocations:Http:AgentOnly"))
+        {
+            _app.Logger.LogInformation("Agent-only HTTP surface: administrative and operator routes are not registered");
+            return;
+        }
+
         _app.MapOpenApi();
         _app.MapScalarApiReference();
         _app.MapWorkspaceEndpoints();
         _app.MapAgentEndpoints();
         _app.MapToolEndpoints();
-        _app.MapGovernedInvocationEndpoints();
         _app.MapPluginEndpoints();
         _app.MapSkillEndpoints();
         _app.MapChannelEndpoints();

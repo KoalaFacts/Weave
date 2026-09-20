@@ -1,86 +1,90 @@
-# Dependency review evidence gate — partial remediation of #110
+# Dependency comparison evidence and NuGet snapshot production
 
-## The observed defect
+## The defect and the guard
 
-The existing pinned Dependency Review action can print `No snapshots were found
-for the head SHA` and still succeed. The test-only baseline in PR #112, commit
-`b41999b4852d0b480f6a03f32553e9059453192d`, reproduced this in CI 35496678029:
-Dependency Review succeeded despite the missing-head warning. The new repository
-contract test failed because there was no prerequisite evidence gate; its unchanged
-severity/license/read-permission positive control passed. Of 46 Python checks,
-45 passed and the one intended check failed. No .NET test run is claimed for that
-baseline because the earlier repository check stopped the build job.
+The pinned Dependency Review action can report a missing-head snapshot warning
+and still conclude success. The first increment reproduced that behavior and
+added a read-only preflight before the policy action. The preflight still blocks
+on missing/invalid evidence on any page, HTTP/network failures and size/page limits.
+A valid empty delta is not a complete vulnerability/license audit.
 
-This is different from a legitimate empty dependency delta. A PR with no dependency
-changes can legitimately return zero changes; that is not a full dependency audit,
-and missing graph evidence must never be used to infer that everything was checked.
+## Exact source graphs, separate trust boundaries
 
-## What this increment changes
+The pipeline now validates BOTH exact event base/head commits using
+`dotnet restore Weave.slnx --locked-mode` in jobs with read-only repository access.
+Checked-out credentials are not persisted. Their failure blocks snapshot production;
+restoration does not silently regenerate or accept modified lockfiles.
 
-A read-only standard-library preflight calls GitHub's dependency comparison API
-for the exact PR base/head SHAs before the policy action. Missing snapshot warnings,
-invalid responses, API/network failures, oversize responses or pagination limits
-fail the job. The downstream policy action does not run after failure. No
-continue-on-error, warn-only fallback, removed gate or permissive retry is added.
+A separate fresh runner executes an explicitly SHA-pinned producer. It has the
+contents-write permission required by GitHub's snapshot API, but does NOT check
+out, execute, restore or build the inspected PR revision. It reads the two exact
+commits and their trees/lockfile blobs using fixed-origin GitHub API GET requests.
+No PR-produced executable or untrusted artifact is downloaded/executed by that job.
+Changes to the producer require reviewing and explicitly updating its immutable
+pin in the workflow; a modified script on a PR does not silently replace it.
 
-The response's `x-github-dependency-graph-snapshot-warnings` header is checked on
-every page using the same base64 encoding documented by GitHub. The client uses a
-fixed HTTPS API origin, no redirects or ambient proxy, per-request timeout, bounded
-body size and page count. It never follows a response-supplied next URL with the
-credential. A three-minute workflow step deadline bounds the overall gate.
+The producer inventories every checked-in .NET project and requires its committed
+NuGet lockfile. It verifies Git blob hashes, complete trees, package content hashes,
+resolved package versions, direct/transitive classifications and dependency edges.
+Framework graphs remain distinct. Local Project edges expand to actual external
+packages rather than inventing NuGet identities for local code. Unknown node kinds,
+missing locks/edges, ambiguous names, symlinks, corrupt/oversize JSON and empty total
+graphs fail closed. All packages are included in policy evaluation; the conservative
+runtime scope is not a claim that test-only dependencies are production runtime.
 
-The small `dependency-review-evidence` artifact records the exact repository and
-SHAs, available/unavailable status, safe failure category and snapshot warning.
-It does not record the API credential or arbitrary upstream response bodies.
-The job summary distinguishes availability from vulnerability/license policy.
-Previous bot comments may describe an older commit: current check status and
-recorded SHAs take precedence; this gate does not rewrite another action's history.
+Only validated JSON snapshots are submitted, tagged with their actual source SHA,
+ref and consistent detector/correlator. Both graphs are fully constructed before
+submission. SUCCESS and ACCEPTED receipts are supported, matching GitHub's official
+dependency-submission toolkit; ACCEPTED is normal for a nondefault branch. A receipt
+is NOT comparison evidence. The original warning-sensitive preflight must still
+succeed, followed by the pinned vulnerability/license policy action. Partial
+submission or an API failure does not make the review pass.
 
-Existing NuGet audit, severity threshold, pinned action and license restrictions
-remain unchanged. There is no package, product code or token-permission expansion.
-The build and source-generation/format checks are not bypassed by this increment.
+Artifacts retain the exact submitted graphs, lock blob identities, source SHAs,
+manifest/node counts, receipt IDs and the independent comparison result. Credentials
+and arbitrary server bodies are not logged. API calls use HTTPS, no proxy/redirect,
+size limits and deadlines; no retry-to-green or fabricated snapshot is introduced.
 
-## What remains open
+## Preserved policy and limits
 
-**This is not a complete fix of #110.** It prevents a false clean result but does
-not create the missing snapshots or prove that every resolved NuGet dependency is
-represented. No main merge or issue closure is authorized by passing unit tests.
-With the current missing snapshot, a failing Dependency Review job is expected
-and must remain visible; do not make it green by weakening this gate.
+The existing high-severity threshold, license restrictions, NuGet audit, strict
+build and format checks remain unchanged. The policy job keeps contents-read
+permission; only the separate non-building snapshot writer gains contents-write.
+This is not untrusted PR build execution with a write-capable token. Workflow
+changes themselves remain security-sensitive and require normal maintainer review.
 
-GitHub's supported-ecosystem table lists NuGet project files and packages.config,
-not packages.lock.json. This repository uses centralized versions and committed
-NuGet lockfiles. Its checked-in CI has no snapshot submission stage. Those facts
-identify a graph-production gap worth investigating, but do not prove which
-repository-level automatic submission settings are enabled. Such settings have
-not been read or changed by this work.
+The submitted graph covers committed NuGet locks, not every language's dependencies
+or every possible dynamic/custom build configuration. Locked restores verify the
+normal solution configuration; they are not a sandbox against a malicious project
+build. The writer relies on no execution of such code. Existing non-NuGet static
+analysis and example verification are not replaced by this detector.
 
-Before #110 can be closed, provide matching base/head snapshots containing the
-actual restored dependency graph; verify a real package change is visible; preserve
-lock consistency and direct/transitive auditing; and separately review the license
-policy. Prefer a supported producer with an explicit trust boundary. Do not solve
-this by running untrusted PR build scripts with a write-capable repository token,
-adding pull_request_target checkout of PR code, inventing success evidence, or
-silently replacing a missing base snapshot with a different commit.
+Fork PRs without write permission will fail the submission gate rather than silently
+skip evidence; a maintainer-controlled submission path would need its own trusted
+workflow. No pull_request_target escalation or repository settings change is made.
+Manual/merge-group events retain their prior policy scope; this increment's exact
+pair production applies to PR and main-push events. A missing/deleted source ref
+or absent base is an explicit failure, not permission to substitute another SHA.
 
-The pinned action still supports the deprecated `deny-licenses` option. Its warning
-is not a reason to remove the policy. Moving to an allow-list is a separate policy
-decision requiring an inventory and explicit review; no license-coverage guarantee
-is inferred from a green action or this preflight.
+An empty comparison of identical NuGet graphs demonstrates current evidence
+availability, not an exhaustive security certification or proof of every license.
+A separate known-change validation is needed before claiming full closure of the
+broader #110 acceptance; its result and any remaining scope belong in the issue/PR
+record. No library update or historical downgrade is required by this change.
 
-## References and verification
+## Verification history
 
-- GitHub dependency review and snapshot-warning header:
-  https://docs.github.com/en/code-security/concepts/supply-chain-security/dependency-review
-- Supported ecosystems and manifest formats:
-  https://docs.github.com/en/code-security/reference/supply-chain-security/dependency-graph-supported-package-ecosystems
-- Exact pinned action's header handling:
-  https://github.com/actions/dependency-review-action/blob/a1d282b36b6f3519aa1f3fc636f609c47dddb294/src/dependency-graph.ts
-- License-option discussion:
-  https://github.com/actions/dependency-review-action/issues/997
+The missing-producer workflow tests first failed (three intended failures, 61
+controls passing). Translator tests cover direct/transitive/project edges, framework
+coverage, changed versions, integrity and unsafe inputs. Receipt tests reproduced
+rejection of ACCEPTED while unknown responses remain failures. Real runs validate
+both exact locks, submit real source graphs and then call the actual comparison API;
+final exact-head evidence is recorded on #112. Tests and API receipts are distinct.
 
-Local focused API tests use synthetic headers/responses only. The real workflow
-must separately demonstrate that the actual missing-head warning blocks the action.
-Final exact-commit build/test/format results and the evidence artifact belong in
-PR #112. Do not describe an intentionally blocked dependency check as complete CI
-success or claim that all issue acceptance criteria were met.
+The producer does not change product runtime, tokens, approval, schema or dependencies.
+Concurrent AgentOnly composition is preserved when integrating current main.
+No production deployment, credential rotation or data reset is part of this work.
+
+References: [GitHub dependency submission](https://docs.github.com/en/rest/dependency-graph/dependency-submission),
+[official submission toolkit](https://github.com/github/dependency-submission-toolkit/blob/main/src/snapshot.ts),
+[dependency review](https://docs.github.com/en/code-security/concepts/supply-chain-security/dependency-review).

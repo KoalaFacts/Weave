@@ -152,7 +152,7 @@ jobs:
       # Source commits are read as JSON blobs via the API, never checked out here.
       - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v6
         with:
-          ref: dbd3c857b31e7e6e5e79a616cd795a6ed0aaf62e
+          ref: c36ab57b5c2c46e00b7cc71fdab19cac4e344b3e
           persist-credentials: false
       - name: Submit exact base and head lock graphs
         env:
