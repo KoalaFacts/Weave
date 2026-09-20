@@ -19,7 +19,7 @@ public sealed class DashboardReviewMergeRegressionTests
             PlanDigest = "original-digest"
         });
         var snapshot = JsonSerializer.Deserialize(json, type).ShouldNotBeNull();
-        var parameters = type.GetProperty("Parameters")!.GetValue(snapshot)
+        var parameters = type.GetProperty("Parameters")!.GetValue(snapshot).ShouldNotBeNull()
             .ShouldBeAssignableTo<IDictionary<string, string>>();
 
         parameters.IsReadOnly.ShouldBeTrue();
