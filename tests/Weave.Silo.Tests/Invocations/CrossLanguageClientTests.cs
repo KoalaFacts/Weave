@@ -55,7 +55,9 @@ public sealed class CrossLanguageClientTests
         var digest = preview.GetProperty("body").GetProperty("planDigest").GetString();
         var approved = await fx.OperatorAsync("decide", new JsonObject
         {
-            ["invocation"] = write.DeepClone(), ["planDigest"] = digest, ["decision"] = "approve"
+            ["invocation"] = write.DeepClone(),
+            ["planDigest"] = digest,
+            ["decision"] = "approve"
         });
         approved.GetProperty("status").GetInt32().ShouldBe(200);
         File.ReadAllText(fx.Target).ShouldBe("original");
@@ -85,8 +87,11 @@ public sealed class CrossLanguageClientTests
         await fx.ConnectAsync();
         var write = new JsonObject
         {
-            ["invocationId"] = Guid.NewGuid().ToString("N"), ["toolName"] = "files", ["method"] = "write_file",
-            ["parameters"] = new JsonObject { ["path"] = "note.txt" }, ["rawInput"] = "effect"
+            ["invocationId"] = Guid.NewGuid().ToString("N"),
+            ["toolName"] = "files",
+            ["method"] = "write_file",
+            ["parameters"] = new JsonObject { ["path"] = "note.txt" },
+            ["rawInput"] = "effect"
         };
         fx.Sql("CREATE TRIGGER fail_admission BEFORE INSERT ON invocation_attempts BEGIN SELECT RAISE(ABORT, 'private admission detail'); END;");
         var notSent = await fx.CallAsync(sender, "invoke", write, fx.Writer());
@@ -152,12 +157,16 @@ public sealed class CrossLanguageClientTests
         }
         public Task<ToolHandle> ConnectAsync() => Tool.ConnectAsync(new ToolSpec
         {
-            Name = "files", Type = ToolType.FileSystem,
+            Name = "files",
+            Type = ToolType.FileSystem,
             FileSystem = new Weave.Tools.Connectors.FileSystemToolConfig { Root = Path.GetDirectoryName(Target)! }
         }, Token("setup", ["tool:files:connect"]));
         public CapabilityToken Token(string subject, HashSet<string> grants) => Tokens.Mint(new CapabilityTokenRequest
         {
-            WorkspaceId = "workspace", IssuedTo = subject, Grants = grants, Lifetime = TimeSpan.FromMinutes(5)
+            WorkspaceId = "workspace",
+            IssuedTo = subject,
+            Grants = grants,
+            Lifetime = TimeSpan.FromMinutes(5)
         });
         public CapabilityToken Reader() => Token("agent", ["tool:files:invoke:read_file", "invocation:read"]);
         public CapabilityToken Writer() => Token("agent", ["tool:files:invoke:write_file", "invocation:read"]);
@@ -173,7 +182,10 @@ public sealed class CrossLanguageClientTests
             var binary = Path.Combine(repo, "clients", "rust", "target", "debug", OperatingSystem.IsWindows() ? "weave-client.exe" : "weave-client");
             var start = new ProcessStartInfo(isRust ? binary : "node")
             {
-                UseShellExecute = false, RedirectStandardInput = true, RedirectStandardOutput = true, RedirectStandardError = true
+                UseShellExecute = false,
+                RedirectStandardInput = true,
+                RedirectStandardOutput = true,
+                RedirectStandardError = true
             };
             if (!isRust)
                 start.ArgumentList.Add(Path.Combine(repo, "tests", "client-probes", language + ".mjs"));

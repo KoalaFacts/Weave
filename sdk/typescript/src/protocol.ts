@@ -44,10 +44,13 @@ export function invocationId(value: string): string {
   if (typeof value !== 'string' || !/^[0-9a-fA-F]{32}$/.test(value) || /^0+$/.test(value)) throw new ClientError('invalid-input');
   return value.toLowerCase();
 }
+function plainRecord(value: unknown): value is Record<string, unknown> {
+  return object(value) && (Object.getPrototypeOf(value) === Object.prototype || Object.getPrototypeOf(value) === null);
+}
 export function snapshot(value: Invocation): Invocation {
-  if (!object(value) || Object.keys(value).some(k => !['invocationId','toolName','method','parameters','rawInput'].includes(k))
+  if (!plainRecord(value) || Object.keys(value).some(k => !['invocationId','toolName','method','parameters','rawInput'].includes(k))
     || typeof value.toolName !== 'string' || typeof value.method !== 'string' || !value.method.trim()
-    || !object(value.parameters) || Object.values(value.parameters).some(v => typeof v !== 'string')
+    || !plainRecord(value.parameters) || Object.values(value.parameters).some(v => typeof v !== 'string')
     || (value.rawInput !== undefined && value.rawInput !== null && typeof value.rawInput !== 'string')) throw new ClientError('invalid-input');
   return {invocationId: invocationId(value.invocationId), toolName:component(value.toolName), method:value.method,
     parameters:Object.fromEntries(Object.entries(value.parameters)),

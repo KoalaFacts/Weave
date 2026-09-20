@@ -243,10 +243,12 @@ impl Client {
         let value: Value =
             serde_json::from_slice(&bytes).map_err(|_| ClientError::unconfirmed("protocol", id))?;
         validate_response(&value, id, tool, approval)?;
-        Ok(Reply {
-            status,
-            body: value,
-        })
+        let body = if value.get("success").is_none() && value.get("invocationId").is_none() {
+            serde_json::json!({ "errorCode": value["errorCode"] })
+        } else {
+            value
+        };
+        Ok(Reply { status, body })
     }
 }
 fn validate_response(

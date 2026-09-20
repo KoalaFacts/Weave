@@ -6,6 +6,8 @@ export class HttpTransport {
   readonly workspace: string;
   #base: string; #capability: string; #bearer: string | undefined; #timeout: number;
   constructor(options: ClientOptions) {
+    if (!options || typeof options.baseUrl !== 'string' || typeof options.capability !== 'string'
+      || (options.globalBearer !== undefined && typeof options.globalBearer !== 'string')) throw new ClientError('invalid-input');
     this.workspace = component(options.workspace);
     let url: URL;
     try { url = new URL(options.baseUrl); } catch { throw new ClientError('invalid-input'); }
@@ -15,7 +17,7 @@ export class HttpTransport {
       || (url.protocol === 'http:' && !['127.0.0.1','[::1]'].includes(url.hostname))
       || !/^[A-Za-z0-9_-]{1,16384}$/.test(options.capability)
       || (options.globalBearer !== undefined && !/^[\x21-\x7e]{1,16384}$/.test(options.globalBearer))) throw new ClientError('invalid-input');
-    this.#base = url.href.replace(/\/$/,''); this.#capability = options.capability; this.#bearer = options.globalBearer;
+    this.#base = url.href.replace(/\/+$/,''); this.#capability = options.capability; this.#bearer = options.globalBearer;
     this.#timeout = options.timeoutMs ?? 30_000;
     if (!Number.isInteger(this.#timeout) || this.#timeout < 1 || this.#timeout > 300_000) throw new ClientError('invalid-input');
   }
