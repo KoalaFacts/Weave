@@ -25,8 +25,11 @@ public sealed partial class GovernedHttpEntryTests
         using var lifetime = (IDisposable)session;
         await session.LoadAsync(fx.Workspace, "files", JsonSerializer.Serialize(new
         {
-            invocationId = request.InvocationId!.Value.ToString(), toolName = request.ToolName,
-            method = request.Method, parameters = request.Parameters, rawInput = request.RawInput
+            invocationId = request.InvocationId!.Value.ToString(),
+            toolName = request.ToolName,
+            method = request.Method,
+            parameters = request.Parameters,
+            rawInput = request.RawInput
         }), Encode(reviewer), globalAuthentication ? fx.GlobalApiSecret : "", TestContext.Current.CancellationToken);
 
         ((string?)session.Error).ShouldBeNull();

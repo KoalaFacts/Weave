@@ -108,7 +108,11 @@ public sealed class DashboardReviewSessionTests
         var calls = 0;
         using var http = Client((_, _) =>
         {
-            if (++calls == 1) { firstEntered.TrySetResult(); return release.Task; }
+            if (++calls == 1)
+            {
+                firstEntered.TrySetResult();
+                return release.Task;
+            }
             return Task.FromResult(Reply(body: "second content"));
         });
         dynamic session = Session(http, new Clock());
@@ -194,17 +198,27 @@ public sealed class DashboardReviewSessionTests
 
     private static string Input(string body = "reviewed text") => JsonSerializer.Serialize(new
     {
-        invocationId = Id, toolName = "files", method = "write_file",
-        parameters = new Dictionary<string, string> { ["path"] = "note.txt" }, rawInput = body
+        invocationId = Id,
+        toolName = "files",
+        method = "write_file",
+        parameters = new Dictionary<string, string> { ["path"] = "note.txt" },
+        rawInput = body
     });
 
     private static HttpResponseMessage Reply(string id = Id, string body = "reviewed text", DateTimeOffset? expiry = null) => new(HttpStatusCode.OK)
     {
         Content = new StringContent(JsonSerializer.Serialize(new
         {
-            invocationId = id, workspaceId = "workspace", subject = "original-agent", toolName = "files", operation = "write_file",
-            targetDescription = "FileSystem controlled root", parameters = new Dictionary<string, string> { ["path"] = "note.txt" },
-            rawInput = body, planDigest = "test-plan", expiresAt = expiry ?? Now.AddMinutes(5)
+            invocationId = id,
+            workspaceId = "workspace",
+            subject = "original-agent",
+            toolName = "files",
+            operation = "write_file",
+            targetDescription = "FileSystem controlled root",
+            parameters = new Dictionary<string, string> { ["path"] = "note.txt" },
+            rawInput = body,
+            planDigest = "test-plan",
+            expiresAt = expiry ?? Now.AddMinutes(5)
         }), Encoding.UTF8, "application/json")
     };
 
