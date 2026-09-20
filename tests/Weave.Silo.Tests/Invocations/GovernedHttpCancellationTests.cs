@@ -1,6 +1,7 @@
 using System.Net.Http.Json;
 using System.Runtime.CompilerServices;
 using System.Text.Json;
+using System.Text.Json.Serialization;
 using Microsoft.AspNetCore.Hosting;
 using Microsoft.AspNetCore.WebUtilities;
 using Microsoft.Extensions.DependencyInjection;
@@ -16,13 +17,17 @@ namespace Weave.Silo.Tests.Invocations;
 
 public sealed class GovernedHttpCancellationTests
 {
-    private static readonly JsonSerializerOptions JsonOptions = new(JsonSerializerDefaults.Web);
+    private static readonly JsonSerializerOptions JsonOptions = new(JsonSerializerDefaults.Web)
+    {
+        DefaultIgnoreCondition = JsonIgnoreCondition.WhenWritingNull
+    };
 
     [Theory]
     [InlineData("invoke")]
     [InlineData("outcome")]
     [InlineData("approval")]
     [InlineData("review")]
+    [InlineData("decision")]
     public async Task SendAsync_CancelledWhileGrainAuthorizes_ObservesCancellationBeforeAdmission(string operation)
     {
         var root = Path.Combine(Path.GetTempPath(), $"weave-http-cancellation-{Guid.NewGuid():N}");
@@ -37,6 +42,7 @@ public sealed class GovernedHttpCancellationTests
             {
                 builder.UseSetting("Weave:Auth:Mode", "none");
                 builder.UseSetting("Weave:Invocations:Http:Enabled", "true");
+                builder.UseSetting("Weave:Invocations:Http:DecisionsEnabled", "true");
                 builder.UseSetting("CapabilityTokens:SigningKey", "test-cancellation-" + Guid.NewGuid().ToString("N"));
                 builder.UseSetting("CapabilityTokens:RevocationDirectory", Path.Combine(root, "revocations"));
                 builder.UseSetting("Weave:Invocations:DatabasePath", Path.Combine(root, "journal.db"));
@@ -46,6 +52,9 @@ public sealed class GovernedHttpCancellationTests
                     services.AddSingleton<ICapabilityAuthorizer>(provider => new GatedAuthorizer(
                         new CapabilityAuthorizer(provider.GetRequiredService<ICapabilityTokenService>(),
                             provider.GetRequiredService<IEventBus>(), NullLogger<CapabilityAuthorizer>.Instance), gate));
+                    if (operation == "decision")
+                        services.PostConfigure<InvocationJournalOptions>(options =>
+                            options.ApprovalRequiredGrants = ["tool:files:invoke:write_file"]);
                 });
             });
             using var client = host.CreateClient();
@@ -66,27 +75,42 @@ public sealed class GovernedHttpCancellationTests
                 FileSystem = new Weave.Tools.Connectors.FileSystemToolConfig { Root = Path.Combine(root, "tools") }
             }, Token("setup", ["tool:files:connect"]));
             var id = InvocationId.From(Guid.NewGuid().ToString("N"));
+            var invocation = new ToolInvocation
+            {
+                InvocationId = id,
+                ToolName = "files",
+                Method = "write_file",
+                Parameters = new() { ["path"] = "note.txt" },
+                RawInput = "must not be written"
+            };
+            InvocationApproval? awaiting = null;
+            if (operation == "decision")
+            {
+                var owner = Token("setup", ["tool:files:invoke:write_file", "invocation:read"]);
+                (await tool.InvokeAsync(invocation, owner)).ErrorCode.ShouldBe("approval-pending");
+                awaiting = (await tool.GetApprovalAsync(id, owner)).ShouldNotBeNull();
+            }
             var route = "/api/workspaces/workspace/tools/files/invocations";
             var suffix = operation switch
             {
                 "invoke" => "",
                 "approval" => "/" + id + "/approval",
                 "review" => "/" + id + "/approval/review",
+                "decision" => "/" + id + "/approval/decision",
                 _ => "/" + id
             };
-            var hasBody = operation is "invoke" or "review";
+            var hasBody = operation is "invoke" or "review" or "decision";
             using var message = new HttpRequestMessage(hasBody ? HttpMethod.Post : HttpMethod.Get, route + suffix);
-            var credential = Token("cancellation-probe", ["tool:files:invoke:write_file", "invocation:read"]);
+            var credential = Token("cancellation-probe",
+                ["tool:files:invoke:write_file", "invocation:read", "approval:decide", "tool:files:approve:write_file"]);
             message.Headers.Add("X-Weave-Capability", WebEncoders.Base64UrlEncode(JsonSerializer.SerializeToUtf8Bytes(credential, JsonOptions)));
             if (hasBody)
-                message.Content = JsonContent.Create(new ToolInvocation
-                {
-                    InvocationId = id,
-                    ToolName = "files",
-                    Method = "write_file",
-                    Parameters = new() { ["path"] = "note.txt" },
-                    RawInput = "must not be written"
-                }, options: JsonOptions);
+            {
+                object body = operation == "decision"
+                    ? new { Invocation = invocation, PlanDigest = awaiting!.PlanDigest, Decision = "approve" }
+                    : invocation;
+                message.Content = JsonContent.Create(body, options: JsonOptions);
+            }
             using var abort = CancellationTokenSource.CreateLinkedTokenSource(TestContext.Current.CancellationToken);
             var pending = client.SendAsync(message, abort.Token);
             try
@@ -115,6 +139,8 @@ public sealed class GovernedHttpCancellationTests
             File.ReadAllText(target).ShouldBe("original");
             host.Services.GetRequiredService<IInvocationJournal>()
                 .Find("workspace", id, TestContext.Current.CancellationToken).ShouldBeNull();
+            if (operation == "decision")
+                (await tool.GetApprovalAsync(id, Token("setup", ["invocation:read"]))).ShouldBe(awaiting);
         }
         finally
         {

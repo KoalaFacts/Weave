@@ -23,5 +23,7 @@ public static class ExtensionsToInvocationEndpoints
         group.MapGet("/{invocationId}", GetInvocationEndpoint.HandleAsync);
         group.MapGet("/{invocationId}/approval", GetApprovalEndpoint.HandleAsync);
         group.MapPost("/{invocationId}/approval/review", ReviewApprovalEndpoint.HandleAsync);
+        if (app.Configuration.GetValue<bool>("Weave:Invocations:Http:DecisionsEnabled"))
+            group.MapPost("/{invocationId}/approval/decision", DecideReviewedApprovalEndpoint.HandleAsync);
     }
 }

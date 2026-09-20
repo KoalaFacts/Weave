@@ -1,5 +1,7 @@
+using System.Collections.Concurrent;
 using System.Diagnostics;
 using System.Net.Sockets;
+using Microsoft.Extensions.Logging;
 using Microsoft.Extensions.Logging.Abstractions;
 using Weave.Security.Tokens;
 using Weave.Tools.Connectors;
@@ -19,6 +21,7 @@ public sealed class EchoMcpHttpTransportSmokeTests : IDisposable
         Grants = ["tool:echo-server-http"]
     };
 
+    private readonly ConcurrentQueue<string> _diagnostics = new();
     private Process? _server;
     private int _port;
 
@@ -49,7 +52,7 @@ public sealed class EchoMcpHttpTransportSmokeTests : IDisposable
         _server = StartServer(python!, scriptPath!, _port);
         await WaitForListenerAsync(_port, TestContext.Current.CancellationToken);
 
-        var connector = new McpToolConnector(NullLogger<McpToolConnector>.Instance);
+        var connector = new McpToolConnector(new DiagnosticLogger(Capture));
         var spec = new ToolSpec
         {
             Name = "echo-server-http",
@@ -72,7 +75,7 @@ public sealed class EchoMcpHttpTransportSmokeTests : IDisposable
                 },
                 TestContext.Current.CancellationToken);
 
-            result.Error.ShouldBeNull();
+            result.Error.ShouldBeNull(string.Join("\n", _diagnostics));
             result.Success.ShouldBeTrue();
             result.Output.ShouldBe("hello over http");
         }
@@ -95,7 +98,7 @@ public sealed class EchoMcpHttpTransportSmokeTests : IDisposable
         _server = StartServer(python!, scriptPath!, _port);
         await WaitForListenerAsync(_port, TestContext.Current.CancellationToken);
 
-        var connector = new McpToolConnector(NullLogger<McpToolConnector>.Instance);
+        var connector = new McpToolConnector(new DiagnosticLogger(Capture));
         var spec = new ToolSpec
         {
             Name = "echo-server-http-sse",
@@ -120,7 +123,7 @@ public sealed class EchoMcpHttpTransportSmokeTests : IDisposable
                 },
                 TestContext.Current.CancellationToken);
 
-            result.Error.ShouldBeNull();
+            result.Error.ShouldBeNull(string.Join("\n", _diagnostics));
             result.Success.ShouldBeTrue();
             result.Output.ShouldBe("stream-me");
         }
@@ -178,7 +181,7 @@ public sealed class EchoMcpHttpTransportSmokeTests : IDisposable
             () => connector.ConnectAsync(spec, _token, TestContext.Current.CancellationToken));
     }
 
-    private static Process StartServer(string python, string script, int port)
+    private Process StartServer(string python, string script, int port)
     {
         var psi = new ProcessStartInfo
         {
@@ -194,7 +197,29 @@ public sealed class EchoMcpHttpTransportSmokeTests : IDisposable
         psi.ArgumentList.Add("--port");
         psi.ArgumentList.Add(port.ToString(System.Globalization.CultureInfo.InvariantCulture));
         var proc = Process.Start(psi) ?? throw new InvalidOperationException("failed to start echo-mcp http server");
+        proc.OutputDataReceived += (_, e) => Capture(e.Data);
+        proc.ErrorDataReceived += (_, e) => Capture(e.Data);
+        proc.BeginOutputReadLine();
+        proc.BeginErrorReadLine();
         return proc;
+    }
+
+    private void Capture(string? line)
+    {
+        if (line is not null && _diagnostics.Count < 32)
+            _diagnostics.Enqueue(line[..Math.Min(2048, line.Length)]);
+    }
+
+    private sealed class DiagnosticLogger(Action<string?> capture) : ILogger<McpToolConnector>
+    {
+        public IDisposable? BeginScope<TState>(TState state) where TState : notnull => null;
+        public bool IsEnabled(LogLevel logLevel) => true;
+        public void Log<TState>(LogLevel logLevel, EventId eventId, TState state, Exception? exception,
+            Func<TState, Exception?, string> formatter)
+        {
+            if (exception is not null)
+                capture(exception.ToString());
+        }
     }
 
     private static async Task WaitForListenerAsync(int port, CancellationToken ct)
