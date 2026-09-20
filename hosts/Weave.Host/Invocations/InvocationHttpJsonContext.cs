@@ -13,5 +13,6 @@ namespace Weave.Silo.Invocations;
 [JsonSerializable(typeof(InvocationHttpResult))]
 [JsonSerializable(typeof(ApprovalHttpStatus))]
 [JsonSerializable(typeof(ApprovalReviewHttpResponse))]
+[JsonSerializable(typeof(ApprovalDecisionHttpRequest))]
 [JsonSerializable(typeof(InvocationHttpError))]
 internal sealed partial class InvocationHttpJsonContext : JsonSerializerContext;

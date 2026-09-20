@@ -15,4 +15,6 @@ public interface IToolActorGrain : IToolActor, IGrainWithStringKey
         CancellationToken cancellationToken);
     Task<InvocationApprovalReviewResult> ReviewApprovalWithCancellationAsync(ToolInvocation invocation, CapabilityToken token,
         CancellationToken cancellationToken);
+    Task<InvocationApprovalDecisionResult> DecideReviewedApprovalWithCancellationAsync(ToolInvocation invocation,
+        string planDigest, InvocationApprovalDecision decision, CapabilityToken token, CancellationToken cancellationToken);
 }
