@@ -1,0 +1,11 @@
+.review-panel { margin-top: 2rem; padding: 1.5rem; border: 1px solid var(--neutral-stroke-rest, #bbb); border-radius: 12px; }
+.eyebrow { font-size: .75rem; letter-spacing: .12em; font-weight: 700; }
+.warning { font-weight: 700; border-inline-start: 4px solid currentColor; padding-inline-start: .8rem; }
+dl { display: grid; grid-template-columns: minmax(9rem, 1fr) minmax(0, 3fr); gap: .8rem 1.2rem; }
+dt { font-weight: 600; }
+dd { margin: 0; min-width: 0; }
+pre, code { white-space: pre-wrap; overflow-wrap: anywhere; unicode-bidi: plaintext; direction: ltr; }
+pre { margin: 0; padding: .8rem; background: var(--neutral-layer-2, #f3f3f3); border-radius: 6px; }
+.body { padding: 1rem; }
+.legend { font-size: .9rem; }
+@media (max-width: 640px) { dl { grid-template-columns: 1fr; gap: .4rem; } dd { margin-bottom: .8rem; } }
