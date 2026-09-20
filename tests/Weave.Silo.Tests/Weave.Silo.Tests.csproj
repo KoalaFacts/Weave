@@ -5,6 +5,9 @@
     <IsAotExcluded>true</IsAotExcluded>
     <RootNamespace>Weave.Silo.Tests</RootNamespace>
   </PropertyGroup>
+  <ItemGroup Condition="'$(EchoPluginExamples)' != 'true'">
+    <Compile Remove="Invocations/EchoPluginTests.cs" />
+  </ItemGroup>
   <ItemGroup>
     <ProjectReference Include="../../hosts/Weave.Host/Weave.Host.csproj" />
     <ProjectReference Include="../../src/Weave.csproj" />
