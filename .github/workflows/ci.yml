@@ -132,6 +132,23 @@ jobs:
         with:
           persist-credentials: false
 
+      - name: Require dependency comparison evidence
+        timeout-minutes: 3
+        env:
+          GH_TOKEN: ${{ github.token }}
+          PR_BASE_SHA: ${{ github.event.pull_request.base.sha }}
+          PR_HEAD_SHA: ${{ github.event.pull_request.head.sha }}
+        run: python3 scripts/check_dependency_review_evidence.py --report "$RUNNER_TEMP/dependency-review-evidence.json"
+
+      - name: Upload dependency comparison evidence
+        if: always()
+        uses: actions/upload-artifact@043fb46d1a93c77aae656e7c1c64a875d1fc6a0a # v7
+        with:
+          name: dependency-review-evidence
+          path: ${{ runner.temp }}/dependency-review-evidence.json
+          if-no-files-found: error
+          retention-days: 14
+
       - name: Dependency Review
         uses: actions/dependency-review-action@a1d282b36b6f3519aa1f3fc636f609c47dddb294 # v4
         with:

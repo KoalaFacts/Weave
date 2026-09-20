@@ -1,0 +1,11 @@
+{
+  "name": "echo-sample",
+  "type": "mcp",
+  "mcp": {
+    "server": "node",
+    "args": [
+      "--experimental-strip-types",
+      "examples/plugins/echo/typescript/server.ts"
+    ]
+  }
+}

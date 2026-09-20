@@ -1,0 +1,10 @@
+{
+  "name": "echo-sample",
+  "type": "mcp",
+  "mcp": {
+    "server": "python3",
+    "args": [
+      "examples/plugins/echo/python/server.py"
+    ]
+  }
+}
