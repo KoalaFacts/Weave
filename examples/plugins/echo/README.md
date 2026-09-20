@@ -22,7 +22,7 @@ for JSON-RPC on stdin; it is not an interactive chat prompt.
 | --- | --- | --- | --- |
 | Python | Python 3.10+ | None | `python3 examples/plugins/echo/python/server.py` |
 | TypeScript | Node 22.16+ | None; native type stripping | `node --experimental-strip-types examples/plugins/echo/typescript/server.ts` |
-| Rust | Rust/Cargo | `cargo build --manifest-path examples/plugins/echo/rust/Cargo.toml` | `examples/plugins/echo/rust/target/debug/weave-echo-plugin-example` |
+| Rust | Rust/Cargo | `cargo build --locked --manifest-path examples/plugins/echo/rust/Cargo.toml` | `examples/plugins/echo/rust/target/debug/weave-echo-plugin-example` |
 | Java | JDK 17+ and Maven | `mvn -q -f examples/plugins/echo/java/pom.xml compile dependency:copy-dependencies` | `java -cp 'examples/plugins/echo/java/target/classes:examples/plugins/echo/java/target/dependency/*' EchoServer` |
 
 Python and TypeScript use their standard runtimes only. Rust uses `serde_json`;
@@ -48,7 +48,8 @@ Each language has a `tool.json` with the current Weave `ToolSpec` shape. For exa
 
 In an existing workspace manifest, copy its `type` and `mcp` fields into the
 `tools` dictionary under the `echo-sample` key (not an array). Alternatively, pass
-an equivalent `ToolSpec` to `IToolActor.ConnectAsync` from trusted host code. Use only one variant under this name in a workspace. The paths
+an equivalent `ToolSpec` to `IToolActor.ConnectAsync` from trusted host code. Use only
+one variant under this name in a workspace. The paths
 assume the Host starts in the repository root; use absolute executable/script or
 classpath paths in another deployment. Java's supplied tool.json is for POSIX.
 
@@ -88,7 +89,7 @@ export EchoPluginExamples=true
 # Build your selected language first.
 dotnet build tests/Weave.Silo.Tests/Weave.Silo.Tests.csproj -c Release
 dotnet test --project tests/Weave.Silo.Tests/Weave.Silo.Tests.csproj --no-build -c Release \
-  -- --filter-class Weave.Silo.Tests.Invocations.EchoPluginTests
+  --filter-class Weave.Silo.Tests.Invocations.EchoPluginTests
 ```
 
 Python is used by the shared verification harness; it is not required to run the

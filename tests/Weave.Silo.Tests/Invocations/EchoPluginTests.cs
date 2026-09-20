@@ -50,7 +50,7 @@ public sealed class EchoPluginTests
         await actor.ConnectAsync(spec, fx.Token("setup", "tool:echo-sample:connect"));
         try
         {
-            (await actor.GetSchemaAsync()).Description.ShouldContain("echo");
+            (await actor.GetSchemaAsync()).Description.ShouldContain("Return the supplied text unchanged.");
             var id = InvocationId.From(Guid.NewGuid().ToString("N"));
             const string text = "你好，Weave 🙂\r\nA second line.";
             var invocation = new ToolInvocation

@@ -90,7 +90,7 @@ jobs:
       - name: Verify real governed invocation and no dispatch without permission
         run: >-
           dotnet test --project tests/Weave.Silo.Tests/Weave.Silo.Tests.csproj --no-build -c Release
-          -- --filter-class Weave.Silo.Tests.Invocations.EchoPluginTests
+          --filter-class Weave.Silo.Tests.Invocations.EchoPluginTests
           --report-xunit-trx --results-directory ./example-results
       - name: Upload verification evidence
         if: always()
