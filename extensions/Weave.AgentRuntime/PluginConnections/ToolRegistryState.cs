@@ -23,17 +23,28 @@ public sealed record ToolRegistryState
 
     public void GrantTools(string agentName, IReadOnlyList<string> toolNames, IReadOnlyList<string> capabilities)
     {
-        AgentToolAccess[agentName] = [.. toolNames.Distinct(StringComparer.Ordinal)];
-        AgentCapabilities[agentName] = [.. capabilities.Distinct(StringComparer.Ordinal)];
+        List<string> tools = [.. toolNames.Distinct(StringComparer.Ordinal)];
+        List<string> grants = [.. capabilities.Distinct(StringComparer.Ordinal)];
+        AgentToolAccess[agentName] = tools;
+        AgentCapabilities[agentName] = grants;
     }
 
     public void ConfigureAccess(
         IReadOnlyDictionary<string, List<string>> agentToolAccess,
         IReadOnlyDictionary<string, List<string>> agentCapabilities)
     {
+        // Finish both snapshots before replacing state; inputs may alias these maps.
+        var tools = agentToolAccess.ToDictionary(pair => pair.Key,
+            pair => pair.Value.Distinct(StringComparer.Ordinal).ToList(), StringComparer.Ordinal);
+        var grants = tools.Keys.ToDictionary(agentName => agentName,
+            agentName => (agentCapabilities.GetValueOrDefault(agentName) ?? [])
+                .Distinct(StringComparer.Ordinal).ToList(), StringComparer.Ordinal);
         AgentToolAccess.Clear();
         AgentCapabilities.Clear();
-        foreach (var (agentName, toolNames) in agentToolAccess)
-            GrantTools(agentName, toolNames, agentCapabilities.GetValueOrDefault(agentName) ?? []);
+        foreach (var (agentName, available) in tools)
+        {
+            AgentToolAccess[agentName] = available;
+            AgentCapabilities[agentName] = grants[agentName];
+        }
     }
 }
