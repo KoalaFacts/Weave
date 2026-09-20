@@ -22,7 +22,11 @@ public sealed class EchoPluginTests
     {
         var path = Environment.GetEnvironmentVariable("WEAVE_ECHO_SPEC")
             ?? throw new InvalidOperationException("Set WEAVE_ECHO_SPEC to the sample tool.json.");
-        using var config = JsonDocument.Parse(File.ReadAllText(path));
+        var root = RepositoryRoot();
+        string Resolve(string value) => string.Join(Path.PathSeparator,
+            value.Split(Path.PathSeparator).Select(part => part.StartsWith("examples/plugins/echo/", StringComparison.Ordinal)
+                ? Path.GetFullPath(part, root) : part));
+        using var config = JsonDocument.Parse(File.ReadAllText(Path.GetFullPath(path, root)));
         var mcp = config.RootElement.GetProperty("mcp");
         var spec = new ToolSpec
         {
@@ -30,8 +34,8 @@ public sealed class EchoPluginTests
             Type = ToolType.Mcp,
             Mcp = new McpConfig
             {
-                Server = mcp.GetProperty("server").GetString()!,
-                Args = [.. mcp.GetProperty("args").EnumerateArray().Select(a => a.GetString()!)]
+                Server = Resolve(mcp.GetProperty("server").GetString()!),
+                Args = [.. mcp.GetProperty("args").EnumerateArray().Select(a => Resolve(a.GetString()!))]
             }
         };
         spec.Name.ShouldBe("echo-sample");
@@ -80,6 +84,14 @@ public sealed class EchoPluginTests
         {
             await actor.DisconnectAsync();
         }
+    }
+
+    private static string RepositoryRoot()
+    {
+        for (DirectoryInfo? directory = new(AppContext.BaseDirectory); directory is not null; directory = directory.Parent)
+            if (File.Exists(Path.Combine(directory.FullName, "Weave.slnx")))
+                return directory.FullName;
+        throw new DirectoryNotFoundException("Run the sample check from a Weave checkout.");
     }
 
     // Observes the real connector boundary; every operation is forwarded unchanged.
