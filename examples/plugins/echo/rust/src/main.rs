@@ -11,7 +11,9 @@ fn handle(message: Value, initialized: &mut bool, ready: &mut bool) -> Option<Va
     }
     let method = message["method"].as_str().unwrap();
     let Some(id) = message.get("id") else {
-        if method == "notifications/initialized" && *initialized { *ready = true; }
+        if method == "notifications/initialized" && *initialized {
+            *ready = true;
+        }
         return None;
     };
     if !(id.is_string() || id.is_i64() || id.is_u64()) {
@@ -30,15 +32,23 @@ fn handle(message: Value, initialized: &mut bool, ready: &mut bool) -> Option<Va
         }
         "ping" => json!({}),
         _ if !*ready => return Some(error(id.clone(), -32002, "Server not initialized.")),
-        "tools/list" => json!({"tools": [{"name": "echo", "description": "Return the supplied text unchanged.",
+        "tools/list" => {
+            json!({"tools": [{"name": "echo", "description": "Return the supplied text unchanged.",
             "inputSchema": {"type": "object", "properties": {"text": {"type": "string"}},
-                "required": ["text"], "additionalProperties": false}}]}),
+                "required": ["text"], "additionalProperties": false}}]})
+        }
         "tools/call" => {
-            if params["name"] != "echo" { return Some(error(id.clone(), -32602, "Unknown tool.")); }
+            if params["name"] != "echo" {
+                return Some(error(id.clone(), -32602, "Unknown tool."));
+            }
             let args = &params["arguments"];
             let valid = args.as_object().is_some_and(|a| a.len() == 1) && args["text"].is_string();
             // Replace this expression with your own tool's behavior.
-            let text = if valid { args["text"].as_str().unwrap() } else { "Expected exactly one string argument: text." };
+            let text = if valid {
+                args["text"].as_str().unwrap()
+            } else {
+                "Expected exactly one string argument: text."
+            };
             json!({"content": [{"type": "text", "text": text}], "isError": !valid})
         }
         _ => return Some(error(id.clone(), -32601, "Unknown method.")),

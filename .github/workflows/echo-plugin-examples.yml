@@ -6,6 +6,7 @@ on:
     paths:
       - 'examples/plugins/echo/**'
       - 'src/**'
+      - 'hosts/Weave.Host/**'
       - 'extensions/Weave.Mcp/**'
       - 'extensions/Weave.Security.Sqlite/**'
       - 'tests/Weave.Silo.Tests/**'
@@ -18,6 +19,7 @@ on:
     paths:
       - 'examples/plugins/echo/**'
       - 'src/**'
+      - 'hosts/Weave.Host/**'
       - 'extensions/Weave.Mcp/**'
       - 'extensions/Weave.Security.Sqlite/**'
       - 'tests/Weave.Silo.Tests/**'
@@ -29,6 +31,10 @@ on:
 
 permissions:
   contents: read
+
+defaults:
+  run:
+    shell: bash
 
 concurrency:
   group: echo-plugins-${{ github.ref }}
@@ -65,9 +71,9 @@ jobs:
       - name: Build Rust sample
         if: matrix.language == 'rust'
         run: |
-          cargo fmt --manifest-path examples/plugins/echo/rust/Cargo.toml
-          cargo build --manifest-path examples/plugins/echo/rust/Cargo.toml
-          cargo clippy --manifest-path examples/plugins/echo/rust/Cargo.toml -- -D warnings
+          cargo fmt --manifest-path examples/plugins/echo/rust/Cargo.toml -- --check
+          cargo build --locked --manifest-path examples/plugins/echo/rust/Cargo.toml
+          cargo clippy --locked --manifest-path examples/plugins/echo/rust/Cargo.toml -- -D warnings
       - name: Build Java sample
         if: matrix.language == 'java'
         run: mvn -B -q -f examples/plugins/echo/java/pom.xml compile dependency:copy-dependencies
