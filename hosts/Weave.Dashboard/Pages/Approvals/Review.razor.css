@@ -1,0 +1,10 @@
+.review-page { max-width: 980px; margin: 0 auto; padding: 1.5rem; }
+.eyebrow { font-size: .75rem; font-weight: 700; letter-spacing: .12em; }
+.inputs { display: grid; gap: .7rem; padding: 1.5rem; border: 1px solid var(--neutral-stroke-rest, #bbb); border-radius: 12px; }
+label { font-weight: 600; }
+input { box-sizing: border-box; max-width: 100%; width: 100%; padding: .6rem; border: 1px solid var(--neutral-stroke-rest, #aaa); border-radius: 4px; }
+.actions { display: flex; flex-wrap: wrap; gap: .75rem; }
+button { padding: .65rem 1rem; cursor: pointer; }
+button:disabled { cursor: wait; }
+.warning { font-weight: 600; border-inline-start: 4px solid currentColor; padding-inline-start: 1rem; }
+code { overflow-wrap: anywhere; }

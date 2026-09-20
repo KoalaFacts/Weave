@@ -1,0 +1,41 @@
+@using Weave.Dashboard.Approvals
+
+<section class="review-panel" aria-label="Verified approval content">
+    <header role="status" aria-live="polite">
+        <p class="eyebrow">READ-ONLY REVIEW</p>
+        <h2>@(Expired ? "Review expired" : "Verified snapshot")</h2>
+        <p>No approval or execution has occurred from viewing this screen.</p>
+        @if (Expired)
+        {
+            <p class="warning">Do not use this expired snapshot. Verify again before any separate decision.</p>
+        }
+        else
+        {
+            <p>This is a point-in-time match, not a lock. The server rechecks any later decision and execution.</p>
+        }
+    </header>
+    <dl>
+        <dt>Invocation</dt><dd><code>@Display(Snapshot.InvocationId)</code></dd>
+        <dt>Workspace</dt><dd><code>@Display(Snapshot.WorkspaceId)</code></dd>
+        <dt>Requested by</dt><dd><code>@Display(Snapshot.Subject)</code></dd>
+        <dt>Tool / operation</dt><dd><code>@Display(Snapshot.ToolName) / @Display(Snapshot.Operation)</code></dd>
+        <dt>Registered target</dt><dd><pre>@Display(Snapshot.TargetDescription)</pre></dd>
+        <dt>Expires (UTC)</dt><dd><time>@Snapshot.ExpiresAt.UtcDateTime.ToString("O")</time></dd>
+        <dt>Exact plan digest</dt><dd><code>@Display(Snapshot.PlanDigest)</code></dd>
+    </dl>
+    <h3>Complete parameters</h3>
+    @if (Snapshot.Parameters.Count == 0)
+    {
+        <p>No parameters.</p>
+    }
+    @foreach (var entry in Snapshot.Parameters.OrderBy(p => p.Key, StringComparer.Ordinal))
+    {
+        <h4><code>@Display(entry.Key)</code></h4>
+        <pre>@Display(entry.Value)</pre>
+    }
+    <h3>Complete body</h3>
+    <p>@(Snapshot.RawInput is null ? "Null body" : $"{Snapshot.RawInput.Length} UTF-16 code units; nothing truncated")</p>
+    <pre class="body">@Display(Snapshot.RawInput)</pre>
+    <p class="legend">Values are exact JSON string literals: quotes distinguish text from null; escapes make newlines, tabs, Unicode and hidden direction controls visible. No HTML or Markdown is executed.</p>
+    <p>Approval remains a separate authorized operator action. A copied digest is not proof of human review.</p>
+</section>
