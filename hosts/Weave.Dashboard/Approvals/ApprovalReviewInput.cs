@@ -11,7 +11,9 @@ internal sealed record ApprovalReviewInput(string Id, string Method, Dictionary<
     {
         if (!Segment(workspace) || !Segment(tool) || Encoding.UTF8.GetByteCount(json) > MaxBytes)
             return null;
-        using var document = JsonDocument.Parse(json);
+        using var document = TryParseDocument(json);
+        if (document is null)
+            return null;
         var root = document.RootElement;
         if (root.ValueKind != JsonValueKind.Object)
             return null;
@@ -47,6 +49,18 @@ internal sealed record ApprovalReviewInput(string Id, string Method, Dictionary<
         && !string.IsNullOrWhiteSpace(result.PlanDigest) && result.PlanDigest.Length <= 512
         && result.RawInput == RawInput && result.Parameters is not null && result.Parameters.Count == Parameters.Count
         && Parameters.All(pair => result.Parameters.TryGetValue(pair.Key, out var value) && value == pair.Value);
+
+    private static JsonDocument? TryParseDocument(string json)
+    {
+        try
+        {
+            return JsonDocument.Parse(json);
+        }
+        catch (JsonException)
+        {
+            return null;
+        }
+    }
 
     private static bool Segment(string value) => value.Length is > 0 and <= 128
         && value is not "." and not ".."

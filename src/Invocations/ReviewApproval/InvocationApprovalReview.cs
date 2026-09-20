@@ -1,6 +1,8 @@
+using System.Collections.Immutable;
+
 namespace Weave.Invocations;
 
-/// <summary>Owned, verified display data at review time. Not an approval or a dispatch credential.</summary>
+/// <summary>Immutable, verified display data at review time. Not an approval or a dispatch credential.</summary>
 public sealed record InvocationApprovalReview(
     InvocationId InvocationId,
     string WorkspaceId,
@@ -8,7 +10,7 @@ public sealed record InvocationApprovalReview(
     string ToolName,
     string Operation,
     string TargetDescription,
-    Dictionary<string, string> Parameters,
+    ImmutableDictionary<string, string> Parameters,
     string? RawInput,
     string PlanDigest,
     DateTimeOffset ExpiresAt);
