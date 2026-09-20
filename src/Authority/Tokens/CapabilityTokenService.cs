@@ -125,9 +125,15 @@ public sealed class CapabilityTokenService : ICapabilityTokenService
 
         var now = _timeProvider.GetUtcNow();
         _revokedTokens.TryAdd(tokenId, now);
+        Exception? persistenceFailure = null;
         try
         {
             File.WriteAllText(GetRevocationPath(tokenId), now.ToString("O", System.Globalization.CultureInfo.InvariantCulture));
+        }
+        catch (Exception error) when (error is IOException or UnauthorizedAccessException)
+        {
+            persistenceFailure = error;
+            throw;
         }
         finally
         {
@@ -141,6 +147,11 @@ public sealed class CapabilityTokenService : ICapabilityTokenService
                 catch (ObjectDisposedException)
                 {
                     // source already disposed
+                }
+                catch (AggregateException cancellationFailure) when (persistenceFailure is not null)
+                {
+                    throw new AggregateException("Revocation persistence and cancellation callbacks both failed.",
+                        persistenceFailure, cancellationFailure);
                 }
             }
         }
@@ -179,7 +190,7 @@ public sealed class CapabilityTokenService : ICapabilityTokenService
 
     private static string ComputeSignature(CapabilityToken token, byte[] key)
     {
-        var hash = HMACSHA256.HashData(key, CapabilityTokenPayload.Encode(token));
+        var hash = HMACSHA256.HashData(key, payload: CapabilityTokenPayload.Encode(token));
         return Convert.ToBase64String(hash);
     }
 
