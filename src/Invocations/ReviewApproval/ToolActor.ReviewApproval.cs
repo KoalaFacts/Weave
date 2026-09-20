@@ -1,3 +1,4 @@
+using System.Collections.Immutable;
 using Weave.Invocations;
 using Weave.Security.Tokens;
 
@@ -62,7 +63,7 @@ public sealed partial class ToolActor
             return new(null, "approval-plan-conflict");
 
         return new(new InvocationApprovalReview(approval.InvocationId, approval.WorkspaceId, approval.Subject,
-            approval.ToolName, approval.Operation, description, request.Parameters, request.RawInput,
+            approval.ToolName, approval.Operation, description, request.Parameters.ToImmutableDictionary(StringComparer.Ordinal), request.RawInput,
             approval.PlanDigest, approval.ExpiresAt), null);
 
         async Task AuthorizeReviewerAsync()

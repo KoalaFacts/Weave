@@ -1,5 +1,6 @@
 using Microsoft.FluentUI.AspNetCore.Components;
 using Weave.Dashboard.Api;
+using Weave.Dashboard.Approvals;
 using Weave.Dashboard.Components;
 using Weave.ServiceDefaults;
 
@@ -12,6 +13,7 @@ builder.Services.AddRazorComponents()
 
 builder.Services.AddFluentUIComponents();
 builder.Services.AddSignalR();
+builder.Services.AddApprovalReviewScreen(builder.Configuration);
 
 builder.Services.AddHttpClient<WeaveApiClient>(client =>
     client.BaseAddress = new Uri("https+http://silo"));

@@ -41,8 +41,9 @@ The current code is the starting point for the control plane, not an empty scaff
 | Invocation recording | The host requires an on-disk SQLite journal. Intent, authorization evidence and a distinct attempt are committed before dispatch; recording failure blocks the call. Stable IDs prevent repeat dispatch against that journal, and owner-scoped outcome lookup works after Host restart. | Single-host/preserved-file scope, metadata rather than response-body storage, no automatic unknown-outcome recovery or cluster-wide guarantee. |
 | Durable approval | Configured filesystem operations wait for an independently authorized, exact-plan decision. Approval is consumed atomically with attempt admission; the original request must be resubmitted with current authority. | Reviewed HTTP decisions are separately opt-in. Filesystem is the first target-binding adapter; unsupported required targets fail closed. |
 | Governed HTTP entry | Opt-in routes submit invocations and query outcomes/approval status using already signed capability tokens. | Not public token issuance or self-service onboarding. Global API auth remains separate; restrict exposure to the governed routes. |
-| Verified approval review | An independent reviewer submits the retained request; a read-only endpoint returns readable inputs and registered-target information only when they match the pending plan. | JSON review data is not an approval receipt. No reviewer-side secret resolution; unsupported or changed effective inputs fail closed. |
-| Operator decisions | A Python terminal example displays complete escaped review data and requires explicit digest-bound confirmation. The decision endpoint revalidates content before recording approve/reject without executing. | Requires administrator-provisioned connections and credentials. Not a browser UI, human identity proof or public token issuer. |
+| Verified approval review | An independent reviewer submits the retained request; a read-only endpoint and Dashboard screen at `/approvals/review` display inputs and registered-target information only when they match the pending plan. | The screen verifies and displays; it has no approve/reject/execute action. A snapshot is not an approval receipt. No reviewer-side secret resolution; unsupported or changed effective inputs fail closed. |
+| Operator decisions | A separate terminal example and opt-in HTTP endpoint revalidate original content before recording approve/reject without executing. | Requires administrator-provisioned reviewer credentials. The Dashboard screen remains read-only. |
+| Language clients | A TypeScript SDK separates Agent and operator calls; a Rust caller submits invocations and queries status. Both use the existing governed HTTP path and caller-retained IDs. | Source-only, unpublished packages; no automatic retries, token issuance or replacement of the existing CLI. |
 | Connectors | MCP over stdio and HTTP/SSE, CLI, filesystem, OpenAPI, Direct HTTP, and Dapr extension projects. | An outbound MCP connector is not an inbound MCP governance server. Protocol coverage and security controls differ by adapter. |
 | Authentication and credentials | Signed capability tokens, revocation handling, secret-protection code, and API authentication that rejects broken enabled configurations. | API auth defaults to `none`. The built-in bearer mode is a shared token, not a complete OAuth/OIDC or tenant identity system. |
 | Verification | Automated tests, dependency auditing, CI, and release-source/package validation. | Passing checks does not establish complete tenant isolation, generalized provider approval coverage, or a sandbox for untrusted code. |
@@ -55,7 +56,9 @@ Relevant implementation: [tool dispatch](src/Invocations/InvokeTool/ToolActor.cs
 
 **Durable approval:** configure `Weave:Invocations:ApprovalRequiredGrants` explicitly; its default is empty. The operator uses `IToolActor.GetApprovalAsync` and `DecideApprovalAsync`; approval does not itself dispatch or grant execution permission. An approver needs `approval:decide` and the exact tool-operation approval grant, and cannot approve its own request. The original caller resumes by resubmitting the same ID and request. Read the [approval configuration, decision and restart guide](docs/implementation/2026-09-20-durable-approval.md) before using it. Keep the journal outside agent-readable or writable tool roots and protect its files; it is not encrypted or tamper-proof audit storage.
 
-**HTTP and readable review:** see the [capability-authenticated ingress guide](docs/implementation/2026-09-20-governed-http-entry.md) and [verified review contract](docs/implementation/2026-09-20-verified-approval-review.md). Review matches the retained original request and current target before returning content; it neither approves nor executes. Render the response as plain text and bind any subsequent decision to its exact plan digest. The journal does not supply a lost request body, and an old preview cannot override later changes or expiry. The [terminal operator example](examples/governed-tools/README.md) now provides complete escaped review and explicit approval/rejection through the separately enabled [reviewed decision endpoint](docs/implementation/2026-09-20-reviewed-approval-decisions.md). A browser review UI and self-service onboarding remain future work.
+**HTTP and readable review:** see the [capability-authenticated ingress guide](docs/implementation/2026-09-20-governed-http-entry.md) and [verified review contract](docs/implementation/2026-09-20-verified-approval-review.md). Review matches the retained original request and current target before returning content; it neither approves nor executes. The [read-only Dashboard screen](docs/implementation/2026-09-20-operator-review-screen.md) displays the complete verified content, target, digest and expiry. Enable it explicitly with `Weave:Review:Enabled` and an administrator-selected `Weave:Review:BaseUrl`. The journal does not supply a lost request body, and an old preview cannot override later changes or expiry. Human login, browser decision actions and real-browser acceptance remain separate work. The [terminal operator example](examples/governed-tools/README.md) uses the separately enabled [reviewed decision endpoint](docs/implementation/2026-09-20-reviewed-approval-decisions.md); it is not a browser approval action.
+
+**TypeScript and Rust:** start with the [TypeScript SDK](sdk/typescript/README.md), [Rust caller](clients/rust/README.md) and [shared compatibility scenarios](protocol/governed-tools/README.md). Both clients use already-issued credentials and preserve exact invocation IDs; neither generates authority or automatically retries unknown effects. Python is not a runtime requirement for these clients. The packages are available from source, not published registry releases.
 
 The existing Agent Runtime, memory, skills, channels, and other features remain in the repository. They are not prerequisites for the new Governed Tools profile. The current executable host still composes the existing runtime; extracting an extension does not, by itself, deliver every proposed deployment profile.
 
@@ -63,7 +66,7 @@ The existing Agent Runtime, memory, skills, channels, and other features remain 
 
 Build from source to explore this branch rather than assuming a published CLI release contains the new architecture.
 
-**Prerequisites:** Git, the .NET SDK selected by [global.json](global.json), and Python 3.10+ available as `python3` for the repository checks and MCP subprocess tests. The SDK policy permits patch roll-forward; inspect `dotnet --version` rather than assuming an exact installed patch.
+**Prerequisites:** Git, the .NET SDK selected by [global.json](global.json), and Python 3.10+ available as `python3` for the repository checks and MCP subprocess tests. The SDK policy permits patch roll-forward; inspect `dotnet --version` rather than assuming an exact installed patch. Full Host tests also require Node 22+ and the built Rust/TypeScript clients as shown below; those are test prerequisites, not new C# Host runtime dependencies.
 
 From the repository root:
 
@@ -94,15 +97,17 @@ dotnet test --project tests/Weave.Tools.Tests/Weave.Tools.Tests.csproj --no-buil
 
 That suite includes a round trip through the real MCP connector and the repository's [Python echo server](examples/echo-mcp/server.py). Some tests require platform facilities such as symlink creation; inspect skipped tests as well as failures. These connector tests are not evidence of the target end-to-end authorization and approval path.
 
-To exercise the host-level journal, approval and HTTP review scenarios, including complete Host recreation against the same SQLite file:
+To exercise the host-level journal, approval and HTTP review scenarios, including complete Host recreation against the same SQLite file and independent language clients:
 
 ```bash
+npm ci --ignore-scripts --prefix sdk/typescript
+npm run build --prefix sdk/typescript
+rustup toolchain install 1.98.1 --profile minimal
+cargo +1.98.1 build --locked --manifest-path clients/rust/Cargo.toml
 dotnet test --project tests/Weave.Silo.Tests/Weave.Silo.Tests.csproj --no-build -c Release
 ```
 
-The [approval restart test](tests/Weave.Silo.Tests/Invocations/ApprovalHostRestartTests.cs) demonstrates waiting without writing, restarting, an independent decision, explicit resubmission, and duplicate protection through the actual Orleans actor interface. The [HTTP review tests](tests/Weave.Silo.Tests/Invocations/GovernedHttpApprovalReviewTests.cs) verify readable content before a separately authorized decision. These are executable developer examples, not a shipped approval screen or self-service onboarding flow.
-
-For an operator-facing example, follow [Review and decide a pending operation](examples/governed-tools/README.md). Its real-process tests exercise approve, reject and leave-unchanged against Kestrel with both global and capability authentication. The helper never requests tool execution; the original caller resumes separately after approval.
+The [approval restart test](tests/Weave.Silo.Tests/Invocations/ApprovalHostRestartTests.cs) demonstrates waiting without writing, restarting, an independent decision, explicit resubmission, and duplicate protection through the actual Orleans actor interface. The [HTTP review tests](tests/Weave.Silo.Tests/Invocations/GovernedHttpApprovalReviewTests.cs) verify readable content before a separately authorized decision. The Dashboard has a read-only review screen, but these server/client/rendering tests do not replace browser end-to-end acceptance or implement self-service onboarding. The [cross-language tests](tests/Weave.Silo.Tests/Invocations/CrossLanguageClientTests.cs) alternate TypeScript and Rust through real Kestrel, SQLite and filesystem operations.
 
 For the current manifest format, see the [Manifest Reference](docs/manifest-reference.md). Older examples may retain pre-refactor paths; use `hosts/Weave.Cli/Weave.Cli.csproj` and the current CLI help. [Release history](https://github.com/KoalaFacts/Weave/releases) describes published versions separately from this development branch.
 
@@ -162,7 +167,7 @@ Operation identity must retain its provider/installation context and contract re
 
 ## What comes next
 
-Invocation ingress, verified readable review and an explicit terminal decision flow are available for the bounded filesystem path. The next user-facing work is safer administrator onboarding and a clearer operator interface, without treating an unexplained digest, stale preview or self-issued identity as approval. Generalized target/resource constraints and safe recovery from uncertain results remain explicit work.
+The invocation ingress, verified review data, read-only Dashboard screen, reviewed operator decisions and initial language clients are available in this development branch. The next user-facing work is safe onboarding, browser acceptance and clearer operator integration; the Dashboard screen itself still cannot approve or execute. No unexplained digest, stale preview or self-issued identity is approval. Generalized target/resource constraints and safe recovery from uncertain results remain explicit work.
 
 Then bring existing MCP/CLI/HTTP operations through the same path, add imported resource bindings and constrained credentials, and expand provisioning/reconciliation only for concrete workflows. A marketplace, hosted reasoning service, universal scheduler, or email/SMS infrastructure is not a prerequisite.
 
@@ -181,7 +186,10 @@ src/Plugins/      Plugin/discovery behavior
 src/Resources/    Existing identifiers; generalized resource lifecycle is a target
 hosts/            Executable hosts and their composition
 extensions/       Opt-in protocol, runtime, and persistence implementations
-tests/            .NET test projects
+sdk/typescript/   Source-only integration SDK with separate Agent/operator entry points
+clients/rust/     Independent native caller, not a replacement product CLI
+protocol/         Shared client compatibility scenarios
+tests/            .NET tests and independent client probes
 tools/            Source generators
 scripts/          Repository checks and developer/release tooling
 ```
