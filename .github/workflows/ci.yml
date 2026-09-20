@@ -38,6 +38,29 @@ jobs:
       - name: Architecture checks
         run: python3 -m unittest discover -s scripts/tests -v
 
+      - name: Build and test language clients
+        run: |
+          node --version
+          node -e 'if (Number(process.versions.node.split(".")[0]) < 22) process.exit(1)'
+          npm install --ignore-scripts --prefix sdk/typescript
+          npm test --prefix sdk/typescript
+          rustup toolchain install 1.98.1 --profile minimal --component rustfmt --component clippy
+          cargo +1.98.1 fmt --manifest-path clients/rust/Cargo.toml
+          cargo +1.98.1 build --manifest-path clients/rust/Cargo.toml
+          cargo +1.98.1 test --manifest-path clients/rust/Cargo.toml
+
+      - name: Upload client lock and formatting evidence
+        if: always()
+        uses: actions/upload-artifact@043fb46d1a93c77aae656e7c1c64a875d1fc6a0a # v7
+        with:
+          name: client-build-evidence
+          path: |
+            sdk/typescript/package-lock.json
+            clients/rust/Cargo.lock
+            clients/rust/src/*.rs
+          retention-days: 7
+          if-no-files-found: warn
+
       - name: Setup .NET
         uses: ./.github/actions/setup-dotnet
 
@@ -51,6 +74,14 @@ jobs:
         run: >-
           dotnet test --solution Weave.slnx --no-build -c Release
           -- --report-xunit-trx --results-directory ./test-results
+
+      - name: Client quality and dependency audit
+        run: |
+          git diff --exit-code -- clients/rust/src
+          cargo +1.98.1 clippy --manifest-path clients/rust/Cargo.toml --all-targets -- -D warnings
+          npm audit --prefix sdk/typescript --audit-level=high
+          cargo +1.98.1 install cargo-audit --version 0.22.2 --locked
+          cargo +1.98.1 audit --file clients/rust/Cargo.lock
 
       - name: Publish test results
         uses: EnricoMi/publish-unit-test-result-action@d0a4676d0e0b938bc201470d88276b7c74c712b3 # v2

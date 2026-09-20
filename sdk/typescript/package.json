@@ -1,0 +1,12 @@
+{
+  "name": "@weave/governed-tools",
+  "version": "0.0.0-dev",
+  "private": true,
+  "type": "module",
+  "license": "MIT OR AGPL-3.0-or-later",
+  "exports": {".": {"types": "./dist/client.d.ts", "import": "./dist/client.js"}, "./operator": {"types": "./dist/operator.d.ts", "import": "./dist/operator.js"}},
+  "files": ["dist"],
+  "engines": {"node": ">=22"},
+  "scripts": {"build": "tsc -p tsconfig.json", "test": "npm run build && node --test test/*.test.mjs"},
+  "devDependencies": {"typescript": "5.8.3"}
+}

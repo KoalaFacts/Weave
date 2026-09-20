@@ -1,0 +1,5 @@
+[
+  {"name":"unicode-crlf", "request":{"invocationId":"14bd2b92c8a34fdd8c79cb62eab32a13", "toolName":"files", "method":"write_file", "parameters":{"path":"note.txt","z":"末尾","a":"é"}, "rawInput":"第一行\r\n第二行\n🙂\t<script>data</script>"}},
+  {"name":"null-input", "request":{"invocationId":"24bd2b92c8a34fdd8c79cb62eab32a13", "toolName":"files", "method":"read_file", "parameters":{"path":"note.txt"}, "rawInput":null}},
+  {"name":"omitted-input", "request":{"invocationId":"34bd2b92c8a34fdd8c79cb62eab32a13", "toolName":"files", "method":"read_file", "parameters":{"path":"note.txt"}}}
+]

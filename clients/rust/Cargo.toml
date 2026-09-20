@@ -1,0 +1,15 @@
+[package]
+name = "weave-governed-client"
+version = "0.0.0"
+edition = "2024"
+license = "MIT OR AGPL-3.0-or-later"
+publish = false
+
+[[bin]]
+name = "weave-client"
+path = "src/main.rs"
+
+[dependencies]
+reqwest = { version = "=0.13.4", default-features = false, features = ["blocking", "rustls"] }
+serde = { version = "=1.0.228", features = ["derive"] }
+serde_json = "=1.0.145"
