@@ -128,32 +128,35 @@ public sealed class CapabilityTokenService : ICapabilityTokenService
         Exception? persistenceFailure = null;
         try
         {
-            File.WriteAllText(GetRevocationPath(tokenId), now.ToString("O", System.Globalization.CultureInfo.InvariantCulture));
-        }
-        catch (Exception error) when (error is IOException or UnauthorizedAccessException)
-        {
-            persistenceFailure = error;
-            throw;
-        }
-        finally
-        {
-            // Persistence failure is still reported, but cannot bypass local cancellation.
-            if (_liveSources.TryRemove(tokenId, out var cts))
+            try
             {
-                try
+                File.WriteAllText(GetRevocationPath(tokenId), now.ToString("O", System.Globalization.CultureInfo.InvariantCulture));
+            }
+            catch (Exception error) when (error is IOException or UnauthorizedAccessException)
+            {
+                persistenceFailure = error;
+                throw;
+            }
+            finally
+            {
+                // Persistence failure cannot bypass local cancellation.
+                if (_liveSources.TryRemove(tokenId, out var cts))
                 {
-                    cts.Cancel();
-                }
-                catch (ObjectDisposedException)
-                {
-                    // source already disposed
-                }
-                catch (AggregateException cancellationFailure) when (persistenceFailure is not null)
-                {
-                    throw new AggregateException("Revocation persistence and cancellation callbacks both failed.",
-                        persistenceFailure, cancellationFailure);
+                    try
+                    {
+                        cts.Cancel();
+                    }
+                    catch (ObjectDisposedException)
+                    {
+                        // source already disposed
+                    }
                 }
             }
+        }
+        catch (AggregateException cancellationFailure) when (persistenceFailure is not null)
+        {
+            throw new AggregateException("Revocation persistence and cancellation callbacks both failed.",
+                persistenceFailure, cancellationFailure);
         }
     }
 
