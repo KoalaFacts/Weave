@@ -125,25 +125,70 @@ public sealed class CapabilityTokenService : ICapabilityTokenService
 
         var now = _timeProvider.GetUtcNow();
         _revokedTokens.TryAdd(tokenId, now);
-        File.WriteAllText(GetRevocationPath(tokenId), now.ToString("O", System.Globalization.CultureInfo.InvariantCulture));
-
-        if (_liveSources.TryRemove(tokenId, out var cts))
+        Exception? persistenceFailure = null;
+        try
         {
             try
             {
-                cts.Cancel();
+                File.WriteAllText(GetRevocationPath(tokenId), now.ToString("O", System.Globalization.CultureInfo.InvariantCulture));
             }
-            catch (ObjectDisposedException)
+            catch (Exception error) when (error is IOException or UnauthorizedAccessException)
             {
-                // source already disposed
+                persistenceFailure = error;
+                throw;
             }
+            finally
+            {
+                // Persistence failure cannot bypass local cancellation.
+                if (_liveSources.TryRemove(tokenId, out var cts))
+                {
+                    try
+                    {
+                        cts.Cancel();
+                    }
+                    catch (ObjectDisposedException)
+                    {
+                        // source already disposed
+                    }
+                }
+            }
+        }
+        catch (AggregateException cancellationFailure) when (persistenceFailure is not null)
+        {
+            throw new AggregateException("Revocation persistence and cancellation callbacks both failed.",
+                persistenceFailure, cancellationFailure);
         }
     }
 
     public bool IsRevoked(string tokenId)
     {
-        return CapabilityTokenPayload.HasValidTokenId(tokenId)
-            && (_revokedTokens.ContainsKey(tokenId) || File.Exists(GetRevocationPath(tokenId)));
+        if (!CapabilityTokenPayload.HasValidTokenId(tokenId))
+            return false;
+        if (_revokedTokens.ContainsKey(tokenId))
+            return true;
+
+        try
+        {
+            try
+            {
+                // Any entry at the marker path blocks use, including an unexpected directory.
+                _ = File.GetAttributes(GetRevocationPath(tokenId));
+                return true;
+            }
+            catch (FileNotFoundException)
+            {
+                // Absence is authoritative only while the parent store remains a directory.
+                return (File.GetAttributes(_revocationDirectory) & FileAttributes.Directory) == 0;
+            }
+        }
+        catch (IOException)
+        {
+            return true;
+        }
+        catch (UnauthorizedAccessException)
+        {
+            return true;
+        }
     }
 
     private static string ComputeSignature(CapabilityToken token, byte[] key)
