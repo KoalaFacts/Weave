@@ -36,7 +36,8 @@ public sealed class DashboardReviewMergeRegressionTests
         {
             calls++;
             return Task.FromResult(Reply());
-        })) { BaseAddress = new Uri("http://localhost/") };
+        }))
+        { BaseAddress = new Uri("http://localhost/") };
         dynamic session = DashboardReviewSessionTests.Session(http, TimeProvider.System);
         using var lifetime = (IDisposable)session;
 
@@ -61,7 +62,8 @@ public sealed class DashboardReviewMergeRegressionTests
             calls++;
             request.Headers.GetValues("Authorization").Single().ShouldBe("Bearer " + bearer);
             return Task.FromResult(Reply());
-        })) { BaseAddress = new Uri("http://localhost/") };
+        }))
+        { BaseAddress = new Uri("http://localhost/") };
         dynamic session = DashboardReviewSessionTests.Session(http, TimeProvider.System);
         using var lifetime = (IDisposable)session;
         var json = JsonSerializer.Serialize(new
