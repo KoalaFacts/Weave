@@ -16,7 +16,7 @@ internal static class DecideReviewedApprovalEndpoint
         if (!InvocationHttp.TryInvocationId(invocationId, out var id))
             return InvocationHttp.Error(400, "invalid-invocation-id");
         var (body, invalid) = await ReadInvocationHttpRequest.ReadJsonAsync(context,
-            InvocationHttpJsonContext.Default.ApprovalDecisionHttpRequest);
+            ApprovalDecisionJsonContext.Default.ApprovalDecisionHttpRequest);
         if (body is null)
             return invalid!;
         if (body.Decision is not ("approve" or "reject") || string.IsNullOrWhiteSpace(body.PlanDigest)
