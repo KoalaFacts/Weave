@@ -177,11 +177,15 @@ public sealed class AgentOnlyHttpSurfaceTests
         public CapabilityToken Token(string subject, HashSet<string> grants) =>
             Host.Services.GetRequiredService<ICapabilityTokenService>().Mint(new CapabilityTokenRequest
             {
-                WorkspaceId = "workspace", IssuedTo = subject, Grants = grants, Lifetime = TimeSpan.FromMinutes(5)
+                WorkspaceId = "workspace",
+                IssuedTo = subject,
+                Grants = grants,
+                Lifetime = TimeSpan.FromMinutes(5)
             });
         public Task<ToolHandle> ConnectAsync() => Tool.ConnectAsync(new ToolSpec
         {
-            Name = "files", Type = ToolType.FileSystem,
+            Name = "files",
+            Type = ToolType.FileSystem,
             FileSystem = new Weave.Tools.Connectors.FileSystemToolConfig { Root = Path.GetDirectoryName(Target)! }
         }, Token("setup", ["tool:files:connect"]));
         public async Task<HttpResponseMessage> SendAsync(ToolInvocation request, CapabilityToken token)
