@@ -118,8 +118,62 @@ jobs:
           src/Composition/VirtualActors/IActorTimerRegistry.cs src/Composition/VirtualActors/IVirtualActorProvider.cs
           src/Composition/VirtualActors/VirtualActorId.cs src/Composition/WeavePorts.cs
 
+  dependency-lock-validation:
+    name: Locked dependency graph (${{ matrix.source }})
+    if: github.event_name == 'pull_request' || github.event_name == 'push'
+    runs-on: ubuntu-latest
+    timeout-minutes: 10
+    permissions:
+      contents: read
+    strategy:
+      fail-fast: false
+      matrix:
+        source: [base, head]
+    steps:
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v6
+        with:
+          ref: ${{ matrix.source == 'base' && (github.event.pull_request.base.sha || github.event.before) || (github.event.pull_request.head.sha || github.sha) }}
+          persist-credentials: false
+      - uses: ./.github/actions/setup-dotnet
+      - name: Validate the exact committed dependency closure
+        run: |
+          dotnet restore Weave.slnx --locked-mode
+          git diff --exit-code -- '**/packages.lock.json'
+
+  dependency-snapshots:
+    name: Submit verified dependency snapshots
+    needs: dependency-lock-validation
+    runs-on: ubuntu-latest
+    timeout-minutes: 5
+    permissions:
+      contents: write
+    steps:
+      # Only the reviewed immutable producer is executable in this job.
+      # Source commits are read as JSON blobs via the API, never checked out here.
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v6
+        with:
+          ref: c36ab57b5c2c46e00b7cc71fdab19cac4e344b3e
+          persist-credentials: false
+      - name: Submit exact base and head lock graphs
+        env:
+          GH_TOKEN: ${{ github.token }}
+          PR_BASE_SHA: ${{ github.event.pull_request.base.sha || github.event.before }}
+          PR_HEAD_SHA: ${{ github.event.pull_request.head.sha || github.sha }}
+          PR_BASE_REF: refs/heads/${{ github.base_ref || 'main' }}
+          PR_HEAD_REF: ${{ github.event_name == 'pull_request' && format('refs/pull/{0}/head', github.event.number) || github.ref }}
+        run: python3 scripts/submit_nuget_snapshots.py --output "$RUNNER_TEMP/dependency-snapshots"
+      - name: Retain source and submission evidence
+        if: always()
+        uses: actions/upload-artifact@043fb46d1a93c77aae656e7c1c64a875d1fc6a0a # v7
+        with:
+          name: dependency-snapshots
+          path: ${{ runner.temp }}/dependency-snapshots/
+          if-no-files-found: error
+          retention-days: 14
+
   dependency-review:
     name: Dependency Review
+    needs: dependency-snapshots
     runs-on: ubuntu-latest
     if: github.event_name == 'pull_request'
     permissions:
@@ -131,6 +185,23 @@ jobs:
         uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v6
         with:
           persist-credentials: false
+
+      - name: Require dependency comparison evidence
+        timeout-minutes: 3
+        env:
+          GH_TOKEN: ${{ github.token }}
+          PR_BASE_SHA: ${{ github.event.pull_request.base.sha }}
+          PR_HEAD_SHA: ${{ github.event.pull_request.head.sha }}
+        run: python3 scripts/check_dependency_review_evidence.py --report "$RUNNER_TEMP/dependency-review-evidence.json"
+
+      - name: Upload dependency comparison evidence
+        if: always()
+        uses: actions/upload-artifact@043fb46d1a93c77aae656e7c1c64a875d1fc6a0a # v7
+        with:
+          name: dependency-review-evidence
+          path: ${{ runner.temp }}/dependency-review-evidence.json
+          if-no-files-found: error
+          retention-days: 14
 
       - name: Dependency Review
         uses: actions/dependency-review-action@a1d282b36b6f3519aa1f3fc636f609c47dddb294 # v4
