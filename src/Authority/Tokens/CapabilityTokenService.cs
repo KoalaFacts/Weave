@@ -190,7 +190,7 @@ public sealed class CapabilityTokenService : ICapabilityTokenService
 
     private static string ComputeSignature(CapabilityToken token, byte[] key)
     {
-        var hash = HMACSHA256.HashData(key, payload: CapabilityTokenPayload.Encode(token));
+        var hash = HMACSHA256.HashData(key, CapabilityTokenPayload.Encode(token));
         return Convert.ToBase64String(hash);
     }
 
