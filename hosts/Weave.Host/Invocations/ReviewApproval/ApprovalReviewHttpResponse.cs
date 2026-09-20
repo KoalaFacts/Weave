@@ -1,3 +1,4 @@
+using System.Collections.Immutable;
 using Weave.Invocations;
 
 namespace Weave.Silo.Invocations;
@@ -9,7 +10,7 @@ internal sealed record ApprovalReviewHttpResponse(
     string ToolName,
     string Operation,
     string TargetDescription,
-    Dictionary<string, string> Parameters,
+    ImmutableDictionary<string, string> Parameters,
     string? RawInput,
     string PlanDigest,
     DateTimeOffset ExpiresAt)
