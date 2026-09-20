@@ -9,7 +9,12 @@ public static class ExtensionsToInvocationEndpoints
 
     public static void MapGovernedInvocationEndpoints(this WebApplication app)
     {
-        if (!app.Configuration.GetValue<bool>("Weave:Invocations:Http:Enabled"))
+        var enabled = app.Configuration.GetValue<bool>("Weave:Invocations:Http:Enabled");
+        var agentOnly = app.Configuration.GetValue<bool>("Weave:Invocations:Http:AgentOnly");
+        var decisionsEnabled = app.Configuration.GetValue<bool>("Weave:Invocations:Http:DecisionsEnabled");
+        if (agentOnly && (!enabled || decisionsEnabled))
+            throw new InvalidOperationException("AgentOnly requires governed HTTP Enabled=true and DecisionsEnabled=false.");
+        if (!enabled)
             return;
 
         var keys = app.Services.GetRequiredService<IOptions<CapabilityTokenOptions>>().Value;
@@ -22,8 +27,11 @@ public static class ExtensionsToInvocationEndpoints
         group.MapPost("", InvokeToolEndpoint.HandleAsync);
         group.MapGet("/{invocationId}", GetInvocationEndpoint.HandleAsync);
         group.MapGet("/{invocationId}/approval", GetApprovalEndpoint.HandleAsync);
+        if (agentOnly)
+            return;
+
         group.MapPost("/{invocationId}/approval/review", ReviewApprovalEndpoint.HandleAsync);
-        if (app.Configuration.GetValue<bool>("Weave:Invocations:Http:DecisionsEnabled"))
+        if (decisionsEnabled)
             group.MapPost("/{invocationId}/approval/decision", DecideReviewedApprovalEndpoint.HandleAsync);
     }
 }
