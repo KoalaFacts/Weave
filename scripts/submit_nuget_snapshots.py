@@ -204,14 +204,15 @@ def main():
         # Validate both graphs completely before making any submission.
         for index, plan in enumerate(plans):
             result = api.request('dependency-graph/snapshots', plan)
-            if result.get('result') != 'SUCCESS' or not isinstance(result.get('id'), int):
+            if result.get('result') not in ('SUCCESS', 'ACCEPTED') or type(result.get('id')) is not int:
                 raise SnapshotError('snapshot-not-confirmed')
-            report['sources'].append({'sha': plan['sha'], 'snapshot_id': result['id'], **plan['metadata']})
+            report['sources'].append({'sha': plan['sha'], 'snapshot_id': result['id'],
+                                      'receipt': result['result'], **plan['metadata']})
             (args.output / f'snapshot-{index}.json').write_text(json.dumps(plan, indent=2) + '\n', encoding='utf-8')
         report['status'] = 'submitted'
         print('Exact base/head NuGet graphs submitted; availability and policy checks still must pass.')
-    except (SnapshotError, KeyError, TypeError, ValueError, RecursionError):
-        report['failure'] = 'dependency-snapshot-production-failed'
+    except (SnapshotError, KeyError, TypeError, ValueError, RecursionError) as error:
+        report['failure'] = str(error) if isinstance(error, SnapshotError) else 'invalid-snapshot-input'
         print('::error::Dependency snapshot production failed. No clean review can be claimed.')
     (args.output / 'submission.json').write_text(json.dumps(report, indent=2) + '\n', encoding='utf-8')
     return 0 if report['status'] == 'submitted' else 1
