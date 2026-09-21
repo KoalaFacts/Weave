@@ -37,17 +37,22 @@ limits. This change does not invent new numeric configuration limits or an outbo
 request-size contract.
 
 A leading empty data field contributes a newline when another data field follows.
-An incomplete data event is not promoted at EOF. Failing such an MCP response
-explicitly avoids waiting for a fabricated result. Encoding rejection is a deliberate
+An incomplete data event is not promoted at EOF. Encoding rejection is a deliberate
 strict MCP boundary, not a claim to implement every browser EventSource behavior.
 Server-push GET, automatic reconnection, session headers and general JSON-RPC shape
 validation are not added here.
 
-IdleTimeoutSeconds retains its separate per-line wait bound. The whole request
+IdleTimeoutSeconds retains its separate per-line wait bound. The whole HTTP request
 budget also bounds a busy stream or full queue, so repeated progress cannot extend
-an invocation indefinitely. Already delivered complete frames are not rolled back
-by a later stream error. Callers must retain invocation IDs and use the existing
-journal/outcome semantics; no failure authorizes a fresh-ID retry.
+that response-consumption phase indefinitely. This is NOT a deadline for a later
+JSON-RPC correlation wait after HTTP has already completed; malformed/nonmatching
+RPC replies and invocation-level completion remain separate review work. Caller
+cancellation must still propagate through the connection and executor.
+
+Already delivered complete frames are not rolled back by a later stream error.
+Callers must retain invocation IDs and use the existing journal/outcome semantics;
+no failure authorizes a fresh-ID retry. Cancelling network I/O does not undo an
+upstream effect or contain an arbitrary non-cooperative implementation.
 
 ## Verification scope
 
