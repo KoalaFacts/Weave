@@ -73,7 +73,7 @@ internal sealed class McpHttpTestPeer : IAsyncDisposable
         await stream.WriteAsync(bytes, ct);
     }
 
-    public static Task HeadersAsync(NetworkStream stream, CancellationToken ct, string contentType, int length = 1, string extraHeaders = "", int status = 200)
+    public static Task HeadersAsync(NetworkStream stream, CancellationToken ct, string contentType = "application/json", int length = 1, string extraHeaders = "", int status = 200)
     {
         var headers = $"HTTP/1.1 {status} Test\r\nContent-Type: {contentType}\r\nContent-Length: {length}\r\nConnection: close\r\n{extraHeaders}\r\n";
         return stream.WriteAsync(Encoding.ASCII.GetBytes(headers), ct).AsTask();
