@@ -6,7 +6,7 @@ namespace Weave.Tools.Connectors;
 // Parsing belongs to this transport, not a second public protocol or SDK.
 internal sealed partial class HttpMcpTransport
 {
-    private static readonly Encoding StrictUtf8 = new UTF8Encoding(false, true);
+    private static readonly Encoding _strictUtf8 = new UTF8Encoding(false, true);
 
     private async Task ConsumeJsonAsync(HttpResponseMessage response, CancellationToken ct)
     {
@@ -35,7 +35,7 @@ internal sealed partial class HttpMcpTransport
             ArrayPool<byte>.Shared.Return(buffer);
         }
 
-        var body = StrictUtf8.GetString(sink.GetBuffer(), 0, (int)sink.Length);
+        var body = _strictUtf8.GetString(sink.GetBuffer(), 0, (int)sink.Length);
         await _incoming.Writer.WriteAsync(body, ct);
     }
 
@@ -46,7 +46,7 @@ internal sealed partial class HttpMcpTransport
 
         await using var stream = await response.Content.ReadAsStreamAsync(ct);
         using var bounded = new McpResponseReadStream(stream, _maxResponseBytes);
-        using var reader = new StreamReader(bounded, StrictUtf8, detectEncodingFromByteOrderMarks: false, leaveOpen: true);
+        using var reader = new StreamReader(bounded, _strictUtf8, detectEncodingFromByteOrderMarks: false, leaveOpen: true);
         var data = new StringBuilder();
         long frameBytes = 0;
         var hasData = false;
@@ -93,7 +93,7 @@ internal sealed partial class HttpMcpTransport
             {
                 var payload = line == "data" ? ReadOnlySpan<char>.Empty
                     : line.AsSpan(line.Length > 5 && line[5] == ' ' ? 6 : 5);
-                frameBytes += StrictUtf8.GetByteCount(payload) + (hasData ? 1L : 0L);
+                frameBytes += _strictUtf8.GetByteCount(payload) + (hasData ? 1L : 0L);
                 if (frameBytes > _maxFrameBytes)
                     throw Failure($"SSE data frame exceeded limit {_maxFrameBytes}");
                 if (hasData)

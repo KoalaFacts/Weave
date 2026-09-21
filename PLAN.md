@@ -1,6 +1,6 @@
 # Mainline foundation plan
 
-**Updated:** 2026-09-21. **Baseline:** `068ccb81d2d18abe34d5fd5ef92b44576c5c47fc`.
+**Updated:** 2026-09-21. **Baseline:** `35807690bfc12c058253b4f978767beb8af87f8e`.
 **Goal:** make one governed operation reliable before widening the product.
 **Architecture:** [ARCHITECTURE.md](ARCHITECTURE.md) owns the target;
 [AGENTS.md](AGENTS.md) owns implementation rules. This document owns the current
@@ -25,17 +25,17 @@ rights, and unknown outcomes do not authorize replay under a fresh ID.
 ## Integration closure
 
 The [branch audit](docs/implementation/2026-09-21-branch-integration.md) records every
-retained non-main branch at the baseline. Ten tips are already ancestors; two old
-snapshots have exact tree-equivalent main ancestors. The early operation-authority
-branch contains two useful registry details to integrate under current contracts.
-Its older executor, wire shapes and pipeline are superseded, not new product work.
-The explicitly rejected #104 alternate approval and #108 SDK branches stay retained
-but excluded. A generic instruction to integrate work does not reverse those scope
-decisions. Never use an unchanged-tree merge to hide an unreviewed difference.
+retained non-main branch at the previous baseline. PR #114 reconciled thirteen
+original tips and recovered two registry safeguards without restoring obsolete
+executors, wire shapes or workflows. Its merge and actual main validation are
+recorded at commit35807690. The explicitly rejected #104 alternate approval and
+#108 SDK branches stay retained but excluded. A generic instruction to integrate
+work does not reverse those scope decisions. Never use an unchanged-tree merge
+to hide an unreviewed difference.
 
 ## Ordered work and exit gates
 
-### 1. Registry consistency and integration (current slice)
+### 1. Registry consistency and integration (completed in #114)
 
 **Files:** ToolRegistryState.cs and ToolRegistryActor.cs under
 extensions/Weave.AgentRuntime/PluginConnections; focused tests under
@@ -50,31 +50,44 @@ tests/Weave.Agents.Tests/ToolRegistrySnapshotRecoveryTests.cs.
 - [x] Recheck the registered connection after schema lookup, alongside current
   authority and definition, before minting a token. Do not infer invocation rights
   from tool availability or an old connected state.
-- [ ] Merge the reviewed branch resolution only after full regression, strict build,
+- [x] Merge the reviewed branch resolution only after full regression, strict build,
   format and real dependency evidence pass; verify the resulting main as well.
 
 This is input-failure consistency within the existing actor, not a concurrent-map
 transaction or a fix for failed persistentState.WriteStateAsync. Durable write
 failure semantics need their own real storage boundary test before being claimed.
 
-### 2. Transport reliability — issue #92 (next)
+### 2. Transport boundaries and reliability (current round)
 
 **Inspect:** extensions/Weave.Mcp/InvokeTool/{HttpMcpTransport,McpConnection}.cs,
 examples/echo-mcp/server.py and tests/Weave.Tools.Tests/EchoMcpHttpTransportSmokeTests.cs.
 
+The bounded response hardening in **PR #124** is separate from the intermittent
+before-header failure. See [scope and migration notes](docs/implementation/2026-09-21-mcp-http-boundaries.md).
+
+- [x] Reproduce native redirects/cookie reuse, incomplete whole-request deadlines,
+  active-read disposal, queue blocking, UTF-8/delimiter/frame miscounts, invalid
+  decoding and incomplete-event promotion against unchanged production code.
+- [x] Implement endpoint retention, no implicit cookies, a linked whole-request
+  deadline, disposal cancellation, bounded raw body reads and strict frame decoding.
+- [ ] Complete exact-head full regression, existing security and dependency gates,
+  review and explicit integration. An implementation record is not a main merge.
+
+The remaining **#92** acceptance is deliberately not checked off:
+
 - [ ] Reproduce the before-header ResponseEnded failure with controlled peer and
   process lifecycle. Capture bounded server/transport evidence without logging
   secrets; distinguish bind/readiness/process-exit, response framing and pooling.
-- [ ] Turn the established cause into a deterministic regression, including a
-  successful control and a peer that consumes a request then closes. Count calls
-  so a retry cannot disguise a duplicated side effect.
+- [ ] Turn its established cause into a deterministic regression, with a successful
+  control and a peer that consumes a request then closes. Count calls so retries
+  cannot disguise duplicated side effects. #124 adds the latter control but does
+  not establish the original intermittent cause.
 - [ ] Fix only the proven cause. Run repeated real HTTP/SSE interactions and the
   entire suite without test retries/skips or longer timeouts to mask the problem.
 
 A repeat passing is diagnostic evidence, not closure. Keep #92 open until the
-causal regression fails before and passes after the fix. Separately test actual
-UTF-8 response/frame byte limits before claiming protection for non-ASCII streams;
-that is not an explanation of the existing before-header failure.
+causal regression fails before and passes after its fix. Successful byte-boundary
+regressions do not explain a failure that happens before any response body exists.
 
 ### 3. Supply-chain evidence acceptance — issue #110
 

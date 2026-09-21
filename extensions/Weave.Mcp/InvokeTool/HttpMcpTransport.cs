@@ -55,7 +55,10 @@ internal sealed partial class HttpMcpTransport : IMcpTransport
         {
             AllowAutoRedirect = false,
             UseCookies = false
-        }) { Timeout = TimeSpan.FromSeconds(config.RequestTimeoutSeconds) };
+        })
+        {
+            Timeout = TimeSpan.FromSeconds(config.RequestTimeoutSeconds)
+        };
         return Task.FromResult<IMcpTransport>(new HttpMcpTransport(httpClient, ownsHttpClient: true, uri, config));
     }
 
