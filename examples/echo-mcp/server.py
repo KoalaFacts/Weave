@@ -163,6 +163,12 @@ class McpHttpHandler(http.server.BaseHTTPRequestHandler):
     def log_message(self, fmt, *args):  # noqa: D401, N802 — silence default access log
         pass
 
+    def end_headers(self):
+        # Announce the existing close policy before a client can reuse this socket.
+        if self.close_connection:
+            self.send_header("Connection", "close")
+        super().end_headers()
+
     def do_POST(self):  # noqa: N802 — required by BaseHTTPRequestHandler
         if self.path != "/mcp":
             self.send_error(404, "use POST /mcp")
