@@ -60,6 +60,6 @@ internal static class ExtensionsToTrustedOperator
         return Results.Text(encoded, "text/plain");
     }
 
-    private static bool HasInput(HttpContext context) => context.Request.ContentLength is > 0
+    internal static bool HasInput(HttpContext context) => context.Request.ContentLength is > 0
         || context.Request.Headers.ContainsKey("Transfer-Encoding") || context.Request.QueryString.HasValue;
 }
