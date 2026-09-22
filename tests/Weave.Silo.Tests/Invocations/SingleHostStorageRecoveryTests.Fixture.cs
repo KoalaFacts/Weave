@@ -47,6 +47,9 @@ public sealed partial class SingleHostStorageRecoveryTests : IDisposable
             }));
         });
         using var client = host.CreateClient();
+        // Bootstrap may initialize state; recovery startup must not depend on a later service lookup.
+        if (!recovery)
+            _ = host.Services.GetRequiredService<ICapabilityTokenService>();
         var running = new RunningHost(host, client, Path.GetDirectoryName(Target)!);
         await run(running);
     }
@@ -83,8 +86,8 @@ public sealed partial class SingleHostStorageRecoveryTests : IDisposable
     {
         public HttpClient Client => client;
         public string Route => "/api/workspaces/recovery/tools/files/invocations";
-        public ICapabilityTokenService Tokens { get; } = host.Services.GetRequiredService<ICapabilityTokenService>();
-        public IToolActor Tool { get; } = host.Services.GetRequiredService<IVirtualActorProvider>()
+        public ICapabilityTokenService Tokens => host.Services.GetRequiredService<ICapabilityTokenService>();
+        public IToolActor Tool => host.Services.GetRequiredService<IVirtualActorProvider>()
             .GetActor<IToolActor>(VirtualActorId.From("recovery/files"));
         public CapabilityToken Token(string subject, HashSet<string>? grants = null) => Tokens.Mint(new CapabilityTokenRequest
         {
