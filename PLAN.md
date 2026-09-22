@@ -1,6 +1,6 @@
 # Mainline foundation plan
 
-**Updated:** 2026-09-22. **Baseline:** `cbfff7db21e06c5e11b8a7d72fabc3179f473443`.
+**Updated:** 2026-09-22. **Baseline:** `784461759315754544685b492308062d33f8f431`.
 **Goal:** make one governed operation reliable before widening the product.
 **Architecture:** [ARCHITECTURE.md](ARCHITECTURE.md) owns the target;
 [AGENTS.md](AGENTS.md) owns implementation rules. This document owns the current
@@ -37,7 +37,9 @@ merged as25694f69 with actual changed-package evidence. Its seven applicable
 updates were integrated; #119's incompatible compiler proposal was rejected.
 PR #125 merged as605d114d, passed actual main verification and closed #92 with
 causal positive/negative controls. PR #126 merged ascbfff7db, passed actual main
-verification and closed #110's remaining acceptance. No extra workstream was added.
+verification and closed #110's remaining acceptance. PR #127 merged as78446175
+with retained-storage recovery and actual main verification. No extra workstream
+was added; do not repeat completed recovery work because of an old checkbox.
 
 ## Ordered work and exit gates
 
@@ -125,12 +127,15 @@ write permission, package downgrade or license-policy exemption is needed here.
 
 **Inspect:** Authority/Tokens, Invocations, the SQLite extension and Host composition.
 
-- [ ] Finish the retained-storage recovery slice in #127: optional required-existing
-  startup for both owners, no runtime empty-journal creation, and real Host tests
-  preserving approval, revoked credentials and unknown outcomes. Review, merge and
-  actual-main evidence are required before closing this subitem.
-- [ ] Test behavioral expiry/cancellation under the injected clock, then actual
-  worker shutdown and restart. No stale token replay or dropped unknown outcomes.
+- [x] Finish retained-storage recovery in #127: optional required-existing startup
+  for both owners, no runtime empty-journal creation, and real Host tests preserving
+  approval, revoked credentials and unknown outcomes. Reviewed merge and actual
+  main evidence are recorded on #127 at baseline78446175.
+- [x] Test behavioral expiry/cancellation under the injected clock and actual OS
+  process shutdown/restart in #128. Five clock cases plus one parent scenario
+  exercise graceful completion and a killed-after-effect process, retained unknown
+  state, expired/revoked authority denial and no repeat dispatch. Full regression
+  passed on947ba01; exact final review/merge/main evidence belongs on #128.
 - [ ] Provide one explicit trusted provisioning/operator route to the same logical
   backend. AgentOnly must not acquire management endpoints; separate SQLite files
   must not be presented as a shared approval system.
@@ -138,8 +143,12 @@ write permission, package downgrade or license-policy exemption is needed here.
 The [storage recovery record](docs/implementation/2026-09-22-single-host-storage-recovery.md)
 distinguishes explicit first initialization from recovery. Required-existing flags
 do not detect erased/rolled-back evidence or a fully valid empty replacement.
-Host recreation tests are not OS-worker kill/power-loss simulations. The existing
-internal operator interface is used by tests, not claimed as new public onboarding.
+The [lifetime/process record](docs/implementation/2026-09-22-single-host-lifetime-recovery.md)
+distinguishes deterministic expiry timers from fixed validation timestamps and an
+actual controlled OS-process kill from physical power loss. Tool configuration is
+reconnected by trusted fixture setup, not claimed durable/public provisioning.
+The existing internal operator interface is not new public onboarding. The final
+provisioning/operator subitem remains the next task; do not expand the plan.
 
 Do not add multi-host consensus, resource provisioning or broad UI redesign to
 these checks. Choose the smallest failing case each time.

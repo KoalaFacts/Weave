@@ -79,16 +79,25 @@ public sealed class CapabilityTokenService : ICapabilityTokenService
     public CapabilityTokenSource MintLinked(CapabilityTokenRequest request, CancellationToken parentCt)
     {
         var token = Mint(request);
-        var cts = CancellationTokenSource.CreateLinkedTokenSource(parentCt);
-
         var remaining = token.ExpiresAt - _timeProvider.GetUtcNow();
-        if (remaining > TimeSpan.Zero)
-            cts.CancelAfter(remaining);
-        else
-            cts.Cancel();
+        var expiry = new CancellationTokenSource(remaining > TimeSpan.Zero ? remaining : TimeSpan.Zero, _timeProvider);
+        CancellationTokenSource cts;
+        try
+        {
+            cts = CancellationTokenSource.CreateLinkedTokenSource(parentCt, expiry.Token);
+        }
+        catch
+        {
+            expiry.Dispose();
+            throw;
+        }
 
         _liveSources[token.TokenId] = cts;
-        return new CapabilityTokenSource(token, cts, () => _liveSources.TryRemove(token.TokenId, out _));
+        return new CapabilityTokenSource(token, cts, () =>
+        {
+            _liveSources.TryRemove(token.TokenId, out _);
+            expiry.Dispose();
+        });
     }
 
     public bool Validate(CapabilityToken token)
