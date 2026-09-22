@@ -46,7 +46,7 @@ TOOLS = [
         "inputSchema": {
             "type": "object",
             "properties": {
-                "text": {"type": "string", "description": "Text to echo back"},
+                "text": {"type": "string", "description": "The text to echo back"},
                 "chunk_size": {"type": "integer", "description": "If > 0, chunk the response over SSE"},
             },
             "required": ["text"],
@@ -162,6 +162,12 @@ class McpHttpHandler(http.server.BaseHTTPRequestHandler):
 
     def log_message(self, fmt, *args):  # noqa: D401, N802 — silence default access log
         pass
+
+    def end_headers(self):
+        # Announce the existing close policy before a client can reuse this socket.
+        if self.close_connection:
+            self.send_header("Connection", "close")
+        super().end_headers()
 
     def do_POST(self):  # noqa: N802 — required by BaseHTTPRequestHandler
         if self.path != "/mcp":
