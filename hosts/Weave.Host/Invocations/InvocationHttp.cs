@@ -76,7 +76,7 @@ internal static class InvocationHttp
     public static IResult Error(int status, string code) => Results.Json(
         new InvocationHttpError(code), InvocationHttpJsonContext.Default.InvocationHttpError, statusCode: status);
 
-    private static bool IsRouteSegment(string value) => value.Length is > 0 and <= 128
+    internal static bool IsRouteSegment(string value) => value.Length is > 0 and <= 128
         && value is not "." and not ".."
         && value.All(c => char.IsAsciiLetterOrDigit(c) || c is '-' or '_' or '.');
 }

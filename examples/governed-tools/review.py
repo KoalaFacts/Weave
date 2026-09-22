@@ -108,7 +108,7 @@ class _NoRedirect(http.HTTPRedirectHandler):
 
 
 class OperatorTransport:
-    def __init__(self, capability: str, bearer: str | None = None):
+    def __init__(self, capability: str, bearer: str | None = None, operator_key: str | None = None):
         if not re.fullmatch(r"[A-Za-z0-9_-]{1,16384}", capability):
             raise ReviewError("Supply an already issued base64url capability envelope.")
         self.headers = {"X-Weave-Capability": capability, "Content-Type": "application/json", "Accept": "application/json"}
@@ -116,6 +116,10 @@ class OperatorTransport:
             if len(bearer) > 16384 or any(ord(c) < 33 or ord(c) > 126 for c in bearer):
                 raise ReviewError("The optional global bearer is not a valid header value.")
             self.headers["Authorization"] = "Bearer " + bearer
+        if operator_key is not None:
+            if not 32 <= len(operator_key) <= 256 or any(not 33 <= ord(c) <= 126 for c in operator_key):
+                raise ReviewError("The optional operator key is not a valid header value.")
+            self.headers["X-Weave-Operator-Key"] = operator_key
         # Never forward the capability to an environment proxy or a redirected origin.
         self.opener = http.build_opener(http.ProxyHandler({}), _NoRedirect())
 
@@ -152,7 +156,7 @@ def main() -> int:
             raise ReviewError("The retained request file exceeds the byte limit.")
         invocation = json.loads(body, object_pairs_hook=_unique_object)
         capability = os.environ.get("WEAVE_REVIEW_CAPABILITY") or getpass.getpass("Reviewer capability (hidden): ")
-        transport = OperatorTransport(capability, os.environ.get("WEAVE_OPERATOR_BEARER"))
+        transport = OperatorTransport(capability, os.environ.get("WEAVE_OPERATOR_BEARER"), os.environ.get("WEAVE_OPERATOR_KEY"))
         run_review(args.url, args.workspace, invocation, transport.post_json, input, sys.stdout)
         return 0
     except ReviewError as failure:
