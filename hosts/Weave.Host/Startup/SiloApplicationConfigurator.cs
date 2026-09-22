@@ -4,6 +4,7 @@ using Weave.ServiceDefaults;
 using Weave.Silo.Api;
 using Weave.Silo.Configuration;
 using Weave.Silo.Invocations;
+using Weave.Silo.Operator;
 using Weave.Silo.Security;
 
 namespace Weave.Silo.Startup;
@@ -30,6 +31,7 @@ internal sealed class SiloApplicationConfigurator
         _app.UseAuditLog(auditOptions);
         _app.UseApiAuth();
         UseProblemDetails();
+        _app.ConfigureTrustedOperator();
 
         await new SiloPluginActivator(_app.Services, _app.Logger, _weaveSettings).ActivateAsync();
 

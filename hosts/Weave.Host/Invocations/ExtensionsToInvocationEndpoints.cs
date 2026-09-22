@@ -24,9 +24,9 @@ public static class ExtensionsToInvocationEndpoints
 
         var group = app.MapGroup("/api/workspaces/{workspaceId}/tools/{toolName}/invocations")
             .WithTags("Governed Invocations");
-        group.MapPost("", InvokeToolEndpoint.HandleAsync);
-        group.MapGet("/{invocationId}", GetInvocationEndpoint.HandleAsync);
-        group.MapGet("/{invocationId}/approval", GetApprovalEndpoint.HandleAsync);
+        group.MapPost("", InvokeToolEndpoint.HandleAsync).WithMetadata(new AgentInvocationEndpoint());
+        group.MapGet("/{invocationId}", GetInvocationEndpoint.HandleAsync).WithMetadata(new AgentInvocationEndpoint());
+        group.MapGet("/{invocationId}/approval", GetApprovalEndpoint.HandleAsync).WithMetadata(new AgentInvocationEndpoint());
         if (agentOnly)
             return;
 
