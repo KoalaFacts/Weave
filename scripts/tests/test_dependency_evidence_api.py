@@ -17,6 +17,7 @@ evidence = importlib.util.module_from_spec(SPEC)
 SPEC.loader.exec_module(evidence)
 BASE, HEAD = "1" * 40, "2" * 40
 CHANGE = {"change_type": "added", "manifest": "src/Weave.csproj"}
+NEXT = '<https://api.github.com/ignored>; rel="next"'
 
 
 class Reply(io.BytesIO):
@@ -70,7 +71,7 @@ class EvidenceApiTests(unittest.TestCase):
 
     def test_missing_evidence_on_later_page_blocks_the_whole_comparison(self):
         warning = base64.b64encode(b"missing head").decode()
-        opener = Opener(Reply(json.dumps([CHANGE] * 100).encode()), Reply(warning=warning))
+        opener = Opener(Reply(json.dumps([CHANGE] * 100).encode(), link=NEXT), Reply(warning=warning))
         with self.assertRaises(evidence.EvidenceUnavailable):
             self.check(opener)
         self.assertEqual(len(opener.requests), 2)
@@ -98,7 +99,8 @@ class EvidenceApiTests(unittest.TestCase):
             self.assertNotIn("private", str(caught.exception))
 
     def test_malformed_or_wrong_schema_response_is_unavailable(self):
-        for body in (b"{bad", b"null", b"{}", b"[null]", b"[{}]", b"\xff", json.dumps([CHANGE] * 101).encode()):
+        for body in (b"{bad", b"null", b"{}", b"[null]", b"[{}]", b"\xff",
+                     json.dumps([{"change_type": "unexpected", "manifest": "src/Weave.csproj"}]).encode()):
             with self.subTest(body=body[:20]), self.assertRaises(evidence.EvidenceUnavailable):
                 self.check(Opener(Reply(body)))
 
@@ -111,8 +113,45 @@ class EvidenceApiTests(unittest.TestCase):
 
     def test_page_limit_is_not_successful_partial_review(self):
         with patch.object(evidence, "MAX_PAGES", 2), self.assertRaises(evidence.EvidenceUnavailable) as caught:
-            self.check(Opener(*(Reply(json.dumps([CHANGE] * 100).encode()) for _ in range(2))))
+            self.check(Opener(*(Reply(json.dumps([CHANGE] * 100).encode(), link=NEXT) for _ in range(2))))
         self.assertEqual(caught.exception.code, "comparison-pagination-limit")
+
+    def test_complete_unpaginated_delta_over_one_hundred_is_not_invalid(self):
+        opener = Opener(Reply(json.dumps([CHANGE] * 280).encode()))
+        try:
+            result = self.check(opener)
+        except evidence.EvidenceUnavailable as error:
+            self.fail(f"Complete bounded comparison was rejected: {error.code}")
+        self.assertEqual(result, {"dependency_changes": 280, "pages": 1})
+        self.assertEqual(len(opener.requests), 1)
+
+    def test_exactly_one_hundred_without_next_does_not_invent_a_page(self):
+        opener = Opener(Reply(json.dumps([CHANGE] * 100).encode()), Reply())
+        self.assertEqual(self.check(opener), {"dependency_changes": 100, "pages": 1})
+        self.assertEqual(len(opener.requests), 1)
+
+    def test_total_entry_budget_is_preserved_for_complete_large_responses(self):
+        with self.assertRaises(evidence.EvidenceUnavailable) as caught:
+            self.check(Opener(Reply(json.dumps([CHANGE] * 2001).encode())))
+        self.assertEqual(caught.exception.code, "comparison-change-limit")
+
+    def test_total_entry_budget_applies_across_explicit_pages(self):
+        opener = Opener(Reply(json.dumps([CHANGE] * 100).encode(), link=NEXT),
+                        Reply(json.dumps([CHANGE] * 1901).encode()))
+        with self.assertRaises(evidence.EvidenceUnavailable) as caught:
+            self.check(opener)
+        self.assertEqual(caught.exception.code, "comparison-change-limit")
+        self.assertEqual(len(opener.requests), 2)
+
+    def test_large_response_still_checks_every_entry_and_snapshot_warning(self):
+        body = json.dumps([CHANGE] * 200 + [{"change_type": "unexpected", "manifest": "x"}]).encode()
+        with self.assertRaises(evidence.EvidenceUnavailable) as caught:
+            self.check(Opener(Reply(body)))
+        self.assertEqual(caught.exception.code, "invalid-comparison-response")
+        warning = base64.b64encode(b"missing head").decode()
+        with self.assertRaises(evidence.EvidenceUnavailable) as caught:
+            self.check(Opener(Reply(json.dumps([CHANGE] * 280).encode(), warning=warning)))
+        self.assertEqual(caught.exception.code, "missing-snapshot-evidence")
 
     def test_invalid_identity_is_rejected_before_any_request(self):
         for repo, base, head in (("owner/repo?x", BASE, HEAD), ("../repo", BASE, HEAD),
