@@ -89,6 +89,14 @@ class LicenseEvidenceTests(unittest.TestCase):
         for operation in ('dotnet restore', 'npm install', 'cargo build', 'mvn '):
             self.assertNotIn(operation, denial)
 
+    def test_permission_denial_is_from_the_actual_snapshot_post_not_graph_reads(self):
+        workflow = (ROOT / '.github/workflows/dependency-policy-acceptance.yml').read_text()
+        denial = workflow.split('  read-only-submission:\n', 1)[1]
+        self.assertIn("failed_request == {'path': 'dependency-graph/snapshots', 'method': 'POST'}", denial)
+        self.assertIn('return original_request(self, path, payload)', denial)
+        self.assertIn("'failed_request': failed_request", denial)
+        self.assertIn('writes_attempted == 1', denial)
+
 
 if __name__ == '__main__':
     unittest.main()
