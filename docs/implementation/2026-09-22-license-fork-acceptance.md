@@ -81,11 +81,11 @@ Use a maintainer-controlled integration PR for the EXACT reviewed commit:
    scripts, MSBuild files and imports, generated locks and executable hooks. Do not
    run source/build commands in a shell holding a write credential. Approval of a
    workflow change is a real maintainer trust decision, not just a green test badge.
-2. After review, re-read the original head and ensure it has not moved. Create a
-   new branch IN THE BASE REPOSITORY pointing at that exact existing commit object.
-   Do not checkout/build the fork with the write token; creating a Git ref through
-   the API only changes the reference. Do not silently cherry-pick/rebase to a new
-   identity and reuse old evidence.
+2. After review, re-read the original head and ensure it has not moved. Verify that
+   the base repository can resolve that exact commit object, then create a new
+   branch IN THE BASE REPOSITORY pointing to it. Creating a Git ref through the
+   API does not checkout/build fork code with the write token. Do not silently
+   cherry-pick/rebase to a new identity and reuse old evidence.
 3. Open a normal integration PR from that branch to main, linking the original PR
    and reviewed SHA. Existing CI performs isolated contents-read restores of its
    exact base/head, the pinned non-building snapshot writer, evidence preflight,
@@ -98,15 +98,16 @@ Use a maintainer-controlled integration PR for the EXACT reviewed commit:
    The original fork gate is not waived or forged; it is superseded by a clearly
    identified reviewed integration, not falsely relabeled as successful.
 
-Example API-only commands for a trusted maintainer shell (not an automated job):
+Example Bash/API-only commands for a trusted maintainer shell, not an automated job:
 
 ```bash
-# Set these after reviewing the original PR. SHA is the full reviewed commit.
+# Replace these only after reviewing the original PR.
 REPO=KoalaFacts/Weave
 PR=1234
-SHA=<full-reviewed-40-hex-head>
-# Verify the head again immediately before creating the integration ref.
+SHA='REPLACE_WITH_REVIEWED_40_HEX_SHA'
+[[ "$PR" =~ ^[1-9][0-9]*$ && "$SHA" =~ ^[0-9a-f]{40}$ ]] || exit 1
 test "$(gh api "repos/$REPO/pulls/$PR" --jq .head.sha)" = "$SHA" || exit 1
+test "$(gh api "repos/$REPO/git/commits/$SHA" --jq .sha)" = "$SHA" || exit 1
 BRANCH="review/fork-$PR-${SHA:0:12}"
 gh api --method POST "repos/$REPO/git/refs" -f "ref=refs/heads/$BRANCH" -f "sha=$SHA"
 gh pr create --repo "$REPO" --base main --head "$BRANCH" \
@@ -114,10 +115,10 @@ gh pr create --repo "$REPO" --base main --head "$BRANCH" \
   --body "Reviewed source: $SHA. Original PR: #$PR. Require fresh exact-ref CI before merge."
 ```
 
-Replace placeholders before running; never execute this block against an arbitrary
-unreviewed PR. These commands were source-checked, not used to create a fake fork
-in this change. #126 itself exercises the ordinary maintainer-branch validation
-path, while the separate real read-only job proves the permission-denial side.
+The unchanged placeholders fail before any API call. Never execute this block
+against an arbitrary unreviewed PR. Commands were source-checked, not used to create
+a fake fork in this change. #126 itself exercises the ordinary maintainer-branch
+validation path, while the real read-only job proves the permission-denial side.
 
 ## Closeout evidence and limits
 
