@@ -38,11 +38,12 @@ public sealed partial class HostProcessRecoveryTests
                 WorkingDirectory = AppContext.BaseDirectory
             };
             start.ArgumentList.Add(typeof(HostProcessRecoveryTests).Assembly.Location);
-            start.ArgumentList.Add("--filter-class");
+            start.ArgumentList.Add("-class");
             start.ArgumentList.Add(typeof(HostProcessRecoveryTests).FullName!);
             start.Environment[ChildRootVariable] = root;
             var process = new Process { StartInfo = start };
-            try { process.Start().ShouldBeTrue(); }
+            try
+            { process.Start().ShouldBeTrue(); }
             catch { process.Dispose(); throw; }
             var child = new HostChild(process, settings.SigningKey);
             try
