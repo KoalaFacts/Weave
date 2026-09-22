@@ -115,7 +115,6 @@ jobs:
           src/Plugins/PluginServiceBroker.cs src/Credentials/SecretSafeException.cs
           src/Credentials/SecretValue.cs src/Credentials/SecretValueJsonConverter.cs
           src/Composition/Text/ControlCharFilter.cs src/Composition/VirtualActors/IActorState.cs
-          src/Composition/VirtualActors/IActorTimerRegistry.cs src/Composition/VirtualActors/IVirtualActorProvider.cs
           src/Composition/VirtualActors/VirtualActorId.cs src/Composition/WeavePorts.cs
 
   dependency-lock-validation:
@@ -204,8 +203,24 @@ jobs:
           retention-days: 14
 
       - name: Dependency Review
+        id: dependency-policy
         uses: actions/dependency-review-action@a1d282b36b6f3519aa1f3fc636f609c47dddb294 # v4
         with:
           fail-on-severity: high
           deny-licenses: GPL-2.0, GPL-3.0, AGPL-3.0
           comment-summary-in-pr: always
+
+      - name: Require complete license evidence
+        if: ${{ !cancelled() && steps.dependency-policy.outcome != 'skipped' }}
+        env:
+          INVALID_LICENSE_CHANGES: ${{ steps.dependency-policy.outputs['invalid-license-changes'] }}
+        run: python3 scripts/check_dependency_license_evidence.py --report "$RUNNER_TEMP/dependency-license-evidence.json"
+
+      - name: Retain license evidence outcome
+        if: always()
+        uses: actions/upload-artifact@043fb46d1a93c77aae656e7c1c64a875d1fc6a0a # v7
+        with:
+          name: dependency-license-evidence
+          path: ${{ runner.temp }}/dependency-license-evidence.json
+          if-no-files-found: error
+          retention-days: 14
