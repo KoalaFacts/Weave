@@ -115,6 +115,7 @@ jobs:
           src/Plugins/PluginServiceBroker.cs src/Credentials/SecretSafeException.cs
           src/Credentials/SecretValue.cs src/Credentials/SecretValueJsonConverter.cs
           src/Composition/Text/ControlCharFilter.cs src/Composition/VirtualActors/IActorState.cs
+          src/Composition/VirtualActors/IActorTimerRegistry.cs src/Composition/VirtualActors/IVirtualActorProvider.cs
           src/Composition/VirtualActors/VirtualActorId.cs src/Composition/WeavePorts.cs
 
   dependency-lock-validation:
