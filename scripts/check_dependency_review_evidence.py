@@ -17,6 +17,7 @@ import urllib.request
 
 MAX_PAGE_BYTES = 2 * 1024 * 1024
 MAX_PAGES = 20
+MAX_CHANGES = 2000
 WARNING_HEADER = "x-github-dependency-graph-snapshot-warnings"
 
 
@@ -88,14 +89,18 @@ def inspect_comparison(repository, base_sha, head_sha, token, opener=None):
             changes = json.loads(body)
         except (ValueError, UnicodeDecodeError):
             raise EvidenceUnavailable("invalid-comparison-response") from None
-        if not isinstance(changes, list) or len(changes) > 100:
+        if not isinstance(changes, list):
             raise EvidenceUnavailable("invalid-comparison-response")
+        if total + len(changes) > MAX_CHANGES:
+            raise EvidenceUnavailable("comparison-change-limit")
         if any(not isinstance(change, dict)
                or change.get("change_type") not in ("added", "removed")
                or not isinstance(change.get("manifest"), str) for change in changes):
             raise EvidenceUnavailable("invalid-comparison-response")
         total += len(changes)
-        if not next_page and len(changes) < 100:
+        # The API may return a complete array larger than the requested page size.
+        # Only an explicit continuation header establishes another page.
+        if not next_page:
             return {"dependency_changes": total, "pages": page}
         # Never follow a response-supplied URL with the API credential.
         # Instead request the next numbered page from the same fixed endpoint.
