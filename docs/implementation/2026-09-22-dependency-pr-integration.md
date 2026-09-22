@@ -51,6 +51,32 @@ project code with its write token and did not move refs. Both temporary workflow
 are removed from the final tree. Existing CI, dependency evidence producer, audit
 policy and warning/format checks remain unchanged.
 
+## Correct the real-comparison blocker
+
+The first committed combined graph produced valid snapshots but its evidence
+preflight rejected the actual nonempty API reply. A read-only fixed-source
+inspection retained the response and headers' relevant presence flags in artifact
+10672526271: HTTP200,92783 bytes,280 valid added/removed entries, string manifests,
+no snapshot warning and no next-page Link. The prior assumption of at most100
+entries per response was false; GitHub's endpoint does not document per_page as
+a supported pagination parameter.
+
+The existing preflight now accepts a bounded complete array regardless of a
+100-entry boundary and follows only an explicit continuation signal. It retains
+the2MiB response and20-page caps and makes the prior2000-entry overall budget
+explicit across all pages. Any malformed entry, missing-snapshot warning, network
+failure, foreign-origin redirect, incomplete pagination or exceeded budget still
+blocks. The downstream vulnerability/license policy action is untouched.
+
+Five new regression methods pin complete280-entry and exact100-entry responses,
+single/cumulative entry limits and invalid/warned large responses. Existing
+later-page tests now supply an actual next header instead of inventing continuation
+from array length. A previously invalid101-entry fixture was corrected because
+that is a valid complete response, with explicit unknown-change-type rejection
+retained. Test-only8c7a9ef first produced four intended failures with77 controls
+passing, before changing the script. The diagnostic workflow is removed as well.
+This is repair of the current merge gate, not permission to weaken its policy.
+
 ## Verification and limits
 
 Final acceptance requires the committed full lock graph to pass normal locked
@@ -68,7 +94,9 @@ was invoked to test it. Existing product tests do not establish live connectivit
 to every external database/model service.
 
 No authority, approval, invocation state, transport source, schema or public API
-implementation is rewritten here. The known #92 investigation and the remaining
-#110 license/permission acceptance keep their existing scope; merging dependencies
+implementation is rewritten here. The known #92 investigation and remaining
+#110 license/permission acceptance keep their existing scope; real change evidence
 does not automatically close either issue. No new plan item, credential rotation,
 storage reset, protection bypass or publication is part of this integration.
+
+Reference: [dependency comparison endpoint](https://docs.github.com/en/rest/dependency-graph/dependency-review#get-a-diff-of-the-dependencies-between-commits).
