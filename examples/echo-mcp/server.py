@@ -46,7 +46,7 @@ TOOLS = [
         "inputSchema": {
             "type": "object",
             "properties": {
-                "text": {"type": "string", "description": "The text to echo back"},
+                "text": {"type": "string", "description": "Text to echo back"},
                 "chunk_size": {"type": "integer", "description": "If > 0, chunk the response over SSE"},
             },
             "required": ["text"],
