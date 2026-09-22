@@ -1,4 +1,5 @@
 using System.Text.Json;
+using Microsoft.AspNetCore.Http.Features;
 using Microsoft.AspNetCore.WebUtilities;
 using Weave.Security.Tokens;
 using Weave.Shared.VirtualActors;
@@ -60,6 +61,7 @@ internal static class ExtensionsToTrustedOperator
         return Results.Text(encoded, "text/plain");
     }
 
-    internal static bool HasInput(HttpContext context) => context.Request.ContentLength is > 0
-        || context.Request.Headers.ContainsKey("Transfer-Encoding") || context.Request.QueryString.HasValue;
+    internal static bool HasInput(HttpContext context) => context.Features.Get<IHttpRequestBodyDetectionFeature>()?.CanHaveBody == true
+        || context.Request.ContentLength is > 0 || context.Request.Headers.ContainsKey("Transfer-Encoding")
+        || context.Request.QueryString.HasValue;
 }

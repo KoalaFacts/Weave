@@ -1,6 +1,6 @@
 # Mainline foundation plan
 
-**Updated:** 2026-09-22. **Baseline:** `784461759315754544685b492308062d33f8f431`.
+**Updated:** 2026-09-23. **Baseline:** `6c3c6681897ab13cf3e8f8778f9439932dfe73bc`.
 **Goal:** make one governed operation reliable before widening the product.
 **Architecture:** [ARCHITECTURE.md](ARCHITECTURE.md) owns the target;
 [AGENTS.md](AGENTS.md) owns implementation rules. This document owns the current
@@ -38,8 +38,10 @@ updates were integrated; #119's incompatible compiler proposal was rejected.
 PR #125 merged as605d114d, passed actual main verification and closed #92 with
 causal positive/negative controls. PR #126 merged ascbfff7db, passed actual main
 verification and closed #110's remaining acceptance. PR #127 merged as78446175
-with retained-storage recovery and actual main verification. No extra workstream
-was added; do not repeat completed recovery work because of an old checkbox.
+with retained-storage recovery. PR #128 merged as6c3c6681 and verified actual
+process recovery and behavioral expiry on main. PR #129 supplies the final
+trusted operator entry below; its completion requires reviewed integration and
+actual merged-main evidence on that PR. No extra workstream is added.
 
 ## Ordered work and exit gates
 
@@ -123,7 +125,7 @@ Keep source-lock validation read-only and the snapshot writer pinned/isolated fr
 PR build execution. A submission receipt is not a policy result. No new producer,
 write permission, package downgrade or license-policy exemption is needed here.
 
-### 4. One-host recovery and safe onboarding (current stage)
+### 4. One-host recovery and safe onboarding (final integration: #129)
 
 **Inspect:** Authority/Tokens, Invocations, the SQLite extension and Host composition.
 
@@ -134,24 +136,32 @@ write permission, package downgrade or license-policy exemption is needed here.
 - [x] Test behavioral expiry/cancellation under the injected clock and actual OS
   process shutdown/restart in #128. Five clock cases plus one parent scenario
   exercise graceful completion and a killed-after-effect process, retained unknown
-  state, expired/revoked authority denial and no repeat dispatch. Full regression
-  passed on947ba01; exact final review/merge/main evidence belongs on #128.
-- [ ] Provide one explicit trusted provisioning/operator route to the same logical
-  backend. AgentOnly must not acquire management endpoints; separate SQLite files
-  must not be presented as a shared approval system.
+  state, expired/revoked authority denial and no repeat dispatch. Reviewed merge
+  and actual-main results are recorded on #128 at6c3c6681.
+- [x] Provide the explicitly enabled trusted operator entry in #129. A separate
+  administrator key guards management; profile-only connect and credential issuance
+  feed the SAME Host, ToolActor and journal as Agent invocation and reviewed approval.
+  AgentOnly remains separate and cannot be combined with operator mode. Real HTTP
+  acceptance verifies no implicit execution grant, no body-selected authority and
+  no repeated effect. Final exact-head review/merge/main evidence belongs on #129.
 
 The [storage recovery record](docs/implementation/2026-09-22-single-host-storage-recovery.md)
 distinguishes explicit first initialization from recovery. Required-existing flags
 do not detect erased/rolled-back evidence or a fully valid empty replacement.
 The [lifetime/process record](docs/implementation/2026-09-22-single-host-lifetime-recovery.md)
 distinguishes deterministic expiry timers from fixed validation timestamps and an
-actual controlled OS-process kill from physical power loss. Tool configuration is
-reconnected by trusted fixture setup, not claimed durable/public provisioning.
-The existing internal operator interface is not new public onboarding. The final
-provisioning/operator subitem remains the next task; do not expand the plan.
+actual controlled OS-process kill from physical power loss.
+The [operator guide](docs/implementation/2026-09-22-trusted-operator-onboarding.md)
+contains the deployment profiles, private-key handling and existing reviewer helper.
+Operator mode is one full protected Host, NOT management routes added to AgentOnly
+and NOT a second Host sharing claims about separate SQLite files. Tool connections
+are deliberately configured/reconnected, not automatically persisted or dispatched.
 
-Do not add multi-host consensus, resource provisioning or broad UI redesign to
-these checks. Choose the smallest failing case each time.
+This completes the scoped implementation baseline once #129's integration gate is
+verified. It is not certification of an arbitrary production deployment, a human
+identity/MFA system, sandbox, multi-Host consensus or full resource provisioning.
+Those limits are not authorization to add new work to this plan. Do not repeat
+completed gates or widen the product without a separately agreed next scope.
 
 ## Working and verification discipline
 
