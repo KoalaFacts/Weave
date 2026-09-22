@@ -15,6 +15,8 @@ public sealed partial class TrustedOperatorOnboardingTests
 {
     private const string Route = "/api/workspaces/onboarding/tools/files/invocations";
     private static readonly JsonSerializerOptions JsonOptions = new(JsonSerializerDefaults.Web);
+    private static readonly string[] EscalatedGrants = ["*"];
+    private static readonly string[] ReaderGrants = ["invocation:read", "tool:files:invoke:read_file"];
 
     [Fact]
     public async Task Onboard_RealHttpOperatorAndAgent_ShareApprovalAndNeverReplayTheEffect()
@@ -110,12 +112,12 @@ public sealed partial class TrustedOperatorOnboardingTests
     }
 
     [Fact]
-    public async Task Issue_PredefinedProfile_IgnoresNoCallerAuthorityAndReturnsNoncacheableCredential()
+    public async Task Issue_PredefinedProfile_RejectsCallerAuthorityAndReturnsNoncacheableCredential()
     {
         await using var fx = new Fixture();
         fx.Start();
         using var injection = await fx.SendAsync(HttpMethod.Post, "/api/operator/credentials/reader/issue",
-            new { issuedTo = "administrator", grants = new[] { "*" } }, admin: true);
+            new { issuedTo = "administrator", grants = EscalatedGrants }, admin: true);
         injection.StatusCode.ShouldBe(HttpStatusCode.BadRequest);
         using var response = await fx.SendAsync(HttpMethod.Post, "/api/operator/credentials/reader/issue", admin: true);
         response.StatusCode.ShouldBe(HttpStatusCode.OK);
@@ -124,7 +126,7 @@ public sealed partial class TrustedOperatorOnboardingTests
         var token = JsonSerializer.Deserialize<CapabilityToken>(WebEncoders.Base64UrlDecode(encoded), JsonOptions)!;
         token.IssuedTo.ShouldBe("agent");
         token.WorkspaceId.ShouldBe("onboarding");
-        token.Grants.Order().ShouldBe(new[] { "invocation:read", "tool:files:invoke:read_file" });
+        token.Grants.Order(StringComparer.Ordinal).ShouldBe(ReaderGrants);
         (token.ExpiresAt - token.IssuedAt).ShouldBe(TimeSpan.FromMinutes(5));
     }
 
@@ -169,17 +171,19 @@ public sealed partial class TrustedOperatorOnboardingTests
         private readonly SiloFactory _parent = new();
         private readonly WebApplicationFactory<Program> _host;
         public string OperatorKey { get; } = "test-operator-" + Guid.NewGuid().ToString("N");
+        public string GlobalSecret { get; } = "test-platform-" + Guid.NewGuid().ToString("N");
         public HttpClient Client { get; private set; } = null!;
         public string Target => Path.Combine(_root, "tools", "note.txt");
 
-        public Fixture(bool enabled = true, string? condition = null)
+        public Fixture(bool enabled = true, string? condition = null, bool globalAuthentication = false)
         {
             Directory.CreateDirectory(Path.Combine(_root, "tools"));
             File.WriteAllText(Target, "original");
             var signingKey = "test-signing-" + Guid.NewGuid().ToString("N");
             _host = _parent.WithWebHostBuilder(builder =>
             {
-                builder.UseSetting("Weave:Auth:Mode", "none");
+                builder.UseSetting("Weave:Auth:Mode", globalAuthentication ? "bearer" : "none");
+                if (globalAuthentication) builder.UseSetting("Weave:Auth:Secret", GlobalSecret);
                 builder.UseSetting("CapabilityTokens:SigningKey", signingKey);
                 builder.UseSetting("CapabilityTokens:RevocationDirectory", Path.Combine(_root, "revocations"));
                 builder.UseSetting("Weave:Invocations:Http:Enabled", condition == "disabled-invocations" ? "false" : "true");
@@ -214,8 +218,12 @@ public sealed partial class TrustedOperatorOnboardingTests
         public void Start(bool useKestrel = false)
         {
             if (useKestrel)
+            {
                 _host.UseKestrel(0);
-            Client = _host.CreateClient(new WebApplicationFactoryClientOptions { BaseAddress = new Uri("https://localhost") });
+                Client = _host.CreateClient();
+            }
+            else
+                Client = _host.CreateClient(new WebApplicationFactoryClientOptions { BaseAddress = new Uri("https://localhost") });
         }
 
         public async Task<string> IssueAsync(string name)
