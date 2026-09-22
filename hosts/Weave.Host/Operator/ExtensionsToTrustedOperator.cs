@@ -36,7 +36,8 @@ internal static class ExtensionsToTrustedOperator
             IssuedTo = "trusted-operator-setup",
             Grants = ["tool:" + configured.Tool.Name + ":connect"],
             Lifetime = TimeSpan.FromMinutes(1)
-        }) with { CancellationToken = context.RequestAborted };
+        }) with
+        { CancellationToken = context.RequestAborted };
         if (!tokens.Validate(token))
             return InvocationHttp.Error(503, "operator-authority-unavailable");
         var actor = actors.GetActor<IToolActor>(VirtualActorId.From(configured.WorkspaceId + "/" + configured.Tool.Name));

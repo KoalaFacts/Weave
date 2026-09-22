@@ -1,6 +1,7 @@
 using System.Net;
 using System.Net.Http.Json;
 using System.Text.Json;
+using System.Text.Json.Serialization;
 using Microsoft.AspNetCore.Hosting;
 using Microsoft.AspNetCore.Mvc.Testing;
 using Microsoft.AspNetCore.WebUtilities;
@@ -14,7 +15,10 @@ namespace Weave.Silo.Tests.Invocations;
 public sealed partial class TrustedOperatorOnboardingTests
 {
     private const string Route = "/api/workspaces/onboarding/tools/files/invocations";
-    private static readonly JsonSerializerOptions JsonOptions = new(JsonSerializerDefaults.Web);
+    private static readonly JsonSerializerOptions JsonOptions = new(JsonSerializerDefaults.Web)
+    {
+        DefaultIgnoreCondition = JsonIgnoreCondition.WhenWritingNull
+    };
     private static readonly string[] EscalatedGrants = ["*"];
     private static readonly string[] ReaderGrants = ["invocation:read", "tool:files:invoke:read_file"];
 
@@ -158,8 +162,10 @@ public sealed partial class TrustedOperatorOnboardingTests
     private static ToolInvocation Request() => new()
     {
         InvocationId = InvocationId.From(Guid.NewGuid().ToString("N")),
-        ToolName = "files", Method = "write_file",
-        Parameters = new() { ["path"] = "note.txt" }, RawInput = "operator-reviewed text"
+        ToolName = "files",
+        Method = "write_file",
+        Parameters = new() { ["path"] = "note.txt" },
+        RawInput = "operator-reviewed text"
     };
 
     private static Task<JsonElement> JsonAsync(HttpResponseMessage response) =>
@@ -183,7 +189,8 @@ public sealed partial class TrustedOperatorOnboardingTests
             _host = _parent.WithWebHostBuilder(builder =>
             {
                 builder.UseSetting("Weave:Auth:Mode", globalAuthentication ? "bearer" : "none");
-                if (globalAuthentication) builder.UseSetting("Weave:Auth:Secret", GlobalSecret);
+                if (globalAuthentication)
+                    builder.UseSetting("Weave:Auth:Secret", GlobalSecret);
                 builder.UseSetting("CapabilityTokens:SigningKey", signingKey);
                 builder.UseSetting("CapabilityTokens:RevocationDirectory", Path.Combine(_root, "revocations"));
                 builder.UseSetting("Weave:Invocations:Http:Enabled", condition == "disabled-invocations" ? "false" : "true");
@@ -236,9 +243,12 @@ public sealed partial class TrustedOperatorOnboardingTests
         public async Task<HttpResponseMessage> SendAsync(HttpMethod method, string route, object? body = null, string? capability = null, bool admin = false)
         {
             using var request = new HttpRequestMessage(method, route);
-            if (admin) request.Headers.Add("X-Weave-Operator-Key", OperatorKey);
-            if (capability is not null) request.Headers.Add("X-Weave-Capability", capability);
-            if (body is not null) request.Content = JsonContent.Create(body, options: JsonOptions);
+            if (admin)
+                request.Headers.Add("X-Weave-Operator-Key", OperatorKey);
+            if (capability is not null)
+                request.Headers.Add("X-Weave-Capability", capability);
+            if (body is not null)
+                request.Content = JsonContent.Create(body, options: JsonOptions);
             return await Client.SendAsync(request, TestContext.Current.CancellationToken);
         }
 
