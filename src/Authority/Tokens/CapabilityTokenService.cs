@@ -42,7 +42,13 @@ public sealed class CapabilityTokenService : ICapabilityTokenService
 
         _revocationDirectory = resolved.RevocationDirectory
             ?? Path.Combine(Path.GetTempPath(), "weave-capability-revocations");
-        Directory.CreateDirectory(_revocationDirectory);
+        if (resolved.RequireExistingStorage)
+        {
+            if ((File.GetAttributes(_revocationDirectory) & FileAttributes.Directory) == 0)
+                throw new InvalidOperationException("Recovery requires an existing revocation directory.");
+        }
+        else
+            Directory.CreateDirectory(_revocationDirectory);
         _timeProvider = timeProvider ?? throw new ArgumentNullException(nameof(timeProvider));
     }
 

@@ -21,19 +21,24 @@ public sealed partial class SqliteInvocationJournal : IInvocationApprovalJournal
             || path.StartsWith("file:", StringComparison.OrdinalIgnoreCase))
             throw new InvalidOperationException("Invocation recording requires an unambiguous on-disk database path.");
         path = Path.GetFullPath(path);
-        Directory.CreateDirectory(Path.GetDirectoryName(path)!);
+        if (!options.Value.RequireExistingStorage)
+            Directory.CreateDirectory(Path.GetDirectoryName(path)!);
         _connectionString = new SqliteConnectionStringBuilder
         {
             DataSource = path,
-            Mode = SqliteOpenMode.ReadWriteCreate,
+            Mode = SqliteOpenMode.ReadWrite,
             Pooling = false,
             DefaultTimeout = 5
         }.ToString();
-        using var connection = Open();
+        using var connection = Open(allowCreate: !options.Value.RequireExistingStorage);
+        if (options.Value.RequireExistingStorage)
+            ValidateRetainedSchema(connection);
         using var mode = connection.CreateCommand();
         mode.CommandText = "PRAGMA journal_mode=WAL;";
         if (!string.Equals(mode.ExecuteScalar()?.ToString(), "wal", StringComparison.OrdinalIgnoreCase))
             throw new InvalidOperationException("The invocation journal requires SQLite WAL mode.");
+        if (options.Value.RequireExistingStorage)
+            return;
         using var schema = connection.CreateCommand();
         schema.CommandText = """
             CREATE TABLE IF NOT EXISTS invocations (
@@ -135,9 +140,12 @@ public sealed partial class SqliteInvocationJournal : IInvocationApprovalJournal
         return command.ExecuteNonQuery() == 1;
     }
 
-    private SqliteConnection Open()
+    private SqliteConnection Open(bool allowCreate = false)
     {
-        var connection = new SqliteConnection(_connectionString);
+        var connectionString = allowCreate
+            ? new SqliteConnectionStringBuilder(_connectionString) { Mode = SqliteOpenMode.ReadWriteCreate }.ToString()
+            : _connectionString;
+        var connection = new SqliteConnection(connectionString);
         try
         {
             connection.Open();
