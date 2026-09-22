@@ -84,7 +84,8 @@ public sealed partial class HostProcessRecoveryTests
                     {
                         // Always observe the pending HTTP task before disposing the parent fixture.
                         first.Client.CancelPendingRequests();
-                        try { using var response = await sending; }
+                        try
+                        { using var response = await sending; }
                         catch (Exception error) when (error is HttpRequestException or OperationCanceledException) { }
                     }
                 }
