@@ -6,6 +6,7 @@ ChatGPT-authored test content, not a live model call. Approval is a scripted dem
 through the existing reviewer CLI, not evidence of independent human approval.
 """
 import argparse
+import codecs
 from datetime import datetime, timezone
 import hashlib
 import json
@@ -248,8 +249,17 @@ class Walkthrough:
         self.record('approval does not grant execution authority', status=403)
         executed = self.call('POST', ROUTE, 200, write, writer)
         check(executed.get('success') is True, 'Approved invocation did not succeed.')
-        check(self.target.read_text(encoding='utf-8') == summary, 'Written document does not match the approved content.')
+        # The existing writer explicitly uses Encoding.UTF8, including its preamble.
+        # Compare exact bytes rather than trimming arbitrary content to obtain a pass.
+        actual = self.target.read_bytes()
+        self.report['written_file'] = {'sha256': hashlib.sha256(actual).hexdigest(),
+                                       'bytes': len(actual), 'utf8_preamble': actual.startswith(codecs.BOM_UTF8)}
+        (self.evidence / 'actual-written-summary.md').write_bytes(actual)
+        check(actual == codecs.BOM_UTF8 + summary.encode('utf-8'), 'Written bytes differ from the approved UTF-8 content and preamble.')
         self.record('original Agent executes same ID and approved content', status=200, sha256=sha(summary))
+        reread = self.call('POST', ROUTE, 200, self.invocation('read_file', 'summary.md'), reader)
+        check(reread.get('output') == summary, 'Public API did not read back the exact approved text.')
+        self.record('public API reads back exact approved text', status=200, sha256=sha(summary))
         status_path = ROUTE + '/' + write['invocationId']
         outcome = self.call('GET', status_path, 200, capability=writer)
         check(outcome.get('outcome') == 'Succeeded', 'Recorded result is not Succeeded.')
@@ -296,7 +306,9 @@ class Walkthrough:
         for log in self.logs:
             if log.exists():
                 # No raw credentials, configuration, journal or unbounded logs leave the job.
-                raw = log.read_bytes()[-32768:].decode('utf-8', errors='replace')
+                with log.open('rb') as source:
+                    source.seek(max(0, log.stat().st_size - 32768))
+                    raw = source.read(32768).decode('utf-8', errors='replace')
                 (self.evidence / log.name).write_text(self.redact(raw), encoding='utf-8')
         self.report['finished_at'] = datetime.now(timezone.utc).isoformat()
         data = self.redact(json.dumps(self.report, ensure_ascii=False, indent=2)) + '\n'
