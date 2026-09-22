@@ -1,6 +1,6 @@
 # Mainline foundation plan
 
-**Updated:** 2026-09-21. **Baseline:** `35807690bfc12c058253b4f978767beb8af87f8e`.
+**Updated:** 2026-09-22. **Baseline:** `25694f693b9ce33a5ef24a8b9ec5b3a41a7c0fe0`.
 **Goal:** make one governed operation reliable before widening the product.
 **Architecture:** [ARCHITECTURE.md](ARCHITECTURE.md) owns the target;
 [AGENTS.md](AGENTS.md) owns implementation rules. This document owns the current
@@ -25,13 +25,17 @@ rights, and unknown outcomes do not authorize replay under a fresh ID.
 ## Integration closure
 
 The [branch audit](docs/implementation/2026-09-21-branch-integration.md) records every
-retained non-main branch at the previous baseline. PR #114 reconciled thirteen
-original tips and recovered two registry safeguards without restoring obsolete
-executors, wire shapes or workflows. Its merge and actual main validation are
-recorded at commit35807690. The explicitly rejected #104 alternate approval and
-#108 SDK branches stay retained but excluded. A generic instruction to integrate
-work does not reverse those scope decisions. Never use an unchanged-tree merge
-to hide an unreviewed difference.
+retained non-main branch at its baseline. PR #114 reconciled thirteen original
+tips and recovered two registry safeguards without restoring obsolete executors,
+wire shapes or workflows. The explicitly rejected #104 alternate approval and
+#108 SDK branches stay excluded. A generic instruction to integrate work does not
+reverse those scope decisions. Never use an unchanged-tree merge to hide a diff.
+
+PR #124's response hardening merged as dea58f06 and was verified on actual main.
+PR #123's [dependency integration](docs/implementation/2026-09-22-dependency-pr-integration.md)
+merged as25694f69 with actual changed-package evidence. Its seven applicable
+updates were integrated; #119's incompatible compiler proposal was rejected.
+These completed integrations do not add another workstream.
 
 ## Ordered work and exit gates
 
@@ -57,12 +61,12 @@ This is input-failure consistency within the existing actor, not a concurrent-ma
 transaction or a fix for failed persistentState.WriteStateAsync. Durable write
 failure semantics need their own real storage boundary test before being claimed.
 
-### 2. Transport boundaries and reliability (current round)
+### 2. Transport boundaries and reliability (#124 and #125)
 
 **Inspect:** extensions/Weave.Mcp/InvokeTool/{HttpMcpTransport,McpConnection}.cs,
 examples/echo-mcp/server.py and tests/Weave.Tools.Tests/EchoMcpHttpTransportSmokeTests.cs.
 
-The bounded response hardening in **PR #124** is separate from the intermittent
+The bounded response hardening in **PR #124** is separate from the original
 before-header failure. See [scope and migration notes](docs/implementation/2026-09-21-mcp-http-boundaries.md).
 
 - [x] Reproduce native redirects/cookie reuse, incomplete whole-request deadlines,
@@ -70,33 +74,36 @@ before-header failure. See [scope and migration notes](docs/implementation/2026-
   decoding and incomplete-event promotion against unchanged production code.
 - [x] Implement endpoint retention, no implicit cookies, a linked whole-request
   deadline, disposal cancellation, bounded raw body reads and strict frame decoding.
-- [ ] Complete exact-head full regression, existing security and dependency gates,
-  review and explicit integration. An implementation record is not a main merge.
+- [x] Complete exact-head regression, security/dependency gates, review, integration
+  and actual merged-main verification for #124.
 
-The remaining **#92** acceptance is deliberately not checked off:
+**#92 causal work is implemented and regression-verified in PR #125.** Its final
+exact-head review and actual merged-main evidence are recorded on that PR; a
+checked implementation item does not substitute for the integration gate below.
+See [cause, controls and limits](docs/implementation/2026-09-22-echo-http-close-lifecycle.md).
 
-- [ ] Reproduce the before-header ResponseEnded failure with controlled peer and
-  process lifecycle. Capture bounded server/transport evidence without logging
-  secrets; distinguish bind/readiness/process-exit, response framing and pooling.
-- [ ] Turn its established cause into a deterministic regression, with a successful
-  control and a peer that consumes a request then closes. Count calls so retries
-  cannot disguise duplicated side effects. #124 adds the latter control but does
-  not establish the original intermittent cause.
-- [ ] Fix only the proven cause. Run repeated real HTTP/SSE interactions and the
-  entire suite without test retries/skips or longer timeouts to mask the problem.
+- [x] Reproduce before-header ResponseEnded using the real handler and native
+  client: a completed JSON/204 response was reused before the peer's close arrived.
+  Observe the queued undispatched POST, live server and bounded runtime diagnostics.
+- [x] Retain successful controls and header-removal negative controls. Check every
+  result and count calls so a retry cannot disguise a dropped or duplicated effect.
+- [x] Announce the server's existing close policy, without client pooling/retry or
+  protocol changes. Run ten distinct mixed JSON/SSE calls per positive case and
+  the full suite; retain the original smoke tests and all earlier failure evidence.
 
-A repeat passing is diagnostic evidence, not closure. Keep #92 open until the
-causal regression fails before and passes after its fix. Successful byte-boundary
-regressions do not explain a failure that happens before any response body exists.
+Before closing #92, require #125's normal reviewed merge and actual main regression
+with the controls still present. The demonstrated demo/native-client mechanism is
+not a guarantee against every future network EOF or proof of every historical run.
 
 ### 3. Supply-chain evidence acceptance — issue #110
 
 **Inspect:** .github/workflows/ci.yml, scripts/check_dependency_review_evidence.py,
 scripts/submit_nuget_snapshots.py and their tests.
 
-- [ ] Exercise a deliberately scoped, non-vulnerable real dependency change in an
-  isolated review. Verify both exact source graphs, the actual changed package
-  and version, complete pagination and policy evaluation, not just empty deltas.
+- [x] Exercise a real dependency-changing review with both exact source graphs,
+  actual changed package versions and policy evaluation, not only empty deltas.
+  #123 also repaired the complete-response parsing assumption without weakening
+  missing-evidence, schema or resource bounds.
 - [ ] Demonstrate denied/unknown-license and missing-evidence behavior using an
   isolated policy fixture; do not downgrade production dependencies to make a test.
 - [ ] Verify behavior when fork permissions cannot submit snapshots and record a
