@@ -3,7 +3,6 @@ using System.Net.Http.Json;
 using System.Text.Json;
 using Microsoft.AspNetCore.WebUtilities;
 using Microsoft.Extensions.Options;
-using Microsoft.Extensions.Time.Testing;
 using Weave.Invocations;
 using Weave.Security.Tokens;
 using Weave.Tools.Tool;
@@ -36,7 +35,8 @@ public sealed partial class HostProcessRecoveryTests
         var target = Path.Combine(root, "tools", "note.txt");
         File.WriteAllText(target, "original");
         var key = "test-process-only-" + Guid.NewGuid().ToString("N");
-        var clock = new FakeTimeProvider(new DateTimeOffset(2026, 9, 22, 0, 0, 0, TimeSpan.Zero));
+        var clock = new ApprovalClock();
+        clock.Advance(new DateTimeOffset(2026, 9, 22, 0, 0, 0, TimeSpan.Zero) - clock.GetUtcNow());
         var tokens = new CapabilityTokenService(Options.Create(new CapabilityTokenOptions
         {
             SigningKey = key,

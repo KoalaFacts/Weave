@@ -3,7 +3,6 @@ using Microsoft.AspNetCore.Hosting;
 using Microsoft.Extensions.DependencyInjection;
 using Microsoft.Extensions.DependencyInjection.Extensions;
 using Microsoft.Extensions.Logging.Abstractions;
-using Microsoft.Extensions.Time.Testing;
 using Weave.Invocations;
 using Weave.Security.Tokens;
 using Weave.Shared.VirtualActors;
@@ -19,6 +18,8 @@ public sealed partial class HostProcessRecoveryTests
     {
         Path.IsPathFullyQualified(root).ShouldBeTrue();
         var settings = JsonSerializer.Deserialize<WorkerSettings>(File.ReadAllText(Path.Combine(root, "worker.json")), JsonOptions)!;
+        var clock = new ApprovalClock();
+        clock.Advance(settings.Now - clock.GetUtcNow());
         await using var parent = new SiloFactory();
         await using var host = parent.WithWebHostBuilder(builder =>
         {
@@ -33,7 +34,7 @@ public sealed partial class HostProcessRecoveryTests
             builder.ConfigureServices(services =>
             {
                 services.RemoveAll<TimeProvider>();
-                services.AddSingleton<TimeProvider>(new FakeTimeProvider(settings.Now));
+                services.AddSingleton<TimeProvider>(clock);
                 services.RemoveAll<IToolConnector>();
                 services.AddSingleton<IToolConnector>(new CompletionGateConnector(root, settings.HoldCompletion));
                 services.PostConfigure<InvocationJournalOptions>(options =>
