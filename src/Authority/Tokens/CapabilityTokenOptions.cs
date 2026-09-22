@@ -20,4 +20,7 @@ public sealed class CapabilityTokenOptions
     public string? PreviousSigningKey { get; init; }
 
     public string? RevocationDirectory { get; init; }
+
+    /// <summary>Require the retained revocation directory; do not create it during recovery.</summary>
+    public bool RequireExistingStorage { get; init; }
 }

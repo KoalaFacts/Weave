@@ -1,6 +1,6 @@
 # Mainline foundation plan
 
-**Updated:** 2026-09-22. **Baseline:** `605d114da86c9e64acea649d8d2ffe5dcb1884c4`.
+**Updated:** 2026-09-22. **Baseline:** `cbfff7db21e06c5e11b8a7d72fabc3179f473443`.
 **Goal:** make one governed operation reliable before widening the product.
 **Architecture:** [ARCHITECTURE.md](ARCHITECTURE.md) owns the target;
 [AGENTS.md](AGENTS.md) owns implementation rules. This document owns the current
@@ -36,7 +36,8 @@ PR #123's [dependency integration](docs/implementation/2026-09-22-dependency-pr-
 merged as25694f69 with actual changed-package evidence. Its seven applicable
 updates were integrated; #119's incompatible compiler proposal was rejected.
 PR #125 merged as605d114d, passed actual main verification and closed #92 with
-causal positive/negative controls. These integrations do not add another workstream.
+causal positive/negative controls. PR #126 merged ascbfff7db, passed actual main
+verification and closed #110's remaining acceptance. No extra workstream was added.
 
 ## Ordered work and exit gates
 
@@ -93,7 +94,7 @@ See [cause, controls and limits](docs/implementation/2026-09-22-echo-http-close-
 The demonstrated example/native-client mechanism is not a guarantee against every
 future network EOF or proof of every historical occurrence.
 
-### 3. Supply-chain evidence acceptance — issue #110 / PR #126
+### 3. Supply-chain evidence acceptance (completed through #126; #110 closed)
 
 **Inspect:** .github/workflows/ci.yml, scripts/check_dependency_review_evidence.py,
 scripts/check_dependency_license_evidence.py, scripts/submit_nuget_snapshots.py,
@@ -110,28 +111,35 @@ the independent Dependency Policy Acceptance workflow and their tests.
   403, nonzero producer result and zero confirmed submissions. Document a reviewed
   same-SHA maintainer integration path without fork-token escalation.
 
-The last gate is normal #126 review/merge plus actual merged-main verification,
-recorded on that PR before closing #110. Isolated fixture results are not invented
-production dependency evidence. The permission test is fork-equivalent, not a live
-external fork or a verification of every administrative setting.
+Normal #126 review/merge and actual merged-main verification are recorded on #126
+and #110. Isolated fixture results are not invented production dependency evidence.
+The permission test is fork-equivalent, not a live external fork or a verification
+of every administrative setting.
 See [acceptance and maintainer procedure](docs/implementation/2026-09-22-license-fork-acceptance.md).
 
 Keep source-lock validation read-only and the snapshot writer pinned/isolated from
 PR build execution. A submission receipt is not a policy result. No new producer,
 write permission, package downgrade or license-policy exemption is needed here.
 
-### 4. One-host recovery and safe onboarding (after those gates)
+### 4. One-host recovery and safe onboarding (current stage)
 
 **Inspect:** Authority/Tokens, Invocations, the SQLite extension and Host composition.
 
-- [ ] Test recovery from unavailable/replaced revocation and journal storage with
-  retained real evidence. Distinguish initialized-service failure from a fresh
-  process recreating an empty directory; never describe the latter as recovery.
+- [ ] Finish the retained-storage recovery slice in #127: optional required-existing
+  startup for both owners, no runtime empty-journal creation, and real Host tests
+  preserving approval, revoked credentials and unknown outcomes. Review, merge and
+  actual-main evidence are required before closing this subitem.
 - [ ] Test behavioral expiry/cancellation under the injected clock, then actual
   worker shutdown and restart. No stale token replay or dropped unknown outcomes.
 - [ ] Provide one explicit trusted provisioning/operator route to the same logical
   backend. AgentOnly must not acquire management endpoints; separate SQLite files
   must not be presented as a shared approval system.
+
+The [storage recovery record](docs/implementation/2026-09-22-single-host-storage-recovery.md)
+distinguishes explicit first initialization from recovery. Required-existing flags
+do not detect erased/rolled-back evidence or a fully valid empty replacement.
+Host recreation tests are not OS-worker kill/power-loss simulations. The existing
+internal operator interface is used by tests, not claimed as new public onboarding.
 
 Do not add multi-host consensus, resource provisioning or broad UI redesign to
 these checks. Choose the smallest failing case each time.
