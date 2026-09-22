@@ -1,6 +1,6 @@
 # Mainline foundation plan
 
-**Updated:** 2026-09-22. **Baseline:** `25694f693b9ce33a5ef24a8b9ec5b3a41a7c0fe0`.
+**Updated:** 2026-09-22. **Baseline:** `605d114da86c9e64acea649d8d2ffe5dcb1884c4`.
 **Goal:** make one governed operation reliable before widening the product.
 **Architecture:** [ARCHITECTURE.md](ARCHITECTURE.md) owns the target;
 [AGENTS.md](AGENTS.md) owns implementation rules. This document owns the current
@@ -35,7 +35,8 @@ PR #124's response hardening merged as dea58f06 and was verified on actual main.
 PR #123's [dependency integration](docs/implementation/2026-09-22-dependency-pr-integration.md)
 merged as25694f69 with actual changed-package evidence. Its seven applicable
 updates were integrated; #119's incompatible compiler proposal was rejected.
-These completed integrations do not add another workstream.
+PR #125 merged as605d114d, passed actual main verification and closed #92 with
+causal positive/negative controls. These integrations do not add another workstream.
 
 ## Ordered work and exit gates
 
@@ -61,7 +62,7 @@ This is input-failure consistency within the existing actor, not a concurrent-ma
 transaction or a fix for failed persistentState.WriteStateAsync. Durable write
 failure semantics need their own real storage boundary test before being claimed.
 
-### 2. Transport boundaries and reliability (#124 and #125)
+### 2. Transport boundaries and reliability (completed in #124 and #125)
 
 **Inspect:** extensions/Weave.Mcp/InvokeTool/{HttpMcpTransport,McpConnection}.cs,
 examples/echo-mcp/server.py and tests/Weave.Tools.Tests/EchoMcpHttpTransportSmokeTests.cs.
@@ -77,9 +78,7 @@ before-header failure. See [scope and migration notes](docs/implementation/2026-
 - [x] Complete exact-head regression, security/dependency gates, review, integration
   and actual merged-main verification for #124.
 
-**#92 causal work is implemented and regression-verified in PR #125.** Its final
-exact-head review and actual merged-main evidence are recorded on that PR; a
-checked implementation item does not substitute for the integration gate below.
+**#92 is closed after #125's reviewed merge and actual main verification.**
 See [cause, controls and limits](docs/implementation/2026-09-22-echo-http-close-lifecycle.md).
 
 - [x] Reproduce before-header ResponseEnded using the real handler and native
@@ -91,27 +90,35 @@ See [cause, controls and limits](docs/implementation/2026-09-22-echo-http-close-
   protocol changes. Run ten distinct mixed JSON/SSE calls per positive case and
   the full suite; retain the original smoke tests and all earlier failure evidence.
 
-Before closing #92, require #125's normal reviewed merge and actual main regression
-with the controls still present. The demonstrated demo/native-client mechanism is
-not a guarantee against every future network EOF or proof of every historical run.
+The demonstrated example/native-client mechanism is not a guarantee against every
+future network EOF or proof of every historical occurrence.
 
-### 3. Supply-chain evidence acceptance — issue #110
+### 3. Supply-chain evidence acceptance — issue #110 / PR #126
 
 **Inspect:** .github/workflows/ci.yml, scripts/check_dependency_review_evidence.py,
-scripts/submit_nuget_snapshots.py and their tests.
+scripts/check_dependency_license_evidence.py, scripts/submit_nuget_snapshots.py,
+the independent Dependency Policy Acceptance workflow and their tests.
 
 - [x] Exercise a real dependency-changing review with both exact source graphs,
   actual changed package versions and policy evaluation, not only empty deltas.
   #123 also repaired the complete-response parsing assumption without weakening
   missing-evidence, schema or resource bounds.
-- [ ] Demonstrate denied/unknown-license and missing-evidence behavior using an
-  isolated policy fixture; do not downgrade production dependencies to make a test.
-- [ ] Verify behavior when fork permissions cannot submit snapshots and record a
-  maintainer-safe path before promising external contribution onboarding.
+- [x] Demonstrate denied/unknown-license and missing-evidence behavior using the
+  pinned action and isolated API fixtures. Preserve the original policy and block
+  missing/unlicensed output with a narrow evidence gate, not a second SPDX engine.
+- [x] Exercise the actual snapshot API with a contents-read Actions token: require
+  403, nonzero producer result and zero confirmed submissions. Document a reviewed
+  same-SHA maintainer integration path without fork-token escalation.
+
+The last gate is normal #126 review/merge plus actual merged-main verification,
+recorded on that PR before closing #110. Isolated fixture results are not invented
+production dependency evidence. The permission test is fork-equivalent, not a live
+external fork or a verification of every administrative setting.
+See [acceptance and maintainer procedure](docs/implementation/2026-09-22-license-fork-acceptance.md).
 
 Keep source-lock validation read-only and the snapshot writer pinned/isolated from
-PR build execution. A submission receipt is not a policy result. Do not remove
-current restrictions or update a trusted producer pin without source review.
+PR build execution. A submission receipt is not a policy result. No new producer,
+write permission, package downgrade or license-policy exemption is needed here.
 
 ### 4. One-host recovery and safe onboarding (after those gates)
 

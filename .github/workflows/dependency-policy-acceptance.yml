@@ -1,0 +1,113 @@
+name: Dependency Policy Acceptance
+
+on:
+  pull_request:
+    branches: [main]
+    paths: ['scripts/**', '.github/workflows/ci.yml', '.github/workflows/dependency-policy-acceptance.yml']
+  push:
+    branches: [main]
+    paths: ['scripts/**', '.github/workflows/ci.yml', '.github/workflows/dependency-policy-acceptance.yml']
+  workflow_dispatch:
+
+permissions:
+  contents: read
+
+jobs:
+  policy:
+    name: Pinned action license and evidence fixtures
+    runs-on: ubuntu-latest
+    timeout-minutes: 10
+    steps:
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1
+        with:
+          persist-credentials: false
+      - name: Read the same immutable action used by CI
+        uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1
+        with:
+          repository: actions/dependency-review-action
+          ref: a1d282b36b6f3519aa1f3fc636f609c47dddb294
+          path: .policy-action
+          persist-credentials: false
+      - name: Run real policy with loopback data and no real credentials
+        run: |
+          node --version
+          python3 scripts/acceptance/dependency_policy.py --action .policy-action --report "$RUNNER_TEMP/policy-acceptance.json"
+      - name: Preserve acceptance results
+        if: always()
+        uses: actions/upload-artifact@043fb46d1a93c77aae656e7c1c64a875d1fc6a0a
+        with:
+          name: policy-acceptance
+          path: ${{ runner.temp }}/policy-acceptance.json
+          if-no-files-found: error
+          retention-days: 14
+
+  read-only-submission:
+    name: Actual snapshot API denies read-only token
+    runs-on: ubuntu-latest
+    timeout-minutes: 10
+    permissions:
+      contents: read
+    steps:
+      # Execute only the already-reviewed producer. Do not build PR code here.
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1
+        with:
+          ref: c36ab57b5c2c46e00b7cc71fdab19cac4e344b3e
+          persist-credentials: false
+      - name: Require actual permission denial, not fabricated API evidence
+        env:
+          GH_TOKEN: ${{ github.token }}
+          PR_BASE_SHA: ${{ github.event.pull_request.base.sha || github.event.before || github.sha }}
+          PR_HEAD_SHA: ${{ github.event.pull_request.head.sha || github.sha }}
+          PR_BASE_REF: refs/heads/main
+          PR_HEAD_REF: ${{ github.event_name == 'pull_request' && format('refs/pull/{0}/head', github.event.number) || github.ref }}
+        shell: python
+        run: |
+          import contextlib, importlib.util, io, json, os, pathlib, signal, sys
+          output = pathlib.Path(os.environ['RUNNER_TEMP']) / 'read-only-denial'
+          spec = importlib.util.spec_from_file_location('producer', 'scripts/submit_nuget_snapshots.py')
+          producer = importlib.util.module_from_spec(spec)
+          spec.loader.exec_module(producer)
+          original_request = producer.Api.request
+          observed = {'writes': 0, 'reads': 0, 'failed_request': None}
+          def record_request(self, path, payload=None):
+              observed['reads' if payload is None else 'writes'] += 1
+              try:
+                  # Observe the boundary, forwarding the real request and response unchanged.
+                  return original_request(self, path, payload)
+              except producer.SnapshotError:
+                  observed['failed_request'] = {'path': path, 'method': 'GET' if payload is None else 'POST'}
+                  raise
+          producer.Api.request = record_request
+          sys.argv = ['submit_nuget_snapshots.py', '--output', str(output)]
+          signal.alarm(240)
+          try:
+              with contextlib.redirect_stdout(io.StringIO()):
+                  exit_code = producer.main()
+          finally:
+              signal.alarm(0)
+              producer.Api.request = original_request
+          report = json.loads((output / 'submission.json').read_text())
+          failed_request = observed['failed_request']
+          writes_attempted = observed['writes']
+          passed = exit_code == 1 and report.get('status') == 'unavailable' \
+              and report.get('failure') == 'snapshot-api-http-403' and report.get('sources') == [] \
+              and failed_request == {'path': 'dependency-graph/snapshots', 'method': 'POST'} \
+              and writes_attempted == 1 and observed['reads'] > 0
+          (output / 'acceptance.json').write_text(json.dumps({
+              'passed': passed, 'expected_http_status': 403, 'producer_exit': exit_code,
+              'actual_failure': report.get('failure'), 'failed_request': failed_request,
+              'writes_attempted': writes_attempted, 'graph_reads': observed['reads'],
+              'base_sha': os.environ['PR_BASE_SHA'], 'head_sha': os.environ['PR_HEAD_SHA'],
+              'confirmed_submissions': len(report.get('sources', []))
+          }, indent=2) + '\n')
+          if not passed:
+              raise SystemExit('Expected actual read-only snapshot POST denial was not observed.')
+          print('Real read-only token: exact graphs read, one snapshot POST denied with 403, no confirmed submissions.')
+      - name: Preserve permission-denial evidence
+        if: always()
+        uses: actions/upload-artifact@043fb46d1a93c77aae656e7c1c64a875d1fc6a0a
+        with:
+          name: read-only-submission-denial
+          path: ${{ runner.temp }}/read-only-denial/
+          if-no-files-found: error
+          retention-days: 14
