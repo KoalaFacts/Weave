@@ -85,7 +85,7 @@ public sealed partial class SingleHostStorageRecoveryTests : IDisposable
     private sealed class RunningHost(WebApplicationFactory<Program> host, HttpClient client, string toolRoot)
     {
         public HttpClient Client => client;
-        public string Route => "/api/workspaces/recovery/tools/files/invocations";
+        public string Route { get; } = "/api/workspaces/recovery/tools/files/invocations";
         public ICapabilityTokenService Tokens => host.Services.GetRequiredService<ICapabilityTokenService>();
         public IToolActor Tool => host.Services.GetRequiredService<IVirtualActorProvider>()
             .GetActor<IToolActor>(VirtualActorId.From("recovery/files"));
