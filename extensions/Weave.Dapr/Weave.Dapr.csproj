@@ -1,0 +1,10 @@
+<Project Sdk="Microsoft.NET.Sdk">
+  <PropertyGroup>
+    <RootNamespace>Weave.Tools</RootNamespace>
+    <Description>Opt-in Dapr tool adapter for Weave.</Description>
+  </PropertyGroup>
+  <ItemGroup>
+    <ProjectReference Include="../../src/Weave.csproj" />
+    <InternalsVisibleTo Include="Weave.Tools.Tests" />
+  </ItemGroup>
+</Project>

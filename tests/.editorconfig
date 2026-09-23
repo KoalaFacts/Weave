@@ -1,0 +1,9 @@
+# Preserve the repository's existing test-only analyzer overrides at the new root.
+# All other conventions continue to inherit from the root .editorconfig.
+
+[*.cs]
+dotnet_naming_rule.async_methods_should_end_with_async.severity = none
+dotnet_diagnostic.CA1707.severity = none
+dotnet_diagnostic.IDE0058.severity = none
+dotnet_diagnostic.IDE0022.severity = none
+dotnet_diagnostic.JSON002.severity = none

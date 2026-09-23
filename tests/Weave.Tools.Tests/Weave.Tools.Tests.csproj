@@ -1,0 +1,24 @@
+<Project Sdk="Microsoft.NET.Sdk">
+  <PropertyGroup>
+    <IsAotExcluded>true</IsAotExcluded>
+    <IsPackable>false</IsPackable>
+    <IsTestProject>true</IsTestProject>
+    <RootNamespace>Weave.Tools.Tests</RootNamespace>
+  </PropertyGroup>
+  <ItemGroup>
+    <ProjectReference Include="../../src/Weave.csproj" />
+  </ItemGroup>
+  <ItemGroup>
+    <PackageReference Include="xunit.v3" />
+    <PackageReference Include="NSubstitute" />
+    <PackageReference Include="Shouldly" />
+  </ItemGroup>
+  <ItemGroup>
+    <ProjectReference Include="../../extensions/Weave.Mcp/Weave.Mcp.csproj" />
+    <ProjectReference Include="../../extensions/Weave.CliTools/Weave.CliTools.csproj" />
+    <ProjectReference Include="../../extensions/Weave.OpenApi/Weave.OpenApi.csproj" />
+    <ProjectReference Include="../../extensions/Weave.DirectHttp/Weave.DirectHttp.csproj" />
+    <ProjectReference Include="../../extensions/Weave.FileSystem/Weave.FileSystem.csproj" />
+    <ProjectReference Include="../../extensions/Weave.Dapr/Weave.Dapr.csproj" />
+  </ItemGroup>
+</Project>

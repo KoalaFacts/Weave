@@ -1,0 +1,54 @@
+{
+  // Sample Weave workspace that registers the echo-mcp server as a tool.
+  //
+  // Weave's MCP connector currently uses the stdio transport, so this manifest
+  // points to `python3 server.py --transport stdio`. The HTTP/SSE transports
+  // exposed by server.py are reachable by other MCP clients (see README.md).
+  //
+  // Boot from the repo root:
+  //   dotnet run --project src/UX/Weave.Cli -- workspace up examples/echo-mcp/workspace.json
+  //
+  // The model field uses a stub so the workspace boots without API keys —
+  // swap to a real Anthropic/OpenAI model + set the matching API key env var
+  // to drive the full chat → tool-call → response loop.
+
+  "version": "1.0",
+  "name": "echo-demo",
+
+  "agents": {
+    "echoer": {
+      "model": "claude-haiku-4-5-20251001",
+      "tools": ["echo-server"]
+    }
+  },
+
+  "tools": {
+    "echo-server": {
+      "type": "mcp",
+      "mcp": {
+        // Stdio variant: Weave spawns the server as a subprocess.
+        "server": "python3",
+        "args": ["examples/echo-mcp/server.py", "--transport", "stdio"]
+      }
+    }
+    // HTTP variant — uncomment to point at a separately-running HTTP server
+    // started with:  python3 examples/echo-mcp/server.py --transport http --port 8765
+    //
+    // NOTE: HTTP transport rejects loopback / private / link-local / reserved
+    // IPs by default (SSRF defense). For local development, opt in with
+    // `allow_private_endpoints: true`. Production manifests pointing at public
+    // DNS hostnames don't need the opt-in.
+    //
+    // "echo-server": {
+    //   "type": "mcp",
+    //   "mcp": {
+    //     "url": "http://127.0.0.1:8765/mcp",
+    //     "allow_private_endpoints": true
+    //   }
+    // }
+  },
+
+  "workspace": {
+    "secrets": { "provider": "env" }
+  }
+}

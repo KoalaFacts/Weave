@@ -1,0 +1,23 @@
+<Project Sdk="Microsoft.NET.Sdk">
+  <PropertyGroup>
+    <IsPackable>false</IsPackable>
+    <IsTestProject>true</IsTestProject>
+    <IsAotExcluded>true</IsAotExcluded>
+    <RootNamespace>Weave.Cli.Tests</RootNamespace>
+  </PropertyGroup>
+  <ItemGroup>
+    <ProjectReference Include="../../hosts/Weave.Cli/Weave.Cli.csproj" />
+    <ProjectReference Include="../../extensions/Weave.Cli.Shell/Weave.Cli.Shell.csproj" />
+    <ProjectReference Include="../../extensions/Weave.Cli.Tui/Weave.Cli.Tui.csproj" />
+  </ItemGroup>
+  <ItemGroup>
+    <PackageReference Include="xunit.v3" />
+    <PackageReference Include="Shouldly" />
+    <PackageReference Include="NSubstitute" />
+    <PackageReference Include="Microsoft.Extensions.TimeProvider.Testing" />
+  </ItemGroup>
+  <ItemGroup>
+    <Using Include="Weave.Cli.Shell" />
+    <Using Include="Weave.Cli.Tui" />
+  </ItemGroup>
+</Project>

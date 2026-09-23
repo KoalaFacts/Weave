@@ -39,7 +39,7 @@ This is the property regulated environments need: the manifest *is* the access p
 
 ### 4. Scoped, signed, time-boxed, revocable
 
-`CapabilityTokenService` mints HMAC-SHA256 tokens with workspace, issuer, grants, issued-at, and expires-at, defaulting to a 24-hour lifetime; verifies signatures with constant-time comparison; supports wildcard grants and file-backed revocation ([CapabilityTokenService.cs:36](../src/Security/Weave.Security/Tokens/CapabilityTokenService.cs), [:55](../src/Security/Weave.Security/Tokens/CapabilityTokenService.cs), [:69](../src/Security/Weave.Security/Tokens/CapabilityTokenService.cs), [:84](../src/Security/Weave.Security/Tokens/CapabilityTokenService.cs); full surface in [security.md:15-62](security.md)).
+`CapabilityTokenService` mints HMAC-SHA256 tokens with workspace, issuer, grants, issued-at, and expires-at, defaulting to a 24-hour lifetime; verifies signatures with constant-time comparison; supports wildcard grants and file-backed revocation ([CapabilityTokenService.cs:36](../src/Authority/Tokens/CapabilityTokenService.cs), [:55](../src/Authority/Tokens/CapabilityTokenService.cs), [:69](../src/Authority/Tokens/CapabilityTokenService.cs), [:84](../src/Authority/Tokens/CapabilityTokenService.cs); full surface in [security.md:15-62](security.md)).
 
 Every adjective in the positioning sentence maps to a behavior already in the code. We are not promising a model; we are naming the one that exists and committing to extend it instead of bypassing it.
 
@@ -101,13 +101,13 @@ The grant strings in `CapabilityToken.Grants` are the runtime's user interface f
 | `tool:<name>` | Connector invoke and connect | Today |
 | `tool:*` | Any tool | Today |
 | `secret:<path>` | Secret proxy resolve | Today (see [security.md:155-171](security.md)) |
-| `channel:send:<channel>` / `channel:receive:<channel>` | Channel routing (inbound + reply) | Today (enforced at [ChannelGatewayActor.cs](../src/Assistants/Weave.Agents/Actors/ChannelGatewayActor.cs)) |
-| `skill:write` / `skill:read` | Skill-memory persistence | Today (enforced at [SkillMemoryActor.cs](../src/Assistants/Weave.Agents/Actors/SkillMemoryActor.cs)) |
+| `channel:send:<channel>` / `channel:receive:<channel>` | Channel routing (inbound + reply) | Today (enforced at [ChannelGatewayActor.cs](../extensions/Weave.AgentRuntime/Actors/ChannelGatewayActor.cs)) |
+| `skill:write` / `skill:read` | Skill-memory persistence | Today (enforced at [SkillMemoryActor.cs](../extensions/Weave.AgentRuntime/Actors/SkillMemoryActor.cs)) |
 | `user:read:<userId>` / `user:write:<userId>` | User-profile access | Today |
-| `plugin:invoke:<plugin>` | Hot-swap plugin connect/disconnect (Dapr, Vault, webhook) | Today (enforced at [PluginRegistry.cs](../src/Runtime/Weave.Silo/Plugins/PluginRegistry.cs)) |
+| `plugin:invoke:<plugin>` | Hot-swap plugin connect/disconnect (Dapr, Vault, webhook) | Today (enforced at [PluginRegistry.cs](../hosts/Weave.Host/Plugins/PluginRegistry.cs)) |
 | `marketplace:install` | Installing a marketplace item | Direction |
 
-Wildcards live in [`CapabilityToken.HasGrant`](../src/Security/Weave.Security/Tokens/CapabilityToken.cs) and match segment-wise: each `*` covers one segment, except a trailing `*` which covers one or more. `tool:*` matches any depth under `tool`; `user:*:alice` matches both `user:read:alice` and `user:write:alice`; the bare `*` matches anything. Manifest-side wildcards (when the manifest declares `skill:*` instead of `skill:read`) are still ahead of us — runtime checks against the manifest use direct `.Contains(grant)` today.
+Wildcards live in [`CapabilityToken.HasGrant`](../src/Authority/Tokens/CapabilityToken.cs) and match segment-wise: each `*` covers one segment, except a trailing `*` which covers one or more. `tool:*` matches any depth under `tool`; `user:*:alice` matches both `user:read:alice` and `user:write:alice`; the bare `*` matches anything. Manifest-side wildcards (when the manifest declares `skill:*` instead of `skill:read`) are still ahead of us — runtime checks against the manifest use direct `.Contains(grant)` today.
 
 ## Decision rules for PR review
 

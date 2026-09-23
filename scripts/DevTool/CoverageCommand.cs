@@ -13,7 +13,7 @@ internal static class CoverageCommand
     public static int Run(string[] args)
     {
         var threshold = 90.0;
-        var searchRoot = "src";
+        var searchRoot = "tests";
         var skipCollect = false;
 
         for (var i = 0; i < args.Length; i++)

@@ -1,0 +1,21 @@
+<Project Sdk="Microsoft.NET.Sdk">
+  <PropertyGroup>
+    <IsPackable>false</IsPackable>
+    <IsTestProject>true</IsTestProject>
+    <IsAotExcluded>true</IsAotExcluded>
+    <RootNamespace>Weave.Workspaces.Tests</RootNamespace>
+  </PropertyGroup>
+  <ItemGroup>
+    <ProjectReference Include="../../src/Weave.csproj" />
+    <ProjectReference Include="../../extensions/Weave.AgentRuntime/Weave.AgentRuntime.csproj" />
+    <ProjectReference Include="../../hosts/Weave.Host/Weave.Host.csproj" />
+  </ItemGroup>
+  <ItemGroup>
+    <PackageReference Include="xunit.v3" />
+    <PackageReference Include="Shouldly" />
+    <PackageReference Include="NSubstitute" />
+  </ItemGroup>
+  <PropertyGroup>
+    <TestingPlatformCommandLineArguments>--filter-not-trait "Category=Integration"</TestingPlatformCommandLineArguments>
+  </PropertyGroup>
+</Project>

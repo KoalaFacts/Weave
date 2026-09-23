@@ -1,0 +1,51 @@
+@page "/approvals/review"
+@rendermode Microsoft.AspNetCore.Components.Web.RenderMode.InteractiveServer
+
+<PageTitle>Approval review — Weave</PageTitle>
+<div class="review-page">
+    <p class="eyebrow">WEAVE / GOVERNED TOOLS</p>
+    <h1>Review the actual request</h1>
+    <p>Verify who requested an operation, its target and its complete content before making a separate approval decision.</p>
+    @if (!Options.Enabled)
+    {
+        <section role="status">
+            <h2>Review screen is disabled</h2>
+            <p>An administrator must configure <code>Weave:Review:Enabled</code> and a trusted <code>Weave:Review:BaseUrl</code>. This screen cannot issue credentials or connect tools.</p>
+        </section>
+    }
+    else
+    {
+        <p>Configured review server: <code>@Options.Upstream</code>. Use a protected Dashboard connection; uploaded requests pass through this Dashboard server.</p>
+        <section class="inputs" aria-label="Original request and reviewer credentials">
+            <h2>1. Supply the retained request</h2>
+            <label for="review-workspace">Workspace</label>
+            <input id="review-workspace" @bind="Workspace" @bind:event="oninput" autocomplete="off" maxlength="128" />
+            <label for="review-tool">Tool name</label>
+            <input id="review-tool" @bind="Tool" @bind:event="oninput" autocomplete="off" maxlength="128" />
+            <label for="review-file">Original invocation JSON file (maximum 1 MiB)</label>
+            <InputFile id="review-file" @key="_pickerVersion" OnChange="ReadFileAsync" accept="application/json,.json" />
+            <p>@_fileStatus</p>
+            <label for="review-capability">Independent reviewer's capability envelope</label>
+            <input id="review-capability" type="password" @bind="Capability" @bind:event="oninput" autocomplete="off" spellcheck="false" maxlength="16384" />
+            <label for="review-api-token">Global API bearer token, only when the Host requires it</label>
+            <input id="review-api-token" type="password" @bind="GlobalBearer" @bind:event="oninput" autocomplete="off" spellcheck="false" maxlength="8192" />
+            <p>Credentials are sent only with this verification request and cleared from the form. They are not saved by this feature. Do not paste the Agent's credential in place of an independent reviewer's.</p>
+            <div class="actions">
+                <button type="button" @onclick="VerifyAsync" disabled="@(Session.Loading || _uploading || _originalJson is null)">@(Session.Loading ? "Verifying…" : "Verify for review")</button>
+                <button type="button" @onclick="Clear">Clear and cancel</button>
+            </div>
+        </section>
+        @if (_fileError is not null || Session.Error is not null)
+        {
+            <p role="alert" class="warning">@(_fileError ?? Session.Error)</p>
+        }
+        @if (Session.Snapshot is { } snapshot)
+        {
+            <ApprovalReviewPanel Snapshot="snapshot" Expired="Session.IsExpired" />
+        }
+        else
+        {
+            <p role="status">No verified snapshot is displayed. Verifying does not approve or execute.</p>
+        }
+    }
+</div>

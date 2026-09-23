@@ -69,3 +69,11 @@ nul
 NUL
 superpowers/
 .claude/.adversarial-review-marker
+
+# Local verification artifacts
+/artifacts/
+__pycache__/
+*.pyc
+
+# Release orchestration source, not compiled Release output.
+!/scripts/release/

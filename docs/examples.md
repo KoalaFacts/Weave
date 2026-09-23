@@ -212,7 +212,7 @@ public sealed record StartWorkspaceCommand(WorkspaceId WorkspaceId, WorkspaceMan
 Implement the handler (in the Silo or domain project):
 
 ```csharp
-// Source: src/Runtime/Weave.Silo/Api/WorkspaceCommandHandlers.cs
+// Source: hosts/Weave.Host/Api/WorkspaceCommandHandlers.cs
 public sealed class StartWorkspaceHandler(IActorFactory actorFactory)
     : ICommandHandler<StartWorkspaceCommand, WorkspaceState>
 {
@@ -331,7 +331,7 @@ public sealed partial class ToolActor(
 ## Minting and Validating Capability Tokens
 
 ```csharp
-// Source: src/Security/Weave.Security/Tokens/CapabilityTokenService.cs
+// Source: src/Authority/Tokens/CapabilityTokenService.cs
 
 // Mint a token
 var token = tokenService.Mint(new CapabilityTokenRequest
@@ -357,7 +357,7 @@ tokenService.Revoke(token.TokenId);
 ## Publishing Domain Events
 
 ```csharp
-// Source: src/Assistants/Weave.Agents/Actors/AgentActor.cs
+// Source: extensions/Weave.AgentRuntime/Actors/AgentActor.cs
 
 // Publishing
 await eventBus.PublishAsync(new AgentActivatedEvent
@@ -408,7 +408,7 @@ await lifecycleManager.RunHooksAsync(LifecyclePhase.ToolConnected, context, ct);
 Pattern: NSubstitute for mocking + Shouldly for assertions.
 
 ```csharp
-// Source: src/Tools/Weave.Tools.Tests/ToolActorTests.cs
+// Source: tests/Weave.Tools.Tests/ToolActorTests.cs
 
 public sealed class ToolActorTests
 {

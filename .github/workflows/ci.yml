@@ -14,8 +14,6 @@ concurrency:
 
 permissions:
   contents: read
-  checks: write
-  pull-requests: write
 
 env:
   DOTNET_NOLOGO: true
@@ -26,12 +24,19 @@ jobs:
   build-and-test:
     name: Build & Test
     runs-on: ubuntu-latest
+    permissions:
+      contents: read
+      checks: write
 
     steps:
       - name: Checkout
-        uses: actions/checkout@de0fac2e4500dabe0009e67214ff5f5447ce83dd # v6
+        uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v6
         with:
           fetch-depth: 0
+          persist-credentials: false
+
+      - name: Architecture checks
+        run: python3 -m unittest discover -s scripts/tests -v
 
       - name: Setup .NET
         uses: ./.github/actions/setup-dotnet
@@ -48,11 +53,12 @@ jobs:
           -- --report-xunit-trx --results-directory ./test-results
 
       - name: Publish test results
-        uses: EnricoMi/publish-unit-test-result-action@c950f6fb443cb5af20a377fd0dfaa78838901040 # v2
+        uses: EnricoMi/publish-unit-test-result-action@d0a4676d0e0b938bc201470d88276b7c74c712b3 # v2
         if: always()
         with:
           files: test-results/**/*.trx
           check_name: 'Test Results'
+          comment_mode: 'off'
 
       - name: Upload test results
         if: always()
@@ -68,7 +74,9 @@ jobs:
 
     steps:
       - name: Checkout
-        uses: actions/checkout@de0fac2e4500dabe0009e67214ff5f5447ce83dd # v6
+        uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v6
+        with:
+          persist-credentials: false
 
       - name: Setup .NET
         uses: ./.github/actions/setup-dotnet
@@ -84,13 +92,88 @@ jobs:
       - name: Build (warnings as errors)
         run: dotnet build Weave.slnx --no-restore -c Release /p:TreatWarningsAsErrors=true
 
+      # dotnet format loads the Debug design-time graph; build its analyzer reference too.
+      - name: Build source generator for formatting
+        run: dotnet build tools/Weave.SourceGen/Weave.SourceGen.csproj --no-restore -c Debug /p:TreatWarningsAsErrors=true
+
       - name: Check formatting
         run: >-
           dotnet format Weave.slnx --no-restore --verify-no-changes --verbosity diagnostic
-          --exclude src/Foundation/Weave.Shared/
+          --exclude src/Authority/CapabilityGrantMatcher.cs
+          src/Composition/Cqrs/CommandDispatcher.cs src/Composition/Cqrs/ICommandDispatcher.cs
+          src/Composition/Cqrs/ICommandHandler.cs src/Composition/Cqrs/IQueryDispatcher.cs
+          src/Composition/Cqrs/IQueryHandler.cs src/Composition/Cqrs/QueryDispatcher.cs
+          src/Composition/Events/DomainEvent.cs src/Composition/Events/IDomainEvent.cs
+          src/Composition/Events/IEventBus.cs src/Composition/Events/InProcessEventBus.cs
+          src/Agents/AgentId.cs src/Agents/AgentTaskId.cs src/Channels/ChannelId.cs
+          src/Resources/ContainerId.cs src/Memory/EpisodeId.cs src/Plugins/Catalog/MarketplaceItemId.cs
+          src/Resources/NetworkId.cs src/Skills/SkillId.cs src/Workspaces/Templates/TemplateId.cs
+          src/Users/UserId.cs src/Workspaces/WorkspaceId.cs
+          src/Composition/Lifecycle/ILifecycleHook.cs src/Composition/Lifecycle/ILifecycleManager.cs
+          src/Composition/Lifecycle/LifecycleContext.cs src/Composition/Lifecycle/LifecycleManager.cs
+          src/Composition/Lifecycle/LifecyclePhase.cs src/Plugins/EventBusProxy.cs
+          src/Plugins/PluginServiceBroker.cs src/Credentials/SecretSafeException.cs
+          src/Credentials/SecretValue.cs src/Credentials/SecretValueJsonConverter.cs
+          src/Composition/Text/ControlCharFilter.cs src/Composition/VirtualActors/IActorState.cs
+          src/Composition/VirtualActors/IActorTimerRegistry.cs src/Composition/VirtualActors/IVirtualActorProvider.cs
+          src/Composition/VirtualActors/VirtualActorId.cs src/Composition/WeavePorts.cs
+
+  dependency-lock-validation:
+    name: Locked dependency graph (${{ matrix.source }})
+    if: github.event_name == 'pull_request' || github.event_name == 'push'
+    runs-on: ubuntu-latest
+    timeout-minutes: 10
+    permissions:
+      contents: read
+    strategy:
+      fail-fast: false
+      matrix:
+        source: [base, head]
+    steps:
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v6
+        with:
+          ref: ${{ matrix.source == 'base' && (github.event.pull_request.base.sha || github.event.before) || (github.event.pull_request.head.sha || github.sha) }}
+          persist-credentials: false
+      - uses: ./.github/actions/setup-dotnet
+      - name: Validate the exact committed dependency closure
+        run: |
+          dotnet restore Weave.slnx --locked-mode
+          git diff --exit-code -- '**/packages.lock.json'
+
+  dependency-snapshots:
+    name: Submit verified dependency snapshots
+    needs: dependency-lock-validation
+    runs-on: ubuntu-latest
+    timeout-minutes: 5
+    permissions:
+      contents: write
+    steps:
+      # Only the reviewed immutable producer is executable in this job.
+      # Source commits are read as JSON blobs via the API, never checked out here.
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v6
+        with:
+          ref: c36ab57b5c2c46e00b7cc71fdab19cac4e344b3e
+          persist-credentials: false
+      - name: Submit exact base and head lock graphs
+        env:
+          GH_TOKEN: ${{ github.token }}
+          PR_BASE_SHA: ${{ github.event.pull_request.base.sha || github.event.before }}
+          PR_HEAD_SHA: ${{ github.event.pull_request.head.sha || github.sha }}
+          PR_BASE_REF: refs/heads/${{ github.base_ref || 'main' }}
+          PR_HEAD_REF: ${{ github.event_name == 'pull_request' && format('refs/pull/{0}/head', github.event.number) || github.ref }}
+        run: python3 scripts/submit_nuget_snapshots.py --output "$RUNNER_TEMP/dependency-snapshots"
+      - name: Retain source and submission evidence
+        if: always()
+        uses: actions/upload-artifact@043fb46d1a93c77aae656e7c1c64a875d1fc6a0a # v7
+        with:
+          name: dependency-snapshots
+          path: ${{ runner.temp }}/dependency-snapshots/
+          if-no-files-found: error
+          retention-days: 14
 
   dependency-review:
     name: Dependency Review
+    needs: dependency-snapshots
     runs-on: ubuntu-latest
     if: github.event_name == 'pull_request'
     permissions:
@@ -99,11 +182,46 @@ jobs:
 
     steps:
       - name: Checkout
-        uses: actions/checkout@de0fac2e4500dabe0009e67214ff5f5447ce83dd # v6
+        uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v6
+        with:
+          persist-credentials: false
+
+      - name: Require dependency comparison evidence
+        timeout-minutes: 3
+        env:
+          GH_TOKEN: ${{ github.token }}
+          PR_BASE_SHA: ${{ github.event.pull_request.base.sha }}
+          PR_HEAD_SHA: ${{ github.event.pull_request.head.sha }}
+        run: python3 scripts/check_dependency_review_evidence.py --report "$RUNNER_TEMP/dependency-review-evidence.json"
+
+      - name: Upload dependency comparison evidence
+        if: always()
+        uses: actions/upload-artifact@043fb46d1a93c77aae656e7c1c64a875d1fc6a0a # v7
+        with:
+          name: dependency-review-evidence
+          path: ${{ runner.temp }}/dependency-review-evidence.json
+          if-no-files-found: error
+          retention-days: 14
 
       - name: Dependency Review
-        uses: actions/dependency-review-action@2031cfc080254a8a887f58cffee85186f0e49e48 # v4
+        id: dependency-policy
+        uses: actions/dependency-review-action@a1d282b36b6f3519aa1f3fc636f609c47dddb294 # v4
         with:
           fail-on-severity: high
           deny-licenses: GPL-2.0, GPL-3.0, AGPL-3.0
           comment-summary-in-pr: always
+
+      - name: Require complete license evidence
+        if: ${{ !cancelled() && steps.dependency-policy.outcome != 'skipped' }}
+        env:
+          INVALID_LICENSE_CHANGES: ${{ steps.dependency-policy.outputs['invalid-license-changes'] }}
+        run: python3 scripts/check_dependency_license_evidence.py --report "$RUNNER_TEMP/dependency-license-evidence.json"
+
+      - name: Retain license evidence outcome
+        if: always()
+        uses: actions/upload-artifact@043fb46d1a93c77aae656e7c1c64a875d1fc6a0a # v7
+        with:
+          name: dependency-license-evidence
+          path: ${{ runner.temp }}/dependency-license-evidence.json
+          if-no-files-found: error
+          retention-days: 14

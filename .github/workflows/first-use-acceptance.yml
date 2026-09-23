@@ -1,0 +1,59 @@
+name: Standalone First Use
+
+on:
+  pull_request:
+    branches: [main]
+    paths:
+      - 'examples/governed-tools/first_use.py'
+      - '.github/workflows/first-use-acceptance.yml'
+  push:
+    branches: [main]
+    paths:
+      - 'examples/governed-tools/first_use.py'
+      - '.github/workflows/first-use-acceptance.yml'
+  workflow_dispatch:
+
+permissions:
+  contents: read
+
+concurrency:
+  group: first-use-${{ github.ref }}
+  cancel-in-progress: true
+
+jobs:
+  walkthrough:
+    name: Fresh Host public HTTP walkthrough
+    runs-on: ubuntu-latest
+    timeout-minutes: 12
+    steps:
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1
+        with:
+          ref: ${{ github.event.pull_request.head.sha || github.sha }}
+          persist-credentials: false
+          fetch-depth: 0
+      - name: Confirm this acceptance does not substitute modified product code
+        run: >-
+          git diff --exit-code 3ded2a1162bfb14f314f39cb04a574e85edda469 HEAD --
+          src/ hosts/ extensions/ tools/ Directory.Build.props Directory.Build.targets
+          Directory.Packages.props global.json
+      - uses: ./.github/actions/setup-dotnet
+        with:
+          cache: 'false'
+      - name: Build the ordinary standalone Host
+        run: |
+          dotnet --version
+          dotnet restore hosts/Weave.Host/Weave.Host.csproj --locked-mode
+          dotnet build hosts/Weave.Host/Weave.Host.csproj --no-restore -c Release /p:TreatWarningsAsErrors=true
+      - name: Run actual first-use and restart flow
+        run: >-
+          python3 -u examples/governed-tools/first_use.py
+          --host hosts/Weave.Host/bin/Release/net10.0/Weave.Silo.dll
+          --evidence "$RUNNER_TEMP/weave-first-use-evidence"
+      - name: Retain sanitized report and test documents only
+        if: always()
+        uses: actions/upload-artifact@043fb46d1a93c77aae656e7c1c64a875d1fc6a0a
+        with:
+          name: standalone-first-use
+          path: ${{ runner.temp }}/weave-first-use-evidence/
+          retention-days: 14
+          if-no-files-found: error

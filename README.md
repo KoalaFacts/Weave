@@ -3,512 +3,216 @@
 [![CI](https://github.com/KoalaFacts/Weave/actions/workflows/ci.yml/badge.svg)](https://github.com/KoalaFacts/Weave/actions/workflows/ci.yml)
 [![Security Scan](https://github.com/KoalaFacts/Weave/actions/workflows/scan-security.yml/badge.svg)](https://github.com/KoalaFacts/Weave/actions/workflows/scan-security.yml)
 
-**Security-first AI agent orchestration for .NET.** Define assistants, lock down their tools with capability tokens, and keep secrets from leaking — all from a single manifest file. Runs locally with one command.
+**An open-source control plane for AI agents.**
 
-Most agent frameworks give your AI unrestricted access and hope for the best. Weave starts from the opposite assumption: assistants get *only* the capabilities you explicitly grant, secrets are proxied and scanned for leaks, and every tool call goes through a security boundary you control.
+Connect your agents. Control what they can do. See what they did.
 
-## What You Can Build
+Weave is building the layer between an agent's intent and its access to real systems: which operation it may perform, on whose account, against which resource, with whose approval, and with what record of the outcome.
 
-- **A coding assistant** that has git and filesystem access but can't `rm -rf /` or `git push --force`
-- **A research team** with a supervisor that delegates to specialist workers, each with their own tools
-- **A support bot** on Slack, Discord, or Telegram that remembers each user's preferences and gets better at recurring tasks
-- **A DevOps agent** that deploys services on a cron schedule and builds reusable skills from successful deployments
-- **A shared tool marketplace** where your team publishes vetted tool configurations that any workspace can install
+The first focus is **Governed Tools**: bring existing tools under explicit authorization without requiring people to replace their agents or adopt a new reasoning framework. C#/.NET is the reference implementation; the intended integration boundary is language-neutral.
 
-## How Weave Is Different
+> **Early development, pre-1.0.** The repository contains a working workspace-oriented runtime and tool connectors. The complete control-plane path described below is the target, not a shipping guarantee. Start with [current capabilities](#what-works-today) and the [development build](#try-the-current-development-build).
 
-| | Other agent frameworks | Weave |
-|---|---|---|
-| **Security model** | Bolt-on, if any | Capability tokens, secret proxying, leak scanning, sandboxed tools |
-| **Secret handling** | Pass API keys directly to the model | Secrets never reach the model — proxied, redacted, and scanned for 15+ leak patterns |
-| **Tool access** | Allow-all or manual prompt engineering | Sandboxed filesystem, shell metacharacter blocking, SSRF protection, allow/deny lists |
-| **Self-improving** | Static prompts | Agents auto-extract skills from completed tasks and retrieve them for similar future work |
-| **Reach users** | API-only | Built-in channel gateway — Slack, Discord, Telegram, Teams, Email out of the box |
-| **Personalization** | Stateless | User modeling tracks preferences, topics, and context across sessions |
-| **Architecture** | Single-process, in-memory | Orleans grain-based — each agent, tool, and workspace is an independent, recoverable actor |
-| **Configuration** | Code-heavy setup | One JSONC manifest defines everything |
-| **Extensibility** | Rebuild to add integrations | Hot-swap plugins at runtime (Dapr, Vault, webhooks) without restarts |
-| **Runtime** | Cloud-only or single-machine | Local-first, scales to Kubernetes when you need it |
+## Why Weave
 
-## Quick Start
+Giving an agent access to an integration is not the same as deciding what it may do through that integration. Reading a repository, opening a pull request, and merging it are different permissions—even when they use the same account and tool server.
 
-Weave runs on Windows, macOS, and Linux.
+Weave is for developers connecting agents to real services and teams that need a consistent place to make those decisions. Its intended role is to connect an agent's identity and working context to a specific, authorized action—not to decide how the agent thinks.
 
-**Install:**
+Consider a coding agent working on a customer repository:
 
-| Platform | Command |
-|----------|--------|
-| **Windows** | `irm https://raw.githubusercontent.com/KoalaFacts/Weave/main/scripts/install.ps1 \| iex` |
-| **macOS / Linux** | `curl -fsSL https://raw.githubusercontent.com/KoalaFacts/Weave/main/scripts/install.sh \| sh` |
-| **.NET** | `dotnet tool install --global Weave.Cli` |
+| Request | Intended control-plane behavior |
+| --- | --- |
+| Read a file | Allow only the permitted repository and operation. |
+| Open a pull request | Obtain approval for the exact repository, branch, and proposed change when policy requires it. |
+| Merge the pull request | Deny unless the agent has a separate applicable grant. |
+| Retry after a connection drops | Determine whether the first attempt took effect before risking a duplicate action. |
 
-<details>
-<summary><b>Build from source</b></summary>
+**This is a design example, not a supported policy file or a claim of a ready-made GitHub integration.** It explains the distinction Weave is working toward: access to a tool must not become blanket authority over everything behind it.
 
-Requires the .NET SDK version pinned in [`global.json`](global.json) (currently .NET 10). Install it from [dot.net](https://dot.net) if needed.
+## What works today
+
+The current code is the starting point for the control plane, not an empty scaffold. Its existing behavior includes:
+
+| Area | Current implementation | Boundary to keep in mind |
+| --- | --- | --- |
+| Workspaces and agents | Manifest-based configuration, a CLI, and an Orleans-backed host/runtime. | Agent actor keys remain `{workspaceId}/{agentName}`. Portable identity is not implemented by moving files. |
+| Tool execution | `ToolActor` separates connection permission from `tool:<name>:invoke:<operation>` grants, normalizes adapter selectors, and rechecks authority before dispatch. Agent tool availability alone does not mint execution rights. | This is operation selection within the current workspace/tool model, not generalized resource/account constraints or installation revisions. |
+| Invocation recording | The host requires an on-disk SQLite journal. Intent, authorization evidence and a distinct attempt are committed before dispatch; recording failure blocks the call. Stable IDs prevent repeat dispatch against that journal, and owner-scoped outcome lookup works after Host restart. | Single-host/preserved-file scope, metadata rather than response-body storage, no automatic unknown-outcome recovery or cluster-wide guarantee. |
+| Durable approval | Configured filesystem operations wait for an independently authorized, exact-plan decision. Approval is consumed atomically with attempt admission; the original request must be resubmitted with current authority. | Reviewed HTTP decisions are separately opt-in. Filesystem is the first target-binding adapter; unsupported required targets fail closed. |
+| Governed HTTP entry | Opt-in routes submit invocations and query outcomes/approval status using already signed capability tokens. | Not public token issuance or self-service onboarding. Global API auth remains separate; restrict exposure to the governed routes. |
+| Verified approval review | An independent reviewer submits the retained request; a read-only endpoint and Dashboard screen at `/approvals/review` display inputs and registered-target information only when they match the pending plan. | The screen verifies and displays; it has no approve/reject/execute action. A snapshot is not an approval receipt. No reviewer-side secret resolution; unsupported or changed effective inputs fail closed. |
+| Operator decisions | A Python terminal example displays complete escaped review data and requires explicit digest-bound confirmation. The decision endpoint revalidates content before recording approve/reject without executing. | Requires administrator-provisioned connections and credentials. The Dashboard remains read-only; browser decision actions and human login are not implemented. |
+| Connectors | MCP over stdio and HTTP/SSE, CLI, filesystem, OpenAPI, Direct HTTP, and Dapr extension projects. | An outbound MCP connector is not an inbound MCP governance server. Protocol coverage and security controls differ by adapter. |
+| Authentication and credentials | Signed capability tokens, revocation handling, secret-protection code, and API authentication that rejects broken enabled configurations. | API auth defaults to `none`. The built-in bearer mode is a shared token, not a complete OAuth/OIDC or tenant identity system. |
+| Verification | Automated tests, dependency auditing, CI, and release-source/package validation. | Passing checks does not establish complete tenant isolation, generalized provider approval coverage, or a sandbox for untrusted code. |
+
+Relevant implementation: [tool dispatch](src/Invocations/InvokeTool/ToolActor.cs), [token service](src/Authority/Tokens/CapabilityTokenService.cs), [API authentication](hosts/Weave.Host/Security/ApiAuthOptions.cs), and [delivery records](docs/implementation/).
+
+**Grant migration:** bare `tool:<name>` grants no longer authorize execution. Configure explicit `AgentDefinition.Capabilities`; for example, `tool:files:invoke:read_file` does not grant `write_file`. CLI execution requires `exec` authority, not a caller-supplied read-only label. Read the [operation-authority migration notes](docs/implementation/2026-09-19-exact-tool-operations.md) before upgrading existing workspaces or custom connectors.
+
+**Invocation recording:** the host defaults to `~/.weave/invocations.db`; configure `Weave:Invocations:DatabasePath` for a persistent local path. There is no production in-memory fallback. Retain a caller-generated `InvocationId` before sending when response-loss recovery matters: omitted IDs create new logical calls. `IToolActor.GetInvocationAsync` requires separate `invocation:read` authority and the original workspace, tool and token subject. Queries and duplicate submissions return outcome metadata, not the original response body. Unknown outcomes must not be retried under a fresh ID. Read the [journal scope, query and migration notes](docs/implementation/2026-09-19-durable-invocations.md); separate silo-local files do not provide distributed deduplication.
+
+**Durable approval:** configure `Weave:Invocations:ApprovalRequiredGrants` explicitly; its default is empty. The operator uses `IToolActor.GetApprovalAsync` and `DecideApprovalAsync`; approval does not itself dispatch or grant execution permission. An approver needs `approval:decide` and the exact tool-operation approval grant, and cannot approve its own request. The original caller resumes by resubmitting the same ID and request. Read the [approval configuration, decision and restart guide](docs/implementation/2026-09-20-durable-approval.md) before using it. Keep the journal outside agent-readable or writable tool roots and protect its files; it is not encrypted or tamper-proof audit storage.
+
+**HTTP and readable review:** see the [capability-authenticated ingress guide](docs/implementation/2026-09-20-governed-http-entry.md) and [verified review contract](docs/implementation/2026-09-20-verified-approval-review.md). Review matches the retained original request and current target before returning content; it neither approves nor executes. The [read-only Dashboard screen](docs/implementation/2026-09-20-operator-review-screen.md) displays the complete verified content, target, digest and expiry. Enable it explicitly with `Weave:Review:Enabled` and an administrator-selected `Weave:Review:BaseUrl`. The journal does not supply a lost request body, and an old preview cannot override later changes or expiry. Human login, browser decision actions and real-browser acceptance remain separate work.
+
+**Reviewed decisions:** the [terminal operator example](examples/governed-tools/README.md) provides complete escaped review and explicit approval/rejection through the separately enabled [reviewed decision endpoint](docs/implementation/2026-09-20-reviewed-approval-decisions.md). Enable `Weave:Invocations:Http:DecisionsEnabled` in addition to the governed HTTP profile. A decision re-verifies the original request and target; it neither executes the tool nor grants execution authority. The existing Dashboard is not changed into a decision surface by enabling this endpoint.
+
+The existing Agent Runtime, memory, skills, channels, and other features remain in the repository. They are not prerequisites for the new Governed Tools profile. The current executable host still composes the existing runtime; extracting an extension does not, by itself, deliver every proposed deployment profile.
+
+## Try the current development build
+
+Build from source to explore this branch rather than assuming a published CLI release contains the new architecture.
+
+**Prerequisites:** Git, the .NET SDK selected by [global.json](global.json), and Python 3.10+ available as `python3` for the repository checks and MCP subprocess tests. The SDK policy permits patch roll-forward; inspect `dotnet --version` rather than assuming an exact installed patch.
+
+From the repository root:
 
 ```bash
 git clone https://github.com/KoalaFacts/Weave.git
 cd Weave
 
-# Build and test
-dotnet build Weave.slnx
-dotnet test --solution Weave.slnx
+dotnet restore Weave.slnx
+dotnet build Weave.slnx --no-restore -c Release
 
-# Run the CLI directly without installing
-dotnet run --project src/UX/Weave.Cli -- --help
-
-# Install as a global tool from source
-dotnet pack src/UX/Weave.Cli -c Release -o ./artifacts
-dotnet tool install --global --add-source ./artifacts Weave.Cli
-
-# Launch the interactive TUI (or any other subcommand)
-weave
+# Inspect the current command surface without starting a server.
+dotnet run --project hosts/Weave.Cli/Weave.Cli.csproj --no-build -c Release -- --help
 ```
 
-To uninstall the locally built tool: `dotnet tool uninstall --global Weave.Cli`.
-
-</details>
-
-**Create and run your first workspace:**
+Create a starter configuration with the existing CLI:
 
 ```bash
-weave workspace new demo --preset coding-assistant
-weave run demo
+dotnet run --project hosts/Weave.Cli/Weave.Cli.csproj --no-build -c Release -- workspace new demo --preset starter
 ```
 
-That is it. `weave run` starts the server and workspace in one command. Everything runs locally — no external services required.
+This creates `demo/workspace.json` and supporting folders, and registers the workspace in the local Weave configuration. It does **not** call a model, provision an external resource, configure approval requirements, or demonstrate the operator approval workflow. Review generated configuration before starting a workspace; model-backed chat needs the selected model provider's configuration and credentials.
 
-**Or try the support-team preset** with Slack, skill memory, and a health monitor:
+To exercise the existing connectors without a model account:
 
 ```bash
-weave workspace new my-team --preset support-team
-weave run my-team
+dotnet test --project tests/Weave.Tools.Tests/Weave.Tools.Tests.csproj --no-build -c Release
 ```
 
-## Example Manifest
+That suite includes a round trip through the real MCP connector and the repository's [Python echo server](examples/echo-mcp/server.py). Some tests require platform facilities such as symlink creation; inspect skipped tests as well as failures. These connector tests are not evidence of the target end-to-end authorization and approval path.
 
-A workspace manifest is a JSONC file. This one defines an assistant with git access and sandboxed file operations:
-
-```jsonc
-{
-  "version": "1.0",
-  "name": "my-workspace",
-  "agents": {
-    "coder": {
-      "model": "claude-sonnet-4-20250514",
-      "tools": ["git", "files"],
-      "max_concurrent_tasks": 3
-    }
-  },
-  "tools": {
-    "git": {
-      "type": "cli",
-      "cli": {
-        "shell": "/bin/bash",
-        "allowed_commands": ["git *"],
-        "denied_commands": ["git push --force", "git reset --hard"]
-      }
-    },
-    "files": {
-      "type": "filesystem",
-      "filesystem": {
-        "root": "./workspace-data",
-        "sandbox": true,
-        "read_only": false
-      }
-    }
-  }
-}
-```
-
-See the full schema in the [Manifest Reference](docs/manifest-reference.md).
-
-## Channels — Reach Users Where They Are
-
-Connect your agents to messaging platforms. Users talk to agents on Slack, Discord, or Telegram — Weave routes messages to the right agent and sends responses back.
-
-```jsonc
-"channels": {
-  "slack-support": {
-    "type": "slack",
-    "target_agent": "support-bot",
-    "config": {
-      "webhook_url": "https://hooks.slack.com/services/..."
-    }
-  },
-  "telegram-alerts": {
-    "type": "telegram",
-    "target_agent": "monitor",
-    "config": {
-      "bot_token": "${secrets.telegram_bot_token}",
-      "chat_id": "-100123456789"
-    }
-  }
-}
-```
-
-Supported channels: **Slack**, **Discord**, **Telegram**, **Microsoft Teams**, **Email**. Each channel routes to a specific agent, or you can configure pattern-based routing rules via the API.
-
-Inbound messages are received via webhook at `POST /api/workspaces/{id}/channels/inbound`. The channel gateway resolves the target agent, forwards the message, and returns the response.
-
-## Skill Memory — Agents That Learn
-
-When an agent completes a multi-step task and it gets accepted, Weave automatically extracts a **skill document** capturing what was done, which tools were used, and in what order. The next time a similar request comes in, the agent retrieves matching skills and includes them in its context.
-
-This means your agents get measurably better at recurring tasks without any manual prompt engineering.
+To exercise the host-level journal, approval and HTTP review scenarios, including complete Host recreation against the same SQLite file:
 
 ```bash
-# Skills are created automatically, but you can also store them manually:
-curl -X POST http://localhost:5000/api/workspaces/my-ws/skills \
-  -H "Content-Type: application/json" \
-  -d '{
-    "title": "Deploy to staging",
-    "description": "Build, test, and deploy a service to the staging environment",
-    "tags": ["deploy", "staging", "docker"],
-    "steps": [
-      { "action": "Run tests", "tool_name": "cli" },
-      { "action": "Build Docker image", "tool_name": "cli" },
-      { "action": "Push to registry", "tool_name": "cli" },
-      { "action": "Update deployment manifest", "tool_name": "files" }
-    ],
-    "tools_used": ["cli", "files"],
-    "created_by_agent": "deployer"
-  }'
-
-# Search for relevant skills:
-curl http://localhost:5000/api/workspaces/my-ws/skills/search?q=deploy+staging
+dotnet test --project tests/Weave.Silo.Tests/Weave.Silo.Tests.csproj --no-build -c Release
 ```
 
-Skills are scoped to a workspace — all agents in the workspace share and benefit from accumulated skills.
+The [approval restart test](tests/Weave.Silo.Tests/Invocations/ApprovalHostRestartTests.cs) demonstrates waiting without writing, restarting, an independent decision, explicit resubmission, and duplicate protection through the actual Orleans actor interface. The [HTTP review tests](tests/Weave.Silo.Tests/Invocations/GovernedHttpApprovalReviewTests.cs) verify readable content before a separately authorized decision. The Dashboard has a read-only review screen, but these server/client/rendering tests do not replace browser end-to-end acceptance or implement self-service onboarding.
 
-## User Modeling — Personalized Agents
+For an operator-facing example, follow [Review and decide a pending operation](examples/governed-tools/README.md). Its real-process tests exercise approve, reject and leave-unchanged against Kestrel with both global and capability authentication. The helper never requests tool execution; the original caller resumes separately after approval.
 
-Weave tracks user preferences, frequently discussed topics, and domain context across sessions. When a user sends a message (via a channel or the API with a `userId`), their profile is automatically injected into the agent's context.
+For the current manifest format, see the [Manifest Reference](docs/manifest-reference.md). Older examples may retain pre-refactor paths; use `hosts/Weave.Cli/Weave.Cli.csproj` and the current CLI help. [Release history](https://github.com/KoalaFacts/Weave/releases) describes published versions separately from this development branch.
 
-```bash
-# Set user preferences
-curl -X PUT http://localhost:5000/api/workspaces/my-ws/users/alice/preferences \
-  -H "Content-Type: application/json" \
-  -d '{ "key": "language", "value": "python" }'
+**Local evaluation is not a production deployment.** Keep unauthenticated development endpoints private. Before exposing a host, configure authentication and transport protection, restrict credentials and network access, and assess the deployment's actual isolation boundaries. Exposing the new governed routes does not secure the host's unrelated administrative endpoints.
 
-# Set domain context
-curl -X PUT http://localhost:5000/api/workspaces/my-ws/users/alice/context \
-  -H "Content-Type: application/json" \
-  -d '{ "key": "project", "value": "data-pipeline-v2" }'
+## The model we are building
 
-# View profile
-curl http://localhost:5000/api/workspaces/my-ws/users/alice/profile
-```
+**Identity, context, and authority are separate.** In the target model, an Agent belongs to a Tenant independently of a Workspace. A Workspace organizes work; a Room supplies the working context inside it. Entering a Room does not automatically grant access to its resources.
 
-When Alice messages the agent, it automatically receives: *"User preferences: language=python. Top topics: deployment (12), testing (8). Domain context: project=data-pipeline-v2."*
+| Concept | Question it answers |
+| --- | --- |
+| Agent / subject | Who is acting? Subjects can also be humans, services, or plugin installations. |
+| Tenant, Workspace, Room | Within which security partition and working context? |
+| Authority | Which exact operation is permitted, with what conditions and delegation? |
+| Resource and binding | Which concrete asset is involved, and where is it available? |
+| Plugin installation | Which configured provider instance will execute the operation? |
+| Credential reference | Which approved authentication material may that executor use? |
+| Invocation, attempt, approval, audit | What was requested, authorized, attempted, and actually confirmed? |
 
-## Marketplace — Share Vetted Tool Configurations
+A mailbox, browser profile, repository, or cloud account is an example of a resource—not a promise that Weave currently provisions it. Resource binding makes an asset available in a context; it neither grants every operation nor transfers ownership. Deleting an agent or uninstalling an integration must not implicitly delete upstream assets.
 
-A curated registry of tool configurations that teams can share. Unlike unrestricted plugin marketplaces, every item must pass a security review before publishing.
+### One governed invocation
 
-```bash
-# Submit a tool configuration
-curl -X POST http://localhost:5000/api/marketplace \
-  -H "Content-Type: application/json" \
-  -d '{
-    "name": "GitHub MCP",
-    "description": "GitHub integration via MCP server",
-    "category": "ToolConnector",
-    "version": "1.0.0",
-    "author": "platform-team",
-    "tags": ["github", "mcp", "git"]
-  }'
-
-# Publish after security review
-curl -X POST http://localhost:5000/api/marketplace/{itemId}/publish \
-  -d '{ "reviewer_id": "security-lead", "approved": true, "notes": "Reviewed, safe to use" }'
-
-# Search and browse
-curl http://localhost:5000/api/marketplace/search?q=github
-curl http://localhost:5000/api/marketplace
-```
-
-## Capability Templates — Pre-Built Agent Configurations
-
-Shareable, versioned agent configurations with pre-validated tool chains. Create a template once, instantiate it across workspaces.
-
-```bash
-# Register a template
-curl -X POST http://localhost:5000/api/templates \
-  -H "Content-Type: application/json" \
-  -d '{
-    "name": "Code Reviewer",
-    "description": "Agent configured for PR reviews with git and file access",
-    "version": "1.0.0",
-    "author": "platform-team",
-    "agent_definition": {
-      "model": "claude-sonnet-4-20250514",
-      "tools": ["git", "files"],
-      "max_concurrent_tasks": 3
-    },
-    "required_tools": {
-      "git": { "type": "cli", "cli": { "shell": "/bin/bash", "allowed_commands": ["git *"] } },
-      "files": { "type": "filesystem", "filesystem": { "root": "./repo", "sandbox": true } }
-    },
-    "tags": ["code-review", "git"]
-  }'
-
-# Validate and publish
-curl -X POST http://localhost:5000/api/templates/{templateId}/publish
-
-# Browse published templates
-curl http://localhost:5000/api/templates
-```
-
-Templates validate that the agent model is specified, all referenced tools exist in `required_tools`, and every tool has a valid type — before they can be published.
-
-## Storage Backends
-
-Weave uses Orleans grain persistence. Choose the backend that fits your infrastructure:
-
-| Backend | Config value | Connection string key | Use case |
-|---|---|---|---|
-| **In-Memory** | `memory` (default) | — | Instant start, resets on restart |
-| **SQLite** | `sqlite` | `ConnectionStrings:Sqlite` | Zero-config local file, persists across restarts |
-| **Redis** | `redis` | `ConnectionStrings:Redis` | Fast, shared state across silos |
-| **SQL Server** | `sqlserver` | `ConnectionStrings:SqlServer` | Enterprise, existing SQL infrastructure |
-| **PostgreSQL** | `postgresql` | `ConnectionStrings:PostgreSql` | Cross-platform relational, open source |
-
-Configure via `appsettings.json` or environment variables:
-
-```jsonc
-{
-  "Weave": {
-    "Storage": "postgresql"  // or "sqlserver", "redis", "memory"
-  },
-  "ConnectionStrings": {
-    "PostgreSql": "Host=localhost;Database=weave;Username=youruser;Password=yourpassword"
-  }
-}
-```
-
-Or change the global default via CLI:
-```bash
-weave storage change postgresql --connection "Host=localhost;Database=weave;Username=youruser;Password=yourpassword"
-```
-
-Or override per-workspace in the manifest:
-```jsonc
-"workspace": {
-  "storage": {
-    "backend": "postgresql",
-    "connection_string": "Host=db.prod.example.com;Database=weave;..."
-  }
-}
-```
-
-Workspace-level storage overrides take precedence over the global setting. This lets you run dev workspaces in memory while production workspaces persist to PostgreSQL.
-
-All backends support both grain state persistence and cluster membership. Orleans provides [SQL scripts](https://learn.microsoft.com/dotnet/orleans/host/configuration-guide/adonet-configuration) for creating the required tables.
-
-### Migrating between backends
-
-When you switch storage (e.g., SQLite locally to PostgreSQL in production), use `weave data export` to create a portable snapshot and `weave data import` to restore it on the new backend:
-
-```bash
-# 1. Export while current backend is running
-weave data export my-app -o backup.json
-
-# 2. Stop the server
-weave workspace down my-app
-
-# 3. Switch backend
-weave storage change postgresql --connection "Host=localhost;Database=weave;..."
-
-# 4. Import into the new backend
-weave run my-app
-weave data import backup.json
-```
-
-The export includes the workspace manifest, prompt files, skills, channels, user profiles, marketplace items, and templates — everything needed to fully reconstruct a workspace on a different machine or backend.
-
-## Security
-
-Security is not an add-on — it is the architecture. Every layer is zero-trust by default.
-
-### API authentication
-
-Authentication is opt-in — local dev works without auth, production opts in via config. The auth layer is pluggable via the `IApiAuthProvider` interface.
-
-| Mode | Header | Use case |
-|------|--------|----------|
-| `none` | — | Local dev (default) |
-| `apikey` | `X-Api-Key: <key>` | Service-to-service, simple setups |
-| `bearer` | `Authorization: Bearer <token>` | OAuth2/OIDC integration |
-| *Custom* | Implement `IApiAuthProvider` | SAML, mTLS, custom identity providers |
-
-```jsonc
-// appsettings.json or via weave init
-{
-  "Weave": {
-    "Auth": {
-      "Mode": "apikey",
-      "Secret": "env:WEAVE_API_SECRET"  // never plaintext in config
-    },
-    "RequireHttps": true
-  }
-}
-```
-
-Secrets use the same `{provider}:{key}` reference syntax — `env:`, `file:`, `vault:`, or plain text for dev.
-
-### Audit logging
-
-Every API call is logged by default — method, path, status, caller identity, IP, duration. Audit data drives observability and feeds the self-improvement loop.
-
-```
-AUDIT POST /api/workspaces/ws-1/agents/coder/messages -> 200 | caller=apikey:a3f8c1e2*** ip=10.0.0.5 duration=342ms
-```
-
-Disable with `Weave:Audit:Disabled=true` (not recommended). Every tool call passes through multiple layers before anything executes.
-
-### Capability tokens
-
-Agents receive time-limited, scoped tokens that grant access to specific tools. A token for `tool:git` cannot invoke `tool:files`. Tokens are HMAC-SHA256 signed with constant-time verification, and can be revoked at any time.
-
-### Secret management
-
-Secrets never reach the AI model. When a manifest references `${secrets.api_key}`, Weave's secret proxy resolves the value at the grain boundary. The model only ever sees the placeholder. Responses are scanned for 15+ leak patterns (AWS keys, GitHub tokens, JWTs, private keys, connection strings) plus Shannon entropy analysis — if a secret leaks into a tool response, it is redacted before the agent sees it.
-
-### Sandboxed filesystem
-
-The filesystem connector locks all operations to a configured root directory:
-
-- Path traversal blocked (`..`, absolute paths, drive letters, URL schemes, null bytes)
-- NTFS Alternate Data Streams blocked
-- Symlink/junction escape prevention — every path component resolved and verified
-- Read-only mode, configurable size limits
-- 7 operations: `read_file`, `write_file`, `edit_file`, `list_directory`, `search_files`, `grep`, `file_info`
-
-### Tool-level protections
-
-- **CLI**: Shell metacharacter injection blocked (`;`, `|`, `&&`, `` ` ``, `$()`). Allow/deny wildcard patterns with case-insensitive matching.
-- **HTTP** (OpenAPI / DirectHttp): SSRF protection rejects path traversal, encoded characters, and absolute URL injection.
-- **MCP**: Process isolation for external servers.
-
-## Built-in Tools
-
-| Type | What it does |
-|------|-------------|
-| **filesystem** | Sandboxed file access — read, write, edit, grep, search. Locked to a root directory with symlink escape prevention. |
-| **cli** | Shell commands with allow/deny lists and metacharacter blocking. |
-| **mcp** | Model Context Protocol servers over stdin/stdout. |
-| **openapi** | HTTP APIs described by an OpenAPI spec, with SSRF protection. |
-| **direct_http** | Lightweight HTTP calls to a base URL with path validation. |
-| **dapr** | Dapr service invocation through the sidecar. |
-
-## Plugins
-
-Plugins swap runtime services without rebuilding or restarting. They activate based on environment detection or explicit manifest configuration.
-
-| Plugin | What it provides |
-|--------|-----------------|
-| **dapr** | Event bus and tool connector via Dapr sidecar |
-| **vault** | Secret provider backed by HashiCorp Vault |
-| **webhook** | Event bus that posts domain events to a URL |
-| **http** | Named HTTP clients for custom integrations |
-
-```jsonc
-"plugins": {
-  "vault": {
-    "type": "vault",
-    "config": {
-      "address": "https://vault.example.com"
-      // token resolved from VAULT_TOKEN env var
-    }
-  }
-}
-```
-
-## Presets
-
-| Preset | What you get |
-|--------|-------------|
-| **starter** | One assistant, no tools — the simplest possible workspace. |
-| **coding-assistant** | An assistant with git and filesystem tools, ready for code tasks. |
-| **research** | An assistant with web and document tools for gathering information. |
-| **multi-agent** | A supervisor and worker assistants for more complex workflows. |
-
-```bash
-weave workspace new demo --preset coding-assistant
-```
-
-## CLI
+The target execution path is:
 
 ```text
-weave workspace new <name>          Create a new workspace
-weave workspace up <name>           Start a workspace
-weave workspace down <name>         Stop a workspace
-weave workspace status <name>       See what is happening
-
-weave workspace add agent <name>    Add an assistant
-weave workspace add tool <name>     Add a tool
-weave workspace add target <name>   Add a deployment target
-
-weave workspace show <name>         Show the current configuration
-weave workspace validate <name>     Check that everything is correct
-weave workspace publish <name>      Generate deployment files
-weave workspace presets             Browse preset templates
-
-weave workspace list                List all workspaces
-weave workspace remove <name>       Remove a workspace
-
-weave storage show                  Show current storage backend
-weave storage change <backend>      Switch storage (stop server first)
-
-weave data export <name>            Export workspace to portable JSON
-weave data import <file>            Import workspace from export file
-
-weave marketplace list              Browse published marketplace items
-weave marketplace search <query>    Search the marketplace
-weave marketplace submit            Submit a new tool configuration
-weave marketplace publish <id>      Publish after security review
-weave marketplace info <id>         Show item details
+authenticate the caller and establish trusted context
+  -> resolve the exact operation, installation, resource, and credential constraints
+  -> normalize and freeze the plan
+  -> authorize and obtain approval if required
+  -> revalidate permissions, target, and approval
+  -> persist the attempt and required local evidence
+  -> execute through the selected adapter
+  -> record the confirmed result or OutcomeUnknown
 ```
 
-## Architecture
+Preliminary access checks must precede disclosure of protected metadata. Approval binds to the actual plan: changing the account, target, operation revision, or meaningful inputs cannot silently reuse an old approval. Missing required authorization or recording prevents dispatch.
 
-Weave is built on [Orleans](https://learn.microsoft.com/dotnet/orleans/) — every agent, tool, workspace, and security boundary is an independent grain that can fail and recover without taking down the system.
+A timeout after dispatch may leave the outcome unknown. A local transaction cannot make an arbitrary external API execute exactly once; recovery needs provider-supported idempotency, status checks, or an explicit operator decision—not a blind replay.
+
+HTTP, MCP, CLI, and UI entry points should share these semantics as they are implemented. Adding another entrance must not create a less-governed route.
+
+### Existing integrations, not a replacement ecosystem
+
+Weave's direction is to adapt existing MCP servers, command-line programs, and HTTP APIs before asking developers to build native plugins.
+
+A **plugin definition** describes contributions and requested permissions. A **plugin installation** is a configured instance with its own credentials, granted permissions, readiness, and lifecycle. Requested permissions are not granted permissions.
+
+| Installation ownership | Meaning |
+| --- | --- |
+| **Internal** | Weave manages the supported execution lifecycle. |
+| **External** | Another system manages the execution lifetime; Weave connects to it. |
+
+Ownership is independent of protocol, language, and trust. A Weave-launched MCP process and an independently operated MCP server can use the same protocol but have different lifecycle ownership. MCP/CLI/HTTP/gRPC describe interfaces; OpenAPI describes an API contract. A process, container, or WASM runtime describes execution placement—not permission or guaranteed isolation. gRPC/WASM support is not implied by this taxonomy.
+
+Operation identity must retain its provider/installation context and contract revision. Similarly named operations from different vendors are not automatically interchangeable.
+
+## What comes next
+
+Invocation ingress, verified review data, the read-only Dashboard and an explicit terminal decision flow are available. The next user-facing milestone is real-browser acceptance and connecting browser approve/reject controls to the existing reviewed decision endpoint. It must not turn an unexplained digest, stale preview or self-issued identity into approval. Generalized target/resource constraints and safe recovery from uncertain results remain explicit work.
+
+Then bring existing MCP/CLI/HTTP operations through the same path, add imported resource bindings and constrained credentials, and expand provisioning/reconciliation only for concrete workflows. A marketplace, hosted reasoning service, universal scheduler, or email/SMS infrastructure is not a prerequisite.
+
+The detailed semantics and acceptance cases live in [ARCHITECTURE.md](ARCHITECTURE.md). Implementation records describe what each increment actually delivered; a roadmap entry is not an API contract.
+
+## Architecture for contributors
+
+**Vertical Slice + Composition.** Features own their contracts, behavior, and state. A slice completes a use case; a host selects implementations. There is no compulsory Core/Application/Infrastructure hierarchy or matching stack inside every feature.
 
 ```text
-Workspace Manifest (JSONC)
-    |
-    v
-Silo (Orleans Host + ASP.NET Core APIs)
-    |
-    +-- Agent Grains (AI model integration, task management, chat pipeline)
-    +-- Tool Grains (connector dispatch, token validation, leak scanning)
-    +-- Security Grains (secret proxy, capability tokens)
-    +-- Plugin Service Broker (hot-swap Dapr, Vault, webhooks at runtime)
-    |
-    v
-Tool Connectors (FileSystem, CLI, MCP, OpenAPI, DirectHttp, Dapr)
+src/Weave.csproj   Product library; feature folders are directly under src/
+src/Agents/       Identity-related behavior retained from the current runtime
+src/Authority/    Grants and authorization
+src/Invocations/  Tool execution, durable approval/admission and verified review
+src/Plugins/      Plugin/discovery behavior
+src/Resources/    Existing identifiers; generalized resource lifecycle is a target
+hosts/            Executable hosts and their composition
+extensions/       Opt-in protocol, runtime, and persistence implementations
+tests/            .NET test projects
+tools/            Source generators
+scripts/          Repository checks and developer/release tooling
 ```
 
-The dashboard provides a live view of workspace status, agent activity, tool connections, and LLM costs.
+This is a map, not the full folder inventory. Add features when behavior needs them, not empty directories for roadmap nouns. Orleans is used by the current host; the target keeps it replaceable at appropriate runtime boundaries and out of external contracts. The reference application does not require a microservice per feature.
 
-## Documentation
+## Security boundaries
 
-- [Manifest Reference](docs/manifest-reference.md) — full schema for workspace JSONC files, including channels
-- [Tools](docs/tools.md) — connector interfaces, security features, and testing patterns
-- [Examples](docs/examples.md) — end-to-end workspace manifests, CLI usage, and code patterns
-- [Architecture docs](docs/) — subsystem documentation for Foundation, Workspaces, Assistants, Tools, Security, Deployment, and Runtime
+Weave can govern only the execution and credential paths it actually controls. An agent holding independent upstream credentials and unrestricted network access can bypass it.
 
-## Built With
+In-process plugins are trusted code; an interface or assembly loader is not a sandbox. Separate processes or containers require deliberate filesystem, network, process, and credential restrictions. Leak scanning and redaction reduce exposure but do not guarantee prevention of prompt injection or exfiltration.
 
-- [.NET 10](https://dotnet.microsoft.com/) and [Orleans](https://learn.microsoft.com/dotnet/orleans/) for the actor-based runtime
-- [Microsoft.Extensions.AI](https://devblogs.microsoft.com/dotnet/introducing-microsoft-extensions-ai-preview/) for model-agnostic AI integration
-- [Aspire](https://learn.microsoft.com/dotnet/aspire/) for local orchestration and observability
-- [Spectre.Console](https://spectreconsole.net/) for the interactive CLI
+A policy document, test badge, or approved architecture is not proof that those boundaries exist in a deployment. Review the [security remediation record](docs/implementation/2026-09-19-security-remediation.md) and [release-chain record](docs/implementation/2026-09-19-release-chain-security.md) for the changes and limits of those increments.
+
+## Contributing and documentation
+
+Read [AGENTS.md](AGENTS.md) for the shared development rules, verification commands, and change-safety requirements. It is the single repository instruction source for coding assistants; `CLAUDE.md` only imports it. Human contributors use the same build and review requirements.
+
+| Document | Purpose |
+| --- | --- |
+| [Architecture](ARCHITECTURE.md) | Target design, ownership, and security semantics. |
+| [Shared contributor instructions](AGENTS.md) | How to make and verify changes in this repository. |
+| [Implementation records](docs/implementation/) | Delivered increments, evidence, and known limits. |
+| [Manifest reference](docs/manifest-reference.md) | Existing workspace configuration, not the proposed control-plane API. |
+
+For a contribution or issue, identify the concrete operation or workflow, the expected outcome, and the failure case it needs to handle. Small, testable vertical slices are more useful than speculative infrastructure or a broad provider catalogue.
 
 ## License
 
-Dual-licensed under your choice of [MIT License](LICENSE-MIT) or [GNU Affero General Public License v3.0](LICENSE-AGPL).
+Dual-licensed under your choice of the [MIT License](LICENSE-MIT) or [GNU Affero General Public License v3.0](LICENSE-AGPL).
 
 SPDX: `MIT OR AGPL-3.0-or-later`.
