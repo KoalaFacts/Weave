@@ -6,11 +6,11 @@ using Weave.Tools.Tool;
 
 namespace Weave.Invocations;
 
-internal static class InvocationFingerprint
+public static class InvocationFingerprint
 {
     private const int MaxInputCharacters = 1_048_576;
 
-    public static InvocationRecord? Prepare(ToolInvocation request, CapabilityToken token,
+    internal static InvocationRecord? Prepare(ToolInvocation request, CapabilityToken token,
         string connectorType, DateTimeOffset now)
     {
         var id = request.InvocationId ?? InvocationId.From(Guid.NewGuid().ToString("N"));
