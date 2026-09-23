@@ -20,14 +20,15 @@ public sealed class AgentOnlyHttpSurfaceTests
     private static readonly JsonSerializerOptions JsonOptions = new(JsonSerializerDefaults.Web);
 
     [Fact]
-    public async Task Start_AgentOnly_RegistersOnlyThreeGovernedApiRoutes()
+    public async Task Start_AgentOnly_RegistersOnlyFiveGovernedApiRoutes()
     {
         await using var fx = new Fixture();
         _ = fx.Client;
         var routes = fx.Host.Services.GetRequiredService<EndpointDataSource>().Endpoints
             .OfType<RouteEndpoint>().Select(e => e.RoutePattern.RawText!).ToArray();
         routes.Where(r => r.StartsWith("/api", StringComparison.Ordinal)).Order().ToArray()
-            .ShouldBe(new[] { Pattern + "/", Pattern + "/{invocationId}", Pattern + "/{invocationId}/approval" }.Order().ToArray());
+            .ShouldBe(new[] { Pattern + "/", Pattern + "/{invocationId}", Pattern + "/{invocationId}/approval",
+                Pattern + "/{invocationId}/proposal", Pattern + "/{invocationId}/resume" }.Order().ToArray());
         routes.ShouldNotContain(r => r.Contains("openapi", StringComparison.OrdinalIgnoreCase)
             || r.Contains("scalar", StringComparison.OrdinalIgnoreCase));
     }
@@ -40,6 +41,8 @@ public sealed class AgentOnlyHttpSurfaceTests
     [InlineData("GET", "/scalar/v1")]
     [InlineData("POST", Prefix + "/14bd2b92c8a34fdd8c79cb62eab32a13/approval/review")]
     [InlineData("POST", Prefix + "/14bd2b92c8a34fdd8c79cb62eab32a13/approval/decision")]
+    [InlineData("GET", Prefix + "/14bd2b92c8a34fdd8c79cb62eab32a13/approval/review")]
+    [InlineData("POST", Prefix + "/14bd2b92c8a34fdd8c79cb62eab32a13/decision")]
     public async Task Send_AgentOnly_AdministrativeAndOperatorRoutesAreAbsent(string method, string path)
     {
         await using var fx = new Fixture();

@@ -213,7 +213,9 @@ public sealed partial class UuidProposalRecoveryTests : IDisposable
         // A retained version-one store is not mistaken for an old schema upgrade.
         using var connection = new SqliteConnection(new SqliteConnectionStringBuilder
         {
-            DataSource = Path.Combine(_root, "journal.db"), Mode = SqliteOpenMode.ReadWrite, Pooling = false
+            DataSource = Path.Combine(_root, "journal.db"),
+            Mode = SqliteOpenMode.ReadWrite,
+            Pooling = false
         }.ToString());
         connection.Open();
         using var command = connection.CreateCommand();
@@ -221,7 +223,8 @@ public sealed partial class UuidProposalRecoveryTests : IDisposable
         Convert.ToInt64(command.ExecuteScalar(), System.Globalization.CultureInfo.InvariantCulture).ShouldBe(1);
         var options = Microsoft.Extensions.Options.Options.Create(new InvocationJournalOptions
         {
-            DatabasePath = Path.Combine(_root, "journal.db"), RequireExistingStorage = true
+            DatabasePath = Path.Combine(_root, "journal.db"),
+            RequireExistingStorage = true
         });
         Should.Throw<SqliteException>(() => new Weave.Security.Sqlite.SqliteInvocationJournal(options));
         command.CommandText = "SELECT COUNT(*) FROM sqlite_master WHERE type='table' AND name='invocation_proposals';";
@@ -247,8 +250,11 @@ public sealed partial class UuidProposalRecoveryTests : IDisposable
 
     private static ToolInvocation Request() => new()
     {
-        InvocationId = InvocationId.From(Guid.NewGuid().ToString("N")), ToolName = "files", Method = "write_file",
-        Parameters = new() { ["path"] = "note.txt" }, RawInput = Proposed
+        InvocationId = InvocationId.From(Guid.NewGuid().ToString("N")),
+        ToolName = "files",
+        Method = "write_file",
+        Parameters = new() { ["path"] = "note.txt" },
+        RawInput = Proposed
     };
 
     private static async Task<JsonElement> Json(HttpResponseMessage response) =>
@@ -262,9 +268,10 @@ public sealed partial class UuidProposalRecoveryTests : IDisposable
 
     private sealed class Clock : TimeProvider
     {
-        private DateTimeOffset _now = new(2026, 9, 24, 0, 0, 0, TimeSpan.Zero);
-        public override DateTimeOffset GetUtcNow() => _now;
-        public void Advance(TimeSpan amount) => _now += amount;
+        private TimeSpan _offset;
+        // Orleans also consumes this registration; start aligned with its wall clock.
+        public override DateTimeOffset GetUtcNow() => TimeProvider.System.GetUtcNow() + _offset;
+        public void Advance(TimeSpan amount) => _offset += amount;
     }
 
     private sealed class Fixture : IAsyncDisposable
@@ -278,7 +285,7 @@ public sealed partial class UuidProposalRecoveryTests : IDisposable
         public ICapabilityTokenService Tokens => _host.Services.GetRequiredService<ICapabilityTokenService>();
         private IToolActor Tool => _host.Services.GetRequiredService<IVirtualActorProvider>().GetActor<IToolActor>(VirtualActorId.From("uuid-pilot/files"));
 
-        public Fixture(string root, TimeProvider clock, bool recovery = false)
+        public Fixture(string root, TimeProvider clock, bool recovery = false, bool requireApproval = true)
         {
             _root = root;
             Directory.CreateDirectory(Path.Combine(root, "tools"));
@@ -299,7 +306,7 @@ public sealed partial class UuidProposalRecoveryTests : IDisposable
                     {
                         options.DatabasePath = Path.Combine(root, "journal.db");
                         options.RequireExistingStorage = recovery;
-                        options.ApprovalRequiredGrants = ["tool:files:invoke:write_file"];
+                        options.ApprovalRequiredGrants = requireApproval ? ["tool:files:invoke:write_file"] : [];
                         options.ApprovalLifetime = TimeSpan.FromMinutes(5);
                     });
                 });
@@ -310,7 +317,10 @@ public sealed partial class UuidProposalRecoveryTests : IDisposable
 
         private CapabilityToken Token(string subject, HashSet<string> grants) => Tokens.Mint(new CapabilityTokenRequest
         {
-            WorkspaceId = "uuid-pilot", IssuedTo = subject, Grants = grants, Lifetime = TimeSpan.FromMinutes(5)
+            WorkspaceId = "uuid-pilot",
+            IssuedTo = subject,
+            Grants = grants,
+            Lifetime = TimeSpan.FromMinutes(5)
         });
         public CapabilityToken Agent() => Token("agent", ["invocation:read", "tool:files:invoke:write_file"]);
         public CapabilityToken Reader() => Token("agent", ["invocation:read", "invocation:proposal:read"]);
@@ -320,7 +330,8 @@ public sealed partial class UuidProposalRecoveryTests : IDisposable
             Directory.CreateDirectory(root ?? Path.GetDirectoryName(Target)!);
             await Tool.ConnectAsync(new ToolSpec
             {
-                Name = "files", Type = ToolType.FileSystem,
+                Name = "files",
+                Type = ToolType.FileSystem,
                 FileSystem = new Weave.Tools.Connectors.FileSystemToolConfig { Root = root ?? Path.GetDirectoryName(Target)! }
             }, Token("setup", ["tool:files:connect"]));
         }
@@ -341,7 +352,9 @@ public sealed partial class UuidProposalRecoveryTests : IDisposable
         {
             using var connection = new SqliteConnection(new SqliteConnectionStringBuilder
             {
-                DataSource = Path.Combine(_root, "journal.db"), Mode = SqliteOpenMode.ReadWrite, Pooling = false
+                DataSource = Path.Combine(_root, "journal.db"),
+                Mode = SqliteOpenMode.ReadWrite,
+                Pooling = false
             }.ToString());
             connection.Open();
             using var command = connection.CreateCommand();

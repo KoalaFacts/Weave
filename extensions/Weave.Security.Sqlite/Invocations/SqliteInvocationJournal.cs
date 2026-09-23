@@ -87,7 +87,8 @@ public sealed partial class SqliteInvocationJournal : IInvocationProposalJournal
                 candidate.Subject, candidate.ToolName, candidate.Operation, candidate.InputDigest) is null)
             return new InvocationClaim(false, candidate)
             {
-                BlockingReason = "proposal-unavailable", Approval = previousApproval
+                BlockingReason = "proposal-unavailable",
+                Approval = previousApproval
             };
         var admission = AdmitApproval(connection, transaction, candidate);
         if (proposal is not null && previousApproval is null
