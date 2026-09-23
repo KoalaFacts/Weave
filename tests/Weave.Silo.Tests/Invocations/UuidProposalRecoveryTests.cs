@@ -13,7 +13,7 @@ using Weave.Tools.Tool;
 
 namespace Weave.Silo.Tests.Invocations;
 
-public sealed class UuidProposalRecoveryTests : IDisposable
+public sealed partial class UuidProposalRecoveryTests : IDisposable
 {
     private readonly string _root = Path.Combine(Path.GetTempPath(), "weave-uuid-recovery-" + Guid.NewGuid().ToString("N"));
     private readonly Clock _clock = new();
@@ -329,9 +329,9 @@ public sealed class UuidProposalRecoveryTests : IDisposable
         {
             using var request = new HttpRequestMessage(method, "/api/workspaces/uuid-pilot/tools/files/invocations" + suffix);
             request.Headers.Add("X-Weave-Capability", WebEncoders.Base64UrlEncode(JsonSerializer.SerializeToUtf8Bytes(token,
-                new JsonSerializerOptions(JsonSerializerDefaults.Web))));
+                JsonSerializerOptions.Web)));
             if (body is not null)
-                request.Content = JsonContent.Create(body, options: new JsonSerializerOptions(JsonSerializerDefaults.Web));
+                request.Content = JsonContent.Create(body, options: JsonSerializerOptions.Web);
             return await Client.SendAsync(request, TestContext.Current.CancellationToken);
         }
 
