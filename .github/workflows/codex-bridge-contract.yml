@@ -1,0 +1,76 @@
+name: Codex Bridge Contract
+
+on:
+  pull_request:
+    branches: [main]
+    paths:
+      - 'examples/governed-tools/codex_bridge.py'
+      - 'examples/governed-tools/first_use.py'
+      - 'scripts/tests/test_codex_bridge*.py'
+      - 'hosts/Weave.Host/**'
+      - 'src/Invocations/**'
+      - '.github/workflows/codex-bridge-contract.yml'
+  workflow_dispatch:
+
+permissions:
+  contents: read
+
+jobs:
+  pending-boundary:
+    name: Real Host pending contract (not live Codex acceptance)
+    runs-on: ubuntu-latest
+    timeout-minutes: 10
+    steps:
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1
+        with:
+          persist-credentials: false
+      - uses: ./.github/actions/setup-dotnet
+      - name: Build ordinary Host
+        run: |
+          dotnet restore hosts/Weave.Host/Weave.Host.csproj --locked-mode
+          dotnet build hosts/Weave.Host/Weave.Host.csproj --no-restore -c Release /p:TreatWarningsAsErrors=true
+      - name: Verify pending and no operator side channel
+        env:
+          PYTHONPATH: examples/governed-tools
+        run: |
+          python3 - <<'PY'
+          from pathlib import Path
+          import tempfile
+          from first_use import Walkthrough, SOURCE, INTRO, BASE
+          from codex_bridge import Bridge, BridgeError
+          repo = Path.cwd()
+          dll = repo / 'hosts/Weave.Host/bin/Release/net10.0/Weave.Silo.dll'
+          with tempfile.TemporaryDirectory(prefix='weave-bridge-contract-') as directory:
+              root = Path(directory)
+              evidence = root / 'evidence'
+              evidence.mkdir()
+              fx = Walkthrough(repo, dll, evidence, root)
+              fx.config['Weave']['Operator']['Credentials']['pilot'] = {
+                  'WorkspaceId': 'first-use', 'IssuedTo': 'agent', 'Lifetime': '00:05:00',
+                  'Grants': ['tool:files:invoke:read_file', 'tool:files:invoke:write_file', 'invocation:read']}
+              try:
+                  fx.start()
+                  fx.call('POST', '/api/operator/tools/files/connect', 204, operator=True)
+                  agent = Bridge(BASE, 'first-use', 'files', root / 'agent-requests', fx.issue('pilot'))
+                  read = agent.call_tool('read_document', {'path': 'meeting.txt'})
+                  assert read['http_status'] == 200 and read['result']['output'] == SOURCE
+                  proposal = {'request_key': 'contract-only', 'path': 'summary.md', 'content': 'Transport contract, not model output.'}
+                  pending = agent.call_tool('submit_write', proposal)
+                  assert pending['http_status'] == 202 and pending['result']['errorCode'] == 'approval-pending'
+                  assert fx.target.read_text(encoding='utf-8') == INTRO
+                  state = agent.call_tool('resume_write', {'request_key': 'contract-only'})
+                  assert state['approval']['result']['approvalState'] == 'Pending'
+                  assert fx.target.read_text(encoding='utf-8') == INTRO
+                  repeated = agent.call_tool('submit_write', proposal)
+                  assert repeated['invocation_id'] == pending['invocation_id']
+                  try:
+                      agent.call_tool('approve', {'request_key': 'contract-only'})
+                  except BridgeError:
+                      pass
+                  else:
+                      raise AssertionError('An operator tool was exposed to the Agent.')
+                  assert fx.target.read_text(encoding='utf-8') == INTRO
+                  print('PASS real Host read/pending/query-only/no-approval-tool boundary; no model or human decision ran.')
+              finally:
+                  fx.stop()
+          PY
