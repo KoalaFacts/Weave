@@ -1,10 +1,11 @@
 #!/usr/bin/env python3
-"""Four MCP stdio tools over existing governed HTTP; no approval or operator API.
+"""Four MCP stdio tools over governed HTTP; the server owns persisted proposal bodies.
 
-Run in the Agent environment, never with the Host's files or administrator secrets.
-The Host MUST require human approval for write_file. This adapter is not a sandbox.
+Run in the Agent environment without Host files or administrator secrets.
+The Host MUST require approval for write_file. This adapter is not a sandbox.
 """
 import argparse
+import hashlib
 import json
 import os
 from pathlib import Path
@@ -14,18 +15,18 @@ from urllib import error, parse, request
 import uuid
 
 MAX_BYTES = 1_048_576
-INSTRUCTIONS = ('Use one request_key per intended write and retain it. A Pending response is NOT '
-                'execution success. Stop and ask the human to review the exact saved request with '
-                'their separate reviewer tool. Never approve yourself. Query get_status after '
-                'interruptions; resume_write only sends the original request if the server reports '
-                'Approved and no admitted outcome. Never replace an unknown outcome with a new key.')
-FIELDS = {'read_document': ('path',), 'submit_write': ('request_key', 'path', 'content'),
-          'get_status': ('request_key',), 'resume_write': ('request_key',)}
+INSTRUCTIONS = ('Choose and retain one invocation_id UUID before each intended write. Pending is NOT '
+                'execution success. Ask the human to review that UUID using their separate reviewer. '
+                'Never approve yourself. Query get_status after interruptions. resume_write sends only '
+                'the UUID after server Approved and no admitted outcome, using current authority. '
+                'Never replace an unknown outcome with a new UUID. Local receipts contain no proposal body.')
+FIELDS = {'read_document': ('path',), 'submit_write': ('invocation_id', 'path', 'content'),
+          'get_status': ('invocation_id',), 'resume_write': ('invocation_id',)}
 DESCRIPTIONS = {
     'read_document': 'Read a document from the configured Weave tool, not the local disk.',
-    'submit_write': 'Submit a write under Host policy; human-demo Host must require approval. Saves exact input before sending. Repeated key queries only.',
-    'get_status': 'Query the saved invocation and, when not admitted, its approval. No writes.',
-    'resume_write': 'After human approval, send the exact saved request with current authority. Never edit or auto-retry.',
+    'submit_write': 'Create a frozen server proposal using a retained UUID. Host must require approval. Known UUIDs are queried, not automatically executed.',
+    'get_status': 'Query server invocation and approval by UUID; needs no local body file. No writes.',
+    'resume_write': 'After human approval, continue the server-owned original by UUID and current authority. No uploaded body or automatic retry.',
 }
 
 
@@ -55,15 +56,23 @@ def invalid_constant(_):
 
 def load(data):
     if len(data) > MAX_BYTES:
-        raise BridgeError('Response or saved request exceeds the bridge byte limit.')
-    return json.loads(data, object_pairs_hook=unique,
-                      parse_constant=invalid_constant)
+        raise BridgeError('Response or receipt exceeds the bridge byte limit.')
+    return json.loads(data, object_pairs_hook=unique, parse_constant=invalid_constant)
 
 
 def component(value):
     if not isinstance(value, str) or not re.fullmatch(r'[A-Za-z0-9_-]{1,64}', value):
         raise BridgeError('Use a bounded alphanumeric identifier with hyphens or underscores.')
     return value
+
+
+def identifier(value):
+    if not isinstance(value, str) or not re.fullmatch(r'[0-9a-fA-F]{32}|[0-9a-fA-F]{8}(-[0-9a-fA-F]{4}){3}-[0-9a-fA-F]{12}', value):
+        raise BridgeError('Supply a nonzero invocation UUID, not a file name or request alias.')
+    parsed = uuid.UUID(value)
+    if not parsed.int:
+        raise BridgeError('Supply a nonzero invocation UUID.')
+    return parsed.hex
 
 
 def endpoint(value):
@@ -97,7 +106,7 @@ class Bridge:
         self.root = Path(directory)
         self.root.mkdir(mode=0o700, parents=True, exist_ok=True)
         if self.root.is_symlink():
-            raise BridgeError('Request storage must not be a symbolic link.')
+            raise BridgeError('Receipt storage must not be a symbolic link.')
         self.save('context', {'origin': self.url, 'workspace': self.workspace, 'tool': self.tool})
         self.route = f'/api/workspaces/{self.workspace}/tools/{self.tool}/invocations'
         self.http = request.build_opener(request.ProxyHandler({}), NoRedirect())
@@ -105,7 +114,7 @@ class Bridge:
     def read(self, key):
         path = self.root / (component(key) + '.json')
         if path.is_symlink():
-            raise BridgeError('Saved requests must not be symbolic links.')
+            raise BridgeError('Receipts must not be symbolic links.')
         with path.open('rb') as source:
             return load(source.read(MAX_BYTES + 1))
 
@@ -115,13 +124,12 @@ class Bridge:
             descriptor = os.open(self.root / (component(key) + '.json'), os.O_WRONLY | os.O_CREAT | os.O_EXCL, 0o600)
         except FileExistsError:
             if self.read(key) != value:
-                raise BridgeError('Saved context or request differs; it cannot be overwritten.') from None
+                raise BridgeError('Saved context or UUID input differs; it cannot be overwritten.') from None
             return
         with os.fdopen(descriptor, 'wb') as output:
             output.write(data)
             output.flush()
             os.fsync(output.fileno())
-        # Saved payloads are retry evidence, not another authorization or approval store.
 
     def send(self, method, suffix='', body=None):
         try:
@@ -137,29 +145,16 @@ class Bridge:
                 if not 200 <= status < 300:
                     return {'http_status': status, 'result': None, 'next': 'Do not claim success or retry automatically.'}
                 if response.headers.get_content_type() != 'application/json':
-                    raise BridgeError('Unexpected response type; query the retained ID, do not repeat the effect.')
+                    raise BridgeError('Unexpected response type; query the retained UUID, do not repeat the effect.')
                 payload = load(response.read(MAX_BYTES + 1))
                 if not isinstance(payload, dict):
-                    raise BridgeError('Invalid response shape; query the retained ID.')
+                    raise BridgeError('Invalid response shape; query the retained UUID.')
             return {'http_status': status, 'result': payload}
         except (error.URLError, OSError, TimeoutError, ValueError, RecursionError):
-            return {'http_status': None, 'result': None, 'next': 'Outcome unconfirmed. Query the retained ID; do not create another key or auto-retry.'}
+            return {'http_status': None, 'result': None, 'next': 'Outcome unconfirmed. Query the retained UUID; do not create another UUID or auto-retry.'}
 
-    def saved(self, key):
-        component(key)
-        if key == 'context':
-            raise BridgeError('This request key is reserved.')
-        value = self.read(key)
-        if (not isinstance(value, dict) or set(value) != {'invocationId', 'toolName', 'method', 'parameters', 'rawInput'}
-                or not re.fullmatch(r'[0-9a-f]{32}', str(value['invocationId'])) or int(value['invocationId'], 16) == 0
-                or value['toolName'] != self.tool or value['method'] != 'write_file'
-                or not isinstance(value['parameters'], dict) or set(value['parameters']) != {'path'}
-                or not isinstance(value['parameters']['path'], str) or not isinstance(value['rawInput'], str)):
-            raise BridgeError('Saved write has an invalid shape; do not infer permission to retry.')
-        return value
-
-    def status(self, saved):
-        suffix = '/' + saved['invocationId']
+    def status(self, invocation_id):
+        suffix = '/' + identifier(invocation_id)
         outcome = self.send('GET', suffix)
         if outcome['http_status'] != 404:
             return {'invocation': outcome, 'approval': None}
@@ -168,7 +163,7 @@ class Bridge:
     def call_tool(self, name, args):
         if name not in FIELDS or not isinstance(args, dict) or set(args) != set(FIELDS[name]):
             raise BridgeError('Unknown tool or arguments. No operator or arbitrary HTTP operations are exposed.')
-        if not all(isinstance(v, str) for v in args.values()):
+        if not all(isinstance(value, str) for value in args.values()):
             raise BridgeError('Tool arguments must be strings.')
         encode(args)
         if 'path' in args and (not args['path'] or len(args['path']) > 1024 or '\x00' in args['path']):
@@ -177,29 +172,33 @@ class Bridge:
             body = {'invocationId': uuid.uuid4().hex, 'toolName': self.tool, 'method': 'read_file',
                     'parameters': {'path': args['path']}}
             return {**self.send('POST', body=body), 'invocation_id': body['invocationId']}
-        key = component(args['request_key'])
-        if key == 'context':
-            raise BridgeError('This request key is reserved.')
+        invocation_id = identifier(args['invocation_id'])
         if name == 'submit_write':
+            body = {'invocationId': invocation_id, 'toolName': self.tool, 'method': 'write_file',
+                    'parameters': {'path': args['path']}, 'rawInput': args['content']}
+            receipt = {'invocationId': invocation_id, 'inputSha256': hashlib.sha256(encode(body)).hexdigest()}
             try:
-                saved = self.saved(key)
+                prior = self.read(invocation_id)
             except FileNotFoundError:
-                saved = {'invocationId': uuid.uuid4().hex, 'toolName': self.tool, 'method': 'write_file',
-                         'parameters': {'path': args['path']}, 'rawInput': args['content']}
-                self.save(key, saved)  # Must finish before the first network side effect.
-                return {**self.send('POST', body=saved), 'request_key': key, 'invocation_id': saved['invocationId']}
-            if saved['parameters'] != {'path': args['path']} or saved['rawInput'] != args['content']:
-                raise BridgeError('Changed content cannot reuse this request key or its approval.')
-        else:
-            saved = self.saved(key)
-        state = self.status(saved)
+                prior = None
+            if prior is not None and prior != receipt:
+                raise BridgeError('Changed content cannot reuse this UUID or its approval.')
+            state = self.status(invocation_id)
+            approval = state['approval']
+            if prior is None and approval is not None and approval['http_status'] == 404:
+                # No earlier local submission or server record. Retain identity/hash BEFORE POST,
+                # but never make a body file necessary for subsequent review/status/continuation.
+                self.save(invocation_id, receipt)
+                return {**self.send('POST', body=body), 'invocation_id': invocation_id}
+            return {**state, 'invocation_id': invocation_id}
+        state = self.status(invocation_id)
         approval = state['approval']
         if (name == 'resume_write' and approval and approval['http_status'] == 200
                 and approval['result'].get('approvalState') == 'Approved'):
-            result = self.send('POST', body=saved)
+            result = self.send('POST', '/' + invocation_id + '/resume')
         else:
             result = state
-        return {**result, 'request_key': key, 'invocation_id': saved['invocationId']}
+        return {**result, 'invocation_id': invocation_id}
 
 
 def serve(bridge):
@@ -221,7 +220,7 @@ def serve(bridge):
             if method == 'initialize':
                 initialized = True
                 result = {'protocolVersion': '2024-11-05', 'capabilities': {'tools': {}},
-                          'serverInfo': {'name': 'weave-governed-files', 'version': '0.1.0'}, 'instructions': INSTRUCTIONS}
+                          'serverInfo': {'name': 'weave-governed-files', 'version': '0.2.0'}, 'instructions': INSTRUCTIONS}
             elif method == 'ping':
                 result = {}
             elif not ready:
@@ -240,7 +239,7 @@ def serve(bridge):
                 except BridgeError as failure:
                     result = {'content': [{'type': 'text', 'text': str(failure)}], 'isError': True}
                 except (OSError, ValueError, RecursionError):
-                    result = {'content': [{'type': 'text', 'text': 'Request not confirmed. Check arguments, saved request and current authority. Never auto-retry with a new key.'}], 'isError': True}
+                    result = {'content': [{'type': 'text', 'text': 'Request not confirmed. Check UUID, arguments and current authority. Never auto-retry with a new UUID.'}], 'isError': True}
             else:
                 raise BridgeError('Unsupported method.')
             reply['result'] = result
@@ -257,7 +256,7 @@ def main():
     parser.add_argument('--url', required=True)
     parser.add_argument('--workspace', required=True)
     parser.add_argument('--tool', default='files')
-    parser.add_argument('--requests', type=Path, required=True)
+    parser.add_argument('--requests', type=Path, required=True, help='Private UUID/hash receipt directory; no proposal bodies')
     args = parser.parse_args()
     try:
         if any(os.environ.get(key) for key in ('WEAVE_OPERATOR_KEY', 'WEAVE_REVIEW_CAPABILITY',
