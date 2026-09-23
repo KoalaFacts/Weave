@@ -39,10 +39,11 @@ The current code is the starting point for the control plane, not an empty scaff
 | Workspaces and agents | Manifest-based configuration, a CLI, and an Orleans-backed host/runtime. | Agent actor keys remain `{workspaceId}/{agentName}`. Portable identity is not implemented by moving files. |
 | Tool execution | `ToolActor` separates connection permission from `tool:<name>:invoke:<operation>` grants, normalizes adapter selectors, and rechecks authority before dispatch. Agent tool availability alone does not mint execution rights. | This is operation selection within the current workspace/tool model, not generalized resource/account constraints or installation revisions. |
 | Invocation recording | The host requires an on-disk SQLite journal. Intent, authorization evidence and a distinct attempt are committed before dispatch; recording failure blocks the call. Stable IDs prevent repeat dispatch against that journal, and owner-scoped outcome lookup works after Host restart. | Single-host/preserved-file scope, metadata rather than response-body storage, no automatic unknown-outcome recovery or cluster-wide guarantee. |
-| Durable approval | Configured filesystem operations wait for an independently authorized, exact-plan decision. Approval is consumed atomically with attempt admission; the original request must be resubmitted with current authority. | Reviewed HTTP decisions are separately opt-in. Filesystem is the first target-binding adapter; unsupported required targets fail closed. |
-| Governed HTTP entry | Opt-in routes submit invocations and query outcomes/approval status using already signed capability tokens. | Not public token issuance or self-service onboarding. Global API auth remains separate; restrict exposure to the governed routes. |
-| Verified approval review | An independent reviewer submits the retained request; a read-only endpoint and Dashboard screen at `/approvals/review` display inputs and registered-target information only when they match the pending plan. | The screen verifies and displays; it has no approve/reject/execute action. A snapshot is not an approval receipt. No reviewer-side secret resolution; unsupported or changed effective inputs fail closed. |
-| Operator decisions | A Python terminal example displays complete escaped review data and requires explicit digest-bound confirmation. The decision endpoint revalidates content before recording approve/reject without executing. | Requires administrator-provisioned connections and credentials. The Dashboard remains read-only; browser decision actions and human login are not implemented. |
+| Stored proposals | A separate table in the same journal transaction retains immutable original input. Authorized UUID routes retrieve, review, decide and resume without a client body file. | New retained inputs only; historical missing bodies are not invented. Proposal storage contains confidential plaintext and needs protected retention/backups. UUID is not authority. |
+| Durable approval | Configured filesystem operations wait for an independently authorized, exact-plan decision. Approval is consumed atomically with attempt admission; current execution authority is still required. | Reviewed HTTP decisions are separately opt-in. Filesystem is the first target-binding adapter; unsupported required targets fail closed. |
+| Governed HTTP entry | Opt-in routes submit invocations and query outcomes/approval status using already signed capability tokens. UUID proposal/resume routes preserve those checks. | Global API auth remains separate. The explicit protected operator profile provides controlled onboarding, not anonymous self-service. |
+| Verified approval review | An independent reviewer can retrieve a stored proposal by UUID for exact-plan verification. The existing read-only Dashboard at `/approvals/review` still uses explicit original-input verification. | The screen has no approve/reject/execute action. A snapshot is not an approval receipt. No reviewer-side secret resolution; unsupported or changed effective inputs fail closed. |
+| Operator decisions | A Python terminal example fetches a verified proposal by UUID, displays complete escaped data and requires explicit digest-bound confirmation. The decision endpoint revalidates content before recording approve/reject without executing. | Requires administrator-provisioned connections and credentials. The Dashboard remains read-only; browser decision actions and human login are not implemented. |
 | Connectors | MCP over stdio and HTTP/SSE, CLI, filesystem, OpenAPI, Direct HTTP, and Dapr extension projects. | An outbound MCP connector is not an inbound MCP governance server. Protocol coverage and security controls differ by adapter. |
 | Authentication and credentials | Signed capability tokens, revocation handling, secret-protection code, and API authentication that rejects broken enabled configurations. | API auth defaults to `none`. The built-in bearer mode is a shared token, not a complete OAuth/OIDC or tenant identity system. |
 | Verification | Automated tests, dependency auditing, CI, and release-source/package validation. | Passing checks does not establish complete tenant isolation, generalized provider approval coverage, or a sandbox for untrusted code. |
@@ -53,11 +54,13 @@ Relevant implementation: [tool dispatch](src/Invocations/InvokeTool/ToolActor.cs
 
 **Invocation recording:** the host defaults to `~/.weave/invocations.db`; configure `Weave:Invocations:DatabasePath` for a persistent local path. There is no production in-memory fallback. Retain a caller-generated `InvocationId` before sending when response-loss recovery matters: omitted IDs create new logical calls. `IToolActor.GetInvocationAsync` requires separate `invocation:read` authority and the original workspace, tool and token subject. Queries and duplicate submissions return outcome metadata, not the original response body. Unknown outcomes must not be retried under a fresh ID. Read the [journal scope, query and migration notes](docs/implementation/2026-09-19-durable-invocations.md); separate silo-local files do not provide distributed deduplication.
 
-**Durable approval:** configure `Weave:Invocations:ApprovalRequiredGrants` explicitly; its default is empty. The operator uses `IToolActor.GetApprovalAsync` and `DecideApprovalAsync`; approval does not itself dispatch or grant execution permission. An approver needs `approval:decide` and the exact tool-operation approval grant, and cannot approve its own request. The original caller resumes by resubmitting the same ID and request. Read the [approval configuration, decision and restart guide](docs/implementation/2026-09-20-durable-approval.md) before using it. Keep the journal outside agent-readable or writable tool roots and protect its files; it is not encrypted or tamper-proof audit storage.
+**UUID proposals:** new requests persist their original input separately from audit metadata. Owners need both `invocation:read` and `invocation:proposal:read` to retrieve the body; reviewers use the independent exact-operation review path. Current execution rights are rechecked on empty-body UUID resume. The [proposal storage and API guide](docs/implementation/2026-09-24-authorized-proposal-uuid.md) describes the additive schema upgrade, confidential-content retention, terminal/MCP migration and missing historical-body behavior. No generic file/resource catalogue, response-body cache or automatic backfill is implied.
 
-**HTTP and readable review:** see the [capability-authenticated ingress guide](docs/implementation/2026-09-20-governed-http-entry.md) and [verified review contract](docs/implementation/2026-09-20-verified-approval-review.md). Review matches the retained original request and current target before returning content; it neither approves nor executes. The [read-only Dashboard screen](docs/implementation/2026-09-20-operator-review-screen.md) displays the complete verified content, target, digest and expiry. Enable it explicitly with `Weave:Review:Enabled` and an administrator-selected `Weave:Review:BaseUrl`. The journal does not supply a lost request body, and an old preview cannot override later changes or expiry. Human login, browser decision actions and real-browser acceptance remain separate work.
+**Durable approval:** configure `Weave:Invocations:ApprovalRequiredGrants` explicitly; its default is empty. The operator uses `IToolActor.GetApprovalAsync` and `DecideApprovalAsync`; approval does not itself dispatch or grant execution permission. An approver needs `approval:decide` and the exact tool-operation approval grant, and cannot approve its own request. The original caller resumes the same ID with current execution authority; UUID HTTP resume retrieves the input server-side. Read the [approval configuration, decision and restart guide](docs/implementation/2026-09-20-durable-approval.md) before using it. Keep the journal outside agent-readable or writable tool roots and protect its files; it is not encrypted or tamper-proof audit storage.
 
-**Reviewed decisions:** the [terminal operator example](examples/governed-tools/README.md) provides complete escaped review and explicit approval/rejection through the separately enabled [reviewed decision endpoint](docs/implementation/2026-09-20-reviewed-approval-decisions.md). Enable `Weave:Invocations:Http:DecisionsEnabled` in addition to the governed HTTP profile. A decision re-verifies the original request and target; it neither executes the tool nor grants execution authority. The existing Dashboard is not changed into a decision surface by enabling this endpoint.
+**HTTP and readable review:** see the [capability-authenticated ingress guide](docs/implementation/2026-09-20-governed-http-entry.md), [verified review contract](docs/implementation/2026-09-20-verified-approval-review.md) and current [UUID extension](docs/implementation/2026-09-24-authorized-proposal-uuid.md). Review matches the original request and current target before returning content; it neither approves nor executes. The [read-only Dashboard screen](docs/implementation/2026-09-20-operator-review-screen.md) displays the complete verified content, target, digest and expiry. Enable it explicitly with `Weave:Review:Enabled` and an administrator-selected `Weave:Review:BaseUrl`. That screen retains its explicit-input mode; new UUID terminal/API access does not require uploading a body. Historical absent bodies remain unavailable, and an old preview cannot override later changes or expiry. Human login, browser decision actions and real-browser acceptance remain separate work.
+
+**Reviewed decisions:** the [terminal operator example](examples/governed-tools/README.md) provides complete escaped review and explicit approval/rejection through the separately enabled reviewed decision endpoints. Prefer `review.py --invocation-id <UUID> --tool files` with the configured URL/workspace; no copied JSON file is required for a stored proposal. Enable `Weave:Invocations:Http:DecisionsEnabled` in addition to the governed HTTP profile. A decision re-verifies the original request and target; it neither executes the tool nor grants execution authority. The existing Dashboard is not changed into a decision surface by enabling this endpoint.
 
 The existing Agent Runtime, memory, skills, channels, and other features remain in the repository. They are not prerequisites for the new Governed Tools profile. The current executable host still composes the existing runtime; extracting an extension does not, by itself, deliver every proposed deployment profile.
 
@@ -151,68 +154,19 @@ HTTP, MCP, CLI, and UI entry points should share these semantics as they are imp
 
 Weave's direction is to adapt existing MCP servers, command-line programs, and HTTP APIs before asking developers to build native plugins.
 
-A **plugin definition** describes contributions and requested permissions. A **plugin installation** is a configured instance with its own credentials, granted permissions, readiness, and lifecycle. Requested permissions are not granted permissions.
+A **plugin definition** describes contributions and requested permissions. A **plugin installation** identifies a Tenant-scoped configured instance with its own credentials, granted permissions, readiness, and lifecycle. Requested permissions are not granted permissions.
 
 | Installation ownership | Meaning |
 | --- | --- |
 | **Internal** | Weave manages the supported execution lifecycle. |
-| **External** | Another system manages the execution lifetime; Weave connects to it. |
+| **External** | Another system manages execution lifetime; Weave connects to it. |
 
-Ownership is independent of protocol, language, and trust. A Weave-launched MCP process and an independently operated MCP server can use the same protocol but have different lifecycle ownership. MCP/CLI/HTTP/gRPC describe interfaces; OpenAPI describes an API contract. A process, container, or WASM runtime describes execution placement—not permission or guaranteed isolation. gRPC/WASM support is not implied by this taxonomy.
+Ownership is independent of protocol, language, and trust. A Weave-launched MCP process and an independently operated MCP server can use the same protocol but have different lifecycle ownership. MCP/CLI/HTTP/gRPC describe interfaces/adapters, not exclusive plugin kinds. OpenAPI describes an API contract. A process, container, or WASM runtime describes execution placement—not permission or guaranteed isolation. gRPC/WASM support is not implied by this taxonomy.
 
 Operation identity must retain its provider/installation context and contract revision. Similarly named operations from different vendors are not automatically interchangeable.
 
 ## What comes next
 
-Invocation ingress, verified review data, the read-only Dashboard and an explicit terminal decision flow are available. The next user-facing milestone is real-browser acceptance and connecting browser approve/reject controls to the existing reviewed decision endpoint. It must not turn an unexplained digest, stale preview or self-issued identity into approval. Generalized target/resource constraints and safe recovery from uncertain results remain explicit work.
+Invocation ingress, UUID proposal access, verified review data, the read-only Dashboard and an explicit terminal decision flow are available. The separate Codex/human pilot still requires actual model, human-decision and isolation evidence. Follow the agreed scope in [PLAN.md](PLAN.md); do not treat this implementation as authorization for another workstream. Browser decision controls, generalized resource constraints and safe recovery from uncertain external results remain separate target capabilities.
 
-Then bring existing MCP/CLI/HTTP operations through the same path, add imported resource bindings and constrained credentials, and expand provisioning/reconciliation only for concrete workflows. A marketplace, hosted reasoning service, universal scheduler, or email/SMS infrastructure is not a prerequisite.
-
-The detailed semantics and acceptance cases live in [ARCHITECTURE.md](ARCHITECTURE.md). Implementation records describe what each increment actually delivered; a roadmap entry is not an API contract.
-
-## Architecture for contributors
-
-**Vertical Slice + Composition.** Features own their contracts, behavior, and state. A slice completes a use case; a host selects implementations. There is no compulsory Core/Application/Infrastructure hierarchy or matching stack inside every feature.
-
-```text
-src/Weave.csproj   Product library; feature folders are directly under src/
-src/Agents/       Identity-related behavior retained from the current runtime
-src/Authority/    Grants and authorization
-src/Invocations/  Tool execution, durable approval/admission and verified review
-src/Plugins/      Plugin/discovery behavior
-src/Resources/    Existing identifiers; generalized resource lifecycle is a target
-hosts/            Executable hosts and their composition
-extensions/       Opt-in protocol, runtime, and persistence implementations
-tests/            .NET test projects
-tools/            Source generators
-scripts/          Repository checks and developer/release tooling
-```
-
-This is a map, not the full folder inventory. Add features when behavior needs them, not empty directories for roadmap nouns. Orleans is used by the current host; the target keeps it replaceable at appropriate runtime boundaries and out of external contracts. The reference application does not require a microservice per feature.
-
-## Security boundaries
-
-Weave can govern only the execution and credential paths it actually controls. An agent holding independent upstream credentials and unrestricted network access can bypass it.
-
-In-process plugins are trusted code; an interface or assembly loader is not a sandbox. Separate processes or containers require deliberate filesystem, network, process, and credential restrictions. Leak scanning and redaction reduce exposure but do not guarantee prevention of prompt injection or exfiltration.
-
-A policy document, test badge, or approved architecture is not proof that those boundaries exist in a deployment. Review the [security remediation record](docs/implementation/2026-09-19-security-remediation.md) and [release-chain record](docs/implementation/2026-09-19-release-chain-security.md) for the changes and limits of those increments.
-
-## Contributing and documentation
-
-Read [AGENTS.md](AGENTS.md) for the shared development rules, verification commands, and change-safety requirements. It is the single repository instruction source for coding assistants; `CLAUDE.md` only imports it. Human contributors use the same build and review requirements.
-
-| Document | Purpose |
-| --- | --- |
-| [Architecture](ARCHITECTURE.md) | Target design, ownership, and security semantics. |
-| [Shared contributor instructions](AGENTS.md) | How to make and verify changes in this repository. |
-| [Implementation records](docs/implementation/) | Delivered increments, evidence, and known limits. |
-| [Manifest reference](docs/manifest-reference.md) | Existing workspace configuration, not the proposed control-plane API. |
-
-For a contribution or issue, identify the concrete operation or workflow, the expected outcome, and the failure case it needs to handle. Small, testable vertical slices are more useful than speculative infrastructure or a broad provider catalogue.
-
-## License
-
-Dual-licensed under your choice of the [MIT License](LICENSE-MIT) or [GNU Affero General Public License v3.0](LICENSE-AGPL).
-
-SPDX: `MIT OR AGPL-3.0-or-later`.
+A marketplace, hosted reasoning service, universal scheduler, or email/SMS infrastructure is not a prerequisite for the current governed tools profile.

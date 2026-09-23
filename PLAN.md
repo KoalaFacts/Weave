@@ -1,6 +1,6 @@
 # Mainline foundation plan
 
-**Updated:** 2026-09-23. **Baseline:** `6c3c6681897ab13cf3e8f8778f9439932dfe73bc`.
+**Updated:** 2026-09-24. **Baseline:** `5cc84a59e2fc30840c0ac904cb3a32e2648619b1`.
 **Goal:** make one governed operation reliable before widening the product.
 **Architecture:** [ARCHITECTURE.md](ARCHITECTURE.md) owns the target;
 [AGENTS.md](AGENTS.md) owns implementation rules. This document owns the current
@@ -39,9 +39,9 @@ PR #125 merged as605d114d, passed actual main verification and closed #92 with
 causal positive/negative controls. PR #126 merged ascbfff7db, passed actual main
 verification and closed #110's remaining acceptance. PR #127 merged as78446175
 with retained-storage recovery. PR #128 merged as6c3c6681 and verified actual
-process recovery and behavioral expiry on main. PR #129 supplies the final
-trusted operator entry below; its completion requires reviewed integration and
-actual merged-main evidence on that PR. No extra workstream is added.
+process recovery and behavioral expiry on main. PR #129 completed the protected
+operator entry. PR #130 exercised scripted first use; #131 prepared the real-client
+bridge. Neither scripted checks nor #131's merge complete the live human trial.
 
 ## Ordered work and exit gates
 
@@ -125,7 +125,7 @@ Keep source-lock validation read-only and the snapshot writer pinned/isolated fr
 PR build execution. A submission receipt is not a policy result. No new producer,
 write permission, package downgrade or license-policy exemption is needed here.
 
-### 4. One-host recovery and safe onboarding (final integration: #129)
+### 4. One-host recovery and safe onboarding (completed through #129)
 
 **Inspect:** Authority/Tokens, Invocations, the SQLite extension and Host composition.
 
@@ -157,11 +157,33 @@ Operator mode is one full protected Host, NOT management routes added to AgentOn
 and NOT a second Host sharing claims about separate SQLite files. Tool connections
 are deliberately configured/reconnected, not automatically persisted or dispatched.
 
-This completes the scoped implementation baseline once #129's integration gate is
-verified. It is not certification of an arbitrary production deployment, a human
-identity/MFA system, sandbox, multi-Host consensus or full resource provisioning.
-Those limits are not authorization to add new work to this plan. Do not repeat
-completed gates or widen the product without a separately agreed next scope.
+This is not certification of an arbitrary production deployment, a human identity/
+MFA system, sandbox, multi-Host consensus or full resource provisioning. Those limits
+are not authorization to add work or repeat completed gates.
+
+## Approved UUID proposal completion — PR #132
+
+The owner explicitly requested these four items after the live pilot exposed the
+manual body-file handoff. This is the current bounded scope, not a new roadmap.
+See [implementation, API and upgrade guide](docs/implementation/2026-09-24-authorized-proposal-uuid.md).
+
+- [x] Retain immutable original proposals in the existing SQLite journal transaction;
+  fail before Pending/dispatch on recording failure, without backfilling old bodies.
+- [x] Authorize UUID proposal/review/decision/resume APIs by validated identity,
+  workspace/tool ownership and the exact operation. Metadata access alone does not
+  expose contents; current rights are rechecked before result disclosure/execution.
+- [x] Update existing terminal and four-tool MCP use to UUID. Only first creation
+  needs content; reviewer and restarted clients no longer need a local body file.
+- [x] Exercise real storage/Host recreation, body loss, concurrent continuation,
+  rollback, old-schema migration, corrupt/missing evidence and cross-subject/grant
+  denial. Keep unknown outcomes and no-repeat dispatch. Branch evidence is on #132.
+
+Final exact-head review, normal expected-head merge and actual merged-main results
+are recorded on #132, not assumed from these implementation checkboxes. The separate
+[live pilot checklist](docs/implementation/2026-09-23-codex-human-pilot.md) remains
+unchecked until a real model, a person and the isolated runtime are actually observed.
+No file-resource catalogue, browser approval UI, new auth provider, automatic replay,
+retention worker or extra language SDK is authorized by this completion.
 
 ## Working and verification discipline
 
