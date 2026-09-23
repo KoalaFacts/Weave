@@ -3,11 +3,12 @@ using Microsoft.Data.Sqlite;
 using Microsoft.Extensions.Options;
 using Weave.Invocations;
 using Weave.Shared.Ids;
+using Weave.Tools.Tool;
 
 namespace Weave.Security.Sqlite;
 
 /// <summary>On-disk journal. Short SQLite transactions claim one attempt; none span dispatch.</summary>
-public sealed partial class SqliteInvocationJournal : IInvocationApprovalJournal
+public sealed partial class SqliteInvocationJournal : IInvocationProposalJournal
 {
     private readonly string _connectionString;
     private readonly InvocationApprovalPolicy _approvalPolicy;
@@ -38,7 +39,10 @@ public sealed partial class SqliteInvocationJournal : IInvocationApprovalJournal
         if (!string.Equals(mode.ExecuteScalar()?.ToString(), "wal", StringComparison.OrdinalIgnoreCase))
             throw new InvalidOperationException("The invocation journal requires SQLite WAL mode.");
         if (options.Value.RequireExistingStorage)
+        {
+            EnsureProposalSchema(connection);
             return;
+        }
         using var schema = connection.CreateCommand();
         schema.CommandText = """
             CREATE TABLE IF NOT EXISTS invocations (
@@ -56,9 +60,17 @@ public sealed partial class SqliteInvocationJournal : IInvocationApprovalJournal
             );
             """ + ApprovalSchema;
         schema.ExecuteNonQuery();
+        EnsureProposalSchema(connection);
     }
 
-    public InvocationClaim TryStart(InvocationRecord candidate, CancellationToken cancellationToken)
+    public InvocationClaim TryStart(InvocationRecord candidate, CancellationToken cancellationToken) =>
+        TryStartCore(candidate, null, null, cancellationToken);
+
+    public InvocationClaim TryStart(InvocationRecord candidate, ToolInvocation proposal, string connectorKind,
+        CancellationToken cancellationToken) => TryStartCore(candidate, proposal, connectorKind, cancellationToken);
+
+    private InvocationClaim TryStartCore(InvocationRecord candidate, ToolInvocation? proposal, string? connectorKind,
+        CancellationToken cancellationToken)
     {
         ArgumentNullException.ThrowIfNull(candidate);
         if (candidate.Attempt.Outcome != InvocationOutcome.OutcomeUnknown || candidate.Attempt.CompletedAt is not null)
@@ -69,7 +81,19 @@ public sealed partial class SqliteInvocationJournal : IInvocationApprovalJournal
         var recorded = Read(connection, transaction, candidate.WorkspaceId, candidate.InvocationId);
         if (recorded is not null)
             return new InvocationClaim(false, recorded);
+        var previousApproval = ReadApproval(connection, transaction, candidate.WorkspaceId, candidate.InvocationId);
+        if (proposal is not null && previousApproval is not null && previousApproval.Matches(candidate)
+            && ReadProposal(connection, transaction, candidate.WorkspaceId, candidate.InvocationId,
+                candidate.Subject, candidate.ToolName, candidate.Operation, candidate.InputDigest) is null)
+            return new InvocationClaim(false, candidate)
+            {
+                BlockingReason = "proposal-unavailable", Approval = previousApproval
+            };
         var admission = AdmitApproval(connection, transaction, candidate);
+        if (proposal is not null && previousApproval is null
+            && (admission is null || admission.BlockingReason == "approval-pending"))
+            InsertProposal(connection, transaction, candidate, proposal,
+                connectorKind ?? throw new InvalidOperationException("A proposal connector kind is required."));
         if (admission?.BlockingReason is not null)
         {
             cancellationToken.ThrowIfCancellationRequested();

@@ -7,13 +7,17 @@ namespace Weave.Invocations;
 public sealed class InvocationExecution(IInvocationJournal journal, TimeProvider timeProvider, ILogger logger)
 {
     public async Task<ToolResult> ExecuteAsync(InvocationRecord candidate, Func<Task> revalidate,
-        Func<Task<ToolResult>> dispatch, CancellationToken cancellationToken)
+        Func<Task<ToolResult>> dispatch, CancellationToken cancellationToken,
+        ToolInvocation? proposal = null, string? connectorKind = null)
     {
         InvocationClaim claim;
         try
         {
             cancellationToken.ThrowIfCancellationRequested();
-            claim = journal.TryStart(candidate, cancellationToken);
+            claim = proposal is not null && journal is IInvocationProposalJournal proposals
+                ? proposals.TryStart(candidate, proposal,
+                    connectorKind ?? throw new InvalidOperationException("A proposal connector kind is required."), cancellationToken)
+                : journal.TryStart(candidate, cancellationToken);
         }
         catch (OperationCanceledException) when (cancellationToken.IsCancellationRequested)
         {
