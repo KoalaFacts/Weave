@@ -1,4 +1,5 @@
 using Microsoft.Extensions.Options;
+using Weave.Invocations;
 using Weave.Security.Tokens;
 
 namespace Weave.Silo.Invocations;
@@ -21,17 +22,25 @@ public static class ExtensionsToInvocationEndpoints
         if (keys.SigningKey == DevelopmentSigningKey || keys.PreviousSigningKey == DevelopmentSigningKey)
             throw new InvalidOperationException("The governed HTTP entry cannot use the public development signing key, including as a previous key.");
         _ = app.Services.GetRequiredService<ICapabilityTokenService>();
+        if (app.Services.GetRequiredService<IInvocationJournal>() is not IInvocationProposalJournal)
+            throw new InvalidOperationException("Governed HTTP requires durable UUID proposal support in its journal.");
 
         var group = app.MapGroup("/api/workspaces/{workspaceId}/tools/{toolName}/invocations")
             .WithTags("Governed Invocations");
         group.MapPost("", InvokeToolEndpoint.HandleAsync).WithMetadata(new AgentInvocationEndpoint());
         group.MapGet("/{invocationId}", GetInvocationEndpoint.HandleAsync).WithMetadata(new AgentInvocationEndpoint());
         group.MapGet("/{invocationId}/approval", GetApprovalEndpoint.HandleAsync).WithMetadata(new AgentInvocationEndpoint());
+        group.MapGet("/{invocationId}/proposal", GetStoredProposalEndpoint.HandleAsync).WithMetadata(new AgentInvocationEndpoint());
+        group.MapPost("/{invocationId}/resume", ResumeInvocationEndpoint.HandleAsync).WithMetadata(new AgentInvocationEndpoint());
         if (agentOnly)
             return;
 
         group.MapPost("/{invocationId}/approval/review", ReviewApprovalEndpoint.HandleAsync);
+        group.MapGet("/{invocationId}/approval/review", ReviewStoredApprovalEndpoint.HandleAsync);
         if (decisionsEnabled)
+        {
             group.MapPost("/{invocationId}/approval/decision", DecideReviewedApprovalEndpoint.HandleAsync);
+            group.MapPost("/{invocationId}/decision", DecideStoredApprovalEndpoint.HandleAsync);
+        }
     }
 }

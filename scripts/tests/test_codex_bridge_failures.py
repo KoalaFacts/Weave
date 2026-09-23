@@ -18,16 +18,26 @@ SPEC.loader.exec_module(bridge)
 
 
 class BridgeFailureTests(unittest.TestCase):
-    def test_lost_post_response_keeps_input_and_never_retries(self):
+    def test_lost_post_response_keeps_uuid_receipt_and_never_retries(self):
+        identifier = '89f0b55c9a314192a40751bb85da3c43'
         with tempfile.TemporaryDirectory() as temp:
             agent = bridge.Bridge('http://127.0.0.1:9401', 'pilot', 'files', Path(temp), 'synthetic_capability')
-            with patch.object(agent.http, 'open', side_effect=error.URLError('private-upstream-detail')) as network:
-                result = agent.call_tool('submit_write', {'request_key': 'one', 'path': 'out.md', 'content': 'model content'})
+            absent = {'invocation': {'http_status': 404, 'result': None},
+                      'approval': {'http_status': 404, 'result': None}}
+            with patch.object(agent, 'status', return_value=absent), \
+                 patch.object(agent.http, 'open', side_effect=error.URLError('private-upstream-detail')) as network:
+                result = agent.call_tool('submit_write', {'invocation_id': identifier, 'path': 'out.md', 'content': 'model content'})
             self.assertIsNone(result['http_status'])
             self.assertIn('Outcome unconfirmed', result['next'])
             self.assertNotIn('private-upstream-detail', json.dumps(result))
             self.assertEqual(network.call_count, 1)
-            self.assertEqual(json.loads((Path(temp) / 'one.json').read_text())['invocationId'], result['invocation_id'])
+            self.assertEqual(network.call_args.args[0].method, 'POST')
+            receipt = json.loads((Path(temp) / (identifier + '.json')).read_text())
+            self.assertEqual(receipt['invocationId'], result['invocation_id'])
+            self.assertEqual(set(receipt), {'invocationId', 'inputSha256'})
+            with patch.object(agent, 'status', return_value=absent), patch.object(agent.http, 'open') as network:
+                agent.call_tool('submit_write', {'invocation_id': identifier, 'path': 'out.md', 'content': 'model content'})
+                network.assert_not_called()
 
     def test_remote_cleartext_and_credential_urls_are_rejected(self):
         for url in ('http://example.com', 'https://user:secret@example.com', 'https://example.com/?key=x',
@@ -47,7 +57,7 @@ class BridgeFailureTests(unittest.TestCase):
 
     def test_admin_environment_is_rejected_before_protocol_or_http(self):
         with tempfile.TemporaryDirectory() as temp:
-            env = {k: os.environ[k] for k in ('PATH', 'LANG') if k in os.environ}
+            env = {k: os.environ[k] for k in ('PATH', 'LANG', 'SystemRoot') if k in os.environ}
             env.update({'WEAVE_AGENT_CAPABILITY': 'synthetic', 'WEAVE_OPERATOR_KEY': 'do-not-leak-this-private-value'})
             result = subprocess.run([sys.executable, str(SOURCE), '--url', 'http://127.0.0.1:1',
                                      '--workspace', 'pilot', '--requests', temp], input='', text=True,

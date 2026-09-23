@@ -132,6 +132,7 @@ public sealed partial class ToolActor(
                 Error = "Use a nonempty 32-hex invocation ID and at most 1048576 input characters with non-null parameter values."
             };
         request = request with { InvocationId = candidate.InvocationId };
+        var proposal = request with { Parameters = new Dictionary<string, string>(request.Parameters, StringComparer.Ordinal) };
         var effectiveInvocation = await _secretSubstitutor.SubstituteAsync(_identity.WorkspaceId, request);
         var binding = connector as IApprovalTargetBinding;
         var adapterTarget = binding?.GetApprovalTargetDigest(handle);
@@ -147,7 +148,7 @@ public sealed partial class ToolActor(
         {
             var response = await connector.InvokeAsync(handle, effectiveInvocation, token.CancellationToken);
             return await _leakGuard.RedactIfInboundLeaksAsync(_identity.WorkspaceId, _identity.ToolName, response);
-        }, token.CancellationToken);
+        }, token.CancellationToken, proposal, definition.Type.ToString());
 
         if (!result.IsReplay && result.OutcomeRecorded)
         {

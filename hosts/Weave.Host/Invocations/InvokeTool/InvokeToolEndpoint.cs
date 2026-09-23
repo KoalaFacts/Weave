@@ -32,7 +32,7 @@ internal static class InvokeToolEndpoint
         }
     }
 
-    private static int Status(ToolResult result)
+    internal static int Status(ToolResult result)
     {
         if (result.Success)
             return 200;
@@ -43,7 +43,7 @@ internal static class InvokeToolEndpoint
         if (result.ErrorCode == "invalid-invocation")
             return 400;
         if (result.Outcome == InvocationOutcome.OutcomeUnknown || result.IsReplay || result.ApprovalState is not null
-            || result.ErrorCode is "invocation-id-conflict" or "approval-plan-conflict")
+            || result.ErrorCode is "invocation-id-conflict" or "approval-plan-conflict" or "proposal-unavailable")
             return 409;
         return 422;
     }
