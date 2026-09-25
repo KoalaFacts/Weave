@@ -1,6 +1,7 @@
 using System.Net;
 using System.Net.Http.Headers;
 using System.Text;
+using System.Text.Json;
 using System.Threading.Channels;
 using Weave.Workspaces.Manifest;
 
@@ -87,6 +88,13 @@ internal sealed partial class HttpMcpTransport : IMcpTransport
             using var response = await _httpClient.SendAsync(request, HttpCompletionOption.ResponseHeadersRead, deadline.Token);
             if (response.StatusCode == HttpStatusCode.NoContent)
                 return;
+            if (response.StatusCode == HttpStatusCode.Accepted)
+            {
+                using var message = JsonDocument.Parse(json);
+                if (message.RootElement.TryGetProperty("id", out _))
+                    throw Failure("HTTP 202 cannot acknowledge an MCP request");
+                return;
+            }
             if (!response.IsSuccessStatusCode)
                 throw Failure($"HTTP {(int)response.StatusCode}");
 

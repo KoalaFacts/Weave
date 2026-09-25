@@ -1,3 +1,4 @@
+using System.Diagnostics;
 using System.Text.Json;
 using Microsoft.Extensions.Logging.Abstractions;
 using Weave.Invocations;
@@ -18,6 +19,66 @@ namespace Weave.Silo.Tests.Invocations;
 public sealed class EchoPluginTests
 {
     [Fact]
+    public async Task Invoke_RealHttpEchoPlugin_UsesStreamableHttp()
+    {
+        var cli = Path.Combine(RepositoryRoot(), "npm", "weave-plugin-echo", "dist", "cli.js");
+        var start = new ProcessStartInfo("node")
+        {
+            RedirectStandardError = true,
+            UseShellExecute = false
+        };
+        start.ArgumentList.Add(cli);
+        start.ArgumentList.Add("--http");
+        start.ArgumentList.Add("--port");
+        start.ArgumentList.Add("0");
+        using var server = Process.Start(start) ?? throw new InvalidOperationException("Could not start Echo HTTP plugin.");
+        try
+        {
+            var ready = await server.StandardError.ReadLineAsync(TestContext.Current.CancellationToken)
+                .AsTask().WaitAsync(TimeSpan.FromSeconds(10), TestContext.Current.CancellationToken)
+                ?? throw new InvalidOperationException("Echo HTTP plugin exited before startup.");
+            ready.ShouldStartWith("Echo MCP endpoint: http://127.0.0.1:");
+            var endpoint = ready["Echo MCP endpoint: ".Length..];
+
+            var connector = new McpToolConnector(NullLogger<McpToolConnector>.Instance);
+            using var fx = new ApprovalScenario();
+            var spec = new ToolSpec
+            {
+                Name = "echo-sample",
+                Type = ToolType.Mcp,
+                Mcp = new McpConfig
+                {
+                    Url = endpoint,
+                    AllowPrivateEndpoints = true
+                }
+            };
+            var handle = await connector.ConnectAsync(spec, fx.Token("setup", "tool:echo-sample:connect"), TestContext.Current.CancellationToken);
+            try
+            {
+                (await connector.DiscoverSchemaAsync(handle, TestContext.Current.CancellationToken)).Description.ShouldContain("Return the supplied text unchanged.");
+                var result = await connector.InvokeAsync(handle, new ToolInvocation
+                {
+                    ToolName = "echo-sample",
+                    Method = "echo",
+                    Parameters = new() { ["text"] = "HTTP from Weave" }
+                }, TestContext.Current.CancellationToken);
+                result.Success.ShouldBeTrue(result.Error);
+                result.Output.ShouldBe("HTTP from Weave");
+            }
+            finally
+            {
+                await connector.DisconnectAsync(handle, TestContext.Current.CancellationToken);
+            }
+        }
+        finally
+        {
+            if (!server.HasExited)
+                server.Kill(entireProcessTree: true);
+            await server.WaitForExitAsync(TestContext.Current.CancellationToken);
+        }
+    }
+
+    [Fact]
     public async Task Invoke_RealEchoPlugin_DeniesMissingGrantAndRecordsOneAllowedDispatch()
     {
         var path = Environment.GetEnvironmentVariable("WEAVE_ECHO_SPEC")
@@ -25,6 +86,7 @@ public sealed class EchoPluginTests
         var root = RepositoryRoot();
         string Resolve(string value) => string.Join(Path.PathSeparator,
             value.Split(Path.PathSeparator).Select(part => part.StartsWith("examples/plugins/echo/", StringComparison.Ordinal)
+                || part.StartsWith("npm/weave-plugin-echo/", StringComparison.Ordinal)
                 ? Path.GetFullPath(part, root) : part));
         using var config = JsonDocument.Parse(File.ReadAllText(Path.GetFullPath(path, root)));
         var mcp = config.RootElement.GetProperty("mcp");
