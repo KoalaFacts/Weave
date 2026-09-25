@@ -16,6 +16,9 @@ public static class PluginEndpoints
         group.MapGet("/catalog", GetCatalogAsync)
             .WithDescription("List available plugin types and their configuration schemas.")
             .Produces<IEnumerable<PluginSchema>>();
+        group.MapGet("/composition", GetCompositionAsync)
+            .WithDescription("Show active plugin registrations and activation status.")
+            .Produces<IEnumerable<PluginCompositionEntry>>();
         group.MapPost("/", ConnectPluginAsync)
             .WithDescription("Connect a plugin with configuration. Unknown config keys are returned as warnings.")
             .Produces<ConnectPluginResponse>(201)
@@ -45,6 +48,9 @@ public static class PluginEndpoints
     {
         return Results.Ok(registry.GetCatalog());
     }
+
+    private static async Task<IResult> GetCompositionAsync(IPluginRegistry registry, CancellationToken ct) =>
+        Results.Ok(await registry.GetCompositionAsync(ct));
 
     // --- POST/DELETE endpoints ---
 

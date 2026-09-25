@@ -69,6 +69,23 @@ public sealed partial class ToolDiscoveryService : IToolDiscoveryService
         return removed;
     }
 
+    public bool UnregisterIfCurrent(ToolType type, IToolConnector connector)
+    {
+        bool removed;
+        lock (_lock)
+        {
+            removed = _dynamic.TryGetValue(type, out var current) && ReferenceEquals(current, connector);
+            if (removed)
+            {
+                _dynamic.Remove(type);
+                _cachedTypes = null;
+            }
+        }
+        if (removed)
+            LogConnectorUnregistered(type);
+        return removed;
+    }
+
     private IReadOnlyList<ToolType> RebuildTypeCache() =>
         [.. _builtIn.Keys.Union(_dynamic.Keys)];
 

@@ -117,6 +117,20 @@ public sealed class ToolDiscoveryServiceTests
     }
 
     [Fact]
+    public void UnregisterIfCurrent_ReplacedConnector_PreservesReplacement()
+    {
+        var service = CreateService();
+        var first = CreateConnector(ToolType.Dapr);
+        var replacement = CreateConnector(ToolType.Dapr);
+        service.Register(first);
+        service.Register(replacement);
+
+        service.UnregisterIfCurrent(ToolType.Dapr, first).ShouldBeFalse();
+
+        service.GetConnector(ToolType.Dapr).ShouldBeSameAs(replacement);
+    }
+
+    [Fact]
     public void Unregister_NonexistentType_ReturnsFalse()
     {
         var service = CreateService();

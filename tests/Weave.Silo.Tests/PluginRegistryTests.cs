@@ -157,7 +157,7 @@ public sealed class PluginRegistryTests
     }
 
     [Fact]
-    public async Task ConnectAsync_AlreadyActive_HotSwapsPlugin()
+    public async Task ConnectAsync_AlreadyActive_SameConnectorOwnsReplacement()
     {
         var connector = new FakePluginConnector("dapr", connected: true, schema: TestSchema);
         var registry = CreateRegistry(connector);
@@ -175,7 +175,7 @@ public sealed class PluginRegistryTests
         }, AnyPlugin);
 
         registry.GetAll().Count.ShouldBe(1);
-        connector.DisconnectCount.ShouldBe(1);
+        connector.DisconnectCount.ShouldBe(0);
     }
 
     [Fact]
@@ -482,6 +482,7 @@ public sealed class PluginRegistryTests
     {
         public string PluginType => type;
         public int DisconnectCount { get; private set; }
+        public IReadOnlyList<string> RegistrationKeys(string name) => [];
 
         public PluginSchema Schema { get; } = schema ?? new()
         {
@@ -624,6 +625,7 @@ public sealed class PluginRegistryTests
     private sealed class ThrowingPluginConnector(string type) : IPluginConnector
     {
         public string PluginType => type;
+        public IReadOnlyList<string> RegistrationKeys(string name) => [];
 
         public PluginSchema Schema { get; } = new()
         {

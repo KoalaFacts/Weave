@@ -125,6 +125,31 @@ public sealed class PluginServiceBrokerTests
         callbackSawNull.ShouldBeTrue();
     }
 
+    [Fact]
+    public void ClearIfCurrent_ReplacedService_PreservesReplacement()
+    {
+        var first = Substitute.For<IEventBus>();
+        var replacement = Substitute.For<IEventBus>();
+        _broker.Swap<IEventBus>(first);
+        _broker.Swap<IEventBus>(replacement);
+
+        _broker.ClearIfCurrent<IEventBus>(first).ShouldBeFalse();
+
+        _broker.Get<IEventBus>().ShouldBeSameAs(replacement);
+    }
+
+    [Fact]
+    public void ReplaceIfCurrent_ActiveService_ChangesServiceAtomically()
+    {
+        var first = Substitute.For<IEventBus>();
+        var replacement = Substitute.For<IEventBus>();
+        _broker.Swap<IEventBus>(first);
+
+        _broker.ReplaceIfCurrent<IEventBus>(first, replacement).ShouldBeTrue();
+
+        _broker.Get<IEventBus>().ShouldBeSameAs(replacement);
+    }
+
     // --- Named services ---
 
     [Fact]
@@ -161,6 +186,32 @@ public sealed class PluginServiceBrokerTests
     }
 
     [Fact]
+    public void RemoveIfCurrent_ReplacedNamedService_PreservesReplacement()
+    {
+        using var first = new HttpClient();
+        using var replacement = new HttpClient();
+        _broker.Set("http:api", first);
+        _broker.Set("http:api", replacement);
+
+        _broker.RemoveIfCurrent("http:api", first).ShouldBeFalse();
+
+        _broker.Get<HttpClient>("http:api").ShouldBeSameAs(replacement);
+    }
+
+    [Fact]
+    public void RemoveIfCurrent_EqualButDistinctNamedService_PreservesReplacement()
+    {
+        var first = new EqualService("same");
+        var replacement = new EqualService("same");
+        _broker.Set("key", first);
+        _broker.Set("key", replacement);
+
+        _broker.RemoveIfCurrent("key", first).ShouldBeFalse();
+
+        _broker.Get<EqualService>("key").ShouldBeSameAs(replacement);
+    }
+
+    [Fact]
     public void Named_Set_OverwritesPrevious()
     {
         var first = new HttpClient();
@@ -184,4 +235,6 @@ public sealed class PluginServiceBrokerTests
         _broker.Set("key", "a string");
         _broker.Get<HttpClient>("key").ShouldBeNull();
     }
+
+    private sealed record EqualService(string Value);
 }

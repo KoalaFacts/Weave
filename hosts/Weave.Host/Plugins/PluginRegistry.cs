@@ -6,7 +6,7 @@ namespace Weave.Silo.Plugins;
 
 // --- Registry ---
 
-public sealed partial class PluginRegistry : IPluginRegistry, IDisposable
+public sealed partial class PluginRegistry : IPluginRegistry, IDisposable, IAsyncDisposable
 {
     private readonly Dictionary<string, IPluginConnector> _connectorsByType;
     private readonly ConcurrentDictionary<string, PluginStatus> _active = new(StringComparer.OrdinalIgnoreCase);
@@ -77,10 +77,33 @@ public sealed partial class PluginRegistry : IPluginRegistry, IDisposable
             return status;
         }
 
-        // Per-name lock prevents concurrent connect/disconnect for the same plugin name
+        // Serialize registrations so ownership checks and activation share one view.
         await _connectLock.WaitAsync();
         try
         {
+            var registrations = new HashSet<string>(connector.RegistrationKeys(name), StringComparer.OrdinalIgnoreCase);
+            foreach (var activeStatus in _active.Values)
+            {
+                if (string.Equals(activeStatus.Name, name, StringComparison.OrdinalIgnoreCase) ||
+                    !_connectorsByType.TryGetValue(activeStatus.Type, out var existingConnector))
+                    continue;
+
+                var conflict = existingConnector.RegistrationKeys(activeStatus.Name)
+                    .FirstOrDefault(registrations.Contains);
+                if (conflict is null)
+                    continue;
+
+                var blocked = new PluginStatus
+                {
+                    Name = name,
+                    Type = definition.Type,
+                    IsConnected = false,
+                    Error = $"Registration '{conflict}' is already provided by plugin '{activeStatus.Name}'."
+                };
+                LogPluginConnectFailed(name, definition.Type, blocked.Error);
+                return blocked;
+            }
+
             // Make-before-break: connect the new plugin first. If it fails,
             // the old plugin remains active and uninterrupted.
             var connStatus = await connector.ConnectAsync(name, resolved);
@@ -101,7 +124,8 @@ public sealed partial class PluginRegistry : IPluginRegistry, IDisposable
             if (_active.TryGetValue(name, out var existing) && existing.IsConnected)
             {
                 LogPluginHotSwap(name, existing.Type, definition.Type);
-                if (_connectorsByType.TryGetValue(existing.Type, out var existingConnector))
+                if (_connectorsByType.TryGetValue(existing.Type, out var existingConnector) &&
+                    !ReferenceEquals(existingConnector, connector))
                     await existingConnector.DisconnectAsync(name);
             }
 
@@ -134,7 +158,7 @@ public sealed partial class PluginRegistry : IPluginRegistry, IDisposable
         await _connectLock.WaitAsync();
         try
         {
-            if (!_active.TryRemove(name, out var existing))
+            if (!_active.TryGetValue(name, out var existing))
             {
                 return new PluginStatus
                 {
@@ -148,10 +172,12 @@ public sealed partial class PluginRegistry : IPluginRegistry, IDisposable
             if (_connectorsByType.TryGetValue(existing.Type, out var connector))
             {
                 var status = await connector.DisconnectAsync(name);
+                _active.TryRemove(name, out _);
                 LogPluginDisconnected(name, existing.Type);
                 return status;
             }
 
+            _active.TryRemove(name, out _);
             return existing with { IsConnected = false };
         }
         finally
@@ -174,8 +200,6 @@ public sealed partial class PluginRegistry : IPluginRegistry, IDisposable
         List<PluginSchema> schemas = [.. _connectorsByType.Values.Select(c => c.Schema)];
         return schemas;
     }
-
-    public void Dispose() => _connectLock.Dispose();
 
     [LoggerMessage(Level = LogLevel.Information, Message = "Plugin '{Name}' ({Type}) connected")]
     private partial void LogPluginConnected(string name, string type);

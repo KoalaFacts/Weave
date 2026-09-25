@@ -8,4 +8,5 @@ public interface IToolDiscoveryService
     IReadOnlyList<ToolType> SupportedTypes { get; }
     void Register(IToolConnector connector);
     bool Unregister(ToolType type);
+    bool UnregisterIfCurrent(ToolType type, IToolConnector connector);
 }
