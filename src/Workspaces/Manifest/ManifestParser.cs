@@ -8,7 +8,7 @@ public sealed class ManifestParser : IManifestParser
         FrozenSet.ToFrozenSet(["mcp", "dapr", "openapi", "cli", "library", "direct_http", "filesystem"]);
 
     private static readonly FrozenSet<string> ValidPluginTypes =
-        FrozenSet.ToFrozenSet(["dapr", "vault", "http", "webhook", "custom"]);
+        FrozenSet.ToFrozenSet(["dapr", "dapr_tools", "vault", "http", "webhook", "custom"]);
 
     public WorkspaceManifest Parse(string json)
     {
@@ -76,6 +76,8 @@ public sealed class ManifestParser : IManifestParser
                 errors.Add($"Tool '{toolName}': invalid type '{tool.Type}'. Must be one of: {string.Join(", ", ValidToolTypes)}.");
         }
 
+        errors.AddRange(ValidateDaprToolDependencies(manifest));
+
         foreach (var (targetName, target) in manifest.Targets)
         {
             if (string.IsNullOrWhiteSpace(target.Runtime))
@@ -91,6 +93,23 @@ public sealed class ManifestParser : IManifestParser
                 errors.Add($"Plugin '{pluginName}': invalid type '{plugin.Type}'. Must be one of: {string.Join(", ", ValidPluginTypes)}.");
         }
 
+        return errors;
+    }
+
+    public static IReadOnlyList<string> ValidateDaprToolDependencies(WorkspaceManifest manifest)
+    {
+        var errors = new List<string>();
+        foreach (var (toolName, tool) in manifest.Tools)
+        {
+            if (!string.Equals(tool.Type, "dapr", StringComparison.OrdinalIgnoreCase))
+                continue;
+            if (string.IsNullOrWhiteSpace(tool.Dapr?.AppId))
+                errors.Add($"Tool '{toolName}': Dapr appId is required.");
+            if (string.IsNullOrWhiteSpace(tool.RequiresPlugin)
+                || !manifest.Plugins.TryGetValue(tool.RequiresPlugin, out var requiredPlugin)
+                || !string.Equals(requiredPlugin.Type, "dapr_tools", StringComparison.OrdinalIgnoreCase))
+                errors.Add($"Tool '{toolName}': requiresPlugin must name a Dapr tools plugin in this manifest.");
+        }
         return errors;
     }
 }

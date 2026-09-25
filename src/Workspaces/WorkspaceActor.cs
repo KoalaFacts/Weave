@@ -55,8 +55,13 @@ public sealed partial class WorkspaceActor(
             persistentState.State.Containers.Clear();
             persistentState.State.ActiveAgents.Clear();
             persistentState.State.ActiveTools.Clear();
+            persistentState.State.ActivePlugins.Clear();
             persistentState.State.ActiveAgents.AddRange(manifest.Agents.Keys);
             persistentState.State.ActiveTools.AddRange(manifest.Tools.Keys);
+            persistentState.State.ActivePlugins.AddRange(manifest.Tools.Values
+                .Where(static tool => string.Equals(tool.Type, "dapr", StringComparison.OrdinalIgnoreCase))
+                .Select(static tool => tool.RequiresPlugin!)
+                .Distinct(StringComparer.Ordinal));
             foreach (var container in env.Containers)
             {
                 persistentState.State.Containers.Add(new ContainerInfo
@@ -119,6 +124,7 @@ public sealed partial class WorkspaceActor(
             persistentState.State.Containers.Clear();
             persistentState.State.ActiveAgents.Clear();
             persistentState.State.ActiveTools.Clear();
+            persistentState.State.ActivePlugins.Clear();
             persistentState.State.NetworkId = null;
 
             await persistentState.WriteStateAsync();

@@ -25,7 +25,7 @@ public static class PluginEndpoints
             .ProducesValidationProblem()
             .ProducesProblem(409)
             .ProducesProblem(422);
-        group.MapDelete("/{name}", DisconnectPluginAsync)
+        group.MapDelete("/{**name}", DisconnectPluginAsync)
             .WithDescription("Disconnect a plugin by name.")
             .Produces(204)
             .ProducesProblem(404);

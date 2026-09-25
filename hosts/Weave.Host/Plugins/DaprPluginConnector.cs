@@ -69,8 +69,11 @@ public sealed partial class DaprPluginConnector(
         // will complete safely against the still-valid HttpClient handler.
         var scope = new PluginActivationScope();
         scope.Add(() => broker.Swap<IEventBus>(eventBus), () => broker.ClearIfCurrent<IEventBus>(eventBus));
-        scope.Add(() => toolDiscovery.Register(toolConnector),
-            () => toolDiscovery.UnregisterIfCurrent(ToolType.Dapr, toolConnector));
+        scope.Add(() => toolDiscovery.Register(toolConnector), () =>
+        {
+            toolConnector.Deactivate();
+            toolDiscovery.UnregisterIfCurrent(ToolType.Dapr, toolConnector);
+        });
         _activations.Replace(name, scope);
 
         LogDaprConnected(name, baseUrl);

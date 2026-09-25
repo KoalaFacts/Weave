@@ -1,4 +1,6 @@
 using Weave.Workspaces.Manifest;
+using Weave.Tools.Connectors;
+using Weave.Tools.Mapping;
 namespace Weave.Workspaces.Tests;
 
 public sealed class ManifestParserTests
@@ -188,6 +190,56 @@ public sealed class ManifestParserTests
 
         var errors = _parser.Validate(manifest);
         errors.ShouldContain(e => e.Contains("invalid"));
+    }
+
+    [Fact]
+    public void Validate_DaprToolWithoutDeclaredProvider_ReturnsError()
+    {
+        var manifest = new WorkspaceManifest
+        {
+            Version = "1.0",
+            Name = "test",
+            Tools = new Dictionary<string, ToolDefinition>
+            {
+                ["echo"] = new()
+                {
+                    Type = "dapr",
+                    Dapr = new DaprToolConfig { AppId = "echo-service" },
+                    RequiresPlugin = "missing"
+                }
+            }
+        };
+
+        _parser.Validate(manifest).ShouldContain(error => error.Contains("requiresPlugin"));
+    }
+
+    [Fact]
+    public void Serialize_DaprToolWithDeclaredProvider_PreservesTargetAndDependency()
+    {
+        var manifest = new WorkspaceManifest
+        {
+            Version = "1.0",
+            Name = "test",
+            Plugins = new Dictionary<string, PluginDefinition>
+            {
+                ["sidecar"] = new() { Type = "dapr_tools" }
+            },
+            Tools = new Dictionary<string, ToolDefinition>
+            {
+                ["echo"] = new()
+                {
+                    Type = "dapr",
+                    Dapr = new DaprToolConfig { AppId = "echo-service" },
+                    RequiresPlugin = "sidecar"
+                }
+            }
+        };
+
+        _parser.Validate(manifest).ShouldBeEmpty();
+        var restored = _parser.Parse(_parser.Serialize(manifest));
+        restored.Tools["echo"].RequiresPlugin.ShouldBe("sidecar");
+        ToolSpecMapper.FromDefinition("echo", restored.Tools["echo"])
+            .Dapr!.AppId.ShouldBe("echo-service");
     }
 
     [Fact]

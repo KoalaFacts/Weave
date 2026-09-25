@@ -27,7 +27,8 @@ internal static class ToolSpecMapper
             OpenApi = definition.OpenApi,
             Cli = definition.Cli,
             DirectHttp = MapDirectHttp(definition.DirectHttp),
-            FileSystem = MapFileSystem(definition.FileSystem)
+            FileSystem = MapFileSystem(definition.FileSystem),
+            Dapr = definition.Dapr
         };
     }
 

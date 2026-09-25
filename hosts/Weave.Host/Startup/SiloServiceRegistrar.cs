@@ -186,6 +186,11 @@ internal sealed class SiloServiceRegistrar
     private void RegisterPluginConnectors()
     {
         _services.AddSingleton<IPluginConnector>(sp =>
+            new DaprToolsPluginConnector(
+                sp.GetRequiredService<IToolDiscoveryService>(),
+                sp.GetRequiredService<IHttpClientFactory>(),
+                sp.GetRequiredService<ILoggerFactory>()));
+        _services.AddSingleton<IPluginConnector>(sp =>
             new DaprPluginConnector(
                 sp.GetRequiredService<PluginServiceBroker>(),
                 sp.GetRequiredService<IToolDiscoveryService>(),

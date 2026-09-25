@@ -11,13 +11,21 @@ namespace Weave.Tools.Connectors;
 /// </summary>
 public sealed partial class DaprToolConnector(HttpClient httpClient, ILogger<DaprToolConnector> logger) : IToolConnector
 {
+    private int _active = 1;
+
     public ToolType ToolType => ToolType.Dapr;
+
+    public void Deactivate() => Interlocked.Exchange(ref _active, 0);
 
     public ToolInvocation NormalizeInvocation(ToolInvocation invocation) => invocation;
 
     public Task<ToolHandle> ConnectAsync(ToolSpec tool, CapabilityToken token, CancellationToken ct = default)
     {
+        if (Volatile.Read(ref _active) == 0)
+            throw new InvalidOperationException("Dapr tool connector is inactive.");
         var dapr = tool.Dapr ?? throw new InvalidOperationException($"Tool '{tool.Name}' has no Dapr configuration");
+        if (string.IsNullOrWhiteSpace(dapr.AppId))
+            throw new InvalidOperationException($"Tool '{tool.Name}' requires a Dapr app ID.");
         LogDaprToolConnected(tool.Name, dapr.AppId);
         return Task.FromResult(new ToolHandle
         {
@@ -37,6 +45,8 @@ public sealed partial class DaprToolConnector(HttpClient httpClient, ILogger<Dap
     public async Task<ToolResult> InvokeAsync(ToolHandle handle, ToolInvocation invocation, CancellationToken ct = default)
     {
         var sw = Stopwatch.StartNew();
+        if (Volatile.Read(ref _active) == 0)
+            return new ToolResult { Success = false, ToolName = handle.ToolName, Error = "Dapr tool connector is inactive.", Duration = sw.Elapsed };
         try
         {
             var appId = handle.ConnectionId.Replace("dapr:", "", StringComparison.Ordinal);
