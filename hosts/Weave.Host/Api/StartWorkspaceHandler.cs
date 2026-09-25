@@ -30,7 +30,6 @@ public sealed class StartWorkspaceHandler(
 
         var workspaceId = command.WorkspaceId.ToString();
         var workspace = actors.GetActor<IWorkspaceActor>(VirtualActorId.From(command.WorkspaceId.ToString()));
-        await workspace.StartAsync(command.Manifest);
         var registry = actors.GetActor<IWorkspaceRegistryActor>(VirtualActorId.From("active"));
 
         var toolRegistry = actors.GetActor<IToolRegistryActor>(VirtualActorId.From(command.WorkspaceId.ToString()));
@@ -44,6 +43,7 @@ public sealed class StartWorkspaceHandler(
         try
         {
             await registry.RegisterAsync(workspaceId);
+            await workspace.StartAsync(command.Manifest);
 
             foreach (var pluginName in requiredPlugins)
             {

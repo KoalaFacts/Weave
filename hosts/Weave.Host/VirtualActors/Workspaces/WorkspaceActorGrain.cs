@@ -30,4 +30,6 @@ public sealed class WorkspaceActorGrain : Grain, IWorkspaceActorGrain
     public Task<WorkspaceState> StartAsync(WorkspaceManifest manifest) => _actor.StartAsync(manifest);
     public Task StopAsync() => _actor.StopAsync();
     public Task<WorkspaceState> GetStateAsync() => _actor.GetStateAsync();
+    public Task SetDaprToolInstallationEnabledAsync(string pluginName, bool enabled) =>
+        _actor.SetDaprToolInstallationEnabledAsync(pluginName, enabled);
 }

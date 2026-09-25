@@ -41,6 +41,8 @@ public sealed class StopWorkspaceHandler(
 
         foreach (var pluginName in state.ActivePlugins)
         {
+            if (state.DaprToolInstallations.Any(item => string.Equals(item.PluginName, pluginName, StringComparison.Ordinal)))
+                await workspace.SetDaprToolInstallationEnabledAsync(pluginName, false);
             var registrationName = $"{workspaceId}/{pluginName}";
             using var source = tokenService.MintLinked(new CapabilityTokenRequest
             {

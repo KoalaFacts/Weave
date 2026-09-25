@@ -9,4 +9,8 @@
     <PackageReference Include="Microsoft.Orleans.Persistence.AdoNet" />
     <PackageReference Include="Microsoft.Data.Sqlite" />
   </ItemGroup>
+  <ItemGroup>
+    <EmbeddedResource Include="Sqlite-Main.sql" />
+    <EmbeddedResource Include="Sqlite-Persistence.sql" />
+  </ItemGroup>
 </Project>

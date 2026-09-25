@@ -109,6 +109,9 @@ public sealed class ManifestParser : IManifestParser
                 || !manifest.Plugins.TryGetValue(tool.RequiresPlugin, out var requiredPlugin)
                 || !string.Equals(requiredPlugin.Type, "dapr_tools", StringComparison.OrdinalIgnoreCase))
                 errors.Add($"Tool '{toolName}': requiresPlugin must name a Dapr tools plugin in this manifest.");
+            else if (!requiredPlugin.Config.TryGetValue("port", out var portText)
+                || !int.TryParse(portText, out var port) || port is < 1 or > 65535)
+                errors.Add($"Tool '{toolName}': the Dapr tools installation requires an explicit sidecar port between 1 and 65535.");
         }
         return errors;
     }

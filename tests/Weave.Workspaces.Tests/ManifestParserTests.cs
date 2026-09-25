@@ -222,7 +222,11 @@ public sealed class ManifestParserTests
             Name = "test",
             Plugins = new Dictionary<string, PluginDefinition>
             {
-                ["sidecar"] = new() { Type = "dapr_tools" }
+                ["sidecar"] = new()
+                {
+                    Type = "dapr_tools",
+                    Config = new Dictionary<string, string> { ["port"] = "3500" }
+                }
             },
             Tools = new Dictionary<string, ToolDefinition>
             {

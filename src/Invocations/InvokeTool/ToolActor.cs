@@ -54,7 +54,9 @@ public sealed partial class ToolActor(
 
         await lifecycleManager.RunHooksAsync(LifecyclePhase.ToolConnecting, context, token.CancellationToken);
 
-        var connector = discovery.GetConnector(definition.Type);
+        var connector = definition.InstallationId is null
+            ? discovery.GetConnector(definition.Type)
+            : discovery.GetConnector(definition.Type, definition.InstallationId);
         token.CancellationToken.ThrowIfCancellationRequested();
         _handle = await connector.ConnectAsync(definition, token, token.CancellationToken);
         _connectedConnector = connector;
@@ -206,7 +208,10 @@ public sealed partial class ToolActor(
             return false;
         try
         {
-            return ReferenceEquals(discovery.GetConnector(_definition.Type), connector);
+            var current = _definition.InstallationId is null
+                ? discovery.GetConnector(_definition.Type)
+                : discovery.GetConnector(_definition.Type, _definition.InstallationId);
+            return ReferenceEquals(current, connector);
         }
         catch (NotSupportedException)
         {

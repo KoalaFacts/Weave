@@ -13,6 +13,23 @@ before disposing the plugin registration. A direct plugin disable also blocks
 new calls, and a later connector of the same type cannot silently take over an
 old tool handle.
 
+Each workspace now stores a Dapr tool installation record with a stable
+`<workspace-id>/<plugin-name>` identity, fixed local sidecar port, configuration
+digest and desired enabled state. Tool resolution selects the connector by that
+installation identity. Two workspaces can therefore use different Dapr
+sidecars concurrently. Disabling an installation persists the disabled state
+before removing its runtime connector; a later Host restart does not reactivate
+it. Re-enabling through `POST /api/plugins` requires the installed port.
+The workspace registry records the ID before workspace provisioning, so a
+restart can find a workspace that reached Running even if startup was
+interrupted before plugin activation.
+
+With durable actor storage configured, Host startup reads active workspaces and
+reactivates their enabled Dapr installations. Tool handles are rebuilt on
+resolution. The recovery path never replays an invocation. This path was
+verified with a real file-backed SQLite actor store across three Host starts:
+created, recovered and called, then disabled and not recovered.
+
 The workspace manifest is the definition and deployment input for this first
 path. For example, the `manifest` inside `POST /api/workspaces` can contain:
 
@@ -46,10 +63,19 @@ network health check. The example model name must be replaced with a configured
 model if the Agent reasoning runtime is used. The tool can be exercised through
 the governed invocation path without starting an Agent reasoning loop.
 
+For restart recovery in a local single-Host deployment, configure
+`Weave:ActorStorage:Provider=sqlite` and an appropriate
+`ConnectionStrings:Sqlite` file path. The default memory actor store does not
+survive restart. The SQLite extension initializes the Orleans 10.1.0 main and
+persistence schema for an empty database and rejects an incomplete schema;
+it does not migrate an existing schema. SQLite is for one Host, not clustered
+deployment.
+
 ## Authorization and failure behavior
 
 - `requiresPlugin` must name a `dapr_tools` definition in the same manifest.
-  Missing target app IDs and missing dependencies fail manifest validation.
+  Missing target app IDs, missing dependencies and non-explicit or invalid
+  sidecar ports fail manifest validation.
 - Plugin connection still requires the Host's existing
   `plugin:invoke:<workspace-id>/<plugin-name>` grant. The workspace startup
   command mints this narrow internal token after its administrative HTTP entry.
@@ -69,27 +95,29 @@ the governed invocation path without starting an Agent reasoning loop.
 
 ## Limits and Cordis decision
 
-This is a workspace-lifetime installation from a manifest, not a durable,
-independent `PluginInstallation` with its own approval, revision, credential
-references and restart/reconciliation lifecycle. A Host restart does not
-automatically recreate this plugin from the prior workspace manifest. Dapr tool
-connector registration is still a global Host key, so concurrent workspaces
-cannot each install a different Dapr tool connector. The in-process connector
-is trusted code and is not isolated from the Host.
+This is a durable, workspace-owned Dapr installation when the actor store is
+durable. It is not yet a general Tenant-scoped `PluginInstallation` with
+independent approval, credentials, code/package revision and multi-Host
+coordination. The configuration digest covers the sidecar port and a declared
+Dapr tools implementation revision. Behavior or schema changes require that
+revision to advance. A previously running workspace persisted before
+this change has no recoverable Dapr port; stop and start it from its manifest
+to create the installation record. The in-process connector is trusted code
+and is not isolated from the Host.
 
 The exercise supports extending Cordis-style reversible effects and explicit
-dependency declarations to further real providers. The next justified
-foundation is installation-scoped connector identity and persistent lifecycle
-state, so multiple workspaces can coexist and restart safely. It does not yet
-justify replacing Weave's existing authorization, invocation journal or Agent
-runtime with a general Cordis context tree or typed event system.
+dependency declarations to further real providers. Installation-scoped routing
+and desired-state recovery were needed here and have been added. A context tree
+could later organize nested scopes and bulk disposal, but it does not provide
+durable identity, grants, revision binding or recovery by itself. No current
+Dapr path needs a general context tree or typed event system.
 
 ## Verification
 
-`DaprWorkspacePluginFlowTests` starts a real Host and a local fake sidecar,
-starts a workspace from the manifest, checks denied and granted Agent
-resolution, performs an authorized `ping` through ToolActor and the invocation
-journal, disables and replaces the plugin, and verifies that the old tool cannot
-redirect to the new connector. `ManifestParserTests` covers dependency
-validation and serialization. This proves the local single-host path, not a
-real Dapr deployment or multi-host behavior.
+`DaprWorkspacePluginFlowTests` starts real Hosts and local fake sidecars,
+checks denied and granted Agent resolution, performs authorized calls through
+ToolActor and the invocation journal, routes two workspaces to separate
+sidecars, and exercises recovery and persisted disable across Host restarts.
+`ManifestParserTests` covers dependency validation and serialization. This
+proves the local single-Host path, not a real Dapr deployment or multi-Host
+behavior.

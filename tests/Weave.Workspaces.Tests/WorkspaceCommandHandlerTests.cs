@@ -226,7 +226,8 @@ public sealed class WorkspaceCommandHandlerTests
 
         await Should.ThrowAsync<InvalidOperationException>(
             () => handler.HandleAsync(command, CancellationToken.None));
-        await workspaceRegistry.DidNotReceive().RegisterAsync(Arg.Any<string>());
+        await workspaceRegistry.Received(1).RegisterAsync(TestWorkspaceId.ToString());
+        await workspaceRegistry.Received(1).UnregisterAsync(TestWorkspaceId.ToString());
     }
 
     [Fact]

@@ -2,6 +2,7 @@ using Microsoft.Extensions.Logging;
 using Weave.Shared.Events;
 using Weave.Shared.Ids;
 using Weave.Shared.Lifecycle;
+using Weave.Tools.InstallDaprTool;
 using Weave.Workspaces.Manifest;
 using Weave.Workspaces.Runtime;
 using Weave.Workspaces.Templates;
@@ -34,6 +35,10 @@ public sealed partial class WorkspaceActor(
         if (persistentState.State.Status is WorkspaceStatus.Running)
             return persistentState.State;
 
+        var dependencyErrors = ManifestParser.ValidateDaprToolDependencies(manifest);
+        if (dependencyErrors.Count > 0)
+            throw new InvalidOperationException(string.Join(" ", dependencyErrors));
+
         persistentState.State.Status = WorkspaceStatus.Starting;
 
         var context = new LifecycleContext
@@ -62,6 +67,23 @@ public sealed partial class WorkspaceActor(
                 .Where(static tool => string.Equals(tool.Type, "dapr", StringComparison.OrdinalIgnoreCase))
                 .Select(static tool => tool.RequiresPlugin!)
                 .Distinct(StringComparer.Ordinal));
+            foreach (var installation in persistentState.State.DaprToolInstallations)
+                installation.DesiredEnabled = false;
+            foreach (var pluginName in persistentState.State.ActivePlugins)
+            {
+                var port = int.Parse(manifest.Plugins[pluginName].Config["port"], System.Globalization.CultureInfo.InvariantCulture);
+                var id = $"{persistentState.State.WorkspaceId}/{pluginName}";
+                var installation = persistentState.State.DaprToolInstallations
+                    .SingleOrDefault(item => string.Equals(item.Id, id, StringComparison.Ordinal));
+                if (installation is null)
+                {
+                    installation = new DaprToolInstallation { Id = id, PluginName = pluginName };
+                    persistentState.State.DaprToolInstallations.Add(installation);
+                }
+                installation.Port = port;
+                installation.ConfigDigest = DaprToolInstallation.ComputeConfigDigest(port);
+                installation.DesiredEnabled = true;
+            }
             foreach (var container in env.Containers)
             {
                 persistentState.State.Containers.Add(new ContainerInfo
@@ -125,6 +147,8 @@ public sealed partial class WorkspaceActor(
             persistentState.State.ActiveAgents.Clear();
             persistentState.State.ActiveTools.Clear();
             persistentState.State.ActivePlugins.Clear();
+            foreach (var installation in persistentState.State.DaprToolInstallations)
+                installation.DesiredEnabled = false;
             persistentState.State.NetworkId = null;
 
             await persistentState.WriteStateAsync();
@@ -149,6 +173,18 @@ public sealed partial class WorkspaceActor(
             LogWorkspaceFailed(ex, persistentState.State.WorkspaceId, "stop");
             throw;
         }
+    }
+
+    public async Task SetDaprToolInstallationEnabledAsync(string pluginName, bool enabled)
+    {
+        var installation = persistentState.State.DaprToolInstallations.SingleOrDefault(item =>
+            string.Equals(item.PluginName, pluginName, StringComparison.Ordinal));
+        if (installation is null)
+            throw new InvalidOperationException($"Dapr tool installation '{pluginName}' was not found.");
+        if (enabled && persistentState.State.Status is not WorkspaceStatus.Running)
+            throw new InvalidOperationException("The workspace must be running to enable a Dapr tool installation.");
+        installation.DesiredEnabled = enabled;
+        await persistentState.WriteStateAsync();
     }
 
     public Task<WorkspaceState> GetStateAsync() => Task.FromResult(persistentState.State);

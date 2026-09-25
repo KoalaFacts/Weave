@@ -8,6 +8,7 @@ public sealed partial class ToolDiscoveryService : IToolDiscoveryService
 {
     private readonly FrozenDictionary<ToolType, IToolConnector> _builtIn;
     private readonly Dictionary<ToolType, IToolConnector> _dynamic = [];
+    private readonly Dictionary<(string InstallationId, ToolType Type), IToolConnector> _installations = [];
     private readonly Lock _lock = new();
     private IReadOnlyList<ToolType>? _cachedTypes;
     private readonly ILogger<ToolDiscoveryService> _logger;
@@ -34,6 +35,14 @@ public sealed partial class ToolDiscoveryService : IToolDiscoveryService
             : throw new NotSupportedException($"No connector registered for tool type '{type}'");
     }
 
+    public IToolConnector GetConnector(ToolType type, string installationId)
+    {
+        lock (_lock)
+            return _installations.TryGetValue((installationId, type), out var connector)
+                ? connector
+                : throw new NotSupportedException($"No connector registered for installation '{installationId}' and tool type '{type}'");
+    }
+
     public IReadOnlyList<ToolType> SupportedTypes
     {
         get
@@ -52,6 +61,13 @@ public sealed partial class ToolDiscoveryService : IToolDiscoveryService
             _dynamic[connector.ToolType] = connector;
             _cachedTypes = null;
         }
+        LogConnectorRegistered(connector.ToolType);
+    }
+
+    public void Register(string installationId, IToolConnector connector)
+    {
+        lock (_lock)
+            _installations[(installationId, connector.ToolType)] = connector;
         LogConnectorRegistered(connector.ToolType);
     }
 
@@ -80,6 +96,21 @@ public sealed partial class ToolDiscoveryService : IToolDiscoveryService
                 _dynamic.Remove(type);
                 _cachedTypes = null;
             }
+        }
+        if (removed)
+            LogConnectorUnregistered(type);
+        return removed;
+    }
+
+    public bool UnregisterIfCurrent(string installationId, ToolType type, IToolConnector connector)
+    {
+        bool removed;
+        lock (_lock)
+        {
+            var key = (installationId, type);
+            removed = _installations.TryGetValue(key, out var current) && ReferenceEquals(current, connector);
+            if (removed)
+                _installations.Remove(key);
         }
         if (removed)
             LogConnectorUnregistered(type);

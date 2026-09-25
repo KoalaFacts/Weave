@@ -15,7 +15,7 @@ public sealed class DaprToolsPluginConnector(
 
     public string PluginType => "dapr_tools";
 
-    public IReadOnlyList<string> RegistrationKeys(string name) => ["tool:dapr"];
+    public IReadOnlyList<string> RegistrationKeys(string name) => [$"tool:dapr:{name}"];
 
     public PluginSchema Schema { get; } = new()
     {
@@ -46,10 +46,11 @@ public sealed class DaprToolsPluginConnector(
         client.BaseAddress = new Uri($"http://localhost:{port}");
         var connector = new DaprToolConnector(client, loggerFactory.CreateLogger<DaprToolConnector>());
         var scope = new PluginActivationScope();
-        scope.Add(() => toolDiscovery.Register(connector), () =>
+        scope.Add(() => toolDiscovery.Register(name, connector), () =>
         {
             connector.Deactivate();
-            toolDiscovery.UnregisterIfCurrent(ToolType.Dapr, connector);
+            toolDiscovery.UnregisterIfCurrent(name, ToolType.Dapr, connector);
+            client.Dispose();
         });
         _activations.Replace(name, scope);
 
