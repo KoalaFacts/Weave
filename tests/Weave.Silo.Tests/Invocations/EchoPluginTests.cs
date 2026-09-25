@@ -21,6 +21,12 @@ public sealed class EchoPluginTests
     [Fact]
     public async Task Invoke_RealHttpEchoPlugin_UsesStreamableHttp()
     {
+        var packageSpec = Path.Combine(RepositoryRoot(), "npm", "weave-plugin-echo", "tool.json");
+        var configuredSpec = Environment.GetEnvironmentVariable("WEAVE_ECHO_SPEC");
+        Assert.SkipWhen(configuredSpec is null || !string.Equals(
+            Path.GetFullPath(configuredSpec, RepositoryRoot()), packageSpec, StringComparison.OrdinalIgnoreCase),
+            "The HTTP check runs with the npm Echo package job.");
+
         var cli = Path.Combine(RepositoryRoot(), "npm", "weave-plugin-echo", "dist", "cli.js");
         var start = new ProcessStartInfo("node")
         {
