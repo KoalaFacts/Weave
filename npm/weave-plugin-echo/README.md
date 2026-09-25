@@ -29,16 +29,19 @@ two-endpoint HTTP+SSE transport.
 ## Connect from Weave
 
 An administrator can add one of these tool definitions to a workspace
-manifest. For stdio, use the installed binary's absolute path or the
-deployment's approved executable lookup:
+manifest. For stdio, run `npm root` in the installation directory and append
+`@koalafacts/weave-plugin-echo/dist/cli.js` to find the JavaScript entry
+point. Set `server` to the approved Node executable and `args[0]` to the
+absolute path of that file. This works on Windows too, where npm's command
+shim cannot be launched directly by Weave's process runner:
 
 ```json
 {
   "echo-sample": {
     "type": "mcp",
     "mcp": {
-      "server": "weave-plugin-echo",
-      "args": ["--stdio"]
+      "server": "node",
+      "args": ["<absolute path to installed dist/cli.js>", "--stdio"]
     }
   }
 }
