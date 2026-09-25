@@ -89,9 +89,9 @@ deployment.
   plugin registrations, stops the workspace and removes it from the active
   workspace registry. If cleanup itself fails, the original failure and cleanup
   failures are surfaced together.
-- Disabling the plugin blocks old Dapr connectors from issuing further HTTP
-  requests. In-flight requests already sent to the sidecar may still complete;
-  the invocation journal's outcome semantics continue to apply.
+- Disabling the plugin prevents further HTTP handoffs and waits for requests
+  already handed to the sidecar to finish before disconnect returns. The
+  invocation journal's outcome semantics continue to apply.
 
 ## Limits and Cordis decision
 

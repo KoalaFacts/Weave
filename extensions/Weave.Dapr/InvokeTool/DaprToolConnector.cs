@@ -11,18 +11,31 @@ namespace Weave.Tools.Connectors;
 /// </summary>
 public sealed partial class DaprToolConnector(HttpClient httpClient, ILogger<DaprToolConnector> logger) : IToolConnector
 {
-    private int _active = 1;
+    private readonly object _dispatchGate = new();
+    private bool _active = true;
+    private int _inFlight;
 
     public ToolType ToolType => ToolType.Dapr;
 
-    public void Deactivate() => Interlocked.Exchange(ref _active, 0);
+    public void Deactivate()
+    {
+        lock (_dispatchGate)
+        {
+            _active = false;
+            while (_inFlight > 0)
+                Monitor.Wait(_dispatchGate);
+        }
+    }
 
     public ToolInvocation NormalizeInvocation(ToolInvocation invocation) => invocation;
 
     public Task<ToolHandle> ConnectAsync(ToolSpec tool, CapabilityToken token, CancellationToken ct = default)
     {
-        if (Volatile.Read(ref _active) == 0)
-            throw new InvalidOperationException("Dapr tool connector is inactive.");
+        lock (_dispatchGate)
+        {
+            if (!_active)
+                throw new InvalidOperationException("Dapr tool connector is inactive.");
+        }
         var dapr = tool.Dapr ?? throw new InvalidOperationException($"Tool '{tool.Name}' has no Dapr configuration");
         if (string.IsNullOrWhiteSpace(dapr.AppId))
             throw new InvalidOperationException($"Tool '{tool.Name}' requires a Dapr app ID.");
@@ -45,16 +58,34 @@ public sealed partial class DaprToolConnector(HttpClient httpClient, ILogger<Dap
     public async Task<ToolResult> InvokeAsync(ToolHandle handle, ToolInvocation invocation, CancellationToken ct = default)
     {
         var sw = Stopwatch.StartNew();
-        if (Volatile.Read(ref _active) == 0)
-            return new ToolResult { Success = false, ToolName = handle.ToolName, Error = "Dapr tool connector is inactive.", Duration = sw.Elapsed };
+        var handedOff = false;
         try
         {
             var appId = handle.ConnectionId.Replace("dapr:", "", StringComparison.Ordinal);
             var bytes = JsonSerializer.SerializeToUtf8Bytes(invocation.Parameters, DaprToolJsonContext.Default.DictionaryStringString);
             using var content = new ByteArrayContent(bytes);
             content.Headers.ContentType = new System.Net.Http.Headers.MediaTypeHeaderValue("application/json");
-            using var response = await httpClient.PostAsync(
-                $"/v1.0/invoke/{appId}/method/{invocation.Method}", content, ct);
+            Task<HttpResponseMessage> responseTask;
+            lock (_dispatchGate)
+            {
+                if (!_active)
+                    return new ToolResult { Success = false, ToolName = handle.ToolName, Error = "Dapr tool connector is inactive.", Duration = sw.Elapsed };
+                _inFlight++;
+                try
+                {
+                    responseTask = httpClient.PostAsync(
+                        $"/v1.0/invoke/{appId}/method/{invocation.Method}", content, ct);
+                    handedOff = true;
+                }
+                catch
+                {
+                    _inFlight--;
+                    if (_inFlight == 0)
+                        Monitor.PulseAll(_dispatchGate);
+                    throw;
+                }
+            }
+            using var response = await responseTask;
             var output = await response.Content.ReadAsStringAsync(ct);
             sw.Stop();
 
@@ -71,6 +102,18 @@ public sealed partial class DaprToolConnector(HttpClient httpClient, ILogger<Dap
             sw.Stop();
             LogDaprToolInvocationFailed(ex, handle.ToolName);
             return new ToolResult { Success = false, ToolName = handle.ToolName, Error = ex.Message, Duration = sw.Elapsed };
+        }
+        finally
+        {
+            if (handedOff)
+            {
+                lock (_dispatchGate)
+                {
+                    _inFlight--;
+                    if (_inFlight == 0)
+                        Monitor.PulseAll(_dispatchGate);
+                }
+            }
         }
     }
 
