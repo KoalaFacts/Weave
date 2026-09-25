@@ -1,6 +1,9 @@
 using Weave.Security.Tokens;
 using Weave.Silo.Plugins;
+using Weave.Tools.InstallDaprTool;
+using Weave.Workspaces.Lifecycle;
 using Weave.Workspaces.Manifest;
+using Weave.Workspaces.Templates;
 namespace Weave.Silo.Api;
 
 public static class PluginEndpoints
@@ -25,7 +28,7 @@ public static class PluginEndpoints
             .ProducesValidationProblem()
             .ProducesProblem(409)
             .ProducesProblem(422);
-        group.MapDelete("/{name}", DisconnectPluginAsync)
+        group.MapDelete("/{**name}", DisconnectPluginAsync)
             .WithDescription("Disconnect a plugin by name.")
             .Produces(204)
             .ProducesProblem(404);
@@ -58,6 +61,7 @@ public static class PluginEndpoints
         ConnectPluginRequest request,
         IPluginRegistry registry,
         ICapabilityTokenService tokenService,
+        IVirtualActorProvider actors,
         CancellationToken ct)
     {
         var errors = ValidateConnectPlugin(request);
@@ -78,10 +82,38 @@ public static class PluginEndpoints
                 Config = request.Config is not null ? new(request.Config) : []
             };
 
+            var installed = await FindDaprInstallationAsync(request.Name, actors);
+            if (installed is not null || string.Equals(request.Type, "dapr_tools", StringComparison.OrdinalIgnoreCase))
+            {
+                if (installed is null)
+                    return ResultExtensions.Conflict("Install this Dapr tools plugin through a workspace manifest first.");
+                if (!string.Equals(request.Type, "dapr_tools", StringComparison.OrdinalIgnoreCase))
+                    return ResultExtensions.Conflict("This installation is bound to the Dapr tools plugin type.");
+                if (!int.TryParse(definition.Config.GetValueOrDefault("port"), out var port)
+                    || port != installed.Value.Installation.Port
+                    || !string.Equals(installed.Value.Installation.ConfigDigest,
+                        DaprToolInstallation.ComputeConfigDigest(port), StringComparison.Ordinal))
+                    return ResultExtensions.Conflict("The Dapr tools configuration differs from the installed revision.");
+            }
+
             using var source = PluginTokenFactory.MintInvoke(tokenService, request.Name, ct);
             var status = await registry.ConnectAsync(request.Name, definition, source.Token);
             if (!status.IsConnected)
                 return ResultExtensions.UnprocessableEntity(status.Error ?? "Plugin connection failed.");
+
+            if (installed is not null)
+            {
+                try
+                {
+                    await installed.Value.Workspace.SetDaprToolInstallationEnabledAsync(
+                        installed.Value.Installation.PluginName, true);
+                }
+                catch
+                {
+                    await registry.DisconnectAsync(request.Name, source.Token);
+                    throw;
+                }
+            }
 
             return Results.Created(
                 $"/api/plugins/{request.Name}",
@@ -97,14 +129,36 @@ public static class PluginEndpoints
         string name,
         IPluginRegistry registry,
         ICapabilityTokenService tokenService,
+        IVirtualActorProvider actors,
         CancellationToken ct)
     {
+        var installed = await FindDaprInstallationAsync(name, actors);
+        if (installed is not null)
+            await installed.Value.Workspace.SetDaprToolInstallationEnabledAsync(
+                installed.Value.Installation.PluginName, false);
         using var source = PluginTokenFactory.MintInvoke(tokenService, name, ct);
         var status = await registry.DisconnectAsync(name, source.Token);
         if (status.Error is not null)
+        {
+            if (installed is not null)
+                return Results.NoContent();
             return ResultExtensions.NotFound($"Plugin '{name}' not found.");
+        }
 
         return Results.NoContent();
+    }
+
+    private static async Task<(IWorkspaceActor Workspace, DaprToolInstallation Installation)?> FindDaprInstallationAsync(
+        string name, IVirtualActorProvider actors)
+    {
+        var slash = name.IndexOf('/', StringComparison.Ordinal);
+        if (slash <= 0 || slash == name.Length - 1)
+            return null;
+        var workspace = actors.GetActor<IWorkspaceActor>(VirtualActorId.From(name[..slash]));
+        var state = await workspace.GetStateAsync();
+        var installation = state.DaprToolInstallations.SingleOrDefault(item =>
+            string.Equals(item.Id, name, StringComparison.Ordinal));
+        return installation is null ? null : (workspace, installation);
     }
 
     // --- Validation ---

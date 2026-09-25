@@ -1,4 +1,5 @@
 using Weave.Shared.Ids;
+using Weave.Tools.InstallDaprTool;
 
 namespace Weave.Workspaces.Lifecycle;
 
@@ -10,6 +11,8 @@ public sealed record WorkspaceState
     public DateTimeOffset? StoppedAt { get; set; }
     public List<string> ActiveAgents { get; init; } = [];
     public List<string> ActiveTools { get; init; } = [];
+    public List<string> ActivePlugins { get; init; } = [];
+    public List<DaprToolInstallation> DaprToolInstallations { get; init; } = [];
     public List<ContainerInfo> Containers { get; init; } = [];
     public NetworkId? NetworkId { get; set; }
     public string? ErrorMessage { get; set; }

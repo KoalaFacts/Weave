@@ -6,6 +6,7 @@ using Weave.Shared.Events;
 using Weave.Shared.Ids;
 using Weave.Shared.Lifecycle;
 using Weave.Tools.Discovery;
+using Weave.Tools.Connectors;
 using Weave.Tools.Marketplace;
 namespace Weave.Tools.Tool;
 
@@ -26,6 +27,7 @@ public sealed partial class ToolActor(
     private readonly InvocationExecution _execution = new(journal, timeProvider, logger);
     private ToolHandle? _handle;
     private ToolSpec? _definition;
+    private IToolConnector? _connectedConnector;
     private long _connectionVersion;
 
     public Task OnActivatedAsync(string? key, CancellationToken cancellationToken)
@@ -52,9 +54,12 @@ public sealed partial class ToolActor(
 
         await lifecycleManager.RunHooksAsync(LifecyclePhase.ToolConnecting, context, token.CancellationToken);
 
-        var connector = discovery.GetConnector(definition.Type);
+        var connector = definition.InstallationId is null
+            ? discovery.GetConnector(definition.Type)
+            : discovery.GetConnector(definition.Type, definition.InstallationId);
         token.CancellationToken.ThrowIfCancellationRequested();
         _handle = await connector.ConnectAsync(definition, token, token.CancellationToken);
+        _connectedConnector = connector;
 
         await lifecycleManager.RunHooksAsync(
             LifecyclePhase.ToolConnected,
@@ -79,7 +84,7 @@ public sealed partial class ToolActor(
 
         await lifecycleManager.RunHooksAsync(LifecyclePhase.ToolDisconnecting, context, CancellationToken.None);
 
-        var connector = discovery.GetConnector(_definition.Type);
+        var connector = _connectedConnector ?? throw new InvalidOperationException("Tool connector is not connected.");
         await connector.DisconnectAsync(_handle);
 
         await lifecycleManager.RunHooksAsync(
@@ -88,6 +93,7 @@ public sealed partial class ToolActor(
             CancellationToken.None);
 
         _handle = null;
+        _connectedConnector = null;
         LogToolDisconnected(_identity.ToolName, _identity.WorkspaceId);
     }
 
@@ -103,7 +109,7 @@ public sealed partial class ToolActor(
         var handle = _handle;
         var definition = _definition;
         var connectionVersion = _connectionVersion;
-        var connector = definition is null ? null : discovery.GetConnector(definition.Type);
+        var connector = _connectedConnector;
         if (connector is not null)
             request = connector.NormalizeInvocation(request);
         _identity.Ensure(invocation: request, token: token);
@@ -112,7 +118,7 @@ public sealed partial class ToolActor(
         var grant = ToolCapability.Invoke(_identity.ToolName, request.Method);
         await authorizer.AuthorizeAsync(token, grant, _identity.WorkspaceId);
 
-        if (handle is null || definition is null || connector is null)
+        if (handle is null || definition is null || connector is null || !ConnectorIsCurrent(connector))
             throw new InvalidOperationException($"Tool '{_identity.ToolName}' is not connected");
         if (!string.Equals(handle.ToolName, _identity.ToolName, StringComparison.Ordinal) || handle.Type != definition.Type)
             throw new UnauthorizedAccessException("Tool connection does not match actor identity.");
@@ -178,6 +184,8 @@ public sealed partial class ToolActor(
             token.CancellationToken.ThrowIfCancellationRequested();
             if (connectionVersion != _connectionVersion || !ReferenceEquals(handle, _handle) || !ReferenceEquals(definition, _definition))
                 throw new UnauthorizedAccessException("Tool connection changed during authorization.");
+            if (!ConnectorIsCurrent(connector))
+                throw new UnauthorizedAccessException("Tool connector changed during authorization.");
             if (binding is not null && !string.Equals(adapterTarget, binding.GetApprovalTargetDigest(handle), StringComparison.Ordinal))
                 throw new UnauthorizedAccessException("Tool approval target changed during authorization.");
         }
@@ -188,8 +196,27 @@ public sealed partial class ToolActor(
         if (_handle is null || _definition is null)
             return new ToolSchema { ToolName = _identity.ToolName, Description = "Tool not connected" };
 
-        var connector = discovery.GetConnector(_definition.Type);
+        var connector = _connectedConnector;
+        if (connector is null || !ConnectorIsCurrent(connector))
+            return new ToolSchema { ToolName = _identity.ToolName, Description = "Tool not connected" };
         return await connector.DiscoverSchemaAsync(_handle);
+    }
+
+    private bool ConnectorIsCurrent(IToolConnector connector)
+    {
+        if (_definition is null)
+            return false;
+        try
+        {
+            var current = _definition.InstallationId is null
+                ? discovery.GetConnector(_definition.Type)
+                : discovery.GetConnector(_definition.Type, _definition.InstallationId);
+            return ReferenceEquals(current, connector);
+        }
+        catch (NotSupportedException)
+        {
+            return false;
+        }
     }
 
     public Task<ToolHandle?> GetHandleAsync() => Task.FromResult(_handle);
