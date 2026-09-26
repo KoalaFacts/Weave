@@ -71,6 +71,47 @@ public sealed class McpWorkspacePluginFlowTests
     }
 
     [Fact]
+    public async Task StopWorkspaceAsync_McpInstallation_RequiresWorkspaceDisableCapability()
+    {
+        var directory = Path.Join(Path.GetTempPath(), $"weave-mcp-stop-authority-{Guid.NewGuid():N}");
+        Directory.CreateDirectory(directory);
+        try
+        {
+            await using var peer = new McpPeer("stop-authority");
+            await peer.StartAsync();
+            await using var host = new DurableSiloFactory(directory);
+            using var client = host.CreateClient();
+            var workspaceId = await StartWorkspaceAsync(client, host.Services, peer);
+
+            using var denied = await client.DeleteAsync($"/api/workspaces/{workspaceId}",
+                TestContext.Current.CancellationToken);
+            denied.StatusCode.ShouldBe(HttpStatusCode.Unauthorized);
+            using (var wrongWorkspace = await SendPluginAsync(client, host.Services, HttpMethod.Delete,
+                $"/api/workspaces/{workspaceId}", "other", "workspace:stop", token:
+                    Mint(host.Services, "other", "workspace:stop", secondGrant: "plugin:mcp_tools:disable")))
+                wrongWorkspace.StatusCode.ShouldBe(HttpStatusCode.Forbidden);
+            using (var missingDisable = await SendPluginAsync(client, host.Services, HttpMethod.Delete,
+                $"/api/workspaces/{workspaceId}", workspaceId, "workspace:stop"))
+                missingDisable.StatusCode.ShouldBe(HttpStatusCode.Forbidden);
+            using (var missingStop = await SendPluginAsync(client, host.Services, HttpMethod.Delete,
+                $"/api/workspaces/{workspaceId}", workspaceId, "plugin:mcp_tools:disable"))
+                missingStop.StatusCode.ShouldBe(HttpStatusCode.Forbidden);
+            await InvokeAsync(host.Services, workspaceId, "stop-authority");
+            using var allowed = await SendPluginAsync(client, host.Services, HttpMethod.Delete,
+                $"/api/workspaces/{workspaceId}", workspaceId, "workspace:stop", token:
+                    Mint(host.Services, workspaceId, "workspace:stop", secondGrant: "plugin:mcp_tools:disable"));
+            allowed.StatusCode.ShouldBe(HttpStatusCode.NoContent);
+            var workspace = host.Services.GetRequiredService<IVirtualActorProvider>()
+                .GetActor<IWorkspaceActor>(VirtualActorId.From(workspaceId));
+            (await workspace.GetStateAsync()).McpToolInstallations.Single().DesiredEnabled.ShouldBeFalse();
+        }
+        finally
+        {
+            Directory.Delete(directory, recursive: true);
+        }
+    }
+
+    [Fact]
     public async Task Restart_TwoMcpInstallations_RouteIndependentlyAndHonorDisable()
     {
         var directory = Path.Join(Path.GetTempPath(), $"weave-mcp-installation-{Guid.NewGuid():N}");

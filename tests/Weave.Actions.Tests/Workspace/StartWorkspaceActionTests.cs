@@ -161,12 +161,13 @@ public sealed class StartWorkspaceActionTests
     public async Task ExecuteAsync_WithInstallationCapability_SendsItOnlyOnTheRequest()
     {
         string? presented = null;
+        using var unauthorized = new HttpResponseMessage(HttpStatusCode.Unauthorized);
         var handler = new StubHttpMessageHandler((request, _) =>
         {
             presented = request.Headers.GetValues("X-Weave-Capability").Single();
-            return Task.FromResult(new HttpResponseMessage(HttpStatusCode.Unauthorized));
+            return Task.FromResult(unauthorized);
         });
-        using var client = new HttpClient(handler) { BaseAddress = new Uri("http://example.test") };
+        using var client = new HttpClient(handler) { BaseAddress = new Uri("https://example.test") };
         var action = new StartWorkspaceAction(client);
 
         var result = await action.ExecuteAsync(new StartWorkspaceInput(NewManifest("demo"), "operator-capability"),
@@ -176,6 +177,38 @@ public sealed class StartWorkspaceActionTests
         result.Failure.Reason.ShouldBe(ActionFailureReason.Unauthorized);
         presented.ShouldBe("operator-capability");
         client.DefaultRequestHeaders.Contains("X-Weave-Capability").ShouldBeFalse();
+    }
+
+    [Theory]
+    [InlineData("http://example.test/")]
+    [InlineData("https://user:password@example.test/")]
+    [InlineData("https://example.test/subpath")]
+    [InlineData("https://example.test/?next=elsewhere")]
+    public async Task ExecuteAsync_CapabilityWithUnsafeOrigin_RejectsBeforeHttp(string origin)
+    {
+        var handler = StubHttpMessageHandler.Throws(new InvalidOperationException("HTTP was sent"));
+        using var client = new HttpClient(handler) { BaseAddress = new Uri(origin) };
+        var action = new StartWorkspaceAction(client);
+
+        var result = await action.ExecuteAsync(new StartWorkspaceInput(NewManifest("demo"), "encoded-token"),
+            CancellationToken.None);
+
+        result.Failure.ShouldNotBeNull();
+        result.Failure.Reason.ShouldBe(ActionFailureReason.ValidationFailed);
+        handler.LastRequestUri.ShouldBeNull();
+    }
+
+    [Fact]
+    public void CreateHandler_CapabilityTransport_DisablesRedirectsAndAmbientCredentials()
+    {
+        using var handler = WorkspaceCapabilityHttp.CreateHandler();
+
+        WorkspaceCapabilityHttp.IsSecureOrigin(new Uri("http://localhost:9401")).ShouldBeTrue();
+        WorkspaceCapabilityHttp.IsSecureOrigin(new Uri("http://127.0.0.1:9401")).ShouldBeTrue();
+        handler.AllowAutoRedirect.ShouldBeFalse();
+        handler.UseCookies.ShouldBeFalse();
+        handler.UseProxy.ShouldBeFalse();
+        handler.UseDefaultCredentials.ShouldBeFalse();
     }
 
     [Fact]

@@ -25,12 +25,20 @@ public sealed class StopWorkspaceAction
     {
         ArgumentNullException.ThrowIfNull(input);
         ArgumentException.ThrowIfNullOrWhiteSpace(input.WorkspaceId);
+        if (input.Capability is { } encoded && !WorkspaceCapabilityHttp.IsEncodedToken(encoded))
+            return ActionResult.Failed<StopWorkspaceResult>(
+                ActionFailure.ValidationFailed("The installation capability is not a single encoded token."));
+        if (input.Capability is not null && !WorkspaceCapabilityHttp.IsSecureOrigin(_httpClient.BaseAddress))
+            return ActionResult.Failed<StopWorkspaceResult>(
+                ActionFailure.ValidationFailed("Installation capabilities require a fixed HTTPS origin or HTTP loopback."));
 
         try
         {
-            using var response = await _httpClient.DeleteAsync(
-                $"/api/workspaces/{Uri.EscapeDataString(input.WorkspaceId)}",
-                cancellationToken);
+            using var request = new HttpRequestMessage(HttpMethod.Delete,
+                $"/api/workspaces/{Uri.EscapeDataString(input.WorkspaceId)}");
+            if (input.Capability is not null)
+                request.Headers.Add("X-Weave-Capability", input.Capability);
+            using var response = await _httpClient.SendAsync(request, cancellationToken);
 
             return response.StatusCode switch
             {

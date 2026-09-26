@@ -5,4 +5,10 @@ namespace Weave.Actions.Workspace;
 /// id they recorded when the workspace was started; the action does not
 /// resolve names.
 /// </summary>
-public sealed record StopWorkspaceInput(string WorkspaceId);
+public sealed class StopWorkspaceInput(string workspaceId, string? capability = null)
+{
+    public string WorkspaceId { get; } = workspaceId;
+    internal string? Capability { get; } = capability;
+
+    public override string ToString() => "StopWorkspaceInput (capability: ***REDACTED***)";
+}

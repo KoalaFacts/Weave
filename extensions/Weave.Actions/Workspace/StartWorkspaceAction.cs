@@ -30,10 +30,12 @@ public sealed class StartWorkspaceAction
     {
         ArgumentNullException.ThrowIfNull(input);
         ArgumentNullException.ThrowIfNull(input.Manifest);
-        if (input.Capability is { } encoded && (encoded.Length is 0 or > 16_384
-            || encoded.Any(character => !char.IsAsciiLetterOrDigit(character) && character is not '-' and not '_')))
+        if (input.Capability is { } encoded && !WorkspaceCapabilityHttp.IsEncodedToken(encoded))
             return ActionResult.Failed<StartWorkspaceResult>(
                 ActionFailure.ValidationFailed("The installation capability is not a single encoded token."));
+        if (input.Capability is not null && !WorkspaceCapabilityHttp.IsSecureOrigin(_httpClient.BaseAddress))
+            return ActionResult.Failed<StartWorkspaceResult>(
+                ActionFailure.ValidationFailed("Installation capabilities require a fixed HTTPS origin or HTTP loopback."));
 
         try
         {

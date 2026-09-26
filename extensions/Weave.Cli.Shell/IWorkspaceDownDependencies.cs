@@ -13,7 +13,7 @@ internal interface IWorkspaceDownDependencies
 
     Task<string> ReadAllTextAsync(string path, CancellationToken ct);
 
-    Task<ActionResult<StopWorkspaceResult>> StopWorkspaceAsync(string workspaceId, CancellationToken ct);
+    Task<ActionResult<StopWorkspaceResult>> StopWorkspaceAsync(string workspaceId, string? capability, CancellationToken ct);
 
     void DeleteFile(string path);
 }

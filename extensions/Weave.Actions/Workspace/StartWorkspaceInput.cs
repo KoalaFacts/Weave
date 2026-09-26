@@ -13,4 +13,6 @@ public sealed class StartWorkspaceInput(WorkspaceManifest manifest, string? capa
 {
     public WorkspaceManifest Manifest { get; } = manifest;
     internal string? Capability { get; } = capability;
+
+    public override string ToString() => "StartWorkspaceInput (capability: ***REDACTED***)";
 }

@@ -89,7 +89,10 @@ internal sealed class RunCliCommand(
             // share the DI'd typed HttpClient (which is configured at Build()
             // with the default silo URL). One-shot run-and-block lifetime
             // makes inline HttpClient construction fine.
-            using var httpClient = new HttpClient { BaseAddress = new Uri($"http://localhost:{port}", UriKind.Absolute) };
+            using var httpClient = new HttpClient(WorkspaceCapabilityHttp.CreateHandler())
+            {
+                BaseAddress = new Uri($"http://localhost:{port}", UriKind.Absolute)
+            };
             var startAction = new StartWorkspaceAction(httpClient);
 
             var result = await startAction.ExecuteAsync(new StartWorkspaceInput(manifest, capability), ct);

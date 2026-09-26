@@ -92,8 +92,9 @@ public static class PluginEndpoints
             var installedMcp = await FindMcpInstallationAsync(request.Name, actors);
             if (installedMcp is not null || string.Equals(request.Type, "mcp_tools", StringComparison.OrdinalIgnoreCase))
             {
-                var workspaceId = installedMcp?.Installation.Id.Split('/')[0]
-                    ?? request.Name.Split('/')[0].ToLowerInvariant();
+                var workspaceId = installedMcp is not null
+                    ? installedMcp.Value.Installation.Id.Split('/')[0]
+                    : request.Name.Split('/')[0].ToLowerInvariant();
                 var denial = await authority.DenialAsync(context, workspaceId,
                     McpInstallationAuthority.EnableGrant);
                 if (denial is not null)

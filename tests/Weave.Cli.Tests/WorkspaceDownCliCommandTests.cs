@@ -114,6 +114,26 @@ public class WorkspaceDownCliCommandTests
     }
 
     [Fact]
+    public async Task ExecuteAsync_CapabilityFile_ForwardsTokenToStopAction()
+    {
+        var dependencies = new TestWorkspaceDownDependencies
+        {
+            ManifestPath = "workspace.json",
+            StateExists = true,
+            WorkspaceIdText = "workspace-from-state",
+            CapabilityText = "  encoded-token  "
+        };
+        var command = new WorkspaceDownCliCommand(dependencies, Prompt);
+
+        var result = await command.ExecuteAsync(
+            new WorkspaceDownOptions("demo", CapabilityFile: "capability.txt"),
+            TestContext.Current.CancellationToken);
+
+        result.ShouldBe(0);
+        dependencies.StoppedCapability.ShouldBe("encoded-token");
+    }
+
+    [Fact]
     public async Task ExecuteAsync_StopActionFails_ReturnsFailureAndLeavesStateFileIntact()
     {
         var dependencies = new TestWorkspaceDownDependencies
@@ -193,6 +213,8 @@ public class WorkspaceDownCliCommandTests
 
         public string WorkspaceIdText { get; init; } = string.Empty;
 
+        public string CapabilityText { get; init; } = string.Empty;
+
         public ActionResult<StopWorkspaceResult> StopResult { get; init; } =
             ActionResult.Success(new StopWorkspaceResult());
 
@@ -202,6 +224,8 @@ public class WorkspaceDownCliCommandTests
 
         public string? StoppedWorkspaceId { get; private set; }
 
+        public string? StoppedCapability { get; private set; }
+
         public string? DeletedPath { get; private set; }
 
         public string? ResolveManifestPath(string? name) => ManifestPath;
@@ -210,12 +234,15 @@ public class WorkspaceDownCliCommandTests
 
         public bool FileExists(string path) => StateExists;
 
-        public Task<string> ReadAllTextAsync(string path, CancellationToken ct) => Task.FromResult(WorkspaceIdText);
+        public Task<string> ReadAllTextAsync(string path, CancellationToken ct) =>
+            Task.FromResult(path == "capability.txt" ? CapabilityText : WorkspaceIdText);
 
-        public Task<ActionResult<StopWorkspaceResult>> StopWorkspaceAsync(string workspaceId, CancellationToken ct)
+        public Task<ActionResult<StopWorkspaceResult>> StopWorkspaceAsync(
+            string workspaceId, string? capability, CancellationToken ct)
         {
             StopCalls++;
             StoppedWorkspaceId = workspaceId;
+            StoppedCapability = capability;
             return Task.FromResult(StopResult);
         }
 
