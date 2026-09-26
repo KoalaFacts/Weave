@@ -57,14 +57,15 @@ class BridgeFailureTests(unittest.TestCase):
 
     def test_admin_environment_is_rejected_before_protocol_or_http(self):
         with tempfile.TemporaryDirectory() as temp:
-            env = {k: os.environ[k] for k in ('PATH', 'LANG', 'SystemRoot') if k in os.environ}
+            env = {k: os.environ[k] for k in ('PATH', 'LANG', 'SystemRoot', 'SystemDrive') if k in os.environ}
             env.update({'WEAVE_AGENT_CAPABILITY': 'synthetic', 'WEAVE_OPERATOR_KEY': 'do-not-leak-this-private-value'})
             result = subprocess.run([sys.executable, str(SOURCE), '--url', 'http://127.0.0.1:1',
                                      '--workspace', 'pilot', '--requests', temp], input='', text=True,
-                                    capture_output=True, timeout=5, env=env)
+                                    capture_output=True, timeout=5, env=env, cwd=temp)
             self.assertEqual(result.returncode, 2)
             self.assertEqual(result.stdout, '')
             self.assertNotIn('do-not-leak', result.stderr)
+            self.assertFalse((Path(temp) / '%SystemDrive%').exists())
             self.assertEqual(list(Path(temp).iterdir()), [])
 
 

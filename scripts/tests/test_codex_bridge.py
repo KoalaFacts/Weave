@@ -131,7 +131,7 @@ class BridgeTests(unittest.TestCase):
         self.assertEqual(json.loads(self.calls[0][3])['method'], 'read_file')
 
     def test_real_stdio_process_discovers_only_four_tools_and_uuid_contract(self):
-        env = {k: os.environ[k] for k in ('PATH', 'LANG', 'SystemRoot') if k in os.environ}
+        env = {k: os.environ[k] for k in ('PATH', 'LANG', 'SystemRoot', 'SystemDrive') if k in os.environ}
         env['WEAVE_AGENT_CAPABILITY'] = 'test_capability'
         messages = [{'jsonrpc': '2.0', 'id': 1, 'method': 'initialize', 'params': {'protocolVersion': '2024-11-05'}},
                     {'jsonrpc': '2.0', 'method': 'notifications/initialized'},
@@ -139,8 +139,9 @@ class BridgeTests(unittest.TestCase):
         result = subprocess.run([sys.executable, str(BRIDGE), '--url', self.url, '--workspace', 'pilot',
                                  '--tool', 'files', '--requests', self.temp.name],
                                 input='\n'.join(json.dumps(m) for m in messages)+'\n',
-                                text=True, capture_output=True, timeout=5, env=env)
+                                text=True, capture_output=True, timeout=5, env=env, cwd=self.temp.name)
         self.assertEqual(result.returncode, 0, result.stderr)
+        self.assertFalse((Path(self.temp.name) / '%SystemDrive%').exists())
         replies = [json.loads(line) for line in result.stdout.splitlines()]
         self.assertEqual(len(replies), 2)
         tools = {t['name']: t for t in replies[1]['result']['tools']}
