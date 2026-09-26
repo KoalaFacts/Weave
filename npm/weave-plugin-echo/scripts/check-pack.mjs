@@ -7,13 +7,13 @@ const npmCli = process.env.npm_execpath;
 if (!npmCli)
     throw new Error('Run this check through npm run pack:check.');
 
-const packed = spawnSync(process.execPath, [npmCli, 'publish', '--dry-run', '--access', 'public', '--json'], {
+const packed = spawnSync(process.execPath, [npmCli, 'pack', '--dry-run', '--json'], {
     cwd: new URL('..', import.meta.url),
     encoding: 'utf8'
 });
 if (packed.status !== 0)
-    throw new Error(packed.stderr || packed.stdout || 'npm publish dry run failed.');
-assert.doesNotMatch(packed.stderr, /npm warn publish npm auto-corrected/, 'npm must not rewrite the published manifest.');
+    throw new Error(packed.stderr || packed.stdout || 'npm pack dry run failed.');
+assert.doesNotMatch(packed.stderr, /npm warn .*auto-corrected/, 'npm must not rewrite the published manifest.');
 
 const report = JSON.parse(packed.stdout);
 const entry = Array.isArray(report) ? report[0] : report['@koalafacts/weave-plugin-echo'];

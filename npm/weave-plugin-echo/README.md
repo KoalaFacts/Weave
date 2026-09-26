@@ -134,19 +134,17 @@ network isolation for plugin code or a general plugin authoring framework.
 
 ## Publishing
 
-The first release requires an npm account with publish access to the
-`@koalafacts` scope. After this change is merged and checks pass, the
-maintainer runs `npm ci`, `npm test`, `npm run pack:check`, and
-`npm publish --access public` from this directory, completing npm's
-interactive authentication. The package must exist on npm before its
-trusted publisher can be configured.
+Version `0.1.0` was bootstrapped with interactive npm authentication. Its npm
+trusted publisher is configured for `KoalaFacts/Weave`, workflow
+`publish-npm-plugin-echo.yml`, and environment `npm`, with direct publishing
+allowed. The GitHub environment allows only `main` and requires maintainer
+review. The bootstrap release does not prove an OIDC publish; that requires a
+new version through the workflow.
 
-For later releases, configure a GitHub Actions trusted publisher on npm for
-`KoalaFacts/Weave`, workflow `publish-npm-plugin-echo.yml`, and environment
-`npm`, with direct `npm publish` allowed. Protect that GitHub environment
-with required reviewers. Bump the version in `package.json`,
+For later releases, bump the version in `package.json`,
 `package-lock.json`, and `src/index.ts` together; the pack check rejects a
 version mismatch. Merge the reviewed change, then manually dispatch the
 publish workflow from `main` with that exact version. The workflow uses OIDC
-and does not require a stored npm write token. See the
+and does not require a stored npm write token. Verify the configured publisher
+with `npm trust list @koalafacts/weave-plugin-echo`. See the
 [npm trusted publishing guide](https://docs.npmjs.com/trusted-publishers/).
