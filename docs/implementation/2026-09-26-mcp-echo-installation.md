@@ -27,6 +27,39 @@ remain in the ToolActor path. An approval target includes the installation
 configuration and pinned operation schema digest. The approval review path
 resolves the installation-scoped connector.
 
+The HTTP management entry requires a signed `X-Weave-Capability` even when
+global API authentication is disabled. A manifest containing `mcp_tools` needs
+both `workspace:create` and `plugin:mcp_tools:install` with token workspace
+`silo` because the new workspace ID does not exist yet. The token is checked
+before a workspace is created.
+Enabling an existing installation needs `plugin:mcp_tools:enable`; disabling it
+needs `plugin:mcp_tools:disable`. Stopping its workspace through the HTTP API
+needs both `workspace:stop` and `plugin:mcp_tools:disable`, since stop disables
+all installations in that workspace. These tokens must name the installation's
+workspace ID. Missing, malformed, expired, or revoked credentials return 401;
+wrong workspace or missing grant returns 403. This check is in addition to any
+configured global API or trusted-operator authentication.
+
+An operator can issue the installation token through the existing configured
+[credential-profile endpoint](2026-09-22-trusted-operator-onboarding.md). For
+example, a profile with workspace `silo`, grants `workspace:create` and
+`plugin:mcp_tools:install`, and a short lifetime can issue a capability
+for `weave workspace up <workspace> --capability-file <private-token-file>` (or `weave run`
+and `weave data import` with the same option). The file contains only the base64url capability text
+returned by `POST /api/operator/credentials/<profile>/issue`. After creation,
+configure a separate profile for that workspace ID with the enable and disable
+grants; send its issued capability as `X-Weave-Capability` on `POST /api/plugins`
+or `DELETE /api/plugins/<workspace-id>/<plugin-name>`. Keep the token file
+private, and never put it in the manifest. The `silo` installation grant can
+create more than one MCP workspace during its lifetime; it is not a per-workspace
+approval. Use `weave workspace down <workspace> --capability-file <private-token-file>`
+with a separate workspace-scoped token granting both `workspace:stop` and
+`plugin:mcp_tools:disable`. The CLI sends these tokens only on the relevant
+request, accepts HTTPS origins or HTTP loopback, and refuses redirects and
+ambient credentials on those clients. A reachable server that rejects import
+startup causes `weave data import` to return failure while retaining restored
+files. TUI workspace start and stop currently do not accept a capability file.
+
 Disabling first closes the connector's dispatch gate, then persists disabled
 intent and disconnects it. Existing admitted calls drain before disposal.
 Re-enabling through the plugin API requires the pinned stored contract, probes
@@ -48,5 +81,6 @@ brokerage, a general operation catalogue, or cluster-wide dispatch fencing.
 The HTTP peer can change between a probe and a later call; MCP provides no
 atomic server-revision precondition for that interval. The pre-call check
 reduces exposure and fails closed on observed drift; it cannot prove that a
-server's implementation stayed fixed while handling a request. The Host's
-current administrative authentication settings still govern the plugin API.
+server's implementation stayed fixed while handling a request. Other
+administrative routes still use the Host's configured authentication settings.
+This increment only adds capability checks for the MCP installation path.

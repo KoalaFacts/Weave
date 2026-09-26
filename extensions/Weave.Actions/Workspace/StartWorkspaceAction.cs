@@ -30,14 +30,23 @@ public sealed class StartWorkspaceAction
     {
         ArgumentNullException.ThrowIfNull(input);
         ArgumentNullException.ThrowIfNull(input.Manifest);
+        if (input.Capability is { } encoded && !WorkspaceCapabilityHttp.IsEncodedToken(encoded))
+            return ActionResult.Failed<StartWorkspaceResult>(
+                ActionFailure.ValidationFailed("The installation capability is not a single encoded token."));
+        if (input.Capability is not null && !WorkspaceCapabilityHttp.IsSecureOrigin(_httpClient.BaseAddress))
+            return ActionResult.Failed<StartWorkspaceResult>(
+                ActionFailure.ValidationFailed("Installation capabilities require a fixed HTTPS origin or HTTP loopback."));
 
         try
         {
-            using var response = await _httpClient.PostAsJsonAsync(
-                "/api/workspaces",
-                new StartWorkspaceWire { Manifest = input.Manifest },
-                WorkspaceJsonContext.Default.StartWorkspaceWire,
-                cancellationToken);
+            using var request = new HttpRequestMessage(HttpMethod.Post, "/api/workspaces")
+            {
+                Content = JsonContent.Create(new StartWorkspaceWire { Manifest = input.Manifest },
+                    WorkspaceJsonContext.Default.StartWorkspaceWire)
+            };
+            if (input.Capability is not null)
+                request.Headers.Add("X-Weave-Capability", input.Capability);
+            using var response = await _httpClient.SendAsync(request, cancellationToken);
 
             return response.StatusCode switch
             {

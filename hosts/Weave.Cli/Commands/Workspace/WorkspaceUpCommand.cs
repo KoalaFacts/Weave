@@ -18,13 +18,18 @@ internal static class WorkspaceUpCommand
             DefaultValueFactory = _ => "local"
         };
         targetOption.CompletionSources.Add(CliCompletions.CompleteDeployTargets);
+        var capabilityFileOption = new Option<string?>("--capability-file")
+        {
+            Description = "File containing an operator-issued workspace installation capability"
+        };
 
-        var cmd = new Command("up", "Start a workspace") { nameArg, targetOption };
+        var cmd = new Command("up", "Start a workspace") { nameArg, targetOption, capabilityFileOption };
         cmd.SetAction(async (parseResult, cancellationToken) =>
         {
             var name = parseResult.GetValue(nameArg);
             var target = parseResult.GetValue(targetOption)!;
-            return await handler.ExecuteAsync(new WorkspaceUpOptions(name, target), cancellationToken);
+            var capabilityFile = parseResult.GetValue(capabilityFileOption);
+            return await handler.ExecuteAsync(new WorkspaceUpOptions(name, target, capabilityFile), cancellationToken);
         });
 
         return cmd;

@@ -15,6 +15,26 @@ internal static class InvocationHttp
         ICapabilityTokenService tokens, [NotNullWhen(true)] out CapabilityToken? token,
         [NotNullWhen(false)] out IResult? failure)
     {
+        if (!TryReadCapability(context, tokens, out token, out failure))
+            return false;
+        if (!IsRouteSegment(workspaceId) || !IsRouteSegment(toolName))
+        {
+            token = null;
+            failure = Error(400, "invalid-route-identity");
+            return false;
+        }
+        if (!string.Equals(token.WorkspaceId, workspaceId, StringComparison.Ordinal))
+        {
+            token = null;
+            failure = Error(403, "forbidden");
+            return false;
+        }
+        return true;
+    }
+
+    public static bool TryReadCapability(HttpContext context, ICapabilityTokenService tokens,
+        [NotNullWhen(true)] out CapabilityToken? token, [NotNullWhen(false)] out IResult? failure)
+    {
         context.Response.Headers.CacheControl = "no-store";
         context.Response.Headers.Pragma = "no-cache";
         token = null;
@@ -45,16 +65,6 @@ internal static class InvocationHttp
         if (presented is null || !tokens.Validate(presented))
         {
             context.Response.Headers.WWWAuthenticate = "WeaveCapability";
-            return false;
-        }
-        if (!IsRouteSegment(workspaceId) || !IsRouteSegment(toolName))
-        {
-            failure = Error(400, "invalid-route-identity");
-            return false;
-        }
-        if (!string.Equals(presented.WorkspaceId, workspaceId, StringComparison.Ordinal))
-        {
-            failure = Error(403, "forbidden");
             return false;
         }
         token = presented with { CancellationToken = context.RequestAborted };

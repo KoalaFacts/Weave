@@ -41,8 +41,10 @@ public static class SiloActionsServiceCollectionExtensions
         services.AddHttpClient<ListTasksAction>(configureSiloClient);
         services.AddHttpClient<GetWorkspaceStatusAction>(configureSiloClient);
         services.AddHttpClient<ValidateWorkspaceAction>(configureSiloClient);
-        services.AddHttpClient<StartWorkspaceAction>(configureSiloClient);
-        services.AddHttpClient<StopWorkspaceAction>(configureSiloClient);
+        services.AddHttpClient<StartWorkspaceAction>(configureSiloClient)
+            .ConfigurePrimaryHttpMessageHandler(WorkspaceCapabilityHttp.CreateHandler);
+        services.AddHttpClient<StopWorkspaceAction>(configureSiloClient)
+            .ConfigurePrimaryHttpMessageHandler(WorkspaceCapabilityHttp.CreateHandler);
 
         // Phase 4b — workspace data-roundtrip verbs. Return opaque JsonElement
         // for wire fidelity; the only callers today are workspace export/import.

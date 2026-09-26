@@ -40,13 +40,39 @@ internal sealed class DataImportCliCommand(
         }
 
         var name = options.WorkspaceName ?? export.WorkspaceName;
+        string? capability = null;
+        if (options.CapabilityFile is not null)
+        {
+            try
+            {
+                capability = (await File.ReadAllTextAsync(options.CapabilityFile, ct)).Trim();
+            }
+            catch (Exception ex) when (ex is IOException or UnauthorizedAccessException)
+            {
+                CliTheme.WriteError($"Could not read capability file: {ex.Message}");
+                return 1;
+            }
+            if (!WorkspaceCapabilityHttp.IsEncodedToken(capability))
+            {
+                CliTheme.WriteError("The capability file must contain one encoded token.");
+                return 1;
+            }
+        }
         CliTheme.WriteInfo($"Importing workspace '{name}' (exported {export.ExportedAt:yyyy-MM-dd HH:mm} UTC)...");
 
         var basePath = await RestoreFilesAsync(export, name, ct);
 
         var systemInfo = await systemInfoAction.ExecuteAsync(new GetSystemInfoInput(), ct);
         if (systemInfo.IsSuccess && systemInfo.Value.Reachable)
-            await TryStartImportedWorkspaceAsync(export, name, basePath, ct);
+        {
+            if (!await TryStartImportedWorkspaceAsync(export, name, basePath, capability, ct))
+            {
+                if (ct.IsCancellationRequested)
+                    return 130;
+                CliTheme.WriteWarning($"Workspace files restored to {basePath}; server restoration did not complete.");
+                return 1;
+            }
+        }
         else
             CliTheme.WriteMuted("  Server not running — files restored, start with: weave run " + name);
 
@@ -107,10 +133,11 @@ internal sealed class DataImportCliCommand(
         return basePath;
     }
 
-    private async Task TryStartImportedWorkspaceAsync(
+    private async Task<bool> TryStartImportedWorkspaceAsync(
         WorkspaceExport export,
         string name,
         string basePath,
+        string? capability,
         CancellationToken ct)
     {
         WorkspaceManifest manifest;
@@ -123,15 +150,15 @@ internal sealed class DataImportCliCommand(
         {
             CliTheme.WriteWarning($"  Could not parse manifest: {ex.Message}");
             CliTheme.WriteMuted("  Files are restored — start manually with: weave run " + name);
-            return;
+            return false;
         }
 
-        var startResult = await startAction.ExecuteAsync(new StartWorkspaceInput(manifest), ct);
+        var startResult = await startAction.ExecuteAsync(new StartWorkspaceInput(manifest, capability), ct);
         if (!startResult.IsSuccess)
         {
             CliTheme.WriteWarning($"  Could not start workspace: {startResult.Failure.Message}");
             CliTheme.WriteMuted("  Files are restored — start manually with: weave run " + name);
-            return;
+            return false;
         }
 
         var workspaceId = startResult.Value.Workspace.WorkspaceId;
@@ -139,14 +166,15 @@ internal sealed class DataImportCliCommand(
         await File.WriteAllTextAsync(statePath, workspaceId, ct);
         CliTheme.WriteInfo($"  Workspace started (ID: {workspaceId}).");
 
-        await RestoreSkillsAsync(export, workspaceId, ct);
-        await RestoreChannelsAsync(export, workspaceId, ct);
+        var skillsRestored = await RestoreSkillsAsync(export, workspaceId, ct);
+        var channelsRestored = await RestoreChannelsAsync(export, workspaceId, ct);
+        return skillsRestored && channelsRestored;
     }
 
-    private async Task RestoreSkillsAsync(WorkspaceExport export, string workspaceId, CancellationToken ct)
+    private async Task<bool> RestoreSkillsAsync(WorkspaceExport export, string workspaceId, CancellationToken ct)
     {
         if (export.Skills.Count == 0)
-            return;
+            return true;
 
         var restored = 0;
         var skillErrors = new List<string>();
@@ -162,12 +190,13 @@ internal sealed class DataImportCliCommand(
         CliTheme.WriteInfo($"  Skills restored: {restored}/{export.Skills.Count}");
         foreach (var err in skillErrors)
             CliTheme.WriteWarning($"    Skill failed: {err}");
+        return skillErrors.Count == 0;
     }
 
-    private async Task RestoreChannelsAsync(WorkspaceExport export, string workspaceId, CancellationToken ct)
+    private async Task<bool> RestoreChannelsAsync(WorkspaceExport export, string workspaceId, CancellationToken ct)
     {
         if (export.Channels.Count == 0)
-            return;
+            return true;
 
         var restored = 0;
         var channelErrors = new List<string>();
@@ -183,5 +212,6 @@ internal sealed class DataImportCliCommand(
         CliTheme.WriteInfo($"  Channels restored: {restored}/{export.Channels.Count}");
         foreach (var err in channelErrors)
             CliTheme.WriteWarning($"    Channel failed: {err}");
+        return channelErrors.Count == 0;
     }
 }

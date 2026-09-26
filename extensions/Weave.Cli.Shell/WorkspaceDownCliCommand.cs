@@ -1,4 +1,5 @@
 using Weave.Actions.Context;
+using Weave.Actions.Workspace;
 
 namespace Weave.Cli.Shell;
 
@@ -47,7 +48,26 @@ internal sealed class WorkspaceDownCliCommand(IWorkspaceDownDependencies depende
             }
         }
 
-        var result = await dependencies.StopWorkspaceAsync(workspaceId, ct);
+        string? capability = null;
+        if (options.CapabilityFile is not null)
+        {
+            try
+            {
+                capability = (await dependencies.ReadAllTextAsync(options.CapabilityFile, ct)).Trim();
+            }
+            catch (Exception ex) when (ex is IOException or UnauthorizedAccessException)
+            {
+                CliTheme.WriteError($"Could not read capability file: {ex.Message}");
+                return 1;
+            }
+            if (!WorkspaceCapabilityHttp.IsEncodedToken(capability))
+            {
+                CliTheme.WriteError("The capability file must contain one encoded token.");
+                return 1;
+            }
+        }
+
+        var result = await dependencies.StopWorkspaceAsync(workspaceId, capability, ct);
         if (!result.IsSuccess)
         {
             if (result.Failure.Reason == ActionFailureReason.Cancelled)

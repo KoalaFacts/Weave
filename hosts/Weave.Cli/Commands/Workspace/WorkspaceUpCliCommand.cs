@@ -31,6 +31,13 @@ internal sealed class WorkspaceUpCliCommand(
         CliTheme.WriteInfo($"Starting workspace from {manifestPath} (target: {options.Target})...");
 
         var manifest = await WorkspaceManifestFile.ReadPreparedAsync(manifestPath, ct);
+        var capability = options.CapabilityFile is null ? null
+            : (await File.ReadAllTextAsync(options.CapabilityFile, ct)).Trim();
+        if (options.CapabilityFile is not null && capability is { Length: 0 })
+        {
+            CliTheme.WriteError("The capability file is empty.");
+            return 1;
+        }
 
         var systemInfo = await systemInfoAction.ExecuteAsync(new GetSystemInfoInput(), ct);
         if (ct.IsCancellationRequested)
@@ -53,7 +60,7 @@ internal sealed class WorkspaceUpCliCommand(
             CliTheme.WriteSuccess("Server ready.");
         }
 
-        var result = await startAction.ExecuteAsync(new StartWorkspaceInput(manifest), ct);
+        var result = await startAction.ExecuteAsync(new StartWorkspaceInput(manifest, capability), ct);
         if (!result.IsSuccess)
         {
             if (result.Failure.Reason == ActionFailureReason.Cancelled)

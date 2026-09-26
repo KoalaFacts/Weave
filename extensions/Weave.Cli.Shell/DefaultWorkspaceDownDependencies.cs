@@ -13,8 +13,8 @@ internal sealed class DefaultWorkspaceDownDependencies(StopWorkspaceAction stopA
 
     public Task<string> ReadAllTextAsync(string path, CancellationToken ct) => File.ReadAllTextAsync(path, ct);
 
-    public Task<ActionResult<StopWorkspaceResult>> StopWorkspaceAsync(string workspaceId, CancellationToken ct) =>
-        stopAction.ExecuteAsync(new StopWorkspaceInput(workspaceId), ct);
+    public Task<ActionResult<StopWorkspaceResult>> StopWorkspaceAsync(string workspaceId, string? capability, CancellationToken ct) =>
+        stopAction.ExecuteAsync(new StopWorkspaceInput(workspaceId, capability), ct);
 
     public void DeleteFile(string path) => File.Delete(path);
 }

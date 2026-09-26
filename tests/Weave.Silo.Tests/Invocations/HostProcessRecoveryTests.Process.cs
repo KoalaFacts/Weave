@@ -48,8 +48,7 @@ public sealed partial class HostProcessRecoveryTests
             var child = new HostChild(process, settings.SigningKey);
             try
             {
-                await child.WaitForFileAsync(Path.Combine(root, "ready"), ct);
-                var address = new Uri(File.ReadAllText(Path.Combine(root, "ready")));
+                var address = new Uri(await child.ReadReadyFileAsync(Path.Join(root, "ready"), ct));
                 address.IsLoopback.ShouldBeTrue();
                 address.Scheme.ShouldBe("http");
                 child.Client.BaseAddress = address;
@@ -69,6 +68,24 @@ public sealed partial class HostProcessRecoveryTests
                 if (_process.HasExited)
                     throw new InvalidOperationException($"Worker exited {_process.ExitCode}: {await DiagnosticsAsync()}");
                 await Task.Delay(25, ct);
+            }
+        }
+
+        private async Task<string> ReadReadyFileAsync(string path, CancellationToken ct)
+        {
+            while (true)
+            {
+                await WaitForFileAsync(path, ct);
+                try
+                {
+                    return await File.ReadAllTextAsync(path, ct);
+                }
+                catch (IOException) when (!ct.IsCancellationRequested)
+                {
+                    if (_process.HasExited)
+                        throw;
+                    await Task.Delay(25, ct);
+                }
             }
         }
 

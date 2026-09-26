@@ -111,6 +111,62 @@ public sealed class StopWorkspaceActionTests
     }
 
     [Fact]
+    public async Task ExecuteAsync_WithStopCapability_SendsItOnlyOnTheRequest()
+    {
+        string? presented = null;
+        using var response = new HttpResponseMessage(HttpStatusCode.NoContent);
+        var handler = new StubHttpMessageHandler((request, _) =>
+        {
+            presented = request.Headers.GetValues("X-Weave-Capability").Single();
+            return Task.FromResult(response);
+        });
+        using var client = new HttpClient(handler) { BaseAddress = new Uri("https://example.test") };
+        var action = new StopWorkspaceAction(client);
+
+        var result = await action.ExecuteAsync(new StopWorkspaceInput("ws-1", "encoded-token"),
+            CancellationToken.None);
+
+        result.IsSuccess.ShouldBeTrue();
+        presented.ShouldBe("encoded-token");
+        client.DefaultRequestHeaders.Contains("X-Weave-Capability").ShouldBeFalse();
+    }
+
+    [Theory]
+    [InlineData("http://example.test/")]
+    [InlineData("https://example.test/subpath")]
+    public async Task ExecuteAsync_CapabilityWithUnsafeOrigin_RejectsBeforeHttp(string origin)
+    {
+        var handler = StubHttpMessageHandler.Throws(new InvalidOperationException("HTTP was sent"));
+        using var client = new HttpClient(handler) { BaseAddress = new Uri(origin) };
+        var action = new StopWorkspaceAction(client);
+
+        var result = await action.ExecuteAsync(new StopWorkspaceInput("ws-1", "encoded-token"),
+            CancellationToken.None);
+
+        result.Failure.ShouldNotBeNull();
+        result.Failure.Reason.ShouldBe(ActionFailureReason.ValidationFailed);
+        handler.LastRequestUri.ShouldBeNull();
+    }
+
+    [Fact]
+    public async Task ExecuteAsync_InvalidCapability_RejectsAndRedacts()
+    {
+        var handler = StubHttpMessageHandler.Throws(new InvalidOperationException("HTTP was sent"));
+        using var client = new HttpClient(handler) { BaseAddress = new Uri("https://example.test") };
+        var action = new StopWorkspaceAction(client);
+        const string invalid = "private-token\r\nanother-header";
+        var input = new StopWorkspaceInput("ws-1", invalid);
+
+        var result = await action.ExecuteAsync(input, CancellationToken.None);
+
+        result.Failure.ShouldNotBeNull();
+        result.Failure.Reason.ShouldBe(ActionFailureReason.ValidationFailed);
+        input.ToString()!.ShouldNotContain(invalid);
+        result.Failure.Message.ShouldNotContain(invalid);
+        handler.LastRequestUri.ShouldBeNull();
+    }
+
+    [Fact]
     public async Task ExecuteAsync_NullInput_Throws()
     {
         using var client = HttpClientReturning(HttpStatusCode.OK, "{}");

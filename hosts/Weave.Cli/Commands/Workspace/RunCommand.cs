@@ -17,13 +17,19 @@ internal static class RunCommand
             Description = "Server port",
             DefaultValueFactory = _ => configStore.Load().DefaultPort
         };
+        var capabilityFileOption = new Option<string?>("--capability-file")
+        {
+            Description = "File containing an operator-issued workspace installation capability"
+        };
 
-        var cmd = new Command("run", "Start the server and workspace in one command") { nameArg, portOption };
+        var cmd = new Command("run", "Start the server and workspace in one command")
+            { nameArg, portOption, capabilityFileOption };
         cmd.SetAction(async (parseResult, cancellationToken) =>
         {
             var name = parseResult.GetValue(nameArg);
             var port = parseResult.GetValue(portOption);
-            return await handler.ExecuteAsync(new RunOptions(name, port), cancellationToken);
+            var capabilityFile = parseResult.GetValue(capabilityFileOption);
+            return await handler.ExecuteAsync(new RunOptions(name, port, capabilityFile), cancellationToken);
         });
 
         return cmd;

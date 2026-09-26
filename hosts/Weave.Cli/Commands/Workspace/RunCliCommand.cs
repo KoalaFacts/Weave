@@ -31,6 +31,13 @@ internal sealed class RunCliCommand(
         CliTheme.WriteBanner();
 
         var manifest = await WorkspaceManifestFile.ReadPreparedAsync(manifestPath, ct);
+        var capability = options.CapabilityFile is null ? null
+            : (await File.ReadAllTextAsync(options.CapabilityFile, ct)).Trim();
+        if (options.CapabilityFile is not null && capability is { Length: 0 })
+        {
+            CliTheme.WriteError("The capability file is empty.");
+            return 1;
+        }
 
         CliTheme.WriteKeyValue("Workspace", manifest.Name);
         CliTheme.WriteKeyValue("Agents", manifest.Agents.Count.ToString(CultureInfo.InvariantCulture));
@@ -82,10 +89,13 @@ internal sealed class RunCliCommand(
             // share the DI'd typed HttpClient (which is configured at Build()
             // with the default silo URL). One-shot run-and-block lifetime
             // makes inline HttpClient construction fine.
-            using var httpClient = new HttpClient { BaseAddress = new Uri($"http://localhost:{port}", UriKind.Absolute) };
+            using var httpClient = new HttpClient(WorkspaceCapabilityHttp.CreateHandler())
+            {
+                BaseAddress = new Uri($"http://localhost:{port}", UriKind.Absolute)
+            };
             var startAction = new StartWorkspaceAction(httpClient);
 
-            var result = await startAction.ExecuteAsync(new StartWorkspaceInput(manifest), ct);
+            var result = await startAction.ExecuteAsync(new StartWorkspaceInput(manifest, capability), ct);
             if (!result.IsSuccess)
             {
                 if (result.Failure.Reason == ActionFailureReason.Cancelled)
