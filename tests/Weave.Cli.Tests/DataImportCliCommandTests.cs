@@ -13,13 +13,13 @@ public sealed class DataImportCliCommandTests
     [Fact]
     public async Task ExecuteAsync_ReachableServerRejectsStartup_ReturnsFailureAndRetainsFiles()
     {
-        var directory = Path.Combine(Path.GetTempPath(), $"weave-import-{Guid.NewGuid():N}");
+        var directory = Path.Join(Path.GetTempPath(), $"weave-import-{Guid.NewGuid():N}");
         Directory.CreateDirectory(directory);
         try
         {
-            var exportPath = Path.Combine(directory, "export.json");
-            var capabilityPath = Path.Combine(directory, "capability.txt");
-            var workspacePath = Path.Combine(directory, "restored");
+            var exportPath = Path.Join(directory, "export.json");
+            var capabilityPath = Path.Join(directory, "capability.txt");
+            var workspacePath = Path.Join(directory, "restored");
             var export = new WorkspaceExport
             {
                 WorkspaceName = "demo",
@@ -43,8 +43,8 @@ public sealed class DataImportCliCommandTests
 
             result.ShouldBe(1);
             handler.PresentedCapability.ShouldBe("encoded-token");
-            File.Exists(Path.Combine(workspacePath, "workspace.json")).ShouldBeTrue();
-            File.Exists(Path.Combine(workspacePath, ".weave", "workspace-id")).ShouldBeFalse();
+            File.Exists(Path.Join(workspacePath, "workspace.json")).ShouldBeTrue();
+            File.Exists(Path.Join(workspacePath, ".weave", "workspace-id")).ShouldBeFalse();
         }
         finally
         {
@@ -55,12 +55,12 @@ public sealed class DataImportCliCommandTests
     [Fact]
     public async Task ExecuteAsync_SkillRestoreFails_ReturnsFailureAfterWorkspaceStarted()
     {
-        var directory = Path.Combine(Path.GetTempPath(), $"weave-import-{Guid.NewGuid():N}");
+        var directory = Path.Join(Path.GetTempPath(), $"weave-import-{Guid.NewGuid():N}");
         Directory.CreateDirectory(directory);
         try
         {
-            var exportPath = Path.Combine(directory, "export.json");
-            var workspacePath = Path.Combine(directory, "restored");
+            var exportPath = Path.Join(directory, "export.json");
+            var workspacePath = Path.Join(directory, "restored");
             using var skillDocument = JsonDocument.Parse("{}");
             var export = new WorkspaceExport
             {
@@ -84,7 +84,7 @@ public sealed class DataImportCliCommandTests
 
             result.ShouldBe(1);
             handler.SkillPostCount.ShouldBe(1);
-            File.Exists(Path.Combine(workspacePath, ".weave", "workspace-id")).ShouldBeTrue();
+            File.Exists(Path.Join(workspacePath, ".weave", "workspace-id")).ShouldBeTrue();
         }
         finally
         {
