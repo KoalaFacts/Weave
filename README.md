@@ -69,7 +69,9 @@ The existing Agent Runtime, memory, skills, channels, and other features remain 
 
 Build from source to explore this branch rather than assuming a published CLI release contains the new architecture.
 
-**Prerequisites:** Git, the .NET SDK selected by [global.json](global.json), and Python 3.10+ available as `python3` for the repository checks and MCP subprocess tests. The SDK policy permits patch roll-forward; inspect `dotnet --version` rather than assuming an exact installed patch.
+**Prerequisites:** Git, a stable .NET SDK version 10.0.201 or newer selected by [global.json](global.json), and Python 3.10+ available as `python3` for the repository checks and MCP subprocess tests. The SDK policy selects the highest compatible installed version; inspect `dotnet --version` before building.
+
+NuGet lockfiles include SDK-provided packages. CI installs the SDK used to generate the committed locks; a different compatible SDK may update those files during restore.
 
 From the repository root:
 

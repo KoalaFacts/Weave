@@ -83,7 +83,9 @@ class UuidProposalClientTests(unittest.TestCase):
             server = ThreadingHTTPServer(('127.0.0.1', 0), Peer)
             worker = threading.Thread(target=server.serve_forever, daemon=True)
             worker.start()
-            env = {k: os.environ[k] for k in ('PATH', 'LANG', 'LC_ALL', 'SystemRoot') if k in os.environ}
+            env = {k: os.environ[k] for k in ('PATH', 'LANG', 'LC_ALL', 'SystemRoot', 'SystemDrive')
+                   if k in os.environ}
+            env.update({key: tempfile.gettempdir() for key in ('TMPDIR', 'TEMP', 'TMP')})
             env['WEAVE_REVIEW_CAPABILITY'] = 'synthetic_reviewer'
             env['WEAVE_OPERATOR_KEY'] = 'synthetic-operator-key-for-test-only-123456789'
             try:

@@ -2,6 +2,7 @@
 import os
 from pathlib import Path
 import re
+import shutil
 import subprocess
 import tempfile
 import unittest
@@ -36,17 +37,21 @@ class ReleaseWorkflowTests(unittest.TestCase):
         workflow = ROOT / '.github/workflows/release.yml'
         blocks = run_blocks(workflow)
         validation = next(b for b in blocks if 'validate-version' in b or 'VERSION="${{ inputs.version }}"' in b)
+        shell = shutil.which('sh' if os.name == 'nt' else 'bash')
+        if shell is None:
+            self.skipTest('A POSIX shell is unavailable')
         with tempfile.TemporaryDirectory() as temporary:
             sentinel = Path(temporary) / 'executed'
             value = f'1.2.3$(touch "{sentinel}")'
             script = validation.replace('${{ inputs.version }}', value)
-            result = subprocess.run(['bash', '-euo', 'pipefail', '-c', script],
+            result = subprocess.run([shell, '-euo', 'pipefail', '-c', script],
                                     cwd=ROOT, env={**os.environ, 'INPUT_VERSION': value,
                                     'GITHUB_OUTPUT': str(Path(temporary) / 'output'),
                                     'GITHUB_ENV': str(Path(temporary) / 'env')},
-                                    capture_output=True, text=True, timeout=10)
+                                    capture_output=True, text=True, timeout=30)
             self.assertFalse(sentinel.exists(), 'Version input executed as shell code before validation')
-            self.assertNotEqual(result.returncode, 0, 'Invalid version was accepted')
+            self.assertEqual(result.returncode, 1, result.stderr)
+            self.assertIn('Release validation failed (ValueError).', result.stderr)
 
     def test_valid_version_produces_only_canonical_output(self):
         with tempfile.TemporaryDirectory() as temporary:
