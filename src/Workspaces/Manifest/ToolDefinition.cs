@@ -9,4 +9,6 @@ public sealed record ToolDefinition
     public CliConfig? Cli { get; init; }
     public DirectHttpConfig? DirectHttp { get; init; }
     public FileSystemToolConfig? FileSystem { get; init; }
+    public Weave.Tools.Connectors.DaprToolConfig? Dapr { get; init; }
+    public string? RequiresPlugin { get; init; }
 }

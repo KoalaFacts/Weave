@@ -16,4 +16,5 @@ public interface IPluginRegistry
     Task<PluginStatus> DisconnectAsync(string name, CapabilityToken token);
     IReadOnlyList<PluginStatus> GetAll();
     IReadOnlyList<PluginSchema> GetCatalog();
+    Task<IReadOnlyList<PluginCompositionEntry>> GetCompositionAsync(CancellationToken cancellationToken);
 }

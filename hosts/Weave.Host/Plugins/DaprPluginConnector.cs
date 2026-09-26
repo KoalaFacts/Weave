@@ -19,8 +19,11 @@ public sealed partial class DaprPluginConnector(
     ILoggerFactory loggerFactory) : IPluginConnector
 {
     private readonly ILogger<DaprPluginConnector> _logger = loggerFactory.CreateLogger<DaprPluginConnector>();
+    private readonly PluginActivationStore _activations = new();
 
     public string PluginType => "dapr";
+
+    public IReadOnlyList<string> RegistrationKeys(string name) => ["event-bus", "tool:dapr"];
 
     public PluginSchema Schema { get; } = new()
     {
@@ -51,8 +54,7 @@ public sealed partial class DaprPluginConnector(
 
         var baseUrl = $"http://localhost:{port}";
 
-        // B6 fix: Create ALL resources before swapping anything, so a failure
-        // in tool setup doesn't leave a half-swapped event bus.
+        // Prepare both resources before changing runtime registrations.
         var eventClient = httpClientFactory.CreateClient($"dapr-plugin:{name}");
         eventClient.BaseAddress = new Uri(baseUrl);
         var eventBus = new DaprEventBus(eventClient, loggerFactory.CreateLogger<DaprEventBus>());
@@ -61,12 +63,33 @@ public sealed partial class DaprPluginConnector(
         toolClient.BaseAddress = new Uri(baseUrl);
         var toolConnector = new DaprToolConnector(toolClient, loggerFactory.CreateLogger<DaprToolConnector>());
 
-        // Now swap atomically — both resources are ready
-        // B1 fix: Don't dispose previous. HttpClient lifetime is managed by
+        // Apply both registrations as one owned activation; roll back if either fails.
+        // Don't dispose the previous bus. HttpClient lifetime is managed by
         // IHttpClientFactory. In-flight PublishAsync calls on the old bus
         // will complete safely against the still-valid HttpClient handler.
-        broker.Swap<IEventBus>(eventBus);
-        toolDiscovery.Register(toolConnector);
+        var scope = new PluginActivationScope();
+        IEventBus? displacedBus = null;
+        scope.Add(() => displacedBus = broker.Swap<IEventBus>(eventBus), () =>
+        {
+            if (displacedBus is null)
+                broker.ClearIfCurrent<IEventBus>(eventBus);
+            else
+                broker.ReplaceIfCurrent<IEventBus>(eventBus, displacedBus);
+        });
+        scope.Add(() => toolDiscovery.Register(toolConnector), () =>
+        {
+            toolConnector.Deactivate();
+            toolDiscovery.UnregisterIfCurrent(ToolType.Dapr, toolConnector);
+        });
+        try
+        {
+            _activations.Replace(name, scope);
+        }
+        finally
+        {
+            // A later disconnect must clear this installation, not restore a replaced one.
+            displacedBus = null;
+        }
 
         LogDaprConnected(name, baseUrl);
 
@@ -81,11 +104,7 @@ public sealed partial class DaprPluginConnector(
 
     public Task<PluginStatus> DisconnectAsync(string name)
     {
-        // M3 fix: Only clear the slot if we still own it
-        if (broker.Get<IEventBus>() is DaprEventBus)
-            broker.Swap<IEventBus>(null);
-
-        toolDiscovery.Unregister(ToolType.Dapr);
+        _activations.Remove(name);
 
         LogDaprDisconnected(name);
         return Task.FromResult(new PluginStatus { Name = name, Type = PluginType, IsConnected = false });
@@ -93,8 +112,7 @@ public sealed partial class DaprPluginConnector(
 
     public PluginStatus GetStatus(string name)
     {
-        var hasBus = broker.Get<IEventBus>() is DaprEventBus;
-        return new PluginStatus { Name = name, Type = PluginType, IsConnected = hasBus };
+        return new PluginStatus { Name = name, Type = PluginType, IsConnected = _activations.Contains(name) };
     }
 
     [LoggerMessage(Level = LogLevel.Information, Message = "Dapr plugin '{Name}' connected — sidecar at {BaseUrl}")]

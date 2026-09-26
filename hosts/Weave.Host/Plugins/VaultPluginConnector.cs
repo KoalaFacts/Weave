@@ -15,8 +15,11 @@ public sealed partial class VaultPluginConnector(
     ILoggerFactory loggerFactory) : IPluginConnector
 {
     private readonly ILogger<VaultPluginConnector> _logger = loggerFactory.CreateLogger<VaultPluginConnector>();
+    private readonly PluginActivationStore _activations = new();
 
     public string PluginType => "vault";
+
+    public IReadOnlyList<string> RegistrationKeys(string name) => ["secret-provider"];
 
     public PluginSchema Schema { get; } = new()
     {
@@ -59,7 +62,9 @@ public sealed partial class VaultPluginConnector(
             loggerFactory.CreateLogger<VaultSecretProvider>());
 
         // Don't dispose previous — in-flight ResolveAsync calls may still reference it.
-        broker.Swap<ISecretProvider>(provider);
+        var scope = new PluginActivationScope();
+        scope.Add(() => broker.Swap<ISecretProvider>(provider), () => broker.ClearIfCurrent<ISecretProvider>(provider));
+        _activations.Replace(name, scope);
 
         LogVaultConnected(name, address);
 
@@ -75,8 +80,7 @@ public sealed partial class VaultPluginConnector(
     public Task<PluginStatus> DisconnectAsync(string name)
     {
         // Only clear the slot if we still own it
-        if (broker.Get<ISecretProvider>() is VaultSecretProvider)
-            broker.Swap<ISecretProvider>(null);
+        _activations.Remove(name);
 
         LogVaultDisconnected(name);
         return Task.FromResult(new PluginStatus { Name = name, Type = PluginType, IsConnected = false });
@@ -84,8 +88,7 @@ public sealed partial class VaultPluginConnector(
 
     public PluginStatus GetStatus(string name)
     {
-        var hasVault = broker.Get<ISecretProvider>() is VaultSecretProvider;
-        return new PluginStatus { Name = name, Type = PluginType, IsConnected = hasVault };
+        return new PluginStatus { Name = name, Type = PluginType, IsConnected = _activations.Contains(name) };
     }
 
     [LoggerMessage(Level = LogLevel.Information, Message = "Vault plugin '{Name}' connected — server at {Address}")]

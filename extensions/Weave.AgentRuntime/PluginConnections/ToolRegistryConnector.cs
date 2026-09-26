@@ -45,7 +45,12 @@ internal sealed class ToolRegistryConnector(
         await lifecycleManager.RunHooksAsync(LifecyclePhase.ToolConnecting, context, CancellationToken.None);
 
         var resolvedDefinition = await secretResolver.ResolveAsync(workspaceId, definition);
-        var toolSpec = ToolSpecMapper.FromDefinition(toolName, resolvedDefinition);
+        var toolSpec = ToolSpecMapper.FromDefinition(toolName, resolvedDefinition) with
+        {
+            InstallationId = resolvedDefinition.RequiresPlugin is null
+                ? null
+                : $"{workspaceId}/{resolvedDefinition.RequiresPlugin}"
+        };
         using var source = tokenService.MintLinked(new CapabilityTokenRequest
         {
             WorkspaceId = workspaceId,

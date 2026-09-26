@@ -6,6 +6,7 @@ public sealed record ToolSpec
 {
     public string Name { get; init; } = string.Empty;
     public ToolType Type { get; init; }
+    public string? InstallationId { get; init; }
     public Weave.Workspaces.Manifest.McpConfig? Mcp { get; init; }
     public DaprToolConfig? Dapr { get; init; }
     public Weave.Workspaces.Manifest.OpenApiConfig? OpenApi { get; init; }

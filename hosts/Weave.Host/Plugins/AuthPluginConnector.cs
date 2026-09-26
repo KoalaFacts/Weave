@@ -8,8 +8,11 @@ public sealed partial class AuthPluginConnector(
     ILoggerFactory loggerFactory) : IPluginConnector
 {
     private readonly ILogger<AuthPluginConnector> _logger = loggerFactory.CreateLogger<AuthPluginConnector>();
+    private readonly PluginActivationStore _activations = new();
 
     public string PluginType => "auth";
+
+    public IReadOnlyList<string> RegistrationKeys(string name) => ["authentication"];
 
     public PluginSchema Schema { get; } = new()
     {
@@ -72,7 +75,10 @@ public sealed partial class AuthPluginConnector(
                 "Register a custom IApiAuthProvider for enterprise providers (EntraID, Auth0, Keycloak, etc).")
         };
 
-        broker.Swap<IApiAuthProvider>(provider);
+        var scope = new PluginActivationScope();
+        scope.Add(() => broker.Swap<IApiAuthProvider>(provider),
+            () => broker.ReplaceIfCurrent<IApiAuthProvider>(provider, new UnavailableApiAuthProvider()));
+        _activations.Replace(name, scope);
         LogAuthConnected(name, providerName);
 
         return Task.FromResult(new PluginStatus
@@ -90,7 +96,7 @@ public sealed partial class AuthPluginConnector(
 
     public Task<PluginStatus> DisconnectAsync(string name)
     {
-        broker.Swap<IApiAuthProvider>(new UnavailableApiAuthProvider());
+        _activations.Remove(name);
         LogAuthDisconnected(name);
 
         return Task.FromResult(new PluginStatus
@@ -104,14 +110,12 @@ public sealed partial class AuthPluginConnector(
     public PluginStatus GetStatus(string name)
     {
         var active = broker.Get<IApiAuthProvider>();
-        if (active is UnavailableApiAuthProvider)
-            active = null;
         return new PluginStatus
         {
             Name = name,
             Type = PluginType,
-            IsConnected = active is not null,
-            Info = active is not null
+            IsConnected = _activations.Contains(name),
+            Info = _activations.Contains(name) && active is not null
                 ? new Dictionary<string, string> { ["provider"] = active.Name }
                 : new Dictionary<string, string>()
         };
