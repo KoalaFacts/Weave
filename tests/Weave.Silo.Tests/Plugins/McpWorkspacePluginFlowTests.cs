@@ -239,10 +239,53 @@ public sealed class McpWorkspacePluginFlowTests
         Directory.CreateDirectory(directory);
         try
         {
-            await using var host = new DurableSiloFactory(directory);
-            using var client = host.CreateClient();
-            var workspaceId = await StartWorkspaceAsync(client, endpoint);
-            await InvokeAsync(host.Services, workspaceId, "package response");
+            string firstId;
+            string secondId;
+            await using (var first = new DurableSiloFactory(directory))
+            {
+                using var client = first.CreateClient();
+                firstId = await StartWorkspaceAsync(client, endpoint);
+                secondId = await StartWorkspaceAsync(client, endpoint);
+                await InvokeAsync(first.Services, firstId, "first package response");
+                await InvokeAsync(first.Services, secondId, "second package response");
+            }
+
+            await using (var second = new DurableSiloFactory(directory))
+            {
+                using var client = second.CreateClient();
+                await second.Services.GetRequiredService<ToolInstallationRestorer>().Completion
+                    .WaitAsync(TimeSpan.FromSeconds(30), TestContext.Current.CancellationToken);
+                await InvokeAsync(second.Services, firstId, "first after restart");
+                await InvokeAsync(second.Services, secondId, "second after restart");
+                using var disable = await client.DeleteAsync($"/api/plugins/{firstId}/ECHO_SERVER",
+                    TestContext.Current.CancellationToken);
+                disable.StatusCode.ShouldBe(HttpStatusCode.NoContent);
+                var actors = second.Services.GetRequiredService<IVirtualActorProvider>();
+                var workspace = actors.GetActor<IWorkspaceActor>(VirtualActorId.From(firstId));
+                (await workspace.GetStateAsync()).McpToolInstallations.Single().DesiredEnabled.ShouldBeFalse();
+                var (disabledTool, disabledToken) = await ResolveAsync(second.Services, firstId);
+                await Should.ThrowAsync<InvalidOperationException>(() => disabledTool.InvokeAsync(new ToolInvocation
+                {
+                    ToolName = "echo",
+                    Method = "echo",
+                    InvocationId = InvocationId.From(Guid.NewGuid().ToString("N")),
+                    Parameters = new Dictionary<string, string> { ["text"] = "blocked" }
+                }, disabledToken));
+                await InvokeAsync(second.Services, secondId, "other workspace remains active");
+            }
+
+            await using (var third = new DurableSiloFactory(directory))
+            {
+                using var client = third.CreateClient();
+                await third.Services.GetRequiredService<ToolInstallationRestorer>().Completion
+                    .WaitAsync(TimeSpan.FromSeconds(30), TestContext.Current.CancellationToken);
+                using var composition = await client.GetAsync("/api/plugins/composition",
+                    TestContext.Current.CancellationToken);
+                var active = await composition.Content.ReadAsStringAsync(TestContext.Current.CancellationToken);
+                active.ShouldNotContain($"{firstId}/echo_server");
+                active.ShouldContain($"{secondId}/echo_server");
+                await InvokeAsync(third.Services, secondId, "second package response after restart");
+            }
         }
         finally
         {

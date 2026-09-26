@@ -1,0 +1,109 @@
+name: Verify Published npm Echo Plugin
+
+on:
+  workflow_dispatch:
+    inputs:
+      version:
+        description: Exact published version matching this commit
+        required: true
+        type: string
+      release_sha:
+        description: Full source commit SHA recorded by the npm release
+        required: true
+        type: string
+  workflow_call:
+    inputs:
+      version:
+        required: true
+        type: string
+      release_sha:
+        required: true
+        type: string
+
+permissions:
+  contents: read
+
+jobs:
+  published-package:
+    runs-on: ubuntu-latest
+    timeout-minutes: 20
+    steps:
+      - name: Checkout release source
+        uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v6
+        with:
+          ref: ${{ github.sha }}
+          persist-credentials: false
+      - name: Set up Node and npm registry
+        uses: actions/setup-node@249970729cb0ef3589644e2896645e5dc5ba9c38 # v6
+        with:
+          node-version: '24'
+          registry-url: https://registry.npmjs.org
+          package-manager-cache: false
+      - name: Use npm with attestation report support
+        run: npm install --global npm@12.0.2 --ignore-scripts --no-audit --no-fund
+      - name: Resolve exact published version
+        id: package
+        env:
+          REQUESTED_VERSION: ${{ inputs.version }}
+        run: |
+          version=$(node -p "require('./npm/weave-plugin-echo/package.json').version")
+          if [ -n "$REQUESTED_VERSION" ] && [ "$REQUESTED_VERSION" != "$version" ]; then
+            echo "Requested version does not match the checked-out package" >&2
+            exit 1
+          fi
+          echo "version=$version" >> "$GITHUB_OUTPUT"
+      - name: Install the registry package
+        env:
+          VERSION: ${{ steps.package.outputs.version }}
+        run: |
+          install_dir="$RUNNER_TEMP/weave-echo-consumer"
+          for attempt in $(seq 1 12); do
+            if npm view "@koalafacts/weave-plugin-echo@$VERSION" version --registry=https://registry.npmjs.org >/dev/null 2>&1; then
+              break
+            fi
+            if [ "$attempt" -eq 12 ]; then
+              echo "Published version did not become available" >&2
+              exit 1
+            fi
+            sleep 5
+          done
+          npm install --prefix "$install_dir" --save-exact --ignore-scripts --no-audit --no-fund \
+            "@koalafacts/weave-plugin-echo@$VERSION"
+      - name: Verify npm signatures and source provenance
+        env:
+          VERSION: ${{ steps.package.outputs.version }}
+          RELEASE_SHA: ${{ inputs.release_sha }}
+        run: |
+          install_dir="$RUNNER_TEMP/weave-echo-consumer"
+          npm audit signatures --prefix "$install_dir" --json --include-attestations \
+            > "$RUNNER_TEMP/weave-echo-signatures.json"
+          node npm/weave-plugin-echo/scripts/check-published-provenance.mjs \
+            "$RUNNER_TEMP/weave-echo-signatures.json" "$install_dir/package-lock.json" \
+            "$VERSION" "$RELEASE_SHA"
+      - name: Set up .NET
+        uses: ./.github/actions/setup-dotnet
+      - name: Restore Weave connector checks
+        run: dotnet restore tests/Weave.Silo.Tests/Weave.Silo.Tests.csproj --locked-mode
+      - name: Build Weave connector checks
+        run: >-
+          dotnet build tests/Weave.Silo.Tests/Weave.Silo.Tests.csproj
+          --no-restore -c Release /p:TreatWarningsAsErrors=true
+      - name: Exercise published Echo through Weave
+        run: |
+          : > "$RUNNER_TEMP/weave-echo-http.log"
+          node "$RUNNER_TEMP/weave-echo-consumer/node_modules/@koalafacts/weave-plugin-echo/dist/cli.js" \
+            --http --port 0 2> "$RUNNER_TEMP/weave-echo-http.log" &
+          echo_pid=$!
+          trap 'kill "$echo_pid" 2>/dev/null || true' EXIT
+          endpoint=""
+          for attempt in $(seq 1 100); do
+            endpoint=$(sed -n 's/^Echo MCP endpoint: //p' "$RUNNER_TEMP/weave-echo-http.log" | head -n 1)
+            if [ -n "$endpoint" ]; then break; fi
+            if ! kill -0 "$echo_pid" 2>/dev/null; then break; fi
+            sleep 0.1
+          done
+          if [ -z "$endpoint" ]; then cat "$RUNNER_TEMP/weave-echo-http.log"; exit 1; fi
+          WEAVE_ECHO_TEST_ENDPOINT="$endpoint" dotnet test \
+            --project tests/Weave.Silo.Tests/Weave.Silo.Tests.csproj \
+            --no-build -c Release \
+            --filter-class Weave.Silo.Tests.Plugins.McpWorkspacePluginFlowTests

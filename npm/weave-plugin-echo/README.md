@@ -134,12 +134,12 @@ network isolation for plugin code or a general plugin authoring framework.
 
 ## Publishing
 
-Version `0.1.0` was bootstrapped with interactive npm authentication. Its npm
+Version `0.1.0` was bootstrapped with interactive npm authentication. Version
+`0.1.1` was published from `main` by the OIDC workflow. Its npm
 trusted publisher is configured for `KoalaFacts/Weave`, workflow
 `publish-npm-plugin-echo.yml`, and environment `npm`, with direct publishing
 allowed. The GitHub environment allows only `main` and requires maintainer
-review. The bootstrap release does not prove an OIDC publish; that requires a
-new version through the workflow.
+review. The bootstrap release did not prove an OIDC publish.
 
 For later releases, bump the version in `package.json`,
 `package-lock.json`, `src/index.ts`, the manifest example above, and the
@@ -149,3 +149,11 @@ publish workflow from `main` with that exact version. The workflow uses OIDC
 and does not require a stored npm write token. Verify the configured publisher
 with `npm trust list @koalafacts/weave-plugin-echo`. See the
 [npm trusted publishing guide](https://docs.npmjs.com/trusted-publishers/).
+
+After a successful publish, the
+[published-package workflow](../../.github/workflows/verify-published-npm-plugin-echo.yml)
+installs that exact version from the npm registry, checks npm signatures and
+the provenance binding to the release commit, then runs the installed HTTP
+server through Weave's authorization and installation-lifecycle checks. It can
+also be dispatched manually with the version matching the selected commit and
+the full source commit SHA recorded by the npm release.
