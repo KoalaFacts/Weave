@@ -233,7 +233,7 @@ class McpHttpHandler(http.server.BaseHTTPRequestHandler):
 
 def run_http(port: int):
     server = http.server.ThreadingHTTPServer(("127.0.0.1", port), McpHttpHandler)
-    print(f"echo-mcp listening on http://127.0.0.1:{port}/mcp", flush=True)
+    print(f"echo-mcp listening on http://127.0.0.1:{server.server_port}/mcp", flush=True)
     try:
         server.serve_forever()
     except KeyboardInterrupt:
