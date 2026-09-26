@@ -158,6 +158,45 @@ public sealed class StartWorkspaceActionTests
     }
 
     [Fact]
+    public async Task ExecuteAsync_WithInstallationCapability_SendsItOnlyOnTheRequest()
+    {
+        string? presented = null;
+        var handler = new StubHttpMessageHandler((request, _) =>
+        {
+            presented = request.Headers.GetValues("X-Weave-Capability").Single();
+            return Task.FromResult(new HttpResponseMessage(HttpStatusCode.Unauthorized));
+        });
+        using var client = new HttpClient(handler) { BaseAddress = new Uri("http://example.test") };
+        var action = new StartWorkspaceAction(client);
+
+        var result = await action.ExecuteAsync(new StartWorkspaceInput(NewManifest("demo"), "operator-capability"),
+            CancellationToken.None);
+
+        result.Failure.ShouldNotBeNull();
+        result.Failure.Reason.ShouldBe(ActionFailureReason.Unauthorized);
+        presented.ShouldBe("operator-capability");
+        client.DefaultRequestHeaders.Contains("X-Weave-Capability").ShouldBeFalse();
+    }
+
+    [Fact]
+    public async Task ExecuteAsync_InvalidInstallationCapability_RejectsBeforeHttpWithoutLeakingToken()
+    {
+        var handler = StubHttpMessageHandler.Throws(new InvalidOperationException("HTTP was sent"));
+        using var client = new HttpClient(handler) { BaseAddress = new Uri("http://example.test") };
+        var action = new StartWorkspaceAction(client);
+        const string invalid = "private-token\r\nanother-header";
+        var input = new StartWorkspaceInput(NewManifest("demo"), invalid);
+
+        var result = await action.ExecuteAsync(input, CancellationToken.None);
+
+        input.ToString()!.ShouldNotContain(invalid);
+        result.Failure.ShouldNotBeNull();
+        result.Failure.Reason.ShouldBe(ActionFailureReason.ValidationFailed);
+        result.Failure.Message.ShouldNotContain(invalid);
+        handler.LastRequestUri.ShouldBeNull();
+    }
+
+    [Fact]
     public async Task ExecuteAsync_NullInput_Throws()
     {
         using var client = HttpClientReturning(HttpStatusCode.OK, "{}");

@@ -9,4 +9,8 @@ namespace Weave.Actions.Workspace;
 /// separate process and sees no relative paths). The action then POSTs the
 /// prepared manifest as-is.
 /// </summary>
-public sealed record StartWorkspaceInput(WorkspaceManifest Manifest);
+public sealed class StartWorkspaceInput(WorkspaceManifest manifest, string? capability = null)
+{
+    public WorkspaceManifest Manifest { get; } = manifest;
+    internal string? Capability { get; } = capability;
+}

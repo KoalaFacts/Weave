@@ -63,6 +63,8 @@ public static class PluginEndpoints
         ConnectPluginRequest request,
         IPluginRegistry registry,
         ICapabilityTokenService tokenService,
+        IMcpInstallationAuthority authority,
+        HttpContext context,
         IVirtualActorProvider actors,
         CancellationToken ct)
     {
@@ -88,6 +90,15 @@ public static class PluginEndpoints
 
             var installed = await FindDaprInstallationAsync(request.Name, actors);
             var installedMcp = await FindMcpInstallationAsync(request.Name, actors);
+            if (installedMcp is not null || string.Equals(request.Type, "mcp_tools", StringComparison.OrdinalIgnoreCase))
+            {
+                var workspaceId = installedMcp?.Installation.Id.Split('/')[0]
+                    ?? request.Name.Split('/')[0].ToLowerInvariant();
+                var denial = await authority.DenialAsync(context, workspaceId,
+                    McpInstallationAuthority.EnableGrant);
+                if (denial is not null)
+                    return denial;
+            }
             if (installed is not null || string.Equals(request.Type, "dapr_tools", StringComparison.OrdinalIgnoreCase))
             {
                 if (installed is null)
@@ -178,12 +189,22 @@ public static class PluginEndpoints
         string name,
         IPluginRegistry registry,
         ICapabilityTokenService tokenService,
+        IMcpInstallationAuthority authority,
+        HttpContext context,
         IVirtualActorProvider actors,
         IMcpInstallationDispatchGate mcpDispatchGate,
         CancellationToken ct)
     {
         var installed = await FindDaprInstallationAsync(name, actors);
         var installedMcp = await FindMcpInstallationAsync(name, actors);
+        if (installedMcp is not null)
+        {
+            var workspaceId = installedMcp.Value.Installation.Id.Split('/')[0];
+            var denial = await authority.DenialAsync(context, workspaceId,
+                McpInstallationAuthority.DisableGrant);
+            if (denial is not null)
+                return denial;
+        }
         var registrationName = installedMcp?.Installation.Id ?? name;
         if (installedMcp is not null)
             mcpDispatchGate.BeginDisable(registrationName);

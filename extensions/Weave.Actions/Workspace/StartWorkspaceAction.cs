@@ -30,14 +30,21 @@ public sealed class StartWorkspaceAction
     {
         ArgumentNullException.ThrowIfNull(input);
         ArgumentNullException.ThrowIfNull(input.Manifest);
+        if (input.Capability is { } encoded && (encoded.Length is 0 or > 16_384
+            || encoded.Any(character => !char.IsAsciiLetterOrDigit(character) && character is not '-' and not '_')))
+            return ActionResult.Failed<StartWorkspaceResult>(
+                ActionFailure.ValidationFailed("The installation capability is not a single encoded token."));
 
         try
         {
-            using var response = await _httpClient.PostAsJsonAsync(
-                "/api/workspaces",
-                new StartWorkspaceWire { Manifest = input.Manifest },
-                WorkspaceJsonContext.Default.StartWorkspaceWire,
-                cancellationToken);
+            using var request = new HttpRequestMessage(HttpMethod.Post, "/api/workspaces")
+            {
+                Content = JsonContent.Create(new StartWorkspaceWire { Manifest = input.Manifest },
+                    WorkspaceJsonContext.Default.StartWorkspaceWire)
+            };
+            if (input.Capability is not null)
+                request.Headers.Add("X-Weave-Capability", input.Capability);
+            using var response = await _httpClient.SendAsync(request, cancellationToken);
 
             return response.StatusCode switch
             {

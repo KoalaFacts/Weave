@@ -1,6 +1,7 @@
 using System.Text.Json;
 using Weave.Shared.Cqrs;
 using Weave.Shared.Ids;
+using Weave.Silo.Plugins;
 using Weave.Workspaces.Lifecycle;
 using Weave.Workspaces.Manifest;
 namespace Weave.Silo.Api;
@@ -66,8 +67,18 @@ public static class WorkspaceEndpoints
     private static async Task<IResult> StartWorkspaceAsync(
         StartWorkspaceRequest request,
         ICommandDispatcher dispatcher,
+        HttpContext context,
+        IMcpInstallationAuthority authority,
         CancellationToken ct)
     {
+        if (request.Manifest.Plugins.Values.Any(plugin =>
+            string.Equals(plugin.Type, "mcp_tools", StringComparison.OrdinalIgnoreCase)))
+        {
+            var denial = await authority.DenialAsync(context, "silo",
+                McpInstallationAuthority.CreateWorkspaceGrant, McpInstallationAuthority.InstallGrant);
+            if (denial is not null)
+                return denial;
+        }
         var errors = ValidateStartWorkspace(request);
         if (errors is not null)
             return ResultExtensions.ValidationFailed(errors);
