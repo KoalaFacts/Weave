@@ -1,0 +1,56 @@
+{
+  "name": "@koalafacts/weave-plugin-echo",
+  "version": "0.1.0",
+  "description": "An Echo MCP plugin for Weave with Streamable HTTP and stdio entry points",
+  "type": "module",
+  "license": "MIT OR AGPL-3.0-or-later",
+  "repository": {
+    "type": "git",
+    "url": "git+https://github.com/KoalaFacts/Weave.git",
+    "directory": "npm/weave-plugin-echo"
+  },
+  "homepage": "https://github.com/KoalaFacts/Weave/tree/main/npm/weave-plugin-echo",
+  "bugs": "https://github.com/KoalaFacts/Weave/issues",
+  "engines": {
+    "node": ">=22.14.0"
+  },
+  "bin": {
+    "weave-plugin-echo": "dist/cli.js"
+  },
+  "exports": {
+    ".": {
+      "types": "./dist/index.d.ts",
+      "import": "./dist/index.js"
+    },
+    "./stdio": {
+      "types": "./dist/stdio.d.ts",
+      "import": "./dist/stdio.js"
+    }
+  },
+  "files": [
+    "dist/",
+    "README.md",
+    "LICENSE-MIT",
+    "LICENSE-AGPL"
+  ],
+  "publishConfig": {
+    "access": "public"
+  },
+  "scripts": {
+    "build": "tsc -p tsconfig.json",
+    "check": "tsc -p tsconfig.json --noEmit",
+    "test": "tsc -p tsconfig.json && node --test",
+    "pack:check": "node scripts/check-pack.mjs",
+    "prepack": "npm run build"
+  },
+  "dependencies": {
+    "@modelcontextprotocol/node": "2.1.0",
+    "@modelcontextprotocol/server": "2.1.0",
+    "zod": "4.6.5"
+  },
+  "devDependencies": {
+    "@modelcontextprotocol/client": "2.1.0",
+    "@types/node": "24.13.6",
+    "typescript": "7.0.2"
+  }
+}

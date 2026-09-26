@@ -1,0 +1,99 @@
+name: Publish npm Echo Plugin
+
+on:
+  workflow_dispatch:
+    inputs:
+      version:
+        description: Exact package.json version to publish
+        required: true
+        type: string
+
+concurrency:
+  group: publish-npm-plugin-echo
+  cancel-in-progress: false
+
+permissions:
+  contents: read
+
+jobs:
+  verify:
+    if: github.ref == 'refs/heads/main'
+    runs-on: ubuntu-latest
+    timeout-minutes: 20
+    defaults:
+      run:
+        working-directory: npm/weave-plugin-echo
+    env:
+      EXPECTED_VERSION: ${{ inputs.version }}
+    steps:
+      - name: Checkout exact main commit
+        uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v6
+        with:
+          ref: ${{ github.sha }}
+          persist-credentials: false
+      - name: Set up Node and npm registry
+        uses: actions/setup-node@249970729cb0ef3589644e2896645e5dc5ba9c38 # v6
+        with:
+          node-version: '24'
+          registry-url: https://registry.npmjs.org
+          package-manager-cache: false
+      - name: Verify requested package identity
+        run: >-
+          node -e "const p=require('./package.json');
+          if(p.name!=='@koalafacts/weave-plugin-echo'||p.version!==process.env.EXPECTED_VERSION)
+          process.exit(1)"
+      - name: Install locked dependencies
+        run: npm ci --ignore-scripts
+      - name: Check and exercise package
+        run: |
+          npm run check
+          npm test
+          npm run pack:check
+          npm audit --omit=dev --audit-level=high
+      - name: Pack the verified version
+        run: |
+          npm pack
+          mv "koalafacts-weave-plugin-echo-${EXPECTED_VERSION}.tgz" release.tgz
+          sha256sum release.tgz > release.tgz.sha256
+      - name: Preserve the exact package
+        uses: actions/upload-artifact@043fb46d1a93c77aae656e7c1c64a875d1fc6a0a # v7
+        with:
+          name: npm-echo-package
+          path: |
+            npm/weave-plugin-echo/release.tgz
+            npm/weave-plugin-echo/release.tgz.sha256
+          if-no-files-found: error
+          retention-days: 7
+
+  publish:
+    needs: verify
+    runs-on: ubuntu-latest
+    timeout-minutes: 10
+    environment:
+      name: npm
+      url: https://www.npmjs.com/package/@koalafacts/weave-plugin-echo
+    permissions:
+      contents: read
+      id-token: write
+    steps:
+      - name: Checkout exact main commit
+        uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v6
+        with:
+          ref: ${{ github.sha }}
+          persist-credentials: false
+      - name: Set up Node and npm registry
+        uses: actions/setup-node@249970729cb0ef3589644e2896645e5dc5ba9c38 # v6
+        with:
+          node-version: '24'
+          registry-url: https://registry.npmjs.org
+          package-manager-cache: false
+      - name: Retrieve the verified package
+        uses: actions/download-artifact@3e5f45b2cfb9172054b4087a40e8e0b5a5461e7c # v8
+        with:
+          name: npm-echo-package
+          path: release
+      - name: Verify artifact checksum
+        working-directory: release
+        run: sha256sum --check release.tgz.sha256
+      - name: Publish with npm trusted publishing
+        run: npm publish ./release/release.tgz --access public

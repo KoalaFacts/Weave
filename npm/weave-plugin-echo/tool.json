@@ -1,0 +1,8 @@
+{
+  "name": "echo-sample",
+  "type": "mcp",
+  "mcp": {
+    "server": "node",
+    "args": ["npm/weave-plugin-echo/dist/cli.js"]
+  }
+}

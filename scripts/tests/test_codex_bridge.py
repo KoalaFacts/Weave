@@ -1,4 +1,5 @@
-"""Adapter contract checks; fake HTTP peer is NOT a live model or human approval."""
+"""Adapter contract checks; the HTTP peer is NOT a live model or human approval."""
+import hashlib
 import importlib.util
 import json
 import os
@@ -12,6 +13,7 @@ import unittest
 
 ROOT = Path(__file__).resolve().parents[2]
 BRIDGE = ROOT / 'examples/governed-tools/codex_bridge.py'
+ID = '89f0b55c9a314192a40751bb85da3c43'
 
 
 class BridgeTests(unittest.TestCase):
@@ -54,49 +56,55 @@ class BridgeTests(unittest.TestCase):
         self.server.server_close()
         self.thread.join(timeout=2)
 
-    def pending(self, key='summary-v1'):
-        self.replies.append((202, {'errorCode': 'approval-pending'}))
-        return self.agent.call_tool('submit_write', {'request_key': key, 'path': 'summary.md', 'content': '汉🙂\n'})
+    def pending(self):
+        self.replies.extend([(404, {}), (404, {}), (202, {'errorCode': 'approval-pending'})])
+        return self.agent.call_tool('submit_write', {'invocation_id': ID, 'path': 'summary.md', 'content': '汉🙂\n'})
 
-    def test_pending_is_not_success_and_original_request_is_saved_before_return(self):
+    def test_pending_is_not_success_and_receipt_retains_uuid_hash_not_body(self):
         result = self.pending()
         self.assertEqual(result['http_status'], 202)
-        saved = json.loads((Path(self.temp.name) / 'summary-v1.json').read_text())
-        self.assertEqual(saved['rawInput'], '汉🙂\n')
-        self.assertEqual(result['invocation_id'], saved['invocationId'])
-        self.assertEqual(self.calls[0][3], self.module.encode(saved))
-        self.assertNotIn('X-Weave-Operator-Key', self.calls[0][2])
+        saved = json.loads((Path(self.temp.name) / (ID + '.json')).read_text())
+        self.assertEqual(set(saved), {'invocationId', 'inputSha256'})
+        self.assertEqual(result['invocation_id'], ID)
+        self.assertEqual(saved['invocationId'], ID)
+        self.assertEqual(saved['inputSha256'], hashlib.sha256(self.calls[-1][3]).hexdigest())
+        self.assertEqual(json.loads(self.calls[-1][3])['rawInput'], '汉🙂\n')
+        self.assertEqual([call[0] for call in self.calls], ['GET', 'GET', 'POST'])
+        for call in self.calls:
+            self.assertNotIn('X-Weave-Operator-Key', call[2])
 
-    def test_duplicate_submit_is_query_only_and_changed_body_cannot_replace_saved_request(self):
+    def test_duplicate_submit_is_query_only_and_changed_body_cannot_reuse_uuid(self):
         first = self.pending()
         self.replies.extend([(404, {}), (200, {'approvalState': 'Pending'})])
-        again = self.agent.call_tool('submit_write', {'request_key': 'summary-v1', 'path': 'summary.md', 'content': '汉🙂\n'})
+        again = self.agent.call_tool('submit_write', {'invocation_id': ID, 'path': 'summary.md', 'content': '汉🙂\n'})
         self.assertEqual(again['invocation_id'], first['invocation_id'])
         self.assertEqual(sum(c[0] == 'POST' for c in self.calls), 1)
         with self.assertRaises(self.module.BridgeError):
-            self.agent.call_tool('submit_write', {'request_key': 'summary-v1', 'path': 'summary.md', 'content': 'changed'})
-        self.assertEqual(len(self.calls), 3)
+            self.agent.call_tool('submit_write', {'invocation_id': ID, 'path': 'summary.md', 'content': 'changed'})
+        self.assertEqual(len(self.calls), 5)
 
-    def test_resume_after_bridge_restart_uses_same_saved_bytes_and_only_when_approved(self):
+    def test_resume_after_bridge_restart_and_local_receipt_loss_uses_uuid_with_current_token(self):
         self.pending()
-        saved_wire = self.calls[0][3]
+        (Path(self.temp.name) / (ID + '.json')).unlink()
         replacement = self.module.Bridge(self.url, 'pilot', 'files', Path(self.temp.name), 'fresh_capability')
         self.replies.extend([(404, {}), (200, {'approvalState': 'Approved'}), (200, {'success': True, 'outcomeRecorded': True})])
-        result = replacement.call_tool('resume_write', {'request_key': 'summary-v1'})
+        result = replacement.call_tool('resume_write', {'invocation_id': ID})
         self.assertEqual(result['http_status'], 200)
-        self.assertEqual(self.calls[-1][3], saved_wire)
+        self.assertEqual(self.calls[-1][1], '/api/workspaces/pilot/tools/files/invocations/' + ID + '/resume')
+        self.assertEqual(self.calls[-1][3], b'')
         self.assertEqual(self.calls[-1][2]['X-Weave-Capability'], 'fresh_capability')
+        self.assertFalse((Path(self.temp.name) / (ID + '.json')).exists())
 
     def test_pending_rejected_expired_unknown_and_recorded_outcomes_never_trigger_resume_post(self):
         self.pending()
         for state in ('Pending', 'Rejected', 'Expired', 'Cancelled'):
             self.replies.extend([(404, {}), (200, {'approvalState': state})])
-            self.agent.call_tool('resume_write', {'request_key': 'summary-v1'})
+            self.agent.call_tool('resume_write', {'invocation_id': ID})
         for outcome in ('OutcomeUnknown', 'Succeeded', 'Failed'):
             self.replies.append((200, {'outcome': outcome}))
-            self.agent.call_tool('resume_write', {'request_key': 'summary-v1'})
+            self.agent.call_tool('resume_write', {'invocation_id': ID})
         self.replies.append((401, {}))
-        self.agent.call_tool('resume_write', {'request_key': 'summary-v1'})
+        self.agent.call_tool('resume_write', {'invocation_id': ID})
         self.assertEqual(sum(c[0] == 'POST' for c in self.calls), 1)
 
     def test_only_declared_tools_and_arguments_can_be_used(self):
@@ -104,9 +112,12 @@ class BridgeTests(unittest.TestCase):
             with self.assertRaises(self.module.BridgeError):
                 self.agent.call_tool(name, {})
         with self.assertRaises(self.module.BridgeError):
-            self.agent.call_tool('submit_write', {'request_key': 'one', 'path': 'a', 'content': 'x', 'grants': ['*']})
+            self.agent.call_tool('submit_write', {'invocation_id': ID, 'path': 'a', 'content': 'x', 'grants': ['*']})
+        for invalid in ('../x', 'summary-v1', '0' * 32):
+            with self.assertRaises(self.module.BridgeError):
+                self.agent.call_tool('submit_write', {'invocation_id': invalid, 'path': 'a', 'content': 'x'})
         with self.assertRaises(self.module.BridgeError):
-            self.agent.call_tool('submit_write', {'request_key': '../x', 'path': 'a', 'content': 'x'})
+            self.agent.call_tool('get_status', {'request_key': 'summary-v1'})
         self.assertEqual(self.calls, [])
 
     def test_state_cannot_be_reused_for_another_target_or_workspace(self):
@@ -119,8 +130,8 @@ class BridgeTests(unittest.TestCase):
         self.assertEqual(result['result']['output'], 'unique-input-汉')
         self.assertEqual(json.loads(self.calls[0][3])['method'], 'read_file')
 
-    def test_real_stdio_process_discovers_only_four_tools_and_never_approves(self):
-        env = {k: os.environ[k] for k in ('PATH', 'LANG') if k in os.environ}
+    def test_real_stdio_process_discovers_only_four_tools_and_uuid_contract(self):
+        env = {k: os.environ[k] for k in ('PATH', 'LANG', 'SystemRoot') if k in os.environ}
         env['WEAVE_AGENT_CAPABILITY'] = 'test_capability'
         messages = [{'jsonrpc': '2.0', 'id': 1, 'method': 'initialize', 'params': {'protocolVersion': '2024-11-05'}},
                     {'jsonrpc': '2.0', 'method': 'notifications/initialized'},
@@ -132,9 +143,20 @@ class BridgeTests(unittest.TestCase):
         self.assertEqual(result.returncode, 0, result.stderr)
         replies = [json.loads(line) for line in result.stdout.splitlines()]
         self.assertEqual(len(replies), 2)
-        names = {t['name'] for t in replies[1]['result']['tools']}
-        self.assertEqual(names, {'read_document', 'submit_write', 'get_status', 'resume_write'})
+        tools = {t['name']: t for t in replies[1]['result']['tools']}
+        self.assertEqual(set(tools), {'read_document', 'submit_write', 'get_status', 'resume_write'})
+        for name in ('get_status', 'resume_write'):
+            self.assertEqual(tools[name]['inputSchema']['required'], ['invocation_id'])
+        self.assertNotIn('request_key', tools['submit_write']['inputSchema']['properties'])
         self.assertEqual(self.calls, [])
+
+    def test_failed_initial_status_lookup_never_submits_or_saves_a_write(self):
+        for status in (401, 403, 500):
+            self.replies.append((status, {}))
+            result = self.agent.call_tool('submit_write', {'invocation_id': ID, 'path': 'summary.md', 'content': 'not submitted'})
+            self.assertEqual(result['invocation']['http_status'], status)
+        self.assertTrue(all(call[0] == 'GET' for call in self.calls))
+        self.assertFalse((Path(self.temp.name) / (ID + '.json')).exists())
 
 
 if __name__ == '__main__':

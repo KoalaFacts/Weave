@@ -27,6 +27,7 @@ public sealed class ToolRegistryActorGrain : Grain, IToolRegistryActorGrain
         _actor.OnActivatedAsync(this.GetPrimaryKeyString(), cancellationToken);
 
     public Task ConnectToolsAsync(Dictionary<string, ToolDefinition> tools) => _actor.ConnectToolsAsync(tools);
+    public Task ReconnectInstallationAsync(string pluginName) => _actor.ReconnectInstallationAsync(pluginName);
     public Task ConfigureAccessAsync(Dictionary<string, List<string>> agentToolAccess, Dictionary<string, List<string>> agentCapabilities) =>
         _actor.ConfigureAccessAsync(agentToolAccess, agentCapabilities);
     public Task GrantAgentToolsAsync(string agentName, IReadOnlyList<string> toolNames, IReadOnlyList<string> capabilities) =>

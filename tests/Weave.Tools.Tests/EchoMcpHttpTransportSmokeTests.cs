@@ -22,6 +22,7 @@ public sealed class EchoMcpHttpTransportSmokeTests : IDisposable
     };
 
     private readonly ConcurrentQueue<string> _diagnostics = new();
+    private readonly TaskCompletionSource<int> _ready = new(TaskCreationOptions.RunContinuationsAsynchronously);
     private Process? _server;
     private int _port;
 
@@ -48,9 +49,8 @@ public sealed class EchoMcpHttpTransportSmokeTests : IDisposable
         var scriptPath = LocateServerScript();
         Assert.SkipWhen(scriptPath is null, "examples/echo-mcp/server.py not found relative to repo root");
 
-        _port = FindFreePort();
-        _server = StartServer(python!, scriptPath!, _port);
-        await WaitForListenerAsync(_port, TestContext.Current.CancellationToken);
+        _server = StartServer(python!, scriptPath!);
+        _port = await WaitForReadyAsync(TestContext.Current.CancellationToken);
 
         var connector = new McpToolConnector(new DiagnosticLogger(Capture));
         var spec = new ToolSpec
@@ -94,9 +94,8 @@ public sealed class EchoMcpHttpTransportSmokeTests : IDisposable
         var scriptPath = LocateServerScript();
         Assert.SkipWhen(scriptPath is null, "examples/echo-mcp/server.py not found relative to repo root");
 
-        _port = FindFreePort();
-        _server = StartServer(python!, scriptPath!, _port);
-        await WaitForListenerAsync(_port, TestContext.Current.CancellationToken);
+        _server = StartServer(python!, scriptPath!);
+        _port = await WaitForReadyAsync(TestContext.Current.CancellationToken);
 
         var connector = new McpToolConnector(new DiagnosticLogger(Capture));
         var spec = new ToolSpec
@@ -181,7 +180,7 @@ public sealed class EchoMcpHttpTransportSmokeTests : IDisposable
             () => connector.ConnectAsync(spec, _token, TestContext.Current.CancellationToken));
     }
 
-    private Process StartServer(string python, string script, int port)
+    private Process StartServer(string python, string script)
     {
         var psi = new ProcessStartInfo
         {
@@ -195,19 +194,37 @@ public sealed class EchoMcpHttpTransportSmokeTests : IDisposable
         psi.ArgumentList.Add("--transport");
         psi.ArgumentList.Add("http");
         psi.ArgumentList.Add("--port");
-        psi.ArgumentList.Add(port.ToString(System.Globalization.CultureInfo.InvariantCulture));
-        var proc = Process.Start(psi) ?? throw new InvalidOperationException("failed to start echo-mcp http server");
+        psi.ArgumentList.Add("0");
+        var proc = new Process { StartInfo = psi, EnableRaisingEvents = true };
         proc.OutputDataReceived += (_, e) => Capture(e.Data);
         proc.ErrorDataReceived += (_, e) => Capture(e.Data);
-        proc.BeginOutputReadLine();
-        proc.BeginErrorReadLine();
-        return proc;
+        proc.Exited += (_, _) => _ready.TrySetException(new IOException("echo-mcp http server exited before readiness"));
+        try
+        {
+            if (!proc.Start())
+                throw new InvalidOperationException("failed to start echo-mcp http server");
+            proc.BeginOutputReadLine();
+            proc.BeginErrorReadLine();
+            return proc;
+        }
+        catch
+        {
+            proc.Dispose();
+            throw;
+        }
     }
 
     private void Capture(string? line)
     {
-        if (line is not null && _diagnostics.Count < 32)
+        if (line is null)
+            return;
+        if (_diagnostics.Count < 32)
             _diagnostics.Enqueue(line[..Math.Min(2048, line.Length)]);
+        const string readyPrefix = "echo-mcp listening on ";
+        if (line.StartsWith(readyPrefix, StringComparison.Ordinal)
+            && Uri.TryCreate(line[readyPrefix.Length..], UriKind.Absolute, out var endpoint)
+            && endpoint.Host == "127.0.0.1" && endpoint.Port is > 0 and <= 65535)
+            _ready.TrySetResult(endpoint.Port);
     }
 
     private sealed class DiagnosticLogger(Action<string?> capture) : ILogger<McpToolConnector>
@@ -222,23 +239,16 @@ public sealed class EchoMcpHttpTransportSmokeTests : IDisposable
         }
     }
 
-    private static async Task WaitForListenerAsync(int port, CancellationToken ct)
+    private async Task<int> WaitForReadyAsync(CancellationToken ct)
     {
-        var deadline = DateTimeOffset.UtcNow.AddSeconds(5);
-        while (DateTimeOffset.UtcNow < deadline)
+        try
         {
-            try
-            {
-                using var probe = new TcpClient();
-                await probe.ConnectAsync("127.0.0.1", port, ct);
-                return;
-            }
-            catch (SocketException)
-            {
-                await Task.Delay(50, ct);
-            }
+            return await _ready.Task.WaitAsync(TimeSpan.FromSeconds(20), ct);
         }
-        throw new TimeoutException($"echo-mcp http server did not bind to port {port} within 5s");
+        catch (TimeoutException error)
+        {
+            throw new TimeoutException($"echo-mcp http server did not report readiness within 20s: {string.Join("; ", _diagnostics)}", error);
+        }
     }
 
     private static int FindFreePort()
@@ -257,7 +267,8 @@ public sealed class EchoMcpHttpTransportSmokeTests : IDisposable
                 continue;
             // Path.Join (not Combine) — Combine silently drops `dir` if `name` were
             // accidentally rooted; Join concatenates regardless.
-            foreach (var candidate in pathEnv.Split(Path.PathSeparator).Select(dir => Path.Join(dir, name)))
+            foreach (var candidate in pathEnv.Split(Path.PathSeparator).Select(dir =>
+                Path.Join(dir, OperatingSystem.IsWindows() ? $"{name}.exe" : name)))
             {
                 if (File.Exists(candidate))
                     return candidate;

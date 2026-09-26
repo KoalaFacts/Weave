@@ -10,109 +10,100 @@ namespace Weave.Shared.Plugins;
 /// active subscriptions are disposed on the old bus and re-created on the new one.
 /// </summary>
 /// <remarks>
-/// Uses <see cref="ReaderWriterLockSlim"/>: publishes take a read lock (concurrent),
-/// swaps take a write lock (exclusive, waits for in-flight publishes to drain).
+/// Concurrent publishes hold an async-safe read lease. A swap waits for them
+/// before moving subscriptions to the new bus.
 /// </remarks>
 public sealed partial class EventBusProxy : IEventBus, IDisposable
 {
     private readonly PluginServiceBroker _broker;
     private readonly InProcessEventBus _fallback;
     private readonly ILogger<EventBusProxy> _logger;
-    private readonly ReaderWriterLockSlim _rwLock = new();
+    private readonly EventBusSwapGate _gate = new();
+    private readonly Lock _lifetimeLock = new();
+    private readonly IDisposable _swapRegistration;
     private readonly List<SubscriptionRecord> _subscriptions = [];
+    private IEventBus _current;
+    private int _disposed;
 
     public EventBusProxy(PluginServiceBroker broker, InProcessEventBus fallback, ILogger<EventBusProxy>? logger = null)
     {
         _broker = broker;
         _fallback = fallback;
         _logger = logger ?? NullLogger<EventBusProxy>.Instance;
-        _broker.OnSwap<IEventBus>(ReplaySubscriptions);
+        _current = fallback;
+        _swapRegistration = _broker.OnSwap<IEventBus>(ReplaySubscriptions, bus => _current = bus ?? fallback);
     }
-
-    private IEventBus Current => _broker.Get<IEventBus>() ?? _fallback;
 
     public async Task PublishAsync<TEvent>(TEvent domainEvent, CancellationToken ct) where TEvent : IDomainEvent
     {
-        // Read lock: multiple publishes proceed concurrently.
-        // A swap (write lock) blocks until all in-flight publishes complete.
-        _rwLock.EnterReadLock();
-        try
-        {
-            var bus = Current;
-            await bus.PublishAsync(domainEvent, ct);
-        }
-        finally
-        {
-            _rwLock.ExitReadLock();
-        }
+        using var lease = await _gate.EnterReadAsync(ct);
+        ObjectDisposedException.ThrowIf(Volatile.Read(ref _disposed) != 0, this);
+        await _current.PublishAsync(domainEvent, ct);
     }
 
     public IDisposable Subscribe<TEvent>(Func<TEvent, CancellationToken, Task> handler) where TEvent : IDomainEvent
     {
-        _rwLock.EnterWriteLock();
-        try
-        {
-            var innerSub = Current.Subscribe(handler);
-            var record = new SubscriptionRecord(
-                bus => bus.Subscribe(handler),
-                innerSub);
-            _subscriptions.Add(record);
-            return new ProxySubscription(this, record);
-        }
-        finally
-        {
-            _rwLock.ExitWriteLock();
-        }
+        using var lease = _gate.EnterWrite();
+        ObjectDisposedException.ThrowIf(Volatile.Read(ref _disposed) != 0, this);
+        var innerSub = _current.Subscribe(handler);
+        var record = new SubscriptionRecord(
+            bus => bus.Subscribe(handler),
+            innerSub);
+        _subscriptions.Add(record);
+        return new ProxySubscription(this, record);
     }
 
     private void Unsubscribe(SubscriptionRecord record)
     {
-        _rwLock.EnterWriteLock();
-        try
+        lock (_lifetimeLock)
         {
+            if (_disposed != 0)
+                return;
+
+            using var lease = _gate.EnterWrite();
             if (_subscriptions.Remove(record))
                 record.InnerSubscription.Dispose();
-        }
-        finally
-        {
-            _rwLock.ExitWriteLock();
         }
     }
 
     private void ReplaySubscriptions()
     {
-        // Called from broker.Swap callback which holds broker._lock.
-        // We take the write lock here — this blocks until all in-flight
-        // publishes (read locks) drain, guaranteeing no publish can
-        // target a bus whose subscriptions have been replayed away.
-        _rwLock.EnterWriteLock();
-        try
+        var bus = _broker.Get<IEventBus>() ?? _fallback;
+        using var lease = _gate.EnterWrite();
+        _current = bus;
+        foreach (var record in _subscriptions)
         {
-            var bus = Current;
-            foreach (var record in _subscriptions)
+            var oldSub = record.InnerSubscription;
+            try
             {
-                var oldSub = record.InnerSubscription;
-                try
-                {
-                    record.InnerSubscription = record.SubscribeFactory(bus);
-                    oldSub.Dispose();
-                }
-                catch (Exception ex) when (ex is InvalidOperationException or ObjectDisposedException)
-                {
-                    // If re-subscribe fails, keep the old subscription reference
-                    // so that Unsubscribe can still dispose it cleanly.
-                    record.InnerSubscription = oldSub;
-                    LogReplayFailed(ex);
-                }
+                record.InnerSubscription = record.SubscribeFactory(bus);
+                oldSub.Dispose();
             }
-        }
-        finally
-        {
-            _rwLock.ExitWriteLock();
+            catch (Exception ex) when (ex is InvalidOperationException or ObjectDisposedException)
+            {
+                record.InnerSubscription = oldSub;
+                LogReplayFailed(ex);
+            }
         }
     }
 
-    public void Dispose() => _rwLock.Dispose();
+    public void Dispose()
+    {
+        lock (_lifetimeLock)
+        {
+            if (Interlocked.Exchange(ref _disposed, 1) != 0)
+                return;
+
+            _swapRegistration.Dispose();
+            using (var lease = _gate.EnterWrite())
+            {
+                foreach (var record in _subscriptions)
+                    record.InnerSubscription.Dispose();
+                _subscriptions.Clear();
+            }
+            _gate.Dispose();
+        }
+    }
 
     private sealed class SubscriptionRecord(
         Func<IEventBus, IDisposable> subscribeFactory,

@@ -14,8 +14,11 @@ public sealed partial class WebhookPluginConnector(
     ILoggerFactory loggerFactory) : IPluginConnector
 {
     private readonly ILogger<WebhookPluginConnector> _logger = loggerFactory.CreateLogger<WebhookPluginConnector>();
+    private readonly PluginActivationStore _activations = new();
 
     public string PluginType => "webhook";
+
+    public IReadOnlyList<string> RegistrationKeys(string name) => ["event-bus"];
 
     public PluginSchema Schema { get; } = new()
     {
@@ -59,7 +62,9 @@ public sealed partial class WebhookPluginConnector(
             webhookUri,
             loggerFactory.CreateLogger<WebhookEventBus>());
 
-        broker.Swap<IEventBus>(eventBus);
+        var scope = new PluginActivationScope();
+        scope.Add(() => broker.Swap<IEventBus>(eventBus), () => broker.ClearIfCurrent<IEventBus>(eventBus));
+        _activations.Replace(name, scope);
 
         LogWebhookConnected(name, url);
 
@@ -75,8 +80,7 @@ public sealed partial class WebhookPluginConnector(
     public Task<PluginStatus> DisconnectAsync(string name)
     {
         // Only clear the slot if we still own it
-        if (broker.Get<IEventBus>() is WebhookEventBus)
-            broker.Swap<IEventBus>(null);
+        _activations.Remove(name);
 
         LogWebhookDisconnected(name);
         return Task.FromResult(new PluginStatus { Name = name, Type = PluginType, IsConnected = false });
@@ -84,8 +88,7 @@ public sealed partial class WebhookPluginConnector(
 
     public PluginStatus GetStatus(string name)
     {
-        var hasBus = broker.Get<IEventBus>() is WebhookEventBus;
-        return new PluginStatus { Name = name, Type = PluginType, IsConnected = hasBus };
+        return new PluginStatus { Name = name, Type = PluginType, IsConnected = _activations.Contains(name) };
     }
 
     [LoggerMessage(Level = LogLevel.Information, Message = "Webhook plugin '{Name}' connected — posting to {Url}")]

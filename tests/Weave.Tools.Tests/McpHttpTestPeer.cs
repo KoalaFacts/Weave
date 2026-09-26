@@ -64,6 +64,7 @@ internal sealed class McpHttpTestPeer : IAsyncDisposable
         catch (OperationCanceledException) when (_shutdown.IsCancellationRequested) { }
         catch (IOException) when (_shutdown.IsCancellationRequested) { }
         catch (SocketException) when (_shutdown.IsCancellationRequested) { }
+        catch (ObjectDisposedException) when (_shutdown.IsCancellationRequested) { return; }
     }
 
     public static async Task ReplyAsync(NetworkStream stream, CancellationToken ct, string body = "{}", string extraHeaders = "", int status = 200)

@@ -76,14 +76,23 @@ public sealed class HttpPluginConnectorTests
     }
 
     [Fact]
-    public void GetStatus_Connected_ReturnsTrue()
+    public async Task GetStatus_Connected_ReturnsTrue()
     {
-        var (connector, broker) = CreateConnector();
-        broker.Set("http:svc", new HttpClient());
+        var (connector, _) = CreateConnector();
+        await connector.ConnectAsync("svc", Def("https://api.example.com"));
 
         var status = connector.GetStatus("svc");
 
         status.IsConnected.ShouldBeTrue();
+    }
+
+    [Fact]
+    public void GetStatus_ForeignBrokerRegistration_DoesNotClaimActivation()
+    {
+        var (connector, broker) = CreateConnector();
+        broker.Set("http:svc", new HttpClient());
+
+        connector.GetStatus("svc").IsConnected.ShouldBeFalse();
     }
 
     [Fact]

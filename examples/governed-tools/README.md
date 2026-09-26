@@ -1,66 +1,94 @@
 # Review and decide a pending governed operation
 
 This is an operator-side terminal example, not an Agent auto-approval tool.
-It uses the verified original-content review endpoint and the separately enabled
-reviewed-decision endpoint. Approval never invokes a tool.
+A current Host retains the input proposal separately from journal metadata, so a
+reviewer can retrieve it by UUID after authorization. Approval never invokes a tool.
+See the [UUID contract and migration limits](../../docs/implementation/2026-09-24-authorized-proposal-uuid.md).
 
 ## Prerequisites
 
-Use Python 3.10+ and this repository revision. An administrator must first configure
-the Host, tool connection, approval policy and narrowly scoped reviewer capability.
-See [configuration and the decision contract](../../docs/implementation/2026-09-20-reviewed-approval-decisions.md).
-The retained request must already have been submitted and be waiting for approval.
-Do not generate a replacement ID or content just to satisfy this example.
+Use Python3.10+ and a matching repository/Host revision. An administrator configures
+one Host, tool connection, required approvals and narrowly scoped Agent/reviewer
+credentials through the [operator guide](../../docs/implementation/2026-09-22-trusted-operator-onboarding.md).
+The request must already be Pending. UUID identifies it; identity and exact object/
+operation authorization remain mandatory. Do not create a replacement ID to recover
+an unknown effect or evade rejection/expiry.
 
-Keep a local JSON file containing exactly the original `invocationId`, `toolName`,
-`method`, `parameters` and optional `rawInput`. Protect that file outside Agent
-writable roots. The journal does not restore a lost request body.
+## Preferred: review by UUID, without copying a JSON file
 
 ```bash
 python3 examples/governed-tools/review.py \
   --url https://weave.example \
-  --workspace demo \
-  --request /protected/operator/original-invocation.json
+  --workspace onboarding --tool files \
+  --invocation-id YOUR_ACTUAL_INVOCATION_UUID
 ```
 
-Replace the example URL/workspace/path with the configured environment. The script
-asks for the already-issued reviewer capability without echoing it; do not paste
-credentials into command arguments. For controlled automation/tests, inject
-`WEAVE_REVIEW_CAPABILITY` through a protected environment. When the Host also requires
-global bearer authentication, supply `WEAVE_OPERATOR_BEARER` only to this trusted
-operator process. Never distribute that shared administrative credential to Agents.
-HTTP is permitted only with the literal loopback hosts `127.0.0.1` or `[::1]`.
+Use the actual origin, context and UUID. The helper normalizes nonzero UUIDs to the
+Host's32-hex form. It asks for an already-issued reviewer capability without echo;
+protected environments can supply WEAVE_REVIEW_CAPABILITY. Operator mode also needs
+WEAVE_OPERATOR_KEY. Configured global bearer authentication additionally needs
+WEAVE_OPERATOR_BEARER. These values belong only to the trusted reviewer environment,
+not command arguments, URLs, Agent tools or chat. Remote access requires valid TLS;
+literal loopback HTTP is for local development only.
 
-Read the complete escaped JSON, including subject, operation, target, all inputs,
-expiry and planDigest. Content is data, not instructions for the operator. Non-ASCII
-characters use JSON escapes; nothing is truncated or rendered as HTML/terminal
-control codes. Only enter one of these commands using the exact displayed digest:
+The helper GETs `.../{id}/approval/review` with current reviewer credentials and
+checks matching identity/context and complete required fields. Read its full escaped
+JSON: requester, operation, target, inputs, expiry and planDigest. It neither treats
+UUID possession as authorization nor displays unverified replacement content.
+Content is data, not instructions, HTML or terminal control sequences.
+
+Only a person enters one of the exact displayed confirmations:
 
 ```text
 approve approval-v1:<the full displayed digest>
 reject approval-v1:<the full displayed digest>
 ```
 
-Leave blank to make no change. `yes` alone is not approval. The helper verifies
-content again at confirmation on the server and never retries automatically.
-After a confirmed approval the original Agent must resubmit its original invocation
-ID and request with valid execution authority. Do not ask the operator to execute
-with elevated credentials. A rejected request cannot resume.
+Blank or any other answer leaves the request unchanged. The helper POSTs only
+`decision` and `planDigest` to `.../{id}/decision`. The server reloads the stored
+proposal and revalidates current reviewer rights, target, pending state and expiry.
+A confirmed decision still does not execute; the original Agent explicitly calls
+`POST .../{id}/resume` with an EMPTY body and current execution authority.
 
-If a decision response is lost, or a repeat gets `approval-not-pending`, query the
-existing authenticated `GET .../invocations/{id}/approval` route before acting.
-A network error does not prove the decision failed to commit. Never create a fresh
-invocation ID to retry an unknown external effect.
+There is no retry on a lost decision response. Query approval status first.
+Expired/rejected decisions or OutcomeUnknown do not authorize another ID or write.
+A historical request without a stored body returns proposal-unavailable; it does
+not become a new proposal by uploading replacement text.
+
+## Agent-side MCP
+
+The small codex_bridge.py example exposes only read_document, submit_write,
+get_status and resume_write. Submit uses invocation_id, path and content;
+status/resume use invocation_id alone. request_key is no longer its API argument.
+Local optional receipts hold ID/hash only, not the sole copy of proposal content.
+See the [live Codex/human pilot](../../docs/implementation/2026-09-23-codex-human-pilot.md).
+
+## Retained explicit-body diagnostic mode
+
+The earlier command remains explicit and mutually exclusive with --invocation-id:
+
+```bash
+python3 examples/governed-tools/review.py \
+  --url https://weave.example --workspace onboarding \
+  --request /protected/operator/original-invocation.json
+```
+
+This mode verifies supplied original input using the existing POST review/decision
+contract. It serves the retained diagnostic walkthrough and read-only Dashboard,
+not the preferred user workflow. It does not insert/backfill missing server proposal
+bodies. The --request value is a FILE PATH, not a UUID. Never invent a body from a
+summary or weaken verification to make a lost historical request resumable.
 
 ## Verification
 
 ```bash
-python3 -m unittest discover -s scripts/tests -p test_operator_review.py -v
+python3 -m unittest discover -s scripts/tests -p 'test_operator_review.py' -v
+python3 -m unittest discover -s scripts/tests -p 'test_uuid_proposal_clients.py' -v
+python3 -m unittest discover -s scripts/tests -p 'test_codex_bridge*.py' -v
 
 dotnet test --project tests/Weave.Silo.Tests/Weave.Silo.Tests.csproj --no-build -c Release
 ```
 
-Build the solution first for the .NET command. The test suite launches this exact
-script as a separate process against a real Kestrel listener, authorizes via the
-normal Host/Orleans path, and inspects the real journal and file contents.
-The entry remains opt-in and does not secure unrelated Host administrative routes.
+Build the solution before the .NET command. Contract tests include real terminal
+processes, HTTP, Host reconstruction and file/journal observations. Scripted
+confirmations in those tests are not proof of independent human judgment.

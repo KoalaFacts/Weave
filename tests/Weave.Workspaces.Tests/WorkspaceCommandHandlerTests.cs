@@ -1,3 +1,4 @@
+using Microsoft.Extensions.Options;
 using Weave.Agents.Channels;
 using Weave.Agents.Lifecycle;
 using Weave.Agents.Memory;
@@ -5,8 +6,11 @@ using Weave.Agents.Skills;
 using Weave.Agents.ToolRegistry;
 using Weave.Agents.Users;
 using Weave.Agents.Verification;
+using Weave.Security.Tokens;
 using Weave.Shared.Ids;
 using Weave.Silo.Api;
+using Weave.Silo.Plugins;
+using Weave.Tools.Connectors;
 using Weave.Workspaces.Lifecycle;
 using Weave.Workspaces.Manifest;
 using Weave.Workspaces.Registry;
@@ -53,9 +57,14 @@ public sealed class WorkspaceCommandHandlerTests
             .Returns(supervisor);
         workspaceActor.StartAsync(Arg.Any<WorkspaceManifest>())
             .Returns(expectedState);
-        workspaceActor.GetStateAsync().Returns(expectedState);
+        workspaceActor.GetStateAsync().Returns(new WorkspaceState
+        {
+            WorkspaceId = TestWorkspaceId,
+            Status = WorkspaceStatus.Stopped
+        }, expectedState);
 
-        var handler = new StartWorkspaceHandler(actors);
+        var handler = new StartWorkspaceHandler(actors, Substitute.For<IPluginRegistry>(),
+            Substitute.For<ICapabilityTokenService>());
         var manifest = CreateManifest();
         var command = new StartWorkspaceCommand(TestWorkspaceId, manifest);
 
@@ -93,7 +102,10 @@ public sealed class WorkspaceCommandHandlerTests
         actors.GetActor<IAgentSupervisorActor>(Arg.Any<VirtualActorId>())
             .Returns(supervisor);
 
-        var handler = new StopWorkspaceHandler(actors);
+        var plugins = Substitute.For<IPluginRegistry>();
+        plugins.GetAll().Returns([]);
+        var handler = new StopWorkspaceHandler(actors, plugins, Substitute.For<ICapabilityTokenService>(),
+            Substitute.For<Weave.Silo.Plugins.IMcpInstallationDispatchGate>());
         var command = new StopWorkspaceCommand(TestWorkspaceId);
 
         var result = await handler.HandleAsync(command, CancellationToken.None);
@@ -212,12 +224,122 @@ public sealed class WorkspaceCommandHandlerTests
             .Returns(supervisor);
         workspaceActor.StartAsync(Arg.Any<WorkspaceManifest>())
             .Returns<WorkspaceState>(x => throw new InvalidOperationException("Provisioning failed"));
+        workspaceActor.GetStateAsync().Returns(new WorkspaceState { WorkspaceId = TestWorkspaceId });
 
-        var handler = new StartWorkspaceHandler(actors);
+        var handler = new StartWorkspaceHandler(actors, Substitute.For<IPluginRegistry>(),
+            Substitute.For<ICapabilityTokenService>());
         var command = new StartWorkspaceCommand(TestWorkspaceId, CreateManifest());
 
         await Should.ThrowAsync<InvalidOperationException>(
             () => handler.HandleAsync(command, CancellationToken.None));
-        await workspaceRegistry.DidNotReceive().RegisterAsync(Arg.Any<string>());
+        await workspaceRegistry.Received(1).RegisterAsync(TestWorkspaceId.ToString());
+        await workspaceRegistry.Received(1).UnregisterAsync(TestWorkspaceId.ToString());
+    }
+
+    [Fact]
+    public async Task StartWorkspaceHandler_DaprActivationFails_StopsWorkspaceAndClearsTools()
+    {
+        var actors = Substitute.For<IVirtualActorProvider>();
+        var workspace = Substitute.For<IWorkspaceActor>();
+        var workspaceRegistry = Substitute.For<IWorkspaceRegistryActor>();
+        var tools = Substitute.For<IToolRegistryActor>();
+        var plugins = Substitute.For<IPluginRegistry>();
+        actors.GetActor<IWorkspaceActor>(Arg.Any<VirtualActorId>()).Returns(workspace);
+        actors.GetActor<IWorkspaceRegistryActor>(Arg.Any<VirtualActorId>()).Returns(workspaceRegistry);
+        actors.GetActor<IToolRegistryActor>(Arg.Any<VirtualActorId>()).Returns(tools);
+        workspace.StartAsync(Arg.Any<WorkspaceManifest>()).Returns(new WorkspaceState
+        {
+            WorkspaceId = TestWorkspaceId,
+            Status = WorkspaceStatus.Running
+        });
+        workspace.GetStateAsync().Returns(new WorkspaceState { WorkspaceId = TestWorkspaceId });
+        plugins.ConnectAsync(Arg.Any<string>(), Arg.Any<PluginDefinition>(), Arg.Any<CapabilityToken>())
+            .Returns(new PluginStatus { Name = "ws-1/sidecar", Type = "dapr_tools", Error = "offline" });
+        var tokenService = new CapabilityTokenService(
+            Options.Create(new CapabilityTokenOptions
+            {
+                SigningKey = "test-signing-key-that-is-at-least-32-chars-long"
+            }), TimeProvider.System);
+        var manifest = CreateManifest() with
+        {
+            Plugins = new Dictionary<string, PluginDefinition>
+            {
+                ["sidecar"] = new() { Type = "dapr_tools", Config = new Dictionary<string, string> { ["port"] = "3500" } }
+            },
+            Tools = new Dictionary<string, ToolDefinition>
+            {
+                ["echo"] = new()
+                {
+                    Type = "dapr",
+                    RequiresPlugin = "sidecar",
+                    Dapr = new DaprToolConfig { AppId = "echo-service" }
+                }
+            }
+        };
+        var handler = new StartWorkspaceHandler(actors, plugins, tokenService);
+
+        await Should.ThrowAsync<InvalidOperationException>(() => handler.HandleAsync(
+            new StartWorkspaceCommand(TestWorkspaceId, manifest), CancellationToken.None));
+
+        await tools.Received(1).DisconnectAllAsync();
+        await workspace.Received(1).StopAsync();
+        await workspaceRegistry.Received(1).UnregisterAsync(TestWorkspaceId.ToString());
+    }
+
+    [Fact]
+    public async Task StartWorkspaceHandler_AgentActivationFails_DisconnectsActivatedDaprPlugin()
+    {
+        var actors = Substitute.For<IVirtualActorProvider>();
+        var workspace = Substitute.For<IWorkspaceActor>();
+        var workspaceRegistry = Substitute.For<IWorkspaceRegistryActor>();
+        var tools = Substitute.For<IToolRegistryActor>();
+        var supervisor = Substitute.For<IAgentSupervisorActor>();
+        var plugins = Substitute.For<IPluginRegistry>();
+        actors.GetActor<IWorkspaceActor>(Arg.Any<VirtualActorId>()).Returns(workspace);
+        actors.GetActor<IWorkspaceRegistryActor>(Arg.Any<VirtualActorId>()).Returns(workspaceRegistry);
+        actors.GetActor<IToolRegistryActor>(Arg.Any<VirtualActorId>()).Returns(tools);
+        actors.GetActor<IAgentSupervisorActor>(Arg.Any<VirtualActorId>()).Returns(supervisor);
+        workspace.StartAsync(Arg.Any<WorkspaceManifest>()).Returns(new WorkspaceState
+        {
+            WorkspaceId = TestWorkspaceId,
+            Status = WorkspaceStatus.Running
+        });
+        workspace.GetStateAsync().Returns(new WorkspaceState { WorkspaceId = TestWorkspaceId });
+        plugins.ConnectAsync(Arg.Any<string>(), Arg.Any<PluginDefinition>(), Arg.Any<CapabilityToken>())
+            .Returns(new PluginStatus { Name = "ws-1/sidecar", Type = "dapr_tools", IsConnected = true });
+        supervisor.ActivateAllAsync(Arg.Any<WorkspaceManifest>())
+            .Returns(Task.FromException(new InvalidOperationException("Agent activation failed")));
+        var tokenService = new CapabilityTokenService(
+            Options.Create(new CapabilityTokenOptions
+            {
+                SigningKey = "test-signing-key-that-is-at-least-32-chars-long"
+            }), TimeProvider.System);
+        var manifest = CreateManifest() with
+        {
+            Plugins = new Dictionary<string, PluginDefinition>
+            {
+                ["sidecar"] = new() { Type = "dapr_tools", Config = new Dictionary<string, string> { ["port"] = "3500" } }
+            },
+            Tools = new Dictionary<string, ToolDefinition>
+            {
+                ["echo"] = new()
+                {
+                    Type = "dapr",
+                    RequiresPlugin = "sidecar",
+                    Dapr = new DaprToolConfig { AppId = "echo-service" }
+                }
+            }
+        };
+        var handler = new StartWorkspaceHandler(actors, plugins, tokenService);
+
+        var error = await Should.ThrowAsync<InvalidOperationException>(() => handler.HandleAsync(
+            new StartWorkspaceCommand(TestWorkspaceId, manifest), CancellationToken.None));
+
+        error.Message.ShouldBe("Agent activation failed");
+        await supervisor.Received(1).DeactivateAllAsync();
+        await tools.Received(1).DisconnectAllAsync();
+        await plugins.Received(1).DisconnectAsync("ws-1/sidecar", Arg.Any<CapabilityToken>());
+        await workspace.Received(1).StopAsync();
+        await workspaceRegistry.Received(1).UnregisterAsync(TestWorkspaceId.ToString());
     }
 }

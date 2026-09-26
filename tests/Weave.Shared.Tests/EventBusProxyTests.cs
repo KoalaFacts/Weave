@@ -47,6 +47,76 @@ public sealed class EventBusProxyTests
     }
 
     [Fact]
+    public async Task PublishAsync_AsyncHandler_CompletesAfterCallingThreadExits()
+    {
+        using var proxy = new EventBusProxy(_broker, _fallback);
+        var release = new TaskCompletionSource(TaskCreationOptions.RunContinuationsAsynchronously);
+        proxy.Subscribe<TestEvent>(async (_, _) => await release.Task);
+        Task? publish = null;
+        var thread = new Thread(() => publish = proxy.PublishAsync(
+            new TestEvent("async") { SourceId = "test" }, CancellationToken.None));
+
+        thread.Start();
+        thread.Join();
+        release.SetResult();
+
+        await publish!.WaitAsync(TimeSpan.FromSeconds(5), TestContext.Current.CancellationToken);
+    }
+
+    [Fact]
+    public async Task HotSwap_InFlightPublish_WaitsAndRoutesSubsequentPublishToNewBus()
+    {
+        using var proxy = new EventBusProxy(_broker, _fallback);
+        var entered = new TaskCompletionSource(TaskCreationOptions.RunContinuationsAsynchronously);
+        var release = new TaskCompletionSource(TaskCreationOptions.RunContinuationsAsynchronously);
+        var received = new List<string>();
+        proxy.Subscribe<TestEvent>(async (domainEvent, _) =>
+        {
+            received.Add(domainEvent.Data);
+            if (domainEvent.Data == "first")
+            {
+                entered.SetResult();
+                await release.Task;
+            }
+        });
+
+        var first = proxy.PublishAsync(new TestEvent("first") { SourceId = "test" }, CancellationToken.None);
+        await entered.Task.WaitAsync(TimeSpan.FromSeconds(5), TestContext.Current.CancellationToken);
+        var nextBus = CreateBus();
+        var swap = Task.Run(() => _broker.Swap<IEventBus>(nextBus));
+        try
+        {
+            using var wait = new CancellationTokenSource(TimeSpan.FromSeconds(5));
+            while (!ReferenceEquals(_broker.Get<IEventBus>(), nextBus))
+                await Task.Delay(10, wait.Token);
+            swap.IsCompleted.ShouldBeFalse();
+        }
+        finally
+        {
+            release.TrySetResult();
+        }
+
+        await first.WaitAsync(TimeSpan.FromSeconds(5), TestContext.Current.CancellationToken);
+        await swap.WaitAsync(TimeSpan.FromSeconds(5), TestContext.Current.CancellationToken);
+        await proxy.PublishAsync(new TestEvent("second") { SourceId = "test" }, CancellationToken.None);
+
+        received.ShouldBe(["first", "second"]);
+    }
+
+    [Fact]
+    public void Dispose_ExistingSubscriptionHandle_CanStillBeDisposed()
+    {
+        var proxy = new EventBusProxy(_broker, _fallback);
+        var subscription = proxy.Subscribe<TestEvent>((_, _) => Task.CompletedTask);
+
+        proxy.Dispose();
+
+        Should.NotThrow(() => subscription.Dispose());
+        Should.NotThrow(() => proxy.Dispose());
+        Should.NotThrow(() => _broker.Swap<IEventBus>(CreateBus()));
+    }
+
+    [Fact]
     public async Task PublishAsync_AfterClear_RevertsToFallback()
     {
         var proxy = new EventBusProxy(_broker, _fallback);

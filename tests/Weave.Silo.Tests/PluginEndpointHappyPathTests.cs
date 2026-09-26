@@ -32,15 +32,13 @@ public sealed class PluginEndpointHappyPathTests : IClassFixture<SiloFactory>
             TestContext.Current.CancellationToken);
         var connectBody = await connectResponse.Content.ReadAsStringAsync(TestContext.Current.CancellationToken);
 
-        // A 201 Created or 422 Unprocessable (if the test broker state is
-        // quirky) both prove the route + validation wiring works.
-        ((int)connectResponse.StatusCode).ShouldBeLessThan(500, connectBody);
+        connectResponse.StatusCode.ShouldBe(HttpStatusCode.Created, connectBody);
 
         using var disconnectResponse = await client.DeleteAsync(
             $"/api/plugins/{pluginName}",
             TestContext.Current.CancellationToken);
 
-        ((int)disconnectResponse.StatusCode).ShouldBeLessThan(500);
+        disconnectResponse.StatusCode.ShouldBe(HttpStatusCode.NoContent);
     }
 
     [Fact]
@@ -113,5 +111,50 @@ public sealed class PluginEndpointHappyPathTests : IClassFixture<SiloFactory>
         body.ShouldContain("dapr");
         body.ShouldContain("vault");
         body.ShouldContain("webhook");
+    }
+
+    [Fact]
+    public async Task Composition_AfterHttpConnect_ShowsOwnedRegistrationWithoutConfiguration()
+    {
+        using var client = _factory.CreateClient();
+        var name = $"http-{Guid.NewGuid():N}";
+
+        try
+        {
+            using var connectResponse = await client.PostAsJsonAsync(
+                "/api/plugins",
+                new
+                {
+                    Name = name,
+                    Type = "http",
+                    Config = new Dictionary<string, string>
+                    {
+                        ["base_url"] = "https://api.example.com",
+                        ["private_marker"] = "never-include-this-value"
+                    }
+                },
+                TestContext.Current.CancellationToken);
+            connectResponse.StatusCode.ShouldBe(HttpStatusCode.Created);
+
+            using var response = await client.GetAsync(
+                "/api/plugins/composition", TestContext.Current.CancellationToken);
+            response.StatusCode.ShouldBe(HttpStatusCode.OK);
+            var body = await response.Content.ReadAsStringAsync(TestContext.Current.CancellationToken);
+            using var json = JsonDocument.Parse(body);
+            var plugin = json.RootElement.EnumerateArray().Single(entry =>
+                entry.GetProperty("name").GetString() == name);
+
+            plugin.GetProperty("isConnected").GetBoolean().ShouldBeTrue();
+            plugin.GetProperty("registrations").EnumerateArray()
+                .Select(value => value.GetString()).ShouldContain($"http:{name}");
+            body.ShouldNotContain("https://api.example.com");
+            body.ShouldNotContain("never-include-this-value");
+        }
+        finally
+        {
+            using var response = await client.DeleteAsync(
+                $"/api/plugins/{name}", TestContext.Current.CancellationToken);
+            response.StatusCode.ShouldBe(HttpStatusCode.NoContent);
+        }
     }
 }

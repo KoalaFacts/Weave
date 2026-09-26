@@ -12,8 +12,11 @@ public sealed partial class HttpPluginConnector(
     ILoggerFactory loggerFactory) : IPluginConnector
 {
     private readonly ILogger<HttpPluginConnector> _logger = loggerFactory.CreateLogger<HttpPluginConnector>();
+    private readonly PluginActivationStore _activations = new();
 
     public string PluginType => "http";
+
+    public IReadOnlyList<string> RegistrationKeys(string name) => [$"http:{name}"];
 
     public PluginSchema Schema { get; } = new()
     {
@@ -42,7 +45,10 @@ public sealed partial class HttpPluginConnector(
 
         var httpClient = httpClientFactory.CreateClient($"plugin:{name}");
         httpClient.BaseAddress = new Uri(baseUrl);
-        broker.Set($"http:{name}", httpClient);
+        var key = $"http:{name}";
+        var scope = new PluginActivationScope();
+        scope.Add(() => broker.Set(key, httpClient), () => broker.RemoveIfCurrent(key, httpClient));
+        _activations.Replace(name, scope);
 
         LogHttpConnected(name, baseUrl);
 
@@ -59,15 +65,14 @@ public sealed partial class HttpPluginConnector(
     {
         // Remove from broker but don't dispose — HttpClient lifetime is managed
         // by IHttpClientFactory. Disposing would fault in-flight requests.
-        broker.Remove($"http:{name}");
+        _activations.Remove(name);
 
         return Task.FromResult(new PluginStatus { Name = name, Type = PluginType, IsConnected = false });
     }
 
     public PluginStatus GetStatus(string name)
     {
-        var client = broker.Get<HttpClient>($"http:{name}");
-        return new PluginStatus { Name = name, Type = PluginType, IsConnected = client is not null };
+        return new PluginStatus { Name = name, Type = PluginType, IsConnected = _activations.Contains(name) };
     }
 
     [LoggerMessage(Level = LogLevel.Information, Message = "HTTP plugin '{Name}' connected — base URL {BaseUrl}")]

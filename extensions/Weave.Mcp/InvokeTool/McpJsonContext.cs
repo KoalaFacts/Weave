@@ -78,7 +78,7 @@ internal sealed record McpToolListResult
     public IReadOnlyList<McpTool> Tools { get; init; } = [];
 }
 
-internal sealed record McpTool
+internal sealed class McpTool
 {
     [JsonPropertyName("name")]
     public required string Name { get; init; }
@@ -88,6 +88,9 @@ internal sealed record McpTool
 
     [JsonPropertyName("inputSchema")]
     public JsonElement? InputSchema { get; init; }
+
+    [JsonExtensionData]
+    public Dictionary<string, JsonElement>? AdditionalProperties { get; set; }
 }
 
 internal sealed record McpToolCallParams
@@ -122,6 +125,7 @@ internal sealed record McpContentBlock
 [JsonSerializable(typeof(McpInitializeParams))]
 [JsonSerializable(typeof(McpInitializeResult))]
 [JsonSerializable(typeof(McpToolListResult))]
+[JsonSerializable(typeof(McpTool))]
 [JsonSerializable(typeof(McpToolCallParams))]
 [JsonSerializable(typeof(McpToolCallResult))]
 [JsonSourceGenerationOptions(DefaultIgnoreCondition = JsonIgnoreCondition.WhenWritingNull)]

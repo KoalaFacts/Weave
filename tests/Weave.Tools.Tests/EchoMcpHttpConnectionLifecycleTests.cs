@@ -16,10 +16,10 @@ public sealed class EchoMcpHttpConnectionLifecycleTests
     [InlineData(204)]
     public async Task ExampleServer_DelayedSocketClose_PreservesHandshakeAndEveryJsonSseCall(int predecessorStatus)
     {
+        await using var peer = new ClosingPeer(predecessorStatus, implicitClose: false);
+        var endpoint = await peer.EndpointAsync(TestContext.Current.CancellationToken);
         using var deadline = CancellationTokenSource.CreateLinkedTokenSource(TestContext.Current.CancellationToken);
         deadline.CancelAfter(TimeSpan.FromSeconds(15));
-        await using var peer = new ClosingPeer(predecessorStatus, implicitClose: false);
-        var endpoint = await peer.EndpointAsync(deadline.Token);
         await using var connection = new McpConnection(await HttpMcpTransport.ConnectAsync(Config(endpoint), deadline.Token),
             "echo-close", NullLogger.Instance);
 
@@ -52,10 +52,10 @@ public sealed class EchoMcpHttpConnectionLifecycleTests
     [InlineData(204)]
     public async Task ExampleServer_ImplicitCloseNegativeControl_ReproducesResponseEndedWithoutReplay(int predecessorStatus)
     {
+        await using var peer = new ClosingPeer(predecessorStatus, implicitClose: true);
+        var endpoint = await peer.EndpointAsync(TestContext.Current.CancellationToken);
         using var deadline = CancellationTokenSource.CreateLinkedTokenSource(TestContext.Current.CancellationToken);
         deadline.CancelAfter(TimeSpan.FromSeconds(10));
-        await using var peer = new ClosingPeer(predecessorStatus, implicitClose: true);
-        var endpoint = await peer.EndpointAsync(deadline.Token);
         await using var connection = new McpConnection(await HttpMcpTransport.ConnectAsync(Config(endpoint), deadline.Token),
             "echo-close", NullLogger.Instance);
 
@@ -132,7 +132,7 @@ public sealed class EchoMcpHttpConnectionLifecycleTests
 
         public async Task<string> EndpointAsync(CancellationToken ct)
         {
-            var port = await _ready.Task.WaitAsync(TimeSpan.FromSeconds(5), ct);
+            var port = await _ready.Task.WaitAsync(TimeSpan.FromSeconds(20), ct);
             return $"http://127.0.0.1:{port}/mcp";
         }
 
@@ -185,7 +185,7 @@ public sealed class EchoMcpHttpConnectionLifecycleTests
             foreach (var name in new[] { "python3", "python" })
                 foreach (var directory in (Environment.GetEnvironmentVariable("PATH") ?? "").Split(Path.PathSeparator))
                 {
-                    var candidate = Path.Join(directory, name);
+                    var candidate = Path.Join(directory, OperatingSystem.IsWindows() ? $"{name}.exe" : name);
                     if (File.Exists(candidate))
                         return candidate;
                 }

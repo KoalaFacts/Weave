@@ -5,10 +5,13 @@ on:
     branches: [main]
     paths:
       - 'examples/governed-tools/codex_bridge.py'
+      - 'examples/governed-tools/review.py'
       - 'examples/governed-tools/first_use.py'
       - 'scripts/tests/test_codex_bridge*.py'
+      - 'scripts/tests/test_uuid_proposal_clients.py'
       - 'hosts/Weave.Host/**'
       - 'src/Invocations/**'
+      - 'extensions/Weave.Security.Sqlite/Invocations/**'
       - '.github/workflows/codex-bridge-contract.yml'
   workflow_dispatch:
 
@@ -17,7 +20,7 @@ permissions:
 
 jobs:
   pending-boundary:
-    name: Real Host pending contract (not live Codex acceptance)
+    name: Real Host UUID contract (not live human acceptance)
     runs-on: ubuntu-latest
     timeout-minutes: 10
     steps:
@@ -29,14 +32,20 @@ jobs:
         run: |
           dotnet restore hosts/Weave.Host/Weave.Host.csproj --locked-mode
           dotnet build hosts/Weave.Host/Weave.Host.csproj --no-restore -c Release /p:TreatWarningsAsErrors=true
-      - name: Verify pending and no operator side channel
+      - name: Verify UUID review and continuation after Host and client restart
         env:
           PYTHONPATH: examples/governed-tools
         run: |
           python3 - <<'PY'
+          import codecs
+          import os
           from pathlib import Path
+          import sqlite3
+          import subprocess
+          import sys
           import tempfile
-          from first_use import Walkthrough, SOURCE, INTRO, BASE
+          import uuid
+          from first_use import Walkthrough, SOURCE, INTRO, BASE, ROUTE
           from codex_bridge import Bridge, BridgeError
           repo = Path.cwd()
           dll = repo / 'hosts/Weave.Host/bin/Release/net10.0/Weave.Silo.dll'
@@ -51,26 +60,59 @@ jobs:
               try:
                   fx.start()
                   fx.call('POST', '/api/operator/tools/files/connect', 204, operator=True)
-                  agent = Bridge(BASE, 'first-use', 'files', root / 'agent-requests', fx.issue('pilot'))
+                  agent = Bridge(BASE, 'first-use', 'files', root / 'agent-receipts', fx.issue('pilot'))
                   read = agent.call_tool('read_document', {'path': 'meeting.txt'})
                   assert read['http_status'] == 200 and read['result']['output'] == SOURCE
-                  proposal = {'request_key': 'contract-only', 'path': 'summary.md', 'content': 'Transport contract, not model output.'}
+                  identifier = uuid.uuid4().hex
+                  content = 'UUID contract 汉🙂, not model output.\n'
+                  proposal = {'invocation_id': identifier, 'path': 'summary.md', 'content': content}
                   pending = agent.call_tool('submit_write', proposal)
                   assert pending['http_status'] == 202 and pending['result']['errorCode'] == 'approval-pending'
                   assert fx.target.read_text(encoding='utf-8') == INTRO
-                  state = agent.call_tool('resume_write', {'request_key': 'contract-only'})
+                  state = agent.call_tool('resume_write', {'invocation_id': identifier})
                   assert state['approval']['result']['approvalState'] == 'Pending'
-                  assert fx.target.read_text(encoding='utf-8') == INTRO
                   repeated = agent.call_tool('submit_write', proposal)
-                  assert repeated['invocation_id'] == pending['invocation_id']
+                  assert repeated['invocation_id'] == identifier
                   try:
-                      agent.call_tool('approve', {'request_key': 'contract-only'})
+                      agent.call_tool('approve', {'invocation_id': identifier})
                   except BridgeError:
                       pass
                   else:
                       raise AssertionError('An operator tool was exposed to the Agent.')
                   assert fx.target.read_text(encoding='utf-8') == INTRO
-                  print('PASS real Host read/pending/query-only/no-approval-tool boundary; no model or human decision ran.')
+                  del proposal, pending, repeated, read, agent
+                  fx.stop()
+                  fx.start(recovery=True)
+                  fx.call('POST', '/api/operator/tools/files/connect', 204, operator=True)
+                  agent = Bridge(BASE, 'first-use', 'files', root / 'new-empty-client', fx.issue('pilot'))
+                  state = agent.call_tool('get_status', {'invocation_id': identifier})
+                  assert state['approval']['result']['approvalState'] == 'Pending'
+                  reviewer = fx.issue('reviewer')
+                  preview = fx.call('GET', ROUTE + '/' + identifier + '/approval/review', 200,
+                                    capability=reviewer, operator=True)
+                  assert preview['rawInput'] == content
+                  env = {k: os.environ[k] for k in ('PATH', 'LANG', 'LC_ALL') if k in os.environ}
+                  env.update(WEAVE_REVIEW_CAPABILITY=reviewer, WEAVE_OPERATOR_KEY=fx.operator)
+                  decision = subprocess.run([sys.executable, str(repo / 'examples/governed-tools/review.py'),
+                      '--url', BASE, '--workspace', 'first-use', '--tool', 'files', '--invocation-id', identifier],
+                      cwd=root / 'new-empty-client', env=env, input='approve ' + preview['planDigest'] + '\n',
+                      text=True, capture_output=True, timeout=35)
+                  assert decision.returncode == 0 and 'Approved.' in decision.stdout
+                  assert fx.target.read_text(encoding='utf-8') == INTRO
+                  result = agent.call_tool('resume_write', {'invocation_id': identifier})
+                  assert result['http_status'] == 200 and result['result']['success'] is True
+                  assert fx.target.read_bytes() == codecs.BOM_UTF8 + content.encode('utf-8')
+                  assert agent.call_tool('read_document', {'path': 'summary.md'})['result']['output'] == content
+                  fx.target.write_text('independent later sentinel', encoding='utf-8')
+                  recorded = agent.call_tool('resume_write', {'invocation_id': identifier})
+                  assert recorded['invocation']['result']['outcome'] == 'Succeeded'
+                  assert fx.target.read_text(encoding='utf-8') == 'independent later sentinel'
+                  with sqlite3.connect(root / 'state' / 'invocations.db') as database:
+                      count = database.execute('SELECT COUNT(*) FROM invocation_attempts WHERE invocation_id=?', (identifier,)).fetchone()[0]
+                      assert count == 1
+                  assert not (root / 'new-empty-client' / (identifier + '.json')).exists()
+                  print('PASS real Host restart, body-free terminal review, MCP UUID continuation, exact bytes and one attempt.')
+                  print('Scripted protocol contract only: no live model, human judgment or OS isolation claim.')
               finally:
                   fx.stop()
           PY

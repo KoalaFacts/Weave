@@ -6,14 +6,20 @@ using Weave.Agents.Skills;
 using Weave.Agents.ToolRegistry;
 using Weave.Agents.Users;
 using Weave.Agents.Verification;
+using Weave.Security.Tokens;
 using Weave.Shared.Cqrs;
+using Weave.Silo.Plugins;
 using Weave.Workspaces.Lifecycle;
 using Weave.Workspaces.Registry;
 using Weave.Workspaces.Templates;
 
 namespace Weave.Silo.Api;
 
-public sealed class StopWorkspaceHandler(IVirtualActorProvider actors)
+public sealed class StopWorkspaceHandler(
+    IVirtualActorProvider actors,
+    IPluginRegistry plugins,
+    ICapabilityTokenService tokenService,
+    IMcpInstallationDispatchGate mcpDispatchGate)
     : ICommandHandler<StopWorkspaceCommand, bool>
 {
     public async Task<bool> HandleAsync(StopWorkspaceCommand command, CancellationToken ct)
@@ -21,6 +27,12 @@ public sealed class StopWorkspaceHandler(IVirtualActorProvider actors)
         var workspaceId = command.WorkspaceId.ToString();
         var workspace = actors.GetActor<IWorkspaceActor>(VirtualActorId.From(command.WorkspaceId.ToString()));
         var state = await workspace.GetStateAsync();
+
+        foreach (var installation in state.McpToolInstallations.Where(item => item.DesiredEnabled))
+        {
+            mcpDispatchGate.BeginDisable(installation.Id);
+            await workspace.SetMcpToolInstallationEnabledAsync(installation.PluginName, false);
+        }
 
         foreach (var agentName in state.ActiveAgents)
         {
@@ -33,6 +45,21 @@ public sealed class StopWorkspaceHandler(IVirtualActorProvider actors)
 
         var toolRegistry = actors.GetActor<IToolRegistryActor>(VirtualActorId.From(command.WorkspaceId.ToString()));
         await toolRegistry.DisconnectAllAsync();
+
+        foreach (var pluginName in state.ActivePlugins)
+        {
+            if (state.DaprToolInstallations.Any(item => string.Equals(item.PluginName, pluginName, StringComparison.Ordinal)))
+                await workspace.SetDaprToolInstallationEnabledAsync(pluginName, false);
+            var registrationName = $"{workspaceId}/{pluginName}";
+            using var source = tokenService.MintLinked(new CapabilityTokenRequest
+            {
+                WorkspaceId = workspaceId,
+                IssuedTo = $"{workspaceId}/workspace-stop",
+                Grants = [$"plugin:invoke:{registrationName}"],
+                Lifetime = TimeSpan.FromMinutes(1)
+            }, CancellationToken.None);
+            await plugins.DisconnectAsync(registrationName, source.Token);
+        }
 
         await workspace.StopAsync();
 

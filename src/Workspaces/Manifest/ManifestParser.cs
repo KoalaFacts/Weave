@@ -8,7 +8,7 @@ public sealed class ManifestParser : IManifestParser
         FrozenSet.ToFrozenSet(["mcp", "dapr", "openapi", "cli", "library", "direct_http", "filesystem"]);
 
     private static readonly FrozenSet<string> ValidPluginTypes =
-        FrozenSet.ToFrozenSet(["dapr", "vault", "http", "webhook", "custom"]);
+        FrozenSet.ToFrozenSet(["dapr", "dapr_tools", "mcp_tools", "vault", "http", "webhook", "custom"]);
 
     public WorkspaceManifest Parse(string json)
     {
@@ -76,6 +76,9 @@ public sealed class ManifestParser : IManifestParser
                 errors.Add($"Tool '{toolName}': invalid type '{tool.Type}'. Must be one of: {string.Join(", ", ValidToolTypes)}.");
         }
 
+        errors.AddRange(ValidateDaprToolDependencies(manifest));
+        errors.AddRange(ValidateMcpToolDependencies(manifest));
+
         foreach (var (targetName, target) in manifest.Targets)
         {
             if (string.IsNullOrWhiteSpace(target.Runtime))
@@ -91,6 +94,67 @@ public sealed class ManifestParser : IManifestParser
                 errors.Add($"Plugin '{pluginName}': invalid type '{plugin.Type}'. Must be one of: {string.Join(", ", ValidPluginTypes)}.");
         }
 
+        return errors;
+    }
+
+    public static IReadOnlyList<string> ValidateDaprToolDependencies(WorkspaceManifest manifest)
+    {
+        var errors = new List<string>();
+        foreach (var (toolName, tool) in manifest.Tools)
+        {
+            if (!string.Equals(tool.Type, "dapr", StringComparison.OrdinalIgnoreCase))
+                continue;
+            if (string.IsNullOrWhiteSpace(tool.Dapr?.AppId))
+                errors.Add($"Tool '{toolName}': Dapr appId is required.");
+            if (string.IsNullOrWhiteSpace(tool.RequiresPlugin)
+                || !manifest.Plugins.TryGetValue(tool.RequiresPlugin, out var requiredPlugin)
+                || !string.Equals(requiredPlugin.Type, "dapr_tools", StringComparison.OrdinalIgnoreCase))
+                errors.Add($"Tool '{toolName}': requiresPlugin must name a Dapr tools plugin in this manifest.");
+            else if (!requiredPlugin.Config.TryGetValue("port", out var portText)
+                || !int.TryParse(portText, out var port) || port is < 1 or > 65535)
+                errors.Add($"Tool '{toolName}': the Dapr tools installation requires an explicit sidecar port between 1 and 65535.");
+        }
+        return errors;
+    }
+
+    public static IReadOnlyList<string> ValidateMcpToolDependencies(WorkspaceManifest manifest)
+    {
+        var errors = new List<string>();
+        var installations = new HashSet<string>(StringComparer.OrdinalIgnoreCase);
+        foreach (var (toolName, tool) in manifest.Tools.Where(static item =>
+            string.Equals(item.Value.Type, "mcp", StringComparison.OrdinalIgnoreCase)
+            && item.Value.RequiresPlugin is not null))
+        {
+            if (string.IsNullOrWhiteSpace(tool.RequiresPlugin)
+                || !manifest.Plugins.TryGetValue(tool.RequiresPlugin, out var plugin)
+                || !string.Equals(plugin.Type, "mcp_tools", StringComparison.OrdinalIgnoreCase))
+            {
+                errors.Add($"Tool '{toolName}': requiresPlugin must name an MCP tools plugin in this manifest.");
+                continue;
+            }
+            if (!installations.Add(tool.RequiresPlugin))
+                errors.Add($"MCP tools plugin '{tool.RequiresPlugin}' supports one declared tool in this installation.");
+            if (plugin.Config is null)
+            {
+                errors.Add($"MCP tools plugin '{tool.RequiresPlugin}': configuration is required.");
+                continue;
+            }
+            if (tool.Mcp is not { Server: null, Url: not null } mcp || mcp.Args is null || mcp.Env is null
+                || mcp.Args.Count != 0 || mcp.Env.Count != 0
+                || !Uri.TryCreate(mcp.Url, UriKind.Absolute, out var uri)
+                || uri.Scheme != Uri.UriSchemeHttp || uri.Host != "127.0.0.1" || uri.Port is < 1 or > 65535
+                || uri.AbsolutePath != "/mcp" || uri.Query.Length != 0 || uri.Fragment.Length != 0
+                || uri.UserInfo.Length != 0 || !mcp.AllowPrivateEndpoints
+                || mcp.RequestTimeoutSeconds != 300 || mcp.IdleTimeoutSeconds != 30
+                || mcp.MaxResponseBytes != 16 * 1024 * 1024 || mcp.MaxFrameBytes != 1024 * 1024
+                || mcp.MaxQueuedFrames != 1024)
+                errors.Add($"Tool '{toolName}': this MCP installation requires an explicit HTTP endpoint at http://127.0.0.1:<port>/mcp.");
+            foreach (var key in new[] { "server_name", "server_version", "operation" })
+                if (string.IsNullOrWhiteSpace(plugin.Config.GetValueOrDefault(key)))
+                    errors.Add($"MCP tools plugin '{tool.RequiresPlugin}': '{key}' is required.");
+            if (plugin.Config.Keys.Except(["server_name", "server_version", "operation"], StringComparer.Ordinal).Any())
+                errors.Add($"MCP tools plugin '{tool.RequiresPlugin}': unsupported configuration field.");
+        }
         return errors;
     }
 }
