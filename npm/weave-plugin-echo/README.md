@@ -57,7 +57,7 @@ tool together in a workspace manifest:
       "type": "mcp_tools",
       "config": {
         "server_name": "weave-plugin-echo",
-        "server_version": "0.1.0",
+        "server_version": "0.1.1",
         "operation": "echo"
       }
     }
@@ -142,7 +142,8 @@ review. The bootstrap release does not prove an OIDC publish; that requires a
 new version through the workflow.
 
 For later releases, bump the version in `package.json`,
-`package-lock.json`, and `src/index.ts` together; the pack check rejects a
+`package-lock.json`, `src/index.ts`, the manifest example above, and the
+Echo package integration test together; the pack check rejects a package
 version mismatch. Merge the reviewed change, then manually dispatch the
 publish workflow from `main` with that exact version. The workflow uses OIDC
 and does not require a stored npm write token. Verify the configured publisher

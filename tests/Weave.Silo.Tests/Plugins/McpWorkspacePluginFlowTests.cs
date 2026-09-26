@@ -24,6 +24,8 @@ namespace Weave.Silo.Tests.Plugins;
 
 public sealed class McpWorkspacePluginFlowTests
 {
+    private const string EchoServerVersion = "0.1.1";
+
     [Fact]
     public async Task Restart_TwoMcpInstallations_RouteIndependentlyAndHonorDisable()
     {
@@ -292,7 +294,7 @@ public sealed class McpWorkspacePluginFlowTests
                     Config = new Dictionary<string, string>
                     {
                         ["server_name"] = "weave-plugin-echo",
-                        ["server_version"] = "0.1.0",
+                        ["server_version"] = EchoServerVersion,
                         ["operation"] = "echo"
                     }
                 }
@@ -349,7 +351,7 @@ public sealed class McpWorkspacePluginFlowTests
 
         public string SchemaDescription { get; set; } = "Return text unchanged.";
         public string AnnotationTitle { get; set; } = "Echo";
-        public string ServerVersion { get; set; } = "0.1.0";
+        public string ServerVersion { get; set; } = EchoServerVersion;
         public string Endpoint { get; private set; } = string.Empty;
         public int CallCount => Volatile.Read(ref _calls);
 
