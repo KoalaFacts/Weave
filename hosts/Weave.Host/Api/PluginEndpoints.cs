@@ -1,6 +1,8 @@
+using Weave.Agents.ToolRegistry;
 using Weave.Security.Tokens;
 using Weave.Silo.Plugins;
 using Weave.Tools.InstallDaprTool;
+using Weave.Tools.InstallMcpTool;
 using Weave.Workspaces.Lifecycle;
 using Weave.Workspaces.Manifest;
 using Weave.Workspaces.Templates;
@@ -69,7 +71,9 @@ public static class PluginEndpoints
             return ResultExtensions.ValidationFailed(errors);
 
         var catalog = registry.GetCatalog();
-        var (configErrors, warnings) = ValidatePluginConfig(request, catalog);
+        var (configErrors, warnings) = string.Equals(request.Type, "mcp_tools", StringComparison.OrdinalIgnoreCase)
+            ? (null, new List<string>())
+            : ValidatePluginConfig(request, catalog);
         if (configErrors is not null)
             return ResultExtensions.ValidationFailed(configErrors);
 
@@ -83,6 +87,7 @@ public static class PluginEndpoints
             };
 
             var installed = await FindDaprInstallationAsync(request.Name, actors);
+            var installedMcp = await FindMcpInstallationAsync(request.Name, actors);
             if (installed is not null || string.Equals(request.Type, "dapr_tools", StringComparison.OrdinalIgnoreCase))
             {
                 if (installed is null)
@@ -94,6 +99,31 @@ public static class PluginEndpoints
                     || !string.Equals(installed.Value.Installation.ConfigDigest,
                         DaprToolInstallation.ComputeConfigDigest(port), StringComparison.Ordinal))
                     return ResultExtensions.Conflict("The Dapr tools configuration differs from the installed revision.");
+            }
+
+            if (installedMcp is not null || string.Equals(request.Type, "mcp_tools", StringComparison.OrdinalIgnoreCase))
+            {
+                if (installedMcp is null)
+                    return ResultExtensions.Conflict("Install this MCP tools plugin through a workspace manifest first.");
+                if (!string.Equals(request.Type, "mcp_tools", StringComparison.OrdinalIgnoreCase))
+                    return ResultExtensions.Conflict("This installation is bound to the MCP tools plugin type.");
+                var installation = installedMcp.Value.Installation;
+                if (installation.ContractDigest.Length == 0 || installation.ConfigDigest !=
+                    McpToolInstallation.ComputeConfigDigest(installation.Url, installation.ServerName,
+                        installation.ServerVersion, installation.Operation))
+                    return ResultExtensions.Conflict("The MCP installation has no valid pinned contract.");
+                var expected = new Dictionary<string, string>(StringComparer.Ordinal)
+                {
+                    ["url"] = installation.Url,
+                    ["server_name"] = installation.ServerName,
+                    ["server_version"] = installation.ServerVersion,
+                    ["operation"] = installation.Operation,
+                    ["contract_digest"] = installation.ContractDigest
+                };
+                if (definition.Config.Any(item => !expected.TryGetValue(item.Key, out var value)
+                    || !string.Equals(item.Value, value, StringComparison.Ordinal)))
+                    return ResultExtensions.Conflict("The MCP configuration differs from the installed revision.");
+                definition = definition with { Config = expected };
             }
 
             using var source = PluginTokenFactory.MintInvoke(tokenService, request.Name, ct);
@@ -114,6 +144,24 @@ public static class PluginEndpoints
                     throw;
                 }
             }
+            if (installedMcp is not null)
+            {
+                try
+                {
+                    await installedMcp.Value.Workspace.SetMcpToolInstallationEnabledAsync(
+                        installedMcp.Value.Installation.PluginName, true);
+                    var workspaceId = request.Name[..request.Name.IndexOf('/', StringComparison.Ordinal)];
+                    var tools = actors.GetActor<IToolRegistryActor>(VirtualActorId.From(workspaceId));
+                    await tools.ReconnectInstallationAsync(installedMcp.Value.Installation.PluginName);
+                }
+                catch
+                {
+                    await installedMcp.Value.Workspace.SetMcpToolInstallationEnabledAsync(
+                        installedMcp.Value.Installation.PluginName, false);
+                    await registry.DisconnectAsync(request.Name, source.Token);
+                    throw;
+                }
+            }
 
             return Results.Created(
                 $"/api/plugins/{request.Name}",
@@ -130,17 +178,24 @@ public static class PluginEndpoints
         IPluginRegistry registry,
         ICapabilityTokenService tokenService,
         IVirtualActorProvider actors,
+        IMcpInstallationDispatchGate mcpDispatchGate,
         CancellationToken ct)
     {
         var installed = await FindDaprInstallationAsync(name, actors);
+        var installedMcp = await FindMcpInstallationAsync(name, actors);
+        if (installedMcp is not null)
+            mcpDispatchGate.BeginDisable(name);
         if (installed is not null)
             await installed.Value.Workspace.SetDaprToolInstallationEnabledAsync(
                 installed.Value.Installation.PluginName, false);
+        if (installedMcp is not null)
+            await installedMcp.Value.Workspace.SetMcpToolInstallationEnabledAsync(
+                installedMcp.Value.Installation.PluginName, false);
         using var source = PluginTokenFactory.MintInvoke(tokenService, name, ct);
         var status = await registry.DisconnectAsync(name, source.Token);
         if (status.Error is not null)
         {
-            if (installed is not null)
+            if (installed is not null || installedMcp is not null)
                 return Results.NoContent();
             return ResultExtensions.NotFound($"Plugin '{name}' not found.");
         }
@@ -157,6 +212,19 @@ public static class PluginEndpoints
         var workspace = actors.GetActor<IWorkspaceActor>(VirtualActorId.From(name[..slash]));
         var state = await workspace.GetStateAsync();
         var installation = state.DaprToolInstallations.SingleOrDefault(item =>
+            string.Equals(item.Id, name, StringComparison.Ordinal));
+        return installation is null ? null : (workspace, installation);
+    }
+
+    private static async Task<(IWorkspaceActor Workspace, McpToolInstallation Installation)?> FindMcpInstallationAsync(
+        string name, IVirtualActorProvider actors)
+    {
+        var slash = name.IndexOf('/', StringComparison.Ordinal);
+        if (slash <= 0 || slash == name.Length - 1)
+            return null;
+        var workspace = actors.GetActor<IWorkspaceActor>(VirtualActorId.From(name[..slash]));
+        var state = await workspace.GetStateAsync();
+        var installation = state.McpToolInstallations.SingleOrDefault(item =>
             string.Equals(item.Id, name, StringComparison.Ordinal));
         return installation is null ? null : (workspace, installation);
     }

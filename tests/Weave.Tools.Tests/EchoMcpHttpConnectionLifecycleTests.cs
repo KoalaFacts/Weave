@@ -185,7 +185,7 @@ public sealed class EchoMcpHttpConnectionLifecycleTests
             foreach (var name in new[] { "python3", "python" })
                 foreach (var directory in (Environment.GetEnvironmentVariable("PATH") ?? "").Split(Path.PathSeparator))
                 {
-                    var candidate = Path.Join(directory, name);
+                    var candidate = Path.Join(directory, OperatingSystem.IsWindows() ? $"{name}.exe" : name);
                     if (File.Exists(candidate))
                         return candidate;
                 }

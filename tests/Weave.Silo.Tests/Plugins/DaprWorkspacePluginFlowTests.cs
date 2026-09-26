@@ -50,7 +50,7 @@ public sealed class DaprWorkspacePluginFlowTests : IClassFixture<SiloFactory>
             await using (var second = new DurableSiloFactory(directory))
             {
                 using var client = second.CreateClient();
-                await second.Services.GetRequiredService<DaprToolInstallationRestorer>().Completion
+                await second.Services.GetRequiredService<ToolInstallationRestorer>().Completion
                     .WaitAsync(TimeSpan.FromSeconds(30), TestContext.Current.CancellationToken);
                 using var composition = await client.GetAsync("/api/plugins/composition", TestContext.Current.CancellationToken);
                 (await composition.Content.ReadAsStringAsync(TestContext.Current.CancellationToken))
@@ -78,7 +78,7 @@ public sealed class DaprWorkspacePluginFlowTests : IClassFixture<SiloFactory>
             await using (var third = new DurableSiloFactory(directory))
             {
                 using var client = third.CreateClient();
-                await third.Services.GetRequiredService<DaprToolInstallationRestorer>().Completion
+                await third.Services.GetRequiredService<ToolInstallationRestorer>().Completion
                     .WaitAsync(TimeSpan.FromSeconds(30), TestContext.Current.CancellationToken);
                 using var composition = await client.GetAsync("/api/plugins/composition", TestContext.Current.CancellationToken);
                 (await composition.Content.ReadAsStringAsync(TestContext.Current.CancellationToken))

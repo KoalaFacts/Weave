@@ -47,21 +47,44 @@ shim cannot be launched directly by Weave's process runner:
 }
 ```
 
-For the loopback HTTP process started above:
+For the loopback HTTP process started above, declare the installation and the
+tool together in a workspace manifest:
 
 ```json
 {
-  "echo-sample": {
-    "type": "mcp",
-    "mcp": {
-      "url": "http://127.0.0.1:9450/mcp",
-      "allow_private_endpoints": true
+  "plugins": {
+    "echo_server": {
+      "type": "mcp_tools",
+      "config": {
+        "server_name": "weave-plugin-echo",
+        "server_version": "0.1.0",
+        "operation": "echo"
+      }
+    }
+  },
+  "tools": {
+    "echo-sample": {
+      "type": "mcp",
+      "requires_plugin": "echo_server",
+      "mcp": {
+        "url": "http://127.0.0.1:9450/mcp",
+        "allow_private_endpoints": true
+      }
     }
   }
 }
 ```
 
-The JSON blocks are the entries for a workspace manifest's `tools` map.
+The first JSON block above is an entry for a manifest's `tools` map; the
+second block shows its `plugins` and `tools` fields. A full manifest also
+needs `version` and `name`; invocation needs an Agent definition. The Echo process is managed
+outside Weave. On workspace start, Weave probes its server name, version and
+declared operation, pins the operation schema digest and stores the
+installation under that workspace. After a Host restart it verifies that
+contract before restoring the connector. A changed contract stays inactive.
+To adopt a new endpoint or version, declare a new plugin name and review its
+grants.
+
 Grant an Agent access to `echo-sample` and explicitly grant
 `tool:echo-sample:invoke:echo` before it can call the Echo operation. The
 invocation method is `echo`; its `text` argument is a string. Weave
@@ -69,8 +92,9 @@ authorizes the caller, records the attempt and controls approval where
 configured. This plugin does not receive Weave signing keys or implement a
 second policy engine. Installing an npm package never grants a Weave operation.
 
-The package is a small external MCP plugin, not Weave's internal
-`PluginInstallation` implementation. Weave currently uses the legacy MCP
+This is a workspace-scoped persisted installation for one external MCP
+operation. It is not the general Tenant-scoped `PluginInstallation` target,
+an npm process supervisor or a sandbox. Weave currently uses the legacy MCP
 initialize handshake, which this package's server accepts; modern MCP
 clients can use the same Streamable HTTP endpoint.
 

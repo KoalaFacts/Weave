@@ -7,4 +7,6 @@ public interface IWorkspaceActor
     Task StopAsync();
     Task<WorkspaceState> GetStateAsync();
     Task SetDaprToolInstallationEnabledAsync(string pluginName, bool enabled);
+    Task SetMcpToolInstallationEnabledAsync(string pluginName, bool enabled);
+    Task PinMcpToolContractAsync(string pluginName, string contractDigest);
 }

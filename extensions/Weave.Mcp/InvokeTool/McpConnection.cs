@@ -32,6 +32,8 @@ internal sealed partial class McpConnection : IAsyncDisposable
     }
 
     public bool HasExited => _transport.HasExited;
+    public string? ServerName { get; private set; }
+    public string? ServerVersion { get; private set; }
 
     public string DiagnosticTail() => _transport.FormatDiagnosticTail();
 
@@ -49,20 +51,22 @@ internal sealed partial class McpConnection : IAsyncDisposable
         var paramsNode = JsonSerializer.SerializeToNode(initParams, McpJsonContext.Default.McpInitializeParams);
         var result = await SendRequestAsync("initialize", paramsNode, ct);
         var initResult = result.Deserialize(McpJsonContext.Default.McpInitializeResult);
+        ServerName = initResult?.ServerInfo?.Name;
+        ServerVersion = initResult?.ServerInfo?.Version;
         LogMcpInitialized(_toolName, initResult?.ServerInfo?.Name ?? "?", initResult?.ProtocolVersion ?? "?");
 
         await SendNotificationAsync("notifications/initialized", paramsNode: null, ct);
     }
 
-    public async Task<IReadOnlyList<McpTool>> ListToolsAsync(CancellationToken ct)
+    public async Task<IReadOnlyList<McpTool>> ListToolsAsync(CancellationToken ct, bool refresh = false)
     {
-        if (_toolsCache is not null)
+        if (!refresh && _toolsCache is not null)
             return _toolsCache;
 
         await _toolsLock.WaitAsync(ct);
         try
         {
-            if (_toolsCache is not null)
+            if (!refresh && _toolsCache is not null)
                 return _toolsCache;
 
             var result = await SendRequestAsync("tools/list", paramsNode: null, ct);

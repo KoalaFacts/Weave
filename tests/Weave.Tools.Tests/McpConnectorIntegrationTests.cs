@@ -145,7 +145,8 @@ public sealed class McpConnectorIntegrationTests : IDisposable
             var pathEnv = Environment.GetEnvironmentVariable("PATH");
             if (pathEnv is null)
                 continue;
-            foreach (var candidate in pathEnv.Split(Path.PathSeparator).Select(dir => Path.Join(dir, name)))
+            foreach (var candidate in pathEnv.Split(Path.PathSeparator).Select(dir =>
+                Path.Join(dir, OperatingSystem.IsWindows() ? $"{name}.exe" : name)))
             {
                 if (File.Exists(candidate))
                     return candidate;

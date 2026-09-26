@@ -64,6 +64,18 @@ public sealed class ToolRegistryActor(
         await persistentState.WriteStateAsync();
     }
 
+    public async Task ReconnectInstallationAsync(string pluginName)
+    {
+        EnsureWorkspaceId();
+        foreach (var (toolName, definition) in persistentState.State.Definitions.Where(item =>
+            string.Equals(item.Value.RequiresPlugin, pluginName, StringComparison.Ordinal)).ToList())
+        {
+            var toolActor = actors.GetActor<IToolActor>(VirtualActorId.From($"{_workspaceId}/{toolName}"));
+            await toolActor.DisconnectAsync();
+            await ConnectOneAsync(toolName, definition);
+        }
+    }
+
     private async Task ConnectOneAsync(string toolName, ToolDefinition definition)
     {
         try

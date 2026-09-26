@@ -3,6 +3,7 @@ using Weave.Shared.Events;
 using Weave.Shared.Ids;
 using Weave.Shared.Lifecycle;
 using Weave.Tools.InstallDaprTool;
+using Weave.Tools.InstallMcpTool;
 using Weave.Workspaces.Manifest;
 using Weave.Workspaces.Runtime;
 using Weave.Workspaces.Templates;
@@ -32,12 +33,37 @@ public sealed partial class WorkspaceActor(
 
     public async Task<WorkspaceState> StartAsync(WorkspaceManifest manifest)
     {
-        if (persistentState.State.Status is WorkspaceStatus.Running)
-            return persistentState.State;
-
-        var dependencyErrors = ManifestParser.ValidateDaprToolDependencies(manifest);
+        var dependencyErrors = ManifestParser.ValidateDaprToolDependencies(manifest)
+            .Concat(ManifestParser.ValidateMcpToolDependencies(manifest)).ToList();
         if (dependencyErrors.Count > 0)
             throw new InvalidOperationException(string.Join(" ", dependencyErrors));
+
+        foreach (var tool in manifest.Tools.Values.Where(static item => item.RequiresPlugin is not null))
+        {
+            var pluginName = tool.RequiresPlugin!;
+            if ((string.Equals(tool.Type, "mcp", StringComparison.OrdinalIgnoreCase)
+                    && persistentState.State.DaprToolInstallations.Any(item => item.PluginName == pluginName))
+                || (string.Equals(tool.Type, "dapr", StringComparison.OrdinalIgnoreCase)
+                    && persistentState.State.McpToolInstallations.Any(item => item.PluginName == pluginName)))
+                throw new InvalidOperationException(
+                    $"Plugin name '{pluginName}' was already used by another installation type; choose a new name.");
+        }
+
+        foreach (var tool in manifest.Tools.Values.Where(static item =>
+            string.Equals(item.Type, "mcp", StringComparison.OrdinalIgnoreCase) && item.RequiresPlugin is not null))
+        {
+            var plugin = manifest.Plugins[tool.RequiresPlugin!];
+            var digest = McpToolInstallation.ComputeConfigDigest(tool.Mcp!.Url!,
+                plugin.Config["server_name"], plugin.Config["server_version"], plugin.Config["operation"]);
+            var existing = persistentState.State.McpToolInstallations.SingleOrDefault(item =>
+                string.Equals(item.PluginName, tool.RequiresPlugin, StringComparison.Ordinal));
+            if (existing is not null && !string.Equals(existing.ConfigDigest, digest, StringComparison.Ordinal))
+                throw new InvalidOperationException(
+                    $"MCP installation '{tool.RequiresPlugin}' changed; use a new plugin name for the new revision.");
+        }
+
+        if (persistentState.State.Status is WorkspaceStatus.Running)
+            return persistentState.State;
 
         persistentState.State.Status = WorkspaceStatus.Starting;
 
@@ -64,12 +90,17 @@ public sealed partial class WorkspaceActor(
             persistentState.State.ActiveAgents.AddRange(manifest.Agents.Keys);
             persistentState.State.ActiveTools.AddRange(manifest.Tools.Keys);
             persistentState.State.ActivePlugins.AddRange(manifest.Tools.Values
-                .Where(static tool => string.Equals(tool.Type, "dapr", StringComparison.OrdinalIgnoreCase))
+                .Where(static tool => tool.RequiresPlugin is not null
+                    && (string.Equals(tool.Type, "dapr", StringComparison.OrdinalIgnoreCase)
+                        || string.Equals(tool.Type, "mcp", StringComparison.OrdinalIgnoreCase)))
                 .Select(static tool => tool.RequiresPlugin!)
                 .Distinct(StringComparer.Ordinal));
             foreach (var installation in persistentState.State.DaprToolInstallations)
                 installation.DesiredEnabled = false;
-            foreach (var pluginName in persistentState.State.ActivePlugins)
+            foreach (var installation in persistentState.State.McpToolInstallations)
+                installation.DesiredEnabled = false;
+            foreach (var pluginName in persistentState.State.ActivePlugins.Where(name =>
+                string.Equals(manifest.Plugins[name].Type, "dapr_tools", StringComparison.OrdinalIgnoreCase)))
             {
                 var port = int.Parse(manifest.Plugins[pluginName].Config["port"], System.Globalization.CultureInfo.InvariantCulture);
                 var id = $"{persistentState.State.WorkspaceId}/{pluginName}";
@@ -82,6 +113,31 @@ public sealed partial class WorkspaceActor(
                 }
                 installation.Port = port;
                 installation.ConfigDigest = DaprToolInstallation.ComputeConfigDigest(port);
+                installation.DesiredEnabled = true;
+            }
+            foreach (var tool in manifest.Tools.Values.Where(static item =>
+                string.Equals(item.Type, "mcp", StringComparison.OrdinalIgnoreCase) && item.RequiresPlugin is not null))
+            {
+                var pluginName = tool.RequiresPlugin!;
+                var plugin = manifest.Plugins[pluginName];
+                var url = tool.Mcp!.Url!;
+                var serverName = plugin.Config["server_name"];
+                var serverVersion = plugin.Config["server_version"];
+                var operation = plugin.Config["operation"];
+                var digest = McpToolInstallation.ComputeConfigDigest(url, serverName, serverVersion, operation);
+                var id = $"{persistentState.State.WorkspaceId}/{pluginName}";
+                var installation = persistentState.State.McpToolInstallations.SingleOrDefault(item =>
+                    string.Equals(item.Id, id, StringComparison.Ordinal));
+                if (installation is null)
+                {
+                    installation = new McpToolInstallation { Id = id, PluginName = pluginName };
+                    persistentState.State.McpToolInstallations.Add(installation);
+                }
+                installation.Url = url;
+                installation.ServerName = serverName;
+                installation.ServerVersion = serverVersion;
+                installation.Operation = operation;
+                installation.ConfigDigest = digest;
                 installation.DesiredEnabled = true;
             }
             foreach (var container in env.Containers)
@@ -149,6 +205,8 @@ public sealed partial class WorkspaceActor(
             persistentState.State.ActivePlugins.Clear();
             foreach (var installation in persistentState.State.DaprToolInstallations)
                 installation.DesiredEnabled = false;
+            foreach (var installation in persistentState.State.McpToolInstallations)
+                installation.DesiredEnabled = false;
             persistentState.State.NetworkId = null;
 
             await persistentState.WriteStateAsync();
@@ -184,6 +242,35 @@ public sealed partial class WorkspaceActor(
         if (enabled && persistentState.State.Status is not WorkspaceStatus.Running)
             throw new InvalidOperationException("The workspace must be running to enable a Dapr tool installation.");
         installation.DesiredEnabled = enabled;
+        await persistentState.WriteStateAsync();
+    }
+
+    public async Task SetMcpToolInstallationEnabledAsync(string pluginName, bool enabled)
+    {
+        var installation = persistentState.State.McpToolInstallations.SingleOrDefault(item =>
+            string.Equals(item.PluginName, pluginName, StringComparison.Ordinal));
+        if (installation is null)
+            throw new InvalidOperationException($"MCP tool installation '{pluginName}' was not found.");
+        if (enabled && persistentState.State.Status is not WorkspaceStatus.Running)
+            throw new InvalidOperationException("The workspace must be running to enable an MCP tool installation.");
+        if (enabled && string.IsNullOrEmpty(installation.ContractDigest))
+            throw new InvalidOperationException("The MCP tool contract has not been pinned.");
+        installation.DesiredEnabled = enabled;
+        await persistentState.WriteStateAsync();
+    }
+
+    public async Task PinMcpToolContractAsync(string pluginName, string contractDigest)
+    {
+        if (string.IsNullOrWhiteSpace(contractDigest))
+            throw new InvalidOperationException("The MCP tool contract digest is required.");
+        var installation = persistentState.State.McpToolInstallations.SingleOrDefault(item =>
+            string.Equals(item.PluginName, pluginName, StringComparison.Ordinal));
+        if (installation is null || persistentState.State.Status is not WorkspaceStatus.Running)
+            throw new InvalidOperationException("The MCP tool installation is not running.");
+        if (installation.ContractDigest.Length != 0
+            && !string.Equals(installation.ContractDigest, contractDigest, StringComparison.Ordinal))
+            throw new InvalidOperationException("The MCP tool contract changed; disable and review this installation.");
+        installation.ContractDigest = contractDigest;
         await persistentState.WriteStateAsync();
     }
 

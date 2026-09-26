@@ -70,3 +70,21 @@ jobs:
         run: >-
           dotnet test --project tests/Weave.Silo.Tests/Weave.Silo.Tests.csproj
           --no-build -c Release --filter-class Weave.Silo.Tests.Invocations.EchoPluginTests
+      - name: Verify installed HTTP Echo through Weave
+        working-directory: .
+        run: |
+          : > "$RUNNER_TEMP/weave-echo-http.log"
+          node npm/weave-plugin-echo/dist/cli.js --http --port 0 2> "$RUNNER_TEMP/weave-echo-http.log" &
+          echo_pid=$!
+          trap 'kill "$echo_pid" 2>/dev/null || true' EXIT
+          endpoint=""
+          for attempt in $(seq 1 100); do
+            endpoint=$(sed -n 's/^Echo MCP endpoint: //p' "$RUNNER_TEMP/weave-echo-http.log" | head -n 1)
+            if [ -n "$endpoint" ]; then break; fi
+            sleep 0.1
+          done
+          if [ -z "$endpoint" ]; then cat "$RUNNER_TEMP/weave-echo-http.log"; exit 1; fi
+          WEAVE_ECHO_TEST_ENDPOINT="$endpoint" dotnet test \
+            --project tests/Weave.Silo.Tests/Weave.Silo.Tests.csproj \
+            --no-build -c Release -- \
+            --filter-method Weave.Silo.Tests.Plugins.McpWorkspacePluginFlowTests.EchoPackage_HttpInstallation_InvokesThroughWeave
