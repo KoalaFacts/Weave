@@ -84,7 +84,7 @@ Persisted Orleans field IDs are append-only: never renumber or reuse them. Keep 
 
 ## Build and verification
 
-Run commands from the repository root. Use `global.json` and check `dotnet --version`; its `latestPatch` policy allows SDK patch roll-forward. Most projects target .NET 10. Package versions are centralized in `Directory.Packages.props`, except the explicitly opted-out generator project. Regenerate affected lockfiles after dependency changes; do not hand-edit their hashes.
+Run commands from the repository root. Use `global.json` and check `dotnet --version`; its `latestMajor` policy selects the highest installed stable SDK at or above 10.0.201. Most projects target .NET 10. Package versions are centralized in `Directory.Packages.props`, except the explicitly opted-out generator project. Regenerate affected lockfiles after dependency changes; do not hand-edit their hashes.
 
 For code, dependencies, or build changes:
 

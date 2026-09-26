@@ -176,7 +176,12 @@ class PackageTests(unittest.TestCase):
 
     def test_symlink_rejected(self):
         self.package.rename(self.directory / 'target')
-        self.package.symlink_to(self.directory / 'target')
+        try:
+            self.package.symlink_to(self.directory / 'target')
+        except OSError as error:
+            if getattr(error, 'winerror', None) == 1314:
+                self.skipTest('Windows symlink privilege is unavailable')
+            raise
         with self.assertRaises(ValueError):
             guard.validate_packages(self.directory, '1.2.3')
 

@@ -1,4 +1,5 @@
 """Dependency-free architecture gates for the flat source migration."""
+import os
 from pathlib import Path
 import unittest
 import xml.etree.ElementTree as ET
@@ -15,7 +16,15 @@ class SourceLayoutTests(unittest.TestCase):
         forbidden = {'Weave', 'Features', 'Foundation', 'Assistants', 'Runtime', 'UX',
                      'Security', 'Core', 'Contracts', 'Kernel', 'Infrastructure'}
         actual = {p.name for p in (ROOT / 'src').iterdir() if p.is_dir()}
-        self.assertFalse(actual & forbidden, sorted(actual & forbidden))
+        source_wrappers = set()
+        for name in actual & forbidden:
+            for _, directories, files in os.walk(ROOT / 'src' / name):
+                directories[:] = [directory for directory in directories
+                                  if directory not in {'bin', 'obj'}]
+                if any(not file.endswith('.user') for file in files):
+                    source_wrappers.add(name)
+                    break
+        self.assertFalse(source_wrappers, sorted(source_wrappers))
         self.assertTrue({'Agents', 'Workspaces', 'Authority', 'Invocations', 'Plugins',
                          'Credentials', 'Audit', 'Composition'} <= actual)
 
