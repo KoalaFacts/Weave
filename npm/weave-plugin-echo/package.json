@@ -15,7 +15,7 @@
     "node": ">=22.14.0"
   },
   "bin": {
-    "weave-plugin-echo": "./dist/cli.js"
+    "weave-plugin-echo": "dist/cli.js"
   },
   "exports": {
     ".": {
