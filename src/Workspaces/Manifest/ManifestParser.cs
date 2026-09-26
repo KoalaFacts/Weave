@@ -121,11 +121,10 @@ public sealed class ManifestParser : IManifestParser
     {
         var errors = new List<string>();
         var installations = new HashSet<string>(StringComparer.Ordinal);
-        foreach (var (toolName, tool) in manifest.Tools)
+        foreach (var (toolName, tool) in manifest.Tools.Where(static item =>
+            string.Equals(item.Value.Type, "mcp", StringComparison.OrdinalIgnoreCase)
+            && item.Value.RequiresPlugin is not null))
         {
-            if (!string.Equals(tool.Type, "mcp", StringComparison.OrdinalIgnoreCase)
-                || tool.RequiresPlugin is null)
-                continue;
             if (string.IsNullOrWhiteSpace(tool.RequiresPlugin)
                 || !manifest.Plugins.TryGetValue(tool.RequiresPlugin, out var plugin)
                 || !string.Equals(plugin.Type, "mcp_tools", StringComparison.OrdinalIgnoreCase))

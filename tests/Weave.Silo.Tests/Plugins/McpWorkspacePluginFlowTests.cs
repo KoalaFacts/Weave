@@ -25,7 +25,7 @@ public sealed class McpWorkspacePluginFlowTests
     [Fact]
     public async Task Restart_TwoMcpInstallations_RouteIndependentlyAndHonorDisable()
     {
-        var directory = Path.Combine(Path.GetTempPath(), $"weave-mcp-installation-{Guid.NewGuid():N}");
+        var directory = Path.Join(Path.GetTempPath(), $"weave-mcp-installation-{Guid.NewGuid():N}");
         Directory.CreateDirectory(directory);
         try
         {
@@ -135,7 +135,7 @@ public sealed class McpWorkspacePluginFlowTests
     [Fact]
     public async Task InvokeAsync_ChangedMcpSchema_BlocksExternalCall()
     {
-        var directory = Path.Combine(Path.GetTempPath(), $"weave-mcp-schema-{Guid.NewGuid():N}");
+        var directory = Path.Join(Path.GetTempPath(), $"weave-mcp-schema-{Guid.NewGuid():N}");
         Directory.CreateDirectory(directory);
         try
         {
@@ -185,7 +185,7 @@ public sealed class McpWorkspacePluginFlowTests
         var endpoint = Environment.GetEnvironmentVariable("WEAVE_ECHO_TEST_ENDPOINT");
         if (string.IsNullOrEmpty(endpoint))
             Assert.Skip("Set WEAVE_ECHO_TEST_ENDPOINT to the running Echo package HTTP endpoint.");
-        var directory = Path.Combine(Path.GetTempPath(), $"weave-mcp-package-{Guid.NewGuid():N}");
+        var directory = Path.Join(Path.GetTempPath(), $"weave-mcp-package-{Guid.NewGuid():N}");
         Directory.CreateDirectory(directory);
         try
         {
@@ -283,8 +283,8 @@ public sealed class McpWorkspacePluginFlowTests
         {
             builder.UseSetting("Weave:LocalMode", "true");
             builder.UseSetting("Weave:ActorStorage:Provider", "sqlite");
-            builder.UseSetting("ConnectionStrings:Sqlite", $"Data Source={Path.Combine(directory, "actors.db")};Pooling=False");
-            builder.UseSetting("Weave:Invocations:DatabasePath", Path.Combine(directory, "invocations.db"));
+            builder.UseSetting("ConnectionStrings:Sqlite", $"Data Source={Path.Join(directory, "actors.db")};Pooling=False");
+            builder.UseSetting("Weave:Invocations:DatabasePath", Path.Join(directory, "invocations.db"));
             builder.UseSetting("urls", "http://127.0.0.1:0");
             builder.ConfigureAppConfiguration(cfg => cfg.AddInMemoryCollection(
                 new Dictionary<string, string?> { ["ASPNETCORE_ENVIRONMENT"] = "Development" }));
