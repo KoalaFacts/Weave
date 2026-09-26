@@ -57,7 +57,7 @@ tool together in a workspace manifest:
       "type": "mcp_tools",
       "config": {
         "server_name": "weave-plugin-echo",
-        "server_version": "0.1.0",
+        "server_version": "0.1.1",
         "operation": "echo"
       }
     }
