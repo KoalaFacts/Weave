@@ -11,7 +11,8 @@ public sealed class McpToolsPluginConnector(
     IToolDiscoveryService discovery,
     ILoggerFactory loggerFactory) : IPluginConnector, IMcpInstallationDispatchGate
 {
-    private readonly ConcurrentDictionary<string, McpToolConnector> _active = new(StringComparer.Ordinal);
+    private readonly ConcurrentDictionary<string, (string Id, McpToolConnector Connector)> _active =
+        new(StringComparer.OrdinalIgnoreCase);
 
     public string PluginType => "mcp_tools";
     public IReadOnlyList<string> RegistrationKeys(string name) => [$"tool:mcp:{name}"];
@@ -64,9 +65,12 @@ public sealed class McpToolsPluginConnector(
 
         _active.TryGetValue(name, out var previous);
         discovery.Register(name, connector);
-        _active[name] = connector;
-        if (previous is not null)
-            await previous.DeactivateAsync();
+        _active[name] = (name, connector);
+        if (previous.Connector is not null)
+        {
+            discovery.UnregisterIfCurrent(previous.Id, ToolType.Mcp, previous.Connector);
+            await previous.Connector.DeactivateAsync();
+        }
         return new PluginStatus
         {
             Name = name,
@@ -78,20 +82,20 @@ public sealed class McpToolsPluginConnector(
 
     public async Task<PluginStatus> DisconnectAsync(string name)
     {
-        if (_active.TryGetValue(name, out var connector))
+        if (_active.TryGetValue(name, out var active))
         {
-            connector.BeginDeactivate();
+            active.Connector.BeginDeactivate();
             _active.TryRemove(name, out _);
-            discovery.UnregisterIfCurrent(name, ToolType.Mcp, connector);
-            await connector.DeactivateAsync();
+            discovery.UnregisterIfCurrent(active.Id, ToolType.Mcp, active.Connector);
+            await active.Connector.DeactivateAsync();
         }
         return new PluginStatus { Name = name, Type = PluginType };
     }
 
     public void BeginDisable(string installationId)
     {
-        if (_active.TryGetValue(installationId, out var connector))
-            connector.BeginDeactivate();
+        if (_active.TryGetValue(installationId, out var active))
+            active.Connector.BeginDeactivate();
     }
 
     public PluginStatus GetStatus(string name) => new()

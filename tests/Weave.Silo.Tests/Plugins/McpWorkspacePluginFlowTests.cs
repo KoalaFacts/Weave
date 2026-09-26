@@ -8,8 +8,10 @@ using Microsoft.AspNetCore.Hosting.Server.Features;
 using Microsoft.AspNetCore.Mvc.Testing;
 using Microsoft.Extensions.Configuration;
 using Microsoft.Extensions.DependencyInjection;
+using Microsoft.Extensions.Options;
 using Weave.Agents.ToolRegistry;
 using Weave.Invocations;
+using Weave.Security.Tokens;
 using Weave.Shared.VirtualActors;
 using Weave.Silo.Plugins;
 using Weave.Tools.Connectors;
@@ -86,7 +88,7 @@ public sealed class McpWorkspacePluginFlowTests
                     .WaitAsync(TimeSpan.FromSeconds(30), TestContext.Current.CancellationToken);
                 await InvokeAsync(second.Services, firstId, "first");
                 await InvokeAsync(second.Services, secondId, "second");
-                using var disable = await client.DeleteAsync($"/api/plugins/{firstId}/echo_server",
+                using var disable = await client.DeleteAsync($"/api/plugins/{firstId.ToUpperInvariant()}/ECHO_SERVER",
                     TestContext.Current.CancellationToken);
                 disable.StatusCode.ShouldBe(HttpStatusCode.NoContent);
                 var actors = second.Services.GetRequiredService<IVirtualActorProvider>();
@@ -102,12 +104,12 @@ public sealed class McpWorkspacePluginFlowTests
                 }, disabledToken));
                 using var enable = await client.PostAsJsonAsync("/api/plugins", new
                 {
-                    Name = $"{firstId}/echo_server",
+                    Name = $"{firstId}/ECHO_SERVER",
                     Type = "mcp_tools"
                 }, TestContext.Current.CancellationToken);
                 enable.StatusCode.ShouldBe(HttpStatusCode.Created);
                 await InvokeAsync(second.Services, firstId, "first");
-                using var disableAgain = await client.DeleteAsync($"/api/plugins/{firstId}/echo_server",
+                using var disableAgain = await client.DeleteAsync($"/api/plugins/{firstId}/ECHO_SERVER",
                     TestContext.Current.CancellationToken);
                 disableAgain.StatusCode.ShouldBe(HttpStatusCode.NoContent);
                 await InvokeAsync(second.Services, secondId, "second");
@@ -172,6 +174,52 @@ public sealed class McpWorkspacePluginFlowTests
             changedVersion.Error.ShouldNotBeNull();
             changedVersion.Error.ShouldContain("identity");
             peer.CallCount.ShouldBe(calls);
+        }
+        finally
+        {
+            Directory.Delete(directory, recursive: true);
+        }
+    }
+
+    [Fact]
+    public async Task ReviewApprovalAsync_DisabledMcpInstallation_ReturnsUnavailable()
+    {
+        var directory = Path.Join(Path.GetTempPath(), $"weave-mcp-review-{Guid.NewGuid():N}");
+        Directory.CreateDirectory(directory);
+        try
+        {
+            await using var peer = new McpPeer("review");
+            await peer.StartAsync();
+            await using var host = new DurableSiloFactory(directory, requireApproval: true);
+            using var client = host.CreateClient();
+            var workspaceId = await StartWorkspaceAsync(client, peer);
+            var (tool, writer) = await ResolveAsync(host.Services, workspaceId);
+            var request = new ToolInvocation
+            {
+                ToolName = "echo",
+                Method = "echo",
+                InvocationId = InvocationId.From(Guid.NewGuid().ToString("N")),
+                Parameters = new Dictionary<string, string> { ["text"] = "not dispatched" }
+            };
+            (await tool.InvokeAsync(request, writer)).ErrorCode.ShouldBe("approval-pending");
+            peer.CallCount.ShouldBe(0);
+            var reviewer = host.Services.GetRequiredService<ICapabilityTokenService>().Mint(new CapabilityTokenRequest
+            {
+                WorkspaceId = workspaceId,
+                IssuedTo = "reviewer",
+                Grants = ["invocation:read", "approval:decide", "tool:echo:approve:echo"],
+                Lifetime = TimeSpan.FromMinutes(5)
+            });
+            (await tool.ReviewApprovalAsync(request, reviewer)).Review.ShouldNotBeNull();
+
+            using var disable = await client.DeleteAsync($"/api/plugins/{workspaceId}/ECHO_SERVER",
+                TestContext.Current.CancellationToken);
+            disable.StatusCode.ShouldBe(HttpStatusCode.NoContent);
+
+            var review = await tool.ReviewApprovalAsync(request, reviewer);
+            review.Review.ShouldBeNull();
+            review.ErrorCode.ShouldBe("approval-review-unavailable");
+            peer.CallCount.ShouldBe(0);
         }
         finally
         {
@@ -277,7 +325,7 @@ public sealed class McpWorkspacePluginFlowTests
         return document.RootElement.GetProperty("workspaceId").GetString()!;
     }
 
-    private sealed class DurableSiloFactory(string directory) : WebApplicationFactory<Program>
+    private sealed class DurableSiloFactory(string directory, bool requireApproval = false) : WebApplicationFactory<Program>
     {
         protected override void ConfigureWebHost(IWebHostBuilder builder)
         {
@@ -288,6 +336,9 @@ public sealed class McpWorkspacePluginFlowTests
             builder.UseSetting("urls", "http://127.0.0.1:0");
             builder.ConfigureAppConfiguration(cfg => cfg.AddInMemoryCollection(
                 new Dictionary<string, string?> { ["ASPNETCORE_ENVIRONMENT"] = "Development" }));
+            if (requireApproval)
+                builder.ConfigureServices(services => services.PostConfigure<InvocationJournalOptions>(options =>
+                    options.ApprovalRequiredGrants = ["tool:echo:invoke:echo"]));
         }
     }
 

@@ -126,8 +126,9 @@ public static class PluginEndpoints
                 definition = definition with { Config = expected };
             }
 
-            using var source = PluginTokenFactory.MintInvoke(tokenService, request.Name, ct);
-            var status = await registry.ConnectAsync(request.Name, definition, source.Token);
+            var registrationName = installedMcp?.Installation.Id ?? request.Name;
+            using var source = PluginTokenFactory.MintInvoke(tokenService, registrationName, ct);
+            var status = await registry.ConnectAsync(registrationName, definition, source.Token);
             if (!status.IsConnected)
                 return ResultExtensions.UnprocessableEntity(status.Error ?? "Plugin connection failed.");
 
@@ -140,7 +141,7 @@ public static class PluginEndpoints
                 }
                 catch
                 {
-                    await registry.DisconnectAsync(request.Name, source.Token);
+                    await registry.DisconnectAsync(registrationName, source.Token);
                     throw;
                 }
             }
@@ -150,7 +151,7 @@ public static class PluginEndpoints
                 {
                     await installedMcp.Value.Workspace.SetMcpToolInstallationEnabledAsync(
                         installedMcp.Value.Installation.PluginName, true);
-                    var workspaceId = request.Name[..request.Name.IndexOf('/', StringComparison.Ordinal)];
+                    var workspaceId = registrationName[..registrationName.IndexOf('/', StringComparison.Ordinal)];
                     var tools = actors.GetActor<IToolRegistryActor>(VirtualActorId.From(workspaceId));
                     await tools.ReconnectInstallationAsync(installedMcp.Value.Installation.PluginName);
                 }
@@ -158,13 +159,13 @@ public static class PluginEndpoints
                 {
                     await installedMcp.Value.Workspace.SetMcpToolInstallationEnabledAsync(
                         installedMcp.Value.Installation.PluginName, false);
-                    await registry.DisconnectAsync(request.Name, source.Token);
+                    await registry.DisconnectAsync(registrationName, source.Token);
                     throw;
                 }
             }
 
             return Results.Created(
-                $"/api/plugins/{request.Name}",
+                $"/api/plugins/{registrationName}",
                 new ConnectPluginResponse { Status = status, Warnings = warnings });
         }
         catch (InvalidOperationException ex)
@@ -183,16 +184,17 @@ public static class PluginEndpoints
     {
         var installed = await FindDaprInstallationAsync(name, actors);
         var installedMcp = await FindMcpInstallationAsync(name, actors);
+        var registrationName = installedMcp?.Installation.Id ?? name;
         if (installedMcp is not null)
-            mcpDispatchGate.BeginDisable(name);
+            mcpDispatchGate.BeginDisable(registrationName);
         if (installed is not null)
             await installed.Value.Workspace.SetDaprToolInstallationEnabledAsync(
                 installed.Value.Installation.PluginName, false);
         if (installedMcp is not null)
             await installedMcp.Value.Workspace.SetMcpToolInstallationEnabledAsync(
                 installedMcp.Value.Installation.PluginName, false);
-        using var source = PluginTokenFactory.MintInvoke(tokenService, name, ct);
-        var status = await registry.DisconnectAsync(name, source.Token);
+        using var source = PluginTokenFactory.MintInvoke(tokenService, registrationName, ct);
+        var status = await registry.DisconnectAsync(registrationName, source.Token);
         if (status.Error is not null)
         {
             if (installed is not null || installedMcp is not null)
@@ -222,10 +224,10 @@ public static class PluginEndpoints
         var slash = name.IndexOf('/', StringComparison.Ordinal);
         if (slash <= 0 || slash == name.Length - 1)
             return null;
-        var workspace = actors.GetActor<IWorkspaceActor>(VirtualActorId.From(name[..slash]));
+        var workspace = actors.GetActor<IWorkspaceActor>(VirtualActorId.From(name[..slash].ToLowerInvariant()));
         var state = await workspace.GetStateAsync();
         var installation = state.McpToolInstallations.SingleOrDefault(item =>
-            string.Equals(item.Id, name, StringComparison.Ordinal));
+            string.Equals(item.Id, name, StringComparison.OrdinalIgnoreCase));
         return installation is null ? null : (workspace, installation);
     }
 

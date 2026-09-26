@@ -42,9 +42,11 @@ public sealed partial class WorkspaceActor(
         {
             var pluginName = tool.RequiresPlugin!;
             if ((string.Equals(tool.Type, "mcp", StringComparison.OrdinalIgnoreCase)
-                    && persistentState.State.DaprToolInstallations.Any(item => item.PluginName == pluginName))
+                    && persistentState.State.DaprToolInstallations.Any(item =>
+                        string.Equals(item.PluginName, pluginName, StringComparison.OrdinalIgnoreCase)))
                 || (string.Equals(tool.Type, "dapr", StringComparison.OrdinalIgnoreCase)
-                    && persistentState.State.McpToolInstallations.Any(item => item.PluginName == pluginName)))
+                    && persistentState.State.McpToolInstallations.Any(item =>
+                        string.Equals(item.PluginName, pluginName, StringComparison.OrdinalIgnoreCase))))
                 throw new InvalidOperationException(
                     $"Plugin name '{pluginName}' was already used by another installation type; choose a new name.");
         }
@@ -56,7 +58,10 @@ public sealed partial class WorkspaceActor(
             var digest = McpToolInstallation.ComputeConfigDigest(tool.Mcp!.Url!,
                 plugin.Config["server_name"], plugin.Config["server_version"], plugin.Config["operation"]);
             var existing = persistentState.State.McpToolInstallations.SingleOrDefault(item =>
-                string.Equals(item.PluginName, tool.RequiresPlugin, StringComparison.Ordinal));
+                string.Equals(item.PluginName, tool.RequiresPlugin, StringComparison.OrdinalIgnoreCase));
+            if (existing is not null && !string.Equals(existing.PluginName, tool.RequiresPlugin, StringComparison.Ordinal))
+                throw new InvalidOperationException(
+                    $"MCP installation '{tool.RequiresPlugin}' differs in case from the installed name '{existing.PluginName}'.");
             if (existing is not null && !string.Equals(existing.ConfigDigest, digest, StringComparison.Ordinal))
                 throw new InvalidOperationException(
                     $"MCP installation '{tool.RequiresPlugin}' changed; use a new plugin name for the new revision.");
@@ -127,7 +132,7 @@ public sealed partial class WorkspaceActor(
                 var digest = McpToolInstallation.ComputeConfigDigest(url, serverName, serverVersion, operation);
                 var id = $"{persistentState.State.WorkspaceId}/{pluginName}";
                 var installation = persistentState.State.McpToolInstallations.SingleOrDefault(item =>
-                    string.Equals(item.Id, id, StringComparison.Ordinal));
+                    string.Equals(item.Id, id, StringComparison.OrdinalIgnoreCase));
                 if (installation is null)
                 {
                     installation = new McpToolInstallation { Id = id, PluginName = pluginName };

@@ -1,3 +1,4 @@
+using System.Buffers.Binary;
 using System.Security.Cryptography;
 using System.Text;
 
@@ -17,7 +18,23 @@ public sealed record McpToolInstallation
     public string ConfigDigest { get; set; } = string.Empty;
     public bool DesiredEnabled { get; set; }
 
-    public static string ComputeConfigDigest(string url, string serverName, string serverVersion, string operation) =>
-        Convert.ToHexString(SHA256.HashData(Encoding.UTF8.GetBytes(
-            $"{ImplementationRevision}\n{url}\n{serverName}\n{serverVersion}\n{operation}")));
+    public static string ComputeConfigDigest(string url, string serverName, string serverVersion, string operation)
+    {
+        using var hash = IncrementalHash.CreateHash(HashAlgorithmName.SHA256);
+        Append(ImplementationRevision);
+        Append(url);
+        Append(serverName);
+        Append(serverVersion);
+        Append(operation);
+        return Convert.ToHexString(hash.GetHashAndReset());
+
+        void Append(string value)
+        {
+            var bytes = Encoding.UTF8.GetBytes(value);
+            Span<byte> length = stackalloc byte[sizeof(int)];
+            BinaryPrimitives.WriteInt32BigEndian(length, bytes.Length);
+            hash.AppendData(length);
+            hash.AppendData(bytes);
+        }
+    }
 }

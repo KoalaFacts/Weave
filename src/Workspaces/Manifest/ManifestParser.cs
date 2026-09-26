@@ -120,7 +120,7 @@ public sealed class ManifestParser : IManifestParser
     public static IReadOnlyList<string> ValidateMcpToolDependencies(WorkspaceManifest manifest)
     {
         var errors = new List<string>();
-        var installations = new HashSet<string>(StringComparer.Ordinal);
+        var installations = new HashSet<string>(StringComparer.OrdinalIgnoreCase);
         foreach (var (toolName, tool) in manifest.Tools.Where(static item =>
             string.Equals(item.Value.Type, "mcp", StringComparison.OrdinalIgnoreCase)
             && item.Value.RequiresPlugin is not null))
@@ -134,7 +134,13 @@ public sealed class ManifestParser : IManifestParser
             }
             if (!installations.Add(tool.RequiresPlugin))
                 errors.Add($"MCP tools plugin '{tool.RequiresPlugin}' supports one declared tool in this installation.");
-            if (tool.Mcp is not { Server: null, Url: not null } mcp || mcp.Args.Count != 0 || mcp.Env.Count != 0
+            if (plugin.Config is null)
+            {
+                errors.Add($"MCP tools plugin '{tool.RequiresPlugin}': configuration is required.");
+                continue;
+            }
+            if (tool.Mcp is not { Server: null, Url: not null } mcp || mcp.Args is null || mcp.Env is null
+                || mcp.Args.Count != 0 || mcp.Env.Count != 0
                 || !Uri.TryCreate(mcp.Url, UriKind.Absolute, out var uri)
                 || uri.Scheme != Uri.UriSchemeHttp || uri.Host != "127.0.0.1" || uri.Port is < 1 or > 65535
                 || uri.AbsolutePath != "/mcp" || uri.Query.Length != 0 || uri.Fragment.Length != 0
