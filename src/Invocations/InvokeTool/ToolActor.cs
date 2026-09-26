@@ -5,8 +5,8 @@ using Weave.Security.Tokens;
 using Weave.Shared.Events;
 using Weave.Shared.Ids;
 using Weave.Shared.Lifecycle;
-using Weave.Tools.Discovery;
 using Weave.Tools.Connectors;
+using Weave.Tools.Discovery;
 using Weave.Tools.Marketplace;
 namespace Weave.Tools.Tool;
 

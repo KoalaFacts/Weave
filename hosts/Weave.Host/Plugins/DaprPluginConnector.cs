@@ -68,13 +68,28 @@ public sealed partial class DaprPluginConnector(
         // IHttpClientFactory. In-flight PublishAsync calls on the old bus
         // will complete safely against the still-valid HttpClient handler.
         var scope = new PluginActivationScope();
-        scope.Add(() => broker.Swap<IEventBus>(eventBus), () => broker.ClearIfCurrent<IEventBus>(eventBus));
+        IEventBus? displacedBus = null;
+        scope.Add(() => displacedBus = broker.Swap<IEventBus>(eventBus), () =>
+        {
+            if (displacedBus is null)
+                broker.ClearIfCurrent<IEventBus>(eventBus);
+            else
+                broker.ReplaceIfCurrent<IEventBus>(eventBus, displacedBus);
+        });
         scope.Add(() => toolDiscovery.Register(toolConnector), () =>
         {
             toolConnector.Deactivate();
             toolDiscovery.UnregisterIfCurrent(ToolType.Dapr, toolConnector);
         });
-        _activations.Replace(name, scope);
+        try
+        {
+            _activations.Replace(name, scope);
+        }
+        finally
+        {
+            // A later disconnect must clear this installation, not restore a replaced one.
+            displacedBus = null;
+        }
 
         LogDaprConnected(name, baseUrl);
 

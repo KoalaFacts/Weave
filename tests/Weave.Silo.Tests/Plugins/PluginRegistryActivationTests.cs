@@ -122,6 +122,41 @@ public sealed class PluginRegistryActivationTests
     }
 
     [Fact]
+    public async Task ConnectAsync_DaprRegistrationFails_RestoresPreviousEventBus()
+    {
+        var broker = new PluginServiceBroker(NullLogger<PluginServiceBroker>.Instance);
+        var discovery = Substitute.For<IToolDiscoveryService>();
+        var registrations = 0;
+        discovery.When(service => service.Register(Arg.Any<IToolConnector>()))
+            .Do(_ =>
+            {
+                if (++registrations == 2)
+                    throw new InvalidOperationException("registration failed");
+            });
+        using var services = CreateHttpServices();
+        using var registry = CreateRegistry(new DaprPluginConnector(
+            broker, discovery, services.GetRequiredService<IHttpClientFactory>(), NullLoggerFactory.Instance));
+
+        var first = await registry.ConnectAsync("sidecar", new PluginDefinition
+        {
+            Type = "dapr",
+            Config = new Dictionary<string, string> { ["port"] = "3500" }
+        }, AnyPlugin);
+        first.IsConnected.ShouldBeTrue();
+        var previousBus = broker.Get<IEventBus>();
+
+        var replacement = await registry.ConnectAsync("sidecar", new PluginDefinition
+        {
+            Type = "dapr",
+            Config = new Dictionary<string, string> { ["port"] = "3501" }
+        }, AnyPlugin);
+
+        replacement.IsConnected.ShouldBeFalse();
+        broker.Get<IEventBus>().ShouldBeSameAs(previousBus);
+        registry.GetAll().Single().Type.ShouldBe("dapr");
+    }
+
+    [Fact]
     public async Task ConnectAsync_ReplacingWebhookWithDapr_KeepsNewEventBus()
     {
         var broker = new PluginServiceBroker(NullLogger<PluginServiceBroker>.Instance);

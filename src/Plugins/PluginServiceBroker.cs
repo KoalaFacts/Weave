@@ -118,21 +118,47 @@ public sealed partial class PluginServiceBroker(ILogger<PluginServiceBroker> log
     /// Register a callback that fires after a <see cref="Swap{T}"/> for <typeparamref name="T"/>.
     /// Multiple callbacks can be registered for the same type.
     /// </summary>
-    public IDisposable OnSwap<T>(Action callback) where T : class
+    public IDisposable OnSwap<T>(Action callback) where T : class =>
+        OnSwap<T>(callback, static _ => { });
+
+    public IDisposable OnSwap<T>(Action callback, Action<T?> initialize) where T : class
     {
         lock (_updateLock)
         {
+            T? current;
             lock (_lock)
             {
-                if (!_swapCallbacks.TryGetValue(typeof(T), out var list))
+                if (!_swapCallbacks.TryGetValue(typeof(T), out var callbacks))
                 {
-                    list = [];
-                    _swapCallbacks[typeof(T)] = list;
+                    callbacks = [];
+                    _swapCallbacks[typeof(T)] = callbacks;
                 }
-                list.Add(callback);
+                callbacks.Add(callback);
+                current = _services.TryGetValue(typeof(T), out var service) ? (T)service : null;
             }
+
+            var initialized = false;
+            try
+            {
+                initialize(current);
+                initialized = true;
+            }
+            finally
+            {
+                if (!initialized)
+                {
+                    lock (_lock)
+                    {
+                        var callbacks = _swapCallbacks[typeof(T)];
+                        callbacks.Remove(callback);
+                        if (callbacks.Count == 0)
+                            _swapCallbacks.Remove(typeof(T));
+                    }
+                }
+            }
+
+            return new SwapCallbackRegistration(this, typeof(T), callback);
         }
-        return new SwapCallbackRegistration(this, typeof(T), callback);
     }
 
     private Action[] SnapshotCallbacks(Type serviceType) =>

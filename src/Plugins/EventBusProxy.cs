@@ -31,8 +31,7 @@ public sealed partial class EventBusProxy : IEventBus, IDisposable
         _fallback = fallback;
         _logger = logger ?? NullLogger<EventBusProxy>.Instance;
         _current = fallback;
-        _swapRegistration = _broker.OnSwap<IEventBus>(ReplaySubscriptions);
-        _current = _broker.Get<IEventBus>() ?? fallback;
+        _swapRegistration = _broker.OnSwap<IEventBus>(ReplaySubscriptions, bus => _current = bus ?? fallback);
     }
 
     public async Task PublishAsync<TEvent>(TEvent domainEvent, CancellationToken ct) where TEvent : IDomainEvent

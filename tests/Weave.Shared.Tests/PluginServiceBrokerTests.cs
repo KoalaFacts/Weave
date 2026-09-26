@@ -90,6 +90,47 @@ public sealed class PluginServiceBrokerTests
     }
 
     [Fact]
+    public async Task OnSwap_WithSnapshot_OrdersInitializationBeforeLaterSwap()
+    {
+        var first = Substitute.For<IEventBus>();
+        var second = Substitute.For<IEventBus>();
+        _broker.Swap<IEventBus>(first);
+        using var entered = new ManualResetEventSlim();
+        using var release = new ManualResetEventSlim();
+        using var swapStarted = new ManualResetEventSlim();
+        IEventBus? observed = null;
+
+        var subscribe = Task.Run(() => _broker.OnSwap<IEventBus>(
+            () => observed = _broker.Get<IEventBus>(),
+            snapshot =>
+            {
+                entered.Set();
+                release.Wait(TestContext.Current.CancellationToken);
+                observed = snapshot;
+            }));
+        try
+        {
+            entered.Wait(TimeSpan.FromSeconds(5), TestContext.Current.CancellationToken).ShouldBeTrue();
+            var swap = Task.Run(() =>
+            {
+                swapStarted.Set();
+                return _broker.Swap<IEventBus>(second);
+            });
+            swapStarted.Wait(TimeSpan.FromSeconds(5), TestContext.Current.CancellationToken).ShouldBeTrue();
+            await Task.Delay(TimeSpan.FromMilliseconds(100), TestContext.Current.CancellationToken);
+            swap.IsCompleted.ShouldBeFalse();
+            release.Set();
+            using var registration = await subscribe;
+            await swap;
+            observed.ShouldBeSameAs(second);
+        }
+        finally
+        {
+            release.Set();
+        }
+    }
+
+    [Fact]
     public void Swap_IndependentTypes_DontInterfere()
     {
         var bus = Substitute.For<IEventBus>();

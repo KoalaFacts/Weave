@@ -194,6 +194,25 @@ public sealed class PluginRegistryTests
     }
 
     [Fact]
+    public async Task ConnectAsync_OldConnectorCleanupFails_NewConnectorOwnsRegistration()
+    {
+        var old = new ThrowingDisconnectPluginConnector("old");
+        var next = new FakePluginConnector("next", connected: true);
+        var registry = CreateRegistry(old, next);
+
+        (await registry.ConnectAsync("events", new PluginDefinition { Type = "old" }, AnyPlugin))
+            .IsConnected.ShouldBeTrue();
+
+        var replacement = await registry.ConnectAsync("events", new PluginDefinition { Type = "next" }, AnyPlugin);
+
+        replacement.IsConnected.ShouldBeFalse();
+        registry.GetAll().Single().Type.ShouldBe("next");
+        (await registry.DisconnectAsync("events", AnyPlugin)).IsConnected.ShouldBeFalse();
+        next.DisconnectCount.ShouldBe(1);
+        registry.GetAll().ShouldBeEmpty();
+    }
+
+    [Fact]
     public async Task ConnectAsync_ConnectorThrows_ReturnsError()
     {
         var connector = new ThrowingPluginConnector("dapr");
@@ -509,6 +528,28 @@ public sealed class PluginRegistryTests
 
         public PluginStatus GetStatus(string name) =>
             new() { Name = name, Type = type, IsConnected = connected };
+    }
+
+    private sealed class ThrowingDisconnectPluginConnector(string type) : IPluginConnector
+    {
+        public string PluginType => type;
+        public IReadOnlyList<string> RegistrationKeys(string name) => [];
+        public PluginSchema Schema { get; } = new()
+        {
+            Type = type,
+            Description = "Old connector",
+            Provides = [],
+            Config = []
+        };
+
+        public Task<PluginStatus> ConnectAsync(string name, PluginDefinition definition) =>
+            Task.FromResult(new PluginStatus { Name = name, Type = type, IsConnected = true });
+
+        public Task<PluginStatus> DisconnectAsync(string name) =>
+            throw new InvalidOperationException("old cleanup failed");
+
+        public PluginStatus GetStatus(string name) =>
+            new() { Name = name, Type = type, IsConnected = true };
     }
 
     // --- Capability check tests ---

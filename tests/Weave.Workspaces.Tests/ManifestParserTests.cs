@@ -1,6 +1,6 @@
-using Weave.Workspaces.Manifest;
 using Weave.Tools.Connectors;
 using Weave.Tools.Mapping;
+using Weave.Workspaces.Manifest;
 namespace Weave.Workspaces.Tests;
 
 public sealed class ManifestParserTests

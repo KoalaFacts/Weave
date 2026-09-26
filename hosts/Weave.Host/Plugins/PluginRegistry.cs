@@ -124,12 +124,17 @@ public sealed partial class PluginRegistry : IPluginRegistry, IDisposable, IAsyn
             if (_active.TryGetValue(name, out var existing) && existing.IsConnected)
             {
                 LogPluginHotSwap(name, existing.Type, definition.Type);
+                // The replacement already owns its registrations. Keep registry ownership
+                // with it even when cleanup of the displaced connector fails.
+                _active[name] = status;
                 if (_connectorsByType.TryGetValue(existing.Type, out var existingConnector) &&
                     !ReferenceEquals(existingConnector, connector))
                     await existingConnector.DisconnectAsync(name);
             }
-
-            _active[name] = status;
+            else
+            {
+                _active[name] = status;
+            }
             LogPluginConnected(name, definition.Type);
             return status;
         }
