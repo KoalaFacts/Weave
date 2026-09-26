@@ -155,4 +155,5 @@ After a successful publish, the
 installs that exact version from the npm registry, checks npm signatures and
 the provenance binding to the release commit, then runs the installed HTTP
 server through Weave's authorization and installation-lifecycle checks. It can
-also be dispatched manually with the version matching the selected commit.
+also be dispatched manually with the version matching the selected commit and
+the full source commit SHA recorded by the npm release.

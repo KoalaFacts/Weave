@@ -7,6 +7,10 @@ on:
         description: Exact published version matching this commit
         required: true
         type: string
+      release_sha:
+        description: Full source commit SHA recorded by the npm release
+        required: true
+        type: string
   workflow_call:
     inputs:
       version:
@@ -35,6 +39,8 @@ jobs:
           node-version: '24'
           registry-url: https://registry.npmjs.org
           package-manager-cache: false
+      - name: Use npm with attestation report support
+        run: npm install --global npm@12.0.2 --ignore-scripts --no-audit --no-fund
       - name: Resolve exact published version
         id: package
         env:

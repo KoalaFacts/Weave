@@ -70,7 +70,8 @@ use this workflow.
 ### ✅ [verify-published-npm-plugin-echo.yml](./verify-published-npm-plugin-echo.yml) — Verify Published npm Echo Plugin
 
 **Triggers:** Called by the Echo publish workflow after npm publish succeeds,
-or manual dispatch with the exact version at the selected commit
+or manual dispatch with the exact version at the selected commit and the
+release source SHA
 
 Installs the exact package from the npm registry, verifies its registry
 signatures and source provenance, and runs its HTTP entry through Weave's

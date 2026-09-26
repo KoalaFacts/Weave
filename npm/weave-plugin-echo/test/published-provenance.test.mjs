@@ -69,6 +69,11 @@ test('checkPublishedProvenance_DifferentSourceCommit_Denies', () => {
     assert.throws(() => checkPublishedProvenance(report, lock, version, 'b'.repeat(40)));
 });
 
+test('checkPublishedProvenance_MissingSourceCommit_Denies', () => {
+    const { report, lock } = evidence();
+    assert.throws(() => checkPublishedProvenance(report, lock, version));
+});
+
 test('checkPublishedProvenance_DifferentTarball_Denies', () => {
     const { report, lock } = evidence();
     lock.packages[`node_modules/${packageName}`].integrity =

@@ -6,8 +6,9 @@ import { fileURLToPath } from 'node:url';
 const packageName = '@koalafacts/weave-plugin-echo';
 const provenanceType = 'https://slsa.dev/provenance/v1';
 
-export function checkPublishedProvenance(report, lock, version, sourceSha = '') {
+export function checkPublishedProvenance(report, lock, version, sourceSha) {
     assert.match(version, /^\d+\.\d+\.\d+(?:-[0-9A-Za-z.-]+)?$/);
+    assert.match(sourceSha, /^[0-9a-f]{40}$/);
     assert.deepEqual(report.invalid, []);
     assert.deepEqual(report.missing, []);
     assert.ok(Array.isArray(report.verified));
@@ -32,18 +33,15 @@ export function checkPublishedProvenance(report, lock, version, sourceSha = '') 
     assert.equal(workflow?.repository, 'https://github.com/KoalaFacts/Weave');
     assert.equal(workflow?.path, '.github/workflows/publish-npm-plugin-echo.yml');
     assert.equal(workflow?.ref, 'refs/heads/main');
-    if (sourceSha) {
-        assert.match(sourceSha, /^[0-9a-f]{40}$/);
-        assert.ok(statement.predicate?.buildDefinition?.resolvedDependencies?.some(dependency =>
-            dependency.digest?.gitCommit === sourceSha), 'Provenance must name the triggering release commit');
-    }
+    assert.ok(statement.predicate?.buildDefinition?.resolvedDependencies?.some(dependency =>
+        dependency.digest?.gitCommit === sourceSha), 'Provenance must name the triggering release commit');
 }
 
 if (process.argv[1] && resolve(process.argv[1]) === fileURLToPath(import.meta.url)) {
     try {
-        const [reportPath, lockPath, version, sourceSha = ''] = process.argv.slice(2);
-        if (!reportPath || !lockPath || !version)
-            throw new Error('Usage: check-published-provenance.mjs REPORT LOCK VERSION [SOURCE_SHA]');
+        const [reportPath, lockPath, version, sourceSha] = process.argv.slice(2);
+        if (!reportPath || !lockPath || !version || !sourceSha)
+            throw new Error('Usage: check-published-provenance.mjs REPORT LOCK VERSION SOURCE_SHA');
         const report = JSON.parse(readFileSync(reportPath, 'utf8'));
         const lock = JSON.parse(readFileSync(lockPath, 'utf8'));
         checkPublishedProvenance(report, lock, version, sourceSha);
