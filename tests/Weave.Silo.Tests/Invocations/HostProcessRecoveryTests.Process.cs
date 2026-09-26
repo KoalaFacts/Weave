@@ -48,7 +48,7 @@ public sealed partial class HostProcessRecoveryTests
             var child = new HostChild(process, settings.SigningKey);
             try
             {
-                var address = new Uri(await child.ReadReadyFileAsync(Path.Combine(root, "ready"), ct));
+                var address = new Uri(await child.ReadReadyFileAsync(Path.Join(root, "ready"), ct));
                 address.IsLoopback.ShouldBeTrue();
                 address.Scheme.ShouldBe("http");
                 child.Client.BaseAddress = address;
