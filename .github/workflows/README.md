@@ -67,6 +67,18 @@ used by this workflow. The first package version must be published interactively
 before npm allows a trusted publisher to be configured; subsequent versions
 use this workflow.
 
+### ✅ [verify-published-npm-plugin-echo.yml](./verify-published-npm-plugin-echo.yml) — Verify Published npm Echo Plugin
+
+**Triggers:** Successful manual Echo publish from `main`, or manual dispatch
+with the exact version at the selected commit
+
+Installs the exact package from the npm registry, verifies its registry
+signatures and source provenance, and runs its HTTP entry through Weave's
+authorization, workspace-installation, restart, disable, and schema-drift
+checks. The job has read-only repository permission and uses no npm publish
+credentials. A successful source-package CI run alone does not prove this
+published-package path.
+
 ---
 
 ### 🔒 [scan-security.yml](./scan-security.yml) — Security Scan
