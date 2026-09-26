@@ -18,7 +18,8 @@ namespace Weave.Silo.Api;
 public sealed class StopWorkspaceHandler(
     IVirtualActorProvider actors,
     IPluginRegistry plugins,
-    ICapabilityTokenService tokenService)
+    ICapabilityTokenService tokenService,
+    IMcpInstallationDispatchGate mcpDispatchGate)
     : ICommandHandler<StopWorkspaceCommand, bool>
 {
     public async Task<bool> HandleAsync(StopWorkspaceCommand command, CancellationToken ct)
@@ -26,6 +27,12 @@ public sealed class StopWorkspaceHandler(
         var workspaceId = command.WorkspaceId.ToString();
         var workspace = actors.GetActor<IWorkspaceActor>(VirtualActorId.From(command.WorkspaceId.ToString()));
         var state = await workspace.GetStateAsync();
+
+        foreach (var installation in state.McpToolInstallations.Where(item => item.DesiredEnabled))
+        {
+            mcpDispatchGate.BeginDisable(installation.Id);
+            await workspace.SetMcpToolInstallationEnabledAsync(installation.PluginName, false);
+        }
 
         foreach (var agentName in state.ActiveAgents)
         {

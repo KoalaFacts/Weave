@@ -1,23 +1,35 @@
 using System.Collections.Concurrent;
 using System.Diagnostics;
+using System.Security.Cryptography;
 using System.Text;
 using System.Text.Json;
 using System.Text.Json.Nodes;
 using Microsoft.Extensions.Logging;
+using Weave.Invocations;
 using Weave.Security.Tokens;
+using Weave.Tools.InstallMcpTool;
 using Weave.Tools.Tool;
 using Weave.Workspaces.Manifest;
 
 namespace Weave.Tools.Connectors;
 
-public sealed partial class McpToolConnector : IToolConnector
+public sealed partial class McpToolConnector : IToolConnector, IApprovalTargetBinding
 {
     private readonly Func<McpConfig, CancellationToken, Task<IMcpTransport>> _transportFactory;
     private readonly ILogger<McpToolConnector> _logger;
     private readonly ConcurrentDictionary<string, McpConnection> _connections = new(StringComparer.Ordinal);
+    private readonly McpInstallationContract? _installation;
+    private readonly object _dispatchGate = new();
+    private TaskCompletionSource? _idle;
+    private bool _active = true;
+    private int _inFlight;
+    private string? _observedContractDigest;
 
     public McpToolConnector(ILogger<McpToolConnector> logger)
         : this(SelectTransport, logger) { }
+
+    public McpToolConnector(McpInstallationContract installation, ILogger<McpToolConnector> logger)
+        : this(SelectTransport, logger) => _installation = installation;
 
     private static Task<IMcpTransport> SelectTransport(McpConfig config, CancellationToken ct)
     {
@@ -41,12 +53,62 @@ public sealed partial class McpToolConnector : IToolConnector
     }
 
     public ToolType ToolType => ToolType.Mcp;
+    public string? ContractDigest => _installation?.ContractDigest ?? Volatile.Read(ref _observedContractDigest);
+
+    public void BeginDeactivate()
+    {
+        lock (_dispatchGate)
+            _active = false;
+    }
+
+    public async Task DeactivateAsync()
+    {
+        Task wait;
+        lock (_dispatchGate)
+        {
+            _active = false;
+            wait = _inFlight == 0 ? Task.CompletedTask : (_idle ??= new(TaskCreationOptions.RunContinuationsAsynchronously)).Task;
+        }
+        await wait;
+        var connections = _connections.ToArray();
+        foreach (var item in connections)
+            _connections.TryRemove(item.Key, out _);
+        await Task.WhenAll(connections.Select(static item => item.Value.DisposeAsync().AsTask()));
+    }
 
     public ToolInvocation NormalizeInvocation(ToolInvocation invocation) => invocation;
+
+    public string? GetApprovalTargetDigest(ToolHandle handle) => _installation is null || ContractDigest is null
+        ? null
+        : McpToolInstallation.ComputeConfigDigest(_installation.Url, _installation.ServerName,
+            _installation.ServerVersion, _installation.Operation) + ":" + ContractDigest;
+
+    public string? GetApprovalTargetDescription(ToolHandle handle) => _installation is null
+        ? null
+        : $"MCP {_installation.ServerName} {_installation.ServerVersion} at {_installation.Url}; "
+            + $"operation {_installation.Operation}; schema SHA-256 {ContractDigest}";
+
+    public async Task ProbeAsync(McpConfig config, CancellationToken ct = default)
+    {
+        if (_installation is null || !string.Equals(config.Url, _installation.Url, StringComparison.Ordinal))
+            throw new InvalidOperationException("MCP probe endpoint differs from its installation.");
+        var transport = await _transportFactory(config, ct);
+        await using var connection = new McpConnection(transport, _installation.Operation, _logger);
+        await connection.InitializeAsync(ct);
+        await VerifyContractAsync(connection, refresh: false, ct);
+    }
 
     public async Task<ToolHandle> ConnectAsync(ToolSpec tool, CapabilityToken token, CancellationToken ct = default)
     {
         var mcp = tool.Mcp ?? throw new InvalidOperationException($"Tool '{tool.Name}' has no MCP configuration");
+        if (_installation is not null && (!string.Equals(mcp.Url, _installation.Url, StringComparison.Ordinal)
+            || mcp.Server is not null || mcp.Args.Count != 0 || mcp.Env.Count != 0))
+            throw new UnauthorizedAccessException("MCP tool endpoint differs from its installation.");
+        lock (_dispatchGate)
+        {
+            if (!_active)
+                throw new InvalidOperationException("MCP installation is inactive.");
+        }
 
         var transport = await _transportFactory(mcp, ct);
         var connection = new McpConnection(transport, tool.Name, _logger);
@@ -54,25 +116,30 @@ public sealed partial class McpToolConnector : IToolConnector
         try
         {
             await connection.InitializeAsync(ct);
+            if (_installation is not null)
+                await VerifyContractAsync(connection, refresh: false, ct);
+            var connectionId = Guid.NewGuid().ToString("N");
+            lock (_dispatchGate)
+            {
+                if (!_active)
+                    throw new InvalidOperationException("MCP installation is inactive.");
+                _connections[connectionId] = connection;
+            }
+
+            LogMcpToolConnected(tool.Name);
+            return new ToolHandle
+            {
+                ToolName = tool.Name,
+                Type = ToolType.Mcp,
+                ConnectionId = connectionId,
+                IsConnected = true
+            };
         }
         catch
         {
             await connection.DisposeAsync();
             throw;
         }
-
-        var connectionId = Guid.NewGuid().ToString("N");
-        _connections[connectionId] = connection;
-
-        LogMcpToolConnected(tool.Name);
-
-        return new ToolHandle
-        {
-            ToolName = tool.Name,
-            Type = ToolType.Mcp,
-            ConnectionId = connectionId,
-            IsConnected = true
-        };
     }
 
     public async Task DisconnectAsync(ToolHandle handle, CancellationToken ct = default)
@@ -86,6 +153,31 @@ public sealed partial class McpToolConnector : IToolConnector
 
     public async Task<ToolResult> InvokeAsync(ToolHandle handle, ToolInvocation invocation, CancellationToken ct = default)
     {
+        lock (_dispatchGate)
+        {
+            if (!_active)
+                return new ToolResult { Success = false, ToolName = handle.ToolName, Error = "MCP installation is inactive." };
+            _inFlight++;
+        }
+
+        try
+        {
+            return await InvokeConnectedAsync(handle, invocation, ct);
+        }
+        finally
+        {
+            lock (_dispatchGate)
+            {
+                if (--_inFlight == 0)
+                    _idle?.TrySetResult();
+            }
+        }
+    }
+
+    private async Task<ToolResult> InvokeConnectedAsync(ToolHandle handle, ToolInvocation invocation, CancellationToken ct)
+    {
+        if (_installation is not null && !string.Equals(invocation.Method, _installation.Operation, StringComparison.Ordinal))
+            return new ToolResult { Success = false, ToolName = handle.ToolName, Error = "MCP operation is not granted by this installation." };
         if (!_connections.TryGetValue(handle.ConnectionId, out var connection))
         {
             return new ToolResult { Success = false, ToolName = handle.ToolName, Error = "MCP process not connected" };
@@ -104,6 +196,10 @@ public sealed partial class McpToolConnector : IToolConnector
         var sw = Stopwatch.StartNew();
         try
         {
+            if (_installation is not null)
+                await ProbeAsync(_installation.ProbeConfig(), ct);
+            if (_installation is not null)
+                await VerifyContractAsync(connection, refresh: true, ct);
             var arguments = BuildArguments(invocation);
             var result = await connection.CallToolAsync(invocation.Method, arguments, ct);
             sw.Stop();
@@ -133,6 +229,25 @@ public sealed partial class McpToolConnector : IToolConnector
         }
     }
 
+    private async Task VerifyContractAsync(McpConnection connection, bool refresh, CancellationToken ct)
+    {
+        var installation = _installation!;
+        if (!string.Equals(connection.ServerName, installation.ServerName, StringComparison.Ordinal)
+            || !string.Equals(connection.ServerVersion, installation.ServerVersion, StringComparison.Ordinal))
+            throw new InvalidOperationException("MCP server identity differs from the installed contract.");
+        var tools = await connection.ListToolsAsync(ct, refresh);
+        var operation = tools.SingleOrDefault(tool => string.Equals(tool.Name, installation.Operation, StringComparison.Ordinal));
+        if (operation is null)
+            throw new InvalidOperationException("MCP operation is missing or ambiguous.");
+        var serialized = JsonSerializer.SerializeToUtf8Bytes(operation, McpJsonContext.Default.McpTool);
+        var digest = Convert.ToHexString(SHA256.HashData(serialized));
+        if (installation.ContractDigest is not null && !string.Equals(digest, installation.ContractDigest, StringComparison.Ordinal))
+            throw new InvalidOperationException("MCP operation contract differs from the installed revision.");
+        var observed = Interlocked.CompareExchange(ref _observedContractDigest, digest, null);
+        if (observed is not null && !string.Equals(observed, digest, StringComparison.Ordinal))
+            throw new InvalidOperationException("MCP operation contract changed during this installation.");
+    }
+
     public async Task<ToolSchema> DiscoverSchemaAsync(ToolHandle handle, CancellationToken ct = default)
     {
         if (!_connections.TryGetValue(handle.ConnectionId, out var connection))
@@ -142,7 +257,12 @@ public sealed partial class McpToolConnector : IToolConnector
 
         try
         {
-            var tools = await connection.ListToolsAsync(ct);
+            var tools = await connection.ListToolsAsync(ct, refresh: _installation is not null);
+            if (_installation is not null)
+            {
+                await VerifyContractAsync(connection, refresh: false, ct);
+                tools = tools.Where(tool => string.Equals(tool.Name, _installation.Operation, StringComparison.Ordinal)).ToList();
+            }
             return new ToolSchema
             {
                 ToolName = handle.ToolName,

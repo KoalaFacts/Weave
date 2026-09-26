@@ -34,7 +34,9 @@ public sealed partial class ToolActor
         if (handle is null || definition is null || handle.Type != definition.Type
             || !string.Equals(handle.ToolName, _identity.ToolName, StringComparison.Ordinal))
             return new(null, "approval-review-unavailable");
-        var connector = discovery.GetConnector(definition.Type);
+        var connector = _connectedConnector;
+        if (connector is null || !ConnectorIsCurrent(connector))
+            return new(null, "approval-review-unavailable");
         if (connector is not IApprovalTargetBinding binding)
             return new(null, "approval-review-unavailable");
         request = connector.NormalizeInvocation(request);

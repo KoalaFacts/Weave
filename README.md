@@ -45,6 +45,7 @@ The current code is the starting point for the control plane, not an empty scaff
 | Verified approval review | An independent reviewer can retrieve a stored proposal by UUID for exact-plan verification. The existing read-only Dashboard at `/approvals/review` still uses explicit original-input verification. | The screen has no approve/reject/execute action. A snapshot is not an approval receipt. No reviewer-side secret resolution; unsupported or changed effective inputs fail closed. |
 | Operator decisions | A Python terminal example fetches a verified proposal by UUID, displays complete escaped data and requires explicit digest-bound confirmation. The decision endpoint revalidates content before recording approve/reject without executing. | Requires administrator-provisioned connections and credentials. The Dashboard remains read-only; browser decision actions and human login are not implemented. |
 | Connectors | MCP over stdio and HTTP/SSE, CLI, filesystem, OpenAPI, Direct HTTP, and Dapr extension projects. | An outbound MCP connector is not an inbound MCP governance server. Protocol coverage and security controls differ by adapter. |
+| Tool plugin installations | Workspace-scoped Dapr and loopback HTTP MCP installations retain configured identity and enabled state across Host restarts when actor storage is durable. The MCP path pins one operation contract and routes calls through exact Agent grants. | The external MCP process is deployer-managed. This is not the general Tenant-scoped installation and resource model. |
 | Authentication and credentials | Signed capability tokens, revocation handling, secret-protection code, and API authentication that rejects broken enabled configurations. | API auth defaults to `none`. The built-in bearer mode is a shared token, not a complete OAuth/OIDC or tenant identity system. |
 | Verification | Automated tests, dependency auditing, CI, and release-source/package validation. | Passing checks does not establish complete tenant isolation, generalized provider approval coverage, or a sandbox for untrusted code. |
 
@@ -154,7 +155,7 @@ HTTP, MCP, CLI, and UI entry points should share these semantics as they are imp
 
 Weave's direction is to adapt existing MCP servers, command-line programs, and HTTP APIs before asking developers to build native plugins.
 
-A **plugin definition** describes contributions and requested permissions. A **plugin installation** identifies a Tenant-scoped configured instance with its own credentials, granted permissions, readiness, and lifecycle. Requested permissions are not granted permissions.
+A **plugin definition** describes contributions and requested permissions. In the target model, a **plugin installation** identifies a Tenant-scoped configured instance with its own credentials, granted permissions, readiness, and lifecycle. Requested permissions are not granted permissions. The current Dapr and MCP paths implement narrower workspace-scoped installations.
 
 | Installation ownership | Meaning |
 | --- | --- |

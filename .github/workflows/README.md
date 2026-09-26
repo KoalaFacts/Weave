@@ -48,6 +48,27 @@ Automated CI/CD workflows for Weave.
 
 ---
 
+### 📦 [npm-plugin-echo.yml](./npm-plugin-echo.yml) — Verify npm Echo Plugin
+
+**Triggers:** Echo package and connector changes on `main` or in pull requests, manual
+
+Builds and tests the npm package, checks its published contents and dependencies,
+then exercises the real Weave MCP connector and authorization path.
+
+### 🚀 [publish-npm-plugin-echo.yml](./publish-npm-plugin-echo.yml) — Publish npm Echo Plugin
+
+**Trigger:** Manual on `main` with the exact package version
+
+The verification job checks the version, tests and packs the package without
+OIDC permission. The publish job downloads that exact tarball, verifies its
+checksum and uses npm trusted publishing. The `npm` environment restricts
+deployment to `main` and requires a maintainer review. No npm write token is
+used by this workflow. The first package version must be published interactively
+before npm allows a trusted publisher to be configured; subsequent versions
+use this workflow.
+
+---
+
 ### 🔒 [scan-security.yml](./scan-security.yml) — Security Scan
 
 **Triggers:** Weekly (Monday 03:00 UTC), push to `main`, PRs, manual

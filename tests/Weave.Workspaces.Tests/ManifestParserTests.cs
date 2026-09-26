@@ -7,6 +7,23 @@ public sealed class ManifestParserTests
 {
     private readonly ManifestParser _parser = new();
 
+    [Theory]
+    [InlineData("args")]
+    [InlineData("env")]
+    public void Validate_McpInstallationWithExplicitNullCollection_ReturnsValidationError(string field)
+    {
+        var json = """
+            {"version":"1.0","name":"test","plugins":{"echo_server":{"type":"mcp_tools",
+            "config":{"server_name":"server","server_version":"1","operation":"echo"}}},
+            "tools":{"echo":{"type":"mcp","requires_plugin":"echo_server",
+            "mcp":{"url":"http://127.0.0.1:9000/mcp","allow_private_endpoints":true,"args":null}}}}
+            """.Replace("\"args\":null", $"\"{field}\":null", StringComparison.Ordinal);
+
+        var errors = _parser.Validate(_parser.Parse(json));
+
+        errors.ShouldContain(error => error.Contains("requires an explicit HTTP endpoint", StringComparison.Ordinal));
+    }
+
     private const string FullManifest = """
         {
           // Full workspace manifest for testing

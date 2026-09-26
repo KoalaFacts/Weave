@@ -12,13 +12,16 @@ const packed = spawnSync(process.execPath, [npmCli, 'pack', '--dry-run', '--json
     encoding: 'utf8'
 });
 if (packed.status !== 0)
-    throw new Error(packed.stderr || packed.stdout || 'npm pack failed.');
+    throw new Error(packed.stderr || packed.stdout || 'npm pack dry run failed.');
+assert.doesNotMatch(packed.stderr, /npm warn .*auto-corrected/, 'npm must not rewrite the published manifest.');
 
 const report = JSON.parse(packed.stdout);
 const entry = Array.isArray(report) ? report[0] : report['@koalafacts/weave-plugin-echo'];
 assert.equal(entry.name, '@koalafacts/weave-plugin-echo');
 assert.equal(echoPluginVersion, entry.version);
-assert.equal(JSON.parse(readFileSync(new URL('../package.json', import.meta.url), 'utf8')).version, entry.version);
+const manifest = JSON.parse(readFileSync(new URL('../package.json', import.meta.url), 'utf8'));
+assert.equal(manifest.version, entry.version);
+assert.equal(manifest.bin['weave-plugin-echo'], 'dist/cli.js');
 const files = new Set(entry.files.map(file => file.path));
 assert.deepEqual(files, new Set([
     'LICENSE-AGPL',

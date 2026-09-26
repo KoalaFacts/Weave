@@ -57,7 +57,11 @@ public sealed class WorkspaceCommandHandlerTests
             .Returns(supervisor);
         workspaceActor.StartAsync(Arg.Any<WorkspaceManifest>())
             .Returns(expectedState);
-        workspaceActor.GetStateAsync().Returns(expectedState);
+        workspaceActor.GetStateAsync().Returns(new WorkspaceState
+        {
+            WorkspaceId = TestWorkspaceId,
+            Status = WorkspaceStatus.Stopped
+        }, expectedState);
 
         var handler = new StartWorkspaceHandler(actors, Substitute.For<IPluginRegistry>(),
             Substitute.For<ICapabilityTokenService>());
@@ -100,7 +104,8 @@ public sealed class WorkspaceCommandHandlerTests
 
         var plugins = Substitute.For<IPluginRegistry>();
         plugins.GetAll().Returns([]);
-        var handler = new StopWorkspaceHandler(actors, plugins, Substitute.For<ICapabilityTokenService>());
+        var handler = new StopWorkspaceHandler(actors, plugins, Substitute.For<ICapabilityTokenService>(),
+            Substitute.For<Weave.Silo.Plugins.IMcpInstallationDispatchGate>());
         var command = new StopWorkspaceCommand(TestWorkspaceId);
 
         var result = await handler.HandleAsync(command, CancellationToken.None);
@@ -219,6 +224,7 @@ public sealed class WorkspaceCommandHandlerTests
             .Returns(supervisor);
         workspaceActor.StartAsync(Arg.Any<WorkspaceManifest>())
             .Returns<WorkspaceState>(x => throw new InvalidOperationException("Provisioning failed"));
+        workspaceActor.GetStateAsync().Returns(new WorkspaceState { WorkspaceId = TestWorkspaceId });
 
         var handler = new StartWorkspaceHandler(actors, Substitute.For<IPluginRegistry>(),
             Substitute.For<ICapabilityTokenService>());
@@ -246,6 +252,7 @@ public sealed class WorkspaceCommandHandlerTests
             WorkspaceId = TestWorkspaceId,
             Status = WorkspaceStatus.Running
         });
+        workspace.GetStateAsync().Returns(new WorkspaceState { WorkspaceId = TestWorkspaceId });
         plugins.ConnectAsync(Arg.Any<string>(), Arg.Any<PluginDefinition>(), Arg.Any<CapabilityToken>())
             .Returns(new PluginStatus { Name = "ws-1/sidecar", Type = "dapr_tools", Error = "offline" });
         var tokenService = new CapabilityTokenService(
@@ -297,6 +304,7 @@ public sealed class WorkspaceCommandHandlerTests
             WorkspaceId = TestWorkspaceId,
             Status = WorkspaceStatus.Running
         });
+        workspace.GetStateAsync().Returns(new WorkspaceState { WorkspaceId = TestWorkspaceId });
         plugins.ConnectAsync(Arg.Any<string>(), Arg.Any<PluginDefinition>(), Arg.Any<CapabilityToken>())
             .Returns(new PluginStatus { Name = "ws-1/sidecar", Type = "dapr_tools", IsConnected = true });
         supervisor.ActivateAllAsync(Arg.Any<WorkspaceManifest>())

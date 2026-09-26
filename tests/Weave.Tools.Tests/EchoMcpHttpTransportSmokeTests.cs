@@ -257,7 +257,8 @@ public sealed class EchoMcpHttpTransportSmokeTests : IDisposable
                 continue;
             // Path.Join (not Combine) — Combine silently drops `dir` if `name` were
             // accidentally rooted; Join concatenates regardless.
-            foreach (var candidate in pathEnv.Split(Path.PathSeparator).Select(dir => Path.Join(dir, name)))
+            foreach (var candidate in pathEnv.Split(Path.PathSeparator).Select(dir =>
+                Path.Join(dir, OperatingSystem.IsWindows() ? $"{name}.exe" : name)))
             {
                 if (File.Exists(candidate))
                     return candidate;

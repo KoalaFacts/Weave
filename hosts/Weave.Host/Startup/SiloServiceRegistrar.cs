@@ -185,8 +185,14 @@ internal sealed class SiloServiceRegistrar
 
     private void RegisterPluginConnectors()
     {
-        _services.AddSingleton<DaprToolInstallationRestorer>();
-        _services.AddHostedService(sp => sp.GetRequiredService<DaprToolInstallationRestorer>());
+        _services.AddSingleton<ToolInstallationRestorer>();
+        _services.AddHostedService(sp => sp.GetRequiredService<ToolInstallationRestorer>());
+        _services.AddSingleton<McpToolsPluginConnector>(sp =>
+            new McpToolsPluginConnector(
+                sp.GetRequiredService<IToolDiscoveryService>(),
+                sp.GetRequiredService<ILoggerFactory>()));
+        _services.AddSingleton<IPluginConnector>(sp => sp.GetRequiredService<McpToolsPluginConnector>());
+        _services.AddSingleton<IMcpInstallationDispatchGate>(sp => sp.GetRequiredService<McpToolsPluginConnector>());
         _services.AddSingleton<IPluginConnector>(sp =>
             new DaprToolsPluginConnector(
                 sp.GetRequiredService<IToolDiscoveryService>(),

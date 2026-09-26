@@ -24,18 +24,23 @@ public sealed class StartWorkspaceHandler(
 {
     public async Task<WorkspaceState> HandleAsync(StartWorkspaceCommand command, CancellationToken ct)
     {
-        var errors = ManifestParser.ValidateDaprToolDependencies(command.Manifest);
+        var errors = ManifestParser.ValidateDaprToolDependencies(command.Manifest)
+            .Concat(ManifestParser.ValidateMcpToolDependencies(command.Manifest)).ToList();
         if (errors.Count > 0)
             throw new InvalidOperationException(string.Join(" ", errors));
 
         var workspaceId = command.WorkspaceId.ToString();
         var workspace = actors.GetActor<IWorkspaceActor>(VirtualActorId.From(command.WorkspaceId.ToString()));
         var registry = actors.GetActor<IWorkspaceRegistryActor>(VirtualActorId.From("active"));
+        if ((await workspace.GetStateAsync()).Status is WorkspaceStatus.Running)
+            throw new InvalidOperationException("Workspace is already running; stop it before changing the manifest.");
 
         var toolRegistry = actors.GetActor<IToolRegistryActor>(VirtualActorId.From(command.WorkspaceId.ToString()));
         var supervisor = actors.GetActor<IAgentSupervisorActor>(VirtualActorId.From(command.WorkspaceId.ToString()));
         var requiredPlugins = command.Manifest.Tools.Values
-            .Where(static tool => string.Equals(tool.Type, "dapr", StringComparison.OrdinalIgnoreCase))
+            .Where(static tool => tool.RequiresPlugin is not null
+                && (string.Equals(tool.Type, "dapr", StringComparison.OrdinalIgnoreCase)
+                    || string.Equals(tool.Type, "mcp", StringComparison.OrdinalIgnoreCase)))
             .Select(static tool => tool.RequiresPlugin!)
             .Distinct(StringComparer.Ordinal);
         var activated = new List<string>();
@@ -45,9 +50,24 @@ public sealed class StartWorkspaceHandler(
             await registry.RegisterAsync(workspaceId);
             await workspace.StartAsync(command.Manifest);
 
+            var installations = (await workspace.GetStateAsync()).McpToolInstallations;
+
             foreach (var pluginName in requiredPlugins)
             {
                 var registrationName = $"{workspaceId}/{pluginName}";
+                var definition = command.Manifest.Plugins[pluginName];
+                var installation = installations.SingleOrDefault(item =>
+                    string.Equals(item.Id, registrationName, StringComparison.Ordinal) && item.DesiredEnabled);
+                if (installation is not null)
+                {
+                    var config = new Dictionary<string, string>(definition.Config, StringComparer.Ordinal)
+                    {
+                        ["url"] = installation.Url
+                    };
+                    if (installation.ContractDigest.Length != 0)
+                        config["contract_digest"] = installation.ContractDigest;
+                    definition = definition with { Config = config };
+                }
                 using var source = tokenService.MintLinked(new CapabilityTokenRequest
                 {
                     WorkspaceId = workspaceId,
@@ -56,10 +76,16 @@ public sealed class StartWorkspaceHandler(
                     Lifetime = TimeSpan.FromMinutes(1)
                 }, ct);
                 var plugin = await plugins.ConnectAsync(registrationName,
-                    command.Manifest.Plugins[pluginName], source.Token);
+                    definition, source.Token);
                 if (!plugin.IsConnected)
                     throw new InvalidOperationException($"Plugin '{pluginName}' could not activate: {plugin.Error}");
                 activated.Add(registrationName);
+                if (installation is not null)
+                {
+                    if (!plugin.Info.TryGetValue("contract_digest", out var observed))
+                        throw new InvalidOperationException("MCP plugin did not report its observed contract.");
+                    await workspace.PinMcpToolContractAsync(pluginName, observed);
+                }
             }
 
             await toolRegistry.ConnectToolsAsync(command.Manifest.Tools);
