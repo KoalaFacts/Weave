@@ -7,28 +7,27 @@ on:
         description: Exact published version matching this commit
         required: true
         type: string
-  workflow_run:
-    workflows: [Publish npm Echo Plugin]
-    types: [completed]
+  workflow_call:
+    inputs:
+      version:
+        required: true
+        type: string
+      release_sha:
+        required: true
+        type: string
 
 permissions:
   contents: read
 
 jobs:
   published-package:
-    if: >-
-      github.event_name == 'workflow_dispatch' ||
-      (github.event.workflow_run.conclusion == 'success' &&
-       github.event.workflow_run.event == 'workflow_dispatch' &&
-       github.event.workflow_run.head_branch == 'main' &&
-       github.event.workflow_run.head_repository.full_name == github.repository)
     runs-on: ubuntu-latest
     timeout-minutes: 20
     steps:
       - name: Checkout release source
         uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v6
         with:
-          ref: ${{ github.event.workflow_run.head_sha || github.sha }}
+          ref: ${{ github.sha }}
           persist-credentials: false
       - name: Set up Node and npm registry
         uses: actions/setup-node@249970729cb0ef3589644e2896645e5dc5ba9c38 # v6
@@ -67,7 +66,7 @@ jobs:
       - name: Verify npm signatures and source provenance
         env:
           VERSION: ${{ steps.package.outputs.version }}
-          RELEASE_SHA: ${{ github.event.workflow_run.head_sha }}
+          RELEASE_SHA: ${{ inputs.release_sha }}
         run: |
           install_dir="$RUNNER_TEMP/weave-echo-consumer"
           npm audit signatures --prefix "$install_dir" --json --include-attestations \

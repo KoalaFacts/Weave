@@ -97,3 +97,12 @@ jobs:
         run: sha256sum --check release.tgz.sha256
       - name: Publish with npm trusted publishing
         run: npm publish ./release/release.tgz --access public
+
+  verify-published:
+    needs: publish
+    permissions:
+      contents: read
+    uses: ./.github/workflows/verify-published-npm-plugin-echo.yml
+    with:
+      version: ${{ inputs.version }}
+      release_sha: ${{ github.sha }}
