@@ -1,12 +1,12 @@
 using System.Net;
 using System.Net.Http.Json;
 using System.Text.Json;
-using Microsoft.AspNetCore.WebUtilities;
 using Microsoft.AspNetCore.Builder;
 using Microsoft.AspNetCore.Hosting;
 using Microsoft.AspNetCore.Hosting.Server;
 using Microsoft.AspNetCore.Hosting.Server.Features;
 using Microsoft.AspNetCore.Mvc.Testing;
+using Microsoft.AspNetCore.WebUtilities;
 using Microsoft.Extensions.Configuration;
 using Microsoft.Extensions.DependencyInjection;
 using Microsoft.Extensions.Options;
@@ -186,10 +186,10 @@ public sealed class McpWorkspacePluginFlowTests
                 (await workspace.GetStateAsync()).McpToolInstallations.Single().DesiredEnabled.ShouldBeFalse();
                 using var enable = await SendPluginAsync(client, second.Services, HttpMethod.Post,
                     "/api/plugins", firstId, "plugin:mcp_tools:enable", new
-                {
-                    Name = $"{firstId}/ECHO_SERVER",
-                    Type = "mcp_tools"
-                });
+                    {
+                        Name = $"{firstId}/ECHO_SERVER",
+                        Type = "mcp_tools"
+                    });
                 enable.StatusCode.ShouldBe(HttpStatusCode.Created);
                 await InvokeAsync(second.Services, firstId, "first");
                 using var disableAgain = await SendPluginAsync(client, second.Services, HttpMethod.Delete,
@@ -452,42 +452,42 @@ public sealed class McpWorkspacePluginFlowTests
         WebEncoders.Base64UrlEncode(JsonSerializer.SerializeToUtf8Bytes(token, JsonOptions));
 
     private static WorkspaceManifest CreateManifest(string endpoint) => new()
+    {
+        Version = "1.0",
+        Name = $"mcp-tool-{Guid.NewGuid():N}",
+        Plugins = new Dictionary<string, PluginDefinition>
         {
-            Version = "1.0",
-            Name = $"mcp-tool-{Guid.NewGuid():N}",
-            Plugins = new Dictionary<string, PluginDefinition>
+            ["echo_server"] = new()
             {
-                ["echo_server"] = new()
+                Type = "mcp_tools",
+                Config = new Dictionary<string, string>
                 {
-                    Type = "mcp_tools",
-                    Config = new Dictionary<string, string>
-                    {
-                        ["server_name"] = "weave-plugin-echo",
-                        ["server_version"] = EchoServerVersion,
-                        ["operation"] = "echo"
-                    }
-                }
-            },
-            Tools = new Dictionary<string, ToolDefinition>
-            {
-                ["echo"] = new()
-                {
-                    Type = "mcp",
-                    RequiresPlugin = "echo_server",
-                    Mcp = new McpConfig { Url = endpoint, AllowPrivateEndpoints = true }
-                }
-            },
-            Agents = new Dictionary<string, AgentDefinition>
-            {
-                ["observer"] = new() { Model = "test", Tools = ["echo"] },
-                ["caller"] = new()
-                {
-                    Model = "test",
-                    Tools = ["echo"],
-                    Capabilities = ["tool:echo:invoke:echo"]
+                    ["server_name"] = "weave-plugin-echo",
+                    ["server_version"] = EchoServerVersion,
+                    ["operation"] = "echo"
                 }
             }
-        };
+        },
+        Tools = new Dictionary<string, ToolDefinition>
+        {
+            ["echo"] = new()
+            {
+                Type = "mcp",
+                RequiresPlugin = "echo_server",
+                Mcp = new McpConfig { Url = endpoint, AllowPrivateEndpoints = true }
+            }
+        },
+        Agents = new Dictionary<string, AgentDefinition>
+        {
+            ["observer"] = new() { Model = "test", Tools = ["echo"] },
+            ["caller"] = new()
+            {
+                Model = "test",
+                Tools = ["echo"],
+                Capabilities = ["tool:echo:invoke:echo"]
+            }
+        }
+    };
 
     private sealed class DurableSiloFactory(string directory, bool requireApproval = false) : WebApplicationFactory<Program>
     {
