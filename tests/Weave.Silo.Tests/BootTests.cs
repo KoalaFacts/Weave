@@ -1,4 +1,6 @@
 using System.Net;
+using Microsoft.Extensions.DependencyInjection;
+using Microsoft.Extensions.Logging;
 
 namespace Weave.Silo.Tests;
 
@@ -22,5 +24,15 @@ public sealed class BootTests : IClassFixture<SiloFactory>
         using var response = await client.GetAsync("/health", TestContext.Current.CancellationToken);
 
         response.StatusCode.ShouldBe(HttpStatusCode.OK);
+    }
+
+    [Fact]
+    public void Start_TestHost_UsesConsoleWithoutWindowsEventLog()
+    {
+        using var client = _factory.CreateClient();
+        var providers = _factory.Services.GetServices<ILoggerProvider>().ToArray();
+
+        providers.ShouldContain(provider => provider.GetType().Name == "ConsoleLoggerProvider");
+        providers.ShouldNotContain(provider => provider.GetType().Name == "EventLogLoggerProvider");
     }
 }

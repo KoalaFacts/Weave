@@ -1,6 +1,7 @@
 using Microsoft.AspNetCore.Hosting;
 using Microsoft.AspNetCore.Mvc.Testing;
 using Microsoft.Extensions.Configuration;
+using Microsoft.Extensions.Logging;
 
 namespace Weave.Silo.Tests;
 
@@ -27,6 +28,13 @@ public sealed class SiloFactory : WebApplicationFactory<Program>
             {
                 ["ASPNETCORE_ENVIRONMENT"] = "Development"
             }));
+
+        // Keep Windows EventLog disposal from racing Orleans background logging.
+        builder.ConfigureLogging(logging =>
+        {
+            logging.ClearProviders();
+            logging.AddConsole();
+        });
     }
 
     public override async ValueTask DisposeAsync()
