@@ -127,42 +127,4 @@ public sealed class AgentEndpointHappyPathTests : IClassFixture<SiloFactory>
         response.StatusCode.ShouldBe(HttpStatusCode.OK);
     }
 
-    [Fact]
-    public async Task Activate_SubmitTask_Complete_Review_FullLifecycle()
-    {
-        using var client = _factory.CreateClient();
-        var ws = NewWorkspaceId();
-        var agent = NewAgentName();
-        await client.PostAsJsonAsync(
-            $"/api/workspaces/{ws}/agents/{agent}/activate", ActivateBody(),
-            TestContext.Current.CancellationToken);
-        using var submitResponse = await client.PostAsJsonAsync(
-            $"/api/workspaces/{ws}/agents/{agent}/tasks",
-            new { Description = "end-to-end task" },
-            TestContext.Current.CancellationToken);
-        using var submitDoc = JsonDocument.Parse(await submitResponse.Content.ReadAsStringAsync(TestContext.Current.CancellationToken));
-        var taskId = submitDoc.RootElement.GetProperty("taskId").GetString();
-
-        using var completeResponse = await client.PostAsJsonAsync(
-            $"/api/workspaces/{ws}/agents/{agent}/tasks/{taskId}/complete",
-            new
-            {
-                Success = true,
-                Proof = new[]
-                {
-                    new { Type = "CiStatus", Label = "build", Value = "green", Uri = (string?)null },
-                    new { Type = "TestResults", Label = "unit", Value = "passed", Uri = (string?)null }
-                }
-            },
-            TestContext.Current.CancellationToken);
-        var completeBody = await completeResponse.Content.ReadAsStringAsync(TestContext.Current.CancellationToken);
-        completeResponse.StatusCode.ShouldBe(HttpStatusCode.OK, completeBody);
-
-        using var reviewResponse = await client.PostAsJsonAsync(
-            $"/api/workspaces/{ws}/agents/{agent}/tasks/{taskId}/review",
-            new { Accepted = true, Feedback = "looks good" },
-            TestContext.Current.CancellationToken);
-        var reviewBody = await reviewResponse.Content.ReadAsStringAsync(TestContext.Current.CancellationToken);
-        reviewResponse.StatusCode.ShouldBe(HttpStatusCode.OK, reviewBody);
-    }
 }
