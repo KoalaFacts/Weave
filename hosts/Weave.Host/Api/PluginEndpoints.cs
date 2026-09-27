@@ -33,6 +33,7 @@ public static class PluginEndpoints
         group.MapDelete("/{**name}", DisconnectPluginAsync)
             .WithDescription("Disconnect a plugin by name.")
             .Produces(204)
+            .ProducesProblem(409)
             .ProducesProblem(404);
 
         return group;
@@ -141,7 +142,7 @@ public static class PluginEndpoints
                 definition = definition with { Config = expected };
             }
 
-            var registrationName = installedMcp?.Installation.Id ?? request.Name;
+            var registrationName = installedMcp?.Installation.Id ?? installed?.Installation.Id ?? request.Name;
             using var source = PluginTokenFactory.MintInvoke(tokenService, registrationName, ct);
             var status = await registry.ConnectAsync(registrationName, definition, source.Token);
             if (!status.IsConnected)
@@ -189,7 +190,7 @@ public static class PluginEndpoints
         }
     }
 
-    private static async Task<IResult> DisconnectPluginAsync(
+    internal static async Task<IResult> DisconnectPluginAsync(
         string name,
         IPluginRegistry registry,
         ICapabilityTokenService tokenService,
@@ -199,7 +200,15 @@ public static class PluginEndpoints
         IMcpInstallationDispatchGate mcpDispatchGate,
         CancellationToken ct)
     {
-        var installed = await FindDaprInstallationAsync(name, actors);
+        (IWorkspaceActor Workspace, DaprToolInstallation Installation)? installed;
+        try
+        {
+            installed = await FindDaprInstallationAsync(name, actors);
+        }
+        catch (AmbiguousDaprInstallationException ex)
+        {
+            return ResultExtensions.Conflict(ex.Message);
+        }
         var installedMcp = await FindMcpInstallationAsync(name, actors);
         var disableGrants = new List<string>();
         if (installedMcp is not null)
@@ -213,7 +222,7 @@ public static class PluginEndpoints
             if (denial is not null)
                 return denial;
         }
-        var registrationName = installedMcp?.Installation.Id ?? name;
+        var registrationName = installedMcp?.Installation.Id ?? installed?.Installation.Id ?? name;
         if (installedMcp is not null)
             mcpDispatchGate.BeginDisable(registrationName);
         if (installed is not null)
@@ -240,12 +249,17 @@ public static class PluginEndpoints
         var slash = name.IndexOf('/', StringComparison.Ordinal);
         if (slash <= 0 || slash == name.Length - 1)
             return null;
-        var workspace = actors.GetActor<IWorkspaceActor>(VirtualActorId.From(name[..slash]));
+        var workspace = actors.GetActor<IWorkspaceActor>(VirtualActorId.From(name[..slash].ToLowerInvariant()));
         var state = await workspace.GetStateAsync();
-        var installation = state.DaprToolInstallations.SingleOrDefault(item =>
-            string.Equals(item.Id, name, StringComparison.Ordinal));
-        return installation is null ? null : (workspace, installation);
+        var matches = state.DaprToolInstallations.Where(item =>
+            string.Equals(item.Id, name, StringComparison.OrdinalIgnoreCase)).Take(2).ToArray();
+        if (matches.Length > 1)
+            throw new AmbiguousDaprInstallationException();
+        return matches.Length == 0 ? null : (workspace, matches[0]);
     }
+
+    private sealed class AmbiguousDaprInstallationException() : InvalidOperationException(
+        "Dapr installation identity is ambiguous; review the stored records before managing it.");
 
     private static async Task<(IWorkspaceActor Workspace, McpToolInstallation Installation)?> FindMcpInstallationAsync(
         string name, IVirtualActorProvider actors)

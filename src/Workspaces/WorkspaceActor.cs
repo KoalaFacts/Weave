@@ -38,6 +38,15 @@ public sealed partial class WorkspaceActor(
         if (dependencyErrors.Count > 0)
             throw new InvalidOperationException(string.Join(" ", dependencyErrors));
 
+        if (persistentState.State.DaprToolInstallations
+            .GroupBy(static item => item.Id, StringComparer.OrdinalIgnoreCase)
+            .Any(static group => group.Skip(1).Any())
+            || persistentState.State.DaprToolInstallations
+                .GroupBy(static item => item.PluginName, StringComparer.OrdinalIgnoreCase)
+                .Any(static group => group.Skip(1).Any()))
+            throw new InvalidOperationException(
+                "Dapr installation identity is ambiguous; review the stored records before restarting.");
+
         foreach (var tool in manifest.Tools.Values.Where(static item => item.RequiresPlugin is not null))
         {
             var pluginName = tool.RequiresPlugin!;
@@ -65,6 +74,27 @@ public sealed partial class WorkspaceActor(
             if (existing is not null && !string.Equals(existing.ConfigDigest, digest, StringComparison.Ordinal))
                 throw new InvalidOperationException(
                     $"MCP installation '{tool.RequiresPlugin}' changed; use a new plugin name for the new revision.");
+        }
+
+        var daprPluginNames = manifest.Tools.Values.Where(static item =>
+            string.Equals(item.Type, "dapr", StringComparison.OrdinalIgnoreCase) && item.RequiresPlugin is not null)
+            .Select(static item => item.RequiresPlugin!).Distinct(StringComparer.Ordinal).ToList();
+        if (daprPluginNames.GroupBy(static name => name, StringComparer.OrdinalIgnoreCase)
+            .Any(static group => group.Skip(1).Any()))
+            throw new InvalidOperationException("Dapr plugin names differ only in case within this manifest.");
+        foreach (var pluginName in daprPluginNames)
+        {
+            var existing = persistentState.State.DaprToolInstallations.SingleOrDefault(item =>
+                string.Equals(item.PluginName, pluginName, StringComparison.OrdinalIgnoreCase));
+            if (existing is not null && !string.Equals(existing.PluginName, pluginName, StringComparison.Ordinal))
+                throw new InvalidOperationException(
+                    $"Dapr installation '{pluginName}' differs in case from the installed name '{existing.PluginName}'.");
+            var port = int.Parse(manifest.Plugins[pluginName].Config["port"],
+                System.Globalization.CultureInfo.InvariantCulture);
+            if (existing is not null && !string.Equals(existing.ConfigDigest,
+                DaprToolInstallation.ComputeConfigDigest(port), StringComparison.Ordinal))
+                throw new InvalidOperationException(
+                    $"Dapr installation '{pluginName}' changed; use a new plugin name for the new revision.");
         }
 
         if (persistentState.State.Status is WorkspaceStatus.Running)
@@ -110,7 +140,7 @@ public sealed partial class WorkspaceActor(
                 var port = int.Parse(manifest.Plugins[pluginName].Config["port"], System.Globalization.CultureInfo.InvariantCulture);
                 var id = $"{persistentState.State.WorkspaceId}/{pluginName}";
                 var installation = persistentState.State.DaprToolInstallations
-                    .SingleOrDefault(item => string.Equals(item.Id, id, StringComparison.Ordinal));
+                    .SingleOrDefault(item => string.Equals(item.Id, id, StringComparison.OrdinalIgnoreCase));
                 if (installation is null)
                 {
                     installation = new DaprToolInstallation { Id = id, PluginName = pluginName };
