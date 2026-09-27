@@ -23,7 +23,7 @@ using Weave.Workspaces.Manifest;
 
 namespace Weave.Silo.Tests.Plugins;
 
-public sealed class McpWorkspacePluginFlowTests
+public sealed partial class McpWorkspacePluginFlowTests
 {
     private const string EchoServerVersion = "0.1.1";
     private static readonly JsonSerializerOptions JsonOptions = new(JsonSerializerDefaults.Web);

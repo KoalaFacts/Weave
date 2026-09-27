@@ -187,7 +187,7 @@ public sealed class WorkspaceActorTests
     }
 
     [Fact]
-    public async Task OnActivatedAsync_WithKey_SetsWorkspaceId()
+    public async Task OnActivatedAsync_UnknownWorkspace_DoesNotPersistOrAssignIdentity()
     {
         var state = new WorkspaceState(); // WorkspaceId.IsEmpty == true
         var persistentState = CreatePersistentState(state);
@@ -199,8 +199,29 @@ public sealed class WorkspaceActorTests
         var actor = new WorkspaceActor(runtime, lifecycle, eventBus, TimeProvider.System, logger, persistentState);
         await actor.OnActivatedAsync("my-workspace", TestContext.Current.CancellationToken);
 
-        state.WorkspaceId.ShouldBe(WorkspaceId.From("my-workspace"));
-        await persistentState.Received(1).WriteStateAsync(Arg.Any<CancellationToken>());
+        state.WorkspaceId.IsEmpty.ShouldBeTrue();
+        await persistentState.DidNotReceive().WriteStateAsync(Arg.Any<CancellationToken>());
+    }
+
+    [Fact]
+    public async Task StartAsync_AfterUnknownActivation_PersistsWorkspaceIdentity()
+    {
+        var state = new WorkspaceState();
+        var persistentState = CreatePersistentState(state);
+        var runtime = Substitute.For<IWorkspaceRuntime>();
+        runtime.ProvisionAsync(Arg.Any<WorkspaceManifest>(), Arg.Any<CancellationToken>())
+            .Returns(new WorkspaceEnvironment(WorkspaceId.From("new-workspace"), NetworkId.From("net-1"), []));
+        var actor = new WorkspaceActor(runtime, Substitute.For<ILifecycleManager>(),
+            Substitute.For<IEventBus>(), TimeProvider.System, Substitute.For<ILogger<WorkspaceActor>>(),
+            persistentState);
+        await actor.OnActivatedAsync("new-workspace", TestContext.Current.CancellationToken);
+
+        await actor.StartAsync(new WorkspaceManifest { Name = "new-workspace", Version = "1.0" });
+
+        state.WorkspaceId.ShouldBe(WorkspaceId.From("new-workspace"));
+#pragma warning disable xUnit1051 // NSubstitute verification matches the actor's parameterless write overload
+        await persistentState.Received(1).WriteStateAsync();
+#pragma warning restore xUnit1051
     }
 
     [Fact]

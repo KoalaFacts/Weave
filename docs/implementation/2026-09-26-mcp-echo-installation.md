@@ -18,6 +18,9 @@ installations after a Host restart; invalid or changed contracts stay
 inactive. Two workspaces using the same plugin name route through distinct
 installation IDs.
 
+The later [workspace installation inventory](2026-09-28-workspace-installation-inventory.md)
+provides an authorized read of those records after stop and restart.
+
 Only an explicit `tool:<toolName>:invoke:<operation>` Agent capability grants
 invocation. Discovery for the installed connector exposes only the declared
 operation. Before each call the connector makes a fresh initialize/tools-list

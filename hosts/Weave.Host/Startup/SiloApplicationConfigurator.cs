@@ -88,6 +88,7 @@ internal sealed class SiloApplicationConfigurator
         _app.MapAgentEndpoints();
         _app.MapToolEndpoints();
         _app.MapPluginEndpoints();
+        _app.MapPluginInstallationEndpoints();
         _app.MapSkillEndpoints();
         _app.MapChannelEndpoints();
         _app.MapUserEndpoints();

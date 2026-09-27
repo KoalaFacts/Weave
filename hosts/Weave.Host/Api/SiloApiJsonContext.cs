@@ -35,6 +35,7 @@ namespace Weave.Silo.Api;
 [JsonSerializable(typeof(ConnectPluginResponse))]
 [JsonSerializable(typeof(PluginStatus))]
 [JsonSerializable(typeof(PluginCompositionEntry))]
+[JsonSerializable(typeof(List<PluginInstallationResponse>))]
 [JsonSerializable(typeof(IEnumerable<WorkspaceResponse>))]
 [JsonSerializable(typeof(IEnumerable<AgentResponse>))]
 [JsonSerializable(typeof(IEnumerable<TaskResponse>))]

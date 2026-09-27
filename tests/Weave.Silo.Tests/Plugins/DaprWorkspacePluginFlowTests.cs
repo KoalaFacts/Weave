@@ -27,7 +27,7 @@ using Weave.Workspaces.Manifest;
 
 namespace Weave.Silo.Tests.Plugins;
 
-public sealed class DaprWorkspacePluginFlowTests : IClassFixture<SiloFactory>
+public sealed partial class DaprWorkspacePluginFlowTests : IClassFixture<SiloFactory>
 {
     private static readonly JsonSerializerOptions JsonOptions = new(JsonSerializerDefaults.Web);
     private readonly SiloFactory _factory;
