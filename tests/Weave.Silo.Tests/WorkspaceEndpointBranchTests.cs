@@ -15,19 +15,15 @@ public sealed class WorkspaceEndpointBranchTests : IClassFixture<SiloFactory>
     public WorkspaceEndpointBranchTests(SiloFactory factory) => _factory = factory;
 
     [Fact]
-    public async Task GetState_UnknownId_DoesNot500()
+    public async Task GetState_UnknownId_ReturnsNotFound()
     {
-        // WorkspaceActor auto-activates on any access, so unknown IDs won't
-        // return 404 today. Document current behavior: endpoint must at least
-        // not crash — a future fix (status/started-at check) should flip this
-        // to explicit 404.
         using var client = _factory.CreateClient();
 
         using var response = await client.GetAsync(
             $"/api/workspaces/ws_nonexistent_{Guid.NewGuid():N}",
             TestContext.Current.CancellationToken);
 
-        ((int)response.StatusCode).ShouldBeLessThan(500);
+        response.StatusCode.ShouldBe(HttpStatusCode.NotFound);
     }
 
     [Fact]

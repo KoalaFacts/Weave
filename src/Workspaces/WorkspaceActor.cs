@@ -24,11 +24,6 @@ public sealed partial class WorkspaceActor(
     {
         _key = key;
         await persistentState.ReadStateAsync(cancellationToken);
-        if (persistentState.State.WorkspaceId.IsEmpty && !string.IsNullOrWhiteSpace(key))
-        {
-            persistentState.State.WorkspaceId = WorkspaceId.From(key!);
-            await persistentState.WriteStateAsync(cancellationToken);
-        }
     }
 
     public async Task<WorkspaceState> StartAsync(WorkspaceManifest manifest)
@@ -100,6 +95,12 @@ public sealed partial class WorkspaceActor(
         if (persistentState.State.Status is WorkspaceStatus.Running)
             return persistentState.State;
 
+        if (persistentState.State.WorkspaceId.IsEmpty)
+        {
+            if (string.IsNullOrWhiteSpace(_key))
+                throw new InvalidOperationException("A workspace key is required to start a new workspace.");
+            persistentState.State.WorkspaceId = WorkspaceId.From(_key);
+        }
         persistentState.State.Status = WorkspaceStatus.Starting;
 
         var context = new LifecycleContext
