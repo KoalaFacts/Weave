@@ -50,7 +50,7 @@ public sealed class GetSystemInfoAction
         {
             using var cts = CancellationTokenSource.CreateLinkedTokenSource(cancellationToken);
             cts.CancelAfter(ProbeTimeout);
-            var response = await _httpClient.GetAsync("/health", cts.Token);
+            using var response = await _httpClient.GetAsync("/health", cts.Token);
             return response.IsSuccessStatusCode;
         }
         catch (Exception ex) when (ex is HttpRequestException
