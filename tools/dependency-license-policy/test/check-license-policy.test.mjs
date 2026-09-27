@@ -45,6 +45,23 @@ test('inspectPolicy_UnknownOrMissingLicense_Unavailable', () => {
   }
 });
 
+test('inspectPolicy_PinnedSetupNodeWithVerifiedLicense_Available', () => {
+  const pin = '249970729cb0ef3589644e2896645e5dc5ba9c38';
+  const pinned = {
+    ...change(null),
+    ecosystem: 'actions',
+    name: 'actions/setup-node',
+    version: pin,
+    package_url: `pkg:githubactions/actions/setup-node@${pin}`,
+  };
+  assert.equal(inspect([pinned]).status, 'available');
+  assert.equal(inspect([{ ...pinned, version: 'different' }]).status, 'unavailable');
+  assert.equal(inspect([{ ...pinned, package_url: `pkg:githubactions/other/setup-node@${pin}` }]).status,
+    'unavailable');
+  assert.equal(inspect([{ ...pinned, ecosystem: 'npm' }]).status, 'unavailable');
+  assert.equal(inspect([{ ...pinned, license: 'GPL-3.0' }]).status, 'blocked');
+});
+
 test('inspectPolicy_IncompleteComparison_Unavailable', () => {
   const added = [change('MIT')];
   assert.equal(inspectPolicy(JSON.stringify(added), '').status, 'unavailable');

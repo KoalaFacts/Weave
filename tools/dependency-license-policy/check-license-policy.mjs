@@ -6,6 +6,15 @@ import parseSpdx from 'spdx-expression-parse';
 const MAX_BYTES = 2 * 1024 * 1024;
 const MAX_CHANGES = 2000;
 const DENIED = ['GPL-2.0', 'GPL-3.0', 'AGPL-3.0'];
+// GitHub's dependency graph omits the license for this action. The MIT license
+// was checked at the pinned source commit: https://github.com/actions/setup-node/blob/249970729cb0ef3589644e2896645e5dc5ba9c38/LICENSE
+const VERIFIED_ACTION_LICENSES = new Map([
+  ['pkg:githubactions/actions/setup-node@249970729cb0ef3589644e2896645e5dc5ba9c38', {
+    name: 'actions/setup-node',
+    version: '249970729cb0ef3589644e2896645e5dc5ba9c38',
+    license: 'MIT',
+  }],
+]);
 
 const unavailable = failure_code => ({ status: 'unavailable', failure_code });
 
@@ -45,7 +54,13 @@ export function inspectPolicy(changesPayload, evidencePayload) {
         return unavailable('invalid-license-evidence');
       }
       added++;
-      const license = change.license;
+      const verifiedAction = change.ecosystem === 'actions'
+        ? VERIFIED_ACTION_LICENSES.get(change.package_url)
+        : undefined;
+      const license = change.license === null &&
+        verifiedAction?.name === change.name && verifiedAction.version === change.version
+        ? verifiedAction.license
+        : change.license;
       if (typeof license !== 'string' || !license || license.length > 4096 ||
           license === 'NOASSERTION') {
         unknown++;

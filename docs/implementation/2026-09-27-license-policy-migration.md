@@ -15,9 +15,12 @@ the same `@onebeyond/spdx-license-satisfies` evaluator used by the
 [pinned action](https://github.com/actions/dependency-review-action/blob/a1d282b36b6f3519aa1f3fc636f609c47dddb294/src/spdx.ts).
 It rejects GPL-2.0, GPL-3.0, and AGPL-3.0 according to that evaluator. It also
 rejects invalid, empty, and `NOASSERTION` licenses. A raw null license fails
-closed, including when the action could otherwise look up a repository license;
-this is a deliberate stricter outcome because the action's change output does
-not include the looked-up license needed to verify the deny decision.
+closed unless the exact dependency version has a reviewed license attestation.
+GitHub's comparison reports a null license for the pinned `actions/setup-node`
+version in this workflow. Its [MIT license at that commit](https://github.com/actions/setup-node/blob/249970729cb0ef3589644e2896645e5dc5ba9c38/LICENSE)
+is recorded in the policy by exact package URL, name, version, and ecosystem.
+Other unknown versions still fail closed. A non-null license from the action
+always takes precedence over the attestation.
 
 The policy check requires the number of action changes to equal the already
 checked GitHub dependency-comparison count. Missing, truncated, malformed, or
