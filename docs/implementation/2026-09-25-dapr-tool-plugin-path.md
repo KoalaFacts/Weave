@@ -87,7 +87,10 @@ deployment.
   both Dapr and MCP installations requires both disable grants to stop.
   Missing, expired, or revoked tokens return 401; insufficient grants or a
   different workspace return 403. The CLI workspace start and stop commands
-  accept `--capability-file` for these requests.
+  accept `--capability-file` for these requests. Management routes resolve
+  case-varied installation names to the stored ID before authorization and
+  dispatch; changing the submitted casing cannot select another plugin type
+  or bypass persisted disable intent.
 - Plugin connection still requires the Host's existing
   `plugin:invoke:<workspace-id>/<plugin-name>` grant. The workspace startup
   command mints this narrow internal token after the administrative check.
