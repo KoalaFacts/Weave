@@ -2,6 +2,8 @@ using Weave.Actions.Context;
 using Weave.Actions.Workspace;
 using Weave.Cli.Commands;
 using Weave.Cli.Shell;
+using Weave.Cli.Tui;
+using Weave.Cli.Tui.Verbs;
 
 namespace Weave.Cli.Tests;
 
@@ -134,6 +136,27 @@ public class WorkspaceDownCliCommandTests
     }
 
     [Fact]
+    public async Task DispatchAsync_TuiDownWithCapabilityFile_ForwardsTokenToStopAction()
+    {
+        var dependencies = new TestWorkspaceDownDependencies
+        {
+            ManifestPath = "workspace.json",
+            CapabilityText = "  encoded-token  "
+        };
+        var session = new TuiSession(new FixedManifestResolver());
+        session.TryOpen("demo", out _).ShouldBeTrue();
+        session.MarkRunning("workspace-123");
+        var verb = new DownVerb(new WorkspaceDownCliCommand(dependencies, Prompt));
+
+        await verb.DispatchAsync(new TuiVerbContext(session, "capability.txt", () => { }),
+            TestContext.Current.CancellationToken);
+
+        dependencies.StoppedCapability.ShouldBe("encoded-token");
+        dependencies.StoppedWorkspaceId.ShouldBe("workspace-123");
+        session.IsRunning.ShouldBeFalse();
+    }
+
+    [Fact]
     public async Task ExecuteAsync_StopActionFails_ReturnsFailureAndLeavesStateFileIntact()
     {
         var dependencies = new TestWorkspaceDownDependencies
@@ -203,6 +226,11 @@ public class WorkspaceDownCliCommandTests
     private sealed class NullManifestResolver : IManifestResolver
     {
         public string? Resolve(string? workspace) => null;
+    }
+
+    private sealed class FixedManifestResolver : IManifestResolver
+    {
+        public string? Resolve(string? workspace) => "workspace.json";
     }
 
     private sealed class TestWorkspaceDownDependencies : IWorkspaceDownDependencies

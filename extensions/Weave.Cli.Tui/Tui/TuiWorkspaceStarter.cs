@@ -48,6 +48,25 @@ internal sealed class TuiWorkspaceStarter(
             return;
         }
 
+        string? capability = null;
+        if (context.Args is { } capabilityFile)
+        {
+            try
+            {
+                capability = (await File.ReadAllTextAsync(capabilityFile, ct)).Trim();
+            }
+            catch (Exception ex) when (ex is IOException or UnauthorizedAccessException or ArgumentException)
+            {
+                CliTheme.WriteError($"Could not read capability file: {ex.Message}");
+                return;
+            }
+            if (!WorkspaceCapabilityHttp.IsEncodedToken(capability))
+            {
+                CliTheme.WriteError("The capability file must contain one encoded token.");
+                return;
+            }
+        }
+
         ActionResult<StartWorkspaceResult> startResult = default;
         SiloAutoStartResult? siloFailure = null;
 
@@ -79,7 +98,7 @@ internal sealed class TuiWorkspaceStarter(
                     ctx.Status($"Silo ready — starting '{manifest.Name}'…");
                 }
 
-                startResult = await startAction.ExecuteAsync(new StartWorkspaceInput(manifest), ct);
+                startResult = await startAction.ExecuteAsync(new StartWorkspaceInput(manifest, capability), ct);
 
                 if (startResult.IsSuccess)
                 {

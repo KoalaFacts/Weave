@@ -75,6 +75,23 @@ public sealed class GetSystemInfoActionTests
     }
 
     [Fact]
+    public async Task ExecuteAsync_HealthResponse_DisposesResponse()
+    {
+        var configSource = Substitute.For<ISystemConfigSource>();
+        configSource.Load().Returns(NewSnapshot());
+        using var response = new TrackingResponse(HttpStatusCode.OK);
+        using var client = new HttpClient(new SingleResponseHandler(response))
+        {
+            BaseAddress = new Uri("http://example.test")
+        };
+        var action = new GetSystemInfoAction(configSource, client);
+
+        await action.ExecuteAsync(new GetSystemInfoInput(), TestContext.Current.CancellationToken);
+
+        response.WasDisposed.ShouldBeTrue();
+    }
+
+    [Fact]
     public async Task ExecuteAsync_NullInput_Throws()
     {
         using var client = HttpClientReturning(HttpStatusCode.OK);
@@ -99,6 +116,23 @@ public sealed class GetSystemInfoActionTests
         AuthMode = "none",
         RequireHttps = false,
         SiloPath = null,
-        WeaveHome = "/home/user/.weave"
+        WeaveHome = "weave-home"
     };
+
+    private sealed class SingleResponseHandler(HttpResponseMessage response) : HttpMessageHandler
+    {
+        protected override Task<HttpResponseMessage> SendAsync(
+            HttpRequestMessage request, CancellationToken cancellationToken) => Task.FromResult(response);
+    }
+
+    private sealed class TrackingResponse(HttpStatusCode statusCode) : HttpResponseMessage(statusCode)
+    {
+        public bool WasDisposed { get; private set; }
+
+        protected override void Dispose(bool disposing)
+        {
+            WasDisposed = true;
+            base.Dispose(disposing);
+        }
+    }
 }
