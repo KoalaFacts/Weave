@@ -1,6 +1,11 @@
+using System.Collections.Concurrent;
 using System.Net;
 using System.Net.Http.Json;
 using System.Text.Json;
+using Microsoft.AspNetCore.TestHost;
+using Microsoft.Extensions.DependencyInjection;
+using Microsoft.Extensions.DependencyInjection.Extensions;
+using Weave.Agents.Verification;
 
 namespace Weave.Silo.Tests;
 
@@ -128,9 +133,17 @@ public sealed class AgentEndpointHappyPathTests : IClassFixture<SiloFactory>
     }
 
     [Fact]
-    public async Task Activate_SubmitTask_Complete_Review_FullLifecycle()
+    public async Task ReviewTask_AutomaticVerificationPaused_AcceptsTask()
     {
-        using var client = _factory.CreateClient();
+        await using var parent = new SiloFactory();
+        var pausedVerification = new PausedVerificationDispatcher();
+        await using var host = parent.WithWebHostBuilder(builder =>
+            builder.ConfigureTestServices(services =>
+            {
+                services.RemoveAll<IAgentVerificationDispatcher>();
+                services.AddSingleton<IAgentVerificationDispatcher>(pausedVerification);
+            }));
+        using var client = host.CreateClient();
         var ws = NewWorkspaceId();
         var agent = NewAgentName();
         await client.PostAsJsonAsync(
@@ -157,6 +170,9 @@ public sealed class AgentEndpointHappyPathTests : IClassFixture<SiloFactory>
             TestContext.Current.CancellationToken);
         var completeBody = await completeResponse.Content.ReadAsStringAsync(TestContext.Current.CancellationToken);
         completeResponse.StatusCode.ShouldBe(HttpStatusCode.OK, completeBody);
+        using var completeDoc = JsonDocument.Parse(completeBody);
+        completeDoc.RootElement.GetProperty("status").GetString().ShouldBe("AwaitingReview");
+        pausedVerification.Pending.ShouldContain(request => request.TaskId.ToString() == taskId);
 
         using var reviewResponse = await client.PostAsJsonAsync(
             $"/api/workspaces/{ws}/agents/{agent}/tasks/{taskId}/review",
@@ -164,5 +180,21 @@ public sealed class AgentEndpointHappyPathTests : IClassFixture<SiloFactory>
             TestContext.Current.CancellationToken);
         var reviewBody = await reviewResponse.Content.ReadAsStringAsync(TestContext.Current.CancellationToken);
         reviewResponse.StatusCode.ShouldBe(HttpStatusCode.OK, reviewBody);
+        using var reviewDoc = JsonDocument.Parse(reviewBody);
+        reviewDoc.RootElement.GetProperty("status").GetString().ShouldBe("Accepted");
+        reviewDoc.RootElement.GetProperty("proof").GetProperty("reviewFeedback")
+            .GetString().ShouldBe("looks good");
+    }
+
+    private sealed class PausedVerificationDispatcher : IAgentVerificationDispatcher
+    {
+        public ConcurrentQueue<AgentVerificationRequest> Pending { get; } = new();
+
+        public ValueTask EnqueueAsync(AgentVerificationRequest request, CancellationToken ct)
+        {
+            ct.ThrowIfCancellationRequested();
+            Pending.Enqueue(request);
+            return ValueTask.CompletedTask;
+        }
     }
 }
