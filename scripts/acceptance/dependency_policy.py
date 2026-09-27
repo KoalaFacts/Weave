@@ -106,15 +106,15 @@ def run_case(action, node, name, changes, warning, expected_blocked):
         thread.start()
         try:
             # Allowlist: no inherited CI credentials, artifact tokens, proxies or Node hooks.
-            env = {key: os.environ[key] for key in ('PATH', 'SYSTEMROOT', 'LANG') if key in os.environ}
+            env = {key: os.environ[key] for key in ('PATH', 'SYSTEMROOT', 'SystemDrive', 'LANG')
+                   if key in os.environ}
             env.update({'HOME': str(directory), 'GITHUB_WORKSPACE': str(directory),
                         'GITHUB_EVENT_PATH': str(event), 'GITHUB_EVENT_NAME': 'pull_request',
                         'GITHUB_REPOSITORY': 'fixture/repo', 'GITHUB_OUTPUT': str(output),
                         'GITHUB_STEP_SUMMARY': str(summary), 'GITHUB_SERVER_URL': 'https://github.com',
                         'GITHUB_API_URL': f'http://127.0.0.1:{server.server_port}',
                         'INPUT_REPO-TOKEN': TOKEN, 'INPUT_BASE-REF': BASE, 'INPUT_HEAD-REF': HEAD,
-                        'INPUT_FAIL-ON-SEVERITY': 'high',
-                        'INPUT_DENY-LICENSES': 'GPL-2.0, GPL-3.0, AGPL-3.0',
+                        'INPUT_FAIL-ON-SEVERITY': 'high', 'INPUT_LICENSE-CHECK': 'true',
                         'INPUT_SHOW-OPENSSF-SCORECARD': 'false', 'INPUT_COMMENT-SUMMARY-IN-PR': 'never',
                         'INPUT_RETRY-ON-SNAPSHOT-WARNINGS': 'false'})
             result = subprocess.run([node, str(action / 'dist/index.js')], env=env,
@@ -125,27 +125,54 @@ def run_case(action, node, name, changes, warning, expected_blocked):
             evidence = importlib.util.module_from_spec(spec)
             spec.loader.exec_module(evidence)
             evidence_status = 'available'
+            comparison = None
             try:
-                evidence.inspect_comparison('fixture/repo', BASE, HEAD, TOKEN, LoopbackOpener(server.server_port))
+                comparison = evidence.inspect_comparison('fixture/repo', BASE, HEAD, TOKEN,
+                                                         LoopbackOpener(server.server_port))
             except evidence.EvidenceUnavailable as error:
                 evidence_status = error.code
             guard_exit = None
+            policy_exit = None
+            policy_report = None
             guard = ROOT / 'scripts/check_dependency_license_evidence.py'
             if guard.exists() and evidence_status == 'available':
                 guard_env = {**env, 'INVALID_LICENSE_CHANGES': action_output.get('invalid-license-changes', '')}
                 checked = subprocess.run([sys.executable, str(guard), '--report', str(directory / 'license.json')],
                                          env=guard_env, capture_output=True, timeout=10, check=False)
                 guard_exit = checked.returncode
-            blocked = result.returncode != 0 or evidence_status != 'available' or guard_exit not in (None, 0)
+                comparison_path = directory / 'comparison.json'
+                comparison_path.write_text(json.dumps({'status': 'available', **comparison}))
+                policy_path = directory / 'policy.json'
+                policy = ROOT / 'tools/dependency-license-policy/check-license-policy.mjs'
+                policy_env = {**env, 'DEPENDENCY_CHANGES': action_output.get('dependency-changes', '')}
+                checked = subprocess.run([node, str(policy), str(comparison_path), str(policy_path)],
+                                         env=policy_env, capture_output=True, timeout=10, check=False)
+                policy_exit = checked.returncode
+                if policy_path.exists():
+                    policy_report = json.loads(policy_path.read_text())
+            blocked = (result.returncode != 0 or evidence_status != 'available'
+                       or guard_exit not in (None, 0) or policy_exit not in (None, 0))
             assert server.calls, 'Action never reached the controlled API'
             assert not server.unexpected, f'Unexpected API calls: {server.unexpected}'
             assert 'invalid-license-changes' in action_output, result.stdout.decode(errors='replace')[-3000:]
+            assert 'dependency-changes' in action_output, result.stdout.decode(errors='replace')[-3000:]
             invalid = json.loads(action_output['invalid-license-changes'])
+            deprecation_warning = (b'deny-licenses' in result.stdout or
+                                   b'deny-licenses' in result.stderr or
+                                   'deny-licenses' in summary.read_text())
+            expected_policy = (None if evidence_status != 'available' else
+                               'blocked' if name.startswith('prohibited-') else
+                               'unavailable' if expected_blocked else 'available')
             record = {'case': name, 'action_exit': result.returncode, 'guard_exit': guard_exit,
+                      'policy_exit': policy_exit,
+                      'policy_status': policy_report['status'] if policy_report else None,
                       'evidence': evidence_status, 'blocked': blocked, 'expected_blocked': expected_blocked,
                       'invalid_counts': {key: len(value) for key, value in invalid.items()},
-                      'requests': len(server.calls)}
-            record['passed'] = blocked == expected_blocked
+                      'requests': len(server.calls), 'deprecation_warning': deprecation_warning}
+            record['passed'] = (blocked == expected_blocked and not deprecation_warning and
+                                record['policy_status'] == expected_policy and
+                                policy_exit == (None if expected_policy is None else
+                                                0 if expected_policy == 'available' else 1))
             return record
         finally:
             server.shutdown()
@@ -166,8 +193,10 @@ def main():
         raise SystemExit('The acceptance action must match the reviewed immutable pin.')
     cases = [
         ('permitted-license', [change('MIT')], False, False),
+        ('permitted-expression', [change('MIT OR Apache-2.0')], False, False),
         ('prohibited-gpl', [change('GPL-3.0')], False, True),
         ('prohibited-agpl', [change('AGPL-3.0')], False, True),
+        ('prohibited-expression', [change('MIT OR GPL-3.0')], False, True),
         ('invalid-spdx', [change('not-an-spdx-license')], False, True),
         ('missing-license', [change(None)], False, True),
         ('noassertion-license', [change('NOASSERTION')], False, True),

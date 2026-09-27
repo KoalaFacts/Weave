@@ -178,7 +178,6 @@ jobs:
     if: github.event_name == 'pull_request'
     permissions:
       contents: read
-      pull-requests: write
 
     steps:
       - name: Checkout
@@ -208,8 +207,8 @@ jobs:
         uses: actions/dependency-review-action@a1d282b36b6f3519aa1f3fc636f609c47dddb294 # v4
         with:
           fail-on-severity: high
-          deny-licenses: GPL-2.0, GPL-3.0, AGPL-3.0
-          comment-summary-in-pr: always
+          license-check: true
+          comment-summary-in-pr: never
 
       - name: Require complete license evidence
         if: ${{ !cancelled() && steps.dependency-policy.outcome != 'skipped' }}
@@ -217,11 +216,37 @@ jobs:
           INVALID_LICENSE_CHANGES: ${{ steps.dependency-policy.outputs['invalid-license-changes'] }}
         run: python3 scripts/check_dependency_license_evidence.py --report "$RUNNER_TEMP/dependency-license-evidence.json"
 
+      - name: Set up Node for license policy
+        if: ${{ !cancelled() && steps.dependency-policy.outcome != 'skipped' }}
+        uses: actions/setup-node@249970729cb0ef3589644e2896645e5dc5ba9c38 # v6
+        with:
+          node-version: '24'
+          package-manager-cache: false
+
+      - name: Install locked license policy dependencies
+        if: ${{ !cancelled() && steps.dependency-policy.outcome != 'skipped' }}
+        run: npm ci --prefix tools/dependency-license-policy --ignore-scripts --no-audit --no-fund
+
+      - name: Audit license policy dependencies
+        if: ${{ !cancelled() && steps.dependency-policy.outcome != 'skipped' }}
+        run: npm audit --prefix tools/dependency-license-policy --omit=dev --audit-level=high
+
+      - name: Require allowed dependency licenses
+        if: ${{ !cancelled() && steps.dependency-policy.outcome != 'skipped' }}
+        env:
+          DEPENDENCY_CHANGES: ${{ steps.dependency-policy.outputs['dependency-changes'] }}
+        run: >-
+          node tools/dependency-license-policy/check-license-policy.mjs
+          "$RUNNER_TEMP/dependency-review-evidence.json"
+          "$RUNNER_TEMP/dependency-license-policy.json"
+
       - name: Retain license evidence outcome
         if: always()
         uses: actions/upload-artifact@043fb46d1a93c77aae656e7c1c64a875d1fc6a0a # v7
         with:
           name: dependency-license-evidence
-          path: ${{ runner.temp }}/dependency-license-evidence.json
+          path: |
+            ${{ runner.temp }}/dependency-license-evidence.json
+            ${{ runner.temp }}/dependency-license-policy.json
           if-no-files-found: error
           retention-days: 14

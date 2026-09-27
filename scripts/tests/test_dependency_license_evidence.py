@@ -69,13 +69,22 @@ class LicenseEvidenceTests(unittest.TestCase):
         review = workflow.split('  dependency-review:\n', 1)[1]
         self.assertIn('id: dependency-policy', review)
         self.assertIn('a1d282b36b6f3519aa1f3fc636f609c47dddb294', review)
-        self.assertIn('deny-licenses: GPL-2.0, GPL-3.0, AGPL-3.0', review)
+        self.assertNotIn('deny-licenses:', review)
+        self.assertIn('license-check: true', review)
         self.assertIn('check_dependency_license_evidence.py', review)
+        self.assertIn('npm ci --prefix tools/dependency-license-policy --ignore-scripts', review)
+        self.assertIn('npm audit --prefix tools/dependency-license-policy --omit=dev', review)
+        self.assertIn('tools/dependency-license-policy/check-license-policy.mjs', review)
+        self.assertIn("steps.dependency-policy.outputs['dependency-changes']", review)
         self.assertIn("steps.dependency-policy.outputs['invalid-license-changes']", review)
         self.assertLess(review.index('check_dependency_review_evidence.py'), review.index('id: dependency-policy'))
         self.assertLess(review.index('id: dependency-policy'), review.index('check_dependency_license_evidence.py'))
+        self.assertLess(review.index('check_dependency_license_evidence.py'),
+                        review.index('tools/dependency-license-policy/check-license-policy.mjs'))
         self.assertNotIn('continue-on-error', review)
         self.assertNotIn('contents: write', review)
+        self.assertNotIn('pull-requests: write', review)
+        self.assertIn('comment-summary-in-pr: never', review)
 
     def test_fork_equivalent_permission_acceptance_keeps_writer_immutable_and_readonly(self):
         workflow = (ROOT / '.github/workflows/dependency-policy-acceptance.yml').read_text()

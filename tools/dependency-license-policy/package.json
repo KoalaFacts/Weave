@@ -1,0 +1,12 @@
+{
+  "name": "weave-dependency-license-policy",
+  "private": true,
+  "type": "module",
+  "scripts": {
+    "test": "node --test test/*.test.mjs"
+  },
+  "dependencies": {
+    "@onebeyond/spdx-license-satisfies": "1.0.1",
+    "spdx-expression-parse": "5.0.0"
+  }
+}
