@@ -16,7 +16,7 @@ internal sealed class DownVerb(WorkspaceDownCliCommand command) : ITuiVerb
         }
 
         var exitCode = await command.ExecuteAsync(
-            new WorkspaceDownOptions(session.WorkspaceName, session.ManifestPath, session.WorkspaceId),
+            new WorkspaceDownOptions(session.WorkspaceName, session.ManifestPath, session.WorkspaceId, context.Args),
             ct);
 
         if (exitCode == 0)

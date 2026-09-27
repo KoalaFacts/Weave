@@ -27,8 +27,8 @@ internal static class TuiHelpView
 
         RenderGroup("Workspace",
         [
-            ("/up", "", "Start the current workspace"),
-            ("/down", "", "Stop the current workspace"),
+            ("/up [file]", "", "Start the current workspace (optional capability file)"),
+            ("/down [file]", "", "Stop the current workspace (optional capability file)"),
             ("/watch", "", "Live auto-refresh of the current workspace"),
             ("/tools", "", "List tools in the running workspace"),
             ("/tasks", "", "List tasks for the active agent"),

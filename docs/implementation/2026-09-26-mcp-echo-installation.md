@@ -58,7 +58,9 @@ with a separate workspace-scoped token granting both `workspace:stop` and
 request, accepts HTTPS origins or HTTP loopback, and refuses redirects and
 ambient credentials on those clients. A reachable server that rejects import
 startup causes `weave data import` to return failure while retaining restored
-files. TUI workspace start and stop currently do not accept a capability file.
+files. In the TUI, `/up <private-token-file>` and `/down <private-token-file>`
+pass their respective start and stop capabilities for the current workspace.
+The path is optional for workspaces that do not require a capability.
 
 Disabling first closes the connector's dispatch gate, then persists disabled
 intent and disconnects it. Existing admitted calls drain before disposal.
