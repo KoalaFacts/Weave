@@ -63,7 +63,7 @@ public static class PluginEndpoints
         ConnectPluginRequest request,
         IPluginRegistry registry,
         ICapabilityTokenService tokenService,
-        IMcpInstallationAuthority authority,
+        IPluginInstallationAuthority authority,
         HttpContext context,
         IVirtualActorProvider actors,
         CancellationToken ct)
@@ -90,13 +90,16 @@ public static class PluginEndpoints
 
             var installed = await FindDaprInstallationAsync(request.Name, actors);
             var installedMcp = await FindMcpInstallationAsync(request.Name, actors);
+            var enableGrants = new List<string>();
             if (installedMcp is not null || string.Equals(request.Type, "mcp_tools", StringComparison.OrdinalIgnoreCase))
+                enableGrants.Add(PluginInstallationAuthority.McpEnableGrant);
+            if (installed is not null || string.Equals(request.Type, "dapr_tools", StringComparison.OrdinalIgnoreCase))
+                enableGrants.Add(PluginInstallationAuthority.DaprEnableGrant);
+            if (enableGrants.Count > 0)
             {
-                var workspaceId = installedMcp is not null
-                    ? installedMcp.Value.Installation.Id.Split('/')[0]
-                    : request.Name.Split('/')[0].ToLowerInvariant();
-                var denial = await authority.DenialAsync(context, workspaceId,
-                    McpInstallationAuthority.EnableGrant);
+                var workspaceId = (installedMcp?.Installation.Id ?? installed?.Installation.Id ?? request.Name)
+                    .Split('/')[0].ToLowerInvariant();
+                var denial = await authority.DenialAsync(context, workspaceId, enableGrants.ToArray());
                 if (denial is not null)
                     return denial;
             }
@@ -190,7 +193,7 @@ public static class PluginEndpoints
         string name,
         IPluginRegistry registry,
         ICapabilityTokenService tokenService,
-        IMcpInstallationAuthority authority,
+        IPluginInstallationAuthority authority,
         HttpContext context,
         IVirtualActorProvider actors,
         IMcpInstallationDispatchGate mcpDispatchGate,
@@ -198,11 +201,15 @@ public static class PluginEndpoints
     {
         var installed = await FindDaprInstallationAsync(name, actors);
         var installedMcp = await FindMcpInstallationAsync(name, actors);
+        var disableGrants = new List<string>();
         if (installedMcp is not null)
+            disableGrants.Add(PluginInstallationAuthority.McpDisableGrant);
+        if (installed is not null)
+            disableGrants.Add(PluginInstallationAuthority.DaprDisableGrant);
+        if (disableGrants.Count > 0)
         {
-            var workspaceId = installedMcp.Value.Installation.Id.Split('/')[0];
-            var denial = await authority.DenialAsync(context, workspaceId,
-                McpInstallationAuthority.DisableGrant);
+            var workspaceId = (installedMcp?.Installation.Id ?? installed!.Value.Installation.Id).Split('/')[0];
+            var denial = await authority.DenialAsync(context, workspaceId, disableGrants.ToArray());
             if (denial is not null)
                 return denial;
         }

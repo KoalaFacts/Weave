@@ -76,11 +76,23 @@ deployment.
 - `requiresPlugin` must name a `dapr_tools` definition in the same manifest.
   Missing target app IDs, missing dependencies and non-explicit or invalid
   sidecar ports fail manifest validation.
+- A Dapr manifest submitted through `POST /api/workspaces` requires a signed
+  `X-Weave-Capability` with `workspace:create` and
+  `plugin:dapr_tools:install` for workspace `silo`, before workspace creation.
+  Enabling an installation through `POST /api/plugins` requires
+  `plugin:dapr_tools:enable`; disabling it through `DELETE /api/plugins/{id}`
+  requires `plugin:dapr_tools:disable`. Stopping a workspace with a Dapr
+  installation requires both `workspace:stop` and
+  `plugin:dapr_tools:disable`, scoped to that workspace ID. A workspace with
+  both Dapr and MCP installations requires both disable grants to stop.
+  Missing, expired, or revoked tokens return 401; insufficient grants or a
+  different workspace return 403. The CLI workspace start and stop commands
+  accept `--capability-file` for these requests.
 - Plugin connection still requires the Host's existing
   `plugin:invoke:<workspace-id>/<plugin-name>` grant. The workspace startup
-  command mints this narrow internal token after its administrative HTTP entry.
-  As elsewhere in the current Host, `Weave:Auth:Mode=none` provides no caller
-  authentication. Enable Host API authentication for administrative use.
+  command mints this narrow internal token after the administrative check.
+  Other Host routes retain their configured authentication behavior;
+  `Weave:Auth:Mode=none` is not global caller authentication.
 - Tool availability never grants invocation permission. The Agent's tool list
   and exact operation capability are both required to obtain a resolution;
   ToolActor rechecks the operation before dispatch.

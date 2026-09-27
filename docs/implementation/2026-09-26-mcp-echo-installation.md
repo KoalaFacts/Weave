@@ -83,4 +83,6 @@ atomic server-revision precondition for that interval. The pre-call check
 reduces exposure and fails closed on observed drift; it cannot prove that a
 server's implementation stayed fixed while handling a request. Other
 administrative routes still use the Host's configured authentication settings.
-This increment only adds capability checks for the MCP installation path.
+The MCP path uses installation-scoped capability checks; the later Dapr
+installation path now uses the same administrative boundary with Dapr-specific
+grants.

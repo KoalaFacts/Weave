@@ -69,14 +69,21 @@ public static class WorkspaceEndpoints
         StartWorkspaceRequest request,
         ICommandDispatcher dispatcher,
         HttpContext context,
-        IMcpInstallationAuthority authority,
+        IPluginInstallationAuthority authority,
         CancellationToken ct)
     {
+        var installationGrants = new List<string>();
         if (request.Manifest.Plugins.Values.Any(plugin =>
             string.Equals(plugin.Type, "mcp_tools", StringComparison.OrdinalIgnoreCase)))
+            installationGrants.Add(PluginInstallationAuthority.McpInstallGrant);
+        if (request.Manifest.Plugins.Values.Any(plugin =>
+            string.Equals(plugin.Type, "dapr_tools", StringComparison.OrdinalIgnoreCase)))
+            installationGrants.Add(PluginInstallationAuthority.DaprInstallGrant);
+        if (installationGrants.Count > 0)
         {
+            installationGrants.Insert(0, PluginInstallationAuthority.CreateWorkspaceGrant);
             var denial = await authority.DenialAsync(context, "silo",
-                McpInstallationAuthority.CreateWorkspaceGrant, McpInstallationAuthority.InstallGrant);
+                installationGrants.ToArray());
             if (denial is not null)
                 return denial;
         }
@@ -129,15 +136,22 @@ public static class WorkspaceEndpoints
         string workspaceId,
         ICommandDispatcher dispatcher,
         IVirtualActorProvider actors,
-        IMcpInstallationAuthority authority,
+        IPluginInstallationAuthority authority,
         HttpContext context,
         CancellationToken ct)
     {
         var workspace = actors.GetActor<IWorkspaceActor>(VirtualActorId.From(workspaceId));
-        if ((await workspace.GetStateAsync()).McpToolInstallations.Count > 0)
+        var state = await workspace.GetStateAsync();
+        var disableGrants = new List<string>();
+        if (state.McpToolInstallations.Count > 0)
+            disableGrants.Add(PluginInstallationAuthority.McpDisableGrant);
+        if (state.DaprToolInstallations.Count > 0)
+            disableGrants.Add(PluginInstallationAuthority.DaprDisableGrant);
+        if (disableGrants.Count > 0)
         {
+            disableGrants.Insert(0, PluginInstallationAuthority.StopWorkspaceGrant);
             var denial = await authority.DenialAsync(context, workspaceId,
-                McpInstallationAuthority.StopWorkspaceGrant, McpInstallationAuthority.DisableGrant);
+                disableGrants.ToArray());
             if (denial is not null)
                 return denial;
         }
