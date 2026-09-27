@@ -11,7 +11,7 @@ Automated CI/CD workflows for Weave.
 **Jobs:**
 1. **Build & Test** — restore, build, test, publish test results
 2. **Code Quality** — dependency audit, warnings-as-errors build, formatting check
-3. **Dependency Review** (PRs only) — blocks high-severity vulnerabilities and GPL licenses
+3. **Dependency Review** (PRs only) — blocks high-severity vulnerabilities, checks complete license evidence, and rejects the configured GPL licenses. The job check is authoritative; the action's PR summary comment is disabled because it does not include the separate license-policy decision. See [license policy migration](../../docs/implementation/2026-09-27-license-policy-migration.md).
 
 **Artifacts:** Test results (30 days)
 

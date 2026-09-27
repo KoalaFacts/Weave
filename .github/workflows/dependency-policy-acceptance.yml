@@ -3,10 +3,10 @@ name: Dependency Policy Acceptance
 on:
   pull_request:
     branches: [main]
-    paths: ['scripts/**', '.github/workflows/ci.yml', '.github/workflows/dependency-policy-acceptance.yml']
+    paths: ['scripts/**', 'tools/dependency-license-policy/**', '.github/workflows/ci.yml', '.github/workflows/dependency-policy-acceptance.yml']
   push:
     branches: [main]
-    paths: ['scripts/**', '.github/workflows/ci.yml', '.github/workflows/dependency-policy-acceptance.yml']
+    paths: ['scripts/**', 'tools/dependency-license-policy/**', '.github/workflows/ci.yml', '.github/workflows/dependency-policy-acceptance.yml']
   workflow_dispatch:
 
 permissions:
@@ -28,6 +28,13 @@ jobs:
           ref: a1d282b36b6f3519aa1f3fc636f609c47dddb294
           path: .policy-action
           persist-credentials: false
+      - name: Set up Node for license policy
+        uses: actions/setup-node@249970729cb0ef3589644e2896645e5dc5ba9c38 # v6
+        with:
+          node-version: '24'
+          package-manager-cache: false
+      - name: Install locked license policy dependencies
+        run: npm ci --prefix tools/dependency-license-policy --ignore-scripts --no-audit --no-fund
       - name: Run real policy with loopback data and no real credentials
         run: |
           node --version

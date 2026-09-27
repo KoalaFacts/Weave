@@ -24,7 +24,8 @@ class DependencyReviewWorkflowTests(unittest.TestCase):
         self.assertIn("contents: read", job)
         self.assertNotIn("contents: write", job)
         self.assertIn("fail-on-severity: high", job)
-        self.assertIn("deny-licenses: GPL-2.0, GPL-3.0, AGPL-3.0", job)
+        self.assertNotIn("deny-licenses:", job)
+        self.assertIn("tools/dependency-license-policy/check-license-policy.mjs", job)
 
 
 if __name__ == "__main__":

@@ -1,5 +1,8 @@
 # License evidence and fork-permission acceptance (#110)
 
+This is the historical #110 implementation record. The current license policy
+path is described in [the later migration](2026-09-27-license-policy-migration.md).
+
 This completes the two remaining supply-chain acceptance items in PLAN.md. It
 keeps the existing dependency action, deny list, vulnerability threshold and pinned
 snapshot producer. No package version or product runtime changes are involved.
