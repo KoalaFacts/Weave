@@ -33,6 +33,7 @@ public static class PluginEndpoints
         group.MapDelete("/{**name}", DisconnectPluginAsync)
             .WithDescription("Disconnect a plugin by name.")
             .Produces(204)
+            .ProducesProblem(409)
             .ProducesProblem(404);
 
         return group;
@@ -189,7 +190,7 @@ public static class PluginEndpoints
         }
     }
 
-    private static async Task<IResult> DisconnectPluginAsync(
+    internal static async Task<IResult> DisconnectPluginAsync(
         string name,
         IPluginRegistry registry,
         ICapabilityTokenService tokenService,
@@ -199,7 +200,15 @@ public static class PluginEndpoints
         IMcpInstallationDispatchGate mcpDispatchGate,
         CancellationToken ct)
     {
-        var installed = await FindDaprInstallationAsync(name, actors);
+        (IWorkspaceActor Workspace, DaprToolInstallation Installation)? installed;
+        try
+        {
+            installed = await FindDaprInstallationAsync(name, actors);
+        }
+        catch (AmbiguousDaprInstallationException ex)
+        {
+            return ResultExtensions.Conflict(ex.Message);
+        }
         var installedMcp = await FindMcpInstallationAsync(name, actors);
         var disableGrants = new List<string>();
         if (installedMcp is not null)
@@ -242,10 +251,15 @@ public static class PluginEndpoints
             return null;
         var workspace = actors.GetActor<IWorkspaceActor>(VirtualActorId.From(name[..slash].ToLowerInvariant()));
         var state = await workspace.GetStateAsync();
-        var installation = state.DaprToolInstallations.SingleOrDefault(item =>
-            string.Equals(item.Id, name, StringComparison.OrdinalIgnoreCase));
-        return installation is null ? null : (workspace, installation);
+        var matches = state.DaprToolInstallations.Where(item =>
+            string.Equals(item.Id, name, StringComparison.OrdinalIgnoreCase)).Take(2).ToArray();
+        if (matches.Length > 1)
+            throw new AmbiguousDaprInstallationException();
+        return matches.Length == 0 ? null : (workspace, matches[0]);
     }
+
+    private sealed class AmbiguousDaprInstallationException() : InvalidOperationException(
+        "Dapr installation identity is ambiguous; review the stored records before managing it.");
 
     private static async Task<(IWorkspaceActor Workspace, McpToolInstallation Installation)?> FindMcpInstallationAsync(
         string name, IVirtualActorProvider actors)
