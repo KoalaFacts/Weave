@@ -225,7 +225,7 @@ internal sealed class SiloServiceRegistrar
                 sp.GetRequiredService<IHttpClientFactory>(),
                 sp.GetRequiredService<ILoggerFactory>()));
         _services.AddSingleton<IPluginRegistry, PluginRegistry>();
-        _services.AddScoped<IMcpInstallationAuthority, McpInstallationAuthority>();
+        _services.AddScoped<IPluginInstallationAuthority, PluginInstallationAuthority>();
     }
 
     private void RegisterApiOptions()

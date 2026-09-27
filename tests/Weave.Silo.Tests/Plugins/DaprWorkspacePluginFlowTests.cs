@@ -7,6 +7,7 @@ using Microsoft.AspNetCore.Hosting.Server;
 using Microsoft.AspNetCore.Hosting.Server.Features;
 using Microsoft.AspNetCore.Http;
 using Microsoft.AspNetCore.Mvc.Testing;
+using Microsoft.AspNetCore.WebUtilities;
 using Microsoft.Extensions.Configuration;
 using Microsoft.Extensions.DependencyInjection;
 using Weave.Agents.Channels;
@@ -17,6 +18,7 @@ using Weave.Agents.ToolRegistry;
 using Weave.Agents.Users;
 using Weave.Agents.Verification;
 using Weave.Invocations;
+using Weave.Security.Tokens;
 using Weave.Shared.VirtualActors;
 using Weave.Silo.Plugins;
 using Weave.Tools.Connectors;
@@ -27,9 +29,161 @@ namespace Weave.Silo.Tests.Plugins;
 
 public sealed class DaprWorkspacePluginFlowTests : IClassFixture<SiloFactory>
 {
+    private static readonly JsonSerializerOptions JsonOptions = new(JsonSerializerDefaults.Web);
     private readonly SiloFactory _factory;
 
     public DaprWorkspacePluginFlowTests(SiloFactory factory) => _factory = factory;
+
+    [Fact]
+    public async Task StartWorkspace_MixedPluginManifest_RequiresBothInstallGrants()
+    {
+        using var client = _factory.CreateClient();
+        var manifest = new WorkspaceManifest
+        {
+            Version = "1.0",
+            Name = "mixed-plugin-authority",
+            Plugins = new Dictionary<string, PluginDefinition>
+            {
+                ["sidecar"] = new() { Type = "dapr_tools" },
+                ["peer"] = new() { Type = "mcp_tools" }
+            }
+        };
+        using (var daprOnly = await SendWithTokenAsync(client, HttpMethod.Post, "/api/workspaces",
+            Mint(_factory.Services, "silo", "workspace:create", "plugin:dapr_tools:install"),
+            new { Manifest = manifest }))
+            daprOnly.StatusCode.ShouldBe(HttpStatusCode.Forbidden);
+        using (var mcpOnly = await SendWithTokenAsync(client, HttpMethod.Post, "/api/workspaces",
+            Mint(_factory.Services, "silo", "workspace:create", "plugin:mcp_tools:install"),
+            new { Manifest = manifest }))
+            mcpOnly.StatusCode.ShouldBe(HttpStatusCode.Forbidden);
+    }
+
+    [Fact]
+    public async Task StartWorkspace_DaprManifest_RequiresCreateAndInstallGrants()
+    {
+        using var client = _factory.CreateClient();
+        var manifest = new WorkspaceManifest
+        {
+            Version = "1.0",
+            Name = "dapr-authority",
+            Plugins = new Dictionary<string, PluginDefinition>
+            {
+                ["sidecar"] = new() { Type = "dapr_tools", Config = new Dictionary<string, string> { ["port"] = "3500" } }
+            }
+        };
+
+        using (var missing = await client.PostAsJsonAsync("/api/workspaces", new { Manifest = manifest },
+            TestContext.Current.CancellationToken))
+            missing.StatusCode.ShouldBe(HttpStatusCode.Unauthorized);
+        using (var wrongWorkspace = await SendWithTokenAsync(client, HttpMethod.Post, "/api/workspaces",
+            Mint(_factory.Services, "other", "workspace:create", "plugin:dapr_tools:install"),
+            new { Manifest = manifest }))
+            wrongWorkspace.StatusCode.ShouldBe(HttpStatusCode.Forbidden);
+        using (var missingInstall = await SendWithTokenAsync(client, HttpMethod.Post, "/api/workspaces",
+            Mint(_factory.Services, "silo", "workspace:create"), new { Manifest = manifest }))
+            missingInstall.StatusCode.ShouldBe(HttpStatusCode.Forbidden);
+        using (var missingCreate = await SendWithTokenAsync(client, HttpMethod.Post, "/api/workspaces",
+            Mint(_factory.Services, "silo", "plugin:dapr_tools:install"), new { Manifest = manifest }))
+            missingCreate.StatusCode.ShouldBe(HttpStatusCode.Forbidden);
+        var revoked = Mint(_factory.Services, "silo", "workspace:create", "plugin:dapr_tools:install");
+        _factory.Services.GetRequiredService<ICapabilityTokenService>().Revoke(revoked.TokenId);
+        using (var revokedResponse = await SendWithTokenAsync(client, HttpMethod.Post, "/api/workspaces",
+            revoked, new { Manifest = manifest }))
+            revokedResponse.StatusCode.ShouldBe(HttpStatusCode.Unauthorized);
+        using (var expired = await SendWithTokenAsync(client, HttpMethod.Post, "/api/workspaces",
+            Mint(_factory.Services, "silo", "workspace:create", "plugin:dapr_tools:install",
+                TimeSpan.FromSeconds(-1)), new { Manifest = manifest }))
+            expired.StatusCode.ShouldBe(HttpStatusCode.Unauthorized);
+    }
+
+    [Fact]
+    public async Task StopWorkspace_DaprInstallation_RequiresStopAndDisableGrants()
+    {
+        await using var sidecar = CreateSidecar("stop-authority");
+        await sidecar.StartAsync(TestContext.Current.CancellationToken);
+        using var client = _factory.CreateClient();
+        var workspaceId = await StartWorkspaceAsync(client, _factory.Services, sidecar);
+        using (var missing = await client.DeleteAsync($"/api/workspaces/{workspaceId}",
+            TestContext.Current.CancellationToken))
+            missing.StatusCode.ShouldBe(HttpStatusCode.Unauthorized);
+        using (var wrongWorkspace = await SendWithTokenAsync(client, HttpMethod.Delete,
+            $"/api/workspaces/{workspaceId}", Mint(_factory.Services, "other", "workspace:stop",
+                "plugin:dapr_tools:disable")))
+            wrongWorkspace.StatusCode.ShouldBe(HttpStatusCode.Forbidden);
+        using (var missingStopGrant = await SendWithTokenAsync(client, HttpMethod.Delete,
+            $"/api/workspaces/{workspaceId}", Mint(_factory.Services, workspaceId, "plugin:dapr_tools:disable")))
+            missingStopGrant.StatusCode.ShouldBe(HttpStatusCode.Forbidden);
+        using (var missingDaprGrant = await SendWithTokenAsync(client, HttpMethod.Delete,
+            $"/api/workspaces/{workspaceId}", Mint(_factory.Services, workspaceId, "workspace:stop")))
+            missingDaprGrant.StatusCode.ShouldBe(HttpStatusCode.Forbidden);
+
+        var actors = _factory.Services.GetRequiredService<IVirtualActorProvider>();
+        var workspace = actors.GetActor<Weave.Workspaces.Lifecycle.IWorkspaceActor>(VirtualActorId.From(workspaceId));
+        (await workspace.GetStateAsync()).DaprToolInstallations.Single().DesiredEnabled.ShouldBeTrue();
+        using var stop = await SendAuthorizedAsync(client, _factory.Services, HttpMethod.Delete,
+            $"/api/workspaces/{workspaceId}", workspaceId, "workspace:stop", "plugin:dapr_tools:disable");
+        stop.StatusCode.ShouldBe(HttpStatusCode.NoContent);
+    }
+
+    [Fact]
+    public async Task DisconnectPlugin_DaprInstallation_RequiresDisableGrant()
+    {
+        await using var sidecar = CreateSidecar("disable-authority");
+        await sidecar.StartAsync(TestContext.Current.CancellationToken);
+        using var client = _factory.CreateClient();
+        var workspaceId = await StartWorkspaceAsync(client, _factory.Services, sidecar);
+        using (var missing = await client.DeleteAsync($"/api/plugins/{workspaceId}/sidecar",
+            TestContext.Current.CancellationToken))
+            missing.StatusCode.ShouldBe(HttpStatusCode.Unauthorized);
+        using (var wrongWorkspace = await SendWithTokenAsync(client, HttpMethod.Delete,
+            $"/api/plugins/{workspaceId}/sidecar", Mint(_factory.Services, "other", "plugin:dapr_tools:disable")))
+            wrongWorkspace.StatusCode.ShouldBe(HttpStatusCode.Forbidden);
+        var actors = _factory.Services.GetRequiredService<IVirtualActorProvider>();
+        var workspace = actors.GetActor<Weave.Workspaces.Lifecycle.IWorkspaceActor>(VirtualActorId.From(workspaceId));
+        (await workspace.GetStateAsync()).DaprToolInstallations.Single().DesiredEnabled.ShouldBeTrue();
+        using (var disable = await SendAuthorizedAsync(client, _factory.Services, HttpMethod.Delete,
+            $"/api/plugins/{workspaceId}/sidecar", workspaceId, "plugin:dapr_tools:disable"))
+            disable.StatusCode.ShouldBe(HttpStatusCode.NoContent);
+        (await workspace.GetStateAsync()).DaprToolInstallations.Single().DesiredEnabled.ShouldBeFalse();
+        using var stop = await SendAuthorizedAsync(client, _factory.Services, HttpMethod.Delete,
+            $"/api/workspaces/{workspaceId}", workspaceId, "workspace:stop", "plugin:dapr_tools:disable");
+        stop.StatusCode.ShouldBe(HttpStatusCode.NoContent);
+    }
+
+    [Fact]
+    public async Task ConnectPlugin_DisabledDaprInstallation_RequiresEnableGrant()
+    {
+        await using var sidecar = CreateSidecar("enable-authority");
+        await sidecar.StartAsync(TestContext.Current.CancellationToken);
+        using var client = _factory.CreateClient();
+        var workspaceId = await StartWorkspaceAsync(client, _factory.Services, sidecar);
+        using (var disable = await SendAuthorizedAsync(client, _factory.Services, HttpMethod.Delete,
+            $"/api/plugins/{workspaceId}/sidecar", workspaceId, "plugin:dapr_tools:disable"))
+            disable.StatusCode.ShouldBe(HttpStatusCode.NoContent);
+        var actors = _factory.Services.GetRequiredService<IVirtualActorProvider>();
+        var workspace = actors.GetActor<Weave.Workspaces.Lifecycle.IWorkspaceActor>(VirtualActorId.From(workspaceId));
+        var port = (await workspace.GetStateAsync()).DaprToolInstallations.Single().Port.ToString(
+            System.Globalization.CultureInfo.InvariantCulture);
+        var enableRequest = new
+        {
+            Name = $"{workspaceId}/sidecar",
+            Type = "dapr_tools",
+            Config = new Dictionary<string, string> { ["port"] = port }
+        };
+        using (var missingEnable = await client.PostAsJsonAsync("/api/plugins", enableRequest,
+            TestContext.Current.CancellationToken))
+            missingEnable.StatusCode.ShouldBe(HttpStatusCode.Unauthorized);
+        using (var wrongEnable = await SendWithTokenAsync(client, HttpMethod.Post, "/api/plugins",
+            Mint(_factory.Services, "other", "plugin:dapr_tools:enable"), enableRequest))
+            wrongEnable.StatusCode.ShouldBe(HttpStatusCode.Forbidden);
+        (await workspace.GetStateAsync()).DaprToolInstallations.Single().DesiredEnabled.ShouldBeFalse();
+        using (var enable = await SendAuthorizedAsync(client, _factory.Services, HttpMethod.Post,
+            "/api/plugins", workspaceId, "plugin:dapr_tools:enable", null, enableRequest))
+            enable.StatusCode.ShouldBe(HttpStatusCode.Created);
+        using var stop = await SendAuthorizedAsync(client, _factory.Services, HttpMethod.Delete,
+            $"/api/workspaces/{workspaceId}", workspaceId, "workspace:stop", "plugin:dapr_tools:disable");
+        stop.StatusCode.ShouldBe(HttpStatusCode.NoContent);
+    }
 
     [Fact]
     public async Task Restart_PersistedDaprInstallation_ReactivatesUntilDisabled()
@@ -44,7 +198,7 @@ public sealed class DaprWorkspacePluginFlowTests : IClassFixture<SiloFactory>
             await using (var first = new DurableSiloFactory(directory))
             {
                 using var client = first.CreateClient();
-                workspaceId = await StartWorkspaceAsync(client, sidecar);
+                workspaceId = await StartWorkspaceAsync(client, first.Services, sidecar);
             }
 
             await using (var second = new DurableSiloFactory(directory))
@@ -70,8 +224,8 @@ public sealed class DaprWorkspacePluginFlowTests : IClassFixture<SiloFactory>
                 result.Success.ShouldBeTrue(result.Error);
                 result.Output.ShouldContain("recovered");
 
-                using var disable = await client.DeleteAsync($"/api/plugins/{workspaceId}/sidecar",
-                    TestContext.Current.CancellationToken);
+                using var disable = await SendAuthorizedAsync(client, second.Services, HttpMethod.Delete,
+                    $"/api/plugins/{workspaceId}/sidecar", workspaceId, "plugin:dapr_tools:disable");
                 disable.StatusCode.ShouldBe(HttpStatusCode.NoContent);
             }
 
@@ -117,8 +271,8 @@ public sealed class DaprWorkspacePluginFlowTests : IClassFixture<SiloFactory>
         await secondSidecar.StartAsync(TestContext.Current.CancellationToken);
 
         using var client = _factory.CreateClient();
-        var firstId = await StartWorkspaceAsync(client, firstSidecar);
-        var secondId = await StartWorkspaceAsync(client, secondSidecar);
+        var firstId = await StartWorkspaceAsync(client, _factory.Services, firstSidecar);
+        var secondId = await StartWorkspaceAsync(client, _factory.Services, secondSidecar);
         var actors = _factory.Services.GetRequiredService<IVirtualActorProvider>();
 
         foreach (var (workspaceId, expected) in new[] { (firstId, "first"), (secondId, "second") })
@@ -137,7 +291,8 @@ public sealed class DaprWorkspacePluginFlowTests : IClassFixture<SiloFactory>
             result.Output.ShouldContain(expected);
         }
 
-        using var firstStop = await client.DeleteAsync($"/api/workspaces/{firstId}", TestContext.Current.CancellationToken);
+        using var firstStop = await SendAuthorizedAsync(client, _factory.Services, HttpMethod.Delete,
+            $"/api/workspaces/{firstId}", firstId, "workspace:stop", "plugin:dapr_tools:disable");
         firstStop.StatusCode.ShouldBe(HttpStatusCode.NoContent);
         var remainingRegistry = actors.GetActor<IToolRegistryActor>(VirtualActorId.From(secondId));
         var remainingResolution = await remainingRegistry.ResolveAsync("caller", "echo");
@@ -151,7 +306,8 @@ public sealed class DaprWorkspacePluginFlowTests : IClassFixture<SiloFactory>
         }, remainingResolution.Token);
         remainingResult.Success.ShouldBeTrue(remainingResult.Error);
         remainingResult.Output.ShouldContain("second");
-        using var secondStop = await client.DeleteAsync($"/api/workspaces/{secondId}", TestContext.Current.CancellationToken);
+        using var secondStop = await SendAuthorizedAsync(client, _factory.Services, HttpMethod.Delete,
+            $"/api/workspaces/{secondId}", secondId, "workspace:stop", "plugin:dapr_tools:disable");
         secondStop.StatusCode.ShouldBe(HttpStatusCode.NoContent);
     }
 
@@ -164,7 +320,7 @@ public sealed class DaprWorkspacePluginFlowTests : IClassFixture<SiloFactory>
         return sidecar;
     }
 
-    private static async Task<string> StartWorkspaceAsync(HttpClient client, WebApplication sidecar)
+    private static async Task<string> StartWorkspaceAsync(HttpClient client, IServiceProvider services, WebApplication sidecar)
     {
         var address = sidecar.Services.GetRequiredService<IServer>().Features
             .Get<IServerAddressesFeature>()!.Addresses.Single();
@@ -189,7 +345,9 @@ public sealed class DaprWorkspacePluginFlowTests : IClassFixture<SiloFactory>
                 ["caller"] = new() { Model = "test", Tools = ["echo"], Capabilities = ["tool:echo:invoke:ping"] }
             }
         };
-        using var response = await client.PostAsJsonAsync("/api/workspaces", new { Manifest = manifest }, TestContext.Current.CancellationToken);
+        using var response = await SendAuthorizedAsync(client, services, HttpMethod.Post,
+            "/api/workspaces", "silo", "workspace:create", "plugin:dapr_tools:install",
+            new { Manifest = manifest });
         var body = await response.Content.ReadAsStringAsync(TestContext.Current.CancellationToken);
         response.StatusCode.ShouldBe(HttpStatusCode.Created, body);
         using var document = JsonDocument.Parse(body);
@@ -242,8 +400,9 @@ public sealed class DaprWorkspacePluginFlowTests : IClassFixture<SiloFactory>
             }
         };
 
-        using var start = await client.PostAsJsonAsync("/api/workspaces",
-            new { Manifest = manifest }, TestContext.Current.CancellationToken);
+        using var start = await SendAuthorizedAsync(client, _factory.Services, HttpMethod.Post,
+            "/api/workspaces", "silo", "workspace:create", "plugin:dapr_tools:install",
+            new { Manifest = manifest });
         var body = await start.Content.ReadAsStringAsync(TestContext.Current.CancellationToken);
         start.StatusCode.ShouldBe(HttpStatusCode.Created, body);
         using var document = JsonDocument.Parse(body);
@@ -273,8 +432,8 @@ public sealed class DaprWorkspacePluginFlowTests : IClassFixture<SiloFactory>
         var active = await composition.Content.ReadAsStringAsync(TestContext.Current.CancellationToken);
         active.ShouldContain($"{workspaceId}/sidecar");
 
-        using var disable = await client.DeleteAsync($"/api/plugins/{workspaceId}/sidecar",
-            TestContext.Current.CancellationToken);
+        using var disable = await SendAuthorizedAsync(client, _factory.Services, HttpMethod.Delete,
+            $"/api/plugins/{workspaceId}/sidecar", workspaceId, "plugin:dapr_tools:disable");
         disable.StatusCode.ShouldBe(HttpStatusCode.NoContent);
         await Should.ThrowAsync<InvalidOperationException>(() => actor.InvokeAsync(new ToolInvocation
         {
@@ -283,20 +442,22 @@ public sealed class DaprWorkspacePluginFlowTests : IClassFixture<SiloFactory>
             InvocationId = InvocationId.From(Guid.NewGuid().ToString("N"))
         }, authorized.Token));
 
-        using var changedConfig = await client.PostAsJsonAsync("/api/plugins", new
-        {
-            Name = $"{workspaceId}/sidecar",
-            Type = "dapr_tools",
-            Config = new Dictionary<string, string> { ["port"] = port == "3500" ? "3501" : "3500" }
-        }, TestContext.Current.CancellationToken);
+        using var changedConfig = await SendAuthorizedAsync(client, _factory.Services, HttpMethod.Post,
+            "/api/plugins", workspaceId, "plugin:dapr_tools:enable", null, new
+            {
+                Name = $"{workspaceId}/sidecar",
+                Type = "dapr_tools",
+                Config = new Dictionary<string, string> { ["port"] = port == "3500" ? "3501" : "3500" }
+            });
         changedConfig.StatusCode.ShouldBe(HttpStatusCode.Conflict);
 
-        using var reactivate = await client.PostAsJsonAsync("/api/plugins", new
-        {
-            Name = $"{workspaceId}/sidecar",
-            Type = "dapr_tools",
-            Config = new Dictionary<string, string> { ["port"] = port }
-        }, TestContext.Current.CancellationToken);
+        using var reactivate = await SendAuthorizedAsync(client, _factory.Services, HttpMethod.Post,
+            "/api/plugins", workspaceId, "plugin:dapr_tools:enable", null, new
+            {
+                Name = $"{workspaceId}/sidecar",
+                Type = "dapr_tools",
+                Config = new Dictionary<string, string> { ["port"] = port }
+            });
         reactivate.StatusCode.ShouldBe(HttpStatusCode.Created);
         await Should.ThrowAsync<InvalidOperationException>(() => actor.InvokeAsync(new ToolInvocation
         {
@@ -305,8 +466,8 @@ public sealed class DaprWorkspacePluginFlowTests : IClassFixture<SiloFactory>
             InvocationId = InvocationId.From(Guid.NewGuid().ToString("N"))
         }, authorized.Token));
 
-        using var stop = await client.DeleteAsync($"/api/workspaces/{workspaceId}",
-            TestContext.Current.CancellationToken);
+        using var stop = await SendAuthorizedAsync(client, _factory.Services, HttpMethod.Delete,
+            $"/api/workspaces/{workspaceId}", workspaceId, "workspace:stop", "plugin:dapr_tools:disable");
         stop.StatusCode.ShouldBe(HttpStatusCode.NoContent);
         (await actor.GetHandleAsync()).ShouldBeNull();
         await Should.ThrowAsync<InvalidOperationException>(() => actor.InvokeAsync(new ToolInvocation
@@ -319,5 +480,32 @@ public sealed class DaprWorkspacePluginFlowTests : IClassFixture<SiloFactory>
             TestContext.Current.CancellationToken);
         (await after.Content.ReadAsStringAsync(TestContext.Current.CancellationToken))
             .ShouldNotContain($"{workspaceId}/sidecar");
+    }
+
+    private static async Task<HttpResponseMessage> SendAuthorizedAsync(HttpClient client, IServiceProvider services,
+        HttpMethod method, string path, string workspaceId, string grant, string? secondGrant = null, object? body = null)
+    {
+        return await SendWithTokenAsync(client, method, path, Mint(services, workspaceId, grant, secondGrant), body);
+    }
+
+    private static CapabilityToken Mint(IServiceProvider services, string workspaceId, string grant,
+        string? secondGrant = null, TimeSpan? lifetime = null) =>
+        services.GetRequiredService<ICapabilityTokenService>().Mint(new CapabilityTokenRequest
+        {
+            WorkspaceId = workspaceId,
+            IssuedTo = "dapr-installation-operator",
+            Grants = secondGrant is null ? [grant] : [grant, secondGrant],
+            Lifetime = lifetime ?? TimeSpan.FromMinutes(5)
+        });
+
+    private static async Task<HttpResponseMessage> SendWithTokenAsync(HttpClient client, HttpMethod method,
+        string path, CapabilityToken token, object? body = null)
+    {
+        using var request = new HttpRequestMessage(method, path);
+        if (body is not null)
+            request.Content = JsonContent.Create(body);
+        request.Headers.Add("X-Weave-Capability",
+            WebEncoders.Base64UrlEncode(JsonSerializer.SerializeToUtf8Bytes(token, JsonOptions)));
+        return await client.SendAsync(request, TestContext.Current.CancellationToken);
     }
 }
