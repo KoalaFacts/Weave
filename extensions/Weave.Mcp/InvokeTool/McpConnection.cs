@@ -34,6 +34,7 @@ internal sealed partial class McpConnection : IAsyncDisposable
     }
 
     public bool HasExited => _transport.HasExited;
+    public bool UsesModernProtocol => _modern;
     public string? ServerName { get; private set; }
     public string? ServerVersion { get; private set; }
 

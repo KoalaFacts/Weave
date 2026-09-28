@@ -4,7 +4,7 @@ The outbound MCP HTTP connector probes `server/discover` with the `2026-07-28` r
 
 A legacy HTTP endpoint that rejects the probe with an unrecognized HTTP 400, or responds with a non-modern JSON-RPC error, continues through the existing `initialize` path. A recognized modern protocol error does not trigger a downgrade. The existing stdio connector remains on its legacy handshake.
 
-The installation still pins server identity, selected operation, and operation contract digest. Probe, connection, and pre-dispatch refresh all use the same revision selection; a changed contract blocks the call. The integration path covers installation, invocation, restart recovery, and disable with a modern-only loopback service. The Python Echo HTTP smoke test covers the legacy path.
+The installation still pins server identity, selected operation, and operation contract digest. For modern HTTP, that digest includes a new behavior revision alongside the tool definition; legacy installations retain their original digest. If a previously installed legacy endpoint upgrades to modern HTTP, the old installation cannot activate or dispatch until its contract is reviewed and installed again. This also invalidates approval plans bound to the former digest. Probe, connection, and pre-dispatch refresh enforce the same binding. The integration path covers installation, invocation, restart recovery, disable, and upgrade rejection with loopback services. The Python Echo HTTP smoke test covers the legacy path.
 
 An installed tool's `x-mcp-header` annotations expose the selected argument values to HTTP intermediaries. Base64 encoding is transport encoding, not secrecy. Operators should reject schemas that promote credentials or sensitive data into headers.
 

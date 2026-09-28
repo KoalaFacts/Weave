@@ -24,6 +24,45 @@ public sealed class McpModernHttpProtocolTests
     }
 
     [Theory]
+    [InlineData("1.0", "1")]
+    [InlineData("1e2", "100")]
+    [InlineData("1.20e1", "12")]
+    [InlineData("10e-1", "1")]
+    [InlineData("0e999999999999999999999", "0")]
+    [InlineData("9007199254740991.0", "9007199254740991")]
+    public void ForTool_IntegralJsonNumber_UsesNormalizedHeaderValue(string raw, string expected)
+    {
+        using var document = JsonDocument.Parse("""{"type":"object","properties":{"count":{"type":"integer","x-mcp-header":"Count"}}}""");
+        var tool = new McpTool { Name = "echo", InputSchema = document.RootElement.Clone() };
+        var arguments = JsonNode.Parse($"{{\"count\":{raw}}}")!;
+
+        McpHttpHeaderValue.ForTool(tool, arguments)["Count"].ShouldBe(expected);
+    }
+
+    [Theory]
+    [InlineData("1.00000000000000000000000000001")]
+    [InlineData("1.5")]
+    [InlineData("9007199254740992")]
+    public void ForTool_InvalidInteger_RejectsHeaderValue(string raw)
+    {
+        using var document = JsonDocument.Parse("""{"type":"object","properties":{"count":{"type":"integer","x-mcp-header":"Count"}}}""");
+        var tool = new McpTool { Name = "echo", InputSchema = document.RootElement.Clone() };
+
+        Should.Throw<InvalidOperationException>(() => McpHttpHeaderValue.ForTool(tool,
+            JsonNode.Parse($"{{\"count\":{raw}}}")!));
+    }
+
+    [Fact]
+    public void HasValidSchema_InstanceExamplesContainingAnnotationName_RemainsAvailable()
+    {
+        using var document = JsonDocument.Parse("""{"type":"object","properties":{"region":{"type":"string","x-mcp-header":"Region"},"data":{"type":"object","default":{"x-mcp-header":"example"},"examples":[{"x-mcp-header":"example"}],"const":{"x-mcp-header":"example"}}}}""");
+        var tool = new McpTool { Name = "echo", InputSchema = document.RootElement.Clone() };
+
+        McpHttpHeaderValue.HasValidSchema(tool).ShouldBeTrue();
+        McpHttpHeaderValue.ForTool(tool, JsonNode.Parse("""{"region":"west"}""")!)["Region"].ShouldBe("west");
+    }
+
+    [Theory]
     [InlineData("""{"type":"object","properties":{"one":{"type":"string","x-mcp-header":"Region"},"two":{"type":"string","x-mcp-header":"region"}}}""")]
     [InlineData("""{"type":"object","properties":{"one":{"type":"number","x-mcp-header":"Region"}}}""")]
     [InlineData("""{"type":"object","items":{"type":"string","x-mcp-header":"Region"}}""")]

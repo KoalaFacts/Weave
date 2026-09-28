@@ -86,7 +86,7 @@ public sealed partial class McpToolConnector : IToolConnector, IApprovalTargetBi
     public string? GetApprovalTargetDescription(ToolHandle handle) => _installation is null
         ? null
         : $"MCP {_installation.ServerName} {_installation.ServerVersion} at {_installation.Url}; "
-            + $"operation {_installation.Operation}; schema SHA-256 {ContractDigest}";
+            + $"operation {_installation.Operation}; contract SHA-256 {ContractDigest}";
 
     public async Task ProbeAsync(McpConfig config, CancellationToken ct = default)
     {
@@ -240,12 +240,22 @@ public sealed partial class McpToolConnector : IToolConnector, IApprovalTargetBi
         if (operation is null)
             throw new InvalidOperationException("MCP operation is missing or ambiguous.");
         var serialized = JsonSerializer.SerializeToUtf8Bytes(operation, McpJsonContext.Default.McpTool);
-        var digest = Convert.ToHexString(SHA256.HashData(serialized));
+        var digest = connection.UsesModernProtocol
+            ? ComputeModernContractDigest(serialized)
+            : Convert.ToHexString(SHA256.HashData(serialized));
         if (installation.ContractDigest is not null && !string.Equals(digest, installation.ContractDigest, StringComparison.Ordinal))
             throw new InvalidOperationException("MCP operation contract differs from the installed revision.");
         var observed = Interlocked.CompareExchange(ref _observedContractDigest, digest, null);
         if (observed is not null && !string.Equals(observed, digest, StringComparison.Ordinal))
             throw new InvalidOperationException("MCP operation contract changed during this installation.");
+    }
+
+    private static string ComputeModernContractDigest(byte[] serialized)
+    {
+        using var hash = IncrementalHash.CreateHash(HashAlgorithmName.SHA256);
+        hash.AppendData("mcp_tools/2\n2026-07-28\n"u8);
+        hash.AppendData(serialized);
+        return Convert.ToHexString(hash.GetHashAndReset());
     }
 
     public async Task<ToolSchema> DiscoverSchemaAsync(ToolHandle handle, CancellationToken ct = default)

@@ -67,7 +67,7 @@ internal static class McpHttpHeaderValue
                 {
                     if (property.Value.ValueKind != JsonValueKind.Object)
                     {
-                        if (ContainsAnnotation(property.Value))
+                        if (ContainsSchemaAnnotation(property.Value))
                             throw new InvalidOperationException("MCP tool has an unreachable HTTP header annotation.");
                         continue;
                     }
@@ -75,17 +75,28 @@ internal static class McpHttpHeaderValue
                     Collect(property.Value, child, headers, names, isProperty: true);
                 }
             }
-            else if (ContainsAnnotation(field.Value))
+            else if (ContainsSchemaAnnotationInKeyword(field.Name, field.Value))
                 throw new InvalidOperationException("MCP tool has an unreachable HTTP header annotation.");
         }
     }
 
-    private static bool ContainsAnnotation(JsonElement element)
+    private static bool ContainsSchemaAnnotation(JsonElement element)
     {
-        if (element.ValueKind == JsonValueKind.Object)
-            return element.EnumerateObject().Any(property => property.NameEquals("x-mcp-header")
-                || ContainsAnnotation(property.Value));
-        return element.ValueKind == JsonValueKind.Array && element.EnumerateArray().Any(ContainsAnnotation);
+        return element.ValueKind == JsonValueKind.Object
+            && element.EnumerateObject().Any(property => property.NameEquals("x-mcp-header")
+                || ContainsSchemaAnnotationInKeyword(property.Name, property.Value));
+    }
+
+    private static bool ContainsSchemaAnnotationInKeyword(string keyword, JsonElement value)
+    {
+        if (keyword is "properties" or "patternProperties" or "$defs" or "definitions" or "dependentSchemas" or "dependencies")
+            return value.ValueKind == JsonValueKind.Object
+                && value.EnumerateObject().Any(property => ContainsSchemaAnnotation(property.Value));
+        if (keyword is "allOf" or "anyOf" or "oneOf" or "prefixItems")
+            return value.ValueKind == JsonValueKind.Array && value.EnumerateArray().Any(ContainsSchemaAnnotation);
+        return keyword is "items" or "additionalProperties" or "unevaluatedProperties" or "unevaluatedItems"
+            or "propertyNames" or "contains" or "not" or "if" or "then" or "else" or "contentSchema"
+            && ContainsSchemaAnnotation(value);
     }
 
     private static bool ValidName(string name) => name.Length > 0 && name.All(static ch =>
@@ -100,9 +111,7 @@ internal static class McpHttpHeaderValue
             {
                 "string" => value.GetValue<string>(),
                 "boolean" => value.GetValue<bool>() ? "true" : "false",
-                "integer" when long.TryParse(value.ToJsonString(), NumberStyles.Integer,
-                    CultureInfo.InvariantCulture, out var number) && number is >= -MaxSafeInteger and <= MaxSafeInteger
-                    => number.ToString(CultureInfo.InvariantCulture),
+                "integer" when TryNormalizeInteger(value, out var number) => number,
                 _ => throw new InvalidOperationException("MCP header argument does not match its schema type.")
             };
         }
@@ -110,5 +119,44 @@ internal static class McpHttpHeaderValue
         {
             throw new InvalidOperationException("MCP header argument does not match its schema type.");
         }
+    }
+
+    private static bool TryNormalizeInteger(JsonNode value, out string normalized)
+    {
+        normalized = string.Empty;
+        var raw = value.ToJsonString();
+        if (value is not JsonValue)
+            return false;
+        using var document = JsonDocument.Parse(raw);
+        if (document.RootElement.ValueKind != JsonValueKind.Number)
+            return false;
+
+        var exponentIndex = raw.IndexOfAny(['e', 'E']);
+        var mantissa = exponentIndex < 0 ? raw : raw[..exponentIndex];
+        var dotIndex = mantissa.IndexOf('.');
+        var fractionalDigits = dotIndex < 0 ? 0 : mantissa.Length - dotIndex - 1;
+        var negative = mantissa[0] == '-';
+        var digits = dotIndex < 0 ? mantissa[(negative ? 1 : 0)..]
+            : mantissa[(negative ? 1 : 0)..dotIndex] + mantissa[(dotIndex + 1)..];
+        var significant = digits.TrimStart('0');
+        if (significant.Length == 0)
+        {
+            normalized = "0";
+            return true;
+        }
+        var exponent = 0;
+        if (exponentIndex >= 0 && !int.TryParse(raw.AsSpan(exponentIndex + 1), NumberStyles.AllowLeadingSign,
+            CultureInfo.InvariantCulture, out exponent))
+            return false;
+        var core = significant.TrimEnd('0');
+        var shift = (long)exponent - fractionalDigits + significant.Length - core.Length;
+        if (shift < 0 || core.Length + shift > 16)
+            return false;
+        var expanded = (negative ? "-" : "") + core + new string('0', (int)shift);
+        if (!long.TryParse(expanded, NumberStyles.AllowLeadingSign, CultureInfo.InvariantCulture, out var integer)
+            || integer is < -MaxSafeInteger or > MaxSafeInteger)
+            return false;
+        normalized = integer.ToString(CultureInfo.InvariantCulture);
+        return true;
     }
 }
