@@ -39,7 +39,8 @@ public sealed class DaprToolsPluginConnector(
             {
                 Name = name,
                 Type = PluginType,
-                Error = "Dapr sidecar port must be between 1 and 65535."
+                Error = "Dapr sidecar port must be between 1 and 65535.",
+                InstallationFailure = InstallationFailureCode.InvalidConfiguration
             });
 
         var client = httpClientFactory.CreateClient($"dapr-tool:{name}");

@@ -63,10 +63,12 @@ public sealed class PluginRegistryTests
         new(TokenService, bus ?? Substitute.For<IEventBus>(), NullLogger<CapabilityAuthorizer>.Instance);
 
     private static PluginRegistry CreateRegistry(params IPluginConnector[] connectors) =>
-        new(connectors, CreateAuthorizer(), NullLogger<PluginRegistry>.Instance);
+        new(connectors, CreateAuthorizer(), new InstallationDiagnostics(TimeProvider.System),
+            NullLogger<PluginRegistry>.Instance);
 
     private static PluginRegistry CreateRegistry(IEventBus bus, params IPluginConnector[] connectors) =>
-        new(connectors, CreateAuthorizer(bus), NullLogger<PluginRegistry>.Instance);
+        new(connectors, CreateAuthorizer(bus), new InstallationDiagnostics(TimeProvider.System),
+            NullLogger<PluginRegistry>.Instance);
 
     [Fact]
     public async Task ConnectAsync_KnownType_ReturnsConnected()

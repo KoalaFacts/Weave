@@ -30,6 +30,7 @@ public sealed class PluginRegistryActivationTests
     private static PluginRegistry CreateRegistry(params IPluginConnector[] connectors) =>
         new(connectors,
             new CapabilityAuthorizer(TokenService, Substitute.For<IEventBus>(), NullLogger<CapabilityAuthorizer>.Instance),
+            new InstallationDiagnostics(TimeProvider.System),
             NullLogger<PluginRegistry>.Instance);
 
     private static ServiceProvider CreateHttpServices() =>

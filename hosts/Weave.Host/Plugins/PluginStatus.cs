@@ -7,4 +7,5 @@ public sealed record PluginStatus
     public bool IsConnected { get; init; }
     public string? Error { get; init; }
     public IReadOnlyDictionary<string, string> Info { get; init; } = new Dictionary<string, string>();
+    internal InstallationFailureCode? InstallationFailure { get; init; }
 }

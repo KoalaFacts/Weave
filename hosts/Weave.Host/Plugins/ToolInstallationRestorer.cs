@@ -13,6 +13,7 @@ internal sealed class ToolInstallationRestorer(
     IVirtualActorProvider actors,
     IPluginRegistry plugins,
     ICapabilityTokenService tokenService,
+    IInstallationDiagnostics diagnostics,
     ILogger<ToolInstallationRestorer> logger) : BackgroundService
 {
     private readonly TaskCompletionSource _completed = new(TaskCreationOptions.RunContinuationsAsynchronously);
@@ -55,6 +56,7 @@ internal sealed class ToolInstallationRestorer(
                     || !string.Equals(installation.ConfigDigest,
                         DaprToolInstallation.ComputeConfigDigest(installation.Port), StringComparison.Ordinal))
                 {
+                    diagnostics.Record(installation.Id, InstallationFailureCode.StoredConfigurationInvalid);
                     logger.LogWarning("Dapr tool installation {InstallationId} has invalid stored configuration.", installation.Id);
                     continue;
                 }
@@ -91,12 +93,18 @@ internal sealed class ToolInstallationRestorer(
             foreach (var installation in state.McpToolInstallations.Where(item => item.DesiredEnabled))
             {
                 if (!string.Equals(installation.Id, $"{workspaceId}/{installation.PluginName}", StringComparison.Ordinal)
-                    || string.IsNullOrWhiteSpace(installation.ContractDigest)
                     || !string.Equals(installation.ConfigDigest,
                         McpToolInstallation.ComputeConfigDigest(installation.Url, installation.ServerName,
                             installation.ServerVersion, installation.Operation), StringComparison.Ordinal))
                 {
+                    diagnostics.Record(installation.Id, InstallationFailureCode.StoredConfigurationInvalid);
                     logger.LogWarning("MCP installation {InstallationId} has invalid stored configuration.", installation.Id);
+                    continue;
+                }
+                if (string.IsNullOrWhiteSpace(installation.ContractDigest))
+                {
+                    diagnostics.Record(installation.Id, InstallationFailureCode.ContractUnpinned);
+                    logger.LogWarning("MCP installation {InstallationId} has no pinned contract.", installation.Id);
                     continue;
                 }
                 using var source = tokenService.MintLinked(new CapabilityTokenRequest
