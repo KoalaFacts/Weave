@@ -1,6 +1,7 @@
 using System.Text.Json;
 using System.Threading.Channels;
 using Microsoft.Extensions.Logging.Abstractions;
+using Microsoft.Extensions.Time.Testing;
 using Weave.Security.Tokens;
 using Weave.Tools.Connectors;
 using Weave.Tools.Tool;
@@ -85,23 +86,35 @@ public sealed class McpToolConnectorTests
     [Fact]
     public async Task ConnectAsync_SilentModernProbe_FallsBackToLegacyInitialize()
     {
-        var transport = new StubMcpTransport { SupportsModernProtocol = true, ModernProbeTimeout = TimeSpan.FromMilliseconds(100) };
-        var (connector, _) = NewConnector(transport);
+        var time = new FakeTimeProvider();
+        var probeTransport = new StubMcpTransport
+        {
+            SupportsModernProtocol = true,
+            ModernProbeTimeout = TimeSpan.FromMilliseconds(100)
+        };
+        var legacyTransport = new StubMcpTransport { SupportsModernProtocol = true };
+        var opened = 0;
+        var connector = new McpToolConnector((_, _) => Task.FromResult<IMcpTransport>(
+            Interlocked.Increment(ref opened) == 1 ? probeTransport : legacyTransport),
+            NullLogger<McpToolConnector>.Instance, time);
         var connectTask = connector.ConnectAsync(NewSpec(), _token, TestContext.Current.CancellationToken);
 
-        using (var probe = JsonDocument.Parse(await transport.ReadClientFrameAsync()))
+        using (var probe = JsonDocument.Parse(await probeTransport.ReadClientFrameAsync()))
             probe.RootElement.GetProperty("method").GetString().ShouldBe("server/discover");
-        using (var initialize = JsonDocument.Parse(await transport.ReadClientFrameAsync()))
+        time.Advance(TimeSpan.FromMilliseconds(100));
+        using (var initialize = JsonDocument.Parse(await legacyTransport.ReadClientFrameAsync()))
         {
             initialize.RootElement.GetProperty("method").GetString().ShouldBe("initialize");
             var id = initialize.RootElement.GetProperty("id").GetInt64();
-            await transport.WriteServerFrameAsync(Reply(id,
+            await legacyTransport.WriteServerFrameAsync(Reply(id,
                 """{"protocolVersion":"2024-11-05","serverInfo":{"name":"legacy","version":"1"}}"""));
         }
-        using (var notification = JsonDocument.Parse(await transport.ReadClientFrameAsync()))
+        using (var notification = JsonDocument.Parse(await legacyTransport.ReadClientFrameAsync()))
             notification.RootElement.GetProperty("method").GetString().ShouldBe("notifications/initialized");
 
         var handle = await connectTask;
+        opened.ShouldBe(2);
+        probeTransport.Disposed.ShouldBeTrue();
         await connector.DisconnectAsync(handle, TestContext.Current.CancellationToken);
     }
 

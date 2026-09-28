@@ -17,6 +17,7 @@ public sealed partial class McpToolConnector : IToolConnector, IApprovalTargetBi
 {
     private readonly Func<McpConfig, CancellationToken, Task<IMcpTransport>> _transportFactory;
     private readonly ILogger<McpToolConnector> _logger;
+    private readonly TimeProvider _timeProvider;
     private readonly ConcurrentDictionary<string, McpConnection> _connections = new(StringComparer.Ordinal);
     private readonly McpInstallationContract? _installation;
     private readonly object _dispatchGate = new();
@@ -25,11 +26,12 @@ public sealed partial class McpToolConnector : IToolConnector, IApprovalTargetBi
     private int _inFlight;
     private string? _observedContractDigest;
 
-    public McpToolConnector(ILogger<McpToolConnector> logger)
-        : this(SelectTransport, logger) { }
+    public McpToolConnector(ILogger<McpToolConnector> logger, TimeProvider? timeProvider = null)
+        : this(SelectTransport, logger, timeProvider) { }
 
-    public McpToolConnector(McpInstallationContract installation, ILogger<McpToolConnector> logger)
-        : this(SelectTransport, logger) => _installation = installation;
+    public McpToolConnector(McpInstallationContract installation, ILogger<McpToolConnector> logger,
+        TimeProvider? timeProvider = null)
+        : this(SelectTransport, logger, timeProvider) => _installation = installation;
 
     private static Task<IMcpTransport> SelectTransport(McpConfig config, CancellationToken ct)
     {
@@ -46,10 +48,12 @@ public sealed partial class McpToolConnector : IToolConnector, IApprovalTargetBi
 
     internal McpToolConnector(
         Func<McpConfig, CancellationToken, Task<IMcpTransport>> transportFactory,
-        ILogger<McpToolConnector> logger)
+        ILogger<McpToolConnector> logger,
+        TimeProvider? timeProvider = null)
     {
         _transportFactory = transportFactory;
         _logger = logger;
+        _timeProvider = timeProvider ?? TimeProvider.System;
     }
 
     public ToolType ToolType => ToolType.Mcp;
@@ -92,9 +96,7 @@ public sealed partial class McpToolConnector : IToolConnector, IApprovalTargetBi
     {
         if (_installation is null || !string.Equals(config.Url, _installation.Url, StringComparison.Ordinal))
             throw new InvalidOperationException("MCP probe endpoint differs from its installation.");
-        var transport = await _transportFactory(config, ct);
-        await using var connection = new McpConnection(transport, _installation.Operation, _logger);
-        await connection.InitializeAsync(ct);
+        await using var connection = await OpenConnectionAsync(config, _installation.Operation, ct);
         await VerifyContractAsync(connection, refresh: false, ct);
     }
 
@@ -110,12 +112,10 @@ public sealed partial class McpToolConnector : IToolConnector, IApprovalTargetBi
                 throw new InvalidOperationException("MCP installation is inactive.");
         }
 
-        var transport = await _transportFactory(mcp, ct);
-        var connection = new McpConnection(transport, tool.Name, _logger);
+        var connection = await OpenConnectionAsync(mcp, tool.Name, ct);
 
         try
         {
-            await connection.InitializeAsync(ct);
             if (_installation is not null)
                 await VerifyContractAsync(connection, refresh: false, ct);
             var connectionId = Guid.NewGuid().ToString("N");
@@ -138,6 +138,36 @@ public sealed partial class McpToolConnector : IToolConnector, IApprovalTargetBi
         catch
         {
             await connection.DisposeAsync();
+            throw;
+        }
+    }
+
+    private async Task<McpConnection> OpenConnectionAsync(McpConfig config, string toolName, CancellationToken ct)
+    {
+        var connection = new McpConnection(await _transportFactory(config, ct), toolName, _logger, _timeProvider);
+        bool ready;
+        try
+        {
+            ready = await connection.InitializeAsync(ct);
+        }
+        catch
+        {
+            await connection.DisposeAsync();
+            throw;
+        }
+        if (ready)
+            return connection;
+
+        await connection.DisposeAsync();
+        var legacy = new McpConnection(await _transportFactory(config, ct), toolName, _logger, _timeProvider);
+        try
+        {
+            await legacy.InitializeAsync(ct, legacyOnly: true);
+            return legacy;
+        }
+        catch
+        {
+            await legacy.DisposeAsync();
             throw;
         }
     }

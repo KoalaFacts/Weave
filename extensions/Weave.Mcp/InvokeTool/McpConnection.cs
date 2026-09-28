@@ -15,6 +15,7 @@ internal sealed partial class McpConnection : IAsyncDisposable
 
     private readonly IMcpTransport _transport;
     private readonly ILogger _logger;
+    private readonly TimeProvider _timeProvider;
     private readonly string _toolName;
     private readonly ConcurrentDictionary<long, TaskCompletionSource<JsonElement>> _pending = new();
     private readonly CancellationTokenSource _shutdown = new();
@@ -26,11 +27,12 @@ internal sealed partial class McpConnection : IAsyncDisposable
     private IReadOnlyList<McpTool>? _toolsCache;
     private bool _modern;
 
-    public McpConnection(IMcpTransport transport, string toolName, ILogger logger)
+    public McpConnection(IMcpTransport transport, string toolName, ILogger logger, TimeProvider? timeProvider = null)
     {
         _transport = transport;
         _toolName = toolName;
         _logger = logger;
+        _timeProvider = timeProvider ?? TimeProvider.System;
     }
 
     public bool HasExited => _transport.HasExited;
@@ -40,14 +42,20 @@ internal sealed partial class McpConnection : IAsyncDisposable
 
     public string DiagnosticTail() => _transport.FormatDiagnosticTail();
 
-    public async Task InitializeAsync(CancellationToken ct)
+    public async Task<bool> InitializeAsync(CancellationToken ct, bool legacyOnly = false)
     {
         _readLoop = Task.Run(() => ReadLoopAsync(_shutdown.Token), CancellationToken.None);
 
-        if (_transport.SupportsModernProtocol && await TryInitializeModernAsync(ct))
-            return;
+        if (!legacyOnly && _transport.SupportsModernProtocol)
+        {
+            if (await TryInitializeModernAsync(ct))
+                return true;
+            if (_transport.ModernProbeTimeout is not null)
+                return false;
+        }
 
         await InitializeLegacyAsync(ct);
+        return true;
     }
 
     private async Task InitializeLegacyAsync(CancellationToken ct)

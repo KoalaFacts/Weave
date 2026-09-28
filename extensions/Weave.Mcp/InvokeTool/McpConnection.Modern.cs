@@ -8,14 +8,20 @@ internal sealed partial class McpConnection
     private async Task<bool> TryInitializeModernAsync(CancellationToken ct)
     {
         using var probeDeadline = CancellationTokenSource.CreateLinkedTokenSource(ct);
-        if (_transport.ModernProbeTimeout is { } timeout)
-            probeDeadline.CancelAfter(timeout);
+        using var timer = _transport.ModernProbeTimeout is { } timeout
+            ? _timeProvider.CreateTimer(static state => ((CancellationTokenSource)state!).Cancel(), probeDeadline,
+                timeout, Timeout.InfiniteTimeSpan)
+            : null;
         JsonElement result;
         try
         {
             result = await SendRequestAsync("server/discover", paramsNode: null, probeDeadline.Token);
         }
         catch (OperationCanceledException) when (probeDeadline.IsCancellationRequested && !ct.IsCancellationRequested)
+        {
+            return false;
+        }
+        catch (IOException) when (_transport.ModernProbeTimeout is not null)
         {
             return false;
         }

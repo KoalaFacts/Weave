@@ -32,7 +32,9 @@ public sealed class McpConnectorIntegrationTests : IDisposable
             req = json.loads(line)
             method = req.get("method")
             rid = req.get("id")
-            if method == "initialize":
+            if method == "server/discover":
+                sys.exit(0)
+            elif method == "initialize":
                 send({"jsonrpc": "2.0", "id": rid, "result": {
                     "protocolVersion": "2024-11-05",
                     "serverInfo": {"name": "py-mcp-stub", "version": "0.1.0"}
