@@ -45,11 +45,11 @@ public sealed class McpToolConnectorTests
         using (var initDoc = JsonDocument.Parse(initRequest))
         {
             initDoc.RootElement.GetProperty("method").GetString().ShouldBe("initialize");
-            initDoc.RootElement.GetProperty("params").GetProperty("protocolVersion").GetString().ShouldBe("2024-11-05");
+            initDoc.RootElement.GetProperty("params").GetProperty("protocolVersion").GetString().ShouldBe("2025-11-25");
             initDoc.RootElement.GetProperty("params").GetProperty("clientInfo").GetProperty("name").GetString().ShouldBe("weave");
 
             var id = initDoc.RootElement.GetProperty("id").GetInt64();
-            await transport.WriteServerFrameAsync(Reply(id, """{"protocolVersion":"2024-11-05","serverInfo":{"name":"stub","version":"1.0"}}"""));
+            await transport.WriteServerFrameAsync(Reply(id, """{"protocolVersion":"2025-11-25","serverInfo":{"name":"stub","version":"1.0"}}"""));
         }
 
         var initialized = await transport.ReadClientFrameAsync();

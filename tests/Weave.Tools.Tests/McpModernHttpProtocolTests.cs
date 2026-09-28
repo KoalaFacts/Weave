@@ -167,8 +167,10 @@ public sealed class McpModernHttpProtocolTests
             .GetProperty("method").GetString() == "tools/call").ShouldBe(1);
     }
 
-    [Fact]
-    public async Task InitializeAsync_LegacyBadRequest_FallsBackWithoutCallingTool()
+    [Theory]
+    [InlineData(400)]
+    [InlineData(404)]
+    public async Task InitializeAsync_HandshakePeerRejection_FallsBackWithoutCallingTool(int status)
     {
         McpHttpTestPeer? peer = null;
         peer = new McpHttpTestPeer(async (stream, ct) =>
@@ -183,7 +185,7 @@ public sealed class McpModernHttpProtocolTests
             }
             var id = root.GetProperty("id").GetInt64();
             if (method == "server/discover")
-                await McpHttpTestPeer.ReplyAsync(stream, ct, status: 400);
+                await McpHttpTestPeer.ReplyAsync(stream, ct, status: status);
             else if (method == "initialize")
                 await McpHttpTestPeer.ReplyAsync(stream, ct,
                     $"{{\"jsonrpc\":\"2.0\",\"id\":{id},\"result\":{{\"protocolVersion\":\"2024-11-05\",\"serverInfo\":{{\"name\":\"legacy\",\"version\":\"1\"}}}}}}");

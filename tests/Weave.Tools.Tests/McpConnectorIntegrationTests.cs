@@ -35,6 +35,9 @@ public sealed class McpConnectorIntegrationTests : IDisposable
             if method == "server/discover":
                 sys.exit(0)
             elif method == "initialize":
+                if req["params"]["protocolVersion"] != "2025-11-25":
+                    send({"jsonrpc": "2.0", "id": rid, "error": {"code": -32602, "message": "wrong requested revision"}})
+                    continue
                 send({"jsonrpc": "2.0", "id": rid, "result": {
                     "protocolVersion": "2024-11-05",
                     "serverInfo": {"name": "py-mcp-stub", "version": "0.1.0"}
@@ -127,11 +130,14 @@ public sealed class McpConnectorIntegrationTests : IDisposable
         catch (IOException) { /* best-effort cleanup */ }
     }
 
-    [Fact]
-    public async Task RealSubprocess_HandshakeListAndCall_WorksEndToEnd()
+    [Theory]
+    [InlineData("2025-11-25")]
+    [InlineData("2024-11-05")]
+    public async Task RealSubprocess_HandshakeRevision_ListAndCallWorks(string negotiatedVersion)
     {
         var python = LocatePython();
         Assert.SkipWhen(python is null, "python3 required for MCP subprocess integration test");
+        File.WriteAllText(_scriptPath, PythonServer.Replace("2024-11-05", negotiatedVersion, StringComparison.Ordinal));
 
         var connector = new McpToolConnector(NullLogger<McpToolConnector>.Instance);
         var spec = new ToolSpec

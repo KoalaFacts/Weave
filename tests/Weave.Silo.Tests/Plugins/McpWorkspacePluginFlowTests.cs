@@ -306,7 +306,7 @@ public sealed partial class McpWorkspacePluginFlowTests
     }
 
     [Fact]
-    public async Task InvokeAsync_LegacyInstallationAfterModernUpgrade_RequiresNewContractReview()
+    public async Task InvokeAsync_PreviousRevisionInstallationAfterModernUpgrade_RequiresNewContractReview()
     {
         var directory = Path.Join(Path.GetTempPath(), $"weave-mcp-upgrade-{Guid.NewGuid():N}");
         Directory.CreateDirectory(directory);
@@ -672,7 +672,11 @@ public sealed partial class McpWorkspacePluginFlowTests
                 var root = body.RootElement;
                 var method = root.GetProperty("method").GetString();
                 if (method == "notifications/initialized")
+                {
+                    if (!ModernOnly)
+                        request.Headers["MCP-Protocol-Version"].ToString().ShouldBe("2025-11-25");
                     return Microsoft.AspNetCore.Http.Results.Accepted();
+                }
                 var id = root.GetProperty("id").GetInt64();
                 if (ModernOnly && method != "initialize")
                 {
@@ -687,6 +691,10 @@ public sealed partial class McpWorkspacePluginFlowTests
                     return Microsoft.AspNetCore.Http.Results.BadRequest();
                 if (method == "initialize" && ModernOnly)
                     return Microsoft.AspNetCore.Http.Results.BadRequest();
+                if (method == "initialize")
+                    root.GetProperty("params").GetProperty("protocolVersion").GetString().ShouldBe("2025-11-25");
+                else if (!ModernOnly)
+                    request.Headers["MCP-Protocol-Version"].ToString().ShouldBe("2025-11-25");
                 object result = method switch
                 {
                     "server/discover" => new
@@ -700,7 +708,7 @@ public sealed partial class McpWorkspacePluginFlowTests
                     },
                     "initialize" => new
                     {
-                        protocolVersion = "2024-11-05",
+                        protocolVersion = "2025-11-25",
                         serverInfo = new { name = "weave-plugin-echo", version = ServerVersion }
                     },
                     "tools/list" => new

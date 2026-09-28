@@ -9,6 +9,7 @@ namespace Weave.Tools.Connectors;
 internal sealed partial class McpConnection : IAsyncDisposable
 {
     private const string LegacyProtocolVersion = "2024-11-05";
+    private const string PreviousProtocolVersion = "2025-11-25";
     private const string ModernProtocolVersion = "2026-07-28";
     private const string ClientName = "weave";
     private const string ClientVersion = "0.1.0";
@@ -26,6 +27,7 @@ internal sealed partial class McpConnection : IAsyncDisposable
     private long _nextId;
     private IReadOnlyList<McpTool>? _toolsCache;
     private bool _modern;
+    private string? _protocolVersion;
 
     public McpConnection(IMcpTransport transport, string toolName, ILogger logger, TimeProvider? timeProvider = null)
     {
@@ -36,7 +38,7 @@ internal sealed partial class McpConnection : IAsyncDisposable
     }
 
     public bool HasExited => _transport.HasExited;
-    public bool UsesModernProtocol => _modern;
+    public string? ProtocolVersion => _protocolVersion;
     public string? ServerName { get; private set; }
     public string? ServerVersion { get; private set; }
 
@@ -62,7 +64,7 @@ internal sealed partial class McpConnection : IAsyncDisposable
     {
         var initParams = new McpInitializeParams
         {
-            ProtocolVersion = LegacyProtocolVersion,
+            ProtocolVersion = PreviousProtocolVersion,
             Capabilities = new McpClientCapabilities(),
             ClientInfo = new McpClientInfo { Name = ClientName, Version = ClientVersion }
         };
@@ -70,6 +72,9 @@ internal sealed partial class McpConnection : IAsyncDisposable
         var paramsNode = JsonSerializer.SerializeToNode(initParams, McpJsonContext.Default.McpInitializeParams);
         var result = await SendRequestAsync("initialize", paramsNode, ct);
         var initResult = result.Deserialize(McpJsonContext.Default.McpInitializeResult);
+        if (initResult?.ProtocolVersion is not (PreviousProtocolVersion or LegacyProtocolVersion))
+            throw new InvalidOperationException("MCP peer selected an unsupported protocol revision.");
+        _protocolVersion = initResult.ProtocolVersion;
         ServerName = initResult?.ServerInfo?.Name;
         ServerVersion = initResult?.ServerInfo?.Version;
         LogMcpInitialized(_toolName, initResult?.ServerInfo?.Name ?? "?", initResult?.ProtocolVersion ?? "?");
@@ -120,9 +125,9 @@ internal sealed partial class McpConnection : IAsyncDisposable
         var paramsNode = JsonSerializer.SerializeToNode(callParams, McpJsonContext.Default.McpToolCallParams)
             ?? throw new InvalidOperationException("Failed to serialize tools/call params");
         var result = await SendRequestAsync("tools/call", paramsNode, ct, parameterHeaders);
-        if (_modern && (!result.TryGetProperty("content", out var content)
-            || content.ValueKind != JsonValueKind.Array))
-            throw new InvalidOperationException("MCP modern tool result is missing content.");
+        if (!result.TryGetProperty("content", out var content)
+            || content.ValueKind != JsonValueKind.Array)
+            throw new InvalidOperationException("MCP tool result is missing supported content.");
         return result.Deserialize(McpJsonContext.Default.McpToolCallResult)
             ?? new McpToolCallResult { IsError = true };
     }
@@ -142,7 +147,10 @@ internal sealed partial class McpConnection : IAsyncDisposable
             var request = new McpJsonRpcRequest { Id = id, Method = method, Params = paramsNode };
             var json = JsonSerializer.Serialize(request, McpJsonContext.Default.McpJsonRpcRequest);
             var metadata = modern ? new McpRequestMetadata(ModernProtocolVersion, method,
-                method == "tools/call" ? paramsNode?["name"]?.GetValue<string>() : null, parameterHeaders) : null;
+                method == "tools/call" ? paramsNode?["name"]?.GetValue<string>() : null, parameterHeaders)
+                : _protocolVersion == PreviousProtocolVersion
+                    ? new McpRequestMetadata(PreviousProtocolVersion, method, IncludeRoutingHeaders: false)
+                    : null;
 
             await _writeLock.WaitAsync(ct);
             try
@@ -170,10 +178,12 @@ internal sealed partial class McpConnection : IAsyncDisposable
     {
         var notification = new McpJsonRpcNotification { Method = method, Params = paramsNode };
         var json = JsonSerializer.Serialize(notification, McpJsonContext.Default.McpJsonRpcNotification);
+        var metadata = _protocolVersion == PreviousProtocolVersion
+            ? new McpRequestMetadata(PreviousProtocolVersion, method, IncludeRoutingHeaders: false) : null;
 
         await _writeLock.WaitAsync(ct);
         try
-        { await _transport.SendAsync(json, ct); }
+        { await _transport.SendAsync(json, ct, metadata); }
         finally { _writeLock.Release(); }
     }
 

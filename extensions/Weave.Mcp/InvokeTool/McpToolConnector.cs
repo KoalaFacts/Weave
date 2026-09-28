@@ -270,9 +270,12 @@ public sealed partial class McpToolConnector : IToolConnector, IApprovalTargetBi
         if (operation is null)
             throw new InvalidOperationException("MCP operation is missing or ambiguous.");
         var serialized = JsonSerializer.SerializeToUtf8Bytes(operation, McpJsonContext.Default.McpTool);
-        var digest = connection.UsesModernProtocol
-            ? ComputeModernContractDigest(serialized)
-            : Convert.ToHexString(SHA256.HashData(serialized));
+        var digest = connection.ProtocolVersion switch
+        {
+            "2026-07-28" or "2025-11-25" => ComputeVersionedContractDigest(connection.ProtocolVersion, serialized),
+            "2024-11-05" => Convert.ToHexString(SHA256.HashData(serialized)),
+            _ => throw new InvalidOperationException("MCP connection has no supported protocol revision.")
+        };
         if (installation.ContractDigest is not null && !string.Equals(digest, installation.ContractDigest, StringComparison.Ordinal))
             throw new InvalidOperationException("MCP operation contract differs from the installed revision.");
         var observed = Interlocked.CompareExchange(ref _observedContractDigest, digest, null);
@@ -280,10 +283,10 @@ public sealed partial class McpToolConnector : IToolConnector, IApprovalTargetBi
             throw new InvalidOperationException("MCP operation contract changed during this installation.");
     }
 
-    private static string ComputeModernContractDigest(byte[] serialized)
+    private static string ComputeVersionedContractDigest(string version, byte[] serialized)
     {
         using var hash = IncrementalHash.CreateHash(HashAlgorithmName.SHA256);
-        hash.AppendData("mcp_tools/2\n2026-07-28\n"u8);
+        hash.AppendData(Encoding.UTF8.GetBytes($"mcp_tools/2\n{version}\n"));
         hash.AppendData(serialized);
         return Convert.ToHexString(hash.GetHashAndReset());
     }

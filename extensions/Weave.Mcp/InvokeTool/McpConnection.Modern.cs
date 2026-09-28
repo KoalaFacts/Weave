@@ -25,7 +25,8 @@ internal sealed partial class McpConnection
         {
             return false;
         }
-        catch (McpHttpStatusException error) when (error.StatusCode == System.Net.HttpStatusCode.BadRequest
+        catch (McpHttpStatusException error) when ((error.StatusCode is System.Net.HttpStatusCode.BadRequest
+            or System.Net.HttpStatusCode.NotFound)
             && error.ProtocolErrorCode is not (-32020 or -32021 or -32022))
         {
             return false;
@@ -47,6 +48,7 @@ internal sealed partial class McpConnection
 
         (ServerName, ServerVersion) = ReadServerIdentity(result);
         _modern = true;
+        _protocolVersion = ModernProtocolVersion;
         LogMcpInitialized(_toolName, ServerName ?? "?", ModernProtocolVersion);
         return true;
     }

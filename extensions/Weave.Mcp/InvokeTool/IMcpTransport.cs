@@ -13,4 +13,4 @@ internal interface IMcpTransport : IAsyncDisposable
 }
 
 internal sealed record McpRequestMetadata(string ProtocolVersion, string Method, string? Name = null,
-    IReadOnlyDictionary<string, string>? ParameterHeaders = null);
+    IReadOnlyDictionary<string, string>? ParameterHeaders = null, bool IncludeRoutingHeaders = true);
