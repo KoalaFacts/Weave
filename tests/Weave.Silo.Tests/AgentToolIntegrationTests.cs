@@ -115,10 +115,11 @@ public sealed class AgentToolIntegrationTests : IClassFixture<SiloFactory>
         var wsId = await StartWorkspaceAsync(client, manifest);
 
         // Stop the workspace.
+        SiloFactory.Authorize(client, _factory.Services, wsId, "workspace:stop");
         using var stopResponse = await client.DeleteAsync(
             $"/api/workspaces/{wsId}",
             TestContext.Current.CancellationToken);
-        ((int)stopResponse.StatusCode).ShouldBeLessThan(500);
+        stopResponse.StatusCode.ShouldBe(HttpStatusCode.NoContent);
 
         // Agent should no longer be active (returns 200 but with non-Active status, or 404).
         using var agentResponse = await client.GetAsync(
