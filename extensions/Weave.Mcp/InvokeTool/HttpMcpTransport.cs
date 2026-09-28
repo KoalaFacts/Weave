@@ -46,6 +46,7 @@ internal sealed partial class HttpMcpTransport : IMcpTransport
     }
 
     public bool HasExited => Volatile.Read(ref _disposed) != 0;
+    public bool SupportsModernProtocol => true;
 
     public int? ExitCode => null;
 
@@ -70,7 +71,7 @@ internal sealed partial class HttpMcpTransport : IMcpTransport
         return new HttpMcpTransport(httpClient, ownsHttpClient: false, uri, config);
     }
 
-    public async Task SendAsync(string json, CancellationToken ct)
+    public async Task SendAsync(string json, CancellationToken ct, McpRequestMetadata? metadata = null)
     {
         ObjectDisposedException.ThrowIf(HasExited, this);
         _lastDiagnostic = null;
@@ -84,6 +85,16 @@ internal sealed partial class HttpMcpTransport : IMcpTransport
             };
             request.Headers.Accept.Add(new MediaTypeWithQualityHeaderValue("application/json"));
             request.Headers.Accept.Add(new MediaTypeWithQualityHeaderValue("text/event-stream"));
+            if (metadata is not null)
+            {
+                request.Headers.Add("MCP-Protocol-Version", metadata.ProtocolVersion);
+                request.Headers.Add("Mcp-Method", metadata.Method);
+                if (metadata.Name is not null)
+                    request.Headers.Add("Mcp-Name", McpHttpHeaderValue.Encode(metadata.Name));
+                if (metadata.ParameterHeaders is not null)
+                    foreach (var (name, value) in metadata.ParameterHeaders)
+                        request.Headers.Add($"Mcp-Param-{name}", McpHttpHeaderValue.Encode(value));
+            }
 
             using var response = await _httpClient.SendAsync(request, HttpCompletionOption.ResponseHeadersRead, deadline.Token);
             if (response.StatusCode == HttpStatusCode.NoContent)
@@ -96,7 +107,12 @@ internal sealed partial class HttpMcpTransport : IMcpTransport
                 return;
             }
             if (!response.IsSuccessStatusCode)
+            {
+                if (metadata is not null && response.StatusCode is HttpStatusCode.BadRequest or HttpStatusCode.NotFound)
+                    throw new McpHttpStatusException(response.StatusCode,
+                        await ReadProtocolErrorCodeAsync(response, deadline.Token));
                 throw Failure($"HTTP {(int)response.StatusCode}");
+            }
 
             var contentType = response.Content.Headers.ContentType?.MediaType;
             if (string.Equals(contentType, "application/json", StringComparison.OrdinalIgnoreCase))
@@ -130,7 +146,7 @@ internal sealed partial class HttpMcpTransport : IMcpTransport
         {
             throw Failure("HTTP response contains invalid UTF-8", ex);
         }
-        catch (IOException ex) when (_lastDiagnostic is null)
+        catch (IOException ex) when (ex is not McpHttpStatusException && _lastDiagnostic is null)
         {
             throw Failure("HTTP response read failed", ex);
         }

@@ -315,12 +315,13 @@ internal sealed class StubMcpTransport : IMcpTransport
     private readonly Channel<string> _serverToClient = Channel.CreateUnbounded<string>();
 
     public bool Disposed { get; private set; }
+    public bool SupportsModernProtocol => false;
     public bool HasExited => Disposed;
     public int? ExitCode => Disposed ? 0 : null;
     public bool HasPendingClientFrame => _clientToServer.Reader.Count > 0;
     public string? HandleId { get; set; }
 
-    public Task SendAsync(string json, CancellationToken ct) =>
+    public Task SendAsync(string json, CancellationToken ct, McpRequestMetadata? metadata = null) =>
         _clientToServer.Writer.WriteAsync(json, ct).AsTask();
 
     public async Task<string?> ReceiveAsync(CancellationToken ct)
