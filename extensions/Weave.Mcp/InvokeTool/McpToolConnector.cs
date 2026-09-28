@@ -17,6 +17,7 @@ public sealed partial class McpToolConnector : IToolConnector, IApprovalTargetBi
 {
     private readonly Func<McpConfig, CancellationToken, Task<IMcpTransport>> _transportFactory;
     private readonly ILogger<McpToolConnector> _logger;
+    private readonly TimeProvider _timeProvider;
     private readonly ConcurrentDictionary<string, McpConnection> _connections = new(StringComparer.Ordinal);
     private readonly McpInstallationContract? _installation;
     private readonly object _dispatchGate = new();
@@ -25,11 +26,12 @@ public sealed partial class McpToolConnector : IToolConnector, IApprovalTargetBi
     private int _inFlight;
     private string? _observedContractDigest;
 
-    public McpToolConnector(ILogger<McpToolConnector> logger)
-        : this(SelectTransport, logger) { }
+    public McpToolConnector(ILogger<McpToolConnector> logger, TimeProvider? timeProvider = null)
+        : this(SelectTransport, logger, timeProvider) { }
 
-    public McpToolConnector(McpInstallationContract installation, ILogger<McpToolConnector> logger)
-        : this(SelectTransport, logger) => _installation = installation;
+    public McpToolConnector(McpInstallationContract installation, ILogger<McpToolConnector> logger,
+        TimeProvider? timeProvider = null)
+        : this(SelectTransport, logger, timeProvider) => _installation = installation;
 
     private static Task<IMcpTransport> SelectTransport(McpConfig config, CancellationToken ct)
     {
@@ -46,10 +48,12 @@ public sealed partial class McpToolConnector : IToolConnector, IApprovalTargetBi
 
     internal McpToolConnector(
         Func<McpConfig, CancellationToken, Task<IMcpTransport>> transportFactory,
-        ILogger<McpToolConnector> logger)
+        ILogger<McpToolConnector> logger,
+        TimeProvider? timeProvider = null)
     {
         _transportFactory = transportFactory;
         _logger = logger;
+        _timeProvider = timeProvider ?? TimeProvider.System;
     }
 
     public ToolType ToolType => ToolType.Mcp;
@@ -86,15 +90,13 @@ public sealed partial class McpToolConnector : IToolConnector, IApprovalTargetBi
     public string? GetApprovalTargetDescription(ToolHandle handle) => _installation is null
         ? null
         : $"MCP {_installation.ServerName} {_installation.ServerVersion} at {_installation.Url}; "
-            + $"operation {_installation.Operation}; schema SHA-256 {ContractDigest}";
+            + $"operation {_installation.Operation}; contract SHA-256 {ContractDigest}";
 
     public async Task ProbeAsync(McpConfig config, CancellationToken ct = default)
     {
         if (_installation is null || !string.Equals(config.Url, _installation.Url, StringComparison.Ordinal))
             throw new InvalidOperationException("MCP probe endpoint differs from its installation.");
-        var transport = await _transportFactory(config, ct);
-        await using var connection = new McpConnection(transport, _installation.Operation, _logger);
-        await connection.InitializeAsync(ct);
+        await using var connection = await OpenConnectionAsync(config, _installation.Operation, ct);
         await VerifyContractAsync(connection, refresh: false, ct);
     }
 
@@ -110,12 +112,10 @@ public sealed partial class McpToolConnector : IToolConnector, IApprovalTargetBi
                 throw new InvalidOperationException("MCP installation is inactive.");
         }
 
-        var transport = await _transportFactory(mcp, ct);
-        var connection = new McpConnection(transport, tool.Name, _logger);
+        var connection = await OpenConnectionAsync(mcp, tool.Name, ct);
 
         try
         {
-            await connection.InitializeAsync(ct);
             if (_installation is not null)
                 await VerifyContractAsync(connection, refresh: false, ct);
             var connectionId = Guid.NewGuid().ToString("N");
@@ -138,6 +138,36 @@ public sealed partial class McpToolConnector : IToolConnector, IApprovalTargetBi
         catch
         {
             await connection.DisposeAsync();
+            throw;
+        }
+    }
+
+    private async Task<McpConnection> OpenConnectionAsync(McpConfig config, string toolName, CancellationToken ct)
+    {
+        var connection = new McpConnection(await _transportFactory(config, ct), toolName, _logger, _timeProvider);
+        bool ready;
+        try
+        {
+            ready = await connection.InitializeAsync(ct);
+        }
+        catch
+        {
+            await connection.DisposeAsync();
+            throw;
+        }
+        if (ready)
+            return connection;
+
+        await connection.DisposeAsync();
+        var legacy = new McpConnection(await _transportFactory(config, ct), toolName, _logger, _timeProvider);
+        try
+        {
+            await legacy.InitializeAsync(ct, legacyOnly: true);
+            return legacy;
+        }
+        catch
+        {
+            await legacy.DisposeAsync();
             throw;
         }
     }
@@ -240,12 +270,25 @@ public sealed partial class McpToolConnector : IToolConnector, IApprovalTargetBi
         if (operation is null)
             throw new InvalidOperationException("MCP operation is missing or ambiguous.");
         var serialized = JsonSerializer.SerializeToUtf8Bytes(operation, McpJsonContext.Default.McpTool);
-        var digest = Convert.ToHexString(SHA256.HashData(serialized));
+        var digest = connection.ProtocolVersion switch
+        {
+            "2026-07-28" or "2025-11-25" => ComputeVersionedContractDigest(connection.ProtocolVersion, serialized),
+            "2024-11-05" => Convert.ToHexString(SHA256.HashData(serialized)),
+            _ => throw new InvalidOperationException("MCP connection has no supported protocol revision.")
+        };
         if (installation.ContractDigest is not null && !string.Equals(digest, installation.ContractDigest, StringComparison.Ordinal))
             throw new InvalidOperationException("MCP operation contract differs from the installed revision.");
         var observed = Interlocked.CompareExchange(ref _observedContractDigest, digest, null);
         if (observed is not null && !string.Equals(observed, digest, StringComparison.Ordinal))
             throw new InvalidOperationException("MCP operation contract changed during this installation.");
+    }
+
+    private static string ComputeVersionedContractDigest(string version, byte[] serialized)
+    {
+        using var hash = IncrementalHash.CreateHash(HashAlgorithmName.SHA256);
+        hash.AppendData(Encoding.UTF8.GetBytes($"mcp_tools/2\n{version}\n"));
+        hash.AppendData(serialized);
+        return Convert.ToHexString(hash.GetHashAndReset());
     }
 
     public async Task<ToolSchema> DiscoverSchemaAsync(ToolHandle handle, CancellationToken ct = default)

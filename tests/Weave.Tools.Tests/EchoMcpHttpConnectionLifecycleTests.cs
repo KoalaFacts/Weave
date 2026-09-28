@@ -41,8 +41,8 @@ public sealed class EchoMcpHttpConnectionLifecycleTests
         });
 
         error.ShouldBeNull(peer.Diagnostics);
-        await peer.WaitForServedAsync(13, deadline.Token);
-        peer.ServedPosts.ShouldBe(13); // initialize + notification + list + ten distinct calls
+        await peer.WaitForServedAsync(14, deadline.Token);
+        peer.ServedPosts.ShouldBe(14); // discovery probe + initialize + notification + list + ten distinct calls
         peer.LatePosts.ShouldBe(0);
         peer.HasExited.ShouldBeFalse();
     }
@@ -68,7 +68,7 @@ public sealed class EchoMcpHttpConnectionLifecycleTests
         error.ShouldBeOfType<IOException>(peer.Diagnostics);
         error.GetBaseException().ShouldBeOfType<HttpIOException>().HttpRequestError.ShouldBe(HttpRequestError.ResponseEnded);
         await peer.LatePost.WaitAsync(deadline.Token);
-        peer.ServedPosts.ShouldBe(predecessorStatus == 200 ? 1 : 2);
+        peer.ServedPosts.ShouldBe(predecessorStatus == 200 ? 1 : 3);
         peer.LatePosts.ShouldBe(1);
         peer.HasExited.ShouldBeFalse();
     }

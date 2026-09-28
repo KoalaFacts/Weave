@@ -259,6 +259,102 @@ public sealed partial class McpWorkspacePluginFlowTests
     }
 
     [Fact]
+    public async Task Restart_ModernMcpInstallation_RestoresAndInvokesWithGovernance()
+    {
+        var directory = Path.Join(Path.GetTempPath(), $"weave-mcp-modern-{Guid.NewGuid():N}");
+        Directory.CreateDirectory(directory);
+        try
+        {
+            await using var peer = new McpPeer("modern", modernOnly: true);
+            await peer.StartAsync();
+            string workspaceId;
+            await using (var first = new DurableSiloFactory(directory))
+            {
+                using var client = first.CreateClient();
+                workspaceId = await StartWorkspaceAsync(client, first.Services, peer);
+                await InvokeAsync(first.Services, workspaceId, "modern");
+                peer.CallCount.ShouldBe(1);
+            }
+
+            await using (var second = new DurableSiloFactory(directory))
+            {
+                using var client = second.CreateClient();
+                await second.Services.GetRequiredService<ToolInstallationRestorer>().Completion
+                    .WaitAsync(TimeSpan.FromSeconds(30), TestContext.Current.CancellationToken);
+                await InvokeAsync(second.Services, workspaceId, "modern");
+                peer.CallCount.ShouldBe(2);
+                using var disable = await SendPluginAsync(client, second.Services, HttpMethod.Delete,
+                    $"/api/plugins/{workspaceId}/ECHO_SERVER", workspaceId, "plugin:mcp_tools:disable");
+                disable.StatusCode.ShouldBe(HttpStatusCode.NoContent);
+                var actors = second.Services.GetRequiredService<IVirtualActorProvider>();
+                var tool = actors.GetActor<IToolActor>(VirtualActorId.From($"{workspaceId}/echo"));
+                var token = Mint(second.Services, workspaceId, "tool:echo:invoke:echo");
+                await Should.ThrowAsync<InvalidOperationException>(() => tool.InvokeAsync(new ToolInvocation
+                {
+                    ToolName = "echo",
+                    Method = "echo",
+                    InvocationId = InvocationId.From(Guid.NewGuid().ToString("N")),
+                    Parameters = new Dictionary<string, string> { ["text"] = "blocked" }
+                }, token));
+                peer.CallCount.ShouldBe(2);
+            }
+        }
+        finally
+        {
+            Directory.Delete(directory, recursive: true);
+        }
+    }
+
+    [Fact]
+    public async Task InvokeAsync_PreviousRevisionInstallationAfterModernUpgrade_RequiresNewContractReview()
+    {
+        var directory = Path.Join(Path.GetTempPath(), $"weave-mcp-upgrade-{Guid.NewGuid():N}");
+        Directory.CreateDirectory(directory);
+        try
+        {
+            await using var peer = new McpPeer("upgrade");
+            await peer.StartAsync();
+            string workspaceId;
+            await using (var first = new DurableSiloFactory(directory))
+            {
+                using var client = first.CreateClient();
+                workspaceId = await StartWorkspaceAsync(client, first.Services, peer);
+                await InvokeAsync(first.Services, workspaceId, "upgrade");
+                peer.CallCount.ShouldBe(1);
+                peer.ModernOnly = true;
+                var (tool, token) = await ResolveAsync(first.Services, workspaceId);
+                var result = await tool.InvokeAsync(new ToolInvocation
+                {
+                    ToolName = "echo",
+                    Method = "echo",
+                    InvocationId = InvocationId.From(Guid.NewGuid().ToString("N")),
+                    Parameters = new Dictionary<string, string> { ["text"] = "blocked" }
+                }, token);
+                result.Success.ShouldBeFalse();
+                result.Error.ShouldNotBeNull();
+                result.Error.ShouldContain("contract");
+                peer.CallCount.ShouldBe(1);
+            }
+
+            await using (var second = new DurableSiloFactory(directory))
+            {
+                using var client = second.CreateClient();
+                await second.Services.GetRequiredService<ToolInstallationRestorer>().Completion
+                    .WaitAsync(TimeSpan.FromSeconds(30), TestContext.Current.CancellationToken);
+                using var composition = await client.GetAsync("/api/plugins/composition",
+                    TestContext.Current.CancellationToken);
+                var active = await composition.Content.ReadAsStringAsync(TestContext.Current.CancellationToken);
+                active.ShouldNotContain($"{workspaceId}/echo_server");
+                peer.CallCount.ShouldBe(1);
+            }
+        }
+        finally
+        {
+            Directory.Delete(directory, recursive: true);
+        }
+    }
+
+    [Fact]
     public async Task InvokeAsync_ChangedMcpSchema_BlocksExternalCall()
     {
         var directory = Path.Join(Path.GetTempPath(), $"weave-mcp-schema-{Guid.NewGuid():N}");
@@ -547,14 +643,17 @@ public sealed partial class McpWorkspacePluginFlowTests
         }
     }
 
-    private sealed class McpPeer(string label) : IAsyncDisposable
+    private sealed class McpPeer(string label, bool modernOnly = false) : IAsyncDisposable
     {
+        private static readonly string[] SupportedVersions = ["2026-07-28"];
         private readonly WebApplication _app = CreateApp();
         private int _calls;
+        private bool _modernOnly = modernOnly;
 
         public string SchemaDescription { get; set; } = "Return text unchanged.";
         public string AnnotationTitle { get; set; } = "Echo";
         public string ServerVersion { get; set; } = EchoServerVersion;
+        public bool ModernOnly { get => Volatile.Read(ref _modernOnly); set => Volatile.Write(ref _modernOnly, value); }
         public string Endpoint { get; private set; } = string.Empty;
         public int CallCount => Volatile.Read(ref _calls);
 
@@ -573,22 +672,65 @@ public sealed partial class McpWorkspacePluginFlowTests
                 var root = body.RootElement;
                 var method = root.GetProperty("method").GetString();
                 if (method == "notifications/initialized")
+                {
+                    if (!ModernOnly)
+                        request.Headers["MCP-Protocol-Version"].ToString().ShouldBe("2025-11-25");
                     return Microsoft.AspNetCore.Http.Results.Accepted();
+                }
                 var id = root.GetProperty("id").GetInt64();
+                if (ModernOnly && method != "initialize")
+                {
+                    request.Headers["MCP-Protocol-Version"].ToString().ShouldBe("2026-07-28");
+                    request.Headers["Mcp-Method"].ToString().ShouldBe(method);
+                    root.GetProperty("params").GetProperty("_meta")
+                        .GetProperty("io.modelcontextprotocol/protocolVersion").GetString().ShouldBe("2026-07-28");
+                    if (method == "tools/call")
+                        request.Headers["Mcp-Name"].ToString().ShouldBe("echo");
+                }
+                if (method == "server/discover" && !ModernOnly)
+                    return Microsoft.AspNetCore.Http.Results.BadRequest();
+                if (method == "initialize" && ModernOnly)
+                    return Microsoft.AspNetCore.Http.Results.BadRequest();
+                if (method == "initialize")
+                    root.GetProperty("params").GetProperty("protocolVersion").GetString().ShouldBe("2025-11-25");
+                else if (!ModernOnly)
+                    request.Headers["MCP-Protocol-Version"].ToString().ShouldBe("2025-11-25");
                 object result = method switch
                 {
+                    "server/discover" => new
+                    {
+                        resultType = "complete",
+                        supportedVersions = SupportedVersions,
+                        _meta = new Dictionary<string, object>
+                        {
+                            ["io.modelcontextprotocol/serverInfo"] = new { name = "weave-plugin-echo", version = ServerVersion }
+                        }
+                    },
                     "initialize" => new
                     {
-                        protocolVersion = "2024-11-05",
+                        protocolVersion = "2025-11-25",
                         serverInfo = new { name = "weave-plugin-echo", version = ServerVersion }
                     },
                     "tools/list" => new
                     {
+                        resultType = ModernOnly ? "complete" : null,
                         tools = new[] { new { name = "echo", description = SchemaDescription,
                             inputSchema = new { type = "object", properties = new { text = new { type = "string" } } },
-                            annotations = new { title = AnnotationTitle } } }
+                            annotations = new { title = AnnotationTitle } } },
+                        _meta = ModernOnly ? new Dictionary<string, object>
+                        {
+                            ["io.modelcontextprotocol/serverInfo"] = new { name = "weave-plugin-echo", version = ServerVersion }
+                        } : null
                     },
-                    "tools/call" => Call(root),
+                    "tools/call" => ModernOnly ? new
+                    {
+                        resultType = "complete",
+                        content = new[] { new { type = "text", text = CallText(root) } },
+                        _meta = new Dictionary<string, object>
+                        {
+                            ["io.modelcontextprotocol/serverInfo"] = new { name = "weave-plugin-echo", version = ServerVersion }
+                        }
+                    } : Call(root),
                     _ => throw new InvalidOperationException($"Unexpected MCP method {method}.")
                 };
                 return Microsoft.AspNetCore.Http.Results.Json(new { jsonrpc = "2.0", id, result });
@@ -601,9 +743,14 @@ public sealed partial class McpWorkspacePluginFlowTests
 
         private object Call(JsonElement root)
         {
+            return new { content = new[] { new { type = "text", text = CallText(root) } } };
+        }
+
+        private string? CallText(JsonElement root)
+        {
             Interlocked.Increment(ref _calls);
             var text = root.GetProperty("params").GetProperty("arguments").GetProperty("text").GetString();
-            return new { content = new[] { new { type = "text", text = label == "original" ? text : label } } };
+            return label == "original" ? text : label;
         }
 
         public ValueTask DisposeAsync() => _app.DisposeAsync();

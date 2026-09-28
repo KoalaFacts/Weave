@@ -95,6 +95,8 @@ Do not collect every type in a global Contracts/Core package. A lightweight SDK 
 
 Local interfaces can accept CancellationToken. Network messages cannot contain CancellationToken, HttpContext, IServiceProvider, Orleans runtime objects, ORM entities or delegates. External protocols specify identifiers, timestamps, numeric precision, enum handling, deadlines, cancellation, errors, size/depth limits and version compatibility. Mutable payloads must be copied or otherwise owned; a record does not make a mutable child immutable.
 
+For each implemented, versioned external protocol, maintain the two most recent stable revisions across the supported transports and operations. Pin the negotiated revision in installation and approval contracts, and verify both revisions at real protocol boundaries. Older revisions may remain compatible without joining the maintained window; optional protocol features require their own explicit support and evidence.
+
 ## 4. Explicit composition
 
 The Host chooses modules, adapters, persistence, authentication and operational configuration. It implements no business decisions. Constructor/method dependencies are explicit. Dynamic service lookup is limited to actual dispatch/composition machinery.
