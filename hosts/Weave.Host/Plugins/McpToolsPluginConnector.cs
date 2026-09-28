@@ -46,7 +46,13 @@ public sealed class McpToolsPluginConnector(
             || string.IsNullOrWhiteSpace(serverName) || string.IsNullOrWhiteSpace(version)
             || string.IsNullOrWhiteSpace(operation)
             || digest is not null && (digest.Length != 64 || !digest.All(Uri.IsHexDigit)))
-            return new PluginStatus { Name = name, Type = PluginType, Error = "Invalid installed MCP contract." };
+            return new PluginStatus
+            {
+                Name = name,
+                Type = PluginType,
+                Error = "Invalid installed MCP contract.",
+                InstallationFailure = InstallationFailureCode.InvalidConfiguration
+            };
 
         var contract = new McpInstallationContract(url!, serverName!, version!, operation!, digest);
         var connector = new McpToolConnector(
@@ -60,7 +66,22 @@ public sealed class McpToolsPluginConnector(
             or System.Text.Json.JsonException or TaskCanceledException or UnauthorizedAccessException)
         {
             await connector.DeactivateAsync();
-            return new PluginStatus { Name = name, Type = PluginType, Error = error.Message };
+            return new PluginStatus
+            {
+                Name = name,
+                Type = PluginType,
+                Error = error.Message,
+                InstallationFailure = error switch
+                {
+                    HttpRequestException or TaskCanceledException =>
+                        InstallationFailureCode.PeerUnavailable,
+                    IOException ioError when HasTransportFailure(ioError) =>
+                        InstallationFailureCode.PeerUnavailable,
+                    InvalidOperationException =>
+                        InstallationFailureCode.ContractRejected,
+                    _ => InstallationFailureCode.ConnectionFailed
+                }
+            };
         }
 
         _active.TryGetValue(name, out var previous);
@@ -78,6 +99,16 @@ public sealed class McpToolsPluginConnector(
             IsConnected = true,
             Info = new Dictionary<string, string> { ["contract_digest"] = connector.ContractDigest! }
         };
+    }
+
+    private static bool HasTransportFailure(IOException error)
+    {
+        for (Exception? cause = error.InnerException; cause is not null; cause = cause.InnerException)
+        {
+            if (cause is HttpRequestException or OperationCanceledException)
+                return true;
+        }
+        return false;
     }
 
     public async Task<PluginStatus> DisconnectAsync(string name)

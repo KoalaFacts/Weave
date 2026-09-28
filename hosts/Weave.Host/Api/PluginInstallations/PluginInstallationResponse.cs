@@ -5,4 +5,7 @@ public sealed record PluginInstallationResponse(
     string PluginName,
     string Type,
     bool DesiredEnabled,
-    bool RuntimeConnected);
+    bool RuntimeConnected,
+    string Condition,
+    string? ReasonCode,
+    DateTimeOffset? LastCheckedAt);

@@ -105,7 +105,8 @@ public sealed class WorkspaceCommandHandlerTests
         var plugins = Substitute.For<IPluginRegistry>();
         plugins.GetAll().Returns([]);
         var handler = new StopWorkspaceHandler(actors, plugins, Substitute.For<ICapabilityTokenService>(),
-            Substitute.For<Weave.Silo.Plugins.IMcpInstallationDispatchGate>());
+            Substitute.For<Weave.Silo.Plugins.IMcpInstallationDispatchGate>(),
+            Substitute.For<Weave.Silo.Plugins.IInstallationDiagnostics>());
         var command = new StopWorkspaceCommand(TestWorkspaceId);
 
         var result = await handler.HandleAsync(command, CancellationToken.None);

@@ -198,6 +198,7 @@ public static class PluginEndpoints
         HttpContext context,
         IVirtualActorProvider actors,
         IMcpInstallationDispatchGate mcpDispatchGate,
+        IInstallationDiagnostics diagnostics,
         CancellationToken ct)
     {
         (IWorkspaceActor Workspace, DaprToolInstallation Installation)? installed;
@@ -233,6 +234,8 @@ public static class PluginEndpoints
                 installedMcp.Value.Installation.PluginName, false);
         using var source = PluginTokenFactory.MintInvoke(tokenService, registrationName, ct);
         var status = await registry.DisconnectAsync(registrationName, source.Token);
+        if (installed is not null || installedMcp is not null)
+            diagnostics.Record(registrationName, InstallationFailureCode.None);
         if (status.Error is not null)
         {
             if (installed is not null || installedMcp is not null)

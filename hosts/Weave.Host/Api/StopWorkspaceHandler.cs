@@ -19,7 +19,8 @@ public sealed class StopWorkspaceHandler(
     IVirtualActorProvider actors,
     IPluginRegistry plugins,
     ICapabilityTokenService tokenService,
-    IMcpInstallationDispatchGate mcpDispatchGate)
+    IMcpInstallationDispatchGate mcpDispatchGate,
+    IInstallationDiagnostics diagnostics)
     : ICommandHandler<StopWorkspaceCommand, bool>
 {
     public async Task<bool> HandleAsync(StopWorkspaceCommand command, CancellationToken ct)
@@ -59,6 +60,7 @@ public sealed class StopWorkspaceHandler(
                 Lifetime = TimeSpan.FromMinutes(1)
             }, CancellationToken.None);
             await plugins.DisconnectAsync(registrationName, source.Token);
+            diagnostics.Record(registrationName, InstallationFailureCode.None);
         }
 
         await workspace.StopAsync();

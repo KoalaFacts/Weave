@@ -12,15 +12,18 @@ public sealed partial class PluginRegistry : IPluginRegistry, IDisposable, IAsyn
     private readonly ConcurrentDictionary<string, PluginStatus> _active = new(StringComparer.OrdinalIgnoreCase);
     private readonly SemaphoreSlim _connectLock = new(1, 1);
     private readonly ICapabilityAuthorizer _authorizer;
+    private readonly IInstallationDiagnostics _installationDiagnostics;
     // Consumed by the source-generated [LoggerMessage] partial methods below.
     private readonly ILogger<PluginRegistry> _logger;
 
     public PluginRegistry(
         IEnumerable<IPluginConnector> connectors,
         ICapabilityAuthorizer authorizer,
+        IInstallationDiagnostics installationDiagnostics,
         ILogger<PluginRegistry> logger)
     {
         _authorizer = authorizer;
+        _installationDiagnostics = installationDiagnostics;
         _logger = logger;
         var byType = new Dictionary<string, IPluginConnector>(StringComparer.OrdinalIgnoreCase);
         foreach (var connector in connectors)
@@ -54,11 +57,12 @@ public sealed partial class PluginRegistry : IPluginRegistry, IDisposable, IAsyn
                 Name = name,
                 Type = definition.Type,
                 IsConnected = false,
+                InstallationFailure = InstallationFailureCode.UnsupportedPluginType,
                 Error = $"No connector registered for plugin type '{definition.Type}'. " +
                         $"Available: {string.Join(", ", _connectorsByType.Keys)}"
             };
             LogPluginConnectFailed(name, definition.Type, status.Error);
-            return status;
+            return ObserveInstallation(name, status);
         }
 
         // Auto-fill config from environment and validate against schema
@@ -71,10 +75,11 @@ public sealed partial class PluginRegistry : IPluginRegistry, IDisposable, IAsyn
                 Name = name,
                 Type = definition.Type,
                 IsConnected = false,
+                InstallationFailure = InstallationFailureCode.InvalidConfiguration,
                 Error = validationError
             };
             LogPluginConnectFailed(name, definition.Type, validationError);
-            return status;
+            return ObserveInstallation(name, status);
         }
 
         // Serialize registrations so ownership checks and activation share one view.
@@ -98,10 +103,11 @@ public sealed partial class PluginRegistry : IPluginRegistry, IDisposable, IAsyn
                     Name = name,
                     Type = definition.Type,
                     IsConnected = false,
+                    InstallationFailure = InstallationFailureCode.RegistrationConflict,
                     Error = $"Registration '{conflict}' is already provided by plugin '{activeStatus.Name}'."
                 };
                 LogPluginConnectFailed(name, definition.Type, blocked.Error);
-                return blocked;
+                return ObserveInstallation(name, blocked);
             }
 
             // Make-before-break: connect the new plugin first. If it fails,
@@ -118,7 +124,7 @@ public sealed partial class PluginRegistry : IPluginRegistry, IDisposable, IAsyn
             {
                 // New plugin failed to connect — leave the old one running
                 LogPluginConnectFailed(name, definition.Type, status.Error ?? "unknown");
-                return status;
+                return ObserveInstallation(name, status);
             }
 
             if (_active.TryGetValue(name, out var existing) && existing.IsConnected)
@@ -136,7 +142,7 @@ public sealed partial class PluginRegistry : IPluginRegistry, IDisposable, IAsyn
                 _active[name] = status;
             }
             LogPluginConnected(name, definition.Type);
-            return status;
+            return ObserveInstallation(name, status);
         }
         catch (Exception ex) when (ex is HttpRequestException or TaskCanceledException or System.Net.Sockets.SocketException or IOException or InvalidOperationException or System.Text.Json.JsonException)
         {
@@ -145,10 +151,11 @@ public sealed partial class PluginRegistry : IPluginRegistry, IDisposable, IAsyn
                 Name = name,
                 Type = definition.Type,
                 IsConnected = false,
+                InstallationFailure = InstallationFailureCode.ConnectionFailed,
                 Error = ex.Message
             };
             LogPluginConnectFailed(name, definition.Type, ex.Message);
-            return status;
+            return ObserveInstallation(name, status);
         }
         finally
         {
@@ -179,10 +186,12 @@ public sealed partial class PluginRegistry : IPluginRegistry, IDisposable, IAsyn
                 var status = await connector.DisconnectAsync(name);
                 _active.TryRemove(name, out _);
                 LogPluginDisconnected(name, existing.Type);
+                ObserveDisconnected(name, existing.Type);
                 return status;
             }
 
             _active.TryRemove(name, out _);
+            ObserveDisconnected(name, existing.Type);
             return existing with { IsConnected = false };
         }
         finally

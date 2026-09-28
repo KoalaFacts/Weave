@@ -24,6 +24,10 @@ public sealed partial class DaprWorkspacePluginFlowTests
         installation.GetProperty("type").GetString().ShouldBe("dapr_tools");
         installation.GetProperty("desiredEnabled").GetBoolean().ShouldBeTrue();
         installation.GetProperty("runtimeConnected").GetBoolean().ShouldBeTrue();
+        installation.GetProperty("condition").GetString().ShouldBe("ready");
+        installation.GetProperty("reasonCode").ValueKind.ShouldBe(JsonValueKind.Null);
+        installation.GetProperty("lastCheckedAt").GetDateTimeOffset()
+            .ShouldBeLessThanOrEqualTo(DateTimeOffset.UtcNow);
         body.ShouldNotContain("port");
         body.ShouldNotContain("configDigest");
     }
