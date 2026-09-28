@@ -1,6 +1,7 @@
 using System.Text.Json;
 using System.Threading.Channels;
 using Microsoft.Extensions.Logging.Abstractions;
+using Microsoft.Extensions.Time.Testing;
 using Weave.Security.Tokens;
 using Weave.Tools.Connectors;
 using Weave.Tools.Tool;
@@ -44,11 +45,11 @@ public sealed class McpToolConnectorTests
         using (var initDoc = JsonDocument.Parse(initRequest))
         {
             initDoc.RootElement.GetProperty("method").GetString().ShouldBe("initialize");
-            initDoc.RootElement.GetProperty("params").GetProperty("protocolVersion").GetString().ShouldBe("2024-11-05");
+            initDoc.RootElement.GetProperty("params").GetProperty("protocolVersion").GetString().ShouldBe("2025-11-25");
             initDoc.RootElement.GetProperty("params").GetProperty("clientInfo").GetProperty("name").GetString().ShouldBe("weave");
 
             var id = initDoc.RootElement.GetProperty("id").GetInt64();
-            await transport.WriteServerFrameAsync(Reply(id, """{"protocolVersion":"2024-11-05","serverInfo":{"name":"stub","version":"1.0"}}"""));
+            await transport.WriteServerFrameAsync(Reply(id, """{"protocolVersion":"2025-11-25","serverInfo":{"name":"stub","version":"1.0"}}"""));
         }
 
         var initialized = await transport.ReadClientFrameAsync();
@@ -79,6 +80,75 @@ public sealed class McpToolConnectorTests
         await transport.WriteServerFrameAsync(ReplyError(id, -32601, "protocol mismatch"));
 
         await Should.ThrowAsync<InvalidOperationException>(() => connectTask);
+        transport.Disposed.ShouldBeTrue();
+    }
+
+    [Fact]
+    public async Task ConnectAsync_SilentModernProbe_FallsBackToLegacyInitialize()
+    {
+        var time = new FakeTimeProvider();
+        var probeTransport = new StubMcpTransport
+        {
+            SupportsModernProtocol = true,
+            ModernProbeTimeout = TimeSpan.FromMilliseconds(100)
+        };
+        var legacyTransport = new StubMcpTransport { SupportsModernProtocol = true };
+        var opened = 0;
+        var connector = new McpToolConnector((_, _) => Task.FromResult<IMcpTransport>(
+            Interlocked.Increment(ref opened) == 1 ? probeTransport : legacyTransport),
+            NullLogger<McpToolConnector>.Instance, time);
+        var connectTask = connector.ConnectAsync(NewSpec(), _token, TestContext.Current.CancellationToken);
+
+        using (var probe = JsonDocument.Parse(await probeTransport.ReadClientFrameAsync()))
+            probe.RootElement.GetProperty("method").GetString().ShouldBe("server/discover");
+        time.Advance(TimeSpan.FromMilliseconds(100));
+        using (var initialize = JsonDocument.Parse(await legacyTransport.ReadClientFrameAsync()))
+        {
+            initialize.RootElement.GetProperty("method").GetString().ShouldBe("initialize");
+            var id = initialize.RootElement.GetProperty("id").GetInt64();
+            await legacyTransport.WriteServerFrameAsync(Reply(id,
+                """{"protocolVersion":"2024-11-05","serverInfo":{"name":"legacy","version":"1"}}"""));
+        }
+        using (var notification = JsonDocument.Parse(await legacyTransport.ReadClientFrameAsync()))
+            notification.RootElement.GetProperty("method").GetString().ShouldBe("notifications/initialized");
+
+        var handle = await connectTask;
+        opened.ShouldBe(2);
+        probeTransport.Disposed.ShouldBeTrue();
+        await connector.DisconnectAsync(handle, TestContext.Current.CancellationToken);
+    }
+
+    [Fact]
+    public async Task ConnectAsync_RecognizedModernVersionError_DoesNotFallback()
+    {
+        var transport = new StubMcpTransport { SupportsModernProtocol = true };
+        var (connector, _) = NewConnector(transport);
+        var connectTask = connector.ConnectAsync(NewSpec(), _token, TestContext.Current.CancellationToken);
+
+        using var probe = JsonDocument.Parse(await transport.ReadClientFrameAsync());
+        probe.RootElement.GetProperty("method").GetString().ShouldBe("server/discover");
+        await transport.WriteServerFrameAsync(ReplyError(probe.RootElement.GetProperty("id").GetInt64(),
+            -32022, "unsupported version"));
+
+        await Should.ThrowAsync<McpRemoteException>(() => connectTask);
+        transport.HasPendingClientFrame.ShouldBeFalse();
+        transport.Disposed.ShouldBeTrue();
+    }
+
+    [Fact]
+    public async Task ConnectAsync_CancelledModernProbe_DoesNotFallback()
+    {
+        var transport = new StubMcpTransport { SupportsModernProtocol = true, ModernProbeTimeout = TimeSpan.FromSeconds(5) };
+        var (connector, _) = NewConnector(transport);
+        using var cancellation = new CancellationTokenSource();
+        var connectTask = connector.ConnectAsync(NewSpec(), _token, cancellation.Token);
+
+        using var probe = JsonDocument.Parse(await transport.ReadClientFrameAsync());
+        probe.RootElement.GetProperty("method").GetString().ShouldBe("server/discover");
+        await cancellation.CancelAsync();
+
+        await Should.ThrowAsync<OperationCanceledException>(() => connectTask);
+        transport.HasPendingClientFrame.ShouldBeFalse();
         transport.Disposed.ShouldBeTrue();
     }
 
@@ -315,12 +385,15 @@ internal sealed class StubMcpTransport : IMcpTransport
     private readonly Channel<string> _serverToClient = Channel.CreateUnbounded<string>();
 
     public bool Disposed { get; private set; }
+    public bool SupportsModernProtocol { get; init; }
+    public bool UsesHttpHeaders => false;
+    public TimeSpan? ModernProbeTimeout { get; init; }
     public bool HasExited => Disposed;
     public int? ExitCode => Disposed ? 0 : null;
     public bool HasPendingClientFrame => _clientToServer.Reader.Count > 0;
     public string? HandleId { get; set; }
 
-    public Task SendAsync(string json, CancellationToken ct) =>
+    public Task SendAsync(string json, CancellationToken ct, McpRequestMetadata? metadata = null) =>
         _clientToServer.Writer.WriteAsync(json, ct).AsTask();
 
     public async Task<string?> ReceiveAsync(CancellationToken ct)

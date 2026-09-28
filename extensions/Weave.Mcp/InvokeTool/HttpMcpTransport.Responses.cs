@@ -1,5 +1,6 @@
 using System.Buffers;
 using System.Text;
+using System.Text.Json;
 
 namespace Weave.Tools.Connectors;
 
@@ -8,7 +9,37 @@ internal sealed partial class HttpMcpTransport
 {
     private static readonly Encoding _strictUtf8 = new UTF8Encoding(false, true);
 
-    private async Task ConsumeJsonAsync(HttpResponseMessage response, CancellationToken ct)
+    private async Task ConsumeJsonAsync(HttpResponseMessage response, CancellationToken ct) =>
+        await _incoming.Writer.WriteAsync(await ReadJsonFrameAsync(response, ct), ct);
+
+    private async Task<int?> ReadProtocolErrorCodeAsync(HttpResponseMessage response, CancellationToken ct)
+    {
+        if (!string.Equals(response.Content.Headers.ContentType?.MediaType, "application/json",
+            StringComparison.OrdinalIgnoreCase))
+            return null;
+        var body = await ReadJsonFrameAsync(response, ct);
+        try
+        {
+            using var document = JsonDocument.Parse(body);
+            var root = document.RootElement;
+            if (root.ValueKind != JsonValueKind.Object
+                || !root.TryGetProperty("jsonrpc", out var version) || version.ValueKind != JsonValueKind.String
+                || version.GetString() != "2.0"
+                || !root.TryGetProperty("error", out var error)
+                || error.ValueKind != JsonValueKind.Object
+                || !error.TryGetProperty("code", out var code)
+                || code.ValueKind != JsonValueKind.Number
+                || !code.TryGetInt32(out var value))
+                return null;
+            return value;
+        }
+        catch (JsonException)
+        {
+            return null;
+        }
+    }
+
+    private async Task<string> ReadJsonFrameAsync(HttpResponseMessage response, CancellationToken ct)
     {
         var limit = Math.Min(_maxFrameBytes, _maxResponseBytes);
         if (response.Content.Headers.ContentLength is long declared && declared > limit)
@@ -35,8 +66,7 @@ internal sealed partial class HttpMcpTransport
             ArrayPool<byte>.Shared.Return(buffer);
         }
 
-        var body = _strictUtf8.GetString(sink.GetBuffer(), 0, (int)sink.Length);
-        await _incoming.Writer.WriteAsync(body, ct);
+        return _strictUtf8.GetString(sink.GetBuffer(), 0, (int)sink.Length);
     }
 
     private async Task ConsumeEventStreamAsync(HttpResponseMessage response, CancellationToken ct)

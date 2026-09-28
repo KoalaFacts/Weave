@@ -190,7 +190,8 @@ internal sealed class SiloServiceRegistrar
         _services.AddSingleton<McpToolsPluginConnector>(sp =>
             new McpToolsPluginConnector(
                 sp.GetRequiredService<IToolDiscoveryService>(),
-                sp.GetRequiredService<ILoggerFactory>()));
+                sp.GetRequiredService<ILoggerFactory>(),
+                sp.GetRequiredService<TimeProvider>()));
         _services.AddSingleton<IPluginConnector>(sp => sp.GetRequiredService<McpToolsPluginConnector>());
         _services.AddSingleton<IMcpInstallationDispatchGate>(sp => sp.GetRequiredService<McpToolsPluginConnector>());
         _services.AddSingleton<IPluginConnector>(sp =>
