@@ -9,7 +9,8 @@ namespace Weave.Silo.Plugins;
 /// <summary>Owns one verified, installation-scoped HTTP MCP connector per workspace plugin.</summary>
 public sealed class McpToolsPluginConnector(
     IToolDiscoveryService discovery,
-    ILoggerFactory loggerFactory) : IPluginConnector, IMcpInstallationDispatchGate
+    ILoggerFactory loggerFactory,
+    TimeProvider timeProvider) : IPluginConnector, IMcpInstallationDispatchGate
 {
     private readonly ConcurrentDictionary<string, (string Id, McpToolConnector Connector)> _active =
         new(StringComparer.OrdinalIgnoreCase);
@@ -57,7 +58,8 @@ public sealed class McpToolsPluginConnector(
         var contract = new McpInstallationContract(url!, serverName!, version!, operation!, digest);
         var connector = new McpToolConnector(
             contract,
-            loggerFactory.CreateLogger<McpToolConnector>());
+            loggerFactory.CreateLogger<McpToolConnector>(),
+            timeProvider);
         try
         {
             await connector.ProbeAsync(contract.ProbeConfig());

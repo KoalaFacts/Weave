@@ -10,8 +10,8 @@ namespace Weave.Tools.Connectors;
 // Streamable HTTP MCP: one configured endpoint, bounded response data and a
 // deadline covering headers, body consumption and queue backpressure. The
 // existing URL policy still requires deployment egress controls for DNS names.
-// No automatic redirects, cookies or application-level retries. GET streams,
-// session-id negotiation and Authorization pass-through remain out of scope.
+// No automatic redirects, cookies or application-level retries. GET streams
+// and Authorization pass-through remain out of scope.
 internal sealed partial class HttpMcpTransport : IMcpTransport
 {
     private readonly HttpClient _httpClient;
@@ -25,6 +25,8 @@ internal sealed partial class HttpMcpTransport : IMcpTransport
     private readonly CancellationTokenSource _shutdown = new();
     private readonly CancellationToken _shutdownToken;
     private string? _lastDiagnostic;
+    private string? _sessionId;
+    private bool _sessionExpired;
     private int _disposed;
 
     private HttpMcpTransport(HttpClient httpClient, bool ownsHttpClient, Uri endpoint, McpConfig config)
@@ -47,6 +49,8 @@ internal sealed partial class HttpMcpTransport : IMcpTransport
 
     public bool HasExited => Volatile.Read(ref _disposed) != 0;
     public bool SupportsModernProtocol => true;
+    public bool UsesHttpHeaders => true;
+    public TimeSpan? ModernProbeTimeout => null;
 
     public int? ExitCode => null;
 
@@ -74,6 +78,8 @@ internal sealed partial class HttpMcpTransport : IMcpTransport
     public async Task SendAsync(string json, CancellationToken ct, McpRequestMetadata? metadata = null)
     {
         ObjectDisposedException.ThrowIf(HasExited, this);
+        if (_sessionExpired)
+            throw new IOException("MCP HTTP session expired; a new connection is required.");
         _lastDiagnostic = null;
         using var deadline = CancellationTokenSource.CreateLinkedTokenSource(ct, _shutdownToken);
         deadline.CancelAfter(_requestTimeout);
@@ -88,13 +94,18 @@ internal sealed partial class HttpMcpTransport : IMcpTransport
             if (metadata is not null)
             {
                 request.Headers.Add("MCP-Protocol-Version", metadata.ProtocolVersion);
-                request.Headers.Add("Mcp-Method", metadata.Method);
-                if (metadata.Name is not null)
-                    request.Headers.Add("Mcp-Name", McpHttpHeaderValue.Encode(metadata.Name));
-                if (metadata.ParameterHeaders is not null)
-                    foreach (var (name, value) in metadata.ParameterHeaders)
-                        request.Headers.Add($"Mcp-Param-{name}", McpHttpHeaderValue.Encode(value));
+                if (metadata.IncludeRoutingHeaders)
+                {
+                    request.Headers.Add("Mcp-Method", metadata.Method);
+                    if (metadata.Name is not null)
+                        request.Headers.Add("Mcp-Name", McpHttpHeaderValue.Encode(metadata.Name));
+                    if (metadata.ParameterHeaders is not null)
+                        foreach (var (name, value) in metadata.ParameterHeaders)
+                            request.Headers.Add($"Mcp-Param-{name}", McpHttpHeaderValue.Encode(value));
+                }
             }
+            if (_sessionId is not null)
+                request.Headers.Add("Mcp-Session-Id", _sessionId);
 
             using var response = await _httpClient.SendAsync(request, HttpCompletionOption.ResponseHeadersRead, deadline.Token);
             if (response.StatusCode == HttpStatusCode.NoContent)
@@ -108,11 +119,25 @@ internal sealed partial class HttpMcpTransport : IMcpTransport
             }
             if (!response.IsSuccessStatusCode)
             {
+                if (_sessionId is not null && response.StatusCode == HttpStatusCode.NotFound)
+                    _sessionExpired = true;
                 if (metadata is not null && response.StatusCode is HttpStatusCode.BadRequest or HttpStatusCode.NotFound)
                     throw new McpHttpStatusException(response.StatusCode,
                         await ReadProtocolErrorCodeAsync(response, deadline.Token));
                 throw Failure($"HTTP {(int)response.StatusCode}");
             }
+
+            using (var sent = JsonDocument.Parse(json))
+                if (sent.RootElement.TryGetProperty("method", out var sentMethod)
+                    && sentMethod.GetString() == "initialize"
+                    && response.Headers.TryGetValues("Mcp-Session-Id", out var sessionValues))
+                {
+                    var values = sessionValues.ToArray();
+                    if (values.Length != 1 || values[0].Length is < 1 or > 1024
+                        || values[0].Any(static character => character is < '!' or > '~'))
+                        throw Failure("invalid MCP HTTP session identifier");
+                    _sessionId = values[0];
+                }
 
             var contentType = response.Content.Headers.ContentType?.MediaType;
             if (string.Equals(contentType, "application/json", StringComparison.OrdinalIgnoreCase))
