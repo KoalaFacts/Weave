@@ -17,6 +17,7 @@ internal sealed class StdioMcpTransport : IMcpTransport
         _stderrTail = stderrTail;
     }
 
+    public bool SupportsModernProtocol => false;
     public bool HasExited => _process.HasExited;
 
     public int? ExitCode => _process.HasExited ? _process.ExitCode : null;
@@ -60,7 +61,7 @@ internal sealed class StdioMcpTransport : IMcpTransport
         return Task.FromResult<IMcpTransport>(new StdioMcpTransport(process, stderrTail));
     }
 
-    public async Task SendAsync(string json, CancellationToken ct)
+    public async Task SendAsync(string json, CancellationToken ct, McpRequestMetadata? metadata = null)
     {
         await _process.StandardInput.WriteLineAsync(json.AsMemory(), ct);
         await _process.StandardInput.FlushAsync(ct);
