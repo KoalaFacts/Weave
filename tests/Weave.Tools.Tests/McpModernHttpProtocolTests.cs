@@ -147,7 +147,7 @@ public sealed class McpModernHttpProtocolTests
                 await McpHttpTestPeer.ReplyAsync(stream, ct, status: 400);
             else if (method == "initialize")
                 await McpHttpTestPeer.ReplyAsync(stream, ct,
-                    $"{{\"jsonrpc\":\"2.0\",\"id\":{id},\"result\":{{\"protocolVersion\":\"2024-11-05\",\"serverInfo\":{{\"name\":\"legacy\",\"version\":\"1\"}}}}}}" );
+                    $"{{\"jsonrpc\":\"2.0\",\"id\":{id},\"result\":{{\"protocolVersion\":\"2024-11-05\",\"serverInfo\":{{\"name\":\"legacy\",\"version\":\"1\"}}}}}}");
             else
                 throw new InvalidOperationException($"Unexpected method {method}.");
         });

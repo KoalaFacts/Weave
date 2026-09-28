@@ -640,7 +640,8 @@ public sealed partial class McpWorkspacePluginFlowTests
                 {
                     "server/discover" => new
                     {
-                        resultType = "complete", supportedVersions = SupportedVersions,
+                        resultType = "complete",
+                        supportedVersions = SupportedVersions,
                         _meta = new Dictionary<string, object>
                         {
                             ["io.modelcontextprotocol/serverInfo"] = new { name = "weave-plugin-echo", version = ServerVersion }
