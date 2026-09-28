@@ -5,6 +5,8 @@ internal interface IMcpTransport : IAsyncDisposable
     Task SendAsync(string json, CancellationToken ct, McpRequestMetadata? metadata = null);
     Task<string?> ReceiveAsync(CancellationToken ct);
     bool SupportsModernProtocol { get; }
+    bool UsesHttpHeaders { get; }
+    TimeSpan? ModernProbeTimeout { get; }
     bool HasExited { get; }
     int? ExitCode { get; }
     string FormatDiagnosticTail();

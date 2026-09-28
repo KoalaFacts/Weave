@@ -47,6 +47,8 @@ internal sealed partial class HttpMcpTransport : IMcpTransport
 
     public bool HasExited => Volatile.Read(ref _disposed) != 0;
     public bool SupportsModernProtocol => true;
+    public bool UsesHttpHeaders => true;
+    public TimeSpan? ModernProbeTimeout => null;
 
     public int? ExitCode => null;
 

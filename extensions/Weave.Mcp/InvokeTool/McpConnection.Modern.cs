@@ -7,10 +7,17 @@ internal sealed partial class McpConnection
 {
     private async Task<bool> TryInitializeModernAsync(CancellationToken ct)
     {
+        using var probeDeadline = CancellationTokenSource.CreateLinkedTokenSource(ct);
+        if (_transport.ModernProbeTimeout is { } timeout)
+            probeDeadline.CancelAfter(timeout);
         JsonElement result;
         try
         {
-            result = await SendRequestAsync("server/discover", paramsNode: null, ct);
+            result = await SendRequestAsync("server/discover", paramsNode: null, probeDeadline.Token);
+        }
+        catch (OperationCanceledException) when (probeDeadline.IsCancellationRequested && !ct.IsCancellationRequested)
+        {
+            return false;
         }
         catch (McpHttpStatusException error) when (error.StatusCode == System.Net.HttpStatusCode.BadRequest
             && error.ProtocolErrorCode is not (-32020 or -32021 or -32022))

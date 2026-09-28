@@ -17,7 +17,9 @@ internal sealed class StdioMcpTransport : IMcpTransport
         _stderrTail = stderrTail;
     }
 
-    public bool SupportsModernProtocol => false;
+    public bool SupportsModernProtocol => true;
+    public bool UsesHttpHeaders => false;
+    public TimeSpan? ModernProbeTimeout => TimeSpan.FromSeconds(15);
     public bool HasExited => _process.HasExited;
 
     public int? ExitCode => _process.HasExited ? _process.ExitCode : null;

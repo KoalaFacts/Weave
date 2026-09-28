@@ -83,7 +83,7 @@ internal sealed partial class McpConnection : IAsyncDisposable
             var result = await SendRequestAsync("tools/list", paramsNode: null, ct);
             var listing = result.Deserialize(McpJsonContext.Default.McpToolListResult);
             var tools = listing?.Tools ?? [];
-            if (_modern)
+            if (_modern && _transport.UsesHttpHeaders)
             {
                 foreach (var tool in tools.Where(static item => !McpHttpHeaderValue.HasValidSchema(item)))
                     LogInvalidModernTool(_toolName, tool.Name);
@@ -101,7 +101,7 @@ internal sealed partial class McpConnection : IAsyncDisposable
     public async Task<McpToolCallResult> CallToolAsync(string name, JsonNode arguments, CancellationToken ct)
     {
         IReadOnlyDictionary<string, string>? parameterHeaders = null;
-        if (_modern)
+        if (_modern && _transport.UsesHttpHeaders)
         {
             var tools = await ListToolsAsync(ct);
             var tool = tools.SingleOrDefault(item => string.Equals(item.Name, name, StringComparison.Ordinal))

@@ -76,6 +76,40 @@ public sealed class McpConnectorIntegrationTests : IDisposable
                 }})
         """;
 
+    private const string ModernPythonServer = """
+        import json, sys
+
+        def send(obj):
+            sys.stdout.write(json.dumps(obj) + "\n")
+            sys.stdout.flush()
+
+        for line in sys.stdin:
+            request = json.loads(line)
+            method = request.get("method")
+            rid = request.get("id")
+            metadata = request.get("params", {}).get("_meta", {})
+            if metadata.get("io.modelcontextprotocol/protocolVersion") != "2026-07-28":
+                send({"jsonrpc": "2.0", "id": rid, "error": {"code": -32602, "message": "missing modern metadata"}})
+            elif method == "server/discover":
+                send({"jsonrpc": "2.0", "id": rid, "result": {
+                    "resultType": "complete", "supportedVersions": ["2026-07-28"],
+                    "_meta": {"io.modelcontextprotocol/serverInfo": {"name": "modern-stdio", "version": "1"}}
+                }})
+            elif method == "tools/list":
+                send({"jsonrpc": "2.0", "id": rid, "result": {
+                    "resultType": "complete", "tools": [{"name": "echo", "inputSchema": {
+                        "type": "object", "properties": {"text": {"type": "string", "x-mcp-header": "invalid name"}}
+                    }}]
+                }})
+            elif method == "tools/call":
+                text = request["params"]["arguments"]["text"]
+                send({"jsonrpc": "2.0", "id": rid, "result": {
+                    "resultType": "complete", "content": [{"type": "text", "text": "modern:" + text}]
+                }})
+            else:
+                send({"jsonrpc": "2.0", "id": rid, "error": {"code": -32601, "message": "unexpected method"}})
+        """;
+
     private readonly string _scriptPath;
 
     public McpConnectorIntegrationTests()
@@ -135,6 +169,44 @@ public sealed class McpConnectorIntegrationTests : IDisposable
         finally
         {
             await connector.DisconnectAsync(handle, TestContext.Current.CancellationToken);
+        }
+    }
+
+    [Fact]
+    public async Task RealSubprocess_ModernDiscoveryListAndCall_UsesBodyMetadataWithoutHttpHeaders()
+    {
+        var python = LocatePython();
+        Assert.SkipWhen(python is null, "python3 required for MCP subprocess integration test");
+        var scriptPath = Path.Join(Path.GetTempPath(), $"weave-mcp-modern-{Guid.NewGuid():N}.py");
+        File.WriteAllText(scriptPath, ModernPythonServer);
+        try
+        {
+            var connector = new McpToolConnector(NullLogger<McpToolConnector>.Instance);
+            var spec = new ToolSpec
+            {
+                Name = "modern-stdio",
+                Type = ToolType.Mcp,
+                Mcp = new McpConfig { Server = python!, Args = [scriptPath] }
+            };
+            var handle = await connector.ConnectAsync(spec, _token, TestContext.Current.CancellationToken);
+            try
+            {
+                var schema = await connector.DiscoverSchemaAsync(handle, TestContext.Current.CancellationToken);
+                schema.Description.ShouldContain("echo");
+                var result = await connector.InvokeAsync(handle,
+                    new ToolInvocation { ToolName = "modern-stdio", Method = "echo", Parameters = new() { ["text"] = "hello" } },
+                    TestContext.Current.CancellationToken);
+                result.Success.ShouldBeTrue();
+                result.Output.ShouldBe("modern:hello");
+            }
+            finally
+            {
+                await connector.DisconnectAsync(handle, TestContext.Current.CancellationToken);
+            }
+        }
+        finally
+        {
+            File.Delete(scriptPath);
         }
     }
 
