@@ -41,7 +41,7 @@ public sealed class InProcessRuntimeTests
         var runtime = CreateRuntime();
         var manifest = CreateManifest();
 
-        var env = await runtime.ProvisionAsync(manifest, CancellationToken.None);
+        var env = await runtime.ProvisionAsync(WorkspaceId.From("test-ws"), manifest, CancellationToken.None);
 
         env.WorkspaceId.ShouldBe(WorkspaceId.From("test-ws"));
         env.NetworkId.ShouldBe(NetworkId.From("local"));
@@ -49,12 +49,12 @@ public sealed class InProcessRuntimeTests
     }
 
     [Fact]
-    public async Task ProvisionAsync_UsesManifestNameAsWorkspaceId()
+    public async Task ProvisionAsync_UsesSuppliedWorkspaceId()
     {
         var runtime = CreateRuntime();
         var manifest = CreateManifest("my-workspace");
 
-        var env = await runtime.ProvisionAsync(manifest, CancellationToken.None);
+        var env = await runtime.ProvisionAsync(WorkspaceId.From("my-workspace"), manifest, CancellationToken.None);
 
         env.WorkspaceId.ShouldBe(WorkspaceId.From("my-workspace"));
     }
@@ -64,7 +64,8 @@ public sealed class InProcessRuntimeTests
     {
         var runtime = CreateRuntime();
 
-        await runtime.TeardownAsync(WorkspaceId.From("test-ws"), CancellationToken.None);
+        await runtime.TeardownAsync(WorkspaceId.From("test-ws"), NetworkId.From("local"),
+            [], CancellationToken.None);
     }
 
     [Fact]
@@ -121,7 +122,7 @@ public sealed class InProcessRuntimeTests
         var runtime = CreateRuntime();
         var manifest = CreateManifest();
 
-        var env = await runtime.ProvisionAsync(manifest, CancellationToken.None);
+        var env = await runtime.ProvisionAsync(WorkspaceId.From("test-ws"), manifest, CancellationToken.None);
 
         // WorkspaceActor stores containers from the environment — in-process has none
         env.Containers.Count.ShouldBe(0);

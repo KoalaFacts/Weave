@@ -58,6 +58,7 @@ public sealed class PluginLifecycleTests : IClassFixture<SiloFactory>
     public async Task Disconnect_UnknownName_Returns404()
     {
         using var client = _factory.CreateClient();
+        SiloFactory.Authorize(client, _factory.Services, "silo", "plugin:disconnect");
 
         using var response = await client.DeleteAsync(
             $"/api/plugins/never-connected-{Guid.NewGuid():N}",
@@ -67,18 +68,16 @@ public sealed class PluginLifecycleTests : IClassFixture<SiloFactory>
     }
 
     [Fact]
-    public async Task Connect_UnknownType_ReturnsValidationOr422()
+    public async Task Connect_UnknownType_ReturnsUnprocessableEntity()
     {
         using var client = _factory.CreateClient();
+        SiloFactory.Authorize(client, _factory.Services, "silo", "plugin:connect");
 
         using var response = await client.PostAsJsonAsync(
             "/api/plugins",
             new { Name = $"p-{Guid.NewGuid():N}", Type = "definitely-not-a-real-plugin-type" },
             TestContext.Current.CancellationToken);
 
-        // An unknown type either hits 422 (registry rejects) or 201 if the
-        // registry accepts unknown types leniently — either proves routing +
-        // validation wiring works. We assert it's not a 500.
-        ((int)response.StatusCode).ShouldBeLessThan(500);
+        response.StatusCode.ShouldBe(HttpStatusCode.UnprocessableEntity);
     }
 }

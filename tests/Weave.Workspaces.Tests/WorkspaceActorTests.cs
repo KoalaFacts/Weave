@@ -53,7 +53,7 @@ public sealed class WorkspaceActorTests
         var logger = Substitute.For<ILogger<WorkspaceActor>>();
         var persistentState = CreatePersistentState();
 
-        runtime.ProvisionAsync(Arg.Any<WorkspaceManifest>(), Arg.Any<CancellationToken>())
+        runtime.ProvisionAsync(Arg.Any<WorkspaceId>(), Arg.Any<WorkspaceManifest>(), Arg.Any<CancellationToken>())
             .Returns(new WorkspaceEnvironment(
                 WorkspaceId.From("test-workspace"),
                 NetworkId.From("net-1"),
@@ -85,7 +85,7 @@ public sealed class WorkspaceActorTests
 
         await actor.StartAsync(CreateManifest());
 
-        await runtime.Received(1).ProvisionAsync(Arg.Any<WorkspaceManifest>(), Arg.Any<CancellationToken>());
+        await runtime.Received(1).ProvisionAsync(Arg.Any<WorkspaceId>(), Arg.Any<WorkspaceManifest>(), Arg.Any<CancellationToken>());
     }
 
     [Fact]
@@ -126,7 +126,7 @@ public sealed class WorkspaceActorTests
         var state = await actor.StartAsync(CreateManifest());
 
         state.Status.ShouldBe(WorkspaceStatus.Running);
-        await runtime.Received(1).ProvisionAsync(Arg.Any<WorkspaceManifest>(), Arg.Any<CancellationToken>());
+        await runtime.Received(1).ProvisionAsync(Arg.Any<WorkspaceId>(), Arg.Any<WorkspaceManifest>(), Arg.Any<CancellationToken>());
     }
 
     [Fact]
@@ -183,7 +183,7 @@ public sealed class WorkspaceActorTests
 
         await actor.StopAsync();
 
-        await runtime.Received(1).TeardownAsync(Arg.Any<WorkspaceId>(), Arg.Any<CancellationToken>());
+        await runtime.Received(1).TeardownAsync(Arg.Any<WorkspaceId>(), Arg.Any<NetworkId?>(), Arg.Any<IReadOnlyList<ContainerId>>(), Arg.Any<CancellationToken>());
     }
 
     [Fact]
@@ -209,7 +209,7 @@ public sealed class WorkspaceActorTests
         var state = new WorkspaceState();
         var persistentState = CreatePersistentState(state);
         var runtime = Substitute.For<IWorkspaceRuntime>();
-        runtime.ProvisionAsync(Arg.Any<WorkspaceManifest>(), Arg.Any<CancellationToken>())
+        runtime.ProvisionAsync(Arg.Any<WorkspaceId>(), Arg.Any<WorkspaceManifest>(), Arg.Any<CancellationToken>())
             .Returns(new WorkspaceEnvironment(WorkspaceId.From("new-workspace"), NetworkId.From("net-1"), []));
         var actor = new WorkspaceActor(runtime, Substitute.For<ILifecycleManager>(),
             Substitute.For<IEventBus>(), TimeProvider.System, Substitute.For<ILogger<WorkspaceActor>>(),
@@ -267,13 +267,13 @@ public sealed class WorkspaceActorTests
         var logger = Substitute.For<ILogger<WorkspaceActor>>();
         var persistentState = CreatePersistentState();
 
-        runtime.ProvisionAsync(Arg.Any<WorkspaceManifest>(), Arg.Any<CancellationToken>())
+        runtime.ProvisionAsync(Arg.Any<WorkspaceId>(), Arg.Any<WorkspaceManifest>(), Arg.Any<CancellationToken>())
             .Returns(new WorkspaceEnvironment(
                 WorkspaceId.From("test-workspace"),
                 NetworkId.From("net-1"),
                 []));
 
-        runtime.TeardownAsync(Arg.Any<WorkspaceId>(), Arg.Any<CancellationToken>())
+        runtime.TeardownAsync(Arg.Any<WorkspaceId>(), Arg.Any<NetworkId?>(), Arg.Any<IReadOnlyList<ContainerId>>(), Arg.Any<CancellationToken>())
             .Returns(Task.FromException(new InvalidOperationException("teardown boom")));
 
         var actor = new WorkspaceActor(runtime, lifecycle, eventBus, TimeProvider.System, logger, persistentState);
@@ -292,7 +292,7 @@ public sealed class WorkspaceActorTests
 
         await actor.StopAsync();
 
-        await runtime.DidNotReceive().TeardownAsync(Arg.Any<WorkspaceId>(), Arg.Any<CancellationToken>());
+        await runtime.DidNotReceive().TeardownAsync(Arg.Any<WorkspaceId>(), Arg.Any<NetworkId?>(), Arg.Any<IReadOnlyList<ContainerId>>(), Arg.Any<CancellationToken>());
     }
 
     [Fact]
@@ -304,7 +304,7 @@ public sealed class WorkspaceActorTests
         var logger = Substitute.For<ILogger<WorkspaceActor>>();
         var persistentState = CreatePersistentState();
 
-        runtime.ProvisionAsync(Arg.Any<WorkspaceManifest>(), Arg.Any<CancellationToken>())
+        runtime.ProvisionAsync(Arg.Any<WorkspaceId>(), Arg.Any<WorkspaceManifest>(), Arg.Any<CancellationToken>())
             .Returns(Task.FromException<WorkspaceEnvironment>(new InvalidOperationException("Provisioning failed")));
 
         var actor = new WorkspaceActor(runtime, lifecycle, eventBus, TimeProvider.System, logger, persistentState);

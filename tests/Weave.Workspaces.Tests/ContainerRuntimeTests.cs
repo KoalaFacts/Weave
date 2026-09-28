@@ -272,37 +272,33 @@ public sealed class ContainerRuntimeTests
     public async Task TeardownAsync_StopsContainersAndRemovesNetwork()
     {
         var stub = new StubCommandRunner();
-        // First call (ps) returns two container IDs
-        stub.OutputQueue.Enqueue("ctr-1\nctr-2\n");
         var runtime = CreateRuntime(stub);
 
-        await runtime.TeardownAsync(WorkspaceId.From("ws1"), TestContext.Current.CancellationToken);
+        await runtime.TeardownAsync(WorkspaceId.From("ws1"), NetworkId.From("net-123"),
+            [ContainerId.From("ctr-1"), ContainerId.From("ctr-2")], TestContext.Current.CancellationToken);
 
-        // ps, stop ctr-1, rm ctr-1, stop ctr-2, rm ctr-2, network rm
-        stub.Invocations.Count.ShouldBe(6);
-
-        // ps invocation
-        stub.Invocations[0].Arguments.ShouldContain("ps");
+        stub.Invocations.Count.ShouldBe(5);
 
         // stop ctr-1
-        stub.Invocations[1].Arguments.ShouldContain("stop");
-        stub.Invocations[1].Arguments.ShouldContain("ctr-1");
+        stub.Invocations[0].Arguments.ShouldContain("stop");
+        stub.Invocations[0].Arguments.ShouldContain("ctr-1");
 
         // rm ctr-1
-        stub.Invocations[2].Arguments.ShouldContain("rm");
-        stub.Invocations[2].Arguments.ShouldContain("ctr-1");
+        stub.Invocations[1].Arguments.ShouldContain("rm");
+        stub.Invocations[1].Arguments.ShouldContain("ctr-1");
 
         // stop ctr-2
-        stub.Invocations[3].Arguments.ShouldContain("stop");
-        stub.Invocations[3].Arguments.ShouldContain("ctr-2");
+        stub.Invocations[2].Arguments.ShouldContain("stop");
+        stub.Invocations[2].Arguments.ShouldContain("ctr-2");
 
         // rm ctr-2
-        stub.Invocations[4].Arguments.ShouldContain("rm");
-        stub.Invocations[4].Arguments.ShouldContain("ctr-2");
+        stub.Invocations[3].Arguments.ShouldContain("rm");
+        stub.Invocations[3].Arguments.ShouldContain("ctr-2");
 
         // network rm
-        stub.Invocations[5].Arguments.ShouldContain("network");
-        stub.Invocations[5].Arguments.ShouldContain("rm");
+        stub.Invocations[4].Arguments.ShouldContain("network");
+        stub.Invocations[4].Arguments.ShouldContain("rm");
+        stub.Invocations[4].Arguments.ShouldContain("net-123");
     }
 
     // --- ProvisionAsync ---
@@ -324,7 +320,7 @@ public sealed class ContainerRuntimeTests
             }
         };
 
-        var env = await runtime.ProvisionAsync(manifest, TestContext.Current.CancellationToken);
+        var env = await runtime.ProvisionAsync(WorkspaceId.From("test-ws"), manifest, TestContext.Current.CancellationToken);
 
         env.Containers.ShouldBeEmpty();
         // Only 1 invocation: network create
@@ -349,7 +345,7 @@ public sealed class ContainerRuntimeTests
             }
         };
 
-        await runtime.ProvisionAsync(manifest, TestContext.Current.CancellationToken);
+        await runtime.ProvisionAsync(WorkspaceId.From("my-ws"), manifest, TestContext.Current.CancellationToken);
 
         var args = stub.Invocations[0].Arguments;
         args.ShouldContain("custom-my-ws-net");

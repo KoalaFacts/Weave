@@ -24,6 +24,12 @@ public sealed partial class WorkspaceActor(
     {
         _key = key;
         await persistentState.ReadStateAsync(cancellationToken);
+        if (persistentState.State.Status is WorkspaceStatus.Running
+            && persistentState.State.RuntimeInstanceId != runtime.InstanceId)
+        {
+            persistentState.State.RecoveryCondition = WorkspaceRecoveryCondition.RequiresReconciliation;
+            await persistentState.WriteStateAsync(cancellationToken);
+        }
     }
 
     public async Task<WorkspaceState> StartAsync(WorkspaceManifest manifest)
@@ -113,9 +119,11 @@ public sealed partial class WorkspaceActor(
         {
             await lifecycleManager.RunHooksAsync(LifecyclePhase.WorkspaceStarting, context, CancellationToken.None);
 
-            var env = await runtime.ProvisionAsync(manifest, CancellationToken.None);
+            var env = await runtime.ProvisionAsync(persistentState.State.WorkspaceId, manifest, CancellationToken.None);
 
             persistentState.State.Status = WorkspaceStatus.Running;
+            persistentState.State.RecoveryCondition = WorkspaceRecoveryCondition.StartedOnThisHost;
+            persistentState.State.RuntimeInstanceId = runtime.InstanceId;
             persistentState.State.StartedAt = timeProvider.GetUtcNow();
             persistentState.State.NetworkId = env.NetworkId;
             persistentState.State.Name = manifest.Name;
@@ -231,9 +239,14 @@ public sealed partial class WorkspaceActor(
         try
         {
             await lifecycleManager.RunHooksAsync(LifecyclePhase.WorkspaceStopping, context, CancellationToken.None);
-            await runtime.TeardownAsync(persistentState.State.WorkspaceId, CancellationToken.None);
+            await runtime.TeardownAsync(persistentState.State.WorkspaceId,
+                persistentState.State.NetworkId,
+                persistentState.State.Containers.Select(static container => container.ContainerId).ToArray(),
+                CancellationToken.None);
 
             persistentState.State.Status = WorkspaceStatus.Stopped;
+            persistentState.State.RecoveryCondition = WorkspaceRecoveryCondition.NotApplicable;
+            persistentState.State.RuntimeInstanceId = Guid.Empty;
             persistentState.State.StoppedAt = timeProvider.GetUtcNow();
             persistentState.State.Containers.Clear();
             persistentState.State.ActiveAgents.Clear();

@@ -79,14 +79,10 @@ public static class WorkspaceEndpoints
         if (request.Manifest.Plugins.Values.Any(plugin =>
             string.Equals(plugin.Type, "dapr_tools", StringComparison.OrdinalIgnoreCase)))
             installationGrants.Add(PluginInstallationAuthority.DaprInstallGrant);
-        if (installationGrants.Count > 0)
-        {
-            installationGrants.Insert(0, PluginInstallationAuthority.CreateWorkspaceGrant);
-            var denial = await authority.DenialAsync(context, "silo",
-                installationGrants.ToArray());
-            if (denial is not null)
-                return denial;
-        }
+        installationGrants.Insert(0, PluginInstallationAuthority.CreateWorkspaceGrant);
+        var denial = await authority.DenialAsync(context, "silo", installationGrants.ToArray());
+        if (denial is not null)
+            return denial;
         var errors = ValidateStartWorkspace(request);
         if (errors is not null)
             return ResultExtensions.ValidationFailed(errors);
@@ -140,6 +136,10 @@ public static class WorkspaceEndpoints
         HttpContext context,
         CancellationToken ct)
     {
+        var denial = await authority.DenialAsync(context, workspaceId,
+            PluginInstallationAuthority.StopWorkspaceGrant);
+        if (denial is not null)
+            return denial;
         var workspace = actors.GetActor<IWorkspaceActor>(VirtualActorId.From(workspaceId));
         var state = await workspace.GetStateAsync();
         var disableGrants = new List<string>();
@@ -150,8 +150,7 @@ public static class WorkspaceEndpoints
         if (disableGrants.Count > 0)
         {
             disableGrants.Insert(0, PluginInstallationAuthority.StopWorkspaceGrant);
-            var denial = await authority.DenialAsync(context, workspaceId,
-                disableGrants.ToArray());
+            denial = await authority.DenialAsync(context, workspaceId, disableGrants.ToArray());
             if (denial is not null)
                 return denial;
         }

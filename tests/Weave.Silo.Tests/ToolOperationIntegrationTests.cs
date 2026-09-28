@@ -15,6 +15,7 @@ public sealed class ToolOperationIntegrationTests(SiloFactory factory) : IClassF
     public async Task WorkspaceStart_ExplicitReadGrant_DeniesWriteUntilAuthorityIsChanged()
     {
         using var client = factory.CreateClient();
+        SiloFactory.Authorize(client, factory.Services, "silo", "workspace:create");
         var root = Path.Combine(Path.GetTempPath(), $"weave-host-authority-{Guid.NewGuid():N}");
         Directory.CreateDirectory(root);
         var path = Path.Combine(root, "note.txt");
@@ -83,6 +84,7 @@ public sealed class ToolOperationIntegrationTests(SiloFactory factory) : IClassF
         {
             if (workspaceId is not null)
             {
+                SiloFactory.Authorize(client, factory.Services, workspaceId, "workspace:stop");
                 using var cleanup = await client.DeleteAsync($"/api/workspaces/{workspaceId}", TestContext.Current.CancellationToken);
             }
             Directory.Delete(root, recursive: true);

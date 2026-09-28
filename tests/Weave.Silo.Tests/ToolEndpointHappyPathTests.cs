@@ -43,8 +43,9 @@ public sealed class ToolEndpointHappyPathTests : IClassFixture<SiloFactory>
         }
     };
 
-    private static async Task<string> StartWorkspaceAsync(HttpClient client, WorkspaceManifest manifest)
+    private async Task<string> StartWorkspaceAsync(HttpClient client, WorkspaceManifest manifest)
     {
+        SiloFactory.Authorize(client, _factory.Services, "silo", "workspace:create");
         using var response = await client.PostAsJsonAsync(
             "/api/workspaces",
             new { Manifest = manifest },
@@ -100,6 +101,7 @@ public sealed class ToolEndpointHappyPathTests : IClassFixture<SiloFactory>
         var manifest = ManifestWithFileSystemTool(UniqueWorkspaceName());
         var wsId = await StartWorkspaceAsync(client, manifest);
 
+        SiloFactory.Authorize(client, _factory.Services, wsId, "workspace:stop");
         using var stopResponse = await client.DeleteAsync(
             $"/api/workspaces/{wsId}",
             TestContext.Current.CancellationToken);

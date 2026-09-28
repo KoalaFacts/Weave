@@ -1,4 +1,5 @@
 using Microsoft.Extensions.Logging.Abstractions;
+using Weave.Shared.Ids;
 using Weave.Workspaces.Manifest;
 using Weave.Workspaces.Runtime;
 
@@ -155,7 +156,7 @@ public sealed class ContainerRuntimeIntegrationTests
                 }
             };
 
-            env = await runtime.ProvisionAsync(manifest, TestContext.Current.CancellationToken);
+            env = await runtime.ProvisionAsync(WorkspaceId.From(workspaceName), manifest, TestContext.Current.CancellationToken);
 
             env.ShouldNotBeNull();
             env.Containers.Count.ShouldBe(1);
@@ -173,7 +174,8 @@ public sealed class ContainerRuntimeIntegrationTests
         {
             if (env is not null)
             {
-                await runtime.TeardownAsync(env.WorkspaceId, CancellationToken.None);
+                await runtime.TeardownAsync(env.WorkspaceId, env.NetworkId,
+                    env.Containers.Select(static container => container.ContainerId).ToArray(), CancellationToken.None);
             }
         }
     }

@@ -19,6 +19,7 @@ public sealed class PluginEndpointHappyPathTests : IClassFixture<SiloFactory>
     public async Task Connect_HttpPlugin_Returns201ThenDisconnectReturns204()
     {
         using var client = _factory.CreateClient();
+        SiloFactory.Authorize(client, _factory.Services, "silo", "plugin:connect");
         var pluginName = $"http-{Guid.NewGuid():N}";
 
         using var connectResponse = await client.PostAsJsonAsync(
@@ -34,6 +35,7 @@ public sealed class PluginEndpointHappyPathTests : IClassFixture<SiloFactory>
 
         connectResponse.StatusCode.ShouldBe(HttpStatusCode.Created, connectBody);
 
+        SiloFactory.Authorize(client, _factory.Services, "silo", "plugin:disconnect");
         using var disconnectResponse = await client.DeleteAsync(
             $"/api/plugins/{pluginName}",
             TestContext.Current.CancellationToken);
@@ -67,6 +69,7 @@ public sealed class PluginEndpointHappyPathTests : IClassFixture<SiloFactory>
     {
         // Schema validator returns unknown keys as warnings (non-fatal).
         using var client = _factory.CreateClient();
+        SiloFactory.Authorize(client, _factory.Services, "silo", "plugin:connect");
         var name = $"http-{Guid.NewGuid():N}";
 
         using var response = await client.PostAsJsonAsync(
@@ -94,6 +97,7 @@ public sealed class PluginEndpointHappyPathTests : IClassFixture<SiloFactory>
         }
 
         // cleanup
+        SiloFactory.Authorize(client, _factory.Services, "silo", "plugin:disconnect");
         using var _ = await client.DeleteAsync($"/api/plugins/{name}", TestContext.Current.CancellationToken);
     }
 
@@ -117,6 +121,7 @@ public sealed class PluginEndpointHappyPathTests : IClassFixture<SiloFactory>
     public async Task Composition_AfterHttpConnect_ShowsOwnedRegistrationWithoutConfiguration()
     {
         using var client = _factory.CreateClient();
+        SiloFactory.Authorize(client, _factory.Services, "silo", "plugin:connect");
         var name = $"http-{Guid.NewGuid():N}";
 
         try
@@ -152,6 +157,7 @@ public sealed class PluginEndpointHappyPathTests : IClassFixture<SiloFactory>
         }
         finally
         {
+            SiloFactory.Authorize(client, _factory.Services, "silo", "plugin:disconnect");
             using var response = await client.DeleteAsync(
                 $"/api/plugins/{name}", TestContext.Current.CancellationToken);
             response.StatusCode.ShouldBe(HttpStatusCode.NoContent);

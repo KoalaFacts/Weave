@@ -16,6 +16,13 @@ configuration, schema digests, credentials, and invocation history. Unknown
 workspaces return 404; inconsistent stored identities return 409 instead of
 showing records under another workspace ID.
 
+`ready` describes only the plugin registration. After a Host restart, the
+workspace response may report `recoveryCondition: RequiresReconciliation`
+while an installation is registered. The condition is diagnostic; restored
+external connectors use their own connection, contract, and invocation checks.
+Operators must inspect and stop the old workspace before creating a fresh one;
+plugin restoration alone does not recreate its runtime.
+
 The inventory also reports the current Host's last installation observation:
 `condition`, a safe `reasonCode`, and `lastCheckedAt` in UTC. `ready` means an
 enabled installation has an active registration; `blocked` means an enabled

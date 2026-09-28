@@ -10,13 +10,12 @@ public sealed partial class ContainerRuntime(
 {
     private readonly string _engine = NormalizeEngine(options.Engine);
 
+    public Guid InstanceId { get; } = Guid.NewGuid();
     public string RuntimeName => _engine;
 
-    public async Task<WorkspaceEnvironment> ProvisionAsync(WorkspaceManifest manifest, CancellationToken ct)
+    public async Task<WorkspaceEnvironment> ProvisionAsync(WorkspaceId workspaceId, WorkspaceManifest manifest, CancellationToken ct)
     {
-        var workspaceId = manifest.Name;
-
-        var networkName = manifest.Workspace.Network?.Name?.Replace("{workspace}", workspaceId)
+        var networkName = manifest.Workspace.Network?.Name?.Replace("{workspace}", workspaceId.ToString())
             ?? $"weave-{workspaceId}";
         var network = await CreateNetworkAsync(new NetworkSpec
         {
@@ -41,18 +40,17 @@ public sealed partial class ContainerRuntime(
 
         LogWorkspaceProvisioned(logger, workspaceId, containers.Count);
 
-        return new WorkspaceEnvironment(WorkspaceId.From(workspaceId), network.NetworkId, containers);
+        return new WorkspaceEnvironment(workspaceId, network.NetworkId, containers);
     }
 
-    public async Task TeardownAsync(WorkspaceId workspaceId, CancellationToken ct)
+    public async Task TeardownAsync(WorkspaceId workspaceId, NetworkId? networkId,
+        IReadOnlyList<ContainerId> containerIds, CancellationToken ct)
     {
-        var output = await RunContainerCliAsync(["ps", "--filter", $"name=weave-{workspaceId}", "--format", "{{.ID}}"], ct);
-        var containerIds = output.Split('\n', StringSplitOptions.RemoveEmptyEntries);
-
         foreach (var id in containerIds)
-            await StopContainerAsync(ContainerId.From(id.Trim()), ct);
+            await StopContainerAsync(id, ct);
 
-        await DeleteNetworkAsync(NetworkId.From($"weave-{workspaceId}"), ct);
+        if (networkId is not null)
+            await DeleteNetworkAsync(networkId.Value, ct);
 
         LogWorkspaceTornDown(logger, workspaceId.ToString());
     }

@@ -49,8 +49,9 @@ public sealed class AgentToolIntegrationTests : IClassFixture<SiloFactory>
         }
     };
 
-    private static async Task<string> StartWorkspaceAsync(HttpClient client, WorkspaceManifest manifest)
+    private async Task<string> StartWorkspaceAsync(HttpClient client, WorkspaceManifest manifest)
     {
+        SiloFactory.Authorize(client, _factory.Services, "silo", "workspace:create");
         using var response = await client.PostAsJsonAsync(
             "/api/workspaces",
             new StartRequestBody { Manifest = manifest },
