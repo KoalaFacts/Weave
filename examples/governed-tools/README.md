@@ -1,5 +1,22 @@
 # Review and decide a pending governed operation
 
+For a one-command illustration from the repository root, run:
+
+```bash
+python3 examples/governed-tools/demo.py
+```
+
+This standard-library sketch keeps all state in memory and creates no files. It
+walks through permission, approval, resume and duplicate protection without
+starting the Host. Its scripted decision is not independent human review, and
+it does not verify the real security or persistence boundary.
+
+For the actual Host walkthrough, build `hosts/Weave.Host/Weave.Host.csproj` and
+run `first_use.py` with the resulting `Weave.Silo.dll` and a new evidence
+directory. That walkthrough uses local files, signed capabilities, a scripted
+reviewer and the Host's durable SQLite journal. The instructions below cover
+an actual operator decision.
+
 This is an operator-side terminal example, not an Agent auto-approval tool.
 A current Host retains the input proposal separately from journal metadata, so a
 reviewer can retrieve it by UUID after authorization. Approval never invokes a tool.

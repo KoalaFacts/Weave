@@ -32,27 +32,17 @@ This is an implemented, [executable local walkthrough](examples/governed-tools/f
 
 The [implementation records](docs/implementation/) describe the delivered scope and migration limits. The [architecture document](ARCHITECTURE.md) describes the broader target; it is not a list of shipped features.
 
-## Try the governed path locally
+## See the decision flow in memory
 
-You need Git, Python 3.10+ as `python3`, and a stable .NET SDK selected by [global.json](global.json) (10.0.201 or newer). From the repository root, build the host and run the disposable walkthrough while port 9401 is free:
-
-```bash
-git clone https://github.com/KoalaFacts/Weave.git
-cd Weave
-dotnet restore Weave.slnx
-dotnet build Weave.slnx --no-restore -c Release
-python3 examples/governed-tools/first_use.py --host hosts/Weave.Host/bin/Release/net10.0/Weave.Silo.dll --evidence ../weave-first-use-evidence
-```
-
-Choose a new evidence directory if that one already exists. The script creates temporary sample files and credentials, starts a local Host, checks read permission and a blocked write, records a scripted approval, resumes the original request, restarts the Host, and confirms the same ID does not write twice. It leaves a sanitized report in the chosen evidence directory. It does **not** call a model or prove independent human judgment. For an actual operator review and decision, follow [Review and decide a pending operation](examples/governed-tools/README.md) and its [trusted onboarding guide](docs/implementation/2026-09-22-trusted-operator-onboarding.md).
-
-To explore the workspace CLI without a model account:
+From a checkout, run this with Python 3.10+; it uses only the standard library:
 
 ```bash
-dotnet run --project hosts/Weave.Cli/Weave.Cli.csproj --no-build -c Release -- workspace new demo --preset starter
+python3 examples/governed-tools/demo.py
 ```
 
-This creates a local `demo/workspace.json`; it does not configure the approval workflow or start a model. See the [manifest reference](docs/manifest-reference.md) and the CLI's `--help` output for the current command surface.
+The sketch keeps the document, grants, pending write, approval and attempt count in memory. It shows an allowed read, a denied write, an approved request with no immediate effect, a resume that writes, and a repeated ID that does not write again. It needs no .NET build, server, database, model account, network connection or configuration, and creates no files. **This is a control-flow illustration, not the Weave Host or a security verification.**
+
+For the actual Host path with signed authority and a durable journal, use the [governed-tools walkthrough](examples/governed-tools/README.md). It requires a .NET build and local storage. The [trusted onboarding guide](docs/implementation/2026-09-22-trusted-operator-onboarding.md) covers a real operator decision.
 
 ## Current boundaries
 
