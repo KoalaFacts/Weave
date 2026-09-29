@@ -1,6 +1,7 @@
 using System.Text.Json.Serialization;
 using Microsoft.AspNetCore.Mvc;
 using Weave.Agents.ToolRegistry;
+using Weave.Management;
 using Weave.Silo.Plugins;
 using Weave.Workspaces.Manifest;
 namespace Weave.Silo.Api;
@@ -32,6 +33,7 @@ namespace Weave.Silo.Api;
 [JsonSerializable(typeof(ConversationMessageResponse))]
 [JsonSerializable(typeof(TextEventWire))]
 [JsonSerializable(typeof(ConnectPluginRequest))]
+[JsonSerializable(typeof(ManagementOperationRecord))]
 [JsonSerializable(typeof(ConnectPluginResponse))]
 [JsonSerializable(typeof(PluginStatus))]
 [JsonSerializable(typeof(PluginCompositionEntry))]

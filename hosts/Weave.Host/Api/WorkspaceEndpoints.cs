@@ -1,8 +1,10 @@
 using System.Text.Json;
+using System.Text;
 using Weave.Shared.Cqrs;
 using Weave.Shared.Ids;
 using Weave.Shared.VirtualActors;
 using Weave.Silo.Plugins;
+using Weave.Silo.Management;
 using Weave.Workspaces.Lifecycle;
 using Weave.Workspaces.Manifest;
 namespace Weave.Silo.Api;
@@ -70,6 +72,7 @@ public static class WorkspaceEndpoints
         ICommandDispatcher dispatcher,
         HttpContext context,
         IPluginInstallationAuthority authority,
+        ManagementAdmission admission,
         CancellationToken ct)
     {
         var installationGrants = new List<string>();
@@ -87,12 +90,20 @@ public static class WorkspaceEndpoints
         if (errors is not null)
             return ResultExtensions.ValidationFailed(errors);
 
+        var workspaceId = WorkspaceId.New();
+        var admitted = admission.Admit(context, "silo", "workspace:create", workspaceId.ToString(),
+            installationGrants,
+            JsonSerializer.SerializeToUtf8Bytes(request, SiloApiJsonContext.Default.StartWorkspaceRequest),
+            out var managementId);
+        if (admitted is not null)
+            return admitted;
+
         try
         {
-            var workspaceId = WorkspaceId.New();
             var command = new StartWorkspaceCommand(workspaceId, request.Manifest);
             var state = await dispatcher.DispatchAsync<StartWorkspaceCommand, WorkspaceState>(command, ct);
-            return Results.Created($"/api/workspaces/{workspaceId}", WorkspaceResponse.FromState(state));
+            return admission.Confirm(managementId,
+                Results.Created($"/api/workspaces/{workspaceId}", WorkspaceResponse.FromState(state)));
         }
         catch (InvalidOperationException ex)
         {
@@ -134,6 +145,7 @@ public static class WorkspaceEndpoints
         IVirtualActorProvider actors,
         IPluginInstallationAuthority authority,
         HttpContext context,
+        ManagementAdmission admission,
         CancellationToken ct)
     {
         var denial = await authority.DenialAsync(context, workspaceId,
@@ -154,11 +166,18 @@ public static class WorkspaceEndpoints
             if (denial is not null)
                 return denial;
         }
+        else
+            disableGrants.Add(PluginInstallationAuthority.StopWorkspaceGrant);
+
+        var admitted = admission.Admit(context, workspaceId, "workspace:stop", workspaceId,
+            disableGrants, Encoding.UTF8.GetBytes(workspaceId), out var managementId);
+        if (admitted is not null)
+            return admitted;
         try
         {
             var command = new StopWorkspaceCommand(WorkspaceId.From(workspaceId));
             await dispatcher.DispatchAsync<StopWorkspaceCommand, bool>(command, ct);
-            return Results.NoContent();
+            return admission.Confirm(managementId, Results.NoContent());
         }
         catch (InvalidOperationException ex)
         {
