@@ -41,10 +41,7 @@ In the trusted reviewer environment, provide `WEAVE_REVIEW_CAPABILITY` and
 Agent tools and chat. Then run:
 
 ```bash
-node examples/governed-tools/review.mjs \
-  --url https://weave.example \
-  --workspace onboarding --tool files \
-  --invocation-id YOUR_ACTUAL_INVOCATION_UUID
+node examples/governed-tools/review.mjs --url https://weave.example --workspace onboarding --tool files --invocation-id YOUR_ACTUAL_INVOCATION_UUID
 ```
 
 The helper retrieves the Host-retained proposal by UUID, checks its context and
