@@ -15,8 +15,8 @@ public sealed class SqliteManagementOperationJournal : IManagementOperationJourn
     {
         var invocationDirectory = invocationOptions.Value.DatabasePath is { } invocationPath
             ? Path.GetDirectoryName(Path.GetFullPath(invocationPath))!
-            : Path.Combine(Environment.GetFolderPath(Environment.SpecialFolder.UserProfile), ".weave");
-        var path = options.Value.DatabasePath ?? Path.Combine(invocationDirectory, "management.db");
+            : Path.Join(Environment.GetFolderPath(Environment.SpecialFolder.UserProfile), ".weave");
+        var path = options.Value.DatabasePath ?? Path.Join(invocationDirectory, "management.db");
         if (string.IsNullOrWhiteSpace(path) || path.Equals(":memory:", StringComparison.OrdinalIgnoreCase)
             || path.StartsWith("file:", StringComparison.OrdinalIgnoreCase))
             throw new InvalidOperationException("Management recording requires an on-disk database path.");
