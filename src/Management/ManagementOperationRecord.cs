@@ -1,5 +1,8 @@
+using System.Text.Json.Serialization;
+
 namespace Weave.Management;
 
+[JsonConverter(typeof(JsonStringEnumConverter<ManagementOperationOutcome>))]
 public enum ManagementOperationOutcome
 {
     OutcomeUnknown,
