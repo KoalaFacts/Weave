@@ -20,7 +20,7 @@ Weave makes those decisions at the operation boundary. The repository's working 
 | A separate reviewer examines the proposal | The reviewer sees the exact target, inputs, requester and plan digest. Approving records a decision; it does not run the write. |
 | The original agent resumes the same invocation | Weave rechecks current authority and the approved plan, records an attempt, then dispatches. Submitting that invocation ID again does not repeat the write. |
 
-This is an implemented, [executable local walkthrough](examples/governed-tools/first_use.py), not a claim that every connector already supports the same approval policy. The walkthrough uses a scripted reviewer and a deterministic client in place of a person and a live model.
+This is an implemented, [executable local walkthrough](examples/governed-tools/host-demo.mjs), not a claim that every connector already supports the same approval policy. The walkthrough uses a scripted reviewer and a deterministic client in place of a person and a live model.
 
 ## What works today
 
@@ -34,15 +34,15 @@ The [implementation records](docs/implementation/) describe the delivered scope 
 
 ## See the decision flow in memory
 
-From a checkout, run this with Python 3.10+; it uses only the standard library:
+From a checkout, run this with Node.js 22+; it uses only built-in modules:
 
 ```bash
-python3 examples/governed-tools/demo.py
+node examples/governed-tools/demo.mjs
 ```
 
 The sketch keeps the document, grants, pending write, approval and attempt count in memory. It shows an allowed read, a denied write, an approved request with no immediate effect, a resume that writes, and a repeated ID that does not write again. It needs no .NET build, server, database, model account, network connection or configuration, and creates no files. **This is a control-flow illustration, not the Weave Host or a security verification.**
 
-For the actual Host path with signed authority and a durable journal, use the [governed-tools walkthrough](examples/governed-tools/README.md). It requires a .NET build and local storage. The [trusted onboarding guide](docs/implementation/2026-09-22-trusted-operator-onboarding.md) covers a real operator decision.
+For the actual Host path with signed authority and a durable journal, use the [Node governed-tools walkthrough](examples/governed-tools/README.md). It requires a .NET build and local storage, but no npm install or Python. The [trusted onboarding guide](docs/implementation/2026-09-22-trusted-operator-onboarding.md) covers operator setup.
 
 ## Current boundaries
 
