@@ -95,6 +95,21 @@ public sealed class PluginEndpointHappyPathTests : IClassFixture<SiloFactory>
             blocked.StatusCode.ShouldBe(HttpStatusCode.Conflict);
             (await blocked.Content.ReadAsStringAsync(TestContext.Current.CancellationToken))
                 .ShouldContain(webhookName);
+            SiloFactory.Authorize(client, factory.Services, "silo", "plugin:connect");
+            using var replacement = await client.PostAsJsonAsync("/api/plugins", new
+            {
+                Name = providerName,
+                Type = "http",
+                Config = new Dictionary<string, string> { ["base_url"] = "https://other.example.com/" }
+            }, TestContext.Current.CancellationToken);
+            replacement.StatusCode.ShouldBe(HttpStatusCode.Conflict);
+            var replacementId = replacement.Headers.GetValues("X-Weave-Management-Id").Single();
+            SiloFactory.Authorize(client, factory.Services, "silo", "management:operations:read");
+            using var replacementOperation = await client.GetAsync(
+                $"/api/management/operations/silo/{replacementId}", TestContext.Current.CancellationToken);
+            using var replacementJson = JsonDocument.Parse(await replacementOperation.Content.ReadAsStringAsync(
+                TestContext.Current.CancellationToken));
+            replacementJson.RootElement.GetProperty("outcome").GetString().ShouldBe("Failed");
             using var after = await client.GetAsync("/api/plugins/composition",
                 TestContext.Current.CancellationToken);
             using var afterJson = JsonDocument.Parse(await after.Content.ReadAsStringAsync(
@@ -135,6 +150,46 @@ public sealed class PluginEndpointHappyPathTests : IClassFixture<SiloFactory>
         using var json = JsonDocument.Parse(await operation.Content.ReadAsStringAsync(
             TestContext.Current.CancellationToken));
         json.RootElement.GetProperty("outcome").GetString().ShouldBe("Failed");
+    }
+
+    [Fact]
+    public async Task Connect_WebhookDependencyInvalidUrl_RecordsNoEffectFailure()
+    {
+        using var client = _factory.CreateClient();
+        var providerName = $"http-{Guid.NewGuid():N}";
+        SiloFactory.Authorize(client, _factory.Services, "silo", "plugin:connect");
+        try
+        {
+            using var provider = await client.PostAsJsonAsync("/api/plugins", new
+            {
+                Name = providerName,
+                Type = "http",
+                Config = new Dictionary<string, string> { ["base_url"] = "https://api.example.com/" }
+            }, TestContext.Current.CancellationToken);
+            provider.StatusCode.ShouldBe(HttpStatusCode.Created);
+
+            using var rejected = await client.PostAsJsonAsync("/api/plugins", new
+            {
+                Name = $"webhook-{Guid.NewGuid():N}",
+                Type = "webhook",
+                Config = new Dictionary<string, string> { ["url"] = "//other.example.com/events" },
+                Requires = new Dictionary<string, string> { ["http"] = providerName }
+            }, TestContext.Current.CancellationToken);
+            rejected.StatusCode.ShouldBe(HttpStatusCode.UnprocessableEntity);
+            var operationId = rejected.Headers.GetValues("X-Weave-Management-Id").Single();
+            SiloFactory.Authorize(client, _factory.Services, "silo", "management:operations:read");
+            using var operation = await client.GetAsync($"/api/management/operations/silo/{operationId}",
+                TestContext.Current.CancellationToken);
+            using var json = JsonDocument.Parse(await operation.Content.ReadAsStringAsync(
+                TestContext.Current.CancellationToken));
+            json.RootElement.GetProperty("outcome").GetString().ShouldBe("Failed");
+        }
+        finally
+        {
+            SiloFactory.Authorize(client, _factory.Services, "silo", "plugin:disconnect");
+            using var provider = await client.DeleteAsync($"/api/plugins/{providerName}",
+                TestContext.Current.CancellationToken);
+        }
     }
 
     [Fact]

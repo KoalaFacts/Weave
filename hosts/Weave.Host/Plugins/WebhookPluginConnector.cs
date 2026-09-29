@@ -63,6 +63,7 @@ public sealed partial class WebhookPluginConnector(
                     Name = name,
                     Type = PluginType,
                     IsConnected = false,
+                    InstallationFailure = InstallationFailureCode.InvalidConfiguration,
                     Error = "Webhook requires an active HTTP provider and a relative URL."
                 });
             }
@@ -76,6 +77,7 @@ public sealed partial class WebhookPluginConnector(
                     Name = name,
                     Type = PluginType,
                     IsConnected = false,
+                    InstallationFailure = InstallationFailureCode.InvalidConfiguration,
                     Error = "Webhook relative URL must stay on the HTTP provider's origin."
                 });
             }

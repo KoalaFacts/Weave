@@ -170,9 +170,12 @@ public static class PluginEndpoints
             var status = await registry.ConnectAsync(registrationName, definition, source.Token);
             if (!status.IsConnected)
             {
-                var failure = ResultExtensions.UnprocessableEntity(status.Error ?? "Plugin connection failed.");
+                var failure = status.InstallationFailure == InstallationFailureCode.DependencyInUse
+                    ? ResultExtensions.Conflict(status.Error ?? "Plugin dependency is in use.")
+                    : ResultExtensions.UnprocessableEntity(status.Error ?? "Plugin connection failed.");
                 return status.InstallationFailure is InstallationFailureCode.DependencyUnavailable
                     or InstallationFailureCode.DependencyInUse
+                    or InstallationFailureCode.InvalidConfiguration
                     ? admission.ConfirmNoEffect(managementId, failure)
                     : failure;
             }
