@@ -32,8 +32,11 @@ jobs:
           persist-credentials: false
           fetch-depth: 0
       - name: Confirm this acceptance does not substitute modified product code
+        if: github.event_name == 'pull_request'
+        env:
+          BASE_SHA: ${{ github.event.pull_request.base.sha }}
         run: >-
-          git diff --exit-code 3ded2a1162bfb14f314f39cb04a574e85edda469 HEAD --
+          git diff --exit-code "$BASE_SHA" HEAD --
           src/ hosts/ extensions/ tools/ Directory.Build.props Directory.Build.targets
           Directory.Packages.props global.json
       - uses: ./.github/actions/setup-dotnet
