@@ -14,6 +14,7 @@ import os
 from pathlib import Path
 import secrets
 import shutil
+import signal
 import subprocess
 import sys
 import tempfile
@@ -33,6 +34,9 @@ Open question: Confirm the pilot users after the first walkthrough.
 INTRO = "Not written. Awaiting an approved request.\n"
 BASE = 'http://127.0.0.1:9401'
 ROUTE = '/api/workspaces/first-use/tools/files/invocations'
+CHILD_ENV_KEYS = frozenset(name.casefold() for name in (
+    'PATH', 'DOTNET_ROOT', 'LD_LIBRARY_PATH', 'LANG', 'LC_ALL', 'TMPDIR',
+    'SYSTEMROOT', 'WINDIR', 'TEMP', 'TMP', 'COMSPEC', 'PATHEXT'))
 
 
 class AcceptanceFailure(RuntimeError):
@@ -51,6 +55,10 @@ def check(condition, message):
 
 def sha(text):
     return hashlib.sha256(text.encode('utf-8')).hexdigest()
+
+
+def child_environment():
+    return {name: value for name, value in os.environ.items() if name.casefold() in CHILD_ENV_KEYS}
 
 
 def organize(source):
@@ -88,8 +96,8 @@ class Walkthrough:
         for name in ('tools', 'state', 'home'):
             (root / name).mkdir()
         self.target = root / 'tools' / 'summary.md'
-        self.target.write_text(INTRO, encoding='utf-8')
-        (root / 'tools' / 'meeting.txt').write_text(SOURCE, encoding='utf-8')
+        self.target.write_bytes(INTRO.encode('utf-8'))
+        (root / 'tools' / 'meeting.txt').write_bytes(SOURCE.encode('utf-8'))
         profile = lambda subject, grants, lifetime='00:05:00': {
             'WorkspaceId': 'first-use', 'IssuedTo': subject, 'Lifetime': lifetime, 'Grants': grants}
         self.config = {
@@ -145,7 +153,7 @@ class Walkthrough:
         self.config['CapabilityTokens']['RequireExistingStorage'] = recovery
         self.config['Weave']['Invocations']['RequireExistingStorage'] = recovery
         (self.root / 'appsettings.json').write_text(json.dumps(self.config, indent=2), encoding='utf-8')
-        env = {k: os.environ[k] for k in ('PATH', 'DOTNET_ROOT', 'LD_LIBRARY_PATH', 'LANG', 'LC_ALL', 'TMPDIR') if k in os.environ}
+        env = child_environment()
         env.update({'HOME': str(self.root / 'home'), 'DOTNET_ENVIRONMENT': 'Production',
                     'ASPNETCORE_ENVIRONMENT': 'Production', 'DOTNET_NOLOGO': 'true',
                     'DOTNET_CLI_TELEMETRY_OPTOUT': 'true', 'CapabilityTokens__SigningKey': self.signing,
@@ -155,7 +163,8 @@ class Walkthrough:
         self.log_handle = log.open('wb')
         self.process = subprocess.Popen([shutil.which('dotnet'), str(self.dll), '--urls', BASE],
                                         cwd=self.root, env=env, stdin=subprocess.DEVNULL,
-                                        stdout=self.log_handle, stderr=subprocess.STDOUT)
+                                        stdout=self.log_handle, stderr=subprocess.STDOUT,
+                                        creationflags=getattr(subprocess, 'CREATE_NEW_PROCESS_GROUP', 0))
         until = time.monotonic() + 60
         while time.monotonic() < until:
             check(self.process.poll() is None, 'Standalone Host exited before readiness; see sanitized log.')
@@ -173,7 +182,10 @@ class Walkthrough:
             return
         process, self.process = self.process, None
         if process.poll() is None:
-            process.terminate()
+            if os.name == 'nt':
+                process.send_signal(signal.CTRL_BREAK_EVENT)
+            else:
+                process.terminate()
         try:
             code = process.wait(timeout=20)
         except subprocess.TimeoutExpired:
@@ -235,7 +247,7 @@ class Walkthrough:
         preview = self.call('POST', approval + '/review', 200, write, reviewer, operator=True)
         check(preview.get('rawInput') == summary and preview.get('parameters') == write['parameters'], 'Review changed the requested content.')
         self.report['plan_digest'] = preview['planDigest']
-        env = {k: os.environ[k] for k in ('PATH', 'LANG', 'LC_ALL') if k in os.environ}
+        env = child_environment()
         env.update({'WEAVE_REVIEW_CAPABILITY': reviewer, 'WEAVE_OPERATOR_KEY': self.operator})
         decision = subprocess.run([sys.executable, str(self.repo / 'examples/governed-tools/review.py'),
                                    '--url', BASE, '--workspace', 'first-use', '--request', str(retained)],
