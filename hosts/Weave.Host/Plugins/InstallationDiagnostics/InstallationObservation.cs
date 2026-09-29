@@ -8,6 +8,8 @@ public enum InstallationFailureCode
 {
     None,
     StoredConfigurationInvalid,
+    UnsupportedAuthorityState,
+    DefinitionRevisionChanged,
     ContractUnpinned,
     InvalidConfiguration,
     RegistrationConflict,

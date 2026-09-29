@@ -9,10 +9,13 @@ must already know the workspace ID; the active-workspace list is not an
 inventory of stopped workspaces.
 
 Each entry contains the installation ID, plugin name, type, persisted
-`desiredEnabled` intent, and `runtimeConnected`. The latter is a snapshot of
+`definitionRevision`, `desiredEnabled` intent, and `runtimeConnected`. The latter is a snapshot of
 the current Host's plugin registry, not a peer health check or a promise that
 the next invocation will succeed. The response omits endpoint URLs, ports,
-configuration, schema digests, credentials, and invocation history. Unknown
+configuration, schema digests, credential reference names, and invocation history.
+`requestedPermissions` and `grantedPermissions` are reported separately;
+both are empty for the current Dapr and MCP tool installations. The
+`hasCredentialReferences` flag is false for those installations. Unknown
 workspaces return 404; inconsistent stored identities return 409 instead of
 showing records under another workspace ID.
 
@@ -34,8 +37,9 @@ disabled installation may retain a reason code from a failed activation
 attempt while its current registration or disabled intent remains intact.
 Intentional disable clears that reason. Reasons distinguish invalid stored
 configuration, an unpinned or rejected MCP contract, invalid configuration,
-registration conflicts, unsupported plugin types, unavailable MCP peers, and
-other connection failures. Neither a reason code nor the timestamp includes
+registration conflicts, unsupported plugin types, unavailable MCP peers,
+definition-revision drift, unsupported stored authority, and other connection
+failures. Neither a reason code nor the timestamp includes
 the peer's error text.
 
 Observations are kept in memory for this Host, then rebuilt as restoration

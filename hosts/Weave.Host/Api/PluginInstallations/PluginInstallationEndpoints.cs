@@ -1,3 +1,4 @@
+using Weave.Plugins;
 using Weave.Silo.Plugins;
 using Weave.Workspaces.Lifecycle;
 using Weave.Workspaces.Registry;
@@ -53,16 +54,14 @@ public static class PluginInstallationEndpoints
             if (!HasValidIdentity(installation.Id, installation.PluginName, workspaceId)
                 || !ids.Add(installation.Id))
                 return ResultExtensions.Conflict("Stored installation identity is inconsistent.");
-            result.Add(Project(installation.Id, installation.PluginName, "dapr_tools",
-                installation.DesiredEnabled, connected, diagnostics));
+            result.Add(Project(installation, "dapr_tools", connected, diagnostics));
         }
         foreach (var installation in state.McpToolInstallations)
         {
             if (!HasValidIdentity(installation.Id, installation.PluginName, workspaceId)
                 || !ids.Add(installation.Id))
                 return ResultExtensions.Conflict("Stored installation identity is inconsistent.");
-            result.Add(Project(installation.Id, installation.PluginName, "mcp_tools",
-                installation.DesiredEnabled, connected, diagnostics));
+            result.Add(Project(installation, "mcp_tools", connected, diagnostics));
         }
 
         result.Sort(static (left, right) => StringComparer.Ordinal.Compare(left.Id, right.Id));
@@ -73,9 +72,11 @@ public static class PluginInstallationEndpoints
         !string.IsNullOrWhiteSpace(pluginName)
         && string.Equals(id, $"{workspaceId}/{pluginName}", StringComparison.Ordinal);
 
-    private static PluginInstallationResponse Project(string id, string pluginName, string type,
-        bool desiredEnabled, IReadOnlyList<PluginStatus> connected, IInstallationDiagnostics diagnostics)
+    private static PluginInstallationResponse Project(PluginInstallation installation, string type,
+        IReadOnlyList<PluginStatus> connected, IInstallationDiagnostics diagnostics)
     {
+        var id = installation.Id;
+        var desiredEnabled = installation.DesiredEnabled;
         var runtimeConnected = connected.Any(item => string.Equals(item.Name, id, StringComparison.Ordinal)
             && string.Equals(item.Type, type, StringComparison.Ordinal));
         var observation = diagnostics.Get(id);
@@ -93,14 +94,19 @@ public static class PluginInstallationEndpoints
             "inconsistent" => "still_connected",
             _ => ReasonCode(failure)
         };
-        return new PluginInstallationResponse(id, pluginName, type, desiredEnabled,
-            runtimeConnected, condition, reasonCode, observation?.CheckedAt);
+        return new PluginInstallationResponse(id, installation.PluginName, type,
+            installation.DefinitionRevision, desiredEnabled,
+            runtimeConnected, condition, reasonCode, observation?.CheckedAt,
+            installation.RequestedPermissions.ToArray(), installation.GrantedPermissions.ToArray(),
+            installation.CredentialReferences.Count > 0);
     }
 
     private static string? ReasonCode(InstallationFailureCode failure) => failure switch
     {
         InstallationFailureCode.None => null,
         InstallationFailureCode.StoredConfigurationInvalid => "stored_configuration_invalid",
+        InstallationFailureCode.UnsupportedAuthorityState => "unsupported_authority_state",
+        InstallationFailureCode.DefinitionRevisionChanged => "definition_revision_changed",
         InstallationFailureCode.ContractUnpinned => "contract_unpinned",
         InstallationFailureCode.InvalidConfiguration => "invalid_configuration",
         InstallationFailureCode.RegistrationConflict => "registration_conflict",

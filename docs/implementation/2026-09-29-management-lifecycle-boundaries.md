@@ -68,8 +68,9 @@ concurrency/recovery evidence. The existing invocation journal remains the
 authority for tool attempts and approvals and should not be confused with the
 diagnostic capability trace.
 
-This is a requirement decision, not a claim that a management-operation journal
-or per-human administrative identity has been delivered. Other legacy
-administrative routes still rely on the configured Host-level authentication or
-trusted-operator gate and need an explicit operation-by-operation authority
-migration before the entire Host is a unified management surface.
+The later [management operation journal](2026-09-29-management-operation-journal.md)
+implements mandatory admission for workspace creation and stop, and plugin
+connection and disconnection. It does not provide per-human administrative
+identity or cover every management write. Other legacy administrative routes
+still need an operation-by-operation authority migration before the entire
+Host is a unified management surface.
