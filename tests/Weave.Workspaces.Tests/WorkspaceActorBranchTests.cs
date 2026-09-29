@@ -276,6 +276,34 @@ public sealed class WorkspaceActorBranchTests
     }
 
     [Fact]
+    public async Task StartAsync_UnsupportedInstallationAuthority_RejectsBeforeProvisioning()
+    {
+        var installation = new DaprToolInstallation
+        {
+            Id = "ws-1/sidecar",
+            PluginName = "sidecar",
+            Port = 3500,
+            ConfigDigest = DaprToolInstallation.ComputeConfigDigest(3500),
+            DefinitionRevision = DaprToolInstallation.ImplementationRevision,
+            RequestedPermissions = ["plugin:service:other:consume"]
+        };
+        var state = CreateState(new WorkspaceState
+        {
+            WorkspaceId = WorkspaceId.From("ws-1"),
+            Status = WorkspaceStatus.Stopped,
+            DaprToolInstallations = [installation]
+        });
+        var runtime = Substitute.For<IWorkspaceRuntime>();
+        var actor = Create(state, runtime: runtime);
+
+        var error = await Should.ThrowAsync<InvalidOperationException>(() => actor.StartAsync(DaprManifest("sidecar")));
+
+        error.Message.ShouldContain("unsupported permission");
+        installation.DesiredEnabled.ShouldBeFalse();
+        await runtime.DidNotReceive().ProvisionAsync(Arg.Any<WorkspaceId>(), Arg.Any<WorkspaceManifest>(), Arg.Any<CancellationToken>());
+    }
+
+    [Fact]
     public async Task StartAsync_CaseCollidingDaprPluginNames_RejectsBeforeProvisioning()
     {
         var manifest = DaprManifest("sidecar");
