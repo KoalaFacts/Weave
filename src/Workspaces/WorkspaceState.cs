@@ -10,6 +10,7 @@ public sealed record WorkspaceState
     public WorkspaceStatus Status { get; set; } = WorkspaceStatus.Stopped;
     public WorkspaceRecoveryCondition RecoveryCondition { get; set; } = WorkspaceRecoveryCondition.NotApplicable;
     public Guid RuntimeInstanceId { get; set; }
+    public string? RuntimeName { get; set; }
     public DateTimeOffset? StartedAt { get; set; }
     public DateTimeOffset? StoppedAt { get; set; }
     public List<string> ActiveAgents { get; init; } = [];

@@ -4,7 +4,7 @@ using Spectre.Console.Rendering;
 using Weave.Actions.Agent;
 using Weave.Actions.Tool;
 using Weave.Actions.Workspace;
-
+using Weave.Workspaces.Lifecycle;
 using Weave.Workspaces.Manifest;
 
 namespace Weave.Cli.Tui;
@@ -24,6 +24,8 @@ internal static class TuiLiveStatusRenderer
         summary.AddRow("Workspace", $"[bold white]{Markup.Escape(manifest.Name)}[/]");
         summary.AddRow("Workspace ID", Markup.Escape(workspace.WorkspaceId));
         summary.AddRow("Status", StatusMarkup.ColorStatus(workspace.Status));
+        if (workspace.RecoveryCondition is WorkspaceRecoveryCondition.RequiresReconciliation)
+            summary.AddRow("Recovery", "[yellow]Needs review before use[/]");
         summary.AddRow("Containers", workspace.ContainerCount.ToString(CultureInfo.InvariantCulture));
         if (workspace.StartedAt is { } started)
             summary.AddRow("Started", started.ToLocalTime().ToString("u", CultureInfo.InvariantCulture));

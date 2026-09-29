@@ -2,6 +2,7 @@ using System.Net;
 using Weave.Actions.Context;
 using Weave.Actions.Tests.Helpers;
 using Weave.Actions.Workspace;
+using Weave.Workspaces.Lifecycle;
 using Weave.Workspaces.Manifest;
 
 namespace Weave.Actions.Tests.Workspace;
@@ -16,6 +17,7 @@ public sealed class StartWorkspaceActionTests
           "workspaceId": "ws-1",
           "name": "demo",
           "status": "Running",
+          "recoveryCondition": "StartedOnThisHost",
           "containerCount": 3,
           "startedAt": "2026-05-07T10:00:00Z",
           "stoppedAt": null,
@@ -32,6 +34,7 @@ public sealed class StartWorkspaceActionTests
         result.Value!.Workspace.WorkspaceId.ShouldBe("ws-1");
         result.Value.Workspace.Name.ShouldBe("demo");
         result.Value.Workspace.Status.ShouldBe("Running");
+        result.Value.Workspace.RecoveryCondition.ShouldBe(WorkspaceRecoveryCondition.StartedOnThisHost);
         result.Value.Workspace.ContainerCount.ShouldBe(3);
         result.Value.Workspace.StartedAt.ShouldBe(new DateTimeOffset(2026, 5, 7, 10, 0, 0, TimeSpan.Zero));
         result.Value.Workspace.NetworkId.ShouldBe("weave-demo");
@@ -148,7 +151,7 @@ public sealed class StartWorkspaceActionTests
     public async Task ExecuteAsync_TargetsWorkspacesEndpoint()
     {
         var handler = StubHttpMessageHandler.Returns(HttpStatusCode.Created,
-            """{"workspaceId":"x","status":"Running","containerCount":0}""");
+            """{"workspaceId":"x","status":"Running","recoveryCondition":"StartedOnThisHost","containerCount":0}""");
         using var client = new HttpClient(handler) { BaseAddress = new Uri("http://example.test") };
         var action = new StartWorkspaceAction(client);
 

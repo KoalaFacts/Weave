@@ -14,6 +14,7 @@ using Weave.Tools.Connectors;
 using Weave.Workspaces.Lifecycle;
 using Weave.Workspaces.Manifest;
 using Weave.Workspaces.Registry;
+using Weave.Workspaces.Runtime;
 using Weave.Workspaces.Templates;
 
 namespace Weave.Workspaces.Tests;
@@ -106,7 +107,7 @@ public sealed class WorkspaceCommandHandlerTests
         plugins.GetAll().Returns([]);
         var handler = new StopWorkspaceHandler(actors, plugins, Substitute.For<ICapabilityTokenService>(),
             Substitute.For<Weave.Silo.Plugins.IMcpInstallationDispatchGate>(),
-            Substitute.For<Weave.Silo.Plugins.IInstallationDiagnostics>());
+            Substitute.For<Weave.Silo.Plugins.IInstallationDiagnostics>(), Substitute.For<IWorkspaceRuntime>());
         var command = new StopWorkspaceCommand(TestWorkspaceId);
 
         var result = await handler.HandleAsync(command, CancellationToken.None);
@@ -116,6 +117,64 @@ public sealed class WorkspaceCommandHandlerTests
         await supervisor.Received(1).DeactivateAllAsync();
         await toolRegistry.Received(1).DisconnectAllAsync();
         await workspaceRegistry.Received(1).UnregisterAsync(TestWorkspaceId.ToString());
+    }
+
+    [Fact]
+    public async Task StopWorkspaceHandler_RuntimeChanged_RejectsBeforeOtherCleanup()
+    {
+        var actors = Substitute.For<IVirtualActorProvider>();
+        var workspaceActor = Substitute.For<IWorkspaceActor>();
+        workspaceActor.GetStateAsync().Returns(new WorkspaceState
+        {
+            WorkspaceId = TestWorkspaceId,
+            Status = WorkspaceStatus.Running,
+            RuntimeName = "in-process",
+            NetworkId = NetworkId.From("local")
+        });
+        actors.GetActor<IWorkspaceActor>(Arg.Any<VirtualActorId>()).Returns(workspaceActor);
+        var runtime = Substitute.For<IWorkspaceRuntime>();
+        runtime.RuntimeName.Returns("docker");
+        var supervisor = Substitute.For<IAgentSupervisorActor>();
+        actors.GetActor<IAgentSupervisorActor>(Arg.Any<VirtualActorId>()).Returns(supervisor);
+        var handler = new StopWorkspaceHandler(actors, Substitute.For<IPluginRegistry>(),
+            Substitute.For<ICapabilityTokenService>(), Substitute.For<IMcpInstallationDispatchGate>(),
+            Substitute.For<IInstallationDiagnostics>(), runtime);
+
+        await Should.ThrowAsync<InvalidOperationException>(() =>
+            handler.HandleAsync(new StopWorkspaceCommand(TestWorkspaceId), CancellationToken.None));
+
+        await workspaceActor.DidNotReceive().StopAsync();
+        await supervisor.DidNotReceive().DeactivateAllAsync();
+    }
+
+    [Fact]
+    public async Task StopWorkspaceHandler_RetryingTeardown_SkipsCompletedCleanup()
+    {
+        var actors = Substitute.For<IVirtualActorProvider>();
+        var workspaceActor = Substitute.For<IWorkspaceActor>();
+        workspaceActor.GetStateAsync().Returns(new WorkspaceState
+        {
+            WorkspaceId = TestWorkspaceId,
+            Status = WorkspaceStatus.Error,
+            RuntimeName = "podman",
+            NetworkId = NetworkId.From("net-1")
+        });
+        actors.GetActor<IWorkspaceActor>(Arg.Any<VirtualActorId>()).Returns(workspaceActor);
+        var registry = Substitute.For<IWorkspaceRegistryActor>();
+        actors.GetActor<IWorkspaceRegistryActor>(Arg.Any<VirtualActorId>()).Returns(registry);
+        var supervisor = Substitute.For<IAgentSupervisorActor>();
+        actors.GetActor<IAgentSupervisorActor>(Arg.Any<VirtualActorId>()).Returns(supervisor);
+        var runtime = Substitute.For<IWorkspaceRuntime>();
+        runtime.RuntimeName.Returns("podman");
+        var handler = new StopWorkspaceHandler(actors, Substitute.For<IPluginRegistry>(),
+            Substitute.For<ICapabilityTokenService>(), Substitute.For<IMcpInstallationDispatchGate>(),
+            Substitute.For<IInstallationDiagnostics>(), runtime);
+
+        await handler.HandleAsync(new StopWorkspaceCommand(TestWorkspaceId), CancellationToken.None);
+
+        await workspaceActor.Received(1).StopAsync();
+        await supervisor.DidNotReceive().DeactivateAllAsync();
+        await registry.Received(1).UnregisterAsync(TestWorkspaceId.ToString());
     }
 
     [Fact]

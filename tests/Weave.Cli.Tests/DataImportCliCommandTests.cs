@@ -98,7 +98,7 @@ public sealed class DataImportCliCommandTests
         private readonly HttpResponseMessage _denied = new(HttpStatusCode.Unauthorized);
         private readonly HttpResponseMessage _started = new(HttpStatusCode.Created)
         {
-            Content = new StringContent("""{"workspaceId":"ws-1","name":"demo","status":"Running","containerCount":0}""")
+            Content = new StringContent("""{"workspaceId":"ws-1","name":"demo","status":"Running","recoveryCondition":"StartedOnThisHost","containerCount":0}""")
         };
         private readonly HttpResponseMessage _skillDenied = new(HttpStatusCode.Forbidden);
 

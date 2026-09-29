@@ -174,7 +174,7 @@ public sealed class TuiWorkspaceStarterTests
                 ? HttpStatusCode.Unauthorized
                 : HttpStatusCode.Created)
             {
-                Content = new StringContent("""{"workspaceId":"ws-1","name":"demo","status":"Running","containerCount":0}""")
+                Content = new StringContent("""{"workspaceId":"ws-1","name":"demo","status":"Running","recoveryCondition":"StartedOnThisHost","containerCount":0}""")
             });
         }
     }

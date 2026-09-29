@@ -48,6 +48,7 @@ public sealed class WorkspaceActorTests
     private static (WorkspaceActor Actor, IWorkspaceRuntime Runtime, ILifecycleManager Lifecycle, IEventBus EventBus) CreateActor()
     {
         var runtime = Substitute.For<IWorkspaceRuntime>();
+        runtime.RuntimeName.Returns("in-process");
         var lifecycle = Substitute.For<ILifecycleManager>();
         var eventBus = Substitute.For<IEventBus>();
         var logger = Substitute.For<ILogger<WorkspaceActor>>();
@@ -74,6 +75,7 @@ public sealed class WorkspaceActorTests
         var state = await actor.StartAsync(CreateManifest());
 
         state.Status.ShouldBe(WorkspaceStatus.Running);
+        state.RuntimeName.ShouldBe("in-process");
         state.StartedAt.ShouldNotBeNull();
         state.Containers.Count.ShouldBe(2);
     }
@@ -283,6 +285,93 @@ public sealed class WorkspaceActorTests
         ex.Message.ShouldBe("teardown boom");
         persistentState.State.Status.ShouldBe(WorkspaceStatus.Error);
         persistentState.State.ErrorMessage.ShouldBe("teardown boom");
+    }
+
+    [Fact]
+    public async Task StopAsync_RuntimeChanged_RefusesTeardown()
+    {
+        var state = new WorkspaceState
+        {
+            WorkspaceId = WorkspaceId.From("test-workspace"),
+            Status = WorkspaceStatus.Running,
+            RuntimeName = "in-process",
+            NetworkId = NetworkId.From("local")
+        };
+        var persistentState = CreatePersistentState(state);
+        var runtime = Substitute.For<IWorkspaceRuntime>();
+        runtime.RuntimeName.Returns("docker");
+        var actor = new WorkspaceActor(runtime, Substitute.For<ILifecycleManager>(),
+            Substitute.For<IEventBus>(), TimeProvider.System, Substitute.For<ILogger<WorkspaceActor>>(),
+            persistentState);
+
+        var error = await Should.ThrowAsync<InvalidOperationException>(() => actor.StopAsync());
+
+        error.Message.ShouldContain("in-process");
+        state.Status.ShouldBe(WorkspaceStatus.Running);
+        state.RecoveryCondition.ShouldBe(WorkspaceRecoveryCondition.RequiresReconciliation);
+        await runtime.DidNotReceive().TeardownAsync(Arg.Any<WorkspaceId>(), Arg.Any<NetworkId?>(),
+            Arg.Any<IReadOnlyList<ContainerId>>(), Arg.Any<CancellationToken>());
+    }
+
+    [Fact]
+    public async Task OnActivatedAsync_RuntimeChanged_RequiresReconciliation()
+    {
+        var state = new WorkspaceState
+        {
+            WorkspaceId = WorkspaceId.From("test-workspace"),
+            Status = WorkspaceStatus.Running,
+            RuntimeName = "podman",
+            RuntimeInstanceId = Guid.NewGuid(),
+            NetworkId = NetworkId.From("net-1")
+        };
+        var persistentState = CreatePersistentState(state);
+        var runtime = Substitute.For<IWorkspaceRuntime>();
+        runtime.RuntimeName.Returns("docker");
+        var actor = new WorkspaceActor(runtime, Substitute.For<ILifecycleManager>(),
+            Substitute.For<IEventBus>(), TimeProvider.System, Substitute.For<ILogger<WorkspaceActor>>(),
+            persistentState);
+
+        await actor.OnActivatedAsync("test-workspace", TestContext.Current.CancellationToken);
+
+        state.RecoveryCondition.ShouldBe(WorkspaceRecoveryCondition.RequiresReconciliation);
+        await persistentState.Received(1).WriteStateAsync(TestContext.Current.CancellationToken);
+    }
+
+    [Fact]
+    public async Task StopAsync_FailedTeardown_RetainsIdsAndAllowsRetry()
+    {
+        var persistentState = CreatePersistentState();
+        var runtime = Substitute.For<IWorkspaceRuntime>();
+        runtime.RuntimeName.Returns("podman");
+        runtime.ProvisionAsync(Arg.Any<WorkspaceId>(), Arg.Any<WorkspaceManifest>(), Arg.Any<CancellationToken>())
+            .Returns(new WorkspaceEnvironment(WorkspaceId.From("test-workspace"), NetworkId.From("net-1"),
+                [new ContainerHandle(ContainerId.From("ctr-1"), "tool", "image", new Dictionary<int, int>())]));
+        var attempts = 0;
+        runtime.TeardownAsync(Arg.Any<WorkspaceId>(), Arg.Any<NetworkId?>(),
+            Arg.Any<IReadOnlyList<ContainerId>>(), Arg.Any<CancellationToken>())
+            .Returns(_ => ++attempts == 1
+                ? Task.FromException(new InvalidOperationException("remove failed"))
+                : Task.CompletedTask);
+        var actor = new WorkspaceActor(runtime, Substitute.For<ILifecycleManager>(),
+            Substitute.For<IEventBus>(), TimeProvider.System, Substitute.For<ILogger<WorkspaceActor>>(),
+            persistentState);
+        await actor.StartAsync(CreateManifest());
+
+        await Should.ThrowAsync<InvalidOperationException>(() => actor.StopAsync());
+
+        persistentState.State.Status.ShouldBe(WorkspaceStatus.Error);
+        persistentState.State.RecoveryCondition.ShouldBe(WorkspaceRecoveryCondition.RequiresReconciliation);
+        persistentState.State.NetworkId.ShouldBe(NetworkId.From("net-1"));
+        persistentState.State.Containers.ShouldHaveSingleItem().ContainerId.ShouldBe(ContainerId.From("ctr-1"));
+        await Should.ThrowAsync<InvalidOperationException>(() => actor.StartAsync(CreateManifest()));
+
+        await actor.StopAsync();
+
+        persistentState.State.Status.ShouldBe(WorkspaceStatus.Stopped);
+        persistentState.State.NetworkId.ShouldBeNull();
+        persistentState.State.Containers.ShouldBeEmpty();
+        persistentState.State.RuntimeName.ShouldBeNull();
+        attempts.ShouldBe(2);
     }
 
     [Fact]

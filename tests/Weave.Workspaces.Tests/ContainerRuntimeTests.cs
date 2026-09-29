@@ -13,6 +13,7 @@ public sealed class ContainerRuntimeTests
         public string NextOutput { get; set; } = string.Empty;
         public Queue<string> OutputQueue { get; } = new();
         public InvalidOperationException? ThrowOnNextCall { get; set; }
+        public Func<IReadOnlyList<string>, Exception?>? FailureForArguments { get; set; }
 
         public Task<string> RunAsync(string command, IReadOnlyList<string> arguments, CancellationToken ct)
         {
@@ -23,6 +24,9 @@ public sealed class ContainerRuntimeTests
             }
 
             Invocations.Add((command, arguments));
+
+            if (FailureForArguments?.Invoke(arguments) is { } failure)
+                throw failure;
 
             var output = OutputQueue.Count > 0 ? OutputQueue.Dequeue() : NextOutput;
             return Task.FromResult(output);
@@ -192,23 +196,49 @@ public sealed class ContainerRuntimeTests
     // --- StopContainerAsync ---
 
     [Fact]
-    public async Task StopContainerAsync_CallsStopThenRm()
+    public async Task StopContainerAsync_Podman_ForceRemovesMissingContainerSafely()
     {
         var stub = new StubCommandRunner();
         var runtime = CreateRuntime(stub);
 
         await runtime.StopContainerAsync(ContainerId.From("ctr-abc"), TestContext.Current.CancellationToken);
 
+        stub.Invocations.Count.ShouldBe(1);
+        stub.Invocations[0].Arguments.ShouldBe(["rm", "-f", "--ignore", "ctr-abc"]);
+    }
+
+    [Fact]
+    public async Task StopContainerAsync_DockerMissingContainer_ConfirmsAbsence()
+    {
+        var stub = new StubCommandRunner
+        {
+            FailureForArguments = args => args.SequenceEqual(["rm", "-f", "ctr-abc"])
+                ? new InvalidOperationException("No such container") : null
+        };
+        var runtime = CreateContainerRuntime(stub, ContainerRuntimeOptions.DockerEngine);
+
+        await runtime.StopContainerAsync(ContainerId.From("ctr-abc"), TestContext.Current.CancellationToken);
+
         stub.Invocations.Count.ShouldBe(2);
+        stub.Invocations[1].Arguments.ShouldBe(
+            ["container", "ls", "--all", "--no-trunc", "--filter", "id=ctr-abc", "--format", "{{.ID}}"]);
+    }
 
-        var (_, stopArgs) = stub.Invocations[0];
-        stopArgs.ShouldContain("stop");
-        stopArgs.ShouldContain("ctr-abc");
+    [Fact]
+    public async Task StopContainerAsync_DockerStillPresent_PropagatesRemovalFailure()
+    {
+        var stub = new StubCommandRunner
+        {
+            NextOutput = "ctr-abc\n",
+            FailureForArguments = args => args.SequenceEqual(["rm", "-f", "ctr-abc"])
+                ? new InvalidOperationException("remove failed") : null
+        };
+        var runtime = CreateContainerRuntime(stub, ContainerRuntimeOptions.DockerEngine);
 
-        var (_, rmArgs) = stub.Invocations[1];
-        rmArgs.ShouldContain("rm");
-        rmArgs.ShouldContain("-f");
-        rmArgs.ShouldContain("ctr-abc");
+        var error = await Should.ThrowAsync<InvalidOperationException>(() =>
+            runtime.StopContainerAsync(ContainerId.From("ctr-abc"), TestContext.Current.CancellationToken));
+
+        error.Message.ShouldBe("remove failed");
     }
 
     // --- CreateNetworkAsync ---
@@ -262,14 +292,15 @@ public sealed class ContainerRuntimeTests
         var args = stub.Invocations[0].Arguments;
         args.ShouldContain("network");
         args.ShouldContain("rm");
-        args.ShouldContain("-f");
+        args.ShouldContain("--ignore");
+        args.ShouldNotContain("-f");
         args.ShouldContain("net-123");
     }
 
     // --- TeardownAsync ---
 
     [Fact]
-    public async Task TeardownAsync_StopsContainersAndRemovesNetwork()
+    public async Task TeardownAsync_RemovesContainersAndNetwork()
     {
         var stub = new StubCommandRunner();
         var runtime = CreateRuntime(stub);
@@ -277,28 +308,40 @@ public sealed class ContainerRuntimeTests
         await runtime.TeardownAsync(WorkspaceId.From("ws1"), NetworkId.From("net-123"),
             [ContainerId.From("ctr-1"), ContainerId.From("ctr-2")], TestContext.Current.CancellationToken);
 
-        stub.Invocations.Count.ShouldBe(5);
+        stub.Invocations.Count.ShouldBe(3);
 
-        // stop ctr-1
-        stub.Invocations[0].Arguments.ShouldContain("stop");
+        // remove ctr-1
+        stub.Invocations[0].Arguments.ShouldContain("rm");
         stub.Invocations[0].Arguments.ShouldContain("ctr-1");
 
-        // rm ctr-1
+        // remove ctr-2
         stub.Invocations[1].Arguments.ShouldContain("rm");
-        stub.Invocations[1].Arguments.ShouldContain("ctr-1");
-
-        // stop ctr-2
-        stub.Invocations[2].Arguments.ShouldContain("stop");
-        stub.Invocations[2].Arguments.ShouldContain("ctr-2");
-
-        // rm ctr-2
-        stub.Invocations[3].Arguments.ShouldContain("rm");
-        stub.Invocations[3].Arguments.ShouldContain("ctr-2");
+        stub.Invocations[1].Arguments.ShouldContain("ctr-2");
 
         // network rm
-        stub.Invocations[4].Arguments.ShouldContain("network");
-        stub.Invocations[4].Arguments.ShouldContain("rm");
-        stub.Invocations[4].Arguments.ShouldContain("net-123");
+        stub.Invocations[2].Arguments.ShouldContain("network");
+        stub.Invocations[2].Arguments.ShouldContain("rm");
+        stub.Invocations[2].Arguments.ShouldContain("net-123");
+    }
+
+    [Fact]
+    public async Task TeardownAsync_ContainerRemovalFails_AttemptsRemainingResourcesAndFails()
+    {
+        var stub = new StubCommandRunner
+        {
+            FailureForArguments = args => args.SequenceEqual(["rm", "-f", "--ignore", "ctr-1"])
+                ? new InvalidOperationException("ctr-1 removal failed") : null
+        };
+        var runtime = CreateRuntime(stub);
+
+        var error = await Should.ThrowAsync<AggregateException>(() => runtime.TeardownAsync(
+            WorkspaceId.From("ws1"), NetworkId.From("net-123"),
+            [ContainerId.From("ctr-1"), ContainerId.From("ctr-2")], TestContext.Current.CancellationToken));
+
+        error.InnerExceptions.ShouldHaveSingleItem().Message.ShouldContain("ctr-1 removal failed");
+        stub.Invocations.Count.ShouldBe(3);
+        stub.Invocations[1].Arguments.ShouldContain("ctr-2");
+        stub.Invocations[2].Arguments.ShouldContain("net-123");
     }
 
     // --- ProvisionAsync ---
@@ -385,7 +428,7 @@ public sealed class ContainerRuntimeTests
     }
 
     [Fact]
-    public async Task ContainerRuntime_WithDockerEngine_RemovesNetworkWithoutForceFlag()
+    public async Task ContainerRuntime_WithDockerEngine_RemovesMissingNetworkSafely()
     {
         var stub = new StubCommandRunner();
         var runtime = CreateContainerRuntime(stub, ContainerRuntimeOptions.DockerEngine);
@@ -393,7 +436,18 @@ public sealed class ContainerRuntimeTests
         await runtime.DeleteNetworkAsync(NetworkId.From("net-123"), TestContext.Current.CancellationToken);
 
         var args = stub.Invocations[0].Arguments;
-        args.ShouldBe(["network", "rm", "net-123"]);
+        args.ShouldBe(["network", "rm", "-f", "net-123"]);
+    }
+
+    [Fact]
+    public async Task DeleteNetworkAsync_WithPodman_DoesNotForceRemoveAttachedContainers()
+    {
+        var stub = new StubCommandRunner();
+        var runtime = CreateRuntime(stub);
+
+        await runtime.DeleteNetworkAsync(NetworkId.From("net-123"), TestContext.Current.CancellationToken);
+
+        stub.Invocations[0].Arguments.ShouldBe(["network", "rm", "--ignore", "net-123"]);
     }
 
     [Fact]

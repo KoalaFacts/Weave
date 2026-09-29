@@ -1,3 +1,5 @@
+using Weave.Workspaces.Lifecycle;
+
 namespace Weave.Actions.Workspace;
 
 /// <summary>
@@ -11,6 +13,7 @@ public sealed record WorkspaceStatusSummary
     public required string WorkspaceId { get; init; }
     public string? Name { get; init; }
     public required string Status { get; init; }
+    public required WorkspaceRecoveryCondition RecoveryCondition { get; init; }
     public required int ContainerCount { get; init; }
     public DateTimeOffset? StartedAt { get; init; }
     public DateTimeOffset? StoppedAt { get; init; }

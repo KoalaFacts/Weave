@@ -24,8 +24,12 @@ public sealed partial class WorkspaceActor(
     {
         _key = key;
         await persistentState.ReadStateAsync(cancellationToken);
-        if (persistentState.State.Status is WorkspaceStatus.Running
-            && persistentState.State.RuntimeInstanceId != runtime.InstanceId)
+        if (((persistentState.State.Status is WorkspaceStatus.Running
+                    && (persistentState.State.RuntimeInstanceId != runtime.InstanceId
+                        || !string.Equals(persistentState.State.RuntimeName, runtime.RuntimeName, StringComparison.Ordinal)))
+                || (persistentState.State.Status is WorkspaceStatus.Error or WorkspaceStatus.Stopping
+                    && HasRetainedResources(persistentState.State)))
+            && persistentState.State.RecoveryCondition is not WorkspaceRecoveryCondition.RequiresReconciliation)
         {
             persistentState.State.RecoveryCondition = WorkspaceRecoveryCondition.RequiresReconciliation;
             await persistentState.WriteStateAsync(cancellationToken);
@@ -101,6 +105,11 @@ public sealed partial class WorkspaceActor(
         if (persistentState.State.Status is WorkspaceStatus.Running)
             return persistentState.State;
 
+        if (persistentState.State.Status is WorkspaceStatus.Error or WorkspaceStatus.Stopping
+            && HasRetainedResources(persistentState.State))
+            throw new InvalidOperationException(
+                "The previous workspace runtime still has retained resources; reconcile or stop them before restarting.");
+
         if (persistentState.State.WorkspaceId.IsEmpty)
         {
             if (string.IsNullOrWhiteSpace(_key))
@@ -124,6 +133,7 @@ public sealed partial class WorkspaceActor(
             persistentState.State.Status = WorkspaceStatus.Running;
             persistentState.State.RecoveryCondition = WorkspaceRecoveryCondition.StartedOnThisHost;
             persistentState.State.RuntimeInstanceId = runtime.InstanceId;
+            persistentState.State.RuntimeName = runtime.RuntimeName;
             persistentState.State.StartedAt = timeProvider.GetUtcNow();
             persistentState.State.NetworkId = env.NetworkId;
             persistentState.State.Name = manifest.Name;
@@ -225,10 +235,24 @@ public sealed partial class WorkspaceActor(
 
     public async Task StopAsync()
     {
-        if (persistentState.State.Status is not WorkspaceStatus.Running)
+        if (persistentState.State.Status is not WorkspaceStatus.Running
+            && !(persistentState.State.Status is WorkspaceStatus.Error or WorkspaceStatus.Stopping
+                && HasRetainedResources(persistentState.State)))
             return;
 
+        if (!string.Equals(persistentState.State.RuntimeName, runtime.RuntimeName, StringComparison.Ordinal))
+        {
+            persistentState.State.RecoveryCondition = WorkspaceRecoveryCondition.RequiresReconciliation;
+            persistentState.State.ErrorMessage = persistentState.State.RuntimeName is null
+                ? "The workspace's creating runtime is unknown; reconcile its resources before stopping."
+                : $"The workspace was created by '{persistentState.State.RuntimeName}', not '{runtime.RuntimeName}'; restore the creating runtime before stopping.";
+            await persistentState.WriteStateAsync();
+            throw new InvalidOperationException(persistentState.State.ErrorMessage);
+        }
+
         persistentState.State.Status = WorkspaceStatus.Stopping;
+        persistentState.State.RecoveryCondition = WorkspaceRecoveryCondition.RequiresReconciliation;
+        await persistentState.WriteStateAsync();
 
         var context = new LifecycleContext
         {
@@ -247,6 +271,8 @@ public sealed partial class WorkspaceActor(
             persistentState.State.Status = WorkspaceStatus.Stopped;
             persistentState.State.RecoveryCondition = WorkspaceRecoveryCondition.NotApplicable;
             persistentState.State.RuntimeInstanceId = Guid.Empty;
+            persistentState.State.RuntimeName = null;
+            persistentState.State.ErrorMessage = null;
             persistentState.State.StoppedAt = timeProvider.GetUtcNow();
             persistentState.State.Containers.Clear();
             persistentState.State.ActiveAgents.Clear();
@@ -272,9 +298,10 @@ public sealed partial class WorkspaceActor(
 
             LogWorkspaceStopped(persistentState.State.WorkspaceId);
         }
-        catch (Exception ex) when (ex is InvalidOperationException or TimeoutException or IOException or HttpRequestException or System.ComponentModel.Win32Exception)
+        catch (Exception ex) when (ex is InvalidOperationException or AggregateException or TimeoutException or IOException or HttpRequestException or System.ComponentModel.Win32Exception)
         {
             persistentState.State.Status = WorkspaceStatus.Error;
+            persistentState.State.RecoveryCondition = WorkspaceRecoveryCondition.RequiresReconciliation;
             persistentState.State.ErrorMessage = ex.Message;
             await persistentState.WriteStateAsync();
             LogWorkspaceFailed(ex, persistentState.State.WorkspaceId, "stop");
@@ -324,6 +351,9 @@ public sealed partial class WorkspaceActor(
     }
 
     public Task<WorkspaceState> GetStateAsync() => Task.FromResult(persistentState.State);
+
+    private static bool HasRetainedResources(WorkspaceState state) =>
+        state.NetworkId is not null || state.Containers.Count > 0;
 
     [LoggerMessage(Level = LogLevel.Information, Message = "Workspace {WorkspaceId} started")]
     private partial void LogWorkspaceStarted(WorkspaceId workspaceId);

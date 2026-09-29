@@ -22,13 +22,23 @@ The container runtime now receives the immutable workspace ID when provisioning.
 Default resource names and `{workspace}` substitutions use that ID, not the
 display name. Teardown uses the container and network IDs retained in workspace
 state. This also covers a configured network name that differs from the default.
-Existing persisted container and network IDs remain usable; no stored field is
-renumbered or reset.
+New starts also retain the creating runtime type (`in-process`, `docker`, or
+`podman`). Stop refuses to hand retained IDs to a different runtime, before
+agent or plugin cleanup begins. Older persisted states without that identity
+need operator reconciliation before automated teardown; their IDs are not
+discarded or redirected. No stored field is renumbered or reset.
+
+Teardown retries confirmed missing resources safely and attempts every retained
+container and network even if an earlier removal fails. A genuine or uncertain
+failure retains the IDs and a recovery-required error state so a later stop can
+retry on the matching runtime. Podman network removal does not use its
+container-deleting force option. A successful stop clears the retained IDs.
 
 A runtime instance ID accompanies a newly started workspace. When a durable
 `Running` state is activated by a later Host instance, the workspace response
-reports `RequiresReconciliation`. It does not silently claim that containers,
-agents, tools, and external services have all resumed. The condition is diagnostic:
+and the CLI/TUI report `RequiresReconciliation`. It does not silently claim
+that containers, agents, tools, and external services have all resumed. The
+condition is diagnostic:
 restored external Dapr and MCP installations still use their independent
 connection, contract, and invocation-authority checks. Installation `ready`
 means registration only, not full workspace recovery.

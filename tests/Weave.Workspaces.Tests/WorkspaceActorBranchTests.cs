@@ -235,9 +235,12 @@ public sealed class WorkspaceActorBranchTests
         {
             WorkspaceId = WorkspaceId.From("ws-1"),
             Status = WorkspaceStatus.Running,
+            RuntimeName = "podman",
+            NetworkId = NetworkId.From("net-1"),
             StartedAt = DateTimeOffset.UtcNow
         });
         var runtime = Substitute.For<IWorkspaceRuntime>();
+        runtime.RuntimeName.Returns("podman");
         runtime.TeardownAsync(Arg.Any<WorkspaceId>(), Arg.Any<NetworkId?>(), Arg.Any<IReadOnlyList<ContainerId>>(), Arg.Any<CancellationToken>())
             .Returns(Task.FromException(new InvalidOperationException("teardown kaboom")));
         var actor = Create(state, runtime: runtime);
