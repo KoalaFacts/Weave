@@ -25,26 +25,22 @@ public sealed partial class WorkspaceActor(
         _key = key;
         await persistentState.ReadStateAsync(cancellationToken);
         var migratedInstallations = false;
-        foreach (var installation in persistentState.State.DaprToolInstallations)
+        foreach (var installation in persistentState.State.DaprToolInstallations.Where(static item =>
+            string.IsNullOrEmpty(item.DefinitionRevision)
+            && string.Equals(item.ConfigDigest,
+                DaprToolInstallation.ComputeConfigDigest(item.Port), StringComparison.Ordinal)))
         {
-            if (string.IsNullOrEmpty(installation.DefinitionRevision)
-                && string.Equals(installation.ConfigDigest,
-                    DaprToolInstallation.ComputeConfigDigest(installation.Port), StringComparison.Ordinal))
-            {
-                installation.DefinitionRevision = DaprToolInstallation.ImplementationRevision;
-                migratedInstallations = true;
-            }
+            installation.DefinitionRevision = DaprToolInstallation.ImplementationRevision;
+            migratedInstallations = true;
         }
-        foreach (var installation in persistentState.State.McpToolInstallations)
+        foreach (var installation in persistentState.State.McpToolInstallations.Where(static item =>
+            string.IsNullOrEmpty(item.DefinitionRevision)
+            && string.Equals(item.ConfigDigest,
+                McpToolInstallation.ComputeConfigDigest(item.Url, item.ServerName,
+                    item.ServerVersion, item.Operation), StringComparison.Ordinal)))
         {
-            if (string.IsNullOrEmpty(installation.DefinitionRevision)
-                && string.Equals(installation.ConfigDigest,
-                    McpToolInstallation.ComputeConfigDigest(installation.Url, installation.ServerName,
-                        installation.ServerVersion, installation.Operation), StringComparison.Ordinal))
-            {
-                installation.DefinitionRevision = McpToolInstallation.ImplementationRevision;
-                migratedInstallations = true;
-            }
+            installation.DefinitionRevision = McpToolInstallation.ImplementationRevision;
+            migratedInstallations = true;
         }
         if (((persistentState.State.Status is WorkspaceStatus.Running
                     && (persistentState.State.RuntimeInstanceId != runtime.InstanceId
