@@ -17,6 +17,9 @@ public sealed partial class PluginRegistry
                     Name = status.Name,
                     Type = status.Type,
                     Provides = [.. connector.Schema.Provides],
+                    Requires = _requirements.TryGetValue(status.Name, out var requirements)
+                        ? new Dictionary<string, string>(requirements, StringComparer.OrdinalIgnoreCase)
+                        : new Dictionary<string, string>(),
                     Registrations = [.. connector.RegistrationKeys(status.Name)],
                     IsConnected = current.IsConnected
                 });

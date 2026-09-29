@@ -16,5 +16,7 @@ public enum InstallationFailureCode
     UnsupportedPluginType,
     PeerUnavailable,
     ContractRejected,
-    ConnectionFailed
+    ConnectionFailed,
+    DependencyUnavailable,
+    DependencyInUse
 }

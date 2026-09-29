@@ -43,8 +43,20 @@ public sealed partial class HttpPluginConnector(
             });
         }
 
+        if (!Uri.TryCreate(baseUrl, UriKind.Absolute, out var baseUri)
+            || baseUri.Scheme is not ("http" or "https"))
+        {
+            return Task.FromResult(new PluginStatus
+            {
+                Name = name,
+                Type = PluginType,
+                IsConnected = false,
+                Error = "HTTP plugin requires an absolute HTTP or HTTPS base URL."
+            });
+        }
+
         var httpClient = httpClientFactory.CreateClient($"plugin:{name}");
-        httpClient.BaseAddress = new Uri(baseUrl);
+        httpClient.BaseAddress = baseUri;
         var key = $"http:{name}";
         var scope = new PluginActivationScope();
         scope.Add(() => broker.Set(key, httpClient), () => broker.RemoveIfCurrent(key, httpClient));

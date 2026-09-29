@@ -49,6 +49,19 @@ public sealed class HttpPluginConnectorTests
         broker.Get<HttpClient>("http:svc").ShouldBeNull();
     }
 
+    [Theory]
+    [InlineData("relative/path")]
+    [InlineData("file:///tmp/example")]
+    public async Task ConnectAsync_NonHttpBaseUrl_RejectsWithoutRegistration(string baseUrl)
+    {
+        var (connector, broker) = CreateConnector();
+
+        var status = await connector.ConnectAsync("svc", Def(baseUrl));
+
+        status.IsConnected.ShouldBeFalse();
+        broker.Get<HttpClient>("http:svc").ShouldBeNull();
+    }
+
     [Fact]
     public async Task ConnectAsync_ValidBaseUrl_StoresClientInBroker()
     {

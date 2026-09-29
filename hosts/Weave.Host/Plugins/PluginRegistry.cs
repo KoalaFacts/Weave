@@ -36,16 +36,6 @@ public sealed partial class PluginRegistry : IPluginRegistry, IDisposable, IAsyn
         _connectorsByType = byType;
     }
 
-    public async Task<IReadOnlyList<PluginStatus>> ConnectAllAsync(Dictionary<string, PluginDefinition> plugins, CapabilityToken token)
-    {
-        var results = new List<PluginStatus>(plugins.Count);
-        foreach (var (name, definition) in plugins)
-        {
-            results.Add(await ConnectAsync(name, definition, token));
-        }
-        return results;
-    }
-
     public async Task<PluginStatus> ConnectAsync(string name, PluginDefinition definition, CapabilityToken token)
     {
         await _authorizer.AuthorizeAsync(token, $"plugin:invoke:{name}", actorWorkspaceId: null);
@@ -86,6 +76,18 @@ public sealed partial class PluginRegistry : IPluginRegistry, IDisposable, IAsyn
         await _connectLock.WaitAsync();
         try
         {
+            if (_active.ContainsKey(name))
+            {
+                var dependent = FindDependent(name);
+                if (dependent is not null)
+                    return ObserveInstallation(name, DependencyBlocked(name, definition.Type, dependent));
+            }
+
+            var dependencyFailure = ValidateDependencies(name, definition.Type, connector, resolved.Requires,
+                out var requirements);
+            if (dependencyFailure is not null)
+                return ObserveInstallation(name, dependencyFailure);
+
             var registrations = new HashSet<string>(connector.RegistrationKeys(name), StringComparer.OrdinalIgnoreCase);
             foreach (var activeStatus in _active.Values)
             {
@@ -133,6 +135,7 @@ public sealed partial class PluginRegistry : IPluginRegistry, IDisposable, IAsyn
                 // The replacement already owns its registrations. Keep registry ownership
                 // with it even when cleanup of the displaced connector fails.
                 _active[name] = status;
+                _requirements[name] = requirements;
                 if (_connectorsByType.TryGetValue(existing.Type, out var existingConnector) &&
                     !ReferenceEquals(existingConnector, connector))
                     await existingConnector.DisconnectAsync(name);
@@ -140,6 +143,7 @@ public sealed partial class PluginRegistry : IPluginRegistry, IDisposable, IAsyn
             else
             {
                 _active[name] = status;
+                _requirements[name] = requirements;
             }
             LogPluginConnected(name, definition.Type);
             return ObserveInstallation(name, status);
@@ -181,16 +185,22 @@ public sealed partial class PluginRegistry : IPluginRegistry, IDisposable, IAsyn
                 };
             }
 
+            var dependent = FindDependent(name);
+            if (dependent is not null)
+                return DependencyBlocked(name, existing.Type, dependent) with { IsConnected = true };
+
             if (_connectorsByType.TryGetValue(existing.Type, out var connector))
             {
                 var status = await connector.DisconnectAsync(name);
                 _active.TryRemove(name, out _);
+                _requirements.Remove(name);
                 LogPluginDisconnected(name, existing.Type);
                 ObserveDisconnected(name, existing.Type);
                 return status;
             }
 
             _active.TryRemove(name, out _);
+            _requirements.Remove(name);
             ObserveDisconnected(name, existing.Type);
             return existing with { IsConnected = false };
         }

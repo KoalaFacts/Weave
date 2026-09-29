@@ -90,7 +90,8 @@ public static class PluginEndpoints
             {
                 Type = request.Type,
                 Description = request.Description,
-                Config = request.Config is not null ? new(request.Config) : []
+                Config = request.Config is not null ? new(request.Config) : [],
+                Requires = request.Requires is not null ? new(request.Requires) : []
             };
 
             var installed = await FindDaprInstallationAsync(request.Name, actors);
@@ -168,7 +169,13 @@ public static class PluginEndpoints
             using var source = PluginTokenFactory.MintInvoke(tokenService, registrationName, ct);
             var status = await registry.ConnectAsync(registrationName, definition, source.Token);
             if (!status.IsConnected)
-                return ResultExtensions.UnprocessableEntity(status.Error ?? "Plugin connection failed.");
+            {
+                var failure = ResultExtensions.UnprocessableEntity(status.Error ?? "Plugin connection failed.");
+                return status.InstallationFailure is InstallationFailureCode.DependencyUnavailable
+                    or InstallationFailureCode.DependencyInUse
+                    ? admission.ConfirmNoEffect(managementId, failure)
+                    : failure;
+            }
 
             if (installed is not null)
             {
@@ -267,6 +274,8 @@ public static class PluginEndpoints
             diagnostics.Record(registrationName, InstallationFailureCode.None);
         if (status.Error is not null)
         {
+            if (status.InstallationFailure == InstallationFailureCode.DependencyInUse)
+                return admission.ConfirmNoEffect(managementId, ResultExtensions.Conflict(status.Error));
             if (installed is not null || installedMcp is not null)
                 return admission.Confirm(managementId, Results.NoContent());
             return admission.ConfirmNoEffect(managementId,

@@ -114,8 +114,9 @@ The silo bootstraps in this order:
 #### WebhookPluginConnector
 
 - **Provides**: events
-- **Connect**: creates `WebhookEventBus`, swaps via broker
+- **Connect**: creates `WebhookEventBus`, swaps via broker. An optional `requires: { http: <provider> }` uses the named HTTP plugin client and a relative webhook URL.
 - **Behavior**: POSTs events to webhook URL with `X-Weave-Topic` header
+- **Dependency lifecycle**: a missing provider blocks activation; disconnecting or replacing a provider in use returns a conflict until its dependent stops.
 
 ### Event Bus Implementations
 
