@@ -1,5 +1,8 @@
+using System.Text;
+using System.Text.Json;
 using Weave.Agents.ToolRegistry;
 using Weave.Security.Tokens;
+using Weave.Silo.Management;
 using Weave.Silo.Plugins;
 using Weave.Tools.InstallDaprTool;
 using Weave.Tools.InstallMcpTool;
@@ -67,6 +70,7 @@ public static class PluginEndpoints
         IPluginInstallationAuthority authority,
         HttpContext context,
         IVirtualActorProvider actors,
+        ManagementAdmission admission,
         CancellationToken ct)
     {
         var errors = ValidateConnectPlugin(request);
@@ -144,6 +148,13 @@ public static class PluginEndpoints
             }
 
             var registrationName = installedMcp?.Installation.Id ?? installed?.Installation.Id ?? request.Name;
+            var admitted = admission.Admit(context, workspaceId,
+                installed is not null || installedMcp is not null ? "plugin:enable" : "plugin:connect",
+                registrationName, enableGrants,
+                JsonSerializer.SerializeToUtf8Bytes(request, SiloApiJsonContext.Default.ConnectPluginRequest),
+                out var managementId);
+            if (admitted is not null)
+                return admitted;
             using var source = PluginTokenFactory.MintInvoke(tokenService, registrationName, ct);
             var status = await registry.ConnectAsync(registrationName, definition, source.Token);
             if (!status.IsConnected)
@@ -181,9 +192,9 @@ public static class PluginEndpoints
                 }
             }
 
-            return Results.Created(
+            return admission.Confirm(managementId, Results.Created(
                 $"/api/plugins/{registrationName}",
-                new ConnectPluginResponse { Status = status, Warnings = warnings });
+                new ConnectPluginResponse { Status = status, Warnings = warnings }));
         }
         catch (InvalidOperationException ex)
         {
@@ -200,6 +211,7 @@ public static class PluginEndpoints
         IVirtualActorProvider actors,
         IMcpInstallationDispatchGate mcpDispatchGate,
         IInstallationDiagnostics diagnostics,
+        ManagementAdmission admission,
         CancellationToken ct)
     {
         (IWorkspaceActor Workspace, DaprToolInstallation Installation)? installed;
@@ -226,6 +238,11 @@ public static class PluginEndpoints
         if (denial is not null)
             return denial;
         var registrationName = installedMcp?.Installation.Id ?? installed?.Installation.Id ?? name;
+        var admitted = admission.Admit(context, workspaceId,
+            installed is not null || installedMcp is not null ? "plugin:disable" : "plugin:disconnect",
+            registrationName, disableGrants, Encoding.UTF8.GetBytes(registrationName), out var managementId);
+        if (admitted is not null)
+            return admitted;
         if (installedMcp is not null)
             mcpDispatchGate.BeginDisable(registrationName);
         if (installed is not null)
@@ -241,11 +258,12 @@ public static class PluginEndpoints
         if (status.Error is not null)
         {
             if (installed is not null || installedMcp is not null)
-                return Results.NoContent();
-            return ResultExtensions.NotFound($"Plugin '{name}' not found.");
+                return admission.Confirm(managementId, Results.NoContent());
+            return admission.ConfirmNoEffect(managementId,
+                ResultExtensions.NotFound($"Plugin '{name}' not found."));
         }
 
-        return Results.NoContent();
+        return admission.Confirm(managementId, Results.NoContent());
     }
 
     private static async Task<(IWorkspaceActor Workspace, DaprToolInstallation Installation)?> FindDaprInstallationAsync(

@@ -4,6 +4,7 @@ using Weave.Agents.Pipeline;
 using Weave.Agents.Pipeline.Providers;
 using Weave.Agents.Verification;
 using Weave.Invocations;
+using Weave.Management;
 using Weave.Security.Audit;
 using Weave.Security.Plugins;
 using Weave.Security.Postgres;
@@ -19,6 +20,7 @@ using Weave.Shared.Plugins;
 using Weave.Silo.Audit;
 using Weave.Silo.Channels;
 using Weave.Silo.Configuration;
+using Weave.Silo.Management;
 using Weave.Silo.Plugins;
 using Weave.Silo.Security;
 using Weave.Silo.Templates;
@@ -52,6 +54,7 @@ internal sealed class SiloServiceRegistrar
         RegisterRuntime();
         RegisterSecurity();
         RegisterInvocationJournal();
+        RegisterManagementJournal();
         RegisterPluginBroker();
         RegisterAgentPipeline();
         RegisterChannelAdapters();
@@ -107,6 +110,15 @@ internal sealed class SiloServiceRegistrar
             _configuration.GetSection(InvocationJournalOptions.ConfigurationSectionName));
         _services.AddSingleton<IInvocationJournal, SqliteInvocationJournal>();
         _services.AddHostedService<InvocationJournalStartup>();
+    }
+
+    private void RegisterManagementJournal()
+    {
+        _services.Configure<ManagementJournalOptions>(
+            _configuration.GetSection(ManagementJournalOptions.ConfigurationSectionName));
+        _services.AddSingleton<IManagementOperationJournal, SqliteManagementOperationJournal>();
+        _services.AddSingleton<ManagementAdmission>();
+        _services.AddHostedService<ManagementJournalStartup>();
     }
 
     private void RegisterCapabilityAuditStore()

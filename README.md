@@ -48,6 +48,7 @@ For the actual Host path with signed authority and a durable journal, use the [N
 
 - **Approval coverage is specific.** Filesystem is the first adapter with exact target binding for required approval. Reviewed HTTP decisions are opt-in. The Dashboard has a read-only review screen; it does not offer browser approval or human login.
 - **Recovery is bounded.** Duplicate protection depends on the preserved single-host journal file and the same invocation ID. Outcome queries return metadata, not the original response body. An unknown outcome must be investigated; starting a new ID can repeat an external effect.
+- **Management writes have a narrower journal.** Workspace start/stop and plugin connect/disconnect now record admission before effects. Retain `X-Weave-Management-Id` to inspect an uncertain result; the [management journal guide](docs/implementation/2026-09-29-management-operation-journal.md) lists the covered routes and limits.
 - **Workspace restart needs inspection.** A persisted `Running` workspace can be marked as requiring reconciliation after a Host restart. That status does not mean its containers, agents or external plugins were automatically restored.
 - **Deployment security is operator-owned.** API authentication defaults to `none` for local development. The built-in bearer mode is not a full OAuth/OIDC or tenant identity system. In-process plugins are trusted code, not sandboxed code. Protect the journal, credentials and host before exposing them beyond a private environment.
 

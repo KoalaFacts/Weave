@@ -31,7 +31,7 @@ public sealed class DaprInstallationAmbiguityTests
             "ws-1/sidecar", registry, Substitute.For<ICapabilityTokenService>(),
             authority, new DefaultHttpContext(), actors,
             Substitute.For<IMcpInstallationDispatchGate>(),
-            Substitute.For<IInstallationDiagnostics>(), TestContext.Current.CancellationToken);
+            Substitute.For<IInstallationDiagnostics>(), null!, TestContext.Current.CancellationToken);
 
         result.ShouldBeAssignableTo<IStatusCodeHttpResult>().StatusCode.ShouldBe(StatusCodes.Status409Conflict);
         await workspace.DidNotReceiveWithAnyArgs().SetDaprToolInstallationEnabledAsync(default!, default);
@@ -50,7 +50,7 @@ public sealed class DaprInstallationAmbiguityTests
             "ws-1/sidecar", Substitute.For<IPluginRegistry>(), Substitute.For<ICapabilityTokenService>(),
             new UnexpectedAuthority(), new DefaultHttpContext(), actors,
             Substitute.For<IMcpInstallationDispatchGate>(),
-            Substitute.For<IInstallationDiagnostics>(), TestContext.Current.CancellationToken));
+            Substitute.For<IInstallationDiagnostics>(), null!, TestContext.Current.CancellationToken));
 
         error.Message.ShouldBe("state storage unavailable");
     }

@@ -4,6 +4,7 @@ using Weave.ServiceDefaults;
 using Weave.Silo.Api;
 using Weave.Silo.Configuration;
 using Weave.Silo.Invocations;
+using Weave.Silo.Management;
 using Weave.Silo.Operator;
 using Weave.Silo.Security;
 
@@ -89,6 +90,7 @@ internal sealed class SiloApplicationConfigurator
         _app.MapToolEndpoints();
         _app.MapPluginEndpoints();
         _app.MapPluginInstallationEndpoints();
+        _app.MapManagementOperationEndpoints();
         _app.MapSkillEndpoints();
         _app.MapChannelEndpoints();
         _app.MapUserEndpoints();

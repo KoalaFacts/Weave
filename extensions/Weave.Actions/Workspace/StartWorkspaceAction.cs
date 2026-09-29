@@ -37,6 +37,7 @@ public sealed class StartWorkspaceAction
             return ActionResult.Failed<StartWorkspaceResult>(
                 ActionFailure.ValidationFailed("Installation capabilities require a fixed HTTPS origin or HTTP loopback."));
 
+        var managementId = Guid.NewGuid().ToString("N");
         try
         {
             using var request = new HttpRequestMessage(HttpMethod.Post, "/api/workspaces")
@@ -44,6 +45,7 @@ public sealed class StartWorkspaceAction
                 Content = JsonContent.Create(new StartWorkspaceWire { Manifest = input.Manifest },
                     WorkspaceJsonContext.Default.StartWorkspaceWire)
             };
+            request.Headers.Add("X-Weave-Management-Id", managementId);
             if (input.Capability is not null)
                 request.Headers.Add("X-Weave-Capability", input.Capability);
             using var response = await _httpClient.SendAsync(request, cancellationToken);
@@ -56,19 +58,20 @@ public sealed class StartWorkspaceAction
                 HttpStatusCode.Unauthorized or HttpStatusCode.Forbidden => ActionResult.Failed<StartWorkspaceResult>(
                     ActionFailure.Unauthorized($"Silo refused the start request ({(int)response.StatusCode}).")),
                 _ when (int)response.StatusCode >= 500 => ActionResult.Failed<StartWorkspaceResult>(
-                    ActionFailure.Internal($"Silo error starting workspace ({(int)response.StatusCode}).")),
+                    ActionFailure.Internal($"Silo error starting workspace ({(int)response.StatusCode}). Inspect management operation {managementId} before retrying.")),
                 _ => ActionResult.Failed<StartWorkspaceResult>(
                     ActionFailure.Internal($"Unexpected silo response ({(int)response.StatusCode}).")),
             };
         }
         catch (OperationCanceledException) when (cancellationToken.IsCancellationRequested)
         {
-            return ActionResult.Failed<StartWorkspaceResult>(ActionFailure.Cancelled());
+            return ActionResult.Failed<StartWorkspaceResult>(ActionFailure.Cancelled(
+                $"Start request cancelled. Inspect management operation {managementId} before retrying."));
         }
         catch (HttpRequestException ex)
         {
             return ActionResult.Failed<StartWorkspaceResult>(
-                ActionFailure.SiloUnreachable($"Silo unreachable: {ex.Message}"));
+                ActionFailure.SiloUnreachable($"Silo unreachable: {ex.Message}. Inspect management operation {managementId} before retrying."));
         }
     }
 
