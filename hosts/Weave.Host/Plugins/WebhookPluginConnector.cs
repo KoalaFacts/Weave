@@ -25,6 +25,7 @@ public sealed partial class WebhookPluginConnector(
         Type = "webhook",
         Description = "Webhook event bus — publishes domain events via HTTP POST to a URL",
         Provides = ["events"],
+        Consumes = ["http"],
         Config =
         [
             new() { Name = "url", Description = "Webhook endpoint URL", Required = true },
@@ -45,18 +46,58 @@ public sealed partial class WebhookPluginConnector(
             });
         }
 
-        if (!Uri.TryCreate(url, UriKind.Absolute, out var webhookUri))
+        HttpClient httpClient;
+        Uri webhookUri;
+        var providerName = definition.Requires.FirstOrDefault(item =>
+            string.Equals(item.Key, "http", StringComparison.OrdinalIgnoreCase)).Value;
+        if (providerName is not null)
         {
-            return Task.FromResult(new PluginStatus
+            var provider = broker.Get<HttpClient>($"http:{providerName}");
+            if (provider?.BaseAddress is null
+                || url.StartsWith("//", StringComparison.Ordinal)
+                || url.Contains('\\', StringComparison.Ordinal)
+                || !Uri.TryCreate(url, UriKind.Relative, out var relativeUri))
             {
-                Name = name,
-                Type = PluginType,
-                IsConnected = false,
-                Error = $"Invalid webhook URL: '{url}'"
-            });
+                return Task.FromResult(new PluginStatus
+                {
+                    Name = name,
+                    Type = PluginType,
+                    IsConnected = false,
+                    InstallationFailure = InstallationFailureCode.InvalidConfiguration,
+                    Error = "Webhook requires an active HTTP provider and a relative URL."
+                });
+            }
+            httpClient = provider;
+            webhookUri = new Uri(provider.BaseAddress, relativeUri);
+            if (!string.Equals(webhookUri.GetLeftPart(UriPartial.Authority),
+                provider.BaseAddress.GetLeftPart(UriPartial.Authority), StringComparison.OrdinalIgnoreCase))
+            {
+                return Task.FromResult(new PluginStatus
+                {
+                    Name = name,
+                    Type = PluginType,
+                    IsConnected = false,
+                    InstallationFailure = InstallationFailureCode.InvalidConfiguration,
+                    Error = "Webhook relative URL must stay on the HTTP provider's origin."
+                });
+            }
         }
-
-        var httpClient = httpClientFactory.CreateClient($"webhook-plugin:{name}");
+        else
+        {
+            if (!Uri.TryCreate(url, UriKind.Absolute, out var absoluteUri)
+                || absoluteUri.Scheme is not ("http" or "https"))
+            {
+                return Task.FromResult(new PluginStatus
+                {
+                    Name = name,
+                    Type = PluginType,
+                    IsConnected = false,
+                    Error = $"Invalid webhook URL: '{url}'"
+                });
+            }
+            webhookUri = absoluteUri;
+            httpClient = httpClientFactory.CreateClient($"webhook-plugin:{name}");
+        }
         var eventBus = new WebhookEventBus(
             httpClient,
             webhookUri,

@@ -15,12 +15,13 @@ public sealed partial class PluginRegistry
         List<Exception>? errors = null;
         try
         {
-            foreach (var status in _active.Values)
+            foreach (var status in GetDisposalOrder())
             {
                 try
                 {
                     await _connectorsByType[status.Type].DisconnectAsync(status.Name);
                     _active.TryRemove(status.Name, out _);
+                    _requirements.Remove(status.Name);
                 }
                 catch (Exception error)
                 {

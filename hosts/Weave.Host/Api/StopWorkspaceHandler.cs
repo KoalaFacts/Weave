@@ -70,7 +70,9 @@ public sealed class StopWorkspaceHandler(
                     Grants = [$"plugin:invoke:{registrationName}"],
                     Lifetime = TimeSpan.FromMinutes(1)
                 }, CancellationToken.None);
-                await plugins.DisconnectAsync(registrationName, source.Token);
+                var plugin = await plugins.DisconnectAsync(registrationName, source.Token);
+                if (plugin.InstallationFailure == InstallationFailureCode.DependencyInUse)
+                    throw new InvalidOperationException(plugin.Error);
                 diagnostics.Record(registrationName, InstallationFailureCode.None);
             }
         }

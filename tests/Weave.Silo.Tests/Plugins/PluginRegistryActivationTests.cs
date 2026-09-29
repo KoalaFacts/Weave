@@ -1,3 +1,4 @@
+using System.Net;
 using Microsoft.Extensions.DependencyInjection;
 using Microsoft.Extensions.Logging.Abstractions;
 using Microsoft.Extensions.Options;
@@ -15,6 +16,24 @@ namespace Weave.Silo.Tests.Plugins;
 
 public sealed class PluginRegistryActivationTests
 {
+    private sealed record TestEvent : IDomainEvent
+    {
+        public string EventId { get; init; } = "dependency-event";
+        public DateTimeOffset Timestamp { get; init; } = DateTimeOffset.UnixEpoch;
+        public string SourceId { get; init; } = "test";
+    }
+
+    private sealed class CapturingHandler : HttpMessageHandler
+    {
+        public Uri? LastRequestUri { get; private set; }
+
+        protected override Task<HttpResponseMessage> SendAsync(HttpRequestMessage request, CancellationToken cancellationToken)
+        {
+            LastRequestUri = request.RequestUri;
+            return Task.FromResult(new HttpResponseMessage(HttpStatusCode.NoContent));
+        }
+    }
+
     private static readonly CapabilityTokenService TokenService = new(
         Options.Create(new CapabilityTokenOptions { SigningKey = "test-signing-key-that-is-at-least-32-chars-long" }),
         TimeProvider.System);
@@ -35,6 +54,145 @@ public sealed class PluginRegistryActivationTests
 
     private static ServiceProvider CreateHttpServices() =>
         new ServiceCollection().AddHttpClient().BuildServiceProvider();
+
+    private static PluginDefinition DependentWebhook() => new()
+    {
+        Type = "webhook",
+        Config = new Dictionary<string, string> { ["url"] = "events" },
+        Requires = new Dictionary<string, string> { ["http"] = "api" }
+    };
+
+    [Fact]
+    public async Task ConnectAsync_WebhookDependencyMissing_LeavesEventBusUnchanged()
+    {
+        var broker = new PluginServiceBroker(NullLogger<PluginServiceBroker>.Instance);
+        using var services = CreateHttpServices();
+        using var registry = CreateRegistry(new WebhookPluginConnector(
+            broker, services.GetRequiredService<IHttpClientFactory>(), NullLoggerFactory.Instance));
+
+        var status = await registry.ConnectAsync("events", DependentWebhook(), AnyPlugin);
+
+        status.IsConnected.ShouldBeFalse();
+        status.Error.ShouldNotBeNull();
+        status.Error.ShouldContain("api");
+        broker.Get<IEventBus>().ShouldBeNull();
+    }
+
+    [Fact]
+    public async Task ConnectAsync_WebhookDependency_UsesProviderAndProtectsLifecycle()
+    {
+        var broker = new PluginServiceBroker(NullLogger<PluginServiceBroker>.Instance);
+        var handler = new CapturingHandler();
+        var factory = Substitute.For<IHttpClientFactory>();
+        factory.CreateClient(Arg.Any<string>()).Returns(_ => new HttpClient(handler));
+        using var registry = CreateRegistry(
+            new HttpPluginConnector(broker, factory, NullLoggerFactory.Instance),
+            new WebhookPluginConnector(broker, factory, NullLoggerFactory.Instance));
+
+        (await registry.ConnectAsync("api", new PluginDefinition
+        {
+            Type = "http",
+            Config = new Dictionary<string, string> { ["base_url"] = "https://api.example/" }
+        }, AnyPlugin)).IsConnected.ShouldBeTrue();
+        var providerClient = broker.Get<HttpClient>("http:api");
+
+        (await registry.ConnectAsync("events", DependentWebhook(), AnyPlugin)).IsConnected.ShouldBeTrue();
+        await broker.Get<IEventBus>()!.PublishAsync(new TestEvent(), TestContext.Current.CancellationToken);
+        handler.LastRequestUri.ShouldBe(new Uri("https://api.example/events"));
+        var composition = await registry.GetCompositionAsync(TestContext.Current.CancellationToken);
+        composition.Single(item => item.Name == "events").Requires["http"].ShouldBe("api");
+
+        var disconnect = await registry.DisconnectAsync("api", AnyPlugin);
+        disconnect.IsConnected.ShouldBeTrue();
+        disconnect.Error.ShouldNotBeNull();
+        disconnect.Error.ShouldContain("events");
+        broker.Get<HttpClient>("http:api").ShouldBeSameAs(providerClient);
+
+        var replacement = await registry.ConnectAsync("api", new PluginDefinition
+        {
+            Type = "http",
+            Config = new Dictionary<string, string> { ["base_url"] = "https://other.example/" }
+        }, AnyPlugin);
+        replacement.IsConnected.ShouldBeFalse();
+        broker.Get<HttpClient>("http:api").ShouldBeSameAs(providerClient);
+
+        (await registry.DisconnectAsync("events", AnyPlugin)).Error.ShouldBeNull();
+        (await registry.DisconnectAsync("api", AnyPlugin)).Error.ShouldBeNull();
+        broker.Get<HttpClient>("http:api").ShouldBeNull();
+    }
+
+    [Fact]
+    public async Task ConnectAllAsync_DependentListedFirst_ActivatesAfterProvider()
+    {
+        var broker = new PluginServiceBroker(NullLogger<PluginServiceBroker>.Instance);
+        using var services = CreateHttpServices();
+        var factory = services.GetRequiredService<IHttpClientFactory>();
+        using var registry = CreateRegistry(
+            new HttpPluginConnector(broker, factory, NullLoggerFactory.Instance),
+            new WebhookPluginConnector(broker, factory, NullLoggerFactory.Instance));
+        var plugins = new Dictionary<string, PluginDefinition>
+        {
+            ["events"] = DependentWebhook(),
+            ["api"] = new()
+            {
+                Type = "http",
+                Config = new Dictionary<string, string> { ["base_url"] = "https://api.example/" }
+            }
+        };
+
+        var statuses = await registry.ConnectAllAsync(plugins, AnyPlugin);
+
+        statuses.Select(item => item.Name).ShouldBe(["events", "api"]);
+        statuses.ShouldAllBe(item => item.IsConnected);
+        broker.Get<IEventBus>().ShouldBeOfType<WebhookEventBus>();
+    }
+
+    [Fact]
+    public async Task ConnectAsync_UnsupportedDependency_RejectsWithoutActivation()
+    {
+        var broker = new PluginServiceBroker(NullLogger<PluginServiceBroker>.Instance);
+        using var services = CreateHttpServices();
+        using var registry = CreateRegistry(new HttpPluginConnector(
+            broker, services.GetRequiredService<IHttpClientFactory>(), NullLoggerFactory.Instance));
+
+        var status = await registry.ConnectAsync("api", new PluginDefinition
+        {
+            Type = "http",
+            Config = new Dictionary<string, string> { ["base_url"] = "https://api.example/" },
+            Requires = new Dictionary<string, string> { ["secrets"] = "vault" }
+        }, AnyPlugin);
+
+        status.IsConnected.ShouldBeFalse();
+        status.Error.ShouldNotBeNull();
+        status.Error.ShouldContain("does not consume");
+        broker.Get<HttpClient>("http:api").ShouldBeNull();
+    }
+
+    [Theory]
+    [InlineData("//other.example/events")]
+    [InlineData("\\\\other.example/events")]
+    public async Task ConnectAsync_WebhookDependencyCrossOrigin_Rejects(string relativeUrl)
+    {
+        var broker = new PluginServiceBroker(NullLogger<PluginServiceBroker>.Instance);
+        using var services = CreateHttpServices();
+        var factory = services.GetRequiredService<IHttpClientFactory>();
+        using var registry = CreateRegistry(
+            new HttpPluginConnector(broker, factory, NullLoggerFactory.Instance),
+            new WebhookPluginConnector(broker, factory, NullLoggerFactory.Instance));
+        (await registry.ConnectAsync("api", new PluginDefinition
+        {
+            Type = "http",
+            Config = new Dictionary<string, string> { ["base_url"] = "https://api.example/" }
+        }, AnyPlugin)).IsConnected.ShouldBeTrue();
+
+        var status = await registry.ConnectAsync("events", DependentWebhook() with
+        {
+            Config = new Dictionary<string, string> { ["url"] = relativeUrl }
+        }, AnyPlugin);
+
+        status.IsConnected.ShouldBeFalse();
+        broker.Get<IEventBus>().ShouldBeNull();
+    }
 
     [Fact]
     public async Task ConnectAsync_ReplacingHttpPlugin_KeepsReplacementRegistered()
