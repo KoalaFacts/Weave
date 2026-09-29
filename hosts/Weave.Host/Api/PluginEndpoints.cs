@@ -115,6 +115,11 @@ public static class PluginEndpoints
                     return ResultExtensions.Conflict("Install this Dapr tools plugin through a workspace manifest first.");
                 if (!string.Equals(request.Type, "dapr_tools", StringComparison.OrdinalIgnoreCase))
                     return ResultExtensions.Conflict("This installation is bound to the Dapr tools plugin type.");
+                if (installed.Value.Installation.HasUnsupportedAuthority())
+                    return ResultExtensions.Conflict("The Dapr installation contains unsupported permission or credential state.");
+                if (!string.Equals(installed.Value.Installation.DefinitionRevision,
+                    DaprToolInstallation.ImplementationRevision, StringComparison.Ordinal))
+                    return ResultExtensions.Conflict("The Dapr implementation revision differs from the installed revision.");
                 if (!int.TryParse(definition.Config.GetValueOrDefault("port"), out var port)
                     || port != installed.Value.Installation.Port
                     || !string.Equals(installed.Value.Installation.ConfigDigest,
@@ -129,6 +134,11 @@ public static class PluginEndpoints
                 if (!string.Equals(request.Type, "mcp_tools", StringComparison.OrdinalIgnoreCase))
                     return ResultExtensions.Conflict("This installation is bound to the MCP tools plugin type.");
                 var installation = installedMcp.Value.Installation;
+                if (installation.HasUnsupportedAuthority())
+                    return ResultExtensions.Conflict("The MCP installation contains unsupported permission or credential state.");
+                if (!string.Equals(installation.DefinitionRevision,
+                    McpToolInstallation.ImplementationRevision, StringComparison.Ordinal))
+                    return ResultExtensions.Conflict("The MCP implementation revision differs from the installed revision.");
                 if (installation.ContractDigest.Length == 0 || installation.ConfigDigest !=
                     McpToolInstallation.ComputeConfigDigest(installation.Url, installation.ServerName,
                         installation.ServerVersion, installation.Operation))

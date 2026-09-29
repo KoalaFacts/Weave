@@ -22,6 +22,7 @@ using Weave.Security.Tokens;
 using Weave.Shared.VirtualActors;
 using Weave.Silo.Plugins;
 using Weave.Tools.Connectors;
+using Weave.Tools.InstallDaprTool;
 using Weave.Tools.Tool;
 using Weave.Workspaces.Manifest;
 
@@ -259,6 +260,11 @@ public sealed partial class DaprWorkspacePluginFlowTests : IClassFixture<SiloFac
                 using var client = second.CreateClient();
                 await second.Services.GetRequiredService<ToolInstallationRestorer>().Completion
                     .WaitAsync(TimeSpan.FromSeconds(30), TestContext.Current.CancellationToken);
+                var restoredActors = second.Services.GetRequiredService<IVirtualActorProvider>();
+                var restoredWorkspace = restoredActors.GetActor<Weave.Workspaces.Lifecycle.IWorkspaceActor>(
+                    VirtualActorId.From(workspaceId));
+                (await restoredWorkspace.GetStateAsync()).DaprToolInstallations.Single()
+                    .DefinitionRevision.ShouldBe(DaprToolInstallation.ImplementationRevision);
                 using var composition = await client.GetAsync("/api/plugins/composition", TestContext.Current.CancellationToken);
                 (await composition.Content.ReadAsStringAsync(TestContext.Current.CancellationToken))
                     .ShouldContain($"{workspaceId}/sidecar");

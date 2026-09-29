@@ -2,6 +2,7 @@ using System.Net;
 using System.Text.Json;
 using Microsoft.Extensions.DependencyInjection;
 using Weave.Silo.Plugins;
+using Weave.Tools.InstallMcpTool;
 
 namespace Weave.Silo.Tests.Plugins;
 
@@ -112,6 +113,11 @@ public sealed partial class McpWorkspacePluginFlowTests
                     TestContext.Current.CancellationToken));
                 var installation = document.RootElement.EnumerateArray().Single();
                 installation.GetProperty("id").GetString().ShouldBe($"{workspaceId}/echo_server");
+                installation.GetProperty("definitionRevision").GetString()
+                    .ShouldBe(McpToolInstallation.ImplementationRevision);
+                installation.GetProperty("requestedPermissions").GetArrayLength().ShouldBe(0);
+                installation.GetProperty("grantedPermissions").GetArrayLength().ShouldBe(0);
+                installation.GetProperty("hasCredentialReferences").GetBoolean().ShouldBeFalse();
                 installation.GetProperty("desiredEnabled").GetBoolean().ShouldBeFalse();
                 installation.GetProperty("runtimeConnected").GetBoolean().ShouldBeFalse();
                 installation.GetProperty("condition").GetString().ShouldBe("disabled");

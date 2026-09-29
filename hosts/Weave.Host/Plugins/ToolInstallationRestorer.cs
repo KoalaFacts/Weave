@@ -51,6 +51,19 @@ internal sealed class ToolInstallationRestorer(
 
             foreach (var installation in state.DaprToolInstallations.Where(item => item.DesiredEnabled))
             {
+                if (installation.HasUnsupportedAuthority())
+                {
+                    diagnostics.Record(installation.Id, InstallationFailureCode.UnsupportedAuthorityState);
+                    logger.LogWarning("Dapr tool installation {InstallationId} has unsupported authority state.", installation.Id);
+                    continue;
+                }
+                if (!string.Equals(installation.DefinitionRevision,
+                    DaprToolInstallation.ImplementationRevision, StringComparison.Ordinal))
+                {
+                    diagnostics.Record(installation.Id, InstallationFailureCode.DefinitionRevisionChanged);
+                    logger.LogWarning("Dapr tool installation {InstallationId} has a changed definition revision.", installation.Id);
+                    continue;
+                }
                 if (!string.Equals(installation.Id, $"{workspaceId}/{installation.PluginName}", StringComparison.Ordinal)
                     || installation.Port is < 1 or > 65535
                     || !string.Equals(installation.ConfigDigest,
@@ -92,6 +105,19 @@ internal sealed class ToolInstallationRestorer(
 
             foreach (var installation in state.McpToolInstallations.Where(item => item.DesiredEnabled))
             {
+                if (installation.HasUnsupportedAuthority())
+                {
+                    diagnostics.Record(installation.Id, InstallationFailureCode.UnsupportedAuthorityState);
+                    logger.LogWarning("MCP installation {InstallationId} has unsupported authority state.", installation.Id);
+                    continue;
+                }
+                if (!string.Equals(installation.DefinitionRevision,
+                    McpToolInstallation.ImplementationRevision, StringComparison.Ordinal))
+                {
+                    diagnostics.Record(installation.Id, InstallationFailureCode.DefinitionRevisionChanged);
+                    logger.LogWarning("MCP installation {InstallationId} has a changed definition revision.", installation.Id);
+                    continue;
+                }
                 if (!string.Equals(installation.Id, $"{workspaceId}/{installation.PluginName}", StringComparison.Ordinal)
                     || !string.Equals(installation.ConfigDigest,
                         McpToolInstallation.ComputeConfigDigest(installation.Url, installation.ServerName,

@@ -24,6 +24,24 @@ public sealed partial class WorkspaceActor(
     {
         _key = key;
         await persistentState.ReadStateAsync(cancellationToken);
+        var migratedInstallations = false;
+        foreach (var installation in persistentState.State.DaprToolInstallations.Where(static item =>
+            string.IsNullOrEmpty(item.DefinitionRevision)
+            && string.Equals(item.ConfigDigest,
+                DaprToolInstallation.ComputeConfigDigest(item.Port), StringComparison.Ordinal)))
+        {
+            installation.DefinitionRevision = DaprToolInstallation.ImplementationRevision;
+            migratedInstallations = true;
+        }
+        foreach (var installation in persistentState.State.McpToolInstallations.Where(static item =>
+            string.IsNullOrEmpty(item.DefinitionRevision)
+            && string.Equals(item.ConfigDigest,
+                McpToolInstallation.ComputeConfigDigest(item.Url, item.ServerName,
+                    item.ServerVersion, item.Operation), StringComparison.Ordinal)))
+        {
+            installation.DefinitionRevision = McpToolInstallation.ImplementationRevision;
+            migratedInstallations = true;
+        }
         if (((persistentState.State.Status is WorkspaceStatus.Running
                     && (persistentState.State.RuntimeInstanceId != runtime.InstanceId
                         || !string.Equals(persistentState.State.RuntimeName, runtime.RuntimeName, StringComparison.Ordinal)))
@@ -32,8 +50,10 @@ public sealed partial class WorkspaceActor(
             && persistentState.State.RecoveryCondition is not WorkspaceRecoveryCondition.RequiresReconciliation)
         {
             persistentState.State.RecoveryCondition = WorkspaceRecoveryCondition.RequiresReconciliation;
-            await persistentState.WriteStateAsync(cancellationToken);
+            migratedInstallations = true;
         }
+        if (migratedInstallations)
+            await persistentState.WriteStateAsync(cancellationToken);
     }
 
     public async Task<WorkspaceState> StartAsync(WorkspaceManifest manifest)
@@ -76,7 +96,13 @@ public sealed partial class WorkspaceActor(
             if (existing is not null && !string.Equals(existing.PluginName, tool.RequiresPlugin, StringComparison.Ordinal))
                 throw new InvalidOperationException(
                     $"MCP installation '{tool.RequiresPlugin}' differs in case from the installed name '{existing.PluginName}'.");
-            if (existing is not null && !string.Equals(existing.ConfigDigest, digest, StringComparison.Ordinal))
+            if (existing is not null && existing.HasUnsupportedAuthority())
+                throw new InvalidOperationException(
+                    $"MCP installation '{tool.RequiresPlugin}' contains unsupported permission or credential state.");
+            if (existing is not null && (!string.Equals(existing.ConfigDigest, digest, StringComparison.Ordinal)
+                || (!string.IsNullOrEmpty(existing.DefinitionRevision)
+                    && !string.Equals(existing.DefinitionRevision, McpToolInstallation.ImplementationRevision,
+                        StringComparison.Ordinal))))
                 throw new InvalidOperationException(
                     $"MCP installation '{tool.RequiresPlugin}' changed; use a new plugin name for the new revision.");
         }
@@ -94,10 +120,16 @@ public sealed partial class WorkspaceActor(
             if (existing is not null && !string.Equals(existing.PluginName, pluginName, StringComparison.Ordinal))
                 throw new InvalidOperationException(
                     $"Dapr installation '{pluginName}' differs in case from the installed name '{existing.PluginName}'.");
+            if (existing is not null && existing.HasUnsupportedAuthority())
+                throw new InvalidOperationException(
+                    $"Dapr installation '{pluginName}' contains unsupported permission or credential state.");
             var port = int.Parse(manifest.Plugins[pluginName].Config["port"],
                 System.Globalization.CultureInfo.InvariantCulture);
-            if (existing is not null && !string.Equals(existing.ConfigDigest,
-                DaprToolInstallation.ComputeConfigDigest(port), StringComparison.Ordinal))
+            if (existing is not null && (!string.Equals(existing.ConfigDigest,
+                    DaprToolInstallation.ComputeConfigDigest(port), StringComparison.Ordinal)
+                || (!string.IsNullOrEmpty(existing.DefinitionRevision)
+                    && !string.Equals(existing.DefinitionRevision, DaprToolInstallation.ImplementationRevision,
+                        StringComparison.Ordinal))))
                 throw new InvalidOperationException(
                     $"Dapr installation '{pluginName}' changed; use a new plugin name for the new revision.");
         }
@@ -166,6 +198,7 @@ public sealed partial class WorkspaceActor(
                     persistentState.State.DaprToolInstallations.Add(installation);
                 }
                 installation.Port = port;
+                installation.DefinitionRevision = DaprToolInstallation.ImplementationRevision;
                 installation.ConfigDigest = DaprToolInstallation.ComputeConfigDigest(port);
                 installation.DesiredEnabled = true;
             }
@@ -191,6 +224,7 @@ public sealed partial class WorkspaceActor(
                 installation.ServerName = serverName;
                 installation.ServerVersion = serverVersion;
                 installation.Operation = operation;
+                installation.DefinitionRevision = McpToolInstallation.ImplementationRevision;
                 installation.ConfigDigest = digest;
                 installation.DesiredEnabled = true;
             }
@@ -317,6 +351,10 @@ public sealed partial class WorkspaceActor(
             throw new InvalidOperationException($"Dapr tool installation '{pluginName}' was not found.");
         if (enabled && persistentState.State.Status is not WorkspaceStatus.Running)
             throw new InvalidOperationException("The workspace must be running to enable a Dapr tool installation.");
+        if (enabled && (installation.HasUnsupportedAuthority()
+            || !string.Equals(installation.DefinitionRevision,
+                DaprToolInstallation.ImplementationRevision, StringComparison.Ordinal)))
+            throw new InvalidOperationException("The Dapr tool installation requires revision or authority review.");
         installation.DesiredEnabled = enabled;
         await persistentState.WriteStateAsync();
     }
@@ -329,6 +367,10 @@ public sealed partial class WorkspaceActor(
             throw new InvalidOperationException($"MCP tool installation '{pluginName}' was not found.");
         if (enabled && persistentState.State.Status is not WorkspaceStatus.Running)
             throw new InvalidOperationException("The workspace must be running to enable an MCP tool installation.");
+        if (enabled && (installation.HasUnsupportedAuthority()
+            || !string.Equals(installation.DefinitionRevision,
+                McpToolInstallation.ImplementationRevision, StringComparison.Ordinal)))
+            throw new InvalidOperationException("The MCP tool installation requires revision or authority review.");
         if (enabled && string.IsNullOrEmpty(installation.ContractDigest))
             throw new InvalidOperationException("The MCP tool contract has not been pinned.");
         installation.DesiredEnabled = enabled;

@@ -4,6 +4,7 @@ using Weave.Shared.Ids;
 using Weave.Shared.Lifecycle;
 using Weave.Tools.Connectors;
 using Weave.Tools.InstallDaprTool;
+using Weave.Tools.InstallMcpTool;
 using Weave.Workspaces.Lifecycle;
 using Weave.Workspaces.Manifest;
 using Weave.Workspaces.Registry;
@@ -74,6 +75,65 @@ public sealed class WorkspaceActorBranchTests
             }
         }
     };
+
+    [Fact]
+    public async Task OnActivatedAsync_LegacyInstallationDigestMatches_PersistsDefinitionRevision()
+    {
+        var dapr = new DaprToolInstallation
+        {
+            Id = "ws-1/sidecar",
+            PluginName = "sidecar",
+            Port = 3500,
+            ConfigDigest = DaprToolInstallation.ComputeConfigDigest(3500)
+        };
+        var mcp = new McpToolInstallation
+        {
+            Id = "ws-1/echo_server",
+            PluginName = "echo_server",
+            Url = "http://127.0.0.1:3501/mcp",
+            ServerName = "echo",
+            ServerVersion = "1.0",
+            Operation = "echo",
+            ConfigDigest = McpToolInstallation.ComputeConfigDigest(
+                "http://127.0.0.1:3501/mcp", "echo", "1.0", "echo")
+        };
+        var state = CreateState(new WorkspaceState
+        {
+            WorkspaceId = WorkspaceId.From("ws-1"),
+            DaprToolInstallations = [dapr],
+            McpToolInstallations = [mcp]
+        });
+        var actor = Create(state);
+
+        await actor.OnActivatedAsync("ws-1", TestContext.Current.CancellationToken);
+
+        dapr.DefinitionRevision.ShouldBe(DaprToolInstallation.ImplementationRevision);
+        mcp.DefinitionRevision.ShouldBe(McpToolInstallation.ImplementationRevision);
+        await state.Received(1).WriteStateAsync(TestContext.Current.CancellationToken);
+    }
+
+    [Fact]
+    public async Task OnActivatedAsync_LegacyDigestMismatch_LeavesRevisionUnknown()
+    {
+        var installation = new DaprToolInstallation
+        {
+            Id = "ws-1/sidecar",
+            PluginName = "sidecar",
+            Port = 3500,
+            ConfigDigest = "invalid"
+        };
+        var state = CreateState(new WorkspaceState
+        {
+            WorkspaceId = WorkspaceId.From("ws-1"),
+            DaprToolInstallations = [installation]
+        });
+        var actor = Create(state);
+
+        await actor.OnActivatedAsync("ws-1", TestContext.Current.CancellationToken);
+
+        installation.DefinitionRevision.ShouldBeEmpty();
+        await state.DidNotReceive().WriteStateAsync(TestContext.Current.CancellationToken);
+    }
 
     [Fact]
     public async Task StartAsync_CaseChangedDaprInstallation_RejectsBeforeProvisioning()
@@ -185,6 +245,61 @@ public sealed class WorkspaceActorBranchTests
         error.Message.ShouldContain("changed");
         state.State.Status.ShouldBe(WorkspaceStatus.Stopped);
         state.State.DaprToolInstallations.ShouldHaveSingleItem().Port.ShouldBe(3501);
+        await runtime.DidNotReceive().ProvisionAsync(Arg.Any<WorkspaceId>(), Arg.Any<WorkspaceManifest>(), Arg.Any<CancellationToken>());
+    }
+
+    [Fact]
+    public async Task StartAsync_ChangedDaprDefinitionRevision_RejectsBeforeProvisioning()
+    {
+        var state = CreateState(new WorkspaceState
+        {
+            WorkspaceId = WorkspaceId.From("ws-1"),
+            Status = WorkspaceStatus.Stopped,
+            DaprToolInstallations =
+            [
+                new DaprToolInstallation
+                {
+                    Id = "ws-1/sidecar", PluginName = "sidecar", Port = 3500,
+                    ConfigDigest = DaprToolInstallation.ComputeConfigDigest(3500),
+                    DefinitionRevision = "dapr_tools/next"
+                }
+            ]
+        });
+        var runtime = Substitute.For<IWorkspaceRuntime>();
+        var actor = Create(state, runtime: runtime);
+
+        var error = await Should.ThrowAsync<InvalidOperationException>(() => actor.StartAsync(DaprManifest("sidecar")));
+
+        error.Message.ShouldContain("changed");
+        state.State.Status.ShouldBe(WorkspaceStatus.Stopped);
+        await runtime.DidNotReceive().ProvisionAsync(Arg.Any<WorkspaceId>(), Arg.Any<WorkspaceManifest>(), Arg.Any<CancellationToken>());
+    }
+
+    [Fact]
+    public async Task StartAsync_UnsupportedInstallationAuthority_RejectsBeforeProvisioning()
+    {
+        var installation = new DaprToolInstallation
+        {
+            Id = "ws-1/sidecar",
+            PluginName = "sidecar",
+            Port = 3500,
+            ConfigDigest = DaprToolInstallation.ComputeConfigDigest(3500),
+            DefinitionRevision = DaprToolInstallation.ImplementationRevision,
+            RequestedPermissions = ["plugin:service:other:consume"]
+        };
+        var state = CreateState(new WorkspaceState
+        {
+            WorkspaceId = WorkspaceId.From("ws-1"),
+            Status = WorkspaceStatus.Stopped,
+            DaprToolInstallations = [installation]
+        });
+        var runtime = Substitute.For<IWorkspaceRuntime>();
+        var actor = Create(state, runtime: runtime);
+
+        var error = await Should.ThrowAsync<InvalidOperationException>(() => actor.StartAsync(DaprManifest("sidecar")));
+
+        error.Message.ShouldContain("unsupported permission");
+        installation.DesiredEnabled.ShouldBeFalse();
         await runtime.DidNotReceive().ProvisionAsync(Arg.Any<WorkspaceId>(), Arg.Any<WorkspaceManifest>(), Arg.Any<CancellationToken>());
     }
 
