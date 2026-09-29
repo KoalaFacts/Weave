@@ -15,7 +15,8 @@ For the actual Host walkthrough, build `hosts/Weave.Host/Weave.Host.csproj` and
 run `first_use.py` with the resulting `Weave.Silo.dll` and a new evidence
 directory. That walkthrough uses local files, signed capabilities, a scripted
 reviewer and the Host's durable SQLite journal. The instructions below cover
-an actual operator decision.
+an actual operator decision. Its local Host needs ports 9401 (HTTP), 11111
+(Orleans silo) and 30000 (Orleans gateway) free.
 
 This is an operator-side terminal example, not an Agent auto-approval tool.
 A current Host retains the input proposal separately from journal metadata, so a
