@@ -4,6 +4,7 @@ using Weave.Actions.Agent;
 using Weave.Actions.Context;
 using Weave.Actions.Tool;
 using Weave.Actions.Workspace;
+using Weave.Workspaces.Lifecycle;
 using Weave.Workspaces.Manifest;
 
 namespace Weave.Cli.Shell;
@@ -47,6 +48,8 @@ internal sealed class WorkspaceStatusCliCommand(
             if (statusResult.IsSuccess)
             {
                 RenderStatusTable(manifest.Name, statusResult.Value.Workspace, manifestPath);
+                if (statusResult.Value.Workspace.RecoveryCondition is WorkspaceRecoveryCondition.RequiresReconciliation)
+                    CliTheme.WriteWarning("Workspace recovery needs review. Inspect its resources before stopping or using it.");
 
                 var agentsResult = await agentsAction.ExecuteAsync(new ListAgentsInput(workspaceId), ct);
                 if (agentsResult.IsSuccess && agentsResult.Value.Agents.Count > 0)
@@ -77,6 +80,8 @@ internal sealed class WorkspaceStatusCliCommand(
         table.AddRow("Workspace", $"[bold white]{Markup.Escape(workspaceName)}[/]");
         table.AddRow("Workspace ID", Markup.Escape(workspace.WorkspaceId));
         table.AddRow("Status", Markup.Escape(workspace.Status));
+        if (workspace.RecoveryCondition is WorkspaceRecoveryCondition.RequiresReconciliation)
+            table.AddRow("Recovery", "[yellow]Needs review[/]");
         table.AddRow("Manifest", Markup.Escape(manifestPath));
         table.AddRow("Containers", workspace.ContainerCount.ToString(CultureInfo.InvariantCulture));
         AnsiConsole.Write(table);

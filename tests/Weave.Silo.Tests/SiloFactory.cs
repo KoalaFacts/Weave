@@ -1,7 +1,11 @@
+using System.Text.Json;
 using Microsoft.AspNetCore.Hosting;
 using Microsoft.AspNetCore.Mvc.Testing;
+using Microsoft.AspNetCore.WebUtilities;
 using Microsoft.Extensions.Configuration;
+using Microsoft.Extensions.DependencyInjection;
 using Microsoft.Extensions.Logging;
+using Weave.Security.Tokens;
 
 namespace Weave.Silo.Tests;
 
@@ -12,7 +16,23 @@ namespace Weave.Silo.Tests;
 /// </summary>
 public sealed class SiloFactory : WebApplicationFactory<Program>
 {
+    private static readonly JsonSerializerOptions CapabilityJsonOptions = new(JsonSerializerDefaults.Web);
     private readonly string _journalDirectory = Path.Combine(Path.GetTempPath(), $"weave-host-journal-{Guid.NewGuid():N}");
+
+    public static void Authorize(HttpClient client, IServiceProvider services, string workspaceId,
+        params string[] grants)
+    {
+        var token = services.GetRequiredService<ICapabilityTokenService>().Mint(new CapabilityTokenRequest
+        {
+            WorkspaceId = workspaceId,
+            IssuedTo = "silo-test-operator",
+            Grants = new HashSet<string>(grants, StringComparer.Ordinal),
+            Lifetime = TimeSpan.FromMinutes(5)
+        });
+        client.DefaultRequestHeaders.Remove("X-Weave-Capability");
+        client.DefaultRequestHeaders.Add("X-Weave-Capability", WebEncoders.Base64UrlEncode(
+            JsonSerializer.SerializeToUtf8Bytes(token, CapabilityJsonOptions)));
+    }
 
     protected override void ConfigureWebHost(IWebHostBuilder builder)
     {

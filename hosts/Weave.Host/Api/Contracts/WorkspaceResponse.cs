@@ -8,6 +8,8 @@ public sealed record WorkspaceResponse
     public string? Name { get; init; }
     [JsonConverter(typeof(JsonStringEnumConverter<WorkspaceStatus>))]
     public required WorkspaceStatus Status { get; init; }
+    [JsonConverter(typeof(JsonStringEnumConverter<WorkspaceRecoveryCondition>))]
+    public required WorkspaceRecoveryCondition RecoveryCondition { get; init; }
     public required int ContainerCount { get; init; }
     public DateTimeOffset? StartedAt { get; init; }
     public DateTimeOffset? StoppedAt { get; init; }
@@ -19,6 +21,7 @@ public sealed record WorkspaceResponse
         WorkspaceId = state.WorkspaceId.ToString(),
         Name = state.Name,
         Status = state.Status,
+        RecoveryCondition = state.RecoveryCondition,
         ContainerCount = state.Containers.Count,
         StartedAt = state.StartedAt,
         StoppedAt = state.StoppedAt,

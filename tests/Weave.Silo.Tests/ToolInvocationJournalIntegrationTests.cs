@@ -95,6 +95,7 @@ public sealed class ToolInvocationJournalIntegrationTests(SiloFactory factory) :
                 }
             }
         };
+        SiloFactory.Authorize(client, factory.Services, "silo", "workspace:create");
         using var start = await client.PostAsJsonAsync("/api/workspaces", new { Manifest = manifest },
             TestContext.Current.CancellationToken);
         var body = await start.Content.ReadAsStringAsync(TestContext.Current.CancellationToken);
@@ -104,12 +105,12 @@ public sealed class ToolInvocationJournalIntegrationTests(SiloFactory factory) :
         var actors = factory.Services.GetRequiredService<IVirtualActorProvider>();
         var registry = actors.GetActor<IToolRegistryActor>(VirtualActorId.From(workspace));
         var resolution = (await registry.ResolveAsync("writer", "fs-journal")).ShouldNotBeNull();
-        return new Scenario(client, root, path, workspace,
+        return new Scenario(client, factory.Services, root, path, workspace,
             actors.GetActor<IToolActor>(VirtualActorId.From(resolution.ActorKey)), resolution.Token);
     }
 
     private sealed class Scenario(
-        HttpClient client, string root, string path, string workspace,
+        HttpClient client, IServiceProvider services, string root, string path, string workspace,
         IToolActor tool, CapabilityToken token) : IAsyncDisposable
     {
         public string Path { get; } = path;
@@ -120,6 +121,7 @@ public sealed class ToolInvocationJournalIntegrationTests(SiloFactory factory) :
         {
             try
             {
+                SiloFactory.Authorize(client, services, workspace, "workspace:stop");
                 using var response = await client.DeleteAsync($"/api/workspaces/{workspace}",
                     TestContext.Current.CancellationToken);
             }

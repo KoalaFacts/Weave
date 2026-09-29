@@ -55,6 +55,7 @@ public sealed class GetWorkspaceStatusAction
                 WorkspaceId = wire.WorkspaceId,
                 Name = wire.Name,
                 Status = wire.Status,
+                RecoveryCondition = wire.RecoveryCondition,
                 ContainerCount = wire.ContainerCount,
                 StartedAt = wire.StartedAt,
                 StoppedAt = wire.StoppedAt,

@@ -30,6 +30,7 @@ public sealed class WorkspaceEndpointBranchTests : IClassFixture<SiloFactory>
     public async Task Start_MissingName_Returns400()
     {
         using var client = _factory.CreateClient();
+        SiloFactory.Authorize(client, _factory.Services, "silo", "workspace:create");
         var manifest = new WorkspaceManifest { Version = "1.0", Name = "" };
 
         using var response = await client.PostAsJsonAsync(
@@ -44,6 +45,7 @@ public sealed class WorkspaceEndpointBranchTests : IClassFixture<SiloFactory>
     public async Task Start_MissingVersion_Returns400()
     {
         using var client = _factory.CreateClient();
+        SiloFactory.Authorize(client, _factory.Services, "silo", "workspace:create");
         var manifest = new WorkspaceManifest { Version = "", Name = "ok" };
 
         using var response = await client.PostAsJsonAsync(
@@ -58,9 +60,11 @@ public sealed class WorkspaceEndpointBranchTests : IClassFixture<SiloFactory>
     public async Task Stop_UnknownWorkspace_DoesNot500()
     {
         using var client = _factory.CreateClient();
+        var workspaceId = $"ws_nonexistent_{Guid.NewGuid():N}";
+        SiloFactory.Authorize(client, _factory.Services, workspaceId, "workspace:stop");
 
         using var response = await client.DeleteAsync(
-            $"/api/workspaces/ws_nonexistent_{Guid.NewGuid():N}",
+            $"/api/workspaces/{workspaceId}",
             TestContext.Current.CancellationToken);
 
         ((int)response.StatusCode).ShouldBeLessThan(500);
@@ -153,6 +157,7 @@ public sealed class WorkspaceEndpointBranchTests : IClassFixture<SiloFactory>
     public async Task GetState_AfterStart_ReturnsWorkspace()
     {
         using var client = _factory.CreateClient();
+        SiloFactory.Authorize(client, _factory.Services, "silo", "workspace:create");
         using var startResponse = await client.PostAsJsonAsync(
             "/api/workspaces",
             new { Manifest = new WorkspaceManifest { Version = "1.0", Name = $"lookup-{Guid.NewGuid():N}" } },

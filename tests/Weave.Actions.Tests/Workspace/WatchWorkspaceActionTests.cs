@@ -14,7 +14,7 @@ public sealed class WatchWorkspaceActionTests
     {
         var action = new WatchWorkspaceAction(
             new GetWorkspaceStatusAction(HttpClient(HttpStatusCode.OK,
-                """{"workspaceId":"ws-1","name":"demo","status":"Running","containerCount":2}""")),
+                """{"workspaceId":"ws-1","name":"demo","status":"Running","recoveryCondition":"StartedOnThisHost","containerCount":2}""")),
             new ListAgentsAction(HttpClient(HttpStatusCode.OK,
                 """[{"agentName":"alpha","status":"Idle","model":"gpt-5","connectedTools":[],"activeTasks":[]}]""")),
             new ListToolsAction(HttpClient(HttpStatusCode.OK,
@@ -53,7 +53,7 @@ public sealed class WatchWorkspaceActionTests
     {
         var action = new WatchWorkspaceAction(
             new GetWorkspaceStatusAction(HttpClient(HttpStatusCode.OK,
-                """{"workspaceId":"ws-1","status":"Running","containerCount":0}""")),
+                """{"workspaceId":"ws-1","status":"Running","recoveryCondition":"StartedOnThisHost","containerCount":0}""")),
             new ListAgentsAction(ThrowingClient(new HttpRequestException("transient"))),
             new ListToolsAction(HttpClient(HttpStatusCode.OK, "[]")));
 
@@ -69,7 +69,7 @@ public sealed class WatchWorkspaceActionTests
     {
         var action = new WatchWorkspaceAction(
             new GetWorkspaceStatusAction(HttpClient(HttpStatusCode.OK,
-                """{"workspaceId":"ws-1","status":"Running","containerCount":0}""")),
+                """{"workspaceId":"ws-1","status":"Running","recoveryCondition":"StartedOnThisHost","containerCount":0}""")),
             new ListAgentsAction(HttpClient(HttpStatusCode.OK, "[]")),
             new ListToolsAction(HttpClient(HttpStatusCode.InternalServerError, "")));
 

@@ -96,14 +96,15 @@ public static class PluginEndpoints
                 enableGrants.Add(PluginInstallationAuthority.McpEnableGrant);
             if (installed is not null || string.Equals(request.Type, "dapr_tools", StringComparison.OrdinalIgnoreCase))
                 enableGrants.Add(PluginInstallationAuthority.DaprEnableGrant);
-            if (enableGrants.Count > 0)
-            {
-                var workspaceId = (installedMcp?.Installation.Id ?? installed?.Installation.Id ?? request.Name)
-                    .Split('/')[0].ToLowerInvariant();
-                var denial = await authority.DenialAsync(context, workspaceId, enableGrants.ToArray());
-                if (denial is not null)
-                    return denial;
-            }
+            var workspaceId = enableGrants.Count > 0
+                ? (installedMcp?.Installation.Id ?? installed?.Installation.Id ?? request.Name)
+                    .Split('/')[0].ToLowerInvariant()
+                : "silo";
+            if (enableGrants.Count == 0)
+                enableGrants.Add(PluginInstallationAuthority.PluginConnectGrant);
+            var denial = await authority.DenialAsync(context, workspaceId, enableGrants.ToArray());
+            if (denial is not null)
+                return denial;
             if (installed is not null || string.Equals(request.Type, "dapr_tools", StringComparison.OrdinalIgnoreCase))
             {
                 if (installed is null)
@@ -167,8 +168,8 @@ public static class PluginEndpoints
                 {
                     await installedMcp.Value.Workspace.SetMcpToolInstallationEnabledAsync(
                         installedMcp.Value.Installation.PluginName, true);
-                    var workspaceId = registrationName[..registrationName.IndexOf('/', StringComparison.Ordinal)];
-                    var tools = actors.GetActor<IToolRegistryActor>(VirtualActorId.From(workspaceId));
+                    var installationWorkspaceId = registrationName[..registrationName.IndexOf('/', StringComparison.Ordinal)];
+                    var tools = actors.GetActor<IToolRegistryActor>(VirtualActorId.From(installationWorkspaceId));
                     await tools.ReconnectInstallationAsync(installedMcp.Value.Installation.PluginName);
                 }
                 catch
@@ -216,13 +217,14 @@ public static class PluginEndpoints
             disableGrants.Add(PluginInstallationAuthority.McpDisableGrant);
         if (installed is not null)
             disableGrants.Add(PluginInstallationAuthority.DaprDisableGrant);
-        if (disableGrants.Count > 0)
-        {
-            var workspaceId = (installedMcp?.Installation.Id ?? installed!.Value.Installation.Id).Split('/')[0];
-            var denial = await authority.DenialAsync(context, workspaceId, disableGrants.ToArray());
-            if (denial is not null)
-                return denial;
-        }
+        var workspaceId = disableGrants.Count > 0
+            ? (installedMcp?.Installation.Id ?? installed!.Value.Installation.Id).Split('/')[0]
+            : "silo";
+        if (disableGrants.Count == 0)
+            disableGrants.Add(PluginInstallationAuthority.PluginDisconnectGrant);
+        var denial = await authority.DenialAsync(context, workspaceId, disableGrants.ToArray());
+        if (denial is not null)
+            return denial;
         var registrationName = installedMcp?.Installation.Id ?? installed?.Installation.Id ?? name;
         if (installedMcp is not null)
             mcpDispatchGate.BeginDisable(registrationName);

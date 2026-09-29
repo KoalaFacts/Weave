@@ -9,19 +9,21 @@ namespace Weave.Workspaces.Runtime;
 /// </summary>
 public sealed partial class InProcessRuntime(ILogger<InProcessRuntime> logger) : IWorkspaceRuntime
 {
+    public Guid InstanceId { get; } = Guid.NewGuid();
     public string RuntimeName => "in-process";
 
-    public Task<WorkspaceEnvironment> ProvisionAsync(WorkspaceManifest manifest, CancellationToken ct)
+    public Task<WorkspaceEnvironment> ProvisionAsync(WorkspaceId workspaceId, WorkspaceManifest manifest, CancellationToken ct)
     {
         LogWorkspaceProvisioned(manifest.Name);
 
         return Task.FromResult(new WorkspaceEnvironment(
-            WorkspaceId.From(manifest.Name),
+            workspaceId,
             NetworkId.From("local"),
             []));
     }
 
-    public Task TeardownAsync(WorkspaceId workspaceId, CancellationToken ct)
+    public Task TeardownAsync(WorkspaceId workspaceId, NetworkId? networkId,
+        IReadOnlyList<ContainerId> containerIds, CancellationToken ct)
     {
         LogWorkspaceTornDown(workspaceId);
         return Task.CompletedTask;

@@ -15,6 +15,8 @@ internal sealed class PluginInstallationAuthority(
     public const string CreateWorkspaceGrant = "workspace:create";
     public const string StopWorkspaceGrant = "workspace:stop";
     public const string InstallationReadGrant = "plugin:installations:read";
+    public const string PluginConnectGrant = "plugin:connect";
+    public const string PluginDisconnectGrant = "plugin:disconnect";
     public const string McpInstallGrant = "plugin:mcp_tools:install";
     public const string McpEnableGrant = "plugin:mcp_tools:enable";
     public const string McpDisableGrant = "plugin:mcp_tools:disable";

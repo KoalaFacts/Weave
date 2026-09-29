@@ -10,13 +10,12 @@ public sealed partial class ContainerRuntime(
 {
     private readonly string _engine = NormalizeEngine(options.Engine);
 
+    public Guid InstanceId { get; } = Guid.NewGuid();
     public string RuntimeName => _engine;
 
-    public async Task<WorkspaceEnvironment> ProvisionAsync(WorkspaceManifest manifest, CancellationToken ct)
+    public async Task<WorkspaceEnvironment> ProvisionAsync(WorkspaceId workspaceId, WorkspaceManifest manifest, CancellationToken ct)
     {
-        var workspaceId = manifest.Name;
-
-        var networkName = manifest.Workspace.Network?.Name?.Replace("{workspace}", workspaceId)
+        var networkName = manifest.Workspace.Network?.Name?.Replace("{workspace}", workspaceId.ToString())
             ?? $"weave-{workspaceId}";
         var network = await CreateNetworkAsync(new NetworkSpec
         {
@@ -41,18 +40,39 @@ public sealed partial class ContainerRuntime(
 
         LogWorkspaceProvisioned(logger, workspaceId, containers.Count);
 
-        return new WorkspaceEnvironment(WorkspaceId.From(workspaceId), network.NetworkId, containers);
+        return new WorkspaceEnvironment(workspaceId, network.NetworkId, containers);
     }
 
-    public async Task TeardownAsync(WorkspaceId workspaceId, CancellationToken ct)
+    public async Task TeardownAsync(WorkspaceId workspaceId, NetworkId? networkId,
+        IReadOnlyList<ContainerId> containerIds, CancellationToken ct)
     {
-        var output = await RunContainerCliAsync(["ps", "--filter", $"name=weave-{workspaceId}", "--format", "{{.ID}}"], ct);
-        var containerIds = output.Split('\n', StringSplitOptions.RemoveEmptyEntries);
-
+        List<Exception> failures = [];
         foreach (var id in containerIds)
-            await StopContainerAsync(ContainerId.From(id.Trim()), ct);
+        {
+            try
+            {
+                await StopContainerAsync(id, ct);
+            }
+            catch (Exception ex) when (IsTeardownFailure(ex))
+            {
+                failures.Add(ex);
+            }
+        }
 
-        await DeleteNetworkAsync(NetworkId.From($"weave-{workspaceId}"), ct);
+        if (networkId is not null)
+        {
+            try
+            {
+                await DeleteNetworkAsync(networkId.Value, ct);
+            }
+            catch (Exception ex) when (IsTeardownFailure(ex))
+            {
+                failures.Add(ex);
+            }
+        }
+
+        if (failures.Count > 0)
+            throw new AggregateException($"Workspace {workspaceId} teardown requires reconciliation.", failures);
 
         LogWorkspaceTornDown(logger, workspaceId.ToString());
     }
@@ -90,8 +110,24 @@ public sealed partial class ContainerRuntime(
 
     public async Task StopContainerAsync(ContainerId containerId, CancellationToken ct)
     {
-        await RunContainerCliAsync(["stop", containerId.ToString()], ct);
-        await RunContainerCliAsync(["rm", "-f", containerId.ToString()], ct);
+        if (_engine is ContainerRuntimeOptions.PodmanEngine)
+        {
+            await RunContainerCliAsync(["rm", "-f", "--ignore", containerId.ToString()], ct);
+            return;
+        }
+
+        try
+        {
+            await RunContainerCliAsync(["rm", "-f", containerId.ToString()], ct);
+        }
+        catch (InvalidOperationException)
+        {
+            var remaining = await RunContainerCliAsync(
+                ["container", "ls", "--all", "--no-trunc", "--filter", $"id={containerId}", "--format", "{{.ID}}"], ct);
+            if (remaining.Split('\n', StringSplitOptions.RemoveEmptyEntries | StringSplitOptions.TrimEntries)
+                .Contains(containerId.ToString(), StringComparer.Ordinal))
+                throw;
+        }
     }
 
     public async Task<NetworkHandle> CreateNetworkAsync(NetworkSpec spec, CancellationToken ct)
@@ -110,8 +146,8 @@ public sealed partial class ContainerRuntime(
     public async Task DeleteNetworkAsync(NetworkId networkId, CancellationToken ct)
     {
         var args = _engine is ContainerRuntimeOptions.DockerEngine
-            ? new List<string> { "network", "rm", networkId.ToString() }
-            : ["network", "rm", "-f", networkId.ToString()];
+            ? new List<string> { "network", "rm", "-f", networkId.ToString() }
+            : ["network", "rm", "--ignore", networkId.ToString()];
 
         await RunContainerCliAsync(args, ct);
     }
@@ -133,6 +169,10 @@ public sealed partial class ContainerRuntime(
                 $"Unsupported container runtime '{engine}'. Supported values are '{ContainerRuntimeOptions.PodmanEngine}' and '{ContainerRuntimeOptions.DockerEngine}'.")
         };
     }
+
+    private static bool IsTeardownFailure(Exception ex) =>
+        ex is InvalidOperationException or TimeoutException or IOException or HttpRequestException
+            or System.ComponentModel.Win32Exception;
 
     [LoggerMessage(Level = LogLevel.Debug, Message = "Running: {Command} {Arguments}")]
     private static partial void LogContainerCommand(ILogger logger, string command, string arguments);

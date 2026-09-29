@@ -26,6 +26,7 @@ public sealed class WorkspaceLifecycleTests : IClassFixture<SiloFactory>
     public async Task StartWorkspace_with_minimal_manifest_returns_201()
     {
         using var client = _factory.CreateClient();
+        SiloFactory.Authorize(client, _factory.Services, "silo", "workspace:create");
 
         var manifest = new WorkspaceManifest
         {
@@ -56,6 +57,7 @@ public sealed class WorkspaceLifecycleTests : IClassFixture<SiloFactory>
     public async Task StartThenStop_WithHeartbeatConfiguredAgent_ReachesStopped()
     {
         using var client = _factory.CreateClient();
+        SiloFactory.Authorize(client, _factory.Services, "silo", "workspace:create");
 
         var manifest = new WorkspaceManifest
         {
@@ -82,6 +84,7 @@ public sealed class WorkspaceLifecycleTests : IClassFixture<SiloFactory>
         var workspaceId = startDoc.RootElement.GetProperty("workspaceId").GetString();
         workspaceId.ShouldNotBeNullOrWhiteSpace();
 
+        SiloFactory.Authorize(client, _factory.Services, workspaceId!, "workspace:stop");
         using var stopResponse = await client.DeleteAsync(
             $"/api/workspaces/{workspaceId}",
             TestContext.Current.CancellationToken);

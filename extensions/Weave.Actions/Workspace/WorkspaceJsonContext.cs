@@ -1,4 +1,5 @@
 using System.Text.Json.Serialization;
+using Weave.Workspaces.Lifecycle;
 using Weave.Workspaces.Manifest;
 
 namespace Weave.Actions.Workspace;
@@ -15,6 +16,7 @@ internal sealed record WorkspaceWire
     public string WorkspaceId { get; init; } = string.Empty;
     public string? Name { get; init; }
     public string Status { get; init; } = string.Empty;
+    public required WorkspaceRecoveryCondition RecoveryCondition { get; init; }
     public int ContainerCount { get; init; }
     public DateTimeOffset? StartedAt { get; init; }
     public DateTimeOffset? StoppedAt { get; init; }

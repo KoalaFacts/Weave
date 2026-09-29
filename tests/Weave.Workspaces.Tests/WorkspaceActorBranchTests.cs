@@ -92,7 +92,7 @@ public sealed class WorkspaceActorBranchTests
             ]
         });
         var runtime = Substitute.For<IWorkspaceRuntime>();
-        runtime.ProvisionAsync(Arg.Any<WorkspaceManifest>(), Arg.Any<CancellationToken>())
+        runtime.ProvisionAsync(Arg.Any<WorkspaceId>(), Arg.Any<WorkspaceManifest>(), Arg.Any<CancellationToken>())
             .Returns(new WorkspaceEnvironment(WorkspaceId.From("ws-1"), NetworkId.From("net-1"), []));
         var actor = Create(state, runtime: runtime);
 
@@ -101,7 +101,7 @@ public sealed class WorkspaceActorBranchTests
         error.Message.ShouldContain("differs in case");
         state.State.Status.ShouldBe(WorkspaceStatus.Stopped);
         state.State.DaprToolInstallations.Count.ShouldBe(1);
-        await runtime.DidNotReceive().ProvisionAsync(Arg.Any<WorkspaceManifest>(), Arg.Any<CancellationToken>());
+        await runtime.DidNotReceive().ProvisionAsync(Arg.Any<WorkspaceId>(), Arg.Any<WorkspaceManifest>(), Arg.Any<CancellationToken>());
     }
 
     [Fact]
@@ -118,7 +118,7 @@ public sealed class WorkspaceActorBranchTests
             ]
         });
         var runtime = Substitute.For<IWorkspaceRuntime>();
-        runtime.ProvisionAsync(Arg.Any<WorkspaceManifest>(), Arg.Any<CancellationToken>())
+        runtime.ProvisionAsync(Arg.Any<WorkspaceId>(), Arg.Any<WorkspaceManifest>(), Arg.Any<CancellationToken>())
             .Returns(new WorkspaceEnvironment(WorkspaceId.From("ws-1"), NetworkId.From("net-1"), []));
         var actor = Create(state, runtime: runtime);
 
@@ -127,7 +127,7 @@ public sealed class WorkspaceActorBranchTests
         error.Message.ShouldContain("ambiguous");
         state.State.Status.ShouldBe(WorkspaceStatus.Stopped);
         state.State.DaprToolInstallations.Count.ShouldBe(2);
-        await runtime.DidNotReceive().ProvisionAsync(Arg.Any<WorkspaceManifest>(), Arg.Any<CancellationToken>());
+        await runtime.DidNotReceive().ProvisionAsync(Arg.Any<WorkspaceId>(), Arg.Any<WorkspaceManifest>(), Arg.Any<CancellationToken>());
     }
 
     [Fact]
@@ -147,7 +147,7 @@ public sealed class WorkspaceActorBranchTests
             DaprToolInstallations = [installation]
         });
         var runtime = Substitute.For<IWorkspaceRuntime>();
-        runtime.ProvisionAsync(Arg.Any<WorkspaceManifest>(), Arg.Any<CancellationToken>())
+        runtime.ProvisionAsync(Arg.Any<WorkspaceId>(), Arg.Any<WorkspaceManifest>(), Arg.Any<CancellationToken>())
             .Returns(new WorkspaceEnvironment(WorkspaceId.From("ws-1"), NetworkId.From("net-1"), []));
         var actor = Create(state, runtime: runtime);
 
@@ -156,7 +156,7 @@ public sealed class WorkspaceActorBranchTests
         state.State.Status.ShouldBe(WorkspaceStatus.Running);
         state.State.DaprToolInstallations.ShouldHaveSingleItem().ShouldBeSameAs(installation);
         installation.DesiredEnabled.ShouldBeTrue();
-        await runtime.Received(1).ProvisionAsync(Arg.Any<WorkspaceManifest>(), Arg.Any<CancellationToken>());
+        await runtime.Received(1).ProvisionAsync(Arg.Any<WorkspaceId>(), Arg.Any<WorkspaceManifest>(), Arg.Any<CancellationToken>());
     }
 
     [Fact]
@@ -176,7 +176,7 @@ public sealed class WorkspaceActorBranchTests
             ]
         });
         var runtime = Substitute.For<IWorkspaceRuntime>();
-        runtime.ProvisionAsync(Arg.Any<WorkspaceManifest>(), Arg.Any<CancellationToken>())
+        runtime.ProvisionAsync(Arg.Any<WorkspaceId>(), Arg.Any<WorkspaceManifest>(), Arg.Any<CancellationToken>())
             .Returns(new WorkspaceEnvironment(WorkspaceId.From("ws-1"), NetworkId.From("net-1"), []));
         var actor = Create(state, runtime: runtime);
 
@@ -185,7 +185,7 @@ public sealed class WorkspaceActorBranchTests
         error.Message.ShouldContain("changed");
         state.State.Status.ShouldBe(WorkspaceStatus.Stopped);
         state.State.DaprToolInstallations.ShouldHaveSingleItem().Port.ShouldBe(3501);
-        await runtime.DidNotReceive().ProvisionAsync(Arg.Any<WorkspaceManifest>(), Arg.Any<CancellationToken>());
+        await runtime.DidNotReceive().ProvisionAsync(Arg.Any<WorkspaceId>(), Arg.Any<WorkspaceManifest>(), Arg.Any<CancellationToken>());
     }
 
     [Fact]
@@ -201,7 +201,7 @@ public sealed class WorkspaceActorBranchTests
         };
         var state = CreateState();
         var runtime = Substitute.For<IWorkspaceRuntime>();
-        runtime.ProvisionAsync(Arg.Any<WorkspaceManifest>(), Arg.Any<CancellationToken>())
+        runtime.ProvisionAsync(Arg.Any<WorkspaceId>(), Arg.Any<WorkspaceManifest>(), Arg.Any<CancellationToken>())
             .Returns(new WorkspaceEnvironment(WorkspaceId.From("ws-1"), NetworkId.From("net-1"), []));
         var actor = Create(state, runtime: runtime);
 
@@ -209,7 +209,7 @@ public sealed class WorkspaceActorBranchTests
 
         error.Message.ShouldContain("case");
         state.State.Status.ShouldBe(WorkspaceStatus.Stopped);
-        await runtime.DidNotReceive().ProvisionAsync(Arg.Any<WorkspaceManifest>(), Arg.Any<CancellationToken>());
+        await runtime.DidNotReceive().ProvisionAsync(Arg.Any<WorkspaceId>(), Arg.Any<WorkspaceManifest>(), Arg.Any<CancellationToken>());
     }
 
     [Fact]
@@ -235,10 +235,13 @@ public sealed class WorkspaceActorBranchTests
         {
             WorkspaceId = WorkspaceId.From("ws-1"),
             Status = WorkspaceStatus.Running,
+            RuntimeName = "podman",
+            NetworkId = NetworkId.From("net-1"),
             StartedAt = DateTimeOffset.UtcNow
         });
         var runtime = Substitute.For<IWorkspaceRuntime>();
-        runtime.TeardownAsync(Arg.Any<WorkspaceId>(), Arg.Any<CancellationToken>())
+        runtime.RuntimeName.Returns("podman");
+        runtime.TeardownAsync(Arg.Any<WorkspaceId>(), Arg.Any<NetworkId?>(), Arg.Any<IReadOnlyList<ContainerId>>(), Arg.Any<CancellationToken>())
             .Returns(Task.FromException(new InvalidOperationException("teardown kaboom")));
         var actor = Create(state, runtime: runtime);
 
@@ -262,7 +265,7 @@ public sealed class WorkspaceActorBranchTests
 
         await actor.StopAsync();
 
-        await runtime.DidNotReceive().TeardownAsync(Arg.Any<WorkspaceId>(), Arg.Any<CancellationToken>());
+        await runtime.DidNotReceive().TeardownAsync(Arg.Any<WorkspaceId>(), Arg.Any<NetworkId?>(), Arg.Any<IReadOnlyList<ContainerId>>(), Arg.Any<CancellationToken>());
         state.State.Status.ShouldBe(WorkspaceStatus.Stopped);
     }
 
