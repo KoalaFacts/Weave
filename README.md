@@ -20,7 +20,7 @@ Weave makes those decisions at the operation boundary. The repository's working 
 | A separate reviewer examines the proposal | The reviewer sees the exact target, inputs, requester and plan digest. Approving records a decision; it does not run the write. |
 | The original agent resumes the same invocation | Weave rechecks current authority and the approved plan, records an attempt, then dispatches. Submitting that invocation ID again does not repeat the write. |
 
-This is an implemented, [executable local walkthrough](examples/governed-tools/host-demo.mjs), not a claim that every connector already supports the same approval policy. The walkthrough uses a scripted reviewer and a deterministic client in place of a person and a live model.
+This is an implemented, [executable local walkthrough](examples/governed-tools/host-demo.ts), not a claim that every connector already supports the same approval policy. The walkthrough uses a scripted reviewer and a deterministic client in place of a person and a live model.
 
 ## What works today
 
@@ -34,10 +34,10 @@ The [implementation records](docs/implementation/) describe the delivered scope 
 
 ## See the decision flow in memory
 
-From a checkout, run this with Node.js 22+; it uses only built-in modules:
+From a checkout, run this with Node.js 22.18.0+; it uses only built-in modules:
 
 ```bash
-node examples/governed-tools/demo.mjs
+node examples/governed-tools/demo.ts
 ```
 
 The sketch keeps the document, grants, pending write, approval and attempt count in memory. It shows an allowed read, a denied write, an approved request with no immediate effect, a resume that writes, and a repeated ID that does not write again. It needs no .NET build, server, database, model account, network connection or configuration, and creates no files. **This is a control-flow illustration, not the Weave Host or a security verification.**

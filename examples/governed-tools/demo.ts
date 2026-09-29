@@ -7,25 +7,29 @@ const READ = 'tool:files:invoke:read_file';
 const WRITE = 'tool:files:invoke:write_file';
 const APPROVE = 'tool:files:approve:write_file';
 
-const samePlan = (a, b) => a.id === b.id && a.path === b.path && a.content === b.content;
+type WritePlan = { id: string; path: string; content: string };
+type PendingWrite = { subject: string; plan: WritePlan };
+
+const samePlan = (a: WritePlan, b: WritePlan) =>
+  a.id === b.id && a.path === b.path && a.content === b.content;
 
 class InMemorySketch {
-  documents = new Map([['meeting.txt', 'Meeting: ship a small demo.']]);
-  grants = new Map([
+  documents = new Map<string, string>([['meeting.txt', 'Meeting: ship a small demo.']]);
+  grants = new Map<string, Set<string>>([
     ['reader', new Set([READ])],
     ['writer', new Set([WRITE])],
     ['reviewer', new Set([APPROVE])],
   ]);
-  pending = new Map();
-  approved = new Set();
-  completed = new Map();
+  pending = new Map<string, PendingWrite>();
+  approved = new Set<string>();
+  completed = new Map<string, PendingWrite>();
   attempts = 0;
 
-  read(subject, path) {
+  read(subject: string, path: string) {
     return this.grants.get(subject)?.has(READ) ? this.documents.get(path) : 'denied';
   }
 
-  submit(subject, plan) {
+  submit(subject: string, plan: WritePlan) {
     if (!this.grants.get(subject)?.has(WRITE)) return 'denied';
     const done = this.completed.get(plan.id);
     if (done) return done.subject === subject && samePlan(done.plan, plan) ? 'recorded' : 'conflict';
@@ -35,7 +39,7 @@ class InMemorySketch {
     return 'pending';
   }
 
-  approve(subject, plan) {
+  approve(subject: string, plan: WritePlan) {
     const waiting = this.pending.get(plan.id);
     if (!this.grants.get(subject)?.has(APPROVE) || !waiting ||
         waiting.subject === subject || !samePlan(waiting.plan, plan)) return 'denied';
@@ -43,7 +47,7 @@ class InMemorySketch {
     return 'approved';
   }
 
-  resume(subject, plan) {
+  resume(subject: string, plan: WritePlan) {
     const done = this.completed.get(plan.id);
     if (done) return done.subject === subject && samePlan(done.plan, plan) ? 'recorded' : 'conflict';
     const waiting = this.pending.get(plan.id);

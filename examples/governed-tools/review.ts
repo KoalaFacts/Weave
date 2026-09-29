@@ -4,12 +4,14 @@
 import { createInterface } from 'node:readline/promises';
 import { stdin, stdout } from 'node:process';
 
+type ReviewRoute = { base: string; workspace: string; tool: string; id: string };
+
 function check(value, message) {
   if (!value) throw new Error(message);
 }
 
-function argumentsForReview(args) {
-  const options = {};
+function argumentsForReview(args: string[]): ReviewRoute {
+  const options: Record<string, string> = {};
   for (let index = 0; index < args.length; index += 2) {
     check(args[index]?.startsWith('--') && args[index + 1] && !options[args[index]],
       'Use --url, --workspace, --tool and --invocation-id once each.');

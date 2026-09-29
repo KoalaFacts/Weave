@@ -2,15 +2,17 @@
 
 ## See the flow in memory
 
-From the repository root, with Node.js 22+:
+From the repository root, with Node.js 22.18.0+:
 
 ```bash
-node examples/governed-tools/demo.mjs
+node examples/governed-tools/demo.ts
 ```
 
-This uses only built-in modules. The document, grants, proposal, decision and
-attempt count stay in memory. It creates no files, starts no Host and makes no
-network calls. It illustrates the decisions; it does not verify Weave security.
+Node runs these `.ts` files through built-in type stripping, without a
+transpiler or npm install; it does not type-check them. The document, grants,
+proposal, decision and attempt count stay in memory. It creates no files,
+starts no Host and makes no network calls. It illustrates the decisions; it
+does not verify Weave security.
 
 ## Exercise the real Host
 
@@ -19,7 +21,7 @@ With the repository's [.NET SDK](../../global.json) installed and ports 9401
 
 ```bash
 dotnet build hosts/Weave.Host/Weave.Host.csproj -c Release
-node examples/governed-tools/host-demo.mjs
+node examples/governed-tools/host-demo.ts
 ```
 
 No npm packages or Python are needed. The Node script creates a disposable local
@@ -41,7 +43,7 @@ In the trusted reviewer environment, provide `WEAVE_REVIEW_CAPABILITY` and
 Agent tools and chat. Then run:
 
 ```bash
-node examples/governed-tools/review.mjs --url https://weave.example --workspace onboarding --tool files --invocation-id YOUR_ACTUAL_INVOCATION_UUID
+node examples/governed-tools/review.ts --url https://weave.example --workspace onboarding --tool files --invocation-id YOUR_ACTUAL_INVOCATION_UUID
 ```
 
 The helper retrieves the Host-retained proposal by UUID, checks its context and

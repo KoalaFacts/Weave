@@ -17,6 +17,9 @@ const HOST = fileURLToPath(new URL('../../hosts/Weave.Host/bin/Release/net10.0/W
 const SOURCE = 'Project meeting - synthetic demo data\nDecision: Run a small Weave pilot.\nAction: Alex prepares a sample document.\n';
 const INTRO = 'Not written. Awaiting an approved request.\n';
 
+type Invocation = { invocationId: string; toolName: string; method: string;
+  parameters: { path: string }; rawInput?: string };
+
 function check(value, message) {
   if (!value) throw new Error(message);
 }
@@ -148,7 +151,8 @@ async function main() {
     const reviewer = await issue('reviewer');
     console.log('PASS operator-issued, separate capabilities');
 
-    const invocation = (method, path, rawInput) => ({ invocationId: randomUUID().replaceAll('-', ''),
+    const invocation = (method: string, path: string, rawInput?: string): Invocation => ({
+      invocationId: randomUUID().replaceAll('-', ''),
       toolName: 'files', method, parameters: { path }, ...(rawInput === undefined ? {} : { rawInput }) });
     const read = (await call('POST', ROUTE, 200, { body: invocation('read_file', 'meeting.txt'), capability: reader })).value;
     assert.equal(read.output, SOURCE);
@@ -170,7 +174,7 @@ async function main() {
     assert.equal(preview.rawInput, summary);
     assert.deepEqual(preview.parameters, write.parameters);
     check(/^approval-v1:[0-9A-F]{64}$/.test(preview.planDigest), 'Missing verified plan digest.');
-    const reviewScript = fileURLToPath(new URL('./review.mjs', import.meta.url));
+    const reviewScript = fileURLToPath(new URL('./review.ts', import.meta.url));
     const reviewerEnv = Object.fromEntries(Object.entries(process.env).filter(([key]) =>
       ['path', 'systemroot', 'windir', 'comspec', 'pathext'].includes(key.toLowerCase())));
     const decision = spawnSync(process.execPath, [reviewScript, '--url', BASE,
