@@ -29,6 +29,7 @@ using Weave.Tools.Connectors;
 using Weave.Tools.Discovery;
 using Weave.Workspaces.Manifest;
 using Weave.Workspaces.Runtime;
+using Weave.Workspaces.RuntimeRecovery;
 
 namespace Weave.Silo.Startup;
 
@@ -78,6 +79,7 @@ internal sealed class SiloServiceRegistrar
 
     private void RegisterRuntime()
     {
+        _services.AddSingleton<IWorkspaceRuntimeRecovery, WorkspaceRuntimeRecovery>();
         if (_weaveSettings.IsLocalMode)
         {
             _services.AddSingleton<IWorkspaceRuntime, InProcessRuntime>();

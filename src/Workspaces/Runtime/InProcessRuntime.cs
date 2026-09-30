@@ -44,6 +44,22 @@ public sealed partial class InProcessRuntime(ILogger<InProcessRuntime> logger) :
         return Task.CompletedTask;
     }
 
+    public Task<ContainerRuntimeCondition> ObserveContainerAsync(ContainerId containerId, CancellationToken ct)
+    {
+        ct.ThrowIfCancellationRequested();
+        return Task.FromResult(ContainerRuntimeCondition.Unsupported);
+    }
+
+    public Task<ContainerRecoveryResult> RecoverContainerAsync(ContainerId containerId, Func<Task> authorizeDispatch, CancellationToken ct)
+    {
+        ct.ThrowIfCancellationRequested();
+        return Task.FromResult(new ContainerRecoveryResult
+        {
+            ContainerId = containerId.ToString(),
+            Condition = ContainerRuntimeCondition.Unsupported
+        });
+    }
+
     public Task<NetworkHandle> CreateNetworkAsync(NetworkSpec spec, CancellationToken ct)
     {
         return Task.FromResult(new NetworkHandle(NetworkId.From("local"), spec.Name));

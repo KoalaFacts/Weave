@@ -4,6 +4,8 @@ using Weave.Agents.ToolRegistry;
 using Weave.Management;
 using Weave.Silo.Plugins;
 using Weave.Workspaces.Manifest;
+using Weave.Workspaces.Runtime;
+using Weave.Workspaces.RuntimeRecovery;
 namespace Weave.Silo.Api;
 
 [JsonSourceGenerationOptions(
@@ -13,6 +15,8 @@ namespace Weave.Silo.Api;
 [JsonSerializable(typeof(ValidateWorkspaceManifestRequest))]
 [JsonSerializable(typeof(ValidateWorkspaceManifestResult))]
 [JsonSerializable(typeof(WorkspaceResponse))]
+[JsonSerializable(typeof(WorkspaceRuntimeSnapshot))]
+[JsonSerializable(typeof(ContainerRecoveryResult))]
 [JsonSerializable(typeof(AgentResponse))]
 [JsonSerializable(typeof(AgentDefinition))]
 [JsonSerializable(typeof(TaskResponse))]

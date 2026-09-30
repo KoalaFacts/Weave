@@ -53,7 +53,7 @@ public sealed partial class ContainerRuntime(
             {
                 await StopContainerAsync(id, ct);
             }
-            catch (Exception ex) when (IsTeardownFailure(ex))
+            catch (Exception ex) when (IsRuntimeFailure(ex))
             {
                 failures.Add(ex);
             }
@@ -65,7 +65,7 @@ public sealed partial class ContainerRuntime(
             {
                 await DeleteNetworkAsync(networkId.Value, ct);
             }
-            catch (Exception ex) when (IsTeardownFailure(ex))
+            catch (Exception ex) when (IsRuntimeFailure(ex))
             {
                 failures.Add(ex);
             }
@@ -170,7 +170,7 @@ public sealed partial class ContainerRuntime(
         };
     }
 
-    private static bool IsTeardownFailure(Exception ex) =>
+    private static bool IsRuntimeFailure(Exception ex) =>
         ex is InvalidOperationException or TimeoutException or IOException or HttpRequestException
             or System.ComponentModel.Win32Exception;
 

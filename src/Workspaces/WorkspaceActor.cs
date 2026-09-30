@@ -6,6 +6,7 @@ using Weave.Tools.InstallDaprTool;
 using Weave.Tools.InstallMcpTool;
 using Weave.Workspaces.Manifest;
 using Weave.Workspaces.Runtime;
+using Weave.Workspaces.RuntimeRecovery;
 using Weave.Workspaces.Templates;
 
 namespace Weave.Workspaces.Lifecycle;
@@ -16,7 +17,8 @@ public sealed partial class WorkspaceActor(
     IEventBus eventBus,
     TimeProvider timeProvider,
     ILogger<WorkspaceActor> logger,
-    IActorState<WorkspaceState> persistentState) : IWorkspaceActor
+    IActorState<WorkspaceState> persistentState,
+    IWorkspaceRuntimeRecovery recovery) : IWorkspaceActor
 {
     private string? _key;
 

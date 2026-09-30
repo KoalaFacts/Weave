@@ -5,6 +5,7 @@ using Weave.Shared.Ids;
 using Weave.Shared.VirtualActors;
 using Weave.Silo.Management;
 using Weave.Silo.Plugins;
+using Weave.Silo.RuntimeRecovery;
 using Weave.Workspaces.Lifecycle;
 using Weave.Workspaces.Manifest;
 namespace Weave.Silo.Api;
@@ -37,7 +38,7 @@ public static class WorkspaceEndpoints
             .Produces(204)
             .ProducesProblem(409);
 
-        return group;
+        return WorkspaceRuntimeEndpoints.Map(group);
     }
 
     // --- GET endpoints ---
