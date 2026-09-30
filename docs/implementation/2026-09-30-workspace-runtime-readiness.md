@@ -45,6 +45,8 @@ The query performs fresh observations and derives the result at completion, usin
 
 This is **runtime resource readiness**. It does not establish Agent activation, plugin service responsiveness, application health, credential validity or mandatory journal availability. Sequential engine observations are not an atomic engine snapshot and can become stale after the query. Consumers should use the timestamp and underlying conditions when deciding their next explicit action.
 
+Supported installed HTTP MCP tools also have a separate [current service observation](2026-09-30-workspace-mcp-observation.md); it does not change the resource readiness contract.
+
 The earlier cancellation-entry timeout remains undiagnosed; the merged [diagnostic increment](2026-09-30-cancellation-entry-diagnostics.md) remains in place. Implementing this separate query does not claim to fix that timeout.
 
 ## Verification scope

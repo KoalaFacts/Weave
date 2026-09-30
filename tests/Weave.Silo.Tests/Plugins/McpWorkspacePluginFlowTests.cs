@@ -754,5 +754,6 @@ public sealed partial class McpWorkspacePluginFlowTests
         }
 
         public ValueTask DisposeAsync() => _app.DisposeAsync();
+        public Task StopAsync() => _app.StopAsync(TestContext.Current.CancellationToken);
     }
 }

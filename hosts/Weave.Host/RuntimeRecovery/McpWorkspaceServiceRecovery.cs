@@ -10,7 +10,7 @@ using Weave.Workspaces.RuntimeRecovery;
 
 namespace Weave.Silo.RuntimeRecovery;
 
-internal sealed class McpWorkspaceServiceRecovery(
+internal sealed partial class McpWorkspaceServiceRecovery(
     IVirtualActorProvider actors,
     IMcpInstallationDispatchGate installations,
     IToolInstallationPeerProbe probe,

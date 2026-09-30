@@ -228,6 +228,15 @@ public sealed partial class ToolActor(
 
     public Task<ToolHandle?> GetHandleAsync() => Task.FromResult(_handle);
 
+    public Task<bool> HasCurrentConnectionAsync(ToolType expectedType, string? expectedInstallationId, CancellationToken ct)
+    {
+        ct.ThrowIfCancellationRequested();
+        return Task.FromResult(_handle is { IsConnected: true } && _handle.ToolName == _identity.ToolName
+            && _definition is not null && _handle.Type == expectedType && _definition.Type == expectedType
+            && _definition.InstallationId == expectedInstallationId
+            && _connectedConnector is not null && ConnectorIsCurrent(_connectedConnector));
+    }
+
     [LoggerMessage(Level = LogLevel.Information, Message = "Tool '{Tool}' connected in workspace '{Workspace}'")]
     private partial void LogToolConnected(string tool, string workspace);
 

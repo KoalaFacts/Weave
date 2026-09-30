@@ -22,4 +22,5 @@ public interface IToolActor
         string planDigest, InvocationApprovalDecision decision, CapabilityToken token);
     Task<ToolSchema> GetSchemaAsync();
     Task<ToolHandle?> GetHandleAsync();
+    Task<bool> HasCurrentConnectionAsync(ToolType expectedType, string? expectedInstallationId, CancellationToken ct);
 }

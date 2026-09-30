@@ -9,7 +9,7 @@ using Weave.Workspaces.RuntimeRecovery;
 
 namespace Weave.Workspaces.Tests;
 
-public sealed class WorkspaceRuntimeReadinessTests
+public sealed partial class WorkspaceRuntimeReadinessTests
 {
     private static readonly ContainerId Id = ContainerId.From(new string('b', 64));
     private static readonly NetworkId Network = NetworkId.From(new string('d', 64));
