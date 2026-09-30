@@ -53,7 +53,8 @@ public sealed partial class InProcessRuntime(ILogger<InProcessRuntime> logger) :
     public Task<NetworkRuntimeCondition> ObserveNetworkAsync(NetworkId networkId, CancellationToken ct)
     {
         ct.ThrowIfCancellationRequested();
-        return Task.FromResult(NetworkRuntimeCondition.Unsupported);
+        return Task.FromResult(networkId == NetworkId.From("local")
+            ? NetworkRuntimeCondition.NotRequired : NetworkRuntimeCondition.InvalidIdentity);
     }
 
     public Task<ContainerNetworkCondition> ObserveContainerNetworkAsync(ContainerId containerId, NetworkId networkId, CancellationToken ct)

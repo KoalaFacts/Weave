@@ -48,6 +48,9 @@ public sealed class WorkspaceRuntimeRecovery(
                     : ContainerNetworkCondition.NotChecked
             });
         }
+        ct.ThrowIfCancellationRequested();
+        var startedOnCurrentHost = state.RuntimeInstanceId != Guid.Empty && state.RuntimeInstanceId == runtime.InstanceId
+            && state.RuntimeName == runtime.RuntimeName && state.Status is WorkspaceStatus.Running;
         return new WorkspaceRuntimeSnapshot
         {
             WorkspaceId = state.WorkspaceId.ToString(),
@@ -55,11 +58,11 @@ public sealed class WorkspaceRuntimeRecovery(
             RecoveryCondition = state.RecoveryCondition.ToString(),
             CreatingRuntime = state.RuntimeName,
             CurrentRuntime = runtime.RuntimeName,
-            StartedOnCurrentHost = state.RuntimeInstanceId != Guid.Empty && state.RuntimeInstanceId == runtime.InstanceId
-                && state.RuntimeName == runtime.RuntimeName && state.Status is WorkspaceStatus.Running,
+            StartedOnCurrentHost = startedOnCurrentHost,
             ObservedAt = timeProvider.GetUtcNow(),
             Network = network,
-            Containers = observations
+            Containers = observations.AsReadOnly(),
+            Readiness = WorkspaceRuntimeReadiness.Evaluate(state, startedOnCurrentHost, network, observations)
         };
     }
 

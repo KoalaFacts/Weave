@@ -16,6 +16,6 @@ A second regression keeps two real Host/Orleans factories alive with the same To
 
 One whole Host suite and three concurrent focused cancellation-test processes passed during investigation. The simultaneous-Host actor checks also passed. The default-cluster-name hypothesis was not supported by actual state sharing and produced no configuration change.
 
-The intermittent failure's root cause remains unconfirmed. This change improves failure evidence; it does not claim to fix the original intermittent timeout. Workspace readiness behavior awaits a confirmed diagnosis. There are no production authorization, cancellation, journal, persistence or runtime changes in this increment.
+The intermittent failure's root cause remains unconfirmed. This change improves failure evidence; it does not claim to fix the original intermittent timeout. The subsequent [runtime readiness increment](2026-09-30-workspace-runtime-readiness.md) proceeds as a separate query change and retains these diagnostics. There are no production authorization, cancellation, journal, persistence or runtime changes in this diagnostic increment.
 
 The change's PR records final verification commands, repetitions, skips and the exact tested commit. The existing default-suite Docker/Postgres, Windows symlink and live Echo endpoint prerequisites still apply.

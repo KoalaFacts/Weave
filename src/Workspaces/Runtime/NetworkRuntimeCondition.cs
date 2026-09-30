@@ -12,5 +12,6 @@ public enum NetworkRuntimeCondition
     Unsupported,
     InvalidIdentity,
     RuntimeMismatch,
-    NotRecorded
+    NotRecorded,
+    NotRequired
 }

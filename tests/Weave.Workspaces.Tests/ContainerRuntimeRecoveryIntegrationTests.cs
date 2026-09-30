@@ -1,5 +1,10 @@
 using Microsoft.Extensions.Logging.Abstractions;
+using Weave.Management;
+using Weave.Security.Tokens;
+using Weave.Shared.Ids;
+using Weave.Workspaces.Lifecycle;
 using Weave.Workspaces.Runtime;
+using Weave.Workspaces.RuntimeRecovery;
 
 namespace Weave.Workspaces.Tests;
 
@@ -28,9 +33,25 @@ public sealed class ContainerRuntimeRecoveryIntegrationTests
             }, timeout.Token);
             (await runtime.ObserveContainerAsync(handle.ContainerId, timeout.Token))
                 .ShouldBe(ContainerRuntimeCondition.Running);
+            var state = new WorkspaceState
+            {
+                WorkspaceId = WorkspaceId.From("readiness-integration"),
+                Status = WorkspaceStatus.Running,
+                RuntimeName = runtime.RuntimeName,
+                RuntimeInstanceId = runtime.InstanceId,
+                RecoveryCondition = WorkspaceRecoveryCondition.StartedOnThisHost,
+                NetworkId = network.NetworkId,
+                Containers = [new ContainerInfo { ContainerId = handle.ContainerId, Name = handle.Name, Status = ContainerStatus.Running }]
+            };
+            var observation = new WorkspaceRuntimeRecovery(runtime, Substitute.For<ICapabilityAuthorizer>(),
+                Substitute.For<IManagementOperationJournal>(), TimeProvider.System);
+            (await observation.ObserveAsync(state, new CapabilityToken(), timeout.Token)).Readiness.Condition
+                .ShouldBe(WorkspaceRuntimeReadinessCondition.Ready);
             await runner.RunAsync("podman", ["stop", "--time", "1", handle.ContainerId.ToString()], timeout.Token);
             (await runtime.ObserveContainerAsync(handle.ContainerId, timeout.Token))
                 .ShouldBe(ContainerRuntimeCondition.Stopped);
+            (await observation.ObserveAsync(state, new CapabilityToken(), timeout.Token)).Readiness.Condition
+                .ShouldBe(WorkspaceRuntimeReadinessCondition.NotReady);
 
             var recovered = await runtime.RecoverContainerAsync(handle.ContainerId, network!.NetworkId, () => Task.CompletedTask, timeout.Token);
 
@@ -39,6 +60,13 @@ public sealed class ContainerRuntimeRecoveryIntegrationTests
             recovered.Condition.ShouldBe(ContainerRuntimeCondition.Running);
             recovered.Network.Condition.ShouldBe(NetworkRuntimeCondition.Present);
             recovered.NetworkAttachment.ShouldBe(ContainerNetworkCondition.Attached);
+            (await observation.ObserveAsync(state, new CapabilityToken(), timeout.Token)).Readiness.Condition
+                .ShouldBe(WorkspaceRuntimeReadinessCondition.Ready);
+            state.RecoveryCondition = WorkspaceRecoveryCondition.RequiresReconciliation;
+            var unreconciled = await observation.ObserveAsync(state, new CapabilityToken(), timeout.Token);
+            unreconciled.Readiness.Condition.ShouldBe(WorkspaceRuntimeReadinessCondition.NotReady);
+            unreconciled.Readiness.Reasons.ShouldContain(WorkspaceRuntimeReadinessReason.RequiresReconciliation);
+            state.RecoveryCondition.ShouldBe(WorkspaceRecoveryCondition.RequiresReconciliation);
             (await runtime.RecoverContainerAsync(handle.ContainerId, network!.NetworkId, () => Task.CompletedTask, timeout.Token))
                 .Outcome.ShouldBe(ContainerRecoveryOutcome.AlreadyRunning);
             await runner.RunAsync("podman", ["network", "disconnect", network!.NetworkId.ToString(), handle.ContainerId.ToString()], timeout.Token);
@@ -46,6 +74,8 @@ public sealed class ContainerRuntimeRecoveryIntegrationTests
             disconnected.Outcome.ShouldBe(ContainerRecoveryOutcome.Blocked);
             disconnected.NetworkAttachment.ShouldBe(ContainerNetworkCondition.Detached);
             disconnected.Dispatched.ShouldBeFalse();
+            var disconnectedSnapshot = await observation.ObserveAsync(state, new CapabilityToken(), timeout.Token);
+            disconnectedSnapshot.Readiness.Reasons.ShouldContain(WorkspaceRuntimeReadinessReason.ContainerNetworkNotAttached);
             await runner.RunAsync("podman", ["stop", "--time", "1", handle.ContainerId.ToString()], timeout.Token);
             var detached = await runtime.RecoverContainerAsync(handle.ContainerId, network.NetworkId, () => Task.CompletedTask, timeout.Token);
             detached.Outcome.ShouldBe(ContainerRecoveryOutcome.Blocked);

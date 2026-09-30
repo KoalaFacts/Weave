@@ -11,6 +11,7 @@ public sealed record WorkspaceRuntimeSnapshot
     public required string CurrentRuntime { get; init; }
     public bool StartedOnCurrentHost { get; init; }
     public DateTimeOffset ObservedAt { get; init; }
+    public WorkspaceRuntimeReadiness Readiness { get; init; } = new();
     public NetworkRuntimeObservation Network { get; init; } = new();
     public IReadOnlyList<WorkspaceContainerObservation> Containers { get; init; } = [];
 }
