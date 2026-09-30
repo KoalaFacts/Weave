@@ -11,6 +11,8 @@ public interface IWorkspaceActor
     Task StopAsync();
     Task<WorkspaceState> GetStateAsync();
     Task<WorkspaceRuntimeSnapshot> ObserveRuntimeAsync(CapabilityToken token, CancellationToken ct);
+    Task<WorkspaceRuntimeReconciliationResult> ReconcileRuntimeAsync(WorkspaceRuntimeReconciliationRequest request,
+        CapabilityToken token, string managementId, CancellationToken ct);
     Task<ContainerRecoveryResult> RecoverContainerAsync(ContainerId containerId, CapabilityToken token, string managementId, CancellationToken ct);
     Task SetDaprToolInstallationEnabledAsync(string pluginName, bool enabled);
     Task SetMcpToolInstallationEnabledAsync(string pluginName, bool enabled);

@@ -19,7 +19,49 @@ public static class WorkspaceRuntimeEndpoints
             .WithDescription("Observe retained runtime resources and derive readiness with reasons; registration alone is not readiness.");
         routes.MapPost("/{workspaceId}/containers/{containerId}/recover", RecoverAsync)
             .WithDescription("Start one retained stopped container. Does not restore Agent state or replay tool invocations.");
+        routes.MapPost("/{workspaceId}/runtime/reconcile", ReconcileAsync)
+            .WithDescription("Confirm retained resources for a workspace without hosted services. Does not start containers or replay invocations.");
         return routes;
+    }
+
+    private static async Task<IResult> ReconcileAsync(string workspaceId, WorkspaceRuntimeReconciliationRequest request,
+        HttpContext context, IPluginInstallationAuthority authority, IVirtualActorProvider actors,
+        ICapabilityTokenService tokens, TimeProvider timeProvider, CancellationToken ct)
+    {
+        var denial = await authority.DenialAsync(context, workspaceId, WorkspaceRuntimeRecovery.ReconcileGrant);
+        if (denial is not null)
+            return denial;
+        if (!InvocationHttp.TryReadCapability(context, tokens, out var token, out var failure))
+            return failure;
+        var workspace = actors.GetActor<IWorkspaceActor>(VirtualActorId.From(workspaceId));
+        if ((await workspace.GetStateAsync()).WorkspaceId.IsEmpty)
+            return InvocationHttp.Error(404, "workspace-not-found");
+        var invalidId = ManagementAdmission.ReadId(context, out var managementId);
+        if (invalidId is not null)
+            return invalidId;
+        context.Response.Headers[ManagementAdmission.IdHeader] = managementId;
+        using var timeout = new CancellationTokenSource(TimeSpan.FromSeconds(30), timeProvider);
+        using var linked = CancellationTokenSource.CreateLinkedTokenSource(ct, timeout.Token);
+        try
+        {
+            var result = await workspace.ReconcileRuntimeAsync(request, token, managementId, linked.Token);
+            var status = result.Outcome switch
+            {
+                WorkspaceRuntimeReconciliationOutcome.Confirmed => 200,
+                WorkspaceRuntimeReconciliationOutcome.InvalidRequest => 400,
+                WorkspaceRuntimeReconciliationOutcome.EvidenceUnconfirmed => 500,
+                _ => 409
+            };
+            return Results.Json(result, SiloApiJsonContext.Default.WorkspaceRuntimeReconciliationResult, statusCode: status);
+        }
+        catch (UnauthorizedAccessException)
+        {
+            return InvocationHttp.Error(403, "forbidden");
+        }
+        catch (OperationCanceledException) when (timeout.IsCancellationRequested && !ct.IsCancellationRequested)
+        {
+            return InvocationHttp.Error(504, "runtime-reconciliation-unconfirmed");
+        }
     }
 
     private static async Task<IResult> ObserveAsync(string workspaceId, HttpContext context,

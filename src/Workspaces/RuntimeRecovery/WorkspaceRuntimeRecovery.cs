@@ -8,7 +8,7 @@ using Weave.Workspaces.Runtime;
 
 namespace Weave.Workspaces.RuntimeRecovery;
 
-public sealed class WorkspaceRuntimeRecovery(
+public sealed partial class WorkspaceRuntimeRecovery(
     IWorkspaceRuntime runtime,
     ICapabilityAuthorizer authorizer,
     IManagementOperationJournal journal,
@@ -23,6 +23,11 @@ public sealed class WorkspaceRuntimeRecovery(
         if (state.WorkspaceId.IsEmpty)
             throw new UnauthorizedAccessException("Workspace identity is unavailable.");
         await authorizer.AuthorizeAsync(token, ReadGrant, state.WorkspaceId.ToString());
+        return await ObserveAuthorizedAsync(state, ct);
+    }
+
+    private async Task<WorkspaceRuntimeSnapshot> ObserveAuthorizedAsync(WorkspaceState state, CancellationToken ct)
+    {
         var network = new NetworkRuntimeObservation
         {
             NetworkId = state.NetworkId?.ToString(),
@@ -49,7 +54,7 @@ public sealed class WorkspaceRuntimeRecovery(
             });
         }
         ct.ThrowIfCancellationRequested();
-        var startedOnCurrentHost = state.RuntimeInstanceId != Guid.Empty && state.RuntimeInstanceId == runtime.InstanceId
+        var confirmedOnCurrentHost = state.RuntimeInstanceId != Guid.Empty && state.RuntimeInstanceId == runtime.InstanceId
             && state.RuntimeName == runtime.RuntimeName && state.Status is WorkspaceStatus.Running;
         return new WorkspaceRuntimeSnapshot
         {
@@ -58,11 +63,14 @@ public sealed class WorkspaceRuntimeRecovery(
             RecoveryCondition = state.RecoveryCondition.ToString(),
             CreatingRuntime = state.RuntimeName,
             CurrentRuntime = runtime.RuntimeName,
-            StartedOnCurrentHost = startedOnCurrentHost,
+            StartedOnCurrentHost = confirmedOnCurrentHost && state.RecoveryCondition is not WorkspaceRecoveryCondition.RuntimeReconciledOnThisHost,
+            ConfirmedOnCurrentHost = confirmedOnCurrentHost && state.RecoveryCondition is
+                WorkspaceRecoveryCondition.StartedOnThisHost or WorkspaceRecoveryCondition.RuntimeReconciledOnThisHost,
+            ResourceSetDigest = WorkspaceRuntimeResourceSet.Digest(state),
             ObservedAt = timeProvider.GetUtcNow(),
             Network = network,
             Containers = observations.AsReadOnly(),
-            Readiness = WorkspaceRuntimeReadiness.Evaluate(state, startedOnCurrentHost, network, observations)
+            Readiness = WorkspaceRuntimeReadiness.Evaluate(state, confirmedOnCurrentHost, network, observations)
         };
     }
 

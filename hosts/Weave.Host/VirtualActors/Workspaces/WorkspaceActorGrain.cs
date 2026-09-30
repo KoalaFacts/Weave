@@ -34,6 +34,9 @@ public sealed class WorkspaceActorGrain : Grain, IWorkspaceActorGrain
     public Task<WorkspaceState> StartAsync(WorkspaceManifest manifest) => _actor.StartAsync(manifest);
     public Task StopAsync() => _actor.StopAsync();
     public Task<WorkspaceState> GetStateAsync() => _actor.GetStateAsync();
+    public Task<WorkspaceRuntimeReconciliationResult> ReconcileRuntimeAsync(WorkspaceRuntimeReconciliationRequest request,
+        CapabilityToken token, string managementId, CancellationToken ct) =>
+        _actor.ReconcileRuntimeAsync(request, token, managementId, ct);
     public Task<WorkspaceRuntimeSnapshot> ObserveRuntimeAsync(CapabilityToken token, CancellationToken ct) => _actor.ObserveRuntimeAsync(token, ct);
     public Task<ContainerRecoveryResult> RecoverContainerAsync(ContainerId containerId, CapabilityToken token, string managementId, CancellationToken ct) =>
         _actor.RecoverContainerAsync(containerId, token, managementId, ct);

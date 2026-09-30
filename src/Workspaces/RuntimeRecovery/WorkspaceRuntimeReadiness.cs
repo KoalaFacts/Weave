@@ -8,7 +8,7 @@ public sealed record WorkspaceRuntimeReadiness
     public WorkspaceRuntimeReadinessCondition Condition { get; init; }
     public IReadOnlyList<WorkspaceRuntimeReadinessReason> Reasons { get; init; } = [];
 
-    internal static WorkspaceRuntimeReadiness Evaluate(WorkspaceState state, bool startedOnCurrentHost,
+    internal static WorkspaceRuntimeReadiness Evaluate(WorkspaceState state, bool confirmedOnCurrentHost,
         NetworkRuntimeObservation network, IReadOnlyList<WorkspaceContainerObservation> containers)
     {
         var reasons = new List<WorkspaceRuntimeReadinessReason>();
@@ -17,10 +17,13 @@ public sealed record WorkspaceRuntimeReadiness
             Add(WorkspaceRuntimeReadinessReason.WorkspaceNotRunning, true);
         if (state.RecoveryCondition is WorkspaceRecoveryCondition.RequiresReconciliation)
             Add(WorkspaceRuntimeReadinessReason.RequiresReconciliation, true);
-        else if (state.RecoveryCondition is not WorkspaceRecoveryCondition.StartedOnThisHost)
+        else if (state.RecoveryCondition is not (WorkspaceRecoveryCondition.StartedOnThisHost
+            or WorkspaceRecoveryCondition.RuntimeReconciledOnThisHost))
             Add(WorkspaceRuntimeReadinessReason.RecoveryConditionUnconfirmed, false);
-        if (!startedOnCurrentHost)
-            Add(WorkspaceRuntimeReadinessReason.NotStartedOnCurrentHost, true);
+        if (!confirmedOnCurrentHost)
+            Add(state.RecoveryCondition is WorkspaceRecoveryCondition.RuntimeReconciledOnThisHost
+                ? WorkspaceRuntimeReadinessReason.NotReconciledOnCurrentHost
+                : WorkspaceRuntimeReadinessReason.NotStartedOnCurrentHost, true);
 
         switch (network.Condition)
         {
