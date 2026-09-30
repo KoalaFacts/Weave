@@ -7,6 +7,7 @@ using Weave.Workspaces.Lifecycle;
 using Weave.Workspaces.Manifest;
 using Weave.Workspaces.Registry;
 using Weave.Workspaces.Runtime;
+using Weave.Workspaces.RuntimeRecovery;
 using Weave.Workspaces.Templates;
 
 namespace Weave.Workspaces.Tests;
@@ -63,7 +64,7 @@ public sealed class WorkspaceActorTests
                     new ContainerHandle(ContainerId.From("c-2"), "redis", "redis:7-alpine", new Dictionary<int, int> { [WeavePorts.Redis] = WeavePorts.Redis })
                 ]));
 
-        var actor = new WorkspaceActor(runtime, lifecycle, eventBus, TimeProvider.System, logger, persistentState);
+        var actor = new WorkspaceActor(runtime, lifecycle, eventBus, TimeProvider.System, logger, persistentState, Substitute.For<IWorkspaceRuntimeRecovery>());
         return (actor, runtime, lifecycle, eventBus);
     }
 
@@ -198,7 +199,7 @@ public sealed class WorkspaceActorTests
         var eventBus = Substitute.For<IEventBus>();
         var logger = Substitute.For<ILogger<WorkspaceActor>>();
 
-        var actor = new WorkspaceActor(runtime, lifecycle, eventBus, TimeProvider.System, logger, persistentState);
+        var actor = new WorkspaceActor(runtime, lifecycle, eventBus, TimeProvider.System, logger, persistentState, Substitute.For<IWorkspaceRuntimeRecovery>());
         await actor.OnActivatedAsync("my-workspace", TestContext.Current.CancellationToken);
 
         state.WorkspaceId.IsEmpty.ShouldBeTrue();
@@ -215,7 +216,7 @@ public sealed class WorkspaceActorTests
             .Returns(new WorkspaceEnvironment(WorkspaceId.From("new-workspace"), NetworkId.From("net-1"), []));
         var actor = new WorkspaceActor(runtime, Substitute.For<ILifecycleManager>(),
             Substitute.For<IEventBus>(), TimeProvider.System, Substitute.For<ILogger<WorkspaceActor>>(),
-            persistentState);
+            persistentState, Substitute.For<IWorkspaceRuntimeRecovery>());
         await actor.OnActivatedAsync("new-workspace", TestContext.Current.CancellationToken);
 
         await actor.StartAsync(new WorkspaceManifest { Name = "new-workspace", Version = "1.0" });
@@ -236,7 +237,7 @@ public sealed class WorkspaceActorTests
         var eventBus = Substitute.For<IEventBus>();
         var logger = Substitute.For<ILogger<WorkspaceActor>>();
 
-        var actor = new WorkspaceActor(runtime, lifecycle, eventBus, TimeProvider.System, logger, persistentState);
+        var actor = new WorkspaceActor(runtime, lifecycle, eventBus, TimeProvider.System, logger, persistentState, Substitute.For<IWorkspaceRuntimeRecovery>());
         await actor.OnActivatedAsync("different", TestContext.Current.CancellationToken);
 
         state.WorkspaceId.ShouldBe(WorkspaceId.From("existing"));
@@ -254,7 +255,7 @@ public sealed class WorkspaceActorTests
         var eventBus = Substitute.For<IEventBus>();
         var logger = Substitute.For<ILogger<WorkspaceActor>>();
 
-        var actor = new WorkspaceActor(runtime, lifecycle, eventBus, TimeProvider.System, logger, persistentState);
+        var actor = new WorkspaceActor(runtime, lifecycle, eventBus, TimeProvider.System, logger, persistentState, Substitute.For<IWorkspaceRuntimeRecovery>());
         await actor.OnActivatedAsync(null, TestContext.Current.CancellationToken);
 
         state.WorkspaceId.IsEmpty.ShouldBeTrue();
@@ -278,7 +279,7 @@ public sealed class WorkspaceActorTests
         runtime.TeardownAsync(Arg.Any<WorkspaceId>(), Arg.Any<NetworkId?>(), Arg.Any<IReadOnlyList<ContainerId>>(), Arg.Any<CancellationToken>())
             .Returns(Task.FromException(new InvalidOperationException("teardown boom")));
 
-        var actor = new WorkspaceActor(runtime, lifecycle, eventBus, TimeProvider.System, logger, persistentState);
+        var actor = new WorkspaceActor(runtime, lifecycle, eventBus, TimeProvider.System, logger, persistentState, Substitute.For<IWorkspaceRuntimeRecovery>());
         await actor.StartAsync(CreateManifest());
 
         var ex = await Should.ThrowAsync<InvalidOperationException>(() => actor.StopAsync());
@@ -302,7 +303,7 @@ public sealed class WorkspaceActorTests
         runtime.RuntimeName.Returns("docker");
         var actor = new WorkspaceActor(runtime, Substitute.For<ILifecycleManager>(),
             Substitute.For<IEventBus>(), TimeProvider.System, Substitute.For<ILogger<WorkspaceActor>>(),
-            persistentState);
+            persistentState, Substitute.For<IWorkspaceRuntimeRecovery>());
 
         var error = await Should.ThrowAsync<InvalidOperationException>(() => actor.StopAsync());
 
@@ -329,7 +330,7 @@ public sealed class WorkspaceActorTests
         runtime.RuntimeName.Returns("docker");
         var actor = new WorkspaceActor(runtime, Substitute.For<ILifecycleManager>(),
             Substitute.For<IEventBus>(), TimeProvider.System, Substitute.For<ILogger<WorkspaceActor>>(),
-            persistentState);
+            persistentState, Substitute.For<IWorkspaceRuntimeRecovery>());
 
         await actor.OnActivatedAsync("test-workspace", TestContext.Current.CancellationToken);
 
@@ -354,7 +355,7 @@ public sealed class WorkspaceActorTests
                 : Task.CompletedTask);
         var actor = new WorkspaceActor(runtime, Substitute.For<ILifecycleManager>(),
             Substitute.For<IEventBus>(), TimeProvider.System, Substitute.For<ILogger<WorkspaceActor>>(),
-            persistentState);
+            persistentState, Substitute.For<IWorkspaceRuntimeRecovery>());
         await actor.StartAsync(CreateManifest());
 
         await Should.ThrowAsync<InvalidOperationException>(() => actor.StopAsync());
@@ -396,7 +397,7 @@ public sealed class WorkspaceActorTests
         runtime.ProvisionAsync(Arg.Any<WorkspaceId>(), Arg.Any<WorkspaceManifest>(), Arg.Any<CancellationToken>())
             .Returns(Task.FromException<WorkspaceEnvironment>(new InvalidOperationException("Provisioning failed")));
 
-        var actor = new WorkspaceActor(runtime, lifecycle, eventBus, TimeProvider.System, logger, persistentState);
+        var actor = new WorkspaceActor(runtime, lifecycle, eventBus, TimeProvider.System, logger, persistentState, Substitute.For<IWorkspaceRuntimeRecovery>());
 
         await Should.ThrowAsync<InvalidOperationException>(() => actor.StartAsync(CreateManifest()));
 

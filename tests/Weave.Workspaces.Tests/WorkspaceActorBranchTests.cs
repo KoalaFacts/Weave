@@ -9,6 +9,7 @@ using Weave.Workspaces.Lifecycle;
 using Weave.Workspaces.Manifest;
 using Weave.Workspaces.Registry;
 using Weave.Workspaces.Runtime;
+using Weave.Workspaces.RuntimeRecovery;
 using Weave.Workspaces.Templates;
 
 namespace Weave.Workspaces.Tests;
@@ -41,7 +42,7 @@ public sealed class WorkspaceActorBranchTests
             eventBus ?? Substitute.For<IEventBus>(),
             TimeProvider.System,
             NullLogger<WorkspaceActor>.Instance,
-            state);
+            state, Substitute.For<IWorkspaceRuntimeRecovery>());
 
     private static WorkspaceManifest Manifest() => new()
     {

@@ -16,16 +16,13 @@ internal sealed class ManagementAdmission(
         IReadOnlyList<string> authorizedGrants, byte[] requestBytes, out string id)
     {
         id = string.Empty;
-        var values = context.Request.Headers[IdHeader];
-        Guid parsed;
-        if (values.Count == 0)
-            parsed = Guid.NewGuid();
-        else if (values.Count != 1 || !Guid.TryParseExact(values[0], "N", out parsed) || parsed == Guid.Empty)
-            return InvocationHttp.Error(400, "invalid-management-operation-id");
+        var invalidId = ReadId(context, out var requestId);
+        if (invalidId is not null)
+            return invalidId;
         if (!InvocationHttp.TryReadCapability(context, tokens, out var token, out var failure))
             return failure;
 
-        id = parsed.ToString("N");
+        id = requestId;
         var operation = new ManagementOperationRecord
         {
             Id = id,
@@ -41,6 +38,19 @@ internal sealed class ManagementAdmission(
         if (!journal.TryAdmit(operation, context.RequestAborted))
             return InvocationHttp.Error(409, "management-operation-already-admitted");
         context.Response.Headers[IdHeader] = id;
+        return null;
+    }
+
+    public static IResult? ReadId(HttpContext context, out string id)
+    {
+        id = string.Empty;
+        var values = context.Request.Headers[IdHeader];
+        Guid parsed;
+        if (values.Count == 0)
+            parsed = Guid.NewGuid();
+        else if (values.Count != 1 || !Guid.TryParseExact(values[0], "N", out parsed) || parsed == Guid.Empty)
+            return InvocationHttp.Error(400, "invalid-management-operation-id");
+        id = parsed.ToString("N");
         return null;
     }
 
