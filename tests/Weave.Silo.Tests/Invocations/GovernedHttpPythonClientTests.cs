@@ -58,8 +58,8 @@ public sealed partial class GovernedHttpEntryTests
             await process.WaitForExitAsync(timeout.Token);
             var output = await stdout;
             var error = await stderr;
-            process.ExitCode.ShouldBe(0, "The local Python HTTP client must complete normally.");
             error.ShouldBeEmpty();
+            process.ExitCode.ShouldBe(0, "The local Python HTTP client must complete normally.");
             using var result = JsonDocument.Parse(output);
             result.RootElement.GetProperty("read").GetProperty("status").GetInt32().ShouldBe(200);
             result.RootElement.GetProperty("read").GetProperty("body").GetProperty("output").GetString().ShouldBe("original");
