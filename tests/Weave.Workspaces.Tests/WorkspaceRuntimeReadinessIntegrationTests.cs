@@ -18,7 +18,7 @@ public sealed class WorkspaceRuntimeReadinessIntegrationTests
         var runtime = new ContainerRuntime(runner, new ContainerRuntimeOptions { Engine = "podman" },
             NullLogger<ContainerRuntime>.Instance);
         var observation = new WorkspaceRuntimeRecovery(runtime, Substitute.For<ICapabilityAuthorizer>(),
-            Substitute.For<IManagementOperationJournal>(), TimeProvider.System);
+            Substitute.For<IManagementOperationJournal>(), TimeProvider.System, Substitute.For<IWorkspaceHostedServiceRecovery>());
         ContainerHandle? container = null;
         NetworkHandle? network = null;
         using var timeout = CancellationTokenSource.CreateLinkedTokenSource(TestContext.Current.CancellationToken);

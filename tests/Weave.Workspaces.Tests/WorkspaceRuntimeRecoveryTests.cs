@@ -59,7 +59,7 @@ public sealed class WorkspaceRuntimeRecoveryTests
     {
         var runtime = Substitute.For<IWorkspaceRuntime>();
         var journal = Substitute.For<IManagementOperationJournal>();
-        var recovery = new WorkspaceRuntimeRecovery(runtime, Substitute.For<ICapabilityAuthorizer>(), journal, TimeProvider.System);
+        var recovery = new WorkspaceRuntimeRecovery(runtime, Substitute.For<ICapabilityAuthorizer>(), journal, TimeProvider.System, Substitute.For<IWorkspaceHostedServiceRecovery>());
         var state = new WorkspaceState();
 
         await Should.ThrowAsync<UnauthorizedAccessException>(() =>
@@ -78,7 +78,7 @@ public sealed class WorkspaceRuntimeRecoveryTests
         var journal = Substitute.For<IManagementOperationJournal>();
         journal.TryAdmit(Arg.Any<ManagementOperationRecord>(), Arg.Any<CancellationToken>())
             .Returns(_ => throw new IOException("journal unavailable"));
-        var recovery = new WorkspaceRuntimeRecovery(runtime, Substitute.For<ICapabilityAuthorizer>(), journal, TimeProvider.System);
+        var recovery = new WorkspaceRuntimeRecovery(runtime, Substitute.For<ICapabilityAuthorizer>(), journal, TimeProvider.System, Substitute.For<IWorkspaceHostedServiceRecovery>());
 
         await Should.ThrowAsync<IOException>(() => recovery.RecoverAsync(State(), Id, new CapabilityToken(),
             Guid.NewGuid().ToString("N"), TestContext.Current.CancellationToken));
@@ -101,7 +101,7 @@ public sealed class WorkspaceRuntimeRecoveryTests
         var journal = Substitute.For<IManagementOperationJournal>();
         journal.TryAdmit(Arg.Any<ManagementOperationRecord>(), Arg.Any<CancellationToken>()).Returns(true);
         journal.Complete(Arg.Any<string>(), Arg.Any<ManagementOperationOutcome>(), Arg.Any<DateTimeOffset>()).Returns(false);
-        var recovery = new WorkspaceRuntimeRecovery(runtime, Substitute.For<ICapabilityAuthorizer>(), journal, TimeProvider.System);
+        var recovery = new WorkspaceRuntimeRecovery(runtime, Substitute.For<ICapabilityAuthorizer>(), journal, TimeProvider.System, Substitute.For<IWorkspaceHostedServiceRecovery>());
 
         var result = await recovery.RecoverAsync(State(), Id, new CapabilityToken(),
             Guid.NewGuid().ToString("N"), TestContext.Current.CancellationToken);
@@ -119,7 +119,7 @@ public sealed class WorkspaceRuntimeRecoveryTests
         journal.TryAdmit(Arg.Any<ManagementOperationRecord>(), Arg.Any<CancellationToken>()).Returns(true);
         journal.Complete(Arg.Any<string>(), Arg.Any<ManagementOperationOutcome>(), Arg.Any<DateTimeOffset>()).Returns(true);
         return new WorkspaceActor(runtime, Substitute.For<ILifecycleManager>(), Substitute.For<IEventBus>(),
-            TimeProvider.System, NullLogger<WorkspaceActor>.Instance, storage, new WorkspaceRuntimeRecovery(runtime, Substitute.For<ICapabilityAuthorizer>(), journal, TimeProvider.System));
+            TimeProvider.System, NullLogger<WorkspaceActor>.Instance, storage, new WorkspaceRuntimeRecovery(runtime, Substitute.For<ICapabilityAuthorizer>(), journal, TimeProvider.System, Substitute.For<IWorkspaceHostedServiceRecovery>()));
     }
 
     private static WorkspaceState State(string runtimeName = "podman", WorkspaceStatus status = WorkspaceStatus.Running) => new()

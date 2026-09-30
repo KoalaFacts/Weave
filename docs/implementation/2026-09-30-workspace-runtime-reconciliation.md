@@ -4,6 +4,8 @@
 
 A preserved workspace can outlive the host that provisioned its resources. Container recovery alone leaves `RequiresReconciliation`. This increment adds an explicit way to confirm a **resource-only workspace** after checking its exact retained network, container IDs and attachments.
 
+The following [MCP restoration increment](2026-09-30-workspace-mcp-restoration.md) also supports installed HTTP MCP tools, with a separate frozen service digest and current connection grants. The resource-only path below remains supported; Agent and other service restoration remains blocked.
+
 1. Query `GET /api/workspaces/{workspaceId}/runtime` with `workspace:runtime:read`.
 2. If a retained container is stopped, use the existing container recovery operation with its separate `workspace:runtime:recover` grant. Missing resources are not recreated.
 3. Submit the observed `resourceSetDigest` to `POST /api/workspaces/{workspaceId}/runtime/reconcile`, using `workspace:runtime:reconcile` and a fresh `X-Weave-Management-Id`.
@@ -23,7 +25,7 @@ No token is retained for later dispatch. The reconciliation grant allows inspect
 
 The workspace must be registered as `Running`, use the current runtime kind, have a known recovery condition and unambiguous retained container identities. A network must be observed as `Present`, or `NotRequired` with no containers. Every retained container must be `Running` and attached to the retained network. Unknown or unsupported observations cannot confirm readiness.
 
-Active Agent, tool or plugin names, or enabled persisted Dapr/MCP installations, block with `hosted-services-require-restoration`. Current startup also activates services and heartbeats; this increment does not have sufficient retained configuration or restoration evidence for them. It does not clear their recovery requirement merely because their containers look healthy.
+Active Agents, enabled Dapr installations and unsupported tool/plugin configurations block with `hosted-services-require-restoration`. Supported installed HTTP MCP tools follow the linked restoration path. Reconciliation does not clear unsupported service recovery requirements merely because their containers look healthy.
 
 | Outcome | Meaning | HTTP status |
 | --- | --- | --- |
@@ -47,7 +49,7 @@ Authorization failures remain 401/403 at HTTP ingress and denied at the actor bo
 
 ## Limits
 
-This operation observes and confirms retained resources. It does not create or start resources, activate Agent/tool/plugin services, replay invocations, change grants or restore credentials. It does not establish application health or mandatory journal availability. In-process `local` workspaces without hosted services are supported too.
+The resource-only operation observes and confirms retained resources. It does not create or start resources, activate Agent services, replay invocations, change grants or restore credentials. Supported MCP tool reconnection requires the additional restoration path. It does not establish continuing application health or mandatory journal availability. In-process `local` workspaces are supported too.
 
 The workspace actor serializes its operations on one owner. Resource probes are sequential and can become stale after observation; this is not an engine transaction, lease, cluster-wide adoption protocol or fencing mechanism.
 

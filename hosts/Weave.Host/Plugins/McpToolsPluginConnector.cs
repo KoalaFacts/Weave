@@ -1,6 +1,7 @@
 using System.Collections.Concurrent;
 using Weave.Tools.Connectors;
 using Weave.Tools.Discovery;
+using Weave.Tools.InstallMcpTool;
 using Weave.Tools.Tool;
 using Weave.Workspaces.Manifest;
 
@@ -12,7 +13,7 @@ public sealed class McpToolsPluginConnector(
     ILoggerFactory loggerFactory,
     TimeProvider timeProvider) : IPluginConnector, IMcpInstallationDispatchGate
 {
-    private readonly ConcurrentDictionary<string, (string Id, McpToolConnector Connector)> _active =
+    private readonly ConcurrentDictionary<string, (string Id, McpToolConnector Connector, McpInstallationContract Contract)> _active =
         new(StringComparer.OrdinalIgnoreCase);
 
     public string PluginType => "mcp_tools";
@@ -88,7 +89,7 @@ public sealed class McpToolsPluginConnector(
 
         _active.TryGetValue(name, out var previous);
         discovery.Register(name, connector);
-        _active[name] = (name, connector);
+        _active[name] = (name, connector, contract);
         if (previous.Connector is not null)
         {
             discovery.UnregisterIfCurrent(previous.Id, ToolType.Mcp, previous.Connector);
@@ -131,10 +132,16 @@ public sealed class McpToolsPluginConnector(
             active.Connector.BeginDeactivate();
     }
 
+    public bool MatchesInstallation(McpToolInstallationSnapshot installation) =>
+        _active.TryGetValue(installation.Id, out var active) && active.Connector.IsActive
+        && active.Contract.Url == installation.Url && active.Contract.ServerName == installation.ServerName
+        && active.Contract.ServerVersion == installation.ServerVersion && active.Contract.Operation == installation.Operation
+        && active.Connector.ContractDigest == installation.ContractDigest;
+
     public PluginStatus GetStatus(string name) => new()
     {
         Name = name,
         Type = PluginType,
-        IsConnected = _active.ContainsKey(name)
+        IsConnected = _active.TryGetValue(name, out var active) && active.Connector.IsActive
     };
 }

@@ -58,6 +58,14 @@ public sealed partial class McpToolConnector : IToolConnector, IApprovalTargetBi
 
     public ToolType ToolType => ToolType.Mcp;
     public string? ContractDigest => _installation?.ContractDigest ?? Volatile.Read(ref _observedContractDigest);
+    public bool IsActive
+    {
+        get
+        {
+            lock (_dispatchGate)
+                return _active;
+        }
+    }
 
     public void BeginDeactivate()
     {

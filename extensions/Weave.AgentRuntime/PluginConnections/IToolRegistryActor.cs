@@ -5,6 +5,8 @@ public interface IToolRegistryActor
 {
     Task ConnectToolsAsync(Dictionary<string, ToolDefinition> tools);
     Task ReconnectInstallationAsync(string pluginName);
+    Task<IReadOnlyList<McpToolRecoveryPlan>> GetMcpRecoveryPlansAsync(CancellationToken ct);
+    Task<bool> RestoreMcpToolAsync(string toolName, string expectedDigest, Weave.Security.Tokens.CapabilityToken token, CancellationToken ct);
     Task ConfigureAccessAsync(Dictionary<string, List<string>> agentToolAccess, Dictionary<string, List<string>> agentCapabilities);
     Task GrantAgentToolsAsync(string agentName, IReadOnlyList<string> toolNames, IReadOnlyList<string> capabilities);
     Task DisconnectAllAsync();

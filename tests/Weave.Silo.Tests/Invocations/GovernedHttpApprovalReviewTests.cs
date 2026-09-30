@@ -114,7 +114,7 @@ public sealed partial class GovernedHttpEntryTests
             Name = "files",
             Type = ToolType.FileSystem,
             FileSystem = new Weave.Tools.Connectors.FileSystemToolConfig { Root = otherRoot }
-        }, fx.Token(grants: ["tool:files:connect"]));
+        }, fx.Token(grants: ["tool:files:connect"]), TestContext.Current.CancellationToken);
         using var response = await fx.SendAsync(HttpMethod.Post, ReviewRoute(fx, request), request,
             fx.Token("operator", ["invocation:read", "approval:decide", "tool:files:approve:write_file"]));
         response.StatusCode.ShouldBe(HttpStatusCode.Conflict);

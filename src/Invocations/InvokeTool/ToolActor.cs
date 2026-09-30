@@ -36,12 +36,15 @@ public sealed partial class ToolActor(
         return Task.CompletedTask;
     }
 
-    public async Task<ToolHandle> ConnectAsync(ToolSpec definition, CapabilityToken token)
+    public async Task<ToolHandle> ConnectAsync(ToolSpec definition, CapabilityToken token, CancellationToken ct = default)
     {
+        using var cancellation = CancellationTokenSource.CreateLinkedTokenSource(ct, token.CancellationToken);
         _identity.Ensure(definition, token);
-        token = token with { Grants = new HashSet<string>(token.Grants, StringComparer.Ordinal) };
+        token = token with { Grants = new HashSet<string>(token.Grants, StringComparer.Ordinal), CancellationToken = cancellation.Token };
         token.CancellationToken.ThrowIfCancellationRequested();
         await authorizer.AuthorizeAsync(token, ToolCapability.Connect(_identity.ToolName), _identity.WorkspaceId);
+        await DisconnectCoreAsync(cancellation.Token);
+        cancellation.Token.ThrowIfCancellationRequested();
 
         _connectionVersion++;
         _definition = definition;
@@ -58,6 +61,8 @@ public sealed partial class ToolActor(
             ? discovery.GetConnector(definition.Type)
             : discovery.GetConnector(definition.Type, definition.InstallationId);
         token.CancellationToken.ThrowIfCancellationRequested();
+        await authorizer.AuthorizeAsync(token, ToolCapability.Connect(_identity.ToolName), _identity.WorkspaceId);
+        token.CancellationToken.ThrowIfCancellationRequested();
         _handle = await connector.ConnectAsync(definition, token, token.CancellationToken);
         _connectedConnector = connector;
 
@@ -70,7 +75,9 @@ public sealed partial class ToolActor(
         return _handle;
     }
 
-    public async Task DisconnectAsync()
+    public Task DisconnectAsync() => DisconnectCoreAsync(CancellationToken.None);
+
+    private async Task DisconnectCoreAsync(CancellationToken ct)
     {
         if (_handle is null || _definition is null)
             return;
@@ -82,18 +89,18 @@ public sealed partial class ToolActor(
             Phase = LifecyclePhase.ToolDisconnecting
         };
 
-        await lifecycleManager.RunHooksAsync(LifecyclePhase.ToolDisconnecting, context, CancellationToken.None);
+        await lifecycleManager.RunHooksAsync(LifecyclePhase.ToolDisconnecting, context, ct);
 
         var connector = _connectedConnector ?? throw new InvalidOperationException("Tool connector is not connected.");
-        await connector.DisconnectAsync(_handle);
+        await connector.DisconnectAsync(_handle, ct);
+        _handle = null;
+        _connectedConnector = null;
 
         await lifecycleManager.RunHooksAsync(
             LifecyclePhase.ToolDisconnected,
             context with { Phase = LifecyclePhase.ToolDisconnected },
-            CancellationToken.None);
+            ct);
 
-        _handle = null;
-        _connectedConnector = null;
         LogToolDisconnected(_identity.ToolName, _identity.WorkspaceId);
     }
 

@@ -37,7 +37,7 @@ public sealed class WorkspaceRuntimeReadinessTests
     };
 
     private static WorkspaceRuntimeRecovery Recovery(IWorkspaceRuntime runtime) =>
-        new(runtime, Substitute.For<ICapabilityAuthorizer>(), Substitute.For<IManagementOperationJournal>(), TimeProvider.System);
+        new(runtime, Substitute.For<ICapabilityAuthorizer>(), Substitute.For<IManagementOperationJournal>(), TimeProvider.System, Substitute.For<IWorkspaceHostedServiceRecovery>());
 
     [Fact]
     public async Task ObserveAsync_CurrentHostAndHealthyResources_ReportsReadyWithoutMutation()
@@ -47,7 +47,7 @@ public sealed class WorkspaceRuntimeReadinessTests
         var journal = Substitute.For<IManagementOperationJournal>();
         var clock = Substitute.For<TimeProvider>();
         clock.GetUtcNow().Returns(new DateTimeOffset(2026, 9, 30, 0, 0, 0, TimeSpan.Zero));
-        var recovery = new WorkspaceRuntimeRecovery(runtime, Substitute.For<ICapabilityAuthorizer>(), journal, clock);
+        var recovery = new WorkspaceRuntimeRecovery(runtime, Substitute.For<ICapabilityAuthorizer>(), journal, clock, Substitute.For<IWorkspaceHostedServiceRecovery>());
 
         var snapshot = await recovery.ObserveAsync(state, new CapabilityToken(), TestContext.Current.CancellationToken);
 
@@ -225,7 +225,7 @@ public sealed class WorkspaceRuntimeReadinessTests
         var authorizer = Substitute.For<ICapabilityAuthorizer>();
         authorizer.AuthorizeAsync(Arg.Any<CapabilityToken>(), WorkspaceRuntimeRecovery.ReadGrant, "readiness", Arg.Any<string>())
             .Returns(_ => throw new UnauthorizedAccessException());
-        var recovery = new WorkspaceRuntimeRecovery(runtime, authorizer, Substitute.For<IManagementOperationJournal>(), TimeProvider.System);
+        var recovery = new WorkspaceRuntimeRecovery(runtime, authorizer, Substitute.For<IManagementOperationJournal>(), TimeProvider.System, Substitute.For<IWorkspaceHostedServiceRecovery>());
 
         await Should.ThrowAsync<UnauthorizedAccessException>(() =>
             recovery.ObserveAsync(state, new CapabilityToken(), TestContext.Current.CancellationToken));

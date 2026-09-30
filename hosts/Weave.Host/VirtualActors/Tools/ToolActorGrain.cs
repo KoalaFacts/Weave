@@ -32,8 +32,8 @@ public sealed class ToolActorGrain : Grain, IToolActorGrain
     public override Task OnActivateAsync(CancellationToken cancellationToken) =>
         _actor.OnActivatedAsync(this.GetPrimaryKeyString(), cancellationToken);
 
-    public Task<ToolHandle> ConnectAsync(ToolSpec definition, CapabilityToken token) =>
-        _actor.ConnectAsync(definition, token);
+    public Task<ToolHandle> ConnectAsync(ToolSpec definition, CapabilityToken token, CancellationToken ct = default) =>
+        _actor.ConnectAsync(definition, token, ct);
 
     public Task DisconnectAsync() => _actor.DisconnectAsync();
 

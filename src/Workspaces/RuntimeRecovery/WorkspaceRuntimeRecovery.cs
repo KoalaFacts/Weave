@@ -12,7 +12,8 @@ public sealed partial class WorkspaceRuntimeRecovery(
     IWorkspaceRuntime runtime,
     ICapabilityAuthorizer authorizer,
     IManagementOperationJournal journal,
-    TimeProvider timeProvider) : IWorkspaceRuntimeRecovery
+    TimeProvider timeProvider,
+    IWorkspaceHostedServiceRecovery hostedServices) : IWorkspaceRuntimeRecovery
 {
     public const string ReadGrant = "workspace:runtime:read";
     public const string RecoverGrant = "workspace:runtime:recover";
@@ -70,7 +71,8 @@ public sealed partial class WorkspaceRuntimeRecovery(
             ObservedAt = timeProvider.GetUtcNow(),
             Network = network,
             Containers = observations.AsReadOnly(),
-            Readiness = WorkspaceRuntimeReadiness.Evaluate(state, confirmedOnCurrentHost, network, observations)
+            Readiness = WorkspaceRuntimeReadiness.Evaluate(state, confirmedOnCurrentHost, network, observations),
+            HostedServicePlan = await DescribeServicesAsync(state, ct)
         };
     }
 

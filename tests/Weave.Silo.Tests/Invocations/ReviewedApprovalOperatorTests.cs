@@ -68,7 +68,7 @@ public sealed class ReviewedApprovalOperatorTests
                 Name = "files",
                 Type = ToolType.FileSystem,
                 FileSystem = new Weave.Tools.Connectors.FileSystemToolConfig { Root = toolRoot }
-            }, Token("setup", ["tool:files:connect"]));
+            }, Token("setup", ["tool:files:connect"]), TestContext.Current.CancellationToken);
             var writer = Token("writer", ["tool:files:invoke:write_file", "invocation:read"]);
             var reviewer = Token("operator", ["invocation:read", "approval:decide", "tool:files:approve:write_file"]);
             var id = InvocationId.From(Guid.NewGuid().ToString("N"));

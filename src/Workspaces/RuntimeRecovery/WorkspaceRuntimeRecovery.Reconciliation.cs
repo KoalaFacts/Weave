@@ -1,3 +1,5 @@
+using System.Security.Cryptography;
+using System.Text;
 using Weave.Management;
 using Weave.Security.Tokens;
 using Weave.Workspaces.Lifecycle;
@@ -22,6 +24,15 @@ public sealed partial class WorkspaceRuntimeRecovery
             || digest.Any(character => !char.IsAsciiHexDigit(character)))
             return new() { Outcome = WorkspaceRuntimeReconciliationOutcome.InvalidRequest };
         managementId = id.ToString("N");
+        var services = await DescribeServicesAsync(state, ct);
+        if (services is { BlockReason: null }
+            && (request.ExpectedHostedServiceDigest is not { Length: 64 } serviceDigest
+                || serviceDigest.Any(character => !char.IsAsciiHexDigit(character))))
+            return new() { Outcome = WorkspaceRuntimeReconciliationOutcome.InvalidRequest };
+        var grants = services is { BlockReason: null }
+            ? services.RequiredGrants.Prepend(ReconcileGrant).Order(StringComparer.Ordinal).ToArray() : [ReconcileGrant];
+        foreach (var grant in grants.Where(grant => grant != ReconcileGrant))
+            await authorizer.AuthorizeAsync(token, grant, owner);
         if (!journal.TryAdmit(new ManagementOperationRecord
         {
             Id = managementId,
@@ -30,13 +41,15 @@ public sealed partial class WorkspaceRuntimeRecovery
             TokenId = token.TokenId,
             Action = ReconcileGrant,
             Target = owner,
-            AuthorizedGrants = ReconcileGrant,
-            RequestDigest = digest,
+            AuthorizedGrants = string.Join(',', grants),
+            RequestDigest = request.ExpectedHostedServiceDigest is null ? digest
+                : Convert.ToHexStringLower(SHA256.HashData(Encoding.UTF8.GetBytes($"{digest}:{request.ExpectedHostedServiceDigest}"))),
             AdmittedAt = timeProvider.GetUtcNow()
         }, ct))
             return new() { Outcome = WorkspaceRuntimeReconciliationOutcome.AlreadyAdmitted };
 
         WorkspaceRuntimeReconciliationResult result;
+        var serviceRestorationStarted = false;
         try
         {
             if (!string.Equals(digest, WorkspaceRuntimeResourceSet.Digest(state), StringComparison.Ordinal))
@@ -44,10 +57,10 @@ public sealed partial class WorkspaceRuntimeRecovery
             else if (state.RecoveryCondition is not (WorkspaceRecoveryCondition.StartedOnThisHost
                 or WorkspaceRecoveryCondition.RequiresReconciliation or WorkspaceRecoveryCondition.RuntimeReconciledOnThisHost))
                 result = new() { Reason = "recovery-condition-unconfirmed" };
-            else if (state.ActiveAgents.Count > 0 || state.ActiveTools.Count > 0 || state.ActivePlugins.Count > 0
-                || state.DaprToolInstallations.Any(item => item.DesiredEnabled)
-                || state.McpToolInstallations.Any(item => item.DesiredEnabled))
-                result = new() { Reason = "hosted-services-require-restoration" };
+            else if (services?.BlockReason is { } blockReason)
+                result = new() { Reason = blockReason };
+            else if (services is not null && services.Digest != request.ExpectedHostedServiceDigest)
+                result = new() { Outcome = WorkspaceRuntimeReconciliationOutcome.PlanChanged };
             else if (runtime.InstanceId == Guid.Empty || state.Containers.Any(item => item.ContainerId.IsEmpty)
                 || state.Containers.Select(item => item.ContainerId).Distinct().Count() != state.Containers.Count)
                 result = new() { Reason = "invalid-runtime-identity" };
@@ -65,18 +78,50 @@ public sealed partial class WorkspaceRuntimeRecovery
                     result = new() { Reason = "runtime-resources-not-ready", Observation = observed };
                 else
                 {
-                    await authorizer.AuthorizeAsync(token, ReconcileGrant, owner);
-                    ct.ThrowIfCancellationRequested();
-                    if (!string.Equals(digest, WorkspaceRuntimeResourceSet.Digest(state), StringComparison.Ordinal))
+                    if (!await PlanMatchesAsync())
                         result = new() { Outcome = WorkspaceRuntimeReconciliationOutcome.PlanChanged };
                     else
-                        result = await ConfirmAsync(state, observed, readiness, persist);
+                    {
+                        if (services is not null)
+                        {
+                            foreach (var grant in grants)
+                                await authorizer.AuthorizeAsync(token, grant, owner);
+                            ct.ThrowIfCancellationRequested();
+                        }
+                        serviceRestorationStarted = services is not null;
+                        var restorationFailure = services is null ? null
+                            : await hostedServices.RestoreAsync(CaptureServices(state), services.Digest, token, ct);
+                        if (services is not null && restorationFailure is null)
+                        {
+                            observed = await ObserveAuthorizedAsync(state, ct);
+                            readiness = WorkspaceRuntimeReadiness.Evaluate(proposed, true, observed.Network, observed.Containers);
+                        }
+                        foreach (var grant in grants)
+                            await authorizer.AuthorizeAsync(token, grant, owner);
+                        ct.ThrowIfCancellationRequested();
+                        if (!await PlanMatchesAsync())
+                            result = new() { Outcome = WorkspaceRuntimeReconciliationOutcome.PlanChanged };
+                        else if (restorationFailure is not null)
+                            result = new() { Reason = restorationFailure, Observation = observed };
+                        else if (readiness.Condition is not WorkspaceRuntimeReadinessCondition.Ready)
+                            result = new() { Reason = "runtime-resources-not-ready", Observation = observed };
+                        else
+                        {
+                            result = await ConfirmAsync(state, observed, readiness, persist);
+                            result = result with
+                            {
+                                HostedServicesRestored = services is not null
+                                && result.Outcome is WorkspaceRuntimeReconciliationOutcome.Confirmed
+                            };
+                        }
+                    }
                 }
             }
         }
         catch (UnauthorizedAccessException)
         {
-            journal.Complete(managementId, ManagementOperationOutcome.Failed, timeProvider.GetUtcNow());
+            if (!serviceRestorationStarted)
+                journal.Complete(managementId, ManagementOperationOutcome.Failed, timeProvider.GetUtcNow());
             throw;
         }
         if (result.Outcome is WorkspaceRuntimeReconciliationOutcome.OutcomeUnknown)
@@ -84,7 +129,17 @@ public sealed partial class WorkspaceRuntimeRecovery
         var outcome = result.Outcome is WorkspaceRuntimeReconciliationOutcome.Confirmed
             ? ManagementOperationOutcome.Succeeded : ManagementOperationOutcome.Failed;
         return journal.Complete(managementId, outcome, timeProvider.GetUtcNow())
-            ? result : result with { Outcome = WorkspaceRuntimeReconciliationOutcome.EvidenceUnconfirmed };
+            ? result : result with { Outcome = WorkspaceRuntimeReconciliationOutcome.EvidenceUnconfirmed, HostedServicesRestored = false };
+
+        async Task<bool> PlanMatchesAsync()
+        {
+            ct.ThrowIfCancellationRequested();
+            if (digest != WorkspaceRuntimeResourceSet.Digest(state))
+                return false;
+            var current = await DescribeServicesAsync(state, ct);
+            return services is null ? current is null
+                : current is { BlockReason: null } && current.Digest == request.ExpectedHostedServiceDigest;
+        }
     }
 
     private async Task<WorkspaceRuntimeReconciliationResult> ConfirmAsync(WorkspaceState state,

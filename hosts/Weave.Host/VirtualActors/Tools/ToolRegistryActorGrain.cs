@@ -28,6 +28,9 @@ public sealed class ToolRegistryActorGrain : Grain, IToolRegistryActorGrain
 
     public Task ConnectToolsAsync(Dictionary<string, ToolDefinition> tools) => _actor.ConnectToolsAsync(tools);
     public Task ReconnectInstallationAsync(string pluginName) => _actor.ReconnectInstallationAsync(pluginName);
+    public Task<IReadOnlyList<McpToolRecoveryPlan>> GetMcpRecoveryPlansAsync(CancellationToken ct) => _actor.GetMcpRecoveryPlansAsync(ct);
+    public Task<bool> RestoreMcpToolAsync(string toolName, string expectedDigest, CapabilityToken token, CancellationToken ct) =>
+        _actor.RestoreMcpToolAsync(toolName, expectedDigest, token, ct);
     public Task ConfigureAccessAsync(Dictionary<string, List<string>> agentToolAccess, Dictionary<string, List<string>> agentCapabilities) =>
         _actor.ConfigureAccessAsync(agentToolAccess, agentCapabilities);
     public Task GrantAgentToolsAsync(string agentName, IReadOnlyList<string> toolNames, IReadOnlyList<string> capabilities) =>

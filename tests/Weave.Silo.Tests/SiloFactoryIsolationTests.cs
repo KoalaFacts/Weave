@@ -35,7 +35,7 @@ public sealed class SiloFactoryIsolationTests
                 Name = "files",
                 Type = ToolType.FileSystem,
                 FileSystem = new FileSystemToolConfig { Root = root }
-            }, token);
+            }, token, TestContext.Current.CancellationToken);
             (await firstTool.GetHandleAsync()).ShouldNotBeNull().ToolName.ShouldBe("files");
             (await secondTool.GetHandleAsync()).ShouldBeNull();
             await firstTool.DisconnectAsync();

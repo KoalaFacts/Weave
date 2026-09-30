@@ -10,7 +10,7 @@ namespace Weave.Tools.Tool;
 /// </summary>
 public interface IToolActor
 {
-    Task<ToolHandle> ConnectAsync(ToolSpec definition, CapabilityToken token);
+    Task<ToolHandle> ConnectAsync(ToolSpec definition, CapabilityToken token, CancellationToken ct = default);
     Task DisconnectAsync();
     Task<ToolResult> InvokeAsync(ToolInvocation invocation, CapabilityToken token);
     Task<InvocationRecord?> GetInvocationAsync(InvocationId invocationId, CapabilityToken token);
