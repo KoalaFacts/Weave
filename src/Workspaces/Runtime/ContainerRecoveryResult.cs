@@ -6,4 +6,6 @@ public sealed record ContainerRecoveryResult
     public ContainerRecoveryOutcome Outcome { get; init; }
     public ContainerRuntimeCondition Condition { get; init; }
     public bool Dispatched { get; init; }
+    public NetworkRuntimeObservation Network { get; init; } = new();
+    public ContainerNetworkCondition NetworkAttachment { get; init; }
 }

@@ -28,7 +28,8 @@ public sealed class ContainerRuntimeTests
             if (FailureForArguments?.Invoke(arguments) is { } failure)
                 throw failure;
 
-            var output = OutputQueue.Count > 0 ? OutputQueue.Dequeue() : NextOutput;
+            var output = arguments.Count > 1 && arguments[0] == "network" && arguments[1] == "inspect"
+                ? new string('d', 64) : OutputQueue.Count > 0 ? OutputQueue.Dequeue() : NextOutput;
             return Task.FromResult(output);
         }
     }
@@ -253,14 +254,14 @@ public sealed class ContainerRuntimeTests
 
         var handle = await runtime.CreateNetworkAsync(spec, TestContext.Current.CancellationToken);
 
-        stub.Invocations.Count.ShouldBe(1);
+        stub.Invocations.Count.ShouldBe(2);
         var args = stub.Invocations[0].Arguments;
         args.ShouldContain("network");
         args.ShouldContain("create");
         args.ShouldContain("test-net");
 
         handle.Name.ShouldBe("test-net");
-        handle.NetworkId.ShouldBe(NetworkId.From("net-id-123"));
+        handle.NetworkId.ShouldBe(NetworkId.From(new string('d', 64)));
     }
 
     [Fact]
@@ -292,7 +293,7 @@ public sealed class ContainerRuntimeTests
         var args = stub.Invocations[0].Arguments;
         args.ShouldContain("network");
         args.ShouldContain("rm");
-        args.ShouldContain("--ignore");
+        args.ShouldNotContain("--ignore");
         args.ShouldNotContain("-f");
         args.ShouldContain("net-123");
     }
@@ -366,8 +367,7 @@ public sealed class ContainerRuntimeTests
         var env = await runtime.ProvisionAsync(WorkspaceId.From("test-ws"), manifest, TestContext.Current.CancellationToken);
 
         env.Containers.ShouldBeEmpty();
-        // Only 1 invocation: network create
-        stub.Invocations.Count.ShouldBe(1);
+        stub.Invocations.Count.ShouldBe(2);
         stub.Invocations[0].Arguments.ShouldContain("network");
         stub.Invocations[0].Arguments.ShouldContain("create");
     }
@@ -447,7 +447,7 @@ public sealed class ContainerRuntimeTests
 
         await runtime.DeleteNetworkAsync(NetworkId.From("net-123"), TestContext.Current.CancellationToken);
 
-        stub.Invocations[0].Arguments.ShouldBe(["network", "rm", "--ignore", "net-123"]);
+        stub.Invocations[0].Arguments.ShouldBe(["network", "rm", "net-123"]);
     }
 
     [Fact]

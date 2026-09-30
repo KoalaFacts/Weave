@@ -9,7 +9,7 @@ public sealed partial class ContainerRuntime
     {
         ct.ThrowIfCancellationRequested();
         var id = containerId.ToString();
-        if (!IsExactContainerId(id))
+        if (!IsExactEngineId(id))
             return ContainerRuntimeCondition.InvalidIdentity;
 
         try
@@ -38,17 +38,27 @@ public sealed partial class ContainerRuntime
         }
     }
 
-    public async Task<ContainerRecoveryResult> RecoverContainerAsync(ContainerId containerId, Func<Task> authorizeDispatch, CancellationToken ct)
+    public async Task<ContainerRecoveryResult> RecoverContainerAsync(ContainerId containerId, NetworkId requiredNetworkId, Func<Task> authorizeDispatch, CancellationToken ct)
     {
         var condition = await ObserveContainerAsync(containerId, ct);
-        if (condition is not ContainerRuntimeCondition.Stopped)
-            return new ContainerRecoveryResult
-            {
-                ContainerId = containerId.ToString(),
-                Condition = condition,
-                Outcome = condition is ContainerRuntimeCondition.Running
-                    ? ContainerRecoveryOutcome.AlreadyRunning : ContainerRecoveryOutcome.Blocked
-            };
+        var result = new ContainerRecoveryResult
+        {
+            ContainerId = containerId.ToString(),
+            Condition = condition,
+            Network = new NetworkRuntimeObservation { NetworkId = requiredNetworkId.ToString() }
+        };
+        if (condition is not (ContainerRuntimeCondition.Stopped or ContainerRuntimeCondition.Running))
+            return result;
+
+        result = await ObserveRecoveryNetworkAsync(result, requiredNetworkId, ct);
+        if (!NetworkReady(result))
+            return result;
+        if (condition is ContainerRuntimeCondition.Running)
+            return result with { Outcome = ContainerRecoveryOutcome.AlreadyRunning };
+
+        result = await ObserveRecoveryNetworkAsync(result, requiredNetworkId, ct);
+        if (!NetworkReady(result))
+            return result;
 
         await authorizeDispatch();
         ct.ThrowIfCancellationRequested();
@@ -56,28 +66,26 @@ public sealed partial class ContainerRuntime
         {
             var output = await RunContainerCliAsync(["start", containerId.ToString()], ct);
             if (output.Trim() != containerId.ToString())
-                return UnknownRecovery(containerId, ContainerRuntimeCondition.Unknown);
+                return result with { Dispatched = true, Outcome = ContainerRecoveryOutcome.OutcomeUnknown, Condition = ContainerRuntimeCondition.Unknown };
             condition = await ObserveContainerAsync(containerId, ct);
-            return new ContainerRecoveryResult
+            result = await ObserveRecoveryNetworkAsync(result with { Condition = condition, Dispatched = true }, requiredNetworkId, ct);
+            return result with
             {
-                ContainerId = containerId.ToString(),
-                Condition = condition,
-                Dispatched = true,
-                Outcome = condition is ContainerRuntimeCondition.Running
+                Outcome = condition is ContainerRuntimeCondition.Running && NetworkReady(result)
                     ? ContainerRecoveryOutcome.Started : ContainerRecoveryOutcome.OutcomeUnknown
             };
         }
         catch (Exception error) when (IsRuntimeFailure(error))
         {
             LogRuntimeRecoveryUnknown(logger, error.GetType().Name);
-            return UnknownRecovery(containerId, ContainerRuntimeCondition.Unavailable);
+            return result with { Dispatched = true, Outcome = ContainerRecoveryOutcome.OutcomeUnknown, Condition = ContainerRuntimeCondition.Unavailable };
         }
     }
 
-    private static ContainerRecoveryResult UnknownRecovery(ContainerId containerId, ContainerRuntimeCondition condition) =>
-        new() { ContainerId = containerId.ToString(), Condition = condition, Dispatched = true, Outcome = ContainerRecoveryOutcome.OutcomeUnknown };
+    private static bool NetworkReady(ContainerRecoveryResult result) =>
+        result.Network.Condition is NetworkRuntimeCondition.Present && result.NetworkAttachment is ContainerNetworkCondition.Attached;
 
-    internal static bool IsExactContainerId(string id) =>
+    private static bool IsExactEngineId(string id) =>
         id.Length == 64 && id.All(static c => c is >= '0' and <= '9' or >= 'a' and <= 'f');
 
     [LoggerMessage(Level = LogLevel.Warning, Message = "Container runtime observation unavailable ({ErrorType})")]

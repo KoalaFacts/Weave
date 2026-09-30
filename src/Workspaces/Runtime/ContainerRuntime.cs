@@ -132,6 +132,8 @@ public sealed partial class ContainerRuntime(
 
     public async Task<NetworkHandle> CreateNetworkAsync(NetworkSpec spec, CancellationToken ct)
     {
+        if (string.IsNullOrWhiteSpace(spec.Name) || spec.Name.StartsWith('-'))
+            throw new InvalidOperationException("Invalid network name.");
         var args = new List<string> { "network", "create" };
 
         if (spec.Subnet is not null)
@@ -140,6 +142,10 @@ public sealed partial class ContainerRuntime(
         args.Add(spec.Name);
 
         var output = await RunContainerCliAsync(args, ct);
+        if (_engine is ContainerRuntimeOptions.PodmanEngine)
+            output = await RunContainerCliAsync(["network", "inspect", "--format", "{{.ID}}", spec.Name], ct);
+        if (!IsExactEngineId(output.Trim()))
+            throw new InvalidOperationException("Created network identity could not be confirmed.");
         return new NetworkHandle(NetworkId.From(output.Trim()), spec.Name);
     }
 
@@ -147,9 +153,17 @@ public sealed partial class ContainerRuntime(
     {
         var args = _engine is ContainerRuntimeOptions.DockerEngine
             ? new List<string> { "network", "rm", "-f", networkId.ToString() }
-            : ["network", "rm", "--ignore", networkId.ToString()];
+            : ["network", "rm", networkId.ToString()];
 
-        await RunContainerCliAsync(args, ct);
+        try
+        {
+            await RunContainerCliAsync(args, ct);
+        }
+        catch (InvalidOperationException) when (_engine is ContainerRuntimeOptions.PodmanEngine)
+        {
+            if (await ObserveNetworkAsync(networkId, ct) is not NetworkRuntimeCondition.Missing)
+                throw;
+        }
     }
 
     private async Task<string> RunContainerCliAsync(IEnumerable<string> arguments, CancellationToken ct)

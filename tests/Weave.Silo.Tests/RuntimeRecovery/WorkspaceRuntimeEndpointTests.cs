@@ -24,6 +24,8 @@ public sealed class WorkspaceRuntimeEndpointTests
     {
         public bool Running { get; set; }
         public bool Missing { get; set; }
+        public bool NetworkMissing { get; set; }
+        public bool NetworkDetached { get; set; }
         public bool LoseStartResponse { get; set; }
         public int StartCount { get; private set; }
         public Func<bool>? AdmissionRecorded { get; set; }
@@ -37,9 +39,9 @@ public sealed class WorkspaceRuntimeEndpointTests
             ct.ThrowIfCancellationRequested();
             var output = args[0] switch
             {
-                "network" => "network-id\n",
+                "network" => args[1] == "ls" && NetworkMissing ? "" : $"{new string('d', 64)}\n",
                 "run" => $"{ContainerId}\n",
-                "container" => Observe(),
+                "container" => args[1] == "inspect" ? $"{ContainerId}|{(NetworkDetached ? "" : new string('d', 64))}\n" : Observe(),
                 "start" => Start(args),
                 _ => throw new InvalidOperationException("Unexpected test CLI operation")
             };
@@ -111,6 +113,8 @@ public sealed class WorkspaceRuntimeEndpointTests
             using var body = JsonDocument.Parse(await observed.Content.ReadAsStringAsync(TestContext.Current.CancellationToken));
             body.RootElement.GetProperty("registeredStatus").GetString().ShouldBe("Running");
             body.RootElement.GetProperty("containers")[0].GetProperty("condition").GetString().ShouldBe("Stopped");
+            body.RootElement.GetProperty("network").GetProperty("condition").GetString().ShouldBe("Present");
+            body.RootElement.GetProperty("containers")[0].GetProperty("networkAttachment").GetString().ShouldBe("Attached");
         }
         using (var denied = await client.PostAsync(recoveryRoute, null, TestContext.Current.CancellationToken))
             denied.StatusCode.ShouldBe(HttpStatusCode.Forbidden);
@@ -139,6 +143,23 @@ public sealed class WorkspaceRuntimeEndpointTests
         }
 
         runner.Running = false;
+        foreach (var missingNetwork in new[] { true, false })
+        {
+            runner.NetworkMissing = missingNetwork;
+            runner.NetworkDetached = !missingNetwork;
+            var blockedId = Guid.NewGuid().ToString("N");
+            client.DefaultRequestHeaders.Remove("X-Weave-Management-Id");
+            client.DefaultRequestHeaders.Add("X-Weave-Management-Id", blockedId);
+            using var blocked = await client.PostAsync(recoveryRoute, null, TestContext.Current.CancellationToken);
+            blocked.StatusCode.ShouldBe(HttpStatusCode.Conflict);
+            var blockedBody = await blocked.Content.ReadAsStringAsync(TestContext.Current.CancellationToken);
+            blockedBody.ShouldContain("Blocked");
+            blockedBody.ShouldContain(missingNetwork ? "Missing" : "Detached");
+            journal.Find(blockedId, CancellationToken.None)?.Outcome.ToString().ShouldBe("Failed");
+            runner.StartCount.ShouldBe(1);
+        }
+        runner.NetworkMissing = false;
+        runner.NetworkDetached = false;
         runner.LoseStartResponse = true;
         var unknownId = Guid.NewGuid().ToString("N");
         client.DefaultRequestHeaders.Remove("X-Weave-Management-Id");
