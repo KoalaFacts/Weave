@@ -35,14 +35,16 @@ public sealed class ProcessCommandRunnerTests
     public async Task RunAsync_Cancelled_KillsActualChildProcess()
     {
         var pidPath = Path.Join(Path.GetTempPath(), $"weave-cli-{Guid.NewGuid():N}.pid");
+        var pendingPidPath = $"{pidPath}.pending";
         using var cancellation = CancellationTokenSource.CreateLinkedTokenSource(TestContext.Current.CancellationToken);
+        Task<string>? running = null;
         try
         {
             var command = OperatingSystem.IsWindows() ? "powershell" : "/bin/sh";
             string[] arguments = OperatingSystem.IsWindows()
-                ? ["-NoProfile", "-NonInteractive", "-Command", $"$PID | Set-Content -LiteralPath '{pidPath.Replace("'", "''")}'; Start-Sleep -Seconds 60"]
-                : ["-c", "echo $$ > \"$1\"; sleep 60", "--", pidPath];
-            var running = _runner.RunAsync(command, arguments, cancellation.Token);
+                ? ["-NoProfile", "-NonInteractive", "-Command", $"$PID | Set-Content -LiteralPath '{pendingPidPath.Replace("'", "''")}'; Move-Item -LiteralPath '{pendingPidPath.Replace("'", "''")}' -Destination '{pidPath.Replace("'", "''")}'; Start-Sleep -Seconds 60"]
+                : ["-c", "echo $$ > \"$1.pending\"; mv \"$1.pending\" \"$1\"; sleep 60", "--", pidPath];
+            running = _runner.RunAsync(command, arguments, cancellation.Token);
             var pid = 0;
             for (var attempt = 0; attempt < 200 && pid == 0; attempt++)
             {
@@ -73,8 +75,26 @@ public sealed class ProcessCommandRunnerTests
         }
         finally
         {
-            await cancellation.CancelAsync();
-            File.Delete(pidPath);
+            try
+            {
+                await cancellation.CancelAsync();
+                if (running is not null)
+                {
+                    try
+                    {
+                        await running;
+                    }
+                    catch (OperationCanceledException) when (cancellation.IsCancellationRequested)
+                    {
+                        // The runner owns termination and must finish before its signal files are removed.
+                    }
+                }
+            }
+            finally
+            {
+                File.Delete(pidPath);
+                File.Delete(pendingPidPath);
+            }
         }
     }
 
