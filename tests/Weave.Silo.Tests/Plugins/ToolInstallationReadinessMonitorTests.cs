@@ -187,7 +187,7 @@ public sealed class ToolInstallationReadinessMonitorTests
     }
 
     [Fact]
-    public async Task ProbeOnceAsync_WorkspaceReadFails_ContinuesWithOtherWorkspaces()
+    public async Task ProbeOnceAsync_WorkspaceOrProbeFails_ContinuesWithoutInventingObservation()
     {
         const string workspaceId = "healthy-workspace";
         var installation = new DaprToolInstallation
@@ -226,5 +226,17 @@ public sealed class ToolInstallationReadinessMonitorTests
 
         peer.Started.Task.IsCompleted.ShouldBeTrue();
         diagnostics.GetProbe(installation)?.Failure.ShouldBe(InstallationFailureCode.None);
+
+        diagnostics.ClearProbe(installation.Id);
+        var faultyPeer = new WaitingPeerProbe();
+        faultyPeer.Result.TrySetException(new ArgumentException("Unexpected probe defect"));
+        using var faultyMonitor = new ToolInstallationReadinessMonitor(Substitute.For<IHostApplicationLifetime>(),
+            actors, faultyPeer, diagnostics, TimeProvider.System,
+            NullLogger<ToolInstallationReadinessMonitor>.Instance);
+
+        await faultyMonitor.ProbeOnceAsync(TestContext.Current.CancellationToken);
+
+        faultyPeer.Started.Task.IsCompleted.ShouldBeTrue();
+        diagnostics.GetProbe(installation).ShouldBeNull();
     }
 }

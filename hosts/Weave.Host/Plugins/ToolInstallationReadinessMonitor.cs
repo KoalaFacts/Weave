@@ -111,13 +111,6 @@ internal sealed class ToolInstallationReadinessMonitor(
         {
             throw;
         }
-        catch (Exception error)
-        {
-            logger.LogWarning("Installation {InstallationId} probe failed ({ErrorType}).",
-                installation.Id, error.GetType().Name);
-            failure = InstallationFailureCode.ConnectionFailed;
-        }
-
         cancellationToken.ThrowIfCancellationRequested();
         var current = await workspace.GetStateAsync();
         if (current.Status is not WorkspaceStatus.Running)
