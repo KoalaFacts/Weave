@@ -119,7 +119,7 @@ public sealed class EchoPluginTests
             new LifecycleManager(NullLogger<LifecycleManager>.Instance), events,
             NullLogger<ToolActor>.Instance, fx.Journal, fx.Clock);
         await actor.OnActivatedAsync("workspace/echo-sample", TestContext.Current.CancellationToken);
-        await actor.ConnectAsync(spec, fx.Token("setup", "tool:echo-sample:connect"));
+        await actor.ConnectAsync(spec, fx.Token("setup", "tool:echo-sample:connect"), TestContext.Current.CancellationToken);
         try
         {
             (await actor.GetSchemaAsync()).Description.ShouldContain("Return the supplied text unchanged.");

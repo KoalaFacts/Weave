@@ -3,8 +3,8 @@ using Weave.Security.Tokens;
 using Weave.Shared.VirtualActors;
 using Weave.Silo.Plugins;
 using Weave.Silo.RuntimeRecovery;
-using Weave.Tools.InstallMcpTool;
 using Weave.Tools.InstallDaprTool;
+using Weave.Tools.InstallMcpTool;
 using Weave.Workspaces.RuntimeRecovery;
 
 namespace Weave.Silo.Tests.RuntimeRecovery;
