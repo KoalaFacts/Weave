@@ -34,9 +34,8 @@ public sealed class ProcessCommandRunnerTests
     [Fact]
     public async Task RunAsync_Cancelled_KillsActualChildProcess()
     {
-        var pidPath = Path.Combine(Path.GetTempPath(), $"weave-cli-{Guid.NewGuid():N}.pid");
+        var pidPath = Path.Join(Path.GetTempPath(), $"weave-cli-{Guid.NewGuid():N}.pid");
         using var cancellation = CancellationTokenSource.CreateLinkedTokenSource(TestContext.Current.CancellationToken);
-        Process? child = null;
         try
         {
             var command = OperatingSystem.IsWindows() ? "powershell" : "/bin/sh";
@@ -56,21 +55,25 @@ public sealed class ProcessCommandRunnerTests
                     await Task.Delay(50, TestContext.Current.CancellationToken);
             }
             pid.ShouldBeGreaterThan(0);
-            child = Process.GetProcessById(pid);
+            using var child = Process.GetProcessById(pid);
+            try
+            {
+                await cancellation.CancelAsync();
+                await Should.ThrowAsync<OperationCanceledException>(() => running);
+                await child.WaitForExitAsync(TestContext.Current.CancellationToken)
+                    .WaitAsync(TimeSpan.FromSeconds(5), TestContext.Current.CancellationToken);
 
-            await cancellation.CancelAsync();
-            await Should.ThrowAsync<OperationCanceledException>(() => running);
-            await child.WaitForExitAsync(TestContext.Current.CancellationToken)
-                .WaitAsync(TimeSpan.FromSeconds(5), TestContext.Current.CancellationToken);
-
-            child.HasExited.ShouldBeTrue();
+                child.HasExited.ShouldBeTrue();
+            }
+            finally
+            {
+                if (!child.HasExited)
+                    child.Kill(entireProcessTree: true);
+            }
         }
         finally
         {
             await cancellation.CancelAsync();
-            if (child is not null && !child.HasExited)
-                child.Kill(entireProcessTree: true);
-            child?.Dispose();
             File.Delete(pidPath);
         }
     }
