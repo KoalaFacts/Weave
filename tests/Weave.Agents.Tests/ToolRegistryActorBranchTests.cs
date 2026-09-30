@@ -179,7 +179,7 @@ public sealed class ToolRegistryActorBranchTests
         var result = await fx.Actor.ResolveAsync("agent-a", "shell");
 
         result.ShouldNotBeNull();
-        await fx.ToolActor.Received().ConnectAsync(Arg.Any<ToolSpec>(), Arg.Any<CapabilityToken>());
+        await fx.ToolActor.Received().ConnectAsync(Arg.Any<ToolSpec>(), Arg.Any<CapabilityToken>(), Arg.Any<CancellationToken>());
     }
 
     [Fact]
@@ -222,6 +222,6 @@ public sealed class ToolRegistryActorBranchTests
         var result = await fx.Actor.ResolveAsync("agent-a", "shell");
 
         result.ShouldNotBeNull();
-        await fx.ToolActor.Received().ConnectAsync(Arg.Any<ToolSpec>(), Arg.Any<CapabilityToken>());
+        await fx.ToolActor.Received().ConnectAsync(Arg.Any<ToolSpec>(), Arg.Any<CapabilityToken>(), Arg.Any<CancellationToken>());
     }
 }

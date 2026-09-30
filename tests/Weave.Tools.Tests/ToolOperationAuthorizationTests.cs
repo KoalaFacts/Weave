@@ -60,7 +60,7 @@ public sealed class ToolOperationAuthorizationTests
     {
         using var fx = new Fixture();
         var token = fx.Token("tool:files:connect");
-        var handle = await fx.Actor.ConnectAsync(fx.Spec, token);
+        var handle = await fx.Actor.ConnectAsync(fx.Spec, token, TestContext.Current.CancellationToken);
         handle.IsConnected.ShouldBeTrue();
         await Should.ThrowAsync<UnauthorizedAccessException>(() => fx.Actor.InvokeAsync(fx.Write(), token));
         File.ReadAllText(fx.Target).ShouldBe("original");

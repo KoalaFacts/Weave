@@ -14,6 +14,7 @@ public sealed record WorkspaceRuntimeSnapshot
     public string ResourceSetDigest { get; init; } = string.Empty;
     public DateTimeOffset ObservedAt { get; init; }
     public WorkspaceRuntimeReadiness Readiness { get; init; } = new();
+    public WorkspaceHostedServicePlan? HostedServicePlan { get; init; }
     public NetworkRuntimeObservation Network { get; init; } = new();
     public IReadOnlyList<WorkspaceContainerObservation> Containers { get; init; } = [];
 }

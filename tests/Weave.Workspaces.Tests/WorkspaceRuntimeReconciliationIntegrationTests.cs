@@ -20,7 +20,7 @@ public sealed class WorkspaceRuntimeReconciliationIntegrationTests
         var journal = Substitute.For<IManagementOperationJournal>();
         journal.TryAdmit(Arg.Any<ManagementOperationRecord>(), Arg.Any<CancellationToken>()).Returns(true);
         journal.Complete(Arg.Any<string>(), Arg.Any<ManagementOperationOutcome>(), Arg.Any<DateTimeOffset>()).Returns(true);
-        var recovery = new WorkspaceRuntimeRecovery(runtime, Substitute.For<ICapabilityAuthorizer>(), journal, TimeProvider.System);
+        var recovery = new WorkspaceRuntimeRecovery(runtime, Substitute.For<ICapabilityAuthorizer>(), journal, TimeProvider.System, Substitute.For<IWorkspaceHostedServiceRecovery>());
         NetworkHandle? network = null;
         ContainerHandle? container = null;
         using var deadline = CancellationTokenSource.CreateLinkedTokenSource(TestContext.Current.CancellationToken);

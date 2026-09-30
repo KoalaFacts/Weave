@@ -20,7 +20,7 @@ public static class WorkspaceRuntimeEndpoints
         routes.MapPost("/{workspaceId}/containers/{containerId}/recover", RecoverAsync)
             .WithDescription("Start one retained stopped container. Does not restore Agent state or replay tool invocations.");
         routes.MapPost("/{workspaceId}/runtime/reconcile", ReconcileAsync)
-            .WithDescription("Confirm retained resources for a workspace without hosted services. Does not start containers or replay invocations.");
+            .WithDescription("Confirm retained resources and restore supported installed MCP tools. Does not start Agents or replay invocations.");
         return routes;
     }
 

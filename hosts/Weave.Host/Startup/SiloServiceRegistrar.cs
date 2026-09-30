@@ -22,6 +22,7 @@ using Weave.Silo.Channels;
 using Weave.Silo.Configuration;
 using Weave.Silo.Management;
 using Weave.Silo.Plugins;
+using Weave.Silo.RuntimeRecovery;
 using Weave.Silo.Security;
 using Weave.Silo.Templates;
 using Weave.Silo.VirtualActors;
@@ -80,6 +81,7 @@ internal sealed class SiloServiceRegistrar
     private void RegisterRuntime()
     {
         _services.AddSingleton<IWorkspaceRuntimeRecovery, WorkspaceRuntimeRecovery>();
+        _services.AddSingleton<IWorkspaceHostedServiceRecovery, McpWorkspaceServiceRecovery>();
         if (_weaveSettings.IsLocalMode)
         {
             _services.AddSingleton<IWorkspaceRuntime, InProcessRuntime>();

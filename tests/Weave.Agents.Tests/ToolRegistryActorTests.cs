@@ -168,7 +168,7 @@ public sealed class ToolRegistryActorTests
         var persistentState = CreatePersistentState();
 
         var captured = new List<CapabilityToken>();
-        toolActor.ConnectAsync(Arg.Any<ToolSpec>(), Arg.Do<CapabilityToken>(captured.Add))
+        toolActor.ConnectAsync(Arg.Any<ToolSpec>(), Arg.Do<CapabilityToken>(captured.Add), Arg.Any<CancellationToken>())
             .Returns(ci => Task.FromResult(new ToolHandle
             {
                 ToolName = ci.Arg<ToolSpec>().Name,

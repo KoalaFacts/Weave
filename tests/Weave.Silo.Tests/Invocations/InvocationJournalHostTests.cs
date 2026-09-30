@@ -30,7 +30,7 @@ public sealed class InvocationJournalHostTests
                 using var client = first.CreateClient();
                 var tool = Tool(first, workspace);
                 var writer = Token(first, workspace, "writer", ["tool:files:connect", "tool:files:invoke:write_file"]);
-                await tool.ConnectAsync(Spec(root), writer);
+                await tool.ConnectAsync(Spec(root), writer, TestContext.Current.CancellationToken);
                 var result = await tool.InvokeAsync(request, writer);
                 result.Success.ShouldBeTrue(result.Error);
                 result.InvocationId.ShouldBe(id);
@@ -57,7 +57,7 @@ public sealed class InvocationJournalHostTests
                 metadata.ShouldNotContain(reader.Signature);
 
                 var writer = Token(second, workspace, "writer", ["tool:files:connect", "tool:files:invoke:write_file"]);
-                await tool.ConnectAsync(Spec(root), writer);
+                await tool.ConnectAsync(Spec(root), writer, TestContext.Current.CancellationToken);
                 File.WriteAllText(Path.Combine(root, "note.txt"), "changed after host restart");
                 var replay = await tool.InvokeAsync(request, writer);
                 replay.IsReplay.ShouldBeTrue();
@@ -92,7 +92,7 @@ public sealed class InvocationJournalHostTests
             var workspace = "ws-" + Guid.NewGuid().ToString("N");
             var tool = Tool(host, workspace);
             var writer = Token(host, workspace, "writer", ["tool:files:connect", "tool:files:invoke:write_file"]);
-            await tool.ConnectAsync(Spec(root), writer);
+            await tool.ConnectAsync(Spec(root), writer, TestContext.Current.CancellationToken);
             var id = InvocationId.From(Guid.NewGuid().ToString("N"));
             (await tool.InvokeAsync(Request(id), writer)).Success.ShouldBeTrue();
             var reader = Token(host,
@@ -133,7 +133,7 @@ public sealed class InvocationJournalHostTests
             var workspace = "ws-" + Guid.NewGuid().ToString("N");
             var tool = Tool(host, workspace);
             var token = Token(host, workspace, "writer", ["tool:files:connect", "tool:files:invoke:write_file"]);
-            await tool.ConnectAsync(Spec(root), token);
+            await tool.ConnectAsync(Spec(root), token, TestContext.Current.CancellationToken);
             using (var connection = new SqliteConnection(new SqliteConnectionStringBuilder { DataSource = database, Pooling = false }.ToString()))
             {
                 connection.Open();

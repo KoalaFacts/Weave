@@ -73,7 +73,7 @@ public sealed class GovernedHttpCancellationTests
                 Name = "files",
                 Type = ToolType.FileSystem,
                 FileSystem = new Weave.Tools.Connectors.FileSystemToolConfig { Root = Path.Combine(root, "tools") }
-            }, Token("setup", ["tool:files:connect"]));
+            }, Token("setup", ["tool:files:connect"]), TestContext.Current.CancellationToken);
             var id = InvocationId.From(Guid.NewGuid().ToString("N"));
             var invocation = new ToolInvocation
             {

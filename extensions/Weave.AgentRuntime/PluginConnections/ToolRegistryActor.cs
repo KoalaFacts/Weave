@@ -16,7 +16,7 @@ using Weave.Workspaces.Manifest;
 
 namespace Weave.Agents.ToolRegistry;
 
-public sealed class ToolRegistryActor(
+public sealed partial class ToolRegistryActor(
     IVirtualActorProvider actors,
     ICapabilityTokenService tokenService,
     ILifecycleManager lifecycleManager,

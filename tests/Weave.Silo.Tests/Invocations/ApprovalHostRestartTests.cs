@@ -39,7 +39,7 @@ public sealed class ApprovalHostRestartTests
                 using var client = host.CreateClient();
                 var tool = Tool(host, workspace);
                 var writer = Token(host, workspace, "writer", ["tool:files:connect", "tool:files:invoke:write_file", "invocation:read"]);
-                await tool.ConnectAsync(Spec(root), writer);
+                await tool.ConnectAsync(Spec(root), writer, TestContext.Current.CancellationToken);
                 var pending = await tool.InvokeAsync(request, writer);
                 pending.ErrorCode.ShouldBe("approval-pending");
                 pending.AttemptId.ShouldBeNull();
@@ -62,7 +62,7 @@ public sealed class ApprovalHostRestartTests
                 (await tool.DecideApprovalAsync(id, planDigest, InvocationApprovalDecision.Approve, approver)).Succeeded.ShouldBeTrue();
                 File.ReadAllText(path).ShouldBe("original");
                 var writer = Token(host, workspace, "writer", ["tool:files:connect", "tool:files:invoke:write_file", "invocation:read"]);
-                await tool.ConnectAsync(Spec(root), writer);
+                await tool.ConnectAsync(Spec(root), writer, TestContext.Current.CancellationToken);
                 var result = await tool.InvokeAsync(request, writer);
                 result.Success.ShouldBeTrue(result.Error);
                 result.ApprovalState.ShouldBe(InvocationApprovalState.Consumed);

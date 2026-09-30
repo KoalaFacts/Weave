@@ -39,7 +39,7 @@ public sealed partial class GovernedHttpEntryTests
                 Sandbox = sandbox
             }
         };
-        await fx.Tool.ConnectAsync(Spec(originalSandbox), fx.Token(grants: ["tool:files:connect"]));
+        await fx.Tool.ConnectAsync(Spec(originalSandbox), fx.Token(grants: ["tool:files:connect"]), TestContext.Current.CancellationToken);
         var request = Request();
         using var pending = await fx.SendAsync(HttpMethod.Post, fx.Route, request, fx.Token());
         pending.StatusCode.ShouldBe(HttpStatusCode.Accepted);
@@ -49,7 +49,7 @@ public sealed partial class GovernedHttpEntryTests
         (await fx.Tool.DecideApprovalAsync(id, approval.PlanDigest,
             InvocationApprovalDecision.Approve, approver)).Succeeded.ShouldBeTrue();
         await fx.Tool.DisconnectAsync();
-        await fx.Tool.ConnectAsync(Spec(resumedSandbox), fx.Token(grants: ["tool:files:connect"]));
+        await fx.Tool.ConnectAsync(Spec(resumedSandbox), fx.Token(grants: ["tool:files:connect"]), TestContext.Current.CancellationToken);
 
         using var resumed = await fx.SendAsync(HttpMethod.Post, fx.Route, request, fx.Token());
 

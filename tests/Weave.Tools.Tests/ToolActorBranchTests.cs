@@ -88,7 +88,7 @@ public sealed class ToolActorBranchTests
                 IsConnected = true
             });
 
-        var handle = await fx.Actor.ConnectAsync(BuildSpec(), token);
+        var handle = await fx.Actor.ConnectAsync(BuildSpec(), token, TestContext.Current.CancellationToken);
 
         handle.ToolName.ShouldBe("shell");
     }
@@ -119,7 +119,7 @@ public sealed class ToolActorBranchTests
         fx.Connector.InvokeAsync(Arg.Any<ToolHandle>(), Arg.Any<ToolInvocation>(), Arg.Any<CancellationToken>())
             .Returns(new ToolResult { Success = true, ToolName = "shell", Output = "ok", Duration = TimeSpan.FromMilliseconds(5) });
 
-        await fx.Actor.ConnectAsync(BuildSpec(), token);
+        await fx.Actor.ConnectAsync(BuildSpec(), token, TestContext.Current.CancellationToken);
         var invocation = new ToolInvocation
         {
             ToolName = "shell",
@@ -145,7 +145,7 @@ public sealed class ToolActorBranchTests
                 ConnectionId = "id-1",
                 IsConnected = true
             });
-        await fx.Actor.ConnectAsync(BuildSpec(), token);
+        await fx.Actor.ConnectAsync(BuildSpec(), token, TestContext.Current.CancellationToken);
 
         await fx.Actor.DisconnectAsync();
 

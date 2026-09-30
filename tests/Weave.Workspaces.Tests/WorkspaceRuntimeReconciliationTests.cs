@@ -7,7 +7,7 @@ using Weave.Workspaces.RuntimeRecovery;
 
 namespace Weave.Workspaces.Tests;
 
-public sealed class WorkspaceRuntimeReconciliationTests
+public sealed partial class WorkspaceRuntimeReconciliationTests
 {
     [Fact]
     public async Task ReconcileAsync_HealthyRetainedResources_ConfirmsWithoutStartingOrChangingIdentity()
@@ -222,6 +222,7 @@ public sealed class WorkspaceRuntimeReconciliationTests
         public IWorkspaceRuntime Runtime { get; } = Substitute.For<IWorkspaceRuntime>();
         public ICapabilityAuthorizer Authorizer { get; } = Substitute.For<ICapabilityAuthorizer>();
         public IManagementOperationJournal Journal { get; } = Substitute.For<IManagementOperationJournal>();
+        public IWorkspaceHostedServiceRecovery Services { get; } = Substitute.For<IWorkspaceHostedServiceRecovery>();
         public WorkspaceState State { get; } = new()
         {
             WorkspaceId = WorkspaceId.From("ws"),
@@ -245,10 +246,15 @@ public sealed class WorkspaceRuntimeReconciliationTests
             Runtime.ObserveContainerNetworkAsync(Arg.Any<ContainerId>(), Arg.Any<NetworkId>(), Arg.Any<CancellationToken>()).Returns(ContainerNetworkCondition.Attached);
             Journal.TryAdmit(Arg.Any<ManagementOperationRecord>(), Arg.Any<CancellationToken>()).Returns(true);
             Journal.Complete(Arg.Any<string>(), Arg.Any<ManagementOperationOutcome>(), Arg.Any<DateTimeOffset>()).Returns(true);
-            _recovery = new(Runtime, Authorizer, Journal, TimeProvider.System);
+            Services.DescribeAsync(Arg.Any<WorkspaceHostedServices>(), Arg.Any<CancellationToken>()).Returns(new WorkspaceHostedServicePlan());
+            _recovery = new(Runtime, Authorizer, Journal, TimeProvider.System, Services);
         }
         public Task<WorkspaceRuntimeSnapshot> ObserveAsync() => _recovery.ObserveAsync(State, new(), TestContext.Current.CancellationToken);
-        public async Task<WorkspaceRuntimeReconciliationRequest> RequestAsync() => new() { ExpectedResourceSetDigest = (await ObserveAsync()).ResourceSetDigest };
+        public async Task<WorkspaceRuntimeReconciliationRequest> RequestAsync()
+        {
+            var observed = await ObserveAsync();
+            return new() { ExpectedResourceSetDigest = observed.ResourceSetDigest, ExpectedHostedServiceDigest = observed.HostedServicePlan?.Digest };
+        }
         public async Task<WorkspaceRuntimeReconciliationResult> ReconcileAsync(WorkspaceRuntimeReconciliationRequest? request = null,
             CancellationToken? ct = null) => await _recovery.ReconcileAsync(State, request ?? await RequestAsync(), new(),
                 Guid.NewGuid().ToString("N"), token => { Writes++; return Write?.Invoke(token) ?? Task.CompletedTask; }, ct ?? TestContext.Current.CancellationToken);

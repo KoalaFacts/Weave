@@ -63,7 +63,7 @@ public sealed class ApprovalReviewBindingTests
                 Name = "files",
                 Type = ToolType.FileSystem,
                 FileSystem = new Weave.Tools.Connectors.FileSystemToolConfig { Root = toolRoot }
-            }, Token("setup", ["tool:files:connect"]));
+            }, Token("setup", ["tool:files:connect"]), TestContext.Current.CancellationToken);
             var request = new ToolInvocation
             {
                 InvocationId = InvocationId.From(Guid.NewGuid().ToString("N")),
