@@ -9,6 +9,61 @@ namespace Weave.Silo.Tests.Plugins;
 public sealed partial class McpWorkspacePluginFlowTests
 {
     [Fact]
+    public async Task ProbeOnceAsync_McpContractChangesAndRecovers_UpdatesReadinessWithoutDispatch()
+    {
+        var directory = Path.Join(Path.GetTempPath(), $"weave-mcp-readiness-{Guid.NewGuid():N}");
+        Directory.CreateDirectory(directory);
+        try
+        {
+            await using var peer = new McpPeer("readiness");
+            await peer.StartAsync();
+            await using var host = new DurableSiloFactory(directory);
+            using var client = host.CreateClient();
+            var workspaceId = await StartWorkspaceAsync(client, host.Services, peer);
+            var monitor = host.Services.GetRequiredService<ToolInstallationReadinessMonitor>();
+
+            await monitor.ProbeOnceAsync(TestContext.Current.CancellationToken);
+            using (var response = await SendPluginAsync(client, host.Services, HttpMethod.Get,
+                $"/api/plugins/installations/{workspaceId}", workspaceId, "plugin:installations:read"))
+            {
+                using var document = JsonDocument.Parse(await response.Content.ReadAsStringAsync(
+                    TestContext.Current.CancellationToken));
+                document.RootElement.EnumerateArray().Single().GetProperty("probeCondition")
+                    .GetString().ShouldBe("responding");
+            }
+
+            peer.SchemaDescription = "changed contract";
+            await monitor.ProbeOnceAsync(TestContext.Current.CancellationToken);
+            using (var response = await SendPluginAsync(client, host.Services, HttpMethod.Get,
+                $"/api/plugins/installations/{workspaceId}", workspaceId, "plugin:installations:read"))
+            {
+                var body = await response.Content.ReadAsStringAsync(TestContext.Current.CancellationToken);
+                using var document = JsonDocument.Parse(body);
+                var installation = document.RootElement.EnumerateArray().Single();
+                installation.GetProperty("runtimeConnected").GetBoolean().ShouldBeTrue();
+                installation.GetProperty("probeCondition").GetString().ShouldBe("blocked");
+                installation.GetProperty("probeReasonCode").GetString().ShouldBe("contract_rejected");
+                body.ShouldNotContain(peer.Endpoint);
+                body.ShouldNotContain("changed contract");
+            }
+
+            peer.SchemaDescription = "Return text unchanged.";
+            await monitor.ProbeOnceAsync(TestContext.Current.CancellationToken);
+            using var recovered = await SendPluginAsync(client, host.Services, HttpMethod.Get,
+                $"/api/plugins/installations/{workspaceId}", workspaceId, "plugin:installations:read");
+            using var recoveredDocument = JsonDocument.Parse(await recovered.Content.ReadAsStringAsync(
+                TestContext.Current.CancellationToken));
+            recoveredDocument.RootElement.EnumerateArray().Single().GetProperty("probeCondition")
+                .GetString().ShouldBe("responding");
+            peer.CallCount.ShouldBe(0);
+        }
+        finally
+        {
+            Directory.Delete(directory, recursive: true);
+        }
+    }
+
+    [Fact]
     public async Task GetInstallationInventory_RequiresWorkspaceReadGrant()
     {
         var directory = Path.Join(Path.GetTempPath(), $"weave-mcp-inventory-auth-{Guid.NewGuid():N}");
@@ -123,6 +178,8 @@ public sealed partial class McpWorkspacePluginFlowTests
                 installation.GetProperty("condition").GetString().ShouldBe("disabled");
                 installation.GetProperty("reasonCode").ValueKind.ShouldBe(JsonValueKind.Null);
                 installation.GetProperty("lastCheckedAt").ValueKind.ShouldBe(JsonValueKind.Null);
+                installation.GetProperty("probeCondition").GetString().ShouldBe("not_applicable");
+                installation.GetProperty("probeCheckedAt").ValueKind.ShouldBe(JsonValueKind.Null);
             }
         }
         finally

@@ -12,4 +12,7 @@ public sealed record PluginInstallationResponse(
     DateTimeOffset? LastCheckedAt,
     IReadOnlyList<string> RequestedPermissions,
     IReadOnlyList<string> GrantedPermissions,
-    bool HasCredentialReferences);
+    bool HasCredentialReferences,
+    string ProbeCondition,
+    string? ProbeReasonCode,
+    DateTimeOffset? ProbeCheckedAt);
