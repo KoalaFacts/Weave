@@ -52,6 +52,8 @@ The resource `readiness` contract remains unchanged. It describes retained conta
 
 Reads do not reconnect retained handles, admit management operations, change installation desired state, persist a new recovery confirmation or replay invocations. Temporary probe transports are disposed. A failed service observation does not rewrite earlier confirmation/evidence; operators can inspect and deliberately use the existing explicit recovery path.
 
+[Explicit reconciliation now verifies the same current service health after reconnection](2026-09-30-workspace-recovery-verification.md). A non-ready service observation prevents a new recovery confirmation and is returned with its installation diagnostics.
+
 Persisted field IDs, actor keys and enum values are unchanged. The tool actor gains an owned current-connection query; it does not expose configuration, credentials or a connector instance. Runtime JSON gains the optional service observation; cooperating hosts must include the updated Orleans operation and serializers.
 
 ## Verification scope

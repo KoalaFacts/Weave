@@ -22,6 +22,8 @@ public sealed partial class WorkspaceRuntimeReconciliationTests
         });
         fx.Services.RestoreAsync(Arg.Any<WorkspaceHostedServices>(), Arg.Any<string>(), Arg.Any<CapabilityToken>(), Arg.Any<CancellationToken>())
             .Returns(Task.FromResult<string?>(null));
+        fx.Services.ObserveAsync(Arg.Any<WorkspaceHostedServices>(), Arg.Any<string>(), Arg.Any<CancellationToken>())
+            .Returns(new WorkspaceHostedServiceObservation { Condition = WorkspaceRuntimeReadinessCondition.Ready });
         return fx;
     }
 
@@ -97,14 +99,17 @@ public sealed partial class WorkspaceRuntimeReconciliationTests
     public async Task ReconcileAsync_ServiceRestorationFails_PreservesBlockingCondition(string reason)
     {
         var fx = WithServices();
+        var request = await fx.RequestAsync();
+        fx.Services.ClearReceivedCalls();
         fx.Services.RestoreAsync(Arg.Any<WorkspaceHostedServices>(), Arg.Any<string>(), Arg.Any<CapabilityToken>(), Arg.Any<CancellationToken>())
             .Returns(Task.FromResult<string?>(reason));
-        var result = await fx.ReconcileAsync();
+        var result = await fx.ReconcileAsync(request);
         result.Outcome.ShouldBe(WorkspaceRuntimeReconciliationOutcome.Blocked);
         result.Reason.ShouldBe(reason);
         result.HostedServicesRestored.ShouldBeFalse();
         fx.State.RecoveryCondition.ShouldBe(WorkspaceRecoveryCondition.RequiresReconciliation);
         fx.Writes.ShouldBe(0);
+        await fx.Services.DidNotReceive().ObserveAsync(Arg.Any<WorkspaceHostedServices>(), Arg.Any<string>(), Arg.Any<CancellationToken>());
     }
 
     [Fact]
@@ -143,6 +148,8 @@ public sealed partial class WorkspaceRuntimeReconciliationTests
     public async Task ReconcileAsync_AuthorityRevokedAfterRestoration_RetainsUnknownAdmission()
     {
         var fx = WithServices();
+        var request = await fx.RequestAsync();
+        fx.Services.ClearReceivedCalls();
         fx.Services.RestoreAsync(Arg.Any<WorkspaceHostedServices>(), Arg.Any<string>(), Arg.Any<CapabilityToken>(), Arg.Any<CancellationToken>())
             .Returns(_ =>
             {
@@ -150,10 +157,11 @@ public sealed partial class WorkspaceRuntimeReconciliationTests
                     .Returns(Task.FromException(new UnauthorizedAccessException()));
                 return Task.FromResult<string?>(null);
             });
-        await Should.ThrowAsync<UnauthorizedAccessException>(() => fx.ReconcileAsync());
+        await Should.ThrowAsync<UnauthorizedAccessException>(() => fx.ReconcileAsync(request));
         fx.Journal.DidNotReceive().Complete(Arg.Any<string>(), Arg.Any<ManagementOperationOutcome>(), Arg.Any<DateTimeOffset>());
         fx.State.RecoveryCondition.ShouldBe(WorkspaceRecoveryCondition.RequiresReconciliation);
         fx.Writes.ShouldBe(0);
+        await fx.Services.DidNotReceive().ObserveAsync(Arg.Any<WorkspaceHostedServices>(), Arg.Any<string>(), Arg.Any<CancellationToken>());
     }
 
     [Fact]
