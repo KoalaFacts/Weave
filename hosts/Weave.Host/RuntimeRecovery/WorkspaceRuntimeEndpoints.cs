@@ -16,7 +16,7 @@ public static class WorkspaceRuntimeEndpoints
     public static RouteGroupBuilder Map(RouteGroupBuilder routes)
     {
         routes.MapGet("/{workspaceId}/runtime", ObserveAsync)
-            .WithDescription("Observe retained containers by immutable ID; registration is not runtime readiness.");
+            .WithDescription("Observe retained runtime resources and derive readiness with reasons; registration alone is not readiness.");
         routes.MapPost("/{workspaceId}/containers/{containerId}/recover", RecoverAsync)
             .WithDescription("Start one retained stopped container. Does not restore Agent state or replay tool invocations.");
         return routes;

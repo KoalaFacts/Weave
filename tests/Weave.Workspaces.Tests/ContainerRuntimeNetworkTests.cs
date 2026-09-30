@@ -39,11 +39,12 @@ public sealed class ContainerRuntimeNetworkTests
     }
 
     [Fact]
-    public async Task RuntimeNetworkOperations_InProcess_ReportUnsupportedWithoutDispatch()
+    public async Task RuntimeNetworkOperations_InProcess_ObserveLocalMarkerAndBlockRecovery()
     {
         var runtime = new InProcessRuntime(NullLogger<InProcessRuntime>.Instance);
 
-        (await runtime.ObserveNetworkAsync(Network, TestContext.Current.CancellationToken)).ShouldBe(NetworkRuntimeCondition.Unsupported);
+        (await runtime.ObserveNetworkAsync(NetworkId.From("local"), TestContext.Current.CancellationToken)).ShouldBe(NetworkRuntimeCondition.NotRequired);
+        (await runtime.ObserveNetworkAsync(Network, TestContext.Current.CancellationToken)).ShouldBe(NetworkRuntimeCondition.InvalidIdentity);
         (await runtime.ObserveContainerNetworkAsync(Container, Network, TestContext.Current.CancellationToken)).ShouldBe(ContainerNetworkCondition.Unsupported);
         var result = await runtime.RecoverContainerAsync(Container, Network,
             () => throw new InvalidOperationException("must not dispatch"), TestContext.Current.CancellationToken);

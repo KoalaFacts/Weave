@@ -112,6 +112,8 @@ public sealed class WorkspaceRuntimeEndpointTests
             observed.StatusCode.ShouldBe(HttpStatusCode.OK);
             using var body = JsonDocument.Parse(await observed.Content.ReadAsStringAsync(TestContext.Current.CancellationToken));
             body.RootElement.GetProperty("registeredStatus").GetString().ShouldBe("Running");
+            body.RootElement.GetProperty("readiness").GetProperty("condition").GetString().ShouldBe("NotReady");
+            body.RootElement.GetProperty("readiness").GetProperty("reasons")[0].GetString().ShouldBe("ContainerNotRunning");
             body.RootElement.GetProperty("containers")[0].GetProperty("condition").GetString().ShouldBe("Stopped");
             body.RootElement.GetProperty("network").GetProperty("condition").GetString().ShouldBe("Present");
             body.RootElement.GetProperty("containers")[0].GetProperty("networkAttachment").GetString().ShouldBe("Attached");
@@ -140,6 +142,8 @@ public sealed class WorkspaceRuntimeEndpointTests
         {
             using var body = JsonDocument.Parse(await after.Content.ReadAsStringAsync(TestContext.Current.CancellationToken));
             body.RootElement.GetProperty("containers")[0].GetProperty("condition").GetString().ShouldBe("Running");
+            body.RootElement.GetProperty("readiness").GetProperty("condition").GetString().ShouldBe("Ready");
+            body.RootElement.GetProperty("readiness").GetProperty("reasons").GetArrayLength().ShouldBe(0);
         }
 
         runner.Running = false;
@@ -157,6 +161,9 @@ public sealed class WorkspaceRuntimeEndpointTests
             blockedBody.ShouldContain(missingNetwork ? "Missing" : "Detached");
             journal.Find(blockedId, CancellationToken.None)?.Outcome.ToString().ShouldBe("Failed");
             runner.StartCount.ShouldBe(1);
+            using var observation = await client.GetAsync(observationRoute, TestContext.Current.CancellationToken);
+            using var snapshot = JsonDocument.Parse(await observation.Content.ReadAsStringAsync(TestContext.Current.CancellationToken));
+            snapshot.RootElement.GetProperty("readiness").GetProperty("condition").GetString().ShouldBe("NotReady");
         }
         runner.NetworkMissing = false;
         runner.NetworkDetached = false;
