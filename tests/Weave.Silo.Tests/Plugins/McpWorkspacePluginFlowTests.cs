@@ -626,7 +626,8 @@ public sealed partial class McpWorkspacePluginFlowTests
         }
     };
 
-    private sealed class DurableSiloFactory(string directory, bool requireApproval = false) : WebApplicationFactory<Program>
+    private sealed class DurableSiloFactory(string directory, bool requireApproval = false,
+        Action<IServiceCollection>? configureServices = null) : WebApplicationFactory<Program>
     {
         protected override void ConfigureWebHost(IWebHostBuilder builder)
         {
@@ -640,6 +641,8 @@ public sealed partial class McpWorkspacePluginFlowTests
             if (requireApproval)
                 builder.ConfigureServices(services => services.PostConfigure<InvocationJournalOptions>(options =>
                     options.ApprovalRequiredGrants = ["tool:echo:invoke:echo"]));
+            if (configureServices is not null)
+                builder.ConfigureServices(configureServices);
         }
     }
 

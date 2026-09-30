@@ -93,7 +93,16 @@ public sealed partial class WorkspaceRuntimeRecovery
                             : await hostedServices.RestoreAsync(CaptureServices(state), services.Digest, token, ct);
                         if (services is not null && restorationFailure is null)
                         {
-                            observed = await ObserveAuthorizedAsync(state, ct);
+                            foreach (var grant in grants)
+                                await authorizer.AuthorizeAsync(token, grant, owner);
+                            ct.ThrowIfCancellationRequested();
+                            var serviceObservation = await hostedServices.ObserveAsync(CaptureServices(state), services.Digest, ct);
+                            ct.ThrowIfCancellationRequested();
+                            observed = (await ObserveAuthorizedAsync(state, ct)) with
+                            {
+                                HostedServiceObservation = serviceObservation,
+                                ObservedAt = timeProvider.GetUtcNow()
+                            };
                             readiness = WorkspaceRuntimeReadiness.Evaluate(proposed, true, observed.Network, observed.Containers);
                         }
                         foreach (var grant in grants)
@@ -105,6 +114,8 @@ public sealed partial class WorkspaceRuntimeRecovery
                             result = new() { Reason = restorationFailure, Observation = observed };
                         else if (readiness.Condition is not WorkspaceRuntimeReadinessCondition.Ready)
                             result = new() { Reason = "runtime-resources-not-ready", Observation = observed };
+                        else if (services is not null && observed.HostedServiceObservation?.Condition is not WorkspaceRuntimeReadinessCondition.Ready)
+                            result = new() { Reason = "hosted-services-not-ready", Observation = observed };
                         else
                         {
                             result = await ConfirmAsync(state, observed, readiness, persist);

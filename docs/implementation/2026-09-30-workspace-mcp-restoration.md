@@ -17,7 +17,7 @@ An installed MCP connector can be registered on host startup while its tool acto
 ```
 
 5. The caller needs `workspace:runtime:reconcile`, `plugin:invoke:<workspaceId>/<pluginName>` for each enabled installation, and `tool:<toolName>:connect` for each tool. The shared operation validates current authority and durably admits the exact grants and combined plan digest before restoring connections.
-6. Reconciliation freshly probes each pinned peer, reconnects tools from their owned registry definitions, probes the peers again and reobserves retained runtime resources. It rechecks the service plan and current grants before persisting confirmation. `Confirmed` with `hostedServicesRestored: true` is evidence of this completed operation.
+6. Reconciliation freshly probes each pinned peer, reconnects tools from their owned registry definitions, and probes the peers again. It then [verifies current service connections and reobserves retained runtime resources](2026-09-30-workspace-recovery-verification.md), rechecking both plans and current grants before persisting confirmation. `Confirmed` with `hostedServicesRestored: true` includes the final service observation as evidence of this completed operation.
 
 No tool business operation is invoked. Tool discovery, installation registration, connection permission and restoration add no invocation grants. Saved tokens are not reused; the current request capability is passed through each connection boundary.
 

@@ -110,6 +110,8 @@ public sealed partial class McpWorkspacePluginFlowTests
                     TestContext.Current.CancellationToken);
                 confirmation!.Outcome.ShouldBe(WorkspaceRuntimeReconciliationOutcome.Confirmed);
                 confirmation.HostedServicesRestored.ShouldBeTrue();
+                confirmation.Observation!.HostedServiceObservation!.Condition.ShouldBe(WorkspaceRuntimeReadinessCondition.Ready);
+                confirmation.Observation.HostedServiceObservation.McpInstallations.Single().Reason.ShouldBeNull();
                 var confirmedState = await actors.GetActor<IWorkspaceActor>(VirtualActorId.From(workspaceId)).GetStateAsync();
                 confirmedState.RecoveryCondition.ShouldBe(WorkspaceRecoveryCondition.RuntimeReconciledOnThisHost);
                 confirmedInstance = confirmedState.RuntimeInstanceId;
