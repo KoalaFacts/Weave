@@ -5,11 +5,12 @@ using Weave.Silo.Plugins;
 using Weave.Silo.RuntimeRecovery;
 using Weave.Tools.InstallDaprTool;
 using Weave.Tools.InstallMcpTool;
+using Weave.Tools.Tool;
 using Weave.Workspaces.RuntimeRecovery;
 
 namespace Weave.Silo.Tests.RuntimeRecovery;
 
-public sealed class McpWorkspaceServiceRecoveryTests
+public sealed partial class McpWorkspaceServiceRecoveryTests
 {
     [Theory]
     [InlineData("authority")]
@@ -130,6 +131,7 @@ public sealed class McpWorkspaceServiceRecoveryTests
     private sealed class Fixture
     {
         public IToolRegistryActor Registry { get; } = Substitute.For<IToolRegistryActor>();
+        public IToolActor Connection { get; } = Substitute.For<IToolActor>();
         public IMcpInstallationDispatchGate Installations { get; } = Substitute.For<IMcpInstallationDispatchGate>();
         public ProbeStub Probe { get; } = new();
         public McpWorkspaceServiceRecovery Recovery { get; }
@@ -159,6 +161,8 @@ public sealed class McpWorkspaceServiceRecoveryTests
         {
             var actors = Substitute.For<IVirtualActorProvider>();
             actors.GetActor<IToolRegistryActor>(Arg.Any<VirtualActorId>()).Returns(Registry);
+            actors.GetActor<IToolActor>(Arg.Any<VirtualActorId>()).Returns(Connection);
+            Connection.HasCurrentConnectionAsync(ToolType.Mcp, "ws/server", Arg.Any<CancellationToken>()).Returns(true);
             Recovery = new(actors, Installations, Probe, Substitute.For<ICapabilityAuthorizer>());
             SetTools(Tool);
             Installations.MatchesInstallation(Arg.Any<McpToolInstallationSnapshot>()).Returns(true);

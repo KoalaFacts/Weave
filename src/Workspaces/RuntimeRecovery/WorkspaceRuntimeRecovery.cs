@@ -24,7 +24,14 @@ public sealed partial class WorkspaceRuntimeRecovery(
         if (state.WorkspaceId.IsEmpty)
             throw new UnauthorizedAccessException("Workspace identity is unavailable.");
         await authorizer.AuthorizeAsync(token, ReadGrant, state.WorkspaceId.ToString());
-        return await ObserveAuthorizedAsync(state, ct);
+        var snapshot = await ObserveAuthorizedAsync(state, ct);
+        var services = snapshot.HostedServicePlan;
+        var observation = services is null ? null : services.BlockReason is { } reason
+            ? new WorkspaceHostedServiceObservation { Reason = reason }
+            : await hostedServices.ObserveAsync(CaptureServices(state), services.Digest, ct);
+        await authorizer.AuthorizeAsync(token, ReadGrant, state.WorkspaceId.ToString());
+        ct.ThrowIfCancellationRequested();
+        return snapshot with { HostedServiceObservation = observation, ObservedAt = timeProvider.GetUtcNow() };
     }
 
     private async Task<WorkspaceRuntimeSnapshot> ObserveAuthorizedAsync(WorkspaceState state, CancellationToken ct)

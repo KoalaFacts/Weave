@@ -79,4 +79,6 @@ public sealed class ToolActorGrain : Grain, IToolActorGrain
 
     public Task<ToolSchema> GetSchemaAsync() => _actor.GetSchemaAsync();
     public Task<ToolHandle?> GetHandleAsync() => _actor.GetHandleAsync();
+    public Task<bool> HasCurrentConnectionAsync(ToolType expectedType, string? expectedInstallationId, CancellationToken ct) =>
+        _actor.HasCurrentConnectionAsync(expectedType, expectedInstallationId, ct);
 }
