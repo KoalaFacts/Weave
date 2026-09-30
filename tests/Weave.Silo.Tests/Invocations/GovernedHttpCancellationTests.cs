@@ -115,7 +115,21 @@ public sealed class GovernedHttpCancellationTests
             var pending = client.SendAsync(message, abort.Token);
             try
             {
-                await gate.Entered.Task.WaitAsync(TimeSpan.FromSeconds(15), TestContext.Current.CancellationToken);
+                Task first;
+                try
+                {
+                    first = await Task.WhenAny(gate.Entered.Task, pending)
+                        .WaitAsync(TimeSpan.FromSeconds(15), TestContext.Current.CancellationToken);
+                }
+                catch (TimeoutException error)
+                {
+                    throw new TimeoutException($"Authorization entry timed out for {operation}; HTTP task={pending.Status}, authorizer started={gate.Authorizing.Task.IsCompleted}.", error);
+                }
+                if (first == pending)
+                {
+                    using var early = await pending;
+                    gate.Entered.Task.IsCompleted.ShouldBeTrue($"HTTP {early.StatusCode} returned before grain authorization for {operation}.");
+                }
                 await abort.CancelAsync();
                 await Should.ThrowAsync<OperationCanceledException>(async () => await pending);
                 // This observation is inside ToolActor's real Grain call, not merely the HTTP client task.
@@ -151,6 +165,7 @@ public sealed class GovernedHttpCancellationTests
 
     private sealed class AuthorizationGate
     {
+        public TaskCompletionSource Authorizing { get; } = new(TaskCreationOptions.RunContinuationsAsynchronously);
         public TaskCompletionSource Entered { get; } = new(TaskCreationOptions.RunContinuationsAsynchronously);
         public TaskCompletionSource Cancelled { get; } = new(TaskCreationOptions.RunContinuationsAsynchronously);
         public TaskCompletionSource Release { get; } = new(TaskCreationOptions.RunContinuationsAsynchronously);
@@ -163,6 +178,8 @@ public sealed class GovernedHttpCancellationTests
         public async Task AuthorizeAsync(CapabilityToken token, string grant, string? actorWorkspaceId,
             [CallerMemberName] string actionContext = "")
         {
+            if (token.IssuedTo == "cancellation-probe")
+                gate.Authorizing.TrySetResult();
             await inner.AuthorizeAsync(token, grant, actorWorkspaceId, actionContext);
             if (token.IssuedTo != "cancellation-probe" || Interlocked.Exchange(ref _entered, 1) != 0)
                 return;
