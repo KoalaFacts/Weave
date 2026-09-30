@@ -383,9 +383,11 @@ public sealed class CliToolConnectorTests
 
     // --- Successful process execution ---
 
+    public static TheoryData<string> EchoShells => OperatingSystem.IsWindows()
+        ? new() { "pwsh" } : new() { "bash", "sh" };
+
     [Theory]
-    [InlineData("bash")]
-    [InlineData("sh")]
+    [MemberData(nameof(EchoShells))]
     public async Task InvokeAsync_EchoCommand_ReturnsOutput(string shell)
     {
         var connector = CreateConnector();
@@ -395,7 +397,7 @@ public sealed class CliToolConnectorTests
 
         var result = await connector.InvokeAsync(handle, invocation, TestContext.Current.CancellationToken);
 
-        result.Success.ShouldBeTrue();
+        result.Success.ShouldBeTrue(result.Error);
         result.Output.ShouldContain("weave-test-output");
         result.ToolName.ShouldBe("my-cli");
         result.Duration.ShouldBeGreaterThan(TimeSpan.Zero);
@@ -425,13 +427,15 @@ public sealed class CliToolConnectorTests
     public async Task InvokeAsync_NonZeroExitCode_ReturnsFailure()
     {
         var connector = CreateConnector();
-        var spec = CreateSpec(shell: "bash");
+        var spec = CreateSpec(shell: OperatingSystem.IsWindows() ? "pwsh" : "bash");
         var handle = await connector.ConnectAsync(spec, _testToken, TestContext.Current.CancellationToken);
         var invocation = new ToolInvocation { ToolName = "my-cli", RawInput = "exit 1", Parameters = [] };
 
         var result = await connector.InvokeAsync(handle, invocation, TestContext.Current.CancellationToken);
 
         result.Success.ShouldBeFalse();
+        result.Output.ShouldBe(string.Empty);
+        result.Error.ShouldBeNull();
     }
 
     // --- Wildcard: anchored end ---
