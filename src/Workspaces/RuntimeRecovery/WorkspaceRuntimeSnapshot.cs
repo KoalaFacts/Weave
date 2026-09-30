@@ -1,3 +1,5 @@
+using Weave.Workspaces.Runtime;
+
 namespace Weave.Workspaces.RuntimeRecovery;
 
 public sealed record WorkspaceRuntimeSnapshot
@@ -9,5 +11,6 @@ public sealed record WorkspaceRuntimeSnapshot
     public required string CurrentRuntime { get; init; }
     public bool StartedOnCurrentHost { get; init; }
     public DateTimeOffset ObservedAt { get; init; }
+    public NetworkRuntimeObservation Network { get; init; } = new();
     public IReadOnlyList<WorkspaceContainerObservation> Containers { get; init; } = [];
 }

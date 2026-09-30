@@ -8,4 +8,5 @@ public sealed record WorkspaceContainerObservation
     public required string Name { get; init; }
     public required string RegisteredStatus { get; init; }
     public ContainerRuntimeCondition Condition { get; init; }
+    public ContainerNetworkCondition NetworkAttachment { get; init; }
 }

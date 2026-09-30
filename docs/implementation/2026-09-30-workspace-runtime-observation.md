@@ -1,5 +1,7 @@
 # Workspace runtime observation and explicit container recovery
 
+This increment is extended by [network observation and dependency-aware recovery](2026-09-30-workspace-network-recovery.md), which adds retained-network and attachment requirements to the existing route.
+
 ## Delivered path
 
 Weave can query the container engine for each retained container ID, then explicitly start one stopped container. This is the first workspace runtime recovery path in the Agent Control Plane. It does not restore a complete workspace after a Host restart.
@@ -38,6 +40,6 @@ The shared process runner now drains both streams concurrently while retaining a
 
 Tests cover full-ID routing, denial and lifecycle/provider mismatch, malformed observations, unknown outcomes, cancellation, current authority after observation, retained reconciliation status, real HTTP/Orleans dispatch and SQLite management admission, duplicate requests and concurrent recovery. Process tests exercise actual child-process cancellation and excess stdout/stderr.
 
-`ContainerRuntimeRecoveryIntegrationTests` is tagged `Category=Integration` and excluded from the default workspace test invocation. Run it explicitly against a configured Podman engine. It creates a temporary networkless container, observes running/stopped state, starts the same ID, removes it, verifies missing-resource recovery is blocked, and cleans up its own container.
+`ContainerRuntimeRecoveryIntegrationTests` is tagged `Category=Integration` and excluded from the default workspace test invocation. Run it explicitly against a configured Podman engine. The extended test creates a temporary network/container, observes running/stopped state, starts the same ID, checks network dependency failures and missing-resource recovery, and cleans up its own resources.
 
 These tests do not establish Docker integration, cluster-wide recovery, durable observation history or a complete Agent recovery controller.

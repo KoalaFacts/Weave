@@ -23,6 +23,13 @@ public sealed class WorkspaceRuntimeRecovery(
         if (state.WorkspaceId.IsEmpty)
             throw new UnauthorizedAccessException("Workspace identity is unavailable.");
         await authorizer.AuthorizeAsync(token, ReadGrant, state.WorkspaceId.ToString());
+        var network = new NetworkRuntimeObservation
+        {
+            NetworkId = state.NetworkId?.ToString(),
+            Condition = state.NetworkId is null ? NetworkRuntimeCondition.NotRecorded
+                : state.RuntimeName != runtime.RuntimeName ? NetworkRuntimeCondition.RuntimeMismatch
+                : await runtime.ObserveNetworkAsync(state.NetworkId.Value, ct)
+        };
         var observations = new List<WorkspaceContainerObservation>(state.Containers.Count);
         foreach (var container in state.Containers)
         {
@@ -35,7 +42,10 @@ public sealed class WorkspaceRuntimeRecovery(
                 ContainerId = container.ContainerId.ToString(),
                 Name = container.Name,
                 RegisteredStatus = container.Status.ToString(),
-                Condition = condition
+                Condition = condition,
+                NetworkAttachment = network.Condition is NetworkRuntimeCondition.Present
+                    ? await runtime.ObserveContainerNetworkAsync(container.ContainerId, state.NetworkId!.Value, ct)
+                    : ContainerNetworkCondition.NotChecked
             });
         }
         return new WorkspaceRuntimeSnapshot
@@ -48,6 +58,7 @@ public sealed class WorkspaceRuntimeRecovery(
             StartedOnCurrentHost = state.RuntimeInstanceId != Guid.Empty && state.RuntimeInstanceId == runtime.InstanceId
                 && state.RuntimeName == runtime.RuntimeName && state.Status is WorkspaceStatus.Running,
             ObservedAt = timeProvider.GetUtcNow(),
+            Network = network,
             Containers = observations
         };
     }
@@ -74,7 +85,7 @@ public sealed class WorkspaceRuntimeRecovery(
             Action = RecoverGrant,
             Target = target,
             AuthorizedGrants = RecoverGrant,
-            RequestDigest = Convert.ToHexStringLower(SHA256.HashData(Encoding.UTF8.GetBytes(target))),
+            RequestDigest = Convert.ToHexStringLower(SHA256.HashData(Encoding.UTF8.GetBytes($"{target}|{state.NetworkId}"))),
             AdmittedAt = timeProvider.GetUtcNow()
         }, ct))
             return result with { Outcome = ContainerRecoveryOutcome.AlreadyAdmitted };
@@ -87,8 +98,10 @@ public sealed class WorkspaceRuntimeRecovery(
                 result = result with { Condition = ContainerRuntimeCondition.InvalidIdentity };
             else if (state.RuntimeName != runtime.RuntimeName)
                 result = result with { Condition = ContainerRuntimeCondition.RuntimeMismatch };
+            else if (state.NetworkId is null)
+                result = result with { Network = new NetworkRuntimeObservation { Condition = NetworkRuntimeCondition.NotRecorded } };
             else
-                result = await runtime.RecoverContainerAsync(containerId,
+                result = await runtime.RecoverContainerAsync(containerId, state.NetworkId.Value,
                     () => authorizer.AuthorizeAsync(token, RecoverGrant, workspaceId), ct);
         }
         catch (UnauthorizedAccessException)
