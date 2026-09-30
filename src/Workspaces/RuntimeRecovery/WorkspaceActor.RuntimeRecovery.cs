@@ -7,6 +7,9 @@ namespace Weave.Workspaces.Lifecycle;
 
 public sealed partial class WorkspaceActor
 {
+    public Task<WorkspaceRuntimeReconciliationResult> ReconcileRuntimeAsync(WorkspaceRuntimeReconciliationRequest request,
+        CapabilityToken token, string managementId, CancellationToken ct) =>
+        recovery.ReconcileAsync(persistentState.State, request, token, managementId, persistentState.WriteStateAsync, ct);
     public Task<WorkspaceRuntimeSnapshot> ObserveRuntimeAsync(CapabilityToken token, CancellationToken ct) =>
         recovery.ObserveAsync(persistentState.State, token, ct);
 

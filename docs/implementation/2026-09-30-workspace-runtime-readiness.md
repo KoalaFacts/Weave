@@ -2,6 +2,8 @@
 
 ## Delivered query
 
+This record describes the original query increment. The subsequent [explicit resource reconciliation](2026-09-30-workspace-runtime-reconciliation.md) also allows `RuntimeReconciledOnThisHost` to establish runtime readiness, distinguishes confirmation from starting, and adds a resource-set digest. The read-only query still never clears reconciliation itself.
+
 The existing `GET /api/workspaces/{workspaceId}/runtime` response adds `readiness.condition` and `readiness.reasons`. It still requires `workspace:runtime:read` for the target workspace. HTTP and Orleans use the same observation and derivation; no new management operation or grant is introduced.
 
 | Condition | Meaning |

@@ -4,5 +4,6 @@ public enum WorkspaceRecoveryCondition
 {
     NotApplicable,
     StartedOnThisHost,
-    RequiresReconciliation
+    RequiresReconciliation,
+    RuntimeReconciledOnThisHost
 }

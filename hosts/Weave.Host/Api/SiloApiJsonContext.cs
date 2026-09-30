@@ -16,6 +16,8 @@ namespace Weave.Silo.Api;
 [JsonSerializable(typeof(ValidateWorkspaceManifestResult))]
 [JsonSerializable(typeof(WorkspaceResponse))]
 [JsonSerializable(typeof(WorkspaceRuntimeSnapshot))]
+[JsonSerializable(typeof(WorkspaceRuntimeReconciliationRequest))]
+[JsonSerializable(typeof(WorkspaceRuntimeReconciliationResult))]
 [JsonSerializable(typeof(ContainerRecoveryResult))]
 [JsonSerializable(typeof(AgentResponse))]
 [JsonSerializable(typeof(AgentDefinition))]

@@ -10,6 +10,8 @@ public sealed record WorkspaceRuntimeSnapshot
     public string? CreatingRuntime { get; init; }
     public required string CurrentRuntime { get; init; }
     public bool StartedOnCurrentHost { get; init; }
+    public bool ConfirmedOnCurrentHost { get; init; }
+    public string ResourceSetDigest { get; init; } = string.Empty;
     public DateTimeOffset ObservedAt { get; init; }
     public WorkspaceRuntimeReadiness Readiness { get; init; } = new();
     public NetworkRuntimeObservation Network { get; init; } = new();
