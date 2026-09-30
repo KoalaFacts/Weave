@@ -8,6 +8,21 @@ public sealed record WorkspaceRuntimeReadiness
     public WorkspaceRuntimeReadinessCondition Condition { get; init; }
     public IReadOnlyList<WorkspaceRuntimeReadinessReason> Reasons { get; init; } = [];
 
+    internal WorkspaceRuntimeReadiness IncludeHostedServices(WorkspaceHostedServiceObservation? observation)
+    {
+        if (observation is null || observation.Condition is WorkspaceRuntimeReadinessCondition.Ready)
+            return this;
+        var unavailable = observation.Condition is WorkspaceRuntimeReadinessCondition.NotReady;
+        var reason = unavailable ? WorkspaceRuntimeReadinessReason.HostedServicesNotReady
+            : WorkspaceRuntimeReadinessReason.HostedServiceObservationIncomplete;
+        return this with
+        {
+            Condition = unavailable || Condition is WorkspaceRuntimeReadinessCondition.NotReady
+                ? WorkspaceRuntimeReadinessCondition.NotReady : WorkspaceRuntimeReadinessCondition.Unknown,
+            Reasons = Array.AsReadOnly(Reasons.Append(reason).Distinct().ToArray())
+        };
+    }
+
     internal static WorkspaceRuntimeReadiness Evaluate(WorkspaceState state, bool confirmedOnCurrentHost,
         NetworkRuntimeObservation network, IReadOnlyList<WorkspaceContainerObservation> containers)
     {

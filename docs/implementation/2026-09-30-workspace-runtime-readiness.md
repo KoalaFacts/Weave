@@ -2,7 +2,7 @@
 
 ## Delivered query
 
-This record describes the original query increment. The subsequent [explicit resource reconciliation](2026-09-30-workspace-runtime-reconciliation.md) also allows `RuntimeReconciledOnThisHost` to establish runtime readiness, distinguishes confirmation from starting, and adds a resource-set digest. The read-only query still never clears reconciliation itself.
+This record describes the original resource-only query increment. The subsequent [explicit resource reconciliation](2026-09-30-workspace-runtime-reconciliation.md) also allows `RuntimeReconciledOnThisHost` to establish runtime readiness, distinguishes confirmation from starting, and adds a resource-set digest. [Combined workspace readiness](2026-10-01-workspace-service-readiness.md) now includes current hosted-service health in the same top-level result. The read-only query still never clears reconciliation itself.
 
 The existing `GET /api/workspaces/{workspaceId}/runtime` response adds `readiness.condition` and `readiness.reasons`. It still requires `workspace:runtime:read` for the target workspace. HTTP and Orleans use the same observation and derivation; no new management operation or grant is introduced.
 
@@ -45,7 +45,7 @@ The query performs fresh observations and derives the result at completion, usin
 
 This is **runtime resource readiness**. It does not establish Agent activation, plugin service responsiveness, application health, credential validity or mandatory journal availability. Sequential engine observations are not an atomic engine snapshot and can become stale after the query. Consumers should use the timestamp and underlying conditions when deciding their next explicit action.
 
-Supported installed HTTP MCP tools also have a separate [current service observation](2026-09-30-workspace-mcp-observation.md); it does not change the resource readiness contract.
+Supported installed HTTP MCP tools also have a [current service observation](2026-09-30-workspace-mcp-observation.md). Its results now contribute to [combined workspace readiness](2026-10-01-workspace-service-readiness.md); the resource-only contract above describes the original increment.
 
 The earlier cancellation-entry timeout remains undiagnosed; the merged [diagnostic increment](2026-09-30-cancellation-entry-diagnostics.md) remains in place. Implementing this separate query does not claim to fix that timeout.
 

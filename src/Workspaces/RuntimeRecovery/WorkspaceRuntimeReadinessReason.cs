@@ -15,5 +15,7 @@ public enum WorkspaceRuntimeReadinessReason
     ContainerObservationIncomplete,
     ContainerNetworkNotAttached,
     ContainerNetworkObservationIncomplete,
-    NotReconciledOnCurrentHost
+    NotReconciledOnCurrentHost,
+    HostedServicesNotReady,
+    HostedServiceObservationIncomplete
 }

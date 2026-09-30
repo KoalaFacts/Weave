@@ -31,7 +31,12 @@ public sealed partial class WorkspaceRuntimeRecovery(
             : await hostedServices.ObserveAsync(CaptureServices(state), services.Digest, ct);
         await authorizer.AuthorizeAsync(token, ReadGrant, state.WorkspaceId.ToString());
         ct.ThrowIfCancellationRequested();
-        return snapshot with { HostedServiceObservation = observation, ObservedAt = timeProvider.GetUtcNow() };
+        return snapshot with
+        {
+            HostedServiceObservation = observation,
+            Readiness = snapshot.Readiness.IncludeHostedServices(observation),
+            ObservedAt = timeProvider.GetUtcNow()
+        };
     }
 
     private async Task<WorkspaceRuntimeSnapshot> ObserveAuthorizedAsync(WorkspaceState state, CancellationToken ct)

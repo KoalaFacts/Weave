@@ -98,9 +98,11 @@ public sealed partial class WorkspaceRuntimeRecovery
                             ct.ThrowIfCancellationRequested();
                             var serviceObservation = await hostedServices.ObserveAsync(CaptureServices(state), services.Digest, ct);
                             ct.ThrowIfCancellationRequested();
-                            observed = (await ObserveAuthorizedAsync(state, ct)) with
+                            observed = await ObserveAuthorizedAsync(state, ct);
+                            observed = observed with
                             {
                                 HostedServiceObservation = serviceObservation,
+                                Readiness = observed.Readiness.IncludeHostedServices(serviceObservation),
                                 ObservedAt = timeProvider.GetUtcNow()
                             };
                             readiness = WorkspaceRuntimeReadiness.Evaluate(proposed, true, observed.Network, observed.Containers);

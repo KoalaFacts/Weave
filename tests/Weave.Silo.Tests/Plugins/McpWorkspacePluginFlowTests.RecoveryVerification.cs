@@ -87,7 +87,9 @@ public sealed partial class McpWorkspacePluginFlowTests
                 failure.Outcome.ShouldBe(WorkspaceRuntimeReconciliationOutcome.Blocked);
                 failure.Reason.ShouldBe("hosted-services-not-ready");
                 failure.HostedServicesRestored.ShouldBeFalse();
-                failure.Observation!.HostedServiceObservation!.McpInstallations.Single().Reason
+                failure.Observation!.Readiness.Condition.ShouldBe(WorkspaceRuntimeReadinessCondition.NotReady);
+                failure.Observation.Readiness.Reasons.ShouldContain(WorkspaceRuntimeReadinessReason.HostedServicesNotReady);
+                failure.Observation.HostedServiceObservation!.McpInstallations.Single().Reason
                     .ShouldBe(disconnect ? "mcp-tool-not-connected" : "mcp-contract-rejected");
                 (await actors.GetActor<IWorkspaceActor>(VirtualActorId.From(workspaceId)).GetStateAsync())
                     .RecoveryCondition.ShouldBe(WorkspaceRecoveryCondition.RequiresReconciliation);
