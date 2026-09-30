@@ -199,6 +199,15 @@ internal sealed class SiloServiceRegistrar
     {
         _services.AddSingleton<ToolInstallationRestorer>();
         _services.AddHostedService(sp => sp.GetRequiredService<ToolInstallationRestorer>());
+        _services.AddSingleton<IToolInstallationPeerProbe>(sp => new ToolInstallationPeerProbe(
+            new HttpClient(new SocketsHttpHandler
+            {
+                AllowAutoRedirect = false,
+                UseProxy = false
+            }),
+            sp.GetRequiredService<ILoggerFactory>(), sp.GetRequiredService<TimeProvider>()));
+        _services.AddSingleton<ToolInstallationReadinessMonitor>();
+        _services.AddHostedService(sp => sp.GetRequiredService<ToolInstallationReadinessMonitor>());
         _services.AddSingleton<McpToolsPluginConnector>(sp =>
             new McpToolsPluginConnector(
                 sp.GetRequiredService<IToolDiscoveryService>(),

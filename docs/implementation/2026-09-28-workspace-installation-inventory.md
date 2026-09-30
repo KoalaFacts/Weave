@@ -42,11 +42,15 @@ definition-revision drift, unsupported stored authority, and other connection
 failures. Neither a reason code nor the timestamp includes
 the peer's error text.
 
-Observations are kept in memory for this Host, then rebuilt as restoration
-attempts run after restart. An observation is not durable history or a
-continuously refreshed health measurement. In particular, a registered Dapr
-connector does not prove that its sidecar is reachable. No automatic retry or
-external effect follows from reading this inventory.
+Activation observations are kept in memory for this Host, then rebuilt as
+restoration attempts run after restart. Separate `probeCondition`,
+`probeReasonCode`, and `probeCheckedAt` fields report bounded peer checks for
+enabled installations in running workspaces. See the
+[readiness probe scope](2026-09-30-plugin-readiness-probes.md). `condition`
+still describes registration, so a connected plugin can have a blocked peer
+probe. Neither observation is durable history or proof that the next tool
+invocation will succeed. Reading the inventory does not trigger a probe or
+external effect.
 
 Stopping a workspace disables and disconnects its installations while keeping
 their records. With durable actor storage, an authorized query still returns

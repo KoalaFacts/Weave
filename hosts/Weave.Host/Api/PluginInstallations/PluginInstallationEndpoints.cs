@@ -94,11 +94,15 @@ public static class PluginInstallationEndpoints
             "inconsistent" => "still_connected",
             _ => ReasonCode(failure)
         };
+        var probe = desiredEnabled ? diagnostics.GetProbe(installation) : null;
+        var probeCondition = !desiredEnabled ? "not_applicable" : probe is null ? "unobserved"
+            : probe.Failure == InstallationFailureCode.None ? "responding" : "blocked";
         return new PluginInstallationResponse(id, installation.PluginName, type,
             installation.DefinitionRevision, desiredEnabled,
             runtimeConnected, condition, reasonCode, observation?.CheckedAt,
             installation.RequestedPermissions.ToArray(), installation.GrantedPermissions.ToArray(),
-            installation.CredentialReferences.Count > 0);
+            installation.CredentialReferences.Count > 0, probeCondition,
+            probe is null ? null : ReasonCode(probe.Failure), probe?.CheckedAt);
     }
 
     private static string? ReasonCode(InstallationFailureCode failure) => failure switch

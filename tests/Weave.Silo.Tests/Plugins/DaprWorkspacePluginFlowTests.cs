@@ -370,12 +370,14 @@ public sealed partial class DaprWorkspacePluginFlowTests : IClassFixture<SiloFac
         secondStop.StatusCode.ShouldBe(HttpStatusCode.NoContent);
     }
 
-    private static WebApplication CreateSidecar(string source)
+    private static WebApplication CreateSidecar(string source, Func<bool>? isHealthy = null)
     {
         var builder = WebApplication.CreateBuilder();
         builder.WebHost.ConfigureKestrel(options => options.Listen(IPAddress.Loopback, 0));
         var sidecar = builder.Build();
         sidecar.MapPost("/v1.0/invoke/echo-service/method/ping", () => Results.Json(new { source }));
+        sidecar.MapGet("/v1.0/healthz/outbound", () => isHealthy?.Invoke() ?? true
+            ? Results.NoContent() : Results.StatusCode(500));
         return sidecar;
     }
 
