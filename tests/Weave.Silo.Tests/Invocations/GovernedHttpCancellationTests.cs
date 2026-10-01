@@ -1,7 +1,9 @@
+using System.Net;
 using System.Net.Http.Json;
 using System.Runtime.CompilerServices;
 using System.Text.Json;
 using System.Text.Json.Serialization;
+using Microsoft.AspNetCore.Builder;
 using Microsoft.AspNetCore.Hosting;
 using Microsoft.AspNetCore.WebUtilities;
 using Microsoft.Extensions.DependencyInjection;
@@ -11,6 +13,7 @@ using Weave.Invocations;
 using Weave.Security.Tokens;
 using Weave.Shared.Events;
 using Weave.Shared.VirtualActors;
+using Weave.Silo.VirtualActors;
 using Weave.Tools.Tool;
 
 namespace Weave.Silo.Tests.Invocations;
@@ -48,6 +51,10 @@ public sealed class GovernedHttpCancellationTests
                 builder.UseSetting("Weave:Invocations:DatabasePath", Path.Combine(root, "journal.db"));
                 builder.ConfigureServices(services =>
                 {
+                    services.AddSingleton<IStartupFilter>(new RequestEntryObserver(gate));
+                    services.RemoveAll<IVirtualActorProvider>();
+                    services.AddSingleton<IVirtualActorProvider>(provider => new ActorResolutionObserver(
+                        new OrleansVirtualActorProvider(provider.GetRequiredService<Orleans.IGrainFactory>()), gate));
                     services.RemoveAll<ICapabilityAuthorizer>();
                     services.AddSingleton<ICapabilityAuthorizer>(provider => new GatedAuthorizer(
                         new CapabilityAuthorizer(provider.GetRequiredService<ICapabilityTokenService>(),
@@ -101,6 +108,7 @@ public sealed class GovernedHttpCancellationTests
             };
             var hasBody = operation is "invoke" or "review" or "decision";
             using var message = new HttpRequestMessage(hasBody ? HttpMethod.Post : HttpMethod.Get, route + suffix);
+            message.Headers.Add("X-Weave-Cancellation-Probe", "true");
             var credential = Token("cancellation-probe",
                 ["tool:files:invoke:write_file", "invocation:read", "approval:decide", "tool:files:approve:write_file"]);
             message.Headers.Add("X-Weave-Capability", WebEncoders.Base64UrlEncode(JsonSerializer.SerializeToUtf8Bytes(credential, JsonOptions)));
@@ -109,7 +117,7 @@ public sealed class GovernedHttpCancellationTests
                 object body = operation == "decision"
                     ? new { Invocation = invocation, PlanDigest = awaiting!.PlanDigest, Decision = "approve" }
                     : invocation;
-                message.Content = JsonContent.Create(body, options: JsonOptions);
+                message.Content = new BodySerializationObserver(JsonContent.Create(body, options: JsonOptions), gate);
             }
             using var abort = CancellationTokenSource.CreateLinkedTokenSource(TestContext.Current.CancellationToken);
             var pending = client.SendAsync(message, abort.Token);
@@ -123,13 +131,17 @@ public sealed class GovernedHttpCancellationTests
                 }
                 catch (TimeoutException error)
                 {
-                    throw new TimeoutException($"Authorization entry timed out for {operation}; HTTP task={pending.Status}, authorizer started={gate.Authorizing.Task.IsCompleted}.", error);
+                    throw new TimeoutException($"Authorization entry timed out for {operation}; HTTP task={pending.Status}, middleware entered={gate.HttpEntered.Task.IsCompleted}, body started={gate.BodyStarted.Task.IsCompleted}, body completed={gate.BodyCompleted.Task.IsCompleted}, grain resolved={gate.GrainResolved.Task.IsCompleted}, authorizer started={gate.Authorizing.Task.IsCompleted}.", error);
                 }
                 if (first == pending)
                 {
                     using var early = await pending;
                     gate.Entered.Task.IsCompleted.ShouldBeTrue($"HTTP {early.StatusCode} returned before grain authorization for {operation}.");
                 }
+                gate.HttpEntered.Task.IsCompleted.ShouldBeTrue();
+                gate.GrainResolved.Task.IsCompleted.ShouldBeTrue();
+                gate.BodyStarted.Task.IsCompleted.ShouldBe(hasBody);
+                gate.BodyCompleted.Task.IsCompleted.ShouldBe(hasBody);
                 await abort.CancelAsync();
                 await Should.ThrowAsync<OperationCanceledException>(async () => await pending);
                 // This observation is inside ToolActor's real Grain call, not merely the HTTP client task.
@@ -165,10 +177,76 @@ public sealed class GovernedHttpCancellationTests
 
     private sealed class AuthorizationGate
     {
+        public TaskCompletionSource HttpEntered { get; } = new(TaskCreationOptions.RunContinuationsAsynchronously);
+        public TaskCompletionSource BodyStarted { get; } = new(TaskCreationOptions.RunContinuationsAsynchronously);
+        public TaskCompletionSource BodyCompleted { get; } = new(TaskCreationOptions.RunContinuationsAsynchronously);
+        public TaskCompletionSource GrainResolved { get; } = new(TaskCreationOptions.RunContinuationsAsynchronously);
         public TaskCompletionSource Authorizing { get; } = new(TaskCreationOptions.RunContinuationsAsynchronously);
         public TaskCompletionSource Entered { get; } = new(TaskCreationOptions.RunContinuationsAsynchronously);
         public TaskCompletionSource Cancelled { get; } = new(TaskCreationOptions.RunContinuationsAsynchronously);
         public TaskCompletionSource Release { get; } = new(TaskCreationOptions.RunContinuationsAsynchronously);
+    }
+
+    private sealed class RequestEntryObserver(AuthorizationGate gate) : IStartupFilter
+    {
+        public Action<IApplicationBuilder> Configure(Action<IApplicationBuilder> next) => app =>
+        {
+            app.Use(async (context, proceed) =>
+            {
+                if (context.Request.Headers.ContainsKey("X-Weave-Cancellation-Probe"))
+                    gate.HttpEntered.TrySetResult();
+                await proceed(context);
+            });
+            next(app);
+        };
+    }
+
+    private sealed class ActorResolutionObserver(IVirtualActorProvider inner, AuthorizationGate gate) : IVirtualActorProvider
+    {
+        public TActor GetActor<TActor>(VirtualActorId id) where TActor : class
+        {
+            var actor = inner.GetActor<TActor>(id);
+            if (typeof(TActor) == typeof(IToolActorGrain))
+                gate.GrainResolved.TrySetResult();
+            return actor;
+        }
+    }
+
+    private sealed class BodySerializationObserver : HttpContent
+    {
+        private readonly HttpContent _inner;
+        private readonly AuthorizationGate _gate;
+
+        public BodySerializationObserver(HttpContent inner, AuthorizationGate gate)
+        {
+            _inner = inner;
+            _gate = gate;
+            foreach (var header in inner.Headers)
+                Headers.TryAddWithoutValidation(header.Key, header.Value);
+        }
+
+        protected override Task SerializeToStreamAsync(Stream stream, TransportContext? context) =>
+            SerializeToStreamAsync(stream, context, CancellationToken.None);
+
+        protected override async Task SerializeToStreamAsync(Stream stream, TransportContext? context, CancellationToken ct)
+        {
+            _gate.BodyStarted.TrySetResult();
+            await _inner.CopyToAsync(stream, ct);
+            _gate.BodyCompleted.TrySetResult();
+        }
+
+        protected override bool TryComputeLength(out long length)
+        {
+            length = 0;
+            return false;
+        }
+
+        protected override void Dispose(bool disposing)
+        {
+            if (disposing)
+                _inner.Dispose();
+            base.Dispose(disposing);
+        }
     }
 
     private sealed class GatedAuthorizer(ICapabilityAuthorizer inner, AuthorizationGate gate) : ICapabilityAuthorizer
