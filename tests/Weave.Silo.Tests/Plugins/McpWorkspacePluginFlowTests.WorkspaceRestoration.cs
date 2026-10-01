@@ -110,7 +110,8 @@ public sealed partial class McpWorkspacePluginFlowTests
                     TestContext.Current.CancellationToken);
                 confirmation!.Outcome.ShouldBe(WorkspaceRuntimeReconciliationOutcome.Confirmed);
                 confirmation.HostedServicesRestored.ShouldBeTrue();
-                confirmation.Observation!.HostedServiceObservation!.Condition.ShouldBe(WorkspaceRuntimeReadinessCondition.Ready);
+                confirmation.Observation!.Readiness.Condition.ShouldBe(WorkspaceRuntimeReadinessCondition.Ready);
+                confirmation.Observation.HostedServiceObservation!.Condition.ShouldBe(WorkspaceRuntimeReadinessCondition.Ready);
                 confirmation.Observation.HostedServiceObservation.McpInstallations.Single().Reason.ShouldBeNull();
                 var confirmedState = await actors.GetActor<IWorkspaceActor>(VirtualActorId.From(workspaceId)).GetStateAsync();
                 confirmedState.RecoveryCondition.ShouldBe(WorkspaceRecoveryCondition.RuntimeReconciledOnThisHost);
@@ -130,6 +131,35 @@ public sealed partial class McpWorkspacePluginFlowTests
                     TestContext.Current.CancellationToken);
                 duplicateResult!.Outcome.ShouldBe(WorkspaceRuntimeReconciliationOutcome.AlreadyAdmitted);
                 (await tool.GetHandleAsync())!.ConnectionId.ShouldBe(restoredHandle.ConnectionId);
+                peer.CallCount.ShouldBe(0);
+
+                // Confirmation remains historical evidence when a current connection later fails.
+                await tool.DisconnectAsync();
+                using var disconnectedResponse = await SendPluginAsync(restarted, second.Services, HttpMethod.Get,
+                    $"/api/workspaces/{workspaceId}/runtime", workspaceId, WorkspaceRuntimeRecovery.ReadGrant);
+                disconnectedResponse.StatusCode.ShouldBe(HttpStatusCode.OK);
+                var disconnected = (await disconnectedResponse.Content.ReadFromJsonAsync<WorkspaceRuntimeSnapshot>(JsonOptions,
+                    TestContext.Current.CancellationToken))!;
+                disconnected.Readiness.Condition.ShouldBe(WorkspaceRuntimeReadinessCondition.NotReady);
+                disconnected.Readiness.Reasons.Select(reason => reason.ToString()).ShouldContain("HostedServicesNotReady");
+                disconnected.HostedServiceObservation!.McpInstallations.Single().Reason.ShouldBe("mcp-tool-not-connected");
+                disconnected.ConfirmedOnCurrentHost.ShouldBeTrue();
+                disconnected.ResourceSetDigest.ShouldBe(confirmation.Observation.ResourceSetDigest);
+                var readToken = second.Services.GetRequiredService<ICapabilityTokenService>().Mint(new()
+                {
+                    WorkspaceId = workspaceId,
+                    IssuedTo = "readiness-operator",
+                    Grants = [WorkspaceRuntimeRecovery.ReadGrant],
+                    Lifetime = TimeSpan.FromMinutes(5)
+                });
+                var workspace = actors.GetActor<IWorkspaceActor>(VirtualActorId.From(workspaceId));
+                var rpc = await workspace.ObserveRuntimeAsync(readToken, TestContext.Current.CancellationToken);
+                rpc.Readiness.Condition.ShouldBe(disconnected.Readiness.Condition);
+                rpc.Readiness.Reasons.ShouldBe(disconnected.Readiness.Reasons);
+                (await workspace.GetStateAsync()).RecoveryCondition.ShouldBe(WorkspaceRecoveryCondition.RuntimeReconciledOnThisHost);
+                second.Services.GetRequiredService<IManagementOperationJournal>().Find(managementId,
+                    TestContext.Current.CancellationToken).ShouldBe(record);
+                (await tool.GetHandleAsync()).ShouldBeNull();
                 peer.CallCount.ShouldBe(0);
             }
             await using var third = new DurableSiloFactory(directory);

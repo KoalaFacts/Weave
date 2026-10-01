@@ -2,7 +2,7 @@
 
 ## Complete path
 
-An installation record and a successful earlier reconciliation do not prove that a tool is still connected or that its peer still serves the pinned contract. `GET /api/workspaces/{workspaceId}/runtime` now adds `hostedServiceObservation` for workspaces with hosted services, alongside the existing resource `readiness` and frozen `hostedServicePlan`.
+An installation record and a successful earlier reconciliation do not prove that a tool is still connected or that its peer still serves the pinned contract. `GET /api/workspaces/{workspaceId}/runtime` adds `hostedServiceObservation` for workspaces with hosted services, alongside `readiness` and the frozen `hostedServicePlan`. [Workspace readiness now includes service health](2026-10-01-workspace-service-readiness.md).
 
 The caller needs `workspace:runtime:read` for the actual workspace. The shared workspace operation checks current authority before observation and again before returning the result. The existing HTTP ten-second observation deadline and caller cancellation apply to the peer probes and Orleans connection queries.
 
@@ -48,7 +48,7 @@ Example diagnostic fragment:
 
 For multiple installations, any `NotReady` result prevents aggregate readiness; otherwise an `Unknown` result prevents it. A healthy peer does not hide an unavailable or unconfirmed peer. Unsupported Agent, Dapr or other service profiles remain `Unknown` with `hosted-services-require-restoration`; they are not probed. Resource-only workspaces omit the service observation.
 
-The resource `readiness` contract remains unchanged. It describes retained containers/network and host confirmation; it can be `Ready` while MCP services are `NotReady`. `hostedServicePlan` describes recovery eligibility, and can stay unchanged while a peer goes offline or changes its contract. Service observation is a request-time diagnostic, not a background monitor, lease, execution grant or sandbox. Observations are sequential and may become stale; they do not prove that every changed connection setting has been reapplied or that a subsequent business operation will succeed.
+The original resource-only `readiness` aggregation has been replaced by [combined workspace readiness](2026-10-01-workspace-service-readiness.md). Retained resource conditions and host confirmation remain inputs; service diagnostics can now prevent top-level `Ready`. `hostedServicePlan` describes recovery eligibility, and can stay unchanged while a peer goes offline or changes its contract. Service observation is a request-time diagnostic, not a background monitor, lease, execution grant or sandbox. Observations are sequential and may become stale; they do not prove that every changed connection setting has been reapplied or that a subsequent business operation will succeed.
 
 Reads do not reconnect retained handles, admit management operations, change installation desired state, persist a new recovery confirmation or replay invocations. Temporary probe transports are disposed. A failed service observation does not rewrite earlier confirmation/evidence; operators can inspect and deliberately use the existing explicit recovery path.
 

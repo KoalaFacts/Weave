@@ -142,8 +142,14 @@ public sealed class WorkspaceRuntimeEndpointTests
         {
             using var body = JsonDocument.Parse(await after.Content.ReadAsStringAsync(TestContext.Current.CancellationToken));
             body.RootElement.GetProperty("containers")[0].GetProperty("condition").GetString().ShouldBe("Running");
-            body.RootElement.GetProperty("readiness").GetProperty("condition").GetString().ShouldBe("Ready");
-            body.RootElement.GetProperty("readiness").GetProperty("reasons").GetArrayLength().ShouldBe(0);
+            body.RootElement.GetProperty("network").GetProperty("condition").GetString().ShouldBe("Present");
+            body.RootElement.GetProperty("containers")[0].GetProperty("networkAttachment").GetString().ShouldBe("Attached");
+            body.RootElement.GetProperty("hostedServiceObservation").GetProperty("condition").GetString().ShouldBe("Unknown");
+            body.RootElement.GetProperty("hostedServiceObservation").GetProperty("reason").GetString()
+                .ShouldBe("hosted-services-require-restoration");
+            body.RootElement.GetProperty("readiness").GetProperty("condition").GetString().ShouldBe("Unknown");
+            body.RootElement.GetProperty("readiness").GetProperty("reasons").EnumerateArray()
+                .Select(reason => reason.GetString()).ShouldBe(["HostedServiceObservationIncomplete"]);
         }
 
         runner.Running = false;
