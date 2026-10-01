@@ -5,6 +5,7 @@ using System.Text.Json;
 using System.Text.Json.Serialization;
 using Microsoft.AspNetCore.Builder;
 using Microsoft.AspNetCore.Hosting;
+using Microsoft.AspNetCore.Http;
 using Microsoft.AspNetCore.WebUtilities;
 using Microsoft.Extensions.DependencyInjection;
 using Microsoft.Extensions.DependencyInjection.Extensions;
@@ -65,6 +66,9 @@ public sealed class GovernedHttpCancellationTests
                 });
             });
             using var client = host.CreateClient();
+            // CreateClient starts the host; routing is initialized by the first HTTP request.
+            using var readiness = await client.GetAsync("/health", TestContext.Current.CancellationToken);
+            readiness.StatusCode.ShouldBe(HttpStatusCode.OK);
             var tokens = host.Services.GetRequiredService<ICapabilityTokenService>();
             var tool = host.Services.GetRequiredService<IVirtualActorProvider>()
                 .GetActor<IToolActor>(VirtualActorId.From("workspace/files"));
@@ -131,7 +135,7 @@ public sealed class GovernedHttpCancellationTests
                 }
                 catch (TimeoutException error)
                 {
-                    throw new TimeoutException($"Authorization entry timed out for {operation}; HTTP task={pending.Status}, middleware entered={gate.HttpEntered.Task.IsCompleted}, body started={gate.BodyStarted.Task.IsCompleted}, body completed={gate.BodyCompleted.Task.IsCompleted}, grain resolved={gate.GrainResolved.Task.IsCompleted}, authorizer started={gate.Authorizing.Task.IsCompleted}.", error);
+                    throw new TimeoutException($"Authorization entry timed out for {operation}; HTTP task={pending.Status}, routing ready={gate.RoutingReady.Task.IsCompleted}, middleware entered={gate.HttpEntered.Task.IsCompleted}, body started={gate.BodyStarted.Task.IsCompleted}, body completed={gate.BodyCompleted.Task.IsCompleted}, grain resolved={gate.GrainResolved.Task.IsCompleted}, authorizer started={gate.Authorizing.Task.IsCompleted}.", error);
                 }
                 if (first == pending)
                 {
@@ -162,6 +166,7 @@ public sealed class GovernedHttpCancellationTests
             }
             // The non-reentrant grain processes this barrier after the cancelled operation exits.
             await tool.GetHandleAsync().WaitAsync(TimeSpan.FromSeconds(15), TestContext.Current.CancellationToken);
+            gate.ReadyBeforeProbe.ShouldBeTrue("The cancellation probe must follow a successful HTTP readiness request.");
             File.ReadAllText(target).ShouldBe("original");
             host.Services.GetRequiredService<IInvocationJournal>()
                 .Find("workspace", id, TestContext.Current.CancellationToken).ShouldBeNull();
@@ -177,6 +182,8 @@ public sealed class GovernedHttpCancellationTests
 
     private sealed class AuthorizationGate
     {
+        public bool ReadyBeforeProbe { get; set; }
+        public TaskCompletionSource RoutingReady { get; } = new(TaskCreationOptions.RunContinuationsAsynchronously);
         public TaskCompletionSource HttpEntered { get; } = new(TaskCreationOptions.RunContinuationsAsynchronously);
         public TaskCompletionSource BodyStarted { get; } = new(TaskCreationOptions.RunContinuationsAsynchronously);
         public TaskCompletionSource BodyCompleted { get; } = new(TaskCreationOptions.RunContinuationsAsynchronously);
@@ -194,8 +201,14 @@ public sealed class GovernedHttpCancellationTests
             app.Use(async (context, proceed) =>
             {
                 if (context.Request.Headers.ContainsKey("X-Weave-Cancellation-Probe"))
+                {
+                    gate.ReadyBeforeProbe = gate.RoutingReady.Task.IsCompleted;
                     gate.HttpEntered.TrySetResult();
+                }
                 await proceed(context);
+                if (context.Request.Path == "/health" && context.GetEndpoint() is not null
+                    && context.Response.StatusCode == StatusCodes.Status200OK)
+                    gate.RoutingReady.TrySetResult();
             });
             next(app);
         };
