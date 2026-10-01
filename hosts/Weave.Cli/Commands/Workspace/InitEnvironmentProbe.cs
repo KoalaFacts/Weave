@@ -30,6 +30,11 @@ internal static class InitEnvironmentProbe
 
     public static string? DetectSiloPath()
     {
+        var bundledHost = Path.Combine(AppContext.BaseDirectory, "host",
+            OperatingSystem.IsWindows() ? "Weave.Silo.exe" : "Weave.Silo");
+        if (File.Exists(bundledHost))
+            return bundledHost;
+
         var candidates = new[]
         {
             Path.Combine("hosts", "Weave.Host"),

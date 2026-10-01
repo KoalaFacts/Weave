@@ -14,6 +14,11 @@ internal sealed class SiloLauncher(IConfigStore configStore, ISecretResolver sec
         if (!string.IsNullOrWhiteSpace(config.SiloPath) && (File.Exists(config.SiloPath) || Directory.Exists(config.SiloPath)))
             return config.SiloPath;
 
+        var bundledHost = Path.Combine(AppContext.BaseDirectory, "host",
+            OperatingSystem.IsWindows() ? "Weave.Silo.exe" : "Weave.Silo");
+        if (File.Exists(bundledHost))
+            return bundledHost;
+
         var candidates = new[]
         {
             Path.Combine("hosts", "Weave.Host"),
@@ -63,9 +68,13 @@ internal sealed class SiloLauncher(IConfigStore configStore, ISecretResolver sec
             startInfo.ArgumentList.Add(project);
             startInfo.ArgumentList.Add("--");
         }
-        else
+        else if (siloPath.EndsWith(".dll", StringComparison.OrdinalIgnoreCase))
         {
             startInfo.ArgumentList.Add(siloPath);
+        }
+        else
+        {
+            startInfo.FileName = siloPath;
         }
 
         startInfo.ArgumentList.Add("--Weave:LocalMode=true");
@@ -113,7 +122,7 @@ internal sealed class SiloLauncher(IConfigStore configStore, ISecretResolver sec
         catch (Exception ex) when (ex is InvalidOperationException or System.ComponentModel.Win32Exception or IOException)
         {
             logWriter?.Dispose();
-            return new SiloAutoStartResult(false, logPath, $"Failed to launch dotnet: {ex.Message}");
+            return new SiloAutoStartResult(false, logPath, $"Failed to launch the Host: {ex.Message}");
         }
 
         if (process is null)
