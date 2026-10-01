@@ -53,6 +53,8 @@ internal sealed class LocalCodexLauncher(ILocalDeploymentStore store, TimeProvid
                 info.ArgumentList.Add(argument);
         }
         info.ArgumentList.Add("--ignore-user-config");
+        info.ArgumentList.Add("--disable");
+        info.ArgumentList.Add("plugins");
         info.ArgumentList.Add("--cd");
         info.ArgumentList.Add(agentDirectory);
         var command = Environment.ProcessPath ?? throw new IOException("CLI executable path is unavailable.");

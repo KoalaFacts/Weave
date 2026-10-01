@@ -64,7 +64,12 @@ weave local codex
 
 This launches a fresh Codex with only the four `weave_files` business tools and a
 30-minute Agent capability. Your global Codex configuration is preserved, but is
-not loaded for this session; its normal login remains available. Codex runs in the
+not loaded for this session; its normal login remains available. Installed plugins
+are also disabled for this session: ignoring user configuration alone does not
+prevent their companion MCP servers from loading. This does not change your
+installed plugins or other Codex sessions. Runtime verification used Codex CLI
+0.156.1; the client must support `--ignore-user-config` and `--disable plugins`.
+Codex runs in the
 sibling `agent/` working directory. Weave does not pass signing, operator or
 reviewer credentials to this process. If the executable is not on PATH, use
 `--codex` with the actual Codex executable.

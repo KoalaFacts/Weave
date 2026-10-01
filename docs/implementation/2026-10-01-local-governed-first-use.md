@@ -56,6 +56,11 @@ and retained-state guards, bounded transport body cancellation, four-tool discov
 wrong/inexact/noninteractive review, original-ID resume and lost-response receipts.
 Scripted terminal fakes are protocol tests, not proof that a person approved.
 Real published-bundle and fresh-Codex observations must be recorded separately.
+Published acceptance found that ignoring Codex user configuration did not prevent
+installed plugin MCP companions from loading. The launcher additionally disables
+plugins in this one session; a failing regression covers the missing flag, normal
+sandbox approval and the four-tool configuration. Original pending proposals are
+preserved across this launcher correction.
 The earlier live approval at the main baseline establishes the existing server
 path; it is not proof of every new CLI entry point.
 
@@ -74,7 +79,25 @@ review.
   Docker, Windows symlink privileges or the external Echo endpoint.
 - After the final private-directory ignore rule, Release CLI build and all 231
   CLI tests passed without warnings, failures or skips.
+- After the observed plugin-loading correction, all 232 CLI tests passed. The
+  missing session flag was first reproduced by a failing regression.
 - Scoped check-rules and adversarial self-review covered initialization, retained
   state, process arguments/environment, transport bounds, lost responses, human
   decision input, meaningful regressions and documentation. No remaining findings;
   no independent reviewer or cross-platform runtime acceptance is claimed.
+
+### Published Windows acceptance
+
+The self-contained CLI and Host initialized a new sibling-folder deployment with
+`dotnet` absent from the child PATH and DOTNET_ROOT pointing to a nonexistent
+directory. The bundle contains .NET and ASP.NET Core 10.0.12. Initialization
+created both retained stores, required them on subsequent boots and protected the
+private directory; repeat initialization refused without changing configuration.
+
+Real signed-in Codex CLI 0.156.1 read both seeded Chinese documents through native
+Weave MCP, generated its own summary and submitted UUID
+`9d8dbf376e524b8192aa7f6c143ec025`. Server status was Pending with no invocation
+record, and the original summary sentinel bytes were unchanged. These observations
+prove native first use and proposal admission; they do not claim that a person has
+yet approved this new CLI proposal. Human decision and execution need their own
+retained evidence.
