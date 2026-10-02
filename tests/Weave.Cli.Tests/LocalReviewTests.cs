@@ -20,7 +20,7 @@ public sealed class LocalReviewTests
             ? LocalHttpFixture.Response(200, Preview()) : LocalHttpFixture.Response(200, new JsonObject { ["invocationId"] = Id, ["approvalState"] = state }));
         using var client = new HttpClient(handler) { BaseAddress = new Uri("http://127.0.0.1:9401") };
         var exit = await new LocalReview(terminal).RunAsync(new LocalHttp(client, TimeProvider.System), "onboarding", Id, "reviewer", "operator", TestContext.Current.CancellationToken);
-        exit.ShouldBe(0);
+        exit.ShouldBe(decision == "approve" ? LocalReviewOutcome.Approved : LocalReviewOutcome.Rejected);
         terminal.Output.ShouldContain(state + ". This decision did not execute the write. The original Agent must query the UUID and continue or stop.");
         var post = handler.Requests.Single(request => request.Method == "POST");
         post.Path.ShouldEndWith("/" + Id + "/decision");

@@ -7,6 +7,27 @@ namespace Weave.Cli.Tests;
 
 public sealed class LocalHttpTests
 {
+    [Theory]
+    [InlineData(204, true)]
+    [InlineData(200, false)]
+    [InlineData(403, false)]
+    [InlineData(500, false)]
+    public async Task ConnectDocumentsAsync_ConfiguredTool_RequiresConfirmedOperatorConnection(int status, bool confirmed)
+    {
+        using var handler = new LocalHttpFixture((_, _) => LocalHttpFixture.Response(status));
+        using var client = new HttpClient(handler) { BaseAddress = new Uri("http://127.0.0.1:9401") };
+        var operation = new LocalHttp(client, TimeProvider.System).ConnectDocumentsAsync("operator", TestContext.Current.CancellationToken);
+        if (confirmed)
+            await operation;
+        else
+            await Should.ThrowAsync<HttpRequestException>(() => operation);
+        var request = handler.Requests.Single();
+        request.Method.ShouldBe("POST");
+        request.Path.ShouldBe("/api/operator/tools/files/connect");
+        request.Operator.ShouldBeTrue();
+        request.Body.ShouldBeNull();
+    }
+
     [Fact]
     public async Task CallAsync_BodyStallsAfterHeaders_DeadlineCancelsBodyRead()
     {

@@ -7,12 +7,12 @@ namespace Weave.Cli.Commands.Local;
 
 internal sealed partial class LocalReview(ILocalReviewConsole terminal)
 {
-    public async Task<int> RunAsync(LocalHttp http, string workspace, string id, string capability, string key, CancellationToken ct)
+    public async Task<LocalReviewOutcome> RunAsync(LocalHttp http, string workspace, string id, string capability, string key, CancellationToken ct)
     {
         if (!terminal.IsInteractive)
         {
             terminal.WriteLine("Human review requires an interactive terminal. No decision was sent.");
-            return 1;
+            return LocalReviewOutcome.Unavailable;
         }
         id = LocalInvocationClient.NormalizeId(id);
         var route = $"/api/workspaces/{workspace}/tools/files/invocations/{id}";
@@ -20,7 +20,7 @@ internal sealed partial class LocalReview(ILocalReviewConsole terminal)
         if (response.Status != 200)
         {
             terminal.WriteLine($"Review unavailable (HTTP {response.Status}). Query the original UUID; no decision was sent.");
-            return 1;
+            return LocalReviewOutcome.Unavailable;
         }
         var review = response.Body!.AsObject();
         if (review["invocationId"]!.GetValue<string>() != id || review["workspaceId"]!.GetValue<string>() != workspace
@@ -40,7 +40,7 @@ internal sealed partial class LocalReview(ILocalReviewConsole terminal)
         if (answer != "approve " + digest && answer != "reject " + digest)
         {
             terminal.WriteLine("No decision sent.");
-            return 0;
+            return LocalReviewOutcome.Unchanged;
         }
         var decision = answer.StartsWith("approve", StringComparison.Ordinal) ? "approve" : "reject";
         var result = await http.CallAsync(HttpMethod.Post, route + "/decision", capability, key,
@@ -50,10 +50,10 @@ internal sealed partial class LocalReview(ILocalReviewConsole terminal)
             || result.Body?["approvalState"]?.GetValue<string>() != expected)
         {
             terminal.WriteLine("Decision not confirmed. Query the original UUID before doing anything else.");
-            return 1;
+            return LocalReviewOutcome.Unavailable;
         }
         terminal.WriteLine(expected + ". This decision did not execute the write. The original Agent must query the UUID and continue or stop.");
-        return 0;
+        return decision == "approve" ? LocalReviewOutcome.Approved : LocalReviewOutcome.Rejected;
     }
 
     internal static string Display(string text)

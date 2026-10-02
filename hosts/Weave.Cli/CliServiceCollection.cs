@@ -25,9 +25,10 @@ internal static class CliServiceCollection
         services.AddSingleton(TimeProvider.System);
         services.AddSingleton<ILocalDeploymentStore, LocalDeploymentStore>();
         services.AddTransient<LocalHostRunner>();
-        services.AddTransient<LocalCodexLauncher>();
+        services.AddTransient<ILocalCodexLauncher, LocalCodexLauncher>();
         services.AddTransient<ILocalReviewConsole, LocalReviewConsole>();
         services.AddTransient<LocalReview>();
+        services.AddTransient<LocalReviewWorkflow>();
         services.AddTransient<LocalCliCommand>();
 
         // Shell primitives — file-backed and process-shaped services that used

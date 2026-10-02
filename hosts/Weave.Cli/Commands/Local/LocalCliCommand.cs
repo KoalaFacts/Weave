@@ -4,7 +4,7 @@ using System.Text.Json.Nodes;
 
 namespace Weave.Cli.Commands.Local;
 
-internal sealed class LocalCliCommand(ILocalDeploymentStore store, LocalHostRunner host, LocalCodexLauncher codex, LocalReview review, TimeProvider clock)
+internal sealed class LocalCliCommand(ILocalDeploymentStore store, LocalHostRunner host, ILocalCodexLauncher codex, LocalReviewWorkflow review, TimeProvider clock)
 {
     private static readonly string[] ForeignSecrets = ["WEAVE_OPERATOR_KEY", "WEAVE_REVIEW_CAPABILITY", "Weave__Operator__Key", "CapabilityTokens__SigningKey"];
     public async Task<int> InitializeAsync(string directory, string documents, string? hostPath, string workspace, int port, CancellationToken ct)
@@ -36,7 +36,7 @@ internal sealed class LocalCliCommand(ILocalDeploymentStore store, LocalHostRunn
             : codex.RunAsync(LocalDeploymentStore.Resolve(directory), setup.Deployment, executable, agentDirectory, task, execute, ct);
     }
 
-    public async Task<int> ReviewAsync(string directory, string id, CancellationToken ct)
+    public async Task<int> ReviewAsync(string directory, string id, bool continueExecution, string executable, string agentDirectory, CancellationToken ct)
     {
         id = LocalInvocationClient.NormalizeId(id);
         var setup = store.Load(directory);
@@ -46,7 +46,8 @@ internal sealed class LocalCliCommand(ILocalDeploymentStore store, LocalHostRunn
         var http = new LocalHttp(client, clock);
         var key = store.OperatorKey(directory);
         var capability = await http.IssueAsync("reviewer", key, ct);
-        return await review.RunAsync(http, deployment.Workspace, id, capability, key, ct);
+        return await review.RunAsync(http, LocalDeploymentStore.Resolve(directory), deployment, id, capability, key,
+            continueExecution, executable, agentDirectory, ct);
     }
 
     public async Task<int> StatusAsync(string directory, string id, CancellationToken ct)

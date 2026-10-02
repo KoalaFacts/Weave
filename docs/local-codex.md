@@ -62,9 +62,10 @@ In a second terminal, from the same project directory:
 weave local codex
 ```
 
-This launches a fresh Codex with only the four `weave_files` business tools and a
-30-minute Agent capability. Your global Codex configuration is preserved, but is
-not loaded for this session; its normal login remains available. Installed plugins
+This reconnects the configured document tool and launches a fresh Codex with only
+the four `weave_files` business tools and a 30-minute Agent capability. Your global
+Codex configuration is preserved, but is not loaded for this session; its normal
+login remains available. Installed plugins
 are also disabled for this session: ignoring user configuration alone does not
 prevent their companion MCP servers from loading. This does not change your
 installed plugins or other Codex sessions. Runtime verification used Codex CLI
@@ -104,10 +105,27 @@ ordinary document text remains readable. Type the exact displayed `approve
 approval-v1:...` or `reject approval-v1:...` confirmation yourself. Redirected input
 or output cannot perform human review. There is no approval command-line flag.
 
-Approval records a decision; it does not execute the write. Tell Codex to query
-that same UUID and continue only when Approved with no recorded execution. On
-rejection, expiry, cancellation or an unknown outcome, stop. Do not change the
-body or choose another UUID to bypass that result.
+Approval records a decision; it does not execute the write. For immediate Agent
+continuation, start review with this explicit option:
+
+```text
+weave local review --id ORIGINAL_UUID --continue
+```
+
+Keep that terminal open. After you personally enter the exact approval and the
+Host confirms it, the CLI queries the original UUID with fresh Agent authority.
+Only an Approved request without execution starts a fresh Codex under the same
+Agent subject. Codex queries that UUID first and resumes the server-retained body;
+you do not need to notify another chat. The CLI independently checks the recorded
+outcome afterward. A zero Codex exit code alone is not execution confirmation.
+Use `--codex` and `--agent-directory` when those differ from the defaults.
+
+Without `--continue`, tell Codex to query that same UUID and continue only when
+Approved with no recorded execution. On rejection, expiry, cancellation, denied
+access, an unknown outcome or an existing execution record, continuation stops.
+It never retries automatically. Do not change the body or choose another UUID to
+bypass that result. A failed continuation retains both the human decision and the
+original request for status queries.
 
 ## Query and recover
 

@@ -3,7 +3,7 @@ using System.Text.Json.Nodes;
 
 namespace Weave.Cli.Commands.Local;
 
-internal sealed class LocalCodexLauncher(ILocalDeploymentStore store, TimeProvider clock)
+internal sealed class LocalCodexLauncher(ILocalDeploymentStore store, TimeProvider clock) : ILocalCodexLauncher
 {
     public async Task<int> RunAsync(string directory, LocalDeployment deployment, string executable,
         string agentDirectory, string? task, bool execute, CancellationToken ct)
@@ -18,7 +18,10 @@ internal sealed class LocalCodexLauncher(ILocalDeploymentStore store, TimeProvid
         }
         Directory.CreateDirectory(agentDirectory);
         using var client = LocalHttp.CreateClient(deployment.Origin);
-        var capability = await new LocalHttp(client, clock).IssueAsync("agent", store.OperatorKey(directory), ct);
+        var http = new LocalHttp(client, clock);
+        var key = store.OperatorKey(directory);
+        await http.ConnectDocumentsAsync(key, ct);
+        var capability = await http.IssueAsync("agent", key, ct);
         var info = BuildStartInfo(executable, directory, deployment, agentDirectory, task, execute);
         info.Environment["WEAVE_AGENT_CAPABILITY"] = capability;
         using var process = Process.Start(info) ?? throw new IOException("Codex did not start. Install and sign in to the official Codex CLI, or supply --codex with its executable.");

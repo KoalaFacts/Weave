@@ -101,3 +101,42 @@ record, and the original summary sentinel bytes were unchanged. These observatio
 prove native first use and proposal admission; they do not claim that a person has
 yet approved this new CLI proposal. Human decision and execution need their own
 retained evidence.
+
+### Human decision continuation repair
+
+The distinct live `next-steps.md` request received a real human approval on
+October 1, but no Agent continuation ran before expiry. The approved record and
+zero-attempt history are preserved; that expired request must not be resumed or
+replaced to bypass expiry.
+
+`local review --continue` now coordinates immediate continuation after a confirmed
+interactive approval. Review itself only records the decision. A separate workflow
+queries the original UUID with fresh Agent authority and starts a fresh Codex under
+the same configured subject only when Approved without an execution record. The
+Agent must query first and resume the server-retained original. Rejection, inexact
+input, unconfirmed decisions, expiry, denied access and existing outcomes do not
+start the Agent. Its exit code is followed by an independent outcome query; only
+a completed successful attempt confirms execution. Failure or cancellation never
+triggers an automatic retry or replacement UUID.
+
+Each Codex launch reconnects the configured document tool through the protected
+operator API before issuing its narrow credential. This addresses the observed
+tool disconnection after idle actor collection, including a wait for human review.
+Operator/reviewer credentials remain outside the Agent process.
+
+The missing continuation was first reproduced by a failing regression: a confirmed
+approval started zero Agents. CLI protocol tests now cover continuation, rejection,
+changed approval state, denied queries, existing/unknown outcomes, unsuccessful
+process exit, cancellation and unconfirmed final execution. These terminal fakes
+do not establish a new real human approval or a real external write.
+
+The isolated branch also incorporates main's existing routing-readiness and
+dedicated Python pipe-reader fixes. Before that sync, the default parallel full
+run had six failures in MCP readiness, Host recovery, manual review and cancellation
+tests. After rebuilding with the main fixes, the full suite with
+`--max-parallel-test-modules 1` passed: 3,263 succeeded, zero failures and five skips
+(Windows symlink privileges and the external Echo installation endpoint).
+The Release solution build had zero warnings/errors, all 258 CLI tests passed,
+and Python checks had 111 total with one unavailable POSIX-shell skip. This is a
+passing serial-module gate; the post-sync default parallel suite was not rerun.
+Scoped repository checklist review was self-review with no remaining findings.

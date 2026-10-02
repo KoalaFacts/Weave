@@ -32,15 +32,19 @@ internal static class LocalCommands
             parsed.GetValue(executable)!, parsed.GetValue(agent)!, parsed.GetValue(task), parsed.GetValue(execute), ct)));
         root.Subcommands.Add(codex);
 
-        foreach (var name in new[] { "review", "status" })
-        {
-            var id = new Option<string>("--id") { Required = true, Description = "Original invocation UUID" };
-            var command = new Command(name, name == "review" ? "Personally review a Pending UUID; approval does not execute it" : "Query the original UUID without writing") { id };
-            command.SetAction((parsed, ct) => LocalCliCommand.GuardAsync(() => name == "review"
-                ? handler.ReviewAsync(parsed.GetValue(directory)!, parsed.GetValue(id)!, ct)
-                : handler.StatusAsync(parsed.GetValue(directory)!, parsed.GetValue(id)!, ct)));
-            root.Subcommands.Add(command);
-        }
+        var reviewId = new Option<string>("--id") { Required = true, Description = "Original invocation UUID" };
+        var continuation = new Option<bool>("--continue") { Description = "After confirmed human approval, launch Codex to query and continue the original UUID" };
+        var reviewExecutable = new Option<string>("--codex") { DefaultValueFactory = _ => "codex", Description = "Official Codex executable for continuation" };
+        var reviewAgent = new Option<string>("--agent-directory") { DefaultValueFactory = _ => "agent", Description = "Separate Agent working directory for continuation" };
+        var review = new Command("review", "Personally review a Pending UUID; the decision itself does not execute it") { reviewId, continuation, reviewExecutable, reviewAgent };
+        review.SetAction((parsed, ct) => LocalCliCommand.GuardAsync(() => handler.ReviewAsync(parsed.GetValue(directory)!,
+            parsed.GetValue(reviewId)!, parsed.GetValue(continuation), parsed.GetValue(reviewExecutable)!, parsed.GetValue(reviewAgent)!, ct)));
+        root.Subcommands.Add(review);
+
+        var statusId = new Option<string>("--id") { Required = true, Description = "Original invocation UUID" };
+        var status = new Command("status", "Query the original UUID without writing") { statusId };
+        status.SetAction((parsed, ct) => LocalCliCommand.GuardAsync(() => handler.StatusAsync(parsed.GetValue(directory)!, parsed.GetValue(statusId)!, ct)));
+        root.Subcommands.Add(status);
 
         var url = new Option<string>("--url") { Required = true };
         var mcpWorkspace = new Option<string>("--workspace") { Required = true };

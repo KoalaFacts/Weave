@@ -56,6 +56,13 @@ internal sealed class LocalHttp(HttpClient client, TimeProvider clock)
         return capability;
     }
 
+    public async Task ConnectDocumentsAsync(string operatorKey, CancellationToken ct)
+    {
+        var connected = await CallAsync(HttpMethod.Post, "/api/operator/tools/files/connect", null, operatorKey, null, ct);
+        if (connected.Status != 204)
+            throw new HttpRequestException("The configured document tool connection was not confirmed. No Agent was started.");
+    }
+
     private static HttpRequestMessage CreateRequest(HttpMethod method, string route, string? capability, string? operatorKey)
     {
         if (!route.StartsWith("/api/", StringComparison.Ordinal) || route.Contains('?') || route.Contains('#'))
