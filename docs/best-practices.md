@@ -48,13 +48,13 @@ The law of the repo. Every rule here is enforceable in review. Rules exist to pr
 
 ### Process management
 
-**Never set `RedirectStandardOutput = true` (or `RedirectStandardError = true`) on a `Process` without draining the pipe.** A child that writes more than ~4 KB without a reader blocks forever. Use `BeginOutputReadLine` / `BeginErrorReadLine` plus `OutputDataReceived` / `ErrorDataReceived` handlers, and call `Start()` only after wiring them. The Silo auto-start in `hosts/Weave.Cli/Commands/UpCommand.cs` follows this pattern — copy it.
+**Drain every redirected pipe concurrently and bound retained output.** Use `IProcessRunner` for finite CLI tool and workspace command execution. Its implementation in `src/Invocations/Processes/` bounds capture, uses dedicated readers for synchronous process pipes, terminates on cancellation or excess output, and owns cleanup under a separate deadline. Copying `ReadToEndAsync` onto Windows redirected pipes can occupy host worker threads while a child waits for the host.
 
-**Redirect child-process output to a log file on disk, not into memory.** If the CLI wants to show tail on demand, tail the file. Buffering indefinite output into a `StringBuilder` is a memory leak on the happy path.
+**Bound output retention according to the process lifetime.** Finite command responses may use enforced memory limits. Long-running background launchers should use bounded or rotated disk logs; tail those files on demand. Buffering indefinite output into a `StringBuilder` is a memory leak on the happy path.
 
-**If `RedirectStandardError = true`, drain stderr too.** Same pipe-buffer rule as stdout, but easier to miss because tests rarely cover verbose-stderr scenarios. Every connector that spawns a process must wire both pipes — `extensions/Weave.Mcp/InvokeTool/McpToolConnector.cs` is the worked example, calling `process.BeginErrorReadLine()` after `RedirectStandardError = true`.
+**If `RedirectStandardError = true`, drain stderr too.** Same pipe-buffer rule as stdout, but easier to miss because tests rarely cover verbose-stderr scenarios. Every connector that spawns a process must wire both pipes — `extensions/Weave.Mcp/InvokeTool/StdioMcpTransport.cs` is the worked example, calling `process.BeginErrorReadLine()` after `RedirectStandardError = true`.
 
-**When using `ReadToEndAsync` on both pipes, start both reads before awaiting either.** Sequential reads deadlock: if the child fills stderr while stdout is empty, you sit on `ReadToEndAsync(stdout)` forever. Use `Task.WhenAll(stdoutTask, stderrTask)` and then `WaitForExit`. The pattern is in `src/Workspaces/Runtime/ProcessCommandRunner.cs` — copy it.
+**A root process exiting does not prove pipe or descendant cleanup.** Observe both readers before disposing their handles. If cleanup cannot be confirmed by its deadline, report uncertainty and retain ownership/capacity until completion. Do not invent a successful result, free a live execution slot or replay an external effect. See the [process lifecycle record](implementation/2026-10-03-process-lifecycle-hardening.md) for the supported boundary and limits.
 
 **Background launchers (`weave serve --background`, `weave run --background`) must drain pipes or not redirect.** The Silo auto-start handler in `hosts/Weave.Cli/Commands/Workspace/SiloProcessService.cs` is the worked example — it wires `OutputDataReceived` and `ErrorDataReceived` and calls `BeginOutputReadLine` / `BeginErrorReadLine` before the process produces output.
 

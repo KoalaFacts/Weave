@@ -1,5 +1,6 @@
 using Microsoft.Extensions.Logging.Abstractions;
 using Microsoft.Extensions.Options;
+using Weave.Invocations.Processes;
 using Weave.Security.Actors;
 using Weave.Security.Events;
 using Weave.Security.Scanning;
@@ -194,7 +195,7 @@ public sealed class ToolOperationAuthorizationTests
             Proxy.SubstituteAsync(Arg.Any<string>()).Returns(ci => ci.Arg<string>());
             actors.GetActor<ISecretProxyActor>(Arg.Any<VirtualActorId>()).Returns(Proxy);
             IToolConnector connector = cli
-                ? new CliToolConnector(NullLogger<CliToolConnector>.Instance)
+                ? new CliToolConnector(NullLogger<CliToolConnector>.Instance, new ProcessRunner(TimeProvider.System, NullLogger<ProcessRunner>.Instance))
                 : new FileSystemToolConnector(NullLogger<FileSystemToolConnector>.Instance);
             var discovery = new ToolDiscoveryService([connector], NullLogger<ToolDiscoveryService>.Instance);
             Actor = new ToolActor(actors, discovery, new LeakScanner(NullLogger<LeakScanner>.Instance),

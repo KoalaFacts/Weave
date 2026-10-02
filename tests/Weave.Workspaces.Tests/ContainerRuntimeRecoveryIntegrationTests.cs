@@ -1,4 +1,5 @@
 using Microsoft.Extensions.Logging.Abstractions;
+using Weave.Invocations.Processes;
 using Weave.Workspaces.Runtime;
 
 namespace Weave.Workspaces.Tests;
@@ -9,7 +10,7 @@ public sealed class ContainerRuntimeRecoveryIntegrationTests
     [Fact]
     public async Task RecoverContainerAsync_RealStoppedContainer_StartsSameIdAndBlocksAfterRemoval()
     {
-        var runner = new ProcessCommandRunner();
+        var runner = new ProcessCommandRunner(new ProcessRunner(TimeProvider.System, NullLogger<ProcessRunner>.Instance));
         var runtime = new ContainerRuntime(runner, new ContainerRuntimeOptions { Engine = "podman" },
             NullLogger<ContainerRuntime>.Instance);
         ContainerHandle? handle = null;

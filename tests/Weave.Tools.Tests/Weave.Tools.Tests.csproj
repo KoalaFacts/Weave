@@ -6,6 +6,7 @@
     <RootNamespace>Weave.Tools.Tests</RootNamespace>
   </PropertyGroup>
   <ItemGroup>
+    <None Update="Processes/process-child.ts" CopyToOutputDirectory="PreserveNewest" />
     <ProjectReference Include="../../src/Weave.csproj" />
   </ItemGroup>
   <ItemGroup>

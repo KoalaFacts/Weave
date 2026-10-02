@@ -4,6 +4,7 @@ using Weave.Agents.Pipeline;
 using Weave.Agents.Pipeline.Providers;
 using Weave.Agents.Verification;
 using Weave.Invocations;
+using Weave.Invocations.Processes;
 using Weave.Management;
 using Weave.Security.Audit;
 using Weave.Security.Plugins;
@@ -74,6 +75,7 @@ internal sealed class SiloServiceRegistrar
         _services.AddSingleton(_weaveSettings);
         _services.AddSingleton<Weave.Shared.VirtualActors.IVirtualActorProvider, OrleansVirtualActorProvider>();
         _services.AddSingleton<ICommandRunner, ProcessCommandRunner>();
+        _services.AddSingleton<IProcessRunner, ProcessRunner>();
         _services.AddSingleton<IManifestParser, ManifestParser>();
         _services.AddGeneratedCqrsHandlers();
     }
