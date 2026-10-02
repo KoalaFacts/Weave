@@ -67,7 +67,7 @@ public sealed partial class ProcessRunner(TimeProvider clock, ILogger<ProcessRun
             {
                 var processId = process.Id;
                 retainedForCleanup = true;
-                RetainUntilCompleted(process, cleanup);
+                RetainUntilCompleted(process, cleanup, overflow.Task);
                 LogCleanupUnconfirmed(logger, processId, exit.IsCompleted, stdout.IsCompleted,
                     stderr.IsCompleted, termination.IsCompleted);
                 throw new TimeoutException("Command process cleanup is unconfirmed.");
@@ -97,13 +97,14 @@ public sealed partial class ProcessRunner(TimeProvider clock, ILogger<ProcessRun
         }
     }
 
-    private void RetainUntilCompleted(Process process, Task completion)
+    private void RetainUntilCompleted(Process process, Task completion, Task stop)
     {
         // A descendant can retain a pipe after the root exits. Keep its slot and
         // handles owned until both readers finish; never dispose under a live read.
         _unfinished.TryAdd(process, completion);
         _ = completion.ContinueWith(completed =>
         {
+            _ = stop.Exception;
             if (completed.Exception is { } error)
                 LogProcessFailure(logger, error.GetType().Name);
             process.Dispose();
