@@ -231,12 +231,15 @@ public sealed partial class GovernedHttpEntryTests
         public IToolActor Tool => _host.Services.GetRequiredService<IVirtualActorProvider>()
             .GetActor<IToolActor>(VirtualActorId.From(Workspace + "/files"));
 
-        public Fixture(bool enabled = true, bool requireApproval = false, bool useKestrel = false, bool globalAuthentication = false)
+        public Fixture(bool enabled = true, bool requireApproval = false, bool useKestrel = false, bool globalAuthentication = false,
+            IStartupFilter? requestObserver = null)
         {
             Directory.CreateDirectory(Path.Combine(_root, "tools"));
             File.WriteAllText(Target, "original");
             _host = _parent.WithWebHostBuilder(builder =>
             {
+                if (requestObserver is not null)
+                    builder.ConfigureServices(services => services.AddSingleton(requestObserver));
                 builder.UseSetting("Weave:Auth:Mode", globalAuthentication ? "bearer" : "none");
                 if (globalAuthentication)
                     builder.UseSetting("Weave:Auth:Secret", GlobalApiSecret);
