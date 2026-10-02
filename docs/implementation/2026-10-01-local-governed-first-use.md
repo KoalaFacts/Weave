@@ -140,3 +140,37 @@ The Release solution build had zero warnings/errors, all 258 CLI tests passed,
 and Python checks had 111 total with one unavailable POSIX-shell skip. This is a
 passing serial-module gate; the post-sync default parallel suite was not rerun.
 Scoped repository checklist review was self-review with no remaining findings.
+
+### Native UTF-8 boundary
+
+The independent live `review-checklist.md` proposal reached Pending, but comparing
+the server's complete original with the Codex tool arguments revealed mojibake.
+Windows `Console.In` used the console code page for UTF-8 MCP bytes. No human
+review was opened and no decision or write occurred. That frozen proposal remains
+unchanged; a different task requires explicit authorization.
+
+The MCP entry point now opens the standard byte streams directly and the server
+wraps them with strict UTF-8 readers/writers, without a BOM or console-code-page
+dependency. Invalid UTF-8 stops before HTTP or a receipt. Human review output also
+selects UTF-8 when first used, so Chinese text does not depend on the caller's
+output code page. These changes do not rewrite saved proposals or approval digests.
+
+A real CLI subprocess receives raw UTF-8 JSON through stdin and sends the proposal
+to a loopback TCP fixture. Before the fix, the Chinese target filename was
+corrupted; after the fix, both filename and multiline Chinese/emoji content must
+match exactly. The fixture also checks Pending rather than execution and output
+without a BOM. A denial regression rejects invalid UTF-8 before any HTTP request.
+All 260 CLI tests passed after the MCP repair. The TCP fixture proves the native
+encoding boundary, not real human approval or a real filesystem write.
+
+The final Release solution build had zero warnings/errors. A full serial-module
+rerun passed 3,265 tests with zero failures and five environment skips. The earlier
+interrupted run recorded two Host service tests failing after unusually long
+elapsed times; all six related cases passed in a focused recheck. The rerun does
+not establish the cause of those delays or default parallel stability.
+Locked restore and both local self-contained publishes passed. A published CLI
+smoke check without dotnet on PATH preserved a raw Chinese/emoji JSON-RPC ID,
+emitted no BOM, rejected invalid UTF-8 and created no receipts. That protocol-only
+check sent no business HTTP request, human decision or filesystem write.
+Scoped check-rules and adversarial review were self-review with no findings;
+package/provider, persisted schema and architecture changes were not applicable.

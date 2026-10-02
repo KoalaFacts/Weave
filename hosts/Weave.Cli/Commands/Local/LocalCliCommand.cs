@@ -75,7 +75,9 @@ internal sealed class LocalCliCommand(ILocalDeploymentStore store, LocalHostRunn
             throw new ArgumentException("An Agent capability and bounded workspace are required.");
         using var client = LocalHttp.CreateClient(origin);
         var invocations = new LocalInvocationClient(new LocalHttp(client, clock), workspace, capability, Path.GetFullPath(receipts));
-        return await new LocalMcpServer(invocations).RunAsync(Console.In, Console.Out, ct);
+        using var input = Console.OpenStandardInput();
+        using var output = Console.OpenStandardOutput();
+        return await new LocalMcpServer(invocations).RunAsync(input, output, ct);
     }
 
     public static async Task<int> GuardAsync(Func<Task<int>> operation)

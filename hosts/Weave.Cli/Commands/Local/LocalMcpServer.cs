@@ -12,6 +12,13 @@ internal sealed class LocalMcpServer(LocalInvocationClient invocations)
         ["get_status"] = ["invocation_id"], ["resume_write"] = ["invocation_id"]
     };
 
+    public async Task<int> RunAsync(Stream input, Stream output, CancellationToken ct)
+    {
+        using var reader = new StreamReader(input, new UTF8Encoding(false, true), detectEncodingFromByteOrderMarks: false, bufferSize: 4096, leaveOpen: true);
+        await using var writer = new StreamWriter(output, new UTF8Encoding(false, true), bufferSize: 4096, leaveOpen: true);
+        return await RunAsync(reader, writer, ct);
+    }
+
     public async Task<int> RunAsync(TextReader input, TextWriter output, CancellationToken ct)
     {
         var initialized = false;

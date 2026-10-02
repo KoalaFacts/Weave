@@ -101,7 +101,9 @@ weave local review --id ORIGINAL_UUID
 The CLI obtains a separate, independent reviewer capability and retrieves the
 server-verified original. It displays the target, complete content, requester,
 expiry and digest. Terminal control and direction-changing characters are escaped;
-ordinary document text remains readable. Type the exact displayed `approve
+ordinary document text remains readable. The MCP byte streams and human review
+output use UTF-8 explicitly, including on Windows. Invalid UTF-8 MCP input stops
+before contacting the Host. Type the exact displayed `approve
 approval-v1:...` or `reject approval-v1:...` confirmation yourself. Redirected input
 or output cannot perform human review. There is no approval command-line flag.
 

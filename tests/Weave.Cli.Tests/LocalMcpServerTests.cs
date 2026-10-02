@@ -1,3 +1,4 @@
+using System.Text;
 using System.Text.Json.Nodes;
 using Shouldly;
 using Weave.Cli.Commands.Local;
@@ -7,6 +8,21 @@ namespace Weave.Cli.Tests;
 public sealed class LocalMcpServerTests
 {
     private static readonly string[] BusinessTools = ["get_status", "read_document", "resume_write", "submit_write"];
+
+    [Fact]
+    public async Task RunAsync_InvalidUtf8_StopsBeforeHttpWithoutReplacingBytes()
+    {
+        using var files = new LocalTestDirectory();
+        using var handler = new LocalHttpFixture((_, _) => throw new InvalidOperationException("No HTTP call was allowed."));
+        using var client = new HttpClient(handler) { BaseAddress = new Uri("http://127.0.0.1:9401") };
+        var server = new LocalMcpServer(new LocalInvocationClient(new LocalHttp(client, TimeProvider.System), "onboarding", "agent", files.Private));
+        using var input = new MemoryStream([0xff, 0x0a]);
+        using var output = new MemoryStream();
+        await Should.ThrowAsync<DecoderFallbackException>(() => server.RunAsync(input, output, TestContext.Current.CancellationToken));
+        handler.Requests.ShouldBeEmpty();
+        output.Length.ShouldBe(0);
+        Directory.Exists(files.Private).ShouldBeFalse();
+    }
     [Fact]
     public async Task RunAsync_DiscoveryAndForbiddenTool_ExposesOnlyFourBusinessTools()
     {
