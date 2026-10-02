@@ -65,9 +65,10 @@ public sealed partial class ProcessRunner(TimeProvider clock, ILogger<ProcessRun
             }
             catch (TimeoutException)
             {
+                var processId = process.Id;
                 retainedForCleanup = true;
                 RetainUntilCompleted(process, cleanup);
-                LogCleanupUnconfirmed(logger, process.Id, exit.IsCompleted, stdout.IsCompleted,
+                LogCleanupUnconfirmed(logger, processId, exit.IsCompleted, stdout.IsCompleted,
                     stderr.IsCompleted, termination.IsCompleted);
                 throw new TimeoutException("Command process cleanup is unconfirmed.");
             }
