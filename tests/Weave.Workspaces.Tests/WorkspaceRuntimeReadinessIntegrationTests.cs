@@ -1,4 +1,5 @@
 using Microsoft.Extensions.Logging.Abstractions;
+using Weave.Invocations.Processes;
 using Weave.Management;
 using Weave.Security.Tokens;
 using Weave.Shared.Ids;
@@ -14,7 +15,7 @@ public sealed class WorkspaceRuntimeReadinessIntegrationTests
     [Fact]
     public async Task ObserveAsync_RealPodmanResources_TracksExternalChangesAndRetainsReconciliation()
     {
-        var runner = new ProcessCommandRunner();
+        var runner = new ProcessCommandRunner(new ProcessRunner(TimeProvider.System, NullLogger<ProcessRunner>.Instance));
         var runtime = new ContainerRuntime(runner, new ContainerRuntimeOptions { Engine = "podman" },
             NullLogger<ContainerRuntime>.Instance);
         var observation = new WorkspaceRuntimeRecovery(runtime, Substitute.For<ICapabilityAuthorizer>(),

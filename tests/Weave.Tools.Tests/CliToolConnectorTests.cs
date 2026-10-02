@@ -1,4 +1,5 @@
 using Microsoft.Extensions.Logging;
+using Weave.Invocations.Processes;
 using Weave.Security.Tokens;
 using Weave.Tools.Connectors;
 using Weave.Tools.Tool;
@@ -15,7 +16,7 @@ public sealed class CliToolConnectorTests
     };
 
     private static CliToolConnector CreateConnector() =>
-        new(Substitute.For<ILogger<CliToolConnector>>());
+        new(Substitute.For<ILogger<CliToolConnector>>(), new ProcessRunner(TimeProvider.System, Microsoft.Extensions.Logging.Abstractions.NullLogger<ProcessRunner>.Instance));
 
     private static ToolSpec CreateSpec(
         string name = "my-cli",

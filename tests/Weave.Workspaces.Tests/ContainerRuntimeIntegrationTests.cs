@@ -1,4 +1,5 @@
 using Microsoft.Extensions.Logging.Abstractions;
+using Weave.Invocations.Processes;
 using Weave.Shared.Ids;
 using Weave.Workspaces.Manifest;
 using Weave.Workspaces.Runtime;
@@ -8,7 +9,7 @@ namespace Weave.Workspaces.Tests;
 [Trait("Category", "Integration")]
 public sealed class ContainerRuntimeIntegrationTests
 {
-    private static readonly ProcessCommandRunner Runner = new();
+    private static readonly ProcessCommandRunner Runner = new(new ProcessRunner(TimeProvider.System, NullLogger<ProcessRunner>.Instance));
 
     private static ContainerRuntime CreateRuntime() =>
         new(

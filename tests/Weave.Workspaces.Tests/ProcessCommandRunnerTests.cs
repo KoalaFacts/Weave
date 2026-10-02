@@ -1,4 +1,6 @@
 using System.Diagnostics;
+using Microsoft.Extensions.Logging.Abstractions;
+using Weave.Invocations.Processes;
 using Weave.Workspaces.Runtime;
 
 namespace Weave.Workspaces.Tests;
@@ -12,7 +14,7 @@ namespace Weave.Workspaces.Tests;
 /// </summary>
 public sealed class ProcessCommandRunnerTests
 {
-    private readonly ProcessCommandRunner _runner = new();
+    private readonly ProcessCommandRunner _runner = new(new ProcessRunner(TimeProvider.System, NullLogger<ProcessRunner>.Instance));
 
     [Theory]
     [InlineData(false)]

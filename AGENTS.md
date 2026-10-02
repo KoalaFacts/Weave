@@ -88,6 +88,8 @@ Run commands from the repository root. Use `global.json` and check `dotnet --ver
 
 For code, dependencies, or build changes:
 
+Real command-process fixtures require Node 22.18+ to execute their `.ts` worker directly; no npm install is needed. CI selects Node 24.
+
 ```bash
 python3 -m unittest discover -s scripts/tests -v
 dotnet restore Weave.slnx
