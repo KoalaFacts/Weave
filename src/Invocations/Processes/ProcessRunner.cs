@@ -56,8 +56,9 @@ public sealed partial class ProcessRunner(TimeProvider clock, ILogger<ProcessRun
                 LogProcessFailure(logger, error.GetType().Name);
                 failure = ExceptionDispatchInfo.Capture(error);
             }
-            var cleanup = Task.WhenAll(completion, Task.Factory.StartNew(() => KillIfRunning(process),
-                CancellationToken.None, TaskCreationOptions.LongRunning, TaskScheduler.Default));
+            var termination = Task.Factory.StartNew(() => KillIfRunning(process),
+                CancellationToken.None, TaskCreationOptions.LongRunning, TaskScheduler.Default);
+            var cleanup = Task.WhenAll(completion, termination);
             try
             {
                 await cleanup.WaitAsync(CleanupTimeout, clock, CancellationToken.None);
@@ -66,7 +67,8 @@ public sealed partial class ProcessRunner(TimeProvider clock, ILogger<ProcessRun
             {
                 retainedForCleanup = true;
                 RetainUntilCompleted(process, cleanup);
-                LogCleanupUnconfirmed(logger, process.Id);
+                LogCleanupUnconfirmed(logger, process.Id, exit.IsCompleted, stdout.IsCompleted,
+                    stderr.IsCompleted, termination.IsCompleted);
                 throw new TimeoutException("Command process cleanup is unconfirmed.");
             }
             catch (Exception error)
@@ -131,8 +133,9 @@ public sealed partial class ProcessRunner(TimeProvider clock, ILogger<ProcessRun
         return slots;
     }
 
-    [LoggerMessage(Level = LogLevel.Warning, Message = "Command process {ProcessId} cleanup deadline expired; execution slot retained until pipe readers finish")]
-    private static partial void LogCleanupUnconfirmed(ILogger logger, int processId);
+    [LoggerMessage(Level = LogLevel.Warning, Message = "Command process {ProcessId} cleanup deadline expired (exit: {ExitCompleted}, stdout: {StdoutCompleted}, stderr: {StderrCompleted}, termination: {TerminationCompleted}); execution slot retained until cleanup finishes")]
+    private static partial void LogCleanupUnconfirmed(ILogger logger, int processId, bool exitCompleted,
+        bool stdoutCompleted, bool stderrCompleted, bool terminationCompleted);
 
     [LoggerMessage(Level = LogLevel.Warning, Message = "Command process failed ({ErrorType})")]
     private static partial void LogProcessFailure(ILogger logger, string errorType);

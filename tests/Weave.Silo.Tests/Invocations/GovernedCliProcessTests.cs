@@ -1,6 +1,9 @@
+using System.Collections.Concurrent;
 using Microsoft.AspNetCore.Hosting;
 using Microsoft.Extensions.DependencyInjection;
+using Microsoft.Extensions.Logging;
 using Weave.Invocations;
+using Weave.Invocations.Processes;
 using Weave.Security.Tokens;
 using Weave.Shared.VirtualActors;
 using Weave.Tools.Tests.Processes;
@@ -20,6 +23,7 @@ public sealed class GovernedCliProcessTests
         var workspace = "process-" + Guid.NewGuid().ToString("N");
         var request = child.Invocation with { InvocationId = InvocationId.From(Guid.NewGuid().ToString("N")) };
         InvocationAttemptId? admittedAttempt = null;
+        var diagnostics = new ProcessDiagnostics();
         try
         {
             for (var restart = 0; restart < 2; restart++)
@@ -30,8 +34,12 @@ public sealed class GovernedCliProcessTests
                     builder.UseSetting("Weave:Auth:Mode", "none");
                     builder.UseSetting("CapabilityTokens:SigningKey", "test-process-" + Guid.NewGuid().ToString("N"));
                     builder.UseSetting("CapabilityTokens:RevocationDirectory", journalRoot);
-                    builder.ConfigureServices(services => services.PostConfigure<InvocationJournalOptions>(options =>
-                        options.DatabasePath = Path.Join(journalRoot, "invocations.db")));
+                    builder.ConfigureServices(services =>
+                    {
+                        services.AddSingleton<ILogger<ProcessRunner>>(diagnostics);
+                        services.PostConfigure<InvocationJournalOptions>(options =>
+                            options.DatabasePath = Path.Join(journalRoot, "invocations.db"));
+                    });
                 });
                 using var client = host.CreateClient();
                 var tokens = host.Services.GetRequiredService<ICapabilityTokenService>();
@@ -64,7 +72,7 @@ public sealed class GovernedCliProcessTests
                 result.IsReplay.ShouldBe(restart == 1);
                 if (restart == 0)
                 {
-                    result.ErrorCode.ShouldBe("process-output-limit");
+                    result.ErrorCode.ShouldBe("process-output-limit", string.Join(Environment.NewLine, diagnostics.Messages));
                     admittedAttempt = result.AttemptId;
                     admittedAttempt.ShouldNotBeNull();
                 }
@@ -82,5 +90,14 @@ public sealed class GovernedCliProcessTests
                 File.Delete(file);
             Directory.Delete(journalRoot);
         }
+    }
+
+    private sealed class ProcessDiagnostics : ILogger<ProcessRunner>
+    {
+        public ConcurrentQueue<string> Messages { get; } = new();
+        public IDisposable? BeginScope<TState>(TState state) where TState : notnull => null;
+        public bool IsEnabled(LogLevel logLevel) => true;
+        public void Log<TState>(LogLevel logLevel, EventId eventId, TState state, Exception? exception,
+            Func<TState, Exception?, string> formatter) => Messages.Enqueue(formatter(state, exception));
     }
 }

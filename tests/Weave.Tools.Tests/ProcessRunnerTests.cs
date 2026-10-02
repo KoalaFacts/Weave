@@ -57,8 +57,13 @@ public sealed class ProcessRunnerTests
         {
             await abort.CancelAsync();
             try
-            { await running; }
-            catch (OperationCanceledException) when (abort.IsCancellationRequested) { }
+            {
+                await running;
+            }
+            catch (OperationCanceledException error) when (abort.IsCancellationRequested)
+            {
+                error.CancellationToken.ShouldBe(abort.Token);
+            }
         }
     }
 
