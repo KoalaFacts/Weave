@@ -50,7 +50,6 @@ switch (mode) {
   case 'effect-overflow':
     fs.appendFileSync(path.join(root, 'effect'), 'effect');
     process.stdout.write('x'.repeat(70_000));
-    setTimeout(() => {}, 60_000);
     break;
   default:
     throw new Error('Unknown test child mode');
