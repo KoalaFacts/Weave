@@ -21,8 +21,12 @@ public sealed class LocalMcpServerTests
             ? LocalHttpFixture.Response(200, new JsonObject { ["invocationId"] = id, ["approvalState"] = "Approved" })
             : LocalHttpFixture.Response(httpStatus, httpStatus == 200 ? new JsonObject
             {
-                ["invocationId"] = id, ["toolName"] = "files", ["attemptId"] = "3fdd0938f7c0449888d4fabb8e838d50",
-                ["outcome"] = "OutcomeUnknown", ["outcomeRecorded"] = false, ["success"] = false
+                ["invocationId"] = id,
+                ["toolName"] = "files",
+                ["attemptId"] = "3fdd0938f7c0449888d4fabb8e838d50",
+                ["outcome"] = "OutcomeUnknown",
+                ["outcomeRecorded"] = false,
+                ["success"] = false
             } : new JsonObject { ["errorCode"] = httpStatus == 404 ? "invocation-not-found" : "forbidden" }));
         using var client = new HttpClient(handler) { BaseAddress = new Uri("http://127.0.0.1:9401") };
         var server = new LocalMcpServer(new LocalInvocationClient(new LocalHttp(client, TimeProvider.System), "onboarding", "agent", files.Private));

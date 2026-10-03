@@ -82,7 +82,8 @@ internal sealed class LocalCliCommand(ILocalDeploymentStore store, LocalHostRunn
 
     public static async Task<int> GuardAsync(Func<Task<int>> operation)
     {
-        try { return await operation(); }
+        try
+        { return await operation(); }
         catch (ArgumentException failure)
         {
             await Console.Error.WriteLineAsync(LocalReview.Display(failure.Message));

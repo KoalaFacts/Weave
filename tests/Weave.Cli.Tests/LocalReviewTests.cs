@@ -64,9 +64,15 @@ public sealed class LocalReviewTests
 
     private static JsonObject Preview() => new()
     {
-        ["invocationId"] = Id, ["workspaceId"] = "onboarding", ["toolName"] = "files", ["operation"] = "write_file",
-        ["planDigest"] = Digest, ["subject"] = "document-agent", ["targetDescription"] = "private document root",
-        ["expiresAt"] = "2030-01-01T00:00:00Z", ["parameters"] = new JsonObject { ["path"] = "summary.md" },
+        ["invocationId"] = Id,
+        ["workspaceId"] = "onboarding",
+        ["toolName"] = "files",
+        ["operation"] = "write_file",
+        ["planDigest"] = Digest,
+        ["subject"] = "document-agent",
+        ["targetDescription"] = "private document root",
+        ["expiresAt"] = "2030-01-01T00:00:00Z",
+        ["parameters"] = new JsonObject { ["path"] = "summary.md" },
         ["rawInput"] = "摘要\n\x1b[2J\u202e untrusted text"
     };
 

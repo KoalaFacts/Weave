@@ -52,8 +52,12 @@ public sealed class LocalInvocationClientTests
         using var files = new LocalTestDirectory();
         using var handler = new LocalHttpFixture((_, _) => LocalHttpFixture.Response(200, new JsonObject
         {
-            ["invocationId"] = Id, ["toolName"] = "files", ["attemptId"] = "3fdd0938f7c0449888d4fabb8e838d50",
-            ["success"] = outcome == "Succeeded", ["outcome"] = outcome, ["outcomeRecorded"] = recorded
+            ["invocationId"] = Id,
+            ["toolName"] = "files",
+            ["attemptId"] = "3fdd0938f7c0449888d4fabb8e838d50",
+            ["success"] = outcome == "Succeeded",
+            ["outcome"] = outcome,
+            ["outcomeRecorded"] = recorded
         }));
         using var client = new HttpClient(handler) { BaseAddress = new Uri("http://127.0.0.1:9401") };
         var invocations = new LocalInvocationClient(new LocalHttp(client, TimeProvider.System), "onboarding", "test-agent", files.Private);

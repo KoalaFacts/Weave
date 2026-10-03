@@ -22,22 +22,26 @@ internal static class LocalHostConfiguration
             ["CapabilityTokens"] = new JsonObject
             {
                 ["SigningKey"] = Convert.ToHexString(RandomNumberGenerator.GetBytes(32)),
-                ["RevocationDirectory"] = Path.Combine(state, "revocations"), ["RequireExistingStorage"] = false
+                ["RevocationDirectory"] = Path.Combine(state, "revocations"),
+                ["RequireExistingStorage"] = false
             },
             ["Weave"] = new JsonObject
             {
-                ["LocalMode"] = true, ["RequireHttps"] = false,
+                ["LocalMode"] = true,
+                ["RequireHttps"] = false,
                 ["Auth"] = new JsonObject { ["Mode"] = "none" },
                 ["Invocations"] = new JsonObject
                 {
-                    ["DatabasePath"] = Path.Combine(state, "invocations.db"), ["RequireExistingStorage"] = false,
+                    ["DatabasePath"] = Path.Combine(state, "invocations.db"),
+                    ["RequireExistingStorage"] = false,
                     ["ApprovalRequiredGrants"] = new JsonArray("tool:files:invoke:write_file"),
                     ["ApprovalLifetime"] = "1.00:00:00",
                     ["Http"] = new JsonObject { ["Enabled"] = true, ["AgentOnly"] = false, ["DecisionsEnabled"] = true }
                 },
                 ["Operator"] = new JsonObject
                 {
-                    ["Enabled"] = true, ["Key"] = Convert.ToHexString(RandomNumberGenerator.GetBytes(32)),
+                    ["Enabled"] = true,
+                    ["Key"] = Convert.ToHexString(RandomNumberGenerator.GetBytes(32)),
                     ["Credentials"] = profiles,
                     ["Tools"] = new JsonObject
                     {
@@ -46,7 +50,8 @@ internal static class LocalHostConfiguration
                             ["WorkspaceId"] = deployment.Workspace,
                             ["Tool"] = new JsonObject
                             {
-                                ["Name"] = "files", ["Type"] = "FileSystem",
+                                ["Name"] = "files",
+                                ["Type"] = "FileSystem",
                                 ["FileSystem"] = new JsonObject { ["Root"] = deployment.DocumentsPath }
                             }
                         }
@@ -58,7 +63,9 @@ internal static class LocalHostConfiguration
 
     private static JsonObject Profile(string workspace, string subject, params string[] grants) => new()
     {
-        ["WorkspaceId"] = workspace, ["IssuedTo"] = subject, ["Lifetime"] = "00:30:00",
+        ["WorkspaceId"] = workspace,
+        ["IssuedTo"] = subject,
+        ["Lifetime"] = "00:30:00",
         ["Grants"] = new JsonArray(grants.Select(grant => (JsonNode?)JsonValue.Create(grant)).ToArray())
     };
 }

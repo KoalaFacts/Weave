@@ -80,7 +80,9 @@ internal sealed class LocalInvocationClient(LocalHttp http, string workspace, st
 
     private static JsonObject Body(string id, string method, string path) => new()
     {
-        ["invocationId"] = id, ["toolName"] = "files", ["method"] = method,
+        ["invocationId"] = id,
+        ["toolName"] = "files",
+        ["method"] = method,
         ["parameters"] = new JsonObject { ["path"] = path }
     };
 }

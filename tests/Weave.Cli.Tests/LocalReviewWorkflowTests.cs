@@ -38,8 +38,12 @@ public sealed class LocalReviewWorkflowTests
     [InlineData(true, "approve", false, 0)]
     public async Task RunAsync_NoConfirmedApprovalOrManualReview_NeverStartsAgent(bool interactive, string answer, bool continuation, int exit)
     {
-        using var flow = new ReviewFlow { Interactive = interactive, Continue = continuation,
-            Answer = answer is "approve" or "reject" ? answer + " " + Digest : answer };
+        using var flow = new ReviewFlow
+        {
+            Interactive = interactive,
+            Continue = continuation,
+            Answer = answer is "approve" or "reject" ? answer + " " + Digest : answer
+        };
         (await flow.RunAsync()).ShouldBe(exit);
         flow.Launcher.Tasks.ShouldBeEmpty();
         flow.Issued.ShouldBe(0);
@@ -181,14 +185,23 @@ public sealed class LocalReviewWorkflowTests
                 if (route.EndsWith("/review", StringComparison.Ordinal))
                     return LocalHttpFixture.Response(200, new JsonObject
                     {
-                        ["invocationId"] = Id, ["workspaceId"] = "onboarding", ["toolName"] = "files", ["operation"] = "write_file",
-                        ["planDigest"] = Digest, ["subject"] = "document-agent", ["targetDescription"] = "document root",
-                        ["expiresAt"] = "2030-01-01T00:00:00Z", ["parameters"] = new JsonObject { ["path"] = "checklist.md" },
+                        ["invocationId"] = Id,
+                        ["workspaceId"] = "onboarding",
+                        ["toolName"] = "files",
+                        ["operation"] = "write_file",
+                        ["planDigest"] = Digest,
+                        ["subject"] = "document-agent",
+                        ["targetDescription"] = "document root",
+                        ["expiresAt"] = "2030-01-01T00:00:00Z",
+                        ["parameters"] = new JsonObject { ["path"] = "checklist.md" },
                         ["rawInput"] = "A proposal awaiting a human decision."
                     });
                 if (route.EndsWith("/decision", StringComparison.Ordinal))
-                    return LocalHttpFixture.Response(DecisionStatus, new JsonObject { ["invocationId"] = Id,
-                        ["approvalState"] = Answer.StartsWith("reject", StringComparison.Ordinal) ? "Rejected" : "Approved" });
+                    return LocalHttpFixture.Response(DecisionStatus, new JsonObject
+                    {
+                        ["invocationId"] = Id,
+                        ["approvalState"] = Answer.StartsWith("reject", StringComparison.Ordinal) ? "Rejected" : "Approved"
+                    });
                 AgentQueries++;
                 request.Headers.GetValues("X-Weave-Capability").Single().ShouldBe("fresh-agent-" + Issued);
                 request.Headers.Contains("X-Weave-Operator-Key").ShouldBeFalse();
@@ -196,8 +209,12 @@ public sealed class LocalReviewWorkflowTests
                     return LocalHttpFixture.Response(200, new JsonObject { ["invocationId"] = ApprovalId, ["approvalState"] = State });
                 return LocalHttpFixture.Response(InvocationStatus, Outcome is null ? new JsonObject { ["errorCode"] = ErrorCode } : new JsonObject
                 {
-                    ["invocationId"] = Id, ["toolName"] = "files", ["attemptId"] = Attempt,
-                    ["success"] = Outcome == "Succeeded", ["outcome"] = Outcome, ["outcomeRecorded"] = Recorded
+                    ["invocationId"] = Id,
+                    ["toolName"] = "files",
+                    ["attemptId"] = Attempt,
+                    ["success"] = Outcome == "Succeeded",
+                    ["outcome"] = Outcome,
+                    ["outcomeRecorded"] = Recorded
                 });
             });
             _client = new HttpClient(Handler) { BaseAddress = new Uri("http://127.0.0.1:9401") };

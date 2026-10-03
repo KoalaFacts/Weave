@@ -69,9 +69,12 @@ internal sealed class LocalCodexLauncher(ILocalDeploymentStore store, TimeProvid
             bridge.Add((JsonNode?)JsonValue.Create(argument));
         var settings = new JsonObject
         {
-            ["command"] = command, ["args"] = bridge,
-            ["env_vars"] = new JsonArray("WEAVE_AGENT_CAPABILITY"), ["required"] = true,
-            ["startup_timeout_sec"] = 10, ["tool_timeout_sec"] = 45,
+            ["command"] = command,
+            ["args"] = bridge,
+            ["env_vars"] = new JsonArray("WEAVE_AGENT_CAPABILITY"),
+            ["required"] = true,
+            ["startup_timeout_sec"] = 10,
+            ["tool_timeout_sec"] = 45,
             ["enabled_tools"] = new JsonArray("read_document", "submit_write", "get_status", "resume_write")
         };
         foreach (var setting in settings)

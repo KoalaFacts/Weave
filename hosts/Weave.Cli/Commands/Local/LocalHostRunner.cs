@@ -29,8 +29,11 @@ internal sealed class LocalHostRunner(ILocalDeploymentStore store, TimeProvider 
         var launch = SiloProcessService.BuildSiloArgs(deployment.HostPath, deployment.Port);
         var info = new ProcessStartInfo(launch.FileName)
         {
-            WorkingDirectory = Path.Combine(directory, "private"), UseShellExecute = false,
-            CreateNoWindow = true, RedirectStandardOutput = true, RedirectStandardError = true
+            WorkingDirectory = Path.Combine(directory, "private"),
+            UseShellExecute = false,
+            CreateNoWindow = true,
+            RedirectStandardOutput = true,
+            RedirectStandardError = true
         };
         foreach (var argument in launch.Arguments)
             info.ArgumentList.Add(argument.StartsWith("--urls=", StringComparison.Ordinal) ? "--urls=" + deployment.Origin : argument);
@@ -56,7 +59,8 @@ internal sealed class LocalHostRunner(ILocalDeploymentStore store, TimeProvider 
             var http = new LocalHttp(client, clock);
             using var deadline = new CancellationTokenSource(TimeSpan.FromSeconds(30), clock);
             using var startup = CancellationTokenSource.CreateLinkedTokenSource(ct, deadline.Token);
-            try { await ConnectAsync(process, http, store.OperatorKey(directory), startup.Token); }
+            try
+            { await ConnectAsync(process, http, store.OperatorKey(directory), startup.Token); }
             catch (OperationCanceledException) when (!ct.IsCancellationRequested)
             {
                 throw new IOException("Host did not establish the governed document connection within 30 seconds.");

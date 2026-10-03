@@ -108,10 +108,16 @@ public sealed class LocalReviewRenewalTests
 
     private static JsonObject Preview(DateTimeOffset expiry) => new()
     {
-        ["invocationId"] = Id, ["workspaceId"] = "onboarding", ["toolName"] = "files", ["operation"] = "write_file",
-        ["planDigest"] = Digest, ["subject"] = "document-agent", ["targetDescription"] = "document root",
+        ["invocationId"] = Id,
+        ["workspaceId"] = "onboarding",
+        ["toolName"] = "files",
+        ["operation"] = "write_file",
+        ["planDigest"] = Digest,
+        ["subject"] = "document-agent",
+        ["targetDescription"] = "document root",
         ["expiresAt"] = expiry.ToString("O", System.Globalization.CultureInfo.InvariantCulture),
-        ["parameters"] = new JsonObject { ["path"] = "checklist.md" }, ["rawInput"] = "中文提案"
+        ["parameters"] = new JsonObject { ["path"] = "checklist.md" },
+        ["rawInput"] = "中文提案"
     };
 
     private sealed class WaitingTerminal(Func<string> answer) : ILocalReviewConsole

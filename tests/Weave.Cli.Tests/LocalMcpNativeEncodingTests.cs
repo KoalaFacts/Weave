@@ -28,8 +28,11 @@ public sealed class LocalMcpNativeEncodingTests
         var executable = Path.Combine(AppContext.BaseDirectory, OperatingSystem.IsWindows() ? "weave.exe" : "weave");
         var start = new ProcessStartInfo(executable)
         {
-            UseShellExecute = false, CreateNoWindow = true,
-            RedirectStandardInput = true, RedirectStandardOutput = true, RedirectStandardError = true
+            UseShellExecute = false,
+            CreateNoWindow = true,
+            RedirectStandardInput = true,
+            RedirectStandardOutput = true,
+            RedirectStandardError = true
         };
         foreach (var name in start.Environment.Keys.ToArray())
             if (name.StartsWith("WEAVE", StringComparison.OrdinalIgnoreCase) || name.StartsWith("CapabilityTokens", StringComparison.OrdinalIgnoreCase))
@@ -44,9 +47,15 @@ public sealed class LocalMcpNativeEncodingTests
         {
             var call = new JsonObject
             {
-                ["jsonrpc"] = "2.0", ["id"] = 2, ["method"] = "tools/call",
-                ["params"] = new JsonObject { ["name"] = "submit_write", ["arguments"] = new JsonObject
-                    { ["invocation_id"] = id, ["path"] = path, ["content"] = content } }
+                ["jsonrpc"] = "2.0",
+                ["id"] = 2,
+                ["method"] = "tools/call",
+                ["params"] = new JsonObject
+                {
+                    ["name"] = "submit_write",
+                    ["arguments"] = new JsonObject
+                    { ["invocation_id"] = id, ["path"] = path, ["content"] = content }
+                }
             };
             var rawCall = call.ToJsonString(new JsonSerializerOptions { Encoder = JavaScriptEncoder.UnsafeRelaxedJsonEscaping });
             rawCall.ShouldContain("会议审批");
@@ -75,7 +84,8 @@ public sealed class LocalMcpNativeEncodingTests
                 child.Kill(entireProcessTree: true);
             await child.WaitForExitAsync(TestContext.Current.CancellationToken).WaitAsync(TimeSpan.FromSeconds(5), TestContext.Current.CancellationToken);
             await Task.WhenAll(stdout, stderr).WaitAsync(TimeSpan.FromSeconds(5), TestContext.Current.CancellationToken);
-            try { await received; }
+            try
+            { await received; }
             catch (OperationCanceledException) { }
         }
     }
@@ -102,8 +112,11 @@ public sealed class LocalMcpNativeEncodingTests
             var submitted = header.ToString().StartsWith("POST ", StringComparison.Ordinal);
             var response = submitted ? new JsonObject
             {
-                ["invocationId"] = id, ["success"] = false, ["outcomeRecorded"] = false,
-                ["outcome"] = "NotDispatched", ["approvalState"] = "Pending"
+                ["invocationId"] = id,
+                ["success"] = false,
+                ["outcomeRecorded"] = false,
+                ["outcome"] = "NotDispatched",
+                ["approvalState"] = "Pending"
             } : new JsonObject { ["errorCode"] = "not-found" };
             var data = Encoding.UTF8.GetBytes(response.ToJsonString());
             var status = submitted ? "202 Accepted" : "404 Not Found";

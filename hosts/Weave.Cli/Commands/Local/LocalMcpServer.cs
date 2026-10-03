@@ -8,8 +8,10 @@ internal sealed class LocalMcpServer(LocalInvocationClient invocations)
 {
     private static readonly Dictionary<string, string[]> Fields = new(StringComparer.Ordinal)
     {
-        ["read_document"] = ["path"], ["submit_write"] = ["invocation_id", "path", "content"],
-        ["get_status"] = ["invocation_id"], ["resume_write"] = ["invocation_id"]
+        ["read_document"] = ["path"],
+        ["submit_write"] = ["invocation_id", "path", "content"],
+        ["get_status"] = ["invocation_id"],
+        ["resume_write"] = ["invocation_id"]
     };
 
     public async Task<int> RunAsync(Stream input, Stream output, CancellationToken ct)
@@ -52,7 +54,8 @@ internal sealed class LocalMcpServer(LocalInvocationClient invocations)
                     initialized = true;
                     result = new JsonObject
                     {
-                        ["protocolVersion"] = "2024-11-05", ["capabilities"] = new JsonObject { ["tools"] = new JsonObject() },
+                        ["protocolVersion"] = "2024-11-05",
+                        ["capabilities"] = new JsonObject { ["tools"] = new JsonObject() },
                         ["serverInfo"] = new JsonObject { ["name"] = "weave-governed-files", ["version"] = "1.0" },
                         ["instructions"] = "Use one retained invocation_id UUID for each original write. Pending is not execution. A human reviews that UUID in a separate terminal. Query the same UUID after restart. Only resume when execution_state is NotStarted and approvalState is Approved. NotStarted identifies a matching retained approval without an admitted execution attempt; its invocation-not-found HTTP 404 is expected before first execution. OutcomeUnknown identifies an existing attempt: stop, preserve the UUID and investigate. Unconfirmed also requires stopping. Never approve yourself, submit replacement content, or use a new UUID to bypass rejection, expiry or an unknown outcome."
                     };
@@ -73,7 +76,8 @@ internal sealed class LocalMcpServer(LocalInvocationClient invocations)
             {
                 reply = new JsonObject
                 {
-                    ["jsonrpc"] = "2.0", ["id"] = id,
+                    ["jsonrpc"] = "2.0",
+                    ["id"] = id,
                     ["error"] = new JsonObject { ["code"] = -32600, ["message"] = "Invalid or unsupported bounded MCP request." }
                 };
             }
@@ -104,7 +108,8 @@ internal sealed class LocalMcpServer(LocalInvocationClient invocations)
 
     private static JsonObject ToolResult(string text, bool error) => new()
     {
-        ["content"] = new JsonArray(new JsonObject { ["type"] = "text", ["text"] = text }), ["isError"] = error
+        ["content"] = new JsonArray(new JsonObject { ["type"] = "text", ["text"] = text }),
+        ["isError"] = error
     };
 
     private static JsonArray ToolList() => new(Fields.Select(pair => (JsonNode)new JsonObject
@@ -119,7 +124,8 @@ internal sealed class LocalMcpServer(LocalInvocationClient invocations)
         },
         ["inputSchema"] = new JsonObject
         {
-            ["type"] = "object", ["additionalProperties"] = false,
+            ["type"] = "object",
+            ["additionalProperties"] = false,
             ["properties"] = new JsonObject(pair.Value.Select(field => KeyValuePair.Create<string, JsonNode?>(field,
                 new JsonObject { ["type"] = "string" }))),
             ["required"] = new JsonArray(pair.Value.Select(field => (JsonNode?)JsonValue.Create(field)).ToArray())

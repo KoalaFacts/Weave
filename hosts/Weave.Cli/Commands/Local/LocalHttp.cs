@@ -15,7 +15,8 @@ internal sealed class LocalHttp(HttpClient client, TimeProvider clock)
             throw new ArgumentException("This local client requires a literal loopback HTTP origin without credentials, path or query.");
         return new HttpClient(new HttpClientHandler { AllowAutoRedirect = false, UseCookies = false, UseProxy = false })
         {
-            BaseAddress = uri, Timeout = TimeSpan.FromSeconds(15)
+            BaseAddress = uri,
+            Timeout = TimeSpan.FromSeconds(15)
         };
     }
 
