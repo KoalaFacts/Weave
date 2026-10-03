@@ -1,6 +1,7 @@
 using System.Text.Json.Serialization;
 using Microsoft.AspNetCore.Mvc;
 using Weave.Agents.ToolRegistry;
+using Weave.Invocations.Processes;
 using Weave.Management;
 using Weave.Silo.Plugins;
 using Weave.Workspaces.Manifest;
@@ -12,6 +13,7 @@ namespace Weave.Silo.Api;
     PropertyNamingPolicy = JsonKnownNamingPolicy.CamelCase,
     DefaultIgnoreCondition = JsonIgnoreCondition.WhenWritingNull)]
 [JsonSerializable(typeof(StartWorkspaceRequest))]
+[JsonSerializable(typeof(ProcessRuntimeSnapshot))]
 [JsonSerializable(typeof(ValidateWorkspaceManifestRequest))]
 [JsonSerializable(typeof(ValidateWorkspaceManifestResult))]
 [JsonSerializable(typeof(WorkspaceResponse))]

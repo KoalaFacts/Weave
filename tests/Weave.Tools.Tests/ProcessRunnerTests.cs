@@ -5,7 +5,7 @@ using Weave.Tools.Tests.Processes;
 
 namespace Weave.Tools.Tests;
 
-public sealed class ProcessRunnerTests
+public sealed partial class ProcessRunnerTests
 {
     private static ProcessRunner CreateRunner(TimeProvider? clock = null) =>
         new(clock ?? TimeProvider.System, NullLogger<ProcessRunner>.Instance);
@@ -72,17 +72,34 @@ public sealed class ProcessRunnerTests
     {
         using var child = new ProcessTestChild("descendant");
         var clock = new CleanupClock();
-        var running = CreateRunner(clock).RunAsync("node", child.Arguments, TestContext.Current.CancellationToken);
+        var diagnostics = new ObservationDiagnostics();
+        var runner = new ProcessRunner(clock, diagnostics);
+        var running = runner.RunAsync("node", child.Arguments, TestContext.Current.CancellationToken);
         var actual = await child.GetProcessAsync(running);
         try
         {
             await clock.Scheduled.Task.WaitAsync(TimeSpan.FromSeconds(15), TestContext.Current.CancellationToken);
             running.IsCompleted.ShouldBeFalse();
             actual.HasExited.ShouldBeFalse();
+            var cleaning = runner.Observe();
+            cleaning.Available.ShouldBe(7);
+            var execution = cleaning.Executions.ShouldHaveSingleItem();
+            execution.Phase.ShouldBe(ProcessExecutionPhase.CleaningUp);
+            execution.Exit.ShouldBe(ProcessTaskState.Completed);
+            execution.StandardOutput.ShouldBe(ProcessTaskState.Pending);
+            execution.StandardError.ShouldBe(ProcessTaskState.Pending);
             clock.Advance(TimeSpan.FromSeconds(5));
             var error = await Should.ThrowAsync<TimeoutException>(() => running);
             error.Message.ShouldBe("Command process cleanup is unconfirmed.");
             actual.HasExited.ShouldBeFalse();
+            var retained = runner.Observe();
+            retained.Available.ShouldBe(7);
+            var uncertain = retained.Executions.ShouldHaveSingleItem();
+            uncertain.ExecutionId.ShouldBe(execution.ExecutionId);
+            uncertain.Phase.ShouldBe(ProcessExecutionPhase.CleanupUnconfirmed);
+            uncertain.StandardOutput.ShouldBe(ProcessTaskState.Pending);
+            diagnostics.ExecutionIds.ShouldHaveSingleItem().ShouldBe(execution.ExecutionId);
+            cleaning.Executions[0].Phase.ShouldBe(ProcessExecutionPhase.CleaningUp);
         }
         finally
         {
@@ -91,6 +108,8 @@ public sealed class ProcessRunnerTests
             await actual.WaitForExitAsync(TestContext.Current.CancellationToken)
                 .WaitAsync(TimeSpan.FromSeconds(5), TestContext.Current.CancellationToken);
         }
+        await WaitForAvailableAsync(runner, 8);
+        runner.Observe().Executions.ShouldBeEmpty();
     }
 
     [Fact]
@@ -108,11 +127,19 @@ public sealed class ProcessRunnerTests
                 var actual = await children[index].GetProcessAsync(running[index]);
                 actual.HasExited.ShouldBeFalse();
             }
+            var occupied = runner.Observe();
+            occupied.Available.ShouldBe(0);
+            occupied.Executions.Length.ShouldBe(8);
+            occupied.Executions.Select(execution => execution.ExecutionId).Distinct().Count().ShouldBe(8);
+            occupied.Executions.ShouldAllBe(execution => execution.Phase == ProcessExecutionPhase.Running
+                && execution.Exit == ProcessTaskState.Pending && execution.Termination == ProcessTaskState.NotStarted);
             using var denied = new ProcessTestChild("wait");
             var busy = await runner.RunAsync("node", denied.Arguments, TestContext.Current.CancellationToken);
             busy.Failure.ShouldBe(ProcessFailure.CapacityExhausted);
             busy.ExitCode.ShouldBeNull();
             File.Exists(denied.PidPath).ShouldBeFalse();
+            runner.Observe().Executions.Select(execution => execution.ExecutionId)
+                .ShouldBe(occupied.Executions.Select(execution => execution.ExecutionId));
         }
         finally
         {
@@ -134,6 +161,8 @@ public sealed class ProcessRunnerTests
         var probe = await runner.RunAsync("dotnet", ["--version"], TestContext.Current.CancellationToken);
         probe.Failure.ShouldBe(ProcessFailure.None);
         probe.ExitCode.ShouldBe(0);
+        runner.Observe().Available.ShouldBe(8);
+        runner.Observe().Executions.ShouldBeEmpty();
     }
 
     private sealed class CleanupClock : TimeProvider

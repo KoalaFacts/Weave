@@ -41,7 +41,10 @@ internal sealed class ProcessTestChild : IDisposable
             }
             await Task.Delay(25, deadline.Token);
         }
-        _process = Process.GetProcessById(int.Parse(await File.ReadAllTextAsync(PidPath, deadline.Token), CultureInfo.InvariantCulture));
+        await using var input = new FileStream(PidPath, FileMode.Open, FileAccess.Read,
+            FileShare.ReadWrite | FileShare.Delete, bufferSize: 4096, useAsync: true);
+        using var reader = new StreamReader(input, leaveOpen: true);
+        _process = Process.GetProcessById(int.Parse(await reader.ReadToEndAsync(deadline.Token), CultureInfo.InvariantCulture));
         return _process;
     }
 
