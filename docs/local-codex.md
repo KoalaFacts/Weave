@@ -129,15 +129,17 @@ weave local review --id ORIGINAL_UUID --continue
 
 Keep that terminal open. After you personally enter the exact approval and the
 Host confirms it, the CLI queries the original UUID with fresh Agent authority.
-Only an Approved request without execution starts a fresh Codex under the same
-Agent subject. Codex queries that UUID first and resumes the server-retained body;
+Only an Approved request with `execution_state: NotStarted` starts a fresh Codex
+under the same Agent subject. Codex queries that UUID first and resumes the
+server-retained body;
 you do not need to notify another chat. The CLI independently checks the recorded
 outcome afterward. A zero Codex exit code alone is not execution confirmation.
 Use `--codex` and `--agent-directory` when those differ from the defaults.
 
 Without `--continue`, tell Codex to query that same UUID and continue only when
-Approved with no recorded execution. On rejection, expiry, cancellation, denied
-access, an unknown outcome or an existing execution record, continuation stops.
+`execution_state: NotStarted` and `approvalState: Approved`. On rejection, expiry,
+cancellation, denied access, an unknown outcome or an existing execution record,
+continuation stops.
 It never retries automatically. Do not change the body or choose another UUID to
 bypass that result. A failed continuation retains both the human decision and the
 original request for status queries.
@@ -147,6 +149,16 @@ original request for status queries.
 ```text
 weave local status --id ORIGINAL_UUID
 ```
+
+Status retains the raw HTTP evidence and adds `execution_state`. `NotStarted`
+requires an exact `invocation-not-found` response together with a matching
+retained approval that has not been consumed. That 404 is expected before the
+first execution attempt. It is distinct from `OutcomeUnknown`, which identifies
+an existing attempt whose effect is uncertain. Other confirmed attempts report
+their recorded outcome; inconsistent, denied or unavailable responses report
+`Unconfirmed`. Existing attempts, `OutcomeUnknown` and `Unconfirmed` must not be
+resumed automatically. Approval adds no execution grants: the Host revalidates
+current authority and atomically admits or rejects a same-UUID resume.
 
 After Host restart, run `serve` against the same private directory. After Agent
 restart or capability expiry, launch `codex` again and tell it the original UUID.

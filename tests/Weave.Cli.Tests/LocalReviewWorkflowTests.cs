@@ -21,6 +21,8 @@ public sealed class LocalReviewWorkflowTests
         flow.Launcher.Tasks[0].ShouldContain(Id);
         flow.Launcher.Tasks[0].ShouldContain("get_status");
         flow.Launcher.Tasks[0].ShouldContain("resume_write");
+        flow.Launcher.Tasks[0].ShouldContain("NotStarted");
+        flow.Launcher.Tasks[0].ShouldContain("OutcomeUnknown");
         flow.Launcher.Tasks[0].ShouldNotContain("operator-key");
         flow.Handler.Requests.Any(request => request.Path.EndsWith("/resume", StringComparison.Ordinal)).ShouldBeFalse();
         flow.Handler.Requests.Where(request => request.Method == "GET" && !request.Path.EndsWith("/review", StringComparison.Ordinal))
@@ -88,6 +90,17 @@ public sealed class LocalReviewWorkflowTests
     }
 
     [Theory]
+    [InlineData("route-not-found", Id, "Approved")]
+    [InlineData("invocation-not-found", "different-id", "Approved")]
+    [InlineData("invocation-not-found", Id, "Consumed")]
+    public async Task RunAsync_UnconfirmedMissingExecution_DoesNotLaunch(string errorCode, string approvalId, string state)
+    {
+        using var flow = new ReviewFlow { ErrorCode = errorCode, ApprovalId = approvalId, State = state };
+        (await flow.RunAsync()).ShouldBe(1);
+        flow.Launcher.Tasks.ShouldBeEmpty();
+    }
+
+    [Theory]
     [InlineData("Pending", null)]
     [InlineData("Approved", null)]
     [InlineData("Approved", "OutcomeUnknown")]
@@ -138,6 +151,8 @@ public sealed class LocalReviewWorkflowTests
         public int Issued { get; private set; }
         public int AgentQueries { get; private set; }
         public string State { get; set; } = "Approved";
+        public string ApprovalId { get; set; } = Id;
+        public string ErrorCode { get; set; } = "invocation-not-found";
         public string? Outcome { get; set; }
         public bool Recorded { get; set; } = true;
         public string Attempt { get; set; } = "3fdd0938f7c0449888d4fabb8e838d50";
@@ -178,8 +193,8 @@ public sealed class LocalReviewWorkflowTests
                 request.Headers.GetValues("X-Weave-Capability").Single().ShouldBe("fresh-agent-" + Issued);
                 request.Headers.Contains("X-Weave-Operator-Key").ShouldBeFalse();
                 if (route.EndsWith("/approval", StringComparison.Ordinal))
-                    return LocalHttpFixture.Response(200, new JsonObject { ["invocationId"] = Id, ["approvalState"] = State });
-                return LocalHttpFixture.Response(InvocationStatus, Outcome is null ? null : new JsonObject
+                    return LocalHttpFixture.Response(200, new JsonObject { ["invocationId"] = ApprovalId, ["approvalState"] = State });
+                return LocalHttpFixture.Response(InvocationStatus, Outcome is null ? new JsonObject { ["errorCode"] = ErrorCode } : new JsonObject
                 {
                     ["invocationId"] = Id, ["toolName"] = "files", ["attemptId"] = Attempt,
                     ["success"] = Outcome == "Succeeded", ["outcome"] = Outcome, ["outcomeRecorded"] = Recorded

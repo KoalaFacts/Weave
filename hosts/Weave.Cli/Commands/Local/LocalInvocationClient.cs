@@ -21,7 +21,9 @@ internal sealed class LocalInvocationClient(LocalHttp http, string workspace, st
         var result = await http.CallAsync(HttpMethod.Get, _route + "/" + id, capability, null, null, ct);
         var approval = result.Status == 404
             ? await http.CallAsync(HttpMethod.Get, _route + "/" + id + "/approval", capability, null, null, ct) : null;
-        return new JsonObject { ["invocation"] = result.ToNode(), ["approval"] = approval?.ToNode(), ["invocation_id"] = id };
+        var status = new JsonObject { ["invocation"] = result.ToNode(), ["approval"] = approval?.ToNode(), ["invocation_id"] = id };
+        status["execution_state"] = LocalInvocationStatus.ExecutionState(status, id);
+        return status;
     }
 
     public async Task<JsonObject> CallAsync(string name, JsonObject arguments, CancellationToken ct)
@@ -59,8 +61,7 @@ internal sealed class LocalInvocationClient(LocalHttp http, string workspace, st
             return state;
         }
         var current = await StatusAsync(id, ct);
-        if (name == "resume_write" && current["approval"]?["http_status"]?.GetValue<int>() == 200
-            && current["approval"]?["result"]?["approvalState"]?.GetValue<string>() == "Approved")
+        if (name == "resume_write" && LocalInvocationStatus.CanResume(current, id))
         {
             var resumed = (await http.CallAsync(HttpMethod.Post, _route + "/" + id + "/resume", capability, null, null, ct)).ToNode();
             resumed["invocation_id"] = id;

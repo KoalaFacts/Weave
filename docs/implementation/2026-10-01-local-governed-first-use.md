@@ -205,3 +205,47 @@ All 266 CLI tests passed. The full serial-module gate passed 3,271 tests with
 zero failures and five environment skips (Windows symlink privileges and the
 external Echo endpoint). Scoped check-rules and adversarial review were clean
 self-review; package/provider, schema and architecture changes were not applicable.
+
+
+### Approved first execution versus unknown outcome
+
+A subsequent independent Chinese proposal completed real human approval and a
+real Codex write. The original UUID has one successful recorded attempt, and both
+the actual file bytes and the public Weave readback match the approved original.
+The first automatic continuation was blocked before dispatch because Codex's
+normal tool review interpreted an absent execution record as an unknown effect.
+Read-only journal, endpoint and admission checks established that no attempt had
+started. A fresh real Codex then passed normal tool review and resumed that same
+UUID once. This required operator intervention; seamless automatic continuation
+was not established. No direct operator resume, replacement proposal, automatic
+human approval or disabled tool review was used.
+
+The CLI now returns an explicit `execution_state` alongside the raw invocation
+and approval HTTP evidence. Exact `invocation-not-found` plus a matching retained
+pre-admission approval yields `NotStarted`; generic 404s, mismatched UUIDs,
+consumed approvals, denied access and inconsistent responses yield `Unconfirmed`.
+Existing valid attempts retain their actual outcome, including `OutcomeUnknown`
+whether still in progress or completed. A completed successful outcome still
+requires a matching UUID/tool, nonzero attempt, recorded outcome and success flag.
+
+Both automatic Agent launch and `resume_write` use the same predicate: only
+`NotStarted` with `Approved` is eligible. The continuation prompt and MCP tool
+instructions explain why this particular pre-admission 404 is expected and why
+an existing unknown attempt must stop. The Host still revalidates current
+execution authority and atomically admits or refuses the original UUID. Client
+status reads are not a distributed snapshot or an additional execution grant.
+
+The regressions first failed on the missing semantic field and unsafe resume
+eligibility. Tests exercise exact first admission, changed or consumed approvals,
+wrong UUIDs, generic 404s, authorization/availability failures, recorded and
+in-progress unknown attempts, completed outcomes and the actual MCP status JSON.
+These fixtures do not prove a fresh human decision or unattended real Codex
+continuation; those require a separately authorized independent acceptance.
+
+Verification: the Release solution build had zero warnings/errors. Normal and
+locked restores passed. Python checks ran 111 tests with one POSIX-shell skip.
+The full serial-module gate passed 3,301 tests, zero failures and five environment
+skips (Windows symlink privileges and the external Echo endpoint). Scoped
+check-rules and adversarial review were self-review with no remaining findings;
+provider/package, persisted-schema and architecture changes were not applicable.
+The native automatic continuation still requires a fresh independent acceptance.

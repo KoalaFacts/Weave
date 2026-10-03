@@ -54,7 +54,7 @@ internal sealed class LocalMcpServer(LocalInvocationClient invocations)
                     {
                         ["protocolVersion"] = "2024-11-05", ["capabilities"] = new JsonObject { ["tools"] = new JsonObject() },
                         ["serverInfo"] = new JsonObject { ["name"] = "weave-governed-files", ["version"] = "1.0" },
-                        ["instructions"] = "Use one retained invocation_id UUID for each original write. Pending is not execution. A human reviews that UUID in a separate terminal. Query the same UUID after restart. Only resume after Approved with no recorded outcome. Never approve yourself, submit replacement content, or use a new UUID to bypass rejection, expiry or an unknown outcome."
+                        ["instructions"] = "Use one retained invocation_id UUID for each original write. Pending is not execution. A human reviews that UUID in a separate terminal. Query the same UUID after restart. Only resume when execution_state is NotStarted and approvalState is Approved. NotStarted identifies a matching retained approval without an admitted execution attempt; its invocation-not-found HTTP 404 is expected before first execution. OutcomeUnknown identifies an existing attempt: stop, preserve the UUID and investigate. Unconfirmed also requires stopping. Never approve yourself, submit replacement content, or use a new UUID to bypass rejection, expiry or an unknown outcome."
                     };
                 }
                 else if (method == "ping")
@@ -114,8 +114,8 @@ internal sealed class LocalMcpServer(LocalInvocationClient invocations)
         {
             "read_document" => "Read a document through Weave, not local disk.",
             "submit_write" => "Submit original path/content once with a retained UUID. Writes require human approval; known UUIDs are queried.",
-            "get_status" => "Query original UUID outcome and approval without a local proposal body.",
-            _ => "Resume the server-retained original UUID after human approval with current authority. Existing results are not replayed."
+            "get_status" => "Query the original UUID. execution_state distinguishes NotStarted (matching retained approval, no admitted attempt) from an existing attempt's outcome or Unconfirmed. Preserve raw HTTP evidence. A NotStarted invocation-not-found HTTP 404 is expected before first execution; OutcomeUnknown and Unconfirmed require stopping.",
+            _ => "Resume the server-retained original UUID once only when execution_state is NotStarted and approvalState is Approved, using current authority. Approval adds no execution grants. Existing attempts, OutcomeUnknown and Unconfirmed are never replayed."
         },
         ["inputSchema"] = new JsonObject
         {
