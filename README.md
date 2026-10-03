@@ -33,9 +33,10 @@ weave local serve
 
 Keep the Host terminal open. In another terminal, run `weave local codex` and give
 Codex your document task. When it reports a Pending UUID, personally review it
-with `weave local review --id ORIGINAL_UUID`. Approval does not execute the write;
-Codex must query and resume that same UUID. `weave local status --id ORIGINAL_UUID`
-queries a retained result without writing.
+with `weave local review --id ORIGINAL_UUID --continue`. After your approval, the
+CLI launches Codex to query and resume that same UUID, then verifies the recorded
+outcome. Approval itself does not execute the write. `weave local status --id
+ORIGINAL_UUID` queries a retained result without writing.
 
 The bundle includes the .NET runtime; this route needs no SDK, Python, Node or
 wrapper scripts. It is a local same-user profile, not an OS sandbox. See the

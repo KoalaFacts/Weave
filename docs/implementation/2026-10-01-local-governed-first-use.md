@@ -248,4 +248,46 @@ The full serial-module gate passed 3,301 tests, zero failures and five environme
 skips (Windows symlink privileges and the external Echo endpoint). Scoped
 check-rules and adversarial review were self-review with no remaining findings;
 provider/package, persisted-schema and architecture changes were not applicable.
-The native automatic continuation still requires a fresh independent acceptance.
+At that point, native automatic continuation still required a fresh independent
+acceptance.
+
+### Independent automatic continuation acceptance
+
+A new Chinese `delivery-readiness.md` task completed the native workflow on
+2026-10-03 using source commit `c4f33be4161bc85dc8c3cc8db014f2564781af2c`.
+The self-contained CLI started the matching published Host without dotnet on the
+child process PATH, preserving the existing local journal and configuration.
+Real Codex 0.156.1 read both input documents through Weave, generated the proposal,
+submitted one UUID and stopped at Pending. Independent checks found zero admitted
+attempts, no target file and exact equality between submitted and retained content.
+
+The person entered the exact approval confirmation in the native review terminal.
+The journal recorded one independent human-reviewer decision. With `--continue`,
+the CLI then launched a fresh Codex turn under the original Agent subject and
+fresh narrow authority. The Agent called `get_status`, observed the matching
+`Approved` and `NotStarted` response, called `resume_write` once for that UUID,
+then called `get_status` to confirm `Succeeded` and `outcomeRecorded: true`.
+No operator repair, replacement proposal, direct operator resume, supplied human
+decision or disabled Codex tool review intervened after approval.
+
+The CLI's independent final query confirmed the same successful attempt and exited
+zero. Read-only journal verification found exactly one admitted attempt and a
+consumed approval. The 3,680-byte target exactly matched the 3,677-byte approved
+UTF-8 body plus its BOM; public Weave readback matched the original text.
+Previously existing documents and private configuration retained their hashes.
+
+The full continuation trace came from the person's pasted native terminal output,
+correlated with independently queried Host state, journal records and file bytes.
+The read-only console observer started too late to capture that sequence; its
+partial capture remains separate from the supplied transcript. Operator-local
+evidence retains the frozen review, proposal events, Pending checks, native exit
+result, supplied continuation trace, readback and completion verification.
+
+Codex emitted a PowerShell shell-snapshot warning and a rollout-flush warning after
+its terminal turn event. Both are retained in the evidence; neither prevented the
+recorded successful execution or zero CLI exit. This proves the approved automatic
+continuation path for that source commit. It does not establish unattended human
+approval, rejection/expiry recovery, execution-time crash recovery, HTTPS, remote
+deployment, OS isolation or distributed exactly-once execution. Integration with
+later main changes requires its own build and test verification; this live result
+is not evidence for a different binary.

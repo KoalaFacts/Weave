@@ -101,7 +101,7 @@ sandbox protections.
 In a third interactive terminal, run:
 
 ```text
-weave local review --id ORIGINAL_UUID
+weave local review --id ORIGINAL_UUID --continue
 ```
 
 The CLI obtains a separate, independent reviewer capability and retrieves the
@@ -120,8 +120,8 @@ original proposal's expiry. An expired proposal cannot be renewed this way.
 On Windows, run the native command directly in a current PowerShell terminal;
 no wrapper script or transcript processing is required.
 
-Approval records a decision; it does not execute the write. For immediate Agent
-continuation, start review with this explicit option:
+Approval records a decision; it does not execute the write. The `--continue`
+option in the command above requests immediate Agent continuation:
 
 ```text
 weave local review --id ORIGINAL_UUID --continue
@@ -136,7 +136,8 @@ you do not need to notify another chat. The CLI independently checks the recorde
 outcome afterward. A zero Codex exit code alone is not execution confirmation.
 Use `--codex` and `--agent-directory` when those differ from the defaults.
 
-Without `--continue`, tell Codex to query that same UUID and continue only when
+For decision-only review, omit `--continue`. Then tell Codex to query that same
+UUID and continue only when
 `execution_state: NotStarted` and `approvalState: Approved`. On rejection, expiry,
 cancellation, denied access, an unknown outcome or an existing execution record,
 continuation stops.
