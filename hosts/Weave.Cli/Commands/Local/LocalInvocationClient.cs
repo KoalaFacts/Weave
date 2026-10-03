@@ -42,7 +42,7 @@ internal sealed class LocalInvocationClient(LocalHttp http, string workspace, st
             if (bytes.Length > LocalHttp.MaxBytes)
                 throw new ArgumentException("Proposal exceeds the one MiB client limit.");
             var fingerprint = Convert.ToHexString(SHA256.HashData(bytes));
-            var receipt = Path.Combine(receipts, id + ".sha256");
+            var receipt = Path.Join(receipts, id + ".sha256");
             if (File.Exists(receipt) && File.ReadAllText(receipt) != fingerprint)
                 throw new ArgumentException("Changed content cannot reuse the original UUID or approval.");
             var state = await StatusAsync(id, ct);

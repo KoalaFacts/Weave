@@ -7,7 +7,7 @@ internal static class LocalHostConfiguration
 {
     public static JsonObject Create(string directory, LocalDeployment deployment)
     {
-        var state = Path.Combine(directory, "state");
+        var state = Path.Join(directory, "state");
         var profiles = new JsonObject
         {
             ["agent"] = Profile(deployment.Workspace, "document-agent",
@@ -22,7 +22,7 @@ internal static class LocalHostConfiguration
             ["CapabilityTokens"] = new JsonObject
             {
                 ["SigningKey"] = Convert.ToHexString(RandomNumberGenerator.GetBytes(32)),
-                ["RevocationDirectory"] = Path.Combine(state, "revocations"),
+                ["RevocationDirectory"] = Path.Join(state, "revocations"),
                 ["RequireExistingStorage"] = false
             },
             ["Weave"] = new JsonObject
@@ -32,7 +32,7 @@ internal static class LocalHostConfiguration
                 ["Auth"] = new JsonObject { ["Mode"] = "none" },
                 ["Invocations"] = new JsonObject
                 {
-                    ["DatabasePath"] = Path.Combine(state, "invocations.db"),
+                    ["DatabasePath"] = Path.Join(state, "invocations.db"),
                     ["RequireExistingStorage"] = false,
                     ["ApprovalRequiredGrants"] = new JsonArray("tool:files:invoke:write_file"),
                     ["ApprovalLifetime"] = "1.00:00:00",

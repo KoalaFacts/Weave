@@ -55,7 +55,7 @@ internal sealed class LocalReviewWorkflow(LocalReview review, ILocalCodexLaunche
     private static async Task<JsonObject> QueryAsync(LocalHttp http, string directory, string workspace, string id, string key, CancellationToken ct)
     {
         var freshCapability = await http.IssueAsync("agent", key, ct);
-        return await new LocalInvocationClient(http, workspace, freshCapability, Path.Combine(directory, "receipts")).StatusAsync(id, ct);
+        return await new LocalInvocationClient(http, workspace, freshCapability, Path.Join(directory, "receipts")).StatusAsync(id, ct);
     }
 
 }

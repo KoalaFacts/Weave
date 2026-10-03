@@ -11,7 +11,7 @@ public sealed class LocalCodexLauncherTests
         using var files = new LocalTestDirectory();
         var deployment = new LocalDeployment(files.Host, files.Documents, "onboarding", 9401);
         var start = LocalCodexLauncher.BuildStartInfo("codex", files.Private, deployment,
-            Path.Combine(files.Root, "agent"), "Query the retained UUID.", execute: true);
+            Path.Join(files.Root, "agent"), "Query the retained UUID.", execute: true);
         var arguments = start.ArgumentList.ToArray();
         var disable = Array.IndexOf(arguments, "--disable");
         disable.ShouldBeGreaterThanOrEqualTo(0);

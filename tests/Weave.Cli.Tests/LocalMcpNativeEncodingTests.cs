@@ -25,7 +25,7 @@ public sealed class LocalMcpNativeEncodingTests
         listener.Start();
         var port = ((IPEndPoint)listener.LocalEndpoint).Port;
         var received = ReceiveProposalAsync(listener, id, deadline.Token);
-        var executable = Path.Combine(AppContext.BaseDirectory, OperatingSystem.IsWindows() ? "weave.exe" : "weave");
+        var executable = Path.Join(AppContext.BaseDirectory, OperatingSystem.IsWindows() ? "weave.exe" : "weave");
         var start = new ProcessStartInfo(executable)
         {
             UseShellExecute = false,

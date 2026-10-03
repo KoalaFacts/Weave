@@ -59,7 +59,7 @@ internal sealed class LocalCliCommand(ILocalDeploymentStore store, LocalHostRunn
         using var client = LocalHttp.CreateClient(deployment.Origin);
         var http = new LocalHttp(client, clock);
         var capability = await http.IssueAsync("agent", store.OperatorKey(directory), ct);
-        var status = await new LocalInvocationClient(http, deployment.Workspace, capability, Path.Combine(directory, "receipts")).StatusAsync(id, ct);
+        var status = await new LocalInvocationClient(http, deployment.Workspace, capability, Path.Join(directory, "receipts")).StatusAsync(id, ct);
         Console.WriteLine(status.ToJsonString());
         return status["invocation"]!["http_status"]!.GetValue<int>() == 200
             || status["approval"]?["http_status"]?.GetValue<int>() == 200 ? 0 : 1;

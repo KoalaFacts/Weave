@@ -2,10 +2,10 @@ namespace Weave.Cli.Tests;
 
 internal sealed class LocalTestDirectory : IDisposable
 {
-    public string Root { get; } = Path.Combine(Path.GetTempPath(), "weave-local-tests-" + Guid.NewGuid().ToString("N"));
-    public string Private => Path.Combine(Root, ".weave");
-    public string Documents => Path.Combine(Root, "documents");
-    public string Host => Path.Combine(Root, OperatingSystem.IsWindows() ? "Weave.Silo.exe" : "Weave.Silo");
+    public string Root { get; } = Path.Join(Path.GetTempPath(), "weave-local-tests-" + Guid.NewGuid().ToString("N"));
+    public string Private => Path.Join(Root, ".weave");
+    public string Documents => Path.Join(Root, "documents");
+    public string Host => Path.Join(Root, OperatingSystem.IsWindows() ? "Weave.Silo.exe" : "Weave.Silo");
 
     public LocalTestDirectory()
     {

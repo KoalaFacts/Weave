@@ -25,7 +25,7 @@ public sealed class LocalDeploymentStoreTests
             config["Weave"]!["Operator"]!["Credentials"]![profile]!["Lifetime"]!.GetValue<string>().ShouldBe("00:30:00");
         store.SigningKey(files.Private).Length.ShouldBe(64);
         store.OperatorKey(files.Private).ShouldNotBe(store.SigningKey(files.Private));
-        File.ReadAllText(Path.Combine(files.Private, ".gitignore")).ShouldBe("*\n");
+        File.ReadAllText(Path.Join(files.Private, ".gitignore")).ShouldBe("*\n");
         var agent = config["Weave"]!["Operator"]!["Credentials"]!["agent"]!["Grants"]!.AsArray().Select(grant => grant!.GetValue<string>()).ToArray();
         agent.ShouldBe(AgentGrants);
         store.Load(files.Private).Deployment.ShouldBeNull();
@@ -60,7 +60,7 @@ public sealed class LocalDeploymentStoreTests
     {
         using var files = new LocalTestDirectory();
         var store = new LocalDeploymentStore();
-        store.Prepare(Path.Combine(files.Documents, ".weave"), files.Documents, files.Host, "onboarding", 9401).Deployment.ShouldBeNull();
+        store.Prepare(Path.Join(files.Documents, ".weave"), files.Documents, files.Host, "onboarding", 9401).Deployment.ShouldBeNull();
         Directory.GetFileSystemEntries(files.Documents).ShouldBeEmpty();
     }
 
@@ -71,7 +71,7 @@ public sealed class LocalDeploymentStoreTests
         var store = new LocalDeploymentStore();
         var deployment = store.Prepare(files.Private, files.Documents, files.Host, "onboarding", 9401).Deployment!;
         store.CompleteInitialization(files.Private, deployment).ShouldBeFalse();
-        File.Exists(Path.Combine(files.Private, "local.json")).ShouldBeFalse();
+        File.Exists(Path.Join(files.Private, "local.json")).ShouldBeFalse();
     }
 
     [Fact]
@@ -80,8 +80,8 @@ public sealed class LocalDeploymentStoreTests
         using var files = new LocalTestDirectory();
         var store = new LocalDeploymentStore();
         var deployment = store.Prepare(files.Private, files.Documents, files.Host, "onboarding", 9401).Deployment!;
-        File.WriteAllText(Path.Combine(files.Private, "state", "invocations.db"), "existence fixture only");
-        Directory.CreateDirectory(Path.Combine(files.Private, "state", "revocations"));
+        File.WriteAllText(Path.Join(files.Private, "state", "invocations.db"), "existence fixture only");
+        Directory.CreateDirectory(Path.Join(files.Private, "state", "revocations"));
         store.CompleteInitialization(files.Private, deployment);
         store.Load(files.Private).Deployment.ShouldBe(deployment);
         var path = LocalDeploymentStore.HostConfigurationPath(files.Private);

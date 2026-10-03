@@ -141,7 +141,7 @@ public sealed class LocalInvocationClientTests
         var invocations = new LocalInvocationClient(new LocalHttp(client, TimeProvider.System), "onboarding", "test-agent", files.Private);
         var original = new JsonObject { ["invocation_id"] = Id, ["path"] = "summary.md", ["content"] = "approved only by a human" };
         await Should.ThrowAsync<HttpRequestException>(() => invocations.CallAsync("submit_write", original, TestContext.Current.CancellationToken));
-        File.Exists(Path.Combine(files.Private, Id + ".sha256")).ShouldBeTrue();
+        File.Exists(Path.Join(files.Private, Id + ".sha256")).ShouldBeTrue();
         var result = await invocations.CallAsync("submit_write", original, TestContext.Current.CancellationToken);
         result["invocation"]!["http_status"]!.GetValue<int>().ShouldBe(404);
         handler.Requests.Count(request => request.Method == "POST").ShouldBe(1);

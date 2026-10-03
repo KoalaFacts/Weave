@@ -29,7 +29,7 @@ internal sealed class LocalHostRunner(ILocalDeploymentStore store, TimeProvider 
         var launch = SiloProcessService.BuildSiloArgs(deployment.HostPath, deployment.Port);
         var info = new ProcessStartInfo(launch.FileName)
         {
-            WorkingDirectory = Path.Combine(directory, "private"),
+            WorkingDirectory = Path.Join(directory, "private"),
             UseShellExecute = false,
             CreateNoWindow = true,
             RedirectStandardOutput = true,

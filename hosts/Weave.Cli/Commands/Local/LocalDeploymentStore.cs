@@ -8,7 +8,7 @@ internal sealed partial class LocalDeploymentStore : ILocalDeploymentStore
 {
     public static string Resolve(string directory) => Path.GetFullPath(directory);
 
-    public static string HostConfigurationPath(string directory) => Path.Combine(directory, "private", "appsettings.json");
+    public static string HostConfigurationPath(string directory) => Path.Join(directory, "private", "appsettings.json");
 
     public LocalSetupResult Prepare(string directory, string documents, string? host, string workspace, int port)
     {
@@ -20,7 +20,7 @@ internal sealed partial class LocalDeploymentStore : ILocalDeploymentStore
             return new(null, "Use a workspace name of 1-64 letters, digits, underscores or hyphens, and a port from 1024 to 65535.");
         if (SeparateDirectoriesError(directory, documents) is { } pathError)
             return new(null, pathError);
-        host = Path.GetFullPath(host ?? Path.Combine(AppContext.BaseDirectory, "host",
+        host = Path.GetFullPath(host ?? Path.Join(AppContext.BaseDirectory, "host",
             OperatingSystem.IsWindows() ? "Weave.Silo.exe" : "Weave.Silo"));
         if (!File.Exists(host) || host.EndsWith(".csproj", StringComparison.OrdinalIgnoreCase))
             return new(null, "Published Host was not found. Use the distribution containing host/, or provide --host with a published executable or DLL.");
@@ -28,30 +28,30 @@ internal sealed partial class LocalDeploymentStore : ILocalDeploymentStore
             return new(null, "The local configuration directory already exists. Existing state was preserved.");
         var deployment = new LocalDeployment(host, documents, workspace, port);
         LocalPrivateDirectory.Create(directory);
-        File.WriteAllText(Path.Combine(directory, ".gitignore"), "*\n");
-        Directory.CreateDirectory(Path.Combine(directory, "private"));
-        Directory.CreateDirectory(Path.Combine(directory, "state"));
-        Directory.CreateDirectory(Path.Combine(directory, "receipts"));
+        File.WriteAllText(Path.Join(directory, ".gitignore"), "*\n");
+        Directory.CreateDirectory(Path.Join(directory, "private"));
+        Directory.CreateDirectory(Path.Join(directory, "state"));
+        Directory.CreateDirectory(Path.Join(directory, "receipts"));
         File.WriteAllText(HostConfigurationPath(directory), LocalHostConfiguration.Create(directory, deployment).ToJsonString());
         return new(deployment, null);
     }
 
     public bool CompleteInitialization(string directory, LocalDeployment deployment)
     {
-        if (!File.Exists(Path.Combine(directory, "state", "invocations.db"))
-            || !Directory.Exists(Path.Combine(directory, "state", "revocations")))
+        if (!File.Exists(Path.Join(directory, "state", "invocations.db"))
+            || !Directory.Exists(Path.Join(directory, "state", "revocations")))
             return false;
         var configuration = ReadHostConfiguration(directory);
         configuration["CapabilityTokens"]!["RequireExistingStorage"] = true;
         configuration["Weave"]!["Invocations"]!["RequireExistingStorage"] = true;
         File.WriteAllText(HostConfigurationPath(directory), configuration.ToJsonString());
-        File.WriteAllText(Path.Combine(directory, "local.json"), JsonSerializer.Serialize(deployment, LocalJsonContext.Default.LocalDeployment));
+        File.WriteAllText(Path.Join(directory, "local.json"), JsonSerializer.Serialize(deployment, LocalJsonContext.Default.LocalDeployment));
         return true;
     }
 
     public LocalSetupResult Load(string directory)
     {
-        var marker = Path.Combine(Resolve(directory), "local.json");
+        var marker = Path.Join(Resolve(directory), "local.json");
         if (!File.Exists(marker))
             return new(null, "No ready local deployment was found. Use local init for a new directory; preserve and investigate an interrupted setup.");
         var deployment = JsonSerializer.Deserialize(File.ReadAllText(marker), LocalJsonContext.Default.LocalDeployment);
