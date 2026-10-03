@@ -155,9 +155,11 @@ public sealed class LocalReviewWorkflowTests
                 var route = request.RequestUri!.AbsolutePath;
                 if (route.EndsWith("/issue", StringComparison.Ordinal))
                 {
-                    Issued++;
+                    var reviewer = route.EndsWith("/reviewer/issue", StringComparison.Ordinal);
+                    if (!reviewer)
+                        Issued++;
                     var issued = LocalHttpFixture.Response(200);
-                    issued.Content = new StringContent("fresh-agent-" + Issued, Encoding.UTF8, "text/plain");
+                    issued.Content = new StringContent(reviewer ? "fresh-reviewer" : "fresh-agent-" + Issued, Encoding.UTF8, "text/plain");
                     issued.Headers.CacheControl = new CacheControlHeaderValue { NoStore = true };
                     return issued;
                 }

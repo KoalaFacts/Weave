@@ -37,6 +37,12 @@ It does not overwrite an existing deployment or create summary answers.
 The private directory also contains a Git ignore rule for its contents, reducing
 the risk of accidentally committing credentials or retained records.
 
+New local deployments allow 24 hours for a human decision. Agent and reviewer
+capabilities still last 30 minutes. This local setting does not change other Host
+profiles. For an existing deployment, set `Weave:Invocations:ApprovalLifetime` to
+`1.00:00:00` in its private Host configuration and restart the same Host. This
+affects future proposals only; retained proposals keep their frozen expiry.
+
 `serve` runs the published executable and reconnects the configured document tool
 through the protected operator API. Keep this terminal open; Ctrl+C stops this
 Host. The document folder, `.weave/` and the Agent working directory must be
@@ -106,6 +112,13 @@ output use UTF-8 explicitly, including on Windows. Invalid UTF-8 MCP input stops
 before contacting the Host. Type the exact displayed `approve
 approval-v1:...` or `reject approval-v1:...` confirmation yourself. Redirected input
 or output cannot perform human review. There is no approval command-line flag.
+
+After exact human confirmation, the CLI obtains a fresh reviewer capability
+before submitting the decision. Waiting at the prompt does not require extending
+a credential's lifetime. The server still checks current authority and the
+original proposal's expiry. An expired proposal cannot be renewed this way.
+On Windows, run the native command directly in a current PowerShell terminal;
+no wrapper script or transcript processing is required.
 
 Approval records a decision; it does not execute the write. For immediate Agent
 continuation, start review with this explicit option:

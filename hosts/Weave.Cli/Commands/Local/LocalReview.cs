@@ -43,7 +43,8 @@ internal sealed partial class LocalReview(ILocalReviewConsole terminal)
             return LocalReviewOutcome.Unchanged;
         }
         var decision = answer.StartsWith("approve", StringComparison.Ordinal) ? "approve" : "reject";
-        var result = await http.CallAsync(HttpMethod.Post, route + "/decision", capability, key,
+        var currentReviewer = await http.IssueAsync("reviewer", key, ct);
+        var result = await http.CallAsync(HttpMethod.Post, route + "/decision", currentReviewer, key,
             new JsonObject { ["decision"] = decision, ["planDigest"] = digest }, ct);
         var expected = decision == "approve" ? "Approved" : "Rejected";
         if (result.Status != 200 || result.Body?["invocationId"]?.GetValue<string>() != id

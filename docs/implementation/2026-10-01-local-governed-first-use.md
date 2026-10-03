@@ -174,3 +174,34 @@ emitted no BOM, rejected invalid UTF-8 and created no receipts. That protocol-on
 check sent no business HTTP request, human decision or filesystem write.
 Scoped check-rules and adversarial review were self-review with no findings;
 package/provider, persisted schema and architecture changes were not applicable.
+
+### Human waiting window repair
+
+The independent Chinese proposal reached Pending with its exact UTF-8 body, but
+the human entered the confirmation after its 30-minute proposal deadline. The
+retained journal contains no decision, invocation or attempt for that UUID, and
+the target file remains absent. The terminal wrapper also failed while processing
+its transcript in Windows PowerShell 5. This run did not complete human approval
+or execution.
+
+New local configurations now explicitly allow 24 hours for proposal approval.
+Agent and reviewer capabilities retain their 30-minute lifetime. After exact
+interactive confirmation, review obtains a fresh reviewer capability before
+submitting the original digest and decision. Issuance failure or cancellation
+does not send a decision. The server still validates the original frozen deadline
+and current authority. Existing configuration requires an explicit local setting
+update; retained proposals are never renewed, rewritten or assigned another UUID.
+
+The regressions first reproduced approval/rejection failing after a 31-minute
+human wait and the missing local approval lifetime. Tests cover renewed authority
+after exact confirmation, denied issuance and cancellation, alongside existing
+inexact-input and continuation stop paths. These protocol fixtures do not prove
+a new human decision or real filesystem execution. Operators can run the native
+review command directly in a current terminal without transcript wrappers.
+
+Verification: the Release solution build had zero warnings/errors; normal and
+locked restores passed. Python checks ran 111 tests with one POSIX-shell skip.
+All 266 CLI tests passed. The full serial-module gate passed 3,271 tests with
+zero failures and five environment skips (Windows symlink privileges and the
+external Echo endpoint). Scoped check-rules and adversarial review were clean
+self-review; package/provider, schema and architecture changes were not applicable.

@@ -19,6 +19,10 @@ public sealed class LocalDeploymentStoreTests
         config["Urls"]!.GetValue<string>().ShouldBe("http://127.0.0.1:9401");
         config["Weave"]!["Operator"]!["Enabled"]!.GetValue<bool>().ShouldBeTrue();
         config["Weave"]!["Invocations"]!["ApprovalRequiredGrants"]![0]!.GetValue<string>().ShouldBe("tool:files:invoke:write_file");
+        var approvalLifetime = config["Weave"]!["Invocations"]!["ApprovalLifetime"]?.GetValue<string>();
+        approvalLifetime.ShouldBe("1.00:00:00");
+        foreach (var profile in new[] { "agent", "reviewer" })
+            config["Weave"]!["Operator"]!["Credentials"]![profile]!["Lifetime"]!.GetValue<string>().ShouldBe("00:30:00");
         store.SigningKey(files.Private).Length.ShouldBe(64);
         store.OperatorKey(files.Private).ShouldNotBe(store.SigningKey(files.Private));
         File.ReadAllText(Path.Combine(files.Private, ".gitignore")).ShouldBe("*\n");

@@ -1,3 +1,5 @@
+using System.Net.Http.Headers;
+using System.Text;
 using System.Text.Json.Nodes;
 using Shouldly;
 using Weave.Cli.Commands.Local;
@@ -16,13 +18,25 @@ public sealed class LocalReviewTests
     public async Task RunAsync_ExactConfirmation_DecidesOriginalWithoutExecution(string decision, string state)
     {
         var terminal = new ReviewTerminal(true, decision + " " + Digest);
-        using var handler = new LocalHttpFixture((request, _) => request.Method == HttpMethod.Get
-            ? LocalHttpFixture.Response(200, Preview()) : LocalHttpFixture.Response(200, new JsonObject { ["invocationId"] = Id, ["approvalState"] = state }));
+        using var handler = new LocalHttpFixture((request, _) =>
+        {
+            if (request.Method == HttpMethod.Get)
+                return LocalHttpFixture.Response(200, Preview());
+            if (request.RequestUri!.AbsolutePath.EndsWith("/reviewer/issue", StringComparison.Ordinal))
+            {
+                var issued = LocalHttpFixture.Response(200);
+                issued.Content = new StringContent("fresh-reviewer", Encoding.UTF8, "text/plain");
+                issued.Headers.CacheControl = new CacheControlHeaderValue { NoStore = true };
+                return issued;
+            }
+            request.Headers.GetValues("X-Weave-Capability").Single().ShouldBe("fresh-reviewer");
+            return LocalHttpFixture.Response(200, new JsonObject { ["invocationId"] = Id, ["approvalState"] = state });
+        });
         using var client = new HttpClient(handler) { BaseAddress = new Uri("http://127.0.0.1:9401") };
         var exit = await new LocalReview(terminal).RunAsync(new LocalHttp(client, TimeProvider.System), "onboarding", Id, "reviewer", "operator", TestContext.Current.CancellationToken);
         exit.ShouldBe(decision == "approve" ? LocalReviewOutcome.Approved : LocalReviewOutcome.Rejected);
         terminal.Output.ShouldContain(state + ". This decision did not execute the write. The original Agent must query the UUID and continue or stop.");
-        var post = handler.Requests.Single(request => request.Method == "POST");
+        var post = handler.Requests.Single(request => request.Path.EndsWith("/decision", StringComparison.Ordinal));
         post.Path.ShouldEndWith("/" + Id + "/decision");
         var body = post.Body!;
         body.Select(field => field.Key).Order().ShouldBe(DecisionFields);

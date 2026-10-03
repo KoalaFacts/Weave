@@ -32,6 +32,7 @@ internal static class LocalHostConfiguration
                 {
                     ["DatabasePath"] = Path.Combine(state, "invocations.db"), ["RequireExistingStorage"] = false,
                     ["ApprovalRequiredGrants"] = new JsonArray("tool:files:invoke:write_file"),
+                    ["ApprovalLifetime"] = "1.00:00:00",
                     ["Http"] = new JsonObject { ["Enabled"] = true, ["AgentOnly"] = false, ["DecisionsEnabled"] = true }
                 },
                 ["Operator"] = new JsonObject
