@@ -121,9 +121,9 @@ public sealed partial class ProcessRunnerTests
             Func<TState, Exception?, string> formatter)
         {
             if (state is IEnumerable<KeyValuePair<string, object?>> fields)
-                foreach (var field in fields)
-                    if (field.Key == "ExecutionId" && field.Value is Guid id)
-                        ExecutionIds.Enqueue(id);
+                foreach (var id in fields.Where(field => field.Key == "ExecutionId")
+                    .Select(field => field.Value).OfType<Guid>())
+                    ExecutionIds.Enqueue(id);
         }
     }
 }
