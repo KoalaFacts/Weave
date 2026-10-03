@@ -1,12 +1,13 @@
 using System.Collections.Concurrent;
 using System.Diagnostics;
 using Microsoft.Extensions.Logging;
+using Weave.Invocations.Processes;
 using Weave.Security.Tokens;
 using Weave.Tools.Tool;
 using Weave.Workspaces.Manifest;
 namespace Weave.Tools.Connectors;
 
-public sealed partial class CliToolConnector(ILogger<CliToolConnector> logger) : IToolConnector
+public sealed partial class CliToolConnector(ILogger<CliToolConnector> logger, IProcessRunner processes) : IToolConnector
 {
     private static readonly string[] ShellMetacharacters = [";", "|", "&&", "||", "`", "$(", "$((", "\n", "\r", ">>", ">&"];
 
@@ -67,7 +68,7 @@ public sealed partial class CliToolConnector(ILogger<CliToolConnector> logger) :
             };
         }
 
-        return await RunProcessAsync(logger, handle.ToolName, cli, command, sw, ct);
+        return await RunProcessAsync(logger, processes, handle.ToolName, cli, command, sw, ct);
     }
 
     public Task<ToolSchema> DiscoverSchemaAsync(ToolHandle handle, CancellationToken ct = default)
@@ -92,8 +93,8 @@ public sealed partial class CliToolConnector(ILogger<CliToolConnector> logger) :
     [LoggerMessage(Level = LogLevel.Information, Message = "CLI tool '{Tool}' connected (shell: {Shell})")]
     private partial void LogCliToolConnected(string tool, string shell);
 
-    [LoggerMessage(Level = LogLevel.Warning, Message = "CLI tool invocation failed for '{Tool}'")]
-    private static partial void LogCliToolInvocationFailed(ILogger logger, Exception ex, string tool);
+    [LoggerMessage(Level = LogLevel.Warning, Message = "CLI tool invocation failed for '{Tool}' ({ErrorType})")]
+    private static partial void LogCliToolInvocationFailed(ILogger logger, string errorType, string tool);
 
     private static CliCommandPolicyResult EvaluateCommandPolicy(string command, CliConfig config)
     {
@@ -155,6 +156,7 @@ public sealed partial class CliToolConnector(ILogger<CliToolConnector> logger) :
 
     private static async Task<ToolResult> RunProcessAsync(
         ILogger logger,
+        IProcessRunner processes,
         string toolName,
         CliConfig config,
         string command,
@@ -163,63 +165,69 @@ public sealed partial class CliToolConnector(ILogger<CliToolConnector> logger) :
     {
         try
         {
-            var processStart = new ProcessStartInfo
-            {
-                FileName = config.Shell,
-                RedirectStandardOutput = true,
-                RedirectStandardError = true,
-                UseShellExecute = false,
-                CreateNoWindow = true
-            };
-
-            AppendShellArguments(processStart, config.Shell, command);
-
-            using var process = Process.Start(processStart) ?? throw new InvalidOperationException("Failed to start CLI process.");
-            var outputTask = process.StandardOutput.ReadToEndAsync(ct);
-            var errorTask = process.StandardError.ReadToEndAsync(ct);
-
-            await Task.WhenAll(outputTask, errorTask);
-            await process.WaitForExitAsync(ct);
-
-            var output = await outputTask;
-            var error = await errorTask;
+            var result = await processes.RunAsync(config.Shell, ShellArguments(config.Shell, command), ct);
             sw.Stop();
+
+            if (result.Failure == ProcessFailure.CapacityExhausted)
+                return new ToolResult
+                {
+                    ToolName = toolName,
+                    ErrorCode = "process-capacity-exhausted",
+                    Error = "Command process capacity is exhausted.",
+                    Duration = sw.Elapsed
+                };
+
+            if (result.Failure == ProcessFailure.OutputLimitExceeded)
+                return new ToolResult
+                {
+                    ToolName = toolName,
+                    ErrorCode = "process-output-limit",
+                    Error = "Command output limit exceeded.",
+                    Duration = sw.Elapsed
+                };
 
             return new ToolResult
             {
-                Success = process.ExitCode == 0,
+                Success = result.ExitCode == 0,
                 ToolName = toolName,
-                Output = output,
-                Error = string.IsNullOrEmpty(error) ? null : error,
+                Output = result.StandardOutput,
+                Error = string.IsNullOrEmpty(result.StandardError) ? null : result.StandardError,
+                Duration = sw.Elapsed
+            };
+        }
+        catch (TimeoutException ex)
+        {
+            sw.Stop();
+            LogCliToolInvocationFailed(logger, ex.GetType().Name, toolName);
+            return new ToolResult
+            {
+                ToolName = toolName,
+                ErrorCode = "process-cleanup-unconfirmed",
+                Error = "Command process cleanup is unconfirmed.",
                 Duration = sw.Elapsed
             };
         }
         catch (Exception ex) when (ex is InvalidOperationException or System.ComponentModel.Win32Exception or IOException or ObjectDisposedException)
         {
             sw.Stop();
-            LogCliToolInvocationFailed(logger, ex, toolName);
+            LogCliToolInvocationFailed(logger, ex.GetType().Name, toolName);
             return new ToolResult
             {
                 Success = false,
                 ToolName = toolName,
-                Error = ex.Message,
+                ErrorCode = "process-execution-unconfirmed",
+                Error = "CLI process could not be completed.",
                 Duration = sw.Elapsed
             };
         }
     }
 
-    private static void AppendShellArguments(ProcessStartInfo processStart, string shell, string command)
+    private static string[] ShellArguments(string shell, string command)
     {
         if (shell.EndsWith("powershell", StringComparison.OrdinalIgnoreCase) ||
             shell.EndsWith("pwsh", StringComparison.OrdinalIgnoreCase))
-        {
-            processStart.ArgumentList.Add("-Command");
-            processStart.ArgumentList.Add(command);
-            return;
-        }
-
-        processStart.ArgumentList.Add("-c");
-        processStart.ArgumentList.Add(command);
+            return ["-Command", command];
+        return ["-c", command];
     }
 
     private readonly record struct CliCommandPolicyResult(bool IsAllowed, string? Error)

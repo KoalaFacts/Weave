@@ -1,4 +1,8 @@
 <Project Sdk="Microsoft.NET.Sdk">
+  <ItemGroup>
+    <Compile Include="../Weave.Tools.Tests/Processes/ProcessTestChild.cs" Link="Invocations/Processes/ProcessTestChild.cs" />
+    <None Include="../Weave.Tools.Tests/Processes/process-child.ts" Link="Processes/process-child.ts" CopyToOutputDirectory="PreserveNewest" />
+  </ItemGroup>
   <PropertyGroup>
     <IsPackable>false</IsPackable>
     <IsTestProject>true</IsTestProject>
