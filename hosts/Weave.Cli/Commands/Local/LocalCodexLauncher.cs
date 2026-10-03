@@ -42,12 +42,9 @@ internal sealed class LocalCodexLauncher(ILocalDeploymentStore store, TimeProvid
         string agentDirectory, string? task, bool execute)
     {
         var info = new ProcessStartInfo(executable) { UseShellExecute = false, WorkingDirectory = agentDirectory };
-        foreach (var name in info.Environment.Keys.ToArray())
-        {
-            if (name.StartsWith("WEAVE", StringComparison.OrdinalIgnoreCase)
-                || name.StartsWith("CapabilityTokens", StringComparison.OrdinalIgnoreCase))
-                info.Environment.Remove(name);
-        }
+        foreach (var name in info.Environment.Keys.Where(name => name.StartsWith("WEAVE", StringComparison.OrdinalIgnoreCase)
+            || name.StartsWith("CapabilityTokens", StringComparison.OrdinalIgnoreCase)).ToArray())
+            info.Environment.Remove(name);
         if (execute)
         {
             if (string.IsNullOrWhiteSpace(task))
@@ -63,9 +60,9 @@ internal sealed class LocalCodexLauncher(ILocalDeploymentStore store, TimeProvid
         var command = Environment.ProcessPath ?? throw new IOException("CLI executable path is unavailable.");
         var bridge = new JsonArray();
         if (Path.GetFileNameWithoutExtension(command).Equals("dotnet", StringComparison.OrdinalIgnoreCase))
-            bridge.Add((JsonNode?)JsonValue.Create(Path.Combine(AppContext.BaseDirectory, "weave.dll")));
+            bridge.Add((JsonNode?)JsonValue.Create(Path.Join(AppContext.BaseDirectory, "weave.dll")));
         foreach (var argument in new[] { "local", "mcp", "--url", deployment.Origin, "--workspace", deployment.Workspace,
-            "--receipts", Path.Combine(directory, "receipts") })
+            "--receipts", Path.Join(directory, "receipts") })
             bridge.Add((JsonNode?)JsonValue.Create(argument));
         var settings = new JsonObject
         {

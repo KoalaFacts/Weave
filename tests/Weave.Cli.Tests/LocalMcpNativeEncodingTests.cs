@@ -34,9 +34,9 @@ public sealed class LocalMcpNativeEncodingTests
             RedirectStandardOutput = true,
             RedirectStandardError = true
         };
-        foreach (var name in start.Environment.Keys.ToArray())
-            if (name.StartsWith("WEAVE", StringComparison.OrdinalIgnoreCase) || name.StartsWith("CapabilityTokens", StringComparison.OrdinalIgnoreCase))
-                start.Environment.Remove(name);
+        foreach (var name in start.Environment.Keys.Where(name => name.StartsWith("WEAVE", StringComparison.OrdinalIgnoreCase)
+            || name.StartsWith("CapabilityTokens", StringComparison.OrdinalIgnoreCase)).ToArray())
+            start.Environment.Remove(name);
         start.Environment["WEAVE_AGENT_CAPABILITY"] = "fixture-agent";
         foreach (var argument in new[] { "local", "mcp", "--url", $"http://127.0.0.1:{port}", "--workspace", "onboarding", "--receipts", files.Private })
             start.ArgumentList.Add(argument);
@@ -86,18 +86,22 @@ public sealed class LocalMcpNativeEncodingTests
             await Task.WhenAll(stdout, stderr).WaitAsync(TimeSpan.FromSeconds(5), TestContext.Current.CancellationToken);
             try
             { await received; }
-            catch (OperationCanceledException) { }
+            catch (OperationCanceledException canceled) when (canceled.CancellationToken == deadline.Token)
+            {
+                deadline.IsCancellationRequested.ShouldBeTrue();
+            }
         }
     }
 
     private static async Task<JsonObject> ReceiveProposalAsync(TcpListener listener, string id, CancellationToken ct)
     {
+        var header = new StringBuilder();
+        var next = new byte[1];
         for (var index = 0; index < 3; index++)
         {
             using var client = await listener.AcceptTcpClientAsync(ct);
             await using var stream = client.GetStream();
-            var header = new StringBuilder();
-            var next = new byte[1];
+            header.Clear();
             while (!header.ToString().EndsWith("\r\n\r\n", StringComparison.Ordinal))
             {
                 await stream.ReadExactlyAsync(next, ct);

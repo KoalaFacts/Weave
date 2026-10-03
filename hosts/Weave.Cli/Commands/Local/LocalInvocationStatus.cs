@@ -1,3 +1,4 @@
+using System.Diagnostics.CodeAnalysis;
 using System.Text.Json.Nodes;
 using Weave.Invocations;
 
@@ -14,13 +15,13 @@ internal static class LocalInvocationStatus
             var approval = status["approval"] as JsonObject;
             var decision = approval?["result"] as JsonObject;
             if (Has(approval, "http_status", 200) && Has(decision, "invocationId", id)
-                && decision?["approvalState"] is JsonValue state && state.TryGetValue<string>(out var name)
+                && decision["approvalState"] is JsonValue state && state.TryGetValue<string>(out var name)
                 && name is "Pending" or "Approved" or "Rejected" or "Expired" or "Cancelled")
                 return "NotStarted";
             return "Unconfirmed";
         }
         if (!Has(invocation, "http_status", 200) || !Has(result, "invocationId", id) || !Has(result, "toolName", "files")
-            || result?["attemptId"] is not JsonValue attemptValue || !attemptValue.TryGetValue<string>(out var attemptId)
+            || result["attemptId"] is not JsonValue attemptValue || !attemptValue.TryGetValue<string>(out var attemptId)
             || !Guid.TryParseExact(attemptId, "N", out var attempt) || attempt == Guid.Empty
             || result["outcome"] is not JsonValue outcomeValue || !outcomeValue.TryGetValue<string>(out var outcome))
             return "Unconfirmed";
@@ -41,6 +42,6 @@ internal static class LocalInvocationStatus
     public static bool CanResume(JsonObject status, string id) => ExecutionState(status, id) == "NotStarted"
         && Has(status["approval"]?["result"] as JsonObject, "approvalState", "Approved");
 
-    private static bool Has<T>(JsonObject? node, string field, T expected) => node?[field] is JsonValue value
+    private static bool Has<T>([NotNullWhen(true)] JsonObject? node, string field, T expected) => node?[field] is JsonValue value
         && value.TryGetValue<T>(out var actual) && EqualityComparer<T>.Default.Equals(actual, expected);
 }

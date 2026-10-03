@@ -38,16 +38,13 @@ internal sealed class LocalHostRunner(ILocalDeploymentStore store, TimeProvider 
         foreach (var argument in launch.Arguments)
             info.ArgumentList.Add(argument.StartsWith("--urls=", StringComparison.Ordinal) ? "--urls=" + deployment.Origin : argument);
         info.ArgumentList.Add("--contentRoot=" + info.WorkingDirectory);
-        foreach (var key in info.Environment.Keys.ToArray())
-        {
-            if (key.StartsWith("Weave", StringComparison.OrdinalIgnoreCase)
-                || key.StartsWith("CapabilityTokens", StringComparison.OrdinalIgnoreCase)
-                || key.StartsWith("ConnectionStrings", StringComparison.OrdinalIgnoreCase)
-                || key.StartsWith("ASPNETCORE", StringComparison.OrdinalIgnoreCase)
-                || key.Equals("DOTNET_ENVIRONMENT", StringComparison.OrdinalIgnoreCase)
-                || key.Equals("Urls", StringComparison.OrdinalIgnoreCase))
-                info.Environment.Remove(key);
-        }
+        foreach (var key in info.Environment.Keys.Where(key => key.StartsWith("Weave", StringComparison.OrdinalIgnoreCase)
+            || key.StartsWith("CapabilityTokens", StringComparison.OrdinalIgnoreCase)
+            || key.StartsWith("ConnectionStrings", StringComparison.OrdinalIgnoreCase)
+            || key.StartsWith("ASPNETCORE", StringComparison.OrdinalIgnoreCase)
+            || key.Equals("DOTNET_ENVIRONMENT", StringComparison.OrdinalIgnoreCase)
+            || key.Equals("Urls", StringComparison.OrdinalIgnoreCase)).ToArray())
+            info.Environment.Remove(key);
         info.Environment["DOTNET_ENVIRONMENT"] = "Production";
         using var process = Process.Start(info) ?? throw new IOException("Published Host did not start.");
         // The Host is trusted executable code. Bound diagnostics and redact its protected configuration.

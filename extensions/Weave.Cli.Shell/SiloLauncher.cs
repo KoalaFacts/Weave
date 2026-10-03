@@ -14,7 +14,7 @@ internal sealed class SiloLauncher(IConfigStore configStore, ISecretResolver sec
         if (!string.IsNullOrWhiteSpace(config.SiloPath) && (File.Exists(config.SiloPath) || Directory.Exists(config.SiloPath)))
             return config.SiloPath;
 
-        var bundledHost = Path.Combine(AppContext.BaseDirectory, "host",
+        var bundledHost = Path.Join(AppContext.BaseDirectory, "host",
             OperatingSystem.IsWindows() ? "Weave.Silo.exe" : "Weave.Silo");
         if (File.Exists(bundledHost))
             return bundledHost;
