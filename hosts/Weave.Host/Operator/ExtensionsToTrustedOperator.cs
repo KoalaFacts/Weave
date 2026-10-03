@@ -1,8 +1,10 @@
 using System.Text.Json;
 using Microsoft.AspNetCore.Http.Features;
 using Microsoft.AspNetCore.WebUtilities;
+using Weave.Invocations.Processes;
 using Weave.Security.Tokens;
 using Weave.Shared.VirtualActors;
+using Weave.Silo.Api;
 using Weave.Silo.Invocations;
 using Weave.Tools.Tool;
 
@@ -17,6 +19,13 @@ internal static class ExtensionsToTrustedOperator
         var access = new TrustedOperatorAccess(app);
         app.Use(access.GuardAsync);
         var group = app.MapGroup("/api/operator").WithTags("Trusted Operator");
+        group.MapGet("/runtime/processes", (HttpContext context, IProcessRuntimeObserver processes) =>
+        {
+            if (HasInput(context))
+                return InvocationHttp.Error(400, "process-observation-request-must-be-empty");
+            context.RequestAborted.ThrowIfCancellationRequested();
+            return Results.Json(processes.Observe(), SiloApiJsonContext.Default.ProcessRuntimeSnapshot);
+        }).WithDescription("Observe this Host's shared command process capacity and cleanup phases. Requires trusted operator mode.");
         group.MapPost("/tools/{profile}/connect", (HttpContext context, string profile,
             ICapabilityTokenService tokens, IVirtualActorProvider actors) => ConnectAsync(context, profile, access, tokens, actors));
         group.MapPost("/credentials/{profile}/issue", (HttpContext context, string profile,
