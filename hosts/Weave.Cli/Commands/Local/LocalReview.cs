@@ -16,6 +16,7 @@ internal sealed partial class LocalReview(ILocalReviewConsole terminal)
         }
         id = LocalInvocationClient.NormalizeId(id);
         var route = $"/api/workspaces/{workspace}/tools/files/invocations/{id}";
+        await http.ConnectDocumentsAsync(key, ct);
         var response = await http.CallAsync(HttpMethod.Get, route + "/approval/review", capability, key, null, ct);
         if (response.Status != 200)
         {
@@ -43,6 +44,7 @@ internal sealed partial class LocalReview(ILocalReviewConsole terminal)
             return LocalReviewOutcome.Unchanged;
         }
         var decision = answer.StartsWith("approve", StringComparison.Ordinal) ? "approve" : "reject";
+        await http.ConnectDocumentsAsync(key, ct);
         var currentReviewer = await http.IssueAsync("reviewer", key, ct);
         var result = await http.CallAsync(HttpMethod.Post, route + "/decision", currentReviewer, key,
             new JsonObject { ["decision"] = decision, ["planDigest"] = digest }, ct);

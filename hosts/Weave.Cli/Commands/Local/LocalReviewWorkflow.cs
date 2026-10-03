@@ -37,19 +37,16 @@ internal sealed class LocalReviewWorkflow(LocalReview review, ILocalCodexLaunche
             + "Authentication failures and unconfirmed responses also require stopping. After resuming, query and report this UUID's recorded outcome.";
         var exit = await codex.RunAsync(directory, deployment, executable, agentDirectory, task, execute: true, ct);
         if (exit != 0)
-        {
-            Console.Error.WriteLine("Agent continuation did not finish normally. Preserve and query the original UUID before any retry.");
-            return exit;
-        }
+            Console.Error.WriteLine($"Agent continuation exited with code {exit}. Querying the original UUID's recorded outcome; no retry will be submitted.");
         var final = await QueryAsync(http, directory, deployment.Workspace, id, key, ct);
         Console.WriteLine(final.ToJsonString());
         if (LocalInvocationStatus.ExecutionState(final, id) == nameof(InvocationOutcome.Succeeded))
         {
             Console.WriteLine("Original UUID execution is confirmed by the Host's recorded successful outcome.");
-            return 0;
+            return exit;
         }
         Console.Error.WriteLine("No successful recorded outcome was confirmed. The original UUID was preserved; continuation will not be retried automatically.");
-        return 1;
+        return exit != 0 ? exit : 1;
     }
 
     private static async Task<JsonObject> QueryAsync(LocalHttp http, string directory, string workspace, string id, string key, CancellationToken ct)

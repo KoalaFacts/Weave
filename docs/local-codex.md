@@ -13,7 +13,7 @@ proposal and execution record by UUID.
 - The official Codex CLI installed and signed in using its normal login process.
   Weave does not copy login files, install a model provider or create API keys.
 - One local Host at a time. HTTP port 9401 and Orleans ports 11111/30000 must be
-  available. This profile binds its HTTP interface to literal `127.0.0.1`.
+  available. HTTP cannot use either reserved Orleans port. This profile binds its HTTP interface to literal `127.0.0.1`.
 
 If `weave` is not on your PATH, substitute the path to the extracted executable in
 the commands below. Keep the complete `host/` directory beside it.
@@ -105,7 +105,7 @@ weave local review --id ORIGINAL_UUID --continue
 ```
 
 The CLI obtains a separate, independent reviewer capability and retrieves the
-server-verified original. It displays the target, complete content, requester,
+server-verified original after reconnecting the configured document tool. It displays the target, complete content, requester,
 expiry and digest. Terminal control and direction-changing characters are escaped;
 ordinary document text remains readable. The MCP byte streams and human review
 output use UTF-8 explicitly, including on Windows. Invalid UTF-8 MCP input stops
@@ -113,7 +113,8 @@ before contacting the Host. Type the exact displayed `approve
 approval-v1:...` or `reject approval-v1:...` confirmation yourself. Redirected input
 or output cannot perform human review. There is no approval command-line flag.
 
-After exact human confirmation, the CLI obtains a fresh reviewer capability
+After exact human confirmation, the CLI reconnects the document tool again and
+obtains a fresh reviewer capability
 before submitting the decision. Waiting at the prompt does not require extending
 a credential's lifetime. The server still checks current authority and the
 original proposal's expiry. An expired proposal cannot be renewed this way.
@@ -133,7 +134,9 @@ Only an Approved request with `execution_state: NotStarted` starts a fresh Codex
 under the same Agent subject. Codex queries that UUID first and resumes the
 server-retained body;
 you do not need to notify another chat. The CLI independently checks the recorded
-outcome afterward. A zero Codex exit code alone is not execution confirmation.
+outcome afterward, including when Codex exits nonzero. The CLI reports that Host
+outcome and retains a nonzero Codex exit code as a client failure. A zero Codex
+exit code alone is not execution confirmation.
 Use `--codex` and `--agent-directory` when those differ from the defaults.
 
 For decision-only review, omit `--continue`. Then tell Codex to query that same
@@ -165,8 +168,13 @@ After Host restart, run `serve` against the same private directory. After Agent
 restart or capability expiry, launch `codex` again and tell it the original UUID.
 The CLI obtains fresh credentials for the same narrow subject and operations;
 the server retains the original proposal. A known submission is query-only, and a
-recorded result is never automatically replayed. Local receipts contain only
-UUID/hash data, not the original document body or tokens.
+recorded result is never automatically replayed. For a definitive forbidden or
+journal-write-failed response, both owner-scoped lookups must confirm no retained
+invocation or approval before the receipt becomes retryable. A later explicit
+submission may then use only the same UUID and identical body, after querying
+again. Lost responses, generic failures and unknown outcomes remain query-only.
+Local receipts contain only UUID/hash and retry eligibility, not the original
+document body or tokens.
 
 Keep `.weave/` intact, including its database and revocation directory. Missing
 retained storage fails startup. Interrupted initialization leaves its private

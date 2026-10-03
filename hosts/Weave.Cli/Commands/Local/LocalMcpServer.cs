@@ -97,7 +97,10 @@ internal sealed class LocalMcpServer(LocalInvocationClient invocations)
             if (!Fields.TryGetValue(name, out var fields) || arguments.Count != fields.Length
                 || !fields.All(field => arguments[field] is JsonValue value && value.TryGetValue<string>(out _)))
                 return ToolResult("Use one of the four business tools with its exact string arguments.", true);
-            return ToolResult((await invocations.CallAsync(name, arguments, ct)).ToJsonString(), false);
+            var response = await invocations.CallAsync(name, arguments, ct);
+            var error = response["http_status"] is JsonValue status && status.TryGetValue<int>(out var code)
+                && code is < 200 or >= 300;
+            return ToolResult(response.ToJsonString(), error);
         }
         catch (Exception failure) when (failure is IOException or HttpRequestException or ArgumentException or JsonException or InvalidOperationException
             || failure is OperationCanceledException && !ct.IsCancellationRequested)

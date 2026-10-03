@@ -291,3 +291,34 @@ approval, rejection/expiry recovery, execution-time crash recovery, HTTPS, remot
 deployment, OS isolation or distributed exactly-once execution. Integration with
 later main changes requires its own build and test verification; this live result
 is not evidence for a different binary.
+
+
+### Follow-up review corrections
+
+The review triggered after marking the PR ready identified six gaps. The CLI now
+reconnects the configured document tool before fetching a frozen review and again
+after exact human confirmation, before sending the decision. Connection denial
+or cancellation prevents a decision; refreshing the reviewer capability still
+occurs only after confirmation.
+
+MCP operation responses mark non-success HTTP statuses as tool errors, preserving
+the response body. Pending remains a normal response, and explicit status queries
+retain diagnostic evidence. Automatic continuation queries the same UUID after a
+nonzero Codex exit as well as after a zero exit. A recorded successful Host result
+is reported independently; a nonzero Codex exit remains a client failure.
+
+Receipts retain the original fingerprint. Only a recognized forbidden or
+journal-write-failed response followed by exact owner-scoped invocation-not-found
+and approval-not-found responses makes a receipt eligible for an explicit retry.
+The next submission queries again, preserves the UUID and body, and exclusively
+claims and flushes the receipt before its POST. Transport loss, cancellation,
+generic errors, inaccessible records and admitted attempts remain query-only.
+No request is automatically retried and no stored history is deleted.
+
+Directory overlap checks conservatively ignore case on Windows and macOS. HTTP
+ports 11111 and 30000 are rejected before private state creation because the
+local Host reserves them for Orleans; retained configurations use the same check.
+Tests reproduce the original failures and cover positive responses, connection
+denial, cancellation, uncertain receipts and same-body retry controls. The
+platform policy test executes on its current OS; Windows testing does not prove
+real macOS filesystem behavior or Orleans idle collection.

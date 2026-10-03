@@ -131,12 +131,126 @@ public sealed class LocalInvocationClientTests
         handler.Requests.Any(request => request.Method == "POST").ShouldBeFalse();
     }
 
+    [Theory]
+    [InlineData(403, "forbidden", true)]
+    [InlineData(503, "journal-write-failed", true)]
+    [InlineData(503, "service-unavailable", false)]
+    [InlineData(403, "unknown-denial", false)]
+    public async Task SubmitWrite_DefinitivePreAdmissionDenial_AllowsOnlyExplicitSameBodyRetry(int status, string error, bool retryable)
+    {
+        using var files = new LocalTestDirectory();
+        var posts = 0;
+        using var handler = new LocalHttpFixture((request, _) =>
+        {
+            if (request.Method == HttpMethod.Post)
+            {
+                posts++;
+                return posts == 1 ? LocalHttpFixture.Response(status, new JsonObject { ["errorCode"] = error })
+                    : LocalHttpFixture.Response(202, new JsonObject { ["approvalState"] = "Pending" });
+            }
+            return LocalHttpFixture.Response(404, new JsonObject
+            {
+                ["errorCode"] = request.RequestUri!.AbsolutePath.EndsWith("/approval", StringComparison.Ordinal)
+                ? "approval-not-found" : "invocation-not-found"
+            });
+        });
+        using var client = new HttpClient(handler) { BaseAddress = new Uri("http://127.0.0.1:9401") };
+        var invocation = new LocalInvocationClient(new LocalHttp(client, TimeProvider.System), "onboarding", "agent", files.Private);
+        var original = new JsonObject { ["invocation_id"] = Id, ["path"] = "summary.md", ["content"] = "original frozen body" };
+        (await invocation.CallAsync("submit_write", original, TestContext.Current.CancellationToken))["http_status"]!.GetValue<int>().ShouldBe(status);
+        posts.ShouldBe(1);
+        var changed = (JsonObject)original.DeepClone();
+        changed["content"] = "replacement";
+        await Should.ThrowAsync<ArgumentException>(() => invocation.CallAsync("submit_write", changed, TestContext.Current.CancellationToken));
+        await invocation.CallAsync("submit_write", original, TestContext.Current.CancellationToken);
+        posts.ShouldBe(retryable ? 2 : 1);
+        handler.Requests.Where(request => request.Method == "POST").All(request => request.Body!["invocationId"]!.GetValue<string>() == Id
+            && request.Body["rawInput"]!.GetValue<string>() == "original frozen body").ShouldBeTrue();
+        await invocation.CallAsync("submit_write", original, TestContext.Current.CancellationToken);
+        posts.ShouldBe(retryable ? 2 : 1);
+    }
+
+    [Theory]
+    [InlineData(403)]
+    [InlineData(503)]
+    [InlineData(200)]
+    public async Task SubmitWrite_RejectionThenQueryUnconfirmedOrRecorded_RemainsQueryOnly(int lookupStatus)
+    {
+        using var files = new LocalTestDirectory();
+        var posted = false;
+        using var handler = new LocalHttpFixture((request, _) =>
+        {
+            if (request.Method == HttpMethod.Post)
+            {
+                posted = true;
+                return LocalHttpFixture.Response(403, new JsonObject { ["errorCode"] = "forbidden" });
+            }
+            if (posted)
+                return LocalHttpFixture.Response(lookupStatus, new JsonObject { ["outcome"] = "Denied" });
+            return LocalHttpFixture.Response(404, new JsonObject
+            {
+                ["errorCode"] = request.RequestUri!.AbsolutePath.EndsWith("/approval", StringComparison.Ordinal)
+                ? "approval-not-found" : "invocation-not-found"
+            });
+        });
+        using var client = new HttpClient(handler) { BaseAddress = new Uri("http://127.0.0.1:9401") };
+        var invocation = new LocalInvocationClient(new LocalHttp(client, TimeProvider.System), "onboarding", "agent", files.Private);
+        var original = new JsonObject { ["invocation_id"] = Id, ["path"] = "summary.md", ["content"] = "original" };
+        await invocation.CallAsync("submit_write", original, TestContext.Current.CancellationToken);
+        await invocation.CallAsync("submit_write", original, TestContext.Current.CancellationToken);
+        handler.Requests.Count(request => request.Method == "POST").ShouldBe(1);
+        File.ReadAllText(Path.Join(files.Private, Id + ".sha256")).ShouldNotStartWith("retryable:");
+    }
+
+    [Theory]
+    [InlineData("route-not-found", "approval-not-found")]
+    [InlineData("invocation-not-found", "route-not-found")]
+    public async Task SubmitWrite_GenericMissingRoute_NeverSubmits(string invocationError, string approvalError)
+    {
+        using var files = new LocalTestDirectory();
+        using var handler = new LocalHttpFixture((request, _) => LocalHttpFixture.Response(404, new JsonObject
+        { ["errorCode"] = request.RequestUri!.AbsolutePath.EndsWith("/approval", StringComparison.Ordinal) ? approvalError : invocationError }));
+        using var client = new HttpClient(handler) { BaseAddress = new Uri("http://127.0.0.1:9401") };
+        var invocation = new LocalInvocationClient(new LocalHttp(client, TimeProvider.System), "onboarding", "agent", files.Private);
+        await invocation.CallAsync("submit_write", new JsonObject { ["invocation_id"] = Id, ["path"] = "summary.md", ["content"] = "original" }, TestContext.Current.CancellationToken);
+        handler.Requests.Any(request => request.Method == "POST").ShouldBeFalse();
+        Directory.Exists(files.Private).ShouldBeFalse();
+    }
+
+    [Fact]
+    public async Task SubmitWrite_CancelledAfterPost_PreservesUncertainReceiptWithoutRetry()
+    {
+        using var files = new LocalTestDirectory();
+        using var cancellation = new CancellationTokenSource();
+        using var handler = new LocalHttpFixture((request, _) =>
+        {
+            if (request.Method == HttpMethod.Post)
+            {
+                cancellation.Cancel();
+                throw new OperationCanceledException(cancellation.Token);
+            }
+            return LocalHttpFixture.Response(404, new JsonObject
+            {
+                ["errorCode"] = request.RequestUri!.AbsolutePath.EndsWith("/approval", StringComparison.Ordinal)
+                ? "approval-not-found" : "invocation-not-found"
+            });
+        });
+        using var client = new HttpClient(handler) { BaseAddress = new Uri("http://127.0.0.1:9401") };
+        var invocation = new LocalInvocationClient(new LocalHttp(client, TimeProvider.System), "onboarding", "agent", files.Private);
+        var original = new JsonObject { ["invocation_id"] = Id, ["path"] = "summary.md", ["content"] = "original" };
+        await Should.ThrowAsync<OperationCanceledException>(() => invocation.CallAsync("submit_write", original, cancellation.Token));
+        File.ReadAllText(Path.Join(files.Private, Id + ".sha256")).ShouldNotStartWith("retryable:");
+        await invocation.CallAsync("submit_write", original, TestContext.Current.CancellationToken);
+        handler.Requests.Count(request => request.Method == "POST").ShouldBe(1);
+    }
+
     [Fact]
     public async Task SubmitWrite_ResponseLost_RetainsReceiptAndDoesNotAutomaticallyRetry()
     {
         using var files = new LocalTestDirectory();
         using var handler = new LocalHttpFixture((request, _) => request.Method == HttpMethod.Post
-            ? throw new HttpRequestException("response lost") : LocalHttpFixture.Response(404));
+            ? throw new HttpRequestException("response lost") : LocalHttpFixture.Response(404, new JsonObject
+            { ["errorCode"] = request.RequestUri!.AbsolutePath.EndsWith("/approval", StringComparison.Ordinal) ? "approval-not-found" : "invocation-not-found" }));
         using var client = new HttpClient(handler) { BaseAddress = new Uri("http://127.0.0.1:9401") };
         var invocations = new LocalInvocationClient(new LocalHttp(client, TimeProvider.System), "onboarding", "test-agent", files.Private);
         var original = new JsonObject { ["invocation_id"] = Id, ["path"] = "summary.md", ["content"] = "approved only by a human" };

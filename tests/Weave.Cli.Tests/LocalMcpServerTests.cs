@@ -46,6 +46,55 @@ public sealed class LocalMcpServerTests
         handler.Requests.All(request => request.Method == "GET" && !request.Operator).ShouldBeTrue();
     }
 
+    [Theory]
+    [InlineData("read_document", 403, true)]
+    [InlineData("read_document", 503, true)]
+    [InlineData("read_document", 200, false)]
+    [InlineData("submit_write", 403, true)]
+    [InlineData("submit_write", 503, true)]
+    [InlineData("submit_write", 202, false)]
+    [InlineData("resume_write", 403, true)]
+    [InlineData("resume_write", 503, true)]
+    [InlineData("resume_write", 200, false)]
+    public async Task RunAsync_OperationResponse_MapsHttpFailureWithoutLosingEvidence(string name, int status, bool error)
+    {
+        const string id = "82c07b3d2a3646e88f2f0b8db07c452b";
+        using var files = new LocalTestDirectory();
+        using var handler = new LocalHttpFixture((request, _) => request.Method == HttpMethod.Post
+            ? LocalHttpFixture.Response(status, new JsonObject { ["marker"] = "original-response" })
+            : request.RequestUri!.AbsolutePath.EndsWith("/approval", StringComparison.Ordinal)
+                ? name == "resume_write"
+                    ? LocalHttpFixture.Response(200, new JsonObject { ["invocationId"] = id, ["approvalState"] = "Approved" })
+                    : LocalHttpFixture.Response(404, new JsonObject { ["errorCode"] = "approval-not-found" })
+                : LocalHttpFixture.Response(404, new JsonObject { ["errorCode"] = "invocation-not-found" }));
+        using var client = new HttpClient(handler) { BaseAddress = new Uri("http://127.0.0.1:9401") };
+        var server = new LocalMcpServer(new LocalInvocationClient(new LocalHttp(client, TimeProvider.System), "onboarding", "agent", files.Private));
+        var arguments = new JsonObject();
+        if (name != "read_document")
+            arguments["invocation_id"] = id;
+        if (name != "resume_write")
+            arguments["path"] = "proposal.md";
+        if (name == "submit_write")
+            arguments["content"] = "proposal";
+        var request = new JsonObject
+        {
+            ["jsonrpc"] = "2.0",
+            ["id"] = 2,
+            ["method"] = "tools/call",
+            ["params"] = new JsonObject { ["name"] = name, ["arguments"] = arguments }
+        };
+        using var input = new StringReader("{\"jsonrpc\":\"2.0\",\"id\":1,\"method\":\"initialize\"}\n"
+            + "{\"jsonrpc\":\"2.0\",\"method\":\"notifications/initialized\"}\n" + request.ToJsonString());
+        using var output = new StringWriter();
+        await server.RunAsync(input, output, TestContext.Current.CancellationToken);
+        var reply = JsonNode.Parse(output.ToString().Split('\n', StringSplitOptions.RemoveEmptyEntries)[1])!;
+        reply["result"]!["isError"]!.GetValue<bool>().ShouldBe(error);
+        var response = JsonNode.Parse(reply["result"]!["content"]![0]!["text"]!.GetValue<string>())!;
+        response["http_status"]!.GetValue<int>().ShouldBe(status);
+        response["result"]!["marker"]!.GetValue<string>().ShouldBe("original-response");
+        handler.Requests.Count(item => item.Method == "POST").ShouldBe(1);
+    }
+
     [Fact]
     public async Task RunAsync_InvalidUtf8_StopsBeforeHttpWithoutReplacingBytes()
     {

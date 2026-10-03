@@ -121,7 +121,11 @@ public sealed class LocalMcpNativeEncodingTests
                 ["outcomeRecorded"] = false,
                 ["outcome"] = "NotDispatched",
                 ["approvalState"] = "Pending"
-            } : new JsonObject { ["errorCode"] = "not-found" };
+            } : new JsonObject
+            {
+                ["errorCode"] = header.ToString().StartsWith("GET /api/workspaces/onboarding/tools/files/invocations/" + id + "/approval ", StringComparison.Ordinal)
+                ? "approval-not-found" : "invocation-not-found"
+            };
             var data = Encoding.UTF8.GetBytes(response.ToJsonString());
             var status = submitted ? "202 Accepted" : "404 Not Found";
             var responseHeader = Encoding.ASCII.GetBytes($"HTTP/1.1 {status}\r\nContent-Type: application/json\r\nContent-Length: {data.Length}\r\nConnection: close\r\n\r\n");

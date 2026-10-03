@@ -64,6 +64,32 @@ public sealed class LocalDeploymentStoreTests
         Directory.GetFileSystemEntries(files.Documents).ShouldBeEmpty();
     }
 
+    [Theory]
+    [InlineData(11111)]
+    [InlineData(30000)]
+    public void Prepare_OrleansPortSelected_DeniesBeforeCreatingState(int port)
+    {
+        using var files = new LocalTestDirectory();
+        var result = new LocalDeploymentStore().Prepare(files.Private, files.Documents, files.Host, "onboarding", port);
+        result.Deployment.ShouldBeNull();
+        result.Error!.ShouldContain("reserved");
+        Directory.Exists(files.Private).ShouldBeFalse();
+        Should.Throw<ArgumentException>(() => LocalHostRunner.RequireAvailablePorts(port)).Message.ShouldContain("reserved");
+    }
+
+    [Fact]
+    public void SeparateDirectoriesError_CaseAliasContainment_UsesConservativePlatformPolicy()
+    {
+        using var files = new LocalTestDirectory();
+        var alias = files.Documents.ToUpperInvariant();
+        var error = LocalDeploymentStore.SeparateDirectoriesError(Path.Join(alias, "private"), files.Documents);
+        if (OperatingSystem.IsWindows() || OperatingSystem.IsMacOS())
+            error!.ShouldContain("separate directories");
+        else
+            error.ShouldBeNull();
+        LocalDeploymentStore.SeparateDirectoriesError(Path.Join(files.Root, "documents-extra"), files.Documents).ShouldBeNull();
+    }
+
     [Fact]
     public void CompleteInitialization_StoresMissing_DoesNotCreateReadyMarker()
     {

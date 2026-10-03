@@ -18,6 +18,8 @@ internal sealed partial class LocalDeploymentStore : ILocalDeploymentStore
             return new(null, "Choose an existing document directory without a symbolic link at its root.");
         if (!NamePattern().IsMatch(workspace) || port is < 1024 or > 65535)
             return new(null, "Use a workspace name of 1-64 letters, digits, underscores or hyphens, and a port from 1024 to 65535.");
+        if (LocalHostRunner.HttpPortError(port) is { } portError)
+            return new(null, portError);
         if (SeparateDirectoriesError(directory, documents) is { } pathError)
             return new(null, pathError);
         host = Path.GetFullPath(host ?? Path.Join(AppContext.BaseDirectory, "host",
@@ -59,6 +61,8 @@ internal sealed partial class LocalDeploymentStore : ILocalDeploymentStore
             return new(null, "Local deployment configuration is invalid.");
         if (!NamePattern().IsMatch(deployment.Workspace) || deployment.Port is < 1024 or > 65535)
             return new(null, "Local deployment configuration is invalid.");
+        if (LocalHostRunner.HttpPortError(deployment.Port) is { } portError)
+            return new(null, portError);
         var configuration = ReadHostConfiguration(directory);
         if (configuration["CapabilityTokens"]?["RequireExistingStorage"]?.GetValue<bool>() != true
             || configuration["Weave"]?["Invocations"]?["RequireExistingStorage"]?.GetValue<bool>() != true)
@@ -89,7 +93,7 @@ internal sealed partial class LocalDeploymentStore : ILocalDeploymentStore
                     return "Choose local paths without symbolic links or directory redirection in their components.";
             }
         }
-        var comparison = OperatingSystem.IsWindows() ? StringComparison.OrdinalIgnoreCase : StringComparison.Ordinal;
+        var comparison = OperatingSystem.IsWindows() || OperatingSystem.IsMacOS() ? StringComparison.OrdinalIgnoreCase : StringComparison.Ordinal;
         var firstPrefix = Path.EndsInDirectorySeparator(first) ? first : first + Path.DirectorySeparatorChar;
         var secondPrefix = Path.EndsInDirectorySeparator(second) ? second : second + Path.DirectorySeparatorChar;
         if (first.Equals(second, comparison) || first.StartsWith(secondPrefix, comparison)

@@ -6,9 +6,18 @@ namespace Weave.Cli.Commands.Local;
 
 internal sealed class LocalHostRunner(ILocalDeploymentStore store, TimeProvider clock)
 {
+    internal static string? HttpPortError(int port) => port switch
+    {
+        < 1024 or > 65535 => "Use an HTTP port from 1024 to 65535.",
+        11111 or 30000 => "HTTP ports 11111 and 30000 are reserved for the local Orleans Host. Choose another --port.",
+        _ => null
+    };
+
     public static void RequireAvailablePorts(int httpPort)
     {
-        foreach (var port in new[] { httpPort, 11111, 30000 }.Distinct())
+        if (HttpPortError(httpPort) is { } error)
+            throw new ArgumentException(error);
+        foreach (var port in new[] { httpPort, 11111, 30000 })
         {
             try
             {

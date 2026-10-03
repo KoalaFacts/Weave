@@ -43,18 +43,20 @@ internal sealed class LocalInvocationClient(LocalHttp http, string workspace, st
                 throw new ArgumentException("Proposal exceeds the one MiB client limit.");
             var fingerprint = Convert.ToHexString(SHA256.HashData(bytes));
             var receipt = Path.Join(receipts, id + ".sha256");
-            if (File.Exists(receipt) && File.ReadAllText(receipt) != fingerprint)
-                throw new ArgumentException("Changed content cannot reuse the original UUID or approval.");
+            if (File.Exists(receipt))
+                RequireSameFingerprint(File.ReadAllText(receipt), fingerprint);
             var state = await StatusAsync(id, ct);
-            if (!File.Exists(receipt) && state["approval"]?["http_status"]?.GetValue<int>() == 404)
+            if (NoStoredIntent(state) && ClaimReceipt(receipt, fingerprint, ct))
             {
-                Directory.CreateDirectory(receipts);
-                using (var file = new FileStream(receipt, FileMode.CreateNew, FileAccess.Write, FileShare.None))
+                var response = await http.CallAsync(HttpMethod.Post, _route, capability, null, request, ct);
+                if (response.Status == 403 && response.Body?["errorCode"]?.GetValue<string>() == "forbidden"
+                    || response.Status == 503 && response.Body?["errorCode"]?.GetValue<string>() == "journal-write-failed")
                 {
-                    await file.WriteAsync(Encoding.ASCII.GetBytes(fingerprint), ct);
-                    file.Flush(flushToDisk: true);
+                    // Denial can follow admission. Require both owner-scoped lookups to confirm no retained intent.
+                    if (NoStoredIntent(await StatusAsync(id, ct)))
+                        MarkRetryable(receipt, fingerprint, ct);
                 }
-                var submitted = (await http.CallAsync(HttpMethod.Post, _route, capability, null, request, ct)).ToNode();
+                var submitted = response.ToNode();
                 submitted["invocation_id"] = id;
                 return submitted;
             }
@@ -68,6 +70,52 @@ internal sealed class LocalInvocationClient(LocalHttp http, string workspace, st
             return resumed;
         }
         return current;
+    }
+
+    private static bool NoStoredIntent(JsonObject state) =>
+        state["invocation"]?["http_status"]?.GetValue<int>() == 404
+        && state["invocation"]?["result"]?["errorCode"]?.GetValue<string>() == "invocation-not-found"
+        && state["approval"]?["http_status"]?.GetValue<int>() == 404
+        && state["approval"]?["result"]?["errorCode"]?.GetValue<string>() == "approval-not-found";
+
+    private static void RequireSameFingerprint(string stored, string fingerprint)
+    {
+        if (stored != fingerprint && stored != "retryable:" + fingerprint)
+            throw new ArgumentException("Changed content cannot reuse the original UUID or approval.");
+    }
+
+    private bool ClaimReceipt(string receipt, string fingerprint, CancellationToken ct)
+    {
+        Directory.CreateDirectory(receipts);
+        var exists = File.Exists(receipt);
+        using var file = new FileStream(receipt, exists ? FileMode.Open : FileMode.CreateNew, FileAccess.ReadWrite, FileShare.None);
+        if (exists)
+        {
+            using var reader = new StreamReader(file, Encoding.ASCII, leaveOpen: true);
+            var stored = reader.ReadToEnd();
+            RequireSameFingerprint(stored, fingerprint);
+            if (stored == fingerprint)
+                return false;
+        }
+        WriteReceipt(file, fingerprint, ct);
+        return true;
+    }
+
+    private static void MarkRetryable(string receipt, string fingerprint, CancellationToken ct)
+    {
+        using var file = new FileStream(receipt, FileMode.Open, FileAccess.ReadWrite, FileShare.None);
+        using var reader = new StreamReader(file, Encoding.ASCII, leaveOpen: true);
+        RequireSameFingerprint(reader.ReadToEnd(), fingerprint);
+        WriteReceipt(file, "retryable:" + fingerprint, ct);
+    }
+
+    private static void WriteReceipt(FileStream file, string value, CancellationToken ct)
+    {
+        ct.ThrowIfCancellationRequested();
+        file.Position = 0;
+        file.Write(Encoding.ASCII.GetBytes(value));
+        file.SetLength(file.Position);
+        file.Flush(flushToDisk: true);
     }
 
     private static string PathArgument(JsonObject arguments)

@@ -20,6 +20,8 @@ public sealed class LocalReviewTests
         var terminal = new ReviewTerminal(true, decision + " " + Digest);
         using var handler = new LocalHttpFixture((request, _) =>
         {
+            if (request.RequestUri!.AbsolutePath.EndsWith("/connect", StringComparison.Ordinal))
+                return LocalHttpFixture.Response(204);
             if (request.Method == HttpMethod.Get)
                 return LocalHttpFixture.Response(200, Preview());
             if (request.RequestUri!.AbsolutePath.EndsWith("/reviewer/issue", StringComparison.Ordinal))
@@ -54,10 +56,11 @@ public sealed class LocalReviewTests
     public async Task RunAsync_RedirectedOrInexactConfirmation_NeverSendsDecision(bool interactive, string answer)
     {
         var terminal = new ReviewTerminal(interactive, answer);
-        using var handler = new LocalHttpFixture((_, _) => LocalHttpFixture.Response(200, Preview()));
+        using var handler = new LocalHttpFixture((request, _) => request.RequestUri!.AbsolutePath.EndsWith("/connect", StringComparison.Ordinal)
+            ? LocalHttpFixture.Response(204) : LocalHttpFixture.Response(200, Preview()));
         using var client = new HttpClient(handler) { BaseAddress = new Uri("http://127.0.0.1:9401") };
         await new LocalReview(terminal).RunAsync(new LocalHttp(client, TimeProvider.System), "onboarding", Id, "reviewer", "operator", TestContext.Current.CancellationToken);
-        handler.Requests.Any(request => request.Method == "POST").ShouldBeFalse();
+        handler.Requests.Any(request => request.Method == "POST" && !request.Path.EndsWith("/connect", StringComparison.Ordinal)).ShouldBeFalse();
         if (!interactive)
             handler.Requests.ShouldBeEmpty();
     }

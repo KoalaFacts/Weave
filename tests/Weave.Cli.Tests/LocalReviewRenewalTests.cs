@@ -24,6 +24,8 @@ public sealed class LocalReviewRenewalTests
         using var handler = new LocalHttpFixture((request, body) =>
         {
             var route = request.RequestUri!.AbsolutePath;
+            if (route.EndsWith("/connect", StringComparison.Ordinal))
+                return LocalHttpFixture.Response(204);
             if (route.EndsWith("/review", StringComparison.Ordinal))
             {
                 request.Headers.GetValues("X-Weave-Capability").Single().ShouldBe("initial-reviewer");
@@ -49,7 +51,7 @@ public sealed class LocalReviewRenewalTests
         var terminal = new WaitingTerminal(() =>
         {
             issued.ShouldBe(0);
-            handler.Requests.Count.ShouldBe(1);
+            handler.Requests.Count.ShouldBe(2);
             clock.Advance(TimeSpan.FromMinutes(31));
             return decision + " " + Digest;
         });
@@ -62,13 +64,48 @@ public sealed class LocalReviewRenewalTests
         handler.Requests.Any(request => request.Path.EndsWith("/resume", StringComparison.Ordinal)).ShouldBeFalse();
     }
 
+    [Fact]
+    public async Task RunAsync_ToolCollectedBeforeReviewAndDuringWait_ReconnectsBeforeEachReviewOperation()
+    {
+        var connected = false;
+        var connects = 0;
+        using var handler = new LocalHttpFixture((request, body) =>
+        {
+            var route = request.RequestUri!.AbsolutePath;
+            if (route.EndsWith("/connect", StringComparison.Ordinal))
+            {
+                request.Headers.Contains("X-Weave-Capability").ShouldBeFalse();
+                request.Headers.GetValues("X-Weave-Operator-Key").Single().ShouldBe("operator");
+                connected = true;
+                connects++;
+                return LocalHttpFixture.Response(204);
+            }
+            if (route.EndsWith("/issue", StringComparison.Ordinal))
+                return Credential();
+            if (!connected)
+                return LocalHttpFixture.Response(409, new JsonObject { ["errorCode"] = "approval-review-unavailable" });
+            if (route.EndsWith("/review", StringComparison.Ordinal))
+                return LocalHttpFixture.Response(200, Preview(DateTimeOffset.MaxValue));
+            route.ShouldEndWith("/" + Id + "/decision");
+            body!["planDigest"]!.GetValue<string>().ShouldBe(Digest);
+            return LocalHttpFixture.Response(200, new JsonObject { ["invocationId"] = Id, ["approvalState"] = "Approved" });
+        });
+        using var client = new HttpClient(handler) { BaseAddress = new Uri("http://127.0.0.1:9401") };
+        var terminal = new WaitingTerminal(() => { connected = false; return "approve " + Digest; });
+        (await new LocalReview(terminal).RunAsync(new LocalHttp(client, TimeProvider.System), "onboarding", Id,
+            "initial-reviewer", "operator", TestContext.Current.CancellationToken)).ShouldBe(LocalReviewOutcome.Approved);
+        connects.ShouldBe(2);
+        handler.Requests.Count(request => request.Path.EndsWith("/decision", StringComparison.Ordinal)).ShouldBe(1);
+    }
+
     [Theory]
     [InlineData(401)]
     [InlineData(403)]
     [InlineData(500)]
     public async Task RunAsync_ReviewerRenewalDenied_NeverSendsDecision(int status)
     {
-        using var handler = new LocalHttpFixture((request, _) => request.Method == HttpMethod.Get
+        using var handler = new LocalHttpFixture((request, _) => request.RequestUri!.AbsolutePath.EndsWith("/connect", StringComparison.Ordinal)
+            ? LocalHttpFixture.Response(204) : request.Method == HttpMethod.Get
             ? LocalHttpFixture.Response(200, Preview(DateTimeOffset.MaxValue))
             : LocalHttpFixture.Response(status));
         using var client = new HttpClient(handler) { BaseAddress = new Uri("http://127.0.0.1:9401") };
@@ -83,7 +120,8 @@ public sealed class LocalReviewRenewalTests
     public async Task RunAsync_CancelledDuringHumanWait_NeverRenewsOrDecides()
     {
         using var cancellation = new CancellationTokenSource();
-        using var handler = new LocalHttpFixture((_, _) => LocalHttpFixture.Response(200, Preview(DateTimeOffset.MaxValue)));
+        using var handler = new LocalHttpFixture((request, _) => request.RequestUri!.AbsolutePath.EndsWith("/connect", StringComparison.Ordinal)
+            ? LocalHttpFixture.Response(204) : LocalHttpFixture.Response(200, Preview(DateTimeOffset.MaxValue)));
         using var client = new HttpClient(handler) { BaseAddress = new Uri("http://127.0.0.1:9401") };
         var terminal = new WaitingTerminal(() =>
         {
@@ -94,8 +132,32 @@ public sealed class LocalReviewRenewalTests
         await Should.ThrowAsync<OperationCanceledException>(() => new LocalReview(terminal)
             .RunAsync(new LocalHttp(client, TimeProvider.System), "onboarding", Id,
                 "initial-reviewer", "operator", cancellation.Token));
-        handler.Requests.Count.ShouldBe(1);
-        handler.Requests.Any(request => request.Method == "POST").ShouldBeFalse();
+        handler.Requests.Count.ShouldBe(2);
+        handler.Requests.Any(request => request.Method == "POST" && !request.Path.EndsWith("/connect", StringComparison.Ordinal)).ShouldBeFalse();
+    }
+
+    [Theory]
+    [InlineData(1)]
+    [InlineData(2)]
+    public async Task RunAsync_ReconnectionDenied_NeverSendsDecision(int deniedConnection)
+    {
+        var connects = 0;
+        var waited = false;
+        using var handler = new LocalHttpFixture((request, _) =>
+        {
+            var path = request.RequestUri!.AbsolutePath;
+            if (path.EndsWith("/connect", StringComparison.Ordinal))
+                return LocalHttpFixture.Response(++connects == deniedConnection ? 403 : 204);
+            return LocalHttpFixture.Response(200, Preview(DateTimeOffset.MaxValue));
+        });
+        using var client = new HttpClient(handler) { BaseAddress = new Uri("http://127.0.0.1:9401") };
+        var terminal = new WaitingTerminal(() => { waited = true; return "approve " + Digest; });
+        await Should.ThrowAsync<HttpRequestException>(() => new LocalReview(terminal).RunAsync(new LocalHttp(client, TimeProvider.System),
+            "onboarding", Id, "reviewer", "operator", TestContext.Current.CancellationToken));
+        connects.ShouldBe(deniedConnection);
+        waited.ShouldBe(deniedConnection == 2);
+        handler.Requests.Any(request => request.Path.EndsWith("/decision", StringComparison.Ordinal)
+            || request.Path.EndsWith("/issue", StringComparison.Ordinal)).ShouldBeFalse();
     }
 
     private static HttpResponseMessage Credential()

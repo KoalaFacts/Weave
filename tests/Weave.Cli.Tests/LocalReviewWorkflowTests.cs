@@ -137,6 +137,21 @@ public sealed class LocalReviewWorkflowTests
         flow.Launcher.Tasks.Count.ShouldBe(1);
     }
 
+    [Theory]
+    [InlineData("Succeeded")]
+    [InlineData("OutcomeUnknown")]
+    public async Task RunAsync_AgentExitsNonzero_QueriesRecordedOutcomeWithoutRetry(string outcome)
+    {
+        using var flow = new ReviewFlow();
+        flow.Launcher.Run = () => { flow.InvocationStatus = 200; flow.Outcome = outcome; return 7; };
+        (await flow.RunAsync()).ShouldBe(7);
+        flow.Launcher.Tasks.Count.ShouldBe(1);
+        flow.Issued.ShouldBe(2);
+        flow.AgentQueries.ShouldBe(3);
+        flow.Handler.Requests.Last().Path.ShouldEndWith("/" + Id);
+        flow.Handler.Requests.Any(request => request.Path.EndsWith("/resume", StringComparison.Ordinal)).ShouldBeFalse();
+    }
+
     [Fact]
     public async Task RunAsync_ContinuationCancelled_PreservesOriginalWithoutRetry()
     {
@@ -172,6 +187,8 @@ public sealed class LocalReviewWorkflowTests
             Handler = new LocalHttpFixture((request, _) =>
             {
                 var route = request.RequestUri!.AbsolutePath;
+                if (route.EndsWith("/connect", StringComparison.Ordinal))
+                    return LocalHttpFixture.Response(204);
                 if (route.EndsWith("/issue", StringComparison.Ordinal))
                 {
                     var reviewer = route.EndsWith("/reviewer/issue", StringComparison.Ordinal);
