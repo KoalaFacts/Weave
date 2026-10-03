@@ -11,6 +11,16 @@ namespace Weave.Tools.Tests;
 
 public sealed class EchoMcpHttpConnectionLifecycleTests
 {
+    [Fact]
+    public async Task ExampleServer_ReadinessMessage_IsDrainedOutsideTheSharedWorkerPool()
+    {
+        await using var peer = new ClosingPeer(200, implicitClose: false);
+        var endpoint = await peer.EndpointAsync(TestContext.Current.CancellationToken);
+        endpoint.ShouldStartWith("http://127.0.0.1:");
+        peer.ReadinessReadOnThreadPool.ShouldBeFalse();
+        peer.HasExited.ShouldBeFalse();
+    }
+
     [Theory]
     [InlineData(200)]
     [InlineData(204)]
@@ -83,12 +93,15 @@ public sealed class EchoMcpHttpConnectionLifecycleTests
     private sealed class ClosingPeer : IAsyncDisposable
     {
         private readonly Process _process;
+        private readonly Task _stdout;
+        private readonly Task _stderr;
         private readonly ConcurrentQueue<string> _diagnostics = new();
         private readonly TaskCompletionSource<int> _ready = new(TaskCreationOptions.RunContinuationsAsynchronously);
         private readonly TaskCompletionSource _latePost = new(TaskCreationOptions.RunContinuationsAsynchronously);
         private readonly SemaphoreSlim _servedSignal = new(0);
         private int _servedPosts;
         private int _latePosts;
+        private bool _readinessReadOnThreadPool;
 
         public ClosingPeer(int predecessorStatus, bool implicitClose)
         {
@@ -106,15 +119,13 @@ public sealed class EchoMcpHttpConnectionLifecycleTests
             if (implicitClose)
                 start.ArgumentList.Add("--implicit-close");
             _process = new Process { StartInfo = start, EnableRaisingEvents = true };
-            _process.OutputDataReceived += (_, e) => Capture(e.Data);
-            _process.ErrorDataReceived += (_, e) => Capture(e.Data);
             _process.Exited += (_, _) => _ready.TrySetException(new IOException("Echo close peer exited before readiness."));
             try
             {
                 if (!_process.Start())
                     throw new IOException("Echo close peer could not start.");
-                _process.BeginOutputReadLine();
-                _process.BeginErrorReadLine();
+                _stdout = Drain(_process.StandardOutput);
+                _stderr = Drain(_process.StandardError);
             }
             catch
             {
@@ -128,6 +139,7 @@ public sealed class EchoMcpHttpConnectionLifecycleTests
         public int LatePosts => Volatile.Read(ref _latePosts);
         public Task LatePost => _latePost.Task;
         public bool HasExited => _process.HasExited;
+        public bool ReadinessReadOnThreadPool => _readinessReadOnThreadPool;
         public string Diagnostics => RuntimeInformation.FrameworkDescription + "\n" + string.Join("\n", _diagnostics);
 
         public async Task<string> EndpointAsync(CancellationToken ct)
@@ -142,16 +154,17 @@ public sealed class EchoMcpHttpConnectionLifecycleTests
                 await _servedSignal.WaitAsync(ct);
         }
 
-        private void Capture(string? line)
+        private void Capture(string line)
         {
-            if (line is null)
-                return;
             if (_diagnostics.Count < 64)
                 _diagnostics.Enqueue(line[..Math.Min(1024, line.Length)]);
             if (line.StartsWith("ready=", StringComparison.Ordinal)
                 && int.TryParse(line.AsSpan(6), NumberStyles.None, CultureInfo.InvariantCulture, out var port)
                 && port is > 0 and <= 65535)
+            {
+                _readinessReadOnThreadPool = Thread.CurrentThread.IsThreadPoolThread;
                 _ready.TrySetResult(port);
+            }
             if (line == "served")
             {
                 Interlocked.Increment(ref _servedPosts);
@@ -164,6 +177,25 @@ public sealed class EchoMcpHttpConnectionLifecycleTests
             }
         }
 
+        private Task Drain(TextReader reader)
+        {
+            var reading = Task.Factory.StartNew(() =>
+            {
+                while (reader.ReadLine() is { } line)
+                    Capture(line);
+            }, CancellationToken.None, TaskCreationOptions.LongRunning, TaskScheduler.Default);
+            _ = reading.ContinueWith(completed =>
+            {
+                var error = completed.Exception!.GetBaseException();
+                _ready.TrySetException(error);
+                _latePost.TrySetException(error);
+                _ = _ready.Task.Exception;
+                _ = _latePost.Task.Exception;
+            }, CancellationToken.None, TaskContinuationOptions.OnlyOnFaulted | TaskContinuationOptions.ExecuteSynchronously,
+                TaskScheduler.Default);
+            return reading;
+        }
+
         public async ValueTask DisposeAsync()
         {
             try
@@ -171,7 +203,7 @@ public sealed class EchoMcpHttpConnectionLifecycleTests
                 if (!_process.HasExited)
                     _process.Kill(entireProcessTree: true);
                 using var deadline = new CancellationTokenSource(TimeSpan.FromSeconds(2));
-                await _process.WaitForExitAsync(deadline.Token);
+                await Task.WhenAll(_process.WaitForExitAsync(deadline.Token), _stdout, _stderr).WaitAsync(deadline.Token);
             }
             finally
             {

@@ -1,22 +1,19 @@
-using System.Collections.Concurrent;
 using System.Diagnostics;
 using System.Runtime.ExceptionServices;
-using System.Threading.Channels;
 using Microsoft.Extensions.Logging;
 
 namespace Weave.Invocations.Processes;
 
-public sealed partial class ProcessRunner(TimeProvider clock, ILogger<ProcessRunner> logger) : IProcessRunner
+public sealed partial class ProcessRunner(TimeProvider clock, ILogger<ProcessRunner> logger) : IProcessRunner, IProcessRuntimeObserver
 {
     private const int MaxConcurrentProcesses = 8;
     private static readonly TimeSpan CleanupTimeout = TimeSpan.FromSeconds(5);
-    private readonly Channel<byte> _slots = CreateSlots();
-    private readonly ConcurrentDictionary<Process, Task> _unfinished = new();
 
     public async Task<ProcessResult> RunAsync(string executable, IReadOnlyList<string> arguments, CancellationToken ct)
     {
         ct.ThrowIfCancellationRequested();
-        if (!_slots.Reader.TryRead(out _))
+        var execution = TryAdmit();
+        if (execution is null)
             return new ProcessResult(null, string.Empty, string.Empty, ProcessFailure.CapacityExhausted);
         Process? process = null;
         var retainedForCleanup = false;
@@ -39,6 +36,7 @@ public sealed partial class ProcessRunner(TimeProvider clock, ILogger<ProcessRun
             var stdout = ProcessOutputCapture.Start(process.StandardOutput, overflow);
             var stderr = ProcessOutputCapture.Start(process.StandardError, overflow);
             var exit = process.WaitForExitAsync(CancellationToken.None);
+            MarkRunning(execution, exit, stdout, stderr);
             var completion = Task.WhenAll(exit, stdout, stderr);
             ExceptionDispatchInfo? failure = null;
             try
@@ -58,6 +56,7 @@ public sealed partial class ProcessRunner(TimeProvider clock, ILogger<ProcessRun
             }
             var termination = Task.Factory.StartNew(() => KillIfRunning(process),
                 CancellationToken.None, TaskCreationOptions.LongRunning, TaskScheduler.Default);
+            MarkCleanup(execution, termination);
             var cleanup = Task.WhenAll(completion, termination);
             try
             {
@@ -66,9 +65,10 @@ public sealed partial class ProcessRunner(TimeProvider clock, ILogger<ProcessRun
             catch (TimeoutException)
             {
                 var processId = process.Id;
+                MarkUnconfirmed(execution);
                 retainedForCleanup = true;
-                RetainUntilCompleted(process, cleanup, overflow.Task);
-                LogCleanupUnconfirmed(logger, processId, exit.IsCompleted, stdout.IsCompleted,
+                RetainUntilCompleted(process, cleanup, overflow.Task, execution);
+                LogCleanupUnconfirmed(logger, execution.Id, processId, exit.IsCompleted, stdout.IsCompleted,
                     stderr.IsCompleted, termination.IsCompleted);
                 throw new TimeoutException("Command process cleanup is unconfirmed.");
             }
@@ -92,24 +92,22 @@ public sealed partial class ProcessRunner(TimeProvider clock, ILogger<ProcessRun
             if (!retainedForCleanup)
             {
                 process?.Dispose();
-                _slots.Writer.TryWrite(0);
+                Release(execution);
             }
         }
     }
 
-    private void RetainUntilCompleted(Process process, Task completion, Task stop)
+    private void RetainUntilCompleted(Process process, Task completion, Task stop, Execution execution)
     {
         // A descendant can retain a pipe after the root exits. Keep its slot and
         // handles owned until both readers finish; never dispose under a live read.
-        _unfinished.TryAdd(process, completion);
         _ = completion.ContinueWith(completed =>
         {
             _ = stop.Exception;
             if (completed.Exception is { } error)
                 LogProcessFailure(logger, error.GetType().Name);
             process.Dispose();
-            _unfinished.TryRemove(process, out _);
-            _slots.Writer.TryWrite(0);
+            Release(execution);
         }, CancellationToken.None, TaskContinuationOptions.ExecuteSynchronously, TaskScheduler.Default);
     }
 
@@ -127,16 +125,8 @@ public sealed partial class ProcessRunner(TimeProvider clock, ILogger<ProcessRun
         }
     }
 
-    private static Channel<byte> CreateSlots()
-    {
-        var slots = Channel.CreateBounded<byte>(MaxConcurrentProcesses);
-        for (var index = 0; index < MaxConcurrentProcesses; index++)
-            slots.Writer.TryWrite(0);
-        return slots;
-    }
-
-    [LoggerMessage(Level = LogLevel.Warning, Message = "Command process {ProcessId} cleanup deadline expired (exit: {ExitCompleted}, stdout: {StdoutCompleted}, stderr: {StderrCompleted}, termination: {TerminationCompleted}); execution slot retained until cleanup finishes")]
-    private static partial void LogCleanupUnconfirmed(ILogger logger, int processId, bool exitCompleted,
+    [LoggerMessage(Level = LogLevel.Warning, Message = "Command execution {ExecutionId} (process {ProcessId}) cleanup deadline expired (exit: {ExitCompleted}, stdout: {StdoutCompleted}, stderr: {StderrCompleted}, termination: {TerminationCompleted}); execution slot retained until cleanup finishes")]
+    private static partial void LogCleanupUnconfirmed(ILogger logger, Guid executionId, int processId, bool exitCompleted,
         bool stdoutCompleted, bool stderrCompleted, bool terminationCompleted);
 
     [LoggerMessage(Level = LogLevel.Warning, Message = "Command process failed ({ErrorType})")]
