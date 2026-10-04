@@ -162,4 +162,23 @@ public sealed class LocalDeploymentStoreTests
             File.ReadAllBytes(file.Key).ShouldBe(file.Value);
     }
 
+    [Theory]
+    [InlineData(@"\\?\", false)]
+    [InlineData(@"\\?\", true)]
+    [InlineData(@"\\.\", false)]
+    [InlineData(@"\\.\", true)]
+    [InlineData("//?/", false)]
+    [InlineData("//?/", true)]
+    [InlineData("//./", false)]
+    [InlineData("//./", true)]
+    public void SeparateDirectoriesError_DeviceNamespace_RejectsEitherRoot(string prefix, bool first)
+    {
+        using var files = new LocalTestDirectory();
+        var alias = prefix + files.Documents;
+        var error = LocalDeploymentStore.SeparateDirectoriesError(first ? alias : files.Documents,
+            first ? files.Documents : alias);
+        error.ShouldNotBeNull();
+        error.ShouldContain("device");
+    }
+
 }

@@ -128,6 +128,23 @@ public sealed class LocalCodexLauncherTests
         await AssertRejectedAsync(files, files.Host, directory, execute: false);
     }
 
+    [Theory]
+    [InlineData(false)]
+    [InlineData(true)]
+    public async Task RunAsync_WindowsDeviceAlias_RejectsBeforeCredentials(bool hostAlias)
+    {
+        Assert.SkipUnless(OperatingSystem.IsWindows(), "This case exercises real Windows device-path aliases.");
+        using var files = new LocalTestDirectory();
+        var bundle = Path.Join(files.Root, "host");
+        Directory.CreateDirectory(bundle);
+        var host = Path.Join(bundle, "Weave.Silo");
+        File.WriteAllText(host, "Host sentinel; never executed");
+        var alias = @"\\?\" + bundle;
+        await AssertRejectedAsync(files, hostAlias ? Path.Join(alias, "Weave.Silo") : host,
+            hostAlias ? bundle : alias, execute: true);
+        File.ReadAllText(host).ShouldBe("Host sentinel; never executed");
+    }
+
     private static async Task AssertRejectedAsync(LocalTestDirectory files, string host, string agent, bool execute)
     {
         var store = new LocalCredentialBoundaryStore();
