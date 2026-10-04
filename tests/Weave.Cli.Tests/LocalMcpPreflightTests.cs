@@ -226,10 +226,14 @@ public sealed class LocalMcpPreflightTests
         replies.Length.ShouldBe(2);
         var reply = JsonNode.Parse(replies[1]).ShouldBeOfType<JsonObject>();
         var result = reply["result"].ShouldBeOfType<JsonObject>();
-        var isError = result["isError"].ShouldBeAssignableTo<JsonValue>().GetValue<bool>();
+        var errorNode = result["isError"];
+        errorNode.ShouldNotBeNull();
+        var isError = errorNode.GetValue<bool>();
         var content = result["content"].ShouldBeOfType<JsonArray>();
         content.Count.ShouldBe(1);
-        var text = content[0].ShouldBeOfType<JsonObject>()["text"].ShouldBeAssignableTo<JsonValue>().GetValue<string>();
+        var textNode = content[0].ShouldBeOfType<JsonObject>()["text"];
+        textNode.ShouldNotBeNull();
+        var text = textNode.GetValue<string>();
         return (isError, JsonNode.Parse(text).ShouldBeOfType<JsonObject>());
     }
 }
