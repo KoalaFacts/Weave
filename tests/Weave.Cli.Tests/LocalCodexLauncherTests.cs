@@ -110,6 +110,24 @@ public sealed class LocalCodexLauncherTests
         Directory.Exists(agent).ShouldBeTrue();
     }
 
+    [Fact]
+    public async Task RunAsync_SeparatelyPublishedCliWorkspace_RejectsBeforeCredentials()
+    {
+        using var files = new LocalTestDirectory();
+        await AssertRejectedAsync(files, files.Host, AppContext.BaseDirectory, execute: true);
+    }
+
+    [Fact]
+    public async Task RunAsync_RuntimeExecutableWorkspace_RejectsBeforeCredentials()
+    {
+        using var files = new LocalTestDirectory();
+        var executable = Environment.ProcessPath;
+        executable.ShouldNotBeNull();
+        var directory = Path.GetDirectoryName(executable);
+        directory.ShouldNotBeNull();
+        await AssertRejectedAsync(files, files.Host, directory, execute: false);
+    }
+
     private static async Task AssertRejectedAsync(LocalTestDirectory files, string host, string agent, bool execute)
     {
         var store = new LocalCredentialBoundaryStore();

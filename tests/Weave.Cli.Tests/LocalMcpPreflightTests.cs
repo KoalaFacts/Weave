@@ -186,14 +186,17 @@ public sealed class LocalMcpPreflightTests
     };
 
     private static JsonObject ExpectedStatus(int invocationStatus, JsonObject invocation, int? approvalStatus,
-        JsonObject? approval, string executionState) => new()
+        JsonObject? approval, string executionState)
     {
-        ["invocation"] = new JsonObject { ["http_status"] = invocationStatus, ["result"] = invocation.DeepClone() },
-        ["approval"] = approvalStatus is null ? null
-            : new JsonObject { ["http_status"] = approvalStatus.Value, ["result"] = approval?.DeepClone() },
-        ["invocation_id"] = Id,
-        ["execution_state"] = executionState
-    };
+        return new JsonObject
+        {
+            ["invocation"] = new JsonObject { ["http_status"] = invocationStatus, ["result"] = invocation.DeepClone() },
+            ["approval"] = approvalStatus is null ? null
+                : new JsonObject { ["http_status"] = approvalStatus.Value, ["result"] = approval?.DeepClone() },
+            ["invocation_id"] = Id,
+            ["execution_state"] = executionState
+        };
+    }
 
     private static bool IsApproval(HttpRequestMessage request)
     {
