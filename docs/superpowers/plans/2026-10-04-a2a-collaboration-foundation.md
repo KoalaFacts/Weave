@@ -85,6 +85,8 @@ The following shared records are the handoff contract, introduced by the task in
 - `IPeerAgreementStore.Find(PeerScope scope, CancellationToken ct) -> PeerAgreement?`; `FindById(string agreementId, CancellationToken ct) -> PeerAgreement?`; `TryReplace(PeerAgreement value, long expectedRevision, CancellationToken ct) -> bool`
 - `ReviewedNotePlanner.Create(PeerAgreement agreement, CollaborationTaskId taskId, CollaborationContextId contextId, InvocationId invocationId, string text) -> CollaborationResult<FrozenNotePlan>`
 
+Peer operation grants are exactly `collaboration:<recipientRegistrationId>:send`, `collaboration:<recipientRegistrationId>:read`, and `collaboration:<recipientRegistrationId>:cancel`, checked in the receiving workspace. Registration IDs are server-configured route-safe identifiers; no caller-selected grant string is accepted. Planner input digests use the existing `InvocationFingerprint.ComputeInputDigest` over the fixed FileSystem operation, owned parameters, receiving workspace and original recipient subject.
+
 - [ ] Add declarations and tests that fail closed until implemented. Assert the following named cases with exact outcomes:
 
 ```csharp
@@ -174,6 +176,8 @@ result.Success.ShouldBeTrue(); connectorDispatchCount.ShouldBe(1);
 - `GetCollaborationTask.ExecuteAsync(PeerScope scope, CollaborationTaskId id, CancellationToken ct)` and `CancelCollaborationTask.ExecuteAsync(...)` return the same result type
 - `ListCollaborationTasks.ExecuteAsync(PeerScope scope, TaskQuery query, CancellationToken ct) -> Task<CollaborationResult<TaskPage>>`
 - `CollaborationTaskProjection.RefreshAsync(TaskSnapshot task, CapabilityToken recipientToken, CancellationToken ct) -> Task<CollaborationResult<TaskSnapshot>>`; consumes public invocation/proposal/approval readers and exact owner-scoped evidence, never neighboring storage internals
+
+Recipient capabilities require the existing `ToolCapability.Connect(plan.ToolName)`, `ToolCapability.Invoke(plan.ToolName, "write_file")`, and `invocation:read` grants, with exact recipient subject/workspace matching. Operator review retains `approval:decide`, `invocation:read`, and `ToolCapability.Approve(plan.ToolName, "write_file")` plus an independent subject; approval grants never appear on the peer capability.
 
 - [ ] Add the A01/A02/A03/A08/A10/A11/A12/A15/A20/A25 tests from the spec using real SQLite, existing ToolActor, independent operator capability, and a dedicated temporary FileSystem root
 
