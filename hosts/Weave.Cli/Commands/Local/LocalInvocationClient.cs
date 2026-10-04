@@ -49,13 +49,11 @@ internal sealed class LocalInvocationClient(LocalHttp http, string workspace, st
             if (NoStoredIntent(state) && ClaimReceipt(receipt, fingerprint, ct))
             {
                 var response = await http.CallAsync(HttpMethod.Post, _route, capability, null, request, ct);
-                if (response.Status == 403 && response.Body?["errorCode"]?.GetValue<string>() == "forbidden"
+                // Denial can follow admission. Require both owner-scoped lookups to confirm no retained intent.
+                if ((response.Status == 403 && response.Body?["errorCode"]?.GetValue<string>() == "forbidden"
                     || response.Status == 503 && response.Body?["errorCode"]?.GetValue<string>() == "journal-write-failed")
-                {
-                    // Denial can follow admission. Require both owner-scoped lookups to confirm no retained intent.
-                    if (NoStoredIntent(await StatusAsync(id, ct)))
-                        MarkRetryable(receipt, fingerprint, ct);
-                }
+                    && NoStoredIntent(await StatusAsync(id, ct)))
+                    MarkRetryable(receipt, fingerprint, ct);
                 var submitted = response.ToNode();
                 submitted["invocation_id"] = id;
                 return submitted;
