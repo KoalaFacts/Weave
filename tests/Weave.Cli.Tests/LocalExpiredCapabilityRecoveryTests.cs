@@ -49,9 +49,9 @@ public sealed class LocalExpiredCapabilityRecoveryTests
         var accepted = await fresh.CallAsync("submit_write", original, TestContext.Current.CancellationToken);
         await fresh.CallAsync("submit_write", original, TestContext.Current.CancellationToken);
 
+        posts.ShouldBe(2);
         accepted["http_status"]!.GetValue<int>().ShouldBe(202);
         accepted["invocation_id"]!.GetValue<string>().ShouldBe(Id);
-        posts.ShouldBe(2);
         var submissions = handler.Requests.Where(request => request.Method == "POST").ToArray();
         submissions[1].Body!.ToJsonString().ShouldBe(submissions[0].Body!.ToJsonString());
         submissions[1].Body!["invocationId"]!.GetValue<string>().ShouldBe(Id);
