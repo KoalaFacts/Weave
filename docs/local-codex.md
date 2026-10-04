@@ -54,6 +54,10 @@ direction. This applies when Host and CLI are published separately too. The
 launcher rejects redirected executable paths and unsupported Windows device or
 extended path namespaces before creating Agent working files or requesting
 credentials; these path checks do not provide OS isolation.
+Initialization also rejects redirected Host files and directory components before
+creating private configuration. Loading retained configuration checks Host
+redirection before reading private settings, and every Host start repeats the
+validation before launching the published executable or DLL.
 
 If you published Host and CLI separately, provide the published Host once:
 
@@ -115,7 +119,9 @@ server-verified original after reconnecting the configured document tool. It dis
 expiry and digest. Terminal control and direction-changing characters are escaped;
 ordinary document text remains readable. The MCP byte streams and human review
 output use UTF-8 explicitly, including on Windows. Invalid UTF-8 MCP input stops
-before contacting the Host. Type the exact displayed `approve
+before contacting the Host. Submissions remain limited to one MiB. Only the review
+response has a larger bounded allowance for verified metadata and JSON escaping;
+ordinary responses retain the one-MiB limit. Type the exact displayed `approve
 approval-v1:...` or `reject approval-v1:...` confirmation yourself. Redirected input
 or output cannot perform human review. There is no approval command-line flag.
 
@@ -176,9 +182,12 @@ The CLI obtains fresh credentials for the same narrow subject and operations;
 the server retains the original proposal. A known submission is query-only, and a
 recorded result is never automatically replayed. For a definitive forbidden or
 journal-write-failed response, both owner-scoped lookups must confirm no retained
-invocation or approval before the receipt becomes retryable. A later explicit
+invocation or approval before the receipt becomes retryable. The exact
+`401 invalid-capability` response is rejected before admission and also makes the
+receipt retryable; the expired credential does not need to prove absence. A later explicit
 submission may then use only the same UUID and identical body, after querying
-again. Lost responses, generic failures and unknown outcomes remain query-only.
+again with valid authority and confirming neither an invocation nor an approval
+is retained. Lost responses, generic failures and unknown outcomes remain query-only.
 Local receipts contain only UUID/hash and retry eligibility, not the original
 document body or tokens.
 
