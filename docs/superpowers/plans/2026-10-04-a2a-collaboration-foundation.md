@@ -8,7 +8,7 @@
 
 **Tech Stack:** C#/.NET 10, ASP.NET Core, existing Microsoft.Data.Sqlite provider, System.Text.Json source generation, xunit.v3, Shouldly, NSubstitute, Python standard library. No A2A SDK or new third-party package is required.
 
-**Spec:** [Approved A2A foundation design](../specs/2026-10-03-a2a-collaboration-foundation-design.md), approved against PR #181 at `2ad02932b9c26d8f6e40f3b794b1cf8dc9b9769d`. The original product baseline was `b658a5f33741311ffc4e414f01ab14400cb3c569`; prerequisite status is reconciled with main `b99f1fc7362b3c6f4af5692261441cf04e73f60e` after [PR #182](https://github.com/KoalaFacts/Weave/pull/182).
+**Spec:** [Approved A2A foundation design](../specs/2026-10-03-a2a-collaboration-foundation-design.md), approved against PR #181 at `2ad02932b9c26d8f6e40f3b794b1cf8dc9b9769d`. The original product baseline was `b658a5f33741311ffc4e414f01ab14400cb3c569`; prerequisite status is reconciled with main `1e8e09f77f9d22d994e392d377ac03ab8a53a0eb` after [PR #182](https://github.com/KoalaFacts/Weave/pull/182) and [PR #183](https://github.com/KoalaFacts/Weave/pull/183).
 
 **Status:** Proposed implementation plan for review and execution-method selection. No product implementation has started. Documentation integration does not approve the plan or its execution method.
 
@@ -28,7 +28,7 @@
 - “The reserved collaboration envelope requires its gate.” Disabled A2A routes never disable protection of retained collaboration invocations
 - Preserve current actor keys, append-only Orleans field IDs, licensing, warnings-as-errors, audit, exact grants, approval independence, durable admission, and unknown-outcome rules
 - Use `TimeProvider`; source-generated JSON; owned immutable snapshots; no hidden service locators, automatic replay, test weakening, or production in-memory storage fallback
-- PR #182 landed Codex-launch executable/workspace overlap, nested preflight-error, and null-path repairs at `b99f1fc7362b3c6f4af5692261441cf04e73f60e`. Initial-Host redirected-path validation remains a confirmed follow-up prerequisite. Packaged-agent acceptance still requires A21 at the actual launch-tested revision; same-user validation is not OS/cross-user isolation or new live human acceptance. This plan does not edit the Local CLI files
+- PR #182 landed Codex-launch executable/workspace overlap, nested preflight-error, and null-path repairs at `b99f1fc7362b3c6f4af5692261441cf04e73f60e`. PR #183 added initial-Host redirected-path validation at `1e8e09f77f9d22d994e392d377ac03ab8a53a0eb`, with passing post-merge Linux/Windows CI. Packaged-agent acceptance still requires A21 at the actual launch-tested revision; same-user validation is not OS/cross-user isolation or new live human acceptance. This plan does not edit the Local CLI files
 
 ## Review Focus
 
@@ -44,7 +44,7 @@
 
 Recommend **subagent-driven execution**, with one implementer and fresh reviewer per task, then a whole-branch review. The shared dispatch gate and durable recovery are security boundaries; independent rejection of a task is worth the extra review. Do not run simultaneous writers against the same files. Tasks 1–4 are sequential; after Task 4, the protocol work in Task 5 and read-only fixture preparation for Task 7 can proceed independently. Task 6 requires Task 5; Task 7 requires all prior tasks.
 
-At execution time, read `AGENTS.md`, `ARCHITECTURE.md`, the approved spec, and relevant checkout skills. Use an isolated `feat/a2a-collaboration-foundation` branch/worktree based on current main containing the reviewed documentation and PR #182's repairs, following the worktree skill. Verify the exact base, the initial-Host path correction, and retained repair coverage before any packaged launch; do not merge or cherry-pick PR #180 again. Keep the specification and plan with the implementation branch.
+At execution time, read `AGENTS.md`, `ARCHITECTURE.md`, the approved spec, and relevant checkout skills. Use an isolated `feat/a2a-collaboration-foundation` branch/worktree based on current main containing the reviewed documentation and PRs #182/#183's repairs, following the worktree skill. Verify the exact base, the initial-Host path correction, and retained repair coverage before any packaged launch; do not merge or cherry-pick PR #180 again. Keep the specification and plan with the implementation branch.
 
 Desktop is currently offline and no saved coding environment is available. The documented engineering fallback permits the cloud workspace. Before implementation, check its SDK/toolchain and authorized repository access. Current document authoring did not run .NET. If the required .NET 10 stable SDK, package access, or test prerequisites are unavailable, report the specific blocker; do not claim tests passed or weaken the gates. Installing an official toolchain follows the existing confirmation requirements.
 
@@ -248,7 +248,7 @@ Also pin 0.3 `kind`/lowercase states/roles and wrapped Send; 1.0 named unions/up
 
 - [ ] Write and run independent-client failing tests against both real loopback endpoints before completing the client; validate response fields independently of .NET DTOs and validate client redaction with a synthetic credential marker
 - [ ] Complete the deterministic fixture and all spec acceptance cases A01–A25. Produce separate approved/rejected/expired runs. Independently inspect exact note bytes using the retained FileSystem encoding contract (including its BOM behavior), SQLite invocation/attempt/approval state, and task correlation after every restart/error test
-- [ ] If packaged Codex launch is attempted, first verify A21 at that exact revision, using landed repair `b99f1fc7362b3c6f4af5692261441cf04e73f60e` and its CI only as baseline evidence, plus the initial-Host redirected-path correction and its exact-revision tests. If launch-specific verification is unavailable, do not launch; report A21 as unverified and the proof as synthetic HTTP/domain acceptance only. Do not imply a UI/OS sandbox or new real human-login test
+- [ ] If packaged Codex launch is attempted, first verify A21 at that exact revision, using integrated repairs at `1e8e09f77f9d22d994e392d377ac03ab8a53a0eb` and their Linux/Windows CI only as baseline evidence. If launch-specific verification is unavailable, do not launch; report A21 as unverified and the proof as synthetic HTTP/domain acceptance only. Do not imply a UI/OS sandbox or new real human-login test
 - [ ] Run, from the final implementation tree:
 
 ```bash

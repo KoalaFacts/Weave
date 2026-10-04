@@ -4,7 +4,7 @@
 
 **Decision:** Add an opt-in A2A boundary for one governed collaboration between two synthetic agent owners. Support the selected HTTP+JSON operations for A2A wire revisions 1.0 and 0.3. Keep authority, approval, invocation admission, and outcomes under Weave's existing controls.
 
-**Baseline:** The design was researched against Weave main `b658a5f33741311ffc4e414f01ab14400cb3c569` on 2026-10-03. Local-execution prerequisites were reconciled with main `b99f1fc7362b3c6f4af5692261441cf04e73f60e` on 2026-10-04 after PR #182 merged. Protocol sources are A2A specification tags `v1.0.1` and `v0.3.0`. This specification describes proposed behavior, not delivered capability.
+**Baseline:** The design was researched against Weave main `b658a5f33741311ffc4e414f01ab14400cb3c569` on 2026-10-03. Local-execution prerequisites were reconciled with main `1e8e09f77f9d22d994e392d377ac03ab8a53a0eb` on 2026-10-04 after PRs #182 and #183 merged. Protocol sources are A2A specification tags `v1.0.1` and `v0.3.0`. This specification describes proposed behavior, not delivered capability.
 
 ## 1 Purpose and success
 
@@ -24,9 +24,9 @@ The current journal deliberately does not own conversation history or a response
 
 [PR #182](https://github.com/KoalaFacts/Weave/pull/182) integrated PR #180's local workflow and the three scoped repairs into main at `b99f1fc7362b3c6f4af5692261441cf04e73f60e`: Codex-launch executable/workspace overlap checks, nested preflight-error reporting, and retained null-path validation. [Post-merge CI](https://github.com/KoalaFacts/Weave/actions/runs/37178837375) passed the Linux full solution and Windows CLI boundary tests. PR #180 remains open after the squash; it is not a separate merge prerequisite.
 
-A [post-merge review](https://github.com/KoalaFacts/Weave/pull/182#discussion_r4176246432) identified a separate initial-Host path gap: setup and Host startup can follow a redirected Host path before the later Codex-launch guard. Source review confirmed this path at `b99f1fc7362b3c6f4af5692261441cf04e73f60e`; its correction and exact-revision regression evidence are pending. No compromise is demonstrated by that finding.
+A [post-merge review](https://github.com/KoalaFacts/Weave/pull/182#discussion_r4176246432) identified a separate initial-Host path gap: setup and Host startup could follow a redirected Host path before the later Codex-launch guard. Source review confirmed this path at `b99f1fc7362b3c6f4af5692261441cf04e73f60e`. [PR #183](https://github.com/KoalaFacts/Weave/pull/183) corrected it at `1e8e09f77f9d22d994e392d377ac03ab8a53a0eb`, validating Host redirection before setup writes, retained private-settings reads, and initialization/serve launch. Its [post-merge CI](https://github.com/KoalaFacts/Weave/actions/runs/37180869060) passed the Linux full solution and Windows CLI regressions. No compromise is demonstrated by the finding.
 
-The landed repairs establish the tested Codex-launch validation and error-handling behavior in the same-user convenience profile. They do not establish OS or cross-user isolation, new macOS runtime acceptance, a new live human/Codex run, or A2A acceptance. Prior live acceptance retains its original revision attribution.
+The landed repairs establish the tested Host/Codex-launch validation and error-handling behavior in the same-user convenience profile. They do not establish OS or cross-user isolation, new macOS runtime acceptance, a new live human/Codex run, or A2A acceptance. Prior live acceptance retains its original revision attribution.
 
 Any acceptance that launches a local agent against a packaged Host must first prove all of the following at the exact tested revision:
 

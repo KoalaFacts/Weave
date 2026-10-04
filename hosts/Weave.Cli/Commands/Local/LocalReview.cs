@@ -17,7 +17,8 @@ internal sealed partial class LocalReview(ILocalReviewConsole terminal)
         id = LocalInvocationClient.NormalizeId(id);
         var route = $"/api/workspaces/{workspace}/tools/files/invocations/{id}";
         await http.ConnectDocumentsAsync(key, ct);
-        var response = await http.CallAsync(HttpMethod.Get, route + "/approval/review", capability, key, null, ct);
+        var response = await http.CallAsync(HttpMethod.Get, route + "/approval/review", capability, key, null, ct,
+            maxResponseBytes: LocalHttp.MaxReviewResponseBytes);
         if (response.Status != 200)
         {
             terminal.WriteLine($"Review unavailable (HTTP {response.Status}). Query the original UUID; no decision was sent.");

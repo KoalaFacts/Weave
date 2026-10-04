@@ -34,8 +34,10 @@ internal sealed class LocalHostRunner(ILocalDeploymentStore store, TimeProvider 
 
     public async Task<int> RunAsync(string directory, LocalDeployment deployment, bool initialize, CancellationToken ct)
     {
+        if (LocalDeploymentStore.HostPathError(deployment.HostPath) is { } hostError)
+            throw new ArgumentException(hostError);
         RequireAvailablePorts(deployment.Port);
-        var launch = SiloProcessService.BuildSiloArgs(deployment.HostPath, deployment.Port);
+        var launch = SiloProcessService.BuildSiloArgs(Path.GetFullPath(deployment.HostPath), deployment.Port);
         var info = new ProcessStartInfo(launch.FileName)
         {
             WorkingDirectory = Path.Join(directory, "private"),
