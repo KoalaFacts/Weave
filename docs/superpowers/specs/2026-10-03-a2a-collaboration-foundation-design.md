@@ -22,9 +22,11 @@ The current journal deliberately does not own conversation history or a response
 
 ### Local execution readiness
 
-[PR #182](https://github.com/KoalaFacts/Weave/pull/182) integrated PR #180's local workflow and the three scoped repairs into main at `b99f1fc7362b3c6f4af5692261441cf04e73f60e`: trusted executable/workspace overlap checks, nested preflight-error reporting, and retained null-path validation. [Post-merge CI](https://github.com/KoalaFacts/Weave/actions/runs/37178837375) passed the Linux full solution and Windows CLI boundary tests. PR #180 remains open after the squash; it is not a separate merge prerequisite.
+[PR #182](https://github.com/KoalaFacts/Weave/pull/182) integrated PR #180's local workflow and the three scoped repairs into main at `b99f1fc7362b3c6f4af5692261441cf04e73f60e`: Codex-launch executable/workspace overlap checks, nested preflight-error reporting, and retained null-path validation. [Post-merge CI](https://github.com/KoalaFacts/Weave/actions/runs/37178837375) passed the Linux full solution and Windows CLI boundary tests. PR #180 remains open after the squash; it is not a separate merge prerequisite.
 
-These repairs establish validation and error-handling behavior in the same-user convenience profile. They do not establish OS or cross-user isolation, new macOS runtime acceptance, a new live human/Codex run, or A2A acceptance. Prior live acceptance retains its original revision attribution.
+A [post-merge review](https://github.com/KoalaFacts/Weave/pull/182#discussion_r4176246432) identified a separate initial-Host path gap: setup and Host startup can follow a redirected Host path before the later Codex-launch guard. Source review confirmed this path at `b99f1fc7362b3c6f4af5692261441cf04e73f60e`; its correction and exact-revision regression evidence are pending. No compromise is demonstrated by that finding.
+
+The landed repairs establish the tested Codex-launch validation and error-handling behavior in the same-user convenience profile. They do not establish OS or cross-user isolation, new macOS runtime acceptance, a new live human/Codex run, or A2A acceptance. Prior live acceptance retains its original revision attribution.
 
 Any acceptance that launches a local agent against a packaged Host must first prove all of the following at the exact tested revision:
 
@@ -242,7 +244,7 @@ Future external interoperability can reuse this protocol boundary, but each addi
 
 This change is documentation-only. The specification must pass a placeholder/ambiguity scan, source-path and protocol-reference checks, and a consistency review of authority, state, cancellation, and recovery. It must be presented for user review before an implementation plan is written. A later approved plan must identify exact source changes, test order, prerequisites, and execution method.
 
-No successful code build, protocol conformance run, local-agent acceptance, fix to #180, merge, or deployment is asserted by this document.
+This document records landed prerequisite fixes and their CI; it does not assert a successful A2A implementation build, protocol-conformance run, local-agent acceptance, implementation merge, or deployment.
 
 ## References
 
