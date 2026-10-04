@@ -9,8 +9,14 @@ internal sealed class LocalCodexLauncher(ILocalDeploymentStore store, TimeProvid
         string agentDirectory, string? task, bool execute, CancellationToken ct)
     {
         agentDirectory = Path.GetFullPath(agentDirectory);
+        var command = Environment.ProcessPath ?? throw new IOException("CLI executable path is unavailable.");
         var pathError = LocalDeploymentStore.SeparateDirectoriesError(agentDirectory, directory)
-            ?? LocalDeploymentStore.SeparateDirectoriesError(agentDirectory, deployment.DocumentsPath);
+            ?? LocalDeploymentStore.SeparateDirectoriesError(agentDirectory, deployment.DocumentsPath)
+            ?? ExecutableDirectoryError(agentDirectory, deployment.HostPath)
+            ?? LocalDeploymentStore.SeparateDirectoriesError(agentDirectory, AppContext.BaseDirectory)
+            ?? ExecutableDirectoryError(agentDirectory, command)
+            ?? (Path.GetFileNameWithoutExtension(command).Equals("dotnet", StringComparison.OrdinalIgnoreCase)
+                ? ExecutableDirectoryError(agentDirectory, Path.Join(AppContext.BaseDirectory, "weave.dll")) : null);
         if (pathError is not null)
         {
             Console.Error.WriteLine(pathError);
@@ -36,6 +42,16 @@ internal sealed class LocalCodexLauncher(ILocalDeploymentStore store, TimeProvid
                 process.Kill(entireProcessTree: true);
             await process.WaitForExitAsync(CancellationToken.None);
         }
+    }
+
+    private static string? ExecutableDirectoryError(string agentDirectory, string executable)
+    {
+        executable = Path.GetFullPath(executable);
+        var error = LocalDeploymentStore.SeparateDirectoriesError(agentDirectory, Path.GetDirectoryName(executable)!);
+        if (error is not null)
+            return error;
+        return (File.GetAttributes(executable) & FileAttributes.ReparsePoint) != 0
+            ? "Choose trusted executables without symbolic links or file redirection." : null;
     }
 
     internal static ProcessStartInfo BuildStartInfo(string executable, string directory, LocalDeployment deployment,

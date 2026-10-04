@@ -98,9 +98,7 @@ internal sealed class LocalMcpServer(LocalInvocationClient invocations)
                 || !fields.All(field => arguments[field] is JsonValue value && value.TryGetValue<string>(out _)))
                 return ToolResult("Use one of the four business tools with its exact string arguments.", true);
             var response = await invocations.CallAsync(name, arguments, ct);
-            var error = response["http_status"] is JsonValue status && status.TryGetValue<int>(out var code)
-                && code is < 200 or >= 300;
-            return ToolResult(response.ToJsonString(), error);
+            return ToolResult(response.ToJsonString(), OperationHttpFailed(name, response));
         }
         catch (Exception failure) when (failure is IOException or HttpRequestException or ArgumentException or JsonException or InvalidOperationException
             || failure is OperationCanceledException && !ct.IsCancellationRequested)
@@ -108,6 +106,21 @@ internal sealed class LocalMcpServer(LocalInvocationClient invocations)
             return ToolResult("Request not confirmed. Check the original UUID and current authority. Do not retry with a new UUID or replace the original content.", true);
         }
     }
+
+    private static bool OperationHttpFailed(string name, JsonObject response)
+    {
+        if (name == "get_status")
+            return false;
+        if (HttpFailed(response))
+            return true;
+        if (name is not ("submit_write" or "resume_write")
+            || response["execution_state"]?.GetValue<string>() == "NotStarted")
+            return false;
+        return HttpFailed(response["invocation"] as JsonObject) || HttpFailed(response["approval"] as JsonObject);
+    }
+
+    private static bool HttpFailed(JsonObject? response) => response?["http_status"] is JsonValue status
+        && status.TryGetValue<int>(out var code) && code is < 200 or >= 300;
 
     private static JsonObject ToolResult(string text, bool error) => new()
     {

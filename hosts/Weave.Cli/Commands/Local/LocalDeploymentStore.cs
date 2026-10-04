@@ -57,7 +57,8 @@ internal sealed partial class LocalDeploymentStore : ILocalDeploymentStore
         if (!File.Exists(marker))
             return new(null, "No ready local deployment was found. Use local init for a new directory; preserve and investigate an interrupted setup.");
         var deployment = JsonSerializer.Deserialize(File.ReadAllText(marker), LocalJsonContext.Default.LocalDeployment);
-        if (deployment is null)
+        if (deployment is null || string.IsNullOrWhiteSpace(deployment.HostPath)
+            || string.IsNullOrWhiteSpace(deployment.DocumentsPath) || string.IsNullOrWhiteSpace(deployment.Workspace))
             return new(null, "Local deployment configuration is invalid.");
         if (!NamePattern().IsMatch(deployment.Workspace) || deployment.Port is < 1024 or > 65535)
             return new(null, "Local deployment configuration is invalid.");
@@ -98,7 +99,7 @@ internal sealed partial class LocalDeploymentStore : ILocalDeploymentStore
         var secondPrefix = Path.EndsInDirectorySeparator(second) ? second : second + Path.DirectorySeparatorChar;
         if (first.Equals(second, comparison) || first.StartsWith(secondPrefix, comparison)
             || second.StartsWith(firstPrefix, comparison))
-            return "Keep documents, Agent working files and private configuration in separate directories, outside each other's roots.";
+            return "Keep documents, Agent working files, private configuration and trusted executable bundles in separate directories, outside each other's roots.";
         return null;
     }
 
