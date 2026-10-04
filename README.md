@@ -22,6 +22,27 @@ Weave makes those decisions at the operation boundary. The repository's working 
 
 This is an implemented, [executable local walkthrough](examples/governed-tools/host-demo.ts), not a claim that every connector already supports the same approval policy. The walkthrough uses a scripted reviewer and a deterministic client in place of a person and a live model.
 
+## Use your Codex with local documents
+
+With a published CLI-plus-Host bundle and an installed, signed-in Codex CLI:
+
+```text
+weave local init --documents documents
+weave local serve
+```
+
+Keep the Host terminal open. In another terminal, run `weave local codex` and give
+Codex your document task. When it reports a Pending UUID, personally review it
+with `weave local review --id ORIGINAL_UUID --continue`. After your approval, the
+CLI launches Codex to query and resume that same UUID, then verifies the recorded
+outcome. Approval itself does not execute the write. `weave local status --id
+ORIGINAL_UUID` queries a retained result without writing.
+
+The bundle includes the .NET runtime; this route needs no SDK, Python, Node or
+wrapper scripts. It is a local same-user profile, not an OS sandbox. See the
+[complete first-use guide](docs/local-codex.md) for prerequisites, private storage,
+credential expiry, restart and local publishing.
+
 ## What works today
 
 - **Exact tool-operation grants.** Tool availability and connection permission do not grant execution. A grant such as `tool:files:invoke:read_file` does not authorize `write_file`. The host checks signed capability tokens, expiry and revocation before dispatch.

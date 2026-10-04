@@ -143,6 +143,11 @@ jobs:
             -p:PublishReadyToRun=true -p:PackAsTool=false \
             "-p:Version=$VERSION" -o "publish/$RID"
 
+          dotnet publish hosts/Weave.Host/Weave.Host.csproj \
+            -c Release -r "$RID" --self-contained true \
+            -p:PublishReadyToRun=true \
+            "-p:Version=$VERSION" -o "publish/$RID/host"
+
       - name: Package (tar.gz)
         if: matrix.archive == 'tar.gz'
         shell: bash

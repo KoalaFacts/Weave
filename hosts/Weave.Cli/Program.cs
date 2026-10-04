@@ -2,6 +2,7 @@ using System.CommandLine;
 using Microsoft.Extensions.DependencyInjection;
 using Weave.Cli;
 using Weave.Cli.Commands;
+using Weave.Cli.Commands.Local;
 using Weave.Cli.Shell;
 using Weave.Cli.Tui;
 
@@ -24,6 +25,7 @@ var configStore = services.GetRequiredService<IConfigStore>();
 var completions = services.GetRequiredService<WorkspaceCompletions>();
 
 var root = new RootCommand("weave — set up AI assistants with guardrails you control.");
+root.Subcommands.Add(LocalCommands.Create(services.GetRequiredService<LocalCliCommand>()));
 
 var workspace = new Command("workspace", "Manage workspaces");
 root.Subcommands.Add(workspace);

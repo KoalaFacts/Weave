@@ -4,7 +4,7 @@
 
 **Decision:** Add an opt-in A2A boundary for one governed collaboration between two synthetic agent owners. Support the selected HTTP+JSON operations for A2A wire revisions 1.0 and 0.3. Keep authority, approval, invocation admission, and outcomes under Weave's existing controls.
 
-**Baseline:** Weave main `b658a5f33741311ffc4e414f01ab14400cb3c569`, inspected on 2026-10-03. Protocol sources are A2A specification tags `v1.0.1` and `v0.3.0`. This specification describes proposed behavior, not delivered capability.
+**Baseline:** The design was researched against Weave main `b658a5f33741311ffc4e414f01ab14400cb3c569` on 2026-10-03. Local-execution prerequisites were reconciled with main `b99f1fc7362b3c6f4af5692261441cf04e73f60e` on 2026-10-04 after PR #182 merged. Protocol sources are A2A specification tags `v1.0.1` and `v0.3.0`. This specification describes proposed behavior, not delivered capability.
 
 ## 1 Purpose and success
 
@@ -22,7 +22,9 @@ The current journal deliberately does not own conversation history or a response
 
 ### Local execution readiness
 
-PR #180 is separate work. At inspected head `3ab3e5759e7ef5736988ce82d4d35dfb9e030825`, later reviews identify three unresolved boundaries: an agent-writable directory can overlap the Host bundle, nested preflight HTTP failures can be reported as successful MCP operations, and retained deployment metadata can contain null paths. This specification does not claim these defects are fixed.
+[PR #182](https://github.com/KoalaFacts/Weave/pull/182) integrated PR #180's local workflow and the three scoped repairs into main at `b99f1fc7362b3c6f4af5692261441cf04e73f60e`: trusted executable/workspace overlap checks, nested preflight-error reporting, and retained null-path validation. [Post-merge CI](https://github.com/KoalaFacts/Weave/actions/runs/37178837375) passed the Linux full solution and Windows CLI boundary tests. PR #180 remains open after the squash; it is not a separate merge prerequisite.
+
+These repairs establish validation and error-handling behavior in the same-user convenience profile. They do not establish OS or cross-user isolation, new macOS runtime acceptance, a new live human/Codex run, or A2A acceptance. Prior live acceptance retains its original revision attribution.
 
 Any acceptance that launches a local agent against a packaged Host must first prove all of the following at the exact tested revision:
 
@@ -31,7 +33,7 @@ Any acceptance that launches a local agent against a packaged Host must first pr
 - Direct and wrapped preflight failures are reported as failed operations; diagnostic queries remain distinguishable
 - No agent can alter the Host code subsequently run with operator/signing access
 
-The protocol/domain tests may proceed after implementation approval using an isolated test host, ephemeral fixture authority, temporary synthetic directories, and no Codex launch. They must not be labeled packaged-host or OS-isolation acceptance. No dependency on merging #180 is introduced merely to author or review this specification.
+The protocol/domain tests may proceed after implementation approval using an isolated test host, ephemeral fixture authority, temporary synthetic directories, and no Codex launch. They must not be labeled packaged-host or OS-isolation acceptance. The landed repair evidence is an input to the exact-revision launch checks, not a substitute for them; A21 remains unexecuted for this A2A milestone.
 
 ## 3 Alternatives and choice
 
