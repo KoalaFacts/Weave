@@ -23,7 +23,7 @@
 - “Per registered peer/recipient profile: at most 100 retained tasks and 8 active tasks.” Reject capacity overflow; retain evidence
 - “The 1.0 default page is 50 and accepted page size is 1 through 100.” The 0.3 list is an array, bounded by retained-task quota
 - “Loopback connection and request deadlines: 5 and 30 seconds respectively. No automatic send retry.” Poll no faster than once a second
-- “The initial profile accepts only configured literal loopback origins and disabled redirects, proxies, and cookies.” No real peers, production credentials, LLM accounts, deployment, or merge
+- “The initial profile accepts only configured literal loopback origins and disabled redirects, proxies, and cookies.” No real peers, production credentials, LLM accounts, or deployment; repository integration follows the user's current authorization and verified checks
 - “A unique key combines stable authenticated source identity and message ID within the receiving authority.” Destination, installation, plan, and protocol revision belong in the compared digest
 - “The reserved collaboration envelope requires its gate.” Disabled A2A routes never disable protection of retained collaboration invocations
 - Preserve current actor keys, append-only Orleans field IDs, licensing, warnings-as-errors, audit, exact grants, approval independence, durable admission, and unknown-outcome rules
@@ -67,7 +67,7 @@ The following shared records are the handoff contract, introduced by the task in
 | 1 | `CollaborationFailure`: bounded code, safe explanation, retry classification (`Never`, `QueryOnly`, `SameMessageExplicit`) |
 | 1 | `CollaborationResult<T>`: exactly one value or failure; named `Success` and `Failure` factories |
 | 2 | `TaskSnapshot`: IDs, immutable plan, internal state, version, status timestamp, bounded failure or null, scoped messages/artifacts, invocation outcome/attempt reference, continuation-permit revision and dispatch-claim attempt ID; no credential |
-| 2 | `CollaborationTaskState`: Submitted, AwaitingApproval, Working, Completed, Rejected, Canceled, Failed, OutcomeUnknown; `CollaborationMessage`: ID, action, safe text, recorded timestamp; `CollaborationArtifact`: ID, name, content type, literal content |
+| 2 | `CollaborationTaskState`: Submitted, AwaitingApproval, Working, Completed, Rejected, Canceled, Failed, OutcomeUnknown; `CollaborationMessage`: ID, action, safe text, recorded timestamp; `CollaborationArtifact`: Id, Name, ContentType, Text (literal content) |
 | 2 | `OutgoingReceipt`: source/message ID, exact normalized request bytes, chosen origin/recipient/agreement/wire revision, digest, optional learned task/context IDs |
 | 2 | `TaskQuery`: optional context/status/updated-after, page size, opaque cursor, history limit, include-artifacts; `TaskPage`: tasks, next cursor, page size, scoped total |
 | 3 | `InvocationGateInput`: workspace, subject, normalized invocation with owned parameters; `InvocationGateDecision`: allow/deny with bounded reason |
@@ -258,7 +258,7 @@ dotnet test --solution Weave.slnx --no-build -c Release
 Run the exact full-solution formatting command and existing exclusion set from `.github/workflows/ci.yml`. Inspect every skip and failed stage. Because this change touches the Orleans bridge, repeat the full suite three times per repository review guidance. Preserve evidence of failed attempts; no longer timeouts, new skips, assertions weakened, vulnerability suppression, or hand-edited lock hashes.
 - [ ] Apply check-rules and adversarial-review procedures, then a fresh whole-branch review covering both approved spec and final diff. Require explicit review of common-ingress gating, persisted revocation, source receipts, secret substitution, task data leakage, and version-shape differences
 - [ ] Record exact tested commit, observed states, commands, skipped/unrun stages, independent-client scope, and residual A21 prerequisite in the implementation record. Commit `test: verify governed A2A collaboration end to end`
-- [ ] Open/update a draft implementation PR only after authorized execution. Verify pushed SHA and monitor its exact-head CI to terminal, fixing only authorized in-scope failures. Do not merge, deploy, release, or mark broader production readiness without separate authorization
+- [ ] Open/update a draft implementation PR only after authorized execution. Verify pushed SHA and monitor its exact-head CI to terminal, fixing only authorized in-scope failures. Coordinate repository merges under the user's current authorization only after exact-head checks. Deployment, release, and broader production-readiness claims remain outside this plan
 
 ## Coverage and plan self review
 
@@ -273,4 +273,4 @@ Run the exact full-solution formatting command and existing exclusion set from `
 
 ## Requested decision
 
-Review this plan and select **subagent-driven execution** (recommended) or **native execution with a whole-branch review**. Approval can cover the whole plan; individual tasks do not require repeated user confirmations unless scope, external risk, permissions, or a material design decision changes. Existing separate approval boundaries for merges, deployment, credentials, and real external peers remain in force.
+Review this plan and select **subagent-driven execution** (recommended) or **native execution with a whole-branch review**. Approval can cover the whole plan; individual tasks do not require repeated user confirmations unless scope, external risk, permissions, or a material design decision changes. Repository merges follow the user's current authorization and verified checks; no renewed approval per commit is implied. Existing scope limits for deployment, credentials, and real external peers remain in force.
