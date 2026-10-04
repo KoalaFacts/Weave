@@ -51,8 +51,9 @@ their components. Documents cannot contain private state or configuration.
 The Agent working directory must also be outside the Host bundle, CLI/MCP bridge
 installation and runtime executable directories, with no overlap in either
 direction. This applies when Host and CLI are published separately too. The
-launcher rejects redirected executable paths before creating Agent working files
-or requesting credentials; these path checks do not provide OS isolation.
+launcher rejects redirected executable paths and unsupported Windows device or
+extended path namespaces before creating Agent working files or requesting
+credentials; these path checks do not provide OS isolation.
 
 If you published Host and CLI separately, provide the published Host once:
 

@@ -84,6 +84,8 @@ internal sealed partial class LocalDeploymentStore : ILocalDeploymentStore
 
     internal static string? SeparateDirectoriesError(string first, string second)
     {
+        if (HasDevicePrefix(first) || HasDevicePrefix(second))
+            return "Windows device and extended path namespaces are not supported for local directory boundaries.";
         first = Path.TrimEndingDirectorySeparator(Path.GetFullPath(first));
         second = Path.TrimEndingDirectorySeparator(Path.GetFullPath(second));
         foreach (var path in new[] { first, second })
@@ -102,6 +104,10 @@ internal sealed partial class LocalDeploymentStore : ILocalDeploymentStore
             return "Keep documents, Agent working files, private configuration and trusted executable bundles in separate directories, outside each other's roots.";
         return null;
     }
+
+    private static bool HasDevicePrefix(string path) => path.Length >= 4
+        && path[0] is '\\' or '/' && path[1] is '\\' or '/'
+        && path[2] is '?' or '.' && path[3] is '\\' or '/';
 
     private static JsonObject ReadHostConfiguration(string directory) =>
         JsonNode.Parse(File.ReadAllText(HostConfigurationPath(Resolve(directory)))) as JsonObject
