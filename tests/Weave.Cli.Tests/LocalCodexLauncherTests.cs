@@ -129,9 +129,11 @@ public sealed class LocalCodexLauncherTests
     }
 
     [Theory]
-    [InlineData(false)]
-    [InlineData(true)]
-    public async Task RunAsync_WindowsDeviceAlias_RejectsBeforeCredentials(bool hostAlias)
+    [InlineData(@"\\?\", false)]
+    [InlineData(@"\\?\", true)]
+    [InlineData(@"\??\", false)]
+    [InlineData(@"\??\", true)]
+    public async Task RunAsync_WindowsDeviceAlias_RejectsBeforeCredentials(string prefix, bool hostAlias)
     {
         Assert.SkipUnless(OperatingSystem.IsWindows(), "This case exercises real Windows device-path aliases.");
         using var files = new LocalTestDirectory();
@@ -139,7 +141,7 @@ public sealed class LocalCodexLauncherTests
         Directory.CreateDirectory(bundle);
         var host = Path.Join(bundle, "Weave.Silo");
         File.WriteAllText(host, "Host sentinel; never executed");
-        var alias = @"\\?\" + bundle;
+        var alias = prefix + bundle;
         await AssertRejectedAsync(files, hostAlias ? Path.Join(alias, "Weave.Silo") : host,
             hostAlias ? bundle : alias, execute: true);
         File.ReadAllText(host).ShouldBe("Host sentinel; never executed");

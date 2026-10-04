@@ -167,6 +167,8 @@ public sealed class LocalDeploymentStoreTests
     [InlineData(@"\\?\", true)]
     [InlineData(@"\\.\", false)]
     [InlineData(@"\\.\", true)]
+    [InlineData(@"\??\", false)]
+    [InlineData(@"\??\", true)]
     [InlineData("//?/", false)]
     [InlineData("//?/", true)]
     [InlineData("//./", false)]
