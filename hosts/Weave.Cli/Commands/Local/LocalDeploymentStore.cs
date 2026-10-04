@@ -105,7 +105,8 @@ internal sealed partial class LocalDeploymentStore : ILocalDeploymentStore
         return null;
     }
 
-    private static bool HasDevicePrefix(string path) => path.Length >= 4
+    private static bool HasDevicePrefix(string path) => path.StartsWith(@"\??\", StringComparison.Ordinal)
+        || path.Length >= 4
         && path[0] is '\\' or '/' && path[1] is '\\' or '/'
         && path[2] is '?' or '.' && path[3] is '\\' or '/';
 
