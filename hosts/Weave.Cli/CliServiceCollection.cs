@@ -3,6 +3,7 @@ using Weave.Actions;
 using Weave.Actions.Context;
 using Weave.Actions.SystemInfo;
 using Weave.Cli.Commands;
+using Weave.Cli.Commands.Local;
 using Weave.Cli.Tui;
 using Weave.Cli.Tui.Verbs;
 
@@ -22,6 +23,13 @@ internal static class CliServiceCollection
         var services = new ServiceCollection();
 
         services.AddSingleton(TimeProvider.System);
+        services.AddSingleton<ILocalDeploymentStore, LocalDeploymentStore>();
+        services.AddTransient<LocalHostRunner>();
+        services.AddTransient<ILocalCodexLauncher, LocalCodexLauncher>();
+        services.AddTransient<ILocalReviewConsole, LocalReviewConsole>();
+        services.AddTransient<LocalReview>();
+        services.AddTransient<LocalReviewWorkflow>();
+        services.AddTransient<LocalCliCommand>();
 
         // Shell primitives — file-backed and process-shaped services that used
         // to be `internal static class`. One singleton each; no per-call state.

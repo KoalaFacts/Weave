@@ -7,16 +7,18 @@ internal sealed class SiloProcessService(IConfigStore configStore, ISecretResolv
 {
     public Process? StartSilo(string siloPath, int port, Weave.Workspaces.Manifest.StorageConfig? workspaceStorage = null)
     {
+        var launch = BuildSiloArgs(siloPath, port);
         var startInfo = new ProcessStartInfo
         {
-            FileName = "dotnet",
+            FileName = launch.FileName,
             UseShellExecute = false,
             CreateNoWindow = true,
             RedirectStandardOutput = true,
             RedirectStandardError = true
         };
 
-        AddSiloArguments(startInfo.ArgumentList, siloPath, port);
+        foreach (var argument in launch.Arguments)
+            startInfo.ArgumentList.Add(argument);
         AddStorageArguments(startInfo.ArgumentList, workspaceStorage);
         AddAuthArguments(startInfo.ArgumentList);
 
@@ -64,7 +66,9 @@ internal sealed class SiloProcessService(IConfigStore configStore, ISecretResolv
             return new SiloArgs("dotnet", ["run", "--project", project, "--", "--Weave:LocalMode=true", $"--urls=http://localhost:{port}"]);
         }
 
-        return new SiloArgs("dotnet", [siloPath, "--Weave:LocalMode=true", $"--urls=http://localhost:{port}"]);
+        return siloPath.EndsWith(".dll", StringComparison.OrdinalIgnoreCase)
+            ? new SiloArgs("dotnet", [siloPath, "--Weave:LocalMode=true", $"--urls=http://localhost:{port}"])
+            : new SiloArgs(siloPath, ["--Weave:LocalMode=true", $"--urls=http://localhost:{port}"]);
     }
 
     public static void TryKill(Process? process)
@@ -118,13 +122,6 @@ internal sealed class SiloProcessService(IConfigStore configStore, ISecretResolv
         process.ErrorDataReceived += (_, e) => Append("ERR", e.Data);
         process.BeginOutputReadLine();
         process.BeginErrorReadLine();
-    }
-
-    private static void AddSiloArguments(Collection<string> args, string siloPath, int port)
-    {
-        var siloArgs = BuildSiloArgs(siloPath, port);
-        foreach (var arg in siloArgs.Arguments)
-            args.Add(arg);
     }
 
     private void AddStorageArguments(Collection<string> args, Weave.Workspaces.Manifest.StorageConfig? workspaceStorage)

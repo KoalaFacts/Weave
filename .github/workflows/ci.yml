@@ -123,6 +123,35 @@ jobs:
           src/Composition/VirtualActors/IActorTimerRegistry.cs src/Composition/VirtualActors/IVirtualActorProvider.cs
           src/Composition/VirtualActors/VirtualActorId.cs src/Composition/WeavePorts.cs
 
+  windows-cli-boundaries:
+    name: Windows CLI boundary tests
+    runs-on: windows-latest
+    timeout-minutes: 15
+    steps:
+      - name: Checkout exact revision
+        uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v6
+        with:
+          ref: ${{ github.event.pull_request.head.sha || github.sha }}
+          persist-credentials: false
+      - name: Setup .NET
+        uses: ./.github/actions/setup-dotnet
+      - name: Restore locked CLI test dependencies
+        run: dotnet restore tests/Weave.Cli.Tests/Weave.Cli.Tests.csproj --locked-mode
+      - name: Build CLI tests
+        run: dotnet build tests/Weave.Cli.Tests/Weave.Cli.Tests.csproj --no-restore -c Release
+      - name: Test CLI boundaries on Windows
+        run: >-
+          dotnet test --project tests/Weave.Cli.Tests/Weave.Cli.Tests.csproj --no-build -c Release
+          -- --report-xunit-trx --results-directory ./test-results
+      - name: Retain Windows CLI results
+        if: always()
+        uses: actions/upload-artifact@043fb46d1a93c77aae656e7c1c64a875d1fc6a0a # v7
+        with:
+          name: windows-cli-test-results
+          path: test-results/**/*.trx
+          if-no-files-found: error
+          retention-days: 30
+
   dependency-lock-validation:
     name: Locked dependency graph (${{ matrix.source }})
     if: github.event_name == 'pull_request' || github.event_name == 'push'
