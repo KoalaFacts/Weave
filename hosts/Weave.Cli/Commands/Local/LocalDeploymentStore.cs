@@ -22,10 +22,10 @@ internal sealed partial class LocalDeploymentStore : ILocalDeploymentStore
             return new(null, portError);
         if (SeparateDirectoriesError(directory, documents) is { } pathError)
             return new(null, pathError);
-        host = Path.GetFullPath(host ?? Path.Join(AppContext.BaseDirectory, "host",
-            OperatingSystem.IsWindows() ? "Weave.Silo.exe" : "Weave.Silo"));
-        if (!File.Exists(host) || host.EndsWith(".csproj", StringComparison.OrdinalIgnoreCase))
-            return new(null, "Published Host was not found. Use the distribution containing host/, or provide --host with a published executable or DLL.");
+        host ??= Path.Join(AppContext.BaseDirectory, "host", OperatingSystem.IsWindows() ? "Weave.Silo.exe" : "Weave.Silo");
+        if (HostPathError(host) is { } hostError)
+            return new(null, hostError);
+        host = Path.GetFullPath(host);
         if (Directory.Exists(directory) || File.Exists(directory))
             return new(null, "The local configuration directory already exists. Existing state was preserved.");
         var deployment = new LocalDeployment(host, documents, workspace, port);
@@ -64,6 +64,8 @@ internal sealed partial class LocalDeploymentStore : ILocalDeploymentStore
             return new(null, "Local deployment configuration is invalid.");
         if (LocalHostRunner.HttpPortError(deployment.Port) is { } portError)
             return new(null, portError);
+        if (ExecutableRedirectionError(deployment.HostPath) is { } hostError)
+            return new(null, hostError);
         var configuration = ReadHostConfiguration(directory);
         if (configuration["CapabilityTokens"]?["RequireExistingStorage"]?.GetValue<bool>() != true
             || configuration["Weave"]?["Invocations"]?["RequireExistingStorage"]?.GetValue<bool>() != true)
@@ -90,11 +92,8 @@ internal sealed partial class LocalDeploymentStore : ILocalDeploymentStore
         second = Path.TrimEndingDirectorySeparator(Path.GetFullPath(second));
         foreach (var path in new[] { first, second })
         {
-            for (var ancestor = new DirectoryInfo(path); ancestor is not null; ancestor = ancestor.Parent)
-            {
-                if (ancestor.Exists && (ancestor.Attributes & FileAttributes.ReparsePoint) != 0)
-                    return "Choose local paths without symbolic links or directory redirection in their components.";
-            }
+            if (DirectoryRedirectionError(path) is { } error)
+                return error;
         }
         var comparison = OperatingSystem.IsWindows() || OperatingSystem.IsMacOS() ? StringComparison.OrdinalIgnoreCase : StringComparison.Ordinal;
         var firstPrefix = Path.EndsInDirectorySeparator(first) ? first : first + Path.DirectorySeparatorChar;
@@ -102,6 +101,34 @@ internal sealed partial class LocalDeploymentStore : ILocalDeploymentStore
         if (first.Equals(second, comparison) || first.StartsWith(secondPrefix, comparison)
             || second.StartsWith(firstPrefix, comparison))
             return "Keep documents, Agent working files, private configuration and trusted executable bundles in separate directories, outside each other's roots.";
+        return null;
+    }
+
+    internal static string? HostPathError(string host)
+    {
+        if (ExecutableRedirectionError(host) is { } error)
+            return error;
+        return !File.Exists(host) || host.EndsWith(".csproj", StringComparison.OrdinalIgnoreCase)
+            ? "Published Host was not found. Use the distribution containing host/, or provide --host with a published executable or DLL." : null;
+    }
+
+    internal static string? ExecutableRedirectionError(string executable)
+    {
+        if (HasDevicePrefix(executable))
+            return "Windows device and extended path namespaces are not supported for local directory boundaries.";
+        executable = Path.GetFullPath(executable);
+        if (File.Exists(executable) && (File.GetAttributes(executable) & FileAttributes.ReparsePoint) != 0)
+            return "Choose trusted executables without symbolic links or file redirection.";
+        return DirectoryRedirectionError(Path.GetDirectoryName(executable) ?? executable);
+    }
+
+    private static string? DirectoryRedirectionError(string directory)
+    {
+        for (var ancestor = new DirectoryInfo(directory); ancestor is not null; ancestor = ancestor.Parent)
+        {
+            if (ancestor.Exists && (ancestor.Attributes & FileAttributes.ReparsePoint) != 0)
+                return "Choose local paths without symbolic links or directory redirection in their components.";
+        }
         return null;
     }
 

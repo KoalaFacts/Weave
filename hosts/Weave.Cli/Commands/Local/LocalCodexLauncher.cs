@@ -46,6 +46,8 @@ internal sealed class LocalCodexLauncher(ILocalDeploymentStore store, TimeProvid
 
     private static string? ExecutableDirectoryError(string agentDirectory, string executable)
     {
+        if (LocalDeploymentStore.ExecutableRedirectionError(executable) is { } pathError)
+            return pathError;
         executable = Path.GetFullPath(executable);
         var error = LocalDeploymentStore.SeparateDirectoriesError(agentDirectory, Path.GetDirectoryName(executable)!);
         if (error is not null)

@@ -7,6 +7,8 @@ namespace Weave.Cli.Commands.Local;
 internal sealed class LocalHttp(HttpClient client, TimeProvider clock)
 {
     public const int MaxBytes = 1_048_576;
+    // Host limits: request bytes, subject characters, target characters; JSON can escape each to six bytes.
+    public const int MaxReviewResponseBytes = 6 * (MaxBytes + 1024 + 8192) + 1024;
 
     public static HttpClient CreateClient(string origin)
     {
@@ -21,7 +23,7 @@ internal sealed class LocalHttp(HttpClient client, TimeProvider clock)
     }
 
     public async Task<LocalHttpResult> CallAsync(HttpMethod method, string route, string? capability,
-        string? operatorKey, JsonObject? body, CancellationToken ct)
+        string? operatorKey, JsonObject? body, CancellationToken ct, int maxResponseBytes = MaxBytes)
     {
         using var deadline = new CancellationTokenSource(TimeSpan.FromSeconds(15), clock);
         using var scope = CancellationTokenSource.CreateLinkedTokenSource(ct, deadline.Token);
@@ -36,7 +38,7 @@ internal sealed class LocalHttp(HttpClient client, TimeProvider clock)
             request.Content.Headers.ContentType = new MediaTypeHeaderValue("application/json");
         }
         using var response = await client.SendAsync(request, HttpCompletionOption.ResponseHeadersRead, ct);
-        var data = await ReadAsync(response, ct);
+        var data = await ReadAsync(response, maxResponseBytes, ct);
         return new LocalHttpResult((int)response.StatusCode, data.Length == 0 ? null : JsonNode.Parse(data));
     }
 
@@ -47,7 +49,7 @@ internal sealed class LocalHttp(HttpClient client, TimeProvider clock)
         ct = scope.Token;
         using var request = CreateRequest(HttpMethod.Post, $"/api/operator/credentials/{profile}/issue", null, operatorKey);
         using var response = await client.SendAsync(request, HttpCompletionOption.ResponseHeadersRead, ct);
-        var data = await ReadAsync(response, ct);
+        var data = await ReadAsync(response, MaxBytes, ct);
         if ((int)response.StatusCode != 200 || response.Content.Headers.ContentType?.MediaType != "text/plain"
             || response.Headers.CacheControl?.NoStore != true || data.Length == 0)
             throw new HttpRequestException("Credential issuance was not confirmed. No credential was delivered.");
@@ -77,9 +79,9 @@ internal sealed class LocalHttp(HttpClient client, TimeProvider clock)
         return request;
     }
 
-    private static async Task<byte[]> ReadAsync(HttpResponseMessage response, CancellationToken ct)
+    private static async Task<byte[]> ReadAsync(HttpResponseMessage response, int maxBytes, CancellationToken ct)
     {
-        if (response.Content.Headers.ContentLength > MaxBytes)
+        if (response.Content.Headers.ContentLength > maxBytes)
             throw new HttpRequestException("Local API response exceeds the client limit.");
         await using var input = await response.Content.ReadAsStreamAsync(ct);
         using var output = new MemoryStream();
@@ -89,7 +91,7 @@ internal sealed class LocalHttp(HttpClient client, TimeProvider clock)
             var count = await input.ReadAsync(buffer, ct);
             if (count == 0)
                 return output.ToArray();
-            if (output.Length + count > MaxBytes)
+            if (output.Length + count > maxBytes)
                 throw new HttpRequestException("Local API response exceeds the client limit.");
             output.Write(buffer, 0, count);
         }
