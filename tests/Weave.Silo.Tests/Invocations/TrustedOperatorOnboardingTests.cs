@@ -7,6 +7,7 @@ using Microsoft.AspNetCore.Mvc.Testing;
 using Microsoft.AspNetCore.WebUtilities;
 using Microsoft.Extensions.DependencyInjection;
 using Weave.Invocations;
+using Weave.Invocations.Processes;
 using Weave.Security.Tokens;
 using Weave.Tools.Tool;
 
@@ -179,6 +180,7 @@ public sealed partial class TrustedOperatorOnboardingTests
         public string OperatorKey { get; } = "test-operator-" + Guid.NewGuid().ToString("N");
         public string GlobalSecret { get; } = "test-platform-" + Guid.NewGuid().ToString("N");
         public HttpClient Client { get; private set; } = null!;
+        public IProcessRunner Processes => _host.Services.GetRequiredService<IProcessRunner>();
         public string Target => Path.Combine(_root, "tools", "note.txt");
 
         public Fixture(bool enabled = true, string? condition = null, bool globalAuthentication = false)

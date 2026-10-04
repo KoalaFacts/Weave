@@ -75,7 +75,9 @@ internal sealed class SiloServiceRegistrar
         _services.AddSingleton(_weaveSettings);
         _services.AddSingleton<Weave.Shared.VirtualActors.IVirtualActorProvider, OrleansVirtualActorProvider>();
         _services.AddSingleton<ICommandRunner, ProcessCommandRunner>();
-        _services.AddSingleton<IProcessRunner, ProcessRunner>();
+        _services.AddSingleton<ProcessRunner>();
+        _services.AddSingleton<IProcessRunner>(services => services.GetRequiredService<ProcessRunner>());
+        _services.AddSingleton<IProcessRuntimeObserver>(services => services.GetRequiredService<ProcessRunner>());
         _services.AddSingleton<IManifestParser, ManifestParser>();
         _services.AddGeneratedCqrsHandlers();
     }

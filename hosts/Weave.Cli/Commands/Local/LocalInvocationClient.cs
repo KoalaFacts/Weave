@@ -49,9 +49,12 @@ internal sealed class LocalInvocationClient(LocalHttp http, string workspace, st
             if (NoStoredIntent(state) && ClaimReceipt(receipt, fingerprint, ct))
             {
                 var response = await http.CallAsync(HttpMethod.Post, _route, capability, null, request, ct);
-                // Denial can follow admission. Require both owner-scoped lookups to confirm no retained intent.
-                if ((response.Status == 403 && response.Body?["errorCode"]?.GetValue<string>() == "forbidden"
-                    || response.Status == 503 && response.Body?["errorCode"]?.GetValue<string>() == "journal-write-failed")
+                // invalid-capability is pre-admission; an expired credential cannot query absence.
+                // Other denials can follow admission and require both owner-scoped absence checks.
+                var rejectedBeforeAdmission = response.Status == 401 && response.Body?["errorCode"]?.GetValue<string>() == "invalid-capability";
+                if (rejectedBeforeAdmission
+                    || (response.Status == 403 && response.Body?["errorCode"]?.GetValue<string>() == "forbidden"
+                        || response.Status == 503 && response.Body?["errorCode"]?.GetValue<string>() == "journal-write-failed")
                     && NoStoredIntent(await StatusAsync(id, ct)))
                     MarkRetryable(receipt, fingerprint, ct);
                 var submitted = response.ToNode();

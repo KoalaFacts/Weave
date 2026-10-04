@@ -128,4 +128,59 @@ public sealed class LocalDeploymentStoreTests
         result.Error!.ShouldContain("separate directories");
         Directory.Exists(files.Private).ShouldBeFalse();
     }
+
+    [Theory]
+    [InlineData("HostPath", null)]
+    [InlineData("HostPath", "")]
+    [InlineData("HostPath", " ")]
+    [InlineData("DocumentsPath", null)]
+    [InlineData("DocumentsPath", "")]
+    [InlineData("DocumentsPath", " ")]
+    [InlineData("Workspace", null)]
+    public void Load_MalformedRetainedField_ReturnsInvalidWithoutChangingFiles(string field, string? value)
+    {
+        using var files = new LocalTestDirectory();
+        var store = new LocalDeploymentStore();
+        var deployment = store.Prepare(files.Private, files.Documents, files.Host, "onboarding", 9401).Deployment!;
+        File.WriteAllText(Path.Join(files.Private, "state", "invocations.db"), "retained journal sentinel");
+        Directory.CreateDirectory(Path.Join(files.Private, "state", "revocations"));
+        store.CompleteInitialization(files.Private, deployment).ShouldBeTrue();
+        store.Load(files.Private).Deployment.ShouldBe(deployment);
+        var marker = Path.Join(files.Private, "local.json");
+        var json = JsonNode.Parse(File.ReadAllText(marker))!;
+        json[field] = value;
+        File.WriteAllText(marker, json.ToJsonString());
+        var original = Directory.GetFiles(files.Private, "*", SearchOption.AllDirectories)
+            .ToDictionary(path => path, File.ReadAllBytes);
+
+        var result = store.Load(files.Private);
+
+        result.Deployment.ShouldBeNull();
+        result.Error.ShouldBe("Local deployment configuration is invalid.");
+        Directory.GetFiles(files.Private, "*", SearchOption.AllDirectories).Order().ShouldBe(original.Keys.Order());
+        foreach (var file in original)
+            File.ReadAllBytes(file.Key).ShouldBe(file.Value);
+    }
+
+    [Theory]
+    [InlineData(@"\\?\", false)]
+    [InlineData(@"\\?\", true)]
+    [InlineData(@"\\.\", false)]
+    [InlineData(@"\\.\", true)]
+    [InlineData(@"\??\", false)]
+    [InlineData(@"\??\", true)]
+    [InlineData("//?/", false)]
+    [InlineData("//?/", true)]
+    [InlineData("//./", false)]
+    [InlineData("//./", true)]
+    public void SeparateDirectoriesError_DeviceNamespace_RejectsEitherRoot(string prefix, bool first)
+    {
+        using var files = new LocalTestDirectory();
+        var alias = prefix + files.Documents;
+        var error = LocalDeploymentStore.SeparateDirectoriesError(first ? alias : files.Documents,
+            first ? files.Documents : alias);
+        error.ShouldNotBeNull();
+        error.ShouldContain("device");
+    }
+
 }

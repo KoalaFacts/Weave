@@ -84,6 +84,7 @@ Portable Agent identity, Tenant/Room authority, generalized resource and credent
 | Integrate durable IDs, outcome lookup or approval | [Invocation journal](docs/implementation/2026-09-19-durable-invocations.md), [approval guide](docs/implementation/2026-09-20-durable-approval.md) |
 | Connect an existing agent over HTTP | [Governed HTTP entry](docs/implementation/2026-09-20-governed-http-entry.md), [proposal-by-UUID contract](docs/implementation/2026-09-24-authorized-proposal-uuid.md) |
 | Build or install a tool plugin | [Plugin examples](examples/plugins/echo/README.md), [MCP installation guide](docs/implementation/2026-09-26-mcp-echo-installation.md) |
+| Inspect command capacity or unconfirmed process cleanup | [Process runtime diagnostics](docs/implementation/2026-10-03-process-runtime-observation.md) |
 | Review product direction and contribution rules | [Architecture](ARCHITECTURE.md), [contributor instructions](AGENTS.md) |
 
 Weave is available under [MIT](LICENSE-MIT) **or** [AGPL-3.0-or-later](LICENSE-AGPL).
