@@ -14,7 +14,7 @@ public sealed record ContactRelation(ContactRequestSummary Request, bool IsBlock
             return new(ContactRelationOutcome.GenerationConflict, this);
         if (IsBlocked)
             return new(ContactRelationOutcome.Blocked, this);
-        if (decision.RequestId != Request.RequestId)
+        if (decision.Request != Request.Locator)
             return new(ContactRelationOutcome.RequestMismatch, this);
         if (!Enum.IsDefined(decision.Status))
             return new(ContactRelationOutcome.InvalidDecision, this);

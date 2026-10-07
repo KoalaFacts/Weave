@@ -136,7 +136,7 @@ public sealed class ContactPolicyTests
     {
         var card = Card(ContactVisibility.Public) with { ExpiresAt = Now.AddMinutes(1) };
         var accepted = Relation(card).ApplyRecipientDecision(
-            new ContactDecision(new ContactRequestId("request-123"), 1, ContactStatus.Accepted), Now).Relation;
+            new ContactDecision(new(new MailboxId("requester-agent"), new ContactRequestId("request-123")), 1, ContactStatus.Accepted), Now).Relation;
 
         var validity = ContactCardPolicy.Validate(card, Now.AddMinutes(1));
 
@@ -254,7 +254,7 @@ public sealed class ContactPolicyTests
     public void Decide_DifferentRequestId_DoesNotChangeState()
     {
         var relation = Relation(Card(ContactVisibility.Public));
-        var decision = Decision(relation, ContactStatus.Accepted) with { RequestId = new ContactRequestId("other-request") };
+        var decision = Decision(relation, ContactStatus.Accepted) with { Request = new(relation.Request.RequesterMailboxId, new ContactRequestId("other-request")) };
 
         var result = relation.ApplyRecipientDecision(decision, Now);
 
@@ -454,7 +454,7 @@ public sealed class ContactPolicyTests
             "private-direct", 1, ContactStatus.Pending, Now, Now.AddHours(24)), false, Now);
 
     private static ContactDecision Decision(ContactRelation relation, ContactStatus status) =>
-        new(relation.Request.RequestId, relation.Generation, status);
+        new(relation.Request.Locator, relation.Generation, status);
 
     private static ContactRelation Accept(ContactRelation relation) =>
         relation.ApplyRecipientDecision(Decision(relation, ContactStatus.Accepted), Now).Relation;

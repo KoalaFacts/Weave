@@ -7,6 +7,7 @@
     <Project Path="hosts/Weave.Cli/Weave.Cli.csproj" />
     <Project Path="hosts/Weave.Dashboard/Weave.Dashboard.csproj" />
     <Project Path="hosts/Weave.Host/Weave.Host.csproj" />
+    <Project Path="hosts/Weave.Mailbox.Host/Weave.Mailbox.Host.csproj" />
     <Project Path="hosts/Weave.ServiceDefaults/Weave.ServiceDefaults.csproj" />
   </Folder>
   <Folder Name="/extensions/">
@@ -19,6 +20,7 @@
     <Project Path="extensions/Weave.Deploy/Weave.Deploy.csproj" />
     <Project Path="extensions/Weave.DirectHttp/Weave.DirectHttp.csproj" />
     <Project Path="extensions/Weave.FileSystem/Weave.FileSystem.csproj" />
+    <Project Path="extensions/Weave.Mailboxes.Sqlite/Weave.Mailboxes.Sqlite.csproj" />
     <Project Path="extensions/Weave.Mcp/Weave.Mcp.csproj" />
     <Project Path="extensions/Weave.OpenApi/Weave.OpenApi.csproj" />
     <Project Path="extensions/Weave.Security.Postgres/Weave.Security.Postgres.csproj" />

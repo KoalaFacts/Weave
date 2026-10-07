@@ -4,7 +4,7 @@ This is the canonical repository instruction file for coding assistants. Human c
 
 ## Read the right source
 
-- Read [ARCHITECTURE.md](ARCHITECTURE.md) before changing feature boundaries or behavior. It defines the Agent Control Plane target, not a claim that every target feature exists.
+- Read [ARCHITECTURE.md](ARCHITECTURE.md) before changing feature boundaries or behavior. It defines the independent-agent network and separate Governed Tools boundaries, not a claim that every target feature exists.
 - Use [README.md](README.md) for product positioning and onboarding; use code and tests to establish current behavior.
 - Consult [implementation records](docs/implementation/) for delivered scope, migrations, and verification limits. Read relevant sections of [best practices](docs/best-practices.md) and the affected feature, not every historical document on every task.
 - The flat architecture and this file supersede old Shared/Core/layer-first layouts in historical guides and review checklists. Preserve their applicable security/testing rules; do not restore obsolete projects or paths.
@@ -12,7 +12,9 @@ This is the canonical repository instruction file for coding assistants. Human c
 
 ## Product intent and implementation boundary
 
-Weave is an **Agent Control Plane**. The first profile is **Governed Tools** for existing agents and integrations. A Weave-hosted reasoning loop is not a product requirement. Do not make marketplaces, broad provider catalogues, model routing, email/SMS infrastructure, or a universal workflow engine prerequisites for a concrete governed use case.
+Weave's primary direction is an **independent-agent network** with contact, inbox and outbox primitives. Admission, member/peer authentication, payload interpretation and collaboration belong to recipient endpoints. Public cards permit attempts without accepting them; unlisted cards and audience hints confer no membership authority. Agents may use their own direct methods without relay copies. The first increment is the opt-in HTTP/SQLite mailbox host; read its [protocol](protocol/weave-mailbox/v1/README.md) and [implementation record](docs/implementation/2026-10-07-agent-contact-mailbox-mvp.md). Do not claim hosted-agent wake, a production client E2EE adapter, physical/backup erasure or exactly-once business effects.
+
+The existing **Governed Tools** Agent Control Plane remains a separate capability for agents and integrations. A Weave-hosted reasoning loop is not a product requirement. Do not make marketplaces, broad provider catalogues, model routing, email/SMS infrastructure, or a universal workflow engine prerequisites for contact/message delivery or a concrete governed use case.
 
 Current Agent actor keys remain `{workspaceId}/{agentName}`. `src/Invocations/InvokeTool/ToolActor.cs` now authorizes adapter-normalized `tool:<name>:invoke:<operation>` scopes separately from connection permission; the registry derives invocation grants from explicit Capabilities, not tool availability. The current host still uses Orleans and the existing Agent Runtime. Portable Agent identity, Tenant/Room authority, generalized resource/installation revision constraints, and reconciliation remain target work. Read the [operation-authority migration record](docs/implementation/2026-09-19-exact-tool-operations.md); do not restore implicit grants or automatically broaden old `tool:<name>` entries.
 
@@ -36,6 +38,8 @@ For a replacement, record what is preserved, deliberately changed, or removed. S
 | --- | --- |
 | `src/Weave.csproj` | `Weave.Product`; avoids collision with the CLI assembly `weave`. |
 | `hosts/Weave.Host/Weave.Host.csproj` | `Weave.Silo`; existing Orleans/HTTP host. |
+| `hosts/Weave.Mailbox.Host/Weave.Mailbox.Host.csproj` | `Weave.Mailbox.Host`; opt-in contact/inbox/outbox HTTP relay with no reasoning runtime. |
+| `extensions/Weave.Mailboxes.Sqlite/Weave.Mailboxes.Sqlite.csproj` | Relay persistence; provider dependency stays outside product contracts. |
 | `extensions/Weave.AgentRuntime/Weave.AgentRuntime.csproj` | `Weave.Agents`; existing reasoning/model integration. |
 | `tools/Weave.SourceGen/Weave.SourceGen.csproj` | Source generation; targets `netstandard2.0`. |
 

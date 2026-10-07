@@ -32,7 +32,7 @@ Relay 模式建议一份正文、两个视图：正文只存于待投递记录�
 
 ## 4 收发与可靠性
 
-Relay 的最小操作是：send、pull inbox、subscribe inbox events、ACK，以及查询自己的 outbox 状态。Contact 相关操作只表达发布或交换名片、联系请求与结果、本地阻止或撤销。具体 URL 与凭据形式留到实现规格。
+Relay 的最小操作是：send、pull inbox、subscribe inbox events、ACK，以及查询自己的 outbox 状态。Contact 相关操作只表达发布或交换名片、联系请求与结果、本地阻止或撤销。具体 URL 与凭据形式见 [v1 实现协议](../../../protocol/weave-mailbox/v1/README.md)。任意名片与邮箱标识使用 JSON 或一次编码的查询字段，不占路径段；联系请求以发起方邮箱和请求 UUID 共同定位，定位字段本身不授予权限。
 
 消息外层仅带投递必要字段：协议版本、目标路由、稳定投递 ID、创建时间、不可延长的 expiresAt、载荷字节与必要的编码标记。源作用域由实际投递控制凭据或接收方分配的通道确定；自称的 agent ID 不作为可信认证。任务 ID、会话内容和认证材料放在不透明载荷内。
 
