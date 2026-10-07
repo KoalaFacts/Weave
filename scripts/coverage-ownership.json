@@ -1,0 +1,267 @@
+{
+  "extensions/Weave.Actions/Weave.Actions.csproj": {
+    "assembly": "Weave.Actions",
+    "contributors": [
+      "Weave.Actions.Tests",
+      "Weave.Cli.Tests"
+    ],
+    "owners": [
+      "Weave.Actions.Tests"
+    ]
+  },
+  "extensions/Weave.AgentRuntime/Weave.AgentRuntime.csproj": {
+    "assembly": "Weave.Agents",
+    "contributors": [
+      "Weave.Agents.Tests",
+      "Weave.Silo.Tests",
+      "Weave.Workspaces.Tests"
+    ],
+    "owners": [
+      "Weave.Agents.Tests",
+      "Weave.Workspaces.Tests"
+    ]
+  },
+  "extensions/Weave.Cli.Shell/Weave.Cli.Shell.csproj": {
+    "assembly": "Weave.Cli.Shell",
+    "contributors": [
+      "Weave.Cli.Tests"
+    ],
+    "owners": [
+      "Weave.Cli.Tests"
+    ]
+  },
+  "extensions/Weave.Cli.Tui/Weave.Cli.Tui.csproj": {
+    "assembly": "Weave.Cli.Tui",
+    "contributors": [
+      "Weave.Cli.Tests"
+    ],
+    "owners": [
+      "Weave.Cli.Tests"
+    ]
+  },
+  "extensions/Weave.CliTools/Weave.CliTools.csproj": {
+    "assembly": "Weave.CliTools",
+    "contributors": [
+      "Weave.Agents.Tests",
+      "Weave.Silo.Tests",
+      "Weave.Tools.Tests",
+      "Weave.Workspaces.Tests"
+    ],
+    "owners": [
+      "Weave.Tools.Tests"
+    ]
+  },
+  "extensions/Weave.Dapr/Weave.Dapr.csproj": {
+    "assembly": "Weave.Dapr",
+    "contributors": [
+      "Weave.Agents.Tests",
+      "Weave.Silo.Tests",
+      "Weave.Tools.Tests",
+      "Weave.Workspaces.Tests"
+    ],
+    "owners": [
+      "Weave.Tools.Tests"
+    ]
+  },
+  "extensions/Weave.Deploy/Weave.Deploy.csproj": {
+    "assembly": "Weave.Deploy",
+    "contributors": [
+      "Weave.Cli.Tests",
+      "Weave.Deploy.Tests"
+    ],
+    "owners": [
+      "Weave.Deploy.Tests"
+    ]
+  },
+  "extensions/Weave.DirectHttp/Weave.DirectHttp.csproj": {
+    "assembly": "Weave.DirectHttp",
+    "contributors": [
+      "Weave.Agents.Tests",
+      "Weave.Silo.Tests",
+      "Weave.Tools.Tests",
+      "Weave.Workspaces.Tests"
+    ],
+    "owners": [
+      "Weave.Tools.Tests"
+    ]
+  },
+  "extensions/Weave.FileSystem/Weave.FileSystem.csproj": {
+    "assembly": "Weave.FileSystem",
+    "contributors": [
+      "Weave.Agents.Tests",
+      "Weave.Silo.Tests",
+      "Weave.Tools.Tests",
+      "Weave.Workspaces.Tests"
+    ],
+    "owners": [
+      "Weave.Tools.Tests"
+    ]
+  },
+  "extensions/Weave.Mailboxes.Sqlite/Weave.Mailboxes.Sqlite.csproj": {
+    "assembly": "Weave.Mailboxes.Sqlite",
+    "contributors": [
+      "Weave.Mailboxes.Tests"
+    ],
+    "owners": [
+      "Weave.Mailboxes.Tests"
+    ]
+  },
+  "extensions/Weave.Mcp/Weave.Mcp.csproj": {
+    "assembly": "Weave.Mcp",
+    "contributors": [
+      "Weave.Agents.Tests",
+      "Weave.Silo.Tests",
+      "Weave.Tools.Tests",
+      "Weave.Workspaces.Tests"
+    ],
+    "owners": [
+      "Weave.Tools.Tests"
+    ]
+  },
+  "extensions/Weave.OpenApi/Weave.OpenApi.csproj": {
+    "assembly": "Weave.OpenApi",
+    "contributors": [
+      "Weave.Agents.Tests",
+      "Weave.Silo.Tests",
+      "Weave.Tools.Tests",
+      "Weave.Workspaces.Tests"
+    ],
+    "owners": [
+      "Weave.Tools.Tests"
+    ]
+  },
+  "extensions/Weave.Security.Postgres/Weave.Security.Postgres.csproj": {
+    "assembly": "Weave.Security.Postgres",
+    "contributors": [
+      "Weave.Agents.Tests",
+      "Weave.Security.Tests",
+      "Weave.Silo.Tests",
+      "Weave.Workspaces.Tests"
+    ],
+    "owners": [
+      "Weave.Security.Tests"
+    ]
+  },
+  "extensions/Weave.Security.Sqlite/Weave.Security.Sqlite.csproj": {
+    "assembly": "Weave.Security.Sqlite",
+    "contributors": [
+      "Weave.Agents.Tests",
+      "Weave.Security.Tests",
+      "Weave.Silo.Tests",
+      "Weave.Workspaces.Tests"
+    ],
+    "owners": [
+      "Weave.Security.Tests"
+    ]
+  },
+  "extensions/Weave.Silo.Clustering.Postgres/Weave.Silo.Clustering.Postgres.csproj": {
+    "assembly": "Weave.Silo.Clustering.Postgres",
+    "contributors": [
+      "Weave.Agents.Tests",
+      "Weave.Silo.Tests",
+      "Weave.Workspaces.Tests"
+    ],
+    "owners": []
+  },
+  "extensions/Weave.Silo.Clustering.Redis/Weave.Silo.Clustering.Redis.csproj": {
+    "assembly": "Weave.Silo.Clustering.Redis",
+    "contributors": [
+      "Weave.Agents.Tests",
+      "Weave.Silo.Tests",
+      "Weave.Workspaces.Tests"
+    ],
+    "owners": []
+  },
+  "extensions/Weave.Silo.Clustering.SqlServer/Weave.Silo.Clustering.SqlServer.csproj": {
+    "assembly": "Weave.Silo.Clustering.SqlServer",
+    "contributors": [
+      "Weave.Agents.Tests",
+      "Weave.Silo.Tests",
+      "Weave.Workspaces.Tests"
+    ],
+    "owners": []
+  },
+  "extensions/Weave.Silo.Clustering.Sqlite/Weave.Silo.Clustering.Sqlite.csproj": {
+    "assembly": "Weave.Silo.Clustering.Sqlite",
+    "contributors": [
+      "Weave.Agents.Tests",
+      "Weave.Silo.Tests",
+      "Weave.Workspaces.Tests"
+    ],
+    "owners": []
+  },
+  "hosts/Weave.AppHost/Weave.AppHost.csproj": {
+    "assembly": "Weave.AppHost",
+    "contributors": [],
+    "owners": []
+  },
+  "hosts/Weave.Cli/Weave.Cli.csproj": {
+    "assembly": "weave",
+    "contributors": [
+      "Weave.Cli.Tests"
+    ],
+    "owners": [
+      "Weave.Cli.Tests"
+    ]
+  },
+  "hosts/Weave.Dashboard/Weave.Dashboard.csproj": {
+    "assembly": "Weave.Dashboard",
+    "contributors": [],
+    "owners": []
+  },
+  "hosts/Weave.Host/Weave.Host.csproj": {
+    "assembly": "Weave.Silo",
+    "contributors": [
+      "Weave.Agents.Tests",
+      "Weave.Silo.Tests",
+      "Weave.Workspaces.Tests"
+    ],
+    "owners": [
+      "Weave.Agents.Tests",
+      "Weave.Silo.Tests",
+      "Weave.Workspaces.Tests"
+    ]
+  },
+  "hosts/Weave.Mailbox.Host/Weave.Mailbox.Host.csproj": {
+    "assembly": "Weave.Mailbox.Host",
+    "contributors": [
+      "Weave.Mailboxes.Tests"
+    ],
+    "owners": [
+      "Weave.Mailboxes.Tests"
+    ]
+  },
+  "hosts/Weave.ServiceDefaults/Weave.ServiceDefaults.csproj": {
+    "assembly": "Weave.ServiceDefaults",
+    "contributors": [
+      "Weave.Agents.Tests",
+      "Weave.Silo.Tests",
+      "Weave.Workspaces.Tests"
+    ],
+    "owners": []
+  },
+  "src/Weave.csproj": {
+    "assembly": "Weave.Product",
+    "contributors": [
+      "Weave.Actions.Tests",
+      "Weave.Agents.Tests",
+      "Weave.Cli.Tests",
+      "Weave.Deploy.Tests",
+      "Weave.Mailboxes.Tests",
+      "Weave.Security.Tests",
+      "Weave.Shared.Tests",
+      "Weave.Silo.Tests",
+      "Weave.Tools.Tests",
+      "Weave.Workspaces.Tests"
+    ],
+    "owners": [
+      "Weave.Deploy.Tests",
+      "Weave.Mailboxes.Tests",
+      "Weave.Security.Tests",
+      "Weave.Shared.Tests",
+      "Weave.Silo.Tests",
+      "Weave.Tools.Tests",
+      "Weave.Workspaces.Tests"
+    ]
+  }
+}

@@ -57,6 +57,33 @@ jobs:
           dotnet test --solution Weave.slnx --no-build -c Release
           -- --report-xunit-trx --results-directory ./test-results
 
+      - name: Restore coverage tool and analyzer
+        run: |
+          dotnet tool restore --tool-manifest .config/dotnet-tools.json
+          dotnet dotnet-coverage --version
+          dotnet restore scripts/DevTool/DevTool.csproj --locked-mode
+          dotnet build scripts/DevTool/DevTool.csproj --no-restore -c Release
+          dotnet format scripts/DevTool/DevTool.csproj --no-restore --verify-no-changes
+
+      - name: Coverage analyzer regressions
+        run: python3 -m unittest discover -s scripts/coverage-tests -v
+
+      - name: Collect and enforce tested-owner coverage
+        timeout-minutes: 30
+        shell: bash
+        run: |
+          mkdir -p TestResults
+          dotnet run --project scripts/DevTool --no-build --no-restore -c Release -- coverage --threshold 90 2>&1 | tee TestResults/coverage-gate.log
+
+      - name: Upload coverage evidence
+        if: always()
+        uses: actions/upload-artifact@043fb46d1a93c77aae656e7c1c64a875d1fc6a0a # v7
+        with:
+          name: coverage-evidence
+          path: TestResults/
+          if-no-files-found: error
+          retention-days: 30
+
       - name: Publish test results
         uses: EnricoMi/publish-unit-test-result-action@d0a4676d0e0b938bc201470d88276b7c74c712b3 # v2
         if: always()
