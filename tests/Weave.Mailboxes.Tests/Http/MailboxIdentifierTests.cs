@@ -38,10 +38,19 @@ public sealed class MailboxIdentifierTests
     [InlineData("owned")]
     public async Task Cards_BroadIdentifiers_SingleParsePublicationAndDiscovery(string id)
     {
-        await using var context = new MailboxHttpContext(); await context.Start(); var now = context.Data.Clock.GetUtcNow();
+        await using var context = new MailboxHttpContext();
+        await context.Start();
+        var now = context.Data.Clock.GetUtcNow();
         var published = await MailboxHttpContext.Json(await context.Send("PUT", "/v1/contacts/cards", "bob", new
-        { cardId = id, visibility = "public", createdAt = now, expiresAt = (DateTimeOffset?)null, revokedAt = (DateTimeOffset?)null,
-            audienceHint = (string?)null, methods = new[] { new { methodId = "relay", version = 1, transport = "relay", endpoint = "https://relay.example.test", instructions = "opaque" } } }));
+        {
+            cardId = id,
+            visibility = "public",
+            createdAt = now,
+            expiresAt = (DateTimeOffset?)null,
+            revokedAt = (DateTimeOffset?)null,
+            audienceHint = (string?)null,
+            methods = new[] { new { methodId = "relay", version = 1, transport = "relay", endpoint = "https://relay.example.test", instructions = "opaque" } }
+        }));
         published.GetProperty("cardId").GetString().ShouldBe(id);
         var found = await MailboxHttpContext.Json(await context.Send("GET", "/v1/contacts/card?cardId=" + Uri.EscapeDataString(id), null));
         found.GetProperty("cardId").GetString().ShouldBe(id);
@@ -51,7 +60,9 @@ public sealed class MailboxIdentifierTests
     [Fact]
     public async Task Request_ForeignIdWithInvalidOrValidCard_NoCollisionDisclosure()
     {
-        await using var context = new MailboxHttpContext(); var alice = context.Data.Request(); await context.Start();
+        await using var context = new MailboxHttpContext();
+        var alice = context.Data.Request();
+        await context.Start();
         var foreign = alice.Request.RequestId.Value;
         var fresh = context.Data.Submission().RequestId.Value;
         foreach (var id in new[] { foreign, fresh })
@@ -68,10 +79,15 @@ public sealed class MailboxIdentifierTests
     [Fact]
     public async Task Aliases_SlashAndLiteralPercent_KeepAckAndBlockSeparate()
     {
-        await using var context = new MailboxHttpContext(o => o with { Credentials = [.. o.Credentials.Select(c => c with
-            { MailboxId = c.MailboxId == "alice" ? "ali/ce" : c.MailboxId == "eve" ? "ali%2Fce" : c.MailboxId })] });
-        var slash = new MailboxAuthority(new("ali/ce")); var percent = new MailboxAuthority(new("ali%2Fce"));
-        var first = context.Data.Request(requester: slash); var second = context.Data.Request(requester: percent);
+        await using var context = new MailboxHttpContext(o => o with
+        {
+            Credentials = [.. o.Credentials.Select(c => c with
+            { MailboxId = c.MailboxId == "alice" ? "ali/ce" : c.MailboxId == "eve" ? "ali%2Fce" : c.MailboxId })]
+        });
+        var slash = new MailboxAuthority(new("ali/ce"));
+        var percent = new MailboxAuthority(new("ali%2Fce"));
+        var first = context.Data.Request(requester: slash);
+        var second = context.Data.Request(requester: percent);
         Require(context.Data.Store.DecideContact(Bob, new(first.Request.Locator, first.Generation, ContactStatus.Accepted), Ct));
         Require(context.Data.Store.DecideContact(Bob, new(second.Request.Locator, second.Generation, ContactStatus.Accepted), Ct));
         await context.Start();
@@ -93,7 +109,9 @@ public sealed class MailboxIdentifierTests
     [InlineData(false)]
     public async Task Request_ExistingOrFreshForeignIdWithValidCard_SameIndependentPendingOutcome(bool existing)
     {
-        await using var context = new MailboxHttpContext(); var alice = context.Data.Request(); await context.Start();
+        await using var context = new MailboxHttpContext();
+        var alice = context.Data.Request();
+        await context.Start();
         var id = existing ? alice.Request.RequestId.Value : context.Data.Submission().RequestId.Value;
         var payload = context.Data.Payload();
         var body = new { requestId = id, cardId = "bob-public", methodId = "relay", payload = MailboxHttpContext.Payload(payload) };
@@ -107,7 +125,7 @@ public sealed class MailboxIdentifierTests
         var eve = await MailboxHttpContext.Json(await context.Send("GET", path + "?requesterMailboxId=eve", "bob"));
         eve.GetProperty("requesterMailboxId").GetString().ShouldBe("eve");
         await MailboxHttpContext.Json(await context.Send("POST", path + "/decision", "bob", new
-            { requesterMailboxId = "eve", expectedGeneration = eve.GetProperty("generation").GetInt64(), status = "accepted", reply = (object?)null }));
+        { requesterMailboxId = "eve", expectedGeneration = eve.GetProperty("generation").GetInt64(), status = "accepted", reply = (object?)null }));
         var untouched = await MailboxHttpContext.Json(await context.Send("GET", "/v1/contacts/requests/" + alice.Request.RequestId.Value + "?requesterMailboxId=alice", "bob"));
         untouched.GetProperty("status").GetString().ShouldBe("pending");
     }
@@ -118,13 +136,15 @@ public sealed class MailboxIdentifierTests
     [InlineData("block")]
     public async Task Identity_BodyBeyondDomainBound_Invalid(string operation)
     {
-        await using var context = new MailboxHttpContext(); var request = context.Data.Request(); await context.Start();
+        await using var context = new MailboxHttpContext();
+        var request = context.Data.Request();
+        await context.Start();
         var identity = new string('x', 129);
         using var response = operation switch
         {
             "ack" => await context.Send("POST", $"/v1/inbox/{request.Request.RequestMessageId}/ack", "bob", new { senderMailboxId = identity }),
             "decision" => await context.Send("POST", $"/v1/contacts/requests/{request.Request.RequestId.Value}/decision", "bob", new
-                { requesterMailboxId = identity, expectedGeneration = request.Generation, status = "accepted", reply = (object?)null }),
+            { requesterMailboxId = identity, expectedGeneration = request.Generation, status = "accepted", reply = (object?)null }),
             "block" => await context.Send("PUT", "/v1/contacts/blocks", "bob", new { peerMailboxId = identity, expectedGeneration = request.Generation }),
             _ => throw new ArgumentOutOfRangeException(nameof(operation))
         };

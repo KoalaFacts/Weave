@@ -8,29 +8,37 @@ public sealed partial class SqliteMailboxStore
     {
         using var db = Session(true, ct);
         var now = _timeProvider.GetUtcNow();
-        if (!ValidId(authority.MailboxId.Value)) return new(MailboxError.Forbidden);
+        if (!ValidId(authority.MailboxId.Value))
+            return new(MailboxError.Forbidden);
         if (!ValidId(envelope.RecipientMailboxId.Value) || envelope.RecipientMailboxId == authority.MailboxId
-            || envelope.Version != 1) return new(MailboxError.Invalid);
+            || envelope.Version != 1)
+            return new(MailboxError.Invalid);
         var validation = ValidatePayload(envelope.Payload, now, firstAdmission: false);
-        if (validation is not null) return new(validation.Value);
+        if (validation is not null)
+            return new(validation.Value);
         var existing = ReadMessage(db, authority.MailboxId, envelope.MessageId);
         if (existing is not null)
         {
-            if (existing.Fingerprint != MessageFingerprint(envelope, 0, null)) return new(MailboxError.Conflict);
+            if (existing.Fingerprint != MessageFingerprint(envelope, 0, null))
+                return new(MailboxError.Conflict);
             var receipt = TerminalizeEffective(db, existing, now);
             db.Commit();
             return new(receipt);
         }
         validation = ValidatePayload(envelope.Payload, now, firstAdmission: true);
-        if (validation is not null) return new(validation.Value);
+        if (validation is not null)
+            return new(validation.Value);
         var channel = ReadChannel(db, authority.MailboxId.Value, envelope.RecipientMailboxId.Value);
-        if (channel is null || channel.IsBlocked) return new(MailboxError.Forbidden);
-        if (channel.Generation != envelope.ContactGeneration) return new(MailboxError.Conflict);
+        if (channel is null || channel.IsBlocked)
+            return new(MailboxError.Forbidden);
+        if (channel.Generation != envelope.ContactGeneration)
+            return new(MailboxError.Conflict);
         var request = channel.CurrentRequest is null ? null : ReadRequest(db, new(new(channel.CurrentRequester!), new(channel.CurrentRequest)));
         if (request?.Summary.Status != ContactStatus.Accepted || request.Summary.Generation != channel.Generation)
             return new(MailboxError.Forbidden);
         var result = AdmitMessage(db, authority.MailboxId, envelope, channel, 0, null, now);
-        if (result.IsSuccess) db.Commit();
+        if (result.IsSuccess)
+            db.Commit();
         return result;
     }
 
@@ -70,8 +78,10 @@ public sealed partial class SqliteMailboxStore
         using var db = Session(true, ct);
         var now = _timeProvider.GetUtcNow();
         var message = ReadMessage(db, senderMailboxId, messageId);
-        if (message is null) return new(MailboxError.Unavailable);
-        if (message.Receipt.RecipientMailboxId != authority.MailboxId) return new(MailboxError.Forbidden);
+        if (message is null)
+            return new(MailboxError.Unavailable);
+        if (message.Receipt.RecipientMailboxId != authority.MailboxId)
+            return new(MailboxError.Forbidden);
         var receipt = TerminalizeEffective(db, message, now);
         if (receipt.State == MailboxReceiptState.Pending)
         {
@@ -97,8 +107,10 @@ public sealed partial class SqliteMailboxStore
     private static MailboxReceipt EffectiveReceipt(MailboxDatabaseSession db, MailboxMessageRow message, DateTimeOffset now)
     {
         var receipt = message.Receipt;
-        if (receipt.State != MailboxReceiptState.Pending) return receipt;
-        if (receipt.ExpiresAt <= now) return receipt with { State = MailboxReceiptState.Expired, TerminalAt = receipt.ExpiresAt };
+        if (receipt.State != MailboxReceiptState.Pending)
+            return receipt;
+        if (receipt.ExpiresAt <= now)
+            return receipt with { State = MailboxReceiptState.Expired, TerminalAt = receipt.ExpiresAt };
         var channel = ReadChannel(db, receipt.SenderMailboxId.Value, receipt.RecipientMailboxId.Value)!;
         if (channel.IsBlocked || channel.Generation != message.Generation)
             return receipt with { State = MailboxReceiptState.Blocked, TerminalAt = channel.UpdatedAt };

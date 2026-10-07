@@ -15,7 +15,8 @@ internal sealed class MailboxV1Fixture : IDisposable
         Directory.CreateDirectory(_directory);
         Options = new() { DatabasePath = Path.Combine(_directory, "retained.db"), RequireExistingStorage = true };
         Request = new(new(Guid.CreateVersion7(Clock.GetUtcNow()).ToString()), new("card"), "relay", Payload("handshake"));
-        Reply = Payload("reply"); Live = Payload("live");
+        Reply = Payload("reply");
+        Live = Payload("live");
         using var connection = new SqliteConnection(new SqliteConnectionStringBuilder { DataSource = Options.DatabasePath, Pooling = false }.ToString());
         connection.Open();
         Execute(connection, File.ReadAllText(Path.Combine(AppContext.BaseDirectory, "Storage/Fixtures/mailbox-v1.sql")));
@@ -43,8 +44,10 @@ internal sealed class MailboxV1Fixture : IDisposable
     internal SqliteMailboxStore Open() => new(Options, Clock);
     internal long Scalar(string sql)
     {
-        using var connection = new SqliteConnection(new SqliteConnectionStringBuilder { DataSource = Options.DatabasePath, Pooling = false }.ToString()); connection.Open();
-        using var command = connection.CreateCommand(); command.CommandText = sql;
+        using var connection = new SqliteConnection(new SqliteConnectionStringBuilder { DataSource = Options.DatabasePath, Pooling = false }.ToString());
+        connection.Open();
+        using var command = connection.CreateCommand();
+        command.CommandText = sql;
         return Convert.ToInt64(command.ExecuteScalar(), System.Globalization.CultureInfo.InvariantCulture);
     }
     internal void SetMigrationFailure(bool enabled)
@@ -55,7 +58,8 @@ internal sealed class MailboxV1Fixture : IDisposable
     }
     private MailboxPayload Payload(string value)
     {
-        var now = Clock.GetUtcNow(); return new(Guid.CreateVersion7(now), now, now.AddMinutes(20), "opaque", Encoding.UTF8.GetBytes(value));
+        var now = Clock.GetUtcNow();
+        return new(Guid.CreateVersion7(now), now, now.AddMinutes(20), "opaque", Encoding.UTF8.GetBytes(value));
     }
     private void Message(SqliteConnection connection, int sequence, string sender, string recipient, MailboxPayload payload, int purpose, int state)
     {
@@ -70,19 +74,27 @@ internal sealed class MailboxV1Fixture : IDisposable
     }
     private static void Execute(SqliteConnection connection, string sql, params (string Name, object? Value)[] values)
     {
-        using var command = connection.CreateCommand(); command.CommandText = sql;
-        foreach (var (name, value) in values) command.Parameters.AddWithValue(name, value ?? DBNull.Value);
+        using var command = connection.CreateCommand();
+        command.CommandText = sql;
+        foreach (var (name, value) in values)
+            command.Parameters.AddWithValue(name, value ?? DBNull.Value);
         command.ExecuteNonQuery();
     }
     private static string Hash(Action<BinaryWriter> write)
     {
-        using var stream = new MemoryStream(); using (var writer = new BinaryWriter(stream, Encoding.UTF8, true)) write(writer);
+        using var stream = new MemoryStream();
+        using (var writer = new BinaryWriter(stream, Encoding.UTF8, true))
+            write(writer);
         return Convert.ToHexString(SHA256.HashData(stream.ToArray()));
     }
     private static void Write(BinaryWriter writer, MailboxPayload payload)
     {
-        writer.Write(payload.MessageId.ToByteArray()); writer.Write(payload.CreatedAt.UtcTicks); writer.Write(payload.ExpiresAt.UtcTicks);
-        writer.Write(payload.PayloadEncoding); writer.Write(payload.Bytes.Length); writer.Write(payload.Bytes.AsSpan());
+        writer.Write(payload.MessageId.ToByteArray());
+        writer.Write(payload.CreatedAt.UtcTicks);
+        writer.Write(payload.ExpiresAt.UtcTicks);
+        writer.Write(payload.PayloadEncoding);
+        writer.Write(payload.Bytes.Length);
+        writer.Write(payload.Bytes.AsSpan());
     }
     public void Dispose() => Directory.Delete(_directory, true);
 }

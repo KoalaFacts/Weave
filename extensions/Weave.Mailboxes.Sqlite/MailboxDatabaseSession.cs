@@ -53,7 +53,8 @@ internal sealed class MailboxDatabaseSession : IDisposable
         var command = _connection.CreateCommand();
         command.Transaction = _transaction;
         command.CommandText = sql;
-        foreach (var (name, value) in values) command.Parameters.AddWithValue(name, value ?? DBNull.Value);
+        foreach (var (name, value) in values)
+            command.Parameters.AddWithValue(name, value ?? DBNull.Value);
         return command;
     }
 

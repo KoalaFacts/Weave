@@ -30,7 +30,8 @@ public sealed class MailboxMigrationTests
     [Fact]
     public void Open_MigrationTransactionFails_RollsBackWithoutResetOrResurrection()
     {
-        using var fixture = new MailboxV1Fixture(); fixture.SetMigrationFailure(true);
+        using var fixture = new MailboxV1Fixture();
+        fixture.SetMigrationFailure(true);
         Should.Throw<Microsoft.Data.Sqlite.SqliteException>(() => fixture.Open());
         fixture.Scalar("SELECT version FROM mailbox_schema").ShouldBe(1);
         fixture.Scalar("SELECT count(*) FROM pragma_table_info('contact_channels') WHERE name='current_requester'").ShouldBe(0);
@@ -46,9 +47,11 @@ public sealed class MailboxMigrationTests
     [Fact]
     public async Task Open_ConcurrentRetainedV1_MigratesOnceWithBothOwnersPreserved()
     {
-        using var fixture = new MailboxV1Fixture(); using var start = new ManualResetEventSlim();
+        using var fixture = new MailboxV1Fixture();
+        using var start = new ManualResetEventSlim();
         var tasks = Enumerable.Range(0, 2).Select(_ => Task.Run(() => { start.Wait(Ct); return fixture.Open(); }, Ct)).ToArray();
-        start.Set(); var stores = await Task.WhenAll(tasks);
+        start.Set();
+        var stores = await Task.WhenAll(tasks);
         fixture.Scalar("SELECT version FROM mailbox_schema").ShouldBe(2);
         fixture.Scalar("SELECT count(*) FROM contact_requests").ShouldBe(1);
         foreach (var store in stores)
@@ -61,7 +64,8 @@ public sealed class MailboxMigrationTests
     [Fact]
     public void Open_MigratedState_ScopedCollisionAndOldCursorPreserveOrdering()
     {
-        using var fixture = new MailboxV1Fixture(); var store = fixture.Open();
+        using var fixture = new MailboxV1Fixture();
+        var store = fixture.Open();
         store.ReadPending(Bob, "inbox:Ym9i:2", 10, Ct).Items.Single().Envelope.MessageId.ShouldBe(fixture.Live.MessageId);
         Require(store.SetBlocked(Eve, Bob.MailboxId, 3, false, Ct));
         var independentlyScoped = Require(store.RequestContact(Eve, fixture.Request, Ct));

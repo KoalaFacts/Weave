@@ -141,7 +141,7 @@ try {
         privateDiscoveryStatus: await status(alice, 'GET', '/v1/contacts/card?cardId=bob-private-manual'),
         privateExport: await call(bob, 'GET', '/v1/contacts/card?cardId=bob-private-manual') };
     const policies = []; let connected; let reply;
-    for (const [cardId, visibility, ttl, policy, expectedStatus] of cardDefinitions) {
+    for (const [cardId, visibility, , policy, expectedStatus] of cardDefinitions) {
         const body = await makePayload(alice, 'synthetic contact attempt');
         const initial = await call(alice, 'POST', '/v1/contacts/requests', { requestId: body.messageId, cardId, methodId: 'relay', payload: body });
         const optional = policy === 'manual' ? await makePayload(bob, 'synthetic optional reply') : null;

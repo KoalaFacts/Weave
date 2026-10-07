@@ -95,8 +95,11 @@ public sealed class SqliteMailboxStoreTests
         var envelope = context.Envelope(relation);
         var first = Require(context.Store.Send(Alice, envelope, TestContext.Current.CancellationToken));
         Require(context.Store.Send(Alice, envelope, TestContext.Current.CancellationToken)).ShouldBe(first);
-        var changed = envelope with { Payload = new(envelope.MessageId, envelope.CreatedAt, envelope.ExpiresAt,
-            envelope.PayloadEncoding, [9]) };
+        var changed = envelope with
+        {
+            Payload = new(envelope.MessageId, envelope.CreatedAt, envelope.ExpiresAt,
+            envelope.PayloadEncoding, [9])
+        };
         context.Store.Send(Alice, changed, TestContext.Current.CancellationToken).Error.ShouldBe(MailboxError.Conflict);
         context.Store.ReadPending(Bob, null, 10, TestContext.Current.CancellationToken).Items.Length.ShouldBe(1);
     }
@@ -144,8 +147,11 @@ public sealed class SqliteMailboxStoreTests
         context.Store.Sweep(100, TestContext.Current.CancellationToken).ShouldBeGreaterThan(0);
         context.Store.GetReceipt(Alice, envelope.MessageId, TestContext.Current.CancellationToken).ShouldBeNull();
         context.Store.Send(Alice, envelope, TestContext.Current.CancellationToken).Error.ShouldBe(MailboxError.Expired);
-        var forged = envelope with { Payload = new(envelope.MessageId, context.Clock.GetUtcNow(),
-            context.Clock.GetUtcNow().AddMinutes(1), envelope.PayloadEncoding, envelope.Payload.Bytes.AsSpan()) };
+        var forged = envelope with
+        {
+            Payload = new(envelope.MessageId, context.Clock.GetUtcNow(),
+            context.Clock.GetUtcNow().AddMinutes(1), envelope.PayloadEncoding, envelope.Payload.Bytes.AsSpan())
+        };
         context.Store.Send(Alice, forged, TestContext.Current.CancellationToken).Error.ShouldBe(MailboxError.Invalid);
     }
 
@@ -154,7 +160,8 @@ public sealed class SqliteMailboxStoreTests
     {
         using var context = new MailboxTestContext();
         var relation = context.Connect();
-        for (var i = 0; i < 3; i++) Require(context.Store.Send(Alice, context.Envelope(relation), TestContext.Current.CancellationToken));
+        for (var i = 0; i < 3; i++)
+            Require(context.Store.Send(Alice, context.Envelope(relation), TestContext.Current.CancellationToken));
         var first = context.Store.ReadPending(Bob, null, 2, TestContext.Current.CancellationToken);
         first.Items.Length.ShouldBe(2);
         first.NextCursor.ShouldNotBeNull();

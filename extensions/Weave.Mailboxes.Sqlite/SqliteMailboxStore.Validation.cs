@@ -23,16 +23,19 @@ public sealed partial class SqliteMailboxStore
     {
         Span<byte> bytes = stackalloc byte[16];
         id.TryWriteBytes(bytes, bigEndian: true, out _);
-        if ((bytes[6] >> 4) != 7 || (bytes[8] & 0xc0) != 0x80) return false;
+        if ((bytes[6] >> 4) != 7 || (bytes[8] & 0xc0) != 0x80)
+            return false;
         long milliseconds = 0;
-        for (var i = 0; i < 6; i++) milliseconds = (milliseconds << 8) | bytes[i];
+        for (var i = 0; i < 6; i++)
+            milliseconds = (milliseconds << 8) | bytes[i];
         return milliseconds == created.ToUnixTimeMilliseconds();
     }
 
     private static string Fingerprint(Action<BinaryWriter> write)
     {
         using var buffer = new MemoryStream();
-        using (var writer = new BinaryWriter(buffer, Encoding.UTF8, leaveOpen: true)) write(writer);
+        using (var writer = new BinaryWriter(buffer, Encoding.UTF8, leaveOpen: true))
+            write(writer);
         return Convert.ToHexString(SHA256.HashData(buffer.GetBuffer().AsSpan(0, checked((int)buffer.Length))));
     }
 
@@ -70,6 +73,7 @@ public sealed partial class SqliteMailboxStore
         writer.Write(decision.ExpectedGeneration);
         writer.Write((int)decision.Status);
         writer.Write(decision.Reply is not null);
-        if (decision.Reply is { } reply) WritePayload(writer, reply);
+        if (decision.Reply is { } reply)
+            WritePayload(writer, reply);
     });
 }

@@ -31,17 +31,23 @@ public static partial class MailboxHost
             context.Response.Headers.CacheControl = "no-store";
             context.Response.Headers.Pragma = "no-cache";
             var headers = context.Request.Headers[MailboxControlAuthentication.HeaderName];
-            var scope = headers.Count == 1 ? authentication.Authenticate(headers[0]!) : null;
-            if (headers.Count > 0 && scope is null) { await MailboxHttp.ErrorAsync(context, 401, "unauthenticated"); return; }
-            if (scope is not null) context.Features.Set(scope);
+            var scope = authentication.Authenticate(headers.Count == 1 ? headers[0] ?? string.Empty : string.Empty);
+            if (headers.Count > 0 && scope is null)
+            { await MailboxHttp.ErrorAsync(context, 401, "unauthenticated"); return; }
+            if (scope is not null)
+                context.Features.Set(scope);
             var publicDiscovery = context.GetEndpoint()?.Metadata.GetMetadata<PublicCardDiscovery>() is not null;
-            if (scope is null && !publicDiscovery) { await MailboxHttp.ErrorAsync(context, 401, "unauthenticated"); return; }
-            try { await next(context); }
+            if (scope is null && !publicDiscovery)
+            { await MailboxHttp.ErrorAsync(context, 401, "unauthenticated"); return; }
+            try
+            { await next(context); }
             catch (SqliteException)
             {
                 StorageUnavailable(app.Logger);
-                if (context.Response.HasStarted) context.Abort();
-                else await MailboxHttp.ErrorAsync(context, 503, "storage");
+                if (context.Response.HasStarted)
+                    context.Abort();
+                else
+                    await MailboxHttp.ErrorAsync(context, 503, "storage");
             }
             catch (BadHttpRequestException exception) when (exception.StatusCode == 413)
             { if (!context.Response.HasStarted) await MailboxHttp.ErrorAsync(context, 413, "tooLarge"); }

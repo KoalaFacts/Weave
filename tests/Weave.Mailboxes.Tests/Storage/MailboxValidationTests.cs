@@ -24,16 +24,24 @@ public sealed class MailboxValidationTests
         var id = payload.MessageId;
         var encoding = payload.PayloadEncoding;
         var expected = MailboxError.Invalid;
-        if (mutation == "uuid") id = Guid.NewGuid();
-        if (mutation == "binding") created = created.AddSeconds(1);
-        if (mutation == "lifetime") expires = created.AddHours(25);
-        if (mutation == "encoding") encoding = "";
-        if (mutation == "future") { created = created.AddSeconds(31); id = Guid.CreateVersion7(created); }
-        if (mutation == "old") { created = created.AddMinutes(-6); id = Guid.CreateVersion7(created); expected = MailboxError.Expired; }
+        if (mutation == "uuid")
+            id = Guid.NewGuid();
+        if (mutation == "binding")
+            created = created.AddSeconds(1);
+        if (mutation == "lifetime")
+            expires = created.AddHours(25);
+        if (mutation == "encoding")
+            encoding = "";
+        if (mutation == "future")
+        { created = created.AddSeconds(31); id = Guid.CreateVersion7(created); }
+        if (mutation == "old")
+        { created = created.AddMinutes(-6); id = Guid.CreateVersion7(created); expected = MailboxError.Expired; }
         payload = new(id, created, expires, encoding, payload.Bytes.AsSpan());
         var envelope = context.Envelope(relation, payload);
-        if (mutation == "version") envelope = envelope with { Version = 2 };
-        if (mutation == "generation") { envelope = envelope with { ContactGeneration = relation.Generation + 1 }; expected = MailboxError.Conflict; }
+        if (mutation == "version")
+            envelope = envelope with { Version = 2 };
+        if (mutation == "generation")
+        { envelope = envelope with { ContactGeneration = relation.Generation + 1 }; expected = MailboxError.Conflict; }
         context.Store.Send(Alice, envelope, TestContext.Current.CancellationToken).Error.ShouldBe(expected);
         context.Store.GetReceipt(Alice, envelope.MessageId, TestContext.Current.CancellationToken).ShouldBeNull();
     }

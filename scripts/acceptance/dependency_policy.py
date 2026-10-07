@@ -136,17 +136,20 @@ def run_case(action, node, name, changes, warning, expected_blocked):
             policy_report = None
             guard = ROOT / 'scripts/check_dependency_license_evidence.py'
             if guard.exists() and evidence_status == 'available':
-                guard_env = {**env, 'INVALID_LICENSE_CHANGES': action_output.get('invalid-license-changes', '')}
-                checked = subprocess.run([sys.executable, str(guard), '--report', str(directory / 'license.json')],
-                                         env=guard_env, capture_output=True, timeout=10, check=False)
+                invalid_path = directory / 'invalid-license-changes.json'
+                invalid_path.write_text(action_output.get('invalid-license-changes', ''), encoding='utf-8')
+                checked = subprocess.run([sys.executable, str(guard), '--changes', str(invalid_path),
+                                          '--report', str(directory / 'license.json')],
+                                         env=env, capture_output=True, timeout=10, check=False)
                 guard_exit = checked.returncode
                 comparison_path = directory / 'comparison.json'
                 comparison_path.write_text(json.dumps({'status': 'available', **comparison}))
                 policy_path = directory / 'policy.json'
                 policy = ROOT / 'tools/dependency-license-policy/check-license-policy.mjs'
-                policy_env = {**env, 'DEPENDENCY_CHANGES': action_output.get('dependency-changes', '')}
-                checked = subprocess.run([node, str(policy), str(comparison_path), str(policy_path)],
-                                         env=policy_env, capture_output=True, timeout=10, check=False)
+                changes_path = directory / 'dependency-changes.json'
+                changes_path.write_text(action_output.get('dependency-changes', ''), encoding='utf-8')
+                checked = subprocess.run([node, str(policy), str(changes_path), str(comparison_path), str(policy_path)],
+                                         env=env, capture_output=True, timeout=10, check=False)
                 policy_exit = checked.returncode
                 if policy_path.exists():
                     policy_report = json.loads(policy_path.read_text())
@@ -191,6 +194,7 @@ def main():
     actual = subprocess.check_output(['git', '-C', str(action), 'rev-parse', 'HEAD'], text=True).strip()
     if actual != PIN:
         raise SystemExit('The acceptance action must match the reviewed immutable pin.')
+    large = [{**change('MIT'), 'name': f'fixture-{index}-' + 'x' * 750} for index in range(199)]
     cases = [
         ('permitted-license', [change('MIT')], False, False),
         ('permitted-expression', [change('MIT OR Apache-2.0')], False, False),
@@ -202,6 +206,9 @@ def main():
         ('noassertion-license', [change('NOASSERTION')], False, True),
         ('complete-empty-delta', [], False, False),
         ('missing-snapshot', [], True, True),
+        ('large-permitted-delta', large, False, False),
+        ('prohibited-large-final-change', large[:-1] + [{**large[-1], 'license': 'GPL-3.0'}], False, True),
+        ('unknown-large-final-change', large[:-1] + [{**large[-1], 'license': None}], False, True),
     ]
     records = []
     for name, changes, warning, blocked in cases:

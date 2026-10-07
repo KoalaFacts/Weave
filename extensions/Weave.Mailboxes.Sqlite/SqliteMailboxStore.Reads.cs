@@ -18,7 +18,8 @@ public sealed partial class SqliteMailboxStore
     public MailboxPage<ContactRequestSummary> ListContactRequests(MailboxAuthority authority, string? afterCursor, int limit, CancellationToken ct)
     {
         using var db = Session(false, ct);
-        if (!PageStart("contacts", authority, afterCursor, limit, out var after)) return new([], null);
+        if (!PageStart("contacts", authority, afterCursor, limit, out var after))
+            return new([], null);
         var rows = db.Query(RequestSelect + " WHERE (requester=$owner OR recipient=$owner) AND seq>$after ORDER BY seq LIMIT $limit",
             MapRequest, ("$owner", authority.MailboxId.Value), ("$after", after), ("$limit", limit + 1));
         return Page(rows, row => row.Sequence, row => row.Summary, "contacts", authority, limit);
@@ -34,7 +35,8 @@ public sealed partial class SqliteMailboxStore
     public MailboxPage<MailboxReceipt> ListReceipts(MailboxAuthority authority, string? afterCursor, int limit, CancellationToken ct)
     {
         using var db = Session(false, ct);
-        if (!PageStart("receipts", authority, afterCursor, limit, out var after)) return new([], null);
+        if (!PageStart("receipts", authority, afterCursor, limit, out var after))
+            return new([], null);
         var now = _timeProvider.GetUtcNow();
         var rows = db.Query(MessageSelect + " WHERE sender=$owner AND seq>$after ORDER BY seq LIMIT $limit",
             MapMessage, ("$owner", authority.MailboxId.Value), ("$after", after), ("$limit", limit + 1));
@@ -44,7 +46,8 @@ public sealed partial class SqliteMailboxStore
     public MailboxPage<ReceivedMailboxMessage> ReadPending(MailboxAuthority authority, string? afterCursor, int limit, CancellationToken ct)
     {
         using var db = Session(false, ct);
-        if (!PageStart("inbox", authority, afterCursor, limit, out var after)) return new([], null);
+        if (!PageStart("inbox", authority, afterCursor, limit, out var after))
+            return new([], null);
         var now = _timeProvider.GetUtcNow();
         var rows = db.Query("""
             SELECT m.seq,m.sender,m.recipient,m.version,m.generation,m.id,m.created,m.expires,m.encoding,m.payload
@@ -92,8 +95,10 @@ public sealed partial class SqliteMailboxStore
     private static bool PageStart(string kind, MailboxAuthority authority, string? cursor, int limit, out long after)
     {
         after = 0;
-        if (!ValidId(authority.MailboxId.Value) || limit is < 1 or > 100) return false;
-        if (cursor is null) return true;
+        if (!ValidId(authority.MailboxId.Value) || limit is < 1 or > 100)
+            return false;
+        if (cursor is null)
+            return true;
         var prefix = CursorPrefix(kind, authority);
         return cursor.StartsWith(prefix, StringComparison.Ordinal)
             && long.TryParse(cursor.AsSpan(prefix.Length), NumberStyles.None, CultureInfo.InvariantCulture, out after) && after >= 0;

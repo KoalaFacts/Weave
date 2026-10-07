@@ -16,13 +16,18 @@ public sealed partial class SqliteMailboxStore
         using var db = Session(true, ct);
         var now = _timeProvider.GetUtcNow();
         if (!ValidId(authority.MailboxId.Value) || !ValidId(peerMailboxId.Value)
-            || authority.MailboxId == peerMailboxId) return new(MailboxError.Invalid);
+            || authority.MailboxId == peerMailboxId)
+            return new(MailboxError.Invalid);
         var channel = ReadChannel(db, authority.MailboxId.Value, peerMailboxId.Value);
-        if (channel is null) return new(MailboxError.Unavailable);
-        if (channel.Generation != expectedGeneration) return new(MailboxError.Conflict);
+        if (channel is null)
+            return new(MailboxError.Unavailable);
+        if (channel.Generation != expectedGeneration)
+            return new(MailboxError.Conflict);
         var snapshot = channel.Snapshot(authority.MailboxId);
-        if (snapshot.IsBlockedByMailbox == blocked) return new(snapshot);
-        if (channel.Generation == long.MaxValue) return new(MailboxError.Capacity);
+        if (snapshot.IsBlockedByMailbox == blocked)
+            return new(snapshot);
+        if (channel.Generation == long.MaxValue)
+            return new(MailboxError.Capacity);
         var isLow = channel.Low == authority.MailboxId.Value;
         var updated = channel with
         {

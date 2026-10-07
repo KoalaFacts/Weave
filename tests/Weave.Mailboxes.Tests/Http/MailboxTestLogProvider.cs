@@ -13,7 +13,8 @@ internal sealed class MailboxTestLogProvider(List<string> messages) : ILoggerPro
         public void Log<TState>(LogLevel logLevel, EventId eventId, TState state, Exception? exception,
             Func<TState, Exception?, string> formatter)
         {
-            lock (messages) messages.Add(formatter(state, exception));
+            lock (messages)
+                messages.Add(formatter(state, exception));
         }
     }
 }

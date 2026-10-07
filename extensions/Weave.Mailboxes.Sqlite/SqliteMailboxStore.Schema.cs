@@ -14,13 +14,16 @@ public sealed partial class SqliteMailboxStore
         command.Transaction = transaction;
         command.CommandText = "SELECT count(*) FROM sqlite_master WHERE type='table' AND name='mailbox_schema'";
         var exists = (long)command.ExecuteScalar()! != 0;
-        if (requireExisting && !exists) throw new InvalidOperationException("The retained mailbox schema is missing.");
+        if (requireExisting && !exists)
+            throw new InvalidOperationException("The retained mailbox schema is missing.");
         if (exists)
         {
             command.CommandText = "SELECT version FROM mailbox_schema";
             var version = (long)command.ExecuteScalar()!;
-            if (version == 1) MigrateV1(command);
-            else if (version != 2) throw new InvalidOperationException("Unsupported mailbox schema version.");
+            if (version == 1)
+                MigrateV1(command);
+            else if (version != 2)
+                throw new InvalidOperationException("Unsupported mailbox schema version.");
             transaction.Commit();
             return;
         }

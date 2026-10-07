@@ -26,20 +26,24 @@ internal static class MailboxHttp
 
     internal static async Task<T?> ReadAsync<T>(HttpContext context, JsonTypeInfo<T> type) where T : class
     {
-        if (!context.Request.HasJsonContentType()) { await ErrorAsync(context, 400, "invalid"); return null; }
-        if (context.Request.ContentLength > MaximumRequestBytes) { await ErrorAsync(context, 413, "tooLarge"); return null; }
+        if (!context.Request.HasJsonContentType())
+        { await ErrorAsync(context, 400, "invalid"); return null; }
+        if (context.Request.ContentLength > MaximumRequestBytes)
+        { await ErrorAsync(context, 413, "tooLarge"); return null; }
         using var buffer = new MemoryStream();
         var chunk = new byte[8192];
         int read;
         while ((read = await context.Request.Body.ReadAsync(chunk, context.RequestAborted)) != 0)
         {
-            if (buffer.Length + read > MaximumRequestBytes) { await ErrorAsync(context, 413, "tooLarge"); return null; }
+            if (buffer.Length + read > MaximumRequestBytes)
+            { await ErrorAsync(context, 413, "tooLarge"); return null; }
             await buffer.WriteAsync(chunk.AsMemory(0, read), context.RequestAborted);
         }
         try
         {
             var value = JsonSerializer.Deserialize(buffer.GetBuffer().AsSpan(0, (int)buffer.Length), type);
-            if (value is null) await ErrorAsync(context, 400, "invalid");
+            if (value is null)
+                await ErrorAsync(context, 400, "invalid");
             return value;
         }
         catch (JsonException) { await ErrorAsync(context, 400, "invalid"); return null; }
@@ -53,9 +57,14 @@ internal static class MailboxHttp
         context.Response.StatusCode = status;
         return context.Response.WriteAsJsonAsync(new MailboxProblemWire(status, code switch
         {
-            "invalid" => "Invalid request", "unauthenticated" => "Mailbox control required",
-            "unavailable" => "Resource unavailable", "conflict" => "State conflict", "expired" => "Expired",
-            "capacity" => "Capacity reached", "tooLarge" => "Request too large", "storage" => "Storage unavailable",
+            "invalid" => "Invalid request",
+            "unauthenticated" => "Mailbox control required",
+            "unavailable" => "Resource unavailable",
+            "conflict" => "State conflict",
+            "expired" => "Expired",
+            "capacity" => "Capacity reached",
+            "tooLarge" => "Request too large",
+            "storage" => "Storage unavailable",
             _ => throw new ArgumentOutOfRangeException(nameof(code))
         }, code), MailboxJsonContext.Default.MailboxProblemWire, contentType: "application/problem+json", cancellationToken: context.RequestAborted);
     }
@@ -63,7 +72,8 @@ internal static class MailboxHttp
     internal static Task ResultAsync<T, TWire>(HttpContext context, MailboxResult<T> result,
         Func<T, TWire> project, JsonTypeInfo<TWire> type) where T : class
     {
-        if (result.IsSuccess) return WriteAsync(context, project(result.Value!), type);
+        if (result.IsSuccess)
+            return WriteAsync(context, project(result.Value!), type);
         return result.Error switch
         {
             MailboxError.Invalid => ErrorAsync(context, 400, "invalid"),
@@ -82,8 +92,10 @@ internal static class MailboxHttp
         var query = context.Request.Query["limit"];
         if (query.Count > 1 || context.Request.Query["afterCursor"].Count > 1
             || query.Count == 1 && !int.TryParse(query[0], NumberStyles.None, CultureInfo.InvariantCulture, out limit)
-            || limit is < 1 or > 10) return false;
-        if (cursor is null) return true;
+            || limit is < 1 or > 10)
+            return false;
+        if (cursor is null)
+            return true;
         var prefix = kind + ":" + Convert.ToBase64String(System.Text.Encoding.UTF8.GetBytes(authority.MailboxId.Value)) + ":";
         return cursor.Length <= 1024 && cursor.StartsWith(prefix, StringComparison.Ordinal)
             && long.TryParse(cursor.AsSpan(prefix.Length), NumberStyles.None, CultureInfo.InvariantCulture, out var after) && after >= 0;

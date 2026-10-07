@@ -244,18 +244,31 @@ jobs:
           license-check: true
           comment-summary-in-pr: never
 
-      - name: Require complete license evidence
-        if: ${{ !cancelled() && steps.dependency-policy.outcome != 'skipped' }}
-        env:
-          INVALID_LICENSE_CHANGES: ${{ steps.dependency-policy.outputs['invalid-license-changes'] }}
-        run: python3 scripts/check_dependency_license_evidence.py --report "$RUNNER_TEMP/dependency-license-evidence.json"
-
       - name: Set up Node for license policy
         if: ${{ !cancelled() && steps.dependency-policy.outcome != 'skipped' }}
         uses: actions/setup-node@820762786026740c76f36085b0efc47a31fe5020 # v7.0.0
         with:
           node-version: '24'
           package-manager-cache: false
+
+      - name: Materialize dependency policy outputs
+        if: ${{ !cancelled() && steps.dependency-policy.outcome != 'skipped' }}
+        shell: node {0}
+        run: |
+          const { writeFileSync } = require('node:fs');
+          const { join } = require('node:path');
+          // Serialized strings stay data in the runner's script file, never shell or environment input.
+          writeFileSync(join(process.env.RUNNER_TEMP, 'dependency-changes.json'),
+            ${{ toJSON(steps.dependency-policy.outputs['dependency-changes']) }}, 'utf8');
+          writeFileSync(join(process.env.RUNNER_TEMP, 'invalid-license-changes.json'),
+            ${{ toJSON(steps.dependency-policy.outputs['invalid-license-changes']) }}, 'utf8');
+
+      - name: Require complete license evidence
+        if: ${{ !cancelled() && steps.dependency-policy.outcome != 'skipped' }}
+        run: >-
+          python3 scripts/check_dependency_license_evidence.py
+          --changes "$RUNNER_TEMP/invalid-license-changes.json"
+          --report "$RUNNER_TEMP/dependency-license-evidence.json"
 
       - name: Install locked license policy dependencies
         if: ${{ !cancelled() && steps.dependency-policy.outcome != 'skipped' }}
@@ -267,10 +280,9 @@ jobs:
 
       - name: Require allowed dependency licenses
         if: ${{ !cancelled() && steps.dependency-policy.outcome != 'skipped' }}
-        env:
-          DEPENDENCY_CHANGES: ${{ steps.dependency-policy.outputs['dependency-changes'] }}
         run: >-
           node tools/dependency-license-policy/check-license-policy.mjs
+          "$RUNNER_TEMP/dependency-changes.json"
           "$RUNNER_TEMP/dependency-review-evidence.json"
           "$RUNNER_TEMP/dependency-license-policy.json"
 

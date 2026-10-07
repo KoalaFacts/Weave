@@ -15,7 +15,9 @@ public sealed class ContactHttpTests
     public async Task Request_PublicCard_ExplicitRecipientDecisionAcrossRestart(string status)
     {
         await using var context = new MailboxHttpContext();
-        var card = context.Data.Card(); Require(context.Data.Store.PutCard(Bob, card, Ct)); await context.Start();
+        var card = context.Data.Card();
+        Require(context.Data.Store.PutCard(Bob, card, Ct));
+        await context.Start();
         var discovery = await MailboxHttpContext.Json(await context.Send("GET", "/v1/contacts/card?cardId=bob-public", null));
         discovery.GetProperty("cardId").GetString().ShouldBe("bob-public");
         var submission = context.Data.Submission(card);
@@ -30,13 +32,16 @@ public sealed class ContactHttpTests
         polled.GetProperty("items").GetArrayLength().ShouldBe(1);
         polled.GetProperty("items")[0].TryGetProperty("payload", out _).ShouldBeFalse();
         var body = new { requesterMailboxId = "alice", expectedGeneration = generation, status, reply = (object?)null };
-        if (status != "pending") await MailboxHttpContext.Json(await context.Send("POST", path + "/decision", "bob", body));
+        if (status != "pending")
+            await MailboxHttpContext.Json(await context.Send("POST", path + "/decision", "bob", body));
         await context.Restart();
-        var summary = await MailboxHttpContext.Json(await context.Send("GET", path + "?requesterMailboxId=alice")); summary.GetProperty("status").GetString().ShouldBe(status);
+        var summary = await MailboxHttpContext.Json(await context.Send("GET", path + "?requesterMailboxId=alice"));
+        summary.GetProperty("status").GetString().ShouldBe(status);
         (await context.Send("GET", path + "?requesterMailboxId=alice", "eve")).StatusCode.ShouldBe(HttpStatusCode.NotFound);
         (await context.Send("POST", path + "/decision", "eve", body)).StatusCode.ShouldBe(HttpStatusCode.NotFound);
         (await context.Send("POST", path + "/decision", "alice", body)).StatusCode.ShouldBe(HttpStatusCode.NotFound);
-        var inbox = await MailboxHttpContext.Json(await context.Send("GET", "/v1/inbox", "bob")); inbox.GetProperty("items").GetArrayLength().ShouldBe(1);
+        var inbox = await MailboxHttpContext.Json(await context.Send("GET", "/v1/inbox", "bob"));
+        inbox.GetProperty("items").GetArrayLength().ShouldBe(1);
     }
 
     [Fact]
@@ -47,7 +52,8 @@ public sealed class ContactHttpTests
             context.Data.Card("expired") with { ExpiresAt = context.Data.Clock.GetUtcNow().AddSeconds(1) },
             context.Data.Card("revoked") with { RevokedAt = context.Data.Clock.GetUtcNow() } })
             Require(context.Data.Store.PutCard(Bob, card, Ct));
-        context.Data.Clock.Advance(TimeSpan.FromSeconds(1)); await context.Start();
+        context.Data.Clock.Advance(TimeSpan.FromSeconds(1));
+        await context.Start();
         var publicPage = await MailboxHttpContext.Json(await context.Send("GET", "/v1/contacts/cards", null));
         publicPage.GetProperty("items").GetArrayLength().ShouldBe(1);
         publicPage.GetProperty("items")[0].GetProperty("cardId").GetString().ShouldBe("public");
@@ -64,9 +70,19 @@ public sealed class ContactHttpTests
     [Fact]
     public async Task Card_Publication_DerivesOwnerAndPrivateNeverAutoaccepts()
     {
-        await using var context = new MailboxHttpContext(); await context.Start(); var now = context.Data.Clock.GetUtcNow();
-        var body = new { cardId = "private-export", visibility = "unlisted", createdAt = now, expiresAt = (DateTimeOffset?)null,
-            revokedAt = (DateTimeOffset?)null, audienceHint = "intranet", methods = new[] { new { methodId = "relay", version = 1, transport = "relay", endpoint = "https://relay.example.test", instructions = "opaque" } } };
+        await using var context = new MailboxHttpContext();
+        await context.Start();
+        var now = context.Data.Clock.GetUtcNow();
+        var body = new
+        {
+            cardId = "private-export",
+            visibility = "unlisted",
+            createdAt = now,
+            expiresAt = (DateTimeOffset?)null,
+            revokedAt = (DateTimeOffset?)null,
+            audienceHint = "intranet",
+            methods = new[] { new { methodId = "relay", version = 1, transport = "relay", endpoint = "https://relay.example.test", instructions = "opaque" } }
+        };
         var published = await MailboxHttpContext.Json(await context.Send("PUT", "/v1/contacts/cards", "bob", body));
         published.GetProperty("ownerMailboxId").GetString().ShouldBe("bob");
         var submission = context.Data.Submission(context.Data.Card("private-export"));
@@ -78,7 +94,9 @@ public sealed class ContactHttpTests
     [Fact]
     public async Task Blocks_ParticipantFlagsAndGeneration_FenceEveryCard()
     {
-        await using var context = new MailboxHttpContext(); var relation = context.Data.Connect(); await context.Start();
+        await using var context = new MailboxHttpContext();
+        var relation = context.Data.Connect();
+        await context.Start();
         var channel = await MailboxHttpContext.Json(await context.Send("GET", "/v1/contacts/channel?peerMailboxId=alice", "bob"));
         channel.GetProperty("generation").GetInt64().ShouldBe(relation.Generation);
         (await context.Send("GET", "/v1/contacts/channel?peerMailboxId=alice", "eve")).StatusCode.ShouldBe(HttpStatusCode.NotFound);
@@ -98,13 +116,17 @@ public sealed class ContactHttpTests
     [Fact]
     public async Task Decision_OptionalOpaqueReply_OnlyRequesterInboxContainsPayload()
     {
-        await using var context = new MailboxHttpContext(); var request = context.Data.Request(); await context.Start();
+        await using var context = new MailboxHttpContext();
+        var request = context.Data.Request();
+        await context.Start();
         var reply = context.Data.Payload("secret reply");
         await MailboxHttpContext.Json(await context.Send("POST", $"/v1/contacts/requests/{request.Request.RequestId.Value}/decision", "bob",
             new { requesterMailboxId = "alice", expectedGeneration = request.Generation, status = "needsAction", reply = MailboxHttpContext.Payload(reply) }));
         var summary = await MailboxHttpContext.Json(await context.Send("GET", $"/v1/contacts/requests/{request.Request.RequestId.Value}?requesterMailboxId=alice"));
-        summary.TryGetProperty("reply", out _).ShouldBeFalse(); summary.GetProperty("replyMessageId").GetGuid().ShouldBe(reply.MessageId);
-        var inbox = await MailboxHttpContext.Json(await context.Send("GET", "/v1/inbox")); inbox.GetProperty("items")[0].GetProperty("envelope").GetProperty("payload").GetProperty("messageId").GetGuid().ShouldBe(reply.MessageId);
+        summary.TryGetProperty("reply", out _).ShouldBeFalse();
+        summary.GetProperty("replyMessageId").GetGuid().ShouldBe(reply.MessageId);
+        var inbox = await MailboxHttpContext.Json(await context.Send("GET", "/v1/inbox"));
+        inbox.GetProperty("items")[0].GetProperty("envelope").GetProperty("payload").GetProperty("messageId").GetGuid().ShouldBe(reply.MessageId);
     }
     private static CancellationToken Ct => MailboxHttpContext.Ct;
     [Fact]
@@ -126,7 +148,9 @@ public sealed class ContactHttpTests
     [Fact]
     public async Task Cards_PublicIdNamedOwned_RemainsDiscoverable()
     {
-        await using var context = new MailboxHttpContext(); Require(context.Data.Store.PutCard(Bob, context.Data.Card("owned"), Ct)); await context.Start();
+        await using var context = new MailboxHttpContext();
+        Require(context.Data.Store.PutCard(Bob, context.Data.Card("owned"), Ct));
+        await context.Start();
         var card = await MailboxHttpContext.Json(await context.Send("GET", "/v1/contacts/card?cardId=owned", null));
         card.GetProperty("cardId").GetString().ShouldBe("owned");
     }

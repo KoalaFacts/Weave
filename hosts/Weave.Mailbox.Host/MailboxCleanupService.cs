@@ -11,7 +11,8 @@ internal sealed partial class MailboxCleanupService(IExpiringMailboxStore store,
         using var timer = new PeriodicTimer(options.CleanupInterval, timeProvider);
         while (await timer.WaitForNextTickAsync(stoppingToken))
         {
-            try { store.Sweep(options.CleanupBatchSize, stoppingToken); }
+            try
+            { store.Sweep(options.CleanupBatchSize, stoppingToken); }
             catch (SqliteException) { StorageUnavailable(logger); }
         }
     }

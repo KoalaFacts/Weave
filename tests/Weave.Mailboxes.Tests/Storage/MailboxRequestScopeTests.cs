@@ -8,7 +8,9 @@ public sealed class MailboxRequestScopeTests
     [Fact]
     public void Request_SameIdDifferentRequesters_IsolatesAckReplyBlockPurgeAndRestart()
     {
-        using var context = new MailboxTestContext(); var card = context.Card(); Require(context.Store.PutCard(Bob, card, Ct));
+        using var context = new MailboxTestContext();
+        var card = context.Card();
+        Require(context.Store.PutCard(Bob, card, Ct));
         var submission = context.Submission(card);
         var alice = Require(context.Store.RequestContact(Alice, submission, Ct));
         var eve = Require(context.Store.RequestContact(Eve, submission, Ct));
@@ -30,7 +32,9 @@ public sealed class MailboxRequestScopeTests
         context.Store.ReadPending(Eve, null, 10, Ct).Items.Single().Envelope.MessageId.ShouldBe(eveReply.MessageId);
         Require(context.Store.SetBlocked(Bob, Alice.MailboxId, alice.Generation, true, Ct));
         context.Store.GetContactRequest(Bob, eve.Request.Locator, Ct)!.Status.ShouldBe(ContactStatus.Accepted);
-        context.Clock.Advance(TimeSpan.FromDays(8)); while (context.Store.Sweep(1000, Ct) != 0) { }
+        context.Clock.Advance(TimeSpan.FromDays(8));
+        while (context.Store.Sweep(1000, Ct) != 0)
+        { }
         var restarted = context.Restart();
         restarted.GetContactRequest(Bob, alice.Request.Locator, Ct).ShouldBeNull();
         restarted.GetContactRequest(Bob, eve.Request.Locator, Ct)!.Status.ShouldBe(ContactStatus.Accepted);
@@ -43,10 +47,12 @@ public sealed class MailboxRequestScopeTests
     [Fact]
     public void ReadPending_MessagePurposeLocatorDiffers_FailsClosedWithoutOtherRequesterBody()
     {
-        using var context = new MailboxTestContext(); var request = context.Request();
+        using var context = new MailboxTestContext();
+        var request = context.Request();
         using var connection = new Microsoft.Data.Sqlite.SqliteConnection(new Microsoft.Data.Sqlite.SqliteConnectionStringBuilder
-            { DataSource = context.Options.DatabasePath, Pooling = false }.ToString());
-        connection.Open(); using var command = connection.CreateCommand();
+        { DataSource = context.Options.DatabasePath, Pooling = false }.ToString());
+        connection.Open();
+        using var command = connection.CreateCommand();
         command.CommandText = "UPDATE mailbox_messages SET request_requester='eve' WHERE purpose=1";
         command.ExecuteNonQuery().ShouldBe(1);
         context.Store.ReadPending(Bob, null, 10, Ct).Items.ShouldBeEmpty();

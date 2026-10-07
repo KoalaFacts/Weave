@@ -2,7 +2,6 @@
 """Require complete license evidence; SPDX decisions remain owned by the pinned action."""
 import argparse
 import json
-import os
 from pathlib import Path
 import sys
 
@@ -53,9 +52,15 @@ def inspect_licenses(payload):
 
 def main(argv=None):
     parser = argparse.ArgumentParser(description=__doc__)
+    parser.add_argument('--changes', type=Path, required=True)
     parser.add_argument('--report', type=Path, required=True)
     args = parser.parse_args(argv)
-    report = inspect_licenses(os.environ.get('INVALID_LICENSE_CHANGES', ''))
+    try:
+        with args.changes.open('rb') as source:
+            payload = source.read(MAX_BYTES + 1).decode('utf-8')
+    except (OSError, UnicodeError):
+        payload = ''
+    report = inspect_licenses(payload)
     args.report.parent.mkdir(parents=True, exist_ok=True)
     args.report.write_text(json.dumps(report, indent=2) + '\n', encoding='utf-8')
     passed = report['status'] == 'available'

@@ -22,7 +22,10 @@ public sealed partial class SqliteMailboxStore : IExpiringMailboxStore
         Directory.CreateDirectory(Path.GetDirectoryName(path)!);
         _connectionString = new SqliteConnectionStringBuilder
         {
-            DataSource = path, Mode = SqliteOpenMode.ReadWrite, Pooling = false, DefaultTimeout = 5
+            DataSource = path,
+            Mode = SqliteOpenMode.ReadWrite,
+            Pooling = false,
+            DefaultTimeout = 5
         }.ToString();
         using var connection = Open(allowCreate: !options.RequireExistingStorage);
         InitializeSchema(connection, options.RequireExistingStorage);
@@ -31,7 +34,8 @@ public sealed partial class SqliteMailboxStore : IExpiringMailboxStore
     private SqliteConnection Open(bool allowCreate = false)
     {
         var builder = new SqliteConnectionStringBuilder(_connectionString);
-        if (allowCreate) builder.Mode = SqliteOpenMode.ReadWriteCreate;
+        if (allowCreate)
+            builder.Mode = SqliteOpenMode.ReadWriteCreate;
         var connection = new SqliteConnection(builder.ToString());
         try
         {
@@ -52,7 +56,8 @@ public sealed partial class SqliteMailboxStore : IExpiringMailboxStore
     {
         ct.ThrowIfCancellationRequested();
         var connection = Open();
-        try { return new(connection, write, ct); }
+        try
+        { return new(connection, write, ct); }
         catch (SqliteException) { connection.Dispose(); throw; }
     }
 
@@ -74,8 +79,10 @@ public sealed partial class SqliteMailboxStore : IExpiringMailboxStore
 
     private bool EnsureOwner(MailboxDatabaseSession db, string owner)
     {
-        if (db.Scalar("SELECT count(*) FROM mailbox_owners WHERE mailbox = $owner", ("$owner", owner)) != 0) return true;
-        if (db.Scalar("SELECT count(*) FROM mailbox_owners") >= _options.MaximumMailboxes) return false;
+        if (db.Scalar("SELECT count(*) FROM mailbox_owners WHERE mailbox = $owner", ("$owner", owner)) != 0)
+            return true;
+        if (db.Scalar("SELECT count(*) FROM mailbox_owners") >= _options.MaximumMailboxes)
+            return false;
         db.Execute("INSERT INTO mailbox_owners(mailbox) VALUES($owner)", ("$owner", owner));
         return true;
     }

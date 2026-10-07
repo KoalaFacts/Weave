@@ -31,7 +31,8 @@ public sealed class MailboxControlAuthentication
 
     internal MailboxControlScope? Authenticate(string secret)
     {
-        if (secret.Length is < 32 or > 512 || secret.Any(char.IsWhiteSpace)) return null;
+        if (secret.Length is < 32 or > 512 || secret.Any(char.IsWhiteSpace))
+            return null;
         var hash = SHA256.HashData(Encoding.UTF8.GetBytes(secret));
         MailboxControlScope? scope = null;
         foreach (var credential in _credentials)

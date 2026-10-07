@@ -85,15 +85,19 @@ export function inspectPolicy(changesPayload, evidencePayload) {
 }
 
 if (process.argv[1] && fileURLToPath(import.meta.url) === process.argv[1]) {
-  const [evidencePath, reportPath] = process.argv.slice(2);
-  if (!evidencePath || !reportPath || process.argv.length !== 4) {
-    console.error('::error::License policy check requires evidence and report paths.');
+  const [changesPath, evidencePath, reportPath] = process.argv.slice(2);
+  if (!changesPath || !evidencePath || !reportPath || process.argv.length !== 5) {
+    console.error('::error::License policy check requires changes, evidence and report paths.');
     process.exitCode = 2;
   } else {
     let report;
     try {
-      report = inspectPolicy(process.env.DEPENDENCY_CHANGES,
+      report = inspectPolicy(readFileSync(changesPath, 'utf8'),
         readFileSync(evidencePath, 'utf8'));
+    } catch {
+      report = unavailable('invalid-license-evidence');
+    }
+    try {
       writeFileSync(reportPath, `${JSON.stringify(report, null, 2)}\n`, 'utf8');
     } catch {
       report = unavailable('invalid-license-evidence');

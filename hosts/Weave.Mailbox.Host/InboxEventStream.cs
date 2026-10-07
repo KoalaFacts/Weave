@@ -13,7 +13,8 @@ internal sealed class InboxEventStream(IExpiringMailboxStore store, MailboxHostO
     internal async Task RunAsync(HttpContext context)
     {
         var scope = context.Features.Get<MailboxControlScope>()!;
-        if (!Acquire(scope.Authority.MailboxId.Value)) { await MailboxHttp.ErrorAsync(context, 429, "capacity"); return; }
+        if (!Acquire(scope.Authority.MailboxId.Value))
+        { await MailboxHttp.ErrorAsync(context, 429, "capacity"); return; }
         using var lifetime = new CancellationTokenSource(options.StreamLifetime, timeProvider);
         using var cancelled = CancellationTokenSource.CreateLinkedTokenSource(context.RequestAborted, lifetime.Token);
         var ct = cancelled.Token;
@@ -27,15 +28,21 @@ internal sealed class InboxEventStream(IExpiringMailboxStore store, MailboxHostO
                 string? cursor = null;
                 do
                 {
-                    if (!authentication.IsCurrent(scope)) return;
+                    if (!authentication.IsCurrent(scope))
+                        return;
                     var page = store.ReadPending(scope.Authority, cursor, 1, ct);
-                    if (page.Items.IsEmpty) break;
+                    if (page.Items.IsEmpty)
+                        break;
                     var message = page.Items[0];
                     var json = JsonSerializer.SerializeToUtf8Bytes(MailboxWireMapping.Message(message), MailboxJsonContext.Default.ReceivedMessageWire);
                     var prefix = System.Text.Encoding.UTF8.GetBytes($"id: {message.Envelope.MessageId:D}\nevent: message\ndata: ");
                     var frame = new byte[prefix.Length + json.Length + 2];
-                    prefix.CopyTo(frame, 0); json.CopyTo(frame, prefix.Length); frame[^2] = (byte)'\n'; frame[^1] = (byte)'\n';
-                    if (!authentication.IsCurrent(scope)) return;
+                    prefix.CopyTo(frame, 0);
+                    json.CopyTo(frame, prefix.Length);
+                    frame[^2] = (byte)'\n';
+                    frame[^1] = (byte)'\n';
+                    if (!authentication.IsCurrent(scope))
+                        return;
                     await FlushAsync(context, frame, cancelled);
                     cursor = page.NextCursor;
                 } while (cursor is not null);
@@ -67,15 +74,21 @@ internal sealed class InboxEventStream(IExpiringMailboxStore store, MailboxHostO
         lock (_gate)
         {
             var count = _streams.GetValueOrDefault(owner);
-            if (_total >= options.MaximumStreams || count >= options.MaximumStreamsPerMailbox) return false;
-            _streams[owner] = count + 1; _total++; return true;
+            if (_total >= options.MaximumStreams || count >= options.MaximumStreamsPerMailbox)
+                return false;
+            _streams[owner] = count + 1;
+            _total++;
+            return true;
         }
     }
     private void Release(string owner)
     {
         lock (_gate)
         {
-            if (_streams[owner] == 1) _streams.Remove(owner); else _streams[owner]--;
+            if (_streams[owner] == 1)
+                _streams.Remove(owner);
+            else
+                _streams[owner]--;
             _total--;
         }
     }

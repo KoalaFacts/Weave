@@ -1,4 +1,3 @@
-using Weave.Contacts;
 using System.Net;
 using System.Net.Http.Json;
 using System.Security.Cryptography;
@@ -7,6 +6,7 @@ using System.Text.Json;
 using Microsoft.AspNetCore.Builder;
 using Microsoft.AspNetCore.Hosting;
 using Microsoft.Extensions.Logging;
+using Weave.Contacts;
 using Weave.Mailbox.Host;
 using Weave.Mailboxes.Tests.Storage;
 
@@ -56,19 +56,27 @@ internal sealed class MailboxHttpContext : IAsyncDisposable
         HttpCompletionOption completion = HttpCompletionOption.ResponseContentRead, string? lastEventId = null)
     {
         using var request = new HttpRequestMessage(new(method), path);
-        if (owner is not null) request.Headers.Add(MailboxControlAuthentication.HeaderName, Secret(owner));
-        if (lastEventId is not null) request.Headers.Add("Last-Event-ID", lastEventId);
-        if (body is not null) request.Content = JsonContent.Create(body);
+        if (owner is not null)
+            request.Headers.Add(MailboxControlAuthentication.HeaderName, Secret(owner));
+        if (lastEventId is not null)
+            request.Headers.Add("Last-Event-ID", lastEventId);
+        if (body is not null)
+            request.Content = JsonContent.Create(body);
         return await Client.SendAsync(request, completion, Ct);
     }
     public static object Payload(MailboxPayload payload) => new
     {
-        messageId = payload.MessageId, createdAt = payload.CreatedAt, expiresAt = payload.ExpiresAt,
-        payloadEncoding = payload.PayloadEncoding, bytes = Convert.ToBase64String(payload.Bytes.AsSpan())
+        messageId = payload.MessageId,
+        createdAt = payload.CreatedAt,
+        expiresAt = payload.ExpiresAt,
+        payloadEncoding = payload.PayloadEncoding,
+        bytes = Convert.ToBase64String(payload.Bytes.AsSpan())
     };
     public object Message(ContactRelation relation, MailboxPayload? payload = null) => new
     {
-        version = 1, recipientMailboxId = "bob", contactGeneration = relation.Generation,
+        version = 1,
+        recipientMailboxId = "bob",
+        contactGeneration = relation.Generation,
         payload = Payload(payload ?? Data.Payload())
     };
     public static async Task<JsonElement> Json(HttpResponseMessage response, HttpStatusCode expected = HttpStatusCode.OK)
@@ -80,7 +88,8 @@ internal sealed class MailboxHttpContext : IAsyncDisposable
     public async ValueTask DisposeAsync()
     {
         Client?.Dispose();
-        if (_app is not null) { await _app.StopAsync(Ct); await _app.DisposeAsync(); }
+        if (_app is not null)
+        { await _app.StopAsync(Ct); await _app.DisposeAsync(); }
         Data.Dispose();
     }
 }

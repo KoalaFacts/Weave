@@ -12,8 +12,10 @@ internal static class MailboxWireMapping
     internal static ReceiptWire Receipt(MailboxReceipt receipt) => new(receipt.MessageId,
         receipt.SenderMailboxId.Value, receipt.RecipientMailboxId.Value, receipt.State switch
         {
-            MailboxReceiptState.Pending => "pending", MailboxReceiptState.Acknowledged => "acknowledged",
-            MailboxReceiptState.Expired => "expired", MailboxReceiptState.Blocked => "blocked",
+            MailboxReceiptState.Pending => "pending",
+            MailboxReceiptState.Acknowledged => "acknowledged",
+            MailboxReceiptState.Expired => "expired",
+            MailboxReceiptState.Blocked => "blocked",
             _ => throw new ArgumentOutOfRangeException(nameof(receipt))
         }, receipt.ExpiresAt, receipt.TerminalAt);
     internal static ReceivedMessageWire Message(ReceivedMailboxMessage message) => new(message.SenderMailboxId.Value,
@@ -32,13 +34,18 @@ internal static class MailboxWireMapping
         channel.PeerMailboxId.Value, channel.Generation, channel.IsBlockedByMailbox, channel.IsBlockedByPeer, channel.CurrentRequest is { } request ? new(request.RequesterMailboxId.Value, request.RequestId.Value) : null);
     internal static string Status(ContactStatus status) => status switch
     {
-        ContactStatus.Pending => "pending", ContactStatus.NeedsAction => "needsAction",
-        ContactStatus.Accepted => "accepted", ContactStatus.Rejected => "rejected",
+        ContactStatus.Pending => "pending",
+        ContactStatus.NeedsAction => "needsAction",
+        ContactStatus.Accepted => "accepted",
+        ContactStatus.Rejected => "rejected",
         _ => throw new ArgumentOutOfRangeException(nameof(status))
     };
     internal static ContactStatus? Status(string status) => status switch
     {
-        "pending" => ContactStatus.Pending, "needsAction" => ContactStatus.NeedsAction,
-        "accepted" => ContactStatus.Accepted, "rejected" => ContactStatus.Rejected, _ => null
+        "pending" => ContactStatus.Pending,
+        "needsAction" => ContactStatus.NeedsAction,
+        "accepted" => ContactStatus.Accepted,
+        "rejected" => ContactStatus.Rejected,
+        _ => null
     };
 }

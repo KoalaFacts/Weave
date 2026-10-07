@@ -13,7 +13,8 @@ public sealed class MailboxCapacityTests
         var first = context.Envelope(relation);
         Require(context.Store.Send(Alice, first, TestContext.Current.CancellationToken));
         context.Store.Send(Alice, context.Envelope(relation), TestContext.Current.CancellationToken).Error.ShouldBe(MailboxError.Capacity);
-        for (var i = 0; i < 3; i++) Require(context.Store.Acknowledge(Bob, Alice.MailboxId, first.MessageId, TestContext.Current.CancellationToken));
+        for (var i = 0; i < 3; i++)
+            Require(context.Store.Acknowledge(Bob, Alice.MailboxId, first.MessageId, TestContext.Current.CancellationToken));
         Require(context.Store.Send(Alice, context.Envelope(relation), TestContext.Current.CancellationToken));
         context.Store.Send(Alice, context.Envelope(relation), TestContext.Current.CancellationToken).Error.ShouldBe(MailboxError.Capacity);
     }

@@ -120,11 +120,13 @@ public sealed class MailboxAdditionalContractTests
     {
         using var context = new MailboxTestContext();
         var relation = context.Connect();
-        for (var i = 0; i < 4; i++) Require(context.Store.Send(Alice, context.Envelope(relation), TestContext.Current.CancellationToken));
+        for (var i = 0; i < 4; i++)
+            Require(context.Store.Send(Alice, context.Envelope(relation), TestContext.Current.CancellationToken));
         context.Clock.Advance(TimeSpan.FromDays(8));
         context.Store.Sweep(1, TestContext.Current.CancellationToken).ShouldBe(1);
         context.Scalar("SELECT count(*) FROM mailbox_messages WHERE payload IS NOT NULL").ShouldBe(3);
-        while (context.Store.Sweep(2, TestContext.Current.CancellationToken) != 0) { }
+        while (context.Store.Sweep(2, TestContext.Current.CancellationToken) != 0)
+        { }
         context.Scalar("SELECT count(*) FROM mailbox_messages").ShouldBe(0);
         context.Store.GetContactRequest(Alice, relation.Request.Locator, TestContext.Current.CancellationToken)!.Status.ShouldBe(ContactStatus.Accepted);
         Require(context.Store.Send(Alice, context.Envelope(relation), TestContext.Current.CancellationToken));
