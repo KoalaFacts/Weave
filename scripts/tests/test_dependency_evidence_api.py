@@ -6,6 +6,8 @@ import io
 import json
 import os
 from pathlib import Path
+import shutil
+import subprocess
 import tempfile
 import unittest
 from unittest.mock import patch
@@ -49,10 +51,61 @@ class EvidenceApiTests(unittest.TestCase):
         return evidence.inspect_comparison("owner/repo", BASE, HEAD, "synthetic-token", opener)
 
     def test_empty_delta_without_warnings_is_available_not_missing_evidence(self):
-        self.assertEqual(self.check(Opener(Reply())), {"dependency_changes": 0, "pages": 1})
+        self.assertEqual(self.check(Opener(Reply())), {"dependency_changes": 0, "pages": 1,
+                                                     "dependency_records": []})
 
     def test_nonempty_delta_is_counted(self):
         self.assertEqual(self.check(Opener(Reply(json.dumps([CHANGE]).encode())))["dependency_changes"], 1)
+
+    def test_complete_records_are_retained_independently_across_pages(self):
+        first = {**CHANGE, 'license': 'MIT', 'vulnerabilities': [],
+                 'metadata': {'source': 'first-page', 'ratio': 0.5}}
+        last = {**CHANGE, 'manifest': 'last.lock', 'license': 'GPL-3.0',
+                'vulnerabilities': [{'severity': 'high', 'advisory_ghsa_id': 'fixture'}]}
+        result = self.check(Opener(Reply(json.dumps([first]).encode(), link=NEXT),
+                                  Reply(json.dumps([last]).encode())))
+        self.assertEqual(result.get('dependency_records'), [first, last])
+        self.assertEqual(result['dependency_changes'], 2)
+        self.assertEqual(result['pages'], 2)
+
+    def test_nonfinite_or_duplicate_field_comparisons_are_not_valid_evidence(self):
+        for body in (b'[{"change_type":"added","manifest":"fixture","metadata":NaN}]',
+                     b'[{"change_type":"added","manifest":"fixture","metadata":Infinity}]',
+                     b'[{"change_type":"added","manifest":"fixture","metadata":1e999}]',
+                     b'[{"change_type":"added","manifest":"fixture","license":"GPL-3.0","license":"MIT"}]'):
+            with self.subTest(body=body):
+                with self.assertRaises(evidence.EvidenceUnavailable) as caught:
+                    self.check(Opener(Reply(body)))
+                self.assertEqual(caught.exception.code, 'invalid-comparison-response')
+
+    @unittest.skipUnless(shutil.which('node'), 'Node is required for the comparison file boundary')
+    def test_independent_preflight_records_cross_the_real_node_file_boundary(self):
+        records = [{**CHANGE, 'name': f'fixture-{index}', 'version': '1.0.0',
+                    'package_url': f'pkg:nuget/fixture-{index}@1.0.0', 'license': 'MIT',
+                    'metadata': {'ratio': 0.5, 'unicode': '雪'}, 'vulnerabilities': []}
+                   for index in range(199)]
+        comparison = self.check(Opener(Reply(json.dumps(records).encode())))
+        helper = (ROOT / 'tools/dependency-license-policy/comparison-evidence.mjs').as_uri()
+        script = ("import {readFileSync} from 'node:fs'; "
+                  f"import {{inspectComparison}} from {json.dumps(helper)}; "
+                  "const result = inspectComparison(readFileSync(process.argv[1], 'utf8'), "
+                  "readFileSync(process.argv[2], 'utf8')); "
+                  "console.log(JSON.stringify({status:result.status, "
+                  "count:result.changes?.length, failure_code:result.failure_code})); "
+                  "process.exitCode = result.status === 'available' ? 0 : 1;")
+        with tempfile.TemporaryDirectory() as directory:
+            changes, report = Path(directory) / 'changes.json', Path(directory) / 'report.json'
+            report.write_text(json.dumps({'status': 'available', **comparison}, indent=2))
+            for actual, status in ((records[:196] * 3 + records[196:], 'available'),
+                                   (records[:-1] + [{**records[-1], 'name': 'substituted'}], 'unavailable')):
+                with self.subTest(status=status):
+                    changes.write_text(json.dumps(actual))
+                    result = subprocess.run([shutil.which('node'), '--input-type=module', '-e', script,
+                                             str(changes), str(report)], capture_output=True, text=True, timeout=10)
+                    self.assertEqual(result.returncode, 0 if status == 'available' else 1, result.stderr)
+                    self.assertEqual(json.loads(result.stdout),
+                                     {'status': 'available', 'count': 199} if status == 'available' else
+                                     {'status': 'unavailable', 'failure_code': 'incomplete-dependency-comparison'})
 
     def test_missing_base_or_head_snapshot_blocks_even_an_empty_delta(self):
         for side in ("base", "head"):
@@ -122,12 +175,14 @@ class EvidenceApiTests(unittest.TestCase):
             result = self.check(opener)
         except evidence.EvidenceUnavailable as error:
             self.fail(f"Complete bounded comparison was rejected: {error.code}")
-        self.assertEqual(result, {"dependency_changes": 280, "pages": 1})
+        self.assertEqual(result, {"dependency_changes": 280, "pages": 1,
+                                 "dependency_records": [CHANGE] * 280})
         self.assertEqual(len(opener.requests), 1)
 
     def test_exactly_one_hundred_without_next_does_not_invent_a_page(self):
         opener = Opener(Reply(json.dumps([CHANGE] * 100).encode()), Reply())
-        self.assertEqual(self.check(opener), {"dependency_changes": 100, "pages": 1})
+        self.assertEqual(self.check(opener), {"dependency_changes": 100, "pages": 1,
+                                            "dependency_records": [CHANGE] * 100})
         self.assertEqual(len(opener.requests), 1)
 
     def test_total_entry_budget_is_preserved_for_complete_large_responses(self):
@@ -186,6 +241,28 @@ class EvidenceApiTests(unittest.TestCase):
             self.assertEqual(document["status"], "unavailable")
             self.assertNotIn("synthetic-token", report.read_text() + output.getvalue() + summary.read_text())
             self.assertIn("review blocked", summary.read_text())
+
+    def test_cli_available_report_retains_independent_records_and_exact_refs(self):
+        records = [{**CHANGE, 'name': 'private-independent-package', 'license': 'MIT',
+                    'vulnerabilities': [{'severity': 'moderate', 'advisory_ghsa_id': 'fixture'}]}]
+        opener = Opener(Reply(json.dumps(records).encode()))
+        with tempfile.TemporaryDirectory() as directory:
+            report = Path(directory) / 'evidence.json'
+            summary = Path(directory) / 'summary.md'
+            output = io.StringIO()
+            env = {'GITHUB_REPOSITORY': 'owner/repo', 'PR_BASE_SHA': BASE, 'PR_HEAD_SHA': HEAD,
+                   'GH_TOKEN': 'synthetic-token', 'GITHUB_STEP_SUMMARY': str(summary)}
+            with patch.dict(os.environ, env), patch.object(evidence.urllib.request, 'build_opener',
+                                                           return_value=opener), patch('sys.stdout', output):
+                code = evidence.main(['--report', str(report)])
+            self.assertEqual(code, 0)
+            document = json.loads(report.read_text())
+            self.assertEqual(document, {'repository': 'owner/repo', 'base_sha': BASE, 'head_sha': HEAD,
+                                        'status': 'available', 'dependency_changes': 1, 'pages': 1,
+                                        'dependency_records': records})
+            self.assertIn(BASE + '...' + HEAD, opener.requests[0][0].full_url)
+            self.assertNotIn('synthetic-token', report.read_text() + output.getvalue() + summary.read_text())
+            self.assertNotIn('private-independent-package', output.getvalue() + summary.read_text())
 
 
 if __name__ == "__main__":

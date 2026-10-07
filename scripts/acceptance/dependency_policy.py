@@ -51,8 +51,9 @@ def change(license_value):
 
 class Peer(http.server.ThreadingHTTPServer):
     daemon_threads = True
-    def __init__(self, changes, warning):
+    def __init__(self, changes, warning, action_changes=None):
         self.changes, self.warning, self.calls, self.unexpected = changes, warning, [], []
+        self.action_changes = changes if action_changes is None else action_changes
         super().__init__(('127.0.0.1', 0), Handler)
 
 
@@ -60,10 +61,13 @@ class Handler(http.server.BaseHTTPRequestHandler):
     def do_GET(self):
         expected = f'/repos/fixture/repo/dependency-graph/compare/{BASE}...{HEAD}'
         self.server.calls.append(self.path)
-        valid = urllib.parse.urlsplit(self.path).path == expected
+        parsed = urllib.parse.urlsplit(self.path)
+        valid = parsed.path == expected
         if not valid:
             self.server.unexpected.append(self.path)
-        body = json.dumps(self.server.changes if valid else {'message': 'Unexpected fixture endpoint'}).encode()
+        records = self.server.action_changes if urllib.parse.parse_qs(parsed.query).get('per_page') == ['5'] \
+            else self.server.changes
+        body = json.dumps(records if valid else {'message': 'Unexpected fixture endpoint'}).encode()
         self.send_response(200 if valid else 404)
         self.send_header('Content-Type', 'application/json')
         self.send_header('Content-Length', str(len(body)))
@@ -92,7 +96,7 @@ class LoopbackOpener:
         return self.inner.open(local, timeout=timeout)
 
 
-def run_case(action, node, name, changes, warning, expected_blocked):
+def run_case(action, node, name, changes, warning, expected_blocked, action_changes=None):
     with tempfile.TemporaryDirectory(prefix='weave-license-fixture-') as directory:
         directory = Path(directory)
         event = directory / 'event.json'
@@ -101,7 +105,7 @@ def run_case(action, node, name, changes, warning, expected_blocked):
         output, summary = directory / 'outputs', directory / 'summary'
         output.touch()
         summary.touch()
-        server = Peer(changes, warning)
+        server = Peer(changes, warning, action_changes)
         thread = threading.Thread(target=lambda: server.serve_forever(poll_interval=0.01), daemon=True)
         thread.start()
         try:
@@ -143,7 +147,8 @@ def run_case(action, node, name, changes, warning, expected_blocked):
                                          env=env, capture_output=True, timeout=10, check=False)
                 guard_exit = checked.returncode
                 comparison_path = directory / 'comparison.json'
-                comparison_path.write_text(json.dumps({'status': 'available', **comparison}))
+                comparison_path.write_text(json.dumps({'status': 'available', 'repository': 'fixture/repo',
+                                                       'base_sha': BASE, 'head_sha': HEAD, **comparison}))
                 policy_path = directory / 'policy.json'
                 policy = ROOT / 'tools/dependency-license-policy/check-license-policy.mjs'
                 changes_path = directory / 'dependency-changes.json'
@@ -169,11 +174,17 @@ def run_case(action, node, name, changes, warning, expected_blocked):
             record = {'case': name, 'action_exit': result.returncode, 'guard_exit': guard_exit,
                       'policy_exit': policy_exit,
                       'policy_status': policy_report['status'] if policy_report else None,
+                      'policy_failure_code': policy_report.get('failure_code') if policy_report else None,
+                      'comparison_counts': {key: policy_report.get(key) for key in
+                                            ('raw_changes', 'distinct_changes', 'independent_raw_changes')}
+                      if policy_report else None,
                       'evidence': evidence_status, 'blocked': blocked, 'expected_blocked': expected_blocked,
                       'invalid_counts': {key: len(value) for key, value in invalid.items()},
                       'requests': len(server.calls), 'deprecation_warning': deprecation_warning}
             record['passed'] = (blocked == expected_blocked and not deprecation_warning and
                                 record['policy_status'] == expected_policy and
+                                (not name.startswith('incomplete-') or
+                                 record['policy_failure_code'] == 'incomplete-dependency-comparison') and
                                 policy_exit == (None if expected_policy is None else
                                                 0 if expected_policy == 'available' else 1))
             return record
@@ -195,25 +206,42 @@ def main():
     if actual != PIN:
         raise SystemExit('The acceptance action must match the reviewed immutable pin.')
     large = [{**change('MIT'), 'name': f'fixture-{index}-' + 'x' * 750} for index in range(199)]
+    distinct = [{**change('MIT'), 'name': f'fixture-{index}'} for index in range(199)]
+    denied = distinct[:-1] + [{**distinct[-1], 'license': 'GPL-3.0'}]
+    unknown = distinct[:-1] + [{**distinct[-1], 'license': None}]
+    twice = distinct[:196] * 2 + distinct[196:]
+    thrice = distinct[:196] * 3 + distinct[196:]
+    denied_thrice = denied[:196] * 3 + denied[196:]
+    unknown_thrice = unknown[:196] * 3 + unknown[196:]
+    substituted = distinct[:-1] + [{**distinct[-1], 'name': 'substituted-action-record'}]
+    missing = distinct[:-1] + [distinct[0]]
+    conflicting = distinct + [{**distinct[0], 'license': 'GPL-3.0'}]
     cases = [
-        ('permitted-license', [change('MIT')], False, False),
-        ('permitted-expression', [change('MIT OR Apache-2.0')], False, False),
-        ('prohibited-gpl', [change('GPL-3.0')], False, True),
-        ('prohibited-agpl', [change('AGPL-3.0')], False, True),
-        ('prohibited-expression', [change('MIT OR GPL-3.0')], False, True),
-        ('invalid-spdx', [change('not-an-spdx-license')], False, True),
-        ('missing-license', [change(None)], False, True),
-        ('noassertion-license', [change('NOASSERTION')], False, True),
-        ('complete-empty-delta', [], False, False),
-        ('missing-snapshot', [], True, True),
-        ('large-permitted-delta', large, False, False),
-        ('prohibited-large-final-change', large[:-1] + [{**large[-1], 'license': 'GPL-3.0'}], False, True),
-        ('unknown-large-final-change', large[:-1] + [{**large[-1], 'license': None}], False, True),
+        ('permitted-license', [change('MIT')], False, False, None),
+        ('permitted-expression', [change('MIT OR Apache-2.0')], False, False, None),
+        ('prohibited-gpl', [change('GPL-3.0')], False, True, None),
+        ('prohibited-agpl', [change('AGPL-3.0')], False, True, None),
+        ('prohibited-expression', [change('MIT OR GPL-3.0')], False, True, None),
+        ('invalid-spdx', [change('not-an-spdx-license')], False, True, None),
+        ('missing-license', [change(None)], False, True, None),
+        ('noassertion-license', [change('NOASSERTION')], False, True, None),
+        ('complete-empty-delta', [], False, False, None),
+        ('missing-snapshot', [], True, True, None),
+        ('large-permitted-delta', large, False, False, None),
+        ('prohibited-large-final-change', large[:-1] + [{**large[-1], 'license': 'GPL-3.0'}], False, True, None),
+        ('unknown-large-final-change', large[:-1] + [{**large[-1], 'license': None}], False, True, None),
+        ('duplicate-comparison-395', distinct, False, False, twice),
+        ('duplicate-comparison-591', distinct, False, False, thrice),
+        ('prohibited-duplicate-final-record', denied, False, True, denied_thrice),
+        ('unknown-duplicate-final-record', unknown, False, True, unknown_thrice),
+        ('incomplete-same-count-substitution', distinct, False, True, substituted),
+        ('incomplete-duplicate-hidden-missing-record', distinct, False, True, missing[:196] * 3 + missing[196:]),
+        ('incomplete-conflicting-license-record', distinct, False, True, conflicting),
     ]
     records = []
-    for name, changes, warning, blocked in cases:
+    for name, changes, warning, blocked, action_changes in cases:
         try:
-            record = run_case(action, args.node, name, changes, warning, blocked)
+            record = run_case(action, args.node, name, changes, warning, blocked, action_changes)
         except Exception as error:
             record = {'case': name, 'passed': False, 'setup_error': str(error)[:3000]}
         records.append(record)
