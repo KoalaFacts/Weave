@@ -328,7 +328,7 @@ For each test, ask: "what bug in the SUT would this catch?" If you can't name on
 
 ### Test coverage — hard rule, 90% minimum
 
-**Every project's line coverage must be ≥ 90%.** No exceptions; no per-project carve-outs. The currently implemented gate is a bounded **tested-owner gate**, not proof that every runtime project satisfies that broader policy. It requires the actual direct runtime owners of all selected test projects (18 assemblies for the current ten suites), including all of `Weave.Product`, `Weave.Mailboxes.Sqlite`, and `Weave.Mailbox.Host`. [Coverage scope and evidence](coverage.md) documents the seven other runtime assemblies and the unresolved gap. Do not treat a tested-owner pass as every-project compliance or an independent merge approval.
+**Every project's line coverage must be ≥ 90%.** No exceptions; no per-project carve-outs. The currently implemented gate is a bounded **tested-owner gate**, not proof that every runtime project satisfies that broader policy. It requires the actual directly exercised runtime owners of all selected test projects (19 assemblies for the current ten suites, including the source-declared dynamic Dashboard load), including all of `Weave.Product`, `Weave.Mailboxes.Sqlite`, and `Weave.Mailbox.Host`. [Coverage scope and evidence](coverage.md) documents the six other runtime assemblies and the unresolved gap. Do not treat a tested-owner pass as every-project compliance or an independent merge approval.
 
 **How to run the gate locally after the Release solution build:**
 ```

@@ -4,14 +4,16 @@ The repository requires at least 90% line coverage for every project, with no ex
 
 ## Explicit ownership
 
-`scripts/coverage-ownership.json` records each actual runtime project's assembly name, direct test-project owners, and allowed runtime-reference contributors. Architecture tests independently compare the manifest with all projects under `src/`, `hosts/`, and `extensions/`, and with direct references and transitive runtime closure. Build-only analyzer references are not runtime contributors. New projects and suites must update this evidence; observed XML cannot define the required inventory.
+`scripts/coverage-ownership.json` records each actual runtime project's assembly name, direct-reference and explicitly declared dynamic test owners, and allowed runtime-reference contributors. Architecture tests independently compare the manifest with all projects under `src/`, `hosts/`, and `extensions/`, and with direct references, the narrowly source-verified dynamic load below, and their transitive runtime closure. Build-only analyzer references are not runtime contributors. New projects and suites must update this evidence; observed XML cannot define the required inventory.
 
-The current ten test projects directly own 18 runtime assemblies. The required scope includes all non-excluded sequence points reported for each assembly, not only the feature under test. All ten suites may contribute to `Weave.Product`. The mailbox suite requires `Weave.Product`, `Weave.Mailboxes.Sqlite`, and `Weave.Mailbox.Host`; none can be absent or empty.
+The current ten test projects directly exercise 19 runtime assemblies: 18 through project references and Dashboard through an explicit dynamic load. The required scope includes all non-excluded sequence points reported for each assembly, not only the feature under test. All ten suites may contribute to `Weave.Product`. The mailbox suite requires `Weave.Product`, `Weave.Mailboxes.Sqlite`, and `Weave.Mailbox.Host`; none can be absent or empty.
 
-The other seven runtime assemblies are explicit coverage-scope gaps:
+`tests/Weave.Silo.Tests/Invocations/DashboardReviewRenderingTests.cs`, method `DashboardReviewRenderingTests.DashboardType`, deliberately uses `Assembly.LoadFrom` on the real solution-built `Weave.Dashboard.dll`. Rendering, session, merge-regression, and host tests call it. The manifest records this single source-backed dynamic owner; the architecture regression verifies the exact relationship and loader evidence. Dashboard is therefore required for the Silo suite, and its runtime dependencies (including Deploy) may contribute from that report. This is not permission to accept arbitrary runtime assemblies or to exempt Dashboard from 90%.
+
+The other six runtime assemblies are explicit coverage-scope gaps:
 
 - `Weave.ServiceDefaults` and `Weave.Silo.Clustering.Postgres`, `.Redis`, `.SqlServer`, and `.Sqlite` are transitively reachable but have no direct test-project owner.
-- `Weave.AppHost` and `Weave.Dashboard` have no current test contributor.
+- `Weave.AppHost` has no current test contributor.
 
 The analyzer prints measured lines and rates for additional runtime assemblies when permitted reports contain them; missing evidence is `N/A`, never 0% or 100%. These diagnostic rows do not enforce a newly invented threshold or silently assert that the broader policy has been met. Resolving the broader ownership/policy gap is a separate decision.
 

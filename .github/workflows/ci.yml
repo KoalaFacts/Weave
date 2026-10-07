@@ -100,6 +100,72 @@ jobs:
           path: ./test-results/**/*.trx
           retention-days: 30
 
+  # One bounded diagnostic for PR190's next transition, never a threshold waiver.
+  exact-base-coverage-diagnostic:
+    name: Exact-base coverage (diagnostic only)
+    if: >-
+      github.event_name == 'pull_request' && github.event.action == 'synchronize' &&
+      github.event.number == 190 &&
+      github.event.before == 'c8bd6e0df89160e9b74826edca9ac258d6e467f4' &&
+      github.event.pull_request.base.sha == 'a7983cc73e05d9d0bb6afb147ab30396b74e6fde'
+    runs-on: ubuntu-latest
+    timeout-minutes: 30
+    permissions:
+      contents: read
+    steps:
+      - name: Initialize diagnostic evidence
+        env:
+          DIAGNOSTIC_HEAD_SHA: ${{ github.event.pull_request.head.sha }}
+          DIAGNOSTIC_BASE_SHA: ${{ github.event.pull_request.base.sha }}
+        run: |
+          mkdir -p "$RUNNER_TEMP/exact-base-coverage"
+          printf 'Diagnostic only; not full-gate or threshold evidence.\nbase=%s\nhelper-head=%s\nrun=%s\nattempt=%s\n' \
+            "$DIAGNOSTIC_BASE_SHA" "$DIAGNOSTIC_HEAD_SHA" "$GITHUB_RUN_ID" "$GITHUB_RUN_ATTEMPT" \
+            > "$RUNNER_TEMP/exact-base-coverage/run-identity.txt"
+
+      - name: Checkout diagnostic helper only
+        uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v6
+        with:
+          ref: ${{ github.event.pull_request.head.sha }}
+          path: diagnostic-tools
+          persist-credentials: false
+
+      - name: Checkout immutable baseline separately
+        uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v6
+        with:
+          ref: a7983cc73e05d9d0bb6afb147ab30396b74e6fde
+          path: baseline
+          persist-credentials: false
+
+      - name: Retain comparison contract without modifying baseline
+        run: |
+          cp diagnostic-tools/scripts/coverage-ownership.json "$RUNNER_TEMP/exact-base-coverage/head-coverage-ownership.json"
+          cp diagnostic-tools/scripts/DevTool/CoverageCommand.cs "$RUNNER_TEMP/exact-base-coverage/head-CoverageCommand.cs"
+          cp diagnostic-tools/scripts/collect_base_coverage.py "$RUNNER_TEMP/exact-base-coverage/collect_base_coverage.py"
+
+      - name: Setup identical .NET SDK
+        uses: ./diagnostic-tools/.github/actions/setup-dotnet
+
+      - name: Setup Node for real process fixtures
+        uses: actions/setup-node@820762786026740c76f36085b0efc47a31fe5020 # v7.0.0
+        with:
+          node-version: '24'
+
+      - name: Collect all nine exact-base suites without enforcing a threshold
+        shell: bash
+        run: |
+          python3 diagnostic-tools/scripts/collect_base_coverage.py --repository baseline \
+            --output "$RUNNER_TEMP/exact-base-coverage" 2>&1 | tee "$RUNNER_TEMP/exact-base-coverage/diagnostic.log"
+
+      - name: Retain diagnostic evidence even on failure
+        if: always()
+        uses: actions/upload-artifact@043fb46d1a93c77aae656e7c1c64a875d1fc6a0a # v7
+        with:
+          name: exact-base-coverage-diagnostic
+          path: ${{ runner.temp }}/exact-base-coverage/
+          if-no-files-found: error
+          retention-days: 30
+
   code-quality:
     name: Code Quality
     runs-on: ubuntu-latest

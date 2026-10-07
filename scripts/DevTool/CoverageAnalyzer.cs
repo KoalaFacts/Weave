@@ -27,7 +27,7 @@ internal sealed class CoverageAnalyzer(CoverageInventory inventory)
             }
         }
 
-        Console.WriteLine($"Scope: direct runtime owners of {string.Join(", ", inventory.TestProjects.Keys.Order(StringComparer.Ordinal))}.");
+        Console.WriteLine($"Scope: directly exercised runtime owners of {string.Join(", ", inventory.TestProjects.Keys.Order(StringComparer.Ordinal))}.");
         Console.WriteLine("This tested-owner gate does not establish every-runtime-project coverage compliance.");
         Console.WriteLine("Coverage per assembly (union of source lines across selected reports):");
         Console.WriteLine($"  {"Assembly",-35} {"Covered",8} {"Valid",8} {"Rate",8}");
@@ -37,7 +37,7 @@ internal sealed class CoverageAnalyzer(CoverageInventory inventory)
             var required = inventory.RequiredAssemblies.Contains(assembly);
             var label = required ? "required" : "diagnostic only";
             if (!required)
-                Console.WriteLine($"Coverage gap outside tested-owner gate: {assembly} ({(inventory.Contributors[assembly].Count == 0 ? "no test contributor" : "no selected direct owner")}).");
+                Console.WriteLine($"Coverage gap outside tested-owner gate: {assembly} ({(inventory.Contributors[assembly].Count == 0 ? "no test contributor" : "no selected direct or dynamic owner")}).");
             if (lines.Count == 0)
             {
                 if (required)
@@ -49,7 +49,7 @@ internal sealed class CoverageAnalyzer(CoverageInventory inventory)
             var rate = (decimal)covered / lines.Count * 100;
             Console.WriteLine(FormattableString.Invariant($"  {assembly,-35} {covered,8} {lines.Count,8} {rate,7:F1}%  {label}"));
             if (required && rate < threshold)
-                belowThreshold.Add(FormattableString.Invariant($"{assembly}: {rate:F1}%"));
+                belowThreshold.Add(FormattableString.Invariant($"{assembly}: {rate:F4}% ({covered}/{lines.Count} lines)"));
         }
         foreach (var error in _errors.Order(StringComparer.Ordinal))
             Console.Error.WriteLine($"Coverage evidence error: {error}");

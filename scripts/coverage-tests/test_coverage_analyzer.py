@@ -92,7 +92,13 @@ class CoverageAnalyzerTests(unittest.TestCase):
                 self.report([self.package(a, [1] * (8 if a == failing else 10) + [0] * (2 if a == failing else 0)) for a in TARGETS]
                             + [('ThirdParty', [('vendor.cs', [1] * 1000)])])
                 output = self.run_gate(1)
-                self.assertIn(f'{failing}: 80.0%', output)
+                self.assertIn(f'{failing}: 80.0000%', output)
+
+    def test_below_threshold_that_rounds_to_ninety_reports_precise_failure(self):
+        (self.root / 'src/Source.cs').write_text('// fixture\n' * 229)
+        self.report([self.package('Weave.Product', [1] * 206 + [0] * 23)]
+                    + [self.package(a) for a in TARGETS if a != 'Weave.Product'])
+        self.assertIn('Weave.Product: 89.9563% (206/229 lines)', self.run_gate(1))
 
     def test_whole_product_keeps_uncovered_legacy_feature(self):
         packages = [self.package(a, [1] * 10) for a in TARGETS]
@@ -283,6 +289,24 @@ class CoverageAnalyzerTests(unittest.TestCase):
         packages[0][1].append(('OnlyModel.cs', [0] * 100))
         self.report(packages, sources=[self.root / 'src/Models'])
         self.row(self.run_gate(0), 'Weave.Product', 9, 10)
+
+    def test_real_manifest_accepts_direct_dynamic_dashboard_owner_and_enforces_threshold(self):
+        self.projects = json.loads((ROOT / 'scripts/coverage-ownership.json').read_text())
+        self.suites = [p.stem for p in (ROOT / 'tests').rglob('*.Tests.csproj')]
+        self.materialize()
+        suite = 'Weave.Silo.Tests'
+        packages = [(entry['assembly'], [(str(Path(path).parent / 'Source.cs'), [1] * 9 + [0])])
+                    for path, entry in self.projects.items()
+                    if suite in entry['contributors'] or entry['assembly'] in {'Weave.Dashboard', 'Weave.Deploy'}]
+        self.report(packages, suite=suite)
+        self.row(self.run_gate(0, '--root', f'tests/{suite}'), 'Weave.Dashboard', 9, 10)
+        dashboard = next(package for package in packages if package[0] == 'Weave.Dashboard')
+        dashboard[1][0] = (dashboard[1][0][0], [1] * 8 + [0] * 2)
+        self.report(packages, suite=suite)
+        self.assertIn('Weave.Dashboard: 80.0000%', self.run_gate(1, '--root', f'tests/{suite}'))
+        self.report([package for package in packages if package[0] != 'Weave.Dashboard'], suite=suite)
+        self.assertIn('Weave.Dashboard: missing non-excluded valid lines',
+                      self.run_gate(2, '--root', f'tests/{suite}'))
 
     def test_unknown_options_and_nonfinite_or_out_of_range_threshold_fail(self):
         self.report()

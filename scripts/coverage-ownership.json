@@ -67,7 +67,8 @@
     "assembly": "Weave.Deploy",
     "contributors": [
       "Weave.Cli.Tests",
-      "Weave.Deploy.Tests"
+      "Weave.Deploy.Tests",
+      "Weave.Silo.Tests"
     ],
     "owners": [
       "Weave.Deploy.Tests"
@@ -206,8 +207,19 @@
   },
   "hosts/Weave.Dashboard/Weave.Dashboard.csproj": {
     "assembly": "Weave.Dashboard",
-    "contributors": [],
-    "owners": []
+    "contributors": [
+      "Weave.Silo.Tests"
+    ],
+    "owners": [
+      "Weave.Silo.Tests"
+    ],
+    "dynamicOwners": [
+      {
+        "suite": "Weave.Silo.Tests",
+        "source": "tests/Weave.Silo.Tests/Invocations/DashboardReviewRenderingTests.cs",
+        "method": "DashboardReviewRenderingTests.DashboardType"
+      }
+    ]
   },
   "hosts/Weave.Host/Weave.Host.csproj": {
     "assembly": "Weave.Silo",

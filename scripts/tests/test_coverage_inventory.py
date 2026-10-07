@@ -8,10 +8,14 @@ ROOT = Path(__file__).resolve().parents[2]
 
 
 def references(project):
-    return {(project.parent / ref.attrib['Include'].replace('\\', '/')).resolve()
-            for ref in ET.parse(project).getroot().iter('ProjectReference')
-            if ref.get('ReferenceOutputAssembly', 'true').lower() != 'false'
-            and ref.get('OutputItemType') != 'Analyzer'}
+    targets = {(project.parent / ref.attrib['Include'].replace('\\', '/')).resolve()
+               for ref in ET.parse(project).getroot().iter('ProjectReference')
+               if ref.get('ReferenceOutputAssembly', 'true').lower() != 'false'
+               and ref.get('OutputItemType') != 'Analyzer'}
+    manifest = json.loads((ROOT / 'scripts/coverage-ownership.json').read_text())
+    targets.update((ROOT / path).resolve() for path, entry in manifest.items()
+                   if any(owner['suite'] == project.stem for owner in entry.get('dynamicOwners', [])))
+    return targets
 
 
 def closure(project, seen=None):
@@ -37,7 +41,7 @@ class CoverageInventoryTests(unittest.TestCase):
             assemblies.append(actual)
         self.assertEqual(len(assemblies), len(set(assemblies)))
 
-    def test_owners_are_direct_references_and_contributors_are_runtime_closure(self):
+    def test_owners_are_direct_or_explicit_dynamic_and_contributors_are_runtime_closure(self):
         manifest = json.loads((ROOT / 'scripts/coverage-ownership.json').read_text())
         suites = sorted((ROOT / 'tests').rglob('*.Tests.csproj'))
         for path, entry in manifest.items():
@@ -52,11 +56,26 @@ class CoverageInventoryTests(unittest.TestCase):
         required = {p['assembly'] for p in manifest.values() if 'Weave.Mailboxes.Tests' in p['owners']}
         self.assertEqual({'Weave.Product', 'Weave.Mailboxes.Sqlite', 'Weave.Mailbox.Host'}, required)
         no_contributor = {p['assembly'] for p in manifest.values() if not p['contributors']}
-        self.assertEqual({'Weave.AppHost', 'Weave.Dashboard'}, no_contributor)
+        self.assertEqual({'Weave.AppHost'}, no_contributor)
         indirect = {p['assembly'] for p in manifest.values() if p['contributors'] and not p['owners']}
         self.assertEqual({'Weave.ServiceDefaults', 'Weave.Silo.Clustering.Postgres',
                           'Weave.Silo.Clustering.Redis', 'Weave.Silo.Clustering.SqlServer',
                           'Weave.Silo.Clustering.Sqlite'}, indirect)
+
+    def test_dashboard_dynamic_ownership_is_narrow_and_source_backed(self):
+        manifest = json.loads((ROOT / 'scripts/coverage-ownership.json').read_text())
+        dynamic = {path: entry['dynamicOwners'] for path, entry in manifest.items() if entry.get('dynamicOwners')}
+        self.assertEqual({'hosts/Weave.Dashboard/Weave.Dashboard.csproj': [{
+            'suite': 'Weave.Silo.Tests',
+            'source': 'tests/Weave.Silo.Tests/Invocations/DashboardReviewRenderingTests.cs',
+            'method': 'DashboardReviewRenderingTests.DashboardType',
+        }]}, dynamic)
+        evidence = (ROOT / dynamic['hosts/Weave.Dashboard/Weave.Dashboard.csproj'][0]['source']).read_text()
+        self.assertIn('internal static Type DashboardType(string name)', evidence)
+        self.assertIn('Assembly.LoadFrom(assemblyPath)', evidence)
+        self.assertIn('"hosts", "Weave.Dashboard", "bin", configuration', evidence)
+        self.assertIn('"net10.0", "Weave.Dashboard.dll"', evidence)
+        self.assertEqual(['Weave.Silo.Tests'], manifest['hosts/Weave.Dashboard/Weave.Dashboard.csproj']['owners'])
 
     def test_ci_restores_pinned_tool_runs_executable_regressions_and_keeps_reports(self):
         workflow = (ROOT / '.github/workflows/ci.yml').read_text().split('  code-quality:')[0]
