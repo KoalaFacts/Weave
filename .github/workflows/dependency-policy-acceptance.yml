@@ -35,6 +35,8 @@ jobs:
           package-manager-cache: false
       - name: Install locked license policy dependencies
         run: npm ci --prefix tools/dependency-license-policy --ignore-scripts --no-audit --no-fund
+      - name: Run file-based license policy regressions
+        run: npm test --prefix tools/dependency-license-policy
       - name: Run real policy with loopback data and no real credentials
         run: |
           node --version

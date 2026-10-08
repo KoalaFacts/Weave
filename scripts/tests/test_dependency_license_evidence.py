@@ -3,7 +3,6 @@ import copy
 import importlib.util
 import io
 import json
-import os
 from pathlib import Path
 import tempfile
 import unittest
@@ -56,13 +55,26 @@ class LicenseEvidenceTests(unittest.TestCase):
         private = {**ENTRY, 'name': 'private-credential-like-text', 'license': 'private-peer-data'}
         with tempfile.TemporaryDirectory() as root:
             report = Path(root) / 'report.json'
+            changes = Path(root) / 'changes.json'
+            changes.write_text(json.dumps({**EMPTY, 'unlicensed': [private]}))
             output = io.StringIO()
-            with patch.dict(os.environ, {'INVALID_LICENSE_CHANGES': json.dumps({**EMPTY, 'unlicensed': [private]})}), \
-                 patch('sys.stdout', output):
-                self.assertEqual(guard.main(['--report', str(report)]), 1)
+            with patch('sys.stdout', output):
+                self.assertEqual(guard.main(['--changes', str(changes), '--report', str(report)]), 1)
             text = report.read_text() + output.getvalue()
             self.assertNotIn('private-', text)
             self.assertEqual(json.loads(report.read_text())['unlicensed'], 1)
+
+    def test_cli_missing_malformed_and_oversized_files_fail_closed(self):
+        with tempfile.TemporaryDirectory() as root:
+            changes, report = Path(root) / 'changes.json', Path(root) / 'report.json'
+            for payload in (None, b'\xff', b'{', b' ' * (guard.MAX_BYTES + 1)):
+                with self.subTest(payload=None if payload is None else len(payload)):
+                    if payload is not None:
+                        changes.write_bytes(payload)
+                    with patch('sys.stdout', io.StringIO()):
+                        self.assertEqual(guard.main(['--changes', str(changes), '--report', str(report)]), 1)
+                    self.assertEqual(json.loads(report.read_text()), {
+                        'status': 'unavailable', 'failure_code': 'invalid-license-evidence'})
 
     def test_ci_runs_evidence_guard_after_the_same_pinned_policy_action(self):
         workflow = (ROOT / '.github/workflows/ci.yml').read_text()

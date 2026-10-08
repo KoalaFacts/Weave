@@ -1,0 +1,763 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "$id": "urn:weave:mailbox:v1",
+  "title": "Weave mailbox relay v1",
+  "$comment": "Runtime enforces UTF-8 byte bounds, creation/expiry/UUIDv7 binding, scoped cursors, and transactional contact generation. Control authority and host configuration are never wire fields.",
+  "$defs": {
+    "payload": {
+      "type": "object",
+      "additionalProperties": false,
+      "properties": {
+        "messageId": {
+          "type": "string",
+          "format": "uuid"
+        },
+        "createdAt": {
+          "type": "string",
+          "format": "date-time"
+        },
+        "expiresAt": {
+          "type": "string",
+          "format": "date-time"
+        },
+        "payloadEncoding": {
+          "type": "string",
+          "minLength": 1,
+          "maxLength": 128
+        },
+        "bytes": {
+          "type": "string",
+          "contentEncoding": "base64",
+          "maxLength": 87384,
+          "description": "At most 65536 decoded bytes; UUIDv7 timestamp matches createdAt to the millisecond"
+        }
+      },
+      "required": [
+        "messageId",
+        "createdAt",
+        "expiresAt",
+        "payloadEncoding",
+        "bytes"
+      ]
+    },
+    "contactMethod": {
+      "type": "object",
+      "additionalProperties": false,
+      "properties": {
+        "methodId": {
+          "type": "string",
+          "minLength": 1,
+          "maxLength": 128
+        },
+        "version": {
+          "type": "integer",
+          "minimum": 1,
+          "maximum": 2147483647
+        },
+        "transport": {
+          "enum": [
+            "relay",
+            "direct"
+          ]
+        },
+        "endpoint": {
+          "type": "string",
+          "minLength": 1,
+          "maxLength": 2048
+        },
+        "instructions": {
+          "type": "string",
+          "maxLength": 65536
+        }
+      },
+      "required": [
+        "methodId",
+        "version",
+        "transport",
+        "endpoint",
+        "instructions"
+      ]
+    },
+    "messageSubmission": {
+      "type": "object",
+      "additionalProperties": false,
+      "properties": {
+        "version": {
+          "const": 1
+        },
+        "recipientMailboxId": {
+          "type": "string",
+          "minLength": 1,
+          "maxLength": 128
+        },
+        "contactGeneration": {
+          "type": "integer",
+          "minimum": 1,
+          "maximum": 9223372036854775807
+        },
+        "payload": {
+          "$ref": "#/$defs/payload"
+        }
+      },
+      "required": [
+        "version",
+        "recipientMailboxId",
+        "contactGeneration",
+        "payload"
+      ]
+    },
+    "contactSubmission": {
+      "type": "object",
+      "additionalProperties": false,
+      "properties": {
+        "requestId": {
+          "type": "string",
+          "pattern": "^[0-9a-f]{8}-[0-9a-f]{4}-7[0-9a-f]{3}-[89ab][0-9a-f]{3}-[0-9a-f]{12}$"
+        },
+        "cardId": {
+          "type": "string",
+          "minLength": 1,
+          "maxLength": 128
+        },
+        "methodId": {
+          "type": "string",
+          "minLength": 1,
+          "maxLength": 128
+        },
+        "payload": {
+          "$ref": "#/$defs/payload"
+        }
+      },
+      "required": [
+        "requestId",
+        "cardId",
+        "methodId",
+        "payload"
+      ]
+    },
+    "contactDecision": {
+      "type": "object",
+      "additionalProperties": false,
+      "properties": {
+        "expectedGeneration": {
+          "type": "integer",
+          "minimum": 1,
+          "maximum": 9223372036854775807
+        },
+        "status": {
+          "enum": [
+            "pending",
+            "needsAction",
+            "accepted",
+            "rejected"
+          ]
+        },
+        "reply": {
+          "anyOf": [
+            {
+              "$ref": "#/$defs/payload"
+            },
+            {
+              "type": "null"
+            }
+          ]
+        },
+        "requesterMailboxId": {
+          "type": "string",
+          "minLength": 1,
+          "maxLength": 128
+        }
+      },
+      "required": [
+        "expectedGeneration",
+        "status",
+        "reply",
+        "requesterMailboxId"
+      ]
+    },
+    "blockSubmission": {
+      "type": "object",
+      "additionalProperties": false,
+      "properties": {
+        "expectedGeneration": {
+          "type": "integer",
+          "minimum": 1,
+          "maximum": 9223372036854775807
+        },
+        "peerMailboxId": {
+          "type": "string",
+          "minLength": 1,
+          "maxLength": 128
+        }
+      },
+      "required": [
+        "expectedGeneration",
+        "peerMailboxId"
+      ]
+    },
+    "cardSubmission": {
+      "type": "object",
+      "additionalProperties": false,
+      "properties": {
+        "cardId": {
+          "type": "string",
+          "minLength": 1,
+          "maxLength": 128
+        },
+        "visibility": {
+          "enum": [
+            "public",
+            "unlisted"
+          ]
+        },
+        "createdAt": {
+          "type": "string",
+          "format": "date-time"
+        },
+        "expiresAt": {
+          "anyOf": [
+            {
+              "type": "string",
+              "format": "date-time"
+            },
+            {
+              "type": "null"
+            }
+          ]
+        },
+        "revokedAt": {
+          "anyOf": [
+            {
+              "type": "string",
+              "format": "date-time"
+            },
+            {
+              "type": "null"
+            }
+          ]
+        },
+        "audienceHint": {
+          "anyOf": [
+            {
+              "type": "string",
+              "maxLength": 1024
+            },
+            {
+              "type": "null"
+            }
+          ]
+        },
+        "methods": {
+          "type": "array",
+          "minItems": 1,
+          "maxItems": 16,
+          "items": {
+            "$ref": "#/$defs/contactMethod"
+          }
+        }
+      },
+      "required": [
+        "cardId",
+        "visibility",
+        "createdAt",
+        "expiresAt",
+        "revokedAt",
+        "audienceHint",
+        "methods"
+      ]
+    },
+    "receipt": {
+      "type": "object",
+      "additionalProperties": false,
+      "properties": {
+        "messageId": {
+          "type": "string",
+          "format": "uuid"
+        },
+        "senderMailboxId": {
+          "type": "string",
+          "minLength": 1,
+          "maxLength": 128
+        },
+        "recipientMailboxId": {
+          "type": "string",
+          "minLength": 1,
+          "maxLength": 128
+        },
+        "state": {
+          "enum": [
+            "pending",
+            "acknowledged",
+            "expired",
+            "blocked"
+          ]
+        },
+        "expiresAt": {
+          "type": "string",
+          "format": "date-time"
+        },
+        "terminalAt": {
+          "anyOf": [
+            {
+              "type": "string",
+              "format": "date-time"
+            },
+            {
+              "type": "null"
+            }
+          ]
+        }
+      },
+      "required": [
+        "messageId",
+        "senderMailboxId",
+        "recipientMailboxId",
+        "state",
+        "expiresAt",
+        "terminalAt"
+      ]
+    },
+    "contactSummary": {
+      "type": "object",
+      "additionalProperties": false,
+      "properties": {
+        "requestId": {
+          "type": "string",
+          "minLength": 1,
+          "maxLength": 128
+        },
+        "cardId": {
+          "type": "string",
+          "minLength": 1,
+          "maxLength": 128
+        },
+        "requesterMailboxId": {
+          "type": "string",
+          "minLength": 1,
+          "maxLength": 128
+        },
+        "recipientMailboxId": {
+          "type": "string",
+          "minLength": 1,
+          "maxLength": 128
+        },
+        "methodId": {
+          "type": "string",
+          "minLength": 1,
+          "maxLength": 128
+        },
+        "generation": {
+          "type": "integer",
+          "minimum": 1,
+          "maximum": 9223372036854775807
+        },
+        "status": {
+          "enum": [
+            "pending",
+            "needsAction",
+            "accepted",
+            "rejected"
+          ]
+        },
+        "createdAt": {
+          "type": "string",
+          "format": "date-time"
+        },
+        "expiresAt": {
+          "type": "string",
+          "format": "date-time"
+        },
+        "requestMessageId": {
+          "anyOf": [
+            {
+              "type": "string",
+              "format": "uuid"
+            },
+            {
+              "type": "null"
+            }
+          ]
+        },
+        "replyMessageId": {
+          "anyOf": [
+            {
+              "type": "string",
+              "format": "uuid"
+            },
+            {
+              "type": "null"
+            }
+          ]
+        }
+      },
+      "required": [
+        "requestId",
+        "cardId",
+        "requesterMailboxId",
+        "recipientMailboxId",
+        "methodId",
+        "generation",
+        "status",
+        "createdAt",
+        "expiresAt",
+        "requestMessageId",
+        "replyMessageId"
+      ]
+    },
+    "contactChannel": {
+      "type": "object",
+      "additionalProperties": false,
+      "properties": {
+        "mailboxId": {
+          "type": "string",
+          "minLength": 1,
+          "maxLength": 128
+        },
+        "peerMailboxId": {
+          "type": "string",
+          "minLength": 1,
+          "maxLength": 128
+        },
+        "generation": {
+          "type": "integer",
+          "minimum": 1,
+          "maximum": 9223372036854775807
+        },
+        "isBlockedByMailbox": {
+          "type": "boolean"
+        },
+        "isBlockedByPeer": {
+          "type": "boolean"
+        },
+        "currentRequest": {
+          "anyOf": [
+            {
+              "$ref": "#/$defs/contactRequestLocator"
+            },
+            {
+              "type": "null"
+            }
+          ]
+        }
+      },
+      "required": [
+        "mailboxId",
+        "peerMailboxId",
+        "generation",
+        "isBlockedByMailbox",
+        "isBlockedByPeer",
+        "currentRequest"
+      ]
+    },
+    "problem": {
+      "type": "object",
+      "additionalProperties": false,
+      "properties": {
+        "status": {
+          "enum": [
+            400,
+            401,
+            404,
+            409,
+            410,
+            413,
+            429,
+            503
+          ]
+        },
+        "title": {
+          "type": "string",
+          "maxLength": 64
+        },
+        "code": {
+          "enum": [
+            "invalid",
+            "unauthenticated",
+            "unavailable",
+            "conflict",
+            "expired",
+            "tooLarge",
+            "capacity",
+            "storage"
+          ]
+        }
+      },
+      "required": [
+        "status",
+        "title",
+        "code"
+      ]
+    },
+    "receivedMessage": {
+      "type": "object",
+      "additionalProperties": false,
+      "properties": {
+        "senderMailboxId": {
+          "type": "string",
+          "minLength": 1,
+          "maxLength": 128
+        },
+        "envelope": {
+          "$ref": "#/$defs/messageSubmission"
+        }
+      },
+      "required": [
+        "senderMailboxId",
+        "envelope"
+      ]
+    },
+    "contactRelation": {
+      "type": "object",
+      "additionalProperties": false,
+      "properties": {
+        "request": {
+          "$ref": "#/$defs/contactSummary"
+        },
+        "generation": {
+          "type": "integer",
+          "minimum": 1,
+          "maximum": 9223372036854775807
+        },
+        "isBlocked": {
+          "type": "boolean"
+        },
+        "isConnected": {
+          "type": "boolean"
+        },
+        "updatedAt": {
+          "type": "string",
+          "format": "date-time"
+        }
+      },
+      "required": [
+        "request",
+        "generation",
+        "isBlocked",
+        "isConnected",
+        "updatedAt"
+      ]
+    },
+    "card": {
+      "type": "object",
+      "additionalProperties": false,
+      "properties": {
+        "ownerMailboxId": {
+          "type": "string",
+          "minLength": 1,
+          "maxLength": 128
+        },
+        "cardId": {
+          "type": "string",
+          "minLength": 1,
+          "maxLength": 128
+        },
+        "visibility": {
+          "enum": [
+            "public",
+            "unlisted"
+          ]
+        },
+        "createdAt": {
+          "type": "string",
+          "format": "date-time"
+        },
+        "expiresAt": {
+          "anyOf": [
+            {
+              "type": "string",
+              "format": "date-time"
+            },
+            {
+              "type": "null"
+            }
+          ]
+        },
+        "revokedAt": {
+          "anyOf": [
+            {
+              "type": "string",
+              "format": "date-time"
+            },
+            {
+              "type": "null"
+            }
+          ]
+        },
+        "audienceHint": {
+          "anyOf": [
+            {
+              "type": "string",
+              "maxLength": 1024
+            },
+            {
+              "type": "null"
+            }
+          ]
+        },
+        "methods": {
+          "type": "array",
+          "minItems": 1,
+          "maxItems": 16,
+          "items": {
+            "$ref": "#/$defs/contactMethod"
+          }
+        }
+      },
+      "required": [
+        "ownerMailboxId",
+        "cardId",
+        "visibility",
+        "createdAt",
+        "expiresAt",
+        "revokedAt",
+        "audienceHint",
+        "methods"
+      ]
+    },
+    "inboxPage": {
+      "type": "object",
+      "additionalProperties": false,
+      "properties": {
+        "items": {
+          "type": "array",
+          "maxItems": 10,
+          "items": {
+            "$ref": "#/$defs/receivedMessage"
+          }
+        },
+        "nextCursor": {
+          "anyOf": [
+            {
+              "type": "string",
+              "maxLength": 1024
+            },
+            {
+              "type": "null"
+            }
+          ]
+        }
+      },
+      "required": [
+        "items",
+        "nextCursor"
+      ]
+    },
+    "outboxPage": {
+      "type": "object",
+      "additionalProperties": false,
+      "properties": {
+        "items": {
+          "type": "array",
+          "maxItems": 10,
+          "items": {
+            "$ref": "#/$defs/receipt"
+          }
+        },
+        "nextCursor": {
+          "anyOf": [
+            {
+              "type": "string",
+              "maxLength": 1024
+            },
+            {
+              "type": "null"
+            }
+          ]
+        }
+      },
+      "required": [
+        "items",
+        "nextCursor"
+      ]
+    },
+    "contactPage": {
+      "type": "object",
+      "additionalProperties": false,
+      "properties": {
+        "items": {
+          "type": "array",
+          "maxItems": 10,
+          "items": {
+            "$ref": "#/$defs/contactSummary"
+          }
+        },
+        "nextCursor": {
+          "anyOf": [
+            {
+              "type": "string",
+              "maxLength": 1024
+            },
+            {
+              "type": "null"
+            }
+          ]
+        }
+      },
+      "required": [
+        "items",
+        "nextCursor"
+      ]
+    },
+    "cardPage": {
+      "type": "object",
+      "additionalProperties": false,
+      "properties": {
+        "items": {
+          "type": "array",
+          "maxItems": 10,
+          "items": {
+            "$ref": "#/$defs/card"
+          }
+        },
+        "nextCursor": {
+          "anyOf": [
+            {
+              "type": "string",
+              "maxLength": 1024
+            },
+            {
+              "type": "null"
+            }
+          ]
+        }
+      },
+      "required": [
+        "items",
+        "nextCursor"
+      ]
+    },
+    "ackSubmission": {
+      "type": "object",
+      "additionalProperties": false,
+      "properties": {
+        "senderMailboxId": {
+          "type": "string",
+          "minLength": 1,
+          "maxLength": 128
+        }
+      },
+      "required": [
+        "senderMailboxId"
+      ]
+    },
+    "contactRequestLocator": {
+      "type": "object",
+      "additionalProperties": false,
+      "properties": {
+        "requesterMailboxId": {
+          "type": "string",
+          "minLength": 1,
+          "maxLength": 128
+        },
+        "requestId": {
+          "type": "string",
+          "pattern": "^[0-9a-f]{8}-[0-9a-f]{4}-7[0-9a-f]{3}-[89ab][0-9a-f]{3}-[0-9a-f]{12}$"
+        }
+      },
+      "required": [
+        "requesterMailboxId",
+        "requestId"
+      ]
+    }
+  }
+}

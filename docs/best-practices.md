@@ -328,18 +328,21 @@ For each test, ask: "what bug in the SUT would this catch?" If you can't name on
 
 ### Test coverage — hard rule, 90% minimum
 
-**Every project's line coverage must be ≥ 90%. CI fails when any single project is below.** No exceptions; no per-project carve-outs. Exclusions from the coverage number are narrow and justified in `coverage.runsettings` — source-generated code, Program.cs, DTO/record-only files, and actor state models. Everything else counts.
+**Every project's line coverage must be ≥ 90%.** No exceptions; no per-project carve-outs. The currently implemented gate is a bounded **tested-owner gate**, not proof that every runtime project satisfies that broader policy. It requires the actual directly exercised runtime owners of all selected test projects (19 assemblies for the current ten suites, including the source-declared dynamic Dashboard load), including all of `Weave.Product`, `Weave.Mailboxes.Sqlite`, and `Weave.Mailbox.Host`. [Coverage scope and evidence](coverage.md) documents the six other runtime assemblies and the unresolved gap. Do not treat a tested-owner pass as every-project compliance or an independent merge approval.
 
-**How to run the gate locally:**
+**How to run the gate locally after the Release solution build:**
 ```
-dotnet tool restore
-dotnet run --project scripts/DevTool -- coverage --threshold 90
+dotnet tool restore --tool-manifest .config/dotnet-tools.json
+dotnet restore scripts/DevTool/DevTool.csproj --locked-mode
+dotnet build scripts/DevTool/DevTool.csproj --no-restore -c Release
+python3 -m unittest discover -s scripts/coverage-tests -v
+dotnet run --project scripts/DevTool --no-build --no-restore -c Release -- coverage --threshold 90
 ```
-The DevTool finds all test projects, runs `dotnet dotnet-coverage collect` per project, then parses the Cobertura XML. Exit code 1 = any project below threshold. Use `--skip-collect` to re-analyze existing results without re-running tests.
+The DevTool discovers selected test projects, runs the pinned `dotnet-coverage` collector per project, requires each expected report, then unions Cobertura source-line evidence across permitted contributors. Each required assembly must independently reach 90%; an average cannot rescue one below threshold. Exit 1 means a threshold or collection failure; exit 2 means missing/invalid evidence. `--skip-collect` re-analyzes the exact selected reports; `--root` narrows test-project selection and is explicitly scoped output.
 
-**Inner loop stays fast.** `dotnet test` without coverage runs as usual — `dotnet-coverage` is a local tool (`.config/dotnet-tools.json`) that wraps externally and only runs when invoked by the DevTool or CI. No coverage packages are added to test projects.
+**Inner loop stays fast.** Ordinary `dotnet test` runs without coverage. CI runs the collector and tested-owner gate after successful build/test, and retains raw XML and logs even on failure. No coverage packages are added to test projects.
 
-**Current baseline (captured at doc time):** overall **23.9%**. The 90% line is a target we're intentionally setting ABOVE current state — the enforcement gate is off in local dev until the gap closes. The gap is tracked as an item in `docs/audit-findings.md` and closes through real new tests, not coverage-gaming shortcuts.
+The previous 23.9% figure used obsolete ownership accounting and is not a current verified baseline. Current percentages require a successful real collection and corrected analyzer output. A successful synthetic analyzer regression run does not measure product coverage. Existing exclusions remain source paths containing `obj` or `Models`, `.g.cs`, filenames containing `Surrogate`, `*Contracts.cs`, and `Program.cs`; no new exclusions are introduced.
 
 **Coverage raised by assertion-free tests is rejected in review.** A PR that brings the number up by 2% while adding five tests that only call the SUT without asserting is worse than no change. The Test Quality rules above apply to every coverage-driven PR.
 

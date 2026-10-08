@@ -2,9 +2,8 @@ import { readFileSync, writeFileSync } from 'node:fs';
 import { fileURLToPath } from 'node:url';
 import { satisfiesAny } from '@onebeyond/spdx-license-satisfies';
 import parseSpdx from 'spdx-expression-parse';
+import { inspectComparison } from './comparison-evidence.mjs';
 
-const MAX_BYTES = 2 * 1024 * 1024;
-const MAX_CHANGES = 2000;
 const DENIED = ['GPL-2.0', 'GPL-3.0', 'AGPL-3.0'];
 // GitHub's dependency graph omits the license for this action. The MIT license
 // was checked at the pinned source commit: https://github.com/actions/setup-node/blob/249970729cb0ef3589644e2896645e5dc5ba9c38/LICENSE
@@ -20,19 +19,9 @@ const unavailable = failure_code => ({ status: 'unavailable', failure_code });
 
 export function inspectPolicy(changesPayload, evidencePayload) {
   try {
-    if (typeof changesPayload !== 'string' || typeof evidencePayload !== 'string' ||
-        Buffer.byteLength(changesPayload) > MAX_BYTES ||
-        Buffer.byteLength(evidencePayload) > MAX_BYTES) {
-      return unavailable('invalid-license-evidence');
-    }
-    const changes = JSON.parse(changesPayload);
-    const evidence = JSON.parse(evidencePayload);
-    if (!Array.isArray(changes) || changes.length > MAX_CHANGES ||
-        evidence?.status !== 'available' ||
-        !Number.isSafeInteger(evidence.dependency_changes) ||
-        evidence.dependency_changes !== changes.length) {
-      return unavailable('incomplete-dependency-comparison');
-    }
+    const comparison = inspectComparison(changesPayload, evidencePayload);
+    if (comparison.status !== 'available') return comparison;
+    const changes = comparison.changes;
 
     let added = 0;
     let removed = 0;
@@ -75,7 +64,11 @@ export function inspectPolicy(changesPayload, evidencePayload) {
         unknown++;
       }
     }
-    const counts = { added, removed, forbidden, unknown };
+    const counts = {
+      added, removed, forbidden, unknown,
+      raw_changes: comparison.raw_changes, distinct_changes: changes.length,
+      independent_raw_changes: comparison.independent_raw_changes,
+    };
     if (forbidden) return { status: 'blocked', failure_code: 'license-policy-denied', ...counts };
     if (unknown) return { ...unavailable('license-evidence-unavailable'), ...counts };
     return { status: 'available', ...counts };
@@ -85,15 +78,19 @@ export function inspectPolicy(changesPayload, evidencePayload) {
 }
 
 if (process.argv[1] && fileURLToPath(import.meta.url) === process.argv[1]) {
-  const [evidencePath, reportPath] = process.argv.slice(2);
-  if (!evidencePath || !reportPath || process.argv.length !== 4) {
-    console.error('::error::License policy check requires evidence and report paths.');
+  const [changesPath, evidencePath, reportPath] = process.argv.slice(2);
+  if (!changesPath || !evidencePath || !reportPath || process.argv.length !== 5) {
+    console.error('::error::License policy check requires changes, evidence and report paths.');
     process.exitCode = 2;
   } else {
     let report;
     try {
-      report = inspectPolicy(process.env.DEPENDENCY_CHANGES,
+      report = inspectPolicy(readFileSync(changesPath, 'utf8'),
         readFileSync(evidencePath, 'utf8'));
+    } catch {
+      report = unavailable('invalid-license-evidence');
+    }
+    try {
       writeFileSync(reportPath, `${JSON.stringify(report, null, 2)}\n`, 'utf8');
     } catch {
       report = unavailable('invalid-license-evidence');

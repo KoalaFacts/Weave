@@ -32,6 +32,16 @@ static int PrintUsage()
 
         Options:
           -h, --help   Show this help message.
+
+        Coverage options (run from the repository root after a Release solution build):
+          -t, --threshold N   Minimum line coverage per required assembly; default 90.
+          -r, --root PATH     Select test projects under PATH; default tests.
+          --skip-collect      Analyze the exact selected reports already in TestResults.
+
+        Coverage scope: direct-reference and declared dynamic owners of selected tests.
+        Transitive and unowned runtime assemblies are diagnostic scope gaps.
+        Exit codes: 0 = tested-owner threshold met, 1 = threshold/collection failure,
+        2 = invalid or missing evidence. A scoped pass is not every-project compliance.
         """);
     return 0;
 }

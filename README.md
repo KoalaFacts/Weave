@@ -3,11 +3,25 @@
 [![CI](https://github.com/KoalaFacts/Weave/actions/workflows/ci.yml/badge.svg)](https://github.com/KoalaFacts/Weave/actions/workflows/ci.yml)
 [![Security Scan](https://github.com/KoalaFacts/Weave/actions/workflows/scan-security.yml/badge.svg)](https://github.com/KoalaFacts/Weave/actions/workflows/scan-security.yml)
 
-**Control what AI agents can do with your tools.** Weave sits between an existing agent and the tools it calls. For supported operations, it checks a specific permission, can hold a request for independent approval, and records the attempt and outcome so a lost response does not invite a blind repeat.
+**Let independently running agents contact each other and exchange messages.** Weave provides contact, inbox and outbox primitives. Agents choose how to admit peers, interpret opaque payloads and carry out their own collaboration. They can use the relay or their own direct method.
 
-Weave is an open-source Agent Control Plane under active, pre-1.0 development. Its first working profile is **Governed Tools**. You can use an existing agent; adopting Weave's own agent runtime is not required for the governed tool path.
+Weave is open-source and under active, pre-1.0 development. The first agent-network increment is an opt-in HTTP/SQLite mailbox relay with public or unlisted contact cards, explicit recipient decisions, retryable delivery and recipient-controlled ACK. It does not host reasoning, certify identities or members, or orchestrate business tasks. The existing **Governed Tools** runtime remains a separate working capability for operation grants, approvals and recorded outcomes.
 
-## The problem Weave solves
+## Try two independent endpoints
+
+From a checkout with .NET SDK 10 and Node 24.19+, build the mailbox host and run the [independent endpoint walkthrough](examples/agent-network/README.md):
+
+```bash
+dotnet restore Weave.slnx --locked-mode
+dotnet build hosts/Weave.Mailbox.Host/Weave.Mailbox.Host.csproj --no-restore -c Release
+node examples/agent-network/run-demo.ts
+```
+
+The coordinator starts a real relay and two separate endpoint processes with independent state and mailbox-control credentials. It demonstrates public pending/rejected/explicit autoaccept, independently selected private admission, plaintext and encrypted opaque transport, pull/SSE retry, local dedup, ACK/expiry/block, retained restart and direct endpoint delivery with no relay copy. It uses only synthetic data and built-in Node modules, with no npm install, hosted agent or model account.
+
+Public exposure permits a contact attempt; it never means acceptance. Unlisted distribution and audience hints do not implement group membership checks. Endpoint encryption is optional and strongly recommended: the demo's AES fixture is not a production E2EE adapter. Plaintext can be read by relay infrastructure. ACK removes the active relay body; it is not human reading, business completion or erasure of endpoint copies, WAL history and backups. See the [v1 protocol](protocol/weave-mailbox/v1/README.md) and [delivered scope](docs/implementation/2026-10-07-agent-contact-mailbox-mvp.md).
+
+## Governed Tools: control operation authority
 
 Connecting an agent to a tool often gives it several powers at once. A file tool can read and write; an API may expose both harmless queries and consequential changes. When a request times out, the caller may not know whether a change happened. A tool connection alone cannot answer **which operation was allowed, what was approved, or whether the effect was already attempted**.
 
@@ -45,6 +59,7 @@ credential expiry, restart and local publishing.
 
 ## What works today
 
+- **Agent contact and mailboxes.** A separately composed relay publishes independently public/unlisted, long/short-lived cards. Recipient endpoints decide admission; accepted peers send bounded opaque bytes, pull or subscribe to pending bodies and explicitly ACK. Sender-scoped immutable retries return body-free receipts. Known-pair blocking fences admission and delivery; unblock needs fresh contact. The [independent endpoint example](examples/agent-network/README.md) also demonstrates a separate direct method without a relay copy
 - **Exact tool-operation grants.** Tool availability and connection permission do not grant execution. A grant such as `tool:files:invoke:read_file` does not authorize `write_file`. The host checks signed capability tokens, expiry and revocation before dispatch.
 - **Durable file-write approval.** When configured for a supported filesystem operation, Weave retains the original proposal and waits for an independently authorized decision bound to its target and inputs. The original caller must resume with the same ID and current execution rights.
 - **Recorded attempts and outcomes.** The host uses an on-disk SQLite journal. It commits invocation and attempt evidence before an external call, exposes owner-scoped outcome lookup, and prevents duplicate dispatch for the same logical request. A timeout after dispatch can still mean an unknown external outcome.
@@ -68,6 +83,7 @@ For the actual Host path with signed authority and a durable journal, use the [N
 
 ## Current boundaries
 
+- **Network scope is small.** One relay host and preserved SQLite file; no mandatory A2A server, member/identity certification, business scheduler, production E2EE adapter, NAT traversal, multi-node guarantee or hosted-agent wake. Explicit mailbox-control provisioning and production HTTPS are operator responsibilities. Relay delivery is at-least-once until ACK/expiry, with no exactly-once business-effect promise
 - **Approval coverage is specific.** Filesystem is the first adapter with exact target binding for required approval. Reviewed HTTP decisions are opt-in. The Dashboard has a read-only review screen; it does not offer browser approval or human login.
 - **Recovery is bounded.** Duplicate protection depends on the preserved single-host journal file and the same invocation ID. Outcome queries return metadata, not the original response body. An unknown outcome must be investigated; starting a new ID can repeat an external effect.
 - **Management writes have a narrower journal.** Workspace start/stop and plugin connect/disconnect now record admission before effects. Retain `X-Weave-Management-Id` to inspect an uncertain result; the [management journal guide](docs/implementation/2026-09-29-management-operation-journal.md) lists the covered routes and limits.
@@ -80,6 +96,7 @@ Portable Agent identity, Tenant/Room authority, generalized resource and credent
 
 | If you need to… | Start here |
 | --- | --- |
+| Integrate contact/inbox/outbox or run independent endpoints | [Mailbox protocol](protocol/weave-mailbox/v1/README.md), [endpoint walkthrough](examples/agent-network/README.md) |
 | Understand exact grants and existing-workspace migration | [Operation authority](docs/implementation/2026-09-19-exact-tool-operations.md) |
 | Integrate durable IDs, outcome lookup or approval | [Invocation journal](docs/implementation/2026-09-19-durable-invocations.md), [approval guide](docs/implementation/2026-09-20-durable-approval.md) |
 | Connect an existing agent over HTTP | [Governed HTTP entry](docs/implementation/2026-09-20-governed-http-entry.md), [proposal-by-UUID contract](docs/implementation/2026-09-24-authorized-proposal-uuid.md) |

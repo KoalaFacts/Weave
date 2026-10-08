@@ -1,7 +1,7 @@
 # Weave Architecture
 
 > **Baseline:** Revision 2.1 — Vertical Slices, Explicit Composition, Flat Source Layout.
-> **Product:** Agent Control Plane. **Reference language:** C#/.NET. **Plugin ecosystem:** language-neutral.
+> **Product:** Independent-agent network; separate Governed Tools capability. **Reference language:** C#/.NET. **Plugin ecosystem:** language-neutral.
 > **Implementation:** The source migration is the first structural increment, not completion of this target. See [implementation record](docs/implementation/2026-09-19-flat-source-foundation.md). Existing actor keys, tool-level permissions and runtime behavior are deliberately retained until their own tested replacements are implemented.
 
 ## 1. Architectural decision
@@ -10,13 +10,19 @@
 
 There is no compulsory Core -> Application -> Kernel -> Infrastructure stack. A function does not need a controller/service/repository chain or a base-handler hierarchy to be valid. Composition and independent responsibility—not the number of layers—are the organizing principles.
 
-Weave first governs existing agents' access to tools. An agent does not have to adopt the Weave reasoning runtime. The enduring responsibility is to represent intent, govern authority, bind resources, reconcile long-lived state and record accountable actions.
+Weave's primary network responsibility is contact, inbox and outbox for independently running agents. Recipient endpoints choose admission and any peer/member authentication, interpret opaque payloads and perform their own work. Public visibility permits requests without accepting them. A mailbox can publish multiple independently exposed and long/short-lived cards; unlisted distribution and audience hints do not certify membership. Agents may choose direct methods that bypass the relay.
+
+The implemented network increment composes a separate HTTP host with an opt-in SQLite provider and no reasoning runtime. It derives mailbox-control scope from trusted configured credential hashes, stores transient opaque inbox bytes and body-free contact/outbox metadata, supports at-least-once delivery until explicit recipient ACK/expiry, and fences known-pair delivery with block/generation state. Request identity is requester-scoped; arbitrary mailbox/card identifiers occupy JSON or singly parsed query fields. The [v1 wire contract](protocol/weave-mailbox/v1/README.md) and [implementation record](docs/implementation/2026-10-07-agent-contact-mailbox-mvp.md) define delivered behavior, migration and bounds. The independent endpoint example's direct HTTP and optional crypto are synthetic fixtures, not production NAT traversal, an E2EE adapter or hosted-agent wake.
+
+Governed Tools retains its separate Agent Control Plane responsibility: represent intent, govern authority, bind resources, reconcile long-lived state and record accountable actions. An agent does not have to adopt the Weave reasoning runtime. The governance sections below describe that capability and its target semantics; network contact acceptance never grants tool authority.
 
 ## 2. Source and project boundaries
 
 ```text
 src/
   Weave.csproj
+  Contacts/
+  Mailboxes/
   Agents/
   Workspaces/
   Authority/
@@ -27,12 +33,14 @@ src/
   Audit/
   Composition/
 hosts/
+  Weave.Mailbox.Host/
   Weave.Host/
   Weave.Cli/
   Weave.Dashboard/
   Weave.AppHost/
   Weave.ServiceDefaults/
 extensions/
+  Weave.Mailboxes.Sqlite/
   Weave.AgentRuntime/
   Weave.Mcp/
   Weave.CliTools/
@@ -79,6 +87,8 @@ A module is not necessarily an assembly or service. A slice need not become a pl
 
 | Feature | Owns |
 |---|---|
+| Contacts | Declared contact cards, independent exposure/lifetime, requester-scoped requests and recipient-controlled channel/block state |
+| Mailboxes | Opaque transient delivery, recipient inbox/ACK, sender-scoped immutable admission and body-free receipts |
 | Agents | Stable subject identity, definition, status and references |
 | Workspaces | Administrative grouping and configuration |
 | Rooms | Working context, participation and contextual availability |
@@ -101,7 +111,7 @@ For each implemented, versioned external protocol, maintain the two most recent 
 
 The Host chooses modules, adapters, persistence, authentication and operational configuration. It implements no business decisions. Constructor/method dependencies are explicit. Dynamic service lookup is limited to actual dispatch/composition machinery.
 
-The initial profile is Governed Tools. A reasoning runtime, memory, skills and model integrations are optional consumers of the same governed operation API.
+The network profile composes contact/inbox/outbox without reasoning or business execution. Governed Tools remains a separate profile; a reasoning runtime, memory, skills and model integrations are optional consumers of its governed operation API.
 
 Startup validates required services, unambiguous executor bindings, compatible contracts and durable recording. Missing Authority or a mandatory journal makes governed execution not ready. Do not use last-registration-wins for safety-critical collaborators.
 

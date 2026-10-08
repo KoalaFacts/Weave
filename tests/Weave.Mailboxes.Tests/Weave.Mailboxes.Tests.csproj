@@ -1,0 +1,21 @@
+<Project Sdk="Microsoft.NET.Sdk">
+  <PropertyGroup>
+    <IsAotExcluded>true</IsAotExcluded>
+    <IsPackable>false</IsPackable>
+    <IsTestProject>true</IsTestProject>
+    <RootNamespace>Weave.Mailboxes.Tests</RootNamespace>
+  </PropertyGroup>
+  <ItemGroup>
+    <ProjectReference Include="../../src/Weave.csproj" />
+    <ProjectReference Include="../../extensions/Weave.Mailboxes.Sqlite/Weave.Mailboxes.Sqlite.csproj" />
+    <ProjectReference Include="../../hosts/Weave.Mailbox.Host/Weave.Mailbox.Host.csproj" />
+  </ItemGroup>
+  <ItemGroup>
+    <PackageReference Include="xunit.v3" />
+    <PackageReference Include="NSubstitute" />
+    <PackageReference Include="Shouldly" />
+  </ItemGroup>
+  <ItemGroup>
+    <None Update="Storage/Fixtures/mailbox-v1.sql" CopyToOutputDirectory="PreserveNewest" />
+  </ItemGroup>
+</Project>

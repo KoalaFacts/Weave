@@ -8,6 +8,7 @@ import argparse
 import base64
 import binascii
 import json
+import math
 import os
 from pathlib import Path
 import re
@@ -31,6 +32,26 @@ class EvidenceUnavailable(Exception):
 class NoRedirect(urllib.request.HTTPRedirectHandler):
     def redirect_request(self, req, fp, code, msg, headers, newurl):
         return None
+
+
+def unique_object(pairs):
+    result = {}
+    for key, value in pairs:
+        if key in result:
+            raise ValueError('duplicate field')
+        result[key] = value
+    return result
+
+
+def finite_float(value):
+    number = float(value)
+    if not math.isfinite(number):
+        raise ValueError('nonfinite number')
+    return number
+
+
+def reject_nonfinite(_):
+    raise ValueError('nonfinite number')
 
 
 def snapshot_warning(headers):
@@ -60,6 +81,7 @@ def inspect_comparison(repository, base_sha, head_sha, token, opener=None):
     if opener is None:
         opener = urllib.request.build_opener(urllib.request.ProxyHandler({}), NoRedirect())
     total = 0
+    records = []
     for page in range(1, MAX_PAGES + 1):
         url = (f"https://api.github.com/repos/{repository}/dependency-graph/compare/"
                f"{base_sha}...{head_sha}?per_page=100&page={page}")
@@ -86,8 +108,9 @@ def inspect_comparison(repository, base_sha, head_sha, token, opener=None):
         if len(body) > MAX_PAGE_BYTES:
             raise EvidenceUnavailable("comparison-response-too-large")
         try:
-            changes = json.loads(body)
-        except (ValueError, UnicodeDecodeError):
+            changes = json.loads(body, object_pairs_hook=unique_object,
+                                 parse_float=finite_float, parse_constant=reject_nonfinite)
+        except (ValueError, UnicodeDecodeError, RecursionError):
             raise EvidenceUnavailable("invalid-comparison-response") from None
         if not isinstance(changes, list):
             raise EvidenceUnavailable("invalid-comparison-response")
@@ -98,10 +121,11 @@ def inspect_comparison(repository, base_sha, head_sha, token, opener=None):
                or not isinstance(change.get("manifest"), str) for change in changes):
             raise EvidenceUnavailable("invalid-comparison-response")
         total += len(changes)
+        records.extend(changes)
         # The API may return a complete array larger than the requested page size.
         # Only an explicit continuation header establishes another page.
         if not next_page:
-            return {"dependency_changes": total, "pages": page}
+            return {"dependency_changes": total, "pages": page, "dependency_records": records}
         # Never follow a response-supplied URL with the API credential.
         # Instead request the next numbered page from the same fixed endpoint.
     raise EvidenceUnavailable("comparison-pagination-limit")
