@@ -1,5 +1,7 @@
 # A2A Collaboration Foundation Implementation Plan
 
+> **Superseded direction (2026-10-04):** The user replaced this governed-note collaboration scope with direct agent access to an encrypted, expiring Cloudflare inbox/outbox carrying selected A2A payloads. See the [replacement mailbox specification](../specs/2026-10-04-encrypted-agent-mailbox-design.md). This historical document is retained for context; do not execute this plan or treat its earlier approval as approval of the replacement implementation.
+
 > **For agentic workers:** REQUIRED SUB-SKILL: Use superpowers:subagent-driven-development (recommended) or superpowers:executing-plans to implement this plan task-by-task. Steps use checkbox (`- [ ]`) syntax for tracking.
 
 **Goal:** Prove one approved note exchange between two synthetic owners' agents using A2A 1.0 and 0.3, with scoped durable tasks and existing governed invocation semantics.
