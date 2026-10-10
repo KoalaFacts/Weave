@@ -1,3 +1,4 @@
+using System.Diagnostics;
 using System.Net;
 using Microsoft.Extensions.Logging.Abstractions;
 using Weave.Security.Tokens;
@@ -67,8 +68,7 @@ public sealed class DaprToolConnectorLifecycleTests
 
         await Should.ThrowAsync<ObjectDisposedException>(
             () => connector.InvokeAsync(handle, CreateInvocation(), TestContext.Current.CancellationToken));
-        await Task.Run(connector.Deactivate, TestContext.Current.CancellationToken)
-            .WaitAsync(TimeSpan.FromSeconds(5), TestContext.Current.CancellationToken);
+        await DeactivateOnDedicatedThreadAsync(connector, TestContext.Current.CancellationToken);
 
         handler.RequestCount.ShouldBe(0);
         var exception = await Should.ThrowAsync<InvalidOperationException>(
@@ -86,12 +86,18 @@ public sealed class DaprToolConnectorLifecycleTests
         var handle = await connector.ConnectAsync(CreateSpec(), CreateToken(), TestContext.Current.CancellationToken);
 
         var invocation = connector.InvokeAsync(handle, CreateInvocation(), cancellation.Token);
-        await handler.Started.Task.WaitAsync(TimeSpan.FromSeconds(5), TestContext.Current.CancellationToken);
-        invocation.IsCompleted.ShouldBeFalse();
-        await cancellation.CancelAsync();
-        var result = await invocation.WaitAsync(TimeSpan.FromSeconds(5), TestContext.Current.CancellationToken);
-        await Task.Run(connector.Deactivate, TestContext.Current.CancellationToken)
-            .WaitAsync(TimeSpan.FromSeconds(5), TestContext.Current.CancellationToken);
+        try
+        {
+            await handler.Started.Task.WaitAsync(TimeSpan.FromSeconds(5), TestContext.Current.CancellationToken);
+            invocation.IsCompleted.ShouldBeFalse();
+        }
+        finally
+        {
+            await cancellation.CancelAsync();
+            await invocation.WaitAsync(TimeSpan.FromSeconds(5), CancellationToken.None);
+        }
+        var result = await invocation;
+        await DeactivateOnDedicatedThreadAsync(connector, TestContext.Current.CancellationToken);
 
         result.Success.ShouldBeFalse();
         result.ToolName.ShouldBe("order-processing");
@@ -99,6 +105,52 @@ public sealed class DaprToolConnectorLifecycleTests
         result.Output.ShouldBeEmpty();
         handler.RequestCount.ShouldBe(1);
         handler.RequestCancellation.IsCancellationRequested.ShouldBeTrue();
+    }
+
+    private static async Task DeactivateOnDedicatedThreadAsync(DaprToolConnector connector, CancellationToken ct)
+    {
+        var entered = new TaskCompletionSource(TaskCreationOptions.RunContinuationsAsynchronously);
+        var completed = new TaskCompletionSource<TimeSpan>(TaskCreationOptions.RunContinuationsAsynchronously);
+        // Deactivate can block in Monitor.Wait. Do not charge shared thread-pool queue delay
+        // against its admission-release assertion, especially under coverage instrumentation.
+        var worker = new Thread(() =>
+        {
+            entered.TrySetResult();
+            try
+            {
+                var elapsed = Stopwatch.StartNew();
+                connector.Deactivate();
+                elapsed.Stop();
+                completed.TrySetResult(elapsed.Elapsed);
+            }
+            catch (Exception exception)
+            {
+                // Surface worker failures on the test task instead of crashing the process.
+                completed.TrySetException(exception);
+            }
+        })
+        {
+            IsBackground = true,
+            Name = "Dapr lifecycle deactivation assertion"
+        };
+        worker.Start();
+        await WaitForPhaseAsync(entered.Task, "Dedicated deactivation worker did not start.", ct);
+        await WaitForPhaseAsync(completed.Task, "Deactivate did not complete after the worker entered; dispatch admission may be retained.", ct);
+        worker.Join(TimeSpan.FromSeconds(5)).ShouldBeTrue("Completed deactivation worker must exit.");
+        (await completed.Task).ShouldBeLessThanOrEqualTo(TimeSpan.FromSeconds(5),
+            "Deactivate itself must complete within five seconds, independent of test continuation scheduling.");
+    }
+
+    private static async Task WaitForPhaseAsync(Task phase, string timeoutMessage, CancellationToken ct)
+    {
+        try
+        {
+            await phase.WaitAsync(TimeSpan.FromSeconds(5), ct);
+        }
+        catch (TimeoutException exception)
+        {
+            throw new TimeoutException(timeoutMessage, exception);
+        }
     }
 
     private static ToolSpec CreateSpec() => new()
