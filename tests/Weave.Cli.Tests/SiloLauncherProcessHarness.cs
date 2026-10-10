@@ -41,8 +41,9 @@ internal static class SiloLauncherProcessHarness
                 RedirectStandardError = true
             };
             start.ArgumentList.Add("--wait");
-            start.ArgumentList.Add(Environment.GetEnvironmentVariable("DOTNET_HOST_PATH") ?? "dotnet");
-            start.ArgumentList.Add(testClass.Assembly.Location);
+            var testHost = Path.ChangeExtension(testClass.Assembly.Location, null);
+            File.Exists(testHost).ShouldBeTrue("Build the test apphost before running isolated process fixtures.");
+            start.ArgumentList.Add(testHost);
             start.ArgumentList.Add("-class");
             start.ArgumentList.Add(testClass.FullName.ShouldNotBeNull());
             start.Environment[RootVariable] = root;

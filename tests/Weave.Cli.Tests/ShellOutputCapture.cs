@@ -18,6 +18,7 @@ internal sealed class ShellOutputCapture : IDisposable
             ColorSystem = ColorSystemSupport.NoColors,
             Out = new AnsiConsoleOutput(_writer)
         });
+        console.Profile.Capabilities.Ansi = false;
         console.Profile.Width = 240;
         AnsiConsole.Console = console;
     }

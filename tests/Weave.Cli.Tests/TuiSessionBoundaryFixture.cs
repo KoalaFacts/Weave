@@ -24,6 +24,7 @@ internal sealed class TuiSessionBoundaryFixture : IDisposable
             ColorSystem = ColorSystemSupport.NoColors,
             Out = new AnsiConsoleOutput(_output)
         });
+        AnsiConsole.Console.Profile.Capabilities.Ansi = false;
         AnsiConsole.Console.Profile.Width = 180;
         Session = new TuiSession(new ManifestResolver(_manifests));
         Chat = new TuiChatSession(new SendMessageStreamingAction(_client), TimeProvider.System);

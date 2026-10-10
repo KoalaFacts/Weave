@@ -144,6 +144,7 @@ public sealed class ChatComposerRendererBehaviorTests
             Interactive = InteractionSupport.No,
             Out = new AnsiConsoleOutput(writer)
         });
+        console.Profile.Capabilities.Ansi = false;
         console.Profile.Width = 240;
         console.Write(ChatComposerRenderer.Build(model));
         return writer.ToString();

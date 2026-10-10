@@ -9,7 +9,7 @@ internal static class CliVaultProcessFixture
     public static Task RunAsync(Type testClass, string secretPath, string responseBody, int status, Action<CliSecretResolver> assertion) =>
         SiloLauncherProcessHarness.RunAsync(testClass, async _ =>
         {
-            var listener = new TcpListener(IPAddress.Loopback, 0);
+            using var listener = new TcpListener(IPAddress.Loopback, 0);
             listener.Start();
             using var serverCancellation = CancellationTokenSource.CreateLinkedTokenSource(TestContext.Current.CancellationToken);
             var request = ReplyAsync(listener, responseBody, status, serverCancellation.Token);

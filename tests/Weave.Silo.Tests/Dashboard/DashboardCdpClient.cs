@@ -5,7 +5,7 @@ using System.Text.Json.Nodes;
 
 namespace Weave.Silo.Tests.Dashboard;
 
-internal sealed class DashboardCdpClient(Uri dashboardOrigin) : IAsyncDisposable
+internal sealed class DashboardCdpClient(Uri dashboardOrigin, Func<string> childDiagnostics) : IAsyncDisposable
 {
     private readonly ClientWebSocket _socket = new();
     private readonly CancellationTokenSource _lifetime = new();
@@ -73,20 +73,100 @@ internal sealed class DashboardCdpClient(Uri dashboardOrigin) : IAsyncDisposable
         return (T)primitive;
     }
 
-    public async Task WaitForAsync(string expression, string reason)
+    public Task WaitForAsync(string expression, string reason) =>
+        WaitForAsync(() => EvaluateAsync<bool>(expression), reason);
+
+    public Task WaitForFileInputAsync() => WaitForAsync(FileInputHasChangeListenerAsync, "interactive file input change listener");
+
+    private async Task<bool> FileInputHasChangeListenerAsync()
+    {
+        var evaluated = await CommandAsync("Runtime.evaluate", new JsonObject
+        {
+            ["expression"] = "document.querySelector('#review-file')",
+            ["returnByValue"] = false
+        });
+        var element = evaluated.GetProperty("result");
+        if (!element.TryGetProperty("objectId", out var remoteId))
+            return false;
+        var objectId = remoteId.GetString().ShouldNotBeNull();
+        Exception? operationError = null;
+        var hasChangeListener = false;
+        try
+        {
+            // Inspect actual DOM listeners, without accessing Blazor's private state or calling handlers.
+            var listeners = await CommandAsync("DOMDebugger.getEventListeners", new JsonObject { ["objectId"] = objectId });
+            hasChangeListener = listeners.GetProperty("listeners").EnumerateArray()
+                .Any(listener => listener.GetProperty("type").GetString() == "change");
+        }
+        catch (Exception error)
+        {
+            operationError = error;
+        }
+        try
+        {
+            await CommandAsync("Runtime.releaseObject", new JsonObject { ["objectId"] = objectId });
+        }
+        catch (Exception releaseError) when (operationError is not null)
+        {
+            throw new AggregateException("File input listener inspection and remote object release both failed.",
+                operationError, releaseError);
+        }
+        if (operationError is not null)
+            System.Runtime.ExceptionServices.ExceptionDispatchInfo.Capture(operationError).Throw();
+        return hasChangeListener;
+    }
+
+    private async Task WaitForAsync(Func<Task<bool>> predicate, string reason)
     {
         using var deadline = CancellationTokenSource.CreateLinkedTokenSource(TestContext.Current.CancellationToken, _lifetime.Token);
         deadline.CancelAfter(TimeSpan.FromSeconds(20));
         try
         {
-            while (!await EvaluateAsync<bool>(expression))
+            while (!await predicate())
                 await Task.Delay(50, deadline.Token);
         }
-        catch (OperationCanceledException) when (!TestContext.Current.CancellationToken.IsCancellationRequested && !_lifetime.IsCancellationRequested)
+        catch (OperationCanceledException error) when (!TestContext.Current.CancellationToken.IsCancellationRequested && !_lifetime.IsCancellationRequested)
         {
-            throw new TimeoutException("Dashboard browser did not reach: " + reason);
+            throw new TimeoutException("Dashboard browser did not reach: " + reason + "\n" + await TimeoutDiagnosticsAsync(), error);
         }
     }
+
+    private async Task<string> TimeoutDiagnosticsAsync()
+    {
+        string dom;
+        try
+        {
+            // No credential values. Bound the browser reply as well as the captured child log tails.
+            dom = await EvaluateAsync<string>("""
+                JSON.stringify({
+                  page: document.querySelector('.review-page')?.innerText.slice(0, 4096),
+                  fileInput: !!document.querySelector('#review-file'),
+                  files: Array.from(document.querySelector('#review-file')?.files ?? []).slice(0, 2)
+                    .map(file => ({ name: file.name.slice(0, 128), size: file.size })),
+                  buttons: Array.from(document.querySelectorAll('.review-page .actions button')).slice(0, 4)
+                    .map(button => ({ text: button.textContent.slice(0, 128), disabled: button.disabled })),
+                  blazorErrorVisible: !!document.querySelector('#blazor-error-ui')?.getClientRects().length
+                })
+                """);
+        }
+        catch (Exception error)
+        {
+            // This is the final diagnostic boundary: parsing/protocol failures must not replace the timeout.
+            dom = "DOM diagnostics unavailable: " + error.GetType().Name + ": " + error.Message;
+        }
+        string children;
+        try
+        {
+            children = childDiagnostics();
+        }
+        catch (Exception error)
+        {
+            children = "Child diagnostics unavailable: " + error.GetType().Name + ": " + error.Message;
+        }
+        return "DOM: " + Tail(dom, 8192) + "\n" + Tail(children, 8448);
+    }
+
+    internal static string Tail(string text, int limit) => text.Length <= limit ? text : text[^limit..];
 
     public async Task UploadAsync(string path)
     {

@@ -31,6 +31,7 @@ internal sealed class TuiViewTestContext : IDisposable
             Ansi = AnsiSupport.No,
             Interactive = InteractionSupport.No
         });
+        AnsiConsole.Console.Profile.Capabilities.Ansi = false;
         AnsiConsole.Console.Profile.Width = 240;
     }
 

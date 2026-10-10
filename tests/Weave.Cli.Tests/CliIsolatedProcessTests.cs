@@ -65,12 +65,12 @@ public sealed class CliIsolatedProcessTests
         var cached = await cli.RunAsync("version");
 
         uncached.ExitCode.ShouldBe(0, uncached.StandardError);
-        uncached.StandardOutput.ShouldStartWith("weave v");
-        uncached.StandardOutput.ShouldContain("no update cache yet");
+        uncached.VisibleOutput.ShouldStartWith("weave v");
+        uncached.VisibleOutput.ShouldContain("no update cache yet");
         cached.ExitCode.ShouldBe(0, cached.StandardError);
-        cached.StandardOutput.ShouldContain("v999999.0.0 is available");
-        cached.StandardOutput.ShouldContain("dotnet tool update --global Weave.Cli");
-        cached.StandardOutput.ShouldNotContain("no update cache yet");
+        cached.VisibleOutput.ShouldContain("v999999.0.0 is available");
+        cached.VisibleOutput.ShouldContain("dotnet tool update --global Weave.Cli");
+        cached.VisibleOutput.ShouldNotContain("no update cache yet");
         (await File.ReadAllTextAsync(cachePath, TestContext.Current.CancellationToken)).ShouldBe(cache);
         File.Exists(cli.ConfigPath).ShouldBeFalse();
     }

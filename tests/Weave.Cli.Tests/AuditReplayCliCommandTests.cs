@@ -124,6 +124,7 @@ public sealed class AuditReplayCliCommandTests
                 ColorSystem = ColorSystemSupport.NoColors,
                 Out = new AnsiConsoleOutput(_writer)
             });
+            console.Profile.Capabilities.Ansi = false;
             console.Profile.Width = 240;
             AnsiConsole.Console = console;
         }

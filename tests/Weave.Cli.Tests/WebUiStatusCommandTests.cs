@@ -41,11 +41,19 @@ public sealed class WebUiStatusCommandTests
 
     private sealed class DashboardHandler(HttpStatusCode status) : HttpMessageHandler
     {
+        private readonly HttpResponseMessage _response = new(status);
         public Uri? RequestUri { get; private set; }
         protected override Task<HttpResponseMessage> SendAsync(HttpRequestMessage request, CancellationToken cancellationToken)
         {
             RequestUri = request.RequestUri;
-            return Task.FromResult(new HttpResponseMessage(status));
+            return Task.FromResult(_response);
+        }
+
+        protected override void Dispose(bool disposing)
+        {
+            if (disposing)
+                _response.Dispose();
+            base.Dispose(disposing);
         }
     }
 }

@@ -61,17 +61,15 @@ internal sealed partial class DashboardReviewBrowserFixture : IAsyncDisposable
             browserStart.ArgumentList.Add(argument);
         _chrome = new DashboardBrowserChild(browserStart);
         var endpoint = await WaitForChromeAsync(_chrome, profile);
-        _browser = new DashboardCdpClient(address);
+        _browser = new DashboardCdpClient(address, () =>
+            "Dashboard log tail:\n" + DashboardCdpClient.Tail(_dashboard.ShouldNotBeNull().Log, 4096)
+            + "\nChrome log tail:\n" + DashboardCdpClient.Tail(_chrome.ShouldNotBeNull().Log, 4096));
         await _browser.ConnectAsync(endpoint);
         await Browser.CommandAsync("Page.navigate", new JsonObject { ["url"] = new Uri(address, "/approvals/review").AbsoluteUri });
         await Browser.WaitForAsync("document.querySelector('#review-file') !== null", "Review input form");
-        // The initial HTML can precede SignalR startup. An observable Clear response proves events are live.
-        await Browser.WaitForAsync("""
-            (() => {
-              document.querySelector('.review-page .actions button:last-child')?.click();
-              return document.querySelector('.review-page')?.innerText.includes('No file loaded. Select the retained original JSON request.') === true;
-            })()
-            """, "interactive Clear event");
+        // InputFile registers its native change listener after the interactive render.
+        // Observe readiness without queuing Clear events that can replace this keyed input.
+        await Browser.WaitForFileInputAsync();
     }
 
     public async Task FillAsync(string id, string value)

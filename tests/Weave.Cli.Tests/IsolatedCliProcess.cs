@@ -1,9 +1,10 @@
 using System.Diagnostics;
 using System.Text;
+using System.Text.RegularExpressions;
 
 namespace Weave.Cli.Tests;
 
-internal sealed class IsolatedCliProcess : IDisposable
+internal sealed partial class IsolatedCliProcess : IDisposable
 {
     private readonly string _assemblyPath;
     public string Root { get; }
@@ -104,5 +105,11 @@ internal sealed class IsolatedCliProcess : IDisposable
         return retained.ToString();
     }
 
-    internal sealed record Result(int ExitCode, string StandardOutput, string StandardError);
+    [GeneratedRegex(@"\u001b\[[0-9;]*m")]
+    private static partial Regex StyleSequences();
+
+    internal sealed record Result(int ExitCode, string StandardOutput, string StandardError)
+    {
+        public string VisibleOutput => StyleSequences().Replace(StandardOutput, string.Empty);
+    }
 }
