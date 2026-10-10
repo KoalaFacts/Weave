@@ -60,7 +60,7 @@ public static class WorkspaceEndpoints
     {
         var query = new GetWorkspaceStateQuery(WorkspaceId.From(workspaceId));
         var state = await dispatcher.DispatchAsync<GetWorkspaceStateQuery, WorkspaceState>(query, ct);
-        if (state.WorkspaceId.IsEmpty)
+        if (!WorkspaceReadPresence.Exists(state))
             return ResultExtensions.NotFound($"Workspace '{workspaceId}' not found.");
 
         return Results.Ok(WorkspaceResponse.FromState(state));
