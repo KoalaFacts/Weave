@@ -21,7 +21,7 @@ internal sealed class InitWizardProcessFixture : IDisposable
         Directory.CreateDirectory(Workspace);
     }
 
-    public async Task<JsonDocument> RunAsync(string scenario)
+    public async Task<JsonDocument> RunAsync(string scenario, int expectedExitCode = 0)
     {
         Assert.SkipUnless(OperatingSystem.IsLinux(), "Init wizard interaction requires Linux PTYs and HOME-based profile isolation.");
         var python = (Environment.GetEnvironmentVariable("PATH") ?? string.Empty).Split(Path.PathSeparator)
@@ -37,6 +37,12 @@ internal sealed class InitWizardProcessFixture : IDisposable
         var parentEnvironment = ProfileVariables.ToDictionary(name => name, Environment.GetEnvironmentVariable, StringComparer.Ordinal);
         using var deadline = CancellationTokenSource.CreateLinkedTokenSource(TestContext.Current.CancellationToken);
         deadline.CancelAfter(TimeSpan.FromSeconds(50));
+        await File.WriteAllTextAsync(Path.Join(Root, "workspace_new_scenario.py"),
+            WorkspaceNewPtyScenario.Script, deadline.Token);
+        await File.WriteAllTextAsync(Path.Join(Root, "init_storage_next.py"),
+            InitStorageNextScenario.Script, deadline.Token);
+        await File.WriteAllTextAsync(Path.Join(Root, "run_workspace_scenario.py"),
+            RunWorkspacePtyScenario.Script, deadline.Token);
         var start = new ProcessStartInfo(python)
         {
             UseShellExecute = false,
@@ -44,7 +50,7 @@ internal sealed class InitWizardProcessFixture : IDisposable
             RedirectStandardError = true,
             WorkingDirectory = Root
         };
-        foreach (var argument in new[] { "-u", "-c", InitWizardPtyDriver.Script, executable, Root, scenario })
+        foreach (var argument in new[] { "-u", "-c", InitWizardPtyDriver.Script, executable, Root, scenario, expectedExitCode.ToString(System.Globalization.CultureInfo.InvariantCulture) })
             start.ArgumentList.Add(argument);
         using var process = new Process { StartInfo = start };
         Task<string>? stdout = null;
@@ -59,7 +65,7 @@ internal sealed class InitWizardProcessFixture : IDisposable
             await process.WaitForExitAsync(deadline.Token);
             process.ExitCode.ShouldBe(0, await stderr);
             var result = JsonDocument.Parse(await stdout);
-            result.RootElement.GetProperty("exitCode").GetInt32().ShouldBe(0);
+            result.RootElement.GetProperty("exitCode").GetInt32().ShouldBe(expectedExitCode);
             Environment.CurrentDirectory.ShouldBe(parentDirectory);
             Environment.GetFolderPath(Environment.SpecialFolder.UserProfile).ShouldBe(parentProfile);
             foreach (var (name, value) in parentEnvironment)

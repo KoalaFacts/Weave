@@ -631,6 +631,7 @@ public sealed partial class McpWorkspacePluginFlowTests
     {
         protected override void ConfigureWebHost(IWebHostBuilder builder)
         {
+            SiloTestPorts.Configure(builder);
             builder.UseSetting("Weave:LocalMode", "true");
             builder.UseSetting("Weave:ActorStorage:Provider", "sqlite");
             builder.UseSetting("ConnectionStrings:Sqlite", $"Data Source={Path.Join(directory, "actors.db")};Pooling=False");

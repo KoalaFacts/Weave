@@ -36,6 +36,7 @@ public sealed class SiloFactory : WebApplicationFactory<Program>
 
     protected override void ConfigureWebHost(IWebHostBuilder builder)
     {
+        SiloTestPorts.Configure(builder);
         builder.UseSetting("Weave:LocalMode", "true");
         builder.UseSetting("Weave:Storage", "memory");
         builder.UseSetting("Weave:Invocations:DatabasePath", Path.Combine(_journalDirectory, "invocations.db"));

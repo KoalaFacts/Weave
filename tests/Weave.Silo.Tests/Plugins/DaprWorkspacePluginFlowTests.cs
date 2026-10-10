@@ -311,6 +311,7 @@ public sealed partial class DaprWorkspacePluginFlowTests : IClassFixture<SiloFac
     {
         protected override void ConfigureWebHost(IWebHostBuilder builder)
         {
+            SiloTestPorts.Configure(builder);
             builder.UseSetting("Weave:LocalMode", "true");
             builder.UseSetting("Weave:ActorStorage:Provider", "sqlite");
             builder.UseSetting("ConnectionStrings:Sqlite", $"Data Source={Path.Combine(directory, "actors.db")};Pooling=False");

@@ -11,6 +11,7 @@ internal static class InitWizardPtyDriver
         import pty
         import re
         import select
+        import runpy
         import signal
         import socket
         import struct
@@ -19,8 +20,16 @@ internal static class InitWizardPtyDriver
         import termios
         import time
 
-        executable, root_text, scenario = sys.argv[1:]
+        executable, root_text, scenario, expected_exit_text = sys.argv[1:]
+        expected_exit = int(expected_exit_text)
+        config_scenario = scenario.startswith("config-")
+        storage_scenario = scenario.startswith("storage-")
         root = pathlib.Path(root_text)
+        next_scenario = scenario.startswith(("next-init-", "next-storage-"))
+        next_module = runpy.run_path(str(root / "init_storage_next.py")) if next_scenario else None
+        workspace_scenario = scenario.startswith(("workspace-new-", "run-workspace-"))
+        workspace_module_file = "run_workspace_scenario.py" if scenario.startswith("run-workspace-") else "workspace_new_scenario.py"
+        workspace_module = runpy.run_path(str(root / workspace_module_file)) if workspace_scenario else None
         home, workspace = root / "profile", root / "workspace"
         private = home / ".weave"
         config_path = private / "config.json"
@@ -57,6 +66,9 @@ internal static class InitWizardPtyDriver
                 "Host=127.0.0.1;Port=" + str(listener.getsockname()[1])
                 + ";Database=fixture;Username=fixture;Password=fixture-storage-file-sentinel\n")
 
+        if next_scenario:
+            listener = next_module["prepare"](environment, private, scenario)
+
         probe = subprocess.run([executable, "config", "get", "weaveHome"],
                                cwd=workspace, env=environment, stdin=subprocess.DEVNULL,
                                capture_output=True, text=True, timeout=10)
@@ -66,7 +78,18 @@ internal static class InitWizardPtyDriver
         if pid == 0:
             fcntl.ioctl(0, termios.TIOCSWINSZ, struct.pack("HHHH", 45, 180, 0, 0))
             os.chdir(workspace)
-            os.execve(executable, [executable, "init"], environment)
+            arguments = [executable, "config", "set"] if config_scenario else [executable, "init"]
+            if workspace_scenario:
+                arguments = workspace_module["arguments"](executable, root, scenario)
+            if scenario == "config-path":
+                arguments.append("SiLoPaTh")
+            elif scenario == "config-invalid-port":
+                arguments.append("defaultPort")
+            if scenario.startswith("next-storage-"):
+                arguments = [executable, "storage", "change"]
+            if storage_scenario:
+                arguments = [executable, "storage", "change"]
+            os.execve(executable, arguments, environment)
 
         transcript = bytearray()
         stages = []
@@ -117,6 +140,31 @@ internal static class InitWizardPtyDriver
             answer(b"\x1b[B" * index + b"\r", next_prompt, stage)
 
         try:
+            if next_scenario:
+                probe_connections = next_module["run"](scenario, private, listener, wait_for, answer, choose)
+            if storage_scenario:
+                wait_for("New backend:")
+                if scenario == "storage-sqlite":
+                    choose(1, "Storage changed:", "sqlite-selected")
+                elif scenario == "storage-memory":
+                    choose(0, "Storage changed:", "memory-selected")
+                else:
+                    raise AssertionError("Unknown storage scenario: " + scenario)
+            if workspace_scenario:
+                workspace_module["run"](scenario, wait_for, answer, choose, output, stages)
+            elif config_scenario:
+                if scenario == "config-menu":
+                    wait_for("Which config value would you like to update?")
+                    choose(1, "defaultPort:", "port-selected")
+                    answer(b"9529\r", "defaultPort = 9529", "port-persisted")
+                elif scenario == "config-path":
+                    wait_for("SiLoPaTh:")
+                    answer(str(explicit_runtime).encode() + b"\r", "siloPath =", "path-persisted")
+                elif scenario == "config-invalid-port":
+                    wait_for("defaultPort:")
+                    answer(b"65536\r", "not a valid port", "invalid-port-refused")
+                else:
+                    raise AssertionError("Unknown config PTY scenario: " + scenario)
             if scenario in ("decline", "reconfigure"):
                 wait_for("Reconfigure?")
                 if scenario == "decline":
@@ -124,10 +172,10 @@ internal static class InitWizardPtyDriver
                     stages.append("declined")
                 else:
                     answer(b"y\r", "Storage backend:", "reconfigure-approved")
-            else:
+            elif not config_scenario and not storage_scenario and not workspace_scenario and not next_scenario:
                 wait_for("Storage backend:")
 
-            if scenario != "decline":
+            if not config_scenario and not storage_scenario and not workspace_scenario and not next_scenario and scenario != "decline":
                 if scenario == "sqlite-defaults":
                     choose(0, "Server port:", "sqlite")
                 elif scenario in ("postgres-env", "postgres-file", "postgres-file-refused"):
@@ -187,7 +235,7 @@ internal static class InitWizardPtyDriver
                     raise AssertionError("Init failed to terminate")
                 read_once()
             read_once()
-            if exit_code != 0:
+            if exit_code != expected_exit:
                 raise AssertionError("Init exited with " + str(exit_code))
             print(json.dumps({"exitCode": exit_code, "output": output(), "stages": stages,
                               "probeConnections": probe_connections}))
