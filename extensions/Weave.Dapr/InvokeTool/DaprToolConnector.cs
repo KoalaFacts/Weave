@@ -65,26 +65,10 @@ public sealed partial class DaprToolConnector(HttpClient httpClient, ILogger<Dap
             var bytes = JsonSerializer.SerializeToUtf8Bytes(invocation.Parameters, DaprToolJsonContext.Default.DictionaryStringString);
             using var content = new ByteArrayContent(bytes);
             content.Headers.ContentType = new System.Net.Http.Headers.MediaTypeHeaderValue("application/json");
-            Task<HttpResponseMessage> responseTask;
-            lock (_dispatchGate)
-            {
-                if (!_active)
-                    return new ToolResult { Success = false, ToolName = handle.ToolName, Error = "Dapr tool connector is inactive.", Duration = sw.Elapsed };
-                _inFlight++;
-                try
-                {
-                    responseTask = httpClient.PostAsync(
-                        $"/v1.0/invoke/{appId}/method/{invocation.Method}", content, ct);
-                    handedOff = true;
-                }
-                catch
-                {
-                    _inFlight--;
-                    if (_inFlight == 0)
-                        Monitor.PulseAll(_dispatchGate);
-                    throw;
-                }
-            }
+            var responseTask = TryBeginDispatchAsync(appId, invocation.Method, content, ct);
+            if (responseTask is null)
+                return new ToolResult { Success = false, ToolName = handle.ToolName, Error = "Dapr tool connector is inactive.", Duration = sw.Elapsed };
+            handedOff = true;
             using var response = await responseTask;
             var output = await response.Content.ReadAsStringAsync(ct);
             sw.Stop();
@@ -113,6 +97,30 @@ public sealed partial class DaprToolConnector(HttpClient httpClient, ILogger<Dap
                     if (_inFlight == 0)
                         Monitor.PulseAll(_dispatchGate);
                 }
+            }
+        }
+    }
+
+    // Keep synchronous admission and HTTP handoff in one lock, outside the async method's
+    // exception-filter frame so filter temporaries cannot overlap the compiler's lockTaken local.
+    private Task<HttpResponseMessage>? TryBeginDispatchAsync(
+        string appId, string method, HttpContent content, CancellationToken ct)
+    {
+        lock (_dispatchGate)
+        {
+            if (!_active)
+                return null;
+            _inFlight++;
+            try
+            {
+                return httpClient.PostAsync($"/v1.0/invoke/{appId}/method/{method}", content, ct);
+            }
+            catch
+            {
+                _inFlight--;
+                if (_inFlight == 0)
+                    Monitor.PulseAll(_dispatchGate);
+                throw;
             }
         }
     }
