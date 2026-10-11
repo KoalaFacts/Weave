@@ -54,7 +54,7 @@ public sealed class StartWorkspaceAction
             {
                 HttpStatusCode.Created or HttpStatusCode.OK => await ReadSuccessAsync(response, cancellationToken),
                 HttpStatusCode.BadRequest => await ReadValidationFailureAsync(response, cancellationToken),
-                HttpStatusCode.Conflict => await ReadConflictAsync(response, cancellationToken),
+                HttpStatusCode.Conflict => await ReadConflictAsync(response, managementId, cancellationToken),
                 HttpStatusCode.Unauthorized or HttpStatusCode.Forbidden => ActionResult.Failed<StartWorkspaceResult>(
                     ActionFailure.Unauthorized($"Silo refused the start request ({(int)response.StatusCode}).")),
                 _ when (int)response.StatusCode >= 500 => ActionResult.Failed<StartWorkspaceResult>(
@@ -117,16 +117,18 @@ public sealed class StartWorkspaceAction
 
     private static async Task<ActionResult<StartWorkspaceResult>> ReadConflictAsync(
         HttpResponseMessage response,
+        string managementId,
         CancellationToken cancellationToken)
     {
         var problem = await response.Content.ReadFromJsonAsync(
             WorkspaceJsonContext.Default.WorkspaceProblemWire,
             cancellationToken);
         var detail = problem?.Detail;
-        return ActionResult.Failed<StartWorkspaceResult>(
-            ActionFailure.Conflict(string.IsNullOrWhiteSpace(detail)
-                ? "Workspace is already running or in a conflicting state."
-                : detail));
+        var message = string.IsNullOrWhiteSpace(detail)
+            ? "Workspace is already running or in a conflicting state."
+            : detail;
+        return ActionResult.Failed<StartWorkspaceResult>(ActionFailure.Conflict(
+            $"{message} Inspect management operation {managementId} before retrying."));
     }
 
     // The silo emits ValidationProblem with a per-field errors map (e.g.

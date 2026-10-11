@@ -40,7 +40,7 @@ public static class PluginInstallationEndpoints
         ct.ThrowIfCancellationRequested();
         var workspace = actors.GetActor<IWorkspaceActor>(VirtualActorId.From(workspaceId));
         var state = await workspace.GetStateAsync();
-        if (state.WorkspaceId.IsEmpty)
+        if (!WorkspaceReadPresence.Exists(state))
             return ResultExtensions.NotFound($"Workspace '{workspaceId}' not found.");
         if (!string.Equals(state.WorkspaceId.ToString(), workspaceId, StringComparison.Ordinal))
             return ResultExtensions.Conflict("Stored workspace identity does not match the requested workspace.");

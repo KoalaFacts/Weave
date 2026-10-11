@@ -24,7 +24,7 @@
 - “The 1.0 default page is 50 and accepted page size is 1 through 100.” The 0.3 list is an array, bounded by retained-task quota
 - “Loopback connection and request deadlines: 5 and 30 seconds respectively. No automatic send retry.” Poll no faster than once a second
 - “The initial profile accepts only configured literal loopback origins and disabled redirects, proxies, and cookies.” No real peers, production credentials, LLM accounts, or deployment; repository integration follows the user's current authorization and verified checks
-- “A unique key combines stable authenticated source identity and message ID within the receiving authority.” Destination, installation, plan, and protocol revision belong in the compared digest
+- The deduplication key is `(receivingAuthorityId, sourceOwnerId, sourceWorkspaceId, sourceAgentId, messageId)` using authenticated peer identity, including its workspace. Destination, installation, plan, and protocol revision belong in the compared digest
 - “The reserved collaboration envelope requires its gate.” Disabled A2A routes never disable protection of retained collaboration invocations
 - Preserve current actor keys, append-only Orleans field IDs, licensing, warnings-as-errors, audit, exact grants, approval independence, durable admission, and unknown-outcome rules
 - Use `TimeProvider`; source-generated JSON; owned immutable snapshots; no hidden service locators, automatic replay, test weakening, or production in-memory storage fallback
@@ -123,7 +123,7 @@ Also test empty text, multibyte Unicode boundary, expired/disabled policy, forge
 
 `CollaborationStoreOptions.DatabasePath` is an explicit absolute on-disk path; `RequireExistingStorage` rejects missing/incompatible retained storage. Use the same configured protected database file as the invocation journal for additive collaboration/peer tables, but access them only through their feature contracts. The always-active guard cannot lose track of bindings when A2A routes are disabled.
 
-- [ ] Add real-file tests for atomic source/message deduplication, conflicting destination/wire digests, 100 retained/8 active quotas, three-owner scoped list/counts, opaque principal/filter-bound cursors, 16-message limit, immutable snapshots, and cancellation-versus-claim compare-and-set
+- [ ] Add real-file tests for atomic source/message deduplication, same-owner/same-agent/same-message collisions across two authenticated workspaces (distinct tasks and isolated receipt reads), conflicting destination/wire digests, 100 retained/8 active quotas, three-owner scoped list/counts, opaque principal/filter-bound cursors, 16-message limit, immutable snapshots, and cancellation-versus-claim compare-and-set
 
 ```csharp
 // Admit_ConcurrentIdenticalMessage_ReturnsOneTaskAndInvocation
@@ -135,8 +135,8 @@ reopenedAgreement.Enabled.ShouldBeFalse(); reopenedReceipt.Digest.ShouldBe(origi
 ```
 
 - [ ] Run `dotnet test --project tests/Weave.Silo.Tests/Weave.Silo.Tests.csproj -c Release`; require intended persistence/concurrency failures before implementation
-- [ ] Implement versioned additive schema, WAL/full synchronous durability, uniqueness by `(receivingAuthorityId, sourceOwnerId, sourceAgentId, messageId)` rather than rotating token/subject evidence, typed short transactions, persisted peer revocation, scoped queries and cursor snapshots, and durable outgoing receipts. Empty/foreign cursors fail without cross-scope counts. TryUpdate may change only the state projection, bounded messages/artifacts, and permit/claim fields; it rejects any change to immutable participants, IDs, plan or digest. Add `TryUpdate_ChangesFrozenPlan_Rejects` with unchanged readback. No automatic evidence deletion or `:memory:` production fallback
-- [ ] Run tests with two independent store instances and reopened files; assert no lost updates, preserved prior invocation tables, denied unknown/newer schema, and no state creation on invalid path
+- [ ] Implement additive schema versioning in a collaboration-owned `collaboration_schema` metadata table with one version row; never change the invocation journal-owned `PRAGMA user_version`. Use WAL/full synchronous durability, uniqueness by `(receivingAuthorityId, sourceOwnerId, sourceWorkspaceId, sourceAgentId, messageId)` rather than rotating token/subject evidence, typed short transactions, persisted peer revocation, scoped queries and cursor snapshots, and durable outgoing receipts partitioned by the same authenticated source workspace identity. Empty/foreign cursors fail without cross-scope counts. TryUpdate may change only the state projection, bounded messages/artifacts, and permit/claim fields; it rejects any change to immutable participants, IDs, plan or digest. Add `TryUpdate_ChangesFrozenPlan_Rejects` with unchanged readback. No automatic evidence deletion or `:memory:` production fallback
+- [ ] Run tests with two independent store instances and reopened files; assert no lost updates, preserved prior invocation tables and unchanged journal `user_version` after opening both stores in either order, denied unknown/newer collaboration metadata version without writes, and no state creation on invalid path
 - [ ] Commit `feat: persist scoped collaboration tasks and outgoing receipts`
 
 ### Task 3: Enforce one gate in every invocation path
@@ -233,7 +233,7 @@ Also pin 0.3 `kind`/lowercase states/roles and wrapped Send; 1.0 named unions/up
 - `SendPeerTask.ExecuteAsync(PeerSendRequest request, CapabilityToken currentPeerToken, CancellationToken ct) -> Task<CollaborationResult<PeerTaskResult>>`; owns source policy and receipt-before-send ordering
 - `A2AHttpClient.SendAsync(OutgoingReceipt receipt, CapabilityToken currentPeerToken, CancellationToken ct) -> Task<CollaborationResult<PeerTaskResult>>`; transport only, no implicit retry
 
-- [ ] Add real HTTP tests for disabled routes; missing/ambiguous authority/store/public signing key; `none` global auth not bypassing peer auth; wrong recipient/task/cursor; exact per-version routes and headers; 0.3 cancel name mismatch; proper 401/403/404/error envelopes
+- [ ] Add real HTTP tests for disabled routes; missing/ambiguous authority/store/public signing key; `none` global auth not bypassing peer auth; wrong recipient/task/cursor; exact per-version routes; header-only/query-only/agreeing `A2A-Version` values; absent/empty selecting 0.3; rejection before admission of repeated, comma-joined, conflicting or unsupported versions; 0.3 cancel name mismatch; proper 401/403/404/error envelopes
 - [ ] Add controlled-response-loss tests and restart source receipt storage before receiving task/context IDs. Assert an explicit identical resubmission returns the original task while changed origin, recipient, body, or version conflicts. Assert failed receipt persistence results in zero network calls
 - [ ] Run Silo tests and record intended routing/authentication/transmission-order failures
 - [ ] Compose exactly one durable guard and policy provider, independent of route enablement; map version-specific handlers to Task 4 use cases. Client disables cookies, redirects and proxies; accepts only configured literal loopback endpoints; uses 5-second connect/30-second request deadlines. Credentials are per-request and never stored with receipts or followed to an advertised replacement origin

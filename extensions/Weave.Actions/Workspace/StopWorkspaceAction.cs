@@ -45,7 +45,7 @@ public sealed class StopWorkspaceAction
             return response.StatusCode switch
             {
                 HttpStatusCode.NoContent => ActionResult.Success(new StopWorkspaceResult()),
-                HttpStatusCode.Conflict => await ReadConflictAsync(response, input.WorkspaceId, cancellationToken),
+                HttpStatusCode.Conflict => await ReadConflictAsync(response, input.WorkspaceId, managementId, cancellationToken),
                 HttpStatusCode.Unauthorized or HttpStatusCode.Forbidden => ActionResult.Failed<StopWorkspaceResult>(
                     ActionFailure.Unauthorized($"Silo refused the stop request ({(int)response.StatusCode}).")),
                 _ when (int)response.StatusCode >= 500 => ActionResult.Failed<StopWorkspaceResult>(
@@ -69,15 +69,17 @@ public sealed class StopWorkspaceAction
     private static async Task<ActionResult<StopWorkspaceResult>> ReadConflictAsync(
         HttpResponseMessage response,
         string workspaceId,
+        string managementId,
         CancellationToken cancellationToken)
     {
         var problem = await response.Content.ReadFromJsonAsync(
             WorkspaceJsonContext.Default.WorkspaceProblemWire,
             cancellationToken);
         var detail = problem?.Detail;
-        return ActionResult.Failed<StopWorkspaceResult>(
-            ActionFailure.Conflict(string.IsNullOrWhiteSpace(detail)
-                ? $"Workspace '{workspaceId}' could not be stopped."
-                : detail));
+        var message = string.IsNullOrWhiteSpace(detail)
+            ? $"Workspace '{workspaceId}' could not be stopped."
+            : detail;
+        return ActionResult.Failed<StopWorkspaceResult>(ActionFailure.Conflict(
+            $"{message} Inspect management operation {managementId} before retrying."));
     }
 }

@@ -4,6 +4,7 @@ using System.Text.Json.Nodes;
 
 namespace Weave.Silo.Tests.Dashboard;
 
+[Trait("Category", "Integration")]
 public sealed class DashboardReviewBrowserTests
 {
     private const string OriginalBody = "review-content-marker <script>window.__reviewInjected=true</script>\ncomplete retained text";

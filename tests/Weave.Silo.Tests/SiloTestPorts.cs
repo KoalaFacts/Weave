@@ -1,5 +1,5 @@
 using System.Net;
-using System.Net.Sockets;
+using Microsoft.AspNetCore.Connections;
 using Microsoft.AspNetCore.Hosting;
 using Microsoft.Extensions.DependencyInjection;
 using Orleans.Configuration;
@@ -10,25 +10,33 @@ internal static class SiloTestPorts
 {
     public static void Configure(IWebHostBuilder builder) => builder.ConfigureServices(services =>
     {
-        using var silo = new TcpListener(IPAddress.Loopback, 0);
-        using var gateway = new TcpListener(IPAddress.Loopback, 0);
-        silo.Start();
-        gateway.Start();
-        var siloEndpoint = (IPEndPoint)silo.LocalEndpoint;
-        var gatewayEndpoint = (IPEndPoint)gateway.LocalEndpoint;
-        siloEndpoint.Port.ShouldNotBe(11111);
-        siloEndpoint.Port.ShouldNotBe(30000);
-        gatewayEndpoint.Port.ShouldNotBe(11111);
-        gatewayEndpoint.Port.ShouldNotBe(30000);
-        services.PostConfigure<EndpointOptions>(options =>
+        // Preserve Orleans' opaque transport keys and native listener factories.
+        var transports = services.Where(descriptor => descriptor.IsKeyedService
+            && descriptor.ServiceType == typeof(IConnectionListenerFactory)).ToArray();
+        transports.Length.ShouldBe(2, "Orleans 10.1 registers silo and gateway listener factories.");
+        foreach (var descriptor in transports)
+        {
+            descriptor.Lifetime.ShouldBe(ServiceLifetime.Singleton);
+            descriptor.KeyedImplementationFactory.ShouldNotBeNull();
+        }
+        services.AddSingleton(provider => new SiloTestListeners(
+            (IConnectionListenerFactory)transports[0].KeyedImplementationFactory!(provider, transports[0].ServiceKey),
+            (IConnectionListenerFactory)transports[1].KeyedImplementationFactory!(provider, transports[1].ServiceKey)));
+        foreach (var descriptor in transports)
+        {
+            services.Remove(descriptor);
+            services.Add(ServiceDescriptor.KeyedSingleton<IConnectionListenerFactory>(descriptor.ServiceKey,
+                (provider, _) => provider.GetRequiredService<SiloTestListeners>()));
+        }
+        services.AddOptions<EndpointOptions>().PostConfigure<SiloTestListeners>((options, listeners) =>
         {
             options.AdvertisedIPAddress = IPAddress.Loopback;
-            options.SiloPort = siloEndpoint.Port;
-            options.GatewayPort = gatewayEndpoint.Port;
-            options.SiloListeningEndpoint = siloEndpoint;
-            options.GatewayListeningEndpoint = gatewayEndpoint;
+            options.SiloPort = listeners.SiloEndpoint.Port;
+            options.GatewayPort = listeners.GatewayEndpoint.Port;
+            options.SiloListeningEndpoint = listeners.SiloEndpoint;
+            options.GatewayListeningEndpoint = listeners.GatewayEndpoint;
         });
-        services.PostConfigure<DevelopmentClusterMembershipOptions>(options =>
-            options.PrimarySiloEndpoint = siloEndpoint);
+        services.AddOptions<DevelopmentClusterMembershipOptions>().PostConfigure<SiloTestListeners>(
+            (options, listeners) => options.PrimarySiloEndpoint = listeners.SiloEndpoint);
     });
 }
