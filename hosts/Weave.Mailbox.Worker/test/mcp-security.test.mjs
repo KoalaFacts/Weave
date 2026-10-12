@@ -46,3 +46,8 @@ test('MCP waits for slow stdout consumers instead of dispatching unbounded large
         child.stdout.resume();await allCalls;const [code]=await exited;assert.equal(code,0);assert.equal(stderr,'');
     }finally{if(child.exitCode===null)child.kill();await server.close();}
 });
+test('MCP redacts the actual HTTP header value when the runtime strips surrounding whitespace',async()=>{
+    const actual=secret(),control='  '+actual+'  ';
+    const server=await httpServer((req,res)=>{const received=req.headers['x-weave-mailbox-control'];assert.equal(received,actual);res.setHeader('Content-Type','application/json');res.end(JSON.stringify({[received]:'reflected header',value:received}));}),client=mcpClient(server.url,control);
+    try{await client.initialize();const result=await client.call('read_inbox');assert.equal(result.isError,false);assert.ok(!result.content[0].text.includes(actual));assert.ok(!client.logs.includes(actual));}finally{await client.close();await server.close();}
+});
