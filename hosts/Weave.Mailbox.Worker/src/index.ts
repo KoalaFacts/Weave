@@ -1,4 +1,6 @@
 import { demo } from './demo';
+import { registry } from './registry';
+import { publicReadRate } from './public-rate';
 import { directory, mutateAddress, ownedAddresses } from './addresses';
 import { sweep } from './cleanup';
 import { budgetDatabase } from './budget';
@@ -12,13 +14,18 @@ import { read } from './reads';
 import { body, control, fail, json, problem } from './wire';
 
 export default {
+    async scheduled(_event: unknown, env: Env): Promise<void> {
+        await sweep({...env,db:budgetDatabase(env.db)},true);
+    },
     async fetch(request: Request, env: Env, context: Context): Promise<Response> {
         env = {...env,db:budgetDatabase(env.db)};
         try {
             const url = new URL(request.url), secret = control(request), method = request.method;
             if (url.protocol !== 'https:' && !['localhost','127.0.0.1','[::1]'].includes(url.hostname)) fail(400,'invalid');
             if (method === 'GET' && url.pathname === '/') return demo();
+            if (method === 'GET' && url.pathname === '/registry') return registry();
             if (method === 'POST' && url.pathname === '/v1/accounts') return json(await register(env,request,secret,await body(request)));
+            if(method==='GET'&&['/v1/directory','/v1/directory/address','/v1/contacts/cards','/v1/contacts/card'].includes(url.pathname))await publicReadRate(env,request);
             const account = await authenticate(env,secret);
             if (method === 'GET' && ['/v1/directory','/v1/directory/address'].includes(url.pathname)) return json(await atomic(env.db,tx => directory(tx,url)));
             if (method === 'GET' && ['/v1/contacts/cards','/v1/contacts/card'].includes(url.pathname)) return json(await atomic(env.db,tx => read(tx,url,account?.accountId ?? null)));

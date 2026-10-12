@@ -1,0 +1,8 @@
+{
+  "name": "weave-mailbox-demo",
+  "type": "mcp",
+  "mcp": {
+    "server": "node",
+    "args": ["examples/mailbox-demo-mcp/server.mjs"]
+  }
+}

@@ -4,6 +4,7 @@
   "compatibility_date": "2026-07-01",
   "compatibility_flags": ["nodejs_compat"],
   "workers_dev": false,
+  "triggers": {"crons": ["*/5 * * * *"]},
   "rules": [{"type":"Text","globs":["**/*.html"],"fallthrough":true}],
   "d1_databases": [{
     "binding": "db",
@@ -12,6 +13,8 @@
     "migrations_dir": "migrations"
   }],
   "vars": {
+    "CLEANUP_MAX_MESSAGES": "128",
+    "CLEANUP_TIME_BUDGET_MS": "2000",
     "REGISTRATION_ENABLED": "false",
     "REGISTRATION_MAX_ACCOUNTS": "100",
     "REGISTRATION_PER_IP_PER_HOUR": "10",

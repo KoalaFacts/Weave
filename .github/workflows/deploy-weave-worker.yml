@@ -63,6 +63,8 @@ jobs:
           WEAVE_D1_DATABASE_NAME: ${{ vars.WEAVE_D1_DATABASE_NAME }}
           WEAVE_REGISTRATION_ENABLED: ${{ vars.WEAVE_REGISTRATION_ENABLED }}
           WEAVE_HOST: ${{ vars.WEAVE_HOST }}
+          CLEANUP_MAX_MESSAGES: ${{ vars.CLEANUP_MAX_MESSAGES }}
+          CLEANUP_TIME_BUDGET_MS: ${{ vars.CLEANUP_TIME_BUDGET_MS }}
   deploy-production:
     needs: verify
     if: inputs.configuration_scope == 'production'
@@ -89,3 +91,5 @@ jobs:
           WEAVE_D1_DATABASE_NAME: ${{ vars.WEAVE_D1_DATABASE_NAME }}
           WEAVE_REGISTRATION_ENABLED: ${{ vars.WEAVE_REGISTRATION_ENABLED }}
           WEAVE_HOST: ${{ vars.WEAVE_HOST }}
+          CLEANUP_MAX_MESSAGES: ${{ vars.CLEANUP_MAX_MESSAGES }}
+          CLEANUP_TIME_BUDGET_MS: ${{ vars.CLEANUP_TIME_BUDGET_MS }}

@@ -19,7 +19,7 @@ Commands were run locally with Node 24.19.0, .NET SDK 10.0.401 and the pinned Wo
 | Check | Actual result |
 | --- | --- |
 | `npm run typecheck` | Passed. |
-| `npm test` | 32 passed, no failures or skips. Includes real workerd/D1 HTTP and restart tests, exact timestamp/int64 checks, HTTPS ingress, UI-script regressions and SSE bounds. |
+| `npm test` | 66 passed, no failures or skips in the follow-up suite; the subsequently added cleanup elapsed-time regression also passed 1/1 separately. Includes real workerd/D1, MCP child processes, IDOR, registry, rate and cleanup checks. |
 | `npm run test:compat` | Passed. Original C# DTO/source-generated JSON traversed real Worker HTTP for contact, acceptance, messages, inbox, ACK and replay; synthetic UTF-8 SHA-256 vectors also matched. |
 | `npm audit --json` | Zero reported vulnerabilities in the pinned dependency graph. |
 | Local Wrangler migration and HTTP smoke | Migration applied; browser entry returned 200; registration, zero initial addresses, private-address creation and absence from public discovery verified. |
@@ -74,3 +74,7 @@ python3 /workspace/weave-toolchain/reap.py dotnet tests/Weave.Silo.Tests/bin/Rel
 ```
 
 The reaper only owns/reaps child processes; it does not filter tests or change browser flags. All five failures occur in fixture startup before browser/product actions. The outer child-process assertion reports Chromium's startup failure, not a failed product behavior assertion. No sandbox bypass was used.
+
+## Public registry, runnable MCP and scheduled cleanup follow-up
+
+Adds `/registry` using the existing public projection, a native Node stdio demo MCP using the actual authenticated HTTP API, shared public-discovery request rates, and a bounded scheduled cleanup entry. See [security verification](2026-10-12-demo-security.md) for new positive/negative tests, IDOR matrix, retention and execution caps, review findings and remaining gates. No remote account registration or cleanup was performed.

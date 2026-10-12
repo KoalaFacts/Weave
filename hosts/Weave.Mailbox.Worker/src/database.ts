@@ -10,6 +10,8 @@ export interface Database { prepare(sql: string): Statement; batch(statements: S
 export interface Env {
     db: Database;
     WEAVE_HOST?: string;
+    CLEANUP_MAX_MESSAGES?: string;
+    CLEANUP_TIME_BUDGET_MS?: string;
     REGISTRATION_ENABLED: string;
     REGISTRATION_MAX_ACCOUNTS: string;
     REGISTRATION_PER_IP_PER_HOUR: string;

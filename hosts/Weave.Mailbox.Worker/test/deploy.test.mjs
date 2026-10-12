@@ -18,8 +18,9 @@ function fixture({status=200,failAt=0,pending=false,wrongBinding=false}={}){
 }
 test('deployment configuration binds existing resources and validates optional origin',()=>{
     const config=deploymentConfig(base,env);assert.equal(config.name,'demo');assert.equal(config.d1_databases[0].binding,'db');assert.equal(config.workers_dev,true);assert.equal(config.vars.REGISTRATION_ENABLED,'false');assert.equal(config.vars.WEAVE_HOST,undefined);
+    assert.equal(deploymentConfig(base,{...env,CLEANUP_MAX_MESSAGES:'0'}).vars.CLEANUP_MAX_MESSAGES,'0');
     assert.equal(deploymentConfig(base,{...env,WEAVE_HOST:'https://demo.weave-389.workers.dev/'}).vars.WEAVE_HOST,'https://demo.weave-389.workers.dev');
-    for(const change of [{CLOUDFLARE_ACCOUNT_ID:''},{WEAVE_D1_DATABASE_ID:'00000000-0000-0000-0000-000000000000'},{WEAVE_D1_DATABASE_NAME:''},{WEAVE_REGISTRATION_ENABLED:'yes'},{WEAVE_HOST:'https://example.com/path'},{WEAVE_HOST:'http://example.com'}])assert.throws(()=>deploymentConfig(base,{...env,...change}));
+    for(const change of [{CLOUDFLARE_ACCOUNT_ID:''},{WEAVE_D1_DATABASE_ID:'00000000-0000-0000-0000-000000000000'},{WEAVE_D1_DATABASE_NAME:''},{WEAVE_REGISTRATION_ENABLED:'yes'},{CLEANUP_MAX_MESSAGES:'100001'},{CLEANUP_TIME_BUDGET_MS:'10001'},{WEAVE_HOST:'https://example.com/path'},{WEAVE_HOST:'http://example.com'}])assert.throws(()=>deploymentConfig(base,{...env,...change}));
 });
 test('deployment confirms migration completion before deploying and removes temporary config',async()=>{
     const f=fixture();await deploy(f.options);assert.equal(f.requests.length,3);

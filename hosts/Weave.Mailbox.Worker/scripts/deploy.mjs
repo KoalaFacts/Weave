@@ -13,6 +13,9 @@ export function deploymentConfig(base,env,root=directory){
     const registration=env.WEAVE_REGISTRATION_ENABLED||'false';
     if(!['true','false'].includes(registration))throw Error('WEAVE_REGISTRATION_ENABLED must be true or false.');
     const vars={...base.vars,REGISTRATION_ENABLED:registration};
+    for(const [name,maximum] of [['CLEANUP_MAX_MESSAGES',100000],['CLEANUP_TIME_BUDGET_MS',10000]]){
+        if(env[name]){if(!/^\d+$/.test(env[name])||Number(env[name])>maximum)throw Error(name+' exceeds its supported bound.');vars[name]=env[name];}
+    }
     if(env.WEAVE_HOST){
         let url;try{url=new URL(env.WEAVE_HOST);}catch{throw Error('WEAVE_HOST must be an HTTPS origin.');}
         if(url.protocol!=='https:'||url.username||url.password||url.pathname!=='/'||url.search||url.hash)throw Error('WEAVE_HOST must be an HTTPS origin.');
