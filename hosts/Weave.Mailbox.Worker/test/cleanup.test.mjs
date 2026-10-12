@@ -2,12 +2,34 @@ import assert from 'node:assert/strict';
 import { test } from 'node:test';
 import { readFile } from 'node:fs/promises';
 import { start, payload } from './harness.mjs';
+import { deploymentConfig } from '../scripts/deploy.mjs';
 const DAY=86400000;
 async function scheduled(h){const result=await (await h.mf.getWorker()).scheduled({cron:'*/5 * * * *',scheduledTime:Date.now()});assert.equal(result.outcome,'ok');}
 async function seed(h,sender,recipient,p,state='pending',terminalAt=null){
     const record={receipt:{messageId:p.messageId,senderMailboxId:sender,recipientMailboxId:recipient,state,expiresAt:p.expiresAt,terminalAt},generation:1,version:1,payload:p,size:Buffer.from(p.bytes,'base64').length,expiresTicks:(BigInt(Date.parse(p.expiresAt))*10000n).toString(),fingerprint:'synthetic-retention-fixture',purpose:0,request:null};
     await h.db.prepare("INSERT INTO mailbox_records(kind,owner,id,data) VALUES('message',?,?,?)").bind(sender,p.messageId,JSON.stringify(record)).run();return record;
 }
+test('demo deployment bindings preserve expired business records while registry housekeeping continues',async()=>{
+    const base=JSON.parse(await readFile('wrangler.jsonc','utf8'));
+    const config=deploymentConfig(base,{CLOUDFLARE_ACCOUNT_ID:'a'.repeat(32),WEAVE_D1_DATABASE_ID:'11111111-2222-3333-4444-555555555555',WEAVE_D1_DATABASE_NAME:'synthetic-demo',CLEANUP_MAX_MESSAGES:'128',CLEANUP_TIME_BUDGET_MS:'2000'});
+    const h=await start({bindings:config.vars});
+    try{
+        const old=Date.now()-9*DAY,p=payload('retained demo body',old);
+        await seed(h,'sender','recipient',p);
+        const insert=async(kind,owner,id,data)=>h.db.prepare('INSERT INTO mailbox_records(kind,owner,id,data) VALUES(?,?,?,?)').bind(kind,owner,id,JSON.stringify(data)).run();
+        await insert('request','sender','old-request',{summary:{status:'pending',expiresAt:p.expiresAt},expiresTicks:(BigInt(Date.parse(p.expiresAt))*10000n).toString(),terminalAt:null});
+        await insert('request','sender','terminal-request',{terminalAt:new Date(old).toISOString()});
+        await insert('channel','recipient','sender',{currentRequest:{requesterMailboxId:'sender',requestId:'terminal-request'}});
+        await insert('public-rate','','old-counter',{at:old,count:1});
+        const snapshot=async()=> (await h.db.prepare("SELECT kind,owner,id,data FROM mailbox_records WHERE kind IN ('message','request','channel') ORDER BY seq").all()).results;
+        const before=await snapshot();await scheduled(h);assert.deepEqual(await snapshot(),before);
+        assert.equal(await h.db.prepare("SELECT count(*) n FROM mailbox_records WHERE kind='maintenance'").first('n'),0);
+        assert.deepEqual((await h.ok('/v1/directory')).items,[]);
+        assert.equal(await h.db.prepare("SELECT count(*) n FROM mailbox_records WHERE kind='public-rate' AND id='old-counter'").first('n'),0);
+        assert.equal(await h.db.prepare("SELECT count(*) n FROM mailbox_records WHERE kind='public-rate'").first('n'),2);
+        assert.deepEqual(await snapshot(),before);
+    }finally{await h.close();}
+});
 test('scheduled safety net clears expired and retained terminal bodies, preserves live pending and seven-day receipts',async()=>{
     const h=await start();
     try{
