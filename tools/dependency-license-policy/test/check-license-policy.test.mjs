@@ -64,6 +64,24 @@ test('inspectPolicy_PinnedSetupNodeWithVerifiedLicense_Available', () => {
   assert.equal(inspectScenario([{ ...pinned, license: 'GPL-3.0' }]).status, 'blocked');
 });
 
+test('inspectPolicy_PinnedUploadArtifactUpdateWithVerifiedLicense_RequiresExactIdentity', () => {
+  const pin = 'cf430e030ddbb5b0abf93d22962f4752f3646cd9';
+  const name = 'actions/upload-artifact';
+  const pinned = {
+    ...change(null), ecosystem: 'actions', name, version: pin,
+    package_url: `pkg:githubactions/${name}@${pin}`,
+  };
+  assert.equal(inspectScenario([pinned]).status, 'available');
+  for (const mismatch of [
+    { name: 'other/upload-artifact' }, { version: 'different' },
+    { package_url: `pkg:githubactions/other/upload-artifact@${pin}` },
+    { ecosystem: 'npm' }, { license: 'NOASSERTION' },
+  ]) {
+    assert.equal(inspectScenario([{ ...pinned, ...mismatch }]).status, 'unavailable');
+  }
+  assert.equal(inspectScenario([{ ...pinned, license: 'GPL-3.0' }]).status, 'blocked');
+});
+
 test('inspectPolicy_PinnedDownloadArtifactUpdateWithVerifiedLicense_RequiresExactIdentity', () => {
   const pin = '9000827ccba6bdab643e8b6fd33ac0654aef8333';
   const name = 'actions/download-artifact';
