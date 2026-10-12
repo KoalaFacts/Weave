@@ -27,10 +27,11 @@ jobs:
         with:
           persist-credentials: false
 
-      - name: Setup pinned .NET SDK
+      - name: Setup .NET 10 GA SDK
         uses: ./.github/actions/setup-dotnet
         with:
-          dotnet-version: '10.0.401'
+          dotnet-version: '10.0.x'
+          dotnet-quality: 'ga'
 
       - name: Architecture checks
         run: python3 -m unittest discover -s scripts/tests -v

@@ -58,11 +58,7 @@ jobs:
         working-directory: hosts/Weave.Mailbox.Worker
         env:
           CLOUDFLARE_API_TOKEN: ${{ secrets.CLOUDFLARE_API_TOKEN }}
-          CLOUDFLARE_ACCOUNT_ID: ${{ vars.CLOUDFLARE_ACCOUNT_ID }}
-          WEAVE_D1_DATABASE_ID: ${{ vars.WEAVE_D1_DATABASE_ID }}
-          WEAVE_D1_DATABASE_NAME: ${{ vars.WEAVE_D1_DATABASE_NAME }}
-          WEAVE_REGISTRATION_ENABLED: ${{ vars.WEAVE_REGISTRATION_ENABLED }}
-          WEAVE_HOST: ${{ vars.WEAVE_HOST }}
+          CLOUDFLARE_ACCOUNT_ID: ${{ secrets.CLOUDFLARE_ACCOUNT_ID }}
   deploy-production:
     needs: verify
     if: inputs.configuration_scope == 'production'
@@ -84,8 +80,4 @@ jobs:
         working-directory: hosts/Weave.Mailbox.Worker
         env:
           CLOUDFLARE_API_TOKEN: ${{ secrets.CLOUDFLARE_API_TOKEN }}
-          CLOUDFLARE_ACCOUNT_ID: ${{ vars.CLOUDFLARE_ACCOUNT_ID }}
-          WEAVE_D1_DATABASE_ID: ${{ vars.WEAVE_D1_DATABASE_ID }}
-          WEAVE_D1_DATABASE_NAME: ${{ vars.WEAVE_D1_DATABASE_NAME }}
-          WEAVE_REGISTRATION_ENABLED: ${{ vars.WEAVE_REGISTRATION_ENABLED }}
-          WEAVE_HOST: ${{ vars.WEAVE_HOST }}
+          CLOUDFLARE_ACCOUNT_ID: ${{ secrets.CLOUDFLARE_ACCOUNT_ID }}

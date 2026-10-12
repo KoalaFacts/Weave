@@ -3,17 +3,18 @@ import test from 'node:test';
 import { readFileSync, existsSync } from 'node:fs';
 import { deploy, deploymentConfig, noPendingMigrations } from '../scripts/deploy.mjs';
 const base=JSON.parse(readFileSync(new URL('../wrangler.jsonc',import.meta.url)));
-const env={CLOUDFLARE_ACCOUNT_ID:'a'.repeat(32),WEAVE_D1_DATABASE_ID:'11111111-2222-3333-4444-555555555555',WEAVE_D1_DATABASE_NAME:'synthetic-weave',CLOUDFLARE_API_TOKEN:'synthetic-deploy-token'};
-function fixture({status=200,failAt=0,pending=false,wrongBinding=false,cleanup=['0','0'],verificationStatus=200,extraEnv={}}={}){
+const database={uuid:'11111111-2222-3333-4444-555555555555',name:'synthetic-weave'};
+const env={CLOUDFLARE_ACCOUNT_ID:'a'.repeat(32),CLOUDFLARE_API_TOKEN:'synthetic-deploy-token'};
+function fixture({status=200,failAt=0,pending=false,bindingResult=[{name:'db',type:'d1',id:database.uuid}],databaseResult=database,cleanup=['0','0'],verificationStatus=200,extraEnv={}}={}){
     const requests=[],commands=[],paths=[],configs=[];
     return {requests,commands,paths,configs,options:{env:{...env,...extraEnv},fetchImpl:async(url,options)=>{
         requests.push(url);assert.equal(options.redirect,'error');assert.equal(options.headers.Authorization,'Bearer '+env.CLOUDFLARE_API_TOKEN);
         const verifying=commands.length===4;
-        const bindings=[{name:'db',type:'d1',id:wrongBinding?'wrong':env.WEAVE_D1_DATABASE_ID}];
+        const bindings=verifying?[...bindingResult]:bindingResult;
         if(verifying)for(const [index,name] of ['CLEANUP_MAX_MESSAGES','CLEANUP_TIME_BUDGET_MS'].entries()){
             if(cleanup[index]!==undefined)bindings.push({name,type:'plain_text',text:cleanup[index]});
         }
-        const result=url.endsWith('/workers/subdomain')?{subdomain:'weave-389'}:url.endsWith('/settings')?{bindings}:{uuid:env.WEAVE_D1_DATABASE_ID,name:env.WEAVE_D1_DATABASE_NAME};
+        const result=url.endsWith('/workers/subdomain')?{subdomain:'weave-389'}:url.endsWith('/settings')?{bindings}:databaseResult;
         const responseStatus=verifying?verificationStatus:status;
         return {ok:responseStatus===200,status:responseStatus,json:async()=>({success:true,result})};
     },run:args=>{
@@ -22,10 +23,16 @@ function fixture({status=200,failAt=0,pending=false,wrongBinding=false,cleanup=[
         return {status:commands.length===failAt?1:0,stdout:commands.length===3?(pending?'0002_pending.sql\n':'No migrations to apply!\n'):''};
     }}};
 }
-test('deployment configuration binds existing resources and validates optional origin',()=>{
+test('deployment configuration targets the existing Worker and db binding',()=>{
     const config=deploymentConfig(base,env);assert.equal(config.name,'demo');assert.equal(config.d1_databases[0].binding,'db');assert.equal(config.workers_dev,true);assert.equal(config.vars.REGISTRATION_ENABLED,'false');assert.equal(config.vars.WEAVE_HOST,undefined);
-    assert.equal(deploymentConfig(base,{...env,WEAVE_HOST:'https://demo.weave-389.workers.dev/'}).vars.WEAVE_HOST,'https://demo.weave-389.workers.dev');
-    for(const change of [{CLOUDFLARE_ACCOUNT_ID:''},{WEAVE_D1_DATABASE_ID:'00000000-0000-0000-0000-000000000000'},{WEAVE_D1_DATABASE_NAME:''},{WEAVE_REGISTRATION_ENABLED:'yes'},{WEAVE_HOST:'https://example.com/path'},{WEAVE_HOST:'http://example.com'}])assert.throws(()=>deploymentConfig(base,{...env,...change}));
+    assert.throws(()=>deploymentConfig(base,{...env,CLOUDFLARE_ACCOUNT_ID:''}),/CLOUDFLARE_ACCOUNT_ID must identify the existing account/);
+});
+test('deployment uses checked-in registration and ignores inherited host and registration settings',()=>{
+    for(const registration of ['true','false']){
+        const config=deploymentConfig({...base,vars:{...base.vars,REGISTRATION_ENABLED:registration}},{...env,WEAVE_REGISTRATION_ENABLED:registration==='true'?'false':'true',WEAVE_HOST:'https://stale.example.test'});
+        assert.equal(config.vars.REGISTRATION_ENABLED,registration);
+        assert.equal(config.vars.WEAVE_HOST,undefined);
+    }
 });
 test('checked-in demo and deployment keep business cleanup disabled despite inherited values',()=>{
     assert.equal(base.vars.CLEANUP_MAX_MESSAGES,'0');assert.equal(base.vars.CLEANUP_TIME_BUDGET_MS,'0');
@@ -77,6 +84,35 @@ test('remaining or unrecognized migration output blocks deployment',async()=>{
 for(const status of [401,403,404])test(`HTTP ${status} stops without retry or mutation`,async()=>{
     const f=fixture({status});await assert.rejects(deploy(f.options),new RegExp('HTTP '+status));assert.equal(f.requests.length,1);assert.equal(f.commands.length,0);
 });
-test('existing binding mismatch stops before migrations',async()=>{
-    const f=fixture({wrongBinding:true});await assert.rejects(deploy(f.options),/binding does not match/);assert.equal(f.commands.length,0);
+for(const extraEnv of [{},{WEAVE_D1_DATABASE_ID:'22222222-3333-4444-5555-666666666666',WEAVE_D1_DATABASE_NAME:'stale-ignored'}])test(`deployment discovers existing D1 identity with ${Object.keys(extraEnv).length?'stale ignored':'no'} database settings`,async()=>{
+    const f=fixture({extraEnv});await deploy(f.options);
+    assert.deepEqual(f.requests.map(url=>url.split('/accounts/')[1].slice(32)),['/workers/subdomain','/workers/scripts/demo/settings','/d1/database/'+database.uuid,'/workers/scripts/demo/settings']);
+    assert.equal(f.commands.length,4);
+    for(const config of f.configs){
+        assert.equal(config.d1_databases.length,1);
+        assert.equal(config.d1_databases[0].binding,'db');
+        assert.equal(config.d1_databases[0].database_id,database.uuid);
+        assert.equal(config.d1_databases[0].database_name,database.name);
+    }
+});
+for(const [label,bindingResult] of [
+    ['missing',[]],
+    ['invalid collection',{}],
+    ['invalid UUID',[{name:'db',type:'d1',id:'../other-resource'}]],
+    ['placeholder UUID',[{name:'db',type:'d1',id:'00000000-0000-0000-0000-000000000000'}]],
+    ['wrong type',[{name:'db',type:'kv_namespace',id:database.uuid}]],
+    ['ambiguous',[{name:'db',type:'d1',id:database.uuid},{name:'db',type:'d1',id:database.uuid}]],
+])test(`discovered D1 binding ${label} stops before database lookup and migration`,async()=>{
+    const f=fixture({bindingResult});await assert.rejects(deploy(f.options),/existing D1 binding named db/);
+    assert.equal(f.requests.length,2);assert.equal(f.commands.length,0);
+});
+for(const databaseResult of [{...database,uuid:'22222222-3333-4444-5555-666666666666'},{...database,name:''},{...database,name:'../other'}])test(`discovered D1 identity ${JSON.stringify(databaseResult)} stops before migration`,async()=>{
+    const f=fixture({databaseResult});await assert.rejects(deploy(f.options),/Existing D1 identity/);
+    assert.equal(f.requests.length,3);assert.equal(f.commands.length,0);
+});
+for(const requestNumber of [2,3])for(const status of [401,403,404])test(`discovery request ${requestNumber} HTTP ${status} stops without retry or mutation`,async()=>{
+    const f=fixture(),fetchImpl=f.options.fetchImpl;
+    f.options.fetchImpl=async(...args)=>{const response=await fetchImpl(...args);return f.requests.length===requestNumber?{...response,ok:false,status}:response;};
+    await assert.rejects(deploy(f.options),new RegExp('HTTP '+status));
+    assert.equal(f.requests.length,requestNumber);assert.equal(f.commands.length,0);
 });

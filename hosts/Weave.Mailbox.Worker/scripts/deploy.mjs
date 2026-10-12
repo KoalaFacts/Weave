@@ -8,19 +8,10 @@ const expectedSubdomain='weave-389';
 export function deploymentConfig(base,env,root=directory){
     if(base.name!=='demo'||base.d1_databases?.length!==1||base.d1_databases[0].binding!=='db')throw Error('Expected existing Worker demo and binding db.');
     if(!/^[a-f0-9]{32}$/i.test(env.CLOUDFLARE_ACCOUNT_ID??''))throw Error('CLOUDFLARE_ACCOUNT_ID must identify the existing account.');
-    if(!/^[a-f0-9]{8}(?:-[a-f0-9]{4}){3}-[a-f0-9]{12}$/i.test(env.WEAVE_D1_DATABASE_ID??'')||env.WEAVE_D1_DATABASE_ID==='00000000-0000-0000-0000-000000000000')throw Error('WEAVE_D1_DATABASE_ID must identify the existing database.');
-    if(!/^[a-zA-Z0-9_-]+$/.test(env.WEAVE_D1_DATABASE_NAME??''))throw Error('WEAVE_D1_DATABASE_NAME is required.');
-    const registration=env.WEAVE_REGISTRATION_ENABLED||'false';
-    if(!['true','false'].includes(registration))throw Error('WEAVE_REGISTRATION_ENABLED must be true or false.');
     // Business sweeps stay disabled for this demo, including with inherited environment values.
-    const vars={...base.vars,REGISTRATION_ENABLED:registration,CLEANUP_MAX_MESSAGES:'0',CLEANUP_TIME_BUDGET_MS:'0'};
-    if(env.WEAVE_HOST){
-        let url;try{url=new URL(env.WEAVE_HOST);}catch{throw Error('WEAVE_HOST must be an HTTPS origin.');}
-        if(url.protocol!=='https:'||url.username||url.password||url.pathname!=='/'||url.search||url.hash)throw Error('WEAVE_HOST must be an HTTPS origin.');
-        vars.WEAVE_HOST=url.origin;
-    }
+    const vars={...base.vars,CLEANUP_MAX_MESSAGES:'0',CLEANUP_TIME_BUDGET_MS:'0'};
     return {...base,account_id:env.CLOUDFLARE_ACCOUNT_ID,main:resolve(root,base.main),workers_dev:true,vars,
-        d1_databases:[{...base.d1_databases[0],database_id:env.WEAVE_D1_DATABASE_ID,database_name:env.WEAVE_D1_DATABASE_NAME,migrations_dir:resolve(root,base.d1_databases[0].migrations_dir)}]};
+        d1_databases:[{...base.d1_databases[0],migrations_dir:resolve(root,base.d1_databases[0].migrations_dir)}]};
 }
 export function noPendingMigrations(output){return /(?:^|\n)(?:✅ )?No migrations to apply!\s*(?:\n|$)/u.test(output);}
 export async function deploy({env=process.env,fetchImpl=fetch,run,root=directory}={}){
@@ -35,11 +26,14 @@ export async function deploy({env=process.env,fetchImpl=fetch,run,root=directory
     const subdomain=await inspect('/workers/subdomain','Account subdomain');
     if(subdomain.subdomain!==expectedSubdomain)throw Error('Account does not own the authorized weave-389.workers.dev subdomain.');
     const worker=await inspect('/workers/scripts/demo/settings','Existing Worker demo');
-    const binding=worker.bindings?.find(binding=>binding.name==='db'&&binding.type==='d1');
-    if(binding?.id!==config.d1_databases[0].database_id)throw Error('Existing Worker db binding does not match the configured D1 ID.');
-    if(worker.bindings.some(binding=>!['plain_text','json','secret_text'].includes(binding.type)&&!(binding.type==='d1'&&binding.name==='db')))throw Error('Unexpected existing resource bindings; refusing to overwrite them.');
-    const database=await inspect('/d1/database/'+config.d1_databases[0].database_id,'Existing D1 database');
-    if(database.uuid!==config.d1_databases[0].database_id||database.name!==config.d1_databases[0].database_name)throw Error('Existing D1 identity does not match configuration.');
+    const bindings=Array.isArray(worker.bindings)?worker.bindings.filter(binding=>binding?.name==='db'):[];
+    const binding=bindings[0];
+    if(bindings.length!==1||binding?.type!=='d1'||!/^[a-f0-9]{8}(?:-[a-f0-9]{4}){3}-[a-f0-9]{12}$/i.test(binding.id??'')||binding.id==='00000000-0000-0000-0000-000000000000')throw Error('Expected one valid existing D1 binding named db.');
+    if(worker.bindings.some(binding=>!['plain_text','json','secret_text'].includes(binding?.type)&&!(binding?.type==='d1'&&binding.name==='db')))throw Error('Unexpected existing resource bindings; refusing to overwrite them.');
+    const database=await inspect('/d1/database/'+binding.id,'Existing D1 database');
+    if(database.uuid!==binding.id||typeof database.name!=='string'||!/^[a-zA-Z0-9_-]+$/.test(database.name))throw Error('Existing D1 identity does not match its Worker binding or has an invalid name.');
+    config.d1_databases[0].database_id=database.uuid;
+    config.d1_databases[0].database_name=database.name;
     const temporary=await mkdtemp(join(root,'.deploy-'));
     try{
         const configPath=join(temporary,'wrangler.json');await writeFile(configPath,JSON.stringify(config,null,2),{mode:0o600});
