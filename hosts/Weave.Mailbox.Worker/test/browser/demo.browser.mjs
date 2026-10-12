@@ -13,8 +13,24 @@ const publicLabel = 'Browser Bob <img src=x onerror=alert(1)>';
 const privateLabel = 'Browser Alice private address';
 const message = 'Browser acceptance message — 你好 🌿';
 
-const text = (page, id) => page.evaluate(`document.getElementById(${JSON.stringify(id)}).textContent`);
-const waitText = (page, id, expected) => page.wait(`document.getElementById(${JSON.stringify(id)}).textContent.includes(${JSON.stringify(expected)})`);
+const text = (page, id) => page.call('function (id) { return document.getElementById(id).textContent; }', [id]);
+const waitText = (page, id, expected) => page.waitCall('function (id, expected) { return document.getElementById(id).textContent.includes(expected); }', [id, expected], id + ' contains expected text');
+
+async function verifyLiteralArguments(page) {
+    const id = 'probe-";globalThis.__weaveBrowserInjected=true;//\\\u2028\u2029';
+    const value = '";globalThis.__weaveBrowserInjected=true;//\n</script><script>globalThis.__weaveBrowserInjected=true</script>\n` ${globalThis.__weaveBrowserInjected=true} \\ \u2028\u2029';
+    await page.call(`function (id) {
+        const probe = document.createElement('textarea');
+        probe.id = id;
+        probe.hidden = true;
+        document.body.append(probe);
+    }`, [id]);
+    try {
+        await page.fill(id, value);
+        assert.equal(await page.call('function (id) { return document.getElementById(id).value; }', [id]), value);
+        assert.equal(await page.evaluate('globalThis.__weaveBrowserInjected'), undefined);
+    } finally { await page.call('function (id) { document.getElementById(id).remove(); }', [id]); }
+}
 
 async function register(page, control, name, firstRegistration = true) {
     await page.fill('control', control);
@@ -68,6 +84,8 @@ test('real Worker UI: isolated sessions, public/private discovery, acceptance, r
         await registry.screenshot('registry-empty-desktop');
         const alice = await chrome.page('alice');
         const bob = await chrome.page('bob');
+        await verifyLiteralArguments(alice);
+        checkpoints.push('CDP passes special characters in textarea ID and value literally without executing the injected marker');
         await alice.fill('control', 'too-short');
         await alice.click('#register');
         await waitText(alice, 'status', 'Control must be at least 64 characters.');
@@ -161,7 +179,7 @@ test('real Worker UI: isolated sessions, public/private discovery, acceptance, r
         await bob.clickText('#inbox', 'Acknowledge');
         await waitText(bob, 'inbox', 'No pending messages.');
         await alice.click('#loadOutbox');
-        await alice.wait(`JSON.parse(document.getElementById('outbox').textContent).some(r => r.messageId === ${JSON.stringify(messageId)} && r.state === 'acknowledged')`);
+        await alice.waitCall('function (messageId) { return JSON.parse(document.getElementById("outbox").textContent).some(r => r.messageId === messageId && r.state === "acknowledged"); }', [messageId], 'acknowledged receipt');
         const receipt = (await h.ok('/v1/outbox', aliceControl)).items.filter(r => r.messageId === messageId);
         assert.equal(receipt.length, 1);
         assert.equal(receipt[0].state, 'acknowledged');

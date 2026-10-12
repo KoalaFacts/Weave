@@ -146,7 +146,7 @@ export class Chrome {
     }
 }
 
-class Page {
+export class Page {
     loadedDocuments = new Set();
     sentMessages = [];
     failNextSendResponse = false;
@@ -181,8 +181,24 @@ class Page {
         assert.equal(result.exceptionDetails, undefined, JSON.stringify(result.exceptionDetails));
         return result.result.value;
     }
+    async call(functionDeclaration, values = []) {
+        const target = await this.command('Runtime.evaluate', { expression: 'globalThis' });
+        assert.equal(target.exceptionDetails, undefined, JSON.stringify(target.exceptionDetails));
+        assert.ok(target.result.objectId, 'Expected a remote global object.');
+        try {
+            const result = await this.command('Runtime.callFunctionOn', {
+                objectId: target.result.objectId, functionDeclaration,
+                arguments: values.map(value => ({ value })), awaitPromise: true, returnByValue: true
+            });
+            assert.equal(result.exceptionDetails, undefined, JSON.stringify(result.exceptionDetails));
+            return result.result.value;
+        } finally { await this.command('Runtime.releaseObject', { objectId: target.result.objectId }); }
+    }
     async wait(expression, description = expression) {
         await until(() => this.evaluate(expression), this.name + ': ' + description);
+    }
+    async waitCall(functionDeclaration, values, description) {
+        await until(() => this.call(functionDeclaration, values), this.name + ': ' + description);
     }
     async navigate(path) {
         const url = path.startsWith('chrome:') ? path : this.browser.origin + path;
@@ -192,31 +208,35 @@ class Page {
         // Observe the matching document load before evaluating JavaScript, so a destroyed
         // about:blank execution context is never mistaken for an application failure.
         await until(() => this.loadedDocuments.has(navigation.loaderId), this.name + ': document load');
-        await this.wait(`location.href === ${JSON.stringify(url)} && document.readyState === 'complete'`);
+        await this.waitCall('function (url) { return location.href === url && document.readyState === "complete"; }', [url], 'navigation ready');
     }
     resize(width, height, mobile = false) {
         return this.command('Emulation.setDeviceMetricsOverride', { width, height, deviceScaleFactor: 1, mobile });
     }
     fill(id, value) {
-        return this.evaluate(`(() => { const e = document.getElementById(${JSON.stringify(id)}); e.value = ${JSON.stringify(value)}; e.dispatchEvent(new Event('input', { bubbles: true })); })()`);
+        return this.call(`function (id, value) {
+            const e = document.getElementById(id);
+            e.value = value;
+            e.dispatchEvent(new Event('input', { bubbles: true }));
+        }`, [id, value]);
     }
     async click(selector) {
-        const point = await this.evaluate(`(() => {
-            const e = document.querySelector(${JSON.stringify(selector)});
-            if (!e || e.disabled) throw Error('Button unavailable: ' + ${JSON.stringify(selector)});
+        const point = await this.call(`function (selector) {
+            const e = document.querySelector(selector);
+            if (!e || e.disabled) throw Error('Button unavailable: ' + selector);
             e.scrollIntoView({ block: 'center' });
             const r = e.getBoundingClientRect(), x = r.x + r.width / 2, y = r.y + r.height / 2;
             if (!e.contains(document.elementFromPoint(x, y))) throw Error('Button obscured');
             return { x, y };
-        })()`);
+        }`, [selector]);
         await this.command('Input.dispatchMouseEvent', { type: 'mousePressed', ...point, button: 'left', clickCount: 1 });
         await this.command('Input.dispatchMouseEvent', { type: 'mouseReleased', ...point, button: 'left', clickCount: 1 });
     }
     async clickText(container, text) {
-        const index = await this.evaluate(`Array.from(document.querySelectorAll(${JSON.stringify(container + ' button')})).findIndex(e => e.textContent === ${JSON.stringify(text)})`);
+        const index = await this.call('function (selector, text) { return Array.from(document.querySelectorAll(selector)).findIndex(e => e.textContent === text); }', [container + ' button', text]);
         assert.notEqual(index, -1, 'Button not found: ' + text);
         // Mark the existing button only to obtain an unambiguous pointer target.
-        await this.evaluate(`document.querySelectorAll(${JSON.stringify(container + ' button')})[${index}].setAttribute('data-browser-target', 'true')`);
+        await this.call('function (selector, index) { document.querySelectorAll(selector)[index].setAttribute("data-browser-target", "true"); }', [container + ' button', index]);
         try { await this.click('[data-browser-target]'); }
         finally { await this.evaluate(`document.querySelector('[data-browser-target]')?.removeAttribute('data-browser-target')`); }
     }
