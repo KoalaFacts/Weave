@@ -68,11 +68,13 @@ internal static class SiloLauncherProcessGroup
         return false;
     }
 
-    private static string[]? ReadProcessFields(int pid)
+    private static string[]? ReadProcessFields(int pid) => ReadProcessFields(pid, File.ReadAllText);
+
+    internal static string[]? ReadProcessFields(int pid, Func<string, string> readAllText)
     {
         try
         {
-            var stat = File.ReadAllText($"/proc/{pid.ToString(CultureInfo.InvariantCulture)}/stat");
+            var stat = readAllText($"/proc/{pid.ToString(CultureInfo.InvariantCulture)}/stat");
             return stat[(stat.LastIndexOf(')') + 1)..].Split(' ', StringSplitOptions.RemoveEmptyEntries);
         }
         catch (FileNotFoundException)
@@ -81,6 +83,11 @@ internal static class SiloLauncherProcessGroup
         }
         catch (DirectoryNotFoundException)
         {
+            return null;
+        }
+        catch (IOException exception) when (OperatingSystem.IsLinux() && exception.HResult == 3)
+        {
+            // procfs reports ESRCH if the process exits after stat is opened but before it is read.
             return null;
         }
     }
