@@ -28,20 +28,41 @@ This starts real local workerd/D1, runs `tests/Weave.Worker.Compatibility`, then
 
 No account token, Cloudflare secret or real registration data is needed for these commands. Do not run remote migration/deployment commands until the target account, D1 resource and deployment have been separately authorized.
 
-### D1 resource and table setup
+### Deploy the existing Worker and D1 database
 
-The operator creates the Worker and D1 resources separately. In `wrangler.jsonc`, keep the D1 binding `db`, replace `database_name` with the actual database name and `database_id` with its ID. The all-zero checked-in ID is a placeholder. The Worker name is `demo`, matching the existing resource; do not create a duplicate Worker. Registration remains disabled until explicitly enabled. The page uses relative API paths and new relay addresses default to the actual request URL origin. No GitHub `WEAVE_HOST` variable is required. An optional `WEAVE_HOST` may specify a validated canonical HTTPS origin (HTTP only on loopback), with no credentials, path, query or fragment. Forwarded host/protocol headers are not used to generate links.
+The manual [Deploy Weave Worker workflow](../../.github/workflows/deploy-weave-worker.yml) targets only the existing Worker **demo**, account subdomain **weave-389**, and its existing lowercase **db** binding. It creates no Worker, database, domain or DNS record. After this draft is reviewed and merged, dispatch the workflow on `main`, selecting `configuration_scope: repository` for repository configuration or `production` for the existing GitHub environment. No `weave-demo` environment is required. Environment protection rules still apply. Confirm where the already-prepared configuration is saved before dispatching; do not recreate credentials or print their values.
 
-In the Cloudflare dashboard, open the existing `demo` Worker, select **Bindings → Add binding → D1 database**, set the variable name to **db**, and choose the independent Weave database. Keep that binding consistent with the checked-in Wrangler configuration. The runtime accesses `env.db` through Cloudflare's binding; no database password or Cloudflare management API token belongs in the app. Deployment and remote migrations instead require the operator/CI's separately authorized Cloudflare management credentials and account ID. See [D1 bindings](https://developers.cloudflare.com/d1/get-started/#3-bind-your-worker-to-your-d1-database). Do not share another application's business tables.
+Use these existing GitHub configuration names in the selected scope:
 
-Tables are created by the versioned SQL in `migrations/`, not automatically on requests. From this directory, after the remote resource and migration have been authorized, run:
+| Kind | Name | Value |
+| --- | --- | --- |
+| Secret | `CLOUDFLARE_API_TOKEN` | Existing deployment token; never an application binding. |
+| Variable | `CLOUDFLARE_ACCOUNT_ID` | Existing account ID. |
+| Variable | `WEAVE_D1_DATABASE_ID` | Existing D1 UUID bound to `demo` as `db`. |
+| Variable | `WEAVE_D1_DATABASE_NAME` | Actual existing database name. |
+| Optional variable | `WEAVE_REGISTRATION_ENABLED` | `true` to allow bounded registration; defaults to `false`. |
+| Optional variable | `WEAVE_HOST` | Canonical HTTPS origin; normally omit. |
+
+For new Cloudflare permissions use **Workers Editor**, scoped to the individual existing Worker `demo`, plus **D1 Edit** for migration operations. Deploying a Worker with a D1 binding does not itself require direct D1 permissions; running migrations does. No Workers Admin, Zone or DNS permissions are needed. The legacy Workers Scripts Edit mapping continues to work and has no announced retirement date, but new setup should use the [current Workers roles](https://developers.cloudflare.com/workers/authorization/workers/). Do not create an additional Worker. The account-subdomain lookup also needs to succeed with that token: current API documentation does not explicitly confirm individual-Worker Editor scope for this account-level read. This has not been remotely verified. If it is denied, stop and report the endpoint; do not broaden permissions automatically.
+
+The workflow installs pinned dependencies from the lockfile, runs Worker tests/typechecking/audit and the original C# wire compatibility harness before the deployment job receives credentials. The deployment script checks the existing account subdomain, Worker binding and database identity through Cloudflare GET endpoints. A denied/missing resource or mismatched binding stops without trying another account or creating resources. It builds an ignored temporary Wrangler config from the selected values; no secret is written into that file. The checked-in all-zero database ID remains a local placeholder.
+
+The only remote mutation sequence is:
 
 ```sh
-npx wrangler d1 migrations list db --remote
-npx wrangler d1 migrations apply db --remote
+# The script supplies the validated temporary --config to every command.
+wrangler d1 migrations list db --remote
+wrangler d1 migrations apply db --remote
+wrangler d1 migrations list db --remote
+# Continue only after the pinned CLI confirms: No migrations to apply!
+wrangler deploy --keep-vars
 ```
 
-These are operator instructions, not commands executed by this change. Wrangler records applied migration versions in `d1_migrations`. The first local apply succeeded; repeating it reported no pending migrations and preserved mailbox rows and sequence state. There is only `0001_mailbox.sql` currently, so no second-version upgrade is claimed tested. Do not manually rerun the SQL or reset existing data to apply later versions; add an ordered migration and validate preservation against the prior version.
+Use the workflow, or `node scripts/deploy.mjs` from this directory with the same approved environment variables; do not run these commands until remote migration/deployment is authorized. The workflow uses the lockfile's local Wrangler binary, not an unpinned downloaded CLI. List may initialize Wrangler's migration metadata. Any command failure or unrecognized/pending post-apply state stops deployment. A failed deployment can leave successfully applied migrations in place: correct the deployment error and rerun the workflow. Wrangler's `d1_migrations` history makes already-applied versions a no-op. Do not manually replay SQL, edit applied migrations, add `IF NOT EXISTS` to hide schema drift, or reset business data. Future changes require new numbered migrations that remain compatible with the previously deployed Worker until rollout completes. These migrations are the sole schema authority; no parallel Drizzle/schema-sync framework exists.
+
+The first local apply executed all 13 commands; repeating it reported no pending migrations and preserved mailbox rows and sequence state. Only `0001_mailbox.sql` exists, so a second-version upgrade is not claimed tested. Remote migration/deployment has not been executed as part of this change. Concurrent workflow deployments are serialized without cancelling an in-progress migration.
+
+The page uses relative API paths and new relay addresses default to the actual request URL origin, including `https://demo.weave-389.workers.dev/`. No GitHub `WEAVE_HOST` variable is required. Forwarded host/protocol headers are ignored. Keep the existing D1 binding named **db**; the runtime accesses `env.db`, with no database password or management token in the app. See [D1 bindings](https://developers.cloudflare.com/d1/get-started/#3-bind-your-worker-to-your-d1-database) and [numbered migrations](https://developers.cloudflare.com/d1/reference/migrations/).
 
 ## Registration and addresses
 

@@ -30,7 +30,7 @@ Commands were run locally with Node 24.19.0, .NET SDK 10.0.401 and the pinned Wo
 
 The page-script regressions run the actual inline script with a simulated DOM/fetch. The slow-writer deadline regression uses a controlled clock/writer; separate HTTP tests exercise real SSE. Neither constitutes graphical browser E2E. That validation remains blocked by the local Chromium sandbox configuration. Independent review closed the reported ownership, transition timestamp, quota, stream lifetime, unknown-scheme and UI retry/session findings; its separately executed checks covered four UI cases and the stream deadline case.
 
-The compatibility executable is included in the solution for build/restore, but `dotnet test` does not invoke it: run `npm run test:compat` explicitly. No new CI workflow is included. This record makes no new coverage-threshold claim and does not imply that repository CI or a deployed system is green. Remote migration, remote behavior, plan limits and browser E2E require their own evidence before promotion.
+The compatibility executable is included in the solution for build/restore, but `dotnet test` does not invoke it: run `npm run test:compat` explicitly. The manual deployment workflow runs this harness explicitly before a separate credential-bearing deployment job. This record makes no new coverage-threshold claim and does not imply that repository CI or a deployed system is green. Remote migration, remote behavior, plan limits and browser E2E require their own evidence before promotion.
 
 ## Browser failure baseline
 
@@ -58,4 +58,19 @@ SSE tail starvation was reproduced with 9 and 64 pending messages. The final fix
 
 The demo now derives new relay endpoints from the actual request URL origin by default, ignoring Forwarded/X-Forwarded-Host. No host variable is mandatory. Optional WEAVE_HOST overrides must pass origin validation. Runtime configuration targets the user's existing Worker name demo; database ID is still a placeholder and no remote configuration or deployment was performed. Three reported unused imports were removed.
 
-The D1 binding is consistently lowercase `db`, matching the operator's existing binding. Runtime access is `env.db`; Wrangler and all fixtures use that name without an uppercase alias. Database name/ID remain unset pending operator details.
+The D1 binding is consistently lowercase `db`, matching the operator's existing binding. Runtime access is `env.db`; Wrangler and all fixtures use that name without an uppercase alias. The checked-in database ID remains a placeholder; the deployment workflow reads the actual name/ID from the selected existing GitHub configuration scope.
+
+## Manual deployment workflow follow-up
+
+The manual `deploy-weave-worker.yml` supports repository configuration and the existing `production` environment. It accepts only main, serializes deployment runs, verifies the Worker and C# wire contract before credential use, and never runs on pushes or pull requests. The deployment script checks the existing `demo`/`db`/`weave-389` resource identity, then runs numbered migration list → apply → list → explicit no-pending confirmation → deploy. Permission denial, identity mismatch or migration failure stops without resource creation or permission fallback. Current Cloudflare role instructions use Workers Editor scoped to demo plus D1 Edit for migrations. See the host README for configuration names and rerun semantics. This is an implementation and local-verification result, not evidence of remote deployment.
+
+The exact original full-suite command was `dotnet test --solution Weave.slnx --no-build -c Release`. The clean baseline reproduction used:
+
+```sh
+source /workspace/weave-toolchain/env.sh
+dotnet restore Weave.slnx --locked-mode
+dotnet build Weave.slnx --no-restore -c Release
+python3 /workspace/weave-toolchain/reap.py dotnet tests/Weave.Silo.Tests/bin/Release/net10.0/Weave.Silo.Tests.dll -class Weave.Silo.Tests.Dashboard.DashboardReviewBrowserTests
+```
+
+The reaper only owns/reaps child processes; it does not filter tests or change browser flags. All five failures occur in fixture startup before browser/product actions. The outer child-process assertion reports Chromium's startup failure, not a failed product behavior assertion. No sandbox bypass was used.
