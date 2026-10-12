@@ -43,7 +43,7 @@ jobs:
           python3 scripts/acceptance/dependency_policy.py --action .policy-action --report "$RUNNER_TEMP/policy-acceptance.json"
       - name: Preserve acceptance results
         if: always()
-        uses: actions/upload-artifact@043fb46d1a93c77aae656e7c1c64a875d1fc6a0a
+        uses: actions/upload-artifact@cf430e030ddbb5b0abf93d22962f4752f3646cd9
         with:
           name: policy-acceptance
           path: ${{ runner.temp }}/policy-acceptance.json
@@ -114,7 +114,7 @@ jobs:
           print('Real read-only token: exact graphs read, one snapshot POST denied with 403, no confirmed submissions.')
       - name: Preserve permission-denial evidence
         if: always()
-        uses: actions/upload-artifact@043fb46d1a93c77aae656e7c1c64a875d1fc6a0a
+        uses: actions/upload-artifact@cf430e030ddbb5b0abf93d22962f4752f3646cd9
         with:
           name: read-only-submission-denial
           path: ${{ runner.temp }}/read-only-denial/

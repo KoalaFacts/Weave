@@ -77,7 +77,7 @@ jobs:
 
       - name: Upload coverage evidence
         if: always()
-        uses: actions/upload-artifact@043fb46d1a93c77aae656e7c1c64a875d1fc6a0a # v7
+        uses: actions/upload-artifact@cf430e030ddbb5b0abf93d22962f4752f3646cd9 # v7
         with:
           name: coverage-evidence
           path: TestResults/
@@ -94,7 +94,7 @@ jobs:
 
       - name: Upload test results
         if: always()
-        uses: actions/upload-artifact@043fb46d1a93c77aae656e7c1c64a875d1fc6a0a # v7
+        uses: actions/upload-artifact@cf430e030ddbb5b0abf93d22962f4752f3646cd9 # v7
         with:
           name: test-results
           path: ./test-results/**/*.trx
@@ -159,7 +159,7 @@ jobs:
 
       - name: Retain diagnostic evidence even on failure
         if: always()
-        uses: actions/upload-artifact@043fb46d1a93c77aae656e7c1c64a875d1fc6a0a # v7
+        uses: actions/upload-artifact@cf430e030ddbb5b0abf93d22962f4752f3646cd9 # v7
         with:
           name: exact-base-coverage-diagnostic
           path: ${{ runner.temp }}/exact-base-coverage/
@@ -238,7 +238,7 @@ jobs:
           -- --report-xunit-trx --results-directory ./test-results
       - name: Retain Windows CLI results
         if: always()
-        uses: actions/upload-artifact@043fb46d1a93c77aae656e7c1c64a875d1fc6a0a # v7
+        uses: actions/upload-artifact@cf430e030ddbb5b0abf93d22962f4752f3646cd9 # v7
         with:
           name: windows-cli-test-results
           path: test-results/**/*.trx
@@ -291,7 +291,7 @@ jobs:
         run: python3 scripts/submit_nuget_snapshots.py --output "$RUNNER_TEMP/dependency-snapshots"
       - name: Retain source and submission evidence
         if: always()
-        uses: actions/upload-artifact@043fb46d1a93c77aae656e7c1c64a875d1fc6a0a # v7
+        uses: actions/upload-artifact@cf430e030ddbb5b0abf93d22962f4752f3646cd9 # v7
         with:
           name: dependency-snapshots
           path: ${{ runner.temp }}/dependency-snapshots/
@@ -322,7 +322,7 @@ jobs:
 
       - name: Upload dependency comparison evidence
         if: always()
-        uses: actions/upload-artifact@043fb46d1a93c77aae656e7c1c64a875d1fc6a0a # v7
+        uses: actions/upload-artifact@cf430e030ddbb5b0abf93d22962f4752f3646cd9 # v7
         with:
           name: dependency-review-evidence
           path: ${{ runner.temp }}/dependency-review-evidence.json
@@ -381,7 +381,7 @@ jobs:
 
       - name: Retain license evidence outcome
         if: always()
-        uses: actions/upload-artifact@043fb46d1a93c77aae656e7c1c64a875d1fc6a0a # v7
+        uses: actions/upload-artifact@cf430e030ddbb5b0abf93d22962f4752f3646cd9 # v7
         with:
           name: dependency-license-evidence
           path: |
