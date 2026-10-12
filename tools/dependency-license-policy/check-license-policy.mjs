@@ -20,6 +20,12 @@ const VERIFIED_ACTION_LICENSES = new Map([
     version: '949feb2413d6458794dcd2491c4babbbce0c15c1',
     license: 'MIT',
   }],
+  // MIT verified at https://github.com/actions/upload-artifact/blob/043fb46d1a93c77aae656e7c1c64a875d1fc6a0a/LICENSE
+  ['pkg:githubactions/actions/upload-artifact@043fb46d1a93c77aae656e7c1c64a875d1fc6a0a', {
+    name: 'actions/upload-artifact',
+    version: '043fb46d1a93c77aae656e7c1c64a875d1fc6a0a',
+    license: 'MIT',
+  }],
   // MIT verified at https://github.com/actions/upload-artifact/blob/cf430e030ddbb5b0abf93d22962f4752f3646cd9/LICENSE
   ['pkg:githubactions/actions/upload-artifact@cf430e030ddbb5b0abf93d22962f4752f3646cd9', {
     name: 'actions/upload-artifact',
