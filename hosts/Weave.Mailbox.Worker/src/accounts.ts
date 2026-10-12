@@ -9,7 +9,7 @@ function settings(env: Env, name: keyof Env, max: number): number {
 export async function authenticate(env: Env, secret: string | null): Promise<any | null> {
     if (secret === null) return null;
     const digest = (await controlDigest(secret))!;
-    const row = await env.DB.prepare("SELECT data FROM mailbox_records WHERE kind='account' AND json_extract(data,'$.controlHash')=? AND json_extract(data,'$.controlHashScheme')=?").bind(digest,CONTROL_HASH_SCHEME).first<{data:string}>();
+    const row = await env.db.prepare("SELECT data FROM mailbox_records WHERE kind='account' AND json_extract(data,'$.controlHash')=? AND json_extract(data,'$.controlHashScheme')=?").bind(digest,CONTROL_HASH_SCHEME).first<{data:string}>();
     if (!row) fail(401,'unauthenticated');
     const account=parse(row.data);
     if (!validParameters(account.controlHashParameters) || !digestMatches(digest,account.controlHash)) fail(401,'unauthenticated');
@@ -21,7 +21,7 @@ export async function register(env: Env, request: Request, secret: string | null
         if (input[key] != null && (typeof input[key] !== 'string' || input[key].length > max || /[\u0000-\u001f\u007f-\u009f]/u.test(input[key]))) fail();
     }
     const digest = (await controlDigest(secret))!;
-    return atomic(env.DB, async tx => {
+    return atomic(env.db, async tx => {
         const existing = await tx.rows('account', "json_extract(data,'$.controlHash')=?", [digest]);
         if (existing.length) { const a=parse(existing[0].data); if (a.controlHashScheme !== CONTROL_HASH_SCHEME || !validParameters(a.controlHashParameters) || !digestMatches(digest,a.controlHash)) fail(401,'unauthenticated'); return {agentId:a.accountId,displayName:a.displayName,description:a.description}; }
         if (env.REGISTRATION_ENABLED !== 'true') fail(404,'unavailable');

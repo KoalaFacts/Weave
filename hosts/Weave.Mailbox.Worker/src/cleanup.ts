@@ -3,7 +3,7 @@ import { atomic, type Env } from './database';
 // Opportunistic, bounded cleanup; no remote scheduler or background resources required.
 // It commits independently of the following user operation, so capacity can recover.
 export async function sweep(env: Env): Promise<void> {
-    await atomic(env.DB,async tx => {
+    await atomic(env.db,async tx => {
         const now = Date.now(), previous = await tx.get('maintenance','','sweep');
         if (previous && now-previous.at < 60000) return;
         const before = new Date(now-7*86400000).toISOString(), nowTicks = (BigInt(now)*10000n).toString();

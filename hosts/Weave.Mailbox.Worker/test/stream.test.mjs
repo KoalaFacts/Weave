@@ -50,12 +50,89 @@ test('absolute stream deadline releases its lease even when each write is slow b
     const writer={write:()=>new Promise(resolve=>setTimeout(resolve,9000)),close:async()=>{},abort:async()=>{aborted=true;}};
     globalThis.TransformStream=class {readable=new ReadableStream();writable={getWriter:()=>writer};};
     const message={receipt:{senderMailboxId:'a',recipientMailboxId:'b'},generation:1,version:1,payload:{messageId:'id'}};
-    const db={prepare(sql){return {sql,bind(){return this;},async first(column){return column==='token'?'revision':{total:0,owned:0};},async all(){return {results:[{seq:'1',data:JSON.stringify(message)}]};}}},async batch(statements){if(statements.some(s=>s.sql.startsWith('DELETE FROM mailbox_records WHERE kind=?')))released=true;return [];}};
+    const db={prepare(sql){return {sql,bind(){return this;},async first(column){return column==='token'?'revision':sql.includes('count(*)')?{total:0,owned:0}:null;},async all(){return {results:[{seq:'1',data:JSON.stringify(message)}]};}}},async batch(statements){if(statements.some(s=>s.sql.startsWith('DELETE FROM mailbox_records WHERE kind=?')))released=true;return [];}};
     t.mock.timers.enable({apis:['setTimeout','Date'],now:Date.now()});
     try {
-        await stream({DB:db},'b',new Request('http://localhost'),{waitUntil(p){completion=p;}});
+        await stream({db:db},'b',new Request('http://localhost'),{waitUntil(p){completion=p;}});
         for(const elapsed of [9000,9000,1000,1000]) {t.mock.timers.tick(elapsed);await new Promise(resolve=>setImmediate(resolve));}
         await completion;
         assert.equal(aborted,true);assert.equal(released,true);
     } finally {t.mock.timers.reset();globalThis.TransformStream=Original;}
+});
+for(const count of [9,64])test('SSE traverses all '+count+' pending messages without ACK and replays them on reconnect',async()=>{
+    const h=await start();
+    try {
+        const a=await h.participant(),b=await h.participant(),expiresAt=new Date(Date.now()+3600000).toISOString();
+        const first={...payload('contact'),expiresAt},ids=[first.messageId];
+        await h.ok('/v1/contacts/requests',a.control,'POST',{requestId:first.messageId,cardId:b.cardId,methodId:'relay',payload:first});
+        await h.ok('/v1/contacts/requests/'+first.messageId+'/decision',b.control,'POST',{requesterMailboxId:a.accountId,expectedGeneration:1,status:'accepted',reply:null});
+        for(let i=1;i<count;i++){
+            const p={...payload('pending '+i),expiresAt};ids.push(p.messageId);
+            await h.ok('/v1/messages',a.control,'POST',{version:1,recipientMailboxId:b.accountId,contactGeneration:1,payload:p});
+        }
+        for(let traversal=0;traversal<2;traversal++){
+            const delivered=new Set();
+            for(let connection=0;connection<Math.ceil(count/8)+2 && delivered.size<count;connection++){
+                const response=await h.mf.dispatchFetch('http://localhost/v1/inbox/events',{headers:{'X-Weave-Mailbox-Control':b.control,'Last-Event-ID':ids.at(-1)}});
+                assert.equal(response.status,200);
+                for(const match of (await response.text()).matchAll(/^id: (.+)$/gm))delivered.add(match[1]);
+                // Response closure precedes waitUntil's lease/progress commit.
+                for(let wait=0;wait<100;wait++){
+                    if(await h.db.prepare("SELECT count(*) n FROM mailbox_records WHERE kind='stream' AND owner=?").bind(b.accountId).first('n')===0)break;
+                    await new Promise(resolve=>setTimeout(resolve,10));
+                }
+            }
+            assert.deepEqual([...delivered].sort(),[...ids].sort());
+            assert.equal((await h.ok('/v1/outbox/'+ids.at(-1),a.control)).state,'pending');
+        }
+    } finally {await h.close();}
+});
+async function pendingPair(h,count){
+    const a=await h.participant(),b=await h.participant(),p=payload('contact'),ids=[p.messageId];
+    await h.ok('/v1/contacts/requests',a.control,'POST',{requestId:p.messageId,cardId:b.cardId,methodId:'relay',payload:p});
+    await h.ok('/v1/contacts/requests/'+p.messageId+'/decision',b.control,'POST',{requesterMailboxId:a.accountId,expectedGeneration:1,status:'accepted',reply:null});
+    for(let i=1;i<count;i++){const next=payload('message '+i);ids.push(next.messageId);await h.ok('/v1/messages',a.control,'POST',{version:1,recipientMailboxId:b.accountId,contactGeneration:1,payload:next});}
+    return {a,b,ids};
+}
+async function controlledStream(h,owner,write){
+    const {build}=await import('esbuild'),{runInNewContext}=await import('node:vm');
+    const bundled=await build({stdin:{contents:"export {stream} from './src/stream.ts'; export {budgetDatabase} from './src/budget.ts';",resolveDir:process.cwd()},bundle:true,write:false,format:'cjs',platform:'node'});
+    const module={exports:{}};let completion;
+    const TestStream=class {readable=new ReadableStream();writable={getWriter:()=>({write:bytes=>write(new TextDecoder().decode(bytes)),close:async()=>{},abort:async()=>{}})};};
+    runInNewContext(bundled.outputFiles[0].text,{module,exports:module.exports,TextEncoder,URL,crypto,Response,Request,btoa,atob,TransformStream:TestStream,setTimeout,clearTimeout});
+    const {stream,budgetDatabase}=module.exports;
+    await stream({db:budgetDatabase({prepare:sql=>h.db.prepare(sql),batch:statements=>h.db.batch(Array.from(statements))})},owner,new Request('http://localhost'),{waitUntil(p){completion=p;}});
+    return {completion};
+}
+for(const transition of ['ACK','block'])test('SSE takes a fresh D1 snapshot after a blocked write while the next message is '+transition+'ed',async()=>{
+    const h=await start();
+    try {
+        const {a,b,ids}=await pendingPair(h,2),frames=[];let changed=false;
+        const {completion}=await controlledStream(h,b.accountId,async frame=>{
+            frames.push(frame);
+            if(!changed&&frame.includes('id: '+ids[0])){
+                changed=true;
+                if(transition==='ACK')await h.ok('/v1/inbox/'+ids[1]+'/ack',b.control,'POST',{senderMailboxId:a.accountId});
+                else await h.ok('/v1/contacts/blocks',b.control,'PUT',{peerMailboxId:a.accountId,expectedGeneration:1});
+            }
+        });
+        await completion;assert.equal(changed,true);
+        assert.equal(frames.some(frame=>frame.includes('id: '+ids[1])),false);
+    } finally {await h.close();}
+});
+test('late stream release cannot overwrite newer traversal progress',async()=>{
+    const h=await start();let unblock;
+    try {
+        const {b,ids}=await pendingPair(h,9);let entered;
+        const waiting=new Promise(resolve=>{entered=resolve;}),blocked=new Promise(resolve=>{unblock=resolve;});
+        let writes=0;
+        const old=await controlledStream(h,b.accountId,async frame=>{if(!frame.includes('event: message'))return;if(writes++===0){entered();await blocked;}else throw Error('disconnected');});
+        await waiting;
+        const newer=await controlledStream(h,b.accountId,async()=>{});await newer.completion;
+        const before=await h.db.prepare("SELECT data FROM mailbox_records WHERE kind='stream-progress' AND owner=?").bind(b.accountId).first('data');
+        assert.ok(JSON.parse(before).version);assert.ok(JSON.parse(before).cursor);
+        unblock();await old.completion;
+        assert.equal(await h.db.prepare("SELECT data FROM mailbox_records WHERE kind='stream-progress' AND owner=?").bind(b.accountId).first('data'),before);
+        assert.equal((await h.ok('/v1/inbox',b.control)).items.length,ids.length);
+    } finally {unblock?.();await h.close();}
 });

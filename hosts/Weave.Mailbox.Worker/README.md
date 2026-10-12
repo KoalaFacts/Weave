@@ -10,7 +10,7 @@ Use Node 24.19+ and the repository's .NET SDK policy. From this directory:
 npm ci
 npm run typecheck
 npm test
-npx wrangler d1 migrations apply DB --local
+npx wrangler d1 migrations apply db --local
 npm run dev -- --ip 127.0.0.1 --port 8787 --var REGISTRATION_ENABLED:true
 ```
 
@@ -30,13 +30,15 @@ No account token, Cloudflare secret or real registration data is needed for thes
 
 ### D1 resource and table setup
 
-The operator creates the Worker and D1 resources separately. In `wrangler.jsonc`, keep the D1 binding `DB`, replace `database_name` with the actual database name and `database_id` with its ID. The all-zero checked-in ID is a placeholder. Configure the actual HTTPS `PUBLIC_BASE_URL` before remote use; registration remains disabled until explicitly enabled.
+The operator creates the Worker and D1 resources separately. In `wrangler.jsonc`, keep the D1 binding `db`, replace `database_name` with the actual database name and `database_id` with its ID. The all-zero checked-in ID is a placeholder. The Worker name is `demo`, matching the existing resource; do not create a duplicate Worker. Registration remains disabled until explicitly enabled. The page uses relative API paths and new relay addresses default to the actual request URL origin. No GitHub `WEAVE_HOST` variable is required. An optional `WEAVE_HOST` may specify a validated canonical HTTPS origin (HTTP only on loopback), with no credentials, path, query or fragment. Forwarded host/protocol headers are not used to generate links.
+
+In the Cloudflare dashboard, open the existing `demo` Worker, select **Bindings → Add binding → D1 database**, set the variable name to **db**, and choose the independent Weave database. Keep that binding consistent with the checked-in Wrangler configuration. The runtime accesses `env.db` through Cloudflare's binding; no database password or Cloudflare management API token belongs in the app. Deployment and remote migrations instead require the operator/CI's separately authorized Cloudflare management credentials and account ID. See [D1 bindings](https://developers.cloudflare.com/d1/get-started/#3-bind-your-worker-to-your-d1-database). Do not share another application's business tables.
 
 Tables are created by the versioned SQL in `migrations/`, not automatically on requests. From this directory, after the remote resource and migration have been authorized, run:
 
 ```sh
-npx wrangler d1 migrations list DB --remote
-npx wrangler d1 migrations apply DB --remote
+npx wrangler d1 migrations list db --remote
+npx wrangler d1 migrations apply db --remote
 ```
 
 These are operator instructions, not commands executed by this change. Wrangler records applied migration versions in `d1_migrations`. The first local apply succeeded; repeating it reported no pending migrations and preserved mailbox rows and sequence state. There is only `0001_mailbox.sql` currently, so no second-version upgrade is claimed tested. Do not manually rerun the SQL or reset existing data to apply later versions; add an ordered migration and validate preservation against the prior version.
@@ -108,6 +110,6 @@ The Worker budgets at most 48 D1 statements per invocation, counting batch state
 
 Terminal bodies are removed on ACK/block and a bounded opportunistic sweep expires bodies and purges seven-day terminal records. Sweeps run at most once per minute on authenticated v1 mutations. An idle deployment does not physically sweep until another mutation. This is logical retention, not verified deletion from backups. Generations use exact int64 parsing/serialization; timestamp comparisons preserve 100ns where required. Responses never expose internal D1 revision/counter/hash fields.
 
-SSE uses shared expiring D1 leases (two/agent, 100 total), polling rather than push wakeup, eight bounded reads per connection, a 10-second write timeout and an absolute 20-second stream lifetime below its 30-second lease. Reconnect is expected; Last-Event-ID is not an ACK and pending messages may replay. The demo explicitly starts/restarts watches. ACK prevents subsequent fresh reads from redelivering; an already emitted frame cannot be recalled. No exactly-once business-effect guarantee is made.
+SSE uses shared expiring D1 leases (two/agent, 100 total), polling rather than push wakeup, eight bounded reads per connection, a 10-second write timeout and an absolute 20-second stream lifetime below its 30-second lease. Each event retains a fresh, single-item owned D1 snapshot so ACK/block/expiry is checked after prior writes. A server-owned traversal cursor continues across finite connections, unlike the C# host's longer per-poll traversal. Progress is saved only after successful writes (or an empty tail), atomically with lease release, using an independent version CAS to prevent a late concurrent release from overwriting newer progress. Reaching the end wraps to replay still-pending messages. Stable queues of up to 64 messages can therefore be traversed across successful reconnects without requiring earlier ACKs; interrupted writes or storage failures may replay earlier positions. This scheduling cursor never deletes or acknowledges messages. Last-Event-ID and client afterCursor remain ignored, not replay suppression. The demo explicitly starts/restarts watches. ACK prevents subsequent fresh reads from redelivering; an already emitted frame cannot be recalled. No exactly-once business-effect guarantee is made.
 
 Development tools are pinned and audited. Wrangler 4.149.0's corresponding Miniflare release currently has an alpha version suffix; the test harness uses its official v4-options converter and explicit v5 persistence path. Local workerd evidence does not prove deployed Cloudflare behavior, plan quota/performance or remote durability; those require a separately authorized deployment test.

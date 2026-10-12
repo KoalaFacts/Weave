@@ -19,7 +19,7 @@ Commands were run locally with Node 24.19.0, .NET SDK 10.0.401 and the pinned Wo
 | Check | Actual result |
 | --- | --- |
 | `npm run typecheck` | Passed. |
-| `npm test` | 23 passed, no failures or skips. Includes real workerd/D1 HTTP and restart tests, exact timestamp/int64 checks, HTTPS ingress, UI-script regressions and SSE bounds. |
+| `npm test` | 32 passed, no failures or skips. Includes real workerd/D1 HTTP and restart tests, exact timestamp/int64 checks, HTTPS ingress, UI-script regressions and SSE bounds. |
 | `npm run test:compat` | Passed. Original C# DTO/source-generated JSON traversed real Worker HTTP for contact, acceptance, messages, inbox, ACK and replay; synthetic UTF-8 SHA-256 vectors also matched. |
 | `npm audit --json` | Zero reported vulnerabilities in the pinned dependency graph. |
 | Local Wrangler migration and HTTP smoke | Migration applied; browser entry returned 200; registration, zero initial addresses, private-address creation and absence from public discovery verified. |
@@ -51,3 +51,11 @@ Affected methods in `Weave.Silo.Tests.Dashboard.DashboardReviewBrowserTests`:
 - `Review_UploadAndVerify_RendersExactContentAndInvalidatesWhenWorkspaceChanges`
 
 Local Wrangler migration was also applied a second time: it reported no pending migration, retained identical mailbox row hashes and SQLite sequence state, and kept one `d1_migrations` record. Only the initial version exists; a future version upgrade is not yet tested. Remote resource creation and migrations were not performed.
+
+A follow-up review reproduced address-editor state surviving Clear session/account switching. The shared reset now clears label, validity bounds, direct URI, edit identity and public checkbox using the same helper as Cancel edit. Two original-page-script regressions failed before the fix and verify both transitions and the next account's empty/private creation payload afterward. These remain simulated-DOM tests, not browser E2E.
+
+SSE tail starvation was reproduced with 9 and 64 pending messages. The final fix keeps one fresh D1 snapshot per event and persists a server-owned traversal position across finite connections. Independent version CAS prevents late concurrent releases from rewinding it; a completed traversal wraps and replays unacknowledged messages. This differs from the C# host's longer traversal scheduling but does not turn any cursor into ACK. Real workerd reconnect tests visit and revisit every pending message without ACK; controlled writes against real D1 verify ACK/block between events and stale-release isolation. The 48-query cap remains enforced. Browser E2E remains unverified.
+
+The demo now derives new relay endpoints from the actual request URL origin by default, ignoring Forwarded/X-Forwarded-Host. No host variable is mandatory. Optional WEAVE_HOST overrides must pass origin validation. Runtime configuration targets the user's existing Worker name demo; database ID is still a placeholder and no remote configuration or deployment was performed. Three reported unused imports were removed.
+
+The D1 binding is consistently lowercase `db`, matching the operator's existing binding. Runtime access is `env.db`; Wrangler and all fixtures use that name without an uppercase alias. Database name/ID remain unset pending operator details.

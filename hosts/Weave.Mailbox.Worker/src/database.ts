@@ -8,8 +8,8 @@ export interface Statement {
 }
 export interface Database { prepare(sql: string): Statement; batch(statements: Statement[]): Promise<unknown[]>; }
 export interface Env {
-    DB: Database;
-    PUBLIC_BASE_URL: string;
+    db: Database;
+    WEAVE_HOST?: string;
     REGISTRATION_ENABLED: string;
     REGISTRATION_MAX_ACCOUNTS: string;
     REGISTRATION_PER_IP_PER_HOUR: string;

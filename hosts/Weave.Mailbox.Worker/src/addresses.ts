@@ -1,6 +1,6 @@
 import { atomic, Transaction, type Env } from './database';
-import { cardView, eligible, publishSequence } from './cards';
-import { enc, fail, identity, limit, object, parse, query, uuid } from './wire';
+import { publishSequence } from './cards';
+import { enc, fail, limit, object, parse, query, uuid } from './wire';
 import { ticks } from './protocol';
 
 function profile(input: any): any {
@@ -19,16 +19,16 @@ function profile(input: any): any {
     }
     return {label:input.label ?? null,isPublic:input.isPublic ?? false,effectiveFrom:input.effectiveFrom ?? null,effectiveTo:input.effectiveTo ?? null,directUri:input.directUri ?? null};
 }
-function baseUrl(env: Env): string {
-    const url = new URL(env.PUBLIC_BASE_URL);
+function baseUrl(env: Env,origin: string): string {
+    const url = new URL(env.WEAVE_HOST ?? origin);
     if (url.username || url.password || url.search || url.hash || url.pathname !== '/' || (url.protocol !== 'https:' && !(url.protocol === 'http:' && ['localhost','127.0.0.1','[::1]'].includes(url.hostname)))) fail(503,'storage');
     return url.origin;
 }
 export const addressView = (c: any) => ({addressId:c.cardId,accountId:c.ownerMailboxId,...c._address});
-export async function mutateAddress(env: Env,owner: string,id: string|null,input: any,remove = false): Promise<any> {
+export async function mutateAddress(env: Env,owner: string,id: string|null,input: any,origin: string,remove = false): Promise<any> {
     if (id !== null) uuid(id);
     const chosen = remove ? null : profile(input);
-    return atomic(env.DB,async tx => {
+    return atomic(env.db,async tx => {
         const previous = id === null ? null : await tx.get('card','',id);
         if (id !== null && (!previous || !previous._address || previous._deleted || previous.ownerMailboxId !== owner)) fail(404,'unavailable');
         if (remove) {
@@ -41,7 +41,7 @@ export async function mutateAddress(env: Env,owner: string,id: string|null,input
         }
         const cardId = id ?? crypto.randomUUID();
         const c = {...(previous ?? {cardId,ownerMailboxId:owner,createdAt:new Date().toISOString(),expiresAt:null,revokedAt:null,audienceHint:null,
-            methods:[{methodId:'relay',version:1,transport:'relay',endpoint:baseUrl(env),instructions:'Contact request requires recipient acceptance'}]}),
+            methods:[{methodId:'relay',version:1,transport:'relay',endpoint:baseUrl(env,origin),instructions:'Contact request requires recipient acceptance'}]}),
             visibility:chosen.isPublic ? 'public' : 'unlisted',_address:chosen,_deleted:false,
             _effectiveFromTicks:chosen.effectiveFrom === null ? null : ticks(chosen.effectiveFrom).toString(),
             _effectiveToTicks:chosen.effectiveTo === null ? null : ticks(chosen.effectiveTo).toString(),

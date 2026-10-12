@@ -42,3 +42,23 @@ test('demo confirmed contact plus failed refresh stays submitted',async()=>{
     assert.equal(posts.length,1);assert.equal(app.get('requestContact').textContent,'Request contact');assert.match(app.get('status').textContent,/Contact request submitted; refresh/);
     await app.click('requestContact');assert.equal(posts.length,1);
 });
+for(const transition of ['clear session','switch account'])test('demo '+transition+' discards private address edits and public checkbox before another account can create',async()=>{
+    const writes=[];
+    const privateAddress={addressId:'a-private-address',accountId:'a',label:'private label',isPublic:false,effectiveFrom:'2026-01-01T00:00:00Z',effectiveTo:'2027-01-01T00:00:00Z',directUri:'https://private.example.test/contact'};
+    const app=ui(async(path,options)=>{
+        if(path==='/v1/addresses'){
+            if(options.method==='POST'){writes.push({control:options.headers['X-Weave-Mailbox-Control'],body:JSON.parse(options.body)});return json({});}
+            return json({items:options.headers['X-Weave-Mailbox-Control'][0]==='a'?[privateAddress]:[],nextCursor:null});
+        }
+        return base(path,options);
+    });
+    await app.register();
+    const edit=app.get('addresses').children[0].children.find(child=>child.textContent==='Edit');
+    await edit.handlers.click();assert.equal(app.get('label').value,privateAddress.label);
+    app.get('label').value='unsaved private label';app.get('directUri').value='https://unsaved.example.test/private';app.get('isPublic').checked=true;
+    if(transition==='clear session')await app.click('disconnect');else await app.register('b'.repeat(64));
+    for(const id of ['label','from','to','directUri'])assert.equal(app.get(id).value,'',id+' retained old-account data');
+    assert.equal(app.get('isPublic').checked,false);assert.equal(app.get('createAddress').textContent,'Create address');
+    if(transition==='clear session')await app.register('b'.repeat(64));
+    await app.click('createAddress');assert.deepEqual(writes,[{control:'b'.repeat(64),body:{label:null,isPublic:false,effectiveFrom:null,effectiveTo:null,directUri:null}}]);
+});

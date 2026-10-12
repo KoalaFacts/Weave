@@ -1,5 +1,5 @@
 import { Transaction } from './database';
-import { fail, identity, object, parse, uuid } from './wire';
+import { fail, identity, object, uuid } from './wire';
 import { blocked, current, fingerprint, nowText, readChannel, ticks, validateEnvelope, validatePayload } from './protocol';
 
 export async function effective(tx: Transaction,m: any): Promise<any> {

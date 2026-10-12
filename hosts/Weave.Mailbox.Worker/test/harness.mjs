@@ -5,11 +5,11 @@ import { randomBytes } from 'node:crypto';
 export const secret = () => randomBytes(32).toString('hex');
 export async function start({ persist, migrate = true, bindings = {} } = {}) {
     const mf = new Miniflare(convertV4MiniflareOptions({ modules: true, scriptPath: 'dist/index.js', compatibilityDate: '2026-07-01', compatibilityFlags:['nodejs_compat'],
-        d1Databases: ['DB'], ...(persist ? { resourcePersistencePath: persist } : {}), bindings: {
+        d1Databases: ['db'], ...(persist ? { resourcePersistencePath: persist } : {}), bindings: {
             REGISTRATION_ENABLED: 'true', REGISTRATION_MAX_ACCOUNTS: '100',
             REGISTRATION_PER_IP_PER_HOUR: '10', REGISTRATION_GLOBAL_PER_HOUR: '100',
-            PUBLIC_BASE_URL: 'https://relay.test', ...bindings } }));
-    const db = await mf.getD1Database('DB');
+            ...bindings } }));
+    const db = await mf.getD1Database('db');
     if (migrate) for (const sql of (await readFile('migrations/0001_mailbox.sql','utf8')).split(';').filter(x => x.trim())) await db.prepare(sql).run();
     const request = (path, control, method = 'GET', value) => mf.dispatchFetch('http://localhost' + path, {
         method, headers: { ...(control ? {'X-Weave-Mailbox-Control':control} : {}), 'Content-Type':'application/json' },
