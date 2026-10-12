@@ -1,0 +1,21 @@
+{
+  "name": "weave-mailbox-demo",
+  "main": "src/index.ts",
+  "compatibility_date": "2026-07-01",
+  "compatibility_flags": ["nodejs_compat"],
+  "workers_dev": false,
+  "rules": [{"type":"Text","globs":["**/*.html"],"fallthrough":true}],
+  "d1_databases": [{
+    "binding": "DB",
+    "database_name": "weave-mailbox-demo",
+    "database_id": "00000000-0000-0000-0000-000000000000",
+    "migrations_dir": "migrations"
+  }],
+  "vars": {
+    "REGISTRATION_ENABLED": "false",
+    "REGISTRATION_MAX_ACCOUNTS": "100",
+    "REGISTRATION_PER_IP_PER_HOUR": "10",
+    "REGISTRATION_GLOBAL_PER_HOUR": "100",
+    "PUBLIC_BASE_URL": "http://127.0.0.1:8787"
+  }
+}

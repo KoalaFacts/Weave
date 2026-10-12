@@ -1,0 +1,10 @@
+<Project Sdk="Microsoft.NET.Sdk">
+  <PropertyGroup>
+    <OutputType>Exe</OutputType>
+    <IsPackable>false</IsPackable>
+  </PropertyGroup>
+  <ItemGroup>
+    <Compile Include="../../hosts/Weave.Mailbox.Host/*Wire.cs" Link="Wire/%(Filename)%(Extension)" />
+    <Compile Include="../../hosts/Weave.Mailbox.Host/MailboxJsonContext.cs" Link="Wire/MailboxJsonContext.cs" />
+  </ItemGroup>
+</Project>
