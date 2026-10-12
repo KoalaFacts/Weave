@@ -1,155 +1,47 @@
-# GitHub Actions Workflows
+# GitHub Actions workflows
 
-Automated CI/CD workflows for Weave.
+The repository has 13 current workflow files. Ordinary verification keeps its existing workflow and check identities while sharing build/audit implementation. Release, publish and deployment jobs retain separate permissions and configured environment protections.
 
-## Workflows Overview
+## Current workflows
 
-### 🔨 [ci.yml](./ci.yml) — Build and Test
+| Workflow | Triggers | Purpose and checks |
+| --- | --- | --- |
+| [ci.yml](ci.yml) | Main push, PR to main, merge queue, manual | Build & Test, nonpublishing tool-package smoke, tested-owner coverage, Code Quality, Windows CLI boundaries, exact locked dependency graphs, verified snapshots and Dependency Review. |
+| [scan-security.yml](scan-security.yml) | Monday 03:00 UTC, main push, PR to main, manual | Vulnerability Audit: locked restore with low-severity/direct/transitive audit, strict JSON evidence validation and deprecation report. |
+| [worker-browser.yml](worker-browser.yml) | Main push, PR to main, merge queue | Worker API, D1, MCP, C# compatibility and real browser checks with normal Chrome protection; retains browser evidence. |
+| [codex-bridge-contract.yml](codex-bridge-contract.yml) | Relevant PR paths, manual | Real Host UUID contract across restart and explicit approval; scripted protocol verification, not live human acceptance. |
+| [first-use-acceptance.yml](first-use-acceptance.yml) | Relevant main/PR paths, manual | Fresh Host public HTTP walkthrough and restart. On PRs, rejects changes to product/build inputs in this isolated acceptance run. |
+| [dependency-policy-acceptance.yml](dependency-policy-acceptance.yml) | Policy/scripts/CI paths on main/PR, manual | Pinned license-action fixtures and actual denial of dependency snapshot submission with a read-only token. |
+| [echo-plugin-examples.yml](echo-plugin-examples.yml) | Echo/core/Host/MCP/test/config paths on main/PR, manual | Python, TypeScript, Rust and Java stdio examples plus governed invocation; separate language checks and evidence. |
+| [npm-plugin-echo.yml](npm-plugin-echo.yml) | npm Echo and connector paths on main/PR, manual | Exact npm contents, both transports, shipped dependency audit and real Weave authorization/HTTP installation checks. |
+| [release.yml](release.yml) | Manual on main, exact version | Create Release: locked restore/build/test, validated .NET tool package and provenance, six platform archives, tag at the built commit and GitHub release. |
+| [publish-nuget.yml](publish-nuget.yml) | Successful Create Release on main, or manual exact version plus release run ID | Verify immutable source/run/artifact/tag identity, download that artifact, validate packages, then publish in the `nuget` environment. |
+| [publish-npm-plugin-echo.yml](publish-npm-plugin-echo.yml) | Manual on main, exact package version | Verify and pack once, preserve tarball/checksum, publish through npm OIDC in the `npm` environment, then invoke published-package verification. |
+| [verify-published-npm-plugin-echo.yml](verify-published-npm-plugin-echo.yml) | Called after npm publish, or manual exact version/source SHA | Install registry package, verify signatures/provenance, and exercise Weave installation, restart, disable and schema drift without publish credentials. |
+| [deploy-weave-worker.yml](deploy-weave-worker.yml) | Manual on main, repository or production scope | Verify Worker/C# compatibility, discover existing `demo`/`db`, migrate and deploy only those existing resources; confirm business cleanup remains disabled. |
 
-**Triggers:** Push to `main`, pull requests, merge queue, manual
+Path-scoped workflows retain their original path filters; Host acceptance also runs when its shared build/setup action changes. This does not turn every change into every optional acceptance run. See each workflow for its exact paths, timeouts and artifact retention. CI retains test/coverage evidence for 30 days; dependency audit evidence is retained for 14 days.
 
-**Jobs:**
-1. **Build & Test** — restore, build, test, publish test results
-2. **Code Quality** — dependency audit, warnings-as-errors build, formatting check
-3. **Dependency Review** (PRs only) — blocks high-severity vulnerabilities, checks complete license evidence, and rejects the configured GPL licenses. The job check is authoritative; the action's PR summary comment is disabled because it does not include the separate license-policy decision. See [license policy migration](../../docs/implementation/2026-09-27-license-policy-migration.md).
+## Shared implementation
 
-**Artifacts:** Test results (30 days)
+- [setup-dotnet](../actions/setup-dotnet/action.yml) installs `10.0.x` with `dotnet-quality: ga`, with optional NuGet caching. `global.json` controls resolution; its existing `latestMajor` policy remains. The NuGet publishing job uses its pinned setup action directly because it checks out validation code only.
+- [build-standalone-host](../actions/build-standalone-host/action.yml) supplies the same locked restore and warnings-as-errors Host build to First Use and Codex Bridge. First Use continues to disable cache.
+- [strict-nuget-audit](../actions/strict-nuget-audit/action.yml) is shared by CI Code Quality and Security Scan. It validates machine-readable audit results using [check_dependency_audit.py](../../scripts/check_dependency_audit.py); restore failure, malformed/missing evidence, reported warnings/errors or any reported vulnerability fail the job.
 
----
+## Retired checks and compatibility
 
-### 📦 [release.yml](./release.yml) — Create Release
+The old `vertical-slice-validation.yml` and `security-release-chain-validation.yml` branch-specific workflows are removed. Their useful package smoke and strict audit checks now run in normal CI/security scanning. Their automatic lockfile regeneration/commit jobs are retired; normal CI validates committed lockfiles without rewriting or pushing them.
 
-**Trigger:** Manual (`workflow_dispatch`) — enter a version like `0.1.0`
+The PR190 exact-base coverage collector is no longer invoked by CI. Its old check name, **Exact-base coverage (diagnostic only)**, remains temporarily so an unverified required-check setting cannot be left waiting for a missing name. It now depends on the actual **Build & Test** job and fails unless that job succeeds. It performs no baseline collection, rebuild, threshold exception or fabricated success. The standalone diagnostic script and its safety tests remain available for deliberate local use.
 
-**Jobs:**
-1. **Create Release** — validate version, build, test, pack the Weave.Cli .NET tool, generate provenance attestation
-2. **Publish Binaries** (×6) — single-file, self-contained, trimmed, R2R binaries for win-x64, win-arm64, linux-x64, linux-arm64, osx-x64, osx-arm64
-3. **GitHub Release** — creates a tagged release with all platform archives and auto-generated notes
+Required-check/ruleset configuration could not be verified because the read endpoint was denied. Ordinary workflow file identities, job names and Security Scan push/PR triggers therefore remain. Shared composite steps reduce duplicated maintenance without moving checks into nested reusable workflows or broadening path triggers to run unrelated suites. Release/publish/deployment workflows are not combined across credential or approval boundaries.
 
-**Artifacts:** NuGet package (90 days), platform binaries
+These changes reduce current workflow source files from 15 to 13. They do not delete historical Actions UI entries or run evidence. In particular, historical **Prepare PR90 Merge** came from `pr90-merge-preparation.yml`, which is not a current workflow file; it is distinct from the retired security-release-chain validation file.
 
----
+## Release and deployment setup
 
-### 🚀 [publish-nuget.yml](./publish-nuget.yml) — Publish to NuGet
+NuGet publishing uses the existing `NUGET_API_KEY` Secret in its applicable scope and the `nuget` environment. Automatic publication is tied to one successful Create Release run. Manual republication requires the exact version and that run's ID; it does not select the latest release. Missing/expired/mismatched artifacts fail validation. There is no rebuild-from-source fallback. Packages use embedded symbols; the current release generates `.nupkg` only. `--skip-duplicate` handles an already-published version without selecting another version.
 
-**Triggers:**
-- Automatic — when `Create Release` workflow completes successfully
-- Manual — for emergency republishing
+npm publication uses the configured npm trusted publisher and the `npm` environment, with OIDC only in the publish job. No npm write token is introduced. The first version still needs the existing npm trusted-publisher bootstrap process; source-package checks do not substitute for post-publication verification.
 
-**What it does:**
-1. Determines version from latest release tag
-2. Downloads the Weave.Cli package from the release (or rebuilds from source)
-3. Publishes the `.nupkg` and `.snupkg` to NuGet.org
-4. Generates a job summary with install command
-
-**Requirements:**
-- `NUGET_API_KEY` secret configured
-- GitHub environment: `nuget`
-
----
-
-### 📦 [npm-plugin-echo.yml](./npm-plugin-echo.yml) — Verify npm Echo Plugin
-
-**Triggers:** Echo package and connector changes on `main` or in pull requests, manual
-
-Builds and tests the npm package, checks its published contents and dependencies,
-then exercises the real Weave MCP connector and authorization path.
-
-### 🚀 [publish-npm-plugin-echo.yml](./publish-npm-plugin-echo.yml) — Publish npm Echo Plugin
-
-**Trigger:** Manual on `main` with the exact package version
-
-The verification job checks the version, tests and packs the package without
-OIDC permission. The publish job downloads that exact tarball, verifies its
-checksum and uses npm trusted publishing. The `npm` environment restricts
-deployment to `main` and requires a maintainer review. No npm write token is
-used by this workflow. The first package version must be published interactively
-before npm allows a trusted publisher to be configured; subsequent versions
-use this workflow.
-
-### ✅ [verify-published-npm-plugin-echo.yml](./verify-published-npm-plugin-echo.yml) — Verify Published npm Echo Plugin
-
-**Triggers:** Called by the Echo publish workflow after npm publish succeeds,
-or manual dispatch with the exact version at the selected commit and the
-release source SHA
-
-Installs the exact package from the npm registry, verifies its registry
-signatures and source provenance, and runs its HTTP entry through Weave's
-authorization, workspace-installation, restart, disable, and schema-drift
-checks. The job has read-only repository permission and uses no npm publish
-credentials. A successful source-package CI run alone does not prove this
-published-package path.
-
----
-
-### 🔒 [scan-security.yml](./scan-security.yml) — Security Scan
-
-**Triggers:** Weekly (Monday 03:00 UTC), push to `main`, PRs, manual
-
-**What it does:**
-- Audits all dependencies for known vulnerabilities
-- Checks for deprecated packages
-- Uploads audit report
-
----
-
-## Composite Actions
-
-### [setup-dotnet](../actions/setup-dotnet/action.yml)
-Reusable action that sets up .NET SDK with NuGet package caching. Used by all workflows.
-
----
-
-## Release Process
-
-```bash
-# 1. Go to Actions → Create Release → Run workflow
-# 2. Enter version: 0.1.0
-# 3. The workflow will:
-#    - Build, test, and pack everything
-#    - Create platform binaries (6 architectures)
-#    - Create a GitHub Release with all artifacts
-#    - Trigger publish-nuget to push packages to NuGet.org
-```
-
-No manual git tagging required — the workflow creates the tag when it publishes the release.
-
----
-
-## Required Setup
-
-### Secrets
-
-Configure in **Settings → Secrets and variables → Actions**:
-
-| Secret | Description |
-|--------|-------------|
-| `NUGET_API_KEY` | NuGet.org API key with push permissions |
-
-### Environments
-
-Create a `nuget` environment in **Settings → Environments** for deployment protection rules (optional but recommended).
-
----
-
-## Status Badges
-
-```markdown
-[![CI](https://github.com/KoalaFacts/Weave/actions/workflows/ci.yml/badge.svg)](https://github.com/KoalaFacts/Weave/actions/workflows/ci.yml)
-[![NuGet](https://img.shields.io/nuget/v/Weave.Cli.svg)](https://www.nuget.org/packages/Weave.Cli)
-```
-
----
-
-## Troubleshooting
-
-### CI fails on formatting
-```bash
-dotnet format Weave.slnx
-```
-
-### NuGet publish fails with "already exists"
-The `--skip-duplicate` flag handles this. If it still fails, verify the version isn't already published on NuGet.org.
-
-### Release workflow can't find packages
-The publish-nuget workflow will fall back to building from source if no packages are attached to the release.
+Worker deployment uses existing `CLOUDFLARE_API_TOKEN` and `CLOUDFLARE_ACCOUNT_ID` Secrets in the selected repository/production scope. No D1 ID/name, registration or host GitHub settings are required: existing D1 identity is discovered through the Worker binding, registration follows checked-in configuration (currently disabled), and new addresses use request origin. See [Worker deployment instructions](../../hosts/Weave.Mailbox.Worker/README.md#deploy-the-existing-worker-and-d1-database). Configured environment protection rules still apply. Local CI/fixture success is not evidence of a successful remote deployment.

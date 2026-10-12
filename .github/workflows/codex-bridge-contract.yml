@@ -13,6 +13,8 @@ on:
       - 'src/Invocations/**'
       - 'extensions/Weave.Security.Sqlite/Invocations/**'
       - '.github/workflows/codex-bridge-contract.yml'
+      - '.github/actions/build-standalone-host/**'
+      - '.github/actions/setup-dotnet/**'
   workflow_dispatch:
 
 permissions:
@@ -27,11 +29,8 @@ jobs:
       - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1
         with:
           persist-credentials: false
-      - uses: ./.github/actions/setup-dotnet
       - name: Build ordinary Host
-        run: |
-          dotnet restore hosts/Weave.Host/Weave.Host.csproj --locked-mode
-          dotnet build hosts/Weave.Host/Weave.Host.csproj --no-restore -c Release /p:TreatWarningsAsErrors=true
+        uses: ./.github/actions/build-standalone-host
       - name: Verify UUID review and continuation after Host and client restart
         env:
           PYTHONPATH: examples/governed-tools

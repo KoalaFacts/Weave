@@ -1,6 +1,7 @@
 """Bounded baseline diagnostics; these tests never execute a coverage collector."""
 import importlib.util
 import json
+import os
 from pathlib import Path
 import subprocess
 import tempfile
@@ -10,25 +11,30 @@ from unittest.mock import patch
 ROOT = Path(__file__).resolve().parents[2]
 SCRIPT = ROOT / 'scripts/collect_base_coverage.py'
 BASE = 'a7983cc73e05d9d0bb6afb147ab30396b74e6fde'
-BEFORE = 'c8bd6e0df89160e9b74826edca9ac258d6e467f4'
 
 
 class BaselineWorkflowTests(unittest.TestCase):
-    def test_job_is_bounded_to_one_pr_transition_and_read_only(self):
+    def test_retired_diagnostic_preserves_check_identity_and_propagates_real_gate_result(self):
         workflow = (ROOT / '.github/workflows/ci.yml').read_text()
         self.assertIn('  exact-base-coverage-diagnostic:\n', workflow)
         job = workflow.split('  exact-base-coverage-diagnostic:\n')[1].split('\n  code-quality:')[0]
-        for required in ("github.event_name == 'pull_request'", "github.event.action == 'synchronize'",
-                         'github.event.number == 190', f"github.event.before == '{BEFORE}'",
-                         f"github.event.pull_request.base.sha == '{BASE}'", 'contents: read',
-                         'timeout-minutes: 30', 'if: always()', 'persist-credentials: false',
-                         'path: baseline', 'path: diagnostic-tools', 'collect_base_coverage.py',
-                         'uses: ./diagnostic-tools/.github/actions/setup-dotnet', "node-version: '24'"):
+        for required in ('name: Exact-base coverage (diagnostic only)', 'needs: build-and-test',
+                         'if: always()', 'contents: read', 'timeout-minutes: 2',
+                         'GATE_RESULT: ${{ needs.build-and-test.result }}'):
             self.assertIn(required, job)
-        for forbidden in ('write', 'secrets.', 'GH_TOKEN', 'continue-on-error', '--threshold', 'pull_request_target'):
+        for forbidden in ('write', 'secrets.', 'GH_TOKEN', 'continue-on-error', '--threshold',
+                          'pull_request_target', 'uses:', 'checkout', 'dotnet', 'collect_base_coverage.py'):
             self.assertNotIn(forbidden, job)
-        self.assertIn(f'ref: {BASE}', job)
-        self.assertIn('github.event.pull_request.head.sha', job)
+        for retired in (BASE, 'github.event.number == 190', 'diagnostic-tools', 'path: baseline'):
+            self.assertNotIn(retired, workflow)
+        body = job.split('        run: |\n', 1)[1]
+        script = '\n'.join(line[10:] for line in body.splitlines())
+        for state, expected in [('success', 0), ('failure', 1), ('cancelled', 1), ('skipped', 1), ('unknown', 1)]:
+            with self.subTest(state=state):
+                result = subprocess.run(['bash', '-euo', 'pipefail', '-c', script],
+                                        env={**os.environ, 'GATE_RESULT': state},
+                                        capture_output=True, text=True, timeout=10)
+                self.assertEqual(expected, result.returncode, result.stdout + result.stderr)
 
 
 class BaselineCollectorTests(unittest.TestCase):

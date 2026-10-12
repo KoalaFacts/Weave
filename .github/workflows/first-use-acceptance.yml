@@ -6,11 +6,15 @@ on:
     paths:
       - 'examples/governed-tools/first_use.py'
       - '.github/workflows/first-use-acceptance.yml'
+      - '.github/actions/build-standalone-host/**'
+      - '.github/actions/setup-dotnet/**'
   push:
     branches: [main]
     paths:
       - 'examples/governed-tools/first_use.py'
       - '.github/workflows/first-use-acceptance.yml'
+      - '.github/actions/build-standalone-host/**'
+      - '.github/actions/setup-dotnet/**'
   workflow_dispatch:
 
 permissions:
@@ -39,14 +43,10 @@ jobs:
           git diff --exit-code "$BASE_SHA" HEAD --
           src/ hosts/ extensions/ tools/ Directory.Build.props Directory.Build.targets
           Directory.Packages.props global.json
-      - uses: ./.github/actions/setup-dotnet
+      - name: Build the ordinary standalone Host
+        uses: ./.github/actions/build-standalone-host
         with:
           cache: 'false'
-      - name: Build the ordinary standalone Host
-        run: |
-          dotnet --version
-          dotnet restore hosts/Weave.Host/Weave.Host.csproj --locked-mode
-          dotnet build hosts/Weave.Host/Weave.Host.csproj --no-restore -c Release /p:TreatWarningsAsErrors=true
       - name: Run actual first-use and restart flow
         run: >-
           python3 -u examples/governed-tools/first_use.py
