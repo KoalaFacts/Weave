@@ -12,10 +12,8 @@ export function deploymentConfig(base,env,root=directory){
     if(!/^[a-zA-Z0-9_-]+$/.test(env.WEAVE_D1_DATABASE_NAME??''))throw Error('WEAVE_D1_DATABASE_NAME is required.');
     const registration=env.WEAVE_REGISTRATION_ENABLED||'false';
     if(!['true','false'].includes(registration))throw Error('WEAVE_REGISTRATION_ENABLED must be true or false.');
-    const vars={...base.vars,REGISTRATION_ENABLED:registration};
-    for(const [name,maximum] of [['CLEANUP_MAX_MESSAGES',100000],['CLEANUP_TIME_BUDGET_MS',10000]]){
-        if(env[name]){if(!/^\d+$/.test(env[name])||Number(env[name])>maximum)throw Error(name+' exceeds its supported bound.');vars[name]=env[name];}
-    }
+    // Business sweeps stay disabled for this demo, including with inherited environment values.
+    const vars={...base.vars,REGISTRATION_ENABLED:registration,CLEANUP_MAX_MESSAGES:'0',CLEANUP_TIME_BUDGET_MS:'0'};
     if(env.WEAVE_HOST){
         let url;try{url=new URL(env.WEAVE_HOST);}catch{throw Error('WEAVE_HOST must be an HTTPS origin.');}
         if(url.protocol!=='https:'||url.username||url.password||url.pathname!=='/'||url.search||url.hash)throw Error('WEAVE_HOST must be an HTTPS origin.');
@@ -29,10 +27,10 @@ export async function deploy({env=process.env,fetchImpl=fetch,run,root=directory
     const base=JSON.parse(await readFile(join(root,'wrangler.jsonc'),'utf8')),config=deploymentConfig(base,env,root);
     if(!env.CLOUDFLARE_API_TOKEN)throw Error('CLOUDFLARE_API_TOKEN is required; its value is never written to config.');
     const apiRoot='https://api.cloudflare.com/client/v4/accounts/'+config.account_id;
-    async function inspect(path,label){
-        let response;try{response=await fetchImpl(apiRoot+path,{headers:{Authorization:'Bearer '+env.CLOUDFLARE_API_TOKEN},redirect:'error'});}catch{throw Error(label+' lookup failed; no mutation attempted.');}
-        if(!response.ok)throw Error(label+' lookup failed (HTTP '+response.status+'); no mutation attempted.');
-        let body;try{body=await response.json();}catch{throw Error(label+' lookup returned invalid JSON.');}if(body.success!==true||!body.result)throw Error(label+' lookup returned an invalid result.');return body.result;
+    async function inspect(path,label,state='no mutation attempted'){
+        let response;try{response=await fetchImpl(apiRoot+path,{headers:{Authorization:'Bearer '+env.CLOUDFLARE_API_TOKEN},redirect:'error'});}catch{throw Error(label+' lookup failed; '+state+'.');}
+        if(!response.ok)throw Error(label+' lookup failed (HTTP '+response.status+'); '+state+'.');
+        let body;try{body=await response.json();}catch{throw Error(label+' lookup returned invalid JSON; '+state+'.');}if(body?.success!==true||!body.result)throw Error(label+' lookup returned an invalid result; '+state+'.');return body.result;
     }
     const subdomain=await inspect('/workers/subdomain','Account subdomain');
     if(subdomain.subdomain!==expectedSubdomain)throw Error('Account does not own the authorized weave-389.workers.dev subdomain.');
@@ -51,6 +49,11 @@ export async function deploy({env=process.env,fetchImpl=fetch,run,root=directory
         command(['d1','migrations','apply','db','--remote']);
         if(!noPendingMigrations(command(['d1','migrations','list','db','--remote'])))throw Error('Pending migration state is not empty; deployment stopped.');
         command(['deploy','--keep-vars']);
+        const deployed=await inspect('/workers/scripts/demo/settings','Worker cleanup settings','deployment already completed; cleanup settings unverified');
+        for(const name of ['CLEANUP_MAX_MESSAGES','CLEANUP_TIME_BUDGET_MS']){
+            if(!Array.isArray(deployed.bindings)||!deployed.bindings.some(binding=>binding?.name===name&&binding.type==='plain_text'&&binding.text==='0'))throw Error('Deployment completed, but '+name+' is not confirmed disabled; no automatic rollback attempted.');
+        }
+        console.log('Verified deployed demo business cleanup: CLEANUP_MAX_MESSAGES=0, CLEANUP_TIME_BUDGET_MS=0.');
     }finally{await rm(temporary,{recursive:true,force:true});}
 }
 if(process.argv[1]&&import.meta.url===pathToFileURL(resolve(process.argv[1])).href){
