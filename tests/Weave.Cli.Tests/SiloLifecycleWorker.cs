@@ -60,13 +60,36 @@ internal sealed class SiloLifecycleWorker : IAsyncDisposable
         return json["args"].ShouldNotBeNull().AsArray().Select(value => value.ShouldNotBeNull().GetValue<string>()).ToArray();
     }
 
-    public async Task<JsonNode> RequestAsync(CancellationToken ct)
+    public async Task<JsonNode> RequestAsync(Task operation, CancellationToken ct)
     {
         var path = Path.Join(_root, "request.json");
         while (!File.Exists(path))
-            await Task.Delay(10, ct);
+        {
+            if (operation.IsCompleted)
+            {
+                await operation;
+                if (File.Exists(path))
+                    break;
+                throw new InvalidOperationException($"Command finished before the workspace request. {RequestProgress}");
+            }
+            if (HasExited && !File.Exists(path))
+                throw new InvalidOperationException($"Owned worker exited with exit code {ExitCode} before the workspace request. {RequestProgress}");
+            try
+            {
+                await Task.Delay(10, ct);
+            }
+            catch (OperationCanceledException exception) when (ct.IsCancellationRequested)
+            {
+                throw new OperationCanceledException($"Workspace request observation was cancelled. {RequestProgress}", exception, ct);
+            }
+        }
         return JsonNode.Parse(await File.ReadAllTextAsync(path, ct)).ShouldNotBeNull();
     }
+
+    private string RequestProgress => $"started={File.Exists(Path.Join(_root, "started.json"))}; "
+        + $"listening={File.Exists(Path.Join(_root, "listening.json"))}; "
+        + $"health={File.Exists(Path.Join(_root, "health.json"))}; "
+        + $"log={File.Exists(Path.Join(_root, "..", ".weave", "silo.log"))}";
 
     public async Task ListeningAsync(CancellationToken ct)
     {

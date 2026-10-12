@@ -8,10 +8,22 @@ const DENIED = ['GPL-2.0', 'GPL-3.0', 'AGPL-3.0'];
 // GitHub's dependency graph omits the license for this action. The MIT license
 // was checked at the pinned source commit: https://github.com/actions/setup-node/blob/249970729cb0ef3589644e2896645e5dc5ba9c38/LICENSE
 const VERIFIED_ACTION_LICENSES = new Map([
+  // MIT verified at https://github.com/actions/checkout/blob/3d3c42e5aac5ba805825da76410c181273ba90b1/LICENSE
+  ['pkg:githubactions/actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1', {
+    name: 'actions/checkout',
+    version: '3d3c42e5aac5ba805825da76410c181273ba90b1',
+    license: 'MIT',
+  }],
   // MIT verified at https://github.com/actions/setup-node/blob/949feb2413d6458794dcd2491c4babbbce0c15c1/LICENSE
   ['pkg:githubactions/actions/setup-node@949feb2413d6458794dcd2491c4babbbce0c15c1', {
     name: 'actions/setup-node',
     version: '949feb2413d6458794dcd2491c4babbbce0c15c1',
+    license: 'MIT',
+  }],
+  // MIT verified at https://github.com/actions/upload-artifact/blob/043fb46d1a93c77aae656e7c1c64a875d1fc6a0a/LICENSE
+  ['pkg:githubactions/actions/upload-artifact@043fb46d1a93c77aae656e7c1c64a875d1fc6a0a', {
+    name: 'actions/upload-artifact',
+    version: '043fb46d1a93c77aae656e7c1c64a875d1fc6a0a',
     license: 'MIT',
   }],
   // MIT verified at https://github.com/actions/upload-artifact/blob/cf430e030ddbb5b0abf93d22962f4752f3646cd9/LICENSE

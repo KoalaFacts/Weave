@@ -1,0 +1,95 @@
+name: Deploy Weave Worker
+on:
+  workflow_dispatch:
+    inputs:
+      configuration_scope:
+        description: Use configured repository values or the existing production environment
+        required: true
+        type: choice
+        options: [repository, production]
+permissions:
+  contents: read
+concurrency:
+  group: deploy-weave-worker-demo
+  cancel-in-progress: false
+jobs:
+  verify:
+    if: github.ref == 'refs/heads/main'
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1
+        with:
+          ref: ${{ github.sha }}
+          persist-credentials: false
+      - uses: actions/setup-node@949feb2413d6458794dcd2491c4babbbce0c15c1 # v7.1.0
+        with:
+          node-version: '24'
+          package-manager-cache: false
+      - run: npm ci --ignore-scripts
+        working-directory: hosts/Weave.Mailbox.Worker
+      - uses: ./.github/actions/setup-dotnet
+      - run: |
+          npm run typecheck
+          npm test
+          npm audit --audit-level=high
+        working-directory: hosts/Weave.Mailbox.Worker
+      - run: |
+          dotnet restore tests/Weave.Worker.Compatibility/Weave.Worker.Compatibility.csproj --locked-mode
+          dotnet build tests/Weave.Worker.Compatibility/Weave.Worker.Compatibility.csproj --no-restore -c Release
+      - run: npm run test:compat
+        working-directory: hosts/Weave.Mailbox.Worker
+  deploy-repository:
+    needs: verify
+    if: inputs.configuration_scope == 'repository'
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1
+        with:
+          ref: ${{ github.sha }}
+          persist-credentials: false
+      - uses: actions/setup-node@949feb2413d6458794dcd2491c4babbbce0c15c1 # v7.1.0
+        with:
+          node-version: '24'
+          package-manager-cache: false
+      - run: npm ci --ignore-scripts
+        working-directory: hosts/Weave.Mailbox.Worker
+      - name: Verify resources, migrate, confirm, and deploy existing demo
+        run: node scripts/deploy.mjs
+        working-directory: hosts/Weave.Mailbox.Worker
+        env:
+          CLOUDFLARE_API_TOKEN: ${{ secrets.CLOUDFLARE_API_TOKEN }}
+          CLOUDFLARE_ACCOUNT_ID: ${{ vars.CLOUDFLARE_ACCOUNT_ID }}
+          WEAVE_D1_DATABASE_ID: ${{ vars.WEAVE_D1_DATABASE_ID }}
+          WEAVE_D1_DATABASE_NAME: ${{ vars.WEAVE_D1_DATABASE_NAME }}
+          WEAVE_REGISTRATION_ENABLED: ${{ vars.WEAVE_REGISTRATION_ENABLED }}
+          WEAVE_HOST: ${{ vars.WEAVE_HOST }}
+          CLEANUP_MAX_MESSAGES: ${{ vars.CLEANUP_MAX_MESSAGES }}
+          CLEANUP_TIME_BUDGET_MS: ${{ vars.CLEANUP_TIME_BUDGET_MS }}
+  deploy-production:
+    needs: verify
+    if: inputs.configuration_scope == 'production'
+    runs-on: ubuntu-latest
+    environment: production
+    steps:
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1
+        with:
+          ref: ${{ github.sha }}
+          persist-credentials: false
+      - uses: actions/setup-node@949feb2413d6458794dcd2491c4babbbce0c15c1 # v7.1.0
+        with:
+          node-version: '24'
+          package-manager-cache: false
+      - run: npm ci --ignore-scripts
+        working-directory: hosts/Weave.Mailbox.Worker
+      - name: Verify resources, migrate, confirm, and deploy existing demo
+        run: node scripts/deploy.mjs
+        working-directory: hosts/Weave.Mailbox.Worker
+        env:
+          CLOUDFLARE_API_TOKEN: ${{ secrets.CLOUDFLARE_API_TOKEN }}
+          CLOUDFLARE_ACCOUNT_ID: ${{ vars.CLOUDFLARE_ACCOUNT_ID }}
+          WEAVE_D1_DATABASE_ID: ${{ vars.WEAVE_D1_DATABASE_ID }}
+          WEAVE_D1_DATABASE_NAME: ${{ vars.WEAVE_D1_DATABASE_NAME }}
+          WEAVE_REGISTRATION_ENABLED: ${{ vars.WEAVE_REGISTRATION_ENABLED }}
+          WEAVE_HOST: ${{ vars.WEAVE_HOST }}
+          CLEANUP_MAX_MESSAGES: ${{ vars.CLEANUP_MAX_MESSAGES }}
+          CLEANUP_TIME_BUDGET_MS: ${{ vars.CLEANUP_TIME_BUDGET_MS }}

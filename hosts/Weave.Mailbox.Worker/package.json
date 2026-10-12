@@ -1,0 +1,26 @@
+{
+  "name": "weave-mailbox-worker",
+  "version": "0.0.0",
+  "private": true,
+  "license": "MIT OR AGPL-3.0-or-later",
+  "type": "module",
+  "engines": {
+    "node": ">=24.19.0"
+  },
+  "scripts": {
+    "build": "esbuild src/index.ts --bundle --format=esm --platform=browser --outfile=dist/index.js --external:node:crypto --loader:.html=text",
+    "test": "npm run build && node --test --test-concurrency=1 test/*.test.mjs",
+    "typecheck": "tsc --noEmit",
+    "dev": "wrangler dev --local",
+    "test:compat": "npm run build && node test/compat.mjs",
+    "test:browser": "npm run build && node --test test/browser/demo.browser.mjs",
+    "benchmark:hash": "node test/hash-benchmark.mjs"
+  },
+  "devDependencies": {
+    "@types/node": "24.19.2",
+    "esbuild": "0.28.2",
+    "miniflare": "5.20261006.1-alpha",
+    "typescript": "7.0.2",
+    "wrangler": "4.149.0"
+  }
+}

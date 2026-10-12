@@ -34,6 +34,7 @@
     <Project Path="tools/Weave.SourceGen/Weave.SourceGen.csproj" />
   </Folder>
   <Folder Name="/tests/">
+    <Project Path="tests/Weave.Worker.Compatibility/Weave.Worker.Compatibility.csproj" />
     <Project Path="tests/Weave.Actions.Tests/Weave.Actions.Tests.csproj" />
     <Project Path="tests/Weave.Agents.Tests/Weave.Agents.Tests.csproj" />
     <Project Path="tests/Weave.Cli.Tests/Weave.Cli.Tests.csproj" />
