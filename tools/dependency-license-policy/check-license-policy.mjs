@@ -8,6 +8,12 @@ const DENIED = ['GPL-2.0', 'GPL-3.0', 'AGPL-3.0'];
 // GitHub's dependency graph omits the license for this action. The MIT license
 // was checked at the pinned source commit: https://github.com/actions/setup-node/blob/249970729cb0ef3589644e2896645e5dc5ba9c38/LICENSE
 const VERIFIED_ACTION_LICENSES = new Map([
+  // MIT verified at https://github.com/actions/setup-node/blob/949feb2413d6458794dcd2491c4babbbce0c15c1/LICENSE
+  ['pkg:githubactions/actions/setup-node@949feb2413d6458794dcd2491c4babbbce0c15c1', {
+    name: 'actions/setup-node',
+    version: '949feb2413d6458794dcd2491c4babbbce0c15c1',
+    license: 'MIT',
+  }],
   ['pkg:githubactions/actions/setup-node@249970729cb0ef3589644e2896645e5dc5ba9c38', {
     name: 'actions/setup-node',
     version: '249970729cb0ef3589644e2896645e5dc5ba9c38',
