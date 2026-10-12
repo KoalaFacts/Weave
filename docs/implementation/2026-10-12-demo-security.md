@@ -1,6 +1,6 @@
 # Demo registry, MCP and cleanup security verification
 
-This record describes application checks on the Worker demo, not a formal compliance certification, penetration test or assertion that the public deployment is secure. It extends the [Worker implementation record](2026-10-12-worker-d1-demo.md). The existing .NET Chromium startup failures and remote-deployment gates remain unresolved.
+This record describes application checks on the Worker demo, not a formal compliance certification, penetration test or assertion that the public deployment is secure. It extends the [Worker implementation record](2026-10-12-worker-d1-demo.md). The .NET Chromium startup failures below describe the earlier local environment. Current Worker UI evidence comes from the separate [Worker verification workflow](../../.github/workflows/worker-browser.yml), whose protected-browser result and screenshots must be checked for the reviewed commit. Remote-deployment permissions remain a separate gate.
 
 ## Delivered boundaries
 
@@ -31,4 +31,4 @@ The initial schedule is every five minutes; no guarantee is made that a backlog 
 
 Local dependency audit, staged credential scan, YAML parsing, typechecking, actual Worker tests and the C# source-generated wire harness complement these tests; audit zero alone does not establish security. Independent review verified both MCP fixes and inspected registry output, rate-limit SQL and cleanup bounds/retention. No production credentials were generated, committed or printed, and no remote account, migration, deployment or deletion was performed.
 
-Remote Cloudflare behavior, account-level deployment-read permissions, real ingress headers, plan cost/quota/performance, scheduler delivery and graphical browser E2E remain unverified. Prior full .NET result remains4252passed/13skipped/5failed; the same five fail during Chromium startup on clean baseline. Do not merge or describe all CI as green on the strength of these local checks. The user has not granted a new coverage exception.
+Remote Cloudflare behavior, account-level deployment-read permissions, real ingress headers, plan cost/quota/performance and scheduler delivery remain unverified by these local checks. The historical full local .NET result was 4252 passed / 13 skipped / 5 failed; those five failed during Chromium startup on the clean baseline too. That result does not replace current complete CI or the separate real Worker browser regression. Inspect its screenshots before claiming visual acceptance. No coverage exception is introduced.

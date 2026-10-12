@@ -64,6 +64,24 @@ test('inspectPolicy_PinnedSetupNodeWithVerifiedLicense_Available', () => {
   assert.equal(inspectScenario([{ ...pinned, license: 'GPL-3.0' }]).status, 'blocked');
 });
 
+test('inspectPolicy_PinnedCheckoutWithVerifiedLicense_RequiresExactIdentity', () => {
+  const pin = '3d3c42e5aac5ba805825da76410c181273ba90b1';
+  const name = 'actions/checkout';
+  const pinned = {
+    ...change(null), ecosystem: 'actions', name, version: pin,
+    package_url: `pkg:githubactions/${name}@${pin}`,
+  };
+  assert.equal(inspectScenario([pinned]).status, 'available');
+  for (const mismatch of [
+    { name: 'other/checkout' }, { version: 'different' },
+    { package_url: `pkg:githubactions/other/checkout@${pin}` },
+    { ecosystem: 'npm' }, { license: 'NOASSERTION' },
+  ]) {
+    assert.equal(inspectScenario([{ ...pinned, ...mismatch }]).status, 'unavailable');
+  }
+  assert.equal(inspectScenario([{ ...pinned, license: 'GPL-3.0' }]).status, 'blocked');
+});
+
 test('inspectPolicy_PinnedSetupNodeUpdateWithVerifiedLicense_RequiresExactIdentity', () => {
   const pin = '949feb2413d6458794dcd2491c4babbbce0c15c1';
   const name = 'actions/setup-node';

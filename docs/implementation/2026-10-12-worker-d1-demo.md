@@ -1,5 +1,7 @@
 # Native Worker and D1 mailbox demo
 
+The local browser failures recorded below are historical environment results, not a universal merge gate. The separate [Worker verification workflow](../../.github/workflows/worker-browser.yml) now runs the actual `/` and `/registry` UI against temporary local D1 in protected Chrome on ordinary PR/main CI. It covers independent sessions, public/private discovery, recipient acceptance, an uncertain-send retry, inbox reads and mobile ACK, and retains desktop/mobile screenshots for inspection. Its result must be checked for the reviewed commit; adding the test is not evidence that it passed.
+
 Local implementation based on `b53fa3005d317b1205c748bc860be0c7b856d05c`; no cloud resource, remote migration, deployment, package publication or production credential change was performed. The existing C# host and SQLite provider remain separate. This is not a migration of their stored mailboxes.
 
 ## Delivered path

@@ -54,7 +54,8 @@ static PayloadWire Payload(string text)
 }
 static void Check(bool condition, string assertion)
 {
-    if (!condition) throw new InvalidOperationException(assertion);
+    if (!condition)
+        throw new InvalidOperationException(assertion);
 }
 async Task<string> Register(string control)
 {
@@ -66,7 +67,8 @@ async Task<HttpResponseMessage> Raw(HttpMethod method, string path, string contr
 {
     using var request = new HttpRequestMessage(method, path);
     request.Headers.Add("X-Weave-Mailbox-Control", control);
-    if (body is not null) request.Content = new StringContent(body, Encoding.UTF8, "application/json");
+    if (body is not null)
+        request.Content = new StringContent(body, Encoding.UTF8, "application/json");
     var response = await client.SendAsync(request);
     if (!response.IsSuccessStatusCode)
     {
@@ -81,7 +83,7 @@ async Task<T> Get<T>(string path, string control, JsonTypeInfo<T> type)
     using var response = await Raw(HttpMethod.Get, path, control, null);
     return (await response.Content.ReadFromJsonAsync(type))!;
 }
-async Task<TOut> Exchange<TIn,TOut>(HttpMethod method, string path, string control, TIn value, JsonTypeInfo<TIn> input, JsonTypeInfo<TOut> output)
+async Task<TOut> Exchange<TIn, TOut>(HttpMethod method, string path, string control, TIn value, JsonTypeInfo<TIn> input, JsonTypeInfo<TOut> output)
 {
     using var response = await Raw(method, path, control, JsonSerializer.Serialize(value, input));
     return (await response.Content.ReadFromJsonAsync(output))!;

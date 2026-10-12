@@ -26,6 +26,16 @@ npm run test:compat
 
 This starts real local workerd/D1, runs `tests/Weave.Worker.Compatibility`, then shuts down the test server. The executable links the original C# v1 DTO/source-generated JSON source files rather than maintaining copies. Its UTF-8 hash vectors are deliberately synthetic public test data. Standard `dotnet test` does not run this separate cross-runtime fixture; run the command above as well.
 
+For the real browser regression on Linux with installed Chrome/Chromium and its normal sandbox available:
+
+```sh
+npm run test:browser
+```
+
+Set `CHROME_BIN` to an installed browser if it is not on `PATH`. The native Node/CDP fixture downloads no browser and never disables its sandbox. It starts isolated temporary D1 storage and separate browser contexts, registers two synthetic accounts through the UI, checks anonymous public/private discovery, requires recipient acceptance, loses a successful send response to verify an exact-envelope retry, then checks inbox reads, mobile ACK and the sender receipt. It also checks desktop/mobile horizontal layout and captures full-page screenshots. Browser processes and temporary D1/profile data are cleaned up; screenshots, sandbox status and bounded diagnostic logs remain in ignored `test-results/browser/` (or `WEAVE_BROWSER_EVIDENCE`). Controls are fixed public test data, and network logs omit headers and bodies.
+
+The [Worker verification workflow](../../.github/workflows/worker-browser.yml) runs these browser checks plus typechecking, Worker API/D1/MCP tests, audit and C# compatibility on ordinary pull requests and main pushes, without deployment credentials. Its `worker-browser-evidence` artifact contains screenshots and diagnostic results, including partial evidence on browser-test failure. A browser startup failure is a failed prerequisite, not a skipped or successful UI acceptance. Inspect the screenshots as well as the automated assertions before claiming visual acceptance.
+
 No account token, Cloudflare secret or real registration data is needed for these commands. Do not run remote migration/deployment commands until the target account, D1 resource and deployment have been separately authorized.
 
 ### Deploy the existing Worker and D1 database

@@ -13,6 +13,7 @@
     "typecheck": "tsc --noEmit",
     "dev": "wrangler dev --local",
     "test:compat": "npm run build && node test/compat.mjs",
+    "test:browser": "npm run build && node --test test/browser/demo.browser.mjs",
     "benchmark:hash": "node test/hash-benchmark.mjs"
   },
   "devDependencies": {

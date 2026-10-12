@@ -89,7 +89,7 @@ internal static class SiloLifecycleCommands
         try
         {
             await worker.ObserveStartedAsync(running, deadline.Token);
-            var request = await worker.RequestAsync(deadline.Token);
+            var request = await worker.RequestAsync(running, deadline.Token);
             request["headers"].ShouldNotBeNull()["x-weave-capability"].ShouldNotBeNull().GetValue<string>()
                 .ShouldBe("fixture-capability");
             var agent = request["body"].ShouldNotBeNull()["manifest"].ShouldNotBeNull()["agents"].ShouldNotBeNull()["assistant"].ShouldNotBeNull();
