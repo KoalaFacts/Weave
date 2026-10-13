@@ -2,13 +2,14 @@ import { relative, resolve } from 'node:path';
 
 function safeLine(value, limit) {
     if (typeof value !== 'string') return '';
-    return value.slice(0, 8192).split(/[\r\n]/, 1)[0]
-        .replace(/\u001b\[[0-9;]*m/g, '')
+    const line = value.slice(0, 8192).split(/[\r\n]/, 1)[0];
+    // Reject obscured fields before matching credentials; partial ANSI/control stripping can expose values.
+    if (/[\p{Cc}\p{Cf}\u2028\u2029]/u.test(line)) return '[nonprinting text omitted]';
+    return line
         .replace(/https?:\/\/[^\s"'<>]+/gi, '[URL omitted]')
         .replace(/\b[\w-]*(?:authorization|credentials?|control|password|secret|token|api[_-]?key)[\w-]*(?:["']?\s*[:=]|\s+).+/gi, '[sensitive details omitted]')
         .replace(/\b(?:Bearer|Basic)\s+\S+/gi, '[credential omitted]')
         .replace(/[A-Za-z0-9+/_=-]{24,}/g, '[opaque value omitted]')
-        .replace(/[\x00-\x1f\x7f\u2028\u2029]/g, ' ')
         .slice(0, limit);
 }
 

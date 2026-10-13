@@ -80,3 +80,16 @@ test('browser reporter bounds huge failures and the number of annotations', asyn
     assert.equal(result.annotations.filter(line => line.startsWith('::notice ')).length, 1);
     assert.ok(result.annotations.every(line => line.length < 2048));
 });
+
+test('browser annotations reject control and ANSI text before matching credentials', async () => {
+    const messages = ['access_token\u0000=tinyAT', 'client_secret\u001b[2K=tinyCS',
+        'access_to\u0000ken=tinyAT', 'password\t tinyPW', 'token\u200b=tinyTK',
+        'client_secret\u001b]0;title\u0007=tinyCS'];
+    const result = await report(messages.map((message, i) =>
+        `test('nonprinting failure ${i}', () => { throw Error(${JSON.stringify(message)}); });`).join('\n'));
+    assert.equal(result.status, 1);
+    assert.equal(result.annotations.length, messages.length);
+    assert.doesNotMatch(result.stdout, /tinyAT|tinyCS|tinyPW|tinyTK|[\u0000\u001b\u0007\u200b]/);
+    assert.ok(result.annotations.every(line => line.includes('test/browser/diagnostic.browser.mjs')));
+    assert.match(result.log, /tinyAT/);
+});
