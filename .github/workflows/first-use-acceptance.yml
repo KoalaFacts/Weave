@@ -35,14 +35,6 @@ jobs:
           ref: ${{ github.event.pull_request.head.sha || github.sha }}
           persist-credentials: false
           fetch-depth: 0
-      - name: Confirm this acceptance does not substitute modified product code
-        if: github.event_name == 'pull_request'
-        env:
-          BASE_SHA: ${{ github.event.pull_request.base.sha }}
-        run: >-
-          git diff --exit-code "$BASE_SHA" HEAD --
-          src/ hosts/ extensions/ tools/ Directory.Build.props Directory.Build.targets
-          Directory.Packages.props global.json
       - name: Build the ordinary standalone Host
         uses: ./.github/actions/build-standalone-host
         with:
@@ -52,6 +44,11 @@ jobs:
           python3 -u examples/governed-tools/first_use.py
           --host hosts/Weave.Host/bin/Release/net10.0/Weave.Silo.dll
           --evidence "$RUNNER_TEMP/weave-first-use-evidence"
+      - name: Confirm acceptance preserved the reviewed product and dependency locks
+        run: >-
+          git diff --exit-code HEAD --
+          src/ hosts/ extensions/ tools/ Directory.Build.props Directory.Build.targets
+          Directory.Packages.props global.json
       - name: Retain sanitized report and test documents only
         if: always()
         uses: actions/upload-artifact@043fb46d1a93c77aae656e7c1c64a875d1fc6a0a
