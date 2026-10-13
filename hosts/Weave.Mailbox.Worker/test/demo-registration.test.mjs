@@ -9,6 +9,11 @@ const script = /<script nonce="WEAVE_NONCE">([\s\S]*?)<\/script>/.exec(html)[1];
 const json = (value, status = 200) => new Response(JSON.stringify(value), { status });
 const account = { agentId: 'local-demo-agent', displayName: null, description: null };
 
+function promptText(markup, id) {
+    return new RegExp('<textarea id="' + id + '"[^>]*>([\\s\\S]*?)</textarea>').exec(markup)[1]
+        .replace(/&(amp|lt);/g, (_, entity) => ({ amp: '&', lt: '<' })[entity]);
+}
+
 function ui(fetch, { unavailableCrypto = false } = {}) {
     const elements = new Map(), calls = [], downloads = [], blobs = new Map(), timers = [], randomSizes = [];
     function element() {
@@ -20,7 +25,7 @@ function ui(fetch, { unavailableCrypto = false } = {}) {
     }
     for (const match of html.matchAll(/<[^>]+\bid="([^"]+)"[^>]*>/g)) {
         const node = element(); node.hidden = /\bhidden\b/.test(match[0]); node.disabled = /\bdisabled\b/.test(match[0]);
-        if(match[1].startsWith('agentPrompt'))node.value=new RegExp('<textarea id="'+match[1]+'"[^>]*>([\\s\\S]*?)</textarea>').exec(html)[1].replaceAll('&amp;','&').replaceAll('&lt;','<');
+        if (match[1].startsWith('agentPrompt')) node.value = promptText(html, match[1]);
         elements.set(match[1], node);
     }
     const get = id => { assert.ok(elements.has(id), 'Missing UI element: ' + id); return elements.get(id); };
@@ -40,6 +45,11 @@ function ui(fetch, { unavailableCrypto = false } = {}) {
         async click(id) { assert.equal(typeof get(id).handlers.click, 'function', 'Missing action: ' + id); await get(id).handlers.click(); } };
 }
 const success = path => path === '/v1/accounts' ? json(account) : json({ items: [], nextCursor: null });
+
+test('prompt fixture decodes HTML entities once, preserving literal encoded instructions', () => {
+    const markup = '<textarea id="agentPromptA">&amp;lt; &amp;amp; &lt;tag> A&amp;B</textarea>';
+    assert.equal(promptText(markup, 'agentPromptA'), '&lt; &amp; <tag> A&B');
+});
 
 test('opening the demo has no registration, credential generation or backup side effects', () => {
     const app = ui(success);
@@ -244,11 +254,12 @@ test('restoring a saved account opens scenarios without generating another crede
 });
 
 
-test('agent instructions use this deployment origin without account or credential side effects',()=>{
-    const app=ui(success);
-    for(const suffix of ['A','B']){
-        assert.ok(app.get('agentPrompt'+suffix).value.includes('http://127.0.0.1:43210'));
-        assert.ok(!app.get('agentPrompt'+suffix).value.includes('https://demo.weave-389.workers.dev'));
+test('agent instructions use this deployment origin without account or credential side effects', () => {
+    const app = ui(success);
+    for (const suffix of ['A', 'B']) {
+        const prompt = app.get('agentPrompt' + suffix).value;
+        const origins = [...prompt.matchAll(/https?:\/\/\S+/g)].map(([url]) => new URL(url.replace(/\.$/, '')).origin);
+        assert.deepEqual(origins, ['http://127.0.0.1:43210']);
     }
-    assert.deepEqual(app.calls,[]);assert.deepEqual(app.randomSizes,[]);assert.deepEqual(app.downloads,[]);
+    assert.deepEqual(app.calls, []); assert.deepEqual(app.randomSizes, []); assert.deepEqual(app.downloads, []);
 });

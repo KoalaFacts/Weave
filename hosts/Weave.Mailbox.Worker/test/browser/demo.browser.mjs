@@ -129,8 +129,8 @@ test('real Worker UI: isolated sessions, public/private discovery, acceptance, r
         const prompt = await alice.locator('#agentPromptA').inputValue();
         assert.match(prompt, /WEAVE-DEMO A to B: ping 001/);
         assert.match(prompt, /never simulate the other agent/);
-        assert.ok(prompt.includes(origin));
-        assert.ok(!prompt.includes('https://demo.weave-389.workers.dev'));
+        const promptOrigins = [...prompt.matchAll(/https?:\/\/\S+/g)].map(([url]) => new URL(url.replace(/\.$/, '')).origin);
+        assert.deepEqual(promptOrigins, [origin]);
         assert.ok(!prompt.includes('[DEMO_ORIGIN]'));
         await alice.context().grantPermissions(['clipboard-read', 'clipboard-write'], { origin });
         await alice.locator('#copyPromptA').click();
