@@ -21,7 +21,7 @@ internal sealed partial class DashboardReviewBrowserFixture : IAsyncDisposable
     public IPage Page => _browser.ShouldNotBeNull().Page;
     public IReadOnlyCollection<string> BlockedRequests => _browser.ShouldNotBeNull().BlockedRequests.ToArray();
 
-    public async Task StartAsync()
+    public async Task StartAsync(Action<string>? onWebSocketClosed = null)
     {
         await Api.StartAsync();
         var assembly = DashboardReviewRenderingTests.DashboardType("Weave.Dashboard.Pages.Approvals.Review").Assembly.Location;
@@ -43,7 +43,7 @@ internal sealed partial class DashboardReviewBrowserFixture : IAsyncDisposable
         _dashboard = new DashboardBrowserChild(start);
         var address = await WaitForDashboardAsync(_dashboard);
 
-        _browser = new DashboardPlaywrightBrowser(address);
+        _browser = new DashboardPlaywrightBrowser(address, onWebSocketClosed);
         await _browser.StartAsync();
     }
 

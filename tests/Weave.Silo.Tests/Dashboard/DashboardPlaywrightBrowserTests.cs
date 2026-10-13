@@ -34,14 +34,40 @@ public sealed class DashboardPlaywrightBrowserTests
     public async Task Browser_ReloadsOwnedPage_ClosesRoutedWebSocketAndRemainsInteractive()
     {
         await using var fixture = new DashboardReviewBrowserFixture();
-        await fixture.StartAsync();
+        var closed = new TaskCompletionSource(TaskCreationOptions.RunContinuationsAsynchronously);
+        await fixture.StartAsync(address =>
+        {
+            if (new Uri(address).PathAndQuery == "/_blazor?weave-reload-probe")
+                closed.TrySetResult();
+        });
+
+        // A direct SignalR handshake establishes an owned socket whose lifetime this test
+        // controls, independently of Blazor's transport negotiation and fallback.
+        var socket = await fixture.Page.RunAndWaitForWebSocketAsync(async () =>
+        {
+            var handshake = await fixture.Page.EvaluateAsync<string>("""
+                () => new Promise((resolve, reject) => {
+                  const url = new URL('/_blazor?weave-reload-probe', location.href);
+                  url.protocol = 'ws:';
+                  const socket = globalThis.__weaveReloadProbe = new WebSocket(url);
+                  socket.binaryType = 'arraybuffer';
+                  socket.onopen = () => socket.send(JSON.stringify({ protocol: 'blazorpack', version: 1 }) + '\u001e');
+                  socket.onmessage = event => resolve(typeof event.data === 'string'
+                    ? event.data : new TextDecoder().decode(event.data));
+                  socket.onerror = () => reject(new Error('Owned Blazor WebSocket handshake failed.'));
+                  socket.onclose = () => reject(new Error('Owned Blazor WebSocket closed before its handshake.'));
+                })
+                """).WaitAsync(TimeSpan.FromSeconds(10), TestContext.Current.CancellationToken);
+            handshake.ShouldBe("{}\u001e");
+        }, new()
+        {
+            Predicate = connection => new Uri(connection.Url).PathAndQuery == "/_blazor?weave-reload-probe"
+        }).WaitAsync(TestContext.Current.CancellationToken);
+        socket.IsClosed.ShouldBeFalse();
 
         // Reload closes routed sockets without a close code or reason in the driver protocol.
-        // The SDK must handle that event without poisoning the shared Playwright connection.
-        var socket = await fixture.Page.RunAndWaitForWebSocketAsync(() => fixture.Page.ReloadAsync(), new()
-        {
-            Predicate = connection => new Uri(connection.Url).AbsolutePath == "/_blazor"
-        }).WaitAsync(TestContext.Current.CancellationToken);
+        await fixture.Page.ReloadAsync().WaitAsync(TestContext.Current.CancellationToken);
+        await closed.Task.WaitAsync(TimeSpan.FromSeconds(10), TestContext.Current.CancellationToken);
         await using var ready = await fixture.Page.WaitForFunctionAsync(
             "() => globalThis.__weaveFileInputReady(document.querySelector('#review-file'))")
             .WaitAsync(TestContext.Current.CancellationToken);
@@ -49,7 +75,6 @@ public sealed class DashboardPlaywrightBrowserTests
 
         await Assertions.Expect(fixture.Page.Locator(".review-page"))
             .ToContainTextAsync("No file loaded. Select the retained original JSON request.");
-        socket.IsClosed.ShouldBeFalse();
         fixture.BlockedRequests.ShouldBeEmpty();
         fixture.Api.Requests.ShouldBeEmpty();
     }
