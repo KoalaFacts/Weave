@@ -1,7 +1,7 @@
 export class Problem extends Error {
-    constructor(public status: number, public code: string) { super(code); }
+    constructor(public status: number, public code: string, public retryAfter?: number) { super(code); }
 }
-export function fail(status = 400, code = 'invalid'): never { throw new Problem(status, code); }
+export function fail(status = 400, code = 'invalid', retryAfter?: number): never { throw new Problem(status, code, retryAfter); }
 export const enc = new TextEncoder();
 export function stringify(value: unknown): string {
     if (typeof value === 'bigint') return value.toString();
@@ -25,7 +25,9 @@ export function json(value: unknown, status = 200): Response {
 export function problem(error: unknown): Response {
     const p = error instanceof Problem ? error : new Problem(503, 'storage');
     const titles: Record<string,string> = { invalid: 'Invalid request', unauthenticated: 'Mailbox control required', unavailable: 'Resource unavailable', conflict: 'State conflict', expired: 'Expired', capacity: 'Capacity reached', tooLarge: 'Request too large', storage: 'Storage unavailable' };
-    return json({ status: p.status, title: titles[p.code], code: p.code }, p.status);
+    const response = json({ status: p.status, title: titles[p.code], code: p.code }, p.status);
+    if (p.retryAfter !== undefined) response.headers.set('Retry-After', String(p.retryAfter));
+    return response;
 }
 export function object(value: any, required: string[], optional: string[] = []): void {
     if (!value || typeof value !== 'object' || Array.isArray(value) || required.some(k => !(k in value)) || Object.keys(value).some(k => !required.includes(k) && !optional.includes(k))) fail();
