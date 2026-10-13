@@ -3,7 +3,7 @@ using Microsoft.Playwright;
 
 namespace Weave.Silo.Tests.Dashboard;
 
-internal sealed class DashboardPlaywrightBrowser(Uri origin, Action<string>? onWebSocketClosed = null) : IAsyncDisposable
+internal sealed class DashboardPlaywrightBrowser(Uri origin) : IAsyncDisposable
 {
     private IPlaywright? _playwright;
     private IBrowser? _browser;
@@ -60,16 +60,7 @@ internal sealed class DashboardPlaywrightBrowser(Uri origin, Action<string>? onW
         await _context.RouteWebSocketAsync("**/*", socket =>
         {
             if (Permitted(socket.Url, webSocket: true))
-            {
-                var server = socket.ConnectToServer();
-                if (onWebSocketClosed is not null)
-                    socket.OnClose((code, reason) =>
-                    {
-                        // OnClose replaces the SDK's automatic forwarding to the server.
-                        _webSocketClosures.Add(server.CloseAsync(new() { Code = code, Reason = reason }));
-                        onWebSocketClosed(socket.Url);
-                    });
-            }
+                socket.ConnectToServer();
             else
             {
                 BlockedRequests.Enqueue(socket.Url);
@@ -110,16 +101,8 @@ internal sealed class DashboardPlaywrightBrowser(Uri origin, Action<string>? onW
             }
             finally
             {
-                try
-                {
-                    if (_context is not null)
-                        await _context.CloseAsync();
-                }
-                finally
-                {
-                    // Closing the context can queue owned server-side socket closures.
-                    await Task.WhenAll(_webSocketClosures).WaitAsync(TimeSpan.FromSeconds(5));
-                }
+                if (_context is not null)
+                    await _context.CloseAsync();
             }
         }
         finally

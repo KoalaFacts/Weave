@@ -31,24 +31,34 @@ public sealed class DashboardPlaywrightBrowserTests
     }
 
     [Fact]
-    public async Task Browser_ReloadsOwnedPage_ClosesRoutedWebSocketAndRemainsInteractive()
+    public async Task Browser_ReloadsPage_DecodesRoutedSocketCloseWithoutMetadataAndRemainsInteractive()
     {
         await using var fixture = new DashboardReviewBrowserFixture();
-        var closed = new TaskCompletionSource(TaskCreationOptions.RunContinuationsAsynchronously);
-        await fixture.StartAsync(address =>
+        await fixture.StartAsync();
+        var closed = new TaskCompletionSource<(int? Code, string? Reason)>(TaskCreationOptions.RunContinuationsAsynchronously);
+        var probeAddress = new UriBuilder(fixture.Page.Url)
         {
-            if (new Uri(address).PathAndQuery == "/_blazor?weave-reload-probe")
-                closed.TrySetResult();
-        });
+            Scheme = "ws", Path = "/__weave_playwright_reload_probe", Query = "", Fragment = ""
+        }.Uri.AbsoluteUri;
+        // This exact test-only route exercises the SDK's mock socket lifecycle without
+        // changing the context routes for Dashboard traffic or foreign-origin denial.
+        await fixture.Page.RouteWebSocketAsync(address => address == probeAddress,
+            socket => socket.OnClose((code, reason) => closed.TrySetResult((code, reason))));
+        (await fixture.Page.EvaluateAsync<bool>("""
+            url => new Promise((resolve, reject) => {
+              const socket = globalThis.__weaveReloadProbe = new WebSocket(url);
+              socket.onopen = () => resolve(socket.readyState === WebSocket.OPEN);
+              socket.onerror = () => reject(new Error('Test routed WebSocket failed to open.'));
+              socket.onclose = () => reject(new Error('Test routed WebSocket closed before opening.'));
+            })
+            """, probeAddress).WaitAsync(TimeSpan.FromSeconds(10), TestContext.Current.CancellationToken)).ShouldBeTrue();
 
-        // A direct SignalR handshake establishes an owned socket whose lifetime this test
-        // controls, independently of Blazor's transport negotiation and fallback.
-        var socket = await OpenOwnedProbeAsync(fixture.Page);
-        socket.IsClosed.ShouldBeFalse();
-
-        // Reload closes routed sockets without a close code or reason in the driver protocol.
+        // Destroying the page realm emits closePage with neither code nor reason.
+        // SDK 1.62.0 threw before invoking this callback; 1.63.0 decodes both as null.
         await fixture.Page.ReloadAsync().WaitAsync(TestContext.Current.CancellationToken);
-        await closed.Task.WaitAsync(TimeSpan.FromSeconds(10), TestContext.Current.CancellationToken);
+        var close = await closed.Task.WaitAsync(TimeSpan.FromSeconds(10), TestContext.Current.CancellationToken);
+        close.Code.ShouldBeNull();
+        close.Reason.ShouldBeNull();
         await using var ready = await fixture.Page.WaitForFunctionAsync(
             "() => globalThis.__weaveFileInputReady(document.querySelector('#review-file'))")
             .WaitAsync(TestContext.Current.CancellationToken);
@@ -58,72 +68,6 @@ public sealed class DashboardPlaywrightBrowserTests
             .ToContainTextAsync("No file loaded. Select the retained original JSON request.");
         fixture.BlockedRequests.ShouldBeEmpty();
         fixture.Api.Requests.ShouldBeEmpty();
-    }
-
-    private static async Task<IWebSocket> OpenOwnedProbeAsync(IPage page)
-    {
-        var nativeError = new TaskCompletionSource<string>(TaskCreationOptions.RunContinuationsAsynchronously);
-        IWebSocket? observedSocket = null;
-        var httpRouteCount = 0;
-        Func<string, bool> matchesProbe = address => new Uri(address).PathAndQuery == "/_blazor?weave-reload-probe";
-        Task ObserveHttpRouteAsync(IRoute route)
-        {
-            Interlocked.Increment(ref httpRouteCount);
-            // Preserve the existing context origin and redirect checks.
-            return route.FallbackAsync();
-        }
-        void CaptureSocketError(object? sender, string error) => nativeError.TrySetResult(error[..Math.Min(error.Length, 512)]);
-        void ObserveSocket(object? sender, IWebSocket connection)
-        {
-            if (matchesProbe(connection.Url))
-            {
-                observedSocket = connection;
-                connection.SocketError += CaptureSocketError;
-            }
-        }
-
-        await page.RouteAsync(matchesProbe, ObserveHttpRouteAsync);
-        page.WebSocket += ObserveSocket;
-        try
-        {
-            return await page.RunAndWaitForWebSocketAsync(async () =>
-            {
-                var handshake = await page.EvaluateAsync<string>("""
-                () => new Promise((resolve, reject) => {
-                  const url = new URL('/_blazor?weave-reload-probe', location.href);
-                  url.protocol = 'ws:';
-                  const socket = globalThis.__weaveReloadProbe = new WebSocket(url);
-                  socket.binaryType = 'arraybuffer';
-                  socket.onopen = () => socket.send(JSON.stringify({ protocol: 'blazorpack', version: 1 }) + '\u001e');
-                  socket.onmessage = event => resolve(typeof event.data === 'string'
-                    ? event.data : new TextDecoder().decode(event.data));
-                  socket.onerror = () => reject(new Error('Owned Blazor WebSocket handshake failed.'));
-                  socket.onclose = () => reject(new Error('Owned Blazor WebSocket closed before its handshake.'));
-                })
-                """).WaitAsync(TimeSpan.FromSeconds(10), TestContext.Current.CancellationToken);
-                handshake.ShouldBe("{}\u001e");
-            }, new()
-            {
-                Predicate = connection => matchesProbe(connection.Url)
-            }).WaitAsync(TestContext.Current.CancellationToken);
-        }
-        catch (PlaywrightException error)
-        {
-            // Native Chromium errors distinguish an HTTP rejection from browser policy.
-            // Retain only this probe's bounded error, with no headers or response bodies.
-            await Task.WhenAny(nativeError.Task, Task.Delay(TimeSpan.FromSeconds(2), TestContext.Current.CancellationToken));
-            TestContext.Current.CancellationToken.ThrowIfCancellationRequested();
-            var detail = nativeError.Task.IsCompletedSuccessfully ? await nativeError.Task : "not reported within 2 seconds";
-            throw new PlaywrightException(
-                $"Owned WebSocket failed; native error: {detail}; HTTP route observations: {Volatile.Read(ref httpRouteCount)}.", error);
-        }
-        finally
-        {
-            page.WebSocket -= ObserveSocket;
-            if (observedSocket is not null)
-                observedSocket.SocketError -= CaptureSocketError;
-            await page.UnrouteAsync(matchesProbe, ObserveHttpRouteAsync);
-        }
     }
 
     [Fact]
