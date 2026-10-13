@@ -1,0 +1,50 @@
+name: Prepare managed Chromium sandbox
+description: Allow the pinned SDK browser to create user namespaces on Ubuntu 24.04 CI
+inputs:
+  playwright-package:
+    description: Repository-relative installed Playwright package for this test suite
+    required: true
+runs:
+  using: composite
+  steps:
+    - name: Inspect the runner and render an exact executable profile
+      shell: bash
+      working-directory: ${{ github.workspace }}
+      env:
+        PLAYWRIGHT_PACKAGE: ${{ inputs.playwright-package }}
+      run: |
+        test "$RUNNER_ENVIRONMENT" = github-hosted
+        test "$RUNNER_OS" = Linux
+        test "$RUNNER_ARCH" = X64
+        test "$ImageOS" = ubuntu24
+        test "$(id -u)" -ne 0
+        sudo aa-status --enabled
+        cat /etc/os-release
+        uname -sr
+        sysctl kernel.apparmor_restrict_unprivileged_userns user.max_user_namespaces | tee "$RUNNER_TEMP/playwright-policy-before.txt"
+        browser_path="$(node -e '
+          const path = require("node:path");
+          const sdk = path.resolve(process.env.PLAYWRIGHT_PACKAGE);
+          console.error("Playwright SDK: " + require(path.join(sdk, "package.json")).version);
+          console.log(require(sdk).chromium.executablePath());
+        ')"
+        python3 scripts/playwright_apparmor_profile.py "$browser_path" > "$RUNNER_TEMP/weave-playwright-chromium"
+        sha256sum "$browser_path"
+        cat "$RUNNER_TEMP/weave-playwright-chromium"
+    - name: Load only the managed Chromium user namespace profile
+      shell: bash
+      run: |
+        if [ "$(sysctl -n kernel.apparmor_restrict_unprivileged_userns)" = 1 ]; then
+          sudo install -o root -g root -m 0644 "$RUNNER_TEMP/weave-playwright-chromium" /etc/apparmor.d/weave-playwright-chromium
+          sudo apparmor_parser --replace /etc/apparmor.d/weave-playwright-chromium
+          sudo grep -F 'weave-playwright-chromium (unconfined)' /sys/kernel/security/apparmor/profiles
+        else
+          echo 'The runner already permits unprivileged user namespaces; no profile was loaded.'
+        fi
+    - name: Verify the global namespace restrictions are unchanged
+      shell: bash
+      run: |
+        sysctl kernel.apparmor_restrict_unprivileged_userns user.max_user_namespaces > "$RUNNER_TEMP/playwright-policy-after.txt"
+        diff -u "$RUNNER_TEMP/playwright-policy-before.txt" "$RUNNER_TEMP/playwright-policy-after.txt"
+        cat "$RUNNER_TEMP/playwright-policy-after.txt"
+        echo '::notice title=Managed Chromium sandbox prerequisite::Runner prerequisite prepared; global namespace policy unchanged. UI acceptance still requires the browser tests.'

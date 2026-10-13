@@ -17,7 +17,7 @@ concurrency:
 jobs:
   worker:
     name: Worker API, compatibility and browser
-    runs-on: ubuntu-latest
+    runs-on: ubuntu-24.04
     timeout-minutes: 15
     defaults:
       run:
@@ -49,6 +49,10 @@ jobs:
         run: npm run test:compat
       - name: Install locked Playwright Chromium and Linux dependencies
         run: npx --no-install playwright install --with-deps --no-shell chromium
+      - name: Prepare the managed Worker browser sandbox
+        uses: ./.github/actions/setup-playwright-sandbox
+        with:
+          playwright-package: hosts/Weave.Mailbox.Worker/node_modules/playwright
       - name: Exercise real demo and registry in protected Chrome
         # Playwright manages the matching browser; chromiumSandbox remains enabled.
         # The fixture fails if the runner cannot provide its namespace and seccomp sandbox.
