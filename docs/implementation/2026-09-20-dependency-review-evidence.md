@@ -47,7 +47,11 @@ The producer inventories every checked-in .NET project and requires its committe
 NuGet lockfile. It verifies Git blob hashes, complete trees, package content hashes,
 resolved package versions, direct/transitive classifications and dependency edges.
 Framework graphs remain distinct. Local Project edges expand to actual external
-packages rather than inventing NuGet identities for local code. Unknown node kinds,
+packages rather than inventing NuGet identities for local code. Every Project node
+is traversed, including projects with no incoming external-package edge. Otherwise
+a package referenced only by a local project could be missing without rejection.
+Empty projects are permitted; incomplete/cyclic project edges and non-map dependency
+lists are not. Unknown node kinds,
 missing locks/edges, ambiguous names, symlinks, corrupt/oversize JSON and empty total
 graphs fail closed. All packages are included in policy evaluation; the conservative
 runtime scope is not a claim that test-only dependencies are production runtime.

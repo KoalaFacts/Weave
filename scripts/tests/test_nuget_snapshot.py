@@ -104,6 +104,30 @@ class NugetSnapshotTests(unittest.TestCase):
         with self.assertRaises(ValueError):
             manifests(value)
 
+    def test_project_edges_are_validated_without_external_incoming_edges(self):
+        for edges in ({'Not.In.Lock': '1.0.0'}, {'weave.local': '1.0.0'}, ['Example.Leaf']):
+            with self.subTest(edges=edges):
+                value = lock()
+                value['dependencies']['net10.0']['weave.local']['dependencies'] = edges
+                with self.assertRaises(snapshots.SnapshotError):
+                    manifests(value)
+
+    def test_package_referenced_only_by_a_project_cannot_be_omitted(self):
+        value = lock()
+        packages = value['dependencies']['net10.0']
+        packages.pop('Example.Leaf')
+        packages['Example.Top']['dependencies'] = {}
+        with self.assertRaises(snapshots.SnapshotError):
+            manifests(value)
+
+    def test_standalone_empty_and_nested_projects_keep_only_real_packages(self):
+        value = lock()
+        packages = value['dependencies']['net10.0']
+        packages['empty.local'] = {'type': 'Project'}
+        packages['nested.local'] = {'type': 'Project', 'dependencies': {'weave.local': '1.0.0'}}
+        graph = next(iter(manifests(value).values()))['resolved']
+        self.assertEqual(set(graph), {'pkg:nuget/example.top@1.0.0', 'pkg:nuget/example.leaf@1.0.0'})
+
     def test_exact_commit_and_lock_blob_are_preserved_in_submission(self):
         api = FakeApi()
         result = self.snapshot(api)

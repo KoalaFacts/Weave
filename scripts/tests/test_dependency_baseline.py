@@ -133,6 +133,29 @@ class HistoricalBaselineTests(unittest.TestCase):
                 self.assertEqual(report['failure'], reason)
                 self.assertIsNone(plan)
 
+    def test_every_project_edge_is_required_even_without_an_external_incoming_edge(self):
+        for edges, reason in [({'Not.In.Lock': '1.0.0'}, 'incomplete-or-cyclic-project-edge'),
+                              ({'weave.local': '1.0.0'}, 'incomplete-or-cyclic-project-edge'),
+                              (['Example.Leaf'], 'invalid-project-edges')]:
+            with self.subTest(edges=edges):
+                value = lock()
+                value['dependencies']['net10.0']['weave.local']['dependencies'] = edges
+                code, report, plan, _, _ = self.run_step(FakeApi(value))
+                self.assertEqual(code, 1)
+                self.assertEqual(report['status'], 'unavailable')
+                self.assertEqual(report['failure'], reason)
+                self.assertIsNone(plan)
+
+    def test_omitting_a_package_referenced_only_by_a_project_blocks_the_baseline(self):
+        value = lock()
+        packages = value['dependencies']['net10.0']
+        packages.pop('Example.Leaf')
+        packages['Example.Top']['dependencies'] = {}
+        code, report, plan, _, _ = self.run_step(FakeApi(value))
+        self.assertEqual(code, 1)
+        self.assertEqual(report['failure'], 'incomplete-or-cyclic-project-edge')
+        self.assertIsNone(plan)
+
 
 if __name__ == '__main__':
     unittest.main()
