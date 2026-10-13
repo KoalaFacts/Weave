@@ -1,0 +1,85 @@
+import assert from 'node:assert/strict';
+import { test } from 'node:test';
+import { start } from './harness.mjs';
+
+for (const count of [0, 10, 11, 23]) test(`anonymous directory browses ${count} public addresses in stable ten-item pages`, async () => {
+    const h = await start();
+    try {
+        const owner = await h.register({ displayName: 'PRIVATE-PROFILE', description: 'PRIVATE-DESCRIPTION' });
+        const visible = [];
+        for (let index = 0; index < count; index++) visible.push(await h.address(owner, { label: `Public ${index}`, isPublic: true }));
+        const hidden = [];
+        for (const profile of [{ label: 'PRIVATE' }, { label: 'FUTURE', isPublic: true, effectiveFrom: '2099-01-01T00:00:00Z' }, { label: 'EXPIRED', isPublic: true, effectiveTo: '2020-01-01T00:00:00Z' }]) hidden.push(await h.address(owner, profile));
+        const removed = await h.address(owner, { label: 'REMOVED', isPublic: true });
+        await h.ok('/v1/addresses/' + removed.addressId, owner.control, 'DELETE');
+        hidden.push(removed);
+        const seen = [], sizes = [];
+        let cursor = null;
+        do {
+            const page = await h.ok('/v1/directory' + (cursor ? '?afterCursor=' + encodeURIComponent(cursor) : ''));
+            sizes.push(page.items.length); seen.push(...page.items.map(item => item.addressId));
+            for (const item of page.items) assert.deepEqual(Object.keys(item).sort(), ['accountId', 'addressId', 'directUri', 'effectiveFrom', 'effectiveTo', 'isPublic', 'label']);
+            assert.ok(!JSON.stringify(page).includes(owner.control));
+            assert.ok(!JSON.stringify(page).includes('PRIVATE-'));
+            cursor = page.nextCursor;
+            if (cursor) assert.equal(cursor, 'directory::' + page.items.at(-1).addressId);
+            assert.ok(sizes.length <= 3, 'Pagination must terminate.');
+        } while (cursor);
+        assert.deepEqual(sizes, count === 0 ? [0] : count === 10 ? [10] : count === 11 ? [10, 1] : [10, 10, 3]);
+        assert.deepEqual(seen, visible.map(item => item.addressId).sort());
+        assert.equal(new Set(seen).size, count);
+        for (const item of hidden) assert.equal((await h.request('/v1/directory/address?addressId=' + item.addressId)).status, 404);
+        for (const query of ['limit=11', 'limit=100', 'limit=0', 'limit=-1', 'limit=1&limit=10']) assert.equal((await h.request('/v1/directory?' + query)).status, 400);
+    } finally { await h.close(); }
+});
+
+test('directory rejects malformed and wrong-scope cursors before returning public rows', async () => {
+    const h = await start();
+    try {
+        const owner = await h.register(), visible = await h.address(owner, { label: 'Visible', isPublic: true });
+        for (const cursor of ['directory::' + '-'.repeat(36), 'directory::' + 'a'.repeat(36), 'directory::AAAAAAAA-AAAA-AAAA-AAAA-AAAAAAAAAAAA', 'directory:' + btoa('another search') + ':' + visible.addressId, 'addresses::' + visible.addressId]) {
+            assert.equal((await h.request('/v1/directory?afterCursor=' + encodeURIComponent(cursor))).status, 400, cursor);
+        }
+        assert.equal((await h.request('/v1/directory?afterCursor=directory%3A%3A' + visible.addressId + '&afterCursor=duplicate')).status, 400);
+        assert.deepEqual((await h.ok('/v1/directory?afterCursor=' + encodeURIComponent('directory::' + visible.addressId))).items, []);
+    } finally { await h.close(); }
+});
+
+test('public rate denial returns the longest blocked window and recovers without charging rejected reads', async () => {
+    const h = await start();
+    const request = (path = '/v1/directory', ip = '192.0.2.40') => h.mf.dispatchFetch('http://localhost' + path, { headers: { 'CF-Connecting-IP': ip } });
+    try {
+        assert.equal((await request()).status, 200);
+        const now = Date.now();
+        await h.db.prepare("UPDATE mailbox_records SET data=json_set(data,'$.count',CASE WHEN id='global' THEN 2000 ELSE 120 END,'$.at',?) WHERE kind='public-rate'").bind(now - 10000).run();
+        await h.db.prepare("UPDATE mailbox_records SET data=json_set(data,'$.at',?) WHERE kind='public-rate' AND id='global'").bind(now - 55000).run();
+        const before = (await h.db.prepare("SELECT id,data FROM mailbox_records WHERE kind='public-rate' ORDER BY id").all()).results;
+        for (const route of ['/v1/directory', '/v1/directory/address?addressId=00000000-0000-0000-0000-000000000000', '/v1/contacts/cards', '/v1/contacts/card?cardId=missing']) {
+            const response = await request(route);
+            assert.equal(response.status, 429);
+            const retry = Number(response.headers.get('Retry-After'));
+            assert.ok(Number.isInteger(retry) && retry >= 45 && retry <= 50, 'Retry-After must cover both blocked windows: ' + retry);
+            assert.deepEqual(await response.json(), { status: 429, title: 'Capacity reached', code: 'capacity' });
+        }
+        assert.deepEqual((await h.db.prepare("SELECT id,data FROM mailbox_records WHERE kind='public-rate' ORDER BY id").all()).results, before);
+        const otherSource = await request('/v1/directory', '192.0.2.41');
+        assert.equal(otherSource.status, 429);
+        assert.ok(Number(otherSource.headers.get('Retry-After')) >= 1 && Number(otherSource.headers.get('Retry-After')) <= 5);
+        await h.db.prepare("UPDATE mailbox_records SET data=json_set(data,'$.at',?) WHERE kind='public-rate'").bind(Date.now() - 61000).run();
+        const recovered = await request(); assert.equal(recovered.status, 200); assert.equal(recovered.headers.get('Retry-After'), null);
+        const counters = (await h.db.prepare("SELECT data FROM mailbox_records WHERE kind='public-rate'").all()).results;
+        assert.ok(counters.every(row => JSON.parse(row.data).count === 1));
+    } finally { await h.close(); }
+});
+
+test('concurrent anonymous reads cannot cross the per-source threshold', async () => {
+    const h = await start();
+    try {
+        const request = () => h.request('/v1/directory');
+        await request();
+        await h.db.prepare("UPDATE mailbox_records SET data=json_set(data,'$.count',119) WHERE kind='public-rate' AND id!='global'").run();
+        const responses = await Promise.all([request(), request()]);
+        assert.deepEqual(responses.map(response => response.status).sort(), [200, 429]);
+        assert.ok(Number(responses.find(response => response.status === 429).headers.get('Retry-After')) > 0);
+    } finally { await h.close(); }
+});

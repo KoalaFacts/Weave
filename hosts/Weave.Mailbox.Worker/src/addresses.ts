@@ -73,7 +73,7 @@ export async function directory(tx: Transaction,url: URL): Promise<any> {
     }
     const n=limit(url),search=query(url,'q') ?? '',after=query(url,'afterCursor'); if(search.length>128) fail();
     const prefix='directory:'+btoa(unescape(encodeURIComponent(search)))+':';
-    if(after !== null && (!after.startsWith(prefix) || !/^[0-9a-f-]{36}$/.test(after.slice(prefix.length)))) fail();
+    if(after !== null){if(!after.startsWith(prefix))fail();uuid(after.slice(prefix.length));}
     const rows=(await tx.db.prepare(`SELECT id,data FROM mailbox_records WHERE ${filter} AND id>?
         AND (instr(lower(COALESCE(json_extract(data,'$._address.label'),'')),lower(?))>0 OR instr(id,?)>0) ORDER BY id LIMIT ?`)
         .bind(now,now,after?.slice(prefix.length) ?? '',search,search,n+1).all<{id:string;data:string}>()).results;
