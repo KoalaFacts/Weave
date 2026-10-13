@@ -10,6 +10,8 @@ import { BrowserFixture } from './playwright.mjs';
 const publicLabel = 'Browser Bob <img src=x onerror=alert(1)>';
 const privateLabel = 'Browser Alice private address';
 const message = 'Browser acceptance message — 你好 🌿';
+const ping = 'WEAVE-DEMO A to B: ping 001.';
+const reply = 'WEAVE-DEMO B to A: pong 001.';
 
 const text = (page, id) => page.locator('#' + id).textContent();
 const waitText = (page, id, expected) => page.waitForFunction(([id, expected]) => document.getElementById(id).textContent.includes(expected), [id, expected]);
@@ -38,7 +40,7 @@ async function resume(page, control) {
     await page.locator('#control').fill(control);
     await page.locator('#register').click();
     await waitText(page, 'status', 'Agent connected.');
-    await page.locator('#recovery summary').click();
+    assert.equal(await page.locator('#workspace').isVisible(), true);
     return (await text(page, 'identity')).replace('Agent ID: ', '');
 }
 
@@ -51,11 +53,11 @@ async function register(page, name) {
     const control = await (await registration).headerValue('X-Weave-Mailbox-Control');
     await waitText(page, 'status', 'Agent connected.');
     assert.match(control, /^[0-9a-f]{64}$/);
-    assert.equal(await text(page, 'addresses'), 'No addresses yet.');
+    assert.equal(await text(page, 'addresses'), 'No addresses yet. Create one only if someone needs to contact you.');
     assert.equal(await page.locator('#credentialBackup').isVisible(), true);
-    assert.equal(await page.locator('#createAccount').isDisabled(), true);
+    assert.equal(await page.locator('#workspace').isVisible(), false);
+    assert.equal(await page.locator('#accountStart').isVisible(), false);
     assert.ok((await text(page, 'status')).includes('Back up your credential'));
-    await page.locator('#profileOptions summary').click();
     return { id: (await text(page, 'identity')).replace('Agent ID: ', ''), control };
 }
 
@@ -113,6 +115,30 @@ test('real Worker UI: isolated sessions, public/private discovery, acceptance, r
             assert.equal(await page.locator('#control').inputValue(), '');
             assert.equal(await page.locator('#credentialBackup').isVisible(), false);
         }
+        assert.equal(await alice.locator('#workspace').isVisible(), false);
+        assert.equal(await alice.getByRole('button', { name: 'Create account', exact: true }).isVisible(), true);
+        await layout(fixture, alice, 'demo-start-desktop', 1440, 1000, false);
+        const startMobile = await fixture.page('start-mobile', '/', { viewport: { width: 390, height: 844 }, isMobile: true });
+        await layout(fixture, startMobile, 'demo-start-mobile', 390, 844, true);
+        await startMobile.context().close();
+        await alice.locator('#browserGuide summary').click();
+        assert.ok((await text(alice, 'browserGuide')).includes('acknowledged'));
+        await fixture.screenshot(alice, 'demo-browser-walkthrough');
+        await alice.locator('#browserGuide summary').click();
+        await alice.locator('#agentGuide summary').click();
+        const prompt = await alice.locator('#agentPromptA').inputValue();
+        assert.match(prompt, /WEAVE-DEMO A to B: ping 001/);
+        assert.match(prompt, /never simulate the other agent/);
+        await alice.context().grantPermissions(['clipboard-read', 'clipboard-write'], { origin });
+        await alice.locator('#copyPromptA').click();
+        await waitText(alice, 'status', 'Agent A instruction copied.');
+        assert.equal(await alice.evaluate(() => navigator.clipboard.readText()), prompt);
+        await alice.locator('#copyPromptB').click();
+        await waitText(alice, 'status', 'Agent B instruction copied.');
+        assert.equal(await alice.evaluate(() => navigator.clipboard.readText()), await alice.locator('#agentPromptB').inputValue());
+        await alice.context().clearPermissions();
+        await alice.locator('#agentGuide summary').click();
+        assert.equal(await h.db.prepare("SELECT count(*) n FROM mailbox_records WHERE kind='account'").first('n'), 0);
         const downloads = [];
         alice.on('download', download => downloads.push(download));
         await alice.locator('#recovery summary').click();
@@ -125,6 +151,7 @@ test('real Worker UI: isolated sessions, public/private discovery, acceptance, r
         assert.notEqual(aliceId, bobId);
         assert.notEqual(aliceControl, bobControl);
         assert.equal(downloads.length, 0, 'Registration must not start a credential download.');
+        await fixture.screenshot(alice, 'demo-backup-before-continue');
         const downloadStarted = alice.waitForEvent('download');
         await alice.locator('#downloadCredential').click();
         const download = await downloadStarted;
@@ -135,6 +162,11 @@ test('real Worker UI: isolated sessions, public/private discovery, acceptance, r
         assert.equal(await h.db.prepare("SELECT count(*) n FROM mailbox_records WHERE kind='account'").first('n'), 2);
         checkpoints.push('Page load creates no account; two one-click registrations stay in memory with zero addresses; backup download requires a separate click');
 
+        for (const page of [alice, bob]) {
+            await page.locator('#continueToContacts').click();
+            assert.equal(await page.locator('#workspace').isVisible(), true);
+            await page.locator('#addressScenario > summary').click();
+        }
         await alice.locator('#label').fill(privateLabel);
         await alice.locator('#createAddress').click();
         await waitText(alice, 'addresses', privateLabel);
@@ -173,30 +205,37 @@ test('real Worker UI: isolated sessions, public/private discovery, acceptance, r
         await layout(fixture, registryMobile, 'registry-public-mobile', 390, 844, true);
         checkpoints.push('Anonymous registry exposes only public address; private exact lookup unavailable, label and direct URI rendered as inert text');
 
+        await alice.locator('#discoverScenario > summary').click();
         await alice.locator('#search').fill('Browser Bob');
         await alice.locator('#discover').click();
         await waitText(alice, 'directory', publicLabel);
         await alice.locator('#directory').getByRole('button', { name: 'Use address', exact: true }).click();
         assert.equal(await alice.evaluate(() => document.getElementById("addressId").value), publicId);
-        await alice.locator('#intro').fill('Browser contact introduction');
+        await alice.locator('#intro').fill('WEAVE-DEMO contact A to B.');
         await alice.locator('#requestContact').click();
         await waitText(alice, 'status', 'Contact request submitted.');
-        await alice.locator('#contacts').getByRole('button', { name: 'Select peer', exact: true }).click();
+        await alice.locator('#contacts').getByRole('button', { name: 'Open conversation', exact: true }).click();
         assert.equal(await alice.evaluate(() => document.getElementById("peer").value), bobId);
-        assert.equal(await alice.evaluate(() => [...document.querySelectorAll("#contacts button")].some(e => e.textContent === "accepted")), false);
+        assert.equal(await alice.evaluate(() => [...document.querySelectorAll("#contacts button")].some(e => e.textContent === "Accept contact")), false);
         await alice.locator('#message').fill(message);
         await alice.locator('#send').click();
         await waitText(alice, 'status', 'Resource unavailable (404)');
         assert.equal(await alice.evaluate(() => document.getElementById("send").textContent), 'Send message');
         assert.equal(await alice.evaluate(() => document.getElementById("message").readOnly), false);
         await fixture.screenshot(alice, 'demo-before-acceptance-denied');
+        await bob.locator('#contactScenario > summary').click();
         await bob.locator('#loadContacts').click();
         await waitText(bob, 'contacts', 'pending');
-        await bob.locator('#contacts').getByRole('button', { name: 'accepted', exact: true }).click();
-        await bob.waitForFunction(() => document.querySelector('#contacts .row strong')?.textContent.startsWith('accepted'));
-        await bob.locator('#contacts').getByRole('button', { name: 'Select peer', exact: true }).click();
+        await bob.locator('#mailboxScenario > summary').click();
         await bob.locator('#loadInbox').click();
-        await waitText(bob, 'inbox', 'Browser contact introduction');
+        await waitText(bob, 'inbox', 'WEAVE-DEMO contact A to B.');
+        assert.ok((await text(bob, 'inbox')).includes(aliceId));
+        await bob.locator('#contactScenario > summary').click();
+        await bob.locator('#contacts').getByRole('button', { name: 'Accept contact', exact: true }).click();
+        await bob.waitForFunction(() => document.querySelector('#contacts .row strong')?.textContent.startsWith('accepted'));
+        await bob.locator('#contacts').getByRole('button', { name: 'Open conversation', exact: true }).click();
+        await bob.locator('#loadInbox').click();
+        await waitText(bob, 'inbox', 'WEAVE-DEMO contact A to B.');
         await bob.locator('#inbox').getByRole('button', { name: 'Acknowledge', exact: true }).click();
         await waitText(bob, 'inbox', 'No pending messages.');
         checkpoints.push('Sender cannot accept own request or send before recipient acceptance; recipient accepted and acknowledged introduction');
@@ -225,6 +264,7 @@ test('real Worker UI: isolated sessions, public/private discovery, acceptance, r
         const bobMobile = await fixture.page('bob-mobile', '/', mobileOptions);
         assert.notEqual(bobMobile.context(), bobDesktop.context());
         assert.equal(await resume(bobMobile, bobControl), bobId);
+        await bobMobile.locator('#mailboxScenario > summary').click();
         await bobMobile.locator('#loadInbox').click();
         await waitText(bobMobile, 'inbox', message);
         assert.equal(await bobMobile.locator('#inbox .row').count(), 1);
@@ -244,6 +284,38 @@ test('real Worker UI: isolated sessions, public/private discovery, acceptance, r
         await layout(fixture, alice, 'demo-acknowledged-desktop', 1440, 1000, false);
         await layout(fixture, bob, 'demo-acknowledged-mobile', 390, 844, true);
         checkpoints.push('Lost successful response retried exact envelope once; one pending body; reads do not ACK; mobile ACK removed body and sender sees one acknowledged receipt');
+
+        await alice.locator('#message').fill(ping);
+        await alice.locator('#send').click();
+        await waitText(alice, 'status', 'Message sent.');
+        const pingId = fixture.sentMessages.get(alice).at(-1).payload.messageId;
+        await bob.locator('#loadInbox').tap();
+        await waitText(bob, 'inbox', ping);
+        assert.equal(await bob.locator('#inbox .row').count(), 1);
+        await bob.locator('#inbox').getByRole('button', { name: 'Acknowledge', exact: true }).tap();
+        await waitText(bob, 'inbox', 'No pending messages.');
+        await alice.locator('#loadOutbox').click();
+        await alice.waitForFunction(id => JSON.parse(document.getElementById('outbox').textContent).some(r => r.messageId === id && r.state === 'acknowledged'), pingId);
+        checkpoints.push('Walkthrough ping reached B and B explicitly ACKed; A sees the exact ping receipt acknowledged');
+
+        await bob.locator('#contactScenario > summary').click();
+        await bob.locator('#loadContacts').click();
+        await waitText(bob, 'contacts', 'accepted');
+        await bob.locator('#contacts').getByRole('button', { name: 'Open conversation', exact: true }).click();
+        await bob.locator('#message').fill(reply);
+        await bob.locator('#send').tap();
+        await waitText(bob, 'status', 'Message sent.');
+        const replyId = fixture.sentMessages.get(bob).at(-1).payload.messageId;
+        await alice.locator('#loadInbox').click();
+        await waitText(alice, 'inbox', reply);
+        assert.equal(await alice.locator('#inbox .row').count(), 1);
+        await alice.locator('#inbox').getByRole('button', { name: 'Acknowledge', exact: true }).click();
+        await waitText(alice, 'inbox', 'No pending messages.');
+        await bob.locator('#loadOutbox').tap();
+        await bob.waitForFunction(id => JSON.parse(document.getElementById('outbox').textContent).some(r => r.messageId === id && r.state === 'acknowledged'), replyId);
+        assert.equal((await h.ok('/v1/outbox/' + replyId, bobControl)).state, 'acknowledged');
+        await layout(fixture, bob, 'demo-reply-acknowledged-mobile', 390, 844, true);
+        checkpoints.push('B replied with the walkthrough pong; A read and ACKed it; B sees the exact pong receipt acknowledged');
 
         await alice.locator('#disconnect').click();
         await waitText(alice, 'identity', 'No agent connected.');

@@ -141,6 +141,7 @@ test('overlapping registration clicks do not dispatch twice and clearing ignores
     await app.click('disconnect'); resolveRegistration(json(account)); await pending;
     assert.equal(app.get('identity').textContent, 'No agent connected.'); assert.equal(app.get('credentialBackup').hidden, true);
     assert.equal(app.calls.length, 1); assert.equal(app.get('createAccount').disabled, false);
+    assert.equal(app.get('workspace').hidden, true); assert.equal(app.get('accountStart').hidden, false);
 });
 
 test('unavailable Web Crypto fails closed without registration', async () => {
@@ -195,4 +196,47 @@ test('real Worker commits a lost registration once, resumes its saved control, a
         assert.equal(app.get('identity').textContent, 'No agent connected.');
         assert.equal(await h.db.prepare("SELECT count(*) n FROM mailbox_records WHERE kind='account'").first('n'), 1);
     } finally { await h.close(); }
+});
+
+
+test('new account shows backup before scenario controls and continue never downloads or registers again', async () => {
+    const app = ui(success);
+    assert.equal(app.get('workspace').hidden, true);
+    assert.equal(app.get('accountStart').hidden, false);
+    await app.click('continueToContacts');
+    assert.equal(app.get('workspace').hidden, true);
+    await app.click('createAccount');
+    assert.equal(app.get('workspace').hidden, true);
+    assert.equal(app.get('accountStart').hidden, true);
+    assert.equal(app.get('continueToContacts').hidden, false);
+    await app.click('continueToContacts');
+    assert.equal(app.get('workspace').hidden, false);
+    assert.equal(app.get('continueToContacts').hidden, true);
+    assert.deepEqual(app.downloads, []);
+    assert.equal(app.calls.filter(c => c.method === 'POST').length, 1);
+    await app.click('disconnect');
+    assert.equal(app.get('workspace').hidden, true);
+    assert.equal(app.get('accountStart').hidden, false);
+});
+
+test('unknown registration keeps retry and backup visible but cannot expose connected scenarios', async () => {
+    const app = ui(() => { throw Error('Response lost'); });
+    await app.click('createAccount');
+    assert.equal(app.get('accountStart').hidden, false);
+    assert.equal(app.get('credentialBackup').hidden, false);
+    assert.equal(app.get('continueToContacts').hidden, true);
+    await app.click('continueToContacts');
+    assert.equal(app.get('workspace').hidden, true);
+    assert.equal(app.calls.length, 1);
+});
+
+test('restoring a saved account opens scenarios without generating another credential', async () => {
+    const app = ui(success);
+    app.get('control').value = 'saved-demo-credential-'.padEnd(64, 'r');
+    await app.click('register');
+    assert.equal(app.get('workspace').hidden, false);
+    assert.equal(app.get('accountStart').hidden, true);
+    assert.equal(app.get('continueToContacts').hidden, true);
+    assert.deepEqual(app.randomSizes, []);
+    assert.deepEqual(app.downloads, []);
 });
