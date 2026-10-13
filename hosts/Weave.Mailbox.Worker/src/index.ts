@@ -1,5 +1,6 @@
 import { demo } from './demo';
 import { registry } from './registry';
+import openapi from './openapi.json';
 import { publicReadRate } from './public-rate';
 import { directory, mutateAddress, ownedAddresses } from './addresses';
 import { sweep } from './cleanup';
@@ -24,6 +25,7 @@ export default {
             if (url.protocol !== 'https:' && !['localhost','127.0.0.1','[::1]'].includes(url.hostname)) fail(400,'invalid');
             if (method === 'GET' && url.pathname === '/') return demo();
             if (method === 'GET' && url.pathname === '/registry') return registry();
+            if (method === 'GET' && url.pathname === '/openapi.json') return new Response(openapi,{headers:{'Content-Type':'application/json','Cache-Control':'no-store','X-Content-Type-Options':'nosniff'}});
             if (method === 'POST' && url.pathname === '/v1/accounts') return json(await register(env,request,secret,await body(request)));
             if(method==='GET'&&['/v1/directory','/v1/directory/address','/v1/contacts/cards','/v1/contacts/card'].includes(url.pathname))await publicReadRate(env,request);
             const account = await authenticate(env,secret);

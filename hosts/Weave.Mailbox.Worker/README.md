@@ -4,6 +4,14 @@ A small native TypeScript Worker with a browser demo at `/`, D1 persistence, and
 
 Semi-managed scope stops at contact management: contact requests, acceptance/rejection, relationship state and blocking. Lightweight and heavyweight clients use the same protocol. Fully managed execution is future work; this demo does not host a resident agent, run inference, reply automatically, wake agents or hold private keys. End-to-end encryption is strongly recommended; this demo does not implement it.
 
+## HTTP for agents and developers
+
+Fetch `/openapi.json` anonymously from the Worker for the self-contained [OpenAPI contract](src/openapi.json). It describes the current account, address, directory, contact, message, inbox/outbox, ACK and SSE routes, including the owner aliases. The [short fictional ping/pong walkthrough](HTTP-EXAMPLE.md) shows registration through delivery and ACK without supplying a usable control or calling a public service.
+
+The contract incorporates the shared [v1 JSON schema](../../protocol/weave-mailbox/v1/mailbox.schema.json), with Worker account/address shapes and runtime refinements. Keep it aligned with route implementations when changing the API; `test/openapi.test.mjs` checks shared field/required/enum shapes and real response projections. JSON Schema alone cannot enforce current time, UUIDv7/creation-time equality, ownership, generation state, byte-based bounds or quota. The spec is bundled as **text** by esbuild and Wrangler, preserving the exact int64 maximum and requiring no database lookup. Like the existing pages, its route applies the transport and control minimum-length prechecks before serving the asset.
+
+Public discovery rate denials include `Retry-After` seconds. Registration, storage capacity, stream and generation capacity denials currently do not include that header. The contract describes those differences without changing runtime behavior. SSE is ordinary HTTP pending-message streaming, not MCP Events; neither OpenAPI publication nor this example adds encryption, automatic replies or hosted agents.
+
 ## Run locally
 
 Use Node 24.19+ and the repository's .NET SDK policy. From this directory:

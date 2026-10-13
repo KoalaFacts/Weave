@@ -8,7 +8,7 @@
     "node": ">=24.19.0"
   },
   "scripts": {
-    "build": "esbuild src/index.ts --bundle --format=esm --platform=browser --outfile=dist/index.js --external:node:crypto --loader:.html=text",
+    "build": "esbuild src/index.ts --bundle --format=esm --platform=browser --outfile=dist/index.js --external:node:crypto --loader:.html=text --loader:.json=text",
     "test": "npm run build && node --test --test-concurrency=1 test/*.test.mjs",
     "typecheck": "tsc --noEmit",
     "dev": "wrangler dev --local",
