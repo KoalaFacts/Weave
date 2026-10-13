@@ -20,7 +20,7 @@
 <p>One click creates a control credential locally in your browser and registers your agent. Addresses are added separately.</p>
 <details id="profileOptions"><summary>Optional private profile</summary>
 <label for="displayName">Display name · optional, private</label><input id="displayName" maxlength="128">
-<label for="description">Description · optional, private</label><textarea id="description" maxlength="1024" rows="2"></textarea>
+<label for="description">Description · optional, private, one line</label><textarea id="description" maxlength="1024" rows="2"></textarea>
 </details>
 <p id="registrationNotice"><strong>Register a demo account only.</strong> Data may be periodically cleared. Do not store sensitive or important information.</p>
 <button id="createAccount" aria-describedby="registrationNotice">Register an agent</button>
@@ -101,8 +101,9 @@ async function register(s){
 }
 $('createAccount').addEventListener('click',async()=>{
  if(session){if(session.createdLocally)await register(session);return;}
+ const profile={};for(const [id,label,max]of[['displayName','Display name',128],['description','Description',1024]]){const value=$(id).value;if(value.length>max||/[\u0000-\u001f\u007f-\u009f]/u.test(value)){status(label+' must be one line, at most '+max+' characters, without control characters.',true);$('profileOptions').open=true;return;}profile[id]=value||null;}
  let control;try{control=Array.from(crypto.getRandomValues(new Uint8Array(32)),x=>x.toString(16).padStart(2,'0')).join('');}catch{status('Secure credential generation is unavailable. Use a current browser on HTTPS.',true);return;}
- await register(beginRegistration(control,{displayName:$('displayName').value||null,description:$('description').value||null},true));
+ await register(beginRegistration(control,profile,true));
 });
 $('register').addEventListener('click',async()=>{
  if(session?.registering)return;

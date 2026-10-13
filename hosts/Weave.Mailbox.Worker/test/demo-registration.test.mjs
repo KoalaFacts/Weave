@@ -12,7 +12,7 @@ const account = { agentId: 'local-demo-agent', displayName: null, description: n
 function ui(fetch, { unavailableCrypto = false } = {}) {
     const elements = new Map(), calls = [], downloads = [], blobs = new Map(), timers = [], randomSizes = [];
     function element() {
-        return { value: '', textContent: '', disabled: false, hidden: false, children: [], handlers: {}, classList: { toggle() {} },
+        return { value: '', textContent: '', disabled: false, hidden: false, readOnly: false, children: [], handlers: {}, classList: { toggle() {} },
             addEventListener(name, handler) { this.handlers[name] = handler; },
             append(...children) { this.children.push(...children); },
             replaceChildren(...children) { this.children = children; this.textContent = ''; },
@@ -63,6 +63,27 @@ test('one click generates a 256-bit control and registers optional private profi
     assert.match(app.get('status').textContent, /Back up your credential/);
     assert.deepEqual(app.downloads, []);
     await app.click('createAccount'); assert.equal(app.calls.length, 2); assert.deepEqual(app.randomSizes, [32]);
+});
+
+for (const [scenario, field, value, label] of [
+    ['multiline description', 'description', 'First line\nSecond line', 'Description'],
+    ['control character in name', 'displayName', 'Private\u007fagent', 'Display name'],
+    ['C1 control character in description', 'description', 'Private\u0085description', 'Description'],
+    ['overlong name', 'displayName', 'n'.repeat(129), 'Display name'],
+    ['overlong description', 'description', 'd'.repeat(1025), 'Description']
+]) test('invalid profile: ' + scenario + ' stays editable before generation and can be corrected', async () => {
+    const app = ui(success); app.get(field).value = value;
+    await app.click('createAccount');
+    assert.deepEqual(app.randomSizes, []); assert.deepEqual(app.calls, []);
+    assert.equal(app.get('credentialBackup').hidden, true); assert.equal(app.get('createAccount').disabled, false);
+    assert.equal(app.get(field).value, value);
+    for (const id of ['displayName', 'description']) assert.equal(app.get(id).readOnly, false);
+    assert.ok(app.get('status').textContent.startsWith(label + ' must be'));
+    assert.match(app.get('status').textContent, /one line.*control characters/);
+    app.get(field).value = 'Corrected profile'; await app.click('createAccount');
+    assert.deepEqual(app.randomSizes, [32]);
+    assert.equal(JSON.parse(app.calls[0].body)[field], 'Corrected profile');
+    assert.equal(app.get('identity').textContent, 'Agent ID: ' + account.agentId);
 });
 
 test('credential backup is created only by a download click and its object URL is revoked', async () => {
@@ -151,9 +172,15 @@ test('real Worker commits a lost registration once, resumes its saved control, a
             return response;
         });
         assert.equal(await h.db.prepare("SELECT count(*) n FROM mailbox_records WHERE kind='account'").first('n'), 0);
+        app.get('description').value = 'First line\nSecond line'; await app.click('createAccount');
+        assert.deepEqual(app.calls, []); assert.deepEqual(app.randomSizes, []);
+        assert.equal(app.get('description').readOnly, false);
+        app.get('description').value = 'First line Second line';
         await app.click('createAccount');
         assert.match(app.get('status').textContent, /outcome unknown/);
         assert.equal(await h.db.prepare("SELECT count(*) n FROM mailbox_records WHERE kind='account'").first('n'), 1);
+        const storedProfile = await h.db.prepare("SELECT data FROM mailbox_records WHERE kind='account'").first('data');
+        assert.equal(JSON.parse(storedProfile).description, 'First line Second line');
         await app.click('createAccount');
         const identity = app.get('identity').textContent;
         assert.match(identity, /^Agent ID: /);
