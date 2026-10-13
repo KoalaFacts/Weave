@@ -1,5 +1,5 @@
 import assert from 'node:assert/strict';
-import { writeFile } from 'node:fs/promises';
+import { rm, writeFile } from 'node:fs/promises';
 import { join } from 'node:path';
 import { chromium } from 'playwright';
 
@@ -87,10 +87,12 @@ export class BrowserFixture {
     }
 
     async screenshot(page, name) {
+        const mobile = this.mobilePages.has(page);
+        if (mobile) await rm(join(this.evidence, name + '-tiles.json'), { force: true });
         const measure = () => page.evaluate(() => ({ width: document.documentElement.scrollWidth, height: document.documentElement.scrollHeight, x: scrollX, y: scrollY }));
         const size = await measure();
         assert.ok(size.width <= 2000 && size.height <= 20000, 'Page exceeded screenshot dimension budget.');
-        if (!this.mobilePages.has(page)) return this.captureScreenshot(page, name, true);
+        if (!mobile) return this.captureScreenshot(page, name, true);
 
         // Chromium full-page capture reapplies WebPreferences and resets maxTouchPoints.
         // Viewport tiles preserve native mobile emulation and the original geometry.
@@ -99,6 +101,7 @@ export class BrowserFixture {
         const count = Math.max(1, Math.ceil(size.height / viewport.height));
         assert.ok(this.screenshots + count <= 32, 'Screenshot count exceeded evidence budget before full mobile coverage.');
         const tiles = [];
+        let captureError;
         try {
             for (let index = 0; index < count; index++) {
                 const y = Math.min(index * viewport.height, Math.max(0, size.height - viewport.height));
@@ -109,8 +112,16 @@ export class BrowserFixture {
                 assert.deepEqual(after, { ...size, x: 0, y }, 'Page dimensions or scroll changed during screenshot; mobile coverage is incomplete.');
                 tiles.push({ file: file + '.png', x: 0, y });
             }
+        } catch (error) {
+            captureError = error;
+            throw error;
         } finally {
-            await page.evaluate(({ x, y }) => scrollTo({ left: x, top: y, behavior: 'instant' }), { x: size.x, y: size.y });
+            try {
+                await page.evaluate(({ x, y }) => scrollTo({ left: x, top: y, behavior: 'instant' }), { x: size.x, y: size.y });
+            } catch (restoreError) {
+                if (captureError) throw new AggregateError([captureError, restoreError], 'Mobile capture failed and its original scroll could not be restored.', { cause: captureError });
+                throw restoreError;
+            }
         }
         await writeFile(join(this.evidence, name + '-tiles.json'), JSON.stringify({ viewport, document: { width: size.width, height: size.height }, tiles }, null, 2));
     }

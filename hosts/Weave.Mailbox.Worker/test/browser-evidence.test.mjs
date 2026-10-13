@@ -82,3 +82,43 @@ test('mobile evidence rejects incomplete or excessive capture and restores scrol
         assert.ok(!(await readdir(root)).includes(name + '-tiles.json'), 'Incomplete evidence must not publish a coverage index.');
     });
 });
+
+test('failed mobile recapture removes the previous coverage index', async t => {
+    for (const failure of ['capture', 'count', 'dimensions']) await t.test(failure, async t => {
+        const root = await mkdtemp(join(tmpdir(), 'weave-browser-tiles-'));
+        t.after(() => rm(root, { recursive: true, force: true }));
+        const fixture = new BrowserFixture(root, 'http://127.0.0.1:1234');
+        const page = mobilePage();
+        fixture.mobilePages.add(page);
+        await fixture.screenshot(page, 'repeated');
+        assert.ok((await readdir(root)).includes('repeated-tiles.json'));
+        if (failure === 'capture') page.screenshot = async () => { throw Error('capture interrupted'); };
+        if (failure === 'count') fixture.screenshots = 31;
+        if (failure === 'dimensions') page.state.height = 20001;
+        await assert.rejects(fixture.screenshot(page, 'repeated'));
+        assert.ok(!(await readdir(root)).includes('repeated-tiles.json'), 'A failed recapture must not retain the prior coverage index.');
+    });
+});
+
+test('mobile evidence retains capture and restoration errors together', async t => {
+    const root = await mkdtemp(join(tmpdir(), 'weave-browser-tiles-'));
+    t.after(() => rm(root, { recursive: true, force: true }));
+    const fixture = new BrowserFixture(root, 'http://127.0.0.1:1234');
+    const page = mobilePage();
+    fixture.mobilePages.add(page);
+    const captureError = Error('capture interrupted');
+    const restoreError = Error('restoration interrupted');
+    page.screenshot = async () => { throw captureError; };
+    const evaluate = page.evaluate;
+    page.evaluate = async (callback, position) => {
+        if (position?.y === 100) throw restoreError;
+        return evaluate(callback, position);
+    };
+    await assert.rejects(fixture.screenshot(page, 'dual-failure'), error => {
+        assert.ok(error instanceof AggregateError);
+        assert.equal(error.cause, captureError);
+        assert.deepEqual(error.errors, [captureError, restoreError]);
+        return true;
+    });
+    assert.ok(!(await readdir(root)).includes('dual-failure-tiles.json'));
+});
