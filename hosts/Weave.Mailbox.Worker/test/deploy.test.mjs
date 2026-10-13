@@ -3,9 +3,11 @@ import test from 'node:test';
 import { readFileSync, existsSync } from 'node:fs';
 import { deploy, deploymentConfig, noPendingMigrations } from '../scripts/deploy.mjs';
 const base=JSON.parse(readFileSync(new URL('../wrangler.jsonc',import.meta.url)));
+const registrationNames=['REGISTRATION_ENABLED','REGISTRATION_MAX_ACCOUNTS','REGISTRATION_PER_IP_PER_HOUR','REGISTRATION_GLOBAL_PER_HOUR'];
+const registration=Object.fromEntries(registrationNames.map(name=>[name,base.vars[name]]));
 const database={uuid:'11111111-2222-3333-4444-555555555555',name:'synthetic-weave'};
 const env={CLOUDFLARE_ACCOUNT_ID:'a'.repeat(32),CLOUDFLARE_API_TOKEN:'synthetic-deploy-token'};
-function fixture({status=200,failAt=0,pending=false,bindingResult=[{name:'db',type:'d1',id:database.uuid}],databaseResult=database,cleanup=['0','0'],verificationStatus=200,extraEnv={}}={}){
+function fixture({status=200,failAt=0,pending=false,bindingResult=[{name:'db',type:'d1',id:database.uuid}],databaseResult=database,cleanup=['0','0'],verificationStatus=200,registrationValues=registration,extraEnv={}}={}){
     const requests=[],commands=[],paths=[],configs=[];
     return {requests,commands,paths,configs,options:{env:{...env,...extraEnv},fetchImpl:async(url,options)=>{
         requests.push(url);assert.equal(options.redirect,'error');assert.equal(options.headers.Authorization,'Bearer '+env.CLOUDFLARE_API_TOKEN);
@@ -14,6 +16,7 @@ function fixture({status=200,failAt=0,pending=false,bindingResult=[{name:'db',ty
         if(verifying)for(const [index,name] of ['CLEANUP_MAX_MESSAGES','CLEANUP_TIME_BUDGET_MS'].entries()){
             if(cleanup[index]!==undefined)bindings.push({name,type:'plain_text',text:cleanup[index]});
         }
+        if(verifying)for(const [name,text] of Object.entries(registrationValues))if(text!==undefined)bindings.push({name,type:'plain_text',text});
         const result=url.endsWith('/workers/subdomain')?{subdomain:'weave-389'}:url.endsWith('/settings')?{bindings}:databaseResult;
         const responseStatus=verifying?verificationStatus:status;
         return {ok:responseStatus===200,status:responseStatus,json:async()=>({success:true,result})};
@@ -24,7 +27,7 @@ function fixture({status=200,failAt=0,pending=false,bindingResult=[{name:'db',ty
     }}};
 }
 test('deployment configuration targets the existing Worker and db binding',()=>{
-    const config=deploymentConfig(base,env);assert.equal(config.name,'demo');assert.equal(config.d1_databases[0].binding,'db');assert.equal(config.workers_dev,true);assert.equal(config.vars.REGISTRATION_ENABLED,'false');assert.equal(config.vars.WEAVE_HOST,undefined);
+    const config=deploymentConfig(base,env);assert.equal(config.name,'demo');assert.equal(config.d1_databases[0].binding,'db');assert.equal(config.workers_dev,true);assert.equal(config.vars.REGISTRATION_ENABLED,'true');assert.equal(config.vars.REGISTRATION_MAX_ACCOUNTS,'100');assert.equal(config.vars.REGISTRATION_PER_IP_PER_HOUR,'10');assert.equal(config.vars.REGISTRATION_GLOBAL_PER_HOUR,'100');assert.equal(config.vars.WEAVE_HOST,undefined);
     assert.throws(()=>deploymentConfig(base,{...env,CLOUDFLARE_ACCOUNT_ID:''}),/CLOUDFLARE_ACCOUNT_ID must identify the existing account/);
 });
 test('deployment uses checked-in registration and ignores inherited host and registration settings',()=>{
@@ -50,6 +53,11 @@ test('deployment passes disabled cleanup to Wrangler and verifies actual Worker 
 });
 for(const cleanup of [['128','0'],['0','2000'],['0',undefined]])test(`deployed cleanup ${cleanup} is rejected without retry or rollback`,async()=>{
     const f=fixture({cleanup});await assert.rejects(deploy(f.options),/Deployment completed.*not confirmed disabled/);
+    assert.equal(f.commands.length,4);assert.equal(f.requests.length,4);assert.ok(f.paths.every(path=>!existsSync(path)));
+});
+for(const name of registrationNames)for(const value of ['unexpected',undefined])test(`deployed ${name} ${value===undefined?'missing':'mismatch'} fails after deployment without retry`,async()=>{
+    const f=fixture({registrationValues:{...registration,[name]:value}});
+    await assert.rejects(deploy(f.options),new RegExp('Deployment completed.*'+name+' is not confirmed against configuration'));
     assert.equal(f.commands.length,4);assert.equal(f.requests.length,4);assert.ok(f.paths.every(path=>!existsSync(path)));
 });
 test('denied post-deployment settings verification reports that deployment already completed',async()=>{

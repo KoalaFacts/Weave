@@ -43,11 +43,16 @@ export async function deploy({env=process.env,fetchImpl=fetch,run,root=directory
         command(['d1','migrations','apply','db','--remote']);
         if(!noPendingMigrations(command(['d1','migrations','list','db','--remote'])))throw Error('Pending migration state is not empty; deployment stopped.');
         command(['deploy','--keep-vars']);
-        const deployed=await inspect('/workers/scripts/demo/settings','Worker cleanup settings','deployment already completed; cleanup settings unverified');
+        const deployed=await inspect('/workers/scripts/demo/settings','Worker settings','deployment already completed; settings unverified');
         for(const name of ['CLEANUP_MAX_MESSAGES','CLEANUP_TIME_BUDGET_MS']){
             if(!Array.isArray(deployed.bindings)||!deployed.bindings.some(binding=>binding?.name===name&&binding.type==='plain_text'&&binding.text==='0'))throw Error('Deployment completed, but '+name+' is not confirmed disabled; no automatic rollback attempted.');
         }
+        for(const name of ['REGISTRATION_ENABLED','REGISTRATION_MAX_ACCOUNTS','REGISTRATION_PER_IP_PER_HOUR','REGISTRATION_GLOBAL_PER_HOUR']){
+            const bindings=deployed.bindings.filter(binding=>binding?.name===name);
+            if(bindings.length!==1||bindings[0].type!=='plain_text'||bindings[0].text!==config.vars[name])throw Error('Deployment completed, but '+name+' is not confirmed against configuration; no automatic rollback attempted.');
+        }
         console.log('Verified deployed demo business cleanup: CLEANUP_MAX_MESSAGES=0, CLEANUP_TIME_BUDGET_MS=0.');
+        console.log('Verified deployed demo registration and account limits match the checked-in configuration.');
     }finally{await rm(temporary,{recursive:true,force:true});}
 }
 if(process.argv[1]&&import.meta.url===pathToFileURL(resolve(process.argv[1])).href){
