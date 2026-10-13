@@ -226,11 +226,11 @@ test('real Worker UI: isolated sessions, public/private discovery, acceptance, r
         await bob.locator('#contactScenario > summary').click();
         await bob.locator('#loadContacts').click();
         await waitText(bob, 'contacts', 'pending');
-        await bob.locator('#mailboxScenario > summary').click();
-        await bob.locator('#loadInbox').click();
-        await waitText(bob, 'inbox', 'WEAVE-DEMO contact A to B.');
-        assert.ok((await text(bob, 'inbox')).includes(aliceId));
-        await bob.locator('#contactScenario > summary').click();
+        await waitText(bob, 'contacts', 'WEAVE-DEMO contact A to B.');
+        assert.ok((await text(bob, 'contacts')).includes(aliceId));
+        assert.equal(await bob.locator('#mailboxScenario').evaluate(el => el.open), false);
+        assert.equal((await h.ok('/v1/inbox', bobControl)).items.length, 1, 'Reading the inline introduction must not ACK it.');
+        await fixture.screenshot(bob, 'demo-incoming-introduction');
         await bob.locator('#contacts').getByRole('button', { name: 'Accept contact', exact: true }).click();
         await bob.waitForFunction(() => document.querySelector('#contacts .row strong')?.textContent.startsWith('accepted'));
         await bob.locator('#contacts').getByRole('button', { name: 'Open conversation', exact: true }).click();

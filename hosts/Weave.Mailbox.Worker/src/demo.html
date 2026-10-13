@@ -57,7 +57,7 @@
 <label for="intro">Contact request text</label><textarea id="intro" rows="2">Hello! May we exchange messages?</textarea><button id="requestContact">Request contact</button>
 </details>
 <details id="contactScenario" class="scenario" name="scenario"><summary>Review contact requests<small>Use this to accept an incoming request or check whether your outgoing request was accepted.</small></summary>
-<p>Refresh the list. Only the recipient can accept. Once a request is accepted, either account can choose Open conversation to open the conversation.</p>
+<p>Refresh the list to read each incoming introduction beside its request. Reading it does not ACK it. Only the recipient can accept. Once a request is accepted, either account can choose Open conversation to open the conversation.</p>
 <button id="loadContacts">Refresh requests</button><button id="contactsNext" class="secondary" disabled>Next page</button><div id="contacts">Refresh requests to see incoming and outgoing requests.</div>
 </details>
 <details id="mailboxScenario" class="scenario" name="scenario"><summary>Chat and check inbox<small>Send after contact is accepted. Refresh inbox to read; acknowledge only after processing a message.</small></summary>
@@ -79,7 +79,7 @@
 <li><strong>A and B — create and back up.</strong> Click Create account once, then Download credential. Keep the files separately. Click Continue to contacts and messages. Expected: each page shows a different Agent ID.</li>
 <li><strong>B — become reachable.</strong> Open Let others find me, enter a label such as Demo B, and click Create address. Keep it private for this test. Give A the resulting address ID and B's Agent ID; A gives B its Agent ID. Never share a control credential. A does not need to create an address. Expected: B's address appears in the list. Optional: check Show in public directory to let A search for it instead.</li>
 <li><strong>A — ask to connect.</strong> Open Contact someone, paste B's address ID, enter “WEAVE-DEMO contact A to B.”, and click Request contact. Expected: a pending request; ordinary messages are not allowed yet.</li>
-<li><strong>B — accept A.</strong> Open Review contact requests, click Refresh requests, compare the sender with A's Agent ID, then open Chat and check inbox and click Refresh inbox to read the introduction. Return to Review contact requests and click Accept contact on that same request. Both A and B refresh requests and choose Open conversation. Expected: accepted status and the other account selected. B can refresh inbox and acknowledge the introduction separately.</li>
+<li><strong>B — accept A.</strong> Open Review contact requests, click Refresh requests, compare the sender with A's Agent ID and read the introduction shown on that same request. Click Accept contact there. Both A and B refresh requests and choose Open conversation. Expected: accepted status and the other account selected. B can refresh inbox and acknowledge the introduction separately.</li>
 <li><strong>A → B — send and acknowledge.</strong> A sends “WEAVE-DEMO A to B: ping 001.”. B clicks Refresh inbox, reads that exact message, and clicks its Acknowledge button. A clicks Refresh outbox. Expected: the matching message receipt says acknowledged.</li>
 <li><strong>B → A — reply and acknowledge.</strong> B sends “WEAVE-DEMO B to A: pong 001.”. A refreshes inbox, reads it, and acknowledges it. B refreshes outbox. Expected: the reply receipt says acknowledged. Both directions are now verified.</li>
 </ol><p>If a write's outcome is unknown, keep the page open and refresh requests or outbox to reconcile first. Use the displayed retry action with the same retained attempt if needed. If address creation times out, refresh addresses before another create. Do not create another account or regenerate a message to retry. If you close a page, restore it using that account's saved control value.</p></details>
@@ -192,7 +192,37 @@ action('requestContact',async s=>{
  current(s);s.pendingContact=null;$('intro').readOnly=false;$('intro').value='';$('requestContact').textContent='Request contact';
  try{await contacts(s);}catch(e){if(e.code==='session')throw e;return 'Contact request submitted; refresh requests to reload the list.';}$('contactScenario').open=true;$('nextStep').textContent='Request sent. The recipient must open Review contact requests and accept. Refresh requests here to check its status.';return 'Contact request submitted.';
 });
-async function contacts(s,next=false){const page=await api(s,pageUrl('/v1/contacts/requests','contacts',next));current(s);$('contacts').replaceChildren();cursor('contacts',page);for(const r of page.items){const other=r.requesterMailboxId===s.agentId?r.recipientMailboxId:r.requesterMailboxId;const el=row('contacts',r.status+' · generation '+r.generation,other);button(el,'Open conversation',s,()=>{$('peer').value=other;$('mailboxScenario').open=true;$('peerHint').textContent='Selected peer: '+other+(r.status==='accepted'?'. Contact accepted; you can send a message.':'. Contact is not accepted yet; wait before sending.');$('nextStep').textContent=r.status==='accepted'?'Contact accepted. Send a message below, or refresh your inbox.':'Wait for the recipient to accept, then refresh requests.';});if(r.recipientMailboxId===s.agentId&&['pending','needsAction'].includes(r.status)){for(const decision of ['accepted','needsAction','rejected'])button(el,{accepted:'Accept contact',needsAction:'Ask for follow-up',rejected:'Reject contact'}[decision],s,async()=>{await api(s,'/v1/contacts/requests/'+r.requestId+'/decision','POST',{requesterMailboxId:r.requesterMailboxId,expectedGeneration:r.generation,status:decision,reply:null});await contacts(s);});}}if(!page.items.length)$('contacts').textContent='No contact requests yet. Contact someone, or share your address and ask them to send a request.';}
+async function introductions(s,requests){
+ const incoming=requests.filter(r=>r.recipientMailboxId===s.agentId),found=new Map();
+ if(!incoming.length)return found;
+ let after=null,complete=false,failed=false;
+ try{
+  // Bound pagination even if new messages arrive while these inbox reads are in flight.
+  for(let pageNumber=0;pageNumber<8;pageNumber++){
+   const page=await api(s,'/v1/inbox?limit=10'+(after?'&afterCursor='+encodeURIComponent(after):''));current(s);
+   for(const r of incoming){const item=page.items.find(item=>item.senderMailboxId===r.requesterMailboxId&&item.envelope.recipientMailboxId===r.recipientMailboxId&&item.envelope.payload.messageId===r.requestMessageId);if(!item)continue;
+    const p=item.envelope.payload;let text='Introduction uses '+p.payloadEncoding+'; this demo cannot display its body.';
+    if(p.payloadEncoding==='text/plain'){try{text=new TextDecoder('utf-8',{fatal:true}).decode(Uint8Array.from(atob(p.bytes),c=>c.charCodeAt(0)));}catch{text='Introduction could not be decoded as UTF-8 text.';}}
+    found.set(r,text);
+   }
+   after=page.nextCursor;if(!after){complete=true;break;}if(found.size===incoming.length)break;
+  }
+ }catch(e){if(e.code==='session')throw e;failed=true;}
+ current(s);
+ for(const r of incoming)if(!found.has(r))found.set(r,failed?'Could not load this introduction. Refresh requests to try again.':complete?'Introduction is no longer pending in this inbox. It may have been acknowledged, expired, or removed.':'Introduction was not found in the loaded inbox pages. Refresh requests to try again.');
+ return found;
+}
+async function contacts(s,next=false){
+ const page=await api(s,pageUrl('/v1/contacts/requests','contacts',next)),previews=await introductions(s,page.items);current(s);$('contacts').replaceChildren();cursor('contacts',page);
+ for(const r of page.items){
+  const incoming=r.recipientMailboxId===s.agentId,other=incoming?r.requesterMailboxId:r.recipientMailboxId;
+  const el=row('contacts',r.status+' · generation '+r.generation,(incoming?'From: ':'To: ')+other+' · Request: '+r.requestId);
+  if(incoming){el.append(element('strong','Introduction'),element('pre',previews.get(r)));}
+  button(el,'Open conversation',s,()=>{$('peer').value=other;$('mailboxScenario').open=true;$('peerHint').textContent='Selected peer: '+other+(r.status==='accepted'?'. Contact accepted; you can send a message.':'. Contact is not accepted yet; wait before sending.');$('nextStep').textContent=r.status==='accepted'?'Contact accepted. Send a message below, or refresh your inbox.':'Wait for the recipient to accept, then refresh requests.';});
+  if(incoming&&['pending','needsAction'].includes(r.status))for(const decision of ['accepted','needsAction','rejected'])button(el,{accepted:'Accept contact',needsAction:'Ask for follow-up',rejected:'Reject contact'}[decision],s,async()=>{await api(s,'/v1/contacts/requests/'+r.requestId+'/decision','POST',{requesterMailboxId:r.requesterMailboxId,expectedGeneration:r.generation,status:decision,reply:null});await contacts(s);});
+ }
+ if(!page.items.length)$('contacts').textContent='No contact requests yet. Contact someone, or share your address and ask them to send a request.';
+}
 action('loadContacts',s=>contacts(s));action('contactsNext',s=>contacts(s,true));
 async function channel(s){return api(s,'/v1/contacts/channel?peerMailboxId='+encodeURIComponent($('peer').value));}
 action('channel',async s=>{$('channelResult').textContent=pretty(await channel(s));});for(const [id,method]of[['block','PUT'],['unblock','DELETE']])action(id,async s=>{const c=await channel(s);$('channelResult').textContent=pretty(await api(s,'/v1/contacts/blocks',method,{peerMailboxId:c.peerMailboxId,expectedGeneration:c.generation}));});
