@@ -1,6 +1,6 @@
 # Browser tests
 
-Dashboard and Worker browser tests use official Playwright SDKs with the managed `chromium` channel. Dashboard pins `Microsoft.Playwright` in `Directory.Packages.props`; Worker pins `playwright` in its npm manifest and lockfile. The current .NET 1.62.0 and Node 1.62.1 SDK manifests both select Chromium revision 1234 (Chrome for Testing 151.0.7922.34). Browser revisions must be checked when either SDK changes; do not substitute a system Chrome executable.
+Dashboard and Worker browser tests use official Playwright SDKs with the managed `chromium` channel. Dashboard pins `Microsoft.Playwright` in `Directory.Packages.props`; Worker pins `playwright` in its npm manifest and lockfile. The .NET 1.63.0 SDK selects Chromium revision 1243 (Chrome for Testing 153.0.8010.12); the Node 1.62.1 SDK selects revision 1234 (151.0.7922.34). Each suite installs its own SDK's browser. Browser revisions must be checked when either SDK changes; do not substitute a system Chrome executable.
 
 ## Dashboard
 
@@ -11,10 +11,13 @@ dotnet restore Weave.slnx --locked-mode
 dotnet build Weave.slnx --no-restore -c Release
 pwsh tests/Weave.Silo.Tests/bin/Release/net10.0/playwright.ps1 install --with-deps --no-shell chromium
 dotnet test --project tests/Weave.Silo.Tests/Weave.Silo.Tests.csproj --no-build -c Release \
-  -- --filter-class Weave.Silo.Tests.Dashboard.DashboardReviewBrowserTests
+  -- --filter-class Weave.Silo.Tests.Dashboard.DashboardReviewBrowserTests \
+     --filter-class Weave.Silo.Tests.Dashboard.DashboardPlaywrightBrowserTests
 ```
 
 The five review cases exercise real Blazor file uploads, exact request bytes, safe denial, upstream cancellation, clearing credential fields, literal rendering and invalid UTF-8/oversized rejection before upstream dispatch. A fresh browser context owns its page and permits only the fixture's Dashboard HTTP/WebSocket origin. Service workers and redirects are blocked. Native file-input listener readiness is observed before uploading, because a visible server-rendered input is not necessarily interactive yet. The Dashboard server and temporary API/storage retain their independent bounded process cleanup.
+
+The fixture regressions also check foreign-origin HTTP/WebSocket denial followed by a live Blazor action, page reload with an active routed WebSocket, and disposal during a pending page operation. Reload and disposal make the [Playwright driver emit WebSocket close events without a code or reason](https://github.com/microsoft/playwright/blob/v1.63.0/packages/playwright-core/src/server/dispatchers/webSocketRouteDispatcher.ts). The [official .NET 1.63.0 SDK handles these optional fields](https://github.com/microsoft/playwright-dotnet/blob/v1.63.0/src/Playwright/Core/WebSocketRoute.cs); 1.62.0 threw `KeyNotFoundException` and could mask the original operation during cleanup. The SDK upgrade preserves routing and browser sandbox options.
 
 ## Worker
 
