@@ -11,8 +11,12 @@ test('demo entry serves executable UI with per-response CSP nonce, no cached cre
         const script=/<script nonce="([^"]+)">([\s\S]*?)<\/script>/.exec(html);assert.ok(script);assert.ok(csp.includes("'nonce-"+script[1]+"'"));
         new Script(script[2]);
         assert.ok(csp.includes("connect-src 'self'"));assert.ok(csp.includes("frame-ancestors 'none'"));
-        assert.equal(/localStorage|sessionStorage|document\.cookie/.test(script[2]),false);
-        for(const id of ['register','createAddress','discover','requestContact','loadContacts','send','loadInbox','stream'])assert.ok(html.includes('id="'+id+'"'));
+        assert.equal(/localStorage|sessionStorage|indexedDB|document\.cookie|console\./.test(script[2]),false);
+        for(const id of ['createAccount','register','downloadCredential','createAddress','discover','requestContact','loadContacts','send','loadInbox','stream'])assert.ok(html.includes('id="'+id+'"'));
+        assert.match(html,/<div id="credentialBackup" hidden>/);
+        assert.match(html,/<details id="recovery">[\s\S]*?id="register"[\s\S]*?<\/details>/);
+        assert.match(html,/<details id="addressDeveloper">[\s\S]*?id="directUri"[\s\S]*?<\/details>/);
+        assert.match(html,/<a href="\/openapi.json">OpenAPI document<\/a>/);
         const second=await h.request('/');assert.notEqual(second.headers.get('content-security-policy'),csp);
     } finally {await h.close();}
 });

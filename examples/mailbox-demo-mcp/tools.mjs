@@ -12,7 +12,7 @@ export const tools=[
     definition('demo_guide','Read the runnable account/address/contact/message workflow and credential rules.',{},[],true),
     definition('search_registry','Browse explicitly public, currently effective addresses without credentials. Discovery grants no message permission.',{q:string(128),...page},[],true),
     definition('lookup_address','Look up one currently public effective address. Private/absent addresses are unavailable.',{addressId:uuid},['addressId'],true),
-    definition('register_account','Explicitly register/reconnect using the operator-supplied control. May create a persistent remote account; call only with user authorization. Starts with zero addresses. Profile stays private.',{displayName:string(128),description:string(1024)}),
+    definition('register_account','Explicitly register/reconnect using the operator-supplied control. May create a remote demo account; call only with user authorization. Demo only: data may be periodically cleared. Do not store sensitive or important information. Starts with zero addresses. Profile stays private.',{displayName:string(128),description:string(1024)}),
     definition('create_address','Create an address for the authenticated account; private by default. isPublic:true explicitly publishes it.',profile),
     definition('list_addresses','Read only this authenticated account’s addresses.',page,[],true),
     definition('prepare_payload','Prepare a text payload locally, without sending. Save the returned exact payload before sending; reuse it after unknown outcomes. Does not create credentials.',{text:{...string(65536),minLength:1}},['text'],true),

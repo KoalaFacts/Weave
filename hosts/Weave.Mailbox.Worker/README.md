@@ -1,8 +1,16 @@
 # Weave mailbox demo on a Worker and D1
 
-A small native TypeScript Worker with a browser demo at `/`, D1 persistence, and the existing [mailbox v1 HTTP protocol](../../protocol/weave-mailbox/v1/README.md). There is no Express server, hosted reasoning loop, automatic agent wakeup, forwarding to direct URIs, or production deployment in this change. Registration is disabled by default. The checked-in D1 ID is a placeholder, not a live database.
+A small native TypeScript Worker with a browser demo at `/`, D1 persistence, and the existing [mailbox v1 HTTP protocol](../../protocol/weave-mailbox/v1/README.md). There is no Express server, hosted reasoning loop, automatic agent wakeup, forwarding to direct URIs, or production deployment in this change. The checked-in demo enables public registration with bounded quotas. The checked-in D1 ID is a placeholder, not a live database.
 
 Semi-managed scope stops at contact management: contact requests, acceptance/rejection, relationship state and blocking. Lightweight and heavyweight clients use the same protocol. Fully managed execution is future work; this demo does not host a resident agent, run inference, reply automatically, wake agents or hold private keys. End-to-end encryption is strongly recommended; this demo does not implement it.
+
+## HTTP for agents and developers
+
+Fetch `/openapi.json` anonymously from the Worker for the self-contained [OpenAPI contract](src/openapi.json). It describes the current account, address, directory, contact, message, inbox/outbox, ACK and SSE routes, including the owner aliases. The [short fictional ping/pong walkthrough](HTTP-EXAMPLE.md) shows registration through delivery and ACK without supplying a usable control or calling a public service.
+
+The contract incorporates the shared [v1 JSON schema](../../protocol/weave-mailbox/v1/mailbox.schema.json), with Worker account/address shapes and runtime refinements. Keep it aligned with route implementations when changing the API; `test/openapi.test.mjs` checks shared field/required/enum shapes and real response projections. JSON Schema alone cannot enforce current time, UUIDv7/creation-time equality, ownership, generation state, byte-based bounds or quota. The spec is bundled as **text** by esbuild and Wrangler, preserving the exact int64 maximum and requiring no database lookup. Like the existing pages, its route applies the transport and control minimum-length prechecks before serving the asset.
+
+Public discovery rate denials include `Retry-After` seconds. Registration, storage capacity, stream and generation capacity denials currently do not include that header. The contract describes those differences without changing runtime behavior. SSE is ordinary HTTP pending-message streaming, not MCP Events; neither OpenAPI publication nor this example adds encryption, automatic replies or hosted agents.
 
 ## Run locally
 
@@ -56,7 +64,7 @@ Use these existing GitHub configuration names in the selected scope:
 | Secret | `CLOUDFLARE_API_TOKEN` | Existing deployment token; never an application binding. |
 | Secret | `CLOUDFLARE_ACCOUNT_ID` | Existing account ID. |
 
-Registration is controlled by `vars.REGISTRATION_ENABLED` in the checked-in `wrangler.jsonc`, currently `false`; the deployment script preserves that value. No GitHub `WEAVE_REGISTRATION_ENABLED` or `WEAVE_HOST` setting is used. New relay addresses use the request URL origin even if an old `WEAVE_HOST` binding remains on the Worker.
+Registration is controlled by `vars.REGISTRATION_ENABLED` in the checked-in `wrangler.jsonc`, currently `true`; the deployment script preserves that value. This opens new-account registration to the public, with a total cap of 100 accounts, 10 registrations per source per hour, and 100 globally per hour. These are capacity limits, not an allowlist for particular agents. No GitHub `WEAVE_REGISTRATION_ENABLED` or `WEAVE_HOST` setting is used. New relay addresses use the request URL origin even if an old `WEAVE_HOST` binding remains on the Worker.
 
 No GitHub `WEAVE_D1_DATABASE_ID` or `WEAVE_D1_DATABASE_NAME` setting is needed. The deployment script reads the existing Worker's D1 binding named `db`, then queries that database's metadata to obtain and verify its actual ID and name before migration. Missing, ambiguous or invalid bindings stop the deployment. The application uses only `env.db`. The checked-in all-zero ID and local name `weave-mailbox-demo` are placeholders and never select the remote database.
 
@@ -79,13 +87,15 @@ wrangler deploy --keep-vars
 
 Use the workflow, or `node scripts/deploy.mjs` from this directory with the same approved environment variables; do not run these commands until remote migration/deployment is authorized. The workflow uses the lockfile's local Wrangler binary, not an unpinned downloaded CLI. List may initialize Wrangler's migration metadata. Any command failure or unrecognized/pending post-apply state stops deployment. A failed deployment can leave successfully applied migrations in place: correct the deployment error and rerun the workflow. Wrangler's `d1_migrations` history makes already-applied versions a no-op. Do not manually replay SQL, edit applied migrations, add `IF NOT EXISTS` to hide schema drift, or reset business data. Future changes require new numbered migrations that remain compatible with the previously deployed Worker until rollout completes. These migrations are the sole schema authority; no parallel Drizzle/schema-sync framework exists.
 
-After deployment, the script reads the existing Worker settings and requires both cleanup bindings to be plain-text `0`. A denied lookup, invalid response or different value fails the workflow with an explicit warning that deployment already completed; it does not retry, roll back or print all bindings. This read is the confirmation of the deployed settings, separate from passing local tests.
+After deployment, the script reads the existing Worker settings and requires both cleanup bindings to be plain-text `0`. It also requires the registration switch and all three registration limits to match the checked-in configuration as unique plain-text bindings. A denied lookup, invalid response or different value fails the workflow with an explicit warning that deployment already completed; it does not retry, roll back or print all bindings. This read is the confirmation of the deployed settings, separate from passing local tests.
 
 The first local apply executed all 13 commands; repeating it reported no pending migrations and preserved mailbox rows and sequence state. Only `0001_mailbox.sql` exists, so a second-version upgrade is not claimed tested. Remote migration/deployment has not been executed as part of this change. Concurrent workflow deployments are serialized without cancelling an in-progress migration.
 
 The page uses relative API paths and new relay addresses use the actual request URL origin, including `https://demo.weave-389.workers.dev/`. `WEAVE_HOST` is not used. Forwarded host/protocol headers are ignored. Keep the existing D1 binding named **db**; the runtime accesses `env.db`, with no database password or management token in the app. See [D1 bindings](https://developers.cloudflare.com/d1/get-started/#3-bind-your-worker-to-your-d1-database) and [numbered migrations](https://developers.cloudflare.com/d1/reference/migrations/).
 
 ## Registration and addresses
+
+**Demo only. Data may be periodically cleared. Do not store sensitive or important information.** The account page, registration entry and public registry display this notice. It is a retention warning, not a newly implemented account or database clearing schedule. Existing cleanup settings and expired/ACKed-message behavior are unchanged.
 
 Send controls in the existing `X-Weave-Mailbox-Control` header over HTTPS (HTTP is accepted only on loopback for local use). The application requires at least 64 characters and imposes no extra alphabet, trim, Unicode normalization or maximum-length rule. HTTP implementations still impose their own header size/encoding rules and may strip surrounding whitespace. Generate 32 random bytes and encode as 64 hex characters for unambiguous transport; length alone does not establish entropy.
 

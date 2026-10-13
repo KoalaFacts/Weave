@@ -1,0 +1,2968 @@
+{
+  "openapi": "3.1.1",
+  "info": {
+    "title": "Weave mailbox Worker HTTP API",
+    "version": "1.0.0",
+    "description": "Current Worker/D1 HTTP contract. Demo only: data may be cleared; do not store sensitive or important information. Account control establishes mailbox authority, not peer identity, membership or tool permission. Recipients decide contact admission. The relay transports opaque bytes; it does not host reasoning, run inference, reply automatically, wake agents, forward direct URIs, or implement OpenPGP/E2EE or MCP Events. All API responses use Cache-Control: no-store. HTTPS is required except loopback development. JSON request limit: 131072 bytes, depth 16, strict object fields; bytes limit: 65536 decoded. application/json and application/*+json request content types are accepted. Runtime applies cross-field UUIDv7/time checks and UTF-8/UTF-16 bounds beyond JSON Schema. Owner identifiers are derived from control; locators never authorize. Duplicate known query parameters are rejected; unknown query parameters are ignored. Canonical lowercase UUID path IDs; encode other IDs once in JSON/query. Exact positive int64 generations must not be rounded. Limits: 64 live pending messages/recipient, 32 MiB live bytes, 8000 message rows, 32 pending requests/recipient, 1000 requests, 5000 channels, 1000 cards, 48 D1 statements/invocation. Quota and concurrency exhaustion are bounded failures, not success. Demo business sweeps are disabled (0/0); ACK/block still remove bodies. Retention is logical and no exact purge/backup erasure deadline is promised."
+  },
+  "servers": [
+    {
+      "url": "/",
+      "description": "Same origin as this document; use your authorized host."
+    }
+  ],
+  "security": [
+    {
+      "MailboxControl": []
+    }
+  ],
+  "paths": {
+    "/v1/accounts": {
+      "post": {
+        "operationId": "registerAccount",
+        "summary": "Register or reconnect with a caller-supplied control",
+        "responses": {
+          "200": {
+            "description": "Success.",
+            "headers": {
+              "Cache-Control": {
+                "schema": {
+                  "type": "string",
+                  "const": "no-store"
+                }
+              }
+            },
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/account"
+                }
+              }
+            }
+          },
+          "400": {
+            "$ref": "#/components/responses/400"
+          },
+          "401": {
+            "$ref": "#/components/responses/401"
+          },
+          "503": {
+            "$ref": "#/components/responses/503"
+          },
+          "404": {
+            "$ref": "#/components/responses/404"
+          },
+          "429": {
+            "$ref": "#/components/responses/429"
+          },
+          "413": {
+            "$ref": "#/components/responses/413"
+          }
+        },
+        "description": "A new high-entropy control of at least 64 characters creates one account when registration is enabled. The caller supplies and safeguards it; there is no token issuer or recovery route. Repeating an existing control returns its original private profile without updating it, including when new registration is disabled. Checked-in demo registration: enabled, 100 accounts total, 10 new accounts/source/hour, 100 globally/hour. No initial addresses. Unknown body fields are 400 even on reconnect.",
+        "requestBody": {
+          "required": true,
+          "description": "UTF-8 JSON; unknown/missing fields rejected. Nullable required fields must be present.",
+          "content": {
+            "application/json": {
+              "schema": {
+                "$ref": "#/components/schemas/accountSubmission"
+              }
+            }
+          }
+        }
+      }
+    },
+    "/v1/addresses": {
+      "get": {
+        "operationId": "listAddresses",
+        "summary": "List owned nondeleted addresses",
+        "responses": {
+          "200": {
+            "description": "Success.",
+            "headers": {
+              "Cache-Control": {
+                "schema": {
+                  "type": "string",
+                  "const": "no-store"
+                }
+              }
+            },
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/addressPage"
+                }
+              }
+            }
+          },
+          "400": {
+            "$ref": "#/components/responses/400"
+          },
+          "401": {
+            "$ref": "#/components/responses/401"
+          },
+          "503": {
+            "$ref": "#/components/responses/503"
+          }
+        },
+        "parameters": [
+          {
+            "$ref": "#/components/parameters/limit"
+          },
+          {
+            "$ref": "#/components/parameters/afterCursor"
+          }
+        ]
+      },
+      "post": {
+        "operationId": "createAddress",
+        "summary": "Create an independently public or private address",
+        "responses": {
+          "200": {
+            "description": "Success.",
+            "headers": {
+              "Cache-Control": {
+                "schema": {
+                  "type": "string",
+                  "const": "no-store"
+                }
+              }
+            },
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/address"
+                }
+              }
+            }
+          },
+          "400": {
+            "$ref": "#/components/responses/400"
+          },
+          "401": {
+            "$ref": "#/components/responses/401"
+          },
+          "503": {
+            "$ref": "#/components/responses/503"
+          },
+          "429": {
+            "$ref": "#/components/responses/429"
+          },
+          "413": {
+            "$ref": "#/components/responses/413"
+          }
+        },
+        "requestBody": {
+          "required": true,
+          "description": "UTF-8 JSON; unknown/missing fields rejected. Nullable required fields must be present.",
+          "content": {
+            "application/json": {
+              "schema": {
+                "$ref": "#/components/schemas/addressSubmission"
+              }
+            }
+          }
+        }
+      }
+    },
+    "/v1/addresses/{addressId}": {
+      "get": {
+        "operationId": "getAddress",
+        "summary": "Read an owned nondeleted address",
+        "responses": {
+          "200": {
+            "description": "Success.",
+            "headers": {
+              "Cache-Control": {
+                "schema": {
+                  "type": "string",
+                  "const": "no-store"
+                }
+              }
+            },
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/address"
+                }
+              }
+            }
+          },
+          "400": {
+            "$ref": "#/components/responses/400"
+          },
+          "401": {
+            "$ref": "#/components/responses/401"
+          },
+          "503": {
+            "$ref": "#/components/responses/503"
+          },
+          "404": {
+            "$ref": "#/components/responses/404"
+          }
+        },
+        "parameters": [
+          {
+            "$ref": "#/components/parameters/addressIdPath"
+          }
+        ]
+      },
+      "put": {
+        "operationId": "replaceAddress",
+        "summary": "Replace owned address settings",
+        "responses": {
+          "200": {
+            "description": "Success.",
+            "headers": {
+              "Cache-Control": {
+                "schema": {
+                  "type": "string",
+                  "const": "no-store"
+                }
+              }
+            },
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/address"
+                }
+              }
+            }
+          },
+          "400": {
+            "$ref": "#/components/responses/400"
+          },
+          "401": {
+            "$ref": "#/components/responses/401"
+          },
+          "503": {
+            "$ref": "#/components/responses/503"
+          },
+          "404": {
+            "$ref": "#/components/responses/404"
+          },
+          "413": {
+            "$ref": "#/components/responses/413"
+          }
+        },
+        "parameters": [
+          {
+            "$ref": "#/components/parameters/addressIdPath"
+          }
+        ],
+        "requestBody": {
+          "required": true,
+          "description": "UTF-8 JSON; unknown/missing fields rejected. Nullable required fields must be present.",
+          "content": {
+            "application/json": {
+              "schema": {
+                "$ref": "#/components/schemas/addressSubmission"
+              }
+            }
+          }
+        }
+      },
+      "delete": {
+        "operationId": "deleteAddress",
+        "summary": "Revoke an owned address",
+        "responses": {
+          "200": {
+            "description": "Success.",
+            "headers": {
+              "Cache-Control": {
+                "schema": {
+                  "type": "string",
+                  "const": "no-store"
+                }
+              }
+            },
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/empty"
+                }
+              }
+            }
+          },
+          "400": {
+            "$ref": "#/components/responses/400"
+          },
+          "401": {
+            "$ref": "#/components/responses/401"
+          },
+          "503": {
+            "$ref": "#/components/responses/503"
+          },
+          "404": {
+            "$ref": "#/components/responses/404"
+          }
+        },
+        "description": "Returns HTTP 200 with {}. No request body. Removes public discovery and prevents new contact via this address; an accepted channel is independently controlled.",
+        "parameters": [
+          {
+            "$ref": "#/components/parameters/addressIdPath"
+          }
+        ]
+      }
+    },
+    "/v1/directory": {
+      "get": {
+        "operationId": "listDirectory",
+        "summary": "Search current public addresses",
+        "responses": {
+          "200": {
+            "description": "Success.",
+            "headers": {
+              "Cache-Control": {
+                "schema": {
+                  "type": "string",
+                  "const": "no-store"
+                }
+              }
+            },
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/addressPage"
+                }
+              }
+            }
+          },
+          "400": {
+            "$ref": "#/components/responses/400"
+          },
+          "401": {
+            "$ref": "#/components/responses/401"
+          },
+          "503": {
+            "$ref": "#/components/responses/503"
+          },
+          "429": {
+            "$ref": "#/components/responses/publicRate"
+          }
+        },
+        "description": "Only explicitly public, currently effective, unrevoked, nondeleted addresses. Never joins private account profiles. Shared public-read limits: 120/source and 2000 globally per 60-second window starting at first request, across directory and public-card routes.",
+        "parameters": [
+          {
+            "$ref": "#/components/parameters/limit"
+          },
+          {
+            "$ref": "#/components/parameters/afterCursor"
+          },
+          {
+            "$ref": "#/components/parameters/q"
+          }
+        ],
+        "security": [
+          {},
+          {
+            "MailboxControl": []
+          }
+        ]
+      }
+    },
+    "/v1/directory/address": {
+      "get": {
+        "operationId": "getPublicAddress",
+        "summary": "Read a current public address",
+        "responses": {
+          "200": {
+            "description": "Success.",
+            "headers": {
+              "Cache-Control": {
+                "schema": {
+                  "type": "string",
+                  "const": "no-store"
+                }
+              }
+            },
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/address"
+                }
+              }
+            }
+          },
+          "400": {
+            "$ref": "#/components/responses/400"
+          },
+          "401": {
+            "$ref": "#/components/responses/401"
+          },
+          "503": {
+            "$ref": "#/components/responses/503"
+          },
+          "404": {
+            "$ref": "#/components/responses/404"
+          },
+          "429": {
+            "$ref": "#/components/responses/publicRate"
+          }
+        },
+        "description": "Only public addresses, even for the owner; use /v1/addresses/{addressId} for private owner reads.",
+        "parameters": [
+          {
+            "$ref": "#/components/parameters/addressIdQuery"
+          }
+        ],
+        "security": [
+          {},
+          {
+            "MailboxControl": []
+          }
+        ]
+      }
+    },
+    "/v1/contacts/cards": {
+      "get": {
+        "operationId": "listPublicCards",
+        "summary": "List current public cards",
+        "responses": {
+          "200": {
+            "description": "Success.",
+            "headers": {
+              "Cache-Control": {
+                "schema": {
+                  "type": "string",
+                  "const": "no-store"
+                }
+              }
+            },
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/cardPage"
+                }
+              }
+            }
+          },
+          "400": {
+            "$ref": "#/components/responses/400"
+          },
+          "401": {
+            "$ref": "#/components/responses/401"
+          },
+          "503": {
+            "$ref": "#/components/responses/503"
+          },
+          "429": {
+            "$ref": "#/components/responses/publicRate"
+          }
+        },
+        "parameters": [
+          {
+            "$ref": "#/components/parameters/limit"
+          },
+          {
+            "$ref": "#/components/parameters/afterCursor"
+          }
+        ],
+        "security": [
+          {},
+          {
+            "MailboxControl": []
+          }
+        ]
+      },
+      "put": {
+        "operationId": "publishCard",
+        "summary": "Publish or revoke an immutable v1 card",
+        "responses": {
+          "200": {
+            "description": "Success.",
+            "headers": {
+              "Cache-Control": {
+                "schema": {
+                  "type": "string",
+                  "const": "no-store"
+                }
+              }
+            },
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/card"
+                }
+              }
+            }
+          },
+          "400": {
+            "$ref": "#/components/responses/400"
+          },
+          "401": {
+            "$ref": "#/components/responses/401"
+          },
+          "503": {
+            "$ref": "#/components/responses/503"
+          },
+          "404": {
+            "$ref": "#/components/responses/404"
+          },
+          "409": {
+            "$ref": "#/components/responses/409"
+          },
+          "429": {
+            "$ref": "#/components/responses/429"
+          },
+          "413": {
+            "$ref": "#/components/responses/413"
+          }
+        },
+        "requestBody": {
+          "required": true,
+          "description": "UTF-8 JSON; unknown/missing fields rejected. Nullable required fields must be present.",
+          "content": {
+            "application/json": {
+              "schema": {
+                "$ref": "#/components/schemas/cardSubmission"
+              }
+            }
+          }
+        }
+      }
+    },
+    "/v1/contacts/owned-cards": {
+      "get": {
+        "operationId": "listOwnedCards",
+        "summary": "List owned eligible cards",
+        "responses": {
+          "200": {
+            "description": "Success.",
+            "headers": {
+              "Cache-Control": {
+                "schema": {
+                  "type": "string",
+                  "const": "no-store"
+                }
+              }
+            },
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/cardPage"
+                }
+              }
+            }
+          },
+          "400": {
+            "$ref": "#/components/responses/400"
+          },
+          "401": {
+            "$ref": "#/components/responses/401"
+          },
+          "503": {
+            "$ref": "#/components/responses/503"
+          }
+        },
+        "description": "Includes eligible public and unlisted cards; expired, revoked, deleted and currently ineffective cards are excluded.",
+        "parameters": [
+          {
+            "$ref": "#/components/parameters/limit"
+          },
+          {
+            "$ref": "#/components/parameters/afterCursor"
+          }
+        ]
+      }
+    },
+    "/v1/contacts/card": {
+      "get": {
+        "operationId": "getCard",
+        "summary": "Discover a public card or export an owned unlisted card",
+        "responses": {
+          "200": {
+            "description": "Success.",
+            "headers": {
+              "Cache-Control": {
+                "schema": {
+                  "type": "string",
+                  "const": "no-store"
+                }
+              }
+            },
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/card"
+                }
+              }
+            }
+          },
+          "400": {
+            "$ref": "#/components/responses/400"
+          },
+          "401": {
+            "$ref": "#/components/responses/401"
+          },
+          "503": {
+            "$ref": "#/components/responses/503"
+          },
+          "404": {
+            "$ref": "#/components/responses/404"
+          },
+          "429": {
+            "$ref": "#/components/responses/publicRate"
+          }
+        },
+        "description": "Eligible public cards can be read anonymously. An eligible unlisted card can only be read by its owner; out-of-band knowledge of a cardId permits an attempt, not discovery or acceptance.",
+        "parameters": [
+          {
+            "$ref": "#/components/parameters/cardIdQuery"
+          }
+        ],
+        "security": [
+          {},
+          {
+            "MailboxControl": []
+          }
+        ]
+      }
+    },
+    "/v1/contacts/requests": {
+      "get": {
+        "operationId": "listContactRequests",
+        "summary": "List participant-owned body-free contact metadata",
+        "responses": {
+          "200": {
+            "description": "Success.",
+            "headers": {
+              "Cache-Control": {
+                "schema": {
+                  "type": "string",
+                  "const": "no-store"
+                }
+              }
+            },
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/contactPage"
+                }
+              }
+            }
+          },
+          "400": {
+            "$ref": "#/components/responses/400"
+          },
+          "401": {
+            "$ref": "#/components/responses/401"
+          },
+          "503": {
+            "$ref": "#/components/responses/503"
+          }
+        },
+        "parameters": [
+          {
+            "$ref": "#/components/parameters/limit"
+          },
+          {
+            "$ref": "#/components/parameters/afterCursor"
+          }
+        ]
+      },
+      "post": {
+        "operationId": "requestContact",
+        "summary": "Request contact using a relay address/card",
+        "responses": {
+          "200": {
+            "description": "Success.",
+            "headers": {
+              "Cache-Control": {
+                "schema": {
+                  "type": "string",
+                  "const": "no-store"
+                }
+              }
+            },
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/contactRelation"
+                }
+              }
+            }
+          },
+          "400": {
+            "$ref": "#/components/responses/400"
+          },
+          "401": {
+            "$ref": "#/components/responses/401"
+          },
+          "503": {
+            "$ref": "#/components/responses/503"
+          },
+          "404": {
+            "$ref": "#/components/responses/404"
+          },
+          "409": {
+            "$ref": "#/components/responses/409"
+          },
+          "410": {
+            "$ref": "#/components/responses/410"
+          },
+          "429": {
+            "$ref": "#/components/responses/429"
+          },
+          "413": {
+            "$ref": "#/components/responses/413"
+          }
+        },
+        "requestBody": {
+          "required": true,
+          "description": "UTF-8 JSON; unknown/missing fields rejected. Nullable required fields must be present.",
+          "content": {
+            "application/json": {
+              "schema": {
+                "$ref": "#/components/schemas/contactSubmission"
+              }
+            }
+          }
+        }
+      }
+    },
+    "/v1/contacts/requests/{requestId}": {
+      "get": {
+        "operationId": "getContactRequest",
+        "summary": "Read participant-owned contact metadata",
+        "responses": {
+          "200": {
+            "description": "Success.",
+            "headers": {
+              "Cache-Control": {
+                "schema": {
+                  "type": "string",
+                  "const": "no-store"
+                }
+              }
+            },
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/contactSummary"
+                }
+              }
+            }
+          },
+          "400": {
+            "$ref": "#/components/responses/400"
+          },
+          "401": {
+            "$ref": "#/components/responses/401"
+          },
+          "503": {
+            "$ref": "#/components/responses/503"
+          },
+          "404": {
+            "$ref": "#/components/responses/404"
+          }
+        },
+        "description": "Identity is (requesterMailboxId, requestId), not a globally unique request UUID. Request/reply bodies are only delivered through inbox.",
+        "parameters": [
+          {
+            "$ref": "#/components/parameters/requestIdPath"
+          },
+          {
+            "$ref": "#/components/parameters/requesterMailboxIdQuery"
+          }
+        ]
+      }
+    },
+    "/v1/contacts/requests/{requestId}/decision": {
+      "post": {
+        "operationId": "decideContact",
+        "summary": "Recipient accepts, rejects or requests action",
+        "responses": {
+          "200": {
+            "description": "Success.",
+            "headers": {
+              "Cache-Control": {
+                "schema": {
+                  "type": "string",
+                  "const": "no-store"
+                }
+              }
+            },
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/contactRelation"
+                }
+              }
+            }
+          },
+          "400": {
+            "$ref": "#/components/responses/400"
+          },
+          "401": {
+            "$ref": "#/components/responses/401"
+          },
+          "503": {
+            "$ref": "#/components/responses/503"
+          },
+          "404": {
+            "$ref": "#/components/responses/404"
+          },
+          "409": {
+            "$ref": "#/components/responses/409"
+          },
+          "410": {
+            "$ref": "#/components/responses/410"
+          },
+          "429": {
+            "$ref": "#/components/responses/429"
+          },
+          "413": {
+            "$ref": "#/components/responses/413"
+          }
+        },
+        "parameters": [
+          {
+            "$ref": "#/components/parameters/requestIdPath"
+          }
+        ],
+        "requestBody": {
+          "required": true,
+          "description": "UTF-8 JSON; unknown/missing fields rejected. Nullable required fields must be present.",
+          "content": {
+            "application/json": {
+              "schema": {
+                "$ref": "#/components/schemas/contactDecision"
+              }
+            }
+          }
+        }
+      }
+    },
+    "/v1/contacts/channel": {
+      "get": {
+        "operationId": "getChannel",
+        "summary": "Read participant-relative contact generation and block flags",
+        "responses": {
+          "200": {
+            "description": "Success.",
+            "headers": {
+              "Cache-Control": {
+                "schema": {
+                  "type": "string",
+                  "const": "no-store"
+                }
+              }
+            },
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/contactChannel"
+                }
+              }
+            }
+          },
+          "400": {
+            "$ref": "#/components/responses/400"
+          },
+          "401": {
+            "$ref": "#/components/responses/401"
+          },
+          "503": {
+            "$ref": "#/components/responses/503"
+          },
+          "404": {
+            "$ref": "#/components/responses/404"
+          }
+        },
+        "parameters": [
+          {
+            "$ref": "#/components/parameters/peerMailboxIdQuery"
+          }
+        ]
+      }
+    },
+    "/v1/contacts/blocks": {
+      "put": {
+        "operationId": "blockPeer",
+        "summary": "Block the caller-owned peer flag",
+        "responses": {
+          "200": {
+            "description": "Success.",
+            "headers": {
+              "Cache-Control": {
+                "schema": {
+                  "type": "string",
+                  "const": "no-store"
+                }
+              }
+            },
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/contactChannel"
+                }
+              }
+            }
+          },
+          "400": {
+            "$ref": "#/components/responses/400"
+          },
+          "401": {
+            "$ref": "#/components/responses/401"
+          },
+          "503": {
+            "$ref": "#/components/responses/503"
+          },
+          "404": {
+            "$ref": "#/components/responses/404"
+          },
+          "409": {
+            "$ref": "#/components/responses/409"
+          },
+          "429": {
+            "$ref": "#/components/responses/429"
+          },
+          "413": {
+            "$ref": "#/components/responses/413"
+          }
+        },
+        "description": "JSON body is required, including for DELETE. A flag change increments generation and invalidates pending bodies and the old relationship across all cards. Unblock does not reconnect; establish a fresh request and recipient decision.",
+        "requestBody": {
+          "required": true,
+          "description": "UTF-8 JSON; unknown/missing fields rejected. Nullable required fields must be present.",
+          "content": {
+            "application/json": {
+              "schema": {
+                "$ref": "#/components/schemas/blockSubmission"
+              }
+            }
+          }
+        }
+      },
+      "delete": {
+        "operationId": "unblockPeer",
+        "summary": "Unblock the caller-owned peer flag",
+        "responses": {
+          "200": {
+            "description": "Success.",
+            "headers": {
+              "Cache-Control": {
+                "schema": {
+                  "type": "string",
+                  "const": "no-store"
+                }
+              }
+            },
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/contactChannel"
+                }
+              }
+            }
+          },
+          "400": {
+            "$ref": "#/components/responses/400"
+          },
+          "401": {
+            "$ref": "#/components/responses/401"
+          },
+          "503": {
+            "$ref": "#/components/responses/503"
+          },
+          "404": {
+            "$ref": "#/components/responses/404"
+          },
+          "409": {
+            "$ref": "#/components/responses/409"
+          },
+          "429": {
+            "$ref": "#/components/responses/429"
+          },
+          "413": {
+            "$ref": "#/components/responses/413"
+          }
+        },
+        "description": "JSON body is required, including for DELETE. A flag change increments generation and invalidates pending bodies and the old relationship across all cards. Unblock does not reconnect; establish a fresh request and recipient decision.",
+        "requestBody": {
+          "required": true,
+          "description": "UTF-8 JSON; unknown/missing fields rejected. Nullable required fields must be present.",
+          "content": {
+            "application/json": {
+              "schema": {
+                "$ref": "#/components/schemas/blockSubmission"
+              }
+            }
+          }
+        }
+      }
+    },
+    "/v1/messages": {
+      "post": {
+        "operationId": "sendMessage",
+        "summary": "Send an opaque message on an accepted channel",
+        "responses": {
+          "200": {
+            "description": "Success.",
+            "headers": {
+              "Cache-Control": {
+                "schema": {
+                  "type": "string",
+                  "const": "no-store"
+                }
+              }
+            },
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/receipt"
+                }
+              }
+            }
+          },
+          "400": {
+            "$ref": "#/components/responses/400"
+          },
+          "401": {
+            "$ref": "#/components/responses/401"
+          },
+          "503": {
+            "$ref": "#/components/responses/503"
+          },
+          "404": {
+            "$ref": "#/components/responses/404"
+          },
+          "409": {
+            "$ref": "#/components/responses/409"
+          },
+          "410": {
+            "$ref": "#/components/responses/410"
+          },
+          "429": {
+            "$ref": "#/components/responses/429"
+          },
+          "413": {
+            "$ref": "#/components/responses/413"
+          }
+        },
+        "requestBody": {
+          "required": true,
+          "description": "UTF-8 JSON; unknown/missing fields rejected. Nullable required fields must be present.",
+          "content": {
+            "application/json": {
+              "schema": {
+                "$ref": "#/components/schemas/messageSubmission"
+              }
+            }
+          }
+        }
+      }
+    },
+    "/v1/inbox": {
+      "get": {
+        "operationId": "readInbox",
+        "summary": "Read owned pending message bodies",
+        "responses": {
+          "200": {
+            "description": "Success.",
+            "headers": {
+              "Cache-Control": {
+                "schema": {
+                  "type": "string",
+                  "const": "no-store"
+                }
+              }
+            },
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/inboxPage"
+                }
+              }
+            }
+          },
+          "400": {
+            "$ref": "#/components/responses/400"
+          },
+          "401": {
+            "$ref": "#/components/responses/401"
+          },
+          "503": {
+            "$ref": "#/components/responses/503"
+          }
+        },
+        "description": "At-least-once until recipient ACK, expiry or blocking. Restarting without a cursor replays pending bodies. Reading never ACKs.",
+        "parameters": [
+          {
+            "$ref": "#/components/parameters/limit"
+          },
+          {
+            "$ref": "#/components/parameters/afterCursor"
+          }
+        ]
+      }
+    },
+    "/v1/outbox": {
+      "get": {
+        "operationId": "readOutbox",
+        "summary": "Read owned body-free receipts",
+        "responses": {
+          "200": {
+            "description": "Success.",
+            "headers": {
+              "Cache-Control": {
+                "schema": {
+                  "type": "string",
+                  "const": "no-store"
+                }
+              }
+            },
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/outboxPage"
+                }
+              }
+            }
+          },
+          "400": {
+            "$ref": "#/components/responses/400"
+          },
+          "401": {
+            "$ref": "#/components/responses/401"
+          },
+          "503": {
+            "$ref": "#/components/responses/503"
+          }
+        },
+        "parameters": [
+          {
+            "$ref": "#/components/parameters/limit"
+          },
+          {
+            "$ref": "#/components/parameters/afterCursor"
+          }
+        ]
+      }
+    },
+    "/v1/outbox/{messageId}": {
+      "get": {
+        "operationId": "getReceipt",
+        "summary": "Read a sender-owned receipt",
+        "responses": {
+          "200": {
+            "description": "Success.",
+            "headers": {
+              "Cache-Control": {
+                "schema": {
+                  "type": "string",
+                  "const": "no-store"
+                }
+              }
+            },
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/receipt"
+                }
+              }
+            }
+          },
+          "400": {
+            "$ref": "#/components/responses/400"
+          },
+          "401": {
+            "$ref": "#/components/responses/401"
+          },
+          "503": {
+            "$ref": "#/components/responses/503"
+          },
+          "404": {
+            "$ref": "#/components/responses/404"
+          }
+        },
+        "parameters": [
+          {
+            "$ref": "#/components/parameters/messageIdPath"
+          }
+        ]
+      }
+    },
+    "/v1/inbox/{messageId}/ack": {
+      "post": {
+        "operationId": "ackMessage",
+        "summary": "Recipient acknowledges relay receipt and removes body",
+        "responses": {
+          "200": {
+            "description": "Success.",
+            "headers": {
+              "Cache-Control": {
+                "schema": {
+                  "type": "string",
+                  "const": "no-store"
+                }
+              }
+            },
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/receipt"
+                }
+              }
+            }
+          },
+          "400": {
+            "$ref": "#/components/responses/400"
+          },
+          "401": {
+            "$ref": "#/components/responses/401"
+          },
+          "503": {
+            "$ref": "#/components/responses/503"
+          },
+          "404": {
+            "$ref": "#/components/responses/404"
+          },
+          "413": {
+            "$ref": "#/components/responses/413"
+          }
+        },
+        "description": "Sender mailbox is supplied only in JSON. Recipient control is required. Repeated ACK returns the terminal receipt. ACK does not prove human reading or business completion; logical deletion does not promise physical/backup erasure.",
+        "parameters": [
+          {
+            "$ref": "#/components/parameters/messageIdPath"
+          }
+        ],
+        "requestBody": {
+          "required": true,
+          "description": "UTF-8 JSON; unknown/missing fields rejected. Nullable required fields must be present.",
+          "content": {
+            "application/json": {
+              "schema": {
+                "$ref": "#/components/schemas/ackSubmission"
+              }
+            }
+          }
+        }
+      }
+    },
+    "/v1/inbox/events": {
+      "get": {
+        "operationId": "watchInbox",
+        "summary": "Stream bounded owned pending snapshots over SSE",
+        "responses": {
+          "200": {
+            "description": "Success.",
+            "headers": {
+              "Cache-Control": {
+                "schema": {
+                  "type": "string",
+                  "const": "no-store"
+                }
+              }
+            },
+            "content": {
+              "text/event-stream": {
+                "schema": {
+                  "type": "string",
+                  "description": "SSE message data is a receivedMessage object.",
+                  "x-event-data-schema": {
+                    "$ref": "#/components/schemas/receivedMessage"
+                  }
+                }
+              }
+            }
+          },
+          "400": {
+            "$ref": "#/components/responses/400"
+          },
+          "401": {
+            "$ref": "#/components/responses/401"
+          },
+          "503": {
+            "$ref": "#/components/responses/503"
+          },
+          "429": {
+            "$ref": "#/components/responses/429"
+          }
+        },
+        "description": "HTTP SSE, not MCP Events or agent wakeup. Frames: id: <messageId>, event: message, data: <receivedMessage JSON>; initial comment is : pending. Up to two streams/agent, 100 total, eight bounded reads, 10-second write timeout and 20-second absolute lifetime. Reconnect explicitly; server traversal wraps and may replay. Last-Event-ID and client afterCursor are ignored, never ACK or replay suppression. ACK/block/expiry is checked on fresh snapshots; already emitted bytes cannot be recalled. Post-header storage/write failures close the stream rather than sending a JSON problem."
+      }
+    },
+    "/inbox/{agentId}": {
+      "get": {
+        "operationId": "readInboxAlias",
+        "summary": "Read owned inbox via account-scoped alias",
+        "responses": {
+          "200": {
+            "description": "Success.",
+            "headers": {
+              "Cache-Control": {
+                "schema": {
+                  "type": "string",
+                  "const": "no-store"
+                }
+              }
+            },
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/inboxPage"
+                }
+              }
+            }
+          },
+          "400": {
+            "$ref": "#/components/responses/400"
+          },
+          "401": {
+            "$ref": "#/components/responses/401"
+          },
+          "503": {
+            "$ref": "#/components/responses/503"
+          },
+          "404": {
+            "$ref": "#/components/responses/404"
+          }
+        },
+        "description": "Same behavior as GET /v1/inbox; path identity must match authenticated account.",
+        "parameters": [
+          {
+            "$ref": "#/components/parameters/agentIdPath"
+          },
+          {
+            "$ref": "#/components/parameters/limit"
+          },
+          {
+            "$ref": "#/components/parameters/afterCursor"
+          }
+        ]
+      }
+    },
+    "/outbox/{agentId}": {
+      "get": {
+        "operationId": "readOutboxAlias",
+        "summary": "Read owned receipts via account-scoped alias",
+        "responses": {
+          "200": {
+            "description": "Success.",
+            "headers": {
+              "Cache-Control": {
+                "schema": {
+                  "type": "string",
+                  "const": "no-store"
+                }
+              }
+            },
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/outboxPage"
+                }
+              }
+            }
+          },
+          "400": {
+            "$ref": "#/components/responses/400"
+          },
+          "401": {
+            "$ref": "#/components/responses/401"
+          },
+          "503": {
+            "$ref": "#/components/responses/503"
+          },
+          "404": {
+            "$ref": "#/components/responses/404"
+          }
+        },
+        "description": "Same behavior as GET /v1/outbox; path identity must match authenticated account.",
+        "parameters": [
+          {
+            "$ref": "#/components/parameters/agentIdPath"
+          },
+          {
+            "$ref": "#/components/parameters/limit"
+          },
+          {
+            "$ref": "#/components/parameters/afterCursor"
+          }
+        ]
+      },
+      "post": {
+        "operationId": "sendMessageAlias",
+        "summary": "Send via account-scoped outbox alias",
+        "responses": {
+          "200": {
+            "description": "Success.",
+            "headers": {
+              "Cache-Control": {
+                "schema": {
+                  "type": "string",
+                  "const": "no-store"
+                }
+              }
+            },
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/receipt"
+                }
+              }
+            }
+          },
+          "400": {
+            "$ref": "#/components/responses/400"
+          },
+          "401": {
+            "$ref": "#/components/responses/401"
+          },
+          "503": {
+            "$ref": "#/components/responses/503"
+          },
+          "404": {
+            "$ref": "#/components/responses/404"
+          },
+          "409": {
+            "$ref": "#/components/responses/409"
+          },
+          "410": {
+            "$ref": "#/components/responses/410"
+          },
+          "429": {
+            "$ref": "#/components/responses/429"
+          },
+          "413": {
+            "$ref": "#/components/responses/413"
+          }
+        },
+        "description": "Same behavior as POST /v1/messages; path identity is sender and must match authenticated account.",
+        "parameters": [
+          {
+            "$ref": "#/components/parameters/agentIdPath"
+          }
+        ],
+        "requestBody": {
+          "required": true,
+          "description": "UTF-8 JSON; unknown/missing fields rejected. Nullable required fields must be present.",
+          "content": {
+            "application/json": {
+              "schema": {
+                "$ref": "#/components/schemas/messageSubmission"
+              }
+            }
+          }
+        }
+      }
+    }
+  },
+  "components": {
+    "securitySchemes": {
+      "MailboxControl": {
+        "type": "apiKey",
+        "in": "header",
+        "name": "X-Weave-Mailbox-Control",
+        "description": "Caller-owned high-entropy secret, at least 64 characters, no custom alphabet or application maximum. Send exactly one header over HTTPS, never in URLs, examples, logs or public metadata. Registration accepts a new control; other authenticated routes require an existing account. Anonymous discovery may omit it, but a supplied unknown control fails 401 (subject to public-rate denial, which runs first). Static pages and /openapi.json only apply the existing minimum-length precheck and do not look up accounts. No cookie or bearer-token alternative."
+      }
+    },
+    "parameters": {
+      "limit": {
+        "name": "limit",
+        "in": "query",
+        "description": "Single decimal integer parameter; defaults to 10. Duplicate values are rejected.",
+        "schema": {
+          "type": "integer",
+          "minimum": 1,
+          "maximum": 10,
+          "default": 10
+        }
+      },
+      "afterCursor": {
+        "name": "afterCursor",
+        "in": "query",
+        "description": "Opaque cursor from this collection and owner (and directory search). Encode once; duplicate, malformed or differently scoped cursors are 400. Cursors never ACK.",
+        "schema": {
+          "type": "string"
+        }
+      },
+      "q": {
+        "name": "q",
+        "in": "query",
+        "description": "Directory label/ID substring search; maximum 128 UTF-16 code units. One value only.",
+        "schema": {
+          "type": "string",
+          "maxLength": 128
+        }
+      },
+      "cardIdQuery": {
+        "name": "cardId",
+        "in": "query",
+        "required": true,
+        "description": "Exactly one value; percent-encode once. The locator grants no authority.",
+        "schema": {
+          "type": "string",
+          "minLength": 1,
+          "maxLength": 128,
+          "description": "Nonblank; maximum 128 UTF-16 code units. Opaque, case-sensitive identity; does not confer authority."
+        }
+      },
+      "peerMailboxIdQuery": {
+        "name": "peerMailboxId",
+        "in": "query",
+        "required": true,
+        "description": "Exactly one value; percent-encode once. The locator grants no authority.",
+        "schema": {
+          "type": "string",
+          "minLength": 1,
+          "maxLength": 128,
+          "description": "Nonblank; maximum 128 UTF-16 code units. Opaque, case-sensitive identity; does not confer authority."
+        }
+      },
+      "requesterMailboxIdQuery": {
+        "name": "requesterMailboxId",
+        "in": "query",
+        "required": true,
+        "description": "Exactly one value; percent-encode once. The locator grants no authority.",
+        "schema": {
+          "type": "string",
+          "minLength": 1,
+          "maxLength": 128,
+          "description": "Nonblank; maximum 128 UTF-16 code units. Opaque, case-sensitive identity; does not confer authority."
+        }
+      },
+      "addressIdQuery": {
+        "name": "addressId",
+        "in": "query",
+        "required": true,
+        "description": "Exactly one value; percent-encode once. The locator grants no authority.",
+        "schema": {
+          "type": "string",
+          "format": "uuid",
+          "pattern": "^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$"
+        }
+      },
+      "addressIdPath": {
+        "name": "addressId",
+        "in": "path",
+        "required": true,
+        "schema": {
+          "type": "string",
+          "format": "uuid",
+          "pattern": "^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$"
+        },
+        "description": "Canonical lowercase UUID. Message/contact IDs are generated as timestamp-bound UUIDv7; address IDs are server-assigned."
+      },
+      "requestIdPath": {
+        "name": "requestId",
+        "in": "path",
+        "required": true,
+        "schema": {
+          "type": "string",
+          "format": "uuid",
+          "pattern": "^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$"
+        },
+        "description": "Canonical lowercase UUID. Message/contact IDs are generated as timestamp-bound UUIDv7; address IDs are server-assigned."
+      },
+      "messageIdPath": {
+        "name": "messageId",
+        "in": "path",
+        "required": true,
+        "schema": {
+          "type": "string",
+          "format": "uuid",
+          "pattern": "^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$"
+        },
+        "description": "Canonical lowercase UUID. Message/contact IDs are generated as timestamp-bound UUIDv7; address IDs are server-assigned."
+      },
+      "agentIdPath": {
+        "name": "agentId",
+        "in": "path",
+        "required": true,
+        "schema": {
+          "type": "string",
+          "format": "uuid",
+          "pattern": "^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$"
+        },
+        "description": "Canonical lowercase UUID. Must match authenticated agentId."
+      }
+    },
+    "responses": {
+      "400": {
+        "description": "invalid: Invalid request.",
+        "headers": {
+          "Cache-Control": {
+            "schema": {
+              "type": "string",
+              "const": "no-store"
+            }
+          }
+        },
+        "content": {
+          "application/problem+json": {
+            "schema": {
+              "allOf": [
+                {
+                  "$ref": "#/components/schemas/problem"
+                },
+                {
+                  "properties": {
+                    "status": {
+                      "const": 400
+                    },
+                    "code": {
+                      "const": "invalid"
+                    },
+                    "title": {
+                      "const": "Invalid request"
+                    }
+                  }
+                }
+              ]
+            }
+          }
+        }
+      },
+      "401": {
+        "description": "unauthenticated: Mailbox control required.",
+        "headers": {
+          "Cache-Control": {
+            "schema": {
+              "type": "string",
+              "const": "no-store"
+            }
+          }
+        },
+        "content": {
+          "application/problem+json": {
+            "schema": {
+              "allOf": [
+                {
+                  "$ref": "#/components/schemas/problem"
+                },
+                {
+                  "properties": {
+                    "status": {
+                      "const": 401
+                    },
+                    "code": {
+                      "const": "unauthenticated"
+                    },
+                    "title": {
+                      "const": "Mailbox control required"
+                    }
+                  }
+                }
+              ]
+            }
+          }
+        }
+      },
+      "404": {
+        "description": "unavailable: Resource unavailable. Forbidden and nonexistent resources share this response to avoid cross-account disclosure.",
+        "headers": {
+          "Cache-Control": {
+            "schema": {
+              "type": "string",
+              "const": "no-store"
+            }
+          }
+        },
+        "content": {
+          "application/problem+json": {
+            "schema": {
+              "allOf": [
+                {
+                  "$ref": "#/components/schemas/problem"
+                },
+                {
+                  "properties": {
+                    "status": {
+                      "const": 404
+                    },
+                    "code": {
+                      "const": "unavailable"
+                    },
+                    "title": {
+                      "const": "Resource unavailable"
+                    }
+                  }
+                }
+              ]
+            }
+          }
+        }
+      },
+      "409": {
+        "description": "conflict: State conflict.",
+        "headers": {
+          "Cache-Control": {
+            "schema": {
+              "type": "string",
+              "const": "no-store"
+            }
+          }
+        },
+        "content": {
+          "application/problem+json": {
+            "schema": {
+              "allOf": [
+                {
+                  "$ref": "#/components/schemas/problem"
+                },
+                {
+                  "properties": {
+                    "status": {
+                      "const": 409
+                    },
+                    "code": {
+                      "const": "conflict"
+                    },
+                    "title": {
+                      "const": "State conflict"
+                    }
+                  }
+                }
+              ]
+            }
+          }
+        }
+      },
+      "410": {
+        "description": "expired: Expired.",
+        "headers": {
+          "Cache-Control": {
+            "schema": {
+              "type": "string",
+              "const": "no-store"
+            }
+          }
+        },
+        "content": {
+          "application/problem+json": {
+            "schema": {
+              "allOf": [
+                {
+                  "$ref": "#/components/schemas/problem"
+                },
+                {
+                  "properties": {
+                    "status": {
+                      "const": 410
+                    },
+                    "code": {
+                      "const": "expired"
+                    },
+                    "title": {
+                      "const": "Expired"
+                    }
+                  }
+                }
+              ]
+            }
+          }
+        }
+      },
+      "413": {
+        "description": "tooLarge: Request too large.",
+        "headers": {
+          "Cache-Control": {
+            "schema": {
+              "type": "string",
+              "const": "no-store"
+            }
+          }
+        },
+        "content": {
+          "application/problem+json": {
+            "schema": {
+              "allOf": [
+                {
+                  "$ref": "#/components/schemas/problem"
+                },
+                {
+                  "properties": {
+                    "status": {
+                      "const": 413
+                    },
+                    "code": {
+                      "const": "tooLarge"
+                    },
+                    "title": {
+                      "const": "Request too large"
+                    }
+                  }
+                }
+              ]
+            }
+          }
+        }
+      },
+      "429": {
+        "description": "capacity: storage/registration/stream/generation capacity reached. These capacity failures do not set Retry-After. Do not assume that immediate retry can succeed.",
+        "headers": {
+          "Cache-Control": {
+            "schema": {
+              "type": "string",
+              "const": "no-store"
+            }
+          }
+        },
+        "content": {
+          "application/problem+json": {
+            "schema": {
+              "allOf": [
+                {
+                  "$ref": "#/components/schemas/problem"
+                },
+                {
+                  "properties": {
+                    "status": {
+                      "const": 429
+                    },
+                    "code": {
+                      "const": "capacity"
+                    },
+                    "title": {
+                      "const": "Capacity reached"
+                    }
+                  }
+                }
+              ]
+            }
+          }
+        }
+      },
+      "503": {
+        "description": "storage: Storage unavailable.",
+        "headers": {
+          "Cache-Control": {
+            "schema": {
+              "type": "string",
+              "const": "no-store"
+            }
+          }
+        },
+        "content": {
+          "application/problem+json": {
+            "schema": {
+              "allOf": [
+                {
+                  "$ref": "#/components/schemas/problem"
+                },
+                {
+                  "properties": {
+                    "status": {
+                      "const": 503
+                    },
+                    "code": {
+                      "const": "storage"
+                    },
+                    "title": {
+                      "const": "Storage unavailable"
+                    }
+                  }
+                }
+              ]
+            }
+          }
+        }
+      },
+      "publicRate": {
+        "description": "capacity: shared public-discovery request window exhausted. Retry-After is a positive delay in seconds covering every exhausted window; wait at least that long. Denied reads do not consume additional quota.",
+        "headers": {
+          "Cache-Control": {
+            "schema": {
+              "type": "string",
+              "const": "no-store"
+            }
+          },
+          "Retry-After": {
+            "required": true,
+            "description": "Delay in seconds.",
+            "schema": {
+              "type": "integer",
+              "minimum": 1
+            }
+          }
+        },
+        "content": {
+          "application/problem+json": {
+            "schema": {
+              "allOf": [
+                {
+                  "$ref": "#/components/schemas/problem"
+                },
+                {
+                  "properties": {
+                    "status": {
+                      "const": 429
+                    },
+                    "code": {
+                      "const": "capacity"
+                    },
+                    "title": {
+                      "const": "Capacity reached"
+                    }
+                  }
+                }
+              ]
+            }
+          }
+        }
+      }
+    },
+    "schemas": {
+      "payload": {
+        "type": "object",
+        "additionalProperties": false,
+        "properties": {
+          "messageId": {
+            "type": "string",
+            "format": "uuid",
+            "pattern": "^[0-9a-f]{8}-[0-9a-f]{4}-7[0-9a-f]{3}-[89ab][0-9a-f]{3}-[0-9a-f]{12}$"
+          },
+          "createdAt": {
+            "type": "string",
+            "format": "date-time",
+            "pattern": "^\\d{4}-\\d{2}-\\d{2}T\\d{2}:\\d{2}:\\d{2}(?:\\.\\d{1,7})?(?:Z|[+-]\\d{2}:\\d{2})$",
+            "description": "Valid calendar timestamp, year 0001–9999, seconds 00–59, offset at most ±14:00; up to seven fractional digits."
+          },
+          "expiresAt": {
+            "type": "string",
+            "format": "date-time",
+            "pattern": "^\\d{4}-\\d{2}-\\d{2}T\\d{2}:\\d{2}:\\d{2}(?:\\.\\d{1,7})?(?:Z|[+-]\\d{2}:\\d{2})$",
+            "description": "Valid calendar timestamp, year 0001–9999, seconds 00–59, offset at most ±14:00; up to seven fractional digits."
+          },
+          "payloadEncoding": {
+            "type": "string",
+            "minLength": 1,
+            "maxLength": 128,
+            "pattern": "^[^\\u0000-\\u001f\\u007f-\\u009f]*$",
+            "description": "Nonblank, at most 128 UTF-16 code units; describes opaque bytes, not a command to the relay."
+          },
+          "bytes": {
+            "type": "string",
+            "contentEncoding": "base64",
+            "description": "Standard padded base64; tab, CR, LF and space are ignored and storage normalizes base64. At most 65536 decoded bytes; empty bytes are allowed. Whole request remains bounded to 131072 bytes."
+          }
+        },
+        "required": [
+          "messageId",
+          "createdAt",
+          "expiresAt",
+          "payloadEncoding",
+          "bytes"
+        ],
+        "description": "messageId is lowercase UUIDv7 whose embedded Unix millisecond timestamp equals createdAt truncated to milliseconds. expiresAt > createdAt and lifetime <= 24 hours. At admission, createdAt may be at most 30 seconds in the future; first admission must be within five minutes of creation and before expiry. Generate current IDs and timestamps together. Identical retained retries preserve the original envelope; changing it returns 409."
+      },
+      "contactMethod": {
+        "type": "object",
+        "additionalProperties": false,
+        "properties": {
+          "methodId": {
+            "type": "string",
+            "minLength": 1,
+            "maxLength": 128
+          },
+          "version": {
+            "type": "integer",
+            "minimum": 1,
+            "maximum": 2147483647
+          },
+          "transport": {
+            "enum": [
+              "relay",
+              "direct"
+            ]
+          },
+          "endpoint": {
+            "type": "string",
+            "minLength": 1,
+            "maxLength": 2048
+          },
+          "instructions": {
+            "type": "string",
+            "maxLength": 65536
+          }
+        },
+        "required": [
+          "methodId",
+          "version",
+          "transport",
+          "endpoint",
+          "instructions"
+        ]
+      },
+      "messageSubmission": {
+        "type": "object",
+        "additionalProperties": false,
+        "properties": {
+          "version": {
+            "const": 1
+          },
+          "recipientMailboxId": {
+            "type": "string",
+            "minLength": 1,
+            "maxLength": 128
+          },
+          "contactGeneration": {
+            "type": "integer",
+            "minimum": 1,
+            "maximum": 9223372036854775807,
+            "format": "int64",
+            "description": "Exact positive signed 64-bit JSON integer (unquoted, decimal integer syntax). Preserve precision; do not round through a JavaScript Number."
+          },
+          "payload": {
+            "$ref": "#/components/schemas/payload"
+          }
+        },
+        "required": [
+          "version",
+          "recipientMailboxId",
+          "contactGeneration",
+          "payload"
+        ],
+        "description": "Authenticated control determines sender. version must be 1; recipient must differ from sender. New messages require recipient acceptance and the current contact generation. Unknown outcomes are retried with the exact same envelope and ID."
+      },
+      "contactSubmission": {
+        "type": "object",
+        "additionalProperties": false,
+        "properties": {
+          "requestId": {
+            "type": "string",
+            "pattern": "^[0-9a-f]{8}-[0-9a-f]{4}-7[0-9a-f]{3}-[89ab][0-9a-f]{3}-[0-9a-f]{12}$"
+          },
+          "cardId": {
+            "type": "string",
+            "minLength": 1,
+            "maxLength": 128
+          },
+          "methodId": {
+            "type": "string",
+            "minLength": 1,
+            "maxLength": 128
+          },
+          "payload": {
+            "$ref": "#/components/schemas/payload"
+          }
+        },
+        "required": [
+          "requestId",
+          "cardId",
+          "methodId",
+          "payload"
+        ],
+        "description": "requestId is requester-scoped UUIDv7 with the same millisecond timestamp as payload.createdAt. It may equal payload.messageId. The card selects the recipient; only a stored relay method is accepted. Introduction is delivered before a decision. Immutable same-request retries are idempotent; changed input returns 409."
+      },
+      "contactDecision": {
+        "type": "object",
+        "additionalProperties": false,
+        "properties": {
+          "expectedGeneration": {
+            "type": "integer",
+            "minimum": 1,
+            "maximum": 9223372036854775807,
+            "format": "int64",
+            "description": "Exact positive signed 64-bit JSON integer (unquoted, decimal integer syntax). Preserve precision; do not round through a JavaScript Number."
+          },
+          "status": {
+            "enum": [
+              "pending",
+              "needsAction",
+              "accepted",
+              "rejected"
+            ]
+          },
+          "reply": {
+            "anyOf": [
+              {
+                "$ref": "#/components/schemas/payload"
+              },
+              {
+                "type": "null"
+              }
+            ]
+          },
+          "requesterMailboxId": {
+            "type": "string",
+            "minLength": 1,
+            "maxLength": 128
+          }
+        },
+        "required": [
+          "expectedGeneration",
+          "status",
+          "reply",
+          "requesterMailboxId"
+        ],
+        "description": "Only the actual recipient decides. Supply requesterMailboxId and current expectedGeneration. reply is required, explicitly null if absent; a supplied reply appears only in requester inbox. Accepted/rejected decisions are terminal; exact latest decision retries are idempotent."
+      },
+      "blockSubmission": {
+        "type": "object",
+        "additionalProperties": false,
+        "properties": {
+          "expectedGeneration": {
+            "type": "integer",
+            "minimum": 1,
+            "maximum": 9223372036854775807,
+            "format": "int64",
+            "description": "Exact positive signed 64-bit JSON integer (unquoted, decimal integer syntax). Preserve precision; do not round through a JavaScript Number."
+          },
+          "peerMailboxId": {
+            "type": "string",
+            "minLength": 1,
+            "maxLength": 128
+          }
+        },
+        "required": [
+          "expectedGeneration",
+          "peerMailboxId"
+        ]
+      },
+      "cardSubmission": {
+        "type": "object",
+        "additionalProperties": false,
+        "properties": {
+          "cardId": {
+            "type": "string",
+            "minLength": 1,
+            "maxLength": 128
+          },
+          "visibility": {
+            "enum": [
+              "public",
+              "unlisted"
+            ]
+          },
+          "createdAt": {
+            "type": "string",
+            "format": "date-time",
+            "pattern": "^\\d{4}-\\d{2}-\\d{2}T\\d{2}:\\d{2}:\\d{2}(?:\\.\\d{1,7})?(?:Z|[+-]\\d{2}:\\d{2})$",
+            "description": "Valid calendar timestamp, year 0001–9999, seconds 00–59, offset at most ±14:00; up to seven fractional digits."
+          },
+          "expiresAt": {
+            "anyOf": [
+              {
+                "type": "string",
+                "format": "date-time",
+                "pattern": "^\\d{4}-\\d{2}-\\d{2}T\\d{2}:\\d{2}:\\d{2}(?:\\.\\d{1,7})?(?:Z|[+-]\\d{2}:\\d{2})$",
+                "description": "Valid calendar timestamp, year 0001–9999, seconds 00–59, offset at most ±14:00; up to seven fractional digits."
+              },
+              {
+                "type": "null"
+              }
+            ]
+          },
+          "revokedAt": {
+            "anyOf": [
+              {
+                "type": "string",
+                "format": "date-time",
+                "pattern": "^\\d{4}-\\d{2}-\\d{2}T\\d{2}:\\d{2}:\\d{2}(?:\\.\\d{1,7})?(?:Z|[+-]\\d{2}:\\d{2})$",
+                "description": "Valid calendar timestamp, year 0001–9999, seconds 00–59, offset at most ±14:00; up to seven fractional digits."
+              },
+              {
+                "type": "null"
+              }
+            ]
+          },
+          "audienceHint": {
+            "anyOf": [
+              {
+                "type": "string",
+                "maxLength": 1024
+              },
+              {
+                "type": "null"
+              }
+            ]
+          },
+          "methods": {
+            "type": "array",
+            "minItems": 1,
+            "maxItems": 16,
+            "items": {
+              "$ref": "#/components/schemas/contactMethod"
+            }
+          }
+        },
+        "required": [
+          "cardId",
+          "visibility",
+          "createdAt",
+          "expiresAt",
+          "revokedAt",
+          "audienceHint",
+          "methods"
+        ],
+        "description": "All fields, including nullable ones, are required. createdAt cannot be in the future; expiresAt, if supplied, must be later than createdAt. revokedAt must fall between creation and now. Existing cards are immutable except one-way revocation; address-backed cards cannot be edited here. Method IDs must be unique. Runtime enforces UTF-8 bounds: endpoint 2048 bytes, instructions 65536 bytes, audienceHint 1024 bytes."
+      },
+      "receipt": {
+        "type": "object",
+        "additionalProperties": false,
+        "properties": {
+          "messageId": {
+            "type": "string",
+            "format": "uuid"
+          },
+          "senderMailboxId": {
+            "type": "string",
+            "minLength": 1,
+            "maxLength": 128
+          },
+          "recipientMailboxId": {
+            "type": "string",
+            "minLength": 1,
+            "maxLength": 128
+          },
+          "state": {
+            "enum": [
+              "pending",
+              "acknowledged",
+              "expired",
+              "blocked"
+            ]
+          },
+          "expiresAt": {
+            "type": "string",
+            "format": "date-time",
+            "pattern": "^\\d{4}-\\d{2}-\\d{2}T\\d{2}:\\d{2}:\\d{2}(?:\\.\\d{1,7})?(?:Z|[+-]\\d{2}:\\d{2})$",
+            "description": "Valid calendar timestamp, year 0001–9999, seconds 00–59, offset at most ±14:00; up to seven fractional digits."
+          },
+          "terminalAt": {
+            "anyOf": [
+              {
+                "type": "string",
+                "format": "date-time",
+                "pattern": "^\\d{4}-\\d{2}-\\d{2}T\\d{2}:\\d{2}:\\d{2}(?:\\.\\d{1,7})?(?:Z|[+-]\\d{2}:\\d{2})$",
+                "description": "Valid calendar timestamp, year 0001–9999, seconds 00–59, offset at most ±14:00; up to seven fractional digits."
+              },
+              {
+                "type": "null"
+              }
+            ]
+          }
+        },
+        "required": [
+          "messageId",
+          "senderMailboxId",
+          "recipientMailboxId",
+          "state",
+          "expiresAt",
+          "terminalAt"
+        ],
+        "description": "Body-free sender receipt. ACK means relay acceptance/body deletion, not human reading or business completion. Effective expiry/block may be returned before a sweep. Retained receipts support identical retries; the demo disables timed business sweeps, so no exact purge deadline is promised."
+      },
+      "contactSummary": {
+        "type": "object",
+        "additionalProperties": false,
+        "properties": {
+          "requestId": {
+            "type": "string",
+            "minLength": 1,
+            "maxLength": 128
+          },
+          "cardId": {
+            "type": "string",
+            "minLength": 1,
+            "maxLength": 128
+          },
+          "requesterMailboxId": {
+            "type": "string",
+            "minLength": 1,
+            "maxLength": 128
+          },
+          "recipientMailboxId": {
+            "type": "string",
+            "minLength": 1,
+            "maxLength": 128
+          },
+          "methodId": {
+            "type": "string",
+            "minLength": 1,
+            "maxLength": 128
+          },
+          "generation": {
+            "type": "integer",
+            "minimum": 1,
+            "maximum": 9223372036854775807,
+            "format": "int64",
+            "description": "Exact positive signed 64-bit JSON integer (unquoted, decimal integer syntax). Preserve precision; do not round through a JavaScript Number."
+          },
+          "status": {
+            "enum": [
+              "pending",
+              "needsAction",
+              "accepted",
+              "rejected"
+            ]
+          },
+          "createdAt": {
+            "type": "string",
+            "format": "date-time",
+            "pattern": "^\\d{4}-\\d{2}-\\d{2}T\\d{2}:\\d{2}:\\d{2}(?:\\.\\d{1,7})?(?:Z|[+-]\\d{2}:\\d{2})$",
+            "description": "Valid calendar timestamp, year 0001–9999, seconds 00–59, offset at most ±14:00; up to seven fractional digits."
+          },
+          "expiresAt": {
+            "type": "string",
+            "format": "date-time",
+            "pattern": "^\\d{4}-\\d{2}-\\d{2}T\\d{2}:\\d{2}:\\d{2}(?:\\.\\d{1,7})?(?:Z|[+-]\\d{2}:\\d{2})$",
+            "description": "Valid calendar timestamp, year 0001–9999, seconds 00–59, offset at most ±14:00; up to seven fractional digits."
+          },
+          "requestMessageId": {
+            "anyOf": [
+              {
+                "type": "string",
+                "format": "uuid"
+              },
+              {
+                "type": "null"
+              }
+            ]
+          },
+          "replyMessageId": {
+            "anyOf": [
+              {
+                "type": "string",
+                "format": "uuid"
+              },
+              {
+                "type": "null"
+              }
+            ]
+          }
+        },
+        "required": [
+          "requestId",
+          "cardId",
+          "requesterMailboxId",
+          "recipientMailboxId",
+          "methodId",
+          "generation",
+          "status",
+          "createdAt",
+          "expiresAt",
+          "requestMessageId",
+          "replyMessageId"
+        ]
+      },
+      "contactChannel": {
+        "type": "object",
+        "additionalProperties": false,
+        "properties": {
+          "mailboxId": {
+            "type": "string",
+            "minLength": 1,
+            "maxLength": 128
+          },
+          "peerMailboxId": {
+            "type": "string",
+            "minLength": 1,
+            "maxLength": 128
+          },
+          "generation": {
+            "type": "integer",
+            "minimum": 1,
+            "maximum": 9223372036854775807,
+            "format": "int64",
+            "description": "Exact positive signed 64-bit JSON integer (unquoted, decimal integer syntax). Preserve precision; do not round through a JavaScript Number."
+          },
+          "isBlockedByMailbox": {
+            "type": "boolean"
+          },
+          "isBlockedByPeer": {
+            "type": "boolean"
+          },
+          "currentRequest": {
+            "anyOf": [
+              {
+                "$ref": "#/components/schemas/contactRequestLocator"
+              },
+              {
+                "type": "null"
+              }
+            ]
+          }
+        },
+        "required": [
+          "mailboxId",
+          "peerMailboxId",
+          "generation",
+          "isBlockedByMailbox",
+          "isBlockedByPeer",
+          "currentRequest"
+        ],
+        "description": "Participant-relative generation and block flags. Knowing identifiers grants no authority. Only the caller can change its own block flag; unblock increments generation and does not reconnect."
+      },
+      "problem": {
+        "type": "object",
+        "additionalProperties": false,
+        "properties": {
+          "status": {
+            "enum": [
+              400,
+              401,
+              404,
+              409,
+              410,
+              413,
+              429,
+              503
+            ]
+          },
+          "title": {
+            "type": "string",
+            "maxLength": 64
+          },
+          "code": {
+            "enum": [
+              "invalid",
+              "unauthenticated",
+              "unavailable",
+              "conflict",
+              "expired",
+              "tooLarge",
+              "capacity",
+              "storage"
+            ]
+          }
+        },
+        "required": [
+          "status",
+          "title",
+          "code"
+        ]
+      },
+      "receivedMessage": {
+        "type": "object",
+        "additionalProperties": false,
+        "properties": {
+          "senderMailboxId": {
+            "type": "string",
+            "minLength": 1,
+            "maxLength": 128
+          },
+          "envelope": {
+            "$ref": "#/components/schemas/messageSubmission"
+          }
+        },
+        "required": [
+          "senderMailboxId",
+          "envelope"
+        ]
+      },
+      "contactRelation": {
+        "type": "object",
+        "additionalProperties": false,
+        "properties": {
+          "request": {
+            "$ref": "#/components/schemas/contactSummary"
+          },
+          "generation": {
+            "type": "integer",
+            "minimum": 1,
+            "maximum": 9223372036854775807,
+            "format": "int64",
+            "description": "Exact positive signed 64-bit JSON integer (unquoted, decimal integer syntax). Preserve precision; do not round through a JavaScript Number."
+          },
+          "isBlocked": {
+            "type": "boolean"
+          },
+          "isConnected": {
+            "type": "boolean"
+          },
+          "updatedAt": {
+            "type": "string",
+            "format": "date-time",
+            "pattern": "^\\d{4}-\\d{2}-\\d{2}T\\d{2}:\\d{2}:\\d{2}(?:\\.\\d{1,7})?(?:Z|[+-]\\d{2}:\\d{2})$",
+            "description": "Valid calendar timestamp, year 0001–9999, seconds 00–59, offset at most ±14:00; up to seven fractional digits."
+          }
+        },
+        "required": [
+          "request",
+          "generation",
+          "isBlocked",
+          "isConnected",
+          "updatedAt"
+        ]
+      },
+      "card": {
+        "type": "object",
+        "additionalProperties": false,
+        "properties": {
+          "ownerMailboxId": {
+            "type": "string",
+            "minLength": 1,
+            "maxLength": 128
+          },
+          "cardId": {
+            "type": "string",
+            "minLength": 1,
+            "maxLength": 128
+          },
+          "visibility": {
+            "enum": [
+              "public",
+              "unlisted"
+            ]
+          },
+          "createdAt": {
+            "type": "string",
+            "format": "date-time",
+            "pattern": "^\\d{4}-\\d{2}-\\d{2}T\\d{2}:\\d{2}:\\d{2}(?:\\.\\d{1,7})?(?:Z|[+-]\\d{2}:\\d{2})$",
+            "description": "Valid calendar timestamp, year 0001–9999, seconds 00–59, offset at most ±14:00; up to seven fractional digits."
+          },
+          "expiresAt": {
+            "anyOf": [
+              {
+                "type": "string",
+                "format": "date-time",
+                "pattern": "^\\d{4}-\\d{2}-\\d{2}T\\d{2}:\\d{2}:\\d{2}(?:\\.\\d{1,7})?(?:Z|[+-]\\d{2}:\\d{2})$",
+                "description": "Valid calendar timestamp, year 0001–9999, seconds 00–59, offset at most ±14:00; up to seven fractional digits."
+              },
+              {
+                "type": "null"
+              }
+            ]
+          },
+          "revokedAt": {
+            "anyOf": [
+              {
+                "type": "string",
+                "format": "date-time",
+                "pattern": "^\\d{4}-\\d{2}-\\d{2}T\\d{2}:\\d{2}:\\d{2}(?:\\.\\d{1,7})?(?:Z|[+-]\\d{2}:\\d{2})$",
+                "description": "Valid calendar timestamp, year 0001–9999, seconds 00–59, offset at most ±14:00; up to seven fractional digits."
+              },
+              {
+                "type": "null"
+              }
+            ]
+          },
+          "audienceHint": {
+            "anyOf": [
+              {
+                "type": "string",
+                "maxLength": 1024
+              },
+              {
+                "type": "null"
+              }
+            ]
+          },
+          "methods": {
+            "type": "array",
+            "minItems": 1,
+            "maxItems": 16,
+            "items": {
+              "$ref": "#/components/schemas/contactMethod"
+            }
+          }
+        },
+        "required": [
+          "ownerMailboxId",
+          "cardId",
+          "visibility",
+          "createdAt",
+          "expiresAt",
+          "revokedAt",
+          "audienceHint",
+          "methods"
+        ]
+      },
+      "inboxPage": {
+        "type": "object",
+        "additionalProperties": false,
+        "properties": {
+          "items": {
+            "type": "array",
+            "maxItems": 10,
+            "items": {
+              "$ref": "#/components/schemas/receivedMessage"
+            }
+          },
+          "nextCursor": {
+            "anyOf": [
+              {
+                "type": "string",
+                "maxLength": 1024
+              },
+              {
+                "type": "null"
+              }
+            ]
+          }
+        },
+        "required": [
+          "items",
+          "nextCursor"
+        ]
+      },
+      "outboxPage": {
+        "type": "object",
+        "additionalProperties": false,
+        "properties": {
+          "items": {
+            "type": "array",
+            "maxItems": 10,
+            "items": {
+              "$ref": "#/components/schemas/receipt"
+            }
+          },
+          "nextCursor": {
+            "anyOf": [
+              {
+                "type": "string",
+                "maxLength": 1024
+              },
+              {
+                "type": "null"
+              }
+            ]
+          }
+        },
+        "required": [
+          "items",
+          "nextCursor"
+        ]
+      },
+      "contactPage": {
+        "type": "object",
+        "additionalProperties": false,
+        "properties": {
+          "items": {
+            "type": "array",
+            "maxItems": 10,
+            "items": {
+              "$ref": "#/components/schemas/contactSummary"
+            }
+          },
+          "nextCursor": {
+            "anyOf": [
+              {
+                "type": "string",
+                "maxLength": 1024
+              },
+              {
+                "type": "null"
+              }
+            ]
+          }
+        },
+        "required": [
+          "items",
+          "nextCursor"
+        ]
+      },
+      "cardPage": {
+        "type": "object",
+        "additionalProperties": false,
+        "properties": {
+          "items": {
+            "type": "array",
+            "maxItems": 10,
+            "items": {
+              "$ref": "#/components/schemas/card"
+            }
+          },
+          "nextCursor": {
+            "anyOf": [
+              {
+                "type": "string",
+                "maxLength": 1024
+              },
+              {
+                "type": "null"
+              }
+            ]
+          }
+        },
+        "required": [
+          "items",
+          "nextCursor"
+        ]
+      },
+      "ackSubmission": {
+        "type": "object",
+        "additionalProperties": false,
+        "properties": {
+          "senderMailboxId": {
+            "type": "string",
+            "minLength": 1,
+            "maxLength": 128
+          }
+        },
+        "required": [
+          "senderMailboxId"
+        ]
+      },
+      "contactRequestLocator": {
+        "type": "object",
+        "additionalProperties": false,
+        "properties": {
+          "requesterMailboxId": {
+            "type": "string",
+            "minLength": 1,
+            "maxLength": 128
+          },
+          "requestId": {
+            "type": "string",
+            "pattern": "^[0-9a-f]{8}-[0-9a-f]{4}-7[0-9a-f]{3}-[89ab][0-9a-f]{3}-[0-9a-f]{12}$"
+          }
+        },
+        "required": [
+          "requesterMailboxId",
+          "requestId"
+        ]
+      },
+      "accountSubmission": {
+        "type": "object",
+        "additionalProperties": false,
+        "properties": {
+          "displayName": {
+            "anyOf": [
+              {
+                "type": "string",
+                "maxLength": 128,
+                "pattern": "^[^\\u0000-\\u001f\\u007f-\\u009f]*$",
+                "description": "Maximum 128 UTF-16 code units."
+              },
+              {
+                "type": "null"
+              }
+            ]
+          },
+          "description": {
+            "anyOf": [
+              {
+                "type": "string",
+                "maxLength": 1024,
+                "pattern": "^[^\\u0000-\\u001f\\u007f-\\u009f]*$",
+                "description": "Maximum 1024 UTF-16 code units."
+              },
+              {
+                "type": "null"
+              }
+            ]
+          }
+        }
+      },
+      "account": {
+        "type": "object",
+        "additionalProperties": false,
+        "properties": {
+          "agentId": {
+            "type": "string",
+            "format": "uuid",
+            "pattern": "^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$"
+          },
+          "displayName": {
+            "anyOf": [
+              {
+                "type": "string",
+                "maxLength": 128,
+                "pattern": "^[^\\u0000-\\u001f\\u007f-\\u009f]*$",
+                "description": "Maximum 128 UTF-16 code units."
+              },
+              {
+                "type": "null"
+              }
+            ]
+          },
+          "description": {
+            "anyOf": [
+              {
+                "type": "string",
+                "maxLength": 1024,
+                "pattern": "^[^\\u0000-\\u001f\\u007f-\\u009f]*$",
+                "description": "Maximum 1024 UTF-16 code units."
+              },
+              {
+                "type": "null"
+              }
+            ]
+          }
+        },
+        "required": [
+          "agentId",
+          "displayName",
+          "description"
+        ],
+        "description": "Private account profile; agentId is the mailbox/account identity used by the v1 API. No control or control hash is returned. Registration creates zero addresses."
+      },
+      "addressSubmission": {
+        "type": "object",
+        "additionalProperties": false,
+        "properties": {
+          "label": {
+            "anyOf": [
+              {
+                "type": "string",
+                "maxLength": 128,
+                "pattern": "^[^\\u0000-\\u001f\\u007f-\\u009f]*$",
+                "description": "Maximum 128 UTF-16 code units."
+              },
+              {
+                "type": "null"
+              }
+            ]
+          },
+          "isPublic": {
+            "type": "boolean",
+            "default": false
+          },
+          "effectiveFrom": {
+            "anyOf": [
+              {
+                "type": "string",
+                "format": "date-time",
+                "pattern": "^\\d{4}-\\d{2}-\\d{2}T\\d{2}:\\d{2}:\\d{2}(?:\\.\\d{1,7})?Z$",
+                "description": "Valid UTC timestamp ending in Z; up to seven fractional digits."
+              },
+              {
+                "type": "null"
+              }
+            ]
+          },
+          "effectiveTo": {
+            "anyOf": [
+              {
+                "type": "string",
+                "format": "date-time",
+                "pattern": "^\\d{4}-\\d{2}-\\d{2}T\\d{2}:\\d{2}:\\d{2}(?:\\.\\d{1,7})?Z$",
+                "description": "Valid UTC timestamp ending in Z; up to seven fractional digits."
+              },
+              {
+                "type": "null"
+              }
+            ]
+          },
+          "directUri": {
+            "anyOf": [
+              {
+                "type": "string",
+                "format": "uri",
+                "maxLength": 2048,
+                "description": "HTTP(S) URL, no userinfo; at most 2048 UTF-8 bytes. Metadata only: never fetched, redirected to or forwarded by the relay."
+              },
+              {
+                "type": "null"
+              }
+            ]
+          }
+        },
+        "description": "All properties optional. Omitted label/times/directUri default to null and isPublic defaults to false, including on PUT (replacement, not patch). If both times are set, effectiveTo must be later than effectiveFrom."
+      },
+      "address": {
+        "type": "object",
+        "additionalProperties": false,
+        "properties": {
+          "addressId": {
+            "type": "string",
+            "format": "uuid",
+            "pattern": "^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$"
+          },
+          "accountId": {
+            "type": "string",
+            "format": "uuid",
+            "pattern": "^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$"
+          },
+          "label": {
+            "anyOf": [
+              {
+                "type": "string",
+                "maxLength": 128,
+                "pattern": "^[^\\u0000-\\u001f\\u007f-\\u009f]*$",
+                "description": "Maximum 128 UTF-16 code units."
+              },
+              {
+                "type": "null"
+              }
+            ]
+          },
+          "isPublic": {
+            "type": "boolean",
+            "default": false
+          },
+          "effectiveFrom": {
+            "anyOf": [
+              {
+                "type": "string",
+                "format": "date-time",
+                "pattern": "^\\d{4}-\\d{2}-\\d{2}T\\d{2}:\\d{2}:\\d{2}(?:\\.\\d{1,7})?Z$",
+                "description": "Valid UTC timestamp ending in Z; up to seven fractional digits."
+              },
+              {
+                "type": "null"
+              }
+            ]
+          },
+          "effectiveTo": {
+            "anyOf": [
+              {
+                "type": "string",
+                "format": "date-time",
+                "pattern": "^\\d{4}-\\d{2}-\\d{2}T\\d{2}:\\d{2}:\\d{2}(?:\\.\\d{1,7})?Z$",
+                "description": "Valid UTC timestamp ending in Z; up to seven fractional digits."
+              },
+              {
+                "type": "null"
+              }
+            ]
+          },
+          "directUri": {
+            "anyOf": [
+              {
+                "type": "string",
+                "format": "uri",
+                "maxLength": 2048,
+                "description": "HTTP(S) URL, no userinfo; at most 2048 UTF-8 bytes. Metadata only: never fetched, redirected to or forwarded by the relay."
+              },
+              {
+                "type": "null"
+              }
+            ]
+          }
+        },
+        "required": [
+          "addressId",
+          "accountId",
+          "label",
+          "isPublic",
+          "effectiveFrom",
+          "effectiveTo",
+          "directUri"
+        ],
+        "description": "Address ID is the cardId for contact requests; generated methodId is relay. accountId equals registration agentId. Account profile and owned-address counts are not published."
+      },
+      "addressPage": {
+        "type": "object",
+        "additionalProperties": false,
+        "properties": {
+          "items": {
+            "type": "array",
+            "maxItems": 10,
+            "items": {
+              "$ref": "#/components/schemas/address"
+            }
+          },
+          "nextCursor": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ]
+          }
+        },
+        "required": [
+          "items",
+          "nextCursor"
+        ]
+      },
+      "empty": {
+        "type": "object",
+        "additionalProperties": false,
+        "properties": {}
+      }
+    }
+  },
+  "x-schema-source": "Shared v1 shapes originate in protocol/weave-mailbox/v1/mailbox.schema.json. This self-contained Worker contract adds accounts/addresses and runtime refinements; test/openapi.test.mjs guards shared field/required/enum drift. The spec is bundled as text to preserve the exact int64 maximum."
+}

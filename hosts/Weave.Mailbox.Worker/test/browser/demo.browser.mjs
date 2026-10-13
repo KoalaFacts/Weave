@@ -6,9 +6,7 @@ import { join, resolve } from 'node:path';
 import { start } from '../harness.mjs';
 import { BrowserFixture } from './playwright.mjs';
 
-// Deliberately public test controls, usable only in this isolated temporary D1.
-const aliceControl = 'browser-local-alice-'.padEnd(64, 'a');
-const bobControl = 'browser-local-bob-'.padEnd(64, 'b');
+// Controls created by this UI test are usable only in its isolated temporary D1.
 const publicLabel = 'Browser Bob <img src=x onerror=alert(1)>';
 const privateLabel = 'Browser Alice private address';
 const message = 'Browser acceptance message — 你好 🌿';
@@ -35,14 +33,30 @@ async function verifyLiteralArguments(page) {
     }
 }
 
-async function register(page, control, name, firstRegistration = true) {
+async function resume(page, control) {
+    if (!await page.locator('#recovery').evaluate(element => element.open)) await page.locator('#recovery summary').click();
     await page.locator('#control').fill(control);
-    await page.locator('#displayName').fill(name);
-    await page.locator('#description').fill(name + ' private profile');
     await page.locator('#register').click();
     await waitText(page, 'status', 'Agent connected.');
-    if (firstRegistration) assert.equal(await text(page, 'addresses'), 'No addresses yet.');
+    await page.locator('#recovery summary').click();
     return (await text(page, 'identity')).replace('Agent ID: ', '');
+}
+
+async function register(page, name) {
+    await page.locator('#profileOptions summary').click();
+    await page.locator('#displayName').fill(name);
+    await page.locator('#description').fill(name + ' private profile');
+    const registration = page.waitForRequest(request => new URL(request.url()).pathname === '/v1/accounts' && request.method() === 'POST');
+    await page.locator('#createAccount').click();
+    const control = await (await registration).headerValue('X-Weave-Mailbox-Control');
+    await waitText(page, 'status', 'Agent connected.');
+    assert.match(control, /^[0-9a-f]{64}$/);
+    assert.equal(await text(page, 'addresses'), 'No addresses yet.');
+    assert.equal(await page.locator('#credentialBackup').isVisible(), true);
+    assert.equal(await page.locator('#createAccount').isDisabled(), true);
+    assert.ok((await text(page, 'status')).includes('Back up your credential'));
+    await page.locator('#profileOptions summary').click();
+    return { id: (await text(page, 'identity')).replace('Agent ID: ', ''), control };
 }
 
 async function layout(fixture, page, name, width, height, mobile) {
@@ -94,15 +108,32 @@ test('real Worker UI: isolated sessions, public/private discovery, acceptance, r
         assert.notEqual(alice.context(), bob.context());
         await verifyLiteralArguments(alice);
         checkpoints.push('Playwright passes special characters in textarea ID and value literally without executing the injected marker');
+        assert.equal(await h.db.prepare("SELECT count(*) n FROM mailbox_records WHERE kind='account'").first('n'), 0);
+        for (const page of [alice, bob]) {
+            assert.equal(await page.locator('#control').inputValue(), '');
+            assert.equal(await page.locator('#credentialBackup').isVisible(), false);
+        }
+        const downloads = [];
+        alice.on('download', download => downloads.push(download));
+        await alice.locator('#recovery summary').click();
         await alice.locator('#control').fill('too-short');
         await alice.locator('#register').click();
         await waitText(alice, 'status', 'Control must be at least 64 characters.');
-        const aliceId = await register(alice, aliceControl, 'Alice private display');
-        const bobId = await register(bob, bobControl, 'Bob private display');
+        await alice.locator('#recovery summary').click();
+        const { id: aliceId, control: aliceControl } = await register(alice, 'Alice private display');
+        const { id: bobId, control: bobControl } = await register(bob, 'Bob private display');
         assert.notEqual(aliceId, bobId);
+        assert.notEqual(aliceControl, bobControl);
+        assert.equal(downloads.length, 0, 'Registration must not start a credential download.');
+        const downloadStarted = alice.waitForEvent('download');
+        await alice.locator('#downloadCredential').click();
+        const download = await downloadStarted;
+        assert.equal(download.suggestedFilename(), 'weave-demo-credential.json');
+        await download.cancel(); // The fixture deliberately keeps acceptDownloads:false.
         assert.equal(await alice.evaluate(() => localStorage.length + sessionStorage.length), 0);
         assert.equal(await bob.evaluate(() => localStorage.length + sessionStorage.length), 0);
-        checkpoints.push('Two independent browser contexts registered through UI; invalid-control recovery and empty addresses verified');
+        assert.equal(await h.db.prepare("SELECT count(*) n FROM mailbox_records WHERE kind='account'").first('n'), 2);
+        checkpoints.push('Page load creates no account; two one-click registrations stay in memory with zero addresses; backup download requires a separate click');
 
         await alice.locator('#label').fill(privateLabel);
         await alice.locator('#createAddress').click();
@@ -110,7 +141,9 @@ test('real Worker UI: isolated sessions, public/private discovery, acceptance, r
         const privateId = (await h.ok('/v1/addresses', aliceControl)).items[0].addressId;
         await bob.locator('#label').fill(publicLabel);
         await bob.locator('#isPublic').click();
+        await bob.locator('#addressDeveloper summary').click();
         await bob.locator('#directUri').fill('https://browser-metadata.invalid/never-fetch');
+        await bob.locator('#addressDeveloper summary').click();
         await bob.locator('#createAddress').click();
         await waitText(bob, 'addresses', publicLabel);
         const publicId = (await h.ok('/v1/addresses', bobControl)).items[0].addressId;
@@ -191,7 +224,7 @@ test('real Worker UI: isolated sessions, public/private discovery, acceptance, r
         await layout(fixture, bob, 'demo-inbox-desktop', 1440, 1000, false);
         const bobMobile = await fixture.page('bob-mobile', '/', mobileOptions);
         assert.notEqual(bobMobile.context(), bobDesktop.context());
-        assert.equal(await register(bobMobile, bobControl, 'Bob private display', false), bobId);
+        assert.equal(await resume(bobMobile, bobControl), bobId);
         await bobMobile.locator('#loadInbox').click();
         await waitText(bobMobile, 'inbox', message);
         assert.equal(await bobMobile.locator('#inbox .row').count(), 1);
@@ -218,7 +251,7 @@ test('real Worker UI: isolated sessions, public/private discovery, acceptance, r
         assert.equal(await text(alice, 'outbox'), '');
         assert.equal(await text(bob, 'identity'), 'Agent ID: ' + bobId);
         assert.equal(await text(bobDesktop, 'identity'), 'Agent ID: ' + bobId);
-        assert.equal(await register(alice, aliceControl, 'Alice private display', false), aliceId);
+        assert.equal(await resume(alice, aliceControl), aliceId);
         assert.equal((await h.ok('/v1/addresses', aliceControl)).items.length, 1);
         checkpoints.push('Clear session erases page state, does not affect peer context, and same control resumes same account');
         assert.deepEqual(fixture.errors, []);

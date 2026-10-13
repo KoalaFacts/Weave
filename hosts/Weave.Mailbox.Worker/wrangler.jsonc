@@ -5,7 +5,7 @@
   "compatibility_flags": ["nodejs_compat"],
   "workers_dev": false,
   "triggers": {"crons": ["*/5 * * * *"]},
-  "rules": [{"type":"Text","globs":["**/*.html"],"fallthrough":true}],
+  "rules": [{"type":"Text","globs":["**/*.html","**/*.json"],"fallthrough":true}],
   "d1_databases": [{
     "binding": "db",
     "database_name": "weave-mailbox-demo",
@@ -15,7 +15,7 @@
   "vars": {
     "CLEANUP_MAX_MESSAGES": "0",
     "CLEANUP_TIME_BUDGET_MS": "0",
-    "REGISTRATION_ENABLED": "false",
+    "REGISTRATION_ENABLED": "true",
     "REGISTRATION_MAX_ACCOUNTS": "100",
     "REGISTRATION_PER_IP_PER_HOUR": "10",
     "REGISTRATION_GLOBAL_PER_HOUR": "100"
