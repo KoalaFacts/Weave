@@ -31,16 +31,26 @@ class SnapshotWorkflowTests(unittest.TestCase):
         for unsafe in ('dotnet restore', 'npm ', 'cargo ', 'mvn ', 'pull_request_target', 'continue-on-error'):
             self.assertNotIn(unsafe, writer)
 
-    def test_exact_base_and_head_locks_are_verified_without_write_permission(self):
+    def test_head_restore_and_historical_base_validation_both_remain_required(self):
         text = self.workflow()
         self.assertIn('  dependency-lock-validation:\n', text)
         job = text.split('  dependency-lock-validation:\n', 1)[1].split('  dependency-snapshots:\n', 1)[0]
         self.assertIn('github.event.pull_request.base.sha', job)
         self.assertIn('github.event.pull_request.head.sha', job)
         self.assertIn('dotnet restore Weave.slnx --locked-mode', job)
+        self.assertIn('name: Locked dependency graph (${{ matrix.source }})', job)
+        self.assertIn('source: [base, head]', job)
+        self.assertIn("ref: ${{ matrix.source == 'base' && 'c36ab57b5c2c46e00b7cc71fdab19cac4e344b3e' ||", job)
+        self.assertIn("if: matrix.source == 'head'\n        run: |\n          dotnet restore", job)
+        self.assertIn("if: matrix.source == 'head'\n        uses: ./.github/actions/setup-dotnet", job)
+        self.assertIn("name: Validate the exact committed historical baseline\n        if: matrix.source == 'base'", job)
+        self.assertIn('PR_BASE_REF: refs/heads/${{ github.base_ref', job)
+        self.assertIn('producer.snapshot(', job)
+        self.assertIn('if: ${{ always() && matrix.source ==', job)
         self.assertIn('contents: read', job)
         self.assertNotIn('contents: write', job)
-        self.assertNotIn('GH_TOKEN:', job)
+        self.assertNotIn('continue-on-error', job)
+        self.assertNotIn('pull_request_target', job)
 
 
 if __name__ == '__main__':
