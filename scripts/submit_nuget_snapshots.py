@@ -1,8 +1,9 @@
 #!/usr/bin/env python3
 """Submit committed NuGet lock graphs; never execute the inspected revision's code.
 
-Run only from an explicitly pinned trusted tools revision, after read-only locked
-restores of BOTH source revisions. No package installation or build occurs here.
+Run only from an explicitly pinned trusted tools revision, after strict head
+locked restore and historical base graph validation in separate read-only jobs.
+No package installation or build occurs here.
 """
 import argparse
 import base64
@@ -124,6 +125,11 @@ def lock_manifests(path, document, blob_sha):
             for child in edges:
                 result.update(children(child.lower(), visiting | {name}))
             return result
+
+        # Local projects usually have no incoming external-package edges.
+        # Their closure is still required even though they have no NuGet identity.
+        for name in table.keys() - urls.keys():
+            children(name, set())
 
         resolved = {}
         for name, url in urls.items():

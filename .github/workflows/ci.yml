@@ -220,6 +220,8 @@ jobs:
           retention-days: 30
 
   dependency-lock-validation:
+    # Retain the required-check identities. Base validates historical committed
+    # graph evidence; only the proposed head must satisfy a fresh locked restore.
     name: Locked dependency graph (${{ matrix.source }})
     if: github.event_name == 'pull_request' || github.event_name == 'push'
     runs-on: ubuntu-latest
@@ -233,13 +235,60 @@ jobs:
     steps:
       - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v6
         with:
-          ref: ${{ matrix.source == 'base' && (github.event.pull_request.base.sha || github.event.before) || (github.event.pull_request.head.sha || github.sha) }}
+          ref: ${{ matrix.source == 'base' && '97452c5adf605b69234798ead7e1b7550f425ccb' || (github.event.pull_request.head.sha || github.sha) }}
           persist-credentials: false
-      - uses: ./.github/actions/setup-dotnet
-      - name: Validate the exact committed dependency closure
+      - name: Set up .NET for the proposed head
+        if: matrix.source == 'head'
+        uses: ./.github/actions/setup-dotnet
+      - name: Validate the exact head committed dependency closure
+        if: matrix.source == 'head'
         run: |
           dotnet restore Weave.slnx --locked-mode
           git diff --exit-code -- '**/packages.lock.json'
+      - name: Validate the exact committed historical baseline
+        if: matrix.source == 'base'
+        env:
+          GH_TOKEN: ${{ github.token }}
+          PR_BASE_SHA: ${{ github.event.pull_request.base.sha || github.event.before }}
+          PR_BASE_REF: refs/heads/${{ github.base_ref || 'main' }}
+        shell: python
+        run: |
+          import importlib.util, json, os, pathlib
+          spec = importlib.util.spec_from_file_location('producer', 'scripts/submit_nuget_snapshots.py')
+          producer = importlib.util.module_from_spec(spec)
+          spec.loader.exec_module(producer)
+          output = pathlib.Path(os.environ['RUNNER_TEMP']) / 'dependency-baseline'
+          output.mkdir(parents=True, exist_ok=True)
+          report = {'status': 'unavailable', 'validation': 'committed-lock-graph',
+                    'restore_performed': False, 'source_sha': os.environ['PR_BASE_SHA'],
+                    'source_ref': os.environ['PR_BASE_REF']}
+          try:
+              repository = os.environ['GITHUB_REPOSITORY']
+              api = producer.Api(repository, os.environ['GH_TOKEN'])
+              plan = producer.snapshot(api, report['source_sha'], report['source_ref'],
+                                       repository, os.environ['GITHUB_RUN_ID'], {})
+              (output / 'baseline.json').write_text(json.dumps(plan, indent=2) + '\n')
+              report.update(status='available', **plan['metadata'])
+          except (producer.SnapshotError, KeyError, TypeError, ValueError, RecursionError) as error:
+              report['failure'] = str(error) if isinstance(error, producer.SnapshotError) else 'invalid-baseline-input'
+          (output / 'validation.json').write_text(json.dumps(report, indent=2) + '\n')
+          with open(os.environ['GITHUB_STEP_SUMMARY'], 'a') as summary:
+              summary.write('## Historical dependency baseline\n\n')
+              summary.write('Exact committed lock graph available.\n' if report['status'] == 'available'
+                            else '**Unavailable — snapshot production blocked.**\n')
+              summary.write('\nThis validates historical comparison data and does not establish a fresh locked restore '
+                            'of the base. The exact head must pass strict locked restore and all dependency policies.\n')
+          if report['status'] != 'available':
+              print('::error::Historical dependency baseline is unavailable; snapshot production is blocked.')
+          raise SystemExit(0 if report['status'] == 'available' else 1)
+      - name: Retain historical baseline validation evidence
+        if: ${{ always() && matrix.source == 'base' }}
+        uses: actions/upload-artifact@043fb46d1a93c77aae656e7c1c64a875d1fc6a0a # v7
+        with:
+          name: dependency-baseline
+          path: ${{ runner.temp }}/dependency-baseline/
+          if-no-files-found: error
+          retention-days: 14
 
   dependency-snapshots:
     name: Submit verified dependency snapshots
@@ -253,7 +302,7 @@ jobs:
       # Source commits are read as JSON blobs via the API, never checked out here.
       - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v6
         with:
-          ref: c36ab57b5c2c46e00b7cc71fdab19cac4e344b3e
+          ref: 97452c5adf605b69234798ead7e1b7550f425ccb
           persist-credentials: false
       - name: Submit exact base and head lock graphs
         env:
