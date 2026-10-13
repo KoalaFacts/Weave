@@ -59,7 +59,12 @@ jobs:
         # Only temporary local D1 and synthetic public controls are used; no cloud credentials.
         run: |
           mkdir -p test-results/browser
-          npm run test:browser 2>&1 | tee test-results/browser/test.log
+          npm run build
+          # Raw spec output stays in the artifact; only bounded, escaped annotations enter workflow commands.
+          node --test --test-concurrency=1 \
+            --test-reporter=spec --test-reporter-destination=test-results/browser/test.log \
+            --test-reporter=./test/github-browser-reporter.mjs --test-reporter-destination=stdout \
+            test/browser/*.browser.mjs 2>&1 | tee test-results/browser/annotations.log
       - name: Retain synthetic browser screenshots and failure evidence
         if: always()
         uses: actions/upload-artifact@043fb46d1a93c77aae656e7c1c64a875d1fc6a0a # v7

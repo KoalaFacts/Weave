@@ -20,6 +20,8 @@ The five review cases exercise real Blazor file uploads, exact request bytes, sa
 
 Use the [Worker browser instructions](../hosts/Weave.Mailbox.Worker/README.md) to install locked Node dependencies and managed Chromium, then run `npm run test:browser`. The browser suite covers the registry, independent accounts, recipient acceptance, exact-envelope retry after a lost successful response, inbox reads and mobile ACK. Its fixture regressions cover native browser operations and network/lifecycle boundaries. Inspect the synthetic screenshots as well as the assertion results.
 
+Worker CI runs the same build, browser test files and concurrency with Node's standard multi-reporter support. Full `spec` output is retained in `test-results/browser/test.log`; a separate reporter emits at most ten bounded failure annotations with credential-like values omitted and repository test locations. Raw test output stays outside GitHub's workflow-command parser. These annotations supplement the existing evidence artifact and do not change the test runner's exit status.
+
 ## Environment and evidence
 
 Use Linux with browser sandbox support. Worker retains its original namespace and seccomp assertions. Dashboard had no sandbox-status assertions before the migration; its previous native Chrome launch used the normal sandbox defaults. The migration's explicit `ChromiumSandbox = true` preserves that launch behavior through Playwright's supported option. Playwright's unconfigured launch defaults can disable Chromium's sandbox, so a successful default smoke page does not prove protected acceptance. Do not add disabling flags, custom executable paths, global security-policy changes or automatic fallback to get a green result.
