@@ -9,7 +9,7 @@ function ui(fetch){
     const elements=new Map();
     function element(){return {value:'',textContent:'',checked:false,disabled:false,readOnly:false,children:[],handlers:{},classList:{toggle(){}},addEventListener(name,fn){this.handlers[name]=fn;},append(...children){this.children.push(...children);},replaceChildren(...children){this.children=children;this.textContent='';}};}
     const get=id=>{if(!elements.has(id))elements.set(id,element());return elements.get(id);};
-    const context=createContext({document:{getElementById:get,createElement:element},fetch,crypto:webcrypto,TextEncoder,TextDecoder,AbortController,btoa,atob,navigator:{clipboard:{writeText:async()=>{}}}});
+    const context=createContext({document:{getElementById:get,createElement:element},fetch,location:{origin:'http://127.0.0.1:43210'},crypto:webcrypto,TextEncoder,TextDecoder,AbortController,btoa,atob,navigator:{clipboard:{writeText:async()=>{}}}});
     runInContext(script,context);
     return {get,click:id=>get(id).handlers.click(),async register(control='a'.repeat(64)){get('control').value=control;await get('register').handlers.click();}};
 }
