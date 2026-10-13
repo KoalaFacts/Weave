@@ -233,6 +233,72 @@ const largeChanges = () => Array.from({ length: 199 }, (_, index) => ({
   ...change('MIT'), name: `private-${index}-${'x'.repeat(750)}`,
 }));
 
+for (const [name, license, status, failure_code, forbidden, unknown] of [
+  ['DeniedLicense', 'GPL-3.0', 'blocked', 'license-policy-denied', 1, 0],
+  ['UnknownLicense', 'private-license\n::error::injected', 'unavailable',
+    'license-evidence-unavailable', 0, 1],
+]) {
+  test(`cli_${name}_AnnotatesOnlyFailureCategoryAndCounts`, () => {
+    const records = [{
+      ...change(license), name: 'private-package', manifest: 'private-manifest',
+      failure_code: 'private-failure', added: 'private-count',
+    }];
+
+    const checked = runFilePolicy(JSON.stringify(records), records);
+
+    assert.equal(checked.result.status, 1);
+    assert.equal(checked.result.stderr, '');
+    assert.equal(checked.result.stdout, '::error::Dependency license policy failed: ' + JSON.stringify({
+      status, failure_code, added: 1, removed: 0, forbidden, unknown,
+      raw_changes: 1, distinct_changes: 1, independent_raw_changes: 1,
+    }) + '\n');
+  });
+}
+
+test('cli_IncompleteComparison_AnnotatesCategoryWithoutUntrustedRecordFields', () => {
+  const records = [{ ...change('MIT'), name: 'private-package' }];
+  const changed = [{ ...records[0], license: 'private-license', failure_code: 'private-code' }];
+
+  const checked = runFilePolicy(JSON.stringify(changed), records);
+
+  assert.equal(checked.result.status, 1);
+  assert.equal(checked.result.stderr, '');
+  assert.equal(checked.result.stdout, '::error::Dependency license policy failed: ' +
+    '{"status":"unavailable","failure_code":"incomplete-dependency-comparison"}\n');
+});
+
+test('cli_InvalidInput_AnnotatesCategoryWithoutRawPayload', () => {
+  const checked = runFilePolicy('private-invalid-json\n::error::injected', []);
+
+  assert.equal(checked.result.status, 1);
+  assert.equal(checked.result.stderr, '');
+  assert.equal(checked.result.stdout, '::error::Dependency license policy failed: ' +
+    '{"status":"unavailable","failure_code":"invalid-license-evidence"}\n');
+});
+
+test('cli_ReportWriteFailure_AnnotatesCategoryWithoutFilesystemDetails', () => {
+  const directory = mkdtempSync(join(tmpdir(), 'weave-license-policy-write-'));
+  try {
+    const changes = join(directory, 'changes.json');
+    const evidence = join(directory, 'evidence.json');
+    writeFileSync(changes, '[]');
+    writeFileSync(evidence, JSON.stringify({
+      status: 'available', dependency_changes: 0, dependency_records: [],
+    }));
+
+    const result = spawnSync(process.execPath,
+      [fileURLToPath(new URL('../check-license-policy.mjs', import.meta.url)), changes, evidence,
+        join(directory, 'private-missing-directory', 'report.json')], { encoding: 'utf8' });
+
+    assert.equal(result.status, 1);
+    assert.equal(result.stderr, '');
+    assert.equal(result.stdout, '::error::Dependency license policy failed: ' +
+      '{"status":"unavailable","failure_code":"invalid-license-evidence"}\n');
+  } finally {
+    rmSync(directory, { recursive: true });
+  }
+});
+
 test('cli_LargeFileBeyondEnvironmentBoundary_ProcessesEveryChange', () => {
   const independentRecords = largeChanges();
   independentRecords[0] = change('GPL-3.0', 'removed');
