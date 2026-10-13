@@ -45,6 +45,18 @@ test('public registry browser: desktop and touch browse ten-item pages, rate den
                 await view.page.locator('#status').filter({ hasText: 'No current public addresses.' }).waitFor();
                 assert.equal(await view.page.locator('#next').isDisabled(), true);
                 await capture(fixture, view.page, 'registry-pagination-empty-' + view.name);
+                const lookups = [];
+                const recordLookup = request => { if (new URL(request.url()).pathname === '/v1/directory/address') lookups.push(request.url()); };
+                view.page.on('request', recordLookup);
+                for (const value of ['', '   ']) {
+                    await view.page.locator('#address').fill(value);
+                    await view.page.locator('#lookup')[view.mobile ? 'tap' : 'click']();
+                    await view.page.locator('#status').filter({ hasText: /^Enter an address ID\.$/ }).waitFor();
+                    assert.equal(await view.page.locator('#next').isDisabled(), true);
+                    assert.deepEqual(lookups, []);
+                }
+                view.page.off('request', recordLookup);
+                await capture(fixture, view.page, 'registry-empty-lookup-' + view.name);
             }
             const owner = await h.register({ displayName: 'PRIVATE-REGISTRY-PROFILE' }), visible = [];
             for (let index = 0; index < 23; index++) visible.push(await h.address(owner, { label: 'Browse address ' + String(index + 1).padStart(2, '0'), isPublic: true }));

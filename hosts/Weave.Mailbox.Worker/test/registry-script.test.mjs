@@ -14,7 +14,7 @@ async function registry(h) {
         while (get('status').textContent === 'Loading…') { assert.ok(Date.now() < deadline, 'Registry request did not settle'); await new Promise(resolve => setTimeout(resolve, 10)); }
     };
     await settled();
-    return { get, calls, click: async id => { get(id).handlers.click(); await settled(); } };
+    return { get, calls, load: context.load, click: async id => { get(id).handlers.click(); await settled(); } };
 }
 
 test('registry browser script requests ten-item pages and follows the server cursor without duplicate rows', async () => {
@@ -47,5 +47,38 @@ test('registry renders the actual rate retry delay, clears stale rows and recove
         await h.db.prepare("UPDATE mailbox_records SET data=json_set(data,'$.at',?) WHERE kind='public-rate'").bind(Date.now() - 61000).run();
         await page.click('find');
         assert.equal(page.get('status').textContent, 'Public addresses shown below.'); assert.equal(page.get('results').children.length, 1);
+    } finally { await h.close(); }
+});
+
+test('registry rejects empty and whitespace-only address IDs before fetching and accepts a corrected ID', async () => {
+    const h = await start();
+    try {
+        const account = await h.register(), address = await h.address(account, { label: 'Public', isPublic: true });
+        const page = await registry(h), initialCalls = page.calls.length;
+        for (const value of ['', '  \t ']) {
+            page.get('address').value = value; await page.click('lookup');
+            assert.equal(page.get('status').textContent, 'Enter an address ID.');
+            assert.equal(page.calls.length, initialCalls);
+            assert.equal(page.get('results').children.length, 0);
+            assert.equal(page.get('next').disabled, true);
+        }
+        page.get('address').value = address.addressId; await page.click('lookup');
+        assert.equal(page.calls.length, initialCalls + 1);
+        assert.equal(new URL(page.calls.at(-1).path, 'http://localhost').searchParams.get('addressId'), address.addressId);
+        assert.equal(page.get('results').children[0].children[1].textContent, 'Address ID: ' + address.addressId);
+    } finally { await h.close(); }
+});
+
+test('empty lookup keeps its input guidance when an earlier registry request finishes later', async () => {
+    const h = await start();
+    let release;
+    try {
+        const page = await registry({ request: path => path === '/v1/directory?deferred' ? new Promise(resolve => { release = resolve; }) : h.request(path) });
+        const pending = page.load('/v1/directory?deferred'), calls = page.calls.length;
+        await page.click('lookup');
+        release(new Response(JSON.stringify({ items: [], nextCursor: null })));
+        await pending;
+        assert.equal(page.get('status').textContent, 'Enter an address ID.');
+        assert.equal(page.calls.length, calls);
     } finally { await h.close(); }
 });

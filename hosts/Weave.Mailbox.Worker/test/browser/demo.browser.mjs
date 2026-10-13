@@ -134,10 +134,14 @@ test('real Worker UI: isolated sessions, public/private discovery, acceptance, r
         assert.ok(!prompt.includes('[DEMO_ORIGIN]'));
         await alice.context().grantPermissions(['clipboard-read', 'clipboard-write'], { origin });
         await alice.locator('#copyPromptA').click();
-        await waitText(alice, 'status', 'Agent A instruction copied.');
+        await waitText(alice, 'copyStatusA', 'Agent A instruction copied.');
+        assert.equal(await alice.locator('#copyStatusA').isVisible(), true);
+        assert.equal(await alice.locator('#copyStatusA').evaluate(element => element.previousElementSibling.id), 'copyPromptA');
         assert.equal(await alice.evaluate(() => navigator.clipboard.readText()), prompt);
         await alice.locator('#copyPromptB').click();
-        await waitText(alice, 'status', 'Agent B instruction copied.');
+        await waitText(alice, 'copyStatusB', 'Agent B instruction copied.');
+        assert.equal(await alice.locator('#copyStatusB').isVisible(), true);
+        assert.equal(await alice.locator('#copyStatusB').evaluate(element => element.previousElementSibling.id), 'copyPromptB');
         assert.equal(await alice.evaluate(() => navigator.clipboard.readText()), await alice.locator('#agentPromptB').inputValue());
         await alice.context().clearPermissions();
         await alice.locator('#agentGuide summary').click();

@@ -5,16 +5,47 @@ import { createContext, runInContext } from 'node:vm';
 import { webcrypto } from 'node:crypto';
 const html=await readFile('src/demo.html','utf8');
 const script=/<script nonce="WEAVE_NONCE">([\s\S]*?)<\/script>/.exec(html)[1];
-function ui(fetch){
+function ui(fetch,{writeClipboard=async()=>{}}={}){
     const elements=new Map();
     function element(){return {value:'',textContent:'',checked:false,disabled:false,readOnly:false,children:[],handlers:{},classList:{toggle(){}},addEventListener(name,fn){this.handlers[name]=fn;},append(...children){this.children.push(...children);},replaceChildren(...children){this.children=children;this.textContent='';}};}
     const get=id=>{if(!elements.has(id))elements.set(id,element());return elements.get(id);};
-    const context=createContext({document:{getElementById:get,createElement:element},fetch,location:{origin:'http://127.0.0.1:43210'},crypto:webcrypto,TextEncoder,TextDecoder,AbortController,btoa,atob,navigator:{clipboard:{writeText:async()=>{}}}});
+    const context=createContext({document:{getElementById:get,createElement:element},fetch,location:{origin:'http://127.0.0.1:43210'},crypto:webcrypto,TextEncoder,TextDecoder,AbortController,btoa,atob,navigator:{clipboard:{writeText:writeClipboard}}});
     runInContext(script,context);
     return {get,click:id=>get(id).handlers.click(),async register(control='a'.repeat(64)){get('control').value=control;await get('register').handlers.click();}};
 }
 const json=(value,status=200)=>new Response(JSON.stringify(value),{status});
 const base=(path,options)=>path==='/v1/accounts'?json({agentId:options.headers['X-Weave-Mailbox-Control'][0],displayName:null,description:null}):path==='/v1/addresses'?json({items:[],nextCursor:null}):null;
+
+for (const suffix of ['A', 'B']) test('copy Agent ' + suffix + ' reports beside its own button without changing account status', async () => {
+    let finish;
+    const writes = [];
+    const app = ui(() => assert.fail('Copy must not call the API'), {
+        writeClipboard: text => { writes.push(text); return new Promise(resolve => { finish = resolve; }); }
+    });
+    app.get('agentPrompt' + suffix).value = 'Instruction for ' + suffix;
+    app.get('status').textContent = 'Current account status';
+    const pending = app.click('copyPrompt' + suffix);
+    assert.equal(app.get('copyPrompt' + suffix).disabled, true);
+    assert.equal(app.get('copyStatus' + suffix).textContent, 'Copying…');
+    finish(); await pending;
+    assert.deepEqual(writes, ['Instruction for ' + suffix]);
+    assert.equal(app.get('copyStatus' + suffix).textContent, 'Agent ' + suffix + ' instruction copied.');
+    assert.equal(app.get('copyStatus' + (suffix === 'A' ? 'B' : 'A')).textContent, '');
+    assert.equal(app.get('status').textContent, 'Current account status');
+    assert.equal(app.get('copyPrompt' + suffix).disabled, false);
+});
+
+test('copy failure replaces stale success beside the button and allows another explicit attempt', async () => {
+    let denied = true;
+    const app = ui(() => assert.fail('Copy must not call the API'), { writeClipboard: async () => { if (denied) throw Error('Permission denied'); } });
+    app.get('copyStatusA').textContent = 'Agent A instruction copied.';
+    await app.click('copyPromptA');
+    assert.equal(app.get('copyStatusA').textContent, 'Copy unavailable. Select and copy the instruction text above.');
+    assert.equal(app.get('copyPromptA').disabled, false);
+    denied = false; await app.click('copyPromptA');
+    assert.equal(app.get('copyStatusA').textContent, 'Agent A instruction copied.');
+});
+
 test('demo confirmed send plus failed receipt refresh does not turn into a resend',async()=>{
     const posts=[];
     const app=ui(async(path,options)=>base(path,options)??(path.startsWith('/v1/contacts/channel')?json({generation:1,peerMailboxId:'b'}):options.method==='POST'?(posts.push(JSON.parse(options.body)),json({state:'pending'})):json({title:'Storage unavailable'},503)));
