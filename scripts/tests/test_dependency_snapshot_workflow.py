@@ -40,7 +40,7 @@ class SnapshotWorkflowTests(unittest.TestCase):
         self.assertIn('dotnet restore Weave.slnx --locked-mode', job)
         self.assertIn('name: Locked dependency graph (${{ matrix.source }})', job)
         self.assertIn('source: [base, head]', job)
-        self.assertIn("ref: ${{ matrix.source == 'base' && 'c36ab57b5c2c46e00b7cc71fdab19cac4e344b3e' ||", job)
+        self.assertIn("ref: ${{ matrix.source == 'base' && '97452c5adf605b69234798ead7e1b7550f425ccb' ||", job)
         self.assertIn("if: matrix.source == 'head'\n        run: |\n          dotnet restore", job)
         self.assertIn("if: matrix.source == 'head'\n        uses: ./.github/actions/setup-dotnet", job)
         self.assertIn("name: Validate the exact committed historical baseline\n        if: matrix.source == 'base'", job)
@@ -51,6 +51,15 @@ class SnapshotWorkflowTests(unittest.TestCase):
         self.assertNotIn('contents: write', job)
         self.assertNotIn('continue-on-error', job)
         self.assertNotIn('pull_request_target', job)
+
+    def test_baseline_writer_and_permission_denial_share_the_reviewed_project_validator(self):
+        text = self.workflow()
+        writer = text.split('  dependency-snapshots:\n', 1)[1].split('  dependency-review:\n', 1)[0]
+        acceptance = (ROOT / '.github/workflows/dependency-policy-acceptance.yml').read_text()
+        denial = acceptance.split('  read-only-submission:\n', 1)[1]
+        revision = '97452c5adf605b69234798ead7e1b7550f425ccb'
+        self.assertIn('ref: ' + revision, writer)
+        self.assertIn('ref: ' + revision, denial)
 
 
 if __name__ == '__main__':

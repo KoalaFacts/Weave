@@ -54,7 +54,7 @@ that never reaches the fixture API cannot count as successful policy acceptance.
 Under normal GitHub fork-PR settings, GITHUB_TOKEN write permissions are reduced
 to read-only. Snapshot submission requires repository contents-write permission.
 The new independent job uses an ACTUAL contents-read Actions token, executes only
-the already-reviewed producer at `c36ab57b5c2c46e00b7cc71fdab19cac4e344b3e`, and reads
+the immutable producer at `97452c5adf605b69234798ead7e1b7550f425ccb`, and reads
 real exact base/head locks. It attempts the actual API call and requires **HTTP403,
 producer exit1, status unavailable and zero confirmed submissions**. A network
 failure, malformed graph, missing token, unexpected successful write or empty
@@ -67,7 +67,9 @@ workflow is not a grant of snapshot write permission.
 
 Because the existing producer already reports this failure correctly, no extra
 fork preflight, second snapshot service or privileged recovery workflow is needed.
-The normal writer remains pinned and separated from read-only source restoration.
+The normal writer remains pinned and separated from read-only source validation.
+Baseline validation, submission and this denial test share the same immutable
+producer revision, including validation of every local Project dependency edge.
 The original fork's missing-evidence gate remains non-passing; never mark it clean
 because the isolated denial TEST itself passed.
 

@@ -227,7 +227,7 @@ jobs:
     steps:
       - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v6
         with:
-          ref: ${{ matrix.source == 'base' && 'c36ab57b5c2c46e00b7cc71fdab19cac4e344b3e' || (github.event.pull_request.head.sha || github.sha) }}
+          ref: ${{ matrix.source == 'base' && '97452c5adf605b69234798ead7e1b7550f425ccb' || (github.event.pull_request.head.sha || github.sha) }}
           persist-credentials: false
       - name: Set up .NET for the proposed head
         if: matrix.source == 'head'
@@ -294,7 +294,7 @@ jobs:
       # Source commits are read as JSON blobs via the API, never checked out here.
       - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v6
         with:
-          ref: c36ab57b5c2c46e00b7cc71fdab19cac4e344b3e
+          ref: 97452c5adf605b69234798ead7e1b7550f425ccb
           persist-credentials: false
       - name: Submit exact base and head lock graphs
         env:
