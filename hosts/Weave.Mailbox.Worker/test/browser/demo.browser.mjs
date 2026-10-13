@@ -57,7 +57,7 @@ async function layout(fixture, page, name, width, height, mobile) {
         };
     });
     assert.equal(measurement.width, width);
-    assert.equal(measurement.touch, mobile);
+    assert.equal(measurement.touch, mobile, name + ': native touch capability must match the context.');
     assert.ok(measurement.documentWidth <= width + 1, JSON.stringify(measurement));
     assert.deepEqual(measurement.clippedControls, []);
     if (measurement.grid) assert.equal(measurement.grid, mobile ? 'block' : 'grid');
@@ -198,6 +198,7 @@ test('real Worker UI: isolated sessions, public/private discovery, acceptance, r
         bob = bobMobile;
         await layout(fixture, bob, 'demo-inbox-mobile', 390, 844, true);
         // Exercise ACK with native mobile viewport and touch emulation active.
+        assert.ok(await bob.evaluate(() => navigator.maxTouchPoints > 0), 'Mobile screenshot must retain native touch before ACK.');
         await bob.locator('#inbox').getByRole('button', { name: 'Acknowledge', exact: true }).tap();
         await waitText(bob, 'inbox', 'No pending messages.');
         await alice.locator('#loadOutbox').click();

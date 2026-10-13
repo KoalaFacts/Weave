@@ -1,6 +1,6 @@
 import assert from 'node:assert/strict';
 import { createServer } from 'node:http';
-import { mkdir } from 'node:fs/promises';
+import { mkdir, readFile } from 'node:fs/promises';
 import { resolve } from 'node:path';
 import { test } from 'node:test';
 import { BrowserFixture } from './playwright.mjs';
@@ -15,6 +15,14 @@ test('native Playwright pages preserve literal data, isolation, navigation and c
     const server = createServer((request, response) => {
         if (request.url === '/redirect') {
             response.writeHead(302, { location: externalOrigin + '/redirect-target' }).end();
+        } else if (request.url === '/touch') {
+            response.setHeader('Content-Type', 'text/html');
+            response.end(`<!doctype html><html><head><meta name="viewport" content="width=device-width, initial-scale=1"></head>
+                <body style="margin:0;height:2400px"><input id="control" value="synthetic masked control">
+                <button id="touch-probe" style="position:fixed;bottom:10px;left:10px">Touch probe</button>
+                <script>document.getElementById('touch-probe').addEventListener('touchstart', event => {
+                    globalThis.touchProbe = { trusted: event.isTrusted, points: navigator.maxTouchPoints };
+                });</script></body></html>`);
         } else {
             response.setHeader('Content-Type', 'text/html');
             response.end('<!doctype html><html><body><h1>Fixture ready</h1></body></html>');
@@ -69,6 +77,40 @@ test('native Playwright pages preserve literal data, isolation, navigation and c
             assert.equal(externalRequests, 0);
             assert.deepEqual(fixture.errors.splice(0), ['second: blocked unexpected origin', 'second: blocked redirect']);
             assert.ok(fixture.trace.every(entry => !JSON.stringify(entry).includes('private=query')));
+        });
+        await t.test('mobile screenshots preserve touch, viewport and scroll across desktop captures', async () => {
+            const viewport = { width: 390, height: 844 };
+            const mobile = await fixture.page('touch', '/touch', { viewport, isMobile: true });
+            const state = () => mobile.evaluate(() => ({
+                width: innerWidth, height: innerHeight, x: scrollX, y: scrollY,
+                points: navigator.maxTouchPoints, coarse: matchMedia('(pointer: coarse)').matches
+            }));
+            await mobile.evaluate(() => scrollTo({ left: 0, top: 123, behavior: 'instant' }));
+            const before = await state();
+            assert.equal(before.width, viewport.width);
+            assert.equal(before.height, viewport.height);
+            assert.ok(before.points > 0);
+            assert.equal(before.coarse, true);
+            assert.equal(before.y, 123);
+            await second.evaluate(() => { document.body.style.height = '2400px'; });
+            for (let round = 0; round < 2; round++) {
+                const name = 'touch-round-' + round;
+                await fixture.screenshot(mobile, name);
+                assert.deepEqual(mobile.viewportSize(), viewport);
+                assert.deepEqual(await state(), before, 'Mobile capture must preserve native touch and geometry.');
+                const index = JSON.parse(await readFile(resolve(evidence, name + '-tiles.json'), 'utf8'));
+                assert.deepEqual(index.tiles.map(tile => tile.y), [0, 844, 1556]);
+                for (const tile of index.tiles) {
+                    const png = await readFile(resolve(evidence, tile.file));
+                    assert.equal(png.readUInt32BE(16), viewport.width);
+                    assert.equal(png.readUInt32BE(20), viewport.height);
+                }
+                await fixture.screenshot(second, name + '-desktop');
+                assert.deepEqual(await state(), before, 'Desktop capture must leave the mobile context untouched.');
+                await mobile.evaluate(() => { globalThis.touchProbe = null; });
+                await mobile.locator('#touch-probe').tap();
+                assert.deepEqual(await mobile.evaluate(() => globalThis.touchProbe), { trusted: true, points: before.points });
+            }
         });
         await t.test('browser close cancels pending operations and is safe to repeat', async () => {
             const browser = fixture.browser;

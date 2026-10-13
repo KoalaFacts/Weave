@@ -6,6 +6,7 @@ import { chromium } from 'playwright';
 // Only fixed synthetic controls are used. Retain metadata, never headers or bodies.
 export class BrowserFixture {
     pages = new Map();
+    mobilePages = new WeakSet();
     sentMessages = new Map();
     pendingSendLoss = new Set();
     trace = [];
@@ -72,6 +73,7 @@ export class BrowserFixture {
             } finally { await response?.dispose(); }
         });
         page = await context.newPage();
+        if (isMobile) this.mobilePages.add(page);
         this.pages.set(name, page);
         this.sentMessages.set(page, messages);
         page.on('pageerror', () => this.recordError(name + ': uncaught page exception'));
@@ -85,10 +87,37 @@ export class BrowserFixture {
     }
 
     async screenshot(page, name) {
-        assert.ok(++this.screenshots <= 32, 'Screenshot count exceeded evidence budget.');
-        const size = await page.evaluate(() => ({ width: document.documentElement.scrollWidth, height: document.documentElement.scrollHeight }));
+        const measure = () => page.evaluate(() => ({ width: document.documentElement.scrollWidth, height: document.documentElement.scrollHeight, x: scrollX, y: scrollY }));
+        const size = await measure();
         assert.ok(size.width <= 2000 && size.height <= 20000, 'Page exceeded screenshot dimension budget.');
-        const png = await page.screenshot({ fullPage: true, timeout: 10000, mask: [page.locator('#control')] });
+        if (!this.mobilePages.has(page)) return this.captureScreenshot(page, name, true);
+
+        // Chromium full-page capture reapplies WebPreferences and resets maxTouchPoints.
+        // Viewport tiles preserve native mobile emulation and the original geometry.
+        const viewport = page.viewportSize();
+        assert.ok(viewport.width <= 2000 && viewport.height <= 20000 && size.width <= viewport.width, 'Page exceeded screenshot dimension budget.');
+        const count = Math.max(1, Math.ceil(size.height / viewport.height));
+        assert.ok(this.screenshots + count <= 32, 'Screenshot count exceeded evidence budget before full mobile coverage.');
+        const tiles = [];
+        try {
+            for (let index = 0; index < count; index++) {
+                const y = Math.min(index * viewport.height, Math.max(0, size.height - viewport.height));
+                await page.evaluate(({ x, y }) => scrollTo({ left: x, top: y, behavior: 'instant' }), { x: 0, y });
+                const file = name + '-tile-' + String(index + 1).padStart(2, '0');
+                await this.captureScreenshot(page, file, false);
+                const after = await measure();
+                assert.deepEqual(after, { ...size, x: 0, y }, 'Page dimensions or scroll changed during screenshot; mobile coverage is incomplete.');
+                tiles.push({ file: file + '.png', x: 0, y });
+            }
+        } finally {
+            await page.evaluate(({ x, y }) => scrollTo({ left: x, top: y, behavior: 'instant' }), { x: size.x, y: size.y });
+        }
+        await writeFile(join(this.evidence, name + '-tiles.json'), JSON.stringify({ viewport, document: { width: size.width, height: size.height }, tiles }, null, 2));
+    }
+
+    async captureScreenshot(page, name, fullPage) {
+        assert.ok(++this.screenshots <= 32, 'Screenshot count exceeded evidence budget.');
+        const png = await page.screenshot({ fullPage, timeout: 10000, mask: [page.locator('#control')] });
         assert.ok(png.length <= 8 * 1024 * 1024, 'Screenshot exceeded evidence byte budget.');
         await writeFile(join(this.evidence, name + '.png'), png);
     }
