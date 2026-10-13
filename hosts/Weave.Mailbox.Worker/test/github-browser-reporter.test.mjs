@@ -1,18 +1,20 @@
 import assert from 'node:assert/strict';
 import { spawnSync } from 'node:child_process';
-import { mkdir, mkdtemp, readFile, rm, writeFile } from 'node:fs/promises';
+import { copyFile, mkdir, mkdtemp, readFile, rm, writeFile } from 'node:fs/promises';
 import { tmpdir } from 'node:os';
 import { join } from 'node:path';
 import { fileURLToPath } from 'node:url';
 import { test } from 'node:test';
 
 const reporter = fileURLToPath(new URL('./github-browser-reporter.mjs', import.meta.url));
+const runner = new URL('./fixtures/browser-reporter-runner.mjs', import.meta.url);
 
-async function report(source) {
+async function report(tests, { stdout = [], stderr = [] } = {}) {
     const root = await mkdtemp(join(tmpdir(), 'weave-browser-reporter-'));
     try {
         await mkdir(join(root, 'test/browser'), { recursive: true });
-        await writeFile(join(root, 'test/browser/diagnostic.browser.mjs'), "import { test } from 'node:test';\nimport assert from 'node:assert/strict';\n" + source);
+        await copyFile(runner, join(root, 'test/browser/diagnostic.browser.mjs'));
+        await writeFile(join(root, 'test/browser/diagnostic.json'), JSON.stringify({ tests, stdout, stderr }));
         const environment = { ...process.env };
         delete environment.NODE_TEST_CONTEXT; // This is a separate test runner, not the current runner's child file.
         const result = spawnSync(process.execPath, [
@@ -29,7 +31,7 @@ async function report(source) {
 }
 
 test('browser reporter preserves passing exit status and native spec output', async () => {
-    const result = await report("test('passing browser control', () => assert.equal(1, 1));");
+    const result = await report([{ name: 'passing browser control' }]);
     assert.equal(result.status, 0, result.stderr);
     assert.match(result.log, /passing browser control/);
     assert.match(result.log, /pass 1/);
@@ -37,11 +39,12 @@ test('browser reporter preserves passing exit status and native spec output', as
 });
 
 test('browser reporter exposes the underlying failure and owned location without hiding failure', async () => {
-    const result = await report("test('failing browser control', () => { throw Object.assign(new Error('Browser checkpoint failed'), { code: 'ERR_CHECKPOINT' }); });");
+    const result = await report([{ name: 'failing browser control',
+        error: { message: 'Browser checkpoint failed', code: 'ERR_CHECKPOINT' } }]);
     assert.equal(result.status, 1, result.stderr);
     assert.match(result.log, /fail 1/);
     assert.equal(result.annotations.length, 1);
-    assert.match(result.annotations[0], /^::error file=hosts\/Weave.Mailbox.Worker\/test\/browser\/diagnostic.browser.mjs,line=3/);
+    assert.match(result.annotations[0], /^::error file=hosts\/Weave.Mailbox.Worker\/test\/browser\/diagnostic.browser.mjs,line=11,/);
     assert.match(result.annotations[0], /failing browser control/);
     assert.match(result.annotations[0], /ERR_CHECKPOINT/);
     assert.match(result.annotations[0], /Browser checkpoint failed/);
@@ -49,17 +52,20 @@ test('browser reporter exposes the underlying failure and owned location without
 });
 
 test('browser annotations escape workflow commands and omit credential-like fields', async () => {
-    const source = [
-        "console.log('::warning title=forged::forged-stdout'); console.error('::error title=forged::forged-stderr');",
-        `test(${JSON.stringify('hostile title %0A\r\n::warning title=forged::forged-command')}, () => { throw Error(${JSON.stringify('checkpoint 50%\r\n::error title=forged::forged-message')}); });`,
+    const tests = [
+        { name: 'hostile title %0A\r\n::warning title=forged::forged-command',
+            error: { message: 'checkpoint 50%\r\n::error title=forged::forged-message' } },
         ...['Authorization: Bearer sentinel-authorization', 'control=sentinel-control', 'password: sentinel-password',
             'api_key=sentinel-api-key', 'credentials: sentinel-credentials', 'access_token=tinyAT',
             'client_secret=tinyCS',
             'https://sentinel-user:sentinel-password@example.invalid/path?secret=sentinel-query',
             'opaque ' + 'UnlabelledSecret'.repeat(4)].map((message, i) =>
-            `test('sensitive failure ${i}', () => { throw Error(${JSON.stringify(message)}); });`)
-    ].join('\n');
-    const result = await report(source);
+            ({ name: 'sensitive failure ' + i, error: { message } }))
+    ];
+    const result = await report(tests, {
+        stdout: ['::warning title=forged::forged-stdout'],
+        stderr: ['::error title=forged::forged-stderr']
+    });
     assert.equal(result.status, 1);
     assert.equal(result.annotations.length, 10);
     const annotations = result.annotations.join('\n');
@@ -74,7 +80,9 @@ test('browser annotations escape workflow commands and omit credential-like fiel
 });
 
 test('browser reporter bounds huge failures and the number of annotations', async () => {
-    const result = await report(`for (let i = 0; i < 12; i++) test('bounded failure ' + i, () => { throw Error('checkpoint ' + 'x'.repeat(100000)); });`);
+    const result = await report(Array.from({ length: 12 }, (_, i) => ({
+        name: 'bounded failure ' + i, error: { message: 'checkpoint ' + 'x'.repeat(100000) }
+    })));
     assert.equal(result.status, 1);
     assert.equal(result.annotations.filter(line => line.startsWith('::error ')).length, 10);
     assert.equal(result.annotations.filter(line => line.startsWith('::notice ')).length, 1);
@@ -86,7 +94,7 @@ test('browser annotations reject control and ANSI text before matching credentia
         'access_to\u0000ken=tinyAT', 'password\t tinyPW', 'token\u200b=tinyTK',
         'client_secret\u001b]0;title\u0007=tinyCS'];
     const result = await report(messages.map((message, i) =>
-        `test('nonprinting failure ${i}', () => { throw Error(${JSON.stringify(message)}); });`).join('\n'));
+        ({ name: 'nonprinting failure ' + i, error: { message } })));
     assert.equal(result.status, 1);
     assert.equal(result.annotations.length, messages.length);
     assert.doesNotMatch(result.stdout, /tinyAT|tinyCS|tinyPW|tinyTK|[\u0000\u001b\u0007\u200b]/);
