@@ -10,10 +10,30 @@ A valid empty delta is not a complete vulnerability/license audit.
 
 ## Exact source graphs, separate trust boundaries
 
-The pipeline now validates BOTH exact event base/head commits using
-`dotnet restore Weave.slnx --locked-mode` in jobs with read-only repository access.
-Checked-out credentials are not persisted. Their failure blocks snapshot production;
-restoration does not silently regenerate or accept modified lockfiles.
+The pipeline requires two read-only validations for the exact event base/head pair.
+The head must pass `dotnet restore Weave.slnx --locked-mode` without modifying any
+committed lockfile. The historical base must supply a complete, authentic committed
+lock graph through the same SHA-pinned reader used by the snapshot writer. The base
+job checks out only that trusted reader, reads source Git objects with a read-only
+token and does not execute or restore historical project code. Neither job persists
+checkout credentials; failure of either blocks snapshot production.
+
+The required-check names remain `Locked dependency graph (base)` and
+`Locked dependency graph (head)`. The base step, summary and `dependency-baseline`
+artifact explicitly identify its validation as `committed-lock-graph` with
+`restore_performed: false`. Its graph retains the actual base SHA/ref, lock blob
+identities and resolved package versions. This is evidence of the historical
+committed dependency state, not a claim that the old source can restore or build.
+
+Originally both jobs required fresh locked restores. That deadlocked lock-repair
+PRs after dependency updates reached main without regenerating every consumer
+lock: the repair changed the head but could not rewrite its immutable base. A base
+whose committed graph remains structurally valid can be compared even when its
+project declarations no longer match those locks. Base locks are neither regenerated
+nor replaced with head locks; the resulting differences remain visible to policy.
+Missing locks, malformed graphs, missing edges, corrupt hashes and invalid source
+identities still block. This intentionally changes historical-baseline semantics;
+strict head restore, full-head audit and comparison policy remain mandatory.
 
 A separate fresh runner executes an explicitly SHA-pinned producer. It has the
 contents-write permission required by GitHub's snapshot API, but does NOT check
@@ -27,7 +47,11 @@ The producer inventories every checked-in .NET project and requires its committe
 NuGet lockfile. It verifies Git blob hashes, complete trees, package content hashes,
 resolved package versions, direct/transitive classifications and dependency edges.
 Framework graphs remain distinct. Local Project edges expand to actual external
-packages rather than inventing NuGet identities for local code. Unknown node kinds,
+packages rather than inventing NuGet identities for local code. Every Project node
+is traversed, including projects with no incoming external-package edge. Otherwise
+a package referenced only by a local project could be missing without rejection.
+Empty projects are permitted; incomplete/cyclic project edges and non-map dependency
+lists are not. Unknown node kinds,
 missing locks/edges, ambiguous names, symlinks, corrupt/oversize JSON and empty total
 graphs fail closed. All packages are included in policy evaluation; the conservative
 runtime scope is not a claim that test-only dependencies are production runtime.
@@ -54,8 +78,8 @@ This is not untrusted PR build execution with a write-capable token. Workflow
 changes themselves remain security-sensitive and require normal maintainer review.
 
 The submitted graph covers committed NuGet locks, not every language's dependencies
-or every possible dynamic/custom build configuration. Locked restores verify the
-normal solution configuration; they are not a sandbox against a malicious project
+or every possible dynamic/custom build configuration. The head locked restore verifies
+the normal solution configuration; it is not a sandbox against a malicious project
 build. The writer relies on no execution of such code. Existing non-NuGet static
 analysis and example verification are not replaced by this detector.
 

@@ -60,7 +60,7 @@ jobs:
       # Execute only the already-reviewed producer. Do not build PR code here.
       - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1
         with:
-          ref: c36ab57b5c2c46e00b7cc71fdab19cac4e344b3e
+          ref: 97452c5adf605b69234798ead7e1b7550f425ccb
           persist-credentials: false
       - name: Require actual permission denial, not fabricated API evidence
         env:

@@ -1,0 +1,14 @@
+name: Strict NuGet audit
+description: Restore the locked dependency graph and reject incomplete or vulnerable audit evidence
+runs:
+  using: composite
+  steps:
+    - name: Restore and audit the committed dependency graph
+      shell: bash
+      run: |
+        set -euo pipefail
+        mkdir -p artifacts/dependency-audit
+        dotnet restore Weave.slnx --locked-mode -p:NuGetAudit=true -p:NuGetAuditMode=all -p:NuGetAuditLevel=low |& tee artifacts/dependency-audit/restore.log
+        dotnet package list --project Weave.slnx --include-transitive --vulnerable --no-restore --format json --output-version 1 > artifacts/dependency-audit/report.json
+        python3 scripts/check_dependency_audit.py artifacts/dependency-audit/report.json
+        dotnet package list --project Weave.slnx --deprecated --no-restore | tee artifacts/dependency-audit/deprecated.txt

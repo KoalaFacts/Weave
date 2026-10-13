@@ -19,8 +19,8 @@ function profile(input: any): any {
     }
     return {label:input.label ?? null,isPublic:input.isPublic ?? false,effectiveFrom:input.effectiveFrom ?? null,effectiveTo:input.effectiveTo ?? null,directUri:input.directUri ?? null};
 }
-function baseUrl(env: Env,origin: string): string {
-    const url = new URL(env.WEAVE_HOST ?? origin);
+function baseUrl(origin: string): string {
+    const url = new URL(origin);
     if (url.username || url.password || url.search || url.hash || url.pathname !== '/' || (url.protocol !== 'https:' && !(url.protocol === 'http:' && ['localhost','127.0.0.1','[::1]'].includes(url.hostname)))) fail(503,'storage');
     return url.origin;
 }
@@ -41,7 +41,7 @@ export async function mutateAddress(env: Env,owner: string,id: string|null,input
         }
         const cardId = id ?? crypto.randomUUID();
         const c = {...(previous ?? {cardId,ownerMailboxId:owner,createdAt:new Date().toISOString(),expiresAt:null,revokedAt:null,audienceHint:null,
-            methods:[{methodId:'relay',version:1,transport:'relay',endpoint:baseUrl(env,origin),instructions:'Contact request requires recipient acceptance'}]}),
+            methods:[{methodId:'relay',version:1,transport:'relay',endpoint:baseUrl(origin),instructions:'Contact request requires recipient acceptance'}]}),
             visibility:chosen.isPublic ? 'public' : 'unlisted',_address:chosen,_deleted:false,
             _effectiveFromTicks:chosen.effectiveFrom === null ? null : ticks(chosen.effectiveFrom).toString(),
             _effectiveToTicks:chosen.effectiveTo === null ? null : ticks(chosen.effectiveTo).toString(),

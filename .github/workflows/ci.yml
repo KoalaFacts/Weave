@@ -52,6 +52,14 @@ jobs:
       - name: Build
         run: dotnet build Weave.slnx --no-restore -c Release
 
+      - name: Pack and validate the tool without publishing
+        env:
+          VERSION: 0.0.0-ci-validation
+        run: |
+          dotnet pack hosts/Weave.Cli/Weave.Cli.csproj -c Release --no-build \
+            "-p:Version=$VERSION" -p:IncludeSymbols=false -o packages
+          python3 scripts/release/guard.py validate-packages
+
       - name: Test
         run: >-
           dotnet test --solution Weave.slnx --no-build -c Release
@@ -100,71 +108,26 @@ jobs:
           path: ./test-results/**/*.trx
           retention-days: 30
 
-  # One bounded diagnostic for PR190's next transition, never a threshold waiver.
+  # Retain the check identity until required-check configuration can be verified.
   exact-base-coverage-diagnostic:
     name: Exact-base coverage (diagnostic only)
-    if: >-
-      github.event_name == 'pull_request' && github.event.action == 'synchronize' &&
-      github.event.number == 190 &&
-      github.event.before == 'c8bd6e0df89160e9b74826edca9ac258d6e467f4' &&
-      github.event.pull_request.base.sha == 'a7983cc73e05d9d0bb6afb147ab30396b74e6fde'
+    needs: build-and-test
+    if: always()
     runs-on: ubuntu-latest
-    timeout-minutes: 30
+    timeout-minutes: 2
     permissions:
       contents: read
     steps:
-      - name: Initialize diagnostic evidence
+      - name: Propagate the current build and coverage gate
         env:
-          DIAGNOSTIC_HEAD_SHA: ${{ github.event.pull_request.head.sha }}
-          DIAGNOSTIC_BASE_SHA: ${{ github.event.pull_request.base.sha }}
-        run: |
-          mkdir -p "$RUNNER_TEMP/exact-base-coverage"
-          printf 'Diagnostic only; not full-gate or threshold evidence.\nbase=%s\nhelper-head=%s\nrun=%s\nattempt=%s\n' \
-            "$DIAGNOSTIC_BASE_SHA" "$DIAGNOSTIC_HEAD_SHA" "$GITHUB_RUN_ID" "$GITHUB_RUN_ATTEMPT" \
-            > "$RUNNER_TEMP/exact-base-coverage/run-identity.txt"
-
-      - name: Checkout diagnostic helper only
-        uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v6
-        with:
-          ref: ${{ github.event.pull_request.head.sha }}
-          path: diagnostic-tools
-          persist-credentials: false
-
-      - name: Checkout immutable baseline separately
-        uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v6
-        with:
-          ref: a7983cc73e05d9d0bb6afb147ab30396b74e6fde
-          path: baseline
-          persist-credentials: false
-
-      - name: Retain comparison contract without modifying baseline
-        run: |
-          cp diagnostic-tools/scripts/coverage-ownership.json "$RUNNER_TEMP/exact-base-coverage/head-coverage-ownership.json"
-          cp diagnostic-tools/scripts/DevTool/CoverageCommand.cs "$RUNNER_TEMP/exact-base-coverage/head-CoverageCommand.cs"
-          cp diagnostic-tools/scripts/collect_base_coverage.py "$RUNNER_TEMP/exact-base-coverage/collect_base_coverage.py"
-
-      - name: Setup identical .NET SDK
-        uses: ./diagnostic-tools/.github/actions/setup-dotnet
-
-      - name: Setup Node for real process fixtures
-        uses: actions/setup-node@949feb2413d6458794dcd2491c4babbbce0c15c1 # v7.1.0
-        with:
-          node-version: '24'
-
-      - name: Collect all nine exact-base suites without enforcing a threshold
+          GATE_RESULT: ${{ needs.build-and-test.result }}
         shell: bash
         run: |
-          python3 diagnostic-tools/scripts/collect_base_coverage.py --repository baseline \
-            --output "$RUNNER_TEMP/exact-base-coverage" 2>&1 | tee "$RUNNER_TEMP/exact-base-coverage/diagnostic.log"
-
-      - name: Retain diagnostic evidence even on failure
-        if: always()
-        uses: actions/upload-artifact@043fb46d1a93c77aae656e7c1c64a875d1fc6a0a # v7
-        with:
-          name: exact-base-coverage-diagnostic
-          path: ${{ runner.temp }}/exact-base-coverage/
-          if-no-files-found: error
-          retention-days: 30
+          if [ "$GATE_RESULT" != success ]; then
+            echo 'The current Build & Test gate did not succeed.'
+            exit 1
+          fi
+          echo 'Historical baseline diagnostic retired; the current Build & Test gate succeeded.'
 
   code-quality:
     name: Code Quality
@@ -179,13 +142,16 @@ jobs:
       - name: Setup .NET
         uses: ./.github/actions/setup-dotnet
 
-      - name: Restore
-        run: dotnet restore Weave.slnx
+      - name: Strict locked dependency audit
+        uses: ./.github/actions/strict-nuget-audit
 
-      - name: Audit dependencies
-        run: |
-          dotnet list Weave.slnx package --deprecated
-          dotnet list Weave.slnx package --vulnerable --include-transitive
+      - name: Retain strict audit evidence
+        if: always()
+        uses: actions/upload-artifact@043fb46d1a93c77aae656e7c1c64a875d1fc6a0a # v7
+        with:
+          name: ci-dependency-audit
+          path: artifacts/dependency-audit/
+          retention-days: 14
 
       - name: Build (warnings as errors)
         run: dotnet build Weave.slnx --no-restore -c Release /p:TreatWarningsAsErrors=true
@@ -246,6 +212,8 @@ jobs:
           retention-days: 30
 
   dependency-lock-validation:
+    # Retain the required-check identities. Base validates historical committed
+    # graph evidence; only the proposed head must satisfy a fresh locked restore.
     name: Locked dependency graph (${{ matrix.source }})
     if: github.event_name == 'pull_request' || github.event_name == 'push'
     runs-on: ubuntu-latest
@@ -259,13 +227,60 @@ jobs:
     steps:
       - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v6
         with:
-          ref: ${{ matrix.source == 'base' && (github.event.pull_request.base.sha || github.event.before) || (github.event.pull_request.head.sha || github.sha) }}
+          ref: ${{ matrix.source == 'base' && '97452c5adf605b69234798ead7e1b7550f425ccb' || (github.event.pull_request.head.sha || github.sha) }}
           persist-credentials: false
-      - uses: ./.github/actions/setup-dotnet
-      - name: Validate the exact committed dependency closure
+      - name: Set up .NET for the proposed head
+        if: matrix.source == 'head'
+        uses: ./.github/actions/setup-dotnet
+      - name: Validate the exact head committed dependency closure
+        if: matrix.source == 'head'
         run: |
           dotnet restore Weave.slnx --locked-mode
           git diff --exit-code -- '**/packages.lock.json'
+      - name: Validate the exact committed historical baseline
+        if: matrix.source == 'base'
+        env:
+          GH_TOKEN: ${{ github.token }}
+          PR_BASE_SHA: ${{ github.event.pull_request.base.sha || github.event.before }}
+          PR_BASE_REF: refs/heads/${{ github.base_ref || 'main' }}
+        shell: python
+        run: |
+          import importlib.util, json, os, pathlib
+          spec = importlib.util.spec_from_file_location('producer', 'scripts/submit_nuget_snapshots.py')
+          producer = importlib.util.module_from_spec(spec)
+          spec.loader.exec_module(producer)
+          output = pathlib.Path(os.environ['RUNNER_TEMP']) / 'dependency-baseline'
+          output.mkdir(parents=True, exist_ok=True)
+          report = {'status': 'unavailable', 'validation': 'committed-lock-graph',
+                    'restore_performed': False, 'source_sha': os.environ['PR_BASE_SHA'],
+                    'source_ref': os.environ['PR_BASE_REF']}
+          try:
+              repository = os.environ['GITHUB_REPOSITORY']
+              api = producer.Api(repository, os.environ['GH_TOKEN'])
+              plan = producer.snapshot(api, report['source_sha'], report['source_ref'],
+                                       repository, os.environ['GITHUB_RUN_ID'], {})
+              (output / 'baseline.json').write_text(json.dumps(plan, indent=2) + '\n')
+              report.update(status='available', **plan['metadata'])
+          except (producer.SnapshotError, KeyError, TypeError, ValueError, RecursionError) as error:
+              report['failure'] = str(error) if isinstance(error, producer.SnapshotError) else 'invalid-baseline-input'
+          (output / 'validation.json').write_text(json.dumps(report, indent=2) + '\n')
+          with open(os.environ['GITHUB_STEP_SUMMARY'], 'a') as summary:
+              summary.write('## Historical dependency baseline\n\n')
+              summary.write('Exact committed lock graph available.\n' if report['status'] == 'available'
+                            else '**Unavailable — snapshot production blocked.**\n')
+              summary.write('\nThis validates historical comparison data and does not establish a fresh locked restore '
+                            'of the base. The exact head must pass strict locked restore and all dependency policies.\n')
+          if report['status'] != 'available':
+              print('::error::Historical dependency baseline is unavailable; snapshot production is blocked.')
+          raise SystemExit(0 if report['status'] == 'available' else 1)
+      - name: Retain historical baseline validation evidence
+        if: ${{ always() && matrix.source == 'base' }}
+        uses: actions/upload-artifact@043fb46d1a93c77aae656e7c1c64a875d1fc6a0a # v7
+        with:
+          name: dependency-baseline
+          path: ${{ runner.temp }}/dependency-baseline/
+          if-no-files-found: error
+          retention-days: 14
 
   dependency-snapshots:
     name: Submit verified dependency snapshots
@@ -279,7 +294,7 @@ jobs:
       # Source commits are read as JSON blobs via the API, never checked out here.
       - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v6
         with:
-          ref: c36ab57b5c2c46e00b7cc71fdab19cac4e344b3e
+          ref: 97452c5adf605b69234798ead7e1b7550f425ccb
           persist-credentials: false
       - name: Submit exact base and head lock graphs
         env:

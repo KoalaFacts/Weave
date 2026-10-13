@@ -11,7 +11,7 @@ async function seed(h,sender,recipient,p,state='pending',terminalAt=null){
 }
 test('demo deployment bindings preserve expired business records while registry housekeeping continues',async()=>{
     const base=JSON.parse(await readFile('wrangler.jsonc','utf8'));
-    const config=deploymentConfig(base,{CLOUDFLARE_ACCOUNT_ID:'a'.repeat(32),WEAVE_D1_DATABASE_ID:'11111111-2222-3333-4444-555555555555',WEAVE_D1_DATABASE_NAME:'synthetic-demo',CLEANUP_MAX_MESSAGES:'128',CLEANUP_TIME_BUDGET_MS:'2000'});
+    const config=deploymentConfig(base,{CLOUDFLARE_ACCOUNT_ID:'a'.repeat(32),CLEANUP_MAX_MESSAGES:'128',CLEANUP_TIME_BUDGET_MS:'2000'});
     const h=await start({bindings:config.vars});
     try{
         const old=Date.now()-9*DAY,p=payload('retained demo body',old);

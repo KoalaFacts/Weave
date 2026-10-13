@@ -25,37 +25,24 @@ jobs:
     steps:
       - name: Checkout
         uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v6
+        with:
+          persist-credentials: false
 
       - name: Setup .NET
         uses: ./.github/actions/setup-dotnet
 
-      - name: Restore
-        run: dotnet restore Weave.slnx
-
-      - name: Audit for vulnerabilities
-        run: |
-          set -euo pipefail
-          dotnet list Weave.slnx package --vulnerable --include-transitive --verbosity minimal | tee security-audit.txt
-
-      - name: Audit for deprecated packages
-        run: |
-          dotnet list Weave.slnx package --deprecated | tee -a security-audit.txt
+      - name: Strict locked dependency audit
+        uses: ./.github/actions/strict-nuget-audit
 
       - name: Upload audit report
         if: always()
         uses: actions/upload-artifact@043fb46d1a93c77aae656e7c1c64a875d1fc6a0a # v7
         with:
           name: security-audit
-          path: security-audit.txt
+          path: artifacts/dependency-audit/
           retention-days: 14
 
       - name: Summary
         if: always()
         run: |
-          echo "## Dependency Security Audit" >> $GITHUB_STEP_SUMMARY
-          echo "" >> $GITHUB_STEP_SUMMARY
-          echo "**Run**: $(date -u '+%Y-%m-%d %H:%M:%S UTC')" >> $GITHUB_STEP_SUMMARY
-          echo "" >> $GITHUB_STEP_SUMMARY
-          echo '```' >> $GITHUB_STEP_SUMMARY
-          cat security-audit.txt >> $GITHUB_STEP_SUMMARY
-          echo '```' >> $GITHUB_STEP_SUMMARY
+          echo 'Strict restore, machine-readable vulnerability evidence and deprecation output are retained in the security-audit artifact.' >> "$GITHUB_STEP_SUMMARY"

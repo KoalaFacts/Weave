@@ -1,0 +1,19 @@
+name: Build standalone Host
+description: Set up the shared SDK and build the ordinary Host with locked dependencies
+inputs:
+  cache:
+    description: Enable NuGet caching for this acceptance job
+    required: false
+    default: 'true'
+runs:
+  using: composite
+  steps:
+    - uses: ./.github/actions/setup-dotnet
+      with:
+        cache: ${{ inputs.cache }}
+    - name: Restore and build the ordinary Host
+      shell: bash
+      run: |
+        dotnet --version
+        dotnet restore hosts/Weave.Host/Weave.Host.csproj --locked-mode
+        dotnet build hosts/Weave.Host/Weave.Host.csproj --no-restore -c Release /p:TreatWarningsAsErrors=true

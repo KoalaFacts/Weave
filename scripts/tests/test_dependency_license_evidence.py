@@ -103,7 +103,7 @@ class LicenseEvidenceTests(unittest.TestCase):
         denial = workflow.split('  read-only-submission:\n', 1)[1]
         self.assertIn('contents: read', denial)
         self.assertNotIn('contents: write', denial)
-        self.assertIn('ref: c36ab57b5c2c46e00b7cc71fdab19cac4e344b3e', denial)
+        self.assertIn('ref: 97452c5adf605b69234798ead7e1b7550f425ccb', denial)
         self.assertIn('snapshot-api-http-403', denial)
         self.assertIn("report.get('sources') == []", denial)
         self.assertNotIn('pull_request_target:', workflow)

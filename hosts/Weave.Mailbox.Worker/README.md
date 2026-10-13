@@ -49,17 +49,17 @@ Use these existing GitHub configuration names in the selected scope:
 | Kind | Name | Value |
 | --- | --- | --- |
 | Secret | `CLOUDFLARE_API_TOKEN` | Existing deployment token; never an application binding. |
-| Variable | `CLOUDFLARE_ACCOUNT_ID` | Existing account ID. |
-| Variable | `WEAVE_D1_DATABASE_ID` | Existing D1 UUID bound to `demo` as `db`. |
-| Variable | `WEAVE_D1_DATABASE_NAME` | Actual existing database name. |
-| Optional variable | `WEAVE_REGISTRATION_ENABLED` | `true` to allow bounded registration; defaults to `false`. |
-| Optional variable | `WEAVE_HOST` | Canonical HTTPS origin; normally omit. |
+| Secret | `CLOUDFLARE_ACCOUNT_ID` | Existing account ID. |
+
+Registration is controlled by `vars.REGISTRATION_ENABLED` in the checked-in `wrangler.jsonc`, currently `false`; the deployment script preserves that value. No GitHub `WEAVE_REGISTRATION_ENABLED` or `WEAVE_HOST` setting is used. New relay addresses use the request URL origin even if an old `WEAVE_HOST` binding remains on the Worker.
+
+No GitHub `WEAVE_D1_DATABASE_ID` or `WEAVE_D1_DATABASE_NAME` setting is needed. The deployment script reads the existing Worker's D1 binding named `db`, then queries that database's metadata to obtain and verify its actual ID and name before migration. Missing, ambiguous or invalid bindings stop the deployment. The application uses only `env.db`. The checked-in all-zero ID and local name `weave-mailbox-demo` are placeholders and never select the remote database.
 
 Business sweeps are disabled in the checked-in demo configuration: `CLEANUP_MAX_MESSAGES=0` and `CLEANUP_TIME_BUDGET_MS=0`. The deployment script also pins both values to zero, ignoring inherited environment values. Neither setting needs a GitHub variable. Temporary rate-counter, lease and guard housekeeping stays enabled; ACK, blocking and existing terminal-message handling can still clear bodies. Retained records still count toward the existing storage capacity.
 
 For new Cloudflare permissions use **Workers Editor**, scoped to the individual existing Worker `demo`, plus **D1 Edit** for migration operations. Deploying a Worker with a D1 binding does not itself require direct D1 permissions; running migrations does. No Workers Admin, Zone or DNS permissions are needed. The legacy Workers Scripts Edit mapping continues to work and has no announced retirement date, but new setup should use the [current Workers roles](https://developers.cloudflare.com/workers/authorization/workers/). Do not create an additional Worker. The account-subdomain lookup also needs to succeed with that token: current API documentation does not explicitly confirm individual-Worker Editor scope for this account-level read. This has not been remotely verified. If it is denied, stop and report the endpoint; do not broaden permissions automatically.
 
-The workflow installs pinned dependencies from the lockfile, runs Worker tests/typechecking/audit and the original C# wire compatibility harness before the deployment job receives credentials. The deployment script checks the existing account subdomain, Worker binding and database identity through Cloudflare GET endpoints. A denied/missing resource or mismatched binding stops without trying another account or creating resources. It builds an ignored temporary Wrangler config from the selected values; no secret is written into that file. The checked-in all-zero database ID remains a local placeholder.
+The workflow installs pinned dependencies from the lockfile, runs Worker tests/typechecking/audit and the original C# wire compatibility harness before the deployment job receives credentials. The deployment script checks the existing account subdomain, discovers the existing `demo` Worker's `db` binding, and verifies that database's identity through Cloudflare GET endpoints. A denied/missing resource or mismatched identity stops without trying another account or creating resources. It builds an ignored temporary Wrangler config from the configured account ID and discovered database identity, with owner-only file permissions; the API token is never written into that file. The file is removed after the command sequence, including on failure. The checked-in all-zero database ID remains a local placeholder.
 
 The only remote mutation sequence is:
 
@@ -78,7 +78,7 @@ After deployment, the script reads the existing Worker settings and requires bot
 
 The first local apply executed all 13 commands; repeating it reported no pending migrations and preserved mailbox rows and sequence state. Only `0001_mailbox.sql` exists, so a second-version upgrade is not claimed tested. Remote migration/deployment has not been executed as part of this change. Concurrent workflow deployments are serialized without cancelling an in-progress migration.
 
-The page uses relative API paths and new relay addresses default to the actual request URL origin, including `https://demo.weave-389.workers.dev/`. No GitHub `WEAVE_HOST` variable is required. Forwarded host/protocol headers are ignored. Keep the existing D1 binding named **db**; the runtime accesses `env.db`, with no database password or management token in the app. See [D1 bindings](https://developers.cloudflare.com/d1/get-started/#3-bind-your-worker-to-your-d1-database) and [numbered migrations](https://developers.cloudflare.com/d1/reference/migrations/).
+The page uses relative API paths and new relay addresses use the actual request URL origin, including `https://demo.weave-389.workers.dev/`. `WEAVE_HOST` is not used. Forwarded host/protocol headers are ignored. Keep the existing D1 binding named **db**; the runtime accesses `env.db`, with no database password or management token in the app. See [D1 bindings](https://developers.cloudflare.com/d1/get-started/#3-bind-your-worker-to-your-d1-database) and [numbered migrations](https://developers.cloudflare.com/d1/reference/migrations/).
 
 ## Registration and addresses
 

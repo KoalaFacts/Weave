@@ -85,13 +85,36 @@ class ReleaseWorkflowTests(unittest.TestCase):
     def test_embedded_symbols_do_not_request_an_empty_symbol_package(self):
         props = ET.parse(ROOT / 'Directory.Build.props')
         self.assertEqual(props.find('.//DebugType').text, 'embedded')
-        for name in ('release.yml', 'security-release-chain-validation.yml'):
+        for name in ('release.yml', 'ci.yml'):
             content = (ROOT / '.github/workflows' / name).read_text()
             self.assertNotIn('IncludeSymbols=true', content)
             self.assertNotIn('SymbolPackageFormat=snupkg', content)
             self.assertIn('IncludeSymbols=false', content)
         release = (ROOT / '.github/workflows/release.yml').read_text()
         self.assertNotIn('artifacts/*.snupkg', release)
+
+    def test_ci_packages_real_tool_without_publish_credentials(self):
+        content = (ROOT / '.github/workflows/ci.yml').read_text()
+        build = content.split('  build-and-test:', 1)[1].split('  exact-base-coverage-diagnostic:', 1)[0]
+        for required in ('dotnet pack hosts/Weave.Cli/Weave.Cli.csproj', 'IncludeSymbols=false',
+                         'scripts/release/guard.py validate-packages', '0.0.0-ci-validation'):
+            self.assertIn(required, build)
+        for forbidden in ('nuget push', 'NUGET_API_KEY', 'id-token: write', 'attestations: write'):
+            self.assertNotIn(forbidden, build)
+
+    def test_current_checks_share_strict_locked_dependency_audit(self):
+        action = ROOT / '.github/actions/strict-nuget-audit/action.yml'
+        self.assertTrue(action.exists(), 'Strict audit must replace the retired branch-specific checks')
+        content = action.read_text()
+        for required in ('--locked-mode', 'NuGetAudit=true', 'NuGetAuditMode=all', 'NuGetAuditLevel=low',
+                         '--include-transitive', '--vulnerable', '--no-restore', '--format json',
+                         '--output-version 1', 'scripts/check_dependency_audit.py', 'set -euo pipefail'):
+            self.assertIn(required, content)
+        for filename in ('ci.yml', 'scan-security.yml'):
+            self.assertIn('uses: ./.github/actions/strict-nuget-audit',
+                          (ROOT / '.github/workflows' / filename).read_text())
+        for forbidden in ('--force-evaluate', 'continue-on-error', '|| true', 'NuGetAudit=false'):
+            self.assertNotIn(forbidden, content)
 
     def test_ci_reports_checks_without_requesting_pr_comment_writes(self):
         content = (ROOT / '.github/workflows/ci.yml').read_text()

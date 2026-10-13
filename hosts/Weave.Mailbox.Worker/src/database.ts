@@ -9,7 +9,6 @@ export interface Statement {
 export interface Database { prepare(sql: string): Statement; batch(statements: Statement[]): Promise<unknown[]>; }
 export interface Env {
     db: Database;
-    WEAVE_HOST?: string;
     CLEANUP_MAX_MESSAGES?: string;
     CLEANUP_TIME_BUDGET_MS?: string;
     REGISTRATION_ENABLED: string;
