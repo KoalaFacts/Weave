@@ -1,17 +1,21 @@
 """Check the path boundary of the CI-only managed Chromium AppArmor profile."""
+import importlib.util
 import os
 from pathlib import Path
 import shutil
 import subprocess
-import sys
 import tempfile
 import unittest
+from unittest.mock import patch
 
 from test_release_security import run_blocks
 
 
 ROOT = Path(__file__).resolve().parents[2]
 SCRIPT = ROOT / 'scripts/playwright_apparmor_profile.py'
+SPEC = importlib.util.spec_from_file_location('playwright_apparmor_profile', SCRIPT)
+PROFILE = importlib.util.module_from_spec(SPEC)
+SPEC.loader.exec_module(PROFILE)
 
 
 class PlaywrightAppArmorProfileTests(unittest.TestCase):
@@ -25,14 +29,12 @@ class PlaywrightAppArmorProfileTests(unittest.TestCase):
         self.browser.chmod(0o755)
 
     def render(self, executable):
-        return subprocess.run([sys.executable, str(SCRIPT), str(executable)],
-                              env={**os.environ, 'HOME': str(self.home)},
-                              text=True, capture_output=True, timeout=10)
+        with patch.object(PROFILE.Path, 'home', return_value=self.home):
+            return PROFILE.chromium_profile(str(executable))
 
     def test_installed_managed_executable_gets_one_exact_userns_attachment(self):
         result = self.render(self.browser)
-        self.assertEqual(result.returncode, 0, result.stderr)
-        self.assertEqual(result.stdout, 'abi <abi/4.0>,\n'
+        self.assertEqual(result, 'abi <abi/4.0>,\n'
                          f'profile weave-playwright-chromium "{self.browser}" flags=(unconfined) {{\n'
                          '  userns,\n}\n')
 
@@ -44,10 +46,8 @@ class PlaywrightAppArmorProfileTests(unittest.TestCase):
                            '/opt/google/chrome/chrome',
                            str(self.browser).replace('/.cache/', '/other-cache/')):
             with self.subTest(executable=executable):
-                result = self.render(executable)
-                self.assertNotEqual(result.returncode, 0)
-                self.assertIn('Expected the exact managed Chromium executable', result.stderr)
-                self.assertEqual(result.stdout, '')
+                with self.assertRaisesRegex(ValueError, 'Expected the exact managed Chromium executable'):
+                    self.render(executable)
 
     def test_missing_or_nonexecutable_browser_does_not_generate_policy(self):
         for missing in (False, True):
@@ -56,19 +56,15 @@ class PlaywrightAppArmorProfileTests(unittest.TestCase):
                     self.browser.unlink()
                 else:
                     self.browser.chmod(0o644)
-                result = self.render(self.browser)
-                self.assertNotEqual(result.returncode, 0)
-                self.assertIn('Install the pinned Playwright Chromium first', result.stderr)
-                self.assertEqual(result.stdout, '')
+                with self.assertRaisesRegex(ValueError, 'Install the pinned Playwright Chromium first'):
+                    self.render(self.browser)
 
     def test_symlink_to_another_executable_does_not_generate_policy(self):
         target = self.home / 'other-browser'
         self.browser.rename(target)
         self.browser.symlink_to(target)
-        result = self.render(self.browser)
-        self.assertNotEqual(result.returncode, 0)
-        self.assertIn('must not contain symlinks', result.stderr)
-        self.assertEqual(result.stdout, '')
+        with self.assertRaisesRegex(ValueError, 'must not contain symlinks'):
+            self.render(self.browser)
 
     def test_runner_policy_check_rejects_changed_global_restrictions(self):
         shell = shutil.which('bash')
