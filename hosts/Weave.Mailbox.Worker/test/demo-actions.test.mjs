@@ -9,7 +9,7 @@ function ui(fetch){
     const elements=new Map();
     function element(){return {value:'',textContent:'',checked:false,disabled:false,readOnly:false,children:[],handlers:{},classList:{toggle(){}},addEventListener(name,fn){this.handlers[name]=fn;},append(...children){this.children.push(...children);},replaceChildren(...children){this.children=children;this.textContent='';}};}
     const get=id=>{if(!elements.has(id))elements.set(id,element());return elements.get(id);};
-    const context=createContext({document:{getElementById:get,createElement:element},fetch,crypto:webcrypto,TextEncoder,TextDecoder,AbortController,btoa,atob,navigator:{clipboard:{writeText:async()=>{}}}});
+    const context=createContext({document:{getElementById:get,createElement:element},fetch,location:{origin:'http://127.0.0.1:43210'},crypto:webcrypto,TextEncoder,TextDecoder,AbortController,btoa,atob,navigator:{clipboard:{writeText:async()=>{}}}});
     runInContext(script,context);
     return {get,click:id=>get(id).handlers.click(),async register(control='a'.repeat(64)){get('control').value=control;await get('register').handlers.click();}};
 }
@@ -61,4 +61,66 @@ for(const transition of ['clear session','switch account'])test('demo '+transiti
     assert.equal(app.get('isPublic').checked,false);assert.equal(app.get('createAddress').textContent,'Create address');
     if(transition==='clear session')await app.register('b'.repeat(64));
     await app.click('createAddress');assert.deepEqual(writes,[{control:'b'.repeat(64),body:{label:null,isPublic:false,effectiveFrom:null,effectiveTo:null,directUri:null}}]);
+});
+
+const introductionRequest={requestId:'request-from-b',requestMessageId:'intro-from-b',requesterMailboxId:'b',recipientMailboxId:'a',status:'pending',generation:1};
+const introduction=(messageId='intro-from-b',sender='b',recipient='a',text='Hello 你好 <img src=x onerror=alert(1)>')=>({senderMailboxId:sender,envelope:{recipientMailboxId:recipient,payload:{messageId,payloadEncoding:'text/plain',bytes:Buffer.from(text).toString('base64')}}});
+const rendered=node=>[node.textContent,...node.children.map(rendered)].join('\n');
+
+test('contact review shows only its exact incoming introduction as inert text without ACK or acceptance',async()=>{
+    const reads=[];
+    const app=ui(async(path,options)=>{
+        const initial=base(path,options);if(initial)return initial;reads.push([path,options.method,options.headers['X-Weave-Mailbox-Control']]);
+        if(path==='/v1/contacts/requests')return json({items:[introductionRequest],nextCursor:null});
+        return json({items:[introduction('intro-from-b','foreign','a','wrong sender'),introduction('intro-from-b','b','foreign','wrong recipient'),introduction('unrelated','b','a','wrong message'),introduction()],nextCursor:null});
+    });
+    await app.register();await app.click('loadContacts');
+    const row=app.get('contacts').children[0],text=rendered(row);
+    assert.match(text,/Hello 你好 <img src=x onerror=alert\(1\)>/);
+    assert.doesNotMatch(text,/wrong sender|wrong recipient|wrong message/);
+    assert.match(text,/request-from-b/);
+    assert.ok(row.children.some(child=>child.textContent==='Accept contact'));
+    assert.ok(reads.some(([path])=>path.startsWith('/v1/inbox')));
+    assert.ok(reads.every(([,method,control])=>method==='GET'&&control==='a'.repeat(64)));
+});
+
+for(const mode of ['missing','read failed'])test('contact review honestly reports introduction '+mode+' and preserves explicit decisions',async()=>{
+    const app=ui(async(path,options)=>base(path,options)??(path==='/v1/contacts/requests'?json({items:[introductionRequest],nextCursor:null}):mode==='missing'?json({items:[],nextCursor:null}):json({title:'Storage unavailable'},503)));
+    await app.register();await app.click('loadContacts');
+    const row=app.get('contacts').children[0];
+    assert.match(rendered(row),mode==='missing'?/no longer pending.*acknowledged.*expired/i:/could not load.*refresh requests/i);
+    assert.ok(row.children.some(child=>child.textContent==='Accept contact'));
+});
+
+test('clearing while an introduction read is pending prevents a late private body from rendering',async()=>{
+    let release,entered;const waiting=new Promise(resolve=>{entered=resolve;});
+    const app=ui(async(path,options)=>base(path,options)??(path==='/v1/contacts/requests'?json({items:[introductionRequest],nextCursor:null}):(entered(),new Promise(resolve=>{release=resolve;}))));
+    await app.register();const pending=app.click('loadContacts');await waiting;
+    await app.click('disconnect');release(json({items:[introduction()],nextCursor:null}));await pending;
+    assert.equal(rendered(app.get('contacts')),'');assert.equal(app.get('workspace').hidden,true);
+});
+
+test('contact introduction lookup follows inbox cursors and keeps colliding message IDs bound to their requester',async()=>{
+    const other={...introductionRequest,requestId:'request-from-c',requesterMailboxId:'c'};
+    const paths=[];
+    const app=ui(async(path,options)=>{
+        const initial=base(path,options);if(initial)return initial;paths.push(path);
+        if(path==='/v1/contacts/requests')return json({items:[introductionRequest,other],nextCursor:null});
+        if(!path.includes('afterCursor'))return json({items:[introduction('intro-from-b','c','a','Introduction from C')],nextCursor:'inbox:a:10'});
+        return json({items:[introduction()],nextCursor:null});
+    });
+    await app.register();await app.click('loadContacts');
+    const [fromB,fromC]=app.get('contacts').children.map(rendered);
+    assert.match(fromB,/Hello 你好/);assert.doesNotMatch(fromB,/Introduction from C/);
+    assert.match(fromC,/Introduction from C/);assert.doesNotMatch(fromC,/Hello 你好/);
+    assert.ok(paths.includes('/v1/inbox?limit=10&afterCursor=inbox%3Aa%3A10'));
+});
+
+test('contact introduction lookup is bounded and does not call a partial traversal acknowledged or expired',async()=>{
+    let pages=0;
+    const app=ui(async(path,options)=>base(path,options)??(path==='/v1/contacts/requests'?json({items:[introductionRequest],nextCursor:null}):json({items:[],nextCursor:'inbox:a:'+ ++pages})));
+    await app.register();await app.click('loadContacts');
+    assert.equal(pages,8);
+    const text=rendered(app.get('contacts'));
+    assert.match(text,/not found in the loaded inbox pages/);assert.doesNotMatch(text,/acknowledged|expired/);
 });
