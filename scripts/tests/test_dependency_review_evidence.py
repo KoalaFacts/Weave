@@ -27,6 +27,13 @@ class DependencyReviewWorkflowTests(unittest.TestCase):
         self.assertNotIn("deny-licenses:", job)
         self.assertIn("tools/dependency-license-policy/check-license-policy.mjs", job)
 
+    def test_snapshot_wait_has_an_explicit_budget_and_enclosing_timeouts(self):
+        job = self.job()
+        self.assertIn('--snapshot-wait-seconds 600', job)
+        self.assertIn('    timeout-minutes: 20\n', job.split('    steps:', 1)[0])
+        gate = job.split('      - name: Require dependency comparison evidence\n', 1)[1]
+        self.assertIn('        timeout-minutes: 12\n', gate.split('\n      - name:', 1)[0])
+
 
 if __name__ == "__main__":
     unittest.main()

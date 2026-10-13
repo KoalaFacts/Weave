@@ -325,6 +325,7 @@ jobs:
     name: Dependency Review
     needs: dependency-snapshots
     runs-on: ubuntu-latest
+    timeout-minutes: 20
     if: github.event_name == 'pull_request'
     permissions:
       contents: read
@@ -336,12 +337,15 @@ jobs:
           persist-credentials: false
 
       - name: Require dependency comparison evidence
-        timeout-minutes: 3
+        timeout-minutes: 12
         env:
           GH_TOKEN: ${{ github.token }}
           PR_BASE_SHA: ${{ github.event.pull_request.base.sha }}
           PR_HEAD_SHA: ${{ github.event.pull_request.head.sha }}
-        run: python3 scripts/check_dependency_review_evidence.py --report "$RUNNER_TEMP/dependency-review-evidence.json"
+        run: >-
+          python3 scripts/check_dependency_review_evidence.py
+          --snapshot-wait-seconds 600
+          --report "$RUNNER_TEMP/dependency-review-evidence.json"
 
       - name: Upload dependency comparison evidence
         if: always()

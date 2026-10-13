@@ -46,6 +46,21 @@ class Opener:
         return value
 
 
+class Clock:
+    def __init__(self, advance=True):
+        self.now = 0
+        self.sleeps = []
+        self.advance = advance
+
+    def monotonic(self):
+        return self.now
+
+    def sleep(self, seconds):
+        self.sleeps.append(seconds)
+        if self.advance:
+            self.now += seconds
+
+
 class EvidenceApiTests(unittest.TestCase):
     def check(self, opener):
         return evidence.inspect_comparison("owner/repo", BASE, HEAD, "synthetic-token", opener)
@@ -263,6 +278,127 @@ class EvidenceApiTests(unittest.TestCase):
             self.assertIn(BASE + '...' + HEAD, opener.requests[0][0].full_url)
             self.assertNotIn('synthetic-token', report.read_text() + output.getvalue() + summary.read_text())
             self.assertNotIn('private-independent-package', output.getvalue() + summary.read_text())
+
+
+class EvidenceWaitTests(unittest.TestCase):
+    def warning(self, **kwargs):
+        return Reply(warning=base64.b64encode(b'private snapshot warning').decode(), **kwargs)
+
+    def run_cli(self, opener, budget=None, clock=None):
+        clock = clock or Clock()
+        with tempfile.TemporaryDirectory() as directory:
+            report = Path(directory) / 'report.json'
+            env = {'GITHUB_REPOSITORY': 'owner/repo', 'PR_BASE_SHA': BASE,
+                   'PR_HEAD_SHA': HEAD, 'GH_TOKEN': 'synthetic-token'}
+            output = io.StringIO()
+            args = ['--report', str(report)]
+            if budget is not None:
+                args += ['--snapshot-wait-seconds', str(budget)]
+            with patch.dict(os.environ, env), patch.object(evidence.urllib.request, 'build_opener',
+                    return_value=opener), patch.object(evidence, 'time', clock, create=True), \
+                    patch('sys.stdout', output):
+                code = evidence.main(args)
+            self.assertNotIn('synthetic-token', report.read_text() + output.getvalue())
+            self.assertNotIn('private snapshot warning', output.getvalue())
+            return code, json.loads(report.read_text()), clock
+
+    def test_default_budget_does_not_wait_on_snapshot_warning(self):
+        opener = Opener(self.warning(), Reply())
+        code, report, clock = self.run_cli(opener)
+        self.assertEqual((code, report['failure_code']), (1, 'missing-snapshot-evidence'))
+        self.assertEqual(len(opener.requests), 1)
+        self.assertEqual(clock.sleeps, [])
+
+    def test_warning_then_available_restarts_exact_pair_and_retains_only_complete_new_pages(self):
+        stale = {**CHANGE, 'manifest': 'stale.lock'}
+        fresh = {**CHANGE, 'manifest': 'current.lock'}
+        opener = Opener(Reply(json.dumps([stale]).encode(), link=NEXT), self.warning(),
+                        Reply(json.dumps([CHANGE]).encode(), link=NEXT),
+                        Reply(json.dumps([fresh]).encode()))
+
+        code, report, clock = self.run_cli(opener, 600)
+
+        self.assertEqual(code, 0)
+        self.assertEqual(report['status'], 'available')
+        self.assertEqual(report['dependency_records'], [CHANGE, fresh])
+        self.assertEqual((report['dependency_changes'], report['pages']), (2, 2))
+        self.assertEqual(clock.sleeps, [10])
+        endpoint = f'https://api.github.com/repos/owner/repo/dependency-graph/compare/{BASE}...{HEAD}'
+        self.assertEqual([request.full_url for request, _ in opener.requests],
+                         [f'{endpoint}?per_page=100&page={page}' for page in [1, 2, 1, 2]])
+        self.assertTrue(all(request.get_method() == 'GET' for request, _ in opener.requests))
+
+    def test_permanent_warning_exhausts_deadline_and_remains_unavailable(self):
+        opener = Opener(self.warning(), self.warning(), Reply())
+
+        code, report, clock = self.run_cli(opener, 20)
+
+        self.assertEqual((code, report['failure_code']), (1, 'snapshot-evidence-timeout'))
+        self.assertEqual(report['status'], 'unavailable')
+        self.assertNotIn('dependency_records', report)
+        self.assertEqual(len(opener.requests), 2)
+        self.assertEqual(clock.sleeps, [10, 10])
+
+    def test_stalled_clock_still_has_a_finite_attempt_limit(self):
+        opener = Opener(*(self.warning() for _ in range(61)), Reply())
+
+        code, report, clock = self.run_cli(opener, 600, Clock(advance=False))
+
+        self.assertEqual((code, report['failure_code']), (1, 'snapshot-evidence-timeout'))
+        self.assertEqual(len(opener.requests), 61)
+        self.assertEqual(clock.sleeps, [10] * 60)
+
+    def test_invalid_warning_or_response_is_not_retried(self):
+        cases = [
+            (Reply(warning='%%%'), 'invalid-snapshot-warning'),
+            (self.warning(data=b'{bad'), 'invalid-comparison-response'),
+            (self.warning(data=b'[{}]'), 'invalid-comparison-response'),
+            (self.warning(data=b' ' * (evidence.MAX_PAGE_BYTES + 1)), 'comparison-response-too-large'),
+            (self.warning(status=403), 'comparison-http-error'),
+            (urllib.error.URLError('private network details'), 'comparison-network-error'),
+            (Reply(b'{}'), 'invalid-comparison-response'),
+            (Reply(json.dumps([CHANGE] * 2001).encode()), 'comparison-change-limit'),
+        ]
+        for reply, failure_code in cases:
+            with self.subTest(failure_code=failure_code):
+                opener = Opener(reply, Reply())
+                code, report, clock = self.run_cli(opener, 600)
+                self.assertEqual((code, report['failure_code']), (1, failure_code))
+                self.assertEqual(len(opener.requests), 1)
+                self.assertEqual(clock.sleeps, [])
+
+    def test_warning_does_not_mask_invalid_later_page(self):
+        opener = Opener(self.warning(link=NEXT), Reply(b'{bad'), Reply())
+
+        code, report, clock = self.run_cli(opener, 600)
+
+        self.assertEqual((code, report['failure_code']), (1, 'invalid-comparison-response'))
+        self.assertEqual(len(opener.requests), 2)
+        self.assertEqual(clock.sleeps, [])
+
+    def test_response_arriving_after_deadline_is_not_accepted(self):
+        clock = Clock()
+
+        class LateReply(Reply):
+            def read(self, size):
+                clock.now += 2
+                return super().read(size)
+
+        opener = Opener(LateReply())
+
+        code, report, _ = self.run_cli(opener, 1, clock)
+
+        self.assertEqual((code, report['failure_code']), (1, 'snapshot-evidence-timeout'))
+        self.assertEqual(opener.requests[0][1], 1)
+        self.assertEqual(clock.sleeps, [])
+
+    def test_wait_budget_must_be_an_integer_from_zero_through_six_hundred(self):
+        for budget in ['-1', '601', 'nan', '0.1']:
+            with self.subTest(budget=budget), tempfile.TemporaryDirectory() as directory, \
+                    patch('sys.stderr', io.StringIO()), self.assertRaises(SystemExit) as caught:
+                evidence.main(['--report', str(Path(directory) / 'report.json'),
+                               '--snapshot-wait-seconds', budget])
+            self.assertEqual(caught.exception.code, 2)
 
 
 if __name__ == "__main__":
