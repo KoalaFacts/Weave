@@ -52,6 +52,9 @@ jobs:
       - name: Build
         run: dotnet build Weave.slnx --no-restore -c Release
 
+      - name: Install the pinned Dashboard Playwright browser
+        run: pwsh tests/Weave.Silo.Tests/bin/Release/net10.0/playwright.ps1 install --with-deps --no-shell chromium
+
       - name: Pack and validate the tool without publishing
         env:
           VERSION: 0.0.0-ci-validation

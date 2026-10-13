@@ -1,6 +1,8 @@
 using System.Text;
 using System.Text.Json;
 using System.Text.Json.Nodes;
+using Microsoft.Playwright;
+using static Microsoft.Playwright.Assertions;
 
 namespace Weave.Silo.Tests.Dashboard;
 
@@ -20,7 +22,7 @@ public sealed class DashboardReviewBrowserTests
         await fixture.LoadRequestAsync(path);
 
         await fixture.ClickVerifyAsync();
-        await fixture.Browser.WaitForAsync("document.querySelector('.review-panel h2')?.textContent === 'Verified snapshot'", "verified review snapshot");
+        await Expect(fixture.Page.Locator(".review-panel h2")).ToHaveTextAsync("Verified snapshot");
 
         var request = fixture.Api.Requests.ShouldHaveSingleItem();
         request.Method.ShouldBe("POST");
@@ -31,20 +33,20 @@ public sealed class DashboardReviewBrowserTests
         var text = await fixture.TextAsync();
         text.ShouldContain("original-release-agent");
         text.ShouldContain("browser-review-plan-marker");
-        (await fixture.Browser.EvaluateAsync<string>("document.querySelector('.review-panel pre.body').textContent"))
+        (await fixture.Page.Locator(".review-panel pre.body").TextContentAsync())
             .ShouldBe(JsonSerializer.Serialize(OriginalBody));
-        (await fixture.Browser.EvaluateAsync<int>("document.querySelectorAll('.review-panel script').length")).ShouldBe(0);
+        (await fixture.Page.Locator(".review-panel script").CountAsync()).ShouldBe(0);
         text.ShouldContain("No approval or execution has occurred");
-        (await fixture.Browser.EvaluateAsync<bool>("window.__reviewInjected === undefined")).ShouldBeTrue();
-        (await fixture.Browser.EvaluateAsync<string>("document.getElementById('review-capability').value")).ShouldBe("");
-        (await fixture.Browser.EvaluateAsync<string>("document.getElementById('review-api-token').value")).ShouldBe("");
+        (await fixture.Page.EvaluateAsync<bool>("window.__reviewInjected === undefined")).ShouldBeTrue();
+        (await fixture.Page.Locator("#review-capability").InputValueAsync()).ShouldBe("");
+        (await fixture.Page.Locator("#review-api-token").InputValueAsync()).ShouldBe("");
 
         await fixture.FillAsync("review-workspace", "different-lab");
-        await fixture.Browser.WaitForAsync("document.querySelector('.review-panel') === null", "changed workspace invalidates verified snapshot");
+        await Expect(fixture.Page.Locator(".review-panel")).ToHaveCountAsync(0);
 
         (await fixture.TextAsync()).ShouldContain("No verified snapshot is displayed.");
         fixture.Api.Requests.ShouldHaveSingleItem();
-        fixture.Browser.BlockedRequests.ShouldBeEmpty();
+        fixture.BlockedRequests.ShouldBeEmpty();
     }
 
     [Fact]
@@ -57,16 +59,16 @@ public sealed class DashboardReviewBrowserTests
         await fixture.LoadRequestAsync(path);
 
         await fixture.ClickVerifyAsync();
-        await fixture.Browser.WaitForAsync("document.querySelector('.review-page [role=alert]')?.textContent.includes('Review denied.') === true", "denied review message");
+        await Expect(fixture.Page.GetByRole(AriaRole.Alert)).ToContainTextAsync("Review denied.");
 
         var text = await fixture.TextAsync();
         text.ShouldContain("An independent reviewer needs read, decision and exact-operation approval authority.");
         text.ShouldNotContain("private-upstream-denial-marker");
-        (await fixture.Browser.EvaluateAsync<bool>("document.querySelector('.review-panel') === null")).ShouldBeTrue();
-        (await fixture.Browser.EvaluateAsync<string>("document.getElementById('review-capability').value")).ShouldBe("");
-        (await fixture.Browser.EvaluateAsync<string>("document.getElementById('review-api-token').value")).ShouldBe("");
+        (await fixture.Page.Locator(".review-panel").CountAsync()).ShouldBe(0);
+        (await fixture.Page.Locator("#review-capability").InputValueAsync()).ShouldBe("");
+        (await fixture.Page.Locator("#review-api-token").InputValueAsync()).ShouldBe("");
         fixture.Api.Requests.ShouldHaveSingleItem().Path.ShouldBe(DashboardReviewBrowserApi.ReviewPath);
-        fixture.Browser.BlockedRequests.ShouldBeEmpty();
+        fixture.BlockedRequests.ShouldBeEmpty();
     }
 
     [Fact]
@@ -79,7 +81,7 @@ public sealed class DashboardReviewBrowserTests
         await fixture.LoadRequestAsync(path);
         await fixture.ClickVerifyAsync();
         await fixture.Api.Entered.Task.WaitAsync(TimeSpan.FromSeconds(10), TestContext.Current.CancellationToken);
-        await fixture.Browser.WaitForAsync("document.querySelector('.review-page .actions button:first-child').textContent === 'Verifying…'", "pending verification");
+        await Expect(fixture.Page.Locator(".review-page .actions button").First).ToHaveTextAsync("Verifying…");
 
         try
         {
@@ -91,16 +93,16 @@ public sealed class DashboardReviewBrowserTests
             fixture.Api.Release.TrySetResult();
         }
         await fixture.Api.Completed.Task.WaitAsync(TimeSpan.FromSeconds(10), TestContext.Current.CancellationToken);
-        await fixture.Browser.WaitForAsync("document.querySelector('.review-page').innerText.includes('No file loaded. Select the retained original JSON request.')", "cleared upload state");
+        await Expect(fixture.Page.Locator(".review-page")).ToContainTextAsync("No file loaded. Select the retained original JSON request.");
 
-        (await fixture.Browser.EvaluateAsync<bool>("document.querySelector('.review-panel') === null")).ShouldBeTrue();
-        (await fixture.Browser.EvaluateAsync<bool>("document.querySelector('.review-page .actions button:first-child').disabled")).ShouldBeTrue();
-        (await fixture.Browser.EvaluateAsync<int>("document.getElementById('review-file').files.length")).ShouldBe(0);
-        (await fixture.Browser.EvaluateAsync<string>("document.getElementById('review-capability').value")).ShouldBe("");
-        (await fixture.Browser.EvaluateAsync<string>("document.getElementById('review-api-token').value")).ShouldBe("");
+        (await fixture.Page.Locator(".review-panel").CountAsync()).ShouldBe(0);
+        (await fixture.Page.Locator(".review-page .actions button").First.IsDisabledAsync()).ShouldBeTrue();
+        (await fixture.Page.EvaluateAsync<int>("document.getElementById('review-file').files.length")).ShouldBe(0);
+        (await fixture.Page.Locator("#review-capability").InputValueAsync()).ShouldBe("");
+        (await fixture.Page.Locator("#review-api-token").InputValueAsync()).ShouldBe("");
         (await fixture.TextAsync()).ShouldContain("No verified snapshot is displayed.");
         fixture.Api.Requests.ShouldHaveSingleItem().Path.ShouldBe(DashboardReviewBrowserApi.ReviewPath);
-        fixture.Browser.BlockedRequests.ShouldBeEmpty();
+        fixture.BlockedRequests.ShouldBeEmpty();
     }
 
     [Theory]
@@ -114,14 +116,14 @@ public sealed class DashboardReviewBrowserTests
         byte[] bytes = oversized ? new byte[1_048_577] : [0xC3, 0x28];
         await File.WriteAllBytesAsync(path, bytes, TestContext.Current.CancellationToken);
 
-        await fixture.Browser.UploadAsync(path);
-        await fixture.Browser.WaitForAsync("document.querySelector('.review-page [role=alert]')?.textContent.includes('Unable to read the file.') === true", "rejected invalid upload");
+        await fixture.Page.Locator("#review-file").SetInputFilesAsync(path);
+        await Expect(fixture.Page.GetByRole(AriaRole.Alert)).ToContainTextAsync("Unable to read the file.");
 
         (await fixture.TextAsync()).ShouldContain("Select a UTF-8 invocation JSON file no larger than 1 MiB.");
-        (await fixture.Browser.EvaluateAsync<bool>("document.querySelector('.review-page .actions button:first-child').disabled")).ShouldBeTrue();
-        (await fixture.Browser.EvaluateAsync<bool>("document.querySelector('.review-panel') === null")).ShouldBeTrue();
+        (await fixture.Page.Locator(".review-page .actions button").First.IsDisabledAsync()).ShouldBeTrue();
+        (await fixture.Page.Locator(".review-panel").CountAsync()).ShouldBe(0);
         fixture.Api.Requests.ShouldBeEmpty();
-        fixture.Browser.BlockedRequests.ShouldBeEmpty();
+        fixture.BlockedRequests.ShouldBeEmpty();
     }
 
     private static string OriginalRequest() => new JsonObject
