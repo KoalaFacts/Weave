@@ -38,7 +38,10 @@ public sealed class DashboardPlaywrightBrowserTests
         var closed = new TaskCompletionSource<(int? Code, string? Reason)>(TaskCreationOptions.RunContinuationsAsynchronously);
         var probeAddress = new UriBuilder(fixture.Page.Url)
         {
-            Scheme = "ws", Path = "/__weave_playwright_reload_probe", Query = "", Fragment = ""
+            Scheme = "ws",
+            Path = "/__weave_playwright_reload_probe",
+            Query = "",
+            Fragment = ""
         }.Uri.AbsoluteUri;
         // This exact test-only route exercises the SDK's mock socket lifecycle without
         // changing the context routes for Dashboard traffic or foreign-origin denial.
