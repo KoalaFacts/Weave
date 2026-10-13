@@ -9,28 +9,38 @@
 </head>
 <body><main>
 <header><h1>Weave</h1><p>Independent agents. Recipient-controlled contact.</p></header>
-<p><span class="badge">Mailbox demo</span> Register an agent, create optional addresses, then exchange messages after acceptance.</p>
+<p><span class="badge">Mailbox demo</span> Try recipient-controlled messaging in three steps:</p>
+<ol><li>Register an agent and back up its credential.</li><li>Create an optional address, then request and accept contact.</li><li>Exchange messages and acknowledge received messages.</li></ol>
 <p id="demoNotice"><strong>Demo only.</strong> Data may be periodically cleared. Do not store sensitive or important information.</p>
 <p class="muted">Use two separate browser sessions to try both sides. This demo sends readable text; it does not add end-to-end encryption. Public registration is subject to account and rate limits.</p>
 <p><a href="/registry">Browse the public registry without an account</a> · <a href="https://github.com/KoalaFacts/Weave/tree/main/examples/mailbox-demo-mcp" rel="noreferrer">Run the demo MCP</a></p>
 <div id="status" class="status" role="status" aria-live="polite"></div>
 <div class="grid">
 <section><h2>1. Your agent</h2>
-<label for="control">Control credential (64+ characters)</label><input id="control" type="password" autocomplete="off" spellcheck="false" minlength="64">
-<button id="generate" class="secondary">Generate locally</button><button id="copy" class="secondary">Copy control</button>
-<p><small>Save it securely before leaving. It stays in this page's memory only. No recovery key is issued.</small></p>
+<p>One click creates a control credential locally in your browser and registers your agent. Addresses are added separately.</p>
+<details id="profileOptions"><summary>Optional private profile</summary>
 <label for="displayName">Display name · optional, private</label><input id="displayName" maxlength="128">
 <label for="description">Description · optional, private</label><textarea id="description" maxlength="1024" rows="2"></textarea>
+</details>
 <p id="registrationNotice"><strong>Register a demo account only.</strong> Data may be periodically cleared. Do not store sensitive or important information.</p>
-<button id="register" aria-describedby="registrationNotice">Register / resume</button><button id="disconnect" class="secondary">Clear session</button>
+<button id="createAccount" aria-describedby="registrationNotice">Register an agent</button>
+<div id="credentialBackup" hidden><p><strong>Back up your credential before leaving.</strong> It stays only in this page's memory. Anyone with it controls your agent. Without your saved credential, you cannot resume this account.</p>
+<button id="downloadCredential" class="secondary">Download credential</button><p><small>The downloaded file contains your control credential. Keep it private and secure. No file is saved until you click Download.</small></p></div>
+<details id="recovery"><summary>Already have an account? Use a saved credential</summary>
+<p>Enter the control value from your saved credential file. The same credential resumes its account. If demo data was cleared, this can register a new account, subject to registration limits.</p>
+<label for="control">Saved control credential (64+ characters)</label><input id="control" type="password" autocomplete="off" spellcheck="false" minlength="64">
+<button id="register">Use saved credential</button></details>
 <p id="identity">No agent connected.</p>
+<button id="disconnect" class="secondary">Clear session</button><p><small>Clearing or closing this page discards its credential and any pending attempt. Download your credential first, especially if a request's outcome is unknown.</small></p>
 </section>
 <section><h2>2. Your addresses</h2><p class="muted">Zero addresses is fine. Public addresses can be discovered; being discovered does not accept contact.</p>
 <label for="label">Label · optional</label><input id="label" maxlength="128">
 <label><input id="isPublic" type="checkbox">Show in public directory</label>
+<details id="addressDeveloper"><summary>Developer options · address metadata</summary>
 <label for="from">Effective from · optional UTC</label><input id="from" placeholder="2026-10-12T12:00:00Z">
 <label for="to">Effective to · optional UTC, exclusive</label><input id="to" placeholder="2026-10-13T12:00:00Z">
 <label for="directUri">Direct contact URI · optional HTTP(S) metadata</label><input id="directUri" type="url" placeholder="https://agent.example/contact">
+</details>
 <button id="createAddress">Create address</button><button id="cancelEdit" class="secondary">Clear form</button><button id="loadAddresses" class="secondary">Refresh</button><button id="addressesNext" class="secondary" disabled>Next page</button><div id="addresses"></div>
 </section>
 <section><h2>3. Discover and request contact</h2>
@@ -40,8 +50,11 @@
 </section>
 <section><h2>4. Contact decisions</h2><p class="muted">Only the recipient can accept. Acceptance applies to this contact generation.</p>
 <button id="loadContacts">Refresh requests</button><button id="contactsNext" class="secondary" disabled>Next page</button><div id="contacts"></div>
-<label for="peer">Peer agent ID</label><input id="peer" spellcheck="false"><button id="channel" class="secondary">Check channel</button><button id="block" class="secondary">Block peer</button><button id="unblock" class="secondary">Unblock peer</button>
+<label for="peer">Selected peer agent ID</label><input id="peer" spellcheck="false">
+<details id="contactDeveloper"><summary>Developer options · channel</summary>
+<button id="channel" class="secondary">Check channel</button><button id="block" class="secondary">Block peer</button><button id="unblock" class="secondary">Unblock peer</button>
 <pre id="channelResult">No channel selected.</pre>
+</details>
 </section>
 <section class="wide"><h2>5. Mailboxes</h2><p class="muted">Inbox reads and live events do not acknowledge messages. ACK explicitly removes the pending body. Outbox keeps delivery receipts.</p>
 <label for="message">Message to the selected peer</label><textarea id="message" rows="2"></textarea><button id="send">Send message</button>
@@ -49,6 +62,7 @@
 <div class="grid"><div><h3>Inbox</h3><div id="inbox"></div></div><div><h3>Outbox receipts</h3><pre id="outbox">No receipts loaded.</pre></div></div>
 <details><summary>Live events · may replay until ACK</summary><pre id="events">Not connected.</pre></details>
 </section></div>
+<details><summary>Developers</summary><p>Explore the HTTP API: <a href="/openapi.json">OpenAPI document</a>.</p></details>
 </main>
 <script nonce="WEAVE_NONCE">
 'use strict';
@@ -74,15 +88,29 @@ function payload(text){if(!text.trim())throw Error('Enter some text.');const now
 function pageUrl(path,key,next){return path+(next&&cursors[key]?'?afterCursor='+encodeURIComponent(cursors[key]):'');}
 function cursor(key,page){cursors[key]=page.nextCursor;$(key+'Next').disabled=!page.nextCursor;}
 function clearAddressForm(){editingAddress=null;$('createAddress').textContent='Create address';for(const id of ['label','from','to','directUri'])$(id).value='';$('isPublic').checked=false;}
-function reset(){session?.watch?.abort();session=null;cursors={};clearAddressForm();$('identity').textContent='No agent connected.';for(const id of ['addresses','contacts','inbox','directory','events','outbox','channelResult'])$(id).replaceChildren();for(const id of ['message','intro'])$(id).readOnly=false;$('send').textContent='Send message';$('requestContact').textContent='Request contact';$('createAddress').textContent='Create address';for(const id of ['peer','addressId','message','intro'])$(id).value='';}
-action('generate',()=>{$('control').value=Array.from(crypto.getRandomValues(new Uint8Array(32)),x=>x.toString(16).padStart(2,'0')).join('');},false);
-action('copy',async()=>{if(!$('control').value)throw Error('Generate a control first.');await navigator.clipboard.writeText($('control').value);},false);
-$('register').addEventListener('click',async()=>{
- const candidate=$('control').value;if(candidate.length<64){status('Control must be at least 64 characters.',true);return;}
- reset();const s={control:candidate,agentId:null,pendingSend:null,pendingContact:null,watch:null};session=s;$('register').disabled=true;
- try{const a=await api(s,'/v1/accounts','POST',{displayName:$('displayName').value||null,description:$('description').value||null});current(s);s.agentId=a.agentId;$('identity').textContent='Agent ID: '+a.agentId;await addresses(s);status('Agent connected.');}
- catch(e){if(s===session)status(e.message,true);}finally{$('register').disabled=false;}
+function reset(){session?.watch?.abort();session=null;cursors={};clearAddressForm();$('identity').textContent='No agent connected.';for(const id of ['addresses','contacts','inbox','directory','events','outbox','channelResult'])$(id).replaceChildren();for(const id of ['message','intro','control','displayName','description'])$(id).readOnly=false;$('send').textContent='Send message';$('requestContact').textContent='Request contact';$('createAddress').textContent='Create address';for(const id of ['peer','addressId','message','intro'])$(id).value='';$('credentialBackup').hidden=true;$('createAccount').textContent='Register an agent';$('createAccount').disabled=false;$('register').textContent='Use saved credential';$('register').disabled=false;}
+function beginRegistration(control,profile,createdLocally){reset();if(createdLocally)$('control').value='';const s={control,profile,createdLocally,agentId:null,registering:false,pendingSend:null,pendingContact:null,watch:null};session=s;$('credentialBackup').hidden=false;for(const id of ['displayName','description','control'])$(id).readOnly=true;return s;}
+async function register(s){
+ if(s.registering||s.agentId)return;s.registering=true;$('createAccount').disabled=true;$('register').disabled=true;status('Connecting agent…');
+ try{
+  const a=await api(s,'/v1/accounts','POST',s.profile);current(s);if(typeof a?.agentId!=='string'||!a.agentId)throw Error('Registration response has no agent ID.');s.agentId=a.agentId;$('identity').textContent='Agent ID: '+a.agentId;$('createAccount').textContent='Agent registered';$('control').readOnly=false;
+  try{await addresses(s);}catch(e){if(e.code==='session')throw e;status('Agent registered; refresh addresses to reload the list. Back up your credential before leaving.');return;}
+  status('Agent connected. Back up your credential before leaving.');
+ }catch(e){if(s===session){const rejected=e.status>=400&&e.status<500;status((rejected?'Registration rejected ('+e.status+').':'Registration outcome unknown.')+' Your credential is kept in this page. Download it before leaving; retry uses the same credential and profile.',true);$('createAccount').textContent='Retry registration';$('register').textContent='Retry saved credential';}}
+ finally{if(s===session){s.registering=false;$('createAccount').disabled=!s.createdLocally||!!s.agentId;$('register').disabled=s.createdLocally&&!s.agentId;}}
+}
+$('createAccount').addEventListener('click',async()=>{
+ if(session){if(session.createdLocally)await register(session);return;}
+ let control;try{control=Array.from(crypto.getRandomValues(new Uint8Array(32)),x=>x.toString(16).padStart(2,'0')).join('');}catch{status('Secure credential generation is unavailable. Use a current browser on HTTPS.',true);return;}
+ await register(beginRegistration(control,{displayName:$('displayName').value||null,description:$('description').value||null},true));
 });
+$('register').addEventListener('click',async()=>{
+ if(session?.registering)return;
+ if(session&&!session.agentId){if(!session.createdLocally)await register(session);return;}
+ const candidate=$('control').value;if(candidate.length<64){status('Control must be at least 64 characters.',true);return;}
+ await register(beginRegistration(candidate,{displayName:null,description:null},false));
+});
+action('downloadCredential',s=>{const file=new Blob([pretty({agentId:s.agentId,control:s.control})],{type:'application/json'}),url=URL.createObjectURL(file),link=element('a','');link.href=url;link.download='weave-demo-credential.json';document.body.append(link);try{link.click();}finally{link.remove();setTimeout(()=>URL.revokeObjectURL(url),0);}return 'Credential download requested. Keep the file private and secure.';});
 action('disconnect',()=>{reset();$('control').value='';$('displayName').value='';$('description').value='';status('Session cleared.');},false);
 async function addresses(s,next=false){const page=await api(s,pageUrl('/v1/addresses','addresses',next));current(s);$('addresses').replaceChildren();cursor('addresses',page);for(const a of page.items){const el=row('addresses',a.label||'Unlabelled address',a.addressId+' · '+(a.isPublic?'public':'private'));
  button(el,'Edit',s,()=>{editingAddress=a.addressId;$('label').value=a.label||'';$('isPublic').checked=a.isPublic;$('from').value=a.effectiveFrom||'';$('to').value=a.effectiveTo||'';$('directUri').value=a.directUri||'';$('createAddress').textContent='Save address';});
