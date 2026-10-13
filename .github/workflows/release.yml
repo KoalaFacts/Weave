@@ -24,7 +24,7 @@ env:
 jobs:
   create-release:
     name: Release v${{ inputs.version }}
-    runs-on: ubuntu-latest
+    runs-on: ubuntu-24.04
     if: github.ref == 'refs/heads/main'
     outputs:
       version: ${{ steps.version.outputs.version }}
@@ -62,6 +62,14 @@ jobs:
 
       - name: Build
         run: dotnet build Weave.slnx --no-restore -c Release
+
+      - name: Install the pinned Dashboard Playwright browser
+        run: pwsh tests/Weave.Silo.Tests/bin/Release/net10.0/playwright.ps1 install --with-deps --no-shell chromium
+
+      - name: Prepare the managed Dashboard browser sandbox
+        uses: ./.github/actions/setup-playwright-sandbox
+        with:
+          playwright-package: tests/Weave.Silo.Tests/bin/Release/net10.0/.playwright/package
 
       - name: Test
         run: dotnet test --solution Weave.slnx --no-build -c Release

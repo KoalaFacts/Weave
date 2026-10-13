@@ -13,13 +13,17 @@ import os
 from pathlib import Path
 import re
 import sys
+import time
 import urllib.error
 import urllib.request
 
 MAX_PAGE_BYTES = 2 * 1024 * 1024
-MAX_PAGES = 20
+MAX_TOTAL_BYTES = 40 * 1024 * 1024
+MAX_PAGES = 400
 MAX_CHANGES = 2000
 WARNING_HEADER = "x-github-dependency-graph-snapshot-warnings"
+MAX_WARNING_ATTEMPTS = 61
+WARNING_INTERVAL_SECONDS = 10
 
 
 class EvidenceUnavailable(Exception):
@@ -70,7 +74,7 @@ def snapshot_warning(headers):
     return warning
 
 
-def inspect_comparison(repository, base_sha, head_sha, token, opener=None):
+def inspect_comparison(repository, base_sha, head_sha, token, opener=None, *, deadline=None):
     if (not re.fullmatch(r"[A-Za-z0-9_.-]+/[A-Za-z0-9_.-]+", repository)
             or any(part in (".", "..") for part in repository.split("/"))
             or not re.fullmatch(r"[0-9a-fA-F]{40}", base_sha)
@@ -81,10 +85,15 @@ def inspect_comparison(repository, base_sha, head_sha, token, opener=None):
     if opener is None:
         opener = urllib.request.build_opener(urllib.request.ProxyHandler({}), NoRedirect())
     total = 0
+    total_bytes = 0
     records = []
+    warnings = []
     for page in range(1, MAX_PAGES + 1):
+        timeout = 15 if deadline is None else min(15, deadline - time.monotonic())
+        if timeout <= 0:
+            raise EvidenceUnavailable("snapshot-evidence-timeout", warnings)
         url = (f"https://api.github.com/repos/{repository}/dependency-graph/compare/"
-               f"{base_sha}...{head_sha}?per_page=100&page={page}")
+               f"{base_sha}...{head_sha}?per_page=5&page={page}")
         request = urllib.request.Request(url, headers={
             "Accept": "application/vnd.github+json",
             "Authorization": "Bearer " + token,
@@ -92,13 +101,13 @@ def inspect_comparison(repository, base_sha, head_sha, token, opener=None):
             "User-Agent": "weave-dependency-evidence"
         })
         try:
-            with opener.open(request, timeout=15) as response:
+            with opener.open(request, timeout=timeout) as response:
                 if response.status != 200:
                     raise EvidenceUnavailable("comparison-http-error")
                 warning = snapshot_warning(response.headers)
                 if warning is not None:
-                    raise EvidenceUnavailable("missing-snapshot-evidence", (warning,))
-                body = response.read(MAX_PAGE_BYTES + 1)
+                    warnings.append(warning)
+                body = response.read(min(MAX_PAGE_BYTES, MAX_TOTAL_BYTES - total_bytes) + 1)
                 next_page = 'rel="next"' in response.headers.get("Link", "")
         except urllib.error.HTTPError as error:
             error.close()
@@ -107,6 +116,9 @@ def inspect_comparison(repository, base_sha, head_sha, token, opener=None):
             raise EvidenceUnavailable("comparison-network-error") from None
         if len(body) > MAX_PAGE_BYTES:
             raise EvidenceUnavailable("comparison-response-too-large")
+        total_bytes += len(body)
+        if total_bytes > MAX_TOTAL_BYTES:
+            raise EvidenceUnavailable("comparison-total-response-too-large")
         try:
             changes = json.loads(body, object_pairs_hook=unique_object,
                                  parse_float=finite_float, parse_constant=reject_nonfinite)
@@ -122,18 +134,50 @@ def inspect_comparison(repository, base_sha, head_sha, token, opener=None):
             raise EvidenceUnavailable("invalid-comparison-response")
         total += len(changes)
         records.extend(changes)
+        if deadline is not None and time.monotonic() >= deadline:
+            raise EvidenceUnavailable("snapshot-evidence-timeout", warnings)
         # The API may return a complete array larger than the requested page size.
         # Only an explicit continuation header establishes another page.
         if not next_page:
+            if warnings:
+                raise EvidenceUnavailable("missing-snapshot-evidence", warnings)
             return {"dependency_changes": total, "pages": page, "dependency_records": records}
         # Never follow a response-supplied URL with the API credential.
         # Instead request the next numbered page from the same fixed endpoint.
     raise EvidenceUnavailable("comparison-pagination-limit")
 
 
+def wait_for_comparison(repository, base_sha, head_sha, token, wait_seconds):
+    if not wait_seconds:
+        return inspect_comparison(repository, base_sha, head_sha, token)
+    deadline = time.monotonic() + wait_seconds
+    for attempt in range(1, MAX_WARNING_ATTEMPTS + 1):
+        try:
+            return inspect_comparison(repository, base_sha, head_sha, token, deadline=deadline)
+        except EvidenceUnavailable as error:
+            if error.code != "missing-snapshot-evidence":
+                raise
+            remaining = deadline - time.monotonic()
+            if remaining <= 0 or attempt == MAX_WARNING_ATTEMPTS:
+                raise EvidenceUnavailable("snapshot-evidence-timeout", error.warnings) from None
+            time.sleep(min(WARNING_INTERVAL_SECONDS, remaining))
+
+
+def wait_budget(value):
+    try:
+        seconds = int(value)
+    except ValueError:
+        raise argparse.ArgumentTypeError("snapshot wait must be an integer from 0 through 600") from None
+    if not 0 <= seconds <= 600:
+        raise argparse.ArgumentTypeError("snapshot wait must be an integer from 0 through 600")
+    return seconds
+
+
 def main(argv=None):
     parser = argparse.ArgumentParser(description=__doc__)
     parser.add_argument("--report", type=Path, required=True)
+    parser.add_argument("--snapshot-wait-seconds", type=wait_budget, default=0,
+                        help="wait up to 600 seconds only for valid snapshot warnings (default: 0)")
     args = parser.parse_args(argv)
     repository = os.environ.get("GITHUB_REPOSITORY", "")
     base_sha = os.environ.get("PR_BASE_SHA", "")
@@ -141,8 +185,8 @@ def main(argv=None):
     report = {"repository": repository, "base_sha": base_sha, "head_sha": head_sha,
               "status": "unavailable"}
     try:
-        report.update(inspect_comparison(repository, base_sha, head_sha,
-                                         os.environ.get("GH_TOKEN", "")))
+        report.update(wait_for_comparison(repository, base_sha, head_sha,
+                                          os.environ.get("GH_TOKEN", ""), args.snapshot_wait_seconds))
         report["status"] = "available"
         code = 0
     except EvidenceUnavailable as error:

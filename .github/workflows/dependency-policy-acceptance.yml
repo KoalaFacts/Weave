@@ -71,7 +71,7 @@ jobs:
           PR_HEAD_REF: ${{ github.event_name == 'pull_request' && format('refs/pull/{0}/head', github.event.number) || github.ref }}
         shell: python
         run: |
-          import contextlib, importlib.util, io, json, os, pathlib, signal, sys
+          import contextlib, importlib.util, io, json, os, pathlib, re, signal, sys
           output = pathlib.Path(os.environ['RUNNER_TEMP']) / 'read-only-denial'
           spec = importlib.util.spec_from_file_location('producer', 'scripts/submit_nuget_snapshots.py')
           producer = importlib.util.module_from_spec(spec)
@@ -110,6 +110,15 @@ jobs:
               'confirmed_submissions': len(report.get('sources', []))
           }, indent=2) + '\n')
           if not passed:
+              failure = report.get('failure')
+              diagnostic = {
+                  'producer_exit': exit_code,
+                  'failure': failure if isinstance(failure, str) and re.fullmatch(r'[a-z0-9-]{1,64}', failure) else 'unrecognized-failure',
+                  'failed_request': 'snapshot-post' if failed_request == {'path': 'dependency-graph/snapshots', 'method': 'POST'} else 'graph-read' if failed_request and failed_request.get('method') == 'GET' else 'other',
+                  'writes_attempted': writes_attempted, 'graph_reads': observed['reads'],
+                  'confirmed_submissions': len(report.get('sources', []))
+              }
+              print('::error title=Snapshot permission acceptance::' + json.dumps(diagnostic, separators=(',', ':')))
               raise SystemExit('Expected actual read-only snapshot POST denial was not observed.')
           print('Real read-only token: exact graphs read, one snapshot POST denied with 403, no confirmed submissions.')
       - name: Preserve permission-denial evidence

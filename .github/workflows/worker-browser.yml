@@ -17,7 +17,7 @@ concurrency:
 jobs:
   worker:
     name: Worker API, compatibility and browser
-    runs-on: ubuntu-latest
+    runs-on: ubuntu-24.04
     timeout-minutes: 15
     defaults:
       run:
@@ -47,12 +47,24 @@ jobs:
           dotnet build tests/Weave.Worker.Compatibility/Weave.Worker.Compatibility.csproj --no-restore -c Release
       - name: Exercise C# against local Worker HTTP
         run: npm run test:compat
+      - name: Install locked Playwright Chromium and Linux dependencies
+        run: npx --no-install playwright install --with-deps --no-shell chromium
+      - name: Prepare the managed Worker browser sandbox
+        uses: ./.github/actions/setup-playwright-sandbox
+        with:
+          playwright-package: hosts/Weave.Mailbox.Worker/node_modules/playwright
       - name: Exercise real demo and registry in protected Chrome
-        # ubuntu-latest supplies Chrome. The fixture fails if its normal sandbox cannot start.
+        # Playwright manages the matching browser; chromiumSandbox remains enabled.
+        # The fixture fails if the runner cannot provide its namespace and seccomp sandbox.
         # Only temporary local D1 and synthetic public controls are used; no cloud credentials.
         run: |
           mkdir -p test-results/browser
-          npm run test:browser 2>&1 | tee test-results/browser/test.log
+          npm run build
+          # Raw spec output stays in the artifact; only bounded, escaped annotations enter workflow commands.
+          node --test --test-concurrency=1 \
+            --test-reporter=spec --test-reporter-destination=test-results/browser/test.log \
+            --test-reporter=./test/github-browser-reporter.mjs --test-reporter-destination=stdout \
+            test/browser/*.browser.mjs 2>&1 | tee test-results/browser/annotations.log
       - name: Retain synthetic browser screenshots and failure evidence
         if: always()
         uses: actions/upload-artifact@043fb46d1a93c77aae656e7c1c64a875d1fc6a0a # v7

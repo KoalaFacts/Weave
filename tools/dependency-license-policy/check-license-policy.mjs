@@ -125,9 +125,21 @@ if (process.argv[1] && fileURLToPath(import.meta.url) === process.argv[1]) {
     } catch {
       report = unavailable('invalid-license-evidence');
     }
-    console.log(report.status === 'available'
-      ? 'Dependency license policy available for the reviewed changes.'
-      : '::error::Dependency license policy is unavailable or denied.');
+    if (report.status === 'available') {
+      console.log('Dependency license policy available for the reviewed changes.');
+    } else {
+      const diagnostic = {
+        status: report.status === 'blocked' ? 'blocked' : 'unavailable',
+        failure_code: ['license-policy-denied', 'license-evidence-unavailable',
+          'incomplete-dependency-comparison', 'invalid-license-evidence'].includes(report.failure_code)
+          ? report.failure_code : 'invalid-license-evidence',
+      };
+      for (const key of ['added', 'removed', 'forbidden', 'unknown',
+        'raw_changes', 'distinct_changes', 'independent_raw_changes']) {
+        if (Number.isSafeInteger(report[key]) && report[key] >= 0) diagnostic[key] = report[key];
+      }
+      console.log(`::error::Dependency license policy failed: ${JSON.stringify(diagnostic)}`);
+    }
     process.exitCode = report.status === 'available' ? 0 : 1;
   }
 }

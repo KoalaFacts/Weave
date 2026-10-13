@@ -233,6 +233,72 @@ const largeChanges = () => Array.from({ length: 199 }, (_, index) => ({
   ...change('MIT'), name: `private-${index}-${'x'.repeat(750)}`,
 }));
 
+for (const [name, license, status, failure_code, forbidden, unknown] of [
+  ['DeniedLicense', 'GPL-3.0', 'blocked', 'license-policy-denied', 1, 0],
+  ['UnknownLicense', 'private-license\n::error::injected', 'unavailable',
+    'license-evidence-unavailable', 0, 1],
+]) {
+  test(`cli_${name}_AnnotatesOnlyFailureCategoryAndCounts`, () => {
+    const records = [{
+      ...change(license), name: 'private-package', manifest: 'private-manifest',
+      failure_code: 'private-failure', added: 'private-count',
+    }];
+
+    const checked = runFilePolicy(JSON.stringify(records), records);
+
+    assert.equal(checked.result.status, 1);
+    assert.equal(checked.result.stderr, '');
+    assert.equal(checked.result.stdout, '::error::Dependency license policy failed: ' + JSON.stringify({
+      status, failure_code, added: 1, removed: 0, forbidden, unknown,
+      raw_changes: 1, distinct_changes: 1, independent_raw_changes: 1,
+    }) + '\n');
+  });
+}
+
+test('cli_IncompleteComparison_AnnotatesCategoryWithoutUntrustedRecordFields', () => {
+  const records = [{ ...change('MIT'), name: 'private-package' }];
+  const changed = [{ ...records[0], license: 'private-license', failure_code: 'private-code' }];
+
+  const checked = runFilePolicy(JSON.stringify(changed), records);
+
+  assert.equal(checked.result.status, 1);
+  assert.equal(checked.result.stderr, '');
+  assert.equal(checked.result.stdout, '::error::Dependency license policy failed: ' +
+    '{"status":"unavailable","failure_code":"incomplete-dependency-comparison"}\n');
+});
+
+test('cli_InvalidInput_AnnotatesCategoryWithoutRawPayload', () => {
+  const checked = runFilePolicy('private-invalid-json\n::error::injected', []);
+
+  assert.equal(checked.result.status, 1);
+  assert.equal(checked.result.stderr, '');
+  assert.equal(checked.result.stdout, '::error::Dependency license policy failed: ' +
+    '{"status":"unavailable","failure_code":"invalid-license-evidence"}\n');
+});
+
+test('cli_ReportWriteFailure_AnnotatesCategoryWithoutFilesystemDetails', () => {
+  const directory = mkdtempSync(join(tmpdir(), 'weave-license-policy-write-'));
+  try {
+    const changes = join(directory, 'changes.json');
+    const evidence = join(directory, 'evidence.json');
+    writeFileSync(changes, '[]');
+    writeFileSync(evidence, JSON.stringify({
+      status: 'available', dependency_changes: 0, dependency_records: [],
+    }));
+
+    const result = spawnSync(process.execPath,
+      [fileURLToPath(new URL('../check-license-policy.mjs', import.meta.url)), changes, evidence,
+        join(directory, 'private-missing-directory', 'report.json')], { encoding: 'utf8' });
+
+    assert.equal(result.status, 1);
+    assert.equal(result.stderr, '');
+    assert.equal(result.stdout, '::error::Dependency license policy failed: ' +
+      '{"status":"unavailable","failure_code":"invalid-license-evidence"}\n');
+  } finally {
+    rmSync(directory, { recursive: true });
+  }
+});
+
 test('cli_LargeFileBeyondEnvironmentBoundary_ProcessesEveryChange', () => {
   const independentRecords = largeChanges();
   independentRecords[0] = change('GPL-3.0', 'removed');
@@ -327,4 +393,26 @@ test('cli_SameCountSubstitutionOrConflictingLicense_RemainsIncomplete', () => {
       status: 'unavailable', failure_code: 'incomplete-dependency-comparison',
     });
   }
+});
+
+test('inspectPolicy_ObservedPaginationViews_RequireEveryManifestFromThePinnedAction', () => {
+  const fixture = JSON.parse(readFileSync(new URL(
+    '../../../scripts/tests/fixtures/dependency-comparison-pagination.json', import.meta.url), 'utf8'));
+  const expand = indices => indices.map(index => fixture.records[index]);
+  const independent = expand(fixture.per_page_5.flat());
+  const actual = expand(fixture.action_parsed);
+  const omitted = expand(fixture.per_page_100);
+
+  assert.equal(inspectScenario(omitted, actual).failure_code, 'incomplete-dependency-comparison');
+  assert.deepEqual(inspectScenario(independent, actual), {
+    status: 'available', added: 7, removed: 0, forbidden: 0, unknown: 0,
+    raw_changes: 9, distinct_changes: 7, independent_raw_changes: 9,
+  });
+  assert.equal(inspectScenario(independent, omitted).failure_code, 'incomplete-dependency-comparison');
+  const extra = actual.find(record => !omitted.includes(record));
+  assert.ok(extra);
+  assert.equal(inspectScenario(independent, [...actual, { ...extra, license: 'GPL-3.0' }]).failure_code,
+    'incomplete-dependency-comparison');
+  const denied = independent.map(record => record === extra ? { ...record, license: 'GPL-3.0' } : record);
+  assert.equal(inspectScenario(denied).failure_code, 'license-policy-denied');
 });
