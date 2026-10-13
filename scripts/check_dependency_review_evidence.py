@@ -18,7 +18,8 @@ import urllib.error
 import urllib.request
 
 MAX_PAGE_BYTES = 2 * 1024 * 1024
-MAX_PAGES = 20
+MAX_TOTAL_BYTES = 40 * 1024 * 1024
+MAX_PAGES = 400
 MAX_CHANGES = 2000
 WARNING_HEADER = "x-github-dependency-graph-snapshot-warnings"
 MAX_WARNING_ATTEMPTS = 61
@@ -84,6 +85,7 @@ def inspect_comparison(repository, base_sha, head_sha, token, opener=None, *, de
     if opener is None:
         opener = urllib.request.build_opener(urllib.request.ProxyHandler({}), NoRedirect())
     total = 0
+    total_bytes = 0
     records = []
     warnings = []
     for page in range(1, MAX_PAGES + 1):
@@ -91,7 +93,7 @@ def inspect_comparison(repository, base_sha, head_sha, token, opener=None, *, de
         if timeout <= 0:
             raise EvidenceUnavailable("snapshot-evidence-timeout", warnings)
         url = (f"https://api.github.com/repos/{repository}/dependency-graph/compare/"
-               f"{base_sha}...{head_sha}?per_page=100&page={page}")
+               f"{base_sha}...{head_sha}?per_page=5&page={page}")
         request = urllib.request.Request(url, headers={
             "Accept": "application/vnd.github+json",
             "Authorization": "Bearer " + token,
@@ -105,7 +107,7 @@ def inspect_comparison(repository, base_sha, head_sha, token, opener=None, *, de
                 warning = snapshot_warning(response.headers)
                 if warning is not None:
                     warnings.append(warning)
-                body = response.read(MAX_PAGE_BYTES + 1)
+                body = response.read(min(MAX_PAGE_BYTES, MAX_TOTAL_BYTES - total_bytes) + 1)
                 next_page = 'rel="next"' in response.headers.get("Link", "")
         except urllib.error.HTTPError as error:
             error.close()
@@ -114,6 +116,9 @@ def inspect_comparison(repository, base_sha, head_sha, token, opener=None, *, de
             raise EvidenceUnavailable("comparison-network-error") from None
         if len(body) > MAX_PAGE_BYTES:
             raise EvidenceUnavailable("comparison-response-too-large")
+        total_bytes += len(body)
+        if total_bytes > MAX_TOTAL_BYTES:
+            raise EvidenceUnavailable("comparison-total-response-too-large")
         try:
             changes = json.loads(body, object_pairs_hook=unique_object,
                                  parse_float=finite_float, parse_constant=reject_nonfinite)

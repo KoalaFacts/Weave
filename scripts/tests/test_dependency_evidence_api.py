@@ -325,7 +325,7 @@ class EvidenceWaitTests(unittest.TestCase):
         self.assertEqual(clock.sleeps, [10])
         endpoint = f'https://api.github.com/repos/owner/repo/dependency-graph/compare/{BASE}...{HEAD}'
         self.assertEqual([request.full_url for request, _ in opener.requests],
-                         [f'{endpoint}?per_page=100&page={page}' for page in [1, 2, 1, 2]])
+                         [f'{endpoint}?per_page=5&page={page}' for page in [1, 2, 1, 2]])
         self.assertTrue(all(request.get_method() == 'GET' for request, _ in opener.requests))
 
     def test_permanent_warning_exhausts_deadline_and_remains_unavailable(self):

@@ -394,3 +394,25 @@ test('cli_SameCountSubstitutionOrConflictingLicense_RemainsIncomplete', () => {
     });
   }
 });
+
+test('inspectPolicy_ObservedPaginationViews_RequireEveryManifestFromThePinnedAction', () => {
+  const fixture = JSON.parse(readFileSync(new URL(
+    '../../../scripts/tests/fixtures/dependency-comparison-pagination.json', import.meta.url), 'utf8'));
+  const expand = indices => indices.map(index => fixture.records[index]);
+  const independent = expand(fixture.per_page_5.flat());
+  const actual = expand(fixture.action_parsed);
+  const omitted = expand(fixture.per_page_100);
+
+  assert.equal(inspectScenario(omitted, actual).failure_code, 'incomplete-dependency-comparison');
+  assert.deepEqual(inspectScenario(independent, actual), {
+    status: 'available', added: 7, removed: 0, forbidden: 0, unknown: 0,
+    raw_changes: 9, distinct_changes: 7, independent_raw_changes: 9,
+  });
+  assert.equal(inspectScenario(independent, omitted).failure_code, 'incomplete-dependency-comparison');
+  const extra = actual.find(record => !omitted.includes(record));
+  assert.ok(extra);
+  assert.equal(inspectScenario(independent, [...actual, { ...extra, license: 'GPL-3.0' }]).failure_code,
+    'incomplete-dependency-comparison');
+  const denied = independent.map(record => record === extra ? { ...record, license: 'GPL-3.0' } : record);
+  assert.equal(inspectScenario(denied).failure_code, 'license-policy-denied');
+});

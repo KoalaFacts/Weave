@@ -65,8 +65,8 @@ class Handler(http.server.BaseHTTPRequestHandler):
         valid = parsed.path == expected
         if not valid:
             self.server.unexpected.append(self.path)
-        records = self.server.action_changes if urllib.parse.parse_qs(parsed.query).get('per_page') == ['5'] \
-            else self.server.changes
+        records = self.server.changes if self.headers.get('User-Agent') == 'weave-dependency-evidence' \
+            else self.server.action_changes
         body = json.dumps(records if valid else {'message': 'Unexpected fixture endpoint'}).encode()
         self.send_response(200 if valid else 404)
         self.send_header('Content-Type', 'application/json')
@@ -92,7 +92,8 @@ class LoopbackOpener:
         parsed = urllib.parse.urlsplit(request.full_url)
         assert parsed.netloc == 'api.github.com'
         local = urllib.request.Request(f'http://127.0.0.1:{self.port}{parsed.path}?{parsed.query}',
-                                       headers={'Authorization': 'Bearer ' + TOKEN})
+                                       headers={'Authorization': 'Bearer ' + TOKEN,
+                                                'User-Agent': request.get_header('User-agent')})
         return self.inner.open(local, timeout=timeout)
 
 

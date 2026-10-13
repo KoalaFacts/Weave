@@ -24,6 +24,18 @@ review job has 20 minutes. Expiry remains a failed gate. Waiting does not resubm
 snapshots or rerun vulnerability/license policy, and does not establish that every
 snapshot warning will recover.
 
+The preflight uses the pinned action's `per_page=5` view. An observed warning-free
+comparison returned six distinct records at page size 100, but seven across the
+complete size-five pages (nine raw records including exact duplicates). The extra
+record was a separate manifest identity; the pinned action's schema preserved it.
+Using the same page size retains that record rather than relaxing exact comparison.
+The preflight still constructs numbered pages on the fixed origin and source pair,
+never following response-provided URLs. A single read is bounded by 400 pages,
+2,000 raw records, 2 MiB per response and 40 MiB across all responses (the previous
+20-page worst-case body budget). This also bounds the default zero-wait read;
+CI additionally retains the deadline and runner time limits above. Exact complete
+record comparison, conflicting-identity rejection and license policy are unchanged.
+
 ## Exact source graphs, separate trust boundaries
 
 The pipeline requires two read-only validations for the exact event base/head pair.
