@@ -47,8 +47,11 @@ jobs:
           dotnet build tests/Weave.Worker.Compatibility/Weave.Worker.Compatibility.csproj --no-restore -c Release
       - name: Exercise C# against local Worker HTTP
         run: npm run test:compat
+      - name: Install locked Playwright Chromium and Linux dependencies
+        run: npx --no-install playwright install --with-deps --no-shell chromium
       - name: Exercise real demo and registry in protected Chrome
-        # ubuntu-latest supplies Chrome. The fixture fails if its normal sandbox cannot start.
+        # Playwright manages the matching browser; chromiumSandbox remains enabled.
+        # The fixture fails if the runner cannot provide its namespace and seccomp sandbox.
         # Only temporary local D1 and synthetic public controls are used; no cloud credentials.
         run: |
           mkdir -p test-results/browser
