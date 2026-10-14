@@ -8,7 +8,7 @@ The one-time `normalize-mailbox-records` script renames the existing JSON table 
 
 All new point-in-time columns use UTC Unix epoch 100ns INTEGER values without unit suffixes. D1 integer reads explicitly cast to decimal text and bindings use decimal strings; 64-bit values do not pass through JavaScript Number. Millisecond conversion is confined to existing wire/runtime boundaries. New server rows share an operation time, unchanged retries preserve row timestamps, and older unknown timestamps remain NULL. The schema and runtime retain revision/CAS fencing independently of timestamps.
 
-Canonical HTTP and demo names use `accountId`, `*AccountId` and `X-Weave-Account-Control`. The previous identity fields/header, MCP environment variable and old tool argument shapes remain for one release. Conflicting identity/header aliases are rejected. Existing controls retain their hash scheme/parameters and IDs. Original v1 fingerprints, cursors and generation integers remain usable; the C# v1 interoperability test remains required.
+Canonical HTTP and demo names use `accountId`, `*AccountId` and `X-Weave-Account-Control`. The previous identity fields/header, MCP environment variable and old tool argument shapes remain for one release. Conflicting identity/header aliases are rejected. A client using only the old control header receives the original v1 response shape (including SSE), preserving strict original C# DTO readers; the canonical header exposes the new account/address metadata. Existing controls retain their hash scheme/parameters and IDs. Original v1 fingerprints, cursors and generation integers remain usable; the C# v1 interoperability test remains required.
 
 ## Contact and payload behavior
 

@@ -138,3 +138,30 @@ test('sequence exhaustion cannot round, wrap or partially register an address',a
         assert.equal(await h.db.prepare('SELECT token FROM mailbox_revision').first('token'),revision);
     }finally{await h.close();}
 });
+
+test('original control header preserves strict v1 summaries and HTTP/SSE envelopes while canonical reads retain modern metadata',async()=>{
+    const h=await start();let reader;
+    const legacy=async(path,control,method='GET',value)=>{
+        const response=await h.mf.dispatchFetch('http://localhost'+path,{method,headers:{'X-Weave-Mailbox-Control':control,'Content-Type':'application/json'},...(value===undefined?{}:{body:JSON.stringify(value)})});
+        assert.equal(response.status,200,await response.clone().text());return response.json();
+    };
+    try{
+        const a=await h.participant(),b=await h.participant(),r=await request(h,a,b),accepted=await accept(h,a,b,r);
+        const old=await legacy('/v1/contacts/requests/'+r.input.requestId+'?requesterMailboxId='+a.accountId,b.control);
+        assert.deepEqual(Object.keys(old).sort(),['requestId','cardId','requesterMailboxId','recipientMailboxId','methodId','generation','status','createdAt','expiresAt','requestMessageId','replyMessageId'].sort());
+        assert.equal(old.requesterMailboxId,a.accountId);assert.equal(old.status,'accepted');
+        await h.ok('/v1/inbox/'+r.input.payload.messageId+'/ack',b.control,'POST',{senderAccountId:a.accountId});
+        const envelope={version:2,recipientAccountId:b.accountId,contactGeneration:r.state.generation,connectionToken:accepted.token,payload:payload('mixed client bytes')};
+        await h.ok('/v1/messages',a.control,'POST',envelope);
+        const original={senderMailboxId:a.accountId,envelope:{version:1,recipientMailboxId:b.accountId,contactGeneration:r.state.generation,payload:envelope.payload}};
+        assert.deepEqual((await legacy('/v1/inbox',b.control)).items,[original]);
+        const canonical=(await h.ok('/v1/inbox',b.control)).items[0];
+        assert.equal(canonical.senderAccountId,a.accountId);assert.equal(canonical.envelope.version,2);assert.equal(canonical.envelope.connectionToken,accepted.token);
+        const response=await h.mf.dispatchFetch('http://localhost/v1/inbox/events',{headers:{'X-Weave-Mailbox-Control':b.control}});
+        assert.equal(response.status,200);reader=response.body.getReader();let text='',match;
+        for(let i=0;i<10&&!match;i++){const part=await reader.read();assert.equal(part.done,false);text+=new TextDecoder().decode(part.value);match=/data: (.+)\n\n/.exec(text);}
+        assert.ok(match);assert.deepEqual(JSON.parse(match[1]),original);await reader.cancel();reader=null;
+        assert.equal((await legacy('/v1/inbox/'+envelope.payload.messageId+'/ack',b.control,'POST',{senderMailboxId:a.accountId})).state,'acknowledged');
+        assert.equal(await h.db.prepare('SELECT protocol_version FROM message_delivery JOIN mailbox_records ON message_seq=seq WHERE message_id=?').bind(envelope.payload.messageId).first('protocol_version'),2);
+    }finally{await reader?.cancel();await h.close();}
+});

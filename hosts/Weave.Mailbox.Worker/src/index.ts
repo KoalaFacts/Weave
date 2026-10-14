@@ -14,7 +14,7 @@ import { deleteContact, ownContacts } from './contact-links';
 import { atomic, type Env } from './database';
 import { ack, send } from './messages';
 import { read } from './reads';
-import { body, control, fail, json, problem } from './wire';
+import { body, control, fail, json, legacyResponse, problem } from './wire';
 import { validatePayload } from './protocol';
 
 export default {
@@ -26,6 +26,7 @@ export default {
         env = {...env,db:budgetDatabase(env.db)};
         try {
             const url = new URL(request.url), secret = control(request), method = request.method;
+            const respond=(value:unknown)=>json(value,200,legacyResponse(request));
             if (url.protocol !== 'https:' && !['localhost','127.0.0.1','[::1]'].includes(url.hostname)) fail(400,'invalid');
             if (method === 'GET' && url.pathname === '/') return demo();
             if (method === 'GET' && url.pathname === '/agent-start.md') return agentStart();
@@ -37,17 +38,17 @@ export default {
                     if(!await authenticate(env,secret))fail(401,'unauthenticated');
                 }else if(method!=='GET'||url.pathname==='/v1/inbox/events')fail(503,'maintenance',30);
             }
-            if (method === 'POST' && url.pathname === '/v1/accounts') return json(await register(env,request,secret,await body(request)));
+            if (method === 'POST' && url.pathname === '/v1/accounts') return respond(await register(env,request,secret,await body(request)));
             if(env.RECOVERY_READ_ONLY!=='true'&&method==='GET'&&['/v1/directory','/v1/directory/address','/v1/contacts/cards','/v1/contacts/card'].includes(url.pathname))await publicReadRate(env,request);
             const account = await authenticate(env,secret);
-            if (method === 'GET' && ['/v1/directory','/v1/directory/address'].includes(url.pathname)) return json(await atomic(env.db,tx => directory(tx,url)));
-            if (method === 'GET' && ['/v1/contacts/cards','/v1/contacts/card'].includes(url.pathname)) return json(await atomic(env.db,tx => read(tx,url,account?.accountId ?? null)));
+            if (method === 'GET' && ['/v1/directory','/v1/directory/address'].includes(url.pathname)) return respond(await atomic(env.db,tx => directory(tx,url)));
+            if (method === 'GET' && ['/v1/contacts/cards','/v1/contacts/card'].includes(url.pathname)) return respond(await atomic(env.db,tx => read(tx,url,account?.accountId ?? null)));
             if (!account) fail(401,'unauthenticated');
             if (url.pathname === '/v1/addresses' || /^\/v1\/addresses\/[^/]+$/.test(url.pathname)) {
                 const id = url.pathname === '/v1/addresses' ? null : url.pathname.split('/')[3];
-                if (method === 'GET') return json(await atomic(env.db,tx => ownedAddresses(tx,account.accountId,url)));
-                if (method === 'POST' && id === null || method === 'PUT' && id !== null) return json(await mutateAddress(env,account.accountId,id,await body(request),url.origin));
-                if (method === 'DELETE' && id !== null) return json(await mutateAddress(env,account.accountId,id,null,url.origin,true));
+                if (method === 'GET') return respond(await atomic(env.db,tx => ownedAddresses(tx,account.accountId,url)));
+                if (method === 'POST' && id === null || method === 'PUT' && id !== null) return respond(await mutateAddress(env,account.accountId,id,await body(request),url.origin));
+                if (method === 'DELETE' && id !== null) return respond(await mutateAddress(env,account.accountId,id,null,url.origin,true));
                 fail(404,'unavailable');
             }
             const match = url.pathname.match(/^\/(inbox|outbox)\/([^/]+)$/);
@@ -56,18 +57,18 @@ export default {
                 url.pathname = match[1] === 'outbox' && method === 'POST' ? '/v1/messages' : '/v1/'+match[1];
             }
             const owner = account.accountId;
-            if(method==='GET'&&url.pathname==='/v1/contacts')return json(await atomic(env.db,tx=>ownContacts(tx,owner,url)));
+            if(method==='GET'&&url.pathname==='/v1/contacts')return respond(await atomic(env.db,tx=>ownContacts(tx,owner,url)));
             const contact=url.pathname.match(/^\/v1\/contacts\/accounts\/([^/]+)$/);
-            if(method==='GET'&&contact)return json(await atomic(env.db,tx=>ownContacts(tx,owner,url,decodeURIComponent(contact[1]))));
-            if(method==='DELETE'&&contact)return json(await atomic(env.db,tx=>deleteContact(tx,owner,decodeURIComponent(contact[1]))));
+            if(method==='GET'&&contact)return respond(await atomic(env.db,tx=>ownContacts(tx,owner,url,decodeURIComponent(contact[1]))));
+            if(method==='DELETE'&&contact)return respond(await atomic(env.db,tx=>deleteContact(tx,owner,decodeURIComponent(contact[1]))));
             if (method === 'GET' && url.pathname === '/v1/inbox/events') return await stream(env,owner,request,context);
-            if (method === 'GET') return json(await atomic(env.db,tx => read(tx,url,owner)));
+            if (method === 'GET') return respond(await atomic(env.db,tx => read(tx,url,owner)));
             const input = await body(request);
             // Validate bounded payloads before cleanup can produce any write.
             if(input?.payload!==undefined)validatePayload(input.payload);
             if(input?.reply!==undefined&&input.reply!==null)validatePayload(input.reply);
             await sweep(env);
-            return json(await atomic(env.db,async tx => {
+            return respond(await atomic(env.db,async tx => {
                 if (method === 'PUT' && url.pathname === '/v1/contacts/cards') return putCard(tx,owner,input);
                 if (method === 'POST' && url.pathname === '/v1/contacts/requests') return requestContact(tx,owner,input);
                 const decision = url.pathname.match(/^\/v1\/contacts\/requests\/([^/]+)\/decision$/);

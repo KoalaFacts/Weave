@@ -16,7 +16,7 @@ export async function start({ persist, migrate = true, bindings = {}, scriptPath
         else await initializeDatabase(db,BigInt(Date.now())*10000n);
     }
     const request = (path, control, method = 'GET', value) => mf.dispatchFetch('http://localhost' + path, {
-        method, headers: { ...(control ? {'X-Weave-Mailbox-Control':control} : {}), 'Content-Type':'application/json' },
+        method, headers: { ...(control ? {[legacy?'X-Weave-Mailbox-Control':'X-Weave-Account-Control']:control} : {}), 'Content-Type':'application/json' },
         ...(value === undefined ? {} : { body: typeof value === 'string' ? value : JSON.stringify(value) }) });
     const ok = async (path, control, method = 'GET', value) => {
         const r = await request(path,control,method,value); assert.equal(r.status,200,await r.clone().text()); return r.json();

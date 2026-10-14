@@ -19,15 +19,25 @@ export function parse(text: string): any {
         return value;
     });
 }
-export function json(value: unknown, status = 200): Response {
-    return new Response(stringify(accountNames(value)), { status, headers: { 'Content-Type': status >= 400 ? 'application/problem+json' : 'application/json', 'Cache-Control': 'no-store', 'Pragma': 'no-cache' } });
+export function json(value: unknown, status = 200, legacy = false): Response {
+    return new Response(stringify(accountNames(value,legacy)), { status, headers: { 'Content-Type': status >= 400 ? 'application/problem+json' : 'application/json', 'Cache-Control': 'no-store', 'Pragma': 'no-cache' } });
 }
 const identityNames:Record<string,string>={agentId:'accountId',mailboxId:'accountId',ownerMailboxId:'ownerAccountId',senderMailboxId:'senderAccountId',recipientMailboxId:'recipientAccountId',requesterMailboxId:'requesterAccountId',peerMailboxId:'peerAccountId'};
-export function accountNames(value:any):any {
-    if(Array.isArray(value))return value.map(accountNames);
+export function legacyResponse(request:Request):boolean {
+    return request.headers.has('X-Weave-Mailbox-Control')&&!request.headers.has('X-Weave-Account-Control');
+}
+export function accountNames(value:any,legacy=false):any {
+    if(Array.isArray(value))return value.map(child=>accountNames(child,legacy));
     if(value&&typeof value==='object'){
         const result:Record<string,any>={};
-        for(const [key,child] of Object.entries(value)){result[key]=accountNames(child);const canonical=key==='isBlockedByMailbox'?'isBlockedByAccount':identityNames[key];if(canonical)result[canonical]=child;}
+        const summary='requestVersion' in value&&'requesterMailboxId' in value;
+        const envelope='payload' in value&&'recipientMailboxId' in value&&value.version===2;
+        for(const [key,child] of Object.entries(value)){
+            if(legacy&&(summary&&['requestVersion','requesterAddressId','recipientAddressId'].includes(key)||envelope&&key==='connectionToken'))continue;
+            result[key]=legacy&&envelope&&key==='version'?1:accountNames(child,legacy);
+            const canonical=key==='isBlockedByMailbox'?'isBlockedByAccount':identityNames[key];
+            if(canonical&&!legacy)result[canonical]=child;
+        }
         return result;
     }
     return value;

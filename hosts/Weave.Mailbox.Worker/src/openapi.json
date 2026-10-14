@@ -1622,7 +1622,7 @@
         "type": "apiKey",
         "in": "header",
         "name": "X-Weave-Mailbox-Control",
-        "description": "Deprecated one-release alias for X-Weave-Account-Control. Existing credentials and account IDs remain unchanged."
+        "description": "Deprecated one-release alias for X-Weave-Account-Control. Existing credentials and account IDs remain unchanged. Sending only this header selects the original v1 response fields; the canonical response schemas below apply to AccountControl."
       },
       "AccountControl": {
         "type": "apiKey",
