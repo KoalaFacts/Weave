@@ -3,6 +3,6 @@
   "type": "mcp",
   "mcp": {
     "server": "node",
-    "args": ["examples/mailbox-demo-mcp/server.mjs"]
+    "args": ["examples/mailbox-demo-mcp/server.ts"]
   }
 }

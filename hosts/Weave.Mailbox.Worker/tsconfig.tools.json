@@ -1,0 +1,22 @@
+{
+  "extends": "./tsconfig.json",
+  "compilerOptions": {
+    "module": "NodeNext",
+    "moduleResolution": "NodeNext",
+    "erasableSyntaxOnly": true,
+    "verbatimModuleSyntax": true,
+    "lib": [
+      "ESNext",
+      "DOM",
+      "DOM.Iterable",
+      "DOM.AsyncIterable"
+    ]
+  },
+  "include": [
+    "scripts/**/*.ts",
+    "../../examples/mailbox-demo-mcp/*.ts"
+  ],
+  "exclude": [
+    "scripts/data-migrations/**/*.ts"
+  ]
+}

@@ -94,6 +94,8 @@ For code, dependencies, or build changes:
 
 Real command-process fixtures require Node 22.18+ to execute their `.ts` worker directly; no npm install is needed. CI selects Node 24.
 
+Write new Node tools and tests in TypeScript (`.ts`), using Node 24 native type stripping and a separate type-check gate. Keep explicit import extensions and erasable TypeScript syntax. Preserve executed data-migration content bytes, checksums and identities. A source-file rename must retain the original checksum inputs and prove that completed records are recognized without rerunning conversion. Historical migration artifacts are excluded from annotation-only edits; ordinary tools are checked separately from runtime tests.
+
 ```bash
 python3 -m unittest discover -s scripts/tests -v
 dotnet restore Weave.slnx

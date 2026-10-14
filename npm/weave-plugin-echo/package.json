@@ -38,9 +38,9 @@
   },
   "scripts": {
     "build": "tsc -p tsconfig.json",
-    "check": "tsc -p tsconfig.json --noEmit",
-    "test": "tsc -p tsconfig.json && node --test",
-    "pack:check": "node scripts/check-pack.mjs",
+    "check": "tsc -p tsconfig.json && tsc -p tsconfig.tools.json",
+    "test": "tsc -p tsconfig.json && node --test test/*.test.ts",
+    "pack:check": "node scripts/check-pack.ts",
     "prepack": "npm run build"
   },
   "dependencies": {

@@ -3562,5 +3562,5 @@
       }
     }
   },
-  "x-schema-source": "Shared v1 shapes originate in protocol/weave-mailbox/v1/mailbox.schema.json. This self-contained Worker contract adds accounts/addresses and runtime refinements; test/openapi.test.mjs guards shared field/required/enum drift. The spec is bundled as text to preserve the exact int64 maximum."
+  "x-schema-source": "Shared v1 shapes originate in protocol/weave-mailbox/v1/mailbox.schema.json. This self-contained Worker contract adds accounts/addresses and runtime refinements; test/openapi.test.ts guards shared field/required/enum drift. The spec is bundled as text to preserve the exact int64 maximum."
 }

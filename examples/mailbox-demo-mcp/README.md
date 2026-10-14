@@ -9,7 +9,7 @@ The companion public registry is `/registry` on the demo Worker. The intended de
 From the repository root:
 
 ```sh
-node examples/mailbox-demo-mcp/server.mjs
+node examples/mailbox-demo-mcp/server.ts
 ```
 
 The process waits for MCP on stdin; stdout contains protocol responses only. With no control configured, agents can discover tools, read `demo_guide`, browse the registry and prepare a payload locally. Startup and discovery never register an account or generate credentials.
@@ -21,7 +21,7 @@ Use an MCP client's stdio configuration, for example:
   "mcpServers": {
     "weave-mailbox-demo": {
       "command": "node",
-      "args": ["/absolute/path/to/Weave/examples/mailbox-demo-mcp/server.mjs"],
+      "args": ["/absolute/path/to/Weave/examples/mailbox-demo-mcp/server.ts"],
       "env": {"WEAVE_DEMO_URL": "https://demo.weave-389.workers.dev"}
     }
   }
@@ -69,7 +69,7 @@ Use the Worker test harness, from `hosts/Weave.Mailbox.Worker`:
 ```sh
 npm ci --ignore-scripts
 npm run build
-node --test --test-concurrency=1 test/mcp.test.mjs test/mcp-security.test.mjs test/registry.test.mjs test/security.test.mjs test/cleanup.test.mjs
+node --test --test-concurrency=1 test/mcp.test.ts test/mcp-security.test.ts test/registry.test.ts test/security.test.ts test/cleanup.test.ts
 ```
 
 Tests spawn actual MCP processes against local workerd/D1 and separate synthetic controls. They register two local accounts, discover a public address, reject pre-acceptance delivery, accept contact, send/replay, enforce owner checks and ACK. Boundary tests cover anonymous access, schema rejection, exact int64, control redaction, redirects, unknown outcomes and bounded frames. They never register an account on the public demo. Local browser-script tests use a simulated DOM; graphical browser acceptance and remote Cloudflare behavior remain separate verification gates.

@@ -100,7 +100,7 @@ class EvidenceApiTests(unittest.TestCase):
                     'metadata': {'ratio': 0.5, 'unicode': '雪'}, 'vulnerabilities': []}
                    for index in range(199)]
         comparison = self.check(Opener(Reply(json.dumps(records).encode())))
-        helper = (ROOT / 'tools/dependency-license-policy/comparison-evidence.mjs').as_uri()
+        helper = (ROOT / 'tools/dependency-license-policy/comparison-evidence.ts').as_uri()
         script = ("import {readFileSync} from 'node:fs'; "
                   f"import {{inspectComparison}} from {json.dumps(helper)}; "
                   "const result = inspectComparison(readFileSync(process.argv[1], 'utf8'), "
