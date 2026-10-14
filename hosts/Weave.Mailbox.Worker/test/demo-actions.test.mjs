@@ -14,17 +14,17 @@ function ui(fetch){
     return {get,click:id=>get(id).handlers.click(),async register(control='a'.repeat(64)){get('control').value=control;await get('register').handlers.click();}};
 }
 const json=(value,status=200)=>new Response(JSON.stringify(value),{status});
-const base=(path,options)=>path==='/v1/accounts'?json({agentId:options.headers['X-Weave-Mailbox-Control'][0],displayName:null,description:null}):path==='/v1/addresses'?json({items:[],nextCursor:null}):null;
+const base=(path,options)=>path.startsWith('/v1/contacts/accounts/')?json({accountId:'b',connectionToken:'c'.repeat(64),canSend:true}):path==='/v1/accounts'?json({accountId:options.headers['X-Weave-Account-Control'][0],displayName:null,description:null}):path.startsWith('/v1/addresses')?json({items:[],nextCursor:null}):null;
 test('demo confirmed send plus failed receipt refresh does not turn into a resend',async()=>{
     const posts=[];
-    const app=ui(async(path,options)=>base(path,options)??(path.startsWith('/v1/contacts/channel')?json({generation:1,peerMailboxId:'b'}):options.method==='POST'?(posts.push(JSON.parse(options.body)),json({state:'pending'})):json({title:'Storage unavailable'},503)));
+    const app=ui(async(path,options)=>base(path,options)??(path.startsWith('/v1/contacts/channel')?json({generation:1,peerAccountId:'b'}):options.method==='POST'?(posts.push(JSON.parse(options.body)),json({state:'pending'})):json({title:'Storage unavailable'},503)));
     await app.register();app.get('peer').value='b';app.get('message').value='one message';await app.click('send');
     assert.equal(posts.length,1);assert.equal(app.get('send').textContent,'Send message');assert.equal(app.get('message').value,'');assert.match(app.get('status').textContent,/Message sent; refresh outbox/);
     await app.click('send');assert.equal(posts.length,1);
 });
 test('demo unknown send result preserves the exact envelope on retry',async()=>{
     const posts=[];
-    const app=ui(async(path,options)=>{const initial=base(path,options);if(initial)return initial;if(path.startsWith('/v1/contacts/channel'))return json({generation:1,peerMailboxId:'b'});if(options.method==='POST'){posts.push(JSON.parse(options.body));if(posts.length===1)throw Error('Connection lost');return json({state:'pending'});}return json({items:[],nextCursor:null});});
+    const app=ui(async(path,options)=>{const initial=base(path,options);if(initial)return initial;if(path.startsWith('/v1/contacts/channel'))return json({generation:1,peerAccountId:'b'});if(options.method==='POST'){posts.push(JSON.parse(options.body));if(posts.length===1)throw Error('Connection lost');return json({state:'pending'});}return json({items:[],nextCursor:null});});
     await app.register();app.get('peer').value='b';app.get('message').value='one message';await app.click('send');assert.equal(app.get('send').textContent,'Retry same message');assert.equal(app.get('message').readOnly,true);
     await app.click('send');assert.equal(posts.length,2);assert.deepEqual(posts[0],posts[1]);assert.equal(app.get('message').readOnly,false);
 });
@@ -32,13 +32,13 @@ test('demo account switch cancels stale continuations before any message dispatc
     let resolveChannel,entered;const waiting=new Promise(resolve=>{entered=resolve;});const posts=[];
     const app=ui(async(path,options)=>{const initial=base(path,options);if(initial)return initial;if(path.startsWith('/v1/contacts/channel')){entered();return new Promise(resolve=>{resolveChannel=resolve;});}if(options.method==='POST')posts.push(options);return json({items:[],nextCursor:null});});
     await app.register();app.get('peer').value='b';app.get('message').value='old-account message';const pending=app.click('send');await waiting;
-    await app.register('c'.repeat(64));resolveChannel(json({generation:1,peerMailboxId:'b'}));await pending;
-    assert.equal(posts.length,0);assert.equal(app.get('identity').textContent,'Agent ID: c');assert.equal(app.get('message').value,'');
+    await app.register('c'.repeat(64));resolveChannel(json({generation:1,peerAccountId:'b'}));await pending;
+    assert.equal(posts.length,0);assert.equal(app.get('identity').textContent,'Account ID: c');assert.equal(app.get('message').value,'');
 });
 test('demo confirmed contact plus failed refresh stays submitted',async()=>{
     const posts=[];
     const app=ui(async(path,options)=>base(path,options)??(options.method==='POST'?(posts.push(JSON.parse(options.body)),json({generation:1})):json({title:'Storage unavailable'},503)));
-    await app.register();app.get('addressId').value='public-address';app.get('intro').value='hello';await app.click('requestContact');
+    await app.register();app.get('requesterAddressId').value='my-address';app.get('recipientAccountId').value='b';app.get('addressId').value='public-address';app.get('intro').value='hello';await app.click('requestContact');
     assert.equal(posts.length,1);assert.equal(app.get('requestContact').textContent,'Request contact');assert.match(app.get('status').textContent,/Contact request submitted; refresh/);
     await app.click('requestContact');assert.equal(posts.length,1);
 });
@@ -46,9 +46,9 @@ for(const transition of ['clear session','switch account'])test('demo '+transiti
     const writes=[];
     const privateAddress={addressId:'a-private-address',accountId:'a',label:'private label',isPublic:false,effectiveFrom:'2026-01-01T00:00:00Z',effectiveTo:'2027-01-01T00:00:00Z',directUri:'https://private.example.test/contact'};
     const app=ui(async(path,options)=>{
-        if(path==='/v1/addresses'){
-            if(options.method==='POST'){writes.push({control:options.headers['X-Weave-Mailbox-Control'],body:JSON.parse(options.body)});return json({});}
-            return json({items:options.headers['X-Weave-Mailbox-Control'][0]==='a'?[privateAddress]:[],nextCursor:null});
+        if(path.startsWith('/v1/addresses')){
+            if(options.method==='POST'){writes.push({control:options.headers['X-Weave-Account-Control'],body:JSON.parse(options.body)});return json({});}
+            return json({items:options.headers['X-Weave-Account-Control'][0]==='a'?[privateAddress]:[],nextCursor:null});
         }
         return base(path,options);
     });
@@ -63,8 +63,8 @@ for(const transition of ['clear session','switch account'])test('demo '+transiti
     await app.click('createAddress');assert.deepEqual(writes,[{control:'b'.repeat(64),body:{label:null,isPublic:false,effectiveFrom:null,effectiveTo:null,directUri:null}}]);
 });
 
-const introductionRequest={requestId:'request-from-b',requestMessageId:'intro-from-b',requesterMailboxId:'b',recipientMailboxId:'a',status:'pending',generation:1};
-const introduction=(messageId='intro-from-b',sender='b',recipient='a',text='Hello 你好 <img src=x onerror=alert(1)>')=>({senderMailboxId:sender,envelope:{recipientMailboxId:recipient,payload:{messageId,payloadEncoding:'text/plain',bytes:Buffer.from(text).toString('base64')}}});
+const introductionRequest={requestId:'request-from-b',requestMessageId:'intro-from-b',requesterAccountId:'b',recipientAccountId:'a',status:'pending',generation:1};
+const introduction=(messageId='intro-from-b',sender='b',recipient='a',text='Hello 你好 <img src=x onerror=alert(1)>')=>({senderAccountId:sender,envelope:{recipientAccountId:recipient,payload:{messageId,payloadEncoding:'text/plain',bytes:Buffer.from(text).toString('base64')}}});
 const rendered=node=>[node.textContent,...node.children.map(rendered)].join('\n');
 
 test('contact history shows expired, accepted and rejected requests without offering expired decisions',async()=>{
@@ -95,7 +95,7 @@ test('contact metadata is visible while its separate introduction read is still 
 test('contact review shows only its exact incoming introduction as inert text without ACK or acceptance',async()=>{
     const reads=[];
     const app=ui(async(path,options)=>{
-        const initial=base(path,options);if(initial)return initial;reads.push([path,options.method,options.headers['X-Weave-Mailbox-Control']]);
+        const initial=base(path,options);if(initial)return initial;reads.push([path,options.method,options.headers['X-Weave-Account-Control']]);
         if(path==='/v1/contacts/requests')return json({items:[introductionRequest],nextCursor:null});
         return json({items:[introduction('intro-from-b','foreign','a','wrong sender'),introduction('intro-from-b','b','foreign','wrong recipient'),introduction('unrelated','b','a','wrong message'),introduction()],nextCursor:null});
     });
@@ -127,7 +127,7 @@ test('clearing while an introduction read is pending prevents a late private bod
 
 test('an older introduction response cannot replace a newer contact page',async()=>{
     let release,entered,contactReads=0,nextDisabled;const waiting=new Promise(resolve=>{entered=resolve;});
-    const newer={...introductionRequest,requestId:'newer-request-from-c',requesterMailboxId:'c',requestMessageId:'intro-from-c'};
+    const newer={...introductionRequest,requestId:'newer-request-from-c',requesterAccountId:'c',requestMessageId:'intro-from-c'};
     const app=ui(async(path,options)=>{
         const initial=base(path,options);if(initial)return initial;
         if(path.startsWith('/v1/contacts/requests'))return json({items:[++contactReads===1?introductionRequest:newer],nextCursor:contactReads===1?'contacts:a:10':null});
@@ -148,7 +148,7 @@ test('an older introduction response cannot replace a newer contact page',async(
 });
 
 test('contact introduction lookup follows inbox cursors and keeps colliding message IDs bound to their requester',async()=>{
-    const other={...introductionRequest,requestId:'request-from-c',requesterMailboxId:'c'};
+    const other={...introductionRequest,requestId:'request-from-c',requesterAccountId:'c'};
     const paths=[];
     const app=ui(async(path,options)=>{
         const initial=base(path,options);if(initial)return initial;paths.push(path);

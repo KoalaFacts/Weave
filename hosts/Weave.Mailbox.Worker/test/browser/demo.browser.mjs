@@ -39,9 +39,9 @@ async function resume(page, control) {
     if (!await page.locator('#recovery').evaluate(element => element.open)) await page.locator('#recovery summary').click();
     await page.locator('#control').fill(control);
     await page.locator('#register').click();
-    await waitText(page, 'status', 'Agent connected.');
+    await waitText(page, 'status', 'Account connected.');
     assert.equal(await page.locator('#workspace').isVisible(), true);
-    return (await text(page, 'identity')).replace('Agent ID: ', '');
+    return (await text(page, 'identity')).replace('Account ID: ', '');
 }
 
 async function register(page, name) {
@@ -50,15 +50,15 @@ async function register(page, name) {
     await page.locator('#description').fill(name + ' private profile');
     const registration = page.waitForRequest(request => new URL(request.url()).pathname === '/v1/accounts' && request.method() === 'POST');
     await page.locator('#createAccount').click();
-    const control = await (await registration).headerValue('X-Weave-Mailbox-Control');
-    await waitText(page, 'status', 'Agent connected.');
+    const control = await (await registration).headerValue('X-Weave-Account-Control');
+    await waitText(page, 'status', 'Account connected.');
     assert.match(control, /^[0-9a-f]{64}$/);
-    assert.equal(await text(page, 'addresses'), 'No addresses yet. Create one only if someone needs to contact you.');
+    assert.equal(await text(page, 'addresses'), 'No addresses yet. Create one to introduce yourself or receive a request.');
     assert.equal(await page.locator('#credentialBackup').isVisible(), true);
     assert.equal(await page.locator('#workspace').isVisible(), false);
     assert.equal(await page.locator('#accountStart').isVisible(), false);
     assert.ok((await text(page, 'status')).includes('Back up your credential'));
-    return { id: (await text(page, 'identity')).replace('Agent ID: ', ''), control };
+    return { id: (await text(page, 'identity')).replace('Account ID: ', ''), control };
 }
 
 async function layout(fixture, page, name, width, height, mobile) {
@@ -110,7 +110,7 @@ test('real Worker UI: isolated sessions, public/private discovery, acceptance, r
         assert.notEqual(alice.context(), bob.context());
         await verifyLiteralArguments(alice);
         checkpoints.push('Playwright passes special characters in textarea ID and value literally without executing the injected marker');
-        assert.equal(await h.db.prepare("SELECT count(*) n FROM mailbox_records WHERE kind='account'").first('n'), 0);
+        assert.equal(await h.db.prepare("SELECT count(*) n FROM accounts").first('n'), 0);
         for (const page of [alice, bob]) {
             assert.equal(await page.locator('#control').inputValue(), '');
             assert.equal(await page.locator('#credentialBackup').isVisible(), false);
@@ -143,7 +143,7 @@ test('real Worker UI: isolated sessions, public/private discovery, acceptance, r
         assert.equal(await alice.evaluate(() => navigator.clipboard.readText()), await alice.locator('#agentPromptB').inputValue());
         await alice.context().clearPermissions();
         await alice.locator('#agentGuide summary').click();
-        assert.equal(await h.db.prepare("SELECT count(*) n FROM mailbox_records WHERE kind='account'").first('n'), 0);
+        assert.equal(await h.db.prepare("SELECT count(*) n FROM accounts").first('n'), 0);
         const downloads = [];
         alice.on('download', download => downloads.push(download));
         await alice.locator('#recovery summary').click();
@@ -164,7 +164,7 @@ test('real Worker UI: isolated sessions, public/private discovery, acceptance, r
         await download.cancel(); // The fixture deliberately keeps acceptDownloads:false.
         assert.equal(await alice.evaluate(() => localStorage.length + sessionStorage.length), 0);
         assert.equal(await bob.evaluate(() => localStorage.length + sessionStorage.length), 0);
-        assert.equal(await h.db.prepare("SELECT count(*) n FROM mailbox_records WHERE kind='account'").first('n'), 2);
+        assert.equal(await h.db.prepare("SELECT count(*) n FROM accounts").first('n'), 2);
         checkpoints.push('Page load creates no account; two one-click registrations stay in memory with zero addresses; backup download requires a separate click');
 
         for (const page of [alice, bob]) {
@@ -227,6 +227,7 @@ test('real Worker UI: isolated sessions, public/private discovery, acceptance, r
         await waitText(alice, 'status', 'Resource unavailable (404)');
         assert.equal(await alice.evaluate(() => document.getElementById("send").textContent), 'Send message');
         assert.equal(await alice.evaluate(() => document.getElementById("message").readOnly), false);
+        assert.equal(fixture.sentMessages.get(alice).length, 0, 'Missing reciprocal contact must prevent message dispatch.');
         await fixture.screenshot(alice, 'demo-before-acceptance-denied');
         await bob.locator('#contactScenario > summary').click();
         await bob.locator('#loadContacts').click();
@@ -253,10 +254,10 @@ test('real Worker UI: isolated sessions, public/private discovery, acceptance, r
         await fixture.screenshot(alice, 'demo-unknown-send-recovery');
         await alice.locator('#send').click();
         await waitText(alice, 'status', 'Message sent.');
-        assert.equal(fixture.sentMessages.get(alice).length, 3, 'Denied send, committed send with lost response, and retry');
-        assert.deepEqual(fixture.sentMessages.get(alice)[1], fixture.sentMessages.get(alice)[2], 'Retry must preserve the exact envelope.');
+        assert.equal(fixture.sentMessages.get(alice).length, 2, 'Committed send with lost response and exact retry');
+        assert.deepEqual(fixture.sentMessages.get(alice)[0], fixture.sentMessages.get(alice)[1], 'Retry must preserve the exact envelope.');
         assert.equal(await alice.evaluate(() => document.getElementById("message").value), '');
-        const messageId = fixture.sentMessages.get(alice)[1].payload.messageId;
+        const messageId = fixture.sentMessages.get(alice)[0].payload.messageId;
         await bob.locator('#loadInbox').click();
         await waitText(bob, 'inbox', message);
         assert.equal(await bob.evaluate(() => document.querySelectorAll("#inbox .row").length), 1);
@@ -284,8 +285,8 @@ test('real Worker UI: isolated sessions, public/private discovery, acceptance, r
         const receipt = (await h.ok('/v1/outbox', aliceControl)).items.filter(r => r.messageId === messageId);
         assert.equal(receipt.length, 1);
         assert.equal(receipt[0].state, 'acknowledged');
-        const stored = await h.db.prepare("SELECT data FROM mailbox_records WHERE kind='message' AND owner=? AND id=?").bind(aliceId, messageId).first();
-        assert.equal(JSON.parse(stored.data).payload, null, 'ACK must remove the stored pending body.');
+        const stored = await h.db.prepare("SELECT payload FROM mailbox_records WHERE sender_account_id=? AND message_id=?").bind(aliceId, messageId).first();
+        assert.equal(stored.payload, null, 'ACK must remove the stored pending body.');
         await layout(fixture, alice, 'demo-acknowledged-desktop', 1440, 1000, false);
         await layout(fixture, bob, 'demo-acknowledged-mobile', 390, 844, true);
         checkpoints.push('Lost successful response retried exact envelope once; one pending body; reads do not ACK; mobile ACK removed body and sender sees one acknowledged receipt');
@@ -323,11 +324,11 @@ test('real Worker UI: isolated sessions, public/private discovery, acceptance, r
         checkpoints.push('B replied with the walkthrough pong; A read and ACKed it; B sees the exact pong receipt acknowledged');
 
         await alice.locator('#disconnect').click();
-        await waitText(alice, 'identity', 'No agent connected.');
+        await waitText(alice, 'identity', 'No account connected.');
         assert.equal(await alice.evaluate(() => document.getElementById("control").value), '');
         assert.equal(await text(alice, 'outbox'), '');
-        assert.equal(await text(bob, 'identity'), 'Agent ID: ' + bobId);
-        assert.equal(await text(bobDesktop, 'identity'), 'Agent ID: ' + bobId);
+        assert.equal(await text(bob, 'identity'), 'Account ID: ' + bobId);
+        assert.equal(await text(bobDesktop, 'identity'), 'Account ID: ' + bobId);
         assert.equal(await resume(alice, aliceControl), aliceId);
         assert.equal((await h.ok('/v1/addresses', aliceControl)).items.length, 1);
         checkpoints.push('Clear session erases page state, does not affect peer context, and same control resumes same account');

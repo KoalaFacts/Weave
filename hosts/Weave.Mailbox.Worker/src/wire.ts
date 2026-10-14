@@ -20,11 +20,21 @@ export function parse(text: string): any {
     });
 }
 export function json(value: unknown, status = 200): Response {
-    return new Response(stringify(value), { status, headers: { 'Content-Type': status >= 400 ? 'application/problem+json' : 'application/json', 'Cache-Control': 'no-store', 'Pragma': 'no-cache' } });
+    return new Response(stringify(accountNames(value)), { status, headers: { 'Content-Type': status >= 400 ? 'application/problem+json' : 'application/json', 'Cache-Control': 'no-store', 'Pragma': 'no-cache' } });
+}
+const identityNames:Record<string,string>={agentId:'accountId',mailboxId:'accountId',ownerMailboxId:'ownerAccountId',senderMailboxId:'senderAccountId',recipientMailboxId:'recipientAccountId',requesterMailboxId:'requesterAccountId',peerMailboxId:'peerAccountId'};
+export function accountNames(value:any):any {
+    if(Array.isArray(value))return value.map(accountNames);
+    if(value&&typeof value==='object'){
+        const result:Record<string,any>={};
+        for(const [key,child] of Object.entries(value)){result[key]=accountNames(child);const canonical=key==='isBlockedByMailbox'?'isBlockedByAccount':identityNames[key];if(canonical)result[canonical]=child;}
+        return result;
+    }
+    return value;
 }
 export function problem(error: unknown): Response {
     const p = error instanceof Problem ? error : new Problem(503, 'storage');
-    const titles: Record<string,string> = { invalid: 'Invalid request', unauthenticated: 'Mailbox control required', unavailable: 'Resource unavailable', conflict: 'State conflict', expired: 'Expired', capacity: 'Capacity reached', tooLarge: 'Request too large', storage: 'Storage unavailable' };
+    const titles: Record<string,string> = { invalid: 'Invalid request', unauthenticated: 'Account control required', unavailable: 'Resource unavailable', conflict: 'State conflict', expired: 'Expired', capacity: 'Capacity reached', tooLarge: 'Request too large', storage: 'Storage unavailable', maintenance:'Maintenance in progress' };
     const response = json({ status: p.status, title: titles[p.code], code: p.code }, p.status);
     if (p.retryAfter !== undefined) response.headers.set('Retry-After', String(p.retryAfter));
     return response;
@@ -51,15 +61,28 @@ export async function body(request: Request): Promise<any> {
     const all = new Uint8Array(size); let offset = 0; for (const chunk of chunks) { all.set(chunk, offset); offset += chunk.length; }
     let value; try { value = parse(new TextDecoder('utf-8', { fatal: true }).decode(all)); } catch (e) { if (e instanceof Problem) throw e; fail(); }
     const depth = (v: any, n: number) => { if (n > 16) fail(); if (v && typeof v === 'object') for (const child of Object.values(v)) depth(child, n + 1); };
-    depth(value, 0); return value;
+    depth(value, 0);
+    if(value&&typeof value==='object'&&!Array.isArray(value))for(const [legacy,canonical] of Object.entries(identityNames)){
+        if(legacy in value&&canonical in value&&value[legacy]!==value[canonical])fail();
+        const from:string=value.requestVersion===2?legacy:canonical,to:string=value.requestVersion===2?canonical:legacy;
+        if(from in value){value[to]=value[from];delete value[from];}
+    }
+    return value;
 }
 export async function hash(value: string): Promise<string> {
     return Array.from(new Uint8Array(await crypto.subtle.digest('SHA-256', enc.encode(value))), b => b.toString(16).padStart(2,'0')).join('');
 }
 export function control(request: Request): string | null {
-    const value = request.headers.get('X-Weave-Mailbox-Control');
+    const canonical=request.headers.get('X-Weave-Account-Control'),legacy=request.headers.get('X-Weave-Mailbox-Control');
+    if(canonical!==null&&legacy!==null&&canonical!==legacy)fail(401,'unauthenticated');
+    const value = canonical??legacy;
     if (value !== null && (value.length < 64)) fail(401, 'unauthenticated');
     return value;
+}
+export function identityQuery(url:URL,canonical:string,legacy:string):string {
+    const a=query(url,canonical),b=query(url,legacy);
+    if(a!==null&&b!==null&&a!==b)fail();
+    const value=a??b;if(value===null)fail();identity(value);return value;
 }
 export function query(url: URL, name: string, required = false): string | null {
     const all = url.searchParams.getAll(name); if (all.length > 1 || required && all.length !== 1) fail(); return all[0] ?? null;

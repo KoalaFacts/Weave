@@ -3,6 +3,7 @@ import { test } from 'node:test';
 import { mkdir, writeFile } from 'node:fs/promises';
 import { join, resolve } from 'node:path';
 import { start, payload } from '../harness.mjs';
+import { seedRequest } from '../storage-fixtures.mjs';
 import { BrowserFixture } from './playwright.mjs';
 
 test('contact history remains visible on desktop and native mobile after introduction expiry', { timeout:60000 }, async () => {
@@ -15,11 +16,10 @@ test('contact history remains visible on desktop and native mobile after introdu
         const a = await h.register(), b = await h.register();
         for (const [index,status] of ['pending','accepted','rejected'].entries()) {
             const p = payload('synthetic history',Date.now() - 9 * 86400000 + index);
-            const summary = { requestId:p.messageId,cardId:'synthetic-history-card',requesterMailboxId:a.agentId,
-                recipientMailboxId:b.agentId,methodId:'relay',generation:1,status,createdAt:p.createdAt,
+            const summary = { requestId:p.messageId,cardId:'synthetic-history-card',requesterMailboxId:a.accountId,
+                recipientMailboxId:b.accountId,methodId:'relay',generation:1,status,createdAt:p.createdAt,
                 expiresAt:p.expiresAt,requestMessageId:p.messageId,replyMessageId:null };
-            await h.db.prepare("INSERT INTO mailbox_records(kind,owner,id,data) VALUES('request',?,?,?)")
-                .bind(a.agentId,p.messageId,JSON.stringify({summary})).run();
+            await seedRequest(h.db,{summary});
         }
         await fixture.start();
         for (const mobile of [false,true]) {
@@ -28,7 +28,7 @@ test('contact history remains visible on desktop and native mobile after introdu
             await page.locator('#recovery summary').click();
             await page.locator('#control').fill(b.control);
             await page.locator('#register').click();
-            await page.waitForFunction(() => document.getElementById('identity').textContent.startsWith('Agent ID:'));
+            await page.waitForFunction(() => document.getElementById('identity').textContent.startsWith('Account ID:'));
             await page.locator('#contactScenario summary').click();
             if (mobile) await page.locator('#loadContacts').tap(); else await page.locator('#loadContacts').click();
             await page.waitForFunction(() => document.querySelectorAll('#contacts .row').length === 3
@@ -48,7 +48,7 @@ test('contact history remains visible on desktop and native mobile after introdu
         }
         assert.deepEqual(fixture.errors,[]);
         assert.equal(fixture.trace.some(r=>r.method !== 'GET' && r.path !== '/v1/accounts'),false);
-        assert.equal(await h.db.prepare("SELECT count(*) n FROM mailbox_records WHERE kind='request'").first('n'),3);
+        assert.equal(await h.db.prepare("SELECT count(*) n FROM contact_requests").first('n'),3);
         await writeFile(join(evidence,'result.json'),JSON.stringify({status:'passed',statuses:['expired','accepted','rejected'],requestRows:3,decisions:0,acknowledgments:0},null,2));
     } catch (error) {
         await writeFile(join(evidence,'result.json'),JSON.stringify({status:'failed',error:String(error.stack).slice(-32768)},null,2));

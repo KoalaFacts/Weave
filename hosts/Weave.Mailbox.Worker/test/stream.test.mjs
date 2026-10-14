@@ -50,7 +50,7 @@ test('absolute stream deadline releases its lease even when each write is slow b
     const writer={write:()=>new Promise(resolve=>setTimeout(resolve,9000)),close:async()=>{},abort:async()=>{aborted=true;}};
     globalThis.TransformStream=class {readable=new ReadableStream();writable={getWriter:()=>writer};};
     const message={receipt:{senderMailboxId:'a',recipientMailboxId:'b'},generation:1,version:1,payload:{messageId:'id'}};
-    const db={prepare(sql){return {sql,bind(){return this;},async first(column){return column==='token'?'revision':sql.includes('count(*)')?{total:0,owned:0}:null;},async all(){return {results:[{seq:'1',data:JSON.stringify(message)}]};}}},async batch(statements){if(statements.some(s=>s.sql.startsWith('DELETE FROM mailbox_records WHERE kind=?')))released=true;return [];}};
+    const db={prepare(sql){return {sql,bind(){return this;},async first(column){return column==='token'?'revision':sql.includes('count(*)')?{total:0,owned:0}:null;},async all(){return {results:[{seq:'1',message_id:'id',sender_account_id:'a',recipient_account_id:'b',payload:[65],payload_size:1,payload_encoding:'text/plain',created_at:'0',expires_at:'36000000000',state:'pending',terminal_at:null,legacy_generation:'1',protocol_version:1,purpose:0,connection_token:null,request_id:null}]};}}},async batch(statements){if(statements.some(s=>s.sql.toLowerCase().startsWith('delete from stream_leases')))released=true;return [];}};
     t.mock.timers.enable({apis:['setTimeout','Date'],now:Date.now()});
     try {
         await stream({db:db},'b',new Request('http://localhost'),{waitUntil(p){completion=p;}});
@@ -78,7 +78,7 @@ for(const count of [9,64])test('SSE traverses all '+count+' pending messages wit
                 for(const match of (await response.text()).matchAll(/^id: (.+)$/gm))delivered.add(match[1]);
                 // Response closure precedes waitUntil's lease/progress commit.
                 for(let wait=0;wait<100;wait++){
-                    if(await h.db.prepare("SELECT count(*) n FROM mailbox_records WHERE kind='stream' AND owner=?").bind(b.accountId).first('n')===0)break;
+                    if(await h.db.prepare("SELECT count(*) n FROM stream_leases WHERE account_id=?").bind(b.accountId).first('n')===0)break;
                     await new Promise(resolve=>setTimeout(resolve,10));
                 }
             }
@@ -129,10 +129,10 @@ test('late stream release cannot overwrite newer traversal progress',async()=>{
         const old=await controlledStream(h,b.accountId,async frame=>{if(!frame.includes('event: message'))return;if(writes++===0){entered();await blocked;}else throw Error('disconnected');});
         await waiting;
         const newer=await controlledStream(h,b.accountId,async()=>{});await newer.completion;
-        const before=await h.db.prepare("SELECT data FROM mailbox_records WHERE kind='stream-progress' AND owner=?").bind(b.accountId).first('data');
+        const before=await h.db.prepare("SELECT json_object('cursor',cursor,'version',version) data FROM stream_cursors WHERE account_id=?").bind(b.accountId).first('data');
         assert.ok(JSON.parse(before).version);assert.ok(JSON.parse(before).cursor);
         unblock();await old.completion;
-        assert.equal(await h.db.prepare("SELECT data FROM mailbox_records WHERE kind='stream-progress' AND owner=?").bind(b.accountId).first('data'),before);
+        assert.equal(await h.db.prepare("SELECT json_object('cursor',cursor,'version',version) data FROM stream_cursors WHERE account_id=?").bind(b.accountId).first('data'),before);
         assert.equal((await h.ok('/v1/inbox',b.control)).items.length,ids.length);
     } finally {unblock?.();await h.close();}
 });

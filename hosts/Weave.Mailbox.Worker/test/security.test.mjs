@@ -55,8 +55,8 @@ test('public registry enforces shared source/global request rates and does not s
         for(let i=0;i<120;i++)assert.equal((await request('192.0.2.10')).status,200);
         assert.equal((await request('192.0.2.10')).status,429);
         assert.equal((await request('192.0.2.11')).status,200);
-        const rows=await h.db.prepare("SELECT data,id FROM mailbox_records WHERE kind='public-rate'").all();assert.ok(!JSON.stringify(rows.results).includes('192.0.2.'));
-        await h.db.prepare("UPDATE mailbox_records SET data=json_set(data,'$.count',2000) WHERE kind='public-rate' AND id='global'").run();
+        const rows=await h.db.prepare("SELECT * FROM rate_limits WHERE policy='public-read'").all();assert.ok(!JSON.stringify(rows.results).includes('192.0.2.'));
+        await h.db.prepare("UPDATE rate_limits SET count=2000 WHERE policy='public-read' AND bucket_key='global'").run();
         assert.equal((await request('192.0.2.12')).status,429);
         assert.equal((await h.request('/v1/contacts/cards')).status,429);
     }finally{await h.close();}

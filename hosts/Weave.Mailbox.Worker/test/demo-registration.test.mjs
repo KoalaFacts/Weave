@@ -7,7 +7,7 @@ import { start } from './harness.mjs';
 const html = await readFile('src/demo.html', 'utf8');
 const script = /<script nonce="WEAVE_NONCE">([\s\S]*?)<\/script>/.exec(html)[1];
 const json = (value, status = 200) => new Response(JSON.stringify(value), { status });
-const account = { agentId: 'local-demo-agent', displayName: null, description: null };
+const account = { accountId: 'local-demo-agent', displayName: null, description: null };
 
 function promptText(markup, id) {
     return new RegExp('<textarea id="' + id + '"[^>]*>([\\s\\S]*?)</textarea>').exec(markup)[1]
@@ -64,12 +64,12 @@ test('one click generates a 256-bit control and registers optional private profi
     app.get('control').value = 'previously entered recovery value';
     await app.click('createAccount');
     assert.deepEqual(app.randomSizes, [32]);
-    assert.deepEqual(app.calls.map(c => [c.path, c.method]), [['/v1/accounts', 'POST'], ['/v1/addresses', 'GET']]);
-    const request = app.calls[0], control = request.headers['X-Weave-Mailbox-Control'];
+    assert.deepEqual(app.calls.map(c => [c.path, c.method]), [['/v1/accounts', 'POST'], ['/v1/addresses?includeRevoked=true', 'GET']]);
+    const request = app.calls[0], control = request.headers['X-Weave-Account-Control'];
     assert.match(control, /^[0-9a-f]{64}$/);
     assert.deepEqual(JSON.parse(request.body), { displayName: 'Private local tester', description: 'Private description' });
     assert.ok(!request.path.includes(control)); assert.ok(!request.body.includes(control));
-    assert.equal(app.get('identity').textContent, 'Agent ID: ' + account.agentId);
+    assert.equal(app.get('identity').textContent, 'Account ID: ' + account.accountId);
     assert.equal(app.get('control').value, '');
     assert.equal(app.get('credentialBackup').hidden, false); assert.equal(app.get('createAccount').disabled, true);
     assert.match(app.get('status').textContent, /Back up your credential/);
@@ -95,7 +95,7 @@ for (const [scenario, field, value, label] of [
     app.get(field).value = 'Corrected profile'; await app.click('createAccount');
     assert.deepEqual(app.randomSizes, [32]);
     assert.equal(JSON.parse(app.calls[0].body)[field], 'Corrected profile');
-    assert.equal(app.get('identity').textContent, 'Agent ID: ' + account.agentId);
+    assert.equal(app.get('identity').textContent, 'Account ID: ' + account.accountId);
 });
 
 test('credential backup is created only by a download click and its object URL is revoked', async () => {
@@ -103,7 +103,7 @@ test('credential backup is created only by a download click and its object URL i
     assert.equal(app.blobs.size, 0); await app.click('downloadCredential');
     assert.equal(app.downloads.length, 1);
     const download = app.downloads[0], exported = JSON.parse(await download.blob.text());
-    assert.deepEqual(exported, { agentId: account.agentId, control: app.calls[0].headers['X-Weave-Mailbox-Control'] });
+    assert.deepEqual(exported, { accountId: account.accountId, control: app.calls[0].headers['X-Weave-Account-Control'] });
     assert.equal(download.filename, 'weave-demo-credential.json'); assert.ok(!download.href.includes(exported.control));
     app.flushTimers(); assert.equal(app.blobs.size, 0);
     await app.click('disconnect'); assert.equal(app.get('credentialBackup').hidden, true);
@@ -123,23 +123,23 @@ for (const mode of ['lost response', 'server failure', 'invalid response', 'miss
             return success(path, options);
         });
         app.get('displayName').value = 'Original profile'; await app.click('createAccount');
-        assert.equal(attempts, 1); assert.equal(app.get('identity').textContent, 'No agent connected.');
+        assert.equal(attempts, 1); assert.equal(app.get('identity').textContent, 'No account connected.');
         assert.equal(app.get('credentialBackup').hidden, false); assert.equal(app.get('createAccount').disabled, false);
         assert.match(app.get('createAccount').textContent, /Retry/);
         assert.match(app.get('status').textContent, mode.includes('denial') ? /rejected/ : /unknown/);
         await app.click('downloadCredential');
-        assert.equal(JSON.parse(await app.downloads[0].blob.text()).control, app.calls[0].headers['X-Weave-Mailbox-Control']);
+        assert.equal(JSON.parse(await app.downloads[0].blob.text()).control, app.calls[0].headers['X-Weave-Account-Control']);
         app.get('displayName').value = 'Edited while retrying'; await app.click('createAccount');
         const posts = app.calls.filter(c => c.method === 'POST');
         assert.equal(posts.length, 2); assert.deepEqual(posts[0], posts[1]); assert.deepEqual(app.randomSizes, [32]);
-        assert.equal(app.get('identity').textContent, 'Agent ID: ' + account.agentId);
+        assert.equal(app.get('identity').textContent, 'Account ID: ' + account.accountId);
     });
 }
 
 test('confirmed registration with a failed address refresh stays connected and never registers again', async () => {
     const app = ui(path => path === '/v1/accounts' ? json(account) : json({ title: 'Storage unavailable' }, 503));
     await app.click('createAccount');
-    assert.equal(app.get('identity').textContent, 'Agent ID: ' + account.agentId);
+    assert.equal(app.get('identity').textContent, 'Account ID: ' + account.accountId);
     assert.match(app.get('status').textContent, /registered.*refresh addresses/i);
     assert.match(app.get('status').textContent, /Back up your credential/);
     await app.click('createAccount'); assert.equal(app.calls.filter(c => c.method === 'POST').length, 1);
@@ -151,7 +151,7 @@ test('overlapping registration clicks do not dispatch twice and clearing ignores
     const pending = app.click('createAccount'); await app.click('createAccount');
     assert.equal(app.calls.length, 1); assert.deepEqual(app.randomSizes, [32]);
     await app.click('disconnect'); resolveRegistration(json(account)); await pending;
-    assert.equal(app.get('identity').textContent, 'No agent connected.'); assert.equal(app.get('credentialBackup').hidden, true);
+    assert.equal(app.get('identity').textContent, 'No account connected.'); assert.equal(app.get('credentialBackup').hidden, true);
     assert.equal(app.calls.length, 1); assert.equal(app.get('createAccount').disabled, false);
     assert.equal(app.get('workspace').hidden, true); assert.equal(app.get('accountStart').hidden, false);
 });
@@ -168,8 +168,8 @@ test('separate recovery accepts a saved credential without generating one or ret
     const savedControl = 'public-local-recovery-control-'.padEnd(64, 'r');
     app.get('control').value = savedControl; await app.click('register');
     assert.deepEqual(app.randomSizes, []); assert.equal(app.calls.length, 1);
-    assert.equal(app.calls[0].headers['X-Weave-Mailbox-Control'], savedControl);
-    assert.equal(app.get('identity').textContent, 'No agent connected.');
+    assert.equal(app.calls[0].headers['X-Weave-Account-Control'], savedControl);
+    assert.equal(app.get('identity').textContent, 'No account connected.');
     assert.match(app.get('status').textContent, /rejected.*401/);
 });
 
@@ -178,35 +178,35 @@ test('real Worker commits a lost registration once, resumes its saved control, a
     let loseResponse = true;
     try {
         const app = ui(async (path, options) => {
-            const response = await h.request(path, options.headers['X-Weave-Mailbox-Control'], options.method, options.body);
+            const response = await h.request(path, options.headers['X-Weave-Account-Control'], options.method, options.body);
             if (path === '/v1/accounts' && loseResponse) {
                 loseResponse = false; assert.equal(response.status, 200); throw Error('Response lost after commit');
             }
             return response;
         });
-        assert.equal(await h.db.prepare("SELECT count(*) n FROM mailbox_records WHERE kind='account'").first('n'), 0);
+        assert.equal(await h.db.prepare("SELECT count(*) n FROM accounts").first('n'), 0);
         app.get('description').value = 'First line\nSecond line'; await app.click('createAccount');
         assert.deepEqual(app.calls, []); assert.deepEqual(app.randomSizes, []);
         assert.equal(app.get('description').readOnly, false);
         app.get('description').value = 'First line Second line';
         await app.click('createAccount');
         assert.match(app.get('status').textContent, /outcome unknown/);
-        assert.equal(await h.db.prepare("SELECT count(*) n FROM mailbox_records WHERE kind='account'").first('n'), 1);
-        const storedProfile = await h.db.prepare("SELECT data FROM mailbox_records WHERE kind='account'").first('data');
-        assert.equal(JSON.parse(storedProfile).description, 'First line Second line');
+        assert.equal(await h.db.prepare("SELECT count(*) n FROM accounts").first('n'), 1);
+        const storedProfile = await h.db.prepare("SELECT description FROM accounts").first('description');
+        assert.equal(storedProfile, 'First line Second line');
         await app.click('createAccount');
         const identity = app.get('identity').textContent;
-        assert.match(identity, /^Agent ID: /);
-        assert.equal(await h.db.prepare("SELECT count(*) n FROM mailbox_records WHERE kind='account'").first('n'), 1);
-        assert.equal(await h.db.prepare("SELECT count(*) n FROM mailbox_records WHERE kind='address'").first('n'), 0);
+        assert.match(identity, /^Account ID: /);
+        assert.equal(await h.db.prepare("SELECT count(*) n FROM accounts").first('n'), 1);
+        assert.equal(await h.db.prepare("SELECT count(*) n FROM account_addresses").first('n'), 0);
         await app.click('downloadCredential');
         const backup = JSON.parse(await app.downloads[0].blob.text());
         await app.click('disconnect'); app.get('control').value = backup.control; await app.click('register');
         assert.equal(app.get('identity').textContent, identity);
         await app.click('disconnect'); await app.click('createAccount');
         assert.match(app.get('status').textContent, /rejected \(429\)/);
-        assert.equal(app.get('identity').textContent, 'No agent connected.');
-        assert.equal(await h.db.prepare("SELECT count(*) n FROM mailbox_records WHERE kind='account'").first('n'), 1);
+        assert.equal(app.get('identity').textContent, 'No account connected.');
+        assert.equal(await h.db.prepare("SELECT count(*) n FROM accounts").first('n'), 1);
     } finally { await h.close(); }
 });
 

@@ -28,12 +28,12 @@
         get('copyInvitation').disabled=true;get('invitationAddressesNext').disabled=true;
     }
     function account(){
-        if(!session?.agentId)throw Error('Create or restore your own account first. No account was created by this action.');
+        if(!session?.accountId)throw Error('Create or restore your own account first. No account was created by this action.');
         current(session);return session;
     }
     function effective(address,s){
         const now=Date.now();
-        return address?.accountId===s.agentId&&typeof address.addressId==='string'&&address.addressId.length>0&&
+        return address?.accountId===s.accountId&&typeof address.addressId==='string'&&address.addressId.length>0&&
             (address.effectiveFrom==null||Number.isFinite(Date.parse(address.effectiveFrom))&&Date.parse(address.effectiveFrom)<=now)&&
             (address.effectiveTo==null||Number.isFinite(Date.parse(address.effectiveTo))&&Date.parse(address.effectiveTo)>now);
     }
@@ -63,8 +63,8 @@
         try{
             const s=account(),id=get('invitationAddress').value,address=known.get(id);
             if(owner!==s||!effective(address,s))throw Error('Choose a current address belonging to this account; refresh addresses if needed.');
-            if(newRun||!card||card.peerAgentId!==s.agentId||card.peerAddressId!==id){
-                card={type:'weave-demo-invitation',version:1,origin:location.origin,peerAgentId:s.agentId,peerAddressId:id,runId:crypto.randomUUID(),goal:'one_ping_pong'};
+            if(newRun||!card||card.peerAccountId!==s.accountId||card.peerAddressId!==id){
+                card={type:'weave-demo-invitation',version:1,origin:location.origin,peerAccountId:s.accountId,peerAgentId:s.accountId,peerAddressId:id,runId:crypto.randomUUID(),goal:'one_ping_pong'};
             }
             get('invitationCard').value=JSON.stringify(card,null,2);get('copyInvitation').disabled=false;
             report('Contact card prepared locally. Share it with the intended agent; no contact request was sent.');

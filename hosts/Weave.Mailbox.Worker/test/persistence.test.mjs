@@ -23,11 +23,11 @@ test('fresh Worker reload retains decisions, receipt cursors and ACK tombstones 
         assert.deepEqual(await h.ok('/v1/outbox/'+p.messageId,a.control),ack);
         const remaining=await h.ok('/v1/outbox?limit=1&afterCursor='+encodeURIComponent(first.nextCursor),a.control);
         assert.equal(remaining.items.length,1); assert.equal(remaining.items[0].messageId,envelope.payload.messageId);
-        const inbox=await h.ok('/v1/inbox',b.control); assert.equal(inbox.items.length,1); assert.deepEqual(inbox.items[0].envelope,envelope);
+        const inbox=await h.ok('/v1/inbox',b.control); assert.equal(inbox.items.length,1); assert.deepEqual(inbox.items[0].envelope,{...envelope,recipientAccountId:b.accountId});
         assert.equal((await h.ok('/v1/inbox',a.control)).items[0].envelope.payload.messageId,decision.reply.messageId);
         assert.equal((await h.request('/v1/outbox?afterCursor='+encodeURIComponent(first.nextCursor),b.control)).status,400);
-        const stored=await h.db.prepare("SELECT data FROM mailbox_records WHERE kind='message' AND id=? AND owner=?").bind(p.messageId,a.accountId).first();
-        assert.equal(JSON.parse(stored.data).payload,null);
+        const stored=await h.db.prepare("SELECT payload FROM mailbox_records WHERE message_id=? AND sender_account_id=?").bind(p.messageId,a.accountId).first();
+        assert.equal(stored.payload,null);
     } finally { await h.close(); await rm(persist,{recursive:true,force:true}); }
 });
 test('concurrent decision races commit one outcome and preserve the exact requester-scoped request', async () => {
@@ -48,9 +48,10 @@ test('int64 generation does not round in JavaScript, D1, replay fingerprints or 
         const a=await h.participant(),b=await h.participant(),p=payload();
         await h.ok('/v1/contacts/requests',a.control,'POST',{requestId:p.messageId,cardId:b.cardId,methodId:'relay',payload:p});
         // Seed a reachable long-running channel boundary directly; exercise all operations via HTTP.
-        const rows=await h.db.prepare("SELECT kind,owner,id,data FROM mailbox_records WHERE kind IN ('channel','request')").all();
-        for(const row of rows.results) await h.db.prepare('UPDATE mailbox_records SET data=? WHERE kind=? AND owner=? AND id=?')
-            .bind(row.data.replaceAll('"generation":1','"generation":9007199254740993'),row.kind,row.owner,row.id).run();
+        await h.db.batch([
+            h.db.prepare('UPDATE legacy_channels SET generation=?').bind('9007199254740993'),
+            h.db.prepare('UPDATE contact_requests SET legacy_generation=?').bind('9007199254740993')
+        ]);
         const rejected=await h.request('/v1/contacts/blocks',b.control,'PUT','{"peerMailboxId":"'+a.accountId+'","expectedGeneration":9007199254740992}');
         assert.equal(rejected.status,409);
         const changed=await h.request('/v1/contacts/blocks',b.control,'PUT','{"peerMailboxId":"'+a.accountId+'","expectedGeneration":9007199254740993}');

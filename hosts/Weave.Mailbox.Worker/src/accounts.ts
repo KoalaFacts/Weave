@@ -9,9 +9,9 @@ function settings(env: Env, name: keyof Env, max: number): number {
 export async function authenticate(env: Env, secret: string | null): Promise<any | null> {
     if (secret === null) return null;
     const digest = (await controlDigest(secret))!;
-    const row = await env.db.prepare("SELECT data FROM mailbox_records WHERE kind='account' AND json_extract(data,'$.controlHash')=? AND json_extract(data,'$.controlHashScheme')=?").bind(digest,CONTROL_HASH_SCHEME).first<{data:string}>();
+    const row = await env.db.prepare('SELECT account_id,control_hash,control_hash_scheme,control_hash_parameters,display_name,description FROM accounts WHERE control_hash=? AND control_hash_scheme=?').bind(digest,CONTROL_HASH_SCHEME).first<any>();
     if (!row) fail(401,'unauthenticated');
-    const account=parse(row.data);
+    const account={accountId:row.account_id,controlHash:row.control_hash,controlHashScheme:row.control_hash_scheme,controlHashParameters:parse(row.control_hash_parameters),displayName:row.display_name,description:row.description};
     if (!validParameters(account.controlHashParameters) || !digestMatches(digest,account.controlHash)) fail(401,'unauthenticated');
     return account;
 }
@@ -22,23 +22,24 @@ export async function register(env: Env, request: Request, secret: string | null
     }
     const digest = (await controlDigest(secret))!;
     return atomic(env.db, async tx => {
-        const existing = await tx.rows('account', "json_extract(data,'$.controlHash')=?", [digest]);
-        if (existing.length) { const a=parse(existing[0].data); if (a.controlHashScheme !== CONTROL_HASH_SCHEME || !validParameters(a.controlHashParameters) || !digestMatches(digest,a.controlHash)) fail(401,'unauthenticated'); return {agentId:a.accountId,displayName:a.displayName,description:a.description}; }
+        const existing = await tx.db.prepare('SELECT account_id FROM accounts WHERE control_hash=?').bind(digest).first<string>('account_id');
+        if (existing) { const a=await tx.get('account','',existing); if (a.controlHashScheme !== CONTROL_HASH_SCHEME || !validParameters(a.controlHashParameters) || !digestMatches(digest,a.controlHash)) fail(401,'unauthenticated'); return {agentId:a.accountId,displayName:a.displayName,description:a.description}; }
         if (env.REGISTRATION_ENABLED !== 'true') fail(404,'unavailable');
         const now = Date.now(), hour = Math.floor(now / 3600000);
         const source = await hash('registration:' + hour + ':' + (request.headers.get('CF-Connecting-IP') ?? 'unknown'));
         const maxAccounts = settings(env,'REGISTRATION_MAX_ACCOUNTS',10000);
         const maxGlobal = settings(env,'REGISTRATION_GLOBAL_PER_HOUR',10000);
         const maxSource = settings(env,'REGISTRATION_PER_IP_PER_HOUR',1000);
-        const count = await tx.db.prepare("SELECT count(*) n FROM mailbox_records WHERE kind='account'").first<number>('n');
+        const count = await tx.db.prepare('SELECT count(*) n FROM accounts').first<number>('n');
         if (count === null || count >= maxAccounts) fail(429,'capacity');
         for (const [id,max] of [['global',maxGlobal],[source,maxSource]] as const) {
             const counter = await tx.get('registration-rate','',id);
             const count = counter?.hour === hour ? counter.count : 0;
             if (count >= max) fail(429,'capacity'); tx.put('registration-rate','',id,{ hour, count: count + 1 });
         }
-        tx.writes.push(tx.db.prepare("DELETE FROM mailbox_records WHERE seq IN (SELECT seq FROM mailbox_records WHERE kind='registration-rate' AND json_extract(data,'$.hour')<? LIMIT 100)").bind(hour));
+        tx.writes.push(tx.db.prepare("DELETE FROM rate_limits WHERE seq IN (SELECT seq FROM rate_limits WHERE policy='registration' AND window_start<CAST(? AS INTEGER) LIMIT 100)").bind((BigInt(hour)*36000000000n).toString()));
         const accountId = crypto.randomUUID();
+        if(await tx.get('account','',accountId))fail(409,'conflict');
         tx.put('account','',accountId,{accountId,controlHash:digest,controlHashScheme:CONTROL_HASH_SCHEME,controlHashParameters:CONTROL_HASH_PARAMETERS,displayName:input.displayName ?? null,description:input.description ?? null});
         return {agentId:accountId,displayName:input.displayName ?? null,description:input.description ?? null};
     });

@@ -1,8 +1,9 @@
 import { Transaction } from './database';
+import { isoUtc } from './time';
 import { enc, fail, generation, hash, identity, object, stringify, uuid } from './wire';
 
 export const MAX_GENERATION = 9223372036854775807n;
-export const nowText = () => new Date().toISOString();
+export const nowText = (tx?:Transaction) => tx?isoUtc(tx.store.now).replace(/(\.\d{3})0000Z$/,'$1Z'):new Date().toISOString();
 export function ticks(value: unknown): bigint {
     if (typeof value !== 'string') fail();
     const match = /^(\d{4})-(\d\d)-(\d\d)T(\d\d):(\d\d):(\d\d)(?:\.(\d{1,7}))?(Z|[+-]\d\d:\d\d)$/.exec(value);
@@ -25,9 +26,10 @@ export function validatePayload(p: any, first = false): void {
     if (typeof p.payloadEncoding !== 'string' || !p.payloadEncoding.trim() || p.payloadEncoding.length > 128 || /[\u0000-\u001f\u007f-\u009f]/u.test(p.payloadEncoding)) fail();
     if (typeof p.bytes !== 'string') fail();
     const base64 = p.bytes.replace(/[\t\r\n ]/g,'');
+    if(base64.length>87384)fail(413,'tooLarge');
     if (!/^(?:[A-Za-z0-9+/]{4})*(?:[A-Za-z0-9+/]{2}==|[A-Za-z0-9+/]{3}=)?$/.test(base64)) fail();
     let decoded; try { decoded = atob(base64); } catch { fail(); }
-    if (decoded.length > 65536) fail(); p.bytes = btoa(decoded);
+    if (decoded.length > 65536) fail(413,'tooLarge'); p.bytes = btoa(decoded);
     if (first && (expires <= now || now-created > 3000000000n)) fail(410,'expired');
 }
 export async function fingerprint(value: any): Promise<string> {
@@ -51,8 +53,10 @@ export const channelView = (c: any,owner: string) => ({ mailboxId:owner,peerMail
 export const readChannel = (tx: Transaction,a: string,b: string) => tx.get('channel','',channelKey(a,b));
 export function writeChannel(tx: Transaction,c: any): void { tx.put('channel','',channelKey(c.low,c.high),c); }
 export function validateEnvelope(e: any,sender: string): void {
-    object(e,['version','recipientMailboxId','contactGeneration','payload']); identity(e.recipientMailboxId); generation(e.contactGeneration);
-    if (e.version !== 1 || e.recipientMailboxId === sender) fail(); validatePayload(e.payload);
+    object(e,['version','recipientMailboxId','contactGeneration','payload'],e.version===2?['connectionToken']:[]); identity(e.recipientMailboxId); generation(e.contactGeneration);
+    if (![1,2].includes(e.version) || e.recipientMailboxId === sender) fail();
+    if(e.version===2&&(typeof e.connectionToken!=='string'||!/^[0-9a-f]{64}$/.test(e.connectionToken)))fail();
+    validatePayload(e.payload);
 }
 export function utf8(value: unknown,max: number,nullable = false): void {
     if (nullable && value === null) return;

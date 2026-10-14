@@ -14,6 +14,6 @@ export async function publicReadRate(env: Env,request: Request): Promise<void> {
             else tx.put('public-rate','',id,{at:current?previous.at:now,count:count+1});
         }
         if(retryAfter)fail(429,'capacity',retryAfter);
-        tx.writes.push(tx.db.prepare("DELETE FROM mailbox_records WHERE seq IN (SELECT seq FROM mailbox_records WHERE kind='public-rate' AND json_extract(data,'$.at')<? ORDER BY seq LIMIT 128)").bind(now-120000));
+        tx.writes.push(tx.db.prepare("DELETE FROM rate_limits WHERE seq IN (SELECT seq FROM rate_limits WHERE policy='public-read' AND window_start<CAST(? AS INTEGER) ORDER BY seq LIMIT 128)").bind((BigInt(now-120000)*10000n).toString()));
     });
 }

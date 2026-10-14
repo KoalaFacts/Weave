@@ -19,7 +19,7 @@ test('anonymous agent entry serves the canonical guide and inert nonce-protected
         }
         const scripts=[...html.matchAll(/<script nonce="([^"]+)">([\s\S]*?)<\/script>/g)];assert.equal(scripts.length,2);
         for(const [,nonce,script]of scripts){assert.ok(csp.includes("'nonce-"+nonce+"'"));new Script(script);}
-        assert.ok(!html.includes('WEAVE_NONCE'));assert.equal(await h.db.prepare("SELECT count(*) n FROM mailbox_records WHERE kind='account'").first('n'),0);
+        assert.ok(!html.includes('WEAVE_NONCE'));assert.equal(await h.db.prepare("SELECT count(*) n FROM accounts").first('n'),0);
         const contract=await h.ok('/openapi.json');
         for(const path of ['/v1/accounts','/v1/addresses','/v1/contacts/channel','/v1/contacts/requests','/v1/contacts/requests/{requestId}','/v1/messages','/v1/inbox','/v1/inbox/{messageId}/ack','/v1/outbox/{messageId}'])assert.ok(contract.paths[path],path);
     }finally{await h.close();}
@@ -30,6 +30,6 @@ test('MCP guide returns the exact same instructions without registration or secr
         await client.initialize();const result=await client.call('demo_guide'),guide=value(result);
         assert.equal(guide.instructions,await readFile('src/agent-start.md','utf8'));assert.equal(guide.start,guide.origin+'/agent-start.md');
         assert.ok(guide.boundary.includes('does not grant permission'));assert.equal(guide.readiness.credentialConfigured,true);
-        assert.ok(!JSON.stringify(result).includes(control));assert.equal(await h.db.prepare("SELECT count(*) n FROM mailbox_records WHERE kind='account'").first('n'),0);
+        assert.ok(!JSON.stringify(result).includes(control));assert.equal(await h.db.prepare("SELECT count(*) n FROM accounts").first('n'),0);
     }finally{await client.close();await h.close();}
 });

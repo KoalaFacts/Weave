@@ -1,7 +1,9 @@
-import { fail, parse, stringify } from './wire';
+import { fail, stringify } from './wire';
+import { RecordStore } from './record-store';
+import { nowUtc } from './time';
 
 export interface Statement {
-    bind(...values: (string | number | null)[]): Statement;
+    bind(...values: (string | number | null | ArrayBuffer)[]): Statement;
     all<T>(): Promise<{ results: T[] }>;
     first<T>(column?: string): Promise<T | null>;
     run(): Promise<unknown>;
@@ -9,6 +11,8 @@ export interface Statement {
 export interface Database { prepare(sql: string): Statement; batch(statements: Statement[]): Promise<unknown[]>; }
 export interface Env {
     db: Database;
+    MAINTENANCE_MODE?: string;
+    RECOVERY_READ_ONLY?: string;
     CLEANUP_MAX_MESSAGES?: string;
     CLEANUP_TIME_BUDGET_MS?: string;
     REGISTRATION_ENABLED: string;
@@ -21,22 +25,20 @@ export class Transaction {
     writes: Statement[] = [];
     invalidatedPair: string[] | null = null;
     private cache = new Map<string,any>();
-    constructor(public db: Database) {}
-    async rows(kind: string, condition = '1=1', args: (string | number | null)[] = [], suffix = 'ORDER BY seq'): Promise<RecordRow[]> {
-        return (await this.db.prepare(`SELECT CAST(seq AS TEXT) seq,kind,owner,id,data FROM mailbox_records WHERE kind=? AND (${condition}) ${suffix}`).bind(kind,...args).all<RecordRow>()).results;
-    }
+    readonly store:RecordStore;
+    constructor(public db: Database) {this.store=new RecordStore(db,this.writes,nowUtc());}
     async get(kind: string, owner: string, id: string): Promise<any | null> {
         const key = stringify([kind,owner,id]); if (this.cache.has(key)) return this.cache.get(key);
-        const row = await this.db.prepare('SELECT data FROM mailbox_records WHERE kind=? AND owner=? AND id=?').bind(kind,owner,id).first<{data:string}>();
-        const value = row ? parse(row.data) : null; this.cache.set(key,value); return value;
+        const value=await this.store.get(kind,owner,id);this.cache.set(key,value);return value;
     }
     put(kind: string, owner: string, id: string, value: any): void {
         this.cache.set(stringify([kind,owner,id]),value);
-        this.writes.push(this.db.prepare(`INSERT INTO mailbox_records(kind,owner,id,data) VALUES(?,?,?,?) ON CONFLICT(kind,owner,id) DO UPDATE SET data=excluded.data`).bind(kind,owner,id,stringify(value)));
+        this.store.put(kind,owner,id,value);
     }
     delete(kind: string, owner: string, id: string): void {
         this.cache.set(stringify([kind,owner,id]),null);
-        this.writes.push(this.db.prepare('DELETE FROM mailbox_records WHERE kind=? AND owner=? AND id=?').bind(kind,owner,id));
+        if(kind!=='stream')throw Error('Only temporary stream leases may be deleted by record kind.');
+        this.writes.push(this.db.prepare('DELETE FROM stream_leases WHERE account_id=? AND lease_id=?').bind(owner,id));
     }
 }
 export async function atomic<T>(db: Database, operation: (tx: Transaction) => Promise<T>): Promise<T> {
@@ -54,9 +56,10 @@ export async function atomic<T>(db: Database, operation: (tx: Transaction) => Pr
             return result as T;
         }
         try {
+            const at=tx.store.now.toString();
             await db.batch([
-                db.prepare('UPDATE mailbox_revision SET token=? WHERE singleton=1 AND token=?').bind(crypto.randomUUID(),revision),
-                db.prepare('INSERT INTO mailbox_guard(ok) VALUES(changes())'),
+                db.prepare('UPDATE mailbox_revision SET token=?,updated_at=? WHERE singleton=1 AND token=?').bind(crypto.randomUUID(),at,revision),
+                db.prepare('INSERT INTO mailbox_guard(ok,created_at,updated_at) VALUES(changes(),?,?)').bind(at,at),
                 ...tx.writes,
                 db.prepare('DELETE FROM mailbox_guard')
             ]);
