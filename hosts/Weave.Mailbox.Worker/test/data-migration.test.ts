@@ -35,14 +35,20 @@ function fixture() {
 }
 async function database() {
     const mf=new Miniflare(convertV4MiniflareOptions({modules:true,script:'export default {fetch(){return new Response("migration fixture")}}',compatibilityDate:'2026-07-01',d1Databases:['db']}));
-    const db=await mf.getD1Database('db');
-    for(const sql of (await readFile('test/fixtures/legacy-mailbox.sql','utf8')).split(';').filter(x=>x.trim()))await db.prepare(sql).run();
-    await db.prepare("CREATE TABLE d1_migrations(id INTEGER PRIMARY KEY,name TEXT NOT NULL,applied_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP)").run();
-    await db.prepare("INSERT INTO d1_migrations(id,name,applied_at) VALUES(1,'0001_mailbox.sql','2026-10-07 00:00:00')").run();
-    const data=fixture();
-    await db.batch(data.rows.map(row=>db.prepare('INSERT INTO mailbox_records(seq,kind,owner,id,data) VALUES(?,?,?,?,?)').bind(row.seq,row.kind,row.owner,row.id,row.data)));
-    await db.prepare('UPDATE sqlite_sequence SET seq=? WHERE name=?').bind(highWater.toString(),'mailbox_records').run();
-    return {db,...data,close:()=>mf.dispose()};
+    try {
+        const db=await mf.getD1Database('db');
+        for(const sql of (await readFile('test/fixtures/legacy-mailbox.sql','utf8')).split(';').filter(x=>x.trim()))await db.prepare(sql).run();
+        await db.prepare("CREATE TABLE d1_migrations(id INTEGER PRIMARY KEY,name TEXT NOT NULL,applied_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP)").run();
+        await db.prepare("INSERT INTO d1_migrations(id,name,applied_at) VALUES(1,'0001_mailbox.sql','2026-10-07 00:00:00')").run();
+        const data=fixture();
+        await db.batch(data.rows.map(row=>db.prepare('INSERT INTO mailbox_records(seq,kind,owner,id,data) VALUES(?,?,?,?,?)').bind(row.seq,row.kind,row.owner,row.id,row.data)));
+        await db.prepare('UPDATE sqlite_sequence SET seq=? WHERE name=?').bind(highWater.toString(),'mailbox_records').run();
+        return {db,...data,close:()=>mf.dispose()};
+    } catch (error) {
+        try { await mf.dispose(); }
+        catch (cleanupError) { throw new AggregateError([error, cleanupError], 'Migration fixture initialization and disposal failed.', { cause: error }); }
+        throw error;
+    }
 }
 
 test('renamed historical sources retain original bytes and failed adapter runs clean up',async()=>{
