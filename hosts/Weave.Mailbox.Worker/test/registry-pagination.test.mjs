@@ -8,6 +8,7 @@ for (const count of [0, 10, 11, 23]) test(`anonymous directory browses ${count} 
         const owner = await h.register({ displayName: 'PRIVATE-PROFILE', description: 'PRIVATE-DESCRIPTION' });
         const visible = [];
         for (let index = 0; index < count; index++) visible.push(await h.address(owner, { label: `Public ${index}`, isPublic: true }));
+        for (let index=0;index<visible.length;index++) await h.db.prepare("UPDATE mailbox_records SET data=json_set(data,'$.createdAt',?) WHERE kind='card' AND id=?").bind(new Date(Date.UTC(2025,0,1,0,0,index)).toISOString(),visible[index].addressId).run();
         const hidden = [];
         for (const profile of [{ label: 'PRIVATE' }, { label: 'FUTURE', isPublic: true, effectiveFrom: '2099-01-01T00:00:00Z' }, { label: 'EXPIRED', isPublic: true, effectiveTo: '2020-01-01T00:00:00Z' }]) hidden.push(await h.address(owner, profile));
         const removed = await h.address(owner, { label: 'REMOVED', isPublic: true });
@@ -22,11 +23,11 @@ for (const count of [0, 10, 11, 23]) test(`anonymous directory browses ${count} 
             assert.ok(!JSON.stringify(page).includes(owner.control));
             assert.ok(!JSON.stringify(page).includes('PRIVATE-'));
             cursor = page.nextCursor;
-            if (cursor) assert.equal(cursor, 'directory::' + page.items.at(-1).addressId);
+            if (cursor) { assert.ok(cursor.startsWith('directory-created-v1::')); assert.ok(cursor.endsWith('/'+page.items.at(-1).addressId)); }
             assert.ok(sizes.length <= 3, 'Pagination must terminate.');
         } while (cursor);
         assert.deepEqual(sizes, count === 0 ? [0] : count === 10 ? [10] : count === 11 ? [10, 1] : [10, 10, 3]);
-        assert.deepEqual(seen, visible.map(item => item.addressId).sort());
+        assert.deepEqual(seen, visible.map(item => item.addressId).reverse());
         assert.equal(new Set(seen).size, count);
         for (const item of hidden) assert.equal((await h.request('/v1/directory/address?addressId=' + item.addressId)).status, 404);
         for (const query of ['limit=11', 'limit=100', 'limit=0', 'limit=-1', 'limit=1&limit=10']) assert.equal((await h.request('/v1/directory?' + query)).status, 400);
@@ -41,7 +42,7 @@ test('directory rejects malformed and wrong-scope cursors before returning publi
             assert.equal((await h.request('/v1/directory?afterCursor=' + encodeURIComponent(cursor))).status, 400, cursor);
         }
         assert.equal((await h.request('/v1/directory?afterCursor=directory%3A%3A' + visible.addressId + '&afterCursor=duplicate')).status, 400);
-        assert.deepEqual((await h.ok('/v1/directory?afterCursor=' + encodeURIComponent('directory::' + visible.addressId))).items, []);
+        assert.deepEqual((await h.ok('/v1/directory?afterCursor=' + encodeURIComponent('directory-created-v1::1900-01-01T00:00:00.000Z/' + visible.addressId))).items, []);
     } finally { await h.close(); }
 });
 

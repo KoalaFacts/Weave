@@ -72,10 +72,19 @@ export async function directory(tx: Transaction,url: URL): Promise<any> {
         if (!row) fail(404,'unavailable'); return addressView(parse(row.data));
     }
     const n=limit(url),search=query(url,'q') ?? '',after=query(url,'afterCursor'); if(search.length>128) fail();
-    const prefix='directory:'+btoa(unescape(encodeURIComponent(search)))+':';
-    if(after !== null){if(!after.startsWith(prefix))fail();uuid(after.slice(prefix.length));}
-    const rows=(await tx.db.prepare(`SELECT id,data FROM mailbox_records WHERE ${filter} AND id>?
-        AND (instr(lower(COALESCE(json_extract(data,'$._address.label'),'')),lower(?))>0 OR instr(id,?)>0) ORDER BY id LIMIT ?`)
-        .bind(now,now,after?.slice(prefix.length) ?? '',search,search,n+1).all<{id:string;data:string}>()).results;
-    return {items:rows.slice(0,n).map(r=>addressView(parse(r.data))),nextCursor:rows.length>n ? prefix+rows[n-1].id : null};
+    // Version and query bind the opaque cursor to this ordering; old ID-only cursors must restart.
+    const prefix='directory-created-v1:'+btoa(unescape(encodeURIComponent(search)))+':';
+    let boundary: [string,string] | null = null;
+    if(after !== null){
+        if(!after.startsWith(prefix))fail();
+        const value=after.slice(prefix.length),created=value.slice(0,24),id=value.slice(25);
+        if(value[24]!=='/'||!/^\d{4}-\d{2}-\d{2}T\d{2}:\d{2}:\d{2}\.\d{3}Z$/.test(created)||!Number.isFinite(Date.parse(created))||new Date(created).toISOString()!==created)fail();
+        uuid(id);boundary=[created,id];
+    }
+    const rows=(await tx.db.prepare(`SELECT id,data,json_extract(data,'$.createdAt') AS createdAt FROM mailbox_records WHERE ${filter}
+        ${boundary ? "AND (json_extract(data,'$.createdAt'),id)<(?,?)" : ''}
+        AND (instr(lower(COALESCE(json_extract(data,'$._address.label'),'')),lower(?))>0 OR instr(id,?)>0)
+        ORDER BY json_extract(data,'$.createdAt') DESC,id DESC LIMIT ?`)
+        .bind(now,now,...(boundary ?? []),search,search,n+1).all<{id:string;data:string;createdAt:string}>()).results;
+    return {items:rows.slice(0,n).map(r=>addressView(parse(r.data))),nextCursor:rows.length>n ? prefix+rows[n-1].createdAt+'/'+rows[n-1].id : null};
 }
