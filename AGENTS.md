@@ -88,7 +88,7 @@ Persisted Orleans field IDs are append-only: never renumber or reuse them. Keep 
 
 ## Build and verification
 
-Run commands from the repository root. Install the exact stable SDK selected by `global.json` (currently 10.0.402) and check `dotnet --version`. Its `rollForward: disable` policy deliberately fails when that SDK is absent; a newer SDK alone does not satisfy this prerequisite. Shared CI setup installs the selected SDK from `global.json`. An SDK servicing upgrade must deliberately regenerate and verify its implicit dependency lockfiles, not restore a floating SDK policy to bypass a locked-restore failure. Most projects target .NET 10. Package versions are centralized in `Directory.Packages.props`, except the explicitly opted-out generator project. Regenerate affected lockfiles after dependency changes; do not hand-edit their hashes.
+Run commands from the repository root with a stable .NET 10 SDK and check `dotnet --version`. `global.json` uses the valid baseline `10.0.100` with `rollForward: latestMinor`, allowing installed .NET 10 feature bands and patches without selecting .NET 11. Shared CI setup installs the `10.x` channel and preserves `dotnet-quality` (default `ga`); it does not install the baseline as an exact SDK. Keep locked restore and security auditing enabled; an SDK-driven dependency graph change requires deliberate lockfile regeneration and verification. Most projects target .NET 10. Package versions are centralized in `Directory.Packages.props`, except the explicitly opted-out generator project. Regenerate affected lockfiles after dependency changes; do not hand-edit their hashes.
 
 For code, dependencies, or build changes:
 

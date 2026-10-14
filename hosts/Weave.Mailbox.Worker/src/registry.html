@@ -43,11 +43,16 @@ $('find').addEventListener('click',()=>browse($('search').value));
 $('browse').addEventListener('click',()=>{$('search').value='';$('address').value='';return browse();});
 $('lookup').addEventListener('click',()=>{
     const id=$('address').value.trim();
-    if(!id){$('status').textContent='Enter a public address ID, or use Browse all.';return;}
+    if(!id){
+        ++epoch;
+        $('previous').disabled=!listing||pageIndex===0;$('next').disabled=!cursor;
+        $('retry').disabled=!pending;
+        $('status').textContent='Enter a public address ID, or use Browse all.';return;
+    }
     return load({path:'/v1/directory/address?addressId='+encodeURIComponent(id),exact:true});
 });
-$('next').addEventListener('click',()=>{if(!pending&&cursor)return browse(search,pageIndex+1,cursor);});
-$('previous').addEventListener('click',()=>{if(!pending&&listing&&pageIndex>0)return browse(search,pageIndex-1,starts[pageIndex-1]);});
+$('next').addEventListener('click',()=>{if(!$('next').disabled&&cursor)return browse(search,pageIndex+1,cursor);});
+$('previous').addEventListener('click',()=>{if(!$('previous').disabled&&listing&&pageIndex>0)return browse(search,pageIndex-1,starts[pageIndex-1]);});
 $('retry').addEventListener('click',()=>{if(pending&&!$('retry').disabled)return load(pending);});
 browse();
 </script></main></body></html>

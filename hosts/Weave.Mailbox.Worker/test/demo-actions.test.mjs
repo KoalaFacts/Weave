@@ -67,6 +67,20 @@ const introductionRequest={requestId:'request-from-b',requestMessageId:'intro-fr
 const introduction=(messageId='intro-from-b',sender='b',recipient='a',text='Hello 你好 <img src=x onerror=alert(1)>')=>({senderMailboxId:sender,envelope:{recipientMailboxId:recipient,payload:{messageId,payloadEncoding:'text/plain',bytes:Buffer.from(text).toString('base64')}}});
 const rendered=node=>[node.textContent,...node.children.map(rendered)].join('\n');
 
+test('contact metadata is visible while its separate introduction read is still pending',async()=>{
+    let release,entered;const waiting=new Promise(resolve=>{entered=resolve;});
+    const app=ui(async(path,options)=>base(path,options)??(path==='/v1/contacts/requests'?json({items:[introductionRequest],nextCursor:null}):(entered(),new Promise(resolve=>{release=resolve;}))));
+    await app.register();app.get('contacts').textContent='No contact requests yet.';
+    const pending=app.click('loadContacts');await waiting;
+    try {
+        assert.match(rendered(app.get('contacts')),/request-from-b/);
+        assert.match(rendered(app.get('contacts')),/From: b/);
+        assert.doesNotMatch(rendered(app.get('contacts')),/No contact requests yet/);
+        assert.match(rendered(app.get('contacts')),/Loading introduction/);
+    } finally {release(json({items:[introduction()],nextCursor:null}));await pending;}
+    assert.match(rendered(app.get('contacts')),/Hello 你好/);
+});
+
 test('contact review shows only its exact incoming introduction as inert text without ACK or acceptance',async()=>{
     const reads=[];
     const app=ui(async(path,options)=>{
@@ -98,6 +112,28 @@ test('clearing while an introduction read is pending prevents a late private bod
     await app.register();const pending=app.click('loadContacts');await waiting;
     await app.click('disconnect');release(json({items:[introduction()],nextCursor:null}));await pending;
     assert.equal(rendered(app.get('contacts')),'');assert.equal(app.get('workspace').hidden,true);
+});
+
+test('an older introduction response cannot replace a newer contact page',async()=>{
+    let release,entered,contactReads=0,nextDisabled;const waiting=new Promise(resolve=>{entered=resolve;});
+    const newer={...introductionRequest,requestId:'newer-request-from-c',requesterMailboxId:'c',requestMessageId:'intro-from-c'};
+    const app=ui(async(path,options)=>{
+        const initial=base(path,options);if(initial)return initial;
+        if(path.startsWith('/v1/contacts/requests'))return json({items:[++contactReads===1?introductionRequest:newer],nextCursor:contactReads===1?'contacts:a:10':null});
+        if(contactReads===1){entered();return new Promise(resolve=>{release=resolve;});}
+        return json({items:[introduction('intro-from-c','c','a','Newer introduction')],nextCursor:null});
+    });
+    await app.register();const pending=app.click('loadContacts');await waiting;
+    try {
+        assert.equal(app.get('contactsNext').disabled,false);
+        await app.click('contactsNext');
+        assert.match(rendered(app.get('contacts')),/newer-request-from-c/);
+        assert.match(rendered(app.get('contacts')),/Newer introduction/);
+        nextDisabled=app.get('contactsNext').disabled;
+    } finally {release(json({items:[introduction()],nextCursor:null}));await pending;}
+    assert.match(rendered(app.get('contacts')),/newer-request-from-c/);
+    assert.doesNotMatch(rendered(app.get('contacts')),/request-from-b|Hello 你好/);
+    assert.equal(app.get('contactsNext').disabled,nextDisabled);
 });
 
 test('contact introduction lookup follows inbox cursors and keeps colliding message IDs bound to their requester',async()=>{

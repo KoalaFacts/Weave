@@ -36,6 +36,11 @@
     <Using Include="Shouldly" />
   </ItemGroup>
 
+  <!-- Keep the existing locked build-tool graph stable across .NET 10 SDK servicing releases. -->
+  <ItemGroup Condition="$([MSBuild]::IsTargetFrameworkCompatible('$(TargetFramework)', 'net6.0')) and ('$(IsTrimmable)' == 'true' or '$(IsAotCompatible)' == 'true')">
+    <PackageReference Include="Microsoft.NET.ILLink.Tasks" PrivateAssets="all" />
+  </ItemGroup>
+
   <!--
        Coverage uses the dotnet-coverage local tool (see .config/dotnet-tools.json)
        which wraps externally around the test process. No in-process MTP extensions

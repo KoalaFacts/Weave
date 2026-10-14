@@ -14,7 +14,7 @@ Public discovery rate denials include `Retry-After` seconds. Registration, stora
 
 ## Run locally
 
-Use Node 24.19+ and install the exact .NET SDK selected by [global.json](../../global.json) (currently 10.0.402). SDK roll-forward is disabled; a newer SDK alone is not sufficient. Check `dotnet --version` from the repository root. From this directory:
+Use Node 24.19+ and a stable .NET 10 SDK. [global.json](../../global.json) permits installed .NET 10 feature bands and patches through `latestMinor`, starting from the valid `10.0.100` baseline; it does not require that exact SDK or select .NET 11. Check `dotnet --version` from the repository root. From this directory:
 
 ```sh
 npm ci

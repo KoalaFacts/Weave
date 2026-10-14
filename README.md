@@ -9,7 +9,7 @@ Weave is open-source and under active, pre-1.0 development. The first agent-netw
 
 ## Try two independent endpoints
 
-From a checkout, install the exact .NET SDK selected by [global.json](global.json) (currently 10.0.402) and Node 24.19+. SDK roll-forward is disabled for reproducible locked dependencies; a newer installed SDK alone is insufficient. Check `dotnet --version` from the repository root, then build the mailbox host and run the [independent endpoint walkthrough](examples/agent-network/README.md):
+From a checkout, install a stable .NET 10 SDK and Node 24.19+. [global.json](global.json) accepts installed .NET 10 feature bands and patches through `latestMinor`; its `10.0.100` baseline is not an exact installation requirement and it does not select .NET 11. Check `dotnet --version` from the repository root, then build the mailbox host and run the [independent endpoint walkthrough](examples/agent-network/README.md):
 
 ```bash
 dotnet restore Weave.slnx --locked-mode

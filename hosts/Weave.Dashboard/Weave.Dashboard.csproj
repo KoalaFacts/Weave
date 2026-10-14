@@ -12,6 +12,7 @@
     <ProjectReference Include="../../extensions/Weave.Deploy/Weave.Deploy.csproj" />
   </ItemGroup>
   <ItemGroup>
+    <PackageReference Include="Microsoft.AspNetCore.App.Internal.Assets" PrivateAssets="all" />
     <PackageReference Include="Microsoft.Orleans.Client" />
     <PackageReference Include="Microsoft.FluentUI.AspNetCore.Components" />
     <PackageReference Include="Microsoft.FluentUI.AspNetCore.Components.Icons" />
