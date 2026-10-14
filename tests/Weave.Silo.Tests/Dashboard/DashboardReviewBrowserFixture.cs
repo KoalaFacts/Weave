@@ -8,20 +8,32 @@ internal sealed partial class DashboardReviewBrowserFixture : IAsyncDisposable
 {
     private DashboardBrowserChild? _dashboard;
     private DashboardPlaywrightBrowser? _browser;
+    private readonly bool _mobile;
 
-    public DashboardReviewBrowserFixture(bool hold = false, bool deny = false)
+    public DashboardReviewBrowserFixture(bool hold = false, bool deny = false, bool mobile = false)
     {
         Assert.SkipWhen(!OperatingSystem.IsLinux(), "Dashboard browser tests require Linux process/profile isolation.");
         Root = Directory.CreateTempSubdirectory("weave-dashboard-browser-").FullName;
         Api = new DashboardReviewBrowserApi(Root, hold, deny);
+        _mobile = mobile;
     }
 
     public string Root { get; }
     public DashboardReviewBrowserApi Api { get; }
+    public Uri Address { get; private set; } = null!;
+    public DashboardReviewBrowserEvidence Evidence { get; private set; } = null!;
     public IPage Page => _browser.ShouldNotBeNull().Page;
     public IReadOnlyCollection<string> BlockedRequests => _browser.ShouldNotBeNull().BlockedRequests.ToArray();
 
     public async Task StartAsync()
+    {
+        await StartHostAsync();
+        _browser = new DashboardPlaywrightBrowser(Address, _mobile);
+        await _browser.StartAsync();
+        Evidence = new DashboardReviewBrowserEvidence(Page, Root, _mobile);
+    }
+
+    public async Task StartHostAsync()
     {
         await Api.StartAsync();
         var assembly = DashboardReviewRenderingTests.DashboardType("Weave.Dashboard.Pages.Approvals.Review").Assembly.Location;
@@ -38,13 +50,11 @@ internal sealed partial class DashboardReviewBrowserFixture : IAsyncDisposable
         start.Environment["DOTNET_ENVIRONMENT"] = "Development";
         start.Environment["Weave__Review__Enabled"] = "true";
         start.Environment["Weave__Review__BaseUrl"] = Api.Address.AbsoluteUri;
+        start.Environment["services__silo__http__0"] = Api.Address.AbsoluteUri;
         start.Environment["OTEL_EXPORTER_OTLP_ENDPOINT"] = "";
         start.Environment["Logging__LogLevel__Default"] = "Information";
         _dashboard = new DashboardBrowserChild(start);
-        var address = await WaitForDashboardAsync(_dashboard);
-
-        _browser = new DashboardPlaywrightBrowser(address);
-        await _browser.StartAsync();
+        Address = await WaitForDashboardAsync(_dashboard);
     }
 
     public Task FillAsync(string id, string value) =>
@@ -55,7 +65,7 @@ internal sealed partial class DashboardReviewBrowserFixture : IAsyncDisposable
         await FillAsync("review-workspace", "release-lab");
         await FillAsync("review-tool", "files");
         await Page.Locator("#review-file").SetInputFilesAsync(path).WaitAsync(TestContext.Current.CancellationToken);
-        await Assertions.Expect(Page.Locator(".review-page")).ToContainTextAsync("Not yet verified; no file is saved by the Dashboard.")
+        await Assertions.Expect(Page.Locator(".review-page")).ToContainTextAsync("No file is saved by the Dashboard.")
             .WaitAsync(TestContext.Current.CancellationToken);
         await FillAsync("review-capability", "browser-review-capability");
         await FillAsync("review-api-token", "browser-global-token");

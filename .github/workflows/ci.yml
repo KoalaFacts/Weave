@@ -69,9 +69,20 @@ jobs:
           python3 scripts/release/guard.py validate-packages
 
       - name: Test
+        env:
+          WEAVE_DASHBOARD_EVIDENCE: ${{ runner.temp }}/dashboard-browser-evidence
         run: >-
           dotnet test --solution Weave.slnx --no-build -c Release
           -- --report-xunit-trx --results-directory ./test-results
+
+      - name: Upload Dashboard browser evidence
+        if: always()
+        uses: actions/upload-artifact@043fb46d1a93c77aae656e7c1c64a875d1fc6a0a # v7
+        with:
+          name: dashboard-browser-evidence
+          path: ${{ runner.temp }}/dashboard-browser-evidence/
+          if-no-files-found: error
+          retention-days: 14
 
       - name: Restore coverage tool and analyzer
         run: |
