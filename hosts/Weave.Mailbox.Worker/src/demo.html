@@ -213,15 +213,16 @@ async function introductions(s,requests){
  return found;
 }
 async function contacts(s,next=false){
- const page=await api(s,pageUrl('/v1/contacts/requests','contacts',next)),previews=await introductions(s,page.items);current(s);$('contacts').replaceChildren();cursor('contacts',page);
+ const page=await api(s,pageUrl('/v1/contacts/requests','contacts',next));current(s);$('contacts').replaceChildren();cursor('contacts',page);const bodies=new Map();
  for(const r of page.items){
   const incoming=r.recipientMailboxId===s.agentId,other=incoming?r.requesterMailboxId:r.recipientMailboxId;
   const el=row('contacts',r.status+' · generation '+r.generation,(incoming?'From: ':'To: ')+other+' · Request: '+r.requestId);
-  if(incoming){el.append(element('strong','Introduction'),element('pre',previews.get(r)));}
+  if(incoming){const body=element('pre','Loading introduction…');bodies.set(r,body);el.append(element('strong','Introduction'),body);}
   button(el,'Open conversation',s,()=>{$('peer').value=other;$('mailboxScenario').open=true;$('peerHint').textContent='Selected peer: '+other+(r.status==='accepted'?'. Contact accepted; you can send a message.':'. Contact is not accepted yet; wait before sending.');$('nextStep').textContent=r.status==='accepted'?'Contact accepted. Send a message below, or refresh your inbox.':'Wait for the recipient to accept, then refresh requests.';});
   if(incoming&&['pending','needsAction'].includes(r.status))for(const decision of ['accepted','needsAction','rejected'])button(el,{accepted:'Accept contact',needsAction:'Ask for follow-up',rejected:'Reject contact'}[decision],s,async()=>{await api(s,'/v1/contacts/requests/'+r.requestId+'/decision','POST',{requesterMailboxId:r.requesterMailboxId,expectedGeneration:r.generation,status:decision,reply:null});await contacts(s);});
  }
  if(!page.items.length)$('contacts').textContent='No contact requests yet. Contact someone, or share your address and ask them to send a request.';
+ const previews=await introductions(s,page.items);current(s);for(const [r,body]of bodies)body.textContent=previews.get(r);
 }
 action('loadContacts',s=>contacts(s));action('contactsNext',s=>contacts(s,true));
 async function channel(s){return api(s,'/v1/contacts/channel?peerMailboxId='+encodeURIComponent($('peer').value));}
