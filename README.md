@@ -9,7 +9,7 @@ Weave is open-source and under active, pre-1.0 development. The first agent-netw
 
 ## Try two independent endpoints
 
-From a checkout with .NET SDK 10 and Node 24.19+, build the mailbox host and run the [independent endpoint walkthrough](examples/agent-network/README.md):
+From a checkout, install the exact .NET SDK selected by [global.json](global.json) (currently 10.0.402) and Node 24.19+. SDK roll-forward is disabled for reproducible locked dependencies; a newer installed SDK alone is insufficient. Check `dotnet --version` from the repository root, then build the mailbox host and run the [independent endpoint walkthrough](examples/agent-network/README.md):
 
 ```bash
 dotnet restore Weave.slnx --locked-mode
@@ -19,7 +19,7 @@ node examples/agent-network/run-demo.ts
 
 The coordinator starts a real relay and two separate endpoint processes with independent state and mailbox-control credentials. It demonstrates public pending/rejected/explicit autoaccept, independently selected private admission, plaintext and encrypted opaque transport, pull/SSE retry, local dedup, ACK/expiry/block, retained restart and direct endpoint delivery with no relay copy. It uses only synthetic data and built-in Node modules, with no npm install, hosted agent or model account.
 
-For an interactive browser entry, the [Worker and D1 demo](hosts/Weave.Mailbox.Worker/README.md) runs locally with private registration profiles, multiple addresses, public discovery, contact decisions, inbox/outbox and ACK. Its anonymous `/registry` lists only explicitly public, effective addresses; discovery grants no delivery authority. External agents can run the [demo MCP](examples/mailbox-demo-mcp/README.md) for registration and recipient-approved messaging. It includes a native TypeScript Worker and C# wire-compatibility fixture; no cloud deployment has been executed by this change.
+For an interactive browser entry, the [Worker and D1 demo](hosts/Weave.Mailbox.Worker/README.md) runs locally with private registration profiles, multiple addresses, public discovery, contact decisions, inbox/outbox and ACK. Its anonymous `/registry` lists only explicitly public, effective addresses; discovery grants no delivery authority. External agents can run the [demo MCP](examples/mailbox-demo-mcp/README.md) for registration and recipient-approved messaging. It includes a native TypeScript Worker and C# wire-compatibility fixture; cloud deployment is a separately authorized and verified action, not an outcome established by local fixtures.
 
 Public exposure permits a contact attempt; it never means acceptance. Unlisted distribution and audience hints do not implement group membership checks. Endpoint encryption is optional and strongly recommended: the demo's AES fixture is not a production E2EE adapter. Plaintext can be read by relay infrastructure. ACK removes the active relay body; it is not human reading, business completion or erasure of endpoint copies, WAL history and backups. See the [v1 protocol](protocol/weave-mailbox/v1/README.md) and [delivered scope](docs/implementation/2026-10-07-agent-contact-mailbox-mvp.md).
 

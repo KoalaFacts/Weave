@@ -127,10 +127,12 @@ test('real Worker UI: isolated sessions, public/private discovery, acceptance, r
         await alice.locator('#browserGuide summary').click();
         await alice.locator('#agentGuide summary').click();
         const prompt = await alice.locator('#agentPromptA').inputValue();
-        assert.match(prompt, /WEAVE-DEMO A to B: ping 001/);
-        assert.match(prompt, /never simulate the other agent/);
+        assert.match(prompt, /agent-start\.md/);
+        assert.match(prompt, /Operate only your own account/);
+        assert.match(prompt, /runId and replyTo/);
+        assert.doesNotMatch(prompt, /ping 001|pong 001/);
         const promptOrigins = [...prompt.matchAll(/https?:\/\/\S+/g)].map(([url]) => new URL(url.replace(/\.$/, '')).origin);
-        assert.deepEqual(promptOrigins, [origin]);
+        assert.deepEqual([...new Set(promptOrigins)], [origin]);
         assert.ok(!prompt.includes('[DEMO_ORIGIN]'));
         await alice.context().grantPermissions(['clipboard-read', 'clipboard-write'], { origin });
         await alice.locator('#copyPromptA').click();

@@ -34,7 +34,7 @@ test('actual registry page script renders untrusted labels as text and performs 
         function element(){return {textContent:'',value:'',children:[],disabled:false,handlers:{},set innerHTML(_value){throw Error('HTML parsing is forbidden');},append(child){this.children.push(child)},replaceChildren(...children){this.children=children},addEventListener(event,fn){this.handlers[event]=fn}};}
         const get=id=>{if(!elements.has(id))elements.set(id,element());return elements.get(id)};
         const context=createContext({document:{getElementById:get,createElement:element},fetch:async(path,options)=>{calls.push({path,options});return h.request(path)}});
-        runInContext(script,context);await runInContext('load("/v1/directory")',context);
+        await runInContext(script,context);
         assert.equal(get('results').children[0].children[0].textContent,label);assert.equal(context.compromised,undefined);
         assert.ok(calls.every(call=>call.path.startsWith('/v1/directory')&&call.options.credentials==='omit'&&!call.options.headers));
         get('address').value=hidden.addressId;await get('lookup').handlers.click();assert.equal(get('results').children.length,0);assert.equal(get('status').textContent,'Public address unavailable.');

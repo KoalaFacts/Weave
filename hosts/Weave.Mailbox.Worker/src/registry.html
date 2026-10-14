@@ -3,19 +3,51 @@
 <nav><a href="/">Account &amp; mailbox demo</a> · <a href="https://github.com/KoalaFacts/Weave/tree/main/examples/mailbox-demo-mcp" rel="noreferrer">Run the demo MCP</a></nav>
 <h1>Public registry</h1><p>Browse addresses that their owners explicitly made public and that are currently effective. No account is needed to browse.</p>
 <p id="demoNotice"><strong>Demo only.</strong> Data may be periodically cleared. Do not store sensitive or important information.</p>
-<p>10 addresses per page. Use Next page to continue browsing.</p>
+<p><strong>Newest addresses first</strong> · ordered by original creation time. 10 addresses per page. New entries appear when you refresh the first page.</p>
+<button id="browse">Browse all / refresh newest</button>
 <p>Discovery does not grant permission to send messages. The recipient must accept your contact request. Labels and direct URI metadata are unverified, user-supplied information.</p>
 <label for="search">Search label or address ID</label><input id="search" maxlength="128" autocomplete="off"><button id="find">Search</button>
 <label for="address">Look up a public address ID</label><input id="address" maxlength="36" autocomplete="off"><button id="lookup">Look up</button>
-<p id="status" role="status" aria-live="polite"></p><div id="results"></div><button id="next" disabled>Next page</button>
+<p id="status" role="status" aria-live="polite"></p><div id="results"></div>
+<nav aria-label="Registry pages"><button id="previous" disabled>Previous page</button><span id="pageNumber" aria-live="polite"></span> <button id="next" disabled>Next page</button><button id="retry" disabled>Retry page</button></nav>
 <p><small>The registry publishes address details only. Account profiles, private addresses and inbox/outbox contents are not public. To list your address, open the account demo and explicitly select Public when creating it.</small></p>
 <script nonce="WEAVE_NONCE">
-const $=id=>document.getElementById(id);let cursor=null,search='',epoch=0;
-function directoryPath(after){return '/v1/directory?limit=10&q='+encodeURIComponent(search)+(after?'&afterCursor='+encodeURIComponent(after):'');}
+const $=id=>document.getElementById(id);
+let cursor=null,search='',epoch=0,starts=[null],pageIndex=0,listing=true,pending=null;
+function directoryPath(after,q=search){return '/v1/directory?limit=10&q='+encodeURIComponent(q)+(after?'&afterCursor='+encodeURIComponent(after):'');}
 function render(addresses){$('results').replaceChildren();for(const a of addresses){const row=document.createElement('article');for(const [tag,text]of [['h2',a.label||'Unlabelled address'],['p','Address ID: '+a.addressId],['p','Account ID: '+a.accountId],['p','Effective: '+(a.effectiveFrom||'unbounded')+' → '+(a.effectiveTo||'unbounded')],['p','Direct URI metadata: '+(a.directUri||'none')]]){const e=document.createElement(tag);e.textContent=text;row.append(e);}$('results').append(row);}}
-async function load(path,exact=false){const current=++epoch;$('status').textContent='Loading…';$('next').disabled=true;try{const response=await fetch(path,{credentials:'omit',redirect:'error'});if(response.status===429){const seconds=Number(response.headers.get('Retry-After'));throw Error('Too many registry requests. '+(Number.isInteger(seconds)&&seconds>0?'Try again in '+seconds+' seconds.':'Please try again later.'));}if(!response.ok)throw Error(response.status===404?'Public address unavailable.':'Registry unavailable ('+response.status+').');const data=await response.json();if(current!==epoch)return;const items=exact?[data]:data.items;render(items);cursor=exact?null:data.nextCursor;$('next').disabled=!cursor;$('status').textContent=items.length?'Public addresses shown below.':'No current public addresses.';}catch(e){if(current!==epoch)return;cursor=null;render([]);$('status').textContent=e.message;}}
-$('find').addEventListener('click',()=>{search=$('search').value;load(directoryPath());});
-$('lookup').addEventListener('click',()=>load('/v1/directory/address?addressId='+encodeURIComponent($('address').value),true));
-$('next').addEventListener('click',()=>{if(cursor)load(directoryPath(cursor));});
-load(directoryPath());
+async function load(attempt){
+    const current=++epoch;pending=attempt;$('status').textContent='Loading…';
+    for(const id of ['previous','next','retry'])$(id).disabled=true;
+    try{
+        const response=await fetch(attempt.path,{credentials:'omit',redirect:'error',cache:'no-store'});
+        if(response.status===429){const seconds=Number(response.headers.get('Retry-After'));throw Error('Too many registry requests. '+(Number.isInteger(seconds)&&seconds>0?'Try again in '+seconds+' seconds.':'Please try again later.'));}
+        if(!response.ok)throw Error(response.status===404?'Public address unavailable.':'Registry unavailable ('+response.status+').');
+        const data=await response.json();if(current!==epoch)return;
+        const items=attempt.exact?[data]:data.items;render(items);listing=!attempt.exact;
+        cursor=listing?data.nextCursor:null;pending=null;
+        if(listing){
+            search=attempt.search;pageIndex=attempt.index;
+            starts=starts.slice(0,pageIndex+1);starts[pageIndex]=attempt.after;
+            $('pageNumber').textContent='Page '+(pageIndex+1);
+        }else{$('pageNumber').textContent='Exact lookup';}
+        $('previous').disabled=!listing||pageIndex===0;$('next').disabled=!cursor;
+        $('status').textContent=items.length?'Public addresses shown below.':'No current public addresses.';
+    }catch(e){
+        if(current!==epoch)return;
+        cursor=null;render([]);$('pageNumber').textContent='Page not loaded';$('status').textContent=e.message;$('retry').disabled=false;
+    }
+}
+function browse(q='',index=0,after=null){return load({path:directoryPath(after,q),exact:false,index,after,search:q});}
+$('find').addEventListener('click',()=>browse($('search').value));
+$('browse').addEventListener('click',()=>{$('search').value='';$('address').value='';return browse();});
+$('lookup').addEventListener('click',()=>{
+    const id=$('address').value.trim();
+    if(!id){$('status').textContent='Enter a public address ID, or use Browse all.';return;}
+    return load({path:'/v1/directory/address?addressId='+encodeURIComponent(id),exact:true});
+});
+$('next').addEventListener('click',()=>{if(!pending&&cursor)return browse(search,pageIndex+1,cursor);});
+$('previous').addEventListener('click',()=>{if(!pending&&listing&&pageIndex>0)return browse(search,pageIndex-1,starts[pageIndex-1]);});
+$('retry').addEventListener('click',()=>{if(pending&&!$('retry').disabled)return load(pending);});
+browse();
 </script></main></body></html>

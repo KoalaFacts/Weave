@@ -22,6 +22,7 @@ test('registry browser script requests ten-item pages and follows the server cur
     try {
         const account = await h.register(), expected = [];
         for (let index = 0; index < 11; index++) expected.push(await h.address(account, { label: 'Browse ' + index, isPublic: true }));
+        for (let index=0;index<expected.length;index++) await h.db.prepare("UPDATE mailbox_records SET data=json_set(data,'$.createdAt',?) WHERE kind='card' AND id=?").bind(new Date(Date.UTC(2025,0,1,0,0,index)).toISOString(),expected[index].addressId).run();
         const page = await registry(h);
         assert.equal(new URL(page.calls[0].path, 'http://localhost').searchParams.get('limit'), '10');
         assert.equal(page.get('results').children.length, 10); assert.equal(page.get('next').disabled, false);
@@ -29,7 +30,7 @@ test('registry browser script requests ten-item pages and follows the server cur
         await page.click('next');
         assert.equal(page.get('results').children.length, 1); assert.equal(page.get('next').disabled, true);
         const all = [...first, page.get('results').children[0].children[1].textContent];
-        assert.deepEqual(all, expected.map(item => 'Address ID: ' + item.addressId).sort());
+        assert.deepEqual(all, expected.map(item => 'Address ID: ' + item.addressId).reverse());
         assert.ok(page.calls.every(call => new URL(call.path, 'http://localhost').searchParams.get('limit') === '10'));
         assert.ok(page.calls.every(call => call.options.credentials === 'omit' && !call.options.headers));
     } finally { await h.close(); }

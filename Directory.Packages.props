@@ -5,6 +5,7 @@
   </PropertyGroup>
   <ItemGroup Label="Security fixes for transitive dependencies">
     <!-- Keep provider dependencies opt-in; these pins only affect existing dependency graphs. -->
+    <PackageVersion Include="System.Security.Cryptography.Pkcs" Version="9.0.21" />
     <PackageVersion Include="Microsoft.OpenApi" Version="2.7.5" />
     <PackageVersion Include="MessagePack" Version="2.5.303" />
     <PackageVersion Include="SSH.NET" Version="2026.0.0" />
