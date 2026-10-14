@@ -2018,28 +2018,29 @@
         "content": {
           "application/problem+json": {
             "schema": {
-              "allOf": [
+              "oneOf": [
                 {
-                  "$ref": "#/components/schemas/problem"
+                  "allOf": [
+                    {
+                      "$ref": "#/components/schemas/problem"
+                    },
+                    {
+                      "properties": {
+                        "status": {
+                          "const": 503
+                        },
+                        "code": {
+                          "const": "storage"
+                        },
+                        "title": {
+                          "const": "Storage unavailable"
+                        }
+                      }
+                    }
+                  ]
                 },
                 {
-                  "properties": {
-                    "status": {
-                      "const": 503
-                    },
-                    "code": {
-                      "enum": [
-                        "storage",
-                        "maintenance"
-                      ]
-                    },
-                    "title": {
-                      "enum": [
-                        "Storage unavailable",
-                        "Maintenance in progress"
-                      ]
-                    }
-                  }
+                  "$ref": "#/components/schemas/maintenanceProblem"
                 }
               ]
             }
@@ -2687,8 +2688,7 @@
               "expired",
               "tooLarge",
               "capacity",
-              "storage",
-              "maintenance"
+              "storage"
             ]
           }
         },
@@ -3538,6 +3538,26 @@
         "required": [
           "items",
           "nextCursor"
+        ]
+      },
+      "maintenanceProblem": {
+        "type": "object",
+        "additionalProperties": false,
+        "properties": {
+          "status": {
+            "const": 503
+          },
+          "title": {
+            "const": "Maintenance in progress"
+          },
+          "code": {
+            "const": "maintenance"
+          }
+        },
+        "required": [
+          "status",
+          "title",
+          "code"
         ]
       }
     }

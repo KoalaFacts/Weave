@@ -160,3 +160,20 @@ test('429 contract distinguishes public-rate Retry-After from registration capac
         assert.equal(spec.components.responses.publicRate.headers['Retry-After'].required,true);
     } finally { await h.close(); }
 });
+
+test('503 maintenance response has its own exact contract without expanding shared v1 error codes', async () => {
+    const h=await start({migrate:false,bindings:{MAINTENANCE_MODE:'true'}});
+    try {
+        const response=await h.request('/v1/directory');
+        assert.equal(response.status,503);
+        assert.equal(response.headers.get('retry-after'),'30');
+        const value=await response.json(),schema=spec.components.schemas.maintenanceProblem;
+        assert.deepEqual(value,{status:503,title:'Maintenance in progress',code:'maintenance'});
+        assert.equal(schema.additionalProperties,false);
+        assert.deepEqual(Object.keys(value).sort(),schema.required.toSorted());
+        for(const [key,item] of Object.entries(value))assert.equal(schema.properties[key].const,item,key);
+        const documented=spec.components.responses['503'].content['application/problem+json'].schema.oneOf;
+        assert.deepEqual(documented[1],{$ref:'#/components/schemas/maintenanceProblem'});
+        assert.equal(spec.components.schemas.problem.properties.code.enum.includes('maintenance'),false);
+    } finally {await h.close();}
+});
