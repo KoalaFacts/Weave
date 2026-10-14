@@ -6,14 +6,14 @@ const html=readFileSync(new URL('../src/registry.html',import.meta.url),'utf8');
 const script=/<script nonce="WEAVE_NONCE">([\s\S]*?)<\/script>/.exec(html)[1];
 const item=label=>({label,addressId:label,accountId:'public-owner',isPublic:true});
 const response=(label,nextCursor=null)=>new Response(JSON.stringify({items:[item(label)],nextCursor}));
-async function ui(fetcher=async path=>path.includes('afterCursor')?response('older'):response('newest','cursor/+?')){
+async function ui(fetcher=async path=>path.includes('afterCursor')?response('older'):response('newest','cursor/+?'),{waitForInitial=true}={}){
     const elements=new Map(),calls=[];
     const element=()=>({value:'',textContent:'',children:[],disabled:false,handlers:{},append(child){this.children.push(child);},replaceChildren(...children){this.children=children;},addEventListener(event,handler){this.handlers[event]=handler;}});
     const get=id=>{if(!elements.has(id))elements.set(id,element());return elements.get(id);};
-    runInContext(script,createContext({document:{getElementById:get,createElement:element},fetch:(path,options)=>{calls.push({path,options});return fetcher(path,options);}}));
+    const ready=runInContext(script,createContext({document:{getElementById:get,createElement:element},fetch:(path,options)=>{calls.push({path,options});return fetcher(path,options);}}));
     const settle=async()=>{for(let i=0;i<100;i++){await new Promise(resolve=>setImmediate(resolve));if(get('status').textContent!=='Loading…')return;}throw Error('Registry did not settle');};
-    await settle();
-    return {get,calls,settle,async click(id){assert.equal(typeof get(id).handlers.click,'function',id+' click action is missing');get(id).handlers.click();await settle();}};
+    if(waitForInitial)await ready;
+    return {get,calls,ready,settle,async click(id){assert.equal(typeof get(id).handlers.click,'function',id+' click action is missing');await get(id).handlers.click();await settle();}};
 }
 test('registry immediately browses anonymously without a required search or account',async()=>{
     const app=await ui();assert.equal(app.calls.length,1);assert.equal(new URL(app.calls[0].path,'https://local').searchParams.get('q'),'');
@@ -56,4 +56,110 @@ test('failed next page retains an explicit retry of the same cursor and does not
     await app.click('next');assert.equal(app.calls.length,2);assert.equal(app.get('results').children.length,0);
     assert.equal(app.get('retry').disabled,false);failed=false;await app.click('retry');
     assert.equal(app.calls[2].path,app.calls[1].path);assert.equal(app.get('pageNumber').textContent,'Page 2');
+});
+
+const guidance='Enter a public address ID, or use Browse all.';
+async function pendingPage(direction){
+    const requests=[];
+    const app=await ui(path=>new Promise((resolve,reject)=>requests.push({path,resolve,reject})),{waitForInitial:false});
+    let pending=app.ready;
+    if(direction!=='initial'){
+        requests.at(-1).resolve(response('page one','cursor/+?'));await pending;
+        pending=app.get('next').handlers.click();
+        if(direction==='previous'){
+            requests.at(-1).resolve(response('page two','third'));await pending;
+            pending=app.get('previous').handlers.click();
+        }
+    }
+    return {app,requests,pending};
+}
+function visiblePage(app){
+    return {rows:JSON.stringify(app.get('results').children),page:app.get('pageNumber').textContent};
+}
+async function emptyLookup(app){
+    const before=visiblePage(app),count=app.calls.length;
+    for(const value of ['', ' \t ']){
+        app.get('address').value=value;await app.get('lookup').handlers.click();
+        assert.equal(app.calls.length,count,'Empty lookup must not fetch');
+        assert.deepEqual(visiblePage(app),before,'Empty lookup must preserve displayed rows and page');
+        assert.equal(app.get('status').textContent,guidance);
+    }
+    return before;
+}
+const oldResponses={
+    success:request=>request.resolve(response('stale page','stale cursor')),
+    unavailable:request=>request.resolve(new Response('{}',{status:503})),
+    rateLimited:request=>request.resolve(new Response('{}',{status:429,headers:{'Retry-After':'42'}})),
+    networkError:request=>request.reject(new Error('old connection failed'))
+};
+for(const direction of ['initial','next','previous']){
+    for(const [outcome,complete] of Object.entries(oldResponses)){
+        test(`empty lookup invalidates ${direction} ${outcome} and permits explicit retry, lookup and browse`,async()=>{
+            const {app,requests,pending}=await pendingPage(direction);
+            const old=requests.at(-1),before=await emptyLookup(app);
+            complete(old);await pending;
+            assert.deepEqual(visiblePage(app),before,'Old response must not replace retained rows or page');
+            assert.equal(app.get('status').textContent,guidance,'Old response must not overwrite input guidance');
+            assert.equal(app.get('previous').disabled,direction!=='previous');
+            assert.equal(app.get('next').disabled,direction==='initial');
+            assert.equal(app.get('retry').disabled,false,'The invalidated attempt remains explicitly retryable');
+
+            const retry=app.get('retry').handlers.click();
+            assert.equal(app.calls.length,requests.length);
+            assert.notEqual(requests.at(-1),old,'Retry must actually fetch');
+            assert.equal(requests.at(-1).path,old.path);
+            requests.at(-1).resolve(response('retried','new cursor'));await retry;
+            assert.equal(app.get('pageNumber').textContent,direction==='next'?'Page 2':'Page 1');
+            assert.equal(app.get('results').children[0].children[0].textContent,'retried');
+            assert.equal(app.get('retry').disabled,true);
+
+            app.get('address').value=' public-id ';
+            const lookup=app.get('lookup').handlers.click();
+            assert.equal(requests.at(-1).path,'/v1/directory/address?addressId=public-id');
+            requests.at(-1).resolve(new Response(JSON.stringify(item('exact result'))));await lookup;
+            assert.equal(app.get('pageNumber').textContent,'Exact lookup');
+            assert.equal(app.get('results').children[0].children[0].textContent,'exact result');
+
+            const browse=app.get('browse').handlers.click();
+            assert.equal(requests.at(-1).path,'/v1/directory?limit=10&q=');
+            requests.at(-1).resolve(response('fresh first page','fresh cursor'));await browse;
+            assert.equal(app.get('pageNumber').textContent,'Page 1');
+            assert.equal(app.get('next').disabled,false);
+            assert.equal(app.get('previous').disabled,true);
+        });
+    }
+    test(`empty lookup during ${direction} restores navigation before the old response settles`,async()=>{
+        const {app,requests,pending}=await pendingPage(direction);
+        const old=requests.at(-1);await emptyLookup(app);
+        const action=direction==='initial'?'browse':direction;
+        assert.equal(app.get(action).disabled,false);
+        const next=app.get(action).handlers.click(),current=requests.at(-1);
+        assert.notEqual(current,old,'Navigation must not remain blocked by the invalidated attempt');
+        old.reject(new Error('stale failure'));await pending;
+        assert.equal(app.get('status').textContent,'Loading…');
+        for(const id of ['previous','next','retry'])assert.equal(app.get(id).disabled,true);
+        current.resolve(response('current page','current cursor'));await next;
+        assert.equal(app.get('results').children[0].children[0].textContent,'current page');
+        assert.equal(app.get('pageNumber').textContent,direction==='next'?'Page 2':'Page 1');
+    });
+    test(`empty lookup during ${direction} JSON decoding ignores the late body`,async()=>{
+        const {app,requests,pending}=await pendingPage(direction);
+        let releaseBody,bodyStarted;
+        const started=new Promise(resolve=>{bodyStarted=resolve;});
+        requests.at(-1).resolve({ok:true,status:200,json:()=>{bodyStarted();return new Promise(resolve=>{releaseBody=resolve;});}});
+        await started;const before=await emptyLookup(app);
+        releaseBody({items:[item('late decoded body')],nextCursor:'late'});await pending;
+        assert.deepEqual(visiblePage(app),before);
+        assert.equal(app.get('status').textContent,guidance);
+    });
+}
+test('empty lookup after a page failure preserves explicit retry and recovers to an empty page',async()=>{
+    const {app,requests,pending}=await pendingPage('next');
+    requests.at(-1).resolve(new Response('{}',{status:503}));await pending;
+    await emptyLookup(app);assert.equal(app.get('retry').disabled,false);
+    const retry=app.get('retry').handlers.click();
+    requests.at(-1).resolve(new Response(JSON.stringify({items:[],nextCursor:null})));await retry;
+    assert.equal(app.get('status').textContent,'No current public addresses.');
+    assert.equal(app.get('pageNumber').textContent,'Page 2');
+    assert.equal(app.get('next').disabled,true);assert.equal(app.get('retry').disabled,true);
 });
