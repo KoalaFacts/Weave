@@ -30,8 +30,8 @@ export function accountNames(value:any,legacy=false):any {
     if(Array.isArray(value))return value.map(child=>accountNames(child,legacy));
     if(value&&typeof value==='object'){
         const result:Record<string,any>={};
-        const summary='requestVersion' in value&&'requesterMailboxId' in value;
-        const envelope='payload' in value&&'recipientMailboxId' in value&&value.version===2;
+        const summary = ('requestVersion' in value) && ('requesterMailboxId' in value);
+        const envelope = ('payload' in value) && ('recipientMailboxId' in value) && value.version === 2;
         for(const [key,child] of Object.entries(value)){
             if(legacy&&(summary&&['requestVersion','requesterAddressId','recipientAddressId'].includes(key)||envelope&&key==='connectionToken'))continue;
             result[key]=legacy&&envelope&&key==='version'?1:accountNames(child,legacy);
@@ -73,7 +73,7 @@ export async function body(request: Request): Promise<any> {
     const depth = (v: any, n: number) => { if (n > 16) fail(); if (v && typeof v === 'object') for (const child of Object.values(v)) depth(child, n + 1); };
     depth(value, 0);
     if(value&&typeof value==='object'&&!Array.isArray(value))for(const [legacy,canonical] of Object.entries(identityNames)){
-        if(legacy in value&&canonical in value&&value[legacy]!==value[canonical])fail();
+        if ((legacy in value) && (canonical in value) && value[legacy] !== value[canonical]) fail();
         const from:string=value.requestVersion===2?legacy:canonical,to:string=value.requestVersion===2?canonical:legacy;
         if(from in value){value[to]=value[from];delete value[from];}
     }

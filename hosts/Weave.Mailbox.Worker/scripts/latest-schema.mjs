@@ -26,8 +26,8 @@ const identifier=name=>'"'+name.replaceAll('"','""')+'"';
 const columnShape=column=>({name:column.name,type:column.type.toLowerCase(),notnull:column.pk&&column.type.toLowerCase()==='integer'?1:column.notnull,default:column.dflt_value,pk:column.pk});
 const canonicalSql=sql=>(sql.match(/'(?:''|[^'])*'|"(?:""|[^"])*"|`(?:``|[^`])*`|[^\s'"`;]+/g)??[]).map(token=>token.startsWith("'")?token:token.replace(/^["`]|["`]$/g,'').toLowerCase()).join('');
 function checks(sql){
-    const result=[],pattern=/\bCHECK\s*\(/ig;let match;
-    while((match=pattern.exec(sql))!==null){
+    const result=[],pattern=/\bCHECK\s*\(/ig;
+    while(pattern.exec(sql)!==null){
         let depth=1,quote=null,end=pattern.lastIndex;
         for(;end<sql.length&&depth;end++){
             const c=sql[end];

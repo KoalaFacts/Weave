@@ -1,7 +1,7 @@
 import { Transaction } from './database';
 import { cardView, eligible } from './cards';
 import { effective } from './messages';
-import { fail, identity, identityQuery, limit, parse, query, uuid } from './wire';
+import { fail, identity, identityQuery, limit, query, uuid } from './wire';
 import { channelView, effectiveRequest, readChannel } from './protocol';
 import { accountAddresses, contactCards, contactRequests } from './schema';
 import { addressSnapshot, cardSnapshot, requestSnapshot, messageSnapshot } from './wire-snapshots';
