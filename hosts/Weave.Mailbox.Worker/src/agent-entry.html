@@ -20,6 +20,7 @@
     const get=id=>document.getElementById(id);
     let owner=null,known=new Map(),after=null,card=null,revision=0;
     const report=text=>{get('invitationStatus').textContent=text;};
+    function invalidateCard(){card=null;get('invitationCard').value='';get('copyInvitation').disabled=true;}
     function clear(){
         revision++;owner=null;known.clear();after=null;card=null;
         get('invitationAddress').replaceChildren();get('invitationCard').value='';
@@ -51,6 +52,7 @@
             }
             after=page.nextCursor;get('invitationAddressesNext').disabled=!after;
             if(card&&known.has(card.peerAddressId))get('invitationAddress').value=card.peerAddressId;
+            else invalidateCard();
             report(known.size?'Select your receiving address and prepare a card. No remote data was changed.':'No current address on this page. Check the next page, or create an address in Let others find me.');
         }catch{
             if(owner===s&&version===revision){known.clear();after=null;get('invitationAddress').replaceChildren();report('Could not read your addresses. Refresh to try again; no account or address was created.');}
@@ -69,10 +71,16 @@
     }
     get('loadInvitationAddresses').addEventListener('click',()=>load());
     get('invitationAddressesNext').addEventListener('click',()=>load(true));
+    get('invitationAddress').addEventListener('change',()=>{
+        if(card&&card.peerAddressId!==get('invitationAddress').value){invalidateCard();report('Address changed. Prepare a contact card for the selected address before copying.');}
+    });
     get('buildInvitation').addEventListener('click',()=>build());
     get('newInvitationRun').addEventListener('click',()=>build(true));
     get('copyInvitation').addEventListener('click',async()=>{
         if(!card||owner!==session||get('copyInvitation').disabled)return;
+        if(card.peerAddressId!==get('invitationAddress').value||!effective(known.get(card.peerAddressId),owner)){
+            invalidateCard();report('Choose a current address and prepare its contact card before copying.');return;
+        }
         const s=owner,value=JSON.stringify(card,null,2);
         try{await navigator.clipboard.writeText(value);if(owner===s&&session===s)report('Contact card copied. No credentials included and no message sent.');}
         catch{if(owner===s&&session===s)report('Clipboard unavailable. Select and copy the contact card text above.');}

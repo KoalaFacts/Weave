@@ -18,7 +18,7 @@ function ui(read=async()=>({items:[owned],nextCursor:null})){
     const session={agentId:'recipient',control:'SYNTHETIC_PRIVATE_CONTROL_DO_NOT_COPY'};
     const context=createContext({document:{getElementById:get,createElement:element},session,location:{origin:'https://demo.weave-389.workers.dev'},crypto:webcrypto,URL,Date,Map,JSON,navigator:{clipboard:{writeText:async text=>copied.push(text)}},api:async(s,path,method='GET')=>{calls.push({s,path,method});return read(s,path,method);},current:s=>{if(context.session!==s)throw Error('Session changed');}});
     runInContext(source,context);
-    return {get,calls,copied,context,click:async id=>{for(const fn of get(id).handlers.click??[])await fn();},async ready(){await this.click('loadInvitationAddresses');get('invitationAddress').value=owned.addressId;}};
+    return {get,calls,copied,context,click:async id=>{for(const fn of get(id).handlers.click??[])await fn();},change:async id=>{for(const fn of get(id).handlers.change??[])await fn();},async ready(){await this.click('loadInvitationAddresses');get('invitationAddress').value=owned.addressId;}};
 }
 test('agent entry is readable without JavaScript and points to one canonical guide',()=>{
     assert.ok(existsSync(entryPath),'Agent entry panel is missing');
@@ -69,4 +69,25 @@ test('clipboard failure preserves the card and offers manual copy without sendin
     app.context.navigator.clipboard.writeText=async()=>{throw Error('denied');};await app.click('copyInvitation');
     assert.equal(app.get('invitationCard').value,original);assert.match(app.get('invitationStatus').textContent,/select and copy/i);
     assert.ok(app.calls.every(call=>call.method==='GET'));
+});
+
+test('changing the selected address invalidates the old card before copying',async()=>{
+    const other={...owned,addressId:'01991341-0000-7000-8000-000000000002'};
+    const app=ui(async()=>({items:[owned,other],nextCursor:null}));await app.ready();await app.click('buildInvitation');
+    const original=JSON.parse(app.get('invitationCard').value);
+    app.get('invitationAddress').value=other.addressId;await app.change('invitationAddress');
+    assert.equal(app.get('invitationCard').value,'');assert.equal(app.get('copyInvitation').disabled,true);
+    await app.click('copyInvitation');assert.equal(app.copied.length,0);
+    await app.click('buildInvitation');const current=JSON.parse(app.get('invitationCard').value);
+    assert.equal(current.peerAddressId,other.addressId);assert.notEqual(current.runId,original.runId);
+});
+test('copy revalidates address selection even if a change event was not delivered',async()=>{
+    const app=ui();await app.ready();await app.click('buildInvitation');app.get('invitationAddress').value='';
+    await app.click('copyInvitation');assert.equal(app.copied.length,0);assert.equal(app.get('invitationCard').value,'');
+});
+test('guide explicitly retrieves and correlates the inbox introduction before acceptance',()=>{
+    const guide=readFileSync(guidePath,'utf8'),section=guide.split('### Recipient introduction review before acceptance')[1]?.split('## 4.')[0];
+    assert.ok(section,'Recipient review step is missing');
+    for(const field of ['read_inbox','GET /v1/inbox','requestMessageId','requesterMailboxId','recipientMailboxId','nextCursor','needs_owner_action'])assert.ok(section.includes(field),field);
+    assert.ok(section.indexOf('read_inbox')<section.indexOf('decide_contact'));
 });
