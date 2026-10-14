@@ -86,6 +86,8 @@ test('shared v1 field, required, enum and reference contracts stay aligned with 
         assert.deepEqual(spec.components.schemas[name].required ?? [],[]);
     }
     assert.deepEqual(spec.components.schemas.contactDecision.required.toSorted(),['expectedGeneration','reply','requesterMailboxId','status']);
+    assert.deepEqual(spec.components.schemas.contactSummary.properties.status.enum,['pending','needsAction','accepted','rejected','expired']);
+    assert.equal(spec.components.schemas.contactDecision.properties.status.enum.includes('expired'),false);
     assert.match(spec.components.schemas.payload.properties.messageId.pattern,/7\[/);
 });
 

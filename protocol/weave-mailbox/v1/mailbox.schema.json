@@ -356,7 +356,8 @@
             "pending",
             "needsAction",
             "accepted",
-            "rejected"
+            "rejected",
+            "expired"
           ]
         },
         "createdAt": {

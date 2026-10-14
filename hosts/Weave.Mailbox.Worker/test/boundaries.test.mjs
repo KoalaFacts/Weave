@@ -8,6 +8,16 @@ async function module(path) {
     const built=await build({entryPoints:[path],bundle:true,write:false,format:'esm',platform:'node'});
     return import('data:text/javascript;base64,'+Buffer.from(built.outputFiles[0].text).toString('base64'));
 }
+test('contact expiry is a read-only 100ns projection and does not expire accepted or rejected decisions',async()=>{
+    const {effectiveRequest,ticks}=await module('src/protocol.ts');
+    const expiresAt='2026-10-12T12:00:00.0000001Z',now=ticks(expiresAt);
+    for(const status of ['pending','needsAction','accepted','rejected']){
+        const summary={status,expiresAt};
+        assert.equal(effectiveRequest(summary,now-1n).status,status);
+        assert.equal(effectiveRequest(summary,now).status,['pending','needsAction'].includes(status)?'expired':status);
+        assert.equal(summary.status,status);
+    }
+});
 test('activation predicate accepts exact start, rejects exact end and preserves 100ns timestamp comparisons',async()=>{
     const {eligible}=await module('src/cards.ts'),{ticks}=await module('src/protocol.ts');
     const start=ticks('2026-10-12T12:00:00.0000001Z'),end=start+1n;

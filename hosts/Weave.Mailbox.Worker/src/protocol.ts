@@ -43,7 +43,9 @@ export const pair = (a: string,b: string) => a < b ? [a,b] : [b,a];
 export const channelKey = (a: string,b: string) => stringify(pair(a,b));
 export const blocked = (c: any) => c.blockedLow || c.blockedHigh;
 export const current = (c: any,r: any) => c.currentRequest?.requesterMailboxId === r.requesterMailboxId && c.currentRequest?.requestId === r.requestId && c.generation === r.generation;
-export const relation = (c: any,r: any) => ({request:r.summary,generation:c.generation,isBlocked:blocked(c),isConnected:!blocked(c) && current(c,r.summary) && r.summary.status === 'accepted',updatedAt:ticks(c.updatedAt) > ticks(r.updatedAt) ? c.updatedAt : r.updatedAt});
+export const effectiveRequest = (summary: any,now = BigInt(Date.now())*10000n) =>
+    ['pending','needsAction'].includes(summary.status) && ticks(summary.expiresAt) <= now ? {...summary,status:'expired'} : summary;
+export const relation = (c: any,r: any) => ({request:effectiveRequest(r.summary),generation:c.generation,isBlocked:blocked(c),isConnected:!blocked(c) && current(c,r.summary) && r.summary.status === 'accepted',updatedAt:ticks(c.updatedAt) > ticks(r.updatedAt) ? c.updatedAt : r.updatedAt});
 export const channelView = (c: any,owner: string) => ({ mailboxId:owner,peerMailboxId:c.low === owner ? c.high : c.low,generation:c.generation,
     isBlockedByMailbox:c.low === owner ? c.blockedLow : c.blockedHigh,isBlockedByPeer:c.low === owner ? c.blockedHigh : c.blockedLow,currentRequest:c.currentRequest });
 export const readChannel = (tx: Transaction,a: string,b: string) => tx.get('channel','',channelKey(a,b));

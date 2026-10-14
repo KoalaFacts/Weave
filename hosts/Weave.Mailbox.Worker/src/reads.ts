@@ -2,7 +2,7 @@ import { Transaction } from './database';
 import { cardView, eligible } from './cards';
 import { effective } from './messages';
 import { fail, identity, limit, parse, query, uuid } from './wire';
-import { channelView, readChannel } from './protocol';
+import { channelView, effectiveRequest, readChannel } from './protocol';
 
 export function pageStart(url: URL,kind: string,owner: string): {n:number;after:string;prefix:string} {
     const n = limit(url), cursor = query(url,'afterCursor');
@@ -24,7 +24,7 @@ export async function read(tx: Transaction,url: URL,owner: string | null): Promi
     if (request) {
         uuid(request[1]); const requester = query(url,'requesterMailboxId',true); identity(requester);
         const r = await tx.get('request',requester,request[1]);
-        if (!r || ![r.summary.requesterMailboxId,r.summary.recipientMailboxId].includes(owner)) fail(404,'unavailable'); return r.summary;
+        if (!r || ![r.summary.requesterMailboxId,r.summary.recipientMailboxId].includes(owner)) fail(404,'unavailable'); return effectiveRequest(r.summary);
     }
     const receipt = path.match(/^\/v1\/outbox\/([^/]+)$/);
     if (receipt) { uuid(receipt[1]); const m = await tx.get('message',owner!,receipt[1]); if (!m) fail(404,'unavailable'); return effective(tx,m); }
@@ -50,14 +50,14 @@ export async function read(tx: Transaction,url: URL,owner: string | null): Promi
             ORDER BY m.seq LIMIT ?`;
         args = [owner!,owner!,after,owner!,(BigInt(Date.now())*10000n).toString(),n+1];
     } else {
-        sql = `SELECT CAST(seq AS TEXT) seq,data FROM mailbox_records WHERE kind=? AND seq>CAST(? AS INTEGER) AND ${kind === 'contacts' ? "(owner=? OR json_extract(data,'$.summary.recipientMailboxId')=?)" : 'owner=?'} ORDER BY seq LIMIT ?`;
+        sql = `SELECT CAST(seq AS TEXT) seq,data FROM mailbox_records WHERE kind=? AND seq>CAST(? AS INTEGER) AND ${kind === 'contacts' ? "(owner=? OR json_extract(data,'$.summary.recipientMailboxId')=?)" : 'owner=?'} ORDER BY mailbox_records.seq LIMIT ?`;
         args = [kind === 'contacts' ? 'request' : 'message',after,owner!,...(kind === 'contacts' ? [owner!] : []),n+1];
     }
     const rows = (await tx.db.prepare(sql).bind(...args).all<{seq:string;data:string}>()).results;
     const items = [];
     for (const row of rows.slice(0,n)) {
         const value = parse(row.data);
-        items.push(kind.endsWith('cards') ? cardView(value) : kind === 'contacts' ? value.summary : kind === 'receipts' ? await effective(tx,value) :
+        items.push(kind.endsWith('cards') ? cardView(value) : kind === 'contacts' ? effectiveRequest(value.summary) : kind === 'receipts' ? await effective(tx,value) :
             {senderMailboxId:value.receipt.senderMailboxId,envelope:{version:value.version,recipientMailboxId:value.receipt.recipientMailboxId,contactGeneration:value.generation,payload:value.payload}});
     }
     return {items,nextCursor:rows.length > n ? prefix + rows[n-1].seq : null};

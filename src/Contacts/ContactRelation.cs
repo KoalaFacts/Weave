@@ -1,6 +1,6 @@
 namespace Weave.Contacts;
 
-/// <summary>Recipient-controlled state. The host must authenticate ownership before invoking mutations.</summary>
+/// <summary>Recipient decisions and effective request state. The host authenticates ownership before mutations.</summary>
 public sealed record ContactRelation(ContactRequestSummary Request, bool IsBlocked, DateTimeOffset UpdatedAt)
 {
     public long Generation { get; init; } = Request.Generation;
@@ -16,11 +16,11 @@ public sealed record ContactRelation(ContactRequestSummary Request, bool IsBlock
             return new(ContactRelationOutcome.Blocked, this);
         if (decision.Request != Request.Locator)
             return new(ContactRelationOutcome.RequestMismatch, this);
-        if (!Enum.IsDefined(decision.Status))
+        if (decision.Status is not (ContactStatus.Pending or ContactStatus.NeedsAction or ContactStatus.Accepted or ContactStatus.Rejected))
             return new(ContactRelationOutcome.InvalidDecision, this);
-        if (Request.Generation != Generation || Request.Status is not (ContactStatus.Pending or ContactStatus.NeedsAction))
+        if (Request.Generation != Generation || Request.Status is not (ContactStatus.Pending or ContactStatus.NeedsAction or ContactStatus.Expired))
             return new(ContactRelationOutcome.NotPending, this);
-        if (now >= Request.ExpiresAt)
+        if (Request.Status == ContactStatus.Expired || now >= Request.ExpiresAt)
             return new(ContactRelationOutcome.Expired, this);
 
         return new(ContactRelationOutcome.Applied, this with

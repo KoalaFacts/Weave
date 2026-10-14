@@ -57,7 +57,7 @@
 <label for="intro">Contact request text</label><textarea id="intro" rows="2">Hello! May we exchange messages?</textarea><button id="requestContact">Request contact</button>
 </details>
 <details id="contactScenario" class="scenario" name="scenario"><summary>Review contact requests<small>Use this to accept an incoming request or check whether your outgoing request was accepted.</small></summary>
-<p>Refresh the list to read each incoming introduction beside its request. Reading it does not ACK it. Only the recipient can accept. Once a request is accepted, either account can choose Open conversation to open the conversation.</p>
+<p>Refresh to see incoming and outgoing history, including accepted, rejected and expired requests. Reading an introduction does not ACK it. Only the recipient can accept. Once accepted, either account can choose Open conversation.</p>
 <button id="loadContacts">Refresh requests</button><button id="contactsNext" class="secondary" disabled>Next page</button><div id="contacts">Refresh requests to see incoming and outgoing requests.</div>
 </details>
 <details id="mailboxScenario" class="scenario" name="scenario"><summary>Chat and check inbox<small>Send after contact is accepted. Refresh inbox to read; acknowledge only after processing a message.</small></summary>
@@ -217,8 +217,9 @@ async function contacts(s,next=false){
  for(const r of page.items){
   const incoming=r.recipientMailboxId===s.agentId,other=incoming?r.requesterMailboxId:r.recipientMailboxId;
   const el=row('contacts',r.status+' · generation '+r.generation,(incoming?'From: ':'To: ')+other+' · Request: '+r.requestId);
+  if(r.status==='expired')el.append(element('p','Expired on '+r.expiresAt+'. This request stays in your history. Send a new contact request to try again.'));
   if(incoming){const body=element('pre','Loading introduction…');bodies.set(r,body);el.append(element('strong','Introduction'),body);}
-  button(el,'Open conversation',s,()=>{$('peer').value=other;$('mailboxScenario').open=true;$('peerHint').textContent='Selected peer: '+other+(r.status==='accepted'?'. Contact accepted; you can send a message.':'. Contact is not accepted yet; wait before sending.');$('nextStep').textContent=r.status==='accepted'?'Contact accepted. Send a message below, or refresh your inbox.':'Wait for the recipient to accept, then refresh requests.';});
+  button(el,'Open conversation',s,()=>{const hint=r.status==='accepted'?'This request was accepted. Sending requires the contact to remain connected.':['expired','rejected'].includes(r.status)?'Send a new contact request before messaging.':'Wait for the recipient to accept, then refresh requests.';$('peer').value=other;$('mailboxScenario').open=true;$('peerHint').textContent='Selected peer: '+other+'. '+hint;$('nextStep').textContent=hint;});
   if(incoming&&['pending','needsAction'].includes(r.status))for(const decision of ['accepted','needsAction','rejected'])button(el,{accepted:'Accept contact',needsAction:'Ask for follow-up',rejected:'Reject contact'}[decision],s,async()=>{await api(s,'/v1/contacts/requests/'+r.requestId+'/decision','POST',{requesterMailboxId:r.requesterMailboxId,expectedGeneration:r.generation,status:decision,reply:null});await contacts(s);});
  }
  if(!page.items.length)$('contacts').textContent='No contact requests yet. Contact someone, or share your address and ask them to send a request.';

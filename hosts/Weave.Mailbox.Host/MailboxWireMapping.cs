@@ -38,6 +38,7 @@ internal static class MailboxWireMapping
         ContactStatus.NeedsAction => "needsAction",
         ContactStatus.Accepted => "accepted",
         ContactStatus.Rejected => "rejected",
+        ContactStatus.Expired => "expired",
         _ => throw new ArgumentOutOfRangeException(nameof(status))
     };
     internal static ContactStatus? Status(string status) => status switch

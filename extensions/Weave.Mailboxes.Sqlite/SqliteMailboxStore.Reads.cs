@@ -12,7 +12,7 @@ public sealed partial class SqliteMailboxStore
         using var db = Session(false, ct);
         var row = ReadRequest(db, request);
         return row is not null && (row.Summary.RequesterMailboxId == authority.MailboxId
-            || row.Summary.RecipientMailboxId == authority.MailboxId) ? row.Summary : null;
+            || row.Summary.RecipientMailboxId == authority.MailboxId) ? EffectiveRequest(row.Summary, _timeProvider.GetUtcNow()) : null;
     }
 
     public MailboxPage<ContactRequestSummary> ListContactRequests(MailboxAuthority authority, string? afterCursor, int limit, CancellationToken ct)
@@ -22,7 +22,8 @@ public sealed partial class SqliteMailboxStore
             return new([], null);
         var rows = db.Query(RequestSelect + " WHERE (requester=$owner OR recipient=$owner) AND seq>$after ORDER BY seq LIMIT $limit",
             MapRequest, ("$owner", authority.MailboxId.Value), ("$after", after), ("$limit", limit + 1));
-        return Page(rows, row => row.Sequence, row => row.Summary, "contacts", authority, limit);
+        var now = _timeProvider.GetUtcNow();
+        return Page(rows, row => row.Sequence, row => EffectiveRequest(row.Summary, now), "contacts", authority, limit);
     }
 
     public MailboxReceipt? GetReceipt(MailboxAuthority authority, Guid messageId, CancellationToken ct)
@@ -64,6 +65,10 @@ public sealed partial class SqliteMailboxStore
             ("$owner", authority.MailboxId.Value), ("$after", after), ("$now", now.UtcTicks), ("$limit", limit + 1));
         return Page(rows, row => row.Sequence, row => row.Message, "inbox", authority, limit);
     }
+
+    private static ContactRequestSummary EffectiveRequest(ContactRequestSummary request, DateTimeOffset now) =>
+        request.Status is ContactStatus.Pending or ContactStatus.NeedsAction && request.ExpiresAt <= now
+            ? request with { Status = ContactStatus.Expired } : request;
 
     private const string RequestSelect = """
         SELECT seq,id,card,requester,recipient,method,generation,status,created,expires,request_message,

@@ -6,7 +6,7 @@ namespace Weave.Mailboxes.Tests.Storage;
 public sealed class MailboxRequestScopeTests
 {
     [Fact]
-    public void Request_SameIdDifferentRequesters_IsolatesAckReplyBlockPurgeAndRestart()
+    public void Request_SameIdDifferentRequesters_IsolatesAckReplyBlockHistoryAndRestart()
     {
         using var context = new MailboxTestContext();
         var card = context.Card();
@@ -36,11 +36,11 @@ public sealed class MailboxRequestScopeTests
         while (context.Store.Sweep(1000, Ct) != 0)
         { }
         var restarted = context.Restart();
-        restarted.GetContactRequest(Bob, alice.Request.Locator, Ct).ShouldBeNull();
+        restarted.GetContactRequest(Bob, alice.Request.Locator, Ct)!.Status.ShouldBe(ContactStatus.Expired);
         restarted.GetContactRequest(Bob, eve.Request.Locator, Ct)!.Status.ShouldBe(ContactStatus.Accepted);
         restarted.GetContactChannel(Bob, Eve.MailboxId, Ct)!.CurrentRequest.ShouldBe(eve.Request.Locator);
         Require(restarted.Send(Eve, new(1, Bob.MailboxId, eve.Generation, context.Payload("new live")), Ct));
-        restarted.RequestContact(Alice, submission, Ct).Error.ShouldBe(MailboxError.Expired);
+        Require(restarted.RequestContact(Alice, submission, Ct)).Request.Status.ShouldBe(ContactStatus.Expired);
         context.Scalar("SELECT count(*) FROM mailbox_messages WHERE payload IS NOT NULL").ShouldBe(1);
         context.Scalar("SELECT count(*) FROM mailbox_messages WHERE request_requester='alice' AND payload IS NOT NULL").ShouldBe(0);
     }

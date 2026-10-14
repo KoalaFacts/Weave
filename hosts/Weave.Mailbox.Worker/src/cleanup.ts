@@ -43,17 +43,7 @@ export async function sweep(env: Env,scheduled=false): Promise<{messages:number;
                     AND json_extract(data,'$.receipt.state') IN ('acknowledged','expired','blocked')
                     AND julianday(json_extract(data,'$.receipt.terminalAt'))<=julianday(?)`).bind(...ids,before));
             }
-            if(first){
-                tx.writes.push(tx.db.prepare(`UPDATE mailbox_records SET data=json_set(data,'$.terminalAt',json_extract(data,'$.summary.expiresAt'))
-                    WHERE seq IN (SELECT seq FROM mailbox_records WHERE kind='request' AND json_extract(data,'$.summary.status') IN ('pending','needsAction')
-                    AND json_extract(data,'$.terminalAt') IS NULL AND CAST(json_extract(data,'$.expiresTicks') AS INTEGER)<=CAST(? AS INTEGER) ORDER BY seq LIMIT 128)`).bind(nowTicks));
-                const purge=`SELECT owner,id FROM mailbox_records WHERE kind='request' AND json_extract(data,'$.terminalAt') IS NOT NULL
-                    AND julianday(json_extract(data,'$.terminalAt'))<=julianday(?) ORDER BY seq LIMIT 128`;
-                tx.writes.push(tx.db.prepare(`UPDATE mailbox_records SET data=json_set(data,'$.currentRequest',NULL) WHERE kind='channel'
-                    AND (json_extract(data,'$.currentRequest.requesterMailboxId'),json_extract(data,'$.currentRequest.requestId')) IN (${purge})`).bind(before));
-                tx.writes.push(tx.db.prepare(`DELETE FROM mailbox_records WHERE kind='request' AND (owner,id) IN (${purge})`).bind(before));
-                tx.put('maintenance','','sweep',{at:now});
-            }
+            if(first)tx.put('maintenance','','sweep',{at:now});
             return rows.length;
         });
         messages+=count;batches++;

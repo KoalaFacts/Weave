@@ -67,6 +67,17 @@ const introductionRequest={requestId:'request-from-b',requestMessageId:'intro-fr
 const introduction=(messageId='intro-from-b',sender='b',recipient='a',text='Hello 你好 <img src=x onerror=alert(1)>')=>({senderMailboxId:sender,envelope:{recipientMailboxId:recipient,payload:{messageId,payloadEncoding:'text/plain',bytes:Buffer.from(text).toString('base64')}}});
 const rendered=node=>[node.textContent,...node.children.map(rendered)].join('\n');
 
+test('contact history shows expired, accepted and rejected requests without offering expired decisions',async()=>{
+    const requests=['expired','accepted','rejected'].map((status,i)=>({...introductionRequest,requestId:'history-'+i,status,expiresAt:'2026-01-01T00:00:00Z'}));
+    const app=ui(async(path,options)=>base(path,options)??(path==='/v1/contacts/requests'?json({items:requests,nextCursor:null}):json({items:[],nextCursor:null})));
+    await app.register();await app.click('loadContacts');
+    const rows=app.get('contacts').children;assert.equal(rows.length,3);
+    for(let i=0;i<3;i++)assert.match(rendered(rows[i]),new RegExp(requests[i].status+' · generation 1'));
+    assert.match(rendered(rows[0]),/Expired on 2026-01-01T00:00:00Z.*stays in your history/);
+    for(const row of rows)assert.equal(row.children.some(child=>['Accept contact','Ask for follow-up','Reject contact'].includes(child.textContent)),false);
+    assert.match(rendered(rows[0]),/Introduction is no longer pending/);
+});
+
 test('contact metadata is visible while its separate introduction read is still pending',async()=>{
     let release,entered;const waiting=new Promise(resolve=>{entered=resolve;});
     const app=ui(async(path,options)=>base(path,options)??(path==='/v1/contacts/requests'?json({items:[introductionRequest],nextCursor:null}):(entered(),new Promise(resolve=>{release=resolve;}))));

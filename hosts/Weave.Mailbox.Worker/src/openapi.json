@@ -623,7 +623,8 @@
     "/v1/contacts/requests": {
       "get": {
         "operationId": "listContactRequests",
-        "summary": "List participant-owned body-free contact metadata",
+        "summary": "List participant-owned body-free contact history",
+        "description": "Includes all retained statuses in creation sequence order, ten per page by default. Follow nextCursor for later history. Pending/needsAction reads as expired at expiresAt; accepted/rejected stay unchanged. Contact metadata is not automatically deleted. Introduction/reply bodies expire independently.",
         "responses": {
           "200": {
             "description": "Success.",
@@ -2290,7 +2291,8 @@
               "pending",
               "needsAction",
               "accepted",
-              "rejected"
+              "rejected",
+              "expired"
             ]
           },
           "createdAt": {
