@@ -14,6 +14,33 @@ public sealed class DashboardReviewBrowserTests
     [Theory]
     [InlineData(false)]
     [InlineData(true)]
+    public async Task Layout_HomeApiUnavailable_ShowsErrorAndRetainsNavigation(bool mobile)
+    {
+        await using var fixture = new DashboardReviewBrowserFixture(mobile: mobile);
+        await fixture.StartAsync();
+
+        await fixture.Page.GetByRole(AriaRole.Link, new() { Name = "Home", Exact = true }).ClickAsync();
+        await Expect(fixture.Page.Locator("main")).ToContainTextAsync("Welcome to Weave");
+        await Expect(fixture.Page.Locator("main")).ToContainTextAsync("Unable to connect to the Weave Silo API.");
+        await fixture.Evidence.CaptureAsync("home-api-unavailable", reviewPage: false);
+
+        await fixture.Page.GetByRole(AriaRole.Link, new() { Name = "Approval review", Exact = true }).ClickAsync();
+        await Expect(fixture.Page.Locator(".review-page")).ToContainTextAsync("No verified snapshot is displayed.");
+        fixture.Api.Requests.ShouldNotBeEmpty();
+        foreach (var request in fixture.Api.Requests)
+        {
+            request.Method.ShouldBe("GET");
+            request.Path.ShouldBe("/api/workspaces");
+            request.Capability.ShouldBe("");
+            request.Authorization.ShouldBe("");
+        }
+        fixture.BlockedRequests.ShouldBeEmpty();
+        fixture.Evidence.AssertLayouts();
+    }
+
+    [Theory]
+    [InlineData(false)]
+    [InlineData(true)]
     public async Task Review_UploadAndVerify_RendersExactContentAndInvalidatesWhenWorkspaceChanges(bool mobile)
     {
         await using var fixture = new DashboardReviewBrowserFixture(mobile: mobile);

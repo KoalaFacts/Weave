@@ -50,6 +50,7 @@ internal sealed partial class DashboardReviewBrowserFixture : IAsyncDisposable
         start.Environment["DOTNET_ENVIRONMENT"] = "Development";
         start.Environment["Weave__Review__Enabled"] = "true";
         start.Environment["Weave__Review__BaseUrl"] = Api.Address.AbsoluteUri;
+        start.Environment["services__silo__http__0"] = Api.Address.AbsoluteUri;
         start.Environment["OTEL_EXPORTER_OTLP_ENDPOINT"] = "";
         start.Environment["Logging__LogLevel__Default"] = "Information";
         _dashboard = new DashboardBrowserChild(start);
@@ -64,7 +65,7 @@ internal sealed partial class DashboardReviewBrowserFixture : IAsyncDisposable
         await FillAsync("review-workspace", "release-lab");
         await FillAsync("review-tool", "files");
         await Page.Locator("#review-file").SetInputFilesAsync(path).WaitAsync(TestContext.Current.CancellationToken);
-        await Assertions.Expect(Page.Locator(".review-page")).ToContainTextAsync("Not yet verified; no file is saved by the Dashboard.")
+        await Assertions.Expect(Page.Locator(".review-page")).ToContainTextAsync("No file is saved by the Dashboard.")
             .WaitAsync(TestContext.Current.CancellationToken);
         await FillAsync("review-capability", "browser-review-capability");
         await FillAsync("review-api-token", "browser-global-token");

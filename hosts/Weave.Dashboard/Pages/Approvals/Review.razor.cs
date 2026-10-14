@@ -64,7 +64,7 @@ public sealed partial class Review : ComponentBase, IAsyncDisposable
             if (version == _fileVersion && !pending.IsCancellationRequested)
             {
                 _originalJson = new UTF8Encoding(false, true).GetString(buffer.ToArray()).TrimStart('\uFEFF');
-                _fileStatus = $"Loaded {file.Name} ({buffer.Length} bytes). Not yet verified; no file is saved by the Dashboard.";
+                _fileStatus = $"Loaded {file.Name} ({buffer.Length} bytes). No file is saved by the Dashboard.";
             }
         }
         catch (OperationCanceledException) when (pending.IsCancellationRequested)

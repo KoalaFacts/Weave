@@ -8,30 +8,31 @@ internal sealed class DashboardReviewBrowserEvidence(IPage page, string temporar
     private readonly List<(string State, JsonElement Layout)> _layouts = [];
     private int _images;
 
-    public async Task CaptureAsync(string state)
+    public async Task CaptureAsync(string state, bool reviewPage = true)
     {
         var layout = await page.EvaluateAsync<JsonElement>("""
-            () => {
-              const review = document.querySelector('.review-page');
+            reviewPage => {
+              const content = document.querySelector(reviewPage ? '.review-page' : 'main');
               const footer = document.querySelector('.footer');
               const box = element => { const r = element.getBoundingClientRect();
                 return { left: r.left, right: r.right, top: r.top + scrollY, bottom: r.bottom + scrollY }; };
-              const elements = [...review.querySelectorAll('input, button, label, pre, code')];
+              const elements = [...content.querySelectorAll('input, button, label, pre, code, a, fluent-anchor, fluent-card')];
               return {
+                reviewPage,
                 viewportWidth: innerWidth, viewportHeight: innerHeight,
                 documentWidth: document.documentElement.scrollWidth,
                 documentHeight: document.documentElement.scrollHeight,
-                review: box(review), footer: box(footer),
-                formDisplay: getComputedStyle(review.querySelector('.inputs')).display,
-                maxWidth: getComputedStyle(review).maxWidth,
+                content: box(content), footer: box(footer),
+                formDisplay: reviewPage ? getComputedStyle(content.querySelector('.inputs')).display : null,
+                maxWidth: reviewPage ? getComputedStyle(content).maxWidth : null,
                 clipped: elements.filter(e => { const r = box(e); return r.left < -1 || r.right > innerWidth + 1; })
                   .map(e => e.id || e.tagName),
-                capabilityLength: document.querySelector('#review-capability').value.length,
-                tokenLength: document.querySelector('#review-api-token').value.length,
+                capabilityLength: reviewPage ? document.querySelector('#review-capability').value.length : 0,
+                tokenLength: reviewPage ? document.querySelector('#review-api-token').value.length : 0,
                 touchPoints: navigator.maxTouchPoints
               };
             }
-            """);
+            """, reviewPage);
         _layouts.Add((state, layout));
         var directory = Path.Join(Environment.GetEnvironmentVariable("WEAVE_DASHBOARD_EVIDENCE")
             ?? Path.Join(temporaryRoot, "evidence"), mobile ? "mobile" : "desktop");
@@ -94,13 +95,16 @@ internal sealed class DashboardReviewBrowserEvidence(IPage page, string temporar
             layout.GetProperty("viewportHeight").GetInt32().ShouldBe(mobile ? 844 : 1000, state);
             if (mobile)
                 layout.GetProperty("touchPoints").GetInt32().ShouldBeGreaterThan(0, state);
-            layout.GetProperty("formDisplay").GetString().ShouldBe("grid", state + ": application styles must load.");
-            layout.GetProperty("maxWidth").GetString().ShouldBe("980px", state);
+            if (layout.GetProperty("reviewPage").GetBoolean())
+            {
+                layout.GetProperty("formDisplay").GetString().ShouldBe("grid", state + ": application styles must load.");
+                layout.GetProperty("maxWidth").GetString().ShouldBe("980px", state);
+            }
             layout.GetProperty("documentWidth").GetInt32().ShouldBeLessThanOrEqualTo(
                 layout.GetProperty("viewportWidth").GetInt32() + 1, state + ": no horizontal document overflow.");
             layout.GetProperty("clipped").GetArrayLength().ShouldBe(0, state + ": controls and review text must fit the viewport.");
             layout.GetProperty("footer").GetProperty("top").GetDouble().ShouldBeGreaterThanOrEqualTo(
-                layout.GetProperty("review").GetProperty("bottom").GetDouble() - 1, state + ": footer must follow the complete review.");
+                layout.GetProperty("content").GetProperty("bottom").GetDouble() - 1, state + ": footer must follow the complete content.");
         }
     }
 }
