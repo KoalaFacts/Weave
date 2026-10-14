@@ -151,7 +151,7 @@ def run_case(action, node, name, changes, warning, expected_blocked, action_chan
                 comparison_path.write_text(json.dumps({'status': 'available', 'repository': 'fixture/repo',
                                                        'base_sha': BASE, 'head_sha': HEAD, **comparison}))
                 policy_path = directory / 'policy.json'
-                policy = ROOT / 'tools/dependency-license-policy/check-license-policy.mjs'
+                policy = ROOT / 'tools/dependency-license-policy/check-license-policy.ts'
                 changes_path = directory / 'dependency-changes.json'
                 changes_path.write_text(action_output.get('dependency-changes', ''), encoding='utf-8')
                 checked = subprocess.run([node, str(policy), str(changes_path), str(comparison_path), str(policy_path)],

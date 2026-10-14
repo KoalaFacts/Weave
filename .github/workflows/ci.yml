@@ -398,10 +398,14 @@ jobs:
         if: ${{ !cancelled() && steps.dependency-policy.outcome != 'skipped' }}
         run: npm audit --prefix tools/dependency-license-policy --omit=dev --audit-level=high
 
+      - name: Type-check license policy tools
+        if: ${{ !cancelled() && steps.dependency-policy.outcome != 'skipped' }}
+        run: npm run typecheck --prefix tools/dependency-license-policy
+
       - name: Require allowed dependency licenses
         if: ${{ !cancelled() && steps.dependency-policy.outcome != 'skipped' }}
         run: >-
-          node tools/dependency-license-policy/check-license-policy.mjs
+          node tools/dependency-license-policy/check-license-policy.ts
           "$RUNNER_TEMP/dependency-changes.json"
           "$RUNNER_TEMP/dependency-review-evidence.json"
           "$RUNNER_TEMP/dependency-license-policy.json"

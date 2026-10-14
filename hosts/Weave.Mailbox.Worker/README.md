@@ -8,7 +8,7 @@ Semi-managed scope stops at contact management: contact requests, acceptance/rej
 
 Fetch `/openapi.json` anonymously from the Worker for the self-contained [OpenAPI contract](src/openapi.json). It describes the current account, address, directory, contact, message, inbox/outbox, ACK and SSE routes, including the owner aliases. The [short fictional ping/pong walkthrough](HTTP-EXAMPLE.md) shows registration through delivery and ACK without supplying a usable control or calling a public service.
 
-The contract incorporates the shared [v1 JSON schema](../../protocol/weave-mailbox/v1/mailbox.schema.json), with Worker account/address shapes and runtime refinements. Keep it aligned with route implementations when changing the API; `test/openapi.test.mjs` checks shared field/required/enum shapes and real response projections. JSON Schema alone cannot enforce current time, UUIDv7/creation-time equality, ownership, generation state, byte-based bounds or quota. The spec is bundled as **text** by esbuild and Wrangler, preserving the exact int64 maximum and requiring no database lookup. Like the existing pages, its route applies the transport and control minimum-length prechecks before serving the asset.
+The contract incorporates the shared [v1 JSON schema](../../protocol/weave-mailbox/v1/mailbox.schema.json), with Worker account/address shapes and runtime refinements. Keep it aligned with route implementations when changing the API; `test/openapi.test.ts` checks shared field/required/enum shapes and real response projections. JSON Schema alone cannot enforce current time, UUIDv7/creation-time equality, ownership, generation state, byte-based bounds or quota. The spec is bundled as **text** by esbuild and Wrangler, preserving the exact int64 maximum and requiring no database lookup. Like the existing pages, its route applies the transport and control minimum-length prechecks before serving the asset.
 
 Public discovery rate denials include `Retry-After` seconds. Registration, storage capacity, stream and generation capacity denials currently do not include that header. The contract describes those differences without changing runtime behavior. SSE is ordinary HTTP pending-message streaming, not MCP Events; neither OpenAPI publication nor this example adds encryption, automatic replies or hosted agents.
 
@@ -22,7 +22,7 @@ Use Node 24.19+ and a stable .NET 10 SDK. [global.json](../../global.json) permi
 npm ci
 npm run typecheck
 npm test
-node scripts/local-storage.mjs initialize
+node scripts/local-storage.ts initialize
 npm run dev -- --ip 127.0.0.1 --port 8787 --var REGISTRATION_ENABLED:true
 ```
 
@@ -81,7 +81,16 @@ For new Cloudflare permissions use **Workers Editor**, scoped to the individual 
 
 The workflow installs pinned dependencies from the lockfile, runs Worker tests/typechecking/audit and the original C# wire compatibility harness before the deployment job receives credentials. The deployment script checks the existing account subdomain, discovers the existing `demo` Worker's `db` binding, and verifies that database's identity through Cloudflare GET endpoints. A denied/missing resource or mismatched identity stops without trying another account or creating resources. It builds an ignored temporary Wrangler config from the configured account ID and discovered database identity, with owner-only file permissions; the API token is never written into that file. The file is removed after the command sequence, including on failure. The checked-in all-zero database ID remains a local placeholder.
 
-The deployment sequence is implemented by `scripts/deploy.mjs`:
+The deployment sequence is implemented by `scripts/deploy.ts`:
+
+Ordinary tools run directly with Node 24 and are checked by `npm run typecheck`
+using `tsconfig.tools.json`. New tools use `.ts`; no custom TypeScript loader is
+required. Tests and browser fixtures also use `.ts`. The executed files in
+`scripts/data-migrations/` are renamed without changing any content bytes.
+`scripts/run-data-migration.ts` creates a temporary copy under the original
+names so their unchanged imports and checksum algorithm still work, then removes
+it on success or failure. The Worker checkout must be writable for that temporary
+directory. No migration identity, stored checksum or database history is rewritten.
 
 1. Build the active and read-only recovery bundles and record their SHA-256 values.
 2. Connect through Wrangler's official remote D1 binding, then deploy and verify maintenance mode. HTTP business requests and scheduled work are paused. The conversion also fences old in-flight transactions at `mailbox_guard`.
@@ -92,7 +101,7 @@ The deployment sequence is implemented by `scripts/deploy.mjs`:
 
 `src/schema.ts` is the only maintained structure definition. Generated SQL exists only as a reviewed runtime plan, not a numbered SQL history. `test/fixtures/legacy-mailbox.sql` is an old-format fixture solely for migration tests. The existing database's `d1_migrations` history is retained untouched; it does not control the new schema.
 
-Use the workflow, or `node scripts/deploy.mjs` with the approved Cloudflare environment, only when remote migration/deployment is authorized. The remote connection uses the pinned Wrangler `getPlatformProxy` with `remote:true` on the one verified D1 binding, so `db.batch()` remains a D1 transaction. There is no sequential REST transaction emulation, new remote credential or public migration endpoint. Temporary configs have owner-only permissions, exclude the API token, and are removed on exit.
+Use the workflow, or `node scripts/deploy.ts` with the approved Cloudflare environment, only when remote migration/deployment is authorized. The remote connection uses the pinned Wrangler `getPlatformProxy` with `remote:true` on the one verified D1 binding, so `db.batch()` remains a D1 transaction. There is no sequential REST transaction emulation, new remote credential or public migration endpoint. Temporary configs have owner-only permissions, exclude the API token, and are removed on exit.
 
 A failure before active cutover leaves maintenance in place. A failure after the active deployment reports that stage explicitly; it does not silently restore old code or data. Use the retained **schema-aware read-only recovery version** to read the current normalized tables, including subsequent registrations, revocations, accepted/deleted contacts and ACKs. Recovery rejects writes and streaming and skips scheduled cleanup and public rate writes. It is a service recovery option with read-only availability, not a full business rollback. Never deploy the pre-conversion Worker or restore a frozen database snapshot over newer writes.
 

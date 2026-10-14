@@ -25,7 +25,7 @@ class DependencyReviewWorkflowTests(unittest.TestCase):
         self.assertNotIn("contents: write", job)
         self.assertIn("fail-on-severity: high", job)
         self.assertNotIn("deny-licenses:", job)
-        self.assertIn("tools/dependency-license-policy/check-license-policy.mjs", job)
+        self.assertIn("tools/dependency-license-policy/check-license-policy.ts", job)
 
     def test_snapshot_wait_has_an_explicit_budget_and_enclosing_timeouts(self):
         job = self.job()

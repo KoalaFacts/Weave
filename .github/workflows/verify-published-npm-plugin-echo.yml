@@ -77,7 +77,7 @@ jobs:
           install_dir="$RUNNER_TEMP/weave-echo-consumer"
           npm audit signatures --prefix "$install_dir" --json --include-attestations \
             > "$RUNNER_TEMP/weave-echo-signatures.json"
-          node npm/weave-plugin-echo/scripts/check-published-provenance.mjs \
+          node npm/weave-plugin-echo/scripts/check-published-provenance.ts \
             "$RUNNER_TEMP/weave-echo-signatures.json" "$install_dir/package-lock.json" \
             "$VERSION" "$RELEASE_SHA"
       - name: Set up .NET

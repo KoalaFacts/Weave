@@ -172,7 +172,7 @@ public sealed class IndependentAgentsTests
         {
             var repository = RepositoryRoot();
             var start = new ProcessStartInfo("node") { WorkingDirectory = directory, RedirectStandardOutput = true, RedirectStandardError = true, UseShellExecute = false };
-            start.ArgumentList.Add(Path.Combine(repository, "tests", "Weave.Mailboxes.Tests", "Acceptance", "Fixtures", "cancellation-probe.mjs"));
+            start.ArgumentList.Add(Path.Combine(repository, "tests", "Weave.Mailboxes.Tests", "Acceptance", "Fixtures", "cancellation-probe.ts"));
             start.ArgumentList.Add(stage);
             start.ArgumentList.Add(new Uri(Path.Combine(repository, "examples", "agent-network", "run-demo.ts")).AbsoluteUri);
             start.Environment["WEAVE_DEMO_HOST"] = Path.Combine(AppContext.BaseDirectory, "Weave.Mailbox.Host.dll");
@@ -207,7 +207,7 @@ public sealed class IndependentAgentsTests
         {
             var repository = RepositoryRoot();
             var start = new ProcessStartInfo("node") { WorkingDirectory = directory, RedirectStandardOutput = true, RedirectStandardError = true, UseShellExecute = false };
-            start.ArgumentList.Add(Path.Combine(repository, "tests", "Weave.Mailboxes.Tests", "Acceptance", "Fixtures", "cancellation-probe.mjs"));
+            start.ArgumentList.Add(Path.Combine(repository, "tests", "Weave.Mailboxes.Tests", "Acceptance", "Fixtures", "cancellation-probe.ts"));
             start.ArgumentList.Add(stage);
             start.ArgumentList.Add(new Uri(Path.Combine(repository, "examples", "agent-network", "run-demo.ts")).AbsoluteUri);
             start.Environment["WEAVE_DEMO_HOST"] = Path.Combine(AppContext.BaseDirectory, "Weave.Mailbox.Host.dll");
