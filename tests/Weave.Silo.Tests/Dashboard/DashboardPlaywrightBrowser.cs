@@ -3,7 +3,7 @@ using Microsoft.Playwright;
 
 namespace Weave.Silo.Tests.Dashboard;
 
-internal sealed class DashboardPlaywrightBrowser(Uri origin) : IAsyncDisposable
+internal sealed class DashboardPlaywrightBrowser(Uri origin, bool mobile = false) : IAsyncDisposable
 {
     private IPlaywright? _playwright;
     private IBrowser? _browser;
@@ -28,7 +28,9 @@ internal sealed class DashboardPlaywrightBrowser(Uri origin) : IAsyncDisposable
         _context = await _browser.NewContextAsync(new()
         {
             ServiceWorkers = ServiceWorkerPolicy.Block,
-            ViewportSize = new() { Width = 1440, Height = 1000 }
+            ViewportSize = new() { Width = mobile ? 390 : 1440, Height = mobile ? 844 : 1000 },
+            IsMobile = mobile,
+            HasTouch = mobile
         });
         _context.SetDefaultTimeout(20_000);
         await _context.RouteAsync("**/*", async route =>
