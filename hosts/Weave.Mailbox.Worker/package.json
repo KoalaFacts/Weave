@@ -8,16 +8,21 @@
     "node": ">=24.19.0"
   },
   "scripts": {
-    "build": "esbuild src/index.ts --bundle --format=esm --platform=browser --outfile=dist/index.js --external:node:crypto --loader:.html=text --loader:.json=text --loader:.md=text",
+    "build": "esbuild src/index.ts src/recovery.ts --bundle --format=esm --platform=browser --outdir=dist --external:node:crypto --loader:.html=text --loader:.json=text --loader:.md=text",
     "test": "npm run build && node --test --test-concurrency=1 test/*.test.mjs",
     "typecheck": "tsc --noEmit",
     "dev": "wrangler dev --local",
     "test:compat": "npm run build && node test/compat.mjs",
     "test:browser": "npm run build && node --test --test-concurrency=1 test/browser/*.browser.mjs",
-    "benchmark:hash": "node test/hash-benchmark.mjs"
+    "benchmark:hash": "node test/hash-benchmark.mjs",
+    "build:recovery": "esbuild src/recovery.ts --bundle --format=esm --platform=browser --outfile=dist/recovery.js --external:node:crypto --loader:.html=text --loader:.json=text --loader:.md=text"
+  },
+  "dependencies": {
+    "drizzle-orm": "0.45.4"
   },
   "devDependencies": {
     "@types/node": "24.19.2",
+    "drizzle-kit": "0.31.11",
     "esbuild": "0.28.2",
     "miniflare": "5.20261006.1-alpha",
     "playwright": "1.62.1",

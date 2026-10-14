@@ -16,10 +16,10 @@ test('pending contact persists for both participants across Worker restart and r
         const relation=await h.ok('/v1/contacts/requests',a.control,'POST',submission);
         assert.equal(relation.request.status,'pending');
         assert.equal(relation.request.recipientMailboxId,b.agentId);
-        const stored=await h.db.prepare("SELECT owner,data FROM mailbox_records WHERE kind='request' AND id=?").bind(p.messageId).all();
+        const stored=await h.db.prepare("SELECT requester_account_id,recipient_account_id,request_id,status FROM contact_requests WHERE request_id=?").bind(p.messageId).all();
         assert.equal(stored.results.length,1);
-        assert.equal(stored.results[0].owner,a.agentId);
-        assert.deepEqual(JSON.parse(stored.results[0].data).summary,relation.request);
+        assert.equal(stored.results[0].requester_account_id,a.agentId);
+        assert.equal(stored.results[0].recipient_account_id,b.agentId);assert.equal(stored.results[0].request_id,p.messageId);assert.equal(stored.results[0].status,'pending');
         const exact='/v1/contacts/requests/'+p.messageId+'?requesterMailboxId='+a.agentId;
         for(const participant of [a,b]) {
             assert.deepEqual(await h.ok(exact,participant.control),relation.request);

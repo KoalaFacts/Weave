@@ -3,7 +3,7 @@ import { test } from 'node:test';
 import { start } from './harness.mjs';
 async function at(h,owner,time,profile={}){
     const a=await h.address(owner,{isPublic:true,...profile});
-    await h.db.prepare("UPDATE mailbox_records SET data=json_set(data,'$.createdAt',?) WHERE kind='card' AND id=?").bind(time,a.addressId).run();return a;
+    await h.db.prepare("UPDATE account_addresses SET created_at=? WHERE address_id=?").bind((BigInt(Date.parse(time))*10000n).toString(),a.addressId).run();return a;
 }
 const page=(h,cursor,limit=2,q='')=>h.ok('/v1/directory?limit='+limit+'&q='+encodeURIComponent(q)+(cursor?'&afterCursor='+encodeURIComponent(cursor):''));
 const ids=p=>p.items.map(x=>x.addressId);

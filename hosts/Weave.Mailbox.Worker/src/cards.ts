@@ -27,8 +27,9 @@ export async function putCard(tx: Transaction,owner: string,input: any): Promise
         if (existing.ownerMailboxId !== owner) fail(404,'unavailable');
         if (existing._address) fail(409,'conflict');
         if (await fingerprint({...cardView(existing),revokedAt:null}) !== await fingerprint({...card,revokedAt:null}) || existing.revokedAt !== null && ticks(existing.revokedAt) !== (input.revokedAt === null ? null : ticks(input.revokedAt))) fail(409,'conflict');
+        if(existing.revokedAt===null&&input.revokedAt===null||existing.revokedAt!==null&&input.revokedAt!==null&&ticks(existing.revokedAt)===ticks(input.revokedAt))return cardView(existing);
     } else {
-        const count = await tx.db.prepare("SELECT count(*) n FROM mailbox_records WHERE kind='card'").first<number>('n');
+        const count = await tx.db.prepare('SELECT (SELECT count(*) FROM contact_cards)+(SELECT count(*) FROM account_addresses) n').first<number>('n');
         if (count === null || count >= 1000) fail(429,'capacity');
     }
     tx.put('card','',card.cardId,{...card,_expiresTicks:card.expiresAt === null ? null : ticks(card.expiresAt).toString(),_publicSequence:existing?._publicSequence ?? (card.visibility === 'public' ? await publishSequence(tx) : null)}); return card;

@@ -7,6 +7,29 @@ namespace Weave.Mailboxes.Tests.Http;
 [Trait("Category", "Integration")]
 public sealed class ContactHttpTests
 {
+    [Fact]
+    public async Task History_ExpiredRequest_ReadsAfterSweepWithoutAllowingExpiredDecision()
+    {
+        await using var context = new MailboxHttpContext();
+        var relation = context.Data.Request();
+        await context.Start();
+        var path = "/v1/contacts/requests/" + relation.Request.RequestId.Value;
+        var decision = new { requesterMailboxId = "alice", expectedGeneration = relation.Generation, status = "expired", reply = (object?)null };
+        (await context.Send("POST", path + "/decision", "bob", decision)).StatusCode.ShouldBe(HttpStatusCode.BadRequest);
+        context.Data.Clock.Advance(TimeSpan.FromDays(8));
+        while (context.Data.Store.Sweep(100, Ct) != 0)
+        { }
+        await context.Restart();
+        var summary = await MailboxHttpContext.Json(await context.Send("GET", path + "?requesterMailboxId=alice", "bob"));
+        summary.GetProperty("status").GetString().ShouldBe("expired");
+        summary.TryGetProperty("payload", out _).ShouldBeFalse();
+        var page = await MailboxHttpContext.Json(await context.Send("GET", "/v1/contacts/requests", "alice"));
+        page.GetProperty("items")[0].GetProperty("requestId").GetString().ShouldBe(relation.Request.RequestId.Value);
+        page.GetProperty("items")[0].GetProperty("status").GetString().ShouldBe("expired");
+        var accept = new { requesterMailboxId = "alice", expectedGeneration = relation.Generation, status = "accepted", reply = (object?)null };
+        (await context.Send("POST", path + "/decision", "bob", accept)).StatusCode.ShouldBe(HttpStatusCode.Gone);
+    }
+
     [Theory]
     [InlineData("pending")]
     [InlineData("needsAction")]

@@ -3,7 +3,7 @@
   "info": {
     "title": "Weave mailbox Worker HTTP API",
     "version": "1.0.0",
-    "description": "Current Worker/D1 HTTP contract. Demo only: data may be cleared; do not store sensitive or important information. Account control establishes mailbox authority, not peer identity, membership or tool permission. Recipients decide contact admission. The relay transports opaque bytes; it does not host reasoning, run inference, reply automatically, wake agents, forward direct URIs, or implement OpenPGP/E2EE or MCP Events. All API responses use Cache-Control: no-store. HTTPS is required except loopback development. JSON request limit: 131072 bytes, depth 16, strict object fields; bytes limit: 65536 decoded. application/json and application/*+json request content types are accepted. Runtime applies cross-field UUIDv7/time checks and UTF-8/UTF-16 bounds beyond JSON Schema. Owner identifiers are derived from control; locators never authorize. Duplicate known query parameters are rejected; unknown query parameters are ignored. Canonical lowercase UUID path IDs; encode other IDs once in JSON/query. Exact positive int64 generations must not be rounded. Limits: 64 live pending messages/recipient, 32 MiB live bytes, 8000 message rows, 32 pending requests/recipient, 1000 requests, 5000 channels, 1000 cards, 48 D1 statements/invocation. Quota and concurrency exhaustion are bounded failures, not success. Demo business sweeps are disabled (0/0); ACK/block still remove bodies. Retention is logical and no exact purge/backup erasure deadline is promised."
+    "description": "Current Worker/D1 HTTP contract. Demo only: data may be cleared; do not store sensitive or important information. Account control establishes mailbox authority, not peer identity, membership or tool permission. Recipients decide contact admission. The relay transports opaque bytes; it does not host reasoning, run inference, reply automatically, wake agents, forward direct URIs, or implement OpenPGP/E2EE or MCP Events. All API responses use Cache-Control: no-store. HTTPS is required except loopback development. JSON request limit: 131072 bytes, depth 16, strict object fields; bytes limit: 65536 decoded. application/json and application/*+json request content types are accepted. Runtime applies cross-field UUIDv7/time checks and UTF-8/UTF-16 bounds beyond JSON Schema. Owner identifiers are derived from control; locators never authorize. Duplicate known query parameters are rejected; unknown query parameters are ignored. Canonical lowercase UUID path IDs; encode other IDs once in JSON/query. Exact positive int64 generations must not be rounded. Limits: 64 live pending messages/recipient, 32 MiB live bytes, 8000 message rows, 32 pending requests/recipient, 1000 requests, 5000 channels, 1000 cards, 48 D1 statements/invocation. Quota and concurrency exhaustion are bounded failures, not success. Demo business sweeps are disabled (0/0); ACK/block still remove bodies. Retention is logical and no exact purge/backup erasure deadline is promised. This release uses dedicated D1 tables, opaque message BLOBs and exact UTC Unix epoch 100ns integers internally. HTTP time values remain ISO 8601. Decoded messages are at most 65536 bytes, including an allowed empty body; the whole JSON request is at most 131072 bytes. Oversize returns 413 before writes. Contacts and request history are distinct; address IDs and request history are retained."
   },
   "servers": [
     {
@@ -12,6 +12,9 @@
     }
   ],
   "security": [
+    {
+      "AccountControl": []
+    },
     {
       "MailboxControl": []
     }
@@ -112,6 +115,15 @@
           },
           {
             "$ref": "#/components/parameters/afterCursor"
+          },
+          {
+            "name": "includeRevoked",
+            "in": "query",
+            "schema": {
+              "type": "boolean",
+              "default": false
+            },
+            "description": "Include permanent revoked address history for the authenticated owner."
           }
         ]
       },
@@ -205,6 +217,15 @@
         "parameters": [
           {
             "$ref": "#/components/parameters/addressIdPath"
+          },
+          {
+            "name": "includeRevoked",
+            "in": "query",
+            "schema": {
+              "type": "boolean",
+              "default": false
+            },
+            "description": "Include permanent revoked address history for the authenticated owner."
           }
         ]
       },
@@ -265,7 +286,7 @@
       },
       "delete": {
         "operationId": "deleteAddress",
-        "summary": "Revoke an owned address",
+        "summary": "Revoke an address permanently; retain its ID and owner history",
         "responses": {
           "200": {
             "description": "Success.",
@@ -357,6 +378,9 @@
         "security": [
           {},
           {
+            "AccountControl": []
+          },
+          {
             "MailboxControl": []
           }
         ]
@@ -410,6 +434,9 @@
         "security": [
           {},
           {
+            "AccountControl": []
+          },
+          {
             "MailboxControl": []
           }
         ]
@@ -461,6 +488,9 @@
         ],
         "security": [
           {},
+          {
+            "AccountControl": []
+          },
           {
             "MailboxControl": []
           }
@@ -615,6 +645,9 @@
         "security": [
           {},
           {
+            "AccountControl": []
+          },
+          {
             "MailboxControl": []
           }
         ]
@@ -623,7 +656,8 @@
     "/v1/contacts/requests": {
       "get": {
         "operationId": "listContactRequests",
-        "summary": "List participant-owned body-free contact metadata",
+        "summary": "List participant-owned body-free contact history",
+        "description": "Includes all retained statuses in creation sequence order, ten per page by default. Follow nextCursor for later history. Pending/needsAction reads as expired at expiresAt; accepted/rejected stay unchanged. Contact metadata is not automatically deleted. Introduction/reply bodies expire independently.",
         "responses": {
           "200": {
             "description": "Success.",
@@ -664,7 +698,7 @@
       },
       "post": {
         "operationId": "requestContact",
-        "summary": "Request contact using a relay address/card",
+        "summary": "Request contact with validated account and address pairs",
         "responses": {
           "200": {
             "description": "Success.",
@@ -1286,7 +1320,7 @@
         "description": "HTTP SSE, not MCP Events or agent wakeup. Frames: id: <messageId>, event: message, data: <receivedMessage JSON>; initial comment is : pending. Up to two streams/agent, 100 total, eight bounded reads, 10-second write timeout and 20-second absolute lifetime. Reconnect explicitly; server traversal wraps and may replay. Last-Event-ID and client afterCursor are ignored, never ACK or replay suppression. ACK/block/expiry is checked on fresh snapshots; already emitted bytes cannot be recalled. Post-header storage/write failures close the stream rather than sending a JSON problem."
       }
     },
-    "/inbox/{agentId}": {
+    "/inbox/{accountId}": {
       "get": {
         "operationId": "readInboxAlias",
         "summary": "Read owned inbox via account-scoped alias",
@@ -1336,7 +1370,7 @@
         ]
       }
     },
-    "/outbox/{agentId}": {
+    "/outbox/{accountId}": {
       "get": {
         "operationId": "readOutboxAlias",
         "summary": "Read owned receipts via account-scoped alias",
@@ -1450,6 +1484,136 @@
           }
         }
       }
+    },
+    "/v1/contacts": {
+      "get": {
+        "operationId": "listOwnedContacts",
+        "summary": "List this account’s contacts",
+        "parameters": [
+          {
+            "$ref": "#/components/parameters/limit"
+          },
+          {
+            "$ref": "#/components/parameters/afterCursor"
+          }
+        ],
+        "responses": {
+          "200": {
+            "description": "Success.",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ownedContactPage"
+                }
+              }
+            }
+          },
+          "400": {
+            "$ref": "#/components/responses/400"
+          },
+          "401": {
+            "$ref": "#/components/responses/401"
+          },
+          "404": {
+            "$ref": "#/components/responses/404"
+          },
+          "409": {
+            "$ref": "#/components/responses/409"
+          },
+          "503": {
+            "$ref": "#/components/responses/503"
+          }
+        }
+      }
+    },
+    "/v1/contacts/accounts/{accountId}": {
+      "get": {
+        "operationId": "getOwnedContact",
+        "summary": "Read one owned contact and its connection round",
+        "parameters": [
+          {
+            "name": "accountId",
+            "in": "path",
+            "required": true,
+            "schema": {
+              "type": "string",
+              "minLength": 1,
+              "maxLength": 128
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "description": "Success.",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/contact"
+                }
+              }
+            }
+          },
+          "400": {
+            "$ref": "#/components/responses/400"
+          },
+          "401": {
+            "$ref": "#/components/responses/401"
+          },
+          "404": {
+            "$ref": "#/components/responses/404"
+          },
+          "409": {
+            "$ref": "#/components/responses/409"
+          },
+          "503": {
+            "$ref": "#/components/responses/503"
+          }
+        }
+      },
+      "delete": {
+        "operationId": "removeOwnedContact",
+        "summary": "Remove only this account’s contact",
+        "description": "Invalidates old messages in both directions. The other account’s contact and all request history remain. Only a new accepted request reconnects.",
+        "parameters": [
+          {
+            "name": "accountId",
+            "in": "path",
+            "required": true,
+            "schema": {
+              "type": "string",
+              "minLength": 1,
+              "maxLength": 128
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "description": "Success.",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/empty"
+                }
+              }
+            }
+          },
+          "400": {
+            "$ref": "#/components/responses/400"
+          },
+          "401": {
+            "$ref": "#/components/responses/401"
+          },
+          "404": {
+            "$ref": "#/components/responses/404"
+          },
+          "409": {
+            "$ref": "#/components/responses/409"
+          },
+          "503": {
+            "$ref": "#/components/responses/503"
+          }
+        }
+      }
     }
   },
   "components": {
@@ -1458,7 +1622,13 @@
         "type": "apiKey",
         "in": "header",
         "name": "X-Weave-Mailbox-Control",
-        "description": "Caller-owned high-entropy secret, at least 64 characters, no custom alphabet or application maximum. Send exactly one header over HTTPS, never in URLs, examples, logs or public metadata. Registration accepts a new control; other authenticated routes require an existing account. Anonymous discovery may omit it, but a supplied unknown control fails 401 (subject to public-rate denial, which runs first). Static pages and /openapi.json only apply the existing minimum-length precheck and do not look up accounts. No cookie or bearer-token alternative."
+        "description": "Deprecated one-release alias for X-Weave-Account-Control. Existing credentials and account IDs remain unchanged. Sending only this header selects the original v1 response fields; the canonical response schemas below apply to AccountControl."
+      },
+      "AccountControl": {
+        "type": "apiKey",
+        "in": "header",
+        "name": "X-Weave-Account-Control",
+        "description": "Caller-owned high-entropy secret, at least 64 characters, no custom alphabet or application maximum. Send exactly one header over HTTPS, never in URLs, examples, logs or public metadata. Registration accepts a new control; other authenticated routes require an existing account. Anonymous discovery may omit it, but a supplied unknown control fails 401 (subject to public-rate denial, which runs first). Static pages and /openapi.json only apply the existing minimum-length precheck and do not look up accounts. No cookie or bearer-token alternative. X-Weave-Mailbox-Control remains a one-release alias. Supplying different values in both headers fails authentication."
       }
     },
     "parameters": {
@@ -1571,7 +1741,7 @@
         "description": "Canonical lowercase UUID. Message/contact IDs are generated as timestamp-bound UUIDv7; address IDs are server-assigned."
       },
       "agentIdPath": {
-        "name": "agentId",
+        "name": "accountId",
         "in": "path",
         "required": true,
         "schema": {
@@ -1829,34 +1999,48 @@
         }
       },
       "503": {
-        "description": "storage: Storage unavailable.",
+        "description": "Storage unavailable, or maintenance/recovery mode. Maintenance returns Retry-After: 30 and does not admit the operation.",
         "headers": {
           "Cache-Control": {
             "schema": {
               "type": "string",
               "const": "no-store"
             }
+          },
+          "Retry-After": {
+            "description": "Present for maintenance mode.",
+            "schema": {
+              "type": "integer",
+              "minimum": 1
+            }
           }
         },
         "content": {
           "application/problem+json": {
             "schema": {
-              "allOf": [
+              "oneOf": [
                 {
-                  "$ref": "#/components/schemas/problem"
+                  "allOf": [
+                    {
+                      "$ref": "#/components/schemas/problem"
+                    },
+                    {
+                      "properties": {
+                        "status": {
+                          "const": 503
+                        },
+                        "code": {
+                          "const": "storage"
+                        },
+                        "title": {
+                          "const": "Storage unavailable"
+                        }
+                      }
+                    }
+                  ]
                 },
                 {
-                  "properties": {
-                    "status": {
-                      "const": 503
-                    },
-                    "code": {
-                      "const": "storage"
-                    },
-                    "title": {
-                      "const": "Storage unavailable"
-                    }
-                  }
+                  "$ref": "#/components/schemas/maintenanceProblem"
                 }
               ]
             }
@@ -1939,7 +2123,7 @@
           "bytes": {
             "type": "string",
             "contentEncoding": "base64",
-            "description": "Standard padded base64; tab, CR, LF and space are ignored and storage normalizes base64. At most 65536 decoded bytes; empty bytes are allowed. Whole request remains bounded to 131072 bytes."
+            "description": "Standard padded base64; tab, CR, LF and space are ignored and the wire representation normalizes Base64; storage retains raw opaque BLOB bytes. At most 65536 decoded bytes; empty bytes are allowed. Whole request remains bounded to 131072 bytes."
           }
         },
         "required": [
@@ -1990,65 +2174,24 @@
         ]
       },
       "messageSubmission": {
-        "type": "object",
-        "additionalProperties": false,
-        "properties": {
-          "version": {
-            "const": 1
+        "oneOf": [
+          {
+            "$ref": "#/components/schemas/messageSubmissionV2"
           },
-          "recipientMailboxId": {
-            "type": "string",
-            "minLength": 1,
-            "maxLength": 128
-          },
-          "contactGeneration": {
-            "type": "integer",
-            "minimum": 1,
-            "maximum": 9223372036854775807,
-            "format": "int64",
-            "description": "Exact positive signed 64-bit JSON integer (unquoted, decimal integer syntax). Preserve precision; do not round through a JavaScript Number."
-          },
-          "payload": {
-            "$ref": "#/components/schemas/payload"
+          {
+            "$ref": "#/components/schemas/messageSubmissionV1"
           }
-        },
-        "required": [
-          "version",
-          "recipientMailboxId",
-          "contactGeneration",
-          "payload"
-        ],
-        "description": "Authenticated control determines sender. version must be 1; recipient must differ from sender. New messages require recipient acceptance and the current contact generation. Unknown outcomes are retried with the exact same envelope and ID."
+        ]
       },
       "contactSubmission": {
-        "type": "object",
-        "additionalProperties": false,
-        "properties": {
-          "requestId": {
-            "type": "string",
-            "pattern": "^[0-9a-f]{8}-[0-9a-f]{4}-7[0-9a-f]{3}-[89ab][0-9a-f]{3}-[0-9a-f]{12}$"
+        "oneOf": [
+          {
+            "$ref": "#/components/schemas/contactSubmissionV2"
           },
-          "cardId": {
-            "type": "string",
-            "minLength": 1,
-            "maxLength": 128
-          },
-          "methodId": {
-            "type": "string",
-            "minLength": 1,
-            "maxLength": 128
-          },
-          "payload": {
-            "$ref": "#/components/schemas/payload"
+          {
+            "$ref": "#/components/schemas/contactSubmissionV1"
           }
-        },
-        "required": [
-          "requestId",
-          "cardId",
-          "methodId",
-          "payload"
-        ],
-        "description": "requestId is requester-scoped UUIDv7 with the same millisecond timestamp as payload.createdAt. It may equal payload.messageId. The card selects the recipient; only a stored relay method is accepted. Introduction is delivered before a decision. Immutable same-request retries are idempotent; changed input returns 409."
+        ]
       },
       "contactDecision": {
         "type": "object",
@@ -2082,16 +2225,37 @@
           "requesterMailboxId": {
             "type": "string",
             "minLength": 1,
+            "maxLength": 128,
+            "deprecated": true
+          },
+          "requesterAccountId": {
+            "type": "string",
+            "minLength": 1,
             "maxLength": 128
           }
         },
         "required": [
           "expectedGeneration",
           "status",
-          "reply",
-          "requesterMailboxId"
+          "reply"
         ],
-        "description": "Only the actual recipient decides. Supply requesterMailboxId and current expectedGeneration. reply is required, explicitly null if absent; a supplied reply appears only in requester inbox. Accepted/rejected decisions are terminal; exact latest decision retries are idempotent."
+        "description": "Only the actual recipient decides. Supply requesterMailboxId and current expectedGeneration. reply is required, explicitly null if absent; a supplied reply appears only in requester inbox. Accepted/rejected decisions are terminal; exact latest decision retries are idempotent. Account names are canonical. Old identity fields remain for one release; conflicting aliases are rejected.",
+        "allOf": [
+          {
+            "anyOf": [
+              {
+                "required": [
+                  "requesterAccountId"
+                ]
+              },
+              {
+                "required": [
+                  "requesterMailboxId"
+                ]
+              }
+            ]
+          }
+        ]
       },
       "blockSubmission": {
         "type": "object",
@@ -2107,13 +2271,35 @@
           "peerMailboxId": {
             "type": "string",
             "minLength": 1,
+            "maxLength": 128,
+            "deprecated": true
+          },
+          "peerAccountId": {
+            "type": "string",
+            "minLength": 1,
             "maxLength": 128
           }
         },
         "required": [
-          "expectedGeneration",
-          "peerMailboxId"
-        ]
+          "expectedGeneration"
+        ],
+        "allOf": [
+          {
+            "anyOf": [
+              {
+                "required": [
+                  "peerAccountId"
+                ]
+              },
+              {
+                "required": [
+                  "peerMailboxId"
+                ]
+              }
+            ]
+          }
+        ],
+        "description": " Account names are canonical. Old identity fields remain for one release; conflicting aliases are rejected."
       },
       "cardSubmission": {
         "type": "object",
@@ -2204,12 +2390,14 @@
           "senderMailboxId": {
             "type": "string",
             "minLength": 1,
-            "maxLength": 128
+            "maxLength": 128,
+            "deprecated": true
           },
           "recipientMailboxId": {
             "type": "string",
             "minLength": 1,
-            "maxLength": 128
+            "maxLength": 128,
+            "deprecated": true
           },
           "state": {
             "enum": [
@@ -2237,6 +2425,16 @@
                 "type": "null"
               }
             ]
+          },
+          "recipientAccountId": {
+            "type": "string",
+            "minLength": 1,
+            "maxLength": 128
+          },
+          "senderAccountId": {
+            "type": "string",
+            "minLength": 1,
+            "maxLength": 128
           }
         },
         "required": [
@@ -2245,9 +2443,11 @@
           "recipientMailboxId",
           "state",
           "expiresAt",
-          "terminalAt"
+          "terminalAt",
+          "recipientAccountId",
+          "senderAccountId"
         ],
-        "description": "Body-free sender receipt. ACK means relay acceptance/body deletion, not human reading or business completion. Effective expiry/block may be returned before a sweep. Retained receipts support identical retries; the demo disables timed business sweeps, so no exact purge deadline is promised."
+        "description": "Body-free sender receipt. ACK means relay acceptance/body deletion, not human reading or business completion. Effective expiry/block may be returned before a sweep. Retained receipts support identical retries; the demo disables timed business sweeps, so no exact purge deadline is promised. Account names are canonical. Old identity fields remain for one release; conflicting aliases are rejected."
       },
       "contactSummary": {
         "type": "object",
@@ -2266,12 +2466,14 @@
           "requesterMailboxId": {
             "type": "string",
             "minLength": 1,
-            "maxLength": 128
+            "maxLength": 128,
+            "deprecated": true
           },
           "recipientMailboxId": {
             "type": "string",
             "minLength": 1,
-            "maxLength": 128
+            "maxLength": 128,
+            "deprecated": true
           },
           "methodId": {
             "type": "string",
@@ -2290,7 +2492,8 @@
               "pending",
               "needsAction",
               "accepted",
-              "rejected"
+              "rejected",
+              "expired"
             ]
           },
           "createdAt": {
@@ -2326,6 +2529,47 @@
                 "type": "null"
               }
             ]
+          },
+          "requesterAccountId": {
+            "type": "string",
+            "minLength": 1,
+            "maxLength": 128
+          },
+          "recipientAccountId": {
+            "type": "string",
+            "minLength": 1,
+            "maxLength": 128
+          },
+          "requestVersion": {
+            "type": "integer",
+            "enum": [
+              1,
+              2
+            ]
+          },
+          "requesterAddressId": {
+            "anyOf": [
+              {
+                "type": "string",
+                "format": "uuid",
+                "pattern": "^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$"
+              },
+              {
+                "type": "null"
+              }
+            ]
+          },
+          "recipientAddressId": {
+            "anyOf": [
+              {
+                "type": "string",
+                "format": "uuid",
+                "pattern": "^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$"
+              },
+              {
+                "type": "null"
+              }
+            ]
           }
         },
         "required": [
@@ -2339,8 +2583,14 @@
           "createdAt",
           "expiresAt",
           "requestMessageId",
-          "replyMessageId"
-        ]
+          "replyMessageId",
+          "requesterAccountId",
+          "recipientAccountId",
+          "requestVersion",
+          "requesterAddressId",
+          "recipientAddressId"
+        ],
+        "description": " Account names are canonical. Old identity fields remain for one release; conflicting aliases are rejected."
       },
       "contactChannel": {
         "type": "object",
@@ -2349,12 +2599,14 @@
           "mailboxId": {
             "type": "string",
             "minLength": 1,
-            "maxLength": 128
+            "maxLength": 128,
+            "deprecated": true
           },
           "peerMailboxId": {
             "type": "string",
             "minLength": 1,
-            "maxLength": 128
+            "maxLength": 128,
+            "deprecated": true
           },
           "generation": {
             "type": "integer",
@@ -2364,7 +2616,8 @@
             "description": "Exact positive signed 64-bit JSON integer (unquoted, decimal integer syntax). Preserve precision; do not round through a JavaScript Number."
           },
           "isBlockedByMailbox": {
-            "type": "boolean"
+            "type": "boolean",
+            "deprecated": true
           },
           "isBlockedByPeer": {
             "type": "boolean"
@@ -2378,6 +2631,19 @@
                 "type": "null"
               }
             ]
+          },
+          "accountId": {
+            "type": "string",
+            "minLength": 1,
+            "maxLength": 128
+          },
+          "peerAccountId": {
+            "type": "string",
+            "minLength": 1,
+            "maxLength": 128
+          },
+          "isBlockedByAccount": {
+            "type": "boolean"
           }
         },
         "required": [
@@ -2386,9 +2652,12 @@
           "generation",
           "isBlockedByMailbox",
           "isBlockedByPeer",
-          "currentRequest"
+          "currentRequest",
+          "accountId",
+          "peerAccountId",
+          "isBlockedByAccount"
         ],
-        "description": "Participant-relative generation and block flags. Knowing identifiers grants no authority. Only the caller can change its own block flag; unblock increments generation and does not reconnect."
+        "description": "Participant-relative generation and block flags. Knowing identifiers grants no authority. Only the caller can change its own block flag; unblock increments generation and does not reconnect. Account names are canonical. Old identity fields remain for one release; conflicting aliases are rejected."
       },
       "problem": {
         "type": "object",
@@ -2436,16 +2705,24 @@
           "senderMailboxId": {
             "type": "string",
             "minLength": 1,
-            "maxLength": 128
+            "maxLength": 128,
+            "deprecated": true
           },
           "envelope": {
             "$ref": "#/components/schemas/messageSubmission"
+          },
+          "senderAccountId": {
+            "type": "string",
+            "minLength": 1,
+            "maxLength": 128
           }
         },
         "required": [
           "senderMailboxId",
-          "envelope"
-        ]
+          "envelope",
+          "senderAccountId"
+        ],
+        "description": " Account names are canonical. Old identity fields remain for one release; conflicting aliases are rejected."
       },
       "contactRelation": {
         "type": "object",
@@ -2489,7 +2766,8 @@
           "ownerMailboxId": {
             "type": "string",
             "minLength": 1,
-            "maxLength": 128
+            "maxLength": 128,
+            "deprecated": true
           },
           "cardId": {
             "type": "string",
@@ -2552,6 +2830,11 @@
             "items": {
               "$ref": "#/components/schemas/contactMethod"
             }
+          },
+          "ownerAccountId": {
+            "type": "string",
+            "minLength": 1,
+            "maxLength": 128
           }
         },
         "required": [
@@ -2562,8 +2845,10 @@
           "expiresAt",
           "revokedAt",
           "audienceHint",
-          "methods"
-        ]
+          "methods",
+          "ownerAccountId"
+        ],
+        "description": " Account names are canonical. Old identity fields remain for one release; conflicting aliases are rejected."
       },
       "inboxPage": {
         "type": "object",
@@ -2684,12 +2969,33 @@
           "senderMailboxId": {
             "type": "string",
             "minLength": 1,
+            "maxLength": 128,
+            "deprecated": true
+          },
+          "senderAccountId": {
+            "type": "string",
+            "minLength": 1,
             "maxLength": 128
           }
         },
-        "required": [
-          "senderMailboxId"
-        ]
+        "required": [],
+        "allOf": [
+          {
+            "anyOf": [
+              {
+                "required": [
+                  "senderAccountId"
+                ]
+              },
+              {
+                "required": [
+                  "senderMailboxId"
+                ]
+              }
+            ]
+          }
+        ],
+        "description": " Account names are canonical. Old identity fields remain for one release; conflicting aliases are rejected."
       },
       "contactRequestLocator": {
         "type": "object",
@@ -2698,17 +3004,25 @@
           "requesterMailboxId": {
             "type": "string",
             "minLength": 1,
-            "maxLength": 128
+            "maxLength": 128,
+            "deprecated": true
           },
           "requestId": {
             "type": "string",
             "pattern": "^[0-9a-f]{8}-[0-9a-f]{4}-7[0-9a-f]{3}-[89ab][0-9a-f]{3}-[0-9a-f]{12}$"
+          },
+          "requesterAccountId": {
+            "type": "string",
+            "minLength": 1,
+            "maxLength": 128
           }
         },
         "required": [
           "requesterMailboxId",
-          "requestId"
-        ]
+          "requestId",
+          "requesterAccountId"
+        ],
+        "description": " Account names are canonical. Old identity fields remain for one release; conflicting aliases are rejected."
       },
       "accountSubmission": {
         "type": "object",
@@ -2749,7 +3063,8 @@
           "agentId": {
             "type": "string",
             "format": "uuid",
-            "pattern": "^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$"
+            "pattern": "^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$",
+            "deprecated": true
           },
           "displayName": {
             "anyOf": [
@@ -2776,14 +3091,20 @@
                 "type": "null"
               }
             ]
+          },
+          "accountId": {
+            "type": "string",
+            "format": "uuid",
+            "pattern": "^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$"
           }
         },
         "required": [
           "agentId",
           "displayName",
-          "description"
+          "description",
+          "accountId"
         ],
-        "description": "Private account profile; agentId is the mailbox/account identity used by the v1 API. No control or control hash is returned. Registration creates zero addresses."
+        "description": "Private account profile; agentId is the mailbox/account identity used by the v1 API. No control or control hash is returned. Registration creates zero addresses. Account names are canonical. Old identity fields remain for one release; conflicting aliases are rejected."
       },
       "addressSubmission": {
         "type": "object",
@@ -2917,6 +3238,30 @@
                 "type": "null"
               }
             ]
+          },
+          "createdAt": {
+            "type": [
+              "string",
+              "null"
+            ],
+            "format": "date-time",
+            "description": "Present when includeRevoked=true on an authenticated owner lookup."
+          },
+          "expiresAt": {
+            "type": [
+              "string",
+              "null"
+            ],
+            "format": "date-time",
+            "description": "Present when includeRevoked=true on an authenticated owner lookup."
+          },
+          "revokedAt": {
+            "type": [
+              "string",
+              "null"
+            ],
+            "format": "date-time",
+            "description": "Present when includeRevoked=true on an authenticated owner lookup."
           }
         },
         "required": [
@@ -2961,6 +3306,259 @@
         "type": "object",
         "additionalProperties": false,
         "properties": {}
+      },
+      "messageSubmissionV1": {
+        "type": "object",
+        "additionalProperties": false,
+        "properties": {
+          "version": {
+            "const": 1
+          },
+          "recipientMailboxId": {
+            "type": "string",
+            "minLength": 1,
+            "maxLength": 128,
+            "deprecated": true
+          },
+          "contactGeneration": {
+            "type": "integer",
+            "minimum": 1,
+            "maximum": 9223372036854775807,
+            "format": "int64",
+            "description": "Exact positive signed 64-bit JSON integer (unquoted, decimal integer syntax). Preserve precision; do not round through a JavaScript Number."
+          },
+          "payload": {
+            "$ref": "#/components/schemas/payload"
+          },
+          "recipientAccountId": {
+            "type": "string",
+            "minLength": 1,
+            "maxLength": 128
+          }
+        },
+        "required": [
+          "version",
+          "contactGeneration",
+          "payload"
+        ],
+        "description": "Authenticated control determines sender. version must be 1; recipient must differ from sender. New messages require recipient acceptance and the current contact generation. Unknown outcomes are retried with the exact same envelope and ID. Account names are canonical. Old identity fields remain for one release; conflicting aliases are rejected.",
+        "allOf": [
+          {
+            "anyOf": [
+              {
+                "required": [
+                  "recipientAccountId"
+                ]
+              },
+              {
+                "required": [
+                  "recipientMailboxId"
+                ]
+              }
+            ]
+          }
+        ],
+        "deprecated": true
+      },
+      "messageSubmissionV2": {
+        "type": "object",
+        "additionalProperties": false,
+        "properties": {
+          "version": {
+            "const": 2
+          },
+          "recipientMailboxId": {
+            "type": "string",
+            "minLength": 1,
+            "maxLength": 128,
+            "deprecated": true
+          },
+          "contactGeneration": {
+            "type": "integer",
+            "minimum": 1,
+            "maximum": 9223372036854775807,
+            "format": "int64",
+            "description": "Exact positive signed 64-bit JSON integer (unquoted, decimal integer syntax). Preserve precision; do not round through a JavaScript Number."
+          },
+          "payload": {
+            "$ref": "#/components/schemas/payload"
+          },
+          "recipientAccountId": {
+            "type": "string",
+            "minLength": 1,
+            "maxLength": 128
+          },
+          "connectionToken": {
+            "type": "string",
+            "pattern": "^[0-9a-f]{64}$",
+            "description": "Current connection round from the authenticated contact lookup. Account authentication is still required."
+          }
+        },
+        "required": [
+          "version",
+          "contactGeneration",
+          "payload",
+          "connectionToken"
+        ],
+        "description": "Both directional contacts must exist and match this connection token. The current generation also fences the one-release v1 channel. A deleted contact requires a new accepted request.",
+        "allOf": [
+          {
+            "anyOf": [
+              {
+                "required": [
+                  "recipientAccountId"
+                ]
+              },
+              {
+                "required": [
+                  "recipientMailboxId"
+                ]
+              }
+            ]
+          }
+        ]
+      },
+      "contactSubmissionV1": {
+        "type": "object",
+        "additionalProperties": false,
+        "properties": {
+          "requestId": {
+            "type": "string",
+            "pattern": "^[0-9a-f]{8}-[0-9a-f]{4}-7[0-9a-f]{3}-[89ab][0-9a-f]{3}-[0-9a-f]{12}$"
+          },
+          "cardId": {
+            "type": "string",
+            "minLength": 1,
+            "maxLength": 128
+          },
+          "methodId": {
+            "type": "string",
+            "minLength": 1,
+            "maxLength": 128
+          },
+          "payload": {
+            "$ref": "#/components/schemas/payload"
+          }
+        },
+        "required": [
+          "requestId",
+          "cardId",
+          "methodId",
+          "payload"
+        ],
+        "description": "requestId is requester-scoped UUIDv7 with the same millisecond timestamp as payload.createdAt. It may equal payload.messageId. The card selects the recipient; only a stored relay method is accepted. Introduction is delivered before a decision. Immutable same-request retries are idempotent; changed input returns 409.",
+        "deprecated": true
+      },
+      "contactSubmissionV2": {
+        "type": "object",
+        "additionalProperties": false,
+        "properties": {
+          "requestVersion": {
+            "const": 2
+          },
+          "requestId": {
+            "type": "string",
+            "pattern": "^[0-9a-f]{8}-[0-9a-f]{4}-7[0-9a-f]{3}-[89ab][0-9a-f]{3}-[0-9a-f]{12}$"
+          },
+          "requesterAccountId": {
+            "type": "string",
+            "format": "uuid",
+            "pattern": "^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$"
+          },
+          "requesterAddressId": {
+            "type": "string",
+            "format": "uuid",
+            "pattern": "^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$"
+          },
+          "recipientAccountId": {
+            "type": "string",
+            "format": "uuid",
+            "pattern": "^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$"
+          },
+          "recipientAddressId": {
+            "type": "string",
+            "format": "uuid",
+            "pattern": "^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$"
+          },
+          "payload": {
+            "$ref": "#/components/schemas/payload"
+          }
+        },
+        "required": [
+          "requestVersion",
+          "requestId",
+          "requesterAccountId",
+          "requesterAddressId",
+          "recipientAccountId",
+          "recipientAddressId",
+          "payload"
+        ],
+        "description": "The authenticated requester must own requesterAddressId; recipientAccountId must own recipientAddressId. Both addresses must be active. Historical v1 requests retain a null source address."
+      },
+      "contact": {
+        "type": "object",
+        "additionalProperties": false,
+        "properties": {
+          "accountId": {
+            "type": "string",
+            "minLength": 1,
+            "maxLength": 128
+          },
+          "connectionToken": {
+            "type": "string",
+            "pattern": "^[0-9a-f]{64}$"
+          },
+          "canSend": {
+            "type": "boolean"
+          }
+        },
+        "required": [
+          "accountId",
+          "connectionToken",
+          "canSend"
+        ]
+      },
+      "ownedContactPage": {
+        "type": "object",
+        "additionalProperties": false,
+        "properties": {
+          "items": {
+            "type": "array",
+            "items": {
+              "$ref": "#/components/schemas/contact"
+            }
+          },
+          "nextCursor": {
+            "type": [
+              "string",
+              "null"
+            ]
+          }
+        },
+        "required": [
+          "items",
+          "nextCursor"
+        ]
+      },
+      "maintenanceProblem": {
+        "type": "object",
+        "additionalProperties": false,
+        "properties": {
+          "status": {
+            "const": 503
+          },
+          "title": {
+            "const": "Maintenance in progress"
+          },
+          "code": {
+            "const": "maintenance"
+          }
+        },
+        "required": [
+          "status",
+          "title",
+          "code"
+        ]
       }
     }
   },

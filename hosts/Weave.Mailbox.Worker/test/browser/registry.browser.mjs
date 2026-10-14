@@ -48,7 +48,7 @@ test('public registry browser: desktop and touch browse ten-item pages, rate den
             }
             const owner = await h.register({ displayName: 'PRIVATE-REGISTRY-PROFILE' }), visible = [];
             for (let index = 0; index < 23; index++) visible.push(await h.address(owner, { label: 'Browse address ' + String(index + 1).padStart(2, '0'), isPublic: true }));
-            for (let index=0;index<visible.length;index++) await h.db.prepare("UPDATE mailbox_records SET data=json_set(data,'$.createdAt',?) WHERE kind='card' AND id=?").bind(new Date(Date.UTC(2025,0,1,0,0,index)).toISOString(),visible[index].addressId).run();
+            for (let index=0;index<visible.length;index++) await h.db.prepare("UPDATE account_addresses SET created_at=? WHERE address_id=?").bind((BigInt(Date.UTC(2025,0,1,0,0,index))*10000n).toString(),visible[index].addressId).run();
             for (const profile of [{ label: 'PRIVATE-ADDRESS' }, { label: 'FUTURE-ADDRESS', isPublic: true, effectiveFrom: '2099-01-01T00:00:00Z' }, { label: 'EXPIRED-ADDRESS', isPublic: true, effectiveTo: '2020-01-01T00:00:00Z' }]) await h.address(owner, profile);
             const expected = visible.map(item => item.addressId).reverse();
             for (const view of views) {
@@ -71,7 +71,7 @@ test('public registry browser: desktop and touch browse ten-item pages, rate den
                 assert.equal(await view.page.locator('#previous').isDisabled(),true);
                 checkpoints.push(view.name + ': anonymous 10/10/3 creation-ordered pages; previous and browse-all return to the expected pages; no private/inactive rows');
             }
-            await h.db.prepare("UPDATE mailbox_records SET data=json_set(data,'$.count',2000,'$.at',?) WHERE kind='public-rate' AND id='global'").bind(Date.now()).run();
+            await h.db.prepare("UPDATE rate_limits SET count=2000,window_start=CAST(? AS INTEGER)*10000 WHERE policy='public-read' AND bucket_key='global'").bind(Date.now()).run();
             for (const view of views) {
                 await view.page.locator('#find')[view.mobile ? 'tap' : 'click']();
                 await view.page.locator('#status').filter({ hasText: /^Too many registry requests\. Try again in \d+ seconds\.$/ }).waitFor();
@@ -79,7 +79,7 @@ test('public registry browser: desktop and touch browse ten-item pages, rate den
                 assert.equal(await view.page.locator('#next').isDisabled(), true);
                 await capture(fixture, view.page, 'registry-pagination-rate-' + view.name);
             }
-            await h.db.prepare("UPDATE mailbox_records SET data=json_set(data,'$.at',?) WHERE kind='public-rate'").bind(Date.now() - 61000).run();
+            await h.db.prepare("UPDATE rate_limits SET window_start=CAST(? AS INTEGER)*10000 WHERE policy='public-read'").bind(Date.now() - 61000).run();
             for (const view of views) {
                 await view.page.locator('#find')[view.mobile ? 'tap' : 'click'](); await rows(view.page, expected.slice(0, 10));
                 assert.equal(await view.page.locator('#next').isDisabled(), false);

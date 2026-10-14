@@ -1,15 +1,15 @@
 import { atomic, type Env } from './database';
 import { read } from './reads';
-import { enc, fail, stringify } from './wire';
+import { accountNames, enc, fail, legacyResponse, stringify } from './wire';
 
 export interface Context { waitUntil(promise: Promise<unknown>): void; }
 export async function stream(env: Env,owner: string,request: Request,context: Context): Promise<Response> {
     const id = crypto.randomUUID();
     const {expires,progress} = await atomic(env.db,async tx => {
-        const count = await tx.db.prepare(`SELECT count(*) total,sum(CASE WHEN owner=? THEN 1 ELSE 0 END) owned FROM mailbox_records
-            WHERE kind='stream' AND json_extract(data,'$.expires')>?`).bind(owner,Date.now()).first<{total:number;owned:number}>();
+        const count = await tx.db.prepare(`SELECT count(*) total,sum(CASE WHEN account_id=? THEN 1 ELSE 0 END) owned FROM stream_leases
+            WHERE expires_at>CAST(? AS INTEGER)`).bind(owner,(BigInt(Date.now())*10000n).toString()).first<{total:number;owned:number}>();
         if (!count || count.total >= 100 || count.owned >= 2) fail(429,'capacity');
-        tx.writes.push(tx.db.prepare("DELETE FROM mailbox_records WHERE kind='stream' AND json_extract(data,'$.expires')<=?").bind(Date.now()));
+        tx.writes.push(tx.db.prepare('DELETE FROM stream_leases WHERE expires_at<=CAST(? AS INTEGER)').bind((BigInt(Date.now())*10000n).toString()));
         const leaseExpiry=Date.now()+30000;
         tx.put('stream',owner,id,{expires:leaseExpiry});
         return {expires:leaseExpiry,progress:await tx.get('stream-progress',owner,'cursor')};
@@ -43,7 +43,7 @@ export async function stream(env: Env,owner: string,request: Request,context: Co
                 if (stopped) break;
                 if (page.items.length) {
                     const message = page.items[0];
-                    if (!await write(`id: ${message.envelope.payload.messageId}\nevent: message\ndata: ${stringify(message)}\n\n`)) break;
+                    if (!await write(`id: ${message.envelope.payload.messageId}\nevent: message\ndata: ${stringify(accountNames(message,legacyResponse(request)))}\n\n`)) break;
                 }
                 if (stopped) break;
                 cursor = page.nextCursor; progressed = true;

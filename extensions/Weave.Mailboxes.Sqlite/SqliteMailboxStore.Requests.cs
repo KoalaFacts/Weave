@@ -25,7 +25,7 @@ public sealed partial class SqliteMailboxStore
             if (previous.Fingerprint != fingerprint)
                 return new(MailboxError.Conflict);
             var previousChannel = ReadChannel(db, authority.MailboxId.Value, previous.Summary.RecipientMailboxId.Value)!;
-            return new(previousChannel.Relation(previous.Summary, previous.UpdatedAt));
+            return new(previousChannel.Relation(EffectiveRequest(previous.Summary, now), previous.UpdatedAt));
         }
         validation = ValidatePayload(request.Payload, now, firstAdmission: true);
         if (validation is not null)
@@ -105,7 +105,7 @@ public sealed partial class SqliteMailboxStore
         }
         var fingerprint = DecisionFingerprint(decision);
         if (request.DecisionFingerprint == fingerprint)
-            return new(channel.Relation(request.Summary, request.UpdatedAt));
+            return new(channel.Relation(EffectiveRequest(request.Summary, now), request.UpdatedAt));
         var applied = channel.Relation(request.Summary, request.UpdatedAt).ApplyRecipientDecision(decision, now);
         if (applied.Outcome != ContactRelationOutcome.Applied)
             return new(applied.Outcome switch

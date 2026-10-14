@@ -16,7 +16,7 @@ test('registration creates zero addresses; control requires at least 64 chars wi
         assert.equal((await h.request('/v1/accounts','x'.repeat(63),'POST',{})).status,401);
         const profile=await h.register({displayName:'private profile',description:'not in directory'});
         assert.equal(profile.displayName,'private profile');
-        assert.deepEqual(await h.ok('/v1/accounts',profile.control,'POST',{displayName:'retry'}),{agentId:profile.agentId,displayName:'private profile',description:'not in directory'});
+        assert.deepEqual(await h.ok('/v1/accounts',profile.control,'POST',{displayName:'retry'}),{agentId:profile.agentId,accountId:profile.agentId,displayName:'private profile',description:'not in directory'});
         const long=await h.register({},'z'.repeat(600)); assert.ok(long.accountId);
         assert.equal((await h.request('/v1/accounts',null,'POST',{})).status,401);
         assert.equal((await h.request('/v1/directory',secret())).status,401);
@@ -35,7 +35,7 @@ test('private addresses stay hidden through all public discovery paths and dupli
         assert.equal(pub.addressId,hidden.addressId);
         assert.deepEqual(await h.ok('/v1/directory/address?addressId='+pub.addressId),pub);
         await h.ok('/v1/addresses/'+pub.addressId,a.control,'PUT',{isPublic:false});
-        assert.deepEqual(await h.ok('/v1/accounts',a.control,'POST',{}),{agentId:a.accountId,displayName:null,description:null});
+        assert.deepEqual(await h.ok('/v1/accounts',a.control,'POST',{}),{agentId:a.accountId,accountId:a.accountId,displayName:null,description:null});
         assert.deepEqual(await h.ok('/v1/directory'),{items:[],nextCursor:null});
         assert.deepEqual(await h.ok('/v1/contacts/cards'),{items:[],nextCursor:null});
         assert.equal((await h.request('/v1/directory/address?addressId='+pub.addressId)).status,404);
@@ -80,14 +80,14 @@ test('D1 concurrent registration is idempotent, capacity and rate limits persist
     try {
         const control=secret(),[a,b]=await Promise.all([h.register({},control),h.register({},control)]); assert.deepEqual(a,b);
         const address=await h.address(a,{label:'persistent'});
-        const stored=await h.db.prepare("SELECT data FROM mailbox_records WHERE kind='account'").all();
-        assert.equal(stored.results.length,1); assert.equal(stored.results[0].data.includes(control),false);
+        const stored=await h.db.prepare("SELECT * FROM accounts").all();
+        assert.equal(stored.results.length,1); assert.equal(JSON.stringify(stored.results[0]).includes(control),false);
         await h.close();h=await start({persist,migrate:false,bindings:{REGISTRATION_PER_IP_PER_HOUR:'1'}});
-        assert.deepEqual(await h.ok('/v1/accounts',control,'POST',{}),{agentId:a.accountId,displayName:null,description:null});
+        assert.deepEqual(await h.ok('/v1/accounts',control,'POST',{}),{agentId:a.accountId,accountId:a.accountId,displayName:null,description:null});
         assert.deepEqual((await h.ok('/v1/addresses',control)).items,[address]);
         assert.equal((await h.request('/v1/accounts',secret(),'POST',{})).status,429);
         await h.close();h=await start({persist,migrate:false,bindings:{REGISTRATION_ENABLED:'false'}});
-        assert.deepEqual(await h.ok('/v1/accounts',control,'POST',{}),{agentId:a.accountId,displayName:null,description:null});
+        assert.deepEqual(await h.ok('/v1/accounts',control,'POST',{}),{agentId:a.accountId,accountId:a.accountId,displayName:null,description:null});
         assert.equal((await h.request('/v1/accounts',secret(),'POST',{})).status,404);
     } finally {await h.close();await rm(persist,{recursive:true,force:true});}
 });

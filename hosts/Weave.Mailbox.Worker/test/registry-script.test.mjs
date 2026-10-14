@@ -22,7 +22,7 @@ test('registry browser script requests ten-item pages and follows the server cur
     try {
         const account = await h.register(), expected = [];
         for (let index = 0; index < 11; index++) expected.push(await h.address(account, { label: 'Browse ' + index, isPublic: true }));
-        for (let index=0;index<expected.length;index++) await h.db.prepare("UPDATE mailbox_records SET data=json_set(data,'$.createdAt',?) WHERE kind='card' AND id=?").bind(new Date(Date.UTC(2025,0,1,0,0,index)).toISOString(),expected[index].addressId).run();
+        for (let index=0;index<expected.length;index++) await h.db.prepare("UPDATE account_addresses SET created_at=? WHERE address_id=?").bind((BigInt(Date.UTC(2025,0,1,0,0,index))*10000n).toString(),expected[index].addressId).run();
         const page = await registry(h);
         assert.equal(new URL(page.calls[0].path, 'http://localhost').searchParams.get('limit'), '10');
         assert.equal(page.get('results').children.length, 10); assert.equal(page.get('next').disabled, false);
@@ -41,11 +41,11 @@ test('registry renders the actual rate retry delay, clears stale rows and recove
     try {
         const account = await h.register(); await h.address(account, { label: 'Public', isPublic: true });
         const page = await registry(h); assert.equal(page.get('results').children.length, 1);
-        await h.db.prepare("UPDATE mailbox_records SET data=json_set(data,'$.count',2000,'$.at',?) WHERE kind='public-rate' AND id='global'").bind(Date.now()).run();
+        await h.db.prepare("UPDATE rate_limits SET count=2000,window_start=CAST(? AS INTEGER)*10000 WHERE policy='public-read' AND bucket_key='global'").bind(Date.now()).run();
         await page.click('find');
         assert.match(page.get('status').textContent, /^Too many registry requests\. Try again in [1-6]?\d seconds\.$/);
         assert.equal(page.get('results').children.length, 0); assert.equal(page.get('next').disabled, true);
-        await h.db.prepare("UPDATE mailbox_records SET data=json_set(data,'$.at',?) WHERE kind='public-rate'").bind(Date.now() - 61000).run();
+        await h.db.prepare("UPDATE rate_limits SET window_start=CAST(? AS INTEGER)*10000 WHERE policy='public-read'").bind(Date.now() - 61000).run();
         await page.click('find');
         assert.equal(page.get('status').textContent, 'Public addresses shown below.'); assert.equal(page.get('results').children.length, 1);
     } finally { await h.close(); }

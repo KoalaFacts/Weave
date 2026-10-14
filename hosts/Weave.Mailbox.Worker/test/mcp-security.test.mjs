@@ -9,7 +9,7 @@ import { start, secret, payload } from './harness.mjs';
 async function httpServer(handler){const server=createServer(handler);server.listen(0,'127.0.0.1');await once(server,'listening');return {url:'http://127.0.0.1:'+server.address().port,async close(){server.closeAllConnections();await new Promise(resolve=>server.close(resolve));}};}
 test('MCP fixed origin, exact int64 and public credential omission survive the real HTTP boundary',async()=>{
     const control=secret(),requests=[];
-    const server=await httpServer(async(req,res)=>{let body='';for await(const chunk of req)body+=chunk;requests.push({url:req.url,control:req.headers['x-weave-mailbox-control'],body});res.setHeader('Content-Type','application/json');res.end('{"generation":9007199254740993,"reflected":'+JSON.stringify(control)+','+JSON.stringify(control)+':"secret key"}');}),client=mcpClient(server.url,control);
+    const server=await httpServer(async(req,res)=>{let body='';for await(const chunk of req)body+=chunk;requests.push({url:req.url,control:req.headers['x-weave-account-control'],body});res.setHeader('Content-Type','application/json');res.end('{"generation":9007199254740993,"reflected":'+JSON.stringify(control)+','+JSON.stringify(control)+':"secret key"}');}),client=mcpClient(server.url,control);
     try{
         await client.initialize();const found=await client.call('search_registry');assert.ok(found.content[0].text.includes('9007199254740993'));assert.ok(!found.content[0].text.includes(control));assert.equal(requests[0].control,undefined);
         await client.call('send_message',{recipientMailboxId:'recipient',contactGeneration:'9007199254740993',payload:payload('exact')});assert.ok(requests[1].body.includes('"contactGeneration":9007199254740993'));assert.equal(requests[1].control,control);
@@ -48,6 +48,6 @@ test('MCP waits for slow stdout consumers instead of dispatching unbounded large
 });
 test('MCP redacts the actual HTTP header value when the runtime strips surrounding whitespace',async()=>{
     const actual=secret(),control='  '+actual+'  ';
-    const server=await httpServer((req,res)=>{const received=req.headers['x-weave-mailbox-control'];assert.equal(received,actual);res.setHeader('Content-Type','application/json');res.end(JSON.stringify({[received]:'reflected header',value:received}));}),client=mcpClient(server.url,control);
+    const server=await httpServer((req,res)=>{const received=req.headers['x-weave-account-control'];assert.equal(received,actual);res.setHeader('Content-Type','application/json');res.end(JSON.stringify({[received]:'reflected header',value:received}));}),client=mcpClient(server.url,control);
     try{await client.initialize();const result=await client.call('read_inbox');assert.equal(result.isError,false);assert.ok(!result.content[0].text.includes(actual));assert.ok(!client.logs.includes(actual));}finally{await client.close();await server.close();}
 });

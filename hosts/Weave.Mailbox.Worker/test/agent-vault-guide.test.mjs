@@ -31,19 +31,19 @@ test('vault-first guide gates account creation on real storage and injection cap
 });
 test('registration contract in the vault guide matches HTTP and MCP without creating a credential', () => {
     const contract = JSON.parse(readFileSync(new URL('../src/openapi.json', import.meta.url), 'utf8'));
-    const security = contract.components.securitySchemes.MailboxControl;
-    assert.equal(security.in, 'header'); assert.equal(security.name, 'X-Weave-Mailbox-Control');
+    const security = contract.components.securitySchemes.AccountControl;
+    assert.equal(security.in, 'header'); assert.equal(security.name, 'X-Weave-Account-Control');
     assert.match(security.description, /at least 64 characters/);
     assert.deepEqual(contract.components.schemas.accountSubmission.required ?? [], []);
     assert.ok(contract.paths['/v1/accounts'].post);
     assert.ok(valid({}, tools.find(tool => tool.name === 'register_account').inputSchema));
     assert.deepEqual(operation('register_account', {}).slice(0, 3), ['POST', '/v1/accounts', {}]);
     assert.match(guide, /POST \/v1\/accounts/); assert.match(guide, /JSON body `\{\}`/);
-    assert.match(guide, /original control value.*X-Weave-Mailbox-Control/);
+    assert.match(guide, /original control value.*X-Weave-Account-Control/);
     assert.match(guide, /at least 64 characters/);
 });
 test('vault guide distinguishes durable saving, registration and restoration evidence', () => {
-    for (const term of ['registrationStatus', 'vaultPersistenceStatus', 'recoveryVerificationStatus', 'vault reference', 'service origin', 'agentId', 'fresh session', 'different Agent ID', 'Do not overwrite']) assert.ok(guide.includes(term), term);
+    for (const term of ['registrationStatus', 'vaultPersistenceStatus', 'recoveryVerificationStatus', 'vault reference', 'service origin', 'accountId', 'fresh session', 'different Account ID', 'Do not overwrite']) assert.ok(guide.includes(term), term);
     assert.match(guide, /401.*not proof.*demo clearing/);
     assert.match(guide, /do not automatically call registration/i);
     assert.match(guide, /same saved control/);
@@ -71,6 +71,6 @@ test('anonymous HTTP, page prompts and MCP share the vault-first guide without a
         await client.initialize(); const result = value(await client.call('demo_guide'));
         assert.equal(result.instructions, guide); assert.equal(result.readiness.credentialConfigured, false);
         assert.match(result.credentials, /vault-first/);
-        assert.equal(await h.db.prepare("SELECT count(*) n FROM mailbox_records WHERE kind='account'").first('n'), 0);
+        assert.equal(await h.db.prepare("SELECT count(*) n FROM accounts").first('n'), 0);
     } finally { try { await client.close(); } finally { await h.close(); } }
 });

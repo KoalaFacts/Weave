@@ -22,38 +22,23 @@ export async function sweep(env: Env,scheduled=false): Promise<{messages:number;
             const now=Date.now(),previous=first?await tx.get('maintenance','','sweep'):null;
             if(first&&previous&&now-previous.at<60000)return 0;
             if(performance.now()>=deadline)return 0;
-            const before=new Date(now-7*86400000).toISOString(),nowTicks=(BigInt(now)*10000n).toString();
-            // Fetch only sequence IDs, never message bodies. A successful transaction removes
-            // these rows from eligibility; reruns resume oldest eligible rows without skips.
-            const rows=(await tx.db.prepare(`SELECT CAST(seq AS TEXT) seq FROM mailbox_records WHERE kind='message' AND (
-                (json_extract(data,'$.receipt.state')='pending' AND CAST(json_extract(data,'$.expiresTicks') AS INTEGER)<=CAST(? AS INTEGER)) OR
-                (json_extract(data,'$.receipt.state') IN ('acknowledged','expired','blocked') AND
-                    (json_extract(data,'$.payload') IS NOT NULL OR julianday(json_extract(data,'$.receipt.terminalAt'))<=julianday(?))))
-                ORDER BY seq LIMIT ?`).bind(nowTicks,before,limit).all<{seq:string}>()).results;
+            const before=(BigInt(now-7*86400000)*10000n).toString(),nowTicks=(BigInt(now)*10000n).toString();
+            const rows=(await tx.db.prepare(`SELECT CAST(m.seq AS TEXT) seq FROM mailbox_records m JOIN message_delivery d ON d.message_seq=m.seq WHERE
+                (d.state='pending' AND m.expires_at<=CAST(? AS INTEGER)) OR
+                (d.state IN ('acknowledged','expired','blocked') AND (m.payload IS NOT NULL OR d.terminal_at<=CAST(? AS INTEGER)))
+                ORDER BY m.seq LIMIT ?`).bind(nowTicks,before,limit).all<{seq:string}>()).results;
             if(performance.now()>=deadline)return 0;
             if(rows.length){
                 const ids=rows.map(row=>row.seq),marks=ids.map(()=>'?').join(',');
-                tx.writes.push(tx.db.prepare(`UPDATE mailbox_records SET data=json_set(data,'$.receipt.state','expired',
-                    '$.receipt.terminalAt',json_extract(data,'$.receipt.expiresAt'),'$.payload',NULL,'$.size',0)
-                    WHERE seq IN (${marks}) AND json_extract(data,'$.receipt.state')='pending'
-                    AND CAST(json_extract(data,'$.expiresTicks') AS INTEGER)<=CAST(? AS INTEGER)`).bind(...ids,nowTicks));
-                tx.writes.push(tx.db.prepare(`UPDATE mailbox_records SET data=json_set(data,'$.payload',NULL,'$.size',0)
-                    WHERE seq IN (${marks}) AND json_extract(data,'$.receipt.state') IN ('acknowledged','expired','blocked')`).bind(...ids));
-                tx.writes.push(tx.db.prepare(`DELETE FROM mailbox_records WHERE seq IN (${marks})
-                    AND json_extract(data,'$.receipt.state') IN ('acknowledged','expired','blocked')
-                    AND julianday(json_extract(data,'$.receipt.terminalAt'))<=julianday(?)`).bind(...ids,before));
+                tx.writes.push(tx.db.prepare(`UPDATE mailbox_records_legacy SET data=json_set(data,'$.payload',NULL,'$.size',0),payload_cleared_at=?
+                    WHERE seq IN (${marks}) AND kind='message' AND json_extract(data,'$.payload') IS NOT NULL`).bind(nowTicks,...ids));
+                tx.writes.push(tx.db.prepare(`UPDATE message_delivery SET state='expired',terminal_at=(SELECT expires_at FROM mailbox_records WHERE seq=message_seq),updated_at=?
+                    WHERE message_seq IN (${marks}) AND state='pending'`).bind(nowTicks,...ids));
+                tx.writes.push(tx.db.prepare(`UPDATE mailbox_records SET payload=NULL,payload_size=0,updated_at=? WHERE seq IN (${marks})`).bind(nowTicks,...ids));
+                tx.writes.push(tx.db.prepare(`DELETE FROM mailbox_records WHERE seq IN (${marks}) AND seq IN
+                    (SELECT message_seq FROM message_delivery WHERE state IN ('acknowledged','expired','blocked') AND terminal_at<=CAST(? AS INTEGER))`).bind(...ids,before));
             }
-            if(first){
-                tx.writes.push(tx.db.prepare(`UPDATE mailbox_records SET data=json_set(data,'$.terminalAt',json_extract(data,'$.summary.expiresAt'))
-                    WHERE seq IN (SELECT seq FROM mailbox_records WHERE kind='request' AND json_extract(data,'$.summary.status') IN ('pending','needsAction')
-                    AND json_extract(data,'$.terminalAt') IS NULL AND CAST(json_extract(data,'$.expiresTicks') AS INTEGER)<=CAST(? AS INTEGER) ORDER BY seq LIMIT 128)`).bind(nowTicks));
-                const purge=`SELECT owner,id FROM mailbox_records WHERE kind='request' AND json_extract(data,'$.terminalAt') IS NOT NULL
-                    AND julianday(json_extract(data,'$.terminalAt'))<=julianday(?) ORDER BY seq LIMIT 128`;
-                tx.writes.push(tx.db.prepare(`UPDATE mailbox_records SET data=json_set(data,'$.currentRequest',NULL) WHERE kind='channel'
-                    AND (json_extract(data,'$.currentRequest.requesterMailboxId'),json_extract(data,'$.currentRequest.requestId')) IN (${purge})`).bind(before));
-                tx.writes.push(tx.db.prepare(`DELETE FROM mailbox_records WHERE kind='request' AND (owner,id) IN (${purge})`).bind(before));
-                tx.put('maintenance','','sweep',{at:now});
-            }
+            if(first)tx.put('maintenance','','sweep',{at:now});
             return rows.length;
         });
         messages+=count;batches++;

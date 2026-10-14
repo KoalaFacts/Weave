@@ -16,12 +16,12 @@ test('real browser creates an inert nonsecret invitation and preserves the run a
         assert.equal(await page.locator('#agentStart a[href="/agent-start.md"]').count(),1);
         for(const role of ['A','B'])assert.match(await page.locator('#agentPrompt'+role).inputValue(),/agent-start\.md/);
         await page.locator('#recovery summary').click();await page.locator('#control').fill(account.control);await page.locator('#register').click();
-        await page.waitForFunction(()=>document.getElementById('status').textContent.includes('Agent connected.'));
+        await page.waitForFunction(()=>document.getElementById('status').textContent.includes('Account connected.'));
         await page.locator('#invitationBuilder summary').click();await page.locator('#loadInvitationAddresses').click();
         await page.locator('#invitationAddress option[value="'+address.addressId+'"]').waitFor({state:'attached'});
         await page.locator('#invitationAddress').selectOption(address.addressId);await page.locator('#buildInvitation').click();
         const original=await page.locator('#invitationCard').inputValue(),card=JSON.parse(original);
-        assert.equal(card.peerAgentId,account.agentId);assert.equal(card.peerAddressId,address.addressId);assert.equal(card.origin,origin);assert.ok(!original.includes(account.control));
+        assert.equal(card.peerAccountId,account.agentId);assert.equal(card.peerAddressId,address.addressId);assert.equal(card.origin,origin);assert.ok(!original.includes(account.control));
         assert.equal(await page.locator('#invitationBuilder img').count(),0);
         await page.locator('#buildInvitation').click();assert.equal(await page.locator('#invitationCard').inputValue(),original);
         await page.context().grantPermissions(['clipboard-read','clipboard-write'],{origin});await page.locator('#copyInvitation').click();

@@ -46,7 +46,7 @@ public sealed class MailboxBlockTests
     }
 
     [Fact]
-    public void SetBlocked_BothParticipants_OnlyOwnerClearsItsFlagAfterRestartAndPurge()
+    public void SetBlocked_BothParticipants_OnlyOwnerClearsItsFlagAfterRestartAndMessagePurge()
     {
         using var context = new MailboxTestContext();
         var relation = context.Connect();
@@ -55,7 +55,7 @@ public sealed class MailboxBlockTests
         context.Clock.Advance(TimeSpan.FromDays(8));
         context.Store.Sweep(100, TestContext.Current.CancellationToken);
         var restarted = context.Restart();
-        restarted.GetContactRequest(Alice, relation.Request.Locator, TestContext.Current.CancellationToken).ShouldBeNull();
+        restarted.GetContactRequest(Alice, relation.Request.Locator, TestContext.Current.CancellationToken)!.Status.ShouldBe(ContactStatus.Accepted);
         var clearedAlice = Require(restarted.SetBlocked(Alice, Bob.MailboxId, both.Generation, false, TestContext.Current.CancellationToken));
         clearedAlice.IsBlockedByMailbox.ShouldBeFalse();
         clearedAlice.IsBlockedByPeer.ShouldBeTrue();

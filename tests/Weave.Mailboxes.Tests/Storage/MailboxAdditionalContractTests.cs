@@ -116,7 +116,7 @@ public sealed class MailboxAdditionalContractTests
     }
 
     [Fact]
-    public void Sweep_BoundedBatch_LeavesLiveConnectionAndRemovesTerminalMetadata()
+    public void Sweep_BoundedBatch_LeavesLiveConnectionAndRemovesTerminalMessageMetadata()
     {
         using var context = new MailboxTestContext();
         var relation = context.Connect();
