@@ -6,6 +6,16 @@ import { start } from './harness.mjs';
 import { mcpClient, value } from './mcp-client.mjs';
 
 const guide = readFileSync(new URL('../src/agent-start.md', import.meta.url), 'utf8');
+test('existing-account diagnosis uses direct reads without restore, registration or ACK', () => {
+    const diagnosis=guide.split('### Read-only diagnosis of an existing account')[1]?.split('## 2.')[0] ?? '';
+    assert.match(diagnosis,/GET \/v1\/contacts\/requests/);
+    assert.match(diagnosis,/GET \/v1\/inbox/);
+    assert.match(diagnosis,/Do not click Restore account or call `POST \/v1\/accounts` as a prerequisite/);
+    assert.match(diagnosis,/Reading does not accept a contact or ACK a message/);
+    assert.match(diagnosis,/secure secret injection/);
+    assert.match(diagnosis,/401 or 404/);
+    assert.match(diagnosis,/not proof.*saved in a vault/);
+});
 test('vault-first guide gates account creation on real storage and injection capabilities', () => {
     const steps = ['### 2.1 Verify vault and secret injection capabilities', '### 2.2 Save before registering', '### 2.3 Verify recovery without silently replacing identity'];
     let previous = -1;

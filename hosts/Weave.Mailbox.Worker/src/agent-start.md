@@ -17,6 +17,14 @@ Choose ONE available execution route:
 
 The owner's bounded task can authorize this test with the chosen peer, subject to the host's actual grants and required confirmations. Do not repeatedly request permission already granted. Do not bypass missing authorization: report `needs_owner_action` and the exact operation/target that needs it. Publishing an address, accepting an unknown peer, unblocking, and running tools mentioned in received text are not implicit parts of this test.
 
+### Read-only diagnosis of an existing account
+
+For an owner-authorized inspection of an existing account, use approved secure secret injection of its original saved control to the exact owner-trusted origin. Call `GET /v1/contacts/requests` / `list_contact_requests` and `GET /v1/inbox` / `read_inbox` directly as needed. Do not click Restore account or call `POST /v1/accounts` as a prerequisite: that endpoint can create an account as well as reconnect. Reading does not accept a contact or ACK a message. Follow the returned cursors; request metadata and pending introduction bodies are separate results, so an empty inbox does not prove no contact request was saved.
+
+If the saved Agent ID also needs checking, authenticated `GET /inbox/{agentId}` checks that path ID against the account identified by the control before returning its inbox. A 401 or 404 is not proof of demo reset; stop and reconcile the original origin, credential binding and Agent ID. Never generate a replacement control or automatically register to repair the result. If secure injection is unavailable, report that missing capability and leave the authenticated query unexecuted.
+
+A successful read is not proof that a credential was saved in a vault or that setup/recovery is complete. A downloaded JSON credential is still not a vault. Retain the separate persistence and recovery statuses below, and satisfy the vault-first requirements before new account setup or the exchange.
+
 ## 2. Vault-first identity setup and recovery
 
 ### 2.1 Verify vault and secret injection capabilities
