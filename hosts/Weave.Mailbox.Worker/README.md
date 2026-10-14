@@ -26,6 +26,8 @@ node scripts/local-storage.ts initialize
 npm run dev -- --ip 127.0.0.1 --port 8787 --var REGISTRATION_ENABLED:true
 ```
 
+`npm test` preloads [local test transport configuration](test/local-miniflare.ts) for the pinned Miniflare/Undici pair. It disables HTTP loopback keep-alive in test processes and Miniflare's synchronous proxy worker, so a blocked Node event loop cannot reuse a workerd-expired socket. Requests are sent once; timeouts and assertions are unchanged. This is a version-sensitive test-only constructor interception, not a Miniflare extension API. It adds connection overhead and excludes local keep-alive behavior from this suite's coverage; development, browser and deployment commands do not load it. Focused Node tests should retain `node --require ./test/local-miniflare.ts --test ...` so the evaluated CommonJS proxy worker receives the configuration too.
+
 Open `http://127.0.0.1:8787/`. Use two separate browser sessions for two agents. Generate and save each control locally, register, create an address for each account, and submit a request using both account/address pairs. The recipient accepts explicitly; the sender can then send. Refresh or watch the recipient inbox and ACK a message. Refresh the sender's outbox to see its terminal receipt.
 
 The page holds controls and uncertain-send retry bodies only in memory. Closing or clearing the page loses that local state; keep your control in your own secure store. An uncertain send retries the same envelope while the page remains open. Readable demo text is not end-to-end encrypted. A public address permits a contact attempt, not an accepted connection. `directUri` is displayed as text metadata and is never fetched or forwarded to.

@@ -10,21 +10,27 @@ export async function start({ persist, migrate = true, bindings = {}, scriptPath
             REGISTRATION_ENABLED: 'true', REGISTRATION_MAX_ACCOUNTS: '100',
             REGISTRATION_PER_IP_PER_HOUR: '10', REGISTRATION_GLOBAL_PER_HOUR: '100',
             ...bindings } }));
-    const db = await mf.getD1Database('db');
-    if(migrate){
-        if(legacy)for(const sql of (await readFile('test/fixtures/legacy-mailbox.sql','utf8')).split(';').filter(x=>x.trim()))await db.prepare(sql).run();
-        else await initializeDatabase(db,BigInt(Date.now())*10000n);
+    try {
+        const db = await mf.getD1Database('db');
+        if(migrate){
+            if(legacy)for(const sql of (await readFile('test/fixtures/legacy-mailbox.sql','utf8')).split(';').filter(x=>x.trim()))await db.prepare(sql).run();
+            else await initializeDatabase(db,BigInt(Date.now())*10000n);
+        }
+        const request = (path, control, method = 'GET', value) => mf.dispatchFetch('http://localhost' + path, {
+            method, headers: { ...(control ? {[legacy?'X-Weave-Mailbox-Control':'X-Weave-Account-Control']:control} : {}), 'Content-Type':'application/json' },
+            ...(value === undefined ? {} : { body: typeof value === 'string' ? value : JSON.stringify(value) }) });
+        const ok = async (path, control, method = 'GET', value) => {
+            const r = await request(path,control,method,value); assert.equal(r.status,200,await r.clone().text()); return r.json();
+        };
+        const register = async (profile = {}, control = secret()) => { const response=await ok('/v1/accounts',control,'POST',profile); return {...response,accountId:response.agentId,control}; };
+        const address = (account, profile = {}) => ok('/v1/addresses',account.control,'POST',profile);
+        const participant = async () => { const account=await register(); const card=await address(account); return {...account,cardId:card.addressId}; };
+        return { mf, db, request, ok, register, address, participant, close: () => mf.dispose() };
+    } catch (error) {
+        try { await mf.dispose(); }
+        catch (cleanupError) { throw new AggregateError([error, cleanupError], 'Test runtime initialization and disposal failed.', { cause: error }); }
+        throw error;
     }
-    const request = (path, control, method = 'GET', value) => mf.dispatchFetch('http://localhost' + path, {
-        method, headers: { ...(control ? {[legacy?'X-Weave-Mailbox-Control':'X-Weave-Account-Control']:control} : {}), 'Content-Type':'application/json' },
-        ...(value === undefined ? {} : { body: typeof value === 'string' ? value : JSON.stringify(value) }) });
-    const ok = async (path, control, method = 'GET', value) => {
-        const r = await request(path,control,method,value); assert.equal(r.status,200,await r.clone().text()); return r.json();
-    };
-    const register = async (profile = {}, control = secret()) => { const response=await ok('/v1/accounts',control,'POST',profile); return {...response,accountId:response.agentId,control}; };
-    const address = (account, profile = {}) => ok('/v1/addresses',account.control,'POST',profile);
-    const participant = async () => { const account=await register(); const card=await address(account); return {...account,cardId:card.addressId}; };
-    return { mf, db, request, ok, register, address, participant, close: () => mf.dispose() };
 }
 export function payload(bytes = 'hello', now = Date.now()) {
     const hex = now.toString(16).padStart(12,'0');
