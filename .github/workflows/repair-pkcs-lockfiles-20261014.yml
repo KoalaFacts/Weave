@@ -1,0 +1,84 @@
+name: Regenerate patched PKCS dependency locks
+on:
+  push:
+    branches: [repair/agent-entry-pkcs-locks-20261014]
+permissions:
+  contents: read
+jobs:
+  repair:
+    if: github.repository == 'KoalaFacts/Weave' && github.ref == 'refs/heads/repair/agent-entry-pkcs-locks-20261014'
+    runs-on: ubuntu-latest
+    timeout-minutes: 15
+    permissions:
+      contents: write
+    steps:
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1
+        with:
+          ref: ${{ github.sha }}
+          persist-credentials: true
+      - name: Select the patched SDK and PKCS package explicitly
+        shell: bash
+        run: |
+          python3 - <<'PY'
+          import json
+          from pathlib import Path
+          p=Path('global.json'); data=json.loads(p.read_text())
+          assert data['sdk']['version']=='10.0.401'
+          assert data['sdk']['rollForward']=='disable'
+          data['sdk']['version']='10.0.402';p.write_text(json.dumps(data,indent=2)+'\n')
+          p=Path('Directory.Packages.props');text=p.read_text()
+          assert 'Include="System.Security.Cryptography.Pkcs"' not in text
+          marker='    <!-- Keep provider dependencies opt-in; these pins only affect existing dependency graphs. -->\n'
+          assert text.count(marker)==1
+          p.write_text(text.replace(marker,marker+'    <PackageVersion Include="System.Security.Cryptography.Pkcs" Version="9.0.21" />\n'))
+          PY
+      - uses: ./.github/actions/setup-dotnet
+      - name: Regenerate with NuGet, retaining audit and exact package hashes
+        shell: bash
+        run: |
+          set -euo pipefail
+          dotnet restore Weave.slnx --force-evaluate -p:RestoreLockedMode=false -p:NuGetAudit=true -p:NuGetAuditMode=all -p:NuGetAuditLevel=low
+          python3 - <<'PY'
+          import subprocess
+          from pathlib import Path
+          paths=subprocess.check_output(['git','ls-files','**/packages.lock.json'],text=True).splitlines()
+          for lock in paths:
+              projects=list(Path(lock).parent.glob('*.csproj'))
+              assert len(projects)==1,(lock,projects)
+              subprocess.run(['dotnet','restore',str(projects[0]),'--force-evaluate','-p:RestoreLockedMode=false','-p:NuGetAudit=true','-p:NuGetAuditMode=all','-p:NuGetAuditLevel=low'],check=True)
+          PY
+      - name: Strictly verify the regenerated dependency graph
+        uses: ./.github/actions/strict-nuget-audit
+      - name: Retain the exact generated patch
+        shell: bash
+        run: |
+          set -euo pipefail
+          git diff --check
+          git diff --binary -- global.json Directory.Packages.props '**/packages.lock.json' > artifacts/dependency-audit/generated.patch
+          python3 - <<'PY'
+          import subprocess
+          allowed={'global.json','Directory.Packages.props'}
+          changes=subprocess.check_output(['git','diff','--name-only'],text=True).splitlines()
+          assert changes
+          assert all(p in allowed or p.endswith('/packages.lock.json') for p in changes),changes
+          PY
+      - uses: actions/upload-artifact@043fb46d1a93c77aae656e7c1c64a875d1fc6a0a
+        if: always()
+        with:
+          name: regenerated-pkcs-locks
+          path: artifacts/dependency-audit/
+          retention-days: 14
+      - name: Commit only verified repair files to this isolated branch and remove this one-use workflow
+        shell: bash
+        run: |
+          set -euo pipefail
+          test "$GITHUB_REF_NAME" = repair/agent-entry-pkcs-locks-20261014
+          test "$(git rev-parse HEAD)" = "$GITHUB_SHA"
+          test "$(git ls-remote origin "refs/heads/$GITHUB_REF_NAME" | cut -f1)" = "$GITHUB_SHA"
+          git add global.json Directory.Packages.props
+          git ls-files -z '**/packages.lock.json' | xargs -0 git add --
+          git rm .github/workflows/repair-pkcs-lockfiles-20261014.yml
+          git config user.name 'github-actions[bot]'
+          git config user.email '41898282+github-actions[bot]@users.noreply.github.com'
+          git commit -m 'Regenerate dependency locks with SDK 10.0.402 and patched PKCS 9.0.21'
+          git push origin "HEAD:refs/heads/$GITHUB_REF_NAME"
