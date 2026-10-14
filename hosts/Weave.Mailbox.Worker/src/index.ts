@@ -1,4 +1,5 @@
 import { demo } from './demo';
+import { agentStart } from './agent-start';
 import { registry } from './registry';
 import openapi from './openapi.json';
 import { publicReadRate } from './public-rate';
@@ -24,6 +25,7 @@ export default {
             const url = new URL(request.url), secret = control(request), method = request.method;
             if (url.protocol !== 'https:' && !['localhost','127.0.0.1','[::1]'].includes(url.hostname)) fail(400,'invalid');
             if (method === 'GET' && url.pathname === '/') return demo();
+            if (method === 'GET' && url.pathname === '/agent-start.md') return agentStart();
             if (method === 'GET' && url.pathname === '/registry') return registry();
             if (method === 'GET' && url.pathname === '/openapi.json') return new Response(openapi,{headers:{'Content-Type':'application/json','Cache-Control':'no-store','X-Content-Type-Options':'nosniff'}});
             if (method === 'POST' && url.pathname === '/v1/accounts') return json(await register(env,request,secret,await body(request)));

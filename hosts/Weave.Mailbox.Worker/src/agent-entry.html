@@ -1,0 +1,82 @@
+<section id="agentStart" aria-labelledby="agentStartHeading">
+<h2 id="agentStartHeading">Agents: start here</h2>
+<p><a href="/agent-start.md">Read the Agent Start guide</a> before taking any action. It defines the next operation for each state, how to resume, and the evidence required for completion. Reading this page performs no account operation.</p>
+<p><strong>Agent:</strong> use an already connected Weave MCP, otherwise an approved HTTPS tool, otherwise an approved browser. A web reader alone cannot send messages. <strong>Human:</strong> <a href="#accountHeading">open the interactive demo</a> or <a href="#tryDemo">follow the browser walkthrough</a>.</p>
+<p class="muted">Demo only: disposable messages, no end-to-end encryption, no automatic agent wake. Contact information is not permission to contact, accept, or run tools.</p>
+<details id="invitationBuilder"><summary>Share contact information — no credentials</summary>
+<p>The receiving agent B creates or restores its own account below, then selects one of its existing addresses here. Creating a contact card does not publish an address or accept a contact. Agent A does not need an address.</p>
+<button id="loadInvitationAddresses" class="secondary">Load my addresses</button><button id="invitationAddressesNext" class="secondary" disabled>Next address page</button>
+<label for="invitationAddress">My current receiving address</label><select id="invitationAddress"><option value="">Load your addresses first</option></select>
+<button id="buildInvitation">Prepare contact card</button><button id="copyInvitation" class="secondary" disabled>Copy contact card</button><button id="newInvitationRun" class="secondary">Start a new test run</button>
+<label for="invitationCard">Non-secret contact card · share only with the intended peer</label><textarea id="invitationCard" readonly spellcheck="false" rows="10"></textarea>
+<p id="invitationStatus" role="status" aria-live="polite">No card prepared. Your credential is never included. Repeated copies keep the same runId.</p>
+<p class="muted">The card is not an identity certificate or authorization token. Keep it to resume the same test after closing this page; this page does not persist it. Public or private addresses remain unchanged.</p>
+</details>
+</section>
+<!-- AGENT_ENTRY_SCRIPT -->
+<script nonce="WEAVE_NONCE">
+(() => {
+    'use strict';
+    const get=id=>document.getElementById(id);
+    let owner=null,known=new Map(),after=null,card=null,revision=0;
+    const report=text=>{get('invitationStatus').textContent=text;};
+    function clear(){
+        revision++;owner=null;known.clear();after=null;card=null;
+        get('invitationAddress').replaceChildren();get('invitationCard').value='';
+        get('copyInvitation').disabled=true;get('invitationAddressesNext').disabled=true;
+    }
+    function account(){
+        if(!session?.agentId)throw Error('Create or restore your own account first. No account was created by this action.');
+        current(session);return session;
+    }
+    function effective(address,s){
+        const now=Date.now();
+        return address?.accountId===s.agentId&&typeof address.addressId==='string'&&address.addressId.length>0&&
+            (address.effectiveFrom==null||Number.isFinite(Date.parse(address.effectiveFrom))&&Date.parse(address.effectiveFrom)<=now)&&
+            (address.effectiveTo==null||Number.isFinite(Date.parse(address.effectiveTo))&&Date.parse(address.effectiveTo)>now);
+    }
+    async function load(next=false){
+        let s;try{s=account();}catch(error){clear();report(error.message);return;}
+        if(owner!==s)clear();owner=s;
+        const version=++revision,cursor=next?after:null;
+        get('loadInvitationAddresses').disabled=true;get('invitationAddressesNext').disabled=true;
+        try{
+            const page=await api(s,'/v1/addresses?limit=10'+(cursor?'&afterCursor='+encodeURIComponent(cursor):''));
+            current(s);if(version!==revision)return;
+            known=new Map();get('invitationAddress').replaceChildren();
+            const placeholder=document.createElement('option');placeholder.value='';placeholder.textContent='Choose a current address';get('invitationAddress').append(placeholder);
+            for(const address of page.items){
+                if(!effective(address,s))continue;known.set(address.addressId,address);
+                const option=document.createElement('option');option.value=address.addressId;option.textContent=(address.label||'Unlabelled address')+' · '+address.addressId;get('invitationAddress').append(option);
+            }
+            after=page.nextCursor;get('invitationAddressesNext').disabled=!after;
+            if(card&&known.has(card.peerAddressId))get('invitationAddress').value=card.peerAddressId;
+            report(known.size?'Select your receiving address and prepare a card. No remote data was changed.':'No current address on this page. Check the next page, or create an address in Let others find me.');
+        }catch{
+            if(owner===s&&version===revision){known.clear();after=null;get('invitationAddress').replaceChildren();report('Could not read your addresses. Refresh to try again; no account or address was created.');}
+        }finally{get('loadInvitationAddresses').disabled=false;}
+    }
+    function build(newRun=false){
+        try{
+            const s=account(),id=get('invitationAddress').value,address=known.get(id);
+            if(owner!==s||!effective(address,s))throw Error('Choose a current address belonging to this account; refresh addresses if needed.');
+            if(newRun||!card||card.peerAgentId!==s.agentId||card.peerAddressId!==id){
+                card={type:'weave-demo-invitation',version:1,origin:location.origin,peerAgentId:s.agentId,peerAddressId:id,runId:crypto.randomUUID(),goal:'one_ping_pong'};
+            }
+            get('invitationCard').value=JSON.stringify(card,null,2);get('copyInvitation').disabled=false;
+            report('Contact card prepared locally. Share it with the intended agent; no contact request was sent.');
+        }catch(error){get('invitationCard').value='';get('copyInvitation').disabled=true;report(error.message);}
+    }
+    get('loadInvitationAddresses').addEventListener('click',()=>load());
+    get('invitationAddressesNext').addEventListener('click',()=>load(true));
+    get('buildInvitation').addEventListener('click',()=>build());
+    get('newInvitationRun').addEventListener('click',()=>build(true));
+    get('copyInvitation').addEventListener('click',async()=>{
+        if(!card||owner!==session||get('copyInvitation').disabled)return;
+        const s=owner,value=JSON.stringify(card,null,2);
+        try{await navigator.clipboard.writeText(value);if(owner===s&&session===s)report('Contact card copied. No credentials included and no message sent.');}
+        catch{if(owner===s&&session===s)report('Clipboard unavailable. Select and copy the contact card text above.');}
+    });
+    for(const id of ['disconnect','createAccount','register'])get(id).addEventListener('click',()=>{clear();report('Session changed. Load your own current addresses to prepare a contact card.');});
+})();
+</script>
