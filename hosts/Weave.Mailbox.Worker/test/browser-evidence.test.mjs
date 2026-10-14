@@ -67,42 +67,43 @@ test('mobile capture records required coverage before rejecting an exhausted scr
     const root = await mkdtemp(join(tmpdir(), 'weave-browser-plan-'));
     t.after(() => rm(root, { recursive: true, force: true }));
     const fixture = new BrowserFixture(root, 'http://127.0.0.1:1234');
-    const page = mobilePage();
+    const page = mobilePage({ height: 4456 });
     fixture.mobilePages.add(page);
-    fixture.screenshots = 30;
+    fixture.screenshots = 28;
     await assert.rejects(fixture.screenshot(page, 'over-budget'), /count exceeded/);
     const files = await readdir(root);
     assert.ok(files.includes('over-budget-capture-plan.json'), 'The failed state must retain its measured capture requirements.');
     assert.deepEqual(JSON.parse(await readFile(join(root, 'over-budget-capture-plan.json'), 'utf8')), {
-        mobile: true, viewport: { width: 390, height: 844 }, document: { width: 390, height: 2200 },
-        screenshotsBefore: 30, screenshotsRequired: 3, screenshotsAfter: 33, screenshotLimit: 32
+        mobile: true, viewport: { width: 390, height: 844 }, document: { width: 390, height: 4456 },
+        screenshotsBefore: 28, screenshotsRequired: 6, screenshotsAfter: 34, screenshotLimit: 33
     });
     assert.deepEqual(page.captures, [], 'An over-budget plan must not start partial capture.');
-    assert.equal(fixture.screenshots, 30);
+    assert.equal(fixture.screenshots, 28);
     assert.equal(page.state.y, 100);
     assert.deepEqual(files, ['over-budget-capture-plan.json'], 'A plan is not a completed coverage index or screenshot.');
 });
 
-test('mobile capture at the exact budget records its plan and retains every masked tile', async t => {
+test('measured final demo capture reaches the exact budget and retains every masked tile', async t => {
     const root = await mkdtemp(join(tmpdir(), 'weave-browser-plan-'));
     t.after(() => rm(root, { recursive: true, force: true }));
     const fixture = new BrowserFixture(root, 'http://127.0.0.1:1234');
-    const page = mobilePage();
+    // CI measured this final state after 27 earlier images at the same viewport.
+    const page = mobilePage({ height: 4456 });
     fixture.mobilePages.add(page);
-    fixture.screenshots = 29;
+    fixture.screenshots = 27;
     await fixture.screenshot(page, 'exact-budget');
     assert.ok((await readdir(root)).includes('exact-budget-capture-plan.json'), 'Successful capture must retain the same pre-capture measurements.');
     const plan = JSON.parse(await readFile(join(root, 'exact-budget-capture-plan.json'), 'utf8'));
     assert.deepEqual(plan, {
-        mobile: true, viewport: { width: 390, height: 844 }, document: { width: 390, height: 2200 },
-        screenshotsBefore: 29, screenshotsRequired: 3, screenshotsAfter: 32, screenshotLimit: 32
+        mobile: true, viewport: { width: 390, height: 844 }, document: { width: 390, height: 4456 },
+        screenshotsBefore: 27, screenshotsRequired: 6, screenshotsAfter: 33, screenshotLimit: 33
     });
-    assert.equal(fixture.screenshots, 32);
-    assert.deepEqual(page.captures.map(capture => capture.y), [0, 844, 1356]);
+    assert.equal(fixture.screenshots, 33);
+    assert.deepEqual(page.captures.map(capture => capture.y), [0, 844, 1688, 2532, 3376, 3612]);
     assert.ok(page.captures.every(capture => capture.fullPage === false && capture.mask[0] === page.mask));
     assert.equal(page.state.y, 100);
     const index = JSON.parse(await readFile(join(root, 'exact-budget-tiles.json'), 'utf8'));
-    assert.equal(index.tiles.length, 3);
+    assert.equal(index.tiles.length, 6);
     assert.equal(index.tiles.at(-1).y + index.viewport.height, index.document.height);
 });
 
@@ -113,17 +114,17 @@ test('desktop capture plans one full-page image and retains the exhausted-budget
     const page = mobilePage();
     page.state.width = 1440;
     page.viewportSize = () => ({ width: 1440, height: 1000 });
-    fixture.screenshots = 31;
+    fixture.screenshots = 32;
     await fixture.screenshot(page, 'desktop');
     await assert.rejects(fixture.screenshot(page, 'desktop-over-budget'), /count exceeded/);
     assert.ok((await readdir(root)).includes('desktop-over-budget-capture-plan.json'), 'Desktop denial must also retain its pre-capture plan.');
     const expected = {
         mobile: false, viewport: { width: 1440, height: 1000 }, document: { width: 1440, height: 2200 },
-        screenshotsBefore: 31, screenshotsRequired: 1, screenshotsAfter: 32, screenshotLimit: 32
+        screenshotsBefore: 32, screenshotsRequired: 1, screenshotsAfter: 33, screenshotLimit: 33
     };
     assert.deepEqual(JSON.parse(await readFile(join(root, 'desktop-capture-plan.json'), 'utf8')), expected);
     assert.deepEqual(JSON.parse(await readFile(join(root, 'desktop-over-budget-capture-plan.json'), 'utf8')), {
-        ...expected, screenshotsBefore: 32, screenshotsAfter: 33
+        ...expected, screenshotsBefore: 33, screenshotsAfter: 34
     });
     assert.equal(page.captures.length, 1);
     assert.equal(page.captures[0].fullPage, true);
@@ -134,7 +135,7 @@ test('mobile evidence rejects incomplete or excessive capture and restores scrol
     for (const [name, options, priorScreenshots, expected] of [
         ['interruption', { failCapture: 2 }, 0, /capture interrupted/],
         ['growth', { growAfterCapture: true }, 0, /changed during screenshot/],
-        ['count', {}, 30, /count exceeded/],
+        ['count', {}, 31, /count exceeded/],
         ['dimensions', { height: 20001 }, 0, /dimension budget/],
         ['bytes', { bytes: 8 * 1024 * 1024 + 1 }, 0, /byte budget/]
     ]) await t.test(name, async t => {

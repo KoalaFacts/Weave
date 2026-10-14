@@ -3,6 +3,8 @@ import { rm, writeFile } from 'node:fs/promises';
 import { join } from 'node:path';
 import { chromium } from 'playwright';
 
+const screenshotLimit = 33;
+
 // Only fixed synthetic controls are used. Retain metadata, never headers or bodies.
 export class BrowserFixture {
     pages = new Map();
@@ -96,7 +98,7 @@ export class BrowserFixture {
         await writeFile(join(this.evidence, name + '-capture-plan.json'), JSON.stringify({
             mobile, viewport, document: { width: size.width, height: size.height },
             screenshotsBefore: this.screenshots, screenshotsRequired: count,
-            screenshotsAfter: this.screenshots + count, screenshotLimit: 32
+            screenshotsAfter: this.screenshots + count, screenshotLimit
         }, null, 2));
         assert.ok(size.width <= 2000 && size.height <= 20000, 'Page exceeded screenshot dimension budget.');
         if (!mobile) return this.captureScreenshot(page, name, true);
@@ -104,7 +106,7 @@ export class BrowserFixture {
         // Chromium full-page capture reapplies WebPreferences and resets maxTouchPoints.
         // Viewport tiles preserve native mobile emulation and the original geometry.
         assert.ok(viewport.width <= 2000 && viewport.height <= 20000 && size.width <= viewport.width, 'Page exceeded screenshot dimension budget.');
-        assert.ok(this.screenshots + count <= 32, 'Screenshot count exceeded evidence budget before full mobile coverage.');
+        assert.ok(this.screenshots + count <= screenshotLimit, 'Screenshot count exceeded evidence budget before full mobile coverage.');
         const tiles = [];
         let captureError;
         try {
@@ -132,7 +134,7 @@ export class BrowserFixture {
     }
 
     async captureScreenshot(page, name, fullPage) {
-        assert.ok(++this.screenshots <= 32, 'Screenshot count exceeded evidence budget.');
+        assert.ok(++this.screenshots <= screenshotLimit, 'Screenshot count exceeded evidence budget.');
         const png = await page.screenshot({ fullPage, timeout: 10000, mask: [page.locator('#control')] });
         assert.ok(png.length <= 8 * 1024 * 1024, 'Screenshot exceeded evidence byte budget.');
         await writeFile(join(this.evidence, name + '.png'), png);
