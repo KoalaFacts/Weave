@@ -162,9 +162,10 @@ public sealed class IndependentAgentsTests
     }
 
     [Theory]
-    [InlineData("readiness")]
-    [InlineData("rpc")]
-    public async Task Demo_NoncooperativeChildCancellation_ObservesBoundedExitAndDrain(string stage)
+    [InlineData("readiness", 0)]
+    [InlineData("rpc", 0)]
+    [InlineData("rpc", 12000)]
+    public async Task Demo_NoncooperativeChildCancellation_ObservesBoundedExitAndDrain(string stage, int startupDelayMs)
     {
         var directory = Path.Combine(Path.GetTempPath(), "weave-cancel-" + Guid.NewGuid());
         Directory.CreateDirectory(directory);
@@ -175,6 +176,7 @@ public sealed class IndependentAgentsTests
             start.ArgumentList.Add(Path.Combine(repository, "tests", "Weave.Mailboxes.Tests", "Acceptance", "Fixtures", "cancellation-probe.ts"));
             start.ArgumentList.Add(stage);
             start.ArgumentList.Add(new Uri(Path.Combine(repository, "examples", "agent-network", "run-demo.ts")).AbsoluteUri);
+            start.ArgumentList.Add(startupDelayMs.ToString(System.Globalization.CultureInfo.InvariantCulture));
             start.Environment["WEAVE_DEMO_HOST"] = Path.Combine(AppContext.BaseDirectory, "Weave.Mailbox.Host.dll");
             var output = await RunProcess(start);
             output.ExitCode.ShouldBe(0, output.Error);
@@ -185,6 +187,7 @@ public sealed class IndependentAgentsTests
             result.GetProperty("allChildrenClosed").GetBoolean().ShouldBeTrue();
             result.GetProperty("drainsObserved").GetBoolean().ShouldBeTrue();
             result.GetProperty("stoppedSignalControls").GetBoolean().ShouldBeTrue();
+            result.GetProperty("elapsedBeforeCancelMs").GetInt32().ShouldBeGreaterThanOrEqualTo(startupDelayMs);
             result.GetProperty("elapsedAfterCancelMs").GetInt32().ShouldBeLessThan(10000);
             result.GetProperty("outcome").GetString().ShouldBe("AbortError");
             if (!OperatingSystem.IsWindows())
