@@ -15,68 +15,21 @@ jobs:
       - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1
         with:
           ref: ${{ github.sha }}
+          fetch-depth: 2
           persist-credentials: true
-      - name: Correct only inspected prerequisite, directory and release paragraphs
+      - name: Apply the exact already-verified documentation edits
         shell: bash
         run: |
           python3 - <<'PY'
-          import json
-          from pathlib import Path
-          def replace(path, old, new):
-              p=Path(path); text=p.read_text()
-              assert text.count(old)==1, (path, old[:100], text.count(old))
-              p.write_text(text.replace(old,new))
-          sdk=json.loads(Path('global.json').read_text())['sdk']
-          assert sdk=={'version':'10.0.402','rollForward':'disable','allowPrerelease':False}
-          replace('AGENTS.md',
-              'Use `global.json` and check `dotnet --version`; its `latestMajor` policy selects the highest installed stable SDK at or above 10.0.201.',
-              'Install the exact stable SDK selected by `global.json` (currently 10.0.402) and check `dotnet --version`. Its `rollForward: disable` policy deliberately fails when that SDK is absent; a newer SDK alone does not satisfy this prerequisite. Shared CI setup installs the selected SDK from `global.json`. An SDK servicing upgrade must deliberately regenerate and verify its implicit dependency lockfiles, not restore a floating SDK policy to bypass a locked-restore failure.')
-          replace('README.md',
-              'From a checkout with .NET SDK 10 and Node 24.19+, build the mailbox host and run the [independent endpoint walkthrough](examples/agent-network/README.md):',
-              'From a checkout, install the exact .NET SDK selected by [global.json](global.json) (currently 10.0.402) and Node 24.19+. SDK roll-forward is disabled for reproducible locked dependencies; a newer installed SDK alone is insufficient. Check `dotnet --version` from the repository root, then build the mailbox host and run the [independent endpoint walkthrough](examples/agent-network/README.md):')
-          replace('README.md',
-              'no cloud deployment has been executed by this change.',
-              'cloud deployment is a separately authorized and verified action, not an outcome established by local fixtures.')
-          worker='hosts/Weave.Mailbox.Worker/README.md'
-          replace(worker,
-              'There is no Express server, hosted reasoning loop, automatic agent wakeup, forwarding to direct URIs, or production deployment in this change.',
-              'There is no Express server, hosted reasoning loop, automatic agent wakeup or forwarding to direct URIs. Remote demo deployment is a separately authorized and verified operation, not a production-readiness claim.')
-          replace(worker,
-              "Use Node 24.19+ and the repository's .NET SDK policy. From this directory:",
-              'Use Node 24.19+ and install the exact .NET SDK selected by [global.json](../../global.json) (currently 10.0.402). SDK roll-forward is disabled; a newer SDK alone is not sufficient. Check `dotnet --version` from the repository root. From this directory:')
-          replace(worker,
-              'The manual [Deploy Weave Worker workflow](../../.github/workflows/deploy-weave-worker.yml) targets only the existing Worker **demo**, account subdomain **weave-389**, and its existing lowercase **db** binding. It creates no Worker, database, domain or DNS record. After this draft is reviewed and merged, dispatch the workflow on `main`, selecting `configuration_scope: repository` for repository configuration or `production` for the existing GitHub environment. No `weave-demo` environment is required. Environment protection rules still apply. Confirm where the already-prepared configuration is saved before dispatching; do not recreate credentials or print their values.',
-              'The [Deploy Weave Worker workflow](../../.github/workflows/deploy-weave-worker.yml) targets only the existing Worker **demo**, account subdomain **weave-389**, and its existing lowercase **db** binding. It creates no Worker, database, domain or DNS record. After code is reviewed, verified and merged, choose an explicit release signal:\n\n- Manually dispatch on `main`, selecting `configuration_scope: repository` for repository configuration or `production` for the existing GitHub environment. Production environment protection rules still apply.\n- Push an already-merged commit to `publish/demo`. This is a privileged release branch, not a scratch branch: its push automatically runs verification and then the repository-scoped migration/deployment job using existing repository Cloudflare secrets. It does not select the production environment. Ordinary `main` pushes do not deploy.\n\nThe workflow verifies that the selected SHA is checked out and is already an ancestor of `main` before the existing Worker tests, audit and C# compatibility checks. Advance the release branch without force; do not bypass a divergent head or failed check. No `weave-demo` environment is required. Confirm the authorized target and configuration scope before either release signal; do not recreate credentials or print their values.')
-          replace(worker,
-              'Directory cursors contain only the last public random address ID and search scope.',
-              'Directory cursors are opaque, versioned and bound to the exact search scope. They carry the last returned public address creation-time/ID tuple for newest-first keyset pagination; clients must forward `nextCursor` verbatim rather than constructing it. Old ID-only cursors return 400: restart from the first page instead of mixing ordering schemes.')
-          replace(worker,
-              'The public registry opens directly into browsing and requests ten addresses per page, including after search and Next page. The server rejects larger, invalid or duplicated page-size parameters; smaller API pages remain supported for existing clients. Results use immutable address-ID order and strictly validated search-scoped UUID cursors, so traversing an unchanged result set neither repeats nor skips entries. Visibility and validity are checked on each request; this is a live directory, not a frozen multi-request snapshot.',
-              'The public registry opens directly into anonymous browsing without a required search. It requests ten addresses per page and offers Browse all / refresh newest, Previous page, Next page, a local page number and explicit failed-page retry. The server rejects larger, invalid or duplicated page-size parameters; smaller API pages remain supported. Results use original server-recorded `createdAt` descending, then immutable address ID descending to break timestamp ties. Editing or republishing an address does not change its original creation time. The keyset cursor continues after a deleted boundary record; newer insertions above that boundary appear on refreshing the first page rather than shifting forward pages. Back navigation retains only page-start cursors and re-fetches current visibility, never cached address bodies. Search submission starts a new traversal. There is no offset, total-count query or arbitrary jump-to-page. Visibility and validity are checked on each request; this is a live directory, not a frozen multi-request snapshot, and its page number denotes this browser traversal. See the [pagination implementation record](../../docs/implementation/2026-10-14-registry-created-pagination.md) for tested behavior and limits.')
-          replace(worker,
-              'Remote migration/deployment has not been executed as part of this change.',
-              'Remote migration/deployment success must be established by the selected deployment run and its post-deployment checks, not these local migration results.')
-          replace(worker,
-              'This read is the confirmation of the deployed settings, separate from passing local tests.',
-              'This read is the confirmation of the deployed settings, separate from passing local tests. The workflow then runs `scripts/verify-agent-entry.mjs`: anonymous reads from the fixed demo origin must return the exact checked-out Agent Start guide and the homepage agent-entry controls. A post-deployment verification failure is not reported as publication success and does not automatically retry or roll back.')
-          workflows='.github/workflows/README.md'
-          replace(workflows,
-              '| [deploy-weave-worker.yml](deploy-weave-worker.yml) | Manual on main, repository or production scope | Verify Worker/C# compatibility, discover existing `demo`/`db`, migrate and deploy only those existing resources; confirm business cleanup remains disabled. |',
-              '| [deploy-weave-worker.yml](deploy-weave-worker.yml) | Manual on main (repository or production scope), or explicit push to `publish/demo` (repository scope) | Require the selected SHA already on main, verify Worker/C# compatibility, discover existing `demo`/`db`, migrate and deploy only those existing resources; confirm settings and read-only published Agent Start evidence. |')
-          replace(workflows,
-              '- [setup-dotnet](../actions/setup-dotnet/action.yml) installs `10.0.x` with `dotnet-quality: ga`, with optional NuGet caching. `global.json` controls resolution; its existing `latestMajor` policy remains. The NuGet publishing job uses its pinned setup action directly because it checks out validation code only.',
-              '- [setup-dotnet](../actions/setup-dotnet/action.yml) always installs the exact stable SDK selected by `global.json` (currently 10.0.402), with optional NuGet caching. `rollForward: disable` prevents a servicing update from silently changing implicit locked dependencies; additional SDK inputs do not change the selected repository SDK. Intentional SDK upgrades must regenerate and verify the corresponding locks. The NuGet publishing job uses its pinned setup action directly because it checks out validation code only.')
-          replace(workflows,
-              'Worker deployment uses existing `CLOUDFLARE_API_TOKEN` and `CLOUDFLARE_ACCOUNT_ID` Secrets in the selected repository/production scope.',
-              'Worker deployment uses existing `CLOUDFLARE_API_TOKEN` and `CLOUDFLARE_ACCOUNT_ID` Secrets. Manual dispatch on `main` selects repository or production scope; production retains its environment protections. An explicit push of an already-merged commit to `publish/demo` instead selects repository scope and automatically performs verified remote migration/deployment. Treat that branch as a release signal, not an ordinary working branch. Normal main pushes do not deploy. The selected SHA must already be on main and pass the verification job. Do not force-update the release branch or treat local checks as deployment authorization.')
-          for path in ['AGENTS.md',workflows]:
-              assert 'latestMajor' not in Path(path).read_text(),path
-          text=Path(worker).read_text()
-          assert 'immutable address-ID order' not in text
-          assert 'last public random address ID and search scope' not in text
-          assert 'publish/demo' in text and 'createdAt' in text
+          import subprocess, textwrap
+          source=subprocess.check_output(['git','show','75e0b3f1148530d620027a43eeebf283a34d6314:.github/workflows/repair-agent-docs-20261014.yml'],text=True)
+          marker="          python3 - <<'PY'\n"
+          start=source.index(marker)+len(marker)
+          end=source.index('\n          PY',start)
+          program=textwrap.dedent(source[start:end])
+          exec(compile(program,'verified-document-edits','exec'))
           PY
-      - name: Verify repository documentation guards and exact edit scope
+      - name: Verify repository guards and exact edit scope
         shell: bash
         run: |
           set -euo pipefail
@@ -90,21 +43,23 @@ jobs:
           PY
           mkdir -p /tmp/weave-doc-evidence
           git diff -- AGENTS.md README.md hosts/Weave.Mailbox.Worker/README.md .github/workflows/README.md > /tmp/weave-doc-evidence/docs.patch
+          cp .github/workflows/README.md /tmp/weave-doc-evidence/workflows-README.md
       - uses: actions/upload-artifact@043fb46d1a93c77aae656e7c1c64a875d1fc6a0a
         with:
           name: canonical-documentation-patch
-          path: /tmp/weave-doc-evidence/docs.patch
+          path: /tmp/weave-doc-evidence/
           retention-days: 14
-      - name: Commit only documentation and remove this one-use workflow
+      - name: Commit only non-workflow documentation and remove this one-use workflow
         shell: bash
         run: |
           set -euo pipefail
           test "$GITHUB_REF_NAME" = repair/agent-entry-docs-20261014
           test "$(git rev-parse HEAD)" = "$GITHUB_SHA"
           test "$(git ls-remote origin "refs/heads/$GITHUB_REF_NAME" | cut -f1)" = "$GITHUB_SHA"
-          git add AGENTS.md README.md hosts/Weave.Mailbox.Worker/README.md .github/workflows/README.md
+          # The workflow README is retained as an artifact for the separately authorized connector write.
+          git add AGENTS.md README.md hosts/Weave.Mailbox.Worker/README.md
           git rm .github/workflows/repair-agent-docs-20261014.yml
           git config user.name 'github-actions[bot]'
           git config user.email '41898282+github-actions[bot]@users.noreply.github.com'
-          git commit -m 'Align canonical SDK, registry cursor and explicit deployment documentation'
+          git commit -m 'Align canonical SDK prerequisites and public registry deployment documentation'
           git push origin "HEAD:refs/heads/$GITHUB_REF_NAME"
