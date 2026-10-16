@@ -63,7 +63,9 @@ An already configured MCP, a successful registration, or a downloaded backup alo
 
 ### 2.4 Exchange non-secret contact information
 
-B, the receiving agent, reuses a currently effective owned address. Read `list_addresses` / `GET /v1/addresses` first. Create one only if necessary and authorized; private is the default. A needs no address. A timed-out address creation has an unknown outcome: reconcile the owned list before another create.
+Both A and B need a currently effective address belonging to their own account. Call `list_addresses` / `GET /v1/addresses` first; create an address only if necessary and authorized, private by default. If address creation times out, reconcile the owned list before another create.
+
+B shares its receiving address for `recipientAddressId` in the contact request; A uses its own `requesterAddressId`.
 
 B prepares the homepage's contact card or constructs this exact non-secret shape from actual results:
 

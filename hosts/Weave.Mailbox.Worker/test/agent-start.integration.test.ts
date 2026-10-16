@@ -15,7 +15,7 @@ test('anonymous agent entry serves the canonical guide and inert nonce-protected
         assert.ok(html.indexOf('href="/agent-start.md"')<html.indexOf('id="accountHeading"'));
         for(const role of ['A','B']){
             const prompt=new RegExp('<textarea id="agentPrompt'+role+'"[^>]*>([\\s\\S]*?)</textarea>').exec(html)[1];
-            assert.match(prompt,/agent-start\.md/);assert.match(prompt,/runId/);assert.doesNotMatch(prompt,/ping 001|pong 001/);
+            assert.match(prompt,/First read \[DEMO_ORIGIN\]\/agent-start\.md/);assert.match(prompt,/runId/);assert.doesNotMatch(prompt,/A_ADDRESS_ID|B_ADDRESS_ID|ping 001|pong 001/);
         }
         const scripts=[...html.matchAll(/<script nonce="([^"]+)">([\s\S]*?)<\/script>/g)];assert.equal(scripts.length,2);
         for(const [,nonce,script]of scripts){assert.ok(csp.includes("'nonce-"+nonce+"'"));new Script(script);}
