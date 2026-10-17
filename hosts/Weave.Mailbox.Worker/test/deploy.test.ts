@@ -1,6 +1,7 @@
 import assert from 'node:assert/strict';
 import test from 'node:test';
 import { readFileSync, existsSync } from 'node:fs';
+import { createHash } from 'node:crypto';
 import { deploy, deploymentConfig } from '../scripts/deploy.ts';
 import { start } from './harness.ts';
 import { normalizeRecords } from '../scripts/run-data-migration.ts';
@@ -69,6 +70,7 @@ test('missing recovery version prevents active deployment',async()=>{
 test('recovery version API identity mismatch prevents active deployment',async()=>{
     const f=fixture(),fetch=f.options.fetchImpl;f.options.fetchImpl=async(...args)=>{const r=await fetch(...args);return args[0].includes('/versions/')?{...r,json:async()=>({success:true,result:{id:'other'}})}:r;};
     await assert.rejects(deploy(f.options),/Recovery version identity mismatch/);assert.equal(f.commands.length,2);
+    assert.equal(JSON.parse(readFileSync(new URL('../test-results/deployment/result.json',import.meta.url),'utf8')).recoveryVersion,undefined);
 });
 for(const status of [401,403,404])test(`HTTP ${status} stops without retry or mutation`,async()=>{
     const f=fixture({status});await assert.rejects(deploy(f.options),new RegExp('HTTP '+status));assert.equal(f.requests.length,1);assert.equal(f.commands.length,0);
@@ -94,4 +96,123 @@ test('actual D1 migration runs through deployment orchestration while preserving
         assert.equal(await h.db.prepare('SELECT count(*) n FROM data_migrations WHERE completed_at IS NOT NULL').first('n'),1);
         assert.equal(await h.db.prepare("SELECT count(*) n FROM sqlite_master WHERE type='trigger'").first('n'),0);
     }finally{await h.close();}
+});
+
+const completedChecksum=createHash('sha256').update(['scripts/data-migrations/normalize-records.ts','scripts/data-migrations/legacy-records.ts','src/time.ts','src/credentials.ts']
+    .map(path=>readFileSync(new URL('../'+path,import.meta.url),'utf8')).join('\n')).digest('hex');
+async function completedFixture({legacy=false,checksum=completedChecksum,completed='123',record=true}={}){
+    const h=await start({legacy}),f=fixture({extraEnv:{WEAVE_DEPLOY_DATABASE_MODE:'completed-only'}}),sql=[];
+    if(record&&!legacy)await h.db.prepare('INSERT INTO data_migrations(script_id,checksum,created_at,updated_at,completed_at) VALUES(?,?,1,1,?)')
+        .bind('normalize-mailbox-records',checksum,completed).run();
+    f.options.openDatabase=async()=>({db:{prepare:query=>{sql.push(query);return h.db.prepare(query);},batch:statements=>h.db.batch(statements)},close:async()=>{f.closed=true;}});
+    f.options.planSchema=planLatestSchema;
+    f.options.convert=async()=>{throw Error('Unexpected historical conversion');};
+    f.options.applySchema=async()=>{throw Error('Unexpected schema application');};
+    return Object.assign(f,{h,sql,writes:()=>sql.filter(query=>!query.startsWith('SELECT ')&&!query.startsWith('PRAGMA '))});
+}
+for(const mode of ['','unknown','COMPLETED-ONLY'])test('invalid explicit database mode stops before external operations: '+JSON.stringify(mode),async()=>{
+    const f=fixture({extraEnv:{WEAVE_DEPLOY_DATABASE_MODE:mode}});
+    await assert.rejects(deploy(f.options),/database mode/i);assert.equal(f.requests.length,0);assert.equal(f.commands.length,0);
+});
+for(const [name,options] of [
+    ['missing table',{legacy:true}],['missing record',{record:false}],['incomplete record',{completed:null}],['checksum mismatch',{checksum:'b'.repeat(64)}]
+])test('completed-only refuses '+name+' before maintenance or writes',async()=>{
+    const f=await completedFixture(options);
+    try{await assert.rejects(deploy(f.options),/completed migration/i);assert.equal(f.commands.length,0);assert.deepEqual(f.writes(),[]);assert.equal(f.closed,true);}
+    finally{await f.h.close();}
+});
+test('completed-only refuses missing schema objects before maintenance or writes',async()=>{
+    const f=await completedFixture();
+    try{
+        await f.h.db.prepare('DROP INDEX messages_identity').run();
+        await assert.rejects(deploy(f.options),/empty schema plan/i);assert.equal(f.commands.length,0);assert.deepEqual(f.writes(),[]);
+        assert.equal(await f.h.db.prepare("SELECT count(*) n FROM sqlite_master WHERE name='messages_identity'").first('n'),0);
+    }finally{await f.h.close();}
+});
+for(const stage of ['before-maintenance','maintenance','after-ledger-check','before-active'])test('completed-only refuses a migration write gate at '+stage,async()=>{
+    const f=await completedFixture(),run=f.options.run,open=f.options.openDatabase;
+    const addGate=()=>f.h.db.prepare("CREATE TRIGGER data_migration_write_gate BEFORE INSERT ON mailbox_guard BEGIN SELECT RAISE(ABORT,'data_migration_in_progress'); END").run();
+    try{
+        if(stage==='before-maintenance')await addGate();
+        f.options.run=async args=>{const result=run(args);if((stage==='maintenance'&&f.commands.length===1)||(stage==='before-active'&&f.commands.length===2))await addGate();return result;};
+        if(stage==='after-ledger-check')f.options.openDatabase=async()=>{
+            const connection=await open(),batch=connection.db.batch;
+            connection.db.batch=async statements=>{const result=await batch(statements);await addGate();return result;};return connection;
+        };
+        await assert.rejects(deploy(f.options),/migration write gate/i);
+        assert.deepEqual(f.events,stage==='before-maintenance'?[]:stage==='before-active'?['maintenance','recovery']:['maintenance']);
+        assert.equal(f.writes().length,['before-maintenance','maintenance'].includes(stage)?0:1);
+        assert.equal(await f.h.db.prepare("SELECT count(*) n FROM sqlite_master WHERE type='trigger' AND name='data_migration_write_gate'").first('n'),1);
+        await assert.rejects(f.h.db.prepare('INSERT INTO mailbox_guard(ok,created_at,updated_at) VALUES(1,1,1)').run(),/data_migration_in_progress/);
+    }finally{await f.h.close();}
+});
+test('completed-only deploys on actual D1 with one ledger check and without invoking conversion or schema writes',async()=>{
+    const f=await completedFixture();
+    try{
+        const before=(await f.h.db.prepare('SELECT * FROM data_migrations').all()).results,revision=(await f.h.db.prepare('SELECT * FROM mailbox_revision').all()).results;
+        const result=await deploy(f.options);
+        assert.equal(result.databaseMode,'completed-only');assert.equal(result.conversion.alreadyCompleted,true);assert.equal(result.conversion.checksum,completedChecksum);
+        assert.deepEqual(f.events,['maintenance','recovery','active']);assert.equal(result.schemaPlan.statements.length,0);
+        assert.equal(f.writes().length,1);assert.match(f.writes()[0],/^CREATE TABLE IF NOT EXISTS `data_migrations`/);
+        assert.deepEqual((await f.h.db.prepare('SELECT * FROM data_migrations').all()).results,before);
+        assert.deepEqual((await f.h.db.prepare('SELECT * FROM mailbox_revision').all()).results,revision);
+    }finally{await f.h.close();}
+});
+for(const kind of ['ledger','schema'])test('completed-only stops after maintenance if '+kind+' changed, before the ledger check',async()=>{
+    const f=await completedFixture(),run=f.options.run;
+    f.options.run=async args=>{const result=run(args);if(f.commands.length===1)await f.h.db.prepare(kind==='ledger'?'UPDATE data_migrations SET completed_at=NULL':'DROP INDEX messages_identity').run();return result;};
+    try{
+        await assert.rejects(deploy(f.options),kind==='ledger'?/completed migration/i:/empty schema plan/i);
+        assert.deepEqual(f.events,['maintenance']);assert.deepEqual(f.writes(),[]);
+    }finally{await f.h.close();}
+});
+for(const sql of ['DELETE FROM data_migrations','PRAGMA user_version=1','PRAGMA table_info("accounts"); DELETE FROM accounts','SELECT * FROM accounts'])test('completed-only planner cannot dispatch unexpected SQL: '+sql,async()=>{
+    const f=await completedFixture();
+    f.options.planSchema=async db=>{await db.prepare(sql).all();return {statements:[],preservedUnmanagedTables:[]};};
+    try{await assert.rejects(deploy(f.options),/restricted deployment/i);assert.equal(f.commands.length,0);assert.ok(!f.sql.includes(sql));}
+    finally{await f.h.close();}
+});
+test('completed-only metadata statements never expose run or a raw statement after bind',async()=>{
+    const f=await completedFixture(),plan=f.options.planSchema;
+    f.options.planSchema=async db=>{
+        const statement=db.prepare("SELECT name FROM sqlite_master WHERE type='table'");
+        assert.equal(statement.run,undefined);assert.equal(statement.bind().run,undefined);
+        await assert.rejects(async()=>db.batch([]),/restricted deployment/i);
+        return plan(db);
+    };
+    try{await deploy(f.options);assert.deepEqual(f.events,['maintenance','recovery','active']);}
+    finally{await f.h.close();}
+});
+for(const kind of ['ledger','schema'])test('completed-only stops after the permitted ledger check when '+kind+' changes',async()=>{
+    const f=await completedFixture(),open=f.options.openDatabase;
+    f.options.openDatabase=async()=>{
+        const connection=await open(),batch=connection.db.batch;
+        connection.db.batch=async statements=>{const result=await batch(statements);await f.h.db.prepare(kind==='ledger'?'UPDATE data_migrations SET completed_at=NULL':'DROP INDEX messages_identity').run();return result;};
+        return connection;
+    };
+    try{
+        await assert.rejects(deploy(f.options),kind==='ledger'?/completed migration/i:/empty schema plan/i);assert.deepEqual(f.events,['maintenance']);
+        assert.equal(f.writes().length,1);assert.match(f.writes()[0],/^CREATE TABLE IF NOT EXISTS `data_migrations`/);
+    }finally{await f.h.close();}
+});
+for(const kind of ['ledger','schema'])test('completed-only retains recovery evidence when final '+kind+' validation fails',async()=>{
+    const f=await completedFixture(),run=f.options.run;
+    f.options.run=async args=>{const result=run(args);if(f.commands.length===2)await f.h.db.prepare(kind==='ledger'?'UPDATE data_migrations SET completed_at=NULL':'DROP INDEX messages_identity').run();return result;};
+    try{
+        await assert.rejects(deploy(f.options),kind==='ledger'?/completed migration/i:/empty schema plan/i);assert.deepEqual(f.events,['maintenance','recovery']);assert.equal(f.writes().length,1);
+        const report=JSON.parse(readFileSync(new URL('../test-results/deployment/result.json',import.meta.url),'utf8'));
+        assert.equal(report.recoveryVersion,version);assert.equal(report.recoveryCommand,'wrangler versions deploy '+version+'@100% --yes');
+        assert.equal(report.phase,'schema-aware recovery version retained; maintenance retained');assert.equal(report.finishedAt,undefined);
+        assert.match(report.failure,kind==='ledger'?/completed migration/i:/empty schema plan/i);
+    }finally{await f.h.close();}
+});
+for(const evidence of ['changed','missing','failed'])test('completed-only requires successful zero-change evidence from the ledger check: '+evidence,async()=>{
+    const f=await completedFixture(),open=f.options.openDatabase;
+    f.options.openDatabase=async()=>{
+        const connection=await open(),batch=connection.db.batch;
+        connection.db.batch=async statements=>{const result=await batch(statements);return result.map(item=>evidence==='changed'?{...item,meta:{...item.meta,changed_db:true}}:evidence==='missing'?{...item,meta:undefined}:{...item,success:false});};
+        return connection;
+    };
+    try{await assert.rejects(deploy(f.options),/did not confirm zero changes/);assert.deepEqual(f.events,['maintenance']);assert.equal(f.writes().length,1);}
+    finally{await f.h.close();}
 });
