@@ -141,9 +141,10 @@ export async function deploy({env=process.env,fetchImpl=fetch,run,root=directory
         const recovery=await inspect<{id:string;resources:WorkerSettings}>('/workers/scripts/demo/versions/'+version,'Recovery version',phase);
         if(recovery.id!==version)throw Error('Recovery version identity mismatch; maintenance retained.');
         verifySettings(recovery.resources,'false');
-        if(completed)await completed.verify();
         report.recoveryVersion=version;
         report.recoveryCommand='wrangler versions deploy '+version+'@100% --yes';
+        phase='schema-aware recovery version retained; maintenance retained';await save();
+        if(completed)await completed.verify();
         phase='schema-aware recovery version retained; active deployment requested';await save();
         console.log('Schema-aware read-only recovery version: '+version+' (SHA-256 '+hashes.recovery+').');
         await command(['deploy','--keep-vars','--no-bundle'],'active');

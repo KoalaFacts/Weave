@@ -99,14 +99,17 @@ The workflow verifies that the selected SHA is checked out and is already an anc
 
 For a release authorized only against an already completed migration and existing
 schema, select `database_mode: completed-only` on the manual dispatch. This mode
-requires the original migration checksum, a completed ledger record and an empty
-schema plan before maintenance, after maintenance and before active deployment.
+requires the original migration checksum, a completed ledger record, an absent
+migration write gate and an empty schema plan before maintenance, after maintenance
+and before active deployment. A residual migration trigger is rejected, never removed.
 Its planner receives only a restricted metadata-reading database interface.
 The historical converter and schema applier are never called. Its sole DDL is the
 generated `CREATE TABLE IF NOT EXISTS data_migrations` statement, whose successful
 zero-change metadata is required; the ledger and schema are checked again afterward.
 No other DDL/DML is permitted, and a failed check never falls back to maintenance
 conversion. A failure after the maintenance deployment leaves maintenance in place.
+Verified recovery version information is saved before the final database check, so
+it remains available in the failure report if that check fails.
 This protects the permitted SQL scope; it does not lock out concurrent administrators
 or provide an atomic snapshot across deployment steps.
 

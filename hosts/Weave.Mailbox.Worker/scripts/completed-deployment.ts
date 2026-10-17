@@ -6,8 +6,9 @@ import { latestSchemaStatements, planLatestSchema, type StorageDatabase, type St
 
 const ledgerTableSql="SELECT sql FROM sqlite_master WHERE type='table' AND name='data_migrations'";
 const ledgerSql='SELECT script_id,checksum,CAST(completed_at AS TEXT) completed_at FROM data_migrations WHERE script_id=? LIMIT 2';
+const migrationGateSql="SELECT 1 found FROM sqlite_master WHERE type='trigger' AND name='data_migration_write_gate'";
 const scriptId='normalize-mailbox-records';
-const metadataSql=new Set([ledgerTableSql,ledgerSql,
+const metadataSql=new Set([ledgerTableSql,ledgerSql,migrationGateSql,
     "SELECT name FROM sqlite_master WHERE type='table'",
     "SELECT type,name,tbl_name,sql FROM sqlite_master WHERE type IN ('table','index')"]);
 
@@ -38,6 +39,8 @@ export async function prepareCompletedDeployment(db:StorageDatabase,root:string,
         const rows=(await metadata.prepare(ledgerSql).bind(scriptId).all<{script_id:string;checksum:string;completed_at:string|null}>()).results;
         if(rows.length!==1||rows[0].script_id!==scriptId||rows[0].checksum!==checksum||typeof rows[0].completed_at!=='string'||!/^\d+$/.test(rows[0].completed_at))
             throw Error('Completed migration with the original checksum is required; no conversion is permitted.');
+        if(await metadata.prepare(migrationGateSql).first())
+            throw Error('Restricted deployment requires the migration write gate to be absent; no trigger changes are permitted.');
         const schemaPlan=await planSchema(metadata);
         if(schemaPlan.statements.length)throw Error('Restricted deployment requires an empty schema plan; no schema changes are permitted.');
         const conversion={alreadyCompleted:true,checksum,completedAt:rows[0].completed_at};
