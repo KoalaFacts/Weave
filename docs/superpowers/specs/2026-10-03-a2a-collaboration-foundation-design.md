@@ -1,5 +1,7 @@
 # A2A collaboration foundation design
 
+> **Superseded direction (2026-10-04):** The user replaced this governed-note collaboration scope with direct agent access to an encrypted, expiring Cloudflare inbox/outbox carrying selected A2A payloads. See the [replacement mailbox specification](2026-10-04-encrypted-agent-mailbox-design.md). This historical document is retained for context; do not execute this plan or treat its earlier approval as approval of the replacement implementation.
+
 **Status:** Written design approved for implementation planning on 2026-10-04. See the [implementation plan](../plans/2026-10-04-a2a-collaboration-foundation.md) for the task breakdown and execution-method review. Product implementation has not started.
 
 **Decision:** Add an opt-in A2A boundary for one governed collaboration between two synthetic agent owners. Support the selected HTTP+JSON operations for A2A wire revisions 1.0 and 0.3. Keep authority, approval, invocation admission, and outcomes under Weave's existing controls.
