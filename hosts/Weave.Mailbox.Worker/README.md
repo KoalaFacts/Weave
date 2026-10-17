@@ -97,6 +97,25 @@ The [Deploy Weave Worker workflow](../../.github/workflows/deploy-weave-worker.y
 
 The workflow verifies that the selected SHA is checked out and is already an ancestor of `main` before the existing Worker tests, audit and C# compatibility checks. Advance the release branch without force; do not bypass a divergent head or failed check. No `weave-demo` environment is required. Confirm the authorized target and configuration scope before either release signal; do not recreate credentials or print their values.
 
+For a release authorized only against an already completed migration and existing
+schema, select `database_mode: completed-only` on the manual dispatch. This mode
+requires the original migration checksum, a completed ledger record and an empty
+schema plan before maintenance, after maintenance and before active deployment.
+Its planner receives only a restricted metadata-reading database interface.
+The historical converter and schema applier are never called. Its sole DDL is the
+generated `CREATE TABLE IF NOT EXISTS data_migrations` statement, whose successful
+zero-change metadata is required; the ledger and schema are checked again afterward.
+No other DDL/DML is permitted, and a failed check never falls back to maintenance
+conversion. A failure after the maintenance deployment leaves maintenance in place.
+This protects the permitted SQL scope; it does not lock out concurrent administrators
+or provide an atomic snapshot across deployment steps.
+
+The default `database_mode: maintain` retains the existing reviewed conversion and
+additive-schema flow; `publish/demo` pushes retain that default. Direct authorized
+script execution selects the same mode with `WEAVE_DEPLOY_DATABASE_MODE`; unknown
+or explicitly empty values fail before external operations. `completed-only` still
+requires deployment and ledger-check approval; it is not a read-only inspection.
+
 Use these existing GitHub configuration names in the selected scope:
 
 | Kind | Name | Value |
