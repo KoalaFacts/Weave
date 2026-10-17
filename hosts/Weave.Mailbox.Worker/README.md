@@ -59,6 +59,37 @@ No account token, Cloudflare secret or real registration data is needed for thes
 
 ### Deploy the existing Worker and D1 database
 
+Before deciding whether database work is needed, use the independent
+[Inspect Weave Worker D1 workflow](../../.github/workflows/inspect-weave-worker-d1.yml).
+It is manually dispatched on `main` only and uses the same repository
+`CLOUDFLARE_API_TOKEN` / `CLOUDFLARE_ACCOUNT_ID` secrets as the existing
+repository deployment job. It adds no environment, credentials, resources or
+permissions. Check the existing release queue before dispatch: it shares the
+deployment concurrency group, and GitHub may replace an already pending run.
+Do not cancel a release or bypass an approval to run this inspection.
+
+After credential-free typechecking and focused tests, `scripts/d1-preflight.ts`
+verifies the existing `weave-389` account subdomain, `demo` Worker and unique `db`
+binding, then reads that D1's identity. Its only SQL requests are fixed SELECTs
+for table/index definitions from `sqlite_master` and the checksum/completion of
+`normalize-mailbox-records` from an already existing `data_migrations` table.
+The latter is skipped if the table is absent. The
+[official D1 query API](https://developers.cloudflare.com/api/resources/d1/subresources/database/methods/query/)
+uses POST even for SELECT; no SQL write, schema generation, initialization,
+migration, deployment or public Demo HTTP request is performed. No arguments,
+alternate targets or arbitrary SQL are accepted. Any refusal, redirect, malformed
+or oversized response stops without retry; do not expand access or switch routes.
+
+The workflow logs only projected D1 identity, schema definitions, the selected
+migration state and zero-write query metadata, never full settings/API responses
+or credentials. It uploads no artifact. Missing ledger, incomplete conversion and
+checksum mismatch are distinct results. A successful inspection means the reads
+completed; it does **not** mean the schema matches or deployment is approved.
+Compare the returned definitions with the reported source schema hash and review
+the actual differences before authorizing any database operation. The reads are
+a point-in-time observation, not an atomic snapshot or an execution guard against
+later drift. This workflow never starts the deployment workflow automatically.
+
 The [Deploy Weave Worker workflow](../../.github/workflows/deploy-weave-worker.yml) targets only the existing Worker **demo**, account subdomain **weave-389**, and its existing lowercase **db** binding. It creates no Worker, database, domain or DNS record. After code is reviewed, verified and merged, choose an explicit release signal:
 
 - Manually dispatch on `main`, selecting `configuration_scope: repository` for repository configuration or `production` for the existing GitHub environment. Production environment protection rules still apply.
