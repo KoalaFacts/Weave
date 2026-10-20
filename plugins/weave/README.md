@@ -4,10 +4,10 @@
 The package contains setup and safe messaging skills. Its [registered-app map](.app.json)
 is empty. Installing the plugin alone cannot register an account or send messages.
 
-As of 2026-10-20, the package is on `feat/weave-marketplace-20261020` in
-[PR #226](https://github.com/KoalaFacts/Weave/pull/226), not merged to `main`.
-The instructions below show how to import that preview. An actual ChatGPT import
-and live messaging acceptance have **not** been verified for this package.
+The instructions below use `main` for normal installation. For pre-merge review,
+use a reviewed commit from [PR #226](https://github.com/KoalaFacts/Weave/pull/226)
+instead. An actual ChatGPT import and live messaging acceptance have **not** been
+verified for this package.
 
 | You want to… | Use this route | Current result |
 | --- | --- | --- |
@@ -27,19 +27,19 @@ This route requires a workspace with GitHub marketplace import enabled and the
 appropriate administrator permissions. A GitHub account must be able to read the
 source repository. Do not assume every personal account or client has this menu.
 
-1. Open **Workspace settings → Plugins → Add → Import marketplace**.
+1. Open **Admin Console → select the intended workspace → Plugins → Add → Import marketplace**.
 2. Fill in the following values. Keep Source, Path and ref separate:
 
    | Field | Value |
    | --- | --- |
    | Source | `https://github.com/KoalaFacts/Weave` |
    | Path | Leave empty. |
-   | Branch, tag, or commit | `feat/weave-marketplace-20261020` |
+   | Branch, tag, or commit | `main`, or leave empty for the repository default branch. |
 
    Source is the repository URL, not a `tree/...` or `blob/...` URL. Path is not
    `.agents/plugins/marketplace.json` or `plugins/weave`. Leaving the ref blank
-   selects the default branch, which does not contain this preview before merge.
-   For a fixed review snapshot, use the commit you reviewed instead of the branch.
+   selects the default branch. For an unmerged change or a fixed review snapshot,
+   use the commit you reviewed instead; it will not receive later branch updates.
 3. Select **Import marketplace**, authorize GitHub read access when prompted,
    and check **Import results**. A failed import is not a successful installation.
 4. Review the imported **Weave** plugin's workspace installation policy and
@@ -54,7 +54,7 @@ grant access to a service. If the import menu is unavailable, ask the workspace
 administrator to check eligibility and permissions rather than granting broad
 GitHub access or treating a desktop configuration as a cloud connection.
 
-For later updates, use **Workspace settings → Plugins → Marketplaces**, select
+For later updates, use **Admin Console → select the intended workspace → Plugins → Marketplaces**, select
 the marketplace and choose **Sync now**, then check the sync result. A tracked
 branch can receive new commits; a fixed commit stays pinned. Sync does not
 complete missing authentication or grant new service access.
@@ -64,7 +64,7 @@ complete missing authentication or grant new service access.
 In a supported environment with Codex CLI installed, add the preview catalog:
 
 ```sh
-codex plugin marketplace add KoalaFacts/Weave --ref feat/weave-marketplace-20261020
+codex plugin marketplace add KoalaFacts/Weave --ref main
 codex plugin marketplace list
 ```
 
@@ -103,7 +103,7 @@ actual vault, secure injection, recovery and user-authorization requirements.
 
 | Symptom | Check |
 | --- | --- |
-| Marketplace manifest not found | Source must be the repository root URL, Path empty, ref `feat/weave-marketplace-20261020` while this preview is unmerged. |
+| Marketplace manifest not found | Source must be the repository root URL, Path empty, ref `main` (or empty for the default branch). For an unmerged change, use its reviewed commit. |
 | Import succeeded but no messaging tools appear | Expected for the empty app map. The operator still needs to deliver and register the remote service; reinstalling does not create one. |
 | Plugin appears on desktop but not on the web | Desktop/local catalog configuration is not workspace import. Check the target surface and workspace policies; a local process cannot be invoked by a cloud chat merely because it was installed locally. |
 | Guide works but registry request fails | Check the MCP host's route to the demo API and its `WEAVE_DEMO_URL`. Do not infer an empty registry or create another account. |
@@ -168,3 +168,7 @@ Demo data may be periodically cleared. See [safety and status](references/safety
 
 The `.codex-plugin/plugin.json` compatibility layout is retained intentionally:
 it is supported by GitHub workspace import and avoids two competing manifests.
+
+Public Plugin Directory submission has additional listing and branding requirements
+and is not part of this custom-marketplace preview. See the
+[submission reference](https://developers.openai.com/plugins/deploy/submission-errors).

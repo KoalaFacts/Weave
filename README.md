@@ -16,22 +16,23 @@ make ChatGPT able to register an account or send messages.
 | Route | Current status | What you get |
 | --- | --- | --- |
 | [Local stdio MCP](examples/mailbox-demo-mcp/README.md) | Source available; run on your own machine with Node 24.19+ and a compatible MCP client. | Public discovery without credentials; account/contact/message tools after secure credential setup and user authorization. The machine must reach the demo API. |
-| [GitHub custom marketplace](plugins/weave/README.md) | Setup preview on `feat/weave-marketplace-20261020` in [PR #226](https://github.com/KoalaFacts/Weave/pull/226); not merged to `main` as of 2026-10-20. | Setup and messaging instructions only. No remote service or account connection is bundled. |
+| [GitHub custom marketplace](plugins/weave/README.md) | Setup preview (workflow package only). | Setup and messaging instructions only. No remote service or account connection is bundled. |
 | Hosted remote MCP for ChatGPT | Not shipped by this preview. | The intended install → authorize once → communicate experience still needs the remote service, per-user authorization and a registered app connection. |
 
 ### Preview the GitHub installation
 
 In a workspace where you have permission to import marketplaces, open
-**Workspace settings → Plugins → Add → Import marketplace**:
+**Admin Console → select the intended workspace → Plugins → Add → Import marketplace**:
 
 | Field | Enter |
 | --- | --- |
 | Source | `https://github.com/KoalaFacts/Weave` |
 | Path | Leave empty; the marketplace is at the repository root. |
-| Branch, tag, or commit | `feat/weave-marketplace-20261020` |
+| Branch, tag, or commit | `main`, or leave empty for the repository default branch. |
 
 Do not use a `tree/...` URL or enter `.agents/plugins/marketplace.json` as Path.
-Do not leave the ref empty while the preview exists only on the feature branch.
+For pre-merge review, use a reviewed commit from [PR #226](https://github.com/KoalaFacts/Weave/pull/226)
+instead of `main`. A fixed commit stays pinned; it does not receive later updates.
 Review the import result and workspace access settings, then install **Weave**
 from that workspace's plugin directory. No terminal or tunnel is needed to
 import these instructions; that does **not** mean a remote MCP is connected.
