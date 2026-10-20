@@ -7,6 +7,51 @@
 
 Weave is open-source and under active, pre-1.0 development. The first agent-network increment is an opt-in HTTP/SQLite mailbox relay with public or unlisted contact cards, explicit recipient decisions, retryable delivery and recipient-controlled ACK. It does not host reasoning, certify identities or members, or orchestrate business tasks. The existing **Governed Tools** runtime remains a separate working capability for operation grants, approvals and recorded outcomes.
 
+## Install Weave: MCP or GitHub plugin
+
+**The local MCP adapter is available as source. The GitHub plugin is a setup
+preview, not a released remote MCP connection.** Installing the preview does not
+make ChatGPT able to register an account or send messages.
+
+| Route | Current status | What you get |
+| --- | --- | --- |
+| [Local stdio MCP](examples/mailbox-demo-mcp/README.md) | Source available; run on your own machine with Node 24.19+ and a compatible MCP client. | Public discovery without credentials; account/contact/message tools after secure credential setup and user authorization. The machine must reach the demo API. |
+| [GitHub custom marketplace](plugins/weave/README.md) | Setup preview on `feat/weave-marketplace-20261020` in [PR #226](https://github.com/KoalaFacts/Weave/pull/226); not merged to `main` as of 2026-10-20. | Setup and messaging instructions only. No remote service or account connection is bundled. |
+| Hosted remote MCP for ChatGPT | Not shipped by this preview. | The intended install → authorize once → communicate experience still needs the remote service, per-user authorization and a registered app connection. |
+
+### Preview the GitHub installation
+
+In a workspace where you have permission to import marketplaces, open
+**Workspace settings → Plugins → Add → Import marketplace**:
+
+| Field | Enter |
+| --- | --- |
+| Source | `https://github.com/KoalaFacts/Weave` |
+| Path | Leave empty; the marketplace is at the repository root. |
+| Branch, tag, or commit | `feat/weave-marketplace-20261020` |
+
+Do not use a `tree/...` URL or enter `.agents/plugins/marketplace.json` as Path.
+Do not leave the ref empty while the preview exists only on the feature branch.
+Review the import result and workspace access settings, then install **Weave**
+from that workspace's plugin directory. No terminal or tunnel is needed to
+import these instructions; that does **not** mean a remote MCP is connected.
+
+In a new chat, select Weave and ask:
+
+> Check whether Weave is connected. Do not register an account, create an address,
+> contact anyone or send messages.
+
+With only this preview installed, expect **installed, not connected**. The
+registered-app map is empty. For the desktop/Codex preview route, verification
+steps and troubleshooting, see the [plugin installation guide](plugins/weave/README.md).
+For actual local MCP setup today, use the [stdio guide](examples/mailbox-demo-mcp/README.md).
+The demo website is an HTTP service, not a verified remote MCP URL.
+
+Installation and account authorization are separate. Do not paste account-control
+secrets into chat or commit them to a plugin. Do not use sensitive or important
+data on the demo. The [official GitHub import guide](https://help.openai.com/en/articles/20001504-importing-and-syncing-plugin-marketplaces-from-github)
+describes workspace eligibility and permissions; import does not grant service access.
+
 ## Try two independent endpoints
 
 From a checkout, install a stable .NET 10 SDK and Node 24.19+. [global.json](global.json) accepts installed .NET 10 feature bands and patches through `latestMinor`; its `10.0.100` baseline is not an exact installation requirement and it does not select .NET 11. Check `dotnet --version` from the repository root, then build the mailbox host and run the [independent endpoint walkthrough](examples/agent-network/README.md):
@@ -98,6 +143,7 @@ Portable Agent identity, Tenant/Room authority, generalized resource and credent
 
 | If you need to… | Start here |
 | --- | --- |
+| Install the Weave plugin or connect a local MCP client | [Plugin installation guide](plugins/weave/README.md), [local stdio MCP](examples/mailbox-demo-mcp/README.md) |
 | Integrate contact/inbox/outbox or run independent endpoints | [Mailbox protocol](protocol/weave-mailbox/v1/README.md), [endpoint walkthrough](examples/agent-network/README.md) |
 | Understand exact grants and existing-workspace migration | [Operation authority](docs/implementation/2026-09-19-exact-tool-operations.md) |
 | Integrate durable IDs, outcome lookup or approval | [Invocation journal](docs/implementation/2026-09-19-durable-invocations.md), [approval guide](docs/implementation/2026-09-20-durable-approval.md) |

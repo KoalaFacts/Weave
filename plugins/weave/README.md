@@ -1,31 +1,113 @@
-# Weave plugin — setup preview
+# Weave plugin — installation and connection status
 
-**Status: workflow package, not a connected remote service.** Version 0.1.0 ships
-setup and safe messaging skills. Its registered-app map is intentionally empty.
-Installing it will not register an account or enable live messaging by itself.
+**Version 0.1.0 is a setup preview, not a released remote MCP connection.**
+The package contains setup and safe messaging skills. Its [registered-app map](.app.json)
+is empty. Installing the plugin alone cannot register an account or send messages.
 
-The target experience is: add the GitHub marketplace, install Weave, link your
-own account once, then use the connected tools. Users should not need to run
-Node, clone the repository, or maintain a tunnel for the web version.
+As of 2026-10-20, the package is on `feat/weave-marketplace-20261020` in
+[PR #226](https://github.com/KoalaFacts/Weave/pull/226), not merged to `main`.
+The instructions below show how to import that preview. An actual ChatGPT import
+and live messaging acceptance have **not** been verified for this package.
 
-## GitHub marketplace
+| You want to… | Use this route | Current result |
+| --- | --- | --- |
+| Preview GitHub installation in a managed ChatGPT workspace | [Workspace import](#chatgpt-workspace-import) | Installs instructions, not a working remote connection. |
+| Preview the package in a supported desktop/Codex environment | [Desktop/Codex catalog](#desktopcodex-catalog) | Adds the catalog; install the plugin separately. Still no bundled MCP runtime. |
+| Connect an agent to the demo using a local process | [Local stdio MCP guide](https://github.com/KoalaFacts/Weave/blob/main/examples/mailbox-demo-mcp/README.md) | Requires Node 24.19+, a compatible client and network access. Private operations additionally need secure credential setup. |
+| Install in ChatGPT, authorize once and immediately exchange messages | Hosted remote MCP | **Not available from this preview.** See [remaining operator work](#operator-bind-the-real-remote-app). |
 
-Workspace administrators can use **Admin Console → Plugins → Add → Import
-marketplace** with source `https://github.com/KoalaFacts/Weave`, an empty Path,
-and the reviewed branch/tag/commit. The source must be a repository URL, not a
-`tree/...` or `blob/...` URL. Use the feature branch while reviewing this change;
-it will not be available on `main` before merge. A fixed commit prevents automatic
-upgrades; a branch can receive later syncs. Review imported plugin permissions.
+The target web experience is install → authorize once → communicate, without
+running Node or a tunnel on each user's computer. That is the target, not the
+current preview's capability. The demo homepage/registry is not a remote MCP URL;
+do not guess a `/mcp` endpoint or use a GitHub URL as an MCP server address.
 
-For a supported local Codex marketplace, the equivalent catalog command is:
+## ChatGPT workspace import
+
+This route requires a workspace with GitHub marketplace import enabled and the
+appropriate administrator permissions. A GitHub account must be able to read the
+source repository. Do not assume every personal account or client has this menu.
+
+1. Open **Workspace settings → Plugins → Add → Import marketplace**.
+2. Fill in the following values. Keep Source, Path and ref separate:
+
+   | Field | Value |
+   | --- | --- |
+   | Source | `https://github.com/KoalaFacts/Weave` |
+   | Path | Leave empty. |
+   | Branch, tag, or commit | `feat/weave-marketplace-20261020` |
+
+   Source is the repository URL, not a `tree/...` or `blob/...` URL. Path is not
+   `.agents/plugins/marketplace.json` or `plugins/weave`. Leaving the ref blank
+   selects the default branch, which does not contain this preview before merge.
+   For a fixed review snapshot, use the commit you reviewed instead of the branch.
+3. Select **Import marketplace**, authorize GitHub read access when prompted,
+   and check **Import results**. A failed import is not a successful installation.
+4. Review the imported **Weave** plugin's workspace installation policy and
+   required apps. Repository policy values do not override workspace settings.
+   This preview references no apps; it cannot offer a Weave account-linking flow.
+5. Install Weave from the workspace plugin directory, open a new chat, select
+   Weave, and run the [read-only check](#check-installation-without-creating-an-account).
+
+No local checkout, Node process, tunnel or OpenAI API key is required to import
+this instruction package. Import does not deploy a server, connect an account or
+grant access to a service. If the import menu is unavailable, ask the workspace
+administrator to check eligibility and permissions rather than granting broad
+GitHub access or treating a desktop configuration as a cloud connection.
+
+For later updates, use **Workspace settings → Plugins → Marketplaces**, select
+the marketplace and choose **Sync now**, then check the sync result. A tracked
+branch can receive new commits; a fixed commit stays pinned. Sync does not
+complete missing authentication or grant new service access.
+
+## Desktop/Codex catalog
+
+In a supported environment with Codex CLI installed, add the preview catalog:
 
 ```sh
-codex plugin marketplace add KoalaFacts/Weave --ref <reviewed-branch-or-tag>
+codex plugin marketplace add KoalaFacts/Weave --ref feat/weave-marketplace-20261020
+codex plugin marketplace list
 ```
 
-Installing this preview brings in the workflows, not the service. Run the setup
-skill and expect **installed, not connected** when no Weave tools are available.
-Workspaces and clients differ; a valid catalog is not proof of a successful import.
+These commands add and inspect a **catalog**; they do not install or connect a
+Weave MCP server. Restart the ChatGPT desktop app, open its Plugins Directory,
+choose the **Weave** marketplace source (`weave-plugins`), then install **Weave**
+(`weave`) and test in a new chat. Local availability is not cloud/web availability.
+The preview contains no `.mcp.json`, local runtime or connection credentials.
+
+These steps follow the [official packaging guide](https://developers.openai.com/plugins/build/plugins).
+They have been documentation-checked, not run as an end-to-end installation in
+this environment. Use the local stdio guide above for actual MCP process setup;
+that route is separate from installing this instruction package.
+
+## Check installation without creating an account
+
+After selecting Weave in a new chat, use this prompt:
+
+> Check whether Weave tools are available. If they are, call demo_guide, then
+> search_registry with limit 1. Report the results separately. Do not register
+> an account, create an address, contact anyone, acknowledge messages or send.
+
+| Result | What it proves |
+| --- | --- |
+| Plugin visible; no Weave tools | **Installed, not connected.** This is expected with only this preview. |
+| `demo_guide` succeeds | MCP tools can be called. In the existing local adapter the guide is bundled, so this alone does not prove the demo API is reachable. |
+| `search_registry` succeeds, including an empty result | The public directory request worked. A timeout/error is not an empty directory. |
+| Private account tools work with the intended identity | Separately configured account access works; installation and public discovery do not establish this. |
+
+Do not register merely to test installation. The guide's `credentialConfigured`
+flag alone does not prove that a credential authenticates successfully or that
+identity recovery is configured. Before private operations, follow the service's
+actual vault, secure injection, recovery and user-authorization requirements.
+
+## Troubleshooting
+
+| Symptom | Check |
+| --- | --- |
+| Marketplace manifest not found | Source must be the repository root URL, Path empty, ref `feat/weave-marketplace-20261020` while this preview is unmerged. |
+| Import succeeded but no messaging tools appear | Expected for the empty app map. The operator still needs to deliver and register the remote service; reinstalling does not create one. |
+| Plugin appears on desktop but not on the web | Desktop/local catalog configuration is not workspace import. Check the target surface and workspace policies; a local process cannot be invoked by a cloud chat merely because it was installed locally. |
+| Guide works but registry request fails | Check the MCP host's route to the demo API and its `WEAVE_DEMO_URL`. Do not infer an empty registry or create another account. |
+| Account access fails or changes after reconnecting | Stop and inspect the saved origin/account/credential binding. Do not generate a replacement identity or fall back to a shared account. |
 
 ## Operator: bind the real remote app
 
