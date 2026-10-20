@@ -281,6 +281,40 @@ class EvidenceApiTests(unittest.TestCase):
 
 
 class EvidenceWaitTests(unittest.TestCase):
+    def test_cli_exposes_failure_code_without_private_response_details(self):
+        cases = [
+            (Opener(Reply(status=403)), {}, 'comparison-http-error'),
+            (Opener(urllib.error.URLError('private network details')), {}, 'comparison-network-error'),
+            (Opener(Reply(b'private response body')), {}, 'invalid-comparison-response'),
+            (Opener(), {'GH_TOKEN': ''}, 'missing-or-invalid-api-credential'),
+            (Opener(), {'PR_HEAD_SHA': 'invalid'}, 'invalid-comparison-identity'),
+            (Opener(Reply(warning='%%%')), {}, 'invalid-snapshot-warning'),
+            (Opener(*(self.warning() for _ in range(60))), {}, 'snapshot-evidence-timeout'),
+        ]
+        for opener, overrides, failure_code in cases:
+            with self.subTest(failure_code=failure_code), tempfile.TemporaryDirectory() as directory:
+                report = Path(directory) / 'report.json'
+                summary = Path(directory) / 'summary.md'
+                output = io.StringIO()
+                env = {'GITHUB_REPOSITORY': 'owner/repo', 'PR_BASE_SHA': BASE,
+                       'PR_HEAD_SHA': HEAD, 'GH_TOKEN': 'synthetic-token',
+                       'GITHUB_STEP_SUMMARY': str(summary), **overrides}
+                with patch.dict(os.environ, env), patch.object(evidence.urllib.request, 'build_opener',
+                        return_value=opener), patch.object(evidence, 'time', Clock()), \
+                        patch('sys.stdout', output):
+                    code = evidence.main(['--report', str(report), '--snapshot-wait-seconds', '600'])
+                self.assertEqual(code, 1)
+                document = json.loads(report.read_text())
+                self.assertEqual(document['status'], 'unavailable')
+                self.assertEqual(document['failure_code'], failure_code)
+                self.assertNotIn('dependency_records', document)
+                self.assertIn(f'::error::Dependency comparison evidence is unavailable ({failure_code}).',
+                              output.getvalue())
+                self.assertIn(f'Failure code: `{failure_code}`', summary.read_text())
+                for private in ['synthetic-token', 'private network details', 'private response body',
+                                'private snapshot warning', '%%%']:
+                    self.assertNotIn(private, output.getvalue() + summary.read_text())
+
     def warning(self, **kwargs):
         return Reply(warning=base64.b64encode(b'private snapshot warning').decode(), **kwargs)
 
