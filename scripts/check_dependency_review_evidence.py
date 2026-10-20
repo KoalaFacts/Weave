@@ -195,7 +195,8 @@ def main(argv=None):
         code = 1
     args.report.write_text(json.dumps(report, ensure_ascii=True, indent=2) + "\n", encoding="utf-8")
     if code:
-        print("::error::Dependency comparison evidence is unavailable. The review must not be treated as clean.")
+        print(f"::error::Dependency comparison evidence is unavailable ({report['failure_code']}). "
+              "The review must not be treated as clean.")
     else:
         print(f"Dependency comparison available: {report['dependency_changes']} change(s). "
               "Zero changes is not a full dependency or license audit.")
@@ -205,6 +206,8 @@ def main(argv=None):
             output.write("## Dependency comparison evidence\n\n")
             output.write("**Unavailable — review blocked.**\n" if code else
                          "Available for the exact base/head pair; the policy review follows.\n")
+            if code:
+                output.write(f"\nFailure code: `{report['failure_code']}`\n")
             output.write("\nThis check does not establish complete NuGet dependency or license coverage. "
                          "See the dependency-review-evidence artifact for the checked SHAs and status.\n")
     return code
