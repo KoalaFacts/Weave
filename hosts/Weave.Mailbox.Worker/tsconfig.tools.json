@@ -15,7 +15,8 @@
   "include": [
     "scripts/**/*.ts",
     "test/local-miniflare.ts",
-    "../../examples/mailbox-demo-mcp/*.ts"
+    "../../examples/mailbox-demo-mcp/*.ts",
+    "../../scripts/marketplace/*.ts"
   ],
   "exclude": [
     "scripts/data-migrations/**/*.ts"
