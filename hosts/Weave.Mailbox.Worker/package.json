@@ -9,7 +9,8 @@
   },
   "scripts": {
     "build": "esbuild src/index.ts src/recovery.ts --bundle --format=esm --platform=browser --outdir=dist --external:node:crypto --loader:.html=text --loader:.json=text --loader:.md=text",
-    "test": "npm run build && node --require ./test/local-miniflare.ts --test --test-concurrency=1 test/*.test.ts",
+    "test": "npm run test:marketplace && npm run build && node --require ./test/local-miniflare.ts --test --test-concurrency=1 test/*.test.ts",
+    "test:marketplace": "node ../../scripts/marketplace/marketplace.ts check && node --test ../../scripts/marketplace/marketplace.test.ts",
     "typecheck": "tsc --noEmit && tsc --project tsconfig.tools.json",
     "dev": "wrangler dev --local",
     "test:compat": "npm run build && node test/compat.ts",
