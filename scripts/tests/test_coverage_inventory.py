@@ -93,7 +93,7 @@ class CoverageInventoryTests(unittest.TestCase):
         upload = workflow.split('- name: Upload coverage evidence\n')[1]
         self.assertTrue(upload.lstrip().startswith('if: always()'))
         tools = json.loads((ROOT / '.config/dotnet-tools.json').read_text())['tools']
-        self.assertEqual('18.11.2', tools['dotnet-coverage']['version'])
+        self.assertEqual('18.12.0', tools['dotnet-coverage']['version'])
         self.assertFalse(tools['dotnet-coverage']['rollForward'])
 
 
