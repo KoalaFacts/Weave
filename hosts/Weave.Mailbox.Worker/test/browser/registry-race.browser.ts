@@ -130,9 +130,9 @@ test('registry empty lookup fences pending pages and restores desktop/touch reco
                         assert.equal(await page.locator('#retry').isDisabled(), true);
                         if (direction === 'next' && status === 200) await capture(fixture, page, view + '-empty');
 
-                        await page.locator('#address').fill('public-id');
+                        await page.locator('#address').fill('12345678-1234-1234-1234-123456789abc');
                         const lookup = await responses.request(() => click('lookup'));
-                        assert.equal(lookup.path, '/v1/directory/address?addressId=public-id');
+                        assert.equal(lookup.path, '/v1/directory/address?addressId=12345678-1234-1234-1234-123456789abc');
                         await responses.respond(lookup, card('exact result'));
                         assert.equal(await page.locator('#pageNumber').innerText(), 'Exact lookup');
                         const browse = await responses.request(() => click('browse'));

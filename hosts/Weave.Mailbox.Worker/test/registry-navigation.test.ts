@@ -113,9 +113,9 @@ for(const direction of ['initial','next','previous']){
             assert.equal(app.get('results').children[0].children[0].textContent,'retried');
             assert.equal(app.get('retry').disabled,true);
 
-            app.get('address').value=' public-id ';
+            app.get('address').value=' 12345678-1234-1234-1234-123456789abc ';
             const lookup=app.get('lookup').handlers.click();
-            assert.equal(requests.at(-1).path,'/v1/directory/address?addressId=public-id');
+            assert.equal(requests.at(-1).path,'/v1/directory/address?addressId=12345678-1234-1234-1234-123456789abc');
             requests.at(-1).resolve(new Response(JSON.stringify(item('exact result'))));await lookup;
             assert.equal(app.get('pageNumber').textContent,'Exact lookup');
             assert.equal(app.get('results').children[0].children[0].textContent,'exact result');
@@ -162,4 +162,74 @@ test('empty lookup after a page failure preserves explicit retry and recovers to
     assert.equal(app.get('status').textContent,'No current public addresses.');
     assert.equal(app.get('pageNumber').textContent,'Page 2');
     assert.equal(app.get('next').disabled,true);assert.equal(app.get('retry').disabled,true);
+});
+
+const exactId='12345678-1234-1234-1234-123456789abc';
+const invalidGuidance='Enter a valid public address ID (lowercase UUID), or use Browse all.';
+for(const invalid of ['not-an-address',exactId.toUpperCase(),exactId.replaceAll('-',''),'{'+exactId+'}',exactId.slice(1),exactId.replace('a','g')]){
+    test('invalid exact address input preserves browsing without requesting or retrying: '+invalid,async()=>{
+        const app=await ui(async path=>path.includes('/address?')?new Response('{}',{status:400}):response('newest','next')),before=visiblePage(app),count=app.calls.length;
+        app.get('address').value=invalid;await app.click('lookup');
+        assert.equal(app.get('status').textContent,invalidGuidance);
+        assert.equal(app.calls.length,count,'Invalid input must not make an HTTP request');
+        assert.deepEqual(visiblePage(app),before);
+        assert.equal(app.get('retry').disabled,true);
+        await app.click('retry');assert.equal(app.calls.length,count);
+        await app.click('browse');assert.equal(app.get('address').value,'');
+        assert.equal(app.get('pageNumber').textContent,'Page 1');
+    });
+}
+for(const id of ['00000000-0000-0000-0000-000000000000',exactId,'ffffffff-ffff-ffff-ffff-ffffffffffff']){
+    test('exact lookup accepts the server UUID shape without inventing version restrictions: '+id,async()=>{
+        const app=await ui(async path=>path.includes('/address?')?new Response(JSON.stringify(item('found'))):response('browse'));
+        app.get('address').value=' '+id+' ';await app.click('lookup');
+        assert.equal(app.calls.at(-1).path,'/v1/directory/address?addressId='+id);
+        assert.equal(app.get('pageNumber').textContent,'Exact lookup');
+        assert.equal(app.get('results').children[0].children[0].textContent,'found');
+    });
+}
+for(const [status,message,retryable] of [
+    [400,invalidGuidance,false],
+    [404,'Public address unavailable.',false],
+    [429,'Too many registry requests. Try again in 42 seconds.',true],
+    [503,'Registry unavailable (503).',true],
+    [null,'Registry unavailable. Please try again.',true]
+]){
+    test('exact lookup classifies '+status+' and recovers with a corrected address and Browse all',async()=>{
+        let fail=true;
+        const app=await ui(async path=>{
+            if(!path.includes('/address?'))return response('browse');
+            if(!fail)return new Response(JSON.stringify(item('corrected')));
+            if(status===null)throw Error('private network diagnostic');
+            return new Response('{}',{status,headers:{'Retry-After':'42'}});
+        });
+        app.get('address').value=exactId;await app.click('lookup');
+        assert.equal(app.get('status').textContent,message);
+        assert.equal(app.get('retry').disabled,!retryable);
+        assert.equal(app.get('pageNumber').textContent,retryable?'Page not loaded':'Exact lookup');
+        assert.equal(app.get('results').children.length,0);
+        const count=app.calls.length;
+        await app.click('retry');assert.equal(app.calls.length,count+(retryable?1:0));
+        fail=false;app.get('address').value='00000000-0000-0000-0000-000000000001';await app.click('lookup');
+        assert.equal(app.get('results').children[0].children[0].textContent,'corrected');
+        assert.equal(app.get('retry').disabled,true);
+        await app.click('browse');assert.equal(app.get('pageNumber').textContent,'Page 1');
+        assert.equal(app.get('results').children[0].children[0].textContent,'browse');
+    });
+}
+
+test('invalid input cancels stale exact lookup recovery without letting its late error overwrite guidance',async()=>{
+    const waiting=[];
+    const app=await ui(path=>path.includes('/address?')?new Promise(resolve=>{waiting.push(resolve);}):Promise.resolve(response('browse','next')));
+    app.get('address').value=exactId;const old=app.get('lookup').handlers.click();
+    app.get('address').value='not-an-address';const invalid=app.get('lookup').handlers.click();
+    try{
+        assert.equal(app.get('status').textContent,invalidGuidance);assert.equal(app.get('retry').disabled,true);
+        assert.equal(waiting.length,1,'Invalid input must not start another lookup');
+    }finally{
+        for(const resolve of waiting)resolve(new Response('{}',{status:400}));
+        await Promise.all([old,invalid]);
+    }
+    assert.equal(app.get('status').textContent,invalidGuidance);assert.equal(app.get('retry').disabled,true);
+    await app.click('browse');assert.equal(app.get('pageNumber').textContent,'Page 1');
 });

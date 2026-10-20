@@ -53,6 +53,30 @@ test('public registry browser: desktop and touch browse ten-item pages, rate den
             const expected = visible.map(item => item.addressId).reverse();
             for (const view of views) {
                 await view.page.locator('#find')[view.mobile ? 'tap' : 'click']();
+                await rows(view.page, expected.slice(0, 10));
+                const requests = fixture.trace.length;
+                await view.page.locator('#address').fill('not-an-address');
+                await view.page.locator('#lookup')[view.mobile ? 'tap' : 'click']();
+                await view.page.locator('#status').filter({ hasText: 'Enter a valid public address ID (lowercase UUID), or use Browse all.' }).waitFor();
+                assert.equal(fixture.trace.length, requests, 'Invalid input must not request the registry');
+                await rows(view.page, expected.slice(0, 10));
+                assert.equal(await view.page.locator('#pageNumber').textContent(), 'Page 1');
+                assert.equal(await view.page.locator('#retry').isDisabled(), true);
+                await capture(fixture, view.page, 'registry-invalid-address-' + view.name);
+                await view.page.locator('#address').fill('00000000-0000-0000-0000-000000000000');
+                await view.page.locator('#lookup')[view.mobile ? 'tap' : 'click']();
+                await view.page.locator('#status').filter({ hasText: 'Public address unavailable.' }).waitFor();
+                assert.equal(await view.page.locator('#results article').count(), 0);
+                assert.equal(await view.page.locator('#pageNumber').textContent(), 'Exact lookup');
+                assert.equal(await view.page.locator('#retry').isDisabled(), true);
+                await view.page.locator('#address').fill(expected[0]);
+                await view.page.locator('#lookup')[view.mobile ? 'tap' : 'click']();
+                await rows(view.page, [expected[0]]);
+                assert.equal(await view.page.locator('#pageNumber').textContent(), 'Exact lookup');
+                await view.page.locator('#browse')[view.mobile ? 'tap' : 'click']();
+                await rows(view.page, expected.slice(0, 10));
+                assert.equal(await view.page.locator('#address').inputValue(), '');
+                checkpoints.push(view.name + ': invalid input makes no request or retry; valid unavailable address is distinct; corrected lookup and Browse all recover');
                 for (let index = 0; index < 3; index++) {
                     await rows(view.page, expected.slice(index * 10, (index + 1) * 10));
                     const text = await view.page.locator('body').innerText();
