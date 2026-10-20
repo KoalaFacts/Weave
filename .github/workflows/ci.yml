@@ -431,3 +431,12 @@ jobs:
             ${{ runner.temp }}/dependency-license-policy.json
           if-no-files-found: error
           retention-days: 14
+
+      - name: Diagnose fixed dependency comparison
+        if: ${{ !cancelled() && github.event.pull_request.number == 223 }}
+        timeout-minutes: 2
+        env:
+          GH_TOKEN: ${{ github.token }}
+          PR_HEAD_SHA: ${{ github.event.pull_request.head.sha }}
+          DIAGNOSTIC_REPORT: ${{ runner.temp }}/dependency-comparison-diagnostic.json
+        run: python3 scripts/diagnose_dependency_comparison.py
