@@ -154,6 +154,25 @@ test('inspectPolicy_PinnedDownloadArtifactUpdateWithVerifiedLicense_RequiresExac
   assert.equal(inspectScenario([{ ...pinned, license: 'GPL-3.0' }]).status, 'blocked');
 });
 
+test('inspectPolicy_PinnedTestResultPublisherWithVerifiedLicense_RequiresExactIdentity', () => {
+  const pin = '7622c5bf3d112a72ab4fa3951c2aa5723d8ab92d';
+  const name = 'EnricoMi/publish-unit-test-result-action';
+  const pinned = {
+    ...change(null), ecosystem: 'actions', name, version: pin,
+    package_url: `pkg:githubactions/${name}@${pin}`,
+  };
+  assert.equal(inspectScenario([pinned]).status, 'available');
+  for (const mismatch of [
+    { name: 'other/publish-unit-test-result-action' }, { version: 'different' },
+    { package_url: `pkg:githubactions/other/publish-unit-test-result-action@${pin}` },
+    { ecosystem: 'npm' }, { license: 'NOASSERTION' }, { license: '' },
+  ]) {
+    assert.equal(inspectScenario([{ ...pinned, ...mismatch }]).status, 'unavailable');
+  }
+  assert.equal(inspectScenario([{ ...pinned, license: 'GPL-3.0' }]).status, 'blocked');
+  assert.equal(inspectScenario([pinned], []).failure_code, 'incomplete-dependency-comparison');
+});
+
 test('inspectPolicy_IncompleteComparison_Unavailable', () => {
   const added = [change('MIT')];
   assert.equal(inspectPolicy(JSON.stringify(added), '').status, 'unavailable');

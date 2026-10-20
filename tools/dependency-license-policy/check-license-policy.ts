@@ -8,6 +8,12 @@ const DENIED = ['GPL-2.0', 'GPL-3.0', 'AGPL-3.0'];
 // GitHub's dependency graph omits the license for this action. The MIT license
 // was checked at the pinned source commit: https://github.com/actions/setup-node/blob/249970729cb0ef3589644e2896645e5dc5ba9c38/LICENSE
 const VERIFIED_ACTION_LICENSES = new Map([
+  // Apache-2.0 verified at https://github.com/EnricoMi/publish-unit-test-result-action/blob/7622c5bf3d112a72ab4fa3951c2aa5723d8ab92d/LICENSE
+  ['pkg:githubactions/EnricoMi/publish-unit-test-result-action@7622c5bf3d112a72ab4fa3951c2aa5723d8ab92d', {
+    name: 'EnricoMi/publish-unit-test-result-action',
+    version: '7622c5bf3d112a72ab4fa3951c2aa5723d8ab92d',
+    license: 'Apache-2.0',
+  }],
   // MIT verified at https://github.com/actions/checkout/blob/3d3c42e5aac5ba805825da76410c181273ba90b1/LICENSE
   ['pkg:githubactions/actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1', {
     name: 'actions/checkout',
