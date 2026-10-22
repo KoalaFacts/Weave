@@ -4,22 +4,26 @@ import {Endpoint} from './endpoint.ts';
 import {connect} from './mcp.ts';
 import {resolveControl} from './vault.ts';
 import {generate} from './model.ts';
-import {load,PairError,object,validateOrigin} from './runtime.ts';
+import {capture,load,PairError,object,validateOrigin} from './runtime.ts';
 
 async function serve():Promise<void>{
     const directory=resolve(process.argv[2]),config=object(load(join(directory,'agent.json')));
     validateOrigin(config.origin);
     if(!['A','B'].includes(config.role))throw new PairError('invalid_agent_role');
     const abort=new AbortController();
-    const endpoint=new Endpoint(config.role,config.runId,directory,async()=>connect(await resolveControl(config.reference)),
+    const endpoint=new Endpoint(config.role,config.runId,directory,async()=>connect(await resolveControl(config.reference,
+        args=>capture('op',args,{timeoutMs:30000,signal:abort.signal})),abort.signal),
         (sequence,history)=>generate(config.model,config.role,sequence,history,directory,abort.signal));
     let busy=false,stopping=false;
-    const stop=async()=>{if(stopping)return;stopping=true;abort.abort();await endpoint.close();process.exit(0);};
+    let active:Promise<void>|undefined;
+    const stop=async()=>{if(stopping)return;stopping=true;abort.abort();await Promise.allSettled([active,endpoint.close()]);process.exit(0);};
     process.on('SIGTERM',()=>void stop());process.on('SIGINT',()=>void stop());process.on('disconnect',()=>void stop());
-    process.on('message',async raw=>{
+    const reply=(message:unknown)=>{if(process.connected)process.send?.(message);};
+    process.on('message',raw=>{
         const message=object(raw);
-        if(busy||stopping){process.send?.({id:message.id,error:'agent_busy'});return;}
+        if(busy||stopping){reply({id:message.id,error:'agent_busy'});return;}
         busy=true;
+        active=(async()=>{
         try{
             let result:unknown={};
             switch(message.command){
@@ -33,9 +37,10 @@ async function serve():Promise<void>{
             case 'evidence':result=await endpoint.evidence();break;
             default:throw new PairError('unknown_agent_command');
             }
-            process.send?.({id:message.id,result});
-        }catch(error){process.send?.({id:message.id,error:error instanceof PairError?error.message:'agent_failed'});}
+            reply({id:message.id,result});
+        }catch(error){reply({id:message.id,error:error instanceof PairError?error.message:'agent_failed'});}
         finally{busy=false;}
+        })();
     });
 }
 if(process.argv[1]&&resolve(process.argv[1])===fileURLToPath(import.meta.url))serve().catch(()=>{process.stderr.write('agent_start_failed\n');process.exitCode=1;});

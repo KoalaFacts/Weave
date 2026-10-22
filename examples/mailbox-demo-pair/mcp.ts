@@ -11,7 +11,7 @@ export class StdioClient implements Client {
     private dead=false;
     private closed:Promise<void>;
     private timeoutMs:number;
-    constructor(command:string,args:string[],env:NodeJS.ProcessEnv,timeoutMs=20000){
+    constructor(command:string,args:string[],env:NodeJS.ProcessEnv,timeoutMs=20000,signal?:AbortSignal){
         this.timeoutMs=timeoutMs;
         this.child=spawn(command,args,{env,shell:false,stdio:['pipe','pipe','pipe']});
         this.closed=new Promise(resolve=>this.child.on('close',()=>{this.fail();resolve();}));
@@ -34,6 +34,10 @@ export class StdioClient implements Client {
                 }catch{this.fail();}
             }
         });
+        const abort=()=>this.fail();
+        signal?.addEventListener('abort',abort,{once:true});
+        void this.closed.then(()=>signal?.removeEventListener('abort',abort));
+        if(signal?.aborted)abort();
     }
     private fail():void {
         if(this.dead)return;this.dead=true;
@@ -57,9 +61,10 @@ export class StdioClient implements Client {
     }
     async close():Promise<void>{this.fail();await this.closed;}
 }
-export async function connect(control:string):Promise<Client>{
+export async function connect(control:string,signal?:AbortSignal):Promise<Client>{
+    if(signal?.aborted)throw new PairError('mcp_transport_closed');
     const env=modelEnvironment();delete env.CODEX_HOME;
-    const client=new StdioClient(process.execPath,[...nodeFlags(),fileURLToPath(new URL('../mailbox-demo-mcp/server.ts',import.meta.url))],{...env,WEAVE_DEMO_URL:ORIGIN,WEAVE_ACCOUNT_CONTROL:control});
+    const client=new StdioClient(process.execPath,[...nodeFlags(),fileURLToPath(new URL('../mailbox-demo-mcp/server.ts',import.meta.url))],{...env,WEAVE_DEMO_URL:ORIGIN,WEAVE_ACCOUNT_CONTROL:control},20000,signal);
     try{await client.initialize();const guide=await client.call('demo_guide');if(guide.origin!==ORIGIN||guide.readiness?.credentialConfigured!==true)throw new PairError('mcp_not_ready');return client;}
     catch(error){await client.close();throw error;}
 }

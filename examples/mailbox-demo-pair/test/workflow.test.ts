@@ -57,7 +57,7 @@ test('recipient will not accept an introduction from a different run',async t=>{
     }finally{await a.close();await b.close();}
 });
 test('a write failure preserves a pending exact payload without retry',async t=>{
-    const {a,b,root,r}=await pair(t);try{const ai=await a.setup(),bi=await b.setup();a.peer(bi);b.peer(ai);await a.introduce();await b.accept();
+    const {a,b,root}=await pair(t);try{const ai=await a.setup(),bi=await b.setup();a.peer(bi);b.peer(ai);await a.introduce();await b.accept();
         const original=(a as any).client.call.bind((a as any).client);let attempts=0;
         (a as any).client.call=async(name:string,args:any)=>{if(name==='send_message'){attempts++;throw Error('timeout');}return original(name,args);};
         await assert.rejects(a.step(1));assert.equal(attempts,1);

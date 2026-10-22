@@ -77,3 +77,32 @@ a required follow-up, not a claimed result.
 
 See the [runner guide](../../examples/mailbox-demo-pair/README.md) for exact
 commands, prerequisites, costs, persistence and manual reconciliation limits.
+
+## Review follow-up
+
+The seven initial review findings were addressed without suppressing CodeQL:
+assertion grouping is explicit, unused bindings are removed, and the malformed
+stdio fixture passes its output as a separate argument to a constant child
+script. Both malformed and unsolicited response cases still require the
+transport to fail and remain closed.
+
+Independent review also reproduced a shutdown defect: after IPC disconnection,
+the endpoint worker exited before a SIGTERM-resistant child was reaped. Model,
+vault-read and MCP-connect operations now share cancellation, already-cancelled
+captures cannot spawn, and the worker waits for its current command and cleanup
+before exiting. Real local process regressions for synthetic Codex and vault
+executables failed before this repair and passed afterward. MCP handshake
+cancellation and an already-cancelled capture have separate regressions.
+
+The follow-up used the full checkout with Node 24.19.0, pinned TypeScript 7.0.2,
+stable .NET SDK 10.0.401 and locked dependencies. All 36 pair tests, Worker
+typechecking, Release build (zero warnings/errors), 184 Python checks and the
+C# HTTP compatibility fixture passed. The non-browser .NET run passed 4,272
+tests with 13 prerequisite/platform skips; 15 Dashboard browser cases were
+explicitly excluded. This is not a claim of full local browser or coverage
+acceptance. The earlier browser-sandbox limitation remains, and no threshold
+or protection was relaxed. Independent review found the shutdown blocker fixed.
+
+These are synthetic controls/inference and local process/HTTP evidence. No real
+model invocation, vault operation, public-demo registration or message exchange
+was performed during this follow-up.

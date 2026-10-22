@@ -22,8 +22,8 @@ test('runtime rejects non-demo destinations and lossy or invalid generations', a
 test('process failures and timeouts never return untrusted stderr', async () => {
     const {capture}=await import('../runtime.ts');
     await assert.rejects(capture(process.execPath,['-e','console.error("secret-value");process.exit(3)']), e=>e instanceof Error && e.message==='process_failed');
-    await assert.rejects(capture(process.execPath,['-e','setInterval(()=>{},1000)'],{timeoutMs:40}),e=>e instanceof Error&&e.message==='process_timeout');
-    await assert.rejects(capture(process.execPath,['-e','process.stdout.write("x".repeat(5000))'],{maxBytes:1024}),e=>e instanceof Error&&e.message==='process_output_limit');
+    await assert.rejects(capture(process.execPath,['-e','setInterval(()=>{},1000)'],{timeoutMs:40}),e => (e instanceof Error) && e.message === 'process_timeout');
+    await assert.rejects(capture(process.execPath,['-e','process.stdout.write("x".repeat(5000))'],{maxBytes:1024}),e => (e instanceof Error) && e.message === 'process_output_limit');
 });
 
 test('bounded execution uses stdin and an argument array, never a shell', async () => {

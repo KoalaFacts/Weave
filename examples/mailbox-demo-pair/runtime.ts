@@ -40,6 +40,7 @@ export function modelEnvironment(source:NodeJS.ProcessEnv=process.env):NodeJS.Pr
 }
 export const nodeFlags = () => process.execArgv.filter(arg=>arg==='--experimental-strip-types');
 export async function capture(command:string,args:string[],options:{input?:string;env?:NodeJS.ProcessEnv;cwd?:string;timeoutMs?:number;maxBytes?:number;signal?:AbortSignal}={}):Promise<string> {
+    if(options.signal?.aborted)throw new PairError('process_cancelled');
     return await new Promise((resolve,reject)=>{
         const child=spawn(command,args,{shell:false,stdio:['pipe','pipe','pipe'],env:options.env??process.env,cwd:options.cwd});
         let output='',bytes=0,failure:string|undefined,killTimer:NodeJS.Timeout|undefined;
