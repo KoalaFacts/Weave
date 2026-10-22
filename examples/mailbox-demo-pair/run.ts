@@ -32,7 +32,7 @@ export async function doctor(vault?:string,options:DoctorOptions={}):Promise<Dia
 }
 export interface Agent {call(command:string,value?:unknown):Promise<any>}
 class AgentProcess implements Agent {
-    private child:ChildProcess;private count=0;private dead=false;private pending=new Map<number,{resolve:(v:any)=>void;reject:(e:Error)=>void;timer:NodeJS.Timeout}>();private closed:Promise<void>;
+    private child:ChildProcess;private count=0;private dead=false;private pending=new Map<number,{resolve:(v:any)=>void;reject:(e:Error)=>void;timer:NodeJS.Timeout}>();private closed:Promise<void>;private stopping?:Promise<void>;
     constructor(directory:string){
         this.child=fork(fileURLToPath(new URL('./worker.ts',import.meta.url)),[directory],{execArgv:nodeFlags(),cwd:directory,detached:true,stdio:['ignore','pipe','pipe','ipc']});
         this.closed=new Promise(resolve=>this.child.on('close',()=>{this.fail();resolve();}));
@@ -47,9 +47,13 @@ class AgentProcess implements Agent {
         if(this.dead)throw new PairError('agent_process_closed');const id=++this.count;
         return await new Promise((resolve,reject)=>{const timer=setTimeout(()=>{this.fail();void this.stop();},150000);this.pending.set(id,{resolve,reject,timer});this.child.send({id,command,value},error=>{if(error)this.fail();});});
     }
-    async stop():Promise<void>{
+    stop():Promise<void>{return this.stopping??=this.stopGroup();}
+    private async stopGroup():Promise<void>{
         this.fail();const kill=(signal:NodeJS.Signals)=>{if(this.child.pid)try{process.kill(-this.child.pid,signal);}catch{/* already exited */}};
-        kill('SIGTERM');const timer=setTimeout(()=>kill('SIGKILL'),1000);try{await this.closed;}finally{clearTimeout(timer);}
+        kill('SIGTERM');
+        // Worker exit does not prove that descendants in its process group have exited.
+        const terminated=new Promise<void>(resolve=>setTimeout(()=>{kill('SIGKILL');resolve();},1000));
+        await Promise.all([this.closed,terminated]);
     }
 }
 export async function exchange(a:Agent,b:Agent):Promise<ReturnType<typeof verifyEvidence>>{
