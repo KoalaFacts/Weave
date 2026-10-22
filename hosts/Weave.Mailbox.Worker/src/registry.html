@@ -13,16 +13,23 @@
 <p><small>The registry publishes address details only. Account profiles, private addresses and inbox/outbox contents are not public. To list your address, open the account demo and explicitly select Public when creating it.</small></p>
 <script nonce="WEAVE_NONCE">
 const $=id=>document.getElementById(id);
+const invalidAddress='Enter a valid public address ID (lowercase UUID), or use Browse all.';
 let cursor=null,search='',epoch=0,starts=[null],pageIndex=0,listing=true,pending=null;
 function directoryPath(after,q=search){return '/v1/directory?limit=10&q='+encodeURIComponent(q)+(after?'&afterCursor='+encodeURIComponent(after):'');}
 function render(addresses){$('results').replaceChildren();for(const a of addresses){const row=document.createElement('article');for(const [tag,text]of [['h2',a.label||'Unlabelled address'],['p','Address ID: '+a.addressId],['p','Account ID: '+a.accountId],['p','Effective: '+(a.effectiveFrom||'unbounded')+' → '+(a.effectiveTo||'unbounded')],['p','Direct URI metadata: '+(a.directUri||'none')]]){const e=document.createElement(tag);e.textContent=text;row.append(e);}$('results').append(row);}}
 async function load(attempt){
+    let failure='Registry unavailable. Please try again.',retryable=true;
     const current=++epoch;pending=attempt;$('status').textContent='Loading…';
     for(const id of ['previous','next','retry'])$(id).disabled=true;
     try{
         const response=await fetch(attempt.path,{credentials:'omit',redirect:'error',cache:'no-store'});
-        if(response.status===429){const seconds=Number(response.headers.get('Retry-After'));throw Error('Too many registry requests. '+(Number.isInteger(seconds)&&seconds>0?'Try again in '+seconds+' seconds.':'Please try again later.'));}
-        if(!response.ok)throw Error(response.status===404?'Public address unavailable.':'Registry unavailable ('+response.status+').');
+        if(!response.ok){
+            if(response.status===429){const seconds=Number(response.headers.get('Retry-After'));failure='Too many registry requests. '+(Number.isInteger(seconds)&&seconds>0?'Try again in '+seconds+' seconds.':'Please try again later.');}
+            else if(attempt.exact&&response.status===400){failure=invalidAddress;retryable=false;}
+            else if(attempt.exact&&response.status===404){failure='Public address unavailable.';retryable=false;}
+            else failure='Registry unavailable ('+response.status+').';
+            throw Error(failure);
+        }
         const data=await response.json();if(current!==epoch)return;
         const items=attempt.exact?[data]:data.items;render(items);listing=!attempt.exact;
         cursor=listing?data.nextCursor:null;pending=null;
@@ -33,9 +40,10 @@ async function load(attempt){
         }else{$('pageNumber').textContent='Exact lookup';}
         $('previous').disabled=!listing||pageIndex===0;$('next').disabled=!cursor;
         $('status').textContent=items.length?'Public addresses shown below.':'No current public addresses.';
-    }catch(e){
+    }catch{
         if(current!==epoch)return;
-        cursor=null;render([]);$('pageNumber').textContent='Page not loaded';$('status').textContent=e.message;$('retry').disabled=false;
+        cursor=null;pending=retryable?attempt:null;render([]);
+        $('pageNumber').textContent=retryable?'Page not loaded':'Exact lookup';$('status').textContent=failure;$('retry').disabled=!retryable;
     }
 }
 function browse(q='',index=0,after=null){return load({path:directoryPath(after,q),exact:false,index,after,search:q});}
@@ -43,11 +51,11 @@ $('find').addEventListener('click',()=>browse($('search').value));
 $('browse').addEventListener('click',()=>{$('search').value='';$('address').value='';return browse();});
 $('lookup').addEventListener('click',()=>{
     const id=$('address').value.trim();
-    if(!id){
-        ++epoch;
+    if(!id||!/^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/.test(id)){
+        ++epoch;if(pending?.exact)pending=null;
         $('previous').disabled=!listing||pageIndex===0;$('next').disabled=!cursor;
         $('retry').disabled=!pending;
-        $('status').textContent='Enter a public address ID, or use Browse all.';return;
+        $('status').textContent=id?invalidAddress:'Enter a public address ID, or use Browse all.';return;
     }
     return load({path:'/v1/directory/address?addressId='+encodeURIComponent(id),exact:true});
 });

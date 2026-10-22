@@ -50,3 +50,31 @@ test('registry renders the actual rate retry delay, clears stale rows and recove
         assert.equal(page.get('status').textContent, 'Public addresses shown below.'); assert.equal(page.get('results').children.length, 1);
     } finally { await h.close(); }
 });
+
+test('registry input validation agrees with the real address contract and correction restores lookup and browsing',async()=>{
+    const h=await start();
+    try{
+        const account=await h.register(),address=await h.address(account,{label:'Real public address',isPublic:true});
+        const page=await registry(h),before=JSON.stringify(page.get('results').children),count=page.calls.length;
+        for(const invalid of ['not-an-address','ABCDEF12-1234-1234-1234-123456789abc','12345678123412341234123456789abc']){
+            assert.equal((await h.request('/v1/directory/address?addressId='+encodeURIComponent(invalid))).status,400);
+            page.get('address').value=invalid;await page.click('lookup');
+            assert.equal(page.get('status').textContent,'Enter a valid public address ID (lowercase UUID), or use Browse all.');
+            assert.equal(page.calls.length,count);assert.equal(page.get('retry').disabled,true);
+            assert.equal(JSON.stringify(page.get('results').children),before);assert.equal(page.get('pageNumber').textContent,'Page 1');
+        }
+        for(const missing of ['00000000-0000-0000-0000-000000000000','12345678-1234-1234-1234-123456789abc','ffffffff-ffff-ffff-ffff-ffffffffffff']){
+            assert.equal((await h.request('/v1/directory/address?addressId='+missing)).status,404);
+            page.get('address').value=missing;await page.click('lookup');
+            assert.equal(page.get('status').textContent,'Public address unavailable.');
+            assert.equal(page.get('pageNumber').textContent,'Exact lookup');assert.equal(page.get('retry').disabled,true);
+            assert.equal(page.get('results').children.length,0);
+        }
+        page.get('address').value=address.addressId;await page.click('lookup');
+        assert.equal(page.get('results').children[0].children[1].textContent,'Address ID: '+address.addressId);
+        assert.equal(page.get('pageNumber').textContent,'Exact lookup');
+        await page.click('browse');assert.equal(page.get('address').value,'');assert.equal(page.get('pageNumber').textContent,'Page 1');
+        assert.equal(page.get('results').children[0].children[0].textContent,'Real public address');
+        assert.ok(page.calls.every(call=>call.options.credentials==='omit'&&!call.options.headers));
+    }finally{await h.close();}
+});

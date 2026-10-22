@@ -369,9 +369,37 @@ class EvidenceWaitTests(unittest.TestCase):
 
         self.assertEqual((code, report['failure_code']), (1, 'snapshot-evidence-timeout'))
         self.assertEqual(report['status'], 'unavailable')
+        self.assertEqual(report['snapshot_warnings'], ['private snapshot warning'])
         self.assertNotIn('dependency_records', report)
         self.assertEqual(len(opener.requests), 2)
         self.assertEqual(clock.sleeps, [10, 10])
+
+    def test_late_unwarned_response_preserves_last_observed_warning_without_accepting_evidence(self):
+        clock = Clock()
+
+        class LateReply(Reply):
+            def read(self, size):
+                clock.now += 11
+                return super().read(size)
+
+        opener = Opener(self.warning(), LateReply())
+        code, report, _ = self.run_cli(opener, 20, clock)
+
+        self.assertEqual((code, report['failure_code']), (1, 'snapshot-evidence-timeout'))
+        self.assertEqual(report['snapshot_warnings'], ['private snapshot warning'])
+        self.assertNotIn('dependency_records', report)
+        self.assertEqual(len(opener.requests), 2)
+        self.assertEqual(clock.sleeps, [10])
+
+    def test_http_denial_after_warning_stops_without_reclassifying_or_retrying_it(self):
+        opener = Opener(self.warning(), Reply(status=403), Reply())
+        code, report, clock = self.run_cli(opener, 600)
+
+        self.assertEqual((code, report['failure_code']), (1, 'comparison-http-error'))
+        self.assertEqual(report['snapshot_warnings'], [])
+        self.assertNotIn('dependency_records', report)
+        self.assertEqual(len(opener.requests), 2)
+        self.assertEqual(clock.sleeps, [10])
 
     def test_stalled_clock_still_has_a_finite_attempt_limit(self):
         opener = Opener(*(self.warning() for _ in range(61)), Reply())

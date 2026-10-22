@@ -151,12 +151,16 @@ def wait_for_comparison(repository, base_sha, head_sha, token, wait_seconds):
     if not wait_seconds:
         return inspect_comparison(repository, base_sha, head_sha, token)
     deadline = time.monotonic() + wait_seconds
+    last_warnings = ()
     for attempt in range(1, MAX_WARNING_ATTEMPTS + 1):
         try:
             return inspect_comparison(repository, base_sha, head_sha, token, deadline=deadline)
         except EvidenceUnavailable as error:
+            if error.code == "snapshot-evidence-timeout" and not error.warnings and last_warnings:
+                raise EvidenceUnavailable(error.code, last_warnings) from None
             if error.code != "missing-snapshot-evidence":
                 raise
+            last_warnings = error.warnings
             remaining = deadline - time.monotonic()
             if remaining <= 0 or attempt == MAX_WARNING_ATTEMPTS:
                 raise EvidenceUnavailable("snapshot-evidence-timeout", error.warnings) from None
