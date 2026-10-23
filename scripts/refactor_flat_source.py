@@ -177,7 +177,6 @@ def main() -> None:
         'AssemblyName': 'Weave.Product', 'RootNamespace': 'Weave', 'PackageId': 'Weave',
         'Description': 'Composable Weave features, organized as vertical slices.',
         'GenerateCqrsRegistration': 'false',
-        'NoWarn': '$(NoWarn);NU1510',
     }.items():
         ET.SubElement(properties, name).text = value
     packages: dict[str, ET.Element] = {}
@@ -185,7 +184,8 @@ def main() -> None:
     for source in sorted(MERGED):
         tree = ET.fromstring(original_projects[source])
         for item in tree.iter('PackageReference'):
-            packages[item.attrib['Include']] = item
+            if item.attrib['Include'] != 'System.Text.Json':  # Provided by the product's net10.0 framework.
+                packages[item.attrib['Include']] = item
         friends.update(x.attrib['Include'] for x in tree.iter('InternalsVisibleTo'))
     group = ET.SubElement(product, 'ItemGroup')
     for item in sorted(packages.values(), key=lambda p: p.attrib['Include']):

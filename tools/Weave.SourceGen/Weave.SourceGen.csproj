@@ -14,7 +14,6 @@
     <IsRoslynComponent>true</IsRoslynComponent>
     <ManagePackageVersionsCentrally>false</ManagePackageVersionsCentrally>
     <Nullable>enable</Nullable>
-    <NoWarn>$(NoWarn);NU1603</NoWarn>
     <RootNamespace>Weave.SourceGen</RootNamespace>
   </PropertyGroup>
   <ItemGroup>
