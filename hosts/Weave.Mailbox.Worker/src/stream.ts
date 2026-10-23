@@ -24,6 +24,8 @@ export async function stream(env: Env,owner: string,request: Request,context: Co
     const abort = () => { stopped = true; endLifetime(new Error('stream ended')); void writer.abort().catch(() => {}); };
     const deadline = setTimeout(abort,Math.max(0,expires-10000-Date.now()));
     request.signal.addEventListener('abort',abort,{once:true});
+    // Cancellation may have happened while acquiring the durable lease.
+    if (request.signal.aborted) abort();
     async function write(frame: string): Promise<boolean> {
         let timer: ReturnType<typeof setTimeout> | undefined;
         try {
@@ -34,7 +36,7 @@ export async function stream(env: Env,owner: string,request: Request,context: Co
     }
     context.waitUntil((async () => {
         try {
-            if (!await write(': pending\n\n')) return;
+            if (stopped || !await write(': pending\n\n')) return;
             // Each event gets a fresh owned snapshot. Finite connections continue a
             // server-owned traversal; wrapping replays pending messages without ACK.
             for (let cycle=0;cycle<8 && !stopped;cycle++) {
