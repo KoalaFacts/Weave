@@ -76,3 +76,40 @@ for(const [command,executable] of [['probe','codex'],['setup','op']] as const){
         }
     });
 }
+
+test('coordinator shutdown stops descendants even after their worker exits',{skip:process.platform!=='linux'},async()=>{
+    const root=mkdtempSync(join(tmpdir(),'weave-pair-descendants-')),bin=join(root,'bin');
+    mkdirSync(bin,{mode:0o700});
+    const runId=randomUUID(),vault='a'.repeat(26),reference=(role:string)=>`op://${vault}/${(role==='A'?'b':'c').repeat(26)}/password`;
+    save(join(root,'pair.json'),{version:1,runId,vault,model:'fixture',origin:ORIGIN});
+    for(const role of ['A','B']){
+        mkdirSync(join(root,role),{mode:0o700});
+        save(join(root,role,'agent.json'),{role,runId,model:'fixture',origin:ORIGIN,reference:reference(role)});
+        save(join(root,`vault-${role}.json`),{status:'saved',vault,origin:ORIGIN,reference:reference(role)});
+    }
+    // Fake executables run only local processes; the probe never completes or reaches setup.
+    const descendant="process.on('SIGTERM',()=>{});require('node:fs').writeFileSync('descendant.pid',String(process.pid));setInterval(()=>{},1000);";
+    writeFileSync(join(bin,'codex'),`#!${process.execPath}\nif(process.argv[2]==='mcp'){console.log('[]');}else if(process.argv[2]==='exec'){require('node:child_process').spawn(process.execPath,['-e',${JSON.stringify(descendant)}],{stdio:'ignore'});setInterval(()=>{},1000);}\n`,{mode:0o700});
+    writeFileSync(join(bin,'op'),`#!${process.execPath}\nconsole.log('{}');\n`,{mode:0o700});
+    const driver=join(root,'driver.mjs');
+    writeFileSync(driver,`globalThis.fetch=async()=>new Response(JSON.stringify({items:[],nextCursor:null}),{headers:{'content-type':'application/json'}});const {main}=await import(${JSON.stringify(new URL('../run.ts',import.meta.url).href)});try{process.exitCode=await main(process.argv.slice(2));}catch{process.exitCode=1;}`);
+    const child=fork(driver,['run','--state',root,'--allow-demo-writes'],{
+        execArgv:[],cwd:root,env:{PATH:bin+delimiter+process.env.PATH},stdio:['ignore','pipe','pipe','ipc']
+    });
+    child.stdout!.resume();child.stderr!.resume();
+    const exited=new Promise<void>(resolve=>child.on('exit',()=>resolve()));
+    const pids:number[]=[];
+    const running=(pid:number)=>{try{return !/^\d+ \(.*\) Z /.test(readFileSync(`/proc/${pid}/stat`,'utf8'));}catch(error){if((error as NodeJS.ErrnoException).code==='ENOENT')return false;throw error;}};
+    try{
+        await waitUntil(()=>['A','B'].every(role=>existsSync(join(root,role,'descendant.pid'))));
+        for(const role of ['A','B'])pids.push(Number(readFileSync(join(root,role,'descendant.pid'),'utf8')));
+        assert.ok(pids.every(running));child.kill('SIGTERM');
+        await Promise.race([exited,delay(5000,undefined,{ref:false}).then(()=>{throw Error('coordinator did not stop');})]);
+        assert.equal(pids.some(running),false,'coordinator exited with running descendants');
+    }finally{
+        if(child.exitCode===null&&child.signalCode===null)child.kill('SIGKILL');
+        await exited;
+        for(const role of ['A','B']){const marker=join(root,role,'descendant.pid');if(existsSync(marker)){const pid=Number(readFileSync(marker,'utf8'));if(running(pid))process.kill(pid,'SIGKILL');}}
+        rmSync(root,{recursive:true,force:true});
+    }
+});
