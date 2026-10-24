@@ -124,9 +124,13 @@ export class Endpoint {
     async reconnect():Promise<void>{
         if(!this.own||!this.target)throw new PairError('endpoint_not_ready');
         await this.client.close();
-        this.client=await this.open();
-        const matches=(await pages(this.client,'list_addresses')).filter(address=>address.addressId===this.own.addressId);
-        if(matches.length!==1||matches[0].accountId!==this.own.accountId||matches[0].isPublic!==false)throw new PairError('reconnected_identity_mismatch');
+        const client=await this.open();
+        try{
+            const matches=(await pages(client,'list_addresses')).filter(address=>address.addressId===this.own.addressId);
+            if(matches.length!==1||matches[0].accountId!==this.own.accountId||matches[0].isPublic!==false||
+                matches[0].effectiveFrom!=null||matches[0].effectiveTo!=null)throw new PairError('reconnected_identity_mismatch');
+            this.client=client;
+        }catch(error){await client.close();throw error;}
     }
     peer(peer:Peer):void{
         if(!this.own||this.target)throw new PairError('peer_already_set_or_not_ready');
