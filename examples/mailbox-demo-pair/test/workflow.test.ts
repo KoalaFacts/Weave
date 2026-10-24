@@ -205,3 +205,27 @@ test('final evidence rejects an address that changed after the message exchange'
         }finally{await Promise.all([a.close(),b.close()]);}
     });
 });
+
+test('final evidence refuses a revoked peer contact on either independent endpoint',async t=>{
+    for(const role of ['A','B'] as const)await t.test(role,async subtest=>{
+        const {a,b,r,root}=await pair(subtest);
+        try{
+            const ai=await a.setup(),bi=await b.setup();a.peer(bi);b.peer(ai);
+            await a.introduce();await b.accept();
+            for(let sequence=1;sequence<=6;sequence++)await (sequence%2?a:b).step(sequence);
+            await a.consumeFinal();
+            // Revoke only the tested endpoint's contact *after* the successful exchange.
+            const endpoint=role==='A'?a:b,client=(endpoint as any).client;
+            const original=client.call.bind(client);
+            client.call=async(name:string,args:any)=>{
+                const result=await original(name,args);
+                return name==='get_contact'?{...result,canSend:false}:result;
+            };
+            const writes=()=>r.calls.filter(x=>['send_message','ack_message','register_account','create_address','request_contact','decide_contact'].includes(x.name)).length;
+            const before=writes();
+            await assert.rejects(endpoint.evidence(),/evidence_contact_mismatch/);
+            assert.equal(writes(),before,'evidence revalidation must not create writes');
+            assert.equal(existsSync(join(root,role,'evidence.json')),false,'revoked contact must not produce successful evidence');
+        }finally{await Promise.all([a.close(),b.close()]);}
+    });
+});
