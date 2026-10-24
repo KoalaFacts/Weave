@@ -15,6 +15,7 @@
   "include": [
     "scripts/**/*.ts",
     "test/local-miniflare.ts",
+    "test/mcp-readme-contract.test.ts",
     "../../examples/mailbox-demo-mcp/*.ts",
     "../../scripts/marketplace/*.ts",
     "../../examples/mailbox-demo-pair/**/*.ts"

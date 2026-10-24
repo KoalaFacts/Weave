@@ -56,7 +56,7 @@ export class StdioClient implements Client {
     }
     async call(name:string,args:Record<string,unknown>={}):Promise<any>{
         const result=object(await this.request('tools/call',{name,arguments:args}));
-        if(result.isError||!Array.isArray(result.content)||result.content.length!==1||result.content[0].type!=='text')throw new PairError('mcp_tool_failed');
+        if(result.isError||!Array.isArray(result.content)||result.content.length!==1||result.content[0]?.type!=='text'||typeof result.content[0].text!=='string')throw new PairError('mcp_tool_failed');
         try{return parseWire(result.content[0].text);}catch{throw new PairError('invalid_mcp_result');}
     }
     async close():Promise<void>{this.fail();await this.closed;}
