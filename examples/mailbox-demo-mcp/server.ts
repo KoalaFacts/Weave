@@ -1,6 +1,8 @@
 // Native Node stdio MCP, following examples/plugins/echo; stdout is JSON-RPC only.
 import { tools, validArguments, operation, preparePayload } from './tools.ts';
 import { readFileSync } from 'node:fs';
+import { ConnectionState } from './connection.ts';
+const connection = new ConnectionState();
 const agentInstructions=readFileSync(new URL('../../hosts/Weave.Mailbox.Worker/src/agent-start.md',import.meta.url),'utf8');
 const MAX_LINE=262144,MAX_RESPONSE=1048576;
 let origin:string,wireControl:string|null|undefined,control=process.env.WEAVE_ACCOUNT_CONTROL??process.env.WEAVE_MAILBOX_CONTROL;
@@ -22,20 +24,22 @@ const guide={origin,registry:origin+'/registry',start:origin+'/agent-start.md',i
     retry:'No automatic HTTP retries. A transport timeout/failure on a write may mean the operation committed: retain IDs/body and retry identical input only. create_address has no idempotency key: reconcile list_addresses before considering another create. Do not regenerate a payload after an unknown outcome.',
     limits:'Text demo, no end-to-end encryption, no secret recovery, no hosted-agent wake. Control length is not entropy; the operator must manage a securely generated control. Discovery and initialization never register automatically.'};
 async function http(method:string,path:string,body?:unknown,publicRead?:boolean){
+    if(connection.accessDenied)return textResult({code:'access_denied',nextAction:'Do not retry or switch routes. Resolve the denial with the owner.',requestSent:false},true);
     if(!publicRead&&!control)return textResult('A control of at least 64 characters must be supplied by the operator in WEAVE_ACCOUNT_CONTROL.',true);
     const headers:Record<string,string>={'Accept':'application/json'};if(body!==undefined)headers['Content-Type']='application/json';if(!publicRead)headers['X-Weave-Account-Control']=control!;
     let response;
     try{
         response=await fetch(origin+path,{method,headers,redirect:'error',signal:AbortSignal.timeout(10000),...(body===undefined?{}:{body:JSON.stringify(body)})});
+        connection.response(method,path,response.status,!!publicRead);
         if(!response.ok){await response.body?.cancel();return textResult(`Demo HTTP ${response.status}. No retry was made. For writes, retain the original input and reconcile state before retrying.`,true);}
-        if(!/^application\/json(?:;|$)/i.test(response.headers.get('content-type')??'')){await response.body?.cancel();return textResult('Demo returned an unexpected response type.',true);}
+        if(!/^application\/json(?:;|$)/i.test(response.headers.get('content-type')??'')){connection.failed(method,path,!!publicRead);await response.body?.cancel();return textResult('Demo returned an unexpected response type.',true);}
         const chunks=[];let bytes=0;for await(const chunk of response.body!){bytes+=chunk.length;if(bytes>MAX_RESPONSE)throw Error();chunks.push(chunk);}
         const raw=Buffer.concat(chunks).toString('utf8');
         const parsed=JSON.parse(raw,(_key,value,context)=>typeof value==='number'&&!Number.isSafeInteger(value)&&/^-?\d+$/.test(context.source??'')?JSON.rawJSON(context.source!):value);
         let serialized=JSON.stringify(parsed);
         for(const credential of new Set([control,wireControl]))if(credential)serialized=serialized.replaceAll(JSON.stringify(credential).slice(1,-1),'[redacted]');
         return textResult(serialized);
-    }catch{return textResult('Demo request failed or timed out; outcome may be unknown. No retry was made. Retain the exact input and reconcile state before retrying.',true);}
+    }catch{connection.failed(method,path,!!publicRead);return textResult('Demo request failed or timed out; outcome may be unknown. No retry was made. Retain the exact input and reconcile state before retrying.',true);}
 }
 let initialized=false,ready=false;
 const error=(id:unknown,code:number,message:string)=>({jsonrpc:'2.0',id,error:{code,message}});
@@ -55,7 +59,7 @@ async function handle(message:RpcMessage|null){
         const args=params.arguments??{};
         if(!validArguments(tool,args))result=textResult('Invalid tool arguments; use the advertised schema. No request was sent.',true);
         else try{
-            result=tool.name==='demo_guide'?textResult(guide):tool.name==='prepare_payload'?textResult(preparePayload(args.text as string)):await http(...operation(tool.name,args));
+            result=tool.name==='demo_guide'?textResult({...guide,connection:connection.snapshot(control!==undefined)}):tool.name==='prepare_payload'?textResult(preparePayload(args.text as string)):await http(...operation(tool.name,args));
         }catch{result=textResult('Invalid tool arguments. No request was sent.',true);}
     }else return error(id,-32601,'Unknown method.');
     return {jsonrpc:'2.0',id,result};
