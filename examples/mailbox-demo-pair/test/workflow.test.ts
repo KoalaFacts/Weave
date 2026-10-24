@@ -40,7 +40,14 @@ test('two endpoints recover private identities, review introductions, converse a
     const {a,b,r,seen}=await pair(t);
     try{
         const ai=await a.setup(),bi=await b.setup();a.peer(bi);b.peer(ai);await a.introduce();await b.accept();
-        for(let n=1;n<=6;n++)await (n%2?a:b).step(n);
+        for(let n=1;n<=6;n++){
+            await (n%2?a:b).step(n);
+            if(n===2){
+                assert.equal(r.messages.filter(m=>m.state==='pending').length,1);
+                await Promise.all([a.reconnect(),b.reconnect()]);
+                assert.equal(r.messages.filter(m=>m.state==='pending').length,1);
+            }
+        }
         await a.consumeFinal();const ae=await a.evidence(),be=await b.evidence();
         const {verifyEvidence}=await import('../endpoint.ts');
         assert.equal(verifyEvidence(ae,be).messages.length,6);assert.equal(seen.length,6);
@@ -54,6 +61,24 @@ test('recipient will not accept an introduction from a different run',async t=>{
     const {a,b,r}=await pair(t);try{const ai=await a.setup(),bi=await b.setup();a.peer(bi);b.peer(ai);await a.introduce();
         r.messages[0].envelope.payload.bytes=Buffer.from(JSON.stringify({type:'weave-pair-contact',runId:randomUUID()})).toString('base64');
         await assert.rejects(b.accept());assert.equal(r.calls.filter(x=>x.name==='decide_contact').length,0);
+    }finally{await a.close();await b.close();}
+});
+test('a reconnect with changed private address ownership fails closed before processing',async t=>{
+    const {a,b,r}=await pair(t);
+    try{
+        const ai=await a.setup(),bi=await b.setup();a.peer(bi);b.peer(ai);await a.introduce();await b.accept();
+        await a.step(1);await b.step(2);
+        const original=(a as any).open;
+        (a as any).open=async()=>{
+            const client=await original(),call=client.call;
+            client.call=async(name:string,args:any)=>name==='list_addresses'
+                ? {items:[{accountId:B,addressId:ai.addressId,isPublic:false}],nextCursor:null} : call(name,args);
+            return client;
+        };
+        await assert.rejects(a.reconnect(),/reconnected_identity_mismatch/);
+        assert.equal(r.calls.filter(x=>x.name==='register_account').length,4);
+        assert.equal(r.calls.filter(x=>x.name==='send_message').length,2);
+        assert.equal(r.messages.filter(m=>m.state==='pending').length,1);
     }finally{await a.close();await b.close();}
 });
 test('a write failure preserves a pending exact payload without retry',async t=>{
