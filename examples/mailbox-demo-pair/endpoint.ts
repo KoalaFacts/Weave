@@ -76,8 +76,9 @@ export class Endpoint {
         const owner=identity(own.accountId),addressId=identity(own.addressId),peer=identity(target.accountId);
         identity(target.addressId);
         if(owner===peer||saved.accountId!==owner||saved.addressId!==addressId||
-            (this.role==='A'?identity(record.introId):record.introId!==null))
+            (this.role==='A'?typeof record.introId!=='string':record.introId!==null))
             throw new PairError('restart_checkpoint_mismatch');
+        if(this.role==='A')identity(record.introId);
         if(!Number.isSafeInteger(record.index)||record.index<1||
             readdirSync(this.directory).filter(name=>/^intent-[1-9][0-9]*\\.json$/.test(name)).length!==record.index)
             throw new PairError('restart_unresolved_write');
