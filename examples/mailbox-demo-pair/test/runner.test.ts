@@ -47,6 +47,29 @@ test('coordinator resumes on new agent objects after turn two without replaying 
     assert.equal(calls.filter(c=>c.command==='reconnect').length,0);
 });
 
+test('cold handoff never starts fresh workers after shutdown during old worker cleanup',async()=>{
+    const {coldHandoff}=await import('../run.ts');
+    const cancellation=new AbortController();let finishStop!:()=>void,spawns=0;
+    const stopped=new Promise<void>(resolve=>{finishStop=resolve;});
+    const pending=coldHandoff(async()=>{await stopped;},async()=>{spawns++;return {};},cancellation.signal);
+    cancellation.abort();finishStop();
+    await assert.rejects(pending,/agent_run_cancelled/);
+    assert.equal(spawns,0);
+});
+
+test('coordinator skips all further turns when shutdown is requested at cold handoff',async()=>{
+    const {exchange}=await import('../run.ts'),cancellation=new AbortController(),steps:number[]=[];
+    const make=(role:'A'|'B')=>({call:async(command:string,value?:unknown)=>{
+        if(command==='setup')return {accountId:role==='A'?'11111111-1111-4111-8111-111111111111':'22222222-2222-4222-8222-222222222222',addressId:randomUUID()};
+        if(command==='step')steps.push(value as number);
+        return {};
+    }});
+    await assert.rejects(exchange(make('A'),make('B'),async()=>{
+        cancellation.abort();return {a:make('A'),b:make('B')};
+    },cancellation.signal),/agent_run_cancelled/);
+    assert.deepEqual(steps,[1,2]);
+});
+
 test('a released run lock does not permit re-running a retained attempt',async t=>{
     const {claimAttempt}=await import('../run.ts');
     const dir=mkdtempSync(join(tmpdir(),'weave-attempt-'));t.after(()=>rmSync(dir,{recursive:true,force:true}));

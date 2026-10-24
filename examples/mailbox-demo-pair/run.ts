@@ -56,24 +56,42 @@ class AgentProcess implements Agent {
         await Promise.all([this.closed,terminated]);
     }
 }
-export async function exchange(a:Agent,b:Agent,restart?:(a:Agent,b:Agent)=>Promise<{a:Agent;b:Agent}>):Promise<ReturnType<typeof verifyEvidence>>{
+// A shutdown request must prevent a new process from being spawned after the old group exits.
+export async function coldHandoff<T>(stop:()=>Promise<void>,start:()=>Promise<T>,signal:AbortSignal):Promise<T>{
+    await stop();
+    if(signal.aborted)throw new PairError('agent_run_cancelled');
+    const fresh=await start();
+    if(signal.aborted)throw new PairError('agent_run_cancelled');
+    return fresh;
+}
+export async function exchange(a:Agent,b:Agent,restart?:(a:Agent,b:Agent)=>Promise<{a:Agent;b:Agent}>,signal?:AbortSignal):Promise<ReturnType<typeof verifyEvidence>>{
+    const requireActive=()=>{if(signal?.aborted)throw new PairError('agent_run_cancelled');};
     let left=a,right=b;
+    requireActive();
     // Probe both real model runtimes before either endpoint creates a demo account.
     await Promise.all([a.call('probe'),b.call('probe')]);
+    requireActive();
     const [ai,bi]=await Promise.all([a.call('setup'),b.call('setup')]);
+    requireActive();
     if(identity(ai.accountId)===identity(bi.accountId))throw new PairError('accounts_not_distinct');
     const invitation=(v:any)=>({accountId:identity(v.accountId),addressId:identity(v.addressId)});
     await a.call('peer',invitation(bi));await b.call('peer',invitation(ai));
-    await a.call('introduce');await b.call('accept');
+    requireActive();await a.call('introduce');
+    requireActive();await b.call('accept');
     for(let sequence=1;sequence<=6;sequence++){
+        requireActive();
         await (sequence%2?left:right).call('step',sequence);
+        requireActive();
         // At the settled turn-two barrier, a fresh process reopens each vault-backed MCP identity.
         if(sequence===2){
-            if(restart){const fresh=await restart(left,right);left=fresh.a;right=fresh.b;}
+            if(restart){const fresh=await restart(left,right);requireActive();left=fresh.a;right=fresh.b;}
             else await Promise.all([left.call('reconnect'),right.call('reconnect')]);
+            requireActive();
         }
     }
-    await left.call('consumeFinal');return verifyEvidence(await left.call('evidence'),await right.call('evidence'));
+    requireActive();await left.call('consumeFinal');
+    requireActive();const evidence=await Promise.all([left.call('evidence'),right.call('evidence')]);
+    requireActive();return verifyEvidence(evidence[0],evidence[1]);
 }
 function flags(args:string[]):Record<string,string|boolean>{
     const result:Record<string,string|boolean>={};const known=['state','vault','model','allow-vault-writes','allow-demo-writes'];
@@ -124,17 +142,20 @@ export async function main(args:string[]):Promise<number>{
     if(references.size!==2)throw new PairError('vault_references_not_distinct');
     const diagnosis=await doctor(config.vault);if(!diagnosis.ready){console.log(JSON.stringify({status:'blocked',...diagnosis,remoteWrites:false}));return 2;}
     const release=claimAttempt(state,config.runId);let a:AgentProcess|undefined,b:AgentProcess|undefined;
-    const interrupt=()=>{void Promise.all([a?.stop(),b?.stop()]);};
+    const cancellation=new AbortController();
+    const interrupt=()=>{cancellation.abort();void Promise.all([a?.stop(),b?.stop()]);};
     process.on('SIGINT',interrupt);process.on('SIGTERM',interrupt);
     try{
         a=new AgentProcess(join(state,'A'));b=new AgentProcess(join(state,'B'));
-        const result=await exchange(a,b,async()=>{
-            // A completed turn is the sole safe hand-off; never resume an interrupted write.
-            await Promise.all([a!.stop(),b!.stop()]);
-            a=new AgentProcess(join(state,'A'));b=new AgentProcess(join(state,'B'));
-            await Promise.all([a.call('restore'),b.call('restore')]);
-            return {a,b};
-        });
+        const result=await exchange(a,b,async()=>await coldHandoff(
+            async()=>{await Promise.all([a!.stop(),b!.stop()]);},
+            async()=>{
+                a=new AgentProcess(join(state,'A'));b=new AgentProcess(join(state,'B'));
+                await Promise.all([a.call('restore'),b.call('restore')]);
+                return {a,b};
+            },cancellation.signal
+        ),cancellation.signal);
+        if(cancellation.signal.aborted)throw new PairError('agent_run_cancelled');
         save(join(state,'result.json'),{status:'completed',kind:'model-driven-endpoints',nativeChatGPTSubagents:false,origin:ORIGIN,runId:config.runId,requestedModel:config.model,conversationModelCalls:6,preflightModelCalls:2,...result});
         console.log(JSON.stringify({status:'completed',messages:result.messages.length,evidence:join(state,'result.json')}));return 0;
     }catch(error){save(join(state,'result.json'),{status:'not_completed',runId:config.runId,reason:error instanceof PairError?error.message:'test_failed',remoteWritesMayHaveOccurred:true});throw error;}
