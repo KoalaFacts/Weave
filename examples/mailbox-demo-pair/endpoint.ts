@@ -80,7 +80,7 @@ export class Endpoint {
             throw new PairError('restart_checkpoint_mismatch');
         if(this.role==='A')identity(record.introId);
         if(!Number.isSafeInteger(record.index)||record.index<1||
-            readdirSync(this.directory).filter(name=>/^intent-[1-9][0-9]*\\.json$/.test(name)).length!==record.index)
+            readdirSync(this.directory).filter(name=>/^intent-[1-9][0-9]*\.json$/.test(name)).length!==record.index)
             throw new PairError('restart_unresolved_write');
         for(let i=1;i<=record.index;i++){
             const intent=object(load(join(this.directory,`intent-${i}.json`)));
