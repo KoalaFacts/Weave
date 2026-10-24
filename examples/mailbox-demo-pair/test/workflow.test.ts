@@ -33,7 +33,7 @@ async function pair(t:any){
     const {Endpoint}=await import('../endpoint.ts');
     const root=mkdtempSync(join(tmpdir(),'weave-endpoint-'));t.after(()=>rmSync(root,{recursive:true,force:true}));
     const r=relay(),runId=randomUUID(),seen:any[]=[];
-    function endpoint(role:'A'|'B') {const dir=join(root,role);mkdirSync(dir,{mode:0o700});return new Endpoint(role,runId,dir,r.open(role),async(sequence:number,history:any[])=>{seen.push({role,sequence,history:structuredClone(history)});return {text:`Generated ${role} ${sequence}: ${history.at(-1)?.text??'first question'}`,threadId:randomUUID(),inputTokens:10,outputTokens:10};});}
+    function endpoint(role:'A'|'B') {const dir=join(root,role);if(!existsSync(dir))mkdirSync(dir,{mode:0o700});return new Endpoint(role,runId,dir,r.open(role),async(sequence:number,history:any[])=>{seen.push({role,sequence,history:structuredClone(history)});return {text:`Generated ${role} ${sequence}: ${history.at(-1)?.text??'first question'}`,threadId:randomUUID(),inputTokens:10,outputTokens:10};});}
     return {a:endpoint('A'),b:endpoint('B'),make:endpoint,root,r,seen,runId};
 }
 test('two endpoints recover private identities, review introductions, converse and verify receipts',async t=>{
