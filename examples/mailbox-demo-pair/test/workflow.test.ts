@@ -81,6 +81,31 @@ test('a reconnect with changed private address ownership fails closed before pro
         assert.equal(r.messages.filter(m=>m.state==='pending').length,1);
     }finally{await a.close();await b.close();}
 });
+test('reconnect rejects a changed private address lifetime and closes the rejected transport',async t=>{
+    const {a,b,r}=await pair(t);
+    try{
+        const ai=await a.setup(),bi=await b.setup();a.peer(bi);b.peer(ai);await a.introduce();await b.accept();
+        await a.step(1);await b.step(2);
+        const original=(a as any).open;let rejectedCloses=0;
+        (a as any).open=async()=>{
+            const client=await original(),call=client.call,close=client.close;
+            client.call=async(name:string,args:any)=>{
+                const response=await call(name,args);
+                if(name!=='list_addresses')return response;
+                return {...response,items:response.items.map((address:any)=>address.addressId===ai.addressId
+                    ? {...address,effectiveTo:'2026-10-24T00:00:00.000Z'}:address)};
+            };
+            client.close=async()=>{rejectedCloses++;await close();};
+            return client;
+        };
+        const writesBefore=r.calls.filter(x=>['send_message','ack_message','register_account','create_address','request_contact','decide_contact'].includes(x.name)).length;
+        await assert.rejects(a.reconnect(),/reconnected_identity_mismatch/);
+        assert.equal(rejectedCloses,1);
+        assert.equal(r.calls.filter(x=>['send_message','ack_message','register_account','create_address','request_contact','decide_contact'].includes(x.name)).length,writesBefore);
+        assert.equal(r.messages.filter(m=>m.state==='pending').length,1);
+    }finally{await a.close();await b.close();}
+});
+
 test('a write failure preserves a pending exact payload without retry',async t=>{
     const {a,b,root}=await pair(t);try{const ai=await a.setup(),bi=await b.setup();a.peer(bi);b.peer(ai);await a.introduce();await b.accept();
         const original=(a as any).client.call.bind((a as any).client);let attempts=0;
