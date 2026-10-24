@@ -229,3 +229,27 @@ test('final evidence refuses a revoked peer contact on either independent endpoi
         }finally{await Promise.all([a.close(),b.close()]);}
     });
 });
+
+test('final evidence rejects a replaced contact generation despite accepted contact and old ACKs',async t=>{
+    for(const role of ['A','B'] as const)await t.test(role,async subtest=>{
+        const {a,b,r,root}=await pair(subtest);
+        try{
+            const ai=await a.setup(),bi=await b.setup();a.peer(bi);b.peer(ai);
+            await a.introduce();await b.accept();
+            for(let sequence=1;sequence<=6;sequence++)await (sequence%2?a:b).step(sequence);
+            await a.consumeFinal();
+            // Model a revoked then reaccepted relationship: canSend is true, but this is a new channel.
+            const endpoint=role==='A'?a:b,client=(endpoint as any).client;
+            const original=client.call.bind(client);
+            client.call=async(name:string,args:any)=>{
+                const result=await original(name,args);
+                return name==='get_channel'?{...result,generation:'2'}:result;
+            };
+            const writes=()=>r.calls.filter(x=>['send_message','ack_message','register_account','create_address','request_contact','decide_contact'].includes(x.name)).length;
+            const before=writes();
+            await assert.rejects(endpoint.evidence(),/evidence_channel_generation_mismatch/);
+            assert.equal(writes(),before,'final generation proof must not write or replay messages');
+            assert.equal(existsSync(join(root,role,'evidence.json')),false,'replaced channel must not produce success evidence');
+        }finally{await Promise.all([a.close(),b.close()]);}
+    });
+});

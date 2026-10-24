@@ -217,6 +217,26 @@ export class Endpoint {
         const receipts=await pages(this.client,'read_outbox'),expected=[...this.sent.map(m=>m.messageId),...(this.introId?[this.introId]:[])];
         const acknowledged:string[]=[];
         for(const id of expected){const matched=receipts.filter(r=>r.messageId===id&&r.recipientAccountId===this.target.accountId);if(matched.length!==1||matched[0].state!=='acknowledged')throw new PairError('receipt_not_acknowledged');acknowledged.push(id);}
+        // Accepted contact and old ACKs are not proof that the original channel still exists.
+        // Bind the proof to the exact persisted send intents, including across the cold restart.
+        const sendIntents=readdirSync(this.directory)
+            .filter(name=>/^intent-[1-9][0-9]*\.json$/.test(name))
+            .map(name=>object(load(join(this.directory,name))))
+            .filter(intent=>intent.operation==='send_message');
+        if(this.sent.length!==3||sendIntents.length!==this.sent.length)
+            throw new PairError('evidence_channel_generation_mismatch');
+        const ids=new Set<string>(),generations=new Set<string>();
+        for(const intent of sendIntents){
+            const args=object(intent.arguments),payload=object(args.payload),id=identity(payload.messageId);
+            if(intent.status!=='response_received'||args.recipientAccountId!==this.target.accountId||
+                ids.has(id)||!this.sent.some(message=>message.messageId===id))
+                throw new PairError('evidence_channel_generation_mismatch');
+            ids.add(id);generations.add(parseGeneration(args.contactGeneration));
+        }
+        const channel=await this.client.call('get_channel',{peerAccountId:this.target.accountId});
+        if(generations.size!==1||parseGeneration(channel.generation)!==generations.values().next().value||
+            channel.isBlockedByMailbox===true||channel.isBlockedByPeer===true)
+            throw new PairError('evidence_channel_generation_mismatch');
         const result={role:this.role,runId:this.runId,accountId:this.own.accountId,peerAccountId:this.target.accountId,recoveryVerified:this.recovered,privateAddress,sent:this.sent,received:this.received,models:this.models,acknowledged};
         save(join(this.directory,'evidence.json'),result);return result;
     }
