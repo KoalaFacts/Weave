@@ -56,7 +56,8 @@ class AgentProcess implements Agent {
         await Promise.all([this.closed,terminated]);
     }
 }
-export async function exchange(a:Agent,b:Agent):Promise<ReturnType<typeof verifyEvidence>>{
+export async function exchange(a:Agent,b:Agent,restart?:(a:Agent,b:Agent)=>Promise<{a:Agent;b:Agent}>):Promise<ReturnType<typeof verifyEvidence>>{
+    let left=a,right=b;
     // Probe both real model runtimes before either endpoint creates a demo account.
     await Promise.all([a.call('probe'),b.call('probe')]);
     const [ai,bi]=await Promise.all([a.call('setup'),b.call('setup')]);
@@ -65,11 +66,14 @@ export async function exchange(a:Agent,b:Agent):Promise<ReturnType<typeof verify
     await a.call('peer',invitation(bi));await b.call('peer',invitation(ai));
     await a.call('introduce');await b.call('accept');
     for(let sequence=1;sequence<=6;sequence++){
-        await (sequence%2?a:b).call('step',sequence);
-        // Keep the second reply unacknowledged while both endpoints reopen their own MCP bindings.
-        if(sequence===2)await Promise.all([a.call('reconnect'),b.call('reconnect')]);
+        await (sequence%2?left:right).call('step',sequence);
+        // At the settled turn-two barrier, a fresh process reopens each vault-backed MCP identity.
+        if(sequence===2){
+            if(restart){const fresh=await restart(left,right);left=fresh.a;right=fresh.b;}
+            else await Promise.all([left.call('reconnect'),right.call('reconnect')]);
+        }
     }
-    await a.call('consumeFinal');return verifyEvidence(await a.call('evidence'),await b.call('evidence'));
+    await left.call('consumeFinal');return verifyEvidence(await left.call('evidence'),await right.call('evidence'));
 }
 function flags(args:string[]):Record<string,string|boolean>{
     const result:Record<string,string|boolean>={};const known=['state','vault','model','allow-vault-writes','allow-demo-writes'];
@@ -124,7 +128,13 @@ export async function main(args:string[]):Promise<number>{
     process.on('SIGINT',interrupt);process.on('SIGTERM',interrupt);
     try{
         a=new AgentProcess(join(state,'A'));b=new AgentProcess(join(state,'B'));
-        const result=await exchange(a,b);
+        const result=await exchange(a,b,async()=>{
+            // A completed turn is the sole safe hand-off; never resume an interrupted write.
+            await Promise.all([a!.stop(),b!.stop()]);
+            a=new AgentProcess(join(state,'A'));b=new AgentProcess(join(state,'B'));
+            await Promise.all([a.call('restore'),b.call('restore')]);
+            return {a,b};
+        });
         save(join(state,'result.json'),{status:'completed',kind:'model-driven-endpoints',nativeChatGPTSubagents:false,origin:ORIGIN,runId:config.runId,requestedModel:config.model,conversationModelCalls:6,preflightModelCalls:2,...result});
         console.log(JSON.stringify({status:'completed',messages:result.messages.length,evidence:join(state,'result.json')}));return 0;
     }catch(error){save(join(state,'result.json'),{status:'not_completed',runId:config.runId,reason:error instanceof PairError?error.message:'test_failed',remoteWritesMayHaveOccurred:true});throw error;}
