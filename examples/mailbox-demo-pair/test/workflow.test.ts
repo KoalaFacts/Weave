@@ -176,3 +176,32 @@ test('cold restore refuses a different owner for the retained private address',a
     finally{await freshA.close();}
     assert.equal(r.calls.filter(x=>['register_account','send_message','ack_message','request_contact','decide_contact','create_address'].includes(x.name)).length,writes);
 });
+
+test('final evidence rejects an address that changed after the message exchange',async t=>{
+    for(const changed of [
+        {name:'public exposure',patch:{isPublic:true}},
+        {name:'new expiry bound',patch:{effectiveTo:'2026-10-25T00:00:00.000Z'}}
+    ])await t.test(changed.name,async subtest=>{
+        const {a,b,r,root}=await pair(subtest);
+        try{
+            const ai=await a.setup(),bi=await b.setup();a.peer(bi);b.peer(ai);
+            await a.introduce();await b.accept();
+            for(let n=1;n<=6;n++)await (n%2?a:b).step(n);
+            await a.consumeFinal();
+            // Simulate a remote address change *after* the six acknowledged messages.
+            // The final evidence gate must read the current address rather than asserting a hard-coded true.
+            const client=(a as any).client,call=client.call.bind(client);
+            client.call=async(name:string,args:any)=>{
+                const result=await call(name,args);
+                if(name!=='list_addresses')return result;
+                return {...result,items:result.items.map((address:any)=>address.addressId===ai.addressId
+                    ? {...address,...changed.patch}:address)};
+            };
+            const writes=()=>r.calls.filter(x=>['send_message','ack_message','register_account','create_address','request_contact','decide_contact'].includes(x.name)).length;
+            const before=writes();
+            await assert.rejects(a.evidence(),/evidence_address_mismatch/);
+            assert.equal(writes(),before,'final evidence validation must be read-only');
+            assert.equal(existsSync(join(root,'A','evidence.json')),false,'must not save false private-address evidence');
+        }finally{await Promise.all([a.close(),b.close()]);}
+    });
+});
