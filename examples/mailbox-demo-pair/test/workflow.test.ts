@@ -33,8 +33,8 @@ async function pair(t:any){
     const {Endpoint}=await import('../endpoint.ts');
     const root=mkdtempSync(join(tmpdir(),'weave-endpoint-'));t.after(()=>rmSync(root,{recursive:true,force:true}));
     const r=relay(),runId=randomUUID(),seen:any[]=[];
-    function endpoint(role:'A'|'B') {const dir=join(root,role);mkdirSync(dir,{mode:0o700});return new Endpoint(role,runId,dir,r.open(role),async(sequence:number,history:any[])=>{seen.push({role,sequence,history:structuredClone(history)});return {text:`Generated ${role} ${sequence}: ${history.at(-1)?.text??'first question'}`,threadId:randomUUID(),inputTokens:10,outputTokens:10};});}
-    return {a:endpoint('A'),b:endpoint('B'),root,r,seen,runId};
+    function endpoint(role:'A'|'B') {const dir=join(root,role);if(!existsSync(dir))mkdirSync(dir,{mode:0o700});return new Endpoint(role,runId,dir,r.open(role),async(sequence:number,history:any[])=>{seen.push({role,sequence,history:structuredClone(history)});return {text:`Generated ${role} ${sequence}: ${history.at(-1)?.text??'first question'}`,threadId:randomUUID(),inputTokens:10,outputTokens:10};});}
+    return {a:endpoint('A'),b:endpoint('B'),make:endpoint,root,r,seen,runId};
 }
 test('two endpoints recover private identities, review introductions, converse and verify receipts',async t=>{
     const {a,b,r,seen}=await pair(t);
@@ -106,4 +106,48 @@ test('failed fresh authentication does not trigger another registration',async t
 });
 test('completion rejects fabricated receiver content even with acknowledged receipts',async t=>{
     const {a,b}=await pair(t);try{const ai=await a.setup(),bi=await b.setup();a.peer(bi);b.peer(ai);await a.introduce();await b.accept();for(let n=1;n<=6;n++)await(n%2?a:b).step(n);await a.consumeFinal();const ae=await a.evidence(),be=await b.evidence();be.received[0].text='fabricated';const {verifyEvidence}=await import('../endpoint.ts');assert.throws(()=>verifyEvidence(ae,be));}finally{await a.close();await b.close();}
+});
+
+test('a cold worker boundary restores both authenticated histories without replaying a pending delivery',async t=>{
+    const {a,b,make,r,seen}=await pair(t);
+    const ai=await a.setup(),bi=await b.setup();a.peer(bi);b.peer(ai);await a.introduce();await b.accept();
+    await a.step(1);await b.step(2);
+    assert.equal(r.messages.filter(m=>m.state==='pending').length,1);
+    await Promise.all([a.close(),b.close()]);
+    const freshA=make('A'),freshB=make('B');
+    try{
+        await Promise.all([freshA.restore(),freshB.restore()]);
+        assert.equal(r.calls.filter(x=>x.name==='send_message').length,2);
+        assert.equal(r.messages.filter(m=>m.state==='pending').length,1);
+        for(let sequence=3;sequence<=6;sequence++)await(sequence%2?freshA:freshB).step(sequence);
+        await freshA.consumeFinal();
+        const {verifyEvidence}=await import('../endpoint.ts');
+        assert.equal(verifyEvidence(await freshA.evidence(),await freshB.evidence()).messages.length,6);
+        assert.deepEqual(seen.filter(s=>s.sequence===3).map(s=>s.history.map((h:any)=>h.sequence)),[[1,2]]);
+        assert.ok(r.messages.every(m=>m.state==='acknowledged'));
+    }finally{await Promise.all([freshA.close(),freshB.close()]);}
+});
+test('cold restore rejects unresolved writes before any network access or replay',async t=>{
+    const {a,b,make,r,root}=await pair(t);
+    const ai=await a.setup(),bi=await b.setup();a.peer(bi);b.peer(ai);await a.introduce();await b.accept();
+    await a.step(1);await b.step(2);await Promise.all([a.close(),b.close()]);
+    const path=join(root,'B','restart-checkpoint.json'),checkpoint=JSON.parse(readFileSync(path,'utf8'));
+    const intent=join(root,'B',`intent-${checkpoint.index}.json`),old=JSON.parse(readFileSync(intent,'utf8'));
+    const {save}=await import('../runtime.ts');
+    save(intent,{...old,status:'pending'});
+    const writes=r.calls.length;const freshB=make('B');
+    try{await assert.rejects(freshB.restore(),/restart_unresolved_write/);assert.equal(r.calls.length,writes);}
+    finally{await freshB.close();}
+});
+test('cold restore refuses a different owner for the retained private address',async t=>{
+    const {a,b,make,r}=await pair(t);
+    const ai=await a.setup(),bi=await b.setup();a.peer(bi);b.peer(ai);await a.introduce();await b.accept();
+    await a.step(1);await b.step(2);await Promise.all([a.close(),b.close()]);
+    const freshA=make('A'),original=(freshA as any).open;
+    (freshA as any).open=async()=>{const c=await original(),call=c.call;c.call=async(name:string,args:any)=>name==='list_addresses'
+        ? {items:[{accountId:B,addressId:ai.addressId,isPublic:false}],nextCursor:null}:call(name,args);return c;};
+    const writes=r.calls.filter(x=>['register_account','send_message','ack_message','request_contact','decide_contact','create_address'].includes(x.name)).length;
+    try{await assert.rejects(freshA.restore(),/restart_identity_mismatch/);}
+    finally{await freshA.close();}
+    assert.equal(r.calls.filter(x=>['register_account','send_message','ack_message','request_contact','decide_contact','create_address'].includes(x.name)).length,writes);
 });

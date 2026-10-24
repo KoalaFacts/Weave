@@ -1,4 +1,4 @@
-import {existsSync} from 'node:fs';
+import {existsSync,readdirSync} from 'node:fs';
 import {join} from 'node:path';
 import {createHash} from 'node:crypto';
 import {PairError,ORIGIN,identity,object,parseGeneration,save,load} from './runtime.ts';
@@ -54,6 +54,71 @@ export class Endpoint {
         const address=existing[0]??await this.write('create_address',{label,isPublic:false});
         if(address.accountId!==accountId||address.isPublic!==false||address.effectiveFrom!=null||address.effectiveTo!=null)throw new PairError('unexpected_test_address');
         this.own={accountId,addressId:identity(address.addressId)};save(path,{origin:ORIGIN,...this.own,recovery:'verified'});return this.own;
+    }
+    // Only the settled first turn of each agent is restorable. Later effects invalidate this barrier.
+    private checkpoint(sequence:number):void{
+        if(sequence!==(this.role==='A'?1:2))return;
+        save(join(this.directory,'restart-checkpoint.json'),{
+            version:1,origin:ORIGIN,role:this.role,runId:this.runId,completedSequence:sequence,
+            own:this.own,target:this.target,introId:this.introId??null,index:this.index,
+            sent:this.sent,received:this.received,models:this.models,history:this.history,recovered:this.recovered
+        });
+    }
+    async restore():Promise<void>{
+        if(this.own||this.target||this.client)throw new PairError('endpoint_already_initialized');
+        const record=object(load(join(this.directory,'restart-checkpoint.json')));
+        const saved=object(load(join(this.directory,'identity.json')));
+        const expected=this.role==='A'?1:2;
+        if(record.version!==1||record.origin!==ORIGIN||record.runId!==this.runId||record.role!==this.role||
+            record.completedSequence!==expected||record.recovered!==true||saved.origin!==ORIGIN||saved.recovery!=='verified')
+            throw new PairError('restart_checkpoint_mismatch');
+        const own=object(record.own),target=object(record.target);
+        const owner=identity(own.accountId),addressId=identity(own.addressId),peer=identity(target.accountId);
+        identity(target.addressId);
+        if(owner===peer||saved.accountId!==owner||saved.addressId!==addressId||
+            (this.role==='A'?typeof record.introId!=='string':record.introId!==null))
+            throw new PairError('restart_checkpoint_mismatch');
+        if(this.role==='A')identity(record.introId);
+        if(!Number.isSafeInteger(record.index)||record.index<1||
+            readdirSync(this.directory).filter(name=>/^intent-[1-9][0-9]*\.json$/.test(name)).length!==record.index)
+            throw new PairError('restart_unresolved_write');
+        for(let i=1;i<=record.index;i++){
+            const intent=object(load(join(this.directory,`intent-${i}.json`)));
+            if(intent.status!=='response_received')throw new PairError('restart_unresolved_write');
+        }
+        const transcript=object(load(join(this.directory,'transcript.json')));
+        if(JSON.stringify({sent:record.sent,received:record.received,models:record.models})!==JSON.stringify(transcript))
+            throw new PairError('restart_state_advanced');
+        if(!Array.isArray(record.sent)||!Array.isArray(record.received)||!Array.isArray(record.models)||!Array.isArray(record.history)||
+            record.sent.length!==1||record.received.length!==(expected-1)||record.models.length!==1||
+            record.history.length!==expected)throw new PairError('restart_checkpoint_mismatch');
+        const sent=object(record.sent[0]),model=object(record.models[0]),history=record.history.map(object);
+        const received=record.received.map(object);
+        if(sent.sequence!==expected||!identity(sent.messageId)||typeof sent.text!=='string'||!sent.text.trim()||
+            Buffer.byteLength(sent.text)>2048||model.sequence!==expected||!identity(model.threadId)||
+            !Number.isSafeInteger(model.outputTokens)||model.outputTokens<1||
+            (expected===1?sent.replyTo!==null:
+                received[0].sequence!==1||sent.replyTo!==identity(received[0].messageId))||
+            (expected===1?false:received[0].replyTo!==null||typeof received[0].text!=='string')||
+            history.some((h:any,i:number)=>h.sequence!==i+1||
+                h.text!==(i===expected-1?sent.text:received[0].text)))
+            throw new PairError('restart_checkpoint_mismatch');
+        // A fresh trusted worker resolves its own vault control before these read-only checks.
+        const client=await this.open();
+        try{
+            const addresses=(await pages(client,'list_addresses')).filter(a=>a.addressId===addressId);
+            if(addresses.length!==1||addresses[0].accountId!==owner||addresses[0].isPublic!==false||
+                addresses[0].effectiveFrom!=null||addresses[0].effectiveTo!=null)
+                throw new PairError('restart_identity_mismatch');
+            const contact=await client.call('get_contact',{accountId:peer});
+            if(contact.canSend!==true)throw new PairError('restart_contact_missing');
+            const receipts=(await pages(client,'read_outbox')).filter(r=>r.messageId===sent.messageId&&r.recipientAccountId===peer);
+            if(receipts.length!==1||receipts[0].state!==(expected===1?'acknowledged':'pending'))
+                throw new PairError('restart_receipt_mismatch');
+        }catch(error){await client.close();throw error;}
+        this.client=client;this.own={accountId:owner,addressId};this.target={accountId:peer,addressId:target.addressId};
+        this.index=record.index;this.introId=this.role==='A'?record.introId:undefined;
+        this.sent=record.sent;this.received=record.received;this.models=record.models;this.history=record.history;this.recovered=true;
     }
     // Reopen from the endpoint's own vault reference; never register while verifying a live binding.
     async reconnect():Promise<void>{
@@ -130,6 +195,7 @@ export class Endpoint {
         const receipt=await this.write('send_message',{recipientAccountId:this.target.accountId,contactGeneration:parseGeneration(channel.generation),connectionToken:contact.connectionToken,payload});
         if(receipt.messageId!==payload.messageId||!['pending','acknowledged'].includes(receipt.state))throw new PairError('send_not_confirmed');
         this.history.push({sequence,text:generated.text});
+        this.checkpoint(sequence);
     }
     async consumeFinal():Promise<void>{if(this.role!=='A'||this.sent.length!==3)throw new PairError('invalid_final_step');await this.ack((await this.receive(6)).messageId);}
     async evidence():Promise<Evidence>{

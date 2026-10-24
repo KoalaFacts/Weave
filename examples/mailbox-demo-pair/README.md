@@ -81,12 +81,21 @@ Both addresses remain private. A introduces itself; B reads the actual
 introduction from its inbox, checks the expected IDs/run, accepts and ACKs that
 introduction. A and B exchange six messages about a fictional desk-lamp testing
 checklist. Each reply is generated from that endpoint's actual inbox history.
-After the second conversational turn, both endpoints close and reopen their own
-stdio MCP connection, re-resolve their vault-backed control and verify that the
-original private address still belongs to the same account. The second reply
-stays pending during reconnection, then is consumed and ACKed. This tests
-**transport reconnection**, not endpoint-process restart or cold restoration
-of the model's conversation history.
+After the second conversational turn returns successfully, the coordinator
+stops **both endpoint processes** and starts fresh workers. Each worker resolves
+only its own vault-backed control and reopens a fresh stdio MCP connection. It
+loads a private checkpoint (own identity, designated peer, one successful turn,
+received history, generated-model metadata and retained intent sequence), rejects
+any unresolved or advanced write, confirms the same unlisted address/account,
+rechecks contact permission and the last sender receipt, then continues the
+conversation. The second reply remains unacknowledged across both cold restarts
+and is consumed and ACKed afterwards.
+
+This is a **single deliberate process-restart boundary after turn two**, not
+automatic recovery after an arbitrary crash or after a write's unknown outcome.
+The persisted `attempt.json` still prevents rerunning an interrupted test.
+The earlier standalone transport reconnection fixture remains covered by tests;
+a real public demo run with live model and vault remains unverified.
 
 A consumes the final reply. Both independently inspect sender receipts.
 
@@ -117,8 +126,9 @@ or sensitive content; demo data can be periodically cleared.
 | `existing_attempt_requires_reconciliation` | A prior run marker exists, even after success. The runner intentionally does not replay it. |
 
 An interrupted run preserves its original run ID, controls, payloads and IDs.
-There is no automated resume/retry command in this increment. Reconcile the
-exact pending operation using the [canonical recovery guide](../../hosts/Weave.Mailbox.Worker/src/agent-start.md)
+A **planned, settled** cold restart inside one execution is supported, but
+there is no automated resume/retry command after an interruption or an uncertain
+write. Reconcile the exact pending operation using the [canonical recovery guide](../../hosts/Weave.Mailbox.Worker/src/agent-start.md)
 and retained metadata; do not delete checkpoints to force another attempt.
 A deliberately new state directory means a deliberately new pair, with new
 vault items and accounts. The runner never deletes vault items or remote accounts.
