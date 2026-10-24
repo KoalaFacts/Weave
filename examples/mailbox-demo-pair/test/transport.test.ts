@@ -31,7 +31,7 @@ test('failed process creation has a bounded transport error',async()=>{
 for(const content of [[null],[{type:'text',text:null}],[{type:'text',text:42}],[{type:'text',text:true}]]){
     test('malformed MCP content is rejected without coercion: '+JSON.stringify(content),async()=>{
         const c=fixture(`r.on('line',line=>{const m=JSON.parse(line);emit(m.id,JSON.parse(process.argv[1]));});`,1500,[JSON.stringify({content})]);
-        try{await assert.rejects(c.call('fixture'),e=>e instanceof Error&&e.name==='PairError'&&e.message==='mcp_tool_failed');}
+        try{await assert.rejects(c.call('fixture'),e => (e instanceof Error) && e.name === 'PairError' && e.message === 'mcp_tool_failed');}
         finally{await c.close();}
     });
 }
