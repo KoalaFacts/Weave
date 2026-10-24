@@ -27,3 +27,17 @@ test('failed process creation has a bounded transport error',async()=>{
     const c=new StdioClient('/weave-missing-fixture-executable',[],{},100);
     try{await assert.rejects(c.call('fixture'),/mcp_transport_failed/);}finally{await c.close();}
 });
+
+for(const content of [[null],[{type:'text',text:null}],[{type:'text',text:42}],[{type:'text',text:true}]]){
+    test('malformed MCP content is rejected without coercion: '+JSON.stringify(content),async()=>{
+        const c=fixture(`r.on('line',line=>{const m=JSON.parse(line);emit(m.id,JSON.parse(process.argv[1]));});`,1500,[JSON.stringify({content})]);
+        try{await assert.rejects(c.call('fixture'),e=>e instanceof Error&&e.name==='PairError'&&e.message==='mcp_tool_failed');}
+        finally{await c.close();}
+    });
+}
+for(const text of ['null','42','true']){
+    test('valid MCP text retains JSON scalar semantics: '+text,async()=>{
+        const c=fixture(`r.on('line',line=>{const m=JSON.parse(line);emit(m.id,{content:[{type:'text',text:process.argv[1]}]});});`,1500,[text]);
+        try{assert.deepEqual(await c.call('fixture'),JSON.parse(text));}finally{await c.close();}
+    });
+}
