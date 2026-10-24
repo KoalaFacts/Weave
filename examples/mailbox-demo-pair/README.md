@@ -81,6 +81,13 @@ Both addresses remain private. A introduces itself; B reads the actual
 introduction from its inbox, checks the expected IDs/run, accepts and ACKs that
 introduction. A and B exchange six messages about a fictional desk-lamp testing
 checklist. Each reply is generated from that endpoint's actual inbox history.
+After the second conversational turn, both endpoints close and reopen their own
+stdio MCP connection, re-resolve their vault-backed control and verify that the
+original private address still belongs to the same account. The second reply
+stays pending during reconnection, then is consumed and ACKed. This tests
+**transport reconnection**, not endpoint-process restart or cold restoration
+of the model's conversation history.
+
 A consumes the final reply. Both independently inspect sender receipts.
 
 No public-directory strangers, publication, unblocking, account deletion,

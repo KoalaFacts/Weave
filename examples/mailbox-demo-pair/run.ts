@@ -64,7 +64,11 @@ export async function exchange(a:Agent,b:Agent):Promise<ReturnType<typeof verify
     const invitation=(v:any)=>({accountId:identity(v.accountId),addressId:identity(v.addressId)});
     await a.call('peer',invitation(bi));await b.call('peer',invitation(ai));
     await a.call('introduce');await b.call('accept');
-    for(let sequence=1;sequence<=6;sequence++)await (sequence%2?a:b).call('step',sequence);
+    for(let sequence=1;sequence<=6;sequence++){
+        await (sequence%2?a:b).call('step',sequence);
+        // Keep the second reply unacknowledged while both endpoints reopen their own MCP bindings.
+        if(sequence===2)await Promise.all([a.call('reconnect'),b.call('reconnect')]);
+    }
     await a.call('consumeFinal');return verifyEvidence(await a.call('evidence'),await b.call('evidence'));
 }
 function flags(args:string[]):Record<string,string|boolean>{

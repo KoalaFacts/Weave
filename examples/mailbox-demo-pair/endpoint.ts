@@ -55,6 +55,14 @@ export class Endpoint {
         if(address.accountId!==accountId||address.isPublic!==false||address.effectiveFrom!=null||address.effectiveTo!=null)throw new PairError('unexpected_test_address');
         this.own={accountId,addressId:identity(address.addressId)};save(path,{origin:ORIGIN,...this.own,recovery:'verified'});return this.own;
     }
+    // Reopen from the endpoint's own vault reference; never register while verifying a live binding.
+    async reconnect():Promise<void>{
+        if(!this.own||!this.target)throw new PairError('endpoint_not_ready');
+        await this.client.close();
+        this.client=await this.open();
+        const matches=(await pages(this.client,'list_addresses')).filter(address=>address.addressId===this.own.addressId);
+        if(matches.length!==1||matches[0].accountId!==this.own.accountId||matches[0].isPublic!==false)throw new PairError('reconnected_identity_mismatch');
+    }
     peer(peer:Peer):void{
         if(!this.own||this.target)throw new PairError('peer_already_set_or_not_ready');
         if(identity(peer.accountId)===this.own.accountId)throw new PairError('accounts_not_distinct');

@@ -29,6 +29,7 @@ async function serve():Promise<void>{
             switch(message.command){
             case 'probe':{const evidence=await generate(config.model,config.role,0,[],directory,abort.signal);result={threadId:evidence.threadId};break;}
             case 'setup':result=await endpoint.setup();break;
+            case 'reconnect':await endpoint.reconnect();break;
             case 'peer':endpoint.peer(message.value);break;
             case 'introduce':await endpoint.introduce();break;
             case 'accept':await endpoint.accept();break;
