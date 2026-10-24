@@ -211,6 +211,9 @@ export class Endpoint {
             addresses[0].isPublic===false&&addresses[0].effectiveFrom==null&&
             addresses[0].effectiveTo==null&&addresses[0].revokedAt==null;
         if(!privateAddress)throw new PairError('evidence_address_mismatch');
+        // Contact revocation or a changed channel cannot be attested by stale send/ACK receipts.
+        const contact=await this.client.call('get_contact',{accountId:this.target.accountId});
+        if(contact.canSend!==true)throw new PairError('evidence_contact_mismatch');
         const receipts=await pages(this.client,'read_outbox'),expected=[...this.sent.map(m=>m.messageId),...(this.introId?[this.introId]:[])];
         const acknowledged:string[]=[];
         for(const id of expected){const matched=receipts.filter(r=>r.messageId===id&&r.recipientAccountId===this.target.accountId);if(matched.length!==1||matched[0].state!=='acknowledged')throw new PairError('receipt_not_acknowledged');acknowledged.push(id);}
