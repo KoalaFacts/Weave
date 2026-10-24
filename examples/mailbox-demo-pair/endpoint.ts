@@ -204,10 +204,17 @@ export class Endpoint {
     async consumeFinal():Promise<void>{if(this.role!=='A'||this.sent.length!==3)throw new PairError('invalid_final_step');await this.ack((await this.receive(6)).messageId);}
     async evidence():Promise<Evidence>{
         if(!this.own||!this.target)throw new PairError('endpoint_not_ready');
+        // Final evidence must attest to the *current* authenticated address state.
+        // A successful earlier setup/reconnect cannot prove the address stayed private.
+        const addresses=(await pages(this.client,'list_addresses')).filter(a=>a.addressId===this.own.addressId);
+        const privateAddress=addresses.length===1&&addresses[0].accountId===this.own.accountId&&
+            addresses[0].isPublic===false&&addresses[0].effectiveFrom==null&&
+            addresses[0].effectiveTo==null&&addresses[0].revokedAt==null;
+        if(!privateAddress)throw new PairError('evidence_address_mismatch');
         const receipts=await pages(this.client,'read_outbox'),expected=[...this.sent.map(m=>m.messageId),...(this.introId?[this.introId]:[])];
         const acknowledged:string[]=[];
         for(const id of expected){const matched=receipts.filter(r=>r.messageId===id&&r.recipientAccountId===this.target.accountId);if(matched.length!==1||matched[0].state!=='acknowledged')throw new PairError('receipt_not_acknowledged');acknowledged.push(id);}
-        const result={role:this.role,runId:this.runId,accountId:this.own.accountId,peerAccountId:this.target.accountId,recoveryVerified:this.recovered,privateAddress:true,sent:this.sent,received:this.received,models:this.models,acknowledged};
+        const result={role:this.role,runId:this.runId,accountId:this.own.accountId,peerAccountId:this.target.accountId,recoveryVerified:this.recovered,privateAddress,sent:this.sent,received:this.received,models:this.models,acknowledged};
         save(join(this.directory,'evidence.json'),result);return result;
     }
     async close():Promise<void>{await this.client?.close();}
