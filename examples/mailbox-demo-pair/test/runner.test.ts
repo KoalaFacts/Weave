@@ -29,6 +29,24 @@ test('coordinator forwards identities and step numbers only, never peer message 
     assert.ok(calls.filter(c=>c.command==='peer').every(c=>Object.keys(c.value).sort().join(',')==='accountId,addressId'));
 });
 
+test('coordinator resumes on new agent objects after turn two without replaying setup or prior steps',async()=>{
+    const {exchange}=await import('../run.ts');const calls:{role:string;command:string;value:unknown;epoch:number}[]=[];
+    let epoch=0,handOffs=0;
+    const make=(role:'A'|'B')=>({call:async(command:string,value?:unknown)=>{
+        calls.push({role,command,value,epoch});
+        if(command==='setup')return {accountId:role==='A'?'11111111-1111-4111-8111-111111111111':'22222222-2222-4222-8222-222222222222',addressId:randomUUID()};
+        if(command==='evidence')throw Error('verification deliberately stopped');
+        return {};
+    }});
+    await assert.rejects(exchange(make('A'),make('B'),async()=>{
+        handOffs++;epoch++;return {a:make('A'),b:make('B')};
+    }));
+    assert.equal(handOffs,1);
+    assert.deepEqual(calls.filter(c=>c.command==='step').map(c=>[c.value,c.epoch]),[[1,0],[2,0],[3,1],[4,1],[5,1],[6,1]]);
+    assert.equal(calls.filter(c=>c.command==='setup').length,2);
+    assert.equal(calls.filter(c=>c.command==='reconnect').length,0);
+});
+
 test('a released run lock does not permit re-running a retained attempt',async t=>{
     const {claimAttempt}=await import('../run.ts');
     const dir=mkdtempSync(join(tmpdir(),'weave-attempt-'));t.after(()=>rmSync(dir,{recursive:true,force:true}));
