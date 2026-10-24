@@ -22,6 +22,10 @@ test('coordinator forwards identities and step numbers only, never peer message 
     await assert.rejects(exchange(process('A'),process('B')));
     const firstSetup=calls.findIndex(c=>c.command==='setup');assert.equal(calls.slice(0,firstSetup).filter(c=>c.command==='probe').length,2);
     assert.deepEqual(calls.filter(c=>c.command==='step').map(c=>c.value),[1,2,3,4,5,6]);
+    const second=calls.findIndex(c=>c.command==='step'&&c.value===2),third=calls.findIndex(c=>c.command==='step'&&c.value===3);
+    const reconnects=calls.flatMap((c,i)=>c.command==='reconnect'?[i]:[]);
+    assert.equal(reconnects.length,2);
+    assert.ok(reconnects.every(i=>i>second&&i<third));
     assert.ok(calls.filter(c=>c.command==='peer').every(c=>Object.keys(c.value).sort().join(',')==='accountId,addressId'));
 });
 
