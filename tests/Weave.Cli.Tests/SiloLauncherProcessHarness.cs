@@ -26,9 +26,16 @@ internal static class SiloLauncherProcessHarness
             return;
         }
 
+        var evidenceDirectory = SiloLauncherFixtureEvidence.DirectoryFor(testClass);
         var root = Directory.CreateTempSubdirectory("weave-launcher-").FullName;
         int? processGroup = null;
         Process? ownedProcess = null;
+        Task<string> stdout = Task.FromResult("");
+        Task<string> stderr = Task.FromResult("");
+        int? exitCode = null;
+        string? completedScenario = null;
+        string evidence = "";
+        var evidenceSaved = false;
         try
         {
             File.Exists("/usr/bin/setsid").ShouldBeTrue("Linux setsid is required to own all launcher descendants.");
@@ -68,8 +75,8 @@ internal static class SiloLauncherProcessHarness
             File.WriteAllText(Path.Join(root, "group-owner.pending"), process.Id.ToString(System.Globalization.CultureInfo.InvariantCulture));
             File.Move(Path.Join(root, "group-owner.pending"), Path.Join(root, "group-owner"));
             process.StandardInput.Close();
-            var stdout = DrainAsync(process.StandardOutput);
-            var stderr = DrainAsync(process.StandardError);
+            stdout = DrainAsync(process.StandardOutput);
+            stderr = DrainAsync(process.StandardError);
             using var timeout = CancellationTokenSource.CreateLinkedTokenSource(TestContext.Current.CancellationToken);
             timeout.CancelAfter(TimeSpan.FromSeconds(35));
             try
@@ -90,29 +97,54 @@ internal static class SiloLauncherProcessHarness
                 await Task.WhenAll(process.WaitForExitAsync(CancellationToken.None), stdout, stderr)
                     .WaitAsync(TimeSpan.FromSeconds(5));
             }
-            process.ExitCode.ShouldBe(0, (await stdout) + (await stderr));
-            File.ReadAllText(Path.Join(root, "scenario-complete")).ShouldBe(testClass.Name);
+            exitCode = process.ExitCode;
+            var marker = Path.Join(root, "scenario-complete");
+            completedScenario = File.Exists(marker) ? File.ReadAllText(marker) : null;
         }
         finally
         {
-            if (ownedProcess is not null)
+            var stopped = false;
+            try
+            {
+                if (ownedProcess is not null)
+                {
+                    try
+                    {
+                        if (!ownedProcess.HasExited)
+                            ownedProcess.Kill(entireProcessTree: true);
+                    }
+                    catch (InvalidOperationException) when (ownedProcess.HasExited)
+                    {
+                        await ownedProcess.WaitForExitAsync(CancellationToken.None);
+                    }
+                    await ownedProcess.WaitForExitAsync(CancellationToken.None).WaitAsync(TimeSpan.FromSeconds(5));
+                    exitCode = ownedProcess.ExitCode;
+                }
+                if (processGroup is { } group)
+                    await SiloLauncherProcessGroup.StopAsync(group);
+                stopped = true;
+            }
+            finally
             {
                 try
                 {
-                    if (!ownedProcess.HasExited)
-                        ownedProcess.Kill(entireProcessTree: true);
+                    evidence = SiloLauncherFixtureEvidence.Save(root, evidenceDirectory, processGroup, exitCode,
+                        stdout.IsCompletedSuccessfully ? stdout.Result : "stdout drain incomplete",
+                        stderr.IsCompletedSuccessfully ? stderr.Result : "stderr drain incomplete", stopped);
+                    evidenceSaved = File.Exists(Path.Join(evidenceDirectory, Path.GetFileName(root) + ".log"));
+                    if (exitCode != 0 || !stopped || !evidenceSaved)
+                        Console.Error.WriteLine(evidence);
                 }
-                catch (InvalidOperationException) when (ownedProcess.HasExited)
+                finally
                 {
-                    await ownedProcess.WaitForExitAsync(CancellationToken.None);
+                    ownedProcess?.Dispose();
                 }
-                await ownedProcess.WaitForExitAsync(CancellationToken.None).WaitAsync(TimeSpan.FromSeconds(5));
             }
-            if (processGroup is { } group)
-                await SiloLauncherProcessGroup.StopAsync(group);
-            ownedProcess?.Dispose();
             Directory.Delete(root, recursive: true);
         }
+        exitCode.ShouldBe(0, evidence);
+        evidenceSaved.ShouldBeTrue(evidence);
+        completedScenario.ShouldBe(testClass.Name, evidence);
     }
 
     public static SiloLauncher Create(CliConfig config) => new(new FixedConfig(config), new NoSecrets());

@@ -29,23 +29,47 @@ internal sealed class SiloLauncherFixtureWorker : IAsyncDisposable
 
     public void ReleasePort() => _reservation.Stop();
 
-    public async Task ObserveStartedAsync(Task launch)
+    public async Task ObserveStartedAsync(Task<SiloAutoStartResult> launch)
     {
         _launchObserved = true;
         var pidPath = Path.Join(_root, "worker.pid");
         using var timeout = CancellationTokenSource.CreateLinkedTokenSource(TestContext.Current.CancellationToken);
         timeout.CancelAfter(TimeSpan.FromSeconds(10));
-        while (!File.Exists(pidPath))
+        try
         {
-            if (launch.IsCompleted)
+            while (!File.Exists(pidPath))
             {
-                await launch;
-                throw new InvalidOperationException("Launcher returned before the worker published its PID.");
+                if (launch.IsCompleted)
+                    throw new InvalidOperationException("Launcher returned before the worker published its PID.");
+                await Task.Delay(20, timeout.Token);
             }
-            await Task.Delay(20, timeout.Token);
+            _process = Process.GetProcessById(int.Parse(await File.ReadAllTextAsync(pidPath, timeout.Token), CultureInfo.InvariantCulture));
+            if (_process.HasExited)
+                throw new InvalidOperationException("Worker exited before its launch could be observed.");
         }
-        _process = Process.GetProcessById(int.Parse(await File.ReadAllTextAsync(pidPath, timeout.Token), CultureInfo.InvariantCulture));
-        _process.HasExited.ShouldBeFalse();
+        catch (Exception observation) when (observation is ArgumentException or InvalidOperationException or OperationCanceledException)
+        {
+            string outcome;
+            try
+            {
+                var result = await launch.WaitAsync(TimeSpan.FromSeconds(5));
+                outcome = $"Launcher result: Success={result.Success}; Reason={result.Reason}; LogPath={result.LogPath}";
+            }
+            catch (Exception terminal)
+            {
+                // Diagnostics must preserve a fault/cancellation/timeout without replacing the observation failure.
+                outcome = $"Launcher task: {launch.Status}; {terminal.GetType().Name}: {terminal.Message}";
+            }
+            try
+            {
+                await File.AppendAllTextAsync(Path.Join(_root, "worker.lifecycle"), outcome + Environment.NewLine, CancellationToken.None);
+            }
+            catch (Exception evidenceFailure) when (evidenceFailure is IOException or UnauthorizedAccessException)
+            {
+                outcome += $"; Lifecycle evidence write failed: {evidenceFailure.GetType().Name}: {evidenceFailure.Message}";
+            }
+            throw new InvalidOperationException($"Worker observation failed. {outcome}", observation);
+        }
     }
 
     public void AllowExit() => File.WriteAllText(Path.Join(_root, "exit"), "exit");
@@ -95,12 +119,19 @@ internal sealed class SiloLauncherFixtureWorker : IAsyncDisposable
         const path = require('node:path');
         const root = process.cwd();
         const args = process.argv.slice(2);
+        const lifecycle = event => {
+          try { fs.appendFileSync(path.join(root, 'worker.lifecycle'), `${new Date().toISOString()} ${event}\n`); }
+          catch (error) { console.error(`fixture lifecycle write failed: ${error.message}`); }
+        };
+        process.on('exit', code => lifecycle(`worker-exit=${code}`));
+        process.on('uncaughtExceptionMonitor', error => lifecycle(`worker-uncaught=${error.stack}`));
         fs.writeFileSync(path.join(root, 'worker.args'), JSON.stringify(args));
         fs.writeFileSync(path.join(root, 'worker.pid.pending'), String(process.pid));
         fs.renameSync(path.join(root, 'worker.pid.pending'), path.join(root, 'worker.pid'));
+        lifecycle('pid-published');
         console.log('launcher-stdout-marker');
         console.error('launcher-stderr-marker');
-        setTimeout(() => process.exit(91), 20000).unref();
+        setTimeout(() => { lifecycle('watchdog-fired'); process.exit(91); }, 20000).unref();
         if (earlyExit) {
           const timer = setInterval(() => {
             if (fs.existsSync(path.join(root, 'exit'))) {
@@ -122,7 +153,7 @@ internal sealed class SiloLauncherFixtureWorker : IAsyncDisposable
             response.writeHead(healthRequests === 1 ? 503 : 200, { 'Content-Type': 'text/plain' });
             response.end('fixture-health');
           });
-          server.listen(port, '127.0.0.1');
+          server.listen(port, '127.0.0.1', () => lifecycle(`listening=${port}`));
         }
         """;
 }

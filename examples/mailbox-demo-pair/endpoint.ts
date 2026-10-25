@@ -82,9 +82,11 @@ export class Endpoint {
         if(!Number.isSafeInteger(record.index)||record.index<1||
             readdirSync(this.directory).filter(name=>/^intent-[1-9][0-9]*\.json$/.test(name)).length!==record.index)
             throw new PairError('restart_unresolved_write');
+        const retainedSends:Record<string,any>[]=[];
         for(let i=1;i<=record.index;i++){
             const intent=object(load(join(this.directory,`intent-${i}.json`)));
             if(intent.status!=='response_received')throw new PairError('restart_unresolved_write');
+            if(intent.operation==='send_message')retainedSends.push(intent);
         }
         const transcript=object(load(join(this.directory,'transcript.json')));
         if(JSON.stringify({sent:record.sent,received:record.received,models:record.models})!==JSON.stringify(transcript))
@@ -103,6 +105,13 @@ export class Endpoint {
             history.some((h:any,i:number)=>h.sequence!==i+1||
                 h.text!==(i===expected-1?sent.text:received[0].text)))
             throw new PairError('restart_checkpoint_mismatch');
+        // Bind the cold restart to the exact generation used by its one persisted send.
+        // An accepted replacement contact does not authorize replaying an old conversation.
+        if(retainedSends.length!==1)throw new PairError('restart_checkpoint_mismatch');
+        const savedArgs=object(retainedSends[0].arguments),savedPayload=object(savedArgs.payload);
+        if(savedArgs.recipientAccountId!==peer||savedPayload.messageId!==sent.messageId)
+            throw new PairError('restart_checkpoint_mismatch');
+        const originalGeneration=parseGeneration(savedArgs.contactGeneration);
         // A fresh trusted worker resolves its own vault control before these read-only checks.
         const client=await this.open();
         try{
@@ -115,6 +124,10 @@ export class Endpoint {
             const receipts=(await pages(client,'read_outbox')).filter(r=>r.messageId===sent.messageId&&r.recipientAccountId===peer);
             if(receipts.length!==1||receipts[0].state!==(expected===1?'acknowledged':'pending'))
                 throw new PairError('restart_receipt_mismatch');
+            const channel=await client.call('get_channel',{peerAccountId:peer});
+            if(parseGeneration(channel.generation)!==originalGeneration||
+                channel.isBlockedByMailbox===true||channel.isBlockedByPeer===true)
+                throw new PairError('restart_channel_generation_mismatch');
         }catch(error){await client.close();throw error;}
         this.client=client;this.own={accountId:owner,addressId};this.target={accountId:peer,addressId:target.addressId};
         this.index=record.index;this.introId=this.role==='A'?record.introId:undefined;
