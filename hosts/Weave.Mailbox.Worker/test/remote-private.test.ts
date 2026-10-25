@@ -1,7 +1,12 @@
 import assert from 'node:assert/strict';
 import {test} from 'node:test';
 import {remoteMcp,type PrivateAccess} from '../src/remote-mcp.ts';
-import {privateScope,privateMcpTools,withoutControl,executePrivateMcp} from '../src/remote-private.ts';
+import {build} from 'esbuild';
+// The Worker source uses bundler-resolution imports. Evaluate precisely that
+// bundled production module instead of relying on Node's extensionless ESM resolution.
+const built=await build({entryPoints:['src/remote-private.ts'],bundle:true,write:false,platform:'node',format:'esm',logLevel:'silent'});
+const bundle='data:text/javascript;base64,'+Buffer.from(built.outputFiles[0].contents).toString('base64');
+const {privateScope,privateMcpTools,withoutControl,executePrivateMcp}=await import(bundle) as typeof import('../src/remote-private.ts');
 import {start,payload} from './harness.ts';
 import type {Env} from '../src/database.ts';
 
@@ -73,7 +78,7 @@ test('real D1 account-scoped contact, message and ACK use server-side channel to
         assert.equal(duplicate.status,200,'same ID/content is idempotent');
         const inbox=await executePrivateMcp(env,origin,b.accountId,'list_my_inbox',{});
         assert.equal(inbox.status,200);
-        assert.ok((await inbox.json()).items.some((item:{payload:{messageId:string}})=>item.payload?.messageId===ordinary.messageId));
+        assert.ok((await inbox.json()).items.some((item:{envelope:{payload:{messageId:string}}})=>item.envelope?.payload?.messageId===ordinary.messageId));
         const foreign=await executePrivateMcp(env,origin,c.accountId,'ack_message',{messageId:ordinary.messageId,senderAccountId:a.accountId});
         assert.equal(foreign.status,404,'another account must never acknowledge B inbox');
         const receipt=await executePrivateMcp(env,origin,b.accountId,'ack_message',{messageId:ordinary.messageId,senderAccountId:a.accountId});
@@ -100,5 +105,26 @@ test('real Worker advertises protected-resource metadata and challenges unauthen
         assert.equal(response.status,401);
         assert.match(response.headers.get('WWW-Authenticate')??'',/scope="weave:messages.send"/);
         assert.equal(await h.db.prepare('SELECT count(*) n FROM mailbox_records').first('n'),before);
+    }finally{await h.close();}
+});
+
+test('malformed private request does not sweep or write maintenance state before validation',async()=>{
+    const h=await start();
+    try{
+        const a=await h.participant(),b=await h.participant();
+        const env:Env={db:h.db,REGISTRATION_ENABLED:'true',REGISTRATION_MAX_ACCOUNTS:'100',
+            REGISTRATION_PER_IP_PER_HOUR:'10',REGISTRATION_GLOBAL_PER_HOUR:'100',
+            CLEANUP_MAX_MESSAGES:'1',CLEANUP_TIME_BUDGET_MS:'2000'};
+        const revision=await h.db.prepare('SELECT token FROM mailbox_revision WHERE singleton=1').first('token');
+        const initial=await h.db.prepare("SELECT count(*) n FROM maintenance_state WHERE name='sweep'").first('n');
+        const content=payload('invalid-request');
+        const response=await executePrivateMcp(env,origin,a.accountId,'request_contact',{
+            requestId:content.messageId,requesterAddressId:a.cardId,recipientAccountId:b.accountId,
+            recipientAddressId:b.cardId,payload:{notAPayload:true}
+        });
+        assert.equal(response.status,400,'invalid payload must be rejected');
+        assert.equal(await h.db.prepare('SELECT token FROM mailbox_revision WHERE singleton=1').first('token'),
+            revision,'invalid payload must not commit cleanup or any other write');
+        assert.equal(await h.db.prepare("SELECT count(*) n FROM maintenance_state WHERE name='sweep'").first('n'),initial);
     }finally{await h.close();}
 });
