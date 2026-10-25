@@ -27,6 +27,16 @@ test('negotiates a supported version for an unknown initialization version',asyn
     const body=await call('initialize',{protocolVersion:'2099-01-01',capabilities:{},clientInfo:{name:'fixture',version:'1'}});
     assert.equal(body.result.protocolVersion,'2025-11-25');
 });
+test('does not negotiate March 2025 batching protocol without batch support',async()=>{
+    // MCP 2025-03-26 requires batch reception; this single-message endpoint supports only the two newer revisions.
+    const init=await call('initialize',{protocolVersion:'2025-03-26',capabilities:{},clientInfo:{name:'legacy-client',version:'1'}});
+    assert.equal(init.result.protocolVersion,'2025-11-25','must not claim March batch compatibility');
+    const unsupported=await remoteMcp(request(rpc('tools/list'),{'mcp-protocol-version':'2025-03-26'}),unused);
+    assert.equal(unsupported.status,400,'legacy revision must not be accepted in the request header');
+    assert.equal((await unsupported.json()).error.code,-32600);
+    const batch=await remoteMcp(request([rpc('tools/list')],{'mcp-protocol-version':'2025-06-18'}),unused);
+    assert.equal(batch.status,400,'newer MCP revisions forbid batching');
+});
 test('advertises only three unauthenticated read-only tools',async()=>{
     const body=await call('tools/list');
     assert.deepEqual(body.result.tools.map((x:any)=>x.name),['demo_guide','search_registry','lookup_address']);
@@ -90,7 +100,7 @@ test('requires JSON content and both Streamable HTTP Accept types',async()=>{
 });
 test('rejects unsupported protocol headers',async()=>{
     assert.equal((await remoteMcp(request(rpc('ping'),{'mcp-protocol-version':'2099-01-01'}),unused)).status,400);
-    for(const version of ['2025-11-25','2025-06-18','2025-03-26'])assert.equal((await remoteMcp(request(rpc('ping'),{'mcp-protocol-version':version}),unused)).status,200);
+    for(const version of ['2025-11-25','2025-06-18'])assert.equal((await remoteMcp(request(rpc('ping'),{'mcp-protocol-version':version}),unused)).status,200);
 });
 test('GET and DELETE are explicitly unsupported, not an auth fallback',async()=>{
     for(const method of ['GET','DELETE']){

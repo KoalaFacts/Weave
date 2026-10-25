@@ -1,5 +1,6 @@
 /** Stateless, public-only Streamable HTTP. No control secret or shared account. */
-const versions = ['2025-11-25', '2025-06-18', '2025-03-26'];
+// March 2025 requires receiving JSON-RPC batches; this single-message transport does not implement them.
+const versions = ['2025-11-25', '2025-06-18'];
 const requestLimit = 16 * 1024;
 const responseLimit = 1024 * 1024;
 type ObjectValue = Record<string, unknown>;

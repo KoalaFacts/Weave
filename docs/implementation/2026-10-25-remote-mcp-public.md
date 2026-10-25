@@ -12,7 +12,10 @@ this source exists.
 The endpoint uses stateless Streamable HTTP, returning JSON rather than an SSE
 stream. It supports initialization, ping, tool discovery, tool calls, and empty
 202 notification acknowledgements. Supported protocol versions are 2025-11-25,
-2025-06-18 and 2025-03-26; newer versions are not claimed. GET/DELETE return 405.
+2025-06-18; older batching-required 2025-03-26 and newer unimplemented versions
+are not claimed. We reject March-version headers and negotiate the current version
+when a March client initializes: March requires receiving JSON-RPC batches, which
+this single-message endpoint does not implement. GET/DELETE return 405.
 POST clients must send `Content-Type: application/json` and an `Accept` header
 containing both `application/json` and `text/event-stream`.
 
