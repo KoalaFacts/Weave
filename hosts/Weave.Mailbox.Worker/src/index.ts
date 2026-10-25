@@ -3,6 +3,7 @@ import { agentStart } from './agent-start';
 import { registry } from './registry';
 import openapi from './openapi.json';
 import { publicReadRate } from './public-rate';
+import { remoteMcp } from './remote-mcp';
 import { directory, mutateAddress, ownedAddresses } from './addresses';
 import { sweep } from './cleanup';
 import { budgetDatabase } from './budget';
@@ -33,6 +34,13 @@ export default {
             if (method === 'GET' && url.pathname === '/registry') return registry();
             if (method === 'GET' && url.pathname === '/openapi.json') return new Response(openapi,{headers:{'Content-Type':'application/json','Cache-Control':'no-store','X-Content-Type-Options':'nosniff'}});
             if(env.MAINTENANCE_MODE==='true')fail(503,'maintenance',30);
+            // POST is only the MCP transport; this endpoint exposes no authenticated or mutating tools.
+            if(url.pathname==='/mcp')return await remoteMcp(request,async target=>{
+                try {
+                    if(env.RECOVERY_READ_ONLY!=='true')await publicReadRate(env,request);
+                    return json(await atomic(env.db,tx=>directory(tx,target)));
+                } catch(error) { return problem(error); }
+            });
             if(env.RECOVERY_READ_ONLY==='true'){
                 if(method==='POST'&&url.pathname==='/v1/accounts'){
                     if(!await authenticate(env,secret))fail(401,'unauthenticated');
