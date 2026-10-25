@@ -68,3 +68,19 @@ cover two existing accounts, control isolation and no database mutation.
 Node22 portable crypto tests are not equivalent to hosted Node24 Worker
 verification; require the exact-head Worker/D1, .NET, protected browser,
 coverage, dependency/licence and security CI before merging.
+
+## First-party browser ownership handoff (source only)
+
+The optional same-origin `GET /account-proof?challenge=<43-character AS nonce>` serves an
+isolated HTML page and `GET /account-proof.js` from the **Weave resource origin**.
+Both are disabled (503) without the valid operator-installed issuer, resource
+and signing key, or during maintenance/recovery. The page displays the configured
+issuer and resource and posts the account control **only** as a same-origin
+`X-Weave-Account-Control` header to `/v1/accounts/proof`. No cross-origin
+redirects, forms, script imports, cookies, local storage or telemetry are
+involved. The control input is cleared after each attempt; no-store, a restrictive
+Content Security Policy, anti-framing and no-referrer headers are set.
+A user copies **only** the short-lived signed proof to the trusted AS, which
+still must check its stored challenge, consume it once, and separately collect
+explicit per-client/per-scope consent. The page does not implement AS sign-in
+or complete authorization and has not been deployed or live-validated.

@@ -41,6 +41,12 @@ function validConfig(config:AccountProofConfig):void {
        resource.href!==config.resource||typeof config.key!=='string'||config.key.length!==43||decode(config.key).length!==32)
         throw Error('Invalid account proof configuration');
 }
+/** All consent entry points enforce one exact installed signer and resource origin. */
+export function validateAccountProofBinding(config:AccountProofConfig,requestOrigin:string):void {
+    validConfig(config);
+    if(new URL(config.resource).origin!==requestOrigin)
+        throw Error('Invalid account proof target origin');
+}
 async function signingKey(config:AccountProofConfig):Promise<CryptoKey>{
     validConfig(config);
     return crypto.subtle.importKey('raw',decode(config.key),{name:'HMAC',hash:'SHA-256'},false,['sign','verify']);

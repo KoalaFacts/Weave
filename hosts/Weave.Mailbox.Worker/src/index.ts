@@ -11,7 +11,8 @@ import { sweep } from './cleanup';
 import { budgetDatabase } from './budget';
 import { stream, type Context } from './stream';
 import { authenticate, register } from './accounts';
-import { issueAccountProof, validAccountProofChallenge } from './account-proof';
+import { issueAccountProof, validAccountProofChallenge, validateAccountProofBinding } from './account-proof';
+import { accountProofPage, accountProofScript } from './account-proof-page';
 import { putCard } from './cards';
 import { decide, requestContact, setBlocked } from './contacts';
 import { deleteContact, ownContacts } from './contact-links';
@@ -31,12 +32,22 @@ export default {
         try {
             const url = new URL(request.url), secret = control(request), method = request.method;
             const respond=(value:unknown)=>json(value,200,legacyResponse(request));
+            const proofConfig=()=>{
+                const cfg={issuer:env.OAUTH_ISSUER??'',resource:env.OAUTH_RESOURCE??'',key:env.OAUTH_ACCOUNT_PROOF_KEY??''};
+                try{validateAccountProofBinding(cfg,url.origin);}catch{fail(503,'storage');}
+                return cfg;
+            };
             if (url.protocol !== 'https:' && !['localhost','127.0.0.1','[::1]'].includes(url.hostname)) fail(400,'invalid');
             if (method === 'GET' && url.pathname === '/') return demo();
             if (method === 'GET' && url.pathname === '/agent-start.md') return agentStart();
             if (method === 'GET' && url.pathname === '/registry') return registry();
             if (method === 'GET' && url.pathname === '/openapi.json') return new Response(openapi,{headers:{'Content-Type':'application/json','Cache-Control':'no-store','X-Content-Type-Options':'nosniff'}});
             if(env.MAINTENANCE_MODE==='true')fail(503,'maintenance',30);
+            if(method==='GET' && (url.pathname==='/account-proof'||url.pathname==='/account-proof.js')){
+                if(env.RECOVERY_READ_ONLY==='true')fail(503,'maintenance',30);
+                const cfg=proofConfig();
+                return url.pathname==='/account-proof'?accountProofPage(cfg.issuer,cfg.resource):accountProofScript();
+            }
             // Protected-resource discovery is an opt-in integration with an
             // external OAuth 2.1 authorization server. Missing/partial config
             // cannot silently enable a shared or anonymous account.
@@ -79,12 +90,8 @@ export default {
             }
             if(method==='POST' && url.pathname==='/v1/accounts/proof') {
                 if(!account)fail(401,'unauthenticated');
-                const cfg={issuer:env.OAUTH_ISSUER??'',resource:env.OAUTH_RESOURCE??'',key:env.OAUTH_ACCOUNT_PROOF_KEY??''};
-                // A missing/mismatched operator binding fails closed; never
-                // accept a caller-supplied issuer, account, or signing key.
-                let resourceOrigin:string;
-                try{resourceOrigin=new URL(cfg.resource).origin;}catch{fail(503,'storage');}
-                if(!cfg.issuer||!cfg.resource||!cfg.key||resourceOrigin!==url.origin)fail(503,'storage');
+                // The form and the direct API share precisely the same fail-closed trust boundary.
+                const cfg=proofConfig();
                 const input=await body(request);
                 object(input,['challenge']);
                 try{validAccountProofChallenge(input.challenge);}catch{fail(400,'invalid');}
