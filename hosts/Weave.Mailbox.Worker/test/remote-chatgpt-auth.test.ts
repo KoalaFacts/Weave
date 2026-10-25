@@ -51,6 +51,8 @@ test('missing bearer preserves HTTP 401 and supplies ChatGPT tool-level OAuth ch
     assert.equal(called,0,'no private write may execute');
     assert.doesNotMatch(JSON.stringify(body),/synthetic_only_not_a_real_secret/);
     assert.equal(response.headers.get('cache-control'),'no-store');
+    assert.equal(response.headers.get('pragma'),'no-cache');
+    assert.equal(response.headers.get('x-content-type-options'),'nosniff');
 });
 
 test('insufficient scope preserves HTTP 403 and gives bounded step-up challenge, never invoking tool',async()=>{
@@ -139,4 +141,19 @@ test('authenticated profile returns only its own stable account ID through real 
         const again=await remoteMcp(request(rpc('get_my_profile')),unused,access);
         assert.deepEqual((await again.json()).result.structuredContent,{id:a.accountId});
     }finally{await h.close();}
+});
+
+test('unauthorized MCP challenge forwards only approved auth headers, never arbitrary provider details',async()=>{
+    const challenge='Bearer resource_metadata="https://demo.test/.well-known/oauth-protected-resource/mcp", error="invalid_token", error_description="Authentication is required", scope="weave:messages.send"';
+    const access:PrivateAccess={tools:privateMcpTools,scope:privateScope,
+        authorize:async()=>new Response('internal-secret-response',{status:401,headers:{
+            'WWW-Authenticate':challenge,'Cache-Control':'no-store','X-Internal-Trace':'private-secret-marker'
+        }}),invoke:async()=>{throw Error('must not be invoked')}};
+    const response=await remoteMcp(request(rpc('send_message')),unused,access);
+    assert.equal(response.status,401);
+    assert.equal(response.headers.get('WWW-Authenticate'),challenge);
+    assert.equal(response.headers.get('X-Internal-Trace'),null);
+    assert.equal(response.headers.get('Cache-Control'),'no-store','duplicate cache directives are invalid');
+    assert.equal(response.headers.get('Pragma'),'no-cache');
+    assert.doesNotMatch(await response.text(),/internal-secret-response|private-secret-marker/);
 });

@@ -130,7 +130,7 @@ export async function remoteMcp(request: Request, read: DirectoryRead, privateAc
                     isError:true,
                     content:[{type:'text',text:caller.status===401?'Authentication required.':'Additional OAuth permission required.'}],
                     _meta:{'mcp/www_authenticate':[challenge]}
-                }},caller.status,Object.fromEntries(caller.headers.entries()));
+                }},caller.status,{'WWW-Authenticate':challenge,'Pragma':'no-cache'});
             }
             return caller;
         }
