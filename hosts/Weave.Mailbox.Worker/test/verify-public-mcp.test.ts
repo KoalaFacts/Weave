@@ -54,8 +54,26 @@ test('release smoke reports directory tool errors without exposing payload',asyn
         assert.doesNotMatch(String(err),/private data/);return true;
     });
 });
-test('release smoke rejects oversized responses without retaining remote content',async()=>{
-    let called=0;const fetcher=(async()=>{called++;return new Response('x'.repeat(300000),{headers:noStore});}) as typeof fetch;
-    await assert.rejects(verifyPublicMcp({fetchImpl:fetcher}),/limit|invalid/);
-    assert.equal(called,1);
+test('release smoke enforces response bytes even for otherwise valid JSON-RPC',async()=>{
+    const oversizedInitialize=(bytes:number)=>json(1,{
+        protocolVersion:'2025-11-25',capabilities:{tools:{listChanged:false}},
+        serverInfo:{name:'weave-public',version:'0.1.0'},padding:'x'.repeat(bytes)
+    });
+    for(const [length,shouldReject] of [[240000,false],[300000,true]] as const){
+        const normal=fixture();let count=0;
+        const fetcher=(async(input:RequestInfo|URL,init?:RequestInit)=>{
+            count++;
+            if(count===1)return oversizedInitialize(length);
+            return normal.fetcher(input,init);
+        }) as typeof fetch;
+        if(shouldReject){
+            await assert.rejects(verifyPublicMcp({fetchImpl:fetcher}),/Published MCP response exceeds size limit\./);
+            assert.equal(count,1,'response limit must stop before discovery or a directory read');
+        }else{
+            const result=await verifyPublicMcp({fetchImpl:fetcher});
+            assert.equal(result.directoryRead,true,'a valid response below the size limit must complete discovery');
+            assert.equal(count,3);
+            assert.deepEqual(normal.seen,['tools/list','tools/call']);
+        }
+    }
 });
