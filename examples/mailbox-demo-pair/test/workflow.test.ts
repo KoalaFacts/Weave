@@ -253,3 +253,30 @@ test('final evidence rejects a replaced contact generation despite accepted cont
         }finally{await Promise.all([a.close(),b.close()]);}
     });
 });
+
+test('cold restore refuses a replaced channel before processing or sending on either endpoint',async t=>{
+    for(const role of ['A','B'] as const)await t.test(role,async subtest=>{
+        const {a,b,make,r}=await pair(subtest);
+        const ai=await a.setup(),bi=await b.setup();a.peer(bi);b.peer(ai);
+        await a.introduce();await b.accept();await a.step(1);await b.step(2);
+        await Promise.all([a.close(),b.close()]);
+        const fresh=make(role),original=(fresh as any).open;
+        let rejectedCloses=0;
+        (fresh as any).open=async()=>{
+            const client=await original(),call=client.call.bind(client),close=client.close.bind(client);
+            client.call=async(name:string,args:any)=>{
+                const result=await call(name,args);
+                return name==='get_channel'?{...result,generation:'2'}:result;
+            };
+            client.close=async()=>{rejectedCloses++;await close();};
+            return client;
+        };
+        const writes=()=>r.calls.filter(x=>['register_account','create_address','request_contact','decide_contact','send_message','ack_message'].includes(x.name)).length;
+        const before=writes();
+        try{
+            await assert.rejects(fresh.restore(),/restart_channel_generation_mismatch/);
+            assert.equal(writes(),before,'a changed channel must be rejected without writes or replay');
+            assert.equal(rejectedCloses,1,'a rejected restored channel must close its new MCP transport');
+        }finally{await fresh.close();}
+    });
+});
