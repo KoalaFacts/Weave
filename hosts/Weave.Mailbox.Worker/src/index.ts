@@ -4,6 +4,8 @@ import { registry } from './registry';
 import openapi from './openapi.json';
 import { publicReadRate } from './public-rate';
 import { remoteMcp } from './remote-mcp';
+import { oauthConfiguration, authorizeOAuth, protectedResourceMetadata } from './remote-oauth';
+import { privateMcpTools, privateScope, executePrivateMcp } from './remote-private';
 import { directory, mutateAddress, ownedAddresses } from './addresses';
 import { sweep } from './cleanup';
 import { budgetDatabase } from './budget';
@@ -34,13 +36,32 @@ export default {
             if (method === 'GET' && url.pathname === '/registry') return registry();
             if (method === 'GET' && url.pathname === '/openapi.json') return new Response(openapi,{headers:{'Content-Type':'application/json','Cache-Control':'no-store','X-Content-Type-Options':'nosniff'}});
             if(env.MAINTENANCE_MODE==='true')fail(503,'maintenance',30);
-            // POST is only the MCP transport; this endpoint exposes no authenticated or mutating tools.
-            if(url.pathname==='/mcp')return await remoteMcp(request,async target=>{
-                try {
-                    if(env.RECOVERY_READ_ONLY!=='true')await publicReadRate(env,request);
-                    return json(await atomic(env.db,tx=>directory(tx,target)));
-                } catch(error) { return problem(error); }
-            });
+            // Protected-resource discovery is an opt-in integration with an
+            // external OAuth 2.1 authorization server. Missing/partial config
+            // cannot silently enable a shared or anonymous account.
+            if(method==='GET'&&url.pathname==='/.well-known/oauth-protected-resource/mcp'){
+                let cfg;try{cfg=oauthConfiguration(env,request.url);}catch{fail(503,'storage');}
+                if(!cfg)fail(404,'unavailable');
+                return protectedResourceMetadata(cfg);
+            }
+            if(url.pathname==='/mcp'){
+                let cfg;try{cfg=oauthConfiguration(env,request.url);}catch{fail(503,'storage');}
+                return await remoteMcp(request,async target=>{
+                    try {
+                        if(env.RECOVERY_READ_ONLY!=='true')await publicReadRate(env,request);
+                        return json(await atomic(env.db,tx=>directory(tx,target)));
+                    } catch(error) { return problem(error); }
+                },cfg&&env.RECOVERY_READ_ONLY!=='true'?{
+                    tools:privateMcpTools,
+                    scope:privateScope,
+                    authorize:async scope=>{
+                        const access=await authorizeOAuth(cfg,request,scope,async accountId=>
+                            (await env.db.prepare('SELECT account_id FROM accounts WHERE account_id=?').bind(accountId).first('account_id'))===accountId);
+                        return access instanceof Response?access:access.accountId;
+                    },
+                    invoke:(accountId,name,args)=>executePrivateMcp(env,url.origin,accountId,name,args)
+                }:undefined);
+            }
             if(env.RECOVERY_READ_ONLY==='true'){
                 if(method==='POST'&&url.pathname==='/v1/accounts'){
                     if(!await authenticate(env,secret))fail(401,'unauthenticated');
