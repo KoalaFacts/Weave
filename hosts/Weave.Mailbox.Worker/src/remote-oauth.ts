@@ -1,7 +1,7 @@
 /** OAuth 2 protected-resource boundary for individually authorized Weave accounts.
  * OAuth 2.1 code/PKCE/consent is performed by the configured authorization server,
- * never by a shared mailbox or by MCP tool arguments. Tokens are introspected on
- * every protected call so revocation is effective without a local token cache.
+ * never by a shared mailbox or by MCP tool arguments. Tokens are freshly verified on every protected call, using HTTPS introspection
+ * or an opt-in private Cloudflare Service Binding; no positive token cache.
  */
 /** Trusted Cloudflare Workers OAuth Provider v1 RPC, not a public introspection URL.
  * Only AS-side grants whose authenticated account UUID is independently verified
@@ -30,9 +30,9 @@ export interface OAuthConfiguration {
 }
 export interface OAuthServiceConfiguration { mode:'service'; issuer:string; resource:string; authServer:OAuthServiceBinding; }
 export type OAuthOptions = OAuthConfiguration | OAuthServiceConfiguration;
-export type OAuthAccess =  {accountId: string} | Response;
+export type OAuthAccess = {accountId: string} | Response;
 const identity = /^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/;
-const serviceTokenPattern = /^[A-Za-z0-9\-._~+/]+:[A-Za-z0-9\-._~+/]+:[A-Za-z0-9\-._~+/]+$/;
+const serviceTokenPattern = /^[A-Za-z0-9._~+/\-]+:[A-Za-z0-9._~+/\-]+:[A-Za-z0-9._~+/\-]+$/;
 const tokenPattern = /^[A-Za-z0-9\-._~+/]+={0,2}$/;
 const scopes = ['weave:addresses.read','weave:addresses.write','weave:contacts.read','weave:contacts.write','weave:messages.read','weave:messages.send','weave:messages.ack'];
 const noStore = {'Cache-Control':'no-store','Pragma':'no-cache','X-Content-Type-Options':'nosniff'};

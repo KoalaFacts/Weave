@@ -128,3 +128,59 @@ test('malformed private request does not sweep or write maintenance state before
         assert.equal(await h.db.prepare("SELECT count(*) n FROM maintenance_state WHERE name='sweep'").first('n'),initial);
     }finally{await h.close();}
 });
+
+
+test('Cloudflare-style private token validation reaches real D1 owner-scoped MCP operations without a shared identity',async()=>{
+    const h=await start();
+    try {
+        const env:Env={db:h.db,REGISTRATION_ENABLED:'true',REGISTRATION_MAX_ACCOUNTS:'100',
+            REGISTRATION_PER_IP_PER_HOUR:'10',REGISTRATION_GLOBAL_PER_HOUR:'100',
+            CLEANUP_MAX_MESSAGES:'0',CLEANUP_TIME_BUDGET_MS:'0'};
+        const a=await h.participant(),b=await h.participant();
+        const tokenA=a.accountId+':grantA:secretA',tokenB=b.accountId+':grantB:secretB';
+        let revokedA=false,validated=0;
+        const cfg=oauthConfiguration({
+            OAUTH_ISSUER:'https://auth.example',OAUTH_RESOURCE:origin+'/mcp',
+            AUTH_SERVER:{validateToken:async(resource:string,token:string)=>{
+                assert.equal(resource,origin+'/mcp');validated++;
+                const owner=token===tokenA?a.accountId:token===tokenB?b.accountId:null;
+                if(!owner||owner===a.accountId&&revokedA)return null;
+                return {audience:resource,userId:owner,props:{accountId:owner},
+                    expiresAt:Math.floor(Date.now()/1000)+120,
+                    scope:['weave:addresses.read'],clientId:'verified-client'};
+            }}
+        },origin+'/mcp')!;
+        const invoke=async(token:string,name:string)=>{
+            const callerRequest=new Request(origin+'/mcp',{method:'POST',
+                headers:{...headers,Authorization:'Bearer '+token},
+                body:JSON.stringify(rpc(name))});
+            return remoteMcp(callerRequest,unused,{tools:privateMcpTools,scope:privateScope,
+                authorize:async scope=>{
+                    const access=await authorizeOAuth(cfg,callerRequest,scope,async account=>
+                        (await h.db.prepare('SELECT account_id FROM accounts WHERE account_id=?').bind(account).first('account_id'))===account);
+                    return access instanceof Response?access:access.accountId;
+                },
+                invoke:(owner,name,args)=>executePrivateMcp(env,origin,owner,name,args)
+            });
+        };
+        const profileA=await invoke(tokenA,'get_my_profile');
+        const profileB=await invoke(tokenB,'get_my_profile');
+        assert.equal(profileA.status,200);
+        assert.equal(profileB.status,200);
+        assert.equal((await profileA.json()).result.structuredContent.id,a.accountId);
+        assert.equal((await profileB.json()).result.structuredContent.id,b.accountId);
+        const addressesA=await invoke(tokenA,'list_my_addresses');
+        const addressesB=await invoke(tokenB,'list_my_addresses');
+        assert.equal(addressesA.status,200);assert.equal(addressesB.status,200);
+        const entriesA=JSON.parse((await addressesA.json()).result.content[0].text).items;
+        const entriesB=JSON.parse((await addressesB.json()).result.content[0].text).items;
+        assert.ok(entriesA.some((item:{addressId:string})=>item.addressId===a.cardId));
+        assert.ok(entriesB.some((item:{addressId:string})=>item.addressId===b.cardId));
+        assert.ok(!entriesA.some((item:{addressId:string})=>item.addressId===b.cardId));
+        assert.ok(!entriesB.some((item:{addressId:string})=>item.addressId===a.cardId));
+        revokedA=true;
+        const denied=await invoke(tokenA,'get_my_profile');
+        assert.equal(denied.status,401,'revoked token must not reuse a cached owner');
+        assert.ok(validated>=5,'each protected call must independently validate the token');
+    } finally {await h.close();}
+});

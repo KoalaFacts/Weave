@@ -114,20 +114,20 @@ test('Service Binding rejects revoked, foreign resource, foreign account, mismat
     for(const [claims,status] of cases){
         const binding={validateToken:async()=>claims};
         const cfg=oauthConfiguration({AUTH_SERVER:binding,OAUTH_ISSUER:config.issuer,OAUTH_RESOURCE:config.resource} as any,config.resource)!;
-        const result=await authorizeOAuth(cfg as any,req(),'weave:messages.send',exists,undefined,now*1000);
+        const result=await authorizeOAuth(cfg as any,req(id+':grantId:secretValue'),'weave:messages.send',exists,undefined,now*1000);
         assert.ok(result instanceof Response);
         assert.equal(result.status,status);
     }
     const binding={validateToken:async()=>valid};
     const cfg=oauthConfiguration({AUTH_SERVER:binding,OAUTH_ISSUER:config.issuer,OAUTH_RESOURCE:config.resource} as any,config.resource)!;
-    const denied=await authorizeOAuth(cfg as any,req(),'weave:messages.send',async()=>false,undefined,now*1000);
+    const denied=await authorizeOAuth(cfg as any,req(id+':grantId:secretValue'),'weave:messages.send',async()=>false,undefined,now*1000);
     assert.ok(denied instanceof Response);assert.equal(denied.status,401);
 });
 test('Service Binding failure is 503 and never leaks upstream error details or dispatches account read',async()=>{
     let checked=0;
     const binding={validateToken:async()=>{throw Error('private binding unavailable SECRET');}};
     const cfg=oauthConfiguration({AUTH_SERVER:binding,OAUTH_ISSUER:config.issuer,OAUTH_RESOURCE:config.resource} as any,config.resource)!;
-    const result=await authorizeOAuth(cfg as any,req(),'weave:messages.send',async()=>{checked++;return true;});
+    const result=await authorizeOAuth(cfg as any,req(id+':grantId:secretValue'),'weave:messages.send',async()=>{checked++;return true;});
     assert.ok(result instanceof Response);assert.equal(result.status,503);assert.equal(checked,0);
     assert.doesNotMatch(await result.text(),/SECRET|binding/);
 });
@@ -136,6 +136,36 @@ test('Service Binding denies a token that expires while the account lookup execu
     const binding={validateToken:async()=>({audience:config.resource,userId:id,props:{accountId:id},
         expiresAt:now+1,scope:['weave:messages.send'],clientId:'verified-public-client'})};
     const cfg=oauthConfiguration({AUTH_SERVER:binding,OAUTH_ISSUER:config.issuer,OAUTH_RESOURCE:config.resource} as any,config.resource)!;
-    const result=await authorizeOAuth(cfg as any,req(),'weave:messages.send',async()=>{clock+=2000;return true;},undefined,()=>clock);
+    const result=await authorizeOAuth(cfg as any,req(id+':grantId:secretValue'),'weave:messages.send',async()=>{clock+=2000;return true;},undefined,()=>clock);
     assert.ok(result instanceof Response);assert.equal(result.status,401);
+});
+
+test('Service Binding rechecks revocation rather than caching an accepted token',async()=>{
+    const now=Math.floor(Date.now()/1000);
+    const validClaims={audience:config.resource,userId:id,props:{accountId:id},
+        expiresAt:now+120,scope:['weave:messages.send'],clientId:'verified-public-client'};
+    let reads=0,revoked=false;
+    const binding={validateToken:async()=>{reads++;return revoked?null:validClaims;}};
+    const cfg=oauthConfiguration({AUTH_SERVER:binding,OAUTH_ISSUER:config.issuer,OAUTH_RESOURCE:config.resource} as any,config.resource)!;
+    const request=req(id+':grantId:secretValue');
+    assert.deepEqual(await authorizeOAuth(cfg,request,'weave:messages.send',exists,undefined,now*1000),{accountId:id});
+    revoked=true;
+    const denied=await authorizeOAuth(cfg,request,'weave:messages.send',exists,undefined,now*1000);
+    assert.ok(denied instanceof Response);assert.equal(denied.status,401);assert.equal(reads,2);
+});
+test('Service Binding rejects a non-Cloudflare token before private RPC',async()=>{
+    let touched=0;
+    const binding={validateToken:async()=>{touched++;return null;}};
+    const cfg=oauthConfiguration({AUTH_SERVER:binding,OAUTH_ISSUER:config.issuer,OAUTH_RESOURCE:config.resource} as any,config.resource)!;
+    const denied=await authorizeOAuth(cfg,req('plain_legacy_token'),'weave:messages.send',exists);
+    assert.ok(denied instanceof Response);assert.equal(denied.status,401);assert.equal(touched,0);
+});
+test('Service Binding rechecks expiry after the private RPC latency',async()=>{
+    const now=Math.floor(Date.now()/1000);let clock=now*1000;
+    const binding={validateToken:async()=>{clock+=2000;return {audience:config.resource,userId:id,props:{accountId:id},
+        expiresAt:now+1,scope:['weave:messages.send'],clientId:'verified-public-client'};}};
+    const cfg=oauthConfiguration({AUTH_SERVER:binding,OAUTH_ISSUER:config.issuer,OAUTH_RESOURCE:config.resource} as any,config.resource)!;
+    let lookedUp=false;
+    const denied=await authorizeOAuth(cfg,req(id+':grantId:secretValue'),'weave:messages.send',async()=>{lookedUp=true;return true;},undefined,()=>clock);
+    assert.ok(denied instanceof Response);assert.equal(denied.status,401);assert.equal(lookedUp,false);
 });
