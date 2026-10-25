@@ -3,10 +3,10 @@
  * never from tool parameters. Channel tokens stay server-side.
  */
 import { atomic, type Env } from './database';
-import { ownContacts, connection } from './contact-links';
+import { ownContacts } from './contact-links';
 import { read } from './reads';
 import { requestContact, decide } from './contacts';
-import { send, ack } from './messages';
+import { sendWithResolvedConnection, ack } from './messages';
 import { fail, identity, json, problem, uuid } from './wire';
 import { MAX_GENERATION, validatePayload } from './protocol';
 import { sweep } from './cleanup';
@@ -107,14 +107,10 @@ export async function executePrivateMcp(env:Env,origin:string,accountId:string,n
             // non-first validation retains idempotent replay of old committed IDs.
             validatePayload(args.payload);
             await sweep(env);
-            // Resolve the current connection token in the SAME transaction as the
-            // guarded send. Never require a client/model to receive or echo it.
-            return json(withoutControl(await atomic(env.db,async tx=>{
-                const token=await connection(tx,accountId,args.recipientAccountId as string);
-                if(!token)fail(404,'unavailable');
-                return send(tx,accountId,{version:2,recipientMailboxId:args.recipientAccountId,
-                    contactGeneration,connectionToken:token,payload:args.payload});
-            })));
+            // Original tokens for retained IDs, current tokens for new sends; all
+            // resolved in the guarded transaction and never exposed to the model.
+            return json(withoutControl(await atomic(env.db,tx=>sendWithResolvedConnection(tx,accountId,
+                args.recipientAccountId as string,contactGeneration,args.payload))));
         }
         if(name==='ack_message'){
             parameters(args,['messageId','senderAccountId'],['messageId','senderAccountId']);
