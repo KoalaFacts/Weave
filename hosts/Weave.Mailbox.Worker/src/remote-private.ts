@@ -8,7 +8,7 @@ import { read } from './reads';
 import { requestContact, decide } from './contacts';
 import { send, ack } from './messages';
 import { fail, identity, json, problem, uuid } from './wire';
-import { MAX_GENERATION } from './protocol';
+import { MAX_GENERATION, validatePayload } from './protocol';
 import { sweep } from './cleanup';
 
 const str = (maxLength: number) => ({type:'string',maxLength});
@@ -80,6 +80,9 @@ export async function executePrivateMcp(env:Env,origin:string,accountId:string,n
             parameters(args,['requestId','requesterAddressId','recipientAccountId','recipientAddressId','payload'],['requestId','requesterAddressId','recipientAccountId','recipientAddressId','payload']);
             for(const key of ['requestId','requesterAddressId','recipientAccountId','recipientAddressId'])uuid(args[key]);
             if(!record(args.payload))fail();
+            // Reject malformed payloads before bounded cleanup writes any state. This
+            // non-first validation retains idempotent replay of old committed IDs.
+            validatePayload(args.payload);
             await sweep(env);
             return json(withoutControl(await atomic(env.db,tx=>requestContact(tx,accountId,{...args,requestVersion:2,requesterAccountId:accountId}))));
         }
@@ -88,7 +91,10 @@ export async function executePrivateMcp(env:Env,origin:string,accountId:string,n
             uuid(args.requestId);uuid(args.requesterAccountId);
             if(!['accepted','rejected'].includes(args.status as string))fail();
             const expectedGeneration=validGeneration(args.expectedGeneration);
-            if(args.reply!==undefined && args.reply!==null && !record(args.reply))fail();
+            if(args.reply!==undefined&&args.reply!==null){
+                if(!record(args.reply))fail();
+                validatePayload(args.reply);
+            }
             await sweep(env);
             return json(withoutControl(await atomic(env.db,tx=>decide(tx,accountId,args.requestId as string,
                 {requesterMailboxId:args.requesterAccountId,expectedGeneration,status:args.status,reply:args.reply??null}))));
@@ -97,6 +103,9 @@ export async function executePrivateMcp(env:Env,origin:string,accountId:string,n
             parameters(args,['recipientAccountId','contactGeneration','payload'],['recipientAccountId','contactGeneration','payload']);
             uuid(args.recipientAccountId);const contactGeneration=validGeneration(args.contactGeneration);
             if(!record(args.payload))fail();
+            // Reject malformed payloads before bounded cleanup writes any state. This
+            // non-first validation retains idempotent replay of old committed IDs.
+            validatePayload(args.payload);
             await sweep(env);
             // Resolve the current connection token in the SAME transaction as the
             // guarded send. Never require a client/model to receive or echo it.
