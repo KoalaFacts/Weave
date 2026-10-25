@@ -94,6 +94,8 @@ test('OAuth callback timeout closes incomplete request sockets without hanging',
         const pending=authorizeMcpAccount(h.resource,'test-public-client',async link=>{
             const redirect=new URL(new URL(link).searchParams.get('redirect_uri')??'');
             incomplete=connect(Number(redirect.port),redirect.hostname);
+            // Closing the callback server intentionally resets this stalled test socket.
+            incomplete.on('error',()=>{});
             await once(incomplete,'connect');
             incomplete.write('GET /callback HTTP/1.1\r\nHost: 127.0.0.1\r\n');
         },{...login,timeoutMs:100}).then(

@@ -69,7 +69,7 @@ export async function authorizeMcpAccount(resource:string,clientId:string,
     const metadata=await boundedJson(discovery,undefined,allowLoopback);
     if(metadata.issuer!==protectedMetadata.authorization_servers[0]||
         !Array.isArray(metadata.response_types_supported)||!metadata.response_types_supported.includes('code')||
-        !Array.isArray(metadata.grant_types_supported)||!metadata.grant_types_supported.includes('authorization_code')||
+        (metadata.grant_types_supported!==undefined&&(!Array.isArray(metadata.grant_types_supported)||!metadata.grant_types_supported.includes('authorization_code')))||
         !Array.isArray(metadata.code_challenge_methods_supported)||!metadata.code_challenge_methods_supported.includes('S256'))
         throw Error('Untrusted OAuth issuer or authorization-code PKCE S256 unsupported');
     const authorization=sameIssuerUrl(metadata.authorization_endpoint,issuer,allowLoopback);
@@ -128,10 +128,10 @@ export async function authorizeMcpAccount(resource:string,clientId:string,
             const token=await boundedJson(tokenEndpoint,{method:'POST',headers:{'Content-Type':'application/x-www-form-urlencoded',
                 Accept:'application/json'},body:form},allowLoopback);
             if(typeof token.access_token!=='string'||!token.access_token||token.access_token.length>4096||
-                token.token_type!=='Bearer'||!Number.isSafeInteger(token.expires_in)||
+                (typeof token.token_type!=='string'||token.token_type.toLowerCase()!=='bearer')||!Number.isSafeInteger(token.expires_in)||
                 (token.expires_in as number)<=0||(token.expires_in as number)>900)
                 throw Error('Invalid OAuth token response');
             return token.access_token;
         }finally{if(timer)clearTimeout(timer);authorizationCode.catch(()=>{});}
-    }finally{await new Promise<void>(resolve=>server.close(()=>resolve()));}
+    }finally{await new Promise<void>(resolve=>{server.close(()=>resolve());server.closeAllConnections();});}
 }
