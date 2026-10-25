@@ -43,3 +43,24 @@ test('invalid AS response never grants access, no cached revoked token',async()=
     const error=await authorizeOAuth(config,req(),'weave:messages.send',exists,(async()=>{throw Error('AS secret failure')}) as typeof fetch,now*1000);
     assert.ok(error instanceof Response);assert.equal(error.status,503);assert.doesNotMatch(await error.text(),/secret/);
 });
+test('OAuth Basic form-encodes client ID and secret before transport',async()=>{
+    const now=Math.floor(Date.now()/1000),special={...config,clientId:'weave+client',clientSecret:'secret+%value'};
+    let observed='';
+    const r=await authorizeOAuth(special,req(),'weave:messages.send',exists,fetchFor(valid(now),(_url,init)=>{
+        observed=Buffer.from(String(init.headers.Authorization).slice(6),'base64').toString('utf8');
+    }),now*1000);
+    assert.deepEqual(r,{accountId:id});
+    assert.equal(observed,'weave%2Bclient:secret%2B%25value');
+});
+test('bearer expiry during introspection fails closed',async()=>{
+    const now=Math.floor(Date.now()/1000),payload={...valid(now),exp:now+1};let clock=now*1000;
+    const fetcher=(async()=>{clock+=2000;return new Response(JSON.stringify(payload),{headers:{'Content-Type':'application/json'}});}) as typeof fetch;
+    const r=await authorizeOAuth(config,req(),'weave:messages.send',exists,fetcher,()=>clock);
+    assert.ok(r instanceof Response);assert.equal(r.status,401);
+});
+test('bearer expiry during account lookup fails closed',async()=>{
+    const now=Math.floor(Date.now()/1000),payload={...valid(now),exp:now+1};let clock=now*1000;
+    const delayed=async(a:string)=>{assert.equal(a,id);clock+=2000;return true;};
+    const r=await authorizeOAuth(config,req(),'weave:messages.send',delayed,fetchFor(payload),()=>clock);
+    assert.ok(r instanceof Response);assert.equal(r.status,401);
+});

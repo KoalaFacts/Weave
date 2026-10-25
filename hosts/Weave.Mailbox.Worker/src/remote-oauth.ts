@@ -47,6 +47,10 @@ function challenge(config:OAuthConfiguration,status:number,scope:string,code:str
     const value=`Bearer resource_metadata="${meta}", error="${code}"${scope?`, scope="${scope}"`:''}`;
     return new Response(JSON.stringify({error:code}),{status,headers:{...noStore,'Content-Type':'application/json','WWW-Authenticate':value}});
 }
+/** RFC 6749 2.3.1: form-encode client ID and secret independently before Basic. */
+function formEncode(value:string):string {
+    return new URLSearchParams({value}).toString().slice('value='.length);
+}
 function failClosed():Response {
     return new Response(JSON.stringify({error:'authorization_unavailable'}),{status:503,headers:{...noStore,'Content-Type':'application/json'}});
 }
@@ -56,7 +60,7 @@ function failClosed():Response {
 export async function authorizeOAuth(
     config: OAuthConfiguration, request: Request, requiredScope: string,
     accountExists: (accountId: string) => Promise<boolean>,
-    fetcher: typeof fetch = fetch, now = Date.now()
+    fetcher: typeof fetch = fetch, now: number | (() => number) = Date.now
 ): Promise<OAuthAccess> {
     const raw = request.headers.get('authorization');
     if (!raw || !/^Bearer\s+/i.test(raw)) return challenge(config,401,requiredScope,'invalid_token');
@@ -67,7 +71,7 @@ export async function authorizeOAuth(
     let data: unknown;
     try {
         const response=await fetcher(config.introspectionUrl,{method:'POST',redirect:'error',cache:'no-store',signal:AbortSignal.timeout(3500),
-            headers:{'Authorization':'Basic '+btoa(config.clientId+':'+config.clientSecret),'Content-Type':'application/x-www-form-urlencoded','Accept':'application/json'},body:form});
+            headers:{'Authorization':'Basic '+btoa(formEncode(config.clientId)+':'+formEncode(config.clientSecret)),'Content-Type':'application/x-www-form-urlencoded','Accept':'application/json'},body:form});
         if (!response.ok || !/^application\/json(?:;|$)/i.test(response.headers.get('Content-Type')??'')) {await response.body?.cancel();return failClosed();}
         // Bound the remote AS response before JSON parsing; never log secrets or response text.
         const reader=response.body?.getReader(); if(!reader)return failClosed();
@@ -78,7 +82,9 @@ export async function authorizeOAuth(
     } catch {return failClosed();}
     if (!data || typeof data!=='object'||Array.isArray(data)) return challenge(config,401,requiredScope,'invalid_token');
     const info=data as Record<string,unknown>;
-    const nowSec=Math.floor(now/1000);
+    // A token may expire while waiting for remote introspection.
+    const clock = typeof now === 'function' ? now : () => now;
+    const nowSec=Math.floor(clock()/1000);
     // RFC 7662 does not guarantee issuer/audience in every response; our configured
     // authorization server MUST return both. Ambiguous bindings are rejected.
     if(info.active!==true||info.iss!==config.issuer||info.aud!==config.resource||typeof info.sub!=='string'||!identity.test(info.sub)
@@ -90,5 +96,7 @@ export async function authorizeOAuth(
     }
     if (typeof info.scope!=='string'||!info.scope.split(' ').includes(requiredScope)) return challenge(config,403,requiredScope,'insufficient_scope');
     try {if(!await accountExists(info.sub))return challenge(config,401,requiredScope,'invalid_token');}catch{return failClosed();}
+    // The database lookup can also outlive the bearer; revalidate before dispatch.
+    if((info.exp as number)<=Math.floor(clock()/1000))return challenge(config,401,requiredScope,'invalid_token');
     return {accountId:info.sub};
 }
