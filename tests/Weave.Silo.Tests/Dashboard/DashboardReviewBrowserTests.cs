@@ -174,6 +174,28 @@ public sealed class DashboardReviewBrowserTests
         fixture.Evidence.AssertLayouts();
     }
 
+    [Fact]
+    public async Task Evidence_MobileSmoothScrolling_CapturesFromTopAndRestoresOriginalPosition()
+    {
+        await using var fixture = new DashboardReviewBrowserFixture(mobile: true);
+        await fixture.StartAsync();
+        var previous = await fixture.Page.EvaluateAsync<int>("""
+            () => {
+              document.documentElement.style.scrollBehavior = 'smooth';
+              document.body.style.minHeight = '2400px';
+              window.scrollTo({left: 0, top: 482, behavior: 'instant'});
+              return window.scrollY;
+            }
+            """);
+        previous.ShouldBeGreaterThan(0, "A scrolled, smooth-scrolling page must exercise the tiled capture regression.");
+
+        await fixture.Evidence.CaptureAsync("smooth-scroll-regression");
+
+        (await fixture.Page.EvaluateAsync<int>("window.scrollY")).ShouldBe(previous,
+            "Capturing all mobile tiles must restore the caller's original scroll position.");
+        fixture.BlockedRequests.ShouldBeEmpty();
+    }
+
     private static string OriginalRequest() => new JsonObject
     {
         ["invocationId"] = "abcdef0123456789abcdef0123456789",

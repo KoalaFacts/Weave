@@ -53,7 +53,7 @@ internal sealed class DashboardReviewBrowserEvidence(IPage page, string temporar
             for (var index = 0; index < count; index++)
             {
                 if (mobile)
-                    await page.EvaluateAsync("y => window.scrollTo(0, y)", Math.Min(index * viewportHeight, height - viewportHeight));
+                    await page.EvaluateAsync("y => window.scrollTo({left: 0, top: y, behavior: 'instant'})", Math.Min(index * viewportHeight, height - viewportHeight));
                 positions.Add(await page.EvaluateAsync<int[]>("() => [scrollX, scrollY]"));
                 var bytes = await page.ScreenshotAsync(new()
                 {
@@ -80,7 +80,7 @@ internal sealed class DashboardReviewBrowserEvidence(IPage page, string temporar
         }
         finally
         {
-            await page.EvaluateAsync("position => window.scrollTo(position[0], position[1])", scroll);
+            await page.EvaluateAsync("position => window.scrollTo({left: position[0], top: position[1], behavior: 'instant'})", scroll);
         }
         await File.WriteAllTextAsync(Path.Join(directory, state + "-tiles.json"), JsonSerializer.Serialize(positions),
             TestContext.Current.CancellationToken);
