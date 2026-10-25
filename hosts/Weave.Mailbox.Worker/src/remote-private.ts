@@ -26,7 +26,7 @@ export const privateMcpTools=[
     {
         ...tool('get_my_profile','Return the immutable account ID associated with the current OAuth token for multi-account recognition.','weave:addresses.read',{},[],true),
         outputSchema:{$schema:'https://json-schema.org/draft/2020-12/schema',type:'object',
-            properties:{id:{type:'string',minLength:1,pattern:'\S',
+            properties:{id:{type:'string',minLength:1,pattern:'\\S',
                 description:'Opaque and stable Weave account identifier for the authenticated OAuth identity.'}},
             required:['id'],additionalProperties:false},
         _meta:{securitySchemes:[{type:'oauth2',scopes:['weave:addresses.read']}],'openai/profile':true}

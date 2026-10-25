@@ -112,6 +112,7 @@ test('OAuth-only get_my_profile is declared for stable multi-account recognition
     assert.equal(tool._meta['openai/profile'],true);
     assert.deepEqual(tool.inputSchema.required,[]);
     assert.deepEqual(tool.outputSchema.required,['id']);
+    assert.equal(tool.outputSchema.properties.id.pattern,'\\S','nonblank identity pattern must survive JavaScript string escaping');
     assert.equal(tool.outputSchema.additionalProperties,false);
     assert.equal(privateScope('get_my_profile'),'weave:addresses.read');
 });
