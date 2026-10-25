@@ -53,13 +53,25 @@ internal sealed class DashboardReviewBrowserEvidence(IPage page, string temporar
             for (var index = 0; index < count; index++)
             {
                 if (mobile)
-                    await page.EvaluateAsync("y => window.scrollTo({left: 0, top: y, behavior: 'instant'})", Math.Min(index * viewportHeight, height - viewportHeight));
+                    await page.EvaluateAsync("""
+                        async y => {
+                          window.scrollTo({left: 0, top: y, behavior: 'instant'});
+                          // A focused input can finish a queued scroll on the next
+                          // animation frame even after an instant scroll returns.
+                          await new Promise(resolve => requestAnimationFrame(resolve));
+                          if (window.scrollY !== y)
+                            window.scrollTo({left: 0, top: y, behavior: 'instant'});
+                        }
+                        """, Math.Min(index * viewportHeight, height - viewportHeight));
                 positions.Add(await page.EvaluateAsync<int[]>("() => [scrollX, scrollY]"));
                 var bytes = await page.ScreenshotAsync(new()
                 {
                     FullPage = !mobile,
                     Mask = [page.Locator("#review-capability"), page.Locator("#review-api-token")]
                 });
+                if (mobile)
+                    (await page.EvaluateAsync<int>("window.scrollY")).ShouldBe(positions[^1][1],
+                        "Masked screenshot capture must not shift away from the recorded tile.");
                 bytes.Length.ShouldBeLessThanOrEqualTo(4 * 1024 * 1024);
                 var name = mobile ? $"{state}-tile-{index + 1:D2}.png" : state + ".png";
                 await File.WriteAllBytesAsync(Path.Join(directory, name), bytes, TestContext.Current.CancellationToken);
