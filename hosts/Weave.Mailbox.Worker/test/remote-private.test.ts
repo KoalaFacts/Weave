@@ -81,3 +81,24 @@ test('real D1 account-scoped contact, message and ACK use server-side channel to
         assert.equal((await receipt.json()).state,'acknowledged');
     }finally{await h.close();}
 });
+
+test('real Worker advertises protected-resource metadata and challenges unauthenticated private tools',async()=>{
+    const h=await start({bindings:{
+        OAUTH_ISSUER:'https://auth.example',OAUTH_RESOURCE:'https://localhost/mcp',
+        OAUTH_INTROSPECTION_URL:'https://auth.example/oauth/introspect',
+        OAUTH_CLIENT_ID:'weave-client',OAUTH_CLIENT_SECRET:'local_fake_secret_for_testing_only'
+    }});
+    try{
+        const discovery=await h.mf.dispatchFetch('https://localhost/.well-known/oauth-protected-resource/mcp');
+        assert.equal(discovery.status,200,await discovery.clone().text());
+        const meta=await discovery.json();
+        assert.equal(meta.resource,'https://localhost/mcp');
+        assert.deepEqual(meta.authorization_servers,['https://auth.example']);
+        const before=await h.db.prepare('SELECT count(*) n FROM mailbox_records').first('n');
+        const response=await h.mf.dispatchFetch('https://localhost/mcp',{method:'POST',headers,
+            body:JSON.stringify(rpc('send_message',{}))});
+        assert.equal(response.status,401);
+        assert.match(response.headers.get('WWW-Authenticate')??'',/scope="weave:messages.send"/);
+        assert.equal(await h.db.prepare('SELECT count(*) n FROM mailbox_records').first('n'),before);
+    }finally{await h.close();}
+});
