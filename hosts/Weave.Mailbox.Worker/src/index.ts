@@ -70,6 +70,12 @@ export default {
             if (method === 'POST' && url.pathname === '/v1/accounts') return respond(await register(env,request,secret,await body(request)));
             if(env.RECOVERY_READ_ONLY!=='true'&&method==='GET'&&['/v1/directory','/v1/directory/address','/v1/contacts/cards','/v1/contacts/card'].includes(url.pathname))await publicReadRate(env,request);
             const account = await authenticate(env,secret);
+            // Existing-account proof for an operator-controlled OAuth issuer. This
+            // read cannot register accounts or turn a control into a bearer token.
+            if(method==='GET' && url.pathname==='/v1/accounts/me') {
+                if(!account)fail(401,'unauthenticated');
+                return respond({accountId:account.accountId});
+            }
             if (method === 'GET' && ['/v1/directory','/v1/directory/address'].includes(url.pathname)) return respond(await atomic(env.db,tx => directory(tx,url)));
             if (method === 'GET' && ['/v1/contacts/cards','/v1/contacts/card'].includes(url.pathname)) return respond(await atomic(env.db,tx => read(tx,url,account?.accountId ?? null)));
             if (!account) fail(401,'unauthenticated');

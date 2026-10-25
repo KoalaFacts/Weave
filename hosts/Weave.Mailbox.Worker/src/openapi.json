@@ -76,6 +76,49 @@
         }
       }
     },
+      "/v1/accounts/me": {
+        "get": {
+          "operationId": "resolveExistingAccount",
+          "summary": "Resolve existing account ownership using its control without registration",
+          "description": "Read-only owner proof for a trusted OAuth authorization server. Requires an existing high-entropy Weave account control, returns only its immutable account UUID and never creates, changes or recovers an account. Do not send controls to arbitrary issuers; this endpoint does not issue OAuth tokens or grant consent.",
+          "responses": {
+            "200": {
+              "description": "Existing authenticated account UUID, no account creation.",
+              "headers": {
+                "Cache-Control": {
+                  "schema": {
+                    "type": "string",
+                    "const": "no-store"
+                  }
+                }
+              },
+              "content": {
+                "application/json": {
+                  "schema": {
+                    "type": "object",
+                    "additionalProperties": false,
+                    "required": [
+                      "accountId"
+                    ],
+                    "properties": {
+                      "accountId": {
+                        "type": "string",
+                        "format": "uuid"
+                      }
+                    }
+                  }
+                }
+              }
+            },
+            "401": {
+              "$ref": "#/components/responses/401"
+            },
+            "503": {
+              "$ref": "#/components/responses/503"
+            }
+          }
+        }
+      },
     "/v1/addresses": {
       "get": {
         "operationId": "listAddresses",
