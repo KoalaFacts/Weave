@@ -17,6 +17,7 @@
     "test/local-miniflare.ts",
     "test/mcp-readme-contract.test.ts",
     "test/remote-live-pair.test.ts",
+    "test/remote-oauth-client.test.ts",
     "../../examples/mailbox-demo-mcp/*.ts",
     "../../scripts/marketplace/*.ts",
     "../../examples/mailbox-demo-pair/**/*.ts",

@@ -6,6 +6,7 @@ import {fork, type ChildProcess} from 'node:child_process';
 import {randomBytes, randomUUID, createHash} from 'node:crypto';
 import {open,unlink} from 'node:fs/promises';
 import {fileURLToPath} from 'node:url';
+import {authorizeMcpAccount} from './oauth.ts';
 
 const toolNames=['get_my_profile','ensure_my_address','list_my_contact_requests','list_my_contacts','get_my_channel',
     'list_my_inbox','list_my_outbox','request_contact','decide_contact','send_message','ack_message'];
@@ -89,10 +90,24 @@ if(process.argv.includes('--agent')){
         process.send?.(reply);
     });
 }else{
-    const tokenA=process.env.WEAVE_AGENT_A_ACCESS_TOKEN,tokenB=process.env.WEAVE_AGENT_B_ACCESS_TOKEN;
-    if(process.env.WEAVE_LIVE_ACCEPTANCE!=='1'||!tokenA||!tokenB||tokenA===tokenB)
-        throw Error('Explicit WEAVE_LIVE_ACCEPTANCE=1 and two distinct privately injected bearer tokens are required; no account is created automatically.');
+    const providedA=process.env.WEAVE_AGENT_A_ACCESS_TOKEN,providedB=process.env.WEAVE_AGENT_B_ACCESS_TOKEN;
+    if(process.env.WEAVE_LIVE_ACCEPTANCE!=='1')
+        throw Error('Explicit WEAVE_LIVE_ACCEPTANCE=1 is required before any private account operation.');
     if(!process.env.WEAVE_EVIDENCE_PATH)throw Error('Provide WEAVE_EVIDENCE_PATH for an exclusive redacted receipt.');
+    if(Boolean(providedA)!==Boolean(providedB))
+        throw Error('Both pre-issued bearer tokens must be supplied together; never fall back to a shared account.');
+    if(!providedA&&!process.env.WEAVE_OAUTH_CLIENT_ID)
+        throw Error('Supply two separately authorized bearer tokens or a registered WEAVE_OAUTH_CLIENT_ID for PKCE consent.');
+    let tokenA=providedA??'',tokenB=providedB??'';
+    if(!tokenA){
+        // No private writes until the operator has separately consented to both
+        // accounts. No browser-specific CLI or vault is required.
+        const clientId=process.env.WEAVE_OAUTH_CLIENT_ID!;
+        const link=(role:'A'|'B')=>(url:string)=>{process.stdout.write('Authorize Weave Agent '+role+' in your browser:\n'+url+'\n');};
+        tokenA=await authorizeMcpAccount(endpoint.href,clientId,link('A'));
+        tokenB=await authorizeMcpAccount(endpoint.href,clientId,link('B'));
+    }
+    if(tokenA===tokenB)throw Error('Each Agent must authorize a different Weave account.');
     const script=fileURLToPath(import.meta.url);
     function start(role:string,token:string):Client{
         const child:ChildProcess=fork(script,['--agent'],{stdio:['ignore','ignore','ignore','ipc'],
