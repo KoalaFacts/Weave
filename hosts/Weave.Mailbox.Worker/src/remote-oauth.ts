@@ -44,7 +44,8 @@ export function protectedResourceMetadata(config: OAuthConfiguration): Response 
 }
 function challenge(config:OAuthConfiguration,status:number,scope:string,code:string): Response {
     const meta=new URL('/.well-known/oauth-protected-resource/mcp',config.resource).href;
-    const value=`Bearer resource_metadata="${meta}", error="${code}"${scope?`, scope="${scope}"`:''}`;
+    const description=code==='insufficient_scope'?'Additional authorization is required':'Authentication is required';
+    const value=`Bearer resource_metadata="${meta}", error="${code}", error_description="${description}"${scope?`, scope="${scope}"`:''}`;
     return new Response(JSON.stringify({error:code}),{status,headers:{...noStore,'Content-Type':'application/json','WWW-Authenticate':value}});
 }
 /** RFC 6749 2.3.1: form-encode client ID and secret independently before Basic. */

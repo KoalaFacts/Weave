@@ -23,6 +23,14 @@ const tool=(name:string,description:string,scope:string,properties:Record<string
     securitySchemes:[{type:'oauth2',scopes:[scope]}],_meta:{securitySchemes:[{type:'oauth2',scopes:[scope]}]}
 });
 export const privateMcpTools=[
+    {
+        ...tool('get_my_profile','Return the immutable account ID associated with the current OAuth token for multi-account recognition.','weave:addresses.read',{},[],true),
+        outputSchema:{$schema:'https://json-schema.org/draft/2020-12/schema',type:'object',
+            properties:{id:{type:'string',minLength:1,pattern:'\\S',
+                description:'Opaque and stable Weave account identifier for the authenticated OAuth identity.'}},
+            required:['id'],additionalProperties:false},
+        _meta:{securitySchemes:[{type:'oauth2',scopes:['weave:addresses.read']}],'openai/profile':true}
+    },
     tool('list_my_addresses','List only addresses owned by your OAuth account, including unlisted addresses.','weave:addresses.read',page,[],true),
     tool('ensure_my_address','Create a private unlisted address using a stable client UUID. Exact retries return the original; changed inputs conflict.','weave:addresses.write',
         {addressId:id,label:str(128)},['addressId']),
@@ -70,6 +78,11 @@ export async function executePrivateMcp(env:Env,origin:string,accountId:string,n
     try {
         if(!privateScope(name))fail(404,'unavailable');
         const target=urlFor(origin,'/');
+        if(name==='get_my_profile'){
+            parameters(args,[]);
+            uuid(accountId);
+            return json({id:accountId});
+        }
         if(['list_my_addresses','list_my_contact_requests','list_my_contacts','list_my_inbox','list_my_outbox'].includes(name)){
             target.pathname=name==='list_my_addresses'?'/v1/addresses':name==='list_my_contact_requests'?'/v1/contacts/requests':
                 name==='list_my_contacts'?'/v1/contacts':name==='list_my_inbox'?'/v1/inbox':'/v1/outbox';

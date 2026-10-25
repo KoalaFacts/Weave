@@ -24,7 +24,10 @@ authorization-code flow, PKCE S256, `resource` in authorization/token requests
 
 The issuer must expose its own RFC 8414 or OpenID Connect metadata, document
 PKCE S256 and support clients according to the actual client registration
-policy. This Worker is **not** a substitute OAuth authorization server or
+policy. For OpenAI clients, provision a supported CIMD, dynamic-client-registration
+or predefined-client path and verify its redirect/issuer callback contract
+(RFC 9207 where advertised) with the live authorization server; a resource
+server cannot implement that user consent path on its own. This Worker is **not** a substitute OAuth authorization server or
 identity-provider registration system.
 
 Set the following **Worker runtime** bindings only for a trusted provisioned AS:
@@ -80,8 +83,20 @@ no private operation is dispatched before fresh introspection and account
 binding. Authentication applies independently on every HTTP tool request,
 including reconnects. Missing request IDs/notifications never execute writes.
 
+For ChatGPT per-tool OAuth linking, 401/403 retain their HTTP status and
+`WWW-Authenticate` header while also returning a JSON-RPC tool-error
+`_meta["mcp/www_authenticate"]` entry containing the same bounded challenge.
+Challenges include a fixed nonsecret `error_description`; AS outages (503)
+never trigger a misleading linking prompt. When OAuth is enabled, public
+guide/discovery explains how to authorize without claiming the anonymous call
+is already authenticated. `get_my_profile` is deliberately read-only and
+returns the immutable Weave account UUID bound to the verified bearer so
+ChatGPT can distinguish independently connected accounts. No profile label,
+account registration or identity sharing is implied.
+
 | Tool | Required scope | Core boundary |
 | --- | --- | --- |
+| `get_my_profile` | `weave:addresses.read` | Stable authenticated account UUID in both `structuredContent` and text; never model-supplied identity. | 
 | `list_my_addresses` | `weave:addresses.read` | Owned private/public address list, never another account's addresses. |
 | `ensure_my_address` | `weave:addresses.write` | Private-by-default creation with a caller-stable UUID; exact retries do not mutate or reallocate. |
 | `list_my_contact_requests` | `weave:contacts.read` | Pending/incoming/outgoing request summaries for explicit recipient acceptance. |
