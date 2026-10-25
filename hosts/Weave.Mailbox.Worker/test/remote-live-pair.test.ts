@@ -88,3 +88,72 @@ test('remote service without configured OAuth never creates addresses or sends m
         assert.equal(privateCalls,0);await assert.rejects(readFile(path));
     }finally{server.close();await rm(temp,{recursive:true,force:true});}
 });
+
+for(const corrupted of ['id','version','content-type']){
+    test('remote HTTP client rejects invalid MCP '+corrupted+' before any further operation',async()=>{
+        const seen:string[]=[];
+        const server=createServer(async(req,res)=>{
+            const parts:Buffer[]=[];for await(const part of req)parts.push(part);
+            const rpc=JSON.parse(Buffer.concat(parts).toString());
+            seen.push(rpc.method);
+            const wrongId=corrupted==='id'&&rpc.method==='initialize';
+            res.setHeader('Content-Type',corrupted==='content-type'?'text/plain':'application/json');
+            res.end(JSON.stringify({jsonrpc:corrupted==='version'?'1.0':'2.0',
+                id:wrongId?rpc.id+1:rpc.id,
+                result:rpc.method==='initialize'?{protocolVersion:'2025-11-25'}:{tools:[]}}));
+        });
+        await new Promise<void>(resolve=>server.listen(0,'127.0.0.1',resolve));
+        const port=(server.address() as {port:number}).port,temp=await mkdtemp(join(tmpdir(),'weave-invalid-rpc-'));
+        const path=join(temp,'result.json');
+        try{
+            const script=fileURLToPath(new URL('../../../examples/remote-mcp-pair/run.ts',import.meta.url));
+            const result=await new Promise<{status:number|null;error:string}>(resolve=>{
+                const child=spawn(process.execPath,[...(process.versions.node.startsWith('22.')?['--experimental-strip-types']:[]),script],{
+                    env:{...process.env,WEAVE_MCP_URL:'http://127.0.0.1:'+port+'/mcp',WEAVE_LIVE_ACCEPTANCE:'1',
+                        WEAVE_EVIDENCE_PATH:path,WEAVE_AGENT_A_ACCESS_TOKEN:'fake-a',WEAVE_AGENT_B_ACCESS_TOKEN:'fake-b'}});
+                let error='';child.stderr.on('data',chunk=>error+=chunk.toString());
+                child.on('exit',status=>resolve({status,error}));
+            });
+            assert.notEqual(result.status,0);
+            assert.deepEqual(seen,['initialize'],'invalid MCP transport responses must not advance the handshake');
+            assert.doesNotMatch(result.error,/fake-a|fake-b/);
+            await assert.rejects(readFile(path));
+        }finally{server.close();await rm(temp,{recursive:true,force:true});}
+    });
+}
+
+test('remote client stops reading an oversized unterminated HTTP response without waiting for timeout',async()=>{
+    let requests=0;
+    const server=createServer(async(req,res)=>{
+        const chunks:Buffer[]=[];for await(const part of req)chunks.push(part);
+        requests++;
+        res.setHeader('Content-Type','application/json');
+        res.write('x'.repeat(1024*1024+4096));
+        // Give a whole-response text() implementation time to wait. A streaming
+        // implementation must reject the oversized first chunk before this ends.
+        const timer=setTimeout(()=>res.end(),5000);
+        res.on('close',()=>clearTimeout(timer));
+    });
+    await new Promise<void>(resolve=>server.listen(0,'127.0.0.1',resolve));
+    const port=(server.address() as {port:number}).port,temp=await mkdtemp(join(tmpdir(),'weave-stream-bound-'));
+    const path=join(temp,'result.json');
+    try{
+        const script=fileURLToPath(new URL('../../../examples/remote-mcp-pair/run.ts',import.meta.url));
+        const startedAt=Date.now();
+        const result=await new Promise<{status:number|null;error:string}>(resolve=>{
+            const child=spawn(process.execPath,[...(process.versions.node.startsWith('22.')?['--experimental-strip-types']:[]),script],{
+                env:{...process.env,WEAVE_MCP_URL:'http://127.0.0.1:'+port+'/mcp',WEAVE_LIVE_ACCEPTANCE:'1',
+                    WEAVE_EVIDENCE_PATH:path,WEAVE_AGENT_A_ACCESS_TOKEN:'fake-a',WEAVE_AGENT_B_ACCESS_TOKEN:'fake-b'}});
+            let error='';child.stderr.on('data',chunk=>error+=chunk.toString());
+            child.on('exit',status=>resolve({status,error}));
+        });
+        assert.ok(Date.now()-startedAt<3500,'the client must enforce its byte bound while the body is still streaming');
+        assert.notEqual(result.status,0);
+        assert.equal(requests,1);
+        assert.doesNotMatch(result.error,/fake-a|fake-b/);
+        await assert.rejects(readFile(path));
+    }finally{
+        server.closeAllConnections();server.close();
+        await rm(temp,{recursive:true,force:true});
+    }
+});
