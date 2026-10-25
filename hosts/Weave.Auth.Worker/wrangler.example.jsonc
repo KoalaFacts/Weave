@@ -1,0 +1,12 @@
+{
+  // NOT a live deployment. Requires operator approval of KV, DO state and secrets.
+  "name":"weave-auth-demo","main":"src/index.ts",
+  "compatibility_date":"2026-10-23",
+  "compatibility_flags":["global_fetch_strictly_public","nodejs_compat"],
+  "workers_dev":false,
+  "vars":{"OAUTH_ISSUER":"https://REPLACE-WITH-APPROVED-DOMAIN.example",
+    "OAUTH_RESOURCE":"https://demo.weave-389.workers.dev/mcp"},
+  "kv_namespaces":[{"binding":"OAUTH_KV","id":"REPLACE_AFTER_APPROVAL"}],
+  "durable_objects":{"bindings":[{"name":"CONSENT_NONCES","class_name":"ConsentNonce"}]},
+  "migrations":[{"tag":"v1","new_sqlite_classes":["ConsentNonce"]}]
+}

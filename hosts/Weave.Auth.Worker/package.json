@@ -1,0 +1,10 @@
+{
+  "name":"weave-auth-worker","version":"0.0.0","private":true,
+  "license":"MIT OR AGPL-3.0-or-later","type":"module",
+  "engines":{"node":">=24.19.0"},
+  "scripts":{"typecheck":"tsc --noEmit","test:portable":"node --test test/*.test.ts",
+    "build":"wrangler deploy --dry-run --config wrangler.example.jsonc --outdir dist"},
+  "dependencies":{"@cloudflare/workers-oauth-provider":"1.2.4"},
+  "devDependencies":{"@cloudflare/workers-types":"4.20260730.1",
+    "@types/node":"24.19.2","typescript":"7.0.2","wrangler":"4.149.0"}
+}
