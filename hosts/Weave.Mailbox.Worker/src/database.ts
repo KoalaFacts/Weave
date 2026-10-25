@@ -18,6 +18,8 @@ export interface Env {
     OAUTH_INTROSPECTION_URL?: string;
     OAUTH_CLIENT_ID?: string;
     OAUTH_CLIENT_SECRET?: string;
+    // Independent short-lived AS consent proof secret, not a mailbox control.
+    OAUTH_ACCOUNT_PROOF_KEY?: string;
     // Optional, exclusive private RPC alternative to HTTPS RFC7662 introspection.
     AUTH_SERVER?: OAuthServiceBinding;
     db: Database;

@@ -11,13 +11,14 @@ import { sweep } from './cleanup';
 import { budgetDatabase } from './budget';
 import { stream, type Context } from './stream';
 import { authenticate, register } from './accounts';
+import { issueAccountProof, validAccountProofChallenge } from './account-proof';
 import { putCard } from './cards';
 import { decide, requestContact, setBlocked } from './contacts';
 import { deleteContact, ownContacts } from './contact-links';
 import { atomic, type Env } from './database';
 import { ack, send } from './messages';
 import { read } from './reads';
-import { body, control, fail, json, legacyResponse, problem } from './wire';
+import { body, control, fail, json, legacyResponse, object, problem } from './wire';
 import { validatePayload } from './protocol';
 
 export default {
@@ -70,11 +71,24 @@ export default {
             if (method === 'POST' && url.pathname === '/v1/accounts') return respond(await register(env,request,secret,await body(request)));
             if(env.RECOVERY_READ_ONLY!=='true'&&method==='GET'&&['/v1/directory','/v1/directory/address','/v1/contacts/cards','/v1/contacts/card'].includes(url.pathname))await publicReadRate(env,request);
             const account = await authenticate(env,secret);
-            // Existing-account proof for an operator-controlled OAuth issuer. This
-            // read cannot register accounts or turn a control into a bearer token.
+            // Local owner check only; do not proxy account controls to an AS.
+            // The challenge-bound handoff below does not forward the control.
             if(method==='GET' && url.pathname==='/v1/accounts/me') {
                 if(!account)fail(401,'unauthenticated');
                 return respond({accountId:account.accountId});
+            }
+            if(method==='POST' && url.pathname==='/v1/accounts/proof') {
+                if(!account)fail(401,'unauthenticated');
+                const cfg={issuer:env.OAUTH_ISSUER??'',resource:env.OAUTH_RESOURCE??'',key:env.OAUTH_ACCOUNT_PROOF_KEY??''};
+                // A missing/mismatched operator binding fails closed; never
+                // accept a caller-supplied issuer, account, or signing key.
+                let resourceOrigin:string;
+                try{resourceOrigin=new URL(cfg.resource).origin;}catch{fail(503,'storage');}
+                if(!cfg.issuer||!cfg.resource||!cfg.key||resourceOrigin!==url.origin)fail(503,'storage');
+                const input=await body(request);
+                object(input,['challenge']);
+                try{validAccountProofChallenge(input.challenge);}catch{fail(400,'invalid');}
+                return respond({proof:await issueAccountProof(cfg,account.accountId,input.challenge)});
             }
             if (method === 'GET' && ['/v1/directory','/v1/directory/address'].includes(url.pathname)) return respond(await atomic(env.db,tx => directory(tx,url)));
             if (method === 'GET' && ['/v1/contacts/cards','/v1/contacts/card'].includes(url.pathname)) return respond(await atomic(env.db,tx => read(tx,url,account?.accountId ?? null)));
