@@ -31,20 +31,25 @@ test('real D1 account-owned address creation is private, replayable and cross-ac
         const args={addressId,label:'Private A'};
         const created=await executePrivateMcp(e,origin,a.accountId,'ensure_my_address',args);
         assert.equal(created.status,200,await created.clone().text());
-        assert.deepEqual(await created.json(),{addressId,accountId:a.accountId,label:'Private A',isPublic:false,
+        const createdBody=await created.json();
+        assert.deepEqual(createdBody,{addressId,accountId:a.accountId,label:'Private A',isPublic:false,
             effectiveFrom:null,effectiveTo:null,directUri:null});
         const stored=await h.ok('/v1/addresses',a.control);
         assert.ok(stored.items.some((item:{addressId:string})=>item.addressId===addressId));
         const revision=await h.db.prepare('SELECT token FROM mailbox_revision WHERE singleton=1').first('token');
         const replay=await executePrivateMcp(e,origin,a.accountId,'ensure_my_address',args);
         assert.equal(replay.status,200);
-        assert.deepEqual(await replay.json(),await created.clone().json());
+        assert.deepEqual(await replay.json(),createdBody);
         assert.equal(await h.db.prepare('SELECT token FROM mailbox_revision WHERE singleton=1').first('token'),
             revision,'an exact replay must not mutate the database');
         const changed=await executePrivateMcp(e,origin,a.accountId,'ensure_my_address',{...args,label:'Changed'});
         assert.equal(changed.status,409,'same creation ID cannot silently update an address');
         const other=await executePrivateMcp(e,origin,b.accountId,'ensure_my_address',args);
         assert.equal(other.status,404,'foreign creation IDs cannot transfer ownership');
+        const bad=await executePrivateMcp(e,origin,a.accountId,'ensure_my_address',{...args,addressId:crypto.randomUUID(),isPublic:true});
+        assert.equal(bad.status,400,'public exposure requires a separate explicit operation');
+        assert.equal(await h.db.prepare('SELECT token FROM mailbox_revision WHERE singleton=1').first('token'),revision,
+            'denied mutations must not change D1 revision');
         const leaked=await h.request('/v1/directory/address?addressId='+addressId);
         assert.equal(leaked.status,404,'the onboarding tool must never implicitly publish an address');
         const own=await executePrivateMcp(e,origin,a.accountId,'list_my_addresses',{limit:1});
@@ -53,9 +58,6 @@ test('real D1 account-owned address creation is private, replayable and cross-ac
         const foreign=await executePrivateMcp(e,origin,b.accountId,'list_my_addresses',{});
         assert.equal(foreign.status,200);
         assert.deepEqual((await foreign.json()).items,[]);
-        const bad=await executePrivateMcp(e,origin,a.accountId,'ensure_my_address',{...args,addressId:crypto.randomUUID(),isPublic:true});
-        assert.equal(bad.status,400,'public exposure requires a separate explicit operation');
-        assert.equal(await h.db.prepare('SELECT token FROM mailbox_revision WHERE singleton=1').first('token'),revision);
     }finally{await h.close();}
 });
 

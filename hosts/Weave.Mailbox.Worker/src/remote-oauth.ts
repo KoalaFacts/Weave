@@ -20,7 +20,7 @@ export interface OAuthConfiguration {
 export type OAuthAccess = {accountId: string} | Response;
 const identity = /^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/;
 const tokenPattern = /^[A-Za-z0-9\-._~+/]+={0,2}$/;
-const scopes = ['weave:contacts.read','weave:contacts.write','weave:messages.read','weave:messages.send','weave:messages.ack'];
+const scopes = ['weave:addresses.read','weave:addresses.write','weave:contacts.read','weave:contacts.write','weave:messages.read','weave:messages.send','weave:messages.ack'];
 const noStore = {'Cache-Control':'no-store','Pragma':'no-cache','X-Content-Type-Options':'nosniff'};
 const safeUrl = (raw: string, label: string): URL => {
     const parsed = new URL(raw);

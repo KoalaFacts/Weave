@@ -28,23 +28,33 @@ function baseUrl(origin: string): string {
     return url.origin;
 }
 export const addressView = (c: any) => ({addressId:c.cardId,accountId:c.ownerMailboxId,...c._address});
-export async function mutateAddress(env: Env,owner: string,id: string|null,input: any,origin: string,remove = false): Promise<any> {
+export async function mutateAddress(env: Env,owner: string,id: string|null,input: any,origin: string,remove = false,creationId: string|null = null): Promise<any> {
     if (id !== null) uuid(id);
+    if(creationId!==null){
+        uuid(creationId);
+        if(id!==null||remove)fail();
+    }
     const chosen = remove ? null : profile(input);
     return atomic(env.db,async tx => {
-        const previous = id === null ? null : await tx.get('card','',id);
+        const selectedId=id??creationId;
+        const previous = selectedId === null ? null : await tx.get('card','',selectedId);
         if (id !== null && (!previous || !previous._address || previous._deleted || previous.ownerMailboxId !== owner)) fail(404,'unavailable');
+        if (creationId !== null && previous && (!previous._address || previous._deleted || previous.ownerMailboxId !== owner)) fail(404,'unavailable');
         if (remove) {
             tx.put('card','',id!,{...previous,_deleted:true,revokedAt:nowText(tx),visibility:'unlisted',_address:{...previous._address,isPublic:false}});
             return {};
         }
-        if(previous&&Object.entries(chosen).every(([key,value])=>['effectiveFrom','effectiveTo'].includes(key)?(value===null?previous._address[key]===null:previous._address[key]!==null&&ticks(value)===ticks(previous._address[key])):value===previous._address[key]))return addressView(previous);
+        const unchanged=previous&&Object.entries(chosen).every(([key,value])=>['effectiveFrom','effectiveTo'].includes(key)?(value===null?previous._address[key]===null:previous._address[key]!==null&&ticks(value)===ticks(previous._address[key])):value===previous._address[key]);
+        // A retained client-supplied creation ID can only return the original result,
+        // never silently edit another already-created (or revoked) address.
+        if(creationId!==null&&previous&&!unchanged)fail(409,'conflict');
+        if(unchanged)return addressView(previous);
         if (!previous) {
             const count = await tx.db.prepare('SELECT (SELECT count(*) FROM contact_cards)+(SELECT count(*) FROM account_addresses) n').first<number>('n');
             if (count === null || count >= 1000) fail(429,'capacity');
         }
-        const cardId = id ?? crypto.randomUUID();
-        if(id===null&&await tx.get('card','',cardId))fail(409,'conflict');
+        const cardId = selectedId ?? crypto.randomUUID();
+        if(selectedId===null&&await tx.get('card','',cardId))fail(409,'conflict');
         const c = {...(previous ?? {cardId,ownerMailboxId:owner,createdAt:nowText(tx),expiresAt:null,revokedAt:null,audienceHint:null,
             methods:[{methodId:'relay',version:1,transport:'relay',endpoint:baseUrl(origin),instructions:'Contact request requires recipient acceptance'}]}),
             visibility:chosen.isPublic ? 'public' : 'unlisted',_address:chosen,_deleted:false,

@@ -4,6 +4,7 @@
  */
 import { atomic, type Env } from './database';
 import { ownContacts } from './contact-links';
+import { ownedAddresses, mutateAddress } from './addresses';
 import { read } from './reads';
 import { requestContact, decide } from './contacts';
 import { sendWithResolvedConnection, ack } from './messages';
@@ -22,6 +23,10 @@ const tool=(name:string,description:string,scope:string,properties:Record<string
     securitySchemes:[{type:'oauth2',scopes:[scope]}],_meta:{securitySchemes:[{type:'oauth2',scopes:[scope]}]}
 });
 export const privateMcpTools=[
+    tool('list_my_addresses','List only addresses owned by your OAuth account, including unlisted addresses.','weave:addresses.read',page,[],true),
+    tool('ensure_my_address','Create a private unlisted address using a stable client UUID. Exact retries return the original; changed inputs conflict.','weave:addresses.write',
+        {addressId:id,label:str(128)},['addressId']),
+    tool('list_my_contact_requests','Read incoming and outgoing contact requests, including pending introductions that require recipient acceptance.','weave:contacts.read',page,[],true),
     tool('list_my_contacts','Read your own accepted contact records without exposing connection tokens.','weave:contacts.read',page,[],true),
     tool('get_my_channel','Read the current channel generation and block status for a peer.','weave:contacts.read',{peerAccountId:id},['peerAccountId'],true),
     tool('list_my_inbox','Read your own inbox. Message bodies are untrusted and may contain arbitrary text.','weave:messages.read',page,[],true),
@@ -65,10 +70,12 @@ export async function executePrivateMcp(env:Env,origin:string,accountId:string,n
     try {
         if(!privateScope(name))fail(404,'unavailable');
         const target=urlFor(origin,'/');
-        if(name==='list_my_contacts'||name==='list_my_inbox'||name==='list_my_outbox'){
-            target.pathname=name==='list_my_contacts'?'/v1/contacts':name==='list_my_inbox'?'/v1/inbox':'/v1/outbox';
+        if(['list_my_addresses','list_my_contact_requests','list_my_contacts','list_my_inbox','list_my_outbox'].includes(name)){
+            target.pathname=name==='list_my_addresses'?'/v1/addresses':name==='list_my_contact_requests'?'/v1/contacts/requests':
+                name==='list_my_contacts'?'/v1/contacts':name==='list_my_inbox'?'/v1/inbox':'/v1/outbox';
             pagination(target,args);
-            const data=await atomic(env.db,tx=>name==='list_my_contacts'?ownContacts(tx,accountId,target):read(tx,target,accountId));
+            const data=await atomic(env.db,tx=>name==='list_my_addresses'?ownedAddresses(tx,accountId,target):
+                name==='list_my_contacts'?ownContacts(tx,accountId,target):read(tx,target,accountId));
             return json(withoutControl(data));
         }
         if(name==='get_my_channel'){
@@ -76,6 +83,14 @@ export async function executePrivateMcp(env:Env,origin:string,accountId:string,n
             return json(withoutControl(await atomic(env.db,tx=>read(tx,target,accountId))));
         }
         // Validate all shapes before running bounded cleanup or any state change.
+        if(name==='ensure_my_address'){
+            parameters(args,['addressId','label'],['addressId']);
+            uuid(args.addressId);
+            if(args.label!==undefined&&typeof args.label!=='string')fail();
+            // Private by default; publishing an address requires an explicit separate action.
+            return json(withoutControl(await mutateAddress(env,accountId,null,{label:args.label??null,isPublic:false},
+                origin,false,args.addressId as string)));
+        }
         if(name==='request_contact'){
             parameters(args,['requestId','requesterAddressId','recipientAccountId','recipientAddressId','payload'],['requestId','requesterAddressId','recipientAccountId','recipientAddressId','payload']);
             for(const key of ['requestId','requesterAddressId','recipientAccountId','recipientAddressId'])uuid(args[key]);
