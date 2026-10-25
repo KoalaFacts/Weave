@@ -93,7 +93,7 @@ later drift. This workflow never starts the deployment workflow automatically.
 The [Deploy Weave Worker workflow](../../.github/workflows/deploy-weave-worker.yml) targets only the existing Worker **demo**, account subdomain **weave-389**, and its existing lowercase **db** binding. It creates no Worker, database, domain or DNS record. After code is reviewed, verified and merged, choose an explicit release signal:
 
 - Manually dispatch on `main`, selecting `configuration_scope: repository` for repository configuration or `production` for the existing GitHub environment. Production environment protection rules still apply.
-- Push an already-merged commit to `publish/demo`. This is a privileged release branch, not a scratch branch: its push automatically runs verification and then the repository-scoped migration/deployment job using existing repository Cloudflare secrets. It does not select the production environment. Ordinary `main` pushes do not deploy.
+- Push an already-merged commit to `publish/demo`. This is a privileged release branch, not a scratch branch: its push automatically runs verification and then the repository-scoped **completed-only deployment** using existing repository Cloudflare secrets. It will fail closed rather than convert records or apply missing schema. It does not select the production environment. Ordinary `main` pushes do not deploy.
 
 The workflow verifies that the selected SHA is checked out and is already an ancestor of `main` before the existing Worker tests, audit and C# compatibility checks. Advance the release branch without force; do not bypass a divergent head or failed check. No `weave-demo` environment is required. Confirm the authorized target and configuration scope before either release signal; do not recreate credentials or print their values.
 
@@ -113,9 +113,10 @@ it remains available in the failure report if that check fails.
 This protects the permitted SQL scope; it does not lock out concurrent administrators
 or provide an atomic snapshot across deployment steps.
 
-The default `database_mode: maintain` retains the existing reviewed conversion and
-additive-schema flow; `publish/demo` pushes retain that default. Direct authorized
-script execution selects the same mode with `WEAVE_DEPLOY_DATABASE_MODE`; unknown
+Manual dispatch defaults to `database_mode: maintain` for the existing reviewed conversion
+and additive-schema flow. **`publish/demo` pushes always select `completed-only`** so ordinary
+release signaling cannot authorize a data migration. Direct authorized script execution
+selects the same mode with `WEAVE_DEPLOY_DATABASE_MODE`; unknown
 or explicitly empty values fail before external operations. `completed-only` still
 requires deployment and ledger-check approval; it is not a read-only inspection.
 
@@ -136,7 +137,9 @@ For new Cloudflare permissions use **Workers Editor**, scoped to the individual 
 
 The workflow installs pinned dependencies from the lockfile, runs Worker tests/typechecking/audit and the original C# wire compatibility harness before the deployment job receives credentials. The deployment script checks the existing account subdomain, discovers the existing `demo` Worker's `db` binding, and verifies that database's identity through Cloudflare GET endpoints. A denied/missing resource or mismatched identity stops without trying another account or creating resources. It builds an ignored temporary Wrangler config from the configured account ID and discovered database identity, with owner-only file permissions; the API token is never written into that file. The file is removed after the command sequence, including on failure. The checked-in all-zero database ID remains a local placeholder.
 
-The deployment sequence is implemented by `scripts/deploy.ts`:
+The maintain-mode deployment sequence is implemented by `scripts/deploy.ts`. In
+completed-only mode, steps 3–4 below are replaced by restricted metadata and
+migration-ledger verification with no conversion or schema application:
 
 Ordinary tools run directly with Node 24 and are checked by `npm run typecheck`
 using `tsconfig.tools.json`. New tools use `.ts`; no custom TypeScript loader is
@@ -152,7 +155,7 @@ directory. No migration identity, stored checksum or database history is rewritt
 3. Run the independent `normalize-mailbox-records` data script. It archives the original records without deleting them, preserves IDs, sequence high-water and `d1_migrations`, converts Base64 once into raw BLOBs, and verifies rows, foreign keys and digests. Its checksum and completion belong to `data_migrations`. An interrupted run retains the write gate and can resume with the same script checksum.
 4. Compare the live database with the latest TypeScript Drizzle schema. Only missing tables/indexes are applied automatically. Existing column, foreign-key, CHECK or index drift stops for explicit review. No table/column drop or reconstruction is permitted.
 5. Upload and verify a separate schema-aware recovery version before routing business traffic to the active version. Record that version ID and exact recovery command in `test-results/deployment/result.json` and the workflow log.
-6. Deploy the active version, then verify D1 identity, maintenance exit, disabled cleanup and registration limits. The existing anonymous Agent Start publication check follows.
+6. Deploy the active version, then verify D1 identity, maintenance exit, disabled cleanup and registration limits. The existing anonymous Agent Start publication check follows, then the release job performs a live credential-free MCP initialize, tool discovery and public D1 registry read at `/mcp`. Neither post-deploy check proves OAuth provisioning or two real Agent connections.
 
 `src/schema.ts` is the only maintained structure definition. Generated SQL exists only as a reviewed runtime plan, not a numbered SQL history. `test/fixtures/legacy-mailbox.sql` is an old-format fixture solely for migration tests. The existing database's `d1_migrations` history is retained untouched; it does not control the new schema.
 
@@ -160,7 +163,7 @@ Use the workflow, or `node scripts/deploy.ts` with the approved Cloudflare envir
 
 A failure before active cutover leaves maintenance in place. A failure after the active deployment reports that stage explicitly; it does not silently restore old code or data. Use the retained **schema-aware read-only recovery version** to read the current normalized tables, including subsequent registrations, revocations, accepted/deleted contacts and ACKs. Recovery rejects writes and streaming and skips scheduled cleanup and public rate writes. It is a service recovery option with read-only availability, not a full business rollback. Never deploy the pre-conversion Worker or restore a frozen database snapshot over newer writes.
 
-Local tests exercise conversion, interrupted resume, orchestration and recovery against actual workerd/D1. Remote success requires a successful authorized deployment and its post-deployment checks; local tests do not establish it. Concurrent deployment workflows remain serialized without cancelling an in-progress conversion.
+Local tests exercise conversion, interrupted resume, orchestration and recovery against actual workerd/D1. Remote success requires a successful authorized deployment and its post-deployment checks, including the public MCP probe. The release probe never sends a control or bearer token, makes one bounded public registry read, rejects malformed or oversized responses and does not call private tools. Local tests do not establish deployment, OAuth authorization or independent Agent messaging. Concurrent deployment workflows remain serialized without cancelling an in-progress conversion.
 
 The page uses relative API paths and new relay addresses use the actual request URL origin, including `https://demo.weave-389.workers.dev/`. `WEAVE_HOST` is not used. Forwarded host/protocol headers are ignored. Keep the existing D1 binding named **db**; the runtime accesses `env.db`, with no database password or management token in the app. See [D1 bindings](https://developers.cloudflare.com/d1/get-started/#3-bind-your-worker-to-your-d1-database) and [D1 transactional batches](https://developers.cloudflare.com/d1/worker-api/d1-database/#batch).
 
