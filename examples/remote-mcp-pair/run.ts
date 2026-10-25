@@ -4,7 +4,7 @@
 import assert from 'node:assert/strict';
 import {fork, type ChildProcess} from 'node:child_process';
 import {randomBytes, randomUUID, createHash} from 'node:crypto';
-import {writeFile} from 'node:fs/promises';
+import {open,unlink} from 'node:fs/promises';
 import {fileURLToPath} from 'node:url';
 
 const toolNames=['get_my_profile','ensure_my_address','list_my_contact_requests','list_my_contacts','get_my_channel',
@@ -23,6 +23,18 @@ if(endpoint.hostname!=='demo.weave-389.workers.dev'&&
 type Reply={id:number,result?:unknown,error?:string};
 type Rpc={id:number,name:string,args?:Record<string,unknown>};
 type Client={pid:number;call:(name:string,args?:Record<string,unknown>)=>Promise<any>;close:()=>Promise<void>};
+/** Preserve exact int64 generations in either structured MCP output or tool text.
+ * Standard JSON.parse loses valid SQLite uint63 generations above 2^53.
+ */
+function parseExactJson(raw:string):any{
+    return JSON.parse(raw,(key:string,value:any,context?:{source:string})=>{
+        if(key!=='generation'||typeof value!=='number')return value;
+        const digits=context?.source;
+        if(!digits||!/^[1-9][0-9]{0,18}$/.test(digits)||BigInt(digits)>9223372036854775807n)
+            throw Error('MCP response contained invalid generation');
+        return digits;
+    });
+}
 const secret=process.env.WEAVE_ACCESS_TOKEN;
 async function remote(name:string,args:Record<string,unknown>={}):Promise<any>{
     const method=name==='initialize'||name==='tools/list'?name:'tools/call';
@@ -56,7 +68,7 @@ async function remote(name:string,args:Record<string,unknown>={}):Promise<any>{
         await reader.cancel().catch(()=>{});
         reader.releaseLock();
     }
-    let rpc:any;try{rpc=JSON.parse(body);}catch{throw Error('MCP '+name+' returned malformed JSON (HTTP '+response.status+')');}
+    let rpc:any;try{rpc=parseExactJson(body);}catch{throw Error('MCP '+name+' returned malformed JSON (HTTP '+response.status+')');}
     if(!rpc||typeof rpc!=='object'||Array.isArray(rpc)||rpc.jsonrpc!=='2.0'||rpc.id!==1)
         throw Error('MCP '+name+' returned a mismatched JSON-RPC envelope');
     if(!response.ok||rpc.error||rpc.result?.isError)throw Error('MCP '+name+' denied or unavailable (HTTP '+response.status+')');
@@ -64,7 +76,7 @@ async function remote(name:string,args:Record<string,unknown>={}):Promise<any>{
     const value=rpc.result?.structuredContent ?? (rpc.result?.content?.[0]?.text);
     if(typeof value==='object'&&value!==null)return value;
     if(typeof value!=='string')throw Error('MCP '+name+' returned an invalid tool result');
-    try{return JSON.parse(value);}catch{throw Error('MCP '+name+' returned invalid tool JSON');}
+    try{return parseExactJson(value);}catch{throw Error('MCP '+name+' returned invalid tool JSON');}
 }
 if(process.argv.includes('--agent')){
     if(!secret)throw Error('Agent missing its own access token');
@@ -117,6 +129,32 @@ if(process.argv.includes('--agent')){
     }
     const evidence:{[key:string]:unknown}={kind:'scripted-remote-MCP-transport',notModelAgentProof:true,target:endpoint.href,
         startedAt:new Date().toISOString(),messages:[]};
+    let evidenceFile:Awaited<ReturnType<typeof open>>|undefined;
+    let journalFile:Awaited<ReturnType<typeof open>>|undefined;
+    async function record(entry:Record<string,unknown>):Promise<void>{
+        if(!journalFile)throw Error('Recovery journal is not reserved');
+        await journalFile.appendFile(JSON.stringify({...entry,at:new Date().toISOString()})+'\n');
+        // A prepared operation must survive process loss BEFORE remote dispatch.
+        await journalFile.sync();
+    }
+    async function privateWrite(client:Client,role:'A'|'B',name:string,args:Record<string,unknown>):Promise<any>{
+        const operationId=randomUUID();
+        await record({phase:'prepared',operationId,role,name,args});
+        let outcome:any;
+        try{outcome=await client.call(name,args);}
+        catch(error){
+            await record({phase:'unknown',operationId});
+            throw error; // Never auto-retry a write whose response was lost.
+        }
+        await record({phase:'confirmed',operationId});
+        return outcome;
+    }
+    async function reserveEvidence():Promise<void>{
+        const path=process.env.WEAVE_EVIDENCE_PATH!;
+        const file=await open(path+'.journal','wx',0o600);
+        try{evidenceFile=await open(path,'wx',0o600);journalFile=file;}
+        catch(error){await file.close();await unlink(path+'.journal');throw error;}
+    }
     let a=start('A',tokenA),b=start('B',tokenB);
     try{
         assert.notEqual(a.pid,b.pid,'agents must run in distinct OS processes');
@@ -128,11 +166,36 @@ if(process.argv.includes('--agent')){
         const profileA=await a.call('get_my_profile'),profileB=await b.call('get_my_profile');
         assert.ok(id.test(profileA.id)&&id.test(profileB.id));assert.notEqual(profileA.id,profileB.id);
         evidence.accountHashes=[profileA.id,profileB.id].map(x=>createHash('sha256').update(x).digest('hex').slice(0,16));
+        // Reject already-connected account pairs without modifying either mailbox.
+        // Always follow owner-scoped cursors: the peer can be beyond page one.
+        async function countInPages(c:Client,tool:string,predicate:(x:any)=>boolean):Promise<number>{
+            let afterCursor:string|undefined,count=0;
+            const seen=new Set<string>();
+            for(let page=0;page<100;page++){
+                const data=await c.call(tool,{limit:10,...(afterCursor?{afterCursor}:{})});
+                if(!data||!Array.isArray(data.items)||data.items.length>10)
+                    throw Error('MCP pagination contract failed');
+                count+=data.items.filter(predicate).length;
+                const next=data.nextCursor;
+                if(next===null||next===undefined)return count;
+                if(typeof next!=='string'||!next||seen.has(next))
+                    throw Error('MCP pagination returned a repeated or invalid cursor');
+                seen.add(next);afterCursor=next;
+            }
+            throw Error('MCP pagination did not finish within the allowed pages');
+        }
+        if(await countInPages(a,'list_my_contacts',(x:any)=>x.accountId===profileB.id)||
+            await countInPages(b,'list_my_contacts',(x:any)=>x.accountId===profileA.id))
+            throw Error('These accounts already have a contact; acceptance requires an unconnected pair.');
+        // Reserve BOTH destinations exclusively, before the first private write.
+        // A failed or unknown write leaves an empty evidence file and a durable
+        // token-free journal, never a fabricated completed result.
+        await reserveEvidence();
         const addressA=randomUUID(),addressB=randomUUID(),nonce=randomBytes(8).toString('hex');
-        await a.call('ensure_my_address',{addressId:addressA,label:'Remote pair '+nonce+' A'});
-        await b.call('ensure_my_address',{addressId:addressB,label:'Remote pair '+nonce+' B'});
+        await privateWrite(a,'A','ensure_my_address',{addressId:addressA,label:'Remote pair '+nonce+' A'});
+        await privateWrite(b,'B','ensure_my_address',{addressId:addressB,label:'Remote pair '+nonce+' B'});
         const intro=payload('synthetic introduction '+nonce);
-        const decision=await a.call('request_contact',{requestId:intro.messageId,requesterAddressId:addressA,
+        const decision=await privateWrite(a,'A','request_contact',{requestId:intro.messageId,requesterAddressId:addressA,
             recipientAccountId:profileB.id,recipientAddressId:addressB,payload:intro});
         async function find(c:Client,tool:string,predicate:(x:any)=>boolean){
             let afterCursor:undefined|string;
@@ -147,7 +210,7 @@ if(process.argv.includes('--agent')){
             throw Error('Expected owner-scoped record unavailable or pagination incomplete');
         }
         await find(b,'list_my_contact_requests',(x:any)=>x.requestId===intro.messageId);
-        await b.call('decide_contact',{requestId:intro.messageId,requesterAccountId:profileA.id,
+        await privateWrite(b,'B','decide_contact',{requestId:intro.messageId,requesterAccountId:profileA.id,
             expectedGeneration:String(decision.generation),status:'accepted'});
         const generation=String(decision.generation);
         await find(a,'list_my_contacts',(x:any)=>x.accountId===profileB.id&&x.canSend===true);
@@ -165,14 +228,14 @@ if(process.argv.includes('--agent')){
             const dest=i%2===0?profileB.id:profileA.id;
             const content='weave-remote-pair-'+nonce+'-'+i,body=payload(content);
             if(i===5)lastPayload=body;
-            const receipt=await sender.call('send_message',{recipientAccountId:dest,contactGeneration:generation,payload:body});
+            const receipt=await privateWrite(sender,i%2===0?'A':'B','send_message',{recipientAccountId:dest,contactGeneration:generation,payload:body});
             assert.equal(receipt.messageId,body.messageId);
             if(i<2){pending.push({messageId:body.messageId,body:content,sender:i===0?'A':'B'});}
             else {
                 const item=await findInbox(receiver,body.messageId);
                 assert.equal(Buffer.from(item.envelope.payload.bytes,'base64').toString(),content);
                 assert.equal(item.senderMailboxId,i%2===0?profileA.id:profileB.id);
-                const ack=await receiver.call('ack_message',{messageId:body.messageId,senderAccountId:item.senderMailboxId});
+                const ack=await privateWrite(receiver,i%2===0?'B':'A','ack_message',{messageId:body.messageId,senderAccountId:item.senderMailboxId});
                 assert.equal(ack.state,'acknowledged');
                 assert.equal((await findOutbox(sender,body.messageId)).state,'acknowledged');
             }
@@ -186,7 +249,7 @@ if(process.argv.includes('--agent')){
                     const receiving=item.sender==='A'?b:a,sending=item.sender==='A'?a:b;
                     const received=await findInbox(receiving,item.messageId);
                     assert.equal(Buffer.from(received.envelope.payload.bytes,'base64').toString(),item.body);
-                    const ack=await receiving.call('ack_message',{messageId:item.messageId,senderAccountId:received.senderMailboxId});
+                    const ack=await privateWrite(receiving,item.sender==='A'?'B':'A','ack_message',{messageId:item.messageId,senderAccountId:received.senderMailboxId});
                     assert.equal(ack.state,'acknowledged');
                     assert.equal((await findOutbox(sending,item.messageId)).state,'acknowledged');
                 }
@@ -195,14 +258,19 @@ if(process.argv.includes('--agent')){
             }
         }
         assert.ok(lastPayload);
-        const original=await b.call('send_message',{recipientAccountId:profileA.id,contactGeneration:generation,payload:lastPayload});
+        const original=await privateWrite(b,'B','send_message',{recipientAccountId:profileA.id,contactGeneration:generation,payload:lastPayload});
         assert.equal(original.state,'acknowledged','a duplicate must return the original final receipt, not enqueue');
         assert.equal(original.messageId,lastPayload.messageId);
-        const outboxB=await b.call('list_my_outbox',{limit:10});
-        assert.equal(outboxB.items.filter((x:any)=>x.messageId===lastPayload.messageId).length,1);
+        assert.equal(await countInPages(b,'list_my_outbox',(x:any)=>x.messageId===lastPayload.messageId),1,
+            'retained outbox ID must appear exactly once across all pages');
+        assert.equal(await countInPages(a,'list_my_inbox',(x:any)=>x.envelope?.payload?.messageId===lastPayload.messageId),0,
+            'acknowledged message must not reappear in the recipient inbox after replay');
         evidence.retainedSendReplayedWithoutRedelivery=true;
         evidence.finishedAt=new Date().toISOString();evidence.completed=true;
-        await writeFile(process.env.WEAVE_EVIDENCE_PATH!,JSON.stringify(evidence,null,2)+'\n',{flag:'wx',mode:0o600});
+        if(!evidenceFile)throw Error('Evidence path was not reserved');
+        await evidenceFile.writeFile(JSON.stringify(evidence,null,2)+'\n');
+        await evidenceFile.sync();
         process.stdout.write('Six remote MCP messages and ACKs confirmed through two isolated client processes; redacted evidence written.\n');
-    }finally{await Promise.allSettled([a.close(),b.close()]);}
+    }finally{await Promise.allSettled([a.close(),b.close(),...(evidenceFile?[evidenceFile.close()]:[]),
+        ...(journalFile?[journalFile.close()]:[])]);}
 }

@@ -13,6 +13,7 @@ const msg=new Map<string,{from:string;to:string;payload:any;state:string}>();
 let introduction:any=null,accepted=false,sendCount=0;
 test('two isolated real HTTP MCP clients preserve two pending messages over both process restarts; six ACKs; no credential leakage',async()=>{
     msg.clear();introduction=null;accepted=false;sendCount=0;
+    const exactGeneration='9007199254740993';
     // Eight retained B receipts put this run's third B send on the next page.
     for(let n=0;n<8;n++){const messageId='existing-b-receipt-'+n;
         msg.set(messageId,{from:bob,to:alice,payload:{messageId},state:'acknowledged'});}
@@ -26,13 +27,13 @@ test('two isolated real HTTP MCP clients preserve two pending messages over both
         else if(!owner){res.statusCode=401;res.end(JSON.stringify({error:'unauthorized'}));return;}
         else if(name==='get_my_profile')value={id:owner};
         else if(name==='ensure_my_address')value={addressId:args.addressId,accountId:owner,isPublic:false};
-        else if(name==='request_contact'){introduction={...args,requesterAccountId:owner,status:'pending'};value={generation:'1'};}
+        else if(name==='request_contact'){introduction={...args,requesterAccountId:owner,status:'pending'};value={generation:exactGeneration};}
         else if(name==='list_my_contact_requests')value={items:owner===bob&&introduction?[{requestId:introduction.requestId,status:introduction.status}]:[],nextCursor:null};
         else if(name==='decide_contact'){assert.equal(owner,bob);accepted=true;introduction.status='accepted';value={status:'accepted'};}
-        else if(name==='get_my_channel'){assert.ok(accepted);value={generation:'1',isBlockedByMailbox:false,isBlockedByPeer:false};}
-        else if(name==='list_my_contacts')value={items:[{accountId:owner===alice?bob:alice,canSend:true}],nextCursor:null};
+        else if(name==='get_my_channel'){assert.ok(accepted);value={generation:exactGeneration,isBlockedByMailbox:false,isBlockedByPeer:false};}
+        else if(name==='list_my_contacts')value={items:accepted?[{accountId:owner===alice?bob:alice,canSend:true}]:[],nextCursor:null};
         else if(name==='send_message'){
-            assert.ok(accepted);assert.equal(args.contactGeneration,'1');
+            assert.ok(accepted);assert.equal(args.contactGeneration,exactGeneration);
             const existing=msg.get(args.payload.messageId);
             if(!existing){sendCount++;msg.set(args.payload.messageId,{from:owner,to:args.recipientAccountId,payload:args.payload,state:'pending'});}
             value={messageId:args.payload.messageId,state:msg.get(args.payload.messageId)?.state};
@@ -48,7 +49,15 @@ test('two isolated real HTTP MCP clients preserve two pending messages over both
         }
         else throw Error('Unknown remote tool '+name);
         res.setHeader('Content-Type','application/json');
-        res.end(JSON.stringify({jsonrpc:'2.0',id:rpc.id,result:rpc.method==='tools/call'?{content:[{type:'text',text:JSON.stringify(value)}]}:value}));
+        let wire=JSON.stringify({jsonrpc:'2.0',id:rpc.id,result:rpc.method==='tools/call'?{content:[{type:'text',text:JSON.stringify(value)}]}:value});
+        // Real Worker serializes int64 generations as unquoted JSON numbers. Send
+        // the number literally, not via JavaScript Number/stringify (which rounds).
+        if(name==='request_contact'||name==='get_my_channel'){
+            const quoted='\\"generation\\":\\"'+exactGeneration+'\\"';
+            assert.ok(wire.includes(quoted),'fixture must emit an exact numeric int64');
+            wire=wire.replace(quoted,'\\"generation\\":'+exactGeneration);
+        }
+        res.end(wire);
     });
     await new Promise<void>(resolve=>server.listen(0,'127.0.0.1',resolve));
     const port=(server.address() as {port:number}).port;
