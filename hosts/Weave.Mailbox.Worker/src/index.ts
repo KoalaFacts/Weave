@@ -45,7 +45,7 @@ export default {
                 return protectedResourceMetadata(cfg);
             }
             if(url.pathname==='/mcp'){
-                let cfg;try{cfg=oauthConfiguration(env,request.url);}catch{fail(503,'storage');}
+                const cfg=(()=>{try{return oauthConfiguration(env,request.url);}catch{fail(503,'storage');}})();
                 return await remoteMcp(request,async target=>{
                     try {
                         if(env.RECOVERY_READ_ONLY!=='true')await publicReadRate(env,request);
