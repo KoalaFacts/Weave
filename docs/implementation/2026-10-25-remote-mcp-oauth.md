@@ -137,3 +137,41 @@ controls must not appear in evidence.
 There is no new D1 schema migration in this increment. Binding OAuth
 subjects to already registered accounts is an **authorization-server
 provisioning requirement**, not a claim of automatic account linking.
+
+## Opt-in Cloudflare Workers OAuth Provider v1 Service Binding mode
+
+The Worker now supports one additional **private RPC** token-verification mode
+for Cloudflare Workers OAuth Provider v1. It is mutually exclusive with the
+HTTPS RFC 7662 introspection mode above; that mode remains supported without
+behavior changes. This does **not** create or deploy an authorization server.
+
+To select the Cloudflare mode, explicitly supply only `OAUTH_ISSUER` (the
+trusted AS public HTTPS issuer), `OAUTH_RESOURCE` (the exact public `/mcp`
+URL), and a Cloudflare Service Binding named `AUTH_SERVER` exposing
+`validateToken(resource, token)`. Do **not** set `OAUTH_INTROSPECTION_URL`,
+`OAUTH_CLIENT_ID` or `OAUTH_CLIENT_SECRET` in this mode. Absent, malformed,
+partial and mixed configurations fail closed. The checked-in demo config does
+not declare this binding; configuring and deploying it requires the operator's
+existing deployment and credential authorization.
+
+The AS must separately authenticate the human/agent, verify **ownership of an
+existing Weave account** before consent/grant, and issue resource-bound tokens.
+Its validated token's `userId` and signed grant `props.accountId` must both
+be that same existing account UUID. Never copy an untrusted account parameter
+into either claim. The resource server also checks the matching D1 account and
+required per-operation scope, exact audience/resource, and expiry before
+execution. Every call validates the token again through the trusted Service
+Binding (including revocation); binding failures are 503, revoked/mismatched
+claims are 401, and missing scopes are 403. The AS must set a token lifetime no
+longer than **900 seconds** (Cloudflare's default can be longer). The resource
+server does not substitute Weave mailbox control secrets for OAuth identity.
+
+Cloudflare v1 uses an authorization-server Worker with KV-backed OAuth state,
+user consent, client registration policy and PKCE S256, plus the private
+Service Binding; these AS/consent, KV, provider registration, resource and
+account-grant controls must be provisioned and acceptance-tested independently.
+They are **not present** merely because Weave now knows how to validate the
+Service Binding result. The binding's validated token does not supply `iss`;
+the trusted issuer is pinned by the operator's binding configuration and the
+AS itself must enforce its token issuer, PKCE and audience during issuance.
+This is not a claim that any existing login service is connected.

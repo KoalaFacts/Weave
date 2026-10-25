@@ -88,11 +88,11 @@ test('Service Binding verifies exact resource, owner identity and operation scop
             expiresAt:now+120,scope:['weave:messages.send'],clientId:'verified-public-client'};
     }};
     const cfg=oauthConfiguration({AUTH_SERVER:binding,OAUTH_ISSUER:config.issuer,OAUTH_RESOURCE:config.resource} as any,config.resource)!;
-    const result=await authorizeOAuth(cfg as any,req('separate_token'),'weave:messages.send',
+    const result=await authorizeOAuth(cfg as any,req(id+':grantId:secretValue'),'weave:messages.send',
         async account=>{lookups++;return account===id;},
         (async()=>{throw Error('Never perform public token introspection in service mode');}) as typeof fetch,now*1000);
     assert.deepEqual(result,{accountId:id});
-    assert.deepEqual(seen,{resource:config.resource,token:'separate_token'});
+    assert.deepEqual(seen,{resource:config.resource,token:id+':grantId:secretValue'});
     assert.equal(lookups,1);
 });
 test('Service Binding rejects revoked, foreign resource, foreign account, mismatched props and missing scope',async()=>{

@@ -1,4 +1,5 @@
 import { fail, stringify } from './wire';
+import type { OAuthServiceBinding } from './remote-oauth';
 import { RecordStore } from './record-store';
 import { nowUtc } from './time';
 
@@ -17,6 +18,8 @@ export interface Env {
     OAUTH_INTROSPECTION_URL?: string;
     OAUTH_CLIENT_ID?: string;
     OAUTH_CLIENT_SECRET?: string;
+    // Optional, exclusive private RPC alternative to HTTPS RFC7662 introspection.
+    AUTH_SERVER?: OAuthServiceBinding;
     db: Database;
     MAINTENANCE_MODE?: string;
     RECOVERY_READ_ONLY?: string;
