@@ -1,6 +1,7 @@
 import assert from 'node:assert/strict';
 import {test} from 'node:test';
 import {remoteMcp,type PrivateAccess} from '../src/remote-mcp.ts';
+import {authorizeOAuth,oauthConfiguration} from '../src/remote-oauth.ts';
 import {build} from 'esbuild';
 // The Worker source uses bundler-resolution imports. Evaluate precisely that
 // bundled production module instead of relying on Node's extensionless ESM resolution.
