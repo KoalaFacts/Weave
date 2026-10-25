@@ -14,9 +14,11 @@ test('explicit publish branch keeps main ancestry and existing verification befo
     assert.match(workflow,/environment: production/);
     assert.match(workflow,/npm test/);assert.match(workflow,/npm run test:compat/);
 });
-test('manual deployment can select completed-only without changing the default maintenance capability',()=>{
+test('manual deployment retains maintain choice while publish branch requires completed-only',()=>{
     const workflow=readFileSync(path,'utf8');
     assert.match(workflow,/database_mode:\s*\n\s*description:[^\n]+\n\s*required: true\n\s*type: choice\n\s*default: maintain\n\s*options: \[maintain, completed-only\]/);
-    assert.equal((workflow.match(/WEAVE_DEPLOY_DATABASE_MODE: \$\{\{ github\.event_name == 'push' && 'maintain' \|\| inputs\.database_mode \}\}/g)||[]).length,2);
+    assert.equal((workflow.match(/WEAVE_DEPLOY_DATABASE_MODE: \$\{\{ github\.event_name == 'push' && 'completed-only' \|\| inputs\.database_mode \}\}/g)||[]).length,2);
     assert.doesNotMatch(workflow,/inputs\.database_mode \|\| 'maintain'/,'A manually supplied empty mode must reach the rejecting script unchanged.');
+    assert.doesNotMatch(workflow,/github\.event_name == 'push' && 'maintain'/,'Automatic publish must never perform an unapproved migration.');
+    assert.equal((workflow.match(/node scripts\/verify-public-mcp\.ts/g)||[]).length,2,'Both deployment jobs must probe real public MCP.');
 });

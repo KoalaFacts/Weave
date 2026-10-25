@@ -74,9 +74,12 @@ jobs:
         env:
           CLOUDFLARE_API_TOKEN: ${{ secrets.CLOUDFLARE_API_TOKEN }}
           CLOUDFLARE_ACCOUNT_ID: ${{ secrets.CLOUDFLARE_ACCOUNT_ID }}
-          WEAVE_DEPLOY_DATABASE_MODE: ${{ github.event_name == 'push' && 'maintain' || inputs.database_mode }}
+          WEAVE_DEPLOY_DATABASE_MODE: ${{ github.event_name == 'push' && 'completed-only' || inputs.database_mode }}
       - name: Verify the published Agent Start guide and homepage
         run: node scripts/verify-agent-entry.ts
+        working-directory: hosts/Weave.Mailbox.Worker
+      - name: Verify published public MCP handshake, discovery and D1 read
+        run: node scripts/verify-public-mcp.ts
         working-directory: hosts/Weave.Mailbox.Worker
   deploy-production:
     needs: verify
@@ -100,7 +103,10 @@ jobs:
         env:
           CLOUDFLARE_API_TOKEN: ${{ secrets.CLOUDFLARE_API_TOKEN }}
           CLOUDFLARE_ACCOUNT_ID: ${{ secrets.CLOUDFLARE_ACCOUNT_ID }}
-          WEAVE_DEPLOY_DATABASE_MODE: ${{ github.event_name == 'push' && 'maintain' || inputs.database_mode }}
+          WEAVE_DEPLOY_DATABASE_MODE: ${{ github.event_name == 'push' && 'completed-only' || inputs.database_mode }}
       - name: Verify the published Agent Start guide and homepage
         run: node scripts/verify-agent-entry.ts
+        working-directory: hosts/Weave.Mailbox.Worker
+      - name: Verify published public MCP handshake, discovery and D1 read
+        run: node scripts/verify-public-mcp.ts
         working-directory: hosts/Weave.Mailbox.Worker
