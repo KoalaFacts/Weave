@@ -1,0 +1,9 @@
+{
+  "name": "weave-remote-mcp-pair",
+  "private": true,
+  "type": "module",
+  "license": "MIT OR AGPL-3.0-or-later",
+  "engines": {
+    "node": ">=24.19.0"
+  }
+}
