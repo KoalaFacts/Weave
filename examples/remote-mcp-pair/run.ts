@@ -34,7 +34,7 @@ async function remote(name:string,args:Record<string,unknown>={}):Promise<any>{
     },body:JSON.stringify({jsonrpc:'2.0',id:1,method,params:parameters})});
     // Streamable HTTP JSON responses must match the exact request envelope.
     // Reject malformed metadata before another remote call can be dispatched.
-    if(!/^application\\/json(?:\\s*;|$)/i.test(response.headers.get('content-type')??''))
+    if(!/^application\/json(?:\s*;|$)/i.test(response.headers.get('content-type')??''))
         throw Error('MCP '+name+' returned an unsupported response type (HTTP '+response.status+')');
     const maxBytes=1024*1024,claimedLength=response.headers.get('content-length');
     if(claimedLength!==null&&(!/^[0-9]+$/.test(claimedLength)||Number(claimedLength)>maxBytes))
