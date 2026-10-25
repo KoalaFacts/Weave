@@ -67,7 +67,9 @@ export async function authorizeMcpAccount(resource:string,clientId:string,
     if(issuer.search||issuer.hash)throw Error('OAuth issuer must not include query parameters');
     const discovery=new URL('/.well-known/oauth-authorization-server'+issuer.pathname.replace(/\/$/,''),issuer);
     const metadata=await boundedJson(discovery,undefined,allowLoopback);
-    if(metadata.issuer!==protectedMetadata.authorization_servers[0]||
+    const responseIssuerFlag=metadata.authorization_response_iss_parameter_supported;
+    if((responseIssuerFlag!==undefined&&typeof responseIssuerFlag!=='boolean')||
+        metadata.issuer!==protectedMetadata.authorization_servers[0]||
         !Array.isArray(metadata.response_types_supported)||!metadata.response_types_supported.includes('code')||
         (metadata.grant_types_supported!==undefined&&(!Array.isArray(metadata.grant_types_supported)||!metadata.grant_types_supported.includes('authorization_code')))||
         !Array.isArray(metadata.code_challenge_methods_supported)||!metadata.code_challenge_methods_supported.includes('S256'))
@@ -109,6 +111,14 @@ export async function authorizeMcpAccount(resource:string,clientId:string,
                 if(supplied.length!==1||suppliedBuffer.length!==stateBuffer.length||
                     !timingSafeEqual(suppliedBuffer,stateBuffer)){
                     res.writeHead(400);res.end('Invalid OAuth state');done(Error('OAuth callback state mismatch'));return;
+                }
+                // RFC 9207 binds the authorization response to the trusted AS.
+                // Cloudflare v1 advertises issuer identification; older issuers
+                // may omit it, but a supplied issuer must always match exactly.
+                const issuers=requestUrl.searchParams.getAll('iss');
+                if(issuers.length>1||(issuers.length===0&&responseIssuerFlag===true)||
+                    (issuers.length===1&&issuers[0]!==metadata.issuer)){
+                    res.writeHead(400);res.end('Invalid OAuth issuer');done(Error('OAuth callback issuer mismatch'));return;
                 }
                 const code=requestUrl.searchParams.getAll('code');
                 if(requestUrl.searchParams.has('error')||code.length!==1||!code[0]||code[0].length>4096){
