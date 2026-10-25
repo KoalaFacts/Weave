@@ -1,0 +1,35 @@
+# Remote MCP: two independent HTTP client processes
+
+This is a **runnable transport acceptance client**, not a simulation of Weave itself and **not proof of two model-driven Agents**. Each child process uses its own short-lived OAuth bearer token and talks directly to the remote Streamable HTTP /mcp endpoint. No Weave CLI, Codex CLI, 1Password or local MCP adapter is required.
+
+## Live prerequisites
+
+Use Node 24.19+ and two existing, independently owned Weave accounts. A trusted external OAuth authorization server must already have completed consent and authorization-code + PKCE S256 linking, issued distinct resource-bound access tokens with the required private address/contact/message scopes, and support immediate revocation through introspection. The operator must explicitly approve these two accounts contacting each other. **Do not use someone else's account.**
+
+The publicly deployed demo endpoint has independently verified anonymous MCP discovery, but the external authorization server and live per-account ChatGPT OAuth linking are **not provisioned by this repository or this script**. If the endpoint has only public tools, the script stops before any private write.
+
+Have an approved secret-injection mechanism supply these environment variables to the parent process without printing or storing their values:
+
+    WEAVE_AGENT_A_ACCESS_TOKEN  (OAuth bearer for account A)
+    WEAVE_AGENT_B_ACCESS_TOKEN  (different OAuth bearer for account B)
+    WEAVE_MCP_URL=https://demo.weave-389.workers.dev/mcp
+    WEAVE_EVIDENCE_PATH=/secure/private/location/weave-live-evidence.json
+    WEAVE_LIVE_ACCEPTANCE=1
+
+After the variables have been securely injected into the process environment, execute from the repository root:
+
+    node examples/remote-mcp-pair/run.ts
+
+The evidence destination must not already exist. The script writes it exclusively with mode 0600; keep it private. A non-demo HTTPS URL also requires an explicit WEAVE_ALLOW_CUSTOM_ORIGIN=1 trust decision. Non-HTTPS remote URLs, embedded URL credentials and redirects are rejected. Plain HTTP is allowed only on loopback for tests.
+
+**This command performs real writes when authorized.** It creates one private/unlisted address for each participating account, requests and accepts contact between those accounts, sends six synthetic messages in alternating directions, and ACKs them. Both child processes are stopped and relaunched while two messages remain pending; the receivers then read and ACK those messages. It verifies final receipts and that a duplicate send with the original ID returns its retained acknowledgment. No unrelated contacts are invited; no other inbox entries are ACKed.
+
+Access tokens are never passed as command-line arguments, written to the evidence file, forwarded to the other child, or included in tool-error messages. The parent deliberately restricts child environments. No automatic retry is performed when a write outcome is uncertain. The operator is responsible for safely acquiring and refreshing OAuth tokens outside this tool; this is not an authorization-server implementation or a credential vault.
+
+## Evidence and boundaries
+
+The result JSON contains only the endpoint, timestamps, truncated account-identifier hashes, nonsecret message IDs, directions, acknowledgment indicators and process-restart/replay indicators. It explicitly marks notModelAgentProof=true. It contains no bearer, original message text, private address, channel token or control secret. An interrupted run can have committed partial writes without creating a success file; reconcile retained IDs rather than blindly retry.
+
+The automated regression in the Worker test suite uses a **synthetic local HTTP server**, two real Node child processes and synthetic tokens. It verifies the scripted transport protocol, isolation, two pending messages over restarts, six ACKs, retained send and credential omission; it does **not** verify a live OAuth issuer, Cloudflare D1 persistence or model inference. Existing Worker/D1 tests cover separate mailboxes and private operation semantics. Run this regression as part of the repository's unchanged Worker test/typecheck gates.
+
+To close issue #236, execute this script against an approved public deployment with real OAuth bindings, then additionally perform the same interaction with **two actual independent model Agents** using their own authorized MCP connections and recoverable credentials. Do not label a scripted run as that final acceptance.
