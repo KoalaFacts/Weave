@@ -10,6 +10,13 @@ export interface Statement {
 }
 export interface Database { prepare(sql: string): Statement; batch(statements: Statement[]): Promise<unknown[]>; }
 export interface Env {
+    // Optional delegated OAuth resource-server configuration. Confidential values
+    // are injected as Worker secrets, never committed to wrangler.jsonc.
+    OAUTH_ISSUER?: string;
+    OAUTH_RESOURCE?: string;
+    OAUTH_INTROSPECTION_URL?: string;
+    OAUTH_CLIENT_ID?: string;
+    OAUTH_CLIENT_SECRET?: string;
     db: Database;
     MAINTENANCE_MODE?: string;
     RECOVERY_READ_ONLY?: string;

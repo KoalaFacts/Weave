@@ -60,6 +60,19 @@ export async function send(tx: Transaction,owner: string,e: any): Promise<any> {
     if(e.version===2&&e.connectionToken!==token)fail(409,'conflict');
     return admit(tx,owner,e,0,null);
 }
+/** Account-authorized send without disclosing channel tokens to the caller.
+ * Retained IDs use their ORIGINAL token, even after contact removal/replacement.
+ * Only the token is recovered: send() still checks the complete supplied envelope
+ * fingerprint and returns its existing receipt without admitting another message.
+ */
+export async function sendWithResolvedConnection(tx: Transaction,owner: string,recipient: string,generation: bigint,payload: any): Promise<any> {
+    validatePayload(payload);
+    const existing=await tx.get('message',owner,payload.messageId);
+    if(existing&&(existing.version!==2||existing.purpose!==0||!existing.connectionToken))fail(409,'conflict');
+    const token=existing?existing.connectionToken:await connection(tx,owner,recipient);
+    if(!token)fail(404,'unavailable');
+    return send(tx,owner,{version:2,recipientMailboxId:recipient,contactGeneration:generation,connectionToken:token,payload});
+}
 export async function ack(tx: Transaction,owner: string,id: string,input: any): Promise<any> {
     uuid(id); object(input,['senderMailboxId']); identity(input.senderMailboxId);
     const m = await tx.get('message',input.senderMailboxId,id);
