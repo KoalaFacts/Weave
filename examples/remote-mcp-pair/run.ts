@@ -32,11 +32,33 @@ async function remote(name:string,args:Record<string,unknown>={}):Promise<any>{
         'Content-Type':'application/json','Accept':'application/json, text/event-stream','MCP-Protocol-Version':'2025-11-25',
         ...(method==='tools/call'?{Authorization:'Bearer '+secret}:{})
     },body:JSON.stringify({jsonrpc:'2.0',id:1,method,params:parameters})});
-    if(response.headers.get('content-length')&&Number(response.headers.get('content-length'))>1024*1024)
+    // Streamable HTTP JSON responses must match the exact request envelope.
+    // Reject malformed metadata before another remote call can be dispatched.
+    if(!/^application\\/json(?:\\s*;|$)/i.test(response.headers.get('content-type')??''))
+        throw Error('MCP '+name+' returned an unsupported response type (HTTP '+response.status+')');
+    const maxBytes=1024*1024,claimedLength=response.headers.get('content-length');
+    if(claimedLength!==null&&(!/^[0-9]+$/.test(claimedLength)||Number(claimedLength)>maxBytes))
         throw Error('MCP response exceeded the size limit');
-    const body=await response.text();
-    if(body.length>1024*1024)throw Error('MCP response exceeded the size limit');
+    const reader=response.body?.getReader();
+    if(!reader)throw Error('MCP '+name+' returned an empty HTTP body');
+    let body='',bytes=0;
+    const decoder=new TextDecoder('utf-8',{fatal:true});
+    try{
+        while(true){
+            const part=await reader.read();
+            if(part.done)break;
+            bytes+=part.value.byteLength;
+            if(bytes>maxBytes)throw Error('MCP response exceeded the size limit');
+            body+=decoder.decode(part.value,{stream:true});
+        }
+        body+=decoder.decode();
+    }finally{
+        await reader.cancel().catch(()=>{});
+        reader.releaseLock();
+    }
     let rpc:any;try{rpc=JSON.parse(body);}catch{throw Error('MCP '+name+' returned malformed JSON (HTTP '+response.status+')');}
+    if(!rpc||typeof rpc!=='object'||Array.isArray(rpc)||rpc.jsonrpc!=='2.0'||rpc.id!==1)
+        throw Error('MCP '+name+' returned a mismatched JSON-RPC envelope');
     if(!response.ok||rpc.error||rpc.result?.isError)throw Error('MCP '+name+' denied or unavailable (HTTP '+response.status+')');
     if(method!=='tools/call')return rpc.result;
     const value=rpc.result?.structuredContent ?? (rpc.result?.content?.[0]?.text);
