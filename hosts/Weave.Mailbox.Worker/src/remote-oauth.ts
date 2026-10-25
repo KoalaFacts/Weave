@@ -1,14 +1,25 @@
 /** OAuth 2 protected-resource boundary for individually authorized Weave accounts.
  * OAuth 2.1 code/PKCE/consent is performed by the configured authorization server,
- * never by a shared mailbox or by MCP tool arguments. Tokens are introspected on
- * every protected call so revocation is effective without a local token cache.
+ * never by a shared mailbox or by MCP tool arguments. Tokens are freshly verified on every protected call, using HTTPS introspection
+ * or an opt-in private Cloudflare Service Binding; no positive token cache.
  */
+/** Trusted Cloudflare Workers OAuth Provider v1 RPC, not a public introspection URL.
+ * Only AS-side grants whose authenticated account UUID is independently verified
+ * may place that UUID in both userId and props.accountId.
+ */
+export interface OAuthServiceBinding {
+    validateToken(resource:string,token:string):Promise<{
+        audience:string;userId:string;props:{accountId:string};
+        expiresAt:number;scope:string[];clientId:string;
+    }|null>;
+}
 export interface OAuthEnvironment {
     OAUTH_ISSUER?: string;
     OAUTH_RESOURCE?: string;
     OAUTH_INTROSPECTION_URL?: string;
     OAUTH_CLIENT_ID?: string;
     OAUTH_CLIENT_SECRET?: string;
+    AUTH_SERVER?: OAuthServiceBinding;
 }
 export interface OAuthConfiguration {
     issuer: string;
@@ -17,8 +28,11 @@ export interface OAuthConfiguration {
     clientId: string;
     clientSecret: string;
 }
+export interface OAuthServiceConfiguration { mode:'service'; issuer:string; resource:string; authServer:OAuthServiceBinding; }
+export type OAuthOptions = OAuthConfiguration | OAuthServiceConfiguration;
 export type OAuthAccess = {accountId: string} | Response;
 const identity = /^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/;
+const serviceTokenPattern = /^[A-Za-z0-9._~+/\-]+:[A-Za-z0-9._~+/\-]+:[A-Za-z0-9._~+/\-]+$/;
 const tokenPattern = /^[A-Za-z0-9\-._~+/]+={0,2}$/;
 const scopes = ['weave:addresses.read','weave:addresses.write','weave:contacts.read','weave:contacts.write','weave:messages.read','weave:messages.send','weave:messages.ack'];
 const noStore = {'Cache-Control':'no-store','Pragma':'no-cache','X-Content-Type-Options':'nosniff'};
@@ -28,8 +42,17 @@ const safeUrl = (raw: string, label: string): URL => {
     return parsed;
 };
 /** A partial/malformed deployment is *not* a fallback to anonymous private tools. */
-export function oauthConfiguration(env: OAuthEnvironment, requestUrl: string): OAuthConfiguration | null {
+export function oauthConfiguration(env: OAuthEnvironment, requestUrl: string): OAuthOptions | null {
     const values = [env.OAUTH_ISSUER,env.OAUTH_RESOURCE,env.OAUTH_INTROSPECTION_URL,env.OAUTH_CLIENT_ID,env.OAUTH_CLIENT_SECRET];
+    if (env.AUTH_SERVER !== undefined) {
+        if (!env.OAUTH_ISSUER || !env.OAUTH_RESOURCE || values.slice(2).some(value=>value!==undefined)
+            || !env.AUTH_SERVER || typeof env.AUTH_SERVER.validateToken!=='function') throw Error('Invalid OAuth Service Binding configuration');
+        const issuer=safeUrl(env.OAUTH_ISSUER,'issuer'), resource=safeUrl(env.OAUTH_RESOURCE,'resource');
+        if (resource.pathname!=='/mcp' || resource.href!==env.OAUTH_RESOURCE
+            || issuer.href.replace(/\/$/,'')!==env.OAUTH_ISSUER.replace(/\/$/,'')
+            || new URL(requestUrl).origin!==resource.origin) throw Error('OAuth Service Binding origin mismatch');
+        return {mode:'service',issuer:env.OAUTH_ISSUER,resource:resource.href,authServer:env.AUTH_SERVER};
+    }
     if (values.every(v=>v===undefined)) return null;
     if (values.some(v=>!v)) throw Error('Incomplete OAuth configuration');
     const issuer=safeUrl(values[0]!, 'issuer'),resource=safeUrl(values[1]!, 'resource'),introspection=safeUrl(values[2]!, 'introspection');
@@ -38,11 +61,11 @@ export function oauthConfiguration(env: OAuthEnvironment, requestUrl: string): O
     if (!/^[\x21-\x7e]{1,128}$/.test(values[3]!)||values[3]!.includes(':')|| !/^[\x21-\x7e]{16,2048}$/.test(values[4]!)) throw Error('Invalid OAuth client credentials');
     return {issuer:values[0]!,resource:resource.href,introspectionUrl:introspection.href,clientId:values[3]!,clientSecret:values[4]!};
 }
-export function protectedResourceMetadata(config: OAuthConfiguration): Response {
+export function protectedResourceMetadata(config: OAuthOptions): Response {
     return new Response(JSON.stringify({resource:config.resource,authorization_servers:[config.issuer],bearer_methods_supported:['header'],scopes_supported:scopes}),
         {status:200,headers:{...noStore,'Content-Type':'application/json'}});
 }
-function challenge(config:OAuthConfiguration,status:number,scope:string,code:string): Response {
+function challenge(config:OAuthOptions,status:number,scope:string,code:string): Response {
     const meta=new URL('/.well-known/oauth-protected-resource/mcp',config.resource).href;
     const description=code==='insufficient_scope'?'Additional authorization is required':'Authentication is required';
     const value=`Bearer resource_metadata="${meta}", error="${code}", error_description="${description}"${scope?`, scope="${scope}"`:''}`;
@@ -59,15 +82,37 @@ function failClosed():Response {
  * No bearer token is forwarded to a mailbox API or arbitrary caller URL.
  */
 export async function authorizeOAuth(
-    config: OAuthConfiguration, request: Request, requiredScope: string,
+    config: OAuthOptions, request: Request, requiredScope: string,
     accountExists: (accountId: string) => Promise<boolean>,
     fetcher: typeof fetch = fetch, now: number | (() => number) = Date.now
 ): Promise<OAuthAccess> {
     const raw = request.headers.get('authorization');
     if (!raw || !/^Bearer\s+/i.test(raw)) return challenge(config,401,requiredScope,'invalid_token');
     const match = /^Bearer ([^\s]+)$/i.exec(raw);
-    if (!match || match[1].length>4096 || !tokenPattern.test(match[1])) return challenge(config,401,requiredScope,'invalid_token');
+    if (!match || match[1].length>4096 || !(('mode' in config ? serviceTokenPattern : tokenPattern).test(match[1]))) return challenge(config,401,requiredScope,'invalid_token');
     if (new URL(request.url).origin!==new URL(config.resource).origin) return failClosed();
+    if ('mode' in config) {
+        // Cloudflare's validated claims are trusted only from this operator-bound
+        // private RPC. Never treat model arguments or user-submitted account IDs
+        // as authorization. Recheck expiry after every asynchronous boundary.
+        const clock=typeof now==='function'?now:()=>now;
+        let claim:Awaited<ReturnType<OAuthServiceBinding['validateToken']>>;
+        try { claim=await config.authServer.validateToken(config.resource,match[1]); }
+        catch { return failClosed(); }
+        const nowSec=Math.floor(clock()/1000);
+        if (!claim || claim.audience!==config.resource || typeof claim.userId!=='string'
+            || !identity.test(claim.userId) || !claim.props || typeof claim.props!=='object'
+            || claim.props.accountId!==claim.userId || !Number.isSafeInteger(claim.expiresAt)
+            || claim.expiresAt<=nowSec || claim.expiresAt>nowSec+900
+            || typeof claim.clientId!=='string' || !claim.clientId
+            || !Array.isArray(claim.scope) || !claim.scope.every(scope=>typeof scope==='string'))
+            return challenge(config,401,requiredScope,'invalid_token');
+        if (!claim.scope.includes(requiredScope))return challenge(config,403,requiredScope,'insufficient_scope');
+        try {if(!await accountExists(claim.userId))return challenge(config,401,requiredScope,'invalid_token');}
+        catch {return failClosed();}
+        if (claim.expiresAt<=Math.floor(clock()/1000))return challenge(config,401,requiredScope,'invalid_token');
+        return {accountId:claim.userId};
+    }
     const form=new URLSearchParams({token:match[1],token_type_hint:'access_token'});
     let data: unknown;
     try {
