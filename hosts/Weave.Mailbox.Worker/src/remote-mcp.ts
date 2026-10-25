@@ -6,6 +6,12 @@ const responseLimit = 1024 * 1024;
 type ObjectValue = Record<string, unknown>;
 type RequestId = string | number | null;
 type DirectoryRead = (url: URL) => Promise<Response>;
+export interface PrivateAccess {
+    tools: readonly unknown[];
+    scope: (name: string) => string | null;
+    authorize: (scope: string) => Promise<string | Response>;
+    invoke: (ownerAccountId: string, name: string, args: Record<string,unknown>) => Promise<Response>;
+}
 const object = (value: unknown): value is ObjectValue => value !== null && typeof value === 'object' && !Array.isArray(value);
 const string = (maxLength: number) => ({type: 'string', maxLength});
 const uuid = /^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/;
@@ -68,7 +74,7 @@ function validArguments(name: string, args: ObjectValue): boolean {
     });
 }
 /** The injected read can access only the canonical public directory; never forward client headers. */
-export async function remoteMcp(request: Request, read: DirectoryRead): Promise<Response> {
+export async function remoteMcp(request: Request, read: DirectoryRead, privateAccess?: PrivateAccess): Promise<Response> {
     const url = new URL(request.url), origin = request.headers.get('origin');
     if (origin !== null && origin !== url.origin) return error(null, -32600, 'Origin is not allowed.', 403);
     if (request.method !== 'POST') return reply(undefined, 405, {Allow: 'POST'});
@@ -97,10 +103,28 @@ export async function remoteMcp(request: Request, read: DirectoryRead): Promise<
         });
     }
     if (message.method === 'ping') return result(id, {});
-    if (message.method === 'tools/list') return result(id, {tools});
+    if (message.method === 'tools/list') return result(id, {tools: privateAccess ? [...tools,...privateAccess.tools] : tools});
     if (message.method !== 'tools/call') return error(id, -32601, 'Method not found.');
     const args = params.arguments === undefined ? {} : params.arguments;
-    if (typeof params.name !== 'string' || !object(args) || !validArguments(params.name, args)) return error(id, -32602, 'Unknown public tool or invalid arguments.');
+    if (typeof params.name !== 'string' || !object(args)) return error(id, -32602, 'Unknown tool or invalid arguments.');
+    const requiredScope = privateAccess?.scope(params.name);
+    if (privateAccess && requiredScope) {
+        // Never execute an operation for a notification or without a fresh
+        // bearer authorization for this exact tool scope and resource.
+        const caller = await privateAccess.authorize(requiredScope);
+        if (caller instanceof Response) return caller;
+        try {
+            const response = await privateAccess.invoke(caller, params.name, args);
+            if (!response.ok) {
+                await response.body?.cancel();
+                return result(id, {isError:true,content:[{type:'text',text:`Private operation failed (HTTP ${response.status}). Do not blindly retry unknown write outcomes; reconcile the original ID.`}]});
+            }
+            return result(id, {content:[{type:'text',text:await boundedText(response.body,responseLimit)}]});
+        } catch {
+            return result(id, {isError:true,content:[{type:'text',text:'Private operation unavailable. The write outcome may be unknown; reconcile before retrying.'}]});
+        }
+    }
+    if (!validArguments(params.name, args)) return error(id, -32602, 'Unknown public tool or invalid arguments.');
     if (params.name === 'demo_guide') return result(id, {content: [{type: 'text', text: JSON.stringify({
         mode: 'public-read-only', authenticated: false, privateMessaging: false,
         accountRegistration: false, durableIdentityRecovery: false, backgroundReceiving: false,
