@@ -91,13 +91,17 @@ async function authorize(req:Request,env:Env,server:OAuthAuthorizationServer<Env
     if(!nonce)return denied();
     let accountId:string;
     try{accountId=await verifyAccountProof(cfg,proof,nonce);}catch{return denied();}
-    // Library's browser-bound consent cookie alone uses eventually-consistent
-    // KV deletion. Only the Durable Object transaction enforces true one-use.
-    if(!await consumeNonce(env,handle,nonce))return denied();
+    // The SDK must validate the original browser's consent cookie BEFORE the
+    // owner nonce is consumed. An unbound request carrying a copied proof must
+    // never burn the legitimate owner's challenge (real workerd regression).
     const approved=await oauth.approveConsent(req,handle);
     if(approved.request.resource!==cfg.resource||
       approved.request.codeChallengeMethod!=="S256"||
       !approved.request.codeChallenge||approved.request.codeChallenge.length!==43)return denied();
+    // SDK consent handles use KV, whose deletion is eventually consistent.
+    // Only the Durable Object transaction fences simultaneous/replayed grants;
+    // if consumption fails, never create an authorization code.
+    if(!await consumeNonce(env,handle,nonce))return denied();
     const {redirectTo}=await oauth.completeAuthorization({
       request:approved.request,userId:accountId,metadata:{},
       scope:approved.request.scope,props:{accountId}
