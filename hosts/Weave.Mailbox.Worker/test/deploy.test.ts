@@ -18,7 +18,7 @@ function fixture({status=200,failAt=0,bindingResult=[dbBinding],databaseResult=d
         requests.push(url);assert.equal(options.redirect,'error');assert.equal(options.headers.Authorization,'Bearer '+env.CLOUDFLARE_API_TOKEN);
         let result;
         if(url.endsWith('/workers/subdomain'))result={subdomain:'weave-389'};
-        else if(url.includes('/versions/'))result={id:version,resources:{bindings:[dbBinding,...Object.entries({...base.vars,MAINTENANCE_MODE:'false'}).map(([name,text])=>({name,type:'plain_text',text}))]}};
+        else if(url.includes('/versions/'))result={id:version,resources:{bindings:[...bindingResult,...Object.entries({...base.vars,MAINTENANCE_MODE:'false'}).map(([name,text])=>({name,type:'plain_text',text}))]}};
         else if(url.endsWith('/settings'))result={bindings:commands.length?[...bindingResult,...Object.entries({...base.vars,MAINTENANCE_MODE:commands.length===1?'true':'false',...settings}).filter(([,value])=>value!==undefined).map(([name,text])=>({name,type:'plain_text',text}))]:bindingResult};
         else result=databaseResult;
         return {ok:status===200,status,json:async()=>({success:true,result})};
@@ -252,4 +252,70 @@ test('enabled remote OAuth identity links require provisioned D1 schema before a
         assert.equal(f.commands.length,0);
         assert.equal(await h.db.prepare("SELECT name FROM sqlite_master WHERE type='table' AND name='oauth_identity_links'").first('name'),null);
     }finally{await h.close();}
+});
+
+const existingAuthService=[
+    dbBinding,
+    {name:'AUTH_SERVER',type:'service',service:'approved-auth-worker'},
+    {name:'OAUTH_ISSUER',type:'plain_text',text:'https://auth.weave.example'},
+    {name:'OAUTH_RESOURCE',type:'plain_text',text:'https://demo.weave-389.workers.dev/mcp'},
+    {name:'OAUTH_ACCOUNT_PROOF_KEY',type:'secret_text'}
+];
+test('existing operator-provisioned OAuth Service Binding survives maintenance, recovery and active deploy without provisioning',async()=>{
+    const f=fixture({bindingResult:existingAuthService});
+    const result=await deploy(f.options);
+    assert.equal(result.worker,'demo');
+    assert.deepEqual(f.events,['maintenance','convert','schema','recovery','active']);
+    for(const config of f.configs){
+        assert.deepEqual(config.services,[{binding:'AUTH_SERVER',service:'approved-auth-worker'}]);
+        assert.equal(config.vars.OAUTH_ISSUER,undefined,'Do not materialize operator OAuth settings into temporary config');
+        assert.equal(config.vars.OAUTH_RESOURCE,undefined,'Do not materialize operator OAuth settings into temporary config');
+        assert.equal(JSON.stringify(config).includes('OAUTH_ACCOUNT_PROOF_KEY'),false,'Do not serialize an installed proof key');
+    }
+    assert.equal(f.commands.length,3);
+    assert.equal(f.closed,true);
+});
+test('lost existing OAuth Service Binding after maintenance stops before any D1 conversion or schema write',async()=>{
+    const f=fixture({bindingResult:existingAuthService}),original=f.options.fetchImpl;
+    f.options.fetchImpl=async (...args)=>{
+        const response=await original(...args);
+        if(args[0].endsWith('/settings')&&f.commands.length>0){
+            const payload=await response.json();
+            payload.result.bindings=payload.result.bindings.filter(binding=>binding.name!=='AUTH_SERVER');
+            return {...response,json:async()=>payload};
+        }
+        return response;
+    };
+    await assert.rejects(deploy(f.options),/AUTH_SERVER.*not confirmed|OAuth Service Binding.*not confirmed/i);
+    assert.deepEqual(f.events,['maintenance']);
+    assert.equal(f.closed,true);
+});
+test('OAuth issuer or account-proof secret lost after maintenance stops before D1 conversion',async()=>{
+    for(const missing of ['OAUTH_ISSUER','OAUTH_ACCOUNT_PROOF_KEY']){
+        const f=fixture({bindingResult:existingAuthService}),original=f.options.fetchImpl;
+        f.options.fetchImpl=async (...args)=>{
+            const response=await original(...args);
+            if(args[0].endsWith('/settings')&&f.commands.length>0){
+                const payload=await response.json();
+                payload.result.bindings=payload.result.bindings.filter(binding=>binding.name!==missing);
+                return {...response,json:async()=>payload};
+            }
+            return response;
+        };
+        await assert.rejects(deploy(f.options),/OAuth.*not confirmed/i);
+        assert.deepEqual(f.events,['maintenance']);
+    }
+});
+test('untrusted or malformed Service Bindings cannot be smuggled into a code-only demo release',async()=>{
+    for(const bindingResult of [
+        [dbBinding,{name:'NOT_OAUTH',type:'service',service:'foreign'}],
+        [...existingAuthService.map(b=>b.name==='AUTH_SERVER'?{...b,service:'../bad-target'}:b)],
+        [...existingAuthService.map(b=>b.name==='AUTH_SERVER'?{...b,service:'demo'}:b)],
+        [...existingAuthService.map(b=>b.name==='AUTH_SERVER'?{...b,environment:'unreviewed'}:b)],
+        existingAuthService.filter(b=>b.name!=='OAUTH_ACCOUNT_PROOF_KEY')
+    ]){
+        const f=fixture({bindingResult});
+        await assert.rejects(deploy(f.options),/Service Binding|service binding|OAuth|Unexpected existing resource bindings/);
+        assert.equal(f.commands.length,0);
+    }
 });
