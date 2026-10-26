@@ -16,6 +16,7 @@ export interface Env {
     OAUTH_ISSUER?: string;
     OAUTH_RESOURCE?: string;
     OAUTH_INTROSPECTION_URL?: string;
+    OAUTH_INTROSPECTION_TRUSTED_ORIGIN?: string;
     OAUTH_CLIENT_ID?: string;
     OAUTH_CLIENT_SECRET?: string;
     // Independent short-lived AS consent proof secret, not a mailbox control.

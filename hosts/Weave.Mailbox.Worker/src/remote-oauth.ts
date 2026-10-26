@@ -17,6 +17,8 @@ export interface OAuthEnvironment {
     OAUTH_ISSUER?: string;
     OAUTH_RESOURCE?: string;
     OAUTH_INTROSPECTION_URL?: string;
+    /** Operator-approved exact HTTPS origin if RFC 7662 lives outside the issuer origin. */
+    OAUTH_INTROSPECTION_TRUSTED_ORIGIN?: string;
     OAUTH_CLIENT_ID?: string;
     OAUTH_CLIENT_SECRET?: string;
     AUTH_SERVER?: OAuthServiceBinding;
@@ -49,8 +51,9 @@ const safeUrl = (raw: string, label: string): URL => {
 /** A partial/malformed deployment is *not* a fallback to anonymous private tools. */
 export function oauthConfiguration(env: OAuthEnvironment, requestUrl: string): OAuthOptions | null {
     const values = [env.OAUTH_ISSUER,env.OAUTH_RESOURCE,env.OAUTH_INTROSPECTION_URL,env.OAUTH_CLIENT_ID,env.OAUTH_CLIENT_SECRET];
+    const trustedOrigin=env.OAUTH_INTROSPECTION_TRUSTED_ORIGIN;
     if (env.AUTH_SERVER !== undefined) {
-        if (!env.OAUTH_ISSUER || !env.OAUTH_RESOURCE || values.slice(2).some(value=>value!==undefined)
+        if (!env.OAUTH_ISSUER || !env.OAUTH_RESOURCE || trustedOrigin!==undefined || values.slice(2).some(value=>value!==undefined)
             || !env.AUTH_SERVER || typeof env.AUTH_SERVER.validateToken!=='function') throw Error('Invalid OAuth Service Binding configuration');
         const issuer=safeUrl(env.OAUTH_ISSUER,'issuer'), resource=safeUrl(env.OAUTH_RESOURCE,'resource');
         if (resource.pathname!=='/mcp' || resource.href!==env.OAUTH_RESOURCE
@@ -58,10 +61,21 @@ export function oauthConfiguration(env: OAuthEnvironment, requestUrl: string): O
             || new URL(requestUrl).origin!==resource.origin) throw Error('OAuth Service Binding origin mismatch');
         return {mode:'service',issuer:env.OAUTH_ISSUER,resource:resource.href,authServer:env.AUTH_SERVER};
     }
-    if (values.every(v=>v===undefined)) return null;
+    if (values.every(v=>v===undefined)) {
+        if (trustedOrigin!==undefined)throw Error('Incomplete OAuth configuration');
+        return null;
+    }
     if (values.some(v=>!v)) throw Error('Incomplete OAuth configuration');
     const issuer=safeUrl(values[0]!, 'issuer'),resource=safeUrl(values[1]!, 'resource'),introspection=safeUrl(values[2]!, 'introspection');
-    if (resource.pathname!=='/mcp'||resource.href!==values[1]||issuer.href.replace(/\/$/,'')!==values[0]!.replace(/\/$/,'')||introspection.origin!==issuer.origin) throw Error('OAuth binding mismatch');
+    // Cross-origin RFC 7662 is operator opt-in: introspection credentials
+    // are sent only to this exact preconfigured HTTPS host, never a redirect.
+    let allowedIntrospectionOrigin=issuer.origin;
+    if(trustedOrigin!==undefined){
+        const approved=safeUrl(trustedOrigin,'trusted introspection origin');
+        if(approved.origin!==trustedOrigin)throw Error('Invalid trusted introspection origin');
+        allowedIntrospectionOrigin=approved.origin;
+    }
+    if (resource.pathname!=='/mcp'||resource.href!==values[1]||issuer.href.replace(/\/$/,'')!==values[0]!.replace(/\/$/,'')||introspection.origin!==allowedIntrospectionOrigin) throw Error('OAuth binding mismatch');
     if (new URL(requestUrl).origin!==resource.origin) throw Error('Unexpected OAuth resource origin');
     if (!/^[\x21-\x7e]{1,128}$/.test(values[3]!)||values[3]!.includes(':')|| !/^[\x21-\x7e]{16,2048}$/.test(values[4]!)) throw Error('Invalid OAuth client credentials');
     return {issuer:values[0]!,resource:resource.href,introspectionUrl:introspection.href,clientId:values[3]!,clientSecret:values[4]!};

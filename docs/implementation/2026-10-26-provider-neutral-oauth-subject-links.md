@@ -42,6 +42,10 @@ issuer mapper. Managed Cloudflare Access opaque `oauth:` credentials and
 its signed origin assertion require a separately validated edge adapter;
 **this RFC 7662 path alone does not support Access Managed OAuth**.
 
+## Separately hosted RFC 7662 introspection
+
+External providers may publish an HTTPS introspection endpoint on an origin different from their trusted issuer. The resource defaults to requiring the issuer's origin. A deployment may explicitly pin `OAUTH_INTROSPECTION_TRUSTED_ORIGIN` to **exactly** the HTTPS origin of the configured `OAUTH_INTROSPECTION_URL` (including non-default port, no path, query, userinfo or fragment). A mismatched value, an isolated trust setting, or a mixture with `AUTH_SERVER` fails closed. The complete introspection URL remains operator-fixed: requests never follow redirects, token/Basic secrets are not sent to discovered or caller-supplied URLs, and the response must still match the separately configured `iss`, `aud`, scope, expiry and active status. This optional integration does not enable Cloudflare Access Managed OAuth.
+
 ## Storage review gate
 
 New additive Drizzle target: `oauth_identity_links` with primary key
