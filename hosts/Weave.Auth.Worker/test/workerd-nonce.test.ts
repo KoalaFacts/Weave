@@ -13,15 +13,19 @@ const issuer='https://auth.weave.example';
 const resource='https://demo.weave-389.workers.dev/mcp';
 const localKey=randomBytes(32).toString('base64url');
 function options(storage:string) {
+  // Miniflare 5 accepts a multi-worker config even for one Worker.
   return {
-    modules:true,
-    scriptPath:resolve('dist/index.js'),
-    compatibilityDate:'2026-10-23',
-    compatibilityFlags:['nodejs_compat','global_fetch_strictly_public'],
-    kvNamespaces:['OAUTH_KV'],
-    durableObjects:{CONSENT_NONCES:'ConsentNonce'},
-    durableObjectsPersist:storage,
-    bindings:{OAUTH_ISSUER:issuer,OAUTH_RESOURCE:resource,OAUTH_ACCOUNT_PROOF_KEY:localKey},
+    workers:[{
+      name:'weave-auth-local',
+      modules:true,
+      scriptPath:resolve('dist/index.js'),
+      compatibilityDate:'2026-10-23',
+      compatibilityFlags:['nodejs_compat','global_fetch_strictly_public'],
+      kvNamespaces:['OAUTH_KV'],
+      durableObjects:{CONSENT_NONCES:'ConsentNonce'},
+      durableObjectsPersist:storage,
+      bindings:{OAUTH_ISSUER:issuer,OAUTH_RESOURCE:resource,OAUTH_ACCOUNT_PROOF_KEY:localKey}
+    }],
     cf:false
   };
 }
