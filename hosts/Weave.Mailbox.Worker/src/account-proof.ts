@@ -21,7 +21,7 @@ function encode(bytes:Uint8Array): string {
     for(const byte of bytes)binary+=String.fromCharCode(byte);
     return btoa(binary).replaceAll('+','-').replaceAll('/','_').replace(/=+$/,'');
 }
-function decode(value:string):Uint8Array {
+function decode(value:string):Uint8Array<ArrayBuffer> {
     if(!b64urlPattern.test(value)||value.length>4096)throw Error('Invalid account proof encoding');
     const raw=atob(value.replaceAll('-','+').replaceAll('_','/')+'='.repeat((4-value.length%4)%4));
     const bytes=Uint8Array.from(raw,ch=>ch.charCodeAt(0));
