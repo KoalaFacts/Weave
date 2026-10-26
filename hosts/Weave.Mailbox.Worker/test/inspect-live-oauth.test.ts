@@ -156,3 +156,29 @@ test('malformed Cloudflare JSON cannot echo a raw secret or start further reques
     });
     assert.equal(f.calls.length,2);
 });
+
+test('incomplete RFC 7662 settings are never reported as configured', async () => {
+    const required = [
+        {name: 'OAUTH_ISSUER', type: 'plain_text', text: 'https://issuer.example'},
+        {name: 'OAUTH_RESOURCE', type: 'plain_text', text: demo + '/mcp'},
+        {name: 'OAUTH_INTROSPECTION_URL', type: 'plain_text', text: 'https://issuer.example/introspect'},
+        {name: 'OAUTH_CLIENT_ID', type: 'plain_text', text: 'client-id'},
+        {name: 'OAUTH_CLIENT_SECRET', type: 'secret_text', text: token}
+    ];
+    for (const missing of required.map(binding => binding.name)) {
+        const f = fixture({bindings: required.filter(binding => binding.name !== missing)});
+        const report = await inspectLiveOAuth(f.input);
+        assert.equal(report.configuration.mode, 'invalid', missing);
+        assert.ok(report.configuration.problems.includes('Incomplete external introspection settings'), missing);
+        assert.ok(!JSON.stringify(report).includes(token), missing);
+    }
+    for (const bindings of [
+        required.filter(binding => ['OAUTH_ISSUER', 'OAUTH_RESOURCE'].includes(binding.name)),
+        [{name: 'OAUTH_INTROSPECTION_TRUSTED_ORIGIN', type: 'plain_text', text: 'https://issuer.example'}]
+    ]) {
+        const f = fixture({bindings});
+        const report = await inspectLiveOAuth(f.input);
+        assert.equal(report.configuration.mode, 'invalid');
+        assert.ok(report.configuration.problems.includes('Incomplete external introspection settings'));
+    }
+});
