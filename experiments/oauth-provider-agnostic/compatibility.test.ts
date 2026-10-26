@@ -9,15 +9,20 @@ import {authorizeOAuth,type OAuthConfiguration} from '../../hosts/Weave.Mailbox.
 const account='01234567-89ab-4def-8123-456789abcdef';
 const scope='weave:messages.read';
 async function provider(label:string,token:string,lifetime=900,subject=account,
-    discovery:'oauth'|'oidc-inserted'|'oidc-appended'|'oidc-blocked'='oauth'){
+    discovery:'oauth'|'oidc-inserted'|'oidc-appended'|'oidc-blocked'='oauth',
+    resourceDiscovery:'path'|'root'|'multiple'='path'){
     let origin='',active=true;
     let codeRecord:{code:string;challenge:string;redirect:string;client:string}|undefined;
     const counts={authorization:0,exchange:0,introspection:0};
     const server=createServer((req,res)=>{void(async()=>{
         const url=new URL(req.url??'/',origin),issuer=origin+'/'+label,resource=origin+'/mcp';
         const reply=(value:unknown,status=200)=>{res.writeHead(status,{'Content-Type':'application/json','Cache-Control':'no-store'});res.end(JSON.stringify(value));};
-        if(req.method==='GET'&&url.pathname==='/.well-known/oauth-protected-resource/mcp'){
-            reply({resource,authorization_servers:[issuer]});return;
+        const resourceMetadataPath=resourceDiscovery==='root'
+            ?'/.well-known/oauth-protected-resource'
+            :'/.well-known/oauth-protected-resource/mcp';
+        if(req.method==='GET'&&url.pathname===resourceMetadataPath){
+            reply({resource,authorization_servers:resourceDiscovery==='multiple'
+                ?['http://127.0.0.1:9/other-issuer',issuer]:[issuer]});return;
         }
         const oauthPath='/.well-known/oauth-authorization-server/'+label;
         if(discovery==='oidc-blocked'&&req.method==='GET'&&url.pathname===oauthPath){
@@ -68,11 +73,11 @@ async function provider(label:string,token:string,lifetime=900,subject=account,
     const resource=origin+'/mcp',issuer=origin+'/'+label;
     const config:OAuthConfiguration={issuer,resource,introspectionUrl:issuer+'/introspect',clientId:'fixture-client',clientSecret:'synthetic-fixture-secret'};
     return {issuer,resource,config,counts,revoke:()=>{active=false;},
-        login:()=>authorizeMcpAccount(resource,label+'-client',async(url)=>{
+        login:(expectedIssuer?:string)=>authorizeMcpAccount(resource,label+'-client',async(url)=>{
             const auth=await fetch(url,{redirect:'manual'});assert.equal(auth.status,302);
             await auth.body?.cancel();const callback=auth.headers.get('location');assert.ok(callback);
             const response=await fetch(callback,{redirect:'error'});assert.equal(response.status,200);await response.body?.cancel();
-        },{allowLoopbackForTests:true,scopes:[scope],timeoutMs:5000}),
+        },{allowLoopbackForTests:true,scopes:[scope],timeoutMs:5000,expectedIssuer}),
         close:()=>new Promise<void>(resolve=>{server.close(()=>resolve());server.closeAllConnections();})};
 }
 for(const [label,token] of [['issuer-a','opaque.alpha_123'],['issuer-b','opaque.beta~456']]){
@@ -103,6 +108,31 @@ for(const discovery of ['oidc-inserted','oidc-appended'] as const){
         }finally{await p.close();}
     });
 }
+
+test('RFC 9728 root protected-resource metadata fallback completes the existing PKCE and introspection flow',async()=>{
+    const p=await provider('root-prm','opaque.root-prm',900,account,'oauth','root');
+    try{
+        const token=await p.login();
+        assert.equal(token,'opaque.root-prm');
+        assert.deepEqual(await authorizeOAuth(p.config,new Request(p.resource,{headers:{Authorization:'Bearer '+token}}),
+            scope,async(id)=>id===account),{accountId:account});
+        assert.deepEqual(p.counts,{authorization:1,exchange:1,introspection:1});
+    }finally{await p.close();}
+});
+
+test('multiple authorized issuers require an exact operator selected issuer before network login',async()=>{
+    const p=await provider('several-issuers','opaque.multi-issuer',900,account,'oauth','multiple');
+    try{
+        await assert.rejects(p.login(),/issuer|approval|unambiguous/i);
+        await assert.rejects(p.login(p.issuer+'/foreign'),/issuer|approval|unambiguous/i);
+        assert.deepEqual(p.counts,{authorization:0,exchange:0,introspection:0});
+        const token=await p.login(p.issuer);
+        assert.equal(token,'opaque.multi-issuer');
+        assert.deepEqual(await authorizeOAuth(p.config,new Request(p.resource,{headers:{Authorization:'Bearer '+token}}),
+            scope,async(id)=>id===account),{accountId:account});
+        assert.deepEqual(p.counts,{authorization:1,exchange:1,introspection:1});
+    }finally{await p.close();}
+});
 
 test('authorization-server 401 does not trigger a fallback or open a login page',async()=>{
     const p=await provider('oidc-blocked','opaque.oidc-blocked',900,account,'oidc-blocked');
