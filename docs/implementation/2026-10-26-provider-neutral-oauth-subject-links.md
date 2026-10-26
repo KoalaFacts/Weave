@@ -26,7 +26,7 @@ bearer. Active links are exclusively keyed by (issuer,resource,digest) and
 cannot be silently claimed by another account even after revocation. Owners
 can view their own digests via `GET /v1/accounts/oauth/links` and revoke one
 with `POST /v1/accounts/oauth/links/revoke` using the exact
-`{issuer,resource,subjectDigest}`, authenticated by Weave control. Revocation
+`{issuer,resource,subjectDigest}`, authenticated by Weave control.
 
 Owner link listings return at most 50 entries, including retained revoked
 history, plus `truncated` and a `nextCursor` continuation when additional

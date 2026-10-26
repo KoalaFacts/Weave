@@ -61,15 +61,17 @@ export async function linkOAuthSubject(db:Database,owner:string,subject:Verified
 function encodeLinkCursor(key:LinkedSubjectKey):string {
     const bytes=new TextEncoder().encode(JSON.stringify(key));
     let binary='';for(const byte of bytes)binary+=String.fromCharCode(byte);
-    return btoa(binary).replace(/\\+/g,'-').replace(/\\//g,'_').replace(/=+$/,'');
+    return btoa(binary).replace(/\+/g,'-').replace(/\//g,'_').replace(/=+$/,'');
 }
 function decodeLinkCursor(value:string):LinkedSubjectKey {
     if(!value||value.length>4096||!/^[A-Za-z0-9_-]+$/.test(value))fail();
     let parsed:unknown;
     try{
         const binary=atob(value.replace(/-/g,'+').replace(/_/g,'/'));
+        const bytes=new Uint8Array(binary.length);
+        for(let index=0;index<binary.length;index++)bytes[index]=binary.charCodeAt(index);
         parsed=JSON.parse(new TextDecoder('utf-8',{fatal:true}).decode(
-            Uint8Array.from(binary,char=>char.charCodeAt(0))));
+            bytes));
     }catch{fail();}
     if(!parsed||typeof parsed!=='object'||Array.isArray(parsed)||
        Object.keys(parsed).sort().join(',')!=='issuer,resource,subjectDigest')fail();
