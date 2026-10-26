@@ -1,6 +1,10 @@
 import assert from 'node:assert/strict';
 import {test} from 'node:test';
-import {start} from './harness.ts';
+import {start,payload} from './harness.ts';
+import {randomUUID} from 'node:crypto';
+import {mkdtemp,rm} from 'node:fs/promises';
+import {tmpdir} from 'node:os';
+import {join} from 'node:path';
 
 test('owner can see only its linked external OAuth subjects, with unauthenticated access denied',async()=>{
     const h=await start({bindings:{
@@ -172,4 +176,129 @@ test('real workerd binds a validated external RFC7662 bearer to its consenting o
         assert.ok(validations>=5,'the real Worker must freshly introspect every authorized or denied call');
         assert.ok(observed.every(x=>x.target&&x.method&&x.basic&&x.token),'the configured issuer, POST, Basic authentication and bearer must all match');
     }finally{await h.close();}
+});
+
+test('two separate external OAuth identities complete real D1 private MCP contact and six-message ACK recovery',async()=>{
+    const issuer='https://issuer.example',resource='https://localhost/mcp';
+    const accessA='opaque-owner-A',accessB='opaque-owner-B';
+    const subjectA='issuer-local-A',subjectB='issuer-local-B';
+    const allScopes='weave:addresses.read weave:addresses.write weave:contacts.read weave:contacts.write weave:messages.read weave:messages.send weave:messages.ack';
+    const subjects=new Map([[accessA,subjectA],[accessB,subjectB]]);
+    const observed=new Map<string,number>();
+    const outboundService=async(request:Request):Promise<Response>=>{
+        assert.equal(request.url,issuer+'/introspect','tokens go only to the configured AS');
+        assert.equal(request.method,'POST');
+        assert.match(request.headers.get('Authorization')??'',/^Basic /);
+        assert.equal(request.headers.has('X-Weave-Account-Control'),false,
+            'long-lived Weave controls must never reach the AS');
+        const token=new URLSearchParams(await request.text()).get('token')??'';
+        observed.set(token,(observed.get(token)??0)+1);
+        const sub=subjects.get(token);
+        const now=Math.floor(Date.now()/1000);
+        return new Response(JSON.stringify(sub?{
+            active:true,iss:issuer,aud:resource,sub,
+            iat:now-5,exp:now+120,scope:allScopes
+        }:{active:false}),{headers:{'Content-Type':'application/json'}});
+    };
+    const persist=await mkdtemp(join(tmpdir(),'weave-external-oauth-mcp-'));
+    const bindings={OAUTH_IDENTITY_LINKS_ENABLED:'true',OAUTH_ISSUER:issuer,
+        OAUTH_RESOURCE:resource,OAUTH_INTROSPECTION_URL:issuer+'/introspect',
+        OAUTH_CLIENT_ID:'protocol-client',OAUTH_CLIENT_SECRET:'isolated-test-only-client-secret'};
+    let h=await start({persist,outboundService,bindings});
+    let sequence=200;
+    type Delivery={sender:string;recipient:string;token:string;receiverToken:string;payload:ReturnType<typeof payload>};
+    const messages:Delivery[]=[];
+    const rawCall=(token:string,name:string,args:Record<string,unknown>={})=>
+        h.mf.dispatchFetch(resource,{method:'POST',headers:{
+            Authorization:'Bearer '+token,'Content-Type':'application/json',
+            Accept:'application/json, text/event-stream','MCP-Protocol-Version':'2025-11-25'
+        },body:JSON.stringify({jsonrpc:'2.0',id:sequence++,method:'tools/call',
+            params:{name,arguments:args}})});
+    const call=async(token:string,name:string,args:Record<string,unknown>={}):Promise<any>=>{
+        const response=await rawCall(token,name,args);
+        assert.equal(response.status,200,'private tool must reach real workerd: '+name);
+        const frame=await response.json() as {result?:{
+            isError?:boolean;structuredContent?:unknown;content?:{text:string}[]}};
+        assert.ok(frame.result&&!frame.result.isError,'MCP tool failed: '+name);
+        return frame.result.structuredContent??JSON.parse(frame.result.content![0].text);
+    };
+    let disposed=false;
+    try{
+        const a=await h.register(),b=await h.register();
+        assert.notEqual(a.accountId,b.accountId);
+        const denied=await rawCall(accessA,'get_my_profile');
+        assert.equal(denied.status,401,'external bearer without first-party link is not account control');
+        const link=async(owner:{control:string},token:string)=>{
+            const response=await h.mf.dispatchFetch('https://localhost/v1/accounts/oauth/links',{
+                method:'POST',headers:{Authorization:'Bearer '+token,
+                    'X-Weave-Account-Control':owner.control,'Content-Type':'application/json'},body:'{}'});
+            assert.equal(response.status,200,'owner+AS token link must succeed');
+            return response.json() as Promise<{issuer:string;resource:string;subjectDigest:string}>;
+        };
+        const linkA=await link(a,accessA),linkB=await link(b,accessB);
+        assert.notEqual(linkA.subjectDigest,linkB.subjectDigest);
+        assert.deepEqual(await call(accessA,'get_my_profile'),{id:a.accountId});
+        assert.deepEqual(await call(accessB,'get_my_profile'),{id:b.accountId});
+        const addressA=randomUUID(),addressB=randomUUID();
+        await call(accessA,'ensure_my_address',{addressId:addressA,label:'External A'});
+        await call(accessB,'ensure_my_address',{addressId:addressB,label:'External B'});
+        const addressesA=await call(accessA,'list_my_addresses');
+        assert.ok(addressesA.items.some((x:{addressId:string})=>x.addressId===addressA));
+        assert.ok(!addressesA.items.some((x:{addressId:string})=>x.addressId===addressB));
+        const intro=payload('external-provider-introduction');
+        const request=await call(accessA,'request_contact',{
+            requestId:intro.messageId,requesterAddressId:addressA,
+            recipientAccountId:b.accountId,recipientAddressId:addressB,payload:intro});
+        const incoming=await call(accessB,'list_my_contact_requests');
+        assert.ok(incoming.items.some((x:{requestId:string;status:string})=>
+            x.requestId===intro.messageId&&x.status==='pending'));
+        await call(accessB,'decide_contact',{
+            requestId:intro.messageId,requesterAccountId:a.accountId,
+            expectedGeneration:String(request.generation),status:'accepted'});
+        const send=async(index:number)=>{
+            const fromA=index%2===0;
+            const token=fromA?accessA:accessB,receiverToken=fromA?accessB:accessA;
+            const sender=fromA?a.accountId:b.accountId,recipient=fromA?b.accountId:a.accountId;
+            const message=payload('external-oauth-message-'+index);
+            const result=await call(token,'send_message',{
+                recipientAccountId:recipient,contactGeneration:String(request.generation),payload:message});
+            assert.equal(result.messageId,message.messageId);
+            assert.equal(result.state,'pending');
+            messages.push({sender,recipient,token,receiverToken,payload:message});
+        };
+        const acknowledge=async(item:Delivery)=>{
+            const inbox=await call(item.receiverToken,'list_my_inbox');
+            assert.ok(inbox.items.some((x:{envelope?:{payload?:{messageId:string}}})=>
+                x.envelope?.payload?.messageId===item.payload.messageId),
+                'pending message must survive workerd/D1 cold restart');
+            const result=await call(item.receiverToken,'ack_message',{
+                messageId:item.payload.messageId,senderAccountId:item.sender});
+            assert.equal(result.state,'acknowledged');
+        };
+        await send(0);
+        await send(1);
+        await h.close();disposed=true;
+        h=await start({persist,migrate:false,outboundService,bindings});disposed=false;
+        await acknowledge(messages[0]);
+        await acknowledge(messages[1]);
+        for(let i=2;i<6;i++){await send(i);await acknowledge(messages[i]);}
+        const replay=await call(messages[0].token,'send_message',{
+            recipientAccountId:messages[0].recipient,
+            contactGeneration:String(request.generation),payload:messages[0].payload});
+        assert.equal(replay.state,'acknowledged','duplicate delivery returns original ACK');
+        const outA=await call(accessA,'list_my_outbox'),outB=await call(accessB,'list_my_outbox');
+        assert.ok(outA.items.length>=3&&outB.items.length>=3);
+        assert.ok((observed.get(accessA)??0)>=7&&(observed.get(accessB)??0)>=7,
+            'no cached OAuth decision across independent send/read/ACK operations');
+        const revoked=await h.mf.dispatchFetch('https://localhost/v1/accounts/oauth/links/revoke',{
+            method:'POST',headers:{'X-Weave-Account-Control':a.control,'Content-Type':'application/json'},
+            body:JSON.stringify(linkA)});
+        assert.equal(revoked.status,200,'owner must be able to revoke provider subject');
+        assert.equal((await rawCall(accessA,'get_my_profile')).status,401);
+        assert.deepEqual(await call(accessB,'get_my_profile'),{id:b.accountId},
+            'revoking A must not disable B');
+    }finally{
+        try {if(!disposed)await h.close();}
+        finally{await rm(persist,{recursive:true,force:true});}
+    }
 });
