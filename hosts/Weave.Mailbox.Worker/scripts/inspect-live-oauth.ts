@@ -68,8 +68,12 @@ export async function inspectLiveOAuth({env = process.env, fetchImpl = fetch}: {
     const get = (name: string): Binding | undefined => bindings.find(x => x.name === name);
     const service = get('AUTH_SERVER');
     const external = get('OAUTH_INTROSPECTION_URL');
+    const externalNames = ['OAUTH_INTROSPECTION_URL', 'OAUTH_CLIENT_ID',
+        'OAUTH_CLIENT_SECRET', 'OAUTH_INTROSPECTION_TRUSTED_ORIGIN'];
+    const externalConfigured = externalNames.some(name => !!get(name));
     if (service && (service.type !== 'service' || typeof service.service !== 'string')) problems.push('Invalid AUTH_SERVER binding type');
-    if (service && external) problems.push('Mixed Service Binding and external introspection modes');
+    if (service && externalConfigured) problems.push('Mixed Service Binding and external introspection modes');
+    if (!service && externalConfigured && !external) problems.push('Incomplete external introspection settings');
     const issuer = get('OAUTH_ISSUER');
     const resourceBinding = get('OAUTH_RESOURCE');
     if (issuer && (issuer.type !== 'plain_text' || typeof issuer.text !== 'string')) problems.push('Invalid OAUTH_ISSUER binding type');
@@ -93,8 +97,12 @@ export async function inspectLiveOAuth({env = process.env, fetchImpl = fetch}: {
             throw Error('Active Worker version metadata is invalid.');
         return {versionId: item.version_id, percentage: item.percentage};
     });
+    // Cloudflare deployments allocate exactly 100% of traffic among their versions.
+    const allocation = versions.reduce((sum, item) => sum + item.percentage, 0);
+    if (Math.abs(allocation - 100) > 0.000001)
+        throw Error('Active Worker deployment traffic allocation is incomplete.');
     const observed: Record<string, {status: number; bearerChallenge: boolean; redirect: boolean}> = {};
-    for (const path of ['/','.well-known/oauth-protected-resource/mcp','/.well-known/oauth-protected-resource','/mcp']) {
+    for (const path of ['/','/.well-known/oauth-protected-resource/mcp','/.well-known/oauth-protected-resource','/mcp']) {
         let response: Response;
         try {
             // Never forward the Cloudflare API token, Weave controls, OAuth bearers or cookies.
@@ -115,7 +123,7 @@ export async function inspectLiveOAuth({env = process.env, fetchImpl = fetch}: {
     const report = {
         checkedAt: new Date().toISOString(),
         deployment: {id: active.id, versions, createdAt: typeof active.created_on === 'string' &&
-            /^\d{4}-\d\d-\d\dT/.test(active.created_on) ? active.created_on : null},
+            /^\d{4}-\d\d-\d\dT\d\d:\d\d:\d\d(?:\.\d+)?(?:Z|[+-]\d\d:\d\d)$/.test(active.created_on) ? active.created_on : null},
         configuration: {
             mode: problems.length ? 'invalid' : service ? 'service-binding' : external ? 'external-rfc7662' : 'not-configured',
             issuerPresent: !!issuer,
@@ -125,7 +133,7 @@ export async function inspectLiveOAuth({env = process.env, fetchImpl = fetch}: {
             problems
         },
         anonymous: observed,
-        metadataBlockedWithoutBearerChallenge: metadata.some(x => x.status === 401 && !x.bearerChallenge),
+        metadataBlockedWithoutBearerChallenge: metadata.every(x => x.status !== 200) && metadata.some(x => x.status === 401 && !x.bearerChallenge),
         interpretation: 'Version and settings are Cloudflare API reads; anonymous HTTP statuses cannot distinguish edge Access/WAF from deployed application behavior. No tokens or bindings are exposed.',
         readOnly: true
     };

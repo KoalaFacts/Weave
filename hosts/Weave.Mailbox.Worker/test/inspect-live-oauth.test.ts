@@ -103,3 +103,32 @@ test('missing credentials stop before all network calls',async()=>{
     await assert.rejects(inspectLiveOAuth({env:{},fetchImpl:f.input.fetchImpl}),/requires the existing Cloudflare/);
     assert.equal(f.calls.length,0);
 });
+
+test('service binding cannot hide any external-only OAuth configuration, even without URL',async()=>{
+    for(const name of ['OAUTH_CLIENT_ID','OAUTH_CLIENT_SECRET','OAUTH_INTROSPECTION_TRUSTED_ORIGIN']){
+        const f=fixture({bindings:[{name:'AUTH_SERVER',type:'service',service:'approved-as'},
+            {name,type:name==='OAUTH_CLIENT_SECRET'?'secret_text':'plain_text',text:token}]});
+        const result=await inspectLiveOAuth(f.input);
+        assert.equal(result.configuration.mode,'invalid',name);
+        assert.ok(result.configuration.problems.some(x=>x.includes('Mixed Service')),name);
+        assert.ok(!JSON.stringify(result).includes(token));
+    }
+});
+test('an incomplete or partial traffic rollout cannot be presented as the active deployment',async()=>{
+    const f=fixture({override:(_url,i)=>i===2?Response.json({success:true,result:{
+        deployments:[{id:deployId,versions:[{version_id:versionId,percentage:50}]}]}}):undefined});
+    await assert.rejects(inspectLiveOAuth(f.input),/traffic allocation is incomplete/);
+    assert.equal(f.calls.length,3,'must refuse inconsistent metadata before public calls');
+});
+test('complete two-version weighted deployments retain each percentage without mutation',async()=>{
+    const other='ac7f7ad9-97d7-4c0a-9f2b-276991341333';
+    const f=fixture({override:(_url,i)=>i===2?Response.json({success:true,result:{
+        deployments:[{id:deployId,versions:[{version_id:versionId,percentage:25},{version_id:other,percentage:75}]}]}}):undefined});
+    const result=await inspectLiveOAuth(f.input);
+    assert.deepEqual(result.deployment.versions,[{versionId:versionId,percentage:25},{versionId:other,percentage:75}]);
+});
+test('valid fallback metadata is not falsely classified as entirely inaccessible',async()=>{
+    const f=fixture({statuses:[200,401,200,405]});
+    const result=await inspectLiveOAuth(f.input);
+    assert.equal(result.metadataBlockedWithoutBearerChallenge,false);
+});
