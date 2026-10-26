@@ -5,6 +5,8 @@ import openapi from './openapi.json';
 import { publicReadRate } from './public-rate';
 import { remoteMcp } from './remote-mcp';
 import { oauthConfiguration, authorizeOAuth, protectedResourceMetadata } from './remote-oauth';
+import type { VerifiedOAuthSubject } from './remote-oauth';
+import {resolveLinkedOAuthSubject,linkOAuthSubject,listOAuthLinks,revokeOAuthLink} from './oauth-identity-links';
 import { privateMcpTools, privateScope, executePrivateMcp } from './remote-private';
 import { directory, mutateAddress, ownedAddresses } from './addresses';
 import { sweep } from './cleanup';
@@ -67,8 +69,11 @@ export default {
                     tools:privateMcpTools,
                     scope:privateScope,
                     authorize:async scope=>{
+                        const resolver=env.OAUTH_IDENTITY_LINKS_ENABLED==='true'?
+                            (subject:VerifiedOAuthSubject)=>resolveLinkedOAuthSubject(env.db,subject):undefined;
                         const access=await authorizeOAuth(cfg,request,scope,async accountId=>
-                            (await env.db.prepare('SELECT account_id FROM accounts WHERE account_id=?').bind(accountId).first('account_id'))===accountId);
+                            (await env.db.prepare('SELECT account_id FROM accounts WHERE account_id=?').bind(accountId).first('account_id'))===accountId,
+                            undefined,Date.now,resolver);
                         return access instanceof Response?access:access.accountId;
                     },
                     invoke:(accountId,name,args)=>executePrivateMcp(env,url.origin,accountId,name,args)
@@ -96,6 +101,37 @@ export default {
                 object(input,['challenge']);
                 try{validAccountProofChallenge(input.challenge);}catch{fail(400,'invalid');}
                 return respond({proof:await issueAccountProof(cfg,account.accountId,input.challenge)});
+            }
+            // Owner linking is an explicit two-credential action, never inferred
+            // from an OAuth subject, email, token or MCP tool argument. The
+            // long-lived control goes only to this Weave resource endpoint.
+            if(url.pathname==='/v1/accounts/oauth/links'||url.pathname==='/v1/accounts/oauth/links/revoke'){
+                if(env.OAUTH_IDENTITY_LINKS_ENABLED!=='true')fail(404,'unavailable');
+                if(!account)fail(401,'unauthenticated');
+                if(method==='GET'&&url.pathname==='/v1/accounts/oauth/links'){
+                    if(url.search)fail();
+                    return respond(await listOAuthLinks(env.db,account.accountId));
+                }
+                if(method==='POST'&&url.pathname==='/v1/accounts/oauth/links/revoke'){
+                    const input=await body(request);
+                    object(input,['issuer','resource','subjectDigest']);
+                    return respond(await revokeOAuthLink(env.db,account.accountId,input));
+                }
+                if(method==='POST'&&url.pathname==='/v1/accounts/oauth/links'){
+                    object(await body(request),[]);
+                    let cfg;try{cfg=oauthConfiguration(env,request.url);}catch{fail(503,'storage');}
+                    // This first path requires standard RFC 7662 introspection.
+                    // Native Cloudflare Service Binding accounts already prove UUID ownership.
+                    if(!cfg||'mode' in cfg)fail(503,'storage');
+                    let subject:VerifiedOAuthSubject|null=null;
+                    const access=await authorizeOAuth(cfg,request,'weave:addresses.read',async id=>
+                        (await env.db.prepare('SELECT account_id FROM accounts WHERE account_id=?').bind(id).first('account_id'))===id,
+                        undefined,Date.now,async verified=>{subject=verified;return account.accountId;});
+                    if(access instanceof Response)return access;
+                    if(!subject)fail(503,'storage');
+                    return respond(await linkOAuthSubject(env.db,account.accountId,subject));
+                }
+                fail(404,'unavailable');
             }
             if (method === 'GET' && ['/v1/directory','/v1/directory/address'].includes(url.pathname)) return respond(await atomic(env.db,tx => directory(tx,url)));
             if (method === 'GET' && ['/v1/contacts/cards','/v1/contacts/card'].includes(url.pathname)) return respond(await atomic(env.db,tx => read(tx,url,account?.accountId ?? null)));

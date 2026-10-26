@@ -22,6 +22,8 @@ export interface Env {
     OAUTH_ACCOUNT_PROOF_KEY?: string;
     // Optional, exclusive private RPC alternative to HTTPS RFC7662 introspection.
     AUTH_SERVER?: OAuthServiceBinding;
+    // External issuer/subject requires owner-approved D1 mapping, disabled by default.
+    OAUTH_IDENTITY_LINKS_ENABLED?: string;
     db: Database;
     MAINTENANCE_MODE?: string;
     RECOVERY_READ_ONLY?: string;
