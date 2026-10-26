@@ -8,7 +8,15 @@ Use Node 24.19+ and two existing, independently owned Weave accounts. A trusted 
 
 The publicly deployed demo endpoint has independently verified anonymous MCP discovery, but the external authorization server and live per-account ChatGPT OAuth linking are **not provisioned by this repository or this script**. If the endpoint has only public tools, the script stops before any private write.
 
-Choose **one** sign-in method. For an already provisioned, trusted OAuth AS, register a public native OAuth client with authorization-code + PKCE S256, RFC 8707 resource indicators, and a loopback redirect URI of `http://127.0.0.1:{ephemeral-port}/callback`. Supply its nonsecret `WEAVE_OAUTH_CLIENT_ID` to the parent instead of bearer token variables. The script verifies protected-resource and authorization-server metadata, opens two **separate** browser-consent URLs (one at a time), checks a random state for each loopback callback, and exchanges each code with a fresh PKCE verifier. Access tokens remain in process memory, scoped to the exact `/mcp` resource, and are not written to evidence or journal. The issuer must support RFC 8414 metadata and the same-origin authorization/token endpoints under the configured issuer.
+Choose **one** sign-in method. For an already provisioned, trusted OAuth AS, register a public native OAuth client with authorization-code + PKCE S256, RFC 8707 resource indicators, and a loopback redirect URI of `http://127.0.0.1:{ephemeral-port}/callback`. Supply its nonsecret `WEAVE_OAUTH_CLIENT_ID` to the parent instead of bearer token variables. The script verifies protected-resource and authorization-server metadata, opens two **separate** browser-consent URLs (one at a time), checks a random state for each loopback callback, and exchanges each code with a fresh PKCE verifier. Access tokens remain in process memory, scoped to the exact `/mcp` resource, and are not written to evidence or journal. The issuer must publish RFC 8414 metadata. By default, its authorization
+and token endpoints must share its origin. If an explicitly trusted issuer
+publishes endpoint URLs on **other HTTPS origins**, pre-approve the exact
+scheme/host/port origins (up to eight) without paths, queries, credentials or
+fragments using the optional `WEAVE_OAUTH_TRUSTED_ENDPOINT_ORIGINS` variable,
+for example `https://login.example,https://tokens.example`. The client still
+checks exact issuer metadata, PKCE, state, resource, 900-second expiry and
+no-redirect token exchange. Never use this option to trust arbitrary metadata
+endpoints; HTTP exceptions apply only to explicit local loopback tests.
 
 Alternatively, have an approved secret-injection mechanism supply **both** short-lived bearer tokens to the parent process without printing or storing their values:
 

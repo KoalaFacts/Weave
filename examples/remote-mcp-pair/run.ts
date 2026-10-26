@@ -103,9 +103,16 @@ if(process.argv.includes('--agent')){
         // No private writes until the operator has separately consented to both
         // accounts. No browser-specific CLI or vault is required.
         const clientId=process.env.WEAVE_OAUTH_CLIENT_ID!;
+        // Only an operator-approved exact endpoint origin may extend RFC 8414
+        // issuer-origin routing. The protocol client validates each entry.
+        const configuredOrigins=process.env.WEAVE_OAUTH_TRUSTED_ENDPOINT_ORIGINS;
+        const trustedEndpointOrigins=configuredOrigins===undefined?[]:configuredOrigins.split(',').map(x=>x.trim());
+        if(trustedEndpointOrigins.length>8||trustedEndpointOrigins.some(x=>!x||x.length>512))
+            throw Error('Invalid WEAVE_OAUTH_TRUSTED_ENDPOINT_ORIGINS; provide at most eight exact origins.');
+        const consentOptions={trustedEndpointOrigins};
         const link=(role:'A'|'B')=>(url:string)=>{process.stdout.write('Authorize Weave Agent '+role+' in your browser:\n'+url+'\n');};
-        tokenA=await authorizeMcpAccount(endpoint.href,clientId,link('A'));
-        tokenB=await authorizeMcpAccount(endpoint.href,clientId,link('B'));
+        tokenA=await authorizeMcpAccount(endpoint.href,clientId,link('A'),consentOptions);
+        tokenB=await authorizeMcpAccount(endpoint.href,clientId,link('B'),consentOptions);
     }
     if(tokenA===tokenB)throw Error('Each Agent must authorize a different Weave account.');
     const script=fileURLToPath(import.meta.url);
