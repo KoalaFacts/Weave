@@ -85,6 +85,7 @@ export async function deploy({env=process.env,fetchImpl=fetch,run,root=directory
     const subdomain=await inspect<{subdomain:string}>('/workers/subdomain','Account subdomain');
     if(subdomain.subdomain!==expectedSubdomain)throw Error('Account does not own the authorized weave-389.workers.dev subdomain.');
     const worker=await inspect<WorkerSettings>('/workers/scripts/demo/settings','Existing Worker demo');
+    if(!Array.isArray(worker.bindings))throw Error('Expected one valid existing D1 binding named db.');
     const bindings=Array.isArray(worker.bindings)?worker.bindings.filter(binding=>binding?.name==='db'):[];
     const oauthFlags=Array.isArray(worker.bindings)?worker.bindings.filter(binding=>binding?.name==='OAUTH_IDENTITY_LINKS_ENABLED'):[];
     if(oauthFlags.length>1||oauthFlags.some(binding=>binding.type!=='plain_text'||(binding.text!=='true'&&binding.text!=='false')))
