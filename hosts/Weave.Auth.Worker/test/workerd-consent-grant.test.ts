@@ -132,6 +132,65 @@ test("a foreign browser cannot burn an owner nonce before consent-cookie verific
       body:consentForm(handle,proof)
     });
     assert.equal(replay.status,400,"SDK handle + Durable Object proof can never grant twice");
+
+    // A second independently consented existing account gets a separate grant
+    // even when using the same registered native OAuth client. No shared owner
+    // or simulated token string may satisfy this real workerd/KV boundary.
+    const accountB=randomUUID(),verifierB=randomBytes(32).toString("base64url");
+    const authorizeB=new URL(url);
+    authorizeB.searchParams.set("state","independent-second-agent");
+    authorizeB.searchParams.set("code_challenge",
+      createHash("sha256").update(verifierB).digest("base64url"));
+    const pageB=await mf.dispatchFetch(authorizeB.href,{redirect:"manual"});
+    assert.equal(pageB.status,200);
+    const htmlB=await pageB.text();
+    const handleB=htmlB.match(/name="handle" value="([A-Za-z0-9_-]{43})"/)?.[1];
+    assert.ok(handleB);
+    assert.notEqual(handleB,handle);
+    const cookieB=pageB.headers.getSetCookie().map(x=>x.split(";")[0]).join("; ");
+    const nonceStubB=ns.get(ns.idFromName(handleB));
+    const nonceResultB=await nonceStubB.fetch("https://nonce.internal/nonce");
+    assert.equal(nonceResultB.status,200);
+    const {challenge:nonceB}=await nonceResultB.json() as {challenge:string};
+    assert.notEqual(nonceB,nonce);
+    const proofB=await issueAccountProof({issuer,resource,key},accountB,nonceB);
+
+    const crossNonce=await mf.dispatchFetch(issuer+"/authorize",{
+      method:"POST",redirect:"manual",
+      headers:{"Origin":issuer,"Cookie":cookieB,"Content-Type":"application/x-www-form-urlencoded"},
+      body:consentForm(handleB,proof)
+    });
+    assert.equal(crossNonce.status,400,"an existing first-account proof is not valid for another grant");
+    assert.equal((await nonceStubB.fetch("https://nonce.internal/nonce")).status,200);
+
+    const allowedB=await mf.dispatchFetch(issuer+"/authorize",{
+      method:"POST",redirect:"manual",
+      headers:{"Origin":issuer,"Cookie":cookieB,"Content-Type":"application/x-www-form-urlencoded"},
+      body:consentForm(handleB,proofB)
+    });
+    assert.equal(allowedB.status,302);
+    const redirectB=new URL(allowedB.headers.get("location")!);
+    assert.equal(redirectB.searchParams.get("state"),"independent-second-agent");
+    assert.equal(redirectB.searchParams.get("iss"),issuer);
+    const codeB=redirectB.searchParams.get("code");
+    assert.ok(codeB);
+    const tokenB=await mf.dispatchFetch(tokenEndpoint,{
+      method:"POST",redirect:"manual",
+      headers:{"Content-Type":"application/x-www-form-urlencoded"},
+      body:new URLSearchParams({
+        grant_type:"authorization_code",code:codeB,client_id:clientId,
+        redirect_uri:redirectUri,code_verifier:verifierB,resource
+      }).toString()
+    });
+    assert.equal(tokenB.status,200);
+    const grantB=await tokenB.json() as {access_token?:string;expires_in?:number;resource?:string};
+    assert.ok(grantB.access_token);
+    assert.notEqual(grantB.access_token,grant.access_token);
+    assert.equal(grantB.expires_in,900);
+    assert.equal(grantB.resource,resource);
+    assert.equal((await kv.list({prefix:"grant:"+accountB+":"})).keys.length,1);
+    assert.equal((await kv.list({prefix:"grant:"+account+":"})).keys.length,1,
+      "authorizing a different account must not replace the first account's grant");
   } finally {
     await mf.dispose();
     await rm(storage,{recursive:true,force:true});
