@@ -61,14 +61,18 @@ function options(storage:string,key:string) {
         exports:{ConsentNonce:{type:"durable-object",storage:"sqlite"}}
       }
     },{
-      name:"weave-resource-regression",
-      modules:true,
-      script:resourceWorker,
-      compatibilityDate:"2026-10-13",
-      compatibilityFlags:["nodejs_compat","global_fetch_strictly_public"],
-      serviceBindings:{AUTH_SERVER:"weave-consent-regression"},
-      d1Databases:{ACCOUNTS:"weave-resource-regression-accounts"},
-      bindings:{OAUTH_ISSUER:issuer,OAUTH_RESOURCE:resource}
+      config:{
+        name:"weave-resource-regression",
+        compatibilityDate:"2026-10-13",
+        compatibilityFlags:["nodejs_compat","global_fetch_strictly_public"],
+        manifest:{mainModule:"resource.js",modules:{"resource.js":{type:"esm",contents:resourceWorker}}},
+        env:{
+          AUTH_SERVER:{type:"service",service:"weave-consent-regression",entrypoint:"default"},
+          ACCOUNTS:{type:"d1"},
+          OAUTH_ISSUER:{type:"text",value:issuer},
+          OAUTH_RESOURCE:{type:"text",value:resource}
+        }
+      }
     }]
   };
 }
