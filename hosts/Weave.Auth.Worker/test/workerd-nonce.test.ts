@@ -26,9 +26,11 @@ function options(storage:string) {
   };
 }
 const url='https://nonce.internal/nonce';
-function request(method:'PUT'|'DELETE',challenge:string):Request {
-  return new Request(url,{method,headers:{'Content-Type':'application/json'},
-    body:JSON.stringify({challenge})});
+function request(method:'PUT'|'DELETE',challenge:string) {
+  // Miniflare's fetch overload takes its own Request type. Pass the
+  // structurally compatible init object, not a Node/Workers Request.
+  return {method,headers:{'Content-Type':'application/json'},
+    body:JSON.stringify({challenge})};
 }
 
 test('real workerd consent nonce atomically blocks parallel replay across cold restarts',async()=>{
@@ -45,8 +47,8 @@ test('real workerd consent nonce atomically blocks parallel replay across cold r
     const first=ns.get(ns.idFromName('independent-consent-handle'));
     const challenge=createChallenge(),other=createChallenge();
     assert.equal((await first.fetch(url)).status,404,'no nonce exists before a consent begins');
-    assert.equal((await first.fetch(request('PUT',challenge))).status,201);
-    assert.equal((await first.fetch(request('PUT',other))).status,409,'one handle cannot silently change identity');
+    assert.equal((await first.fetch(url,request('PUT',challenge))).status,201);
+    assert.equal((await first.fetch(url,request('PUT',other))).status,409,'one handle cannot silently change identity');
     const stored=await first.fetch(url);
     assert.equal(stored.status,200);
     assert.equal(stored.headers.get('cache-control'),'no-store');
@@ -59,12 +61,12 @@ test('real workerd consent nonce atomically blocks parallel replay across cold r
     const reopened=await mf.getDurableObjectNamespace('CONSENT_NONCES');
     const second=reopened.get(reopened.idFromName('independent-consent-handle'));
     assert.deepEqual(await (await second.fetch(url)).json(),{challenge});
-    const attempts=await Promise.all(Array.from({length:8},()=>second.fetch(request('DELETE',challenge))));
+    const attempts=await Promise.all(Array.from({length:8},()=>second.fetch(url,request('DELETE',challenge))));
     const statuses=attempts.map(x=>x.status).sort((a,b)=>a-b);
     assert.deepEqual(statuses,[204,...Array.from({length:7},()=>409)],
       'only one parallel authorization can consume a signed proof challenge');
     assert.equal((await second.fetch(url)).status,404,'consumed challenge is no longer available');
-    assert.equal((await second.fetch(request('DELETE',challenge))).status,409,'replay must not reauthorize');
+    assert.equal((await second.fetch(url,request('DELETE',challenge))).status,409,'replay must not reauthorize');
 
     await mf.dispose();mf=undefined;
     mf=new Miniflare(options(storage));
