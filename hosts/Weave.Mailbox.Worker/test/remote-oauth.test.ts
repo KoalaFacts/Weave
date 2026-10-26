@@ -250,3 +250,47 @@ test('RFC7662 introspection rejects redirects without forwarding the bearer or B
     assert.equal(outgoing,1,'never follow the redirect destination');
     assert.equal(accountReads,0,'redirects cannot establish an authorized account');
 });
+
+test('operator-approved split-origin RFC 7662 endpoint can authorize a distinct AS issuer securely',async()=>{
+    const separate='https://token-gateway.example:8443';
+    const split={...config,introspectionUrl:separate+'/oauth/introspect'};
+    const env={
+        OAUTH_ISSUER:config.issuer,OAUTH_RESOURCE:config.resource,
+        OAUTH_INTROSPECTION_URL:split.introspectionUrl,
+        OAUTH_INTROSPECTION_TRUSTED_ORIGIN:separate,
+        OAUTH_CLIENT_ID:config.clientId,OAUTH_CLIENT_SECRET:config.clientSecret
+    };
+    const approved=oauthConfiguration(env,config.resource);
+    assert.deepEqual(approved,split,'a deliberate exact endpoint-origin trust choice must permit split-origin RFC 7662');
+    let introspections=0;
+    const now=Math.floor(Date.now()/1000);
+    const authorized=await authorizeOAuth(approved!,req(),'weave:messages.send',exists,
+        fetchFor(valid(now),(url,init)=>{
+            introspections++;
+            assert.equal(url,split.introspectionUrl,'never redirect or choose an unapproved endpoint');
+            assert.equal(init.redirect,'manual');
+        }),now*1000);
+    assert.deepEqual(authorized,{accountId:id});
+    assert.equal(introspections,1);
+    const bad=await authorizeOAuth(approved!,req(),'weave:messages.send',exists,
+        fetchFor({...valid(now),iss:separate}),now*1000);
+    assert.ok(bad instanceof Response);assert.equal(bad.status,401,'introspection hosting does not change token issuer trust');
+});
+test('cross-origin token endpoint remains default-denied, exact-pinned, and mutually exclusive with private RPC',()=>{
+    const common={OAUTH_ISSUER:config.issuer,OAUTH_RESOURCE:config.resource,
+        OAUTH_INTROSPECTION_URL:'https://token-gateway.example/oauth/introspect',
+        OAUTH_CLIENT_ID:config.clientId,OAUTH_CLIENT_SECRET:config.clientSecret};
+    assert.throws(()=>oauthConfiguration(common,config.resource),'cross-origin introspection needs deliberate opt-in');
+    for(const origin of ['https://different.example','http://token-gateway.example',
+        'https://token-gateway.example/path','https://user@token-gateway.example',
+        'https://token-gateway.example?x=1','https://token-gateway.example#fragment']){
+        assert.throws(()=>oauthConfiguration({...common,OAUTH_INTROSPECTION_TRUSTED_ORIGIN:origin},config.resource),
+            'invalid or non-exact trusted endpoint origin must be rejected: '+origin);
+    }
+    assert.throws(()=>oauthConfiguration({OAUTH_INTROSPECTION_TRUSTED_ORIGIN:'https://token-gateway.example'},config.resource),
+        'trust setting alone must never silently disable OAuth and expose anonymous private operations');
+    assert.throws(()=>oauthConfiguration({
+        OAUTH_ISSUER:config.issuer,OAUTH_RESOURCE:config.resource,
+        AUTH_SERVER:{validateToken:async()=>null},OAUTH_INTROSPECTION_TRUSTED_ORIGIN:'https://token-gateway.example'
+    },config.resource),'one resource must not accept ambiguous providers');
+});
