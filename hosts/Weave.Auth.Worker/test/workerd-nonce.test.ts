@@ -1,5 +1,6 @@
 import assert from 'node:assert/strict';
 import {randomBytes} from 'node:crypto';
+import {readFileSync} from 'node:fs';
 import {mkdtemp,rm} from 'node:fs/promises';
 import {tmpdir} from 'node:os';
 import {join,resolve} from 'node:path';
@@ -12,21 +13,31 @@ import {createChallenge} from '../src/challenge.ts';
 const issuer='https://auth.weave.example';
 const resource='https://demo.weave-389.workers.dev/mcp';
 const localKey=randomBytes(32).toString('base64url');
+const bundled=readFileSync(resolve('dist/index.js'),'utf8');
 function options(storage:string) {
-  // Miniflare 5 accepts a multi-worker config even for one Worker.
+  // Miniflare v5 uses the workerd-native Worker manifest, NOT v4
+  // scriptPath/kvNamespaces shims. Persist the actual SQLite DO database.
   return {
+    resourcePersistencePath:storage,
+    cf:false,
     workers:[{
-      name:'weave-auth-local',
-      modules:true,
-      scriptPath:resolve('dist/index.js'),
-      compatibilityDate:'2026-10-23',
-      compatibilityFlags:['nodejs_compat','global_fetch_strictly_public'],
-      kvNamespaces:['OAUTH_KV'],
-      durableObjects:{CONSENT_NONCES:'ConsentNonce'},
-      durableObjectsPersist:storage,
-      bindings:{OAUTH_ISSUER:issuer,OAUTH_RESOURCE:resource,OAUTH_ACCOUNT_PROOF_KEY:localKey}
-    }],
-    cf:false
+      config:{
+        name:'weave-auth-local',
+        compatibilityDate:'2026-10-23',
+        compatibilityFlags:['nodejs_compat','global_fetch_strictly_public'],
+        manifest:{mainModule:'index.js',modules:{
+          'index.js':{type:'esm',contents:bundled}
+        }},
+        env:{
+          OAUTH_KV:{type:'kv'},
+          CONSENT_NONCES:{type:'durable-object',worker:'weave-auth-local',exportName:'ConsentNonce'},
+          OAUTH_ISSUER:{type:'text',value:issuer},
+          OAUTH_RESOURCE:{type:'text',value:resource},
+          OAUTH_ACCOUNT_PROOF_KEY:{type:'text',value:localKey}
+        },
+        exports:{ConsentNonce:{type:'durable-object',storage:'sqlite'}}
+      }
+    }]
   };
 }
 const url='https://nonce.internal/nonce';
