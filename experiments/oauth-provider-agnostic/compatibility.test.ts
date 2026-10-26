@@ -8,7 +8,8 @@ import {authorizeOAuth,type OAuthConfiguration} from '../../hosts/Weave.Mailbox.
 
 const account='01234567-89ab-4def-8123-456789abcdef';
 const scope='weave:messages.read';
-async function provider(label:string,token:string,lifetime=900,subject=account){
+async function provider(label:string,token:string,lifetime=900,subject=account,
+    discovery:'oauth'|'oidc-inserted'|'oidc-appended'='oauth'){
     let origin='',active=true;
     let codeRecord:{code:string;challenge:string;redirect:string;client:string}|undefined;
     const counts={authorization:0,exchange:0,introspection:0};
@@ -18,7 +19,10 @@ async function provider(label:string,token:string,lifetime=900,subject=account){
         if(req.method==='GET'&&url.pathname==='/.well-known/oauth-protected-resource/mcp'){
             reply({resource,authorization_servers:[issuer]});return;
         }
-        if(req.method==='GET'&&url.pathname==='/.well-known/oauth-authorization-server/'+label){
+        const discoveryPath=discovery==='oauth'? '/.well-known/oauth-authorization-server/'+label:
+            discovery==='oidc-inserted'? '/.well-known/openid-configuration/'+label:
+            '/'+label+'/.well-known/openid-configuration';
+        if(req.method==='GET'&&url.pathname===discoveryPath){
             reply({issuer,authorization_endpoint:issuer+'/authorize',token_endpoint:issuer+'/token',
                 response_types_supported:['code'],grant_types_supported:['authorization_code'],
                 code_challenge_methods_supported:['S256'],authorization_response_iss_parameter_supported:true});return;
@@ -81,6 +85,21 @@ for(const [label,token] of [['issuer-a','opaque.alpha_123'],['issuer-b','opaque.
         }finally{await p.close();}
     });
 }
+
+for(const discovery of ['oidc-inserted','oidc-appended'] as const){
+    test('existing remote MCP client must accept a trusted '+discovery+' OIDC-only issuer via PKCE',async()=>{
+        const p=await provider('oidc-'+discovery,'opaque.oidc-'+discovery,900,account,discovery);
+        try{
+            const token=await p.login();
+            assert.equal(token,'opaque.oidc-'+discovery);
+            const request=new Request(p.resource,{headers:{Authorization:'Bearer '+token}});
+            const access=await authorizeOAuth(p.config,request,scope,async(id)=>id===account);
+            assert.deepEqual(access,{accountId:account});
+            assert.deepEqual(p.counts,{authorization:1,exchange:1,introspection:1});
+        }finally{await p.close();}
+    });
+}
+
 test('Access-shaped opaque token reaches the client but is not silently treated as RFC7662 or a trusted header',async()=>{
     const p=await provider('gateway-fixture','oauth:synthetic-opaque');
     try{
