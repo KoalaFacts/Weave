@@ -71,7 +71,10 @@ export async function buildArtifacts(root: string){
 export async function deploy({env=process.env,fetchImpl=fetch,run,root=directory,openDatabase=openRemoteDatabase,buildBundles=buildArtifacts,convert=normalizeRecords,applySchema=createMissingSchema,planSchema=planLatestSchema}: DeployOptions={}){
     const databaseMode=env.WEAVE_DEPLOY_DATABASE_MODE??'maintain';
     if(databaseMode!=='maintain'&&databaseMode!=='completed-only')throw Error('Unknown database mode; use maintain or completed-only.');
-    const base=JSON.parse(await readFile(join(root,'wrangler.jsonc'),'utf8')),config=deploymentConfig(base,env,root);
+    const base=JSON.parse(await readFile(join(root,'wrangler.jsonc'),'utf8'));
+    const config: ReturnType<typeof deploymentConfig> & {
+        services?: {binding:string;service:string;entrypoint?:string}[]
+    } = deploymentConfig(base,env,root);
     if(!env.CLOUDFLARE_API_TOKEN)throw Error('CLOUDFLARE_API_TOKEN is required; its value is never written to config.');
     const apiRoot='https://api.cloudflare.com/client/v4/accounts/'+config.account_id;
     async function inspect<T>(path: string,label: string,state='no mutation attempted'): Promise<T>{
