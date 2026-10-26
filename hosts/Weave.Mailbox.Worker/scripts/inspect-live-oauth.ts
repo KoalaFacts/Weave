@@ -75,7 +75,14 @@ export async function inspectLiveOAuth({env = process.env, fetchImpl = fetch}: {
     const externalConfigured = externalNames.some(name => !!get(name));
     if (service && (service.type !== 'service' || typeof service.service !== 'string')) problems.push('Invalid AUTH_SERVER binding type');
     if (service && externalConfigured) problems.push('Mixed Service Binding and external introspection modes');
-    if (!service && externalConfigured && !external) problems.push('Incomplete external introspection settings');
+    // Mirror oauthConfiguration(): an external RFC 7662 mode is only usable
+    // with all five required bindings, even if an introspection URL exists.
+    // Only inspect binding presence; never serialize client credentials.
+    const requiredExternal = ['OAUTH_ISSUER', 'OAUTH_RESOURCE', 'OAUTH_INTROSPECTION_URL',
+        'OAUTH_CLIENT_ID', 'OAUTH_CLIENT_SECRET'];
+    const anyExternal = requiredExternal.some(name => !!get(name)) || !!get('OAUTH_INTROSPECTION_TRUSTED_ORIGIN');
+    if (!service && anyExternal && requiredExternal.some(name => !get(name)))
+        problems.push('Incomplete external introspection settings');
     const issuer = get('OAUTH_ISSUER');
     const resourceBinding = get('OAUTH_RESOURCE');
     if (issuer && (issuer.type !== 'plain_text' || typeof issuer.text !== 'string')) problems.push('Invalid OAUTH_ISSUER binding type');
