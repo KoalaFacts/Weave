@@ -56,12 +56,46 @@ export async function linkOAuthSubject(db:Database,owner:string,subject:Verified
         return key;
     });
 }
-export async function listOAuthLinks(db:Database,owner:string):Promise<{items:Array<LinkedSubjectKey&{active:boolean}>;truncated:boolean}> {
+/** Cursor encodes an ordered key, not an authorization credential. Owner scope is
+ * independently checked in every query, including caller-edited continuations. */
+function encodeLinkCursor(key:LinkedSubjectKey):string {
+    const bytes=new TextEncoder().encode(JSON.stringify(key));
+    let binary='';for(const byte of bytes)binary+=String.fromCharCode(byte);
+    return btoa(binary).replace(/\\+/g,'-').replace(/\\//g,'_').replace(/=+$/,'');
+}
+function decodeLinkCursor(value:string):LinkedSubjectKey {
+    if(!value||value.length>4096||!/^[A-Za-z0-9_-]+$/.test(value))fail();
+    let parsed:unknown;
+    try{
+        const binary=atob(value.replace(/-/g,'+').replace(/_/g,'/'));
+        parsed=JSON.parse(new TextDecoder('utf-8',{fatal:true}).decode(
+            Uint8Array.from(binary,char=>char.charCodeAt(0))));
+    }catch{fail();}
+    if(!parsed||typeof parsed!=='object'||Array.isArray(parsed)||
+       Object.keys(parsed).sort().join(',')!=='issuer,resource,subjectDigest')fail();
+    const key=parsed as LinkedSubjectKey;
+    validateKey(key);
+    if(encodeLinkCursor(key)!==value)fail();
+    return key;
+}
+export async function listOAuthLinks(db:Database,owner:string,cursor:string|null=null):Promise<{
+    items:Array<LinkedSubjectKey&{active:boolean}>;truncated:boolean;nextCursor:string|null
+}> {
     uuid(owner);
-    const rows=(await db.prepare('SELECT issuer,resource,subject_digest,revoked_at FROM oauth_identity_links WHERE account_id=? ORDER BY issuer,resource,subject_digest LIMIT 51')
-        .bind(owner).all<{issuer:string;resource:string;subject_digest:string;revoked_at:string|null}>()).results;
-    return {items:rows.slice(0,50).map(row=>({issuer:row.issuer,resource:row.resource,
-        subjectDigest:row.subject_digest,active:row.revoked_at===null})),truncated:rows.length>50};
+    const after=cursor===null?null:decodeLinkCursor(cursor);
+    const sql=after?
+        'SELECT issuer,resource,subject_digest,revoked_at FROM oauth_identity_links WHERE account_id=? AND (issuer,resource,subject_digest)>(?,?,?) ORDER BY issuer,resource,subject_digest LIMIT 51':
+        'SELECT issuer,resource,subject_digest,revoked_at FROM oauth_identity_links WHERE account_id=? ORDER BY issuer,resource,subject_digest LIMIT 51';
+    const query=db.prepare(sql);
+    const rows=(await (after?query.bind(owner,after.issuer,after.resource,after.subjectDigest):query.bind(owner))
+        .all<{issuer:string;resource:string;subject_digest:string;revoked_at:string|null}>()).results;
+    const visible=rows.slice(0,50);
+    const truncated=rows.length>50;
+    const last=visible.at(-1);
+    return {items:visible.map(row=>({issuer:row.issuer,resource:row.resource,
+        subjectDigest:row.subject_digest,active:row.revoked_at===null})),truncated,
+        nextCursor:truncated&&last?encodeLinkCursor({issuer:last.issuer,resource:last.resource,
+            subjectDigest:last.subject_digest}):null};
 }
 export async function revokeOAuthLink(db:Database,owner:string,key:LinkedSubjectKey):Promise<LinkedSubjectKey&{active:false}> {
     uuid(owner);validateKey(key);

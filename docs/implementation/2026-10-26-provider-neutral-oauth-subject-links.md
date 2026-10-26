@@ -27,7 +27,17 @@ cannot be silently claimed by another account even after revocation. Owners
 can view their own digests via `GET /v1/accounts/oauth/links` and revoke one
 with `POST /v1/accounts/oauth/links/revoke` using the exact
 `{issuer,resource,subjectDigest}`, authenticated by Weave control. Revocation
-is immediate on the next private MCP call because the resource performs a
+
+Owner link listings return at most 50 entries, including retained revoked
+history, plus `truncated` and a `nextCursor` continuation when additional
+entries exist. Fetch `GET /v1/accounts/oauth/links?cursor=<nextCursor>` until
+`nextCursor` is null. The cursor identifies an ordered key, **not a bearer or
+permission**; every page is independently restricted to the authenticated
+Weave account. Invalid, duplicate, or unknown query parameters fail closed.
+All retained links remain discoverable for owner revocation, including when
+the first 50 records are revoked. No raw provider subject is disclosed.
+
+Revocation is immediate on the next private MCP call because the resource performs a
 fresh RFC 7662 introspection and D1 mapping read. A deleted account loses
 its linked authorization; an AS outage or missing schema denies access.
 No token, provider password, or control is stored in the link table.

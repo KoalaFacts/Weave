@@ -109,8 +109,9 @@ export default {
                 if(env.OAUTH_IDENTITY_LINKS_ENABLED!=='true')fail(404,'unavailable');
                 if(!account)fail(401,'unauthenticated');
                 if(method==='GET'&&url.pathname==='/v1/accounts/oauth/links'){
-                    if(url.search)fail();
-                    return respond(await listOAuthLinks(env.db,account.accountId));
+                    if([...url.searchParams.keys()].some(key=>key!=='cursor')||
+                        url.searchParams.getAll('cursor').length>1)fail();
+                    return respond(await listOAuthLinks(env.db,account.accountId,url.searchParams.get('cursor')));
                 }
                 if(method==='POST'&&url.pathname==='/v1/accounts/oauth/links/revoke'){
                     const input=await body(request);
