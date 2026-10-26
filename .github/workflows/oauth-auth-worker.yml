@@ -55,7 +55,7 @@ jobs:
           hosts/Weave.Auth.Worker/node_modules/.bin/tsc --noEmit --strict
           --target es2022 --module esnext --moduleResolution bundler
           --allowImportingTsExtensions --lib es2022,dom,dom.iterable
-          --typeRoots hosts/Weave.Auth.Worker/node_modules/@types
+          --typeRoots hosts/Weave.Auth.Worker/node_modules/@types --types node
           experiments/oauth-provider-agnostic/*.ts
       - name: Test unchanged client against independent protocol issuers
         working-directory: .
