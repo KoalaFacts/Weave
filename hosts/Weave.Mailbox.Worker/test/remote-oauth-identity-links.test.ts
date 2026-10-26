@@ -125,15 +125,15 @@ test('real workerd binds a validated external RFC7662 bearer to its consenting o
     const metadata={active:true,iss:issuer,aud:resource,sub:'separate-external-subject',
         iat:now-5,exp:now+120,scope:'weave:addresses.read'};
     let validations=0;
-    // Simulate the single trusted introspection issuer at the actual Worker
-    // outbound-fetch boundary. All other network destinations fail closed.
+    const observed:Array<{target:boolean;method:boolean;basic:boolean;token:boolean}>=[];
+    // Capture only booleans for safe failure diagnosis; the final assertions
+    // reject every unexpected destination, method, credential and token.
     const outboundService=async(request:Request):Promise<Response>=>{
         const url=new URL(request.url);
-        assert.equal(url.href,issuer+'/introspect');
-        assert.equal(request.method,'POST');
-        assert.match(request.headers.get('Authorization')??'',/^Basic /);
         const form=new URLSearchParams(await request.text());
-        assert.equal(form.get('token'),token);
+        observed.push({target:url.href===issuer+'/introspect',method:request.method==='POST',
+            basic:/^Basic /.test(request.headers.get('Authorization')??''),
+            token:form.get('token')===token});
         validations++;
         return new Response(JSON.stringify(metadata),{headers:{'Content-Type':'application/json'}});
     };
@@ -149,7 +149,7 @@ test('real workerd binds a validated external RFC7662 bearer to its consenting o
         },body:JSON.stringify({jsonrpc:'2.0',id:17,method:'tools/call',
             params:{name:'get_my_profile',arguments:{}}})});
         const before=await rpc();
-        assert.equal(before.status,401,'external bearer alone cannot claim an account');
+        assert.equal(before.status,401,'external bearer alone cannot claim an account; outbound='+JSON.stringify(observed));
         const link=async(control:string)=>h.mf.dispatchFetch('https://localhost/v1/accounts/oauth/links',{
             method:'POST',headers:{'X-Weave-Account-Control':control,Authorization:'Bearer '+token,
                 'Content-Type':'application/json'},body:'{}'});
@@ -170,5 +170,6 @@ test('real workerd binds a validated external RFC7662 bearer to its consenting o
         assert.equal(revoked.status,200,await revoked.clone().text());
         assert.equal((await rpc()).status,401,'revocation must take effect on the next real private MCP call');
         assert.ok(validations>=5,'the real Worker must freshly introspect every authorized or denied call');
+        assert.ok(observed.every(x=>x.target&&x.method&&x.basic&&x.token),'the configured issuer, POST, Basic authentication and bearer must all match');
     }finally{await h.close();}
 });
