@@ -67,7 +67,7 @@ function options(storage:string,key:string) {
         compatibilityFlags:["nodejs_compat","global_fetch_strictly_public"],
         manifest:{mainModule:"resource.js",modules:{"resource.js":{type:"esm",contents:resourceWorker}}},
         env:{
-          AUTH_SERVER:{type:"worker",worker:"weave-consent-regression",entrypoint:"default"},
+          AUTH_SERVER:{type:"worker",worker:"weave-consent-regression"},
           ACCOUNTS:{type:"d1"},
           OAUTH_ISSUER:{type:"text",value:issuer},
           OAUTH_RESOURCE:{type:"text",value:resource}
