@@ -1,0 +1,102 @@
+# OAuth provider-agnostic interoperability experiment
+
+User direction (2026-10-26): Weave owns protocol and business authorization,
+not an OAuth management provider. Cloudflare Access Managed OAuth is one
+candidate, not the core contract. This is an isolated experiment: production
+handlers, credentials, deployment settings, schemas and existing PR #252 are
+unchanged. No new authorization server is deployed or required by this spike.
+
+## Executable evidence
+
+```sh
+node --test experiments/oauth-provider-agnostic/*.test.ts
+node experiments/oauth-provider-agnostic/probe.ts https://YOUR-MCP-HOST/mcp
+# Explicit issuer trust is required before the probe fetches issuer metadata:
+node experiments/oauth-provider-agnostic/probe.ts https://YOUR-MCP-HOST/mcp https://YOUR-ISSUER
+```
+
+Use Node 24.19+. The existing OAuth Worker workflow also runs the experiment
+and probes the existing demo anonymously. There is no client registration,
+cloud write, credential access or token issuance in that public probe. The
+probe bounds response bytes/time, refuses redirects and credentials, reports
+only allowlisted diagnostics, and does not trust an advertised issuer without
+an exact operator-supplied issuer. It implements well-known resource metadata
+and RFC 8414/OIDC discovery; it is NOT a full OAuth SDK, a WWW-Authenticate
+parser, or evidence of consent/token-exchange success. `authenticated` is
+always false in a discovery report. HTTP errors are not successful discovery.
+
+The compatibility tests import the **unchanged repository client and resource
+validator**; they do not reimplement those production paths. Two independent
+synthetic issuer origins run on actual loopback HTTP servers. Each checks the
+PKCE verifier, exact redirect, client ID, resource, authorization code and
+scope, then exercises RFC 7662 and immediate revocation. A simulated browser
+callback is not a real user's consent. Local tests use copied production files
+whose Git blob hashes are verified; CI imports the real checkout directly.
+
+| Experiment | Assertion |
+| --- | --- |
+| Two synthetic issuers | Same client and resource code work using different metadata/configuration; token contents are opaque to the client. |
+| Access-shaped `oauth:` token | The client retains it unchanged, but the current RFC 7662 ingress rejects it. This is a characterization, not an attempt to bypass Access or broaden bearer grammar. |
+| Forged Access header | A bare `Cf-Access-Jwt-Assertion` never grants access. |
+| External non-UUID subject | Current resource validation rejects it before account lookup. No guessed/email-based account linking. |
+| 3600-second lifetime | Current client rejects it under the existing 900-second policy; the spike does not relax policy. |
+| Discovery variants | Resource-path/root metadata, RFC 8414/OIDC tenant locations and explicitly selected issuer work; malformed, oversized, redirected, untrusted and unsafe responses fail closed. |
+
+A passing characterization test can document an **unsupported integration**.
+It does not mean Cloudflare Managed OAuth or any commercial provider has been
+successfully connected. These tests use no real vendor credentials or agents.
+
+## Findings and proposed boundary
+
+1. Keep OAuth authorization-code/PKCE, metadata, resource/audience, expiry,
+   revocation and scope rules in protocol-facing components. RFC 7662 and a
+   separately validated JWT access-token profile are protocol choices; provider
+   branding and token-shape guessing must not select trust implicitly.
+2. Resolve a validated `(issuer, subject)` to authorized Weave account(s)
+   separately. `sub` is not generally a Weave UUID; switching issuers must not
+   link identities by a bare subject or email. Account linking/consent remains
+   an explicit business authorization operation, not something a metadata
+   document or request argument can grant.
+3. The existing Cloudflare Service Binding path is provider-specific. Keep it
+   outside the provider-neutral core if retained. A core request contract must
+   not require a Workers binding, Cloudflare SDK, tenant cookie or header.
+4. Cloudflare **Access Managed OAuth** is different from the Workers OAuth
+   Provider library already used by the optional AS example. Official Access
+   docs describe an opaque token resolved at the edge and a signed
+   `Cf-Access-Jwt-Assertion` forwarded to the origin. This is not a documented
+   interchangeable RFC 7662 endpoint. A deployment adapter would have to
+   validate signature/JWKS, exact issuer and Access application audience,
+   expiry and origin trust before explicit Weave identity/permission mapping.
+   Access application admission must not be turned into blanket Weave scopes.
+   Do not enable Access over an existing independent OAuth flow indiscriminately:
+   it replaces the application's 401 challenge behavior.
+5. The 900-second lifetime is current Weave policy, not a universal OAuth
+   protocol requirement. Negotiate/configure compatible lifetimes explicitly;
+   never silently remove the limit to make a vendor test pass.
+
+## Real Managed OAuth acceptance still required
+
+No accessible configured Access test application or Access management connector
+was available to this session. An existing isolated application URL, approved
+Access application configuration and interactive user login are needed to test
+actual discovery, registration/client policy, PKCE, private-tool scopes,
+issuer/subject mapping and revocation. Do not send credentials in chat. A
+public demo discovery probe cannot substitute for that live test. Do not
+advertise the GitHub plugin as connected on the strength of these results.
+
+Before any production adapter change: keep #252's pending client corrections,
+write failing behavioral tests for the chosen protocol contract and preserve
+existing security/full-suite gates. No production refactor or merge is claimed
+by this experimental branch.
+
+## Primary sources checked 2026-10-26
+
+- MCP 2025-11-25 authorization, including RFC 9728 and RFC 8414/OIDC discovery:
+  https://modelcontextprotocol.io/specification/2025-11-25/basic/authorization
+- RFC 7662 token introspection:
+  https://www.rfc-editor.org/rfc/rfc7662
+- Cloudflare Access Managed OAuth, opaque tokens, forwarded assertions and
+  application configuration (not the Workers OAuth Provider library):
+  https://developers.cloudflare.com/cloudflare-one/access-controls/applications/http-apps/managed-oauth/
+- Access JWT validation:
+  https://developers.cloudflare.com/cloudflare-one/access-controls/applications/http-apps/authorization-cookie/validating-json/
