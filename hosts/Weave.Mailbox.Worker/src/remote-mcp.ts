@@ -96,7 +96,7 @@ export async function remoteMcp(request: Request, read: DirectoryRead, privateAc
         const text = await boundedText(request.body, requestLimit, privateAccess ? async () => {
             // Do not raise the 16 KiB public request cap merely because an
             // Authorization header exists: verify the exact send scope first.
-            if (!/^Bearer [^\\s]+$/i.test(request.headers.get('authorization') ?? '')
+            if (!/^Bearer [^\s]+$/i.test(request.headers.get('authorization') ?? '')
                 || privateAccess.scope('send_message') !== 'weave:messages.send') return false;
             try {
                 const owner = await privateAccess.authorize('weave:messages.send');
