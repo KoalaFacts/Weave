@@ -134,3 +134,16 @@ by this experimental branch.
   https://developers.cloudflare.com/cloudflare-one/access-controls/applications/http-apps/managed-oauth/
 - Access JWT validation:
   https://developers.cloudflare.com/cloudflare-one/access-controls/applications/http-apps/authorization-cookie/validating-json/
+
+## RFC 7591 public-client registration compatibility
+
+The runnable two-process Node client may omit `WEAVE_OAUTH_CLIENT_ID` only
+when the trusted issuer advertises a `registration_endpoint`. It then
+registers each consent session independently as a **public** code/PKCE
+client, restricted to its ephemeral loopback redirect URI. Registration
+and token calls use HTTPS outside loopback tests, bounded JSON, no redirects,
+no credentials, and exact operator-approved issuer/endpoint origins. Returned
+client secrets or untrusted redirect registrations are rejected before
+browser consent. Pre-registered client IDs are still supported unchanged.
+This is RFC 7591 interoperability, not Cloudflare provisioning, consent,
+external-subject linking, or live demo acceptance.

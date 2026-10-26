@@ -96,13 +96,11 @@ if(process.argv.includes('--agent')){
     if(!process.env.WEAVE_EVIDENCE_PATH)throw Error('Provide WEAVE_EVIDENCE_PATH for an exclusive redacted receipt.');
     if(Boolean(providedA)!==Boolean(providedB))
         throw Error('Both pre-issued bearer tokens must be supplied together; never fall back to a shared account.');
-    if(!providedA&&!process.env.WEAVE_OAUTH_CLIENT_ID)
-        throw Error('Supply two separately authorized bearer tokens or a registered WEAVE_OAUTH_CLIENT_ID for PKCE consent.');
     let tokenA=providedA??'',tokenB=providedB??'';
     if(!tokenA){
         // No private writes until the operator has separately consented to both
         // accounts. No browser-specific CLI or vault is required.
-        const clientId=process.env.WEAVE_OAUTH_CLIENT_ID!;
+        const clientId=process.env.WEAVE_OAUTH_CLIENT_ID??''; // Empty: RFC 7591 DCR, if advertised by approved issuer.
         // Only an operator-approved exact endpoint origin may extend RFC 8414
         // issuer-origin routing. The protocol client validates each entry.
         const configuredOrigins=process.env.WEAVE_OAUTH_TRUSTED_ENDPOINT_ORIGINS;

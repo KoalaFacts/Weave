@@ -64,7 +64,8 @@ export async function authorizeMcpAccount(resource:string,clientId:string,
     }
     const endpoint=validEndpoint(resource,allowLoopback);
     if(endpoint.pathname!=='/mcp'||endpoint.search)throw Error('OAuth resource must be the exact /mcp URL');
-    if(!/^[\x21-\x7e]{1,128}$/.test(clientId))throw Error('Invalid public OAuth client ID');
+    // An empty client ID requests RFC 7591 dynamic registration. Nonempty IDs are operator-provisioned.
+    if(clientId&&!/^[\x21-\x7e]{1,128}$/.test(clientId))throw Error('Invalid public OAuth client ID');
     const scopes=options.scopes??[...allowedScopes];
     if(!scopes.length||scopes.some(x=>!allowedScopes.has(x))||new Set(scopes).size!==scopes.length)
         throw Error('Unsupported OAuth scope request');
@@ -84,6 +85,14 @@ export async function authorizeMcpAccount(resource:string,clientId:string,
         throw Error('Untrusted OAuth issuer or authorization-code PKCE S256 unsupported');
     const authorization=sameIssuerUrl(metadata.authorization_endpoint,issuer,allowLoopback,trustedOrigins);
     const tokenEndpoint=sameIssuerUrl(metadata.token_endpoint,issuer,allowLoopback,trustedOrigins);
+    // Discover but never blindly contact an untrusted registration origin.
+    // Dynamic registration is entirely optional when the operator supplies a client ID.
+    const registrationEndpoint=clientId?null:
+        (typeof metadata.registration_endpoint==='string'
+            ?sameIssuerUrl(metadata.registration_endpoint,issuer,allowLoopback,trustedOrigins)
+            :null);
+    if(!clientId&&!registrationEndpoint)
+        throw Error('OAuth issuer does not advertise an approved registration endpoint');
     const verifier=randomBytes(32).toString('base64url');
     const challenge=createHash('sha256').update(verifier).digest('base64url');
     const state=randomBytes(32).toString('base64url');
@@ -94,8 +103,26 @@ export async function authorizeMcpAccount(resource:string,clientId:string,
     try{
         const addr=server.address();if(!addr||typeof addr==='string')throw Error('OAuth loopback callback did not bind');
         const redirectUri=`http://127.0.0.1:${addr.port}/callback`;
+        let selectedClientId=clientId;
+        if(registrationEndpoint){
+            // RFC 7591: register only this ephemeral loopback callback as a public
+            // authorization-code/PKCE client. Never accept or persist a client secret.
+            const registration=await boundedJson(registrationEndpoint,{
+                method:'POST',headers:{'Content-Type':'application/json','Accept':'application/json'},
+                body:JSON.stringify({client_name:'Weave remote MCP client',
+                    redirect_uris:[redirectUri],token_endpoint_auth_method:'none',
+                    grant_types:['authorization_code'],response_types:['code'],scope:scopes.join(' ')})
+            },allowLoopback);
+            if(typeof registration.client_id!=='string'||!/^[\x21-\x7e]{1,128}$/.test(registration.client_id)||
+                registration.client_secret!==undefined||
+                (registration.token_endpoint_auth_method!==undefined&&registration.token_endpoint_auth_method!=='none')||
+                (registration.redirect_uris!==undefined&&
+                    (!Array.isArray(registration.redirect_uris)||!registration.redirect_uris.includes(redirectUri))))
+                throw Error('Invalid OAuth public client registration response');
+            selectedClientId=registration.client_id;
+        }
         const url=new URL(authorization);
-        for(const [key,value] of Object.entries({response_type:'code',client_id:clientId,redirect_uri:redirectUri,
+        for(const [key,value] of Object.entries({response_type:'code',client_id:selectedClientId,redirect_uri:redirectUri,
             state,code_challenge:challenge,code_challenge_method:'S256',resource:endpoint.href,scope:scopes.join(' ')}))
             url.searchParams.set(key,value);
         let timer:ReturnType<typeof setTimeout>|undefined;
@@ -134,7 +161,7 @@ export async function authorizeMcpAccount(resource:string,clientId:string,
             await onAuthorizationUrl(url.href);
             const code=await authorizationCode;
             const form=new URLSearchParams({grant_type:'authorization_code',code,redirect_uri:redirectUri,
-                client_id:clientId,code_verifier:verifier,resource:endpoint.href});
+                client_id:selectedClientId,code_verifier:verifier,resource:endpoint.href});
             const token=await boundedJson(tokenEndpoint,{method:'POST',headers:{'Content-Type':'application/x-www-form-urlencoded',
                 Accept:'application/json'},body:form},allowLoopback);
             if(typeof token.access_token!=='string'||!token.access_token||token.access_token.length>4096||
