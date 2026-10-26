@@ -30,8 +30,7 @@ test('real D1 external-subject links require an owner and revoke immediately wit
         const buildResult=await build({entryPoints:['src/oauth-identity-links.ts'],bundle:true,write:false,
             platform:'node',format:'esm',logLevel:'silent'});
         const bundled='data:text/javascript;base64,'+Buffer.from(buildResult.outputFiles[0].contents).toString('base64');
-        const {linkOAuthSubject,resolveLinkedOAuthSubject,revokeOAuthLink,oauthSubjectDigest}=await import(bundled)
-            as typeof import('../src/oauth-identity-links.ts');
+        const {linkOAuthSubject,resolveLinkedOAuthSubject,revokeOAuthLink,oauthSubjectDigest}=await import(bundled) as typeof import('../src/oauth-identity-links.ts');
         const a=await h.register(),b=await h.register();
         const first={issuer:'https://issuer.example',resource:'https://localhost/mcp',subject:'provider-only-opaque-subject'};
         assert.equal(await resolveLinkedOAuthSubject(h.db,first),null);
@@ -67,8 +66,7 @@ test('real D1 map supplies only an explicitly linked RFC 7662 subject to resourc
         const compiled=await build({entryPoints:['src/oauth-identity-links.ts'],bundle:true,write:false,
             platform:'node',format:'esm',logLevel:'silent'});
         const {linkOAuthSubject,resolveLinkedOAuthSubject,revokeOAuthLink}=await import(
-            'data:text/javascript;base64,'+Buffer.from(compiled.outputFiles[0].contents).toString('base64'))
-            as typeof import('../src/oauth-identity-links.ts');
+            'data:text/javascript;base64,'+Buffer.from(compiled.outputFiles[0].contents).toString('base64')) as typeof import('../src/oauth-identity-links.ts');
         const {authorizeOAuth}=await import('../src/remote-oauth.ts');
         const account=await h.register(),other=await h.register();
         const now=Math.floor(Date.now()/1000);
