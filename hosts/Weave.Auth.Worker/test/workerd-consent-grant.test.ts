@@ -6,7 +6,7 @@ import {tmpdir} from "node:os";
 import {join,resolve} from "node:path";
 import {test} from "node:test";
 import {Miniflare} from "miniflare";
-import ts from "typescript";
+import {stripTypeScriptTypes} from "node:module";
 import {issueAccountProof} from "../../Weave.Mailbox.Worker/src/account-proof.ts";
 
 const issuer="https://auth.weave.example";
@@ -16,10 +16,10 @@ const redirectUri="http://127.0.0.1:53621/callback";
 const bundled=readFileSync(resolve("dist/index.js"),"utf8");
 // Execute the real Weave resource authorization module in a separate workerd
 // isolate. No mock token validator or canned claims may stand in for the AS.
-const resourceAuthorization=ts.transpileModule(
+const resourceAuthorization=stripTypeScriptTypes(
   readFileSync(resolve("../Weave.Mailbox.Worker/src/remote-oauth.ts"),"utf8"),
-  {compilerOptions:{module:ts.ModuleKind.ESNext,target:ts.ScriptTarget.ES2022}}
-).outputText;
+  {mode:"strip"}
+);
 const resourceWorker=resourceAuthorization+`
 export default {
   async fetch(request,env){
@@ -235,7 +235,7 @@ test("a foreign browser cannot burn an owner nonce before consent-cookie verific
     await db.prepare("INSERT INTO accounts (account_id) VALUES (?)").bind(account).run();
     await db.prepare("INSERT INTO accounts (account_id) VALUES (?)").bind(accountB).run();
     const worker=await mf.getWorker("weave-resource-regression");
-    async function identify(token:string):Promise<Response>{
+    async function identify(token:string){
       return worker.fetch(resource,{method:"POST",headers:{Authorization:"Bearer "+token}});
     }
     const ownerA=await identify(grant.access_token!);
