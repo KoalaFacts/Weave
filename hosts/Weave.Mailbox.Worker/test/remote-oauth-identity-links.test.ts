@@ -180,13 +180,15 @@ test('real workerd binds a validated external RFC7662 bearer to its consenting o
 
 test('two separate external OAuth identities complete real D1 private MCP contact and six-message ACK recovery',async()=>{
     const issuer='https://issuer.example',resource='https://localhost/mcp';
+    const introspectionOrigin='https://trusted-token-service.example';
+    const introspectionUrl=introspectionOrigin+'/introspect';
     const accessA='opaque-owner-A',accessB='opaque-owner-B';
     const subjectA='issuer-local-A',subjectB='issuer-local-B';
     const allScopes='weave:addresses.read weave:addresses.write weave:contacts.read weave:contacts.write weave:messages.read weave:messages.send weave:messages.ack';
     const subjects=new Map([[accessA,subjectA],[accessB,subjectB]]);
     const observed=new Map<string,number>();
     const outboundService=async(request:Request):Promise<Response>=>{
-        assert.equal(request.url,issuer+'/introspect','tokens go only to the configured AS');
+        assert.equal(request.url,introspectionUrl,'tokens go only to the exact operator-approved HTTPS introspection endpoint');
         assert.equal(request.method,'POST');
         assert.match(request.headers.get('Authorization')??'',/^Basic /);
         assert.equal(request.headers.has('X-Weave-Account-Control'),false,
@@ -202,7 +204,8 @@ test('two separate external OAuth identities complete real D1 private MCP contac
     };
     const persist=await mkdtemp(join(tmpdir(),'weave-external-oauth-mcp-'));
     const bindings={OAUTH_IDENTITY_LINKS_ENABLED:'true',OAUTH_ISSUER:issuer,
-        OAUTH_RESOURCE:resource,OAUTH_INTROSPECTION_URL:issuer+'/introspect',
+        OAUTH_RESOURCE:resource,OAUTH_INTROSPECTION_URL:introspectionUrl,
+        OAUTH_INTROSPECTION_TRUSTED_ORIGIN:introspectionOrigin,
         OAUTH_CLIENT_ID:'protocol-client',OAUTH_CLIENT_SECRET:'isolated-test-only-client-secret'};
     let h=await start({persist,outboundService,bindings});
     let sequence=200;
