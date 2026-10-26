@@ -104,7 +104,13 @@ test("a foreign browser cannot burn an owner nonce before consent-cookie verific
     const code=redirect.searchParams.get("code");
     assert.ok(code,"authorization code must be returned after explicit consent");
 
-    const token=await mf.dispatchFetch(issuer+"/token",{
+    // Discover the SDK's actual token endpoint; v1.2.4 defaults to
+    // /oauth/token, not /token. A native MCP client must do the same.
+    const metadata=await mf.dispatchFetch(issuer+"/.well-known/oauth-authorization-server");
+    assert.equal(metadata.status,200);
+    const {token_endpoint:tokenEndpoint}=await metadata.json() as {token_endpoint:string};
+    assert.equal(new URL(tokenEndpoint).origin,issuer);
+    const token=await mf.dispatchFetch(tokenEndpoint,{
       method:"POST",redirect:"manual",
       headers:{"Content-Type":"application/x-www-form-urlencoded"},
       body:new URLSearchParams({
