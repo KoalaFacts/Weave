@@ -110,7 +110,9 @@ export async function authorizeMcpAccount(resource:string,clientId:string,
         catch(error){if(!(error instanceof OAuthDiscoveryNotFound))throw error;}
     }
     if(!metadata)throw Error('OAuth issuer does not expose RFC 8414 or OpenID Connect metadata');
-    if(metadata.issuer!==selectedIssuer||
+    const responseIssuerFlag=metadata.authorization_response_iss_parameter_supported;
+    if((responseIssuerFlag!==undefined&&typeof responseIssuerFlag!=='boolean')||
+        metadata.issuer!==selectedIssuer||
         !Array.isArray(metadata.response_types_supported)||!metadata.response_types_supported.includes('code')||
         (metadata.grant_types_supported!==undefined&&(!Array.isArray(metadata.grant_types_supported)||!metadata.grant_types_supported.includes('authorization_code')))||
         !Array.isArray(metadata.code_challenge_methods_supported)||!metadata.code_challenge_methods_supported.includes('S256'))
@@ -178,6 +180,13 @@ export async function authorizeMcpAccount(resource:string,clientId:string,
                 if(supplied.length!==1||suppliedBuffer.length!==stateBuffer.length||
                     !timingSafeEqual(suppliedBuffer,stateBuffer)){
                     res.writeHead(400);res.end('Invalid OAuth state');done(Error('OAuth callback state mismatch'));return;
+                }
+                // RFC 9207: the returned issuer must match the trusted AS,
+                // especially when the AS advertises issuer identification.
+                const issuers=requestUrl.searchParams.getAll('iss');
+                if(issuers.length>1||(issuers.length===0&&responseIssuerFlag===true)||
+                    (issuers.length===1&&issuers[0]!==metadata.issuer)){
+                    res.writeHead(400);res.end('Invalid OAuth issuer');done(Error('OAuth callback issuer mismatch'));return;
                 }
                 const code=requestUrl.searchParams.getAll('code');
                 if(requestUrl.searchParams.has('error')||code.length!==1||!code[0]||code[0].length>4096){
