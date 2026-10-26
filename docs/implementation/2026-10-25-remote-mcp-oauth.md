@@ -183,3 +183,27 @@ Service Binding result. The binding's validated token does not supply `iss`;
 the trusted issuer is pinned by the operator's binding configuration and the
 AS itself must enforce its token issuer, PKCE and audience during issuance.
 This is not a claim that any existing login service is connected.
+
+## Releasing after operator-provisioned OAuth (source-only, not deployment approval)
+
+The normal `deploy-weave-worker` workflow must not create an authorization
+server, OAuth client secret, account-proof signing secret, or D1 link table.
+Once an operator has **separately** provisioned the trusted private
+`AUTH_SERVER` Service Binding on the existing `demo` Worker, a later
+code-only demo release must keep that exact already-installed binding
+through its maintenance, recovery-version and active deployments. The
+release controller reads the existing binding from Cloudflare settings,
+refuses unknown/mismatched targets or mixed RFC 7662 configuration,
+reconstructs only the pre-existing Worker binding in temporary Wrangler
+configuration, and confirms the binding plus exact issuer/resource settings
+after each stage before progressing. An optional existing first-party
+`OAUTH_ACCOUNT_PROOF_KEY` remains in Cloudflare secret storage and is
+validated by binding name/type only; its value is never loaded into
+configuration or evidence. The proof key is not required for an
+independently approved OAuth provider with another valid consent path.
+
+This preserves compatibility with **already-approved** settings. It grants
+no authorization to install a Service Binding, configure a new issuer,
+change secrets, run live D1 migrations, or deploy OAuth to the public demo.
+The concrete owner consent, AS, token, deployment and two real public
+Agent end-to-end acceptance remain separate prerequisites.

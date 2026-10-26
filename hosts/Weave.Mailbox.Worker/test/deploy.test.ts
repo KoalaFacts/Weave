@@ -312,10 +312,24 @@ test('untrusted or malformed Service Bindings cannot be smuggled into a code-onl
         [...existingAuthService.map(b=>b.name==='AUTH_SERVER'?{...b,service:'../bad-target'}:b)],
         [...existingAuthService.map(b=>b.name==='AUTH_SERVER'?{...b,service:'demo'}:b)],
         [...existingAuthService.map(b=>b.name==='AUTH_SERVER'?{...b,environment:'unreviewed'}:b)],
-        existingAuthService.filter(b=>b.name!=='OAUTH_ACCOUNT_PROOF_KEY')
+        [...existingAuthService.map(b=>b.name==='AUTH_SERVER'?{...b,entrypoint:'../bad'}:b)]
     ]){
         const f=fixture({bindingResult});
         await assert.rejects(deploy(f.options),/Service Binding|service binding|OAuth|Unexpected existing resource bindings/);
         assert.equal(f.commands.length,0);
+    }
+});
+
+test('a previously approved OAuth Service Binding can use default or named RPC entrypoint without requiring optional first-party proof',async()=>{
+    for(const entrypoint of [undefined,'AuthServer']){
+        const bindingResult=existingAuthService.filter(b=>b.name!=='OAUTH_ACCOUNT_PROOF_KEY').map(b=>
+            b.name==='AUTH_SERVER'&&entrypoint?{...b,entrypoint}:b);
+        const f=fixture({bindingResult});
+        await deploy(f.options);
+        for(const config of f.configs){
+            assert.deepEqual(config.services,[{binding:'AUTH_SERVER',service:'approved-auth-worker',...(entrypoint?{entrypoint}:{})}]);
+            assert.ok(!JSON.stringify(config).includes('OAUTH_ACCOUNT_PROOF_KEY'));
+        }
+        assert.deepEqual(f.events,['maintenance','convert','schema','recovery','active']);
     }
 });

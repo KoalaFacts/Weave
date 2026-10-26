@@ -15,7 +15,7 @@ interface WorkerConfig {
     d1_databases: {binding:string;database_id:string;database_name:string;remote?:boolean;[key:string]:unknown}[];
     [key:string]: unknown;
 }
-interface Binding {name:string;type:string;id?:string;text?:unknown;}
+interface Binding {name:string;type:string;id?:string;text?:unknown;service?:string;environment?:string;entrypoint?:string;}
 interface WorkerSettings {bindings:Binding[];}
 interface CommandResult {status:number|null;stdout?:string;stderr?:string;}
 interface DatabaseConnection {db:StorageDatabase;close:()=>Promise<void>;}
@@ -43,6 +43,7 @@ const expectedSubdomain='weave-389';
 const demoSchemaPolicy={omitUnapprovedOAuthIdentityLinks:true} as const;
 export function deploymentConfig(base: WorkerConfig,env: NodeJS.ProcessEnv,root=directory){
     if(base.name!=='demo'||base.d1_databases?.length!==1||base.d1_databases[0].binding!=='db')throw Error('Expected existing Worker demo and binding db.');
+    if(base.services!==undefined)throw Error('OAuth Service Bindings must be provisioned separately by an operator, not by this generic release.');
     if(!/^[a-f0-9]{32}$/i.test(env.CLOUDFLARE_ACCOUNT_ID??''))throw Error('CLOUDFLARE_ACCOUNT_ID must identify the existing account.');
     // Business sweeps stay disabled for this demo, including with inherited environment values.
     const vars={...base.vars,CLEANUP_MAX_MESSAGES:'0',CLEANUP_TIME_BUDGET_MS:'0'};
@@ -85,9 +86,49 @@ export async function deploy({env=process.env,fetchImpl=fetch,run,root=directory
     const oauthFlags=Array.isArray(worker.bindings)?worker.bindings.filter(binding=>binding?.name==='OAUTH_IDENTITY_LINKS_ENABLED'):[];
     if(oauthFlags.length>1||oauthFlags.some(binding=>binding.type!=='plain_text'||(binding.text!=='true'&&binding.text!=='false')))
         throw Error('Invalid existing OAuth identity links setting; no mutation attempted.');
+    // A previously approved private OAuth AS may already be bound by an
+    // operator. Recreate only that exact existing service binding for all
+    // three Wrangler stages; --keep-vars preserves variables, not services.
+    // Never introduce a new service target or copy a signing secret to config.
+    const authBindings=worker.bindings.filter(binding=>binding?.name==='AUTH_SERVER');
+    if(authBindings.length>1)throw Error('Ambiguous existing AUTH_SERVER OAuth Service Binding; no mutation attempted.');
+    const authBinding=authBindings[0];
+    const oauthExisting=new Map<string,Binding>();
+    if(authBinding){
+        if(authBinding.type!=='service'||typeof authBinding.service!=='string'||
+            !/^[a-z0-9](?:[a-z0-9-]{0,61}[a-z0-9])?$/.test(authBinding.service)||
+            authBinding.service==='demo'||authBinding.environment!==undefined||
+            (authBinding.entrypoint!==undefined&&!/^[A-Za-z_$][A-Za-z0-9_$]{0,127}$/.test(authBinding.entrypoint)))
+            throw Error('Invalid existing AUTH_SERVER OAuth Service Binding; no mutation attempted.');
+        for(const [name,type] of [
+            ['OAUTH_ISSUER','plain_text'],['OAUTH_RESOURCE','plain_text']
+        ]){
+            const found=worker.bindings.filter(binding=>binding?.name===name);
+            if(found.length!==1||found[0].type!==type)throw Error('Incomplete existing OAuth Service Binding; no mutation attempted.');
+            oauthExisting.set(name,found[0]);
+        }
+        // The first-party proof route is opt-in independently of the trusted
+        // authorization Service Binding. Preserve a pre-existing signing secret
+        // without requiring this provider-specific ownership ceremony.
+        const proofs=worker.bindings.filter(binding=>binding?.name==='OAUTH_ACCOUNT_PROOF_KEY');
+        if(proofs.length>1||proofs.some(binding=>binding.type!=='secret_text'))
+            throw Error('Invalid existing OAuth account-proof key binding; no mutation attempted.');
+        if(proofs.length===1)oauthExisting.set('OAUTH_ACCOUNT_PROOF_KEY',proofs[0]);
+        let issuer:URL;
+        try{issuer=new URL(oauthExisting.get('OAUTH_ISSUER')!.text as string);}
+        catch{throw Error('Invalid existing OAuth issuer; no mutation attempted.');}
+        if(issuer.protocol!=='https:'||issuer.username||issuer.password||issuer.search||issuer.hash||
+            typeof oauthExisting.get('OAUTH_ISSUER')!.text!=='string'||
+            oauthExisting.get('OAUTH_RESOURCE')!.text!=='https://demo.weave-389.workers.dev/mcp')
+            throw Error('Invalid existing OAuth resource or issuer; no mutation attempted.');
+        if(['OAUTH_INTROSPECTION_URL','OAUTH_CLIENT_ID','OAUTH_CLIENT_SECRET','OAUTH_INTROSPECTION_TRUSTED_ORIGIN']
+            .some(name=>worker.bindings.some(binding=>binding.name===name)))
+            throw Error('Mixed OAuth Service Binding and RFC7662 introspection settings; no mutation attempted.');
+        config.services=[{binding:'AUTH_SERVER',service:authBinding.service,...(authBinding.entrypoint?{entrypoint:authBinding.entrypoint}:{})}];
+    }
     const binding=bindings[0];
     if(bindings.length!==1||binding?.type!=='d1'||!/^[a-f0-9]{8}(?:-[a-f0-9]{4}){3}-[a-f0-9]{12}$/i.test(binding.id??'')||binding.id==='00000000-0000-0000-0000-000000000000')throw Error('Expected one valid existing D1 binding named db.');
-    if(worker.bindings.some(binding=>!['plain_text','json','secret_text'].includes(binding?.type)&&!(binding?.type==='d1'&&binding.name==='db')))throw Error('Unexpected existing resource bindings; refusing to overwrite them.');
+    if(worker.bindings.some(binding=>!['plain_text','json','secret_text'].includes(binding?.type)&&!(binding?.type==='d1'&&binding.name==='db')&&binding!==authBinding))throw Error('Unexpected existing resource bindings; refusing to overwrite them.');
     const database=await inspect<{uuid:string;name:string}>('/d1/database/'+binding.id,'Existing D1 database');
     if(database.uuid!==binding.id||typeof database.name!=='string'||!/^[a-zA-Z0-9_-]+$/.test(database.name))throw Error('Existing D1 identity does not match its Worker binding or has an invalid name.');
     config.d1_databases[0].database_id=database.uuid;
@@ -114,6 +155,19 @@ export async function deploy({env=process.env,fetchImpl=fetch,run,root=directory
         }
         function verifySettings(deployed: WorkerSettings,maintenance: string){
             if(!Array.isArray(deployed.bindings))throw Error('Worker settings have invalid bindings; stopping.');
+            const foundAuth=deployed.bindings.filter(binding=>binding?.name==='AUTH_SERVER');
+            if(authBinding){
+                if(foundAuth.length!==1||foundAuth[0].type!=='service'||foundAuth[0].service!==authBinding.service||
+                    foundAuth[0].entrypoint!==authBinding.entrypoint||foundAuth[0].environment!==undefined)
+                    throw Error('Existing AUTH_SERVER OAuth Service Binding not confirmed; stopping before schema writes.');
+                for(const [name,before] of oauthExisting){
+                    const now=deployed.bindings.filter(binding=>binding?.name===name);
+                    if(now.length!==1||now[0].type!==before.type||
+                        (before.type==='plain_text'&&now[0].text!==before.text))
+                        throw Error('Existing OAuth setting '+name+' not confirmed; stopping before schema writes.');
+                }
+            }else if(foundAuth.length)throw Error('Unexpected new AUTH_SERVER OAuth Service Binding; refusing the release.');
+
             for(const [name,value] of Object.entries({...config.vars,MAINTENANCE_MODE:maintenance})){
                 const found=deployed.bindings.filter(binding=>binding?.name===name);
                 if(found.length!==1||found[0].type!=='plain_text'||found[0].text!==value)throw Error('Worker '+name+' is not confirmed against configuration; stopping.');
