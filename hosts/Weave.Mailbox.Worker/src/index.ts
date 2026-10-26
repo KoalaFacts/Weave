@@ -139,7 +139,7 @@ export default {
             if (url.pathname === '/v1/addresses' || /^\/v1\/addresses\/[^/]+$/.test(url.pathname)) {
                 const id = url.pathname === '/v1/addresses' ? null : url.pathname.split('/')[3];
                 if (method === 'GET') return respond(await atomic(env.db,tx => ownedAddresses(tx,account.accountId,url)));
-                if (method === 'POST' && id === null || method === 'PUT' && id !== null) return respond(await mutateAddress(env,account.accountId,id,await body(request),url.origin));
+                if ((method === 'POST' && id === null) || (method === 'PUT' && id !== null)) return respond(await mutateAddress(env,account.accountId,id,await body(request),url.origin));
                 if (method === 'DELETE' && id !== null) return respond(await mutateAddress(env,account.accountId,id,null,url.origin,true));
                 fail(404,'unavailable');
             }

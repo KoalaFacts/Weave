@@ -147,3 +147,15 @@ client secrets or untrusted redirect registrations are rejected before
 browser consent. Pre-registered client IDs are still supported unchanged.
 This is RFC 7591 interoperability, not Cloudflare provisioning, consent,
 external-subject linking, or live demo acceptance.
+
+### 401 deployment diagnosis (anonymous, read-only)
+
+The public `probe.ts` checks the OAuth metadata URL. When it receives a
+401 without usable metadata it compares three **fixed same-origin GET** routes:
+root resource metadata, the `/mcp` resource GET, and the public homepage.
+It emits only status codes and the `WWW-Authenticate` *scheme class*, never
+its realm, URL, cookies, bearer contents, authorization data or response body.
+A 401 on only `/.well-known/` suggests a route-specific gate; a 401 across
+all routes suggests broader access policy, but neither result proves which
+Cloudflare policy is responsible. The original 401 remains a **failed** live
+acceptance gate; the diagnostics never claim authentication or enable writes.

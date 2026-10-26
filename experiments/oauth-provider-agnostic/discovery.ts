@@ -8,6 +8,13 @@ export interface DiscoveryReport {
     authorizationCode?:boolean;
     pkceS256?:boolean;
     authorizationResponseIssuer?:boolean;
+    /** Sanitized fixed-route comparison for a real 401 deployment blocker. */
+    routeDiagnostics?:{
+        rootMetadataStatus?:number;
+        resourceGetStatus?:number;
+        homepageStatus?:number;
+        challengeScheme:'bearer'|'other'|'none';
+    };
 }
 function endpoint(raw:string,allowQuery=false):URL {
     const url=new URL(raw);
@@ -52,24 +59,39 @@ function challengeMetadata(header:string|undefined,resource:URL):URL|undefined {
 /** Only fetch the AS when the caller supplied its exact expected issuer.
  * No URL, claim, token, exception text or untrusted response body is logged.
  */
-export async function inspectOAuthDiscovery(resource:string,expectedIssuer?:string,fetcher:typeof fetch=fetch):Promise<DiscoveryReport> {
+export async function inspectOAuthDiscovery(resource:string,expectedIssuer?:string,fetcher:typeof fetch=fetch,
+    options:{diagnoseGateway?:boolean}={}):Promise<DiscoveryReport> {
     const target=endpoint(resource);
     const trusted=expectedIssuer===undefined?undefined:endpoint(expectedIssuer);
     const first=new URL('/.well-known/oauth-protected-resource'+target.pathname.replace(/\/$/,''),target);
     let found=await metadata(first,fetcher);
     if((found.status===404||found.status===410)&&target.pathname!=='/')
         found=await metadata(new URL('/.well-known/oauth-protected-resource',target),fetcher);
+    let resourceGetStatus:number|undefined;
+    let challenge=found.challenge;
     if(found.status===401){
         let location=challengeMetadata(found.challenge,target);
         if(!location){
             // A gateway may challenge the resource but block its well-known paths.
             // Never attempt a write, send credentials, or follow arbitrary origins.
             const response=await metadata(target,fetcher);
+            resourceGetStatus=response.status;
+            challenge??=response.challenge;
             if(response.status===401)location=challengeMetadata(response.challenge,target);
         }
         if(location)found=await metadata(location,fetcher);
     }
     const report:DiscoveryReport={outcome:'resource-metadata-unavailable',authenticated:false,resourceMetadataStatus:found.status};
+    if(options.diagnoseGateway===true&&found.status===401&&!found.data){
+        // Compare only fixed, same-origin public GET routes. Scheme classification
+        // intentionally discards the full WWW-Authenticate header, realm and URL.
+        const [root,home]=await Promise.all([
+            metadata(new URL('/.well-known/oauth-protected-resource',target),fetcher),
+            metadata(new URL('/',target),fetcher)
+        ]);
+        report.routeDiagnostics={rootMetadataStatus:root.status,resourceGetStatus,
+            homepageStatus:home.status,challengeScheme:/^Bearer(?:\s|$)/i.test(challenge??'')?'bearer':challenge?'other':'none'};
+    }
     if(found.status===404||found.status===410)return {...report,outcome:'resource-metadata-absent'};
     if(!found.data)return report;
     const value=found.data;

@@ -4,7 +4,7 @@ const args=process.argv.slice(2);
 if(args.length<1||args.length>2){console.error('Usage: node probe.ts <HTTPS resource URL> [exact expected issuer]');process.exitCode=2;}
 else{
     try{
-        const report=await inspectOAuthDiscovery(args[0],args[1]);
+        const report=await inspectOAuthDiscovery(args[0],args[1],fetch,{diagnoseGateway:true});
         console.log(JSON.stringify({experiment:'oauth-provider-agnostic',...report},null,2));
         // Absence is a measured outcome, not an auth success or a failing unit test.
         if(report.outcome.endsWith('unavailable')||report.outcome==='metadata-rejected')process.exitCode=1;

@@ -168,3 +168,18 @@ test('optional gated-route diagnostics never contact extra endpoints on valid OA
     assert.equal(result.routeDiagnostics,undefined);
     assert.deepEqual(seen,[rm,am]);
 });
+
+test('401 Bearer scheme is classified without returning any sensitive authorization challenge',async()=>{
+    const rm='https://mailbox.example/.well-known/oauth-protected-resource/mcp';
+    const root='https://mailbox.example/.well-known/oauth-protected-resource';
+    const home='https://mailbox.example/';
+    const secret='PRIVATE_REALM_MUST_NOT_LEAK';
+    const result=await (inspectOAuthDiscovery as Function)(resource,issuer,fake({
+        [rm]:new Response('',{status:401,headers:{'WWW-Authenticate':`Bearer realm="${secret}"`}}),
+        [resource]:new Response('',{status:405}),
+        [root]:new Response('',{status:401}),
+        [home]:new Response('',{headers:{'Content-Type':'text/html'}})
+    }),{diagnoseGateway:true});
+    assert.equal(result.routeDiagnostics?.challengeScheme,'bearer');
+    assert.doesNotMatch(JSON.stringify(result),/PRIVATE_REALM_MUST_NOT_LEAK/);
+});
