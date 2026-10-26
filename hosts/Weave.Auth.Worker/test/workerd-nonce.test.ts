@@ -17,13 +17,17 @@ const bundled=readFileSync(resolve('dist/index.js'),'utf8');
 function options(storage:string) {
   // Miniflare v5 uses the workerd-native Worker manifest, NOT v4
   // scriptPath/kvNamespaces shims. Persist the actual SQLite DO database.
+  // The locked Miniflare workerd binary currently supports dates through
+  // 2026-10-13. This test-only date preserves the exact bundled application
+  // code while exercising real workerd SQLite DO semantics; deployment keeps
+  // its later 2026-10-23 compatibility date and needs separate live proof.
   return {
     resourcePersistencePath:storage,
     cf:false,
     workers:[{
       config:{
         name:'weave-auth-local',
-        compatibilityDate:'2026-10-23',
+        compatibilityDate:'2026-10-13',
         compatibilityFlags:['nodejs_compat','global_fetch_strictly_public'],
         manifest:{mainModule:'index.js',modules:{
           'index.js':{type:'esm',contents:bundled}
