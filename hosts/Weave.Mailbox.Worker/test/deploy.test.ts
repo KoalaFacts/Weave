@@ -216,3 +216,40 @@ for(const evidence of ['changed','missing','failed'])test('completed-only requir
     try{await assert.rejects(deploy(f.options),/did not confirm zero changes/);assert.deepEqual(f.events,['maintenance']);assert.equal(f.writes().length,1);}
     finally{await f.h.close();}
 });
+
+
+test('demo maintain deploy leaves optional unapproved OAuth table absent',async()=>{
+    const h=await start(),f=fixture();
+    try{
+        await h.db.prepare('DROP TABLE oauth_identity_links').run();
+        f.options.openDatabase=async()=>({db:h.db,close:async()=>{}});
+        f.options.convert=async()=>({alreadyCompleted:true});
+        f.options.planSchema=planLatestSchema;
+        f.options.applySchema=createMissingSchema;
+        const result=await deploy(f.options);
+        assert.equal(result.schemaPlan.statements.length,0);
+        assert.equal(f.commands.length,3);
+        assert.equal(await h.db.prepare("SELECT name FROM sqlite_master WHERE type='table' AND name='oauth_identity_links'").first('name'),null);
+    }finally{await h.close();}
+});
+test('completed-only deploy accepts an intentionally unprovisioned OAuth identity-link table',async()=>{
+    const f=await completedFixture();
+    try{
+        await f.h.db.prepare('DROP TABLE oauth_identity_links').run();
+        const result=await deploy(f.options);
+        assert.equal(result.databaseMode,'completed-only');
+        assert.equal(result.schemaPlan.statements.length,0);
+        assert.deepEqual(f.events,['maintenance','recovery','active']);
+        assert.equal(await f.h.db.prepare("SELECT name FROM sqlite_master WHERE type='table' AND name='oauth_identity_links'").first('name'),null);
+    }finally{await f.h.close();}
+});
+test('enabled remote OAuth identity links require provisioned D1 schema before any maintenance',async()=>{
+    const h=await start(),f=fixture({bindingResult:[dbBinding,{name:'OAUTH_IDENTITY_LINKS_ENABLED',type:'plain_text',text:'true'}]});
+    try{
+        await h.db.prepare('DROP TABLE oauth_identity_links').run();
+        f.options.openDatabase=async()=>({db:h.db,close:async()=>{}});
+        await assert.rejects(deploy(f.options),/OAuth identity links.*schema.*approval|OAuth identity links.*not provisioned/i);
+        assert.equal(f.commands.length,0);
+        assert.equal(await h.db.prepare("SELECT name FROM sqlite_master WHERE type='table' AND name='oauth_identity_links'").first('name'),null);
+    }finally{await h.close();}
+});

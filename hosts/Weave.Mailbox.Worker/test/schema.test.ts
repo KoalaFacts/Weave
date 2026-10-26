@@ -67,3 +67,21 @@ test('live schema planning preserves unmanaged history and stops on column drift
         assert.ok((await h.db.prepare('PRAGMA table_info(accounts)').all()).results.some(c=>c.name==='retained_extra'));
     }finally{await h.close();}
 });
+
+
+test('release cannot auto-provision unapproved OAuth subject-link storage while repairing ordinary indexes',async()=>{
+    const {planLatestSchema,createMissingSchema}=await import('../scripts/latest-schema.ts');
+    const {start}=await import('./harness.ts');const h=await start();
+    try{
+        await h.db.prepare('DROP TABLE oauth_identity_links').run();
+        await h.db.prepare('DROP INDEX addresses_owner').run();
+        const unrestricted=await planLatestSchema(h.db);
+        assert.ok(unrestricted.statements.some(sql=>sql.includes('oauth_identity_links')));
+        const release=await planLatestSchema(h.db,{omitUnapprovedOAuthIdentityLinks:true});
+        assert.ok(release.statements.some(sql=>sql.includes('addresses_owner')));
+        assert.ok(release.statements.every(sql=>!sql.includes('oauth_identity_links')));
+        await createMissingSchema(h.db,{omitUnapprovedOAuthIdentityLinks:true});
+        assert.equal(await h.db.prepare("SELECT name FROM sqlite_master WHERE type='table' AND name='oauth_identity_links'").first('name'),null);
+        assert.equal(await h.db.prepare("SELECT name FROM sqlite_master WHERE type='index' AND name='addresses_owner'").first('name'),'addresses_owner');
+    }finally{await h.close();}
+});
