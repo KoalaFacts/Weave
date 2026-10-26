@@ -21,7 +21,7 @@ async function fixture(label:string,config:{registration?:'valid'|'secret'|'wron
         }
         if(req.method==='GET'&&url.pathname==='/.well-known/oauth-authorization-server/'+label){
             respond(res,{issuer,authorization_endpoint:issuer+'/authorize',token_endpoint:issuer+'/token',
-                ...(config.registration==='none'?{}:{registration_endpoint:config.registration==='foreign'?'http://127.0.0.2:1234/register':issuer+'/register'}),
+                ...(config.registration==='none'?{}:{registration_endpoint:config.registration==='foreign'?'http://127.0.0.1:1234/register':issuer+'/register'}),
                 response_types_supported:['code'],grant_types_supported:['authorization_code'],
                 code_challenge_methods_supported:['S256'],authorization_response_iss_parameter_supported:true});return;
         }
