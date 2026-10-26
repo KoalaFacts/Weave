@@ -133,3 +133,38 @@ test('bounds directory response bytes',async()=>{
     const body=await call('tools/call',{name:'search_registry'},async()=>new Response('x'.repeat(1024*1024+1)));
     assert.equal(body.result.isError,true);
 });
+
+
+test('private MCP accepts a bounded full-size message only after trusted write-scope authorization',async()=>{
+    const huge='A'.repeat(64_000);
+    const args={payload:{bytes:huge}};
+    const owner='11111111-2222-3333-4444-555555555555';
+    const frame=rpc('tools/call',{name:'send_message',arguments:args});
+    const largeRequest=()=>request(frame,{authorization:'Bearer synthetic-unlogged-token'});
+    let validations=0,invocations=0;
+    const privateAccess={
+        tools:[],
+        scope:(name:string)=>name==='send_message'?'weave:messages.send':null,
+        authorize:async(scope:string)=>{assert.equal(scope,'weave:messages.send');validations++;return owner;},
+        invoke:async(account:string,name:string,received:Record<string,unknown>)=>{
+            invocations++;assert.equal(account,owner);assert.equal(name,'send_message');
+            assert.deepEqual(received,args);
+            return Response.json({accepted:true});
+        }
+    };
+    const accepted=await remoteMcp(largeRequest(),unused,privateAccess);
+    assert.equal(accepted.status,200,'valid 64 KiB-base64 private tool input must reach its authorized handler');
+    assert.deepEqual(JSON.parse((await accepted.json()).result.content[0].text),{accepted:true});
+    assert.equal(validations,2,'large-body admission and actual tool dispatch are independently checked');
+    assert.equal(invocations,1);
+    const readOnly={...privateAccess,authorize:async()=>new Response(null,{status:403})};
+    const denied=await remoteMcp(largeRequest(),unused,readOnly);
+    assert.equal(denied.status,413,'a bearer without a verified write grant retains the 16 KiB public limit');
+    assert.equal(invocations,1,'denied input must not invoke a private operation');
+    assert.equal((await remoteMcp(largeRequest(),unused)).status,413,'anonymous requests retain the 16 KiB limit');
+    const oversized=await remoteMcp(request(rpc('tools/call',{name:'send_message',
+        arguments:{payload:{bytes:'A'.repeat(140_000)}}}),{authorization:'Bearer synthetic-unlogged-token'}),
+        unused,privateAccess);
+    assert.equal(oversized.status,413,'even authorized requests remain capped at 128 KiB');
+    assert.equal(invocations,1);
+});

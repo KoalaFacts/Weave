@@ -262,7 +262,7 @@ test('two separate external OAuth identities complete real D1 private MCP contac
             const fromA=index%2===0;
             const token=fromA?accessA:accessB,receiverToken=fromA?accessB:accessA;
             const sender=fromA?a.accountId:b.accountId,recipient=fromA?b.accountId:a.accountId;
-            const message=payload('external-oauth-message-'+index);
+            const message=payload(index===5?'external-oauth-large-'+ 'x'.repeat(40_000):'external-oauth-message-'+index);
             const result=await call(token,'send_message',{
                 recipientAccountId:recipient,contactGeneration:String(request.generation),payload:message});
             assert.equal(result.messageId,message.messageId);
@@ -271,9 +271,11 @@ test('two separate external OAuth identities complete real D1 private MCP contac
         };
         const acknowledge=async(item:Delivery)=>{
             const inbox=await call(item.receiverToken,'list_my_inbox');
-            assert.ok(inbox.items.some((x:{envelope?:{payload?:{messageId:string}}})=>
-                x.envelope?.payload?.messageId===item.payload.messageId),
-                'pending message must survive workerd/D1 cold restart');
+            const delivered=inbox.items.find((x:{envelope?:{payload?:{messageId:string}}})=>
+                x.envelope?.payload?.messageId===item.payload.messageId);
+            assert.ok(delivered,'pending message must survive workerd/D1 cold restart');
+            assert.equal(delivered.envelope.payload.bytes,item.payload.bytes,
+                'the complete 40 KiB message body must be delivered without truncation');
             const result=await call(item.receiverToken,'ack_message',{
                 messageId:item.payload.messageId,senderAccountId:item.sender});
             assert.equal(result.state,'acknowledged');
