@@ -6,6 +6,7 @@ import {tmpdir} from "node:os";
 import {join,resolve} from "node:path";
 import {test} from "node:test";
 import {Miniflare} from "miniflare";
+import ts from "typescript";
 import {issueAccountProof} from "../../Weave.Mailbox.Worker/src/account-proof.ts";
 
 const issuer="https://auth.weave.example";
@@ -13,6 +14,31 @@ const resource="https://demo.weave-389.workers.dev/mcp";
 const clientId="weave-consent-regression-client";
 const redirectUri="http://127.0.0.1:53621/callback";
 const bundled=readFileSync(resolve("dist/index.js"),"utf8");
+// Execute the real Weave resource authorization module in a separate workerd
+// isolate. No mock token validator or canned claims may stand in for the AS.
+const resourceAuthorization=ts.transpileModule(
+  readFileSync(resolve("../Weave.Mailbox.Worker/src/remote-oauth.ts"),"utf8"),
+  {compilerOptions:{module:ts.ModuleKind.ESNext,target:ts.ScriptTarget.ES2022}}
+).outputText;
+const resourceWorker=resourceAuthorization+`
+export default {
+  async fetch(request,env){
+    let oauth;
+    try {
+      oauth=oauthConfiguration({
+        OAUTH_ISSUER:env.OAUTH_ISSUER,
+        OAUTH_RESOURCE:env.OAUTH_RESOURCE,
+        AUTH_SERVER:env.AUTH_SERVER
+      },request.url);
+    } catch {return new Response("OAuth unavailable",{status:503});}
+    if(!oauth)return new Response("OAuth unavailable",{status:503});
+    const access=await authorizeOAuth(oauth,request,"weave:messages.send",
+      async owner=>(await env.ACCOUNTS.prepare(
+        "SELECT account_id FROM accounts WHERE account_id=?"
+      ).bind(owner).first("account_id"))===owner);
+    return access instanceof Response?access:Response.json({accountId:access.accountId});
+  }
+};`;
 
 function options(storage:string,key:string) {
   return {
@@ -34,6 +60,15 @@ function options(storage:string,key:string) {
         },
         exports:{ConsentNonce:{type:"durable-object",storage:"sqlite"}}
       }
+    },{
+      name:"weave-resource-regression",
+      modules:true,
+      script:resourceWorker,
+      compatibilityDate:"2026-10-13",
+      compatibilityFlags:["nodejs_compat","global_fetch_strictly_public"],
+      serviceBindings:{AUTH_SERVER:"weave-consent-regression"},
+      d1Databases:{ACCOUNTS:"weave-resource-regression-accounts"},
+      bindings:{OAUTH_ISSUER:issuer,OAUTH_RESOURCE:resource}
     }]
   };
 }
@@ -191,6 +226,41 @@ test("a foreign browser cannot burn an owner nonce before consent-cookie verific
     assert.equal((await kv.list({prefix:"grant:"+accountB+":"})).keys.length,1);
     assert.equal((await kv.list({prefix:"grant:"+account+":"})).keys.length,1,
       "authorizing a different account must not replace the first account's grant");
+
+    // Real two-Worker Service Binding, real AS KV tokens, and the real
+    // resource's authorizeOAuth source running in workerd against D1.
+    // This is still isolated emulation, not a live cloud deployment.
+    const db=await mf.getD1Database("ACCOUNTS","weave-resource-regression");
+    await db.exec("CREATE TABLE accounts (account_id TEXT PRIMARY KEY);");
+    await db.prepare("INSERT INTO accounts (account_id) VALUES (?)").bind(account).run();
+    await db.prepare("INSERT INTO accounts (account_id) VALUES (?)").bind(accountB).run();
+    const worker=await mf.getWorker("weave-resource-regression");
+    async function identify(token:string):Promise<Response>{
+      return worker.fetch(resource,{method:"POST",headers:{Authorization:"Bearer "+token}});
+    }
+    const ownerA=await identify(grant.access_token!);
+    assert.equal(ownerA.status,200,"real resource must accept AS-verified account A");
+    assert.deepEqual(await ownerA.json(),{accountId:account});
+    const ownerB=await identify(grantB.access_token!);
+    assert.equal(ownerB.status,200,"a second token must never bind to account A");
+    assert.deepEqual(await ownerB.json(),{accountId:accountB});
+    assert.equal((await identify("not-a-valid-cloudflare-access-token")).status,401);
+    await db.prepare("DELETE FROM accounts WHERE account_id=?").bind(accountB).run();
+    assert.equal((await identify(grantB.access_token!)).status,401,
+      "removing a Weave account must immediately revoke private resource access");
+    assert.equal((await identify(grant.access_token!)).status,200,
+      "removing B must not deny the independently owned account A");
+    const revocationMetadata=await mf.dispatchFetch(issuer+"/.well-known/oauth-authorization-server");
+    const {revocation_endpoint:revocationEndpoint}=await revocationMetadata.json() as {revocation_endpoint:string};
+    assert.equal(new URL(revocationEndpoint).origin,issuer);
+    const revoked=await mf.dispatchFetch(revocationEndpoint,{
+      method:"POST",redirect:"manual",
+      headers:{"Content-Type":"application/x-www-form-urlencoded"},
+      body:new URLSearchParams({token:grant.access_token!,client_id:clientId}).toString()
+    });
+    assert.equal(revoked.status,200,"the real AS must accept its own token revocation");
+    assert.equal((await identify(grant.access_token!)).status,401,
+      "token revocation must be observed at the next Service Binding lookup");
   } finally {
     await mf.dispose();
     await rm(storage,{recursive:true,force:true});
