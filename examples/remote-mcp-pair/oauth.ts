@@ -13,13 +13,17 @@ const validEndpoint=(raw:string,allowLoopback:boolean):URL=>{
         throw Error('OAuth requires HTTPS endpoints (except explicit local loopback tests)');
     return url;
 };
+class OAuthDiscoveryNotFound extends Error {}
 async function boundedJson(url:URL,init:RequestInit|undefined,allowLoopback:boolean):Promise<Record<string,unknown>>{
     validEndpoint(url.href,allowLoopback);
     let response:Response;
     try{response=await fetch(url,{...init,redirect:'error',cache:'no-store',signal:AbortSignal.timeout(10000)});}
     catch{throw Error('OAuth metadata or token endpoint unavailable');}
     if(!response.ok||!/^application\/json(?:\s*;|$)/i.test(response.headers.get('content-type')??'')){
-        await response.body?.cancel();throw Error('OAuth metadata or token response unavailable');
+        const missing=response.status===404||response.status===410;
+        await response.body?.cancel();
+        if(missing)throw new OAuthDiscoveryNotFound();
+        throw Error('OAuth metadata or token response unavailable');
     }
     const reader=response.body?.getReader();if(!reader)throw Error('OAuth returned no response');
     let bytes=0,text='';const decoder=new TextDecoder('utf-8',{fatal:true});
@@ -76,8 +80,21 @@ export async function authorizeMcpAccount(resource:string,clientId:string,
         throw Error('OAuth protected resource has no unambiguous issuer');
     const issuer=validEndpoint(protectedMetadata.authorization_servers[0],allowLoopback);
     if(issuer.search||issuer.hash)throw Error('OAuth issuer must not include query parameters');
-    const discovery=new URL('/.well-known/oauth-authorization-server'+issuer.pathname.replace(/\/$/,''),issuer);
-    const metadata=await boundedJson(discovery,undefined,allowLoopback);
+    // RFC 8414 first, then the two OIDC tenant discovery conventions.
+    // Only a genuine 404/410 can trigger fallback; authentication errors,
+    // redirects, invalid JSON and issuer mismatches must fail closed.
+    const suffix=issuer.pathname.replace(/\/$/,'');
+    const discoveryUrls=[
+        new URL('/.well-known/oauth-authorization-server'+suffix,issuer),
+        new URL('/.well-known/openid-configuration'+suffix,issuer),
+        ...(suffix?[new URL(suffix+'/.well-known/openid-configuration',issuer)]:[])
+    ];
+    let metadata:Record<string,unknown>|undefined;
+    for(const discovery of discoveryUrls){
+        try{metadata=await boundedJson(discovery,undefined,allowLoopback);break;}
+        catch(error){if(!(error instanceof OAuthDiscoveryNotFound))throw error;}
+    }
+    if(!metadata)throw Error('OAuth issuer does not expose RFC 8414 or OpenID Connect metadata');
     if(metadata.issuer!==protectedMetadata.authorization_servers[0]||
         !Array.isArray(metadata.response_types_supported)||!metadata.response_types_supported.includes('code')||
         (metadata.grant_types_supported!==undefined&&(!Array.isArray(metadata.grant_types_supported)||!metadata.grant_types_supported.includes('authorization_code')))||

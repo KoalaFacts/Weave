@@ -9,7 +9,7 @@ import {authorizeOAuth,type OAuthConfiguration} from '../../hosts/Weave.Mailbox.
 const account='01234567-89ab-4def-8123-456789abcdef';
 const scope='weave:messages.read';
 async function provider(label:string,token:string,lifetime=900,subject=account,
-    discovery:'oauth'|'oidc-inserted'|'oidc-appended'='oauth'){
+    discovery:'oauth'|'oidc-inserted'|'oidc-appended'|'oidc-blocked'='oauth'){
     let origin='',active=true;
     let codeRecord:{code:string;challenge:string;redirect:string;client:string}|undefined;
     const counts={authorization:0,exchange:0,introspection:0};
@@ -19,7 +19,11 @@ async function provider(label:string,token:string,lifetime=900,subject=account,
         if(req.method==='GET'&&url.pathname==='/.well-known/oauth-protected-resource/mcp'){
             reply({resource,authorization_servers:[issuer]});return;
         }
-        const discoveryPath=discovery==='oauth'? '/.well-known/oauth-authorization-server/'+label:
+        const oauthPath='/.well-known/oauth-authorization-server/'+label;
+        if(discovery==='oidc-blocked'&&req.method==='GET'&&url.pathname===oauthPath){
+            reply({error:'operator-denied'},401);return;
+        }
+        const discoveryPath=discovery==='oauth'?oauthPath:
             discovery==='oidc-inserted'? '/.well-known/openid-configuration/'+label:
             '/'+label+'/.well-known/openid-configuration';
         if(req.method==='GET'&&url.pathname===discoveryPath){
@@ -99,6 +103,14 @@ for(const discovery of ['oidc-inserted','oidc-appended'] as const){
         }finally{await p.close();}
     });
 }
+
+test('authorization-server 401 does not trigger a fallback or open a login page',async()=>{
+    const p=await provider('oidc-blocked','opaque.oidc-blocked',900,account,'oidc-blocked');
+    try{
+        await assert.rejects(p.login(),/metadata or token response unavailable/);
+        assert.deepEqual(p.counts,{authorization:0,exchange:0,introspection:0});
+    }finally{await p.close();}
+});
 
 test('Access-shaped opaque token reaches the client but is not silently treated as RFC7662 or a trusted header',async()=>{
     const p=await provider('gateway-fixture','oauth:synthetic-opaque');
