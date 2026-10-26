@@ -76,6 +76,21 @@ jobs:
         run: npm run test:workerd
       - name: Reject high-severity dependency vulnerabilities
         run: npm audit --audit-level=high
+  public-mcp-connected:
+    runs-on: ubuntu-24.04
+    timeout-minutes: 5
+    steps:
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v6
+        with:
+          ref: ${{ github.sha }}
+          persist-credentials: false
+      - uses: actions/setup-node@949feb2413d6458794dcd2491c4babbbce0c15c1 # v7.1.0
+        with:
+          node-version: '24'
+          package-manager-cache: false
+      - name: Connect an actual anonymous MCP client to the public demo (no credentials or writes)
+        run: node hosts/Weave.Mailbox.Worker/scripts/verify-public-mcp.ts
+
   anonymous-discovery:
     runs-on: ubuntu-24.04
     timeout-minutes: 5
