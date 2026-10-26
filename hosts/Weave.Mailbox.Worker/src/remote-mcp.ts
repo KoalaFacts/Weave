@@ -2,6 +2,7 @@
 // March 2025 requires receiving JSON-RPC batches; this single-message transport does not implement them.
 const versions = ['2025-11-25', '2025-06-18'];
 const requestLimit = 16 * 1024;
+const authorizedWriteRequestLimit = 128 * 1024;
 const responseLimit = 1024 * 1024;
 type ObjectValue = Record<string, unknown>;
 type RequestId = string | number | null;
@@ -38,7 +39,8 @@ function reply(value: unknown, status = 200, extra: Record<string, string> = {})
 const error = (id: RequestId, code: number, message: string, status = 200) => reply({jsonrpc: '2.0', id, error: {code, message}}, status);
 const result = (id: RequestId, value: unknown) => reply({jsonrpc: '2.0', id, result: value});
 class BodyLimit extends Error {}
-async function boundedText(stream: ReadableStream<Uint8Array> | null, limit: number): Promise<string> {
+async function boundedText(stream: ReadableStream<Uint8Array> | null, limit: number,
+    authorizeOverflow?: () => Promise<boolean>, largerLimit = limit): Promise<string> {
     if (!stream) return '';
     const reader = stream.getReader(), decoder = new TextDecoder('utf-8', {fatal: true});
     let bytes = 0, text = '';
@@ -47,7 +49,13 @@ async function boundedText(stream: ReadableStream<Uint8Array> | null, limit: num
             const item = await reader.read();
             if (item.done) return text + decoder.decode();
             bytes += item.value.byteLength;
-            if (bytes > limit) throw new BodyLimit();
+            if (bytes > limit) {
+                // Only a freshly verified write grant can increase the private frame
+                // allowance. A single oversized chunk never bypasses the hard cap.
+                if (!authorizeOverflow || bytes > largerLimit || !await authorizeOverflow()) throw new BodyLimit();
+                limit = largerLimit;
+                authorizeOverflow = undefined;
+            }
             text += decoder.decode(item.value, {stream: true});
         }
     } catch (failure) {
@@ -83,13 +91,35 @@ export async function remoteMcp(request: Request, read: DirectoryRead, privateAc
     const protocol = request.headers.get('mcp-protocol-version');
     if (protocol !== null && !versions.includes(protocol)) return error(null, -32600, 'Unsupported MCP protocol version.', 400);
     let message: unknown;
-    try { message = JSON.parse(await boundedText(request.body, requestLimit)); }
-    catch (failure) { return failure instanceof BodyLimit ? error(null, -32600, 'Request is too large.', 413) : error(null, -32700, 'Invalid JSON.', 400); }
+    let largeWriteOwner: string | null = null;
+    try {
+        const text = await boundedText(request.body, requestLimit, privateAccess ? async () => {
+            // Do not raise the 16 KiB public request cap merely because an
+            // Authorization header exists: verify the exact send scope first.
+            if (!/^Bearer [^\\s]+$/i.test(request.headers.get('authorization') ?? '')
+                || privateAccess.scope('send_message') !== 'weave:messages.send') return false;
+            try {
+                const owner = await privateAccess.authorize('weave:messages.send');
+                if (typeof owner !== 'string' || !uuid.test(owner)) return false;
+                largeWriteOwner = owner;
+                return true;
+            } catch { return false; }
+        } : undefined, authorizedWriteRequestLimit);
+        message = JSON.parse(text);
+    } catch (failure) {
+        return failure instanceof BodyLimit ? error(null, -32600, 'Request is too large.', 413)
+            : error(null, -32700, 'Invalid JSON.', 400);
+    }
     if (!object(message) || message.jsonrpc !== '2.0' || typeof message.method !== 'string'
         || (message.params !== undefined && !object(message.params))
         || (Object.hasOwn(message, 'id') && typeof message.id !== 'string' && !Number.isSafeInteger(message.id))) {
         return error(null, -32600, 'Invalid JSON-RPC request.', 400);
     }
+    // The elevated frame cap applies to send_message alone. A claimed write
+    // scope never grants large anonymous, public or other private RPC frames.
+    if (largeWriteOwner !== null && (message.method !== 'tools/call'
+        || !object(message.params) || message.params.name !== 'send_message'))
+        return error(null, -32600, 'Request is too large.', 413);
     // Notifications never execute a tool, including a tools/call sent without an id.
     if (!Object.hasOwn(message, 'id')) return reply(undefined, 202);
     const id = message.id as string | number, params = (message.params ?? {}) as ObjectValue;
@@ -134,6 +164,10 @@ export async function remoteMcp(request: Request, read: DirectoryRead, privateAc
             }
             return caller;
         }
+        // The same token must still resolve to the same owner on the actual
+        // dispatch check. Never write for an identity that changed mid-request.
+        if (largeWriteOwner !== null && caller !== largeWriteOwner)
+            return error(id, -32603, 'Authorization unavailable.', 503);
         try {
             const response = await privateAccess.invoke(caller, params.name, args);
             if (!response.ok) {
