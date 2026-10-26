@@ -39,6 +39,8 @@ interface DeploymentReport {
 
 const directory=resolve(dirname(fileURLToPath(import.meta.url)),'..');
 const expectedSubdomain='weave-389';
+// Ordinary demo releases are NOT permission to create an opt-in OAuth identity store.
+const demoSchemaPolicy={omitUnapprovedOAuthIdentityLinks:true} as const;
 export function deploymentConfig(base: WorkerConfig,env: NodeJS.ProcessEnv,root=directory){
     if(base.name!=='demo'||base.d1_databases?.length!==1||base.d1_databases[0].binding!=='db')throw Error('Expected existing Worker demo and binding db.');
     if(!/^[a-f0-9]{32}$/i.test(env.CLOUDFLARE_ACCOUNT_ID??''))throw Error('CLOUDFLARE_ACCOUNT_ID must identify the existing account.');
@@ -80,6 +82,9 @@ export async function deploy({env=process.env,fetchImpl=fetch,run,root=directory
     if(subdomain.subdomain!==expectedSubdomain)throw Error('Account does not own the authorized weave-389.workers.dev subdomain.');
     const worker=await inspect<WorkerSettings>('/workers/scripts/demo/settings','Existing Worker demo');
     const bindings=Array.isArray(worker.bindings)?worker.bindings.filter(binding=>binding?.name==='db'):[];
+    const oauthFlags=Array.isArray(worker.bindings)?worker.bindings.filter(binding=>binding?.name==='OAUTH_IDENTITY_LINKS_ENABLED'):[];
+    if(oauthFlags.length>1||oauthFlags.some(binding=>binding.type!=='plain_text'||(binding.text!=='true'&&binding.text!=='false')))
+        throw Error('Invalid existing OAuth identity links setting; no mutation attempted.');
     const binding=bindings[0];
     if(bindings.length!==1||binding?.type!=='d1'||!/^[a-f0-9]{8}(?:-[a-f0-9]{4}){3}-[a-f0-9]{12}$/i.test(binding.id??'')||binding.id==='00000000-0000-0000-0000-000000000000')throw Error('Expected one valid existing D1 binding named db.');
     if(worker.bindings.some(binding=>!['plain_text','json','secret_text'].includes(binding?.type)&&!(binding?.type==='d1'&&binding.name==='db')))throw Error('Unexpected existing resource bindings; refusing to overwrite them.');
@@ -121,7 +126,13 @@ export async function deploy({env=process.env,fetchImpl=fetch,run,root=directory
         // initialization, resource provisioning or legacy SQL migration chain.
         const tables=(await connection.db.prepare("SELECT name FROM sqlite_master WHERE type='table'").all<{name:string}>()).results.map(row=>row.name);
         if(!tables.includes('mailbox_records')||!tables.includes('mailbox_revision')||!tables.includes('mailbox_guard'))throw Error('Expected existing mailbox storage; no mutation attempted.');
-        const completed=databaseMode==='completed-only'?await prepareCompletedDeployment(connection.db,root,planSchema):undefined;
+        // A previously enabled link resolver must not be deployed against an
+        // absent identity store. Never silently create that store as part of
+        // the generic demo release or bypass its separate schema approval.
+        if(oauthFlags[0]?.text==='true'&&!tables.includes('oauth_identity_links'))
+            throw Error('OAuth identity links schema not provisioned; separate storage approval required before deployment.');
+        const planDemo=(db:StorageDatabase)=>planSchema(db,demoSchemaPolicy);
+        const completed=databaseMode==='completed-only'?await prepareCompletedDeployment(connection.db,root,planDemo):undefined;
         phase='maintenance deployment requested';await save();
         await command(['deploy','--keep-vars','--no-bundle'],'maintenance');
         verifySettings(await inspect('/workers/scripts/demo/settings','Maintenance settings',phase),'true');
@@ -130,9 +141,9 @@ export async function deploy({env=process.env,fetchImpl=fetch,run,root=directory
             Object.assign(report,await completed.confirm());await save();
         }else{
             report.conversion=await convert(connection.db);
-            const plan=await planSchema(connection.db);report.schemaPlan=plan;await save();
-            await applySchema(connection.db);
-            if((await planSchema(connection.db)).statements.length)throw Error('Schema verification left unapplied statements; maintenance retained.');
+            const plan=await planDemo(connection.db);report.schemaPlan=plan;await save();
+            await applySchema(connection.db,demoSchemaPolicy);
+            if((await planDemo(connection.db)).statements.length)throw Error('Schema verification left unapplied statements; maintenance retained.');
         }
         phase='database validated; maintenance retained; uploading recovery';await save();
         const output=await command(['versions','upload','--keep-vars','--no-bundle','--tag','schema-recovery'],'recovery');

@@ -51,13 +51,20 @@ External providers may publish an HTTPS introspection endpoint on an origin diff
 New additive Drizzle target: `oauth_identity_links` with primary key
 `(issuer, resource, subject_digest)`, account FK (ON DELETE CASCADE), created,
 updated and revocation ticks, plus owner index and digest format CHECK.
-This feature is disabled by default. **The repository generates DDL from
-the Drizzle target; a future deployment could plan creation automatically.**
-Before enabling or deploying this branch: approve the exact generated DDL,
-new D1 storage, retention, privacy, consent UX, data conversion and rollback.
-Do not run `createMissingSchema`, a Cloudflare D1 write, or deploy this
-branch to an existing D1 merely because local/hosted tests initialize a
-separate empty test DB. No migration has been applied to the public demo.
+This feature is disabled by default. The Drizzle target can generate its DDL,
+but the normal demo release path now deliberately **defers** creation of
+`oauth_identity_links` and its indexes in both `maintain` and
+`completed-only` mode. Existing optional table constraints are still
+validated; missing unrelated objects retain their existing checks. A currently
+enabled OAuth link resolver with a missing table fails the deployment
+preflight before maintenance, rather than silently provisioning a new store.
+
+Before enabling OAuth identity links or applying the optional D1 DDL to the
+live database, separately approve the exact generated DDL, storage/retention,
+privacy, consent UX, conversion and rollback. A code-only release with this
+feature disabled is not schema approval, and a synthetic local/hosted D1
+migration is not a live deployment. No migration has been applied to the
+public demo.
 
 ## Test boundary
 
