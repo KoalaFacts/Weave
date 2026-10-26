@@ -1,7 +1,6 @@
 import assert from 'node:assert/strict';
 import {test} from 'node:test';
 import {start} from './harness.ts';
-import {createFetchMock} from 'miniflare';
 
 test('owner can see only its linked external OAuth subjects, with unauthenticated access denied',async()=>{
     const h=await start({bindings:{
@@ -123,14 +122,22 @@ test('real workerd binds a validated external RFC7662 bearer to its consenting o
     const issuer='https://issuer.example',resource='https://localhost/mcp';
     const token='synthetic-public-client-token';
     const now=Math.floor(Date.now()/1000);
-    const fetchMock=createFetchMock();
-    fetchMock.disableNetConnect();
     const metadata={active:true,iss:issuer,aud:resource,sub:'separate-external-subject',
         iat:now-5,exp:now+120,scope:'weave:addresses.read'};
-    fetchMock.get(issuer).intercept({method:'POST',path:'/introspect'}).reply(200,JSON.stringify(metadata),{
-        headers:{'Content-Type':'application/json'}
-    }).persist();
-    const h=await start({fetchMock,bindings:{
+    let validations=0;
+    // Simulate the single trusted introspection issuer at the actual Worker
+    // outbound-fetch boundary. All other network destinations fail closed.
+    const outboundService=async(request:Request):Promise<Response>=>{
+        const url=new URL(request.url);
+        assert.equal(url.href,issuer+'/introspect');
+        assert.equal(request.method,'POST');
+        assert.match(request.headers.get('Authorization')??'',/^Basic /);
+        const form=new URLSearchParams(await request.text());
+        assert.equal(form.get('token'),token);
+        validations++;
+        return new Response(JSON.stringify(metadata),{headers:{'Content-Type':'application/json'}});
+    };
+    const h=await start({outboundService,bindings:{
         OAUTH_IDENTITY_LINKS_ENABLED:'true',
         OAUTH_ISSUER:issuer,OAUTH_RESOURCE:resource,OAUTH_INTROSPECTION_URL:issuer+'/introspect',
         OAUTH_CLIENT_ID:'test-public-client',OAUTH_CLIENT_SECRET:'synthetic-test-secret-for-introspection'
@@ -162,5 +169,6 @@ test('real workerd binds a validated external RFC7662 bearer to its consenting o
             body:JSON.stringify(key)});
         assert.equal(revoked.status,200,await revoked.clone().text());
         assert.equal((await rpc()).status,401,'revocation must take effect on the next real private MCP call');
+        assert.ok(validations>=5,'the real Worker must freshly introspect every authorized or denied call');
     }finally{await h.close();}
 });
