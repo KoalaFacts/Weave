@@ -94,6 +94,15 @@ test('explicitly allowlisted split-origin authorization and token endpoints comp
             /outside trusted issuer origin/,
             'cross-origin endpoints must remain blocked without explicit operator approval');
         assert.equal(opened,0);assert.equal(issued,0);assert.equal(exchanged,0);
+        for(const [origins,reason] of [
+            [[operationsOrigin+'/token'],/exact origin/],
+            [['http://outside.example'],/HTTPS endpoints/],
+            [[issuerOrigin],/outside trusted issuer origin/],
+        ] as const){
+            await assert.rejects(()=>authorizeMcpAccount(expectedResource,clientId,browser,{
+                allowLoopbackForTests:true,scopes:[scope],timeoutMs:5000,trustedEndpointOrigins:[...origins]}),reason);
+        }
+        assert.equal(opened,0);assert.equal(issued,0);assert.equal(exchanged,0);
         const options={allowLoopbackForTests:true,scopes:[scope],timeoutMs:5000,
             trustedEndpointOrigins:[operationsOrigin]};
         const token=await authorizeMcpAccount(expectedResource,clientId,browser,options);

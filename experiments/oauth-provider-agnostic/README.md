@@ -93,6 +93,21 @@ is unchanged. Schema/migration, explicit linking consent and any real vendor
 deployment still need independent authorization and end-to-end testing.
 Cloudflare Access signed identity assertions are *not* RFC 7662 responses.
 
+## RFC 8414 explicitly approved cross-origin endpoint interoperability
+
+An exact trusted issuer can advertise HTTPS authorization and token endpoints on
+different origins. The existing Node MCP client now accepts the optional
+`trustedEndpointOrigins` list of **operator-selected exact origins** for
+this topology. Same-origin remains the default. It refuses unknown origins,
+userinfo, paths/query fragments in the allowlist, plaintext remote HTTP,
+and redirects. The issuer metadata is still fetched from and compared with
+the previously selected trusted issuer; PKCE S256, resource, state, token
+bounds and short expiration policy are unchanged. HTTP loopback support is
+**test-only**. The real Node 24 loopback test uses separate issuer/endpoint
+process servers, a browser callback, authorization code and PKCE token
+exchange, with a negative control showing denial without explicit approval.
+This does not add Cloudflare/Auth0 SDKs or establish a live provider login.
+
 ## Real Managed OAuth acceptance still required
 
 No accessible configured Access test application or Access management connector
