@@ -7,6 +7,7 @@ on:
       - hosts/Weave.Auth.Worker/**
       - hosts/Weave.Mailbox.Worker/src/**
       - hosts/Weave.Mailbox.Worker/scripts/**
+      - hosts/Weave.Mailbox.Worker/test/remote-oauth-identity-links.test.ts
       - hosts/Weave.Mailbox.Worker/package*.json
       - experiments/oauth-provider-agnostic/**
       - examples/remote-mcp-pair/oauth.ts
@@ -18,6 +19,7 @@ on:
       - hosts/Weave.Auth.Worker/**
       - hosts/Weave.Mailbox.Worker/src/**
       - hosts/Weave.Mailbox.Worker/scripts/**
+      - hosts/Weave.Mailbox.Worker/test/remote-oauth-identity-links.test.ts
       - hosts/Weave.Mailbox.Worker/package*.json
       - experiments/oauth-provider-agnostic/**
       - examples/remote-mcp-pair/oauth.ts
@@ -76,6 +78,9 @@ jobs:
       - name: Bundle real mailbox resource Worker without publishing
         working-directory: hosts/Weave.Mailbox.Worker
         run: npm run build
+      - name: Test first-party owner-approved external OAuth subject links against real Worker/D1
+        working-directory: hosts/Weave.Mailbox.Worker
+        run: node --test test/remote-oauth-identity-links.test.ts
       - name: Typecheck OAuth provider 1.2.4 Service Binding and Durable Objects
         run: npm run typecheck
       - name: Run portable proof and consent tests
