@@ -132,3 +132,27 @@ test('valid fallback metadata is not falsely classified as entirely inaccessible
     const result=await inspectLiveOAuth(f.input);
     assert.equal(result.metadataBlockedWithoutBearerChallenge,false);
 });
+
+test('stream errors in Cloudflare metadata cannot echo secrets from a failed body read',async()=>{
+    const secret = 'PRIVATE-STREAM-ERROR-DO-NOT-LEAK';
+    for(const stage of [0,1,2]){
+        const f=fixture({override:(_url,i)=>i===stage?new Response(new ReadableStream({
+            pull(controller){controller.error(Error(secret));}
+        }),{status:200}):undefined});
+        await assert.rejects(inspectLiveOAuth(f.input),error=>{
+            assert.match((error as Error).message,/metadata read failed; no retry or mutation attempted/);
+            assert.ok(!(error as Error).message.includes(secret));
+            return true;
+        });
+        assert.equal(f.calls.length,stage+1);
+    }
+});
+test('malformed Cloudflare JSON cannot echo a raw secret or start further requests',async()=>{
+    const f=fixture({override:(_url,i)=>i===1?new Response('NOT JSON: '+token):undefined});
+    await assert.rejects(inspectLiveOAuth(f.input),error=>{
+        assert.match((error as Error).message,/metadata read failed/);
+        assert.ok(!(error as Error).message.includes(token));
+        return true;
+    });
+    assert.equal(f.calls.length,2);
+});

@@ -52,7 +52,9 @@ export async function inspectLiveOAuth({env = process.env, fetchImpl = fetch}: {
             await response.body?.cancel().catch(() => {});
             throw Error(label + ' returned HTTP ' + response.status + '; no retry or mutation attempted.');
         }
-        const envelope = await boundedJson(response);
+        let envelope: JSONObject;
+        try { envelope = await boundedJson(response); }
+        catch { throw Error(label + ' metadata read failed; no retry or mutation attempted.'); }
         if (envelope.success !== true || !envelope.result) throw Error(label + ' returned invalid metadata; no mutation attempted.');
         return envelope.result;
     }
