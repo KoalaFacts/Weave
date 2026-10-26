@@ -307,3 +307,61 @@ test('two separate external OAuth identities complete real D1 private MCP contac
         finally{await rm(persist,{recursive:true,force:true});}
     }
 });
+
+
+test('owner can reach and revoke the 51st retained OAuth identity link through paginated real D1 listings',async()=>{
+    const h=await start({bindings:{OAUTH_IDENTITY_LINKS_ENABLED:'true'}});
+    try{
+        const owner=await h.register(),other=await h.register();
+        const issuer='https://issuer.example',resource='https://localhost/mcp';
+        const digest=(value:number)=>value.toString(16).padStart(64,'0');
+        // Retained revoked history must not permanently hide a later active link.
+        await h.db.batch(Array.from({length:51},(_,index)=>h.db.prepare(
+            'INSERT INTO oauth_identity_links(issuer,resource,subject_digest,account_id,created_at,updated_at,revoked_at) VALUES(?,?,?,?,?,?,?)'
+        ).bind(issuer,resource,digest(index),owner.accountId,'1','1',index===50?null:'1')));
+        await h.db.prepare(
+            'INSERT INTO oauth_identity_links(issuer,resource,subject_digest,account_id,created_at,updated_at,revoked_at) VALUES(?,?,?,?,?,?,NULL)'
+        ).bind(issuer,resource,digest(999),other.accountId,'1','1').run();
+
+        const url='https://localhost/v1/accounts/oauth/links';
+        const headers={'X-Weave-Account-Control':owner.control};
+        const first=await h.mf.dispatchFetch(url,{headers});
+        assert.equal(first.status,200,await first.clone().text());
+        const page1=await first.json() as {items:Array<{subjectDigest:string;active:boolean}>;truncated:boolean;nextCursor:string|null};
+        assert.equal(page1.items.length,50);
+        assert.ok(page1.items.every(x=>!x.active));
+        assert.equal(page1.truncated,true);
+        assert.ok(typeof page1.nextCursor==='string'&&page1.nextCursor.length>0);
+
+        const second=await h.mf.dispatchFetch(url+'?cursor='+encodeURIComponent(page1.nextCursor!),{headers});
+        assert.equal(second.status,200,await second.clone().text());
+        const page2=await second.json() as typeof page1;
+        assert.deepEqual(page2.items.map(x=>({digest:x.subjectDigest,active:x.active})),
+            [{digest:digest(50),active:true}], 'pagination must expose later active records');
+        assert.equal(page2.truncated,false);
+        assert.equal(page2.nextCursor,null);
+
+        const forbidden=await h.mf.dispatchFetch(url+'?cursor='+encodeURIComponent(page1.nextCursor!),{
+            headers:{'X-Weave-Account-Control':other.control}});
+        assert.equal(forbidden.status,200);
+        assert.deepEqual((await forbidden.json() as typeof page1).items.map(x=>x.subjectDigest),[digest(999)],
+            'cursor from another account must not bypass the owner condition');
+
+        const key={issuer,resource,subjectDigest:digest(50)};
+        const foreignRevoke=await h.mf.dispatchFetch(url+'/revoke',{
+            method:'POST',headers:{'X-Weave-Account-Control':other.control,'Content-Type':'application/json'},
+            body:JSON.stringify(key)});
+        assert.equal(foreignRevoke.status,404);
+        const revoked=await h.mf.dispatchFetch(url+'/revoke',{
+            method:'POST',headers:{...headers,'Content-Type':'application/json'},body:JSON.stringify(key)});
+        assert.equal(revoked.status,200,await revoked.clone().text());
+        assert.notEqual(await h.db.prepare(
+            'SELECT revoked_at FROM oauth_identity_links WHERE account_id=? AND subject_digest=?'
+        ).bind(owner.accountId,digest(50)).first('revoked_at'),null);
+
+        for(const suffix of ['?cursor=not-base64url','?cursor=a&cursor=b','?offset=50']){
+            const bad=await h.mf.dispatchFetch(url+suffix,{headers});
+            assert.equal(bad.status,400,'unexpected or ambiguous continuation must fail closed');
+        }
+    }finally{await h.close();}
+});
