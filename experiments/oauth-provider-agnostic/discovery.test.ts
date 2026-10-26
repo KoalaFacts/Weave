@@ -140,3 +140,31 @@ test('resource endpoint challenge is followed if standard well-known metadata is
     assert.equal(result.outcome,'metadata-compatible');
     assert.deepEqual(seen,[rm,resource,custom,am]);
 });
+
+// RED regression: a 401 at the public well-known URL is a live deployment
+// blocker. Diagnose fixed same-origin GET routes without forwarding secrets.
+test('gated OAuth discovery records root routing and challenge scheme without exposing headers',async()=>{
+    const seen:string[]=[];
+    const root='https://mailbox.example/.well-known/oauth-protected-resource';
+    const home='https://mailbox.example/';
+    const secret='SENSITIVE_REALM_MUST_NEVER_LEAK';
+    const result=await (inspectOAuthDiscovery as Function)(resource,issuer,fake({
+        [rm]:new Response('',{status:401,headers:{'WWW-Authenticate':`Basic realm="${secret}"`}}),
+        [resource]:new Response('',{status:405,headers:{Allow:'POST'}}),
+        [root]:new Response('',{status:401}),
+        [home]:new Response('<html>public homepage</html>',{headers:{'Content-Type':'text/html'}})
+    },seen),{diagnoseGateway:true});
+    assert.equal(result.outcome,'resource-metadata-unavailable');
+    assert.equal(result.authenticated,false);
+    assert.deepEqual(result.routeDiagnostics,{rootMetadataStatus:401,resourceGetStatus:405,homepageStatus:200,challengeScheme:'other'});
+    assert.doesNotMatch(JSON.stringify(result),/SENSITIVE_REALM_MUST_NEVER_LEAK/);
+    assert.deepEqual(seen,[rm,resource,root,home]);
+});
+
+test('optional gated-route diagnostics never contact extra endpoints on valid OAuth metadata',async()=>{
+    const seen:string[]=[];
+    const result=await (inspectOAuthDiscovery as Function)(resource,issuer,fake({[rm]:prm(),[am]:metadata},seen),{diagnoseGateway:true});
+    assert.equal(result.outcome,'metadata-compatible');
+    assert.equal(result.routeDiagnostics,undefined);
+    assert.deepEqual(seen,[rm,am]);
+});
