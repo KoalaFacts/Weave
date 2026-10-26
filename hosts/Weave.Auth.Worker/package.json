@@ -11,7 +11,7 @@
     "typecheck": "tsc --noEmit",
     "test:portable": "node --test test/consent.test.ts test/proof-handoff.test.ts",
     "build": "wrangler deploy --dry-run --config wrangler.example.jsonc --outdir dist",
-    "test:workerd": "node --test test/workerd-nonce.test.ts"
+    "test:workerd": "node --test test/workerd-nonce.test.ts test/workerd-consent-grant.test.ts"
   },
   "dependencies": {
     "@cloudflare/workers-oauth-provider": "1.2.4"
