@@ -53,7 +53,8 @@ export default {
             // Protected-resource discovery is an opt-in integration with an
             // external OAuth 2.1 authorization server. Missing/partial config
             // cannot silently enable a shared or anonymous account.
-            if(method==='GET'&&url.pathname==='/.well-known/oauth-protected-resource/mcp'){
+            if(method==='GET'&&(url.pathname==='/.well-known/oauth-protected-resource/mcp'||
+                url.pathname==='/.well-known/oauth-protected-resource')){
                 let cfg;try{cfg=oauthConfiguration(env,request.url);}catch{fail(503,'storage');}
                 if(!cfg)fail(404,'unavailable');
                 return protectedResourceMetadata(cfg);
