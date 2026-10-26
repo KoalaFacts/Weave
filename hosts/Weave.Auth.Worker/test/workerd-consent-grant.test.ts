@@ -8,12 +8,27 @@ import {test} from "node:test";
 import {Miniflare} from "miniflare";
 import {stripTypeScriptTypes} from "node:module";
 import {initializeDatabase} from "../../Weave.Mailbox.Worker/scripts/latest-schema.ts";
-import {payload as mailboxPayload} from "../../Weave.Mailbox.Worker/test/harness.ts";
+
 
 const issuer="https://auth.weave.example";
 const resource="https://demo.weave-389.workers.dev/mcp";
 const clientId="weave-consent-regression-client";
 const redirectUri="http://127.0.0.1:53621/callback";
+// Payload generated with the exact mailbox wire shape. Importing the broader
+// legacy test harness into a strict OAuth test creates unrelated type errors.
+function mailboxPayload(bytes:string,now=Date.now()){
+  const hex=now.toString(16).padStart(12,"0");
+  return {
+    messageId:hex.slice(0,8)+"-"+hex.slice(8)+"-7"+
+      randomBytes(2).toString("hex").slice(1)+"-8"+
+      randomBytes(2).toString("hex").slice(1)+"-"+
+      randomBytes(6).toString("hex"),
+    createdAt:new Date(now).toISOString(),
+    expiresAt:new Date(now+3600000).toISOString(),
+    payloadEncoding:"text/plain",
+    bytes:Buffer.from(bytes).toString("base64")
+  };
+}
 const bundled=readFileSync(resolve("dist/index.js"),"utf8");
 const mailboxBundle=readFileSync(resolve("../Weave.Mailbox.Worker/dist/index.js"),"utf8");
 // Execute the real Weave resource authorization module in a separate workerd
