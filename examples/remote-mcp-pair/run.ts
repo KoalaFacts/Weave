@@ -107,7 +107,7 @@ if(process.argv.includes('--agent')){
         const trustedEndpointOrigins=configuredOrigins===undefined?[]:configuredOrigins.split(',').map(x=>x.trim());
         if(trustedEndpointOrigins.length>8||trustedEndpointOrigins.some(x=>!x||x.length>512))
             throw Error('Invalid WEAVE_OAUTH_TRUSTED_ENDPOINT_ORIGINS; provide at most eight exact origins.');
-        const consentOptions={trustedEndpointOrigins};
+        const consentOptions={trustedEndpointOrigins,expectedIssuer:process.env.WEAVE_OAUTH_EXPECTED_ISSUER};
         const link=(role:'A'|'B')=>(url:string)=>{process.stdout.write('Authorize Weave Agent '+role+' in your browser:\n'+url+'\n');};
         tokenA=await authorizeMcpAccount(endpoint.href,clientId,link('A'),consentOptions);
         tokenB=await authorizeMcpAccount(endpoint.href,clientId,link('B'),consentOptions);

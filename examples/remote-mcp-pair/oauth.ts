@@ -51,6 +51,8 @@ export interface OAuthLoginOptions {
     timeoutMs?:number;
     /** Optional operator-approved cross-origin RFC 8414 endpoints (exact scheme/host/port). */
     trustedEndpointOrigins?:readonly string[];
+    /** Exact operator-approved issuer when the protected resource advertises multiple issuers. */
+    expectedIssuer?:string;
 }
 /** onAuthorizationUrl opens the trusted AS consent page (or shows the link to
  * the operator). It must never receive the verifier, access token, or code.
@@ -74,11 +76,24 @@ export async function authorizeMcpAccount(resource:string,clientId:string,
     if(!scopes.length||scopes.some(x=>!allowedScopes.has(x))||new Set(scopes).size!==scopes.length)
         throw Error('Unsupported OAuth scope request');
     const protectedResource=new URL('/.well-known/oauth-protected-resource/mcp',endpoint);
-    const protectedMetadata=await boundedJson(protectedResource,undefined,allowLoopback);
-    if(protectedMetadata.resource!==endpoint.href||!Array.isArray(protectedMetadata.authorization_servers)||
-        protectedMetadata.authorization_servers.length!==1||typeof protectedMetadata.authorization_servers[0]!=='string')
-        throw Error('OAuth protected resource has no unambiguous issuer');
-    const issuer=validEndpoint(protectedMetadata.authorization_servers[0],allowLoopback);
+    let protectedMetadata:Record<string,unknown>;
+    try {protectedMetadata=await boundedJson(protectedResource,undefined,allowLoopback);}
+    catch(error){
+        // RFC 9728 also allows the root well-known location, but never
+        // interpret a 401, redirect, 5xx or malformed response as absence.
+        if(!(error instanceof OAuthDiscoveryNotFound))throw error;
+        protectedMetadata=await boundedJson(new URL('/.well-known/oauth-protected-resource',endpoint),undefined,allowLoopback);
+    }
+    const advertised=protectedMetadata.authorization_servers;
+    if(protectedMetadata.resource!==endpoint.href||!Array.isArray(advertised)||
+        advertised.length<1||advertised.length>8||!advertised.every(value=>typeof value==='string'))
+        throw Error('OAuth protected resource has no trustworthy issuer');
+    // A multi-issuer resource requires a pinned operator selection. Never
+    // choose an arbitrary first issuer from untrusted resource metadata.
+    const selectedIssuer=options.expectedIssuer??(advertised.length===1?advertised[0]:null);
+    if(typeof selectedIssuer!=='string'||!advertised.includes(selectedIssuer))
+        throw Error('OAuth issuer requires explicit operator selection');
+    const issuer=validEndpoint(selectedIssuer,allowLoopback);
     if(issuer.search||issuer.hash)throw Error('OAuth issuer must not include query parameters');
     // RFC 8414 first, then the two OIDC tenant discovery conventions.
     // Only a genuine 404/410 can trigger fallback; authentication errors,
@@ -95,7 +110,7 @@ export async function authorizeMcpAccount(resource:string,clientId:string,
         catch(error){if(!(error instanceof OAuthDiscoveryNotFound))throw error;}
     }
     if(!metadata)throw Error('OAuth issuer does not expose RFC 8414 or OpenID Connect metadata');
-    if(metadata.issuer!==protectedMetadata.authorization_servers[0]||
+    if(metadata.issuer!==selectedIssuer||
         !Array.isArray(metadata.response_types_supported)||!metadata.response_types_supported.includes('code')||
         (metadata.grant_types_supported!==undefined&&(!Array.isArray(metadata.grant_types_supported)||!metadata.grant_types_supported.includes('authorization_code')))||
         !Array.isArray(metadata.code_challenge_methods_supported)||!metadata.code_challenge_methods_supported.includes('S256'))
