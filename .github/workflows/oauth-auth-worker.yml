@@ -8,6 +8,7 @@ on:
       - hosts/Weave.Mailbox.Worker/src/**
       - hosts/Weave.Mailbox.Worker/scripts/**
       - hosts/Weave.Mailbox.Worker/test/remote-oauth-identity-links.test.ts
+      - hosts/Weave.Mailbox.Worker/test/harness.ts
       - hosts/Weave.Mailbox.Worker/package*.json
       - experiments/oauth-provider-agnostic/**
       - examples/remote-mcp-pair/oauth.ts
@@ -20,6 +21,7 @@ on:
       - hosts/Weave.Mailbox.Worker/src/**
       - hosts/Weave.Mailbox.Worker/scripts/**
       - hosts/Weave.Mailbox.Worker/test/remote-oauth-identity-links.test.ts
+      - hosts/Weave.Mailbox.Worker/test/harness.ts
       - hosts/Weave.Mailbox.Worker/package*.json
       - experiments/oauth-provider-agnostic/**
       - examples/remote-mcp-pair/oauth.ts
