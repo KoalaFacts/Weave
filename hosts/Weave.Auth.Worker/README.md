@@ -39,10 +39,15 @@ CIMD/DCR policy and revocation. Dynamic client registration is disabled by
 default; Client ID Metadata Documents are available through strictly public
 fetch. Validate source SHAs, Node24 `npm ci`/typecheck, real workerd KV/DO +
 MCP D1 E2E, full repository CI/coverage/security/licence and independent
-review before any merge/release. The committed dependency lock and branch workflow cover Node24 source/type checks,
-portable logic and real workerd Durable Object consent replay and cold restart.
-This remains **local emulation, not real cloud authorization, live AS consent or
-private MCP traffic**, and does not replace full repository or production gates. It is not ready for deployment.
+review before any merge/release. The committed dependency locks and branch workflow cover Node24 source/type checks,
+portable logic, real workerd Durable Object replay, the bundled production mailbox
+Worker and actual D1 schema, individually registered test accounts and Weave-issued
+account proofs, six alternating private MCP messages with ACKs, and two unacknowledged
+opposing messages recovered across a cold Worker restart. These test-owned synthetic
+accounts do NOT establish a public or two-independent-model-Agent acceptance.
+This remains **isolated workerd emulation, not public Cloudflare deployment,
+real human-account consent or independent live model-Agent acceptance**, and
+does not replace full repository or production gates. It is not ready for deployment.
 
 Next live acceptance remains #236: two distinct real accounts/agents, separate
 consents, private contact request/accept, six alternating messages and ACKs,

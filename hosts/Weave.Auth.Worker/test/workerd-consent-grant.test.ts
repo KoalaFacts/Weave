@@ -7,13 +7,15 @@ import {join,resolve} from "node:path";
 import {test} from "node:test";
 import {Miniflare} from "miniflare";
 import {stripTypeScriptTypes} from "node:module";
-import {issueAccountProof} from "../../Weave.Mailbox.Worker/src/account-proof.ts";
+import {initializeDatabase} from "../../Weave.Mailbox.Worker/scripts/latest-schema.ts";
+import {payload as mailboxPayload} from "../../Weave.Mailbox.Worker/test/harness.ts";
 
 const issuer="https://auth.weave.example";
 const resource="https://demo.weave-389.workers.dev/mcp";
 const clientId="weave-consent-regression-client";
 const redirectUri="http://127.0.0.1:53621/callback";
 const bundled=readFileSync(resolve("dist/index.js"),"utf8");
+const mailboxBundle=readFileSync(resolve("../Weave.Mailbox.Worker/dist/index.js"),"utf8");
 // Execute the real Weave resource authorization module in a separate workerd
 // isolate. No mock token validator or canned claims may stand in for the AS.
 const resourceAuthorization=stripTypeScriptTypes(
@@ -73,6 +75,26 @@ function options(storage:string,key:string) {
           OAUTH_RESOURCE:{type:"text",value:resource}
         }
       }
+    },{
+      config:{
+        name:"weave-mailbox-regression",
+        compatibilityDate:"2026-10-13",
+        compatibilityFlags:["nodejs_compat","global_fetch_strictly_public"],
+        manifest:{mainModule:"mailbox.js",modules:{"mailbox.js":{type:"esm",contents:mailboxBundle}}},
+        env:{
+          AUTH_SERVER:{type:"worker",worker:"weave-consent-regression"},
+          db:{type:"d1"},
+          OAUTH_ISSUER:{type:"text",value:issuer},
+          OAUTH_RESOURCE:{type:"text",value:resource},
+          OAUTH_ACCOUNT_PROOF_KEY:{type:"text",value:key},
+          REGISTRATION_ENABLED:{type:"text",value:"true"},
+          REGISTRATION_MAX_ACCOUNTS:{type:"text",value:"10"},
+          REGISTRATION_PER_IP_PER_HOUR:{type:"text",value:"10"},
+          REGISTRATION_GLOBAL_PER_HOUR:{type:"text",value:"10"},
+          CLEANUP_MAX_MESSAGES:{type:"text",value:"0"},
+          CLEANUP_TIME_BUDGET_MS:{type:"text",value:"0"}
+        }
+      }
     }]
   };
 }
@@ -84,8 +106,38 @@ function consentForm(handle:string,proof:string) {
 test("a foreign browser cannot burn an owner nonce before consent-cookie verification", {timeout:90_000}, async()=>{
   const storage=await mkdtemp(join(tmpdir(),"weave-auth-consent-"));
   const key=randomBytes(32).toString("base64url");
-  const mf=new Miniflare(options(storage,key));
+  let mf=new Miniflare(options(storage,key));
   try {
+    // The real production mailbox Worker registers two independently controlled
+    // test accounts against its generated D1 schema. No mocked owner IDs.
+    let mailbox=await mf.getWorker("weave-mailbox-regression");
+    const database=await mf.getD1Database("db","weave-mailbox-regression");
+    await initializeDatabase(database,BigInt(Date.now())*10000n);
+    const controlA=randomBytes(32).toString("hex");
+    const controlB=randomBytes(32).toString("hex");
+    async function register(control:string):Promise<string>{
+      const res=await mailbox.fetch(new URL("/v1/accounts",resource),{
+        method:"POST",headers:{"Content-Type":"application/json","X-Weave-Account-Control":control},body:"{}"
+      });
+      assert.equal(res.status,200,"real mailbox account registration must succeed");
+      const a=await res.json() as {agentId:string};
+      assert.match(a.agentId,/^[0-9a-f-]{36}$/);
+      return a.agentId;
+    }
+    const account=await register(controlA);
+    const accountB=await register(controlB);
+    assert.notEqual(account,accountB);
+    async function ownerProof(control:string,nonce:string):Promise<string>{
+      // Long-lived controls never enter the authorization-server Worker.
+      const res=await mailbox.fetch(new URL("/v1/accounts/proof",resource),{
+        method:"POST",headers:{"Content-Type":"application/json","X-Weave-Account-Control":control},
+        body:JSON.stringify({challenge:nonce})
+      });
+      assert.equal(res.status,200,"real Weave owner proof endpoint must sign challenge");
+      const value=await res.json() as {proof:string};
+      assert.ok(value.proof.startsWith("wop1."));
+      return value.proof;
+    }
     // Controlled test registration only: no DCR endpoint, real user or cloud client.
     const kv=await mf.getKVNamespace("OAUTH_KV");
     await kv.put("client:"+clientId,JSON.stringify({
@@ -99,7 +151,7 @@ test("a foreign browser cannot burn an owner nonce before consent-cookie verific
     const url=new URL(issuer+"/authorize");
     for(const [k,v] of Object.entries({
       response_type:"code",client_id:clientId,redirect_uri:redirectUri,
-      scope:"weave:contacts.read weave:messages.send",state:"separate-browser-state",
+      scope:"weave:addresses.read weave:addresses.write weave:contacts.read weave:contacts.write weave:messages.read weave:messages.send weave:messages.ack",state:"separate-browser-state",
       resource,code_challenge:challenge,code_challenge_method:"S256"
     }))url.searchParams.set(k,v);
 
@@ -115,8 +167,7 @@ test("a foreign browser cannot burn an owner nonce before consent-cookie verific
     const initial=await ownerNonce.fetch("https://nonce.internal/nonce");
     assert.equal(initial.status,200);
     const {challenge:nonce}=await initial.json() as {challenge:string};
-    const account=randomUUID();
-    const proof=await issueAccountProof({issuer,resource,key},account,nonce);
+    const proof=await ownerProof(controlA,nonce);
 
     // A stolen handle + signed proof must NOT consume the owner's one-time
     // challenge without the SDK's original browser-binding cookie.
@@ -175,7 +226,7 @@ test("a foreign browser cannot burn an owner nonce before consent-cookie verific
     // A second independently consented existing account gets a separate grant
     // even when using the same registered native OAuth client. No shared owner
     // or simulated token string may satisfy this real workerd/KV boundary.
-    const accountB=randomUUID(),verifierB=randomBytes(32).toString("base64url");
+    const verifierB=randomBytes(32).toString("base64url");
     const authorizeB=new URL(url);
     authorizeB.searchParams.set("state","independent-second-agent");
     authorizeB.searchParams.set("code_challenge",
@@ -192,7 +243,7 @@ test("a foreign browser cannot burn an owner nonce before consent-cookie verific
     assert.equal(nonceResultB.status,200);
     const {challenge:nonceB}=await nonceResultB.json() as {challenge:string};
     assert.notEqual(nonceB,nonce);
-    const proofB=await issueAccountProof({issuer,resource,key},accountB,nonceB);
+    const proofB=await ownerProof(controlB,nonceB);
 
     const crossNonce=await mf.dispatchFetch(issuer+"/authorize",{
       method:"POST",redirect:"manual",
@@ -231,6 +282,95 @@ test("a foreign browser cannot burn an owner nonce before consent-cookie verific
     assert.equal((await kv.list({prefix:"grant:"+account+":"})).keys.length,1,
       "authorizing a different account must not replace the first account's grant");
 
+
+    // Full OAuth -> actual /mcp tools/call -> production account-scoped D1.
+    // These are isolated test accounts, not real cloud users or model Agents.
+    let rpcId=100;
+    async function privateCall(token:string,name:string,args:Record<string,unknown>={}):Promise<any>{
+      const response=await mailbox.fetch(resource,{
+        method:"POST",headers:{"Content-Type":"application/json",
+          Accept:"application/json, text/event-stream",
+          "MCP-Protocol-Version":"2025-11-25",Authorization:"Bearer "+token},
+        body:JSON.stringify({jsonrpc:"2.0",id:rpcId++,method:"tools/call",
+          params:{name,arguments:args}})
+      });
+      assert.equal(response.status,200,"real MCP rejected "+name);
+      const frame=await response.json() as {result?:{
+        isError?:boolean;structuredContent?:unknown;content?:{text:string}[]}};
+      assert.ok(frame.result&&!frame.result.isError,"MCP private tool failed "+name);
+      return frame.result.structuredContent??JSON.parse(frame.result.content![0].text);
+    }
+    assert.deepEqual(await privateCall(grant.access_token!,"get_my_profile"),{id:account});
+    assert.deepEqual(await privateCall(grantB.access_token!,"get_my_profile"),{id:accountB});
+    const aAddress=randomUUID(),bAddress=randomUUID();
+    const addressA=await privateCall(grant.access_token!,"ensure_my_address",
+      {addressId:aAddress,label:"Test Agent A"});
+    const addressB=await privateCall(grantB.access_token!,"ensure_my_address",
+      {addressId:bAddress,label:"Test Agent B"});
+    assert.equal(addressA.isPublic,false);
+    assert.equal(addressB.isPublic,false);
+    const addressesA=await privateCall(grant.access_token!,"list_my_addresses");
+    assert.ok(addressesA.items.some((x:{addressId:string})=>x.addressId===aAddress));
+    assert.ok(!addressesA.items.some((x:{addressId:string})=>x.addressId===bAddress),
+      "account A must not read private B addresses");
+    const intro=mailboxPayload("test-consent-introduction");
+    const requested=await privateCall(grant.access_token!,"request_contact",{
+      requestId:intro.messageId,requesterAddressId:aAddress,
+      recipientAccountId:accountB,recipientAddressId:bAddress,payload:intro
+    });
+    const pending=await privateCall(grantB.access_token!,"list_my_contact_requests");
+    assert.ok(pending.items.some((x:{requestId:string;status:string})=>
+      x.requestId===intro.messageId&&x.status==="pending"));
+    await privateCall(grantB.access_token!,"decide_contact",{
+      requestId:intro.messageId,requesterAccountId:account,
+      expectedGeneration:String(requested.generation),status:"accepted"
+    });
+    const deliveries:{token:string;receiverToken:string;sender:string;recipient:string;
+      payload:ReturnType<typeof mailboxPayload>}[]=[];
+    async function sendMessage(index:number):Promise<void>{
+      const fromA=index%2===0;
+      const token=fromA?grant.access_token!:grantB.access_token!;
+      const receiverToken=fromA?grantB.access_token!:grant.access_token!;
+      const sender=fromA?account:accountB,recipient=fromA?accountB:account;
+      const payload=mailboxPayload("test-message-"+index);
+      const receipt=await privateCall(token,"send_message",{
+        recipientAccountId:recipient,contactGeneration:String(requested.generation),payload
+      });
+      assert.equal(receipt.messageId,payload.messageId);
+      assert.equal(receipt.state,"pending");
+      deliveries.push({token,receiverToken,sender,recipient,payload});
+    }
+    // Leave one message in EACH direction pending across a genuine cold restart.
+    await sendMessage(0);
+    await sendMessage(1);
+    await mf.dispose();
+    mf=new Miniflare(options(storage,key));
+    mailbox=await mf.getWorker("weave-mailbox-regression");
+    async function acknowledge(item:(typeof deliveries)[number]):Promise<void>{
+      const inbox=await privateCall(item.receiverToken,"list_my_inbox");
+      assert.ok(inbox.items.some((x:{envelope?:{payload?:{messageId:string}}})=>
+        x.envelope?.payload?.messageId===item.payload.messageId),
+        "inbox must retain original pending message after Worker restart");
+      const receipt=await privateCall(item.receiverToken,"ack_message",{
+        messageId:item.payload.messageId,senderAccountId:item.sender
+      });
+      assert.equal(receipt.state,"acknowledged");
+    }
+    await acknowledge(deliveries[0]);
+    await acknowledge(deliveries[1]);
+    for(let i=2;i<6;i++){
+      await sendMessage(i);
+      await acknowledge(deliveries[i]);
+    }
+    const replayedSend=await privateCall(deliveries[0].token,"send_message",{
+      recipientAccountId:deliveries[0].recipient,
+      contactGeneration:String(requested.generation),payload:deliveries[0].payload
+    });
+    assert.equal(replayedSend.state,"acknowledged","identical replay returns original ACK");
+    const outA=await privateCall(grant.access_token!,"list_my_outbox");
+    const outB=await privateCall(grantB.access_token!,"list_my_outbox");
+    assert.ok(outA.items.length>=3&&outB.items.length>=3,
+      "both accounts retain three outgoing receipts");
     // Real two-Worker Service Binding, real AS KV tokens, and the real
     // resource's authorizeOAuth source running in workerd against D1.
     // This is still isolated emulation, not a live cloud deployment.
