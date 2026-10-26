@@ -77,7 +77,8 @@ async function provider(label:string,token:string,lifetime=900,subject=account,
             const auth=await fetch(url,{redirect:'manual'});assert.equal(auth.status,302);
             await auth.body?.cancel();const callback=auth.headers.get('location');assert.ok(callback);
             const response=await fetch(callback,{redirect:'error'});assert.equal(response.status,200);await response.body?.cancel();
-        },{allowLoopbackForTests:true,scopes:[scope],timeoutMs:5000,expectedIssuer}),
+        },{allowLoopbackForTests:true,scopes:[scope],timeoutMs:5000,
+            ...(expectedIssuer===undefined?{}:{expectedIssuer})}),
         close:()=>new Promise<void>(resolve=>{server.close(()=>resolve());server.closeAllConnections();})};
 }
 for(const [label,token] of [['issuer-a','opaque.alpha_123'],['issuer-b','opaque.beta~456']]){
