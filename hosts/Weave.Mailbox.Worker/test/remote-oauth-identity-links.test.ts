@@ -1,6 +1,7 @@
 import assert from 'node:assert/strict';
 import {test} from 'node:test';
 import {start} from './harness.ts';
+import {createFetchMock} from 'miniflare';
 
 test('owner can see only its linked external OAuth subjects, with unauthenticated access denied',async()=>{
     const h=await start({bindings:{
@@ -115,5 +116,51 @@ test('link POST cannot be driven by first-party control alone or OAuth bearer al
         assert.equal(noToken.status,401);
         assert.match(noToken.headers.get('WWW-Authenticate')??'',/resource_metadata=/);
         assert.equal(await h.db.prepare('SELECT count(*) n FROM oauth_identity_links').first('n'),0);
+    }finally{await h.close();}
+});
+
+test('real workerd binds a validated external RFC7662 bearer to its consenting owner and denies after revoke',async()=>{
+    const issuer='https://issuer.example',resource='https://localhost/mcp';
+    const token='synthetic-public-client-token';
+    const now=Math.floor(Date.now()/1000);
+    const fetchMock=createFetchMock();
+    fetchMock.disableNetConnect();
+    const metadata={active:true,iss:issuer,aud:resource,sub:'separate-external-subject',
+        iat:now-5,exp:now+120,scope:'weave:addresses.read'};
+    fetchMock.get(issuer).intercept({method:'POST',path:'/introspect'}).reply(200,JSON.stringify(metadata),{
+        headers:{'Content-Type':'application/json'}
+    }).persist();
+    const h=await start({fetchMock,bindings:{
+        OAUTH_IDENTITY_LINKS_ENABLED:'true',
+        OAUTH_ISSUER:issuer,OAUTH_RESOURCE:resource,OAUTH_INTROSPECTION_URL:issuer+'/introspect',
+        OAUTH_CLIENT_ID:'test-public-client',OAUTH_CLIENT_SECRET:'synthetic-test-secret-for-introspection'
+    }});
+    try{
+        const owner=await h.register(),other=await h.register();
+        const rpc=()=>h.mf.dispatchFetch(resource,{method:'POST',headers:{
+            Authorization:'Bearer '+token,'Content-Type':'application/json',Accept:'application/json, text/event-stream'
+        },body:JSON.stringify({jsonrpc:'2.0',id:17,method:'tools/call',
+            params:{name:'get_my_profile',arguments:{}}})});
+        const before=await rpc();
+        assert.equal(before.status,401,'external bearer alone cannot claim an account');
+        const link=async(control:string)=>h.mf.dispatchFetch('https://localhost/v1/accounts/oauth/links',{
+            method:'POST',headers:{'X-Weave-Account-Control':control,Authorization:'Bearer '+token,
+                'Content-Type':'application/json'},body:'{}'});
+        const linked=await link(owner.control);
+        assert.equal(linked.status,200,await linked.clone().text());
+        const key=await linked.json();
+        assert.deepEqual(Object.keys(key).sort(),['issuer','resource','subjectDigest'].sort());
+        assert.doesNotMatch(JSON.stringify(key),/separate-external-subject|synthetic-public-client-token/);
+        const profile=await rpc();
+        assert.equal(profile.status,200,await profile.clone().text());
+        const message=await profile.json();
+        assert.equal(JSON.parse(message.result.content[0].text).id,owner.accountId);
+        const foreign=await link(other.control);
+        assert.equal(foreign.status,409,'same external identity cannot be reassigned across accounts');
+        const revoked=await h.mf.dispatchFetch('https://localhost/v1/accounts/oauth/links/revoke',{
+            method:'POST',headers:{'X-Weave-Account-Control':owner.control,'Content-Type':'application/json'},
+            body:JSON.stringify(key)});
+        assert.equal(revoked.status,200,await revoked.clone().text());
+        assert.equal((await rpc()).status,401,'revocation must take effect on the next real private MCP call');
     }finally{await h.close();}
 });
