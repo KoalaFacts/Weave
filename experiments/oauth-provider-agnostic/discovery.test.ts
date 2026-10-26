@@ -90,3 +90,53 @@ test('authorization metadata endpoints may retain existing query parameters',asy
     const result=await inspectOAuthDiscovery(resource,issuer,fake({[rm]:prm(),[am]:{...metadata,authorization_endpoint:issuer+'/authorize?existing=value'}}));
     assert.equal(result.outcome,'metadata-compatible');
 });
+
+
+test('401 challenge may point to alternate same-origin resource metadata without vendor-specific code',async()=>{
+    const access='https://mailbox.example/.well-known/cloudflare-access-protected-resource/';
+    const challenge=new Response('',{status:401,headers:{'WWW-Authenticate':`Bearer realm="OAuth", resource_metadata="${access}"`}});
+    const seen:string[]=[];
+    const result=await inspectOAuthDiscovery(resource,issuer,fake({[rm]:challenge,[resource]:challenge,[access]:prm(),[am]:metadata},seen));
+    assert.equal(result.outcome,'metadata-compatible');
+    assert.equal(result.authenticated,false);
+    assert.deepEqual(seen,[rm,access,am]);
+});
+
+test('401 resource metadata challenge never follows foreign origins or duplicate/unsafe locations',async()=>{
+    const good='https://mailbox.example/.well-known/access-protected-resource/';
+    const headers=[
+        `Bearer resource_metadata="https://foreign.example/.well-known/anything"`,
+        `Bearer resource_metadata="${good}", resource_metadata="${good}"`,
+        `Bearer resource_metadata="https://mailbox.example@foreign.example/.well-known/x"`,
+        `Bearer resource_metadata="${good}?token=secret"`,
+        `Bearer resource_metadata="https://mailbox.example/unsafe"`,
+    ];
+    for(const value of headers){
+        const seen:string[]=[];
+        const challenge=new Response('',{status:401,headers:{'WWW-Authenticate':value}});
+        const result=await inspectOAuthDiscovery(resource,issuer,fake({[rm]:challenge,[resource]:challenge},seen));
+        assert.equal(result.outcome,'resource-metadata-unavailable',value);
+        assert.equal(result.authenticated,false);
+        assert.deepEqual(seen,[rm,resource],value);
+    }
+});
+
+test('401 without an OAuth resource metadata challenge remains unavailable, not a successful login',async()=>{
+    const seen:string[]=[];
+    const challenge=new Response('{"error":"invalid_token"}',{status:401,headers:{'Content-Type':'application/json'}});
+    const result=await inspectOAuthDiscovery(resource,issuer,fake({[rm]:challenge,[resource]:challenge},seen));
+    assert.equal(result.outcome,'resource-metadata-unavailable');
+    assert.equal(result.resourceMetadataStatus,401);
+    assert.deepEqual(seen,[rm,resource]);
+});
+
+
+test('resource endpoint challenge is followed if standard well-known metadata is gated',async()=>{
+    const custom='https://mailbox.example/.well-known/alternate-resource-metadata/';
+    const protectedPath=new Response('',{status:401});
+    const resourceResponse=new Response('',{status:401,headers:{'WWW-Authenticate':`Bearer realm="OAuth", resource_metadata="${custom}"`}});
+    const seen:string[]=[];
+    const result=await inspectOAuthDiscovery(resource,issuer,fake({[rm]:protectedPath,[resource]:resourceResponse,[custom]:prm(),[am]:metadata},seen));
+    assert.equal(result.outcome,'metadata-compatible');
+    assert.deepEqual(seen,[rm,resource,custom,am]);
+});

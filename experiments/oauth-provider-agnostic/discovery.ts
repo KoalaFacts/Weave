@@ -15,13 +15,13 @@ function endpoint(raw:string,allowQuery=false):URL {
     return url;
 }
 const object=(value:unknown):value is Record<string,unknown>=>!!value&&typeof value==='object'&&!Array.isArray(value);
-async function metadata(url:URL,fetcher:typeof fetch):Promise<{status?:number;data?:Record<string,unknown>}> {
+async function metadata(url:URL,fetcher:typeof fetch):Promise<{status?:number;data?:Record<string,unknown>;challenge?:string}> {
     let response:Response|undefined;
     try {
         response=await fetcher(url.href,{method:'GET',redirect:'error',credentials:'omit',cache:'no-store',
             signal:AbortSignal.timeout(10000),headers:{Accept:'application/json'}});
         if(!response.ok||!/^application\/json(?:\s*;|$)/i.test(response.headers.get('content-type')??'')){
-            await response.body?.cancel();return {status:response.status};
+            await response.body?.cancel();return {status:response.status,challenge:response.headers.get('WWW-Authenticate')??undefined};
         }
         const reader=response.body?.getReader();if(!reader)return {status:response.status};
         const decoder=new TextDecoder('utf-8',{fatal:true});let text='',count=0;
@@ -34,6 +34,21 @@ async function metadata(url:URL,fetcher:typeof fetch):Promise<{status?:number;da
         const data:unknown=JSON.parse(text);return {status:response.status,...(object(data)?{data}:{})};
     }catch{return {status:response?.status};}
 }
+/** RFC 9728 allows a 401 challenge to name a metadata URL. This read-only
+ * diagnostic follows only an HTTPS same-origin well-known path, never a bearer,
+ * redirect, cookie, cross-origin URL or arbitrary resource address.
+ */
+function challengeMetadata(header:string|undefined,resource:URL):URL|undefined {
+    if(!header||header.length>2048||!/^Bearer\s/i.test(header))return;
+    const matches=[...header.matchAll(/(?:^Bearer\s+|,)\s*resource_metadata\s*=\s*"([^"\r\n]{1,1024})"/gi)];
+    if(matches.length!==1)return;
+    try {
+        const result=endpoint(matches[0][1]);
+        if(result.origin!==resource.origin||!result.pathname.startsWith('/.well-known/')||
+            result.href!==matches[0][1])return;
+        return result;
+    }catch{return;}
+}
 /** Only fetch the AS when the caller supplied its exact expected issuer.
  * No URL, claim, token, exception text or untrusted response body is logged.
  */
@@ -44,6 +59,16 @@ export async function inspectOAuthDiscovery(resource:string,expectedIssuer?:stri
     let found=await metadata(first,fetcher);
     if((found.status===404||found.status===410)&&target.pathname!=='/')
         found=await metadata(new URL('/.well-known/oauth-protected-resource',target),fetcher);
+    if(found.status===401){
+        let location=challengeMetadata(found.challenge,target);
+        if(!location){
+            // A gateway may challenge the resource but block its well-known paths.
+            // Never attempt a write, send credentials, or follow arbitrary origins.
+            const response=await metadata(target,fetcher);
+            if(response.status===401)location=challengeMetadata(response.challenge,target);
+        }
+        if(location)found=await metadata(location,fetcher);
+    }
     const report:DiscoveryReport={outcome:'resource-metadata-unavailable',authenticated:false,resourceMetadataStatus:found.status};
     if(found.status===404||found.status===410)return {...report,outcome:'resource-metadata-absent'};
     if(!found.data)return report;
