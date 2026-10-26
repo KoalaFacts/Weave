@@ -130,7 +130,7 @@ export async function inspectLiveOAuth({env = process.env, fetchImpl = fetch}: {
         readOnly: true
     };
     const serialized = JSON.stringify(report);
-    if ([account, token].some(secret => serialized.includes(secret))) throw Error('Credential reflection prevented diagnostic output.');
+    if ([account, token].some(secret => typeof secret === 'string' && serialized.includes(secret))) throw Error('Credential reflection prevented diagnostic output.');
     return report;
 }
 
