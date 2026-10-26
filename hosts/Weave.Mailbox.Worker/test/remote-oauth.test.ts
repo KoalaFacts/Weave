@@ -21,7 +21,7 @@ test('bearer-only credentials and resource discovery on 401',async()=>{
 test('authorization-server binding is checked via live introspection, never token passthrough',async()=>{
     const now=Math.floor(Date.now()/1000);let checked=false;
     const r=await authorizeOAuth(config,req(), 'weave:messages.send',exists,fetchFor(valid(now),(url,init)=>{
-        checked=true;assert.equal(url,config.introspectionUrl);assert.equal(init.redirect,'error');assert.ok(init.body instanceof URLSearchParams);assert.equal(init.body.get('token'),'token');
+        checked=true;assert.equal(url,config.introspectionUrl);assert.equal(init.redirect,'manual');assert.ok(init.body instanceof URLSearchParams);assert.equal(init.body.get('token'),'token');
     }),now*1000);
     assert.equal(checked,true);assert.deepEqual(r,{accountId:id});
 });
@@ -231,4 +231,22 @@ test('two AS issuers using the same opaque subject cannot cross-link accounts',a
     assert.deepEqual(await authorizeOAuth(another,req(),'weave:messages.send',existsAccount,fetchFor({...claims,iss:another.issuer}),now*1000,resolver),{accountId:second});
     const swapped=await authorizeOAuth(another,req(),'weave:messages.send',existsAccount,fetchFor(claims),now*1000,resolver);
     assert.ok(swapped instanceof Response);assert.equal(swapped.status,401);
+});
+
+test('RFC7662 introspection rejects redirects without forwarding the bearer or Basic credentials',async()=>{
+    const now=Math.floor(Date.now()/1000);
+    let outgoing=0,accountReads=0;
+    const redirectOnly=(async(url:unknown,init:RequestInit)=>{
+        outgoing++;
+        assert.equal(url,config.introspectionUrl);
+        assert.equal(init.redirect,'manual','workerd must not follow or throw on the redirect policy');
+        assert.equal(init.method,'POST');
+        return new Response(null,{status:302,headers:{Location:'https://untrusted.example/steal'}});
+    }) as typeof fetch;
+    const answer=await authorizeOAuth(config,req('synthetic-opaque-token'),'weave:messages.send',
+        async()=>{accountReads++;return true;},redirectOnly,now*1000);
+    assert.ok(answer instanceof Response);
+    assert.equal(answer.status,503,'an upstream 3xx must fail closed');
+    assert.equal(outgoing,1,'never follow the redirect destination');
+    assert.equal(accountReads,0,'redirects cannot establish an authorized account');
 });

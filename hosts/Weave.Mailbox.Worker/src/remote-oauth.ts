@@ -122,7 +122,9 @@ export async function authorizeOAuth(
     const form=new URLSearchParams({token:match[1],token_type_hint:'access_token'});
     let data: unknown;
     try {
-        const response=await fetcher(config.introspectionUrl,{method:'POST',redirect:'error',cache:'no-store',signal:AbortSignal.timeout(3500),
+        // workerd cannot use redirect:'error': manual preserves a non-followed 3xx,
+        // which the response.ok gate rejects without forwarding credentials.
+        const response=await fetcher(config.introspectionUrl,{method:'POST',redirect:'manual',cache:'no-store',signal:AbortSignal.timeout(3500),
             headers:{'Authorization':'Basic '+btoa(formEncode(config.clientId)+':'+formEncode(config.clientSecret)),'Content-Type':'application/x-www-form-urlencoded','Accept':'application/json'},body:form});
         if (!response.ok || !/^application\/json(?:;|$)/i.test(response.headers.get('Content-Type')??'')) {await response.body?.cancel();return failClosed();}
         // Bound the remote AS response before JSON parsing; never log secrets or response text.
