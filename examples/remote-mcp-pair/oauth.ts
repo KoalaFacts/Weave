@@ -34,10 +34,10 @@ async function boundedJson(url:URL,init:RequestInit|undefined,allowLoopback:bool
     if(!data||typeof data!=='object'||Array.isArray(data))throw Error('Invalid OAuth metadata or token response');
     return data as Record<string,unknown>;
 }
-function sameIssuerUrl(raw:unknown,issuer:URL,allowLoopback:boolean):URL{
+function sameIssuerUrl(raw:unknown,issuer:URL,allowLoopback:boolean,trustedOrigins:ReadonlySet<string>):URL{
     if(typeof raw!=='string')throw Error('Missing OAuth authorization or token endpoint');
     const url=validEndpoint(raw,allowLoopback);
-    if(url.origin!==issuer.origin)throw Error('OAuth endpoint is outside trusted issuer origin');
+    if(url.origin!==issuer.origin&&!trustedOrigins.has(url.origin))throw Error('OAuth endpoint is outside trusted issuer origin');
     return url;
 }
 export interface OAuthLoginOptions {
@@ -45,6 +45,8 @@ export interface OAuthLoginOptions {
     allowLoopbackForTests?:boolean;
     scopes?:string[];
     timeoutMs?:number;
+    /** Optional operator-approved cross-origin RFC 8414 endpoints (exact scheme/host/port). */
+    trustedEndpointOrigins?:readonly string[];
 }
 /** onAuthorizationUrl opens the trusted AS consent page (or shows the link to
  * the operator). It must never receive the verifier, access token, or code.
@@ -52,6 +54,14 @@ export interface OAuthLoginOptions {
 export async function authorizeMcpAccount(resource:string,clientId:string,
     onAuthorizationUrl:(url:string)=>Promise<void>|void,options:OAuthLoginOptions={}):Promise<string>{
     const allowLoopback=options.allowLoopbackForTests===true;
+    const trustedOrigins=new Set<string>();
+    for(const origin of options.trustedEndpointOrigins??[]){
+        if(typeof origin!=='string')throw Error('Invalid trusted OAuth endpoint origin');
+        const url=validEndpoint(origin,allowLoopback);
+        if(url.href!==url.origin+'/'||url.pathname!=='/'||url.search||url.hash)
+            throw Error('Trusted OAuth endpoint origin must be an exact origin');
+        trustedOrigins.add(url.origin);
+    }
     const endpoint=validEndpoint(resource,allowLoopback);
     if(endpoint.pathname!=='/mcp'||endpoint.search)throw Error('OAuth resource must be the exact /mcp URL');
     if(!/^[\x21-\x7e]{1,128}$/.test(clientId))throw Error('Invalid public OAuth client ID');
@@ -72,8 +82,8 @@ export async function authorizeMcpAccount(resource:string,clientId:string,
         (metadata.grant_types_supported!==undefined&&(!Array.isArray(metadata.grant_types_supported)||!metadata.grant_types_supported.includes('authorization_code')))||
         !Array.isArray(metadata.code_challenge_methods_supported)||!metadata.code_challenge_methods_supported.includes('S256'))
         throw Error('Untrusted OAuth issuer or authorization-code PKCE S256 unsupported');
-    const authorization=sameIssuerUrl(metadata.authorization_endpoint,issuer,allowLoopback);
-    const tokenEndpoint=sameIssuerUrl(metadata.token_endpoint,issuer,allowLoopback);
+    const authorization=sameIssuerUrl(metadata.authorization_endpoint,issuer,allowLoopback,trustedOrigins);
+    const tokenEndpoint=sameIssuerUrl(metadata.token_endpoint,issuer,allowLoopback,trustedOrigins);
     const verifier=randomBytes(32).toString('base64url');
     const challenge=createHash('sha256').update(verifier).digest('base64url');
     const state=randomBytes(32).toString('base64url');
