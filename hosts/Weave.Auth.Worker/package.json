@@ -10,7 +10,8 @@
   "scripts": {
     "typecheck": "tsc --noEmit",
     "test:portable": "node --test test/*.test.ts",
-    "build": "wrangler deploy --dry-run --config wrangler.example.jsonc --outdir dist"
+    "build": "wrangler deploy --dry-run --config wrangler.example.jsonc --outdir dist",
+    "test:workerd": "node --test test/workerd-nonce.test.ts"
   },
   "dependencies": {
     "@cloudflare/workers-oauth-provider": "1.2.4"
@@ -19,7 +20,8 @@
     "@cloudflare/workers-types": "5.20261025.1",
     "@types/node": "24.19.2",
     "typescript": "7.0.2",
-    "wrangler": "4.149.0"
+    "wrangler": "4.149.0",
+    "miniflare": "5.20261006.1-alpha"
   },
   "overrides": {
     "undici": "7.30.1"

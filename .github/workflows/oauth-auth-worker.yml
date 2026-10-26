@@ -51,5 +51,7 @@ jobs:
         run: npm run test:portable
       - name: Bundle Cloudflare authorization Worker without publishing
         run: npm run build
+      - name: Exercise real workerd Durable Object consent replay and cold restart
+        run: npm run test:workerd
       - name: Reject high-severity dependency vulnerabilities
         run: npm audit --audit-level=high
