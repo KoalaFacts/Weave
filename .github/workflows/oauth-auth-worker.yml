@@ -49,6 +49,20 @@ jobs:
         run: npm run build
       - name: Reject high-severity dependency vulnerabilities
         run: npm audit --audit-level=high
+      # One-time review bridge: only public npm dependency metadata, never secrets.
+      # Remove after the exact generated lockfile is committed.
+      - name: Emit candidate lock for repository import
+        run: |
+          python3 - <<'PY'
+          import base64, hashlib, pathlib
+          data=pathlib.Path("package-lock.json").read_bytes()
+          assert len(data) < 200000
+          print("LOCK_START", len(data), hashlib.sha256(data).hexdigest())
+          encoded=base64.b64encode(data).decode('ascii')
+          for i in range(0,len(encoded),1024):
+              print("LOCK_DATA", encoded[i:i+1024])
+          print("LOCK_END")
+          PY
       - name: Retain candidate lock for reproducible review
         if: always()
         uses: actions/upload-artifact@043fb46d1a93c77aae656e7c1c64a875d1fc6a0a # v7
