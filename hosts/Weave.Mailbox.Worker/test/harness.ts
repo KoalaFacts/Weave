@@ -9,7 +9,7 @@ export async function start({ persist, migrate = true, bindings = {}, scriptPath
         d1Databases: ['db'], ...(persist ? { resourcePersistencePath: persist } : {}), bindings: {
             REGISTRATION_ENABLED: 'true', REGISTRATION_MAX_ACCOUNTS: '100',
             REGISTRATION_PER_IP_PER_HOUR: '10', REGISTRATION_GLOBAL_PER_HOUR: '100',
-            ...bindings } }), ...(outboundService ? {outboundService} : {}) });
+            ...bindings }, ...(outboundService ? {outboundService} : {}) }));
     try {
         const db = await mf.getD1Database('db');
         if(migrate){
