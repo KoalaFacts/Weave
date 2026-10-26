@@ -63,6 +63,9 @@ jobs:
       - name: Install locked mailbox Worker dependencies for full MCP/D1 acceptance
         working-directory: hosts/Weave.Mailbox.Worker
         run: npm ci --ignore-scripts --no-audit --no-fund
+      - name: Strictly typecheck the complete mailbox Worker
+        working-directory: hosts/Weave.Mailbox.Worker
+        run: npm run typecheck
       - name: Verify provider-neutral issuer and subject binding regressions on the real mailbox validator
         working-directory: hosts/Weave.Mailbox.Worker
         run: node --test test/remote-oauth.test.ts

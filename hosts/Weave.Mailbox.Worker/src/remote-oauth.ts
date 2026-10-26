@@ -31,6 +31,11 @@ export interface OAuthConfiguration {
 export interface OAuthServiceConfiguration { mode:'service'; issuer:string; resource:string; authServer:OAuthServiceBinding; }
 export type OAuthOptions = OAuthConfiguration | OAuthServiceConfiguration;
 export type OAuthAccess = {accountId: string} | Response;
+/** The verified AS subject is not a Weave owner. External issuers require a
+ * trusted server-side mapping established by the account owner.
+ */
+export interface VerifiedOAuthSubject {issuer:string;resource:string;subject:string;}
+export type OAuthSubjectResolver=(subject:VerifiedOAuthSubject)=>Promise<string|null>;
 const identity = /^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/;
 const serviceTokenPattern = /^[A-Za-z0-9._~+/\-]+:[A-Za-z0-9._~+/\-]+:[A-Za-z0-9._~+/\-]+$/;
 const tokenPattern = /^[A-Za-z0-9\-._~+/]+={0,2}$/;
@@ -84,7 +89,8 @@ function failClosed():Response {
 export async function authorizeOAuth(
     config: OAuthOptions, request: Request, requiredScope: string,
     accountExists: (accountId: string) => Promise<boolean>,
-    fetcher: typeof fetch = fetch, now: number | (() => number) = Date.now
+    fetcher: typeof fetch = fetch, now: number | (() => number) = Date.now,
+    resolveAccount?: OAuthSubjectResolver
 ): Promise<OAuthAccess> {
     const raw = request.headers.get('authorization');
     if (!raw || !/^Bearer\s+/i.test(raw)) return challenge(config,401,requiredScope,'invalid_token');
@@ -133,7 +139,7 @@ export async function authorizeOAuth(
     const nowSec=Math.floor(clock()/1000);
     // RFC 7662 does not guarantee issuer/audience in every response; our configured
     // authorization server MUST return both. Ambiguous bindings are rejected.
-    if(info.active!==true||info.iss!==config.issuer||info.aud!==config.resource||typeof info.sub!=='string'||!identity.test(info.sub)
+    if(info.active!==true||info.iss!==config.issuer||info.aud!==config.resource||typeof info.sub!=='string'||info.sub.length<1||info.sub.length>255||/[\x00-\x1f\x7f]/.test(info.sub)
         || !Number.isSafeInteger(info.exp)|| (info.exp as number)<=nowSec || (info.exp as number)>nowSec+900
         || !Number.isSafeInteger(info.iat)|| (info.iat as number)>nowSec+60|| (info.iat as number)>=(info.exp as number)
         || (info.exp as number)-(info.iat as number)>900
@@ -141,8 +147,24 @@ export async function authorizeOAuth(
         return challenge(config,401,requiredScope,'invalid_token');
     }
     if (typeof info.scope!=='string'||!info.scope.split(' ').includes(requiredScope)) return challenge(config,403,requiredScope,'insufficient_scope');
-    try {if(!await accountExists(info.sub))return challenge(config,401,requiredScope,'invalid_token');}catch{return failClosed();}
-    // The database lookup can also outlive the bearer; revalidate before dispatch.
+    // OAuth `sub` is issuer-local, not automatically an account UUID.
+    // External issuers need an owner-approved, exact issuer+subject map. Never
+    // silently fall back to a UUID or email if a resolver was configured.
+    let accountId:string;
+    if(resolveAccount){
+        let linked:string|null;
+        try {linked=await resolveAccount({issuer:config.issuer,resource:config.resource,subject:info.sub});}
+        catch {return failClosed();}
+        if(typeof linked!=='string'||!identity.test(linked))return challenge(config,401,requiredScope,'invalid_token');
+        accountId=linked;
+    }else{
+        // Compatibility with the existing explicitly trusted Weave-native AS.
+        if(!identity.test(info.sub))return challenge(config,401,requiredScope,'invalid_token');
+        accountId=info.sub;
+    }
     if((info.exp as number)<=Math.floor(clock()/1000))return challenge(config,401,requiredScope,'invalid_token');
-    return {accountId:info.sub};
+    try {if(!await accountExists(accountId))return challenge(config,401,requiredScope,'invalid_token');}catch{return failClosed();}
+    // The account lookup can also outlive the bearer; revalidate before dispatch.
+    if((info.exp as number)<=Math.floor(clock()/1000))return challenge(config,401,requiredScope,'invalid_token');
+    return {accountId};
 }
