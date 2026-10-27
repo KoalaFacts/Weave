@@ -87,7 +87,9 @@ export async function verifyManagedAccessAssertion(
         if(matches.length!==1)return null;
         const key=await crypto.subtle.importKey('jwk',matches[0] as JsonWebKey,
             {name:'RSASSA-PKCS1-v1_5',hash:'SHA-256'},false,['verify']);
-        const valid=await crypto.subtle.verify('RSASSA-PKCS1-v1_5',key,sig,new TextEncoder().encode(rawHeader+'.'+rawPayload));
+        // TS7 DOM BufferSource requires ArrayBuffer-backed bytes, not an optional SharedArrayBuffer.
+        const signature=new Uint8Array(sig.byteLength);signature.set(sig);
+        const valid=await crypto.subtle.verify('RSASSA-PKCS1-v1_5',key,signature,new TextEncoder().encode(rawHeader+'.'+rawPayload));
         if(!valid||(claims.exp as number)<=Math.floor(clock()/1000))return null;
         return {issuer:cfg.issuer,resource:cfg.resource,subject:claims.sub,expiresAt:claims.exp as number};
     }catch{return null;}
