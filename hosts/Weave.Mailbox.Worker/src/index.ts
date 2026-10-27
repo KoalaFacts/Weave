@@ -5,6 +5,7 @@ import openapi from './openapi.json';
 import { publicReadRate } from './public-rate';
 import { remoteMcp } from './remote-mcp';
 import { oauthConfiguration, authorizeOAuth, protectedResourceMetadata } from './remote-oauth';
+import { demoOAuthClientId, demoOAuthClientMetadata } from './oauth-client-metadata';
 import type { VerifiedOAuthSubject } from './remote-oauth';
 import {resolveLinkedOAuthSubject,linkOAuthSubject,listOAuthLinks,revokeOAuthLink} from './oauth-identity-links';
 import { privateMcpTools, privateScope, executePrivateMcp } from './remote-private';
@@ -44,6 +45,13 @@ export default {
             if (method === 'GET' && url.pathname === '/agent-start.md') return agentStart();
             if (method === 'GET' && url.pathname === '/registry') return registry();
             if (method === 'GET' && url.pathname === '/openapi.json') return new Response(openapi,{headers:{'Content-Type':'application/json','Cache-Control':'no-store','X-Content-Type-Options':'nosniff'}});
+            // Public Client ID Metadata Document for the first-party demo PKCE
+            // acceptance client. No control secret, account, cookie or OAuth
+            // bearer is accepted here. Never reflect an arbitrary Host value.
+            if (url.pathname === '/oauth-client-metadata.json') {
+                if (method !== 'GET' || url.href !== demoOAuthClientId) fail(404,'unavailable');
+                return demoOAuthClientMetadata();
+            }
             if(env.MAINTENANCE_MODE==='true')fail(503,'maintenance',30);
             if(method==='GET' && (url.pathname==='/account-proof'||url.pathname==='/account-proof.js')){
                 if(env.RECOVERY_READ_ONLY==='true')fail(503,'maintenance',30);

@@ -4,6 +4,15 @@
 import { createHash, randomBytes, timingSafeEqual } from 'node:crypto';
 import { createServer } from 'node:http';
 
+/** The canonical demo can use public CIMD without enabling anonymous DCR.
+ * The authorization server must explicitly advertise CIMD support first.
+ */
+export const demoOAuthClientId = 'https://demo.weave-389.workers.dev/oauth-client-metadata.json';
+export function selectOAuthClientId(resource:string,configuredId:string,cimdSupported:unknown):string{
+    if(configuredId)return configuredId;
+    return resource==='https://demo.weave-389.workers.dev/mcp' && cimdSupported===true
+        ?demoOAuthClientId:'';
+}
 const allowedScopes=new Set(['weave:addresses.read','weave:addresses.write','weave:contacts.read','weave:contacts.write',
     'weave:messages.read','weave:messages.send','weave:messages.ack']);
 const loopback=(url:URL)=>url.protocol==='http:' && ['127.0.0.1','[::1]','localhost'].includes(url.hostname);
@@ -119,14 +128,17 @@ export async function authorizeMcpAccount(resource:string,clientId:string,
         throw Error('Untrusted OAuth issuer or authorization-code PKCE S256 unsupported');
     const authorization=sameIssuerUrl(metadata.authorization_endpoint,issuer,allowLoopback,trustedOrigins);
     const tokenEndpoint=sameIssuerUrl(metadata.token_endpoint,issuer,allowLoopback,trustedOrigins);
+    // A trusted first-party demo uses its HTTPS Client ID Metadata Document
+    // only when the AS advertises CIMD. Never enable DCR merely for that client;
+    // foreign resources and explicit operator IDs keep their existing semantics.
+    const resolvedClientId=selectOAuthClientId(endpoint.href,clientId,metadata.client_id_metadata_document_supported);
     // Discover but never blindly contact an untrusted registration origin.
-    // Dynamic registration is entirely optional when the operator supplies a client ID.
-    const registrationEndpoint=clientId?null:
+    const registrationEndpoint=resolvedClientId?null:
         (typeof metadata.registration_endpoint==='string'
             ?sameIssuerUrl(metadata.registration_endpoint,issuer,allowLoopback,trustedOrigins)
             :null);
-    if(!clientId&&!registrationEndpoint)
-        throw Error('OAuth issuer does not advertise an approved registration endpoint');
+    if(!resolvedClientId&&!registrationEndpoint)
+        throw Error('OAuth issuer advertises neither trusted CIMD nor an approved registration endpoint');
     const verifier=randomBytes(32).toString('base64url');
     const challenge=createHash('sha256').update(verifier).digest('base64url');
     const state=randomBytes(32).toString('base64url');
@@ -137,7 +149,7 @@ export async function authorizeMcpAccount(resource:string,clientId:string,
     try{
         const addr=server.address();if(!addr||typeof addr==='string')throw Error('OAuth loopback callback did not bind');
         const redirectUri=`http://127.0.0.1:${addr.port}/callback`;
-        let selectedClientId=clientId;
+        let selectedClientId=resolvedClientId;
         if(registrationEndpoint){
             // RFC 7591: register only this ephemeral loopback callback as a public
             // authorization-code/PKCE client. Never accept or persist a client secret.
