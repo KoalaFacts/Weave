@@ -1,6 +1,7 @@
 import test from 'node:test';
 import assert from 'node:assert/strict';
 import {provisionTrial} from './provision.ts';
+import {inspectAccess} from './preflight.ts';
 
 const account='a'.repeat(32);
 const appId='11111111-2222-3333-4444-555555555555';
@@ -110,4 +111,33 @@ test('POST success with wider domain or OAuth disabled cannot be reported verifi
  const base=fakeCloud();
  const bad:typeof fetch=async(u,i)=>String(u).endsWith('/'+appId)?envelope({id:appId,name:'Weave Managed OAuth Trial',type:'self_hosted',domain:'demo.weave-389.workers.dev',destinations:[{type:'public',uri:'demo.weave-389.workers.dev'}],oauth_configuration:{enabled:false}}):base.fetchImpl(u,i);
  await assert.rejects(provisionTrial({env,inspect:readOnly,fetchImpl:bad}),/verification/);
+});
+
+test('existing partially wildcarded Access hostname denies new policy before any POST, using real preflight', async () => {
+ for (const uri of [
+   'dem*.weave-389.workers.dev/secured/*',
+   'demo*.weave-389.workers.dev',
+   '*mo.weave-389.workers.dev',
+   'd*o.weave-389.workers.dev',
+ ]) {
+   const requests:{path:string;method:string}[]=[];
+   const fetchImpl:typeof fetch=async(input,init={})=>{
+     const url=new URL(String(input));
+     assert.equal(url.origin,'https://api.cloudflare.com');
+     const method=init.method??'GET';
+     const path=url.pathname.slice(('/client/v4/accounts/'+account).length)+url.search;
+     requests.push({path,method});
+     assert.equal(init.redirect,'manual');
+     if(path==='/workers/subdomain')return envelope({subdomain:'weave-389'});
+     if(path==='/access/apps?per_page=100&page=1')return Response.json({success:true,
+       result:[{id:appId,name:'Existing MFA policy',domain:'unrelated.example.org',
+         destinations:[{type:'public',uri}]}],result_info:{page:1,total_pages:1}});
+     if(path==='/access/organizations')return envelope({auth_domain:'team.cloudflareaccess.com'});
+     if(method==='POST')return envelope({id:appId,name:'Weave Managed OAuth Trial'});
+     throw Error('Unexpected request '+method+' '+path);
+   };
+   await assert.rejects(provisionTrial({env,inspect:inspectAccess,fetchImpl}));
+   assert.equal(requests.filter(request=>request.method==='POST').length,0,
+     'must not override an existing Access application with '+uri);
+ }
 });
