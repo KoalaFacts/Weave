@@ -69,8 +69,11 @@ function options(storage:string,key:string) {
       // Miniflare 5's outbound hook is dev configuration, not Worker config.
       // Fail closed for every destination except the canonical public CIMD.
       dev:{
-        outboundService:(request:Request)=>request.method==="GET"&&request.url===clientId
-          ?demoOAuthClientMetadata():new Response("Outbound denied",{status:403})
+        outboundService:{
+          type:"fetcher",
+          handler:(request:Request)=>request.method==="GET"&&request.url===clientId
+            ?demoOAuthClientMetadata():new Response("Outbound denied",{status:403})
+        }
       },
       config:{
         name:"weave-consent-regression",
