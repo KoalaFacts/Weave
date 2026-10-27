@@ -347,9 +347,24 @@ const preapprovedIssuer=[
     {name:'OAUTH_KV',type:'kv_namespace',namespace_id:'b'.repeat(32)},
     {name:'CONSENT_NONCES',type:'durable_object_namespace',class_name:'ConsentNonce'}
 ];
+const validFirstPartyIssuerMetadata={
+    issuer:firstPartyIssuer,client_id_metadata_document_supported:true,
+    code_challenge_methods_supported:['S256'],
+    authorization_endpoint:firstPartyIssuer+'/authorize',
+    token_endpoint:firstPartyIssuer+'/oauth/token',
+    response_types_supported:['code'],grant_types_supported:['authorization_code']
+};
+const validFirstPartyResourceMetadata={
+    resource:firstPartyResource,authorization_servers:[firstPartyIssuer]
+};
+const validFirstPartyClientMetadata={
+    client_id:'https://demo.weave-389.workers.dev/oauth-client-metadata.json',
+    redirect_uris:['http://127.0.0.1/callback'],token_endpoint_auth_method:'none',
+    grant_types:['authorization_code'],response_types:['code']
+};
 function firstPartyBootstrap({bindings=preapprovedResource,asBindings=preapprovedIssuer,publicStatus=200,
-    metadata={issuer:firstPartyIssuer,client_id_metadata_document_supported:true,
-        code_challenge_methods_supported:['S256']},flag='true'}={}){
+    metadata=validFirstPartyIssuerMetadata,flag='true',resourceStatus=200,clientStatus=200,
+    resourceMetadata=validFirstPartyResourceMetadata,clientMetadata=validFirstPartyClientMetadata}={}){
     const f=fixture({bindingResult:bindings,extraEnv:{WEAVE_APPROVED_FIRST_PARTY_OAUTH_BINDING:flag}});
     const original=f.options.fetchImpl;
     f.options.fetchImpl=async (url,options)=>{
@@ -362,6 +377,16 @@ function firstPartyBootstrap({bindings=preapprovedResource,asBindings=preapprove
             f.requests.push(url);
             assert.equal(options.headers?.Authorization,undefined,'Never send the Cloudflare API token to the public issuer');
             return Response.json(metadata,{status:publicStatus});
+        }
+        if(url==='https://demo.weave-389.workers.dev/.well-known/oauth-protected-resource/mcp'){
+            f.requests.push(url);
+            assert.equal(options.headers?.Authorization,undefined,'Never send a Cloudflare token to public resource metadata');
+            return Response.json(resourceMetadata,{status:resourceStatus});
+        }
+        if(url==='https://demo.weave-389.workers.dev/oauth-client-metadata.json'){
+            f.requests.push(url);
+            assert.equal(options.headers?.Authorization,undefined,'Never send a Cloudflare token to public client metadata');
+            return Response.json(clientMetadata,{status:clientStatus});
         }
         const response=await original(url,options);
         // Mirror Cloudflare's post-upload report; assertions also inspect the
@@ -385,6 +410,10 @@ test('explicit one-time first-party bootstrap attaches the approved existing AS 
     assert.deepEqual(f.events,['maintenance','convert','schema','recovery','active']);
     assert.ok(f.requests.some(url=>url.endsWith('/workers/scripts/weave-auth-demo/settings')));
     assert.ok(f.requests.includes(firstPartyIssuer+'/.well-known/oauth-authorization-server'));
+    assert.ok(f.requests.includes('https://demo.weave-389.workers.dev/.well-known/oauth-protected-resource/mcp'),
+        'Successful OAuth rollout must prove real resource discovery after activation');
+    assert.ok(f.requests.includes('https://demo.weave-389.workers.dev/oauth-client-metadata.json'),
+        'Successful OAuth rollout must prove the public CIMD client after activation');
     for(const config of f.configs){
         assert.deepEqual(config.services,[{binding:'AUTH_SERVER',service:'weave-auth-demo',entrypoint:'AuthServer'}]);
         assert.equal(config.vars.OAUTH_ISSUER,firstPartyIssuer);
@@ -429,4 +458,36 @@ test('ordinary demo deploy does not bootstrap even with a preinstalled proof sec
     const f=fixture({bindingResult:preapprovedResource});
     await deploy(f.options);
     assert.ok(f.configs.every(c=>!('services' in c)&&c.vars.OAUTH_ISSUER===undefined));
+});
+
+test('approved first-party AS metadata must expose a viable same-origin code and PKCE issuer before any upload',async()=>{
+    for(const metadata of [
+        {...validFirstPartyIssuerMetadata,authorization_endpoint:undefined},
+        {...validFirstPartyIssuerMetadata,authorization_endpoint:'https://foreign.example/authorize'},
+        {...validFirstPartyIssuerMetadata,authorization_endpoint:firstPartyIssuer+'/authorize?redirect=evil'},
+        {...validFirstPartyIssuerMetadata,token_endpoint:undefined},
+        {...validFirstPartyIssuerMetadata,token_endpoint:'http://weave-auth-demo.weave-389.workers.dev/oauth/token'},
+        {...validFirstPartyIssuerMetadata,token_endpoint:'https://foreign.example/oauth/token'},
+        {...validFirstPartyIssuerMetadata,response_types_supported:['token']},
+        {...validFirstPartyIssuerMetadata,grant_types_supported:['refresh_token']}
+    ]){
+        const f=firstPartyBootstrap({metadata});
+        await assert.rejects(deploy(f.options),/issuer|authorization|token|PKCE|metadata/i);
+        assert.equal(f.commands.length,0,'Bad discovery may not take down a running public demo');
+    }
+});
+test('approved AS binding rollout verifies public resource discovery and CIMD before reporting success',async()=>{
+    for(const variant of [
+        {resourceStatus:404},
+        {resourceMetadata:{...validFirstPartyResourceMetadata,resource:'https://foreign.example/mcp'}},
+        {resourceMetadata:{...validFirstPartyResourceMetadata,authorization_servers:['https://foreign.example']}},
+        {clientStatus:404},
+        {clientMetadata:{...validFirstPartyClientMetadata,client_id:'https://foreign.example/metadata.json'}},
+        {clientMetadata:{...validFirstPartyClientMetadata,redirect_uris:['https://other.example/callback']}}
+    ]){
+        const f=firstPartyBootstrap(variant);
+        await assert.rejects(deploy(f.options),/public OAuth|resource metadata|client metadata|CIMD/i);
+        assert.equal(f.commands.length,3,'Public metadata check runs only after versioned deployment and setting verification');
+        assert.equal(f.closed,true);
+    }
 });
