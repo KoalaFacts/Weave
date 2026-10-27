@@ -333,3 +333,100 @@ test('a previously approved OAuth Service Binding can use default or named RPC e
         assert.deepEqual(f.events,['maintenance','convert','schema','recovery','active']);
     }
 });
+
+
+const firstPartyIssuer='https://weave-auth-demo.weave-389.workers.dev';
+const firstPartyResource='https://demo.weave-389.workers.dev/mcp';
+const preapprovedResource=[
+    dbBinding,{name:'OAUTH_ACCOUNT_PROOF_KEY',type:'secret_text'}
+];
+const preapprovedIssuer=[
+    {name:'OAUTH_ISSUER',type:'plain_text',text:firstPartyIssuer},
+    {name:'OAUTH_RESOURCE',type:'plain_text',text:firstPartyResource},
+    {name:'OAUTH_ACCOUNT_PROOF_KEY',type:'secret_text'},
+    {name:'OAUTH_KV',type:'kv_namespace',namespace_id:'b'.repeat(32)},
+    {name:'CONSENT_NONCES',type:'durable_object_namespace',class_name:'ConsentNonce'}
+];
+function firstPartyBootstrap({bindings=preapprovedResource,asBindings=preapprovedIssuer,publicStatus=200,
+    metadata={issuer:firstPartyIssuer,client_id_metadata_document_supported:true,
+        code_challenge_methods_supported:['S256']},flag='true'}={}){
+    const f=fixture({bindingResult:bindings,extraEnv:{WEAVE_APPROVED_FIRST_PARTY_OAUTH_BINDING:flag}});
+    const original=f.options.fetchImpl;
+    f.options.fetchImpl=async (url,options)=>{
+        if(url.endsWith('/workers/scripts/weave-auth-demo/settings')){
+            f.requests.push(url);
+            assert.equal(options.headers.Authorization,'Bearer '+env.CLOUDFLARE_API_TOKEN);
+            return {ok:true,status:200,json:async()=>({success:true,result:{bindings:asBindings}})};
+        }
+        if(url===firstPartyIssuer+'/.well-known/oauth-authorization-server'){
+            f.requests.push(url);
+            assert.equal(options.headers?.Authorization,undefined,'Never send the Cloudflare API token to the public issuer');
+            return Response.json(metadata,{status:publicStatus});
+        }
+        const response=await original(url,options);
+        // Mirror Cloudflare's post-upload report; assertions also inspect the
+        // actual generated Wrangler configs, not just this simulated response.
+        if(f.commands.length && flag==='true' &&
+            (url.endsWith('/workers/scripts/demo/settings')||url.includes('/workers/scripts/demo/versions/'))){
+            const payload=await response.json(),target=url.includes('/versions/')
+                ?payload.result.resources.bindings:payload.result.bindings;
+            target.push({name:'AUTH_SERVER',type:'service',service:'weave-auth-demo',entrypoint:'AuthServer'});
+            for(const [name,text] of [['OAUTH_ISSUER',firstPartyIssuer],['OAUTH_RESOURCE',firstPartyResource]])
+                target.push({name,type:'plain_text',text});
+            return {...response,json:async()=>payload};
+        }
+        return response;
+    };
+    return f;
+}
+test('explicit one-time first-party bootstrap attaches the approved existing AS in every maintenance/recovery/active stage',async()=>{
+    const f=firstPartyBootstrap();
+    await deploy(f.options);
+    assert.deepEqual(f.events,['maintenance','convert','schema','recovery','active']);
+    assert.ok(f.requests.some(url=>url.endsWith('/workers/scripts/weave-auth-demo/settings')));
+    assert.ok(f.requests.includes(firstPartyIssuer+'/.well-known/oauth-authorization-server'));
+    for(const config of f.configs){
+        assert.deepEqual(config.services,[{binding:'AUTH_SERVER',service:'weave-auth-demo',entrypoint:'AuthServer'}]);
+        assert.equal(config.vars.OAUTH_ISSUER,firstPartyIssuer);
+        assert.equal(config.vars.OAUTH_RESOURCE,firstPartyResource);
+        assert.equal(JSON.stringify(config).includes('OAUTH_ACCOUNT_PROOF_KEY'),false);
+    }
+    assert.equal(f.closed,true);
+});
+test('OAuth binding bootstrap fails closed before maintenance when preapproved infrastructure or public issuer is absent',async()=>{
+    const cases=[
+        firstPartyBootstrap({bindings:[dbBinding]}),
+        firstPartyBootstrap({bindings:[...preapprovedResource,{name:'OAUTH_CLIENT_SECRET',type:'secret_text'}]}),
+        firstPartyBootstrap({asBindings:preapprovedIssuer.filter(x=>x.name!=='OAUTH_KV')}),
+        firstPartyBootstrap({asBindings:preapprovedIssuer.map(x=>x.name==='OAUTH_KV'?{...x,namespace_id:'bad'}:x)}),
+        firstPartyBootstrap({asBindings:preapprovedIssuer.filter(x=>x.name!=='CONSENT_NONCES')}),
+        firstPartyBootstrap({publicStatus:401}),
+        firstPartyBootstrap({metadata:{issuer:'https://untrusted.example',client_id_metadata_document_supported:true,code_challenge_methods_supported:['S256']}}),
+        firstPartyBootstrap({metadata:{issuer:firstPartyIssuer,client_id_metadata_document_supported:false,code_challenge_methods_supported:['S256']}}),
+        firstPartyBootstrap({flag:'tru'}),
+        firstPartyBootstrap({bindings:[...preapprovedResource,{name:'AUTH_SERVER',type:'service',service:'other'}]})
+    ];
+    for(const f of cases){
+        await assert.rejects(deploy(f.options));
+        assert.equal(f.commands.length,0,'No maintenance, D1 or active upload may start on a failed preflight');
+    }
+});
+test('OAuth binding bootstrap verifies the new Service Binding immediately after maintenance before writing to D1',async()=>{
+    const f=firstPartyBootstrap(),original=f.options.fetchImpl;
+    f.options.fetchImpl=async (url,options)=>{
+        const response=await original(url,options);
+        if(url.endsWith('/workers/scripts/demo/settings')&&f.commands.length===1){
+            const payload=await response.json();
+            payload.result.bindings=payload.result.bindings.filter(binding=>binding.name!=='AUTH_SERVER');
+            return {...response,json:async()=>payload};
+        }
+        return response;
+    };
+    await assert.rejects(deploy(f.options),/AUTH_SERVER.*not confirmed|OAuth Service Binding.*not confirmed/i);
+    assert.deepEqual(f.events,['maintenance']);
+});
+test('ordinary demo deploy does not bootstrap even with a preinstalled proof secret',async()=>{
+    const f=fixture({bindingResult:preapprovedResource});
+    await deploy(f.options);
+    assert.ok(f.configs.every(c=>!('services' in c)&&c.vars.OAUTH_ISSUER===undefined));
+});
