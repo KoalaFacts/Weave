@@ -350,12 +350,14 @@ const preapprovedIssuer=[
 const validFirstPartyIssuerMetadata={
     issuer:firstPartyIssuer,client_id_metadata_document_supported:true,
     code_challenge_methods_supported:['S256'],
+    authorization_response_iss_parameter_supported:true,
     authorization_endpoint:firstPartyIssuer+'/authorize',
     token_endpoint:firstPartyIssuer+'/oauth/token',
     response_types_supported:['code'],grant_types_supported:['authorization_code']
 };
 const validFirstPartyResourceMetadata={
-    resource:firstPartyResource,authorization_servers:[firstPartyIssuer]
+    resource:firstPartyResource,authorization_servers:[firstPartyIssuer],
+    scopes_supported:['weave:messages.send','weave:messages.ack']
 };
 const validFirstPartyClientMetadata={
     client_id:'https://demo.weave-389.workers.dev/oauth-client-metadata.json',
@@ -469,7 +471,8 @@ test('approved first-party AS metadata must expose a viable same-origin code and
         {...validFirstPartyIssuerMetadata,token_endpoint:'http://weave-auth-demo.weave-389.workers.dev/oauth/token'},
         {...validFirstPartyIssuerMetadata,token_endpoint:'https://foreign.example/oauth/token'},
         {...validFirstPartyIssuerMetadata,response_types_supported:['token']},
-        {...validFirstPartyIssuerMetadata,grant_types_supported:['refresh_token']}
+        {...validFirstPartyIssuerMetadata,grant_types_supported:['refresh_token']},
+        {...validFirstPartyIssuerMetadata,authorization_response_iss_parameter_supported:false}
     ]){
         const f=firstPartyBootstrap({metadata});
         await assert.rejects(deploy(f.options),/issuer|authorization|token|PKCE|metadata/i);

@@ -82,6 +82,35 @@ export async function deploy({env=process.env,fetchImpl=fetch,run,root=directory
         if(!response.ok)throw Error(label+' lookup failed (HTTP '+response.status+'); '+state+'.');
         let body:{success?:boolean;result?:T};try{body=await response.json() as typeof body;}catch{throw Error(label+' lookup returned invalid JSON; '+state+'.');}if(body?.success!==true||!body.result)throw Error(label+' lookup returned an invalid result; '+state+'.');return body.result;
     }
+    // Public discovery must be observed from the public Internet, with no
+    // Cloudflare control token or mailbox control sent to those origins.
+    // Bound response size and deadline, and never reflect a remote body/error.
+    async function publicJson(url:string,label:string):Promise<Record<string,unknown>>{
+        let response:Response;
+        try{response=await fetchImpl(url,{method:'GET',headers:{Accept:'application/json'},
+            redirect:'manual',signal:AbortSignal.timeout(3500)});}
+        catch{throw Error(label+' unavailable; no cloud mutation inferred.');}
+        if(response.status!==200||
+            (response.headers.get('Content-Type')??'').split(';')[0].trim().toLowerCase()!=='application/json'){
+            await response.body?.cancel().catch(()=>{});
+            throw Error(label+' unavailable or not JSON (HTTP '+response.status+').');
+        }
+        let parsed:unknown;
+        try{
+            const reader=response.body?.getReader();if(!reader)throw Error('missing body');
+            const decoder=new TextDecoder('utf-8',{fatal:true});let raw='',size=0;
+            try{
+                while(true){const part=await reader.read();if(part.done)break;
+                    size+=part.value.byteLength;if(size>8192)throw Error('oversized body');
+                    raw+=decoder.decode(part.value,{stream:true});}
+                raw+=decoder.decode();
+            }finally{await reader.cancel().catch(()=>{});reader.releaseLock();}
+            parsed=JSON.parse(raw);
+        }catch{throw Error(label+' returned invalid bounded JSON.');}
+        if(!parsed||typeof parsed!=='object'||Array.isArray(parsed))
+            throw Error(label+' returned invalid JSON metadata.');
+        return parsed as Record<string,unknown>;
+    }
     const subdomain=await inspect<{subdomain:string}>('/workers/subdomain','Account subdomain');
     if(subdomain.subdomain!==expectedSubdomain)throw Error('Account does not own the authorized weave-389.workers.dev subdomain.');
     const worker=await inspect<WorkerSettings>('/workers/scripts/demo/settings','Existing Worker demo');
@@ -131,33 +160,23 @@ export async function deploy({env=process.env,fetchImpl=fetch,run,root=directory
             nonce[0].class_name!=='ConsentNonce'||nonce[0].environment!==undefined||
             (nonce[0].script_name!==undefined&&nonce[0].script_name!=='weave-auth-demo'))
             throw Error('Approved OAuth authorization Worker has incomplete live bindings; no mutation attempted.');
-        // Public issuer discovery is a separate anonymous GET. Never forward
-        // Cloudflare credentials to the AS; refuse redirects and large bodies.
-        let response:Response;
-        try{response=await fetchImpl(asIssuer+'/.well-known/oauth-authorization-server',{
-            method:'GET',headers:{Accept:'application/json'},redirect:'manual',signal:AbortSignal.timeout(3500)
-        });}catch{throw Error('Approved OAuth issuer is not publicly reachable; no mutation attempted.');}
-        if(response.status!==200||
-            (response.headers.get('Content-Type')??'').split(';')[0].trim().toLowerCase()!=='application/json')
-            throw Error('Approved OAuth issuer discovery is unavailable; no mutation attempted.');
-        let metadata:unknown;
-        try{
-            const reader=response.body?.getReader();if(!reader)throw Error('missing body');
-            const decoder=new TextDecoder('utf-8',{fatal:true});let raw='',size=0;
-            try{
-                while(true){const part=await reader.read();if(part.done)break;
-                    size+=part.value.byteLength;if(size>8192)throw Error('oversized metadata');
-                    raw+=decoder.decode(part.value,{stream:true});}
-                raw+=decoder.decode();
-            }finally{await reader.cancel().catch(()=>{});reader.releaseLock();}
-            metadata=JSON.parse(raw);
-        }catch{throw Error('Approved OAuth issuer metadata is invalid; no mutation attempted.');}
-        if(!metadata||typeof metadata!=='object'||Array.isArray(metadata)||
-            (metadata as Record<string,unknown>).issuer!==asIssuer||
-            (metadata as Record<string,unknown>).client_id_metadata_document_supported!==true||
-            !Array.isArray((metadata as Record<string,unknown>).code_challenge_methods_supported)||
-            !(metadata as {code_challenge_methods_supported:string[]}).code_challenge_methods_supported.includes('S256'))
-            throw Error('Approved OAuth issuer lacks expected identity, CIMD or PKCE support; no mutation attempted.');
+        // This AS must support the exact browser authorization-code/PKCE
+        // endpoints our public CIMD client needs. A plausible issuer label
+        // alone is insufficient to risk switching the real demo into OAuth.
+        const metadata=await publicJson(asIssuer+'/.well-known/oauth-authorization-server',
+            'Approved OAuth issuer metadata');
+        if(metadata.issuer!==asIssuer||
+            metadata.client_id_metadata_document_supported!==true||
+            metadata.authorization_response_iss_parameter_supported!==true||
+            metadata.authorization_endpoint!==asIssuer+'/authorize'||
+            metadata.token_endpoint!==asIssuer+'/oauth/token'||
+            !Array.isArray(metadata.response_types_supported)||
+            !metadata.response_types_supported.includes('code')||
+            !Array.isArray(metadata.grant_types_supported)||
+            !metadata.grant_types_supported.includes('authorization_code')||
+            !Array.isArray(metadata.code_challenge_methods_supported)||
+            !metadata.code_challenge_methods_supported.includes('S256'))
+            throw Error('Approved OAuth issuer lacks the expected authorization-code, CIMD and PKCE metadata; no mutation attempted.');
         authBinding={name:'AUTH_SERVER',type:'service',service:'weave-auth-demo',entrypoint:'AuthServer'};
     }
     const oauthExisting=new Map<string,Binding>();
@@ -290,6 +309,32 @@ export async function deploy({env=process.env,fetchImpl=fetch,run,root=directory
         await command(['deploy','--keep-vars','--no-bundle'],'active');
         phase='active deployment completed; settings unverified';await save();
         verifySettings(await inspect('/workers/scripts/demo/settings','Worker settings',phase),'false');
+        // Live public metadata (not just Cloudflare settings) is a required
+        // success condition of this one-time OAuth rollout. A failure leaves
+        // the safe recovery version and an explicit incomplete-release report.
+        if(firstPartyBootstrap){
+            phase='active settings verified; public OAuth connectivity unconfirmed';await save();
+            const origin='https://demo.weave-389.workers.dev';
+            const publicResource=await publicJson(origin+'/.well-known/oauth-protected-resource/mcp',
+                'Public OAuth resource metadata');
+            if(publicResource.resource!==origin+'/mcp'||
+                !Array.isArray(publicResource.authorization_servers)||
+                publicResource.authorization_servers.length!==1||
+                publicResource.authorization_servers[0]!=='https://weave-auth-demo.weave-389.workers.dev'||
+                !Array.isArray(publicResource.scopes_supported)||
+                !publicResource.scopes_supported.includes('weave:messages.send')||
+                !publicResource.scopes_supported.includes('weave:messages.ack'))
+                throw Error('Public OAuth resource metadata does not advertise the approved issuer and private messaging scopes.');
+            const publicClient=await publicJson(origin+'/oauth-client-metadata.json',
+                'Public OAuth CIMD client metadata');
+            if(publicClient.client_id!==origin+'/oauth-client-metadata.json'||
+                !Array.isArray(publicClient.redirect_uris)||publicClient.redirect_uris.length!==1||
+                publicClient.redirect_uris[0]!=='http://127.0.0.1/callback'||
+                !Array.isArray(publicClient.grant_types)||!publicClient.grant_types.includes('authorization_code')||
+                !Array.isArray(publicClient.response_types)||!publicClient.response_types.includes('code')||
+                publicClient.token_endpoint_auth_method!=='none')
+                throw Error('Public OAuth CIMD client metadata cannot complete the approved public loopback PKCE flow.');
+        }
         phase='active deployment verified';report.finishedAt=new Date().toISOString();await save();
         console.log('Verified deployed demo registration, disabled business cleanup, D1 identity and maintenance exit.');
         return report;
