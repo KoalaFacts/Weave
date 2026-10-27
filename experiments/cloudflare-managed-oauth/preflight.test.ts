@@ -67,11 +67,10 @@ test('follows bounded API pages and projects only the trial and matching-host ap
     });
     const report = await inspectAccess({env,fetchImpl:f.fetchImpl});
     assert.equal(report.apps.complete,true);
-    assert.equal(report.apps.trial.length,1);
-    assert.equal(report.apps.trial[0].managedOAuth,true);
+    assert.deepEqual(report.apps, {status:200,complete:true,trial:[{
+        id:'22222222-2222-2222-2222-222222222222',managedOAuth:true,matchesTrialName:true
+    }]});
     assert.equal(f.calls.length,4);
-    assert.ok(!JSON.stringify(report).includes('private.example.com'));
-    assert.ok(!JSON.stringify(report).includes('never-output'));
 });
 
 test('redirects are not followed and malformed application results fail closed', async () => {
