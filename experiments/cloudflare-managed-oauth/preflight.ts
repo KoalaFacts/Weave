@@ -72,9 +72,39 @@ export async function inspectAccess({env = process.env,fetchImpl = fetch}: {
             const isHost=[app.domain,...additional].some(value=>{
                 if(typeof value!=='string') return false;
                 const hostname=value.split('/')[0].toLowerCase();
-                return hostname===host || hostname==='*.weave-389.workers.dev';
+                // Ignore the path: a more specific rule can replace MFA/device
+                // requirements inherited from a broader host/path Access app.
+                if(hostname===host || hostname==='*') return true;
+                // Retain conservative parent wildcard coverage even when a
+                // documented '*' covers fewer subdomain levels.
+                if(hostname.startsWith('*.') && host.endsWith(hostname.slice(1)))
+                    return true;
+                if(!hostname.includes('*')) return false;
+                // Cloudflare supports prefix/suffix wildcards inside one
+                // subdomain label, e.g. dem*.weave-389.workers.dev. A wildcard
+                // cannot consume a dot. If a label has multiple wildcards,
+                // its actual scope is ambiguous: never silently override it.
+                const pattern=hostname.split('.'),actual=host.split('.');
+                if(pattern.length!==actual.length) return false;
+                if(pattern.some(label=>label.indexOf('*')!==label.lastIndexOf('*')))
+                    return true;
+                return pattern.every((label,index)=>{
+                    const star=label.indexOf('*');
+                    if(star<0) return label===actual[index];
+                    const prefix=label.slice(0,star),suffix=label.slice(star+1);
+                    return actual[index].length>=prefix.length+suffix.length &&
+                        actual[index].startsWith(prefix) &&
+                        actual[index].endsWith(suffix);
+                });
             });
-            if(app.name!==trialName && !isHost) continue;
+            // Cloudflare gives hostname/path rules higher precedence than
+            // Worker and account rules. Conservatively refuse to create a new
+            // application when these existing destinations cannot be proved
+            // disjoint; the read-only inventory does not grant override consent.
+            const potentiallyWorkerWide=Array.isArray(app.destinations)&&
+                app.destinations.some(value=>['all_workers','all_preview_workers',
+                    'worker','preview_worker'].includes(String(object(value).type)));
+            if(app.name!==trialName && !isHost && !potentiallyWorkerWide) continue;
             if(typeof app.id!=='string' || !uuid.test(app.id)) throw Error('Access application metadata is invalid.');
             apps.trial.push({id:app.id,managedOAuth:object(app.oauth_configuration).enabled===true,matchesTrialName:app.name===trialName});
         }

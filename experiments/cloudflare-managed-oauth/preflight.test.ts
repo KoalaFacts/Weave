@@ -111,3 +111,34 @@ test('current destinations override legacy aliases and unrelated suffixes do not
     }],pages)});
     assert.deepEqual((await inspectAccess({env,fetchImpl:f.fetchImpl})).apps.trial,[]);
 });
+
+
+for(const [description, destinations] of [
+    ['account-wide Worker rule', [{type:'all_workers'}]],
+    ['Worker rule with unresolved target', [{type:'worker',worker_id:'different-worker-id'}]],
+    ['all preview Workers', [{type:'all_preview_workers'}]],
+    ['wildcard parent domain', [{type:'public',uri:'*.workers.dev/special/*'}]],
+] as const) test('existing '+description+' is a potential Access precedence conflict; refuse implicit policy replacement',async()=>{
+    const f=fixture({'/access/apps?per_page=100&page=1':()=>envelope([{
+        id:'55555555-5555-5555-5555-555555555555',
+        name:'Existing independent Access policy',
+        domain:'private.example.org',destinations
+    }],pages)});
+    const report=await inspectAccess({env,fetchImpl:f.fetchImpl});
+    assert.deepEqual(report.apps.trial,[{
+        id:'55555555-5555-5555-5555-555555555555',managedOAuth:false,matchesTrialName:false
+    }]);
+});
+
+for(const uri of [
+    'foo*.weave-389.workers.dev/protected/*',
+    'dem*.weave-389.workers.dev.attacker.invalid',
+    '*mo.different.workers.dev',
+]) test('disjoint Access partial wildcard '+uri+' does not block an unrelated path',async()=>{
+    const f=fixture({'/access/apps?per_page=100&page=1':()=>envelope([{
+        id:'66666666-6666-6666-6666-666666666666',
+        name:'Unrelated Access policy',domain:'unrelated.example.org',
+        destinations:[{type:'public',uri}]
+    }],pages)});
+    assert.deepEqual((await inspectAccess({env,fetchImpl:f.fetchImpl})).apps.trial,[]);
+});
