@@ -5,15 +5,18 @@ import {mkdtemp,rm} from "node:fs/promises";
 import {tmpdir} from "node:os";
 import {join,resolve} from "node:path";
 import {test} from "node:test";
-import {Miniflare} from "miniflare";
+import {Miniflare,createFetchMock} from "miniflare";
 import {stripTypeScriptTypes} from "node:module";
 import {initializeDatabase} from "../../Weave.Mailbox.Worker/scripts/latest-schema.ts";
+import {demoOAuthClientId,demoOAuthClientMetadata} from "../../Weave.Mailbox.Worker/src/oauth-client-metadata.ts";
 
 
 const issuer="https://auth.weave.example";
 const resource="https://demo.weave-389.workers.dev/mcp";
-const clientId="weave-consent-regression-client";
+// Exercise the deployed demo\'s public CIMD contract, not a seeded KV client.
+const clientId=demoOAuthClientId;
 const redirectUri="http://127.0.0.1:53621/callback";
+const redirectUriB="http://127.0.0.1:53622/callback";
 // Payload generated with the exact mailbox wire shape. Importing the broader
 // legacy test harness into a strict OAuth test creates unrelated type errors.
 function mailboxPayload(bytes:string,now=Date.now()){
@@ -58,8 +61,18 @@ export default {
 };`;
 
 // The AS exposes only the default WorkerEntrypoint; the operator rollout must use it.
-function options(storage:string,key:string) {
+async function options(storage:string,key:string) {
+  // Intercept only the canonical public metadata document. No test credential,
+  // real network request or SDK pre-registered KV client can satisfy this flow.
+  const fetchMock=createFetchMock();
+  fetchMock.disableNetConnect();
+  const document=demoOAuthClientMetadata();
+  fetchMock.get(new URL(clientId).origin)
+    .intercept({method:"GET",path:"/oauth-client-metadata.json"})
+    .reply(200,await document.text(),{headers:{"Content-Type":"application/json","Cache-Control":"no-store"}})
+    .persist();
   return {
+    fetchMock,
     resourcePersistencePath:storage,
     cf:false,
     workers:[{
@@ -122,7 +135,7 @@ function consentForm(handle:string,proof:string) {
 test("a foreign browser cannot burn an owner nonce before consent-cookie verification", {timeout:90_000}, async()=>{
   const storage=await mkdtemp(join(tmpdir(),"weave-auth-consent-"));
   const key=randomBytes(32).toString("base64url");
-  let mf=new Miniflare(options(storage,key));
+  let mf=new Miniflare(await options(storage,key));
   try {
     // The real production mailbox Worker registers two independently controlled
     // test accounts against its generated D1 schema. No mocked owner IDs.
@@ -154,14 +167,10 @@ test("a foreign browser cannot burn an owner nonce before consent-cookie verific
       assert.ok(value.proof.startsWith("wop1."));
       return value.proof;
     }
-    // Controlled test registration only: no DCR endpoint, real user or cloud client.
+    // The real client flow uses the first-party public CIMD at an HTTPS URL
+    // with two independent ephemeral RFC 8252 loopback ports; no DCR or
+    // synthetic KV pre-registration is allowed.
     const kv=await mf.getKVNamespace("OAUTH_KV");
-    await kv.put("client:"+clientId,JSON.stringify({
-      clientId,redirectUris:[redirectUri],clientName:"Local test agent",
-      grantTypes:["authorization_code","refresh_token"],responseTypes:["code"],
-      tokenEndpointAuthMethod:"none",authMethodExplicit:true,
-      registrationDate:Math.floor(Date.now()/1000)
-    }));
     const verifier=randomBytes(32).toString("base64url");
     const challenge=createHash("sha256").update(verifier).digest("base64url");
     const url=new URL(issuer+"/authorize");
@@ -172,7 +181,7 @@ test("a foreign browser cannot burn an owner nonce before consent-cookie verific
     }))url.searchParams.set(k,v);
 
     const page=await mf.dispatchFetch(url.href,{redirect:"manual"});
-    assert.equal(page.status,200,"real AS must accept a pre-registered PKCE native client");
+    assert.equal(page.status,200,"real AS must fetch demo CIMD and accept ephemeral loopback PKCE client");
     const html=await page.text();
     const handle=html.match(/name="handle" value="([A-Za-z0-9_-]{43})"/)?.[1];
     assert.ok(handle,"SDK-generated browser-bound consent handle must be rendered");
@@ -245,6 +254,7 @@ test("a foreign browser cannot burn an owner nonce before consent-cookie verific
     const verifierB=randomBytes(32).toString("base64url");
     const authorizeB=new URL(url);
     authorizeB.searchParams.set("state","independent-second-agent");
+    authorizeB.searchParams.set("redirect_uri",redirectUriB);
     authorizeB.searchParams.set("code_challenge",
       createHash("sha256").update(verifierB).digest("base64url"));
     const pageB=await mf.dispatchFetch(authorizeB.href,{redirect:"manual"});
@@ -285,7 +295,7 @@ test("a foreign browser cannot burn an owner nonce before consent-cookie verific
       headers:{"Content-Type":"application/x-www-form-urlencoded"},
       body:new URLSearchParams({
         grant_type:"authorization_code",code:codeB,client_id:clientId,
-        redirect_uri:redirectUri,code_verifier:verifierB,resource
+        redirect_uri:redirectUriB,code_verifier:verifierB,resource
       }).toString()
     });
     assert.equal(tokenB.status,200);
@@ -360,7 +370,7 @@ test("a foreign browser cannot burn an owner nonce before consent-cookie verific
     await sendMessage(0);
     await sendMessage(1);
     await mf.dispose();
-    mf=new Miniflare(options(storage,key));
+    mf=new Miniflare(await options(storage,key));
     mailbox=await mf.getWorker("weave-mailbox-regression");
     async function acknowledge(item:(typeof deliveries)[number]):Promise<void>{
       const inbox=await privateCall(item.receiverToken,"list_my_inbox");
