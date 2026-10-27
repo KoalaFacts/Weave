@@ -175,7 +175,7 @@ export async function deploy({env=process.env,fetchImpl=fetch,run,root=directory
                     ?'https://weave-auth-demo.weave-389.workers.dev'
                     :'https://demo.weave-389.workers.dev/mcp';
                 oauthExisting.set(name,{name,type,text:value});
-                config.vars[name]=value;
+                Object.assign(config.vars,{[name]:value});
             }else{
                 const found=worker.bindings.filter(binding=>binding?.name===name);
                 if(found.length!==1||found[0].type!==type)throw Error('Incomplete existing OAuth Service Binding; no mutation attempted.');
