@@ -33,7 +33,7 @@ function validateInputs(env:Env):string[] {
     if(!raw||raw.length>2600||!raw.includes(','))throw Error('Two explicitly selected trial identities are required.');
     const emails=raw.split(',').map(value=>value.trim().toLowerCase());
     if(emails.length<2||emails.length>10||new Set(emails).size!==emails.length||
-        emails.some(email=>email.length>254||!mailbox.test(email)))
+        emails.some(email=>email.length>254||!mailbox.test(email)||/[?*]/.test(email)))
         throw Error('Provide two to ten exact distinct email identities; domains and Everyone are disallowed.');
     return emails.sort();
 }

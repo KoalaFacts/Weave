@@ -47,6 +47,8 @@ test('missing token, identities, dispatch authorization or ambiguous identities 
     {CLOUDFLARE_ACCESS_TRIAL_TOKEN:undefined},{WEAVE_ACCESS_TRIAL_EMAILS:undefined},
     {WEAVE_ACCESS_TRIAL_EMAILS:emailA},{WEAVE_ACCESS_TRIAL_EMAILS:emailA+','+emailA.toUpperCase()},
     {WEAVE_ACCESS_TRIAL_EMAILS:'everyone@example.org,*@example.org'},
+    {WEAVE_ACCESS_TRIAL_EMAILS:'agent*one@example.org,'+emailB},
+    {WEAVE_ACCESS_TRIAL_EMAILS:'agent?one@example.org,'+emailB},
     {WEAVE_ACCESS_TRIAL_COMMIT:'anything'},{GITHUB_REF:'refs/heads/feature'},
     {GITHUB_REPOSITORY:'other/repo'}, {GITHUB_EVENT_NAME:'push'}]){
      let read=0;const cloud=fakeCloud();
