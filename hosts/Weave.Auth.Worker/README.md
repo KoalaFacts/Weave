@@ -85,3 +85,41 @@ approved operator deployment must record the exact source SHA, Worker version,
 the same-origin metadata and browser PKCE consent proof, and its rollback.
 Even a green Wrangler dry run is **not** remote OAuth access or #236's
 two-independent-agent public proof.
+
+## One-time, approved first-party AS-to-demo binding rollout (not executed)
+
+The existing demo release keeps OAuth disabled by default. Only **after separate
+operator approval** of live authorization-service and resource-worker changes,
+provision the existing `weave-auth-demo` Worker at the fixed issuer above, with
+approved KV and SQLite Durable Object, and install the same independently
+generated 32-byte `OAUTH_ACCOUNT_PROOF_KEY` secret in that Worker **and**
+in the existing `demo` resource Worker. Never pass the secret as a command
+argument or commit it. Review the consent, token revocation and retention policy.
+
+Do **not** install `OAUTH_ISSUER` or `OAUTH_RESOURCE` separately on the live
+resource Worker: that would enable incomplete OAuth configuration and fail
+closed before the private service exists. Once an authorized operator has
+independently verified the AS, the normal protected demo deploy procedure
+can be invoked with the **one-time** environment flag
+`WEAVE_APPROVED_FIRST_PARTY_OAUTH_BINDING=true`. The release script first
+performs read-only Cloudflare metadata checks of the already deployed AS,
+its existing KV/DO/secret bindings and anonymous RFC 8414 issuer/CIMD/PKCE
+discovery. Any missing, mixed or mismatched prerequisite aborts **before**
+maintenance, schema processing or an upload. It never provisions KV, DO,
+credentials, D1 identity links or the AS Worker itself.
+
+After that preflight, the same versioned maintenance/recovery/active release
+stages the fixed `AUTH_SERVER` entrypoint service binding and both fixed
+issuer/resource values together. Each stage verifies the effective binding;
+missing service/metadata stops before subsequent stages. Remove the one-time
+flag for later ordinary releases; the script will preserve only already
+installed operator-approved bindings without creating a new one.
+
+This path itself **performs a live Worker release when invoked**; it is not
+approval to run it, nor a successful authorization proof. The operator must
+first approve this exact source SHA and rollout/rollback with the existing
+protected release gate. After an authorized release, separately verify actual
+AS metadata and browser PKCE login/explicit consent for **two independent
+existing users**, private tools, contact, six messages with ACK and cold
+restart/replay. Keep the `oauth_identity_links` D1 schema opt-in disabled
+unless its separate privacy/migration/rollback is approved.

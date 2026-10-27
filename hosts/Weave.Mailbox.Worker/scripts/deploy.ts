@@ -15,7 +15,7 @@ interface WorkerConfig {
     d1_databases: {binding:string;database_id:string;database_name:string;remote?:boolean;[key:string]:unknown}[];
     [key:string]: unknown;
 }
-interface Binding {name:string;type:string;id?:string;text?:unknown;service?:string;environment?:string;entrypoint?:string;}
+interface Binding {name:string;type:string;id?:string;namespace_id?:string;class_name?:string;script_name?:string;text?:unknown;service?:string;environment?:string;entrypoint?:string;}
 interface WorkerSettings {bindings:Binding[];}
 interface CommandResult {status:number|null;stdout?:string;stderr?:string;}
 interface DatabaseConnection {db:StorageDatabase;close:()=>Promise<void>;}
@@ -96,7 +96,70 @@ export async function deploy({env=process.env,fetchImpl=fetch,run,root=directory
     // Never introduce a new service target or copy a signing secret to config.
     const authBindings=worker.bindings.filter(binding=>binding?.name==='AUTH_SERVER');
     if(authBindings.length>1)throw Error('Ambiguous existing AUTH_SERVER OAuth Service Binding; no mutation attempted.');
-    const authBinding=authBindings[0];
+    let authBinding=authBindings[0];
+    const requestedBootstrap=env.WEAVE_APPROVED_FIRST_PARTY_OAUTH_BINDING;
+    if(requestedBootstrap!==undefined&&!['true','false'].includes(requestedBootstrap))
+        throw Error('Invalid first-party OAuth bootstrap permission; no mutation attempted.');
+    const firstPartyBootstrap=requestedBootstrap==='true';
+    if(firstPartyBootstrap){
+        if(authBinding)throw Error('First-party OAuth bootstrap already has a Service Binding; remove the one-time opt-in.');
+        const asIssuer='https://weave-auth-demo.weave-389.workers.dev';
+        const resource='https://demo.weave-389.workers.dev/mcp';
+        const single=(bindings:Binding[],name:string,type:string,value?:string)=>{
+            const matches=bindings.filter(binding=>binding?.name===name);
+            return matches.length===1&&matches[0].type===type&&(value===undefined||matches[0].text===value);
+        };
+        // Install the proof secret separately beforehand, but stage issuer,
+        // resource and AUTH_SERVER together in the maintenance upload. Installing
+        // only issuer/resource on the live Worker would make OAuth fail closed.
+        if(!single(worker.bindings,'OAUTH_ACCOUNT_PROOF_KEY','secret_text')||
+            ['OAUTH_ISSUER','OAUTH_RESOURCE','OAUTH_INTROSPECTION_URL','OAUTH_CLIENT_ID',
+             'OAUTH_CLIENT_SECRET','OAUTH_INTROSPECTION_TRUSTED_ORIGIN']
+                .some(name=>worker.bindings.some(binding=>binding?.name===name))||
+            (oauthFlags.length!==0&&oauthFlags[0].text!=='false'))
+            throw Error('Resource OAuth bootstrap secrets or account policy are not preapproved; no mutation attempted.');
+        const as=await inspect<WorkerSettings>('/workers/scripts/weave-auth-demo/settings','Approved existing OAuth authorization Worker');
+        const kv=as.bindings?.filter(binding=>binding?.name==='OAUTH_KV')??[];
+        const nonce=as.bindings?.filter(binding=>binding?.name==='CONSENT_NONCES')??[];
+        if(!Array.isArray(as.bindings)||
+            !single(as.bindings,'OAUTH_ISSUER','plain_text',asIssuer)||
+            !single(as.bindings,'OAUTH_RESOURCE','plain_text',resource)||
+            !single(as.bindings,'OAUTH_ACCOUNT_PROOF_KEY','secret_text')||
+            kv.length!==1||kv[0].type!=='kv_namespace'||
+            !/^[a-f0-9]{32}$/i.test(kv[0].namespace_id??'')||
+            nonce.length!==1||nonce[0].type!=='durable_object_namespace'||
+            nonce[0].class_name!=='ConsentNonce'||nonce[0].environment!==undefined||
+            (nonce[0].script_name!==undefined&&nonce[0].script_name!=='weave-auth-demo'))
+            throw Error('Approved OAuth authorization Worker has incomplete live bindings; no mutation attempted.');
+        // Public issuer discovery is a separate anonymous GET. Never forward
+        // Cloudflare credentials to the AS; refuse redirects and large bodies.
+        let response:Response;
+        try{response=await fetchImpl(asIssuer+'/.well-known/oauth-authorization-server',{
+            method:'GET',headers:{Accept:'application/json'},redirect:'manual',signal:AbortSignal.timeout(3500)
+        });}catch{throw Error('Approved OAuth issuer is not publicly reachable; no mutation attempted.');}
+        if(response.status!==200||
+            (response.headers.get('Content-Type')??'').split(';')[0].trim().toLowerCase()!=='application/json')
+            throw Error('Approved OAuth issuer discovery is unavailable; no mutation attempted.');
+        let metadata:unknown;
+        try{
+            const reader=response.body?.getReader();if(!reader)throw Error('missing body');
+            const decoder=new TextDecoder('utf-8',{fatal:true});let raw='',size=0;
+            try{
+                while(true){const part=await reader.read();if(part.done)break;
+                    size+=part.value.byteLength;if(size>8192)throw Error('oversized metadata');
+                    raw+=decoder.decode(part.value,{stream:true});}
+                raw+=decoder.decode();
+            }finally{await reader.cancel().catch(()=>{});reader.releaseLock();}
+            metadata=JSON.parse(raw);
+        }catch{throw Error('Approved OAuth issuer metadata is invalid; no mutation attempted.');}
+        if(!metadata||typeof metadata!=='object'||Array.isArray(metadata)||
+            (metadata as Record<string,unknown>).issuer!==asIssuer||
+            (metadata as Record<string,unknown>).client_id_metadata_document_supported!==true||
+            !Array.isArray((metadata as Record<string,unknown>).code_challenge_methods_supported)||
+            !(metadata as {code_challenge_methods_supported:string[]}).code_challenge_methods_supported.includes('S256'))
+            throw Error('Approved OAuth issuer lacks expected identity, CIMD or PKCE support; no mutation attempted.');
+        authBinding={name:'AUTH_SERVER',type:'service',service:'weave-auth-demo',entrypoint:'AuthServer'};
+    }
     const oauthExisting=new Map<string,Binding>();
     if(authBinding){
         if(authBinding.type!=='service'||typeof authBinding.service!=='string'||
@@ -107,9 +170,17 @@ export async function deploy({env=process.env,fetchImpl=fetch,run,root=directory
         for(const [name,type] of [
             ['OAUTH_ISSUER','plain_text'],['OAUTH_RESOURCE','plain_text']
         ]){
-            const found=worker.bindings.filter(binding=>binding?.name===name);
-            if(found.length!==1||found[0].type!==type)throw Error('Incomplete existing OAuth Service Binding; no mutation attempted.');
-            oauthExisting.set(name,found[0]);
+            if(firstPartyBootstrap){
+                const value=name==='OAUTH_ISSUER'
+                    ?'https://weave-auth-demo.weave-389.workers.dev'
+                    :'https://demo.weave-389.workers.dev/mcp';
+                oauthExisting.set(name,{name,type,text:value});
+                config.vars[name]=value;
+            }else{
+                const found=worker.bindings.filter(binding=>binding?.name===name);
+                if(found.length!==1||found[0].type!==type)throw Error('Incomplete existing OAuth Service Binding; no mutation attempted.');
+                oauthExisting.set(name,found[0]);
+            }
         }
         // The first-party proof route is opt-in independently of the trusted
         // authorization Service Binding. Preserve a pre-existing signing secret
