@@ -71,13 +71,16 @@ export async function verifyManagedAccessAssertion(
         const claims:unknown=JSON.parse(decoder.decode(payloadBytes));
         if(!object(header)||header.alg!=='RS256'||typeof header.kid!=='string'||header.kid.length>128||!safeToken.test(header.kid)||
             (header.typ!==undefined&&header.typ!=='JWT')||!object(claims))return null;
+        // Access application JWT session defaults to 24h. Retain an explicit
+        // upper bound; longer sessions must be separately reviewed and configured.
+        const maxAccessSessionSeconds=24*60*60;
         const sec=Math.floor(clock()/1000);
         if(claims.iss!==cfg.issuer||!((Array.isArray(claims.aud)&&claims.aud.includes(cfg.audience))||claims.aud===cfg.audience)||
             typeof claims.sub!=='string'||!claims.sub||claims.sub.length>255||/[\x00-\x1f\x7f]/.test(claims.sub)||
             !Number.isSafeInteger(claims.exp)||!Number.isSafeInteger(claims.iat)||
-            (claims.exp as number)<=sec||(claims.exp as number)>sec+28800||
+            (claims.exp as number)<=sec||(claims.exp as number)>sec+maxAccessSessionSeconds||
             (claims.iat as number)>sec+60||(claims.iat as number)>=(claims.exp as number)||
-            (claims.exp as number)-(claims.iat as number)>28800||
+            (claims.exp as number)-(claims.iat as number)>maxAccessSessionSeconds||
             (claims.nbf!==undefined&&(!Number.isSafeInteger(claims.nbf)||(claims.nbf as number)>sec)))return null;
         const keys=await safeKeys(cfg,fetcher);if(!keys)return null;
         const matches=keys.filter(k=>object(k)&&k.kid===header.kid&&k.kty==='RSA'&&

@@ -106,6 +106,9 @@ export default {
                     }catch(error){return problem(error);}
                 },{
                     tools:privateMcpTools,scope:privateScope,
+                    // This exception is constructed only after signature/issuer/AUD/expiry
+                    // verification above. A client-supplied assertion alone is never a grant.
+                    signedAccessAssertionVerified:true,
                     authorize:async _scope=>{
                         if(identity.expiresAt<=Math.floor(Date.now()/1000))return denial(401);
                         let accountId:string|null;
