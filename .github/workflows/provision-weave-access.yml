@@ -6,6 +6,7 @@ on:
     paths:
       - experiments/cloudflare-managed-oauth/provision.ts
       - experiments/cloudflare-managed-oauth/provision.test.ts
+      - experiments/cloudflare-managed-oauth/workflow-guard.test.ts
       - .github/workflows/provision-weave-access.yml
   workflow_dispatch:
     inputs:
@@ -61,7 +62,7 @@ jobs:
       - name: Ensure the checked out release is the reviewed main commit
         run: |
           test "$(git rev-parse HEAD)" = "$GITHUB_SHA"
-          git merge-base --is-ancestor "$GITHUB_SHA" origin/main
+          test "$(git rev-parse origin/main)" = "$GITHUB_SHA"
       - uses: actions/setup-node@949feb2413d6458794dcd2491c4babbbce0c15c1
         with:
           node-version: '24'
