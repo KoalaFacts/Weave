@@ -177,7 +177,9 @@ export async function deploy({env=process.env,fetchImpl=fetch,run,root=directory
             !Array.isArray(metadata.code_challenge_methods_supported)||
             !metadata.code_challenge_methods_supported.includes('S256'))
             throw Error('Approved OAuth issuer lacks the expected authorization-code, CIMD and PKCE metadata; no mutation attempted.');
-        authBinding={name:'AUTH_SERVER',type:'service',service:'weave-auth-demo',entrypoint:'AuthServer'};
+        // The shipped AS exports `default class AuthServer`, not a named RPC export.
+        // Cloudflare's default WorkerEntrypoint is selected by omitting `entrypoint`.
+        authBinding={name:'AUTH_SERVER',type:'service',service:'weave-auth-demo'};
     }
     const oauthExisting=new Map<string,Binding>();
     if(authBinding){

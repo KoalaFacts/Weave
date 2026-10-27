@@ -397,7 +397,7 @@ function firstPartyBootstrap({bindings=preapprovedResource,asBindings=preapprove
             (url.endsWith('/workers/scripts/demo/settings')||url.includes('/workers/scripts/demo/versions/'))){
             const payload=await response.json(),target=url.includes('/versions/')
                 ?payload.result.resources.bindings:payload.result.bindings;
-            target.push({name:'AUTH_SERVER',type:'service',service:'weave-auth-demo',entrypoint:'AuthServer'});
+            target.push({name:'AUTH_SERVER',type:'service',service:'weave-auth-demo'});
             for(const [name,text] of [['OAUTH_ISSUER',firstPartyIssuer],['OAUTH_RESOURCE',firstPartyResource]])
                 target.push({name,type:'plain_text',text});
             return {...response,json:async()=>payload};

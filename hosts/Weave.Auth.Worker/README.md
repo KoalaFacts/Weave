@@ -34,7 +34,7 @@ bindings and `workers_dev:false`; **do not deploy it or apply migration v1**.
 Before deployment: approve separate Cloudflare AS domain, KV and DO, provision
 both matching 32-byte signing-key secrets (never commit/print), configure
 the operator-owned MCP Worker's `AUTH_SERVER` Service Binding to
-`service:weave-auth-demo, entrypoint:AuthServer`, and review customer consent,
+`service:weave-auth-demo` (default `AuthServer` WorkerEntrypoint; no named `entrypoint`), and review customer consent,
 CIMD/DCR policy and revocation. Dynamic client registration is disabled by
 default; Client ID Metadata Documents are available through strictly public
 fetch. Validate source SHAs, Node24 `npm ci`/typecheck, real workerd KV/DO +
