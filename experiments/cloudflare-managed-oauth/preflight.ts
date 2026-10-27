@@ -72,9 +72,20 @@ export async function inspectAccess({env = process.env,fetchImpl = fetch}: {
             const isHost=[app.domain,...additional].some(value=>{
                 if(typeof value!=='string') return false;
                 const hostname=value.split('/')[0].toLowerCase();
-                return hostname===host || hostname==='*.weave-389.workers.dev';
+                // A less-specific Access hostname wildcard still covers Weave.
+                // Ignore path suffix here: precedence must not silently replace
+                // an existing MFA/device policy without reviewing that policy.
+                return hostname===host || hostname==='*' ||
+                    (hostname.startsWith('*.') && host.endsWith(hostname.slice(1)));
             });
-            if(app.name!==trialName && !isHost) continue;
+            // Cloudflare gives hostname/path rules higher precedence than
+            // Worker and account rules. Conservatively refuse to create a new
+            // application when these existing destinations cannot be proved
+            // disjoint; the read-only inventory does not grant override consent.
+            const potentiallyWorkerWide=Array.isArray(app.destinations)&&
+                app.destinations.some(value=>['all_workers','all_preview_workers',
+                    'worker','preview_worker'].includes(String(object(value).type)));
+            if(app.name!==trialName && !isHost && !potentiallyWorkerWide) continue;
             if(typeof app.id!=='string' || !uuid.test(app.id)) throw Error('Access application metadata is invalid.');
             apps.trial.push({id:app.id,managedOAuth:object(app.oauth_configuration).enabled===true,matchesTrialName:app.name===trialName});
         }
