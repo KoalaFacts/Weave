@@ -1,8 +1,8 @@
 import assert from 'node:assert/strict';
 import {test} from 'node:test';
-import {generateKeyPairSync,createSign} from 'node:crypto';
+import {generateKeyPairSync,createSign,randomUUID} from 'node:crypto';
 import {managedAccessConfiguration,verifyManagedAccessAssertion} from '../src/access-managed.ts';
-import {start} from './harness.ts';
+import {start,payload} from './harness.ts';
 
 const now=1793100000000;
 const issuer='https://weave-trial.cloudflareaccess.com';
@@ -42,6 +42,14 @@ test('Access trial is opt-in, exact issuer and resource only; public MCP remains
 test('signed Access JWT validates exact issuer and app audience, never converts subject into a Weave ID',async()=>{
     assert.deepEqual(await verify(token()),{issuer,resource,subject:'external-subject-A',
         expiresAt:Math.floor(now/1000)+300});
+});
+test('default 24-hour Access application JWT remains usable, beyond-policy lifetime stays denied',async()=>{
+    const sec=Math.floor(now/1000);
+    const allowed=token({iat:sec-10,exp:sec+86390});
+    assert.equal((await verify(allowed))?.expiresAt,sec+86390,
+        'Cloudflare Access defaults application JWTs to 24 hours; a valid default session must authenticate');
+    assert.equal(await verify(token({iat:sec-10,exp:sec+86500})),null,
+        'sessions exceeding the supported Access app duration must still fail closed');
 });
 test('forged signature, unknown kid, missing assertion and hostile algorithms never authenticate',async()=>{
     assert.equal(await verifyManagedAccessAssertion(cfg,new Request(resource),certificates,now),null);
@@ -125,6 +133,41 @@ test('real workerd/D1 trial enforces two credentials, owner binding, revocation 
         const profileB=await h.mf.dispatchFetch(resource,client('external-subject-B'));
         assert.equal(profileB.status,200,await profileB.clone().text());
         assert.equal((await profileB.json()).result.structuredContent.id,b.accountId);
+        // Managed OAuth may consume the opaque bearer before forwarding to origin.
+        // A genuinely validated Access JWT + linked owner, not a forwarded Authorization
+        // header, must admit the existing 128 KiB bounded private send path.
+        const asOwner=async(sub:string,name:string,args:Record<string,unknown>={})=>{
+            const response=await h.mf.dispatchFetch(resource,{method:'POST',headers:{
+                'Content-Type':'application/json',Accept:'application/json, text/event-stream',
+                'Cf-Access-Jwt-Assertion':signed(sub)
+            },body:JSON.stringify({jsonrpc:'2.0',id:88,method:'tools/call',
+                params:{name,arguments:args}})});
+            assert.equal(response.status,200,
+                'valid signed Access assertion without a forwarded bearer must reach '+name);
+            const frame=await response.json() as {result?:{isError?:boolean;structuredContent?:unknown;content?:Array<{text:string}>}};
+            assert.ok(frame.result&&!frame.result.isError,'actual private MCP operation failed: '+name);
+            return frame.result.structuredContent??JSON.parse(frame.result.content![0].text);
+        };
+        const addressA=randomUUID(),addressB=randomUUID();
+        await asOwner('external-subject-A','ensure_my_address',{addressId:addressA,label:'Access A'});
+        await asOwner('external-subject-B','ensure_my_address',{addressId:addressB,label:'Access B'});
+        const intro=payload('access-trial-consent-introduction');
+        const requestContact=await asOwner('external-subject-A','request_contact',{
+            requestId:intro.messageId,requesterAddressId:addressA,
+            recipientAccountId:b.accountId,recipientAddressId:addressB,payload:intro});
+        await asOwner('external-subject-B','decide_contact',{
+            requestId:intro.messageId,requesterAccountId:a.accountId,
+            expectedGeneration:String(requestContact.generation),status:'accepted'});
+        const big=payload('managed-access-large-'+'x'.repeat(20_000));
+        const sent=await asOwner('external-subject-A','send_message',{
+            recipientAccountId:b.accountId,contactGeneration:String(requestContact.generation),payload:big});
+        assert.equal(sent.messageId,big.messageId);
+        const inbox=await asOwner('external-subject-B','list_my_inbox');
+        assert.ok(inbox.items.some((item:{envelope?:{payload?:{messageId:string}}})=>
+            item.envelope?.payload?.messageId===big.messageId));
+        const ack=await asOwner('external-subject-B','ack_message',{
+            messageId:big.messageId,senderAccountId:a.accountId});
+        assert.equal(ack.state,'acknowledged');
         const revoke=await h.mf.dispatchFetch('https://localhost/v1/accounts/oauth/links/revoke',{
             method:'POST',headers:{'Content-Type':'application/json','X-Weave-Account-Control':a.control},
             body:JSON.stringify(keyA)});
