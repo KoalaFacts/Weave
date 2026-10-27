@@ -52,3 +52,36 @@ does not replace full repository or production gates. It is not ready for deploy
 Next live acceptance remains #236: two distinct real accounts/agents, separate
 consents, private contact request/accept, six alternating messages and ACKs,
 cold restart and duplicate-replay persistence, with sanitized evidence.
+
+## Operator-reviewed demo OAuth launch preparation (no live deployment)
+
+After **separate explicit approval** of the Cloudflare OAuth/KV/SQLite Durable
+Object resources, retention and consent flow, the operator may use an existing
+account's Workers.dev origin instead of provisioning a custom domain. This
+nonpublishing preparation path fixes the exact auth origin to
+`https://weave-auth-demo.weave-389.workers.dev` and the resource to
+`https://demo.weave-389.workers.dev/mcp`; it refuses arbitrary origins.
+
+From `hosts/Weave.Auth.Worker`, with Node 24 and locked dependencies installed,
+set `CLOUDFLARE_ACCOUNT_ID` and **the ID of an already approved/existing**
+namespace in `WEAVE_AUTH_KV_NAMESPACE_ID`, plus
+`OAUTH_ISSUER=https://weave-auth-demo.weave-389.workers.dev` and
+`OAUTH_RESOURCE=https://demo.weave-389.workers.dev/mcp`.
+Then run `npm run prepare:demo`. It writes
+`wrangler.demo.generated.jsonc` exclusively (not in git) with mode 0600,
+only public issuer/resource values and resource IDs. No token or proof key is
+written. The test workflow independently bundles this generated manifest
+with Wrangler `--dry-run` using **dummy** IDs; neither CI nor this script
+deploys the Worker or creates KV/DO state.
+
+**Stop at this point until deployment is separately authorized.** Approval
+must also cover the OAuth Service Binding on the actual resource Worker,
+the common `OAUTH_ACCOUNT_PROOF_KEY` secret (installed separately on both
+Workers, never in a manifest), Durable Object migration, revocation/retention,
+and either the reviewed external-subject D1 link migration or the verified
+first-party Service Binding owner model. The normal `demo` deployment
+intentionally cannot create these resources or silently enable them. An
+approved operator deployment must record the exact source SHA, Worker version,
+the same-origin metadata and browser PKCE consent proof, and its rollback.
+Even a green Wrangler dry run is **not** remote OAuth access or #236's
+two-independent-agent public proof.

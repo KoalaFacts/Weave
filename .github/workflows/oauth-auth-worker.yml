@@ -94,6 +94,15 @@ jobs:
         run: npm run typecheck
       - name: Run portable proof and consent tests
         run: npm run test:portable
+      - name: Typecheck and smoke-bundle nonsecret opt-in demo auth manifest (never deploy)
+        run: |
+          npm run prepare:demo
+          node node_modules/wrangler/bin/wrangler.js deploy --dry-run --config wrangler.demo.generated.jsonc --outdir dist/staged-demo
+        env:
+          CLOUDFLARE_ACCOUNT_ID: aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa
+          WEAVE_AUTH_KV_NAMESPACE_ID: bbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbb
+          OAUTH_ISSUER: https://weave-auth-demo.weave-389.workers.dev
+          OAUTH_RESOURCE: https://demo.weave-389.workers.dev/mcp
       - name: Bundle Cloudflare authorization Worker without publishing
         run: npm run build
       - name: Exercise real workerd Durable Object consent replay and cold restart
