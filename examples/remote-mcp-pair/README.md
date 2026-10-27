@@ -8,13 +8,33 @@ Use Node 24.19+ and two existing, independently owned Weave accounts. A trusted 
 
 The publicly deployed demo endpoint has independently verified anonymous MCP discovery, but the external authorization server and live per-account ChatGPT OAuth linking are **not provisioned by this repository or this script**. If the endpoint has only public tools, the script stops before any private write.
 
-Choose **one** sign-in method. For an already provisioned, trusted OAuth AS, register a public native OAuth client with authorization-code + PKCE S256, RFC 8707 resource indicators, and a loopback redirect URI of `http://127.0.0.1:{ephemeral-port}/callback`. Supply its nonsecret `WEAVE_OAUTH_CLIENT_ID` to the parent instead of bearer token variables. The script verifies protected-resource and authorization-server metadata, opens two **separate** browser-consent URLs (one at a time), checks a random state for each loopback callback, and exchanges each code with a fresh PKCE verifier. Access tokens remain in process memory, scoped to the exact `/mcp` resource, and are not written to evidence or journal. The issuer must support RFC 8414 metadata and the same-origin authorization/token endpoints under the configured issuer.
+Choose **one** sign-in method. For the exact public Weave demo resource,
+if the approved authorization server advertises **Client ID Metadata Documents
+(CIMD)**, the runner automatically uses
+`https://demo.weave-389.workers.dev/oauth-client-metadata.json` as its public client ID. This fixed HTTPS document
+advertises RFC 8252 loopback redirects, including random local ports, and
+requires a separate PKCE S256 login and explicit per-account consent for each
+client. This avoids enabling RFC 7591 dynamic registration on the first-party
+Cloudflare OAuth service. It is **public client metadata, not a credential**:
+any local application could present that same client ID, so verify the local
+redirect warning and consent details. You may override it with an independently
+approved `WEAVE_OAUTH_CLIENT_ID`. Other MCP resources keep their supplied ID
+or existing opt-in DCR flow. Neither route provides an anonymous write grant. For an already provisioned, trusted OAuth AS, either supply a pre-registered nonsecret public `WEAVE_OAUTH_CLIENT_ID`, or omit it when the issuer advertises an approved RFC 7591 `registration_endpoint`. Dynamic registration requests a public client for the exact ephemeral `http://127.0.0.1:{port}/callback` redirect with authorization-code + PKCE S256 and RFC 8707 resource indicators. It rejects client secrets, invalid client IDs, mismatched redirect URI responses, unauthorized origins, redirects and non-JSON/unbounded responses. DCR registers only a client; it neither logs in nor grants Weave account access. The script verifies protected-resource and authorization-server metadata, opens two **separate** browser-consent URLs (one at a time), checks a random state for each loopback callback, and exchanges each code with a fresh PKCE verifier. Access tokens remain in process memory, scoped to the exact `/mcp` resource, and are not written to evidence or journal. The issuer must publish valid RFC 8414 or OpenID Connect issuer metadata. Weave tries the resource-specific RFC 9728 well-known location first, then the root location only when the specific one returns 404/410. For a resource advertising more than one OAuth issuer, explicitly pin the chosen issuer with `WEAVE_OAUTH_EXPECTED_ISSUER=https://YOUR-TRUSTED-ISSUER` before attempting consent; Weave never guesses the first advertised issuer. The pinned issuer must exactly match the protected resource's list and the discovered issuer metadata. By default, its authorization
+and token endpoints must share its origin. If an explicitly trusted issuer
+publishes endpoint URLs on **other HTTPS origins**, pre-approve the exact
+scheme/host/port origins (up to eight) without paths, queries, credentials or
+fragments using the optional `WEAVE_OAUTH_TRUSTED_ENDPOINT_ORIGINS` variable,
+for example `https://login.example,https://tokens.example`. The client still
+checks exact issuer metadata, PKCE, state, resource, 900-second expiry and
+no-redirect token exchange. Never use this option to trust arbitrary metadata
+endpoints; HTTP exceptions apply only to explicit local loopback tests.
 
 Alternatively, have an approved secret-injection mechanism supply **both** short-lived bearer tokens to the parent process without printing or storing their values:
 
     WEAVE_AGENT_A_ACCESS_TOKEN  (OAuth bearer for account A)
     WEAVE_AGENT_B_ACCESS_TOKEN  (different OAuth bearer for account B)
-    # OR: WEAVE_OAUTH_CLIENT_ID  (registered public OAuth client ID; interactive PKCE flow)
+    # OR: WEAVE_OAUTH_CLIENT_ID  (optional pre-registered public ID; omission uses advertised RFC 7591 DCR)
+    # WEAVE_OAUTH_EXPECTED_ISSUER=https://YOUR-TRUSTED-ISSUER  (required for multi-issuer resources)
     WEAVE_MCP_URL=https://demo.weave-389.workers.dev/mcp
     WEAVE_EVIDENCE_PATH=/secure/private/location/weave-live-evidence.json
     WEAVE_LIVE_ACCEPTANCE=1
@@ -27,7 +47,7 @@ The evidence destination **and its `.journal` sibling** must not already exist. 
 
 **This command performs real writes when authorized.** It creates one private/unlisted address for each participating account, requests and accepts contact between those accounts, sends six synthetic messages in alternating directions, and ACKs them. Both child processes are stopped and relaunched while two messages remain pending; the receivers then read and ACK those messages. It verifies final receipts and that a duplicate send with the original ID returns its retained acknowledgment. No unrelated contacts are invited; no other inbox entries are ACKed.
 
-Access tokens are never passed as command-line arguments, written to the evidence file, forwarded to the other child, or included in tool-error messages. The parent deliberately restricts child environments. No automatic retry is performed when a write outcome is uncertain. Every private write is fsync-journalled with its exact operation ID, caller role and synthetic arguments before dispatch; confirmed or unknown status follows. A lost response may leave a zero-length incomplete evidence file plus `.journal`. Reconcile its retained IDs against the actual owner-scoped inbox/outbox/contact history; **never blindly rerun the whole script**, reuse a message ID with changed arguments, or delete an unresolved journal. These files do not contain bearer tokens but do contain synthetic message bytes and account identifiers. The operator must provision and authorize the external AS and native client. Interactive PKCE performs only per-account consent and token exchange; token renewal, durable token storage, and the authorization server are outside this tool. If either consent fails or both accounts resolve to the same identity, no mailbox writes are performed.
+Access tokens are never passed as command-line arguments, written to the evidence file, forwarded to the other child, or included in tool-error messages. The parent deliberately restricts child environments. No automatic retry is performed when a write outcome is uncertain. Every private write is fsync-journalled with its exact operation ID, caller role and synthetic arguments before dispatch; confirmed or unknown status follows. A lost response may leave a zero-length incomplete evidence file plus `.journal`. Reconcile its retained IDs against the actual owner-scoped inbox/outbox/contact history; **never blindly rerun the whole script**, reuse a message ID with changed arguments, or delete an unresolved journal. These files do not contain bearer tokens but do contain synthetic message bytes and account identifiers. The operator must provision and authorize the external AS. The native client can be supplied or dynamically registered only when issuer metadata advertises a trusted RFC 7591 endpoint. Interactive PKCE performs only per-account consent and token exchange; token renewal, durable token storage, and the authorization server are outside this tool. If either consent fails or both accounts resolve to the same identity, no mailbox writes are performed.
 
 ## Evidence and boundaries
 

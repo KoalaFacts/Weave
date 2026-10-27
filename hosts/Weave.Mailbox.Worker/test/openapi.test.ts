@@ -31,7 +31,7 @@ test('OpenAPI is an anonymous no-store JSON asset independent of account storage
 
 test('OpenAPI describes the current HTTP method/path set with resolved local references and security', () => {
     const routes = {
-        '/v1/accounts':['post'], '/v1/contacts':['get'], '/v1/contacts/accounts/{accountId}':['get','delete'], '/v1/addresses':['get','post'], '/v1/addresses/{addressId}':['get','put','delete'],
+        '/v1/accounts':['post'], '/v1/accounts/me':['get'], '/v1/accounts/proof':['post'], '/v1/contacts':['get'], '/v1/contacts/accounts/{accountId}':['get','delete'], '/v1/addresses':['get','post'], '/v1/addresses/{addressId}':['get','put','delete'],
         '/v1/directory':['get'], '/v1/directory/address':['get'], '/v1/contacts/cards':['get','put'],
         '/v1/contacts/owned-cards':['get'], '/v1/contacts/card':['get'], '/v1/contacts/requests':['get','post'],
         '/v1/contacts/requests/{requestId}':['get'], '/v1/contacts/requests/{requestId}/decision':['post'],
@@ -107,6 +107,7 @@ test('documented account/address/contact/message/ACK responses match real Worker
     try {
         const a = await h.register(), b = await h.register();
         responseShape(spec.paths['/v1/accounts'].post,await h.ok('/v1/accounts',a.control,'POST',{}));
+        responseShape(spec.paths['/v1/accounts/me'].get,await h.ok('/v1/accounts/me',a.control));
         const address = await h.address(b);
         responseShape(spec.paths['/v1/addresses'].post,address);
         responseShape(spec.paths['/v1/addresses'].get,await h.ok('/v1/addresses',b.control));

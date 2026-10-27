@@ -5,19 +5,24 @@ import openapi from './openapi.json';
 import { publicReadRate } from './public-rate';
 import { remoteMcp } from './remote-mcp';
 import { oauthConfiguration, authorizeOAuth, protectedResourceMetadata } from './remote-oauth';
+import { demoOAuthClientId, demoOAuthClientMetadata } from './oauth-client-metadata';
+import type { VerifiedOAuthSubject } from './remote-oauth';
+import {resolveLinkedOAuthSubject,linkOAuthSubject,listOAuthLinks,revokeOAuthLink} from './oauth-identity-links';
 import { privateMcpTools, privateScope, executePrivateMcp } from './remote-private';
 import { directory, mutateAddress, ownedAddresses } from './addresses';
 import { sweep } from './cleanup';
 import { budgetDatabase } from './budget';
 import { stream, type Context } from './stream';
 import { authenticate, register } from './accounts';
+import { issueAccountProof, validAccountProofChallenge, validateAccountProofBinding } from './account-proof';
+import { accountProofPage, accountProofScript } from './account-proof-page';
 import { putCard } from './cards';
 import { decide, requestContact, setBlocked } from './contacts';
 import { deleteContact, ownContacts } from './contact-links';
 import { atomic, type Env } from './database';
 import { ack, send } from './messages';
 import { read } from './reads';
-import { body, control, fail, json, legacyResponse, problem } from './wire';
+import { body, control, fail, json, legacyResponse, object, problem } from './wire';
 import { validatePayload } from './protocol';
 
 export default {
@@ -30,16 +35,34 @@ export default {
         try {
             const url = new URL(request.url), secret = control(request), method = request.method;
             const respond=(value:unknown)=>json(value,200,legacyResponse(request));
+            const proofConfig=()=>{
+                const cfg={issuer:env.OAUTH_ISSUER??'',resource:env.OAUTH_RESOURCE??'',key:env.OAUTH_ACCOUNT_PROOF_KEY??''};
+                try{validateAccountProofBinding(cfg,url.origin);}catch{fail(503,'storage');}
+                return cfg;
+            };
             if (url.protocol !== 'https:' && !['localhost','127.0.0.1','[::1]'].includes(url.hostname)) fail(400,'invalid');
             if (method === 'GET' && url.pathname === '/') return demo();
             if (method === 'GET' && url.pathname === '/agent-start.md') return agentStart();
             if (method === 'GET' && url.pathname === '/registry') return registry();
             if (method === 'GET' && url.pathname === '/openapi.json') return new Response(openapi,{headers:{'Content-Type':'application/json','Cache-Control':'no-store','X-Content-Type-Options':'nosniff'}});
+            // Public Client ID Metadata Document for the first-party demo PKCE
+            // acceptance client. No control secret, account, cookie or OAuth
+            // bearer is accepted here. Never reflect an arbitrary Host value.
+            if (url.pathname === '/oauth-client-metadata.json') {
+                if (method !== 'GET' || url.href !== demoOAuthClientId) fail(404,'unavailable');
+                return demoOAuthClientMetadata();
+            }
             if(env.MAINTENANCE_MODE==='true')fail(503,'maintenance',30);
+            if(method==='GET' && (url.pathname==='/account-proof'||url.pathname==='/account-proof.js')){
+                if(env.RECOVERY_READ_ONLY==='true')fail(503,'maintenance',30);
+                const cfg=proofConfig();
+                return url.pathname==='/account-proof'?accountProofPage(cfg.issuer,cfg.resource):accountProofScript();
+            }
             // Protected-resource discovery is an opt-in integration with an
             // external OAuth 2.1 authorization server. Missing/partial config
             // cannot silently enable a shared or anonymous account.
-            if(method==='GET'&&url.pathname==='/.well-known/oauth-protected-resource/mcp'){
+            if(method==='GET'&&(url.pathname==='/.well-known/oauth-protected-resource/mcp'||
+                url.pathname==='/.well-known/oauth-protected-resource')){
                 let cfg;try{cfg=oauthConfiguration(env,request.url);}catch{fail(503,'storage');}
                 if(!cfg)fail(404,'unavailable');
                 return protectedResourceMetadata(cfg);
@@ -55,8 +78,11 @@ export default {
                     tools:privateMcpTools,
                     scope:privateScope,
                     authorize:async scope=>{
+                        const resolver=env.OAUTH_IDENTITY_LINKS_ENABLED==='true'?
+                            (subject:VerifiedOAuthSubject)=>resolveLinkedOAuthSubject(env.db,subject):undefined;
                         const access=await authorizeOAuth(cfg,request,scope,async accountId=>
-                            (await env.db.prepare('SELECT account_id FROM accounts WHERE account_id=?').bind(accountId).first('account_id'))===accountId);
+                            (await env.db.prepare('SELECT account_id FROM accounts WHERE account_id=?').bind(accountId).first('account_id'))===accountId,
+                            undefined,Date.now,resolver);
                         return access instanceof Response?access:access.accountId;
                     },
                     invoke:(accountId,name,args)=>executePrivateMcp(env,url.origin,accountId,name,args)
@@ -70,13 +96,60 @@ export default {
             if (method === 'POST' && url.pathname === '/v1/accounts') return respond(await register(env,request,secret,await body(request)));
             if(env.RECOVERY_READ_ONLY!=='true'&&method==='GET'&&['/v1/directory','/v1/directory/address','/v1/contacts/cards','/v1/contacts/card'].includes(url.pathname))await publicReadRate(env,request);
             const account = await authenticate(env,secret);
+            // Local owner check only; do not proxy account controls to an AS.
+            // The challenge-bound handoff below does not forward the control.
+            if(method==='GET' && url.pathname==='/v1/accounts/me') {
+                if(!account)fail(401,'unauthenticated');
+                return respond({accountId:account.accountId});
+            }
+            if(method==='POST' && url.pathname==='/v1/accounts/proof') {
+                if(!account)fail(401,'unauthenticated');
+                // The form and the direct API share precisely the same fail-closed trust boundary.
+                const cfg=proofConfig();
+                const input=await body(request);
+                object(input,['challenge']);
+                try{validAccountProofChallenge(input.challenge);}catch{fail(400,'invalid');}
+                return respond({proof:await issueAccountProof(cfg,account.accountId,input.challenge)});
+            }
+            // Owner linking is an explicit two-credential action, never inferred
+            // from an OAuth subject, email, token or MCP tool argument. The
+            // long-lived control goes only to this Weave resource endpoint.
+            if(url.pathname==='/v1/accounts/oauth/links'||url.pathname==='/v1/accounts/oauth/links/revoke'){
+                if(env.OAUTH_IDENTITY_LINKS_ENABLED!=='true')fail(404,'unavailable');
+                if(!account)fail(401,'unauthenticated');
+                if(method==='GET'&&url.pathname==='/v1/accounts/oauth/links'){
+                    if([...url.searchParams.keys()].some(key=>key!=='cursor')||
+                        url.searchParams.getAll('cursor').length>1)fail();
+                    return respond(await listOAuthLinks(env.db,account.accountId,url.searchParams.get('cursor')));
+                }
+                if(method==='POST'&&url.pathname==='/v1/accounts/oauth/links/revoke'){
+                    const input=await body(request);
+                    object(input,['issuer','resource','subjectDigest']);
+                    return respond(await revokeOAuthLink(env.db,account.accountId,input));
+                }
+                if(method==='POST'&&url.pathname==='/v1/accounts/oauth/links'){
+                    object(await body(request),[]);
+                    let cfg;try{cfg=oauthConfiguration(env,request.url);}catch{fail(503,'storage');}
+                    // This first path requires standard RFC 7662 introspection.
+                    // Native Cloudflare Service Binding accounts already prove UUID ownership.
+                    if(!cfg||'mode' in cfg)fail(503,'storage');
+                    let subject:VerifiedOAuthSubject|null=null;
+                    const access=await authorizeOAuth(cfg,request,'weave:addresses.read',async id=>
+                        (await env.db.prepare('SELECT account_id FROM accounts WHERE account_id=?').bind(id).first('account_id'))===id,
+                        undefined,Date.now,async verified=>{subject=verified;return account.accountId;});
+                    if(access instanceof Response)return access;
+                    if(!subject)fail(503,'storage');
+                    return respond(await linkOAuthSubject(env.db,account.accountId,subject));
+                }
+                fail(404,'unavailable');
+            }
             if (method === 'GET' && ['/v1/directory','/v1/directory/address'].includes(url.pathname)) return respond(await atomic(env.db,tx => directory(tx,url)));
             if (method === 'GET' && ['/v1/contacts/cards','/v1/contacts/card'].includes(url.pathname)) return respond(await atomic(env.db,tx => read(tx,url,account?.accountId ?? null)));
             if (!account) fail(401,'unauthenticated');
             if (url.pathname === '/v1/addresses' || /^\/v1\/addresses\/[^/]+$/.test(url.pathname)) {
                 const id = url.pathname === '/v1/addresses' ? null : url.pathname.split('/')[3];
                 if (method === 'GET') return respond(await atomic(env.db,tx => ownedAddresses(tx,account.accountId,url)));
-                if (method === 'POST' && id === null || method === 'PUT' && id !== null) return respond(await mutateAddress(env,account.accountId,id,await body(request),url.origin));
+                if ((method === 'POST' && id === null) || (method === 'PUT' && id !== null)) return respond(await mutateAddress(env,account.accountId,id,await body(request),url.origin));
                 if (method === 'DELETE' && id !== null) return respond(await mutateAddress(env,account.accountId,id,null,url.origin,true));
                 fail(404,'unavailable');
             }

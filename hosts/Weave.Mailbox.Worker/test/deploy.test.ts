@@ -18,7 +18,7 @@ function fixture({status=200,failAt=0,bindingResult=[dbBinding],databaseResult=d
         requests.push(url);assert.equal(options.redirect,'error');assert.equal(options.headers.Authorization,'Bearer '+env.CLOUDFLARE_API_TOKEN);
         let result;
         if(url.endsWith('/workers/subdomain'))result={subdomain:'weave-389'};
-        else if(url.includes('/versions/'))result={id:version,resources:{bindings:[dbBinding,...Object.entries({...base.vars,MAINTENANCE_MODE:'false'}).map(([name,text])=>({name,type:'plain_text',text}))]}};
+        else if(url.includes('/versions/'))result={id:version,resources:{bindings:[...bindingResult,...Object.entries({...base.vars,MAINTENANCE_MODE:'false'}).map(([name,text])=>({name,type:'plain_text',text}))]}};
         else if(url.endsWith('/settings'))result={bindings:commands.length?[...bindingResult,...Object.entries({...base.vars,MAINTENANCE_MODE:commands.length===1?'true':'false',...settings}).filter(([,value])=>value!==undefined).map(([name,text])=>({name,type:'plain_text',text}))]:bindingResult};
         else result=databaseResult;
         return {ok:status===200,status,json:async()=>({success:true,result})};
@@ -215,4 +215,283 @@ for(const evidence of ['changed','missing','failed'])test('completed-only requir
     };
     try{await assert.rejects(deploy(f.options),/did not confirm zero changes/);assert.deepEqual(f.events,['maintenance']);assert.equal(f.writes().length,1);}
     finally{await f.h.close();}
+});
+
+
+test('demo maintain deploy leaves optional unapproved OAuth table absent',async()=>{
+    const h=await start(),f=fixture();
+    try{
+        await h.db.prepare('DROP TABLE oauth_identity_links').run();
+        f.options.openDatabase=async()=>({db:h.db,close:async()=>{}});
+        f.options.convert=async()=>({alreadyCompleted:true});
+        f.options.planSchema=planLatestSchema;
+        f.options.applySchema=createMissingSchema;
+        const result=await deploy(f.options);
+        assert.equal(result.schemaPlan.statements.length,0);
+        assert.equal(f.commands.length,3);
+        assert.equal(await h.db.prepare("SELECT name FROM sqlite_master WHERE type='table' AND name='oauth_identity_links'").first('name'),null);
+    }finally{await h.close();}
+});
+test('completed-only deploy accepts an intentionally unprovisioned OAuth identity-link table',async()=>{
+    const f=await completedFixture();
+    try{
+        await f.h.db.prepare('DROP TABLE oauth_identity_links').run();
+        const result=await deploy(f.options);
+        assert.equal(result.databaseMode,'completed-only');
+        assert.equal(result.schemaPlan.statements.length,0);
+        assert.deepEqual(f.events,['maintenance','recovery','active']);
+        assert.equal(await f.h.db.prepare("SELECT name FROM sqlite_master WHERE type='table' AND name='oauth_identity_links'").first('name'),null);
+    }finally{await f.h.close();}
+});
+test('enabled remote OAuth identity links require provisioned D1 schema before any maintenance',async()=>{
+    const h=await start(),f=fixture({bindingResult:[dbBinding,{name:'OAUTH_IDENTITY_LINKS_ENABLED',type:'plain_text',text:'true'}]});
+    try{
+        await h.db.prepare('DROP TABLE oauth_identity_links').run();
+        f.options.openDatabase=async()=>({db:h.db,close:async()=>{}});
+        await assert.rejects(deploy(f.options),/OAuth identity links.*schema.*approval|OAuth identity links.*not provisioned/i);
+        assert.equal(f.commands.length,0);
+        assert.equal(await h.db.prepare("SELECT name FROM sqlite_master WHERE type='table' AND name='oauth_identity_links'").first('name'),null);
+    }finally{await h.close();}
+});
+
+const existingAuthService=[
+    dbBinding,
+    {name:'AUTH_SERVER',type:'service',service:'approved-auth-worker'},
+    {name:'OAUTH_ISSUER',type:'plain_text',text:'https://auth.weave.example'},
+    {name:'OAUTH_RESOURCE',type:'plain_text',text:'https://demo.weave-389.workers.dev/mcp'},
+    {name:'OAUTH_ACCOUNT_PROOF_KEY',type:'secret_text'}
+];
+test('existing operator-provisioned OAuth Service Binding survives maintenance, recovery and active deploy without provisioning',async()=>{
+    const f=fixture({bindingResult:existingAuthService});
+    const result=await deploy(f.options);
+    assert.equal(result.worker,'demo');
+    assert.deepEqual(f.events,['maintenance','convert','schema','recovery','active']);
+    for(const config of f.configs){
+        assert.deepEqual(config.services,[{binding:'AUTH_SERVER',service:'approved-auth-worker'}]);
+        assert.equal(config.vars.OAUTH_ISSUER,undefined,'Do not materialize operator OAuth settings into temporary config');
+        assert.equal(config.vars.OAUTH_RESOURCE,undefined,'Do not materialize operator OAuth settings into temporary config');
+        assert.equal(JSON.stringify(config).includes('OAUTH_ACCOUNT_PROOF_KEY'),false,'Do not serialize an installed proof key');
+    }
+    assert.equal(f.commands.length,3);
+    assert.equal(f.closed,true);
+});
+test('lost existing OAuth Service Binding after maintenance stops before any D1 conversion or schema write',async()=>{
+    const f=fixture({bindingResult:existingAuthService}),original=f.options.fetchImpl;
+    f.options.fetchImpl=async (...args)=>{
+        const response=await original(...args);
+        if(args[0].endsWith('/settings')&&f.commands.length>0){
+            const payload=await response.json();
+            payload.result.bindings=payload.result.bindings.filter(binding=>binding.name!=='AUTH_SERVER');
+            return {...response,json:async()=>payload};
+        }
+        return response;
+    };
+    await assert.rejects(deploy(f.options),/AUTH_SERVER.*not confirmed|OAuth Service Binding.*not confirmed/i);
+    assert.deepEqual(f.events,['maintenance']);
+    assert.equal(f.closed,true);
+});
+test('OAuth issuer or account-proof secret lost after maintenance stops before D1 conversion',async()=>{
+    for(const missing of ['OAUTH_ISSUER','OAUTH_ACCOUNT_PROOF_KEY']){
+        const f=fixture({bindingResult:existingAuthService}),original=f.options.fetchImpl;
+        f.options.fetchImpl=async (...args)=>{
+            const response=await original(...args);
+            if(args[0].endsWith('/settings')&&f.commands.length>0){
+                const payload=await response.json();
+                payload.result.bindings=payload.result.bindings.filter(binding=>binding.name!==missing);
+                return {...response,json:async()=>payload};
+            }
+            return response;
+        };
+        await assert.rejects(deploy(f.options),/OAuth.*not confirmed/i);
+        assert.deepEqual(f.events,['maintenance']);
+    }
+});
+test('untrusted or malformed Service Bindings cannot be smuggled into a code-only demo release',async()=>{
+    for(const bindingResult of [
+        [dbBinding,{name:'NOT_OAUTH',type:'service',service:'foreign'}],
+        [...existingAuthService.map(b=>b.name==='AUTH_SERVER'?{...b,service:'../bad-target'}:b)],
+        [...existingAuthService.map(b=>b.name==='AUTH_SERVER'?{...b,service:'demo'}:b)],
+        [...existingAuthService.map(b=>b.name==='AUTH_SERVER'?{...b,environment:'unreviewed'}:b)],
+        [...existingAuthService.map(b=>b.name==='AUTH_SERVER'?{...b,entrypoint:'../bad'}:b)]
+    ]){
+        const f=fixture({bindingResult});
+        await assert.rejects(deploy(f.options),/Service Binding|service binding|OAuth|Unexpected existing resource bindings/);
+        assert.equal(f.commands.length,0);
+    }
+});
+
+test('a previously approved OAuth Service Binding can use default or named RPC entrypoint without requiring optional first-party proof',async()=>{
+    for(const entrypoint of [undefined,'AuthServer']){
+        const bindingResult=existingAuthService.filter(b=>b.name!=='OAUTH_ACCOUNT_PROOF_KEY').map(b=>
+            b.name==='AUTH_SERVER'&&entrypoint?{...b,entrypoint}:b);
+        const f=fixture({bindingResult});
+        await deploy(f.options);
+        for(const config of f.configs){
+            assert.deepEqual(config.services,[{binding:'AUTH_SERVER',service:'approved-auth-worker',...(entrypoint?{entrypoint}:{})}]);
+            assert.ok(!JSON.stringify(config).includes('OAUTH_ACCOUNT_PROOF_KEY'));
+        }
+        assert.deepEqual(f.events,['maintenance','convert','schema','recovery','active']);
+    }
+});
+
+
+const firstPartyIssuer='https://weave-auth-demo.weave-389.workers.dev';
+const firstPartyResource='https://demo.weave-389.workers.dev/mcp';
+const preapprovedResource=[
+    dbBinding,{name:'OAUTH_ACCOUNT_PROOF_KEY',type:'secret_text'}
+];
+const preapprovedIssuer=[
+    {name:'OAUTH_ISSUER',type:'plain_text',text:firstPartyIssuer},
+    {name:'OAUTH_RESOURCE',type:'plain_text',text:firstPartyResource},
+    {name:'OAUTH_ACCOUNT_PROOF_KEY',type:'secret_text'},
+    {name:'OAUTH_KV',type:'kv_namespace',namespace_id:'b'.repeat(32)},
+    {name:'CONSENT_NONCES',type:'durable_object_namespace',class_name:'ConsentNonce'}
+];
+const validFirstPartyIssuerMetadata={
+    issuer:firstPartyIssuer,client_id_metadata_document_supported:true,
+    code_challenge_methods_supported:['S256'],
+    authorization_response_iss_parameter_supported:true,
+    authorization_endpoint:firstPartyIssuer+'/authorize',
+    token_endpoint:firstPartyIssuer+'/oauth/token',
+    response_types_supported:['code'],grant_types_supported:['authorization_code']
+};
+const validFirstPartyResourceMetadata={
+    resource:firstPartyResource,authorization_servers:[firstPartyIssuer],
+    scopes_supported:['weave:messages.send','weave:messages.ack']
+};
+const validFirstPartyClientMetadata={
+    client_id:'https://demo.weave-389.workers.dev/oauth-client-metadata.json',
+    redirect_uris:['http://127.0.0.1/callback'],token_endpoint_auth_method:'none',
+    grant_types:['authorization_code'],response_types:['code']
+};
+function firstPartyBootstrap({bindings=preapprovedResource,asBindings=preapprovedIssuer,publicStatus=200,
+    metadata=validFirstPartyIssuerMetadata,flag='true',resourceStatus=200,clientStatus=200,
+    resourceMetadata=validFirstPartyResourceMetadata,clientMetadata=validFirstPartyClientMetadata}={}){
+    const f=fixture({bindingResult:bindings,extraEnv:{WEAVE_APPROVED_FIRST_PARTY_OAUTH_BINDING:flag}});
+    const original=f.options.fetchImpl;
+    f.options.fetchImpl=async (url,options)=>{
+        if(url.endsWith('/workers/scripts/weave-auth-demo/settings')){
+            f.requests.push(url);
+            assert.equal(options.headers.Authorization,'Bearer '+env.CLOUDFLARE_API_TOKEN);
+            return {ok:true,status:200,json:async()=>({success:true,result:{bindings:asBindings}})};
+        }
+        if(url===firstPartyIssuer+'/.well-known/oauth-authorization-server'){
+            f.requests.push(url);
+            assert.equal(options.headers?.Authorization,undefined,'Never send the Cloudflare API token to the public issuer');
+            return Response.json(metadata,{status:publicStatus});
+        }
+        if(url==='https://demo.weave-389.workers.dev/.well-known/oauth-protected-resource/mcp'){
+            f.requests.push(url);
+            assert.equal(options.headers?.Authorization,undefined,'Never send a Cloudflare token to public resource metadata');
+            return Response.json(resourceMetadata,{status:resourceStatus});
+        }
+        if(url==='https://demo.weave-389.workers.dev/oauth-client-metadata.json'){
+            f.requests.push(url);
+            assert.equal(options.headers?.Authorization,undefined,'Never send a Cloudflare token to public client metadata');
+            return Response.json(clientMetadata,{status:clientStatus});
+        }
+        const response=await original(url,options);
+        // Mirror Cloudflare's post-upload report; assertions also inspect the
+        // actual generated Wrangler configs, not just this simulated response.
+        if(f.commands.length && flag==='true' &&
+            (url.endsWith('/workers/scripts/demo/settings')||url.includes('/workers/scripts/demo/versions/'))){
+            const payload=await response.json(),target=url.includes('/versions/')
+                ?payload.result.resources.bindings:payload.result.bindings;
+            target.push({name:'AUTH_SERVER',type:'service',service:'weave-auth-demo'});
+            for(const [name,text] of [['OAUTH_ISSUER',firstPartyIssuer],['OAUTH_RESOURCE',firstPartyResource]])
+                target.push({name,type:'plain_text',text});
+            return {...response,json:async()=>payload};
+        }
+        return response;
+    };
+    return f;
+}
+test('explicit one-time first-party bootstrap attaches the approved existing AS in every maintenance/recovery/active stage',async()=>{
+    const f=firstPartyBootstrap();
+    await deploy(f.options);
+    assert.deepEqual(f.events,['maintenance','convert','schema','recovery','active']);
+    assert.ok(f.requests.some(url=>url.endsWith('/workers/scripts/weave-auth-demo/settings')));
+    assert.ok(f.requests.includes(firstPartyIssuer+'/.well-known/oauth-authorization-server'));
+    assert.ok(f.requests.includes('https://demo.weave-389.workers.dev/.well-known/oauth-protected-resource/mcp'),
+        'Successful OAuth rollout must prove real resource discovery after activation');
+    assert.ok(f.requests.includes('https://demo.weave-389.workers.dev/oauth-client-metadata.json'),
+        'Successful OAuth rollout must prove the public CIMD client after activation');
+    for(const config of f.configs){
+        assert.deepEqual(config.services,[{binding:'AUTH_SERVER',service:'weave-auth-demo'}],
+            'The shipped AuthServer is a default export; the service binding MUST NOT select an absent named entrypoint.');
+        assert.equal(config.vars.OAUTH_ISSUER,firstPartyIssuer);
+        assert.equal(config.vars.OAUTH_RESOURCE,firstPartyResource);
+        assert.equal(JSON.stringify(config).includes('OAUTH_ACCOUNT_PROOF_KEY'),false);
+    }
+    assert.equal(f.closed,true);
+});
+test('OAuth binding bootstrap fails closed before maintenance when preapproved infrastructure or public issuer is absent',async()=>{
+    const cases=[
+        firstPartyBootstrap({bindings:[dbBinding]}),
+        firstPartyBootstrap({bindings:[...preapprovedResource,{name:'OAUTH_CLIENT_SECRET',type:'secret_text'}]}),
+        firstPartyBootstrap({asBindings:preapprovedIssuer.filter(x=>x.name!=='OAUTH_KV')}),
+        firstPartyBootstrap({asBindings:preapprovedIssuer.map(x=>x.name==='OAUTH_KV'?{...x,namespace_id:'bad'}:x)}),
+        firstPartyBootstrap({asBindings:preapprovedIssuer.filter(x=>x.name!=='CONSENT_NONCES')}),
+        firstPartyBootstrap({publicStatus:401}),
+        firstPartyBootstrap({metadata:{issuer:'https://untrusted.example',client_id_metadata_document_supported:true,code_challenge_methods_supported:['S256']}}),
+        firstPartyBootstrap({metadata:{issuer:firstPartyIssuer,client_id_metadata_document_supported:false,code_challenge_methods_supported:['S256']}}),
+        firstPartyBootstrap({flag:'tru'}),
+        firstPartyBootstrap({bindings:[...preapprovedResource,{name:'AUTH_SERVER',type:'service',service:'other'}]})
+    ];
+    for(const f of cases){
+        await assert.rejects(deploy(f.options));
+        assert.equal(f.commands.length,0,'No maintenance, D1 or active upload may start on a failed preflight');
+    }
+});
+test('OAuth binding bootstrap verifies the new Service Binding immediately after maintenance before writing to D1',async()=>{
+    const f=firstPartyBootstrap(),original=f.options.fetchImpl;
+    f.options.fetchImpl=async (url,options)=>{
+        const response=await original(url,options);
+        if(url.endsWith('/workers/scripts/demo/settings')&&f.commands.length===1){
+            const payload=await response.json();
+            payload.result.bindings=payload.result.bindings.filter(binding=>binding.name!=='AUTH_SERVER');
+            return {...response,json:async()=>payload};
+        }
+        return response;
+    };
+    await assert.rejects(deploy(f.options),/AUTH_SERVER.*not confirmed|OAuth Service Binding.*not confirmed/i);
+    assert.deepEqual(f.events,['maintenance']);
+});
+test('ordinary demo deploy does not bootstrap even with a preinstalled proof secret',async()=>{
+    const f=fixture({bindingResult:preapprovedResource});
+    await deploy(f.options);
+    assert.ok(f.configs.every(c=>!('services' in c)&&c.vars.OAUTH_ISSUER===undefined));
+});
+
+test('approved first-party AS metadata must expose a viable same-origin code and PKCE issuer before any upload',async()=>{
+    for(const metadata of [
+        {...validFirstPartyIssuerMetadata,authorization_endpoint:undefined},
+        {...validFirstPartyIssuerMetadata,authorization_endpoint:'https://foreign.example/authorize'},
+        {...validFirstPartyIssuerMetadata,authorization_endpoint:firstPartyIssuer+'/authorize?redirect=evil'},
+        {...validFirstPartyIssuerMetadata,token_endpoint:undefined},
+        {...validFirstPartyIssuerMetadata,token_endpoint:'http://weave-auth-demo.weave-389.workers.dev/oauth/token'},
+        {...validFirstPartyIssuerMetadata,token_endpoint:'https://foreign.example/oauth/token'},
+        {...validFirstPartyIssuerMetadata,response_types_supported:['token']},
+        {...validFirstPartyIssuerMetadata,grant_types_supported:['refresh_token']},
+        {...validFirstPartyIssuerMetadata,authorization_response_iss_parameter_supported:false}
+    ]){
+        const f=firstPartyBootstrap({metadata});
+        await assert.rejects(deploy(f.options),/issuer|authorization|token|PKCE|metadata/i);
+        assert.equal(f.commands.length,0,'Bad discovery may not take down a running public demo');
+    }
+});
+test('approved AS binding rollout verifies public resource discovery and CIMD before reporting success',async()=>{
+    for(const variant of [
+        {resourceStatus:404},
+        {resourceMetadata:{...validFirstPartyResourceMetadata,resource:'https://foreign.example/mcp'}},
+        {resourceMetadata:{...validFirstPartyResourceMetadata,authorization_servers:['https://foreign.example']}},
+        {clientStatus:404},
+        {clientMetadata:{...validFirstPartyClientMetadata,client_id:'https://foreign.example/metadata.json'}},
+        {clientMetadata:{...validFirstPartyClientMetadata,redirect_uris:['https://other.example/callback']}}
+    ]){
+        const f=firstPartyBootstrap(variant);
+        await assert.rejects(deploy(f.options),/public OAuth|resource metadata|client metadata|CIMD/i);
+        assert.equal(f.commands.length,3,'Public metadata check runs only after versioned deployment and setting verification');
+        assert.equal(f.closed,true);
+    }
 });

@@ -17,6 +17,8 @@ export interface OAuthEnvironment {
     OAUTH_ISSUER?: string;
     OAUTH_RESOURCE?: string;
     OAUTH_INTROSPECTION_URL?: string;
+    /** Operator-approved exact HTTPS origin if RFC 7662 lives outside the issuer origin. */
+    OAUTH_INTROSPECTION_TRUSTED_ORIGIN?: string;
     OAUTH_CLIENT_ID?: string;
     OAUTH_CLIENT_SECRET?: string;
     AUTH_SERVER?: OAuthServiceBinding;
@@ -31,6 +33,11 @@ export interface OAuthConfiguration {
 export interface OAuthServiceConfiguration { mode:'service'; issuer:string; resource:string; authServer:OAuthServiceBinding; }
 export type OAuthOptions = OAuthConfiguration | OAuthServiceConfiguration;
 export type OAuthAccess = {accountId: string} | Response;
+/** The verified AS subject is not a Weave owner. External issuers require a
+ * trusted server-side mapping established by the account owner.
+ */
+export interface VerifiedOAuthSubject {issuer:string;resource:string;subject:string;}
+export type OAuthSubjectResolver=(subject:VerifiedOAuthSubject)=>Promise<string|null>;
 const identity = /^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/;
 const serviceTokenPattern = /^[A-Za-z0-9._~+/\-]+:[A-Za-z0-9._~+/\-]+:[A-Za-z0-9._~+/\-]+$/;
 const tokenPattern = /^[A-Za-z0-9\-._~+/]+={0,2}$/;
@@ -44,8 +51,9 @@ const safeUrl = (raw: string, label: string): URL => {
 /** A partial/malformed deployment is *not* a fallback to anonymous private tools. */
 export function oauthConfiguration(env: OAuthEnvironment, requestUrl: string): OAuthOptions | null {
     const values = [env.OAUTH_ISSUER,env.OAUTH_RESOURCE,env.OAUTH_INTROSPECTION_URL,env.OAUTH_CLIENT_ID,env.OAUTH_CLIENT_SECRET];
+    const trustedOrigin=env.OAUTH_INTROSPECTION_TRUSTED_ORIGIN;
     if (env.AUTH_SERVER !== undefined) {
-        if (!env.OAUTH_ISSUER || !env.OAUTH_RESOURCE || values.slice(2).some(value=>value!==undefined)
+        if (!env.OAUTH_ISSUER || !env.OAUTH_RESOURCE || trustedOrigin!==undefined || values.slice(2).some(value=>value!==undefined)
             || !env.AUTH_SERVER || typeof env.AUTH_SERVER.validateToken!=='function') throw Error('Invalid OAuth Service Binding configuration');
         const issuer=safeUrl(env.OAUTH_ISSUER,'issuer'), resource=safeUrl(env.OAUTH_RESOURCE,'resource');
         if (resource.pathname!=='/mcp' || resource.href!==env.OAUTH_RESOURCE
@@ -53,10 +61,21 @@ export function oauthConfiguration(env: OAuthEnvironment, requestUrl: string): O
             || new URL(requestUrl).origin!==resource.origin) throw Error('OAuth Service Binding origin mismatch');
         return {mode:'service',issuer:env.OAUTH_ISSUER,resource:resource.href,authServer:env.AUTH_SERVER};
     }
-    if (values.every(v=>v===undefined)) return null;
+    if (values.every(v=>v===undefined)) {
+        if (trustedOrigin!==undefined)throw Error('Incomplete OAuth configuration');
+        return null;
+    }
     if (values.some(v=>!v)) throw Error('Incomplete OAuth configuration');
     const issuer=safeUrl(values[0]!, 'issuer'),resource=safeUrl(values[1]!, 'resource'),introspection=safeUrl(values[2]!, 'introspection');
-    if (resource.pathname!=='/mcp'||resource.href!==values[1]||issuer.href.replace(/\/$/,'')!==values[0]!.replace(/\/$/,'')||introspection.origin!==issuer.origin) throw Error('OAuth binding mismatch');
+    // Cross-origin RFC 7662 is operator opt-in: introspection credentials
+    // are sent only to this exact preconfigured HTTPS host, never a redirect.
+    let allowedIntrospectionOrigin=issuer.origin;
+    if(trustedOrigin!==undefined){
+        const approved=safeUrl(trustedOrigin,'trusted introspection origin');
+        if(approved.origin!==trustedOrigin)throw Error('Invalid trusted introspection origin');
+        allowedIntrospectionOrigin=approved.origin;
+    }
+    if (resource.pathname!=='/mcp'||resource.href!==values[1]||issuer.href.replace(/\/$/,'')!==values[0]!.replace(/\/$/,'')||introspection.origin!==allowedIntrospectionOrigin) throw Error('OAuth binding mismatch');
     if (new URL(requestUrl).origin!==resource.origin) throw Error('Unexpected OAuth resource origin');
     if (!/^[\x21-\x7e]{1,128}$/.test(values[3]!)||values[3]!.includes(':')|| !/^[\x21-\x7e]{16,2048}$/.test(values[4]!)) throw Error('Invalid OAuth client credentials');
     return {issuer:values[0]!,resource:resource.href,introspectionUrl:introspection.href,clientId:values[3]!,clientSecret:values[4]!};
@@ -84,7 +103,8 @@ function failClosed():Response {
 export async function authorizeOAuth(
     config: OAuthOptions, request: Request, requiredScope: string,
     accountExists: (accountId: string) => Promise<boolean>,
-    fetcher: typeof fetch = fetch, now: number | (() => number) = Date.now
+    fetcher: typeof fetch = fetch, now: number | (() => number) = Date.now,
+    resolveAccount?: OAuthSubjectResolver
 ): Promise<OAuthAccess> {
     const raw = request.headers.get('authorization');
     if (!raw || !/^Bearer\s+/i.test(raw)) return challenge(config,401,requiredScope,'invalid_token');
@@ -116,7 +136,9 @@ export async function authorizeOAuth(
     const form=new URLSearchParams({token:match[1],token_type_hint:'access_token'});
     let data: unknown;
     try {
-        const response=await fetcher(config.introspectionUrl,{method:'POST',redirect:'error',cache:'no-store',signal:AbortSignal.timeout(3500),
+        // workerd cannot use redirect:'error': manual preserves a non-followed 3xx,
+        // which the response.ok gate rejects without forwarding credentials.
+        const response=await fetcher(config.introspectionUrl,{method:'POST',redirect:'manual',cache:'no-store',signal:AbortSignal.timeout(3500),
             headers:{'Authorization':'Basic '+btoa(formEncode(config.clientId)+':'+formEncode(config.clientSecret)),'Content-Type':'application/x-www-form-urlencoded','Accept':'application/json'},body:form});
         if (!response.ok || !/^application\/json(?:;|$)/i.test(response.headers.get('Content-Type')??'')) {await response.body?.cancel();return failClosed();}
         // Bound the remote AS response before JSON parsing; never log secrets or response text.
@@ -133,7 +155,7 @@ export async function authorizeOAuth(
     const nowSec=Math.floor(clock()/1000);
     // RFC 7662 does not guarantee issuer/audience in every response; our configured
     // authorization server MUST return both. Ambiguous bindings are rejected.
-    if(info.active!==true||info.iss!==config.issuer||info.aud!==config.resource||typeof info.sub!=='string'||!identity.test(info.sub)
+    if(info.active!==true||info.iss!==config.issuer||info.aud!==config.resource||typeof info.sub!=='string'||info.sub.length<1||info.sub.length>255||/[\x00-\x1f\x7f]/.test(info.sub)
         || !Number.isSafeInteger(info.exp)|| (info.exp as number)<=nowSec || (info.exp as number)>nowSec+900
         || !Number.isSafeInteger(info.iat)|| (info.iat as number)>nowSec+60|| (info.iat as number)>=(info.exp as number)
         || (info.exp as number)-(info.iat as number)>900
@@ -141,8 +163,24 @@ export async function authorizeOAuth(
         return challenge(config,401,requiredScope,'invalid_token');
     }
     if (typeof info.scope!=='string'||!info.scope.split(' ').includes(requiredScope)) return challenge(config,403,requiredScope,'insufficient_scope');
-    try {if(!await accountExists(info.sub))return challenge(config,401,requiredScope,'invalid_token');}catch{return failClosed();}
-    // The database lookup can also outlive the bearer; revalidate before dispatch.
+    // OAuth `sub` is issuer-local, not automatically an account UUID.
+    // External issuers need an owner-approved, exact issuer+subject map. Never
+    // silently fall back to a UUID or email if a resolver was configured.
+    let accountId:string;
+    if(resolveAccount){
+        let linked:string|null;
+        try {linked=await resolveAccount({issuer:config.issuer,resource:config.resource,subject:info.sub});}
+        catch {return failClosed();}
+        if(typeof linked!=='string'||!identity.test(linked))return challenge(config,401,requiredScope,'invalid_token');
+        accountId=linked;
+    }else{
+        // Compatibility with the existing explicitly trusted Weave-native AS.
+        if(!identity.test(info.sub))return challenge(config,401,requiredScope,'invalid_token');
+        accountId=info.sub;
+    }
     if((info.exp as number)<=Math.floor(clock()/1000))return challenge(config,401,requiredScope,'invalid_token');
-    return {accountId:info.sub};
+    try {if(!await accountExists(accountId))return challenge(config,401,requiredScope,'invalid_token');}catch{return failClosed();}
+    // The account lookup can also outlive the bearer; revalidate before dispatch.
+    if((info.exp as number)<=Math.floor(clock()/1000))return challenge(config,401,requiredScope,'invalid_token');
+    return {accountId};
 }

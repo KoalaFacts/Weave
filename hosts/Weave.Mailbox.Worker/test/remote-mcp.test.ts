@@ -69,3 +69,27 @@ test('maintenance and Origin checks also guard the actual MCP route',async()=>{
         assert.equal(response.status,503);
     } finally { await maintenance.close(); }
 });
+
+test('root and resource-specific well-known OAuth discovery must agree without any account control',async()=>{
+    const routes=['/.well-known/oauth-protected-resource/mcp','/.well-known/oauth-protected-resource'];
+    const configured={
+        OAUTH_ISSUER:'https://trusted-issuer.example',OAUTH_RESOURCE:'https://localhost/mcp',
+        OAUTH_INTROSPECTION_URL:'https://trusted-issuer.example/introspect',
+        OAUTH_CLIENT_ID:'weave-resource',OAUTH_CLIENT_SECRET:'synthetic-local-test-secret'
+    };
+    for(const [bindings,expectedStatus] of [[{},404],[configured,200],[{OAUTH_ISSUER:configured.OAUTH_ISSUER},503]]){
+        const h=await start({bindings});
+        try{
+            for(const route of routes){
+                const response=await h.mf.dispatchFetch('https://localhost'+route,{headers:{Accept:'application/json'}});
+                assert.equal(response.status,expectedStatus,route+' must not fall through to a control-secret 401');
+                if(expectedStatus===200){
+                    assert.equal(response.headers.get('Cache-Control'),'no-store');
+                    const metadata=await response.json();
+                    assert.equal(metadata.resource,configured.OAUTH_RESOURCE);
+                    assert.deepEqual(metadata.authorization_servers,[configured.OAUTH_ISSUER]);
+                }
+            }
+        }finally{await h.close();}
+    }
+});
