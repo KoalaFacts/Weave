@@ -70,8 +70,13 @@ test('a token that expires while its signing keys are checked cannot authorize',
     assert.equal(await verifyManagedAccessAssertion(cfg,request(short),delayed,()=>clock),null);
 });
 test('real workerd/D1 trial enforces two credentials, owner binding, revocation and private account isolation',async()=>{
-    const outward=async(req:Request)=>certificates(req.url,{method:req.method,redirect:req.redirect,
-        cache:'no-store',headers:{Accept:'application/json'}});
+    const observed:{calls:number;originMatched:boolean;methodMatched:boolean}={calls:0,originMatched:true,methodMatched:true};
+    const outward=async(req:Request)=>{
+        observed.calls++;
+        observed.originMatched&&=req.url===issuer+'/cdn-cgi/access/certs';
+        observed.methodMatched&&=req.method==='GET';
+        return new Response(JSON.stringify({keys:[jwk]}),{headers:{'Content-Type':'application/json'}});
+    };
     const h=await start({outboundService:outward,bindings:{
         ACCESS_TRIAL_ENABLED:'true',ACCESS_TRIAL_ISSUER:issuer,ACCESS_TRIAL_RESOURCE:resource,
         ACCESS_TRIAL_AUDIENCE:audience,OAUTH_IDENTITY_LINKS_ENABLED:'true'
@@ -101,7 +106,7 @@ test('real workerd/D1 trial enforces two credentials, owner binding, revocation 
         const notConsented=await h.mf.dispatchFetch('https://localhost'+link,{
             method:'POST',headers:{'Content-Type':'application/json','X-Weave-Account-Control':a.control,
                 'Cf-Access-Jwt-Assertion':aSigned},body:'{"consent":false}'});
-        assert.equal(notConsented.status,400);
+        assert.equal(notConsented.status,400,`Signed consent preflight: cert-calls=${observed.calls} origin=${observed.originMatched} method=${observed.methodMatched}`);
         const postLink=async(control:string,jwt:string)=>h.mf.dispatchFetch('https://localhost'+link,{
             method:'POST',headers:{'Content-Type':'application/json','X-Weave-Account-Control':control,
                 'Cf-Access-Jwt-Assertion':jwt},body:'{"consent":true}'});
