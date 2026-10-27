@@ -65,8 +65,15 @@ export async function inspectAccess({env = process.env,fetchImpl = fetch}: {
             throw Error('Access application pagination is incomplete or exceeds the bounded limit.');
         for(const value of response.data.result) {
             const app=object(value);
-            const domain=typeof app.domain==='string'?app.domain:'';
-            const isHost=domain===host || domain.startsWith(host+'/') || domain==='*.weave-389.workers.dev';
+            // Cloudflare destinations supersede legacy self_hosted_domains.
+            const additional=Array.isArray(app.destinations)
+                ? app.destinations.filter(value=>object(value).type==='public' || object(value).type===undefined).map(value=>object(value).uri)
+                : Array.isArray(app.self_hosted_domains)?app.self_hosted_domains:[];
+            const isHost=[app.domain,...additional].some(value=>{
+                if(typeof value!=='string') return false;
+                const hostname=value.split('/')[0].toLowerCase();
+                return hostname===host || hostname==='*.weave-389.workers.dev';
+            });
             if(app.name!==trialName && !isHost) continue;
             if(typeof app.id!=='string' || !uuid.test(app.id)) throw Error('Access application metadata is invalid.');
             apps.trial.push({id:app.id,managedOAuth:object(app.oauth_configuration).enabled===true,matchesTrialName:app.name===trialName});

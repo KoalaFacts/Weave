@@ -91,3 +91,23 @@ test('unexpected organization names and reflected credentials cannot be logged',
     const f = fixture({'/access/organizations':() => envelope({auth_domain:'https://evil.invalid/'})});
     await assert.rejects(inspectAccess({env,fetchImpl:f.fetchImpl}),/organization metadata/);
 });
+
+for (const additional of [
+    {self_hosted_domains:['private.example.com','demo.weave-389.workers.dev/managed-oauth-trial']},
+    {destinations:[{type:'public',uri:'private.example.com'},{type:'public',uri:'*.weave-389.workers.dev/managed-oauth-trial'}]}
+]) test('finds Weave coverage on additional public domains without exposing unrelated hosts', async () => {
+    const f=fixture({'/access/apps?per_page=100&page=1':()=>envelope([{
+        id:'33333333-3333-3333-3333-333333333333',name:'existing multi-host app',domain:'private.example.com',...additional
+    }],pages)});
+    const report=await inspectAccess({env,fetchImpl:f.fetchImpl});
+    assert.deepEqual(report.apps.trial,[{id:'33333333-3333-3333-3333-333333333333',managedOAuth:false,matchesTrialName:false}]);
+});
+
+test('current destinations override legacy aliases and unrelated suffixes do not match', async () => {
+    const f=fixture({'/access/apps?per_page=100&page=1':()=>envelope([{
+        id:'44444444-4444-4444-4444-444444444444',name:'other',domain:'private.example.com',
+        self_hosted_domains:['demo.weave-389.workers.dev'],
+        destinations:[{type:'public',uri:'demo.weave-389.workers.dev.attacker.invalid'}]
+    }],pages)});
+    assert.deepEqual((await inspectAccess({env,fetchImpl:f.fetchImpl})).apps.trial,[]);
+});
