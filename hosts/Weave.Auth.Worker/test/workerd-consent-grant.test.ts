@@ -5,7 +5,8 @@ import {mkdtemp,rm} from "node:fs/promises";
 import {tmpdir} from "node:os";
 import {join,resolve} from "node:path";
 import {test} from "node:test";
-import {Miniflare,createFetchMock} from "miniflare";
+import {Miniflare} from "miniflare";
+import {MockAgent} from "undici";
 import {stripTypeScriptTypes} from "node:module";
 import {initializeDatabase} from "../../Weave.Mailbox.Worker/scripts/latest-schema.ts";
 import {demoOAuthClientId,demoOAuthClientMetadata} from "../../Weave.Mailbox.Worker/src/oauth-client-metadata.ts";
@@ -13,7 +14,7 @@ import {demoOAuthClientId,demoOAuthClientMetadata} from "../../Weave.Mailbox.Wor
 
 const issuer="https://auth.weave.example";
 const resource="https://demo.weave-389.workers.dev/mcp";
-// Exercise the deployed demo\'s public CIMD contract, not a seeded KV client.
+// Exercise the deployed demo's public CIMD contract, not a seeded KV client.
 const clientId=demoOAuthClientId;
 const redirectUri="http://127.0.0.1:53621/callback";
 const redirectUriB="http://127.0.0.1:53622/callback";
@@ -64,7 +65,7 @@ export default {
 async function options(storage:string,key:string) {
   // Intercept only the canonical public metadata document. No test credential,
   // real network request or SDK pre-registered KV client can satisfy this flow.
-  const fetchMock=createFetchMock();
+  const fetchMock=new MockAgent();
   fetchMock.disableNetConnect();
   const document=demoOAuthClientMetadata();
   fetchMock.get(new URL(clientId).origin)
