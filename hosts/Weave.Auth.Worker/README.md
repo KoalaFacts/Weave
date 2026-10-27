@@ -123,3 +123,18 @@ AS metadata and browser PKCE login/explicit consent for **two independent
 existing users**, private tools, contact, six messages with ACK and cold
 restart/replay. Keep the `oauth_identity_links` D1 schema opt-in disabled
 unless its separate privacy/migration/rollback is approved.
+
+### Protected GitHub Actions one-time OAuth release selector (not executed)
+
+The **Deploy Weave Worker** workflow exposes `enable_first_party_oauth`
+(default **false**) only through manual dispatch on protected `main`,
+with `configuration_scope=production`, `database_mode=completed-only`
+and a separately approved `production` environment. The Node24
+release-intent gate validates these constraints before other release work
+and again after the environment approval. Only the protected production
+job receives `WEAVE_APPROVED_FIRST_PARTY_OAUTH_BINDING=true`; normal
+`publish/demo` pushes and repository releases cannot activate OAuth.
+This checkbox is NOT approval to create resources, install secrets or migrate
+D1. The live AS, KV, SQLite DO, proof signing secret, Service Binding and
+preflight/rollback must be separately authorized, provisioned and reviewed.
+No cloud change occurs by adding this release selector.
