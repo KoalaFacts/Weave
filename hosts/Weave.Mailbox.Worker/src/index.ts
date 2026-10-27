@@ -4,6 +4,7 @@ import { registry } from './registry';
 import openapi from './openapi.json';
 import { publicReadRate } from './public-rate';
 import { remoteMcp } from './remote-mcp';
+import {managedAccessConfiguration,verifyManagedAccessAssertion} from './access-managed';
 import { oauthConfiguration, authorizeOAuth, protectedResourceMetadata } from './remote-oauth';
 import { demoOAuthClientId, demoOAuthClientMetadata } from './oauth-client-metadata';
 import type { VerifiedOAuthSubject } from './remote-oauth';
@@ -66,6 +67,63 @@ export default {
                 let cfg;try{cfg=oauthConfiguration(env,request.url);}catch{fail(503,'storage');}
                 if(!cfg)fail(404,'unavailable');
                 return protectedResourceMetadata(cfg);
+            }
+
+            // Separate hostname-path Access experiment. Do not put the public
+            // /mcp or demo root behind Access. Access's opaque OAuth bearer is
+            // *not* RFC 7662: origin authorization is the signed Access JWT
+            // plus a separately owner-approved persisted Weave subject link.
+            if(url.pathname==='/access-trial/mcp'||url.pathname==='/access-trial/link'){
+                if(env.RECOVERY_READ_ONLY==='true')fail(503,'maintenance',30);
+                let trial;
+                try{trial=managedAccessConfiguration(env,request.url);}catch{fail(503,'storage');}
+                if(!trial)fail(404,'unavailable');
+                if(env.OAUTH_IDENTITY_LINKS_ENABLED!=='true')fail(503,'storage');
+                const denial=(status:number)=>new Response(JSON.stringify({error:'access_denied'}),{
+                    status,headers:{'Content-Type':'application/json','Cache-Control':'no-store',
+                        'X-Content-Type-Options':'nosniff'}});
+                const identity=await verifyManagedAccessAssertion(trial,request);
+                if(!identity)return denial(401);
+                const verifiedSubject:VerifiedOAuthSubject={
+                    issuer:identity.issuer,resource:identity.resource,subject:identity.subject
+                };
+                if(url.pathname==='/access-trial/link'){
+                    if(method!=='POST')fail(404,'unavailable');
+                    const account=await authenticate(env,secret);
+                    if(!account)return denial(401);
+                    const input=await body(request);
+                    object(input,['consent']);
+                    if(input.consent!==true)fail(400,'invalid');
+                    // Explicit two-credential consent: locally proven control
+                    // and signed Access identity. Never forward the control,
+                    // bearer or raw Access subject to the OAuth provider or D1.
+                    return respond(await linkOAuthSubject(env.db,account.accountId,verifiedSubject));
+                }
+                return remoteMcp(request,async target=>{
+                    try{
+                        await publicReadRate(env,request);
+                        return json(await atomic(env.db,tx=>directory(tx,target)));
+                    }catch(error){return problem(error);}
+                },{
+                    tools:privateMcpTools,scope:privateScope,
+                    authorize:async _scope=>{
+                        if(identity.expiresAt<=Math.floor(Date.now()/1000))return denial(401);
+                        let accountId:string|null;
+                        try{accountId=await resolveLinkedOAuthSubject(env.db,verifiedSubject);}
+                        catch{return denial(503);}
+                        if(!accountId)return denial(401);
+                        try{
+                            const found=await env.db.prepare('SELECT account_id FROM accounts WHERE account_id=?')
+                                .bind(accountId).first<string>('account_id');
+                            if(found!==accountId||identity.expiresAt<=Math.floor(Date.now()/1000))return denial(401);
+                        }catch{return denial(503);}
+                        // This isolated test grant is the owner's explicit link
+                        // to all ordinary private mailbox tools. The tool's
+                        // scope is still resolved and checked before execution.
+                        return accountId;
+                    },
+                    invoke:(accountId,name,args)=>executePrivateMcp(env,url.origin,accountId,name,args)
+                });
             }
             if(url.pathname==='/mcp'){
                 const cfg=(()=>{try{return oauthConfiguration(env,request.url);}catch{fail(503,'storage');}})();
