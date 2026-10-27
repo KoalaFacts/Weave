@@ -6,7 +6,6 @@ import {tmpdir} from "node:os";
 import {join,resolve} from "node:path";
 import {test} from "node:test";
 import {Miniflare} from "miniflare";
-import {MockAgent} from "undici";
 import {stripTypeScriptTypes} from "node:module";
 import {initializeDatabase} from "../../Weave.Mailbox.Worker/scripts/latest-schema.ts";
 import {demoOAuthClientId,demoOAuthClientMetadata} from "../../Weave.Mailbox.Worker/src/oauth-client-metadata.ts";
@@ -62,23 +61,18 @@ export default {
 };`;
 
 // The AS exposes only the default WorkerEntrypoint; the operator rollout must use it.
-async function options(storage:string,key:string) {
-  // Intercept only the canonical public metadata document. No test credential,
-  // real network request or SDK pre-registered KV client can satisfy this flow.
-  const fetchMock=new MockAgent();
-  fetchMock.disableNetConnect();
-  const document=demoOAuthClientMetadata();
-  fetchMock.get(new URL(clientId).origin)
-    .intercept({method:"GET",path:"/oauth-client-metadata.json"})
-    .reply(200,await document.text(),{headers:{"Content-Type":"application/json","Cache-Control":"no-store"}})
-    .persist();
+function options(storage:string,key:string) {
   return {
-    fetchMock,
     resourcePersistencePath:storage,
     cf:false,
     workers:[{
       config:{
         name:"weave-consent-regression",
+        // Route only the canonical public CIMD request through a local workerd
+        // outbound handler. All other network access is denied; no client is
+        // manually registered in the AS KV or sent to a real third party.
+        outboundService:(request:Request)=>request.method==="GET"&&request.url===clientId
+          ?demoOAuthClientMetadata():new Response("Outbound denied",{status:403}),
         // Exact shipped bundle; the locked workerd supports 2026-10-13.
         compatibilityDate:"2026-10-13",
         compatibilityFlags:["nodejs_compat","global_fetch_strictly_public"],
@@ -136,7 +130,7 @@ function consentForm(handle:string,proof:string) {
 test("a foreign browser cannot burn an owner nonce before consent-cookie verification", {timeout:90_000}, async()=>{
   const storage=await mkdtemp(join(tmpdir(),"weave-auth-consent-"));
   const key=randomBytes(32).toString("base64url");
-  let mf=new Miniflare(await options(storage,key));
+  let mf=new Miniflare(options(storage,key));
   try {
     // The real production mailbox Worker registers two independently controlled
     // test accounts against its generated D1 schema. No mocked owner IDs.
@@ -371,7 +365,7 @@ test("a foreign browser cannot burn an owner nonce before consent-cookie verific
     await sendMessage(0);
     await sendMessage(1);
     await mf.dispose();
-    mf=new Miniflare(await options(storage,key));
+    mf=new Miniflare(options(storage,key));
     mailbox=await mf.getWorker("weave-mailbox-regression");
     async function acknowledge(item:(typeof deliveries)[number]):Promise<void>{
       const inbox=await privateCall(item.receiverToken,"list_my_inbox");
