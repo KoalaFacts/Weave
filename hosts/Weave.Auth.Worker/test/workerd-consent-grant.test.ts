@@ -66,13 +66,14 @@ function options(storage:string,key:string) {
     resourcePersistencePath:storage,
     cf:false,
     workers:[{
+      // Miniflare 5's outbound hook is dev configuration, not Worker config.
+      // Fail closed for every destination except the canonical public CIMD.
+      dev:{
+        outboundService:(request:Request)=>request.method==="GET"&&request.url===clientId
+          ?demoOAuthClientMetadata():new Response("Outbound denied",{status:403})
+      },
       config:{
         name:"weave-consent-regression",
-        // Route only the canonical public CIMD request through a local workerd
-        // outbound handler. All other network access is denied; no client is
-        // manually registered in the AS KV or sent to a real third party.
-        outboundService:(request:Request)=>request.method==="GET"&&request.url===clientId
-          ?demoOAuthClientMetadata():new Response("Outbound denied",{status:403}),
         // Exact shipped bundle; the locked workerd supports 2026-10-13.
         compatibilityDate:"2026-10-13",
         compatibilityFlags:["nodejs_compat","global_fetch_strictly_public"],
