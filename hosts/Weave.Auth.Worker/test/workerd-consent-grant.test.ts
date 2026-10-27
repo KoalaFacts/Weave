@@ -57,8 +57,7 @@ export default {
   }
 };`;
 
-// Match the operator-staged named RPC entrypoint at the actual workerd boundary.
-// A class name on the default export alone does not create this named export.
+// The AS exposes only the default WorkerEntrypoint; the operator rollout must use it.
 function options(storage:string,key:string) {
   return {
     resourcePersistencePath:storage,
@@ -86,7 +85,7 @@ function options(storage:string,key:string) {
         compatibilityFlags:["nodejs_compat","global_fetch_strictly_public"],
         manifest:{mainModule:"resource.js",modules:{"resource.js":{type:"esm",contents:resourceWorker}}},
         env:{
-          AUTH_SERVER:{type:"worker",worker:"weave-consent-regression",entrypoint:"AuthServer"},
+          AUTH_SERVER:{type:"worker",worker:"weave-consent-regression"},
           ACCOUNTS:{type:"d1"},
           OAUTH_ISSUER:{type:"text",value:issuer},
           OAUTH_RESOURCE:{type:"text",value:resource}
@@ -99,7 +98,7 @@ function options(storage:string,key:string) {
         compatibilityFlags:["nodejs_compat","global_fetch_strictly_public"],
         manifest:{mainModule:"mailbox.js",modules:{"mailbox.js":{type:"esm",contents:mailboxBundle}}},
         env:{
-          AUTH_SERVER:{type:"worker",worker:"weave-consent-regression",entrypoint:"AuthServer"},
+          AUTH_SERVER:{type:"worker",worker:"weave-consent-regression"},
           db:{type:"d1"},
           OAUTH_ISSUER:{type:"text",value:issuer},
           OAUTH_RESOURCE:{type:"text",value:resource},

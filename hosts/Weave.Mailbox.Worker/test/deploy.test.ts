@@ -417,7 +417,8 @@ test('explicit one-time first-party bootstrap attaches the approved existing AS 
     assert.ok(f.requests.includes('https://demo.weave-389.workers.dev/oauth-client-metadata.json'),
         'Successful OAuth rollout must prove the public CIMD client after activation');
     for(const config of f.configs){
-        assert.deepEqual(config.services,[{binding:'AUTH_SERVER',service:'weave-auth-demo',entrypoint:'AuthServer'}]);
+        assert.deepEqual(config.services,[{binding:'AUTH_SERVER',service:'weave-auth-demo'}],
+            'The shipped AuthServer is a default export; the service binding MUST NOT select an absent named entrypoint.');
         assert.equal(config.vars.OAUTH_ISSUER,firstPartyIssuer);
         assert.equal(config.vars.OAUTH_RESOURCE,firstPartyResource);
         assert.equal(JSON.stringify(config).includes('OAUTH_ACCOUNT_PROOF_KEY'),false);
