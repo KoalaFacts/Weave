@@ -10,6 +10,9 @@ type DirectoryRead = (url: URL) => Promise<Response>;
 export interface PrivateAccess {
     tools: readonly unknown[];
     scope: (name: string) => string | null;
+    // Only a route that has already cryptographically verified an Access JWT may
+    // opt in. Normal OAuth/private and all anonymous/public routes still require a bearer.
+    signedAccessAssertionVerified?: true;
     authorize: (scope: string) => Promise<string | Response>;
     invoke: (ownerAccountId: string, name: string, args: Record<string,unknown>) => Promise<Response>;
 }
@@ -94,9 +97,11 @@ export async function remoteMcp(request: Request, read: DirectoryRead, privateAc
     let largeWriteOwner: string | null = null;
     try {
         const text = await boundedText(request.body, requestLimit, privateAccess ? async () => {
-            // Do not raise the 16 KiB public request cap merely because an
-            // Authorization header exists: verify the exact send scope first.
-            if (!/^Bearer [^\s]+$/i.test(request.headers.get('authorization') ?? '')
+            // A verified Access assertion can authorize a bounded large send
+            // even when Cloudflare consumes the opaque OAuth bearer at the edge.
+            // All other adapters preserve the original bearer requirement.
+            if ((privateAccess.signedAccessAssertionVerified!==true &&
+                    !/^Bearer [^\s]+$/i.test(request.headers.get('authorization') ?? ''))
                 || privateAccess.scope('send_message') !== 'weave:messages.send') return false;
             try {
                 const owner = await privateAccess.authorize('weave:messages.send');
