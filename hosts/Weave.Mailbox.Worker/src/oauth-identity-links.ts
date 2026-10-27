@@ -19,7 +19,7 @@ function validateSubject(value:VerifiedOAuthSubject):void {
     if(issuer.protocol!=='https:'||issuer.username||issuer.password||issuer.search||issuer.hash||
        issuer.href.replace(/\/$/,'')!==value.issuer.replace(/\/$/,'')||
        resource.protocol!=='https:'||resource.username||resource.password||resource.search||resource.hash||
-       resource.pathname!=='/mcp'||resource.href!==value.resource)fail();
+       !['/mcp','/access-trial/mcp'].includes(resource.pathname)||resource.href!==value.resource)fail();
 }
 function validateKey(key:LinkedSubjectKey):void {
     if(!key||typeof key!=='object'||typeof key.subjectDigest!=='string'||!digestPattern.test(key.subjectDigest))fail();
