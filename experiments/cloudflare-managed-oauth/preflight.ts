@@ -72,11 +72,30 @@ export async function inspectAccess({env = process.env,fetchImpl = fetch}: {
             const isHost=[app.domain,...additional].some(value=>{
                 if(typeof value!=='string') return false;
                 const hostname=value.split('/')[0].toLowerCase();
-                // A less-specific Access hostname wildcard still covers Weave.
-                // Ignore path suffix here: precedence must not silently replace
-                // an existing MFA/device policy without reviewing that policy.
-                return hostname===host || hostname==='*' ||
-                    (hostname.startsWith('*.') && host.endsWith(hostname.slice(1)));
+                // Ignore the path: a more specific rule can replace MFA/device
+                // requirements inherited from a broader host/path Access app.
+                if(hostname===host || hostname==='*') return true;
+                // Retain conservative parent wildcard coverage even when a
+                // documented '*' covers fewer subdomain levels.
+                if(hostname.startsWith('*.') && host.endsWith(hostname.slice(1)))
+                    return true;
+                if(!hostname.includes('*')) return false;
+                // Cloudflare supports prefix/suffix wildcards inside one
+                // subdomain label, e.g. dem*.weave-389.workers.dev. A wildcard
+                // cannot consume a dot. If a label has multiple wildcards,
+                // its actual scope is ambiguous: never silently override it.
+                const pattern=hostname.split('.'),actual=host.split('.');
+                if(pattern.length!==actual.length) return false;
+                if(pattern.some(label=>label.indexOf('*')!==label.lastIndexOf('*')))
+                    return true;
+                return pattern.every((label,index)=>{
+                    const star=label.indexOf('*');
+                    if(star<0) return label===actual[index];
+                    const prefix=label.slice(0,star),suffix=label.slice(star+1);
+                    return actual[index].length>=prefix.length+suffix.length &&
+                        actual[index].startsWith(prefix) &&
+                        actual[index].endsWith(suffix);
+                });
             });
             // Cloudflare gives hostname/path rules higher precedence than
             // Worker and account rules. Conservatively refuse to create a new
