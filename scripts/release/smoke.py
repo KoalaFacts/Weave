@@ -61,7 +61,7 @@ def isolated_environment(root):
 
 def windows_job():
     import ctypes
-    from ctypes import wintypes
+    import ctypes.wintypes as wintypes
     kernel = ctypes.WinDLL('kernel32', use_last_error=True)
     kernel.CreateJobObjectW.argtypes = [ctypes.c_void_p, wintypes.LPCWSTR]
     kernel.CreateJobObjectW.restype = wintypes.HANDLE
@@ -99,7 +99,7 @@ def windows_job():
 
 def wait_for_empty_job(kernel, job):
     import ctypes
-    from ctypes import wintypes
+    import ctypes.wintypes as wintypes
 
     class Accounting(ctypes.Structure):
         _fields_ = [('user_time', ctypes.c_int64), ('kernel_time', ctypes.c_int64),
@@ -126,7 +126,7 @@ def resume_windows_process(process):
     children out of its Job even when the helper itself is successfully assigned.
     """
     import ctypes
-    from ctypes import wintypes
+    import ctypes.wintypes as wintypes
     kernel = ctypes.WinDLL('kernel32', use_last_error=True)
 
     class ThreadEntry(ctypes.Structure):
@@ -229,6 +229,7 @@ class OwnedProcess:
                     try:
                         os.killpg(self.process.pid, signal.SIGKILL)
                     except ProcessLookupError:
+                        # The owned process group has already exited.
                         pass
                 if self.process.poll() is None:
                     self.process.kill()
