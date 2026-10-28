@@ -72,12 +72,13 @@ export async function inspectTokenManagement({env = process.env, fetchImpl = fet
         const details = record(await get(root + '/' + verified.id, 'token-details'));
         if (details.id !== verified.id || details.status !== 'active' || !Array.isArray(details.policies))
             throw new InspectionError('token-details');
-        const groups = await get(root + '/permission_groups', 'permission-groups');
+        // The catalogue can be paginated. Fetch only the relevant documented
+        // permission-group name, not a potentially incomplete default first page.
+        const name = tokenKind === 'user' ? 'API Tokens Write' : 'Account API Tokens Write';
+        const groups = await get(root + '/permission_groups?name=' + encodeURIComponent(name), 'permission-groups');
         if (!Array.isArray(groups)) throw new InspectionError('permission-groups');
-        const names = tokenKind === 'user' ? ['API Tokens Write', 'API Tokens Edit'] :
-            ['Account API Tokens Write', 'Account API Tokens Edit'];
         const scope = tokenKind === 'user' ? 'com.cloudflare.api.user' : 'com.cloudflare.api.account';
-        const writeIds = new Set(groups.map(record).filter(group => names.includes(String(group.name)) &&
+        const writeIds = new Set(groups.map(record).filter(group => group.name === name &&
             typeof group.id === 'string' && tag.test(group.id) &&
             Array.isArray(group.scopes) && group.scopes.includes(scope)).map(group => group.id));
         const managementWriteDeclared = details.policies.map(record).some(policy =>
