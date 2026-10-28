@@ -103,6 +103,7 @@ export async function inspectAccess({env = process.env,fetchImpl = fetch}: {
     if(identity.status!==200 || object(identity.data?.result).subdomain!=='weave-389')
         throw Error('Unable to verify the authorized Weave account.');
     const apps:{status:number;complete:boolean;trial:TrialApplication[];errorCodes?:number[];accessNotEnabled?:true}={status:0,complete:false,trial:[]};
+    let seen=0,expectedCount:number|undefined,expectedPages:number|undefined;
     for(let page=1;page<=10;page++) {
         const response=await get('/access/apps?per_page=100&page='+page,token,'Access applications');
         apps.status=response.status;
@@ -112,9 +113,29 @@ export async function inspectAccess({env = process.env,fetchImpl = fetch}: {
             break;
         }
         if(!Array.isArray(response.data.result)) throw Error('Access application metadata is invalid.');
-        const pagination=object(response.data.result_info);
-        const total=pagination.total_pages;
-        if(pagination.page!==page || typeof total!=='number' || !Number.isSafeInteger(total) || total<page || total>10)
+        const info=response.data.result_info;
+        if(!info || typeof info!=='object' || Array.isArray(info))
+            throw Error('Access application pagination is incomplete or exceeds the bounded limit.');
+        const pagination=object(info),total=pagination.total_pages,count=pagination.total_count;
+        const size=response.data.result.length;
+        // Cloudflare's V4PagePaginationArray does not require total_pages.
+        // Without that hint, scan until an empty page, still capped at ten GETs.
+        // Supplied totals/counts must remain consistent; never infer completeness
+        // from a short nonempty page or from an HTTP/metadata failure.
+        if((pagination.page!==undefined && pagination.page!==page) || size>100 ||
+            (total!==undefined && (typeof total!=='number' || !Number.isSafeInteger(total) ||
+                total<0 || total>10 || (total===0 ? page!==1 || size!==0 : total<page) ||
+                (expectedPages!==undefined && total!==expectedPages))) ||
+            (count!==undefined && (typeof count!=='number' || !Number.isSafeInteger(count) ||
+                count<0 || count>1000 || (expectedCount!==undefined && count!==expectedCount))) ||
+            (pagination.count!==undefined && pagination.count!==size))
+            throw Error('Access application pagination is incomplete or exceeds the bounded limit.');
+        if(typeof total==='number')expectedPages=total;
+        if(typeof count==='number')expectedCount=count;
+        seen+=size;
+        const complete=size===0 || (expectedPages!==undefined && page===expectedPages);
+        if((size===0 && expectedPages!==undefined && expectedPages>page) ||
+            (expectedCount!==undefined && (seen>expectedCount || (complete && seen!==expectedCount))))
             throw Error('Access application pagination is incomplete or exceeds the bounded limit.');
         for(const value of response.data.result) {
             const app=object(value);
@@ -161,7 +182,7 @@ export async function inspectAccess({env = process.env,fetchImpl = fetch}: {
             if(typeof app.id!=='string' || !uuid.test(app.id)) throw Error('Access application metadata is invalid.');
             apps.trial.push({id:app.id,managedOAuth:object(app.oauth_configuration).enabled===true,matchesTrialName:app.name===trialName});
         }
-        if(page===total){apps.complete=true;break;}
+        if(complete){apps.complete=true;break;}
     }
     const organizationResponse=await get('/access/organizations',token,'Access organization');
     const organization:{status:number;configured:boolean;authDomain:string|null;errorCodes?:number[];accessNotEnabled?:true}={status:organizationResponse.status,configured:false,authDomain:null};
@@ -192,9 +213,24 @@ if(process.argv[1] && import.meta.url===pathToFileURL(resolve(process.argv[1])).
         const report=await inspectAccess();
         console.log(JSON.stringify(report,null,2));
         if(report.outcome!=='readable') process.exitCode=2;
-    } catch {
-        // Never echo transport errors, response bodies or environment values.
-        console.error('Access preflight failed safely; no cloud changes were attempted.');
+    } catch(error) {
+        // Allowlisted local diagnostics only: never print arbitrary exception text,
+        // raw provider bodies, credentials, or account identifiers.
+        const failures=new Map<string,string>([
+            ['Cloudflare account and credential references are required.','credentials'],
+            ['Unable to verify the authorized Weave account.','account-identity'],
+            ['Access application metadata is invalid.','applications-metadata'],
+            ['Access application pagination is incomplete or exceeds the bounded limit.','applications-pagination'],
+            ['Access organization metadata is invalid.','organization-metadata'],
+            ['Credential reflection prevented preflight output.','credential-reflection'],
+            ['Access preflight accepts no arguments.','arguments']
+        ]);
+        for(const [label,stage] of [['Account','account'],['Access applications','applications'],['Access organization','organization']]) {
+            failures.set(label+' transport failed; no retry or mutation.',stage+'-transport');
+            failures.set(label+' metadata read failed.',stage+'-response');
+        }
+        const failure=error instanceof Error ? failures.get(error.message)??'unexpected-error' : 'unexpected-error';
+        console.error(JSON.stringify({outcome:'failed',failure,readOnly:true,writePermissionVerified:false}));
         process.exitCode=1;
     }
 }
