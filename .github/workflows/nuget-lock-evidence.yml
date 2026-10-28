@@ -1,0 +1,58 @@
+name: NuGet locked-graph repair evidence
+
+on:
+  pull_request:
+    branches: [main]
+    paths:
+      - .github/workflows/nuget-lock-evidence.yml
+      - Directory.Packages.props
+      - '**/packages.lock.json'
+
+permissions:
+  contents: read
+
+jobs:
+  regenerate:
+    if: github.event.pull_request.head.repo.full_name == 'KoalaFacts/Weave' && github.head_ref == 'fix/restore-locked-nuget-10-0-14'
+    runs-on: ubuntu-24.04
+    timeout-minutes: 15
+    steps:
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v6
+        with:
+          ref: ${{ github.event.pull_request.head.sha }}
+          persist-credentials: false
+      - uses: ./.github/actions/setup-dotnet
+        with:
+          cache: 'false'
+      - name: Reproduce locked graph regression before regeneration
+        shell: bash
+        run: |
+          set -euo pipefail
+          if dotnet restore Weave.slnx --locked-mode > /tmp/weave-lock-red.log 2>&1; then
+            echo 'Locked restore unexpectedly succeeded; stop without altering dependency graph.'
+            exit 1
+          fi
+          if ! grep -q 'NU1004' /tmp/weave-lock-red.log; then
+            echo 'Locked restore failed for a reason other than NU1004.'
+            exit 1
+          fi
+          echo 'Confirmed NU1004 on unchanged source before regeneration.'
+      - name: Regenerate using official .NET and verify immutable lock mode
+        shell: bash
+        run: |
+          set -euo pipefail
+          dotnet restore Weave.slnx --force-evaluate -p:RestoreLockedMode=false -p:NuGetAudit=true -p:NuGetAuditMode=all
+          dotnet restore Weave.slnx --locked-mode -p:NuGetAudit=true -p:NuGetAuditMode=all
+          git diff --exit-code -- Directory.Packages.props
+          git diff --name-only -- '**/packages.lock.json' | tee /tmp/weave-updated-lockfiles.txt
+          test -s /tmp/weave-updated-lockfiles.txt
+          if git status --porcelain | grep -v 'packages.lock.json'; then
+            echo 'Unexpected non-lockfile mutation'; exit 1
+          fi
+      - name: Upload authoritative generated locks for reviewed source update
+        uses: actions/upload-artifact@043fb46d1a93c77aae656e7c1c64a875d1fc6a0a # v7
+        with:
+          name: weave-nuget-locks-dotnet10
+          path: '**/packages.lock.json'
+          if-no-files-found: error
+          retention-days: 3
