@@ -12,9 +12,15 @@ const object = (value:unknown):Json => value && typeof value === 'object' && !Ar
 /** Only Cloudflare's structured integer error IDs are public diagnostics.
  * Discard untrusted text, metadata, excessive bodies and malformed streams.
  */
-async function numericErrorCodes(response:Response):Promise<number[]> {
+type AccessErrorEvidence = {errorCodes:number[];accessNotEnabled?:true};
+/** Only classify a disabled Access product when Cloudflare supplies BOTH
+ * its numeric code 9999 and its exact symbolic error marker. Code alone is
+ * ambiguous. Never print or persist the provider's untrusted message.
+ */
+async function accessErrorEvidence(response:Response):Promise<AccessErrorEvidence> {
+    const empty:AccessErrorEvidence={errorCodes:[]};
     const reader=response.body?.getReader();
-    if(!reader)return [];
+    if(!reader)return empty;
     try {
         let size=0;
         const chunks:Uint8Array[]=[];
@@ -22,23 +28,27 @@ async function numericErrorCodes(response:Response):Promise<number[]> {
             const {done,value}=await reader.read();
             if(done)break;
             size+=value.length;
-            if(size>8192)return [];
+            if(size>8192)return empty;
             chunks.push(value);
         }
         const data=object(JSON.parse(new TextDecoder('utf-8',{fatal:true})
             .decode(Buffer.concat(chunks))));
-        if(!Array.isArray(data.errors))return [];
+        if(!Array.isArray(data.errors))return empty;
         const codes:number[]=[];
+        let accessNotEnabled=false;
+        const marker=/(?:^|[^A-Za-z0-9_.])access\.api\.error\.not_enabled(?=$|[^A-Za-z0-9_.])/;
         for(const entry of data.errors.slice(0,16)) {
-            const code=object(entry).code;
+            const error=object(entry),code=error.code;
             if(typeof code==='number' && Number.isSafeInteger(code) &&
                 code>0 && code<=999999 && !codes.includes(code))
                 codes.push(code);
+            if(code===9999 && typeof error.message==='string' &&
+                marker.test(error.message))accessNotEnabled=true;
             if(codes.length===4)break;
         }
-        return codes;
+        return accessNotEnabled ? {errorCodes:codes,accessNotEnabled:true} : {errorCodes:codes};
     } catch {
-        return [];
+        return empty;
     } finally {
         await reader.cancel().catch(()=>{});
         reader.releaseLock();
@@ -54,7 +64,7 @@ export async function inspectAccess({env = process.env,fetchImpl = fetch}: {
     if(!/^[0-9a-f]{32}$/i.test(account) || !token)
         throw Error('Cloudflare account and credential references are required.');
     const api = 'https://api.cloudflare.com/client/v4/accounts/' + account;
-    async function get(path:string,token:string,label:string):Promise<{status:number;data:Json|null;errorCodes?:number[]}> {
+    async function get(path:string,token:string,label:string):Promise<{status:number;data:Json|null;errorCodes?:number[];accessNotEnabled?:true}> {
         let response:Response;
         try {
             response = await fetchImpl(api + path,{
@@ -63,12 +73,12 @@ export async function inspectAccess({env = process.env,fetchImpl = fetch}: {
             });
         } catch { throw Error(label + ' transport failed; no retry or mutation.'); }
         if(!response.ok) {
-            let errorCodes:number[]=[];
+            let evidence:AccessErrorEvidence={errorCodes:[]};
             if(response.status>=400)
-                errorCodes=await numericErrorCodes(response);
+                evidence=await accessErrorEvidence(response);
             else
                 await response.body?.cancel().catch(()=>{});
-            return {status:response.status,data:null,errorCodes};
+            return {status:response.status,data:null,...evidence};
         }
         const reader = response.body?.getReader();
         if(!reader) throw Error(label + ' metadata read failed.');
@@ -92,11 +102,15 @@ export async function inspectAccess({env = process.env,fetchImpl = fetch}: {
     const identity=await get('/workers/subdomain',token,'Account');
     if(identity.status!==200 || object(identity.data?.result).subdomain!=='weave-389')
         throw Error('Unable to verify the authorized Weave account.');
-    const apps:{status:number;complete:boolean;trial:TrialApplication[];errorCodes?:number[]}={status:0,complete:false,trial:[]};
+    const apps:{status:number;complete:boolean;trial:TrialApplication[];errorCodes?:number[];accessNotEnabled?:true}={status:0,complete:false,trial:[]};
     for(let page=1;page<=10;page++) {
         const response=await get('/access/apps?per_page=100&page='+page,token,'Access applications');
         apps.status=response.status;
-        if(!response.data) {apps.errorCodes=response.errorCodes??[];break;}
+        if(!response.data) {
+            apps.errorCodes=response.errorCodes??[];
+            if(response.accessNotEnabled)apps.accessNotEnabled=true;
+            break;
+        }
         if(!Array.isArray(response.data.result)) throw Error('Access application metadata is invalid.');
         const pagination=object(response.data.result_info);
         const total=pagination.total_pages;
@@ -150,8 +164,11 @@ export async function inspectAccess({env = process.env,fetchImpl = fetch}: {
         if(page===total){apps.complete=true;break;}
     }
     const organizationResponse=await get('/access/organizations',token,'Access organization');
-    const organization:{status:number;configured:boolean;authDomain:string|null;errorCodes?:number[]}={status:organizationResponse.status,configured:false,authDomain:null};
-    if(!organizationResponse.data)organization.errorCodes=organizationResponse.errorCodes??[];
+    const organization:{status:number;configured:boolean;authDomain:string|null;errorCodes?:number[];accessNotEnabled?:true}={status:organizationResponse.status,configured:false,authDomain:null};
+    if(!organizationResponse.data) {
+        organization.errorCodes=organizationResponse.errorCodes??[];
+        if(organizationResponse.accessNotEnabled)organization.accessNotEnabled=true;
+    }
     if(organizationResponse.data) {
         const domain=object(organizationResponse.data.result).auth_domain;
         if(typeof domain!=='string' || !/^[a-z0-9](?:[a-z0-9-]{0,61}[a-z0-9])?\.cloudflareaccess\.com$/.test(domain))
