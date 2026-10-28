@@ -54,7 +54,12 @@ test('existing token alone reaches real preflight, single create and policy read
 
 test('a stale trial token cannot replace the selected existing credential on reads or writes',async()=>{
     const f=cloud();
-    await provisionTrial({env:{...env,CLOUDFLARE_ACCESS_TRIAL_TOKEN:'unused-synthetic-token'},fetchImpl:f.fetchImpl});
+    const result=await provisionTrial({env:{...env,CLOUDFLARE_ACCESS_TRIAL_TOKEN:'unused-synthetic-token'},fetchImpl:f.fetchImpl});
+    assert.equal(result.outcome,'created-verified');
+    assert.deepEqual(f.calls.map(call=>call.method+' '+call.path),[
+        'GET /workers/subdomain','GET /access/apps?per_page=100&page=1','GET /access/organizations',
+        'POST /access/apps','GET /access/apps/'+appId,'GET /access/apps/'+appId+'/policies'
+    ]);
     assert.ok(f.calls.every(call=>call.authorization==='Bearer '+env.CLOUDFLARE_API_TOKEN));
 });
 
