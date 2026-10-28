@@ -97,7 +97,7 @@ https://developers.cloudflare.com/cloudflare-one/access-controls/applications/ht
 
 ### Safe Cloudflare 403 diagnostics
 
-When Cloudflare rejects an Access GET, the reviewed-main preflight preserves
+For HTTP errors (4xx/5xx) from Cloudflare Access GETs, the reviewed-main preflight preserves
 only up to four **numeric** provider `errors[].code` values (positive integers
 at most 999999). Error bodies are read with an 8 KiB cap, then discarded; names,
 messages, account IDs, token values, policy rules and arbitrary fields never

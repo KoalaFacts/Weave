@@ -63,7 +63,11 @@ export async function inspectAccess({env = process.env,fetchImpl = fetch}: {
             });
         } catch { throw Error(label + ' transport failed; no retry or mutation.'); }
         if(!response.ok) {
-            const errorCodes=await numericErrorCodes(response);
+            let errorCodes:number[]=[];
+            if(response.status>=400)
+                errorCodes=await numericErrorCodes(response);
+            else
+                await response.body?.cancel().catch(()=>{});
             return {status:response.status,data:null,errorCodes};
         }
         const reader = response.body?.getReader();
