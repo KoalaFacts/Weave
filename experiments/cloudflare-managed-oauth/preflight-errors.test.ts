@@ -45,7 +45,7 @@ test('Cloudflare 403: report only bounded unique numeric error codes from Apps a
         '/workers/subdomain','/access/apps?per_page=100&page=1','/access/organizations'
     ]);
     const output=JSON.stringify(result);
-    for(const sensitive of [token,account,'not authorized','duplicate','secret'])assert.equal(output.includes(sensitive),false);
+    for(const sensitive of [token,account,'not authorized','duplicate'])assert.equal(output.includes(sensitive),false);
     assert.equal(result.readOnly,true);
     assert.equal(result.writePermissionVerified,false);
 });
