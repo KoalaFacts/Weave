@@ -9,7 +9,6 @@ const target='demo.weave-389.workers.dev/access-trial/*';
 const emailA='agent-one@example.org', emailB='agent-two@example.org';
 const env={
   CLOUDFLARE_ACCOUNT_ID:account,CLOUDFLARE_API_TOKEN:'test-worker-token',
-  CLOUDFLARE_ACCESS_TRIAL_TOKEN:'test-access-token',
   WEAVE_ACCESS_TRIAL_EMAILS:emailA+','+emailB,
   WEAVE_ACCESS_TRIAL_COMMIT:'create-weave-access-trial',
   GITHUB_REPOSITORY:'KoalaFacts/Weave',GITHUB_REF:'refs/heads/main',
@@ -121,8 +120,8 @@ test('create once with narrowly scoped path, exact users and short-lived OAuth; 
  assert.deepEqual(body.policies,[{name:'Weave trial exact identities',decision:'allow',include:[{email:{email:emailA}},{email:{email:emailB}}]}]);
  assert.equal(body.app_launcher_visible,false);
  const output=JSON.stringify(result);
- for(const secret of [env.CLOUDFLARE_API_TOKEN,env.CLOUDFLARE_ACCESS_TRIAL_TOKEN,emailA,emailB])assert.equal(output.includes(secret),false);
- assert.ok(cloud.calls.every(c=>c.authorization==='Bearer '+env.CLOUDFLARE_ACCESS_TRIAL_TOKEN && c.redirect==='manual'));
+ for(const secret of [env.CLOUDFLARE_API_TOKEN,emailA,emailB])assert.equal(output.includes(secret),false);
+ assert.ok(cloud.calls.every(c=>c.authorization==='Bearer '+env.CLOUDFLARE_API_TOKEN && c.redirect==='manual'));
 });
 
 test('invalid create result or ambiguous response refuses to claim success; no retry',async()=>{
@@ -135,9 +134,9 @@ test('invalid create result or ambiguous response refuses to claim success; no r
 test('HTTP errors, redirects and secret-containing body failures never cause retry, leak or success',async()=>{
  for(const status of [302,401,403,429,500]){
     let n=0;
-    const fetchImpl:typeof fetch=async()=>{n++;return new Response(env.CLOUDFLARE_ACCESS_TRIAL_TOKEN,{status})};
+    const fetchImpl:typeof fetch=async()=>{n++;return new Response(env.CLOUDFLARE_API_TOKEN,{status})};
     let err:unknown;try{await provisionTrial({env,inspect:readOnly,fetchImpl})}catch(e){err=e}
-    assert.ok(err instanceof Error);assert.ok(!err.message.includes(env.CLOUDFLARE_ACCESS_TRIAL_TOKEN));
+    assert.ok(err instanceof Error);assert.ok(!err.message.includes(env.CLOUDFLARE_API_TOKEN));
     assert.equal(n,1);
  }
 });

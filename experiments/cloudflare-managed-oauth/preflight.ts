@@ -14,9 +14,8 @@ export async function inspectAccess({env = process.env,fetchImpl = fetch}: {
     env?:Environment;fetchImpl?:typeof fetch
 } = {}) {
     const account = env.CLOUDFLARE_ACCOUNT_ID ?? '';
-    const workerToken = env.CLOUDFLARE_API_TOKEN ?? '';
-    const accessToken = env.CLOUDFLARE_ACCESS_TRIAL_TOKEN || workerToken;
-    if(!/^[0-9a-f]{32}$/i.test(account) || !workerToken || !accessToken)
+    const token = env.CLOUDFLARE_API_TOKEN ?? '';
+    if(!/^[0-9a-f]{32}$/i.test(account) || !token)
         throw Error('Cloudflare account and credential references are required.');
     const api = 'https://api.cloudflare.com/client/v4/accounts/' + account;
     async function get(path:string,token:string,label:string):Promise<{status:number;data:Json|null}> {
@@ -50,12 +49,12 @@ export async function inspectAccess({env = process.env,fetchImpl = fetch}: {
         finally { await reader.cancel().catch(() => {});reader.releaseLock(); }
         return {status:response.status,data};
     }
-    const identity=await get('/workers/subdomain',workerToken,'Account');
+    const identity=await get('/workers/subdomain',token,'Account');
     if(identity.status!==200 || object(identity.data?.result).subdomain!=='weave-389')
         throw Error('Unable to verify the authorized Weave account.');
     const apps:{status:number;complete:boolean;trial:TrialApplication[]}={status:0,complete:false,trial:[]};
     for(let page=1;page<=10;page++) {
-        const response=await get('/access/apps?per_page=100&page='+page,accessToken,'Access applications');
+        const response=await get('/access/apps?per_page=100&page='+page,token,'Access applications');
         apps.status=response.status;
         if(!response.data) break;
         if(!Array.isArray(response.data.result)) throw Error('Access application metadata is invalid.');
@@ -110,7 +109,7 @@ export async function inspectAccess({env = process.env,fetchImpl = fetch}: {
         }
         if(page===total){apps.complete=true;break;}
     }
-    const organizationResponse=await get('/access/organizations',accessToken,'Access organization');
+    const organizationResponse=await get('/access/organizations',token,'Access organization');
     const organization:{status:number;configured:boolean;authDomain:string|null}={status:organizationResponse.status,configured:false,authDomain:null};
     if(organizationResponse.data) {
         const domain=object(organizationResponse.data.result).auth_domain;
@@ -124,7 +123,7 @@ export async function inspectAccess({env = process.env,fetchImpl = fetch}: {
         note:'GET-only account preflight. No application, policy, secret, Worker, database or subscription changes. HTTP status does not establish write permission or authentication success.'
     };
     const serialized=JSON.stringify(report);
-    if([account,workerToken,accessToken].some(value=>serialized.includes(value)))
+    if([account,token].some(value=>serialized.includes(value)))
         throw Error('Credential reflection prevented preflight output.');
     return report;
 }

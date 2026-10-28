@@ -2,7 +2,7 @@ import test from 'node:test';
 import assert from 'node:assert/strict';
 import { inspectAccess } from './preflight.ts';
 
-const env = { CLOUDFLARE_ACCOUNT_ID: 'a'.repeat(32), CLOUDFLARE_API_TOKEN: 'synthetic-worker-secret', CLOUDFLARE_ACCESS_TRIAL_TOKEN: 'synthetic-access-secret' };
+const env = { CLOUDFLARE_ACCOUNT_ID: 'a'.repeat(32), CLOUDFLARE_API_TOKEN: 'synthetic-worker-secret' };
 const envelope = (result: unknown, result_info?: unknown) => Response.json({success:true,result,result_info});
 const pages = {page:1,total_pages:1};
 function fixture(overrides: Record<string, () => Response> = {}) {
@@ -15,7 +15,7 @@ function fixture(overrides: Record<string, () => Response> = {}) {
         assert.equal(init.method, 'GET');
         assert.equal(init.redirect, 'manual');
         assert.equal(init.body, undefined);
-        const token = path.startsWith('/workers/') ? env.CLOUDFLARE_API_TOKEN : env.CLOUDFLARE_ACCESS_TRIAL_TOKEN;
+        const token = env.CLOUDFLARE_API_TOKEN;
         assert.equal(new Headers(init.headers).get('Authorization'), 'Bearer ' + token);
         if(overrides[path]) return overrides[path]();
         if(path === '/workers/subdomain') return envelope({subdomain:'weave-389'});
@@ -50,14 +50,14 @@ test('missing credentials and wrong account stop before Access access', async ()
 });
 
 for (const status of [401,403,429,500]) test(`Access HTTP ${status} is reported without response bodies, retries or writes`, async () => {
-    const f = fixture({'/access/apps?per_page=100&page=1':() => new Response(env.CLOUDFLARE_ACCESS_TRIAL_TOKEN,{status})});
+    const f = fixture({'/access/apps?per_page=100&page=1':() => new Response(env.CLOUDFLARE_API_TOKEN,{status})});
     const report = await inspectAccess({env,fetchImpl:f.fetchImpl});
     assert.equal(report.outcome,'blocked');
     assert.equal(report.apps.status,status);
     assert.equal(report.apps.complete,false);
     assert.equal(report.organization.configured,true);
     assert.equal(f.calls.filter(x => x.path.startsWith('/access/apps')).length,1);
-    assert.ok(!JSON.stringify(report).includes(env.CLOUDFLARE_ACCESS_TRIAL_TOKEN));
+    assert.ok(!JSON.stringify(report).includes(env.CLOUDFLARE_API_TOKEN));
 });
 
 test('follows bounded API pages and projects only the trial and matching-host application IDs', async () => {
@@ -81,8 +81,8 @@ test('redirects are not followed and malformed application results fail closed',
 });
 
 test('body stream errors are sanitized and pages above the cap never look complete', async () => {
-    const f = fixture({'/access/apps?per_page=100&page=1':() => new Response(new ReadableStream({start(controller){controller.error(Error(env.CLOUDFLARE_ACCESS_TRIAL_TOKEN));}}))});
-    await assert.rejects(inspectAccess({env,fetchImpl:f.fetchImpl}),error => error instanceof Error && !error.message.includes(env.CLOUDFLARE_ACCESS_TRIAL_TOKEN));
+    const f = fixture({'/access/apps?per_page=100&page=1':() => new Response(new ReadableStream({start(controller){controller.error(Error(env.CLOUDFLARE_API_TOKEN));}}))});
+    await assert.rejects(inspectAccess({env,fetchImpl:f.fetchImpl}),error => error instanceof Error && !error.message.includes(env.CLOUDFLARE_API_TOKEN));
     const many = fixture({'/access/apps?per_page=100&page=1':() => envelope([],{page:1,total_pages:11})});
     await assert.rejects(inspectAccess({env,fetchImpl:many.fetchImpl}),/pagination/);
 });

@@ -1,6 +1,6 @@
 /** One-time, no-retry Cloudflare Access Managed OAuth trial creation.
  * Never reconfigure an existing Access application or write D1/Worker settings.
- * Exact identities are mandatory. Reuse the existing token when it has Access permission.
+ * Both exact identities and the existing Cloudflare API credential are mandatory.
  */
 import {resolve} from 'node:path';
 import {pathToFileURL} from 'node:url';
@@ -24,7 +24,7 @@ const object=(value:unknown):Json|null=>value!==null&&typeof value==='object'&&!
 function validateInputs(env:Env):string[] {
     if(!/^[a-f0-9]{32}$/i.test(env.CLOUDFLARE_ACCOUNT_ID??'')||
         !env.CLOUDFLARE_API_TOKEN)
-        throw Error('Existing Cloudflare account token and account ID are required.');
+        throw Error('Existing Cloudflare API token and account credentials are required.');
     if(env.GITHUB_REPOSITORY!=='KoalaFacts/Weave'||env.GITHUB_REF!=='refs/heads/main'||
         env.GITHUB_EVENT_NAME!=='workflow_dispatch'||
         env.WEAVE_ACCESS_TRIAL_COMMIT!=='create-weave-access-trial')
@@ -94,8 +94,7 @@ export async function provisionTrial({env=process.env,fetchImpl=fetch,inspect}: 
             include:emails.map(email=>({email:{email}}))}]
     };
     const base=apiRoot+env.CLOUDFLARE_ACCOUNT_ID+'/access/apps';
-    // Match the GET-only preflight token: a 403 there forbids the POST below.
-    const token=env.CLOUDFLARE_ACCESS_TRIAL_TOKEN || env.CLOUDFLARE_API_TOKEN!;
+    const token=env.CLOUDFLARE_API_TOKEN!;
     const created=await checkedJson(fetchImpl,base,token,'Access trial creation','POST',body);
     const createdObject=object(created.result);
     const id=createdObject?.id;
