@@ -96,16 +96,21 @@ if(process.argv.includes('--agent')){
     if(!process.env.WEAVE_EVIDENCE_PATH)throw Error('Provide WEAVE_EVIDENCE_PATH for an exclusive redacted receipt.');
     if(Boolean(providedA)!==Boolean(providedB))
         throw Error('Both pre-issued bearer tokens must be supplied together; never fall back to a shared account.');
-    if(!providedA&&!process.env.WEAVE_OAUTH_CLIENT_ID)
-        throw Error('Supply two separately authorized bearer tokens or a registered WEAVE_OAUTH_CLIENT_ID for PKCE consent.');
     let tokenA=providedA??'',tokenB=providedB??'';
     if(!tokenA){
         // No private writes until the operator has separately consented to both
         // accounts. No browser-specific CLI or vault is required.
-        const clientId=process.env.WEAVE_OAUTH_CLIENT_ID!;
+        const clientId=process.env.WEAVE_OAUTH_CLIENT_ID??''; // Empty: RFC 7591 DCR, if advertised by approved issuer.
+        // Only an operator-approved exact endpoint origin may extend RFC 8414
+        // issuer-origin routing. The protocol client validates each entry.
+        const configuredOrigins=process.env.WEAVE_OAUTH_TRUSTED_ENDPOINT_ORIGINS;
+        const trustedEndpointOrigins=configuredOrigins===undefined?[]:configuredOrigins.split(',').map(x=>x.trim());
+        if(trustedEndpointOrigins.length>8||trustedEndpointOrigins.some(x=>!x||x.length>512))
+            throw Error('Invalid WEAVE_OAUTH_TRUSTED_ENDPOINT_ORIGINS; provide at most eight exact origins.');
+        const consentOptions={trustedEndpointOrigins,expectedIssuer:process.env.WEAVE_OAUTH_EXPECTED_ISSUER};
         const link=(role:'A'|'B')=>(url:string)=>{process.stdout.write('Authorize Weave Agent '+role+' in your browser:\n'+url+'\n');};
-        tokenA=await authorizeMcpAccount(endpoint.href,clientId,link('A'));
-        tokenB=await authorizeMcpAccount(endpoint.href,clientId,link('B'));
+        tokenA=await authorizeMcpAccount(endpoint.href,clientId,link('A'),consentOptions);
+        tokenB=await authorizeMcpAccount(endpoint.href,clientId,link('B'),consentOptions);
     }
     if(tokenA===tokenB)throw Error('Each Agent must authorize a different Weave account.');
     const script=fileURLToPath(import.meta.url);

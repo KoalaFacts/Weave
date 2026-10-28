@@ -23,6 +23,42 @@ test('registration creates zero addresses; control requires at least 64 chars wi
         assert.equal((await h.request('/v1/account/directory',a.control,'PUT',{isPublic:true})).status,404);
     } finally {await h.close();}
 });
+test('owner proof resolves only an existing control without creating an account or exposing controls', async () => {
+    const h=await start();
+    try {
+        const a=await h.register(),b=await h.register();
+        const count=await h.db.prepare('SELECT count(*) n FROM accounts').first('n');
+        const revision=await h.db.prepare('SELECT token FROM mailbox_revision WHERE singleton=1').first('token');
+        for(const owner of [a,b]){
+            const response=await h.request('/v1/accounts/me',owner.control);
+            assert.equal(response.status,200,await response.clone().text());
+            assert.equal(response.headers.get('cache-control'),'no-store');
+            assert.equal(response.headers.get('content-type'),'application/json');
+            const text=await response.text();
+            assert.deepEqual(JSON.parse(text),{accountId:owner.accountId});
+            assert.equal(text.includes(owner.control),false,'proof must never reflect account controls');
+        }
+        for(const value of [undefined,secret(),'short']){
+            const denied=await h.request('/v1/accounts/me',value);
+            assert.equal(denied.status,401);
+            assert.doesNotMatch(await denied.text(),/accountId|controlHash|controlSecret/i);
+        }
+        assert.equal(await h.db.prepare('SELECT count(*) n FROM accounts').first('n'),count);
+        assert.equal(await h.db.prepare('SELECT token FROM mailbox_revision WHERE singleton=1').first('token'),revision,
+            'an ownership proof and rejected guesses cannot write to D1');
+    }finally{await h.close();}
+});
+test('owner proof still works after restart with registration disabled, but an unknown control does not register',async()=>{
+    const persist=await mkdtemp(join(tmpdir(),'weave-owner-proof-'));let h=await start({persist});
+    try{
+        const a=await h.register();await h.close();
+        h=await start({persist,migrate:false,bindings:{REGISTRATION_ENABLED:'false'}});
+        assert.deepEqual(await h.ok('/v1/accounts/me',a.control),{accountId:a.accountId});
+        assert.equal((await h.request('/v1/accounts/me',secret())).status,401);
+        assert.equal(await h.db.prepare('SELECT count(*) n FROM accounts').first('n'),1);
+    }finally{await h.close();await rm(persist,{recursive:true,force:true});}
+});
+
 test('private addresses stay hidden through all public discovery paths and duplicate registration cannot publish them', async () => {
     const h=await start();
     try {

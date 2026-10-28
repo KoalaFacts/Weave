@@ -39,7 +39,7 @@ public sealed class VersionCurrentCacheProcessTests
         result.VisibleOutput.ShouldContain("latest on NuGet: v" + latest + " (checked ");
         result.VisibleOutput.ShouldNotContain("is available");
         result.VisibleOutput.ShouldNotContain("Upgrade:");
-        result.VisibleOutput.ShouldNotContain("dotnet tool update --global Weave.Cli");
+        result.VisibleOutput.ShouldNotContain("dotnet tool update --global KoalaFacts.Weave.Cli");
         result.VisibleOutput.ShouldNotContain("no update cache yet");
         (await File.ReadAllTextAsync(cachePath, TestContext.Current.CancellationToken)).ShouldBe(cache);
         File.Exists(cli.ConfigPath).ShouldBeFalse();

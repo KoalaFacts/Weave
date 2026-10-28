@@ -23,7 +23,7 @@ class UuidProposalClientTests(unittest.TestCase):
     def test_mcp_status_needs_only_uuid_and_new_empty_client_directory(self):
         with tempfile.TemporaryDirectory() as directory:
             agent = bridge.Bridge('http://127.0.0.1:9401', 'pilot', 'files', Path(directory), 'synthetic')
-            with patch.object(agent, 'send', side_effect=[{'http_status': 404, 'result': None},
+            with patch.object(agent, 'send', side_effect=[{'http_status': 404, 'result': {'errorCode': 'invocation-not-found'}},
                               {'http_status': 200, 'result': {'approvalState': 'Pending'}}]) as calls:
                 state = agent.call_tool('get_status', {'invocation_id': ID})
             self.assertEqual(state['invocation_id'], ID)
@@ -34,7 +34,7 @@ class UuidProposalClientTests(unittest.TestCase):
     def test_mcp_resume_posts_uuid_without_body_after_explicit_approved_query(self):
         with tempfile.TemporaryDirectory() as directory:
             agent = bridge.Bridge('http://127.0.0.1:9401', 'pilot', 'files', Path(directory), 'fresh_capability')
-            with patch.object(agent, 'send', side_effect=[{'http_status': 404, 'result': None},
+            with patch.object(agent, 'send', side_effect=[{'http_status': 404, 'result': {'errorCode': 'invocation-not-found'}},
                               {'http_status': 200, 'result': {'approvalState': 'Approved'}},
                               {'http_status': 200, 'result': {'success': True}}]) as calls:
                 result = agent.call_tool('resume_write', {'invocation_id': ID})

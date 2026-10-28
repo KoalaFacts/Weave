@@ -4,12 +4,12 @@ import { readFile } from 'node:fs/promises';
 import { randomBytes } from 'node:crypto';
 import { initializeDatabase } from '../scripts/latest-schema.ts';
 export const secret = () => randomBytes(32).toString('hex');
-export async function start({ persist, migrate = true, bindings = {}, scriptPath = 'dist/index.js', legacy = false } = {}) {
+export async function start({ persist, migrate = true, bindings = {}, scriptPath = 'dist/index.js', legacy = false, outboundService } = {}) {
     const mf = new Miniflare(convertV4MiniflareOptions({ modules: true, scriptPath, compatibilityDate: '2026-07-01', compatibilityFlags:['nodejs_compat'],
         d1Databases: ['db'], ...(persist ? { resourcePersistencePath: persist } : {}), bindings: {
             REGISTRATION_ENABLED: 'true', REGISTRATION_MAX_ACCOUNTS: '100',
             REGISTRATION_PER_IP_PER_HOUR: '10', REGISTRATION_GLOBAL_PER_HOUR: '100',
-            ...bindings } }));
+            ...bindings }, ...(outboundService ? {outboundService} : {}) }));
     try {
         const db = await mf.getD1Database('db');
         if(migrate){

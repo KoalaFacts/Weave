@@ -208,11 +208,11 @@
           "xunit.v3.runner.common": "[3.2.2]"
         }
       },
-      "weave": {
+      "KoalaFacts.Weave": {
         "type": "Project",
         "dependencies": {
           "Microsoft.Extensions.AI.Abstractions": "[10.11.0, )",
-          "Microsoft.Extensions.DependencyInjection.Abstractions": "[10.0.13, )",
+          "Microsoft.Extensions.DependencyInjection.Abstractions": "[10.0.14, )",
           "Microsoft.Extensions.Logging.Abstractions": "[10.0.13, )",
           "Microsoft.Extensions.Options": "[10.0.13, )"
         }
@@ -220,15 +220,15 @@
       "weave.mailbox.host": {
         "type": "Project",
         "dependencies": {
-          "Weave": "[1.0.0, )",
+          "KoalaFacts.Weave": "[1.0.0, )",
           "Weave.Mailboxes.Sqlite": "[1.0.0, )"
         }
       },
       "weave.mailboxes.sqlite": {
         "type": "Project",
         "dependencies": {
-          "Microsoft.Data.Sqlite": "[10.0.12, )",
-          "Weave": "[1.0.0, )"
+          "KoalaFacts.Weave": "[1.0.0, )",
+          "Microsoft.Data.Sqlite": "[10.0.12, )"
         }
       },
       "Microsoft.Data.Sqlite": {
@@ -250,9 +250,9 @@
       },
       "Microsoft.Extensions.DependencyInjection.Abstractions": {
         "type": "CentralTransitive",
-        "requested": "[10.0.13, )",
-        "resolved": "10.0.13",
-        "contentHash": "G2GrGWNAPZBsii2F6AU8n+JT2tC1/I0Ml/e9ZyNCgPjf3hZqronP7o0X91aAynCmVeae8KkSIUNXXeXCNRmdVQ=="
+        "requested": "[10.0.14, )",
+        "resolved": "10.0.14",
+        "contentHash": "QtpQzuSZVyTPCuHW058yCs9Nj0394uUkNyFHS813nOmK9UgUdBdaprJ5PPsBgsQIpxADTsTkbaMMonykem6qdw=="
       },
       "Microsoft.Extensions.Logging.Abstractions": {
         "type": "CentralTransitive",

@@ -8,6 +8,65 @@ namespace Weave.Silo.Tests.Invocations;
 public sealed partial class GovernedHttpEntryTests
 {
     [Fact]
+    public async Task Post_SecretInOutboundInput_ReturnsSafeDiagnosticWithoutAdmissionOrWrite()
+    {
+        await using var fx = new Fixture(requireApproval: true);
+        await fx.ConnectAsync();
+        const string secret = "AKIAIOSFODNN7EXAMPLE";
+        var request = Request() with { RawInput = secret };
+
+        using var response = await fx.SendAsync(HttpMethod.Post, fx.Route, request, fx.Token());
+
+        response.StatusCode.ShouldBe(HttpStatusCode.UnprocessableEntity);
+        var body = await JsonAsync(response);
+        body.GetProperty("errorCode").GetString().ShouldBe("outbound-secret-detected");
+        body.GetProperty("outcome").GetString().ShouldBe("NotDispatched");
+        body.GetProperty("invocationId").GetString().ShouldBe(request.InvocationId.ToString());
+        body.GetProperty("outcomeRecorded").GetBoolean().ShouldBeFalse();
+        body.GetRawText().ShouldNotContain(secret);
+        File.ReadAllText(fx.Target).ShouldBe("original");
+        using var outcome = await fx.SendAsync(HttpMethod.Get, fx.Route + "/" + request.InvocationId, null, fx.Token());
+        outcome.StatusCode.ShouldBe(HttpStatusCode.NotFound);
+        using var approval = await fx.SendAsync(HttpMethod.Get, fx.Route + "/" + request.InvocationId + "/approval", null, fx.Token());
+        approval.StatusCode.ShouldBe(HttpStatusCode.NotFound);
+    }
+
+    [Fact]
+    public async Task Post_MarkdownRouteBesideChineseText_ReachesApprovalWithoutWriting()
+    {
+        await using var fx = new Fixture(requireApproval: true);
+        await fx.ConnectAsync();
+        var request = Request() with { RawInput = "使用 `/api/v1/agents/<AGENT_ID>/rotate-key`，提交" };
+
+        using var response = await fx.SendAsync(HttpMethod.Post, fx.Route, request, fx.Token());
+
+        response.StatusCode.ShouldBe(HttpStatusCode.Accepted);
+        (await JsonAsync(response)).GetProperty("errorCode").GetString().ShouldBe("approval-pending");
+        File.ReadAllText(fx.Target).ShouldBe("original");
+        using var approval = await fx.SendAsync(HttpMethod.Get, fx.Route + "/" + request.InvocationId + "/approval", null, fx.Token());
+        (await JsonAsync(approval)).GetProperty("approvalState").GetString().ShouldBe("Pending");
+    }
+
+    [Fact]
+    public async Task Post_SecretWithPreviouslySucceededId_PreservesEarlierOutcome()
+    {
+        await using var fx = new Fixture();
+        await fx.ConnectAsync();
+        var request = Request();
+        using var first = await fx.SendAsync(HttpMethod.Post, fx.Route, request, fx.Token());
+        first.StatusCode.ShouldBe(HttpStatusCode.OK);
+
+        using var rejected = await fx.SendAsync(HttpMethod.Post, fx.Route,
+            request with { RawInput = "AKIAIOSFODNN7EXAMPLE" }, fx.Token());
+
+        rejected.StatusCode.ShouldBe(HttpStatusCode.UnprocessableEntity);
+        (await JsonAsync(rejected)).GetProperty("errorCode").GetString().ShouldBe("outbound-secret-detected");
+        using var recorded = await fx.SendAsync(HttpMethod.Get, fx.Route + "/" + request.InvocationId, null, fx.Token());
+        (await JsonAsync(recorded)).GetProperty("outcome").GetString().ShouldBe("Succeeded");
+        File.ReadAllText(fx.Target).ShouldBe("reviewed text");
+    }
+
+    [Fact]
     public async Task Post_JournalAdmissionFails_ReturnsUnavailableWithoutWriting()
     {
         await using var fx = new Fixture();

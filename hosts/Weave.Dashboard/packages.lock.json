@@ -329,7 +329,7 @@
         "resolved": "10.0.13",
         "contentHash": "E4JC7KcY4j1yx9uy8tVsHlGThnwLdUWtUz6aLHCqbN/jbtwbwbZgnVEF9atUr/7ynFCbo8Rbij056Y9bWM9ALg=="
       },
-      "weave": {
+      "KoalaFacts.Weave": {
         "type": "Project",
         "dependencies": {
           "Microsoft.Extensions.AI.Abstractions": "[10.11.0, )"
@@ -338,16 +338,16 @@
       "Weave.Agents": {
         "type": "Project",
         "dependencies": {
+          "KoalaFacts.Weave": "[1.0.0, )",
           "Microsoft.Extensions.AI": "[10.11.0, )",
           "Microsoft.Extensions.AI.Abstractions": "[10.11.0, )",
-          "Microsoft.Extensions.AI.OpenAI": "[10.11.0, )",
-          "Weave": "[1.0.0, )"
+          "Microsoft.Extensions.AI.OpenAI": "[10.11.0, )"
         }
       },
       "weave.deploy": {
         "type": "Project",
         "dependencies": {
-          "Weave": "[1.0.0, )"
+          "KoalaFacts.Weave": "[1.0.0, )"
         }
       },
       "weave.servicedefaults": {

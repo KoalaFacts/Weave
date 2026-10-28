@@ -143,18 +143,27 @@ class PackageTests(unittest.TestCase):
         self.temporary = tempfile.TemporaryDirectory()
         self.addCleanup(self.temporary.cleanup)
         self.directory = Path(self.temporary.name)
-        self.package = self.directory / 'Weave.Cli.1.2.3.nupkg'
-        self.xml = '<package xmlns="http://schemas.microsoft.com/packaging/2013/05/nuspec.xsd"><metadata><id>Weave.Cli</id><version>1.2.3</version></metadata></package>'
+        self.package = self.directory / 'KoalaFacts.Weave.Cli.1.2.3.nupkg'
+        self.xml = '<package xmlns="http://schemas.microsoft.com/packaging/2013/05/nuspec.xsd"><metadata><id>KoalaFacts.Weave.Cli</id><version>1.2.3</version></metadata></package>'
         self.write(self.package, self.xml)
 
     def write(self, path, xml):
         with zipfile.ZipFile(path, 'w') as archive:
-            archive.writestr('Weave.Cli.nuspec', xml)
+            archive.writestr('KoalaFacts.Weave.Cli.nuspec', xml)
 
     def test_valid_package_and_optional_symbols(self):
         guard.validate_packages(self.directory, '1.2.3')
-        self.write(self.directory / 'Weave.Cli.1.2.3.snupkg', self.xml)
+        self.write(self.directory / 'KoalaFacts.Weave.Cli.1.2.3.snupkg', self.xml)
         guard.validate_packages(self.directory, '1.2.3')
+
+    def test_previous_package_identity_is_rejected(self):
+        self.write(self.package, self.xml.replace('KoalaFacts.Weave.Cli', 'Weave.Cli'))
+        with self.assertRaises(ValueError):
+            guard.validate_packages(self.directory, '1.2.3')
+        self.package.unlink()
+        self.write(self.directory / 'Weave.Cli.1.2.3.nupkg', self.xml)
+        with self.assertRaises(ValueError):
+            guard.validate_packages(self.directory, '1.2.3')
 
     def test_missing_main_package(self):
         self.package.unlink()
@@ -162,7 +171,7 @@ class PackageTests(unittest.TestCase):
             guard.validate_packages(self.directory, '1.2.3')
 
     def test_wrong_id_version_dtd_and_large_manifest(self):
-        for xml in (self.xml.replace('Weave.Cli', 'Other'), self.xml.replace('1.2.3', '9.9.9'),
+        for xml in (self.xml.replace('KoalaFacts.Weave.Cli', 'Other'), self.xml.replace('1.2.3', '9.9.9'),
                     '<!DOCTYPE package []>' + self.xml, self.xml + ' ' * 131073):
             self.write(self.package, xml)
             with self.subTest(kind=xml[:40]):

@@ -76,6 +76,86 @@
         }
       }
     },
+    "/v1/accounts/me": {
+      "get": {
+        "operationId": "resolveExistingAccount",
+        "summary": "Resolve existing account ownership using its control without registration",
+        "description": "Local-only control-authenticated account lookup. An external authorization server MUST NOT request, collect or proxy the raw control. Use the separate signed challenge-bound handoff and informed consent instead; this endpoint does not issue OAuth tokens or create accounts.",
+        "responses": {
+          "200": {
+            "description": "Existing authenticated account UUID, no account creation.",
+            "headers": {
+              "Cache-Control": {
+                "schema": {
+                  "type": "string",
+                  "const": "no-store"
+                }
+              }
+            },
+            "content": {
+              "application/json": {
+                "schema": {
+                  "type": "object",
+                  "additionalProperties": false,
+                  "required": [
+                    "accountId"
+                  ],
+                  "properties": {
+                    "accountId": {
+                      "type": "string",
+                      "format": "uuid"
+                    }
+                  }
+                }
+              }
+            }
+          },
+          "401": {
+            "$ref": "#/components/responses/401"
+          },
+          "503": {
+            "$ref": "#/components/responses/503"
+          }
+        }
+      }
+    },
+    "/v1/accounts/proof": {
+      "post": {
+        "operationId": "issueAccountConsentProof",
+        "summary": "Challenge-bound existing account ownership proof for an operator-controlled AS",
+        "description": "Optional AS consent handoff, not an OAuth grant, token, or consent. The owner sends its existing control only to Weave, never to the AS. The AS must atomically consume the corresponding independently generated challenge and separately obtain informed consent before granting authorization. This read-only proof expires after 60 seconds; missing issuer/resource/secret configuration fails closed.",
+        "requestBody": {
+          "required": true,
+          "content": {
+            "application/json": {
+              "schema": {
+                "type": "object", "additionalProperties": false,
+                "required": ["challenge"],
+                "properties": {"challenge": {"type": "string", "minLength": 43, "maxLength": 43, "pattern": "^[A-Za-z0-9_-]{43}$"}}
+              }
+            }
+          }
+        },
+        "responses": {
+          "200": {
+            "description": "One short-lived signed proof, no OAuth access token.",
+            "headers": {"Cache-Control": {"schema": {"type": "string", "const": "no-store"}}},
+            "content": {
+              "application/json": {
+                "schema": {
+                  "type": "object", "additionalProperties": false,
+                  "required": ["proof"], "properties": {"proof": {"type": "string"}}
+                }
+              }
+            }
+          },
+          "400": {"$ref": "#/components/responses/400"},
+          "401": {"$ref": "#/components/responses/401"},
+          "413": {"$ref": "#/components/responses/413"},
+          "503": {"$ref": "#/components/responses/503"}
+        }
+      }
+    },
     "/v1/addresses": {
       "get": {
         "operationId": "listAddresses",

@@ -174,6 +174,46 @@ public sealed class DashboardReviewBrowserTests
         fixture.Evidence.AssertLayouts();
     }
 
+    [Fact]
+    public async Task Evidence_MobileSmoothScrolling_CapturesFromTopAndRestoresOriginalPosition()
+    {
+        await using var fixture = new DashboardReviewBrowserFixture(mobile: true);
+        await fixture.StartAsync();
+        var previous = await fixture.Page.EvaluateAsync<int>("""
+            () => {
+              document.documentElement.style.scrollBehavior = 'smooth';
+              document.body.style.minHeight = '2400px';
+              window.scrollTo({left: 0, top: 482, behavior: 'instant'});
+              return window.scrollY;
+            }
+            """);
+        previous.ShouldBeGreaterThan(0, "A scrolled, smooth-scrolling page must exercise the tiled capture regression.");
+
+        await fixture.Evidence.CaptureAsync("smooth-scroll-regression");
+
+        (await fixture.Page.EvaluateAsync<int>("window.scrollY")).ShouldBe(previous,
+            "Capturing all mobile tiles must restore the caller's original scroll position.");
+        fixture.BlockedRequests.ShouldBeEmpty();
+    }
+
+    [Fact]
+    public async Task Evidence_RealUploadWithFocusedToken_DoesNotShiftTheFirstMobileScreenshot()
+    {
+        await using var fixture = new DashboardReviewBrowserFixture(mobile: true);
+        await fixture.StartAsync();
+        await fixture.Page.EvaluateAsync("document.documentElement.style.scrollBehavior = 'smooth'");
+        var path = Path.Join(fixture.Root, "focused-input-request.json");
+        await File.WriteAllTextAsync(path, OriginalRequest(), TestContext.Current.CancellationToken);
+        await fixture.LoadRequestAsync(path);
+        (await fixture.Page.EvaluateAsync<string>("document.activeElement?.id")).ShouldBe("review-api-token",
+            "The real upload and credential-fill sequence must leave the last field focused.");
+
+        await fixture.Evidence.CaptureAsync("focused-input-loaded");
+
+        fixture.BlockedRequests.ShouldBeEmpty();
+        fixture.Evidence.AssertLayouts();
+    }
+
     private static string OriginalRequest() => new JsonObject
     {
         ["invocationId"] = "abcdef0123456789abcdef0123456789",

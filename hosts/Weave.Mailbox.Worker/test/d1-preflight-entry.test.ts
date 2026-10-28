@@ -17,7 +17,8 @@ test('D1 preflight is manual, main-only and shares the existing release queue wi
     assert.equal((workflow.match(/ref: \$\{\{ github\.sha \}\}/g)||[]).length,2);
     const inspect=workflow.split('  inspect:\n')[1];assert.ok(inspect);
     assert.match(inspect,/needs: verify/);
-    assert.equal((workflow.match(/secrets\./g)||[]).length,2);
+    assert.equal((workflow.match(/secrets\./g)||[]).length,4);
+    assert.match(inspect,/run: node scripts\/inspect-live-oauth\.ts/);
     assert.match(inspect,/CLOUDFLARE_API_TOKEN: \$\{\{ secrets\.CLOUDFLARE_API_TOKEN \}\}/);
     assert.match(inspect,/CLOUDFLARE_ACCOUNT_ID: \$\{\{ secrets\.CLOUDFLARE_ACCOUNT_ID \}\}/);
     assert.match(inspect,/run: node scripts\/d1-preflight\.ts/);

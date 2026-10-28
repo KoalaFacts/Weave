@@ -508,7 +508,7 @@
         "resolved": "9.0.18",
         "contentHash": "1/iz9Eex1TBMYdAk+m3igaMvL+nk+rY1EqL6u93an/j1ghxmB24vGOKXkVFy3NSPA39s1H/+SNoK257tHoXoLA=="
       },
-      "weave": {
+      "KoalaFacts.Weave": {
         "type": "Project",
         "dependencies": {
           "Microsoft.Extensions.AI.Abstractions": "[10.11.0, )"
@@ -517,60 +517,60 @@
       "Weave.Agents": {
         "type": "Project",
         "dependencies": {
+          "KoalaFacts.Weave": "[1.0.0, )",
           "Microsoft.Extensions.AI": "[10.11.0, )",
           "Microsoft.Extensions.AI.Abstractions": "[10.11.0, )",
-          "Microsoft.Extensions.AI.OpenAI": "[10.11.0, )",
-          "Weave": "[1.0.0, )"
+          "Microsoft.Extensions.AI.OpenAI": "[10.11.0, )"
         }
       },
       "weave.clitools": {
         "type": "Project",
         "dependencies": {
-          "Weave": "[1.0.0, )"
+          "KoalaFacts.Weave": "[1.0.0, )"
         }
       },
       "weave.dapr": {
         "type": "Project",
         "dependencies": {
-          "Weave": "[1.0.0, )"
+          "KoalaFacts.Weave": "[1.0.0, )"
         }
       },
       "weave.directhttp": {
         "type": "Project",
         "dependencies": {
-          "Weave": "[1.0.0, )"
+          "KoalaFacts.Weave": "[1.0.0, )"
         }
       },
       "weave.filesystem": {
         "type": "Project",
         "dependencies": {
-          "Weave": "[1.0.0, )"
+          "KoalaFacts.Weave": "[1.0.0, )"
         }
       },
       "weave.mcp": {
         "type": "Project",
         "dependencies": {
-          "Weave": "[1.0.0, )"
+          "KoalaFacts.Weave": "[1.0.0, )"
         }
       },
       "weave.openapi": {
         "type": "Project",
         "dependencies": {
-          "Weave": "[1.0.0, )"
+          "KoalaFacts.Weave": "[1.0.0, )"
         }
       },
       "weave.security.postgres": {
         "type": "Project",
         "dependencies": {
-          "Npgsql": "[10.0.2, )",
-          "Weave": "[1.0.0, )"
+          "KoalaFacts.Weave": "[1.0.0, )",
+          "Npgsql": "[10.0.2, )"
         }
       },
       "weave.security.sqlite": {
         "type": "Project",
         "dependencies": {
-          "Microsoft.Data.Sqlite": "[10.0.12, )",
-          "Weave": "[1.0.0, )"
+          "KoalaFacts.Weave": "[1.0.0, )",
+          "Microsoft.Data.Sqlite": "[10.0.12, )"
         }
       },
       "weave.servicedefaults": {

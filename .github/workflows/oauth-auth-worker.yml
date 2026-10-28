@@ -1,0 +1,151 @@
+name: OAuth authorization Worker isolated verification
+
+on:
+  push:
+    branches: [main, feat/oauth-existing-account-proof]
+    paths:
+      - hosts/Weave.Auth.Worker/**
+      - hosts/Weave.Mailbox.Worker/src/**
+      - hosts/Weave.Mailbox.Worker/scripts/**
+      - hosts/Weave.Mailbox.Worker/test/remote-oauth-identity-links.test.ts
+      - hosts/Weave.Mailbox.Worker/test/remote-oauth.test.ts
+      - hosts/Weave.Mailbox.Worker/test/remote-oauth-issuer.test.ts
+      - hosts/Weave.Mailbox.Worker/test/harness.ts
+      - hosts/Weave.Mailbox.Worker/package*.json
+      - experiments/oauth-provider-agnostic/**
+      - examples/remote-mcp-pair/oauth.ts
+      - examples/remote-mcp-pair/run.ts
+      - .github/workflows/oauth-auth-worker.yml
+  pull_request:
+    branches: [main]
+    paths:
+      - hosts/Weave.Auth.Worker/**
+      - hosts/Weave.Mailbox.Worker/src/**
+      - hosts/Weave.Mailbox.Worker/scripts/**
+      - hosts/Weave.Mailbox.Worker/test/remote-oauth-identity-links.test.ts
+      - hosts/Weave.Mailbox.Worker/test/remote-oauth.test.ts
+      - hosts/Weave.Mailbox.Worker/test/remote-oauth-issuer.test.ts
+      - hosts/Weave.Mailbox.Worker/test/harness.ts
+      - hosts/Weave.Mailbox.Worker/package*.json
+      - experiments/oauth-provider-agnostic/**
+      - examples/remote-mcp-pair/oauth.ts
+      - examples/remote-mcp-pair/run.ts
+      - .github/workflows/oauth-auth-worker.yml
+  workflow_dispatch:
+
+permissions:
+  contents: read
+
+concurrency:
+  group: weave-auth-worker-${{ github.ref }}
+  cancel-in-progress: false
+
+jobs:
+  auth-worker:
+    runs-on: ubuntu-24.04
+    timeout-minutes: 20
+    defaults:
+      run:
+        shell: bash
+        working-directory: hosts/Weave.Auth.Worker
+    steps:
+      - name: Checkout exact branch SHA without write credentials
+        uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v6
+        with:
+          ref: ${{ github.sha }}
+          persist-credentials: false
+      - name: Node 24 (isolated, no deployment credentials)
+        uses: actions/setup-node@949feb2413d6458794dcd2491c4babbbce0c15c1 # v7.1.0
+        with:
+          node-version: '24'
+          package-manager-cache: false
+      - name: Install committed locked dependencies
+        run: npm ci --ignore-scripts --no-audit --no-fund
+      - name: Typecheck provider-neutral protocol experiment
+        working-directory: .
+        run: >-
+          hosts/Weave.Auth.Worker/node_modules/.bin/tsc --noEmit --strict
+          --target es2022 --module esnext --moduleResolution bundler
+          --allowImportingTsExtensions --lib es2022,dom,dom.iterable
+          --typeRoots hosts/Weave.Auth.Worker/node_modules/@types --types node
+          experiments/oauth-provider-agnostic/*.ts examples/remote-mcp-pair/run.ts
+      - name: Test unchanged client against independent protocol issuers
+        working-directory: .
+        run: node --test experiments/oauth-provider-agnostic/*.test.ts
+      - name: Install locked mailbox Worker dependencies for full MCP/D1 acceptance
+        working-directory: hosts/Weave.Mailbox.Worker
+        run: npm ci --ignore-scripts --no-audit --no-fund
+      - name: Strictly typecheck the complete mailbox Worker
+        working-directory: hosts/Weave.Mailbox.Worker
+        run: npm run typecheck
+      - name: Verify provider-neutral issuer and subject binding regressions on the real mailbox validator
+        working-directory: hosts/Weave.Mailbox.Worker
+        run: node --test test/remote-oauth.test.ts
+      - name: Verify merged RFC 9207 authorization callback issuer binding in the real remote MCP client
+        working-directory: hosts/Weave.Mailbox.Worker
+        run: node --test test/remote-oauth-issuer.test.ts
+      - name: Bundle real mailbox resource Worker without publishing
+        working-directory: hosts/Weave.Mailbox.Worker
+        run: npm run build
+      - name: Test first-party owner-approved external OAuth subject links against real Worker/D1
+        working-directory: hosts/Weave.Mailbox.Worker
+        run: node --test test/remote-oauth-identity-links.test.ts
+      - name: Typecheck OAuth provider 1.2.4 Service Binding and Durable Objects
+        run: npm run typecheck
+      - name: Run portable proof and consent tests
+        run: npm run test:portable
+      - name: Typecheck and smoke-bundle nonsecret opt-in demo auth manifest (never deploy)
+        run: |
+          npm run prepare:demo
+          node node_modules/wrangler/bin/wrangler.js deploy --dry-run --config wrangler.demo.generated.jsonc --outdir dist/staged-demo
+        env:
+          CLOUDFLARE_ACCOUNT_ID: aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa
+          WEAVE_AUTH_KV_NAMESPACE_ID: bbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbb
+          OAUTH_ISSUER: https://weave-auth-demo.weave-389.workers.dev
+          OAUTH_RESOURCE: https://demo.weave-389.workers.dev/mcp
+      - name: Bundle Cloudflare authorization Worker without publishing
+        run: npm run build
+      - name: Exercise real workerd Durable Object consent replay and cold restart
+        run: npm run test:workerd
+      - name: Reject high-severity dependency vulnerabilities
+        run: npm audit --audit-level=high
+  public-mcp-connected:
+    runs-on: ubuntu-24.04
+    timeout-minutes: 5
+    steps:
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v6
+        with:
+          ref: ${{ github.sha }}
+          persist-credentials: false
+      - uses: actions/setup-node@949feb2413d6458794dcd2491c4babbbce0c15c1 # v7.1.0
+        with:
+          node-version: '24'
+          package-manager-cache: false
+      - name: Connect an actual anonymous MCP client to the public demo (no credentials or writes)
+        run: node hosts/Weave.Mailbox.Worker/scripts/verify-public-mcp.ts
+
+  anonymous-discovery:
+    runs-on: ubuntu-24.04
+    timeout-minutes: 5
+    steps:
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v6
+        with:
+          ref: ${{ github.sha }}
+          persist-credentials: false
+      - uses: actions/setup-node@949feb2413d6458794dcd2491c4babbbce0c15c1 # v7.1.0
+        with:
+          node-version: '24'
+          package-manager-cache: false
+      - name: Probe existing demo metadata anonymously (no login or cloud changes)
+        shell: bash
+        run: |
+          mkdir -p test-results/oauth-provider-agnostic
+          node experiments/oauth-provider-agnostic/probe.ts https://demo.weave-389.workers.dev/mcp | tee test-results/oauth-provider-agnostic/discovery.json
+      - name: Retain sanitized discovery result (not authentication evidence)
+        if: always()
+        uses: actions/upload-artifact@043fb46d1a93c77aae656e7c1c64a875d1fc6a0a # v7
+        with:
+          name: oauth-provider-agnostic-discovery
+          path: test-results/oauth-provider-agnostic/discovery.json
+          if-no-files-found: error
+          retention-days: 14

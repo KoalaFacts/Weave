@@ -57,11 +57,16 @@ jobs:
       - name: Setup .NET
         uses: ./.github/actions/setup-dotnet
 
+      - name: Setup Node for real process fixtures
+        uses: actions/setup-node@949feb2413d6458794dcd2491c4babbbce0c15c1 # v7.1.0
+        with:
+          node-version: '24'
+
       - name: Restore
         run: dotnet restore Weave.slnx --locked-mode
 
       - name: Build
-        run: dotnet build Weave.slnx --no-restore -c Release
+        run: dotnet build Weave.slnx --no-restore -c Release "-p:Version=$VERSION"
 
       - name: Install the pinned Dashboard Playwright browser
         run: pwsh tests/Weave.Silo.Tests/bin/Release/net10.0/playwright.ps1 install --with-deps --no-shell chromium
@@ -84,6 +89,11 @@ jobs:
 
       - name: Verify package identity and version
         run: python3 scripts/release/guard.py validate-packages
+
+      - name: Install and exercise the exact tool package
+        run: |
+          python3 scripts/release/smoke.py \
+            --package "packages/KoalaFacts.Weave.Cli.$VERSION.nupkg" --version "$VERSION"
 
       - name: Generate package provenance
         uses: actions/attest-build-provenance@4d101475d8b20a2381f78447822ac1eab6504dd8 # v4
@@ -108,21 +118,27 @@ jobs:
           - rid: win-x64
             os: windows-latest
             archive: zip
+            smoke: true
           - rid: win-arm64
             os: windows-latest
             archive: zip
+            smoke: false
           - rid: linux-x64
-            os: ubuntu-latest
+            os: ubuntu-24.04
             archive: tar.gz
+            smoke: true
           - rid: linux-arm64
-            os: ubuntu-latest
+            os: ubuntu-24.04
             archive: tar.gz
+            smoke: false
           - rid: osx-x64
-            os: macos-latest
+            os: macos-15
             archive: tar.gz
+            smoke: false
           - rid: osx-arm64
-            os: macos-latest
+            os: macos-15
             archive: tar.gz
+            smoke: true
 
     runs-on: ${{ matrix.os }}
     permissions:
@@ -142,6 +158,14 @@ jobs:
       - name: Setup .NET
         uses: ./.github/actions/setup-dotnet
 
+      - name: Download the tool package from this release run
+        if: matrix.smoke
+        uses: actions/download-artifact@9000827ccba6bdab643e8b6fd33ac0654aef8333 # v8
+        with:
+          name: nuget-packages-v${{ env.VERSION }}
+          path: packages
+          digest-mismatch: error
+
       - name: Publish self-contained
         shell: bash
         run: |
@@ -155,6 +179,14 @@ jobs:
             -c Release -r "$RID" --self-contained true \
             -p:PublishReadyToRun=true \
             "-p:Version=$VERSION" -o "publish/$RID/host"
+
+      - name: Verify native package and governed Host distribution
+        if: matrix.smoke
+        shell: bash
+        run: |
+          python3 scripts/release/smoke.py \
+            --package "packages/KoalaFacts.Weave.Cli.$VERSION.nupkg" --version "$VERSION" \
+            --distribution "publish/$RID"
 
       - name: Package (tar.gz)
         if: matrix.archive == 'tar.gz'
@@ -212,16 +244,23 @@ jobs:
 
           | Platform | Command |
           |----------|---------|
-          | **Windows** | \`irm ${RAW}/scripts/install.ps1 \\| iex\` |
-          | **macOS / Linux** | \`curl -fsSL ${RAW}/scripts/install.sh \\| sh\` |
-          | **.NET tool** | \`dotnet tool install -g Weave.Cli --version ${VERSION}\` |
+          | **Windows** | \`\$env:WEAVE_VERSION='${VERSION}'; irm ${RAW}/scripts/install.ps1 \\| iex\` |
+          | **macOS / Linux** | \`curl -fsSL ${RAW}/scripts/install.sh \\| WEAVE_VERSION=${VERSION} sh\` |
+          | **.NET tool** | \`dotnet tool install -g KoalaFacts.Weave.Cli --version ${VERSION}\` |
+
+          The .NET tool provides the CLI. A local Governed Tools host requires the matching full archive and its \`host/\` directory, or an explicitly configured existing Host.
 
           Or download an archive above and extract manually. The install scripts are also attached as release assets:
           - [install.sh](${DL}/install.sh)
           - [install.ps1](${DL}/install.ps1)
           FOOTER
 
-          gh release create "${TAG}" \
+          release_flags=()
+          if [[ "$VERSION" == *-* ]]; then
+            release_flags+=(--prerelease --latest=false)
+          fi
+
+          gh release create "${TAG}" "${release_flags[@]}" \
             --target "$GITHUB_SHA" \
             --title "Release ${TAG}" \
             --generate-notes \

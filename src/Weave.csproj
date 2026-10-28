@@ -2,7 +2,7 @@
   <PropertyGroup>
     <AssemblyName>Weave.Product</AssemblyName>
     <RootNamespace>Weave</RootNamespace>
-    <PackageId>Weave</PackageId>
+    <PackageId>KoalaFacts.Weave</PackageId>
     <Description>Composable Weave features, organized as vertical slices.</Description>
     <GenerateCqrsRegistration>false</GenerateCqrsRegistration>
   </PropertyGroup>
