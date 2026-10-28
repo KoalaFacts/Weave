@@ -158,8 +158,8 @@ test('classifies an exact Cloudflare Access-not-enabled marker with 9999 without
     assert.equal(report.organization.status,403);
     assert.deepEqual(report.apps.errorCodes,[9999]);
     assert.deepEqual(report.organization.errorCodes,[9999]);
-    assert.equal(report.apps.accessNotEnabled,true);
-    assert.equal(report.organization.accessNotEnabled,true);
+    assert.equal((report.apps as {accessNotEnabled?:boolean}).accessNotEnabled,true);
+    assert.equal((report.organization as {accessNotEnabled?:boolean}).accessNotEnabled,true);
     assert.equal(f.calls.length,3);
     const output=JSON.stringify(report);
     assert.ok(!output.includes(env.CLOUDFLARE_API_TOKEN));
@@ -177,7 +177,7 @@ test('9999 alone, unrelated error messages and forged markers outside errors are
         const f=fixture({'/access/apps?per_page=100&page=1':()=>new Response(JSON.stringify(payload),{status:403})});
         const report=await inspectAccess({env,fetchImpl:f.fetchImpl});
         assert.equal(report.outcome,'blocked');
-        assert.notEqual(report.apps.accessNotEnabled,true);
+        assert.notEqual((report.apps as {accessNotEnabled?:boolean}).accessNotEnabled,true);
         assert.equal(f.calls.filter(c=>c.path.startsWith('/access/apps')).length,1);
     }
 });
@@ -190,7 +190,7 @@ test('an HTTP redirect or oversized 403 response cannot be mistaken for an Acces
     ]) {
         const f=fixture({'/access/apps?per_page=100&page=1':response});
         const report=await inspectAccess({env,fetchImpl:f.fetchImpl});
-        assert.notEqual(report.apps.accessNotEnabled,true);
+        assert.notEqual((report.apps as {accessNotEnabled?:boolean}).accessNotEnabled,true);
         assert.deepEqual(report.apps.errorCodes,[]);
     }
 });
