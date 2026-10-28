@@ -9,7 +9,6 @@ const target='demo.weave-389.workers.dev/access-trial/*';
 const emailA='agent-one@example.org', emailB='agent-two@example.org';
 const env={
   CLOUDFLARE_ACCOUNT_ID:account,CLOUDFLARE_API_TOKEN:'test-worker-token',
-  CLOUDFLARE_ACCESS_TRIAL_TOKEN:'test-access-token',
   WEAVE_ACCESS_TRIAL_EMAILS:emailA+','+emailB,
   WEAVE_ACCESS_TRIAL_COMMIT:'create-weave-access-trial',
   GITHUB_REPOSITORY:'KoalaFacts/Weave',GITHUB_REF:'refs/heads/main',
@@ -43,9 +42,51 @@ function fakeCloud(){
  return {calls,fetchImpl};
 }
 
+test('existing Cloudflare token can provision the exact trial after real GET-only preflight',async()=>{
+ const single={...env,CLOUDFLARE_ACCESS_TRIAL_TOKEN:undefined};
+ const cloud=fakeCloud();
+ const calls:{path:string;method:string}[]=[];
+ const fetchImpl:typeof fetch=async(input,init={})=>{
+   const url=new URL(String(input));
+   const path=url.pathname.slice(('/client/v4/accounts/'+account).length)+url.search;
+   calls.push({path,method:init.method??'GET'});
+   assert.equal(new Headers(init.headers).get('Authorization'),'Bearer '+single.CLOUDFLARE_API_TOKEN);
+   assert.equal(init.redirect,'manual');
+   if(path==='/workers/subdomain')return envelope({subdomain:'weave-389'});
+   if(path==='/access/apps?per_page=100&page=1')return Response.json({success:true,result:[],result_info:{page:1,total_pages:1}});
+   if(path==='/access/organizations')return envelope({auth_domain:'team.cloudflareaccess.com'});
+   return cloud.fetchImpl(input,init);
+ };
+ const result=await provisionTrial({env:single,fetchImpl});
+ assert.equal(result.outcome,'created-verified');
+ assert.deepEqual(calls.map(c=>c.method+' '+c.path),[
+   'GET /workers/subdomain','GET /access/apps?per_page=100&page=1',
+   'GET /access/organizations','POST /access/apps',
+   'GET /access/apps/'+appId,'GET /access/apps/'+appId+'/policies'
+ ]);
+ for(const secret of [single.CLOUDFLARE_API_TOKEN,emailA,emailB])
+   assert.equal(JSON.stringify(result).includes(secret),false);
+});
+
+test('existing Cloudflare token receiving Access HTTP 403 cannot attempt the create POST',async()=>{
+ const single={...env,CLOUDFLARE_ACCESS_TRIAL_TOKEN:undefined};
+ const calls:{path:string;method:string}[]=[];
+ const fetchImpl:typeof fetch=async(input,init={})=>{
+   const path=new URL(String(input)).pathname.slice(('/client/v4/accounts/'+account).length);
+   calls.push({path,method:init.method??'GET'});
+   assert.equal(new Headers(init.headers).get('Authorization'),'Bearer '+single.CLOUDFLARE_API_TOKEN);
+   if(path==='/workers/subdomain')return envelope({subdomain:'weave-389'});
+   if(path==='/access/apps')return new Response(null,{status:403});
+   if(path==='/access/organizations')return new Response(null,{status:403});
+   throw Error('Unexpected request');
+ };
+ await assert.rejects(provisionTrial({env:single,fetchImpl}),/unreadable/);
+ assert.equal(calls.filter(c=>c.method==='POST').length,0);
+});
+
 test('missing token, identities, dispatch authorization or ambiguous identities fail before any cloud call',async()=>{
  for(const bad of [
-    {CLOUDFLARE_ACCESS_TRIAL_TOKEN:undefined},{WEAVE_ACCESS_TRIAL_EMAILS:undefined},
+    {CLOUDFLARE_API_TOKEN:undefined},{WEAVE_ACCESS_TRIAL_EMAILS:undefined},
     {WEAVE_ACCESS_TRIAL_EMAILS:emailA},{WEAVE_ACCESS_TRIAL_EMAILS:emailA+','+emailA.toUpperCase()},
     {WEAVE_ACCESS_TRIAL_EMAILS:'everyone@example.org,*@example.org'},
     {WEAVE_ACCESS_TRIAL_EMAILS:'agent*one@example.org,'+emailB},
@@ -79,8 +120,8 @@ test('create once with narrowly scoped path, exact users and short-lived OAuth; 
  assert.deepEqual(body.policies,[{name:'Weave trial exact identities',decision:'allow',include:[{email:{email:emailA}},{email:{email:emailB}}]}]);
  assert.equal(body.app_launcher_visible,false);
  const output=JSON.stringify(result);
- for(const secret of [env.CLOUDFLARE_API_TOKEN,env.CLOUDFLARE_ACCESS_TRIAL_TOKEN,emailA,emailB])assert.equal(output.includes(secret),false);
- assert.ok(cloud.calls.every(c=>c.authorization==='Bearer '+env.CLOUDFLARE_ACCESS_TRIAL_TOKEN && c.redirect==='manual'));
+ for(const secret of [env.CLOUDFLARE_API_TOKEN,emailA,emailB])assert.equal(output.includes(secret),false);
+ assert.ok(cloud.calls.every(c=>c.authorization==='Bearer '+env.CLOUDFLARE_API_TOKEN && c.redirect==='manual'));
 });
 
 test('invalid create result or ambiguous response refuses to claim success; no retry',async()=>{
@@ -93,9 +134,9 @@ test('invalid create result or ambiguous response refuses to claim success; no r
 test('HTTP errors, redirects and secret-containing body failures never cause retry, leak or success',async()=>{
  for(const status of [302,401,403,429,500]){
     let n=0;
-    const fetchImpl:typeof fetch=async()=>{n++;return new Response(env.CLOUDFLARE_ACCESS_TRIAL_TOKEN,{status})};
+    const fetchImpl:typeof fetch=async()=>{n++;return new Response(env.CLOUDFLARE_API_TOKEN,{status})};
     let err:unknown;try{await provisionTrial({env,inspect:readOnly,fetchImpl})}catch(e){err=e}
-    assert.ok(err instanceof Error);assert.ok(!err.message.includes(env.CLOUDFLARE_ACCESS_TRIAL_TOKEN));
+    assert.ok(err instanceof Error);assert.ok(!err.message.includes(env.CLOUDFLARE_API_TOKEN));
     assert.equal(n,1);
  }
 });

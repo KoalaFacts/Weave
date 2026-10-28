@@ -41,14 +41,15 @@ jobs:
           --allowImportingTsExtensions --lib es2022,dom,dom.iterable
           --typeRoots hosts/Weave.Mailbox.Worker/node_modules/@types --types node
           experiments/cloudflare-managed-oauth/*.ts
-      - name: Test read-only API and credential boundaries without real credentials
-        run: node --test experiments/cloudflare-managed-oauth/preflight.test.ts
+      - name: Test Access API and credential boundaries without real credentials
+        run: node --test experiments/cloudflare-managed-oauth/*.test.ts
 
   inspect:
     needs: verify
     if: github.ref == 'refs/heads/main' && github.event_name != 'pull_request'
     runs-on: ubuntu-24.04
     timeout-minutes: 5
+    environment: production
     steps:
       - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1
         with:
@@ -63,4 +64,3 @@ jobs:
         env:
           CLOUDFLARE_ACCOUNT_ID: ${{ secrets.CLOUDFLARE_ACCOUNT_ID }}
           CLOUDFLARE_API_TOKEN: ${{ secrets.CLOUDFLARE_API_TOKEN }}
-          CLOUDFLARE_ACCESS_TRIAL_TOKEN: ${{ secrets.CLOUDFLARE_ACCESS_TRIAL_TOKEN }}

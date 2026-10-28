@@ -4,9 +4,7 @@ on:
   pull_request:
     branches: [main]
     paths:
-      - experiments/cloudflare-managed-oauth/provision.ts
-      - experiments/cloudflare-managed-oauth/provision.test.ts
-      - experiments/cloudflare-managed-oauth/workflow-guard.test.ts
+      - experiments/cloudflare-managed-oauth/**
       - .github/workflows/provision-weave-access.yml
   workflow_dispatch:
     inputs:
@@ -72,6 +70,5 @@ jobs:
         env:
           CLOUDFLARE_ACCOUNT_ID: ${{ secrets.CLOUDFLARE_ACCOUNT_ID }}
           CLOUDFLARE_API_TOKEN: ${{ secrets.CLOUDFLARE_API_TOKEN }}
-          CLOUDFLARE_ACCESS_TRIAL_TOKEN: ${{ secrets.CLOUDFLARE_ACCESS_TRIAL_TOKEN }}
           WEAVE_ACCESS_TRIAL_EMAILS: ${{ secrets.WEAVE_ACCESS_TRIAL_EMAILS }}
           WEAVE_ACCESS_TRIAL_COMMIT: create-weave-access-trial
