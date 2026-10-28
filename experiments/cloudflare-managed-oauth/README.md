@@ -94,3 +94,15 @@ Cloudflare specifications:
 https://developers.cloudflare.com/api/resources/zero_trust/subresources/access/subresources/applications/methods/create/
 https://developers.cloudflare.com/cloudflare-one/access-controls/policies/app-paths/
 https://developers.cloudflare.com/cloudflare-one/access-controls/applications/http-apps/managed-oauth/
+
+### Safe Cloudflare 403 diagnostics
+
+When Cloudflare rejects an Access GET, the reviewed-main preflight preserves
+only up to four **numeric** provider `errors[].code` values (positive integers
+at most 999999). Error bodies are read with an 8 KiB cap, then discarded; names,
+messages, account IDs, token values, policy rules and arbitrary fields never
+appear in logs. A malformed, non-JSON or oversized error yields an empty code
+array and remains a failing HTTP response. No retry, redirect or write occurs.
+A numeric error is diagnostic evidence, **not** proof of missing permissions or
+permission to create the trial. Interpret it against current Cloudflare API
+documentation before any environment or credential change.
