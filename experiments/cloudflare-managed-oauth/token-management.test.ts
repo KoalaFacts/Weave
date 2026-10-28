@@ -14,7 +14,7 @@ function fixture(kind = 'user', denied = false, write = true) {
         assert.equal(init.method, 'GET'); assert.equal(init.redirect, 'manual');
         assert.equal(init.body, undefined); assert.ok(init.signal);
         assert.equal(new Headers(init.headers).get('Authorization'), 'Bearer ' + env.CLOUDFLARE_API_TOKEN);
-        const path = url.pathname.slice('/client/v4'.length); calls.push(path);
+        const path = url.pathname.slice('/client/v4'.length) + url.search; calls.push(path);
         if (path === '/accounts/' + account + '/workers/subdomain') return json({subdomain: 'weave-389'});
         if (path.endsWith('/verify')) return path === root + '/verify' ? json({id, status: 'active'}) : new Response(null, {status: 403});
         if (path === root + '/' + id) return denied ? new Response(env.CLOUDFLARE_API_TOKEN, {status: 403}) : json({
