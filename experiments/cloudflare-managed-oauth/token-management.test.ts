@@ -4,6 +4,11 @@ import {inspectTokenManagement} from './token-management.ts';
 
 const account = 'a'.repeat(32), id = 'b'.repeat(32), group = 'c'.repeat(32);
 const env = {CLOUDFLARE_ACCOUNT_ID: account, CLOUDFLARE_API_TOKEN: 'synthetic-existing-token'};
+const appsEdit = 'd'.repeat(32), appsWrite = 'e'.repeat(32), organizationRead = 'f'.repeat(32);
+const accessNames = [
+    'Access: Apps and Policies Edit', 'Access: Apps and Policies Write',
+    'Access: Organizations, Identity Providers, and Groups Read'
+];
 const json = (result: unknown) => Response.json({success: true, result});
 function fixture(kind = 'user', denied = false, write = true) {
     const root = kind === 'user' ? '/user/tokens' : '/accounts/' + account + '/tokens';
@@ -24,6 +29,13 @@ function fixture(kind = 'user', denied = false, write = true) {
         if (path === root + '/permission_groups?name=' + encodeURIComponent(kind === 'user' ? 'API Tokens Write' : 'Account API Tokens Write')) return json([{id: group,
             name: (kind === 'user' ? 'API Tokens ' : 'Account API Tokens ') + (write ? 'Write' : 'Read'),
             scopes: [kind === 'user' ? 'com.cloudflare.api.user' : 'com.cloudflare.api.account']}]);
+        if (path.startsWith(root + '/permission_groups?name=')) {
+            const name = new URL('https://api.cloudflare.com' + path).searchParams.get('name');
+            const ids: Record<string, string> = {
+                [accessNames[0]]: appsEdit, [accessNames[1]]: appsWrite, [accessNames[2]]: organizationRead
+            };
+            return json(name && ids[name] ? [{id: ids[name], name, scopes: ['com.cloudflare.api.account']}] : []);
+        }
         throw Error('Unexpected request');
     };
     return {root, calls, fetchImpl};
@@ -35,7 +47,9 @@ for (const kind of ['user', 'account']) test(kind + ' token metadata is inspecte
     assert.equal(report.managementWriteDeclared, true); assert.equal(report.writePermissionVerified, false);
     assert.equal(report.readOnly, true);
     assert.deepEqual(f.calls, ['/accounts/' + account + '/workers/subdomain', '/user/tokens/verify',
-        ...(kind === 'account' ? [f.root + '/verify'] : []), f.root + '/' + id, f.root + '/permission_groups?name=' + encodeURIComponent(kind === 'user' ? 'API Tokens Write' : 'Account API Tokens Write')]);
+        ...(kind === 'account' ? [f.root + '/verify'] : []), f.root + '/' + id,
+        f.root + '/permission_groups?name=' + encodeURIComponent(kind === 'user' ? 'API Tokens Write' : 'Account API Tokens Write'),
+        ...accessNames.map(name => f.root + '/permission_groups?name=' + encodeURIComponent(name))]);
     for (const sensitive of [account, id, env.CLOUDFLARE_API_TOKEN, 'private-token-name'])
         assert.equal(JSON.stringify(report).includes(sensitive), false);
 });
@@ -50,7 +64,7 @@ test('read permission does not become declared write permission', async () => {
     const f = fixture('user', false, false);
     const result = await inspectTokenManagement({env, fetchImpl: f.fetchImpl});
     assert.equal(result.outcome, 'readable'); assert.equal(result.managementWriteDeclared, false);
-    assert.equal(result.writePermissionVerified, false); assert.equal(f.calls.length, 4);
+    assert.equal(result.writePermissionVerified, false); assert.equal(f.calls.length, 7);
 });
 test('absent existing credential makes zero requests and never selects another secret', async () => {
     let calls = 0;
@@ -97,6 +111,11 @@ for (const kind of ['user', 'account']) test(kind + ' filters a paginated token 
         if (path === root + '/permission_groups?name=' + encodeURIComponent(name)) return json([{
             id:group, name, scopes:[kind === 'user' ? 'com.cloudflare.api.user' : 'com.cloudflare.api.account']
         }]);
+        if (path.startsWith(root + '/permission_groups?name=')) return json([{
+            id: path.includes(encodeURIComponent(accessNames[2])) ? organizationRead : appsWrite,
+            name: path.includes(encodeURIComponent(accessNames[2])) ? accessNames[2] : accessNames[1],
+            scopes: ['com.cloudflare.api.account']
+        }]);
         throw Error('Unexpected token inspection request ' + path);
     };
     const result = await inspectTokenManagement({env, fetchImpl});
@@ -105,4 +124,67 @@ for (const kind of ['user', 'account']) test(kind + ' filters a paginated token 
     assert.equal(result.writePermissionVerified, false);
     assert.ok(calls.includes(root + '/permission_groups?name=' + encodeURIComponent(name)));
     assert.equal(calls.includes(root + '/permission_groups'), false);
+});
+
+test('the existing account token reports its Access policy for Weave, not the owner broad ChatGPT permission', async () => {
+    for (const [effect, resource, appsExpected, orgExpected] of [
+        ['allow', 'com.cloudflare.api.account.' + account, 'allow', 'allow'],
+        ['deny', 'com.cloudflare.api.account.' + account, 'deny', 'deny'],
+        ['allow', 'com.cloudflare.api.account.' + '9'.repeat(32), 'absent', 'absent'],
+        ['allow', 'com.cloudflare.api.account.*', 'allow', 'allow']
+    ] as const) {
+        const f = fixture('account');
+        const fetchImpl: typeof fetch = async (input, init = {}) => {
+            if (new URL(String(input)).pathname.endsWith('/tokens/' + id)) return json({
+                id, status: 'active', name: 'unlogged-token',
+                policies: [{effect, resources: {[resource]: '*'},
+                    permission_groups: [{id: appsWrite}, {id: organizationRead}]}]
+            });
+            return f.fetchImpl(input, init);
+        };
+        const report = await inspectTokenManagement({env, fetchImpl});
+        assert.equal(report.outcome, 'readable');
+        assert.equal(report.accessAppsPolicy, appsExpected);
+        assert.equal(report.accessOrganizationPolicy, orgExpected);
+        assert.equal(report.writePermissionVerified, false);
+        for (const secret of [account, id, env.CLOUDFLARE_API_TOKEN, 'unlogged-token'])
+            assert.equal(JSON.stringify(report).includes(secret), false);
+    }
+});
+
+test('unknown Access metadata fails closed rather than claiming an authorization', async () => {
+    const f = fixture('account');
+    const fetchImpl: typeof fetch = async (input, init = {}) => {
+        const url = new URL(String(input));
+        if (url.searchParams.get('name')?.startsWith('Access:')) return json([]);
+        if (url.pathname.endsWith('/tokens/' + id)) return json({
+            id, status: 'active', policies: [{effect: 'allow',
+                permission_groups: [{id: appsEdit}, {id: organizationRead}]}]
+        });
+        return f.fetchImpl(input, init);
+    };
+    const report = await inspectTokenManagement({env, fetchImpl});
+    assert.equal(report.outcome, 'readable');
+    assert.equal(report.accessAppsPolicy, 'unknown');
+    assert.equal(report.accessOrganizationPolicy, 'unknown');
+    assert.equal(report.writePermissionVerified, false);
+});
+
+test('explicit account deny wins over Allow and does not leak policies', async () => {
+    const f = fixture('account');
+    const fetchImpl: typeof fetch = async (input, init = {}) => {
+        if (new URL(String(input)).pathname.endsWith('/tokens/' + id)) return json({
+            id, status: 'active', policies: [
+                {effect: 'allow', resources: {'com.cloudflare.api.account.' + account: '*'},
+                    permission_groups: [{id: appsEdit}, {id: organizationRead}]},
+                {effect: 'deny', resources: {'com.cloudflare.api.account.' + account: '*'},
+                    permission_groups: [{id: appsEdit}]}
+            ]
+        });
+        return f.fetchImpl(input, init);
+    };
+    const report = await inspectTokenManagement({env, fetchImpl});
+    assert.equal(report.accessAppsPolicy, 'deny');
+    assert.equal(report.accessOrganizationPolicy, 'allow');
+    assert.equal(report.readOnly, true);
 });

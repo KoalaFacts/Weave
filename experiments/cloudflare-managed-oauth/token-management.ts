@@ -9,6 +9,8 @@ type Json = Record<string, unknown>;
 type Report = {
     outcome: 'readable' | 'blocked'; readOnly: true; writePermissionVerified: false;
     tokenKind?: 'user' | 'account'; managementWriteDeclared?: boolean;
+    accessAppsPolicy?: 'allow' | 'deny' | 'absent' | 'unknown';
+    accessOrganizationPolicy?: 'allow' | 'deny' | 'absent' | 'unknown';
     stage?: string; httpStatus?: number;
 };
 class InspectionError extends Error {
@@ -84,9 +86,49 @@ export async function inspectTokenManagement({env = process.env, fetchImpl = fet
         const managementWriteDeclared = details.policies.map(record).some(policy =>
             policy.effect === 'allow' && Array.isArray(policy.permission_groups) &&
             policy.permission_groups.map(record).some(group => writeIds.has(group.id)));
-        // An allow declaration can still be limited by resource scope, deny policies
-        // or provider rules. No write is attempted or claimed verified by this tool.
-        return {outcome: 'readable', tokenKind, managementWriteDeclared, ...boundary};
+        // These are declarations from this exact token, not effective API authorization.
+        // Use filtered names to avoid first-page omission. Never print policy details.
+        const accessNames = [
+            ['Access: Apps and Policies Edit', 'Access: Apps and Policies Write'],
+            ['Access: Organizations, Identity Providers, and Groups Read']
+        ];
+        async function declared(names: string[]): Promise<'allow' | 'deny' | 'absent' | 'unknown'> {
+            const ids = new Set<string>();
+            for (const name of names) {
+                const found = await get(root + '/permission_groups?name=' + encodeURIComponent(name), 'permission-groups');
+                if (!Array.isArray(found)) throw new InspectionError('permission-groups');
+                for (const candidate of found.map(record)) {
+                    if (candidate.name === name && typeof candidate.id === 'string' &&
+                        tag.test(candidate.id) && Array.isArray(candidate.scopes) &&
+                        candidate.scopes.includes('com.cloudflare.api.account')) ids.add(candidate.id);
+                }
+            }
+            if (!ids.size) return 'unknown'; // A missing catalog group is not proof of missing scope.
+            let allowed = false, denied = false, ambiguous = false;
+            for (const value of details.policies as unknown[]) {
+                const policy = record(value);
+                if (!Array.isArray(policy.permission_groups) ||
+                    !policy.permission_groups.map(record).some(group => ids.has(String(group.id)))) continue;
+                if (!policy.resources || typeof policy.resources !== 'object' || Array.isArray(policy.resources)) {
+                    ambiguous = true; continue;
+                }
+                const resources = policy.resources as Json;
+                const matchesAccount = resources['com.cloudflare.api.account.' + account] === '*' ||
+                    resources['com.cloudflare.api.account.*'] === '*';
+                if (!matchesAccount) continue;
+                if (policy.effect === 'deny') denied = true;
+                else if (policy.effect === 'allow') allowed = true;
+                else ambiguous = true;
+            }
+            // Explicit deny wins over an Allow; ambiguous metadata never looks granted.
+            return denied ? 'deny' : ambiguous ? 'unknown' : allowed ? 'allow' : 'absent';
+        }
+        const accessAppsPolicy = await declared(accessNames[0]);
+        const accessOrganizationPolicy = await declared(accessNames[1]);
+        // An allow declaration can still be limited by IP, provider-side roles, or other rules.
+        // No write is attempted or claimed verified by this tool.
+        return {outcome: 'readable', tokenKind, managementWriteDeclared,
+            accessAppsPolicy, accessOrganizationPolicy, ...boundary};
     } catch (error) {
         return {outcome: 'blocked', stage: error instanceof InspectionError ? error.stage : 'invalid-metadata',
             ...(error instanceof InspectionError && error.httpStatus !== undefined ? {httpStatus: error.httpStatus} : {}), ...boundary};
