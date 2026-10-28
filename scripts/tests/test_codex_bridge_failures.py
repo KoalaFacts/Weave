@@ -22,8 +22,8 @@ class BridgeFailureTests(unittest.TestCase):
         identifier = '89f0b55c9a314192a40751bb85da3c43'
         with tempfile.TemporaryDirectory() as temp:
             agent = bridge.Bridge('http://127.0.0.1:9401', 'pilot', 'files', Path(temp), 'synthetic_capability')
-            absent = {'invocation': {'http_status': 404, 'result': None},
-                      'approval': {'http_status': 404, 'result': None}}
+            absent = {'invocation': {'http_status': 404, 'result': {'errorCode': 'invocation-not-found'}},
+                      'approval': {'http_status': 404, 'result': {'errorCode': 'approval-not-found'}}}
             with patch.object(agent, 'status', return_value=absent), \
                  patch.object(agent.http, 'open', side_effect=error.URLError('private-upstream-detail')) as network:
                 result = agent.call_tool('submit_write', {'invocation_id': identifier, 'path': 'out.md', 'content': 'model content'})

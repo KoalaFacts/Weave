@@ -197,6 +197,57 @@ public sealed class LeakScannerTests
     // --- High entropy detection ---
 
     [Fact]
+    public async Task ScanStringAsync_MarkdownRouteBesideChineseText_DoesNotFlagOrdinaryDocumentation()
+    {
+        var result = await _scanner.ScanStringAsync(
+            "使用 `/api/v1/agents/<AGENT_ID>/rotate-key`，提交", DefaultScanContext,
+            TestContext.Current.CancellationToken);
+
+        result.HasLeaks.ShouldBeFalse();
+    }
+
+    [Theory]
+    [InlineData("`{0}`")]
+    [InlineData("```text\n{0}\n```")]
+    [InlineData("`https://example.test/path?token={0}`，提交")]
+    public async Task ScanStringAsync_HighEntropySecretInsideMarkdown_RemainsDetected(string format)
+    {
+        const string secret = "aB3xZ9mK2pL5nQ8wR7tY6uI4oH1jF0gD2sA3dE";
+        var content = string.Format(System.Globalization.CultureInfo.InvariantCulture, format, secret);
+
+        var result = await _scanner.ScanStringAsync(content, DefaultScanContext, TestContext.Current.CancellationToken);
+
+        result.Findings.ShouldContain(f => f.PatternName == "high_entropy_string"
+            && f.Offset == content.IndexOf(secret, StringComparison.Ordinal) && f.Length == secret.Length);
+    }
+
+    [Fact]
+    public async Task ScanStringAsync_RepeatedHighEntropySecret_ReportsEachActualPosition()
+    {
+        const string secret = "aB3xZ9mK2pL5nQ8wR7tY6uI4oH1jF0gD2sA3dE";
+        var content = secret + " " + secret;
+
+        var result = await _scanner.ScanStringAsync(content, DefaultScanContext, TestContext.Current.CancellationToken);
+
+        var findings = result.Findings.Where(f => f.PatternName == "high_entropy_string").ToArray();
+        findings.Select(f => f.Offset).ShouldBe([0, secret.Length + 1]);
+        findings.ShouldAllBe(f => f.Length == secret.Length);
+    }
+
+    [Theory]
+    [InlineData("`")]
+    [InlineData("``")]
+    public async Task ScanStringAsync_BackticksInsideOpaqueToken_DoNotSplitTheSecret(string backticks)
+    {
+        var secret = "abcdefghijKLMNOPQRST" + backticks + "1234567890!@#$%^&*()";
+
+        var result = await _scanner.ScanStringAsync(secret, DefaultScanContext, TestContext.Current.CancellationToken);
+
+        result.Findings.ShouldContain(f => f.PatternName == "high_entropy_string"
+            && f.Offset == 0 && f.Length == secret.Length);
+    }
+
+    [Fact]
     public async Task ScanStringAsync_HighEntropyToken_DetectedAsLeak()
     {
         // A random-looking 40 char token should trigger entropy detection
