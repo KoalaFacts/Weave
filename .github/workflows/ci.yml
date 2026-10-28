@@ -25,7 +25,7 @@ jobs:
     name: Build & Test
     runs-on: ubuntu-24.04
     env:
-      VERSION: 0.0.0-ci-validation
+      VERSION: 0.1.0-ci-validation
     permissions:
       contents: read
       checks: write

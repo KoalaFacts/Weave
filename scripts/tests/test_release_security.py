@@ -225,7 +225,7 @@ class ReleaseWorkflowTests(unittest.TestCase):
         content = (ROOT / '.github/workflows/ci.yml').read_text()
         build = content.split('  build-and-test:', 1)[1].split('  exact-base-coverage-diagnostic:', 1)[0]
         for required in ('dotnet pack hosts/Weave.Cli/Weave.Cli.csproj', 'IncludeSymbols=false',
-                         'scripts/release/guard.py validate-packages', '0.0.0-ci-validation'):
+                         'scripts/release/guard.py validate-packages', '0.1.0-ci-validation'):
             self.assertIn(required, build)
         for forbidden in ('nuget push', 'NUGET_API_KEY', 'id-token: write', 'attestations: write'):
             self.assertNotIn(forbidden, build)
