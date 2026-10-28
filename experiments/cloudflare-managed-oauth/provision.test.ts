@@ -43,9 +43,51 @@ function fakeCloud(){
  return {calls,fetchImpl};
 }
 
+test('existing Cloudflare token can provision the exact trial after real GET-only preflight',async()=>{
+ const single={...env,CLOUDFLARE_ACCESS_TRIAL_TOKEN:undefined};
+ const cloud=fakeCloud();
+ const calls:{path:string;method:string}[]=[];
+ const fetchImpl:typeof fetch=async(input,init={})=>{
+   const url=new URL(String(input));
+   const path=url.pathname.slice(('/client/v4/accounts/'+account).length)+url.search;
+   calls.push({path,method:init.method??'GET'});
+   assert.equal(new Headers(init.headers).get('Authorization'),'Bearer '+single.CLOUDFLARE_API_TOKEN);
+   assert.equal(init.redirect,'manual');
+   if(path==='/workers/subdomain')return envelope({subdomain:'weave-389'});
+   if(path==='/access/apps?per_page=100&page=1')return Response.json({success:true,result:[],result_info:{page:1,total_pages:1}});
+   if(path==='/access/organizations')return envelope({auth_domain:'team.cloudflareaccess.com'});
+   return cloud.fetchImpl(input,init);
+ };
+ const result=await provisionTrial({env:single,fetchImpl});
+ assert.equal(result.outcome,'created-verified');
+ assert.deepEqual(calls.map(c=>c.method+' '+c.path),[
+   'GET /workers/subdomain','GET /access/apps?per_page=100&page=1',
+   'GET /access/organizations','POST /access/apps',
+   'GET /access/apps/'+appId,'GET /access/apps/'+appId+'/policies'
+ ]);
+ for(const secret of [single.CLOUDFLARE_API_TOKEN,emailA,emailB])
+   assert.equal(JSON.stringify(result).includes(secret),false);
+});
+
+test('existing Cloudflare token receiving Access HTTP 403 cannot attempt the create POST',async()=>{
+ const single={...env,CLOUDFLARE_ACCESS_TRIAL_TOKEN:undefined};
+ const calls:{path:string;method:string}[]=[];
+ const fetchImpl:typeof fetch=async(input,init={})=>{
+   const path=new URL(String(input)).pathname.slice(('/client/v4/accounts/'+account).length);
+   calls.push({path,method:init.method??'GET'});
+   assert.equal(new Headers(init.headers).get('Authorization'),'Bearer '+single.CLOUDFLARE_API_TOKEN);
+   if(path==='/workers/subdomain')return envelope({subdomain:'weave-389'});
+   if(path==='/access/apps')return new Response(null,{status:403});
+   if(path==='/access/organizations')return new Response(null,{status:403});
+   throw Error('Unexpected request');
+ };
+ await assert.rejects(provisionTrial({env:single,fetchImpl}),/unreadable/);
+ assert.equal(calls.filter(c=>c.method==='POST').length,0);
+});
+
 test('missing token, identities, dispatch authorization or ambiguous identities fail before any cloud call',async()=>{
  for(const bad of [
-    {CLOUDFLARE_ACCESS_TRIAL_TOKEN:undefined},{WEAVE_ACCESS_TRIAL_EMAILS:undefined},
+    {CLOUDFLARE_API_TOKEN:undefined},{WEAVE_ACCESS_TRIAL_EMAILS:undefined},
     {WEAVE_ACCESS_TRIAL_EMAILS:emailA},{WEAVE_ACCESS_TRIAL_EMAILS:emailA+','+emailA.toUpperCase()},
     {WEAVE_ACCESS_TRIAL_EMAILS:'everyone@example.org,*@example.org'},
     {WEAVE_ACCESS_TRIAL_EMAILS:'agent*one@example.org,'+emailB},
