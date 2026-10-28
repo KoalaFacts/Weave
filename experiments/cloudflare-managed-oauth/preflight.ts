@@ -9,6 +9,42 @@ const trialName = 'Weave Managed OAuth Trial';
 const uuid = /^[0-9a-f]{8}(?:-[0-9a-f]{4}){3}-[0-9a-f]{12}$/i;
 const object = (value:unknown):Json => value && typeof value === 'object' && !Array.isArray(value) ? value as Json : {};
 
+/** Only Cloudflare's structured integer error IDs are public diagnostics.
+ * Discard untrusted text, metadata, excessive bodies and malformed streams.
+ */
+async function numericErrorCodes(response:Response):Promise<number[]> {
+    const reader=response.body?.getReader();
+    if(!reader)return [];
+    try {
+        let size=0;
+        const chunks:Uint8Array[]=[];
+        for(;;) {
+            const {done,value}=await reader.read();
+            if(done)break;
+            size+=value.length;
+            if(size>8192)return [];
+            chunks.push(value);
+        }
+        const data=object(JSON.parse(new TextDecoder('utf-8',{fatal:true})
+            .decode(Buffer.concat(chunks))));
+        if(!Array.isArray(data.errors))return [];
+        const codes:number[]=[];
+        for(const entry of data.errors.slice(0,16)) {
+            const code=object(entry).code;
+            if(typeof code==='number' && Number.isSafeInteger(code) &&
+                code>0 && code<=999999 && !codes.includes(code))
+                codes.push(code);
+            if(codes.length===4)break;
+        }
+        return codes;
+    } catch {
+        return [];
+    } finally {
+        await reader.cancel().catch(()=>{});
+        reader.releaseLock();
+    }
+}
+
 /** Read-only operator preflight. A readable API does NOT prove write permission or a successful login. */
 export async function inspectAccess({env = process.env,fetchImpl = fetch}: {
     env?:Environment;fetchImpl?:typeof fetch
@@ -18,7 +54,7 @@ export async function inspectAccess({env = process.env,fetchImpl = fetch}: {
     if(!/^[0-9a-f]{32}$/i.test(account) || !token)
         throw Error('Cloudflare account and credential references are required.');
     const api = 'https://api.cloudflare.com/client/v4/accounts/' + account;
-    async function get(path:string,token:string,label:string):Promise<{status:number;data:Json|null}> {
+    async function get(path:string,token:string,label:string):Promise<{status:number;data:Json|null;errorCodes?:number[]}> {
         let response:Response;
         try {
             response = await fetchImpl(api + path,{
@@ -27,8 +63,12 @@ export async function inspectAccess({env = process.env,fetchImpl = fetch}: {
             });
         } catch { throw Error(label + ' transport failed; no retry or mutation.'); }
         if(!response.ok) {
-            await response.body?.cancel().catch(() => {});
-            return {status:response.status,data:null};
+            let errorCodes:number[]=[];
+            if(response.status>=400)
+                errorCodes=await numericErrorCodes(response);
+            else
+                await response.body?.cancel().catch(()=>{});
+            return {status:response.status,data:null,errorCodes};
         }
         const reader = response.body?.getReader();
         if(!reader) throw Error(label + ' metadata read failed.');
@@ -52,11 +92,11 @@ export async function inspectAccess({env = process.env,fetchImpl = fetch}: {
     const identity=await get('/workers/subdomain',token,'Account');
     if(identity.status!==200 || object(identity.data?.result).subdomain!=='weave-389')
         throw Error('Unable to verify the authorized Weave account.');
-    const apps:{status:number;complete:boolean;trial:TrialApplication[]}={status:0,complete:false,trial:[]};
+    const apps:{status:number;complete:boolean;trial:TrialApplication[];errorCodes?:number[]}={status:0,complete:false,trial:[]};
     for(let page=1;page<=10;page++) {
         const response=await get('/access/apps?per_page=100&page='+page,token,'Access applications');
         apps.status=response.status;
-        if(!response.data) break;
+        if(!response.data) {apps.errorCodes=response.errorCodes??[];break;}
         if(!Array.isArray(response.data.result)) throw Error('Access application metadata is invalid.');
         const pagination=object(response.data.result_info);
         const total=pagination.total_pages;
@@ -110,7 +150,8 @@ export async function inspectAccess({env = process.env,fetchImpl = fetch}: {
         if(page===total){apps.complete=true;break;}
     }
     const organizationResponse=await get('/access/organizations',token,'Access organization');
-    const organization:{status:number;configured:boolean;authDomain:string|null}={status:organizationResponse.status,configured:false,authDomain:null};
+    const organization:{status:number;configured:boolean;authDomain:string|null;errorCodes?:number[]}={status:organizationResponse.status,configured:false,authDomain:null};
+    if(!organizationResponse.data)organization.errorCodes=organizationResponse.errorCodes??[];
     if(organizationResponse.data) {
         const domain=object(organizationResponse.data.result).auth_domain;
         if(typeof domain!=='string' || !/^[a-z0-9](?:[a-z0-9-]{0,61}[a-z0-9])?\.cloudflareaccess\.com$/.test(domain))
