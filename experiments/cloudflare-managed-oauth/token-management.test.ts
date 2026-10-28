@@ -175,9 +175,9 @@ test('explicit account deny wins over Allow and does not leak policies', async (
     const fetchImpl: typeof fetch = async (input, init = {}) => {
         if (new URL(String(input)).pathname.endsWith('/tokens/' + id)) return json({
             id, status: 'active', policies: [
-                {effect: 'allow', resources: {'com.cloudflare.api.account.' + account: '*'},
+                {effect: 'allow', resources: {['com.cloudflare.api.account.' + account]: '*'},
                     permission_groups: [{id: appsEdit}, {id: organizationRead}]},
-                {effect: 'deny', resources: {'com.cloudflare.api.account.' + account: '*'},
+                {effect: 'deny', resources: {['com.cloudflare.api.account.' + account]: '*'},
                     permission_groups: [{id: appsEdit}]}
             ]
         });
