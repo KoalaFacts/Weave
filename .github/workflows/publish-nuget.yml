@@ -66,7 +66,7 @@ jobs:
       actions: read
       id-token: write
     environment:
-      name: nuget
+      name: production
       url: https://www.nuget.org/packages/KoalaFacts.Weave.Cli/${{ needs.verify-source.outputs.version }}
     env:
       VERSION: ${{ needs.verify-source.outputs.version }}
@@ -106,7 +106,7 @@ jobs:
         run: |
           set -euo pipefail
           if [[ -z "$NUGET_USER" || "$NUGET_USER" == *"@"* || "$NUGET_USER" =~ [[:space:]] ]]; then
-            echo '::error::Set the nuget environment variable NUGET_USER to a NuGet profile username (not an email address).'
+            echo '::error::Set the production environment variable NUGET_USER to a NuGet profile username (not an email address).'
             exit 1
           fi
 

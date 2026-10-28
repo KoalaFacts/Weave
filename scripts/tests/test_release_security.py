@@ -85,7 +85,7 @@ class ReleaseWorkflowTests(unittest.TestCase):
         self.assertEqual(dict(re.findall(r'^      ([\w-]+): (\w+)$', permissions, re.MULTILINE)),
                          {'contents': 'read', 'actions': 'read', 'id-token': 'write'})
         self.assertEqual(content.count('id-token: write'), 1)
-        self.assertIn('      name: nuget', publish)
+        self.assertIn('      name: production', publish)
 
     def test_trusted_publishing_follows_package_validation_without_long_lived_key(self):
         content = (ROOT / '.github/workflows/publish-nuget.yml').read_text()

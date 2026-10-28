@@ -52,11 +52,11 @@ user or organization:
 | Repository owner | `KoalaFacts` |
 | Repository | `Weave` |
 | Workflow file | `publish-nuget.yml` (file name only) |
-| Environment | `nuget` |
+| Environment | `production` |
 | Package pattern | `KoalaFacts.Weave.Cli` |
 | Publishing scope | Allow the first package creation and subsequent version publication. |
 
-Set the `NUGET_USER` environment variable in the GitHub `nuget` environment's
+Set the `NUGET_USER` environment variable in the GitHub `production` environment's
 **Variables** settings to the personal NuGet profile username that created the
 policy, even when the policy owner is an organization. Do not use the organization
 name, an email address or an assumed GitHub username. This is a GitHub Actions
