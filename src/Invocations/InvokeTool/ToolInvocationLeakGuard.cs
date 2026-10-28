@@ -1,5 +1,6 @@
 using System.Text.Json;
 using Microsoft.Extensions.Logging;
+using Weave.Invocations;
 using Weave.Security.Scanning;
 using Weave.Shared.Events;
 using Weave.Shared.Ids;
@@ -42,6 +43,9 @@ internal sealed partial class ToolInvocationLeakGuard(
         {
             Success = false,
             ToolName = toolName,
+            InvocationId = invocation.InvocationId,
+            Outcome = InvocationOutcome.NotDispatched,
+            ErrorCode = "outbound-secret-detected",
             Error = "Tool invocation blocked: potential secret leak detected in payload"
         };
     }

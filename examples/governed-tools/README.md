@@ -60,3 +60,12 @@ The existing Codex MCP bridge remains in `codex_bridge.py`; it exposes Agent
 read, submit, status and resume operations, not reviewer approval. Its
 [pilot record](../../docs/implementation/2026-09-23-codex-human-pilot.md)
 describes the separate human decision boundary.
+
+For non-2xx HTTP responses, the bridge exposes only a known `errorCode` that
+matches the HTTP status; other response fields are withheld. In particular,
+`outbound-secret-detected` means this request was blocked by scanning, not that
+an earlier request with the same UUID never executed. An initial submission
+requires both explicit `invocation-not-found` and `approval-not-found` responses
+and no existing local receipt; a generic or malformed 404 is insufficient.
+Query the retained UUID before deciding how to recover. Do not automatically
+retry or replace an unknown outcome with a new UUID.

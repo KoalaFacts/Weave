@@ -62,7 +62,7 @@ public sealed partial class LeakScanner : ILeakScanner
         }
 
         // Shannon entropy analysis for high-entropy strings
-        ScanForHighEntropyStrings(content, findings);
+        ScanForHighEntropyStrings(content, findings, ct);
 
         if (findings.Count > 0)
         {
@@ -78,29 +78,56 @@ public sealed partial class LeakScanner : ILeakScanner
         return Task.FromResult(result);
     }
 
-    private static void ScanForHighEntropyStrings(string content, List<LeakFinding> findings)
+    private static void ScanForHighEntropyStrings(string content, List<LeakFinding> findings, CancellationToken ct)
     {
-        // Split on whitespace and common delimiters to find token-like strings
-        var tokens = content.Split([' ', '\n', '\r', '\t', '"', '\'', '=', ':', ',', ';'],
-            StringSplitOptions.RemoveEmptyEntries);
-
-        foreach (var token in tokens)
+        var start = 0;
+        var index = 0;
+        while (index < content.Length)
         {
-            if (token.Length < MinHighEntropyLength || token.Length > 500)
-                continue;
-
-            var entropy = CalculateShannonEntropy(token);
-            if (entropy >= EntropyThreshold)
+            ct.ThrowIfCancellationRequested();
+            var end = index + 1;
+            var boundary = IsTokenDelimiter(content[index]);
+            if (content[index] == '`')
             {
-                findings.Add(new LeakFinding
+                while (end < content.Length && content[end] == '`')
                 {
-                    PatternName = "high_entropy_string",
-                    Description = $"High entropy string detected (entropy: {entropy:F2})",
-                    Offset = content.IndexOf(token, StringComparison.Ordinal),
-                    Length = token.Length
-                });
+                    ct.ThrowIfCancellationRequested();
+                    end++;
+                }
+                // Markdown edges delimit code; internal backticks can be part of an opaque secret.
+                boundary = IsMarkdownEdge(content, index - 1) || IsMarkdownEdge(content, end);
             }
+            if (!boundary)
+            {
+                index = end;
+                continue;
+            }
+
+            ScanHighEntropyToken(content, start, index - start, findings);
+            start = index = end;
         }
+        ScanHighEntropyToken(content, start, content.Length - start, findings);
+    }
+
+    private static bool IsTokenDelimiter(char value) => value is ' ' or '\n' or '\r' or '\t' or '"' or '\'' or '=' or ':' or ',' or ';';
+
+    private static bool IsMarkdownEdge(string content, int index) => index < 0 || index >= content.Length
+        || IsTokenDelimiter(content[index]) || content[index] is '，' or '。' or '；' or '：' or '、' or '！' or '？';
+
+    private static void ScanHighEntropyToken(string content, int start, int length, List<LeakFinding> findings)
+    {
+        if (length < MinHighEntropyLength || length > 500)
+            return;
+        var entropy = CalculateShannonEntropy(content.Substring(start, length));
+        if (entropy < EntropyThreshold)
+            return;
+        findings.Add(new LeakFinding
+        {
+            PatternName = "high_entropy_string",
+            Description = $"High entropy string detected (entropy: {entropy:F2})",
+            Offset = start,
+            Length = length
+        });
     }
 
     public static double CalculateShannonEntropy(string input)

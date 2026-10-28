@@ -6,6 +6,7 @@ The Host MUST require approval for write_file. This adapter is not a sandbox.
 """
 import argparse
 import hashlib
+from http.client import HTTPException
 import json
 import os
 from pathlib import Path
@@ -15,6 +16,22 @@ from urllib import error, parse, request
 import uuid
 
 MAX_BYTES = 1_048_576
+ERROR_CODES = {
+    400: frozenset(('invalid-route-identity', 'invalid-invocation-id', 'invalid-invocation',
+                    'unexpected-request-input', 'invalid-approval-decision', 'invocation-id-mismatch')),
+    401: frozenset(('invalid-capability',)),
+    403: frozenset(('forbidden',)),
+    404: frozenset(('invocation-not-found', 'approval-not-found', 'proposal-not-found')),
+    409: frozenset(('invocation-id-conflict', 'approval-plan-conflict', 'approval-not-pending',
+                    'approval-review-unavailable', 'approval-already-decided', 'approval-expired',
+                    'approval-rejected', 'approval-cancelled', 'approval-not-executable',
+                    'proposal-unavailable', 'invocation-already-claimed', 'outcome-unknown', 'outcome-not-recorded')),
+    413: frozenset(('request-too-large',)),
+    415: frozenset(('unsupported-content-type',)),
+    422: frozenset(('outbound-secret-detected', 'approval-target-unsupported', 'approval-expired')),
+    503: frozenset(('journal-write-failed', 'proposal-storage-unavailable')),
+}
+ERROR_NEXT = 'Query the retained UUID. Do not claim success, auto-retry, or replace an unknown outcome.'
 INSTRUCTIONS = ('Choose and retain one invocation_id UUID before each intended write. Pending is NOT '
                 'execution success. Ask the human to review that UUID using their separate reviewer. '
                 'Never approve yourself. Query get_status after interruptions. resume_write sends only '
@@ -58,6 +75,22 @@ def load(data):
     if len(data) > MAX_BYTES:
         raise BridgeError('Response or receipt exceeds the bridge byte limit.')
     return json.loads(data, object_pairs_hook=unique, parse_constant=invalid_constant)
+
+
+def safe_error(response, status):
+    # HTTP errors can originate outside Weave. Never expose arbitrary response fields.
+    if status not in ERROR_CODES or response.headers.get_content_type() != 'application/json':
+        return None
+    try:
+        payload = load(response.read(MAX_BYTES + 1))
+    except (HTTPException, OSError, ValueError, RecursionError):
+        return None
+    code = payload.get('errorCode') if isinstance(payload, dict) else None
+    return {'errorCode': code} if isinstance(code, str) and code in ERROR_CODES[status] else None
+
+
+def is_not_found(response, code):
+    return response['http_status'] == 404 and response['result'] == {'errorCode': code}
 
 
 def component(value):
@@ -143,20 +176,24 @@ class Bridge:
             with response:
                 status = response.code
                 if not 200 <= status < 300:
-                    return {'http_status': status, 'result': None, 'next': 'Do not claim success or retry automatically.'}
+                    diagnostic = safe_error(response, status)
+                    guidance = ERROR_NEXT
+                    if diagnostic == {'errorCode': 'outbound-secret-detected'}:
+                        guidance = 'This request was blocked by outbound secret scanning. ' + ERROR_NEXT
+                    return {'http_status': status, 'result': diagnostic, 'next': guidance}
                 if response.headers.get_content_type() != 'application/json':
                     raise BridgeError('Unexpected response type; query the retained UUID, do not repeat the effect.')
                 payload = load(response.read(MAX_BYTES + 1))
                 if not isinstance(payload, dict):
                     raise BridgeError('Invalid response shape; query the retained UUID.')
             return {'http_status': status, 'result': payload}
-        except (error.URLError, OSError, TimeoutError, ValueError, RecursionError):
+        except (error.URLError, HTTPException, OSError, TimeoutError, ValueError, RecursionError):
             return {'http_status': None, 'result': None, 'next': 'Outcome unconfirmed. Query the retained UUID; do not create another UUID or auto-retry.'}
 
     def status(self, invocation_id):
         suffix = '/' + identifier(invocation_id)
         outcome = self.send('GET', suffix)
-        if outcome['http_status'] != 404:
+        if not is_not_found(outcome, 'invocation-not-found'):
             return {'invocation': outcome, 'approval': None}
         return {'invocation': outcome, 'approval': self.send('GET', suffix + '/approval')}
 
@@ -185,7 +222,7 @@ class Bridge:
                 raise BridgeError('Changed content cannot reuse this UUID or its approval.')
             state = self.status(invocation_id)
             approval = state['approval']
-            if prior is None and approval is not None and approval['http_status'] == 404:
+            if prior is None and approval is not None and is_not_found(approval, 'approval-not-found'):
                 # No earlier local submission or server record. Retain identity/hash BEFORE POST,
                 # but never make a body file necessary for subsequent review/status/continuation.
                 self.save(invocation_id, receipt)
