@@ -142,3 +142,55 @@ for(const uri of [
     }],pages)});
     assert.deepEqual((await inspectAccess({env,fetchImpl:f.fetchImpl})).apps.trial,[]);
 });
+
+
+test('classifies an exact Cloudflare Access-not-enabled marker with 9999 without exposing provider text', async () => {
+    const errorBody=JSON.stringify({success:false,errors:[{
+        code:9999,message:'access.api.error.not_enabled: Access is not enabled. Private diagnostic ' + env.CLOUDFLARE_API_TOKEN
+    }],account_id:env.CLOUDFLARE_ACCOUNT_ID});
+    const f=fixture({
+        '/access/apps?per_page=100&page=1':()=>new Response(errorBody,{status:403}),
+        '/access/organizations':()=>new Response(errorBody,{status:403})
+    });
+    const report=await inspectAccess({env,fetchImpl:f.fetchImpl});
+    assert.equal(report.outcome,'blocked');
+    assert.equal(report.apps.status,403);
+    assert.equal(report.organization.status,403);
+    assert.deepEqual(report.apps.errorCodes,[9999]);
+    assert.deepEqual(report.organization.errorCodes,[9999]);
+    assert.equal((report.apps as {accessNotEnabled?:boolean}).accessNotEnabled,true);
+    assert.equal((report.organization as {accessNotEnabled?:boolean}).accessNotEnabled,true);
+    assert.equal(f.calls.length,3);
+    const output=JSON.stringify(report);
+    assert.ok(!output.includes(env.CLOUDFLARE_API_TOKEN));
+    assert.ok(!output.includes(env.CLOUDFLARE_ACCOUNT_ID));
+    assert.ok(!output.includes('access.api.error.not_enabled'));
+});
+
+test('9999 alone, unrelated error messages and forged markers outside errors are not proof of disabled Access', async () => {
+    for(const payload of [
+        {errors:[{code:9999,message:'Account has restricted access.'}]},
+        {errors:[{code:10000,message:'access.api.error.not_enabled'}]},
+        {errors:[{code:9999,message:'unrelated error'}],metadata:'access.api.error.not_enabled'},
+        {errors:[{code:9999,message:{value:'access.api.error.not_enabled'}}]}
+    ]) {
+        const f=fixture({'/access/apps?per_page=100&page=1':()=>new Response(JSON.stringify(payload),{status:403})});
+        const report=await inspectAccess({env,fetchImpl:f.fetchImpl});
+        assert.equal(report.outcome,'blocked');
+        assert.notEqual((report.apps as {accessNotEnabled?:boolean}).accessNotEnabled,true);
+        assert.equal(f.calls.filter(c=>c.path.startsWith('/access/apps')).length,1);
+    }
+});
+
+test('an HTTP redirect or oversized 403 response cannot be mistaken for an Access-not-enabled confirmation', async () => {
+    const body=JSON.stringify({errors:[{code:9999,message:'access.api.error.not_enabled'}]});
+    for(const response of [
+        ()=>new Response(body,{status:302,headers:{Location:'https://evil.invalid/'}}),
+        ()=>new Response(body.repeat(1000),{status:403})
+    ]) {
+        const f=fixture({'/access/apps?per_page=100&page=1':response});
+        const report=await inspectAccess({env,fetchImpl:f.fetchImpl});
+        assert.notEqual((report.apps as {accessNotEnabled?:boolean}).accessNotEnabled,true);
+        assert.deepEqual(report.apps.errorCodes,[]);
+    }
+});
