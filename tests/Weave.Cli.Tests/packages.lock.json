@@ -265,7 +265,7 @@
           "xunit.v3.runner.common": "[3.2.2]"
         }
       },
-      "weave": {
+      "KoalaFacts.Weave": {
         "type": "Project",
         "dependencies": {
           "Microsoft.Extensions.AI.Abstractions": "[10.11.0, )",
@@ -274,41 +274,41 @@
           "Microsoft.Extensions.Options": "[10.0.13, )"
         }
       },
-      "weave.actions": {
+      "KoalaFacts.Weave.Cli": {
         "type": "Project",
         "dependencies": {
-          "Microsoft.Extensions.Http": "[10.0.13, )",
-          "Weave": "[1.0.0, )"
-        }
-      },
-      "weave.cli": {
-        "type": "Project",
-        "dependencies": {
+          "KoalaFacts.Weave": "[1.0.0, )",
           "Microsoft.Extensions.DependencyInjection": "[10.0.13, )",
           "Spectre.Console": "[0.55.2, )",
           "System.CommandLine": "[2.0.7, )",
-          "Weave": "[1.0.0, )",
           "Weave.Actions": "[1.0.0, )",
           "Weave.Cli.Shell": "[1.0.0, )",
           "Weave.Cli.Tui": "[1.0.0, )",
           "Weave.Deploy": "[1.0.0, )"
         }
       },
+      "weave.actions": {
+        "type": "Project",
+        "dependencies": {
+          "KoalaFacts.Weave": "[1.0.0, )",
+          "Microsoft.Extensions.Http": "[10.0.13, )"
+        }
+      },
       "weave.cli.shell": {
         "type": "Project",
         "dependencies": {
+          "KoalaFacts.Weave": "[1.0.0, )",
           "Microsoft.Extensions.DependencyInjection.Abstractions": "[10.0.13, )",
           "Spectre.Console": "[0.55.2, )",
-          "Weave": "[1.0.0, )",
           "Weave.Actions": "[1.0.0, )"
         }
       },
       "weave.cli.tui": {
         "type": "Project",
         "dependencies": {
+          "KoalaFacts.Weave": "[1.0.0, )",
           "Microsoft.Extensions.DependencyInjection.Abstractions": "[10.0.13, )",
           "Spectre.Console": "[0.55.2, )",
-          "Weave": "[1.0.0, )",
           "Weave.Actions": "[1.0.0, )",
           "Weave.Cli.Shell": "[1.0.0, )"
         }
@@ -316,7 +316,7 @@
       "weave.deploy": {
         "type": "Project",
         "dependencies": {
-          "Weave": "[1.0.0, )"
+          "KoalaFacts.Weave": "[1.0.0, )"
         }
       },
       "Microsoft.Extensions.AI.Abstractions": {

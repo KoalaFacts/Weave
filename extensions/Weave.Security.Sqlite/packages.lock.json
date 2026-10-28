@@ -55,7 +55,7 @@
           "SQLitePCLRaw.core": "2.1.12"
         }
       },
-      "weave": {
+      "KoalaFacts.Weave": {
         "type": "Project",
         "dependencies": {
           "Microsoft.Extensions.AI.Abstractions": "[10.11.0, )",

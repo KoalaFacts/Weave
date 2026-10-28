@@ -1284,7 +1284,7 @@
         "resolved": "16.3.0",
         "contentHash": "SgMOdxbz8X65z8hraIs6hOEdnkH6hESTAIUa7viEngHOYaH+6q5XJmwr1+yb9vJpNQ19hCQY69xbFsLtXpobQA=="
       },
-      "weave": {
+      "KoalaFacts.Weave": {
         "type": "Project",
         "dependencies": {
           "Microsoft.Extensions.AI.Abstractions": "[10.11.0, )",
@@ -1296,33 +1296,33 @@
       "Weave.Agents": {
         "type": "Project",
         "dependencies": {
+          "KoalaFacts.Weave": "[1.0.0, )",
           "Microsoft.Extensions.AI": "[10.10.0, )",
           "Microsoft.Extensions.AI.Abstractions": "[10.11.0, )",
           "Microsoft.Extensions.AI.OpenAI": "[10.11.0, )",
           "Microsoft.Extensions.Http": "[10.0.13, )",
-          "System.Threading.RateLimiting": "[10.0.12, )",
-          "Weave": "[1.0.0, )"
+          "System.Threading.RateLimiting": "[10.0.12, )"
         }
       },
       "weave.clitools": {
         "type": "Project",
         "dependencies": {
-          "Weave": "[1.0.0, )"
+          "KoalaFacts.Weave": "[1.0.0, )"
         }
       },
       "weave.dapr": {
         "type": "Project",
         "dependencies": {
-          "Weave": "[1.0.0, )"
+          "KoalaFacts.Weave": "[1.0.0, )"
         }
       },
       "weave.dashboard": {
         "type": "Project",
         "dependencies": {
+          "KoalaFacts.Weave": "[1.0.0, )",
           "Microsoft.FluentUI.AspNetCore.Components": "[4.14.1, )",
           "Microsoft.FluentUI.AspNetCore.Components.Icons": "[4.14.1, )",
           "Microsoft.Orleans.Client": "[10.1.0, )",
-          "Weave": "[1.0.0, )",
           "Weave.Agents": "[1.0.0, )",
           "Weave.Deploy": "[1.0.0, )",
           "Weave.ServiceDefaults": "[1.0.0, )"
@@ -1331,47 +1331,47 @@
       "weave.deploy": {
         "type": "Project",
         "dependencies": {
-          "Weave": "[1.0.0, )"
+          "KoalaFacts.Weave": "[1.0.0, )"
         }
       },
       "weave.directhttp": {
         "type": "Project",
         "dependencies": {
-          "Weave": "[1.0.0, )"
+          "KoalaFacts.Weave": "[1.0.0, )"
         }
       },
       "weave.filesystem": {
         "type": "Project",
         "dependencies": {
-          "Weave": "[1.0.0, )"
+          "KoalaFacts.Weave": "[1.0.0, )"
         }
       },
       "weave.mcp": {
         "type": "Project",
         "dependencies": {
-          "Weave": "[1.0.0, )"
+          "KoalaFacts.Weave": "[1.0.0, )"
         }
       },
       "weave.openapi": {
         "type": "Project",
         "dependencies": {
-          "Weave": "[1.0.0, )"
+          "KoalaFacts.Weave": "[1.0.0, )"
         }
       },
       "weave.security.postgres": {
         "type": "Project",
         "dependencies": {
+          "KoalaFacts.Weave": "[1.0.0, )",
           "Microsoft.Extensions.Options": "[10.0.13, )",
-          "Npgsql": "[10.0.2, )",
-          "Weave": "[1.0.0, )"
+          "Npgsql": "[10.0.2, )"
         }
       },
       "weave.security.sqlite": {
         "type": "Project",
         "dependencies": {
+          "KoalaFacts.Weave": "[1.0.0, )",
           "Microsoft.Data.Sqlite": "[10.0.12, )",
-          "Microsoft.Extensions.Options": "[10.0.13, )",
-          "Weave": "[1.0.0, )"
+          "Microsoft.Extensions.Options": "[10.0.13, )"
         }
       },
       "weave.servicedefaults": {
@@ -1389,11 +1389,11 @@
       "Weave.Silo": {
         "type": "Project",
         "dependencies": {
+          "KoalaFacts.Weave": "[1.0.0, )",
           "Microsoft.AspNetCore.OpenApi": "[10.0.7, )",
           "Microsoft.Orleans.Serialization.SystemTextJson": "[10.1.0, )",
           "Microsoft.Orleans.Server": "[10.1.0, )",
           "Scalar.AspNetCore": "[2.14.8, )",
-          "Weave": "[1.0.0, )",
           "Weave.Agents": "[1.0.0, )",
           "Weave.CliTools": "[1.0.0, )",
           "Weave.Dapr": "[1.0.0, )",

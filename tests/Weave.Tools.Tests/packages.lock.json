@@ -193,7 +193,7 @@
           "xunit.v3.runner.common": "[3.2.2]"
         }
       },
-      "weave": {
+      "KoalaFacts.Weave": {
         "type": "Project",
         "dependencies": {
           "Microsoft.Extensions.AI.Abstractions": "[10.11.0, )",
@@ -205,37 +205,37 @@
       "weave.clitools": {
         "type": "Project",
         "dependencies": {
-          "Weave": "[1.0.0, )"
+          "KoalaFacts.Weave": "[1.0.0, )"
         }
       },
       "weave.dapr": {
         "type": "Project",
         "dependencies": {
-          "Weave": "[1.0.0, )"
+          "KoalaFacts.Weave": "[1.0.0, )"
         }
       },
       "weave.directhttp": {
         "type": "Project",
         "dependencies": {
-          "Weave": "[1.0.0, )"
+          "KoalaFacts.Weave": "[1.0.0, )"
         }
       },
       "weave.filesystem": {
         "type": "Project",
         "dependencies": {
-          "Weave": "[1.0.0, )"
+          "KoalaFacts.Weave": "[1.0.0, )"
         }
       },
       "weave.mcp": {
         "type": "Project",
         "dependencies": {
-          "Weave": "[1.0.0, )"
+          "KoalaFacts.Weave": "[1.0.0, )"
         }
       },
       "weave.openapi": {
         "type": "Project",
         "dependencies": {
-          "Weave": "[1.0.0, )"
+          "KoalaFacts.Weave": "[1.0.0, )"
         }
       },
       "Microsoft.Extensions.AI.Abstractions": {

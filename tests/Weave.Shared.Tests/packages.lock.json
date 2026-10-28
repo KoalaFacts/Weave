@@ -196,7 +196,7 @@
           "xunit.v3.runner.common": "[3.2.2]"
         }
       },
-      "weave": {
+      "KoalaFacts.Weave": {
         "type": "Project",
         "dependencies": {
           "Microsoft.Extensions.AI.Abstractions": "[10.11.0, )",

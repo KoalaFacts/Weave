@@ -24,6 +24,8 @@ jobs:
   build-and-test:
     name: Build & Test
     runs-on: ubuntu-24.04
+    env:
+      VERSION: 0.0.0-ci-validation
     permissions:
       contents: read
       checks: write
@@ -50,7 +52,7 @@ jobs:
         run: dotnet restore Weave.slnx
 
       - name: Build
-        run: dotnet build Weave.slnx --no-restore -c Release
+        run: dotnet build Weave.slnx --no-restore -c Release "-p:Version=$VERSION"
 
       - name: Install the pinned Dashboard Playwright browser
         run: pwsh tests/Weave.Silo.Tests/bin/Release/net10.0/playwright.ps1 install --with-deps --no-shell chromium
@@ -61,12 +63,12 @@ jobs:
           playwright-package: tests/Weave.Silo.Tests/bin/Release/net10.0/.playwright/package
 
       - name: Pack and validate the tool without publishing
-        env:
-          VERSION: 0.0.0-ci-validation
         run: |
           dotnet pack hosts/Weave.Cli/Weave.Cli.csproj -c Release --no-build \
             "-p:Version=$VERSION" -p:IncludeSymbols=false -o packages
           python3 scripts/release/guard.py validate-packages
+          python3 scripts/release/smoke.py \
+            --package "packages/KoalaFacts.Weave.Cli.$VERSION.nupkg" --version "$VERSION"
 
       - name: Test
         env:

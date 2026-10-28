@@ -109,7 +109,7 @@
         "resolved": "0.55.2",
         "contentHash": "tN3KEJQQZwLW9HJnG5YTSAxfBwxsmg1wVuGvhGG2rM+pbl+NGaHU8pDcNofPlOXlgpkbpBMxI5t9o9qPfy3sHQ=="
       },
-      "weave": {
+      "KoalaFacts.Weave": {
         "type": "Project",
         "dependencies": {
           "Microsoft.Extensions.AI.Abstractions": "[10.11.0, )",
@@ -121,25 +121,25 @@
       "weave.actions": {
         "type": "Project",
         "dependencies": {
-          "Microsoft.Extensions.Http": "[10.0.13, )",
-          "Weave": "[1.0.0, )"
+          "KoalaFacts.Weave": "[1.0.0, )",
+          "Microsoft.Extensions.Http": "[10.0.13, )"
         }
       },
       "weave.cli.shell": {
         "type": "Project",
         "dependencies": {
+          "KoalaFacts.Weave": "[1.0.0, )",
           "Microsoft.Extensions.DependencyInjection.Abstractions": "[10.0.13, )",
           "Spectre.Console": "[0.55.2, )",
-          "Weave": "[1.0.0, )",
           "Weave.Actions": "[1.0.0, )"
         }
       },
       "weave.cli.tui": {
         "type": "Project",
         "dependencies": {
+          "KoalaFacts.Weave": "[1.0.0, )",
           "Microsoft.Extensions.DependencyInjection.Abstractions": "[10.0.13, )",
           "Spectre.Console": "[0.55.2, )",
-          "Weave": "[1.0.0, )",
           "Weave.Actions": "[1.0.0, )",
           "Weave.Cli.Shell": "[1.0.0, )"
         }
@@ -147,7 +147,7 @@
       "weave.deploy": {
         "type": "Project",
         "dependencies": {
-          "Weave": "[1.0.0, )"
+          "KoalaFacts.Weave": "[1.0.0, )"
         }
       },
       "Microsoft.Extensions.AI.Abstractions": {

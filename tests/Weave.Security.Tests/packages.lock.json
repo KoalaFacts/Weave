@@ -261,7 +261,7 @@
           "xunit.v3.runner.common": "[3.2.2]"
         }
       },
-      "weave": {
+      "KoalaFacts.Weave": {
         "type": "Project",
         "dependencies": {
           "Microsoft.Extensions.AI.Abstractions": "[10.11.0, )",
@@ -273,17 +273,17 @@
       "weave.security.postgres": {
         "type": "Project",
         "dependencies": {
+          "KoalaFacts.Weave": "[1.0.0, )",
           "Microsoft.Extensions.Options": "[10.0.13, )",
-          "Npgsql": "[10.0.2, )",
-          "Weave": "[1.0.0, )"
+          "Npgsql": "[10.0.2, )"
         }
       },
       "weave.security.sqlite": {
         "type": "Project",
         "dependencies": {
+          "KoalaFacts.Weave": "[1.0.0, )",
           "Microsoft.Data.Sqlite": "[10.0.12, )",
-          "Microsoft.Extensions.Options": "[10.0.13, )",
-          "Weave": "[1.0.0, )"
+          "Microsoft.Extensions.Options": "[10.0.13, )"
         }
       },
       "Microsoft.Data.Sqlite": {

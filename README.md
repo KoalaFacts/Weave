@@ -53,6 +53,18 @@ secrets into chat or commit them to a plugin. Do not use sensitive or important
 data on the demo. The [official GitHub import guide](https://help.openai.com/en/articles/20001504-importing-and-syncing-plugin-marketplaces-from-github)
 describes workspace eligibility and permissions; import does not grant service access.
 
+## CLI and Governed Tools distribution
+
+The first preview release is being prepared. The NuGet tool ID is
+`KoalaFacts.Weave.Cli`; its command remains `weave`. The tool package contains
+the CLI, while the platform release archives also contain the Governed Tools
+Host in `host/`. Local execution requires that Host. These artifacts do not
+include the separate mailbox relay or establish a remote MCP connection.
+
+Use an exact published version from [GitHub Releases](https://github.com/KoalaFacts/Weave/releases)
+when one is available. For package scope, installation verification and the
+release procedure, see [releasing Weave](docs/releasing.md).
+
 ## Try two independent endpoints
 
 From a checkout, install a stable .NET 10 SDK and Node 24.19+. [global.json](global.json) accepts installed .NET 10 feature bands and patches through `latestMinor`; its `10.0.100` baseline is not an exact installation requirement and it does not select .NET 11. Check `dotnet --version` from the repository root, then build the mailbox host and run the [independent endpoint walkthrough](examples/agent-network/README.md):
