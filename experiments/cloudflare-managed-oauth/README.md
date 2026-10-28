@@ -79,8 +79,10 @@ back the new application's exact path/OAuth configuration and the attached
 policy. A failed check means the application **may already exist**; inspect
 Cloudflare and run the existing read-only preflight before attempting any
 further operation. The command deliberately refuses to modify or reuse any
-matching existing app. An API HTTP 403 proves only missing permissions, not
-absence of an Access organization.
+matching existing app. An API HTTP 403 is **ambiguous**: it does not by itself prove missing
+permissions or the existence of an Access organization. In particular, a
+Weave-account token may declare the relevant Access permissions as Allow
+while the provider denies access until Zero Trust onboarding is completed.
 
 **Remaining acceptance:** even a successfully created Access app is not a
 working private MCP connector. The opt-in origin route must be configured and
@@ -106,3 +108,24 @@ array and remains a failing HTTP response. No retry, redirect or write occurs.
 A numeric error is diagnostic evidence, **not** proof of missing permissions or
 permission to create the trial. Interpret it against current Cloudflare API
 documentation before any environment or credential change.
+
+A Cloudflare `errors[].code` of `9999` alone is also ambiguous. The read-only
+preflight reports an extra fixed boolean `accessNotEnabled: true` on the
+failed Access endpoint **only** if the bounded 403+ response contains both
+numeric code `9999` and the exact symbolic error marker
+`access.api.error.not_enabled` in that error's `message`. It never echoes
+provider message text. Any other 9999 response remains unclassified, and
+`accessNotEnabled` is absent on unproven responses. A positive marker means
+Cloudflare reports Access as disabled for the selected account, not a token
+permission failure. It does not authorize billing, an account-plan decision,
+Zero Trust onboarding, or an application creation attempt.
+
+Cloudflare Zero Trust onboarding requires a team name, plan selection and
+payment details even for Free (which Cloudflare says is not charged). Those
+owner-controlled steps are **not** part of the approved Access app trial and
+must not be silently performed. No new access token is required for this
+specific diagnosis.
+
+References:
+- https://developers.cloudflare.com/cloudflare-one/setup/
+- https://github.com/cloudflare/workers-sdk/issues/3573
