@@ -17,11 +17,15 @@ It never creates/modifies an application, policy, credential or database.
 A successful GET does not prove that the token can write Access policies.
 
 The workflow is tested on PRs without cloud credentials. The live read uses
-only reviewed main after its test job succeeds. `CLOUDFLARE_API_TOKEN` verifies
-the existing account. An optional `CLOUDFLARE_ACCESS_TRIAL_TOKEN` is used for
-Access reads; without it the existing token is tried without broadening its
-permissions. Store credentials only in GitHub Actions secrets, never comments.
-Blocked API statuses are retained as failures, not treated as successful setup.
+only reviewed main after its test job succeeds, within the same existing
+`production` environment as creation. Both workflows use the existing
+`CLOUDFLARE_API_TOKEN` for account verification and Access operations. No second
+token secret is required or selected, even when a stale trial token exists.
+Environment protection still applies; PR verification receives no credentials.
+Store credentials only in GitHub Actions secrets, never comments. Blocked API
+statuses remain failures, not successful setup. Reusing a token does not grant
+it new permissions: use the actual API result from this environment rather than
+assuming an older repository-only check tested the same credential.
 
 ## Trial boundary
 
@@ -51,9 +55,10 @@ It runs test/typecheck first, and the creation job runs only for an explicit
 Actions secrets in that environment or repository:
 
 - `CLOUDFLARE_ACCOUNT_ID` and the existing `CLOUDFLARE_API_TOKEN` for the
-  fixed `weave-389` account identity check (no writes with this token);
-- `CLOUDFLARE_ACCESS_TRIAL_TOKEN` with account-scoped **Access: Apps and
-  Policies Edit** permission, also readable against Access apps/organization;
+  fixed `weave-389` account identity check, Access reads and the approved create.
+  That same token must have account-scoped **Access: Apps and Policies Write**
+  and access to the organization read endpoint. Do not create, copy, rotate or
+  broaden a token merely because a differently named secret is absent;
 - `WEAVE_ACCESS_TRIAL_EMAILS`: **two or more explicitly approved**, distinct
   exact email addresses, comma-separated. Do not use a wildcard, domain rule,
   Git author email, or Everyone. These addresses are read as a secret and are
