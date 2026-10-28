@@ -90,8 +90,8 @@ def resolve_source(repository, run_id, requested_version='', get=gh_get):
 def validate_packages(directory, version):
     validate_version(version)
     require(directory.is_dir() and not directory.is_symlink(), 'Package directory is missing or linked.')
-    expected = f'Weave.Cli.{version}.nupkg'
-    allowed = {expected, f'Weave.Cli.{version}.snupkg'}
+    expected = f'KoalaFacts.Weave.Cli.{version}.nupkg'
+    allowed = {expected, f'KoalaFacts.Weave.Cli.{version}.snupkg'}
     files = list(directory.iterdir())
     require(any(p.name == expected for p in files), 'Required tool package is missing.')
     for path in files:
@@ -113,7 +113,7 @@ def validate_packages(directory, version):
                 require(len(metadata) == 1, 'Invalid package metadata.')
                 ids = [e.text for e in metadata[0] if e.tag.rsplit('}', 1)[-1] == 'id']
                 versions = [e.text for e in metadata[0] if e.tag.rsplit('}', 1)[-1] == 'version']
-                require(ids == ['Weave.Cli'] and versions == [version], 'Package identity or version differs from release.')
+                require(ids == ['KoalaFacts.Weave.Cli'] and versions == [version], 'Package identity or version differs from release.')
         except (zipfile.BadZipFile, ET.ParseError, UnicodeError) as error:
             raise ValueError('Invalid package or manifest.') from error
 

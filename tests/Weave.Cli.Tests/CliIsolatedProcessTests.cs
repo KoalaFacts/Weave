@@ -69,7 +69,7 @@ public sealed class CliIsolatedProcessTests
         uncached.VisibleOutput.ShouldContain("no update cache yet");
         cached.ExitCode.ShouldBe(0, cached.StandardError);
         cached.VisibleOutput.ShouldContain("v999999.0.0 is available");
-        cached.VisibleOutput.ShouldContain("dotnet tool update --global Weave.Cli");
+        cached.VisibleOutput.ShouldContain("dotnet tool update --global KoalaFacts.Weave.Cli");
         cached.VisibleOutput.ShouldNotContain("no update cache yet");
         (await File.ReadAllTextAsync(cachePath, TestContext.Current.CancellationToken)).ShouldBe(cache);
         File.Exists(cli.ConfigPath).ShouldBeFalse();

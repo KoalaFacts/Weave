@@ -208,7 +208,7 @@
           "xunit.v3.runner.common": "[3.2.2]"
         }
       },
-      "weave": {
+      "KoalaFacts.Weave": {
         "type": "Project",
         "dependencies": {
           "Microsoft.Extensions.AI.Abstractions": "[10.11.0, )",
@@ -220,15 +220,15 @@
       "weave.mailbox.host": {
         "type": "Project",
         "dependencies": {
-          "Weave": "[1.0.0, )",
+          "KoalaFacts.Weave": "[1.0.0, )",
           "Weave.Mailboxes.Sqlite": "[1.0.0, )"
         }
       },
       "weave.mailboxes.sqlite": {
         "type": "Project",
         "dependencies": {
-          "Microsoft.Data.Sqlite": "[10.0.12, )",
-          "Weave": "[1.0.0, )"
+          "KoalaFacts.Weave": "[1.0.0, )",
+          "Microsoft.Data.Sqlite": "[10.0.12, )"
         }
       },
       "Microsoft.Data.Sqlite": {

@@ -61,9 +61,13 @@ jobs:
     needs: verify-source
     runs-on: ubuntu-latest
     timeout-minutes: 10
+    permissions:
+      contents: read
+      actions: read
+      id-token: write
     environment:
       name: nuget
-      url: https://www.nuget.org/packages/Weave.Cli/${{ needs.verify-source.outputs.version }}
+      url: https://www.nuget.org/packages/KoalaFacts.Weave.Cli/${{ needs.verify-source.outputs.version }}
     env:
       VERSION: ${{ needs.verify-source.outputs.version }}
       SOURCE_SHA: ${{ needs.verify-source.outputs.source_sha }}
@@ -92,21 +96,38 @@ jobs:
           merge-multiple: true
           digest-mismatch: error
 
-      - name: Verify package identity and version before exposing the publish key
+      - name: Verify package identity and version before requesting publishing credentials
         run: python3 scripts/release/guard.py validate-packages
 
-      - name: Publish to NuGet.org
+      - name: Validate NuGet profile configuration
         env:
-          NUGET_API_KEY: ${{ secrets.NUGET_API_KEY }}
+          NUGET_USER: ${{ vars.NUGET_USER }}
         shell: bash
         run: |
           set -euo pipefail
-          test -n "$NUGET_API_KEY" || { echo '::error::Publishing credential is missing.'; exit 1; }
+          if [[ -z "$NUGET_USER" || "$NUGET_USER" == *"@"* || "$NUGET_USER" =~ [[:space:]] ]]; then
+            echo '::error::Set the nuget environment variable NUGET_USER to a NuGet profile username (not an email address).'
+            exit 1
+          fi
+
+      - name: Authenticate to NuGet with OIDC
+        id: nuget-login
+        uses: NuGet/login@8d196754b4036150537f80ac539e15c2f1028841 # v1.2.0
+        with:
+          user: ${{ vars.NUGET_USER }}
+
+      - name: Publish to NuGet.org
+        env:
+          NUGET_PUBLISH_TOKEN: ${{ steps.nuget-login.outputs.NUGET_API_KEY }}
+        shell: bash
+        run: |
+          set -euo pipefail
+          test -n "$NUGET_PUBLISH_TOKEN" || { echo '::error::Short-lived publishing credential is missing.'; exit 1; }
           for pkg in packages/*.nupkg packages/*.snupkg; do
             if [ -f "$pkg" ]; then
               dotnet nuget push "$pkg" \
                 --source https://api.nuget.org/v3/index.json \
-                --api-key "$NUGET_API_KEY" \
+                --api-key "$NUGET_PUBLISH_TOKEN" \
                 --skip-duplicate
             fi
           done

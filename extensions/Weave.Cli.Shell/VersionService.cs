@@ -5,8 +5,8 @@ namespace Weave.Cli.Shell;
 
 internal sealed class VersionService(TimeProvider timeProvider)
 {
-    public const string UpgradeCommand = "dotnet tool update --global Weave.Cli";
-    private const string NuGetIndexUrl = "https://api.nuget.org/v3-flatcontainer/weave.cli/index.json";
+    public const string UpgradeCommand = "dotnet tool update --global KoalaFacts.Weave.Cli";
+    private const string NuGetIndexUrl = "https://api.nuget.org/v3-flatcontainer/koalafacts.weave.cli/index.json";
 
     private static readonly TimeSpan _cacheTtl = TimeSpan.FromHours(24);
     private static readonly TimeSpan _networkTimeout = TimeSpan.FromSeconds(3);

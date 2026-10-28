@@ -1,7 +1,7 @@
 #!/bin/sh
 # Weave CLI installer for macOS and Linux
 # Usage:  curl -fsSL https://raw.githubusercontent.com/KoalaFacts/Weave/main/scripts/install.sh | sh
-# Pinned: WEAVE_VERSION=0.1.0 curl -fsSL ... | sh
+# Pinned: curl -fsSL ... | WEAVE_VERSION=0.1.0 sh
 set -e
 
 REPO="KoalaFacts/Weave"

@@ -4,7 +4,7 @@
     <PackAsTool>true</PackAsTool>
     <ToolCommandName>weave</ToolCommandName>
     <AssemblyName>weave</AssemblyName>
-    <PackageId>Weave.Cli</PackageId>
+    <PackageId>KoalaFacts.Weave.Cli</PackageId>
     <Description>CLI for Weave — set up AI assistants with guardrails you control.</Description>
     <RootNamespace>Weave.Cli</RootNamespace>
   </PropertyGroup>

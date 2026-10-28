@@ -29,7 +29,7 @@
           "SQLitePCLRaw.core": "2.1.12"
         }
       },
-      "weave": {
+      "KoalaFacts.Weave": {
         "type": "Project",
         "dependencies": {
           "Microsoft.Extensions.AI.Abstractions": "[10.11.0, )"
@@ -38,8 +38,8 @@
       "weave.mailboxes.sqlite": {
         "type": "Project",
         "dependencies": {
-          "Microsoft.Data.Sqlite": "[10.0.12, )",
-          "Weave": "[1.0.0, )"
+          "KoalaFacts.Weave": "[1.0.0, )",
+          "Microsoft.Data.Sqlite": "[10.0.12, )"
         }
       },
       "Microsoft.Data.Sqlite": {
