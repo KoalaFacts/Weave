@@ -10,7 +10,7 @@ const accessNames = [
     'Access: Organizations, Identity Providers, and Groups Read'
 ];
 const json = (result: unknown) => Response.json({success: true, result});
-function fixture(kind = 'user', denied = false, write = true) {
+function fixture(kind = 'user', denied = false, write = true, policies?: unknown[]) {
     const root = kind === 'user' ? '/user/tokens' : '/accounts/' + account + '/tokens';
     const calls: string[] = [];
     const fetchImpl: typeof fetch = async (input, init = {}) => {
@@ -23,7 +23,7 @@ function fixture(kind = 'user', denied = false, write = true) {
         if (path === '/accounts/' + account + '/workers/subdomain') return json({subdomain: 'weave-389'});
         if (path.endsWith('/verify')) return path === root + '/verify' ? json({id, status: 'active'}) : new Response(null, {status: 403});
         if (path === root + '/' + id) return denied ? new Response(env.CLOUDFLARE_API_TOKEN, {status: 403}) : json({
-            id, status: 'active', name: 'private-token-name', policies: [{effect: 'allow', permission_groups: [{id: group}],
+            id, status: 'active', name: 'private-token-name', policies: policies ?? [{effect: 'allow', permission_groups: [{id: group}],
                 resources: {[kind === 'user' ? 'com.cloudflare.api.user.*' : 'com.cloudflare.api.account.' + account]: '*'}}]
         });
         if (path === root + '/permission_groups?name=' + encodeURIComponent(kind === 'user' ? 'API Tokens Write' : 'Account API Tokens Write')) return json([{id: group,
@@ -187,4 +187,51 @@ test('explicit account deny wins over Allow and does not leak policies', async (
     assert.equal(report.accessAppsPolicy, 'deny');
     assert.equal(report.accessOrganizationPolicy, 'allow');
     assert.equal(report.readOnly, true);
+});
+
+const targetResource = 'com.cloudflare.api.account.' + account;
+const wildcardResource = 'com.cloudflare.api.account.*';
+const accessPolicy = (effect: string, resources: unknown) => ({
+    effect, resources, permission_groups: [{id: appsEdit}, {id: organizationRead}]
+});
+const targetAllow = accessPolicy('allow', {[targetResource]: '*'});
+const nestedDeny = accessPolicy('deny', {[targetResource]: {'*': '*'}});
+const resourceCases: {name: string; policies: unknown[]; expected: string}[] = [
+    {name: 'wildcard account allow', policies: [accessPolicy('allow', {[wildcardResource]: '*'})], expected: 'allow'},
+    {name: 'other account remains absent', policies: [accessPolicy('allow', {
+        ['com.cloudflare.api.account.' + '9'.repeat(32)]: '*'
+    })], expected: 'absent'},
+    {name: 'unrelated deny does not obscure target allow', policies: [targetAllow, accessPolicy('deny', {
+        ['com.cloudflare.api.account.' + '9'.repeat(32)]: {'*': '*'}
+    })], expected: 'allow'},
+    {name: 'explicit deny remains conclusive despite an ambiguous policy', policies: [targetAllow, nestedDeny,
+        accessPolicy('deny', {[wildcardResource]: '*'})], expected: 'deny'},
+    {name: 'nested target allow is not absence', policies: [accessPolicy('allow', {[targetResource]: {'*': '*'}})], expected: 'unknown'},
+    {name: 'nested target deny cannot be covered by allow', policies: [targetAllow, nestedDeny], expected: 'unknown'},
+    {name: 'ambiguous deny before allow remains unknown', policies: [nestedDeny, targetAllow], expected: 'unknown'},
+    {name: 'nested wildcard deny cannot be covered by allow', policies: [targetAllow,
+        accessPolicy('deny', {[wildcardResource]: {'*': '*'}})], expected: 'unknown'},
+    {name: 'null target value is unknown', policies: [targetAllow, accessPolicy('deny', {[targetResource]: null})], expected: 'unknown'},
+    {name: 'array wildcard value is unknown', policies: [targetAllow, accessPolicy('deny', {[wildcardResource]: []})], expected: 'unknown'},
+    {name: 'non-wildcard target string is unknown', policies: [targetAllow,
+        accessPolicy('deny', {[targetResource]: 'restricted-synthetic-resource'})], expected: 'unknown'},
+    {name: 'target wildcard does not hide an ambiguous wildcard scope', policies: [accessPolicy('allow', {
+        [targetResource]: '*', [wildcardResource]: null
+    })], expected: 'unknown'},
+    {name: 'wildcard allow does not hide an ambiguous target scope', policies: [accessPolicy('allow', {
+        [wildcardResource]: '*', [targetResource]: {'*': '*'}
+    })], expected: 'unknown'},
+    {name: 'missing resources remain unknown', policies: [targetAllow, accessPolicy('deny', undefined)], expected: 'unknown'},
+    {name: 'malformed resources remain unknown', policies: [targetAllow, accessPolicy('deny', 'invalid')], expected: 'unknown'}
+];
+for (const {name, policies, expected} of resourceCases) test('Access scope: ' + name, async () => {
+    const f = fixture('account', false, false, policies);
+    const report = await inspectTokenManagement({env, fetchImpl: f.fetchImpl});
+    assert.equal(report.outcome, 'readable');
+    assert.equal(report.accessAppsPolicy, expected);
+    assert.equal(report.accessOrganizationPolicy, expected);
+    assert.equal(report.readOnly, true); assert.equal(report.writePermissionVerified, false);
+    assert.equal(f.calls.length, 8);
+    for (const secret of [account, id, env.CLOUDFLARE_API_TOKEN, 'private-token-name', 'restricted-synthetic-resource'])
+        assert.equal(JSON.stringify(report).includes(secret), false);
 });

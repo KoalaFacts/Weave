@@ -113,9 +113,12 @@ export async function inspectTokenManagement({env = process.env, fetchImpl = fet
                     ambiguous = true; continue;
                 }
                 const resources = policy.resources as Json;
-                const matchesAccount = resources['com.cloudflare.api.account.' + account] === '*' ||
-                    resources['com.cloudflare.api.account.*'] === '*';
-                if (!matchesAccount) continue;
+                const accountResources = ['com.cloudflare.api.account.' + account, 'com.cloudflare.api.account.*']
+                    .filter(key => Object.hasOwn(resources, key));
+                if (accountResources.some(key => resources[key] !== '*')) {
+                    ambiguous = true; continue;
+                }
+                if (!accountResources.length) continue;
                 if (policy.effect === 'deny') denied = true;
                 else if (policy.effect === 'allow') allowed = true;
                 else ambiguous = true;
