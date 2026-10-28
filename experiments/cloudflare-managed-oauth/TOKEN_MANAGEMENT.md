@@ -41,3 +41,21 @@ Official contracts:
 Verification: `node --test experiments/cloudflare-managed-oauth/*.test.ts` on
 Node24 and the existing strict typecheck. Fake HTTP regressions are not live
 Cloudflare permission evidence.
+
+## Permission declaration diagnostic
+
+The same live GET-only inspection also evaluates the existing account token's
+**Access: Apps and Policies Edit/Write** and **Access: Organizations, Identity
+Providers, and Groups Read** policy declarations for the verified Weave account.
+The outputs are `accessAppsPolicy` and `accessOrganizationPolicy`, each one
+of `allow`, `deny`, `absent`, or `unknown`. Explicit deny wins;
+permissions on **another account** do not count; an inaccessible group catalogue
+or ambiguous policy never produces a false `allow`. These bounded fixed-status
+values do not expose IDs, email addresses, policy contents, or token values.
+
+An `allow` is **not a working API grant**. Actual Access-app and organization
+HTTP status remains authoritative. In particular, GitHub plugin Full Access is
+not Cloudflare account-token authorization, and `managementWriteDeclared`
+does not prove a token can extend its own permissions. This check does not
+automatically change any token, nor is it a substitute for selecting exact
+trial identities or for the mandatory final least-privilege cleanup.
