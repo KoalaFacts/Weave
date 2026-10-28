@@ -83,7 +83,8 @@ test('oversized, malformed or stream-failed Access error bodies fail closed with
 
 test('redirect remains blocked without following or reading response body',async()=>{
     const f=replies(
-        ()=>new Response(null,{status:302,headers:{Location:'https://evil.invalid/'}}),
+        ()=>Response.json({success:false,errors:[{code:10000,message:token}]},
+            {status:302,headers:{Location:'https://evil.invalid/'}}),
         ()=>envelope({auth_domain:'example.cloudflareaccess.com'})
     );
     const result=await inspectAccess({env,fetchImpl:f.fetchImpl});
