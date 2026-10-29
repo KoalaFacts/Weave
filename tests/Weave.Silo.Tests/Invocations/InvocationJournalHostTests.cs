@@ -175,6 +175,7 @@ public sealed class InvocationJournalHostTests
             WorkspaceId = workspace,
             IssuedTo = subject,
             Grants = grants,
+            Kind = Weave.Silo.Tests.Invocations.TestPrincipals.For(grants),
             Lifetime = expired ? TimeSpan.FromMinutes(-1) : TimeSpan.FromMinutes(5)
         });
 

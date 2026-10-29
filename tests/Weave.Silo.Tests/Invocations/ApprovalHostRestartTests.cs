@@ -56,7 +56,7 @@ public sealed class ApprovalHostRestartTests
                 using var client = host.CreateClient();
                 var tool = Tool(host, workspace);
                 (await tool.GetHandleAsync()).ShouldBeNull();
-                var approver = Token(host, workspace, "operator", ["invocation:read", "approval:decide", "tool:files:approve:write_file"]);
+                var approver = Token(host, workspace, "operator", ["invocation:read", "tool:files:approve:write_file"]);
                 var approval = (await tool.GetApprovalAsync(id, approver)).ShouldNotBeNull();
                 approval.PlanDigest.ShouldBe(planDigest);
                 (await tool.DecideApprovalAsync(id, planDigest, InvocationApprovalDecision.Approve, approver)).Succeeded.ShouldBeTrue();
@@ -97,6 +97,7 @@ public sealed class ApprovalHostRestartTests
             WorkspaceId = workspace,
             IssuedTo = subject,
             Grants = grants,
+            Kind = TestPrincipals.For(grants),
             Lifetime = TimeSpan.FromMinutes(5)
         });
 

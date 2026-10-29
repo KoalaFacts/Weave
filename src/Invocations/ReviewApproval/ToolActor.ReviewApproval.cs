@@ -71,7 +71,7 @@ public sealed partial class ToolActor
         async Task AuthorizeReviewerAsync()
         {
             await authorizer.AuthorizeAsync(token, "invocation:read", _identity.WorkspaceId);
-            await authorizer.AuthorizeAsync(token, "approval:decide", _identity.WorkspaceId);
+            await authorizer.AuthorizeAsync(token, PrincipalRequirement.Human, _identity.WorkspaceId);
             await authorizer.AuthorizeAsync(token, ToolCapability.Approve(_identity.ToolName, approval.Operation), _identity.WorkspaceId);
             token.CancellationToken.ThrowIfCancellationRequested();
         }

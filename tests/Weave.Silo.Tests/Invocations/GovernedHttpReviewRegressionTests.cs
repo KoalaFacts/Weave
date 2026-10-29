@@ -43,7 +43,7 @@ public sealed partial class GovernedHttpEntryTests
         var request = Request();
         using var pending = await fx.SendAsync(HttpMethod.Post, fx.Route, request, fx.Token());
         pending.StatusCode.ShouldBe(HttpStatusCode.Accepted);
-        var approver = fx.Token("operator", ["invocation:read", "approval:decide", "tool:files:approve:write_file"]);
+        var approver = fx.Token("operator", ["invocation:read", "tool:files:approve:write_file"]);
         var id = request.InvocationId!.Value;
         var approval = (await fx.Tool.GetApprovalAsync(id, approver)).ShouldNotBeNull();
         (await fx.Tool.DecideApprovalAsync(id, approval.PlanDigest,

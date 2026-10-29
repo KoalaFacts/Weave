@@ -134,6 +134,7 @@ public sealed class ToolApprovalBoundaryTests
             WorkspaceId = "workspace",
             IssuedTo = "writer",
             Grants = [grant],
+            Kind = Weave.Silo.Tests.Invocations.TestPrincipals.For([grant]),
             Lifetime = TimeSpan.FromHours(1)
         });
 

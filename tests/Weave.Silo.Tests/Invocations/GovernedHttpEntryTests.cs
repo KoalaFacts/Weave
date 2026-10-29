@@ -96,7 +96,7 @@ public sealed partial class GovernedHttpEntryTests
         attempt.StatusCode.ShouldBe(HttpStatusCode.NotFound);
 
         // Operator decisions still use the protected backend, not an unexplained-hash HTTP approval button.
-        var approver = fx.Token("operator", ["invocation:read", "approval:decide", "tool:files:approve:write_file"]);
+        var approver = fx.Token("operator", ["invocation:read", "tool:files:approve:write_file"]);
         var approval = (await fx.Tool.GetApprovalAsync(request.InvocationId!.Value, approver)).ShouldNotBeNull();
         (await fx.Tool.DecideApprovalAsync(request.InvocationId.Value, approval.PlanDigest,
             InvocationApprovalDecision.Approve, approver)).Succeeded.ShouldBeTrue();
@@ -270,6 +270,7 @@ public sealed partial class GovernedHttpEntryTests
                 WorkspaceId = Workspace,
                 IssuedTo = subject,
                 Grants = grants ?? ["tool:files:invoke:read_file", "tool:files:invoke:write_file", "invocation:read"],
+                Kind = TestPrincipals.For(grants ?? ["tool:files:invoke:read_file", "tool:files:invoke:write_file", "invocation:read"]),
                 Lifetime = expired ? TimeSpan.FromMinutes(-1) : TimeSpan.FromMinutes(5)
             });
 

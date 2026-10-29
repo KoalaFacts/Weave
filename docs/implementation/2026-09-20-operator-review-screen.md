@@ -1,5 +1,7 @@
 # Read-only operator review screen
 
+> **Superseded in part (2026-10-29):** the `approval:decide` grant no longer exists. Decisions now require a Human principal plus the exact operation approval grant; see [human-only approval decisions](2026-10-29-human-approval-principals.md).
+
 ## Scope
 
 The existing Blazor Dashboard now has `/approvals/review`, reached through the

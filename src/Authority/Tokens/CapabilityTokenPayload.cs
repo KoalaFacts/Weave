@@ -16,6 +16,7 @@ internal static class CapabilityTokenPayload
         && HasValidTokenId(token.TokenId)
         && IsValidField(token.WorkspaceId)
         && IsValidField(token.IssuedTo)
+        && Enum.IsDefined(token.Kind)
         && token.Grants is not null
         && token.Grants.Count <= MaximumGrantCount
         && token.Grants.All(IsValidField);
@@ -24,11 +25,12 @@ internal static class CapabilityTokenPayload
     {
         using var buffer = new MemoryStream();
         using var writer = new BinaryWriter(buffer, StrictUtf8, leaveOpen: true);
-        // Domain separation intentionally invalidates the ambiguous pre-v2 signing format.
-        writer.Write("Weave.CapabilityToken/v2");
+        // Domain separation intentionally invalidates earlier signing formats; v3 signs the principal kind.
+        writer.Write("Weave.CapabilityToken/v3");
         writer.Write(token.TokenId);
         writer.Write(token.WorkspaceId);
         writer.Write(token.IssuedTo);
+        writer.Write((int)token.Kind);
         writer.Write(token.IssuedAt.UtcDateTime.Ticks);
         writer.Write(token.ExpiresAt.UtcDateTime.Ticks);
         writer.Write(token.Grants.Count);

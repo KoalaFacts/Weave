@@ -14,7 +14,7 @@ public sealed partial class GovernedHttpEntryTests
         var request = Request();
         using var pending = await fx.SendAsync(HttpMethod.Post, fx.Route, request, fx.Token());
         pending.StatusCode.ShouldBe(HttpStatusCode.Accepted);
-        var reviewer = fx.Token("operator", ["invocation:read", "approval:decide", "tool:files:approve:write_file"]);
+        var reviewer = fx.Token("operator", ["invocation:read", "tool:files:approve:write_file"]);
         var original = (await fx.Tool.GetApprovalAsync(request.InvocationId!.Value, reviewer)).ShouldNotBeNull();
         await fx.Tool.DisconnectAsync();
         await fx.ConnectAsync();
@@ -48,7 +48,7 @@ public sealed partial class GovernedHttpEntryTests
         var request = Request();
         using var pending = await fx.SendAsync(HttpMethod.Post, fx.Route, request, fx.Token());
         pending.StatusCode.ShouldBe(HttpStatusCode.Accepted);
-        var reviewer = fx.Token("operator", ["invocation:read", "approval:decide", "tool:files:approve:write_file"]);
+        var reviewer = fx.Token("operator", ["invocation:read", "tool:files:approve:write_file"]);
         var approval = (await fx.Tool.GetApprovalAsync(request.InvocationId!.Value, reviewer)).ShouldNotBeNull();
         var decider = decision == InvocationApprovalDecision.Cancel
             ? fx.Token(grants: ["invocation:cancel"]) : reviewer;
@@ -70,7 +70,7 @@ public sealed partial class GovernedHttpEntryTests
         pending.StatusCode.ShouldBe(HttpStatusCode.Accepted);
         await fx.Tool.DisconnectAsync();
         using var response = await fx.SendAsync(HttpMethod.Post, ReviewRoute(fx, request), request,
-            fx.Token("operator", ["invocation:read", "approval:decide", "tool:files:approve:write_file"]));
+            fx.Token("operator", ["invocation:read", "tool:files:approve:write_file"]));
         response.StatusCode.ShouldBe(HttpStatusCode.Conflict);
         (await JsonAsync(response)).GetProperty("errorCode").GetString().ShouldBe("approval-review-unavailable");
     }
@@ -81,7 +81,7 @@ public sealed partial class GovernedHttpEntryTests
         await using var fx = new Fixture(requireApproval: true);
         var request = Request();
         using var response = await fx.SendAsync(HttpMethod.Post, ReviewRoute(fx, Request()), request,
-            fx.Token("operator", ["invocation:read", "approval:decide", "tool:files:approve:write_file"]));
+            fx.Token("operator", ["invocation:read", "tool:files:approve:write_file"]));
         response.StatusCode.ShouldBe(HttpStatusCode.BadRequest);
         (await JsonAsync(response)).GetProperty("errorCode").GetString().ShouldBe("invocation-id-mismatch");
     }
@@ -93,7 +93,7 @@ public sealed partial class GovernedHttpEntryTests
         await fx.ConnectAsync();
         var request = Request();
         using var response = await fx.SendAsync(HttpMethod.Post, ReviewRoute(fx, request), request,
-            fx.Token("operator", ["invocation:read", "approval:decide", "tool:files:approve:write_file"]));
+            fx.Token("operator", ["invocation:read", "tool:files:approve:write_file"]));
         response.StatusCode.ShouldBe(HttpStatusCode.NotFound);
         var body = await response.Content.ReadAsStringAsync(TestContext.Current.CancellationToken);
         body.ShouldNotContain(Path.GetDirectoryName(fx.Target)!);
@@ -109,7 +109,7 @@ public sealed partial class GovernedHttpEntryTests
         var request = Request();
         using var pending = await fx.SendAsync(HttpMethod.Post, fx.Route, request, fx.Token());
         pending.StatusCode.ShouldBe(HttpStatusCode.Accepted);
-        var reviewer = fx.Token("operator", ["invocation:read", "approval:decide", "tool:files:approve:write_file"]);
+        var reviewer = fx.Token("operator", ["invocation:read", "tool:files:approve:write_file"]);
         fx.Client.DefaultRequestHeaders.Authorization = null;
         using var denied = await fx.SendAsync(HttpMethod.Post, ReviewRoute(fx, request), request, reviewer);
         denied.StatusCode.ShouldBe(HttpStatusCode.Unauthorized);

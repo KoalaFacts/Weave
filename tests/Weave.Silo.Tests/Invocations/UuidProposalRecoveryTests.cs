@@ -320,11 +320,12 @@ public sealed partial class UuidProposalRecoveryTests : IDisposable
             WorkspaceId = "uuid-pilot",
             IssuedTo = subject,
             Grants = grants,
+            Kind = TestPrincipals.For(grants),
             Lifetime = TimeSpan.FromMinutes(5)
         });
         public CapabilityToken Agent() => Token("agent", ["invocation:read", "tool:files:invoke:write_file"]);
         public CapabilityToken Reader() => Token("agent", ["invocation:read", "invocation:proposal:read"]);
-        public CapabilityToken Reviewer() => Token("human", ["invocation:read", "approval:decide", "tool:files:approve:write_file"]);
+        public CapabilityToken Reviewer() => Token("human", ["invocation:read", "tool:files:approve:write_file"]);
         public async Task ConnectAsync(string? root = null)
         {
             Directory.CreateDirectory(root ?? Path.GetDirectoryName(Target)!);

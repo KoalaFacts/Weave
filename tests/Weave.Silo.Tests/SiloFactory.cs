@@ -27,6 +27,7 @@ public sealed class SiloFactory : WebApplicationFactory<Program>
             WorkspaceId = workspaceId,
             IssuedTo = "silo-test-operator",
             Grants = new HashSet<string>(grants, StringComparer.Ordinal),
+            Kind = Weave.Silo.Tests.Invocations.TestPrincipals.For(new HashSet<string>(grants, StringComparer.Ordinal)),
             Lifetime = TimeSpan.FromMinutes(5)
         });
         client.DefaultRequestHeaders.Remove("X-Weave-Capability");

@@ -130,7 +130,8 @@ public sealed partial class ReviewedApprovalDecisionTests
         {
             WorkspaceId = fx.Workspace,
             IssuedTo = "operator",
-            Grants = ["invocation:read", "approval:decide", "tool:files:approve:write_file"],
+            Grants = ["invocation:read", "tool:files:approve:write_file"],
+            Kind = TestPrincipals.For(["invocation:read", "tool:files:approve:write_file"]),
             Lifetime = TimeSpan.FromMinutes(-1)
         }) : fx.Reviewer();
         if (condition == "tampered")

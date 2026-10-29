@@ -557,6 +557,7 @@ public sealed partial class DaprWorkspacePluginFlowTests : IClassFixture<SiloFac
             WorkspaceId = workspaceId,
             IssuedTo = "dapr-installation-operator",
             Grants = secondGrant is null ? [grant] : [grant, secondGrant],
+            Kind = Weave.Silo.Tests.Invocations.TestPrincipals.For(secondGrant is null ? [grant] : [grant, secondGrant]),
             Lifetime = lifetime ?? TimeSpan.FromMinutes(5)
         });
 

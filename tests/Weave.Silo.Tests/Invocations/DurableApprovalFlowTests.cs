@@ -1,4 +1,5 @@
 using Weave.Invocations;
+using Weave.Security.Tokens;
 using Weave.Tools.Tool;
 
 namespace Weave.Silo.Tests.Invocations;
@@ -33,18 +34,39 @@ public sealed class DurableApprovalFlowTests
     }
 
     [Theory]
-    [InlineData("approval:decide")]
-    [InlineData("tool:files:approve:write_file")]
-    [InlineData("tool:files:invoke:write_file")]
-    public async Task DecideApprovalAsync_MissingDecisionAuthority_DoesNotApprove(string grant)
+    [InlineData(PrincipalKind.Human, "tool:files:invoke:write_file")]
+    [InlineData(PrincipalKind.Human, "tool:files:approve:read_file")]
+    [InlineData(PrincipalKind.Agent, "*")]
+    [InlineData(PrincipalKind.Agent, "tool:*")]
+    public async Task DecideApprovalAsync_MissingDecisionAuthority_DoesNotApprove(PrincipalKind kind, string grant)
     {
         using var fx = new ApprovalScenario();
         var actor = await fx.ConnectAsync();
         var approval = await fx.WaitAsync(actor, fx.Write());
+        var token = fx.Tokens.Mint(new CapabilityTokenRequest
+        {
+            WorkspaceId = "workspace",
+            IssuedTo = "approver",
+            Kind = kind,
+            Grants = [grant, "invocation:read"],
+            Lifetime = TimeSpan.FromHours(1)
+        });
         await Should.ThrowAsync<UnauthorizedAccessException>(() => actor.DecideApprovalAsync(approval.InvocationId,
-            approval.PlanDigest, InvocationApprovalDecision.Approve, fx.Token("approver", grant)));
+            approval.PlanDigest, InvocationApprovalDecision.Approve, token));
         fx.Journal.FindApproval("workspace", approval.InvocationId, TestContext.Current.CancellationToken)
             .ShouldNotBeNull().State.ShouldBe(InvocationApprovalState.Pending);
+    }
+
+    [Fact]
+    public async Task DecideApprovalAsync_HumanWithOperationApprovalGrant_Approves()
+    {
+        using var fx = new ApprovalScenario();
+        var actor = await fx.ConnectAsync();
+        var approval = await fx.WaitAsync(actor, fx.Write());
+        var result = await actor.DecideApprovalAsync(approval.InvocationId, approval.PlanDigest,
+            InvocationApprovalDecision.Approve, fx.Token("approver", "tool:files:approve:write_file"));
+        result.Succeeded.ShouldBeTrue();
+        fx.Scalar("SELECT COUNT(*) FROM invocation_approval_decisions;").ShouldBe(1L);
     }
 
     [Fact]
@@ -54,7 +76,7 @@ public sealed class DurableApprovalFlowTests
         var actor = await fx.ConnectAsync();
         var approval = await fx.WaitAsync(actor, fx.Write());
         var result = await actor.DecideApprovalAsync(approval.InvocationId, approval.PlanDigest,
-            InvocationApprovalDecision.Approve, fx.Token("writer", "approval:decide", "tool:files:approve:write_file"));
+            InvocationApprovalDecision.Approve, fx.Token("writer", "tool:files:approve:write_file"));
         result.ErrorCode.ShouldBe("approval-subject-denied");
         fx.Scalar("SELECT COUNT(*) FROM invocation_approval_decisions;").ShouldBe(0L);
     }

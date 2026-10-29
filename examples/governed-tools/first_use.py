@@ -113,7 +113,8 @@ class Walkthrough:
                                    'Credentials': {
                                        'reader': profile('agent', ['tool:files:invoke:read_file', 'invocation:read']),
                                        'writer': profile('agent', ['tool:files:invoke:write_file', 'invocation:read']),
-                                       'reviewer': profile('reviewer', ['invocation:read', 'approval:decide', 'tool:files:approve:write_file']),
+                                       'reviewer': {**profile('reviewer', ['invocation:read', 'tool:files:approve:write_file']),
+                                                    'Kind': 'Human'},
                                        'expiring': profile('agent', ['tool:files:invoke:read_file'], '00:00:01')}}}}
 
     def record(self, name, **fields):
