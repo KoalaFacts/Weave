@@ -4,7 +4,7 @@ import { registry } from './registry';
 import openapi from './openapi.json';
 import { publicReadRate } from './public-rate';
 import { remoteMcp } from './remote-mcp';
-import {managedAccessConfiguration,verifyManagedAccessAssertion,type AssertionRejection} from './access-managed';
+import {managedAccessConfiguration,verifyManagedAccessAssertion,type AssertionRejection,type LifetimeDetail} from './access-managed';
 import { oauthConfiguration, authorizeOAuth, protectedResourceMetadata } from './remote-oauth';
 import { demoOAuthClientId, demoOAuthClientMetadata } from './oauth-client-metadata';
 import type { VerifiedOAuthSubject } from './remote-oauth';
@@ -82,15 +82,16 @@ export default {
                 // Only Access-admitted (allowlisted) trial users reach this point.
                 // The reason is a fixed category for diagnosing the trial; it
                 // never carries claim values, keys, controls or the assertion.
-                const denial=(status:number,reason:string)=>{
-                    console.warn(JSON.stringify({event:'access-trial-denied',path:url.pathname,status,reason}));
-                    return new Response(JSON.stringify({error:'access_denied',reason}),{
+                const denial=(status:number,reason:string,detail?:LifetimeDetail)=>{
+                    console.warn(JSON.stringify({event:'access-trial-denied',path:url.pathname,status,reason,detail}));
+                    return new Response(JSON.stringify({error:'access_denied',reason,...(detail?{detail}:{})}),{
                         status,headers:{'Content-Type':'application/json','Cache-Control':'no-store',
                             'X-Content-Type-Options':'nosniff'}});
                 };
-                let rejection:AssertionRejection='malformed';
-                const identity=await verifyManagedAccessAssertion(trial,request,fetch,Date.now,reason=>{rejection=reason;});
-                if(!identity)return denial(401,'assertion-'+rejection);
+                let rejection:AssertionRejection='malformed',rejectionDetail:LifetimeDetail|undefined;
+                const identity=await verifyManagedAccessAssertion(trial,request,fetch,Date.now,(reason,detail)=>{
+                    rejection=reason;rejectionDetail=detail;});
+                if(!identity)return denial(401,'assertion-'+rejection,rejectionDetail);
                 const verifiedSubject:VerifiedOAuthSubject={
                     issuer:identity.issuer,resource:identity.resource,subject:identity.subject
                 };

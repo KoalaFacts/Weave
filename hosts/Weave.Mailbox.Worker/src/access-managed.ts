@@ -55,6 +55,8 @@ async function safeKeys(config:ManagedAccessConfiguration,fetcher:typeof fetch):
 /** Non-sensitive category of an assertion rejection, for the trial's own diagnostics.
  * It never contains claim values, keys or the assertion itself.
  */
+/** Timing facts for a lifetime rejection: presence flags and whole-second offsets only. */
+export interface LifetimeDetail {hasExp:boolean;hasIat:boolean;expiresInSeconds:number|null;spanSeconds:number|null;}
 export type AssertionRejection='missing'|'malformed'|'header'|'issuer'|'audience'|'subject'|
     'lifetime'|'not-yet-valid'|'expired'|'keys-unavailable'|'key-not-found'|'signature';
 /** Enforces RS256 signature, issuer, application AUD, expiry and subject.
@@ -63,9 +65,9 @@ export type AssertionRejection='missing'|'malformed'|'header'|'issuer'|'audience
  */
 export async function verifyManagedAccessAssertion(
     cfg:ManagedAccessConfiguration,request:Request,fetcher:typeof fetch=fetch,now:number|(()=>number)=Date.now,
-    onReject:(reason:AssertionRejection)=>void=()=>{}
+    onReject:(reason:AssertionRejection,detail?:LifetimeDetail)=>void=()=>{}
 ):Promise<ManagedAccessSubject|null> {
-    const reject=(reason:AssertionRejection):null=>{onReject(reason);return null;};
+    const reject=(reason:AssertionRejection,detail?:LifetimeDetail):null=>{onReject(reason,detail);return null;};
     const jwt=request.headers.get('Cf-Access-Jwt-Assertion');
     if(!jwt)return reject('missing');
     if(jwt.length>8192||!/^[A-Za-z0-9_-]+\.[A-Za-z0-9_-]+\.[A-Za-z0-9_-]+$/.test(jwt))return reject('malformed');
@@ -89,7 +91,12 @@ export async function verifyManagedAccessAssertion(
         if(typeof claims.sub!=='string'||!claims.sub||claims.sub.length>255||/[\x00-\x1f\x7f]/.test(claims.sub))return reject('subject');
         if(!Number.isSafeInteger(claims.exp)||!Number.isSafeInteger(claims.iat)||
             (claims.exp as number)>sec+maxAccessSessionSeconds||(claims.iat as number)>=(claims.exp as number)||
-            (claims.exp as number)-(claims.iat as number)>maxAccessSessionSeconds)return reject('lifetime');
+            (claims.exp as number)-(claims.iat as number)>maxAccessSessionSeconds){
+            const hasExp=Number.isSafeInteger(claims.exp),hasIat=Number.isSafeInteger(claims.iat);
+            return reject('lifetime',{hasExp,hasIat,
+                expiresInSeconds:hasExp?(claims.exp as number)-sec:null,
+                spanSeconds:hasExp&&hasIat?(claims.exp as number)-(claims.iat as number):null});
+        }
         if((claims.iat as number)>sec+60||
             (claims.nbf!==undefined&&(!Number.isSafeInteger(claims.nbf)||(claims.nbf as number)>sec)))return reject('not-yet-valid');
         if((claims.exp as number)<=sec)return reject('expired');
