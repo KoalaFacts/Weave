@@ -52,48 +52,60 @@ async function safeKeys(config:ManagedAccessConfiguration,fetcher:typeof fetch):
         return data.keys;
     }catch{return null;}
 }
+/** Non-sensitive category of an assertion rejection, for the trial's own diagnostics.
+ * It never contains claim values, keys or the assertion itself.
+ */
+export type AssertionRejection='missing'|'malformed'|'header'|'issuer'|'audience'|'subject'|
+    'lifetime'|'not-yet-valid'|'expired'|'keys-unavailable'|'key-not-found'|'signature';
 /** Enforces RS256 signature, issuer, application AUD, expiry and subject.
  * HTTP headers are untrusted regardless of where a Worker can be reached.
  * Successful verification alone never registers, links or authorizes a Weave account.
  */
 export async function verifyManagedAccessAssertion(
-    cfg:ManagedAccessConfiguration,request:Request,fetcher:typeof fetch=fetch,now:number|(()=>number)=Date.now
+    cfg:ManagedAccessConfiguration,request:Request,fetcher:typeof fetch=fetch,now:number|(()=>number)=Date.now,
+    onReject:(reason:AssertionRejection)=>void=()=>{}
 ):Promise<ManagedAccessSubject|null> {
+    const reject=(reason:AssertionRejection):null=>{onReject(reason);return null;};
     const jwt=request.headers.get('Cf-Access-Jwt-Assertion');
-    if(!jwt||jwt.length>8192||!/^[A-Za-z0-9_-]+\.[A-Za-z0-9_-]+\.[A-Za-z0-9_-]+$/.test(jwt))return null;
+    if(!jwt)return reject('missing');
+    if(jwt.length>8192||!/^[A-Za-z0-9_-]+\.[A-Za-z0-9_-]+\.[A-Za-z0-9_-]+$/.test(jwt))return reject('malformed');
     const clock=typeof now==='function'?now:()=>now;
     const [rawHeader,rawPayload,rawSignature]=jwt.split('.');
     const headerBytes=decode(rawHeader),payloadBytes=decode(rawPayload),sig=decode(rawSignature);
-    if(!headerBytes||!payloadBytes||!sig)return null;
+    if(!headerBytes||!payloadBytes||!sig)return reject('malformed');
     try {
         const decoder=new TextDecoder('utf-8',{fatal:true});
         const header:unknown=JSON.parse(decoder.decode(headerBytes));
         const claims:unknown=JSON.parse(decoder.decode(payloadBytes));
+        if(!object(claims))return reject('malformed');
         if(!object(header)||header.alg!=='RS256'||typeof header.kid!=='string'||header.kid.length>128||!safeToken.test(header.kid)||
-            (header.typ!==undefined&&header.typ!=='JWT')||!object(claims))return null;
+            (header.typ!==undefined&&header.typ!=='JWT'))return reject('header');
         // Access application JWT session defaults to 24h. Retain an explicit
         // upper bound; longer sessions must be separately reviewed and configured.
         const maxAccessSessionSeconds=24*60*60;
         const sec=Math.floor(clock()/1000);
-        if(claims.iss!==cfg.issuer||!((Array.isArray(claims.aud)&&claims.aud.includes(cfg.audience))||claims.aud===cfg.audience)||
-            typeof claims.sub!=='string'||!claims.sub||claims.sub.length>255||/[\x00-\x1f\x7f]/.test(claims.sub)||
-            !Number.isSafeInteger(claims.exp)||!Number.isSafeInteger(claims.iat)||
-            (claims.exp as number)<=sec||(claims.exp as number)>sec+maxAccessSessionSeconds||
-            (claims.iat as number)>sec+60||(claims.iat as number)>=(claims.exp as number)||
-            (claims.exp as number)-(claims.iat as number)>maxAccessSessionSeconds||
-            (claims.nbf!==undefined&&(!Number.isSafeInteger(claims.nbf)||(claims.nbf as number)>sec)))return null;
-        const keys=await safeKeys(cfg,fetcher);if(!keys)return null;
+        if(claims.iss!==cfg.issuer)return reject('issuer');
+        if(!((Array.isArray(claims.aud)&&claims.aud.includes(cfg.audience))||claims.aud===cfg.audience))return reject('audience');
+        if(typeof claims.sub!=='string'||!claims.sub||claims.sub.length>255||/[\x00-\x1f\x7f]/.test(claims.sub))return reject('subject');
+        if(!Number.isSafeInteger(claims.exp)||!Number.isSafeInteger(claims.iat)||
+            (claims.exp as number)>sec+maxAccessSessionSeconds||(claims.iat as number)>=(claims.exp as number)||
+            (claims.exp as number)-(claims.iat as number)>maxAccessSessionSeconds)return reject('lifetime');
+        if((claims.iat as number)>sec+60||
+            (claims.nbf!==undefined&&(!Number.isSafeInteger(claims.nbf)||(claims.nbf as number)>sec)))return reject('not-yet-valid');
+        if((claims.exp as number)<=sec)return reject('expired');
+        const keys=await safeKeys(cfg,fetcher);if(!keys)return reject('keys-unavailable');
         const matches=keys.filter(k=>object(k)&&k.kid===header.kid&&k.kty==='RSA'&&
             (k.alg===undefined||k.alg==='RS256')&&(k.use===undefined||k.use==='sig')&&
             (k.key_ops===undefined||(Array.isArray(k.key_ops)&&k.key_ops.includes('verify')))&&
             typeof k.n==='string'&&typeof k.e==='string');
-        if(matches.length!==1)return null;
+        if(matches.length!==1)return reject('key-not-found');
         const key=await crypto.subtle.importKey('jwk',matches[0] as JsonWebKey,
             {name:'RSASSA-PKCS1-v1_5',hash:'SHA-256'},false,['verify']);
         // TS7 DOM BufferSource requires ArrayBuffer-backed bytes, not an optional SharedArrayBuffer.
         const signature=new Uint8Array(sig.byteLength);signature.set(sig);
         const valid=await crypto.subtle.verify('RSASSA-PKCS1-v1_5',key,signature,new TextEncoder().encode(rawHeader+'.'+rawPayload));
-        if(!valid||(claims.exp as number)<=Math.floor(clock()/1000))return null;
+        if(!valid)return reject('signature');
+        if((claims.exp as number)<=Math.floor(clock()/1000))return reject('expired');
         return {issuer:cfg.issuer,resource:cfg.resource,subject:claims.sub,expiresAt:claims.exp as number};
-    }catch{return null;}
+    }catch{return reject('malformed');}
 }
