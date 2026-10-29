@@ -96,7 +96,7 @@ class BaselineCollectorTests(unittest.TestCase):
             self.assertEqual(['dotnet', 'dotnet-coverage', 'collect', '-f', 'cobertura', '-o',
                               str(self.output / f'{suite}.cobertura.xml'), '-l',
                               str(self.output / f'{suite}.collector.log'), '--', 'dotnet', 'test',
-                              '--project', project, '--no-build', '--no-restore', '-c', 'Release'], arguments)
+                              '--project', str(Path(self.root) / project), '--no-build', '--no-restore', '-c', 'Release'], arguments)
 
     def test_logged_failure_preserves_exit_code_arguments_and_output(self):
         def simulated_process(arguments, **kwargs):

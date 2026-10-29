@@ -84,7 +84,7 @@ jobs:
       - name: Verify HTTP notification responses
         working-directory: .
         run: >-
-          dotnet test --project tests/Weave.Tools.Tests/Weave.Tools.Tests.csproj
+          dotnet test --project ${{ github.workspace }}/tests/Weave.Tools.Tests/Weave.Tools.Tests.csproj
           --no-build -c Release --filter-class Weave.Tools.Tests.HttpMcpTransportWireRoundTripTests
       - name: Verify Weave authorization and journal
         working-directory: .
