@@ -22,3 +22,12 @@ test('manual deployment retains maintain choice while publish branch requires co
     assert.doesNotMatch(workflow,/github\.event_name == 'push' && 'maintain'/,'Automatic publish must never perform an unapproved migration.');
     assert.equal((workflow.match(/node scripts\/verify-public-mcp\.ts/g)||[]).length,2,'Both deployment jobs must probe real public MCP.');
 });
+test('Access trial activation is passed only to the protected production deployment',()=>{
+    const workflow=readFileSync(path,'utf8');
+    assert.equal((workflow.match(/WEAVE_APPROVED_ACCESS_TRIAL_APPLICATION: \$\{\{ inputs\.access_trial_application \}\}/g)||[]).length,1);
+    const production=workflow.slice(workflow.indexOf('  deploy-production:'));
+    assert.match(production,/environment: production/);
+    assert.match(production,/WEAVE_APPROVED_ACCESS_TRIAL_APPLICATION/);
+    assert.doesNotMatch(workflow.slice(0,workflow.indexOf('  deploy-production:')),/WEAVE_APPROVED_ACCESS_TRIAL_APPLICATION/,
+        'Repository-scoped and publish-branch releases must never activate the Access trial.');
+});

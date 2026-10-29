@@ -87,7 +87,9 @@ while the provider denies access until Zero Trust onboarding is completed.
 **Remaining acceptance:** even a successfully created Access app is not a
 working private MCP connector. The opt-in origin route must be configured and
 validated separately. Its current owner-subject binding requires optional D1
-storage **not yet approved to migrate**. Browser consent with independently
+storage, approved by the owner on 2026-10-29 for this trial; the one-time
+activation release is described in
+[the activation record](../../docs/implementation/2026-10-29-access-trial-activation.md). Browser consent with independently
 allowlisted real users, per-user Weave account linking and two genuine Agent
 client message/ACK/restart tests are still independent steps. Do not use an
 Access edge-authenticated identity as Weave mailbox authority by itself.
