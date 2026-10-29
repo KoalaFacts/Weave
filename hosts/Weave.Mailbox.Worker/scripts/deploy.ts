@@ -17,6 +17,7 @@ interface WorkerConfig {
 }
 interface Binding {name:string;type:string;id?:string;namespace_id?:string;class_name?:string;script_name?:string;text?:unknown;service?:string;environment?:string;entrypoint?:string;}
 interface WorkerSettings {bindings:Binding[];}
+interface AccessApplication {id?:unknown;name?:unknown;type?:unknown;domain?:unknown;aud?:unknown;oauth_configuration?:{enabled?:unknown};}
 interface CommandResult {status:number|null;stdout?:string;stderr?:string;}
 interface DatabaseConnection {db:StorageDatabase;close:()=>Promise<void>;}
 interface DeployOptions {
@@ -41,6 +42,12 @@ const directory=resolve(dirname(fileURLToPath(import.meta.url)),'..');
 const expectedSubdomain='weave-389';
 // Ordinary demo releases are NOT permission to create an opt-in OAuth identity store.
 const demoSchemaPolicy={omitUnapprovedOAuthIdentityLinks:true} as const;
+// Only the one-time, owner-approved Access trial activation may create it.
+const approvedIdentityLinkPolicy={omitUnapprovedOAuthIdentityLinks:false} as const;
+const demoOrigin='https://demo.weave-389.workers.dev';
+const accessTrialName='Weave Managed OAuth Trial';
+const accessTrialDomain='demo.weave-389.workers.dev/access-trial/*';
+const accessTrialSettings=['ACCESS_TRIAL_ENABLED','ACCESS_TRIAL_ISSUER','ACCESS_TRIAL_RESOURCE','ACCESS_TRIAL_AUDIENCE'];
 export function deploymentConfig(base: WorkerConfig,env: NodeJS.ProcessEnv,root=directory){
     if(base.name!=='demo'||base.d1_databases?.length!==1||base.d1_databases[0].binding!=='db')throw Error('Expected existing Worker demo and binding db.');
     if(base.services!==undefined)throw Error('OAuth Service Bindings must be provisioned separately by an operator, not by this generic release.');
@@ -181,6 +188,37 @@ export async function deploy({env=process.env,fetchImpl=fetch,run,root=directory
         // Cloudflare's default WorkerEntrypoint is selected by omitting `entrypoint`.
         authBinding={name:'AUTH_SERVER',type:'service',service:'weave-auth-demo'};
     }
+    // One-time Access Managed OAuth trial activation. The owner names the exact
+    // Access application created by provision-weave-access.yml; this release
+    // reads its audience and team domain, creates the approved identity-link
+    // table and enables only the path-scoped /access-trial routes.
+    const requestedTrial=env.WEAVE_APPROVED_ACCESS_TRIAL_APPLICATION??'';
+    let accessTrial:Record<string,string>|undefined;
+    if(requestedTrial!==''){
+        if(!/^[a-f0-9]{8}(?:-[a-f0-9]{4}){3}-[a-f0-9]{12}$/.test(requestedTrial))
+            throw Error('Invalid approved Access trial application; no mutation attempted.');
+        if(databaseMode!=='maintain'||firstPartyBootstrap||authBinding)
+            throw Error('Access trial activation requires a maintain-mode release without another OAuth binding; no mutation attempted.');
+        if(worker.bindings.some(binding=>accessTrialSettings.includes(binding?.name))||
+            (oauthFlags.length!==0&&oauthFlags[0].text!=='false'))
+            throw Error('Access trial or OAuth identity links are already configured; remove the one-time activation.');
+        const app=await inspect<AccessApplication>('/access/apps/'+requestedTrial,'Approved Access trial application');
+        const organization=await inspect<{auth_domain?:unknown}>('/access/organizations','Access organization');
+        if(app.id!==requestedTrial||app.name!==accessTrialName||app.type!=='self_hosted'||app.domain!==accessTrialDomain||
+            app.oauth_configuration?.enabled!==true||typeof app.aud!=='string'||!/^[A-Za-z0-9_-]{16,128}$/.test(app.aud))
+            throw Error('Approved Access trial application does not match the isolated trial; no mutation attempted.');
+        if(typeof organization.auth_domain!=='string'||!/^[a-z0-9-]+\.cloudflareaccess\.com$/.test(organization.auth_domain))
+            throw Error('Access organization team domain is invalid; no mutation attempted.');
+        accessTrial={
+            ACCESS_TRIAL_ENABLED:'true',
+            ACCESS_TRIAL_ISSUER:'https://'+organization.auth_domain,
+            ACCESS_TRIAL_RESOURCE:demoOrigin+'/access-trial/mcp',
+            ACCESS_TRIAL_AUDIENCE:app.aud,
+            OAUTH_IDENTITY_LINKS_ENABLED:'true'
+        };
+        Object.assign(config.vars,accessTrial);
+    }
+    const schemaPolicy=accessTrial?approvedIdentityLinkPolicy:demoSchemaPolicy;
     const oauthExisting=new Map<string,Binding>();
     if(authBinding){
         if(authBinding.type!=='service'||typeof authBinding.service!=='string'||
@@ -281,7 +319,7 @@ export async function deploy({env=process.env,fetchImpl=fetch,run,root=directory
         // the generic demo release or bypass its separate schema approval.
         if(oauthFlags[0]?.text==='true'&&!tables.includes('oauth_identity_links'))
             throw Error('OAuth identity links schema not provisioned; separate storage approval required before deployment.');
-        const planDemo=(db:StorageDatabase)=>planSchema(db,demoSchemaPolicy);
+        const planDemo=(db:StorageDatabase)=>planSchema(db,schemaPolicy);
         const completed=databaseMode==='completed-only'?await prepareCompletedDeployment(connection.db,root,planDemo):undefined;
         phase='maintenance deployment requested';await save();
         await command(['deploy','--keep-vars','--no-bundle'],'maintenance');
@@ -292,7 +330,7 @@ export async function deploy({env=process.env,fetchImpl=fetch,run,root=directory
         }else{
             report.conversion=await convert(connection.db);
             const plan=await planDemo(connection.db);report.schemaPlan=plan;await save();
-            await applySchema(connection.db,demoSchemaPolicy);
+            await applySchema(connection.db,schemaPolicy);
             if((await planDemo(connection.db)).statements.length)throw Error('Schema verification left unapplied statements; maintenance retained.');
         }
         phase='database validated; maintenance retained; uploading recovery';await save();
@@ -336,6 +374,18 @@ export async function deploy({env=process.env,fetchImpl=fetch,run,root=directory
                 !Array.isArray(publicClient.response_types)||!publicClient.response_types.includes('code')||
                 publicClient.token_endpoint_auth_method!=='none')
                 throw Error('Public OAuth CIMD client metadata cannot complete the approved public loopback PKCE flow.');
+        }
+        if(accessTrial){
+            phase='active settings verified; Access trial protection unconfirmed';await save();
+            // Served by Cloudflare Access, not this Worker: proves the edge still
+            // protects the trial path and names the same team as the origin check.
+            const protectedResource=await publicJson(demoOrigin+'/.well-known/cloudflare-access-protected-resource/access-trial/mcp',
+                'Access trial protected-resource metadata');
+            if(protectedResource.resource!==accessTrial.ACCESS_TRIAL_RESOURCE||protectedResource.protected!==true||
+                !Array.isArray(protectedResource.authorization_servers)||
+                protectedResource.authorization_servers.length!==1||
+                protectedResource.authorization_servers[0]!==accessTrial.ACCESS_TRIAL_ISSUER)
+                throw Error('Access trial protected-resource metadata does not match the activated team and resource.');
         }
         phase='active deployment verified';report.finishedAt=new Date().toISOString();await save();
         console.log('Verified deployed demo registration, disabled business cleanup, D1 identity and maintenance exit.');

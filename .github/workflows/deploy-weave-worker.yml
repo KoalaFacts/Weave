@@ -21,6 +21,11 @@ on:
         required: true
         type: boolean
         default: false
+      access_trial_application:
+        description: One-time owner-approved Access trial activation (production, maintain mode); the exact Access application UUID from provision-weave-access.yml, otherwise empty
+        required: false
+        type: string
+        default: ''
 permissions:
   contents: read
 concurrency:
@@ -124,6 +129,7 @@ jobs:
           CLOUDFLARE_ACCOUNT_ID: ${{ secrets.CLOUDFLARE_ACCOUNT_ID }}
           WEAVE_DEPLOY_DATABASE_MODE: ${{ github.event_name == 'push' && 'completed-only' || inputs.database_mode }}
           WEAVE_APPROVED_FIRST_PARTY_OAUTH_BINDING: ${{ inputs.enable_first_party_oauth == true && 'true' || 'false' }}
+          WEAVE_APPROVED_ACCESS_TRIAL_APPLICATION: ${{ inputs.access_trial_application }}
       - name: Verify the published Agent Start guide and homepage
         run: node scripts/verify-agent-entry.ts
         working-directory: hosts/Weave.Mailbox.Worker

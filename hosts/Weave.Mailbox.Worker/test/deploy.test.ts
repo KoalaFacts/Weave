@@ -495,3 +495,103 @@ test('approved AS binding rollout verifies public resource discovery and CIMD be
         assert.equal(f.closed,true);
     }
 });
+
+const trialApp='e9be571a-dae4-466c-8fe1-bf3c74cf878e';
+const trialAud='f'.repeat(64);
+const trialIssuer='https://synthetic-team.cloudflareaccess.com';
+const trialResource='https://demo.weave-389.workers.dev/access-trial/mcp';
+const trialVars={ACCESS_TRIAL_ENABLED:'true',ACCESS_TRIAL_ISSUER:trialIssuer,ACCESS_TRIAL_RESOURCE:trialResource,
+    ACCESS_TRIAL_AUDIENCE:trialAud,OAUTH_IDENTITY_LINKS_ENABLED:'true'};
+function accessTrialActivation({app={},organization={auth_domain:'synthetic-team.cloudflareaccess.com'},bindings=[dbBinding],
+    metadata={resource:trialResource,protected:true,authorization_servers:[trialIssuer]},mode,requested=trialApp}={}){
+    const f=fixture({bindingResult:bindings,extraEnv:{WEAVE_APPROVED_ACCESS_TRIAL_APPLICATION:requested,
+        ...(mode?{WEAVE_DEPLOY_DATABASE_MODE:mode}:{})}});
+    const original=f.options.fetchImpl;f.policies=[];
+    const plan=f.options.planSchema,apply=f.options.applySchema;
+    f.options.planSchema=async(db,policy)=>{f.policies.push(policy);return plan(db,policy);};
+    f.options.applySchema=async(db,policy)=>{f.policies.push(policy);return apply(db,policy);};
+    f.options.fetchImpl=async(url,options)=>{
+        if(url==='https://demo.weave-389.workers.dev/.well-known/cloudflare-access-protected-resource/access-trial/mcp'){
+            f.requests.push(url);
+            assert.equal(options.headers?.Authorization,undefined,'Never send the Cloudflare API token to public Access metadata');
+            return Response.json(metadata);
+        }
+        if(url.endsWith('/access/apps/'+requested)){
+            f.requests.push(url);
+            return {ok:true,status:200,json:async()=>({success:true,result:{id:trialApp,name:'Weave Managed OAuth Trial',
+                type:'self_hosted',domain:'demo.weave-389.workers.dev/access-trial/*',aud:trialAud,
+                oauth_configuration:{enabled:true},...app}})};
+        }
+        if(url.endsWith('/access/organizations')){
+            f.requests.push(url);
+            return {ok:true,status:200,json:async()=>({success:true,result:organization})};
+        }
+        const response=await original(url,options);
+        if(f.commands.length&&(url.endsWith('/workers/scripts/demo/settings')||url.includes('/workers/scripts/demo/versions/'))){
+            const payload=await response.json(),target=url.includes('/versions/')
+                ?payload.result.resources.bindings:payload.result.bindings;
+            for(const [name,text] of Object.entries(trialVars))target.push({name,type:'plain_text',text});
+            return {...response,json:async()=>payload};
+        }
+        return response;
+    };
+    return f;
+}
+test('ordinary releases keep the identity-link table unprovisioned',async()=>{
+    const f=fixture(),policies=[];const plan=f.options.planSchema,apply=f.options.applySchema;
+    f.options.planSchema=async(db,policy)=>{policies.push(policy);return plan(db,policy);};
+    f.options.applySchema=async(db,policy)=>{policies.push(policy);return apply(db,policy);};
+    await deploy(f.options);
+    assert.ok(policies.length>0&&policies.every(policy=>policy.omitUnapprovedOAuthIdentityLinks===true));
+    assert.ok(f.configs.every(config=>config.vars.ACCESS_TRIAL_ENABLED===undefined&&config.vars.OAUTH_IDENTITY_LINKS_ENABLED===undefined));
+});
+test('approved Access trial activation creates the identity-link table and enables only the trial settings',async()=>{
+    const f=accessTrialActivation();
+    await deploy(f.options);
+    assert.deepEqual(f.events,['maintenance','convert','schema','recovery','active']);
+    assert.ok(f.policies.length>0&&f.policies.every(policy=>policy.omitUnapprovedOAuthIdentityLinks===false));
+    for(const config of f.configs){
+        for(const [name,value] of Object.entries(trialVars))assert.equal(config.vars[name],value);
+        assert.equal(config.services,undefined);
+    }
+    assert.ok(f.requests.includes('https://demo.weave-389.workers.dev/.well-known/cloudflare-access-protected-resource/access-trial/mcp'),
+        'Activation must prove the Access edge still protects the trial path');
+});
+test('Access trial activation fails closed before maintenance on any mismatch',async()=>{
+    const cases=[
+        accessTrialActivation({requested:'not-a-uuid'}),
+        accessTrialActivation({mode:'completed-only'}),
+        accessTrialActivation({app:{name:'Other application'}}),
+        accessTrialActivation({app:{domain:'demo.weave-389.workers.dev/*'}}),
+        accessTrialActivation({app:{type:'saas'}}),
+        accessTrialActivation({app:{oauth_configuration:{enabled:false}}}),
+        accessTrialActivation({app:{aud:'short'}}),
+        accessTrialActivation({app:{id:'00000000-0000-0000-0000-000000000001'}}),
+        accessTrialActivation({organization:{auth_domain:'evil.example.com'}}),
+        accessTrialActivation({organization:{}}),
+        accessTrialActivation({bindings:[dbBinding,{name:'ACCESS_TRIAL_ENABLED',type:'plain_text',text:'true'}]}),
+        accessTrialActivation({bindings:[dbBinding,{name:'OAUTH_IDENTITY_LINKS_ENABLED',type:'plain_text',text:'true'}]}),
+        accessTrialActivation({bindings:[dbBinding,{name:'AUTH_SERVER',type:'service',service:'weave-auth-demo'}]})
+    ];
+    for(const f of cases){
+        await assert.rejects(deploy(f.options));
+        assert.equal(f.commands.length,0,'No maintenance, D1 or active upload may start on a failed activation preflight');
+    }
+});
+test('Access trial activation reports an unprotected trial path after release',async()=>{
+    const f=accessTrialActivation({metadata:{resource:trialResource,protected:true,authorization_servers:['https://other.cloudflareaccess.com']}});
+    await assert.rejects(deploy(f.options),/protected-resource metadata does not match/);
+    assert.equal(f.commands.length,3);
+});
+test('approved identity-link policy creates the real table on D1 while the ordinary policy omits it',async()=>{
+    const h=await start();
+    try{
+        const tables=async()=>(await h.db.prepare("SELECT name FROM sqlite_master WHERE type='table' AND name='oauth_identity_links'").all()).results.length;
+        if(await tables())await h.db.prepare('DROP TABLE oauth_identity_links').run();
+        await createMissingSchema(h.db,{omitUnapprovedOAuthIdentityLinks:true});
+        assert.equal(await tables(),0);
+        await createMissingSchema(h.db,{omitUnapprovedOAuthIdentityLinks:false});
+        assert.equal(await tables(),1);
+        assert.equal((await planLatestSchema(h.db,{omitUnapprovedOAuthIdentityLinks:false})).statements.length,0);
+    }finally{await h.close();}
+});
