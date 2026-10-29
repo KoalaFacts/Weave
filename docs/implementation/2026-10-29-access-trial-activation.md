@@ -86,3 +86,16 @@ link flag enabled while the table is missing.
   activation input.
 - Not covered here: the live release, a real Access login, Access forwarding a
   signed assertion for a Managed OAuth bearer, and the two-agent exchange.
+
+## Denial diagnostics (follow-up)
+
+The first live test linked an identity through a `cloudflared` browser
+session and that session reached `get_my_profile`, but Claude Code's Managed
+OAuth bearer reached the origin and was denied with an indistinguishable
+`{"error":"access_denied"}`. Trial denials now add a fixed `reason`
+(`assertion-missing|malformed|header|issuer|audience|subject|lifetime|not-yet-valid|expired|keys-unavailable|key-not-found|signature`,
+`account-control`, `not-linked`, `account-missing`, `link-storage`) and log the
+same category. Only users already admitted by the Access allow policy can reach
+these routes. The reason never contains claim values, keys, controls or the
+assertion.
+

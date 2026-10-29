@@ -65,6 +65,26 @@ test('wrong issuer, app audience, expiry, nbf, future issued and missing opaque 
         assert.equal(await verify(token(value)),null,JSON.stringify(value));
     }
 });
+test('rejections report a fixed, value-free category for each failed check',async()=>{
+    const sec=Math.floor(now/1000);
+    const reasonFor=async(jwt:string|null,fetcher:typeof fetch=certificates)=>{
+        let reason:string|undefined;
+        const result=await verifyManagedAccessAssertion(cfg,jwt===null?new Request(resource):request(jwt),fetcher,now,r=>{reason=r;});
+        assert.equal(result,null);
+        return reason;
+    };
+    const cases:[string|null,string][]=[
+        [null,'missing'],['not.a.jwt','malformed'],[token({}, {alg:'HS256'}),'header'],[token({}, {typ:'at+jwt'}),'header'],
+        [token({iss:'https://foreign.cloudflareaccess.com'}),'issuer'],[token({aud:['other']}),'audience'],
+        [token({sub:''}),'subject'],[token({exp:sec+100000}),'lifetime'],[token({iat:sec+120}),'not-yet-valid'],
+        [token({nbf:sec+120}),'not-yet-valid'],[token({exp:sec}),'expired'],[token({}, {kid:'unknown-key'}),'key-not-found'],
+        [token().split('.').slice(0,2).join('.')+'.'+token({sub:'other'}).split('.')[2],'signature']];
+    for(const [jwt,expected] of cases)assert.equal(await reasonFor(jwt),expected,expected);
+    assert.equal(await reasonFor(token(),(async()=>new Response('secret',{status:503})) as typeof fetch),'keys-unavailable');
+    let reported:string|undefined;
+    assert.ok(await verifyManagedAccessAssertion(cfg,request(token()),certificates,now,r=>{reported=r;}));
+    assert.equal(reported,undefined,'a valid assertion reports no rejection');
+});
 test('pinned cert URL refuses untrusted fetch errors and does not expose bearer',async()=>{
     assert.equal(await verify(token(),(async()=>new Response('secret',{status:503})) as typeof fetch),null);
     assert.equal(await verify(token(),(async()=>{throw Error('secret hidden')}) as typeof fetch),null);
@@ -101,16 +121,19 @@ test('real workerd/D1 trial enforces two credentials, owner binding, revocation 
         });
         const denied=await h.mf.dispatchFetch(resource,client('external-subject-A'));
         assert.equal(denied.status,401,'unlinked Access login never grants a Weave account');
+        assert.deepEqual(await denied.json(),{error:'access_denied',reason:'not-linked'});
         const link='/access-trial/link';
         const aSigned=signed('external-subject-A');
         const noControl=await h.mf.dispatchFetch('https://localhost'+link,{
             method:'POST',headers:{'Content-Type':'application/json','Cf-Access-Jwt-Assertion':aSigned},
             body:'{"consent":true}'});
         assert.equal(noControl.status,401);
+        assert.deepEqual(await noControl.json(),{error:'access_denied',reason:'account-control'});
         const noAssertion=await h.mf.dispatchFetch('https://localhost'+link,{
             method:'POST',headers:{'Content-Type':'application/json','X-Weave-Account-Control':a.control},
             body:'{"consent":true}'});
         assert.equal(noAssertion.status,401);
+        assert.deepEqual(await noAssertion.json(),{error:'access_denied',reason:'assertion-missing'});
         const notConsented=await h.mf.dispatchFetch('https://localhost'+link,{
             method:'POST',headers:{'Content-Type':'application/json','X-Weave-Account-Control':a.control,
                 'Cf-Access-Jwt-Assertion':aSigned},body:'{"consent":false}'});

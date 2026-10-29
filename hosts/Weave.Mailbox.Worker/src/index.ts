@@ -4,7 +4,7 @@ import { registry } from './registry';
 import openapi from './openapi.json';
 import { publicReadRate } from './public-rate';
 import { remoteMcp } from './remote-mcp';
-import {managedAccessConfiguration,verifyManagedAccessAssertion} from './access-managed';
+import {managedAccessConfiguration,verifyManagedAccessAssertion,type AssertionRejection} from './access-managed';
 import { oauthConfiguration, authorizeOAuth, protectedResourceMetadata } from './remote-oauth';
 import { demoOAuthClientId, demoOAuthClientMetadata } from './oauth-client-metadata';
 import type { VerifiedOAuthSubject } from './remote-oauth';
@@ -79,18 +79,25 @@ export default {
                 try{trial=managedAccessConfiguration(env,request.url);}catch{fail(503,'storage');}
                 if(!trial)fail(404,'unavailable');
                 if(env.OAUTH_IDENTITY_LINKS_ENABLED!=='true')fail(503,'storage');
-                const denial=(status:number)=>new Response(JSON.stringify({error:'access_denied'}),{
-                    status,headers:{'Content-Type':'application/json','Cache-Control':'no-store',
-                        'X-Content-Type-Options':'nosniff'}});
-                const identity=await verifyManagedAccessAssertion(trial,request);
-                if(!identity)return denial(401);
+                // Only Access-admitted (allowlisted) trial users reach this point.
+                // The reason is a fixed category for diagnosing the trial; it
+                // never carries claim values, keys, controls or the assertion.
+                const denial=(status:number,reason:string)=>{
+                    console.warn(JSON.stringify({event:'access-trial-denied',path:url.pathname,status,reason}));
+                    return new Response(JSON.stringify({error:'access_denied',reason}),{
+                        status,headers:{'Content-Type':'application/json','Cache-Control':'no-store',
+                            'X-Content-Type-Options':'nosniff'}});
+                };
+                let rejection:AssertionRejection='malformed';
+                const identity=await verifyManagedAccessAssertion(trial,request,fetch,Date.now,reason=>{rejection=reason;});
+                if(!identity)return denial(401,'assertion-'+rejection);
                 const verifiedSubject:VerifiedOAuthSubject={
                     issuer:identity.issuer,resource:identity.resource,subject:identity.subject
                 };
                 if(url.pathname==='/access-trial/link'){
                     if(method!=='POST')fail(404,'unavailable');
                     const account=await authenticate(env,secret);
-                    if(!account)return denial(401);
+                    if(!account)return denial(401,'account-control');
                     const input=await body(request);
                     object(input,['consent']);
                     if(input.consent!==true)fail(400,'invalid');
@@ -110,16 +117,17 @@ export default {
                     // verification above. A client-supplied assertion alone is never a grant.
                     signedAccessAssertionVerified:true,
                     authorize:async _scope=>{
-                        if(identity.expiresAt<=Math.floor(Date.now()/1000))return denial(401);
+                        if(identity.expiresAt<=Math.floor(Date.now()/1000))return denial(401,'assertion-expired');
                         let accountId:string|null;
                         try{accountId=await resolveLinkedOAuthSubject(env.db,verifiedSubject);}
-                        catch{return denial(503);}
-                        if(!accountId)return denial(401);
+                        catch{return denial(503,'link-storage');}
+                        if(!accountId)return denial(401,'not-linked');
                         try{
                             const found=await env.db.prepare('SELECT account_id FROM accounts WHERE account_id=?')
                                 .bind(accountId).first<string>('account_id');
-                            if(found!==accountId||identity.expiresAt<=Math.floor(Date.now()/1000))return denial(401);
-                        }catch{return denial(503);}
+                            if(found!==accountId)return denial(401,'account-missing');
+                            if(identity.expiresAt<=Math.floor(Date.now()/1000))return denial(401,'assertion-expired');
+                        }catch{return denial(503,'link-storage');}
                         // This isolated test grant is the owner's explicit link
                         // to all ordinary private mailbox tools. The tool's
                         // scope is still resolved and checked before execution.
