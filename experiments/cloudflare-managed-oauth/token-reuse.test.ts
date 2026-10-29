@@ -78,17 +78,21 @@ test('existing token Access denial is tested and blocks every write without toke
     assert.ok(f.calls.every(call=>call.method==='GET'&&call.authorization==='Bearer '+env.CLOUDFLARE_API_TOKEN));
 });
 
-test('live inspect and create use the same production secret context, never PR credentials',()=>{
-    for(const [file,job] of [['inspect-weave-access.yml','inspect'],['provision-weave-access.yml','provision']]){
-        const source=readFileSync(new URL('../../.github/workflows/'+file,import.meta.url),'utf8');
-        const start=source.indexOf('\n  '+job+':\n');
-        assert.ok(start>0);
-        const live=source.slice(start);
-        assert.match(live,/\n    environment: production\n/);
-        assert.match(live,/github\.ref == 'refs\/heads\/main'/);
-        assert.match(live,/CLOUDFLARE_API_TOKEN: \$\{\{ secrets\.CLOUDFLARE_API_TOKEN \}\}/);
-        assert.doesNotMatch(source.slice(0,start),/secrets\./);
-    }
+test('live inspection keeps production credentials while retired provisioning has no write-capable job',()=>{
+    const inspect=readFileSync(new URL('../../.github/workflows/inspect-weave-access.yml',import.meta.url),'utf8');
+    const start=inspect.indexOf('\n  inspect:\n');
+    assert.ok(start>0);
+    const live=inspect.slice(start);
+    assert.match(live,/\n    environment: production\n/);
+    assert.match(live,/github\.ref == 'refs\/heads\/main'/);
+    assert.match(live,/CLOUDFLARE_API_TOKEN: \$\{\{ secrets\.CLOUDFLARE_API_TOKEN \}\}/);
+    assert.doesNotMatch(inspect.slice(0,start),/secrets\./);
+
+    const retired=readFileSync(new URL('../../.github/workflows/provision-weave-access.yml',import.meta.url),'utf8');
+    assert.match(retired,/\n  verify:\n/);
+    assert.doesNotMatch(retired,/\n  provision:\n/);
+    assert.doesNotMatch(retired,/secrets\./);
+    assert.doesNotMatch(retired,/create_trial:/);
 });
 
 test('Access workflows do not require or inject a second token secret',()=>{
