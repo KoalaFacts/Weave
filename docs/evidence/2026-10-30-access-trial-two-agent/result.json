@@ -33,6 +33,7 @@
     "repeatAck": {"by": "A", "messageId": "01a187f2-4bb3-72a9-9de8-fc20889b5a9b", "result": "acknowledged", "terminalAt": "2026-10-29T13:56:43.470Z", "duplicate": false},
     "postRestartMessage": {"n": 7, "from": "A", "messageId": "01a187fb-91ad-7833-8752-d915674d30e5", "receipt": "acknowledged", "terminalAt": "2026-10-29T14:07:17.966Z"}
   },
+  "retention": "ack_message clears the message body and keeps only the receipt (messageId, sender, recipient, state, terminalAt, expiresAt).",
   "observedIssues": [
     "One Cloudflare HTTP 502 on ensure_my_address; the idempotent retry with the same addressId succeeded.",
     "request_contact returned a bare HTTP 400 three times because requestId was not a UUIDv7 with the payload timestamp; the schema did not state this rule.",

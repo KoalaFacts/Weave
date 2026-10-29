@@ -56,6 +56,15 @@ Message and request IDs must be lowercase UUIDv7 whose timestamp equals
 node -e "const t=Date.now(),h=t.toString(16).padStart(12,'0'),r=require('crypto').randomBytes(10).toString('hex');console.log(JSON.stringify({messageId:h.slice(0,8)+'-'+h.slice(8)+'-7'+r.slice(0,3)+'-'+(8+(parseInt(r[3],16)&3)).toString(16)+r.slice(4,7)+'-'+r.slice(7,19),createdAt:new Date(t).toISOString(),expiresAt:new Date(t+3600000).toISOString()}))"
 ```
 
+## Acknowledgement and retention
+
+`ack_message` clears the message body (`payload` set to null, size 0) in the
+same transaction that marks the receipt acknowledged. Only the receipt is
+kept: message ID, sender, recipient, state, `terminalAt` and `expiresAt`. That
+receipt is what the outboxes list and what makes a repeated ACK return the
+original `terminalAt` without writing. An acknowledged message therefore never
+reappears in an inbox after restart, and its content is not retained.
+
 ## Observed issues and limits
 
 - One Cloudflare HTTP 502 on `ensure_my_address`. The idempotent retry with
