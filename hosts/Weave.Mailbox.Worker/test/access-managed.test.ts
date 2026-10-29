@@ -81,6 +81,11 @@ test('rejections report a fixed, value-free category for each failed check',asyn
         [token().split('.').slice(0,2).join('.')+'.'+token({sub:'other'}).split('.')[2],'signature']];
     for(const [jwt,expected] of cases)assert.equal(await reasonFor(jwt),expected,expected);
     assert.equal(await reasonFor(token(),(async()=>new Response('secret',{status:503})) as typeof fetch),'keys-unavailable');
+    let lifetime:unknown;
+    await verifyManagedAccessAssertion(cfg,request(token({iat:sec-10,exp:sec+90000})),certificates,now,(_r,d)=>{lifetime=d;});
+    assert.deepEqual(lifetime,{hasExp:true,hasIat:true,expiresInSeconds:90000,spanSeconds:90010});
+    await verifyManagedAccessAssertion(cfg,request(token({iat:undefined})),certificates,now,(_r,d)=>{lifetime=d;});
+    assert.deepEqual(lifetime,{hasExp:true,hasIat:false,expiresInSeconds:300,spanSeconds:null});
     let reported:string|undefined;
     assert.ok(await verifyManagedAccessAssertion(cfg,request(token()),certificates,now,r=>{reported=r;}));
     assert.equal(reported,undefined,'a valid assertion reports no rejection');
