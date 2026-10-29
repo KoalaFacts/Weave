@@ -8,7 +8,8 @@ import { ownedAddresses, mutateAddress } from './addresses';
 import { read } from './reads';
 import { requestContact, decide } from './contacts';
 import { sendWithResolvedConnection, ack } from './messages';
-import { fail, identity, json, problem, uuid } from './wire';
+import { fail, identity, invalidField, json, problem, uuid } from './wire';
+import { checkPayload, checkUuid, contactRequestId } from './mcp-arguments';
 import { MAX_GENERATION, validatePayload } from './protocol';
 import { sweep } from './cleanup';
 
@@ -16,7 +17,16 @@ const str = (maxLength: number) => ({type:'string',maxLength});
 const id = {...str(36),pattern:'^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$'};
 const generation = {...str(19),pattern:'^[1-9][0-9]{0,18}$'};
 const page = {limit:{type:'integer',minimum:1,maximum:10},afterCursor:str(2048)};
-const payload = {type:'object',properties:{messageId:id,createdAt:str(64),expiresAt:str(64),payloadEncoding:str(128),bytes:str(87384)},required:['messageId','createdAt','expiresAt','payloadEncoding','bytes'],additionalProperties:false};
+const uuidV7 = {...str(36),pattern:'^[0-9a-f]{8}-[0-9a-f]{4}-7[0-9a-f]{3}-[89ab][0-9a-f]{3}-[0-9a-f]{12}$'};
+const payload = {type:'object',
+    description:'Message payload. Generate messageId as a lowercase UUIDv7 and set createdAt to exactly the millisecond it encodes.',
+    properties:{
+        messageId:{...uuidV7,description:'Lowercase UUIDv7. Its first 48 bits must equal createdAt in Unix milliseconds. Reuse it to retry an uncertain send.'},
+        createdAt:{...str(64),format:'date-time',description:'ISO 8601 UTC time equal to the millisecond encoded in messageId, e.g. 2026-01-01T00:00:00.000Z. Not more than 30 seconds in the future.'},
+        expiresAt:{...str(64),format:'date-time',description:'ISO 8601 UTC time after createdAt and at most 10 days later.'},
+        payloadEncoding:{...str(128),minLength:1,description:'Media type of the decoded bytes, e.g. text/plain.'},
+        bytes:{...str(87384),contentEncoding:'base64',description:'Standard padded base64 body, at most 64 KiB decoded.'}},
+    required:['messageId','createdAt','expiresAt','payloadEncoding','bytes'],additionalProperties:false};
 const tool=(name:string,description:string,scope:string,properties:Record<string,unknown>,required:string[]=[],readOnly=false)=>({
     name,description,inputSchema:{type:'object',properties,required,additionalProperties:false},
     annotations:{readOnlyHint:readOnly,destructiveHint:false,idempotentHint:readOnly,openWorldHint:false},
@@ -39,9 +49,10 @@ export const privateMcpTools=[
     tool('get_my_channel','Read the current channel generation and block status for a peer.','weave:contacts.read',{peerAccountId:id},['peerAccountId'],true),
     tool('list_my_inbox','Read your own inbox. Message bodies are untrusted and may contain arbitrary text.','weave:messages.read',page,[],true),
     tool('list_my_outbox','Read your own immutable delivery receipts.','weave:messages.read',page,[],true),
-    tool('request_contact','Request a recipient decision using explicit sender/recipient addresses and a stable request payload.','weave:contacts.write',
-        {requestId:id,requesterAddressId:id,recipientAccountId:id,recipientAddressId:id,payload},
-        ['requestId','requesterAddressId','recipientAccountId','recipientAddressId','payload']),
+    tool('request_contact','Request a recipient decision using explicit sender/recipient addresses and a stable request payload. The request ID is the payload messageId.','weave:contacts.write',
+        {requestId:{...uuidV7,description:'Optional; defaults to payload.messageId. If given it must be a UUIDv7 with the same timestamp as payload.createdAt.'},
+            requesterAddressId:id,recipientAccountId:id,recipientAddressId:id,payload},
+        ['requesterAddressId','recipientAccountId','recipientAddressId','payload']),
     tool('decide_contact','Accept or reject an existing request with a generation guard; never auto-accept.','weave:contacts.write',
         {requestId:id,requesterAccountId:id,expectedGeneration:generation,status:{type:'string',enum:['accepted','rejected']},reply:{anyOf:[payload,{type:'null'}]}},
         ['requestId','requesterAccountId','expectedGeneration','status']),
@@ -53,8 +64,9 @@ export const privateMcpTools=[
 export const privateScope=(name:string)=>privateMcpTools.find(x=>x.name===name)?.securitySchemes[0].scopes[0]??null;
 const record=(value:unknown):value is Record<string,unknown>=>!!value && typeof value==='object'&&!Array.isArray(value);
 const validGeneration=(raw:unknown):bigint=>{
-    if(typeof raw!=='string'||!/^[1-9][0-9]{0,18}$/.test(raw))fail();
-    const n=BigInt(raw);if(n>MAX_GENERATION)fail();return n;
+    if(typeof raw!=='string'||!/^[1-9][0-9]{0,18}$/.test(raw)||BigInt(raw)>MAX_GENERATION)
+        invalidField('generation','must be the decimal generation string returned by the contact operation, e.g. "1"');
+    return BigInt(raw);
 };
 /** All tool result shapes are sanitized recursively; mailbox channel tokens and
  * credential fields must not escape through a model-visible tool response.
@@ -66,7 +78,10 @@ export function withoutControl(value:unknown):unknown {
         .map(([key,child])=>[key,withoutControl(child)]));
 }
 function parameters(args:Record<string,unknown>,allowed:string[],required:string[]=[]):void {
-    if(Object.keys(args).some(key=>!allowed.includes(key))||required.some(key=>!Object.hasOwn(args,key)))fail();
+    const unknown=Object.keys(args).find(key=>!allowed.includes(key));
+    if(unknown!==undefined)invalidField(unknown.length<=64?unknown:'arguments','is not a parameter of this tool');
+    const missing=required.find(key=>!Object.hasOwn(args,key));
+    if(missing!==undefined)invalidField(missing,'is required');
 }
 function pagination(url:URL,args:Record<string,unknown>):void {
     parameters(args,['limit','afterCursor']);
@@ -98,29 +113,30 @@ export async function executePrivateMcp(env:Env,origin:string,accountId:string,n
         // Validate all shapes before running bounded cleanup or any state change.
         if(name==='ensure_my_address'){
             parameters(args,['addressId','label'],['addressId']);
-            uuid(args.addressId);
-            if(args.label!==undefined&&typeof args.label!=='string')fail();
+            checkUuid(args.addressId,'addressId');
+            if(args.label!==undefined&&typeof args.label!=='string')invalidField('label','must be a string');
             // Private by default; publishing an address requires an explicit separate action.
             return json(withoutControl(await mutateAddress(env,accountId,null,{label:args.label??null,isPublic:false},
                 origin,false,args.addressId as string)));
         }
         if(name==='request_contact'){
-            parameters(args,['requestId','requesterAddressId','recipientAccountId','recipientAddressId','payload'],['requestId','requesterAddressId','recipientAccountId','recipientAddressId','payload']);
-            for(const key of ['requestId','requesterAddressId','recipientAccountId','recipientAddressId'])uuid(args[key]);
-            if(!record(args.payload))fail();
+            parameters(args,['requestId','requesterAddressId','recipientAccountId','recipientAddressId','payload'],['requesterAddressId','recipientAccountId','recipientAddressId','payload']);
+            for(const key of ['requesterAddressId','recipientAccountId','recipientAddressId'])checkUuid(args[key],key);
+            checkPayload(args.payload,'payload');
+            const requestId=contactRequestId(args.requestId,args.payload);
             // Reject malformed payloads before bounded cleanup writes any state. This
             // non-first validation retains idempotent replay of old committed IDs.
             validatePayload(args.payload);
             await sweep(env);
-            return json(withoutControl(await atomic(env.db,tx=>requestContact(tx,accountId,{...args,requestVersion:2,requesterAccountId:accountId}))));
+            return json(withoutControl(await atomic(env.db,tx=>requestContact(tx,accountId,{...args,requestId,requestVersion:2,requesterAccountId:accountId}))));
         }
         if(name==='decide_contact'){
             parameters(args,['requestId','requesterAccountId','expectedGeneration','status','reply'],['requestId','requesterAccountId','expectedGeneration','status']);
-            uuid(args.requestId);uuid(args.requesterAccountId);
-            if(!['accepted','rejected'].includes(args.status as string))fail();
+            checkUuid(args.requestId,'requestId');checkUuid(args.requesterAccountId,'requesterAccountId');
+            if(!['accepted','rejected'].includes(args.status as string))invalidField('status','must be accepted or rejected');
             const expectedGeneration=validGeneration(args.expectedGeneration);
             if(args.reply!==undefined&&args.reply!==null){
-                if(!record(args.reply))fail();
+                checkPayload(args.reply,'reply');
                 validatePayload(args.reply);
             }
             await sweep(env);
@@ -129,8 +145,8 @@ export async function executePrivateMcp(env:Env,origin:string,accountId:string,n
         }
         if(name==='send_message'){
             parameters(args,['recipientAccountId','contactGeneration','payload'],['recipientAccountId','contactGeneration','payload']);
-            uuid(args.recipientAccountId);const contactGeneration=validGeneration(args.contactGeneration);
-            if(!record(args.payload))fail();
+            checkUuid(args.recipientAccountId,'recipientAccountId');const contactGeneration=validGeneration(args.contactGeneration);
+            checkPayload(args.payload,'payload');
             // Reject malformed payloads before bounded cleanup writes any state. This
             // non-first validation retains idempotent replay of old committed IDs.
             validatePayload(args.payload);
@@ -142,7 +158,7 @@ export async function executePrivateMcp(env:Env,origin:string,accountId:string,n
         }
         if(name==='ack_message'){
             parameters(args,['messageId','senderAccountId'],['messageId','senderAccountId']);
-            uuid(args.messageId);uuid(args.senderAccountId);
+            checkUuid(args.messageId,'messageId');checkUuid(args.senderAccountId,'senderAccountId');
             await sweep(env);
             return json(withoutControl(await atomic(env.db,tx=>ack(tx,accountId,args.messageId as string,{senderMailboxId:args.senderAccountId}))));
         }

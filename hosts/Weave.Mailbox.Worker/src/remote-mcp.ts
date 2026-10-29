@@ -84,6 +84,14 @@ function validArguments(name: string, args: ObjectValue): boolean {
         return key === 'limit' && Number.isSafeInteger(value) && (value as number) >= 1 && (value as number) <= 10;
     });
 }
+async function invalidFieldHint(response: Response): Promise<{field: string; reason: string} | null> {
+    try {
+        const parsed: unknown = JSON.parse(await boundedText(response.body, 4096));
+        if (!object(parsed) || typeof parsed.field !== 'string' || typeof parsed.reason !== 'string'
+            || parsed.field.length > 64 || parsed.reason.length > 256) return null;
+        return {field: parsed.field, reason: parsed.reason};
+    } catch { return null; }
+}
 /** The injected read can access only the canonical public directory; never forward client headers. */
 export async function remoteMcp(request: Request, read: DirectoryRead, privateAccess?: PrivateAccess): Promise<Response> {
     const url = new URL(request.url), origin = request.headers.get('origin');
@@ -176,6 +184,11 @@ export async function remoteMcp(request: Request, read: DirectoryRead, privateAc
         try {
             const response = await privateAccess.invoke(caller, params.name, args);
             if (!response.ok) {
+                // A rejected input names the field and rule so the caller can correct
+                // its own arguments; a 400 means nothing was written.
+                const hint = response.status === 400 ? await invalidFieldHint(response) : null;
+                if (hint) return result(id, {isError:true,structuredContent:{status:400,...hint},
+                    content:[{type:'text',text:`Invalid argument ${hint.field}: ${hint.reason}. Nothing was written; correct it and call again.`}]});
                 await response.body?.cancel();
                 return result(id, {isError:true,content:[{type:'text',text:`Private operation failed (HTTP ${response.status}). Do not blindly retry unknown write outcomes; reconcile the original ID.`}]});
             }
