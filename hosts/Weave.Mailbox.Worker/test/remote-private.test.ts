@@ -217,8 +217,8 @@ test('request_contact names the rejected field, writes nothing, and defaults req
         const content=payload('field-hints');
         await rejected({requestId:'d3898e42-1b78-4fdf-b25f-1bad25df73e3',payload:content},'requestId');
         const shifted=new Date(Date.parse(content.createdAt)+1).toISOString();
-        assert.match(await rejected({payload:{...content,createdAt:shifted}},'payload.createdAt'),
-            new RegExp(content.createdAt.replace(/[.]/g,'\\.')),'the reason names the time encoded in messageId');
+        assert.ok((await rejected({payload:{...content,createdAt:shifted}},'payload.createdAt')).includes(content.createdAt),
+            'the reason names the time encoded in messageId');
         await rejected({payload:{...content,messageId:'d3898e42-1b78-4fdf-b25f-1bad25df73e3'}},'payload.messageId');
         await rejected({payload:{...content,bytes:'not base64!'}},'payload.bytes');
         await rejected({payload:content,extra:true},'extra');
