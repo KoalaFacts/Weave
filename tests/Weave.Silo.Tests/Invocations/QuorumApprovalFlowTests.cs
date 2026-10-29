@@ -4,6 +4,8 @@ namespace Weave.Silo.Tests.Invocations;
 
 public sealed class QuorumApprovalFlowTests
 {
+    private static readonly string[] ConcurrentVoters = ["alice", "alice", "bob", "bob", "alice"];
+
     [Fact]
     public async Task DecideApprovalAsync_TwoDistinctHumans_ApprovesOnlyAtQuorum()
     {
@@ -161,5 +163,47 @@ public sealed class QuorumApprovalFlowTests
         }
         (await actor.InvokeAsync(request, fx.Writer())).Success.ShouldBeTrue();
         File.ReadAllText(fx.Target).ShouldBe("updated");
+    }
+
+    [Fact]
+    public async Task DecideApprovalAsync_ConcurrentVotes_CountEachHumanOnce()
+    {
+        using var fx = new ApprovalScenario();
+        var actor = await fx.ConnectAsync(fx.Reopen(requiredApprovals: 3));
+        var approval = await fx.WaitAsync(actor, fx.Write());
+        var votes = ConcurrentVoters.Select(subject => Task.Run(() =>
+            actor.DecideApprovalAsync(approval.InvocationId, approval.PlanDigest,
+                InvocationApprovalDecision.Approve, fx.Approver(subject))));
+        foreach (var result in await Task.WhenAll(votes))
+            result.Succeeded.ShouldBeTrue(result.ErrorCode);
+        var stored = fx.Journal.FindApproval("workspace", approval.InvocationId, TestContext.Current.CancellationToken)
+            .ShouldNotBeNull();
+        stored.State.ShouldBe(InvocationApprovalState.Pending);
+        stored.Approvals.ShouldBe(2);
+        fx.Scalar("SELECT COUNT(*) FROM invocation_approval_decisions;").ShouldBe(2L);
+    }
+
+    [Fact]
+    public async Task DecideApprovalAsync_LastApprovalRacesRejection_EndsInExactlyOneTerminalState()
+    {
+        using var fx = new ApprovalScenario();
+        var actor = await fx.ConnectAsync(fx.Reopen(requiredApprovals: 2));
+        var request = fx.Write();
+        var approval = await fx.WaitAsync(actor, request);
+        (await actor.DecideApprovalAsync(approval.InvocationId, approval.PlanDigest,
+            InvocationApprovalDecision.Approve, fx.Approver("alice"))).Succeeded.ShouldBeTrue();
+        var results = await Task.WhenAll(
+            Task.Run(() => actor.DecideApprovalAsync(approval.InvocationId, approval.PlanDigest,
+                InvocationApprovalDecision.Approve, fx.Approver("bob"))),
+            Task.Run(() => actor.DecideApprovalAsync(approval.InvocationId, approval.PlanDigest,
+                InvocationApprovalDecision.Reject, fx.Approver("carol"))));
+        results.Count(result => result.Succeeded).ShouldBe(1);
+        results.Count(result => result.ErrorCode == "approval-already-decided").ShouldBe(1);
+        var stored = fx.Journal.FindApproval("workspace", approval.InvocationId, TestContext.Current.CancellationToken)
+            .ShouldNotBeNull();
+        stored.State.ShouldBeOneOf(InvocationApprovalState.Approved, InvocationApprovalState.Rejected);
+        fx.Scalar("SELECT COUNT(*) FROM invocation_approval_decisions;").ShouldBe(2L);
+        var invoked = await actor.InvokeAsync(request, fx.Writer());
+        invoked.Success.ShouldBe(stored.State == InvocationApprovalState.Approved);
     }
 }

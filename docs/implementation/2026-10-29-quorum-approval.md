@@ -62,7 +62,9 @@ version fails closed.
 
 Binaries before this change accept only `user_version=1`
 (`EnsureProposalSchema`), so after the upgrade they refuse to open the journal
-instead of applying single-approval logic to a waiting multi-person plan. A
+instead of applying single-approval logic to a waiting multi-person plan. The check runs when a journal is opened, so stop every
+process running an older binary before the first upgraded process opens the
+journal; an already-running old process is not stopped by the version marker. A
 rollback therefore needs either this binary or an explicit, reviewed downgrade
 of the journal: settle or cancel every pending approval with
 `required_approvals > 1`, then reset the version. Do not reset the version
@@ -87,6 +89,7 @@ while such plans are pending.
   journal (with and without `RequireExistingStorage`), fail-closed open of a
   version-2 journal missing the column and of an unknown later version.
 - Concurrent votes are serialized by the existing immediate (write-locking)
-  SQLite transaction around read, count and write; no separate race test was
-  added for duplicate or approve-versus-reject races.
+  SQLite transaction around read, count and write. Tests cover concurrent
+  duplicate votes and the final approval racing a rejection. The old binary is
+  not executed; its version gate is checked from source.
 - Existing durable-approval suites unchanged and passing.
