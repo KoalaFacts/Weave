@@ -221,16 +221,27 @@ test('request_contact names the rejected field, writes nothing, and defaults req
             'the reason names the time encoded in messageId');
         await rejected({payload:{...content,messageId:'d3898e42-1b78-4fdf-b25f-1bad25df73e3'}},'payload.messageId');
         await rejected({payload:{...content,bytes:'not base64!'}},'payload.bytes');
+        const oneDay=new Date(Date.parse(content.createdAt)+86_400_000).toISOString();
+        const overOneDay=new Date(Date.parse(content.createdAt)+86_400_001).toISOString();
+        assert.match(await rejected({payload:{...content,expiresAt:overOneDay}},'payload.expiresAt'),/at most 24 hours/);
         await rejected({payload:content,extra:true},'extra');
         const {recipientAddressId:_omitted,...missing}=base;
         const absent=await executePrivateMcp(env,origin,a.accountId,'request_contact',{...missing,payload:content});
         assert.equal((await absent.json()).field,'recipientAddressId');
         const before=await executePrivateMcp(env,origin,a.accountId,'list_my_contact_requests',{});
         assert.equal((await before.text()).includes(content.messageId),false,'rejected calls wrote no request');
-        const accepted=await executePrivateMcp(env,origin,a.accountId,'request_contact',{...base,payload:content});
+        const accepted=await executePrivateMcp(env,origin,a.accountId,'request_contact',{...base,payload:{...content,expiresAt:oneDay}});
         assert.equal(accepted.status,200,await accepted.clone().text());
         const listed=await executePrivateMcp(env,origin,a.accountId,'list_my_contact_requests',{});
         assert.ok((await listed.text()).includes(content.messageId),'the omitted requestId is the payload messageId');
+        // An explicit distinct UUIDv7 from the same millisecond remains accepted (existing callers).
+        const second=payload('explicit-request-id');
+        const sameMillis=second.messageId.slice(0,15)+'fff-8fff-ffffffffffff';
+        assert.notEqual(sameMillis,second.messageId);
+        const c=await h.participant();
+        const explicit=await executePrivateMcp(env,origin,a.accountId,'request_contact',{requesterAddressId:a.cardId,
+            recipientAccountId:c.accountId,recipientAddressId:c.cardId,requestId:sameMillis,payload:second});
+        assert.equal(explicit.status,200,await explicit.clone().text());
     }finally{await h.close();}
 });
 

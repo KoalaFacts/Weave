@@ -20,7 +20,7 @@ const payload = {type:'object',
     properties:{
         messageId:v7('Lowercase UUIDv7. Its first 48 bits must equal createdAt in Unix milliseconds. Reuse it to retry an uncertain send.'),
         createdAt:time('ISO 8601 UTC time equal to the millisecond encoded in messageId, e.g. 2026-01-01T00:00:00.000Z. Not more than 30 seconds in the future.'),
-        expiresAt:time('ISO 8601 UTC time after createdAt and at most 10 days later.'),
+        expiresAt:time('ISO 8601 UTC time after createdAt and at most 24 hours later.'),
         payloadEncoding:{...str(128, 'Media type of the decoded bytes, e.g. text/plain.'), minLength:1},
         bytes:{...str(87384, 'Standard padded base64 body, at most 64 KiB decoded.'), contentEncoding:'base64'}},
     required:['messageId','createdAt','expiresAt','payloadEncoding','bytes'], additionalProperties:false};
@@ -38,7 +38,7 @@ const address = out({
     effectiveTo:nullable(time('End of the effective period.')), directUri:nullable(str(2048))
 }, ['addressId','accountId','isPublic']);
 const requestSummary = out({
-    requestId:v7('Contact request ID; equals the request payload messageId.'),
+    requestId:v7('Contact request ID; a UUIDv7 with the same timestamp as the request payload (by default its messageId).'),
     requesterAccountId:id('Requesting account.'), recipientAccountId:id('Recipient account.'),
     requesterAddressId:id('Requester address.'), recipientAddressId:id('Recipient address.'),
     generation:generation('Channel generation this request belongs to.'),
@@ -101,7 +101,7 @@ export const privateMcpTools = [
         'weave:messages.read', page, [], pageOf(inboxItem), {readOnly:true}),
     tool('list_my_outbox', 'Read your own delivery receipts.',
         'weave:messages.read', page, [], pageOf(receipt), {readOnly:true}),
-    tool('request_contact', 'Request a recipient decision using explicit sender/recipient addresses and a stable request payload. The request ID is the payload messageId.',
+    tool('request_contact', 'Request a recipient decision using explicit sender/recipient addresses and a stable request payload. Omit requestId to use the payload messageId.',
         'weave:contacts.write', {
             requestId:v7('Optional; defaults to payload.messageId. If given it must be a UUIDv7 with the same timestamp as payload.createdAt.'),
             requesterAddressId:id('One of your own addresses.'), recipientAccountId:id('Recipient account ID.'),

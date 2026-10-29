@@ -9,8 +9,8 @@ import { ticks } from './protocol';
 const uuidPattern = /^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/;
 const uuidV7Pattern = /^[0-9a-f]{8}-[0-9a-f]{4}-7[0-9a-f]{3}-[89ab][0-9a-f]{3}-[0-9a-f]{12}$/;
 const payloadKeys = ['messageId', 'createdAt', 'expiresAt', 'payloadEncoding', 'bytes'];
-const maxLifetimeTicks = 864000000000n; // ten days
-const maxFutureTicks = 300000000n; // thirty seconds
+const maxLifetimeTicks = 864000000000n; // one day in 100 ns ticks (protocol ticks are ms x 10,000)
+const maxFutureTicks = 300000000n; // thirty seconds in 100 ns ticks
 
 const record = (value: unknown): value is Record<string, unknown> =>
     !!value && typeof value === 'object' && !Array.isArray(value);
@@ -43,7 +43,7 @@ export function checkPayload(value: unknown, field: string): asserts value is Re
         invalidField(field + '.createdAt', 'must not be more than 30 seconds in the future');
     const expires = timestamp(value.expiresAt, field + '.expiresAt');
     if (expires <= created || expires - created > maxLifetimeTicks)
-        invalidField(field + '.expiresAt', 'must be after createdAt and at most 10 days later');
+        invalidField(field + '.expiresAt', 'must be after createdAt and at most 24 hours later');
     const encoding = value.payloadEncoding;
     if (typeof encoding !== 'string' || !encoding.trim() || encoding.length > 128 || /[\u0000-\u001f\u007f-\u009f]/u.test(encoding))
         invalidField(field + '.payloadEncoding', 'must be a non-empty media type such as text/plain');
