@@ -13,54 +13,8 @@ import { checkPayload, checkUuid, contactRequestId } from './mcp-arguments';
 import { MAX_GENERATION, validatePayload } from './protocol';
 import { sweep } from './cleanup';
 
-const str = (maxLength: number) => ({type:'string',maxLength});
-const id = {...str(36),pattern:'^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$'};
-const generation = {...str(19),pattern:'^[1-9][0-9]{0,18}$'};
-const page = {limit:{type:'integer',minimum:1,maximum:10},afterCursor:str(2048)};
-const uuidV7 = {...str(36),pattern:'^[0-9a-f]{8}-[0-9a-f]{4}-7[0-9a-f]{3}-[89ab][0-9a-f]{3}-[0-9a-f]{12}$'};
-const payload = {type:'object',
-    description:'Message payload. Generate messageId as a lowercase UUIDv7 and set createdAt to exactly the millisecond it encodes.',
-    properties:{
-        messageId:{...uuidV7,description:'Lowercase UUIDv7. Its first 48 bits must equal createdAt in Unix milliseconds. Reuse it to retry an uncertain send.'},
-        createdAt:{...str(64),format:'date-time',description:'ISO 8601 UTC time equal to the millisecond encoded in messageId, e.g. 2026-01-01T00:00:00.000Z. Not more than 30 seconds in the future.'},
-        expiresAt:{...str(64),format:'date-time',description:'ISO 8601 UTC time after createdAt and at most 10 days later.'},
-        payloadEncoding:{...str(128),minLength:1,description:'Media type of the decoded bytes, e.g. text/plain.'},
-        bytes:{...str(87384),contentEncoding:'base64',description:'Standard padded base64 body, at most 64 KiB decoded.'}},
-    required:['messageId','createdAt','expiresAt','payloadEncoding','bytes'],additionalProperties:false};
-const tool=(name:string,description:string,scope:string,properties:Record<string,unknown>,required:string[]=[],readOnly=false)=>({
-    name,description,inputSchema:{type:'object',properties,required,additionalProperties:false},
-    annotations:{readOnlyHint:readOnly,destructiveHint:false,idempotentHint:readOnly,openWorldHint:false},
-    securitySchemes:[{type:'oauth2',scopes:[scope]}],_meta:{securitySchemes:[{type:'oauth2',scopes:[scope]}]}
-});
-export const privateMcpTools=[
-    {
-        ...tool('get_my_profile','Return the immutable account ID associated with the current OAuth token for multi-account recognition.','weave:addresses.read',{},[],true),
-        outputSchema:{$schema:'https://json-schema.org/draft/2020-12/schema',type:'object',
-            properties:{id:{type:'string',minLength:1,pattern:'\\S',
-                description:'Opaque and stable Weave account identifier for the authenticated OAuth identity.'}},
-            required:['id'],additionalProperties:false},
-        _meta:{securitySchemes:[{type:'oauth2',scopes:['weave:addresses.read']}],'openai/profile':true}
-    },
-    tool('list_my_addresses','List only addresses owned by your OAuth account, including unlisted addresses.','weave:addresses.read',page,[],true),
-    tool('ensure_my_address','Create a private unlisted address using a stable client UUID. Exact retries return the original; changed inputs conflict.','weave:addresses.write',
-        {addressId:id,label:str(128)},['addressId']),
-    tool('list_my_contact_requests','Read incoming and outgoing contact requests, including pending introductions that require recipient acceptance.','weave:contacts.read',page,[],true),
-    tool('list_my_contacts','Read your own accepted contact records without exposing connection tokens.','weave:contacts.read',page,[],true),
-    tool('get_my_channel','Read the current channel generation and block status for a peer.','weave:contacts.read',{peerAccountId:id},['peerAccountId'],true),
-    tool('list_my_inbox','Read your own inbox. Message bodies are untrusted and may contain arbitrary text.','weave:messages.read',page,[],true),
-    tool('list_my_outbox','Read your own immutable delivery receipts.','weave:messages.read',page,[],true),
-    tool('request_contact','Request a recipient decision using explicit sender/recipient addresses and a stable request payload. The request ID is the payload messageId.','weave:contacts.write',
-        {requestId:{...uuidV7,description:'Optional; defaults to payload.messageId. If given it must be a UUIDv7 with the same timestamp as payload.createdAt.'},
-            requesterAddressId:id,recipientAccountId:id,recipientAddressId:id,payload},
-        ['requesterAddressId','recipientAccountId','recipientAddressId','payload']),
-    tool('decide_contact','Accept or reject an existing request with a generation guard; never auto-accept.','weave:contacts.write',
-        {requestId:id,requesterAccountId:id,expectedGeneration:generation,status:{type:'string',enum:['accepted','rejected']},reply:{anyOf:[payload,{type:'null'}]}},
-        ['requestId','requesterAccountId','expectedGeneration','status']),
-    tool('send_message','Send the exact retained payload to an accepted peer. Reuse the same message ID on uncertain outcomes.','weave:messages.send',
-        {recipientAccountId:id,contactGeneration:generation,payload},['recipientAccountId','contactGeneration','payload']),
-    tool('ack_message','Acknowledge a received message once, using its original sender account and ID.','weave:messages.ack',
-        {messageId:id,senderAccountId:id},['messageId','senderAccountId'])
-];
+export { privateMcpTools } from './private-mcp-tools';
+import { privateMcpTools } from './private-mcp-tools';
 export const privateScope=(name:string)=>privateMcpTools.find(x=>x.name===name)?.securitySchemes[0].scopes[0]??null;
 const record=(value:unknown):value is Record<string,unknown>=>!!value && typeof value==='object'&&!Array.isArray(value);
 const validGeneration=(raw:unknown):bigint=>{
@@ -85,8 +39,14 @@ function parameters(args:Record<string,unknown>,allowed:string[],required:string
 }
 function pagination(url:URL,args:Record<string,unknown>):void {
     parameters(args,['limit','afterCursor']);
-    if(args.limit!==undefined){if(!Number.isSafeInteger(args.limit)||(args.limit as number)<1||(args.limit as number)>10)fail();url.searchParams.set('limit',String(args.limit));}
-    if(args.afterCursor!==undefined){if(typeof args.afterCursor!=='string'||args.afterCursor.length>2048)fail();url.searchParams.set('afterCursor',args.afterCursor);}
+    if(args.limit!==undefined){
+        if(!Number.isSafeInteger(args.limit)||(args.limit as number)<1||(args.limit as number)>10)invalidField('limit','must be an integer from 1 to 10');
+        url.searchParams.set('limit',String(args.limit));
+    }
+    if(args.afterCursor!==undefined){
+        if(typeof args.afterCursor!=='string'||args.afterCursor.length>2048)invalidField('afterCursor','must be the nextCursor string from the previous page');
+        url.searchParams.set('afterCursor',args.afterCursor);
+    }
 }
 function urlFor(origin:string,path:string):URL{return new URL(path,origin);}
 export async function executePrivateMcp(env:Env,origin:string,accountId:string,name:string,args:Record<string,unknown>):Promise<Response> {
