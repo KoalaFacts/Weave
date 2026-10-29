@@ -4,7 +4,7 @@ import { readFileSync } from 'node:fs';
 const root=new URL('../../../',import.meta.url);
 test('repository SDK selection accepts stable .NET 10 feature bands without crossing majors',()=>{
     const config=JSON.parse(readFileSync(new URL('global.json',root),'utf8'));
-    assert.equal(config.sdk.version,'10.0.100');
+    assert.equal(config.sdk.version,'10.0.400');
     assert.equal(config.sdk.rollForward,'latestMinor');
     assert.equal(config.sdk.allowPrerelease,false);
     assert.equal(config.test.runner,'Microsoft.Testing.Platform');

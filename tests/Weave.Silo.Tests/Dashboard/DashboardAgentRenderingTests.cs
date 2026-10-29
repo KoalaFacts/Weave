@@ -32,7 +32,7 @@ public sealed class DashboardAgentRenderingTests
         text.ShouldContain("docs-writer (Idle)");
         text.ShouldContain("Select an agent");
         text.ShouldNotContain("No agents active");
-        html.ShouldNotContain("<fluent-progress-ring");
+        html.ShouldNotContain("<fluent-spinner");
         html.ShouldContain("disabled");
     }
 
@@ -47,7 +47,7 @@ public sealed class DashboardAgentRenderingTests
         text.ShouldContain("No agents active");
         text.ShouldContain("Select an agent");
         text.ShouldNotContain("Unable to connect");
-        html.ShouldNotContain("<fluent-progress-ring");
+        html.ShouldNotContain("<fluent-spinner");
     }
 
     [Fact]
@@ -62,7 +62,7 @@ public sealed class DashboardAgentRenderingTests
 
         DashboardPageFixture.Text(html).ShouldContain("Unable to connect to the Weave Silo API.");
         html.ShouldNotContain("private-upstream-marker");
-        html.ShouldNotContain("<fluent-progress-ring");
+        html.ShouldNotContain("<fluent-spinner");
     }
 
     [Fact]
@@ -87,8 +87,8 @@ public sealed class DashboardAgentRenderingTests
 
         var html = await fixture.HtmlAsync(root);
 
-        initial.ShouldContain("<fluent-progress-ring");
-        html.ShouldNotContain("<fluent-progress-ring");
+        initial.ShouldContain("<fluent-spinner");
+        html.ShouldNotContain("<fluent-spinner");
         DashboardPageFixture.Text(html).ShouldContain("release-reviewer (Active)");
     }
 }

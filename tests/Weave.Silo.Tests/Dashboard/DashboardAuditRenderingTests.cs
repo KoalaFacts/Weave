@@ -36,7 +36,7 @@ public sealed class DashboardAuditRenderingTests
         text.ShouldContain("long-tok…");
         html.ShouldContain("href=\"/audit/long-token-123456789\"");
         html.ShouldContain("href=\"/audit/short-id\"");
-        html.ShouldNotContain("<fluent-progress-ring");
+        html.ShouldNotContain("<fluent-spinner");
     }
 
     [Fact]
@@ -71,7 +71,7 @@ public sealed class DashboardAuditRenderingTests
         var html = await fixture.RenderAsync("Audit", new() { ["TokenId"] = token });
 
         DashboardPageFixture.Text(html).ShouldContain(expected);
-        html.ShouldNotContain("<fluent-progress-ring");
+        html.ShouldNotContain("<fluent-spinner");
         html.ShouldNotContain("Unable to query");
     }
 
@@ -88,7 +88,7 @@ public sealed class DashboardAuditRenderingTests
         text.ShouldContain("403");
         text.ShouldNotContain("No capability authorization rows");
         html.ShouldNotContain("private-body-marker");
-        html.ShouldNotContain("<fluent-progress-ring");
+        html.ShouldNotContain("<fluent-spinner");
     }
 
     [Fact]
@@ -110,9 +110,9 @@ public sealed class DashboardAuditRenderingTests
 
         var html = await fixture.HtmlAsync(root);
 
-        initial.ShouldContain("<fluent-progress-ring");
+        initial.ShouldContain("<fluent-spinner");
         DashboardPageFixture.Text(initial).ShouldContain("Loading…");
-        html.ShouldNotContain("<fluent-progress-ring");
+        html.ShouldNotContain("<fluent-spinner");
         DashboardPageFixture.Text(html).ShouldContain("No audit rows recorded for this token.");
     }
 }

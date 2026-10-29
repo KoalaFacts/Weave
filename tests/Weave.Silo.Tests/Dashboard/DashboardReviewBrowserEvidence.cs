@@ -13,10 +13,10 @@ internal sealed class DashboardReviewBrowserEvidence(IPage page, string temporar
         var layout = await page.EvaluateAsync<JsonElement>("""
             reviewPage => {
               const content = document.querySelector(reviewPage ? '.review-page' : 'main');
-              const footer = document.querySelector('.footer');
+              const footer = document.querySelector('footer');
               const box = element => { const r = element.getBoundingClientRect();
                 return { left: r.left, right: r.right, top: r.top + scrollY, bottom: r.bottom + scrollY }; };
-              const elements = [...content.querySelectorAll('input, button, label, pre, code, a, fluent-anchor, fluent-card')];
+              const elements = [...content.querySelectorAll('input, button, label, pre, code, a, fluent-link, fluent-anchor-button, fluent-card')];
               return {
                 reviewPage,
                 viewportWidth: innerWidth, viewportHeight: innerHeight,

@@ -2,35 +2,35 @@
 
 <PageTitle>Logs - Weave</PageTitle>
 
-<FluentLabel Typo="Typography.H4" Style="margin-bottom: 1rem;">Logs</FluentLabel>
+<FluentText As="TextTag.H4" Style="margin-bottom: 1rem;">Logs</FluentText>
 
-<FluentCard Style="padding: 1rem; margin-bottom: 1.5rem; max-width: 600px; background: var(--neutral-layer-2);">
-    <FluentLabel Typo="Typography.Body">
+<FluentCard Style="padding: 1rem; margin-bottom: 1.5rem; max-width: 600px; background: var(--colorNeutralBackground2);">
+    <FluentText As="TextTag.Paragraph">
         Structured logging from Orleans grains and the chat pipeline is available through the Aspire dashboard.
         This page will aggregate log views in a future update.
-    </FluentLabel>
+    </FluentText>
 </FluentCard>
 
-<FluentLabel Typo="Typography.Subject" Style="margin-bottom: 0.5rem;">Log Sources</FluentLabel>
+<FluentText As="TextTag.Paragraph" Size="TextSize.Size400" Weight="TextWeight.Semibold" Style="margin-bottom: 0.5rem;">Log Sources</FluentText>
 <FluentCard Style="padding: 1rem; max-width: 500px; margin-bottom: 1.5rem;">
     <FluentStack Orientation="Orientation.Vertical" VerticalGap="8">
-        <FluentLabel Typo="Typography.Body">&#x2022; Workspace grain lifecycle events</FluentLabel>
-        <FluentLabel Typo="Typography.Body">&#x2022; Agent activation, deactivation, and chat messages</FluentLabel>
-        <FluentLabel Typo="Typography.Body">&#x2022; Tool connector invocations and security blocks</FluentLabel>
-        <FluentLabel Typo="Typography.Body">&#x2022; Heartbeat scheduling and task submission</FluentLabel>
-        <FluentLabel Typo="Typography.Body">&#x2022; Secret proxy and leak scanner diagnostics</FluentLabel>
+        <FluentText As="TextTag.Paragraph">&#x2022; Workspace grain lifecycle events</FluentText>
+        <FluentText As="TextTag.Paragraph">&#x2022; Agent activation, deactivation, and chat messages</FluentText>
+        <FluentText As="TextTag.Paragraph">&#x2022; Tool connector invocations and security blocks</FluentText>
+        <FluentText As="TextTag.Paragraph">&#x2022; Heartbeat scheduling and task submission</FluentText>
+        <FluentText As="TextTag.Paragraph">&#x2022; Secret proxy and leak scanner diagnostics</FluentText>
     </FluentStack>
 </FluentCard>
 
-<FluentLabel Typo="Typography.Subject" Style="margin-bottom: 0.5rem;">Aspire Dashboard</FluentLabel>
+<FluentText As="TextTag.Paragraph" Size="TextSize.Size400" Weight="TextWeight.Semibold" Style="margin-bottom: 0.5rem;">Aspire Dashboard</FluentText>
 <FluentCard Style="padding: 1rem; max-width: 500px;">
     <FluentStack Orientation="Orientation.Vertical" VerticalGap="8">
-        <FluentLabel Typo="Typography.Body">
+        <FluentText As="TextTag.Paragraph">
             When running through <code>Weave.AppHost</code>, the Aspire dashboard provides structured log viewing,
             distributed traces, and metric dashboards out of the box.
-        </FluentLabel>
-        <FluentLabel Typo="Typography.Body">
+        </FluentText>
+        <FluentText As="TextTag.Paragraph">
             Access it at the URL printed by <code>dotnet run --project src/Runtime/Weave.AppHost</code>.
-        </FluentLabel>
+        </FluentText>
     </FluentStack>
 </FluentCard>

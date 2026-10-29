@@ -1,7 +1,8 @@
 .dashboard-layout { display: flex; flex-direction: column; min-height: 100dvh; }
+.dashboard-header { display: flex; align-items: center; flex-shrink: 0; height: 50px; padding: 0 1rem; background: var(--colorBrandBackground); color: var(--colorNeutralForegroundOnBrand); }
 .dashboard-shell { display: grid; grid-template-columns: 250px minmax(0, 1fr); flex: 1; align-items: start; }
 .dashboard-content { min-width: 0; padding: 1.5rem; }
-.dashboard-layout ::deep .dashboard-footer { flex-shrink: 0; padding: 1rem 1.5rem; }
+.dashboard-footer { flex-shrink: 0; padding: 1rem 1.5rem; background: var(--colorNeutralBackground2); }
 @media (max-width: 640px) {
     .dashboard-shell { grid-template-columns: minmax(0, 1fr); }
     .dashboard-content { padding: .75rem; }

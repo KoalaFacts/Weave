@@ -1,21 +1,23 @@
 @inherits LayoutComponentBase
 
 <div class="dashboard-layout">
-    <FluentHeader>
+    <header class="dashboard-header">
         Weave Dashboard
-    </FluentHeader>
+    </header>
 
     <div class="dashboard-shell">
-        <FluentNavMenu Width="250" Title="Navigation">
+        <FluentNav Width="250px" aria-label="Navigation">
             <NavMenu />
-        </FluentNavMenu>
+        </FluentNav>
 
         <main class="dashboard-content">
             @Body
         </main>
     </div>
 
-    <FluentFooter Class="dashboard-footer">
+    <footer class="dashboard-footer">
         <span>Weave v0.1.0 — AI Agent Workspace Orchestrator</span>
-    </FluentFooter>
+    </footer>
 </div>
+
+<FluentProviders />

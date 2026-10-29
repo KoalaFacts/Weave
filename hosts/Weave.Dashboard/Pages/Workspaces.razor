@@ -2,27 +2,27 @@
 
 <PageTitle>Workspaces - Weave</PageTitle>
 
-<FluentLabel Typo="Typography.H4" Style="margin-bottom: 1rem;">Workspaces</FluentLabel>
+<FluentText As="TextTag.H4" Style="margin-bottom: 1rem;">Workspaces</FluentText>
 
 @if (_loading)
 {
-    <FluentProgressRing />
+    <FluentSpinner />
 }
 else if (_error is not null)
 {
-    <FluentMessageBar Intent="MessageIntent.Error">@_error</FluentMessageBar>
+    <FluentMessageBar Intent="MessageBarIntent.Error">@_error</FluentMessageBar>
 }
 else
 {
     <FluentDataGrid Items="@_workspaces" GridTemplateColumns="1fr 1fr 120px 80px 160px 160px">
         <TemplateColumn Title="Name">
-            <FluentAnchor Href="@($"/workspaces/{context.WorkspaceId}")" Appearance="Appearance.Hypertext">
+            <FluentLink Href="@($"/workspaces/{context.WorkspaceId}")">
                 @(context.Name ?? context.WorkspaceId)
-            </FluentAnchor>
+            </FluentLink>
         </TemplateColumn>
         <PropertyColumn Property="@(w => w.WorkspaceId)" Title="Workspace ID" />
         <TemplateColumn Title="Status">
-            <FluentBadge Appearance="@GetStatusAppearance(context.Status)">@context.Status</FluentBadge>
+            <FluentBadge Color="@GetStatusColor(context.Status)" Content="@context.Status" />
         </TemplateColumn>
         <PropertyColumn Property="@(w => w.ContainerCount)" Title="Containers" />
         <PropertyColumn Property="@(w => w.StartedAt)" Title="Started" Format="g" />

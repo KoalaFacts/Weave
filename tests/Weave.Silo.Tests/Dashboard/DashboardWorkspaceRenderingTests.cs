@@ -39,7 +39,7 @@ public sealed class DashboardWorkspaceRenderingTests
 
         DashboardPageFixture.Text(html).ShouldContain("Unable to connect to the Weave Silo API.");
         html.ShouldNotContain("upstream-private-marker");
-        html.ShouldNotContain("<fluent-progress-ring");
+        html.ShouldNotContain("<fluent-spinner");
     }
 
     [Fact]
@@ -67,7 +67,7 @@ public sealed class DashboardWorkspaceRenderingTests
         text.ShouldContain("Pending");
         html.ShouldContain("href=\"/workspaces/release-lab\"");
         html.ShouldContain("href=\"/workspaces/archived-lab\"");
-        html.ShouldNotContain("<fluent-progress-ring");
+        html.ShouldNotContain("<fluent-spinner");
     }
 
     [Theory]
@@ -91,8 +91,8 @@ public sealed class DashboardWorkspaceRenderingTests
 
         var loaded = await fixture.HtmlAsync(root);
 
-        initial.ShouldContain("<fluent-progress-ring");
-        loaded.ShouldNotContain("<fluent-progress-ring");
+        initial.ShouldContain("<fluent-spinner");
+        loaded.ShouldNotContain("<fluent-spinner");
         loaded.ShouldNotContain("Unable to connect");
         if (page == "Tools")
             DashboardPageFixture.Text(loaded).ShouldContain("No tools connected. Start a workspace to register tools.");
@@ -164,7 +164,7 @@ public sealed class DashboardWorkspaceRenderingTests
         text.ShouldContain("No tools connected.");
         text.ShouldNotContain("Started:");
         text.ShouldNotContain("Stopped:");
-        html.ShouldNotContain("<fluent-progress-ring");
+        html.ShouldNotContain("<fluent-spinner");
     }
 
     [Fact]
@@ -181,7 +181,7 @@ public sealed class DashboardWorkspaceRenderingTests
 
         DashboardPageFixture.Text(html).ShouldContain("Workspace 'missing-lab' not found.");
         requests.ShouldBe(["/api/workspaces/missing-lab"]);
-        html.ShouldNotContain("<fluent-progress-ring");
+        html.ShouldNotContain("<fluent-spinner");
         html.ShouldNotContain("No agents active.");
     }
 

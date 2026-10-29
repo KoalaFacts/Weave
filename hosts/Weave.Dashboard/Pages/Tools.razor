@@ -2,19 +2,19 @@
 
 <PageTitle>Tools - Weave</PageTitle>
 
-<FluentLabel Typo="Typography.H4" Style="margin-bottom: 1rem;">Tool Connections</FluentLabel>
+<FluentText As="TextTag.H4" Style="margin-bottom: 1rem;">Tool Connections</FluentText>
 
 @if (_loading)
 {
-    <FluentProgressRing />
+    <FluentSpinner />
 }
 else if (_error is not null)
 {
-    <FluentMessageBar Intent="MessageIntent.Error">@_error</FluentMessageBar>
+    <FluentMessageBar Intent="MessageBarIntent.Error">@_error</FluentMessageBar>
 }
 else if (_tools.Count == 0)
 {
-    <FluentLabel Typo="Typography.Body">No tools connected. Start a workspace to register tools.</FluentLabel>
+    <FluentText As="TextTag.Paragraph">No tools connected. Start a workspace to register tools.</FluentText>
 }
 else
 {
@@ -22,7 +22,7 @@ else
         <PropertyColumn Property="@(t => t.ToolName)" Title="Tool" />
         <PropertyColumn Property="@(t => t.ToolType)" Title="Type" />
         <TemplateColumn Title="Status">
-            <FluentBadge Appearance="@GetStatusAppearance(context.Status)">@context.Status</FluentBadge>
+            <FluentBadge Color="@GetStatusColor(context.Status)" Content="@context.Status" />
         </TemplateColumn>
         <PropertyColumn Property="@(t => t.Endpoint)" Title="Endpoint" />
         <PropertyColumn Property="@(t => t.ConnectedAt)" Title="Connected" Format="g" />

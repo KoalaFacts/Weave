@@ -10,9 +10,9 @@
     <link href="Weave.Dashboard.styles.css" rel="stylesheet" />
     <HeadOutlet @rendermode="RenderMode.InteractiveServer" />
 </head>
-<body>
+@* no-fuib-style keeps document scrolling: the library default sheet fixes body height and hides overflow for FluentLayout. *@
+<body no-fuib-style>
     <Routes @rendermode="RenderMode.InteractiveServer" />
     <script src="_framework/blazor.web.js"></script>
-    <script src="_content/Microsoft.FluentUI.AspNetCore.Components/Microsoft.FluentUI.AspNetCore.Components.lib.module.js" type="module" async></script>
 </body>
 </html>

@@ -78,7 +78,7 @@
     <PackageVersion Include="Testcontainers.PostgreSql" Version="4.16.0" />
   </ItemGroup>
   <ItemGroup Label="Blazor Dashboard">
-    <PackageVersion Include="Microsoft.FluentUI.AspNetCore.Components" Version="4.14.1" />
-    <PackageVersion Include="Microsoft.FluentUI.AspNetCore.Components.Icons" Version="4.14.1" />
+    <PackageVersion Include="Microsoft.FluentUI.AspNetCore.Components" Version="5.0.1" />
+    <PackageVersion Include="Microsoft.FluentUI.AspNetCore.Components.Icons" Version="5.0.1" />
   </ItemGroup>
 </Project>

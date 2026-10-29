@@ -2,43 +2,43 @@
 
 <PageTitle>Weave Dashboard</PageTitle>
 
-<FluentLabel Typo="Typography.H4">Welcome to Weave</FluentLabel>
-<FluentLabel Typo="Typography.Body" Style="margin-bottom: 1.5rem;">AI Agent Workspace Orchestrator</FluentLabel>
+<FluentText As="TextTag.H4">Welcome to Weave</FluentText>
+<FluentText As="TextTag.Paragraph" Style="margin-bottom: 1.5rem;">AI Agent Workspace Orchestrator</FluentText>
 
-<FluentStack Orientation="Orientation.Horizontal" Wrap="true" HorizontalGap="16">
+<FluentStack Orientation="Orientation.Horizontal" Wrap="true" HorizontalGap="16" VerticalGap="10">
     <FluentCard Style="width: 200px; padding: 1rem;">
-        <FluentLabel Typo="Typography.Subject">Workspaces</FluentLabel>
-        <FluentLabel Typo="Typography.H2" Color="Color.Accent">@_workspaceCount</FluentLabel>
-        <FluentLabel Typo="Typography.Body">Active</FluentLabel>
+        <FluentText As="TextTag.Paragraph" Size="TextSize.Size400" Weight="TextWeight.Semibold">Workspaces</FluentText>
+        <FluentText As="TextTag.H2" Color="Color.Primary">@_workspaceCount</FluentText>
+        <FluentText As="TextTag.Paragraph">Active</FluentText>
     </FluentCard>
 
     <FluentCard Style="width: 200px; padding: 1rem;">
-        <FluentLabel Typo="Typography.Subject">Agents</FluentLabel>
-        <FluentLabel Typo="Typography.H2" Color="Color.Accent">@_agentCount</FluentLabel>
-        <FluentLabel Typo="Typography.Body">Running</FluentLabel>
+        <FluentText As="TextTag.Paragraph" Size="TextSize.Size400" Weight="TextWeight.Semibold">Agents</FluentText>
+        <FluentText As="TextTag.H2" Color="Color.Primary">@_agentCount</FluentText>
+        <FluentText As="TextTag.Paragraph">Running</FluentText>
     </FluentCard>
 
     <FluentCard Style="width: 200px; padding: 1rem;">
-        <FluentLabel Typo="Typography.Subject">Tools</FluentLabel>
-        <FluentLabel Typo="Typography.H2" Color="Color.Accent">@_toolCount</FluentLabel>
-        <FluentLabel Typo="Typography.Body">Connected</FluentLabel>
+        <FluentText As="TextTag.Paragraph" Size="TextSize.Size400" Weight="TextWeight.Semibold">Tools</FluentText>
+        <FluentText As="TextTag.H2" Color="Color.Primary">@_toolCount</FluentText>
+        <FluentText As="TextTag.Paragraph">Connected</FluentText>
     </FluentCard>
 
     <FluentCard Style="width: 200px; padding: 1rem;">
-        <FluentLabel Typo="Typography.Subject">LLM Costs</FluentLabel>
-        <FluentLabel Typo="Typography.H2" Color="Color.Accent">$0.00</FluentLabel>
-        <FluentLabel Typo="Typography.Body">Today</FluentLabel>
+        <FluentText As="TextTag.Paragraph" Size="TextSize.Size400" Weight="TextWeight.Semibold">LLM Costs</FluentText>
+        <FluentText As="TextTag.H2" Color="Color.Primary">$0.00</FluentText>
+        <FluentText As="TextTag.Paragraph">Today</FluentText>
     </FluentCard>
 </FluentStack>
 
-<FluentLabel Typo="Typography.H5" Style="margin-top: 2rem; margin-bottom: 1rem;">Quick Actions</FluentLabel>
-<FluentStack Orientation="Orientation.Horizontal" Wrap="true" HorizontalGap="12">
-    <FluentAnchor Href="/workspaces" Appearance="Appearance.Accent">New Workspace</FluentAnchor>
-    <FluentAnchor Href="/setup" Appearance="Appearance.Outline">Setup Wizard</FluentAnchor>
-    <FluentAnchor Href="/monitoring" Appearance="Appearance.Outline">View Monitoring</FluentAnchor>
+<FluentText As="TextTag.H5" Style="margin-top: 2rem; margin-bottom: 1rem;">Quick Actions</FluentText>
+<FluentStack Orientation="Orientation.Horizontal" Wrap="true" HorizontalGap="12" VerticalGap="10">
+    <FluentAnchorButton Href="/workspaces" Appearance="ButtonAppearance.Primary">New Workspace</FluentAnchorButton>
+    <FluentAnchorButton Href="/setup" Appearance="ButtonAppearance.Outline">Setup Wizard</FluentAnchorButton>
+    <FluentAnchorButton Href="/monitoring" Appearance="ButtonAppearance.Outline">View Monitoring</FluentAnchorButton>
 </FluentStack>
 
 @if (_error is not null)
 {
-    <FluentMessageBar Intent="MessageIntent.Error" Style="margin-top: 1rem;">@_error</FluentMessageBar>
+    <FluentMessageBar Intent="MessageBarIntent.Error" Style="margin-top: 1rem;">@_error</FluentMessageBar>
 }

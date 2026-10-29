@@ -53,11 +53,11 @@ public sealed partial class Audit : ComponentBase
         Navigation.NavigateTo("/audit");
     }
 
-    private static Appearance GetOutcomeAppearance(string outcome) => outcome switch
+    private static BadgeColor GetOutcomeColor(string outcome) => outcome switch
     {
-        "Allow" => Appearance.Accent,
-        "Deny" => Appearance.Accent,
-        _ => Appearance.Neutral
+        "Allow" => BadgeColor.Brand,
+        "Deny" => BadgeColor.Brand,
+        _ => BadgeColor.Informative
     };
 
     private static string ShortId(string tokenId) =>

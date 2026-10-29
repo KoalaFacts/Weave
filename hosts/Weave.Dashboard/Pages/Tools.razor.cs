@@ -34,11 +34,11 @@ public sealed partial class Tools : ComponentBase
         }
     }
 
-    private static Appearance GetStatusAppearance(string status) => status switch
+    private static BadgeColor GetStatusColor(string status) => status switch
     {
-        "Connected" => Appearance.Accent,
-        "Disconnected" => Appearance.Neutral,
-        "Error" => Appearance.Accent,
-        _ => Appearance.Neutral
+        "Connected" => BadgeColor.Brand,
+        "Disconnected" => BadgeColor.Informative,
+        "Error" => BadgeColor.Brand,
+        _ => BadgeColor.Informative
     };
 }
