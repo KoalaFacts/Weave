@@ -1,7 +1,7 @@
 # Weave Architecture
 
 > **Baseline:** Revision 2.1 — Vertical Slices, Explicit Composition, Flat Source Layout.
-> **Product:** Independent-agent network; separate Governed Tools capability. **Reference language:** C#/.NET. **Plugin ecosystem:** language-neutral.
+> **Product:** Independent-agent network; separate Governed Tools capability. **Normative definition:** language-neutral protocols and conformance fixtures ([runtime-neutral contract](docs/runtime-contract.md)); C#/.NET is the current implementation. **Plugin ecosystem:** language-neutral.
 > **Implementation:** The source migration is the first structural increment, not completion of this target. See [implementation record](docs/implementation/2026-09-19-flat-source-foundation.md). Existing actor keys, tool-level permissions and runtime behavior are deliberately retained until their own tested replacements are implemented.
 
 ## 1. Architectural decision
@@ -226,7 +226,7 @@ Calls obtain immediate decisions/results; events describe committed facts. Consu
 
 Keep strong invariants with their state owner or an explicit local transaction. Use an outbox/equivalent durable delivery for audit projections and notifications. No transaction spans a human decision or arbitrary provider call. Compensation must be supported explicitly.
 
-C#/.NET and ASP.NET Core are the reference implementation. Orleans is optional where it serves a real feature and stays out of wire contracts. Initial deployment is a composable application, not mandatory microservices. Multi-node claims need concurrency/recovery tests.
+C#/.NET and ASP.NET Core are the current implementation. Weave is defined by its language-neutral contract, not by one codebase: additional implementations (the target is TypeScript on Workers with Durable Objects) must pass the same conformance fixtures, and stateful features sit behind a thin actor boundary so Orleans or Durable Objects stay replaceable. See the [runtime-neutral contract](docs/runtime-contract.md). Orleans is optional where it serves a real feature and stays out of wire contracts. Initial deployment is a composable application, not mandatory microservices. Multi-node claims need concurrency/recovery tests.
 
 Native AOT is tested per host. It cannot simultaneously promise arbitrary dynamic managed-assembly loading. Static built-ins and external workers are separate implementation paths. Rust/WASM infrastructure is not an initial requirement.
 
