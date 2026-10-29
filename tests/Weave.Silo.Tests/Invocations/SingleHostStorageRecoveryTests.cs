@@ -79,7 +79,7 @@ public sealed partial class SingleHostStorageRecoveryTests
             await host.ConnectAsync();
             writer = host.Token("writer");
             revoked = host.Token("writer");
-            reviewer = host.Token("operator", ["invocation:read", "approval:decide", "tool:files:approve:write_file"]);
+            reviewer = host.Token("operator", ["invocation:read", "tool:files:approve:write_file"]);
             host.Tokens.Revoke(revoked.TokenId);
             using var pending = await host.SendAsync(request, writer);
             pending.StatusCode.ShouldBe(HttpStatusCode.Accepted);

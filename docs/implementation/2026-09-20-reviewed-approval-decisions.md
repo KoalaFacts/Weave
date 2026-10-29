@@ -1,5 +1,7 @@
 # Reviewed approval decisions and operator example
 
+> **Superseded in part (2026-10-29):** the `approval:decide` grant no longer exists. Decisions now require a Human principal plus the exact operation approval grant; see [human-only approval decisions](2026-10-29-human-approval-principals.md).
+
 This increment extends the canonical verified review and durable approval path.
 It adds an opt-in operator decision endpoint and a Python standard-library
 terminal helper. It does not add another approval store, execution route, schema,

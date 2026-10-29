@@ -77,6 +77,7 @@ public sealed class GovernedHttpCancellationTests
                 WorkspaceId = "workspace",
                 IssuedTo = subject,
                 Grants = grants,
+                Kind = TestPrincipals.For(grants),
                 Lifetime = TimeSpan.FromMinutes(5)
             });
             await tool.ConnectAsync(new ToolSpec
@@ -114,7 +115,7 @@ public sealed class GovernedHttpCancellationTests
             using var message = new HttpRequestMessage(hasBody ? HttpMethod.Post : HttpMethod.Get, route + suffix);
             message.Headers.Add("X-Weave-Cancellation-Probe", "true");
             var credential = Token("cancellation-probe",
-                ["tool:files:invoke:write_file", "invocation:read", "approval:decide", "tool:files:approve:write_file"]);
+                ["tool:files:invoke:write_file", "invocation:read", "tool:files:approve:write_file"]);
             message.Headers.Add("X-Weave-Capability", WebEncoders.Base64UrlEncode(JsonSerializer.SerializeToUtf8Bytes(credential, JsonOptions)));
             if (hasBody)
             {

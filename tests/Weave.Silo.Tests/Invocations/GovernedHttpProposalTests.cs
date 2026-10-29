@@ -37,7 +37,7 @@ public sealed partial class GovernedHttpEntryTests
         var request = Request();
         using var pending = await fx.SendAsync(HttpMethod.Post, fx.Route, request, fx.Token());
         pending.StatusCode.ShouldBe(HttpStatusCode.Accepted);
-        var reviewer = fx.Token("human-reviewer", ["invocation:read", "approval:decide", "tool:files:approve:write_file"]);
+        var reviewer = fx.Token("human-reviewer", ["invocation:read", "tool:files:approve:write_file"]);
 
         using var response = await fx.SendAsync(HttpMethod.Get, ReviewRoute(fx, request), null, reviewer);
 
@@ -90,7 +90,7 @@ public sealed partial class GovernedHttpEntryTests
         using var premature = await fx.SendAsync(HttpMethod.Post, route, null, fx.Token());
         premature.StatusCode.ShouldBe(HttpStatusCode.Accepted);
         File.ReadAllText(fx.Target).ShouldBe("original");
-        var reviewer = fx.Token("human-reviewer", ["invocation:read", "approval:decide", "tool:files:approve:write_file"]);
+        var reviewer = fx.Token("human-reviewer", ["invocation:read", "tool:files:approve:write_file"]);
         var approval = (await fx.Tool.GetApprovalAsync(request.InvocationId!.Value, reviewer)).ShouldNotBeNull();
         (await fx.Tool.DecideApprovalAsync(request.InvocationId.Value, approval.PlanDigest,
             InvocationApprovalDecision.Approve, reviewer)).Succeeded.ShouldBeTrue();

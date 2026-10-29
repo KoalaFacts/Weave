@@ -94,6 +94,7 @@ public sealed partial class SingleHostStorageRecoveryTests : IDisposable
             WorkspaceId = "recovery",
             IssuedTo = subject,
             Grants = grants ?? ["tool:files:invoke:write_file", "invocation:read"],
+            Kind = Weave.Silo.Tests.Invocations.TestPrincipals.For(grants ?? ["tool:files:invoke:write_file", "invocation:read"]),
             Lifetime = TimeSpan.FromMinutes(30)
         });
         public Task<ToolHandle> ConnectAsync() => Tool.ConnectAsync(new ToolSpec

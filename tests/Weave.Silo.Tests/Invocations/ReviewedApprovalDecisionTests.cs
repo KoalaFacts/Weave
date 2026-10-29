@@ -155,12 +155,13 @@ public sealed partial class ReviewedApprovalDecisionTests
             WorkspaceId = Workspace,
             IssuedTo = subject,
             Grants = grants,
+            Kind = TestPrincipals.For(grants),
             Lifetime = TimeSpan.FromMinutes(5)
         });
 
         public CapabilityToken Writer() => Token("writer", ["tool:files:invoke:write_file", "invocation:read"]);
         public CapabilityToken Reviewer(string subject = "operator") =>
-            Token(subject, ["invocation:read", "approval:decide", "tool:files:approve:write_file"]);
+            Token(subject, ["invocation:read", "tool:files:approve:write_file"]);
 
         public Task<ToolHandle> ConnectAsync(string? root = null) => Tool.ConnectAsync(new ToolSpec
         {

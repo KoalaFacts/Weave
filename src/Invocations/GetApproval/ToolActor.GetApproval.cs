@@ -23,7 +23,7 @@ public sealed partial class ToolActor
             return null;
         if (!string.Equals(approval.Subject, token.IssuedTo, StringComparison.Ordinal))
         {
-            await authorizer.AuthorizeAsync(token, "approval:decide", _identity.WorkspaceId);
+            await authorizer.AuthorizeAsync(token, PrincipalRequirement.Human, _identity.WorkspaceId);
             await authorizer.AuthorizeAsync(token, ToolCapability.Approve(_identity.ToolName, approval.Operation), _identity.WorkspaceId);
             token.CancellationToken.ThrowIfCancellationRequested();
         }

@@ -141,6 +141,9 @@ public sealed partial class TrustedOperatorOnboardingTests
     [InlineData("agent-only")]
     [InlineData("disabled-invocations")]
     [InlineData("invalid-lifetime")]
+    [InlineData("removed-decision-grant")]
+    [InlineData("agent-approval-grant")]
+    [InlineData("reserved-principal-grant")]
     public async Task Start_UnsafeOperatorConfiguration_FailsWithoutOpeningAdminSurface(string condition)
     {
         await using var fx = new Fixture(condition: condition);
@@ -206,7 +209,7 @@ public sealed partial class TrustedOperatorOnboardingTests
                 builder.UseSetting("Weave:Operator:Tools:files:Tool:FileSystem:Root", Path.Combine(_root, "tools"));
                 Profile("writer", "agent", ["tool:files:invoke:write_file", "invocation:read"]);
                 Profile("reader", "agent", ["tool:files:invoke:read_file", "invocation:read"]);
-                Profile("reviewer", "operator", ["invocation:read", "approval:decide", "tool:files:approve:write_file"]);
+                Profile("reviewer", "operator", ["invocation:read", "tool:files:approve:write_file"]);
                 builder.ConfigureServices(services => services.PostConfigure<InvocationJournalOptions>(options =>
                 {
                     options.DatabasePath = Path.Combine(_root, "journal.db");
@@ -215,11 +218,21 @@ public sealed partial class TrustedOperatorOnboardingTests
                 void Profile(string name, string subject, string[] grants)
                 {
                     var prefix = "Weave:Operator:Credentials:" + name + ":";
+                    var human = TestPrincipals.For(grants) == PrincipalKind.Human;
+                    if (name == "reviewer")
+                        grants = condition switch
+                        {
+                            "removed-decision-grant" => [.. grants, "approval:decide"],
+                            "reserved-principal-grant" => [.. grants, PrincipalRequirement.Human],
+                            _ => grants
+                        };
                     builder.UseSetting(prefix + "WorkspaceId", "onboarding");
                     builder.UseSetting(prefix + "IssuedTo", subject);
                     builder.UseSetting(prefix + "Lifetime", condition == "invalid-lifetime" ? "00:00:00" : "00:05:00");
                     for (var index = 0; index < grants.Length; index++)
                         builder.UseSetting(prefix + "Grants:" + index, grants[index]);
+                    if (human && condition != "agent-approval-grant")
+                        builder.UseSetting(prefix + "Kind", "Human");
                 }
             });
         }

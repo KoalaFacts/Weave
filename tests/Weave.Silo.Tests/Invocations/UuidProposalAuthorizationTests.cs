@@ -22,8 +22,8 @@ public sealed partial class UuidProposalRecoveryTests
         var grants = condition switch
         {
             "metadata" => new HashSet<string> { "invocation:read" },
-            "self-review" => ["invocation:read", "approval:decide", "tool:files:approve:write_file"],
-            "wrong-operation" => ["invocation:read", "approval:decide", "tool:files:approve:read_file"],
+            "self-review" => ["invocation:read", "tool:files:approve:write_file"],
+            "wrong-operation" => ["invocation:read", "tool:files:approve:read_file"],
             _ => ["invocation:read", "invocation:proposal:read"]
         };
         var token = fx.Tokens.Mint(new CapabilityTokenRequest
@@ -31,6 +31,7 @@ public sealed partial class UuidProposalRecoveryTests
             WorkspaceId = condition == "other-workspace" ? "another" : "uuid-pilot",
             IssuedTo = condition is "other-owner" or "wrong-operation" ? "another-user" : "agent",
             Grants = grants,
+            Kind = TestPrincipals.For(grants),
             Lifetime = TimeSpan.FromMinutes(5)
         });
         using var denied = await fx.Send(suffix == "/resume" ? HttpMethod.Post : HttpMethod.Get,

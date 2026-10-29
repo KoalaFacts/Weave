@@ -20,7 +20,7 @@ public sealed partial class GovernedHttpEntryTests
         using var pending = await fx.SendAsync(HttpMethod.Post, fx.Route, request, fx.Token());
         pending.StatusCode.ShouldBe(HttpStatusCode.Accepted);
         fx.Client.DefaultRequestHeaders.Authorization = null;
-        var reviewer = fx.Token("operator", ["invocation:read", "approval:decide", "tool:files:approve:write_file"]);
+        var reviewer = fx.Token("operator", ["invocation:read", "tool:files:approve:write_file"]);
         dynamic session = DashboardReviewSessionTests.Session(fx.Client, TimeProvider.System);
         using var lifetime = (IDisposable)session;
         await session.LoadAsync(fx.Workspace, "files", JsonSerializer.Serialize(new

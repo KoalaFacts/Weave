@@ -58,12 +58,19 @@ public sealed class CapabilityTokenService : ICapabilityTokenService
         ArgumentNullException.ThrowIfNull(request.Grants);
         ArgumentException.ThrowIfNullOrWhiteSpace(request.WorkspaceId);
         ArgumentException.ThrowIfNullOrWhiteSpace(request.IssuedTo);
+        if (!Enum.IsDefined(request.Kind))
+            throw new ArgumentException("The principal kind is not supported.", nameof(request));
+        if (request.Grants.Any(PrincipalRequirement.IsReserved))
+            throw new ArgumentException("Principal requirements cannot be granted; set the principal kind instead.", nameof(request));
+        if (request.Kind != PrincipalKind.Human && request.Grants.Any(PrincipalRequirement.IsApprovalGrant))
+            throw new ArgumentException("Approval grants can only be issued to human principals.", nameof(request));
 
         var now = _timeProvider.GetUtcNow();
         var token = new CapabilityToken
         {
             WorkspaceId = request.WorkspaceId,
             IssuedTo = request.IssuedTo,
+            Kind = request.Kind,
             Grants = new HashSet<string>(request.Grants, StringComparer.Ordinal),
             IssuedAt = now,
             ExpiresAt = now.Add(request.Lifetime)

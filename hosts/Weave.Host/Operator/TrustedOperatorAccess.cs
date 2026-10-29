@@ -44,6 +44,17 @@ internal sealed class TrustedOperatorAccess
                 || credential.Grants.Any(grant => string.IsNullOrWhiteSpace(grant)
                     || grant.Length > 256 || grant.Contains('*') || grant.Any(char.IsControl)))
                 throw new InvalidOperationException("An operator credential profile is invalid; use explicit grants and a positive lifetime up to one hour.");
+        foreach (var credential in credentials.Values)
+        {
+            if (!Enum.IsDefined(credential.Kind))
+                throw new InvalidOperationException("An operator credential profile has an unsupported Kind; use Agent or Human.");
+            if (credential.Grants.Contains("approval:decide"))
+                throw new InvalidOperationException("The approval:decide grant was removed; approval decisions now require a profile with Kind set to Human.");
+            if (credential.Grants.Any(PrincipalRequirement.IsReserved))
+                throw new InvalidOperationException("Principal requirements cannot be granted; set the credential profile Kind instead.");
+            if (credential.Kind != PrincipalKind.Human && credential.Grants.Any(PrincipalRequirement.IsApprovalGrant))
+                throw new InvalidOperationException("Operation approval grants are only allowed on a credential profile with Kind set to Human.");
+        }
         Tools = tools.ToFrozenDictionary(StringComparer.Ordinal);
         Credentials = credentials.ToFrozenDictionary(pair => pair.Key,
             pair => pair.Value with { Grants = new HashSet<string>(pair.Value.Grants, StringComparer.Ordinal) }, StringComparer.Ordinal);

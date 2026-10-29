@@ -1,5 +1,7 @@
 # Trusted operator onboarding on one Host
 
+> **Superseded in part (2026-10-29):** the `approval:decide` grant no longer exists. Decisions now require a Human principal plus the exact operation approval grant; see [human-only approval decisions](2026-10-29-human-approval-principals.md).
+
 This completes the existing stage-4 onboarding route, not a new control plane,
 identity product, approval database or multi-Host deployment. One existing Host
 owns the tools, capability validator and retained invocation/approval journal.

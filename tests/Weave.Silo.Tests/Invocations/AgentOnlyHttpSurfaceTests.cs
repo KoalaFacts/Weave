@@ -48,7 +48,7 @@ public sealed class AgentOnlyHttpSurfaceTests
         await using var fx = new Fixture();
         using var message = new HttpRequestMessage(new HttpMethod(method), path);
         message.Headers.Add("X-Weave-Capability", Encode(fx.Token("operator",
-            ["invocation:read", "approval:decide", "tool:files:approve:write_file"])));
+            ["invocation:read", "tool:files:approve:write_file"])));
         if (method == "POST")
             message.Content = JsonContent.Create(new { });
         using var response = await fx.Client.SendAsync(message, TestContext.Current.CancellationToken);
@@ -183,6 +183,7 @@ public sealed class AgentOnlyHttpSurfaceTests
                 WorkspaceId = "workspace",
                 IssuedTo = subject,
                 Grants = grants,
+                Kind = TestPrincipals.For(grants),
                 Lifetime = TimeSpan.FromMinutes(5)
             });
         public Task<ToolHandle> ConnectAsync() => Tool.ConnectAsync(new ToolSpec

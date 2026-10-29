@@ -73,10 +73,11 @@ internal sealed class ApprovalScenario : IDisposable
         WorkspaceId = "workspace",
         IssuedTo = subject,
         Grants = [.. grants],
+        Kind = TestPrincipals.For([.. grants]),
         Lifetime = TimeSpan.FromHours(1)
     });
 
-    public CapabilityToken Approver() => Token("approver", "approval:decide", "tool:files:approve:write_file", "invocation:read");
+    public CapabilityToken Approver() => Token("approver", "tool:files:approve:write_file", "invocation:read");
     public CapabilityToken Writer() => Token("writer", "tool:files:invoke:write_file", "invocation:read", "invocation:cancel");
 
     public ToolInvocation Write() => new()

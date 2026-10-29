@@ -20,7 +20,7 @@ public sealed record CapabilityAuthorizationEvent : DomainEvent
     /// <summary>
     /// Set on <see cref="CapabilityAuthorizationOutcome.Deny"/>. One of
     /// <c>"invalid-or-expired-token"</c>, <c>"workspace-mismatch"</c>,
-    /// <c>"grant-missing"</c>. Null on allow.
+    /// <c>"grant-missing"</c>, <c>"human-principal-required"</c>. Null on allow.
     /// </summary>
     public string? Reason { get; init; }
 }

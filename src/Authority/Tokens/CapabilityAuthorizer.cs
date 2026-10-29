@@ -55,6 +55,7 @@ public sealed partial class CapabilityAuthorizer(
     private const string ReasonInvalidToken = "invalid-or-expired-token";
     private const string ReasonWorkspaceMismatch = "workspace-mismatch";
     private const string ReasonGrantMissing = "grant-missing";
+    private const string ReasonHumanRequired = "human-principal-required";
 
     /// <summary>
     /// Maximum characters of <c>actionContext</c> recorded on the audit row
@@ -75,7 +76,7 @@ public sealed partial class CapabilityAuthorizer(
     /// <summary>
     /// Counter name. Tagged with <c>outcome</c> (<c>"allow"</c>/<c>"deny"</c>)
     /// and, on deny, <c>reason</c> (one of <c>"invalid-or-expired-token"</c>,
-    /// <c>"workspace-mismatch"</c>, <c>"grant-missing"</c>).
+    /// <c>"workspace-mismatch"</c>, <c>"grant-missing"</c>, <c>"human-principal-required"</c>).
     /// </summary>
     public const string CounterName = "weave.security.capability.authorizations";
 
@@ -109,7 +110,17 @@ public sealed partial class CapabilityAuthorizer(
                 $"Token workspace '{token.WorkspaceId}' does not match actor workspace '{actorWorkspaceId}'");
         }
 
-        if (!token.HasGrant(grant))
+        if (string.Equals(grant, PrincipalRequirement.Human, StringComparison.Ordinal))
+        {
+            // Checked against the signed principal kind; no grant can satisfy it.
+            if (token.Kind != PrincipalKind.Human)
+            {
+                LogDenyHumanRequired(token.IssuedTo, safeActionContext);
+                await PublishAsync(token, grant, safeActionContext, CapabilityAuthorizationOutcome.Deny, ReasonHumanRequired);
+                throw new UnauthorizedAccessException("This action requires a human principal");
+            }
+        }
+        else if (!token.HasGrant(grant))
         {
             LogDenyGrantMissing(token.IssuedTo, grant, safeActionContext);
             await PublishAsync(token, grant, safeActionContext, CapabilityAuthorizationOutcome.Deny, ReasonGrantMissing);
@@ -182,4 +193,8 @@ public sealed partial class CapabilityAuthorizer(
     [LoggerMessage(Level = LogLevel.Warning,
         Message = "Capability denied: token issued to '{IssuedTo}' does not grant '{Grant}' ({ActionContext})")]
     private partial void LogDenyGrantMissing(string issuedTo, string grant, string actionContext);
+
+    [LoggerMessage(Level = LogLevel.Warning,
+        Message = "Capability denied: '{IssuedTo}' is not a human principal ({ActionContext})")]
+    private partial void LogDenyHumanRequired(string issuedTo, string actionContext);
 }

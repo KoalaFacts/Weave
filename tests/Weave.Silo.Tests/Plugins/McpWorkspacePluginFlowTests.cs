@@ -427,7 +427,8 @@ public sealed partial class McpWorkspacePluginFlowTests
             {
                 WorkspaceId = workspaceId,
                 IssuedTo = "reviewer",
-                Grants = ["invocation:read", "approval:decide", "tool:echo:approve:echo"],
+                Grants = ["invocation:read", "tool:echo:approve:echo"],
+                Kind = Weave.Silo.Tests.Invocations.TestPrincipals.For(["invocation:read", "tool:echo:approve:echo"]),
                 Lifetime = TimeSpan.FromMinutes(5)
             });
             (await tool.ReviewApprovalAsync(request, reviewer)).Review.ShouldNotBeNull();
@@ -582,6 +583,7 @@ public sealed partial class McpWorkspacePluginFlowTests
             WorkspaceId = workspaceId,
             IssuedTo = "mcp-installation-operator",
             Grants = secondGrant is null ? [grant] : [grant, secondGrant],
+            Kind = Weave.Silo.Tests.Invocations.TestPrincipals.For(secondGrant is null ? [grant] : [grant, secondGrant]),
             Lifetime = lifetime ?? TimeSpan.FromMinutes(5)
         });
 

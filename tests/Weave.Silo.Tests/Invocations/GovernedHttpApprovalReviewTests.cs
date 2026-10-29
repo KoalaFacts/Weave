@@ -15,7 +15,7 @@ public sealed partial class GovernedHttpEntryTests
         var request = Request() with { RawInput = "Reviewed text: <script>alert('not executable')</script>\n第二行" };
         using var pending = await fx.SendAsync(HttpMethod.Post, fx.Route, request, fx.Token());
         pending.StatusCode.ShouldBe(HttpStatusCode.Accepted);
-        var reviewer = fx.Token("operator", ["invocation:read", "approval:decide", "tool:files:approve:write_file"]);
+        var reviewer = fx.Token("operator", ["invocation:read", "tool:files:approve:write_file"]);
         using var response = await fx.SendAsync(HttpMethod.Post, ReviewRoute(fx, request), request, reviewer);
         response.StatusCode.ShouldBe(HttpStatusCode.OK);
         response.Headers.CacheControl.ShouldNotBeNull().NoStore.ShouldBeTrue();
@@ -63,7 +63,7 @@ public sealed partial class GovernedHttpEntryTests
             _ => request with { Parameters = new() { ["path"] = "note.txt", ["extra"] = "unverified private value" } }
         };
         using var response = await fx.SendAsync(HttpMethod.Post, ReviewRoute(fx, request), changed,
-            fx.Token("operator", ["invocation:read", "approval:decide", "tool:files:approve:write_file"]));
+            fx.Token("operator", ["invocation:read", "tool:files:approve:write_file"]));
         response.StatusCode.ShouldBe(HttpStatusCode.Conflict);
         (await response.Content.ReadAsStringAsync(TestContext.Current.CancellationToken)).ShouldNotContain("unverified private");
         File.ReadAllText(fx.Target).ShouldBe("original");
@@ -73,7 +73,7 @@ public sealed partial class GovernedHttpEntryTests
     [InlineData("missing-credential", HttpStatusCode.Unauthorized)]
     [InlineData("tampered", HttpStatusCode.Unauthorized)]
     [InlineData("expired", HttpStatusCode.Unauthorized)]
-    [InlineData("missing-decision", HttpStatusCode.Forbidden)]
+    [InlineData("agent-principal", HttpStatusCode.Forbidden)]
     [InlineData("wrong-operation", HttpStatusCode.Forbidden)]
     [InlineData("self-review", HttpStatusCode.Forbidden)]
     public async Task Review_UnauthorizedReviewer_CannotObtainVerifiedContent(string condition, HttpStatusCode expected)
@@ -84,9 +84,9 @@ public sealed partial class GovernedHttpEntryTests
         using var pending = await fx.SendAsync(HttpMethod.Post, fx.Route, request, fx.Token());
         pending.StatusCode.ShouldBe(HttpStatusCode.Accepted);
         var token = fx.Token(condition == "self-review" ? "external-agent" : "operator",
-            condition == "missing-decision" ? ["invocation:read", "tool:files:approve:write_file"]
-            : condition == "wrong-operation" ? ["invocation:read", "approval:decide", "tool:files:approve:read_file"]
-            : ["invocation:read", "approval:decide", "tool:files:approve:write_file"], expired: condition == "expired");
+            condition == "agent-principal" ? ["*"]
+            : condition == "wrong-operation" ? ["invocation:read", "tool:files:approve:read_file"]
+            : ["invocation:read", "tool:files:approve:write_file"], expired: condition == "expired");
         if (condition == "tampered")
             token = token with { IssuedTo = "forged" };
         using var message = new HttpRequestMessage(HttpMethod.Post, ReviewRoute(fx, request));
@@ -116,7 +116,7 @@ public sealed partial class GovernedHttpEntryTests
             FileSystem = new Weave.Tools.Connectors.FileSystemToolConfig { Root = otherRoot }
         }, fx.Token(grants: ["tool:files:connect"]), TestContext.Current.CancellationToken);
         using var response = await fx.SendAsync(HttpMethod.Post, ReviewRoute(fx, request), request,
-            fx.Token("operator", ["invocation:read", "approval:decide", "tool:files:approve:write_file"]));
+            fx.Token("operator", ["invocation:read", "tool:files:approve:write_file"]));
         response.StatusCode.ShouldBe(HttpStatusCode.Conflict);
         File.ReadAllText(fx.Target).ShouldBe("original");
         File.Exists(Path.Combine(otherRoot, "note.txt")).ShouldBeFalse();
@@ -133,7 +133,7 @@ public sealed partial class GovernedHttpEntryTests
         using HttpContent content = knownLength ? new ByteArrayContent(bytes) : new UnknownLengthContent(bytes);
         content.Headers.ContentType = new System.Net.Http.Headers.MediaTypeHeaderValue("application/json");
         using var response = await fx.SendAsync(HttpMethod.Post, ReviewRoute(fx, request), content,
-            fx.Token("operator", ["invocation:read", "approval:decide", "tool:files:approve:write_file"]));
+            fx.Token("operator", ["invocation:read", "tool:files:approve:write_file"]));
         response.StatusCode.ShouldBe(HttpStatusCode.RequestEntityTooLarge);
     }
 

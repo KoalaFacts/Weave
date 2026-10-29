@@ -38,6 +38,7 @@ public sealed class ApprovalReviewBindingTests
                 WorkspaceId = "workspace",
                 IssuedTo = subject,
                 Grants = grants,
+                Kind = TestPrincipals.For(grants),
                 Lifetime = TimeSpan.FromMinutes(5)
             });
             var events = new InProcessEventBus(NullLogger<InProcessEventBus>.Instance);
@@ -75,7 +76,7 @@ public sealed class ApprovalReviewBindingTests
             var pending = await actor.InvokeAsync(request, Token("writer", ["tool:files:invoke:write_file"]));
             pending.ErrorCode.ShouldBe("approval-pending");
             proxy.ClearReceivedCalls();
-            var reviewer = Token("operator", ["invocation:read", "approval:decide", "tool:files:approve:write_file"]);
+            var reviewer = Token("operator", ["invocation:read", "tool:files:approve:write_file"]);
 
             var result = await actor.ReviewApprovalAsync(request, reviewer);
 

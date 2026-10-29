@@ -59,7 +59,7 @@ public sealed class InvocationProposalReader(IInvocationJournal journal, ICapabi
             if (access == Access.Read)
                 await authorizer.AuthorizeAsync(token, "invocation:proposal:read", workspaceId);
             if (access == Access.Review)
-                await authorizer.AuthorizeAsync(token, "approval:decide", workspaceId);
+                await authorizer.AuthorizeAsync(token, PrincipalRequirement.Human, workspaceId);
             token.CancellationToken.ThrowIfCancellationRequested();
         }
 

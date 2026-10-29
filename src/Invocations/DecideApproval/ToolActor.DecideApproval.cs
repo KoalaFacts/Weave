@@ -11,7 +11,7 @@ public sealed partial class ToolActor
     {
         EnsureApprovalIdentity();
         token = token with { Grants = new HashSet<string>(token.Grants, StringComparer.Ordinal) };
-        var grant = decision == InvocationApprovalDecision.Cancel ? "invocation:cancel" : "approval:decide";
+        var grant = decision == InvocationApprovalDecision.Cancel ? "invocation:cancel" : PrincipalRequirement.Human;
         token.CancellationToken.ThrowIfCancellationRequested();
         await authorizer.AuthorizeAsync(token, grant, _identity.WorkspaceId);
         if (!Enum.IsDefined(decision) || string.IsNullOrWhiteSpace(planDigest) || planDigest.Length > 128

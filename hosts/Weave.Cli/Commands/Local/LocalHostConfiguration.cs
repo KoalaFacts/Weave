@@ -12,8 +12,8 @@ internal static class LocalHostConfiguration
         {
             ["agent"] = Profile(deployment.Workspace, "document-agent",
                 "tool:files:invoke:read_file", "tool:files:invoke:write_file", "invocation:read"),
-            ["reviewer"] = Profile(deployment.Workspace, "human-reviewer",
-                "invocation:read", "approval:decide", "tool:files:approve:write_file")
+            ["reviewer"] = HumanProfile(Profile(deployment.Workspace, "human-reviewer",
+                "invocation:read", "tool:files:approve:write_file"))
         };
         return new JsonObject
         {
@@ -68,4 +68,11 @@ internal static class LocalHostConfiguration
         ["Lifetime"] = "00:30:00",
         ["Grants"] = new JsonArray(grants.Select(grant => (JsonNode?)JsonValue.Create(grant)).ToArray())
     };
+
+    // Only a Human profile may decide approvals; the kind is signed into its tokens.
+    private static JsonObject HumanProfile(JsonObject profile)
+    {
+        profile["Kind"] = "Human";
+        return profile;
+    }
 }

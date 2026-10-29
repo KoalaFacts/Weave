@@ -1,5 +1,7 @@
 # Authorized UUID proposal storage, review and continuation
 
+> **Superseded in part (2026-10-29):** the `approval:decide` grant no longer exists. Decisions now require a Human principal plus the exact operation approval grant; see [human-only approval decisions](2026-10-29-human-approval-principals.md).
+
 ## Scope
 
 This completes the agreed four-part change: server proposal persistence, authorized
