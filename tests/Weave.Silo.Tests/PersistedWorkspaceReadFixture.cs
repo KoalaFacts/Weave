@@ -64,6 +64,7 @@ internal sealed class PersistedWorkspaceReadFixture : IDisposable
         var readBack = new GrainState<WorkspaceState>(new WorkspaceState());
         await storage.ReadStateAsync(stateName, grainId, readBack);
         readBack.RecordExists.ShouldBeTrue();
+        readBack.State.ShouldNotBeNull();
         readBack.State.WorkspaceId.ShouldBe(value.WorkspaceId);
         readBack.State.Status.ShouldBe(value.Status);
     }

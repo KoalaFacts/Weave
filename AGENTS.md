@@ -78,7 +78,7 @@ Resources owns generic lifecycle and binding semantics; mailbox/telephone/browse
 - Prefer supported source-generated JSON, regex, logging, IDs, and registrations. Keep platform-specific APIs guarded. Native AOT is verified per host, not assumed for all plugins or arbitrary dynamic DLL loading.
 - Preserve zero-argument interactive CLI mode and explicit scriptable commands. Keep the `weave` command, `~/.weave/` configuration namespace, existing 94xx ports, and storage defaults unless their change is in scope. Do not invent default credentials.
 - Update real call sites for deliberate pre-1.0 changes rather than inventing Legacy classes, dual keys, or compatibility shims. This is not permission to reset user data or ignore external consumers.
-- Retain `MIT OR AGPL-3.0-or-later` licensing; do not change licensing as incidental cleanup.
+- Retain `Apache-2.0` licensing; do not change licensing as incidental cleanup.
 
 ### Generator and persistence traps
 
