@@ -27,24 +27,39 @@ async function boundedResponse(response:Response):Promise<unknown>{
     try{return JSON.parse(text) as unknown;}catch{throw Error('Published MCP response is invalid JSON.');}
 }
 
-export async function verifyPublicMcp({fetchImpl=fetch}:{fetchImpl?:typeof fetch}={}){
+export async function verifyPublicMcp({fetchImpl=fetch,delayImpl=(ms:number)=>new Promise<void>(resolve=>setTimeout(resolve,ms))}: {
+    fetchImpl?:typeof fetch;delayImpl?:(ms:number)=>Promise<void>
+}={}){
     async function rpc(id:number,method:string,params:Record<string,unknown>={}):Promise<ObjectValue>{
-        let response:Response;
-        try{
-            response=await fetchImpl(endpoint,{method:'POST',redirect:'error',cache:'no-store',signal:AbortSignal.timeout(15000),
-                headers:{'Content-Type':'application/json',Accept:'application/json, text/event-stream','MCP-Protocol-Version':protocolVersion},
-                body:JSON.stringify({jsonrpc:'2.0',id,method,params})});
-        }catch{throw Error('Published MCP transport is unavailable.');}
-        if(response.status!==200||!/^application\/json(?:;|$)/i.test(response.headers.get('content-type')??'')
-            ||response.headers.get('cache-control')!=='no-store'||response.headers.get('x-content-type-options')!=='nosniff'){
-            await response.body?.cancel();
-            throw Error('Published MCP response failed protocol or cache validation.');
+        // A newly deployed edge may briefly return a gateway error. Only retry
+        // the public, idempotent initialize request; later RPCs are never replayed.
+        const retries=method==='initialize'?2:0;
+        for(let attempt=0;;attempt++){
+            let response:Response;
+            try{
+                response=await fetchImpl(endpoint,{method:'POST',redirect:'error',cache:'no-store',signal:AbortSignal.timeout(15000),
+                    headers:{'Content-Type':'application/json',Accept:'application/json, text/event-stream','MCP-Protocol-Version':protocolVersion},
+                    body:JSON.stringify({jsonrpc:'2.0',id,method,params})});
+            }catch{throw Error('Published MCP transport is unavailable.');}
+            const contentTypeOk=/^application\/json(?:;|$)/i.test(response.headers.get('content-type')??'');
+            const noStoreOk=response.headers.get('cache-control')==='no-store';
+            const nosniffOk=response.headers.get('x-content-type-options')==='nosniff';
+            if(response.status!==200||!contentTypeOk||!noStoreOk||!nosniffOk){
+                await response.body?.cancel();
+                if([502,503,504].includes(response.status)&&attempt<retries){
+                    await delayImpl(500*(attempt+1));
+                    continue;
+                }
+                // Log only status and fixed header-validation flags, never
+                // edge bodies, header values, cookies, or authentication material.
+                throw Error(`Published MCP response failed protocol or cache validation (status=${response.status}, contentTypeOk=${contentTypeOk}, noStoreOk=${noStoreOk}, nosniffOk=${nosniffOk}).`);
+            }
+            const data=await boundedResponse(response);
+            if(!object(data)||data.jsonrpc!=='2.0'||data.id!==id||!object(data.result)||Object.hasOwn(data,'error')){
+                throw Error('Published MCP JSON-RPC result is invalid.');
+            }
+            return data.result;
         }
-        const data=await boundedResponse(response);
-        if(!object(data)||data.jsonrpc!=='2.0'||data.id!==id||!object(data.result)||Object.hasOwn(data,'error')){
-            throw Error('Published MCP JSON-RPC result is invalid.');
-        }
-        return data.result;
     }
     const init=await rpc(1,'initialize',{protocolVersion,capabilities:{},clientInfo:{name:'weave-release-verifier',version:'1.0.0'}});
     if(init.protocolVersion!==protocolVersion||!object(init.serverInfo)||init.serverInfo.name!=='weave-public'){
