@@ -3,7 +3,7 @@
   "version": "0.1.1",
   "description": "An Echo MCP plugin for Weave with Streamable HTTP and stdio entry points",
   "type": "module",
-  "license": "MIT OR AGPL-3.0-or-later",
+  "license": "Apache-2.0",
   "repository": {
     "type": "git",
     "url": "git+https://github.com/KoalaFacts/Weave.git",
@@ -30,8 +30,7 @@
   "files": [
     "dist/",
     "README.md",
-    "LICENSE-MIT",
-    "LICENSE-AGPL"
+    "LICENSE"
   ],
   "publishConfig": {
     "access": "public"
@@ -44,12 +43,12 @@
     "prepack": "npm run build"
   },
   "dependencies": {
-    "@modelcontextprotocol/node": "2.1.0",
-    "@modelcontextprotocol/server": "2.3.1",
+    "@modelcontextprotocol/node": "2.1.2",
+    "@modelcontextprotocol/server": "2.4.0",
     "zod": "4.6.7"
   },
   "devDependencies": {
-    "@modelcontextprotocol/client": "2.3.0",
+    "@modelcontextprotocol/client": "2.4.0",
     "@types/node": "24.13.6",
     "typescript": "7.0.2"
   }

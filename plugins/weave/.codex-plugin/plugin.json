@@ -8,7 +8,7 @@
   },
   "homepage": "https://github.com/KoalaFacts/Weave",
   "repository": "https://github.com/KoalaFacts/Weave",
-  "license": "MIT OR AGPL-3.0-or-later",
+  "license": "Apache-2.0",
   "keywords": ["weave", "agents", "contacts", "messaging"],
   "skills": "./skills/",
   "apps": "./.app.json",

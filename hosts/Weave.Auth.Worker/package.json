@@ -2,7 +2,7 @@
   "name": "weave-auth-worker",
   "version": "0.0.0",
   "private": true,
-  "license": "MIT OR AGPL-3.0-or-later",
+  "license": "Apache-2.0",
   "type": "module",
   "engines": {
     "node": ">=24.19.0"

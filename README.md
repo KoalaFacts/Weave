@@ -165,4 +165,4 @@ Portable Agent identity, Tenant/Room authority, generalized resource and credent
 | Inspect command capacity or unconfirmed process cleanup | [Process runtime diagnostics](docs/implementation/2026-10-03-process-runtime-observation.md) |
 | Review product direction and contribution rules | [Architecture](ARCHITECTURE.md), [contributor instructions](AGENTS.md) |
 
-Weave is available under [MIT](LICENSE-MIT) **or** [AGPL-3.0-or-later](LICENSE-AGPL).
+Weave is licensed under the [Apache License 2.0](LICENSE). Commercial support and commercial licensing are available from the maintainers; open a [GitHub issue](https://github.com/KoalaFacts/Weave/issues) to get in touch.

@@ -24,8 +24,7 @@ assert.equal(manifest.version, entry.version);
 assert.equal(manifest.bin['weave-plugin-echo'], 'dist/cli.js');
 const files = new Set(entry.files.map((file:{path:string}) => file.path));
 assert.deepEqual(files, new Set([
-    'LICENSE-AGPL',
-    'LICENSE-MIT',
+    'LICENSE',
     'README.md',
     'dist/cli.d.ts',
     'dist/cli.js',

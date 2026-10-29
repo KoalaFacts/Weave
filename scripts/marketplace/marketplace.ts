@@ -59,7 +59,7 @@ export function inspect(root: string, requireApp = false): Inspection {
         const manifest = json(root, manifestPath);
         check(manifest.name === 'weave' && typeof manifest.version === 'string' && /^\d+\.\d+\.\d+$/.test(manifest.version), 'Invalid plugin identity or version.');
         check(manifest.skills === './skills/' && manifest.apps === './.app.json', 'Invalid plugin component paths.');
-        check(manifest.license === 'MIT OR AGPL-3.0-or-later', 'Preserve repository licensing.');
+        check(manifest.license === 'Apache-2.0', 'Preserve repository licensing.');
         check(!('mcpServers' in manifest) && !('hooks' in manifest) && !('extensions' in manifest), 'This web-targeted package must not bundle runtimes, hooks, or an unreviewed overlay.');
         for (const path of packageFiles(root)) check(files.has(path), 'Unreviewed package file; do not bundle MCP runtimes, hooks, or credentials.');
         for (const path of files) safeFile(root, `${pluginPath}/${path}`);
