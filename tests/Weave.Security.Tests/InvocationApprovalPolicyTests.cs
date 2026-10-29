@@ -45,6 +45,51 @@ public sealed class InvocationApprovalPolicyTests
         policy.Lifetime.ShouldBe(TimeSpan.FromMinutes(5));
     }
 
+    [Theory]
+    [InlineData("tool:files:invoke:write_file", 0)]
+    [InlineData("tool:files:invoke:write_file", 4)]
+    [InlineData("tool:files:invoke:read_file", 2)]
+    [InlineData("tool:files:invoke:*", 2)]
+    public void Construct_InvalidQuorum_RejectsConfiguration(string grant, int approvals)
+    {
+        var options = new InvocationJournalOptions
+        {
+            ApprovalRequiredGrants = ["tool:files:invoke:write_file"],
+            ApprovalQuorums = [new InvocationApprovalQuorum { Grant = grant, RequiredApprovals = approvals }]
+        };
+        Should.Throw<ArgumentException>(() => new InvocationApprovalPolicy(options));
+    }
+
+    [Fact]
+    public void Construct_DuplicateQuorum_RejectsConfiguration()
+    {
+        var options = new InvocationJournalOptions
+        {
+            ApprovalRequiredGrants = ["tool:files:invoke:write_file"],
+            ApprovalQuorums =
+            [
+                new InvocationApprovalQuorum { Grant = "tool:files:invoke:write_file", RequiredApprovals = 2 },
+                new InvocationApprovalQuorum { Grant = "tool:files:invoke:write_file", RequiredApprovals = 3 }
+            ]
+        };
+        Should.Throw<ArgumentException>(() => new InvocationApprovalPolicy(options));
+    }
+
+    [Fact]
+    public void RequiredApprovals_ConfiguredQuorum_SnapshotsPerOperation()
+    {
+        var options = new InvocationJournalOptions
+        {
+            ApprovalRequiredGrants = ["tool:files:invoke:write_file", "tool:mail:invoke:send"],
+            ApprovalQuorums = [new InvocationApprovalQuorum { Grant = "tool:mail:invoke:send", RequiredApprovals = 2 }]
+        };
+        var policy = new InvocationApprovalPolicy(options);
+        options.ApprovalQuorums[0].RequiredApprovals = 3;
+        options.ApprovalQuorums.Clear();
+        policy.RequiredApprovals("tool:mail:invoke:send").ShouldBe(2);
+        policy.RequiredApprovals("tool:files:invoke:write_file").ShouldBe(1);
+    }
+
     [Fact]
     public void Approve_LiteralComponents_DoesNotCreateWildcardAuthority()
     {

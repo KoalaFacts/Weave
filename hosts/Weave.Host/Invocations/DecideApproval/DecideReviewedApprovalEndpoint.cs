@@ -35,7 +35,7 @@ internal static class DecideReviewedApprovalEndpoint
             var result = await actor.DecideReviewedApprovalWithCancellationAsync(request, body.PlanDigest,
                 decision, token, context.RequestAborted);
             if (result.Succeeded && result.Approval is { } approval)
-                return Results.Json(new ApprovalHttpStatus(approval.InvocationId.ToString(), approval.State, approval.ExpiresAt),
+                return Results.Json(ApprovalHttpStatus.From(approval),
                     InvocationHttpJsonContext.Default.ApprovalHttpStatus);
             return result.ErrorCode switch
             {

@@ -15,7 +15,8 @@ public sealed partial class SqliteInvocationJournal
                 return null;
             if (string.IsNullOrWhiteSpace(candidate.ApprovalTargetDigest))
                 return new InvocationClaim(false, candidate) { BlockingReason = "approval-target-unsupported" };
-            approval = InvocationApprovalPlan.Create(candidate, _approvalPolicy.Lifetime);
+            approval = InvocationApprovalPlan.Create(candidate, _approvalPolicy.Lifetime,
+                _approvalPolicy.RequiredApprovals(candidate.AuthorizedGrant));
             InsertApproval(connection, transaction, approval, candidate);
         }
         else if (!approval.Matches(candidate))

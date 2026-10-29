@@ -1,0 +1,120 @@
+using Weave.Invocations;
+
+namespace Weave.Silo.Tests.Invocations;
+
+public sealed class QuorumApprovalFlowTests
+{
+    [Fact]
+    public async Task DecideApprovalAsync_TwoDistinctHumans_ApprovesOnlyAtQuorum()
+    {
+        using var fx = new ApprovalScenario();
+        var actor = await fx.ConnectAsync(fx.Reopen(requiredApprovals: 2));
+        var request = fx.Write();
+        var approval = await fx.WaitAsync(actor, request);
+        approval.RequiredApprovals.ShouldBe(2);
+        approval.Approvals.ShouldBe(0);
+
+        var first = await actor.DecideApprovalAsync(approval.InvocationId, approval.PlanDigest,
+            InvocationApprovalDecision.Approve, fx.Approver("alice"));
+        first.Succeeded.ShouldBeTrue(first.ErrorCode);
+        first.Approval.ShouldNotBeNull().State.ShouldBe(InvocationApprovalState.Pending);
+        first.Approval.Approvals.ShouldBe(1);
+        (await actor.InvokeAsync(request, fx.Writer())).ErrorCode.ShouldBe("approval-pending");
+        File.ReadAllText(fx.Target).ShouldBe("original");
+
+        var second = await actor.DecideApprovalAsync(approval.InvocationId, approval.PlanDigest,
+            InvocationApprovalDecision.Approve, fx.Approver("bob"));
+        second.Succeeded.ShouldBeTrue(second.ErrorCode);
+        second.Approval.ShouldNotBeNull().State.ShouldBe(InvocationApprovalState.Approved);
+        second.Approval.Approvals.ShouldBe(2);
+        second.Approval.DecidedBy.ShouldBe("bob");
+        fx.Scalar("SELECT COUNT(*) FROM invocation_approval_decisions;").ShouldBe(2L);
+
+        var result = await actor.InvokeAsync(request, fx.Writer());
+        result.Success.ShouldBeTrue(result.Error);
+        File.ReadAllText(fx.Target).ShouldBe("updated");
+    }
+
+    [Fact]
+    public async Task DecideApprovalAsync_SameHumanApprovesTwice_CountsOnce()
+    {
+        using var fx = new ApprovalScenario();
+        var actor = await fx.ConnectAsync(fx.Reopen(requiredApprovals: 2));
+        var approval = await fx.WaitAsync(actor, fx.Write());
+        for (var i = 0; i < 2; i++)
+        {
+            var result = await actor.DecideApprovalAsync(approval.InvocationId, approval.PlanDigest,
+                InvocationApprovalDecision.Approve, fx.Approver("alice"));
+            result.Succeeded.ShouldBeTrue(result.ErrorCode);
+            result.Approval.ShouldNotBeNull().State.ShouldBe(InvocationApprovalState.Pending);
+            result.Approval.Approvals.ShouldBe(1);
+        }
+        fx.Scalar("SELECT COUNT(*) FROM invocation_approval_decisions;").ShouldBe(1L);
+    }
+
+    [Fact]
+    public async Task DecideApprovalAsync_PartialApprovalThenReject_RejectsPlan()
+    {
+        using var fx = new ApprovalScenario();
+        var actor = await fx.ConnectAsync(fx.Reopen(requiredApprovals: 2));
+        var request = fx.Write();
+        var approval = await fx.WaitAsync(actor, request);
+        (await actor.DecideApprovalAsync(approval.InvocationId, approval.PlanDigest,
+            InvocationApprovalDecision.Approve, fx.Approver("alice"))).Succeeded.ShouldBeTrue();
+        (await actor.DecideApprovalAsync(approval.InvocationId, approval.PlanDigest,
+            InvocationApprovalDecision.Reject, fx.Approver("bob"))).Succeeded.ShouldBeTrue();
+        (await actor.DecideApprovalAsync(approval.InvocationId, approval.PlanDigest,
+            InvocationApprovalDecision.Approve, fx.Approver("carol"))).ErrorCode.ShouldBe("approval-already-decided");
+        (await actor.InvokeAsync(request, fx.Writer())).ErrorCode.ShouldBe("approval-rejected");
+        File.ReadAllText(fx.Target).ShouldBe("original");
+    }
+
+    [Fact]
+    public async Task DecideApprovalAsync_RequestorAmongApprovers_DoesNotCount()
+    {
+        using var fx = new ApprovalScenario();
+        var actor = await fx.ConnectAsync(fx.Reopen(requiredApprovals: 2));
+        var approval = await fx.WaitAsync(actor, fx.Write());
+        (await actor.DecideApprovalAsync(approval.InvocationId, approval.PlanDigest,
+            InvocationApprovalDecision.Approve, fx.Approver("alice"))).Succeeded.ShouldBeTrue();
+        (await actor.DecideApprovalAsync(approval.InvocationId, approval.PlanDigest,
+            InvocationApprovalDecision.Approve, fx.Token("writer", "tool:files:approve:write_file")))
+            .ErrorCode.ShouldBe("approval-subject-denied");
+        fx.Journal.FindApproval("workspace", approval.InvocationId, TestContext.Current.CancellationToken)
+            .ShouldNotBeNull().State.ShouldBe(InvocationApprovalState.Pending);
+    }
+
+    [Fact]
+    public async Task DecideApprovalAsync_QuorumLoweredAfterRequest_KeepsStoredQuorumAcrossRestart()
+    {
+        using var fx = new ApprovalScenario();
+        var request = fx.Write();
+        var approval = await fx.WaitAsync(await fx.ConnectAsync(fx.Reopen(requiredApprovals: 2)), request);
+        var restarted = await fx.ConnectAsync(fx.Reopen(requiredApprovals: 1));
+        var first = await restarted.DecideApprovalAsync(approval.InvocationId, approval.PlanDigest,
+            InvocationApprovalDecision.Approve, fx.Approver("alice"));
+        first.Approval.ShouldNotBeNull().State.ShouldBe(InvocationApprovalState.Pending);
+        (await restarted.InvokeAsync(request, fx.Writer())).ErrorCode.ShouldBe("approval-pending");
+
+        var again = await fx.ConnectAsync(fx.Reopen(requiredApprovals: 2));
+        (await again.DecideApprovalAsync(approval.InvocationId, approval.PlanDigest,
+            InvocationApprovalDecision.Approve, fx.Approver("bob"))).Approval.ShouldNotBeNull()
+            .State.ShouldBe(InvocationApprovalState.Approved);
+        (await again.InvokeAsync(request, fx.Writer())).Success.ShouldBeTrue();
+    }
+
+    [Fact]
+    public async Task Open_JournalWithoutQuorumColumn_UpgradesExistingApprovalsToSingleApproval()
+    {
+        using var fx = new ApprovalScenario();
+        var request = fx.Write();
+        var approval = await fx.WaitAsync(await fx.ConnectAsync(), request);
+        fx.ExecuteSql("ALTER TABLE invocation_approvals DROP COLUMN required_approvals;");
+
+        var actor = await fx.ConnectAsync(fx.Reopen(requiredApprovals: 2));
+        var decision = await actor.DecideApprovalAsync(approval.InvocationId, approval.PlanDigest,
+            InvocationApprovalDecision.Approve, fx.Approver());
+        decision.Approval.ShouldNotBeNull().State.ShouldBe(InvocationApprovalState.Approved);
+        decision.Approval.RequiredApprovals.ShouldBe(1);
+    }
+}
