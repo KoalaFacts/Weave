@@ -103,18 +103,63 @@ public sealed class QuorumApprovalFlowTests
         (await again.InvokeAsync(request, fx.Writer())).Success.ShouldBeTrue();
     }
 
-    [Fact]
-    public async Task Open_JournalWithoutQuorumColumn_UpgradesExistingApprovalsToSingleApproval()
+    [Theory]
+    [InlineData(false)]
+    [InlineData(true)]
+    public async Task Open_VersionOneJournalWithoutQuorumColumn_UpgradesExistingApprovalsToSingleApproval(bool requireExisting)
     {
         using var fx = new ApprovalScenario();
         var request = fx.Write();
         var approval = await fx.WaitAsync(await fx.ConnectAsync(), request);
-        fx.ExecuteSql("ALTER TABLE invocation_approvals DROP COLUMN required_approvals;");
+        // Models a journal written before quorum approval.
+        fx.ExecuteSql("ALTER TABLE invocation_approvals DROP COLUMN required_approvals; PRAGMA user_version=1;");
 
-        var actor = await fx.ConnectAsync(fx.Reopen(requiredApprovals: 2));
+        var actor = await fx.ConnectAsync(fx.Reopen(requiredApprovals: 2, requireExistingStorage: requireExisting));
+        fx.Scalar("PRAGMA user_version;").ShouldBe(2L);
         var decision = await actor.DecideApprovalAsync(approval.InvocationId, approval.PlanDigest,
             InvocationApprovalDecision.Approve, fx.Approver());
         decision.Approval.ShouldNotBeNull().State.ShouldBe(InvocationApprovalState.Approved);
         decision.Approval.RequiredApprovals.ShouldBe(1);
+    }
+
+    [Fact]
+    public void Open_QuorumJournalLosesQuorumColumn_FailsClosedWithoutDefaulting()
+    {
+        using var fx = new ApprovalScenario();
+        fx.ExecuteSql("ALTER TABLE invocation_approvals DROP COLUMN required_approvals;");
+        fx.Scalar("PRAGMA user_version;").ShouldBe(2L);
+        Should.Throw<Microsoft.Data.Sqlite.SqliteException>(() => fx.Reopen(requiredApprovals: 2));
+    }
+
+    [Fact]
+    public void Open_UnknownLaterSchemaVersion_FailsClosed()
+    {
+        // The same version gate is what makes pre-quorum binaries (which accept only
+        // version 1) refuse a quorum-aware journal instead of deciding it alone.
+        using var fx = new ApprovalScenario();
+        fx.Scalar("PRAGMA user_version;").ShouldBe(2L);
+        fx.ExecuteSql("PRAGMA user_version=3;");
+        Should.Throw<InvalidOperationException>(() => fx.Reopen());
+    }
+
+    [Fact]
+    public async Task DecideApprovalAsync_ThreePersonQuorum_RequiresThirdDistinctApprover()
+    {
+        using var fx = new ApprovalScenario();
+        var actor = await fx.ConnectAsync(fx.Reopen(requiredApprovals: 3));
+        var request = fx.Write();
+        var approval = await fx.WaitAsync(actor, request);
+        foreach (var (subject, expected) in new[] {
+            ("alice", InvocationApprovalState.Pending), ("bob", InvocationApprovalState.Pending),
+            ("carol", InvocationApprovalState.Approved) })
+        {
+            var result = await actor.DecideApprovalAsync(approval.InvocationId, approval.PlanDigest,
+                InvocationApprovalDecision.Approve, fx.Approver(subject));
+            result.Approval.ShouldNotBeNull().State.ShouldBe(expected);
+            if (expected == InvocationApprovalState.Pending)
+                (await actor.InvokeAsync(request, fx.Writer())).ErrorCode.ShouldBe("approval-pending");
+        }
+        (await actor.InvokeAsync(request, fx.Writer())).Success.ShouldBeTrue();
+        File.ReadAllText(fx.Target).ShouldBe("updated");
     }
 }

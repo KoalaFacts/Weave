@@ -50,10 +50,23 @@ Quorums are a list (configuration keys cannot contain the `:` in grant scopes):
 
 ## Migration
 
-Opening an existing journal adds `required_approvals INTEGER NOT NULL DEFAULT 1`
-to `invocation_approvals` if it is missing, including under
+Opening a version-1 journal adds `required_approvals INTEGER NOT NULL DEFAULT 1
+CHECK(required_approvals BETWEEN 1 AND 3)` to `invocation_approvals` if it is
+missing and sets `PRAGMA user_version=2`, including under
 `RequireExistingStorage`. Existing rows keep single-person approval. No
-historical decision is rewritten.
+historical decision is rewritten. A version-2 journal whose quorum column is
+missing fails to open rather than silently defaulting to one approver; any other
+version fails closed.
+
+### Rollback
+
+Binaries before this change accept only `user_version=1`
+(`EnsureProposalSchema`), so after the upgrade they refuse to open the journal
+instead of applying single-approval logic to a waiting multi-person plan. A
+rollback therefore needs either this binary or an explicit, reviewed downgrade
+of the journal: settle or cancel every pending approval with
+`required_approvals > 1`, then reset the version. Do not reset the version
+while such plans are pending.
 
 ## Not covered
 
@@ -70,5 +83,10 @@ historical decision is rewritten.
 - `InvocationApprovalPolicyTests`: invalid quorum, duplicate quorum, snapshot.
 - `QuorumApprovalFlowTests`: approval only at quorum, repeat approver counted
   once, partial approval then reject, requester excluded, stored quorum kept
-  across restart after lowering, upgrade of a journal without the column.
+  across restart after lowering, three-person quorum, upgrade of a version-1
+  journal (with and without `RequireExistingStorage`), fail-closed open of a
+  version-2 journal missing the column and of an unknown later version.
+- Concurrent votes are serialized by the existing immediate (write-locking)
+  SQLite transaction around read, count and write; no separate race test was
+  added for duplicate or approve-versus-reject races.
 - Existing durable-approval suites unchanged and passing.

@@ -90,21 +90,40 @@ public sealed partial class SqliteInvocationJournal
         command.ExecuteNonQuery();
     }
 
+    // Version 2 marks quorum-aware journals. Binaries before quorum approval accept only
+    // version 1, so a rollback fails closed instead of deciding a multi-person plan alone.
+    private const long QuorumSchemaVersion = 2;
+
     // Additive upgrade for journals written before quorum approval: existing rows keep one approver.
     private static void EnsureApprovalQuorumSchema(SqliteConnection connection)
     {
         using var transaction = connection.BeginTransaction(deferred: false);
         using var command = connection.CreateCommand();
         command.Transaction = transaction;
-        command.CommandText = "SELECT COUNT(*) FROM pragma_table_info('invocation_approvals') WHERE name='required_approvals';";
-        if (Convert.ToInt64(command.ExecuteScalar(), System.Globalization.CultureInfo.InvariantCulture) == 0)
+        command.CommandText = "PRAGMA user_version;";
+        var version = Convert.ToInt64(command.ExecuteScalar(), System.Globalization.CultureInfo.InvariantCulture);
+        if (version == 1)
         {
-            command.CommandText = """
-                ALTER TABLE invocation_approvals ADD COLUMN required_approvals INTEGER NOT NULL DEFAULT 1
-                    CHECK(required_approvals BETWEEN 1 AND 3);
-                """;
+            command.CommandText = "SELECT COUNT(*) FROM pragma_table_info('invocation_approvals') WHERE name='required_approvals';";
+            if (Convert.ToInt64(command.ExecuteScalar(), System.Globalization.CultureInfo.InvariantCulture) == 0)
+            {
+                command.CommandText = """
+                    ALTER TABLE invocation_approvals ADD COLUMN required_approvals INTEGER NOT NULL DEFAULT 1
+                        CHECK(required_approvals BETWEEN 1 AND 3);
+                    """;
+                command.ExecuteNonQuery();
+            }
+            command.CommandText = "PRAGMA user_version=2;";
             command.ExecuteNonQuery();
         }
+        else if (version != QuorumSchemaVersion)
+        {
+            throw new InvalidOperationException("Unsupported invocation approval schema version.");
+        }
+        // Once version 2 is recorded, a missing quorum column is a fault, not a silent single-approval default.
+        command.CommandText = "SELECT required_approvals FROM invocation_approvals LIMIT 0;";
+        using (var reader = command.ExecuteReader())
+            _ = reader.Read();
         transaction.Commit();
     }
 }
