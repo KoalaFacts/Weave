@@ -48,8 +48,12 @@ test('default 24-hour Access application JWT remains usable, beyond-policy lifet
     const allowed=token({iat:sec-10,exp:sec+86390});
     assert.equal((await verify(allowed))?.expiresAt,sec+86390,
         'Cloudflare Access defaults application JWTs to 24 hours; a valid default session must authenticate');
-    assert.equal(await verify(token({iat:sec-10,exp:sec+86500})),null,
-        'sessions exceeding the supported Access app duration must still fail closed');
+    assert.equal((await verify(token({iat:sec-16,exp:sec+86389})))?.expiresAt,sec+86389,
+        'the live Managed OAuth assertion (24h plus a few seconds) must authenticate');
+    assert.equal((await verify(token({iat:sec-10,exp:sec+86510})))?.expiresAt,sec+86510,
+        'a span exactly at the 24h plus 120-second bound is accepted');
+    assert.equal(await verify(token({iat:sec-10,exp:sec+86511})),null,
+        'sessions exceeding 24h plus the 120-second skew must still fail closed');
 });
 test('forged signature, unknown kid, missing assertion and hostile algorithms never authenticate',async()=>{
     assert.equal(await verifyManagedAccessAssertion(cfg,new Request(resource),certificates,now),null);

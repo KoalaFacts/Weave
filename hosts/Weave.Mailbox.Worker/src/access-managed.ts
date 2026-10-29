@@ -84,7 +84,9 @@ export async function verifyManagedAccessAssertion(
             (header.typ!==undefined&&header.typ!=='JWT'))return reject('header');
         // Access application JWT session defaults to 24h. Retain an explicit
         // upper bound; longer sessions must be separately reviewed and configured.
-        const maxAccessSessionSeconds=24*60*60;
+        // Managed OAuth assertions were observed live as 24h plus a few seconds
+        // (86405 s), so allow a bounded 120-second issuance skew, not a longer session.
+        const maxAccessSessionSeconds=24*60*60+120;
         const sec=Math.floor(clock()/1000);
         if(claims.iss!==cfg.issuer)return reject('issuer');
         if(!((Array.isArray(claims.aud)&&claims.aud.includes(cfg.audience))||claims.aud===cfg.audience))return reject('audience');
