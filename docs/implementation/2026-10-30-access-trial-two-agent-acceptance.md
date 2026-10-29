@@ -16,10 +16,14 @@ tests; the specific IDs and timestamps are as reported.
 
 The deployed source was `aab37f17e33a7aefccd63dfc54151702a2a619c1`, released by
 [Deploy Weave Worker run 40880547663](https://github.com/KoalaFacts/Weave/actions/runs/40880547663)
-at about 13:17 UTC as active Worker version `bcd97686-195b-4c5d-a3ea-c402a70c49f4`
-(recovery version `6c4c3c9e-b503-4599-9ed2-be502f5417f9`). That run's release
-steps succeeded and its final public MCP probe failed once, then passed when
-re-run manually. No other Worker release ran during the trial (about
+(created 13:17 UTC). Attempt 1 activated Worker version
+`f2768d74-74e1-416e-8182-85324c39b56a` at 13:23:48 UTC; attempt 2 retained
+recovery version `6c4c3c9e-b503-4599-9ed2-be502f5417f9` and activated
+`bcd97686-195b-4c5d-a3ea-c402a70c49f4` at 13:27:52 UTC, the version in place
+during the trial. Both attempts deployed the same source and both ended with
+the public MCP protocol/cache probe failing. The recording session then ran the
+same probe script against production and it passed; that run is not
+independently verified. No other Worker release ran during the trial (about
 13:40-14:10 UTC). This is from the workflow run list, not a per-request
 version receipt.
 
