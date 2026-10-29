@@ -6,7 +6,24 @@ connected to the private MCP endpoint and exchanged messages through the public
 demo. The sanitized machine-readable result is
 [`docs/evidence/2026-10-30-access-trial-two-agent/result.json`](../evidence/2026-10-30-access-trial-two-agent/result.json).
 
-## What was proven
+## Provenance
+
+These are **reported live observations**: the owner ran both agents and relayed
+their tool results to the recording session. The run was not reproduced by CI
+or by an independent reviewer. Server behaviour cited below (the body is
+cleared on ACK, a repeated ACK is idempotent) is also supported by source and
+tests; the specific IDs and timestamps are as reported.
+
+The deployed source was `aab37f17e33a7aefccd63dfc54151702a2a619c1`, released by
+[Deploy Weave Worker run 40880547663](https://github.com/KoalaFacts/Weave/actions/runs/40880547663)
+at about 13:17 UTC as active Worker version `bcd97686-195b-4c5d-a3ea-c402a70c49f4`
+(recovery version `6c4c3c9e-b503-4599-9ed2-be502f5417f9`). That run's release
+steps succeeded and its final public MCP probe failed once, then passed when
+re-run manually. No other Worker release ran during the trial (about
+13:40-14:10 UTC). This is from the workflow run list, not a per-request
+version receipt.
+
+## What was observed
 
 | Acceptance item (#236) | Result |
 | --- | --- |
@@ -17,7 +34,7 @@ demo. The sanitized machine-readable result is
 | Restart without loss or duplicate ACKs | After restart, inboxes held no acknowledged messages. A repeated ACK returned the original `terminalAt` (no new record). A post-restart message 7 was delivered and acknowledged. |
 | Sanitized result and runbook | This record and `result.json`. No email addresses, controls, tokens, assertions or non-test bodies. |
 
-The deployed Worker source was `aab37f1`. The fixes needed to reach this point
+The fixes needed to reach this point
 were #282 (activation), #283 and #285 (denial diagnostics) and #286 (the
 assertion lifetime skew; Managed OAuth assertions span 24h plus a few seconds).
 

@@ -4,10 +4,33 @@
   "issue": "KoalaFacts/Weave#236",
   "endpoint": "https://demo.weave-389.workers.dev/access-trial/mcp",
   "authentication": "Cloudflare Access Managed OAuth (team fancy-queen-567d), allow policy of two owner-selected exact identities; per-account Weave link created with Access session plus account control and explicit consent",
-  "sourceCommit": "aab37f1",
+  "provenance": {
+    "kind": "reported-live-observation",
+    "description": "The owner ran both agents and relayed their tool results to the recording session. The run was not reproduced by CI or by an independent reviewer. Server behaviour cited here (ACK clears the body, repeated ACK is idempotent) is supported by source and tests; the live values are as reported."
+  },
+  "sourceCommit": "aab37f17e33a7aefccd63dfc54151702a2a619c1",
+  "deployment": {
+    "workflowRun": "https://github.com/KoalaFacts/Weave/actions/runs/40880547663",
+    "activeWorkerVersion": "bcd97686-195b-4c5d-a3ea-c402a70c49f4",
+    "recoveryWorkerVersion": "6c4c3c9e-b503-4599-9ed2-be502f5417f9",
+    "deployedAt": "2026-10-29T13:17Z",
+    "note": "The release steps succeeded; its final public MCP probe failed once and passed when re-run manually. No other Worker release ran during the trial (about 13:40-14:10 UTC); this is from the workflow run list, not a per-request version receipt."
+  },
   "agents": [
-    {"role": "A", "client": "Claude Code 2.1.312 (Windows)", "transport": "streamable HTTP MCP with OAuth (DCR, loopback callback)", "accountId": "0532f06d-b66f-4abf-9560-af6cd988e172", "addressId": "ae22e68b-7735-4525-b713-677980250efb"},
-    {"role": "B", "client": "Codex CLI (Windows)", "transport": "streamable HTTP MCP with OAuth (DCR, loopback callback)", "accountId": "f2a4b80a-18f7-47e2-8ebb-b79b180fb80b", "addressId": "da8bf05e-c30c-4a08-b07b-3fe15e5262c8"}
+    {
+      "role": "A",
+      "client": "Claude Code 2.1.312 (Windows)",
+      "transport": "streamable HTTP MCP with OAuth (DCR, loopback callback)",
+      "accountId": "0532f06d-b66f-4abf-9560-af6cd988e172",
+      "addressId": "ae22e68b-7735-4525-b713-677980250efb"
+    },
+    {
+      "role": "B",
+      "client": "Codex CLI (Windows)",
+      "transport": "streamable HTTP MCP with OAuth (DCR, loopback callback)",
+      "accountId": "f2a4b80a-18f7-47e2-8ebb-b79b180fb80b",
+      "addressId": "da8bf05e-c30c-4a08-b07b-3fe15e5262c8"
+    }
   ],
   "contact": {
     "requestId": "01a187ea-9ff1-78ef-9bde-0aaf2ece3297",
@@ -18,20 +41,74 @@
     "generation": "1"
   },
   "messages": [
-    {"n": 1, "from": "A", "messageId": "01a187f1-60c1-76a8-af14-3e535a3dbef8", "receipt": "acknowledged"},
-    {"n": 2, "from": "B", "messageId": "01a187f2-4bb3-72a9-9de8-fc20889b5a9b", "receipt": "acknowledged", "terminalAt": "2026-10-29T13:56:43.470Z"},
-    {"n": 3, "from": "A", "messageId": "01a187f1-64aa-7944-8b3f-e2c5d7b990a4", "receipt": "acknowledged"},
-    {"n": 4, "from": "B", "messageId": "01a187f2-7ba3-792b-b438-433a199748c4", "receipt": "acknowledged", "terminalAt": "2026-10-29T13:56:43.859Z"},
-    {"n": 5, "from": "A", "messageId": "01a187f1-6a09-78f3-8939-5ea999320a4a", "receipt": "acknowledged"},
-    {"n": 6, "from": "B", "messageId": "01a187f2-a791-783d-b68a-0834c0fac884", "receipt": "acknowledged", "terminalAt": "2026-10-29T13:56:44.149Z"}
+    {
+      "n": 1,
+      "from": "A",
+      "messageId": "01a187f1-60c1-76a8-af14-3e535a3dbef8",
+      "receipt": "acknowledged"
+    },
+    {
+      "n": 2,
+      "from": "B",
+      "messageId": "01a187f2-4bb3-72a9-9de8-fc20889b5a9b",
+      "receipt": "acknowledged",
+      "terminalAt": "2026-10-29T13:56:43.470Z"
+    },
+    {
+      "n": 3,
+      "from": "A",
+      "messageId": "01a187f1-64aa-7944-8b3f-e2c5d7b990a4",
+      "receipt": "acknowledged"
+    },
+    {
+      "n": 4,
+      "from": "B",
+      "messageId": "01a187f2-7ba3-792b-b438-433a199748c4",
+      "receipt": "acknowledged",
+      "terminalAt": "2026-10-29T13:56:43.859Z"
+    },
+    {
+      "n": 5,
+      "from": "A",
+      "messageId": "01a187f1-6a09-78f3-8939-5ea999320a4a",
+      "receipt": "acknowledged"
+    },
+    {
+      "n": 6,
+      "from": "B",
+      "messageId": "01a187f2-a791-783d-b68a-0834c0fac884",
+      "receipt": "acknowledged",
+      "terminalAt": "2026-10-29T13:56:44.149Z"
+    }
   ],
   "restart": {
     "method": "both agent processes exited and restarted; OAuth tokens reused or refreshed by each client",
-    "identityUnchanged": {"A": true, "B": true},
-    "inboxAfterRestart": {"A": "empty", "B": "only the new post-restart message"},
-    "outboxAfterRestart": {"A": "4 receipts (contact introduction and messages 1, 3, 5), all acknowledged", "B": "3 receipts (messages 2, 4, 6), all acknowledged"},
-    "repeatAck": {"by": "A", "messageId": "01a187f2-4bb3-72a9-9de8-fc20889b5a9b", "result": "acknowledged", "terminalAt": "2026-10-29T13:56:43.470Z", "duplicate": false},
-    "postRestartMessage": {"n": 7, "from": "A", "messageId": "01a187fb-91ad-7833-8752-d915674d30e5", "receipt": "acknowledged", "terminalAt": "2026-10-29T14:07:17.966Z"}
+    "identityUnchanged": {
+      "A": true,
+      "B": true
+    },
+    "inboxAfterRestart": {
+      "A": "empty",
+      "B": "only the new post-restart message"
+    },
+    "outboxAfterRestart": {
+      "A": "4 receipts (contact introduction and messages 1, 3, 5), all acknowledged",
+      "B": "3 receipts (messages 2, 4, 6), all acknowledged"
+    },
+    "repeatAck": {
+      "by": "A",
+      "messageId": "01a187f2-4bb3-72a9-9de8-fc20889b5a9b",
+      "result": "acknowledged",
+      "terminalAt": "2026-10-29T13:56:43.470Z",
+      "duplicate": false
+    },
+    "postRestartMessage": {
+      "n": 7,
+      "from": "A",
+      "messageId": "01a187fb-91ad-7833-8752-d915674d30e5",
+      "receipt": "acknowledged",
+      "terminalAt": "2026-10-29T14:07:17.966Z"
+    }
   },
   "retention": "ack_message clears the message body and keeps only the receipt (messageId, sender, recipient, state, terminalAt, expiresAt).",
   "observedIssues": [
