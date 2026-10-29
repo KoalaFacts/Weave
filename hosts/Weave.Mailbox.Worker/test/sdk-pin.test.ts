@@ -2,11 +2,11 @@ import assert from 'node:assert/strict';
 import { test } from 'node:test';
 import { readFileSync } from 'node:fs';
 const root=new URL('../../../',import.meta.url);
-test('repository SDK selection accepts stable .NET 10 feature bands without crossing majors',()=>{
+test('repository SDK selection picks up the .NET 11 SDK from the .NET 10 generator baseline',()=>{
     const config=JSON.parse(readFileSync(new URL('global.json',root),'utf8'));
     assert.equal(config.sdk.version,'10.0.400');
-    assert.equal(config.sdk.rollForward,'latestMinor');
-    assert.equal(config.sdk.allowPrerelease,false);
+    assert.equal(config.sdk.rollForward,'latestMajor');
+    assert.equal(config.sdk.allowPrerelease,true);
     assert.equal(config.test.runner,'Microsoft.Testing.Platform');
 });
 test('shared CI setup installs the .NET 10 channel with the requested quality and retains lock caching',()=>{
@@ -15,6 +15,9 @@ test('shared CI setup installs the .NET 10 channel with the requested quality an
     const input=/^  dotnet-version:\n([\s\S]*?)(?=^  \w|^runs:)/m.exec(action)?.[1];
     assert.ok(input);
     assert.match(input,/^    default: '10\.x'$/m);
+    const next=/^  dotnet-next-version:\n([\s\S]*?)(?=^  \w|^runs:)/m.exec(action)?.[1];
+    assert.match(next,/^    default: '11\.x'$/m);
+    assert.match(action,/dotnet-quality: \$\{\{ inputs\.dotnet-next-quality \}\}/);
     assert.match(action,/dotnet-version: \$\{\{ inputs\.dotnet-version \}\}/);
     assert.match(action,/dotnet-quality: \$\{\{ inputs\.dotnet-quality \}\}/);
     const quality=/^  dotnet-quality:\n([\s\S]*?)(?=^  \w|^runs:)/m.exec(action)?.[1];

@@ -1,6 +1,8 @@
 <Project Sdk="Microsoft.NET.Sdk">
   <PropertyGroup>
     <IsPackable>false</IsPackable>
+    <TargetFramework></TargetFramework>
+    <TargetFrameworks>net10.0;net11.0</TargetFrameworks>
     <IsTestProject>true</IsTestProject>
     <IsAotExcluded>true</IsAotExcluded>
     <RootNamespace>Weave.Cli.Tests</RootNamespace>
