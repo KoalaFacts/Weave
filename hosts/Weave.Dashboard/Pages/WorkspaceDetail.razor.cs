@@ -42,27 +42,27 @@ public sealed partial class WorkspaceDetail : ComponentBase
         }
     }
 
-    private static Appearance GetStatusAppearance(string status) => status switch
+    private static BadgeColor GetStatusColor(string status) => status switch
     {
-        "Running" => Appearance.Accent,
-        "Stopped" => Appearance.Neutral,
-        "Error" => Appearance.Accent,
-        _ => Appearance.Neutral
+        "Running" => BadgeColor.Brand,
+        "Stopped" => BadgeColor.Informative,
+        "Error" => BadgeColor.Brand,
+        _ => BadgeColor.Informative
     };
 
-    private static Appearance GetAgentStatusAppearance(string status) => status switch
+    private static BadgeColor GetAgentStatusColor(string status) => status switch
     {
-        "Active" => Appearance.Accent,
-        "Idle" => Appearance.Neutral,
-        "Error" => Appearance.Accent,
-        _ => Appearance.Neutral
+        "Active" => BadgeColor.Brand,
+        "Idle" => BadgeColor.Informative,
+        "Error" => BadgeColor.Brand,
+        _ => BadgeColor.Informative
     };
 
-    private static Appearance GetToolStatusAppearance(string status) => status switch
+    private static BadgeColor GetToolStatusColor(string status) => status switch
     {
-        "Connected" => Appearance.Accent,
-        "Disconnected" => Appearance.Neutral,
-        "Error" => Appearance.Accent,
-        _ => Appearance.Neutral
+        "Connected" => BadgeColor.Brand,
+        "Disconnected" => BadgeColor.Informative,
+        "Error" => BadgeColor.Brand,
+        _ => BadgeColor.Informative
     };
 }

@@ -30,11 +30,11 @@ public sealed partial class Workspaces : ComponentBase
         }
     }
 
-    private static Appearance GetStatusAppearance(string status) => status switch
+    private static BadgeColor GetStatusColor(string status) => status switch
     {
-        "Running" => Appearance.Accent,
-        "Stopped" => Appearance.Neutral,
-        "Error" => Appearance.Accent,
-        _ => Appearance.Neutral
+        "Running" => BadgeColor.Brand,
+        "Stopped" => BadgeColor.Informative,
+        "Error" => BadgeColor.Brand,
+        _ => BadgeColor.Informative
     };
 }

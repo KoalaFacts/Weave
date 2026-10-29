@@ -2,27 +2,27 @@
 
 <PageTitle>Agents - Weave</PageTitle>
 
-<FluentLabel Typo="Typography.H4" Style="margin-bottom: 1rem;">Agent Console</FluentLabel>
+<FluentText As="TextTag.H4" Style="margin-bottom: 1rem;">Agent Console</FluentText>
 
 @if (_error is not null)
 {
-    <FluentMessageBar Intent="MessageIntent.Error" Style="margin-bottom: 1rem;">@_error</FluentMessageBar>
+    <FluentMessageBar Intent="MessageBarIntent.Error" Style="margin-bottom: 1rem;">@_error</FluentMessageBar>
 }
 
 <FluentStack Orientation="Orientation.Horizontal" HorizontalGap="16" Style="height: 500px;">
     <FluentCard Style="width: 250px; padding: 1rem;">
-        <FluentLabel Typo="Typography.Subject" Style="margin-bottom: 0.5rem;">Active Agents</FluentLabel>
+        <FluentText As="TextTag.Paragraph" Size="TextSize.Size400" Weight="TextWeight.Semibold" Style="margin-bottom: 0.5rem;">Active Agents</FluentText>
         @if (_loading)
         {
-            <FluentProgressRing />
+            <FluentSpinner />
         }
         else if (_agents.Count == 0)
         {
-            <FluentLabel Typo="Typography.Body">No agents active</FluentLabel>
+            <FluentText As="TextTag.Paragraph">No agents active</FluentText>
         }
         @foreach (var agent in _agents)
         {
-            <FluentButton Appearance="@(_selectedAgent?.AgentName == agent.AgentName ? Appearance.Accent : Appearance.Stealth)"
+            <FluentButton Appearance="@(_selectedAgent?.AgentName == agent.AgentName ? ButtonAppearance.Primary : ButtonAppearance.Subtle)"
                           Style="width: 100%; margin-bottom: 4px;"
                           OnClick="@(() => SelectAgent(agent))">
                 @agent.AgentName (@agent.Status)
@@ -31,21 +31,21 @@
     </FluentCard>
 
     <FluentCard Style="flex: 1; padding: 1rem; display: flex; flex-direction: column;">
-        <FluentLabel Typo="Typography.Subject" Style="margin-bottom: 0.5rem;">
+        <FluentText As="TextTag.Paragraph" Size="TextSize.Size400" Weight="TextWeight.Semibold" Style="margin-bottom: 0.5rem;">
             @(_selectedAgent?.AgentName ?? "Select an agent")
-        </FluentLabel>
+        </FluentText>
 
         @if (_selectedAgent is not null)
         {
             <FluentStack Orientation="Orientation.Horizontal" HorizontalGap="8" Style="margin-bottom: 0.5rem;">
-                <FluentBadge>@_selectedAgent.Status</FluentBadge>
+                <FluentBadge Content="@_selectedAgent.Status" />
                 @if (_selectedAgent.Model is not null)
                 {
-                    <FluentBadge Appearance="Appearance.Neutral">@_selectedAgent.Model</FluentBadge>
+                    <FluentBadge Color="BadgeColor.Informative" Content="@_selectedAgent.Model" />
                 }
                 @foreach (var tool in _selectedAgent.ConnectedTools)
                 {
-                    <FluentBadge Appearance="Appearance.Neutral">@tool</FluentBadge>
+                    <FluentBadge Color="BadgeColor.Informative" Content="@tool" />
                 }
             </FluentStack>
         }
@@ -54,15 +54,15 @@
             @foreach (var msg in _messages)
             {
                 <div style="margin-bottom: 0.5rem;">
-                    <FluentLabel Typo="Typography.Body"><strong>@msg.Role:</strong> @msg.Content</FluentLabel>
+                    <FluentText As="TextTag.Paragraph"><strong>@msg.Role:</strong> @msg.Content</FluentText>
                 </div>
             }
         </div>
 
         <FluentStack Orientation="Orientation.Horizontal" HorizontalGap="8">
-            <FluentTextField @bind-Value="_inputMessage" Placeholder="Send message..."
+            <FluentTextInput @bind-Value="_inputMessage" Placeholder="Send message..."
                              Style="flex: 1;" Disabled="@(_selectedAgent is null || _sending)" />
-            <FluentButton Appearance="Appearance.Accent" OnClick="SendMessage"
+            <FluentButton Appearance="ButtonAppearance.Primary" OnClick="SendMessage"
                           Disabled="@(_selectedAgent is null || _sending)">
                 @(_sending ? "Sending..." : "Send")
             </FluentButton>

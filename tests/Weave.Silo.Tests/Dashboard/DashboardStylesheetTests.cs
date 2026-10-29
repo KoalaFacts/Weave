@@ -28,7 +28,7 @@ public sealed partial class DashboardStylesheetTests
         componentPath.ShouldStartWith("_content/Microsoft.FluentUI.AspNetCore.Components/");
         using var component = await http.GetAsync(componentPath, TestContext.Current.CancellationToken);
         component.StatusCode.ShouldBe(HttpStatusCode.OK);
-        (await component.Content.ReadAsStringAsync(TestContext.Current.CancellationToken)).ShouldContain(".footer");
+        (await component.Content.ReadAsStringAsync(TestContext.Current.CancellationToken)).ShouldContain(".fluent-nav");
 
         html.ShouldContain("href=\"Weave.Dashboard.styles.css\" rel=\"stylesheet\"");
     }

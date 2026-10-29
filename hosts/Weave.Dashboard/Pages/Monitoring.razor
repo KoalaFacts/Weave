@@ -2,41 +2,41 @@
 
 <PageTitle>Monitoring - Weave</PageTitle>
 
-<FluentLabel Typo="Typography.H4" Style="margin-bottom: 1rem;">Monitoring</FluentLabel>
+<FluentText As="TextTag.H4" Style="margin-bottom: 1rem;">Monitoring</FluentText>
 
-<FluentCard Style="padding: 1rem; margin-bottom: 1.5rem; max-width: 600px; background: var(--neutral-layer-2);">
-    <FluentLabel Typo="Typography.Body">
+<FluentCard Style="padding: 1rem; margin-bottom: 1.5rem; max-width: 600px; background: var(--colorNeutralBackground2);">
+    <FluentText As="TextTag.Paragraph">
         Monitoring data will surface workspace, agent, and tool health from the Orleans silo.
         This page is under active development.
-    </FluentLabel>
+    </FluentText>
 </FluentCard>
 
 <FluentStack Orientation="Orientation.Horizontal" Wrap="true" HorizontalGap="16" Style="margin-bottom: 1.5rem;">
     <FluentCard Style="width: 200px; padding: 1rem;">
-        <FluentLabel Typo="Typography.Subject">Silo Status</FluentLabel>
-        <FluentLabel Typo="Typography.H2" Color="Color.Accent">—</FluentLabel>
-        <FluentLabel Typo="Typography.Body">Pending</FluentLabel>
+        <FluentText As="TextTag.Paragraph" Size="TextSize.Size400" Weight="TextWeight.Semibold">Silo Status</FluentText>
+        <FluentText As="TextTag.H2" Color="Color.Primary">—</FluentText>
+        <FluentText As="TextTag.Paragraph">Pending</FluentText>
     </FluentCard>
 
     <FluentCard Style="width: 200px; padding: 1rem;">
-        <FluentLabel Typo="Typography.Subject">Heartbeats</FluentLabel>
-        <FluentLabel Typo="Typography.H2" Color="Color.Accent">—</FluentLabel>
-        <FluentLabel Typo="Typography.Body">Pending</FluentLabel>
+        <FluentText As="TextTag.Paragraph" Size="TextSize.Size400" Weight="TextWeight.Semibold">Heartbeats</FluentText>
+        <FluentText As="TextTag.H2" Color="Color.Primary">—</FluentText>
+        <FluentText As="TextTag.Paragraph">Pending</FluentText>
     </FluentCard>
 
     <FluentCard Style="width: 200px; padding: 1rem;">
-        <FluentLabel Typo="Typography.Subject">Rate Limits</FluentLabel>
-        <FluentLabel Typo="Typography.H2" Color="Color.Accent">—</FluentLabel>
-        <FluentLabel Typo="Typography.Body">Pending</FluentLabel>
+        <FluentText As="TextTag.Paragraph" Size="TextSize.Size400" Weight="TextWeight.Semibold">Rate Limits</FluentText>
+        <FluentText As="TextTag.H2" Color="Color.Primary">—</FluentText>
+        <FluentText As="TextTag.Paragraph">Pending</FluentText>
     </FluentCard>
 </FluentStack>
 
-<FluentLabel Typo="Typography.Subject" Style="margin-bottom: 0.5rem;">Available Observability</FluentLabel>
+<FluentText As="TextTag.Paragraph" Size="TextSize.Size400" Weight="TextWeight.Semibold" Style="margin-bottom: 0.5rem;">Available Observability</FluentText>
 <FluentCard Style="padding: 1rem; max-width: 500px;">
     <FluentStack Orientation="Orientation.Vertical" VerticalGap="8">
-        <FluentLabel Typo="Typography.Body">&#x2022; OpenTelemetry tracing and metrics via Aspire service defaults</FluentLabel>
-        <FluentLabel Typo="Typography.Body">&#x2022; Agent heartbeat tracking per workspace</FluentLabel>
-        <FluentLabel Typo="Typography.Body">&#x2022; Cost tracking through the chat pipeline</FluentLabel>
-        <FluentLabel Typo="Typography.Body">&#x2022; Rate limiting diagnostics per agent</FluentLabel>
+        <FluentText As="TextTag.Paragraph">&#x2022; OpenTelemetry tracing and metrics via Aspire service defaults</FluentText>
+        <FluentText As="TextTag.Paragraph">&#x2022; Agent heartbeat tracking per workspace</FluentText>
+        <FluentText As="TextTag.Paragraph">&#x2022; Cost tracking through the chat pipeline</FluentText>
+        <FluentText As="TextTag.Paragraph">&#x2022; Rate limiting diagnostics per agent</FluentText>
     </FluentStack>
 </FluentCard>
