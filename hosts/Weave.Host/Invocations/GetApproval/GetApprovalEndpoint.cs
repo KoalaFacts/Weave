@@ -18,7 +18,7 @@ internal static class GetApprovalEndpoint
             var actor = actors.GetActor<IToolActorGrain>(VirtualActorId.From(workspaceId + "/" + toolName));
             var approval = await actor.GetApprovalWithCancellationAsync(id, token, context.RequestAborted);
             return approval is null ? InvocationHttp.Error(404, "approval-not-found")
-                : Results.Json(new ApprovalHttpStatus(approval.InvocationId.ToString(), approval.State, approval.ExpiresAt),
+                : Results.Json(ApprovalHttpStatus.From(approval),
                     InvocationHttpJsonContext.Default.ApprovalHttpStatus);
         }
         catch (UnauthorizedAccessException)

@@ -39,12 +39,17 @@ internal sealed class ApprovalScenario : IDisposable
         Journal = Reopen();
     }
 
-    public SqliteInvocationJournal Reopen(bool requireApproval = true) => new(Options.Create(new InvocationJournalOptions
-    {
-        DatabasePath = DatabasePath,
-        ApprovalRequiredGrants = requireApproval ? ["tool:files:invoke:write_file"] : [],
-        ApprovalLifetime = TimeSpan.FromMinutes(5)
-    }));
+    public SqliteInvocationJournal Reopen(bool requireApproval = true, int requiredApprovals = 1,
+        bool requireExistingStorage = false) => new(Options.Create(new InvocationJournalOptions
+        {
+            DatabasePath = DatabasePath,
+            RequireExistingStorage = requireExistingStorage,
+            ApprovalRequiredGrants = requireApproval ? ["tool:files:invoke:write_file"] : [],
+            ApprovalQuorums = requireApproval && requiredApprovals > 1
+            ? [new InvocationApprovalQuorum { Grant = "tool:files:invoke:write_file", RequiredApprovals = requiredApprovals }]
+            : [],
+            ApprovalLifetime = TimeSpan.FromMinutes(5)
+        }));
 
     public async Task<ToolActor> ConnectAsync(IInvocationJournal? journal = null, string? root = null)
     {
@@ -77,7 +82,8 @@ internal sealed class ApprovalScenario : IDisposable
         Lifetime = TimeSpan.FromHours(1)
     });
 
-    public CapabilityToken Approver() => Token("approver", "tool:files:approve:write_file", "invocation:read");
+    public CapabilityToken Approver(string subject = "approver") =>
+        Token(subject, "tool:files:approve:write_file", "invocation:read");
     public CapabilityToken Writer() => Token("writer", "tool:files:invoke:write_file", "invocation:read", "invocation:cancel");
 
     public ToolInvocation Write() => new()

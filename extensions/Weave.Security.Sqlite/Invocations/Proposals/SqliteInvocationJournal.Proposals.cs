@@ -33,7 +33,7 @@ public sealed partial class SqliteInvocationJournal
                 """;
             command.ExecuteNonQuery();
         }
-        else if (version != 1)
+        else if (version is not (1 or QuorumSchemaVersion))
         {
             throw new InvalidOperationException("Unsupported invocation proposal schema version.");
         }

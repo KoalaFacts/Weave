@@ -188,7 +188,7 @@ public sealed partial class UuidProposalRecoveryTests : IDisposable
             first.Execute("DROP TABLE invocation_proposals; PRAGMA user_version=0;");
         }
         await using var restored = new Fixture(_root, _clock, recovery: true);
-        restored.Scalar("PRAGMA user_version;").ShouldBe(1);
+        restored.Scalar("PRAGMA user_version;").ShouldBe(2);
         restored.Scalar("SELECT COUNT(*) FROM invocation_approvals;").ShouldBe(1);
         restored.Scalar("SELECT COUNT(*) FROM invocation_proposals;").ShouldBe(0);
         using var proposal = await restored.Send(HttpMethod.Get, "/" + id + "/proposal", null, restored.Reader());
@@ -210,7 +210,7 @@ public sealed partial class UuidProposalRecoveryTests : IDisposable
             _ = await Pending(first);
             first.Execute("DROP TABLE invocation_proposals;");
         }
-        // A retained version-one store is not mistaken for an old schema upgrade.
+        // A retained versioned store is not mistaken for an old schema upgrade.
         using var connection = new SqliteConnection(new SqliteConnectionStringBuilder
         {
             DataSource = Path.Combine(_root, "journal.db"),
@@ -220,7 +220,7 @@ public sealed partial class UuidProposalRecoveryTests : IDisposable
         connection.Open();
         using var command = connection.CreateCommand();
         command.CommandText = "PRAGMA user_version;";
-        Convert.ToInt64(command.ExecuteScalar(), System.Globalization.CultureInfo.InvariantCulture).ShouldBe(1);
+        Convert.ToInt64(command.ExecuteScalar(), System.Globalization.CultureInfo.InvariantCulture).ShouldBe(2);
         var options = Microsoft.Extensions.Options.Options.Create(new InvocationJournalOptions
         {
             DatabasePath = Path.Combine(_root, "journal.db"),

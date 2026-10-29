@@ -41,6 +41,7 @@ public sealed partial class SqliteInvocationJournal : IInvocationProposalJournal
         if (options.Value.RequireExistingStorage)
         {
             EnsureProposalSchema(connection);
+            EnsureApprovalQuorumSchema(connection);
             return;
         }
         using var schema = connection.CreateCommand();
@@ -61,6 +62,7 @@ public sealed partial class SqliteInvocationJournal : IInvocationProposalJournal
             """ + ApprovalSchema;
         schema.ExecuteNonQuery();
         EnsureProposalSchema(connection);
+        EnsureApprovalQuorumSchema(connection);
     }
 
     public InvocationClaim TryStart(InvocationRecord candidate, CancellationToken cancellationToken) =>

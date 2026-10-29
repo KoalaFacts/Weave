@@ -11,5 +11,8 @@ public sealed class InvocationJournalOptions
     public bool RequireExistingStorage { get; set; }
 
     public List<string> ApprovalRequiredGrants { get; set; } = [];
+
+    /// <summary>Optional multi-person approval per required grant; unlisted grants need one approver.</summary>
+    public List<InvocationApprovalQuorum> ApprovalQuorums { get; set; } = [];
     public TimeSpan ApprovalLifetime { get; set; } = TimeSpan.FromMinutes(30);
 }

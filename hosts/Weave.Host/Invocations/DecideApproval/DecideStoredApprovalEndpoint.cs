@@ -36,7 +36,7 @@ internal static class DecideStoredApprovalEndpoint
             var result = await actor.DecideReviewedApprovalWithCancellationAsync(request, body.PlanDigest, decision,
                 token, context.RequestAborted);
             if (result.Succeeded && result.Approval is { } approval)
-                return Results.Json(new ApprovalHttpStatus(approval.InvocationId.ToString(), approval.State, approval.ExpiresAt),
+                return Results.Json(ApprovalHttpStatus.From(approval),
                     InvocationHttpJsonContext.Default.ApprovalHttpStatus);
             return result.ErrorCode == "approval-subject-denied"
                 ? InvocationHttp.Error(403, "forbidden") : ProposalHttp.Unavailable(result.ErrorCode!);

@@ -18,9 +18,11 @@ public static class InvocationApprovalPlan
         });
     }
 
-    public static InvocationApproval Create(InvocationRecord candidate, TimeSpan lifetime)
+    public static InvocationApproval Create(InvocationRecord candidate, TimeSpan lifetime, int requiredApprovals = 1)
     {
         ArgumentException.ThrowIfNullOrWhiteSpace(candidate.ApprovalTargetDigest);
+        ArgumentOutOfRangeException.ThrowIfLessThan(requiredApprovals, 1);
+        ArgumentOutOfRangeException.ThrowIfGreaterThan(requiredApprovals, InvocationApprovalQuorum.MaxRequiredApprovals);
         var expires = candidate.CreatedAt + lifetime;
         var digest = "approval-v1:" + Hash(writer =>
         {
@@ -36,7 +38,8 @@ public static class InvocationApprovalPlan
         });
         return new InvocationApproval(candidate.InvocationId, candidate.WorkspaceId, candidate.Subject,
             candidate.ToolName, candidate.Operation, candidate.InputDigest, candidate.ApprovalTargetDigest,
-            digest, candidate.CreatedAt, expires, InvocationApprovalState.Pending);
+            digest, candidate.CreatedAt, expires, InvocationApprovalState.Pending,
+            RequiredApprovals: requiredApprovals);
     }
 
     private static string Hash(Action<Utf8JsonWriter> write)
