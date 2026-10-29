@@ -1,6 +1,9 @@
+/** Optional machine-readable hint naming the rejected input field. Never echoes the input value. */
+export interface ProblemField { field: string; reason: string; }
 export class Problem extends Error {
-    constructor(public status: number, public code: string, public retryAfter?: number) { super(code); }
+    constructor(public status: number, public code: string, public retryAfter?: number, public detail?: ProblemField) { super(code); }
 }
+export function invalidField(field: string, reason: string): never { throw new Problem(400, 'invalid', undefined, {field, reason}); }
 export function fail(status = 400, code = 'invalid', retryAfter?: number): never { throw new Problem(status, code, retryAfter); }
 export const enc = new TextEncoder();
 export function stringify(value: unknown): string {
@@ -45,7 +48,7 @@ export function accountNames(value:any,legacy=false):any {
 export function problem(error: unknown): Response {
     const p = error instanceof Problem ? error : new Problem(503, 'storage');
     const titles: Record<string,string> = { invalid: 'Invalid request', unauthenticated: 'Account control required', unavailable: 'Resource unavailable', conflict: 'State conflict', expired: 'Expired', capacity: 'Capacity reached', tooLarge: 'Request too large', storage: 'Storage unavailable', maintenance:'Maintenance in progress' };
-    const response = json({ status: p.status, title: titles[p.code], code: p.code }, p.status);
+    const response = json({ status: p.status, title: titles[p.code], code: p.code, ...(p.detail ?? {}) }, p.status);
     if (p.retryAfter !== undefined) response.headers.set('Retry-After', String(p.retryAfter));
     return response;
 }

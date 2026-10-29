@@ -24,7 +24,7 @@ test('committed remote send with lost HTTP response retains an exact token-free 
         else if(name==='get_my_profile')value={id:owner};
         else if(name==='list_my_contacts')value={items:accepted?[{accountId:owner===alice?bob:alice,canSend:true}]:[],nextCursor:null};
         else if(name==='ensure_my_address')value={addressId:args.addressId,accountId:owner,isPublic:false};
-        else if(name==='request_contact'){requestId=args.requestId;value={generation:'1'};}
+        else if(name==='request_contact'){requestId=args.payload.messageId;value={generation:'1'};}
         else if(name==='list_my_contact_requests')value={items:owner===bob&&requestId?[{requestId,status:'pending'}]:[],nextCursor:null};
         else if(name==='decide_contact'){assert.equal(owner,bob);assert.equal(args.requestId,requestId);accepted=true;value={status:'accepted'};}
         else if(name==='get_my_channel'){assert.ok(accepted);value={generation:'1',isBlockedByMailbox:false,isBlockedByPeer:false};}

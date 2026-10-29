@@ -27,7 +27,7 @@ test('two isolated real HTTP MCP clients preserve two pending messages over both
         else if(!owner){res.statusCode=401;res.end(JSON.stringify({error:'unauthorized'}));return;}
         else if(name==='get_my_profile')value={id:owner};
         else if(name==='ensure_my_address')value={addressId:args.addressId,accountId:owner,isPublic:false};
-        else if(name==='request_contact'){introduction={...args,requesterAccountId:owner,status:'pending'};value={generation:exactGeneration};}
+        else if(name==='request_contact'){introduction={...args,requestId:(args.payload as {messageId:string}).messageId,requesterAccountId:owner,status:'pending'};value={generation:exactGeneration};}
         else if(name==='list_my_contact_requests')value={items:owner===bob&&introduction?[{requestId:introduction.requestId,status:introduction.status}]:[],nextCursor:null};
         else if(name==='decide_contact'){assert.equal(owner,bob);accepted=true;introduction.status='accepted';value={status:'accepted'};}
         else if(name==='get_my_channel'){assert.ok(accepted);value={generation:exactGeneration,isBlockedByMailbox:false,isBlockedByPeer:false};}

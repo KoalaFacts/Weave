@@ -60,7 +60,7 @@ test('real D1 account-scoped contact, message and ACK use server-side channel to
         const a=await h.participant(),b=await h.participant(),c=await h.participant();
         const contact=payload('request');
         const requested=await executePrivateMcp(env,origin,a.accountId,'request_contact',{
-            requestId:contact.messageId,requesterAddressId:a.cardId,recipientAccountId:b.accountId,recipientAddressId:b.cardId,payload:contact
+            requesterAddressId:a.cardId,recipientAccountId:b.accountId,recipientAddressId:b.cardId,payload:contact
         });
         assert.equal(requested.status,200,await requested.clone().text());
         const state=await requested.json();
@@ -120,7 +120,7 @@ test('malformed private request does not sweep or write maintenance state before
         const initial=await h.db.prepare("SELECT count(*) n FROM maintenance_state WHERE name='sweep'").first('n');
         const content=payload('invalid-request');
         const response=await executePrivateMcp(env,origin,a.accountId,'request_contact',{
-            requestId:content.messageId,requesterAddressId:a.cardId,recipientAccountId:b.accountId,
+            requesterAddressId:a.cardId,recipientAccountId:b.accountId,
             recipientAddressId:b.cardId,payload:{notAPayload:true}
         });
         assert.equal(response.status,400,'invalid payload must be rejected');
@@ -184,4 +184,67 @@ test('Cloudflare-style private token validation reaches real D1 owner-scoped MCP
         assert.equal(denied.status,401,'revoked token must not reuse a cached owner');
         assert.ok(validated>=5,'each protected call must independently validate the token');
     } finally {await h.close();}
+});
+
+test('private tool schemas state the UUIDv7 and timestamp rules the server enforces',()=>{
+    const contact=privateMcpTools.find(tool=>tool.name==='request_contact')!.inputSchema as any;
+    assert.equal(Object.hasOwn(contact.properties,'requestId'),false,'the request ID is the payload messageId, not a parameter');
+    const v7=new RegExp(contact.properties.payload.properties.messageId.pattern);
+    assert.ok(v7.test('01a187ea-9ff1-78ef-9bde-0aaf2ece3297'));
+    assert.equal(v7.test('d3898e42-1b78-4fdf-b25f-1bad25df73e3'),false,'a UUIDv4 is not a valid messageId');
+    assert.equal(contact.properties.payload.properties.createdAt.format,'date-time');
+    assert.match(contact.properties.payload.properties.createdAt.description,/millisecond encoded in messageId/);
+    const send=privateMcpTools.find(tool=>tool.name==='send_message')!.inputSchema as any;
+    assert.equal(send.properties.payload.properties.messageId.pattern,contact.properties.payload.properties.messageId.pattern);
+});
+
+test('request_contact names the rejected field, writes nothing, and uses the payload messageId as the request ID',async()=>{
+    const h=await start();
+    try{
+        const a=await h.participant(),b=await h.participant();
+        const env:Env={db:h.db,REGISTRATION_ENABLED:'true',REGISTRATION_MAX_ACCOUNTS:'100',
+            REGISTRATION_PER_IP_PER_HOUR:'10',REGISTRATION_GLOBAL_PER_HOUR:'100',
+            CLEANUP_MAX_MESSAGES:'0',CLEANUP_TIME_BUDGET_MS:'0'};
+        const base={requesterAddressId:a.cardId,recipientAccountId:b.accountId,recipientAddressId:b.cardId};
+        const rejected=async(args:Record<string,unknown>,field:string)=>{
+            const response=await executePrivateMcp(env,origin,a.accountId,'request_contact',{...base,...args});
+            assert.equal(response.status,400,field);
+            const body=await response.json();
+            assert.equal(body.field,field);
+            assert.equal(typeof body.reason,'string');
+            return body.reason as string;
+        };
+        const content=payload('field-hints');
+        assert.match(await rejected({requestId:content.messageId,payload:content},'requestId'),/not a parameter/);
+        const shifted=new Date(Date.parse(content.createdAt)+1).toISOString();
+        assert.ok((await rejected({payload:{...content,createdAt:shifted}},'payload.createdAt')).includes(content.createdAt),
+            'the reason names the time encoded in messageId');
+        await rejected({payload:{...content,messageId:'d3898e42-1b78-4fdf-b25f-1bad25df73e3'}},'payload.messageId');
+        await rejected({payload:{...content,bytes:'not base64!'}},'payload.bytes');
+        const oneDay=new Date(Date.parse(content.createdAt)+86_400_000).toISOString();
+        const overOneDay=new Date(Date.parse(content.createdAt)+86_400_001).toISOString();
+        assert.match(await rejected({payload:{...content,expiresAt:overOneDay}},'payload.expiresAt'),/at most 24 hours/);
+        await rejected({payload:content,extra:true},'extra');
+        const {recipientAddressId:_omitted,...missing}=base;
+        const absent=await executePrivateMcp(env,origin,a.accountId,'request_contact',{...missing,payload:content});
+        assert.equal((await absent.json()).field,'recipientAddressId');
+        const before=await executePrivateMcp(env,origin,a.accountId,'list_my_contact_requests',{});
+        assert.equal((await before.text()).includes(content.messageId),false,'rejected calls wrote no request');
+        const accepted=await executePrivateMcp(env,origin,a.accountId,'request_contact',{...base,payload:{...content,expiresAt:oneDay}});
+        assert.equal(accepted.status,200,await accepted.clone().text());
+        const listed=await executePrivateMcp(env,origin,a.accountId,'list_my_contact_requests',{});
+        assert.ok((await listed.text()).includes(content.messageId),'the request ID is the payload messageId');
+    }finally{await h.close();}
+});
+
+test('remote MCP turns a field rejection into a correctable tool error',async()=>{
+    const access:PrivateAccess={tools:privateMcpTools,scope:privateScope,authorize:async()=>accountId,
+        invoke:async()=>new Response(JSON.stringify({status:400,title:'Invalid request',code:'invalid',
+            field:'requestId',reason:'must be a UUIDv7'}),{status:400,headers:{'Content-Type':'application/json'}})};
+    const response=await remoteMcp(new Request(origin+'/mcp',{method:'POST',
+        headers:{...headers,Authorization:'Bearer synthetic'},body:JSON.stringify(rpc('request_contact',{}))}),unused,access);
+    const frame=await response.json();
+    assert.equal(frame.result.isError,true);
+    assert.deepEqual(frame.result.structuredContent,{status:400,field:'requestId',reason:'must be a UUIDv7'});
+    assert.match(frame.result.content[0].text,/Invalid argument requestId: must be a UUIDv7\. Nothing was written/);
 });

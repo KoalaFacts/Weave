@@ -185,7 +185,7 @@ test('real workerd/D1 trial enforces two credentials, owner binding, revocation 
         await asOwner('external-subject-B','ensure_my_address',{addressId:addressB,label:'Access B'});
         const intro=payload('access-trial-consent-introduction');
         const requestContact=await asOwner('external-subject-A','request_contact',{
-            requestId:intro.messageId,requesterAddressId:addressA,
+            requesterAddressId:addressA,
             recipientAccountId:b.accountId,recipientAddressId:addressB,payload:intro});
         await asOwner('external-subject-B','decide_contact',{
             requestId:intro.messageId,requesterAccountId:a.accountId,
