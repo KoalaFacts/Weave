@@ -38,7 +38,7 @@ const address = out({
     effectiveTo:nullable(time('End of the effective period.')), directUri:nullable(str(2048))
 }, ['addressId','accountId','isPublic']);
 const requestSummary = out({
-    requestId:v7('Contact request ID; a UUIDv7 with the same timestamp as the request payload (by default its messageId).'),
+    requestId:v7('Contact request ID; the request payload messageId.'),
     requesterAccountId:id('Requesting account.'), recipientAccountId:id('Recipient account.'),
     requesterAddressId:id('Requester address.'), recipientAddressId:id('Recipient address.'),
     generation:generation('Channel generation this request belongs to.'),
@@ -101,9 +101,8 @@ export const privateMcpTools = [
         'weave:messages.read', page, [], pageOf(inboxItem), {readOnly:true}),
     tool('list_my_outbox', 'Read your own delivery receipts.',
         'weave:messages.read', page, [], pageOf(receipt), {readOnly:true}),
-    tool('request_contact', 'Request a recipient decision using explicit sender/recipient addresses and a stable request payload. Omit requestId to use the payload messageId.',
+    tool('request_contact', 'Request a recipient decision using explicit sender/recipient addresses and a stable request payload. The request ID is the payload messageId.',
         'weave:contacts.write', {
-            requestId:v7('Optional; defaults to payload.messageId. If given it must be a UUIDv7 with the same timestamp as payload.createdAt.'),
             requesterAddressId:id('One of your own addresses.'), recipientAccountId:id('Recipient account ID.'),
             recipientAddressId:id('Recipient address ID, which may be unlisted.'), payload
         }, ['requesterAddressId','recipientAccountId','recipientAddressId','payload'], relation, {idempotent:true}),

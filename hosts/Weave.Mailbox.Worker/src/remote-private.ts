@@ -9,7 +9,7 @@ import { read } from './reads';
 import { requestContact, decide } from './contacts';
 import { sendWithResolvedConnection, ack } from './messages';
 import { fail, identity, invalidField, json, problem, uuid } from './wire';
-import { checkPayload, checkUuid, contactRequestId } from './mcp-arguments';
+import { checkPayload, checkUuid } from './mcp-arguments';
 import { MAX_GENERATION, validatePayload } from './protocol';
 import { sweep } from './cleanup';
 
@@ -80,10 +80,11 @@ export async function executePrivateMcp(env:Env,origin:string,accountId:string,n
                 origin,false,args.addressId as string)));
         }
         if(name==='request_contact'){
-            parameters(args,['requestId','requesterAddressId','recipientAccountId','recipientAddressId','payload'],['requesterAddressId','recipientAccountId','recipientAddressId','payload']);
+            parameters(args,['requesterAddressId','recipientAccountId','recipientAddressId','payload'],['requesterAddressId','recipientAccountId','recipientAddressId','payload']);
             for(const key of ['requesterAddressId','recipientAccountId','recipientAddressId'])checkUuid(args[key],key);
             checkPayload(args.payload,'payload');
-            const requestId=contactRequestId(args.requestId,args.payload);
+            // The request ID is always the payload messageId; there is no separate parameter.
+            const requestId=args.payload.messageId as string;
             // Reject malformed payloads before bounded cleanup writes any state. This
             // non-first validation retains idempotent replay of old committed IDs.
             validatePayload(args.payload);

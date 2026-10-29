@@ -72,7 +72,7 @@ test('two OAuth-account-owned private addresses support a full contact to ACK wo
         }
         const intro=payload('opaque introduction');
         const requested=await executePrivateMcp(e,origin,a.accountId,'request_contact',{
-            requestId:intro.messageId,requesterAddressId:aId,recipientAccountId:b.accountId,recipientAddressId:bId,payload:intro
+            requesterAddressId:aId,recipientAccountId:b.accountId,recipientAddressId:bId,payload:intro
         });
         assert.equal(requested.status,200,await requested.clone().text());
         const state=await requested.json();

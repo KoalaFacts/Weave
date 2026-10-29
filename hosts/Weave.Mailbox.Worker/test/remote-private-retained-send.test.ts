@@ -19,7 +19,7 @@ for(const replace of [false,true])for(const acknowledge of [false,true]){
             const accept=async()=>{
                 const intro=payload('request');
                 const requested=await executePrivateMcp(env,origin,a.accountId,'request_contact',{
-                    requestId:intro.messageId,requesterAddressId:a.cardId,recipientAccountId:b.accountId,recipientAddressId:b.cardId,payload:intro
+                    requesterAddressId:a.cardId,recipientAccountId:b.accountId,recipientAddressId:b.cardId,payload:intro
                 });
                 assert.equal(requested.status,200,await requested.clone().text());
                 const state=await requested.json();

@@ -250,7 +250,7 @@ test('two separate external OAuth identities complete real D1 private MCP contac
         assert.ok(!addressesA.items.some((x:{addressId:string})=>x.addressId===addressB));
         const intro=payload('external-provider-introduction');
         const request=await call(accessA,'request_contact',{
-            requestId:intro.messageId,requesterAddressId:addressA,
+            requesterAddressId:addressA,
             recipientAccountId:b.accountId,recipientAddressId:addressB,payload:intro});
         const incoming=await call(accessB,'list_my_contact_requests');
         assert.ok(incoming.items.some((x:{requestId:string;status:string})=>

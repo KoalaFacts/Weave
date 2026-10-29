@@ -215,7 +215,7 @@ if(process.argv.includes('--agent')){
         await privateWrite(a,'A','ensure_my_address',{addressId:addressA,label:'Remote pair '+nonce+' A'});
         await privateWrite(b,'B','ensure_my_address',{addressId:addressB,label:'Remote pair '+nonce+' B'});
         const intro=payload('synthetic introduction '+nonce);
-        const decision=await privateWrite(a,'A','request_contact',{requestId:intro.messageId,requesterAddressId:addressA,
+        const decision=await privateWrite(a,'A','request_contact',{requesterAddressId:addressA,
             recipientAccountId:profileB.id,recipientAddressId:addressB,payload:intro});
         async function find(c:Client,tool:string,predicate:(x:any)=>boolean){
             let afterCursor:undefined|string;

@@ -51,12 +51,3 @@ export function checkPayload(value: unknown, field: string): asserts value is Re
     if (typeof bytes !== 'string' || !/^(?:[A-Za-z0-9+/]{4})*(?:[A-Za-z0-9+/]{2}==|[A-Za-z0-9+/]{3}=)?$/.test(bytes.replace(/[\t\r\n ]/g, '')))
         invalidField(field + '.bytes', 'must be standard padded base64');
 }
-
-/** A contact requestId is the request payload's UUIDv7; default it when omitted. */
-export function contactRequestId(requestId: unknown, payload: Record<string, unknown>): string {
-    if (requestId === undefined) return payload.messageId as string;
-    if (typeof requestId !== 'string' || !uuidV7Pattern.test(requestId) ||
-        uuidV7Millis(requestId) !== uuidV7Millis(payload.messageId as string))
-        invalidField('requestId', 'must be a UUIDv7 with the same timestamp as payload.createdAt; omit it or use payload.messageId');
-    return requestId;
-}

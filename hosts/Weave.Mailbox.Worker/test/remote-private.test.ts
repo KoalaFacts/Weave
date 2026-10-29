@@ -60,7 +60,7 @@ test('real D1 account-scoped contact, message and ACK use server-side channel to
         const a=await h.participant(),b=await h.participant(),c=await h.participant();
         const contact=payload('request');
         const requested=await executePrivateMcp(env,origin,a.accountId,'request_contact',{
-            requestId:contact.messageId,requesterAddressId:a.cardId,recipientAccountId:b.accountId,recipientAddressId:b.cardId,payload:contact
+            requesterAddressId:a.cardId,recipientAccountId:b.accountId,recipientAddressId:b.cardId,payload:contact
         });
         assert.equal(requested.status,200,await requested.clone().text());
         const state=await requested.json();
@@ -120,7 +120,7 @@ test('malformed private request does not sweep or write maintenance state before
         const initial=await h.db.prepare("SELECT count(*) n FROM maintenance_state WHERE name='sweep'").first('n');
         const content=payload('invalid-request');
         const response=await executePrivateMcp(env,origin,a.accountId,'request_contact',{
-            requestId:content.messageId,requesterAddressId:a.cardId,recipientAccountId:b.accountId,
+            requesterAddressId:a.cardId,recipientAccountId:b.accountId,
             recipientAddressId:b.cardId,payload:{notAPayload:true}
         });
         assert.equal(response.status,400,'invalid payload must be rejected');
@@ -188,7 +188,7 @@ test('Cloudflare-style private token validation reaches real D1 owner-scoped MCP
 
 test('private tool schemas state the UUIDv7 and timestamp rules the server enforces',()=>{
     const contact=privateMcpTools.find(tool=>tool.name==='request_contact')!.inputSchema as any;
-    assert.equal(contact.required.includes('requestId'),false,'requestId defaults to payload.messageId');
+    assert.equal(Object.hasOwn(contact.properties,'requestId'),false,'the request ID is the payload messageId, not a parameter');
     const v7=new RegExp(contact.properties.payload.properties.messageId.pattern);
     assert.ok(v7.test('01a187ea-9ff1-78ef-9bde-0aaf2ece3297'));
     assert.equal(v7.test('d3898e42-1b78-4fdf-b25f-1bad25df73e3'),false,'a UUIDv4 is not a valid messageId');
@@ -198,7 +198,7 @@ test('private tool schemas state the UUIDv7 and timestamp rules the server enfor
     assert.equal(send.properties.payload.properties.messageId.pattern,contact.properties.payload.properties.messageId.pattern);
 });
 
-test('request_contact names the rejected field, writes nothing, and defaults requestId to the payload messageId',async()=>{
+test('request_contact names the rejected field, writes nothing, and uses the payload messageId as the request ID',async()=>{
     const h=await start();
     try{
         const a=await h.participant(),b=await h.participant();
@@ -215,7 +215,7 @@ test('request_contact names the rejected field, writes nothing, and defaults req
             return body.reason as string;
         };
         const content=payload('field-hints');
-        await rejected({requestId:'d3898e42-1b78-4fdf-b25f-1bad25df73e3',payload:content},'requestId');
+        assert.match(await rejected({requestId:content.messageId,payload:content},'requestId'),/not a parameter/);
         const shifted=new Date(Date.parse(content.createdAt)+1).toISOString();
         assert.ok((await rejected({payload:{...content,createdAt:shifted}},'payload.createdAt')).includes(content.createdAt),
             'the reason names the time encoded in messageId');
@@ -233,15 +233,7 @@ test('request_contact names the rejected field, writes nothing, and defaults req
         const accepted=await executePrivateMcp(env,origin,a.accountId,'request_contact',{...base,payload:{...content,expiresAt:oneDay}});
         assert.equal(accepted.status,200,await accepted.clone().text());
         const listed=await executePrivateMcp(env,origin,a.accountId,'list_my_contact_requests',{});
-        assert.ok((await listed.text()).includes(content.messageId),'the omitted requestId is the payload messageId');
-        // An explicit distinct UUIDv7 from the same millisecond remains accepted (existing callers).
-        const second=payload('explicit-request-id');
-        const sameMillis=second.messageId.slice(0,15)+'fff-8fff-ffffffffffff';
-        assert.notEqual(sameMillis,second.messageId);
-        const c=await h.participant();
-        const explicit=await executePrivateMcp(env,origin,a.accountId,'request_contact',{requesterAddressId:a.cardId,
-            recipientAccountId:c.accountId,recipientAddressId:c.cardId,requestId:sameMillis,payload:second});
-        assert.equal(explicit.status,200,await explicit.clone().text());
+        assert.ok((await listed.text()).includes(content.messageId),'the request ID is the payload messageId');
     }finally{await h.close();}
 });
 
