@@ -340,7 +340,7 @@ test("a foreign browser cannot burn an owner nonce before consent-cookie verific
       "account A must not read private B addresses");
     const intro=mailboxPayload("test-consent-introduction");
     const requested=await privateCall(grant.access_token!,"request_contact",{
-      requestId:intro.messageId,requesterAddressId:aAddress,
+      requesterAddressId:aAddress,
       recipientAccountId:accountB,recipientAddressId:bAddress,payload:intro
     });
     const pending=await privateCall(grantB.access_token!,"list_my_contact_requests");
