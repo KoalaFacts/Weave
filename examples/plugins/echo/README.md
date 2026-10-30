@@ -21,7 +21,7 @@ for JSON-RPC on stdin; it is not an interactive chat prompt.
 | Language | Requirement | Build | Start |
 | --- | --- | --- | --- |
 | Python | Python 3.10+ | None | `python3 examples/plugins/echo/python/server.py` |
-| TypeScript | Node 22.16+ | None; native type stripping | `node --experimental-strip-types examples/plugins/echo/typescript/server.ts` |
+| TypeScript | Node 24+ | None; native type stripping | `node --experimental-strip-types examples/plugins/echo/typescript/server.ts` |
 | Rust | Rust/Cargo | `cargo build --locked --manifest-path examples/plugins/echo/rust/Cargo.toml` | `examples/plugins/echo/rust/target/debug/weave-echo-plugin-example` |
 | Java | JDK 17+ and Maven | `mvn -q -f examples/plugins/echo/java/pom.xml compile dependency:copy-dependencies` | `java -cp 'examples/plugins/echo/java/target/classes:examples/plugins/echo/java/target/dependency/*' EchoServer` |
 

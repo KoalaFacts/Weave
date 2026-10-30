@@ -9,11 +9,11 @@ test('read-only doctor reports missing runtime, vault and network without writes
     assert.ok(existsSync(new URL('../run.ts',import.meta.url)),'Missing pair launcher');
     const {doctor}=await import('../run.ts');let writes=0;
     const result=await doctor(undefined,{version:'22.16.0',platform:'linux',execute:async(_cmd,args)=>{if(args.includes('create'))writes++;throw Error('secret');},publicRead:async()=>{throw Error('DNS');},sourceAvailable:true});
-    assert.equal(result.ready,false);assert.ok(result.missing.includes('node_24_19_or_newer'));assert.ok(result.missing.includes('codex_login'));assert.ok(result.missing.includes('secure_vault'));assert.ok(result.missing.includes('demo_connectivity'));assert.equal(writes,0);assert.ok(!JSON.stringify(result).includes('secret'));
+    assert.equal(result.ready,false);assert.ok(result.missing.includes('node_24_or_newer'));assert.ok(result.missing.includes('codex_login'));assert.ok(result.missing.includes('secure_vault'));assert.ok(result.missing.includes('demo_connectivity'));assert.equal(writes,0);assert.ok(!JSON.stringify(result).includes('secret'));
 });
 test('doctor rejects an inherited MCP configuration instead of exposing unrelated tools',async()=>{
     const {doctor}=await import('../run.ts');
-    const result=await doctor(undefined,{version:'24.19.0',platform:'linux',execute:async(cmd,args)=>cmd==='codex'&&args[0]==='mcp'?'[{"name":"unrelated"}]':'{}',publicRead:async()=>({items:[],nextCursor:null}),sourceAvailable:true});
+    const result=await doctor(undefined,{version:'24.0.0',platform:'linux',execute:async(cmd,args)=>cmd==='codex'&&args[0]==='mcp'?'[{"name":"unrelated"}]':'{}',publicRead:async()=>({items:[],nextCursor:null}),sourceAvailable:true});
     assert.ok(result.missing.includes('clean_codex_profile'));
 });
 test('coordinator forwards identities and step numbers only, never peer message text',async()=>{

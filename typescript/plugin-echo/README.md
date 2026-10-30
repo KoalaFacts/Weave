@@ -7,7 +7,7 @@ The same tool definition serves both transports.
 
 ## Install and run
 
-Requires Node.js 22.14 or later.
+Requires Node.js 24 or later.
 
 ```sh
 npm install @koalafacts/weave-plugin-echo

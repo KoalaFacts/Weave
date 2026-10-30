@@ -4,7 +4,7 @@
   "private": true,
   "type": "module",
   "license": "Apache-2.0",
-  "engines": { "node": ">=24.19.0" },
+  "engines": { "node": ">=24" },
   "scripts": {
     "test": "node --test marketplace.test.ts",
     "check": "node marketplace.ts check",

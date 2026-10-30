@@ -2,6 +2,9 @@
   "name": "weave-dependency-license-policy",
   "private": true,
   "type": "module",
+  "engines": {
+    "node": ">=24"
+  },
   "scripts": {
     "test": "npm run typecheck && node --test test/*.test.ts",
     "typecheck": "tsc -p tsconfig.json"

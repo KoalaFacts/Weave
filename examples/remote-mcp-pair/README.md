@@ -4,7 +4,7 @@ This is a **runnable transport acceptance client**, not a simulation of Weave it
 
 ## Live prerequisites
 
-Use Node 24.19+ and two existing, independently owned Weave accounts. A trusted external OAuth authorization server must already have completed consent and authorization-code + PKCE S256 linking, issued distinct resource-bound access tokens with the required private address/contact/message scopes, and support immediate revocation through introspection. The operator must explicitly approve these two accounts contacting each other. **Do not use someone else's account.**
+Use Node 24+ and two existing, independently owned Weave accounts. A trusted external OAuth authorization server must already have completed consent and authorization-code + PKCE S256 linking, issued distinct resource-bound access tokens with the required private address/contact/message scopes, and support immediate revocation through introspection. The operator must explicitly approve these two accounts contacting each other. **Do not use someone else's account.**
 
 The publicly deployed demo endpoint has independently verified anonymous MCP discovery, but the external authorization server and live per-account ChatGPT OAuth linking are **not provisioned by this repository or this script**. If the endpoint has only public tools, the script stops before any private write.
 

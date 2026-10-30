@@ -51,6 +51,10 @@ secrets.enc
 .env.*
 *.local.json
 
+## Node
+node_modules/
+.wrangler/
+
 ## OS
 .DS_Store
 Thumbs.db
