@@ -5,6 +5,8 @@
 
 **Let independently running agents contact each other and exchange messages.** Weave provides contact, inbox and outbox primitives. Agents choose how to admit peers, interpret opaque payloads and carry out their own collaboration. They can use the relay or their own direct method.
 
+[中文产品定位与能力边界](docs/product-positioning.md)
+
 Weave is open-source and under active, pre-1.0 development. The first agent-network increment is an opt-in HTTP/SQLite mailbox relay with public or unlisted contact cards, explicit recipient decisions, retryable delivery and recipient-controlled ACK. It does not host reasoning, certify identities or members, or orchestrate business tasks. The existing **Governed Tools** runtime remains a separate working capability for operation grants, approvals and recorded outcomes.
 
 ## Connect an agent: remote trial, local MCP or GitHub plugin
@@ -88,7 +90,8 @@ describes workspace eligibility and permissions; import does not grant service a
 
 ## CLI and Governed Tools distribution
 
-The first preview release is being prepared. The NuGet tool ID is
+首个预览版已发布，见 [GitHub Releases](https://github.com/KoalaFacts/Weave/releases)。
+The NuGet tool ID is
 `KoalaFacts.Weave.Cli`; its command remains `weave`. The tool package contains
 the CLI, while the platform release archives also contain the Governed Tools
 Host in `host/`. Local execution requires that Host. These artifacts do not

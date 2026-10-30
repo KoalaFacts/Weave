@@ -1,7 +1,7 @@
 # Releasing Weave
 
-The first public preview is being prepared. A successful repository build does
-not establish that a version is available on NuGet or GitHub Releases.
+首个公开预览版 `0.1.0-preview.1` 已发布。仓库构建成功不代表对应版本已在
+NuGet 或 GitHub Releases 上线；使用前仍须核对具体版本及产物。
 
 ## Distribution scope
 
@@ -27,7 +27,7 @@ Weave checkout; migrating that adapter is separate from this release.
 Select an exact version that exists in both the
 [GitHub release](https://github.com/KoalaFacts/Weave/releases) and
 [NuGet listing](https://www.nuget.org/packages/KoalaFacts.Weave.Cli).
-For example, after the selected preview is published:
+例如，选择并核对已发布的预览版后：
 
 ```bash
 dotnet tool install --tool-path ./weave-tools KoalaFacts.Weave.Cli --version VERSION
