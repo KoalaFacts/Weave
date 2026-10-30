@@ -39,6 +39,25 @@ export const accounts = sqliteTable("accounts", {
     check("accounts_control_parameters",sql`json_valid(control_hash_parameters)`)
 ]);
 
+export const agentKeys = sqliteTable("agent_keys", {
+    kid: text("kid").notNull().primaryKey(),
+    account_id: text("account_id").notNull().references(() => accounts.account_id, {onDelete:"restrict"}),
+    public_jwk: text("public_jwk").notNull(),
+    label: text("label"),
+    created_at: exactInteger("created_at").notNull(),
+    last_used_at: exactInteger("last_used_at"),
+    revoked_at: exactInteger("revoked_at"),
+    cooling_until: exactInteger("cooling_until"),
+    updated_at: exactInteger("updated_at").notNull(),
+}, t => [
+    index("agent_keys_account").on(t.account_id, t.revoked_at),
+    check("agent_keys_kid",sql`length(kid)=43 AND kid NOT GLOB '*[^A-Za-z0-9_-]*'`),
+    check("agent_keys_public_jwk",sql`json_valid(public_jwk)`),
+    check("agent_keys_revocation",sql`revoked_at IS NULL OR revoked_at>=created_at`),
+    check("agent_keys_cooling",sql`cooling_until IS NULL OR cooling_until>created_at`),
+    check("agent_keys_label",sql`label IS NULL OR length(label) BETWEEN 1 AND 64`)
+]);
+
 export const accountAddresses = sqliteTable("account_addresses", {
     address_id: text("address_id").notNull().primaryKey(),
     account_id: text("account_id").notNull().references(() => accounts.account_id, {onDelete:"restrict"}),

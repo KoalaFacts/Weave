@@ -2,11 +2,10 @@ import { and, eq, getTableColumns, sql, type SQL } from 'drizzle-orm';
 import { drizzle } from 'drizzle-orm/d1';
 import { type AnySQLiteTable } from 'drizzle-orm/sqlite-core';
 import * as schema from './schema.ts';
-import { exactInt64, isoUtc, utcTicks } from './time.ts';
+import { apiTime, exactInt64, utcTicks } from './time.ts';
 import { type Database, type Statement } from './database.ts';
 import { addressSnapshot, cardSnapshot, requestSnapshot, messageSnapshot } from './wire-snapshots.ts';
 
-const time=(value:string|null)=>value===null?null:isoUtc(value).replace(/(\.\d{3})0000Z$/,'$1Z');
 const ticks=(value:string|null|undefined)=>value==null?null:utcTicks(value);
 const pair=(id:string)=>JSON.parse(id) as [string,string];
 const selectColumns=(table:AnySQLiteTable)=>Object.fromEntries(Object.entries(getTableColumns(table)).map(([name,column])=>[
@@ -69,7 +68,7 @@ export class RecordStore {
         }
         case 'channel':{
             const [low,high]=pair(id),r=await this.select(schema.legacyChannels,and(eq(schema.legacyChannels.low_account_id,low),eq(schema.legacyChannels.high_account_id,high))!);
-            return r&&{low:r.low_account_id,high:r.high_account_id,generation:exactInt64(r.generation),blockedLow:!!r.blocked_low,blockedHigh:!!r.blocked_high,currentRequest:r.current_request_id===null?null:{requesterMailboxId:r.current_requester_account_id,requestId:r.current_request_id},updatedAt:time(r.updated_at)};
+            return r&&{low:r.low_account_id,high:r.high_account_id,generation:exactInt64(r.generation),blockedLow:!!r.blocked_low,blockedHigh:!!r.blocked_high,currentRequest:r.current_request_id===null?null:{requesterMailboxId:r.current_requester_account_id,requestId:r.current_request_id},updatedAt:apiTime(r.updated_at)};
         }
         case 'message':{
             const r=await this.select(schema.mailboxRecords,and(eq(schema.mailboxRecords.sender_account_id,owner),eq(schema.mailboxRecords.message_id,id))!);

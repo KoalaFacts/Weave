@@ -37,6 +37,32 @@ test('publicJwk_WrongShape_ReturnsNull', () => {
     ]) assert.equal(publicJwk(value),null,JSON.stringify(value));
 });
 
+// The eight small-order points: identity, order 2, both order-4 points and the four order-8 points.
+const smallOrderHex=[
+    '0100000000000000000000000000000000000000000000000000000000000000',
+    'ecffffffffffffffffffffffffffffffffffffffffffffffffffffffffffff7f',
+    '0000000000000000000000000000000000000000000000000000000000000000',
+    '0000000000000000000000000000000000000000000000000000000000000080',
+    '26e8958fc2b227b045c3f489f2ef98f0d5dfac05d3c63339b13802886d53fc05',
+    '26e8958fc2b227b045c3f489f2ef98f0d5dfac05d3c63339b13802886d53fc85',
+    'c7176a703d4dd84fba3c0b760d10670f2a2053fa2c39ccc64ec7fd7792ac037a',
+    'c7176a703d4dd84fba3c0b760d10670f2a2053fa2c39ccc64ec7fd7792ac03fa',
+];
+
+test('publicJwk_SmallOrderPoint_ReturnsNull', () => {
+    for(const hex of smallOrderHex) assert.equal(publicJwk({kty:'OKP',crv:'Ed25519',x:Buffer.from(hex,'hex').toString('base64url')}),null,hex);
+});
+
+test('publicJwk_NonCanonicalY_ReturnsNull', () => {
+    // y = p, p+1, p+18 = 2^255-1, each with either x sign bit.
+    for(const low of [0xed,0xee,0xff]) for(const high of [0x7f,0xff]) {
+        const bytes=Buffer.alloc(32,0xff);bytes[0]=low;bytes[31]=high;
+        assert.equal(publicJwk({kty:'OKP',crv:'Ed25519',x:bytes.toString('base64url')}),null,bytes.toString('hex'));
+    }
+    const largestCanonical=Buffer.alloc(32,0xff);largestCanonical[0]=0xeb;largestCanonical[31]=0x7f; // y = p-2
+    assert.ok(publicJwk({kty:'OKP',crv:'Ed25519',x:largestCanonical.toString('base64url')}));
+});
+
 test('fromBase64url_NonCanonical_ReturnsNull', () => {
     assert.deepEqual(fromBase64url('AQID'),new Uint8Array([1,2,3]));
     assert.equal(base64url(new Uint8Array([1,2,3,4])),'AQIDBA');

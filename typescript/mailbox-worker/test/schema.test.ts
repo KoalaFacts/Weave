@@ -20,10 +20,10 @@ test('latest Drizzle schema defines the approved tables without compatibility vi
     const db=await database();
     try {
         const tables=db.prepare("SELECT name FROM sqlite_master WHERE type='table' AND name NOT LIKE 'sqlite_%' ORDER BY name").all().map(r=>r.name);
-        assert.deepEqual(tables,['account_addresses','accounts','contact_cards','contact_requests','contacts','counters','data_migrations','humans','legacy_channels','mailbox_guard','mailbox_records','mailbox_records_legacy','mailbox_revision','maintenance_state','message_delivery','rate_limits','stream_cursors','stream_leases']);
+        assert.deepEqual(tables,['account_addresses','accounts','agent_keys','contact_cards','contact_requests','contacts','counters','data_migrations','humans','legacy_channels','mailbox_guard','mailbox_records','mailbox_records_legacy','mailbox_revision','maintenance_state','message_delivery','rate_limits','stream_cursors','stream_leases']);
         assert.equal(db.prepare("SELECT count(*) n FROM sqlite_master WHERE type IN ('view','trigger')").get().n,0);
         const business=tables.filter(name=>name!=='data_migrations');
-        assert.equal(business.reduce((n,name)=>n+db.prepare(`PRAGMA table_info(${name})`).all().length,0),137);
+        assert.equal(business.reduce((n,name)=>n+db.prepare(`PRAGMA table_info(${name})`).all().length,0),146);
         assert.ok(business.flatMap(name=>db.prepare(`PRAGMA table_info(${name})`).all()).every(c=>!c.name.endsWith('_ticks')));
         assert.ok(!db.prepare('PRAGMA table_info(mailbox_records)').all().some(c=>c.name==='kind'));
     } finally { db.close(); }
@@ -68,4 +68,33 @@ test('live schema planning preserves unmanaged history and stops on column drift
     }finally{await h.close();}
 });
 
+test('live schema planning repairs a dropped ordinary index',async()=>{
+    const {planLatestSchema,createMissingSchema}=await import('../scripts/latest-schema.ts');
+    const {start}=await import('./harness.ts');const h=await start();
+    try{
+        await h.db.prepare('DROP INDEX addresses_owner').run();
+        const plan=await planLatestSchema(h.db);
+        assert.equal(plan.statements.length,1);
+        assert.match(plan.statements[0],/^CREATE INDEX [`"]addresses_owner[`"]/);
+        await createMissingSchema(h.db);
+        assert.equal(await h.db.prepare("SELECT name FROM sqlite_master WHERE type='index' AND name='addresses_owner'").first('name'),'addresses_owner');
+    }finally{await h.close();}
+});
 
+test('agent_keys refuses malformed kids, invalid JWK text, bad labels and inverted times',async()=>{
+    const db=await database();
+    try {
+        accounts(db);
+        const kid='k'.repeat(43);
+        const insert=db.prepare(`INSERT INTO agent_keys(kid,account_id,public_jwk,label,created_at,revoked_at,cooling_until,updated_at) VALUES(?,?,?,?,?,?,?,10)`);
+        insert.run(kid,'synthetic-a','{"crv":"Ed25519"}','laptop',10,null,null);
+        for(const row of [
+            ['k'.repeat(42),'synthetic-a','{}',null,10,null,null],['k'.repeat(42)+'+','synthetic-a','{}',null,10,null,null],
+            ['j'.repeat(43),'synthetic-a','not json',null,10,null,null],['j'.repeat(43),'synthetic-a','{}','',10,null,null],
+            ['j'.repeat(43),'synthetic-a','{}','x'.repeat(65),10,null,null],['j'.repeat(43),'synthetic-a','{}',null,10,9,null],
+            ['j'.repeat(43),'synthetic-a','{}',null,10,null,10],['j'.repeat(43),'missing','{}',null,10,null,null],
+        ]) assert.throws(()=>insert.run(...row),/constraint/i,JSON.stringify(row));
+        insert.run('j'.repeat(43),'synthetic-a','{}','x'.repeat(64),10,10,11);
+        assert.throws(()=>db.prepare("DELETE FROM accounts WHERE account_id='synthetic-a'").run(),/FOREIGN KEY/);
+    } finally { db.close(); }
+});

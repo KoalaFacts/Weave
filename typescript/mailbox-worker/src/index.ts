@@ -13,7 +13,7 @@ import { directory, mutateAddress, ownedAddresses } from './addresses';
 import { sweep } from './cleanup';
 import { budgetDatabase } from './budget';
 import { stream, type Context } from './stream';
-import { authenticate, register } from './accounts';
+import { authenticate, register, registerAgent } from './accounts';
 import { putCard } from './cards';
 import { decide, requestContact, setBlocked } from './contacts';
 import { deleteContact, ownContacts } from './contact-links';
@@ -84,6 +84,8 @@ export default {
                     invoke:(accountId,name,args)=>executePrivateMcp(env,url.origin,accountId,name,args)
                 }:undefined);
             }
+            // Key self-registration; registerAgent applies the read-only recovery gate to new keys itself.
+            if (method === 'POST' && url.pathname === '/v1/accounts' && request.headers.has('DPoP')) return json(await registerAgent(env,request,await body(request)));
             if(env.RECOVERY_READ_ONLY==='true'){
                 if(method==='POST'&&url.pathname==='/v1/accounts'){
                     if(!await authenticate(env,secret))fail(401,'unauthenticated');

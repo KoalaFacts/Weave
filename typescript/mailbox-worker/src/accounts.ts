@@ -1,5 +1,8 @@
 import { CONTROL_HASH_SCHEME, CONTROL_HASH_PARAMETERS, controlDigest, digestMatches, validParameters } from './credentials.ts';
+import { findKey, insertKey, validLabel } from './agent-keys.ts';
 import { atomic, type Env, type Transaction } from './database.ts';
+import { verifyDpop } from './dpop.ts';
+import { epochSeconds } from './time.ts';
 import { fail, hash, object, parse } from './wire.ts';
 
 function settings(env: Env, name: keyof Env, max: number): number {
@@ -34,23 +37,58 @@ export async function admitRegistration(env: Env, tx: Transaction, sourceIp: str
     tx.writes.push(tx.db.prepare("DELETE FROM rate_limits WHERE seq IN (SELECT seq FROM rate_limits WHERE policy='registration' AND window_start<CAST(? AS INTEGER) LIMIT 100)").bind((BigInt(hour)*36000000000n).toString()));
     return true;
 }
-export async function register(env: Env, request: Request, secret: string | null, input: any): Promise<any> {
-    if (!secret) fail(401,'unauthenticated'); object(input,[],['displayName','description']);
+// Self-registration gates; human-owned agents never consume REGISTRATION_MAX_ACCOUNTS.
+async function admitSelfRegistration(env: Env, tx: Transaction, request: Request): Promise<void> {
+    if (env.REGISTRATION_ENABLED !== 'true') fail(404,'unavailable');
+    const maxAccounts = settings(env,'REGISTRATION_MAX_ACCOUNTS',10000);
+    const total = await tx.db.prepare('SELECT count(*) n FROM accounts WHERE human_id IS NULL').first<number>('n');
+    if (total === null || total >= maxAccounts) fail(429,'capacity');
+    if (!await admitRegistration(env,tx,request.headers.get('CF-Connecting-IP') ?? 'unknown')) fail(429,'capacity');
+}
+function profile(input: any, optional: string[]): {displayName: string | null; description: string | null} {
+    object(input,[],['displayName','description',...optional]);
     for (const [key,max] of [['displayName',128],['description',1024]] as const) {
         if (input[key] != null && (typeof input[key] !== 'string' || input[key].length > max || /[\u0000-\u001f\u007f-\u009f]/u.test(input[key]))) fail();
     }
+    return {displayName:input.displayName ?? null,description:input.description ?? null};
+}
+async function newAccountId(tx: Transaction): Promise<string> {
+    const accountId = crypto.randomUUID();
+    if(await tx.get('account','',accountId))fail(409,'conflict');
+    return accountId;
+}
+export async function register(env: Env, request: Request, secret: string | null, input: any): Promise<any> {
+    if (!secret) fail(401,'unauthenticated');
+    const {displayName,description} = profile(input,[]);
     const digest = (await controlDigest(secret))!;
     return atomic(env.db, async tx => {
         const existing = await tx.db.prepare('SELECT account_id FROM accounts WHERE control_hash=?').bind(digest).first<string>('account_id');
         if (existing) { const a=await tx.get('account','',existing); if (a.controlHashScheme !== CONTROL_HASH_SCHEME || !validParameters(a.controlHashParameters) || !digestMatches(digest,a.controlHash)) fail(401,'unauthenticated'); return {agentId:a.accountId,displayName:a.displayName,description:a.description}; }
-        if (env.REGISTRATION_ENABLED !== 'true') fail(404,'unavailable');
-        const maxAccounts = settings(env,'REGISTRATION_MAX_ACCOUNTS',10000);
-        const total = await tx.db.prepare('SELECT count(*) n FROM accounts').first<number>('n');
-        if (total === null || total >= maxAccounts) fail(429,'capacity');
-        if (!await admitRegistration(env,tx,request.headers.get('CF-Connecting-IP') ?? 'unknown')) fail(429,'capacity');
-        const accountId = crypto.randomUUID();
-        if(await tx.get('account','',accountId))fail(409,'conflict');
-        tx.put('account','',accountId,{accountId,controlHash:digest,controlHashScheme:CONTROL_HASH_SCHEME,controlHashParameters:CONTROL_HASH_PARAMETERS,displayName:input.displayName ?? null,description:input.description ?? null});
-        return {agentId:accountId,displayName:input.displayName ?? null,description:input.description ?? null};
+        await admitSelfRegistration(env,tx,request);
+        const accountId = await newAccountId(tx);
+        tx.put('account','',accountId,{accountId,controlHash:digest,controlHashScheme:CONTROL_HASH_SCHEME,controlHashParameters:CONTROL_HASH_PARAMETERS,displayName,description});
+        return {agentId:accountId,displayName,description};
+    });
+}
+/** Self-registers an ownerless agent whose first key is the DPoP proof key; a retry with a live key returns its agent. */
+export async function registerAgent(env: Env, request: Request, input: unknown): Promise<{agentId: string; displayName: string | null; description: string | null; kid: string}> {
+    if (request.headers.has('Authorization')) fail();
+    const proof = await verifyDpop(request,{now:epochSeconds()});
+    if (!proof.ok) fail(401,'unauthenticated');
+    const {displayName,description} = profile(input,['label']);
+    const label = validLabel((input as {label?: unknown}).label);
+    return atomic(env.db, async tx => {
+        const existing = await findKey(tx.db,proof.jkt);
+        if (existing) {
+            if (existing.revokedAt !== null) fail(401,'unauthenticated');
+            const a = await tx.get('account','',existing.accountId);
+            return {agentId:a.accountId,displayName:a.displayName,description:a.description,kid:existing.kid};
+        }
+        if (env.RECOVERY_READ_ONLY === 'true') fail(503,'maintenance',30);
+        await admitSelfRegistration(env,tx,request);
+        const accountId = await newAccountId(tx);
+        tx.put('account','',accountId,{accountId,humanId:null,controlHash:null,controlHashScheme:null,controlHashParameters:null,displayName,description});
+        insertKey(tx,{kid:proof.jkt,accountId,jwk:proof.jwk,label,coolingUntil:null});
+        return {agentId:accountId,displayName,description,kid:proof.jkt};
     });
 }

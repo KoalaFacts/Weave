@@ -4,7 +4,8 @@ import { readFile } from 'node:fs/promises';
 import { randomBytes } from 'node:crypto';
 import { initializeDatabase } from '../scripts/latest-schema.ts';
 export const secret = () => randomBytes(32).toString('hex');
-export async function start({ persist, migrate = true, bindings = {}, scriptPath = 'dist/index.js', legacy = false, outboundService } = {}) {
+export type StartOptions = { persist?: string; migrate?: boolean; bindings?: Record<string, string>; scriptPath?: string; legacy?: boolean; outboundService?: any };
+export async function start({ persist, migrate = true, bindings = {}, scriptPath = 'dist/index.js', legacy = false, outboundService }: StartOptions = {}) {
     const mf = new Miniflare(convertV4MiniflareOptions({ modules: true, scriptPath, compatibilityDate: '2026-07-01', compatibilityFlags:['nodejs_compat'],
         d1Databases: ['db'], ...(persist ? { resourcePersistencePath: persist } : {}), bindings: {
             REGISTRATION_ENABLED: 'true', REGISTRATION_MAX_ACCOUNTS: '100',
@@ -16,14 +17,14 @@ export async function start({ persist, migrate = true, bindings = {}, scriptPath
             if(legacy)for(const sql of (await readFile('test/fixtures/legacy-mailbox.sql','utf8')).split(';').filter(x=>x.trim()))await db.prepare(sql).run();
             else await initializeDatabase(db,BigInt(Date.now())*10000n);
         }
-        const request = (path, control, method = 'GET', value) => mf.dispatchFetch('http://localhost' + path, {
+        const request = (path: string, control?: string | null, method = 'GET', value?: unknown) => mf.dispatchFetch('http://localhost' + path, {
             method, headers: { ...(control ? {[legacy?'X-Weave-Mailbox-Control':'X-Weave-Account-Control']:control} : {}), 'Content-Type':'application/json' },
             ...(value === undefined ? {} : { body: typeof value === 'string' ? value : JSON.stringify(value) }) });
-        const ok = async (path, control, method = 'GET', value) => {
+        const ok = async (path: string, control?: string | null, method = 'GET', value?: unknown): Promise<any> => {
             const r = await request(path,control,method,value); assert.equal(r.status,200,await r.clone().text()); return r.json();
         };
         const register = async (profile = {}, control = secret()) => { const response=await ok('/v1/accounts',control,'POST',profile); return {...response,accountId:response.agentId,control}; };
-        const address = (account, profile = {}) => ok('/v1/addresses',account.control,'POST',profile);
+        const address = (account: { control: string }, profile = {}) => ok('/v1/addresses',account.control,'POST',profile);
         const participant = async () => { const account=await register(); const card=await address(account); return {...account,cardId:card.addressId}; };
         return { mf, db, request, ok, register, address, participant, close: () => mf.dispose() };
     } catch (error) {

@@ -19,13 +19,27 @@ export function fromBase64url(text: string): Uint8Array<ArrayBuffer> | null {
     return base64url(bytes)===text ? bytes : null;
 }
 
+const fieldPrime=2n**255n-19n;
+// y-coordinates of the eight small-order points (identity, order 2, order 4 and order 8; both x signs share a y).
+const smallOrderY=new Set([0n,1n,fieldPrime-1n,
+    2707385501144840649318225287225658788936804267575313519463743609750303402022n,
+    55188659117513257062467267217118295137698188065244968500265048394206261417927n]);
+
+/** Refuses non-canonical (y >= p) and small-order point encodings independently of the runtime's verify checks. */
+function acceptablePoint(bytes: Uint8Array): boolean {
+    let y=0n;
+    for(let i=31;i>=0;i--) y=(y<<8n)|BigInt(i===31 ? bytes[i]&0x7f : bytes[i]);
+    return y<fieldPrime && !smallOrderY.has(y);
+}
+
 const isObject=(value: unknown): value is Record<string, unknown> => typeof value==='object' && value!==null && !Array.isArray(value);
 
 /** Accepts only a public Ed25519 JWK and returns its canonical members; private or unknown members are refused. */
 export function publicJwk(value: unknown): Ed25519Jwk | null {
     if(!isObject(value) || Object.keys(value).some(member => !jwkMembers.has(member))) return null;
     const {kty,crv,x,kid,alg,use}=value;
-    if(kty!=='OKP' || crv!=='Ed25519' || typeof x!=='string' || fromBase64url(x)?.length!==32) return null;
+    const point=typeof x==='string' ? fromBase64url(x) : null;
+    if(kty!=='OKP' || crv!=='Ed25519' || typeof x!=='string' || point?.length!==32 || !acceptablePoint(point)) return null;
     if(kid!==undefined && typeof kid!=='string' || alg!==undefined && !algorithms.has(alg as string) || use!==undefined && use!=='sig') return null;
     return {kty,crv,x};
 }

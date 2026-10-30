@@ -4,6 +4,7 @@ import { mkdtemp, rm } from 'node:fs/promises';
 import { tmpdir } from 'node:os';
 import { join } from 'node:path';
 import { start, secret, payload } from './harness.ts';
+import { createOwnedAgent, signInHuman } from '../src/humans.ts';
 
 test('registration creates zero addresses; control requires at least 64 chars without a custom character alphabet', async () => {
     const h=await start();
@@ -90,6 +91,16 @@ test('D1 concurrent registration is idempotent, capacity and rate limits persist
         assert.deepEqual(await h.ok('/v1/accounts',control,'POST',{}),{agentId:a.accountId,accountId:a.accountId,displayName:null,description:null});
         assert.equal((await h.request('/v1/accounts',secret(),'POST',{})).status,404);
     } finally {await h.close();await rm(persist,{recursive:true,force:true});}
+});
+test('register_HumanOwnedAgents_DoNotConsumeSelfRegistrationCapacity', async () => {
+    const h=await start({bindings:{REGISTRATION_MAX_ACCOUNTS:'1'}});
+    try {
+        const env={db:h.db,REGISTRATION_ENABLED:'true',REGISTRATION_MAX_ACCOUNTS:'1',REGISTRATION_PER_IP_PER_HOUR:'100',REGISTRATION_GLOBAL_PER_HOUR:'100'} as any;
+        const human=await signInHuman(env,{provider:'github',subject:'123',providerCreatedAt:'2020-01-01T00:00:00Z',displayLogin:'alice'}) as any;
+        for(let i=0;i<2;i++)assert.equal((await createOwnedAgent(env,{humanId:human.humanId,displayName:'owned '+i,sourceIp:'203.0.113.7'})).ok,true);
+        await h.register();
+        assert.equal((await h.request('/v1/accounts',secret(),'POST',{})).status,429);
+    } finally {await h.close();}
 });
 test('directory and public-card cursors do not reveal private row counts', async () => {
     const h=await start();
