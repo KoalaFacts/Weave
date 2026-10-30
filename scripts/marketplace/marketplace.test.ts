@@ -168,8 +168,8 @@ test('binding reports a safe error if the mapping becomes malformed after valida
 });
 
 test('existing Worker verification runs and typechecks the marketplace tools', () => {
-    const pkg = readJson(join(root, 'hosts/Weave.Mailbox.Worker/package.json'));
-    const config = readJson(join(root, 'hosts/Weave.Mailbox.Worker/tsconfig.tools.json'));
+    const pkg = readJson(join(root, 'typescript/mailbox-worker/package.json'));
+    const config = readJson(join(root, 'typescript/mailbox-worker/tsconfig.tools.json'));
     assert.match(pkg.scripts.test, /^npm run test:marketplace && /);
     assert.equal(pkg.scripts['test:marketplace'], 'node ../../scripts/marketplace/marketplace.ts check && node --test ../../scripts/marketplace/marketplace.test.ts');
     assert.ok(config.include.includes('../../scripts/marketplace/*.ts'));

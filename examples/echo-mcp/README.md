@@ -109,7 +109,7 @@ python3 examples/echo-mcp/server.py --transport http --port 8765
 Then boot the workspace:
 
 ```bash
-dotnet run --project src/UX/Weave.Cli -- workspace up examples/echo-mcp/workspace.json
+dotnet run --project csharp/src/UX/Weave.Cli -- workspace up examples/echo-mcp/workspace.json
 ```
 
 ### Security defaults

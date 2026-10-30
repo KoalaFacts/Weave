@@ -1,6 +1,6 @@
 # Deployment
 
-> **Source**: `src/Deployment/` | **Depends on**: [Workspaces](workspaces.md) | **Depended on by**: [UX](ux.md)
+> **Source**: `csharp/src/Deployment/` | **Depends on**: [Workspaces](workspaces.md) | **Depended on by**: [UX](ux.md)
 > **See also**: [index](index.md)
 
 The Deployment subsystem translates workspace manifests into platform-specific deployment configurations. It is a stateless translation layer with no CQRS, events, or actors.

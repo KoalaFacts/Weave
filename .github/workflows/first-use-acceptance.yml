@@ -42,13 +42,12 @@ jobs:
       - name: Run actual first-use and restart flow
         run: >-
           python3 -u examples/governed-tools/first_use.py
-          --host hosts/Weave.Host/bin/Release/net10.0/Weave.Silo.dll
+          --host csharp/hosts/Weave.Host/bin/Release/net10.0/Weave.Silo.dll
           --evidence "$RUNNER_TEMP/weave-first-use-evidence"
       - name: Confirm acceptance preserved the reviewed product and dependency locks
         run: >-
           git diff --exit-code HEAD --
-          src/ hosts/ extensions/ tools/ Directory.Build.props Directory.Build.targets
-          Directory.Packages.props global.json
+          csharp/ typescript/ tools/ global.json
       - name: Retain sanitized report and test documents only
         if: always()
         uses: actions/upload-artifact@043fb46d1a93c77aae656e7c1c64a875d1fc6a0a

@@ -46,7 +46,7 @@ jobs:
         env:
           REQUESTED_VERSION: ${{ inputs.version }}
         run: |
-          version=$(node -p "require('./npm/weave-plugin-echo/package.json').version")
+          version=$(node -p "require('./typescript/plugin-echo/package.json').version")
           if [ -n "$REQUESTED_VERSION" ] && [ "$REQUESTED_VERSION" != "$version" ]; then
             echo "Requested version does not match the checked-out package" >&2
             exit 1
@@ -77,16 +77,16 @@ jobs:
           install_dir="$RUNNER_TEMP/weave-echo-consumer"
           npm audit signatures --prefix "$install_dir" --json --include-attestations \
             > "$RUNNER_TEMP/weave-echo-signatures.json"
-          node npm/weave-plugin-echo/scripts/check-published-provenance.ts \
+          node typescript/plugin-echo/scripts/check-published-provenance.ts \
             "$RUNNER_TEMP/weave-echo-signatures.json" "$install_dir/package-lock.json" \
             "$VERSION" "$RELEASE_SHA"
       - name: Set up .NET
         uses: ./.github/actions/setup-dotnet
       - name: Restore Weave connector checks
-        run: dotnet restore tests/Weave.Silo.Tests/Weave.Silo.Tests.csproj --locked-mode
+        run: dotnet restore csharp/tests/Weave.Silo.Tests/Weave.Silo.Tests.csproj --locked-mode
       - name: Build Weave connector checks
         run: >-
-          dotnet build tests/Weave.Silo.Tests/Weave.Silo.Tests.csproj
+          dotnet build csharp/tests/Weave.Silo.Tests/Weave.Silo.Tests.csproj
           --no-restore -c Release /p:TreatWarningsAsErrors=true
       - name: Exercise published Echo through Weave
         run: |
@@ -104,6 +104,6 @@ jobs:
           done
           if [ -z "$endpoint" ]; then cat "$RUNNER_TEMP/weave-echo-http.log"; exit 1; fi
           WEAVE_ECHO_TEST_ENDPOINT="$endpoint" dotnet test \
-            --project tests/Weave.Silo.Tests/Weave.Silo.Tests.csproj \
+            --project csharp/tests/Weave.Silo.Tests/Weave.Silo.Tests.csproj \
             --no-build -c Release \
             --filter-class Weave.Silo.Tests.Plugins.McpWorkspacePluginFlowTests

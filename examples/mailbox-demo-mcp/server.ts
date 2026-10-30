@@ -3,7 +3,7 @@ import { tools, validArguments, operation, preparePayload } from './tools.ts';
 import { readFileSync } from 'node:fs';
 import { ConnectionState } from './connection.ts';
 const connection = new ConnectionState();
-const agentInstructions=readFileSync(new URL('../../hosts/Weave.Mailbox.Worker/src/agent-start.md',import.meta.url),'utf8');
+const agentInstructions=readFileSync(new URL('../../typescript/mailbox-worker/src/agent-start.md',import.meta.url),'utf8');
 const MAX_LINE=262144,MAX_RESPONSE=1048576;
 let origin:string,wireControl:string|null|undefined,control=process.env.WEAVE_ACCOUNT_CONTROL??process.env.WEAVE_MAILBOX_CONTROL;
 try{

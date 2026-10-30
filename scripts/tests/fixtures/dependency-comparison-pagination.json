@@ -37,7 +37,7 @@
   "records": [
     {
       "change_type": "added",
-      "manifest": "hosts/Weave.Mailbox.Worker/package-lock.json",
+      "manifest": "typescript/mailbox-worker/package-lock.json",
       "ecosystem": "npm",
       "name": "fsevents",
       "version": "2.3.2",
@@ -49,7 +49,7 @@
     },
     {
       "change_type": "added",
-      "manifest": "hosts/Weave.Mailbox.Worker/package-lock.json",
+      "manifest": "typescript/mailbox-worker/package-lock.json",
       "ecosystem": "npm",
       "name": "playwright",
       "version": "1.62.1",
@@ -61,7 +61,7 @@
     },
     {
       "change_type": "added",
-      "manifest": "hosts/Weave.Mailbox.Worker/package-lock.json",
+      "manifest": "typescript/mailbox-worker/package-lock.json",
       "ecosystem": "npm",
       "name": "playwright-core",
       "version": "1.62.1",
@@ -73,7 +73,7 @@
     },
     {
       "change_type": "added",
-      "manifest": "tests/Weave.Silo.Tests/packages.lock.json",
+      "manifest": "csharp/tests/Weave.Silo.Tests/packages.lock.json",
       "ecosystem": "nuget",
       "name": "microsoft.playwright",
       "version": "1.63.0",
@@ -85,7 +85,7 @@
     },
     {
       "change_type": "added",
-      "manifest": "tests/Weave.Silo.Tests/packages.lock.json",
+      "manifest": "csharp/tests/Weave.Silo.Tests/packages.lock.json",
       "ecosystem": "nuget",
       "name": "system.componentmodel.annotations",
       "version": "5.0.0",
@@ -97,7 +97,7 @@
     },
     {
       "change_type": "added",
-      "manifest": "tests/Weave.Silo.Tests/Weave.Silo.Tests.csproj",
+      "manifest": "csharp/tests/Weave.Silo.Tests/Weave.Silo.Tests.csproj",
       "ecosystem": "nuget",
       "name": "Microsoft.Playwright",
       "version": ">= 0",
@@ -109,7 +109,7 @@
     },
     {
       "change_type": "added",
-      "manifest": "hosts/Weave.Mailbox.Worker/package.json",
+      "manifest": "typescript/mailbox-worker/package.json",
       "ecosystem": "npm",
       "name": "playwright",
       "version": "1.62.1",

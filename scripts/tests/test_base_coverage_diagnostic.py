@@ -55,13 +55,13 @@ class BaselineCollectorTests(unittest.TestCase):
         self.output.mkdir()
         self.projects = []
         for suite in self.module.EXPECTED_SUITES:
-            project = f'tests/{suite}/{suite}.csproj'
+            project = f'csharp/tests/{suite}/{suite}.csproj'
             path = self.root / project
             path.parent.mkdir(parents=True)
             path.write_text('<Project />')
             self.projects.append(project)
-        (self.root / 'Weave.slnx').write_text('<Solution>' + ''.join(
-            f'<Project Path="{project}" />' for project in self.projects) + '</Solution>')
+        (self.root / 'csharp/Weave.slnx').write_text('<Solution>' + ''.join(
+            f'<Project Path="{project.removeprefix('csharp/')}" />' for project in self.projects) + '</Solution>')
         (self.root / '.config').mkdir()
         (self.root / '.config/dotnet-tools.json').write_text(json.dumps({
             'tools': {'dotnet-coverage': {'version': '18.11.2', 'rollForward': False}}}))
@@ -73,8 +73,8 @@ class BaselineCollectorTests(unittest.TestCase):
             self.module.test_projects(self.root)
 
     def test_solution_cannot_silently_omit_a_base_suite(self):
-        solution = self.root / 'Weave.slnx'
-        solution.write_text(solution.read_text().replace(f'<Project Path="{self.projects[0]}" />', ''))
+        solution = self.root / 'csharp/Weave.slnx'
+        solution.write_text(solution.read_text().replace(f'<Project Path="{self.projects[0].removeprefix('csharp/')}" />', ''))
         with self.assertRaisesRegex(ValueError, 'solution'):
             self.module.test_projects(self.root)
 
@@ -91,7 +91,7 @@ class BaselineCollectorTests(unittest.TestCase):
         self.assertFalse(result)
         self.assertEqual(9, len(observed))
         for root, suite, arguments in observed:
-            project = f'tests/{suite}/{suite}.csproj'
+            project = f'csharp/tests/{suite}/{suite}.csproj'
             self.assertEqual(self.root, root)
             self.assertEqual(['dotnet', 'dotnet-coverage', 'collect', '-f', 'cobertura', '-o',
                               str(self.output / f'{suite}.cobertura.xml'), '-l',
@@ -113,11 +113,11 @@ class BaselineCollectorTests(unittest.TestCase):
         self.assertEqual(records, json.loads((self.output / 'commands.json').read_text()))
 
     def test_binary_snapshot_detects_changes_and_excludes_debug(self):
-        release = self.root / 'tests/Weave.Cli.Tests/bin/Release/net10.0'
+        release = self.root / 'csharp/tests/Weave.Cli.Tests/bin/Release/net10.0'
         release.mkdir(parents=True)
         binary = release / 'weave.dll'
         binary.write_bytes(b'base-binary')
-        debug = self.root / 'tests/Weave.Cli.Tests/bin/Debug'
+        debug = self.root / 'csharp/tests/Weave.Cli.Tests/bin/Debug'
         debug.mkdir(parents=True)
         (debug / 'weave.dll').write_bytes(b'debug')
         before = self.module.binary_hashes(self.root)
@@ -126,13 +126,13 @@ class BaselineCollectorTests(unittest.TestCase):
         self.assertNotEqual(before, self.module.binary_hashes(self.root))
 
     def test_deleted_tracked_source_is_retained_as_missing_evidence(self):
-        with patch.object(self.module, 'git_output', return_value='deleted.cs\0Weave.slnx\0'):
+        with patch.object(self.module, 'git_output', return_value='deleted.cs\0csharp/Weave.slnx\0'):
             hashes = self.module.source_hashes(self.root)
         self.assertIsNone(hashes['deleted.cs'])
-        self.assertEqual(self.module.sha256(self.root / 'Weave.slnx'), hashes['Weave.slnx'])
+        self.assertEqual(self.module.sha256(self.root / 'csharp/Weave.slnx'), hashes['csharp/Weave.slnx'])
 
     def test_apphost_and_native_library_mutation_invalidates_binary_identity(self):
-        release = self.root / 'tests/Weave.Cli.Tests/bin/Release/net10.0'
+        release = self.root / 'csharp/tests/Weave.Cli.Tests/bin/Release/net10.0'
         release.mkdir(parents=True)
         for filename in ('Weave.Cli.Tests', 'libe_sqlite3.so'):
             with self.subTest(filename=filename):

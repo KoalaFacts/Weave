@@ -48,8 +48,8 @@ bridge. Neither scripted checks nor #131's merge complete the live human trial.
 ### 1. Registry consistency and integration (completed in #114)
 
 **Files:** ToolRegistryState.cs and ToolRegistryActor.cs under
-extensions/Weave.AgentRuntime/PluginConnections; focused tests under
-tests/Weave.Agents.Tests/ToolRegistrySnapshotRecoveryTests.cs.
+csharp/extensions/Weave.AgentRuntime/PluginConnections; focused tests under
+csharp/tests/Weave.Agents.Tests/ToolRegistrySnapshotRecoveryTests.cs.
 
 - [x] Prove failures before code changes: input enumeration fails after one list is
   read; configuration aliases the current maps; a later input row is invalid; a
@@ -69,8 +69,8 @@ failure semantics need their own real storage boundary test before being claimed
 
 ### 2. Transport boundaries and reliability (completed in #124 and #125)
 
-**Inspect:** extensions/Weave.Mcp/InvokeTool/{HttpMcpTransport,McpConnection}.cs,
-examples/echo-mcp/server.py and tests/Weave.Tools.Tests/EchoMcpHttpTransportSmokeTests.cs.
+**Inspect:** csharp/extensions/Weave.Mcp/InvokeTool/{HttpMcpTransport,McpConnection}.cs,
+examples/echo-mcp/server.py and csharp/tests/Weave.Tools.Tests/EchoMcpHttpTransportSmokeTests.cs.
 
 The bounded response hardening in **PR #124** is separate from the original
 before-header failure. See [scope and migration notes](docs/implementation/2026-09-21-mcp-http-boundaries.md).
@@ -200,9 +200,9 @@ Run from the repository root (focused MTP options follow the current runner):
 
 ```bash
 python3 -m unittest discover -s scripts/tests -v
-dotnet restore Weave.slnx --locked-mode
-dotnet build Weave.slnx --no-restore -c Release /p:TreatWarningsAsErrors=true
-dotnet test --solution Weave.slnx --no-build -c Release
+dotnet restore csharp/Weave.slnx --locked-mode
+dotnet build csharp/Weave.slnx --no-restore -c Release /p:TreatWarningsAsErrors=true
+dotnet test --solution csharp/Weave.slnx --no-build -c Release
 ```
 
 Samples retain their independent matrix; ordinary backend work does not require

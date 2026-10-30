@@ -70,14 +70,14 @@ release procedure, see [releasing Weave](docs/releasing.md).
 From a checkout, install the .NET 11 SDK (release candidate until GA), the .NET 10 runtime and Node 24.19+. The product library and CLI target both .NET 10 and .NET 11; [global.json](global.json) selects the newest installed SDK, including prereleases. Check `dotnet --version` from the repository root, then build the mailbox host and run the [independent endpoint walkthrough](examples/agent-network/README.md):
 
 ```bash
-dotnet restore Weave.slnx --locked-mode
-dotnet build hosts/Weave.Mailbox.Host/Weave.Mailbox.Host.csproj --no-restore -c Release
+dotnet restore csharp/Weave.slnx --locked-mode
+dotnet build csharp/hosts/Weave.Mailbox.Host/Weave.Mailbox.Host.csproj --no-restore -c Release
 node examples/agent-network/run-demo.ts
 ```
 
 The coordinator starts a real relay and two separate endpoint processes with independent state and mailbox-control credentials. It demonstrates public pending/rejected/explicit autoaccept, independently selected private admission, plaintext and encrypted opaque transport, pull/SSE retry, local dedup, ACK/expiry/block, retained restart and direct endpoint delivery with no relay copy. It uses only synthetic data and built-in Node modules, with no npm install, hosted agent or model account.
 
-For an interactive browser entry, the [Worker and D1 demo](hosts/Weave.Mailbox.Worker/README.md) runs locally with private registration profiles, multiple addresses, public discovery, contact decisions, inbox/outbox and ACK. Its anonymous `/registry` lists only explicitly public, effective addresses; discovery grants no delivery authority. External agents can run the [demo MCP](examples/mailbox-demo-mcp/README.md) for registration and recipient-approved messaging. It includes a native TypeScript Worker and C# wire-compatibility fixture; cloud deployment is a separately authorized and verified action, not an outcome established by local fixtures.
+For an interactive browser entry, the [Worker and D1 demo](typescript/mailbox-worker/README.md) runs locally with private registration profiles, multiple addresses, public discovery, contact decisions, inbox/outbox and ACK. Its anonymous `/registry` lists only explicitly public, effective addresses; discovery grants no delivery authority. External agents can run the [demo MCP](examples/mailbox-demo-mcp/README.md) for registration and recipient-approved messaging. It includes a native TypeScript Worker and C# wire-compatibility fixture; cloud deployment is a separately authorized and verified action, not an outcome established by local fixtures.
 
 Public exposure permits a contact attempt; it never means acceptance. Unlisted distribution and audience hints do not implement group membership checks. Endpoint encryption is optional and strongly recommended: the demo's AES fixture is not a production E2EE adapter. Plaintext can be read by relay infrastructure. ACK removes the active relay body; it is not human reading, business completion or erasure of endpoint copies, WAL history and backups. See the [v1 protocol](protocol/weave-mailbox/v1/README.md) and [delivered scope](docs/implementation/2026-10-07-agent-contact-mailbox-mvp.md).
 
@@ -164,5 +164,6 @@ Portable Agent identity, Tenant/Room authority, generalized resource and credent
 | Build or install a tool plugin | [Plugin examples](examples/plugins/echo/README.md), [MCP installation guide](docs/implementation/2026-09-26-mcp-echo-installation.md) |
 | Inspect command capacity or unconfirmed process cleanup | [Process runtime diagnostics](docs/implementation/2026-10-03-process-runtime-observation.md) |
 | Review product direction and contribution rules | [Architecture](ARCHITECTURE.md), [contributor instructions](AGENTS.md) |
+| Find code in the repository | [`csharp/`](csharp/) holds the C#/.NET implementation, [`typescript/`](typescript/) the Workers and npm packages, and [`protocol/`](protocol/) the language-neutral [runtime contract](docs/runtime-contract.md) both follow |
 
 Weave is licensed under the [Apache License 2.0](LICENSE). Commercial support and commercial licensing are available from the maintainers; open a [GitHub issue](https://github.com/KoalaFacts/Weave/issues) to get in touch.

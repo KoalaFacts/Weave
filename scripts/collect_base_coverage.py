@@ -36,12 +36,12 @@ def binary_hashes(root):
 
 
 def test_projects(root):
-    projects = sorted(path.relative_to(root).as_posix() for path in root.glob('tests/**/*.Tests.csproj')
+    projects = sorted(path.relative_to(root).as_posix() for path in root.glob('csharp/tests/**/*.Tests.csproj')
                       if not {'bin', 'obj'}.intersection(path.relative_to(root).parts))
     if [Path(project).stem for project in projects] != sorted(EXPECTED_SUITES):
         raise ValueError('Exact-base suite inventory must contain all nine approved suites.')
-    solution = ET.parse(root / 'Weave.slnx')
-    included = {node.attrib['Path'] for node in solution.iter('Project')}
+    solution = ET.parse(root / 'csharp/Weave.slnx')
+    included = {f"csharp/{node.attrib['Path']}" for node in solution.iter('Project')}
     if not set(projects).issubset(included):
         raise ValueError('The solution must build all nine baseline suites.')
     return projects
@@ -106,8 +106,8 @@ def run(root, output):
     try:
         for name, arguments in (
             ('sdk', ['dotnet', '--info']),
-            ('restore', ['dotnet', 'restore', 'Weave.slnx']),
-            ('build', ['dotnet', 'build', 'Weave.slnx', '--no-restore', '-c', 'Release']),
+            ('restore', ['dotnet', 'restore', 'csharp/Weave.slnx']),
+            ('build', ['dotnet', 'build', 'csharp/Weave.slnx', '--no-restore', '-c', 'Release']),
             ('tool-restore', ['dotnet', 'tool', 'restore', '--tool-manifest', '.config/dotnet-tools.json']),
             ('collector-version', ['dotnet', 'dotnet-coverage', '--version']),
         ):

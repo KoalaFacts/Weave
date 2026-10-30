@@ -4,42 +4,42 @@ on:
   pull_request:
     branches: [main]
     paths:
-      - 'npm/weave-plugin-echo/**'
-      - 'tests/Weave.Silo.Tests/Invocations/EchoPluginTests.cs'
-      - 'tests/Weave.Tools.Tests/HttpMcpTransportWireRoundTripTests.cs'
-      - 'tests/Weave.Tools.Tests/*Mcp*.cs'
-      - 'extensions/Weave.Mcp/InvokeTool/**'
-      - 'extensions/Weave.AgentRuntime/PluginConnections/**'
-      - 'hosts/Weave.Host/Api/PluginEndpoints.cs'
-      - 'hosts/Weave.Host/Api/StartWorkspaceHandler.cs'
-      - 'hosts/Weave.Host/Api/StopWorkspaceHandler.cs'
-      - 'hosts/Weave.Host/Plugins/**'
-      - 'src/Invocations/ReviewApproval/ToolActor.ReviewApproval.cs'
-      - 'src/Plugins/InstallMcpTool/**'
-      - 'src/Plugins/DiscoverTools/**'
-      - 'src/Workspaces/**'
-      - 'tests/Weave.Silo.Tests/Plugins/McpWorkspacePluginFlowTests.cs'
-      - 'tests/Weave.Workspaces.Tests/**'
+      - 'typescript/plugin-echo/**'
+      - 'csharp/tests/Weave.Silo.Tests/Invocations/EchoPluginTests.cs'
+      - 'csharp/tests/Weave.Tools.Tests/HttpMcpTransportWireRoundTripTests.cs'
+      - 'csharp/tests/Weave.Tools.Tests/*Mcp*.cs'
+      - 'csharp/extensions/Weave.Mcp/InvokeTool/**'
+      - 'csharp/extensions/Weave.AgentRuntime/PluginConnections/**'
+      - 'csharp/hosts/Weave.Host/Api/PluginEndpoints.cs'
+      - 'csharp/hosts/Weave.Host/Api/StartWorkspaceHandler.cs'
+      - 'csharp/hosts/Weave.Host/Api/StopWorkspaceHandler.cs'
+      - 'csharp/hosts/Weave.Host/Plugins/**'
+      - 'csharp/src/Invocations/ReviewApproval/ToolActor.ReviewApproval.cs'
+      - 'csharp/src/Plugins/InstallMcpTool/**'
+      - 'csharp/src/Plugins/DiscoverTools/**'
+      - 'csharp/src/Workspaces/**'
+      - 'csharp/tests/Weave.Silo.Tests/Plugins/McpWorkspacePluginFlowTests.cs'
+      - 'csharp/tests/Weave.Workspaces.Tests/**'
       - '.github/workflows/npm-plugin-echo.yml'
   push:
     branches: [main]
     paths:
-      - 'npm/weave-plugin-echo/**'
-      - 'tests/Weave.Silo.Tests/Invocations/EchoPluginTests.cs'
-      - 'tests/Weave.Tools.Tests/HttpMcpTransportWireRoundTripTests.cs'
-      - 'tests/Weave.Tools.Tests/*Mcp*.cs'
-      - 'extensions/Weave.Mcp/InvokeTool/**'
-      - 'extensions/Weave.AgentRuntime/PluginConnections/**'
-      - 'hosts/Weave.Host/Api/PluginEndpoints.cs'
-      - 'hosts/Weave.Host/Api/StartWorkspaceHandler.cs'
-      - 'hosts/Weave.Host/Api/StopWorkspaceHandler.cs'
-      - 'hosts/Weave.Host/Plugins/**'
-      - 'src/Invocations/ReviewApproval/ToolActor.ReviewApproval.cs'
-      - 'src/Plugins/InstallMcpTool/**'
-      - 'src/Plugins/DiscoverTools/**'
-      - 'src/Workspaces/**'
-      - 'tests/Weave.Silo.Tests/Plugins/McpWorkspacePluginFlowTests.cs'
-      - 'tests/Weave.Workspaces.Tests/**'
+      - 'typescript/plugin-echo/**'
+      - 'csharp/tests/Weave.Silo.Tests/Invocations/EchoPluginTests.cs'
+      - 'csharp/tests/Weave.Tools.Tests/HttpMcpTransportWireRoundTripTests.cs'
+      - 'csharp/tests/Weave.Tools.Tests/*Mcp*.cs'
+      - 'csharp/extensions/Weave.Mcp/InvokeTool/**'
+      - 'csharp/extensions/Weave.AgentRuntime/PluginConnections/**'
+      - 'csharp/hosts/Weave.Host/Api/PluginEndpoints.cs'
+      - 'csharp/hosts/Weave.Host/Api/StartWorkspaceHandler.cs'
+      - 'csharp/hosts/Weave.Host/Api/StopWorkspaceHandler.cs'
+      - 'csharp/hosts/Weave.Host/Plugins/**'
+      - 'csharp/src/Invocations/ReviewApproval/ToolActor.ReviewApproval.cs'
+      - 'csharp/src/Plugins/InstallMcpTool/**'
+      - 'csharp/src/Plugins/DiscoverTools/**'
+      - 'csharp/src/Workspaces/**'
+      - 'csharp/tests/Weave.Silo.Tests/Plugins/McpWorkspacePluginFlowTests.cs'
+      - 'csharp/tests/Weave.Workspaces.Tests/**'
       - '.github/workflows/npm-plugin-echo.yml'
   workflow_dispatch:
 
@@ -52,7 +52,7 @@ jobs:
     timeout-minutes: 20
     defaults:
       run:
-        working-directory: npm/weave-plugin-echo
+        working-directory: typescript/plugin-echo
     steps:
       - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v6
         with:
@@ -75,30 +75,30 @@ jobs:
         uses: ./.github/actions/setup-dotnet
       - name: Restore Weave's connector checks
         working-directory: .
-        run: dotnet restore Weave.slnx --locked-mode
+        run: dotnet restore csharp/Weave.slnx --locked-mode
       - name: Build Weave's connector checks
         working-directory: .
         env:
           EchoPluginExamples: 'true'
-        run: dotnet build Weave.slnx --no-restore -c Release /p:TreatWarningsAsErrors=true
+        run: dotnet build csharp/Weave.slnx --no-restore -c Release /p:TreatWarningsAsErrors=true
       - name: Verify HTTP notification responses
         working-directory: .
         run: >-
-          dotnet test --project ${{ github.workspace }}/tests/Weave.Tools.Tests/Weave.Tools.Tests.csproj
+          dotnet test --project ${{ github.workspace }}/csharp/tests/Weave.Tools.Tests/Weave.Tools.Tests.csproj
           --no-build -c Release --filter-class Weave.Tools.Tests.HttpMcpTransportWireRoundTripTests
       - name: Verify Weave authorization and journal
         working-directory: .
         env:
           EchoPluginExamples: 'true'
-          WEAVE_ECHO_SPEC: npm/weave-plugin-echo/tool.json
+          WEAVE_ECHO_SPEC: typescript/plugin-echo/tool.json
         run: >-
-          dotnet test --project tests/Weave.Silo.Tests/Weave.Silo.Tests.csproj
+          dotnet test --project csharp/tests/Weave.Silo.Tests/Weave.Silo.Tests.csproj
           --no-build -c Release --filter-class Weave.Silo.Tests.Invocations.EchoPluginTests
       - name: Verify installed HTTP Echo through Weave
         working-directory: .
         run: |
           : > "$RUNNER_TEMP/weave-echo-http.log"
-          node npm/weave-plugin-echo/dist/cli.js --http --port 0 2> "$RUNNER_TEMP/weave-echo-http.log" &
+          node typescript/plugin-echo/dist/cli.js --http --port 0 2> "$RUNNER_TEMP/weave-echo-http.log" &
           echo_pid=$!
           trap 'kill "$echo_pid" 2>/dev/null || true' EXIT
           endpoint=""
@@ -109,6 +109,6 @@ jobs:
           done
           if [ -z "$endpoint" ]; then cat "$RUNNER_TEMP/weave-echo-http.log"; exit 1; fi
           WEAVE_ECHO_TEST_ENDPOINT="$endpoint" dotnet test \
-            --project tests/Weave.Silo.Tests/Weave.Silo.Tests.csproj \
+            --project csharp/tests/Weave.Silo.Tests/Weave.Silo.Tests.csproj \
             --no-build -c Release -- \
             --filter-method Weave.Silo.Tests.Plugins.McpWorkspacePluginFlowTests.EchoPackage_HttpInstallation_InvokesThroughWeave

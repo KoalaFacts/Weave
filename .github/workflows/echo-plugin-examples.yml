@@ -5,11 +5,11 @@ on:
     branches: [main]
     paths:
       - 'examples/plugins/echo/**'
-      - 'src/**'
-      - 'hosts/Weave.Host/**'
-      - 'extensions/Weave.Mcp/**'
-      - 'extensions/Weave.Security.Sqlite/**'
-      - 'tests/Weave.Silo.Tests/**'
+      - 'csharp/src/**'
+      - 'csharp/hosts/Weave.Host/**'
+      - 'csharp/extensions/Weave.Mcp/**'
+      - 'csharp/extensions/Weave.Security.Sqlite/**'
+      - 'csharp/tests/Weave.Silo.Tests/**'
       - 'Directory.*'
       - 'global.json'
       - '.github/actions/setup-dotnet/**'
@@ -18,11 +18,11 @@ on:
     branches: [main]
     paths:
       - 'examples/plugins/echo/**'
-      - 'src/**'
-      - 'hosts/Weave.Host/**'
-      - 'extensions/Weave.Mcp/**'
-      - 'extensions/Weave.Security.Sqlite/**'
-      - 'tests/Weave.Silo.Tests/**'
+      - 'csharp/src/**'
+      - 'csharp/hosts/Weave.Host/**'
+      - 'csharp/extensions/Weave.Mcp/**'
+      - 'csharp/extensions/Weave.Security.Sqlite/**'
+      - 'csharp/tests/Weave.Silo.Tests/**'
       - 'Directory.*'
       - 'global.json'
       - '.github/actions/setup-dotnet/**'
@@ -85,11 +85,11 @@ jobs:
         uses: ./.github/actions/setup-dotnet
       - name: Build opt-in governance check
         run: |
-          dotnet restore tests/Weave.Silo.Tests/Weave.Silo.Tests.csproj --locked-mode
-          dotnet build tests/Weave.Silo.Tests/Weave.Silo.Tests.csproj --no-restore -c Release /p:TreatWarningsAsErrors=true
+          dotnet restore csharp/tests/Weave.Silo.Tests/Weave.Silo.Tests.csproj --locked-mode
+          dotnet build csharp/tests/Weave.Silo.Tests/Weave.Silo.Tests.csproj --no-restore -c Release /p:TreatWarningsAsErrors=true
       - name: Verify real governed invocation and no dispatch without permission
         run: >-
-          dotnet test --project tests/Weave.Silo.Tests/Weave.Silo.Tests.csproj --no-build -c Release
+          dotnet test --project csharp/tests/Weave.Silo.Tests/Weave.Silo.Tests.csproj --no-build -c Release
           --filter-class Weave.Silo.Tests.Invocations.EchoPluginTests
           --report-xunit-trx --results-directory ./example-results
       - name: Upload verification evidence

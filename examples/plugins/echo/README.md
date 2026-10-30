@@ -87,8 +87,8 @@ toolchains and the regular CI remains unchanged. To run the opt-in check locally
 export WEAVE_ECHO_SPEC="$PWD/examples/plugins/echo/python/tool.json"
 export EchoPluginExamples=true
 # Build your selected language first.
-dotnet build tests/Weave.Silo.Tests/Weave.Silo.Tests.csproj -c Release
-dotnet test --project tests/Weave.Silo.Tests/Weave.Silo.Tests.csproj --no-build -c Release \
+dotnet build csharp/tests/Weave.Silo.Tests/Weave.Silo.Tests.csproj -c Release
+dotnet test --project csharp/tests/Weave.Silo.Tests/Weave.Silo.Tests.csproj --no-build -c Release \
   --filter-class Weave.Silo.Tests.Invocations.EchoPluginTests
 ```
 

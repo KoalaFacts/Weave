@@ -52,24 +52,24 @@ jobs:
           package-manager-cache: false
       - name: Gate opt-in OAuth release before all other release work
         shell: bash
-        run: node hosts/Weave.Mailbox.Worker/scripts/oauth-rollout-intent.ts
+        run: node typescript/mailbox-worker/scripts/oauth-rollout-intent.ts
         env:
           WEAVE_RELEASE_CONFIGURATION_SCOPE: ${{ inputs.configuration_scope }}
           WEAVE_RELEASE_DATABASE_MODE: ${{ inputs.database_mode }}
           WEAVE_RELEASE_FIRST_PARTY_OAUTH: ${{ inputs.enable_first_party_oauth }}
       - run: npm ci --ignore-scripts
-        working-directory: hosts/Weave.Mailbox.Worker
+        working-directory: typescript/mailbox-worker
       - uses: ./.github/actions/setup-dotnet
       - run: |
           npm run typecheck
           npm test
           npm audit --audit-level=high
-        working-directory: hosts/Weave.Mailbox.Worker
+        working-directory: typescript/mailbox-worker
       - run: |
-          dotnet restore tests/Weave.Worker.Compatibility/Weave.Worker.Compatibility.csproj --locked-mode
-          dotnet build tests/Weave.Worker.Compatibility/Weave.Worker.Compatibility.csproj --no-restore -c Release
+          dotnet restore csharp/tests/Weave.Worker.Compatibility/Weave.Worker.Compatibility.csproj --locked-mode
+          dotnet build csharp/tests/Weave.Worker.Compatibility/Weave.Worker.Compatibility.csproj --no-restore -c Release
       - run: npm run test:compat
-        working-directory: hosts/Weave.Mailbox.Worker
+        working-directory: typescript/mailbox-worker
   deploy-repository:
     needs: verify
     if: inputs.configuration_scope == 'repository' || (github.event_name == 'push' && github.ref == 'refs/heads/publish/demo')
@@ -84,20 +84,20 @@ jobs:
           node-version: '24'
           package-manager-cache: false
       - run: npm ci --ignore-scripts
-        working-directory: hosts/Weave.Mailbox.Worker
+        working-directory: typescript/mailbox-worker
       - name: Verify resources, migrate, confirm, and deploy existing demo
         run: node scripts/deploy.ts
-        working-directory: hosts/Weave.Mailbox.Worker
+        working-directory: typescript/mailbox-worker
         env:
           CLOUDFLARE_API_TOKEN: ${{ secrets.CLOUDFLARE_API_TOKEN }}
           CLOUDFLARE_ACCOUNT_ID: ${{ secrets.CLOUDFLARE_ACCOUNT_ID }}
           WEAVE_DEPLOY_DATABASE_MODE: ${{ github.event_name == 'push' && 'completed-only' || inputs.database_mode }}
       - name: Verify the published Agent Start guide and homepage
         run: node scripts/verify-agent-entry.ts
-        working-directory: hosts/Weave.Mailbox.Worker
+        working-directory: typescript/mailbox-worker
       - name: Verify published public MCP handshake, discovery and D1 read
         run: node scripts/verify-public-mcp.ts
-        working-directory: hosts/Weave.Mailbox.Worker
+        working-directory: typescript/mailbox-worker
   deploy-production:
     needs: verify
     if: inputs.configuration_scope == 'production'
@@ -113,17 +113,17 @@ jobs:
           node-version: '24'
           package-manager-cache: false
       - run: npm ci --ignore-scripts
-        working-directory: hosts/Weave.Mailbox.Worker
+        working-directory: typescript/mailbox-worker
       - name: Revalidate opt-in OAuth release inside protected production
         run: node scripts/oauth-rollout-intent.ts
-        working-directory: hosts/Weave.Mailbox.Worker
+        working-directory: typescript/mailbox-worker
         env:
           WEAVE_RELEASE_CONFIGURATION_SCOPE: ${{ inputs.configuration_scope }}
           WEAVE_RELEASE_DATABASE_MODE: ${{ inputs.database_mode }}
           WEAVE_RELEASE_FIRST_PARTY_OAUTH: ${{ inputs.enable_first_party_oauth }}
       - name: Verify resources, migrate, confirm, and deploy existing demo
         run: node scripts/deploy.ts
-        working-directory: hosts/Weave.Mailbox.Worker
+        working-directory: typescript/mailbox-worker
         env:
           CLOUDFLARE_API_TOKEN: ${{ secrets.CLOUDFLARE_API_TOKEN }}
           CLOUDFLARE_ACCOUNT_ID: ${{ secrets.CLOUDFLARE_ACCOUNT_ID }}
@@ -132,7 +132,7 @@ jobs:
           WEAVE_APPROVED_ACCESS_TRIAL_APPLICATION: ${{ inputs.access_trial_application }}
       - name: Verify the published Agent Start guide and homepage
         run: node scripts/verify-agent-entry.ts
-        working-directory: hosts/Weave.Mailbox.Worker
+        working-directory: typescript/mailbox-worker
       - name: Verify published public MCP handshake, discovery and D1 read
         run: node scripts/verify-public-mcp.ts
-        working-directory: hosts/Weave.Mailbox.Worker
+        working-directory: typescript/mailbox-worker

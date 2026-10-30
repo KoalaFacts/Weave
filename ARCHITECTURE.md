@@ -1,7 +1,7 @@
 # Weave Architecture
 
 > **Baseline:** Revision 2.1 — Vertical Slices, Explicit Composition, Flat Source Layout.
-> **Product:** Independent-agent network; separate Governed Tools capability. **Reference language:** C#/.NET. **Plugin ecosystem:** language-neutral.
+> **Product:** Independent-agent network; separate Governed Tools capability. **Normative definition:** language-neutral protocols and conformance fixtures ([runtime-neutral contract](docs/runtime-contract.md)); C#/.NET is the current implementation. **Plugin ecosystem:** language-neutral.
 > **Implementation:** The source migration is the first structural increment, not completion of this target. See [implementation record](docs/implementation/2026-09-19-flat-source-foundation.md). Existing actor keys, tool-level permissions and runtime behavior are deliberately retained until their own tested replacements are implemented.
 
 ## 1. Architectural decision
@@ -19,47 +19,49 @@ Governed Tools retains its separate Agent Control Plane responsibility: represen
 ## 2. Source and project boundaries
 
 ```text
-src/
-  Weave.csproj
-  Contacts/
-  Mailboxes/
-  Agents/
-  Workspaces/
-  Authority/
-  Invocations/
-  Plugins/
-  Resources/
-  Credentials/
-  Audit/
-  Composition/
-hosts/
-  Weave.Mailbox.Host/
-  Weave.Host/
-  Weave.Cli/
-  Weave.Dashboard/
-  Weave.AppHost/
-  Weave.ServiceDefaults/
-extensions/
-  Weave.Mailboxes.Sqlite/
-  Weave.AgentRuntime/
-  Weave.Mcp/
-  Weave.CliTools/
-  Weave.OpenApi/
-  Weave.DirectHttp/
-  Weave.FileSystem/
-  Weave.Dapr/
-  ...other opt-in implementations...
-tools/
-  Weave.SourceGen/
-tests/
-  ...feature and compatibility test suites...
-protocol/
+csharp/                    C#/.NET implementation (current)
+  Weave.slnx
+  src/
+    Weave.csproj
+    Contacts/
+    Mailboxes/
+    Agents/
+    Workspaces/
+    Authority/
+    Invocations/
+    Plugins/
+    Resources/
+    Credentials/
+    Audit/
+    Composition/
+  hosts/
+    Weave.Mailbox.Host/
+    Weave.Host/
+    Weave.Cli/
+    Weave.Dashboard/
+    Weave.AppHost/
+    Weave.ServiceDefaults/
+  extensions/
+    Weave.Mailboxes.Sqlite/
+    Weave.AgentRuntime/
+    Weave.Mcp/
+    ...other opt-in implementations...
+  tools/
+    Weave.SourceGen/
+    DevTool/
+  tests/
+    ...feature and compatibility test suites...
+typescript/                TypeScript packages
+  auth-worker/
+  mailbox-worker/
+  plugin-echo/
+protocol/                  language-neutral contract
   ...versioned schemas and cross-language fixtures as implemented...
 ```
 
-Feature folders MUST be direct children of `src/`: no product-name or `Features/` wrapper. Additional real features such as Rooms, Channels, Memory and Skills are not technical layers. Do not create empty feature trees before a use case exists.
+Top-level folders are split by language; the [runtime-neutral contract](docs/runtime-contract.md) in `protocol/` is shared by every implementation. Feature folders MUST be direct children of `csharp/src/`: no product-name or `Features/` wrapper. Additional real features such as Rooms, Channels, Memory and Skills are not technical layers. Do not create empty feature trees before a use case exists.
 
-The product project is `src/Weave.csproj`; its assembly is `Weave.Product`, avoiding a case-insensitive collision with the existing CLI assembly `weave`. Its namespace root is `Weave`. Physical directories need not mirror the project name.
+The product project is `csharp/src/Weave.csproj`; its assembly is `Weave.Product`, avoiding a case-insensitive collision with the existing CLI assembly `weave`. Its namespace root is `Weave`. Physical directories need not mirror the project name.
 
 The current structural migration retains existing namespaces to avoid combining a package/host refactor with an unreviewed protocol or persistence migration. Those names are not a reason to recreate Shared/Core layers.
 
@@ -226,7 +228,7 @@ Calls obtain immediate decisions/results; events describe committed facts. Consu
 
 Keep strong invariants with their state owner or an explicit local transaction. Use an outbox/equivalent durable delivery for audit projections and notifications. No transaction spans a human decision or arbitrary provider call. Compensation must be supported explicitly.
 
-C#/.NET and ASP.NET Core are the reference implementation. Orleans is optional where it serves a real feature and stays out of wire contracts. Initial deployment is a composable application, not mandatory microservices. Multi-node claims need concurrency/recovery tests.
+C#/.NET and ASP.NET Core are the current implementation. Weave is defined by its language-neutral contract, not by one codebase: additional implementations (the target is TypeScript on Workers with Durable Objects) must pass the same conformance fixtures, and stateful features sit behind a thin actor boundary so Orleans or Durable Objects stay replaceable. See the [runtime-neutral contract](docs/runtime-contract.md). Orleans is optional where it serves a real feature and stays out of wire contracts. Initial deployment is a composable application, not mandatory microservices. Multi-node claims need concurrency/recovery tests.
 
 Native AOT is tested per host. It cannot simultaneously promise arbitrary dynamic managed-assembly loading. Static built-ins and external workers are separate implementation paths. Rust/WASM infrastructure is not an initial requirement.
 

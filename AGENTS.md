@@ -16,7 +16,7 @@ Weave's primary direction is an **independent-agent network** with contact, inbo
 
 The existing **Governed Tools** Agent Control Plane remains a separate capability for agents and integrations. A Weave-hosted reasoning loop is not a product requirement. Do not make marketplaces, broad provider catalogues, model routing, email/SMS infrastructure, or a universal workflow engine prerequisites for contact/message delivery or a concrete governed use case.
 
-Current Agent actor keys remain `{workspaceId}/{agentName}`. `src/Invocations/InvokeTool/ToolActor.cs` now authorizes adapter-normalized `tool:<name>:invoke:<operation>` scopes separately from connection permission; the registry derives invocation grants from explicit Capabilities, not tool availability. The current host still uses Orleans and the existing Agent Runtime. Portable Agent identity, Tenant/Room authority, generalized resource/installation revision constraints, and reconciliation remain target work. Read the [operation-authority migration record](docs/implementation/2026-09-19-exact-tool-operations.md); do not restore implicit grants or automatically broaden old `tool:<name>` entries.
+Current Agent actor keys remain `{workspaceId}/{agentName}`. `csharp/src/Invocations/InvokeTool/ToolActor.cs` now authorizes adapter-normalized `tool:<name>:invoke:<operation>` scopes separately from connection permission; the registry derives invocation grants from explicit Capabilities, not tool availability. The current host still uses Orleans and the existing Agent Runtime. Portable Agent identity, Tenant/Room authority, generalized resource/installation revision constraints, and reconciliation remain target work. Read the [operation-authority migration record](docs/implementation/2026-09-19-exact-tool-operations.md); do not restore implicit grants or automatically broaden old `tool:<name>` entries.
 
 ToolActor now requires durable invocation/attempt admission before dispatch. The host composes an on-disk SQLite journal, not an optional in-memory fallback. Owner-scoped outcome queries use `invocation:read`; duplicate submissions return metadata without replay. This is a single-host/preserved-file increment, not cluster-wide exactly-once execution or a response-body cache. Read the [journal migration and limits](docs/implementation/2026-09-19-durable-invocations.md). Preserve unknown outcomes and retained IDs; do not add automatic replay, silent record deletion, or a production no-op journal.
 
@@ -26,22 +26,23 @@ For a replacement, record what is preserved, deliberately changed, or removed. S
 
 ## Ownership and composition
 
-- Product source is `src/Weave.csproj`; features are **direct children of `src/`**. No `src/Weave/`, `src/Features/`, universal Core/Contracts/Kernel project, or mandatory Domain/Application/Infrastructure stack.
+- Top-level folders are split by language. `csharp/` holds the C#/.NET implementation (solution, `Directory.*` build files, `NuGet.config` and every .NET project); `typescript/` holds TypeScript packages (Workers, the npm Echo plugin). `protocol/`, `docs/`, `examples/`, `plugins/`, `scripts/` and `.github/` stay language-neutral at the root, and `global.json` stays at the root because the .NET SDK resolves it from the working directory. New implementations or SDKs go in a folder named for their language (`python/`, `rust/`, ...), not for a platform.
+- Product source is `csharp/src/Weave.csproj`; features are **direct children of `csharp/src/`**. No `csharp/src/Weave/`, `csharp/src/Features/`, universal Core/Contracts/Kernel project, or mandatory Domain/Application/Infrastructure stack.
 - A feature owns requests, results, behavior, state, data access, and endpoint adapters. Do not recreate technical-layer baskets globally or inside every slice. Queries may access their owned data directly.
 - Keep public contracts with their semantic owner. Cross-feature callers use explicit public operations and owned/immutable snapshots, not private handlers, mutable entities, or another feature's storage.
 - Prefer composition to base-class hierarchies. Extract an interface/component for actual variability, reuse, testing, or lifecycle needs—not to satisfy a template. Classes over 200 lines warrant a responsibility review, not artificial splitting.
-- `hosts/` compose implementations; `extensions/` hold opt-in protocol/runtime/provider dependencies; `tools/` hold generators; `tests/` hold .NET tests. A separate project needs a packaging, dependency, deployment, or isolation reason.
-- `src/Composition` is dispatch/composition machinery, not a dumping ground for business types. Ordinary handlers must not use `IServiceProvider` as a service locator. Keep dependencies explicit, lifetimes correct, and the startup graph acyclic; do not capture scoped collaborators in singletons.
+- Inside `csharp/`: `hosts/` compose implementations; `extensions/` hold opt-in protocol/runtime/provider dependencies; `tools/` hold generators and the coverage DevTool; `tests/` hold .NET tests. A separate project needs a packaging, dependency, deployment, or isolation reason.
+- `csharp/src/Composition` is dispatch/composition machinery, not a dumping ground for business types. Ordinary handlers must not use `IServiceProvider` as a service locator. Keep dependencies explicit, lifetimes correct, and the startup graph acyclic; do not capture scoped collaborators in singletons.
 - Provider/installation identity determines routing. Safety-critical registrations must not rely on DI order or last-registration-wins. Do not import concrete provider packages into generic product code.
 
 | Current project | Assembly / responsibility |
 | --- | --- |
-| `src/Weave.csproj` | `Weave.Product`; avoids collision with the CLI assembly `weave`. |
-| `hosts/Weave.Host/Weave.Host.csproj` | `Weave.Silo`; existing Orleans/HTTP host. |
-| `hosts/Weave.Mailbox.Host/Weave.Mailbox.Host.csproj` | `Weave.Mailbox.Host`; opt-in contact/inbox/outbox HTTP relay with no reasoning runtime. |
-| `extensions/Weave.Mailboxes.Sqlite/Weave.Mailboxes.Sqlite.csproj` | Relay persistence; provider dependency stays outside product contracts. |
-| `extensions/Weave.AgentRuntime/Weave.AgentRuntime.csproj` | `Weave.Agents`; existing reasoning/model integration. |
-| `tools/Weave.SourceGen/Weave.SourceGen.csproj` | Source generation; targets `netstandard2.0`. |
+| `csharp/src/Weave.csproj` | `Weave.Product`; avoids collision with the CLI assembly `weave`. |
+| `csharp/hosts/Weave.Host/Weave.Host.csproj` | `Weave.Silo`; existing Orleans/HTTP host. |
+| `csharp/hosts/Weave.Mailbox.Host/Weave.Mailbox.Host.csproj` | `Weave.Mailbox.Host`; opt-in contact/inbox/outbox HTTP relay with no reasoning runtime. |
+| `csharp/extensions/Weave.Mailboxes.Sqlite/Weave.Mailboxes.Sqlite.csproj` | Relay persistence; provider dependency stays outside product contracts. |
+| `csharp/extensions/Weave.AgentRuntime/Weave.AgentRuntime.csproj` | `Weave.Agents`; existing reasoning/model integration. |
+| `csharp/tools/Weave.SourceGen/Weave.SourceGen.csproj` | Source generation; targets `netstandard2.0`. |
 
 Keep retained namespaces and assembly names unless the task explicitly includes their migration. Physical layout changes do not prove binary, wire, or persisted-state compatibility.
 
@@ -71,7 +72,7 @@ Resources owns generic lifecycle and binding semantics; mailbox/telephone/browse
 
 ## Engineering conventions
 
-- Follow `.editorconfig` and `tests/.editorconfig`: UTF-8, LF where specified, four-space C#, and two-space JSON/YAML/XML. .NET interfaces keep the `I` prefix. Extension classes follow the existing `ExtensionsToXXX` convention; Blazor behavior goes in `.razor.cs` code-behind.
+- Follow `.editorconfig` and `csharp/tests/.editorconfig`: UTF-8, LF where specified, four-space C#, and two-space JSON/YAML/XML. .NET interfaces keep the `I` prefix. Extension classes follow the existing `ExtensionsToXXX` convention; Blazor behavior goes in `.razor.cs` code-behind.
 - Use existing branded IDs and typed outcomes. Return expected validation/operation failures rather than throwing for normal control flow. Preserve meaningful error categories; never swallow exceptions or report failed/unknown operations as successful.
 - Inject `TimeProvider` for behavioral time. Propagate cancellation at async boundaries, observe background-task faults, and avoid fire-and-forget actor calls.
 - Prefer executable/argument arrays for new CLI operations. Treat shell access as a separate privilege. Drain stdout/stderr concurrently, bound retained output, redact it, and handle process cleanup. A zero exit code alone need not prove business success.
@@ -88,7 +89,7 @@ Persisted Orleans field IDs are append-only: never renumber or reuse them. Keep 
 
 ## Build and verification
 
-Run commands from the repository root with the .NET 11 SDK (release candidate until GA) and the .NET 10 runtime, and check `dotnet --version`. `src/Weave.csproj`, the CLI and their focused tests target `net10.0;net11.0`; other projects target .NET 10. `global.json` uses the baseline `10.0.400` with `rollForward: latestMajor` and `allowPrerelease: true` so the .NET 11 SDK is selected; the baseline matches the Roslyn version referenced by the source generator. After .NET 11 GA, set `allowPrerelease` to `false` and the CI `dotnet-next-quality` default to `ga`. Shared CI setup installs the `10.x` (GA) and `11.x` (preview) channels; it does not install the baseline as an exact SDK. Keep locked restore and security auditing enabled; an SDK-driven dependency graph change requires deliberate lockfile regeneration and verification. Most projects target .NET 10. Package versions are centralized in `Directory.Packages.props`, except the explicitly opted-out generator project. Regenerate affected lockfiles after dependency changes; do not hand-edit their hashes.
+Run commands from the repository root with the .NET 11 SDK (release candidate until GA) and the .NET 10 runtime, and check `dotnet --version`. `csharp/src/Weave.csproj`, the CLI and their focused tests target `net10.0;net11.0`; other projects target .NET 10. `global.json` uses the baseline `10.0.400` with `rollForward: latestMajor` and `allowPrerelease: true` so the .NET 11 SDK is selected; the baseline matches the Roslyn version referenced by the source generator. After .NET 11 GA, set `allowPrerelease` to `false` and the CI `dotnet-next-quality` default to `ga`. Shared CI setup installs the `10.x` (GA) and `11.x` (preview) channels; it does not install the baseline as an exact SDK. Keep locked restore and security auditing enabled; an SDK-driven dependency graph change requires deliberate lockfile regeneration and verification. Most projects target .NET 10. Package versions are centralized in `csharp/Directory.Packages.props`, except the explicitly opted-out generator project. Regenerate affected lockfiles after dependency changes; do not hand-edit their hashes.
 
 For code, dependencies, or build changes:
 
@@ -98,16 +99,16 @@ Write new Node tools and tests in TypeScript (`.ts`), using Node 24 native type 
 
 ```bash
 python3 -m unittest discover -s scripts/tests -v
-dotnet restore Weave.slnx
-dotnet restore Weave.slnx --locked-mode
-dotnet build Weave.slnx --no-restore -c Release
-dotnet test --solution Weave.slnx --no-build -c Release
+dotnet restore csharp/Weave.slnx
+dotnet restore csharp/Weave.slnx --locked-mode
+dotnet build csharp/Weave.slnx --no-restore -c Release
+dotnet test --solution csharp/Weave.slnx --no-build -c Release
 ```
 
 For a focused test run after building:
 
 ```bash
-dotnet test --project tests/Weave.Security.Tests/Weave.Security.Tests.csproj --no-build -c Release
+dotnet test --project csharp/tests/Weave.Security.Tests/Weave.Security.Tests.csproj --no-build -c Release
 ```
 
 Tests use **xunit.v3, Shouldly, and NSubstitute**. Do not introduce FluentAssertions or another .NET test framework. Test names use `Method_Condition_ExpectedResult`. Use `NullLogger<T>.Instance` for internal types that a substitute cannot proxy. Python checks use the standard-library `unittest` toolchain.
