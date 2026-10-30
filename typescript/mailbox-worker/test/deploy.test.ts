@@ -63,9 +63,27 @@ test('verifyMigration failure stops before maintenance or any Worker command',as
     const f=fixture();f.options.verifyMigration=async()=>{throw Error('synthetic interrupted verifyMigration');};
     await assert.rejects(deploy(f.options),/synthetic interrupted/);assert.equal(f.commands.length,0);assert.equal(f.closed,true);
 });
-for(const stage of ['applySchema','planSchema'])test(`${stage} failure leaves maintenance and never uploads active code`,async()=>{
+for(const stage of ['applySchema','planSchema'])test(`${stage} failure fails closed without uploading active code`,async()=>{
     const f=fixture();f.options[stage]=async()=>{throw Error('synthetic interrupted '+stage);};
-    await assert.rejects(deploy(f.options),/synthetic interrupted/);assert.equal(f.commands.length,1);assert.equal(f.closed,true);
+    await assert.rejects(deploy(f.options),/synthetic interrupted/);
+    assert.equal(f.commands.length,stage==='planSchema'?0:1,
+        'read-only schema drift must not take the live Worker into maintenance');
+    assert.equal(f.closed,true);
+});
+test('maintain mode refuses incompatible existing D1 before changing the live Worker',async()=>{
+    const h=await start(),f=fixture();
+    try{
+        // A real Miniflare D1 table whose shape differs from the reviewed target.
+        // planLatestSchema must reject it while the deployed Worker remains active.
+        await h.db.prepare('ALTER TABLE accounts ADD COLUMN unexpected_old_shape TEXT').run();
+        f.options.openDatabase=async()=>({db:h.db,close:async()=>{f.closed=true;}});
+        f.options.planSchema=planLatestSchema;
+        await assert.rejects(deploy(f.options),/accounts|schema|column|drift/i);
+        assert.equal(f.commands.length,0,'never deploy maintenance on known incompatible schema');
+        assert.deepEqual(f.events,['migration']);
+        assert.equal(await h.db.prepare("SELECT count(*) n FROM pragma_table_info('accounts') WHERE name='unexpected_old_shape'").first('n'),1);
+        assert.equal(f.closed,true);
+    }finally{await h.close();}
 });
 test('missing recovery version prevents active deployment',async()=>{
     const f=fixture(),run=f.options.run;f.options.run=args=>({...run(args),stdout:''});await assert.rejects(deploy(f.options),/Recovery version identifier missing/);assert.equal(f.commands.length,2);
