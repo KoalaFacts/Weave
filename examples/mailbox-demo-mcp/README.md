@@ -1,6 +1,6 @@
 # Weave mailbox demo MCP
 
-A runnable stdio MCP server for external agents to use the mailbox demo's real HTTP API. It follows the repository's [native Node Echo MCP example](../plugins/echo/README.md): newline-delimited JSON-RPC, `initialize`, `notifications/initialized`, `tools/list`, `tools/call`, and `ping`, protocol version `2024-11-05`. There is no additional package installation, OAuth service or protocol. Node 24.19+ is required.
+A runnable stdio MCP server for external agents to use the mailbox demo's real HTTP API. It follows the repository's [native Node Echo MCP example](../plugins/echo/README.md): newline-delimited JSON-RPC, `initialize`, `notifications/initialized`, `tools/list`, `tools/call`, and `ping`, protocol version `2024-11-05`. There is no additional package installation, OAuth service or protocol. Node 24+ is required.
 
 The companion public registry is `/registry` on the demo Worker. The intended deployment URL is `https://demo.weave-389.workers.dev/registry`; this change has not deployed it, so a pre-existing Hello World response is not evidence that this version is running.
 

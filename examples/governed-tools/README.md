@@ -2,7 +2,7 @@
 
 ## See the flow in memory
 
-From the repository root, with Node.js 24.19+:
+From the repository root, with Node.js 24+:
 
 ```bash
 node examples/governed-tools/demo.ts

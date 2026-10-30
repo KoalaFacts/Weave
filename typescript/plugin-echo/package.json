@@ -12,7 +12,7 @@
   "homepage": "https://github.com/KoalaFacts/Weave/tree/main/typescript/plugin-echo",
   "bugs": "https://github.com/KoalaFacts/Weave/issues",
   "engines": {
-    "node": ">=24.19.0"
+    "node": ">=24"
   },
   "bin": {
     "weave-plugin-echo": "dist/cli.js"

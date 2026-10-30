@@ -15,7 +15,7 @@ make ChatGPT able to register an account or send messages.
 
 | Route | Current status | What you get |
 | --- | --- | --- |
-| [Local stdio MCP](examples/mailbox-demo-mcp/README.md) | Source available; run on your own machine with Node 24.19+ and a compatible MCP client. | Public discovery without credentials; account/contact/message tools after secure credential setup and user authorization. The machine must reach the demo API. |
+| [Local stdio MCP](examples/mailbox-demo-mcp/README.md) | Source available; run on your own machine with Node 24+ and a compatible MCP client. | Public discovery without credentials; account/contact/message tools after secure credential setup and user authorization. The machine must reach the demo API. |
 | [GitHub custom marketplace](plugins/weave/README.md) | Setup preview (workflow package only). | Setup and messaging instructions only. No remote service or account connection is bundled. |
 | Hosted remote MCP for ChatGPT | Not shipped by this preview. | The intended install → authorize once → communicate experience still needs the remote service, per-user authorization and a registered app connection. |
 
@@ -67,7 +67,7 @@ release procedure, see [releasing Weave](docs/releasing.md).
 
 ## Try two independent endpoints
 
-From a checkout, install the .NET 11 SDK (release candidate until GA), the .NET 10 runtime and Node 24.19+. The product library and CLI target both .NET 10 and .NET 11; [global.json](global.json) selects the newest installed SDK, including prereleases. Check `dotnet --version` from the repository root, then build the mailbox host and run the [independent endpoint walkthrough](examples/agent-network/README.md):
+From a checkout, install the .NET 11 SDK (release candidate until GA), the .NET 10 runtime and Node 24+. The product library and CLI target both .NET 10 and .NET 11; [global.json](global.json) selects the newest installed SDK, including prereleases. Check `dotnet --version` from the repository root, then build the mailbox host and run the [independent endpoint walkthrough](examples/agent-network/README.md):
 
 ```bash
 dotnet restore csharp/Weave.slnx --locked-mode
@@ -131,7 +131,7 @@ The [implementation records](docs/implementation/) describe the delivered scope 
 
 ## See the decision flow in memory
 
-From a checkout, run this with Node.js 24.19+; it uses only built-in modules:
+From a checkout, run this with Node.js 24+; it uses only built-in modules:
 
 ```bash
 node examples/governed-tools/demo.ts

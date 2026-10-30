@@ -15,7 +15,7 @@ node experiments/oauth-provider-agnostic/probe.ts https://YOUR-MCP-HOST/mcp
 node experiments/oauth-provider-agnostic/probe.ts https://YOUR-MCP-HOST/mcp https://YOUR-ISSUER
 ```
 
-Use Node 24.19+. The existing OAuth Worker workflow also runs the experiment
+Use Node 24+. The existing OAuth Worker workflow also runs the experiment
 and probes the existing demo anonymously. There is no client registration,
 cloud write, credential access or token issuance in that public probe. The
 probe bounds response bytes/time, refuses redirects and credentials, reports

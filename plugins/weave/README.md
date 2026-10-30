@@ -13,7 +13,7 @@ verified for this package.
 | --- | --- | --- |
 | Preview GitHub installation in a managed ChatGPT workspace | [Workspace import](#chatgpt-workspace-import) | Installs instructions, not a working remote connection. |
 | Preview the package in a supported desktop/Codex environment | [Desktop/Codex catalog](#desktopcodex-catalog) | Adds the catalog; install the plugin separately. Still no bundled MCP runtime. |
-| Connect an agent to the demo using a local process | [Local stdio MCP guide](https://github.com/KoalaFacts/Weave/blob/main/examples/mailbox-demo-mcp/README.md) | Requires Node 24.19+, a compatible client and network access. Private operations additionally need secure credential setup. |
+| Connect an agent to the demo using a local process | [Local stdio MCP guide](https://github.com/KoalaFacts/Weave/blob/main/examples/mailbox-demo-mcp/README.md) | Requires Node 24+, a compatible client and network access. Private operations additionally need secure credential setup. |
 | Install in ChatGPT, authorize once and immediately exchange messages | Hosted remote MCP | **Not available from this preview.** See [remaining operator work](#operator-bind-the-real-remote-app). |
 
 The target web experience is install → authorize once → communicate, without

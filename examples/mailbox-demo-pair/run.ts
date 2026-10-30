@@ -19,8 +19,8 @@ async function publicRead():Promise<unknown>{
     return JSON.parse(Buffer.concat(chunks).toString('utf8'));
 }
 export async function doctor(vault?:string,options:DoctorOptions={}):Promise<Diagnosis>{
-    const missing:string[]=[],[major,minor]=(options.version??process.versions.node).split('.').map(Number);
-    if(!(major>24||major===24&&minor>=19))missing.push('node_24_19_or_newer');
+    const missing:string[]=[],[major]=(options.version??process.versions.node).split('.').map(Number);
+    if(major<24)missing.push('node_24_or_newer');
     if((options.platform??process.platform)==='win32')missing.push('posix_or_wsl_private_storage');
     const execute=options.execute??((command,args)=>capture(command,args,{timeoutMs:15000,...(command==='codex'?{env:modelEnvironment()}:{})}));
     try{await execute('codex',['login','status']);}catch{missing.push('codex_login');}
