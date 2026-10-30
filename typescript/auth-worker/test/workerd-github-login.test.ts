@@ -21,11 +21,11 @@ const bundled=readFileSync(resolve("dist/index.js"),"utf8");
 const mailboxBundle=readFileSync(resolve("../mailbox-worker/dist/index.js"),"utf8");
 
 // Only the two GitHub endpoints exist; every other outbound request is denied.
-type Recorded={url:string;method:string;redirect:RequestRedirect;headers:Record<string,string>;body:string};
+type Recorded={url:string;method:string;headers:Record<string,string>;body:string};
 const github={requests:[] as Recorded[],userStatus:200,redirectToken:false,redirectUser:false};
 async function fakeGithub(request:Request):Promise<Response>{
   const body=await request.text();
-  github.requests.push({url:request.url,method:request.method,redirect:request.redirect,
+  github.requests.push({url:request.url,method:request.method,
     headers:Object.fromEntries(request.headers),body});
   if(request.method==="POST"&&request.url==="https://github.com/login/oauth/access_token"){
     const form=new URLSearchParams(body);
@@ -262,8 +262,14 @@ test("callback_GithubProviderRedirects_FailClosedWithoutForwardingSecrets",{time
         :["https://github.com/login/oauth/access_token","https://api.github.com/user"];
       assert.deepEqual(github.requests.map(x=>x.url),expectedUrls,
         phase+" must contact only the two fixed GitHub endpoints");
-      assert.ok(github.requests.every(x=>x.redirect==="manual"),
-        phase+" must explicitly disable automatic HTTP redirects");
+      // Miniflare's outbound-service adapter does not preserve the caller's redirect mode
+      // on the handler Request; verify actual requests, credential destinations and outcome.
+      const exchange=github.requests[0];
+      assert.equal(new URLSearchParams(exchange.body).get("client_secret"),githubClientSecret);
+      if(phase==="user"){
+        const who=github.requests[1];
+        assert.equal(who.headers.authorization,"Bearer "+fakeAccessToken);
+      }
       assert.ok(logs.some(x=>x.includes(phase==="token"
         ?"github-login: token exchange failed":"github-login: user fetch failed")));
       assert.ok(!logs.some(x=>x.includes(githubClientSecret)||x.includes(fakeAccessToken)));
