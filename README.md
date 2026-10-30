@@ -90,15 +90,19 @@ describes workspace eligibility and permissions; import does not grant service a
 
 ## CLI and Governed Tools distribution
 
-首个预览版已发布，见 [GitHub Releases](https://github.com/KoalaFacts/Weave/releases)。
+The first preview, [`v0.1.0-preview.1`](https://github.com/KoalaFacts/Weave/releases/tag/v0.1.0-preview.1),
+is published on GitHub Releases and
+[NuGet](https://www.nuget.org/packages/KoalaFacts.Weave.Cli/0.1.0-preview.1).
 The NuGet tool ID is
 `KoalaFacts.Weave.Cli`; its command remains `weave`. The tool package contains
 the CLI, while the platform release archives also contain the Governed Tools
 Host in `host/`. Local execution requires that Host. These artifacts do not
 include the separate mailbox relay or establish a remote MCP connection.
 
-Use an exact published version from [GitHub Releases](https://github.com/KoalaFacts/Weave/releases)
-when one is available. For package scope, installation verification and the
+Choose an exact version published on both
+[GitHub Releases](https://github.com/KoalaFacts/Weave/releases) and
+[NuGet](https://www.nuget.org/packages/KoalaFacts.Weave.Cli); do not assume
+that a repository build makes a new version available. For package scope, installation verification and the
 release procedure, see [releasing Weave](docs/releasing.md).
 
 ## Try two independent endpoints
@@ -167,7 +171,7 @@ The [implementation records](docs/implementation/) describe the delivered scope 
 
 ## See the decision flow in memory
 
-From a checkout, run this with Node.js 22.18.0+; it uses only built-in modules:
+From a checkout, run this with Node.js 24+; it uses only built-in modules:
 
 ```bash
 node examples/governed-tools/demo.ts
