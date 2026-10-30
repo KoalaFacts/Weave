@@ -131,7 +131,7 @@ The [implementation records](docs/implementation/) describe the delivered scope 
 
 ## See the decision flow in memory
 
-From a checkout, run this with Node.js 22.18.0+; it uses only built-in modules:
+From a checkout, run this with Node.js 24.19+; it uses only built-in modules:
 
 ```bash
 node examples/governed-tools/demo.ts
