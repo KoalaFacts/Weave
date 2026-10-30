@@ -1,0 +1,37 @@
+{
+  "hooks": {
+    "PreToolUse": [
+      {
+        "matcher": "mcp__github__create_pull_request",
+        "hooks": [
+          {
+            "type": "command",
+            "command": "node \"c:\\projects\\BeingCiteable\\Weave\\.claude\\hooks\\pre-pr-format-check.ts\"",
+            "timeout": 180,
+            "statusMessage": "Verifying dotnet format before opening PR"
+          }
+        ]
+      },
+      {
+        "matcher": "Bash",
+        "hooks": [
+          {
+            "type": "command",
+            "command": "node \"c:\\projects\\BeingCiteable\\Weave\\.claude\\hooks\\require-adversarial-review.ts\"",
+            "statusMessage": "Verifying adversarial-review marker for staged diff"
+          }
+        ]
+      }
+    ],
+    "SessionStart": [
+      {
+        "hooks": [
+          {
+            "type": "command",
+            "command": "node \"c:\\projects\\BeingCiteable\\Weave\\.claude\\hooks\\session-start.ts\""
+          }
+        ]
+      }
+    ]
+  }
+}
