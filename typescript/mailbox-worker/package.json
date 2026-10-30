@@ -25,7 +25,8 @@
   "overrides": {
     "miniflare": {
       "undici": "7.30.1"
-    }
+    },
+    "esbuild": "$esbuild"
   },
   "devDependencies": {
     "@types/node": "24.19.2",
