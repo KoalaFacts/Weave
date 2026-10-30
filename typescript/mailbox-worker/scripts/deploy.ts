@@ -323,7 +323,14 @@ export async function deploy({env=process.env,fetchImpl=fetch,run,root=directory
         const planDemo=(db:StorageDatabase)=>planSchema(db,schemaPolicy);
         const completed=databaseMode==='completed-only'?await prepareCompletedDeployment(connection.db,planDemo):undefined;
         // Read-only and before maintenance: an unconverted database never pauses the service.
-        if(!completed){report.conversion=await verifyMigration(connection.db);await save();}
+        if(!completed){
+            report.conversion=await verifyMigration(connection.db);
+            // Reject incompatible existing D1 shape BEFORE uploading the maintenance
+            // Worker. Plan again under maintenance before any schema application:
+            // this read-only preflight does not replace the post-pause verification.
+            await planDemo(connection.db);
+            await save();
+        }
         phase='maintenance deployment requested';await save();
         await command(['deploy','--keep-vars','--no-bundle'],'maintenance');
         verifySettings(await inspect('/workers/scripts/demo/settings','Maintenance settings',phase),'true');
