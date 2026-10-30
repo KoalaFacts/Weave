@@ -23,8 +23,5 @@
     "../../scripts/marketplace/*.ts",
     "../../examples/mailbox-demo-pair/**/*.ts",
     "../../examples/remote-mcp-pair/**/*.ts"
-  ],
-  "exclude": [
-    "scripts/data-migrations/**/*.ts"
   ]
 }

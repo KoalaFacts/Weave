@@ -4,9 +4,9 @@ import { fileURLToPath, pathToFileURL } from 'node:url';
 import { spawn } from 'node:child_process';
 import { createHash } from 'node:crypto';
 import { build } from 'esbuild';
-import { normalizeRecords } from './run-data-migration.ts';
 import { createMissingSchema, planLatestSchema, type StorageDatabase } from './latest-schema.ts';
 import { prepareCompletedDeployment } from './completed-deployment.ts';
+import { verifyCompletedMigration } from './completed-migration.ts';
 
 interface WorkerConfig {
     name: string;
@@ -27,7 +27,7 @@ interface DeployOptions {
     root?: string;
     openDatabase?: (configPath:string)=>Promise<DatabaseConnection>;
     buildBundles?: typeof buildArtifacts;
-    convert?: (db:StorageDatabase)=>Promise<unknown>;
+    verifyMigration?: (db:StorageDatabase)=>Promise<unknown>;
     applySchema?: typeof createMissingSchema;
     planSchema?: typeof planLatestSchema;
 }
@@ -75,7 +75,7 @@ export async function buildArtifacts(root: string){
     await build({absWorkingDir:root,entryPoints:['src/index.ts','src/recovery.ts'],bundle:true,format:'esm',platform:'browser',outdir:'dist',external:['node:crypto'],loader:{'.html':'text','.json':'text','.md':'text'}});
     return Object.fromEntries(await Promise.all(['index','recovery'].map(async name=>[name,createHash('sha256').update(await readFile(join(root,'dist',name+'.js'))).digest('hex')])));
 }
-export async function deploy({env=process.env,fetchImpl=fetch,run,root=directory,openDatabase=openRemoteDatabase,buildBundles=buildArtifacts,convert=normalizeRecords,applySchema=createMissingSchema,planSchema=planLatestSchema}: DeployOptions={}){
+export async function deploy({env=process.env,fetchImpl=fetch,run,root=directory,openDatabase=openRemoteDatabase,buildBundles=buildArtifacts,verifyMigration=verifyCompletedMigration,applySchema=createMissingSchema,planSchema=planLatestSchema}: DeployOptions={}){
     const databaseMode=env.WEAVE_DEPLOY_DATABASE_MODE??'maintain';
     if(databaseMode!=='maintain'&&databaseMode!=='completed-only')throw Error('Unknown database mode; use maintain or completed-only.');
     const base=JSON.parse(await readFile(join(root,'wrangler.jsonc'),'utf8'));
@@ -320,7 +320,9 @@ export async function deploy({env=process.env,fetchImpl=fetch,run,root=directory
         if(oauthFlags[0]?.text==='true'&&!tables.includes('oauth_identity_links'))
             throw Error('OAuth identity links schema not provisioned; separate storage approval required before deployment.');
         const planDemo=(db:StorageDatabase)=>planSchema(db,schemaPolicy);
-        const completed=databaseMode==='completed-only'?await prepareCompletedDeployment(connection.db,root,planDemo):undefined;
+        const completed=databaseMode==='completed-only'?await prepareCompletedDeployment(connection.db,planDemo):undefined;
+        // Read-only and before maintenance: an unconverted database never pauses the service.
+        if(!completed){report.conversion=await verifyMigration(connection.db);await save();}
         phase='maintenance deployment requested';await save();
         await command(['deploy','--keep-vars','--no-bundle'],'maintenance');
         verifySettings(await inspect('/workers/scripts/demo/settings','Maintenance settings',phase),'true');
@@ -328,7 +330,6 @@ export async function deploy({env=process.env,fetchImpl=fetch,run,root=directory
         if(completed){
             Object.assign(report,await completed.confirm());await save();
         }else{
-            report.conversion=await convert(connection.db);
             const plan=await planDemo(connection.db);report.schemaPlan=plan;await save();
             await applySchema(connection.db,schemaPolicy);
             if((await planDemo(connection.db)).statements.length)throw Error('Schema verification left unapplied statements; maintenance retained.');

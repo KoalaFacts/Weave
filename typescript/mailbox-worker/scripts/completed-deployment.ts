@@ -1,13 +1,8 @@
-import { readFile } from 'node:fs/promises';
-import { createHash } from 'node:crypto';
-import { join } from 'node:path';
 import { setImmediate as yieldToIo } from 'node:timers/promises';
 import { latestSchemaStatements, planLatestSchema, type StorageDatabase, type StorageStatement } from './latest-schema.ts';
+import { ledgerSql, ledgerTableSql, verifyCompletedMigration } from './completed-migration.ts';
 
-const ledgerTableSql="SELECT sql FROM sqlite_master WHERE type='table' AND name='data_migrations'";
-const ledgerSql='SELECT script_id,checksum,CAST(completed_at AS TEXT) completed_at FROM data_migrations WHERE script_id=? LIMIT 2';
 const migrationGateSql="SELECT 1 found FROM sqlite_master WHERE type='trigger' AND name='data_migration_write_gate'";
-const scriptId='normalize-mailbox-records';
 const metadataSql=new Set([ledgerTableSql,ledgerSql,migrationGateSql,
     "SELECT name FROM sqlite_master WHERE type='table'",
     "SELECT type,name,tbl_name,sql FROM sqlite_master WHERE type IN ('table','index')"]);
@@ -29,21 +24,14 @@ function metadataDatabase(db:StorageDatabase):StorageDatabase {
     };
 }
 
-export async function prepareCompletedDeployment(db:StorageDatabase,root:string,planSchema=planLatestSchema) {
+export async function prepareCompletedDeployment(db:StorageDatabase,planSchema=planLatestSchema) {
     const metadata=metadataDatabase(db);
-    const inputs=['scripts/data-migrations/normalize-records.ts','scripts/data-migrations/legacy-records.ts','src/time.ts','src/credentials.ts'];
-    const checksum=createHash('sha256').update((await Promise.all(inputs.map(path=>readFile(join(root,path),'utf8')))).join('\n')).digest('hex');
     async function verify(stage:string) {
-        const table=await metadata.prepare(ledgerTableSql).first<{sql:string}>();
-        if(!table||!/^\s*CREATE\s+TABLE\b/i.test(table.sql))throw Error('Completed migration requires an existing ordinary ledger table.');
-        const rows=(await metadata.prepare(ledgerSql).bind(scriptId).all<{script_id:string;checksum:string;completed_at:string|null}>()).results;
-        if(rows.length!==1||rows[0].script_id!==scriptId||rows[0].checksum!==checksum||typeof rows[0].completed_at!=='string'||!/^\d+$/.test(rows[0].completed_at))
-            throw Error('Completed migration with the original checksum is required; no conversion is permitted.');
+        const conversion=await verifyCompletedMigration(metadata);
         if(await metadata.prepare(migrationGateSql).first())
             throw Error('Restricted deployment requires the migration write gate to be absent; no trigger changes are permitted.');
         const schemaPlan=await planSchema(metadata);
         if(schemaPlan.statements.length)throw Error('Restricted deployment requires an empty schema plan; no schema changes are permitted.');
-        const conversion={alreadyCompleted:true,checksum,completedAt:rows[0].completed_at};
         console.log('Completed-only validation: '+JSON.stringify({stage,...conversion,schemaStatements:0}));
         return {conversion,schemaPlan};
     }

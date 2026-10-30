@@ -108,31 +108,26 @@ The workflow installs pinned dependencies from the lockfile, runs Worker tests/t
 
 The maintain-mode deployment sequence is implemented by `scripts/deploy.ts`. In
 completed-only mode, steps 3–4 below are replaced by restricted metadata and
-migration-ledger verification with no conversion or schema application:
+migration-ledger verification with no schema application:
 
 Ordinary tools run directly with Node 24 and are checked by `npm run typecheck`
 using `tsconfig.tools.json`. New tools use `.ts`; no custom TypeScript loader is
-required. Tests and browser fixtures also use `.ts`. The executed files in
-`scripts/data-migrations/` are renamed without changing any content bytes.
-`scripts/run-data-migration.ts` creates a temporary copy under the original
-names so their unchanged imports and checksum algorithm still work, then removes
-it on success or failure. The Worker checkout must be writable for that temporary
-directory. No migration identity, stored checksum or database history is rewritten.
+required. Tests and browser fixtures also use `.ts`.
 
 1. Build the active and read-only recovery bundles and record their SHA-256 values.
-2. Connect through Wrangler's official remote D1 binding, then deploy and verify maintenance mode. HTTP business requests and scheduled work are paused. The conversion also fences old in-flight transactions at `mailbox_guard`.
-3. Run the independent `normalize-mailbox-records` data script. It archives the original records without deleting them, preserves IDs, sequence high-water and `d1_migrations`, converts Base64 once into raw BLOBs, and verifies rows, foreign keys and digests. Its checksum and completion belong to `data_migrations`. An interrupted run retains the write gate and can resume with the same script checksum.
+2. Connect through Wrangler's official remote D1 binding, then deploy and verify maintenance mode. HTTP business requests and scheduled work are paused.
+3. Verify, read-only, that `data_migrations` records the historical `normalize-mailbox-records` conversion as completed with its original checksum (`scripts/completed-migration.ts`). That conversion has run in every deployed database and its runner has been removed; a missing, incomplete or mismatched ledger stops the release in maintenance and nothing is converted.
 4. Compare the live database with the latest TypeScript Drizzle schema. Only missing tables/indexes are applied automatically. Existing column, foreign-key, CHECK or index drift stops for explicit review. No table/column drop or reconstruction is permitted.
 5. Upload and verify a separate schema-aware recovery version before routing business traffic to the active version. Record that version ID and exact recovery command in `test-results/deployment/result.json` and the workflow log.
 6. Deploy the active version, then verify D1 identity, maintenance exit, disabled cleanup and registration limits. The existing anonymous Agent Start publication check follows, then the release job performs a live credential-free MCP initialize, tool discovery and public D1 registry read at `/mcp`. Neither post-deploy check proves OAuth provisioning or two real Agent connections.
 
-`src/schema.ts` is the only maintained structure definition. Generated SQL exists only as a reviewed runtime plan, not a numbered SQL history. `test/fixtures/legacy-mailbox.sql` is an old-format fixture solely for migration tests. The existing database's `d1_migrations` history is retained untouched; it does not control the new schema.
+`src/schema.ts` is the only maintained structure definition. Generated SQL exists only as a reviewed runtime plan, not a numbered SQL history. `test/fixtures/legacy-mailbox.sql` is an old-format fixture used to prove deployments refuse unconverted storage. The existing database's `d1_migrations` history is retained untouched; it does not control the new schema.
 
 Use the workflow, or `node scripts/deploy.ts` with the approved Cloudflare environment, only when remote migration/deployment is authorized. The remote connection uses the pinned Wrangler `getPlatformProxy` with `remote:true` on the one verified D1 binding, so `db.batch()` remains a D1 transaction. There is no sequential REST transaction emulation, new remote credential or public migration endpoint. Temporary configs have owner-only permissions, exclude the API token, and are removed on exit.
 
-A failure before active cutover leaves maintenance in place. A failure after the active deployment reports that stage explicitly; it does not silently restore old code or data. Use the retained **schema-aware read-only recovery version** to read the current normalized tables, including subsequent registrations, revocations, accepted/deleted contacts and ACKs. Recovery rejects writes and streaming and skips scheduled cleanup and public rate writes. It is a service recovery option with read-only availability, not a full business rollback. Never deploy the pre-conversion Worker or restore a frozen database snapshot over newer writes.
+A failure before active cutover leaves maintenance in place. A failure after the active deployment reports that stage explicitly; it does not silently restore old code or data. Use the retained **schema-aware read-only recovery version** to read the current normalized tables, including subsequent registrations, revocations, accepted/deleted contacts and ACKs. Recovery rejects writes and streaming and skips scheduled cleanup and public rate writes. It is a service recovery option with read-only availability, not a full business rollback. Never deploy a pre-conversion Worker or restore a frozen database snapshot over newer writes.
 
-Local tests exercise conversion, interrupted resume, orchestration and recovery against actual workerd/D1. Remote success requires a successful authorized deployment and its post-deployment checks, including the public MCP probe. The release probe never sends a control or bearer token, makes one bounded public registry read, rejects malformed or oversized responses and does not call private tools. Local tests do not establish deployment, OAuth authorization or independent Agent messaging. Concurrent deployment workflows remain serialized without cancelling an in-progress conversion.
+Local tests exercise the ledger check, orchestration and recovery against actual workerd/D1. Remote success requires a successful authorized deployment and its post-deployment checks, including the public MCP probe. The release probe never sends a control or bearer token, makes one bounded public registry read, rejects malformed or oversized responses and does not call private tools. Local tests do not establish deployment, OAuth authorization or independent Agent messaging. Concurrent deployment workflows remain serialized without cancelling an in-progress release.
 
 The page uses relative API paths and new relay addresses use the actual request URL origin, including `https://demo.weave-389.workers.dev/`. `WEAVE_HOST` is not used. Forwarded host/protocol headers are ignored. Keep the existing D1 binding named **db**; the runtime accesses `env.db`, with no database password or management token in the app. See [D1 bindings](https://developers.cloudflare.com/d1/get-started/#3-bind-your-worker-to-your-d1-database) and [D1 transactional batches](https://developers.cloudflare.com/d1/worker-api/d1-database/#batch).
 
