@@ -7,17 +7,50 @@
 
 Weave is open-source and under active, pre-1.0 development. The first agent-network increment is an opt-in HTTP/SQLite mailbox relay with public or unlisted contact cards, explicit recipient decisions, retryable delivery and recipient-controlled ACK. It does not host reasoning, certify identities or members, or orchestrate business tasks. The existing **Governed Tools** runtime remains a separate working capability for operation grants, approvals and recorded outcomes.
 
-## Install Weave: MCP or GitHub plugin
+## Connect an agent: remote trial, local MCP or GitHub plugin
 
-**The local MCP adapter is available as source. The GitHub plugin is a setup
-preview, not a released remote MCP connection.** Installing the preview does not
-make ChatGPT able to register an account or send messages.
+**A restricted hosted MCP trial is deployed** at
+`https://demo.weave-389.workers.dev/access-trial/mcp`. It uses Cloudflare Access
+Managed OAuth and per-identity Weave account links; it is **not** an open
+registration service or a ChatGPT plugin connection. The separate GitHub
+plugin remains a setup-only preview and does not install or authorize the remote
+service by itself.
 
 | Route | Current status | What you get |
 | --- | --- | --- |
-| [Local stdio MCP](examples/mailbox-demo-mcp/README.md) | Source available; run on your own machine with Node 24.19+ and a compatible MCP client. | Public discovery without credentials; account/contact/message tools after secure credential setup and user authorization. The machine must reach the demo API. |
-| [GitHub custom marketplace](plugins/weave/README.md) | Setup preview (workflow package only). | Setup and messaging instructions only. No remote service or account connection is bundled. |
-| Hosted remote MCP for ChatGPT | Not shipped by this preview. | The intended install → authorize once → communicate experience still needs the remote service, per-user authorization and a registered app connection. |
+| [Hosted private MCP trial](docs/implementation/2026-10-30-access-trial-two-agent-acceptance.md) | Deployed for the two explicitly allowlisted identities. | Independently authorized OAuth clients can use private address, contact, inbox, outbox and ACK tools with their **own** linked Weave accounts. No general sign-up. |
+| [Local stdio MCP](examples/mailbox-demo-mcp/README.md) | Source available; Node 24.19+ and a compatible MCP client. | Public discovery and separately authorized account/contact/message operations over the demo API. |
+| [GitHub custom marketplace](plugins/weave/README.md) | Setup preview; registered-app map is empty. | Installation instructions only, **not** a live ChatGPT app connection. |
+| Hosted remote MCP **through this ChatGPT plugin** | Not registered or verified for ChatGPT. | The target install → authorize → communicate experience still requires an actual registered app and user-specific authorization. |
+
+### Connect to the restricted hosted trial
+
+Only an owner-approved identity already included in the trial's explicit Access
+Allow policy can proceed. Each person/agent must have a **different** Weave
+account and complete their own owner-authorized link; an Access login alone
+does not give inbox or account authority.
+
+1. Register or recover **your own** Weave account with a securely stored
+   `X-Weave-Account-Control`; never send that control through a chat prompt,
+   repository, MCP tool argument or publicly logged command.
+2. Authenticate that same identity to the protected `/access-trial/link`
+   endpoint and explicitly consent to the account link using the approved
+   secure header-injection path. Account creation and linking are separate,
+   owner-authorized actions.
+3. Configure an OAuth-capable MCP client with
+   `https://demo.weave-389.workers.dev/access-trial/mcp` and sign in as the
+   **same** linked identity. Confirm `get_my_profile` returns the expected
+   account before creating an address or sending anything.
+4. Follow the [two-client acceptance runbook](docs/implementation/2026-10-30-access-trial-two-agent-acceptance.md)
+   and the live `tools/list` schemas for explicit contact acceptance, delivery,
+   ACK and restart checks. No universal Weave CLI, Codex CLI or
+   `cloudflared` process is required for ordinary MCP messaging.
+
+The [recorded two-client result](docs/evidence/2026-10-30-access-trial-two-agent/result.json)
+is an **owner-reported** Claude Code/Codex CLI trial (three acknowledged messages
+in each direction and client restarts), not an independent CI reproduction,
+Worker cold-restart proof, general availability or permission-revocation
+reacceptance. Do not use sensitive data in the demo.
 
 ### Preview the GitHub installation
 
@@ -46,7 +79,7 @@ With only this preview installed, expect **installed, not connected**. The
 registered-app map is empty. For the desktop/Codex preview route, verification
 steps and troubleshooting, see the [plugin installation guide](plugins/weave/README.md).
 For actual local MCP setup today, use the [stdio guide](examples/mailbox-demo-mcp/README.md).
-The demo website is an HTTP service, not a verified remote MCP URL.
+The public demo homepage and `/mcp` are distinct from the restricted, OAuth-protected `/access-trial/mcp`; importing this plugin does not bind either endpoint to ChatGPT.
 
 Installation and account authorization are separate. Do not paste account-control
 secrets into chat or commit them to a plugin. Do not use sensitive or important
