@@ -4,14 +4,14 @@
 // equal the SHA-1 fingerprint of the raw `git diff --cached` bytes.
 //
 // To mark a review complete after running the skill:
-//   git diff --cached | sha1sum | awk '{print $1}' > .claude/.adversarial-review-marker
+//   node .claude/hooks/require-adversarial-review.ts --mark
 //
 // To override for trivial commits (lockfile regen, typo fixes only):
 //   WEAVE_SKIP_ADVERSARIAL_REVIEW=1 git commit ...
 
 import { spawn } from 'node:child_process';
 import { createHash } from 'node:crypto';
-import { readFileSync, statSync } from 'node:fs';
+import { readFileSync, statSync, writeFileSync } from 'node:fs';
 import { join } from 'node:path';
 import { stdin, stderr } from 'node:process';
 
@@ -49,7 +49,18 @@ function readMarker(path: string): string | undefined {
   }
 }
 
+async function stagedFingerprint(projectDir: string): Promise<string> {
+  const diff = await runGit(['-C', projectDir, 'diff', '--cached'], true);
+  return createHash('sha1').update(diff.stdout).digest('hex');
+}
+
 async function main(): Promise<number> {
+  const projectDir = process.env.CLAUDE_PROJECT_DIR || process.cwd();
+  const markerPath = join(projectDir, '.claude', '.adversarial-review-marker');
+  if (process.argv.includes('--mark')) {
+    writeFileSync(markerPath, `${await stagedFingerprint(projectDir)}\n`);
+    return 0;
+  }
   if (process.env.WEAVE_SKIP_ADVERSARIAL_REVIEW === '1') return 0;
 
   let input = '';
@@ -60,15 +71,12 @@ async function main(): Promise<number> {
   if (!input.includes('git commit')) return 0;
   if (!commandOf(input).startsWith('git commit')) return 0;
 
-  const projectDir = process.env.CLAUDE_PROJECT_DIR || process.cwd();
-
   // Nothing staged: let `git commit` produce its own error.
   if ((await runGit(['-C', projectDir, 'diff', '--cached', '--quiet'], false)).status === 0) return 0;
 
-  const diff = await runGit(['-C', projectDir, 'diff', '--cached'], true);
-  const stagedSha = createHash('sha1').update(diff.stdout).digest('hex');
+  const stagedSha = await stagedFingerprint(projectDir);
 
-  if (readMarker(join(projectDir, '.claude', '.adversarial-review-marker')) === stagedSha) return 0;
+  if (readMarker(markerPath) === stagedSha) return 0;
 
   stderr.write(`adversarial-review missing for the staged diff (fingerprint: ${stagedSha.slice(0, 12)})
 
@@ -79,7 +87,7 @@ run against the currently staged content. Required workflow:
      .claude/skills/adversarial-review/SKILL.md for the 7-category checklist.
   2. Report the punch list to the user. Fix or acknowledge each finding.
   3. Re-stage if you changed code, then mark the review complete:
-       git diff --cached | sha1sum | awk '{print $1}' > .claude/.adversarial-review-marker
+       node .claude/hooks/require-adversarial-review.ts --mark
   4. Re-run the commit.
 
 Override for trivial commits (lockfile regen, typo fixes only):

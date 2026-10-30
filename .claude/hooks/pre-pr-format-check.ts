@@ -30,12 +30,10 @@ const excludes = [
 
 type FormatResult = { missing: boolean; status: number | null; output: string };
 
-function runFormat(cwd: string): Promise<FormatResult> {
+function runDotnet(cwd: string, args: string[]): Promise<FormatResult> {
   return new Promise(resolve => {
     const chunks: Buffer[] = [];
-    const child = spawn('dotnet',
-      ['format', 'csharp/Weave.slnx', '--no-restore', '--verify-no-changes', '--exclude', ...excludes],
-      { cwd, stdio: ['ignore', 'pipe', 'pipe'] });
+    const child = spawn('dotnet', args, { cwd, stdio: ['ignore', 'pipe', 'pipe'] });
     const collect = (chunk: Buffer) => chunks.push(chunk);
     child.stdout.on('data', collect);
     child.stderr.on('data', collect);
@@ -52,11 +50,15 @@ function runFormat(cwd: string): Promise<FormatResult> {
   });
 }
 
-const result = await runFormat(process.env.CLAUDE_PROJECT_DIR || '.');
+const cwd = process.env.CLAUDE_PROJECT_DIR || '.';
+// Like CI, build the analyzer generator in Debug first; format loads it to resolve generated types.
+const generator = await runDotnet(cwd, ['build', 'csharp/tools/Weave.SourceGen/Weave.SourceGen.csproj', '-c', 'Debug']);
+const result = generator.missing || generator.status !== 0 ? generator
+  : await runDotnet(cwd, ['format', 'csharp/Weave.slnx', '--no-restore', '--verify-no-changes', '--exclude', ...excludes]);
 
 // No SDK available: don't block; CI still gates format.
 if (!result.missing && result.status !== 0) {
-  const reason = 'dotnet format --verify-no-changes failed. Fix with:\n' +
+  const reason = 'Generator build or dotnet format --verify-no-changes failed. Fix with:\n' +
     `  dotnet format csharp/Weave.slnx --no-restore --exclude ${excludes.join(' ')}\n\n` +
     result.output.replace(/[\r\n]+$/, '');
   stdout.write(`${JSON.stringify({
