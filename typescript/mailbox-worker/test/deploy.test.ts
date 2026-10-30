@@ -268,8 +268,7 @@ const existingAuthService=[
     dbBinding,
     {name:'AUTH_SERVER',type:'service',service:'approved-auth-worker'},
     {name:'OAUTH_ISSUER',type:'plain_text',text:'https://auth.weave.example'},
-    {name:'OAUTH_RESOURCE',type:'plain_text',text:'https://demo.weave-389.workers.dev/mcp'},
-    {name:'OAUTH_ACCOUNT_PROOF_KEY',type:'secret_text'}
+    {name:'OAUTH_RESOURCE',type:'plain_text',text:'https://demo.weave-389.workers.dev/mcp'}
 ];
 test('existing operator-provisioned OAuth Service Binding survives maintenance, recovery and active deploy without provisioning',async()=>{
     const f=fixture({bindingResult:existingAuthService});
@@ -280,7 +279,6 @@ test('existing operator-provisioned OAuth Service Binding survives maintenance, 
         assert.deepEqual(config.services,[{binding:'AUTH_SERVER',service:'approved-auth-worker'}]);
         assert.equal(config.vars.OAUTH_ISSUER,undefined,'Do not materialize operator OAuth settings into temporary config');
         assert.equal(config.vars.OAUTH_RESOURCE,undefined,'Do not materialize operator OAuth settings into temporary config');
-        assert.equal(JSON.stringify(config).includes('OAUTH_ACCOUNT_PROOF_KEY'),false,'Do not serialize an installed proof key');
     }
     assert.equal(f.commands.length,3);
     assert.equal(f.closed,true);
@@ -300,8 +298,8 @@ test('lost existing OAuth Service Binding after maintenance stops before any D1 
     assert.deepEqual(f.events,['migration','maintenance']);
     assert.equal(f.closed,true);
 });
-test('OAuth issuer or account-proof secret lost after maintenance stops before the D1 migration check',async()=>{
-    for(const missing of ['OAUTH_ISSUER','OAUTH_ACCOUNT_PROOF_KEY']){
+test('OAuth issuer or resource lost after maintenance stops before the D1 migration check',async()=>{
+    for(const missing of ['OAUTH_ISSUER','OAUTH_RESOURCE']){
         const f=fixture({bindingResult:existingAuthService}),original=f.options.fetchImpl;
         f.options.fetchImpl=async (...args)=>{
             const response=await original(...args);
@@ -330,15 +328,14 @@ test('untrusted or malformed Service Bindings cannot be smuggled into a code-onl
     }
 });
 
-test('a previously approved OAuth Service Binding can use default or named RPC entrypoint without requiring optional first-party proof',async()=>{
+test('a previously approved OAuth Service Binding can use default or named RPC entrypoint',async()=>{
     for(const entrypoint of [undefined,'AuthServer']){
-        const bindingResult=existingAuthService.filter(b=>b.name!=='OAUTH_ACCOUNT_PROOF_KEY').map(b=>
+        const bindingResult=existingAuthService.map(b=>
             b.name==='AUTH_SERVER'&&entrypoint?{...b,entrypoint}:b);
         const f=fixture({bindingResult});
         await deploy(f.options);
         for(const config of f.configs){
             assert.deepEqual(config.services,[{binding:'AUTH_SERVER',service:'approved-auth-worker',...(entrypoint?{entrypoint}:{})}]);
-            assert.ok(!JSON.stringify(config).includes('OAUTH_ACCOUNT_PROOF_KEY'));
         }
         assert.deepEqual(f.events,['migration','maintenance','schema','recovery','active']);
     }
@@ -347,13 +344,14 @@ test('a previously approved OAuth Service Binding can use default or named RPC e
 
 const firstPartyIssuer='https://weave-auth-demo.weave-389.workers.dev';
 const firstPartyResource='https://demo.weave-389.workers.dev/mcp';
-const preapprovedResource=[
-    dbBinding,{name:'OAUTH_ACCOUNT_PROOF_KEY',type:'secret_text'}
-];
+const preapprovedResource=[dbBinding];
 const preapprovedIssuer=[
     {name:'OAUTH_ISSUER',type:'plain_text',text:firstPartyIssuer},
     {name:'OAUTH_RESOURCE',type:'plain_text',text:firstPartyResource},
-    {name:'OAUTH_ACCOUNT_PROOF_KEY',type:'secret_text'},
+    {name:'GITHUB_CLIENT_ID',type:'plain_text',text:'Iv23liPublicClientId'},
+    {name:'GITHUB_CLIENT_SECRET',type:'secret_text'},
+    {name:'HUMAN_SESSION_KEY',type:'secret_text'},
+    {name:'MAILBOX',type:'service',service:'demo',entrypoint:'HumanDirectory'},
     {name:'OAUTH_KV',type:'kv_namespace',namespace_id:'b'.repeat(32)},
     {name:'CONSENT_NONCES',type:'durable_object_namespace',class_name:'ConsentNonce'}
 ];
@@ -431,14 +429,24 @@ test('explicit one-time first-party bootstrap attaches the approved existing AS 
             'The shipped AuthServer is a default export; the service binding MUST NOT select an absent named entrypoint.');
         assert.equal(config.vars.OAUTH_ISSUER,firstPartyIssuer);
         assert.equal(config.vars.OAUTH_RESOURCE,firstPartyResource);
-        assert.equal(JSON.stringify(config).includes('OAUTH_ACCOUNT_PROOF_KEY'),false);
+        assert.equal(JSON.stringify(config).includes('GITHUB_CLIENT_SECRET'),false);
+        assert.equal(JSON.stringify(config).includes('HUMAN_SESSION_KEY'),false);
     }
     assert.equal(f.closed,true);
 });
 test('OAuth binding bootstrap fails closed before maintenance when preapproved infrastructure or public issuer is absent',async()=>{
     const cases=[
-        firstPartyBootstrap({bindings:[dbBinding]}),
+        firstPartyBootstrap({bindings:[...preapprovedResource,{name:'OAUTH_ISSUER',type:'plain_text',text:firstPartyIssuer}]}),
         firstPartyBootstrap({bindings:[...preapprovedResource,{name:'OAUTH_CLIENT_SECRET',type:'secret_text'}]}),
+        // Human sign-in prerequisites on the AS: GitHub app, session key and the HumanDirectory binding.
+        ...['GITHUB_CLIENT_ID','GITHUB_CLIENT_SECRET','HUMAN_SESSION_KEY','MAILBOX'].map(name=>
+            firstPartyBootstrap({asBindings:preapprovedIssuer.filter(x=>x.name!==name)})),
+        firstPartyBootstrap({asBindings:preapprovedIssuer.map(x=>x.name==='GITHUB_CLIENT_SECRET'?{...x,type:'plain_text',text:'leaked'}:x)}),
+        firstPartyBootstrap({asBindings:preapprovedIssuer.map(x=>x.name==='GITHUB_CLIENT_ID'?{...x,text:'bad id'}:x)}),
+        firstPartyBootstrap({asBindings:[...preapprovedIssuer,{name:'HUMAN_SESSION_KEY',type:'secret_text'}]}),
+        firstPartyBootstrap({asBindings:preapprovedIssuer.map(x=>x.name==='MAILBOX'?{...x,entrypoint:undefined}:x)}),
+        firstPartyBootstrap({asBindings:preapprovedIssuer.map(x=>x.name==='MAILBOX'?{...x,service:'other-worker'}:x)}),
+        firstPartyBootstrap({asBindings:preapprovedIssuer.map(x=>x.name==='MAILBOX'?{...x,environment:'staging'}:x)}),
         firstPartyBootstrap({asBindings:preapprovedIssuer.filter(x=>x.name!=='OAUTH_KV')}),
         firstPartyBootstrap({asBindings:preapprovedIssuer.map(x=>x.name==='OAUTH_KV'?{...x,namespace_id:'bad'}:x)}),
         firstPartyBootstrap({asBindings:preapprovedIssuer.filter(x=>x.name!=='CONSENT_NONCES')}),

@@ -26,7 +26,7 @@ test("readConsent_InvalidBodies_ReturnNull",async()=>{
   for(const value of [
     "handle=A&handle=B&decision=approve&agent=new&agentName=x",
     "handle="+handle+"&decision=approve&agent="+account+"&accountId=forged",
-    "handle="+handle+"&decision=approve&proof=wop1.AA.BB&agent="+account,
+    "handle="+handle+"&decision=approve&proof=AA.BB&agent="+account,
     "handle="+handle+"&decision=approve&agent="+account+"&agent="+randomUUID(),
     "handle="+handle+"&decision=approve&agent="+account+"&agentName=Claude",
     "handle="+handle+"&decision=approve&agentName=Claude",

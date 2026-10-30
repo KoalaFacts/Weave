@@ -95,7 +95,7 @@ test('real workerd consent nonce atomically blocks parallel replay across cold r
     const attempts=await Promise.all(Array.from({length:8},()=>second.fetch(url,request('DELETE',challenge))));
     const statuses=attempts.map(x=>x.status).sort((a,b)=>a-b);
     assert.deepEqual(statuses,[204,...Array.from({length:7},()=>409)],
-      'only one parallel authorization can consume a signed proof challenge');
+      'only one parallel authorization can consume a consent challenge');
     assert.equal((await second.fetch(url)).status,404,'consumed challenge is no longer available');
     assert.equal((await second.fetch(url,request('DELETE',challenge))).status,409,'replay must not reauthorize');
 

@@ -2,7 +2,7 @@ name: OAuth authorization Worker isolated verification
 
 on:
   push:
-    branches: [main, feat/oauth-existing-account-proof]
+    branches: [main]
     paths:
       - typescript/auth-worker/**
       - typescript/mailbox-worker/src/**
@@ -92,7 +92,7 @@ jobs:
         run: node --test test/remote-oauth-identity-links.test.ts
       - name: Typecheck OAuth provider 1.2.4 Service Binding and Durable Objects
         run: npm run typecheck
-      - name: Run portable proof and consent tests
+      - name: Run portable consent and sign-in tests
         run: npm run test:portable
       - name: Typecheck and smoke-bundle nonsecret opt-in demo auth manifest (never deploy)
         run: |
@@ -103,6 +103,7 @@ jobs:
           WEAVE_AUTH_KV_NAMESPACE_ID: bbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbb
           OAUTH_ISSUER: https://weave-auth-demo.weave-389.workers.dev
           OAUTH_RESOURCE: https://demo.weave-389.workers.dev/mcp
+          GITHUB_CLIENT_ID: dummy-public-client-id
       - name: Bundle Cloudflare authorization Worker without publishing
         run: npm run build
       - name: Exercise real workerd Durable Object consent replay and cold restart

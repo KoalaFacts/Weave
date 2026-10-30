@@ -145,11 +145,10 @@ export async function deploy({env=process.env,fetchImpl=fetch,run,root=directory
             const matches=bindings.filter(binding=>binding?.name===name);
             return matches.length===1&&matches[0].type===type&&(value===undefined||matches[0].text===value);
         };
-        // Install the proof secret separately beforehand, but stage issuer,
-        // resource and AUTH_SERVER together in the maintenance upload. Installing
-        // only issuer/resource on the live Worker would make OAuth fail closed.
-        if(!single(worker.bindings,'OAUTH_ACCOUNT_PROOF_KEY','secret_text')||
-            ['OAUTH_ISSUER','OAUTH_RESOURCE','OAUTH_INTROSPECTION_URL','OAUTH_CLIENT_ID',
+        // Stage issuer, resource and AUTH_SERVER together in the maintenance
+        // upload. Installing only issuer/resource on the live Worker would make
+        // OAuth fail closed. The resource Worker holds no shared AS secret.
+        if(['OAUTH_ISSUER','OAUTH_RESOURCE','OAUTH_INTROSPECTION_URL','OAUTH_CLIENT_ID',
              'OAUTH_CLIENT_SECRET','OAUTH_INTROSPECTION_TRUSTED_ORIGIN']
                 .some(name=>worker.bindings.some(binding=>binding?.name===name))||
             (oauthFlags.length!==0&&oauthFlags[0].text!=='false'))
@@ -157,10 +156,19 @@ export async function deploy({env=process.env,fetchImpl=fetch,run,root=directory
         const as=await inspect<WorkerSettings>('/workers/scripts/weave-auth-demo/settings','Approved existing OAuth authorization Worker');
         const kv=as.bindings?.filter(binding=>binding?.name==='OAUTH_KV')??[];
         const nonce=as.bindings?.filter(binding=>binding?.name==='CONSENT_NONCES')??[];
+        // Human sign-in is mandatory on the AS: GitHub OAuth app, session key and
+        // the private Service Binding to this Worker's HumanDirectory entrypoint.
+        const mailbox=as.bindings?.filter(binding=>binding?.name==='MAILBOX')??[];
+        const clientId=as.bindings?.filter(binding=>binding?.name==='GITHUB_CLIENT_ID')??[];
         if(!Array.isArray(as.bindings)||
             !single(as.bindings,'OAUTH_ISSUER','plain_text',asIssuer)||
             !single(as.bindings,'OAUTH_RESOURCE','plain_text',resource)||
-            !single(as.bindings,'OAUTH_ACCOUNT_PROOF_KEY','secret_text')||
+            clientId.length!==1||clientId[0].type!=='plain_text'||typeof clientId[0].text!=='string'||
+            !/^[A-Za-z0-9._-]{1,128}$/.test(clientId[0].text)||
+            !single(as.bindings,'GITHUB_CLIENT_SECRET','secret_text')||
+            !single(as.bindings,'HUMAN_SESSION_KEY','secret_text')||
+            mailbox.length!==1||mailbox[0].type!=='service'||mailbox[0].service!=='demo'||
+            mailbox[0].entrypoint!=='HumanDirectory'||mailbox[0].environment!==undefined||
             kv.length!==1||kv[0].type!=='kv_namespace'||
             !/^[a-f0-9]{32}$/i.test(kv[0].namespace_id??'')||
             nonce.length!==1||nonce[0].type!=='durable_object_namespace'||
@@ -241,13 +249,6 @@ export async function deploy({env=process.env,fetchImpl=fetch,run,root=directory
                 oauthExisting.set(name,found[0]);
             }
         }
-        // The first-party proof route is opt-in independently of the trusted
-        // authorization Service Binding. Preserve a pre-existing signing secret
-        // without requiring this provider-specific ownership ceremony.
-        const proofs=worker.bindings.filter(binding=>binding?.name==='OAUTH_ACCOUNT_PROOF_KEY');
-        if(proofs.length>1||proofs.some(binding=>binding.type!=='secret_text'))
-            throw Error('Invalid existing OAuth account-proof key binding; no mutation attempted.');
-        if(proofs.length===1)oauthExisting.set('OAUTH_ACCOUNT_PROOF_KEY',proofs[0]);
         let issuer:URL;
         try{issuer=new URL(oauthExisting.get('OAUTH_ISSUER')!.text as string);}
         catch{throw Error('Invalid existing OAuth issuer; no mutation attempted.');}

@@ -17,8 +17,6 @@ import { sweep } from './cleanup';
 import { budgetDatabase } from './budget';
 import { stream, type Context } from './stream';
 import { authenticate, register } from './accounts';
-import { issueAccountProof, validAccountProofChallenge, validateAccountProofBinding } from './account-proof';
-import { accountProofPage, accountProofScript } from './account-proof-page';
 import { putCard } from './cards';
 import { decide, requestContact, setBlocked } from './contacts';
 import { deleteContact, ownContacts } from './contact-links';
@@ -47,11 +45,6 @@ export default {
         try {
             const url = new URL(request.url), secret = control(request), method = request.method;
             const respond=(value:unknown)=>json(value,200,legacyResponse(request));
-            const proofConfig=()=>{
-                const cfg={issuer:env.OAUTH_ISSUER??'',resource:env.OAUTH_RESOURCE??'',key:env.OAUTH_ACCOUNT_PROOF_KEY??''};
-                try{validateAccountProofBinding(cfg,url.origin);}catch{fail(503,'storage');}
-                return cfg;
-            };
             if (url.protocol !== 'https:' && !['localhost','127.0.0.1','[::1]'].includes(url.hostname)) fail(400,'invalid');
             if (method === 'GET' && url.pathname === '/') return demo();
             if (method === 'GET' && url.pathname === '/agent-start.md') return agentStart();
@@ -65,11 +58,6 @@ export default {
                 return demoOAuthClientMetadata();
             }
             if(env.MAINTENANCE_MODE==='true')fail(503,'maintenance',30);
-            if(method==='GET' && (url.pathname==='/account-proof'||url.pathname==='/account-proof.js')){
-                if(env.RECOVERY_READ_ONLY==='true')fail(503,'maintenance',30);
-                const cfg=proofConfig();
-                return url.pathname==='/account-proof'?accountProofPage(cfg.issuer,cfg.resource):accountProofScript();
-            }
             // Protected-resource discovery is an opt-in integration with an
             // external OAuth 2.1 authorization server. Missing/partial config
             // cannot silently enable a shared or anonymous account.
@@ -177,21 +165,6 @@ export default {
             if (method === 'POST' && url.pathname === '/v1/accounts') return respond(await register(env,request,secret,await body(request)));
             if(env.RECOVERY_READ_ONLY!=='true'&&method==='GET'&&['/v1/directory','/v1/directory/address','/v1/contacts/cards','/v1/contacts/card'].includes(url.pathname))await publicReadRate(env,request);
             const account = await authenticate(env,secret);
-            // Local owner check only; do not proxy account controls to an AS.
-            // The challenge-bound handoff below does not forward the control.
-            if(method==='GET' && url.pathname==='/v1/accounts/me') {
-                if(!account)fail(401,'unauthenticated');
-                return respond({accountId:account.accountId});
-            }
-            if(method==='POST' && url.pathname==='/v1/accounts/proof') {
-                if(!account)fail(401,'unauthenticated');
-                // The form and the direct API share precisely the same fail-closed trust boundary.
-                const cfg=proofConfig();
-                const input=await body(request);
-                object(input,['challenge']);
-                try{validAccountProofChallenge(input.challenge);}catch{fail(400,'invalid');}
-                return respond({proof:await issueAccountProof(cfg,account.accountId,input.challenge)});
-            }
             // Owner linking is an explicit two-credential action, never inferred
             // from an OAuth subject, email, token or MCP tool argument. The
             // long-lived control goes only to this Weave resource endpoint.
