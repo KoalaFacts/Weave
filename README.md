@@ -67,7 +67,7 @@ release procedure, see [releasing Weave](docs/releasing.md).
 
 ## Try two independent endpoints
 
-From a checkout, install a stable .NET 10 SDK (10.0.400 or later) and Node 24.19+. [global.json](global.json) accepts installed 10.0.4xx and later feature bands and patches through `latestMinor`; its `10.0.400` baseline is not an exact installation requirement and it does not select .NET 11. Check `dotnet --version` from the repository root, then build the mailbox host and run the [independent endpoint walkthrough](examples/agent-network/README.md):
+From a checkout, install the .NET 11 SDK (release candidate until GA), the .NET 10 runtime and Node 24.19+. The product library and CLI target both .NET 10 and .NET 11; [global.json](global.json) selects the newest installed SDK, including prereleases. Check `dotnet --version` from the repository root, then build the mailbox host and run the [independent endpoint walkthrough](examples/agent-network/README.md):
 
 ```bash
 dotnet restore csharp/Weave.slnx --locked-mode

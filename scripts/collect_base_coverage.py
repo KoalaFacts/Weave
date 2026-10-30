@@ -68,7 +68,7 @@ def collect_suites(root, output, projects, records):
         # Keep flags identical to CoverageCommand. Only the evidence destination differs.
         arguments = ['dotnet', 'dotnet-coverage', 'collect', '-f', 'cobertura', '-o', str(report),
                      '-l', str(output / f'{suite}.collector.log'), '--', 'dotnet', 'test',
-                     '--project', project, '--no-build', '--no-restore', '-c', 'Release']
+                     '--project', str(Path(root) / project), '--no-build', '--no-restore', '-c', 'Release']
         if run_logged(root, output, suite, arguments, records) != 0:
             successful = False
         if not report.is_file() or report.stat().st_size == 0:

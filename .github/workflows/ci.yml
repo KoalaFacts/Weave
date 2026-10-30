@@ -75,7 +75,7 @@ jobs:
           WEAVE_DASHBOARD_EVIDENCE: ${{ runner.temp }}/dashboard-browser-evidence
         run: >-
           dotnet test --solution csharp/Weave.slnx --no-build -c Release
-          -- --report-xunit-trx --results-directory ./test-results
+          -- --report-xunit-trx --results-directory ${{ github.workspace }}/test-results
 
       - name: Upload Dashboard browser evidence
         if: always()
@@ -221,8 +221,8 @@ jobs:
         run: dotnet build csharp/tests/Weave.Cli.Tests/Weave.Cli.Tests.csproj --no-restore -c Release
       - name: Test CLI boundaries on Windows
         run: >-
-          dotnet test --project csharp/tests/Weave.Cli.Tests/Weave.Cli.Tests.csproj --no-build -c Release
-          -- --report-xunit-trx --results-directory ./test-results
+          dotnet test --project ${{ github.workspace }}/csharp/tests/Weave.Cli.Tests/Weave.Cli.Tests.csproj --no-build -c Release
+          -- --report-xunit-trx --results-directory ${{ github.workspace }}/test-results
       - name: Retain Windows CLI results
         if: always()
         uses: actions/upload-artifact@043fb46d1a93c77aae656e7c1c64a875d1fc6a0a # v7

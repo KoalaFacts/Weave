@@ -36,12 +36,16 @@
     <Using Include="Shouldly" />
   </ItemGroup>
 
-  <!-- Keep the existing locked build-tool graph stable across .NET 10 SDK servicing releases. -->
+  <!-- Keep the locked build-tool graph stable across SDK servicing and .NET 11 prerelease updates;
+       bump WeaveILLinkTasksNextVersion and regenerate lockfiles when CI moves to a newer .NET 11 SDK. -->
   <Target Name="_PinILLinkPack" BeforeTargets="ProcessFrameworkReferences">
     <ItemGroup>
       <KnownILLinkPack Update="Microsoft.NET.ILLink.Tasks"
                       Condition="'%(KnownILLinkPack.TargetFramework)' == 'net10.0'"
                       ILLinkPackVersion="$(WeaveILLinkTasksVersion)" />
+      <KnownILLinkPack Update="Microsoft.NET.ILLink.Tasks"
+                      Condition="'%(KnownILLinkPack.TargetFramework)' == 'net11.0'"
+                      ILLinkPackVersion="$(WeaveILLinkTasksNextVersion)" />
     </ItemGroup>
   </Target>
 
