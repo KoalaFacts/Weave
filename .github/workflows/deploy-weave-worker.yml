@@ -22,7 +22,7 @@ on:
         type: boolean
         default: false
       access_trial_application:
-        description: One-time owner-approved Access trial activation (production, maintain mode); the exact Access application UUID from provision-weave-access.yml, otherwise empty
+        description: One-time owner-approved Access trial activation (production, maintain mode); the exact UUID of the already provisioned Access application, otherwise empty
         required: false
         type: string
         default: ''
