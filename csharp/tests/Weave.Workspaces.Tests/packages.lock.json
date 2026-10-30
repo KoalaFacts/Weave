@@ -1135,7 +1135,7 @@
           "Microsoft.AspNetCore.OpenApi": "[10.0.14, )",
           "Microsoft.Orleans.Serialization.SystemTextJson": "[10.4.1, )",
           "Microsoft.Orleans.Server": "[10.4.1, )",
-          "Scalar.AspNetCore": "[2.18.5, )",
+          "Scalar.AspNetCore": "[2.18.6, )",
           "Weave.Agents": "[1.0.0, )",
           "Weave.CliTools": "[1.0.0, )",
           "Weave.Dapr": "[1.0.0, )",
@@ -1660,9 +1660,9 @@
       },
       "Scalar.AspNetCore": {
         "type": "CentralTransitive",
-        "requested": "[2.18.5, )",
-        "resolved": "2.18.5",
-        "contentHash": "m7sb2hqbdUXPBa4MvFy7GZ8SU4YGDYhaFkaiATXCMRhIDMA6kJrRQnBO4Z5PRz175sRfYfSXBlyrxckbhhrQ3A=="
+        "requested": "[2.18.6, )",
+        "resolved": "2.18.6",
+        "contentHash": "p1/caWXu7+dmGCVm57hNIIzPz9PhxxUSd8ska9Nq0zbfDFajjGrfo6cw7Lm5LHCVaK6BFa0w8W3pYCERBpC2lQ=="
       },
       "SQLitePCLRaw.bundle_e_sqlite3": {
         "type": "CentralTransitive",
