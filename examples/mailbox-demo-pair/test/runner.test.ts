@@ -4,6 +4,8 @@ import {existsSync,mkdtempSync,rmSync} from 'node:fs';
 import {tmpdir} from 'node:os';
 import {join} from 'node:path';
 import {randomUUID} from 'node:crypto';
+// The pair runtime refuses Windows: private state requires POSIX owner-only storage.
+const posixOnly={skip:process.platform==='win32'&&'Pair private state requires POSIX owner-only storage'};
 
 test('read-only doctor reports missing runtime, vault and network without writes',async()=>{
     assert.ok(existsSync(new URL('../run.ts',import.meta.url)),'Missing pair launcher');
@@ -70,7 +72,7 @@ test('coordinator skips all further turns when shutdown is requested at cold han
     assert.deepEqual(steps,[1,2]);
 });
 
-test('a released run lock does not permit re-running a retained attempt',async t=>{
+test('a released run lock does not permit re-running a retained attempt',posixOnly,async t=>{
     const {claimAttempt}=await import('../run.ts');
     const dir=mkdtempSync(join(tmpdir(),'weave-attempt-'));t.after(()=>rmSync(dir,{recursive:true,force:true}));
     const release=claimAttempt(dir,randomUUID());
@@ -85,7 +87,7 @@ test('existing Worker gates run and typecheck the pair without replacing marketp
     assert.equal(pkg.scripts['test:pair'],'node --test ../../examples/mailbox-demo-pair/test/*.test.ts');
     assert.ok(config.include.includes('../../examples/mailbox-demo-pair/**/*.ts'));
 });
-test('run rejects a duplicated vault reference before any prerequisite or account operation',async t=>{
+test('run rejects a duplicated vault reference before any prerequisite or account operation',posixOnly,async t=>{
     const {mkdtempSync,mkdirSync,rmSync}=await import('node:fs');const {tmpdir}=await import('node:os');const {join}=await import('node:path');
     const {save,ORIGIN}=await import('../runtime.ts');const {main}=await import('../run.ts');
     const state=mkdtempSync(join(tmpdir(),'weave-config-'));t.after(()=>rmSync(state,{recursive:true,force:true}));

@@ -3,9 +3,11 @@ import {test} from 'node:test';
 import {existsSync,mkdtempSync,readFileSync,rmSync} from 'node:fs';
 import {tmpdir} from 'node:os';
 import {join} from 'node:path';
+// The pair runtime refuses Windows: private state requires POSIX owner-only storage.
+const posixOnly={skip:process.platform==='win32'&&'Pair private state requires POSIX owner-only storage'};
 
 function state(t:any){const dir=mkdtempSync(join(tmpdir(),'weave-pair-'));t.after(()=>rmSync(dir,{recursive:true,force:true}));return dir;}
-test('vault allocation persists reference before account access and never writes the control',async t=>{
+test('vault allocation persists reference before account access and never writes the control',posixOnly,async t=>{
     assert.ok(existsSync(new URL('../vault.ts',import.meta.url)),'Missing real vault adapter');
     const {allocate}=await import('../vault.ts');
     const dir=state(t),vault='a'.repeat(26),id='b'.repeat(26),calls:any[]=[];
@@ -15,7 +17,7 @@ test('vault allocation persists reference before account access and never writes
     assert.ok(!readFileSync(join(dir,'vault-A.json'),'utf8').includes('NEVER_SAVE_SECRET'));
     assert.equal(await allocate(dir,vault,'A',async()=>{throw Error('should not run');}),ref);
 });
-test('uncertain vault creation cannot create another key on retry',async t=>{
+test('uncertain vault creation cannot create another key on retry',posixOnly,async t=>{
     const {allocate}=await import('../vault.ts');const dir=state(t);let count=0;
     await assert.rejects(allocate(dir,'a'.repeat(26),'B',async()=>{count++;throw Error('PRIVATE');}));
     await assert.rejects(allocate(dir,'a'.repeat(26),'B',async()=>{count++;return '{}';}));

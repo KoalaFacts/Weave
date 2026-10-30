@@ -11,7 +11,7 @@ const alice='aaaaaaaa-aaaa-4aaa-8aaa-aaaaaaaaaaaa',bob='bbbbbbbb-bbbb-4bbb-8bbb-
 const names=['get_my_profile','ensure_my_address','list_my_contact_requests','list_my_contacts','get_my_channel','list_my_inbox','list_my_outbox','request_contact','decide_contact','send_message','ack_message'];
 const msg=new Map<string,{from:string;to:string;payload:any;state:string}>();
 let introduction:any=null,accepted=false,sendCount=0;
-test('two isolated real HTTP MCP clients preserve two pending messages over both process restarts; six ACKs; no credential leakage',async()=>{
+test('two isolated real HTTP MCP clients preserve two pending messages over both process restarts; six ACKs; no credential leakage',{skip:process.platform==='win32'&&'Requires POSIX owner-only file modes for private pair state'},async()=>{
     msg.clear();introduction=null;accepted=false;sendCount=0;
     const exactGeneration='9007199254740993';
     // Eight retained B receipts put this run's third B send on the next page.
