@@ -35,9 +35,10 @@ Before deployment: approve separate Cloudflare AS domain, KV and DO, provision
 both matching 32-byte signing-key secrets (never commit/print), configure
 the operator-owned MCP Worker's `AUTH_SERVER` Service Binding to
 `service:weave-auth-demo` (default `AuthServer` WorkerEntrypoint; no named `entrypoint`), and review customer consent,
-CIMD/DCR policy and revocation. Dynamic client registration is disabled by
-default; Client ID Metadata Documents are available through strictly public
-fetch. Validate source SHAs, Node24 `npm ci`/typecheck, real workerd KV/DO +
+CIMD/DCR policy and revocation. Client ID Metadata Documents (strictly public
+fetch) are the primary client path; open dynamic client registration at
+`/register` is a fallback limited to 10 per minute per `CF-Connecting-IP` by the
+`REGISTRATION_LIMITER` rate-limit binding (absent binding: `/register` returns 503). Validate source SHAs, Node24 `npm ci`/typecheck, real workerd KV/DO +
 MCP D1 E2E, full repository CI/coverage/security/licence and independent
 review before any merge/release. The committed dependency locks and branch workflow cover Node24 source/type checks,
 portable logic, real workerd Durable Object replay, the bundled production mailbox

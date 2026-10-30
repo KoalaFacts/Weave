@@ -8,5 +8,6 @@
     "OAUTH_RESOURCE":"https://demo.weave-389.workers.dev/mcp"},
   "kv_namespaces":[{"binding":"OAUTH_KV","id":"REPLACE_AFTER_APPROVAL"}],
   "durable_objects":{"bindings":[{"name":"CONSENT_NONCES","class_name":"ConsentNonce"}]},
+  "ratelimits":[{"name":"REGISTRATION_LIMITER","namespace_id":"1001","simple":{"limit":10,"period":60}}],
   "migrations":[{"tag":"v1","new_sqlite_classes":["ConsentNonce"]}]
 }

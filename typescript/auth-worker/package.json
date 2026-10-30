@@ -11,7 +11,7 @@
     "typecheck": "tsc --noEmit",
     "test:portable": "node --test test/consent.test.ts test/prepare-demo.test.ts test/human-session.test.ts",
     "build": "wrangler deploy --dry-run --config wrangler.example.jsonc --outdir dist",
-    "test:workerd": "node --test test/workerd-nonce.test.ts test/workerd-consent-grant.test.ts test/workerd-github-login.test.ts",
+    "test:workerd": "node --test test/workerd-nonce.test.ts test/workerd-consent-grant.test.ts test/workerd-github-login.test.ts test/workerd-registration.test.ts",
     "prepare:demo": "node scripts/prepare-demo.ts"
   },
   "dependencies": {
