@@ -6,11 +6,8 @@ import { registry } from './registry';
 import openapi from './openapi.json';
 import { publicReadRate } from './public-rate';
 import { remoteMcp } from './remote-mcp';
-import {managedAccessConfiguration,verifyManagedAccessAssertion,type AssertionRejection,type LifetimeDetail} from './access-managed';
 import { oauthConfiguration, authorizeOAuth, protectedResourceMetadata } from './remote-oauth';
 import { demoOAuthClientId, demoOAuthClientMetadata } from './oauth-client-metadata';
-import type { VerifiedOAuthSubject } from './remote-oauth';
-import {resolveLinkedOAuthSubject,linkOAuthSubject,listOAuthLinks,revokeOAuthLink} from './oauth-identity-links';
 import { privateMcpTools, privateScope, executePrivateMcp } from './remote-private';
 import { directory, mutateAddress, ownedAddresses } from './addresses';
 import { sweep } from './cleanup';
@@ -68,74 +65,6 @@ export default {
                 return protectedResourceMetadata(cfg);
             }
 
-            // Separate hostname-path Access experiment. Do not put the public
-            // /mcp or demo root behind Access. Access's opaque OAuth bearer is
-            // *not* RFC 7662: origin authorization is the signed Access JWT
-            // plus a separately owner-approved persisted Weave subject link.
-            if(url.pathname==='/access-trial/mcp'||url.pathname==='/access-trial/link'){
-                if(env.RECOVERY_READ_ONLY==='true')fail(503,'maintenance',30);
-                let trial;
-                try{trial=managedAccessConfiguration(env,request.url);}catch{fail(503,'storage');}
-                if(!trial)fail(404,'unavailable');
-                if(env.OAUTH_IDENTITY_LINKS_ENABLED!=='true')fail(503,'storage');
-                // Only Access-admitted (allowlisted) trial users reach this point.
-                // The reason is a fixed category for diagnosing the trial; it
-                // never carries claim values, keys, controls or the assertion.
-                const denial=(status:number,reason:string,detail?:LifetimeDetail)=>{
-                    console.warn(JSON.stringify({event:'access-trial-denied',path:url.pathname,status,reason,detail}));
-                    return new Response(JSON.stringify({error:'access_denied',reason,...(detail?{detail}:{})}),{
-                        status,headers:{'Content-Type':'application/json','Cache-Control':'no-store',
-                            'X-Content-Type-Options':'nosniff'}});
-                };
-                let rejection:AssertionRejection='malformed',rejectionDetail:LifetimeDetail|undefined;
-                const identity=await verifyManagedAccessAssertion(trial,request,fetch,Date.now,(reason,detail)=>{
-                    rejection=reason;rejectionDetail=detail;});
-                if(!identity)return denial(401,'assertion-'+rejection,rejectionDetail);
-                const verifiedSubject:VerifiedOAuthSubject={
-                    issuer:identity.issuer,resource:identity.resource,subject:identity.subject
-                };
-                if(url.pathname==='/access-trial/link'){
-                    if(method!=='POST')fail(404,'unavailable');
-                    const account=await authenticate(env,secret);
-                    if(!account)return denial(401,'account-control');
-                    const input=await body(request);
-                    object(input,['consent']);
-                    if(input.consent!==true)fail(400,'invalid');
-                    // Explicit two-credential consent: locally proven control
-                    // and signed Access identity. Never forward the control,
-                    // bearer or raw Access subject to the OAuth provider or D1.
-                    return respond(await linkOAuthSubject(env.db,account.accountId,verifiedSubject));
-                }
-                return remoteMcp(request,async target=>{
-                    try{
-                        await publicReadRate(env,request);
-                        return json(await atomic(env.db,tx=>directory(tx,target)));
-                    }catch(error){return problem(error);}
-                },{
-                    tools:privateMcpTools,scope:privateScope,
-                    // This exception is constructed only after signature/issuer/AUD/expiry
-                    // verification above. A client-supplied assertion alone is never a grant.
-                    signedAccessAssertionVerified:true,
-                    authorize:async _scope=>{
-                        if(identity.expiresAt<=Math.floor(Date.now()/1000))return denial(401,'assertion-expired');
-                        let accountId:string|null;
-                        try{accountId=await resolveLinkedOAuthSubject(env.db,verifiedSubject);}
-                        catch{return denial(503,'link-storage');}
-                        if(!accountId)return denial(401,'not-linked');
-                        try{
-                            const found=await env.db.prepare('SELECT account_id FROM accounts WHERE account_id=?')
-                                .bind(accountId).first<string>('account_id');
-                            if(found!==accountId)return denial(401,'account-missing');
-                            if(identity.expiresAt<=Math.floor(Date.now()/1000))return denial(401,'assertion-expired');
-                        }catch{return denial(503,'link-storage');}
-                        // This isolated test grant is the owner's explicit link
-                        // to all ordinary private mailbox tools. The tool's
-                        // scope is still resolved and checked before execution.
-                        return accountId;
-                    },
-                    invoke:(accountId,name,args)=>executePrivateMcp(env,url.origin,accountId,name,args)
-                });
-            }
             if(url.pathname==='/mcp'){
                 const cfg=(()=>{try{return oauthConfiguration(env,request.url);}catch{fail(503,'storage');}})();
                 return await remoteMcp(request,async target=>{
@@ -147,11 +76,9 @@ export default {
                     tools:privateMcpTools,
                     scope:privateScope,
                     authorize:async scope=>{
-                        const resolver=env.OAUTH_IDENTITY_LINKS_ENABLED==='true'?
-                            (subject:VerifiedOAuthSubject)=>resolveLinkedOAuthSubject(env.db,subject):undefined;
                         const access=await authorizeOAuth(cfg,request,scope,async accountId=>
                             (await env.db.prepare('SELECT account_id FROM accounts WHERE account_id=?').bind(accountId).first('account_id'))===accountId,
-                            undefined,Date.now,resolver);
+                            undefined,Date.now);
                         return access instanceof Response?access:access.accountId;
                     },
                     invoke:(accountId,name,args)=>executePrivateMcp(env,url.origin,accountId,name,args)
@@ -165,38 +92,6 @@ export default {
             if (method === 'POST' && url.pathname === '/v1/accounts') return respond(await register(env,request,secret,await body(request)));
             if(env.RECOVERY_READ_ONLY!=='true'&&method==='GET'&&['/v1/directory','/v1/directory/address','/v1/contacts/cards','/v1/contacts/card'].includes(url.pathname))await publicReadRate(env,request);
             const account = await authenticate(env,secret);
-            // Owner linking is an explicit two-credential action, never inferred
-            // from an OAuth subject, email, token or MCP tool argument. The
-            // long-lived control goes only to this Weave resource endpoint.
-            if(url.pathname==='/v1/accounts/oauth/links'||url.pathname==='/v1/accounts/oauth/links/revoke'){
-                if(env.OAUTH_IDENTITY_LINKS_ENABLED!=='true')fail(404,'unavailable');
-                if(!account)fail(401,'unauthenticated');
-                if(method==='GET'&&url.pathname==='/v1/accounts/oauth/links'){
-                    if([...url.searchParams.keys()].some(key=>key!=='cursor')||
-                        url.searchParams.getAll('cursor').length>1)fail();
-                    return respond(await listOAuthLinks(env.db,account.accountId,url.searchParams.get('cursor')));
-                }
-                if(method==='POST'&&url.pathname==='/v1/accounts/oauth/links/revoke'){
-                    const input=await body(request);
-                    object(input,['issuer','resource','subjectDigest']);
-                    return respond(await revokeOAuthLink(env.db,account.accountId,input));
-                }
-                if(method==='POST'&&url.pathname==='/v1/accounts/oauth/links'){
-                    object(await body(request),[]);
-                    let cfg;try{cfg=oauthConfiguration(env,request.url);}catch{fail(503,'storage');}
-                    // This first path requires standard RFC 7662 introspection.
-                    // Native Cloudflare Service Binding accounts already prove UUID ownership.
-                    if(!cfg||'mode' in cfg)fail(503,'storage');
-                    let subject:VerifiedOAuthSubject|null=null;
-                    const access=await authorizeOAuth(cfg,request,'weave:addresses.read',async id=>
-                        (await env.db.prepare('SELECT account_id FROM accounts WHERE account_id=?').bind(id).first('account_id'))===id,
-                        undefined,Date.now,async verified=>{subject=verified;return account.accountId;});
-                    if(access instanceof Response)return access;
-                    if(!subject)fail(503,'storage');
-                    return respond(await linkOAuthSubject(env.db,account.accountId,subject));
-                }
-                fail(404,'unavailable');
-            }
             if (method === 'GET' && ['/v1/directory','/v1/directory/address'].includes(url.pathname)) return respond(await atomic(env.db,tx => directory(tx,url)));
             if (method === 'GET' && ['/v1/contacts/cards','/v1/contacts/card'].includes(url.pathname)) return respond(await atomic(env.db,tx => read(tx,url,account?.accountId ?? null)));
             if (!account) fail(401,'unauthenticated');

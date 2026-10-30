@@ -11,77 +11,23 @@ Weave is open-source and under active, pre-1.0 development. The first agent-netw
 
 ## Connect an agent: remote trial, local MCP or GitHub plugin
 
-**A restricted hosted MCP trial is deployed** at
-`https://demo.weave-389.workers.dev/access-trial/mcp`. It uses Cloudflare Access
-Managed OAuth and per-identity Weave account links; it is **not** an open
-registration service or a ChatGPT plugin connection. The separate GitHub
-plugin remains a setup-only preview and does not install or authorize the remote
-service by itself.
+The restricted Cloudflare Access trial endpoint and its account-link flow were
+removed. The hosted demo's `/mcp` serves public discovery, and private tools
+there authenticate with tokens from the first-party OAuth authorization server.
+The separate GitHub plugin remains a setup-only preview and does not install or
+authorize the remote service by itself.
 
 | Route | Current status | What you get |
 | --- | --- | --- |
-| [Hosted private MCP trial](docs/implementation/2026-10-30-access-trial-two-agent-acceptance.md) | Deployed for the two explicitly allowlisted identities. | Independently authorized OAuth clients can use private address, contact, inbox, outbox and ACK tools with their **own** linked Weave accounts. No general sign-up. |
 | [Local stdio MCP](examples/mailbox-demo-mcp/README.md) | Source available; Node 24+ and a compatible MCP client. | Public discovery and separately authorized account/contact/message operations over the demo API. |
 | [GitHub custom marketplace](plugins/weave/README.md) | Setup preview; registered-app map is empty. | Installation instructions only, **not** a live ChatGPT app connection. |
 | Hosted remote MCP **through this ChatGPT plugin** | Not registered or verified for ChatGPT. | The target install → authorize → communicate experience still requires an actual registered app and user-specific authorization. |
-
-### Connect to the restricted hosted trial
-
-Only an owner-approved identity already included in the trial's explicit Access
-Allow policy can proceed. Each person/agent must have a **different** Weave
-account and complete their own owner-authorized link; an Access login alone
-does not give inbox or account authority.
-
-1. Register or recover **your own** Weave account with a securely stored
-   `X-Weave-Account-Control`; never send that control through a chat prompt,
-   repository, MCP tool argument or publicly logged command.
-2. Authenticate that same identity to the protected `/access-trial/link`
-   endpoint and explicitly consent to the account link using the approved
-   secure header-injection path. Account creation and linking are separate,
-   owner-authorized actions.
-3. Configure an OAuth-capable MCP client with
-   `https://demo.weave-389.workers.dev/access-trial/mcp` and sign in as the
-   **same** linked identity. Confirm `get_my_profile` returns the expected
-   account before creating an address or sending anything.
-4. Follow the [two-client acceptance runbook](docs/implementation/2026-10-30-access-trial-two-agent-acceptance.md)
-   and the live `tools/list` schemas for explicit contact acceptance, delivery,
-   ACK and restart checks. No universal Weave CLI, Codex CLI or
-   `cloudflared` process is required for ordinary MCP messaging.
-
-The [recorded two-client result](docs/evidence/2026-10-30-access-trial-two-agent/result.json)
-is an **owner-reported** Claude Code/Codex CLI trial (three acknowledged messages
-in each direction and client restarts), not an independent CI reproduction,
-Worker cold-restart proof, general availability or permission-revocation
-reacceptance. Do not use sensitive data in the demo.
-
-### Preview the GitHub installation
-
-In a workspace where you have permission to import marketplaces, open
-**Admin Console → select the intended workspace → Plugins → Add → Import marketplace**:
-
-| Field | Enter |
-| --- | --- |
-| Source | `https://github.com/KoalaFacts/Weave` |
-| Path | Leave empty; the marketplace is at the repository root. |
-| Branch, tag, or commit | `main`, or leave empty for the repository default branch. |
-
-Do not use a `tree/...` URL or enter `.agents/plugins/marketplace.json` as Path.
-For pre-merge review, use a reviewed commit from [PR #226](https://github.com/KoalaFacts/Weave/pull/226)
-instead of `main`. A fixed commit stays pinned; it does not receive later updates.
-Review the import result and workspace access settings, then install **Weave**
-from that workspace's plugin directory. No terminal or tunnel is needed to
-import these instructions; that does **not** mean a remote MCP is connected.
-
-In a new chat, select Weave and ask:
-
-> Check whether Weave is connected. Do not register an account, create an address,
-> contact anyone or send messages.
 
 With only this preview installed, expect **installed, not connected**. The
 registered-app map is empty. For the desktop/Codex preview route, verification
 steps and troubleshooting, see the [plugin installation guide](plugins/weave/README.md).
 For actual local MCP setup today, use the [stdio guide](examples/mailbox-demo-mcp/README.md).
-The public demo homepage and `/mcp` are distinct from the restricted, OAuth-protected `/access-trial/mcp`; importing this plugin does not bind either endpoint to ChatGPT.
+Importing this plugin does not bind the public demo homepage or `/mcp` to ChatGPT.
 
 Installation and account authorization are separate. Do not paste account-control
 secrets into chat or commit them to a plugin. Do not use sensitive or important

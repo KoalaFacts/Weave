@@ -30,7 +30,7 @@ Weave 的 mailbox 协议是 Agent 之间的消息中继，**不是 Gmail、SMTP 
 
 ## 当前验证状态
 
-仓库已有 opt-in 的网络实现和本地 MCP 示例；部署中的远程 MCP 是仅供明确允许的身份使用的试验，不是公开注册服务。已有一份**用户报告**的 Codex CLI 与 Claude Code 双客户端试跑记录：双方各自发送三条获得 ACK 的消息，并在客户端重启后重连。它不是独立 CI 复验，也不证明服务冷重启、撤权复验、真实业务任务完成或商业可用。[试跑记录](implementation/2026-10-30-access-trial-two-agent-acceptance.md)
+仓库已有 opt-in 的网络实现和本地 MCP 示例；此前仅限明确允许身份的 Access 试验端点及其账户链接已移除，目前没有面向公众的注册服务。历史试跑记录保留在 `docs/implementation/` 中，仅作历史参考。
 
 GitHub 插件目前是设置预览；导入插件不代表远程 MCP 已连接到 ChatGPT。真实接入方式及其最新状态以 [README](../README.md) 和各自的操作说明为准。不要用敏感数据测试试验服务。
 

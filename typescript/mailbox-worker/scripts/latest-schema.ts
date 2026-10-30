@@ -14,7 +14,6 @@ export interface StorageDatabase {
     prepare(sql:string): StorageStatement;
     batch(statements:StorageStatement[]): Promise<unknown>;
 }
-export interface SchemaPlanOptions {omitUnapprovedOAuthIdentityLinks?:boolean;}
 type SchemaObject = {type: string; name: string; tbl_name: string; sql: string};
 type ColumnInfo = {name: string; type: string; notnull: number; dflt_value: unknown; pk: number};
 
@@ -55,7 +54,7 @@ function checks(sql: string){
 // Compare the live database with a fresh database generated from the sole TS
 // schema. Never infer a rename or silently rebuild an existing table. Changes
 // to existing columns/constraints require an explicit reviewed data operation.
-export async function planLatestSchema(db: StorageDatabase,options:SchemaPlanOptions={}) {
+export async function planLatestSchema(db: StorageDatabase) {
     const ddl=await latestSchemaStatements(),expected=new DatabaseSync(':memory:');
     const existing=(await db.prepare("SELECT type,name,tbl_name,sql FROM sqlite_master WHERE type IN ('table','index')").all<SchemaObject>()).results;
     const names=new Set(existing.map(x=>x.name));
@@ -82,20 +81,14 @@ export async function planLatestSchema(db: StorageDatabase,options:SchemaPlanOpt
     const statements=ddl.filter(sql=>{
         const match=/^CREATE (?:UNIQUE )?(?:TABLE|INDEX) [`"]([^`"]+)[`"]/i.exec(sql);
         if(!match)throw Error('Unsupported generated DDL; no schema changes applied.');
-        // Demo releases may repair ordinary schema while keeping the opt-in
-        // OAuth identity-link table and its indexes wholly unprovisioned until
-        // the operator reviews and approves a separate D1 migration.
-        if(options.omitUnapprovedOAuthIdentityLinks &&
-            (match[1]==='oauth_identity_links' ||
-                (/^CREATE (?:UNIQUE )?INDEX /i.test(sql) && /\bON\s+["`]oauth_identity_links["`]\s*\(/i.test(sql))))return false;
         return !names.has(match[1]);
     });
     assertAdditiveSchemaPlan(statements);
     return {statements,preservedUnmanagedTables:existing.filter(x=>x.type==='table'&&!Object.values(schema).some(table=>getTableConfig(table).name===x.name)).map(x=>x.name).sort()};
 }
 
-export async function createMissingSchema(db: StorageDatabase,options:SchemaPlanOptions={}) {
-    const {statements}=await planLatestSchema(db,options);
+export async function createMissingSchema(db: StorageDatabase) {
+    const {statements}=await planLatestSchema(db);
     if(statements.length){const prepared=statements.map(sql=>db.prepare(sql));await yieldToIo();await db.batch(prepared);}
     return statements.length;
 }

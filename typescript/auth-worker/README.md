@@ -150,8 +150,7 @@ first approve this exact source SHA and rollout/rollback with the existing
 protected release gate. After an authorized release, separately verify actual
 AS metadata and browser PKCE login, GitHub sign-in and explicit consent for
 **two independent humans**, private tools, contact, six messages with ACK and cold
-restart/replay. Keep the `oauth_identity_links` D1 schema opt-in disabled
-unless its separate privacy/migration/rollback is approved.
+restart/replay.
 
 ### Protected GitHub Actions one-time OAuth release selector (not executed)
 

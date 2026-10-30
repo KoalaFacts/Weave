@@ -291,22 +291,6 @@ export const mailboxRecordsLegacy = sqliteTable("mailbox_records_legacy", {
 ]);
 
 
-/** Optional, operator-approved identity binding. Do not apply to live D1 without
- * reviewed schema plan and Cloudflare storage-change approval. */
-export const oauthIdentityLinks = sqliteTable("oauth_identity_links", {
-    issuer: text("issuer").notNull(),
-    resource: text("resource").notNull(),
-    subject_digest: text("subject_digest").notNull(),
-    account_id: text("account_id").notNull().references(() => accounts.account_id, {onDelete:"cascade"}),
-    created_at: exactInteger("created_at").notNull(),
-    updated_at: exactInteger("updated_at").notNull(),
-    revoked_at: exactInteger("revoked_at"),
-}, t => [
-    primaryKey({columns:[t.issuer,t.resource,t.subject_digest]}),
-    index("oauth_identity_links_owner").on(t.account_id,t.issuer,t.resource),
-    check("oauth_identity_links_subject_digest",sql`length(subject_digest)=64 AND subject_digest NOT GLOB '*[^0-9a-f]*'`)
-]);
-
 // Independent data-script ledger; d1_migrations remains untouched and unmanaged.
 export const dataMigrations = sqliteTable('data_migrations', {
     script_id: text('script_id').primaryKey(),
