@@ -1,4 +1,4 @@
-"""Retain the action's complete comparison view without broadening evidence limits."""
+"""Retain the action's complete comparison view within explicit evidence limits."""
 import json
 import importlib.util
 from pathlib import Path
@@ -48,24 +48,23 @@ class EvidencePaginationTests(unittest.TestCase):
         self.assertEqual(len(result['dependency_records']), 2000)
         self.assertTrue(opener.requests[-1][0].full_url.endswith('&page=400'))
 
-    def test_four_hundred_pages_with_a_continuation_are_not_partial_success(self):
-        opener = Opener(*(Reply(json.dumps([CHANGE] * 5).encode(), link=NEXT) for _ in range(400)), Reply())
+    def test_two_thousand_pages_with_a_continuation_are_not_partial_success(self):
+        opener = Opener(*(Reply(json.dumps([CHANGE] * 5).encode(), link=NEXT) for _ in range(evidence.MAX_PAGES)), Reply())
 
         with self.assertRaises(evidence.EvidenceUnavailable) as caught:
             self.check(opener)
 
         self.assertEqual(caught.exception.code, 'comparison-pagination-limit')
-        self.assertEqual(len(opener.requests), 400)
+        self.assertEqual(len(opener.requests), evidence.MAX_PAGES)
 
-    def test_two_thousand_and_first_record_is_still_rejected(self):
-        opener = Opener(*(Reply(json.dumps([CHANGE] * 5).encode(), link=NEXT) for _ in range(399)),
-                        Reply(json.dumps([CHANGE] * 6).encode()))
+    def test_ten_thousand_and_first_record_is_still_rejected(self):
+        opener = Opener(Reply(json.dumps([CHANGE] * (evidence.MAX_CHANGES + 1)).encode()))
 
         with self.assertRaises(evidence.EvidenceUnavailable) as caught:
             self.check(opener)
 
         self.assertEqual(caught.exception.code, 'comparison-change-limit')
-        self.assertEqual(len(opener.requests), 400)
+        self.assertEqual(len(opener.requests), 1)
 
     def test_many_small_pages_cannot_expand_the_old_forty_mib_total_body_budget(self):
         body = b'[]' + b' ' * (2 * 1024 * 1024 - 2)
