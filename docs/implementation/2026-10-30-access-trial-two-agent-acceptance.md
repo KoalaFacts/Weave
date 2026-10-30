@@ -14,6 +14,13 @@ or by an independent reviewer. Server behaviour cited below (the body is
 cleared on ACK, a repeated ACK is idempotent) is also supported by source and
 tests; the specific IDs and timestamps are as reported.
 
+**Historical evidence boundary:** this runbook records the October 29 trial,
+not a fresh acceptance of later deployments or permission changes. PR #288
+subsequently tightened private MCP tool schemas and removed the standalone
+`requestId` input to `request_contact`; fresh clients must use the current
+`tools/list` definitions. Re-run the independent two-client flow after any
+permission reduction rather than treating this record as a new receipt.
+
 The deployed source was `aab37f17e33a7aefccd63dfc54151702a2a619c1`, released by
 [Deploy Weave Worker run 40880547663](https://github.com/KoalaFacts/Weave/actions/runs/40880547663)
 (created 13:17 UTC). Attempt 1 activated Worker version
@@ -63,18 +70,39 @@ For each identity (A, then B):
    `codex mcp login …`) and authenticate in the browser as the same identity.
    `get_my_profile` must return the account from step 1.
 
-Then: each agent runs `ensure_my_address`; A runs `request_contact` with B's
-account and address IDs; B runs `list_my_contact_requests` and
-`decide_contact` with `accepted`; the agents alternate `send_message` and
-the recipient runs `list_my_inbox` and `ack_message`; finally both restart and
-repeat the reads.
+Then follow the current private `tools/list` contracts (not the pre-#288
+tool calls in the historical observation):
 
-Message and request IDs must be lowercase UUIDv7 whose timestamp equals
-`payload.createdAt` to the millisecond, and `requestId` must equal the payload
-`messageId`. Until the stricter tool schemas land, generate them with:
+1. Each identity calls `ensure_my_address` with its own stable `addressId`.
+2. A calls `request_contact` with `requesterAddressId`,
+   `recipientAccountId`, `recipientAddressId`, and a `payload`. There is
+   **no separate `requestId` argument**: the request ID is the payload's
+   `messageId`.
+3. B calls `list_my_contact_requests` and explicitly `decide_contact` with
+   the received `requestId`, `requesterAccountId`,
+   `expectedGeneration` (a decimal **string**) and `status: "accepted"`.
+4. A/B alternate `send_message` with `recipientAccountId`,
+   `contactGeneration` (decimal string), and `payload`. The recipient
+   calls `list_my_inbox`, then `ack_message` with the exact `messageId`
+   and `senderAccountId` from that item. Check sender `list_my_outbox`
+   receipts. Page `limit` is at most **10**.
+5. Exit and restart **both real clients**, verify the same two
+   `get_my_profile` accounts and retained receipts, repeat one ACK and
+   verify its original `terminalAt`, then deliver/ACK another message.
+   A client-process restart is not a Worker cold-restart test.
 
-```
-node -e "const t=Date.now(),h=t.toString(16).padStart(12,'0'),r=require('crypto').randomBytes(10).toString('hex');console.log(JSON.stringify({messageId:h.slice(0,8)+'-'+h.slice(8)+'-7'+r.slice(0,3)+'-'+(8+(parseInt(r[3],16)&3)).toString(16)+r.slice(4,7)+'-'+r.slice(7,19),createdAt:new Date(t).toISOString(),expiresAt:new Date(t+3600000).toISOString()}))"
+The schema requires exactly `messageId`, `createdAt`, `expiresAt`,
+`payloadEncoding`, and `bytes` in each payload. IDs are lowercase UUIDv7;
+the first 48 bits must match `createdAt` in milliseconds, with no more than
+30 seconds of future skew. Expiry is later and at most 24 hours later; `bytes`
+is standard padded base64 (64 KiB decoded maximum). **Reuse the identical
+payload and ID after an uncertain result**, not a new ID.
+
+For a synthetic, non-sensitive `text/plain` test payload, a local Node
+example (generates no credential) is:
+
+```sh
+node -e "const t=Date.now(),h=t.toString(16).padStart(12,'0'),r=require('crypto').randomBytes(10).toString('hex');console.log(JSON.stringify({messageId:h.slice(0,8)+'-'+h.slice(8)+'-7'+r.slice(0,3)+'-'+(8+(parseInt(r[3],16)&3)).toString(16)+r.slice(4,7)+'-'+r.slice(7,19),createdAt:new Date(t).toISOString(),expiresAt:new Date(t+3600000).toISOString(),payloadEncoding:'text/plain',bytes:Buffer.from('trial ping','utf8').toString('base64')}))"
 ```
 
 ## Acknowledgement and retention
@@ -90,11 +118,11 @@ reappears in an inbox after restart, and its content is not retained.
 
 - One Cloudflare HTTP 502 on `ensure_my_address`. The idempotent retry with
   the same `addressId` succeeded, and the client then had to re-authenticate.
-- `request_contact` was rejected three times with a bare HTTP 400 because
-  `requestId` was not a UUIDv7 with the payload timestamp; `list_my_inbox` with
-  `limit: 100` was rejected the same way (maximum 10). The tool schemas did not
-  state these rules. Making every MCP tool publish strict input and output
-  schemas and name rejected fields is the follow-up.
+- In the **historical** run, `request_contact` was rejected three times
+  because its payload/ID timestamps did not match; `list_my_inbox` rejected
+  `limit: 100` (maximum 10). PR #288 later published stricter tool schemas
+  and field-specific validation for fresh runs. Do not send a standalone
+  `requestId` with the current `request_contact` tool.
 - The steps were driven by the owner prompting each agent; the agents did not
   coordinate on their own, and no background receiving was used.
 - This is a trial path limited to two allowlisted identities. It does not prove
