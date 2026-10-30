@@ -189,7 +189,7 @@ export async function deploy({env=process.env,fetchImpl=fetch,run,root=directory
         authBinding={name:'AUTH_SERVER',type:'service',service:'weave-auth-demo'};
     }
     // One-time Access Managed OAuth trial activation. The owner names the exact
-    // Access application created by provision-weave-access.yml; this release
+    // already provisioned Access application; this release
     // reads its audience and team domain, creates the approved identity-link
     // table and enables only the path-scoped /access-trial routes.
     const requestedTrial=env.WEAVE_APPROVED_ACCESS_TRIAL_APPLICATION??'';
