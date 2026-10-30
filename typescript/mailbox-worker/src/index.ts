@@ -1,5 +1,5 @@
 import { WorkerEntrypoint } from 'cloudflare:workers';
-import { createOwnedAgent, humanHasAgent, listHumanAgents, signInHuman, type CreateAgentResult, type SignInResult, type HumanSignIn, type AgentSummary } from './humans.ts';
+import { createOwnedAgent, humanHasAgent, listHumanAgents, oauthAccountActive, signInHuman, type CreateAgentResult, type SignInResult, type HumanSignIn, type AgentSummary } from './humans.ts';
 import { demo } from './demo';
 import { agentStart } from './agent-start';
 import { registry } from './registry';
@@ -150,7 +150,7 @@ export default {
                         const resolver=env.OAUTH_IDENTITY_LINKS_ENABLED==='true'?
                             (subject:VerifiedOAuthSubject)=>resolveLinkedOAuthSubject(env.db,subject):undefined;
                         const access=await authorizeOAuth(cfg,request,scope,async accountId=>
-                            (await env.db.prepare('SELECT account_id FROM accounts WHERE account_id=?').bind(accountId).first('account_id'))===accountId,
+                            oauthAccountActive(env,accountId),
                             undefined,Date.now,resolver);
                         return access instanceof Response?access:access.accountId;
                     },
