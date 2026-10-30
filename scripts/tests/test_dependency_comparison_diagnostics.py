@@ -85,7 +85,7 @@ class DiagnosticTests(unittest.TestCase):
         self.assertEqual(len(opener.requests), 1)
 
     def test_body_budget_and_strict_format_errors_are_fixed_codes(self):
-        cases = [(b' ' * (2 * 1024 * 1024 + 1), 'diagnostic-response-too-large'),
+        cases = [(b' ' * (diagnostic.MAX_PAGE_BYTES + 1), 'diagnostic-response-too-large'),
                  (SECRET.encode(), 'diagnostic-invalid-response'),
                  (b'[{"manifest":"a","manifest":"b"}]', 'diagnostic-invalid-response'),
                  (b'[NaN]', 'diagnostic-invalid-response'), (b'[1]', 'diagnostic-invalid-response'),
@@ -99,7 +99,7 @@ class DiagnosticTests(unittest.TestCase):
                 self.assertEqual(len(opener.requests), 1)
 
     def test_aggregate_raw_record_budget_counts_duplicates(self):
-        opener = Opener(*(Reply(json.dumps([RECORD] * 667).encode()) for _ in range(3)))
+        opener = Opener(*(Reply(json.dumps([RECORD] * (diagnostic.MAX_CHANGES // 3 + 1)).encode()) for _ in range(3)))
         with self.assertRaisesRegex(diagnostic.DiagnosticError, '^diagnostic-change-limit$'):
             self.collect(opener)
         self.assertEqual(len(opener.requests), 3)
