@@ -59,7 +59,6 @@ function options(storage:string,authEnv:Record<string,unknown>={},mailboxEnv:Rec
           CONSENT_NONCES:{type:"durable-object",worker:"weave-auth-login",exportName:"ConsentNonce"},
           OAUTH_ISSUER:{type:"text",value:issuer},
           OAUTH_RESOURCE:{type:"text",value:resource},
-          OAUTH_ACCOUNT_PROOF_KEY:{type:"text",value:randomBytes(32).toString("base64url")},
           GITHUB_CLIENT_ID:{type:"text",value:githubClientId},
           GITHUB_CLIENT_SECRET:{type:"text",value:githubClientSecret},
           HUMAN_SESSION_KEY:{type:"text",value:sessionKey},
@@ -218,7 +217,7 @@ test("begin_NonAuthorizePath_Rejected",async()=>{
 test("callback_ForgedOffOriginReturnTo_RejectedAtCompletion",{timeout:30_000},async()=>{
   github.requests.length=0;
   const state=randomBytes(32).toString("base64url");
-  const value=await signedCookieValue(sessionKey,{state,verifier:randomBytes(32).toString("base64url"),
+  const value=await signedCookieValue(sessionKey,"github-login",{state,verifier:randomBytes(32).toString("base64url"),
     returnTo:"https://evil.example/authorize",expiresAt:Date.now()+600_000});
   const result=await callback(shared.mf,"code=fake-code&state="+state,"__Host-weave_login="+value);
   assert.equal(result.status,400);
@@ -226,8 +225,29 @@ test("callback_ForgedOffOriginReturnTo_RejectedAtCompletion",{timeout:30_000},as
   assert.equal(github.requests.length,0);
 });
 
-test("callback_GithubUserFails_Returns502WithoutSession",{timeout:30_000},async()=>{
+test("callback_ExpiredLoginCookie_Returns400WithoutGithubCalls",{timeout:30_000},async()=>{
   github.requests.length=0;
+  const state=randomBytes(32).toString("base64url");
+  const value=await signedCookieValue(sessionKey,"github-login",{state,verifier:randomBytes(32).toString("base64url"),
+    returnTo:authorizeUrl().href,expiresAt:Date.now()-1});
+  const result=await callback(shared.mf,"code=fake-code&state="+state,"__Host-weave_login="+value);
+  assert.equal(result.status,400);
+  assert.equal(sessionCookie(result.headers),undefined);
+  assert.equal(github.requests.length,0,"an expired login cookie must not reach GitHub");
+});
+
+test("callback_GithubExchangeFails_Returns502AndLogsCategory",{timeout:30_000},async()=>{
+  github.requests.length=0;logs.length=0;
+  const started=await begin();
+  const result=await callback(shared.mf,"code=rejected-code&state="+started.location!.searchParams.get("state"),cookieHeader(started.loginCookie!));
+  assert.equal(result.status,502);
+  assert.equal(sessionCookie(result.headers),undefined);
+  assert.ok(logs.some(x=>x.includes("github-login: token exchange failed")),JSON.stringify(logs));
+  assert.ok(!logs.some(x=>x.includes("rejected-code")||x.includes("bad_verification_code")),"no codes or bodies in logs");
+});
+
+test("callback_GithubUserFails_Returns502WithoutSession",{timeout:30_000},async()=>{
+  github.requests.length=0;logs.length=0;
   const before=(await humans(shared.mf)).length;
   github.userStatus=500;
   try{
@@ -236,6 +256,8 @@ test("callback_GithubUserFails_Returns502WithoutSession",{timeout:30_000},async(
     assert.equal(result.status,502);
     assert.equal(sessionCookie(result.headers),undefined);
     assert.equal((await humans(shared.mf)).length,before);
+    assert.ok(logs.some(x=>x.includes("github-login: user fetch failed")),JSON.stringify(logs));
+    assert.ok(!logs.some(x=>x.includes("upstream failure")),"no response bodies in logs");
   }finally{github.userStatus=200;}
 });
 
@@ -260,6 +282,19 @@ test("callback_MailboxUnavailable_Returns503WithoutSession",{timeout:60_000},asy
     assert.match(result.body,/Sign-in temporarily unavailable/);
     assert.equal(sessionCookie(result.headers),undefined);
     assert.equal((await humans(instance.mf)).length,0);
+  }finally{await stop(instance);}
+});
+
+test("callback_MailboxRpcThrows_Returns503AndLogsCategory",{timeout:60_000},async()=>{
+  // The default export has no signIn method, so the RPC call itself fails.
+  const instance=await start({MAILBOX:{type:"worker",worker:"weave-mailbox-login"}});
+  logs.length=0;
+  try{
+    const started=await begin();
+    const result=await callback(instance.mf,"code=fake-code&state="+started.location!.searchParams.get("state"),cookieHeader(started.loginCookie!));
+    assert.equal(result.status,503);
+    assert.equal(sessionCookie(result.headers),undefined);
+    assert.ok(logs.some(x=>x.includes("human-directory: call failed")),JSON.stringify(logs));
   }finally{await stop(instance);}
 });
 

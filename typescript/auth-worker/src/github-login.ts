@@ -20,7 +20,8 @@ const githubLogin=/^[A-Za-z0-9](?:[A-Za-z0-9-]{0,38})$/;
 const callbackPath="/login/github/callback";
 
 const esc=(s:string)=>s.replace(/[&<>"']/g,c=>"&#"+c.charCodeAt(0)+";");
-function page(status:number,title:string,message:string):Response{
+/** A minimal no-store HTML page with a single escaped message and no forms. */
+export function messagePage(status:number,title:string,message:string):Response{
   const html='<!doctype html><html lang="en"><head><meta charset="utf-8">'+
     '<meta name="viewport" content="width=device-width,initial-scale=1"><title>'+esc(title)+
     "</title></head><body><main><h1>"+esc(title)+"</h1><p>"+esc(message)+"</p></main></body></html>";
@@ -30,8 +31,8 @@ function page(status:number,title:string,message:string):Response{
     "Content-Security-Policy":"default-src 'none'; base-uri 'none'; form-action 'none'; frame-ancestors 'none'"
   }});
 }
-const invalid=()=>page(400,"Sign-in failed","The sign-in request is invalid or expired. Start again from your app.");
-const githubFailed=()=>page(502,"Sign-in failed","GitHub sign-in could not be completed. Try again.");
+const invalid=()=>messagePage(400,"Sign-in failed","The sign-in request is invalid or expired. Start again from your app.");
+const githubFailed=()=>messagePage(502,"Sign-in failed","GitHub sign-in could not be completed. Try again.");
 
 /** Only this issuer's own /authorize endpoint may receive the browser after sign-in. */
 function allowedReturnTo(issuer:string,returnTo:URL):boolean{
@@ -54,7 +55,7 @@ export async function beginGithubLogin(env:Pick<GithubLoginEnv,"OAUTH_ISSUER"|"G
   target.searchParams.set("state",state);
   target.searchParams.set("code_challenge",await s256(verifier));
   target.searchParams.set("code_challenge_method","S256");
-  const value=await signedCookieValue(env.HUMAN_SESSION_KEY,
+  const value=await signedCookieValue(env.HUMAN_SESSION_KEY,"github-login",
     {state,verifier,returnTo:returnTo.href,expiresAt:now+loginSeconds*1000});
   return new Response(null,{status:302,headers:{
     Location:target.href,"Set-Cookie":hostCookie(loginCookie,value,loginSeconds),
@@ -64,7 +65,7 @@ export async function beginGithubLogin(env:Pick<GithubLoginEnv,"OAUTH_ISSUER"|"G
 type PendingLogin={state:string;verifier:string;returnTo:URL};
 async function readPendingLogin(env:GithubLoginEnv,request:Request,now:number):Promise<PendingLogin|null>{
   const raw=readCookie(request,loginCookie);
-  const value=raw===null?null:await verifiedCookieValue(env.HUMAN_SESSION_KEY,raw);
+  const value=raw===null?null:await verifiedCookieValue(env.HUMAN_SESSION_KEY,"github-login",raw);
   if(!value||Object.keys(value).length!==4)return null;
   const {state,verifier,returnTo,expiresAt}=value;
   if(typeof state!=="string"||typeof verifier!=="string"||typeof returnTo!=="string"||
@@ -73,27 +74,41 @@ async function readPendingLogin(env:GithubLoginEnv,request:Request,now:number):P
   return allowedReturnTo(env.OAUTH_ISSUER,target)?{state,verifier,returnTo:target}:null;
 }
 type GithubUser={subject:string;login:string;createdAt:string};
-/** The access token stays inside this function: never logged, stored or returned. */
-async function fetchGithubUser(env:GithubLoginEnv,code:string,verifier:string):Promise<GithubUser|null>{
+/** Fixed operator-facing failure categories; never tokens, codes or response bodies. */
+export const failureLog={exchange:"github-login: token exchange failed",user:"github-login: user fetch failed",
+  directory:"human-directory: call failed"} as const;
+async function githubAccessToken(env:GithubLoginEnv,code:string,verifier:string):Promise<string|null>{
   try{
     const exchange=await fetch(githubToken,{method:"POST",
       headers:{Accept:"application/json","Content-Type":"application/x-www-form-urlencoded","User-Agent":"weave-auth"},
       body:new URLSearchParams({client_id:env.GITHUB_CLIENT_ID,client_secret:env.GITHUB_CLIENT_SECRET,code,
         redirect_uri:new URL(callbackPath,env.OAUTH_ISSUER).href,code_verifier:verifier})});
-    if(!exchange.ok)return null;
-    const grant:unknown=await exchange.json();
-    const token=grant&&typeof grant==="object"?(grant as {access_token?:unknown}).access_token:null;
-    if(typeof token!=="string"||!token)return null;
+    if(exchange.ok){
+      const grant:unknown=await exchange.json();
+      const token=grant&&typeof grant==="object"?(grant as {access_token?:unknown}).access_token:null;
+      if(typeof token==="string"&&token)return token;
+    }
+  }catch{/* logged below as a category only */}
+  console.error(failureLog.exchange);
+  return null;
+}
+/** The access token stays inside this function: never logged, stored or returned. */
+async function fetchGithubUser(env:GithubLoginEnv,code:string,verifier:string):Promise<GithubUser|null>{
+  const token=await githubAccessToken(env,code,verifier);
+  if(!token)return null;
+  try{
     const response=await fetch(githubUser,{headers:{Authorization:"Bearer "+token,
       Accept:"application/vnd.github+json","User-Agent":"weave-auth"}});
-    if(!response.ok)return null;
-    const user:unknown=await response.json();
-    if(!user||typeof user!=="object")return null;
-    const {id,login,created_at:createdAt}=user as {id?:unknown;login?:unknown;created_at?:unknown};
-    if(typeof id!=="number"||!Number.isSafeInteger(id)||id<1||typeof login!=="string"||!githubLogin.test(login)||
-      typeof createdAt!=="string"||Number.isNaN(Date.parse(createdAt)))return null;
-    return {subject:String(id),login,createdAt};
-  }catch{return null;}
+    if(response.ok){
+      const user:unknown=await response.json();
+      const {id,login,created_at:createdAt}=user&&typeof user==="object"?
+        user as {id?:unknown;login?:unknown;created_at?:unknown}:{};
+      if(typeof id==="number"&&Number.isSafeInteger(id)&&id>=1&&typeof login==="string"&&githubLogin.test(login)&&
+        typeof createdAt==="string"&&!Number.isNaN(Date.parse(createdAt)))return {subject:String(id),login,createdAt};
+    }
+  }catch{/* logged below as a category only */}
+  console.error(failureLog.user);
+  return null;
 }
 
 export async function completeGithubLogin(env:GithubLoginEnv,request:Request,now:number):Promise<Response>{
@@ -101,7 +116,7 @@ export async function completeGithubLogin(env:GithubLoginEnv,request:Request,now
   const pending=await readPendingLogin(env,request,now);
   if(!pending||url.searchParams.getAll("state").length!==1||url.searchParams.get("state")!==pending.state)return invalid();
   if(url.searchParams.has("error"))return url.searchParams.get("error")==="access_denied"
-    ?page(400,"Sign-in cancelled","GitHub sign-in was cancelled. Start again from your app to continue.")
+    ?messagePage(400,"Sign-in cancelled","GitHub sign-in was cancelled. Start again from your app to continue.")
     :githubFailed();
   const code=url.searchParams.get("code");
   if(url.searchParams.getAll("code").length!==1||!code||!/^[\x21-\x7e]{1,512}$/.test(code))return invalid();
@@ -111,10 +126,10 @@ export async function completeGithubLogin(env:GithubLoginEnv,request:Request,now
   try{
     result=await env.MAILBOX.signIn({provider:"github",subject:user.subject,
       providerCreatedAt:user.createdAt,displayLogin:user.login});
-  }catch{result={ok:false,reason:"unavailable"};}
+  }catch{console.error(failureLog.directory);result={ok:false,reason:"unavailable"};}
   if(!result.ok)return result.reason==="frozen"
-    ?page(403,"Sign-in refused","This GitHub identity is frozen; contact the operator.")
-    :page(503,"Sign-in temporarily unavailable","Sign-in temporarily unavailable. Try again later.");
+    ?messagePage(403,"Sign-in refused","This GitHub identity is frozen; contact the operator.")
+    :messagePage(503,"Sign-in temporarily unavailable","Sign-in temporarily unavailable. Try again later.");
   const headers=new Headers({Location:pending.returnTo.href,"Cache-Control":"no-store","Referrer-Policy":"no-referrer"});
   headers.append("Set-Cookie",await issueHumanSession(env.HUMAN_SESSION_KEY,{humanId:result.humanId,login:user.login},now));
   headers.append("Set-Cookie",hostCookie(loginCookie,"",0));

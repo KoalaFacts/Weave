@@ -22,20 +22,26 @@ async function hmacKey(key:string):Promise<CryptoKey>{
   return crypto.subtle.importKey("raw",fromBase64Url(key)!,{name:"HMAC",hash:"SHA-256"},false,["sign","verify"]);
 }
 
-/** base64url(JSON) "." base64url(HMAC-SHA256(key, JSON)). */
-export async function signedCookieValue(key:string,payload:object):Promise<string>{
+/** Which cookie a signature was made for; a value signed for one purpose never verifies as another. */
+export type CookiePurpose="human-session"|"github-login";
+const signedData=(purpose:CookiePurpose,json:Uint8Array)=>{
+  const tag=encoder.encode("weave-"+purpose+"\n"),data=new Uint8Array(tag.length+json.length);
+  data.set(tag);data.set(json,tag.length);return data;
+};
+/** base64url(JSON) "." base64url(HMAC-SHA256(key, "weave-<purpose>\n" + JSON)). */
+export async function signedCookieValue(key:string,purpose:CookiePurpose,payload:object):Promise<string>{
   const json=encoder.encode(JSON.stringify(payload));
-  const signature=new Uint8Array(await crypto.subtle.sign("HMAC",await hmacKey(key),json));
+  const signature=new Uint8Array(await crypto.subtle.sign("HMAC",await hmacKey(key),signedData(purpose,json)));
   return toBase64Url(json)+"."+toBase64Url(signature);
 }
 /** Returns the parsed object only for an authentic value; callers still check shape and expiry. */
-export async function verifiedCookieValue(key:string,value:string):Promise<Record<string,unknown>|null>{
+export async function verifiedCookieValue(key:string,purpose:CookiePurpose,value:string):Promise<Record<string,unknown>|null>{
   const cryptoKey=await hmacKey(key);
   const parts=value.split(".");
   if(parts.length!==2||value.length>2048)return null;
   const json=fromBase64Url(parts[0]),signature=fromBase64Url(parts[1]);
   if(!json||!signature||signature.length!==32)return null;
-  if(!await crypto.subtle.verify("HMAC",cryptoKey,signature,json))return null;
+  if(!await crypto.subtle.verify("HMAC",cryptoKey,signature,signedData(purpose,json)))return null;
   try{
     const parsed:unknown=JSON.parse(new TextDecoder("utf-8",{fatal:true}).decode(json));
     return parsed&&typeof parsed==="object"&&!Array.isArray(parsed)?parsed as Record<string,unknown>:null;
@@ -52,11 +58,11 @@ export const hostCookie=(name:string,value:string,maxAge:number)=>
 
 export async function issueHumanSession(key:string,session:Omit<HumanSession,"expiresAt">,now:number):Promise<string>{
   const value:HumanSession={humanId:session.humanId,login:session.login,expiresAt:now+sessionSeconds*1000};
-  return hostCookie(humanSessionCookie,await signedCookieValue(key,value),sessionSeconds);
+  return hostCookie(humanSessionCookie,await signedCookieValue(key,"human-session",value),sessionSeconds);
 }
 export async function readHumanSession(key:string,request:Request,now:number):Promise<HumanSession|null>{
   const raw=readCookie(request,humanSessionCookie);
-  const value=raw===null?null:await verifiedCookieValue(key,raw);
+  const value=raw===null?null:await verifiedCookieValue(key,"human-session",raw);
   if(!value||Object.keys(value).length!==3)return null;
   const {humanId,login:name,expiresAt}=value;
   if(typeof humanId!=="string"||!uuid.test(humanId)||typeof name!=="string"||!login.test(name)||

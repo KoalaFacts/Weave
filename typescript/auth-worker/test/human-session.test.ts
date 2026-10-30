@@ -1,7 +1,8 @@
 import assert from "node:assert/strict";
 import {randomBytes,randomUUID} from "node:crypto";
 import {test} from "node:test";
-import {issueHumanSession,readHumanSession} from "../src/human-session.ts";
+import {completeGithubLogin,type GithubLoginEnv} from "../src/github-login.ts";
+import {humanSessionCookie,issueHumanSession,readHumanSession,signedCookieValue} from "../src/human-session.ts";
 
 const now=1_800_000_000_000;
 const newKey=()=>randomBytes(32).toString("base64url");
@@ -56,4 +57,29 @@ test("issueHumanSession_Cookie_HasHostPrefixAndFlags",async()=>{
 
 test("issueHumanSession_MalformedKey_Throws",async()=>{
   await assert.rejects(issueHumanSession("short",{humanId:randomUUID(),login:"alice"},now));
+});
+
+test("readHumanSession_LoginPurposeSignature_ReturnsNull",async()=>{
+  const key=newKey();
+  // Same key and the exact session shape, but signed for the GitHub login cookie.
+  const value=await signedCookieValue(key,"github-login",{humanId:randomUUID(),login:"alice",expiresAt:now+3_600_000});
+  assert.equal(await readHumanSession(key,requestWith(humanSessionCookie+"="+value),now),null);
+});
+
+test("completeGithubLogin_SessionPurposeSignature_Returns400WithoutGithubCalls",async()=>{
+  const key=newKey(),state=randomBytes(32).toString("base64url");
+  // Same key and the exact login shape, but signed as a human session.
+  const value=await signedCookieValue(key,"human-session",{state,verifier:randomBytes(32).toString("base64url"),
+    returnTo:"https://auth.weave.example/authorize",expiresAt:now+600_000});
+  const calls:string[]=[];
+  const original=globalThis.fetch;
+  globalThis.fetch=async input=>{calls.push(String(input));return new Response(null,{status:500});};
+  try{
+    const env={OAUTH_ISSUER:"https://auth.weave.example",GITHUB_CLIENT_ID:"Iv1.test",GITHUB_CLIENT_SECRET:"secret",
+      HUMAN_SESSION_KEY:key,MAILBOX:{} as GithubLoginEnv["MAILBOX"]};
+    const response=await completeGithubLogin(env,new Request("https://auth.weave.example/login/github/callback?code=c&state="+state,
+      {headers:{Cookie:"__Host-weave_login="+value}}),now);
+    assert.equal(response.status,400);
+    assert.equal(calls.length,0);
+  }finally{globalThis.fetch=original;}
 });

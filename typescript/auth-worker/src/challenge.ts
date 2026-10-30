@@ -14,6 +14,7 @@ export function validChallenge(value: unknown): value is string {
   } catch { return false; }
 }
 export const validHandle = validChallenge;
+const accountId=/^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/;
 /** No unbounded multipart body or attacker-controlled additional grant fields. */
 export async function readConsent(request: Request): Promise<URLSearchParams|null> {
   if (!/^application\/x-www-form-urlencoded(?:;|$)/i.test(request.headers.get("content-type")??""))return null;
@@ -25,9 +26,14 @@ export async function readConsent(request: Request): Promise<URLSearchParams|nul
     const raw=new Uint8Array(length);let offset=0;
     for(const chunk of chunks){raw.set(chunk,offset);offset+=chunk.length;}
     const form=new URLSearchParams(new TextDecoder("utf-8",{fatal:true}).decode(raw));
-    if([...form.keys()].some(k=>!["handle","proof","decision"].includes(k))||
+    if([...form.keys()].some(k=>!["handle","decision","agent","agentName"].includes(k))||
       form.getAll("handle").length!==1||form.getAll("decision").length!==1||
-      form.getAll("proof").length>1)return null;
+      form.getAll("agent").length>1||form.getAll("agentName").length>1)return null;
+    const agent=form.get("agent");
+    // An approval names exactly one agent: an existing account UUID, or "new" with its name.
+    if(agent!==null&&agent!=="new"&&!accountId.test(agent))return null;
+    if(form.has("agentName")!==(agent==="new"))return null;
+    if(form.get("decision")==="approve"&&agent===null)return null;
     return form;
   }catch{return null;}finally{await reader.cancel().catch(()=>{});reader.releaseLock();}
 }
