@@ -1,7 +1,7 @@
 import assert from "node:assert/strict";
 import {randomBytes,randomUUID} from "node:crypto";
 import {test} from "node:test";
-import {completeGithubLogin,type GithubLoginEnv} from "../src/github-login.ts";
+import {beginGithubLogin,completeGithubLogin,type GithubLoginEnv} from "../src/github-login.ts";
 import {humanSessionCookie,issueHumanSession,readHumanSession,signedCookieValue} from "../src/human-session.ts";
 
 const now=1_800_000_000_000;
@@ -82,4 +82,24 @@ test("completeGithubLogin_SessionPurposeSignature_Returns400WithoutGithubCalls",
     assert.equal(response.status,400);
     assert.equal(calls.length,0);
   }finally{globalThis.fetch=original;}
+});
+
+test("beginGithubLogin_StateTooLongForLoginCookie_Returns400WithoutRedirect",async()=>{
+  const env={OAUTH_ISSUER:"https://auth.weave.example",GITHUB_CLIENT_ID:"Iv1.test-client-id",HUMAN_SESSION_KEY:newKey()};
+  const returnTo=(state:string)=>{
+    const url=new URL("https://auth.weave.example/authorize");
+    url.searchParams.set("client_id","https://client.example/oauth.json");
+    url.searchParams.set("state",state);
+    return url;
+  };
+  const accepted=await beginGithubLogin(env,returnTo("state-"+randomUUID()),now);
+  assert.equal(accepted.status,302,"an ordinary request still starts GitHub sign-in");
+  const cookie=accepted.headers.get("set-cookie")!.split(";")[0];
+  assert.ok(cookie.length-"__Host-weave_login=".length<=2048);
+
+  const refused=await beginGithubLogin(env,returnTo("x".repeat(1500)),now);
+  assert.equal(refused.status,400);
+  assert.equal(refused.headers.get("location"),null,"never send the browser to GitHub with a cookie that cannot be read back");
+  assert.equal(refused.headers.get("set-cookie"),null);
+  assert.match(await refused.text(),/Authorization request too long/);
 });

@@ -1,7 +1,7 @@
 import type {HumanDirectory} from "../../mailbox-worker/src/index.ts";
 import type {SignInResult} from "../../mailbox-worker/src/humans.ts";
 import {createChallenge} from "./challenge.ts";
-import {hostCookie,issueHumanSession,readCookie,signedCookieValue,verifiedCookieValue} from "./human-session.ts";
+import {hostCookie,issueHumanSession,maxSignedCookieValueLength,readCookie,signedCookieValue,verifiedCookieValue} from "./human-session.ts";
 
 export interface GithubLoginEnv{
   OAUTH_ISSUER:string;
@@ -57,6 +57,9 @@ export async function beginGithubLogin(env:Pick<GithubLoginEnv,"OAUTH_ISSUER"|"G
   target.searchParams.set("code_challenge_method","S256");
   const value=await signedCookieValue(env.HUMAN_SESSION_KEY,"github-login",
     {state,verifier,returnTo:returnTo.href,expiresAt:now+loginSeconds*1000});
+  // The callback could never read an oversized cookie back; refuse before leaving for GitHub.
+  if(value.length>maxSignedCookieValueLength)return messagePage(400,"Authorization request too long",
+    "This authorization request is too long to resume after sign-in. Start again from your app with a shorter request.");
   return new Response(null,{status:302,headers:{
     Location:target.href,"Set-Cookie":hostCookie(loginCookie,value,loginSeconds),
     "Cache-Control":"no-store","Referrer-Policy":"no-referrer"}});

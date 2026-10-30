@@ -153,7 +153,7 @@ async function authorize(req:Request,env:Env,server:OAuthAuthorizationServer<Env
       const login=await beginGithubLogin(env,authorizeUrl(cfg.issuer,approved.request),Date.now());
       const headers=new Headers(login.headers);
       for(const cookie of approved.headers.getSetCookie())headers.append("Set-Cookie",cookie);
-      return new Response(null,{status:login.status,headers});
+      return new Response(login.body,{status:login.status,headers});
     }
     // SDK consent handles use KV, whose deletion is eventually consistent.
     // Only the Durable Object transaction fences simultaneous/replayed grants;

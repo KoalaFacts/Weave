@@ -24,6 +24,8 @@ async function hmacKey(key:string):Promise<CryptoKey>{
 
 /** Which cookie a signature was made for; a value signed for one purpose never verifies as another. */
 export type CookiePurpose="human-session"|"github-login";
+/** The longest signed cookie value verifiedCookieValue reads back; issuers must stay within it. */
+export const maxSignedCookieValueLength=2048;
 const signedData=(purpose:CookiePurpose,json:Uint8Array)=>{
   const tag=encoder.encode("weave-"+purpose+"\n"),data=new Uint8Array(tag.length+json.length);
   data.set(tag);data.set(json,tag.length);return data;
@@ -38,7 +40,7 @@ export async function signedCookieValue(key:string,purpose:CookiePurpose,payload
 export async function verifiedCookieValue(key:string,purpose:CookiePurpose,value:string):Promise<Record<string,unknown>|null>{
   const cryptoKey=await hmacKey(key);
   const parts=value.split(".");
-  if(parts.length!==2||value.length>2048)return null;
+  if(parts.length!==2||value.length>maxSignedCookieValueLength)return null;
   const json=fromBase64Url(parts[0]),signature=fromBase64Url(parts[1]);
   if(!json||!signature||signature.length!==32)return null;
   if(!await crypto.subtle.verify("HMAC",cryptoKey,signature,signedData(purpose,json)))return null;
