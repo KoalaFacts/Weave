@@ -1,5 +1,5 @@
 import { WorkerEntrypoint } from 'cloudflare:workers';
-import { createOwnedAgent, humanHasAgent, listHumanAgents, signInHuman, type CreateAgentResult, type HumanSignIn, type AgentSummary } from './humans.ts';
+import { createOwnedAgent, humanHasAgent, listHumanAgents, signInHuman, type CreateAgentResult, type SignInResult, type HumanSignIn, type AgentSummary } from './humans.ts';
 import { demo } from './demo';
 import { agentStart } from './agent-start';
 import { registry } from './registry';
@@ -29,12 +29,12 @@ import { body, control, fail, json, legacyResponse, object, problem } from './wi
 import { validatePayload } from './protocol';
 
 // Private Service Binding RPC for the OAuth authorization server; deliberately has no fetch route.
+const scopedEnv = (env: Env): Env => ({ ...env, db: budgetDatabase(env.db) });
 export class HumanDirectory extends WorkerEntrypoint<Env> {
-    private get scopedEnv(): Env { return { ...this.env, db: budgetDatabase(this.env.db) }; }
-    signIn(input: HumanSignIn): Promise<{ ok: true; humanId: string } | { ok: false; reason: 'frozen' }> { return signInHuman(this.scopedEnv, input); }
-    listAgents(humanId: string): Promise<AgentSummary[]> { return listHumanAgents(this.scopedEnv, humanId); }
-    createAgent(input: { humanId: string; displayName: string; sourceIp: string }): Promise<CreateAgentResult> { return createOwnedAgent(this.scopedEnv, input); }
-    hasAgent(humanId: string, accountId: string): Promise<boolean> { return humanHasAgent(this.scopedEnv, humanId, accountId); }
+    signIn(input: HumanSignIn): Promise<SignInResult> { return signInHuman(scopedEnv(this.env), input); }
+    listAgents(humanId: string): Promise<AgentSummary[]> { return listHumanAgents(scopedEnv(this.env), humanId); }
+    createAgent(input: { humanId: string; displayName: string; sourceIp: string }): Promise<CreateAgentResult> { return createOwnedAgent(scopedEnv(this.env), input); }
+    hasAgent(humanId: string, accountId: string): Promise<boolean> { return humanHasAgent(scopedEnv(this.env), humanId, accountId); }
 }
 
 export default {

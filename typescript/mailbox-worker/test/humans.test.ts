@@ -124,3 +124,48 @@ test('createOwnedAgent_SourceIpOverHourlyLimit_ReturnsRateLimited', async () => 
         assert.deepEqual(await create(env, id), { ok: false, reason: 'rate-limited' });
     } finally { await h.close(); }
 });
+
+test('createOwnedAgent_GlobalAccountCapReached_StillCreatesUpToPerHumanLimit', async () => {
+    const h = await start();
+    try {
+        const env = environment(h, { REGISTRATION_MAX_ACCOUNTS: '1' }), id = await humanId(env);
+        await h.register();
+        await h.register();
+        for (let i = 0; i < maxAgentsPerHuman; i++) assert.equal((await create(env, id, 'agent ' + i)).ok, true);
+        assert.deepEqual(await create(env, id), { ok: false, reason: 'agent-limit' });
+    } finally { await h.close(); }
+});
+
+test('humanDirectory_MaintenanceMode_RefusesWritesAndReads', async () => {
+    const h = await start();
+    try {
+        const open = environment(h), id = await humanId(open), created = await create(open, id) as { accountId: string };
+        const env = environment(h, { MAINTENANCE_MODE: 'true' });
+        assert.deepEqual(await signInHuman(env, github('999')), { ok: false, reason: 'unavailable' });
+        assert.deepEqual(await create(env, id), { ok: false, reason: 'unavailable' });
+        await assert.rejects(listHumanAgents(env, id), { status: 503 });
+        await assert.rejects(humanHasAgent(env, id, created.accountId), { status: 503 });
+        assert.equal((await listHumanAgents(open, id)).length, 1);
+    } finally { await h.close(); }
+});
+
+test('humanDirectory_RecoveryReadOnly_RefusesWritesButAllowsReads', async () => {
+    const h = await start();
+    try {
+        const open = environment(h), id = await humanId(open), created = await create(open, id) as { accountId: string };
+        const env = environment(h, { RECOVERY_READ_ONLY: 'true' });
+        assert.deepEqual(await signInHuman(env, github('999')), { ok: false, reason: 'unavailable' });
+        assert.deepEqual(await create(env, id), { ok: false, reason: 'unavailable' });
+        assert.equal((await listHumanAgents(env, id)).length, 1);
+        assert.equal(await humanHasAgent(env, id, created.accountId), true);
+    } finally { await h.close(); }
+});
+
+test('createOwnedAgent_RegistrationDisabled_ReturnsUnavailable', async () => {
+    const h = await start();
+    try {
+        const open = environment(h), id = await humanId(open);
+        assert.deepEqual(await create(environment(h, { REGISTRATION_ENABLED: 'false' }), id), { ok: false, reason: 'unavailable' });
+        assert.deepEqual(await listHumanAgents(open, id), []);
+    } finally { await h.close(); }
+});

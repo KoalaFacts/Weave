@@ -15,16 +15,14 @@ export async function authenticate(env: Env, secret: string | null): Promise<any
     if (!validParameters(account.controlHashParameters) || !digestMatches(digest,account.controlHash)) fail(401,'unauthenticated');
     return account;
 }
-// Shared by self-registration and human-owned agent creation: total account capacity,
-// global and per-source hourly counters, and the bounded cleanup of old counters.
+// Shared by self-registration and human-owned agent creation: global and per-source
+// hourly counters and the bounded cleanup of old counters. Total account capacity is
+// a self-registration concern only.
 export async function admitRegistration(env: Env, tx: Transaction, sourceIp: string): Promise<boolean> {
     const hour = Number(tx.store.now / 36000000000n);
     const source = await hash('registration:' + hour + ':' + sourceIp);
-    const maxAccounts = settings(env,'REGISTRATION_MAX_ACCOUNTS',10000);
     const maxGlobal = settings(env,'REGISTRATION_GLOBAL_PER_HOUR',10000);
     const maxSource = settings(env,'REGISTRATION_PER_IP_PER_HOUR',1000);
-    const count = await tx.db.prepare('SELECT count(*) n FROM accounts').first<number>('n');
-    if (count === null || count >= maxAccounts) return false;
     const increments: [string,number][] = [];
     for (const [id,max] of [['global',maxGlobal],[source,maxSource]] as const) {
         const counter = await tx.get('registration-rate','',id);
@@ -46,6 +44,9 @@ export async function register(env: Env, request: Request, secret: string | null
         const existing = await tx.db.prepare('SELECT account_id FROM accounts WHERE control_hash=?').bind(digest).first<string>('account_id');
         if (existing) { const a=await tx.get('account','',existing); if (a.controlHashScheme !== CONTROL_HASH_SCHEME || !validParameters(a.controlHashParameters) || !digestMatches(digest,a.controlHash)) fail(401,'unauthenticated'); return {agentId:a.accountId,displayName:a.displayName,description:a.description}; }
         if (env.REGISTRATION_ENABLED !== 'true') fail(404,'unavailable');
+        const maxAccounts = settings(env,'REGISTRATION_MAX_ACCOUNTS',10000);
+        const total = await tx.db.prepare('SELECT count(*) n FROM accounts').first<number>('n');
+        if (total === null || total >= maxAccounts) fail(429,'capacity');
         if (!await admitRegistration(env,tx,request.headers.get('CF-Connecting-IP') ?? 'unknown')) fail(429,'capacity');
         const accountId = crypto.randomUUID();
         if(await tx.get('account','',accountId))fail(409,'conflict');

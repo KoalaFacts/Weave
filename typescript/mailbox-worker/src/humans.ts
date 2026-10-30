@@ -9,12 +9,17 @@ export const maxAgentsPerHuman = 10;
 
 export type HumanSignIn = { provider: 'github'; subject: string; providerCreatedAt: string; displayLogin: string };
 export type AgentSummary = { accountId: string; displayName: string | null };
-export type CreateAgentResult = { ok: true; accountId: string } | { ok: false; reason: 'agent-limit' | 'rate-limited' | 'invalid' };
+export type SignInResult = { ok: true; humanId: string } | { ok: false; reason: 'frozen' | 'unavailable' };
+export type CreateAgentResult = { ok: true; accountId: string } | { ok: false; reason: 'agent-limit' | 'rate-limited' | 'invalid' | 'unavailable' };
 
 const subjectPattern = /^[1-9][0-9]{0,19}$/;
 const loginPattern = /^[A-Za-z0-9](?:[A-Za-z0-9-]{0,38})$/;
 const uuidPattern = /^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/i;
 const controlCharacters = /[\u0000-\u001f\u007f-\u009f]/u;
+
+// Same gates the fetch handler applies: maintenance stops everything, recovery read-only stops writes.
+const writesRefused = (env: Env) => env.MAINTENANCE_MODE === 'true' || env.RECOVERY_READ_ONLY === 'true';
+const requireReadable = (env: Env) => { if (env.MAINTENANCE_MODE === 'true') fail(503, 'maintenance', 30); };
 
 function sameInstant(left: string, right: string): boolean {
     try { return utcTicks(left) === utcTicks(right); } catch { return false; }
@@ -24,7 +29,8 @@ function requireUuid(value: unknown): string {
     return value;
 }
 
-export async function signInHuman(env: Env, input: HumanSignIn): Promise<{ ok: true; humanId: string } | { ok: false; reason: 'frozen' }> {
+export async function signInHuman(env: Env, input: HumanSignIn): Promise<SignInResult> {
+    if (writesRefused(env)) return { ok: false, reason: 'unavailable' };
     if (input?.provider !== 'github' || typeof input.subject !== 'string' || !subjectPattern.test(input.subject)
         || typeof input.displayLogin !== 'string' || !loginPattern.test(input.displayLogin)
         || typeof input.providerCreatedAt !== 'string') fail();
@@ -52,18 +58,19 @@ export async function signInHuman(env: Env, input: HumanSignIn): Promise<{ ok: t
 }
 
 export async function listHumanAgents(env: Env, humanId: string): Promise<AgentSummary[]> {
-    requireUuid(humanId);
+    requireReadable(env); requireUuid(humanId);
     const { results } = await env.db.prepare('SELECT account_id,display_name FROM accounts WHERE human_id=? ORDER BY created_at,rowid LIMIT ?')
         .bind(humanId, maxAgentsPerHuman).all<{ account_id: string; display_name: string | null }>();
     return results.map(row => ({ accountId: row.account_id, displayName: row.display_name }));
 }
 
 export async function humanHasAgent(env: Env, humanId: string, accountId: string): Promise<boolean> {
-    requireUuid(humanId); requireUuid(accountId);
+    requireReadable(env); requireUuid(humanId); requireUuid(accountId);
     return await env.db.prepare('SELECT 1 n FROM accounts WHERE human_id=? AND account_id=?').bind(humanId, accountId).first('n') !== null;
 }
 
 export async function createOwnedAgent(env: Env, input: { humanId: string; displayName: string; sourceIp: string }): Promise<CreateAgentResult> {
+    if (writesRefused(env) || env.REGISTRATION_ENABLED !== 'true') return { ok: false, reason: 'unavailable' };
     const invalid = { ok: false, reason: 'invalid' } as const;
     if (typeof input?.humanId !== 'string' || !uuidPattern.test(input.humanId) || typeof input.sourceIp !== 'string'
         || typeof input.displayName !== 'string' || input.displayName.length < 1 || input.displayName.length > 128
