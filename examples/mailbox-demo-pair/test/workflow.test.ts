@@ -117,7 +117,7 @@ test('a write failure preserves a pending exact payload without retry',posixOnly
         const pending=checkpoints.find(c=>c.operation==='send_message');assert.equal(pending.status,'pending');assert.ok(pending.arguments.payload.messageId);assert.ok(!JSON.stringify(checkpoints).includes('f'.repeat(64)));
     }finally{await a.close();await b.close();}
 });
-test('incomplete pagination fails rather than being treated as no contact',posixOnly,async()=>{
+test('incomplete pagination fails rather than being treated as no contact',async()=>{
     const {pages}=await import('../mcp.ts');let n=0;
     await assert.rejects(pages({call:async()=>({items:[],nextCursor:String(++n)}),close:async()=>{}},'read_inbox'),/pagination_incomplete/);assert.equal(n,20);
 });
