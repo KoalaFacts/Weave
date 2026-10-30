@@ -137,7 +137,7 @@ test('symlinked app files are rejected without modifying their targets', async t
     try { symlinkSync(target, join(dir, apps)); }
     catch (error) {
         // Windows without Developer Mode or admin rights cannot create symlinks.
-        if ((error as NodeJS.ErrnoException).code !== 'EPERM') throw error;
+        if (process.platform !== 'win32' || (error as NodeJS.ErrnoException).code !== 'EPERM') throw error;
         t.skip('Symlink creation requires Developer Mode or admin rights on this machine');
         return;
     }
