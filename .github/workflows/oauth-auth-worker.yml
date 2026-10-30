@@ -78,15 +78,15 @@ jobs:
       - name: Strictly typecheck the complete mailbox Worker
         working-directory: typescript/mailbox-worker
         run: npm run typecheck
+      - name: Bundle real mailbox resource Worker without publishing
+        working-directory: typescript/mailbox-worker
+        run: npm run build
       - name: Verify provider-neutral issuer and subject binding regressions on the real mailbox validator
         working-directory: typescript/mailbox-worker
         run: node --test test/remote-oauth.test.ts
       - name: Verify merged RFC 9207 authorization callback issuer binding in the real remote MCP client
         working-directory: typescript/mailbox-worker
         run: node --test test/remote-oauth-issuer.test.ts
-      - name: Bundle real mailbox resource Worker without publishing
-        working-directory: typescript/mailbox-worker
-        run: npm run build
       - name: Test first-party owner-approved external OAuth subject links against real Worker/D1
         working-directory: typescript/mailbox-worker
         run: node --test test/remote-oauth-identity-links.test.ts
