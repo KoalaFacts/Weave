@@ -13,8 +13,8 @@ import { fileURLToPath } from 'node:url';
 
 const args = process.argv.slice(2);
 assert(args.every((arg, index) => arg === '--json' || arg === '--state-directory' || args[index - 1] === '--state-directory'), 'Unknown demo option');
-const host = process.env.WEAVE_DEMO_HOST ?? fileURLToPath(new URL('../../hosts/Weave.Mailbox.Host/bin/Release/net10.0/Weave.Mailbox.Host.dll', import.meta.url));
-assert(existsSync(host), 'Build hosts/Weave.Mailbox.Host in Release first');
+const host = process.env.WEAVE_DEMO_HOST ?? fileURLToPath(new URL('../../csharp/hosts/Weave.Mailbox.Host/bin/Release/net10.0/Weave.Mailbox.Host.dll', import.meta.url));
+assert(existsSync(host), 'Build csharp/hosts/Weave.Mailbox.Host in Release first');
 const worker = fileURLToPath(new URL('./agent.ts', import.meta.url));
 const retained = args.includes('--state-directory');
 const selected = retained ? args[args.indexOf('--state-directory') + 1] : mkdtempSync(join(tmpdir(), 'weave-agent-network-'));

@@ -28,7 +28,7 @@ def lock():
 
 
 def manifests(document):
-    return snapshots.lock_manifests('src/packages.lock.json', document, 'a' * 40)
+    return snapshots.lock_manifests('csharp/src/packages.lock.json', document, 'a' * 40)
 
 
 class FakeApi:
@@ -36,8 +36,8 @@ class FakeApi:
         data = json.dumps(lock() if document is None else document).encode()
         blob = hashlib.sha1(b'blob ' + str(len(data)).encode() + b'\0' + data).hexdigest()
         self.tree = {'truncated': False, 'tree': [
-            {'path': 'src/Weave.csproj', 'type': 'blob', 'mode': '100644', 'sha': 'b' * 40, 'size': 1},
-            {'path': 'src/packages.lock.json', 'type': 'blob', 'mode': '100644', 'sha': blob, 'size': len(data)}]}
+            {'path': 'csharp/src/Weave.csproj', 'type': 'blob', 'mode': '100644', 'sha': 'b' * 40, 'size': 1},
+            {'path': 'csharp/src/packages.lock.json', 'type': 'blob', 'mode': '100644', 'sha': blob, 'size': len(data)}]}
         self.blob = {'sha': blob, 'encoding': 'base64', 'content': base64.b64encode(data).decode()}
         self.calls = []
 
@@ -82,7 +82,7 @@ class NugetSnapshotTests(unittest.TestCase):
         value = lock()
         value['dependencies']['net8.0'] = {'Other': package('CentralTransitive', '3.0.0')}
         self.assertEqual(len(manifests(value)), 2)
-        self.assertIn('pkg:nuget/other@3.0.0', manifests(value)['src/packages.lock.json#net8.0']['resolved'])
+        self.assertIn('pkg:nuget/other@3.0.0', manifests(value)['csharp/src/packages.lock.json#net8.0']['resolved'])
 
     def test_unknown_types_missing_versions_hashes_and_edges_fail_closed(self):
         for change in ({'type': 'FutureType'}, {'resolved': ''}, {'contentHash': ''},

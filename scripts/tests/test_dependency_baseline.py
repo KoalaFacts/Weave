@@ -69,7 +69,7 @@ class HistoricalBaselineTests(unittest.TestCase):
         self.assertEqual(plan['sha'], SHA)
         self.assertEqual(plan['ref'], 'refs/heads/main')
         self.assertEqual(report['package_nodes'], 2)
-        self.assertIn('pkg:nuget/example.leaf@1.0.0', plan['manifests']['src/packages.lock.json#net10.0']['resolved'])
+        self.assertIn('pkg:nuget/example.leaf@1.0.0', plan['manifests']['csharp/src/packages.lock.json#net10.0']['resolved'])
         self.assertIn('git/commits/' + SHA, paths)
         self.assertIn('does not establish a fresh locked restore', summary)
 
@@ -78,7 +78,7 @@ class HistoricalBaselineTests(unittest.TestCase):
         updated = copy.deepcopy(lock())
         updated['dependencies']['net10.0']['Example.Leaf']['resolved'] = '2.0.0'
         new = self.run_step(FakeApi(updated))[2]
-        manifest = 'src/packages.lock.json#net10.0'
+        manifest = 'csharp/src/packages.lock.json#net10.0'
         self.assertEqual(set(new['manifests'][manifest]['resolved']) - set(old['manifests'][manifest]['resolved']),
                          {'pkg:nuget/example.leaf@2.0.0'})
         self.assertNotEqual(new['manifests'][manifest]['metadata']['lock_blob'],

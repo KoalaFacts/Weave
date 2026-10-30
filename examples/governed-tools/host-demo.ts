@@ -13,7 +13,7 @@ import { fileURLToPath } from 'node:url';
 
 const BASE = 'http://127.0.0.1:9401';
 const ROUTE = '/api/workspaces/first-use/tools/files/invocations';
-const HOST = fileURLToPath(new URL('../../hosts/Weave.Host/bin/Release/net10.0/Weave.Silo.dll', import.meta.url));
+const HOST = fileURLToPath(new URL('../../csharp/hosts/Weave.Host/bin/Release/net10.0/Weave.Silo.dll', import.meta.url));
 const SOURCE = 'Project meeting - synthetic demo data\nDecision: Run a small Weave pilot.\nAction: Alex prepares a sample document.\n';
 const INTRO = 'Not written. Awaiting an approved request.\n';
 
@@ -115,7 +115,7 @@ function removeTemporaryRoot(root) {
 }
 
 async function main() {
-  check(existsSync(HOST), 'Build the Host first: dotnet build hosts/Weave.Host/Weave.Host.csproj -c Release');
+  check(existsSync(HOST), 'Build the Host first: dotnet build csharp/hosts/Weave.Host/Weave.Host.csproj -c Release');
   const root = mkdtempSync(join(tmpdir(), 'weave-node-host-demo-'));
   const operator = randomBytes(48).toString('base64url');
   const signing = randomBytes(48).toString('base64url');

@@ -4,11 +4,11 @@ The repository requires at least 90% line coverage for every project, with no ex
 
 ## Explicit ownership
 
-`scripts/coverage-ownership.json` records each actual runtime project's assembly name, direct-reference and explicitly declared dynamic test owners, and allowed runtime-reference contributors. Architecture tests independently compare the manifest with all projects under `src/`, `hosts/`, and `extensions/`, and with direct references, the narrowly source-verified dynamic load below, and their transitive runtime closure. Build-only analyzer references are not runtime contributors. New projects and suites must update this evidence; observed XML cannot define the required inventory.
+`scripts/coverage-ownership.json` records each actual runtime project's assembly name, direct-reference and explicitly declared dynamic test owners, and allowed runtime-reference contributors. Architecture tests independently compare the manifest with all projects under `csharp/src/`, `csharp/hosts/`, and `csharp/extensions/`, and with direct references, the narrowly source-verified dynamic load below, and their transitive runtime closure. Build-only analyzer references are not runtime contributors. New projects and suites must update this evidence; observed XML cannot define the required inventory.
 
 The current ten test projects directly exercise 19 runtime assemblies: 18 through project references and Dashboard through an explicit dynamic load. The required scope includes all non-excluded sequence points reported for each assembly, not only the feature under test. All ten suites may contribute to `Weave.Product`. The mailbox suite requires `Weave.Product`, `Weave.Mailboxes.Sqlite`, and `Weave.Mailbox.Host`; none can be absent or empty.
 
-`tests/Weave.Silo.Tests/Invocations/DashboardReviewRenderingTests.cs`, method `DashboardReviewRenderingTests.DashboardType`, deliberately uses `Assembly.LoadFrom` on the real solution-built `Weave.Dashboard.dll`. Rendering, session, merge-regression, and host tests call it. The manifest records this single source-backed dynamic owner; the architecture regression verifies the exact relationship and loader evidence. Dashboard is therefore required for the Silo suite, and its runtime dependencies (including Deploy) may contribute from that report. This is not permission to accept arbitrary runtime assemblies or to exempt Dashboard from 90%.
+`csharp/tests/Weave.Silo.Tests/Invocations/DashboardReviewRenderingTests.cs`, method `DashboardReviewRenderingTests.DashboardType`, deliberately uses `Assembly.LoadFrom` on the real solution-built `Weave.Dashboard.dll`. Rendering, session, merge-regression, and host tests call it. The manifest records this single source-backed dynamic owner; the architecture regression verifies the exact relationship and loader evidence. Dashboard is therefore required for the Silo suite, and its runtime dependencies (including Deploy) may contribute from that report. This is not permission to accept arbitrary runtime assemblies or to exempt Dashboard from 90%.
 
 The other six runtime assemblies are explicit coverage-scope gaps:
 
@@ -30,7 +30,7 @@ The collector must actually observe the test processes. Synthetic fixtures prove
 
 ## Running and reviewing
 
-Use the commands in [best practices](best-practices.md#test-coverage--hard-rule-90-minimum), from the repository root after building the solution in Release. The pinned Microsoft collector is `dotnet-coverage` 18.11.2. `--root tests/Weave.Mailboxes.Tests` is a focused diagnostic and cannot establish the full tested-owner result. `--skip-collect` never searches unrelated reports to rescue a selected suite.
+Use the commands in [best practices](best-practices.md#test-coverage--hard-rule-90-minimum), from the repository root after building the solution in Release. The pinned Microsoft collector is `dotnet-coverage` 18.11.2. `--root csharp/tests/Weave.Mailboxes.Tests` is a focused diagnostic and cannot establish the full tested-owner result. `--skip-collect` never searches unrelated reports to rescue a selected suite.
 
 CI restores the pinned tool and locked DevTool dependencies, runs the actual executable regression suite, collects every test project with normal `dotnet test`, enforces the tested-owner gate at 90%, and retains `TestResults/` even on failure. Collector subprocess output is inherited rather than placed in unread redirected pipes. A fresh collection deletes each selected report before starting that suite, preventing a stale success from being accepted after collection failure.
 

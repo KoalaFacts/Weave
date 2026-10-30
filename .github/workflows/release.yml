@@ -63,25 +63,25 @@ jobs:
           node-version: '24'
 
       - name: Restore
-        run: dotnet restore Weave.slnx --locked-mode
+        run: dotnet restore csharp/Weave.slnx --locked-mode
 
       - name: Build
-        run: dotnet build Weave.slnx --no-restore -c Release "-p:Version=$VERSION"
+        run: dotnet build csharp/Weave.slnx --no-restore -c Release "-p:Version=$VERSION"
 
       - name: Install the pinned Dashboard Playwright browser
-        run: pwsh tests/Weave.Silo.Tests/bin/Release/net10.0/playwright.ps1 install --with-deps --no-shell chromium
+        run: pwsh csharp/tests/Weave.Silo.Tests/bin/Release/net10.0/playwright.ps1 install --with-deps --no-shell chromium
 
       - name: Prepare the managed Dashboard browser sandbox
         uses: ./.github/actions/setup-playwright-sandbox
         with:
-          playwright-package: tests/Weave.Silo.Tests/bin/Release/net10.0/.playwright/package
+          playwright-package: csharp/tests/Weave.Silo.Tests/bin/Release/net10.0/.playwright/package
 
       - name: Test
-        run: dotnet test --solution Weave.slnx --no-build -c Release
+        run: dotnet test --solution csharp/Weave.slnx --no-build -c Release
 
       - name: Pack .NET tool
         run: |
-          dotnet pack hosts/Weave.Cli/Weave.Cli.csproj \
+          dotnet pack csharp/hosts/Weave.Cli/Weave.Cli.csproj \
             -c Release --no-build \
             "-p:Version=$VERSION" \
             -p:IncludeSymbols=false \
@@ -169,13 +169,13 @@ jobs:
       - name: Publish self-contained
         shell: bash
         run: |
-          dotnet publish hosts/Weave.Cli/Weave.Cli.csproj \
+          dotnet publish csharp/hosts/Weave.Cli/Weave.Cli.csproj \
             -c Release -r "$RID" --self-contained true \
             -p:PublishSingleFile=true -p:PublishTrimmed=true \
             -p:PublishReadyToRun=true -p:PackAsTool=false \
             "-p:Version=$VERSION" -o "publish/$RID"
 
-          dotnet publish hosts/Weave.Host/Weave.Host.csproj \
+          dotnet publish csharp/hosts/Weave.Host/Weave.Host.csproj \
             -c Release -r "$RID" --self-contained true \
             -p:PublishReadyToRun=true \
             "-p:Version=$VERSION" -o "publish/$RID/host"

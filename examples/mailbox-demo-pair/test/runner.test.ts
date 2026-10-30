@@ -79,8 +79,8 @@ test('a released run lock does not permit re-running a retained attempt',async t
 });
 test('existing Worker gates run and typecheck the pair without replacing marketplace checks',async()=>{
     const {readFileSync}=await import('node:fs');
-    const pkg=JSON.parse(readFileSync(new URL('../../../hosts/Weave.Mailbox.Worker/package.json',import.meta.url),'utf8'));
-    const config=JSON.parse(readFileSync(new URL('../../../hosts/Weave.Mailbox.Worker/tsconfig.tools.json',import.meta.url),'utf8'));
+    const pkg=JSON.parse(readFileSync(new URL('../../../typescript/mailbox-worker/package.json',import.meta.url),'utf8'));
+    const config=JSON.parse(readFileSync(new URL('../../../typescript/mailbox-worker/tsconfig.tools.json',import.meta.url),'utf8'));
     assert.match(pkg.scripts.test,/^npm run test:marketplace && npm run test:pair && /);
     assert.equal(pkg.scripts['test:pair'],'node --test ../../examples/mailbox-demo-pair/test/*.test.ts');
     assert.ok(config.include.includes('../../examples/mailbox-demo-pair/**/*.ts'));

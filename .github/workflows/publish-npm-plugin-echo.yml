@@ -22,7 +22,7 @@ jobs:
     timeout-minutes: 20
     defaults:
       run:
-        working-directory: npm/weave-plugin-echo
+        working-directory: typescript/plugin-echo
     env:
       EXPECTED_VERSION: ${{ inputs.version }}
     steps:
@@ -60,8 +60,8 @@ jobs:
         with:
           name: npm-echo-package
           path: |
-            npm/weave-plugin-echo/release.tgz
-            npm/weave-plugin-echo/release.tgz.sha256
+            typescript/plugin-echo/release.tgz
+            typescript/plugin-echo/release.tgz.sha256
           if-no-files-found: error
           retention-days: 7
 

@@ -7,8 +7,8 @@ Run a synthetic network walkthrough with one real Weave mailbox relay process an
 From the repository root, use .NET SDK 10 (see `global.json`) and Node 24.19+; Node's built-in SQLite reader is used to inspect active relay rows.
 
 ```bash
-dotnet restore Weave.slnx --locked-mode
-dotnet build hosts/Weave.Mailbox.Host/Weave.Mailbox.Host.csproj --no-restore -c Release
+dotnet restore csharp/Weave.slnx --locked-mode
+dotnet build csharp/hosts/Weave.Mailbox.Host/Weave.Mailbox.Host.csproj --no-restore -c Release
 node examples/agent-network/run-demo.ts
 ```
 
@@ -31,7 +31,7 @@ Absolute and relative supplied paths are resolved once against the directory you
 7. Both endpoints explicitly admit a direct peer. Alice uses Bob's advertised direct method, including after Bob's listener restart, to deliver and retry over endpoint HTTP. Bob's own direct receipt deduplicates it. The relay has no outbox receipt or message row for that ID
 8. The relay restarts on the preserved SQLite file. The original acknowledged receipt remains acknowledged and its body stays removed. All child processes then stop
 
-The [IndependentAgentsTests](../../tests/Weave.Mailboxes.Tests/Acceptance/IndependentAgentsTests.cs) acceptance tests assert these observations and independent state files. Process cleanup uses signal-zero live/stopped controls and a deliberately live negative control. Separate regressions cover noncooperative cancellation before readiness and during a pending command, relative retained-state layout and nonempty-root preservation. A separate SQLite read checks terminal payload removal and absence of a direct-message row. Lower-level mailbox tests exercise exact boundaries, concurrent admission, retained-schema migration and lost-response behavior.
+The [IndependentAgentsTests](../../csharp/tests/Weave.Mailboxes.Tests/Acceptance/IndependentAgentsTests.cs) acceptance tests assert these observations and independent state files. Process cleanup uses signal-zero live/stopped controls and a deliberately live negative control. Separate regressions cover noncooperative cancellation before readiness and during a pending command, relative retained-state layout and nonempty-root preservation. A separate SQLite read checks terminal payload removal and absence of a direct-message row. Lower-level mailbox tests exercise exact boundaries, concurrent admission, retained-schema migration and lost-response behavior.
 
 ## Fixture and product boundary
 

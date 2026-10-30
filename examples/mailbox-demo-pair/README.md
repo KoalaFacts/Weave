@@ -128,7 +128,7 @@ or sensitive content; demo data can be periodically cleared.
 An interrupted run preserves its original run ID, controls, payloads and IDs.
 A **planned, settled** cold restart inside one execution is supported, but
 there is no automated resume/retry command after an interruption or an uncertain
-write. Reconcile the exact pending operation using the [canonical recovery guide](../../hosts/Weave.Mailbox.Worker/src/agent-start.md)
+write. Reconcile the exact pending operation using the [canonical recovery guide](../../typescript/mailbox-worker/src/agent-start.md)
 and retained metadata; do not delete checkpoints to force another attempt.
 A deliberately new state directory means a deliberately new pair, with new
 vault items and accounts. The runner never deletes vault items or remote accounts.

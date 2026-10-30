@@ -15,5 +15,5 @@ runs:
       shell: bash
       run: |
         dotnet --version
-        dotnet restore hosts/Weave.Host/Weave.Host.csproj --locked-mode
-        dotnet build hosts/Weave.Host/Weave.Host.csproj --no-restore -c Release /p:TreatWarningsAsErrors=true
+        dotnet restore csharp/hosts/Weave.Host/Weave.Host.csproj --locked-mode
+        dotnet build csharp/hosts/Weave.Host/Weave.Host.csproj --no-restore -c Release /p:TreatWarningsAsErrors=true

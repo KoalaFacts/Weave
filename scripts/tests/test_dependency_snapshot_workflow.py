@@ -37,7 +37,7 @@ class SnapshotWorkflowTests(unittest.TestCase):
         job = text.split('  dependency-lock-validation:\n', 1)[1].split('  dependency-snapshots:\n', 1)[0]
         self.assertIn('github.event.pull_request.base.sha', job)
         self.assertIn('github.event.pull_request.head.sha', job)
-        self.assertIn('dotnet restore Weave.slnx --locked-mode', job)
+        self.assertIn('dotnet restore csharp/Weave.slnx --locked-mode', job)
         self.assertIn('name: Locked dependency graph (${{ matrix.source }})', job)
         self.assertIn('source: [base, head]', job)
         self.assertIn("ref: ${{ matrix.source == 'base' && '97452c5adf605b69234798ead7e1b7550f425ccb' ||", job)

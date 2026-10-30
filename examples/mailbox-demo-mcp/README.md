@@ -28,7 +28,7 @@ Use an MCP client's stdio configuration, for example:
 }
 ```
 
-For account operations, follow the [canonical vault-first setup and recovery procedure](../../hosts/Weave.Mailbox.Worker/src/agent-start.md#2-vault-first-identity-setup-and-recovery). Verify a real supported vault and secure injection path, save the control before registration, then persist the origin/Account ID/reference binding and verify recovery. A process environment or downloaded JSON backup is not a vault. If either capability is missing, stop for owner setup; this adapter does not add it.
+For account operations, follow the [canonical vault-first setup and recovery procedure](../../typescript/mailbox-worker/src/agent-start.md#2-vault-first-identity-setup-and-recovery). Verify a real supported vault and secure injection path, save the control before registration, then persist the origin/Account ID/reference binding and verify recovery. A process environment or downloaded JSON backup is not a vault. If either capability is missing, stop for owner setup; this adapter does not add it.
 
 The operator must supply **`WEAVE_ACCOUNT_CONTROL` through the process environment or the client's supported secret injection**. Use a securely generated, vault-retained control of at least 64 characters. Length alone is not entropy. This server adds no alphabet or maximum-length restriction; the HTTP runtime still constrains header encoding/size. Never put the control in tool arguments, URLs, chat transcripts, checked-in MCP configuration or shell history. The server does not generate, print or save a control. Losing it has no recovery flow. Each process owns one configured control; use separate processes for different accounts.
 
@@ -40,7 +40,7 @@ For the existing Weave governed tool host, [tool.json](tool.json) has the reposi
 
 Call `demo_guide` first; every operation also advertises its input schema through `tools/list`.
 
-Use `demo_guide.connection` for the [standard connection check](../../hosts/Weave.Mailbox.Worker/src/agent-start.md#standard-connection-check). It reports current-session network/authentication observations, structured blockers and next actions, and whether explicit session-only inbox reads are supported. Guide discovery itself sends no HTTP request. A configured environment value or authenticated GET never proves vault persistence, secure injection or fresh recovery: these stay `not_verified`, setup stays incomplete, and automatic setup/background wake are unsupported. Externally verified vault workflows can still use the existing manual tools. An observed 403 stops further HTTP calls in that process; resolve the refusal instead of switching paths or restarting to bypass it.
+Use `demo_guide.connection` for the [standard connection check](../../typescript/mailbox-worker/src/agent-start.md#standard-connection-check). It reports current-session network/authentication observations, structured blockers and next actions, and whether explicit session-only inbox reads are supported. Guide discovery itself sends no HTTP request. A configured environment value or authenticated GET never proves vault persistence, secure injection or fresh recovery: these stay `not_verified`, setup stays incomplete, and automatic setup/background wake are unsupported. Externally verified vault workflows can still use the existing manual tools. An observed 403 stops further HTTP calls in that process; resolve the refusal instead of switching paths or restarting to bypass it.
 
 **Demo only. Data may be periodically cleared. Do not store sensitive or important information.** Public registration is subject to account and rate limits.
 
@@ -66,7 +66,7 @@ No HTTP retry is automatic. A failed/timed-out write can have committed: retain 
 
 ## Local verification
 
-Use the Worker test harness, from `hosts/Weave.Mailbox.Worker`:
+Use the Worker test harness, from `typescript/mailbox-worker`:
 
 ```sh
 npm ci --ignore-scripts

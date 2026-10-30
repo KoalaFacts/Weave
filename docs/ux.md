@@ -1,6 +1,6 @@
 # UX — CLI & Dashboard
 
-> **Source**: `src/UX/` | **Depends on**: [Foundation](foundation.md), [Workspaces](workspaces.md), [Assistants](assistants.md), [Tools](tools.md), [Security](security.md), [Deployment](deployment.md), [Runtime](runtime.md) | **Depended on by**: (none — top-level)
+> **Source**: `csharp/src/UX/` | **Depends on**: [Foundation](foundation.md), [Workspaces](workspaces.md), [Assistants](assistants.md), [Tools](tools.md), [Security](security.md), [Deployment](deployment.md), [Runtime](runtime.md) | **Depended on by**: (none — top-level)
 > **See also**: [index](index.md)
 
 The UX layer provides two user interfaces for managing Weave workspaces: a terminal CLI and a Blazor web dashboard.

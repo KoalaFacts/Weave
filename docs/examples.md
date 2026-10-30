@@ -212,7 +212,7 @@ public sealed record StartWorkspaceCommand(WorkspaceId WorkspaceId, WorkspaceMan
 Implement the handler (in the Silo or domain project):
 
 ```csharp
-// Source: hosts/Weave.Host/Api/WorkspaceCommandHandlers.cs
+// Source: csharp/hosts/Weave.Host/Api/WorkspaceCommandHandlers.cs
 public sealed class StartWorkspaceHandler(IActorFactory actorFactory)
     : ICommandHandler<StartWorkspaceCommand, WorkspaceState>
 {
@@ -279,7 +279,7 @@ var registry = actorFactory.GetActor<IWorkspaceRegistryActor>("active");
 ### Implementing a actor with primary constructor DI
 
 ```csharp
-// Source: src/Tools/Weave.Tools/Actors/ToolActor.cs
+// Source: csharp/src/Tools/Weave.Tools/Actors/ToolActor.cs
 public sealed partial class ToolActor(
     IActorFactory actorFactory,
     IToolDiscoveryService discovery,
@@ -331,7 +331,7 @@ public sealed partial class ToolActor(
 ## Minting and Validating Capability Tokens
 
 ```csharp
-// Source: src/Authority/Tokens/CapabilityTokenService.cs
+// Source: csharp/src/Authority/Tokens/CapabilityTokenService.cs
 
 // Mint a token
 var token = tokenService.Mint(new CapabilityTokenRequest
@@ -357,7 +357,7 @@ tokenService.Revoke(token.TokenId);
 ## Publishing Domain Events
 
 ```csharp
-// Source: extensions/Weave.AgentRuntime/Actors/AgentActor.cs
+// Source: csharp/extensions/Weave.AgentRuntime/Actors/AgentActor.cs
 
 // Publishing
 await eventBus.PublishAsync(new AgentActivatedEvent
@@ -408,7 +408,7 @@ await lifecycleManager.RunHooksAsync(LifecyclePhase.ToolConnected, context, ct);
 Pattern: NSubstitute for mocking + Shouldly for assertions.
 
 ```csharp
-// Source: tests/Weave.Tools.Tests/ToolActorTests.cs
+// Source: csharp/tests/Weave.Tools.Tests/ToolActorTests.cs
 
 public sealed class ToolActorTests
 {

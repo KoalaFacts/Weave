@@ -9,9 +9,9 @@ on:
       - 'examples/governed-tools/first_use.py'
       - 'scripts/tests/test_codex_bridge*.py'
       - 'scripts/tests/test_uuid_proposal_clients.py'
-      - 'hosts/Weave.Host/**'
-      - 'src/Invocations/**'
-      - 'extensions/Weave.Security.Sqlite/Invocations/**'
+      - 'csharp/hosts/Weave.Host/**'
+      - 'csharp/src/Invocations/**'
+      - 'csharp/extensions/Weave.Security.Sqlite/Invocations/**'
       - '.github/workflows/codex-bridge-contract.yml'
       - '.github/actions/build-standalone-host/**'
       - '.github/actions/setup-dotnet/**'
@@ -47,7 +47,7 @@ jobs:
           from first_use import Walkthrough, SOURCE, INTRO, BASE, ROUTE
           from codex_bridge import Bridge, BridgeError
           repo = Path.cwd()
-          dll = repo / 'hosts/Weave.Host/bin/Release/net10.0/Weave.Silo.dll'
+          dll = repo / 'csharp/hosts/Weave.Host/bin/Release/net10.0/Weave.Silo.dll'
           with tempfile.TemporaryDirectory(prefix='weave-bridge-contract-') as directory:
               root = Path(directory)
               evidence = root / 'evidence'

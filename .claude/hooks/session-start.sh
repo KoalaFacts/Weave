@@ -34,5 +34,5 @@ echo "export DOTNET_NOLOGO=1" >> "$CLAUDE_ENV_FILE"
 export PATH="${DOTNET_INSTALL_DIR}:${PATH}"
 export DOTNET_ROOT="${DOTNET_INSTALL_DIR}"
 cd "${CLAUDE_PROJECT_DIR}"
-dotnet restore Weave.slnx --verbosity quiet
+dotnet restore csharp/Weave.slnx --verbosity quiet
 echo "NuGet packages restored."

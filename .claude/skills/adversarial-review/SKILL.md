@@ -1,13 +1,13 @@
 ---
 name: adversarial-review
-description: Adversarial self-review of staged or recent code, looking for the smells that grep-based auditors miss — dead branches, conflated UX messages, defensive nulls on contracts you control, tests that pass for the wrong reason, redundant DTO chains, style drift inside one file, over-engineering for private contracts. INVOKE THIS — proactively, without being asked — before every `git commit` that touches `src/`, after writing or rewriting any non-trivial code path, before saying "done" on a task that already passed `check-rules`. Pairs with `check-rules` (which catches mechanical/repo-policy violations); this one catches judgement-call smells. Reports a flat punch list with severity, file:line, and fix shape — does not auto-fix.
+description: Adversarial self-review of staged or recent code, looking for the smells that grep-based auditors miss — dead branches, conflated UX messages, defensive nulls on contracts you control, tests that pass for the wrong reason, redundant DTO chains, style drift inside one file, over-engineering for private contracts. INVOKE THIS — proactively, without being asked — before every `git commit` that touches `csharp/src/`, after writing or rewriting any non-trivial code path, before saying "done" on a task that already passed `check-rules`. Pairs with `check-rules` (which catches mechanical/repo-policy violations); this one catches judgement-call smells. Reports a flat punch list with severity, file:line, and fix shape — does not auto-fix.
 ---
 
 # adversarial-review — judgement-call smell-spot
 
 ## When to run
 
-Run this skill, without being asked, before every `git commit` that touches `src/`. Also after rewriting a non-trivial code path, after migrating a feature, before saying "done" on any task that already passed `check-rules`. **`check-rules` catches what `grep` can find; this skill catches what `grep` can't.**
+Run this skill, without being asked, before every `git commit` that touches `csharp/src/`. Also after rewriting a non-trivial code path, after migrating a feature, before saying "done" on any task that already passed `check-rules`. **`check-rules` catches what `grep` can find; this skill catches what `grep` can't.**
 
 If you find yourself thinking "this is fine, I just shipped it" — that is the strongest signal you should run this. The author's confidence is the worst predictor of code quality.
 
@@ -137,13 +137,13 @@ or
 == adversarial-review punch list (<N> findings) ==
 
 BLOCK
-  src/Foo/Bar.cs:42 — catch (FormatException) cannot fire; ManifestParser.Parse only throws JsonException → drop the arm
+  csharp/src/Foo/Bar.cs:42 — catch (FormatException) cannot fire; ManifestParser.Parse only throws JsonException → drop the arm
 
 WARN
-  src/Foo/BazTests.cs:88 — assertion matches both extracted message and fallback default → assert against marker substring only present in stub
+  csharp/src/Foo/BazTests.cs:88 — assertion matches both extracted message and fallback default → assert against marker substring only present in stub
 
 NOTE
-  src/Foo/Quux.cs — wire records mix primary-ctor and property-init styles → align to property-init
+  csharp/src/Foo/Quux.cs — wire records mix primary-ctor and property-init styles → align to property-init
 ```
 
 Always also report what you DIDN'T check (e.g. "skipped category 4 — no test changes in diff"), so the user can tell whether silence means "looked, found nothing" or "didn't look".

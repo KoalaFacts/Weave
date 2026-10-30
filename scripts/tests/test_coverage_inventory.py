@@ -30,7 +30,7 @@ def closure(project, seen=None):
 class CoverageInventoryTests(unittest.TestCase):
     def test_manifest_matches_every_runtime_project_and_actual_assembly(self):
         manifest = json.loads((ROOT / 'scripts/coverage-ownership.json').read_text())
-        projects = {p.relative_to(ROOT).as_posix(): p for area in ('src', 'hosts', 'extensions')
+        projects = {p.relative_to(ROOT).as_posix(): p for area in ('csharp/src', 'csharp/hosts', 'csharp/extensions')
                     for p in (ROOT / area).rglob('*.csproj')
                     if not {'bin', 'obj'} & set(p.parts)}
         self.assertEqual(set(projects), set(manifest))
@@ -43,7 +43,7 @@ class CoverageInventoryTests(unittest.TestCase):
 
     def test_owners_are_direct_or_explicit_dynamic_and_contributors_are_runtime_closure(self):
         manifest = json.loads((ROOT / 'scripts/coverage-ownership.json').read_text())
-        suites = sorted((ROOT / 'tests').rglob('*.Tests.csproj'))
+        suites = sorted((ROOT / 'csharp/tests').rglob('*.Tests.csproj'))
         for path, entry in manifest.items():
             target = (ROOT / path).resolve()
             self.assertEqual(sorted(p.stem for p in suites if target in references(p)), entry['owners'], path)
@@ -65,17 +65,17 @@ class CoverageInventoryTests(unittest.TestCase):
     def test_dashboard_dynamic_ownership_is_narrow_and_source_backed(self):
         manifest = json.loads((ROOT / 'scripts/coverage-ownership.json').read_text())
         dynamic = {path: entry['dynamicOwners'] for path, entry in manifest.items() if entry.get('dynamicOwners')}
-        self.assertEqual({'hosts/Weave.Dashboard/Weave.Dashboard.csproj': [{
+        self.assertEqual({'csharp/hosts/Weave.Dashboard/Weave.Dashboard.csproj': [{
             'suite': 'Weave.Silo.Tests',
-            'source': 'tests/Weave.Silo.Tests/Invocations/DashboardReviewRenderingTests.cs',
+            'source': 'csharp/tests/Weave.Silo.Tests/Invocations/DashboardReviewRenderingTests.cs',
             'method': 'DashboardReviewRenderingTests.DashboardType',
         }]}, dynamic)
-        evidence = (ROOT / dynamic['hosts/Weave.Dashboard/Weave.Dashboard.csproj'][0]['source']).read_text()
+        evidence = (ROOT / dynamic['csharp/hosts/Weave.Dashboard/Weave.Dashboard.csproj'][0]['source']).read_text()
         self.assertIn('internal static Type DashboardType(string name)', evidence)
         self.assertIn('Assembly.LoadFrom(assemblyPath)', evidence)
         self.assertIn('"hosts", "Weave.Dashboard", "bin", configuration', evidence)
         self.assertIn('"net10.0", "Weave.Dashboard.dll"', evidence)
-        self.assertEqual(['Weave.Silo.Tests'], manifest['hosts/Weave.Dashboard/Weave.Dashboard.csproj']['owners'])
+        self.assertEqual(['Weave.Silo.Tests'], manifest['csharp/hosts/Weave.Dashboard/Weave.Dashboard.csproj']['owners'])
 
     def test_ci_restores_pinned_tool_runs_executable_regressions_and_keeps_reports(self):
         workflow = (ROOT / '.github/workflows/ci.yml').read_text().split('  code-quality:')[0]
@@ -86,7 +86,7 @@ class CoverageInventoryTests(unittest.TestCase):
         positions = [workflow.index(step) for step in ordered]
         self.assertEqual(sorted(positions), positions)
         for command in ('dotnet tool restore --tool-manifest .config/dotnet-tools.json',
-                        'dotnet restore scripts/DevTool/DevTool.csproj --locked-mode',
+                        'dotnet restore csharp/tools/DevTool/DevTool.csproj --locked-mode',
                         'python3 -m unittest discover -s scripts/coverage-tests -v',
                         'coverage --threshold 90', 'path: TestResults/'):
             self.assertIn(command, workflow)

@@ -1,6 +1,6 @@
 # Workspaces
 
-> **Source**: `src/Workspaces/` | **Depends on**: [Foundation](foundation.md) | **Depended on by**: [Assistants](assistants.md), [Tools](tools.md), [Security](security.md), [Deployment](deployment.md), [Runtime](runtime.md), [UX](ux.md)
+> **Source**: `csharp/src/Workspaces/` | **Depends on**: [Foundation](foundation.md) | **Depended on by**: [Assistants](assistants.md), [Tools](tools.md), [Security](security.md), [Deployment](deployment.md), [Runtime](runtime.md), [UX](ux.md)
 > **See also**: [index](index.md)
 
 The Workspaces subsystem handles workspace manifest parsing, validation, runtime environment provisioning, and workspace lifecycle management through Orleans actors.
