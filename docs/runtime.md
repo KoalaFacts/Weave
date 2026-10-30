@@ -1,6 +1,6 @@
 # Runtime
 
-> **Source**: `src/Runtime/` | **Depends on**: [Foundation](foundation.md), [Workspaces](workspaces.md), [Assistants](assistants.md), [Tools](tools.md), [Security](security.md) | **Depended on by**: [UX](ux.md)
+> **Source**: `csharp/src/Runtime/` | **Depends on**: [Foundation](foundation.md), [Workspaces](workspaces.md), [Assistants](assistants.md), [Tools](tools.md), [Security](security.md) | **Depended on by**: [UX](ux.md)
 > **See also**: [index](index.md)
 
 The Runtime subsystem is the hosting and orchestration layer: the virtual actor host (currently Orleans-backed), .NET Aspire app host, and shared service defaults.

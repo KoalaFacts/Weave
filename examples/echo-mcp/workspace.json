@@ -6,7 +6,7 @@
   // exposed by server.py are reachable by other MCP clients (see README.md).
   //
   // Boot from the repo root:
-  //   dotnet run --project src/UX/Weave.Cli -- workspace up examples/echo-mcp/workspace.json
+  //   dotnet run --project csharp/src/UX/Weave.Cli -- workspace up examples/echo-mcp/workspace.json
   //
   // The model field uses a stub so the workspace boots without API keys —
   // swap to a real Anthropic/OpenAI model + set the matching API key env var

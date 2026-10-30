@@ -12,15 +12,15 @@ if ! command -v dotnet >/dev/null 2>&1; then
   exit 0
 fi
 
-output=$(dotnet format Weave.slnx --no-restore --verify-no-changes \
-  --exclude src/Foundation/Weave.Shared/ 2>&1)
+output=$(dotnet format csharp/Weave.slnx --no-restore --verify-no-changes \
+  --exclude csharp/src/Foundation/Weave.Shared/ 2>&1)
 status=$?
 
 if [ $status -eq 0 ]; then
   exit 0
 fi
 
-reason=$(printf 'dotnet format --verify-no-changes failed. Fix with:\n  dotnet format Weave.slnx --no-restore --exclude src/Foundation/Weave.Shared/\n\n%s' "$output")
+reason=$(printf 'dotnet format --verify-no-changes failed. Fix with:\n  dotnet format csharp/Weave.slnx --no-restore --exclude csharp/src/Foundation/Weave.Shared/\n\n%s' "$output")
 
 jq -n --arg reason "$reason" '{
   hookSpecificOutput: {

@@ -215,8 +215,8 @@ an untrusted Agent or non-local deployment.
 From the repository root, with its supported SDK installed:
 
 ```text
-dotnet publish hosts/Weave.Cli/Weave.Cli.csproj -c Release -r win-x64 --self-contained true -p:PackAsTool=false -o artifacts/local-bundle
-dotnet publish hosts/Weave.Host/Weave.Host.csproj -c Release -r win-x64 --self-contained true -o artifacts/local-bundle/host
+dotnet publish csharp/hosts/Weave.Cli/Weave.Cli.csproj -c Release -r win-x64 --self-contained true -p:PackAsTool=false -o artifacts/local-bundle
+dotnet publish csharp/hosts/Weave.Host/Weave.Host.csproj -c Release -r win-x64 --self-contained true -o artifacts/local-bundle/host
 ```
 
 Change the RID for the target platform. The release workflow packages the same

@@ -22,7 +22,7 @@ jobs:
     defaults:
       run:
         shell: bash
-        working-directory: hosts/Weave.Mailbox.Worker
+        working-directory: typescript/mailbox-worker
     steps:
       - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v6
         with:
@@ -43,8 +43,8 @@ jobs:
       - name: Build original C# wire compatibility fixture
         working-directory: .
         run: |
-          dotnet restore tests/Weave.Worker.Compatibility/Weave.Worker.Compatibility.csproj --locked-mode
-          dotnet build tests/Weave.Worker.Compatibility/Weave.Worker.Compatibility.csproj --no-restore -c Release
+          dotnet restore csharp/tests/Weave.Worker.Compatibility/Weave.Worker.Compatibility.csproj --locked-mode
+          dotnet build csharp/tests/Weave.Worker.Compatibility/Weave.Worker.Compatibility.csproj --no-restore -c Release
       - name: Exercise C# against local Worker HTTP
         run: npm run test:compat
       - name: Install locked Playwright Chromium and Linux dependencies
@@ -52,7 +52,7 @@ jobs:
       - name: Prepare the managed Worker browser sandbox
         uses: ./.github/actions/setup-playwright-sandbox
         with:
-          playwright-package: hosts/Weave.Mailbox.Worker/node_modules/playwright
+          playwright-package: typescript/mailbox-worker/node_modules/playwright
       - name: Exercise real demo and registry in protected Chrome
         # Playwright manages the matching browser; chromiumSandbox remains enabled.
         # The fixture fails if the runner cannot provide its namespace and seccomp sandbox.
@@ -70,6 +70,6 @@ jobs:
         uses: actions/upload-artifact@043fb46d1a93c77aae656e7c1c64a875d1fc6a0a # v7
         with:
           name: worker-browser-evidence
-          path: hosts/Weave.Mailbox.Worker/test-results/browser/
+          path: typescript/mailbox-worker/test-results/browser/
           if-no-files-found: warn
           retention-days: 14

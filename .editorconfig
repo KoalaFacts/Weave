@@ -283,7 +283,7 @@ dotnet_diagnostic.IDE0290.severity = suggestion
 
 #### Test Project Overrides ####
 
-[src/**.Tests/**.cs]
+[csharp/src/**.Tests/**.cs]
 dotnet_naming_rule.async_methods_should_end_with_async.severity = none
 dotnet_diagnostic.CA1707.severity = none
 

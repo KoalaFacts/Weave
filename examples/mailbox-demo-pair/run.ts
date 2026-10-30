@@ -27,7 +27,7 @@ export async function doctor(vault?:string,options:DoctorOptions={}):Promise<Dia
     try{const servers=JSON.parse(await execute('codex',['mcp','list','--json']));if(!Array.isArray(servers)||servers.length)missing.push('clean_codex_profile');}catch{missing.push('codex_profile_check');}
     try{await execute('op',['whoami','--format=json']);if(vault)await execute('op',['vault','get',vault,'--format=json']);}catch{missing.push('secure_vault');}
     try{const body=object(await (options.publicRead??publicRead)());if(!Array.isArray(body.items)||body.items.length>1||!('nextCursor' in body))throw Error();}catch{missing.push('demo_connectivity');}
-    if(!(options.sourceAvailable??(['server.ts','tools.ts'].every(f=>existsSync(join(root,'examples/mailbox-demo-mcp',f)))&&existsSync(join(root,'hosts/Weave.Mailbox.Worker/src/agent-start.md')))))missing.push('mcp_source_missing');
+    if(!(options.sourceAvailable??(['server.ts','tools.ts'].every(f=>existsSync(join(root,'examples/mailbox-demo-mcp',f)))&&existsSync(join(root,'typescript/mailbox-worker/src/agent-start.md')))))missing.push('mcp_source_missing');
     return {ready:missing.length===0,missing};
 }
 export interface Agent {call(command:string,value?:unknown):Promise<any>}

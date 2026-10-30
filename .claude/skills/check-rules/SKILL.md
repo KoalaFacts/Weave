@@ -15,7 +15,7 @@ Run this skill, without being asked, before saying "done" on any task that adds 
 
 ## Audit procedure
 
-Determine the scope first. If running on a diff, get the changed files: `git diff --name-only main...HEAD` (or `gh pr diff <n> --name-only`). If running on a fresh implementation, the scope is whatever you just wrote. If running on the whole repo, scope is `src/`.
+Determine the scope first. If running on a diff, get the changed files: `git diff --name-only main...HEAD` (or `gh pr diff <n> --name-only`). If running on a fresh implementation, the scope is whatever you just wrote. If running on the whole repo, scope is `csharp/src/`.
 
 Then walk the categories below. Each section names what to check and the exact `grep` / `find` invocation. Report findings as a flat punch list:
 
@@ -55,7 +55,7 @@ Abstractions projects pull zero third-party provider packages. Each storage/tran
 grep -rnE "PackageReference Include=\"(Microsoft\.Data\.Sqlite|Microsoft\.Data\.SqlClient|Npgsql|StackExchange\.Redis|Microsoft\.Orleans\.(Persistence|Clustering)\.(Redis|AdoNet))\"" src --include="*.csproj"
 
 # Verify the abstractions project (e.g. Weave.Security) doesn't pull any
-grep -E "PackageReference" src/Weave.csproj
+grep -E "PackageReference" csharp/src/Weave.csproj
 ```
 
 If a domain project (Weave.Security, Weave.Tools, Weave.Agents, Weave.Workspaces, Weave.Deploy) lists any of those packages: BLOCK — extract into a sibling impl project. If `Weave.Silo` lists them directly (as opposed to via a `Weave.Silo.Clustering.X` project): WARN.
@@ -68,7 +68,7 @@ If the diff touches any `*.csproj`, every consumer's `packages.lock.json` must r
 # Force regenerate and diff — anything other than zero changes means a stale lockfile slipped in
 find src -name "packages.lock.json" -delete
 find src -name "obj" -type d -prune -exec rm -rf {} + 2>/dev/null
-dotnet restore Weave.slnx --force
+dotnet restore csharp/Weave.slnx --force
 git status --short src '*packages.lock.json'
 # Any output = lockfiles were stale; commit the regen.
 ```
@@ -182,7 +182,7 @@ grep -rnE "measurements\.Count\.ShouldBe\(\d|\.Count.ShouldBe\(1\)" src --includ
   | grep -v "/bin/"
 ```
 
-If a test reads from a static instrument and uses `List<T>` instead of `ConcurrentQueue<T>`, or asserts exact counts instead of `ShouldContain`: BLOCK. Pattern lives in `tests/Weave.Security.Tests/CapabilityAuthorizerTests.cs`.
+If a test reads from a static instrument and uses `List<T>` instead of `ConcurrentQueue<T>`, or asserts exact counts instead of `ShouldContain`: BLOCK. Pattern lives in `csharp/tests/Weave.Security.Tests/CapabilityAuthorizerTests.cs`.
 
 ### 9. Catch-clause hygiene (BLOCK on swallowed catches; WARN on verbose form)
 
@@ -361,8 +361,8 @@ grep -rn "Environment\.SetEnvironmentVariable" src --include="*Test*.cs" | grep 
 ### 16. Build and test gate (BLOCK)
 
 ```bash
-dotnet build Weave.slnx 2>&1 | tail -5      # 0 warnings, 0 errors
-dotnet test --solution Weave.slnx --no-build 2>&1 | tail -5
+dotnet build csharp/Weave.slnx 2>&1 | tail -5      # 0 warnings, 0 errors
+dotnet test --solution csharp/Weave.slnx --no-build 2>&1 | tail -5
 ```
 
 Warnings are errors in this repo. Tests must be green. Run the full suite at least 3 times if you touched `CapabilityAuthorizer`, any `Meter`-emitting code, or anything Orleans grain-related — flake hides in single runs.
@@ -373,15 +373,15 @@ Warnings are errors in this repo. Tests must be green. Run the full suite at lea
 == check-rules audit: <scope> ==
 
 BLOCK
-  src/Foo/BarActor.cs:42 — DateTime.UtcNow in retry-backoff loop → inject TimeProvider, call _timeProvider.GetUtcNow()
-  src/Baz/Quux.csproj:8 — Npgsql in domain project → extract impl into Weave.Baz.Postgres
-  src/Foo/Foo.cs — 412 lines, 3 unrelated public types → split per type, each its own file
+  csharp/src/Foo/BarActor.cs:42 — DateTime.UtcNow in retry-backoff loop → inject TimeProvider, call _timeProvider.GetUtcNow()
+  csharp/src/Baz/Quux.csproj:8 — Npgsql in domain project → extract impl into Weave.Baz.Postgres
+  csharp/src/Foo/Foo.cs — 412 lines, 3 unrelated public types → split per type, each its own file
 
 WARN
-  src/Foo/FooTests.cs — 612 lines → production class likely too big; consider splitting
+  csharp/src/Foo/FooTests.cs — 612 lines → production class likely too big; consider splitting
 
 NOTE
-  src/Bar/Models/ — folder name 'Models' is the codified smell list; consider co-locating with consumer
+  csharp/src/Bar/Models/ — folder name 'Models' is the codified smell list; consider co-locating with consumer
 
 If empty: `== check-rules: clean ==`
 ```

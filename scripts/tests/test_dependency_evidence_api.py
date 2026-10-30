@@ -18,7 +18,7 @@ SPEC = importlib.util.spec_from_file_location("evidence", ROOT / "scripts/check_
 evidence = importlib.util.module_from_spec(SPEC)
 SPEC.loader.exec_module(evidence)
 BASE, HEAD = "1" * 40, "2" * 40
-CHANGE = {"change_type": "added", "manifest": "src/Weave.csproj"}
+CHANGE = {"change_type": "added", "manifest": "csharp/src/Weave.csproj"}
 NEXT = '<https://api.github.com/ignored>; rel="next"'
 
 
@@ -168,7 +168,7 @@ class EvidenceApiTests(unittest.TestCase):
 
     def test_malformed_or_wrong_schema_response_is_unavailable(self):
         for body in (b"{bad", b"null", b"{}", b"[null]", b"[{}]", b"\xff",
-                     json.dumps([{"change_type": "unexpected", "manifest": "src/Weave.csproj"}]).encode()):
+                     json.dumps([{"change_type": "unexpected", "manifest": "csharp/src/Weave.csproj"}]).encode()):
             with self.subTest(body=body[:20]), self.assertRaises(evidence.EvidenceUnavailable):
                 self.check(Opener(Reply(body)))
 

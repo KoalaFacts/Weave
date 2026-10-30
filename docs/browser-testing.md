@@ -1,16 +1,16 @@
 # Browser tests
 
-Dashboard and Worker browser tests use official Playwright SDKs with the managed `chromium` channel. Dashboard pins `Microsoft.Playwright` in `Directory.Packages.props`; Worker pins `playwright` in its npm manifest and lockfile. The .NET 1.63.0 SDK selects Chromium revision 1243 (Chrome for Testing 153.0.8010.12); the Node 1.62.1 SDK selects revision 1234 (151.0.7922.34). Each suite installs its own SDK's browser. Browser revisions must be checked when either SDK changes; do not substitute a system Chrome executable.
+Dashboard and Worker browser tests use official Playwright SDKs with the managed `chromium` channel. Dashboard pins `Microsoft.Playwright` in `csharp/Directory.Packages.props`; Worker pins `playwright` in its npm manifest and lockfile. The .NET 1.63.0 SDK selects Chromium revision 1243 (Chrome for Testing 153.0.8010.12); the Node 1.62.1 SDK selects revision 1234 (151.0.7922.34). Each suite installs its own SDK's browser. Browser revisions must be checked when either SDK changes; do not substitute a system Chrome executable.
 
 ## Dashboard
 
 From the repository root, restore and build the solution, then install the browser through the built SDK:
 
 ```bash
-dotnet restore Weave.slnx --locked-mode
-dotnet build Weave.slnx --no-restore -c Release
-pwsh tests/Weave.Silo.Tests/bin/Release/net10.0/playwright.ps1 install --with-deps --no-shell chromium
-dotnet test --project tests/Weave.Silo.Tests/Weave.Silo.Tests.csproj --no-build -c Release \
+dotnet restore csharp/Weave.slnx --locked-mode
+dotnet build csharp/Weave.slnx --no-restore -c Release
+pwsh csharp/tests/Weave.Silo.Tests/bin/Release/net10.0/playwright.ps1 install --with-deps --no-shell chromium
+dotnet test --project csharp/tests/Weave.Silo.Tests/Weave.Silo.Tests.csproj --no-build -c Release \
   -- --filter-class Weave.Silo.Tests.Dashboard.DashboardReviewBrowserTests \
      --filter-class Weave.Silo.Tests.Dashboard.DashboardPlaywrightBrowserTests
 ```
@@ -27,7 +27,7 @@ Reload and disposal make the [Playwright driver emit WebSocket close events with
 
 ## Worker
 
-Use the [Worker browser instructions](../hosts/Weave.Mailbox.Worker/README.md) to install locked Node dependencies and managed Chromium, then run `npm run test:browser`. The browser suite covers the registry, independent accounts, recipient acceptance, exact-envelope retry after a lost successful response, inbox reads and mobile ACK. Its fixture regressions cover native browser operations and network/lifecycle boundaries. Inspect the synthetic screenshots as well as the assertion results.
+Use the [Worker browser instructions](../typescript/mailbox-worker/README.md) to install locked Node dependencies and managed Chromium, then run `npm run test:browser`. The browser suite covers the registry, independent accounts, recipient acceptance, exact-envelope retry after a lost successful response, inbox reads and mobile ACK. Its fixture regressions cover native browser operations and network/lifecycle boundaries. Inspect the synthetic screenshots as well as the assertion results.
 
 Worker CI runs the same build, browser test files and concurrency with Node's standard multi-reporter support. Full `spec` output is retained in `test-results/browser/test.log`; a separate reporter emits at most ten bounded failure annotations with credential-like values omitted and repository test locations. Raw test output stays outside GitHub's workflow-command parser. These annotations supplement the existing evidence artifact and do not change the test runner's exit status.
 

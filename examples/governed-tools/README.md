@@ -20,7 +20,7 @@ With the repository's [.NET SDK](../../global.json) installed and ports 9401
 (HTTP), 11111 (Orleans silo) and 30000 (Orleans gateway) free, run:
 
 ```bash
-dotnet build hosts/Weave.Host/Weave.Host.csproj -c Release
+dotnet build csharp/hosts/Weave.Host/Weave.Host.csproj -c Release
 node examples/governed-tools/host-demo.ts
 ```
 

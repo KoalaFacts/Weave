@@ -42,15 +42,15 @@ Weave.AppHost (Aspire orchestrator)
 
 | Document | Subsystem | Source Path | Key Concepts |
 |----------|-----------|-------------|--------------|
-| [foundation.md](foundation.md) | Shared + SourceGen | `src/Foundation/` | Branded IDs, CQRS dispatch, domain events, lifecycle hooks, SecretValue, source generators |
-| [workspaces.md](workspaces.md) | Workspaces | `src/Workspaces/` | Workspace manifest (JSONC), manifest parser/validator, runtime abstraction (InProcess/Podman), workspace actor, plugin registry |
-| [assistants.md](assistants.md) | Agents | `src/Assistants/` | Agent actor, supervisor, heartbeat scheduling, chat pipeline (rate limiting, cost tracking), task management, proof-of-work verification |
-| [tools.md](tools.md) | Tools | `src/Tools/` | Tool connectors (MCP, CLI, OpenAPI, Dapr, DirectHTTP), tool actor with security scanning, tool discovery service |
-| [security.md](security.md) | Security | `src/Security/` | Capability tokens (HMAC-SHA256), leak scanner (15 patterns + entropy), secret proxy, Vault/InMemory secret providers |
-| [deployment.md](deployment.md) | Deployment | `src/Deployment/` | Publishers: Docker Compose, Kubernetes, Nomad, Fly.io, GitHub Actions |
-| [runtime.md](runtime.md) | Runtime | `src/Runtime/` | Orleans Silo host, Aspire AppHost, plugin wiring (Dapr/Vault), REST API, CQRS handler registration |
-| [ux.md](ux.md) | CLI + Dashboard | `src/UX/` | CLI commands (System.CommandLine + Spectre.Console), Blazor dashboard (FluentUI), workspace presets |
-| [handoff.md](handoff.md) | Action Layer (Shape C) | `extensions/Weave.Actions/` | Frontend-agnostic actions, `IActionPrompter`/`IActionReporter`, `ActionResult<T>`, typed `HttpClient` per action via `AddSiloActions(...)` |
+| [foundation.md](foundation.md) | Shared + SourceGen | `csharp/src/Foundation/` | Branded IDs, CQRS dispatch, domain events, lifecycle hooks, SecretValue, source generators |
+| [workspaces.md](workspaces.md) | Workspaces | `csharp/src/Workspaces/` | Workspace manifest (JSONC), manifest parser/validator, runtime abstraction (InProcess/Podman), workspace actor, plugin registry |
+| [assistants.md](assistants.md) | Agents | `csharp/src/Assistants/` | Agent actor, supervisor, heartbeat scheduling, chat pipeline (rate limiting, cost tracking), task management, proof-of-work verification |
+| [tools.md](tools.md) | Tools | `csharp/src/Tools/` | Tool connectors (MCP, CLI, OpenAPI, Dapr, DirectHTTP), tool actor with security scanning, tool discovery service |
+| [security.md](security.md) | Security | `csharp/src/Security/` | Capability tokens (HMAC-SHA256), leak scanner (15 patterns + entropy), secret proxy, Vault/InMemory secret providers |
+| [deployment.md](deployment.md) | Deployment | `csharp/src/Deployment/` | Publishers: Docker Compose, Kubernetes, Nomad, Fly.io, GitHub Actions |
+| [runtime.md](runtime.md) | Runtime | `csharp/src/Runtime/` | Orleans Silo host, Aspire AppHost, plugin wiring (Dapr/Vault), REST API, CQRS handler registration |
+| [ux.md](ux.md) | CLI + Dashboard | `csharp/src/UX/` | CLI commands (System.CommandLine + Spectre.Console), Blazor dashboard (FluentUI), workspace presets |
+| [handoff.md](handoff.md) | Action Layer (Shape C) | `csharp/extensions/Weave.Actions/` | Frontend-agnostic actions, `IActionPrompter`/`IActionReporter`, `ActionResult<T>`, typed `HttpClient` per action via `AddSiloActions(...)` |
 | [examples.md](examples.md) | Code Examples | (cross-cutting) | Manifest authoring, CLI usage, actors, CQRS handlers, tokens, events, lifecycle hooks, testing patterns |
 
 ## Strategy & Direction

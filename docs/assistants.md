@@ -1,6 +1,6 @@
 # Assistants
 
-> **Source**: `src/Assistants/` | **Depends on**: [Foundation](foundation.md), [Workspaces](workspaces.md), [Tools](tools.md), [Security](security.md) | **Depended on by**: [Runtime](runtime.md), [UX](ux.md)
+> **Source**: `csharp/src/Assistants/` | **Depends on**: [Foundation](foundation.md), [Workspaces](workspaces.md), [Tools](tools.md), [Security](security.md) | **Depended on by**: [Runtime](runtime.md), [UX](ux.md)
 > **See also**: [index](index.md)
 
 The Assistants subsystem implements the AI agent framework — agent actors, supervisor, heartbeat scheduling, chat pipeline, task management, and proof-of-work verification.

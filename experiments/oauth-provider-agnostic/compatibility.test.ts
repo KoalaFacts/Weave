@@ -4,7 +4,7 @@ import {createServer} from 'node:http';
 import {createHash,randomUUID} from 'node:crypto';
 import {test} from 'node:test';
 import {authorizeMcpAccount} from '../../examples/remote-mcp-pair/oauth.ts';
-import {authorizeOAuth,type OAuthConfiguration} from '../../hosts/Weave.Mailbox.Worker/src/remote-oauth.ts';
+import {authorizeOAuth,type OAuthConfiguration} from '../../typescript/mailbox-worker/src/remote-oauth.ts';
 
 const account='01234567-89ab-4def-8123-456789abcdef';
 const scope='weave:messages.read';

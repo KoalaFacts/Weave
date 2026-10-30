@@ -176,8 +176,8 @@ class ReleaseWorkflowTests(unittest.TestCase):
     def test_build_and_pack_receive_the_same_version(self):
         for name in ('release.yml', 'ci.yml'):
             blocks = run_blocks(ROOT / '.github/workflows' / name)
-            build = next(b for b in blocks if b.startswith('dotnet build Weave.slnx'))
-            pack = next(b for b in blocks if 'dotnet pack hosts/Weave.Cli/Weave.Cli.csproj' in b)
+            build = next(b for b in blocks if b.startswith('dotnet build csharp/Weave.slnx'))
+            pack = next(b for b in blocks if 'dotnet pack csharp/hosts/Weave.Cli/Weave.Cli.csproj' in b)
             with self.subTest(workflow=name):
                 self.assertIn('"-p:Version=$VERSION"', build)
                 self.assertIn('"-p:Version=$VERSION"', pack)
@@ -207,11 +207,11 @@ class ReleaseWorkflowTests(unittest.TestCase):
         self.assertIn('https://www.nuget.org/packages/KoalaFacts.Weave.Cli/', publish)
         self.assertIn('dotnet tool install -g KoalaFacts.Weave.Cli --version', release)
         self.assertNotIn('dotnet tool install -g Weave.Cli ', release)
-        project = ET.parse(ROOT / 'hosts/Weave.Cli/Weave.Cli.csproj')
+        project = ET.parse(ROOT / 'csharp/hosts/Weave.Cli/Weave.Cli.csproj')
         self.assertEqual(project.find('.//ToolCommandName').text, 'weave')
 
     def test_embedded_symbols_do_not_request_an_empty_symbol_package(self):
-        props = ET.parse(ROOT / 'Directory.Build.props')
+        props = ET.parse(ROOT / 'csharp/Directory.Build.props')
         self.assertEqual(props.find('.//DebugType').text, 'embedded')
         for name in ('release.yml', 'ci.yml'):
             content = (ROOT / '.github/workflows' / name).read_text()
@@ -224,7 +224,7 @@ class ReleaseWorkflowTests(unittest.TestCase):
     def test_ci_packages_real_tool_without_publish_credentials(self):
         content = (ROOT / '.github/workflows/ci.yml').read_text()
         build = content.split('  build-and-test:', 1)[1].split('  exact-base-coverage-diagnostic:', 1)[0]
-        for required in ('dotnet pack hosts/Weave.Cli/Weave.Cli.csproj', 'IncludeSymbols=false',
+        for required in ('dotnet pack csharp/hosts/Weave.Cli/Weave.Cli.csproj', 'IncludeSymbols=false',
                          'scripts/release/guard.py validate-packages', '0.1.0-ci-validation'):
             self.assertIn(required, build)
         for forbidden in ('nuget push', 'NUGET_API_KEY', 'id-token: write', 'attestations: write'):
@@ -255,7 +255,7 @@ class ReleaseWorkflowTests(unittest.TestCase):
         self.assertNotIn('continue-on-error:', reporter)
 
     def test_messagepack_security_patch_is_pinned(self):
-        packages = ET.parse(ROOT / 'Directory.Packages.props')
+        packages = ET.parse(ROOT / 'csharp/Directory.Packages.props')
         version = packages.find('.//PackageVersion[@Include="MessagePack"]').attrib['Version']
         parts = tuple(int(v) for v in version.split('.'))
         self.assertEqual(parts[0], 2, 'Review a major-version migration explicitly')

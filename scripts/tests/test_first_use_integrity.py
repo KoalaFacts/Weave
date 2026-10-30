@@ -14,12 +14,12 @@ class FirstUseIntegrityTests(unittest.TestCase):
         self.check_integrity(mutate=False)
 
     def test_acceptance_cannot_modify_tracked_product_or_locks(self):
-        for path in ('hosts/Weave.Host/Product.cs', 'hosts/Weave.Host/packages.lock.json'):
+        for path in ('csharp/hosts/Weave.Host/Product.cs', 'csharp/hosts/Weave.Host/packages.lock.json'):
             for staged in (False, True):
                 with self.subTest(path=path, staged=staged):
                     self.check_integrity(mutate=True, path=path, staged=staged)
 
-    def check_integrity(self, *, mutate, path='hosts/Weave.Host/Product.cs', staged=False):
+    def check_integrity(self, *, mutate, path='csharp/hosts/Weave.Host/Product.cs', staged=False):
         shell = shutil.which('sh' if os.name == 'nt' else 'bash')
         if shell is None:
             self.skipTest('A POSIX shell is unavailable')
@@ -33,7 +33,7 @@ class FirstUseIntegrityTests(unittest.TestCase):
                                       text=True, check=True, timeout=10).stdout.strip()
 
             git('init', '-q')
-            source = root / 'hosts/Weave.Host/Product.cs'
+            source = root / 'csharp/hosts/Weave.Host/Product.cs'
             source.parent.mkdir(parents=True)
             source.write_text('baseline product\n')
             lock = source.parent / 'packages.lock.json'

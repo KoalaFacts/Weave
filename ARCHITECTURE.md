@@ -19,47 +19,49 @@ Governed Tools retains its separate Agent Control Plane responsibility: represen
 ## 2. Source and project boundaries
 
 ```text
-src/
-  Weave.csproj
-  Contacts/
-  Mailboxes/
-  Agents/
-  Workspaces/
-  Authority/
-  Invocations/
-  Plugins/
-  Resources/
-  Credentials/
-  Audit/
-  Composition/
-hosts/
-  Weave.Mailbox.Host/
-  Weave.Host/
-  Weave.Cli/
-  Weave.Dashboard/
-  Weave.AppHost/
-  Weave.ServiceDefaults/
-extensions/
-  Weave.Mailboxes.Sqlite/
-  Weave.AgentRuntime/
-  Weave.Mcp/
-  Weave.CliTools/
-  Weave.OpenApi/
-  Weave.DirectHttp/
-  Weave.FileSystem/
-  Weave.Dapr/
-  ...other opt-in implementations...
-tools/
-  Weave.SourceGen/
-tests/
-  ...feature and compatibility test suites...
-protocol/
+csharp/                    C#/.NET implementation (current)
+  Weave.slnx
+  src/
+    Weave.csproj
+    Contacts/
+    Mailboxes/
+    Agents/
+    Workspaces/
+    Authority/
+    Invocations/
+    Plugins/
+    Resources/
+    Credentials/
+    Audit/
+    Composition/
+  hosts/
+    Weave.Mailbox.Host/
+    Weave.Host/
+    Weave.Cli/
+    Weave.Dashboard/
+    Weave.AppHost/
+    Weave.ServiceDefaults/
+  extensions/
+    Weave.Mailboxes.Sqlite/
+    Weave.AgentRuntime/
+    Weave.Mcp/
+    ...other opt-in implementations...
+  tools/
+    Weave.SourceGen/
+    DevTool/
+  tests/
+    ...feature and compatibility test suites...
+typescript/                TypeScript packages
+  auth-worker/
+  mailbox-worker/
+  plugin-echo/
+protocol/                  language-neutral contract
   ...versioned schemas and cross-language fixtures as implemented...
 ```
 
-Feature folders MUST be direct children of `src/`: no product-name or `Features/` wrapper. Additional real features such as Rooms, Channels, Memory and Skills are not technical layers. Do not create empty feature trees before a use case exists.
+Top-level folders are split by language; the [runtime-neutral contract](docs/runtime-contract.md) in `protocol/` is shared by every implementation. Feature folders MUST be direct children of `csharp/src/`: no product-name or `Features/` wrapper. Additional real features such as Rooms, Channels, Memory and Skills are not technical layers. Do not create empty feature trees before a use case exists.
 
-The product project is `src/Weave.csproj`; its assembly is `Weave.Product`, avoiding a case-insensitive collision with the existing CLI assembly `weave`. Its namespace root is `Weave`. Physical directories need not mirror the project name.
+The product project is `csharp/src/Weave.csproj`; its assembly is `Weave.Product`, avoiding a case-insensitive collision with the existing CLI assembly `weave`. Its namespace root is `Weave`. Physical directories need not mirror the project name.
 
 The current structural migration retains existing namespaces to avoid combining a package/host refactor with an unreviewed protocol or persistence migration. Those names are not a reason to recreate Shared/Core layers.
 

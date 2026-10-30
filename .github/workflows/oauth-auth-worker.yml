@@ -4,14 +4,14 @@ on:
   push:
     branches: [main, feat/oauth-existing-account-proof]
     paths:
-      - hosts/Weave.Auth.Worker/**
-      - hosts/Weave.Mailbox.Worker/src/**
-      - hosts/Weave.Mailbox.Worker/scripts/**
-      - hosts/Weave.Mailbox.Worker/test/remote-oauth-identity-links.test.ts
-      - hosts/Weave.Mailbox.Worker/test/remote-oauth.test.ts
-      - hosts/Weave.Mailbox.Worker/test/remote-oauth-issuer.test.ts
-      - hosts/Weave.Mailbox.Worker/test/harness.ts
-      - hosts/Weave.Mailbox.Worker/package*.json
+      - typescript/auth-worker/**
+      - typescript/mailbox-worker/src/**
+      - typescript/mailbox-worker/scripts/**
+      - typescript/mailbox-worker/test/remote-oauth-identity-links.test.ts
+      - typescript/mailbox-worker/test/remote-oauth.test.ts
+      - typescript/mailbox-worker/test/remote-oauth-issuer.test.ts
+      - typescript/mailbox-worker/test/harness.ts
+      - typescript/mailbox-worker/package*.json
       - experiments/oauth-provider-agnostic/**
       - examples/remote-mcp-pair/oauth.ts
       - examples/remote-mcp-pair/run.ts
@@ -19,14 +19,14 @@ on:
   pull_request:
     branches: [main]
     paths:
-      - hosts/Weave.Auth.Worker/**
-      - hosts/Weave.Mailbox.Worker/src/**
-      - hosts/Weave.Mailbox.Worker/scripts/**
-      - hosts/Weave.Mailbox.Worker/test/remote-oauth-identity-links.test.ts
-      - hosts/Weave.Mailbox.Worker/test/remote-oauth.test.ts
-      - hosts/Weave.Mailbox.Worker/test/remote-oauth-issuer.test.ts
-      - hosts/Weave.Mailbox.Worker/test/harness.ts
-      - hosts/Weave.Mailbox.Worker/package*.json
+      - typescript/auth-worker/**
+      - typescript/mailbox-worker/src/**
+      - typescript/mailbox-worker/scripts/**
+      - typescript/mailbox-worker/test/remote-oauth-identity-links.test.ts
+      - typescript/mailbox-worker/test/remote-oauth.test.ts
+      - typescript/mailbox-worker/test/remote-oauth-issuer.test.ts
+      - typescript/mailbox-worker/test/harness.ts
+      - typescript/mailbox-worker/package*.json
       - experiments/oauth-provider-agnostic/**
       - examples/remote-mcp-pair/oauth.ts
       - examples/remote-mcp-pair/run.ts
@@ -47,7 +47,7 @@ jobs:
     defaults:
       run:
         shell: bash
-        working-directory: hosts/Weave.Auth.Worker
+        working-directory: typescript/auth-worker
     steps:
       - name: Checkout exact branch SHA without write credentials
         uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v6
@@ -64,31 +64,31 @@ jobs:
       - name: Typecheck provider-neutral protocol experiment
         working-directory: .
         run: >-
-          hosts/Weave.Auth.Worker/node_modules/.bin/tsc --noEmit --strict
+          typescript/auth-worker/node_modules/.bin/tsc --noEmit --strict
           --target es2022 --module esnext --moduleResolution bundler
           --allowImportingTsExtensions --lib es2022,dom,dom.iterable
-          --typeRoots hosts/Weave.Auth.Worker/node_modules/@types --types node
+          --typeRoots typescript/auth-worker/node_modules/@types --types node
           experiments/oauth-provider-agnostic/*.ts examples/remote-mcp-pair/run.ts
       - name: Test unchanged client against independent protocol issuers
         working-directory: .
         run: node --test experiments/oauth-provider-agnostic/*.test.ts
       - name: Install locked mailbox Worker dependencies for full MCP/D1 acceptance
-        working-directory: hosts/Weave.Mailbox.Worker
+        working-directory: typescript/mailbox-worker
         run: npm ci --ignore-scripts --no-audit --no-fund
       - name: Strictly typecheck the complete mailbox Worker
-        working-directory: hosts/Weave.Mailbox.Worker
+        working-directory: typescript/mailbox-worker
         run: npm run typecheck
       - name: Verify provider-neutral issuer and subject binding regressions on the real mailbox validator
-        working-directory: hosts/Weave.Mailbox.Worker
+        working-directory: typescript/mailbox-worker
         run: node --test test/remote-oauth.test.ts
       - name: Verify merged RFC 9207 authorization callback issuer binding in the real remote MCP client
-        working-directory: hosts/Weave.Mailbox.Worker
+        working-directory: typescript/mailbox-worker
         run: node --test test/remote-oauth-issuer.test.ts
       - name: Bundle real mailbox resource Worker without publishing
-        working-directory: hosts/Weave.Mailbox.Worker
+        working-directory: typescript/mailbox-worker
         run: npm run build
       - name: Test first-party owner-approved external OAuth subject links against real Worker/D1
-        working-directory: hosts/Weave.Mailbox.Worker
+        working-directory: typescript/mailbox-worker
         run: node --test test/remote-oauth-identity-links.test.ts
       - name: Typecheck OAuth provider 1.2.4 Service Binding and Durable Objects
         run: npm run typecheck
@@ -122,7 +122,7 @@ jobs:
           node-version: '24'
           package-manager-cache: false
       - name: Connect an actual anonymous MCP client to the public demo (no credentials or writes)
-        run: node hosts/Weave.Mailbox.Worker/scripts/verify-public-mcp.ts
+        run: node typescript/mailbox-worker/scripts/verify-public-mcp.ts
 
   anonymous-discovery:
     runs-on: ubuntu-24.04
