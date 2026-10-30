@@ -353,9 +353,9 @@ test('cli_MissingMalformedOversizedOrIncompleteFile_RemainsUnavailable', () => {
   for (const [payload, independentRecords, count, code] of [
     [undefined, [change('MIT')], 1, 'invalid-license-evidence'],
     ['{', [change('MIT')], 1, 'invalid-license-evidence'],
-    [' '.repeat(2 * 1024 * 1024 + 1), [], 0, 'invalid-license-evidence'],
+    [' '.repeat(8 * 1024 * 1024 + 1), [], 0, 'invalid-license-evidence'],
     [JSON.stringify([change('MIT')]), [change('MIT')], 2, 'incomplete-dependency-comparison'],
-    [JSON.stringify(Array.from({ length: 2001 }, () => change('MIT'))), [change('MIT')], 1,
+    [JSON.stringify(Array.from({ length: 10001 }, () => change('MIT'))), [change('MIT')], 1,
       'incomplete-dependency-comparison'],
   ]) {
     const checked = runFilePolicy(payload, independentRecords, count);

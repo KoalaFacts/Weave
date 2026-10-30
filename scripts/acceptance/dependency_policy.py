@@ -217,6 +217,9 @@ def main():
     substituted = distinct[:-1] + [{**distinct[-1], 'name': 'substituted-action-record'}]
     missing = distinct[:-1] + [distinct[0]]
     conflicting = distinct + [{**distinct[0], 'license': 'GPL-3.0'}]
+    moved = [{**change('MIT'), 'name': f'moved-{index}',
+              'package_url': f'pkg:nuget/moved-{index}@1.0.0',
+              'manifest': 'csharp/src/packages.lock.json'} for index in range(2105)]
     cases = [
         ('permitted-license', [change('MIT')], False, False, None),
         ('permitted-expression', [change('MIT OR Apache-2.0')], False, False, None),
@@ -229,6 +232,9 @@ def main():
         ('complete-empty-delta', [], False, False, None),
         ('missing-snapshot', [], True, True, None),
         ('large-permitted-delta', large, False, False, None),
+        ('complete-moved-2105', moved, False, False, None),
+        ('prohibited-moved-last', moved[:-1] + [{**moved[-1], 'license': 'GPL-3.0'}], False, True, None),
+        ('incomplete-moved-last', moved, False, True, moved[:-1]),
         ('prohibited-large-final-change', large[:-1] + [{**large[-1], 'license': 'GPL-3.0'}], False, True, None),
         ('unknown-large-final-change', large[:-1] + [{**large[-1], 'license': None}], False, True, None),
         ('duplicate-comparison-395', distinct, False, False, twice),

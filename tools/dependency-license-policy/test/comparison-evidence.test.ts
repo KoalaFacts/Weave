@@ -127,15 +127,15 @@ test('inspectComparison_DeniedFinalDistinctRecord_IsRetainedForUnchangedPolicy',
 
 test('inspectComparison_RawLimitsApplyBeforeCollapsingDuplicates', () => {
   const row = change(0);
-  const padded = { ...row, metadata: 'x'.repeat(1500) };
-  assert.deepEqual(inspect(Array.from({ length: 2001 }, () => row), [row]), unavailable);
-  assert.deepEqual(inspect([row], Array.from({ length: 2001 }, () => row)), unavailable);
-  const oversized = JSON.stringify(Array.from({ length: 1500 }, () => padded));
-  assert.ok(Buffer.byteLength(oversized) > 2 * 1024 * 1024);
+  const padded = { ...row, metadata: 'x'.repeat(8000) };
+  assert.deepEqual(inspect(Array.from({ length: 10001 }, () => row), [row]), unavailable);
+  assert.deepEqual(inspect([row], Array.from({ length: 10001 }, () => row)), unavailable);
+  const oversized = JSON.stringify(Array.from({ length: 1100 }, () => padded));
+  assert.ok(Buffer.byteLength(oversized) > 8 * 1024 * 1024);
   const invalid = { status: 'unavailable', failure_code: 'invalid-license-evidence' };
   assert.deepEqual(inspectComparison(oversized, JSON.stringify(evidence([padded]))), invalid);
   assert.deepEqual(inspectComparison(JSON.stringify([padded]), JSON.stringify({
-    ...evidence([padded]), metadata: 'x'.repeat(2 * 1024 * 1024),
+    ...evidence([padded]), metadata: 'x'.repeat(8 * 1024 * 1024),
   })), invalid);
 });
 
