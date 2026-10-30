@@ -1,6 +1,6 @@
-import { CONTROL_HASH_SCHEME, CONTROL_HASH_PARAMETERS, controlDigest, digestMatches, validParameters } from './credentials';
-import { atomic, type Env } from './database';
-import { fail, hash, object, parse } from './wire';
+import { CONTROL_HASH_SCHEME, CONTROL_HASH_PARAMETERS, controlDigest, digestMatches, validParameters } from './credentials.ts';
+import { atomic, type Env, type Transaction } from './database.ts';
+import { fail, hash, object, parse } from './wire.ts';
 
 function settings(env: Env, name: keyof Env, max: number): number {
     const text = env[name]; if (typeof text !== 'string' || !/^\d+$/.test(text)) fail(503,'storage');
@@ -15,6 +15,27 @@ export async function authenticate(env: Env, secret: string | null): Promise<any
     if (!validParameters(account.controlHashParameters) || !digestMatches(digest,account.controlHash)) fail(401,'unauthenticated');
     return account;
 }
+// Shared by self-registration and human-owned agent creation: total account capacity,
+// global and per-source hourly counters, and the bounded cleanup of old counters.
+export async function admitRegistration(env: Env, tx: Transaction, sourceIp: string): Promise<boolean> {
+    const hour = Number(tx.store.now / 36000000000n);
+    const source = await hash('registration:' + hour + ':' + sourceIp);
+    const maxAccounts = settings(env,'REGISTRATION_MAX_ACCOUNTS',10000);
+    const maxGlobal = settings(env,'REGISTRATION_GLOBAL_PER_HOUR',10000);
+    const maxSource = settings(env,'REGISTRATION_PER_IP_PER_HOUR',1000);
+    const count = await tx.db.prepare('SELECT count(*) n FROM accounts').first<number>('n');
+    if (count === null || count >= maxAccounts) return false;
+    const increments: [string,number][] = [];
+    for (const [id,max] of [['global',maxGlobal],[source,maxSource]] as const) {
+        const counter = await tx.get('registration-rate','',id);
+        const count = counter?.hour === hour ? counter.count : 0;
+        if (count >= max) return false; increments.push([id,count + 1]);
+    }
+    // Nothing is staged for a refusal, so a caller may return it without committing counters.
+    for (const [id,count] of increments) tx.put('registration-rate','',id,{ hour, count });
+    tx.writes.push(tx.db.prepare("DELETE FROM rate_limits WHERE seq IN (SELECT seq FROM rate_limits WHERE policy='registration' AND window_start<CAST(? AS INTEGER) LIMIT 100)").bind((BigInt(hour)*36000000000n).toString()));
+    return true;
+}
 export async function register(env: Env, request: Request, secret: string | null, input: any): Promise<any> {
     if (!secret) fail(401,'unauthenticated'); object(input,[],['displayName','description']);
     for (const [key,max] of [['displayName',128],['description',1024]] as const) {
@@ -25,19 +46,7 @@ export async function register(env: Env, request: Request, secret: string | null
         const existing = await tx.db.prepare('SELECT account_id FROM accounts WHERE control_hash=?').bind(digest).first<string>('account_id');
         if (existing) { const a=await tx.get('account','',existing); if (a.controlHashScheme !== CONTROL_HASH_SCHEME || !validParameters(a.controlHashParameters) || !digestMatches(digest,a.controlHash)) fail(401,'unauthenticated'); return {agentId:a.accountId,displayName:a.displayName,description:a.description}; }
         if (env.REGISTRATION_ENABLED !== 'true') fail(404,'unavailable');
-        const now = Date.now(), hour = Math.floor(now / 3600000);
-        const source = await hash('registration:' + hour + ':' + (request.headers.get('CF-Connecting-IP') ?? 'unknown'));
-        const maxAccounts = settings(env,'REGISTRATION_MAX_ACCOUNTS',10000);
-        const maxGlobal = settings(env,'REGISTRATION_GLOBAL_PER_HOUR',10000);
-        const maxSource = settings(env,'REGISTRATION_PER_IP_PER_HOUR',1000);
-        const count = await tx.db.prepare('SELECT count(*) n FROM accounts').first<number>('n');
-        if (count === null || count >= maxAccounts) fail(429,'capacity');
-        for (const [id,max] of [['global',maxGlobal],[source,maxSource]] as const) {
-            const counter = await tx.get('registration-rate','',id);
-            const count = counter?.hour === hour ? counter.count : 0;
-            if (count >= max) fail(429,'capacity'); tx.put('registration-rate','',id,{ hour, count: count + 1 });
-        }
-        tx.writes.push(tx.db.prepare("DELETE FROM rate_limits WHERE seq IN (SELECT seq FROM rate_limits WHERE policy='registration' AND window_start<CAST(? AS INTEGER) LIMIT 100)").bind((BigInt(hour)*36000000000n).toString()));
+        if (!await admitRegistration(env,tx,request.headers.get('CF-Connecting-IP') ?? 'unknown')) fail(429,'capacity');
         const accountId = crypto.randomUUID();
         if(await tx.get('account','',accountId))fail(409,'conflict');
         tx.put('account','',accountId,{accountId,controlHash:digest,controlHashScheme:CONTROL_HASH_SCHEME,controlHashParameters:CONTROL_HASH_PARAMETERS,displayName:input.displayName ?? null,description:input.description ?? null});

@@ -1,7 +1,8 @@
 /** Optional machine-readable hint naming the rejected input field. Never echoes the input value. */
 export interface ProblemField { field: string; reason: string; }
 export class Problem extends Error {
-    constructor(public status: number, public code: string, public retryAfter?: number, public detail?: ProblemField) { super(code); }
+    status: number; code: string; retryAfter?: number; detail?: ProblemField;
+    constructor(status: number, code: string, retryAfter?: number, detail?: ProblemField) { super(code); this.status = status; this.code = code; this.retryAfter = retryAfter; this.detail = detail; }
 }
 export function invalidField(field: string, reason: string): never { throw new Problem(400, 'invalid', undefined, {field, reason}); }
 export function fail(status = 400, code = 'invalid', retryAfter?: number): never { throw new Problem(status, code, retryAfter); }

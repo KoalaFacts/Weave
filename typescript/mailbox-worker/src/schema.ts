@@ -5,17 +5,35 @@ import { exactInteger, opaqueBytes } from './sqlite-values.ts';
 // Latest target schema. Data transformations and their execution records are separate.
 // No compatibility views, synchronization triggers, or numbered schema snapshots.
 
+export const humans = sqliteTable("humans", {
+    human_id: text("human_id").notNull().primaryKey(),
+    provider: text("provider").notNull(),
+    subject: text("subject").notNull(),
+    provider_created_at: text("provider_created_at").notNull(),
+    display_login: text("display_login").notNull(),
+    frozen_at: exactInteger("frozen_at"),
+    created_at: exactInteger("created_at").notNull(),
+    updated_at: exactInteger("updated_at").notNull(),
+}, t => [
+    uniqueIndex("humans_subject").on(t.provider, t.subject),
+    check("humans_provider",sql`provider='github'`),
+    check("humans_subject_decimal",sql`length(subject) BETWEEN 1 AND 20 AND subject GLOB '[1-9]*' AND subject NOT GLOB '*[^0-9]*'`)
+]);
+
 export const accounts = sqliteTable("accounts", {
     account_id: text("account_id").notNull().primaryKey(),
-    control_hash: text("control_hash").notNull(),
-    control_hash_scheme: text("control_hash_scheme").notNull(),
-    control_hash_parameters: text("control_hash_parameters").notNull(),
+    human_id: text("human_id").references(() => humans.human_id, {onDelete:"restrict"}),
+    control_hash: text("control_hash"),
+    control_hash_scheme: text("control_hash_scheme"),
+    control_hash_parameters: text("control_hash_parameters"),
     display_name: text("display_name"),
     description: text("description"),
     created_at: exactInteger("created_at"),
     updated_at: exactInteger("updated_at"),
 }, t => [
     uniqueIndex("accounts_control_hash").on(t.control_hash),
+    index("accounts_human").on(t.human_id, t.created_at),
+    check("accounts_control_all_or_none",sql`(control_hash IS NULL AND control_hash_scheme IS NULL AND control_hash_parameters IS NULL) OR (control_hash IS NOT NULL AND control_hash_scheme IS NOT NULL AND control_hash_parameters IS NOT NULL)`),
     check("accounts_control_digest",sql`length(control_hash)=64 AND control_hash NOT GLOB '*[^0-9a-f]*'`),
     check("accounts_control_scheme",sql`control_hash_scheme='sha256-utf8-v1'`),
     check("accounts_control_parameters",sql`json_valid(control_hash_parameters)`)

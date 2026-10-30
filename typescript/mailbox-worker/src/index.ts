@@ -1,3 +1,5 @@
+import { WorkerEntrypoint } from 'cloudflare:workers';
+import { createOwnedAgent, humanHasAgent, listHumanAgents, signInHuman, type CreateAgentResult, type HumanSignIn, type AgentSummary } from './humans.ts';
 import { demo } from './demo';
 import { agentStart } from './agent-start';
 import { registry } from './registry';
@@ -25,6 +27,15 @@ import { ack, send } from './messages';
 import { read } from './reads';
 import { body, control, fail, json, legacyResponse, object, problem } from './wire';
 import { validatePayload } from './protocol';
+
+// Private Service Binding RPC for the OAuth authorization server; deliberately has no fetch route.
+export class HumanDirectory extends WorkerEntrypoint<Env> {
+    private get scopedEnv(): Env { return { ...this.env, db: budgetDatabase(this.env.db) }; }
+    signIn(input: HumanSignIn): Promise<{ ok: true; humanId: string } | { ok: false; reason: 'frozen' }> { return signInHuman(this.scopedEnv, input); }
+    listAgents(humanId: string): Promise<AgentSummary[]> { return listHumanAgents(this.scopedEnv, humanId); }
+    createAgent(input: { humanId: string; displayName: string; sourceIp: string }): Promise<CreateAgentResult> { return createOwnedAgent(this.scopedEnv, input); }
+    hasAgent(humanId: string, accountId: string): Promise<boolean> { return humanHasAgent(this.scopedEnv, humanId, accountId); }
+}
 
 export default {
     async scheduled(_event: unknown, env: Env): Promise<void> {

@@ -72,7 +72,7 @@ export function runWrangler(args: string[],root: string,env: NodeJS.ProcessEnv){
     });
 }
 export async function buildArtifacts(root: string){
-    await build({absWorkingDir:root,entryPoints:['src/index.ts','src/recovery.ts'],bundle:true,format:'esm',platform:'browser',outdir:'dist',external:['node:crypto'],loader:{'.html':'text','.json':'text','.md':'text'}});
+    await build({absWorkingDir:root,entryPoints:['src/index.ts','src/recovery.ts'],bundle:true,format:'esm',platform:'browser',outdir:'dist',external:['node:crypto','cloudflare:workers'],loader:{'.html':'text','.json':'text','.md':'text'}});
     return Object.fromEntries(await Promise.all(['index','recovery'].map(async name=>[name,createHash('sha256').update(await readFile(join(root,'dist',name+'.js'))).digest('hex')])));
 }
 export async function deploy({env=process.env,fetchImpl=fetch,run,root=directory,openDatabase=openRemoteDatabase,buildBundles=buildArtifacts,verifyMigration=verifyCompletedMigration,applySchema=createMissingSchema,planSchema=planLatestSchema}: DeployOptions={}){
