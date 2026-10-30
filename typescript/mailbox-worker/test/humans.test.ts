@@ -169,3 +169,18 @@ test('createOwnedAgent_RegistrationDisabled_ReturnsUnavailable', async () => {
         assert.deepEqual(await listHumanAgents(open, id), []);
     } finally { await h.close(); }
 });
+
+test('humanDirectory_FrozenAfterCreatingAgent_RefusesManagement', async () => {
+    const h = await start();
+    try {
+        const env = environment(h), id = await humanId(env), other = await humanId(env, '456');
+        const created = await create(env, id) as { accountId: string };
+        await h.db.prepare("UPDATE humans SET frozen_at=updated_at WHERE human_id=?").bind(id).run();
+        assert.deepEqual(await listHumanAgents(env, id), []);
+        assert.equal(await humanHasAgent(env, id, created.accountId), false);
+        assert.deepEqual(await create(env, id, 'Another'), { ok: false, reason: 'frozen' });
+        assert.equal(await h.db.prepare('SELECT count(*) n FROM accounts WHERE human_id=?').bind(id).first('n'), 1);
+        // Over-correction guard: an unfrozen human is unaffected.
+        assert.equal((await create(env, other)).ok, true);
+    } finally { await h.close(); }
+});

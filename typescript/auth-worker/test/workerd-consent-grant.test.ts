@@ -573,3 +573,35 @@ test("a foreign browser cannot burn an owner nonce before consent-cookie verific
       "token revocation must be observed at the next Service Binding lookup");
   }finally{await stop(instance);}
 });
+
+test("consent_HumanFrozenAfterSignIn_NoCodeForExistingOrNewAgent",{timeout:60_000},async()=>{
+  const {mf}=shared;
+  const owner=await authorizeAgent(mf,10001,"new","Before freeze");
+  const humanId=await humanIdOf(mf,10001);
+  await (await mailboxDb(mf)).prepare("UPDATE humans SET frozen_at=updated_at WHERE human_id=?").bind(humanId).run();
+  for(const choice of [{agent:owner.accountId},{agent:"new",agentName:"After freeze"}] as Record<string,string>[]){
+    const auth=authorization();
+    const consent=await openConsent(mf,auth,owner.session);
+    assert.doesNotMatch(consent.html,new RegExp(owner.accountId),"a frozen human's agents are not offered");
+    const response=await post(mf,consent.cookie,{handle:consent.handle,decision:"approve",...choice});
+    assert.equal(response.status,choice.agent==="new"?403:400);
+    assert.equal(response.headers.get("location"),null,"no code for a frozen human");
+    if(choice.agent==="new")assert.match(await response.text(),/This GitHub identity is frozen; contact the operator/);
+  }
+  assert.equal(await grantsFor(mf,owner.accountId),1,"no grant after the freeze");
+  assert.deepEqual(await agentsOf(mf,humanId),[owner.accountId],"no agent created after the freeze");
+});
+
+test("consent_AgentCreationUnavailable_Returns503WithoutCode",{timeout:60_000},async()=>{
+  const instance=await start({},{REGISTRATION_ENABLED:{type:"text",value:"false"}});
+  try{
+    const {mf}=instance;
+    const auth=authorization();
+    const consent=await openConsent(mf,auth,await signIn(mf,auth,11001));
+    const response=await post(mf,consent.cookie,{handle:consent.handle,decision:"approve",agent:"new",agentName:"Claude Code"});
+    assert.equal(response.status,503);
+    assert.equal(response.headers.get("location"),null);
+    assert.match(await response.text(),/New agents cannot be created right now/);
+    assert.deepEqual(await agentsOf(mf,await humanIdOf(mf,11001)),[]);
+  }finally{await stop(instance);}
+});

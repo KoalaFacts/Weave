@@ -10,7 +10,7 @@ export const maxAgentsPerHuman = 10;
 export type HumanSignIn = { provider: 'github'; subject: string; providerCreatedAt: string; displayLogin: string };
 export type AgentSummary = { accountId: string; displayName: string | null };
 export type SignInResult = { ok: true; humanId: string } | { ok: false; reason: 'frozen' | 'unavailable' };
-export type CreateAgentResult = { ok: true; accountId: string } | { ok: false; reason: 'agent-limit' | 'rate-limited' | 'invalid' | 'unavailable' };
+export type CreateAgentResult = { ok: true; accountId: string } | { ok: false; reason: 'agent-limit' | 'rate-limited' | 'invalid' | 'frozen' | 'unavailable' };
 
 const subjectPattern = /^[1-9][0-9]{0,19}$/;
 const loginPattern = /^[A-Za-z0-9](?:[A-Za-z0-9-]{0,38})$/;
@@ -59,14 +59,14 @@ export async function signInHuman(env: Env, input: HumanSignIn): Promise<SignInR
 
 export async function listHumanAgents(env: Env, humanId: string): Promise<AgentSummary[]> {
     requireReadable(env); requireUuid(humanId);
-    const { results } = await env.db.prepare('SELECT account_id,display_name FROM accounts WHERE human_id=? ORDER BY created_at,rowid LIMIT ?')
+    const { results } = await env.db.prepare('SELECT a.account_id,a.display_name FROM accounts a JOIN humans h ON h.human_id=a.human_id WHERE a.human_id=? AND h.frozen_at IS NULL ORDER BY a.created_at,a.rowid LIMIT ?')
         .bind(humanId, maxAgentsPerHuman).all<{ account_id: string; display_name: string | null }>();
     return results.map(row => ({ accountId: row.account_id, displayName: row.display_name }));
 }
 
 export async function humanHasAgent(env: Env, humanId: string, accountId: string): Promise<boolean> {
     requireReadable(env); requireUuid(humanId); requireUuid(accountId);
-    return await env.db.prepare('SELECT 1 n FROM accounts WHERE human_id=? AND account_id=?').bind(humanId, accountId).first('n') !== null;
+    return await env.db.prepare('SELECT 1 n FROM accounts a JOIN humans h ON h.human_id=a.human_id WHERE a.human_id=? AND a.account_id=? AND h.frozen_at IS NULL').bind(humanId, accountId).first('n') !== null;
 }
 
 export async function createOwnedAgent(env: Env, input: { humanId: string; displayName: string; sourceIp: string }): Promise<CreateAgentResult> {
@@ -77,7 +77,9 @@ export async function createOwnedAgent(env: Env, input: { humanId: string; displ
         || controlCharacters.test(input.displayName)) return invalid;
     return atomic(env.db, async tx => {
         const human = await tx.db.prepare('SELECT frozen_at FROM humans WHERE human_id=?').bind(input.humanId).first<{ frozen_at: string | null }>();
-        if (!human || human.frozen_at !== null) return invalid;
+        if (!human) return invalid;
+        // A frozen GitHub identity has lost its management rights; its agents are not deleted.
+        if (human.frozen_at !== null) return { ok: false as const, reason: 'frozen' as const };
         const owned = await tx.db.prepare('SELECT count(*) n FROM accounts WHERE human_id=?').bind(input.humanId).first<number>('n');
         if (owned === null || owned >= maxAgentsPerHuman) return { ok: false as const, reason: 'agent-limit' as const };
         if (!await admitRegistration(env, tx, input.sourceIp)) return { ok: false as const, reason: 'rate-limited' as const };
