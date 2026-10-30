@@ -10,7 +10,7 @@ import {fileURLToPath} from 'node:url';
 const alice='aaaaaaaa-aaaa-4aaa-8aaa-aaaaaaaaaaaa',bob='bbbbbbbb-bbbb-4bbb-8bbb-bbbbbbbbbbbb';
 const names=['get_my_profile','ensure_my_address','list_my_contact_requests','list_my_contacts','get_my_channel',
     'list_my_inbox','list_my_outbox','request_contact','decide_contact','send_message','ack_message'];
-test('committed remote send with lost HTTP response retains an exact token-free recovery journal without retry',async()=>{
+test('committed remote send with lost HTTP response retains an exact token-free recovery journal without retry',{skip:process.platform==='win32'&&'Requires POSIX owner-only file modes for private pair state'},async()=>{
     let requestId='',accepted=false,sendCount=0,committed:any=null;
     const server=createServer(async(req,res)=>{
         const parts:Buffer[]=[];for await(const part of req)parts.push(part);

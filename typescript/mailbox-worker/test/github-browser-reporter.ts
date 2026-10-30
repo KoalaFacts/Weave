@@ -1,4 +1,5 @@
-import { relative, resolve } from 'node:path';
+import { relative, resolve, sep } from 'node:path';
+import { fileURLToPath, pathToFileURL } from 'node:url';
 
 function safeLine(value, limit) {
     if (typeof value !== 'string') return '';
@@ -18,18 +19,21 @@ function escapeCommand(value) {
 }
 
 function ownedFrames(error, data) {
-    const marker = resolve('test') + '/';
+    // ESM frames use file URLs; CommonJS frames use native paths (backslashes on Windows).
+    const markers = [pathToFileURL(resolve('test')).href + '/', resolve('test') + sep];
     const frames = [];
     const stack = typeof error?.stack === 'string' ? error.stack : '';
     for (const line of stack.slice(0, 16384).split('\n').slice(0, 40)) {
-        if (!/^\s+at /.test(line) || !line.includes(marker)) continue;
-        const frame = line.slice(line.indexOf(marker) + marker.length)
+        const marker = markers.find(candidate => line.includes(candidate));
+        if (!/^\s+at /.test(line) || !marker) continue;
+        const frame = line.slice(line.indexOf(marker) + marker.length).replaceAll('\\', '/')
             .match(/^((?:browser\/[A-Za-z0-9_.-]+|harness)\.ts):(\d+):(\d+)\)?$/);
         if (frame) frames.push({ file: 'test/' + frame[1], line: frame[2], column: frame[3] });
         if (frames.length === 3) break;
     }
     if (!frames.length && typeof data.file === 'string') {
-        const file = relative(process.cwd(), data.file);
+        const path = data.file.startsWith('file:') ? fileURLToPath(data.file) : data.file;
+        const file = relative(process.cwd(), path).replaceAll(sep, '/');
         if (/^test\/browser\/[A-Za-z0-9_.-]+\.ts$/.test(file) && Number.isSafeInteger(data.line))
             frames.push({ file, line: data.line, column: data.column });
     }

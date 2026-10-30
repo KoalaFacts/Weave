@@ -133,7 +133,14 @@ test('symlinked app files are rejected without modifying their targets', async t
     const dir = fixture(t), { bind, inspect } = await api();
     const target = join(dir, 'outside.json');
     writeFileSync(target, '{"apps":{}}\n');
-    rmSync(join(dir, apps)); symlinkSync(target, join(dir, apps));
+    rmSync(join(dir, apps));
+    try { symlinkSync(target, join(dir, apps)); }
+    catch (error) {
+        // Windows without Developer Mode or admin rights cannot create symlinks.
+        if ((error as NodeJS.ErrnoException).code !== 'EPERM') throw error;
+        t.skip('Symlink creation requires Developer Mode or admin rights on this machine');
+        return;
+    }
     assert.ok(inspect(dir).errors.length > 0);
     assert.throws(() => bind(dir, syntheticApp), /invalid/i);
     assert.equal(readFileSync(target, 'utf8'), '{"apps":{}}\n');

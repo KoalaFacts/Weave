@@ -3,6 +3,7 @@ import importlib.util
 import os
 from pathlib import Path
 import shutil
+import sys
 import subprocess
 import tempfile
 import unittest
@@ -18,6 +19,7 @@ PROFILE = importlib.util.module_from_spec(SPEC)
 SPEC.loader.exec_module(PROFILE)
 
 
+@unittest.skipUnless(sys.platform.startswith('linux'), 'AppArmor profiles exist only on the Linux CI runner')
 class PlaywrightAppArmorProfileTests(unittest.TestCase):
     def setUp(self):
         self.temporary = tempfile.TemporaryDirectory()

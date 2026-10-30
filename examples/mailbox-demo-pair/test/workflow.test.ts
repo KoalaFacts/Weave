@@ -4,6 +4,8 @@ import {existsSync,mkdtempSync,mkdirSync,rmSync,readFileSync,readdirSync} from '
 import {join} from 'node:path';
 import {tmpdir} from 'node:os';
 import {randomUUID} from 'node:crypto';
+// The pair runtime refuses Windows: private state requires POSIX owner-only storage.
+const posixOnly={skip:process.platform==='win32'&&'Pair private state requires POSIX owner-only storage'};
 
 const A='11111111-1111-4111-8111-111111111111',B='22222222-2222-4222-8222-222222222222';
 export function relay(){
@@ -36,7 +38,7 @@ async function pair(t:any){
     function endpoint(role:'A'|'B') {const dir=join(root,role);if(!existsSync(dir))mkdirSync(dir,{mode:0o700});return new Endpoint(role,runId,dir,r.open(role),async(sequence:number,history:any[])=>{seen.push({role,sequence,history:structuredClone(history)});return {text:`Generated ${role} ${sequence}: ${history.at(-1)?.text??'first question'}`,threadId:randomUUID(),inputTokens:10,outputTokens:10};});}
     return {a:endpoint('A'),b:endpoint('B'),make:endpoint,root,r,seen,runId};
 }
-test('two endpoints recover private identities, review introductions, converse and verify receipts',async t=>{
+test('two endpoints recover private identities, review introductions, converse and verify receipts',posixOnly,async t=>{
     const {a,b,r,seen}=await pair(t);
     try{
         const ai=await a.setup(),bi=await b.setup();a.peer(bi);b.peer(ai);await a.introduce();await b.accept();
@@ -57,13 +59,13 @@ test('two endpoints recover private identities, review introductions, converse a
         assert.ok(r.messages.every(m=>m.state==='acknowledged'));
     }finally{await a.close();await b.close();}
 });
-test('recipient will not accept an introduction from a different run',async t=>{
+test('recipient will not accept an introduction from a different run',posixOnly,async t=>{
     const {a,b,r}=await pair(t);try{const ai=await a.setup(),bi=await b.setup();a.peer(bi);b.peer(ai);await a.introduce();
         r.messages[0].envelope.payload.bytes=Buffer.from(JSON.stringify({type:'weave-pair-contact',runId:randomUUID()})).toString('base64');
         await assert.rejects(b.accept());assert.equal(r.calls.filter(x=>x.name==='decide_contact').length,0);
     }finally{await a.close();await b.close();}
 });
-test('a reconnect with changed private address ownership fails closed before processing',async t=>{
+test('a reconnect with changed private address ownership fails closed before processing',posixOnly,async t=>{
     const {a,b,r}=await pair(t);
     try{
         const ai=await a.setup(),bi=await b.setup();a.peer(bi);b.peer(ai);await a.introduce();await b.accept();
@@ -81,7 +83,7 @@ test('a reconnect with changed private address ownership fails closed before pro
         assert.equal(r.messages.filter(m=>m.state==='pending').length,1);
     }finally{await a.close();await b.close();}
 });
-test('reconnect rejects a changed private address lifetime and closes the rejected transport',async t=>{
+test('reconnect rejects a changed private address lifetime and closes the rejected transport',posixOnly,async t=>{
     const {a,b,r}=await pair(t);
     try{
         const ai=await a.setup(),bi=await b.setup();a.peer(bi);b.peer(ai);await a.introduce();await b.accept();
@@ -106,7 +108,7 @@ test('reconnect rejects a changed private address lifetime and closes the reject
     }finally{await a.close();await b.close();}
 });
 
-test('a write failure preserves a pending exact payload without retry',async t=>{
+test('a write failure preserves a pending exact payload without retry',posixOnly,async t=>{
     const {a,b,root}=await pair(t);try{const ai=await a.setup(),bi=await b.setup();a.peer(bi);b.peer(ai);await a.introduce();await b.accept();
         const original=(a as any).client.call.bind((a as any).client);let attempts=0;
         (a as any).client.call=async(name:string,args:any)=>{if(name==='send_message'){attempts++;throw Error('timeout');}return original(name,args);};
@@ -115,25 +117,25 @@ test('a write failure preserves a pending exact payload without retry',async t=>
         const pending=checkpoints.find(c=>c.operation==='send_message');assert.equal(pending.status,'pending');assert.ok(pending.arguments.payload.messageId);assert.ok(!JSON.stringify(checkpoints).includes('f'.repeat(64)));
     }finally{await a.close();await b.close();}
 });
-test('incomplete pagination fails rather than being treated as no contact',async()=>{
+test('incomplete pagination fails rather than being treated as no contact',posixOnly,async()=>{
     const {pages}=await import('../mcp.ts');let n=0;
     await assert.rejects(pages({call:async()=>({items:[],nextCursor:String(++n)}),close:async()=>{}},'read_inbox'),/pagination_incomplete/);assert.equal(n,20);
 });
-test('a changed account during fresh recovery stops before creating an address',async t=>{
+test('a changed account during fresh recovery stops before creating an address',posixOnly,async t=>{
     const {a,r,root}=await pair(t);let openings=0;const original=(a as any).open;
     (a as any).open=async()=>{const c=await original();if(++openings===2){const call=c.call;c.call=async(name:string,args:any)=>name==='register_account'?{accountId:randomUUID()}:call(name,args);}return c;};
     try{await assert.rejects(a.setup(),/account_changed/);assert.equal(r.calls.filter(x=>x.name==='create_address').length,0);assert.equal(JSON.parse(readFileSync(join(root,'A/identity.json'),'utf8')).accountId,A);}finally{await a.close();}
 });
-test('failed fresh authentication does not trigger another registration',async t=>{
+test('failed fresh authentication does not trigger another registration',posixOnly,async t=>{
     const {a,r}=await pair(t);let openings=0;const original=(a as any).open;
     (a as any).open=async()=>{const c=await original();if(++openings===2){const call=c.call;c.call=async(name:string,args:any)=>{if(name==='list_addresses')throw Error('401 fixture');return call(name,args);};}return c;};
     try{await assert.rejects(a.setup());assert.equal(r.calls.filter(x=>x.name==='register_account').length,1);assert.equal(r.calls.filter(x=>x.name==='create_address').length,0);}finally{await a.close();}
 });
-test('completion rejects fabricated receiver content even with acknowledged receipts',async t=>{
+test('completion rejects fabricated receiver content even with acknowledged receipts',posixOnly,async t=>{
     const {a,b}=await pair(t);try{const ai=await a.setup(),bi=await b.setup();a.peer(bi);b.peer(ai);await a.introduce();await b.accept();for(let n=1;n<=6;n++)await(n%2?a:b).step(n);await a.consumeFinal();const ae=await a.evidence(),be=await b.evidence();be.received[0].text='fabricated';const {verifyEvidence}=await import('../endpoint.ts');assert.throws(()=>verifyEvidence(ae,be));}finally{await a.close();await b.close();}
 });
 
-test('a cold worker boundary restores both authenticated histories without replaying a pending delivery',async t=>{
+test('a cold worker boundary restores both authenticated histories without replaying a pending delivery',posixOnly,async t=>{
     const {a,b,make,r,seen}=await pair(t);
     const ai=await a.setup(),bi=await b.setup();a.peer(bi);b.peer(ai);await a.introduce();await b.accept();
     await a.step(1);await b.step(2);
@@ -152,7 +154,7 @@ test('a cold worker boundary restores both authenticated histories without repla
         assert.ok(r.messages.every(m=>m.state==='acknowledged'));
     }finally{await Promise.all([freshA.close(),freshB.close()]);}
 });
-test('cold restore rejects unresolved writes before any network access or replay',async t=>{
+test('cold restore rejects unresolved writes before any network access or replay',posixOnly,async t=>{
     const {a,b,make,r,root}=await pair(t);
     const ai=await a.setup(),bi=await b.setup();a.peer(bi);b.peer(ai);await a.introduce();await b.accept();
     await a.step(1);await b.step(2);await Promise.all([a.close(),b.close()]);
@@ -164,7 +166,7 @@ test('cold restore rejects unresolved writes before any network access or replay
     try{await assert.rejects(freshB.restore(),/restart_unresolved_write/);assert.equal(r.calls.length,writes);}
     finally{await freshB.close();}
 });
-test('cold restore refuses a different owner for the retained private address',async t=>{
+test('cold restore refuses a different owner for the retained private address',posixOnly,async t=>{
     const {a,b,make,r}=await pair(t);
     const ai=await a.setup(),bi=await b.setup();a.peer(bi);b.peer(ai);await a.introduce();await b.accept();
     await a.step(1);await b.step(2);await Promise.all([a.close(),b.close()]);
@@ -177,7 +179,7 @@ test('cold restore refuses a different owner for the retained private address',a
     assert.equal(r.calls.filter(x=>['register_account','send_message','ack_message','request_contact','decide_contact','create_address'].includes(x.name)).length,writes);
 });
 
-test('final evidence rejects an address that changed after the message exchange',async t=>{
+test('final evidence rejects an address that changed after the message exchange',posixOnly,async t=>{
     for(const changed of [
         {name:'public exposure',patch:{isPublic:true}},
         {name:'new expiry bound',patch:{effectiveTo:'2026-10-25T00:00:00.000Z'}}
@@ -206,7 +208,7 @@ test('final evidence rejects an address that changed after the message exchange'
     });
 });
 
-test('final evidence refuses a revoked peer contact on either independent endpoint',async t=>{
+test('final evidence refuses a revoked peer contact on either independent endpoint',posixOnly,async t=>{
     for(const role of ['A','B'] as const)await t.test(role,async subtest=>{
         const {a,b,r,root}=await pair(subtest);
         try{
@@ -230,7 +232,7 @@ test('final evidence refuses a revoked peer contact on either independent endpoi
     });
 });
 
-test('final evidence rejects a replaced contact generation despite accepted contact and old ACKs',async t=>{
+test('final evidence rejects a replaced contact generation despite accepted contact and old ACKs',posixOnly,async t=>{
     for(const role of ['A','B'] as const)await t.test(role,async subtest=>{
         const {a,b,r,root}=await pair(subtest);
         try{
@@ -254,7 +256,7 @@ test('final evidence rejects a replaced contact generation despite accepted cont
     });
 });
 
-test('cold restore refuses a replaced channel before processing or sending on either endpoint',async t=>{
+test('cold restore refuses a replaced channel before processing or sending on either endpoint',posixOnly,async t=>{
     for(const role of ['A','B'] as const)await t.test(role,async subtest=>{
         const {a,b,make,r}=await pair(subtest);
         const ai=await a.setup(),bi=await b.setup();a.peer(bi);b.peer(ai);

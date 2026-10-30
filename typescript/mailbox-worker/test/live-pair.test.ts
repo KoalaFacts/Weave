@@ -10,7 +10,7 @@ import {Endpoint,verifyEvidence} from '../../../examples/mailbox-demo-pair/endpo
 import {StdioClient} from '../../../examples/mailbox-demo-pair/mcp.ts';
 import {modelEnvironment} from '../../../examples/mailbox-demo-pair/runtime.ts';
 
-test('pair endpoint protocol executes through real stdio MCP and local Worker D1 with synthetic inference',async()=>{
+test('pair endpoint protocol executes through real stdio MCP and local Worker D1 with synthetic inference',{skip:process.platform==='win32'&&'Requires POSIX owner-only file modes for private pair state'},async()=>{
     const h=await start(),root=mkdtempSync(join(tmpdir(),'weave-pair-d1-')),runId=randomUUID();
     const url=String(await h.mf.ready),controls={A:secret(),B:secret()};
     const script=fileURLToPath(new URL('../../../examples/mailbox-demo-mcp/server.ts',import.meta.url));

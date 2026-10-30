@@ -47,6 +47,7 @@ class Opener:
         return reply
 
 
+@unittest.skipUnless(hasattr(signal, 'SIGALRM'), 'The diagnostic uses SIGALRM deadlines and runs only on POSIX CI runners')
 class DiagnosticTests(unittest.TestCase):
     def collect(self, opener):
         return diagnostic.collect(SECRET, opener=opener)

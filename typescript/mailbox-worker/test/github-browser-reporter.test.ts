@@ -3,10 +3,10 @@ import { spawnSync } from 'node:child_process';
 import { copyFile, mkdir, mkdtemp, readFile, rm, writeFile } from 'node:fs/promises';
 import { tmpdir } from 'node:os';
 import { join } from 'node:path';
-import { fileURLToPath } from 'node:url';
 import { test } from 'node:test';
 
-const reporter = fileURLToPath(new URL('./github-browser-reporter.ts', import.meta.url));
+// Node resolves --test-reporter as a module specifier; a Windows drive path is not one.
+const reporter = new URL('./github-browser-reporter.ts', import.meta.url).href;
 const runner = new URL('./fixtures/browser-reporter-runner.ts', import.meta.url);
 
 async function report(tests, { stdout = [], stderr = [] } = {}) {
