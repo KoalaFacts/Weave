@@ -69,6 +69,14 @@ export async function humanHasAgent(env: Env, humanId: string, accountId: string
     return await env.db.prepare('SELECT 1 n FROM accounts a JOIN humans h ON h.human_id=a.human_id WHERE a.human_id=? AND a.account_id=? AND h.frozen_at IS NULL').bind(humanId, accountId).first('n') !== null;
 }
 
+/** Recheck bearer eligibility on every private OAuth call. Freezing a GitHub human
+ * immediately denies their owned agents without invalidating unrelated control-owned accounts. */
+export async function oauthAccountActive(env: Env, accountId: string): Promise<boolean> {
+    requireReadable(env); requireUuid(accountId);
+    return await env.db.prepare('SELECT 1 n FROM accounts a LEFT JOIN humans h ON h.human_id=a.human_id WHERE a.account_id=? AND (a.human_id IS NULL OR (h.human_id IS NOT NULL AND h.frozen_at IS NULL))')
+        .bind(accountId).first('n') !== null;
+}
+
 export async function createOwnedAgent(env: Env, input: { humanId: string; displayName: string; sourceIp: string }): Promise<CreateAgentResult> {
     if (writesRefused(env) || env.REGISTRATION_ENABLED !== 'true') return { ok: false, reason: 'unavailable' };
     const invalid = { ok: false, reason: 'invalid' } as const;
