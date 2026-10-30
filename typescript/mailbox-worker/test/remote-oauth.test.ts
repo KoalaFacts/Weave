@@ -317,7 +317,7 @@ test('Service Binding refuses a previously issued bearer after GitHub owner free
         const now=Math.floor(Date.now()/1000);
         let currentAccount=owned.accountId;
         const binding={validateToken:async()=>({audience:config.resource,userId:currentAccount,
-            props:{accountId:currentAccount,humanId:signed.humanId},expiresAt:now+120,
+            props:{accountId:currentAccount,...(currentAccount===owned.accountId?{humanId:signed.humanId}:{})},expiresAt:now+120,
             scope:['weave:messages.send'],clientId:'verified-public-client'})};
         const cfg=oauthConfiguration({AUTH_SERVER:binding,OAUTH_ISSUER:config.issuer,
             OAUTH_RESOURCE:config.resource} as any,config.resource)!;
