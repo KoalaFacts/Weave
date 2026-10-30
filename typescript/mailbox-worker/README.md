@@ -16,7 +16,7 @@ The [account storage and recovery record](../../docs/implementation/2026-10-14-w
 
 ## Run locally
 
-Use Node 24.19+ and a stable .NET 10 SDK. [global.json](../../global.json) permits installed .NET 10 feature bands and patches through `latestMinor`, starting from the `10.0.400` baseline; it does not require that exact SDK or select .NET 11. Check `dotnet --version` from the repository root. From this directory:
+Use Node 24.19+, the .NET 11 SDK (release candidate until GA) and the .NET 10 runtime. [global.json](../../global.json) selects the newest installed SDK from the `10.0.400` baseline, including prereleases. Check `dotnet --version` from the repository root. From this directory:
 
 ```sh
 npm ci

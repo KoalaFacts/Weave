@@ -163,7 +163,7 @@ public sealed class McpModernHttpProtocolTests
         await connection.ListToolsAsync(TestContext.Current.CancellationToken);
         await Should.ThrowAsync<InvalidOperationException>(() =>
             connection.CallToolAsync("echo", new JsonObject(), TestContext.Current.CancellationToken));
-        peer.Requests.Count(item => JsonDocument.Parse(item.Body).RootElement
+        peer.Requests.Count(item => JsonElement.Parse(item.Body)
             .GetProperty("method").GetString() == "tools/call").ShouldBe(1);
     }
 
@@ -201,7 +201,7 @@ public sealed class McpModernHttpProtocolTests
 
         await connection.InitializeAsync(TestContext.Current.CancellationToken);
         connection.ServerName.ShouldBe("legacy");
-        peer.Requests.Select(item => JsonDocument.Parse(item.Body).RootElement.GetProperty("method").GetString())
+        peer.Requests.Select(item => JsonElement.Parse(item.Body).GetProperty("method").GetString())
             .ShouldBe(["server/discover", "initialize", "notifications/initialized"]);
     }
 
@@ -283,7 +283,7 @@ public sealed class McpModernHttpProtocolTests
         var result = await connection.CallToolAsync("echo", new JsonObject { ["text"] = " hello 世界 " },
             TestContext.Current.CancellationToken);
         result.Content.Single().Text.ShouldBe("hello");
-        peer.Requests.Select(item => JsonDocument.Parse(item.Body).RootElement.GetProperty("method").GetString())
+        peer.Requests.Select(item => JsonElement.Parse(item.Body).GetProperty("method").GetString())
             .ShouldBe(["server/discover", "tools/list", "tools/call"]);
     }
 }

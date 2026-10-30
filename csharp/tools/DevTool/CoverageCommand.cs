@@ -55,9 +55,10 @@ internal static class CoverageCommand
             var outputFile = Path.Combine(OutputDir, $"{suite}.cobertura.xml");
             File.Delete(outputFile); // Never accept an earlier successful run after a failed collection.
             Console.WriteLine($"Collecting {suite}...");
+            // SDK 11 re-resolves a relative --project against the project directory for multi-target test projects.
             var start = new ProcessStartInfo("dotnet") { UseShellExecute = false };
             foreach (var argument in new[] { "dotnet-coverage", "collect", "-f", "cobertura", "-o", outputFile,
-                "-l", Path.Combine(OutputDir, $"{suite}.collector.log"), "--", "dotnet", "test", "--project", project,
+                "-l", Path.Combine(OutputDir, $"{suite}.collector.log"), "--", "dotnet", "test", "--project", Path.GetFullPath(project),
                 "--no-build", "--no-restore", "-c", "Release" })
                 start.ArgumentList.Add(argument);
             using var process = Process.Start(start) ?? throw new InvalidOperationException($"Could not start collector for {suite}.");

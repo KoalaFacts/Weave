@@ -3,6 +3,7 @@
     <ManagePackageVersionsCentrally>true</ManagePackageVersionsCentrally>
     <CentralPackageTransitivePinningEnabled>true</CentralPackageTransitivePinningEnabled>
     <WeaveILLinkTasksVersion>10.0.14</WeaveILLinkTasksVersion>
+    <WeaveILLinkTasksNextVersion>11.0.0-rc.3.26522.148</WeaveILLinkTasksNextVersion>
   </PropertyGroup>
   <ItemGroup Label="SDK-independent build tools">
     <PackageVersion Include="Microsoft.AspNetCore.App.Internal.Assets" Version="10.0.14" />

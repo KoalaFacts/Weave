@@ -17,10 +17,12 @@ import time
 import urllib.error
 import urllib.request
 
-MAX_PAGE_BYTES = 2 * 1024 * 1024
+# A large lockfile relocation can exceed 2,000 complete dependency records.
+# Keep exact base/head evidence bounded but never truncate records or pagination.
+MAX_PAGE_BYTES = 8 * 1024 * 1024
 MAX_TOTAL_BYTES = 40 * 1024 * 1024
-MAX_PAGES = 400
-MAX_CHANGES = 2000
+MAX_PAGES = 2000
+MAX_CHANGES = 10000
 WARNING_HEADER = "x-github-dependency-graph-snapshot-warnings"
 MAX_WARNING_ATTEMPTS = 61
 WARNING_INTERVAL_SECONDS = 10

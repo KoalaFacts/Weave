@@ -1,5 +1,7 @@
-const MAX_BYTES = 2 * 1024 * 1024;
-const MAX_CHANGES = 2000;
+// Match the independent preflight's larger bounded, exact-base comparison view.
+// Reject any omitted/changed action record; capacity is not evidence of completeness.
+const MAX_BYTES = 8 * 1024 * 1024;
+const MAX_CHANGES = 10000;
 const IDENTITY_FIELDS = ['change_type', 'manifest', 'ecosystem', 'name', 'version', 'package_url'];
 type Change = Record<string, unknown>;
 type Unavailable = {status:'unavailable';failure_code:string};
