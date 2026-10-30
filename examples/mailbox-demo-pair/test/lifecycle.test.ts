@@ -91,7 +91,7 @@ test('coordinator shutdown stops descendants even after their worker exits',{ski
     const descendant="process.on('SIGTERM',()=>{});require('node:fs').writeFileSync('descendant.pid',String(process.pid));setInterval(()=>{},1000);";
     writeFileSync(join(bin,'codex'),`#!${process.execPath}\nif(process.argv[2]==='mcp'){console.log('[]');}else if(process.argv[2]==='exec'){require('node:child_process').spawn(process.execPath,['-e',${JSON.stringify(descendant)}],{stdio:'ignore'});setInterval(()=>{},1000);}\n`,{mode:0o700});
     writeFileSync(join(bin,'op'),`#!${process.execPath}\nconsole.log('{}');\n`,{mode:0o700});
-    const driver=join(root,'driver.mjs');
+    const driver=join(root,'driver.ts');
     writeFileSync(driver,`globalThis.fetch=async()=>new Response(JSON.stringify({items:[],nextCursor:null}),{headers:{'content-type':'application/json'}});const {main}=await import(${JSON.stringify(new URL('../run.ts',import.meta.url).href)});try{process.exitCode=await main(process.argv.slice(2));}catch{process.exitCode=1;}`);
     const child=fork(driver,['run','--state',root,'--allow-demo-writes'],{
         execArgv:[],cwd:root,env:{PATH:bin+delimiter+process.env.PATH},stdio:['ignore','pipe','pipe','ipc']

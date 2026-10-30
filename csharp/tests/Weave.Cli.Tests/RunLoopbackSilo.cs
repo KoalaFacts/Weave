@@ -18,7 +18,7 @@ internal sealed class RunLoopbackSilo : IAsyncDisposable
 
     public RunLoopbackSilo(string root, string mode)
     {
-        var script = Path.Join(root, "run-loopback-silo.cjs");
+        var script = Path.Join(root, "run-loopback-silo.ts");
         File.WriteAllText(script, Script);
         var start = new ProcessStartInfo("node")
         {

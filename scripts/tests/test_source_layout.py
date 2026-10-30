@@ -1,6 +1,7 @@
 """Dependency-free architecture gates for the flat source migration."""
 import os
 from pathlib import Path
+import subprocess
 import unittest
 import xml.etree.ElementTree as ET
 
@@ -73,6 +74,11 @@ class SourceLayoutTests(unittest.TestCase):
         self.assertFalse(any(p.startswith('Microsoft.Orleans') for p in packages))
         self.assertEqual('false', tree.findtext('.//GenerateCqrsRegistration'))
         self.assertTrue((ROOT / 'csharp/src/Invocations/IToolConnector.cs').is_file())
+
+    def test_repository_has_no_cjs_or_mjs_modules(self):
+        tracked = subprocess.run(['git', 'ls-files', '*.cjs', '*.mjs', '*.cts', '*.mts'], cwd=ROOT,
+                                 capture_output=True, text=True, check=True).stdout.split()
+        self.assertEqual([], tracked)
 
 
 if __name__ == '__main__':

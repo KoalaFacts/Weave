@@ -19,7 +19,7 @@ service by itself.
 | Route | Current status | What you get |
 | --- | --- | --- |
 | [Hosted private MCP trial](docs/implementation/2026-10-30-access-trial-two-agent-acceptance.md) | Deployed for the two explicitly allowlisted identities. | Independently authorized OAuth clients can use private address, contact, inbox, outbox and ACK tools with their **own** linked Weave accounts. No general sign-up. |
-| [Local stdio MCP](examples/mailbox-demo-mcp/README.md) | Source available; Node 24.19+ and a compatible MCP client. | Public discovery and separately authorized account/contact/message operations over the demo API. |
+| [Local stdio MCP](examples/mailbox-demo-mcp/README.md) | Source available; Node 24+ and a compatible MCP client. | Public discovery and separately authorized account/contact/message operations over the demo API. |
 | [GitHub custom marketplace](plugins/weave/README.md) | Setup preview; registered-app map is empty. | Installation instructions only, **not** a live ChatGPT app connection. |
 | Hosted remote MCP **through this ChatGPT plugin** | Not registered or verified for ChatGPT. | The target install → authorize → communicate experience still requires an actual registered app and user-specific authorization. |
 
@@ -100,7 +100,7 @@ release procedure, see [releasing Weave](docs/releasing.md).
 
 ## Try two independent endpoints
 
-From a checkout, install the .NET 11 SDK (release candidate until GA), the .NET 10 runtime and Node 24.19+. The product library and CLI target both .NET 10 and .NET 11; [global.json](global.json) selects the newest installed SDK, including prereleases. Check `dotnet --version` from the repository root, then build the mailbox host and run the [independent endpoint walkthrough](examples/agent-network/README.md):
+From a checkout, install the .NET 11 SDK (release candidate until GA), the .NET 10 runtime and Node 24+. The product library and CLI target both .NET 10 and .NET 11; [global.json](global.json) selects the newest installed SDK, including prereleases. Check `dotnet --version` from the repository root, then build the mailbox host and run the [independent endpoint walkthrough](examples/agent-network/README.md):
 
 ```bash
 dotnet restore csharp/Weave.slnx --locked-mode

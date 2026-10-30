@@ -14,7 +14,7 @@ See the [implementation and verification record](../../docs/implementation/2026-
 
 ## Prerequisites
 
-Use a trusted POSIX machine or WSL with Node **24.19+**, a complete Weave checkout,
+Use a trusted POSIX machine or WSL with Node **24+**, a complete Weave checkout,
 network access to `https://demo.weave-389.workers.dev`, and:
 
 - An installed, authenticated **Codex CLI** supporting `exec --ephemeral`,

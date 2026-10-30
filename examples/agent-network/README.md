@@ -4,7 +4,7 @@ Run a synthetic network walkthrough with one real Weave mailbox relay process an
 
 ## Run
 
-From the repository root, use .NET SDK 10 (see `global.json`) and Node 24.19+; Node's built-in SQLite reader is used to inspect active relay rows.
+From the repository root, use .NET SDK 10 (see `global.json`) and Node 24+; Node's built-in SQLite reader is used to inspect active relay rows.
 
 ```bash
 dotnet restore csharp/Weave.slnx --locked-mode

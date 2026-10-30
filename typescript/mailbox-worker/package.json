@@ -5,7 +5,7 @@
   "license": "Apache-2.0",
   "type": "module",
   "engines": {
-    "node": ">=24.19.0"
+    "node": ">=24"
   },
   "scripts": {
     "build": "esbuild src/index.ts src/recovery.ts --bundle --format=esm --platform=browser --outdir=dist --external:node:crypto --loader:.html=text --loader:.json=text --loader:.md=text",
