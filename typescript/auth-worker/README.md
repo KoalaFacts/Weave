@@ -47,8 +47,17 @@ the operator-owned MCP Worker's `AUTH_SERVER` Service Binding to
 `service:weave-auth-demo` (default `AuthServer` WorkerEntrypoint; no named `entrypoint`), and review customer consent,
 CIMD/DCR policy and revocation. Client ID Metadata Documents (strictly public
 fetch) are the primary client path; open dynamic client registration at
-`/register` is a fallback limited to 10 per minute per `CF-Connecting-IP` by the
-`REGISTRATION_LIMITER` rate-limit binding (absent binding: `/register` returns 503). Validate source SHAs, Node24 `npm ci`/typecheck, real workerd KV/DO +
+`/register` is a fallback behind two rate-limit bindings: `REGISTRATION_LIMITER`
+allows 10 per minute per source address (an IPv4 `CF-Connecting-IP` as is, an
+IPv6 one by its /64, an IPv4-mapped IPv6 one as its IPv4 address, anything
+else as one shared `unknown` key), and `REGISTRATION_GLOBAL_LIMITER` allows 100
+per minute across all addresses. Either budget refused returns 429 with
+`Retry-After: 60`. A missing binding or a limiter fault returns 503 and the
+registration endpoint is advertised in metadata only when both are bound.
+Both are Cloudflare rate-limit bindings: per-location, eventually consistent
+budgets, not an exact global cap. Under abuse the global budget can deny the
+DCR fallback to everyone for a minute; CIMD clients are unaffected because they
+never call `/register`. Validate source SHAs, Node24 `npm ci`/typecheck, real workerd KV/DO +
 MCP D1 E2E, full repository CI/coverage/security/licence and independent
 review before any merge/release. The committed dependency locks and branch workflow cover Node24 source/type checks,
 portable logic, real workerd Durable Object replay, the bundled production mailbox
@@ -87,7 +96,7 @@ Then run `npm run prepare:demo`. It writes
 only public issuer/resource/client-ID values, resource IDs and the `MAILBOX`
 Service Binding to the `demo` Worker's `HumanDirectory` entrypoint. No token,
 GitHub client secret or session key is written, and the generated manifest has
-no `REGISTRATION_LIMITER`, so open dynamic client registration stays closed. The test workflow independently bundles this generated manifest
+no `REGISTRATION_LIMITER` or `REGISTRATION_GLOBAL_LIMITER`, so open dynamic client registration stays closed and unadvertised. The test workflow independently bundles this generated manifest
 with Wrangler `--dry-run` using **dummy** IDs; neither CI nor this script
 deploys the Worker or creates KV/DO state.
 

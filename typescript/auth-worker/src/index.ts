@@ -5,14 +5,13 @@ import {createChallenge,validChallenge,validHandle,readConsent} from "./challeng
 import {consentPage} from "./consent-page.ts";
 import {beginGithubLogin,completeGithubLogin,failureLog,messagePage,type GithubLoginEnv} from "./github-login.ts";
 import {readHumanSession,validSigningKey} from "./human-session.ts";
+import {limitRegistration,registrationOpen,type RegistrationLimitEnv} from "./registration-limit.ts";
 export {ConsentNonce} from "./nonce-do.ts";
-interface Env extends GithubLoginEnv {
+interface Env extends GithubLoginEnv,RegistrationLimitEnv {
   OAUTH_KV:KVNamespace;
   CONSENT_NONCES:DurableObjectNamespace;
   OAUTH_ISSUER:string;
   OAUTH_RESOURCE:string;
-  /** Per-IP budget for dynamic client registration; absent means /register is closed. */
-  REGISTRATION_LIMITER?:RateLimit;
 }
 const scopes=["weave:addresses.read","weave:addresses.write","weave:contacts.read",
  "weave:contacts.write","weave:messages.read","weave:messages.send","weave:messages.ack","offline_access"];
@@ -41,9 +40,10 @@ function provider(env:Env):OAuthAuthorizationServer<Env>{
     accessTokenTTL:900,refreshTokenTTL:2_592_000,
     clientIdMetadataDocumentEnabled:true,
     // CIMD stays the primary client path. Open RFC 7591 registration is a fallback
-    // for clients without a metadata document; fetch() rate-limits it per IP and
-    // the consent page labels such clients as unverified.
-    clientRegistrationEndpoint:"/register"
+    // for clients without a metadata document; fetch() rate-limits it per address
+    // and globally, and the consent page labels such clients as unverified. It is
+    // advertised only when both budgets are bound, so metadata never points at a 503.
+    ...registrationOpen(env)?{clientRegistrationEndpoint:"/register"}:{}
   });
 }
 function stub(env:Env,handle:string):DurableObjectStub{
@@ -68,17 +68,6 @@ async function consumeNonce(env:Env,handle:string,challenge:string):Promise<bool
   return result.status===204;
 }
 const denied=()=>new Response("Authorization request invalid or expired",{status:400,headers:{"Cache-Control":"no-store"}});
-const tooManyRegistrations=()=>new Response("Too many registrations",
-  {status:429,headers:{"Cache-Control":"no-store","Retry-After":"60"}});
-/** Fail closed: no limiter binding or a limiter fault means no open registration. */
-async function limitRegistration(env:Env,req:Request):Promise<Response|null>{
-  if(!env.REGISTRATION_LIMITER)return unavailable();
-  if(req.method!=="POST")return null;
-  try{
-    const {success}=await env.REGISTRATION_LIMITER.limit({key:req.headers.get("CF-Connecting-IP")??"unknown"});
-    return success?null:tooManyRegistrations();
-  }catch{return unavailable();}
-}
 const unavailable=()=>new Response("Authorization not configured",{status:503,headers:{"Cache-Control":"no-store"}});
 const directoryUnavailable=()=>{
   console.error(failureLog.directory);
