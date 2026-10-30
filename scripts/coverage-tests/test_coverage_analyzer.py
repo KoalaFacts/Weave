@@ -40,7 +40,7 @@ class CoverageAnalyzerTests(unittest.TestCase):
             project.write_text(f'<Project><PropertyGroup><AssemblyName>{target["assembly"]}</AssemblyName></PropertyGroup></Project>')
             (project.parent / 'Source.cs').write_text('// fixture\n' * 20)
         for suite in self.suites:
-            folder = self.root / 'tests' / suite
+            folder = self.root / 'csharp/tests' / suite
             folder.mkdir(parents=True, exist_ok=True)
             (folder / f'{suite}.csproj').write_text('<Project />')
 
@@ -95,16 +95,16 @@ class CoverageAnalyzerTests(unittest.TestCase):
                 self.assertIn(f'{failing}: 80.0000%', output)
 
     def test_below_threshold_that_rounds_to_ninety_reports_precise_failure(self):
-        (self.root / 'src/Source.cs').write_text('// fixture\n' * 229)
+        (self.root / 'csharp/src/Source.cs').write_text('// fixture\n' * 229)
         self.report([self.package('Weave.Product', [1] * 206 + [0] * 23)]
                     + [self.package(a) for a in TARGETS if a != 'Weave.Product'])
         self.assertIn('Weave.Product: 89.9563% (206/229 lines)', self.run_gate(1))
 
     def test_whole_product_keeps_uncovered_legacy_feature(self):
         packages = [self.package(a, [1] * 10) for a in TARGETS]
-        legacy = self.root / 'src/LegacyFeature.cs'
+        legacy = self.root / 'csharp/src/LegacyFeature.cs'
         legacy.write_text('// uncovered\n' * 10)
-        packages[0][1].append(('src/LegacyFeature.cs', [0] * 10))
+        packages[0][1].append(('csharp/src/LegacyFeature.cs', [0] * 10))
         self.report(packages)
         self.row(self.run_gate(1), 'Weave.Product', 10, 20)
 
@@ -126,7 +126,7 @@ class CoverageAnalyzerTests(unittest.TestCase):
         self.assertIn(MAILBOX, self.run_gate(2))
 
     def test_empty_and_excluded_required_assembly_fail(self):
-        for classes in ([], [('csharp/src/Models/Row.cs', [1]), ('src/Program.cs', [1])]):
+        for classes in ([], [('csharp/src/Models/Row.cs', [1]), ('csharp/src/Program.cs', [1])]):
             with self.subTest(classes=classes):
                 packages = [self.package(a) for a in TARGETS if a != 'Weave.Product']
                 self.report(packages + [('Weave.Product', classes)])
@@ -138,7 +138,7 @@ class CoverageAnalyzerTests(unittest.TestCase):
         self.materialize()
         self.report()
         self.assertIn(SHARED, self.run_gate(2))
-        self.assertIn(SHARED, self.run_gate(2, '--root', f'tests/{SHARED}'))
+        self.assertIn(SHARED, self.run_gate(2, '--root', f'csharp/tests/{SHARED}'))
 
     def test_unknown_suite_and_undeclared_first_party_owner_fail(self):
         self.suites.append('Weave.New.Tests')
@@ -159,7 +159,7 @@ class CoverageAnalyzerTests(unittest.TestCase):
         self.materialize()
         packages = [self.package(a) for a in TARGETS]
         packages[0] = self.package('Weave.Product', [1] * 5 + [0] * 5)
-        packages[0][1].append(('src/Source.cs', [1] * 5 + [0] * 5))
+        packages[0][1].append(('csharp/src/Source.cs', [1] * 5 + [0] * 5))
         self.report(packages)
         self.report([self.package('Weave.Product', [0] * 5 + [1] * 4 + [0])], suite=SHARED)
         first = self.run_gate(0)
@@ -195,7 +195,7 @@ class CoverageAnalyzerTests(unittest.TestCase):
         self.materialize()
         self.report()
         (self.root / 'TestResults' / f'{SHARED}.cobertura.xml').write_text('<broken>')
-        self.row(self.run_gate(0, '--root', f'tests/{MAILBOX}'), 'Weave.Product', 9, 10)
+        self.row(self.run_gate(0, '--root', f'csharp/tests/{MAILBOX}'), 'Weave.Product', 9, 10)
 
     def test_cli_assembly_identity_is_exactly_lowercase_weave(self):
         suite = 'Weave.Cli.Tests'
@@ -204,41 +204,41 @@ class CoverageAnalyzerTests(unittest.TestCase):
             'assembly': 'weave', 'contributors': [suite], 'owners': [suite]}
         self.materialize()
         self.report([('weave', [('csharp/hosts/Weave.Cli/Source.cs', [1] * 9 + [0])])], suite=suite)
-        self.row(self.run_gate(0, '--root', f'tests/{suite}'), 'weave', 9, 10)
+        self.row(self.run_gate(0, '--root', f'csharp/tests/{suite}'), 'weave', 9, 10)
         self.report([('Weave', [('csharp/hosts/Weave.Cli/Source.cs', [1] * 10)])], suite=suite)
-        self.assertIn('weave: missing non-excluded valid lines', self.run_gate(2, '--root', f'tests/{suite}'))
+        self.assertIn('weave: missing non-excluded valid lines', self.run_gate(2, '--root', f'csharp/tests/{suite}'))
 
     def test_path_sources_absolute_relative_and_separators_union(self):
-        classes = [('src/Source.cs', [1] * 5 + [0] * 5),
-                   (str(self.root / 'src/Source.cs'), [0] * 5 + [1] * 5),
-                   (str(self.root / 'src/Source.cs').replace('/', '\\'), [0] * 10),
-                   ('C:\\build\\repo\\src\\Source.cs', [0] * 10),
+        classes = [('csharp/src/Source.cs', [1] * 5 + [0] * 5),
+                   (str(self.root / 'csharp/src/Source.cs'), [0] * 5 + [1] * 5),
+                   (str(self.root / 'csharp/src/Source.cs').replace('/', '\\'), [0] * 10),
+                   ('C:\\build\\repo\\csharp\\src\\Source.cs', [0] * 10),
                    ('Source.cs', [0] * 10)]
         self.report([('Weave.Product', classes)] + [self.package(a) for a in TARGETS if a != 'Weave.Product'],
-                    sources=[self.root / 'src'])
+                    sources=[self.root / 'csharp/src'])
         self.row(self.run_gate(0), 'Weave.Product', 10, 10)
 
     def test_identical_basenames_in_different_directories_stay_distinct(self):
-        (self.root / 'src/Feature').mkdir()
+        (self.root / 'csharp/src/Feature').mkdir()
         (self.root / 'csharp/src/Feature/Source.cs').write_text('// second file\n' * 10)
-        classes = [('src/Source.cs', [1] * 10), ('csharp/src/Feature/Source.cs', [0] * 10)]
+        classes = [('csharp/src/Source.cs', [1] * 10), ('csharp/src/Feature/Source.cs', [0] * 10)]
         self.report([('Weave.Product', classes)] + [self.package(a) for a in TARGETS if a != 'Weave.Product'])
         self.row(self.run_gate(1), 'Weave.Product', 10, 20)
 
     def test_unresolved_ambiguous_and_outside_project_sources_fail(self):
-        for filename, sources in [('missing.cs', []), ('../outside.cs', []), ('Source.cs', [self.root / 'src', self.root / 'src/Feature'])]:
+        for filename, sources in [('missing.cs', []), ('../outside.cs', []), ('Source.cs', [self.root / 'csharp/src', self.root / 'csharp/src/Feature'])]:
             with self.subTest(filename=filename, sources=sources):
-                (self.root / 'src/Feature').mkdir(exist_ok=True)
+                (self.root / 'csharp/src/Feature').mkdir(exist_ok=True)
                 (self.root / 'csharp/src/Feature/Source.cs').write_text('// ambiguous\n')
                 self.report([self.package('Weave.Product', filename=filename)] + [self.package(a) for a in TARGETS if a != 'Weave.Product'], sources=sources)
                 self.assertIn(filename, self.run_gate(2))
 
     def test_existing_exclusions_preserved_for_both_separators(self):
         classes = [('csharp/src/Mailboxes/Row.cs', [1] * 9 + [0])]
-        (self.root / 'src/Mailboxes').mkdir()
+        (self.root / 'csharp/src/Mailboxes').mkdir()
         (self.root / 'csharp/src/Mailboxes/Row.cs').write_text('// counted\n' * 10)
-        excluded = ['src/obj/Generated.cs', 'src/Generated.g.cs', 'csharp/src/Models/Row.cs',
-                    'src/ThingSurrogate.cs', 'src/FeatureContracts.cs', 'src/Program.cs']
+        excluded = ['csharp/src/obj/Generated.cs', 'csharp/src/Generated.g.cs', 'csharp/src/Models/Row.cs',
+                    'csharp/src/ThingSurrogate.cs', 'csharp/src/FeatureContracts.cs', 'csharp/src/Program.cs']
         classes += [(f.replace('/', separator), [0] * 100) for f in excluded for separator in ('/', '\\')]
         self.report([('Weave.Product', classes)] + [self.package(a) for a in TARGETS if a != 'Weave.Product'])
         self.row(self.run_gate(0), 'Weave.Product', 9, 10)
@@ -254,16 +254,16 @@ class CoverageAnalyzerTests(unittest.TestCase):
 
     def test_inventory_addition_or_assembly_identity_change_fails(self):
         self.report()
-        new_project = self.root / 'src/New.csproj'
+        new_project = self.root / 'csharp/src/New.csproj'
         new_project.write_text('<Project />')
-        self.assertIn('src/New.csproj', self.run_gate(2))
+        self.assertIn('csharp/src/New.csproj', self.run_gate(2))
         new_project.unlink()
         (self.root / 'csharp/src/Weave.csproj').write_text('<Project />')
         self.assertIn('Weave.Product', self.run_gate(2))
 
     def test_unowned_apphost_dashboard_are_explicit_gaps_not_invented_requirements(self):
         for name in ('Weave.AppHost', 'Weave.Dashboard'):
-            self.projects[f'hosts/{name}/{name}.csproj'] = {'assembly': name, 'contributors': [], 'owners': []}
+            self.projects[f'csharp/hosts/{name}/{name}.csproj'] = {'assembly': name, 'contributors': [], 'owners': []}
         self.materialize()
         self.report()
         output = self.run_gate(0)
@@ -273,40 +273,40 @@ class CoverageAnalyzerTests(unittest.TestCase):
         self.suites.append(SHARED)
         self.projects['csharp/src/Weave.csproj']['contributors'].append(SHARED)
         self.materialize()
-        self.row(self.run_gate(0, '--root', f'tests/{MAILBOX}'), 'Weave.Product', 9, 10)
+        self.row(self.run_gate(0, '--root', f'csharp/tests/{MAILBOX}'), 'Weave.Product', 9, 10)
 
     def test_transitive_only_assembly_is_reported_as_scope_gap(self):
-        self.projects['hosts/Indirect/Indirect.csproj'] = {
+        self.projects['csharp/hosts/Indirect/Indirect.csproj'] = {
             'assembly': 'Indirect', 'contributors': [MAILBOX], 'owners': []}
         self.materialize()
-        self.report([self.package(a) for a in TARGETS] + [('Indirect', [('hosts/Indirect/Source.cs', [0] * 10)])])
+        self.report([self.package(a) for a in TARGETS] + [('Indirect', [('csharp/hosts/Indirect/Source.cs', [0] * 10)])])
         self.assertIn('Coverage gap outside tested-owner gate: Indirect', self.run_gate(0))
 
     def test_exclusion_from_sources_root_is_preserved(self):
-        (self.root / 'src/Models').mkdir()
+        (self.root / 'csharp/src/Models').mkdir()
         (self.root / 'csharp/src/Models/OnlyModel.cs').write_text('// excluded\n')
         packages = [self.package(a) for a in TARGETS]
         packages[0][1].append(('OnlyModel.cs', [0] * 100))
-        self.report(packages, sources=[self.root / 'src/Models'])
+        self.report(packages, sources=[self.root / 'csharp/src/Models'])
         self.row(self.run_gate(0), 'Weave.Product', 9, 10)
 
     def test_real_manifest_accepts_direct_dynamic_dashboard_owner_and_enforces_threshold(self):
         self.projects = json.loads((ROOT / 'scripts/coverage-ownership.json').read_text())
-        self.suites = [p.stem for p in (ROOT / 'tests').rglob('*.Tests.csproj')]
+        self.suites = [p.stem for p in (ROOT / 'csharp/tests').rglob('*.Tests.csproj')]
         self.materialize()
         suite = 'Weave.Silo.Tests'
         packages = [(entry['assembly'], [(str(Path(path).parent / 'Source.cs'), [1] * 9 + [0])])
                     for path, entry in self.projects.items()
                     if suite in entry['contributors'] or entry['assembly'] in {'Weave.Dashboard', 'Weave.Deploy'}]
         self.report(packages, suite=suite)
-        self.row(self.run_gate(0, '--root', f'tests/{suite}'), 'Weave.Dashboard', 9, 10)
+        self.row(self.run_gate(0, '--root', f'csharp/tests/{suite}'), 'Weave.Dashboard', 9, 10)
         dashboard = next(package for package in packages if package[0] == 'Weave.Dashboard')
         dashboard[1][0] = (dashboard[1][0][0], [1] * 8 + [0] * 2)
         self.report(packages, suite=suite)
-        self.assertIn('Weave.Dashboard: 80.0000%', self.run_gate(1, '--root', f'tests/{suite}'))
+        self.assertIn('Weave.Dashboard: 80.0000%', self.run_gate(1, '--root', f'csharp/tests/{suite}'))
         self.report([package for package in packages if package[0] != 'Weave.Dashboard'], suite=suite)
         self.assertIn('Weave.Dashboard: missing non-excluded valid lines',
-                      self.run_gate(2, '--root', f'tests/{suite}'))
+                      self.run_gate(2, '--root', f'csharp/tests/{suite}'))
 
     def test_unknown_options_and_nonfinite_or_out_of_range_threshold_fail(self):
         self.report()
