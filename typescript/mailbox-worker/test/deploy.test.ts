@@ -1,10 +1,9 @@
 import assert from 'node:assert/strict';
 import test from 'node:test';
 import { readFileSync, existsSync } from 'node:fs';
-import { createHash } from 'node:crypto';
 import { deploy, deploymentConfig } from '../scripts/deploy.ts';
 import { start } from './harness.ts';
-import { normalizeRecords } from '../scripts/run-data-migration.ts';
+import { completedMigration } from '../scripts/completed-migration.ts';
 import { createMissingSchema, planLatestSchema } from '../scripts/latest-schema.ts';
 const base=JSON.parse(readFileSync(new URL('../wrangler.jsonc',import.meta.url)));
 const database={uuid:'11111111-2222-3333-4444-555555555555',name:'synthetic-weave'};
@@ -30,7 +29,7 @@ function fixture({status=200,failAt=0,bindingResult=[dbBinding],databaseResult=d
         const config=JSON.parse(readFileSync(path));assert.equal(config.d1_databases[0].remote,true);assert.equal(config.d1_databases[0].database_id,database.uuid);
         assert.ok(!JSON.stringify(config).includes(env.CLOUDFLARE_API_TOKEN));
         return {db:{prepare:()=>({all:async()=>({results:['mailbox_records','mailbox_revision','mailbox_guard'].map(name=>({name}))})})},close:async()=>{f.closed=true;}};
-    },convert:async()=>{events.push('convert');return {counts:{accounts:2},historyDigest:'synthetic'};},planSchema:async()=>({statements:[],preservedUnmanagedTables:['d1_migrations']}),applySchema:async()=>{events.push('schema');}};
+    },verifyMigration:async()=>{events.push('migration');return {alreadyCompleted:true,checksum:completedMigration.checksum};},planSchema:async()=>({statements:[],preservedUnmanagedTables:['d1_migrations']}),applySchema:async()=>{events.push('schema');}};
     return f;
 }
 test('deployment configuration targets only the existing Worker and retains demo limits',()=>{
@@ -42,16 +41,16 @@ test('checked-in registration and disabled cleanup override inherited settings',
     const config=deploymentConfig({...base,vars:{...base.vars,CLEANUP_MAX_MESSAGES:'128',CLEANUP_TIME_BUDGET_MS:'2000'}},{...env,WEAVE_HOST:'https://stale.example.test',WEAVE_REGISTRATION_ENABLED:'false',CLEANUP_MAX_MESSAGES:'128'});
     assert.equal(config.vars.CLEANUP_MAX_MESSAGES,'0');assert.equal(config.vars.CLEANUP_TIME_BUDGET_MS,'0');assert.equal(config.vars.REGISTRATION_ENABLED,'true');assert.equal(config.vars.WEAVE_HOST,undefined);
 });
-test('deployment pauses all work, converts independently, verifies schema, retains recovery before activating',async()=>{
+test('deployment pauses all work, verifies the completed migration and schema, retains recovery before activating',async()=>{
     const f=fixture();const result=await deploy(f.options);
-    assert.deepEqual(f.events,['maintenance','convert','schema','recovery','active']);
+    assert.deepEqual(f.events,['migration','maintenance','schema','recovery','active']);
     assert.deepEqual(f.commands,[['deploy','--keep-vars','--no-bundle'],['versions','upload','--keep-vars','--no-bundle','--tag','schema-recovery'],['deploy','--keep-vars','--no-bundle']]);
     assert.equal(f.requests.length,6);assert.equal(result.recoveryVersion,version);assert.match(result.recoveryCommand,/@100% --yes$/);
-    assert.deepEqual(f.configs.map(c=>c.vars.MAINTENANCE_MODE),['true','false','false']);assert.ok(f.configs[1].main.endsWith('/dist/recovery.js'));
+    assert.deepEqual(f.configs.map(c=>c.vars.MAINTENANCE_MODE),['true','false','false']);assert.ok(f.configs[1].main.replaceAll('\\','/').endsWith('/dist/recovery.js'));
     assert.ok(f.paths.every(path=>!existsSync(path)));assert.equal(f.closed,true);
 });
-for(const name of Object.keys({...base.vars,MAINTENANCE_MODE:'true'}))for(const value of ['unexpected',undefined])test(`unverified maintenance ${name} ${value??'missing'} prevents conversion`,async()=>{
-    const f=fixture({settings:{[name]:value}});await assert.rejects(deploy(f.options),/not confirmed against configuration/);assert.deepEqual(f.events,['maintenance']);assert.equal(f.closed,true);
+for(const name of Object.keys({...base.vars,MAINTENANCE_MODE:'true'}))for(const value of ['unexpected',undefined])test(`unverified maintenance ${name} ${value??'missing'} prevents database work`,async()=>{
+    const f=fixture({settings:{[name]:value}});await assert.rejects(deploy(f.options),/not confirmed against configuration/);assert.deepEqual(f.events,['migration','maintenance']);assert.equal(f.closed,true);
 });
 test('unverified active settings reports the completed deployment and never selects the old schema',async()=>{
     const f=fixture(),fetch=f.options.fetchImpl;f.options.fetchImpl=async(...args)=>{const r=await fetch(...args);return f.commands.length===3?{...r,ok:false,status:403}:r;};
@@ -60,7 +59,11 @@ test('unverified active settings reports the completed deployment and never sele
 for(const failAt of [1,2,3])test(`command failure ${failAt} stops subsequent operations and preserves the reported stage`,async()=>{
     const f=fixture({failAt});await assert.rejects(deploy(f.options),/failed; stopping.*Last confirmed stage/);assert.equal(f.commands.length,failAt);assert.ok(f.paths.every(path=>!existsSync(path)));assert.equal(f.closed,true);
 });
-for(const stage of ['convert','applySchema','planSchema'])test(`${stage} failure leaves maintenance and never uploads active code`,async()=>{
+test('verifyMigration failure stops before maintenance or any Worker command',async()=>{
+    const f=fixture();f.options.verifyMigration=async()=>{throw Error('synthetic interrupted verifyMigration');};
+    await assert.rejects(deploy(f.options),/synthetic interrupted/);assert.equal(f.commands.length,0);assert.equal(f.closed,true);
+});
+for(const stage of ['applySchema','planSchema'])test(`${stage} failure leaves maintenance and never uploads active code`,async()=>{
     const f=fixture();f.options[stage]=async()=>{throw Error('synthetic interrupted '+stage);};
     await assert.rejects(deploy(f.options),/synthetic interrupted/);assert.equal(f.commands.length,1);assert.equal(f.closed,true);
 });
@@ -85,28 +88,35 @@ for(const requestNumber of [2,3])for(const status of [401,403,404])test(`discove
     const f=fixture(),fetch=f.options.fetchImpl;f.options.fetchImpl=async(...args)=>{const r=await fetch(...args);return f.requests.length===requestNumber?{...r,ok:false,status}:r;};
     await assert.rejects(deploy(f.options),new RegExp('HTTP '+status));assert.equal(f.requests.length,requestNumber);assert.equal(f.commands.length,0);
 });
-test('actual D1 migration runs through deployment orchestration while preserving historical migration rows',async()=>{
-    const h=await start({legacy:true}),f=fixture();
+test('maintain mode on actual D1 verifies the completed ledger without converting or rewriting it',async()=>{
+    const h=await start(),f=fixture();
     try{
-        await h.db.prepare("CREATE TABLE d1_migrations(id INTEGER PRIMARY KEY,name TEXT,applied_at TEXT)").run();
-        await h.db.prepare("INSERT INTO d1_migrations VALUES(1,'0001_mailbox.sql','2026-10-01')").run();
-        f.options.openDatabase=async()=>({db:h.db,close:async()=>{}});f.options.convert=normalizeRecords;f.options.applySchema=createMissingSchema;f.options.planSchema=planLatestSchema;
-        const result=await deploy(f.options);assert.equal(result.conversion.alreadyCompleted,false);assert.equal(result.schemaPlan.statements.length,0);
-        assert.equal(await h.db.prepare('SELECT name FROM d1_migrations').first('name'),'0001_mailbox.sql');
-        assert.equal(await h.db.prepare('SELECT count(*) n FROM data_migrations WHERE completed_at IS NOT NULL').first('n'),1);
-        assert.equal(await h.db.prepare("SELECT count(*) n FROM sqlite_master WHERE type='trigger'").first('n'),0);
+        await h.db.prepare('INSERT INTO data_migrations(script_id,checksum,created_at,updated_at,completed_at) VALUES(?,?,1,1,?)')
+            .bind(completedMigration.scriptId,completedMigration.checksum,'123').run();
+        const before=(await h.db.prepare('SELECT * FROM data_migrations').all()).results;
+        f.options.openDatabase=async()=>({db:h.db,close:async()=>{}});delete f.options.verifyMigration;f.options.applySchema=createMissingSchema;f.options.planSchema=planLatestSchema;
+        const result=await deploy(f.options);
+        assert.deepEqual(result.conversion,{alreadyCompleted:true,checksum:completedMigration.checksum,completedAt:'123'});assert.equal(result.schemaPlan.statements.length,0);
+        assert.deepEqual((await h.db.prepare('SELECT * FROM data_migrations').all()).results,before);
+    }finally{await h.close();}
+});
+for(const [name,options] of [['missing ledger table',{legacy:true}],['missing record',{}]])test('maintain mode refuses '+name+' on actual D1 and never converts',async()=>{
+    const h=await start(options),f=fixture();
+    try{
+        f.options.openDatabase=async()=>({db:h.db,close:async()=>{}});delete f.options.verifyMigration;f.options.applySchema=createMissingSchema;f.options.planSchema=planLatestSchema;
+        await assert.rejects(deploy(f.options),/completed migration/i);assert.deepEqual(f.events,[]);assert.equal(f.commands.length,0);
+        assert.equal(await h.db.prepare("SELECT count(*) n FROM sqlite_master WHERE type='table' AND name='data_migrations'").first('n'),options.legacy?0:1);
     }finally{await h.close();}
 });
 
-const completedChecksum=createHash('sha256').update(['scripts/data-migrations/normalize-records.ts','scripts/data-migrations/legacy-records.ts','src/time.ts','src/credentials.ts']
-    .map(path=>readFileSync(new URL('../'+path,import.meta.url),'utf8')).join('\n')).digest('hex');
+const completedChecksum=completedMigration.checksum;
 async function completedFixture({legacy=false,checksum=completedChecksum,completed='123',record=true}={}){
     const h=await start({legacy}),f=fixture({extraEnv:{WEAVE_DEPLOY_DATABASE_MODE:'completed-only'}}),sql=[];
     if(record&&!legacy)await h.db.prepare('INSERT INTO data_migrations(script_id,checksum,created_at,updated_at,completed_at) VALUES(?,?,1,1,?)')
         .bind('normalize-mailbox-records',checksum,completed).run();
     f.options.openDatabase=async()=>({db:{prepare:query=>{sql.push(query);return h.db.prepare(query);},batch:statements=>h.db.batch(statements)},close:async()=>{f.closed=true;}});
     f.options.planSchema=planLatestSchema;
-    f.options.convert=async()=>{throw Error('Unexpected historical conversion');};
+    f.options.verifyMigration=async()=>{throw Error('Unexpected maintain-mode migration check');};
     f.options.applySchema=async()=>{throw Error('Unexpected schema application');};
     return Object.assign(f,{h,sql,writes:()=>sql.filter(query=>!query.startsWith('SELECT ')&&!query.startsWith('PRAGMA '))});
 }
@@ -146,7 +156,7 @@ for(const stage of ['before-maintenance','maintenance','after-ledger-check','bef
         await assert.rejects(f.h.db.prepare('INSERT INTO mailbox_guard(ok,created_at,updated_at) VALUES(1,1,1)').run(),/data_migration_in_progress/);
     }finally{await f.h.close();}
 });
-test('completed-only deploys on actual D1 with one ledger check and without invoking conversion or schema writes',async()=>{
+test('completed-only deploys on actual D1 with one ledger check and without a maintain-mode check or schema writes',async()=>{
     const f=await completedFixture();
     try{
         const before=(await f.h.db.prepare('SELECT * FROM data_migrations').all()).results,revision=(await f.h.db.prepare('SELECT * FROM mailbox_revision').all()).results;
@@ -223,7 +233,7 @@ test('demo maintain deploy leaves optional unapproved OAuth table absent',async(
     try{
         await h.db.prepare('DROP TABLE oauth_identity_links').run();
         f.options.openDatabase=async()=>({db:h.db,close:async()=>{}});
-        f.options.convert=async()=>({alreadyCompleted:true});
+        f.options.verifyMigration=async()=>({alreadyCompleted:true});
         f.options.planSchema=planLatestSchema;
         f.options.applySchema=createMissingSchema;
         const result=await deploy(f.options);
@@ -265,7 +275,7 @@ test('existing operator-provisioned OAuth Service Binding survives maintenance, 
     const f=fixture({bindingResult:existingAuthService});
     const result=await deploy(f.options);
     assert.equal(result.worker,'demo');
-    assert.deepEqual(f.events,['maintenance','convert','schema','recovery','active']);
+    assert.deepEqual(f.events,['migration','maintenance','schema','recovery','active']);
     for(const config of f.configs){
         assert.deepEqual(config.services,[{binding:'AUTH_SERVER',service:'approved-auth-worker'}]);
         assert.equal(config.vars.OAUTH_ISSUER,undefined,'Do not materialize operator OAuth settings into temporary config');
@@ -275,7 +285,7 @@ test('existing operator-provisioned OAuth Service Binding survives maintenance, 
     assert.equal(f.commands.length,3);
     assert.equal(f.closed,true);
 });
-test('lost existing OAuth Service Binding after maintenance stops before any D1 conversion or schema write',async()=>{
+test('lost existing OAuth Service Binding after maintenance stops before any D1 migration check or schema write',async()=>{
     const f=fixture({bindingResult:existingAuthService}),original=f.options.fetchImpl;
     f.options.fetchImpl=async (...args)=>{
         const response=await original(...args);
@@ -287,10 +297,10 @@ test('lost existing OAuth Service Binding after maintenance stops before any D1 
         return response;
     };
     await assert.rejects(deploy(f.options),/AUTH_SERVER.*not confirmed|OAuth Service Binding.*not confirmed/i);
-    assert.deepEqual(f.events,['maintenance']);
+    assert.deepEqual(f.events,['migration','maintenance']);
     assert.equal(f.closed,true);
 });
-test('OAuth issuer or account-proof secret lost after maintenance stops before D1 conversion',async()=>{
+test('OAuth issuer or account-proof secret lost after maintenance stops before the D1 migration check',async()=>{
     for(const missing of ['OAUTH_ISSUER','OAUTH_ACCOUNT_PROOF_KEY']){
         const f=fixture({bindingResult:existingAuthService}),original=f.options.fetchImpl;
         f.options.fetchImpl=async (...args)=>{
@@ -303,7 +313,7 @@ test('OAuth issuer or account-proof secret lost after maintenance stops before D
             return response;
         };
         await assert.rejects(deploy(f.options),/OAuth.*not confirmed/i);
-        assert.deepEqual(f.events,['maintenance']);
+        assert.deepEqual(f.events,['migration','maintenance']);
     }
 });
 test('untrusted or malformed Service Bindings cannot be smuggled into a code-only demo release',async()=>{
@@ -330,7 +340,7 @@ test('a previously approved OAuth Service Binding can use default or named RPC e
             assert.deepEqual(config.services,[{binding:'AUTH_SERVER',service:'approved-auth-worker',...(entrypoint?{entrypoint}:{})}]);
             assert.ok(!JSON.stringify(config).includes('OAUTH_ACCOUNT_PROOF_KEY'));
         }
-        assert.deepEqual(f.events,['maintenance','convert','schema','recovery','active']);
+        assert.deepEqual(f.events,['migration','maintenance','schema','recovery','active']);
     }
 });
 
@@ -409,7 +419,7 @@ function firstPartyBootstrap({bindings=preapprovedResource,asBindings=preapprove
 test('explicit one-time first-party bootstrap attaches the approved existing AS in every maintenance/recovery/active stage',async()=>{
     const f=firstPartyBootstrap();
     await deploy(f.options);
-    assert.deepEqual(f.events,['maintenance','convert','schema','recovery','active']);
+    assert.deepEqual(f.events,['migration','maintenance','schema','recovery','active']);
     assert.ok(f.requests.some(url=>url.endsWith('/workers/scripts/weave-auth-demo/settings')));
     assert.ok(f.requests.includes(firstPartyIssuer+'/.well-known/oauth-authorization-server'));
     assert.ok(f.requests.includes('https://demo.weave-389.workers.dev/.well-known/oauth-protected-resource/mcp'),
@@ -455,7 +465,7 @@ test('OAuth binding bootstrap verifies the new Service Binding immediately after
         return response;
     };
     await assert.rejects(deploy(f.options),/AUTH_SERVER.*not confirmed|OAuth Service Binding.*not confirmed/i);
-    assert.deepEqual(f.events,['maintenance']);
+    assert.deepEqual(f.events,['migration','maintenance']);
 });
 test('ordinary demo deploy does not bootstrap even with a preinstalled proof secret',async()=>{
     const f=fixture({bindingResult:preapprovedResource});
@@ -548,7 +558,7 @@ test('ordinary releases keep the identity-link table unprovisioned',async()=>{
 test('approved Access trial activation creates the identity-link table and enables only the trial settings',async()=>{
     const f=accessTrialActivation();
     await deploy(f.options);
-    assert.deepEqual(f.events,['maintenance','convert','schema','recovery','active']);
+    assert.deepEqual(f.events,['migration','maintenance','schema','recovery','active']);
     assert.ok(f.policies.length>0&&f.policies.every(policy=>policy.omitUnapprovedOAuthIdentityLinks===false));
     for(const config of f.configs){
         for(const [name,value] of Object.entries(trialVars))assert.equal(config.vars[name],value);
