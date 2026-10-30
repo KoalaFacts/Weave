@@ -435,29 +435,34 @@ test('explicit one-time first-party bootstrap attaches the approved existing AS 
     assert.equal(f.closed,true);
 });
 test('OAuth binding bootstrap fails closed before maintenance when preapproved infrastructure or public issuer is absent',async()=>{
+    // Each case names the refusal it must hit, so a case cannot pass by failing for an unrelated reason.
+    const resourcePolicy=/Resource OAuth bootstrap secrets or account policy are not preapproved/;
+    const incompleteAs=/Approved OAuth authorization Worker has incomplete live bindings/;
+    const issuerMetadata=/Approved OAuth issuer lacks the expected authorization-code, CIMD and PKCE metadata/;
     const cases=[
-        firstPartyBootstrap({bindings:[...preapprovedResource,{name:'OAUTH_ISSUER',type:'plain_text',text:firstPartyIssuer}]}),
-        firstPartyBootstrap({bindings:[...preapprovedResource,{name:'OAUTH_CLIENT_SECRET',type:'secret_text'}]}),
+        [firstPartyBootstrap({bindings:[...preapprovedResource,{name:'OAUTH_ISSUER',type:'plain_text',text:firstPartyIssuer}]}),resourcePolicy],
+        [firstPartyBootstrap({bindings:[...preapprovedResource,{name:'OAUTH_CLIENT_SECRET',type:'secret_text'}]}),resourcePolicy],
         // Human sign-in prerequisites on the AS: GitHub app, session key and the HumanDirectory binding.
         ...['GITHUB_CLIENT_ID','GITHUB_CLIENT_SECRET','HUMAN_SESSION_KEY','MAILBOX'].map(name=>
-            firstPartyBootstrap({asBindings:preapprovedIssuer.filter(x=>x.name!==name)})),
-        firstPartyBootstrap({asBindings:preapprovedIssuer.map(x=>x.name==='GITHUB_CLIENT_SECRET'?{...x,type:'plain_text',text:'leaked'}:x)}),
-        firstPartyBootstrap({asBindings:preapprovedIssuer.map(x=>x.name==='GITHUB_CLIENT_ID'?{...x,text:'bad id'}:x)}),
-        firstPartyBootstrap({asBindings:[...preapprovedIssuer,{name:'HUMAN_SESSION_KEY',type:'secret_text'}]}),
-        firstPartyBootstrap({asBindings:preapprovedIssuer.map(x=>x.name==='MAILBOX'?{...x,entrypoint:undefined}:x)}),
-        firstPartyBootstrap({asBindings:preapprovedIssuer.map(x=>x.name==='MAILBOX'?{...x,service:'other-worker'}:x)}),
-        firstPartyBootstrap({asBindings:preapprovedIssuer.map(x=>x.name==='MAILBOX'?{...x,environment:'staging'}:x)}),
-        firstPartyBootstrap({asBindings:preapprovedIssuer.filter(x=>x.name!=='OAUTH_KV')}),
-        firstPartyBootstrap({asBindings:preapprovedIssuer.map(x=>x.name==='OAUTH_KV'?{...x,namespace_id:'bad'}:x)}),
-        firstPartyBootstrap({asBindings:preapprovedIssuer.filter(x=>x.name!=='CONSENT_NONCES')}),
-        firstPartyBootstrap({publicStatus:401}),
-        firstPartyBootstrap({metadata:{issuer:'https://untrusted.example',client_id_metadata_document_supported:true,code_challenge_methods_supported:['S256']}}),
-        firstPartyBootstrap({metadata:{issuer:firstPartyIssuer,client_id_metadata_document_supported:false,code_challenge_methods_supported:['S256']}}),
-        firstPartyBootstrap({flag:'tru'}),
-        firstPartyBootstrap({bindings:[...preapprovedResource,{name:'AUTH_SERVER',type:'service',service:'other'}]})
+            [firstPartyBootstrap({asBindings:preapprovedIssuer.filter(x=>x.name!==name)}),incompleteAs]),
+        [firstPartyBootstrap({asBindings:preapprovedIssuer.map(x=>x.name==='GITHUB_CLIENT_SECRET'?{...x,type:'plain_text',text:'leaked'}:x)}),incompleteAs],
+        [firstPartyBootstrap({asBindings:preapprovedIssuer.map(x=>x.name==='GITHUB_CLIENT_ID'?{...x,text:'bad id'}:x)}),incompleteAs],
+        [firstPartyBootstrap({asBindings:[...preapprovedIssuer,{name:'HUMAN_SESSION_KEY',type:'secret_text'}]}),incompleteAs],
+        [firstPartyBootstrap({asBindings:preapprovedIssuer.map(x=>x.name==='MAILBOX'?{...x,entrypoint:undefined}:x)}),incompleteAs],
+        [firstPartyBootstrap({asBindings:preapprovedIssuer.map(x=>x.name==='MAILBOX'?{...x,service:'other-worker'}:x)}),incompleteAs],
+        [firstPartyBootstrap({asBindings:preapprovedIssuer.map(x=>x.name==='MAILBOX'?{...x,environment:'staging'}:x)}),incompleteAs],
+        [firstPartyBootstrap({asBindings:preapprovedIssuer.filter(x=>x.name!=='OAUTH_KV')}),incompleteAs],
+        [firstPartyBootstrap({asBindings:preapprovedIssuer.map(x=>x.name==='OAUTH_KV'?{...x,namespace_id:'bad'}:x)}),incompleteAs],
+        [firstPartyBootstrap({asBindings:preapprovedIssuer.filter(x=>x.name!=='CONSENT_NONCES')}),incompleteAs],
+        [firstPartyBootstrap({publicStatus:401}),/Approved OAuth issuer metadata unavailable or not JSON \(HTTP 401\)/],
+        [firstPartyBootstrap({metadata:{issuer:'https://untrusted.example',client_id_metadata_document_supported:true,code_challenge_methods_supported:['S256']}}),issuerMetadata],
+        [firstPartyBootstrap({metadata:{issuer:firstPartyIssuer,client_id_metadata_document_supported:false,code_challenge_methods_supported:['S256']}}),issuerMetadata],
+        [firstPartyBootstrap({flag:'tru'}),/Invalid first-party OAuth bootstrap permission/],
+        [firstPartyBootstrap({bindings:[...preapprovedResource,{name:'AUTH_SERVER',type:'service',service:'other'}]}),
+            /First-party OAuth bootstrap already has a Service Binding/]
     ];
-    for(const f of cases){
-        await assert.rejects(deploy(f.options));
+    for(const [f,expected] of cases){
+        await assert.rejects(deploy(f.options),expected);
         assert.equal(f.commands.length,0,'No maintenance, D1 or active upload may start on a failed preflight');
     }
 });
