@@ -1,5 +1,8 @@
 import assert from 'node:assert/strict';
 import {test} from 'node:test';
+import {start} from './harness.ts';
+import {createOwnedAgent, oauthAccountActive, signInHuman} from '../src/humans.ts';
+import type {Env} from '../src/database.ts';
 import {authorizeOAuth,oauthConfiguration,protectedResourceMetadata,type OAuthConfiguration} from '../src/remote-oauth.ts';
 const id='01234567-89ab-4def-8123-456789abcdef';
 const config:OAuthConfiguration={issuer:'https://auth.example',resource:'https://weave.example/mcp',introspectionUrl:'https://auth.example/oauth/introspect',clientId:'weave-client',clientSecret:'a_secure_local_test_secret_value'};
@@ -293,4 +296,42 @@ test('cross-origin token endpoint remains default-denied, exact-pinned, and mutu
         OAUTH_ISSUER:config.issuer,OAUTH_RESOURCE:config.resource,
         AUTH_SERVER:{validateToken:async()=>null},OAUTH_INTROSPECTION_TRUSTED_ORIGIN:'https://token-gateway.example'
     },config.resource),'one resource must not accept ambiguous providers');
+});
+
+// Real Miniflare D1 + production OAuth gate: no mock account-exists result.
+// The AS claims are simulated, so this is not a real public-agent acceptance.
+test('Service Binding refuses a previously issued bearer after GitHub owner freezes',async()=>{
+    const h=await start();
+    try{
+        const env={db:h.db,REGISTRATION_ENABLED:'true',REGISTRATION_MAX_ACCOUNTS:'100',
+            REGISTRATION_PER_IP_PER_HOUR:'100',REGISTRATION_GLOBAL_PER_HOUR:'100'} as Env;
+        const signed=await signInHuman(env,{provider:'github',subject:'8459',
+            providerCreatedAt:'2020-01-01T00:00:00Z',displayLogin:'owner'});
+        assert.equal(signed.ok,true);
+        if(!signed.ok)throw Error('Test owner not registered');
+        const owned=await createOwnedAgent(env,{humanId:signed.humanId,
+            displayName:'Test agent',sourceIp:'203.0.113.9'});
+        assert.equal(owned.ok,true);
+        if(!owned.ok)throw Error('Test agent not registered');
+        const legacy=await h.register();
+        const now=Math.floor(Date.now()/1000);
+        let currentAccount=owned.accountId;
+        const binding={validateToken:async()=>({audience:config.resource,userId:currentAccount,
+            props:{accountId:currentAccount,humanId:signed.humanId},expiresAt:now+120,
+            scope:['weave:messages.send'],clientId:'verified-public-client'})};
+        const cfg=oauthConfiguration({AUTH_SERVER:binding,OAUTH_ISSUER:config.issuer,
+            OAUTH_RESOURCE:config.resource} as any,config.resource)!;
+        const token=req('owned:grant:secret');
+        const eligible=(accountId:string)=>oauthAccountActive(env,accountId);
+        assert.deepEqual(await authorizeOAuth(cfg,token,'weave:messages.send',eligible,undefined,now*1000),
+            {accountId:owned.accountId});
+        await h.db.prepare('UPDATE humans SET frozen_at=updated_at WHERE human_id=?')
+            .bind(signed.humanId).run();
+        const revoked=await authorizeOAuth(cfg,token,'weave:messages.send',eligible,undefined,now*1000);
+        assert.ok(revoked instanceof Response);
+        assert.equal(revoked.status,401,'freeze must reject an existing still-unexpired access token');
+        currentAccount=legacy.accountId;
+        assert.deepEqual(await authorizeOAuth(cfg,token,'weave:messages.send',eligible,undefined,now*1000),
+            {accountId:legacy.accountId},'independent control-owned accounts stay eligible');
+    }finally{await h.close();}
 });
