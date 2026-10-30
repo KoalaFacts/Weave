@@ -53,8 +53,11 @@ MCP D1 E2E, full repository CI/coverage/security/licence and independent
 review before any merge/release. The committed dependency locks and branch workflow cover Node24 source/type checks,
 portable logic, real workerd Durable Object replay, the bundled production mailbox
 Worker and actual D1 schema, simulated GitHub sign-in through the real
-`HumanDirectory` binding, agent picking and creation, and token issuance for the
-chosen agent. These test-owned synthetic
+`HumanDirectory` binding, agent picking and creation, token issuance for the
+chosen agent and, with tokens from that simulated sign-in, six alternating
+private MCP messages with ACKs between two humans' agents, and one
+unacknowledged message in each direction recovered across a cold Worker
+restart. These test-owned synthetic
 humans and agents do NOT establish a public or two-independent-model-Agent acceptance.
 This remains **isolated workerd emulation, not public Cloudflare deployment,
 real human-account consent or independent live model-Agent acceptance**, and

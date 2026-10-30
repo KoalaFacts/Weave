@@ -445,9 +445,9 @@ test("consent_DirectoryUnavailable_Returns503AndLogsCategory",{timeout:60_000},a
 });
 
 test("a foreign browser cannot burn an owner nonce before consent-cookie verification",{timeout:120_000},async()=>{
-  let instance=await start();
+  const instance=await start();
   try{
-    let {mf}=instance;
+    const {mf}=instance;
     const auth=authorization();
     auth.url.searchParams.set("state","separate-browser-state");auth.state="separate-browser-state";
     const session=await signIn(mf,auth,9001);
@@ -473,9 +473,19 @@ test("a foreign browser cannot burn an owner nonce before consent-cookie verific
     const replay=await post(mf,consent.cookie,fields);
     assert.equal(replay.status,400,"SDK handle + Durable Object nonce can never grant twice");
     assert.deepEqual(await agentsOf(mf,await humanIdOf(mf,9001)),[account],"a replay must not create another agent");
+  }finally{await stop(instance);}
+});
 
-    // A second human independently consents with a separate grant.
-    const second=await authorizeAgent(mf,9003,"new","Agent B");
+test("consent_GithubSignedInAgents_ExchangeSixMessagesAcrossColdRestart",{timeout:120_000},async()=>{
+  let instance=await start();
+  try{
+    let {mf}=instance;
+    // Two humans each sign in through the simulated GitHub flow and consent for a new agent.
+    const first=await authorizeAgent(mf,9101,"new","Agent A");
+    const account=first.accountId,token=first.token;
+    assert.deepEqual(await agentsOf(mf,await humanIdOf(mf,9101)),[account]);
+    assert.equal(await grantsFor(mf,account),1);
+    const second=await authorizeAgent(mf,9103,"new","Agent B");
     const accountB=second.accountId,tokenB=second.token;
     assert.notEqual(accountB,account);
     assert.notEqual(tokenB,token);
