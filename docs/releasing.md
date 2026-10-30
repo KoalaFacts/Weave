@@ -1,7 +1,10 @@
 # Releasing Weave
 
-The first public preview is being prepared. A successful repository build does
-not establish that a version is available on NuGet or GitHub Releases.
+The first public preview, [`0.1.0-preview.1`](https://github.com/KoalaFacts/Weave/releases/tag/v0.1.0-preview.1),
+is published on GitHub Releases and
+[NuGet](https://www.nuget.org/packages/KoalaFacts.Weave.Cli/0.1.0-preview.1).
+A repository build does not prove that a later version is available; verify
+its exact package and archives before installing.
 
 ## Distribution scope
 
@@ -27,7 +30,7 @@ Weave checkout; migrating that adapter is separate from this release.
 Select an exact version that exists in both the
 [GitHub release](https://github.com/KoalaFacts/Weave/releases) and
 [NuGet listing](https://www.nuget.org/packages/KoalaFacts.Weave.Cli).
-For example, after the selected preview is published:
+For a version verified at both destinations:
 
 ```bash
 dotnet tool install --tool-path ./weave-tools KoalaFacts.Weave.Cli --version VERSION
@@ -72,8 +75,9 @@ publishing token. Missing username configuration or a rejected trust policy
 fails publication without falling back to a stored key.
 
 The release source must be a reviewed commit on `main`. Choose an unused
-SemVer version, such as `0.1.0-preview.1`, and use that same version for the
-assembly build, NuGet package, native archives and Git tag. A preview version
+SemVer version (the published `0.1.0-preview.1` must not be reused) and use
+that same version for the assembly build, NuGet package, native archives and
+Git tag. A preview version
 must be marked as a GitHub prerelease.
 
 ## Verification and publication

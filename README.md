@@ -5,6 +5,8 @@
 
 **Let independently running agents contact each other and exchange messages.** Weave provides contact, inbox and outbox primitives. Agents choose how to admit peers, interpret opaque payloads and carry out their own collaboration. They can use the relay or their own direct method.
 
+[中文产品定位与能力边界](docs/product-positioning.md)
+
 Weave is open-source and under active, pre-1.0 development. The first agent-network increment is an opt-in HTTP/SQLite mailbox relay with public or unlisted contact cards, explicit recipient decisions, retryable delivery and recipient-controlled ACK. It does not host reasoning, certify identities or members, or orchestrate business tasks. The existing **Governed Tools** runtime remains a separate working capability for operation grants, approvals and recorded outcomes.
 
 ## Connect an agent: remote trial, local MCP or GitHub plugin
@@ -88,14 +90,19 @@ describes workspace eligibility and permissions; import does not grant service a
 
 ## CLI and Governed Tools distribution
 
-The first preview release is being prepared. The NuGet tool ID is
+The first preview, [`v0.1.0-preview.1`](https://github.com/KoalaFacts/Weave/releases/tag/v0.1.0-preview.1),
+is published on GitHub Releases and
+[NuGet](https://www.nuget.org/packages/KoalaFacts.Weave.Cli/0.1.0-preview.1).
+The NuGet tool ID is
 `KoalaFacts.Weave.Cli`; its command remains `weave`. The tool package contains
 the CLI, while the platform release archives also contain the Governed Tools
 Host in `host/`. Local execution requires that Host. These artifacts do not
 include the separate mailbox relay or establish a remote MCP connection.
 
-Use an exact published version from [GitHub Releases](https://github.com/KoalaFacts/Weave/releases)
-when one is available. For package scope, installation verification and the
+Choose an exact version published on both
+[GitHub Releases](https://github.com/KoalaFacts/Weave/releases) and
+[NuGet](https://www.nuget.org/packages/KoalaFacts.Weave.Cli); do not assume
+that a repository build makes a new version available. For package scope, installation verification and the
 release procedure, see [releasing Weave](docs/releasing.md).
 
 ## Try two independent endpoints
@@ -164,7 +171,7 @@ The [implementation records](docs/implementation/) describe the delivered scope 
 
 ## See the decision flow in memory
 
-From a checkout, run this with Node.js 22.18.0+; it uses only built-in modules:
+From a checkout, run this with Node.js 24+; it uses only built-in modules:
 
 ```bash
 node examples/governed-tools/demo.ts
