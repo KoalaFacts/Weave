@@ -17,6 +17,9 @@ const resource="https://demo.weave-389.workers.dev/mcp";
 const clientId=demoOAuthClientId;
 const redirectUri="http://127.0.0.1:53621/callback";
 const redirectUriB="http://127.0.0.1:53622/callback";
+// Random per run; this test never signs in with GitHub.
+const githubClientSecret=randomBytes(20).toString("hex");
+const sessionKey=randomBytes(32).toString("base64url");
 // Payload generated with the exact mailbox wire shape. Importing the broader
 // legacy test harness into a strict OAuth test creates unrelated type errors.
 function mailboxPayload(bytes:string,now=Date.now()){
@@ -86,7 +89,11 @@ function options(storage:string,key:string) {
           CONSENT_NONCES:{type:"durable-object",worker:"weave-consent-regression",exportName:"ConsentNonce"},
           OAUTH_ISSUER:{type:"text",value:issuer},
           OAUTH_RESOURCE:{type:"text",value:resource},
-          OAUTH_ACCOUNT_PROOF_KEY:{type:"text",value:key}
+          OAUTH_ACCOUNT_PROOF_KEY:{type:"text",value:key},
+          GITHUB_CLIENT_ID:{type:"text",value:"Iv1.test-client-id"},
+          GITHUB_CLIENT_SECRET:{type:"text",value:githubClientSecret},
+          HUMAN_SESSION_KEY:{type:"text",value:sessionKey},
+          MAILBOX:{type:"worker",worker:"weave-mailbox-regression",exportName:"HumanDirectory"}
         },
         exports:{ConsentNonce:{type:"durable-object",storage:"sqlite"}}
       }

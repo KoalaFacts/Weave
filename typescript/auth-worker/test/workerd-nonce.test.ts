@@ -14,6 +14,8 @@ const issuer='https://auth.weave.example';
 const resource='https://demo.weave-389.workers.dev/mcp';
 const localKey=randomBytes(32).toString('base64url');
 const bundled=readFileSync(resolve('dist/index.js'),'utf8');
+// The AS refuses to serve without its human directory binding; this test never calls it.
+const mailboxBundle=readFileSync(resolve('../mailbox-worker/dist/index.js'),'utf8');
 function options(storage:string) {
   // Miniflare v5 uses the workerd-native Worker manifest, NOT v4
   // scriptPath/kvNamespaces shims. Persist the actual SQLite DO database.
@@ -37,9 +39,21 @@ function options(storage:string) {
           CONSENT_NONCES:{type:'durable-object',worker:'weave-auth-local',exportName:'ConsentNonce'},
           OAUTH_ISSUER:{type:'text',value:issuer},
           OAUTH_RESOURCE:{type:'text',value:resource},
-          OAUTH_ACCOUNT_PROOF_KEY:{type:'text',value:localKey}
+          OAUTH_ACCOUNT_PROOF_KEY:{type:'text',value:localKey},
+          GITHUB_CLIENT_ID:{type:'text',value:'Iv1.test-client-id'},
+          GITHUB_CLIENT_SECRET:{type:'text',value:randomBytes(20).toString('hex')},
+          HUMAN_SESSION_KEY:{type:'text',value:randomBytes(32).toString('base64url')},
+          MAILBOX:{type:'worker',worker:'weave-mailbox-local',exportName:'HumanDirectory'}
         },
         exports:{ConsentNonce:{type:'durable-object',storage:'sqlite'}}
+      }
+    },{
+      config:{
+        name:'weave-mailbox-local',
+        compatibilityDate:'2026-10-13',
+        compatibilityFlags:['nodejs_compat','global_fetch_strictly_public'],
+        manifest:{mainModule:'mailbox.js',modules:{'mailbox.js':{type:'esm',contents:mailboxBundle}}},
+        env:{db:{type:'d1'}}
       }
     }]
   };

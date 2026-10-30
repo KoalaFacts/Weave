@@ -3,8 +3,10 @@ import {AuthorizationError,CimdFetchError,OAuthAuthorizationServer} from "@cloud
 import {verifyAccountProof,validateAccountProofBinding,type AccountProofConfig} from "../../mailbox-worker/src/account-proof.ts";
 import {createChallenge,validChallenge,validHandle,readConsent} from "./challenge.ts";
 import {consentPage} from "./consent-page.ts";
+import {completeGithubLogin,type GithubLoginEnv} from "./github-login.ts";
+import {validSigningKey} from "./human-session.ts";
 export {ConsentNonce} from "./nonce-do.ts";
-interface Env {
+interface Env extends GithubLoginEnv {
   OAUTH_KV:KVNamespace;
   CONSENT_NONCES:DurableObjectNamespace;
   OAUTH_ISSUER:string;
@@ -19,6 +21,9 @@ function config(env:Env,requestUrl?:string):AccountProofConfig{
   const issuer=new URL(cfg.issuer);
   if(issuer.pathname!=="/"||issuer.search||issuer.hash||
     (requestUrl&&new URL(requestUrl).origin!==issuer.origin))throw Error("Invalid AS binding");
+  // Human sign-in is mandatory: no GitHub client, session key or directory means no service at all.
+  if(!/^[A-Za-z0-9._-]{1,128}$/.test(env.GITHUB_CLIENT_ID??"")||!/^[!-~]{1,256}$/.test(env.GITHUB_CLIENT_SECRET??"")||
+    !validSigningKey(env.HUMAN_SESSION_KEY)||!env.MAILBOX)throw Error("Invalid human sign-in binding");
   return cfg;
 }
 function provider(env:Env):OAuthAuthorizationServer<Env>{
@@ -122,7 +127,10 @@ export default class AuthServer extends WorkerEntrypoint<Env>{
   async fetch(req:Request):Promise<Response>{
     let server:OAuthAuthorizationServer<Env>;
     try{config(this.env,req.url);server=provider(this.env);}catch{return unavailable();}
-    if(new URL(req.url).pathname==="/authorize")return authorize(req,this.env,server);
+    const path=new URL(req.url).pathname;
+    if(path==="/authorize")return authorize(req,this.env,server);
+    if(path==="/login/github/callback")return req.method==="GET"?completeGithubLogin(this.env,req,Date.now())
+      :new Response("Method not allowed",{status:405,headers:{Allow:"GET","Cache-Control":"no-store"}});
     return server.fetch(req,this.env,this.ctx);
   }
   validateToken(resource:string,token:string){
