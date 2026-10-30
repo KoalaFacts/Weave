@@ -262,7 +262,7 @@ test("callback_GithubProviderRedirects_FailClosedWithoutForwardingSecrets",{time
         :["https://github.com/login/oauth/access_token","https://api.github.com/user"];
       assert.deepEqual(github.requests.map(x=>x.url),expectedUrls,
         phase+" must contact only the two fixed GitHub endpoints");
-      assert.ok(github.requests.every(x=>x.redirect==="error"),
+      assert.ok(github.requests.every(x=>x.redirect==="manual"),
         phase+" must explicitly disable automatic HTTP redirects");
       assert.ok(logs.some(x=>x.includes(phase==="token"
         ?"github-login: token exchange failed":"github-login: user fetch failed")));

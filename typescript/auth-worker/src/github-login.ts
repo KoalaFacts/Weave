@@ -83,7 +83,7 @@ export const failureLog={exchange:"github-login: token exchange failed",user:"gi
 async function githubAccessToken(env:GithubLoginEnv,code:string,verifier:string):Promise<string|null>{
   try{
     // Never follow a provider redirect with the client secret, code or PKCE verifier.
-    const exchange=await fetch(githubToken,{method:"POST",redirect:"error",
+    const exchange=await fetch(githubToken,{method:"POST",redirect:"manual",
       headers:{Accept:"application/json","Content-Type":"application/x-www-form-urlencoded","User-Agent":"weave-auth"},
       body:new URLSearchParams({client_id:env.GITHUB_CLIENT_ID,client_secret:env.GITHUB_CLIENT_SECRET,code,
         redirect_uri:new URL(callbackPath,env.OAUTH_ISSUER).href,code_verifier:verifier})});
@@ -102,7 +102,7 @@ async function fetchGithubUser(env:GithubLoginEnv,code:string,verifier:string):P
   if(!token)return null;
   try{
     // Likewise, never forward a GitHub bearer token to a redirected endpoint.
-    const response=await fetch(githubUser,{redirect:"error",headers:{Authorization:"Bearer "+token,
+    const response=await fetch(githubUser,{redirect:"manual",headers:{Authorization:"Bearer "+token,
       Accept:"application/vnd.github+json","User-Agent":"weave-auth"}});
     if(response.ok){
       const user:unknown=await response.json();
