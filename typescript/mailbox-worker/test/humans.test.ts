@@ -1,7 +1,7 @@
 import assert from 'node:assert/strict';
 import { test } from 'node:test';
 import { start, secret } from './harness.ts';
-import { createOwnedAgent, humanHasAgent, listHumanAgents, maxAgentsPerHuman, signInHuman, type HumanSignIn } from '../src/humans.ts';
+import { createOwnedAgent, humanHasAgent, listHumanAgents, maxAgentsPerHuman, oauthAccountActive, signInHuman, type HumanSignIn } from '../src/humans.ts';
 import type { Env } from '../src/database.ts';
 
 const environment = (h: { db: unknown }, overrides: Partial<Env> = {}) => ({
@@ -182,5 +182,24 @@ test('humanDirectory_FrozenAfterCreatingAgent_RefusesManagement', async () => {
         assert.equal(await h.db.prepare('SELECT count(*) n FROM accounts WHERE human_id=?').bind(id).first('n'), 1);
         // Over-correction guard: an unfrozen human is unaffected.
         assert.equal((await create(env, other)).ok, true);
+    } finally { await h.close(); }
+});
+
+// An already issued bearer is checked at the resource Worker on every call,
+// not just at the authorization server's one-time agent selection.
+test('oauthAccountActive_FrozenGithubHuman_RevokesOwnedAgentButNotLegacyControlAccount', async () => {
+    const h = await start();
+    try {
+        const env = environment(h), id = await humanId(env);
+        const owned = await create(env, id) as { accountId: string };
+        const independent = await h.register();
+        assert.equal(await oauthAccountActive(env, owned.accountId), true);
+        assert.equal(await oauthAccountActive(env, independent.accountId), true);
+        await h.db.prepare('UPDATE humans SET frozen_at=updated_at WHERE human_id=?').bind(id).run();
+        assert.equal(await oauthAccountActive(env, owned.accountId), false,
+            'previously issued bearer must stop authorizing private MCP operations');
+        assert.equal(await oauthAccountActive(env, independent.accountId), true,
+            'unrelated control-owned agent remains available');
+        assert.equal(await oauthAccountActive(env, crypto.randomUUID()), false);
     } finally { await h.close(); }
 });
