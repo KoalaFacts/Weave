@@ -200,14 +200,14 @@ class EvidenceApiTests(unittest.TestCase):
                                             "dependency_records": [CHANGE] * 100})
         self.assertEqual(len(opener.requests), 1)
 
-    def test_total_entry_budget_is_preserved_for_complete_large_responses(self):
+    def test_ten_thousand_entry_budget_is_preserved_for_complete_large_responses(self):
         with self.assertRaises(evidence.EvidenceUnavailable) as caught:
-            self.check(Opener(Reply(json.dumps([CHANGE] * 2001).encode())))
+            self.check(Opener(Reply(json.dumps([CHANGE] * (evidence.MAX_CHANGES + 1)).encode())))
         self.assertEqual(caught.exception.code, "comparison-change-limit")
 
     def test_total_entry_budget_applies_across_explicit_pages(self):
         opener = Opener(Reply(json.dumps([CHANGE] * 100).encode(), link=NEXT),
-                        Reply(json.dumps([CHANGE] * 1901).encode()))
+                        Reply(json.dumps([CHANGE] * (evidence.MAX_CHANGES - 99)).encode()))
         with self.assertRaises(evidence.EvidenceUnavailable) as caught:
             self.check(opener)
         self.assertEqual(caught.exception.code, "comparison-change-limit")
@@ -419,7 +419,7 @@ class EvidenceWaitTests(unittest.TestCase):
             (self.warning(status=403), 'comparison-http-error'),
             (urllib.error.URLError('private network details'), 'comparison-network-error'),
             (Reply(b'{}'), 'invalid-comparison-response'),
-            (Reply(json.dumps([CHANGE] * 2001).encode()), 'comparison-change-limit'),
+            (Reply(json.dumps([CHANGE] * (evidence.MAX_CHANGES + 1)).encode()), 'comparison-change-limit'),
         ]
         for reply, failure_code in cases:
             with self.subTest(failure_code=failure_code):
