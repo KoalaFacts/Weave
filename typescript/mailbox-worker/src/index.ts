@@ -9,7 +9,7 @@ import { remoteMcp } from './remote-mcp';
 import { oauthConfiguration, authorizeOAuth, protectedResourceMetadata } from './remote-oauth';
 import { demoOAuthClientId, demoOAuthClientMetadata } from './oauth-client-metadata';
 import { privateMcpTools, privateScope, executePrivateMcp } from './remote-private';
-import { directory, mutateAddress, ownedAddresses } from './addresses';
+import { directory, directoryAgentCard, mutateAddress, ownedAddresses } from './addresses';
 import { sweep } from './cleanup';
 import { budgetDatabase } from './budget';
 import { stream, type Context } from './stream';
@@ -27,7 +27,7 @@ import { atomic, type Env } from './database';
 import { accountNotices } from './notices.ts';
 import { ack, send } from './messages';
 import { read } from './reads';
-import { body, fail, json, problem } from './wire';
+import { body, fail, json, problem, stringify } from './wire';
 import { validatePayload } from './protocol';
 
 // Private Service Binding RPC for the OAuth authorization server; deliberately has no fetch route.
@@ -100,6 +100,13 @@ export default {
             // Owner recovery authenticates with the owner-issued code plus the new key's DPoP proof; the agent may have no usable key.
             if (method === 'POST' && url.pathname === '/v1/key-requests') return json(await recoverAgentKey(env,request,await body(request)));
             if(env.RECOVERY_READ_ONLY!=='true'&&method==='GET'&&['/v1/directory','/v1/directory/address','/v1/contacts/cards','/v1/contacts/card'].includes(url.pathname))await publicReadRate(env,request);
+            // The Agent Card is public, anonymous and agent-declared; it is served as stored, never as verified.
+            const cardRoute = method === 'GET' ? /^\/v1\/directory\/address\/([^/]+)\/agent-card\.json$/.exec(url.pathname) : null;
+            if (cardRoute) {
+                if (env.RECOVERY_READ_ONLY!=='true') await publicReadRate(env,request);
+                const card = await atomic(env.db,tx => directoryAgentCard(tx,cardRoute[1]));
+                return new Response(stringify(card),{headers:{'Content-Type':'application/json','Cache-Control':'no-store','Pragma':'no-cache','X-Content-Type-Options':'nosniff'}});
+            }
             const account = await authenticateAgent(env,request);
             if (method === 'GET' && ['/v1/directory','/v1/directory/address'].includes(url.pathname)) return json(await atomic(env.db,tx => directory(tx,url)));
             if (method === 'GET' && ['/v1/contacts/cards','/v1/contacts/card'].includes(url.pathname)) return json(await atomic(env.db,tx => read(tx,url,account?.accountId ?? null)));

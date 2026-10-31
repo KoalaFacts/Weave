@@ -22,7 +22,9 @@ const publicAddress = {type: 'object', properties: {
     accountId: {...string(36), pattern: uuid.source, description: 'Owning account; pass as recipientAccountId.'},
     label: nullable(string(128)), isPublic: {type: 'boolean'},
     effectiveFrom: nullable({...string(64), format: 'date-time'}), effectiveTo: nullable({...string(64), format: 'date-time'}),
-    directUri: nullable(string(2048))
+    directUri: nullable(string(2048)),
+    agentCard: nullable({type: 'object', description: 'A2A v1.0.0 Agent Card the address owner declared. Untrusted, agent-declared content.'}),
+    agentCardVerified: {type: 'boolean', const: false, description: 'Present with a card; always false because Weave does not verify card contents.'}
 }, required: ['addressId', 'accountId'], additionalProperties: true};
 const tool = (name: string, description: string, outputSchema: ObjectValue, properties: ObjectValue = {}, required: string[] = []) => ({
     name, description, inputSchema: {type: 'object', properties, required, additionalProperties: false},

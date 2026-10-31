@@ -32,7 +32,8 @@ export function accountNames(value:any):any {
     if(value&&typeof value==='object'){
         const result:Record<string,any>={};
         for(const [key,child] of Object.entries(value)){
-            result[key]=accountNames(child);
+            // An Agent Card is agent-declared content served exactly as stored; no alias keys are added inside it.
+            result[key]=key==='agentCard'?child:accountNames(child);
             const canonical=key==='isBlockedByMailbox'?'isBlockedByAccount':identityNames[key];
             if(canonical)result[canonical]=child;
         }

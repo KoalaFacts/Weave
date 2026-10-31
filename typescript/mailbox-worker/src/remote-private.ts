@@ -12,6 +12,7 @@ import { fail, identity, invalidField, json, problem, uuid } from './wire';
 import { checkUuid } from './mcp-arguments';
 import { MAX_GENERATION, readChannel, relation } from './protocol';
 import { sweep } from './cleanup';
+import { checkAgentCard, publishAgentCard } from './agent-cards.ts';
 import { checkMessage, inboxMessage, messagePayload } from './a2a-message.ts';
 import { idempotencyClaim, recordResultId, replayedResultId, type IdempotencyClaim } from './mcp-idempotency.ts';
 
@@ -100,12 +101,19 @@ export async function executePrivateMcp(env:Env,origin:string,accountId:string,n
         }
         // Validate all shapes before running bounded cleanup or any state change.
         if(name==='ensure_my_address'){
-            parameters(args,['addressId','label'],['addressId']);
+            parameters(args,['addressId','label','isPublic'],['addressId']);
             checkUuid(args.addressId,'addressId');
             if(args.label!==undefined&&typeof args.label!=='string')invalidField('label','must be a string');
-            // Private by default; publishing an address requires an explicit separate action.
-            return json(withoutSecrets(await mutateAddress(env,accountId,null,{label:args.label??null,isPublic:false},
+            if(args.isPublic!==undefined&&typeof args.isPublic!=='boolean')invalidField('isPublic','must be true or false');
+            // Unlisted unless the caller asks for a public address; the slice-3 public-address limits apply.
+            return json(withoutSecrets(await mutateAddress(env,accountId,null,{label:args.label??null,isPublic:args.isPublic===true},
                 origin,false,args.addressId as string)));
+        }
+        if(name==='publish_my_agent_card'){
+            parameters(args,['addressId','card'],['addressId','card']);
+            checkUuid(args.addressId,'addressId');
+            const card=args.card===null?null:checkAgentCard(args.card);
+            return json(withoutSecrets(await publishAgentCard(env,accountId,args.addressId,card)));
         }
         if(name==='request_contact'){
             parameters(args,['requesterAddressId','recipientAccountId','recipientAddressId','message','idempotencyKey'],['requesterAddressId','recipientAccountId','recipientAddressId','message']);

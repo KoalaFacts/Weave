@@ -6,6 +6,7 @@ import { accountAddresses } from './schema';
 import { addressSnapshot } from './wire-snapshots';
 import { isoUtc } from './time';
 import { agentLimits, agentTier } from './agent-limits.ts';
+import { agentCards, removeAgentCard, withAgentCards } from './agent-cards.ts';
 
 function profile(input: any): any {
     object(input,[],['label','isPublic','effectiveFrom','effectiveTo','directUri']);
@@ -43,6 +44,7 @@ export async function mutateAddress(env: Env,owner: string,id: string|null,input
         if (creationId !== null && previous && (!previous._address || previous._deleted || previous.ownerMailboxId !== owner)) fail(404,'unavailable');
         if (remove) {
             tx.put('card','',id!,{...previous,_deleted:true,revokedAt:nowText(tx),visibility:'unlisted',_address:{...previous._address,isPublic:false}});
+            removeAgentCard(tx,id!);
             return {};
         }
         const unchanged=previous&&Object.entries(chosen).every(([key,value])=>['effectiveFrom','effectiveTo'].includes(key)?(value===null?previous._address[key]===null:previous._address[key]!==null&&ticks(value)===ticks(previous._address[key])):value===previous._address[key]);
@@ -70,7 +72,10 @@ export async function mutateAddress(env: Env,owner: string,id: string|null,input
             _effectiveFromTicks:chosen.effectiveFrom === null ? null : ticks(chosen.effectiveFrom).toString(),
             _effectiveToTicks:chosen.effectiveTo === null ? null : ticks(chosen.effectiveTo).toString(),
             _publicSequence:previous?._publicSequence ?? (chosen.isPublic ? await publishSequence(tx) : null)};
-        tx.put('card','',cardId,c); return addressView(c);
+        tx.put('card','',cardId,c);
+        // A card exists only while its address is public; republishing never brings an old card back.
+        if(previous?._address.isPublic&&!chosen.isPublic)removeAgentCard(tx,cardId);
+        return addressView(c);
     });
 }
 export async function ownedAddresses(tx: Transaction,owner: string,url: URL): Promise<any> {
@@ -87,16 +92,26 @@ export async function ownedAddresses(tx: Transaction,owner: string,url: URL): Pr
     const rows=await tx.store.rows(accountAddresses,`account_id=? ${includeRevoked?'':'AND revoked_at IS NULL'} AND address_id>?`,[owner,after?.slice(prefix.length) ?? ''],`ORDER BY address_id LIMIT ${n+1}`);
     return {items:rows.slice(0,n).map(r=>view(addressSnapshot(r))),nextCursor:rows.length>n ? prefix+rows[n-1].address_id : null};
 }
-export async function directory(tx: Transaction,url: URL): Promise<any> {
-    const now=(BigInt(Date.now())*10000n).toString();
-    const filter=`is_public=1 AND revoked_at IS NULL
+const publicFilter=`is_public=1 AND revoked_at IS NULL
         AND (effective_from IS NULL OR effective_from<=CAST(? AS INTEGER))
         AND (effective_to IS NULL OR effective_to>CAST(? AS INTEGER))
         AND (expires_at IS NULL OR expires_at>CAST(? AS INTEGER))`;
+/** The stored Agent Card of a live, currently effective public address, filtered at read as well as deleted on leaving that state. */
+export async function directoryAgentCard(tx: Transaction,addressId: string): Promise<unknown> {
+    uuid(addressId);
+    const now=(BigInt(Date.now())*10000n).toString();
+    const rows=await tx.store.rows(accountAddresses,publicFilter+' AND address_id=?',[now,now,now,addressId],'LIMIT 1');
+    const card=rows.length?(await agentCards(tx,[addressId])).get(addressId):undefined;
+    if (card===undefined) fail(404,'unavailable');
+    return card;
+}
+export async function directory(tx: Transaction,url: URL): Promise<any> {
+    const now=(BigInt(Date.now())*10000n).toString();
+    const filter=publicFilter;
     if (url.pathname.endsWith('/address')) {
         const id=query(url,'addressId',true); uuid(id);
         const rows=await tx.store.rows(accountAddresses,filter+' AND address_id=?',[now,now,now,id],'LIMIT 1');
-        if (!rows.length) fail(404,'unavailable'); return addressView(addressSnapshot(rows[0]));
+        if (!rows.length) fail(404,'unavailable'); return (await withAgentCards(tx,[addressView(addressSnapshot(rows[0]))]))[0];
     }
     const n=limit(url),search=query(url,'q') ?? '',after=query(url,'afterCursor'); if(search.length>128) fail();
     // Version and query bind the opaque cursor to this ordering; old ID-only cursors must restart.
@@ -112,5 +127,5 @@ export async function directory(tx: Transaction,url: URL): Promise<any> {
         ${boundary ? 'AND (created_at,address_id)<(CAST(? AS INTEGER),?)' : ''}
         AND (instr(lower(COALESCE(label,'')),lower(?))>0 OR instr(address_id,?)>0)`,
         [now,now,now,...(boundary??[]),search,search,n+1],'ORDER BY account_addresses.created_at DESC,address_id DESC LIMIT ?');
-    return {items:rows.slice(0,n).map(r=>addressView(addressSnapshot(r))),nextCursor:rows.length>n ? prefix+isoUtc(rows[n-1].created_at)+'/'+rows[n-1].address_id : null};
+    return {items:await withAgentCards(tx,rows.slice(0,n).map(r=>addressView(addressSnapshot(r)))),nextCursor:rows.length>n ? prefix+isoUtc(rows[n-1].created_at)+'/'+rows[n-1].address_id : null};
 }

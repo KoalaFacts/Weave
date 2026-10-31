@@ -31,7 +31,7 @@ test('OpenAPI is an anonymous no-store JSON asset independent of account storage
 test('OpenAPI describes the current HTTP method/path set with resolved local references and security', () => {
     const routes = {
         '/v1/accounts':['post'], '/v1/token':['post'], '/v1/keys':['get','post'], '/v1/keys/{kid}':['delete'], '/v1/binding-requests':['post'], '/v1/binding-requests/{requestId}':['get','delete'], '/v1/key-requests':['post'], '/v1/contacts':['get'], '/v1/contacts/accounts/{accountId}':['get','delete'], '/v1/addresses':['get','post'], '/v1/addresses/{addressId}':['get','put','delete'],
-        '/v1/directory':['get'], '/v1/directory/address':['get'], '/v1/contacts/cards':['get','put'],
+        '/v1/directory':['get'], '/v1/directory/address':['get'], '/v1/directory/address/{addressId}/agent-card.json':['get'], '/v1/contacts/cards':['get','put'],
         '/v1/contacts/owned-cards':['get'], '/v1/contacts/card':['get'], '/v1/contacts/requests':['get','post'],
         '/v1/contacts/requests/{requestId}':['get'], '/v1/contacts/requests/{requestId}/decision':['post'],
         '/v1/contacts/channel':['get'], '/v1/contacts/blocks':['put','delete'], '/v1/messages':['post'],
@@ -48,7 +48,7 @@ test('OpenAPI describes the current HTTP method/path set with resolved local ref
             const operation = spec.paths[path][method];
             assert.equal(ids.has(operation.operationId),false);
             ids.add(operation.operationId);
-            const anonymous = method === 'get' && ['/v1/directory','/v1/directory/address','/v1/contacts/cards','/v1/contacts/card'].includes(path);
+            const anonymous = method === 'get' && ['/v1/directory','/v1/directory/address','/v1/directory/address/{addressId}/agent-card.json','/v1/contacts/cards','/v1/contacts/card'].includes(path);
             const token = {AgentToken:[],DPoPProof:[]};
             const proofOnly = path === '/v1/accounts' || path === '/v1/token' || path === '/v1/key-requests';
             assert.deepEqual(operation.security ?? spec.security,proofOnly ? [{DPoPProof:[]}] : anonymous ? [{},token] : [token],path);

@@ -27,6 +27,24 @@ const message = (description: string) => ({type:'object', description,
         parts:{type:'array', minItems:1, maxItems:8, items:part, description:'1 to 8 parts.'},
         contextId:{...str(128, 'Optional A2A context ID grouping related messages.'), minLength:1}},
     required:['parts'], additionalProperties:false});
+// A2A v1.0.0 AgentCard subset (specification/a2a.proto, proto3 JSON names), at most 32 KiB serialized.
+const agentCard = {type:'object', description:'A2A v1.0.0 AgentCard, at most 32 KiB serialized. Only these fields are accepted.',
+    properties:{
+        name:{...str(128), minLength:1}, description:{...str(1024), minLength:1}, version:{...str(32), minLength:1},
+        supportedInterfaces:{type:'array', minItems:1, maxItems:4, description:'Endpoints you declare. https URLs only; Weave never contacts them.', items:{type:'object',
+            properties:{url:{...str(2048), pattern:'^https://', description:'Absolute https URL without credentials.'},
+                protocolBinding:{type:'string', enum:['JSONRPC','GRPC','HTTP+JSON']}, protocolVersion:{type:'string', const:'1.0'}},
+            required:['url','protocolBinding','protocolVersion'], additionalProperties:false}},
+        skills:{type:'array', maxItems:32, items:{type:'object',
+            properties:{id:{...str(128), minLength:1}, name:{...str(128), minLength:1}, description:{...str(1024), minLength:1},
+                tags:{type:'array', maxItems:16, items:{...str(64), minLength:1}}},
+            required:['id','name','description','tags'], additionalProperties:false}},
+        defaultInputModes:{type:'array', maxItems:16, items:{...str(128), minLength:1}},
+        defaultOutputModes:{type:'array', maxItems:16, items:{...str(128), minLength:1}},
+        capabilities:{type:'object', description:'AgentCapabilities as declared; use {} for none.'},
+        securitySchemes:{type:'object', description:'Optional A2A securitySchemes map.'},
+        securityRequirements:{type:'array', description:'Optional A2A securityRequirements.', items:{type:'object'}}},
+    required:['name','description','version','supportedInterfaces','skills','defaultInputModes','defaultOutputModes','capabilities'], additionalProperties:false};
 const idempotencyKey = {...str(128, 'Optional key, unique per write, retained 24 hours. Repeating the same key with the same input returns the current result for the original message or request without a second write; '
     + 'the same key with different input is refused (idempotency-conflict). Without a key a retry may create a duplicate.'), minLength:1, pattern:'^[A-Za-z0-9._:-]{1,128}$'};
 
@@ -89,9 +107,14 @@ export const privateMcpTools = [
     profile,
     tool('list_my_addresses', 'List only addresses owned by your OAuth account, including unlisted addresses.',
         'weave:addresses.read', page, [], pageOf(address), {readOnly:true}),
-    tool('ensure_my_address', 'Create a private unlisted address using a stable client UUID. Exact retries return the original; changed inputs conflict.',
-        'weave:addresses.write', {addressId:id('Client-chosen stable address UUID; reuse it to retry.'), label:str(128, 'Optional private label.')},
+    tool('ensure_my_address', 'Create an address using a stable client UUID; unlisted unless isPublic is true. A public address is listed in the public directory and counts against the public-address limit. Exact retries return the original; changed inputs conflict.',
+        'weave:addresses.write', {addressId:id('Client-chosen stable address UUID; reuse it to retry.'), label:str(128, 'Optional label; public when isPublic is true.'),
+            isPublic:{type:'boolean', description:'Default false. True lists the address in the public directory, where anyone can read it; discovery grants no messaging permission.'}},
         ['addressId'], address, {idempotent:true}),
+    tool('publish_my_agent_card', 'Attach an A2A v1.0.0 Agent Card to one of your own live public addresses, replacing any earlier card, or remove it with card:null. '
+        + 'The card is what you declare: Weave stores and shows it as unverified and does not check that the declared endpoints exist. It is removed when the address is revoked or stops being public.',
+        'weave:addresses.write', {addressId:id('Your own public address.'), card:nullable(agentCard)}, ['addressId','card'],
+        out({addressId:id('Address ID.'), agentCard:nullable({type:'object'})}, ['addressId','agentCard']), {idempotent:true}),
     tool('list_my_contact_requests', 'Read incoming and outgoing contact requests, including pending introductions that require recipient acceptance.',
         'weave:contacts.read', page, [], pageOf(requestSummary), {readOnly:true}),
     tool('list_my_contacts', 'Read your own accepted contact records without exposing connection tokens.',

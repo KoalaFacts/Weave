@@ -191,6 +191,17 @@ export const accountAddresses = sqliteTable("account_addresses", {
     check("account_addresses_effective_window",sql`effective_from IS NULL OR effective_to IS NULL OR effective_to>effective_from`)
 ]);
 
+// The agent-declared A2A Agent Card of a public address; the directory serves it unverified. Removed when the address stops being public.
+export const addressAgentCards = sqliteTable("address_agent_cards", {
+    address_id: text("address_id").notNull().primaryKey().references(() => accountAddresses.address_id, {onDelete:"restrict"}),
+    account_id: text("account_id").notNull().references(() => accounts.account_id, {onDelete:"restrict"}),
+    card_json: text("card_json").notNull(),
+    updated_at: exactInteger("updated_at").notNull(),
+}, t => [
+    index("address_agent_cards_owner").on(t.account_id),
+    check("address_agent_cards_json",sql`json_valid(card_json) AND json_type(card_json)='object' AND length(CAST(card_json AS BLOB)) BETWEEN 2 AND 32768`)
+]);
+
 export const contactCards = sqliteTable("contact_cards", {
     card_id: text("card_id").notNull().primaryKey(),
     owner_account_id: text("owner_account_id").notNull().references(() => accounts.account_id, {onDelete:"restrict"}),

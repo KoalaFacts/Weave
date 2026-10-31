@@ -46,12 +46,12 @@ test('real D1 account-owned address creation is private, replayable and cross-ac
         assert.equal(changed.status,409,'same creation ID cannot silently update an address');
         const other=await executePrivateMcp(e,origin,b.accountId,'ensure_my_address',args);
         assert.equal(other.status,404,'foreign creation IDs cannot transfer ownership');
-        const bad=await executePrivateMcp(e,origin,a.accountId,'ensure_my_address',{...args,addressId:crypto.randomUUID(),isPublic:true});
-        assert.equal(bad.status,400,'public exposure requires a separate explicit operation');
+        const bad=await executePrivateMcp(e,origin,a.accountId,'ensure_my_address',{...args,addressId:crypto.randomUUID(),isPublic:'yes'});
+        assert.equal(bad.status,400,'isPublic must be a boolean');
         assert.equal(await h.db.prepare('SELECT token FROM mailbox_revision WHERE singleton=1').first('token'),revision,
             'denied mutations must not change D1 revision');
         const leaked=await h.request('/v1/directory/address?addressId='+addressId);
-        assert.equal(leaked.status,404,'the onboarding tool must never implicitly publish an address');
+        assert.equal(leaked.status,404,'an address is never published unless isPublic is true');
         const own=await executePrivateMcp(e,origin,a.accountId,'list_my_addresses',{limit:1});
         assert.equal(own.status,200);
         assert.ok((await own.json()).items.some((item:{addressId:string})=>item.addressId===addressId));
