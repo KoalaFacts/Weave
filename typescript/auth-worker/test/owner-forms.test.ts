@@ -23,6 +23,19 @@ test("readOwnerAction_RoundTrip_ReturnsAction",async()=>{
   assert.deepEqual([...destructiveKinds].sort(),["confirm-binding","confirm-key","issue-recovery-code","revoke-key"]);
 });
 
+test("readOwnerAction_RevokeGrant_RoundTripNotDestructive",async()=>{
+  const humanId=randomUUID(),grantId=randomUUID(),other=randomUUID();
+  const token=await ownerActionToken(key,humanId,{kind:"revoke-grant",grantId},now);
+  assert.deepEqual(await readOwnerAction(key,form(["action",token]),sessionFor(humanId),now),{kind:"revoke-grant",grantId});
+  assert.equal(destructiveKinds.has("revoke-grant"),false,"revoking a client is protective and needs no fresh sign-in");
+  const [payload,signature]=token.split(".");
+  const swapped=Buffer.from(Buffer.from(payload,"base64url").toString().replace(grantId,other)).toString("base64url");
+  assert.equal(await readOwnerAction(key,form(["action",swapped+"."+signature]),sessionFor(humanId),now),null,"a token for one grant cannot name another");
+  const extra=await signedCookieValue(key,"owner-action",{humanId,kind:"revoke-grant",grantId,agentId:randomUUID(),expiresAt:now+600_000});
+  assert.equal(await readOwnerAction(key,form(["action",extra]),sessionFor(humanId),now),null,"exact member set");
+  assert.equal(await readOwnerAction(key,form(["action",token]),sessionFor(randomUUID()),now),null,"another human's session");
+});
+
 test("readOwnerAction_OtherHumansSession_Null",async()=>{
   const token=await ownerActionToken(key,randomUUID(),{kind:"confirm-key",requestId:randomUUID()},now);
   assert.equal(await readOwnerAction(key,form(["action",token]),sessionFor(randomUUID()),now),null);

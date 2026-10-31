@@ -2,10 +2,11 @@ import {WorkerEntrypoint} from "cloudflare:workers";
 import {AuthorizationError,CimdFetchError,OAuthAuthorizationServer,type AuthRequest} from "@cloudflare/workers-oauth-provider";
 import type {CreateAgentResult} from "../../mailbox-worker/src/humans.ts";
 import type {RecordGrantResult} from "../../mailbox-worker/src/client-grants.ts";
-import type {OwnerOverview} from "../../mailbox-worker/src/owner-actions.ts";
+import type {OwnerActionResult,OwnerOverview} from "../../mailbox-worker/src/owner-actions.ts";
 import {createChallenge,validChallenge,validHandle,readConsent} from "./challenge.ts";
 import {consentPage} from "./consent-page.ts";
 import {beginGithubLogin,completeGithubLogin,failureLog,messagePage,type GithubLoginEnv} from "./github-login.ts";
+import {revokeSdkGrants,sdkRevocationsPerPage,type SdkGrants} from "./grant-cleanup.ts";
 import {freshAuthentication,readHumanSession,validSigningKey} from "./human-session.ts";
 import {readOwnerAction,destructiveKinds} from "./owner-forms.ts";
 import {ownerFormTokens,ownerPage,recoveryCodePage} from "./owner-page.ts";
@@ -89,6 +90,8 @@ const agentRefused:Record<Exclude<CreateAgentResult,{ok:true}>["reason"],()=>Res
 const validRequest=(request:AuthRequest,resource:string)=>request.resource===resource&&
   request.codeChallengeMethod==="S256"&&!!request.codeChallenge&&request.codeChallenge.length===43;
 const controlCharacters=/[\u0000-\u001f\u007f-\u009f]/gu;
+/** The client's self-reported name for the owner page: at most 128 characters, control characters shown as `?`; null if it gave none. */
+const ownerClientName=(name:string|undefined)=>name?.trim()?[...name.replace(controlCharacters,"?")].slice(0,128).join(""):null;
 /** The SDK-approved request as a fresh /authorize URL, so sign-in restarts it without trusting form input. */
 function authorizeUrl(issuer:string,request:AuthRequest):URL{
   const url=new URL("/authorize",issuer);
@@ -159,6 +162,8 @@ async function authorize(req:Request,env:Env,server:OAuthAuthorizationServer<Env
       for(const cookie of approved.headers.getSetCookie())headers.append("Set-Cookie",cookie);
       return new Response(login.body,{status:login.status,headers});
     }
+    // The client's own metadata, for the name the owner page shows; an unresolvable CIMD document refuses consent as before.
+    const client=await oauth.lookupClient(approved.request.clientId);
     // SDK consent handles use KV, whose deletion is eventually consistent.
     // Only the Durable Object transaction fences simultaneous/replayed grants;
     // if consumption fails, never create an authorization code or an agent.
@@ -171,11 +176,13 @@ async function authorize(req:Request,env:Env,server:OAuthAuthorizationServer<Env
     const grantId=crypto.randomUUID();
     let recorded:RecordGrantResult;
     try{
-      recorded=await env.MAILBOX.recordGrant({grantId,humanId:human.humanId,accountId,clientId:approved.request.clientId});
+      recorded=await env.MAILBOX.recordGrant({grantId,humanId:human.humanId,accountId,clientId:approved.request.clientId,
+        clientName:ownerClientName(client?.clientName)});
     }catch{return directoryUnavailable();}
     if(!recorded.ok)return messagePage(503,"Not connected","Weave cannot record this connection right now. Try again later.");
     const {redirectTo}=await oauth.completeAuthorization({
-      request:approved.request,userId:accountId,metadata:{},
+      // The mailbox grant ID lets owner revocation find this SDK grant (and its refresh tokens) later.
+      request:approved.request,userId:accountId,metadata:{grantId},
       scope:approved.request.scope,props:{accountId,humanId:human.humanId,grantId}
     });
     const headers=new Headers(approved.headers);
@@ -193,8 +200,38 @@ async function authorize(req:Request,env:Env,server:OAuthAuthorizationServer<Env
 const methodNotAllowed=(allow:string)=>new Response("Method not allowed",{status:405,headers:{Allow:allow,"Cache-Control":"no-store"}});
 const accountRedirect=(result?:string)=>new Response(null,{status:303,headers:{
   Location:"/account"+(result===undefined?"":"?result="+result),"Cache-Control":"no-store","Referrer-Policy":"no-referrer"}});
-/** The owner page: agents, binding requests and keys of the signed-in human. Destructive actions need a fresh GitHub sign-in. */
-async function account(req:Request,env:Env):Promise<Response>{
+/**
+ * SDK clean-up for grants the mailbox already revoked: their SDK grants and refresh tokens go too. Bounded per page load;
+ * false (after logging) when the SDK failed, so a later visit retries. Never un-revokes and never reports the grant live.
+ */
+async function revokeRevokedSdkGrants(api:SdkGrants,agents:{agentId:string;revokedGrantIds:string[]}[]):Promise<boolean>{
+  let budget=sdkRevocationsPerPage;
+  try{
+    for(const agent of agents)if(budget>0&&agent.revokedGrantIds.length>0)
+      budget-=await revokeSdkGrants(api,agent.agentId,agent.revokedGrantIds,budget);
+    return true;
+  }catch{
+    console.error(failureLog.grantSdkRevoke);
+    return false;
+  }
+}
+/** After the mailbox revoked `grantId`: the agent it belonged to, then that agent's SDK grant. */
+async function revokeClientTokens(env:Env,api:SdkGrants,humanId:string,grantId:string):Promise<boolean>{
+  let overview:OwnerOverview;
+  try{overview=await env.MAILBOX.ownerOverview(humanId);}
+  catch{
+    console.error(failureLog.grantSdkRevoke);
+    return false;
+  }
+  if(overview.frozen)return true;
+  const agent=overview.agents.find(x=>x.revokedGrantIds.includes(grantId));
+  return agent===undefined||revokeRevokedSdkGrants(api,[{agentId:agent.agentId,revokedGrantIds:[grantId]}]);
+}
+/**
+ * The owner page: agents, binding requests, keys, connected clients and addresses of the signed-in human. Destructive actions
+ * need a fresh GitHub sign-in; revoking a client's grant does not.
+ */
+async function account(req:Request,env:Env,api:SdkGrants):Promise<Response>{
   if(req.method!=="GET"&&req.method!=="POST")return methodNotAllowed("GET, POST");
   const url=new URL(req.url),now=Date.now();
   const accountUrl=new URL("/account",env.OAUTH_ISSUER);
@@ -205,6 +242,8 @@ async function account(req:Request,env:Env):Promise<Response>{
   if(req.method==="GET"){
     let overview:OwnerOverview;
     try{overview=await env.MAILBOX.ownerOverview(session.humanId);}catch{return directoryUnavailable();}
+    // Retry SDK clean-up a failed or interrupted revocation left behind; the page renders either way.
+    if(!overview.frozen)await revokeRevokedSdkGrants(api,overview.agents);
     let tokens:Map<string,string>;
     try{tokens=await ownerFormTokens(env.HUMAN_SESSION_KEY,session.humanId,overview,now);}
     catch{
@@ -218,11 +257,14 @@ async function account(req:Request,env:Env):Promise<Response>{
   if(!action)return accountRedirect("not-found");
   if(destructiveKinds.has(action.kind)&&!freshAuthentication(session,now))
     return beginGithubLogin(env,accountUrl,now,{reauthenticate:{login:session.login}});
-  try{
-    const result=await env.MAILBOX.ownerAction({humanId:session.humanId,authAt:session.authAt,...action});
-    if(action.kind==="issue-recovery-code"&&"code" in result)return recoveryCodePage(action.agentId,result.code,result.expiresAt);
-    return accountRedirect(result.ok?"done":result.reason);
-  }catch{return directoryUnavailable();}
+  let result:OwnerActionResult;
+  try{result=await env.MAILBOX.ownerAction({humanId:session.humanId,authAt:session.authAt,...action});}
+  catch{return directoryUnavailable();}
+  if(action.kind==="issue-recovery-code"&&"code" in result)return recoveryCodePage(action.agentId,result.code,result.expiresAt);
+  // The mailbox revocation is committed and enforced at /mcp; an SDK failure only defers the token clean-up.
+  if(action.kind==="revoke-grant"&&result.ok)
+    return accountRedirect(await revokeClientTokens(env,api,session.humanId,action.grantId)?"done":"cleanup-pending");
+  return accountRedirect(result.ok?"done":result.reason);
 }
 export default class AuthServer extends WorkerEntrypoint<Env>{
   async fetch(req:Request):Promise<Response>{
@@ -230,7 +272,7 @@ export default class AuthServer extends WorkerEntrypoint<Env>{
     try{config(this.env,req.url);server=provider(this.env);}catch{return unavailable();}
     const path=new URL(req.url).pathname;
     if(path==="/authorize")return authorize(req,this.env,server);
-    if(path==="/account")return account(req,this.env);
+    if(path==="/account")return account(req,this.env,server.getOAuthApi(this.env));
     if(path==="/login/github/callback")return req.method==="GET"?completeGithubLogin(this.env,req,Date.now())
       :new Response("Method not allowed",{status:405,headers:{Allow:"GET","Cache-Control":"no-store"}});
     if(path==="/register"){

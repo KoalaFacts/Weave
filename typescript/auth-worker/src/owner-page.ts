@@ -1,4 +1,4 @@
-import type {OwnerBindingRequest,OwnerKey,OwnerOverview} from "../../mailbox-worker/src/owner-actions.ts";
+import type {OwnerAddress,OwnerBindingRequest,OwnerGrant,OwnerKey,OwnerOverview} from "../../mailbox-worker/src/owner-actions.ts";
 import {freshAuthentication,type HumanSession} from "./human-session.ts";
 import {ownerActionToken} from "./owner-forms.ts";
 
@@ -17,7 +17,7 @@ export const ownerResultText:Readonly<Record<string,string>>=Object.freeze({
   done:"Done.",
   "stale-authentication":"Sign in with GitHub again, then retry: this needs a sign-in from the last 10 minutes.",
   frozen:"This GitHub identity is frozen; contact the operator.",
-  "not-found":"That request or key was not found.",
+  "not-found":"That request, key or connected client was not found.",
   "not-pending":"That request was already decided or cancelled.",
   expired:"That request has expired.",
   "agent-limit":"You already own the maximum of 10 agents.",
@@ -28,6 +28,7 @@ export const ownerResultText:Readonly<Record<string,string>>=Object.freeze({
   "requesting-key-revoked":"The key that made this request has been revoked.",
   "keys-changed":"The agent's keys changed after you opened this page. Review the current keys and confirm again.",
   "form-expired":"This page expired. Reload it and try again.",
+  "cleanup-pending":"Access is revoked; token clean-up will be retried on your next visit.",
   unavailable:"Weave could not complete that right now. Try again later."
 });
 
@@ -57,6 +58,21 @@ function bindingSection(requests:OwnerBindingRequest[],tokens:ReadonlyMap<string
   ].join("")).join("");
 }
 
+/** Client names and IDs are self-reported by the client: escaped text, never a link. */
+function grantsSection(grants:OwnerGrant[],tokens:ReadonlyMap<string,string>):string{
+  if(grants.length===0)return "<h4>Connected clients</h4><p>No connected clients.</p>";
+  return "<h4>Connected clients</h4><ul>"+grants.map(grant=>"<li>"+
+    (grant.clientName===null?"Unnamed client":esc(grant.clientName)+unverified)+"; client ID <code>"+esc(grant.clientId)+"</code>; connected "+
+    esc(grant.createdAt)+form("Revoke access","revoke-grant:"+grant.grantId,tokens)+"</li>").join("")+"</ul>";
+}
+
+function addressesSection(addresses:OwnerAddress[]):string{
+  if(addresses.length===0)return "<h4>Addresses</h4><p>No addresses.</p>";
+  return "<h4>Addresses</h4><ul>"+addresses.map(address=>"<li><code>"+esc(address.addressId)+"</code>"+
+    (address.label===null?"":" label "+esc(address.label)+unverified)+"; "+(address.isPublic?"public":"private")+"; "+
+    (address.hasAgentCard?"has an agent card":"no agent card")+"; created "+esc(address.createdAt)+"</li>").join("")+"</ul>";
+}
+
 function agentSection(overview:Extract<OwnerOverview,{frozen:false}>,tokens:ReadonlyMap<string,string>):string{
   if(overview.agents.length===0)return "<p>You do not own any agents yet.</p>";
   return overview.agents.map(agent=>[
@@ -70,6 +86,7 @@ function agentSection(overview:Extract<OwnerOverview,{frozen:false}>,tokens:Read
       "endorsed by "+fingerprint(request.endorsedBy)+
       "; expires "+esc(request.expiresAt)+form("Confirm","confirm-key:"+request.requestId,tokens)+
       form("Reject","reject-key:"+request.requestId,tokens)+"</li>").join("")+"</ul>"),
+    grantsSection(agent.grants,tokens),addressesSection(agent.addresses),
     "<h4>Lost every key?</h4><p>A recovery code lets the agent add a new key without any existing key. It replaces any earlier code.</p>",
     form("Issue recovery code","issue-recovery-code:"+agent.agentId,tokens),"</section>"
   ].join("")).join("");
@@ -82,8 +99,8 @@ export function ownerPage(overview:OwnerOverview,human:HumanSession,tokens:Reado
   if(overview.frozen)return shell("Your Weave agents",head+"<p>This GitHub identity is frozen; contact the operator. Nothing can be changed from here.</p>");
   const fresh=freshAuthentication(human,now);
   return shell("Your Weave agents",[head,
-    "<p>Confirming, revoking or issuing a recovery code needs a GitHub sign-in in the last 10 minutes. "+(fresh?"Your current sign-in qualifies.":
-      "Your current sign-in is older, so you will be asked to sign in again first.")+"</p>",
+    "<p>Confirming, revoking a key or issuing a recovery code needs a GitHub sign-in in the last 10 minutes. "+(fresh?"Your current sign-in qualifies.":
+      "Your current sign-in is older, so you will be asked to sign in again first.")+" Revoking a connected client's access does not.</p>",
     "<h2>Binding requests</h2>",bindingSection(overview.bindingRequests,tokens,now),
     "<h2>Your agents</h2>",agentSection(overview,tokens)].join(""));
 }
@@ -117,6 +134,7 @@ export async function ownerFormTokens(key:string,humanId:string,overview:OwnerOv
       await add("confirm-key:"+r.requestId,{kind:"confirm-key",requestId:r.requestId});
       await add("reject-key:"+r.requestId,{kind:"reject-key",requestId:r.requestId});
     }
+    for(const g of agent.grants)await add("revoke-grant:"+g.grantId,{kind:"revoke-grant",grantId:g.grantId});
   }
   return tokens;
 }
