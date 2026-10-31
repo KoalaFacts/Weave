@@ -58,6 +58,29 @@ export const agentKeys = sqliteTable("agent_keys", {
     check("agent_keys_label",sql`label IS NULL OR length(label) BETWEEN 1 AND 64`)
 ]);
 
+// Single-use client-assertion IDs, retained until the assertion's own exp.
+export const agentAssertions = sqliteTable("agent_assertions", {
+    account_id: text("account_id").notNull().references(() => accounts.account_id, {onDelete:"restrict"}),
+    jti: text("jti").notNull(),
+    expires_at: exactInteger("expires_at").notNull(),
+    created_at: exactInteger("created_at").notNull(),
+}, t => [
+    primaryKey({columns:[t.account_id,t.jti]}),
+    index("agent_assertions_expiry").on(t.expires_at)
+]);
+
+// Opaque DPoP-bound access tokens, stored only as their hex SHA-256.
+export const agentAccessTokens = sqliteTable("agent_access_tokens", {
+    token_hash: text("token_hash").notNull().primaryKey(),
+    account_id: text("account_id").notNull().references(() => accounts.account_id, {onDelete:"restrict"}),
+    kid: text("kid").notNull().references(() => agentKeys.kid, {onDelete:"restrict"}),
+    expires_at: exactInteger("expires_at").notNull(),
+    created_at: exactInteger("created_at").notNull(),
+}, t => [
+    index("agent_access_tokens_expiry").on(t.expires_at),
+    check("agent_access_tokens_hash",sql`length(token_hash)=64 AND token_hash NOT GLOB '*[^0-9a-f]*'`)
+]);
+
 export const accountAddresses = sqliteTable("account_addresses", {
     address_id: text("address_id").notNull().primaryKey(),
     account_id: text("account_id").notNull().references(() => accounts.account_id, {onDelete:"restrict"}),

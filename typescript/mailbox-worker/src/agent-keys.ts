@@ -19,7 +19,9 @@ export async function findKey(db: Database, kid: string): Promise<KeyRow | null>
         CAST(revoked_at AS TEXT) revoked_at,CAST(cooling_until AS TEXT) cooling_until FROM agent_keys WHERE kid=?`).bind(kid).first<StoredKey>();
     if (!row) return null;
     // Only canonical public JWKs are written; anything else is storage corruption, not a usable key.
-    const jwk = publicJwk(JSON.parse(row.public_jwk)) ?? fail(503, 'storage');
+    let stored: unknown;
+    try { stored = JSON.parse(row.public_jwk); } catch { fail(503, 'storage'); }
+    const jwk = publicJwk(stored) ?? fail(503, 'storage');
     return {kid: row.kid, accountId: row.account_id, jwk, label: row.label, createdAt: exactInt64(row.created_at),
         lastUsedAt: optionalTicks(row.last_used_at), revokedAt: optionalTicks(row.revoked_at), coolingUntil: optionalTicks(row.cooling_until)};
 }

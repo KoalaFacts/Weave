@@ -20,10 +20,10 @@ test('latest Drizzle schema defines the approved tables without compatibility vi
     const db=await database();
     try {
         const tables=db.prepare("SELECT name FROM sqlite_master WHERE type='table' AND name NOT LIKE 'sqlite_%' ORDER BY name").all().map(r=>r.name);
-        assert.deepEqual(tables,['account_addresses','accounts','agent_keys','contact_cards','contact_requests','contacts','counters','data_migrations','humans','legacy_channels','mailbox_guard','mailbox_records','mailbox_records_legacy','mailbox_revision','maintenance_state','message_delivery','rate_limits','stream_cursors','stream_leases']);
+        assert.deepEqual(tables,['account_addresses','accounts','agent_access_tokens','agent_assertions','agent_keys','contact_cards','contact_requests','contacts','counters','data_migrations','humans','legacy_channels','mailbox_guard','mailbox_records','mailbox_records_legacy','mailbox_revision','maintenance_state','message_delivery','rate_limits','stream_cursors','stream_leases']);
         assert.equal(db.prepare("SELECT count(*) n FROM sqlite_master WHERE type IN ('view','trigger')").get().n,0);
         const business=tables.filter(name=>name!=='data_migrations');
-        assert.equal(business.reduce((n,name)=>n+db.prepare(`PRAGMA table_info(${name})`).all().length,0),146);
+        assert.equal(business.reduce((n,name)=>n+db.prepare(`PRAGMA table_info(${name})`).all().length,0),155);
         assert.ok(business.flatMap(name=>db.prepare(`PRAGMA table_info(${name})`).all()).every(c=>!c.name.endsWith('_ticks')));
         assert.ok(!db.prepare('PRAGMA table_info(mailbox_records)').all().some(c=>c.name==='kind'));
     } finally { db.close(); }
@@ -96,5 +96,26 @@ test('agent_keys refuses malformed kids, invalid JWK text, bad labels and invert
         ]) assert.throws(()=>insert.run(...row),/constraint/i,JSON.stringify(row));
         insert.run('j'.repeat(43),'synthetic-a','{}','x'.repeat(64),10,10,11);
         assert.throws(()=>db.prepare("DELETE FROM accounts WHERE account_id='synthetic-a'").run(),/FOREIGN KEY/);
+    } finally { db.close(); }
+});
+
+test('agent assertion and access-token tables refuse malformed hashes, unknown keys and duplicate assertions',async()=>{
+    const db=await database();
+    try {
+        accounts(db);
+        const kid='k'.repeat(43);
+        db.prepare(`INSERT INTO agent_keys(kid,account_id,public_jwk,created_at,updated_at) VALUES(?,'synthetic-a','{}',10,10)`).run(kid);
+        const assertion=db.prepare('INSERT INTO agent_assertions(account_id,jti,expires_at,created_at) VALUES(?,?,20,10)');
+        assertion.run('synthetic-a','jti-0000000000000001');
+        assertion.run('synthetic-b','jti-0000000000000001');
+        assert.throws(()=>assertion.run('synthetic-a','jti-0000000000000001'),/UNIQUE|PRIMARY KEY/);
+        assert.throws(()=>assertion.run('missing','jti-0000000000000002'),/FOREIGN KEY/);
+        const tokens=db.prepare('INSERT INTO agent_access_tokens(token_hash,account_id,kid,expires_at,created_at) VALUES(?,?,?,20,10)');
+        tokens.run('a'.repeat(64),'synthetic-a',kid);
+        for(const row of [['a'.repeat(63),'synthetic-a',kid],['A'.repeat(64),'synthetic-a',kid],['g'.repeat(64),'synthetic-a',kid],['b'.repeat(64),'synthetic-a','j'.repeat(43)],['c'.repeat(64),'missing',kid]])
+            assert.throws(()=>tokens.run(...row),/constraint/i,JSON.stringify(row));
+        assert.throws(()=>db.prepare('DELETE FROM agent_keys WHERE kid=?').run(kid),/FOREIGN KEY/);
+        for(const name of ['agent_assertions_expiry','agent_access_tokens_expiry'])
+            assert.equal(db.prepare("SELECT name FROM sqlite_master WHERE type='index' AND name=?").get(name)?.name,name);
     } finally { db.close(); }
 });

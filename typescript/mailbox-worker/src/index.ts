@@ -14,6 +14,7 @@ import { sweep } from './cleanup';
 import { budgetDatabase } from './budget';
 import { stream, type Context } from './stream';
 import { authenticate, register, registerAgent } from './accounts';
+import { authenticateAgent, issueAgentToken } from './agent-tokens.ts';
 import { putCard } from './cards';
 import { decide, requestContact, setBlocked } from './contacts';
 import { deleteContact, ownContacts } from './contact-links';
@@ -92,8 +93,12 @@ export default {
                 }else if(method!=='GET'||url.pathname==='/v1/inbox/events')fail(503,'maintenance',30);
             }
             if (method === 'POST' && url.pathname === '/v1/accounts') return respond(await register(env,request,secret,await body(request)));
+            if (method === 'POST' && url.pathname === '/v1/token') return await issueAgentToken(env,request);
             if(env.RECOVERY_READ_ONLY!=='true'&&method==='GET'&&['/v1/directory','/v1/directory/address','/v1/contacts/cards','/v1/contacts/card'].includes(url.pathname))await publicReadRate(env,request);
-            const account = await authenticate(env,secret);
+            // An Authorization header selects DPoP agent authentication; the control path remains only until it is removed.
+            if (request.headers.has('Authorization') && secret !== null) fail(401,'unauthenticated');
+            const agent = await authenticateAgent(env,request);
+            const account = agent ? {accountId:agent.accountId} : await authenticate(env,secret);
             if (method === 'GET' && ['/v1/directory','/v1/directory/address'].includes(url.pathname)) return respond(await atomic(env.db,tx => directory(tx,url)));
             if (method === 'GET' && ['/v1/contacts/cards','/v1/contacts/card'].includes(url.pathname)) return respond(await atomic(env.db,tx => read(tx,url,account?.accountId ?? null)));
             if (!account) fail(401,'unauthenticated');

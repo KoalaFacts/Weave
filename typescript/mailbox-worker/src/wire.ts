@@ -51,6 +51,7 @@ export function problem(error: unknown): Response {
     const titles: Record<string,string> = { invalid: 'Invalid request', unauthenticated: 'Account control required', unavailable: 'Resource unavailable', conflict: 'State conflict', expired: 'Expired', capacity: 'Capacity reached', tooLarge: 'Request too large', storage: 'Storage unavailable', maintenance:'Maintenance in progress' };
     const response = json({ status: p.status, title: titles[p.code], code: p.code, ...(p.detail ?? {}) }, p.status);
     if (p.retryAfter !== undefined) response.headers.set('Retry-After', String(p.retryAfter));
+    if (p.code === 'unauthenticated') response.headers.set('WWW-Authenticate', 'DPoP algs="EdDSA"');
     return response;
 }
 export function object(value: any, required: string[], optional: string[] = []): void {

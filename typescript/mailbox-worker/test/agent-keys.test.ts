@@ -6,6 +6,9 @@ import { join } from 'node:path';
 import { start } from './harness.ts';
 import { agentKey, dpopProof, nowSeconds, type TestKey } from './agent-key.ts';
 import { createOwnedAgent, signInHuman } from '../src/humans.ts';
+import { findKey } from '../src/agent-keys.ts';
+import { Problem } from '../src/wire.ts';
+import type { Database } from '../src/database.ts';
 import type { Env } from '../src/database.ts';
 
 type Harness = Awaited<ReturnType<typeof start>>;
@@ -200,4 +203,35 @@ test('registerAgent_HourlyPerIpLimit_429', async () => {
         assert.equal((await refused.json() as {code: string}).code, 'capacity');
         assert.equal(await count(h, 'accounts'), 1);
     } finally { await h.close(); }
+});
+
+test('registerAgent_SameKeyRetries_ChargeNoRateLimit', async () => {
+    const h = await start({bindings: {REGISTRATION_PER_IP_PER_HOUR: '2'}});
+    try {
+        const source = {'CF-Connecting-IP': '198.51.100.10'};
+        const a = agentKey();
+        const first = await registered(h, a, {}, source);
+        assert.deepEqual(await registered(h, a, {}, source), first);
+        assert.deepEqual(await registered(h, a, {}, source), first);
+        await registered(h, agentKey(), {}, source);
+        assert.equal(await count(h, 'accounts'), 2);
+    } finally { await h.close(); }
+});
+
+test('registerAgent_ProofWithAth_401', async () => {
+    const h = await start();
+    try {
+        const key = agentKey();
+        const response = await registerKey(h, key, {}, dpopProof(key, {method: 'POST', url, claims: {ath: 'A'.repeat(43)}}));
+        assert.equal(response.status, 401);
+        assert.equal(await count(h, 'accounts'), 0);
+    } finally { await h.close(); }
+});
+
+test('findKey_CorruptStoredJwk_503Storage', async () => {
+    const row = {kid: 'k'.repeat(43), account_id: 'a', label: null, created_at: '1', last_used_at: null, revoked_at: null, cooling_until: null};
+    for (const public_jwk of ['{not json', '{}']) {
+        const db = {prepare: () => ({bind: () => ({first: async () => ({...row, public_jwk})})})} as unknown as Database;
+        await assert.rejects(findKey(db, row.kid), (error: unknown) => error instanceof Problem && error.status === 503 && error.code === 'storage');
+    }
 });
