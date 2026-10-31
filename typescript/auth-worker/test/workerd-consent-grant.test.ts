@@ -365,10 +365,10 @@ test("consent_ExpiredOrTamperedSession_RedirectsToGithubWithoutCode",{timeout:60
   const {mf}=shared;
   const humanId=randomUUID();
   const expired="__Host-weave_human="+await signedCookieValue(sessionKey,"human-session",
-    {humanId,login:"human5001",expiresAt:Date.now()-1});
-  const valid=await signedCookieValue(sessionKey,"human-session",{humanId,login:"human5001",expiresAt:Date.now()+600_000});
+    {humanId,login:"human5001",expiresAt:Date.now()-1,authAt:Date.now()-2});
+  const valid=await signedCookieValue(sessionKey,"human-session",{humanId,login:"human5001",expiresAt:Date.now()+600_000,authAt:Date.now()});
   const [payload,signature]=valid.split(".");
-  const forgedPayload=Buffer.from(JSON.stringify({humanId:randomUUID(),login:"human5001",expiresAt:Date.now()+600_000})).toString("base64url");
+  const forgedPayload=Buffer.from(JSON.stringify({humanId:randomUUID(),login:"human5001",expiresAt:Date.now()+600_000,authAt:Date.now()})).toString("base64url");
   const tampered="__Host-weave_human="+forgedPayload+"."+signature;
   assert.notEqual(payload,forgedPayload);
   for(const cookie of [expired,tampered]){
@@ -438,7 +438,7 @@ test("consent_DirectoryUnavailable_Returns503AndLogsCategory",{timeout:60_000},a
   logs.length=0;
   try{
     const session="__Host-weave_human="+await signedCookieValue(sessionKey,"human-session",
-      {humanId:randomUUID(),login:"human8001",expiresAt:Date.now()+600_000});
+      {humanId:randomUUID(),login:"human8001",expiresAt:Date.now()+600_000,authAt:Date.now()});
     const auth=authorization();
     const response=await instance.mf.dispatchFetch(auth.url.href,{redirect:"manual",headers:{Cookie:session}});
     assert.equal(response.status,503);

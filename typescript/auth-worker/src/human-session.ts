@@ -1,7 +1,13 @@
 import {validChallenge} from "./challenge.ts";
 
-/** A signed-in person; `expiresAt` is epoch milliseconds. Never an agent. */
-export type HumanSession={humanId:string;login:string;expiresAt:number};
+/** A signed-in person; `expiresAt` and `authAt` (when GitHub last authenticated them) are epoch milliseconds. Never an agent. */
+export type HumanSession={humanId:string;login:string;expiresAt:number;authAt:number};
+// Mirrors reauthWindowMs and reauthFutureSkewMs in the mailbox worker's owner-actions.ts, which re-checks them on every decision.
+const reauthWindowMs=600_000;
+const reauthFutureSkewMs=60_000;
+/** True when the session was authenticated recently enough to authorize a destructive owner action. */
+export const freshAuthentication=(session:HumanSession,now:number):boolean=>
+  now-session.authAt<=reauthWindowMs&&session.authAt<=now+reauthFutureSkewMs;
 export const humanSessionCookie="__Host-weave_human";
 const sessionSeconds=3600;
 const uuid=/^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/i;
@@ -23,7 +29,7 @@ async function hmacKey(key:string):Promise<CryptoKey>{
 }
 
 /** Which cookie a signature was made for; a value signed for one purpose never verifies as another. */
-export type CookiePurpose="human-session"|"github-login";
+export type CookiePurpose="human-session"|"github-login"|"owner-action";
 /** The longest signed cookie value verifiedCookieValue reads back; issuers must stay within it. */
 export const maxSignedCookieValueLength=2048;
 const signedData=(purpose:CookiePurpose,json:Uint8Array)=>{
@@ -58,16 +64,17 @@ export function readCookie(request:Request,name:string):string|null{
 export const hostCookie=(name:string,value:string,maxAge:number)=>
   name+"="+value+"; Secure; HttpOnly; SameSite=Lax; Path=/; Max-Age="+maxAge;
 
-export async function issueHumanSession(key:string,session:Omit<HumanSession,"expiresAt">,now:number):Promise<string>{
-  const value:HumanSession={humanId:session.humanId,login:session.login,expiresAt:now+sessionSeconds*1000};
+export async function issueHumanSession(key:string,session:Pick<HumanSession,"humanId"|"login">,now:number):Promise<string>{
+  const value:HumanSession={humanId:session.humanId,login:session.login,expiresAt:now+sessionSeconds*1000,authAt:now};
   return hostCookie(humanSessionCookie,await signedCookieValue(key,"human-session",value),sessionSeconds);
 }
 export async function readHumanSession(key:string,request:Request,now:number):Promise<HumanSession|null>{
   const raw=readCookie(request,humanSessionCookie);
   const value=raw===null?null:await verifiedCookieValue(key,"human-session",raw);
-  if(!value||Object.keys(value).length!==3)return null;
-  const {humanId,login:name,expiresAt}=value;
+  if(!value||Object.keys(value).length!==4)return null;
+  const {humanId,login:name,expiresAt,authAt}=value;
   if(typeof humanId!=="string"||!uuid.test(humanId)||typeof name!=="string"||!login.test(name)||
-    typeof expiresAt!=="number"||!Number.isSafeInteger(expiresAt)||now>=expiresAt)return null;
-  return {humanId,login:name,expiresAt};
+    typeof expiresAt!=="number"||!Number.isSafeInteger(expiresAt)||now>=expiresAt||
+    typeof authAt!=="number"||!Number.isSafeInteger(authAt)||authAt>expiresAt)return null;
+  return {humanId,login:name,expiresAt,authAt};
 }

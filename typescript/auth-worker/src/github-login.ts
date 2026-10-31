@@ -34,9 +34,10 @@ export function messagePage(status:number,title:string,message:string):Response{
 const invalid=()=>messagePage(400,"Sign-in failed","The sign-in request is invalid or expired. Start again from your app.");
 const githubFailed=()=>messagePage(502,"Sign-in failed","GitHub sign-in could not be completed. Try again.");
 
-/** Only this issuer's own /authorize endpoint may receive the browser after sign-in. */
+/** Only this issuer's own /authorize endpoint or query-less /account page may receive the browser after sign-in. */
 function allowedReturnTo(issuer:string,returnTo:URL):boolean{
-  return returnTo.origin===new URL(issuer).origin&&returnTo.pathname==="/authorize"&&
+  return returnTo.origin===new URL(issuer).origin&&
+    (returnTo.pathname==="/authorize"||(returnTo.pathname==="/account"&&returnTo.search===""))&&
     !returnTo.username&&!returnTo.password&&!returnTo.hash;
 }
 async function s256(verifier:string):Promise<string>{
@@ -45,7 +46,7 @@ async function s256(verifier:string):Promise<string>{
 }
 
 export async function beginGithubLogin(env:Pick<GithubLoginEnv,"OAUTH_ISSUER"|"GITHUB_CLIENT_ID"|"HUMAN_SESSION_KEY">,
-  returnTo:URL,now:number):Promise<Response>{
+  returnTo:URL,now:number,options:{reauthenticate?:{login:string}}={}):Promise<Response>{
   if(!allowedReturnTo(env.OAUTH_ISSUER,returnTo))return invalid();
   const state=createChallenge(),verifier=createChallenge();
   const target=new URL(githubAuthorize);
@@ -55,6 +56,10 @@ export async function beginGithubLogin(env:Pick<GithubLoginEnv,"OAUTH_ISSUER"|"G
   target.searchParams.set("state",state);
   target.searchParams.set("code_challenge",await s256(verifier));
   target.searchParams.set("code_challenge_method","S256");
+  if(options.reauthenticate){
+    target.searchParams.set("prompt","select_account");
+    target.searchParams.set("login",options.reauthenticate.login);
+  }
   const value=await signedCookieValue(env.HUMAN_SESSION_KEY,"github-login",
     {state,verifier,returnTo:returnTo.href,expiresAt:now+loginSeconds*1000});
   // The callback could never read an oversized cookie back; refuse before leaving for GitHub.
