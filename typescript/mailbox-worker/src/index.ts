@@ -15,6 +15,7 @@ import { budgetDatabase } from './budget';
 import { stream, type Context } from './stream';
 import { authenticate, register, registerAgent } from './accounts';
 import { authenticateAgent, issueAgentToken } from './agent-tokens.ts';
+import { addAgentKey, listAgentKeys, revokeAgentKey } from './agent-keys.ts';
 import { putCard } from './cards';
 import { decide, requestContact, setBlocked } from './contacts';
 import { deleteContact, ownContacts } from './contact-links';
@@ -102,6 +103,17 @@ export default {
             if (method === 'GET' && ['/v1/directory','/v1/directory/address'].includes(url.pathname)) return respond(await atomic(env.db,tx => directory(tx,url)));
             if (method === 'GET' && ['/v1/contacts/cards','/v1/contacts/card'].includes(url.pathname)) return respond(await atomic(env.db,tx => read(tx,url,account?.accountId ?? null)));
             if (!account) fail(401,'unauthenticated');
+            if (url.pathname === '/v1/keys' || url.pathname.startsWith('/v1/keys/')) {
+                // Key management needs an agent key; the control path has none to endorse with.
+                if (!agent) fail(401,'unauthenticated');
+                if (url.pathname === '/v1/keys') {
+                    if (method === 'GET') return json(await listAgentKeys(env,agent.accountId));
+                    if (method === 'POST') return json(await addAgentKey(env,request,agent,await body(request)));
+                }
+                const kid = /^\/v1\/keys\/([A-Za-z0-9_-]{43})$/.exec(url.pathname)?.[1];
+                if (method === 'DELETE' && kid !== undefined) return json(await revokeAgentKey(env,agent,kid));
+                fail(404,'unavailable');
+            }
             if (url.pathname === '/v1/addresses' || /^\/v1\/addresses\/[^/]+$/.test(url.pathname)) {
                 const id = url.pathname === '/v1/addresses' ? null : url.pathname.split('/')[3];
                 if (method === 'GET') return respond(await atomic(env.db,tx => ownedAddresses(tx,account.accountId,url)));

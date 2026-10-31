@@ -1,8 +1,9 @@
 import * as schema from './schema.ts';
-import { publicJwk, type Ed25519Jwk } from './jose.ts';
-import { apiTime, exactInt64 } from './time.ts';
-import type { Database, Transaction } from './database.ts';
-import { fail, invalidField } from './wire.ts';
+import type { AgentAuth } from './agent-tokens.ts';
+import { jwkThumbprint, parseJws, publicJwk, verifyJws, type CompactJws, type Ed25519Jwk } from './jose.ts';
+import { apiTime, epochSeconds, exactInt64, nowUtc } from './time.ts';
+import { atomic, type Database, type Env, type Transaction } from './database.ts';
+import { Problem, fail, invalidField, object } from './wire.ts';
 
 export const maxLiveKeysPerAgent = 100;
 export const keyCoolingTicks = 864000000000n; // 24 h
@@ -14,10 +15,15 @@ type StoredKey = {kid: string; account_id: string; public_jwk: string; label: st
 const optionalTicks = (value: string | null) => value === null ? null : exactInt64(value);
 const controlCharacters = /[\u0000-\u001f\u007f-\u009f]/u;
 
+const keyColumns = `kid,account_id,public_jwk,label,CAST(created_at AS TEXT) created_at,CAST(last_used_at AS TEXT) last_used_at,
+    CAST(revoked_at AS TEXT) revoked_at,CAST(cooling_until AS TEXT) cooling_until`;
+
 export async function findKey(db: Database, kid: string): Promise<KeyRow | null> {
-    const row = await db.prepare(`SELECT kid,account_id,public_jwk,label,CAST(created_at AS TEXT) created_at,CAST(last_used_at AS TEXT) last_used_at,
-        CAST(revoked_at AS TEXT) revoked_at,CAST(cooling_until AS TEXT) cooling_until FROM agent_keys WHERE kid=?`).bind(kid).first<StoredKey>();
-    if (!row) return null;
+    const row = await db.prepare(`SELECT ${keyColumns} FROM agent_keys WHERE kid=?`).bind(kid).first<StoredKey>();
+    return row ? keyRow(row) : null;
+}
+
+function keyRow(row: StoredKey): KeyRow {
     // Only canonical public JWKs are written; anything else is storage corruption, not a usable key.
     let stored: unknown;
     try { stored = JSON.parse(row.public_jwk); } catch { fail(503, 'storage'); }
@@ -49,4 +55,97 @@ export function validLabel(value: unknown): string | null {
     if (typeof value !== 'string' || value.length < 1 || value.length > 64 || controlCharacters.test(value))
         invalidField('label', 'must be 1 to 64 characters without control characters');
     return value;
+}
+
+const keyRequestSkewSeconds = 60;
+
+export const isCooling = (row: KeyRow, now: bigint): boolean => row.coolingUntil !== null && row.coolingUntil > now;
+
+function conflict(field: string, reason: 'owned-agent' | 'cooling' | 'key-in-use' | 'last-live-key'): never {
+    throw new Problem(409, 'conflict', undefined, {field, reason});
+}
+
+/** Claims shared by the key proof and the endorsement: exact type, audience and agent, iat within ±60 s. */
+function bindsKeyRequest(jws: CompactJws, type: string, audience: string, accountId: string, now: number): boolean {
+    const {aud, sub, iat} = jws.payload;
+    return jws.header.typ === type && aud === audience && sub === accountId && typeof iat === 'number' && Number.isSafeInteger(iat)
+        && Math.abs(iat - now) <= keyRequestSkewSeconds;
+}
+
+/** GET /v1/keys: the agent's live keys, oldest first. */
+export async function listAgentKeys(env: Env, accountId: string): Promise<{items: AgentKeySummary[]}> {
+    const {results} = await env.db.prepare(`SELECT ${keyColumns} FROM agent_keys WHERE account_id=? AND revoked_at IS NULL ORDER BY created_at,kid`)
+        .bind(accountId).all<StoredKey>();
+    return {items: results.map(row => keySummary(keyRow(row)))};
+}
+
+/**
+ * POST /v1/keys: the new key proves possession with a self-signed proof and the authenticated key endorses its thumbprint,
+ * because a DPoP proof covers neither the body nor replay. The added key cools for 24 h.
+ */
+export async function addAgentKey(env: Env, request: Request, auth: AgentAuth, input: unknown): Promise<AgentKeySummary> {
+    object(input, ['proof', 'endorsement'], ['label']);
+    const {proof: proofText, endorsement: endorsementText, label: labelValue} = input as {proof: unknown; endorsement: unknown; label?: unknown};
+    const label = validLabel(labelValue);
+    const audience = new URL(request.url).origin + '/v1/keys';
+    const now = epochSeconds(nowUtc());
+
+    const proof = (typeof proofText === 'string' ? parseJws(proofText) : null) ?? invalidField('proof', 'must be a compact EdDSA JWS');
+    // publicJwk refuses private (`d`) and unknown members; the refused value is never stored or echoed.
+    const jwk = publicJwk(proof.header.jwk) ?? invalidField('proof', 'jwk must be a public Ed25519 key');
+    if (!bindsKeyRequest(proof, 'weave-key-proof+jwt', audience, auth.accountId, now) || !await verifyJws(proof, jwk))
+        invalidField('proof', 'must be a key proof for this agent signed by the new key');
+    const kid = await jwkThumbprint(jwk);
+
+    const endorsement = (typeof endorsementText === 'string' ? parseJws(endorsementText) : null) ?? invalidField('endorsement', 'must be a compact EdDSA JWS');
+    if (endorsement.header.kid !== auth.kid || endorsement.payload.newKid !== kid
+        || !bindsKeyRequest(endorsement, 'weave-key-endorsement+jwt', audience, auth.accountId, now)) invalidField('endorsement', 'must endorse the new key with the authenticated key');
+    const endorser = await findKey(env.db, auth.kid);
+    if (!endorser || endorser.revokedAt !== null || endorser.accountId !== auth.accountId) fail(401, 'unauthenticated');
+    if (!await verifyJws(endorsement, endorser.jwk)) invalidField('endorsement', 'must endorse the new key with the authenticated key');
+
+    return atomic(env.db, async tx => {
+        const at = tx.store.now;
+        const owner = await tx.db.prepare('SELECT human_id FROM accounts WHERE account_id=?').bind(auth.accountId).first<{human_id: string | null}>();
+        if (!owner) fail(401, 'unauthenticated');
+        // Human-owned agents are refused key additions in this slice.
+        if (owner.human_id !== null) conflict('proof', 'owned-agent');
+        const current = await findKey(tx.db, auth.kid);
+        if (!current || current.revokedAt !== null || current.accountId !== auth.accountId) fail(401, 'unauthenticated');
+        if (isCooling(current, at)) conflict('endorsement', 'cooling');
+        const existing = await findKey(tx.db, kid);
+        if (existing) {
+            if (existing.accountId === auth.accountId && existing.revokedAt === null) return keySummary(existing);
+            conflict('proof', 'key-in-use');
+        }
+        // Counted inside the same optimistic transaction as the insert, so concurrent adds cannot pass the limit.
+        if (await countLiveKeys(tx, auth.accountId) >= maxLiveKeysPerAgent) fail(429, 'capacity');
+        const coolingUntil = at + keyCoolingTicks;
+        insertKey(tx, {kid, accountId: auth.accountId, jwk, label, coolingUntil});
+        return keySummary({kid, accountId: auth.accountId, jwk, label, createdAt: at, lastUsedAt: null, revokedAt: null, coolingUntil});
+    });
+}
+
+/**
+ * DELETE /v1/keys/{kid}: a cooling key may revoke itself or newer keys but not older ones, so an older key can override a key
+ * added during its cooling window. The last live key of an ownerless agent is never revoked.
+ */
+export async function revokeAgentKey(env: Env, auth: AgentAuth, kid: string): Promise<{kid: string; revokedAt: string}> {
+    return atomic(env.db, async tx => {
+        const at = tx.store.now;
+        const target = await findKey(tx.db, kid);
+        if (!target || target.accountId !== auth.accountId) fail(404, 'unavailable');
+        if (target.revokedAt !== null) return {kid, revokedAt: apiTime(target.revokedAt)!};
+        const caller = target.kid === auth.kid ? target : await findKey(tx.db, auth.kid);
+        if (!caller || caller.accountId !== auth.accountId) fail(401, 'unauthenticated');
+        if (caller !== target && isCooling(caller, at) && caller.createdAt >= target.createdAt) conflict('kid', 'cooling');
+        const owner = await tx.db.prepare('SELECT human_id FROM accounts WHERE account_id=?').bind(auth.accountId).first<{human_id: string | null}>();
+        if (!owner) fail(401, 'unauthenticated');
+        if (owner.human_id === null && await countLiveKeys(tx, auth.accountId) <= 1) conflict('kid', 'last-live-key');
+        // After the last-key rule: two keys revoking each other concurrently end with one live key and a 409, not a 401.
+        if (caller.revokedAt !== null) fail(401, 'unauthenticated');
+        const stamp = at.toString();
+        tx.writes.push(tx.db.prepare('UPDATE agent_keys SET revoked_at=CAST(? AS INTEGER),updated_at=CAST(? AS INTEGER) WHERE kid=? AND revoked_at IS NULL').bind(stamp, stamp, kid));
+        return {kid, revokedAt: apiTime(at)!};
+    });
 }
