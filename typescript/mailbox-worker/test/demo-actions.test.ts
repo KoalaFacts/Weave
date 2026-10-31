@@ -3,18 +3,27 @@ import { test } from 'node:test';
 import { readFile } from 'node:fs/promises';
 import { createContext, runInContext } from 'node:vm';
 import { webcrypto } from 'node:crypto';
+import { agentKey } from './agent-key.ts';
 const html=await readFile('src/demo.html','utf8');
 const script=/<script nonce="WEAVE_NONCE">([\s\S]*?)<\/script>/.exec(html)[1];
+const keyFiles=new Map(),accountsByKey=new Map();
+// Each synthetic account ID is one character; its fake access token repeats that character.
+function keyFile(accountId){
+    if(!keyFiles.has(accountId)){const {privateJwk}=agentKey();accountsByKey.set(privateJwk.x,accountId);keyFiles.set(accountId,JSON.stringify({accountId,key:{kty:'OKP',crv:'Ed25519',x:privateJwk.x,d:privateJwk.d}}));}
+    return keyFiles.get(accountId);
+}
+const decode=part=>JSON.parse(Buffer.from(part,'base64url').toString());
+const who=options=>/^DPoP (.)/.exec(options.headers.Authorization??'')?.[1];
 function ui(fetch){
     const elements=new Map();
     function element(){return {value:'',textContent:'',checked:false,disabled:false,readOnly:false,children:[],handlers:{},classList:{toggle(){}},addEventListener(name,fn){this.handlers[name]=fn;},append(...children){this.children.push(...children);},replaceChildren(...children){this.children=children;this.textContent='';}};}
     const get=id=>{if(!elements.has(id))elements.set(id,element());return elements.get(id);};
     const context=createContext({document:{getElementById:get,createElement:element},fetch,location:{origin:'http://127.0.0.1:43210'},crypto:webcrypto,TextEncoder,TextDecoder,AbortController,btoa,atob,navigator:{clipboard:{writeText:async()=>{}}}});
     runInContext(script,context);
-    return {get,click:id=>get(id).handlers.click(),async register(control='a'.repeat(64)){get('control').value=control;await get('register').handlers.click();}};
+    return {get,click:id=>get(id).handlers.click(),async register(accountId='a'){get('agentKey').value=keyFile(accountId);await get('register').handlers.click();}};
 }
 const json=(value,status=200)=>new Response(JSON.stringify(value),{status});
-const base=(path,options)=>path.startsWith('/v1/contacts/accounts/')?json({accountId:'b',connectionToken:'c'.repeat(64),canSend:true}):path==='/v1/accounts'?json({accountId:options.headers['X-Weave-Account-Control'][0],displayName:null,description:null}):path.startsWith('/v1/addresses')?json({items:[],nextCursor:null}):null;
+const base=(path,options)=>path.startsWith('/v1/contacts/accounts/')?json({accountId:'b',connectionToken:'c'.repeat(64),canSend:true}):path==='/v1/accounts'?json({accountId:accountsByKey.get(decode(options.headers.DPoP.split('.')[0]).jwk.x),displayName:null,description:null}):path==='/v1/token'?json({access_token:decode(new URLSearchParams(options.body).get('client_assertion').split('.')[1]).iss.repeat(43),token_type:'DPoP',expires_in:900}):path.startsWith('/v1/addresses')?json({items:[],nextCursor:null}):null;
 test('demo confirmed send plus failed receipt refresh does not turn into a resend',async()=>{
     const posts=[];
     const app=ui(async(path,options)=>base(path,options)??(path.startsWith('/v1/contacts/channel')?json({generation:1,peerAccountId:'b'}):options.method==='POST'?(posts.push(JSON.parse(options.body)),json({state:'pending'})):json({title:'Storage unavailable'},503)));
@@ -32,7 +41,7 @@ test('demo account switch cancels stale continuations before any message dispatc
     let resolveChannel,entered;const waiting=new Promise(resolve=>{entered=resolve;});const posts=[];
     const app=ui(async(path,options)=>{const initial=base(path,options);if(initial)return initial;if(path.startsWith('/v1/contacts/channel')){entered();return new Promise(resolve=>{resolveChannel=resolve;});}if(options.method==='POST')posts.push(options);return json({items:[],nextCursor:null});});
     await app.register();app.get('peer').value='b';app.get('message').value='old-account message';const pending=app.click('send');await waiting;
-    await app.register('c'.repeat(64));resolveChannel(json({generation:1,peerAccountId:'b'}));await pending;
+    await app.register('c');resolveChannel(json({generation:1,peerAccountId:'b'}));await pending;
     assert.equal(posts.length,0);assert.equal(app.get('identity').textContent,'Account ID: c');assert.equal(app.get('message').value,'');
 });
 test('demo confirmed contact plus failed refresh stays submitted',async()=>{
@@ -47,8 +56,8 @@ for(const transition of ['clear session','switch account'])test('demo '+transiti
     const privateAddress={addressId:'a-private-address',accountId:'a',label:'private label',isPublic:false,effectiveFrom:'2026-01-01T00:00:00Z',effectiveTo:'2027-01-01T00:00:00Z',directUri:'https://private.example.test/contact'};
     const app=ui(async(path,options)=>{
         if(path.startsWith('/v1/addresses')){
-            if(options.method==='POST'){writes.push({control:options.headers['X-Weave-Account-Control'],body:JSON.parse(options.body)});return json({});}
-            return json({items:options.headers['X-Weave-Account-Control'][0]==='a'?[privateAddress]:[],nextCursor:null});
+            if(options.method==='POST'){writes.push({account:who(options),body:JSON.parse(options.body)});return json({});}
+            return json({items:who(options)==='a'?[privateAddress]:[],nextCursor:null});
         }
         return base(path,options);
     });
@@ -56,11 +65,11 @@ for(const transition of ['clear session','switch account'])test('demo '+transiti
     const edit=app.get('addresses').children[0].children.find(child=>child.textContent==='Edit');
     await edit.handlers.click();assert.equal(app.get('label').value,privateAddress.label);
     app.get('label').value='unsaved private label';app.get('directUri').value='https://unsaved.example.test/private';app.get('isPublic').checked=true;
-    if(transition==='clear session')await app.click('disconnect');else await app.register('b'.repeat(64));
+    if(transition==='clear session')await app.click('disconnect');else await app.register('b');
     for(const id of ['label','from','to','directUri'])assert.equal(app.get(id).value,'',id+' retained old-account data');
     assert.equal(app.get('isPublic').checked,false);assert.equal(app.get('createAddress').textContent,'Create address');
-    if(transition==='clear session')await app.register('b'.repeat(64));
-    await app.click('createAddress');assert.deepEqual(writes,[{control:'b'.repeat(64),body:{label:null,isPublic:false,effectiveFrom:null,effectiveTo:null,directUri:null}}]);
+    if(transition==='clear session')await app.register('b');
+    await app.click('createAddress');assert.deepEqual(writes,[{account:'b',body:{label:null,isPublic:false,effectiveFrom:null,effectiveTo:null,directUri:null}}]);
 });
 
 const introductionRequest={requestId:'request-from-b',requestMessageId:'intro-from-b',requesterAccountId:'b',recipientAccountId:'a',status:'pending',generation:1};
@@ -95,7 +104,7 @@ test('contact metadata is visible while its separate introduction read is still 
 test('contact review shows only its exact incoming introduction as inert text without ACK or acceptance',async()=>{
     const reads=[];
     const app=ui(async(path,options)=>{
-        const initial=base(path,options);if(initial)return initial;reads.push([path,options.method,options.headers['X-Weave-Account-Control']]);
+        const initial=base(path,options);if(initial)return initial;reads.push([path,options.method,who(options)]);
         if(path==='/v1/contacts/requests')return json({items:[introductionRequest],nextCursor:null});
         return json({items:[introduction('intro-from-b','foreign','a','wrong sender'),introduction('intro-from-b','b','foreign','wrong recipient'),introduction('unrelated','b','a','wrong message'),introduction()],nextCursor:null});
     });
@@ -106,7 +115,7 @@ test('contact review shows only its exact incoming introduction as inert text wi
     assert.match(text,/request-from-b/);
     assert.ok(row.children.some(child=>child.textContent==='Accept contact'));
     assert.ok(reads.some(([path])=>path.startsWith('/v1/inbox')));
-    assert.ok(reads.every(([,method,control])=>method==='GET'&&control==='a'.repeat(64)));
+    assert.ok(reads.every(([,method,account])=>method==='GET'&&account==='a'));
 });
 
 for(const mode of ['missing','read failed'])test('contact review honestly reports introduction '+mode+' and preserves explicit decisions',async()=>{

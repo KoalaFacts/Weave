@@ -1,12 +1,13 @@
 import assert from 'node:assert/strict';
 import { test } from 'node:test';
-import { mkdir, mkdtemp, rm, writeFile } from 'node:fs/promises';
+import { mkdir, mkdtemp, readFile, rm, writeFile } from 'node:fs/promises';
 import { tmpdir } from 'node:os';
 import { join, resolve } from 'node:path';
 import { start } from '../harness.ts';
+import { agentKey } from '../agent-key.ts';
 import { BrowserFixture } from './playwright.ts';
 
-// Controls created by this UI test are usable only in its isolated temporary D1.
+// Agent keys created by this UI test are registered only in its isolated temporary D1.
 const publicLabel = 'Browser Bob <img src=x onerror=alert(1)>';
 const privateLabel = 'Browser Alice private address';
 const message = 'Browser acceptance message — 你好 🌿';
@@ -35,9 +36,9 @@ async function verifyLiteralArguments(page) {
     }
 }
 
-async function resume(page, control) {
+async function resume(page, keyFile) {
     if (!await page.locator('#recovery').evaluate(element => element.open)) await page.locator('#recovery summary').click();
-    await page.locator('#control').fill(control);
+    await page.locator('#agentKey').fill(keyFile);
     await page.locator('#register').click();
     await waitText(page, 'status', 'Account connected.');
     assert.equal(await page.locator('#workspace').isVisible(), true);
@@ -50,15 +51,31 @@ async function register(page, name) {
     await page.locator('#description').fill(name + ' private profile');
     const registration = page.waitForRequest(request => new URL(request.url()).pathname === '/v1/accounts' && request.method() === 'POST');
     await page.locator('#createAccount').click();
-    const control = await (await registration).headerValue('X-Weave-Account-Control');
+    const request = await registration;
     await waitText(page, 'status', 'Account connected.');
-    assert.match(control, /^[0-9a-f]{64}$/);
+    assert.equal(await request.headerValue('X-Weave-Account-Control'), null);
+    assert.equal(await request.headerValue('Authorization'), null);
+    const proof = JSON.parse(Buffer.from((await request.headerValue('DPoP')).split('.')[0], 'base64url').toString());
+    assert.equal(proof.typ, 'dpop+jwt');
+    assert.deepEqual(Object.keys(proof.jwk).sort(), ['crv', 'kty', 'x']);
     assert.equal(await text(page, 'addresses'), 'No addresses yet. Create one to introduce yourself or receive a request.');
     assert.equal(await page.locator('#credentialBackup').isVisible(), true);
     assert.equal(await page.locator('#workspace').isVisible(), false);
     assert.equal(await page.locator('#accountStart').isVisible(), false);
-    assert.ok((await text(page, 'status')).includes('Back up your credential'));
-    return { id: (await text(page, 'identity')).replace('Account ID: ', ''), control };
+    assert.ok((await text(page, 'status')).includes('Back up your agent key'));
+    return { id: (await text(page, 'identity')).replace('Account ID: ', ''), x: proof.jwk.x };
+}
+
+// Downloads the page's key backup and returns it with a Node-side signer for server checks.
+async function backup(page, id, x) {
+    const downloadStarted = page.waitForEvent('download');
+    await page.locator('#downloadCredential').click();
+    const download = await downloadStarted;
+    assert.equal(download.suggestedFilename(), 'weave-demo-agent-key.json');
+    const keyFile = await readFile(await download.path(), 'utf8'), saved = JSON.parse(keyFile);
+    assert.equal(saved.accountId, id); assert.equal(saved.key.x, x); assert.match(saved.key.d, /^[A-Za-z0-9_-]{43}$/);
+    await download.delete();
+    return { keyFile, agent: { accountId: id, key: agentKey(saved.key) } };
 }
 
 async function layout(fixture, page, name, width, height, mobile) {
@@ -104,15 +121,15 @@ test('real Worker UI: isolated sessions, public/private discovery, acceptance, r
         const registry = await fixture.page('registry', '/registry');
         await waitText(registry, 'status', 'No current public addresses.');
         await fixture.screenshot(registry, 'registry-empty-desktop');
-        const alice = await fixture.page('alice');
-        const bobDesktop = await fixture.page('bob');
+        const alice = await fixture.page('alice', '/', { acceptDownloads: true });
+        const bobDesktop = await fixture.page('bob', '/', { acceptDownloads: true });
         let bob = bobDesktop;
         assert.notEqual(alice.context(), bob.context());
         await verifyLiteralArguments(alice);
         checkpoints.push('Playwright passes special characters in textarea ID and value literally without executing the injected marker');
         assert.equal(await h.db.prepare("SELECT count(*) n FROM accounts").first('n'), 0);
         for (const page of [alice, bob]) {
-            assert.equal(await page.locator('#control').inputValue(), '');
+            assert.equal(await page.locator('#agentKey').inputValue(), '');
             assert.equal(await page.locator('#credentialBackup').isVisible(), false);
         }
         assert.equal(await alice.locator('#workspace').isVisible(), false);
@@ -147,25 +164,23 @@ test('real Worker UI: isolated sessions, public/private discovery, acceptance, r
         const downloads = [];
         alice.on('download', download => downloads.push(download));
         await alice.locator('#recovery summary').click();
-        await alice.locator('#control').fill('too-short');
+        await alice.locator('#agentKey').fill('not a saved key file');
         await alice.locator('#register').click();
-        await waitText(alice, 'status', 'Control must be at least 64 characters.');
+        await waitText(alice, 'status', 'Paste the complete saved agent key file');
+        assert.equal(await h.db.prepare("SELECT count(*) n FROM accounts").first('n'), 0);
         await alice.locator('#recovery summary').click();
-        const { id: aliceId, control: aliceControl } = await register(alice, 'Alice private display');
-        const { id: bobId, control: bobControl } = await register(bob, 'Bob private display');
+        const { id: aliceId, x: aliceX } = await register(alice, 'Alice private display');
+        const { id: bobId, x: bobX } = await register(bob, 'Bob private display');
         assert.notEqual(aliceId, bobId);
-        assert.notEqual(aliceControl, bobControl);
-        assert.equal(downloads.length, 0, 'Registration must not start a credential download.');
+        assert.notEqual(aliceX, bobX);
+        assert.equal(downloads.length, 0, 'Registration must not start a key download.');
         await fixture.screenshot(alice, 'demo-backup-before-continue');
-        const downloadStarted = alice.waitForEvent('download');
-        await alice.locator('#downloadCredential').click();
-        const download = await downloadStarted;
-        assert.equal(download.suggestedFilename(), 'weave-demo-credential.json');
-        await download.cancel(); // The fixture deliberately keeps acceptDownloads:false.
+        const { keyFile: aliceKeyFile, agent: aliceAgent } = await backup(alice, aliceId, aliceX);
+        const { keyFile: bobKeyFile, agent: bobAgent } = await backup(bob, bobId, bobX);
         assert.equal(await alice.evaluate(() => localStorage.length + sessionStorage.length), 0);
         assert.equal(await bob.evaluate(() => localStorage.length + sessionStorage.length), 0);
         assert.equal(await h.db.prepare("SELECT count(*) n FROM accounts").first('n'), 2);
-        checkpoints.push('Page load creates no account; two one-click registrations stay in memory with zero addresses; backup download requires a separate click');
+        checkpoints.push('Page load creates no account; two one-click key registrations send only DPoP proofs and keep keys in memory with zero addresses; key backup download requires a separate click');
 
         for (const page of [alice, bob]) {
             await page.locator('#continueToContacts').click();
@@ -175,7 +190,7 @@ test('real Worker UI: isolated sessions, public/private discovery, acceptance, r
         await alice.locator('#label').fill(privateLabel);
         await alice.locator('#createAddress').click();
         await waitText(alice, 'addresses', privateLabel);
-        const privateId = (await h.ok('/v1/addresses', aliceControl)).items[0].addressId;
+        const privateId = (await h.agentOk(aliceAgent, '/v1/addresses')).items[0].addressId;
         await bob.locator('#label').fill(publicLabel);
         await bob.locator('#isPublic').click();
         await bob.locator('#addressDeveloper summary').click();
@@ -183,7 +198,7 @@ test('real Worker UI: isolated sessions, public/private discovery, acceptance, r
         await bob.locator('#addressDeveloper summary').click();
         await bob.locator('#createAddress').click();
         await waitText(bob, 'addresses', publicLabel);
-        const publicId = (await h.ok('/v1/addresses', bobControl)).items[0].addressId;
+        const publicId = (await h.agentOk(bobAgent, '/v1/addresses')).items[0].addressId;
         await registry.locator('#find').click();
         await waitText(registry, 'results', publicLabel);
         assert.equal(await registry.evaluate(() => document.querySelectorAll("#results article").length), 1);
@@ -235,7 +250,7 @@ test('real Worker UI: isolated sessions, public/private discovery, acceptance, r
         await waitText(bob, 'contacts', 'WEAVE-DEMO contact A to B.');
         assert.ok((await text(bob, 'contacts')).includes(aliceId));
         assert.equal(await bob.locator('#mailboxScenario').evaluate(el => el.open), false);
-        assert.equal((await h.ok('/v1/inbox', bobControl)).items.length, 1, 'Reading the inline introduction must not ACK it.');
+        assert.equal((await h.agentOk(bobAgent, '/v1/inbox')).items.length, 1, 'Reading the inline introduction must not ACK it.');
         await fixture.screenshot(bob, 'demo-incoming-introduction');
         await bob.locator('#contacts').getByRole('button', { name: 'Accept contact', exact: true }).click();
         await bob.waitForFunction(() => document.querySelector('#contacts .row strong')?.textContent.startsWith('accepted'));
@@ -269,7 +284,7 @@ test('real Worker UI: isolated sessions, public/private discovery, acceptance, r
         await layout(fixture, bob, 'demo-inbox-desktop', 1440, 1000, false);
         const bobMobile = await fixture.page('bob-mobile', '/', mobileOptions);
         assert.notEqual(bobMobile.context(), bobDesktop.context());
-        assert.equal(await resume(bobMobile, bobControl), bobId);
+        assert.equal(await resume(bobMobile, bobKeyFile), bobId);
         await bobMobile.locator('#mailboxScenario > summary').click();
         await bobMobile.locator('#loadInbox').click();
         await waitText(bobMobile, 'inbox', message);
@@ -282,7 +297,7 @@ test('real Worker UI: isolated sessions, public/private discovery, acceptance, r
         await waitText(bob, 'inbox', 'No pending messages.');
         await alice.locator('#loadOutbox').click();
         await alice.waitForFunction(messageId => JSON.parse(document.getElementById('outbox').textContent).some(r => r.messageId === messageId && r.state === 'acknowledged'), messageId);
-        const receipt = (await h.ok('/v1/outbox', aliceControl)).items.filter(r => r.messageId === messageId);
+        const receipt = (await h.agentOk(aliceAgent, '/v1/outbox')).items.filter(r => r.messageId === messageId);
         assert.equal(receipt.length, 1);
         assert.equal(receipt[0].state, 'acknowledged');
         const stored = await h.db.prepare("SELECT payload FROM mailbox_records WHERE sender_account_id=? AND message_id=?").bind(aliceId, messageId).first();
@@ -319,19 +334,19 @@ test('real Worker UI: isolated sessions, public/private discovery, acceptance, r
         await waitText(alice, 'inbox', 'No pending messages.');
         await bob.locator('#loadOutbox').tap();
         await bob.waitForFunction(id => JSON.parse(document.getElementById('outbox').textContent).some(r => r.messageId === id && r.state === 'acknowledged'), replyId);
-        assert.equal((await h.ok('/v1/outbox/' + replyId, bobControl)).state, 'acknowledged');
+        assert.equal((await h.agentOk(bobAgent, '/v1/outbox/' + replyId)).state, 'acknowledged');
         await layout(fixture, bob, 'demo-reply-acknowledged-mobile', 390, 844, true);
         checkpoints.push('B replied with the walkthrough pong; A read and ACKed it; B sees the exact pong receipt acknowledged');
 
         await alice.locator('#disconnect').click();
         await waitText(alice, 'identity', 'No account connected.');
-        assert.equal(await alice.evaluate(() => document.getElementById("control").value), '');
+        assert.equal(await alice.evaluate(() => document.getElementById("agentKey").value), '');
         assert.equal(await text(alice, 'outbox'), '');
         assert.equal(await text(bob, 'identity'), 'Account ID: ' + bobId);
         assert.equal(await text(bobDesktop, 'identity'), 'Account ID: ' + bobId);
-        assert.equal(await resume(alice, aliceControl), aliceId);
-        assert.equal((await h.ok('/v1/addresses', aliceControl)).items.length, 1);
-        checkpoints.push('Clear session erases page state, does not affect peer context, and same control resumes same account');
+        assert.equal(await resume(alice, aliceKeyFile), aliceId);
+        assert.equal((await h.agentOk(aliceAgent, '/v1/addresses')).items.length, 1);
+        checkpoints.push('Clear session erases page state, does not affect peer context, and the downloaded key file resumes the same account');
         assert.deepEqual(fixture.errors, []);
     } catch (error) {
         for (const [name, page] of fixture?.pages ?? []) {

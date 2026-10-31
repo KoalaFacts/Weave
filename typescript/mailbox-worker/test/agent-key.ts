@@ -1,5 +1,5 @@
 // Test-only Ed25519 agent key and JWS builders; production code verifies with WebCrypto in src/jose.ts.
-import { createHash, generateKeyPairSync, randomUUID, sign } from 'node:crypto';
+import { createHash, createPrivateKey, generateKeyPairSync, randomUUID, sign } from 'node:crypto';
 import type { Ed25519Jwk } from '../src/jose.ts';
 import { epochSeconds } from '../src/time.ts';
 
@@ -7,8 +7,9 @@ export type TestKey = {kid: string; publicJwk: Ed25519Jwk; privateJwk: JsonWebKe
 
 const encode=(value: unknown) => Buffer.from(JSON.stringify(value)).toString('base64url');
 
-export function agentKey(): TestKey {
-    const {privateKey}=generateKeyPairSync('ed25519');
+/** A new Ed25519 key, or the key in a saved private JWK (for example a demo key-file backup). */
+export function agentKey(savedJwk?: JsonWebKey): TestKey {
+    const privateKey=savedJwk===undefined ? generateKeyPairSync('ed25519').privateKey : createPrivateKey({key:{...savedJwk},format:'jwk'});
     const privateJwk=privateKey.export({format:'jwk'}) as JsonWebKey;
     const publicJwk: Ed25519Jwk={kty:'OKP',crv:'Ed25519',x:privateJwk.x!};
     const kid=createHash('sha256').update(JSON.stringify({crv:publicJwk.crv,kty:publicJwk.kty,x:publicJwk.x})).digest('base64url');

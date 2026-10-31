@@ -13,7 +13,7 @@ test('contact history remains visible on desktop and native mobile after introdu
     try {
         h = await start({ bindings:{ CLEANUP_MAX_MESSAGES:'0', CLEANUP_TIME_BUDGET_MS:'0' } });
         fixture = new BrowserFixture(evidence, (await h.mf.ready).origin);
-        const a = await h.register(), b = await h.register();
+        const a = await h.registerAgent(), b = await h.registerAgent();
         for (const [index,status] of ['pending','accepted','rejected'].entries()) {
             const p = payload('synthetic history',Date.now() - 9 * 86400000 + index);
             const summary = { requestId:p.messageId,cardId:'synthetic-history-card',requesterMailboxId:a.accountId,
@@ -26,7 +26,7 @@ test('contact history remains visible on desktop and native mobile after introdu
             const label = mobile ? 'mobile' : 'desktop', viewport = mobile ? {width:390,height:844} : {width:1440,height:1000};
             const page = await fixture.page(label,'/',{viewport,isMobile:mobile});
             await page.locator('#recovery summary').click();
-            await page.locator('#control').fill(b.control);
+            await page.locator('#agentKey').fill(b.keyFile);
             await page.locator('#register').click();
             await page.waitForFunction(() => document.getElementById('identity').textContent.startsWith('Account ID:'));
             await page.locator('#contactScenario summary').click();
@@ -47,7 +47,7 @@ test('contact history remains visible on desktop and native mobile after introdu
             await fixture.screenshot(page,'contact-history-'+label);
         }
         assert.deepEqual(fixture.errors,[]);
-        assert.equal(fixture.trace.some(r=>r.method !== 'GET' && r.path !== '/v1/accounts'),false);
+        assert.equal(fixture.trace.some(r=>r.method !== 'GET' && !['/v1/accounts','/v1/token'].includes(r.path)),false);
         assert.equal(await h.db.prepare("SELECT count(*) n FROM contact_requests").first('n'),3);
         await writeFile(join(evidence,'result.json'),JSON.stringify({status:'passed',statuses:['expired','accepted','rejected'],requestRows:3,decisions:0,acknowledgments:0},null,2));
     } catch (error) {

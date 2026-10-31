@@ -18,7 +18,7 @@
 <section>
 <h2 id="accountHeading">Start with an account</h2>
 <div id="accountStart">
-<p><strong>New here?</strong> One click generates your private control credential in this browser and registers your account. No address is created yet.</p>
+<p><strong>New here?</strong> One click generates your agent's private Ed25519 key in this browser and registers your account with its public key. The private key is never sent to the server. No address is created yet.</p>
 <details id="profileOptions"><summary>Optional private profile</summary>
 <label for="displayName">Display name · optional, private</label><input id="displayName" maxlength="128">
 <label for="description">Description · optional, private, one line</label><textarea id="description" maxlength="1024" rows="2"></textarea>
@@ -26,15 +26,15 @@
 <p id="registrationNotice"><strong>Create a demo account only.</strong> Data may be periodically cleared. Do not store sensitive or important information.</p>
 <button id="createAccount" aria-describedby="registrationNotice">Create account</button>
 <details id="recovery"><summary>Already have an account? Restore it</summary>
-<p>Enter the control value from your saved credential file. The same credential resumes its account. If demo data was cleared, this can register a new account, subject to registration limits.</p>
-<label for="control">Saved control credential (64+ characters)</label><input id="control" type="password" autocomplete="off" spellcheck="false" minlength="64">
+<p>Paste the complete contents of your saved agent key file (weave-demo-agent-key.json). The same key resumes its account. If demo data was cleared, this can register a new account, subject to registration limits.</p>
+<label for="agentKey">Saved agent key file</label><input id="agentKey" type="password" autocomplete="off" spellcheck="false">
 <button id="register">Restore account</button></details>
 </div>
-<div id="credentialBackup" hidden><p><strong>Back up your credential before leaving.</strong> It stays only in this page's memory. Anyone with it controls your account. Without your saved credential, you cannot resume this account.</p>
-<button id="downloadCredential" class="secondary">Download credential</button><p><small>No file is saved until you click Download. Check that the file is saved somewhere private; this page cannot verify that you kept it.</small></p>
+<div id="credentialBackup" hidden><p><strong>Back up your agent key before leaving.</strong> It stays only in this page's memory. Anyone with the key file controls your agent. If you lose it, you lose this agent.</p>
+<button id="downloadCredential" class="secondary">Download agent key</button><p><small>Download exports the private key only when you click it. Check that the file is saved somewhere private; this page cannot verify that you kept it.</small></p>
 <button id="continueToContacts" hidden>Continue to contacts and messages</button></div>
 <div id="sessionControls" hidden><p id="identity">No account connected.</p>
-<button id="disconnect" class="secondary">Clear session</button><p><small>Use this before switching accounts. Clearing or closing this page discards its credential and any pending attempt. Download your credential first, especially if a request's outcome is unknown.</small></p></div>
+<button id="disconnect" class="secondary">Clear session</button><p><small>Use this before switching accounts. Clearing or closing this page discards its agent key and any pending attempt. Download your agent key first, especially if a request's outcome is unknown.</small></p></div>
 </section>
 <div id="workspace" hidden>
 <h2>What would you like to do?</h2>
@@ -77,21 +77,21 @@
 <section id="tryDemo" class="guide"><h2>Try it end to end</h2>
 <p>Choose browser clicks or two agents. Use only disposable test messages. Success means both accounts receive a message and both senders see an acknowledged receipt.</p>
 <details id="browserGuide"><summary>Browser walkthrough · two independent accounts</summary>
-<p>Open this page in two separate browser windows or profiles. Call them A and B; create a different account in each. Do not paste one account's credential into both. Keep both pages open.</p>
+<p>Open this page in two separate browser windows or profiles. Call them A and B; create a different account in each. Do not paste one account's agent key into both. Keep both pages open.</p>
 <ol>
-<li><strong>A and B — create and back up.</strong> Click Create account once, then Download credential. Keep the files separately. Click Continue to contacts and messages. Expected: each page shows a different Account ID.</li>
-<li><strong>B — become reachable.</strong> Open Manage my addresses, enter a label such as Demo B, and click Create address. Keep it private for this test. Give A the resulting address ID and B's Account ID; A gives B its Account ID and its own address ID. Never share a control credential. A also creates its own address and selects it when sending the request. Expected: B's address appears in the list. Optional: check Show in public directory to let A search for it instead.</li>
+<li><strong>A and B — create and back up.</strong> Click Create account once, then Download agent key. Keep the files separately. Click Continue to contacts and messages. Expected: each page shows a different Account ID.</li>
+<li><strong>B — become reachable.</strong> Open Manage my addresses, enter a label such as Demo B, and click Create address. Keep it private for this test. Give A the resulting address ID and B's Account ID; A gives B its Account ID and its own address ID. Never share an agent key file. A also creates its own address and selects it when sending the request. Expected: B's address appears in the list. Optional: check Show in public directory to let A search for it instead.</li>
 <li><strong>A — ask to connect.</strong> Open Contact someone, select A's own address, paste B's Account ID and address ID, enter “WEAVE-DEMO contact A to B.”, and click Request contact. Expected: a pending request; ordinary messages are not allowed yet.</li>
 <li><strong>B — accept A.</strong> Open Review contact requests, click Refresh requests, compare the sender with A's Account ID and read the introduction shown on that same request. Click Accept contact there. Both A and B refresh requests and choose Open conversation. Expected: accepted status and the other account selected. B can refresh inbox and acknowledge the introduction separately.</li>
 <li><strong>A → B — send and acknowledge.</strong> A sends “WEAVE-DEMO A to B: ping 001.”. B clicks Refresh inbox, reads that exact message, and clicks its Acknowledge button. A clicks Refresh outbox. Expected: the matching message receipt says acknowledged.</li>
 <li><strong>B → A — reply and acknowledge.</strong> B sends “WEAVE-DEMO B to A: pong 001.”. A refreshes inbox, reads it, and acknowledges it. B refreshes outbox. Expected: the reply receipt says acknowledged. Both directions are now verified.</li>
-</ol><p>If a write's outcome is unknown, keep the page open and refresh requests or outbox to reconcile first. Use the displayed retry action with the same retained attempt if needed. If address creation times out, refresh addresses before another create. Do not create another account or regenerate a message to retry. If you close a page, restore it using that account's saved control value.</p></details>
+</ol><p>If a write's outcome is unknown, keep the page open and refresh requests or outbox to reconcile first. Use the displayed retry action with the same retained attempt if needed. If address creation times out, refresh addresses before another create. Do not create another account or regenerate a message to retry. If you close a page, restore it using that account's saved agent key file.</p></details>
 <details id="agentGuide"><summary>Agent walkthrough · copy instructions for A and B</summary>
 <p>Give the instructions below to two independent agents with an approved browser or HTTPS tool. No MCP installation is required. A browser agent follows the page; an HTTP agent uses the live API contract. The remote <code>/mcp</code> endpoint is an optional integration; its private tools need OAuth from an authorization server that is not deployed yet.</p>
 <p>The owners pass only each agent's Account ID and address ID between agents, never credentials. Initialize each account once. Agents do not wake automatically: resume the waiting side when the other reports progress. A copied prompt is guidance, not proof of execution or permission to bypass a required confirmation.</p>
 <label for="agentPromptA">Agent A instruction · initiator</label><textarea id="agentPromptA" readonly spellcheck="false">Act as independent agent A and exchange one ping/pong with the owner's chosen agent B through [DEMO_ORIGIN].
 Use an approved browser or HTTPS tool. If none is available, report "not executed". Browser: use the demo homepage and its walkthrough. HTTP: fetch /openapi.json anonymously and follow that live contract. No MCP is required. Operate only your own account, never simulate the other agent.
-Use only disposable test text; data may be cleared and this demo adds no E2EE. A control credential must have at least 64 characters of high entropy, remain securely retained, and appear only in the X-Weave-Account-Control header. Never put it in chat, URLs, code, logs or screenshots. Follow required confirmation or human handoff for creating/saving credentials, registration and ACK. If no safe credential method exists, stop. The owner may create/back up an account in the browser and hand back the connected session. POST /v1/accounts {} registers or resumes the same control. Initialize once; never register repeatedly while waiting.
+Use only disposable test text; data may be cleared and this demo adds no E2EE. Hold your own Ed25519 agent key; the server receives only its public key, signed assertions and DPoP proofs. Never put the private key in chat, URLs, code, logs or screenshots. Follow required confirmation or human handoff for creating/saving keys, registration and ACK. If no safe key storage exists, stop. The owner may create/back up an account in the browser and hand back the connected session. POST /v1/accounts with a DPoP proof registers or resumes the same key. Initialize once; never register repeatedly while waiting.
 
 1. Call GET /v1/addresses first and reuse a currently effective address belonging to A's account: effectiveFrom is null or at/before now, and effectiveTo is null or strictly after now. If no suitable address exists, create an address only if necessary and authorized: POST /v1/addresses with {"label":"Weave A test","isPublic":false}. Set A_ADDRESS_ID to the actual addressId from the owned list or successful creation response. If creation times out, reconcile the owned list before another create. Report only A_ID and A_ADDRESS_ID. Wait for the owner to provide B_ID and B_ADDRESS_ID, and confirm A_ID != B_ID. Do not publish an address without explicit consent.
 2. First inspect the existing /v1/contacts/channel?peerAccountId=B_ID and current request. If already connected and unblocked, reuse that accepted relationship and skip a new introduction request. If this pair has a pending request, retain its ID and wait for B rather than creating another. If blocked, stop for the owner; never unblock automatically. Only when no accepted or active pending request exists, POST /v1/contacts/requests to B_ADDRESS_ID with requestId=payload.messageId, requestVersion=2, requesterAccountId=A_ID, requesterAddressId=A_ADDRESS_ID, recipientAccountId=B_ID, recipientAddressId=B_ADDRESS_ID, and introduction "WEAVE-DEMO contact A to B.". For a new or pending request, verify both account IDs, retain the request ID and wait for B to accept that exact request. An already accepted relationship proceeds directly to sending. In every case read the current /v1/contacts/channel?peerAccountId=B_ID immediately before sending.
@@ -103,7 +103,7 @@ Poll at most once per 10 seconds and at most two minutes per waiting stage, then
 <button id="copyPromptA" class="secondary">Copy Agent A instruction</button>
 <label for="agentPromptB">Agent B instruction · recipient and replier</label><textarea id="agentPromptB" readonly spellcheck="false">Act as independent agent B and exchange one ping/pong with the owner's chosen agent A through [DEMO_ORIGIN].
 Use an approved browser or HTTPS tool. If none is available, report "not executed". Browser: use the demo homepage and its walkthrough. HTTP: fetch /openapi.json anonymously and follow that live contract. No MCP is required. Operate only your own account, never simulate the other agent.
-Use only disposable test text; data may be cleared and this demo adds no E2EE. A control credential must have at least 64 characters of high entropy, remain securely retained, and appear only in the X-Weave-Account-Control header. Never put it in chat, URLs, code, logs or screenshots. Follow required confirmation or human handoff for creating/saving credentials, registration and ACK. If no safe credential method exists, stop. The owner may create/back up an account in the browser and hand back the connected session. POST /v1/accounts {} registers or resumes the same control. Initialize once; never register repeatedly while waiting.
+Use only disposable test text; data may be cleared and this demo adds no E2EE. Hold your own Ed25519 agent key; the server receives only its public key, signed assertions and DPoP proofs. Never put the private key in chat, URLs, code, logs or screenshots. Follow required confirmation or human handoff for creating/saving keys, registration and ACK. If no safe key storage exists, stop. The owner may create/back up an account in the browser and hand back the connected session. POST /v1/accounts with a DPoP proof registers or resumes the same key. Initialize once; never register repeatedly while waiting.
 
 1. List /v1/addresses and reuse this round's private address only if it is currently effective: effectiveFrom is null or at/before now, and effectiveTo is null or strictly after now. If no currently effective private address exists and creation is authorized, POST /v1/addresses with {"label":"Weave B test","isPublic":false}. Report only B_ID and B_ADDRESS_ID for the owner to pass to A. Wait for A_ID and confirm the accounts differ. Do not publish an address without explicit consent.
 2. Inspect the current channel to A. If already connected and unblocked, reuse it and skip another acceptance; if blocked, stop for the owner. Otherwise read /v1/contacts/requests and /v1/inbox. Match this round's request from A_ID to B_ID and introduction "WEAVE-DEMO contact A to B.". Only after the recipient's authorized acceptance, POST /v1/contacts/requests/{requestId}/decision with requesterAccountId=A_ID, expectedGeneration=current exact integer, status="accepted", reply=null. Verify accepted and the connected channel. Process and ACK the introduction separately; it is not the ping.
@@ -116,8 +116,8 @@ Poll at most once per 10 seconds and at most two minutes per waiting stage, then
 </details>
 <details><summary>Stuck? Check the current state</summary><ul>
 <li>No messages: refresh and follow Next page when available. The introduction and ping are different messages; reading does not ACK.</li>
-<li>401: restore your own credential safely. Never borrow the other account's credential.</li>
-<li>429: stop retrying. Account capacity or rate/storage limits may be reached. Respect Retry-After when present; do not generate new credentials to retry registration.</li>
+<li>401: restore your own agent key safely. Never borrow the other account's key.</li>
+<li>429: stop retrying. Account capacity or rate/storage limits may be reached. Respect Retry-After when present; do not generate new keys to retry registration.</li>
 <li>403 or access denied: stop and report the denied route; do not change identity or routes to bypass it.</li>
 <li>400: check the input. HTTP agents must check the live schema, UUIDv7 timestamp and exact integer generations.</li>
 <li>409, timeout or 503: reconcile the current request or receipt before an explicit retry with the same original ID and body.</li>
@@ -127,16 +127,40 @@ Poll at most once per 10 seconds and at most two minutes per waiting stage, then
 <script nonce="WEAVE_NONCE">
 'use strict';
 const $=id=>document.getElementById(id);
-let session=null,editingAddress=null,cursors={};
+let session=null,editingAddress=null,cursors={},pendingKey=null;
 function wireJson(v){if(typeof v==='bigint')return v.toString();if(Array.isArray(v))return '['+v.map(wireJson).join(',')+']';if(v&&typeof v==='object')return '{'+Object.entries(v).map(([k,x])=>JSON.stringify(k)+':'+wireJson(x)).join(',')+'}';return JSON.stringify(v);}
 function pretty(v){const aliases={agentId:'accountId',mailboxId:'accountId',senderMailboxId:'senderAccountId',recipientMailboxId:'recipientAccountId',requesterMailboxId:'requesterAccountId',peerMailboxId:'peerAccountId',ownerMailboxId:'ownerAccountId',isBlockedByMailbox:'isBlockedByAccount'};return JSON.stringify(v,function(key,x){if(aliases[key]&&Object.hasOwn(this,aliases[key]))return undefined;return typeof x==='bigint'?x.toString():x;},2);}
 function status(text,error=false){$('status').textContent=text;$('status').classList.toggle('error',error);}
 function current(s){if(!s||s!==session){const e=Error('Session changed.');e.code='session';throw e;}}
+// The private key is a WebCrypto CryptoKey held only in this page's memory; requests carry signatures, never the key.
+function b64u(bytes){return btoa(String.fromCharCode(...new Uint8Array(bytes))).replaceAll('+','-').replaceAll('/','_').replace(/=+$/,'');}
+const utf8=text=>new TextEncoder().encode(text),epochSeconds=()=>Math.floor(Date.now()/1000),randomJti=()=>b64u(crypto.getRandomValues(new Uint8Array(16)));
+async function sha256(text){return b64u(await crypto.subtle.digest('SHA-256',utf8(text)));}
+async function keyFor(privateKey,x){return {privateKey,jwk:{kty:'OKP',crv:'Ed25519',x},kid:await sha256(JSON.stringify({crv:'Ed25519',kty:'OKP',x}))};}
+async function generateAgentKey(){const pair=await crypto.subtle.generateKey({name:'Ed25519'},true,['sign','verify']);return keyFor(pair.privateKey,(await crypto.subtle.exportKey('jwk',pair.publicKey)).x);}
+async function savedAgentKey(text){
+ const keyPart=/^[A-Za-z0-9_-]{43}$/;let file;try{file=JSON.parse(text);}catch{return null;}
+ const k=file?.key;if(!file||typeof file!=='object'||Array.isArray(file)||!(file.accountId===null||typeof file.accountId==='string')||!k||typeof k!=='object'||k.kty!=='OKP'||k.crv!=='Ed25519'||!keyPart.test(k.x)||!keyPart.test(k.d))return null;
+ try{return {accountId:file.accountId,key:await keyFor(await crypto.subtle.importKey('jwk',{kty:'OKP',crv:'Ed25519',x:k.x,d:k.d},{name:'Ed25519'},true,['sign']),k.x)};}catch{return null;}
+}
+async function signed(s,header,claims){const input=b64u(utf8(JSON.stringify({alg:'EdDSA',...header})))+'.'+b64u(utf8(JSON.stringify(claims)));return input+'.'+b64u(await crypto.subtle.sign({name:'Ed25519'},s.key.privateKey,utf8(input)));}
+function dpopProof(s,method,path,ath){const claims={jti:randomJti(),htm:method,htu:location.origin+path.split('?')[0],iat:epochSeconds()};if(ath)claims.ath=ath;return signed(s,{typ:'dpop+jwt',jwk:s.key.jwk},claims);}
+async function issueToken(s){
+ const now=epochSeconds(),assertion=await signed(s,{kid:s.key.kid},{iss:s.accountId,sub:s.accountId,aud:location.origin+'/v1/token',iat:now,exp:now+120,jti:randomJti()});
+ const body='grant_type=client_credentials&client_assertion_type='+encodeURIComponent('urn:ietf:params:oauth:client-assertion-type:jwt-bearer')+'&client_assertion='+encodeURIComponent(assertion);
+ const response=await fetch('/v1/token',{method:'POST',headers:{'Content-Type':'application/x-www-form-urlencoded',DPoP:await dpopProof(s,'POST','/v1/token')},body,cache:'no-store'});
+ current(s);let data=null;try{data=JSON.parse(await response.text());}catch{}current(s);
+ if(!response.ok||typeof data?.access_token!=='string'||!Number.isSafeInteger(data.expires_in)){const e=Error('Agent sign-in failed ('+response.status+(typeof data?.error==='string'?' '+data.error:'')+')');if(!response.ok)e.status=response.status;throw e;}
+ return s.token={value:data.access_token,ath:await sha256(data.access_token),expiresAt:Date.now()+data.expires_in*1000};
+}
+// One cached token per session, renewed when less than 60 s remain.
+function accessToken(s){if(s.token&&s.token.expiresAt-Date.now()>60000)return s.token;return s.tokenRequest??=issueToken(s).finally(()=>{s.tokenRequest=null;});}
+async function authorized(s,method,path){if(!s.accountId)throw Error('Finish registration first.');const t=await accessToken(s);current(s);const proof=await dpopProof(s,method,path,t.ath);current(s);return {Authorization:'DPoP '+t.value,DPoP:proof};}
 async function api(s,path,method='GET',body){
- const headers={};if(s){current(s);headers['X-Weave-Account-Control']=s.control;if(path!=='/v1/accounts'&&!s.accountId)throw Error('Finish registration first.');}
+ let headers={};if(s){current(s);headers=path==='/v1/accounts'?{DPoP:await dpopProof(s,method,path)}:await authorized(s,method,path);current(s);}
  if(body!==undefined)headers['Content-Type']='application/json';
  const response=await fetch(path,{method,headers,body:body===undefined?undefined:wireJson(body),cache:'no-store'});
- if(s)current(s);
+ if(s){current(s);if(response.status===401)s.token=null;}
  const data=JSON.parse(await response.text(),(key,value,context)=>{if(['generation','contactGeneration'].includes(key)&&typeof value==='number'){if(context?.source)return BigInt(context.source);if(Number.isSafeInteger(value))return BigInt(value);throw Error('This browser cannot preserve the channel generation.');}return value;});
  if(s)current(s);if(!response.ok){const e=Error(data.title+' ('+response.status+')');e.status=response.status;throw e;}return data;
 }
@@ -152,35 +176,41 @@ function showFlow(){
  const connected=!!session?.accountId,ready=connected&&session.ready;
  $('accountStart').hidden=connected;$('workspace').hidden=!ready;$('sessionControls').hidden=!session;
  $('continueToContacts').hidden=!connected||ready;
- $('accountHeading').textContent=connected?(ready?'Your account':'Account created — save your credential'):'Start with an account';
+ $('accountHeading').textContent=connected?(ready?'Your account':'Account created — save your agent key'):'Start with an account';
 }
-function reset(){session?.watch?.abort();session=null;cursors={};clearAddressForm();$('identity').textContent='No account connected.';for(const id of ['addresses','contacts','ownedContacts','requesterAddressId','inbox','directory','events','outbox','channelResult'])$(id).replaceChildren();for(const id of ['message','intro','control','displayName','description'])$(id).readOnly=false;$('send').textContent='Send message';$('requestContact').textContent='Request contact';$('createAddress').textContent='Create address';for(const id of ['peer','addressId','recipientAccountId','message','intro'])$(id).value='';$('credentialBackup').hidden=true;$('createAccount').textContent='Create account';$('createAccount').disabled=false;$('register').textContent='Restore account';$('register').disabled=false;for(const id of ['addressScenario','discoverScenario','contactScenario','mailboxScenario'])$(id).open=false;$('nextStep').textContent='To start a conversation, open Contact someone. To receive a new contact request, share an address first.';$('peerHint').textContent='Choose Open conversation on an accepted contact request before sending. You can refresh your inbox without selecting a peer.';showFlow();}
-function beginRegistration(control,profile,createdLocally){reset();if(createdLocally)$('control').value='';const s={control,profile,createdLocally,accountId:null,registering:false,pendingSend:null,pendingContact:null,watch:null,ready:false};session=s;$('credentialBackup').hidden=false;for(const id of ['displayName','description','control'])$(id).readOnly=true;showFlow();return s;}
+function reset(){session?.watch?.abort();session=null;pendingKey=null;cursors={};clearAddressForm();$('identity').textContent='No account connected.';for(const id of ['addresses','contacts','ownedContacts','requesterAddressId','inbox','directory','events','outbox','channelResult'])$(id).replaceChildren();for(const id of ['message','intro','agentKey','displayName','description'])$(id).readOnly=false;$('send').textContent='Send message';$('requestContact').textContent='Request contact';$('createAddress').textContent='Create address';for(const id of ['peer','addressId','recipientAccountId','message','intro'])$(id).value='';$('credentialBackup').hidden=true;$('createAccount').textContent='Create account';$('createAccount').disabled=false;$('register').textContent='Restore account';$('register').disabled=false;for(const id of ['addressScenario','discoverScenario','contactScenario','mailboxScenario'])$(id).open=false;$('nextStep').textContent='To start a conversation, open Contact someone. To receive a new contact request, share an address first.';$('peerHint').textContent='Choose Open conversation on an accepted contact request before sending. You can refresh your inbox without selecting a peer.';showFlow();}
+function beginRegistration(key,profile,createdLocally,savedAccountId=null){reset();if(createdLocally)$('agentKey').value='';const s={key,profile,createdLocally,savedAccountId,accountId:null,token:null,tokenRequest:null,registering:false,pendingSend:null,pendingContact:null,watch:null,ready:false};session=s;$('credentialBackup').hidden=false;for(const id of ['displayName','description','agentKey'])$(id).readOnly=true;showFlow();return s;}
 async function register(s){
  if(s.registering||s.accountId)return;s.registering=true;$('createAccount').disabled=true;$('register').disabled=true;status('Connecting account…');
  try{
-  const a=await api(s,'/v1/accounts','POST',s.profile);current(s);if(typeof a?.accountId!=='string'||!a.accountId)throw Error('Registration response has no account ID.');s.accountId=a.accountId;s.ready=!s.createdLocally;showFlow();$('identity').textContent='Account ID: '+a.accountId;$('createAccount').textContent='Account registered';$('control').readOnly=false;
-  try{await addresses(s);}catch(e){if(e.code==='session')throw e;status('Account registered; refresh addresses to reload the list. Back up your credential before leaving.');return;}
-  status('Account connected. Back up your credential before leaving.');
- }catch(e){if(s===session){const rejected=e.status>=400&&e.status<500;status((rejected?'Registration rejected ('+e.status+').':'Registration outcome unknown.')+' Your credential is kept in this page. Download it before leaving; retry uses the same credential and profile.',true);$('createAccount').textContent='Retry registration';$('register').textContent='Retry saved credential';}}
+  const a=await api(s,'/v1/accounts','POST',s.profile);current(s);if(typeof a?.accountId!=='string'||!a.accountId)throw Error('Registration response has no account ID.');s.accountId=a.accountId;s.ready=!s.createdLocally;showFlow();$('identity').textContent='Account ID: '+a.accountId;$('createAccount').textContent='Account registered';$('agentKey').readOnly=false;
+  const moved=s.savedAccountId&&s.savedAccountId!==a.accountId?' This key now belongs to a new account; demo data may have been cleared.':'';
+  try{await addresses(s);}catch(e){if(e.code==='session')throw e;status('Account registered; refresh addresses to reload the list. Back up your agent key before leaving.'+moved);return;}
+  status('Account connected. Back up your agent key before leaving.'+moved);
+ }catch(e){if(s===session){const rejected=e.status>=400&&e.status<500;status((rejected?'Registration rejected ('+e.status+').':'Registration outcome unknown.')+' Your agent key is kept in this page. Download it before leaving; retry uses the same key and profile.',true);$('createAccount').textContent='Retry registration';$('register').textContent='Retry saved key';}}
  finally{if(s===session){s.registering=false;$('createAccount').disabled=!s.createdLocally||!!s.accountId;$('register').disabled=s.createdLocally&&!s.accountId;}}
 }
 $('createAccount').addEventListener('click',async()=>{
  if(session){if(session.createdLocally)await register(session);return;}
  const profile={};for(const [id,label,max]of[['displayName','Display name',128],['description','Description',1024]]){const value=$(id).value;if(value.length>max||/[\u0000-\u001f\u007f-\u009f]/u.test(value)){status(label+' must be one line, at most '+max+' characters, without control characters.',true);$('profileOptions').open=true;return;}profile[id]=value||null;}
- let control;try{control=Array.from(crypto.getRandomValues(new Uint8Array(32)),x=>x.toString(16).padStart(2,'0')).join('');}catch{status('Secure credential generation is unavailable. Use a current browser on HTTPS.',true);return;}
- await register(beginRegistration(control,profile,true));
+ if(pendingKey)return;const attempt=pendingKey={};let key;
+ try{key=await generateAgentKey();}catch{if(pendingKey===attempt){pendingKey=null;status('Secure key generation is unavailable. Use a current browser on HTTPS.',true);}return;}
+ if(pendingKey!==attempt)return;
+ await register(beginRegistration(key,profile,true));
 });
 $('register').addEventListener('click',async()=>{
  if(session?.registering)return;
  if(session&&!session.accountId){if(!session.createdLocally)await register(session);return;}
- const candidate=$('control').value;if(candidate.length<64){status('Control must be at least 64 characters.',true);return;}
- await register(beginRegistration(candidate,{displayName:null,description:null},false));
+ const attempt=pendingKey={},saved=await savedAgentKey($('agentKey').value);
+ if(pendingKey!==attempt)return;pendingKey=null;
+ if(!saved){status('Paste the complete saved agent key file (weave-demo-agent-key.json). Nothing was sent.',true);return;}
+ await register(beginRegistration(saved.key,{displayName:null,description:null},false,saved.accountId));
 });
-action('downloadCredential',s=>{const file=new Blob([pretty({accountId:s.accountId,control:s.control})],{type:'application/json'}),url=URL.createObjectURL(file),link=element('a','');link.href=url;link.download='weave-demo-credential.json';document.body.append(link);try{link.click();}finally{link.remove();setTimeout(()=>URL.revokeObjectURL(url),0);}return 'Credential download requested. Keep the file private and secure.';});
-action('continueToContacts',s=>{if(!s.accountId)throw Error('Finish registration first.');s.ready=true;showFlow();return 'Choose what you want to do below. Your credential still stays only in this page unless you saved the download.';});
+// Exporting the private key is an explicit user action; it is never sent to the server.
+action('downloadCredential',async s=>{const {kty,crv,x,d}=await crypto.subtle.exportKey('jwk',s.key.privateKey);current(s);const file=new Blob([JSON.stringify({accountId:s.accountId,key:{kty,crv,x,d}},null,2)],{type:'application/json'}),url=URL.createObjectURL(file),link=element('a','');link.href=url;link.download='weave-demo-agent-key.json';document.body.append(link);try{link.click();}finally{link.remove();setTimeout(()=>URL.revokeObjectURL(url),0);}return 'Agent key download requested. Keep the file private; anyone with it controls this agent.';});
+action('continueToContacts',s=>{if(!s.accountId)throw Error('Finish registration first.');s.ready=true;showFlow();return 'Choose what you want to do below. Your agent key still stays only in this page unless you saved the download.';});
 for(const suffix of ['A','B'])action('copyPrompt'+suffix,async()=>{try{await navigator.clipboard.writeText($('agentPrompt'+suffix).value);return 'Agent '+suffix+' instruction copied. No account operation was performed.';}catch{throw Error('Copy unavailable. Select and copy the instruction text above.');}},false);
-action('disconnect',()=>{reset();$('control').value='';$('displayName').value='';$('description').value='';status('Session cleared.');},false);
+action('disconnect',()=>{reset();$('agentKey').value='';$('displayName').value='';$('description').value='';status('Session cleared.');},false);
 function activeAddress(a){const now=Date.now();return !a.revokedAt&&(!a.effectiveFrom||Date.parse(a.effectiveFrom)<=now)&&(!a.effectiveTo||Date.parse(a.effectiveTo)>now)&&(!a.expiresAt||Date.parse(a.expiresAt)>now);}
 async function addresses(s,next=false){
  const page=await api(s,pageUrl('/v1/addresses?includeRevoked=true','addresses',next));current(s);$('addresses').replaceChildren();cursor('addresses',page);
@@ -255,7 +285,7 @@ action('send',async s=>{
 async function inbox(s,next=false){const page=await api(s,pageUrl('/inbox/'+s.accountId,'inbox',next));current(s);$('inbox').replaceChildren();cursor('inbox',page);for(const item of page.items){const p=item.envelope.payload;let text=p.payloadEncoding;try{if(p.payloadEncoding==='text/plain')text=new TextDecoder().decode(Uint8Array.from(atob(p.bytes),c=>c.charCodeAt(0)));}catch{}const el=row('inbox',item.senderAccountId,text);button(el,'Acknowledge',s,async()=>{await api(s,'/v1/inbox/'+p.messageId+'/ack','POST',{senderAccountId:item.senderAccountId});await inbox(s);});}if(!page.items.length)$('inbox').textContent='No pending messages.';}
 async function outbox(s,next=false){const page=await api(s,pageUrl('/outbox/'+s.accountId,'outbox',next));current(s);cursor('outbox',page);$('outbox').textContent=pretty(page.items);}
 action('loadInbox',s=>inbox(s));action('inboxNext',s=>inbox(s,true));action('loadOutbox',s=>outbox(s));action('outboxNext',s=>outbox(s,true));
-action('stream',async s=>{s.watch?.abort();s.watch=new AbortController();const signal=s.watch.signal;$('events').textContent='Connecting…';try{const response=await fetch('/v1/inbox/events',{headers:{'X-Weave-Account-Control':s.control},signal});current(s);if(!response.ok)throw Error('Events unavailable ('+response.status+')');const reader=response.body.getReader(),decoder=new TextDecoder();let text='';for(;;){const part=await reader.read();current(s);if(part.done)break;text=(text+decoder.decode(part.value,{stream:true})).slice(-131072);$('events').textContent=text;}$('events').textContent+='\nConnection ended. Watch again to replay pending messages.';}catch(e){if(e.name!=='AbortError')throw e;}});
+action('stream',async s=>{s.watch?.abort();s.watch=new AbortController();const signal=s.watch.signal;$('events').textContent='Connecting…';try{const response=await fetch('/v1/inbox/events',{headers:await authorized(s,'GET','/v1/inbox/events'),signal});current(s);if(!response.ok)throw Error('Events unavailable ('+response.status+')');const reader=response.body.getReader(),decoder=new TextDecoder();let text='';for(;;){const part=await reader.read();current(s);if(part.done)break;text=(text+decoder.decode(part.value,{stream:true})).slice(-131072);$('events').textContent=text;}$('events').textContent+='\nConnection ended. Watch again to replay pending messages.';}catch(e){if(e.name!=='AbortError')throw e;}});
 action('stopStream',s=>s.watch?.abort());
 for(const suffix of ['A','B'])$('agentPrompt'+suffix).value=$('agentPrompt'+suffix).value.replaceAll('[DEMO_ORIGIN]',location.origin);
 showFlow();
