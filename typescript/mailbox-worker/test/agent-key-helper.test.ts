@@ -5,7 +5,7 @@ import { tmpdir } from 'node:os';
 import { join } from 'node:path';
 import { test } from 'node:test';
 import { start } from './harness.ts';
-import { accessToken, createKey, dpopProof, fetchWithKey, loadKey, register, WeaveHttpError, type AgentKey, type HelperOptions } from '../../agent-key/src/index.ts';
+import { accessToken, createKey, dpopProof, fetchWithKey, loadKey, RateLimitedError, register, WeaveHttpError, type AgentKey, type HelperOptions } from '../../agent-key/src/index.ts';
 import { accessTokenHash, verifyDpop } from '../src/dpop.ts';
 import { agentLimits } from '../src/agent-limits.ts';
 
@@ -48,6 +48,9 @@ test('dpop_ClaimsExact', async () => withKey(async key => {
     assert.ok(Math.abs((claims.iat as number) - now) <= 1);
     const header = JSON.parse(Buffer.from(proof.split('.')[0]!, 'base64url').toString());
     assert.deepEqual(header, {alg: 'EdDSA', typ: 'dpop+jwt', jwk: key.publicJwk});
+    const again = payloadOf(await dpopProof(key, 'get', url, token));
+    assert.equal(typeof claims.jti, 'string');
+    assert.notEqual(again.jti, claims.jti, 'every proof carries a new jti');
     const verified = await verifyDpop(new Request(url.href, {headers: {DPoP: proof}}), {now, accessToken: token});
     assert.deepEqual(verified.ok && verified.jkt, key.kid);
     // Negative controls: the mailbox refuses the same proof for another method or token.
@@ -136,27 +139,56 @@ test('helper_429_HonoursRetryAfterOnce', async () => {
         await withKey(async key => {
             const setup: Call[] = [];
             const {accountId} = await register(origin, key, {}, {fetch: relay(h, setup)});
-            // A single 429 is waited out for its Retry-After, then the request succeeds with a new assertion.
+            const limitedOnce = (calls: Call[], retryAfter: string) => {
+                let limited = false;
+                return relay(h, calls, url => {
+                    if (url.pathname !== '/v1/token' || limited) return undefined;
+                    limited = true;
+                    return new Response(JSON.stringify({error: 'temporarily_unavailable'}), {status: 429, headers: {'Retry-After': retryAfter}});
+                });
+            };
+            // A 429 with Retry-After of at most 60 s is waited out once, then the request succeeds with a new assertion.
             const waits: number[] = [], calls: Call[] = [];
-            let limited = false;
-            const once = relay(h, calls, url => {
-                if (url.pathname !== '/v1/token' || limited) return undefined;
-                limited = true;
-                return new Response(JSON.stringify({error: 'temporarily_unavailable'}), {status: 429, headers: {'Retry-After': '7'}});
-            });
-            await accessToken(origin, key, accountId, {fetch: once, sleep: async ms => { waits.push(ms); }});
-            assert.deepEqual(waits, [7000]);
+            await accessToken(origin, key, accountId, {fetch: limitedOnce(calls, '60'), sleep: async ms => { waits.push(ms); }});
+            assert.deepEqual(waits, [60_000]);
             assert.deepEqual(calls.map(c => c.status), [429, 200]);
             const [first, second] = calls.map(c => new URLSearchParams(c.body!).get('client_assertion')!);
             assert.notEqual(payloadOf(first!).jti, payloadOf(second!).jti);
-            // The Worker's own hourly limit: one wait, one more attempt, then the 429 is reported.
+            // A longer Retry-After is not waited: the typed error carries it for the caller.
+            const longCalls: Call[] = [], longWaits: number[] = [];
+            await assert.rejects(accessToken(origin, key, accountId, {fetch: limitedOnce(longCalls, '61'), sleep: async ms => { longWaits.push(ms); }}),
+                (error: unknown) => error instanceof RateLimitedError && error.status === 429 && error.retryAfter === 61 && /retry after 61 s/.test(error.message));
+            assert.deepEqual(longCalls.map(c => c.status), [429]);
+            assert.deepEqual(longWaits, []);
+            // The Worker's own hourly limit (Retry-After is the time to the next UTC hour): at most one wait, then the typed error.
             for (let issued = 1; issued < agentLimits.unclaimed.tokensPerHour; issued++) await accessToken(origin, key, accountId, {fetch: relay(h, setup)});
             const exhausted: Call[] = [], limitWaits: number[] = [];
-            await assert.rejects(accessToken(origin, key, accountId, {fetch: relay(h, exhausted), sleep: async ms => { limitWaits.push(ms); }}),
-                (error: unknown) => error instanceof WeaveHttpError && error.status === 429 && error.code === 'temporarily_unavailable');
-            assert.deepEqual(exhausted.map(c => c.status), [429, 429]);
-            assert.equal(limitWaits.length, 1);
-            assert.ok(limitWaits[0]! > 0 && limitWaits[0]! <= 3600_000);
+            const error = await accessToken(origin, key, accountId, {fetch: relay(h, exhausted), sleep: async ms => { limitWaits.push(ms); }})
+                .then(() => assert.fail('the hourly limit was not reported'), (caught: unknown) => caught);
+            assert.ok(error instanceof RateLimitedError && error.code === 'temporarily_unavailable', String(error));
+            assert.ok(error.retryAfter > 0 && error.retryAfter <= 3600);
+            const waited = limitWaits.length === 1;
+            assert.deepEqual(exhausted.map(c => c.status), waited ? [429, 429] : [429]);
+            assert.ok(waited ? limitWaits[0]! <= 60_000 : error.retryAfter > 60);
+        });
+    } finally { await h.close(); }
+});
+
+test('helper_MalformedToken_RefusedWithoutEcho', async () => {
+    const h = await start();
+    try {
+        await withKey(async key => {
+            const {accountId} = await register(origin, key, {}, {fetch: relay(h, [])});
+            for (const bad of ['line\r\nInjected: header', 'has space', 'é'.repeat(10), 'A'.repeat(4097), '=leading']) {
+                const issuing = relay(h, [], url => url.pathname === '/v1/token'
+                    ? new Response(JSON.stringify({access_token: bad, token_type: 'DPoP', expires_in: 900}), {status: 200, headers: {'Content-Type': 'application/json'}}) : undefined);
+                await assert.rejects(accessToken(origin, key, accountId, {fetch: issuing}),
+                    (error: unknown) => error instanceof WeaveHttpError && error.code === 'unexpected-response' && !error.message.includes(bad), JSON.stringify(bad.slice(0, 20)));
+                const calls: Call[] = [];
+                await assert.rejects(fetchWithKey(origin, key, {token: bad, expiresAt: new Date().toISOString(), accountId}, 'GET', '/v1/keys', undefined, {fetch: relay(h, calls)}),
+                    (error: unknown) => error instanceof TypeError && !error.message.includes(bad));
+                assert.equal(calls.length, 0);
+            }
         });
     } finally { await h.close(); }
 });

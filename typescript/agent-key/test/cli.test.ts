@@ -12,6 +12,7 @@ import { fileURLToPath } from 'node:url';
 const cli = fileURLToPath(new URL('../src/cli.ts', import.meta.url));
 const accountId = '0f8fad5b-d9cb-469f-a165-70867728950e';
 const issuedToken = 'T'.repeat(43);
+const limitedAccount = '7c9e6679-7425-40de-944b-e07fc1f90ae7';
 
 type Run = {code: number; stdout: string; stderr: string};
 function run(...args: string[]): Promise<Run> {
@@ -25,14 +26,19 @@ function headerOf(request: IncomingMessage): Record<string, unknown> {
 
 /** A minimal stand-in for the relay: enough shape for the CLI, no verification (the mailbox integration test verifies). */
 async function fakeRelay(): Promise<{server: Server; origin: string}> {
-    const server = createServer((request, response) => {
-        const reply = (status: number, value: unknown) => { response.writeHead(status, {'Content-Type': 'application/json'}); response.end(JSON.stringify(value)); };
-        request.resume();
+    const server = createServer(async (request, response) => {
+        const reply = (status: number, value: unknown, headers: Record<string, string> = {}) => {
+            response.writeHead(status, {'Content-Type': 'application/json', ...headers}); response.end(JSON.stringify(value));
+        };
+        let body = '';
+        for await (const chunk of request) body += chunk;
         if (request.url === '/v1/accounts' && request.method === 'POST') {
             const jwk = headerOf(request).jwk as {crv: string; kty: string; x: string};
             const kid = createHash('sha256').update(JSON.stringify({crv: jwk.crv, kty: jwk.kty, x: jwk.x})).digest('base64url');
             return reply(200, {accountId, displayName: null, description: null, kid});
         }
+        if (request.url === '/v1/token' && new URLSearchParams(body).get('client_id') === limitedAccount)
+            return reply(429, {error: 'temporarily_unavailable'}, {'Retry-After': '3600'});
         if (request.url === '/v1/token' && request.method === 'POST') return reply(200, {access_token: issuedToken, token_type: 'DPoP', expires_in: 900});
         if (request.url === '/v1/keys' && request.method === 'GET' && request.headers.authorization === 'DPoP ' + issuedToken)
             return reply(200, {items: [{kid: 'k', label: null, createdAt: '2026-11-01T00:00:00Z', lastUsedAt: null, coolingUntil: null}]});
@@ -82,6 +88,22 @@ test('cli_NeverPrintsPrivateKey', async () => {
         assert.equal(JSON.parse(runs[2]!.stdout).accountId, accountId);
         assert.equal(JSON.parse(runs[5]!.stdout).accountId, accountId);
         for (const r of runs) assert.ok(!(r.stdout + r.stderr).includes(d), r.stdout + r.stderr);
+    } finally {
+        relay.server.close();
+        await rm(dir, {recursive: true, force: true});
+    }
+});
+
+test('cli_Token_RateLimitedBeyondOneMinute_ReportsWaitWithoutWaiting', async () => {
+    const dir = await mkdtemp(join(tmpdir(), 'weave-agent-key-cli-'));
+    const relay = await fakeRelay();
+    try {
+        const keyfile = join(dir, 'agent.jwk');
+        assert.equal((await run('init', keyfile)).code, 0);
+        const limited = await run('token', relay.origin, keyfile, limitedAccount);
+        assert.equal(limited.code, 1);
+        assert.equal(limited.stdout, '');
+        assert.equal(limited.stderr, 'weave-agent-key: Token request answered HTTP 429 temporarily_unavailable; retry after 3600 s\n');
     } finally {
         relay.server.close();
         await rm(dir, {recursive: true, force: true});

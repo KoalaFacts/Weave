@@ -1,9 +1,11 @@
 import assert from 'node:assert/strict';
-import { chmod, mkdtemp, readFile, rm, stat, writeFile } from 'node:fs/promises';
+import { access, chmod, mkdtemp, readFile, rm, stat, writeFile } from 'node:fs/promises';
 import { tmpdir } from 'node:os';
 import { join } from 'node:path';
 import { test } from 'node:test';
+import { open, unlink } from 'node:fs/promises';
 import { createKey, KeyFileError, loadKey } from '../src/index.ts';
+import { writeNewKeyFile } from '../src/key.ts';
 
 const posixOnly = process.platform === 'win32' ? 'POSIX file modes are not enforced on Windows; this runs on Linux/macOS CI' : false;
 
@@ -81,6 +83,34 @@ test('loadKey_NotAPrivateEd25519Jwk_RefusedWithoutEchoingContent', async () => {
             const path = join(dir, name);
             await writeFile(path, content, {mode: 0o600});
             await assert.rejects(loadKey(path), (error: unknown) => error instanceof KeyFileError && !error.message.includes(jwk.d), name);
+        }
+    } finally { await rm(dir, {recursive: true, force: true}); }
+});
+
+test('createKey_WriteOrCloseFails_RemovesPartialFileAndRethrowsOriginalError', async () => {
+    const dir = await scratch();
+    try {
+        const failing = (failWrite: boolean, failClose: boolean) => (async (...args: Parameters<typeof open>) => {
+            const handle = await open(...args);
+            return new Proxy(handle, {get(target, property) {
+                if (property === 'writeFile' && failWrite) return async () => { await target.writeFile('partial'); throw new Error('disk full'); };
+                if (property === 'close' && failClose) return async () => { await target.close(); throw new Error('close failed'); };
+                const value = Reflect.get(target, property, target);
+                return typeof value === 'function' ? value.bind(target) : value;
+            }});
+        }) as typeof open;
+        const cases: [string, boolean, boolean, boolean, string][] = [
+            ['write.jwk', true, false, false, 'disk full'],
+            ['write-and-close.jwk', true, true, false, 'disk full'],
+            ['close.jwk', false, true, false, 'close failed'],
+            ['unlink-fails.jwk', true, false, true, 'disk full'],
+        ];
+        for (const [name, failWrite, failClose, failUnlink, message] of cases) {
+            const path = join(dir, name);
+            const removal = failUnlink ? (async () => { throw new Error('unlink failed'); }) as typeof unlink : unlink;
+            await assert.rejects(writeNewKeyFile(path, '{}', {open: failing(failWrite, failClose), unlink: removal}), {message}, name);
+            if (failUnlink) await unlink(path);
+            else await assert.rejects(access(path), {code: 'ENOENT'}, name);
         }
     } finally { await rm(dir, {recursive: true, force: true}); }
 });

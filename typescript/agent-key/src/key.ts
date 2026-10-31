@@ -28,25 +28,39 @@ export async function createKey(path: string): Promise<{kid: string}> {
     const pair = await crypto.subtle.generateKey(ed25519, true, ['sign', 'verify']) as CryptoKeyPair;
     const {kty, crv, x, d} = await crypto.subtle.exportKey('jwk', pair.privateKey);
     if (kty !== 'OKP' || crv !== 'Ed25519' || typeof x !== 'string' || typeof d !== 'string') throw new KeyFileError('The runtime did not produce an Ed25519 key.');
+    await writeNewKeyFile(path, JSON.stringify({kty, crv, x, d}) + '\n');
+    return {kid: await thumbprint({kty, crv, x})};
+}
+
+/** File operations used by `writeNewKeyFile`; replaceable only to inject failures in tests. */
+export type KeyFileSystem = {open: typeof open; unlink: typeof unlink};
+
+/** Creates `path` exclusively with mode 0600 and writes `text`; on any failure the partial file is removed and the original error rethrown. */
+export async function writeNewKeyFile(path: string, text: string, fs: KeyFileSystem = {open, unlink}): Promise<void> {
     let file;
     try {
-        file = await open(path, 'wx', 0o600);
+        file = await fs.open(path, 'wx', 0o600);
     } catch (error) {
         if ((error as NodeJS.ErrnoException).code === 'EEXIST') throw new KeyFileError(`Key file ${path} already exists; it is never overwritten.`);
         throw error;
     }
     try {
-        // The creation mode is reduced by the umask but never widened; chmod pins it regardless.
-        if (process.platform !== 'win32') await file.chmod(0o600);
-        await file.writeFile(JSON.stringify({kty, crv, x, d}) + '\n', 'utf8');
-        await file.sync();
-    } catch (error) {
+        try {
+            // The creation mode is reduced by the umask but never widened; chmod pins it regardless.
+            if (process.platform !== 'win32') await file.chmod(0o600);
+            await file.writeFile(text, 'utf8');
+            await file.sync();
+        } catch (error) {
+            // Clean-up must not mask the write failure; a close error here adds nothing.
+            await file.close().catch(() => undefined);
+            throw error;
+        }
         await file.close();
-        await unlink(path); // Only this call created the file, so no partial key is left behind.
+    } catch (error) {
+        // Only this call created the file. An unlink failure must not replace the original error.
+        await fs.unlink(path).catch(() => undefined);
         throw error;
     }
-    await file.close();
-    return {kid: await thumbprint({kty, crv, x})};
 }
 
 function refuse(path: string): never {

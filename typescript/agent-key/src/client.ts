@@ -10,15 +10,30 @@ export class WeaveHttpError extends Error {
     override name = 'WeaveHttpError';
     readonly status: number;
     readonly code: string | null;
-    constructor(operation: string, status: number, code: string | null) {
-        super(`${operation} answered HTTP ${status}${code === null ? '' : ` ${code}`}`);
+    constructor(operation: string, status: number, code: string | null, detail = '') {
+        super(`${operation} answered HTTP ${status}${code === null ? '' : ` ${code}`}${detail}`);
         this.status = status;
         this.code = code;
     }
 }
 
+/** A 429 that was not (or no longer) waited out; `retryAfter` is the relay's Retry-After in seconds. */
+export class RateLimitedError extends WeaveHttpError {
+    override name = 'RateLimitedError';
+    readonly retryAfter: number;
+    constructor(operation: string, code: string | null, retryAfter: number) {
+        super(operation, 429, code, `; retry after ${retryAfter} s`);
+        this.retryAfter = retryAfter;
+    }
+}
+
 const assertionType = 'urn:ietf:params:oauth:client-assertion-type:jwt-bearer';
 const assertionSeconds = 60;
+const maxRetryWaitSeconds = 60;
+// RFC 6750 b64token, bounded: a token is only ever a header value, never error text.
+const b64token = /^[A-Za-z0-9\-._~+/]+=*$/;
+const maxTokenLength = 4096;
+const usableToken = (token: unknown): token is string => typeof token === 'string' && token.length <= maxTokenLength && b64token.test(token);
 const loopback = new Set(['localhost', '127.0.0.1', '[::1]']);
 // These requests authenticate with a DPoP proof alone; a 401 there is never an expired token.
 const keyOnlyPaths = new Set(['/v1/accounts', '/v1/token', '/v1/key-requests']);
@@ -88,17 +103,19 @@ export async function accessToken(origin: string, key: AgentKey, accountId: stri
         const form = new URLSearchParams([['grant_type', 'client_credentials'], ['client_assertion_type', assertionType], ['client_assertion', assertion], ['client_id', accountId]]);
         const response = await send(options, url, {method: 'POST', headers: {'Content-Type': 'application/x-www-form-urlencoded', DPoP: await dpopProof(key, 'POST', url, undefined, options)},
             body: form.toString()});
-        if (response.status === 429 && attempt === 0) {
-            const retryAfter = response.headers.get('Retry-After');
-            if (retryAfter !== null && /^\d{1,6}$/.test(retryAfter)) {
+        const retryAfter = /^\d{1,6}$/.exec(response.headers.get('Retry-After') ?? '')?.[0];
+        if (response.status === 429 && retryAfter !== undefined) {
+            // A short wait is taken once; anything longer is the caller's decision.
+            if (attempt === 0 && Number(retryAfter) <= maxRetryWaitSeconds) {
                 await response.body?.cancel();
                 await (options?.sleep ?? defaultSleep)(Number(retryAfter) * 1000);
                 continue;
             }
+            throw new RateLimitedError('Token request', await errorCode(response), Number(retryAfter));
         }
         if (!response.ok) throw new WeaveHttpError('Token request', response.status, await errorCode(response));
         const issued = await response.json() as {access_token?: unknown; token_type?: unknown; expires_in?: unknown};
-        if (typeof issued.access_token !== 'string' || typeof issued.token_type !== 'string' || issued.token_type.toLowerCase() !== 'dpop'
+        if (!usableToken(issued.access_token) || typeof issued.token_type !== 'string' || issued.token_type.toLowerCase() !== 'dpop'
             || typeof issued.expires_in !== 'number' || !(issued.expires_in > 0))
             throw new WeaveHttpError('Token request', response.status, 'unexpected-response');
         return {token: issued.access_token, expiresAt: new Date(iat * 1000 + issued.expires_in * 1000).toISOString(), accountId};
@@ -113,6 +130,7 @@ export async function fetchWithKey(origin: string, key: AgentKey, token: AccessT
     options?: HelperOptions): Promise<{response: Response; token: AccessToken}> {
     const url = target(origin, path);
     if (keyOnlyPaths.has(url.pathname)) throw new TypeError(`${url.pathname} is not a token-authenticated request.`);
+    if (!usableToken(token.token)) throw new TypeError('The access token is not an RFC 6750 token.');
     const verb = method.toUpperCase();
     const call = async (current: AccessToken) => send(options, url, {method: verb, body: body === undefined ? undefined : JSON.stringify(body), headers: {
         Authorization: `DPoP ${current.token}`, DPoP: await dpopProof(key, verb, url, current.token, options), ...(body === undefined ? {} : {'Content-Type': 'application/json'})}});
