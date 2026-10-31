@@ -615,12 +615,21 @@ test("consent_AgentCreationUnavailable_Returns503WithoutCode",{timeout:60_000},a
   const instance=await start({},{REGISTRATION_ENABLED:{type:"text",value:"false"}});
   try{
     const {mf}=instance;
+    // Existing humans still sign in while registration is closed. Seed the
+    // previously registered identity so this tests agent creation, not the
+    // separate first-time human registration gate.
+    const existingHumanId=randomUUID();
+    const at=(BigInt(Date.now())*10000n).toString();
+    await (await mailboxDb(mf)).prepare(
+      "INSERT INTO humans(human_id,provider,subject,provider_created_at,display_login,created_at,updated_at) VALUES(?,?,?,?,?,?,?)"
+    ).bind(existingHumanId,"github","11001","2011-01-25T18:44:36Z","human11001",at,at).run();
     const auth=authorization();
     const consent=await openConsent(mf,auth,await signIn(mf,auth,11001));
     const response=await post(mf,consent.cookie,{handle:consent.handle,decision:"approve",agent:"new",agentName:"Claude Code"});
     assert.equal(response.status,503);
     assert.equal(response.headers.get("location"),null);
     assert.match(await response.text(),/New agents cannot be created right now/);
-    assert.deepEqual(await agentsOf(mf,await humanIdOf(mf,11001)),[]);
+    assert.equal(await humanIdOf(mf,11001),existingHumanId);
+    assert.deepEqual(await agentsOf(mf,existingHumanId),[]);
   }finally{await stop(instance);}
 });
