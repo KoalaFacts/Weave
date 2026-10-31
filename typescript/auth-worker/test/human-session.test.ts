@@ -132,3 +132,17 @@ test("boundedProviderJson_ChunkedValidJSON_StillParses",async()=>{
     headers:{"Content-Type":"application/json"}
   }),8_192),{access_token:"valid"});
 });
+
+test("boundedProviderJson_UnsupportedContentType_CancelsUntrustedBodyWithoutWaiting", {timeout:2_000}, async()=>{
+  // A response rejected on its headers still owns an unread provider stream.
+  // Discard it without awaiting a provider cancellation that may never settle.
+  let cancelled=false;
+  const stream=new ReadableStream<Uint8Array>({
+    start(controller){controller.enqueue(new TextEncoder().encode("untrusted payload"));},
+    cancel(){cancelled=true;return new Promise<void>(()=>{});}
+  });
+  const started=performance.now();
+  assert.equal(await boundedProviderJson(new Response(stream,{headers:{"Content-Type":"text/plain"}}),8_192),null);
+  assert.equal(cancelled,true,"an unsupported Content-Type must release its response stream");
+  assert.ok(performance.now()-started<1_500,"stream cleanup must not delay rejection");
+});
