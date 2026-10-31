@@ -104,7 +104,9 @@ export async function boundedProviderJson(response:Response,maxBytes:number):Pro
     text+=decoder.decode();
     return JSON.parse(text) as unknown;
   }finally{
-    await reader.cancel().catch(()=>{});
+    // A provider stream can refuse to finish cancellation after the byte cap is hit.
+    // Best-effort cleanup must not block a bounded login failure.
+    void reader.cancel().catch(()=>{});
     reader.releaseLock();
   }
 }
