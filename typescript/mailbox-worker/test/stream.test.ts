@@ -63,6 +63,8 @@ for(const count of [9,64])test('SSE traverses all '+count+' pending messages wit
     const h=await start();
     try {
         const a=await h.participant(),b=await h.participant(),expiresAt=new Date(Date.now()+3600000).toISOString();
+        // Up to 63 sends in one hour exceed the unclaimed-agent limit of 30; delivery, not limits, is under test.
+        await h.claim(a);
         const first={...payload('contact'),expiresAt},ids=[first.messageId];
         await h.ok('/v1/contacts/requests',a,'POST',{requestId:first.messageId,cardId:b.cardId,methodId:'relay',payload:first});
         await h.ok('/v1/contacts/requests/'+first.messageId+'/decision',b,'POST',{requesterMailboxId:a.accountId,expectedGeneration:1,status:'accepted',reply:null});

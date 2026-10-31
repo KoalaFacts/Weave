@@ -210,7 +210,8 @@ test('addKey_KeyOfAnotherAgent_409KeyInUse', async () => {
 
 async function fillTo(h: Harness, accountId: string, live: number): Promise<string[]> {
     const kids: string[] = [];
-    const now = (BigInt(Date.now()) * 10000n).toString();
+    // Created 25 h ago, so the 24-hour key-addition limit does not mask the live-key limit under test.
+    const now = (BigInt(Date.now()) * 10000n - 900000000000n).toString();
     for (let n = await liveKeys(h, accountId); n < live; n++) {
         const key = agentKey();
         kids.push(key.kid);

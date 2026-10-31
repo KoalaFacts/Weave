@@ -28,6 +28,8 @@ test('replacement of a rejected contact frees its pending slot atomically at the
     const h=await start();
     try {
         const a=await h.participant(),b=await h.participant(),x=await h.participant(),p=payload();
+        // 62 sends in one hour exceed the unclaimed-agent limit of 30; the per-recipient pending boundary is under test.
+        await h.claim(a);
         await h.ok('/v1/contacts/requests',a,'POST',{requestId:p.messageId,cardId:b.cardId,methodId:'relay',payload:p});
         await h.ok('/v1/contacts/requests/'+p.messageId+'/decision',b,'POST',{requesterMailboxId:a.accountId,expectedGeneration:1,status:'accepted',reply:null});
         for(let i=0;i<62;i++) await h.ok('/v1/messages',a,'POST',{version:1,recipientMailboxId:b.accountId,contactGeneration:1,payload:payload('message '+i)});

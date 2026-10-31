@@ -17,6 +17,8 @@ test('registry search and exact lookup expose only actively public effective add
     const h=await start();
     try {
         const a=await h.register({displayName:'PRIVATE-PROFILE',description:'PRIVATE-DESCRIPTION'});
+        // Three public addresses exceed the unclaimed-agent limit of one.
+        await h.claim(a);
         const visible=await h.address(a,{label:'Visible <script>untrusted</script>',isPublic:true});
         const hidden=[await h.address(a,{label:'PRIVATE-ADDRESS'}),await h.address(a,{label:'EXPIRED',isPublic:true,effectiveTo:'2020-01-01T00:00:00Z'}),await h.address(a,{label:'FUTURE',isPublic:true,effectiveFrom:'2099-01-01T00:00:00Z'})];
         const page=await h.ok('/v1/directory');assert.deepEqual(page.items.map(x=>x.addressId),[visible.addressId]);

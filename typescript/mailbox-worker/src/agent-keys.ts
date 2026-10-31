@@ -4,6 +4,7 @@ import { jwkThumbprint, parseJws, publicJwk, verifyJws, type CompactJws, type Ed
 import { apiTime, epochSeconds, exactInt64, nowUtc } from './time.ts';
 import { atomic, type Database, type Env, type Transaction } from './database.ts';
 import { pendingKeyRequest, stageKeyRequest, type KeyRequestView } from './key-requests.ts';
+import { requireKeyChurnRoom } from './agent-limits.ts';
 import { Problem, fail, invalidField, object } from './wire.ts';
 
 export const maxLiveKeysPerAgent = 100;
@@ -124,6 +125,7 @@ export async function addAgentKey(env: Env, request: Request, auth: AgentAuth, i
         if (pending) return {status: 202, body: pending};
         // Counted inside the same optimistic transaction as the insert, so concurrent adds cannot pass the limit.
         if (await countLiveKeys(tx, auth.accountId) >= maxLiveKeysPerAgent) fail(429, 'capacity');
+        if (!owned) await requireKeyChurnRoom(tx, auth.accountId);
         if (owned) return {status: 202, body: await stageKeyRequest(tx, {accountId: auth.accountId, kid, jwk, label, endorsedBy: auth.kid})};
         const coolingUntil = at + keyCoolingTicks;
         insertKey(tx, {kid, accountId: auth.accountId, jwk, label, coolingUntil});

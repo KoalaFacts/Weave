@@ -17,6 +17,7 @@
     "test/agent-key.ts",
     "test/agent-keys.test.ts",
     "test/binding-requests.test.ts",
+    "test/agent-limits.test.ts",
     "test/key-requests.test.ts",
     "test/local-miniflare.ts",
     "test/remote-live-pair.test.ts",

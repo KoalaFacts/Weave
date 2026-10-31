@@ -310,7 +310,7 @@ export const rateLimits = sqliteTable("rate_limits", {
 }, t => [
     uniqueIndex("rate_limit_identity").on(t.policy,t.bucket_key),
     index("rate_limit_window").on(t.policy,t.window_start,t.seq),
-    check("rate_limits_policy",sql`policy IN ('registration','public-read','key-recovery')`),
+    check("rate_limits_policy",sql`policy IN ('registration','public-read','key-recovery','agent-send','agent-contact','agent-token')`),
     check("rate_limits_count",sql`count>=0`)
 ]);
 

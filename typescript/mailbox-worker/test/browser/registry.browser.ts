@@ -33,7 +33,7 @@ test('public registry browser: desktop and touch browse ten-item pages, rate den
     let h, fixture;
     try {
         try {
-            h = await start();
+            h = await start({ bindings: { REGISTRATION_PER_IP_PER_HOUR: '100' } });
             const origin = (await h.mf.ready).origin;
             assert.equal(new URL(origin).hostname, '127.0.0.1');
             fixture = new BrowserFixture(evidence, origin); await fixture.start();
@@ -46,8 +46,10 @@ test('public registry browser: desktop and touch browse ten-item pages, rate den
                 assert.equal(await view.page.locator('#next').isDisabled(), true);
                 await capture(fixture, view.page, 'registry-pagination-empty-' + view.name);
             }
-            const owner = await h.register({ displayName: 'PRIVATE-REGISTRY-PROFILE' }), visible = [];
-            for (let index = 0; index < 23; index++) visible.push(await h.address(owner, { label: 'Browse address ' + String(index + 1).padStart(2, '0'), isPublic: true }));
+            // An unclaimed agent may hold one public address, so each visible address has its own owner; the hidden ones share a claimed owner.
+            const ownerProfile = { displayName: 'PRIVATE-REGISTRY-PROFILE' }, owner = await h.register(ownerProfile), visible = [];
+            await h.claim(owner);
+            for (let index = 0; index < 23; index++) visible.push(await h.address(await h.register(ownerProfile), { label: 'Browse address ' + String(index + 1).padStart(2, '0'), isPublic: true }));
             for (let index=0;index<visible.length;index++) await h.db.prepare("UPDATE account_addresses SET created_at=? WHERE address_id=?").bind((BigInt(Date.UTC(2025,0,1,0,0,index))*10000n).toString(),visible[index].addressId).run();
             for (const profile of [{ label: 'PRIVATE-ADDRESS' }, { label: 'FUTURE-ADDRESS', isPublic: true, effectiveFrom: '2099-01-01T00:00:00Z' }, { label: 'EXPIRED-ADDRESS', isPublic: true, effectiveTo: '2020-01-01T00:00:00Z' }]) await h.address(owner, profile);
             const expected = visible.map(item => item.addressId).reverse();

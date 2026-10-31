@@ -60,6 +60,8 @@ test('UTC scheduling hides future and expired addresses and denies their contact
     const h=await start();
     try {
         const a=await h.register(),b=await h.register();
+        // Three public addresses exceed the unclaimed-agent limit of one; scheduling, not limits, is under test.
+        await h.claim(a);
         const past=new Date(Date.now()-3600000).toISOString(),future=new Date(Date.now()+3600000).toISOString();
         const active=await h.address(a,{isPublic:true,effectiveFrom:past,effectiveTo:future});
         const pending=await h.address(a,{isPublic:true,effectiveFrom:future});
@@ -105,7 +107,10 @@ test('register_HumanOwnedAgents_DoNotConsumeSelfRegistrationCapacity', async () 
 test('directory and public-card cursors do not reveal private row counts', async () => {
     const h=await start();
     try {
-        const a=await h.register(),hidden=await h.address(a,{label:'public-label'});
+        const a=await h.register();
+        // Two public addresses exceed the unclaimed-agent limit of one.
+        await h.claim(a);
+        const hidden=await h.address(a,{label:'public-label'});
         const publicOne=await h.address(a,{label:'public-label',isPublic:true}); await h.address(a,{label:'public-label',isPublic:true});
         const first=await h.ok('/v1/directory?limit=1&q=public-label'); assert.equal(first.items.length,1); assert.equal(first.nextCursor.includes(hidden.addressId),false);
         const second=await h.ok('/v1/directory?limit=1&q=public-label&afterCursor='+encodeURIComponent(first.nextCursor));

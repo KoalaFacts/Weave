@@ -2,6 +2,7 @@ import { Transaction } from './database';
 import { fail, identity, object, uuid } from './wire';
 import { blocked, current, fingerprint, nowText, readChannel, ticks, validateEnvelope, validatePayload } from './protocol';
 import { connection } from './contact-links';
+import { agentLimits, agentTier, requireHourly } from './agent-limits.ts';
 
 export async function effective(tx: Transaction,m: any): Promise<any> {
     const r = m.receipt;
@@ -58,6 +59,8 @@ export async function send(tx: Transaction,owner: string,e: any): Promise<any> {
     const token=await connection(tx,owner,e.recipientMailboxId);
     if(!token)fail(404,'unavailable');
     if(e.version===2&&e.connectionToken!==token)fail(409,'conflict');
+    // Only new message IDs reach this point, so a retry returns its receipt without consuming the hourly limit.
+    await requireHourly(tx,'agent-send',owner,agentLimits[await agentTier(tx,owner)].messagesPerHour);
     return admit(tx,owner,e,0,null);
 }
 /** Account-authorized send without disclosing channel tokens to the caller.

@@ -3,6 +3,7 @@ import { verifyDpop } from './dpop.ts';
 import { base64url } from './jose.ts';
 import { apiTime, epochSeconds, exactInt64, nowUtc } from './time.ts';
 import { atomic, type Env } from './database.ts';
+import { requireKeyChurnRoom } from './agent-limits.ts';
 import { writesRefused } from './humans.ts';
 import { fail, hash, invalidField, object } from './wire.ts';
 
@@ -79,6 +80,8 @@ export async function recoverAgentKey(env: Env, request: Request, input: unknown
         const existing = await findKey(tx.db, proof.jkt);
         if (existing && (existing.accountId !== agentId || existing.revokedAt !== null)) conflict('proof', 'key-in-use');
         if (!existing && await countLiveKeys(tx, agentId) >= maxLiveKeysPerAgent) fail(429, 'capacity');
+        // The owner authorised this key: requests made with the agent's own keys do not count against it, added key rows do.
+        if (!existing) await requireKeyChurnRoom(tx, agentId, {countRequests: false});
         tx.writes.push(tx.db.prepare('UPDATE recovery_codes SET used_at=CAST(? AS INTEGER),updated_at=CAST(? AS INTEGER) WHERE account_id=? AND code_hash=? AND used_at IS NULL')
             .bind(stamp, stamp, agentId, codeHash));
         // A key already live on this agent only spends the code.

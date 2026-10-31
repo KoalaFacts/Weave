@@ -3,6 +3,7 @@ import { publicJwk, type Ed25519Jwk } from './jose.ts';
 import { prunedRowsPerCreate, requestLifetimeTicks, retentionTicks } from './request-retention.ts';
 import { apiTime, exactInt64 } from './time.ts';
 import type { Database, Transaction } from './database.ts';
+import { requireKeyChurnRoom } from './agent-limits.ts';
 import { fail } from './wire.ts';
 
 export const pendingKeyRequestsPerAgent = 3;
@@ -63,6 +64,7 @@ export async function stageKeyRequest(tx: Transaction, input: {accountId: string
         .bind(input.accountId, stamp).first<number>('n');
     if (pending === null) fail(503, 'storage');
     if (pending >= pendingKeyRequestsPerAgent) fail(429, 'capacity');
+    await requireKeyChurnRoom(tx, input.accountId);
     // Bounded retention cleanup of decided rows through key_requests_retention; pending rows are only ever expired.
     tx.writes.push(tx.db.prepare(`DELETE FROM key_requests WHERE request_id IN (SELECT request_id FROM key_requests
         WHERE status IN ('confirmed','rejected','expired') AND created_at<=CAST(? AS INTEGER) LIMIT ?)`).bind((at - retentionTicks).toString(), prunedRowsPerCreate));
