@@ -1,9 +1,9 @@
 import assert from 'node:assert/strict';
 import { test } from 'node:test';
 import { start } from './harness.ts';
-import { agentKey, clientAssertion, dpopProof, keyEndorsement, keyProof, type TestKey } from './agent-key.ts';
+import { agentKey, clientAssertion, dpopProof, jws, keyEndorsement, keyProof, type TestKey } from './agent-key.ts';
 import { createOwnedAgent, signInHuman } from '../src/humans.ts';
-import { revokeAgentKey } from '../src/agent-keys.ts';
+import { addAgentKey, revokeAgentKey } from '../src/agent-keys.ts';
 import { Problem } from '../src/wire.ts';
 import type { Env } from '../src/database.ts';
 
@@ -59,6 +59,7 @@ async function problem(response: Response, status: number, expected: Record<stri
     return value;
 }
 const liveKeys = async (h: Harness, accountId: string) => Number(await h.db.prepare('SELECT count(*) n FROM agent_keys WHERE account_id=? AND revoked_at IS NULL').bind(accountId).first('n'));
+const status = (outcome: PromiseSettledResult<unknown>) => outcome.status === 'fulfilled' ? 200 : outcome.reason instanceof Problem ? outcome.reason.status : 0;
 const settle = (h: Harness, kid: string) => h.db.prepare('UPDATE agent_keys SET cooling_until=NULL WHERE kid=?').bind(kid).run();
 
 test('addKey_ProofAndEndorsement_CoolsFor24hAndAuthenticates', async () => {
@@ -126,6 +127,18 @@ test('addKey_EndorsementForOtherNewKid_400', async () => {
         await problem(await addKey(h, cred, newKey, {endorsement: keyEndorsement(cred.key, {accountId: cred.accountId, audience: keysUrl, newKid: newKey.kid, iat: Math.floor(Date.now() / 1000) + 120})}), 400, {code: 'invalid', field: 'endorsement'});
         await problem(await addKey(h, cred, newKey, {endorsement: 'not-a-jws'}), 400, {code: 'invalid', field: 'endorsement'});
         assert.equal(await liveKeys(h, cred.accountId), 1);
+    } finally { await h.close(); }
+});
+
+test('addKey_EndorsementWrongTyp_400', async () => {
+    const h = await start();
+    try {
+        const cred = await agent(h), newKey = agentKey();
+        const payload = {aud: keysUrl, sub: cred.accountId, iat: Math.floor(Date.now() / 1000), newKid: newKey.kid};
+        for (const typ of ['weave-key-proof+jwt', 'dpop+jwt', undefined])
+            await problem(await addKey(h, cred, newKey, {endorsement: jws(cred.key, {typ, kid: cred.key.kid}, payload)}), 400, {code: 'invalid', field: 'endorsement'});
+        // Positive control: the same claims with the endorsement type are accepted.
+        await added(h, cred, newKey, {endorsement: jws(cred.key, {typ: 'weave-key-endorsement+jwt', kid: cred.key.kid}, payload)});
     } finally { await h.close(); }
 });
 
@@ -227,8 +240,16 @@ test('addKey_ConcurrentAtNinetyNine_ExactlyOneSucceeds', async () => {
     try {
         const cred = await agent(h);
         await fillTo(h, cred.accountId, 99);
-        const responses = await Promise.all([addKey(h, cred, agentKey()), addKey(h, cred, agentKey())]);
-        assert.deepEqual(responses.map(r => r.status).sort(), [200, 429]);
+        // Same authenticated caller, prebuilt requests: the race is decided by the count inside the insert transaction.
+        const env = {db: h.db} as unknown as Env, auth = {accountId: cred.accountId, kid: cred.key.kid};
+        const attempt = () => {
+            const newKey = agentKey();
+            return addAgentKey(env, new Request(keysUrl, {method: 'POST'}), auth, {
+                proof: keyProof(newKey, {accountId: cred.accountId, audience: keysUrl}),
+                endorsement: keyEndorsement(cred.key, {accountId: cred.accountId, audience: keysUrl, newKid: newKey.kid})});
+        };
+        const outcomes = await Promise.allSettled([attempt(), attempt()]);
+        assert.deepEqual(outcomes.map(status).sort(), [200, 429]);
         assert.equal(await liveKeys(h, cred.accountId), 100);
     } finally { await h.close(); }
 });
@@ -247,7 +268,7 @@ test('addKey_HumanOwnedAgent_409OwnedAgent', async () => {
         await h.db.prepare('INSERT INTO agent_keys(kid,account_id,public_jwk,created_at,updated_at) VALUES(?,?,?,CAST(? AS INTEGER),CAST(? AS INTEGER))')
             .bind(key.kid, accountId, JSON.stringify(key.publicJwk), now, now).run();
         const cred = await issue(h, accountId, key), newKey = agentKey();
-        await problem(await addKey(h, cred, newKey), 409, {code: 'conflict', reason: 'owned-agent'});
+        await problem(await addKey(h, cred, newKey), 409, {code: 'conflict', field: 'proof', reason: 'owned-agent'});
         assert.equal(await liveKeys(h, accountId), 1);
     } finally { await h.close(); }
 });
@@ -276,35 +297,80 @@ test('revokeKey_CoolingKeyRevokesOlder_409Cooling', async () => {
         const cred = await agent(h), cooling = agentKey();
         await added(h, cred, cooling);
         const coolingCred = await issue(h, cred.accountId, cooling);
-        await problem(await revoke(h, coolingCred, cred.key.kid), 409, {code: 'conflict', reason: 'cooling'});
+        await problem(await revoke(h, coolingCred, cred.key.kid), 409, {code: 'conflict', field: 'kid', reason: 'cooling'});
         assert.equal(await liveKeys(h, cred.accountId), 2);
         assert.equal((await call(h, cred, '/v1/addresses')).status, 200);
     } finally { await h.close(); }
 });
 
-test('revokeKey_CoolingKeyRevokesNewerKey_Succeeds', async () => {
+test('revokeKey_CoolingKeyRevokesNewerKey_409Cooling', async () => {
     const h = await start();
     try {
         const cred = await agent(h), cooling = agentKey(), newer = agentKey();
         await added(h, cred, cooling);
         await added(h, cred, newer);
         const coolingCred = await issue(h, cred.accountId, cooling);
-        assert.equal((await revoke(h, coolingCred, newer.kid)).status, 200);
+        await problem(await revoke(h, coolingCred, newer.kid), 409, {code: 'conflict', field: 'kid', reason: 'cooling'});
+        // A cooling key may revoke only itself.
+        assert.equal((await revoke(h, coolingCred, cooling.kid)).status, 200);
         assert.equal(await liveKeys(h, cred.accountId), 2);
     } finally { await h.close(); }
 });
 
-test('revokeKey_OldKeySelfRevokesDuringCooling_NewKeyKeepsWorking', async () => {
+test('revokeKey_OldKeySelfRevokesDuringCooling_409Cooling', async () => {
     const h = await start();
     try {
         const cred = await agent(h), cooling = agentKey();
         await added(h, cred, cooling);
         const coolingCred = await issue(h, cred.accountId, cooling);
-        assert.equal((await revoke(h, cred, cred.key.kid)).status, 200);
-        await problem(await call(h, cred, '/v1/addresses'), 401, {code: 'unauthenticated'});
+        // The settled key must survive the window so it can still revoke the cooling key.
+        await problem(await revoke(h, cred, cred.key.kid), 409, {code: 'conflict', field: 'kid', reason: 'cooling'});
+        assert.equal((await call(h, cred, '/v1/addresses')).status, 200);
         assert.equal((await call(h, coolingCred, '/v1/addresses')).status, 200);
-        // The cooling key is now the last live key of an ownerless agent.
-        await problem(await revoke(h, coolingCred, cooling.kid), 409, {code: 'conflict', reason: 'last-live-key'});
+        assert.equal(await liveKeys(h, cred.accountId), 2);
+    } finally { await h.close(); }
+});
+
+test('revokeKey_SettledRevokesSettledWhileKeyCools_409Cooling', async () => {
+    const h = await start();
+    try {
+        const cred = await agent(h), settled = agentKey(), cooling = agentKey();
+        await added(h, cred, settled);
+        await settle(h, settled.kid);
+        await added(h, cred, cooling);
+        await problem(await revoke(h, cred, settled.kid), 409, {code: 'conflict', field: 'kid', reason: 'cooling'});
+        const settledCred = await issue(h, cred.accountId, settled);
+        await problem(await revoke(h, settledCred, cred.key.kid), 409, {code: 'conflict', field: 'kid', reason: 'cooling'});
+        assert.equal(await liveKeys(h, cred.accountId), 3);
+    } finally { await h.close(); }
+});
+
+test('revokeKey_CoolingKeyFirstThenSettled_BothSucceed', async () => {
+    const h = await start();
+    try {
+        const cred = await agent(h), settled = agentKey(), cooling = agentKey();
+        await added(h, cred, settled);
+        await settle(h, settled.kid);
+        await added(h, cred, cooling);
+        assert.equal((await revoke(h, cred, cooling.kid)).status, 200);
+        assert.equal((await revoke(h, cred, settled.kid)).status, 200);
+        assert.equal(await liveKeys(h, cred.accountId), 1);
+    } finally { await h.close(); }
+});
+
+test('revokeKey_CoolingEnded_SettledKeyRevocable', async () => {
+    const h = await start();
+    try {
+        const cred = await agent(h), cooling = agentKey();
+        await added(h, cred, cooling);
+        const until = BigInt(await h.db.prepare('SELECT CAST(cooling_until AS TEXT) t FROM agent_keys WHERE kid=?').bind(cooling.kid).first<string>('t') ?? '0');
+        const env = {db: h.db} as unknown as Env, auth = {accountId: cred.accountId, kid: cred.key.kid};
+        await assert.rejects(revokeAgentKey(env, auth, cred.key.kid, () => until - 1n),
+            (error: unknown) => error instanceof Problem && error.status === 409 && error.detail?.reason === 'cooling');
+        // Cooling ends exactly at coolingUntil.
+        const result = await revokeAgentKey(env, auth, cred.key.kid, () => until);
+        assert.equal(result.kid, cred.key.kid);
+        assert.equal(await liveKeys(h, cred.accountId), 1);
     } finally { await h.close(); }
 });
 
@@ -312,7 +378,7 @@ test('revokeKey_LastLiveKey_409', async () => {
     const h = await start();
     try {
         const cred = await agent(h);
-        await problem(await revoke(h, cred, cred.key.kid), 409, {code: 'conflict', reason: 'last-live-key'});
+        await problem(await revoke(h, cred, cred.key.kid), 409, {code: 'conflict', field: 'kid', reason: 'last-live-key'});
         assert.equal(await liveKeys(h, cred.accountId), 1);
         assert.equal((await call(h, cred, '/v1/addresses')).status, 200);
     } finally { await h.close(); }
@@ -329,26 +395,9 @@ test('revokeKey_ConcurrentLastTwo_OneSucceeds', async () => {
         const outcomes = await Promise.allSettled([
             revokeAgentKey(env, {accountId: cred.accountId, kid: cred.key.kid}, second.kid),
             revokeAgentKey(env, {accountId: cred.accountId, kid: second.kid}, cred.key.kid)]);
-        const statuses = outcomes.map(outcome => outcome.status === 'fulfilled' ? 200 : outcome.reason instanceof Problem ? outcome.reason.status : 0);
-        assert.deepEqual(statuses.sort(), [200, 409]);
+        assert.deepEqual(outcomes.map(status).sort(), [200, 409]);
         const refused = outcomes.find(outcome => outcome.status === 'rejected') as PromiseRejectedResult;
         assert.deepEqual(refused.reason.detail, {field: 'kid', reason: 'last-live-key'});
-        assert.equal(await liveKeys(h, cred.accountId), 1);
-    } finally { await h.close(); }
-});
-
-test('revokeKey_ConcurrentLastTwoOverHttp_OneLiveKeyRemains', async () => {
-    const h = await start();
-    try {
-        const cred = await agent(h), second = agentKey();
-        await added(h, cred, second);
-        await settle(h, second.kid);
-        const secondCred = await issue(h, cred.accountId, second);
-        const responses = await Promise.all([revoke(h, cred, second.kid), revoke(h, secondCred, cred.key.kid)]);
-        // The loser is refused either by the last-key rule or, if the winner committed first, by its revoked token.
-        const statuses = responses.map(r => r.status).sort();
-        assert.equal(statuses[0], 200);
-        assert.ok([401, 409].includes(statuses[1]), String(statuses));
         assert.equal(await liveKeys(h, cred.accountId), 1);
     } finally { await h.close(); }
 });

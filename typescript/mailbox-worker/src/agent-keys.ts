@@ -127,21 +127,30 @@ export async function addAgentKey(env: Env, request: Request, auth: AgentAuth, i
 }
 
 /**
- * DELETE /v1/keys/{kid}: a cooling key may revoke itself or newer keys but not older ones, so an older key can override a key
- * added during its cooling window. The last live key of an ownerless agent is never revoked.
+ * DELETE /v1/keys/{kid}. While any key of an ownerless agent cools, its settled keys must survive so that they can still revoke
+ * the cooling key: no settled key is revoked (not even by itself) and a cooling key may revoke only itself. The last live key
+ * of an ownerless agent is never revoked.
  */
-export async function revokeAgentKey(env: Env, auth: AgentAuth, kid: string): Promise<{kid: string; revokedAt: string}> {
+export async function revokeAgentKey(env: Env, auth: AgentAuth, kid: string, clock: () => bigint = nowUtc): Promise<{kid: string; revokedAt: string}> {
     return atomic(env.db, async tx => {
-        const at = tx.store.now;
+        const at = clock();
         const target = await findKey(tx.db, kid);
         if (!target || target.accountId !== auth.accountId) fail(404, 'unavailable');
         if (target.revokedAt !== null) return {kid, revokedAt: apiTime(target.revokedAt)!};
         const caller = target.kid === auth.kid ? target : await findKey(tx.db, auth.kid);
         if (!caller || caller.accountId !== auth.accountId) fail(401, 'unauthenticated');
-        if (caller !== target && isCooling(caller, at) && caller.createdAt >= target.createdAt) conflict('kid', 'cooling');
         const owner = await tx.db.prepare('SELECT human_id FROM accounts WHERE account_id=?').bind(auth.accountId).first<{human_id: string | null}>();
         if (!owner) fail(401, 'unauthenticated');
-        if (owner.human_id === null && await countLiveKeys(tx, auth.accountId) <= 1) conflict('kid', 'last-live-key');
+        if (owner.human_id === null) {
+            if (caller !== target && isCooling(caller, at)) conflict('kid', 'cooling');
+            if (!isCooling(target, at)) {
+                const cooling = await tx.db.prepare('SELECT count(*) n FROM agent_keys WHERE account_id=? AND revoked_at IS NULL AND cooling_until>CAST(? AS INTEGER)')
+                    .bind(auth.accountId, at.toString()).first<number>('n');
+                if (cooling === null) fail(503, 'storage');
+                if (cooling > 0) conflict('kid', 'cooling');
+            }
+            if (await countLiveKeys(tx, auth.accountId) <= 1) conflict('kid', 'last-live-key');
+        }
         // After the last-key rule: two keys revoking each other concurrently end with one live key and a 409, not a 401.
         if (caller.revokedAt !== null) fail(401, 'unauthenticated');
         const stamp = at.toString();
