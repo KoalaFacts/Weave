@@ -29,6 +29,7 @@ export const ownerResultText:Readonly<Record<string,string>>=Object.freeze({
   "keys-changed":"The agent's keys changed after you opened this page. Review the current keys and confirm again.",
   "form-expired":"This page expired. Reload it and try again.",
   "cleanup-pending":"Access is revoked; token clean-up will be retried on your next visit.",
+  "cleanup-complete":"Access is revoked and token clean-up is complete.",
   unavailable:"Weave could not complete that right now. Try again later."
 });
 

@@ -83,8 +83,9 @@ test("ownerPage_UnknownResult_Ignored",async()=>{
     assert.ok(!body.includes('role="status"'),"result "+JSON.stringify(result)+" must not render");
   }
   assert.ok((await html(ownerPage(base(),human,new Map(),"agent-limit",now))).includes(ownerResultText["agent-limit"]));
-  assert.equal(Object.keys(ownerResultText).length,16);
+  assert.equal(Object.keys(ownerResultText).length,17);
   assert.ok((await html(ownerPage(base(),human,new Map(),"cleanup-pending",now))).includes("Access is revoked; token clean-up will be retried on your next visit."));
+  assert.ok((await html(ownerPage(base(),human,new Map(),"cleanup-complete",now))).includes("Access is revoked and token clean-up is complete."));
   assert.ok((await html(ownerPage(base(),human,new Map(),"form-expired",now))).includes("This page expired. Reload it and try again."));
 });
 

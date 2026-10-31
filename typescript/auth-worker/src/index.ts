@@ -7,7 +7,7 @@ import {createChallenge,validChallenge,validHandle,readConsent} from "./challeng
 import {consentClientName,normalisedClientName} from "./client-name.ts";
 import {consentPage} from "./consent-page.ts";
 import {beginGithubLogin,completeGithubLogin,failureLog,messagePage,type GithubLoginEnv} from "./github-login.ts";
-import {revokeSdkGrants,sdkRevocationsPerPage,type SdkGrants} from "./grant-cleanup.ts";
+import {cleanUpRevokedGrants,type SdkGrants} from "./grant-cleanup.ts";
 import {freshAuthentication,readHumanSession,validSigningKey} from "./human-session.ts";
 import {readOwnerAction,destructiveKinds} from "./owner-forms.ts";
 import {ownerFormTokens,ownerPage,recoveryCodePage} from "./owner-page.ts";
@@ -201,20 +201,17 @@ const accountRedirect=(result?:string)=>new Response(null,{status:303,headers:{
   Location:"/account"+(result===undefined?"":"?result="+result),"Cache-Control":"no-store","Referrer-Policy":"no-referrer"}});
 /**
  * SDK clean-up for grants the mailbox already revoked: their SDK grants and refresh tokens go too. Bounded per page load;
- * false (after logging) when the SDK failed, so a later visit retries. Never un-revokes and never reports the grant live.
+ * true only when it finished. An SDK failure is logged and retried on a later visit. Never un-revokes.
  */
-async function revokeRevokedSdkGrants(api:SdkGrants,agents:{agentId:string;revokedGrantIds:string[]}[]):Promise<boolean>{
-  let budget=sdkRevocationsPerPage;
-  try{
-    for(const agent of agents)if(budget>0&&agent.revokedGrantIds.length>0)
-      budget-=await revokeSdkGrants(api,agent.agentId,agent.revokedGrantIds,budget);
-    return true;
-  }catch{
-    console.error(failureLog.grantSdkRevoke);
-    return false;
-  }
+async function revokeRevokedSdkGrants(api:SdkGrants,agents:readonly {agentId:string;revokedGrantIds:readonly string[]}[]):Promise<boolean>{
+  const cleanup=await cleanUpRevokedGrants(api,agents);
+  if(cleanup.failed)console.error(failureLog.grantSdkRevoke);
+  return cleanup.complete;
 }
-/** After the mailbox revoked `grantId`: the agent it belonged to, then that agent's SDK grant. */
+/**
+ * After the mailbox revoked `grantId`: the agent it belonged to, then that agent's SDK grant. True only when that clean-up
+ * finished; a frozen or unreadable re-read, or a grant outside the clean-up window, leaves it pending.
+ */
 async function revokeClientTokens(env:Env,api:SdkGrants,humanId:string,grantId:string):Promise<boolean>{
   let overview:OwnerOverview;
   try{overview=await env.MAILBOX.ownerOverview(humanId);}
@@ -222,9 +219,9 @@ async function revokeClientTokens(env:Env,api:SdkGrants,humanId:string,grantId:s
     console.error(failureLog.grantSdkRevoke);
     return false;
   }
-  if(overview.frozen)return true;
+  if(overview.frozen)return false;
   const agent=overview.agents.find(x=>x.revokedGrantIds.includes(grantId));
-  return agent===undefined||revokeRevokedSdkGrants(api,[{agentId:agent.agentId,revokedGrantIds:[grantId]}]);
+  return agent!==undefined&&revokeRevokedSdkGrants(api,[{agentId:agent.agentId,revokedGrantIds:[grantId]}]);
 }
 /**
  * The owner page: agents, binding requests, keys, connected clients and addresses of the signed-in human. Destructive actions
@@ -242,14 +239,16 @@ async function account(req:Request,env:Env,api:SdkGrants):Promise<Response>{
     let overview:OwnerOverview;
     try{overview=await env.MAILBOX.ownerOverview(session.humanId);}catch{return directoryUnavailable();}
     // Retry SDK clean-up a failed or interrupted revocation left behind; the page renders either way.
-    if(!overview.frozen)await revokeRevokedSdkGrants(api,overview.agents);
+    const cleaned=!overview.frozen&&await revokeRevokedSdkGrants(api,overview.agents);
+    const result=url.searchParams.get("result");
     let tokens:Map<string,string>;
     try{tokens=await ownerFormTokens(env.HUMAN_SESSION_KEY,session.humanId,overview,now);}
     catch{
       console.error(failureLog.formSigning);
       return messagePage(503,"Temporarily unavailable","Weave cannot show your agents right now. Try again later.");
     }
-    return ownerPage(overview,session,tokens,url.searchParams.get("result"),now);
+    // A pending clean-up this very visit finished is reported as finished.
+    return ownerPage(overview,session,tokens,result==="cleanup-pending"&&cleaned?"cleanup-complete":result,now);
   }
   const action=await readOwnerAction(env.HUMAN_SESSION_KEY,req,session,now);
   if(action==="expired")return accountRedirect("form-expired");

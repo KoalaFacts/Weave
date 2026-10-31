@@ -277,9 +277,14 @@ test("account_SdkRevokeFails_PageSaysRevokedAndNextVisitRetries",{timeout:60_000
   assert.ok(await mirrorRevoked(connection.grantId),"the mailbox revocation stands");
   assert.equal(await mcpStatus(connection.accessToken),401,"revoked at the resource despite the SDK failure");
   assert.equal((await sdkGrants(connection.accountId)).length,1,"the SDK grant survived the injected failure");
-  // The redirect target is the next visit: it says what happened and retries the clean-up.
+  // The redirect target is the next visit: it retries the clean-up and says whether that retry finished it.
+  assert.equal((await (await mf.getWorker(kvName)).fetch("https://kv.internal/arm",{method:"POST"})).status,204);
+  const failedAgain=await (await account(cookie,response.headers.get("location")!)).text();
+  assert.ok(failedAgain.includes("Access is revoked; token clean-up will be retried on your next visit."));
+  assert.equal((await sdkGrants(connection.accountId)).length,1);
   const page=await (await account(cookie,response.headers.get("location")!)).text();
-  assert.ok(page.includes("Access is revoked; token clean-up will be retried on your next visit."));
+  assert.ok(page.includes("Access is revoked and token clean-up is complete."));
+  assert.ok(!page.includes("will be retried"));
   assert.deepEqual(await sdkGrants(connection.accountId),[]);
   const denied=await refresh(connection);
   assert.equal(denied.status,400);
@@ -327,4 +332,17 @@ test("consent_CimdDownAtApproval_RefusedOnlyByCompleteAuthorization",{timeout:60
     assert.equal(approved.headers.get("location"),null);
     assert.equal(cimd.fetches-fetches,1);
   }finally{cimd.down=false;}
+});
+
+test("account_RevokeGrantRevokedLongAgo_CleanupPendingNotDone",{timeout:60_000},async()=>{
+  const connection=await connect(),cookie=await sessionCookie(connection.human);
+  const token=revokeForms(await (await account(cookie)).text())[0];
+  // Revoked 31 days ago by some earlier path: outside the clean-up window, so its SDK grant is never looked for.
+  const longAgo=(BigInt(Date.now())-31n*86_400_000n)*10_000n;
+  await (await db()).prepare("UPDATE client_grants SET created_at=CAST(? AS INTEGER)-1,revoked_at=CAST(? AS INTEGER) WHERE grant_id=?")
+    .bind(longAgo.toString(),longAgo.toString(),connection.grantId).run();
+  const response=await postAccount(token,cookie);
+  assert.equal(response.status,303);
+  assert.equal(result(response),"cleanup-pending");
+  assert.equal((await sdkGrants(connection.accountId)).length,1);
 });
