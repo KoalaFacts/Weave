@@ -15,6 +15,7 @@
   "include": [
     "scripts/**/*.ts",
     "test/agent-key.ts",
+    "test/agent-key-helper.test.ts",
     "test/agent-keys.test.ts",
     "test/binding-requests.test.ts",
     "test/agent-limits.test.ts",

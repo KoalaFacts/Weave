@@ -232,6 +232,36 @@ jobs:
           if-no-files-found: error
           retention-days: 30
 
+  agent-key-helper:
+    name: TypeScript agent key helper
+    runs-on: ubuntu-latest
+    timeout-minutes: 15
+    steps:
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v6
+        with:
+          persist-credentials: false
+      - uses: actions/setup-node@949feb2413d6458794dcd2491c4babbbce0c15c1 # v7.1.0
+        with:
+          node-version: '24'
+      - name: Install locked helper dependencies
+        working-directory: typescript/agent-key
+        run: npm ci --ignore-scripts
+      - name: Check TypeScript
+        working-directory: typescript/agent-key
+        run: npm run typecheck
+      - name: Test key files and CLI output
+        working-directory: typescript/agent-key
+        run: npm test
+      - name: Check the packaged command builds
+        working-directory: typescript/agent-key
+        run: npm run build && node dist/cli.js init "$RUNNER_TEMP/agent-key-smoke.jwk"
+      - name: Install locked mailbox Worker dependencies
+        working-directory: typescript/mailbox-worker
+        run: npm ci --ignore-scripts
+      - name: Drive the helper against the mailbox Worker
+        working-directory: typescript/mailbox-worker
+        run: npm run build && node --require ./test/local-miniflare.ts --test --test-concurrency=1 test/agent-key-helper.test.ts
+
   dependency-lock-validation:
     # Retain the required-check identities. Base validates historical committed
     # graph evidence; only the proposed head must satisfy a fresh locked restore.

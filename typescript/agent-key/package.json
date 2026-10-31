@@ -1,0 +1,38 @@
+{
+  "name": "@koalafacts/weave-agent-key",
+  "version": "0.1.0",
+  "description": "Create a Weave agent key, register the agent and call the mailbox HTTP API with DPoP-bound tokens",
+  "private": true,
+  "type": "module",
+  "license": "Apache-2.0",
+  "repository": {
+    "type": "git",
+    "url": "git+https://github.com/KoalaFacts/Weave.git",
+    "directory": "typescript/agent-key"
+  },
+  "engines": {
+    "node": ">=24"
+  },
+  "bin": {
+    "weave-agent-key": "dist/cli.js"
+  },
+  "exports": {
+    ".": {
+      "types": "./dist/index.d.ts",
+      "import": "./dist/index.js"
+    }
+  },
+  "files": [
+    "dist/"
+  ],
+  "scripts": {
+    "build": "tsc -p tsconfig.json",
+    "typecheck": "tsc -p tsconfig.json --noEmit && tsc -p tsconfig.test.json",
+    "test": "node --test test/*.test.ts",
+    "prepack": "npm run build"
+  },
+  "devDependencies": {
+    "@types/node": "24.19.2",
+    "typescript": "7.0.2"
+  }
+}
