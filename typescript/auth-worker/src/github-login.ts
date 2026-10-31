@@ -80,6 +80,32 @@ type GithubUser={subject:string;login:string;createdAt:string};
 /** Fixed operator-facing failure categories; never tokens, codes or response bodies. */
 export const failureLog={exchange:"github-login: token exchange failed",user:"github-login: user fetch failed",
   directory:"human-directory: call failed"} as const;
+
+/** Bound untrusted provider response bodies before JSON decoding/allocating.
+ * Fixed endpoints and redirect guards alone do not limit an oversized 2xx body.
+ * GitHub's two expected responses are small; unexpected oversized data fails closed.
+ */
+async function boundedProviderJson(response:Response,maxBytes:number):Promise<unknown|null>{
+  if(!/^application\\/json(?:;|$)/i.test(response.headers.get("Content-Type")??""))return null;
+  const reader=response.body?.getReader();
+  if(!reader)return null;
+  const decoder=new TextDecoder("utf-8",{fatal:true});
+  let bytes=0,text="";
+  try{
+    while(true){
+      const chunk=await reader.read();
+      if(chunk.done)break;
+      bytes+=chunk.value.byteLength;
+      if(bytes>maxBytes)return null;
+      text+=decoder.decode(chunk.value,{stream:true});
+    }
+    text+=decoder.decode();
+    return JSON.parse(text) as unknown;
+  }finally{
+    await reader.cancel().catch(()=>{});
+    reader.releaseLock();
+  }
+}
 async function githubAccessToken(env:GithubLoginEnv,code:string,verifier:string):Promise<string|null>{
   try{
     // Never follow a provider redirect with the client secret, code or PKCE verifier.
@@ -88,7 +114,7 @@ async function githubAccessToken(env:GithubLoginEnv,code:string,verifier:string)
       body:new URLSearchParams({client_id:env.GITHUB_CLIENT_ID,client_secret:env.GITHUB_CLIENT_SECRET,code,
         redirect_uri:new URL(callbackPath,env.OAUTH_ISSUER).href,code_verifier:verifier})});
     if(exchange.ok){
-      const grant:unknown=await exchange.json();
+      const grant=await boundedProviderJson(exchange,8*1024);
       const token=grant&&typeof grant==="object"?(grant as {access_token?:unknown}).access_token:null;
       if(typeof token==="string"&&token)return token;
     }
@@ -105,7 +131,7 @@ async function fetchGithubUser(env:GithubLoginEnv,code:string,verifier:string):P
     const response=await fetch(githubUser,{redirect:"manual",headers:{Authorization:"Bearer "+token,
       Accept:"application/vnd.github+json","User-Agent":"weave-auth"}});
     if(response.ok){
-      const user:unknown=await response.json();
+      const user=await boundedProviderJson(response,16*1024);
       const {id,login,created_at:createdAt}=user&&typeof user==="object"?
         user as {id?:unknown;login?:unknown;created_at?:unknown}:{};
       if(typeof id==="number"&&Number.isSafeInteger(id)&&id>=1&&typeof login==="string"&&githubLogin.test(login)&&
