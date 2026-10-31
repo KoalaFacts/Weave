@@ -19,10 +19,10 @@ test('latest Drizzle schema defines the approved tables without compatibility vi
     const db=await database();
     try {
         const tables=db.prepare("SELECT name FROM sqlite_master WHERE type='table' AND name NOT LIKE 'sqlite_%' ORDER BY name").all().map(r=>r.name);
-        assert.deepEqual(tables,['account_addresses','accounts','agent_access_tokens','agent_assertions','agent_keys','contact_cards','contact_requests','contacts','counters','data_migrations','humans','legacy_channels','mailbox_guard','mailbox_records','mailbox_records_legacy','mailbox_revision','maintenance_state','message_delivery','rate_limits','stream_cursors','stream_leases']);
+        assert.deepEqual(tables,['account_addresses','accounts','agent_access_tokens','agent_assertions','agent_keys','binding_requests','contact_cards','contact_requests','contacts','counters','data_migrations','humans','legacy_channels','mailbox_guard','mailbox_records','mailbox_records_legacy','mailbox_revision','maintenance_state','message_delivery','rate_limits','stream_cursors','stream_leases']);
         assert.equal(db.prepare("SELECT count(*) n FROM sqlite_master WHERE type IN ('view','trigger')").get().n,0);
         const business=tables.filter(name=>name!=='data_migrations');
-        assert.equal(business.reduce((n,name)=>n+db.prepare(`PRAGMA table_info(${name})`).all().length,0),152);
+        assert.equal(business.reduce((n,name)=>n+db.prepare(`PRAGMA table_info(${name})`).all().length,0),161);
         assert.ok(business.flatMap(name=>db.prepare(`PRAGMA table_info(${name})`).all()).every(c=>!c.name.endsWith('_ticks')));
         assert.ok(!db.prepare('PRAGMA table_info(mailbox_records)').all().some(c=>c.name==='kind'));
         // The archived legacy rows are never looked up by the removed account credential.
@@ -118,6 +118,27 @@ test('agent assertion and access-token tables refuse malformed hashes, unknown k
             assert.throws(()=>tokens.run(...row),/constraint/i,JSON.stringify(row));
         assert.throws(()=>db.prepare('DELETE FROM agent_keys WHERE kid=?').run(kid),/FOREIGN KEY/);
         for(const name of ['agent_assertions_expiry','agent_access_tokens_expiry'])
+            assert.equal(db.prepare("SELECT name FROM sqlite_master WHERE type='index' AND name=?").get(name)?.name,name);
+    } finally { db.close(); }
+});
+
+test('binding_requests refuses malformed subjects, unknown statuses, inverted expiry, mismatched decisions and a second pending row',async()=>{
+    const db=await database();
+    try {
+        accounts(db);
+        const kid='k'.repeat(43);
+        db.prepare(`INSERT INTO agent_keys(kid,account_id,public_jwk,created_at,updated_at) VALUES(?,'synthetic-a','{}',10,10)`).run(kid);
+        const insert=db.prepare('INSERT INTO binding_requests(request_id,account_id,target_subject,kid,status,created_at,expires_at,updated_at,decided_at) VALUES(?,?,?,?,?,10,?,10,?)');
+        insert.run('r1','synthetic-a','4242',kid,'pending',20,null);
+        for(const row of [
+            ['r2','synthetic-a','0',kid,'cancelled',20,11],['r2','synthetic-a','42a',kid,'cancelled',20,11],['r2','synthetic-a','1'.repeat(21),kid,'cancelled',20,11],
+            ['r2','synthetic-a','42',kid,'accepted',20,11],['r2','synthetic-a','42',kid,'cancelled',10,11],['r2','synthetic-a','42',kid,'cancelled',20,null],
+            ['r2','synthetic-b','42',kid,'pending',20,11],['r2','synthetic-a','42',kid,'pending',20,null],['r2','missing','42',kid,'cancelled',20,11],
+            ['r2','synthetic-a','42','j'.repeat(43),'cancelled',20,11],
+        ]) assert.throws(()=>insert.run(...row),/constraint/i,JSON.stringify(row));
+        insert.run('r2','synthetic-b','4242',kid,'pending',20,null);
+        insert.run('r3','synthetic-a','4242',kid,'expired',20,20);
+        for(const name of ['binding_requests_pending','binding_requests_target','binding_requests_account'])
             assert.equal(db.prepare("SELECT name FROM sqlite_master WHERE type='index' AND name=?").get(name)?.name,name);
     } finally { db.close(); }
 });

@@ -16,6 +16,7 @@ import { stream, type Context } from './stream';
 import { registerAgent } from './accounts';
 import { authenticateAgent, issueAgentToken } from './agent-tokens.ts';
 import { addAgentKey, listAgentKeys, revokeAgentKey } from './agent-keys.ts';
+import { cancelBindingRequest, createBindingRequest, getBindingRequest } from './binding-requests.ts';
 import { putCard } from './cards';
 import { decide, requestContact, setBlocked } from './contacts';
 import { deleteContact, ownContacts } from './contact-links';
@@ -101,6 +102,13 @@ export default {
                 }
                 const kid = /^\/v1\/keys\/([A-Za-z0-9_-]{43})$/.exec(url.pathname)?.[1];
                 if (method === 'DELETE' && kid !== undefined) return json(await revokeAgentKey(env,account,kid));
+                fail(404,'unavailable');
+            }
+            if (url.pathname === '/v1/binding-requests' || url.pathname.startsWith('/v1/binding-requests/')) {
+                if (method === 'POST' && url.pathname === '/v1/binding-requests') return json(await createBindingRequest(env,request,account,await body(request)));
+                const requestId = /^\/v1\/binding-requests\/([0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12})$/.exec(url.pathname)?.[1];
+                if (method === 'GET' && requestId !== undefined) return json(await getBindingRequest(env,account,requestId));
+                if (method === 'DELETE' && requestId !== undefined) return json(await cancelBindingRequest(env,account,requestId));
                 fail(404,'unavailable');
             }
             if (url.pathname === '/v1/addresses' || /^\/v1\/addresses\/[^/]+$/.test(url.pathname)) {

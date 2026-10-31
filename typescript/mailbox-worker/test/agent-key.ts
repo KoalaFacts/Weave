@@ -44,3 +44,8 @@ export function keyEndorsement(existing: TestKey, options: {accountId: string; a
     return jws(existing,{typ:'weave-key-endorsement+jwt',kid:existing.kid},
         {aud:options.audience,sub:options.accountId,iat:options.iat??nowSeconds(),newKid:options.newKid});
 }
+
+export function bindingRequest(key: TestKey, options: {accountId: string; audience: string; human: string; iat?: number; header?: object; claims?: object}): string {
+    return jws(key,{typ:'weave-binding-request+jwt',kid:key.kid,...options.header},
+        {aud:options.audience,sub:options.accountId,iat:options.iat??nowSeconds(),human:options.human,...options.claims});
+}

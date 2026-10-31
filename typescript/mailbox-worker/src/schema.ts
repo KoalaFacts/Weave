@@ -73,6 +73,27 @@ export const agentAccessTokens = sqliteTable("agent_access_tokens", {
     check("agent_access_tokens_hash",sql`length(token_hash)=64 AND token_hash NOT GLOB '*[^0-9a-f]*'`)
 ]);
 
+// An ownerless agent's request that a GitHub human own it. No FK to humans: the target may not have signed in yet.
+export const bindingRequests = sqliteTable("binding_requests", {
+    request_id: text("request_id").notNull().primaryKey(),
+    account_id: text("account_id").notNull().references(() => accounts.account_id, {onDelete:"restrict"}),
+    target_subject: text("target_subject").notNull(),
+    kid: text("kid").notNull().references(() => agentKeys.kid, {onDelete:"restrict"}),
+    status: text("status").notNull(),
+    created_at: exactInteger("created_at").notNull(),
+    expires_at: exactInteger("expires_at").notNull(),
+    updated_at: exactInteger("updated_at").notNull(),
+    decided_at: exactInteger("decided_at"),
+}, t => [
+    uniqueIndex("binding_requests_pending").on(t.account_id).where(sql`status='pending'`),
+    index("binding_requests_target").on(t.target_subject, t.status, t.expires_at),
+    index("binding_requests_account").on(t.account_id, t.created_at),
+    check("binding_requests_subject_decimal",sql`length(target_subject) BETWEEN 1 AND 20 AND target_subject GLOB '[1-9]*' AND target_subject NOT GLOB '*[^0-9]*'`),
+    check("binding_requests_status",sql`status IN ('pending','confirmed','rejected','cancelled','expired')`),
+    check("binding_requests_expiry",sql`expires_at>created_at`),
+    check("binding_requests_decision",sql`(status='pending')=(decided_at IS NULL)`)
+]);
+
 export const accountAddresses = sqliteTable("account_addresses", {
     address_id: text("address_id").notNull().primaryKey(),
     account_id: text("account_id").notNull().references(() => accounts.account_id, {onDelete:"restrict"}),
