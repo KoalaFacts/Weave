@@ -231,3 +231,24 @@ test('oauthAccountActive_ExternalIdentityWithoutHumanBinding_RequiresLiveControl
             'removing the control credential must revoke a stale external subject grant');
     } finally { await h.close(); }
 });
+
+
+test('oauthAccountActive_MalformedControlParameters_RevokesUnboundBearer', async () => {
+    // The schema accepts any JSON in control_hash_parameters, but HTTP account
+    // authentication rejects parameters that do not match the current scheme.
+    // A legacy Service Binding token or external OAuth subject link must not
+    // remain usable for a credential that can no longer authenticate.
+    const h = await start();
+    try {
+        const env = environment(h), controlled = await h.register();
+        assert.equal(await oauthAccountActive(env, controlled.accountId, undefined), true);
+        // "{}" passes accounts_control_parameters (json_valid) and the
+        // all-or-none constraint while failing validParameters().
+        await h.db.prepare("UPDATE accounts SET control_hash_parameters='{}' WHERE account_id=?")
+            .bind(controlled.accountId).run();
+        assert.equal(await oauthAccountActive(env, controlled.accountId, undefined), false,
+            'unbound bearer must not outlive the control credential’s supported parameters');
+        assert.equal(await oauthAccountActive(env, controlled.accountId, null), false,
+            'the legacy Service Binding path must enforce the same revocation');
+    } finally { await h.close(); }
+});
