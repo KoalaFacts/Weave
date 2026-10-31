@@ -322,7 +322,7 @@ test('Service Binding refuses a previously issued bearer after GitHub owner free
         const cfg=oauthConfiguration({AUTH_SERVER:binding,OAUTH_ISSUER:config.issuer,
             OAUTH_RESOURCE:config.resource} as any,config.resource)!;
         const token=req('owned:grant:secret');
-        const eligible=(accountId:string)=>oauthAccountActive(env,accountId);
+        const eligible=(accountId:string,serviceHumanId?:string|null)=>oauthAccountActive(env,accountId,serviceHumanId);
         assert.deepEqual(await authorizeOAuth(cfg,token,'weave:messages.send',eligible,undefined,now*1000),
             {accountId:owned.accountId});
         await h.db.prepare('UPDATE humans SET frozen_at=updated_at WHERE human_id=?')
@@ -359,7 +359,7 @@ test('Service Binding revokes stale human bearer after account owner changes',as
         const cfg=oauthConfiguration({AUTH_SERVER:binding,OAUTH_ISSUER:config.issuer,
             OAUTH_RESOURCE:config.resource} as any,config.resource)!;
         const token=req('owned:grant:secret');
-        const eligible=(accountId:string)=>oauthAccountActive(env,accountId);
+        const eligible=(accountId:string,serviceHumanId?:string|null)=>oauthAccountActive(env,accountId,serviceHumanId);
         assert.deepEqual(await authorizeOAuth(cfg,token,'weave:messages.send',eligible,undefined,now*1000),
             {accountId:created.accountId},'original owner token must initially work');
         // Simulate a future approved ownership transfer: the account remains active,
