@@ -149,8 +149,8 @@ export default {
                     authorize:async scope=>{
                         const resolver=env.OAUTH_IDENTITY_LINKS_ENABLED==='true'?
                             (subject:VerifiedOAuthSubject)=>resolveLinkedOAuthSubject(env.db,subject):undefined;
-                        const access=await authorizeOAuth(cfg,request,scope,async accountId=>
-                            oauthAccountActive(env,accountId),
+                        const access=await authorizeOAuth(cfg,request,scope,async (accountId,serviceHumanId)=>
+                            oauthAccountActive(env,accountId,serviceHumanId),
                             undefined,Date.now,resolver);
                         return access instanceof Response?access:access.accountId;
                     },
