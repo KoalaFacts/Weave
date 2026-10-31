@@ -4,9 +4,9 @@ import { findKey, isCooling } from './agent-keys.ts';
 import { parseJws, verifyJws } from './jose.ts';
 import { apiTime, epochSeconds, exactInt64, nowUtc } from './time.ts';
 import { atomic, type Database, type Env } from './database.ts';
+import { prunedRowsPerCreate, requestLifetimeTicks, retentionTicks } from './request-retention.ts';
 import { Problem, fail, invalidField, object } from './wire.ts';
 
-export const requestLifetimeTicks = 864000000000n; // 24 h
 export const bindingRequestsPerAgentPerDay = 5;
 export const pendingBindingRequestsPerHuman = 20;
 
@@ -19,8 +19,6 @@ type StoredBinding = {request_id: string; account_id: string; target_subject: st
 const statuses = new Set<string>(['pending', 'confirmed', 'rejected', 'cancelled', 'expired']);
 const humanTarget = /^github:([1-9][0-9]{0,19})$/;
 const skewSeconds = 60;
-export const retentionTicks = 30n * requestLifetimeTicks; // 30 days
-export const prunedRowsPerCreate = 100;
 const bindingColumns = `request_id,account_id,target_subject,kid,status,CAST(created_at AS TEXT) created_at,CAST(expires_at AS TEXT) expires_at,
     CAST(decided_at AS TEXT) decided_at`;
 

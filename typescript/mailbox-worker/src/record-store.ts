@@ -7,6 +7,8 @@ import { type Database, type Statement } from './database.ts';
 import { addressSnapshot, cardSnapshot, requestSnapshot, messageSnapshot } from './wire-snapshots.ts';
 
 const ticks=(value:string|null|undefined)=>value==null?null:utcTicks(value);
+// rate_limits policy per counter kind; every kind except public-rate counts fixed UTC hours.
+const ratePolicies:Record<string,string>={'registration-rate':'registration','public-rate':'public-read','recovery-rate':'key-recovery'};
 const pair=(id:string)=>JSON.parse(id) as [string,string];
 const selectColumns=(table:AnySQLiteTable)=>Object.fromEntries(Object.entries(getTableColumns(table)).map(([name,column])=>[
     name,column.getSQLType()==='integer'&&column.dataType==='custom'?sql`CAST(${column} AS TEXT)`.as(name):column
@@ -77,9 +79,9 @@ export class RecordStore {
             if(!d)throw Error('Message delivery state is missing.');
             return messageSnapshot(r,d);
         }
-        case 'registration-rate':case 'public-rate':{
-            const r=await this.select(schema.rateLimits,and(eq(schema.rateLimits.policy,kind==='registration-rate'?'registration':'public-read'),eq(schema.rateLimits.bucket_key,id))!);
-            return r&&(kind==='registration-rate'?{hour:Number(exactInt64(r.window_start)/36000000000n),count:r.count}:{at:Number(exactInt64(r.window_start)/10000n),count:r.count});
+        case 'registration-rate':case 'public-rate':case 'recovery-rate':{
+            const r=await this.select(schema.rateLimits,and(eq(schema.rateLimits.policy,ratePolicies[kind]),eq(schema.rateLimits.bucket_key,id))!);
+            return r&&(kind!=='public-rate'?{hour:Number(exactInt64(r.window_start)/36000000000n),count:r.count}:{at:Number(exactInt64(r.window_start)/10000n),count:r.count});
         }
         case 'stream':{
             const r=await this.select(schema.streamLeases,and(eq(schema.streamLeases.account_id,owner),eq(schema.streamLeases.lease_id,id))!);
@@ -123,9 +125,9 @@ export class RecordStore {
             if(bytes===null)this.writes.push(this.db.prepare("UPDATE mailbox_records_legacy SET data=json_set(data,'$.payload',NULL,'$.size',0),payload_cleared_at=? WHERE kind='message' AND owner=? AND id=? AND json_extract(data,'$.payload') IS NOT NULL").bind(this.now.toString(),owner,id));
             return;
         }
-        case 'registration-rate':case 'public-rate':{
-            const t=schema.rateLimits,policy=kind==='registration-rate'?'registration':'public-read',where=and(eq(t.policy,policy),eq(t.bucket_key,id))!;
-            this.upsert(t,{seq:this.sequence(t,where),policy,bucket_key:id,window_start:kind==='registration-rate'?BigInt(v.hour)*36000000000n:BigInt(v.at)*10000n,count:v.count,created_at:this.now},['policy','bucket_key'],['seq']);this.advanceSequence(t,where);return;
+        case 'registration-rate':case 'public-rate':case 'recovery-rate':{
+            const t=schema.rateLimits,policy=ratePolicies[kind],where=and(eq(t.policy,policy),eq(t.bucket_key,id))!;
+            this.upsert(t,{seq:this.sequence(t,where),policy,bucket_key:id,window_start:kind!=='public-rate'?BigInt(v.hour)*36000000000n:BigInt(v.at)*10000n,count:v.count,created_at:this.now},['policy','bucket_key'],['seq']);this.advanceSequence(t,where);return;
         }
         case 'stream':this.upsert(schema.streamLeases,{account_id:owner,lease_id:id,expires_at:BigInt(v.expires)*10000n,created_at:this.now},['account_id','lease_id']);return;
         case 'stream-progress':this.upsert(schema.streamCursors,{account_id:owner,cursor:v.cursor,version:v.version,created_at:this.now},['account_id']);return;

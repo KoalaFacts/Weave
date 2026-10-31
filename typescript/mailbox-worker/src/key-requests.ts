@@ -1,21 +1,19 @@
 import * as schema from './schema.ts';
-import { countLiveKeys, findKey, validLabel } from './agent-keys.ts';
-import { prunedRowsPerCreate, requestLifetimeTicks, retentionTicks } from './binding-requests.ts';
-import { verifyDpop } from './dpop.ts';
 import { publicJwk, type Ed25519Jwk } from './jose.ts';
-import { apiTime, epochSeconds, exactInt64, nowUtc } from './time.ts';
-import { atomic, type Database, type Env, type Transaction } from './database.ts';
-import { Problem, fail, invalidField, object } from './wire.ts';
+import { prunedRowsPerCreate, requestLifetimeTicks, retentionTicks } from './request-retention.ts';
+import { apiTime, exactInt64 } from './time.ts';
+import type { Database, Transaction } from './database.ts';
+import { fail } from './wire.ts';
 
 export const pendingKeyRequestsPerAgent = 3;
 
 export type KeyRequestStatus = 'pending' | 'confirmed' | 'rejected' | 'expired';
-export type KeyRequestView = {requestId: string; agentId: string; kid: string; label: string | null; endorsedBy: string | null; status: KeyRequestStatus;
+export type KeyRequestView = {requestId: string; agentId: string; kid: string; label: string | null; endorsedBy: string; status: KeyRequestStatus;
     createdAt: string; expiresAt: string; decidedAt: string | null};
-export type KeyRequestRow = {requestId: string; accountId: string; kid: string; jwk: Ed25519Jwk; label: string | null; endorsedBy: string | null;
+export type KeyRequestRow = {requestId: string; accountId: string; kid: string; jwk: Ed25519Jwk; label: string | null; endorsedBy: string;
     status: KeyRequestStatus; createdAt: bigint; expiresAt: bigint; decidedAt: bigint | null};
 
-type StoredKeyRequest = {request_id: string; account_id: string; kid: string; public_jwk: string; label: string | null; endorsed_by: string | null; status: string;
+type StoredKeyRequest = {request_id: string; account_id: string; kid: string; public_jwk: string; label: string | null; endorsed_by: string; status: string;
     created_at: string; expires_at: string; decided_at: string | null};
 
 const statuses = new Set<string>(['pending', 'confirmed', 'rejected', 'expired']);
@@ -44,15 +42,20 @@ export function keyRequestView(row: KeyRequestRow, now: bigint): KeyRequestView 
         createdAt: apiTime(row.createdAt)!, expiresAt: apiTime(row.expiresAt)!, decidedAt: apiTime(row.decidedAt)};
 }
 
+/** The live (unexpired) pending request for this kid on this agent, if any. */
+export async function pendingKeyRequest(db: Database, accountId: string, kid: string, now: bigint): Promise<KeyRequestView | null> {
+    const row = await db.prepare(`SELECT ${keyRequestColumns} FROM key_requests WHERE account_id=? AND kid=? AND status='pending' AND expires_at>CAST(? AS INTEGER)`)
+        .bind(accountId, kid, now.toString()).first<StoredKeyRequest>();
+    return row ? keyRequestView(keyRequestRow(row), now) : null;
+}
+
 /**
- * Stages a pending key request in the caller's transaction, at the transaction time. A retry for the same kid returns the live
- * pending request; the pending count is read in the same optimistic transaction as the insert.
+ * Stages a pending key request in the caller's transaction, at the transaction time. The caller has already returned any live
+ * pending request for the same kid (`pendingKeyRequest`), so a retry stays idempotent even when other limits are reached; the
+ * pending count is read in the same optimistic transaction as the insert.
  */
-export async function stageKeyRequest(tx: Transaction, input: {accountId: string; kid: string; jwk: Ed25519Jwk; label: string | null; endorsedBy: string | null}): Promise<KeyRequestView> {
+export async function stageKeyRequest(tx: Transaction, input: {accountId: string; kid: string; jwk: Ed25519Jwk; label: string | null; endorsedBy: string}): Promise<KeyRequestView> {
     const at = tx.store.now, stamp = at.toString();
-    const existing = await tx.db.prepare(`SELECT ${keyRequestColumns} FROM key_requests WHERE account_id=? AND kid=? AND status='pending' AND expires_at>CAST(? AS INTEGER)`)
-        .bind(input.accountId, input.kid, stamp).first<StoredKeyRequest>();
-    if (existing) return keyRequestView(keyRequestRow(existing), at);
     // Staged before the INSERT, so a stale pending row for the same kid no longer holds key_requests_pending.
     tx.writes.push(tx.db.prepare(`UPDATE key_requests SET status='expired',decided_at=CAST(? AS INTEGER),updated_at=CAST(? AS INTEGER)
         WHERE account_id=? AND status='pending' AND expires_at<=CAST(? AS INTEGER)`).bind(stamp, stamp, input.accountId, stamp));
@@ -70,34 +73,4 @@ export async function stageKeyRequest(tx: Transaction, input: {accountId: string
         label: row.label, endorsed_by: row.endorsedBy, status: row.status, created_at: row.createdAt, expires_at: row.expiresAt, updated_at: at, decided_at: null,
     }));
     return keyRequestView(row, at);
-}
-
-/**
- * POST /v1/key-requests: owner recovery for a human-owned agent with no live key. The DPoP proof key is the requested key.
- * Unknown, ownerless and keyed agents get the same 404, so the route is no ownership oracle; those checks precede key-in-use.
- */
-export async function requestRecoveryKey(env: Env, request: Request, input: unknown, clock: () => bigint = nowUtc): Promise<{status: 200 | 202; view: KeyRequestView}> {
-    if (request.headers.has('Authorization')) fail();
-    // No access token: a proof carrying `ath` is refused. publicJwk refuses private (`d`) members; nothing is stored or echoed.
-    const proof = await verifyDpop(request, {now: epochSeconds(clock())});
-    if (!proof.ok) fail(401, 'unauthenticated');
-    object(input, ['agentId'], ['label']);
-    const {agentId, label: labelValue} = input as {agentId: unknown; label?: unknown};
-    if (typeof agentId !== 'string') invalidField('agentId', 'must be an agent ID');
-    const label = validLabel(labelValue);
-    return atomic(env.db, async tx => {
-        const at = tx.store.now;
-        const owner = await tx.db.prepare('SELECT human_id FROM accounts WHERE account_id=?').bind(agentId).first<{human_id: string | null}>();
-        if (!owner || owner.human_id === null) fail(404, 'unavailable');
-        const existing = await findKey(tx.db, proof.jkt);
-        if (existing && existing.accountId === agentId && existing.revokedAt === null) {
-            // A retry after the owner confirmed: only the key's holder can ask, and it already knows the key is on this agent.
-            const confirmed = await tx.db.prepare(`SELECT ${keyRequestColumns} FROM key_requests WHERE account_id=? AND kid=? AND status='confirmed'
-                ORDER BY decided_at DESC LIMIT 1`).bind(agentId, proof.jkt).first<StoredKeyRequest>();
-            if (confirmed) return {status: 200, view: keyRequestView(keyRequestRow(confirmed), at)};
-        }
-        if (await countLiveKeys(tx, agentId) > 0) fail(404, 'unavailable');
-        if (existing) throw new Problem(409, 'conflict', undefined, {field: 'proof', reason: 'key-in-use'});
-        return {status: 202, view: await stageKeyRequest(tx, {accountId: agentId, kid: proof.jkt, jwk: proof.jwk, label, endorsedBy: null})};
-    });
 }

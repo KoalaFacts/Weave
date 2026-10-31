@@ -17,7 +17,7 @@ import { registerAgent } from './accounts';
 import { authenticateAgent, issueAgentToken } from './agent-tokens.ts';
 import { addAgentKey, listAgentKeys, revokeAgentKey } from './agent-keys.ts';
 import { cancelBindingRequest, createBindingRequest, getBindingRequest } from './binding-requests.ts';
-import { requestRecoveryKey } from './key-requests.ts';
+import { recoverAgentKey } from './recovery-codes.ts';
 import { putCard } from './cards';
 import { decide, requestContact, setBlocked } from './contacts';
 import { deleteContact, ownContacts } from './contact-links';
@@ -91,8 +91,8 @@ export default {
             if (method === 'POST' && url.pathname === '/v1/accounts') return json(await registerAgent(env,request,await body(request)));
             if(env.RECOVERY_READ_ONLY==='true'&&(method!=='GET'||url.pathname==='/v1/inbox/events'))fail(503,'maintenance',30);
             if (method === 'POST' && url.pathname === '/v1/token') return await issueAgentToken(env,request);
-            // Owner recovery authenticates with a DPoP proof alone: the agent has no live key to issue a token for.
-            if (method === 'POST' && url.pathname === '/v1/key-requests') { const recovery = await requestRecoveryKey(env,request,await body(request)); return json(recovery.view,recovery.status); }
+            // Owner recovery authenticates with the owner-issued code plus the new key's DPoP proof; the agent may have no usable key.
+            if (method === 'POST' && url.pathname === '/v1/key-requests') return json(await recoverAgentKey(env,request,await body(request)));
             if(env.RECOVERY_READ_ONLY!=='true'&&method==='GET'&&['/v1/directory','/v1/directory/address','/v1/contacts/cards','/v1/contacts/card'].includes(url.pathname))await publicReadRate(env,request);
             const account = await authenticateAgent(env,request);
             if (method === 'GET' && ['/v1/directory','/v1/directory/address'].includes(url.pathname)) return json(await atomic(env.db,tx => directory(tx,url)));

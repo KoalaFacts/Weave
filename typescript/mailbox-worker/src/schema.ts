@@ -95,14 +95,14 @@ export const bindingRequests = sqliteTable("binding_requests", {
     check("binding_requests_decision",sql`(status='pending')=(decided_at IS NULL)`)
 ]);
 
-// A key added to a human-owned agent, held until the owner confirms it; endorsed_by is NULL for owner recovery.
+// A key added to a human-owned agent by one of its live keys, held until the owner confirms it.
 export const keyRequests = sqliteTable("key_requests", {
     request_id: text("request_id").notNull().primaryKey(),
     account_id: text("account_id").notNull().references(() => accounts.account_id, {onDelete:"restrict"}),
     kid: text("kid").notNull(),
     public_jwk: text("public_jwk").notNull(),
     label: text("label"),
-    endorsed_by: text("endorsed_by").references(() => agentKeys.kid, {onDelete:"restrict"}),
+    endorsed_by: text("endorsed_by").notNull().references(() => agentKeys.kid, {onDelete:"restrict"}),
     status: text("status").notNull(),
     created_at: exactInteger("created_at").notNull(),
     expires_at: exactInteger("expires_at").notNull(),
@@ -118,6 +118,23 @@ export const keyRequests = sqliteTable("key_requests", {
     check("key_requests_status",sql`status IN ('pending','confirmed','rejected','expired')`),
     check("key_requests_expiry",sql`expires_at>created_at`),
     check("key_requests_decision",sql`(status='pending')=(decided_at IS NULL)`)
+]);
+
+// The single current owner-issued recovery code of a human-owned agent, stored only as its hex SHA-256.
+// Issuing a new code replaces the row, which invalidates the earlier code.
+export const recoveryCodes = sqliteTable("recovery_codes", {
+    account_id: text("account_id").notNull().primaryKey().references(() => accounts.account_id, {onDelete:"restrict"}),
+    code_hash: text("code_hash").notNull(),
+    human_id: text("human_id").notNull().references(() => humans.human_id, {onDelete:"restrict"}),
+    created_at: exactInteger("created_at").notNull(),
+    expires_at: exactInteger("expires_at").notNull(),
+    used_at: exactInteger("used_at"),
+    updated_at: exactInteger("updated_at").notNull(),
+}, t => [
+    uniqueIndex("recovery_codes_hash").on(t.code_hash),
+    check("recovery_codes_hash_hex",sql`length(code_hash)=64 AND code_hash NOT GLOB '*[^0-9a-f]*'`),
+    check("recovery_codes_expiry",sql`expires_at>created_at`),
+    check("recovery_codes_use",sql`used_at IS NULL OR used_at>=created_at`)
 ]);
 
 export const accountAddresses = sqliteTable("account_addresses", {
@@ -293,7 +310,7 @@ export const rateLimits = sqliteTable("rate_limits", {
 }, t => [
     uniqueIndex("rate_limit_identity").on(t.policy,t.bucket_key),
     index("rate_limit_window").on(t.policy,t.window_start,t.seq),
-    check("rate_limits_policy",sql`policy IN ('registration','public-read')`),
+    check("rate_limits_policy",sql`policy IN ('registration','public-read','key-recovery')`),
     check("rate_limits_count",sql`count>=0`)
 ]);
 

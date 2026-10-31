@@ -19,10 +19,10 @@ test('latest Drizzle schema defines the approved tables without compatibility vi
     const db=await database();
     try {
         const tables=db.prepare("SELECT name FROM sqlite_master WHERE type='table' AND name NOT LIKE 'sqlite_%' ORDER BY name").all().map(r=>r.name);
-        assert.deepEqual(tables,['account_addresses','accounts','agent_access_tokens','agent_assertions','agent_keys','binding_requests','contact_cards','contact_requests','contacts','counters','data_migrations','humans','key_requests','legacy_channels','mailbox_guard','mailbox_records','mailbox_records_legacy','mailbox_revision','maintenance_state','message_delivery','rate_limits','stream_cursors','stream_leases']);
+        assert.deepEqual(tables,['account_addresses','accounts','agent_access_tokens','agent_assertions','agent_keys','binding_requests','contact_cards','contact_requests','contacts','counters','data_migrations','humans','key_requests','legacy_channels','mailbox_guard','mailbox_records','mailbox_records_legacy','mailbox_revision','maintenance_state','message_delivery','rate_limits','recovery_codes','stream_cursors','stream_leases']);
         assert.equal(db.prepare("SELECT count(*) n FROM sqlite_master WHERE type IN ('view','trigger')").get().n,0);
         const business=tables.filter(name=>name!=='data_migrations');
-        assert.equal(business.reduce((n,name)=>n+db.prepare(`PRAGMA table_info(${name})`).all().length,0),172);
+        assert.equal(business.reduce((n,name)=>n+db.prepare(`PRAGMA table_info(${name})`).all().length,0),179);
         assert.ok(business.flatMap(name=>db.prepare(`PRAGMA table_info(${name})`).all()).every(c=>!c.name.endsWith('_ticks')));
         assert.ok(!db.prepare('PRAGMA table_info(mailbox_records)').all().some(c=>c.name==='kind'));
         // The archived legacy rows are never looked up by the removed account credential.
@@ -143,7 +143,7 @@ test('binding_requests refuses malformed subjects, unknown statuses, inverted ex
     } finally { db.close(); }
 });
 
-test('key_requests refuses malformed kids, invalid JWK text, bad labels, unknown statuses and endorsers, inverted expiry, mismatched decisions and a second pending row per kid',async()=>{
+test('key_requests refuses malformed kids, invalid JWK text, bad labels, missing or unknown endorsers, unknown statuses, inverted expiry, mismatched decisions and a second pending row per kid',async()=>{
     const db=await database();
     try {
         accounts(db);
@@ -151,18 +151,39 @@ test('key_requests refuses malformed kids, invalid JWK text, bad labels, unknown
         db.prepare(`INSERT INTO agent_keys(kid,account_id,public_jwk,created_at,updated_at) VALUES(?,'synthetic-a','{}',10,10)`).run(endorser);
         const insert=db.prepare('INSERT INTO key_requests(request_id,account_id,kid,public_jwk,label,endorsed_by,status,created_at,expires_at,updated_at,decided_at) VALUES(?,?,?,?,?,?,?,10,?,10,?)');
         insert.run('r1','synthetic-a',kid,'{}','phone',endorser,'pending',20,null);
+        const e=endorser;
         for(const row of [
-            ['r2','synthetic-a','n'.repeat(42),'{}',null,null,'rejected',20,11],['r2','synthetic-a','n'.repeat(42)+'+','{}',null,null,'rejected',20,11],
-            ['r2','synthetic-a',kid,'not json',null,null,'rejected',20,11],['r2','synthetic-a',kid,'{}','',null,'rejected',20,11],
-            ['r2','synthetic-a',kid,'{}','x'.repeat(65),null,'rejected',20,11],['r2','synthetic-a',kid,'{}',null,'j'.repeat(43),'rejected',20,11],
-            ['r2','synthetic-a',kid,'{}',null,null,'cancelled',20,11],['r2','synthetic-a',kid,'{}',null,null,'rejected',10,11],
-            ['r2','synthetic-a',kid,'{}',null,null,'rejected',20,null],['r2','synthetic-a',kid,'{}',null,null,'pending',20,11],
-            ['r2','synthetic-a',kid,'{}',null,null,'pending',20,null],['r2','missing',kid,'{}',null,null,'rejected',20,11],
+            ['r2','synthetic-a','n'.repeat(42),'{}',null,e,'rejected',20,11],['r2','synthetic-a','n'.repeat(42)+'+','{}',null,e,'rejected',20,11],
+            ['r2','synthetic-a',kid,'not json',null,e,'rejected',20,11],['r2','synthetic-a',kid,'{}','',e,'rejected',20,11],
+            ['r2','synthetic-a',kid,'{}','x'.repeat(65),e,'rejected',20,11],['r2','synthetic-a',kid,'{}',null,'j'.repeat(43),'rejected',20,11],
+            ['r2','synthetic-a',kid,'{}',null,null,'rejected',20,11],
+            ['r2','synthetic-a',kid,'{}',null,e,'cancelled',20,11],['r2','synthetic-a',kid,'{}',null,e,'rejected',10,11],
+            ['r2','synthetic-a',kid,'{}',null,e,'rejected',20,null],['r2','synthetic-a',kid,'{}',null,e,'pending',20,11],
+            ['r2','synthetic-a',kid,'{}',null,e,'pending',20,null],['r2','missing',kid,'{}',null,e,'rejected',20,11],
         ]) assert.throws(()=>insert.run(...row),/constraint/i,JSON.stringify(row));
-        insert.run('r2','synthetic-b',kid,'{}',null,null,'pending',20,null);
+        insert.run('r2','synthetic-b',kid,'{}',null,e,'pending',20,null);
         insert.run('r3','synthetic-a',kid,'{}','x'.repeat(64),endorser,'confirmed',20,11);
         assert.throws(()=>db.prepare('DELETE FROM agent_keys WHERE kid=?').run(endorser),/FOREIGN KEY/);
         for(const name of ['key_requests_pending','key_requests_account','key_requests_retention'])
             assert.equal(db.prepare("SELECT name FROM sqlite_master WHERE type='index' AND name=?").get(name)?.name,name);
+    } finally { db.close(); }
+});
+
+test('recovery_codes keeps one code per agent and refuses malformed hashes, duplicate hashes, unknown humans and inverted times',async()=>{
+    const db=await database();
+    try {
+        accounts(db);
+        db.prepare("INSERT INTO humans(human_id,provider,subject,provider_created_at,display_login,created_at,updated_at) VALUES('h1','github','42','2020-01-01T00:00:00Z','alice',0,0)").run();
+        const insert=db.prepare('INSERT INTO recovery_codes(account_id,code_hash,human_id,created_at,expires_at,used_at,updated_at) VALUES(?,?,?,10,?,?,10)');
+        const a='a'.repeat(64),b='b'.repeat(64);
+        insert.run('synthetic-a',a,'h1',20,null);
+        for(const row of [
+            ['synthetic-a',b,'h1',20,null],['synthetic-b',a,'h1',20,null],['synthetic-b','A'.repeat(64),'h1',20,null],['synthetic-b','b'.repeat(63),'h1',20,null],
+            ['synthetic-b',b,'missing',20,null],['missing',b,'h1',20,null],['synthetic-b',b,'h1',10,null],['synthetic-b',b,'h1',20,9],
+        ]) assert.throws(()=>insert.run(...row),/constraint/i,JSON.stringify(row));
+        insert.run('synthetic-b',b,'h1',20,10);
+        assert.equal(db.prepare("SELECT name FROM sqlite_master WHERE type='index' AND name='recovery_codes_hash'").get()?.name,'recovery_codes_hash');
+        assert.throws(()=>db.prepare("INSERT INTO rate_limits(seq,policy,bucket_key,window_start,count) VALUES(1,'other','x',0,0)").run(),/constraint/i);
+        db.prepare("INSERT INTO rate_limits(seq,policy,bucket_key,window_start,count) VALUES(1,'key-recovery','x',0,0)").run();
     } finally { db.close(); }
 });

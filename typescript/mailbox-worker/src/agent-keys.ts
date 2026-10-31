@@ -3,7 +3,7 @@ import type { AgentAuth } from './agent-tokens.ts';
 import { jwkThumbprint, parseJws, publicJwk, verifyJws, type CompactJws, type Ed25519Jwk } from './jose.ts';
 import { apiTime, epochSeconds, exactInt64, nowUtc } from './time.ts';
 import { atomic, type Database, type Env, type Transaction } from './database.ts';
-import { stageKeyRequest, type KeyRequestView } from './key-requests.ts';
+import { pendingKeyRequest, stageKeyRequest, type KeyRequestView } from './key-requests.ts';
 import { Problem, fail, invalidField, object } from './wire.ts';
 
 export const maxLiveKeysPerAgent = 100;
@@ -62,7 +62,7 @@ const keyRequestSkewSeconds = 60;
 
 export const isCooling = (row: KeyRow, now: bigint): boolean => row.coolingUntil !== null && row.coolingUntil > now;
 
-function conflict(field: string, reason: 'cooling' | 'key-in-use' | 'last-live-key'): never {
+export function conflict(field: string, reason: 'cooling' | 'key-in-use' | 'last-live-key'): never {
     throw new Problem(409, 'conflict', undefined, {field, reason});
 }
 
@@ -119,6 +119,9 @@ export async function addAgentKey(env: Env, request: Request, auth: AgentAuth, i
             if (existing.accountId === auth.accountId && existing.revokedAt === null) return {status: 200, body: keySummary(existing)};
             conflict('proof', 'key-in-use');
         }
+        // A retry of a pending owned-agent addition is answered before any limit, so it stays idempotent.
+        const pending = owned ? await pendingKeyRequest(tx.db, auth.accountId, kid, at) : null;
+        if (pending) return {status: 202, body: pending};
         // Counted inside the same optimistic transaction as the insert, so concurrent adds cannot pass the limit.
         if (await countLiveKeys(tx, auth.accountId) >= maxLiveKeysPerAgent) fail(429, 'capacity');
         if (owned) return {status: 202, body: await stageKeyRequest(tx, {accountId: auth.accountId, kid, jwk, label, endorsedBy: auth.kid})};
