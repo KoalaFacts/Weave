@@ -17,7 +17,7 @@ test("ownerPage_EscapesSelfReportedNameAndShowsFingerprints",async()=>{
   const requestId=randomUUID(),agentId=randomUUID();
   const overview=base({bindingRequests:[{requestId,agentId,displayName:'<script>alert(1)</script>',requestingKid:requesting,
     liveKeys:[{kid:live,label:null,createdAt:iso(now),lastUsedAt:null,coolingUntil:iso(now+3_600_000)}],keysDigest:kid(),createdAt:iso(now),expiresAt:iso(now+86_400_000)}],
-    agents:[{agentId:randomUUID(),displayName:null,keys:[{kid:kid(),label,createdAt:iso(now),lastUsedAt:null,coolingUntil:null}],keyRequests:[]}]});
+    agents:[{agentId:randomUUID(),displayName:null,keys:[{kid:kid(),label,createdAt:iso(now),lastUsedAt:null,coolingUntil:null}],keyRequests:[],grants:[],addresses:[],revokedGrantIds:[]}]});
   const tokens=new Map([["confirm-binding:"+requestId,"tok-confirm"],["reject-binding:"+requestId,"tok-reject"]]);
   const response=ownerPage(overview,human,tokens,null,now);
   assert.equal(response.status,200);
@@ -62,7 +62,7 @@ test("ownerFormTokens_CoversEveryFormTheOverviewRenders",async()=>{
   const requestId=randomUUID(),agentId=randomUUID(),keyId=kid(),keyRequestId=randomUUID();
   const overview=base({bindingRequests:[{requestId,agentId:randomUUID(),displayName:null,requestingKid:kid(),liveKeys:[],keysDigest:kid(),createdAt:iso(now),expiresAt:iso(now+1)}],
     agents:[{agentId,displayName:"a",keys:[{kid:keyId,label:null,createdAt:iso(now),lastUsedAt:null,coolingUntil:null}],
-      keyRequests:[{requestId:keyRequestId,kid:kid(),label:null,endorsedBy:keyId,createdAt:iso(now),expiresAt:iso(now+1)}]}]});
+      keyRequests:[{requestId:keyRequestId,kid:kid(),label:null,endorsedBy:keyId,createdAt:iso(now),expiresAt:iso(now+1)}],grants:[],addresses:[],revokedGrantIds:[]}]});
   const tokens=await ownerFormTokens(signingKey,human.humanId,overview,now);
   assert.deepEqual([...tokens.keys()].sort(),["confirm-binding:"+requestId,"confirm-key:"+keyRequestId,"issue-recovery-code:"+agentId,
     "reject-binding:"+requestId,"reject-key:"+keyRequestId,"revoke-key:"+agentId+":"+keyId].sort());
