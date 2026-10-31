@@ -468,6 +468,9 @@ test("a foreign browser cannot burn an owner nonce before consent-cookie verific
       const foreign=await post(mf,cookie,fields);
       assert.equal(foreign.status,400);
       assert.equal(await nonceStatus(mf,consent.handle),200,"unauthorized browser must not destroy valid owner's nonce");
+      const foreignDeny=await post(mf,cookie,{handle:consent.handle,decision:"deny"});
+      assert.equal(foreignDeny.status,400,"a foreign browser cannot deny this owner's consent");
+      assert.equal(await nonceStatus(mf,consent.handle),200,"unauthorized denial must not consume the owner's nonce");
     }
     assert.deepEqual(await agentsOf(mf,await humanIdOf(mf,9002)),[]);
 
