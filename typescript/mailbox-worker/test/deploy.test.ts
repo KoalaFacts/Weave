@@ -504,6 +504,36 @@ test('ordinary demo deploy does not bootstrap even with a preinstalled proof sec
     assert.ok(f.configs.every(c=>!('services' in c)&&c.vars.OAUTH_ISSUER===undefined));
 });
 
+test('first-party issuer metadata read timeout rejects a stalled body before maintenance', {timeout:6500},async()=>{
+    const f=firstPartyBootstrap(),original=f.options.fetchImpl;
+    f.options.fetchImpl=async (url,options)=>{
+        if(url===firstPartyIssuer+'/.well-known/oauth-authorization-server'){
+            f.requests.push(url);
+            return new Response(new ReadableStream<Uint8Array>({
+                start(controller){controller.enqueue(new TextEncoder().encode('{"issuer":"'));},
+                cancel(){return new Promise<void>(()=>{});}
+            }),{headers:{'Content-Type':'application/json'}});
+        }
+        return original(url,options);
+    };
+    await assert.rejects(deploy(f.options),/issuer metadata|JSON|unavailable/i);
+    assert.equal(f.commands.length,0,'No D1/Worker operation may start on a stalled issuer metadata body');
+});
+test('first-party issuer metadata invalid MIME rejects without waiting for a stalled cancel', {timeout:6500},async()=>{
+    const f=firstPartyBootstrap(),original=f.options.fetchImpl;
+    f.options.fetchImpl=async (url,options)=>{
+        if(url===firstPartyIssuer+'/.well-known/oauth-authorization-server'){
+            f.requests.push(url);
+            return new Response(new ReadableStream<Uint8Array>({
+                cancel(){return new Promise<void>(()=>{});}
+            }),{headers:{'Content-Type':'text/plain'}});
+        }
+        return original(url,options);
+    };
+    await assert.rejects(deploy(f.options),/issuer metadata unavailable or not JSON/i);
+    assert.equal(f.commands.length,0,'Invalid MIME must fail before maintenance');
+});
+
 test('approved first-party AS metadata must expose a viable same-origin code and PKCE issuer before any upload',async()=>{
     for(const metadata of [
         {...validFirstPartyIssuerMetadata,authorization_endpoint:undefined},
