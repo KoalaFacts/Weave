@@ -22,7 +22,7 @@ const mailboxBundle=readFileSync(resolve("../mailbox-worker/dist/index.js"),"utf
 
 // Only the two GitHub endpoints exist; every other outbound request is denied.
 type Recorded={url:string;method:string;headers:Record<string,string>;body:string};
-const github={requests:[] as Recorded[],userStatus:200,redirectToken:false,redirectUser:false};
+const github={requests:[] as Recorded[],userStatus:200,redirectToken:false,redirectUser:false,oversizedToken:false,oversizedUser:false};
 async function fakeGithub(request:Request):Promise<Response>{
   const body=await request.text();
   github.requests.push({url:request.url,method:request.method,
@@ -33,14 +33,16 @@ async function fakeGithub(request:Request):Promise<Response>{
       return Response.json({error:"bad_verification_code"});
     if(github.redirectToken)return new Response(null,{status:307,
       headers:{Location:"https://redirect-sink.example/credentials"}});
-    return Response.json({access_token:fakeAccessToken,token_type:"bearer",scope:"read:user"});
+    return Response.json({access_token:fakeAccessToken,token_type:"bearer",scope:"read:user",
+      ...(github.oversizedToken?{unexpectedPadding:"x".repeat(64*1024)}:{})});
   }
   if(request.method==="GET"&&request.url==="https://api.github.com/user"){
     if(request.headers.get("authorization")!=="Bearer "+fakeAccessToken)return new Response("Bad credentials",{status:401});
     if(github.redirectUser)return new Response(null,{status:307,
       headers:{Location:"https://redirect-sink.example/identity"}});
     if(github.userStatus!==200)return new Response("upstream failure",{status:github.userStatus});
-    return Response.json({id:4242,login:"octo-human",created_at:fakeCreatedAt,email:"private@example.com"});
+    return Response.json({id:4242,login:"octo-human",created_at:fakeCreatedAt,email:"private@example.com",
+      ...(github.oversizedUser?{unexpectedPadding:"x".repeat(64*1024)}:{})});
   }
   return new Response("Outbound denied",{status:403});
 }
@@ -274,6 +276,24 @@ test("callback_GithubProviderRedirects_FailClosedWithoutForwardingSecrets",{time
         ?"github-login: token exchange failed":"github-login: user fetch failed")));
       assert.ok(!logs.some(x=>x.includes(githubClientSecret)||x.includes(fakeAccessToken)));
     }finally{github.redirectToken=false;github.redirectUser=false;}
+  }
+});
+
+test("callback_OversizedGithubResponses_FailClosedBeforeSession",{timeout:60_000},async()=>{
+  const before=(await humans(shared.mf)).length;
+  for(const phase of ["token","user"] as const){
+    github.oversizedToken=phase==="token";
+    github.oversizedUser=phase==="user";
+    github.requests.length=0;
+    try{
+      const started=await begin();
+      const result=await callback(shared.mf,new URLSearchParams({
+        code:"fake-code",state:started.location!.searchParams.get("state")!
+      }).toString(),cookieHeader(started.loginCookie!));
+      assert.equal(result.status,502,phase+" oversized provider payload must fail closed");
+      assert.equal(sessionCookie(result.headers),undefined,"oversized provider payload must not create a session");
+      assert.equal((await humans(shared.mf)).length,before,"oversized provider payload cannot create a human");
+    }finally{github.oversizedToken=false;github.oversizedUser=false;}
   }
 });
 
