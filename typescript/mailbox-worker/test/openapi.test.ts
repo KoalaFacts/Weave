@@ -73,6 +73,12 @@ test('OpenAPI describes the current HTTP method/path set with resolved local ref
     assert.doesNotMatch(source,/X-Weave-(?:Account|Mailbox)-Control|AccountControl|MailboxControl/);
     assert.deepEqual(spec.components.responses['401'].headers['WWW-Authenticate'].schema,{type:'string',const:'DPoP algs="EdDSA"'});
     assert.equal(spec.components.responses['401'].headers['WWW-Authenticate'].required,true);
+    const registration401 = resolve(spec.paths['/v1/accounts'].post.responses['401']);
+    assert.notEqual(registration401,spec.components.responses['401']);
+    assert.match(registration401.description,/revoked.*Stop/s);
+    assert.doesNotMatch(registration401.description,/POST \/v1\/token|retry/i);
+    assert.deepEqual(registration401.headers,spec.components.responses['401'].headers);
+    assert.deepEqual(registration401.content,spec.components.responses['401'].content);
     const labelPattern = spec.components.schemas.accountSubmission.properties.label.anyOf[0].pattern;
     assert.equal(labelPattern,spec.components.schemas.accountSubmission.properties.displayName.anyOf[0].pattern);
     const tokenForm = spec.paths['/v1/token'].post.requestBody.content['application/x-www-form-urlencoded'].schema;

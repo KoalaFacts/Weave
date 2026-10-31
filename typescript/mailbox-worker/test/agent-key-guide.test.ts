@@ -33,7 +33,7 @@ test('key-first guide gates registration on real key storage and signing capabil
     for (const term of ['secure_key_storage', 'secure_signing', 'needs_owner_action', 'required confirmations', 'not published yet']) assert.ok(gate.includes(term), term);
     assert.match(gate, /downloaded agent key file is a backup, not a vault/i);
     assert.match(gate, /Do not generate a key or register/);
-    assert.match(guide, /never in chat, logs, repositories, ordinary notes, plaintext files/);
+    assert.match(guide, /Never put the private key in chat, logs, repositories, ordinary notes, plaintext files/);
 });
 test('registration in the guide matches the documented DPoP-proof-only operation', () => {
     const contract = JSON.parse(readFileSync(new URL('../src/openapi.json', import.meta.url), 'utf8'));
@@ -55,6 +55,8 @@ test('token section pins the implemented lifetimes, skew and renewal rule', () =
     assert.ok(tokens.includes(`±${dpopWindowSeconds} s`), 'clock skew');
     assert.match(tokens, /On a 401.*obtain a new token/s);
     assert.match(tokens, /Do not stop, register again or generate a new key/);
+    assert.match(tokens, /Every DPoP proof in this section.*same JWS header as registration.*"typ":"dpop\+jwt".*"jwk":<public JWK>/s);
+    assert.match(tokens, /401 from `POST \/v1\/accounts` is not an expired token/);
 });
 test('key management states cooling, the 100-key limit and the lost-key consequence', () => {
     const keys = section('### 2.5 Back up, rotate and revoke keys', '### 2.6');
@@ -67,6 +69,7 @@ test('key management states cooling, the 100-key limit and the lost-key conseque
     assert.match(keys, /no settled key can be revoked/);
     assert.match(keys, /cannot endorse/);
     assert.match(keys, /loses every key is lost/);
+    assert.match(keys, /event stream opened before the revocation ends within about 20 seconds/);
 });
 test('guide distinguishes durable saving, registration and restoration evidence', () => {
     for (const term of ['registrationStatus', 'keyPersistenceStatus', 'recoveryVerificationStatus', 'service origin', 'accountId', 'fresh session', 'different Account ID', 'Do not overwrite']) assert.ok(guide.includes(term), term);

@@ -168,7 +168,7 @@ The existing `/v1/contacts/*`, `/v1/messages`, `/v1/inbox`, `/v1/outbox`, receip
 
 ## Key and token storage
 
-D1 stores each agent key as its RFC 7638 thumbprint and canonical public JWK (`{crv, kty, x}`), with label, creation, last-use, cooling and revocation times. Access tokens are opaque 32-byte random values; only their SHA-256 is stored, with the bound key ID and expiry, and every request validates the token with one indexed read that joins the live key. There is no Worker signing secret to provision, rotate or lose. Spent assertion `jti` values are stored until their `exp` plus the 60-second skew allowance; expired assertion and token rows are deleted in bounded batches when tokens are issued.
+D1 stores each agent key as its RFC 7638 thumbprint and canonical public JWK (`{crv, kty, x}`), with label, creation, last token issuance (`lastUsedAt`), cooling and revocation times. Access tokens are opaque 32-byte random values; only their SHA-256 is stored, with the bound key ID and expiry, and every request validates the token with one indexed read that joins the live key. There is no Worker signing secret to provision, rotate or lose. Spent assertion `jti` values are stored until their `exp` plus the 60-second skew allowance; expired assertion and token rows are deleted in bounded batches when tokens are issued.
 
 No private key, access token, assertion or Cloudflare token is written to app logs or D1 in plain form. Token-endpoint failures log only the error class and message, never request data. `.dev.vars*`, `.env*`, build outputs and local Wrangler data are ignored. Do not commit production exports or real test keys.
 

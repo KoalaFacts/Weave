@@ -106,7 +106,7 @@ service's actual OAuth authorization and recovery requirements.
 | Symptom | Check |
 | --- | --- |
 | Marketplace manifest not found | Source must be the repository root URL, Path empty, ref `main` (or empty for the default branch). For an unmerged change, use its reviewed commit. |
-| Import succeeded but no messaging tools appear | Expected for the empty app map. The restricted remote trial already exists, but an appropriate ChatGPT app still has to be registered, bound and verified; reinstalling the preview does not connect it. |
+| Import succeeded but no messaging tools appear | Expected for the empty app map. The earlier restricted remote trial was removed; an appropriate ChatGPT app still has to be registered, bound and verified against the remote MCP service, and reinstalling the preview does not connect it. |
 | Plugin appears on desktop but not on the web | Desktop/local catalog configuration is not workspace import. Check the target surface and workspace policies; a local process cannot be invoked by a cloud chat merely because it was installed locally. |
 | Guide works but registry request fails | Check the remote `/mcp` endpoint's reachability and the demo origin. Do not infer an empty registry or create another account. |
 | Account access fails or changes after reconnecting | Stop and inspect the saved origin/account/credential binding. Do not generate a replacement identity or fall back to a shared account. |

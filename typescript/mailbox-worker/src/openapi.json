@@ -45,7 +45,7 @@
             "$ref": "#/components/responses/400"
           },
           "401": {
-            "$ref": "#/components/responses/401"
+            "$ref": "#/components/responses/registrationUnauthenticated"
           },
           "503": {
             "$ref": "#/components/responses/503"
@@ -2105,7 +2105,50 @@
         }
       },
       "401": {
-        "description": "unauthenticated: Agent authentication required. The access token is missing, expired or revoked, or the DPoP proof is missing or invalid. Obtain a new token from POST /v1/token and retry with a fresh proof.",
+        "description": "unauthenticated: Agent authentication required. The access token is missing, expired or revoked, or the DPoP proof is missing or invalid. On a token-authenticated route, obtain a new token from POST /v1/token and repeat the request once with a fresh proof.",
+        "headers": {
+          "Cache-Control": {
+            "schema": {
+              "type": "string",
+              "const": "no-store"
+            }
+          },
+          "WWW-Authenticate": {
+            "required": true,
+            "description": "RFC 9449 DPoP challenge.",
+            "schema": {
+              "type": "string",
+              "const": "DPoP algs=\"EdDSA\""
+            }
+          }
+        },
+        "content": {
+          "application/problem+json": {
+            "schema": {
+              "allOf": [
+                {
+                  "$ref": "#/components/schemas/problem"
+                },
+                {
+                  "properties": {
+                    "status": {
+                      "const": 401
+                    },
+                    "code": {
+                      "const": "unauthenticated"
+                    },
+                    "title": {
+                      "const": "Agent authentication required"
+                    }
+                  }
+                }
+              ]
+            }
+          }
+        }
+      },
+      "registrationUnauthenticated": {
+        "description": "unauthenticated: The DPoP proof is missing or invalid, or its key is revoked. Registration uses no access token, so this is not an expired token. Stop and report it; do not register again with another key.",
         "headers": {
           "Cache-Control": {
             "schema": {
