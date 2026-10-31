@@ -24,7 +24,11 @@ export function parse(text: string): any {
     });
 }
 export function json(value: unknown, status = 200): Response {
-    return new Response(stringify(accountNames(value)), { status, headers: { 'Content-Type': status >= 400 ? 'application/problem+json' : 'application/json', 'Cache-Control': 'no-store', 'Pragma': 'no-cache' } });
+    return jsonText(stringify(accountNames(value)), status);
+}
+/** A response for JSON text that is already serialized with canonical account names. */
+export function jsonText(text: string, status = 200): Response {
+    return new Response(text, { status, headers: { 'Content-Type': status >= 400 ? 'application/problem+json' : 'application/json', 'Cache-Control': 'no-store', 'Pragma': 'no-cache' } });
 }
 const identityNames:Record<string,string>={agentId:'accountId',mailboxId:'accountId',ownerMailboxId:'ownerAccountId',senderMailboxId:'senderAccountId',recipientMailboxId:'recipientAccountId',requesterMailboxId:'requesterAccountId',peerMailboxId:'peerAccountId'};
 export function accountNames(value:any):any {

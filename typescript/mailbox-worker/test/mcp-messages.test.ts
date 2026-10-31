@@ -349,3 +349,56 @@ test('remoteMcp_ResolvableConflicts_NameTheCode',async()=>{
         assert.match(frame.result.content[0].text,new RegExp(code+'.*Nothing was written'));
     }
 });
+
+const nested=(depth:number):unknown=>{let value:unknown=0;for(let i=0;i<depth;i++)value=[value];return value;};
+const strangerIntroduction=async(h:Harness,from:Participant,to:Participant,body:(messageId:string)=>string)=>{
+    const intro=payload();
+    const sent={...intro,payloadEncoding:'application/json',bytes:Buffer.from(body(intro.messageId)).toString('base64')};
+    await h.ok('/v1/contacts/requests',from,'POST',{requestVersion:2,requestId:intro.messageId,requesterAccountId:from.accountId,
+        requesterAddressId:from.cardId,recipientAccountId:to.accountId,recipientAddressId:to.cardId,payload:sent});
+    return sent;
+};
+
+test('inbox_StrangerDeeplyNestedIntroduction_200KeepsBytes',async()=>{
+    const h=await start();
+    try{
+        const env=environment(h),attacker=await h.participant(),friend=await h.participant(),victim=await h.participant();
+        // Built by hand over HTTP, so no sender-side MCP limit applies.
+        const deep=await strangerIntroduction(h,attacker,victim,id=>JSON.stringify({messageId:id,role:'ROLE_USER',parts:[{data:{x:nested(3000)}}]}));
+        const normal=await strangerIntroduction(h,friend,victim,id=>JSON.stringify({messageId:id,role:'ROLE_USER',parts:[{text:'hi'}]}));
+        const answer=await call(env,victim.accountId,'list_my_inbox',{});
+        assert.equal(answer.status,200,JSON.stringify(answer.body).slice(0,200));
+        const item=(id:string)=>answer.body.items.find((x:any)=>x.envelope.payload.messageId===id);
+        assert.equal(Object.hasOwn(item(deep.messageId),'message'),false);
+        assert.equal(item(deep.messageId).envelope.payload.bytes,deep.bytes);
+        assert.deepEqual(item(normal.messageId).message.parts,[{text:'hi'}]);
+    }finally{await h.close();}
+});
+
+test('inbox_PeerDataWithAliasKeys_ReturnedExactlyAsSent',async()=>{
+    const h=await start();
+    try{
+        const env=environment(h),a=await h.participant(),b=await h.participant(),contact=await connectOverHttp(h,a,b);
+        const message=(messageId:string)=>({messageId,role:'ROLE_USER',parts:[{data:{agentId:'x',senderMailboxId:'y'}}]});
+        const sent=await httpSend(h,b,a,contact,'application/json',id=>JSON.stringify(message(id)));
+        const item=await inboxItem(env,a.accountId,sent.messageId);
+        assert.deepEqual(item.message,message(sent.messageId));
+        assert.deepEqual(Object.keys(item.message.parts[0].data),['agentId','senderMailboxId']);
+        assert.equal(item.senderAccountId,b.accountId,'server data keeps its canonical names');
+    }finally{await h.close();}
+});
+
+test('sendMessage_DataDeeperThan16_InvalidNothingWritten',async()=>{
+    const h=await start();
+    try{
+        const env=environment(h),{a,b}=await pair(h,env),before=await count(h,'SELECT count(*) n FROM mailbox_records');
+        // data itself is level 1; 15 nested arrays reach depth 16 and are accepted.
+        await ok(env,a.accountId,'send_message',{recipientAccountId:b.accountId,message:{parts:[{data:{x:nested(15)}}]}});
+        for(const depth of [16,3000]){
+            const answer=await call(env,a.accountId,'send_message',{recipientAccountId:b.accountId,message:{parts:[{data:{x:nested(depth)}}]},idempotencyKey:'deep'+depth});
+            assert.equal(answer.status,400,String(depth));
+            assert.equal(answer.body.field,'message.parts[0].data');
+        }
+        assert.equal(await count(h,'SELECT count(*) n FROM mailbox_records'),before+1);
+    }finally{await h.close();}
+});

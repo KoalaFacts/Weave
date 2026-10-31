@@ -7,6 +7,10 @@ import { enc, invalidField } from './wire.ts';
 
 export const MAX_MESSAGE_BYTES = 65536;
 const MAX_PARTS = 8;
+// Peer bodies are parsed only within these bounds, so no server helper ever recurses over unbounded peer nesting.
+const MAX_INBOX_DEPTH = 32;
+const MAX_INBOX_VALUES = 10000;
+const MAX_DATA_DEPTH = 16;
 const dayTicks = 864000000000n;
 const controls = /[\u0000-\u001f\u007f-\u009f]/u;
 
@@ -16,6 +20,35 @@ export type LowLevelPayload = {messageId: string; createdAt: string; expiresAt: 
 
 const record = (value: unknown): value is Record<string, unknown> => !!value && typeof value === 'object' && !Array.isArray(value);
 const shortText = (value: unknown) => typeof value === 'string' && value.length >= 1 && value.length <= 128 && !controls.test(value);
+
+/** Iterative check: at most maxDepth nested objects/arrays (the root is level 1) and at most maxValues values in all. */
+function withinShape(value: unknown, maxDepth: number, maxValues = Infinity): boolean {
+    const pending: [unknown, number][] = [[value, 1]];
+    let values = 0;
+    while (pending.length) {
+        const [next, depth] = pending.pop()!;
+        if (++values > maxValues) return false;
+        if (next === null || typeof next !== 'object') continue;
+        if (depth > maxDepth) return false;
+        for (const child of Object.values(next)) pending.push([child, depth + 1]);
+    }
+    return true;
+}
+
+/** Bracket-depth scan of JSON text, before parsing; strings are skipped, so brackets inside them do not count. */
+function shallowJson(text: string, maxDepth: number): boolean {
+    let depth = 0, inString = false;
+    for (let i = 0; i < text.length; i++) {
+        const c = text.charCodeAt(i);
+        if (inString) {
+            if (c === 0x5c) i++;
+            else if (c === 0x22) inString = false;
+        } else if (c === 0x22) inString = true;
+        else if (c === 0x7b || c === 0x5b) { if (++depth > maxDepth) return false; }
+        else if (c === 0x7d || c === 0x5d) depth--;
+    }
+    return true;
+}
 
 function checkPart(value: unknown, field: string): Part {
     if (!record(value)) invalidField(field, 'must be an object with exactly one of text or data');
@@ -28,6 +61,7 @@ function checkPart(value: unknown, field: string): Part {
         return {text: value.text, ...mediaType};
     }
     if (!record(value.data)) invalidField(field + '.data', 'must be a JSON object');
+    if (!withinShape(value.data, MAX_DATA_DEPTH)) invalidField(field + '.data', `must nest at most ${MAX_DATA_DEPTH} levels deep`);
     return {data: value.data, ...mediaType};
 }
 
@@ -75,11 +109,17 @@ export function messagePayload(input: MessageInput, now: bigint): LowLevelPayloa
 }
 
 /** The parsed Message of an application/json body shaped like an A2A Message carrying the envelope messageId; null keeps the raw bytes.
- * The result is untrusted peer content. */
+ * A body nested deeper than 32 levels or holding more than 10 000 values is never parsed. The result is untrusted peer content. */
 export function inboxMessage(payload: unknown): Record<string, unknown> | null {
     if (!record(payload) || payload.payloadEncoding !== 'application/json' || typeof payload.bytes !== 'string' || typeof payload.messageId !== 'string') return null;
     let parsed: unknown;
-    try { parsed = JSON.parse(new TextDecoder('utf-8', {fatal: true}).decode(Uint8Array.from(atob(payload.bytes), c => c.charCodeAt(0)))); }
+    try {
+        const text = new TextDecoder('utf-8', {fatal: true}).decode(Uint8Array.from(atob(payload.bytes), c => c.charCodeAt(0)));
+        if (!shallowJson(text, MAX_INBOX_DEPTH)) return null;
+        parsed = JSON.parse(text);
+    }
     catch { return null; }
-    return record(parsed) && parsed.messageId === payload.messageId && typeof parsed.role === 'string' && Array.isArray(parsed.parts) ? parsed : null;
+    if (!withinShape(parsed, MAX_INBOX_DEPTH, MAX_INBOX_VALUES)) return null;
+    return record(parsed) && parsed.messageId === payload.messageId && typeof parsed.role === 'string'
+        && Array.isArray(parsed.parts) && parsed.parts.every(record) ? parsed : null;
 }

@@ -8,7 +8,7 @@ import { ownedAddresses, mutateAddress } from './addresses';
 import { read } from './reads';
 import { requestContact, decide } from './contacts';
 import { sendWithResolvedConnection, ack, terminalize } from './messages';
-import { fail, identity, invalidField, json, problem, uuid } from './wire';
+import { accountNames, fail, identity, invalidField, json, jsonText, problem, stringify, uuid } from './wire';
 import { checkUuid } from './mcp-arguments';
 import { MAX_GENERATION, readChannel, relation } from './protocol';
 import { sweep } from './cleanup';
@@ -92,8 +92,9 @@ export async function executePrivateMcp(env:Env,origin:string,accountId:string,n
             pagination(target,args);
             const data=await atomic(env.db,tx=>name==='list_my_addresses'?ownedAddresses(tx,accountId,target):
                 name==='list_my_contacts'?ownContacts(tx,accountId,target):read(tx,target,accountId));
-            // Server data is filtered before peer Messages are attached, so peer content is never rewritten.
-            return json(name==='list_my_inbox'?withParsedMessages(withoutSecrets(data) as {items:any[]}):withoutSecrets(data));
+            // Server data is filtered and renamed before peer Messages are attached, so peer content is returned exactly as sent.
+            return name==='list_my_inbox'?jsonText(stringify(withParsedMessages(accountNames(withoutSecrets(data)) as {items:any[]})))
+                :json(withoutSecrets(data));
         }
         if(name==='get_my_channel'){
             parameters(args,['peerAccountId'],['peerAccountId']);identity(args.peerAccountId);target.pathname='/v1/contacts/channel';target.searchParams.set('peerAccountId',args.peerAccountId);

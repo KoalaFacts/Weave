@@ -62,3 +62,19 @@ test('inboxMessage_OnlyWellFormedA2aJson_IsParsed', () => {
     assert.equal(inboxMessage({messageId: 'peer-chosen', payloadEncoding: 'application/json', bytes: Buffer.from([0xff, 0xfe]).toString('base64')}), null);
     assert.equal(inboxMessage(null), null);
 });
+
+test('inboxMessage_BeyondDepthOrValueLimits_KeepsBytes', () => {
+    const id = 'm';
+    const body = (parts: unknown) => ({messageId: id, payloadEncoding: 'application/json',
+        bytes: Buffer.from(JSON.stringify({messageId: id, role: 'ROLE_USER', parts})).toString('base64')});
+    const nest = (depth: number) => { let value: unknown = 0; for (let i = 0; i < depth; i++) value = [value]; return value; };
+    // Message (1) > parts (2) > part (3) > data (4): 28 nested arrays reach exactly 32.
+    assert.ok(inboxMessage(body([{data: {x: nest(28)}}])));
+    assert.equal(inboxMessage(body([{data: {x: nest(29)}}])), null);
+    assert.equal(inboxMessage(body([{data: {x: nest(3000)}}])), null);
+    // Brackets inside strings do not count towards the depth.
+    assert.ok(inboxMessage(body([{text: '['.repeat(100)}])));
+    assert.ok(inboxMessage(body([{data: {x: Array(9990).fill(1)}}])));
+    assert.equal(inboxMessage(body([{data: {x: Array(10000).fill(1)}}])), null);
+    assert.equal(inboxMessage(body([1])), null, 'every part must be an object');
+});
