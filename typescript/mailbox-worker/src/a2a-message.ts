@@ -74,11 +74,12 @@ export function messagePayload(input: MessageInput, now: bigint): LowLevelPayloa
         bytes: base64(enc.encode(JSON.stringify(build(input, messageId))))};
 }
 
-/** The parsed Message of an application/json body shaped like an A2A Message; null keeps the raw bytes. The result is untrusted peer content. */
+/** The parsed Message of an application/json body shaped like an A2A Message carrying the envelope messageId; null keeps the raw bytes.
+ * The result is untrusted peer content. */
 export function inboxMessage(payload: unknown): Record<string, unknown> | null {
-    if (!record(payload) || payload.payloadEncoding !== 'application/json' || typeof payload.bytes !== 'string') return null;
+    if (!record(payload) || payload.payloadEncoding !== 'application/json' || typeof payload.bytes !== 'string' || typeof payload.messageId !== 'string') return null;
     let parsed: unknown;
     try { parsed = JSON.parse(new TextDecoder('utf-8', {fatal: true}).decode(Uint8Array.from(atob(payload.bytes), c => c.charCodeAt(0)))); }
     catch { return null; }
-    return record(parsed) && typeof parsed.messageId === 'string' && typeof parsed.role === 'string' && Array.isArray(parsed.parts) ? parsed : null;
+    return record(parsed) && parsed.messageId === payload.messageId && typeof parsed.role === 'string' && Array.isArray(parsed.parts) ? parsed : null;
 }

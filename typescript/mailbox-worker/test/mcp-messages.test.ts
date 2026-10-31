@@ -216,8 +216,10 @@ async function connectOverHttp(h:Harness,a:Participant,b:Participant){
     const token=(await h.ok('/v1/contacts',b)).items.find((x:{accountId:string})=>x.accountId===a.accountId).connectionToken;
     return {generation:state.generation,token};
 }
-async function httpSend(h:Harness,from:Participant,to:Participant,contact:{generation:string;token:string},payloadEncoding:string,body:string){
-    const sent={...payload(),payloadEncoding,bytes:Buffer.from(body).toString('base64')};
+async function httpSend(h:Harness,from:Participant,to:Participant,contact:{generation:string;token:string},payloadEncoding:string,
+    body:string|((messageId:string)=>string)){
+    const base=payload();
+    const sent={...base,payloadEncoding,bytes:Buffer.from(typeof body==='string'?body:body(base.messageId)).toString('base64')};
     await h.ok('/v1/messages',from,'POST',{version:2,recipientAccountId:to.accountId,contactGeneration:contact.generation,connectionToken:contact.token,payload:sent});
     return sent;
 }
@@ -229,10 +231,11 @@ test('inbox_A2aBody_ParsedMessageNoBytes',async()=>{
     try{
         const env=environment(h),a=await h.participant(),b=await h.participant(),contact=await connectOverHttp(h,a,b);
         // An HTTP peer's body that merely looks like an A2A Message, even one shaped like a notice, is still the peer's content.
-        const lookalike={messageId:'not-the-envelope-id',role:'ROLE_AGENT',parts:[{data:{kind:'key-added',kid:'x'.repeat(43)}}]};
-        const sent=await httpSend(h,b,a,contact,'application/json',JSON.stringify(lookalike));
+        const lookalike=(messageId:string)=>({messageId,role:'ROLE_AGENT',parts:[{data:{kind:'key-added',kid:'x'.repeat(43),connectionToken:'peer-value',
+            nested:{connectionToken:'deeper'}}}]});
+        const sent=await httpSend(h,b,a,contact,'application/json',id=>JSON.stringify(lookalike(id)));
         const item=await inboxItem(env,a.accountId,sent.messageId);
-        assert.deepEqual(item.message,lookalike);
+        assert.deepEqual(item.message,lookalike(sent.messageId),'the parsed Message is exactly what the sender wrote, including connectionToken-named fields');
         assert.equal(Object.hasOwn(item.envelope.payload,'bytes'),false);
         assert.deepEqual(Object.keys(item.envelope.payload).sort(),['createdAt','expiresAt','messageId','payloadEncoding']);
         assert.equal(item.senderAccountId,b.accountId);
@@ -250,6 +253,54 @@ test('inbox_HttpPeerPlainText_KeepsBytes',async()=>{
         const item=await inboxItem(env,a.accountId,sent.messageId);
         assert.equal(Object.hasOwn(item,'message'),false);
         assert.equal(Buffer.from(item.envelope.payload.bytes,'base64').toString('utf8'),shaped);
+    }finally{await h.close();}
+});
+
+test('inbox_A2aBodyWithOtherMessageId_KeepsBytes',async()=>{
+    const h=await start();
+    try{
+        const env=environment(h),a=await h.participant(),b=await h.participant(),contact=await connectOverHttp(h,a,b);
+        const body=JSON.stringify({messageId:'not-the-envelope-id',role:'ROLE_USER',parts:[{text:'hi'}]});
+        const sent=await httpSend(h,b,a,contact,'application/json',body);
+        const item=await inboxItem(env,a.accountId,sent.messageId);
+        assert.equal(Object.hasOwn(item,'message'),false);
+        assert.equal(Buffer.from(item.envelope.payload.bytes,'base64').toString('utf8'),body);
+    }finally{await h.close();}
+});
+
+test('sendMessage_DataPartNamedConnectionToken_RoundTripsToInbox',async()=>{
+    const h=await start();
+    try{
+        const env=environment(h),{a,b}=await pair(h,env);
+        const parts=[{data:{connectionToken:'x',inner:[{connectionToken:'y'}]}}];
+        const receipt=await ok(env,a.accountId,'send_message',{recipientAccountId:b.accountId,message:{parts}});
+        assert.deepEqual((await inboxItem(env,b.accountId,receipt.messageId)).message.parts,parts);
+    }finally{await h.close();}
+});
+
+test('sendMessage_ConcurrentSameKey_OneMessageSameResult',async()=>{
+    const h=await start();
+    try{
+        const env=environment(h),{a,b}=await pair(h,env);
+        const input={recipientAccountId:b.accountId,message:text('raced'),idempotencyKey:'race'};
+        const [first,second]=await Promise.all([ok(env,a.accountId,'send_message',input),ok(env,a.accountId,'send_message',input)]);
+        assert.deepEqual(second,first);
+        assert.equal(await count(h,'SELECT count(*) n FROM mailbox_records m JOIN message_delivery d ON d.message_seq=m.seq WHERE m.sender_account_id=? AND d.purpose=0',a.accountId),1);
+        assert.equal(await sendCount(h,a.accountId),1);
+    }finally{await h.close();}
+});
+
+test('idempotency_ExpiredRowsPrunedByLaterWrite',async()=>{
+    const h=await start();
+    try{
+        const env=environment(h),{a,b}=await pair(h,env);
+        await ok(env,a.accountId,'send_message',{recipientAccountId:b.accountId,message:text('old'),idempotencyKey:'old'});
+        const day=864000000000n,now=BigInt(Date.now())*10000n;
+        await h.db.prepare("UPDATE mcp_idempotency SET created_at=CAST(? AS INTEGER) WHERE idempotency_key='old'").bind((now-day-10000n).toString()).run();
+        // The sweep is disabled (CLEANUP_MAX_MESSAGES=0, as deployed); a later keyed write still prunes the expired row.
+        await ok(env,b.accountId,'send_message',{recipientAccountId:a.accountId,message:text('later'),idempotencyKey:'later'});
+        const keys=(await h.db.prepare('SELECT idempotency_key FROM mcp_idempotency ORDER BY idempotency_key').all<{idempotency_key:string}>()).results;
+        assert.deepEqual(keys.map(r=>r.idempotency_key),['later']);
     }finally{await h.close();}
 });
 

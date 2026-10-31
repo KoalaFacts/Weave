@@ -50,14 +50,15 @@ test('checkMessage_SerializedSizeLimit_CountsWholeMessage', () => {
 
 test('inboxMessage_OnlyWellFormedA2aJson_IsParsed', () => {
     const body = (value: unknown, payloadEncoding = 'application/json') =>
-        ({payloadEncoding, bytes: Buffer.from(typeof value === 'string' ? value : JSON.stringify(value)).toString('base64')});
+        ({messageId: 'peer-chosen', payloadEncoding, bytes: Buffer.from(typeof value === 'string' ? value : JSON.stringify(value)).toString('base64')});
     const message = {messageId: 'peer-chosen', role: 'ROLE_AGENT', parts: [{text: 'hi'}], metadata: {kind: 'key-added'}};
     assert.deepEqual(inboxMessage(body(message)), message);
     assert.equal(inboxMessage(body(message, 'text/plain')), null);
+    assert.equal(inboxMessage({...body(message), messageId: 'envelope-id'}), null, 'the Message must carry the envelope messageId');
     assert.equal(inboxMessage(body('{"messageId":')), null);
     assert.equal(inboxMessage(body([message])), null);
     assert.equal(inboxMessage(body({...message, messageId: 1})), null);
     assert.equal(inboxMessage(body({...message, parts: 'x'})), null);
-    assert.equal(inboxMessage({payloadEncoding: 'application/json', bytes: Buffer.from([0xff, 0xfe]).toString('base64')}), null);
+    assert.equal(inboxMessage({messageId: 'peer-chosen', payloadEncoding: 'application/json', bytes: Buffer.from([0xff, 0xfe]).toString('base64')}), null);
     assert.equal(inboxMessage(null), null);
 });
