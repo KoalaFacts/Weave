@@ -11,14 +11,15 @@ import { apiTime, nowUtc } from './time.ts';
 export const reauthWindowMs = 600_000;
 export const reauthFutureSkewMs = 60_000;
 const maxGrantsPerAgent = 50, maxAddressesPerAgent = 20, maxRevokedGrantIds = 20;
-const revokedGrantWindowTicks = 864_000_000_000n;
+/** 30 days of 100 ns ticks: how long the authorization server keeps retrying SDK clean-up of a revoked grant. */
+const revokedGrantWindowTicks = 25_920_000_000_000n;
 
 export type OwnerKey = {kid: string; label: string | null; createdAt: string; lastUsedAt: string | null; coolingUntil: string | null};
 export type OwnerBindingRequest = {requestId: string; agentId: string; displayName: string | null; requestingKid: string; liveKeys: OwnerKey[]; keysDigest: string; createdAt: string; expiresAt: string};
 export type OwnerKeyRequest = {requestId: string; kid: string; label: string | null; endorsedBy: string; createdAt: string; expiresAt: string};
 export type OwnerGrant = {grantId: string; clientId: string; clientName: string | null; createdAt: string};
 export type OwnerAddress = {addressId: string; label: string | null; isPublic: boolean; hasAgentCard: boolean; createdAt: string};
-/** `revokedGrantIds` are grants revoked in the last 24 hours, for the authorization server's token clean-up retry; never rendered. */
+/** `revokedGrantIds` are grants revoked in the last 30 days, for the authorization server's token clean-up retry; never rendered. */
 export type OwnedAgentKeys = {agentId: string; displayName: string | null; keys: OwnerKey[]; keyRequests: OwnerKeyRequest[];
     grants: OwnerGrant[]; addresses: OwnerAddress[]; revokedGrantIds: string[]};
 export type OwnerOverview = {frozen: true} | {frozen: false; bindingRequests: OwnerBindingRequest[]; agents: OwnedAgentKeys[]};
@@ -38,6 +39,8 @@ export type OwnerActionResult = OwnerDecision | {ok: true; code: string; expires
 export type OwnerHuman = {humanId: string; subject: string};
 
 const uuidPattern = /^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/i;
+/** Grant IDs are minted lowercase by the authorization server; any other spelling is not a grant. */
+const grantIdPattern = /^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/;
 const kidPattern = /^[A-Za-z0-9_-]{43}$/;
 const digestPattern = /^[A-Za-z0-9_-]{43}$/;
 const destructive = new Set<string>(['confirm-binding', 'confirm-key', 'revoke-key', 'issue-recovery-code']);
@@ -54,7 +57,7 @@ export async function ownerOverview(env: Env, humanId: string, clock: () => bigi
     const empty: OwnerOverview = {frozen: false, bindingRequests: [], agents: []};
     if (typeof humanId !== 'string' || !uuidPattern.test(humanId)) return empty;
     return atomic(env.db, async tx => {
-        const now = clock().toString();
+        const nowTicks = clock(), now = nowTicks.toString();
         const human = await tx.db.prepare('SELECT subject,frozen_at FROM humans WHERE human_id=?').bind(humanId).first<{subject: string; frozen_at: string | null}>();
         if (!human) return empty;
         if (human.frozen_at !== null) return {frozen: true as const};
@@ -74,17 +77,17 @@ export async function ownerOverview(env: Env, humanId: string, clock: () => bigi
             .bind(...ownedIds, now).all<{request_id: string; account_id: string; kid: string; label: string | null; endorsed_by: string; created_at: string; expires_at: string}>()).results;
         const grants = ownedIds.length === 0 ? [] : (await tx.db.prepare(`SELECT account_id,grant_id,client_id,client_name,CAST(created_at AS TEXT) created_at FROM (
             SELECT *,row_number() OVER (PARTITION BY account_id ORDER BY created_at DESC,grant_id) rank FROM client_grants WHERE human_id=? AND revoked_at IS NULL AND account_id IN (${placeholders(ownedIds)}))
-            WHERE rank<=? ORDER BY account_id,created_at DESC,grant_id`)
+            WHERE rank<=? ORDER BY account_id,rank`)
             .bind(humanId, ...ownedIds, maxGrantsPerAgent).all<{account_id: string; grant_id: string; client_id: string; client_name: string | null; created_at: string}>()).results;
         const revoked = ownedIds.length === 0 ? [] : (await tx.db.prepare(`SELECT account_id,grant_id FROM (
             SELECT *,row_number() OVER (PARTITION BY account_id ORDER BY revoked_at DESC,grant_id) rank FROM client_grants
             WHERE human_id=? AND revoked_at IS NOT NULL AND revoked_at>CAST(? AS INTEGER) AND account_id IN (${placeholders(ownedIds)}))
-            WHERE rank<=? ORDER BY account_id,revoked_at DESC,grant_id`)
-            .bind(humanId, (clock() - revokedGrantWindowTicks).toString(), ...ownedIds, maxRevokedGrantIds).all<{account_id: string; grant_id: string}>()).results;
+            WHERE rank<=? ORDER BY account_id,rank`)
+            .bind(humanId, (nowTicks - revokedGrantWindowTicks).toString(), ...ownedIds, maxRevokedGrantIds).all<{account_id: string; grant_id: string}>()).results;
         const addresses = ownedIds.length === 0 ? [] : (await tx.db.prepare(`SELECT account_id,address_id,label,is_public,hasCard,CAST(created_at AS TEXT) created_at FROM (
             SELECT a.*,EXISTS(SELECT 1 FROM address_agent_cards c WHERE c.address_id=a.address_id) hasCard,
             row_number() OVER (PARTITION BY a.account_id ORDER BY a.created_at,a.address_id) rank FROM account_addresses a WHERE a.revoked_at IS NULL AND a.account_id IN (${placeholders(ownedIds)}))
-            WHERE rank<=? ORDER BY account_id,created_at,address_id`)
+            WHERE rank<=? ORDER BY account_id,rank`)
             .bind(...ownedIds, maxAddressesPerAgent).all<{account_id: string; address_id: string; label: string | null; is_public: number; hasCard: number; created_at: string}>()).results;
         const bindingRequests: OwnerBindingRequest[] = [];
         for (const row of bindings) {
@@ -118,7 +121,7 @@ function validShape(input: unknown): OwnerAction | null {
         case 'reject-binding': case 'confirm-key': case 'reject-key': return uuid(action.requestId) ? input as OwnerAction : null;
         case 'revoke-key': return uuid(action.agentId) && typeof action.kid === 'string' && kidPattern.test(action.kid) ? input as OwnerAction : null;
         case 'issue-recovery-code': return uuid(action.agentId) ? input as OwnerAction : null;
-        case 'revoke-grant': return uuid(action.grantId) ? input as OwnerAction : null;
+        case 'revoke-grant': return typeof action.grantId === 'string' && grantIdPattern.test(action.grantId) ? input as OwnerAction : null;
         default: return null;
     }
 }

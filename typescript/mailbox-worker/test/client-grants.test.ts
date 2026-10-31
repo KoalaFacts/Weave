@@ -275,7 +275,8 @@ test('recordGrant_ClientNameStoredBounded', async () => {
         const env = environment(h.db), { humanId, accountId } = await owner(env);
         const name = (grantId: string) => h.db.prepare('SELECT client_name n FROM client_grants WHERE grant_id=?').bind(grantId).first<string | null>('n');
         const cases: [string | null | undefined, string | null][] = [['Claude Desktop', 'Claude Desktop'], [null, null], [undefined, null], ['', null],
-            ['a\nb\u0000c\u009fd', 'a?b?c?d'], ['x'.repeat(200), 'x'.repeat(128)]];
+            ['a\nb\u0000c\u009fd', 'a?b?c?d'], ['x'.repeat(200), 'x'.repeat(128)], ['   ', null], ['\t\n', null],
+            ['a\u202ab\u202ec\u2066d\u2069e', 'a?b?c?d?e'], ['\u{1F600}'.repeat(130), '\u{1F600}'.repeat(128)]];
         for (const [clientName, stored] of cases) {
             const grantId = crypto.randomUUID();
             assert.deepEqual(await recordGrant(env, { grantId, humanId, accountId, clientId, ...(clientName === undefined ? {} : { clientName }) }), { ok: true });

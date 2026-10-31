@@ -643,17 +643,64 @@ test('overview_AgentAddresses_LiveOnlyWithCardFlag', async () => {
     } finally { await h.close(); }
 });
 
-test('overview_RevokedGrantIds_Last24h', async () => {
+test('overview_RevokedGrantIds_Last30Days', async () => {
     const h = await start();
     try {
         const id = await human(h, '555'), cred = await ownedAgent(h, id);
         const now = 1_000_000_000_000_000n, day = 864_000_000_000n;
-        const recent = await seedGrant(h, id, cred.accountId, {createdAt: now - day * 3n, revokedAt: now - day / 2n});
-        await seedGrant(h, id, cred.accountId, {createdAt: now - day * 3n, revokedAt: now - day - 1n});
+        const recent = await seedGrant(h, id, cred.accountId, {createdAt: now - day * 40n, revokedAt: now - day * 29n});
+        await seedGrant(h, id, cred.accountId, {createdAt: now - day * 40n, revokedAt: now - day * 30n - 1n});
         const live = await seedGrant(h, id, cred.accountId, {createdAt: now - day});
         const [agent] = await overviewAgent(h, id, () => now);
         assert.deepEqual(agent.revokedGrantIds, [recent]);
         assert.deepEqual(agent.grants.map(g => g.grantId), [live]);
+    } finally { await h.close(); }
+});
+
+test('overview_BusyAgent_BoundedPerAgentWithoutStarvingAnother', async () => {
+    const h = await start();
+    try {
+        const id = await human(h, '555'), busy = await ownedAgent(h, id), quiet = await ownedAgent(h, id, 'quiet');
+        const now = 1_000_000_000_000_000n;
+        const grants: string[] = [], revoked: string[] = [], addresses: string[] = [];
+        for (let i = 1n; i <= 51n; i++) grants.push(await seedGrant(h, id, busy.accountId, {createdAt: now - 1000n + i}));
+        for (let i = 1n; i <= 21n; i++) revoked.push(await seedGrant(h, id, busy.accountId, {createdAt: now - 1000n, revokedAt: now - 100n + i}));
+        for (let i = 1n; i <= 21n; i++) addresses.push(await seedAddress(h, busy.accountId, {createdAt: now - 1000n + i}));
+        const quietGrant = await seedGrant(h, id, quiet.accountId, {createdAt: now - 1000n});
+        const quietRevoked = await seedGrant(h, id, quiet.accountId, {createdAt: now - 1000n, revokedAt: now - 500n});
+        const quietAddress = await seedAddress(h, quiet.accountId, {createdAt: now - 1000n});
+        const agents = await overviewAgent(h, id, () => now);
+        const first = agents.find(a => a.agentId === busy.accountId)!, second = agents.find(a => a.agentId === quiet.accountId)!;
+        assert.deepEqual(first.grants.map(g => g.grantId), grants.slice(1).reverse(), '50 newest live grants');
+        assert.deepEqual(first.addresses.map(a => a.addressId), addresses.slice(0, 20), '20 oldest live addresses');
+        assert.deepEqual(first.revokedGrantIds, revoked.slice(1).reverse(), '20 most recently revoked');
+        assert.deepEqual(second.grants.map(g => g.grantId), [quietGrant]);
+        assert.deepEqual(second.addresses.map(a => a.addressId), [quietAddress]);
+        assert.deepEqual(second.revokedGrantIds, [quietRevoked]);
+    } finally { await h.close(); }
+});
+
+test('overview_OrdersByStoredTicksNotTheirText', async () => {
+    const h = await start();
+    try {
+        const id = await human(h, '555'), cred = await ownedAgent(h, id);
+        // As text "10" sorts before "9"; as ticks it is later.
+        const nine = await seedGrant(h, id, cred.accountId, {createdAt: 9n}), ten = await seedGrant(h, id, cred.accountId, {createdAt: 10n});
+        const nineAddress = await seedAddress(h, cred.accountId, {createdAt: 9n}), tenAddress = await seedAddress(h, cred.accountId, {createdAt: 10n});
+        const [agent] = await overviewAgent(h, id);
+        assert.deepEqual(agent.grants.map(g => g.grantId), [ten, nine]);
+        assert.deepEqual(agent.addresses.map(a => a.addressId), [nineAddress, tenAddress]);
+    } finally { await h.close(); }
+});
+
+test('overview_ReadsTheClockOnce', async () => {
+    const h = await start();
+    try {
+        const id = await human(h, '555'), cred = await ownedAgent(h, id);
+        await seedGrant(h, id, cred.accountId, {revokedAt: 2000n});
+        let reads = 0;
+        await overviewAgent(h, id, () => { reads++; return 1_000_000_000_000_000n; });
+        assert.equal(reads, 1);
     } finally { await h.close(); }
 });
 
@@ -702,5 +749,8 @@ test('revokeGrantAction_NoReauthNeeded', async () => {
         assert.deepEqual(await act(h, id, {kind: 'revoke-grant', grantId, authAt: Date.now() - 86_400_000}), {ok: true});
         assert.notEqual(await grantRevokedAt(h, grantId), null);
         assert.deepEqual(await act(h, id, {kind: 'revoke-grant', grantId: 'not-a-uuid'}), {ok: false, reason: 'not-found'});
+        const other = await seedGrant(h, id, cred.accountId);
+        assert.deepEqual(await act(h, id, {kind: 'revoke-grant', grantId: other.toUpperCase()}), {ok: false, reason: 'not-found'});
+        assert.equal(await grantRevokedAt(h, other), null);
     } finally { await h.close(); }
 });

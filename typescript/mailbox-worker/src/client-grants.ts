@@ -16,16 +16,20 @@ export type RevokeGrantResult = { ok: true } | { ok: false; reason: 'not-found' 
 
 const uuidPattern = /^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/;
 const controlCharacters = /[\u0000-\u001f\u007f-\u009f]/u;
-const controlCharactersGlobal = new RegExp(controlCharacters.source, 'gu');
+/** C0/C1 controls and the bidi embedding, override and isolate controls, which could make a name read as another. */
+const nameControls = /[\u0000-\u001f\u007f-\u009f\u202a-\u202e\u2066-\u2069]/gu;
 const maxClientName = 128;
 const uuid = (value: unknown): value is string => typeof value === 'string' && uuidPattern.test(value);
 
-/** The self-reported name bounded to 128 characters with control characters replaced by `?`; empty becomes null. */
+/**
+ * The self-reported name bounded to 128 characters with control and bidi characters replaced by `?`; empty or
+ * whitespace-only becomes null. The authorization server applies the same rule (auth-worker/src/client-name.ts).
+ */
 function boundedClientName(value: unknown): string | null {
     if (value === undefined || value === null) return null;
     if (typeof value !== 'string') fail();
-    const name = [...value.replace(controlCharactersGlobal, '?')].slice(0, maxClientName).join('');
-    return name === '' ? null : name;
+    if (value.trim() === '') return null;
+    return [...value.replace(nameControls, '?')].slice(0, maxClientName).join('');
 }
 
 /** Records a grant for an agent the (not frozen) human owns. The authorization server issues no code unless this returns ok. */

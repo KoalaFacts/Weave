@@ -274,3 +274,17 @@ test("account_SdkRevokeFails_PageSaysRevokedAndNextVisitRetries",{timeout:60_000
   assert.equal((await account(cookie)).status,200);
   assert.ok(await mirrorRevoked(connection.grantId));
 });
+
+test("account_FrozenHumanRevokeGrant_FrozenPageNothingRevoked",{timeout:60_000},async()=>{
+  const connection=await connect(),cookie=await sessionCookie(connection.human);
+  const token=revokeForms(await (await account(cookie)).text())[0];
+  await (await db()).prepare("UPDATE humans SET frozen_at=updated_at WHERE human_id=?").bind(connection.human.humanId).run();
+  const response=await postAccount(token,cookie);
+  assert.equal(response.status,303);
+  assert.equal(result(response),"frozen");
+  const page=await (await account(cookie,response.headers.get("location")!)).text();
+  assert.ok(page.includes("Nothing can be changed from here."));
+  assert.deepEqual(revokeForms(page),[]);
+  assert.equal(await mirrorRevoked(connection.grantId),false);
+  assert.equal((await sdkGrants(connection.accountId)).length,1);
+});
