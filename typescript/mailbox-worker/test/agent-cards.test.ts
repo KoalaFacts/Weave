@@ -3,6 +3,7 @@ import {test} from 'node:test';
 import {build} from 'esbuild';
 import {start,type AgentCredential} from './harness.ts';
 import type {Env} from '../src/database.ts';
+import {remoteMcp} from '../src/remote-mcp.ts';
 
 const built=await build({entryPoints:['src/remote-private.ts'],bundle:true,write:false,platform:'node',format:'esm',logLevel:'silent'});
 const {executePrivateMcp}=await import('data:text/javascript;base64,'+Buffer.from(built.outputFiles[0].contents).toString('base64')) as typeof import('../src/remote-private.ts');
@@ -190,12 +191,116 @@ test('servedCard_RowOutlivingPublicAddress_FilteredAtRead',async()=>{
     const h=await start();
     try{
         const a=await h.register(),addressId=await publicAddress(h,a);
-        await ok(h,a,'publish_my_agent_card',{addressId,card:card({capabilities:{agentId:'declared'}})});
+        await ok(h,a,'publish_my_agent_card',{addressId,card:card({capabilities:{extensions:[{uri:'https://ext.example/x',params:{agentId:'declared'}}]}})});
         const served=await (await h.request('/v1/directory/address/'+addressId+'/agent-card.json')).json();
-        assert.deepEqual(served.capabilities,{agentId:'declared'},'agent-declared keys are served exactly as stored');
+        assert.deepEqual(served.capabilities.extensions[0].params,{agentId:'declared'},'agent-declared keys are served exactly as stored');
         await h.db.prepare('UPDATE account_addresses SET revoked_at=CAST(? AS INTEGER) WHERE address_id=?').bind((BigInt(Date.now())*10000n).toString(),addressId).run();
         assert.equal(await cards(h),1,'the row is still stored');
         assert.equal((await h.request('/v1/directory/address/'+addressId+'/agent-card.json')).status,404,'a stored card is not served for a non-public address');
         assert.equal((await h.request('/v1/directory/address?addressId='+addressId)).status,404);
+    }finally{await h.close();}
+});
+
+const fullCard=()=>card({
+    capabilities:{streaming:true,pushNotifications:false,extendedAgentCard:false,extensions:[{uri:'https://ext.example/x',description:'Extra',required:false,params:{a:{b:{c:1}},list:['x']}}]},
+    securitySchemes:{
+        key:{apiKeySecurityScheme:{description:'Header key',location:'header',name:'X-Key'}},
+        web:{httpAuthSecurityScheme:{scheme:'Bearer',bearerFormat:'JWT'}},
+        oauth:{oauth2SecurityScheme:{flows:{authorizationCode:{authorizationUrl:'https://auth.example/a',tokenUrl:'https://auth.example/t',refreshUrl:'https://auth.example/r',scopes:{read:'Read access'},pkceRequired:true}},oauth2MetadataUrl:'https://auth.example/.well-known/m'}},
+        oidc:{openIdConnectSecurityScheme:{openIdConnectUrl:'https://auth.example/.well-known/openid-configuration'}},
+        tls:{mtlsSecurityScheme:{description:'Client certificate'}}},
+    securityRequirements:[{schemes:{oauth:{list:['read']},tls:{list:[]}}}]});
+
+test('publishCard_FullCardWithSecurity_StoredAsDeclared',async()=>{
+    const h=await start();
+    try{
+        const a=await h.register(),addressId=await publicAddress(h,a);
+        const published=await ok(h,a,'publish_my_agent_card',{addressId,card:fullCard()});
+        assert.deepEqual(published.agentCard,fullCard());
+        assert.deepEqual(await (await h.request('/v1/directory/address/'+addressId+'/agent-card.json')).json(),fullCard());
+    }finally{await h.close();}
+});
+
+test('publishCard_UnacceptableContent_InvalidNoChange',async()=>{
+    const h=await start();
+    try{
+        const a=await h.register(),addressId=await publicAddress(h,a);
+        const deep={a:{b:{c:{d:{e:1}}}}};
+        const manyKeys=Object.fromEntries(Array.from({length:65},(_,i)=>['k'+i,i]));
+        const big=Object.fromEntries(['a','b','c','d','e'].map(key=>[key,'x'.repeat(1000)]));
+        const ext=(params:unknown)=>card({capabilities:{extensions:[{uri:'https://ext.example/x',params}]}});
+        const scheme=(value:unknown)=>card({securitySchemes:{x:value}});
+        const bad:[string,Record<string,unknown>][]=[
+            ['unknown capability member',card({capabilities:{streaming:true,teleport:true}})],
+            ['non-boolean capability',card({capabilities:{streaming:'yes'}})],
+            ['http extension uri',card({capabilities:{extensions:[{uri:'http://ext.example/x'}]}})],
+            ['over-deep params',ext(deep)],
+            ['too many params members',ext(manyKeys)],
+            ['large params',ext(big)],
+            ['http tokenUrl',scheme({oauth2SecurityScheme:{flows:{clientCredentials:{tokenUrl:'http://auth.example/t',scopes:{}}}}})],
+            ['unknown scheme kind',scheme({kerberosSecurityScheme:{}})],
+            ['two scheme kinds',scheme({mtlsSecurityScheme:{},httpAuthSecurityScheme:{scheme:'Basic'}})],
+            ['unknown scheme member',scheme({mtlsSecurityScheme:{extra:'1'}})],
+            ['bad scheme name',card({securitySchemes:{'bad name':{mtlsSecurityScheme:{}}}})],
+            ['control char in scheme description',scheme({mtlsSecurityScheme:{description:'a\u0007b'}})],
+            ['missing required scheme member',scheme({apiKeySecurityScheme:{name:'X'}})],
+            ['requirement naming a missing scheme',card({securitySchemes:{x:{mtlsSecurityScheme:{}}},securityRequirements:[{schemes:{y:{list:[]}}}]})],
+            ['requirement with no schemes declared',card({securityRequirements:[{schemes:{y:{list:[]}}}]})],
+            ['too many requirements',card({securitySchemes:{x:{mtlsSecurityScheme:{}}},securityRequirements:Array.from({length:17},()=>({}))})],
+            ['control char in description',card({description:'bad\u0000text'})]
+        ];
+        const revision=await h.db.prepare('SELECT token FROM mailbox_revision WHERE singleton=1').first('token');
+        for(const [name,value] of bad)assert.equal((await call(h,a,'publish_my_agent_card',{addressId,card:value})).status,400,name);
+        assert.equal(await cards(h),0);
+        assert.equal(await h.db.prepare('SELECT token FROM mailbox_revision WHERE singleton=1').first('token'),revision,'nothing was written');
+    }finally{await h.close();}
+});
+
+test('publishCard_NonCanonicalHttpsForms_Invalid',async()=>{
+    const h=await start();
+    try{
+        const a=await h.register(),addressId=await publicAddress(h,a);
+        const urls=['https:evil.example','https:\\evil.example','https:/evil.example','https://','https://evil.example\\@good.example','HTTPS://agent.example/a2a'];
+        for(const url of urls){
+            const refused=await call(h,a,'publish_my_agent_card',{addressId,card:card({supportedInterfaces:[{url,protocolBinding:'JSONRPC',protocolVersion:'1.0'}]})});
+            assert.equal(refused.status,400,url);
+        }
+        const viaScheme=await call(h,a,'publish_my_agent_card',{addressId,card:card({securitySchemes:{o:{openIdConnectSecurityScheme:{openIdConnectUrl:'https:evil.example'}}}})});
+        assert.equal(viaScheme.status,400);
+        assert.equal(await cards(h),0);
+        const normalized=await ok(h,a,'publish_my_agent_card',{addressId,card:card({supportedInterfaces:[{url:'https://Agent.Example',protocolBinding:'JSONRPC',protocolVersion:'1.0'}]})});
+        assert.equal(normalized.agentCard.supportedInterfaces[0].url,'https://agent.example/','a valid URL is stored in its normalized form');
+    }finally{await h.close();}
+});
+
+test('publicMcp_LookupAndSearch_ReturnCardUnverified',async()=>{
+    const h=await start();
+    try{
+        const a=await h.register(),addressId=await publicAddress(h,a,'Searchable');
+        await ok(h,a,'publish_my_agent_card',{addressId,card:card()});
+        const read=(url:URL)=>h.request(url.pathname+url.search);
+        const run=async(name:string,args:Record<string,unknown>)=>(await (await remoteMcp(new Request(origin+'/mcp',{method:'POST',
+            headers:{'Content-Type':'application/json',Accept:'application/json, text/event-stream'},
+            body:JSON.stringify({jsonrpc:'2.0',id:1,method:'tools/call',params:{name,arguments:args}})}),read)).json()).result.structuredContent;
+        const found=await run('lookup_address',{addressId});
+        assert.deepEqual(found.agentCard,card());
+        assert.equal(found.agentCardVerified,false);
+        const listed=(await run('search_registry',{q:'Searchable'})).items.find((i:{addressId:string})=>i.addressId===addressId);
+        assert.deepEqual(listed.agentCard,card());
+        assert.equal(listed.agentCardVerified,false);
+    }finally{await h.close();}
+});
+
+test('cardRoute_PublicReadLimitExceeded_429WithRetryAfter',async()=>{
+    const h=await start();
+    try{
+        const a=await h.register(),addressId=await publicAddress(h,a);
+        await ok(h,a,'publish_my_agent_card',{addressId,card:card()});
+        const path='/v1/directory/address/'+addressId+'/agent-card.json';
+        assert.equal((await h.request(path)).status,200);
+        await h.db.prepare("UPDATE rate_limits SET count=2000 WHERE policy='public-read' AND bucket_key='global'").run();
+        const limited=await h.request(path);
+        assert.equal(limited.status,429);
+        assert.ok(Number(limited.headers.get('retry-after'))>0);
     }finally{await h.close();}
 });

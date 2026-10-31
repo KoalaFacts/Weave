@@ -48,10 +48,10 @@ test('OpenAPI describes the current HTTP method/path set with resolved local ref
             const operation = spec.paths[path][method];
             assert.equal(ids.has(operation.operationId),false);
             ids.add(operation.operationId);
-            const anonymous = method === 'get' && ['/v1/directory','/v1/directory/address','/v1/directory/address/{addressId}/agent-card.json','/v1/contacts/cards','/v1/contacts/card'].includes(path);
+            const anonymous = method === 'get' && ['/v1/directory','/v1/directory/address','/v1/contacts/cards','/v1/contacts/card'].includes(path);
             const token = {AgentToken:[],DPoPProof:[]};
             const proofOnly = path === '/v1/accounts' || path === '/v1/token' || path === '/v1/key-requests';
-            assert.deepEqual(operation.security ?? spec.security,proofOnly ? [{DPoPProof:[]}] : anonymous ? [{},token] : [token],path);
+            assert.deepEqual(operation.security ?? spec.security,proofOnly ? [{DPoPProof:[]}] : anonymous ? [{},token] : path.endsWith('/agent-card.json') ? [{}] : [token],path);
             const expectedPath = [...path.matchAll(/\{([^}]+)\}/g)].map(x => x[1]).sort();
             const actualPath = (operation.parameters ?? []).map(resolve).filter(x => x.in === 'path');
             assert.deepEqual(actualPath.map(x => x.name).sort(),expectedPath);

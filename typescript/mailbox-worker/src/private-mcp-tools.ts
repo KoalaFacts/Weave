@@ -41,9 +41,9 @@ const agentCard = {type:'object', description:'A2A v1.0.0 AgentCard, at most 32 
             required:['id','name','description','tags'], additionalProperties:false}},
         defaultInputModes:{type:'array', maxItems:16, items:{...str(128), minLength:1}},
         defaultOutputModes:{type:'array', maxItems:16, items:{...str(128), minLength:1}},
-        capabilities:{type:'object', description:'AgentCapabilities as declared; use {} for none.'},
-        securitySchemes:{type:'object', description:'Optional A2A securitySchemes map.'},
-        securityRequirements:{type:'array', description:'Optional A2A securityRequirements.', items:{type:'object'}}},
+        capabilities:{type:'object', description:'A2A AgentCapabilities: only streaming, pushNotifications, extendedAgentCard (booleans) and extensions [{uri (https), description?, required?, params? (small object)}] up to 16. Use {} for none.'},
+        securitySchemes:{type:'object', description:'Optional A2A securitySchemes map (up to 16): each value has exactly one of apiKeySecurityScheme, httpAuthSecurityScheme, oauth2SecurityScheme, openIdConnectSecurityScheme, mtlsSecurityScheme with only its A2A members; every URL is https.'},
+        securityRequirements:{type:'array', description:'Optional A2A securityRequirements, up to 16: {schemes:{name:{list:[scope]}}} naming schemes declared in securitySchemes.', items:{type:'object'}}},
     required:['name','description','version','supportedInterfaces','skills','defaultInputModes','defaultOutputModes','capabilities'], additionalProperties:false};
 const idempotencyKey = {...str(128, 'Optional key, unique per write, retained 24 hours. Repeating the same key with the same input returns the current result for the original message or request without a second write; '
     + 'the same key with different input is refused (idempotency-conflict). Without a key a retry may create a duplicate.'), minLength:1, pattern:'^[A-Za-z0-9._:-]{1,128}$'};
