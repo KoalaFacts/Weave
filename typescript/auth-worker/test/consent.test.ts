@@ -93,3 +93,20 @@ test("consentPage_UntrustedClient_EscapesMetadataAndKeepsHeaders",async()=>{
   const unverified=await consentPage({...details,clientDomain:undefined},createChallenge(),{login:"alice"},[],"x").text();
   assert.match(unverified,/Self-registered client; its name is not independently verified/);
 });
+
+
+test("readConsent_StalledFormStream_FailsClosedWithinDeadline",{timeout:7_000},async()=>{
+  // An untrusted POST may send only part of a form and never finish the body.
+  // A byte cap alone cannot bound this pending read, so it must fail closed.
+  const partial=new TextEncoder().encode("handle="+createChallenge()+"&decision=approve&agent=new&agentName=");
+  const stream=new ReadableStream<Uint8Array>({
+    start(controller){controller.enqueue(partial);},
+    cancel(){/* Simulated client stops sending; close after cancellation. */}
+  });
+  const request=new Request("https://auth.example/authorize",{
+    method:"POST",headers:{"Content-Type":"application/x-www-form-urlencoded"},body:stream,duplex:"half"
+  } as RequestInit);
+  const start=performance.now();
+  assert.equal(await readConsent(request),null,"a stalled consent body cannot be authorized");
+  assert.ok(performance.now()-start<5_500,"pending request body must be bounded");
+});
