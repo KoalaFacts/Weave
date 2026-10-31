@@ -35,7 +35,7 @@ revocation using its KV token store. Access tokens last **900 seconds**, with
 grant's props. The Weave resource's private `AUTH_SERVER.validateToken(resource, token)`
 RPC remains mandatory for **each** private operation, followed by a D1 read of
 that grant: it must be unrevoked and match the token's account, human and
-client, so `HumanDirectory.revokeGrant` takes effect on the next call. Scope,
+client, so `HumanDirectory.revokeGrant` takes effect on the next call, including with a refreshed token. The owner page for revoking a grant arrives in slice 5; until then `revokeGrant` has no user interface. Revocation is enforced by the mailbox read on each private call; the SDK-side refresh tokens in its KV store are not yet revoked. They fail every private call but remain valid inside the SDK until they expire. Scope,
 audience and expiry are checked as before. No shared account, anonymous private tool,
 automatic consent or external control forwarding is present.
 

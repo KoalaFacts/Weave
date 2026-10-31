@@ -2228,7 +2228,7 @@
             "$ref": "#/components/responses/publicRate"
           }
         },
-        "description": "Only for a live, currently effective public address that has a card; otherwise 404. Public reads share the directory rate limits.",
+        "description": "Anonymous. Only for a public, unrevoked address inside its effective window that has a card; otherwise 404. The card is what the address owner declared: Weave never verifies it, never fetches the URLs it names, and deletes it when the address is revoked or made private. Public reads share the directory rate limits.",
         "parameters": [
           {
             "$ref": "#/components/parameters/addressIdPath"

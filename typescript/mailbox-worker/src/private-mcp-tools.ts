@@ -107,12 +107,12 @@ export const privateMcpTools = [
     profile,
     tool('list_my_addresses', 'List only addresses owned by your OAuth account, including unlisted addresses.',
         'weave:addresses.read', page, [], pageOf(address), {readOnly:true}),
-    tool('ensure_my_address', 'Create an address using a stable client UUID; unlisted unless isPublic is true. A public address is listed in the public directory and counts against the public-address limit. Exact retries return the original; changed inputs conflict.',
+    tool('ensure_my_address', 'Create an address using a stable client UUID; unlisted unless isPublic is true. A public address is listed in the public directory and counts against the public-address limit. Exact retries return the original; changed inputs conflict, so isPublic is decided at creation: to publish, create a public address with a new addressId.',
         'weave:addresses.write', {addressId:id('Client-chosen stable address UUID; reuse it to retry.'), label:str(128, 'Optional label; public when isPublic is true.'),
             isPublic:{type:'boolean', description:'Default false. True lists the address in the public directory, where anyone can read it; discovery grants no messaging permission.'}},
         ['addressId'], address, {idempotent:true}),
-    tool('publish_my_agent_card', 'Attach an A2A v1.0.0 Agent Card to one of your own live public addresses, replacing any earlier card, or remove it with card:null. '
-        + 'The card is what you declare: Weave stores and shows it as unverified and does not check that the declared endpoints exist. It is removed when the address is revoked or stops being public.',
+    tool('publish_my_agent_card', 'Attach an A2A v1.0.0 Agent Card to one of your own public addresses, replacing any earlier card, or remove it with card:null. '
+        + 'The card is what you declare: Weave stores and shows it as unverified and does not check that the declared endpoints exist. It is deleted when the address is revoked or made private, and is served only while the address is public and inside its effective window. Weave never fetches the card URLs.',
         'weave:addresses.write', {addressId:id('Your own public address.'), card:nullable(agentCard)}, ['addressId','card'],
         out({addressId:id('Address ID.'), agentCard:nullable({type:'object'})}, ['addressId','agentCard']), {idempotent:true}),
     tool('list_my_contact_requests', 'Read incoming and outgoing contact requests, including pending introductions that require recipient acceptance.',

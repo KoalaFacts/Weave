@@ -9,14 +9,18 @@ import {fileURLToPath} from 'node:url';
 
 const alice='aaaaaaaa-aaaa-4aaa-8aaa-aaaaaaaaaaaa',bob='bbbbbbbb-bbbb-4bbb-8bbb-bbbbbbbbbbbb';
 const names=['get_my_profile','ensure_my_address','list_my_contact_requests','list_my_contacts','get_my_channel','list_my_inbox','list_my_outbox','request_contact','decide_contact','send_message','ack_message'];
-const msg=new Map<string,{from:string;to:string;payload:any;state:string}>();
+const msg=new Map<string,{from:string;to:string;message:any;state:string}>();
+const keys=new Map<string,{input:string;messageId:string}>();
+let counter=0;
+// The server, not the caller, picks UUIDv7 message IDs; the fixture does the same.
+const serverId=()=>'01900000-0000-7000-8000-'+(++counter).toString(16).padStart(12,'0');
 let introduction:any=null,accepted=false,sendCount=0;
 test('two isolated real HTTP MCP clients preserve two pending messages over both process restarts; six ACKs; no credential leakage',{skip:process.platform==='win32'&&'Requires POSIX owner-only file modes for private pair state'},async()=>{
-    msg.clear();introduction=null;accepted=false;sendCount=0;
+    msg.clear();keys.clear();counter=0;introduction=null;accepted=false;sendCount=0;
     const exactGeneration='9007199254740993';
     // Eight retained B receipts put this run's third B send on the next page.
     for(let n=0;n<8;n++){const messageId='existing-b-receipt-'+n;
-        msg.set(messageId,{from:bob,to:alice,payload:{messageId},state:'acknowledged'});}
+        msg.set(messageId,{from:bob,to:alice,message:null,state:'acknowledged'});}
     const server=createServer(async(req,res)=>{
         const parts:Buffer[]=[];for await(const part of req)parts.push(part);
         const rpc=JSON.parse(Buffer.concat(parts).toString());let value:any;
@@ -27,17 +31,25 @@ test('two isolated real HTTP MCP clients preserve two pending messages over both
         else if(!owner){res.statusCode=401;res.end(JSON.stringify({error:'unauthorized'}));return;}
         else if(name==='get_my_profile')value={id:owner};
         else if(name==='ensure_my_address')value={addressId:args.addressId,accountId:owner,isPublic:false};
-        else if(name==='request_contact'){introduction={...args,requestId:(args.payload as {messageId:string}).messageId,requesterAccountId:owner,status:'pending'};value={generation:exactGeneration};}
+        else if(name==='request_contact'){
+            assert.equal(args.payload,undefined,'MCP writes take message, not payload');assert.ok(args.message.parts[0].text);assert.equal(args.message.messageId,undefined);
+            assert.match(args.idempotencyKey,/^pair-[0-9a-f]{16}-intro$/);
+            introduction={...args,requestId:serverId(),requesterAccountId:owner,status:'pending'};value={request:{requestId:introduction.requestId},generation:exactGeneration};}
         else if(name==='list_my_contact_requests')value={items:owner===bob&&introduction?[{requestId:introduction.requestId,status:introduction.status}]:[],nextCursor:null};
         else if(name==='decide_contact'){assert.equal(owner,bob);accepted=true;introduction.status='accepted';value={status:'accepted'};}
         else if(name==='get_my_channel'){assert.ok(accepted);value={generation:exactGeneration,isBlockedByMailbox:false,isBlockedByPeer:false};}
         else if(name==='list_my_contacts')value={items:accepted?[{accountId:owner===alice?bob:alice,canSend:true}]:[],nextCursor:null};
         else if(name==='send_message'){
             assert.ok(accepted);assert.equal(args.contactGeneration,exactGeneration);
-            const existing=msg.get(args.payload.messageId);
-            if(!existing){sendCount++;msg.set(args.payload.messageId,{from:owner,to:args.recipientAccountId,payload:args.payload,state:'pending'});}
-            value={messageId:args.payload.messageId,state:msg.get(args.payload.messageId)?.state};
-        }else if(name==='list_my_inbox')value={items:[...msg.values()].filter(x=>x.to===owner&&x.state==='pending').map(x=>({senderMailboxId:x.from,envelope:{payload:x.payload}})),nextCursor:null};
+            assert.equal(args.payload,undefined,'MCP writes take message, not payload');assert.ok(args.message.parts[0].text);assert.equal(args.message.messageId,undefined);
+            const input=JSON.stringify([args.recipientAccountId,args.message]),seen=keys.get(owner+args.idempotencyKey);
+            assert.ok(args.idempotencyKey,'every send carries an idempotency key');
+            if(seen)assert.equal(seen.input,input,'a replayed key repeats the same input');
+            else{const messageId=serverId();sendCount++;keys.set(owner+args.idempotencyKey,{input,messageId});
+                msg.set(messageId,{from:owner,to:args.recipientAccountId,message:{messageId,role:'ROLE_USER',...args.message},state:'pending'});}
+            const messageId=keys.get(owner+args.idempotencyKey)!.messageId;
+            value={messageId,state:msg.get(messageId)?.state};
+        }else if(name==='list_my_inbox')value={items:[...msg].filter(([_,x])=>x.to===owner&&x.state==='pending').map(([messageId,x])=>({senderAccountId:x.from,envelope:{payload:{messageId}},message:x.message})),nextCursor:null};
         else if(name==='ack_message'){
             const item=msg.get(args.messageId);assert.ok(item);assert.equal(item.to,owner);item.state='acknowledged';value={messageId:args.messageId,state:'acknowledged'};
         }else if(name==='list_my_outbox'){

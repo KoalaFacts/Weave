@@ -24,13 +24,13 @@ test('committed remote send with lost HTTP response retains an exact token-free 
         else if(name==='get_my_profile')value={id:owner};
         else if(name==='list_my_contacts')value={items:accepted?[{accountId:owner===alice?bob:alice,canSend:true}]:[],nextCursor:null};
         else if(name==='ensure_my_address')value={addressId:args.addressId,accountId:owner,isPublic:false};
-        else if(name==='request_contact'){requestId=args.payload.messageId;value={generation:'1'};}
+        else if(name==='request_contact'){requestId='01900000-0000-7000-8000-000000000001';value={request:{requestId},generation:'1'};}
         else if(name==='list_my_contact_requests')value={items:owner===bob&&requestId?[{requestId,status:'pending'}]:[],nextCursor:null};
         else if(name==='decide_contact'){assert.equal(owner,bob);assert.equal(args.requestId,requestId);accepted=true;value={status:'accepted'};}
         else if(name==='get_my_channel'){assert.ok(accepted);value={generation:'1',isBlockedByMailbox:false,isBlockedByPeer:false};}
         else if(name==='send_message'){
             assert.ok(accepted);assert.equal(args.contactGeneration,'1');
-            sendCount++;committed={owner,recipient:args.recipientAccountId,generation:args.contactGeneration,payload:args.payload};
+            sendCount++;committed={owner,recipient:args.recipientAccountId,generation:args.contactGeneration,message:args.message,idempotencyKey:args.idempotencyKey};
             req.socket.destroy();return;
         }else throw Error('Unexpected call after intentionally lost send receipt: '+name);
         res.setHeader('Content-Type','application/json');
@@ -50,7 +50,7 @@ test('committed remote send with lost HTTP response retains an exact token-free 
         });
         assert.notEqual(result.status,0,'lost response must not be considered completed');
         assert.equal(sendCount,1,'a committed unknown send must not be dispatched again');
-        assert.ok(committed?.payload?.messageId,'fixture must commit before dropping transport');
+        assert.ok(committed?.idempotencyKey,'fixture must commit before dropping transport');
         const journalPath=path+'.journal',contents=await readFile(journalPath,'utf8');
         assert.equal((await stat(journalPath)).mode&0o777,0o600);
         const lines=contents.trim().split('\n').map(x=>JSON.parse(x));
@@ -58,7 +58,8 @@ test('committed remote send with lost HTTP response retains an exact token-free 
         assert.ok(intent,'original send must be durably recorded before network dispatch');
         assert.equal(intent.args.recipientAccountId,committed.recipient);
         assert.equal(intent.args.contactGeneration,committed.generation);
-        assert.deepEqual(intent.args.payload,committed.payload,'the original exact envelope must be recoverable');
+        assert.deepEqual(intent.args.message,committed.message,'the original exact message must be recoverable');
+        assert.equal(intent.args.idempotencyKey,committed.idempotencyKey,'the original idempotency key must be recoverable so the send can be replayed safely');
         assert.ok(lines.some(x=>x.phase==='unknown'&&x.operationId===intent.operationId),
             'lost response must be marked unknown, not retried or declared failure without effect');
         assert.doesNotMatch(contents+result.output,/fake-a|fake-b/);
