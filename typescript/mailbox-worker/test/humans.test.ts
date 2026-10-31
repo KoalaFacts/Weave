@@ -134,6 +134,22 @@ test('createOwnedAgent_InvalidName_ReturnsInvalid', async () => {
     } finally { await h.close(); }
 });
 
+test('createOwnedAgent_BidiFormattingControls_CannotSpoofAgentPickerName', async () => {
+    const h = await start();
+    try {
+        const env = environment(h), id = await humanId(env);
+        // HTML escaping does not neutralize bidirectional rendering overrides
+        // in an OAuth consent page's human-selected agent labels.
+        for (const name of ['Safe\u202Ehidden', 'Safe\u2066hidden\u2069',
+            'Safe\u200Fhidden', 'Safe\u061Chidden']) {
+            assert.deepEqual(await create(env, id, name), { ok: false, reason: 'invalid' }, JSON.stringify(name));
+        }
+        assert.deepEqual(await listHumanAgents(env, id), []);
+        // Legitimate multilingual names and emoji sequences must remain usable.
+        assert.equal((await create(env, id, '合作助手 👩‍💻')).ok, true);
+    } finally { await h.close(); }
+});
+
 test('createOwnedAgent_SourceIpOverHourlyLimit_ReturnsRateLimited', async () => {
     const h = await start();
     try {
