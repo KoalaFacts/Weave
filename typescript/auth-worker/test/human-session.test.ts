@@ -23,6 +23,10 @@ test("readHumanSession_ThreeMemberLegacyShape_ReturnsNull",async()=>{
   assert.equal(await readHumanSession(key,requestWith(humanSessionCookie+"="+legacy),now),null);
   const late=await signedCookieValue(key,"human-session",{humanId:randomUUID(),login:"alice",expiresAt:now+1000,authAt:now+2000});
   assert.equal(await readHumanSession(key,requestWith(humanSessionCookie+"="+late),now),null,"authAt may not exceed expiresAt");
+  const early=await signedCookieValue(key,"human-session",{humanId:randomUUID(),login:"alice",expiresAt:now+3_600_000,authAt:now-1});
+  assert.equal(await readHumanSession(key,requestWith(humanSessionCookie+"="+early),now),null,"authAt may not predate the session lifetime");
+  const owner=await signedCookieValue(key,"owner-action",{humanId:randomUUID(),login:"alice",expiresAt:now+3_600_000,authAt:now});
+  assert.equal(await readHumanSession(key,requestWith(humanSessionCookie+"="+owner),now),null,"another purpose never verifies as a session");
 });
 
 test("freshAuthentication_Boundary",()=>{

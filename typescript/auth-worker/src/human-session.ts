@@ -75,6 +75,6 @@ export async function readHumanSession(key:string,request:Request,now:number):Pr
   const {humanId,login:name,expiresAt,authAt}=value;
   if(typeof humanId!=="string"||!uuid.test(humanId)||typeof name!=="string"||!login.test(name)||
     typeof expiresAt!=="number"||!Number.isSafeInteger(expiresAt)||now>=expiresAt||
-    typeof authAt!=="number"||!Number.isSafeInteger(authAt)||authAt>expiresAt)return null;
+    typeof authAt!=="number"||!Number.isSafeInteger(authAt)||authAt>expiresAt||authAt<expiresAt-sessionSeconds*1000)return null;
   return {humanId,login:name,expiresAt,authAt};
 }

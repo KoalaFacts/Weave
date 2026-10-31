@@ -80,3 +80,38 @@ test("readOwnerAction_IssueRecoveryCode_RoundTrip",async()=>{
   const swapped=Buffer.from(Buffer.from(payload,"base64url").toString().replace(x,y)).toString("base64url");
   assert.equal(await readOwnerAction(key,form(["action",swapped+"."+signature]),sessionFor(humanId),now),null,"a token for one agent cannot name another");
 });
+
+test("readOwnerAction_OtherPurposeUnknownKindMissingOrEmptyMember_Null",async()=>{
+  const humanId=randomUUID(),session=sessionFor(humanId),expiresAt=now+600_000,requestId=randomUUID();
+  const read=(token:string)=>readOwnerAction(key,form(["action",token]),session,now);
+  const sign=(payload:object)=>signedCookieValue(key,"owner-action",payload);
+  assert.notEqual(await read(await sign({humanId,kind:"confirm-key",requestId,expiresAt})),null,"positive control");
+  assert.equal(await read(await signedCookieValue(key,"github-login",{humanId,kind:"confirm-key",requestId,expiresAt})),null);
+  assert.equal(await read(await sign({humanId,kind:"delete-everything",requestId,expiresAt})),null);
+  assert.equal(await read(await sign({humanId,kind:"revoke-key",agentId:randomUUID(),expiresAt})),null,"missing kid");
+  assert.equal(await read(await sign({humanId,kind:"confirm-key",requestId:"",expiresAt})),null);
+});
+
+test("ownerActionToken_ActionCannotOverrideHumanId",async()=>{
+  const humanId=randomUUID(),other=randomUUID();
+  const hostile={kind:"confirm-key",requestId:randomUUID(),humanId:other} as OwnerFormAction;
+  const token=await ownerActionToken(key,humanId,hostile,now);
+  assert.equal(await readOwnerAction(key,form(["action",token]),sessionFor(other),now),null);
+  assert.notEqual(await readOwnerAction(key,form(["action",token]),sessionFor(humanId),now),null);
+});
+
+test("readOwnerAction_OversizedStreamedBody_NullWithoutReadingPastCap",async()=>{
+  const humanId=randomUUID();
+  let pulled=0;
+  const body=new ReadableStream<Uint8Array>({pull(controller){pulled+=1024;controller.enqueue(new Uint8Array(1024).fill(97));}});
+  const request=new Request("https://auth.weave.example/account/action",{method:"POST",
+    headers:{"Content-Type":"application/x-www-form-urlencoded"},body,duplex:"half"} as RequestInit);
+  assert.equal(await readOwnerAction(key,request,sessionFor(humanId),now),null);
+  assert.ok(pulled<=4096+8192,"stopped reading shortly after the cap, pulled "+pulled);
+});
+
+test("readOwnerAction_InvalidUtf8Body_Null",async()=>{
+  const request=new Request("https://auth.weave.example/account/action",{method:"POST",
+    headers:{"Content-Type":"application/x-www-form-urlencoded"},body:new Uint8Array([0x61,0x63,0x74,0x69,0x6f,0x6e,0x3d,0xff,0xfe])});
+  assert.equal(await readOwnerAction(key,request,sessionFor(randomUUID()),now),null);
+});

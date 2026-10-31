@@ -1,3 +1,4 @@
+import {readBoundedForm} from "./challenge.ts";
 import {signedCookieValue,verifiedCookieValue,type HumanSession} from "./human-session.ts";
 
 /** What a signed owner-action token can name; the mailbox worker re-validates and decides. */
@@ -17,14 +18,12 @@ const memberSets:Record<OwnerFormAction["kind"],readonly string[]>={
 
 /** A token bound to one human and one exact action; it lives as long as the re-authentication window. */
 export const ownerActionToken=(key:string,humanId:string,action:OwnerFormAction,now:number):Promise<string>=>
-  signedCookieValue(key,"owner-action",{humanId,...action,expiresAt:now+tokenSeconds*1000});
+  signedCookieValue(key,"owner-action",{...action,humanId,expiresAt:now+tokenSeconds*1000});
 
 /** The action in a one-field form post, or null for anything not signed for this session's human and still unexpired. */
 export async function readOwnerAction(key:string,request:Request,session:HumanSession,now:number):Promise<OwnerFormAction|null>{
-  if(request.headers.get("content-type")?.split(";")[0].trim().toLowerCase()!=="application/x-www-form-urlencoded")return null;
-  const bytes=new Uint8Array(await request.arrayBuffer());
-  if(bytes.length>maxBodyBytes)return null;
-  const fields=[...new URLSearchParams(new TextDecoder().decode(bytes))];
+  const form=await readBoundedForm(request,maxBodyBytes);
+  const fields=form?[...form]:[];
   if(fields.length!==1||fields[0][0]!=="action")return null;
   const value=await verifiedCookieValue(key,"owner-action",fields[0][1]);
   if(!value)return null;
