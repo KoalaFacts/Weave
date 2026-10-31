@@ -143,7 +143,8 @@ export async function executePrivateMcp(env:Env,origin:string,accountId:string,n
             parameters(args,['addressId','card'],['addressId','card']);
             checkUuid(args.addressId,'addressId');
             const card=args.card===null?null:checkAgentCard(args.card);
-            return json(withoutSecrets(await publishAgentCard(env,accountId,args.addressId,card,guard)));
+            // The echo is the stored card exactly; a card never holds connection tokens.
+            return json(await publishAgentCard(env,accountId,args.addressId,card,guard));
         }
         if(name==='request_contact'){
             parameters(args,['requesterAddressId','recipientAccountId','recipientAddressId','message','idempotencyKey'],['requesterAddressId','recipientAccountId','recipientAddressId','message']);

@@ -3,6 +3,9 @@
 const versions = ['2025-11-25', '2025-06-18'];
 const requestLimit = 16 * 1024;
 const authorizedWriteRequestLimit = 128 * 1024;
+// The only tools that carry a full 64 KiB A2A Message, and the write scopes that may admit their larger frame.
+const largeFrameTools = ['send_message', 'request_contact', 'decide_contact'];
+const largeFrameScopes = ['weave:messages.send', 'weave:contacts.write'];
 const responseLimit = 1024 * 1024;
 type ObjectValue = Record<string, unknown>;
 type RequestId = string | number | null;
@@ -146,6 +149,10 @@ async function refusalCode(response: Response): Promise<string | null> {
         return object(parsed) && typeof parsed.code === 'string' && Object.hasOwn(hints, parsed.code) ? parsed.code : null;
     } catch { return null; }
 }
+/** A keyed write is resolved by repeating it with the same key; otherwise the caller reconciles the ID it holds. */
+const retryAdvice = (args: ObjectValue) => typeof args.idempotencyKey === 'string'
+    ? 'The write outcome may be unknown; repeat the same call with the same idempotencyKey to get the original result.'
+    : 'Do not blindly retry unknown write outcomes; reconcile the original ID before retrying.';
 /** The injected read can access only the canonical public directory; never forward client headers. */
 export async function remoteMcp(request: Request, read: DirectoryRead, privateAccess?: PrivateAccess): Promise<Response> {
     const url = new URL(request.url), origin = request.headers.get('origin');
@@ -159,14 +166,18 @@ export async function remoteMcp(request: Request, read: DirectoryRead, privateAc
     let largeWriteOwner: string | null = null;
     try {
         const text = await boundedText(request.body, requestLimit, privateAccess ? async () => {
-            if (!/^Bearer [^\s]+$/i.test(request.headers.get('authorization') ?? '')
-                || privateAccess.scope('send_message') !== 'weave:messages.send') return false;
-            try {
-                const owner = await privateAccess.authorize('weave:messages.send');
-                if (typeof owner !== 'string' || !uuid.test(owner)) return false;
-                largeWriteOwner = owner;
-                return true;
-            } catch { return false; }
+            if (!/^Bearer [^\s]+$/i.test(request.headers.get('authorization') ?? '')) return false;
+            const scopes = [...new Set(largeFrameTools.map(name => privateAccess.scope(name)))]
+                .filter((scope): scope is string => scope !== null && largeFrameScopes.includes(scope));
+            for (const scope of scopes) {
+                try {
+                    const owner = await privateAccess.authorize(scope);
+                    if (typeof owner !== 'string' || !uuid.test(owner)) continue;
+                    largeWriteOwner = owner;
+                    return true;
+                } catch { /* Try the other write scope; failing both keeps the 16 KiB limit. */ }
+            }
+            return false;
         } : undefined, authorizedWriteRequestLimit);
         message = JSON.parse(text);
     } catch (failure) {
@@ -178,10 +189,11 @@ export async function remoteMcp(request: Request, read: DirectoryRead, privateAc
         || (Object.hasOwn(message, 'id') && typeof message.id !== 'string' && !Number.isSafeInteger(message.id))) {
         return error(null, -32600, 'Invalid JSON-RPC request.', 400);
     }
-    // The elevated frame cap applies to send_message alone. A claimed write
-    // scope never grants large anonymous, public or other private RPC frames.
+    // The elevated frame cap applies to the message-carrying writes alone. A claimed
+    // write scope never grants large anonymous, public or other private RPC frames;
+    // dispatch still authorizes the exact tool scope for the same owner.
     if (largeWriteOwner !== null && (message.method !== 'tools/call'
-        || !object(message.params) || message.params.name !== 'send_message'))
+        || !object(message.params) || typeof message.params.name !== 'string' || !largeFrameTools.includes(message.params.name)))
         return error(null, -32600, 'Request is too large.', 413);
     // Notifications never execute a tool, including a tools/call sent without an id.
     if (!Object.hasOwn(message, 'id')) return reply(undefined, 202);
@@ -242,7 +254,7 @@ export async function remoteMcp(request: Request, read: DirectoryRead, privateAc
                 const code = await refusalCode(response);
                 if (code) return result(id, {isError:true,structuredContent:{status:response.status,code},content:[{type:'text',text:refusalHints[response.status][code]}]});
                 await response.body?.cancel();
-                return result(id, {isError:true,content:[{type:'text',text:`Private operation failed (HTTP ${response.status}). Do not blindly retry unknown write outcomes; reconcile the original ID.`}]});
+                return result(id, {isError:true,content:[{type:'text',text:`Private operation failed (HTTP ${response.status}). ${retryAdvice(args)}`}]});
             }
             const body=await boundedText(response.body,responseLimit);
             if (params.name==='get_my_profile') {
@@ -254,7 +266,7 @@ export async function remoteMcp(request: Request, read: DirectoryRead, privateAc
             }
             return result(id, {...structured(body),content:[{type:'text',text:body}]});
         } catch {
-            return result(id, {isError:true,content:[{type:'text',text:params.name==='get_my_profile'?'Profile identity unavailable.':'Private operation unavailable. The write outcome may be unknown; reconcile before retrying.'}]});
+            return result(id, {isError:true,content:[{type:'text',text:params.name==='get_my_profile'?'Profile identity unavailable.':`Private operation unavailable. ${retryAdvice(args)}`}]});
         }
     }
     const issue = argumentIssue(params.name, args);

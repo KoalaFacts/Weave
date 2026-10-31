@@ -101,7 +101,7 @@ const publicFilter=`is_public=1 AND revoked_at IS NULL
 /** The stored Agent Card of a live, currently effective public address, filtered at read as well as deleted on leaving that state. */
 export async function directoryAgentCard(tx: Transaction,addressId: string): Promise<unknown> {
     uuid(addressId);
-    const now=(BigInt(Date.now())*10000n).toString();
+    const now=tx.store.now.toString();
     const rows=await tx.store.rows(accountAddresses,publicFilter+' AND address_id=?',[now,now,now,addressId],'LIMIT 1');
     const card=rows.length?(await agentCards(tx,[addressId])).get(addressId):undefined;
     if (card===undefined) fail(404,'unavailable');

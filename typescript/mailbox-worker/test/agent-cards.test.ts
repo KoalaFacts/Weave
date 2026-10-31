@@ -344,3 +344,30 @@ test('publishCard_UrlOverLimitOnceNormalized_Invalid',async()=>{
         assert.equal(await cards(h),0);
     }finally{await h.close();}
 });
+
+test('publishCard_ParamsNamedConnectionToken_EchoEqualsStoredCard',async()=>{
+    const h=await start();
+    try{
+        const a=await h.register(),addressId=await publicAddress(h,a);
+        const declared=card({capabilities:{extensions:[{uri:'https://ext.example/x',params:{connectionToken:'declared',agentId:'y'}}]}});
+        const published=await ok(h,a,'publish_my_agent_card',{addressId,card:declared});
+        assert.deepEqual(published.agentCard,declared);
+        assert.deepEqual(await (await h.request('/v1/directory/address/'+addressId+'/agent-card.json')).json(),declared);
+    }finally{await h.close();}
+});
+
+test('directoryAgentCard_UsesTransactionClock',async()=>{
+    const bundled=await build({entryPoints:['src/addresses.ts','src/database.ts'],bundle:true,write:false,platform:'node',format:'esm',logLevel:'silent',outdir:'out'});
+    const load=(name:string)=>import('data:text/javascript;base64,'+Buffer.from(bundled.outputFiles.find(f=>f.path.endsWith(name))!.contents).toString('base64'));
+    const {directoryAgentCard}=await load('addresses.js') as typeof import('../src/addresses.ts');
+    const {atomic}=await load('database.js') as typeof import('../src/database.ts');
+    const h=await start();
+    try{
+        const a=await h.register(),addressId=await publicAddress(h,a);
+        await ok(h,a,'publish_my_agent_card',{addressId,card:card()});
+        const now=BigInt(Date.now())*10000n,hour=36000000000n;
+        await h.db.prepare('UPDATE account_addresses SET effective_to=CAST(? AS INTEGER) WHERE address_id=?').bind((now+hour).toString(),addressId).run();
+        assert.deepEqual(await atomic(h.db,tx=>directoryAgentCard(tx,addressId),()=>now),card(),'positive control');
+        await assert.rejects(atomic(h.db,tx=>directoryAgentCard(tx,addressId),()=>now+2n*hour),(error:any)=>error.status===404);
+    }finally{await h.close();}
+});
