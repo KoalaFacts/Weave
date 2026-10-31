@@ -87,7 +87,7 @@ export const failureLog={exchange:"github-login: token exchange failed",user:"gi
  * Fixed endpoints and redirect guards alone do not limit an oversized 2xx body.
  * GitHub's two expected responses are small; unexpected oversized data fails closed.
  */
-async function boundedProviderJson(response:Response,maxBytes:number):Promise<unknown|null>{
+export async function boundedProviderJson(response:Response,maxBytes:number):Promise<unknown|null>{
   if(!/^application\/json(?:;|$)/i.test(response.headers.get("Content-Type")??""))return null;
   const reader=response.body?.getReader();
   if(!reader)return null;

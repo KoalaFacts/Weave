@@ -7,7 +7,7 @@ import {join,resolve} from "node:path";
 import {after,before,test} from "node:test";
 import {Miniflare,type Response as MiniflareResponse} from "miniflare";
 import {initializeDatabase} from "../../mailbox-worker/scripts/latest-schema.ts";
-import {beginGithubLogin} from "../src/github-login.ts";
+import {beginGithubLogin,boundedProviderJson} from "../src/github-login.ts";
 import {signedCookieValue} from "../src/human-session.ts";
 
 const issuer="https://auth.weave.example";
@@ -406,4 +406,22 @@ test("allRoutes_MissingGithubSecret_Return503",{timeout:120_000},async()=>{
       }
     }finally{await mf.dispose();await rm(storage,{recursive:true,force:true});}
   }
+});
+
+
+test("boundedProviderJson_OversizedStreamWithStalledCancel_RejectsPromptly",{timeout:6_000},async()=>{
+  // A provider can exceed the JSON byte limit and then stall during cancellation.
+  // A bounded response must not await an untrusted ReadableStream.cancel() promise.
+  let cancellationRequested=false;
+  const body=new ReadableStream<Uint8Array>({
+    start(controller){controller.enqueue(new Uint8Array(8_193));},
+    cancel(){cancellationRequested=true;return new Promise<void>(()=>{});}
+  });
+  const started=performance.now();
+  const result=await boundedProviderJson(new Response(body,{
+    headers:{"Content-Type":"application/json"}
+  }),8_192);
+  assert.equal(result,null,"oversized provider data must be rejected");
+  assert.equal(cancellationRequested,true,"discard the untrusted provider response");
+  assert.ok(performance.now()-started<5_000,"stream cleanup must not defeat provider bounds");
 });
