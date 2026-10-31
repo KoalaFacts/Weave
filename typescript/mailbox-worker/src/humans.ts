@@ -71,8 +71,20 @@ export async function humanHasAgent(env: Env, humanId: string, accountId: string
 
 /** Recheck bearer eligibility on every private OAuth call. Freezing a GitHub human
  * immediately denies their owned agents without invalidating unrelated control-owned accounts. */
-export async function oauthAccountActive(env: Env, accountId: string): Promise<boolean> {
+export async function oauthAccountActive(env: Env, accountId: string, serviceHumanId?: string | null): Promise<boolean> {
     requireReadable(env); requireUuid(accountId);
+    // Undefined: RFC 7662's independently approved issuer/subject -> account link.
+    // Null: legacy Service Binding token, only valid for a control-owned account.
+    // UUID: owner-linked Service Binding token, only valid while that exact human
+    // still owns the agent and is not frozen (ownership transfer revokes old grants).
+    if (serviceHumanId === null)
+        return await env.db.prepare('SELECT 1 n FROM accounts WHERE account_id=? AND human_id IS NULL')
+            .bind(accountId).first('n') !== null;
+    if (serviceHumanId !== undefined) {
+        if (!uuidPattern.test(serviceHumanId)) return false;
+        return await env.db.prepare('SELECT 1 n FROM accounts a JOIN humans h ON h.human_id=a.human_id WHERE a.account_id=? AND a.human_id=? AND h.frozen_at IS NULL')
+            .bind(accountId, serviceHumanId).first('n') !== null;
+    }
     return await env.db.prepare('SELECT 1 n FROM accounts a LEFT JOIN humans h ON h.human_id=a.human_id WHERE a.account_id=? AND (a.human_id IS NULL OR (h.human_id IS NOT NULL AND h.frozen_at IS NULL))')
         .bind(accountId).first('n') !== null;
 }
