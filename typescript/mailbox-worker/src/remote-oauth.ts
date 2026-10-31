@@ -146,12 +146,32 @@ export async function authorizeOAuth(
         // which the response.ok gate rejects without forwarding credentials.
         const response=await fetcher(config.introspectionUrl,{method:'POST',redirect:'manual',cache:'no-store',signal:AbortSignal.timeout(3500),
             headers:{'Authorization':'Basic '+btoa(formEncode(config.clientId)+':'+formEncode(config.clientSecret)),'Content-Type':'application/x-www-form-urlencoded','Accept':'application/json'},body:form});
-        if (!response.ok || !/^application\/json(?:;|$)/i.test(response.headers.get('Content-Type')??'')) {await response.body?.cancel();return failClosed();}
-        // Bound the remote AS response before JSON parsing; never log secrets or response text.
+        if (!response.ok || !/^application\/json(?:;|$)/i.test(response.headers.get('Content-Type')??'')) {
+            // A failed AS can refuse to finish cancellation; denying access must not wait for it.
+            void response.body?.cancel().catch(()=>{});
+            return failClosed();
+        }
+        // Fetch deadlines can finish when headers arrive: bound the *entire* JSON body too.
         const reader=response.body?.getReader(); if(!reader)return failClosed();
         let size=0,text='';const decoder=new TextDecoder('utf-8',{fatal:true});
-        try {while(true){const part=await reader.read();if(part.done)break;size+=part.value.byteLength;if(size>8192)return failClosed();text+=decoder.decode(part.value,{stream:true});}text+=decoder.decode();}
-        finally {await reader.cancel().catch(()=>{});reader.releaseLock();}
+        let timeout:ReturnType<typeof setTimeout>|undefined;
+        const deadline=new Promise<null>(resolve=>{timeout=setTimeout(()=>resolve(null),3500);});
+        try {
+            while(true){
+                const part=await Promise.race([reader.read(),deadline]);
+                if(part===null)return failClosed();
+                if(part.done)break;
+                size+=part.value.byteLength;
+                if(size>8192)return failClosed();
+                text+=decoder.decode(part.value,{stream:true});
+            }
+            text+=decoder.decode();
+        } finally {
+            if(timeout!==undefined)clearTimeout(timeout);
+            // Cleanup is best-effort: a stalled body/cancel promise cannot hold the authorization request.
+            void reader.cancel().catch(()=>{});
+            reader.releaseLock();
+        }
         data=JSON.parse(text);
     } catch {return failClosed();}
     if (!data || typeof data!=='object'||Array.isArray(data)) return challenge(config,401,requiredScope,'invalid_token');
