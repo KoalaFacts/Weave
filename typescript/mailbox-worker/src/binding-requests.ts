@@ -3,7 +3,9 @@ import type { AgentAuth } from './agent-tokens.ts';
 import { findKey, isCooling } from './agent-keys.ts';
 import { parseJws, verifyJws } from './jose.ts';
 import { apiTime, epochSeconds, exactInt64, nowUtc } from './time.ts';
-import { atomic, type Database, type Env } from './database.ts';
+import { atomic, type Database, type Env, type Transaction } from './database.ts';
+import { maxAgentsPerHuman } from './humans.ts';
+import type { OwnerDecision, OwnerHuman } from './owner-actions.ts';
 import { prunedRowsPerCreate, requestLifetimeTicks, retentionTicks } from './request-retention.ts';
 import { Problem, fail, invalidField, object } from './wire.ts';
 
@@ -131,4 +133,46 @@ export async function cancelBindingRequest(env: Env, auth: AgentAuth, requestId:
             WHERE request_id=? AND status='pending'`).bind(stamp, stamp, requestId));
         return bindingView({...row, status: 'cancelled', decidedAt: at}, at);
     });
+}
+
+/** The request naming this human; another human's request is indistinguishable from a missing one. */
+async function requestForHuman(tx: Transaction, human: OwnerHuman, requestId: string): Promise<BindingRow | null> {
+    const row = await readBindingRow(tx.db, requestId);
+    return row && row.targetSubject === human.subject ? row : null;
+}
+
+/**
+ * Human-side confirmation, staged in the caller's transaction (the human row was re-read there). The guarded UPDATE keeps the
+ * binding one-way, and the agent count is read in the same optimistic transaction, so concurrent confirmations cannot pass the limit.
+ */
+export async function confirmBindingRequest(tx: Transaction, human: OwnerHuman, requestId: string, at: bigint): Promise<OwnerDecision> {
+    const row = await requestForHuman(tx, human, requestId);
+    if (!row) return {ok: false, reason: 'not-found'};
+    if (row.status !== 'pending') return {ok: false, reason: 'not-pending'};
+    if (row.expiresAt <= at) return {ok: false, reason: 'expired'};
+    const owner = await tx.db.prepare('SELECT human_id FROM accounts WHERE account_id=?').bind(row.accountId).first<{human_id: string | null}>();
+    if (!owner) return {ok: false, reason: 'not-found'};
+    if (owner.human_id !== null) return {ok: false, reason: 'already-owned'};
+    const requesting = await findKey(tx.db, row.kid);
+    if (!requesting || requesting.accountId !== row.accountId || requesting.revokedAt !== null) return {ok: false, reason: 'requesting-key-revoked'};
+    const owned = await tx.db.prepare('SELECT count(*) n FROM accounts WHERE human_id=?').bind(human.humanId).first<number>('n');
+    if (owned === null) fail(503, 'storage');
+    if (owned >= maxAgentsPerHuman) return {ok: false, reason: 'agent-limit'};
+    const stamp = at.toString();
+    tx.writes.push(
+        tx.db.prepare('UPDATE accounts SET human_id=?,updated_at=CAST(? AS INTEGER) WHERE account_id=? AND human_id IS NULL').bind(human.humanId, stamp, row.accountId),
+        tx.db.prepare(`UPDATE binding_requests SET status='confirmed',decided_at=CAST(? AS INTEGER),updated_at=CAST(? AS INTEGER)
+            WHERE request_id=? AND status='pending'`).bind(stamp, stamp, requestId));
+    return {ok: true};
+}
+
+/** A pending request is rejected even after its expiry; rejecting needs no fresh authentication. */
+export async function rejectBindingRequest(tx: Transaction, human: OwnerHuman, requestId: string, at: bigint): Promise<OwnerDecision> {
+    const row = await requestForHuman(tx, human, requestId);
+    if (!row) return {ok: false, reason: 'not-found'};
+    if (row.status !== 'pending') return {ok: false, reason: 'not-pending'};
+    const stamp = at.toString();
+    tx.writes.push(tx.db.prepare(`UPDATE binding_requests SET status='rejected',decided_at=CAST(? AS INTEGER),updated_at=CAST(? AS INTEGER)
+        WHERE request_id=? AND status='pending'`).bind(stamp, stamp, requestId));
+    return {ok: true};
 }

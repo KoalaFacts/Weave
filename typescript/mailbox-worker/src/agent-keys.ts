@@ -3,6 +3,7 @@ import type { AgentAuth } from './agent-tokens.ts';
 import { jwkThumbprint, parseJws, publicJwk, verifyJws, type CompactJws, type Ed25519Jwk } from './jose.ts';
 import { apiTime, epochSeconds, exactInt64, nowUtc } from './time.ts';
 import { atomic, type Database, type Env, type Transaction } from './database.ts';
+import type { OwnerDecision } from './owner-actions.ts';
 import { pendingKeyRequest, stageKeyRequest, type KeyRequestView } from './key-requests.ts';
 import { requireKeyChurnRoom } from './agent-limits.ts';
 import { Problem, fail, invalidField, object } from './wire.ts';
@@ -164,4 +165,19 @@ export async function revokeAgentKey(env: Env, auth: AgentAuth, kid: string, clo
         tx.writes.push(tx.db.prepare('UPDATE agent_keys SET revoked_at=CAST(? AS INTEGER),updated_at=CAST(? AS INTEGER) WHERE kid=? AND revoked_at IS NULL').bind(stamp, stamp, kid));
         return {kid, revokedAt: apiTime(at)!};
     });
+}
+
+/**
+ * Human-side revocation, staged in the caller's transaction. The owner may revoke any key of an owned agent, including the last
+ * live one: the owner stays the recovery path. Revoking a revoked key is a successful no-change.
+ */
+export async function revokeKeyForOwner(tx: Transaction, humanId: string, agentId: string, kid: string, at: bigint): Promise<OwnerDecision> {
+    const key = await findKey(tx.db, kid);
+    if (!key || key.accountId !== agentId) return {ok: false, reason: 'not-found'};
+    const owner = await tx.db.prepare('SELECT human_id FROM accounts WHERE account_id=?').bind(agentId).first<{human_id: string | null}>();
+    if (owner?.human_id !== humanId) return {ok: false, reason: 'not-found'};
+    if (key.revokedAt !== null) return {ok: true};
+    const stamp = at.toString();
+    tx.writes.push(tx.db.prepare('UPDATE agent_keys SET revoked_at=CAST(? AS INTEGER),updated_at=CAST(? AS INTEGER) WHERE kid=? AND revoked_at IS NULL').bind(stamp, stamp, kid));
+    return {ok: true};
 }
