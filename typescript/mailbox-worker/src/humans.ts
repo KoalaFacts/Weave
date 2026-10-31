@@ -103,7 +103,7 @@ export async function createOwnedAgent(env: Env, input: { humanId: string; displ
     if (writesRefused(env) || env.REGISTRATION_ENABLED !== 'true') return { ok: false, reason: 'unavailable' };
     const invalid = { ok: false, reason: 'invalid' } as const;
     if (typeof input?.humanId !== 'string' || !uuidPattern.test(input.humanId) || typeof input.sourceIp !== 'string'
-        || typeof input.displayName !== 'string' || input.displayName.length < 1 || input.displayName.length > 128
+        || typeof input.displayName !== 'string' || input.displayName.trim().length === 0 || input.displayName.length > 128
         || controlCharacters.test(input.displayName)) return invalid;
     return atomic(env.db, async tx => {
         const human = await tx.db.prepare('SELECT frozen_at FROM humans WHERE human_id=?').bind(input.humanId).first<{ frozen_at: string | null }>();
