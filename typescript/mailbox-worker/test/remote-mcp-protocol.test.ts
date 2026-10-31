@@ -76,7 +76,7 @@ test('rejects private tools and malformed lookup without touching the database',
     for(const name of ['register_account','send_message','read_inbox']){
         assert.equal((await call('tools/call',{name,arguments:{}})).error.code,-32602);
     }
-    assert.equal((await call('tools/call',{name:'lookup_address',arguments:{addressId:'../accounts/me'}})).error.code,-32602);
+    assert.equal((await call('tools/call',{name:'lookup_address',arguments:{addressId:'../accounts'}})).error.code,-32602);
     assert.equal((await call('tools/call',{name:'demo_guide',arguments:null})).error.code,-32602);
 });
 test('notifications return 202 without invoking tools',async()=>{

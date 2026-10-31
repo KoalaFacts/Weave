@@ -1,12 +1,21 @@
 {
   // NOT a live deployment. Requires operator approval of KV, DO state and secrets.
+  // Secrets installed separately with `wrangler secret put` (never in this file):
+  //   GITHUB_CLIENT_SECRET - the approved GitHub OAuth app's client secret.
+  //   HUMAN_SESSION_KEY    - independently generated 32-byte base64url signing key for human sessions.
   "name":"weave-auth-demo","main":"src/index.ts",
   "compatibility_date":"2026-10-23",
   "compatibility_flags":["global_fetch_strictly_public","nodejs_compat"],
   "workers_dev":false,
   "vars":{"OAUTH_ISSUER":"https://REPLACE-WITH-APPROVED-DOMAIN.example",
-    "OAUTH_RESOURCE":"https://demo.weave-389.workers.dev/mcp"},
+    "OAUTH_RESOURCE":"https://demo.weave-389.workers.dev/mcp",
+    "GITHUB_CLIENT_ID":"REPLACE_WITH_APPROVED_GITHUB_OAUTH_APP_CLIENT_ID"},
+  // Private RPC to the mailbox Worker's human directory (sign-in, agent picker).
+  "services":[{"binding":"MAILBOX","service":"demo","entrypoint":"HumanDirectory"}],
   "kv_namespaces":[{"binding":"OAUTH_KV","id":"REPLACE_AFTER_APPROVAL"}],
   "durable_objects":{"bindings":[{"name":"CONSENT_NONCES","class_name":"ConsentNonce"}]},
+  // Open dynamic client registration needs BOTH budgets; without either, /register is closed and not advertised.
+  "ratelimits":[{"name":"REGISTRATION_LIMITER","namespace_id":"1001","simple":{"limit":10,"period":60}},
+    {"name":"REGISTRATION_GLOBAL_LIMITER","namespace_id":"1002","simple":{"limit":100,"period":60}}],
   "migrations":[{"tag":"v1","new_sqlite_classes":["ConsentNonce"]}]
 }

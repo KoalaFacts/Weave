@@ -1,10 +1,10 @@
 import { and, eq, getTableColumns, sql, type SQL } from 'drizzle-orm';
 import { drizzle } from 'drizzle-orm/d1';
 import { type AnySQLiteTable } from 'drizzle-orm/sqlite-core';
-import * as schema from './schema';
-import { exactInt64, isoUtc, utcTicks } from './time';
-import { type Database, type Statement } from './database';
-import { addressSnapshot, cardSnapshot, requestSnapshot, messageSnapshot } from './wire-snapshots';
+import * as schema from './schema.ts';
+import { exactInt64, isoUtc, utcTicks } from './time.ts';
+import { type Database, type Statement } from './database.ts';
+import { addressSnapshot, cardSnapshot, requestSnapshot, messageSnapshot } from './wire-snapshots.ts';
 
 const time=(value:string|null)=>value===null?null:isoUtc(value).replace(/(\.\d{3})0000Z$/,'$1Z');
 const ticks=(value:string|null|undefined)=>value==null?null:utcTicks(value);
@@ -17,7 +17,8 @@ const selectColumns=(table:AnySQLiteTable)=>Object.fromEntries(Object.entries(ge
 // only in the dedicated tables; message bytes never pass through stored JSON.
 export class RecordStore {
     readonly orm;
-    constructor(readonly db:Database,readonly writes:Statement[],readonly now:bigint){this.orm=drizzle(db as Parameters<typeof drizzle>[0]);}
+    readonly db:Database;readonly writes:Statement[];readonly now:bigint;
+    constructor(db:Database,writes:Statement[],now:bigint){this.db=db;this.writes=writes;this.now=now;this.orm=drizzle(db as Parameters<typeof drizzle>[0]);}
     async select(table:AnySQLiteTable,where:SQL):Promise<any|null>{
         const query=this.orm.select(selectColumns(table)).from(table).where(where).limit(1).toSQL();
         return this.db.prepare(query.sql).bind(...query.params as (string|number|null)[]).first();
@@ -54,7 +55,7 @@ export class RecordStore {
         switch(kind){
         case 'account':{
             const r=await this.select(schema.accounts,eq(schema.accounts.account_id,id));
-            return r&&{accountId:r.account_id,controlHash:r.control_hash,controlHashScheme:r.control_hash_scheme,controlHashParameters:JSON.parse(r.control_hash_parameters),displayName:r.display_name,description:r.description};
+            return r&&{accountId:r.account_id,humanId:r.human_id,controlHash:r.control_hash,controlHashScheme:r.control_hash_scheme,controlHashParameters:r.control_hash_parameters===null?null:JSON.parse(r.control_hash_parameters),displayName:r.display_name,description:r.description};
         }
         case 'card':{
             const a=await this.select(schema.accountAddresses,eq(schema.accountAddresses.address_id,id));
@@ -99,7 +100,7 @@ export class RecordStore {
     }
     put(kind:string,owner:string,id:string,v:any):void{
         switch(kind){
-        case 'account':this.upsert(schema.accounts,{account_id:id,control_hash:v.controlHash,control_hash_scheme:v.controlHashScheme,control_hash_parameters:JSON.stringify(v.controlHashParameters),display_name:v.displayName,description:v.description,created_at:this.now},['account_id'],['control_hash','control_hash_scheme','control_hash_parameters']);return;
+        case 'account':this.upsert(schema.accounts,{account_id:id,human_id:v.humanId??null,control_hash:v.controlHash??null,control_hash_scheme:v.controlHashScheme??null,control_hash_parameters:v.controlHashParameters==null?null:JSON.stringify(v.controlHashParameters),display_name:v.displayName,description:v.description,created_at:this.now},['account_id'],['human_id','control_hash','control_hash_scheme','control_hash_parameters']);return;
         case 'card':{
             const a=v._address,table=a?schema.accountAddresses:schema.contactCards,column=a?schema.accountAddresses.address_id:schema.contactCards.card_id,where=eq(column,id);
             const common={seq:this.sequence(table,where),created_at:ticks(v.createdAt),expires_at:ticks(v.expiresAt),revoked_at:ticks(v.revokedAt),public_seq:v._publicSequence===null?null:exactInt64(v._publicSequence)};

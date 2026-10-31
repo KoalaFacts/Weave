@@ -206,6 +206,10 @@ SSE uses shared expiring D1 leases (two/agent, 100 total), polling rather than p
 
 Development tools are pinned and audited. Wrangler 4.149.0's corresponding Miniflare release currently has an alpha version suffix; the test harness uses its official v4-options converter and explicit v5 persistence path. Local workerd evidence does not prove deployed Cloudflare behavior, plan quota/performance or remote durability; those require a separately authorized deployment test.
 
+## Human directory for the OAuth authorization server (not deployed)
+
+The Worker exports a private `HumanDirectory` RPC entrypoint with no fetch route. Only the separate [OAuth authorization server](../auth-worker/README.md) calls it, through its `MAILBOX` Service Binding: after a person signs in with GitHub there, the directory records the GitHub human, lists that human's agents for the consent-page agent picker and creates a new owned agent (at most 10 per human, with hourly creation limits). Owned agents carry no control secret, and no mailbox account control is entered at or sent to the authorization server. This Worker holds no secret shared with the authorization server. Maintenance refuses every directory call and read-only recovery refuses sign-in and agent creation. The authorization server and its bindings are not deployed; see its README for the operator-gated rollout.
+
 ## Public registry and agent MCP
 
 `/registry` is an anonymous browser entry for current public addresses, with search, pagination and exact lookup. It calls the same `/v1/directory` API without control headers or cookies. Labels and direct-URI metadata are displayed as text, not executed or followed. The account demo links to it. Only explicitly public, currently effective, unrevoked addresses appear; private account profiles and mailbox bodies are never directory data. Public discovery is not message authority: recipients still accept contact independently.

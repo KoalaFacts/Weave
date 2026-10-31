@@ -1,5 +1,8 @@
 import assert from 'node:assert/strict';
 import {test} from 'node:test';
+import {start} from './harness.ts';
+import {createOwnedAgent, oauthAccountActive, signInHuman} from '../src/humans.ts';
+import type {Env} from '../src/database.ts';
 import {authorizeOAuth,oauthConfiguration,protectedResourceMetadata,type OAuthConfiguration} from '../src/remote-oauth.ts';
 const id='01234567-89ab-4def-8123-456789abcdef';
 const config:OAuthConfiguration={issuer:'https://auth.example',resource:'https://weave.example/mcp',introspectionUrl:'https://auth.example/oauth/introspect',clientId:'weave-client',clientSecret:'a_secure_local_test_secret_value'};
@@ -43,6 +46,53 @@ test('invalid AS response never grants access, no cached revoked token',async()=
     const error=await authorizeOAuth(config,req(),'weave:messages.send',exists,(async()=>{throw Error('AS secret failure')}) as typeof fetch,now*1000);
     assert.ok(error instanceof Response);assert.equal(error.status,503);assert.doesNotMatch(await error.text(),/secret/);
 });
+test('RFC7662 introspection body must stop waiting when a 200 JSON stream stalls',{timeout:7_000},async()=>{
+    // HTTP headers can arrive before the authorization server stops producing a body.
+    // The fetch deadline alone does not bound an already delivered Response stream.
+    let accountReads=0,cancelled=false;
+    const upstream=new ReadableStream<Uint8Array>({
+        start(controller){controller.enqueue(new TextEncoder().encode('{"active":true,'));},
+        cancel(){cancelled=true;return new Promise<void>(()=>{});}
+    });
+    const fetcher=(async()=>new Response(upstream,{headers:{'Content-Type':'application/json'}})) as typeof fetch;
+    const started=performance.now();
+    const answer=await authorizeOAuth(config,req(),'weave:messages.send',
+        async()=>{accountReads++;return true;},fetcher);
+    const elapsed=performance.now()-started;
+    assert.ok(answer instanceof Response);
+    assert.equal(answer.status,503,'incomplete introspection cannot authorize an account');
+    assert.equal(accountReads,0,'do not consult account ownership for incomplete AS responses');
+    assert.equal(cancelled,true,'attempt to cancel the stalled upstream');
+    assert.ok(elapsed<6_000,'stalled body must not defeat the 3.5s budget: '+elapsed+'ms');
+});
+test('RFC7662 non-JSON response cannot hang on a broken upstream cancel',{timeout:5_000},async()=>{
+    let cancelled=false;
+    const upstream=new ReadableStream<Uint8Array>({
+        cancel(){cancelled=true;return new Promise<void>(()=>{});}
+    });
+    const fetcher=(async()=>new Response(upstream,{headers:{'Content-Type':'text/html'}})) as typeof fetch;
+    const started=performance.now();
+    const answer=await authorizeOAuth(config,req(),'weave:messages.send',exists,fetcher);
+    assert.ok(answer instanceof Response);
+    assert.equal(answer.status,503);
+    assert.equal(cancelled,true);
+    assert.ok(performance.now()-started<3_500,'invalid response cleanup must not delay denial');
+});
+test('RFC7662 oversized JSON cannot hang on a broken upstream cancel',{timeout:5_000},async()=>{
+    let cancelled=false;
+    const upstream=new ReadableStream<Uint8Array>({
+        start(controller){controller.enqueue(new Uint8Array(8_193));},
+        cancel(){cancelled=true;return new Promise<void>(()=>{});}
+    });
+    const fetcher=(async()=>new Response(upstream,{headers:{'Content-Type':'application/json'}})) as typeof fetch;
+    const started=performance.now();
+    const answer=await authorizeOAuth(config,req(),'weave:messages.send',exists,fetcher);
+    assert.ok(answer instanceof Response);
+    assert.equal(answer.status,503);
+    assert.equal(cancelled,true);
+    assert.ok(performance.now()-started<3_500,'oversized response cleanup must not delay denial');
+});
+
 test('OAuth Basic form-encodes client ID and secret before transport',async()=>{
     const now=Math.floor(Date.now()/1000),special={...config,clientId:'weave+client',clientSecret:'secret+%value'};
     let observed='';
@@ -293,4 +343,93 @@ test('cross-origin token endpoint remains default-denied, exact-pinned, and mutu
         OAUTH_ISSUER:config.issuer,OAUTH_RESOURCE:config.resource,
         AUTH_SERVER:{validateToken:async()=>null},OAUTH_INTROSPECTION_TRUSTED_ORIGIN:'https://token-gateway.example'
     },config.resource),'one resource must not accept ambiguous providers');
+});
+
+// Real Miniflare D1 + production OAuth gate: no mock account-exists result.
+// The AS claims are simulated, so this is not a real public-agent acceptance.
+test('Service Binding refuses a previously issued bearer after GitHub owner freezes',async()=>{
+    const h=await start();
+    try{
+        const env={db:h.db,REGISTRATION_ENABLED:'true',REGISTRATION_MAX_ACCOUNTS:'100',
+            REGISTRATION_PER_IP_PER_HOUR:'100',REGISTRATION_GLOBAL_PER_HOUR:'100'} as Env;
+        const signed=await signInHuman(env,{provider:'github',subject:'8459',
+            providerCreatedAt:'2020-01-01T00:00:00Z',displayLogin:'owner'});
+        assert.equal(signed.ok,true);
+        if(!signed.ok)throw Error('Test owner not registered');
+        const owned=await createOwnedAgent(env,{humanId:signed.humanId,
+            displayName:'Test agent',sourceIp:'203.0.113.9'});
+        assert.equal(owned.ok,true);
+        if(!owned.ok)throw Error('Test agent not registered');
+        const legacy=await h.register();
+        const now=Math.floor(Date.now()/1000);
+        let currentAccount=owned.accountId;
+        const binding={validateToken:async()=>({audience:config.resource,userId:currentAccount,
+            props:{accountId:currentAccount,...(currentAccount===owned.accountId?{humanId:signed.humanId}:{})},expiresAt:now+120,
+            scope:['weave:messages.send'],clientId:'verified-public-client'})};
+        const cfg=oauthConfiguration({AUTH_SERVER:binding,OAUTH_ISSUER:config.issuer,
+            OAUTH_RESOURCE:config.resource} as any,config.resource)!;
+        const token=req('owned:grant:secret');
+        const eligible=(accountId:string,serviceHumanId?:string|null)=>oauthAccountActive(env,accountId,serviceHumanId);
+        assert.deepEqual(await authorizeOAuth(cfg,token,'weave:messages.send',eligible,undefined,now*1000),
+            {accountId:owned.accountId});
+        await h.db.prepare('UPDATE humans SET frozen_at=updated_at WHERE human_id=?')
+            .bind(signed.humanId).run();
+        const revoked=await authorizeOAuth(cfg,token,'weave:messages.send',eligible,undefined,now*1000);
+        assert.ok(revoked instanceof Response);
+        assert.equal(revoked.status,401,'freeze must reject an existing still-unexpired access token');
+        currentAccount=legacy.accountId;
+        assert.deepEqual(await authorizeOAuth(cfg,token,'weave:messages.send',eligible,undefined,now*1000),
+            {accountId:legacy.accountId},'independent control-owned accounts stay eligible');
+    }finally{await h.close();}
+});
+
+test('Service Binding revokes stale human bearer after account owner changes',async()=>{
+    const h=await start();
+    try{
+        const env={db:h.db,REGISTRATION_ENABLED:'true',REGISTRATION_MAX_ACCOUNTS:'100',
+            REGISTRATION_PER_IP_PER_HOUR:'100',REGISTRATION_GLOBAL_PER_HOUR:'100'} as Env;
+        const first=await signInHuman(env,{provider:'github',subject:'8460',
+            providerCreatedAt:'2020-01-01T00:00:00Z',displayLogin:'firstowner'});
+        const second=await signInHuman(env,{provider:'github',subject:'8461',
+            providerCreatedAt:'2020-01-02T00:00:00Z',displayLogin:'secondowner'});
+        assert.equal(first.ok,true); assert.equal(second.ok,true);
+        if(!first.ok||!second.ok)throw Error('Human test setup failed');
+        const created=await createOwnedAgent(env,{humanId:first.humanId,
+            displayName:'Transferable agent',sourceIp:'203.0.113.10'});
+        assert.equal(created.ok,true);
+        if(!created.ok)throw Error('Owned-agent test setup failed');
+        const now=Math.floor(Date.now()/1000);
+        let tokenOwner:string|null=first.humanId;
+        const binding={validateToken:async()=>({audience:config.resource,userId:created.accountId,
+            props:{accountId:created.accountId,...(tokenOwner?{humanId:tokenOwner}:{})},expiresAt:now+120,
+            scope:['weave:messages.send'],clientId:'verified-public-client'})};
+        const cfg=oauthConfiguration({AUTH_SERVER:binding,OAUTH_ISSUER:config.issuer,
+            OAUTH_RESOURCE:config.resource} as any,config.resource)!;
+        const token=req('owned:grant:secret');
+        const eligible=(accountId:string,serviceHumanId?:string|null)=>oauthAccountActive(env,accountId,serviceHumanId);
+        assert.deepEqual(await authorizeOAuth(cfg,token,'weave:messages.send',eligible,undefined,now*1000),
+            {accountId:created.accountId},'original owner token must initially work');
+        tokenOwner=null;
+        const missingOwner=await authorizeOAuth(cfg,token,'weave:messages.send',eligible,undefined,now*1000);
+        assert.ok(missingOwner instanceof Response);
+        assert.equal(missingOwner.status,401,'a legacy token must not grant an owned agent without a human binding');
+        tokenOwner=first.humanId;
+        // Simulate a future approved ownership transfer: the account remains active,
+        // but a grant bound to the previous human must lose all mailbox authority.
+        await h.db.prepare('UPDATE accounts SET human_id=? WHERE account_id=?')
+            .bind(second.humanId,created.accountId).run();
+        const stale=await authorizeOAuth(cfg,token,'weave:messages.send',eligible,undefined,now*1000);
+        assert.ok(stale instanceof Response);
+        assert.equal(stale.status,401,'old owner must lose access even while both humans are unfrozen');
+        tokenOwner=second.humanId;
+        assert.deepEqual(await authorizeOAuth(cfg,token,'weave:messages.send',eligible,undefined,now*1000),
+            {accountId:created.accountId},'current owner with a fresh matching grant may access the agent');
+        // An orphaned agent has neither a current owner nor a control credential.
+        await h.db.prepare('UPDATE accounts SET human_id=NULL WHERE account_id=?')
+            .bind(created.accountId).run();
+        tokenOwner=null;
+        const orphan=await authorizeOAuth(cfg,token,'weave:messages.send',eligible,undefined,now*1000);
+        assert.ok(orphan instanceof Response);
+        assert.equal(orphan.status,401,'ownerless agents without a control credential must not accept legacy grants');
+    }finally{await h.close();}
 });

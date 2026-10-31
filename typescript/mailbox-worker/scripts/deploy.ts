@@ -72,7 +72,7 @@ export function runWrangler(args: string[],root: string,env: NodeJS.ProcessEnv){
     });
 }
 export async function buildArtifacts(root: string){
-    await build({absWorkingDir:root,entryPoints:['src/index.ts','src/recovery.ts'],bundle:true,format:'esm',platform:'browser',outdir:'dist',external:['node:crypto'],loader:{'.html':'text','.json':'text','.md':'text'}});
+    await build({absWorkingDir:root,entryPoints:['src/index.ts','src/recovery.ts'],bundle:true,format:'esm',platform:'browser',outdir:'dist',external:['node:crypto','cloudflare:workers'],loader:{'.html':'text','.json':'text','.md':'text'}});
     return Object.fromEntries(await Promise.all(['index','recovery'].map(async name=>[name,createHash('sha256').update(await readFile(join(root,'dist',name+'.js'))).digest('hex')])));
 }
 export async function deploy({env=process.env,fetchImpl=fetch,run,root=directory,openDatabase=openRemoteDatabase,buildBundles=buildArtifacts,verifyMigration=verifyCompletedMigration,applySchema=createMissingSchema,planSchema=planLatestSchema}: DeployOptions={}){
@@ -99,19 +99,33 @@ export async function deploy({env=process.env,fetchImpl=fetch,run,root=directory
         catch{throw Error(label+' unavailable; no cloud mutation inferred.');}
         if(response.status!==200||
             (response.headers.get('Content-Type')??'').split(';')[0].trim().toLowerCase()!=='application/json'){
-            await response.body?.cancel().catch(()=>{});
+            // A malformed response may never settle its cancellation promise.
+            void response.body?.cancel().catch(()=>{});
             throw Error(label+' unavailable or not JSON (HTTP '+response.status+').');
         }
         let parsed:unknown;
         try{
             const reader=response.body?.getReader();if(!reader)throw Error('missing body');
             const decoder=new TextDecoder('utf-8',{fatal:true});let raw='',size=0;
+            // Fetch can return headers before its body stalls; use one total
+            // body deadline rather than a per-chunk timeout.
+            let timer:ReturnType<typeof setTimeout>|undefined;
+            const deadline=new Promise<null>(resolve=>{timer=setTimeout(()=>resolve(null),3500);});
             try{
-                while(true){const part=await reader.read();if(part.done)break;
+                while(true){
+                    const part=await Promise.race([reader.read(),deadline]);
+                    if(part===null)throw Error('stalled discovery response');
+                    if(part.done)break;
                     size+=part.value.byteLength;if(size>8192)throw Error('oversized body');
-                    raw+=decoder.decode(part.value,{stream:true});}
+                    raw+=decoder.decode(part.value,{stream:true});
+                }
                 raw+=decoder.decode();
-            }finally{await reader.cancel().catch(()=>{});reader.releaseLock();}
+            }finally{
+                if(timer!==undefined)clearTimeout(timer);
+                // Do not await untrusted source cleanup after failing closed.
+                void reader.cancel().catch(()=>{});
+                reader.releaseLock();
+            }
             parsed=JSON.parse(raw);
         }catch{throw Error(label+' returned invalid bounded JSON.');}
         if(!parsed||typeof parsed!=='object'||Array.isArray(parsed))
@@ -145,11 +159,10 @@ export async function deploy({env=process.env,fetchImpl=fetch,run,root=directory
             const matches=bindings.filter(binding=>binding?.name===name);
             return matches.length===1&&matches[0].type===type&&(value===undefined||matches[0].text===value);
         };
-        // Install the proof secret separately beforehand, but stage issuer,
-        // resource and AUTH_SERVER together in the maintenance upload. Installing
-        // only issuer/resource on the live Worker would make OAuth fail closed.
-        if(!single(worker.bindings,'OAUTH_ACCOUNT_PROOF_KEY','secret_text')||
-            ['OAUTH_ISSUER','OAUTH_RESOURCE','OAUTH_INTROSPECTION_URL','OAUTH_CLIENT_ID',
+        // Stage issuer, resource and AUTH_SERVER together in the maintenance
+        // upload. Installing only issuer/resource on the live Worker would make
+        // OAuth fail closed. The resource Worker holds no shared AS secret.
+        if(['OAUTH_ISSUER','OAUTH_RESOURCE','OAUTH_INTROSPECTION_URL','OAUTH_CLIENT_ID',
              'OAUTH_CLIENT_SECRET','OAUTH_INTROSPECTION_TRUSTED_ORIGIN']
                 .some(name=>worker.bindings.some(binding=>binding?.name===name))||
             (oauthFlags.length!==0&&oauthFlags[0].text!=='false'))
@@ -157,10 +170,19 @@ export async function deploy({env=process.env,fetchImpl=fetch,run,root=directory
         const as=await inspect<WorkerSettings>('/workers/scripts/weave-auth-demo/settings','Approved existing OAuth authorization Worker');
         const kv=as.bindings?.filter(binding=>binding?.name==='OAUTH_KV')??[];
         const nonce=as.bindings?.filter(binding=>binding?.name==='CONSENT_NONCES')??[];
+        // Human sign-in is mandatory on the AS: GitHub OAuth app, session key and
+        // the private Service Binding to this Worker's HumanDirectory entrypoint.
+        const mailbox=as.bindings?.filter(binding=>binding?.name==='MAILBOX')??[];
+        const clientId=as.bindings?.filter(binding=>binding?.name==='GITHUB_CLIENT_ID')??[];
         if(!Array.isArray(as.bindings)||
             !single(as.bindings,'OAUTH_ISSUER','plain_text',asIssuer)||
             !single(as.bindings,'OAUTH_RESOURCE','plain_text',resource)||
-            !single(as.bindings,'OAUTH_ACCOUNT_PROOF_KEY','secret_text')||
+            clientId.length!==1||clientId[0].type!=='plain_text'||typeof clientId[0].text!=='string'||
+            !/^[A-Za-z0-9._-]{1,128}$/.test(clientId[0].text)||
+            !single(as.bindings,'GITHUB_CLIENT_SECRET','secret_text')||
+            !single(as.bindings,'HUMAN_SESSION_KEY','secret_text')||
+            mailbox.length!==1||mailbox[0].type!=='service'||mailbox[0].service!=='demo'||
+            mailbox[0].entrypoint!=='HumanDirectory'||mailbox[0].environment!==undefined||
             kv.length!==1||kv[0].type!=='kv_namespace'||
             !/^[a-f0-9]{32}$/i.test(kv[0].namespace_id??'')||
             nonce.length!==1||nonce[0].type!=='durable_object_namespace'||
@@ -241,13 +263,6 @@ export async function deploy({env=process.env,fetchImpl=fetch,run,root=directory
                 oauthExisting.set(name,found[0]);
             }
         }
-        // The first-party proof route is opt-in independently of the trusted
-        // authorization Service Binding. Preserve a pre-existing signing secret
-        // without requiring this provider-specific ownership ceremony.
-        const proofs=worker.bindings.filter(binding=>binding?.name==='OAUTH_ACCOUNT_PROOF_KEY');
-        if(proofs.length>1||proofs.some(binding=>binding.type!=='secret_text'))
-            throw Error('Invalid existing OAuth account-proof key binding; no mutation attempted.');
-        if(proofs.length===1)oauthExisting.set('OAUTH_ACCOUNT_PROOF_KEY',proofs[0]);
         let issuer:URL;
         try{issuer=new URL(oauthExisting.get('OAUTH_ISSUER')!.text as string);}
         catch{throw Error('Invalid existing OAuth issuer; no mutation attempted.');}
@@ -322,7 +337,14 @@ export async function deploy({env=process.env,fetchImpl=fetch,run,root=directory
         const planDemo=(db:StorageDatabase)=>planSchema(db,schemaPolicy);
         const completed=databaseMode==='completed-only'?await prepareCompletedDeployment(connection.db,planDemo):undefined;
         // Read-only and before maintenance: an unconverted database never pauses the service.
-        if(!completed){report.conversion=await verifyMigration(connection.db);await save();}
+        if(!completed){
+            report.conversion=await verifyMigration(connection.db);
+            // Reject incompatible existing D1 shape BEFORE uploading the maintenance
+            // Worker. Plan again under maintenance before any schema application:
+            // this read-only preflight does not replace the post-pause verification.
+            await planDemo(connection.db);
+            await save();
+        }
         phase='maintenance deployment requested';await save();
         await command(['deploy','--keep-vars','--no-bundle'],'maintenance');
         verifySettings(await inspect('/workers/scripts/demo/settings','Maintenance settings',phase),'true');

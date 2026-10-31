@@ -63,9 +63,27 @@ test('verifyMigration failure stops before maintenance or any Worker command',as
     const f=fixture();f.options.verifyMigration=async()=>{throw Error('synthetic interrupted verifyMigration');};
     await assert.rejects(deploy(f.options),/synthetic interrupted/);assert.equal(f.commands.length,0);assert.equal(f.closed,true);
 });
-for(const stage of ['applySchema','planSchema'])test(`${stage} failure leaves maintenance and never uploads active code`,async()=>{
+for(const stage of ['applySchema','planSchema'])test(`${stage} failure fails closed without uploading active code`,async()=>{
     const f=fixture();f.options[stage]=async()=>{throw Error('synthetic interrupted '+stage);};
-    await assert.rejects(deploy(f.options),/synthetic interrupted/);assert.equal(f.commands.length,1);assert.equal(f.closed,true);
+    await assert.rejects(deploy(f.options),/synthetic interrupted/);
+    assert.equal(f.commands.length,stage==='planSchema'?0:1,
+        'read-only schema drift must not take the live Worker into maintenance');
+    assert.equal(f.closed,true);
+});
+test('maintain mode refuses incompatible existing D1 before changing the live Worker',async()=>{
+    const h=await start(),f=fixture();
+    try{
+        // A real Miniflare D1 table whose shape differs from the reviewed target.
+        // planLatestSchema must reject it while the deployed Worker remains active.
+        await h.db.prepare('ALTER TABLE accounts ADD COLUMN unexpected_old_shape TEXT').run();
+        f.options.openDatabase=async()=>({db:h.db,close:async()=>{f.closed=true;}});
+        f.options.planSchema=planLatestSchema;
+        await assert.rejects(deploy(f.options),/accounts|schema|column|drift/i);
+        assert.equal(f.commands.length,0,'never deploy maintenance on known incompatible schema');
+        assert.deepEqual(f.events,['migration']);
+        assert.equal(await h.db.prepare("SELECT count(*) n FROM pragma_table_info('accounts') WHERE name='unexpected_old_shape'").first('n'),1);
+        assert.equal(f.closed,true);
+    }finally{await h.close();}
 });
 test('missing recovery version prevents active deployment',async()=>{
     const f=fixture(),run=f.options.run;f.options.run=args=>({...run(args),stdout:''});await assert.rejects(deploy(f.options),/Recovery version identifier missing/);assert.equal(f.commands.length,2);
@@ -268,8 +286,7 @@ const existingAuthService=[
     dbBinding,
     {name:'AUTH_SERVER',type:'service',service:'approved-auth-worker'},
     {name:'OAUTH_ISSUER',type:'plain_text',text:'https://auth.weave.example'},
-    {name:'OAUTH_RESOURCE',type:'plain_text',text:'https://demo.weave-389.workers.dev/mcp'},
-    {name:'OAUTH_ACCOUNT_PROOF_KEY',type:'secret_text'}
+    {name:'OAUTH_RESOURCE',type:'plain_text',text:'https://demo.weave-389.workers.dev/mcp'}
 ];
 test('existing operator-provisioned OAuth Service Binding survives maintenance, recovery and active deploy without provisioning',async()=>{
     const f=fixture({bindingResult:existingAuthService});
@@ -280,7 +297,6 @@ test('existing operator-provisioned OAuth Service Binding survives maintenance, 
         assert.deepEqual(config.services,[{binding:'AUTH_SERVER',service:'approved-auth-worker'}]);
         assert.equal(config.vars.OAUTH_ISSUER,undefined,'Do not materialize operator OAuth settings into temporary config');
         assert.equal(config.vars.OAUTH_RESOURCE,undefined,'Do not materialize operator OAuth settings into temporary config');
-        assert.equal(JSON.stringify(config).includes('OAUTH_ACCOUNT_PROOF_KEY'),false,'Do not serialize an installed proof key');
     }
     assert.equal(f.commands.length,3);
     assert.equal(f.closed,true);
@@ -300,8 +316,8 @@ test('lost existing OAuth Service Binding after maintenance stops before any D1 
     assert.deepEqual(f.events,['migration','maintenance']);
     assert.equal(f.closed,true);
 });
-test('OAuth issuer or account-proof secret lost after maintenance stops before the D1 migration check',async()=>{
-    for(const missing of ['OAUTH_ISSUER','OAUTH_ACCOUNT_PROOF_KEY']){
+test('OAuth issuer or resource lost after maintenance stops before the D1 migration check',async()=>{
+    for(const missing of ['OAUTH_ISSUER','OAUTH_RESOURCE']){
         const f=fixture({bindingResult:existingAuthService}),original=f.options.fetchImpl;
         f.options.fetchImpl=async (...args)=>{
             const response=await original(...args);
@@ -330,15 +346,14 @@ test('untrusted or malformed Service Bindings cannot be smuggled into a code-onl
     }
 });
 
-test('a previously approved OAuth Service Binding can use default or named RPC entrypoint without requiring optional first-party proof',async()=>{
+test('a previously approved OAuth Service Binding can use default or named RPC entrypoint',async()=>{
     for(const entrypoint of [undefined,'AuthServer']){
-        const bindingResult=existingAuthService.filter(b=>b.name!=='OAUTH_ACCOUNT_PROOF_KEY').map(b=>
+        const bindingResult=existingAuthService.map(b=>
             b.name==='AUTH_SERVER'&&entrypoint?{...b,entrypoint}:b);
         const f=fixture({bindingResult});
         await deploy(f.options);
         for(const config of f.configs){
             assert.deepEqual(config.services,[{binding:'AUTH_SERVER',service:'approved-auth-worker',...(entrypoint?{entrypoint}:{})}]);
-            assert.ok(!JSON.stringify(config).includes('OAUTH_ACCOUNT_PROOF_KEY'));
         }
         assert.deepEqual(f.events,['migration','maintenance','schema','recovery','active']);
     }
@@ -347,13 +362,14 @@ test('a previously approved OAuth Service Binding can use default or named RPC e
 
 const firstPartyIssuer='https://weave-auth-demo.weave-389.workers.dev';
 const firstPartyResource='https://demo.weave-389.workers.dev/mcp';
-const preapprovedResource=[
-    dbBinding,{name:'OAUTH_ACCOUNT_PROOF_KEY',type:'secret_text'}
-];
+const preapprovedResource=[dbBinding];
 const preapprovedIssuer=[
     {name:'OAUTH_ISSUER',type:'plain_text',text:firstPartyIssuer},
     {name:'OAUTH_RESOURCE',type:'plain_text',text:firstPartyResource},
-    {name:'OAUTH_ACCOUNT_PROOF_KEY',type:'secret_text'},
+    {name:'GITHUB_CLIENT_ID',type:'plain_text',text:'Iv23liPublicClientId'},
+    {name:'GITHUB_CLIENT_SECRET',type:'secret_text'},
+    {name:'HUMAN_SESSION_KEY',type:'secret_text'},
+    {name:'MAILBOX',type:'service',service:'demo',entrypoint:'HumanDirectory'},
     {name:'OAUTH_KV',type:'kv_namespace',namespace_id:'b'.repeat(32)},
     {name:'CONSENT_NONCES',type:'durable_object_namespace',class_name:'ConsentNonce'}
 ];
@@ -431,25 +447,40 @@ test('explicit one-time first-party bootstrap attaches the approved existing AS 
             'The shipped AuthServer is a default export; the service binding MUST NOT select an absent named entrypoint.');
         assert.equal(config.vars.OAUTH_ISSUER,firstPartyIssuer);
         assert.equal(config.vars.OAUTH_RESOURCE,firstPartyResource);
-        assert.equal(JSON.stringify(config).includes('OAUTH_ACCOUNT_PROOF_KEY'),false);
+        assert.equal(JSON.stringify(config).includes('GITHUB_CLIENT_SECRET'),false);
+        assert.equal(JSON.stringify(config).includes('HUMAN_SESSION_KEY'),false);
     }
     assert.equal(f.closed,true);
 });
 test('OAuth binding bootstrap fails closed before maintenance when preapproved infrastructure or public issuer is absent',async()=>{
+    // Each case names the refusal it must hit, so a case cannot pass by failing for an unrelated reason.
+    const resourcePolicy=/Resource OAuth bootstrap secrets or account policy are not preapproved/;
+    const incompleteAs=/Approved OAuth authorization Worker has incomplete live bindings/;
+    const issuerMetadata=/Approved OAuth issuer lacks the expected authorization-code, CIMD and PKCE metadata/;
     const cases=[
-        firstPartyBootstrap({bindings:[dbBinding]}),
-        firstPartyBootstrap({bindings:[...preapprovedResource,{name:'OAUTH_CLIENT_SECRET',type:'secret_text'}]}),
-        firstPartyBootstrap({asBindings:preapprovedIssuer.filter(x=>x.name!=='OAUTH_KV')}),
-        firstPartyBootstrap({asBindings:preapprovedIssuer.map(x=>x.name==='OAUTH_KV'?{...x,namespace_id:'bad'}:x)}),
-        firstPartyBootstrap({asBindings:preapprovedIssuer.filter(x=>x.name!=='CONSENT_NONCES')}),
-        firstPartyBootstrap({publicStatus:401}),
-        firstPartyBootstrap({metadata:{issuer:'https://untrusted.example',client_id_metadata_document_supported:true,code_challenge_methods_supported:['S256']}}),
-        firstPartyBootstrap({metadata:{issuer:firstPartyIssuer,client_id_metadata_document_supported:false,code_challenge_methods_supported:['S256']}}),
-        firstPartyBootstrap({flag:'tru'}),
-        firstPartyBootstrap({bindings:[...preapprovedResource,{name:'AUTH_SERVER',type:'service',service:'other'}]})
+        [firstPartyBootstrap({bindings:[...preapprovedResource,{name:'OAUTH_ISSUER',type:'plain_text',text:firstPartyIssuer}]}),resourcePolicy],
+        [firstPartyBootstrap({bindings:[...preapprovedResource,{name:'OAUTH_CLIENT_SECRET',type:'secret_text'}]}),resourcePolicy],
+        // Human sign-in prerequisites on the AS: GitHub app, session key and the HumanDirectory binding.
+        ...['GITHUB_CLIENT_ID','GITHUB_CLIENT_SECRET','HUMAN_SESSION_KEY','MAILBOX'].map(name=>
+            [firstPartyBootstrap({asBindings:preapprovedIssuer.filter(x=>x.name!==name)}),incompleteAs]),
+        [firstPartyBootstrap({asBindings:preapprovedIssuer.map(x=>x.name==='GITHUB_CLIENT_SECRET'?{...x,type:'plain_text',text:'leaked'}:x)}),incompleteAs],
+        [firstPartyBootstrap({asBindings:preapprovedIssuer.map(x=>x.name==='GITHUB_CLIENT_ID'?{...x,text:'bad id'}:x)}),incompleteAs],
+        [firstPartyBootstrap({asBindings:[...preapprovedIssuer,{name:'HUMAN_SESSION_KEY',type:'secret_text'}]}),incompleteAs],
+        [firstPartyBootstrap({asBindings:preapprovedIssuer.map(x=>x.name==='MAILBOX'?{...x,entrypoint:undefined}:x)}),incompleteAs],
+        [firstPartyBootstrap({asBindings:preapprovedIssuer.map(x=>x.name==='MAILBOX'?{...x,service:'other-worker'}:x)}),incompleteAs],
+        [firstPartyBootstrap({asBindings:preapprovedIssuer.map(x=>x.name==='MAILBOX'?{...x,environment:'staging'}:x)}),incompleteAs],
+        [firstPartyBootstrap({asBindings:preapprovedIssuer.filter(x=>x.name!=='OAUTH_KV')}),incompleteAs],
+        [firstPartyBootstrap({asBindings:preapprovedIssuer.map(x=>x.name==='OAUTH_KV'?{...x,namespace_id:'bad'}:x)}),incompleteAs],
+        [firstPartyBootstrap({asBindings:preapprovedIssuer.filter(x=>x.name!=='CONSENT_NONCES')}),incompleteAs],
+        [firstPartyBootstrap({publicStatus:401}),/Approved OAuth issuer metadata unavailable or not JSON \(HTTP 401\)/],
+        [firstPartyBootstrap({metadata:{issuer:'https://untrusted.example',client_id_metadata_document_supported:true,code_challenge_methods_supported:['S256']}}),issuerMetadata],
+        [firstPartyBootstrap({metadata:{issuer:firstPartyIssuer,client_id_metadata_document_supported:false,code_challenge_methods_supported:['S256']}}),issuerMetadata],
+        [firstPartyBootstrap({flag:'tru'}),/Invalid first-party OAuth bootstrap permission/],
+        [firstPartyBootstrap({bindings:[...preapprovedResource,{name:'AUTH_SERVER',type:'service',service:'other'}]}),
+            /First-party OAuth bootstrap already has a Service Binding/]
     ];
-    for(const f of cases){
-        await assert.rejects(deploy(f.options));
+    for(const [f,expected] of cases){
+        await assert.rejects(deploy(f.options),expected);
         assert.equal(f.commands.length,0,'No maintenance, D1 or active upload may start on a failed preflight');
     }
 });
@@ -471,6 +502,36 @@ test('ordinary demo deploy does not bootstrap even with a preinstalled proof sec
     const f=fixture({bindingResult:preapprovedResource});
     await deploy(f.options);
     assert.ok(f.configs.every(c=>!('services' in c)&&c.vars.OAUTH_ISSUER===undefined));
+});
+
+test('first-party issuer metadata read timeout rejects a stalled body before maintenance', {timeout:6500},async()=>{
+    const f=firstPartyBootstrap(),original=f.options.fetchImpl;
+    f.options.fetchImpl=async (url,options)=>{
+        if(url===firstPartyIssuer+'/.well-known/oauth-authorization-server'){
+            f.requests.push(url);
+            return new Response(new ReadableStream<Uint8Array>({
+                start(controller){controller.enqueue(new TextEncoder().encode('{"issuer":"'));},
+                cancel(){return new Promise<void>(()=>{});}
+            }),{headers:{'Content-Type':'application/json'}});
+        }
+        return original(url,options);
+    };
+    await assert.rejects(deploy(f.options),/issuer metadata|JSON|unavailable/i);
+    assert.equal(f.commands.length,0,'No D1/Worker operation may start on a stalled issuer metadata body');
+});
+test('first-party issuer metadata invalid MIME rejects without waiting for a stalled cancel', {timeout:6500},async()=>{
+    const f=firstPartyBootstrap(),original=f.options.fetchImpl;
+    f.options.fetchImpl=async (url,options)=>{
+        if(url===firstPartyIssuer+'/.well-known/oauth-authorization-server'){
+            f.requests.push(url);
+            return new Response(new ReadableStream<Uint8Array>({
+                cancel(){return new Promise<void>(()=>{});}
+            }),{headers:{'Content-Type':'text/plain'}});
+        }
+        return original(url,options);
+    };
+    await assert.rejects(deploy(f.options),/issuer metadata unavailable or not JSON/i);
+    assert.equal(f.commands.length,0,'Invalid MIME must fail before maintenance');
 });
 
 test('approved first-party AS metadata must expose a viable same-origin code and PKCE issuer before any upload',async()=>{
