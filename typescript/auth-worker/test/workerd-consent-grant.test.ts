@@ -656,3 +656,27 @@ test("consent_ChangedHumanSessionAfterDisplay_CannotApproveAsAnotherHuman",{time
   assert.deepEqual(await agentsOf(mf,await humanIdOf(mf,23002)),[],
     "a switched session must not create an agent for a different human");
 });
+
+test("consent_ChangedHumanSessionAfterDisplay_CannotDenyAnotherHumansConsent",{timeout:60_000},async()=>{
+  // Consent belongs to the human shown on its page, for both allow and deny.
+  // Retaining the SDK browser cookie must not let a different signed-in human
+  // invalidate the owner's still-pending consent.
+  const {mf}=shared;
+  const auth=authorization();
+  const original=await signIn(mf,auth,24001);
+  const consent=await openConsent(mf,auth,original);
+  assert.match(consent.html,/Signed in as @human24001/);
+  const replacement=await signIn(mf,authorization(),24002);
+  const switchedCookies=consent.cookie.replace(original,replacement);
+  assert.notEqual(switchedCookies,consent.cookie);
+  const foreign=await post(mf,switchedCookies,{handle:consent.handle,decision:"deny"});
+  assert.equal(foreign.status,400,"a different human must not deny the owner's pending consent");
+  assert.equal(foreign.headers.get("location"),null,"no client redirect from a foreign denial");
+  assert.equal(await nonceStatus(mf,consent.handle),200,
+    "a foreign denial must not burn the original owner's one-time consent");
+  // The original person can still deny their own consent.
+  const owner=await post(mf,consent.cookie,{handle:consent.handle,decision:"deny"});
+  assert.equal(owner.status,302);
+  assert.equal(new URL(owner.headers.get("location")!).searchParams.get("error"),"access_denied");
+  assert.equal(await nonceStatus(mf,consent.handle),404);
+});
