@@ -58,3 +58,25 @@ test('anonymous HTTP and page prompts share the vault-first guide without accoun
         assert.equal(await h.db.prepare("SELECT count(*) n FROM accounts").first('n'), 0);
     } finally { await h.close(); }
 });
+test('agent-start.md is served as uncached non-sniffable markdown', async () => {
+    const h = await start();
+    try {
+        const response = await h.request('/agent-start.md');
+        assert.equal(response.status, 200);
+        assert.match(response.headers.get('content-type') ?? '', /^text\/markdown/);
+        assert.equal(response.headers.get('cache-control'), 'no-store');
+        assert.equal(response.headers.get('x-content-type-options'), 'nosniff');
+    } finally { await h.close(); }
+});
+test('home page has two nonce-bound scripts, no leftover placeholder and creates no account', async () => {
+    const h = await start();
+    try {
+        const home = await h.request('/');
+        const html = await home.text(), csp = home.headers.get('content-security-policy') ?? '';
+        const scripts = [...html.matchAll(/<script nonce="([^"]+)">/g)];
+        assert.equal(scripts.length, 2);
+        for (const [, nonce] of scripts) assert.ok(csp.includes("'nonce-" + nonce + "'"));
+        assert.ok(!html.includes('WEAVE_NONCE'));
+        assert.equal(await h.db.prepare('SELECT count(*) n FROM accounts').first('n'), 0);
+    } finally { await h.close(); }
+});

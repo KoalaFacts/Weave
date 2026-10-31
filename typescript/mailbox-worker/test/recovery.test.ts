@@ -55,3 +55,20 @@ test('retained recovery bundle reads post-cutover writes and performs no rate, c
         assert.deepEqual(await snapshot(h.db),before,'Recovery must neither restore frozen state nor write during read-only service.');
     }finally{try{await h?.close();}finally{await rm(persist,{recursive:true,force:true});}}
 });
+test('address history pages revoked and active addresses for the owner only',async()=>{
+    const h=await start();
+    try{
+        const owner=await h.register(),peer=await h.register();
+        const [revoked,active]=[await h.address(owner),await h.address(owner)].sort((a,b)=>a.addressId.localeCompare(b.addressId));
+        const foreign=await h.address(peer);
+        await h.ok('/v1/addresses/'+revoked.addressId,owner.control,'DELETE');
+        await h.ok('/v1/addresses/'+foreign.addressId,peer.control,'DELETE');
+        assert.deepEqual((await h.ok('/v1/addresses',owner.control)).items.map(x=>x.addressId),[active.addressId]);
+        const first=await h.ok('/v1/addresses?includeRevoked=true&limit=1',owner.control);
+        assert.equal(first.items[0].addressId,revoked.addressId);assert.ok(first.items[0].revokedAt);assert.ok(first.nextCursor);
+        const second=await h.ok('/v1/addresses?includeRevoked=true&limit=1&afterCursor='+encodeURIComponent(first.nextCursor),owner.control);
+        assert.deepEqual(second.items.map(x=>x.addressId),[active.addressId]);
+        assert.equal(second.items[0].revokedAt,null);assert.equal(second.nextCursor,null);
+        for(const item of [...first.items,...second.items])assert.equal(item.accountId,owner.accountId);
+    }finally{await h.close();}
+});
