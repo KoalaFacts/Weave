@@ -110,3 +110,19 @@ test("readConsent_StalledFormStream_FailsClosedWithinDeadline",{timeout:7_000},a
   assert.equal(await readConsent(request),null,"a stalled consent body cannot be authorized");
   assert.ok(performance.now()-start<5_500,"pending request body must be bounded");
 });
+
+test("readConsent_CancelNeverSettles_StillReturnsAtDeadline",{timeout:6_000},async()=>{
+  // A stalled upload can also supply a cancel() that never resolves. The timeout
+  // must bound the whole operation, including stream cleanup, not just read().
+  const partial=new TextEncoder().encode("handle="+createChallenge()+"&decision=approve&agent=new&agentName=");
+  const stream=new ReadableStream<Uint8Array>({
+    start(controller){controller.enqueue(partial);},
+    cancel(){return new Promise<void>(()=>{});}
+  });
+  const request=new Request("https://auth.example/authorize",{
+    method:"POST",headers:{"Content-Type":"application/x-www-form-urlencoded"},body:stream,duplex:"half"
+  } as RequestInit);
+  const start=performance.now();
+  assert.equal(await readConsent(request),null);
+  assert.ok(performance.now()-start<5_500,"cleanup must not defeat the upload deadline");
+});
