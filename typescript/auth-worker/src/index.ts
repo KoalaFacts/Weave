@@ -4,7 +4,9 @@ import type {CreateAgentResult} from "../../mailbox-worker/src/humans.ts";
 import {createChallenge,validChallenge,validHandle,readConsent} from "./challenge.ts";
 import {consentPage} from "./consent-page.ts";
 import {beginGithubLogin,completeGithubLogin,failureLog,messagePage,type GithubLoginEnv} from "./github-login.ts";
-import {readHumanSession,validSigningKey} from "./human-session.ts";
+import {freshAuthentication,readHumanSession,validSigningKey} from "./human-session.ts";
+import {readOwnerAction,destructiveKinds} from "./owner-forms.ts";
+import {ownerFormTokens,ownerPage,recoveryCodePage} from "./owner-page.ts";
 import {limitRegistration,registrationOpen,type RegistrationLimitEnv} from "./registration-limit.ts";
 export {ConsentNonce} from "./nonce-do.ts";
 interface Env extends GithubLoginEnv,RegistrationLimitEnv {
@@ -178,12 +180,41 @@ async function authorize(req:Request,env:Env,server:OAuthAuthorizationServer<Env
     throw error;
   }
 }
+const methodNotAllowed=(allow:string)=>new Response("Method not allowed",{status:405,headers:{Allow:allow,"Cache-Control":"no-store"}});
+const accountRedirect=(result?:string)=>new Response(null,{status:303,headers:{
+  Location:"/account"+(result===undefined?"":"?result="+result),"Cache-Control":"no-store","Referrer-Policy":"no-referrer"}});
+/** The owner page: agents, binding requests and keys of the signed-in human. Destructive actions need a fresh GitHub sign-in. */
+async function account(req:Request,env:Env):Promise<Response>{
+  if(req.method!=="GET"&&req.method!=="POST")return methodNotAllowed("GET, POST");
+  const url=new URL(req.url),now=Date.now();
+  const accountUrl=new URL("/account",env.OAUTH_ISSUER);
+  if(req.method==="POST"&&req.headers.get("origin")!==url.origin)
+    return messagePage(403,"Request refused","This request did not come from the Weave account page.");
+  const session=await readHumanSession(env.HUMAN_SESSION_KEY,req,now);
+  if(!session)return beginGithubLogin(env,accountUrl,now);
+  if(req.method==="GET"){
+    try{
+      const overview=await env.MAILBOX.ownerOverview(session.humanId);
+      return ownerPage(overview,session,await ownerFormTokens(env.HUMAN_SESSION_KEY,session.humanId,overview,now),url.searchParams.get("result"),now);
+    }catch{return directoryUnavailable();}
+  }
+  const action=await readOwnerAction(env.HUMAN_SESSION_KEY,req,session,now);
+  if(!action)return accountRedirect("not-found");
+  if(destructiveKinds.has(action.kind)&&!freshAuthentication(session,now))
+    return beginGithubLogin(env,accountUrl,now,{reauthenticate:{login:session.login}});
+  try{
+    const result=await env.MAILBOX.ownerAction({humanId:session.humanId,authAt:session.authAt,...action});
+    if("code" in result)return recoveryCodePage((action as {agentId:string}).agentId,result.code,result.expiresAt);
+    return accountRedirect(result.ok?"done":result.reason);
+  }catch{return directoryUnavailable();}
+}
 export default class AuthServer extends WorkerEntrypoint<Env>{
   async fetch(req:Request):Promise<Response>{
     let server:OAuthAuthorizationServer<Env>;
     try{config(this.env,req.url);server=provider(this.env);}catch{return unavailable();}
     const path=new URL(req.url).pathname;
     if(path==="/authorize")return authorize(req,this.env,server);
+    if(path==="/account")return account(req,this.env);
     if(path==="/login/github/callback")return req.method==="GET"?completeGithubLogin(this.env,req,Date.now())
       :new Response("Method not allowed",{status:405,headers:{Allow:"GET","Cache-Control":"no-store"}});
     if(path==="/register"){
