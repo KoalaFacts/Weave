@@ -4,7 +4,7 @@ import { atomic, type Env } from './database.ts';
 import { verifyDpop } from './dpop.ts';
 import { base64url, parseJws, verifyJws } from './jose.ts';
 import { epochSeconds, exactInt64, nowUtc } from './time.ts';
-import { fail, hash } from './wire.ts';
+import { Problem, fail, hash } from './wire.ts';
 
 export const accessTokenSeconds = 900;
 export const assertionMaxSeconds = 300;
@@ -12,6 +12,8 @@ export type AgentAuth = {accountId: string; kid: string};
 
 const ticksPerSecond = 10000000n;
 const clockSkewSeconds = 60;
+// Spent jtis outlive their exp by the skew allowance, so a Worker whose clock lags still finds them.
+const assertionRetentionTicks = BigInt(clockSkewSeconds) * ticksPerSecond;
 const maxFormBytes = 8192;
 const expiredRowsPerIssue = 100;
 const assertionType = 'urn:ietf:params:oauth:client-assertion-type:jwt-bearer';
@@ -21,7 +23,9 @@ const dpopAuthorization = /^DPoP ([A-Za-z0-9_-]{43})$/i;
 
 /** An RFC 6749 §5.2 token-endpoint error; anything else thrown while issuing is reported as temporarily_unavailable. */
 class TokenRefusal {
-    constructor(readonly status: number, readonly error: string) {}
+    readonly status: number;
+    readonly error: string;
+    constructor(status: number, error: string) { this.status = status; this.error = error; }
 }
 function refuse(status: number, error: string): never { throw new TokenRefusal(status, error); }
 function invalidRequest(): never { refuse(400, 'invalid_request'); }
@@ -79,14 +83,16 @@ async function assertedKey(env: Env, request: Request, assertion: string, client
 }
 
 /** POST /v1/token: exchanges a single-use key assertion plus a DPoP proof by the same key for an opaque DPoP-bound access token. */
-export async function issueAgentToken(env: Env, request: Request): Promise<Response> {
+export async function issueAgentToken(env: Env, request: Request, clock: () => bigint = nowUtc): Promise<Response> {
     try {
+        // RFC 6749 §2.3: the assertion is the only client authentication method.
+        if (request.headers.has('Authorization')) invalidRequest();
         const form = await readForm(request);
         const grantType = form.get('grant_type'), type = form.get('client_assertion_type'), assertion = form.get('client_assertion');
         if (grantType === undefined || type === undefined || assertion === undefined) invalidRequest();
         if (grantType !== 'client_credentials') refuse(400, 'unsupported_grant_type');
         if (type !== assertionType) invalidRequest();
-        const now = epochSeconds();
+        const now = epochSeconds(clock());
         const proof = await verifyDpop(request, {now});
         if (!proof.ok) refuse(400, 'invalid_dpop_proof');
         const {key, jti, exp} = await assertedKey(env, request, assertion, form.get('client_id'), now);
@@ -98,9 +104,12 @@ export async function issueAgentToken(env: Env, request: Request): Promise<Respo
             if (live !== key.accountId) invalidClient();
             const used = await tx.db.prepare('SELECT 1 used FROM agent_assertions WHERE account_id=? AND jti=?').bind(key.accountId, jti).first<number>('used');
             if (used !== null) invalidClient();
-            const at = tx.store.now, cutoff = at.toString();
+            const at = clock(), cutoff = at.toString();
+            // The assertion may have expired since it was validated; its jti row could already be pruned.
+            if (BigInt(exp) * ticksPerSecond <= at) invalidClient();
             // Bounded expiry cleanup first, so the rows staged below are never part of it.
-            tx.writes.push(tx.db.prepare('DELETE FROM agent_assertions WHERE rowid IN (SELECT rowid FROM agent_assertions WHERE expires_at<=CAST(? AS INTEGER) LIMIT ?)').bind(cutoff, expiredRowsPerIssue));
+            tx.writes.push(tx.db.prepare('DELETE FROM agent_assertions WHERE rowid IN (SELECT rowid FROM agent_assertions WHERE expires_at<=CAST(? AS INTEGER) LIMIT ?)')
+                .bind((at - assertionRetentionTicks).toString(), expiredRowsPerIssue));
             tx.writes.push(tx.db.prepare('DELETE FROM agent_access_tokens WHERE token_hash IN (SELECT token_hash FROM agent_access_tokens WHERE expires_at<=CAST(? AS INTEGER) LIMIT ?)').bind(cutoff, expiredRowsPerIssue));
             tx.store.stage(tx.store.orm.insert(schema.agentAssertions).values({account_id: key.accountId, jti, expires_at: BigInt(exp) * ticksPerSecond, created_at: at}));
             tx.store.stage(tx.store.orm.insert(schema.agentAccessTokens).values({
@@ -110,8 +119,11 @@ export async function issueAgentToken(env: Env, request: Request): Promise<Respo
         });
         return tokenResponse(200, {access_token: accessToken, token_type: 'DPoP', expires_in: accessTokenSeconds});
     } catch (error) {
-        // D1 failures (thrown Problem 503 or raw driver errors) fail closed: nothing was committed.
-        return error instanceof TokenRefusal ? tokenResponse(error.status, {error: error.error}) : tokenResponse(503, {error: 'temporarily_unavailable'});
+        if (error instanceof TokenRefusal) return tokenResponse(error.status, {error: error.error});
+        // D1 failures fail closed: nothing was committed. Only the error class and message are logged, never request data.
+        if (!(error instanceof Problem)) console.error(JSON.stringify({event: 'agent-token-unavailable', errorClass: error instanceof Error ? error.name : typeof error,
+            message: error instanceof Error ? error.message : null}));
+        return tokenResponse(503, {error: 'temporarily_unavailable'});
     }
 }
 

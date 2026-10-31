@@ -7,6 +7,8 @@ import { join } from 'node:path';
 import { setTimeout as delay } from 'node:timers/promises';
 import { start } from './harness.ts';
 import { agentKey, clientAssertion, dpopProof, nowSeconds, type TestKey } from './agent-key.ts';
+import { issueAgentToken } from '../src/agent-tokens.ts';
+import type { Env } from '../src/database.ts';
 
 type Harness = Awaited<ReturnType<typeof start>>;
 type Credential = {accountId: string; key: TestKey};
@@ -342,4 +344,72 @@ test('resource_401_CarriesDpopChallenge', async () => {
         assert.match(challenge, /DPoP/);
         assert.match(challenge, /algs="EdDSA"/);
     } finally { await h.close(); }
+});
+
+// Direct calls with an injected clock: each read of the clock returns the next value (the last one repeats).
+const second = 10000000n;
+const clockOf = (...seconds: number[]) => { let i = 0; return () => BigInt(seconds[Math.min(i++, seconds.length - 1)]) * second; };
+function direct(h: Harness, cred: Credential, assertion: string, clock: () => bigint, iat: number): Promise<Response> {
+    const request = new Request(tokenUrl, post(grant(assertion), dpopProof(cred.key, {method: 'POST', url: tokenUrl, iat})));
+    return issueAgentToken({db: h.db} as unknown as Env, request, clock);
+}
+
+test('token_ExpPassesBetweenValidationAndCommit_401', async () => {
+    const h = await start();
+    try {
+        const cred = await register(h), now = nowSeconds();
+        const assertion = clientAssertion(cred.key, {accountId: cred.accountId, audience: tokenUrl, iat: now, exp: now + 5});
+        // Validated at now (exp in the future); the transaction runs at exactly exp.
+        await refusal(await direct(h, cred, assertion, clockOf(now, now + 5), now), 401, 'invalid_client');
+        assert.equal(await count(h, 'agent_access_tokens'), 0);
+        assert.equal(await count(h, 'agent_assertions'), 0);
+    } finally { await h.close(); }
+});
+
+test('token_JtiJustPastExpiry_KeptByCleanupAndReplayRefused', async () => {
+    const h = await start();
+    try {
+        const cred = await register(h), now = nowSeconds();
+        const first = clientAssertion(cred.key, {accountId: cred.accountId, audience: tokenUrl, iat: now, exp: now + 2, jti: 'first-assertion-00001'});
+        assert.equal((await direct(h, cred, first, clockOf(now), now)).status, 200);
+        await h.db.prepare("INSERT INTO agent_assertions(account_id,jti,expires_at,created_at) VALUES(?,'long-expired-assertion',CAST(? AS INTEGER),CAST(? AS INTEGER))")
+            .bind(cred.accountId, ((BigInt(now) - 120n) * second).toString(), ((BigInt(now) - 200n) * second).toString()).run();
+        // 30 s after the first assertion expired, another issuance runs cleanup.
+        const later = now + 32;
+        const other = clientAssertion(cred.key, {accountId: cred.accountId, audience: tokenUrl, iat: later, exp: later + 60});
+        assert.equal((await direct(h, cred, other, clockOf(later), later)).status, 200);
+        const jtis = (await h.db.prepare('SELECT jti FROM agent_assertions ORDER BY jti').all<{jti: string}>()).results.map(r => r.jti);
+        assert.equal(jtis.includes('first-assertion-00001'), true);
+        assert.equal(jtis.includes('long-expired-assertion'), false);
+        // A Worker whose clock lags still sees the first assertion as unexpired; the retained jti refuses it.
+        await refusal(await direct(h, cred, first, clockOf(now + 1), now + 1), 401, 'invalid_client');
+        assert.equal(await count(h, 'agent_access_tokens'), 2);
+    } finally { await h.close(); }
+});
+
+test('token_AuthorizationHeader_400InvalidRequest', async () => {
+    const h = await start();
+    try {
+        const cred = await register(h);
+        const init = post(grant(clientAssertion(cred.key, {accountId: cred.accountId, audience: tokenUrl})), dpopProof(cred.key, {method: 'POST', url: tokenUrl}));
+        (init.headers as Record<string, string>).Authorization = 'Basic ' + Buffer.from(cred.accountId + ':x').toString('base64');
+        await refusal(await h.mf.dispatchFetch(tokenUrl, init), 400, 'invalid_request');
+        assert.equal(await count(h, 'agent_access_tokens'), 0);
+    } finally { await h.close(); }
+});
+
+test('token_StorageError_503LogsErrorClassOnly', async t => {
+    const cred = {accountId: 'account-with-secret-marker', key: agentKey()}, now = nowSeconds();
+    const assertion = clientAssertion(cred.key, {accountId: cred.accountId, audience: tokenUrl, jti: 'secret-jti-marker-0001'});
+    const proof = dpopProof(cred.key, {method: 'POST', url: tokenUrl});
+    const failing = {prepare: () => { throw new TypeError('D1 unavailable'); }};
+    const logged = t.mock.method(console, 'error', () => {});
+    const response = await issueAgentToken({db: failing} as unknown as Env, new Request(tokenUrl, post(grant(assertion), proof)), () => BigInt(now) * second);
+    await refusal(response, 503, 'temporarily_unavailable');
+    const text = logged.mock.calls.map(call => call.arguments.map(String).join(' ')).join('\n');
+    assert.equal(logged.mock.callCount(), 1);
+    assert.match(text, /agent-token-unavailable/);
+    assert.match(text, /TypeError/);
+    assert.match(text, /D1 unavailable/);
+    for (const secret of [assertion, proof, 'secret-jti-marker', cred.accountId, cred.key.privateJwk.d!]) assert.equal(text.includes(secret), false, secret);
 });
