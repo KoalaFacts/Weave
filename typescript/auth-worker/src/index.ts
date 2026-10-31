@@ -150,12 +150,18 @@ async function authorize(req:Request,env:Env,server:OAuthAuthorizationServer<Env
     const handle=form.get("handle"),decision=form.get("decision");
     if(!validHandle(handle)||!["approve","deny"].includes(decision??""))return denied();
     if(decision==="deny"){
-      // Validate the SDK browser-bound handle before touching the durable nonce.
-      // KV deletion from denyConsent alone is eventually consistent: fence any
-      // stale approval replay with the same one-time Durable Object used by Allow.
-      const rejected=await oauth.denyConsent(req,handle);
+      // A valid SDK browser cookie does not bind the handle to the GitHub human
+      // who saw the page. A later sign-in in that browser must not revoke the
+      // original human's pending consent, even though denial issues no grant.
+      const human=await readHumanSession(env.HUMAN_SESSION_KEY,req,Date.now());
+      if(!human)return denied();
       const nonce=await getNonce(env,handle);
-      if(!nonce||!await consumeNonce(env,handle,nonce))return denied();
+      if(!nonce||nonce!==await subjectBoundChallenge(handle,human.humanId))return denied();
+      // Only the SDK may validate the original browser-bound consent cookie.
+      // Its KV deletion is eventually consistent, so consume the Durable Object
+      // nonce afterward to fence replayed approvals of a denied request.
+      const rejected=await oauth.denyConsent(req,handle);
+      if(!await consumeNonce(env,handle,nonce))return denied();
       return new Response(null,{status:302,headers:rejected.headers});
     }
     // The SDK must validate the original browser's consent cookie BEFORE
