@@ -3,6 +3,8 @@ import { test } from 'node:test';
 import { start, type AgentCredential } from './harness.ts';
 import { agentKey, bindingRequest, keyEndorsement, keyProof } from './agent-key.ts';
 import { signInHuman } from '../src/humans.ts';
+import { createBindingRequest } from '../src/binding-requests.ts';
+import { Problem } from '../src/wire.ts';
 import type { Env } from '../src/database.ts';
 
 type Harness = Awaited<ReturnType<typeof start>>;
@@ -116,9 +118,14 @@ test('createBinding_WrongAudOrSubOrStaleIat_400', async () => {
     const h = await start();
     try {
         const cred = await h.register(), other = await h.register();
-        const now = Math.floor(Date.now() / 1000);
-        for (const overrides of [{audience: origin + '/v1/keys'}, {accountId: other.accountId}, {iat: now - 61}, {iat: now + 61}] as Overrides[])
+        for (const overrides of [{audience: origin + '/v1/keys'}, {accountId: other.accountId}] as Overrides[])
             await problem(await requestBinding(h, cred, 'github:4242', overrides), 400, {code: 'invalid', field: 'request'});
+        // iat skew against a fixed clock, so the ±60 s boundary cannot drift with the test's own run time.
+        const now = Math.floor(Date.now() / 1000), clock = () => BigInt(now) * 10000000n;
+        const direct = (iat: number) => createBindingRequest(env(h), new Request(audience, {method: 'POST'}), {accountId: cred.accountId, kid: cred.key.kid},
+            {request: bindingRequest(cred.key, {accountId: cred.accountId, audience, human: 'github:4242', iat})}, clock);
+        for (const iat of [now - 61, now + 61])
+            await assert.rejects(direct(iat), (error: unknown) => error instanceof Problem && error.status === 400 && error.detail?.field === 'request', 'iat ' + (iat - now));
         const malformed = await h.request('/v1/binding-requests', cred, 'POST', {request: 'not.a.jws'});
         await problem(malformed as unknown as Response, 400, {code: 'invalid', field: 'request'});
         const extra = await h.request('/v1/binding-requests', cred, 'POST', {request: bindingRequest(cred.key, {accountId: cred.accountId, audience, human: 'github:1'}), human: 'github:2'});

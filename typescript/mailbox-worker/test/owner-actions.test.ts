@@ -404,6 +404,46 @@ test('confirmKey_SameKidPendingOnTwoOwnedAgents_SecondKeyInUse', async () => {
     } finally { await h.close(); }
 });
 
+test('confirmKey_SameKidOnTwoAgentsConcurrently_OneOkOneKeyInUse', async () => {
+    const h = await start();
+    try {
+        const id = await human(h, '555');
+        const first = await ownedAgent(h, id, 'one'), second = await ownedAgent(h, id, 'two'), shared = agentKey();
+        const requests = [await addKey(h, first, shared), await addKey(h, second, shared)];
+        const results = await Promise.all(requests.map(requestId => act(h, id, {kind: 'confirm-key', requestId})));
+        assert.deepEqual(results.map(result => result.ok ? 'ok' : (result as {reason: string}).reason).sort(), ['key-in-use', 'ok']);
+        assert.equal(Number(await h.db.prepare('SELECT count(*) n FROM agent_keys WHERE kid=?').bind(shared.kid).first('n')), 1);
+        assert.deepEqual((await Promise.all(requests.map(requestId => keyRequestStatus(h, requestId)))).sort(), ['confirmed', 'pending']);
+    } finally { await h.close(); }
+});
+
+test('revokeKey_KidOfSameHumansOtherAgent_NotFound', async () => {
+    const h = await start();
+    try {
+        const id = await human(h, '555');
+        const first = await ownedAgent(h, id, 'one'), second = await ownedAgent(h, id, 'two');
+        assert.deepEqual(await act(h, id, {kind: 'revoke-key', agentId: first.accountId, kid: second.key.kid}), {ok: false, reason: 'not-found'});
+        assert.equal(await h.db.prepare('SELECT revoked_at FROM agent_keys WHERE kid=?').bind(second.key.kid).first('revoked_at'), null);
+    } finally { await h.close(); }
+});
+
+test('ownerAction_FrozenHuman_RevokeConfirmKeyAndRecoveryCodeFrozenNoChange', async () => {
+    const h = await start();
+    try {
+        const id = await human(h, '555');
+        const cred = await ownedAgent(h, id), newKey = agentKey(), requestId = await addKey(h, cred, newKey);
+        await h.db.prepare('UPDATE humans SET frozen_at=updated_at WHERE human_id=?').bind(id).run();
+        const frozen = {ok: false, reason: 'frozen'};
+        assert.deepEqual(await act(h, id, {kind: 'revoke-key', agentId: cred.accountId, kid: cred.key.kid}), frozen);
+        assert.deepEqual(await act(h, id, {kind: 'confirm-key', requestId}), frozen);
+        assert.deepEqual(await act(h, id, {kind: 'issue-recovery-code', agentId: cred.accountId}), frozen);
+        assert.equal(await h.db.prepare('SELECT revoked_at FROM agent_keys WHERE kid=?').bind(cred.key.kid).first('revoked_at'), null);
+        assert.equal(await keyRequestStatus(h, requestId), 'pending');
+        assert.equal(Number(await h.db.prepare('SELECT count(*) n FROM agent_keys WHERE kid=?').bind(newKey.kid).first('n')), 0);
+        assert.equal(Number(await h.db.prepare('SELECT count(*) n FROM recovery_codes').first('n')), 0);
+    } finally { await h.close(); }
+});
+
 test('confirmKey_LiveKeyLimitOrChurnLimit_KeyLimit', async () => {
     const h = await start();
     try {

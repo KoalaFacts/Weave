@@ -14,7 +14,8 @@ test('registration creates zero addresses and returns the registered key; invali
         assert.deepEqual(Object.keys(a).sort(),['accountId','agentId','description','displayName','key','kid']);
         assert.equal(a.kid,a.key.kid);
         assert.deepEqual(await h.ok('/v1/addresses',a),{items:[],nextCursor:null});
-        for(const path of ['/inbox/','/outbox/']) assert.deepEqual(await h.ok(path+a.accountId,a),{items:[],nextCursor:null});
+        assert.deepEqual(await h.ok('/inbox/'+a.accountId,a),{items:[],nextCursor:null,notices:[]});
+        assert.deepEqual(await h.ok('/outbox/'+a.accountId,a),{items:[],nextCursor:null});
         for(const old of [{isPublic:true},{displayName:1},{description:'x'.repeat(1025)},{email:'a@test'}]) assert.equal((await h.request('/v1/accounts',h.stranger(),'POST',old)).status,400);
         const profile=await h.register({displayName:'private profile',description:'not in directory'});
         assert.equal(profile.displayName,'private profile');

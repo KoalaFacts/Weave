@@ -5,6 +5,7 @@ import { payload, start, type AgentCredential } from './harness.ts';
 import { agentKey, clientAssertion, dpopProof, keyEndorsement, keyProof, type TestKey } from './agent-key.ts';
 import { createOwnedAgent, signInHuman } from '../src/humans.ts';
 import { issueRecoveryCode } from '../src/recovery-codes.ts';
+import { ownerAction } from '../src/owner-actions.ts';
 import type { Env } from '../src/database.ts';
 
 type Harness = Awaited<ReturnType<typeof start>>;
@@ -224,6 +225,50 @@ test('addKey_EleventhKeyRowInDay_429', async () => {
         // Rows older than 24 h no longer count.
         await h.db.prepare('UPDATE agent_keys SET created_at=created_at-CAST(? AS INTEGER),cooling_until=NULL WHERE account_id=?').bind(dayTicks.toString(), a.accountId).run();
         assert.equal((await addKey(h, a, refused)).status, 200);
+    } finally { await h.close(); }
+});
+
+test('addKey_ConfirmedKeyRequestCountsOnceAgainstDailyAdditions', async () => {
+    const h = await start({bindings});
+    try {
+        const a = await h.register();
+        const humanId = await h.claim(a);
+        // The registration key plus seven rows are eight additions in the last 24 h.
+        await revokedRows(h, a.accountId, 7, nowTicks());
+        const confirmed = await addKey(h, a, agentKey());
+        assert.equal(confirmed.status, 202, await confirmed.clone().text());
+        const {requestId} = await confirmed.json() as {requestId: string};
+        assert.deepEqual(await ownerAction(env(h), {humanId, authAt: Date.now(), kind: 'confirm-key', requestId}), {ok: true});
+        // Nine additions: had the confirmed request counted as well as its key row, this tenth would be refused.
+        assert.equal((await addKey(h, a, agentKey())).status, 202);
+        await problem(await addKey(h, a, agentKey()), 429, 'capacity');
+    } finally { await h.close(); }
+});
+
+test('contactRequest_ClaimedSixtyFirst_429WithRetryAfter', async () => {
+    const h = await start({bindings});
+    try {
+        const a = await participant(h);
+        await h.claim(a);
+        const inputs = [];
+        for (let n = 0; n < 61; n++) inputs.push(contactRequest(a, await participant(h)));
+        for (const [n, input] of inputs.slice(0, 60).entries()) assert.equal((await h.request('/v1/contacts/requests', a, 'POST', input)).status, 200, 'request ' + (n + 1));
+        assertRetryAfter(await problem(await h.request('/v1/contacts/requests', a, 'POST', inputs[60]) as unknown as Response, 429, 'capacity'));
+        assert.equal(await h.db.prepare('SELECT count(*) n FROM contact_requests WHERE requester_account_id=?').bind(a.accountId).first('n'), 60);
+    } finally { await h.close(); }
+});
+
+test('token_ClaimedHundredTwentyFirst_429WithRetryAfter', async () => {
+    const h = await start({bindings});
+    try {
+        const a = await h.register();
+        await h.claim(a);
+        for (let n = 0; n < 120; n++) assert.equal((await tokenRequest(h, a.key, a.accountId)).status, 200, 'token ' + (n + 1));
+        const refused = await tokenRequest(h, a.key, a.accountId);
+        assert.equal(refused.status, 429);
+        assert.deepEqual(await refused.json(), {error: 'temporarily_unavailable'});
+        assertRetryAfter(refused);
+        assert.equal(await accessTokens(h, a.accountId), 120);
     } finally { await h.close(); }
 });
 

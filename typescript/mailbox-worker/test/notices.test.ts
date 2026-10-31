@@ -215,6 +215,57 @@ test('inbox_OtherAgentsActivity_NoNoticesForA', async () => {
     } finally { await h.close(); }
 });
 
+test('inbox_MoreThanFiftyNotices_NewestFiftyAcrossSources', async () => {
+    const h = await start();
+    try {
+        const a = await h.register(), base = BigInt(Date.now() - 3_600_000) * 10000n;
+        const statements = [];
+        for (let n = 0; n < 60; n++) {
+            const kid = agentKey().kid, stamp = (base + BigInt(n) * 10000000n).toString();
+            statements.push(h.db.prepare('INSERT INTO agent_keys(kid,account_id,public_jwk,created_at,revoked_at,updated_at) VALUES(?,?,?,CAST(? AS INTEGER),CAST(? AS INTEGER),CAST(? AS INTEGER))')
+                .bind(kid, a.accountId, JSON.stringify({crv: 'Ed25519', kty: 'OKP', x: kid}), stamp, stamp, stamp));
+        }
+        await h.db.batch(statements);
+        const request = await bind(h, a);
+        const notices = (await inbox(h, a)).notices;
+        assert.equal(notices.length, 50);
+        assert.equal(notices[0].kind, 'binding-request');
+        assert.equal(notices[0].requestId, request.requestId);
+        const revoked = notices.slice(1).map(n => Date.parse(n.revokedAt as string));
+        assert.ok(notices.slice(1).every(n => n.kind === 'key-revoked'));
+        assert.deepEqual(revoked, [...revoked].sort((x, y) => y - x), 'newest first');
+        assert.equal(revoked.at(-1), Number((base + 11n * 10000000n) / 10000n), 'the 49 newest of 60 revocations');
+    } finally { await h.close(); }
+});
+
+test('sseInbox_ShapeUnchangedWithNoticesPending', async () => {
+    const h = await start();
+    let reader: ReadableStreamDefaultReader<Uint8Array> | undefined;
+    try {
+        const a = await h.participant(), b = await h.participant();
+        const contact = await befriend(h, b, a);
+        await addKey(h, a);
+        assert.equal((await inbox(h, a)).notices.length, 1, 'a notice is pending for the reader');
+        const sent = payload('hello');
+        await h.ok('/v1/messages', b, 'POST', {version: 2, recipientAccountId: a.accountId, contactGeneration: contact.generation, connectionToken: contact.token, payload: sent});
+        const response = await h.request('/v1/inbox/events', a) as Response;
+        assert.equal(response.status, 200);
+        assert.equal(response.headers.get('content-type'), 'text/event-stream');
+        reader = response.body!.getReader();
+        let text = '';
+        for (let i = 0; i < 10 && !/data: .+\n\n/.test(text); i++) text += new TextDecoder().decode((await reader.read()).value);
+        assert.ok(text.startsWith(': pending\n\n'), text);
+        const frame = /id: (.+)\nevent: message\ndata: (.+)\n\n/.exec(text);
+        assert.ok(frame, text);
+        const data = JSON.parse(frame[2]) as Record<string, unknown>;
+        assert.equal('notices' in data, false);
+        const listed = (await inbox(h, a)).items as {envelope: {payload: {messageId: string}}}[];
+        const item = listed.find(x => x.envelope.payload.messageId === sent.messageId);
+        assert.ok(item);
+        assert.deepEqual(Object.keys(data).sort(), Object.keys(item).sort());
+    } finally { await reader?.cancel(); await h.close(); }
+});
+
 test('mcpInbox_ShapeUnchanged', async () => {
     const h = await start();
     try {

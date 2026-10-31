@@ -21,7 +21,7 @@ test('SSE replays pending across reconnect, bounds per-account slots, ACK remove
         assert.equal(r2.status,200); second = r2.body.getReader(); assert.equal((await nextMessage(second)).envelope.payload.messageId,p.messageId);
         assert.equal((await h.request('/v1/inbox/events',b)).status,429);
         await h.ok('/v1/inbox/'+p.messageId+'/ack',b,'POST',{senderMailboxId:a.accountId});
-        assert.deepEqual(await h.ok('/v1/inbox',b),{items:[],nextCursor:null});
+        assert.deepEqual(await h.ok('/v1/inbox',b),{items:[],nextCursor:null,notices:[]});
         let rest=''; for (;;) { const v=await first.read(); if(v.done) break; rest+=new TextDecoder().decode(v.value); }
         assert.equal(rest.includes('event: message'),false);
     } finally { await first?.cancel(); await second?.cancel(); await h.close(); }
