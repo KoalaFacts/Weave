@@ -258,6 +258,23 @@ jobs:
         working-directory: typescript/agent-key
         run: npm run build && node dist/cli.js init "$RUNNER_TEMP/agent-key-smoke.jwk"
 
+  python-agent-key-helper:
+    name: Python agent key helper
+    runs-on: ubuntu-latest
+    timeout-minutes: 15
+    steps:
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v6
+        with:
+          persist-credentials: false
+      # The minimum supported version; the cross-language vectors are also checked by the TypeScript helper job.
+      - uses: actions/setup-python@6d4fd22b20465ccc0f7354476588e8df7c9ca0e0 # v7.1.0
+        with:
+          python-version: '3.12'
+      - name: Install the pinned helper requirement
+        run: python -m pip install -r python/weave-agent-key/requirements.txt
+      - name: Test key files, client, CLI output and wire vectors
+        run: python -m unittest discover -s python/weave-agent-key/tests -v
+
   dependency-lock-validation:
     # Retain the required-check identities. Base validates historical committed
     # graph evidence; only the proposed head must satisfy a fresh locked restore.

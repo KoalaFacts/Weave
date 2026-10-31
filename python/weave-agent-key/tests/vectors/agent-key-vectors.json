@@ -1,0 +1,34 @@
+{
+  "_comment": "TEST-ONLY wire vectors. The key below was generated solely for these tests, is public, and must never be registered or used anywhere else.",
+  "testOnlyKey": {
+    "kty": "OKP",
+    "crv": "Ed25519",
+    "x": "3Ev3meB7D9QLmzAoTOLSzhZqX-6AcyZ058oJsEItfuk",
+    "d": "6f4iaxXfZd8V30-kPOQ70ebqGA5qkO2BVBqdd9ouyek"
+  },
+  "kid": "nkekMwyvd2d-Jv2aPazGMnXjdmgaMdc4Au6W4J-tlak",
+  "origin": "https://relay.example",
+  "now": 1793491200,
+  "jti": "6a1f4d2e-8b3c-4e5f-9a7b-0c1d2e3f4a5b",
+  "accountId": "0f8fad5b-d9cb-469f-a165-70867728950e",
+  "accessToken": "vector.access-token_~+/0123==",
+  "tokenRequest": {
+    "url": "https://relay.example/v1/token",
+    "assertion": {
+      "signingInput": "eyJhbGciOiJFZERTQSIsImtpZCI6Im5rZWtNd3l2ZDJkLUp2MmFQYXpHTW5YamRtZ2FNZGM0QXU2VzRKLXRsYWsifQ.eyJpc3MiOiIwZjhmYWQ1Yi1kOWNiLTQ2OWYtYTE2NS03MDg2NzcyODk1MGUiLCJzdWIiOiIwZjhmYWQ1Yi1kOWNiLTQ2OWYtYTE2NS03MDg2NzcyODk1MGUiLCJhdWQiOiJodHRwczovL3JlbGF5LmV4YW1wbGUvdjEvdG9rZW4iLCJpYXQiOjE3OTM0OTEyMDAsImV4cCI6MTc5MzQ5MTI2MCwianRpIjoiNmExZjRkMmUtOGIzYy00ZTVmLTlhN2ItMGMxZDJlM2Y0YTViIn0",
+      "signature": "QsUf1Y5068fBaImMHoY8qK8KskziJuB7bJ9LVxFOl8C5vnnOEEXQveM3BxYQ5wXp-1rZA9yreycqzQA_3zAJDA"
+    },
+    "dpop": {
+      "signingInput": "eyJhbGciOiJFZERTQSIsInR5cCI6ImRwb3Arand0IiwiandrIjp7Imt0eSI6Ik9LUCIsImNydiI6IkVkMjU1MTkiLCJ4IjoiM0V2M21lQjdEOVFMbXpBb1RPTFN6aFpxWC02QWN5WjA1OG9Kc0VJdGZ1ayJ9fQ.eyJqdGkiOiI2YTFmNGQyZS04YjNjLTRlNWYtOWE3Yi0wYzFkMmUzZjRhNWIiLCJodG0iOiJQT1NUIiwiaHR1IjoiaHR0cHM6Ly9yZWxheS5leGFtcGxlL3YxL3Rva2VuIiwiaWF0IjoxNzkzNDkxMjAwfQ",
+      "signature": "8q9N8i3rUGW9rgmRuEuRQJvSaWq9zjlVOoPJzi47Fq-RxB5FtYhhgNjyJ4Q9ZY4GzyHZLKiy0i-Ovy6G9GQZDQ"
+    }
+  },
+  "keyList": {
+    "path": "/v1/keys?limit=10",
+    "url": "https://relay.example/v1/keys?limit=10",
+    "dpop": {
+      "signingInput": "eyJhbGciOiJFZERTQSIsInR5cCI6ImRwb3Arand0IiwiandrIjp7Imt0eSI6Ik9LUCIsImNydiI6IkVkMjU1MTkiLCJ4IjoiM0V2M21lQjdEOVFMbXpBb1RPTFN6aFpxWC02QWN5WjA1OG9Kc0VJdGZ1ayJ9fQ.eyJqdGkiOiI2YTFmNGQyZS04YjNjLTRlNWYtOWE3Yi0wYzFkMmUzZjRhNWIiLCJodG0iOiJHRVQiLCJodHUiOiJodHRwczovL3JlbGF5LmV4YW1wbGUvdjEva2V5cyIsImlhdCI6MTc5MzQ5MTIwMCwiYXRoIjoiQVhtNUNRMThXZ0lidks5a2FMa0ZLeHJGbnV2TkRsSHlMbTFkS3BPVTFXdyJ9",
+      "signature": "SlqoPVsQAE8adWlg4-rRwEH8qzBUHQtGltmiVnJwUTzGkskMT9_cTWZDop9S-g8_r3dWlrNgQNUF-b-baUxbCg"
+    }
+  }
+}
