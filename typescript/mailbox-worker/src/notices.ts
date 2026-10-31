@@ -1,6 +1,6 @@
-import { bindingColumns, bindingRow, bindingView, type StoredBinding } from './binding-requests.ts';
-import { keyRequestColumns, keyRequestRow, keyRequestView, type StoredKeyRequest } from './key-requests.ts';
-import { exactInt64, apiTime } from './time.ts';
+import { bindingColumns, bindingRow, bindingView, type BindingStatus, type StoredBinding } from './binding-requests.ts';
+import { keyRequestColumns, keyRequestRow, keyRequestView, type KeyRequestStatus, type StoredKeyRequest } from './key-requests.ts';
+import { apiInstant, exactInt64 } from './time.ts';
 import type { Transaction } from './database.ts';
 
 export const noticeWindowTicks = 864000000000n; // 24 h
@@ -9,31 +9,38 @@ export const maxNotices = 50;
 export type Notice =
     | {kind: 'key-added'; kid: string; label: string | null; createdAt: string; coolingUntil: string | null}
     | {kind: 'key-revoked'; kid: string; revokedAt: string}
-    | {kind: 'key-request'; requestId: string; kid: string; endorsedBy: string; status: string; createdAt: string; expiresAt: string; decidedAt: string | null}
-    | {kind: 'binding-request'; requestId: string; human: string; status: string; createdAt: string; expiresAt: string; decidedAt: string | null};
+    | {kind: 'key-request'; requestId: string; kid: string; endorsedBy: string; status: KeyRequestStatus; createdAt: string; expiresAt: string; decidedAt: string | null}
+    | {kind: 'binding-request'; requestId: string; human: string; status: BindingStatus; createdAt: string; expiresAt: string; decidedAt: string | null};
 
 type StoredKey = {kid: string; label: string | null; created_at: string; revoked_at: string | null; cooling_until: string | null};
 
 /**
- * Derived only from this account's own rows; nothing is stored as a message. The account's first key (its registration key) is
- * not reported as an addition. A pending request past its expiry is reported as expired, at its expiry time.
+ * Derived only from this account's own rows; nothing is stored as a message. The registration key (inserted in the same transaction
+ * as the account, so created at the account's time) is not reported as an addition; every later key is, including the first
+ * recovery key of an agent created without one. A key made by confirming a key request is reported once, by that request's
+ * `key-request` notice. A pending request past its expiry is reported as expired, at its expiry time.
  */
 export async function accountNotices(tx: Transaction, accountId: string, now: bigint): Promise<Notice[]> {
     const since = (now - noticeWindowTicks).toString();
     const entries: {at: bigint; notice: Notice}[] = [];
 
-    const keys = await tx.db.prepare(`SELECT kid,label,CAST(created_at AS TEXT) created_at,CAST(revoked_at AS TEXT) revoked_at,CAST(cooling_until AS TEXT) cooling_until
-        FROM agent_keys WHERE account_id=? AND ((revoked_at IS NULL AND created_at>CAST(? AS INTEGER)
-            AND kid<>(SELECT kid FROM agent_keys WHERE account_id=? ORDER BY created_at,kid LIMIT 1)) OR revoked_at>CAST(? AS INTEGER))
-        ORDER BY max(created_at,coalesce(revoked_at,0)) DESC LIMIT ?`).bind(accountId, since, accountId, since, maxNotices).all<StoredKey>();
+    // Each source loads only its newest `maxNotices` rows, ordered by the same instant as the merge sort below (`at`): the merged
+    // newest 50 are then exact, because any entry of the global top 50 is in its own source's top 50.
+    const keys = await tx.db.prepare(`SELECT k.kid,k.label,CAST(k.created_at AS TEXT) created_at,CAST(k.revoked_at AS TEXT) revoked_at,
+            CAST(k.cooling_until AS TEXT) cooling_until
+        FROM agent_keys k WHERE k.account_id=?1 AND ((k.revoked_at IS NULL AND k.created_at>CAST(?2 AS INTEGER)
+            AND k.created_at<>(SELECT a.created_at FROM accounts a WHERE a.account_id=?1)
+            AND NOT EXISTS (SELECT 1 FROM key_requests r WHERE r.account_id=?1 AND r.kid=k.kid AND r.status='confirmed'))
+            OR k.revoked_at>CAST(?2 AS INTEGER))
+        ORDER BY max(k.created_at,coalesce(k.revoked_at,0)) DESC LIMIT ?3`).bind(accountId, since, maxNotices).all<StoredKey>();
     for (const row of keys.results) {
         if (row.revoked_at !== null) {
             const at = exactInt64(row.revoked_at);
-            entries.push({at, notice: {kind: 'key-revoked', kid: row.kid, revokedAt: apiTime(at)!}});
+            entries.push({at, notice: {kind: 'key-revoked', kid: row.kid, revokedAt: apiInstant(at)}});
         } else {
             const at = exactInt64(row.created_at);
-            entries.push({at, notice: {kind: 'key-added', kid: row.kid, label: row.label, createdAt: apiTime(at)!,
-                coolingUntil: apiTime(row.cooling_until === null ? null : exactInt64(row.cooling_until))}});
+            entries.push({at, notice: {kind: 'key-added', kid: row.kid, label: row.label, createdAt: apiInstant(at),
+                coolingUntil: row.cooling_until === null ? null : apiInstant(exactInt64(row.cooling_until))}});
         }
     }
 

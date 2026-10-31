@@ -21,18 +21,22 @@ const memberSets:Record<OwnerFormAction["kind"],readonly string[]>={
 export const ownerActionToken=(key:string,humanId:string,action:OwnerFormAction,now:number):Promise<string>=>
   signedCookieValue(key,"owner-action",{...action,humanId,expiresAt:now+tokenSeconds*1000});
 
-/** The action in a one-field form post, or null for anything not signed for this session's human and still unexpired. */
-export async function readOwnerAction(key:string,request:Request,session:HumanSession,now:number):Promise<OwnerFormAction|null>{
+/**
+ * The action in a one-field form post; "expired" for a well-formed token of this session's human past its lifetime (the page was
+ * open too long); null for anything else.
+ */
+export async function readOwnerAction(key:string,request:Request,session:HumanSession,now:number):Promise<OwnerFormAction|"expired"|null>{
   const form=await readBoundedForm(request,maxBodyBytes);
   const fields=form?[...form]:[];
   if(fields.length!==1||fields[0][0]!=="action")return null;
   const value=await verifiedCookieValue(key,"owner-action",fields[0][1]);
   if(!value)return null;
   const {humanId,kind,expiresAt,...rest}=value;
-  if(humanId!==session.humanId||typeof expiresAt!=="number"||!Number.isSafeInteger(expiresAt)||now>=expiresAt)return null;
+  if(humanId!==session.humanId||typeof expiresAt!=="number"||!Number.isSafeInteger(expiresAt))return null;
   if(typeof kind!=="string"||!Object.hasOwn(memberSets,kind))return null;
   const members=memberSets[kind as OwnerFormAction["kind"]];
   const names=Object.keys(rest);
   if(names.length!==members.length||!members.every(name=>typeof rest[name]==="string"&&(rest[name] as string).length>0))return null;
+  if(now>=expiresAt)return "expired";
   return {kind,...rest} as OwnerFormAction;
 }

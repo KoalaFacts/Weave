@@ -2,8 +2,10 @@ import assert from 'node:assert/strict';
 import { test } from 'node:test';
 import { build } from 'esbuild';
 import { start, payload, type AgentCredential } from './harness.ts';
-import { agentKey, bindingRequest, keyEndorsement, keyProof, type TestKey } from './agent-key.ts';
+import { agentKey, bindingRequest, dpopProof, keyEndorsement, keyProof, type TestKey } from './agent-key.ts';
 import type { Env } from '../src/database.ts';
+import { createOwnedAgent, signInHuman } from '../src/humans.ts';
+import { ownerAction } from '../src/owner-actions.ts';
 
 const built = await build({entryPoints: ['src/remote-private.ts'], bundle: true, write: false, platform: 'node', format: 'esm', logLevel: 'silent'});
 const {executePrivateMcp} = await import('data:text/javascript;base64,' + Buffer.from(built.outputFiles[0].contents).toString('base64')) as typeof import('../src/remote-private.ts');
@@ -91,6 +93,46 @@ test('inbox_OwnedKeyRequestPending_Notice', async () => {
         assert.equal(notice.kid, b.kid);
         assert.equal(notice.endorsedBy, a.key.kid);
         assert.equal(notice.decidedAt, null);
+    } finally { await h.close(); }
+});
+
+const directEnv = (h: Harness) => ({db: h.db, REGISTRATION_ENABLED: 'true', REGISTRATION_MAX_ACCOUNTS: '100', REGISTRATION_PER_IP_PER_HOUR: '100',
+    REGISTRATION_GLOBAL_PER_HOUR: '100'}) as unknown as Env;
+
+test('inbox_AuthorizationServerAgentFirstRecoveryKey_ReportedAsKeyAdded', async () => {
+    const h = await start();
+    try {
+        const signedIn = await signInHuman(directEnv(h), {provider: 'github', subject: '31337', providerCreatedAt: '2020-01-01T00:00:00Z', displayLogin: 'owner'});
+        assert.equal(signedIn.ok, true);
+        const humanId = (signedIn as {humanId: string}).humanId;
+        const created = await createOwnedAgent(directEnv(h), {humanId, displayName: 'made by AS', sourceIp: '203.0.113.7'});
+        assert.equal(created.ok, true);
+        const accountId = (created as {accountId: string}).accountId;
+        const issued = await ownerAction(directEnv(h), {humanId, authAt: Date.now(), kind: 'issue-recovery-code', agentId: accountId});
+        assert.ok('code' in issued);
+        const key = agentKey(), url = origin + '/v1/key-requests';
+        const redeemed = await h.mf.dispatchFetch(url, {method: 'POST', headers: {'Content-Type': 'application/json', DPoP: dpopProof(key, {method: 'POST', url})},
+            body: JSON.stringify({agentId: accountId, code: issued.code})}) as unknown as Response;
+        assert.equal(redeemed.status, 200, await redeemed.clone().text());
+        const notices = (await inbox(h, {accountId, key})).notices;
+        assert.deepEqual(notices.map(n => [n.kind, n.kid]), [['key-added', key.kid]], 'no registration key exists, so the recovery key is an addition');
+    } finally { await h.close(); }
+});
+
+test('inbox_ConfirmedKeyRequest_OneNoticeNotAlsoKeyAdded', async () => {
+    const h = await start();
+    try {
+        const a = await h.register();
+        const humanId = await h.claim(a), b = agentKey();
+        const response = await h.request('/v1/keys', a, 'POST', keyBody(a, b)) as Response;
+        assert.equal(response.status, 202, await response.clone().text());
+        const {requestId} = await response.json() as {requestId: string};
+        assert.deepEqual(await ownerAction(directEnv(h), {humanId, authAt: Date.now(), kind: 'confirm-key', requestId}), {ok: true});
+        const notices = (await inbox(h, a)).notices;
+        assert.deepEqual(notices.map(n => [n.kind, n.kid, n.status]), [['key-request', b.kid, 'confirmed']]);
+        // Revoking that key is a separate event and is still reported.
+        assert.equal(((await h.request('/v1/keys/' + b.kid, a, 'DELETE')) as Response).status, 200);
+        assert.deepEqual((await inbox(h, a)).notices.map(n => n.kind), ['key-revoked', 'key-request']);
     } finally { await h.close(); }
 });
 

@@ -30,4 +30,6 @@ export function epochSeconds(ticks: bigint = nowUtc()): number {
     return Number(ticks<0n&&ticks%10000000n!==0n?seconds-1n:seconds);
 }
 /** API wire time: milliseconds unless the stored tick carries sub-millisecond precision. */
-export const apiTime=(ticks: string | bigint | null): string | null => ticks===null ? null : isoUtc(ticks).replace(/(\.\d{3})0000Z$/,'$1Z');
+export const apiInstant=(ticks: string | bigint): string => isoUtc(ticks).replace(/(\.\d{3})0000Z$/,'$1Z');
+/** `apiInstant`, passing null through. */
+export const apiTime=(ticks: string | bigint | null): string | null => ticks===null ? null : apiInstant(ticks);

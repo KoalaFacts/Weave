@@ -38,7 +38,7 @@ export class Transaction {
     private cache = new Map<string,any>();
     readonly store:RecordStore;
     db: Database;
-    constructor(db: Database) {this.db=db;this.store=new RecordStore(db,this.writes,nowUtc());}
+    constructor(db: Database, now: bigint = nowUtc()) {this.db=db;this.store=new RecordStore(db,this.writes,now);}
     async get(kind: string, owner: string, id: string): Promise<any | null> {
         const key = stringify([kind,owner,id]); if (this.cache.has(key)) return this.cache.get(key);
         const value=await this.store.get(kind,owner,id);this.cache.set(key,value);return value;
@@ -53,11 +53,12 @@ export class Transaction {
         this.writes.push(this.db.prepare('DELETE FROM stream_leases WHERE account_id=? AND lease_id=?').bind(owner,id));
     }
 }
-export async function atomic<T>(db: Database, operation: (tx: Transaction) => Promise<T>): Promise<T> {
+/** Runs `operation` in an optimistic transaction; `clock` fixes the transaction time (`tx.store.now`) of each attempt. */
+export async function atomic<T>(db: Database, operation: (tx: Transaction) => Promise<T>, clock: () => bigint = nowUtc): Promise<T> {
     for (let attempt = 0; attempt < 4; attempt++) {
         const revision = await db.prepare('SELECT token FROM mailbox_revision WHERE singleton=1').first<string>('token');
         if (revision === null) fail(503,'storage');
-        const tx = new Transaction(db);
+        const tx = new Transaction(db, clock());
         // Even rejected reads need a stable revision before their outcome can be returned.
         let result: T | undefined; let error: unknown;
         try { result = await operation(tx); } catch (e) { error = e; }

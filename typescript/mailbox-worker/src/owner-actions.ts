@@ -1,8 +1,8 @@
 import { atomic, type Env, type Transaction } from './database.ts';
-import { revokeKeyForOwner } from './agent-keys.ts';
+import { confirmKeyRequest, revokeKeyForOwner } from './agent-keys.ts';
 import { confirmBindingRequest, liveKeysDigest, pendingBindingRequestsPerHuman, rejectBindingRequest } from './binding-requests.ts';
 import { maxAgentsPerHuman, requireReadable, writesRefused } from './humans.ts';
-import { confirmKeyRequest, rejectKeyRequest } from './key-requests.ts';
+import { rejectKeyRequest } from './key-requests.ts';
 import { issueRecoveryCode } from './recovery-codes.ts';
 import { apiTime, nowUtc } from './time.ts';
 
@@ -12,7 +12,7 @@ export const reauthFutureSkewMs = 60_000;
 
 export type OwnerKey = {kid: string; label: string | null; createdAt: string; lastUsedAt: string | null; coolingUntil: string | null};
 export type OwnerBindingRequest = {requestId: string; agentId: string; displayName: string | null; requestingKid: string; liveKeys: OwnerKey[]; keysDigest: string; createdAt: string; expiresAt: string};
-export type OwnerKeyRequest = {requestId: string; kid: string; label: string | null; endorsedBy: string | null; createdAt: string; expiresAt: string};
+export type OwnerKeyRequest = {requestId: string; kid: string; label: string | null; endorsedBy: string; createdAt: string; expiresAt: string};
 export type OwnedAgentKeys = {agentId: string; displayName: string | null; keys: OwnerKey[]; keyRequests: OwnerKeyRequest[]};
 export type OwnerOverview = {frozen: true} | {frozen: false; bindingRequests: OwnerBindingRequest[]; agents: OwnedAgentKeys[]};
 
@@ -127,7 +127,8 @@ export async function ownerAction(env: Env, input: OwnerAction, clock: () => big
     }
     try {
         if (action.kind === 'issue-recovery-code') return await issueRecoveryCode(env, {humanId: action.humanId, agentId: action.agentId}, clock);
-        return await atomic(env.db, tx => decide(tx, action, clock()));
+        // The transaction time is the injected clock, so key rows and the churn window of confirm-key use the same time as every decision.
+        return await atomic(env.db, tx => decide(tx, action, tx.store.now), clock);
     } catch {
         console.error('owner-action: storage failure');
         return unavailable;

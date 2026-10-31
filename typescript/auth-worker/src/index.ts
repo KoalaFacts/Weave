@@ -1,6 +1,7 @@
 import {WorkerEntrypoint} from "cloudflare:workers";
 import {AuthorizationError,CimdFetchError,OAuthAuthorizationServer,type AuthRequest} from "@cloudflare/workers-oauth-provider";
 import type {CreateAgentResult} from "../../mailbox-worker/src/humans.ts";
+import type {OwnerOverview} from "../../mailbox-worker/src/owner-actions.ts";
 import {createChallenge,validChallenge,validHandle,readConsent} from "./challenge.ts";
 import {consentPage} from "./consent-page.ts";
 import {beginGithubLogin,completeGithubLogin,failureLog,messagePage,type GithubLoginEnv} from "./github-login.ts";
@@ -193,18 +194,24 @@ async function account(req:Request,env:Env):Promise<Response>{
   const session=await readHumanSession(env.HUMAN_SESSION_KEY,req,now);
   if(!session)return beginGithubLogin(env,accountUrl,now);
   if(req.method==="GET"){
-    try{
-      const overview=await env.MAILBOX.ownerOverview(session.humanId);
-      return ownerPage(overview,session,await ownerFormTokens(env.HUMAN_SESSION_KEY,session.humanId,overview,now),url.searchParams.get("result"),now);
-    }catch{return directoryUnavailable();}
+    let overview:OwnerOverview;
+    try{overview=await env.MAILBOX.ownerOverview(session.humanId);}catch{return directoryUnavailable();}
+    let tokens:Map<string,string>;
+    try{tokens=await ownerFormTokens(env.HUMAN_SESSION_KEY,session.humanId,overview,now);}
+    catch{
+      console.error(failureLog.formSigning);
+      return messagePage(503,"Temporarily unavailable","Weave cannot show your agents right now. Try again later.");
+    }
+    return ownerPage(overview,session,tokens,url.searchParams.get("result"),now);
   }
   const action=await readOwnerAction(env.HUMAN_SESSION_KEY,req,session,now);
+  if(action==="expired")return accountRedirect("form-expired");
   if(!action)return accountRedirect("not-found");
   if(destructiveKinds.has(action.kind)&&!freshAuthentication(session,now))
     return beginGithubLogin(env,accountUrl,now,{reauthenticate:{login:session.login}});
   try{
     const result=await env.MAILBOX.ownerAction({humanId:session.humanId,authAt:session.authAt,...action});
-    if("code" in result)return recoveryCodePage((action as {agentId:string}).agentId,result.code,result.expiresAt);
+    if(action.kind==="issue-recovery-code"&&"code" in result)return recoveryCodePage(action.agentId,result.code,result.expiresAt);
     return accountRedirect(result.ok?"done":result.reason);
   }catch{return directoryUnavailable();}
 }

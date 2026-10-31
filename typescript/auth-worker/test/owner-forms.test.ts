@@ -28,11 +28,14 @@ test("readOwnerAction_OtherHumansSession_Null",async()=>{
   assert.equal(await readOwnerAction(key,form(["action",token]),sessionFor(randomUUID()),now),null);
 });
 
-test("readOwnerAction_Expired_Null",async()=>{
+test("readOwnerAction_Expired_ReportsExpiredOnlyForOwnWellFormedToken",async()=>{
   const humanId=randomUUID();
   const token=await ownerActionToken(key,humanId,{kind:"reject-key",requestId:randomUUID()},now);
-  assert.notEqual(await readOwnerAction(key,form(["action",token]),sessionFor(humanId),now+599_999),null);
-  assert.equal(await readOwnerAction(key,form(["action",token]),sessionFor(humanId),now+600_000),null);
+  assert.equal((await readOwnerAction(key,form(["action",token]),sessionFor(humanId),now+599_999) as {kind:string}).kind,"reject-key");
+  assert.equal(await readOwnerAction(key,form(["action",token]),sessionFor(humanId),now+600_000),"expired");
+  assert.equal(await readOwnerAction(key,form(["action",token]),sessionFor(randomUUID()),now+600_000),null,"another human's expired token is not reported");
+  const malformed=await signedCookieValue(key,"owner-action",{humanId,kind:"delete-everything",requestId:randomUUID(),expiresAt:now});
+  assert.equal(await readOwnerAction(key,form(["action",malformed]),sessionFor(humanId),now+1),null);
 });
 
 test("readOwnerAction_SessionPurposeSignature_Null",async()=>{

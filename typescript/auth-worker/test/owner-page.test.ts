@@ -29,11 +29,11 @@ test("ownerPage_EscapesSelfReportedNameAndShowsFingerprints",async()=>{
   assert.ok(body.includes("&#60;script&#62;"));
   assert.ok(body.includes("self-reported, not verified"));
   assert.ok(body.includes("<strong>"+requesting.slice(0,8)+"</strong>"+requesting.slice(8)));
-  assert.ok(body.includes(live)||body.includes(live.slice(8)));
+  assert.ok(body.includes("<li><code><strong>"+live.slice(0,8)+"</strong>"+live.slice(8)+"</code> - still in its 24 h cooling window</li>"));
   assert.ok(body.includes("still in its 24 h cooling window"));
   assert.ok(body.includes("Signed in as @alice"));
   assert.ok(body.includes('value="tok-confirm"')&&body.includes('value="tok-reject"'));
-  assert.ok(body.includes("Confirming or revoking needs a GitHub sign-in in the last 10 minutes"));
+  assert.ok(body.includes("Confirming, revoking or issuing a recovery code needs a GitHub sign-in in the last 10 minutes"));
 });
 
 test("ownerPage_Frozen_NoForms",async()=>{
@@ -48,21 +48,13 @@ test("ownerPage_UnknownResult_Ignored",async()=>{
     assert.ok(!body.includes('role="status"'),"result "+JSON.stringify(result)+" must not render");
   }
   assert.ok((await html(ownerPage(base(),human,new Map(),"agent-limit",now))).includes(ownerResultText["agent-limit"]));
-  assert.equal(Object.keys(ownerResultText).length,14);
+  assert.equal(Object.keys(ownerResultText).length,15);
+  assert.ok((await html(ownerPage(base(),human,new Map(),"form-expired",now))).includes("This page expired. Reload it and try again."));
 });
 
 test("ownerPage_StaleSession_SaysSignInAgain",async()=>{
   const stale={...human,authAt:now-600_001};
   assert.ok((await html(ownerPage(base(),stale,new Map(),null,now))).includes("asked to sign in again"));
-});
-
-test("ownerPage_RecoveryRequest_LabelledUnendorsed",async()=>{
-  const agentId=randomUUID(),requestId=randomUUID(),endorser=kid();
-  const request=(endorsedBy:string|null)=>({requestId,kid:kid(),label:null,endorsedBy,createdAt:iso(now),expiresAt:iso(now+1000)});
-  const none=await html(ownerPage(base({agents:[{agentId,displayName:"a",keys:[],keyRequests:[request(null)]}]}),human,new Map(),null,now));
-  assert.ok(none.includes("recovery request - no existing key signed it"));
-  const endorsed=await html(ownerPage(base({agents:[{agentId,displayName:"a",keys:[],keyRequests:[request(endorser)]}]}),human,new Map(),null,now));
-  assert.ok(!endorsed.includes("recovery request")&&endorsed.includes("endorsed by"));
 });
 
 test("ownerFormTokens_CoversEveryFormTheOverviewRenders",async()=>{

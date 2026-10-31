@@ -330,6 +330,19 @@ test('confirmKey_EndorsedRequest_KeyLiveSettledAndTokenIssues', async () => {
     } finally { await h.close(); }
 });
 
+test('confirmKey_InjectedClock_StampsKeyAndDecisionAtThatTime', async () => {
+    const h = await start();
+    try {
+        const cred = await h.register();
+        const id = await h.claim(cred), newKey = agentKey(), requestId = await addKey(h, cred, newKey);
+        const later = Date.now() + 3_600_000;
+        assert.deepEqual(await act(h, id, {kind: 'confirm-key', requestId, authAt: later}, {clock: at(later)}), {ok: true});
+        const ticks = (BigInt(later) * 10000n).toString();
+        assert.equal(await h.db.prepare('SELECT CAST(created_at AS TEXT) t FROM agent_keys WHERE kid=?').bind(newKey.kid).first('t'), ticks);
+        assert.equal(await h.db.prepare('SELECT CAST(decided_at AS TEXT) t FROM key_requests WHERE request_id=?').bind(requestId).first('t'), ticks);
+    } finally { await h.close(); }
+});
+
 test('confirmKey_StaleAuth_StaleAuthenticationAndRejectStillWorks', async () => {
     const h = await start();
     try {

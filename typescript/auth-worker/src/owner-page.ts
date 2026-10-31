@@ -12,7 +12,7 @@ const shell=(title:string,body:string,status=200)=>new Response(
   '<!doctype html><html lang="en"><head><meta charset="utf-8"><meta name="viewport" content="width=device-width,initial-scale=1"><title>'+
   esc(title)+"</title></head><body><main>"+body+"</main></body></html>",{status,headers});
 
-/** Text for `?result=`: the success and each failure reason the mailbox worker can return. Anything else is ignored. */
+/** Text for `?result=`: the success, each failure reason the mailbox worker can return and an expired form. Anything else is ignored. */
 export const ownerResultText:Readonly<Record<string,string>>=Object.freeze({
   done:"Done.",
   "stale-authentication":"Sign in with GitHub again, then retry: this needs a sign-in from the last 10 minutes.",
@@ -27,6 +27,7 @@ export const ownerResultText:Readonly<Record<string,string>>=Object.freeze({
   "endorser-revoked":"The key that endorsed this request has been revoked.",
   "requesting-key-revoked":"The key that made this request has been revoked.",
   "keys-changed":"The agent's keys changed after you opened this page. Review the current keys and confirm again.",
+  "form-expired":"This page expired. Reload it and try again.",
   unavailable:"Weave could not complete that right now. Try again later."
 });
 
@@ -66,7 +67,7 @@ function agentSection(overview:Extract<OwnerOverview,{frozen:false}>,tokens:Read
       esc(key.lastUsedAt??"never")+form("Revoke","revoke-key:"+agent.agentId+":"+key.kid,tokens)+"</li>").join("")||"<li>none</li>")+"</ul>",
     "<h4>Pending key requests</h4>"+(agent.keyRequests.length===0?"<p>None.</p>":"<ul>"+agent.keyRequests.map(request=>"<li>"+fingerprint(request.kid)+
       (request.label===null?"":" label "+esc(request.label)+unverified)+"; "+
-      (request.endorsedBy===null?"recovery request - no existing key signed it":"endorsed by "+fingerprint(request.endorsedBy))+
+      "endorsed by "+fingerprint(request.endorsedBy)+
       "; expires "+esc(request.expiresAt)+form("Confirm","confirm-key:"+request.requestId,tokens)+
       form("Reject","reject-key:"+request.requestId,tokens)+"</li>").join("")+"</ul>"),
     "<h4>Lost every key?</h4><p>A recovery code lets the agent add a new key without any existing key. It replaces any earlier code.</p>",
@@ -81,7 +82,7 @@ export function ownerPage(overview:OwnerOverview,human:HumanSession,tokens:Reado
   if(overview.frozen)return shell("Your Weave agents",head+"<p>This GitHub identity is frozen; contact the operator. Nothing can be changed from here.</p>");
   const fresh=freshAuthentication(human,now);
   return shell("Your Weave agents",[head,
-    "<p>Confirming or revoking needs a GitHub sign-in in the last 10 minutes. "+(fresh?"Your current sign-in qualifies.":
+    "<p>Confirming, revoking or issuing a recovery code needs a GitHub sign-in in the last 10 minutes. "+(fresh?"Your current sign-in qualifies.":
       "Your current sign-in is older, so you will be asked to sign in again first.")+"</p>",
     "<h2>Binding requests</h2>",bindingSection(overview.bindingRequests,tokens,now),
     "<h2>Your agents</h2>",agentSection(overview,tokens)].join(""));

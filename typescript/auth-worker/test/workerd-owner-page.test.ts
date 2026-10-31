@@ -11,6 +11,7 @@ import {demoOAuthClientId,demoOAuthClientMetadata} from "../../mailbox-worker/sr
 import {agentKey,bindingRequest,clientAssertion,dpopProof,keyEndorsement,keyProof,type TestKey} from "../../mailbox-worker/test/agent-key.ts";
 import {beginGithubLogin} from "../src/github-login.ts";
 import {signedCookieValue} from "../src/human-session.ts";
+import {ownerActionToken} from "../src/owner-forms.ts";
 
 const issuer="https://auth.weave.example";
 const mailboxOrigin="https://mailbox.example";
@@ -393,6 +394,33 @@ test("account_MailboxRpcThrows_503AndLogsCategory",{timeout:60_000},async()=>{
     const response=await account(await sessionCookie(human),instance.mf);
     assert.equal(response.status,503);
     assert.ok(logs.some(x=>x.includes("human-directory: call failed")),JSON.stringify(logs));
+  }finally{await stop(instance);}
+});
+
+test("account_ExpiredFormToken_FormExpiredNoEffect",{timeout:60_000},async()=>{
+  const human=await seedHuman(),agent=await registerAgent("a"),view=await requestBinding(agent,human);
+  // A reject token minted when a page was rendered more than 10 minutes ago.
+  const token=await ownerActionToken(sessionKey,human.humanId,{kind:"reject-binding",requestId:view.requestId},Date.now()-600_001);
+  const response=await postAccount(token,await sessionCookie(human));
+  assert.equal(response.status,303);
+  assert.equal(result(response),"form-expired");
+  assert.equal(await bindingStatus(agent,view.requestId),"pending");
+  const page=await (await shared.mf.dispatchFetch(issuer+response.headers.get("location")!,{redirect:"manual",headers:{Cookie:await sessionCookie(human)}})).text();
+  assert.ok(page.includes("This page expired. Reload it and try again."));
+});
+
+test("account_PostWhenOwnerActionThrows_503AndLogsCategory",{timeout:60_000},async()=>{
+  // The default export has no ownerAction method, so the RPC call itself fails.
+  const instance=await start({MAILBOX:{type:"worker",worker:mailboxName}});
+  try{
+    const human=await seedHuman(instance.mf);
+    const token=await ownerActionToken(sessionKey,human.humanId,{kind:"reject-binding",requestId:randomUUID()},Date.now());
+    logs.length=0;
+    const response=await postAccount(token,await sessionCookie(human),issuer,instance.mf);
+    assert.equal(response.status,503);
+    assert.equal(response.headers.get("location"),null);
+    assert.ok(logs.some(x=>x.includes("human-directory: call failed")),JSON.stringify(logs));
+    assert.ok(logs.every(x=>!x.includes(token)),"the form token is never logged");
   }finally{await stop(instance);}
 });
 

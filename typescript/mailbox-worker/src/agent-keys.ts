@@ -4,7 +4,7 @@ import { jwkThumbprint, parseJws, publicJwk, verifyJws, type CompactJws, type Ed
 import { apiTime, epochSeconds, exactInt64, nowUtc } from './time.ts';
 import { atomic, type Database, type Env, type Transaction } from './database.ts';
 import type { OwnerDecision } from './owner-actions.ts';
-import { pendingKeyRequest, stageKeyRequest, type KeyRequestView } from './key-requests.ts';
+import { keyRequestOfOwner, pendingKeyRequest, stageKeyRequest, type KeyRequestView } from './key-requests.ts';
 import { requireKeyChurnRoom } from './agent-limits.ts';
 import { Problem, fail, invalidField, object } from './wire.ts';
 
@@ -165,6 +165,32 @@ export async function revokeAgentKey(env: Env, auth: AgentAuth, kid: string, clo
         tx.writes.push(tx.db.prepare('UPDATE agent_keys SET revoked_at=CAST(? AS INTEGER),updated_at=CAST(? AS INTEGER) WHERE kid=? AND revoked_at IS NULL').bind(stamp, stamp, kid));
         return {kid, revokedAt: apiTime(at)!};
     });
+}
+
+/**
+ * Human-side confirmation, staged in the caller's transaction. Everything the request relied on is re-checked here: the endorser must
+ * still be live, the kid must still be unused on any agent, and the limits apply at confirmation time. The pending request becomes the
+ * key row and is not counted again as an addition, so only key rows (in the window and in total) are checked.
+ */
+export async function confirmKeyRequest(tx: Transaction, humanId: string, requestId: string, at: bigint): Promise<OwnerDecision> {
+    const row = await keyRequestOfOwner(tx, humanId, requestId);
+    if (!row) return {ok: false, reason: 'not-found'};
+    if (row.status !== 'pending') return {ok: false, reason: 'not-pending'};
+    if (row.expiresAt <= at) return {ok: false, reason: 'expired'};
+    const endorser = await findKey(tx.db, row.endorsedBy);
+    if (!endorser || endorser.accountId !== row.accountId || endorser.revokedAt !== null) return {ok: false, reason: 'endorser-revoked'};
+    if (await findKey(tx.db, row.kid)) return {ok: false, reason: 'key-in-use'};
+    if (await countLiveKeys(tx, row.accountId) >= maxLiveKeysPerAgent) return {ok: false, reason: 'key-limit'};
+    try { await requireKeyChurnRoom(tx, row.accountId, {countRequests: false}); }
+    catch (error) {
+        if (error instanceof Problem && error.status === 429) return {ok: false, reason: 'key-limit'};
+        throw error;
+    }
+    const stamp = at.toString();
+    insertKey(tx, {kid: row.kid, accountId: row.accountId, jwk: row.jwk, label: row.label, coolingUntil: null});
+    tx.writes.push(tx.db.prepare(`UPDATE key_requests SET status='confirmed',decided_at=CAST(? AS INTEGER),updated_at=CAST(? AS INTEGER)
+        WHERE request_id=? AND status='pending'`).bind(stamp, stamp, requestId));
+    return {ok: true};
 }
 
 /**

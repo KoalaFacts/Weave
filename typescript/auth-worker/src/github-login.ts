@@ -84,7 +84,7 @@ async function readPendingLogin(env:GithubLoginEnv,request:Request,now:number):P
 type GithubUser={subject:string;login:string;createdAt:string};
 /** Fixed operator-facing failure categories; never tokens, codes or response bodies. */
 export const failureLog={exchange:"github-login: token exchange failed",user:"github-login: user fetch failed",
-  directory:"human-directory: call failed"} as const;
+  directory:"human-directory: call failed",formSigning:"owner-page: form signing failed"} as const;
 async function githubAccessToken(env:GithubLoginEnv,code:string,verifier:string):Promise<string|null>{
   try{
     const exchange=await fetch(githubToken,{method:"POST",
