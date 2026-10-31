@@ -254,7 +254,7 @@ test('addKey_ConcurrentAtNinetyNine_ExactlyOneSucceeds', async () => {
     } finally { await h.close(); }
 });
 
-test('addKey_HumanOwnedAgent_409OwnedAgent', async () => {
+test('addKey_HumanOwnedAgent_202AwaitingOwner', async () => {
     const h = await start();
     try {
         const env = {db: h.db, REGISTRATION_ENABLED: 'true', REGISTRATION_MAX_ACCOUNTS: '100', REGISTRATION_PER_IP_PER_HOUR: '100', REGISTRATION_GLOBAL_PER_HOUR: '100'} as unknown as Env;
@@ -268,7 +268,9 @@ test('addKey_HumanOwnedAgent_409OwnedAgent', async () => {
         await h.db.prepare('INSERT INTO agent_keys(kid,account_id,public_jwk,created_at,updated_at) VALUES(?,?,?,CAST(? AS INTEGER),CAST(? AS INTEGER))')
             .bind(key.kid, accountId, JSON.stringify(key.publicJwk), now, now).run();
         const cred = await issue(h, accountId, key), newKey = agentKey();
-        await problem(await addKey(h, cred, newKey), 409, {code: 'conflict', field: 'proof', reason: 'owned-agent'});
+        const response = await addKey(h, cred, newKey);
+        assert.equal(response.status, 202, await response.clone().text());
+        assert.equal((await response.json() as {status: string}).status, 'pending');
         assert.equal(await liveKeys(h, accountId), 1);
     } finally { await h.close(); }
 });

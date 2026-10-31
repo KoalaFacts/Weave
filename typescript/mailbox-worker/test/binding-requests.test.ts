@@ -267,3 +267,18 @@ test('cancelBinding_OtherAgent_404', async () => {
         assert.equal(await h.db.prepare('SELECT status FROM binding_requests WHERE request_id=?').bind(view.requestId).first('status'), 'pending');
     } finally { await h.close(); }
 });
+
+test('createBinding_OldDecidedRows_PrunedExceptConfirmed', async () => {
+    const h = await start();
+    try {
+        const cred = await h.register(), old = (BigInt(Date.now()) - 31n * 86_400_000n) * 10000n;
+        const insert = (requestId: string, status: string) => h.db.prepare(`INSERT INTO binding_requests(request_id,account_id,target_subject,kid,status,created_at,expires_at,updated_at,decided_at)
+            VALUES(?,?,'4242',?,?,CAST(? AS INTEGER),CAST(? AS INTEGER),CAST(? AS INTEGER),CAST(? AS INTEGER))`)
+            .bind(requestId, cred.accountId, cred.key.kid, status, old.toString(), (old + 864000000000n).toString(), old.toString(), (old + 1n).toString()).run();
+        for (const status of ['confirmed', 'rejected', 'cancelled', 'expired']) await insert('old-' + status, status);
+        await created(h, await h.register(), 'github:4242');
+        const left = (await h.db.prepare('SELECT request_id FROM binding_requests WHERE request_id LIKE ?').bind('old-%').all<{request_id: string}>()).results.map((r: {request_id: string}) => r.request_id);
+        // A confirmed request is the consent record behind accounts.human_id and is kept.
+        assert.deepEqual(left, ['old-confirmed']);
+    } finally { await h.close(); }
+});

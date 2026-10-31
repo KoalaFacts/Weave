@@ -17,6 +17,7 @@ import { registerAgent } from './accounts';
 import { authenticateAgent, issueAgentToken } from './agent-tokens.ts';
 import { addAgentKey, listAgentKeys, revokeAgentKey } from './agent-keys.ts';
 import { cancelBindingRequest, createBindingRequest, getBindingRequest } from './binding-requests.ts';
+import { requestRecoveryKey } from './key-requests.ts';
 import { putCard } from './cards';
 import { decide, requestContact, setBlocked } from './contacts';
 import { deleteContact, ownContacts } from './contact-links';
@@ -90,6 +91,8 @@ export default {
             if (method === 'POST' && url.pathname === '/v1/accounts') return json(await registerAgent(env,request,await body(request)));
             if(env.RECOVERY_READ_ONLY==='true'&&(method!=='GET'||url.pathname==='/v1/inbox/events'))fail(503,'maintenance',30);
             if (method === 'POST' && url.pathname === '/v1/token') return await issueAgentToken(env,request);
+            // Owner recovery authenticates with a DPoP proof alone: the agent has no live key to issue a token for.
+            if (method === 'POST' && url.pathname === '/v1/key-requests') { const recovery = await requestRecoveryKey(env,request,await body(request)); return json(recovery.view,recovery.status); }
             if(env.RECOVERY_READ_ONLY!=='true'&&method==='GET'&&['/v1/directory','/v1/directory/address','/v1/contacts/cards','/v1/contacts/card'].includes(url.pathname))await publicReadRate(env,request);
             const account = await authenticateAgent(env,request);
             if (method === 'GET' && ['/v1/directory','/v1/directory/address'].includes(url.pathname)) return json(await atomic(env.db,tx => directory(tx,url)));
@@ -98,7 +101,7 @@ export default {
             if (url.pathname === '/v1/keys' || url.pathname.startsWith('/v1/keys/')) {
                 if (url.pathname === '/v1/keys') {
                     if (method === 'GET') return json(await listAgentKeys(env,account.accountId));
-                    if (method === 'POST') return json(await addAgentKey(env,request,account,await body(request)));
+                    if (method === 'POST') { const added = await addAgentKey(env,request,account,await body(request)); return json(added.body,added.status); }
                 }
                 const kid = /^\/v1\/keys\/([A-Za-z0-9_-]{43})$/.exec(url.pathname)?.[1];
                 if (method === 'DELETE' && kid !== undefined) return json(await revokeAgentKey(env,account,kid));

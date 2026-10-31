@@ -19,8 +19,8 @@ type StoredBinding = {request_id: string; account_id: string; target_subject: st
 const statuses = new Set<string>(['pending', 'confirmed', 'rejected', 'cancelled', 'expired']);
 const humanTarget = /^github:([1-9][0-9]{0,19})$/;
 const skewSeconds = 60;
-const retentionTicks = 30n * requestLifetimeTicks; // 30 days
-const prunedRowsPerCreate = 100;
+export const retentionTicks = 30n * requestLifetimeTicks; // 30 days
+export const prunedRowsPerCreate = 100;
 const bindingColumns = `request_id,account_id,target_subject,kid,status,CAST(created_at AS TEXT) created_at,CAST(expires_at AS TEXT) expires_at,
     CAST(decided_at AS TEXT) decided_at`;
 
@@ -98,9 +98,10 @@ export async function createBindingRequest(env: Env, request: Request, auth: Age
         if (waiting === null) fail(503, 'storage');
         if (waiting >= pendingBindingRequestsPerHuman) fail(429, 'capacity');
 
-        // Bounded retention cleanup of decided rows; pending rows are only ever expired, never deleted here.
+        // Bounded retention cleanup of refused rows through binding_requests_retention. Pending rows are only ever expired, and
+        // confirmed rows are kept: they are the consent record behind accounts.human_id.
         tx.writes.push(tx.db.prepare(`DELETE FROM binding_requests WHERE request_id IN (SELECT request_id FROM binding_requests
-            WHERE status<>'pending' AND created_at<=CAST(? AS INTEGER) LIMIT ?)`).bind((at - retentionTicks).toString(), prunedRowsPerCreate));
+            WHERE status IN ('rejected','cancelled','expired') AND created_at<=CAST(? AS INTEGER) LIMIT ?)`).bind((at - retentionTicks).toString(), prunedRowsPerCreate));
         const row: BindingRow = {requestId: crypto.randomUUID(), accountId: auth.accountId, targetSubject: subject, kid: auth.kid, status: 'pending',
             createdAt: at, expiresAt: at + requestLifetimeTicks, decidedAt: null};
         tx.store.stage(tx.store.orm.insert(schema.bindingRequests).values({

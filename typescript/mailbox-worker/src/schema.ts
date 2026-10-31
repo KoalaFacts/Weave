@@ -88,10 +88,36 @@ export const bindingRequests = sqliteTable("binding_requests", {
     uniqueIndex("binding_requests_pending").on(t.account_id).where(sql`status='pending'`),
     index("binding_requests_target").on(t.target_subject, t.status, t.expires_at),
     index("binding_requests_account").on(t.account_id, t.created_at),
+    index("binding_requests_retention").on(t.status, t.created_at),
     check("binding_requests_subject_decimal",sql`length(target_subject) BETWEEN 1 AND 20 AND target_subject GLOB '[1-9]*' AND target_subject NOT GLOB '*[^0-9]*'`),
     check("binding_requests_status",sql`status IN ('pending','confirmed','rejected','cancelled','expired')`),
     check("binding_requests_expiry",sql`expires_at>created_at`),
     check("binding_requests_decision",sql`(status='pending')=(decided_at IS NULL)`)
+]);
+
+// A key added to a human-owned agent, held until the owner confirms it; endorsed_by is NULL for owner recovery.
+export const keyRequests = sqliteTable("key_requests", {
+    request_id: text("request_id").notNull().primaryKey(),
+    account_id: text("account_id").notNull().references(() => accounts.account_id, {onDelete:"restrict"}),
+    kid: text("kid").notNull(),
+    public_jwk: text("public_jwk").notNull(),
+    label: text("label"),
+    endorsed_by: text("endorsed_by").references(() => agentKeys.kid, {onDelete:"restrict"}),
+    status: text("status").notNull(),
+    created_at: exactInteger("created_at").notNull(),
+    expires_at: exactInteger("expires_at").notNull(),
+    updated_at: exactInteger("updated_at").notNull(),
+    decided_at: exactInteger("decided_at"),
+}, t => [
+    uniqueIndex("key_requests_pending").on(t.account_id, t.kid).where(sql`status='pending'`),
+    index("key_requests_account").on(t.account_id, t.created_at),
+    index("key_requests_retention").on(t.status, t.created_at),
+    check("key_requests_kid",sql`length(kid)=43 AND kid NOT GLOB '*[^A-Za-z0-9_-]*'`),
+    check("key_requests_public_jwk",sql`json_valid(public_jwk)`),
+    check("key_requests_label",sql`label IS NULL OR length(label) BETWEEN 1 AND 64`),
+    check("key_requests_status",sql`status IN ('pending','confirmed','rejected','expired')`),
+    check("key_requests_expiry",sql`expires_at>created_at`),
+    check("key_requests_decision",sql`(status='pending')=(decided_at IS NULL)`)
 ]);
 
 export const accountAddresses = sqliteTable("account_addresses", {

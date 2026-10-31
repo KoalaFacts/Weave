@@ -3,6 +3,7 @@ import type { AgentAuth } from './agent-tokens.ts';
 import { jwkThumbprint, parseJws, publicJwk, verifyJws, type CompactJws, type Ed25519Jwk } from './jose.ts';
 import { apiTime, epochSeconds, exactInt64, nowUtc } from './time.ts';
 import { atomic, type Database, type Env, type Transaction } from './database.ts';
+import { stageKeyRequest, type KeyRequestView } from './key-requests.ts';
 import { Problem, fail, invalidField, object } from './wire.ts';
 
 export const maxLiveKeysPerAgent = 100;
@@ -61,7 +62,7 @@ const keyRequestSkewSeconds = 60;
 
 export const isCooling = (row: KeyRow, now: bigint): boolean => row.coolingUntil !== null && row.coolingUntil > now;
 
-function conflict(field: string, reason: 'owned-agent' | 'cooling' | 'key-in-use' | 'last-live-key'): never {
+function conflict(field: string, reason: 'cooling' | 'key-in-use' | 'last-live-key'): never {
     throw new Problem(409, 'conflict', undefined, {field, reason});
 }
 
@@ -81,9 +82,10 @@ export async function listAgentKeys(env: Env, accountId: string): Promise<{items
 
 /**
  * POST /v1/keys: the new key proves possession with a self-signed proof and the authenticated key endorses its thumbprint,
- * because a DPoP proof covers neither the body nor replay. The added key cools for 24 h.
+ * because a DPoP proof covers neither the body nor replay. On an ownerless agent the added key cools for 24 h; on a human-owned
+ * agent it is held as a pending key request (202) until the owner confirms it, and cooling does not apply.
  */
-export async function addAgentKey(env: Env, request: Request, auth: AgentAuth, input: unknown): Promise<AgentKeySummary> {
+export async function addAgentKey(env: Env, request: Request, auth: AgentAuth, input: unknown): Promise<{status: 200 | 202; body: AgentKeySummary | KeyRequestView}> {
     object(input, ['proof', 'endorsement'], ['label']);
     const {proof: proofText, endorsement: endorsementText, label: labelValue} = input as {proof: unknown; endorsement: unknown; label?: unknown};
     const label = validLabel(labelValue);
@@ -108,21 +110,21 @@ export async function addAgentKey(env: Env, request: Request, auth: AgentAuth, i
         const at = tx.store.now;
         const owner = await tx.db.prepare('SELECT human_id FROM accounts WHERE account_id=?').bind(auth.accountId).first<{human_id: string | null}>();
         if (!owner) fail(401, 'unauthenticated');
-        // Human-owned agents are refused key additions in this slice.
-        if (owner.human_id !== null) conflict('proof', 'owned-agent');
+        const owned = owner.human_id !== null;
         const current = await findKey(tx.db, auth.kid);
         if (!current || current.revokedAt !== null || current.accountId !== auth.accountId) fail(401, 'unauthenticated');
-        if (isCooling(current, at)) conflict('endorsement', 'cooling');
+        if (!owned && isCooling(current, at)) conflict('endorsement', 'cooling');
         const existing = await findKey(tx.db, kid);
         if (existing) {
-            if (existing.accountId === auth.accountId && existing.revokedAt === null) return keySummary(existing);
+            if (existing.accountId === auth.accountId && existing.revokedAt === null) return {status: 200, body: keySummary(existing)};
             conflict('proof', 'key-in-use');
         }
         // Counted inside the same optimistic transaction as the insert, so concurrent adds cannot pass the limit.
         if (await countLiveKeys(tx, auth.accountId) >= maxLiveKeysPerAgent) fail(429, 'capacity');
+        if (owned) return {status: 202, body: await stageKeyRequest(tx, {accountId: auth.accountId, kid, jwk, label, endorsedBy: auth.kid})};
         const coolingUntil = at + keyCoolingTicks;
         insertKey(tx, {kid, accountId: auth.accountId, jwk, label, coolingUntil});
-        return keySummary({kid, accountId: auth.accountId, jwk, label, createdAt: at, lastUsedAt: null, revokedAt: null, coolingUntil});
+        return {status: 200, body: keySummary({kid, accountId: auth.accountId, jwk, label, createdAt: at, lastUsedAt: null, revokedAt: null, coolingUntil})};
     });
 }
 
