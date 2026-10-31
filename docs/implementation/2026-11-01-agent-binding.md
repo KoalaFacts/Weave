@@ -44,7 +44,8 @@ It is not repeated here. The preceding slice is the
   `POST /v1/key-requests` with a DPoP proof and no access token. Every failure
   is one identical `404`, nothing is written, and attempts are limited per source
   address (20 per hour). Recovery keys do not cool and create no key request
-  row. A lost `200` spends the code, so the owner issues another.
+  row. A valid code redeemed while the agent still has live keys also succeeds
+  and spends the code. A lost `200` spends the code, so the owner issues another.
 - **Notices are derived, not inbox messages.** `GET /v1/inbox` pages carry
   `notices` computed at read time from the agent's own key, key-request and
   binding-request rows (last 24 hours, at most 50). The registration key is not
@@ -66,7 +67,8 @@ It is not repeated here. The preceding slice is the
   For every agent: 100 live keys, 10 key additions per rolling 24 hours and 1000
   key rows in total. A pending key request counts as an addition; a recovery key
   counts as one but is not blocked by the agent's own earlier requests. At most
-  5 binding requests per agent per 24 hours, 20 pending per named human and 10
+  5 binding requests created per agent per rolling 24 hours (cancelled,
+  rejected and expired requests count too), 20 pending per named human and 10
   agents per human. The token endpoint answers `429 temporarily_unavailable`
   with `Retry-After` and does not spend the assertion. The shared `429`
   response declares `Retry-After` (set for hourly limits only).
@@ -78,6 +80,12 @@ It is not repeated here. The preceding slice is the
   forces an interactive GitHub page but does not prove credentials were
   re-entered. Whoever takes over the GitHub account can manage that human's
   agents; the owner accepted this risk.
+- **A binding confirmation is bound to the keys the owner saw.** The confirm
+  form signs a digest of the agent's live key IDs as the page showed them. If a
+  key was added or revoked since, the mailbox refuses the confirmation with
+  `keys-changed` and changes nothing; the owner reloads the page, reviews the
+  current keys and confirms again. An action form older than its 10 minute
+  lifetime reports `form-expired` (reload the page) rather than "not found".
 
 ## Removed
 

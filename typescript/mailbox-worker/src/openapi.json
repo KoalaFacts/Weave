@@ -306,7 +306,7 @@
       "post": {
         "operationId": "createBindingRequest",
         "summary": "Ask a GitHub human to own this agent",
-        "description": "Only an ownerless agent can ask. The body carries one compact EdDSA JWS signed by the authenticated key, header {\"typ\":\"weave-binding-request+jwt\",\"alg\":\"EdDSA\",\"kid\":\"<kid>\"} and payload {\"aud\":\"<origin>/v1/binding-requests\",\"sub\":\"<agentId>\",\"iat\":<now>,\"human\":\"github:<numeric GitHub id>\"}; iat is accepted within 60 s. The request waits 24 hours for the named human to confirm it on the account page; a retry naming the same human returns the pending request, and the server never reveals whether that human exists. Binding is one-way: an owned agent cannot be unbound or ask again (409 owned-agent). A key that still cools cannot ask (409 cooling), and naming a different human while one request is pending is 409 binding-pending. At most 5 requests per agent per 24 hours and 20 pending requests naming one human (429 capacity).",
+        "description": "Only an ownerless agent can ask. The body carries one compact EdDSA JWS signed by the authenticated key, header {\"typ\":\"weave-binding-request+jwt\",\"alg\":\"EdDSA\",\"kid\":\"<kid>\"} and payload {\"aud\":\"<origin>/v1/binding-requests\",\"sub\":\"<agentId>\",\"iat\":<now>,\"human\":\"github:<numeric GitHub id>\"}; iat is accepted within 60 s. The request waits 24 hours for the named human to confirm it on the account page; a retry naming the same human returns the pending request, and the server never reveals whether that human exists. Binding is one-way: an owned agent cannot be unbound or ask again (409 owned-agent). A key that still cools cannot ask (409 cooling), and naming a different human while one request is pending is 409 binding-pending. At most 5 requests created per agent per rolling 24 hours, counting cancelled, rejected and expired ones, and 20 pending requests naming one human (429 capacity).",
         "requestBody": {
           "required": true,
           "content": {
@@ -444,7 +444,7 @@
       "post": {
         "operationId": "redeemRecoveryCode",
         "summary": "Redeem an owner-issued recovery code to add a key",
-        "description": "For an owned agent that lost its keys. The owner issues a single-use code on the account page (fresh GitHub sign-in, valid 10 minutes, shown once). The caller sends no access token: only a DPoP proof made with the NEW key, and the body {\"agentId\",\"code\",\"label\"} (label optional). The new key becomes live at once, without cooling, because the owner authorised it. A wrong, expired, used or unknown code, an unknown agent, and a code whose owner is frozen or no longer owns the agent are one identical 404, with nothing written. After a valid code only 409 key-in-use (the key belongs to another agent or was revoked) and 429 (live-key or key-churn limit) are distinguishable. One source address may make 20 attempts per hour (429 with Retry-After). A lost 200 spends the code: ask the owner for a new one. This creates no key request row.",
+        "description": "For an owned agent that lost its keys. The owner issues a single-use code on the account page (fresh GitHub sign-in, valid 10 minutes, shown once). The caller sends no access token: only a DPoP proof made with the NEW key, and the body {\"agentId\",\"code\",\"label\"} (label optional). The new key becomes live at once, without cooling, because the owner authorised it. A wrong, expired, used or unknown code, an unknown agent, and a code whose owner is frozen or no longer owns the agent are one identical 404, with nothing written. After a valid code only 409 key-in-use (the key belongs to another agent or was revoked) and 429 (live-key or key-churn limit) are distinguishable. One source address may make 20 attempts per hour (429 with Retry-After). A valid code redeemed while the agent still has live keys also succeeds and spends the code. A lost 200 spends the code: ask the owner for a new one. This creates no key request row.",
         "requestBody": {
           "required": true,
           "content": {
@@ -2629,8 +2629,7 @@
               "type": "string",
               "const": "no-store"
             }
-          }
-        ,
+          },
           "Retry-After": {
             "required": false,
             "description": "Seconds until the next UTC hour. Present on hourly limits; absent on other capacity failures.",
