@@ -78,7 +78,7 @@ export async function oauthAccountActive(env: Env, accountId: string, serviceHum
     // UUID: owner-linked Service Binding token, only valid while that exact human
     // still owns the agent and is not frozen (ownership transfer revokes old grants).
     if (serviceHumanId === null)
-        return await env.db.prepare('SELECT 1 n FROM accounts WHERE account_id=? AND human_id IS NULL')
+        return await env.db.prepare('SELECT 1 n FROM accounts WHERE account_id=? AND human_id IS NULL AND control_hash IS NOT NULL')
             .bind(accountId).first('n') !== null;
     if (serviceHumanId !== undefined) {
         if (!uuidPattern.test(serviceHumanId)) return false;
