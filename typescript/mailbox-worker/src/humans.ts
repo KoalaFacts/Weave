@@ -1,4 +1,5 @@
 import { admitRegistration } from './accounts.ts';
+import { CONTROL_HASH_SCHEME, validParameters } from './credentials.ts';
 import { atomic, type Env } from './database.ts';
 import { nowUtc, utcTicks } from './time.ts';
 import { fail } from './wire.ts';
@@ -77,9 +78,18 @@ export async function oauthAccountActive(env: Env, accountId: string, serviceHum
     // Binding token) can prove only a control-owned account. A stale external
     // link must not survive control revocation or transfer into human ownership.
     // Only an explicit current human UUID may authorize a human-owned agent.
-    if (serviceHumanId === null || serviceHumanId === undefined)
-        return await env.db.prepare('SELECT 1 n FROM accounts WHERE account_id=? AND human_id IS NULL AND control_hash IS NOT NULL')
-            .bind(accountId).first('n') !== null;
+    if (serviceHumanId === null || serviceHumanId === undefined) {
+        // A non-null digest alone is not a live control credential: the schema
+        // permits valid JSON parameters that the control authenticator rejects.
+        // External subject links and legacy unbound tokens must follow that
+        // same revocation boundary, not merely the digest's presence.
+        const row = await env.db.prepare('SELECT control_hash_scheme,control_hash_parameters FROM accounts WHERE account_id=? AND human_id IS NULL AND control_hash IS NOT NULL')
+            .bind(accountId).first<{ control_hash_scheme: string | null; control_hash_parameters: string | null }>();
+        if (!row || row.control_hash_scheme !== CONTROL_HASH_SCHEME || typeof row.control_hash_parameters !== 'string')
+            return false;
+        try { return validParameters(JSON.parse(row.control_hash_parameters)); }
+        catch { return false; }
+    }
     if (!uuidPattern.test(serviceHumanId)) return false;
     return await env.db.prepare('SELECT 1 n FROM accounts a JOIN humans h ON h.human_id=a.human_id WHERE a.account_id=? AND a.human_id=? AND h.frozen_at IS NULL')
         .bind(accountId, serviceHumanId).first('n') !== null;
