@@ -413,6 +413,12 @@ test("consent_Deny_RedirectsWithAccessDenied",{timeout:60_000},async()=>{
   assert.equal(redirect.searchParams.get("error"),"access_denied");
   assert.equal(redirect.searchParams.get("state"),auth.state);
   assert.equal(redirect.searchParams.get("code"),null);
+  // Even if the SDK KV deletion is eventually consistent, a denial must burn
+  // the strongly-consistent one-time nonce so the same handle cannot later approve.
+  assert.equal(await nonceStatus(mf,consent.handle),404,"denial must consume the pending authorization nonce");
+  const replay=await post(mf,consent.cookie,{handle:consent.handle,decision:"approve",agent:"new",agentName:"After denial"});
+  assert.equal(replay.status,400,"a denied authorization cannot later issue a code");
+  assert.equal(replay.headers.get("location"),null);
   assert.deepEqual(await agentsOf(mf,await humanIdOf(mf,6001)),[]);
 });
 
