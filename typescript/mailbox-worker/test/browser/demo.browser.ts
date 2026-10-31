@@ -166,6 +166,15 @@ test('real Worker UI: isolated sessions, public/private discovery, acceptance, r
         await alice.locator('#agentKey').fill('not a saved key file');
         await alice.locator('#register').click();
         await waitText(alice, 'status', 'Paste the complete saved agent key file');
+        // Real Chromium: a key file whose public x does not belong to its private d is refused before any request.
+        const registrations = [];
+        alice.on('request', request => { if (new URL(request.url()).pathname === '/v1/accounts') registrations.push(request); });
+        const [held, foreign] = [agentKey(), agentKey()];
+        await alice.evaluate(() => { document.getElementById('status').textContent = ''; });
+        await alice.locator('#agentKey').fill(JSON.stringify({ accountId: null, key: { kty: 'OKP', crv: 'Ed25519', x: foreign.publicJwk.x, d: held.privateJwk.d } }));
+        await alice.locator('#register').click();
+        await waitText(alice, 'status', 'Paste the complete saved agent key file');
+        assert.equal(registrations.length, 0);
         assert.equal(await h.db.prepare("SELECT count(*) n FROM accounts").first('n'), 0);
         await alice.locator('#recovery summary').click();
         const { id: aliceId, x: aliceX } = await register(alice, 'Alice private display');

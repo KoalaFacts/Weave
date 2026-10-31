@@ -26,7 +26,7 @@ function savedKeyFile(accountId = 'saved-agent') {
     return { text: JSON.stringify({ accountId, key: { kty: 'OKP', crv: 'Ed25519', x: privateJwk.x, d: privateJwk.d } }), x: publicJwk.x };
 }
 
-function ui(fetch, { unavailableCrypto = false } = {}) {
+function ui(fetch, { unavailableCrypto = false, lenientImport = false } = {}) {
     const elements = new Map(), calls = [], downloads = [], blobs = new Map(), timers = [], randomSizes = [], generated = [];
     function element() {
         return { value: '', textContent: '', disabled: false, hidden: false, readOnly: false, children: [], handlers: {}, classList: { toggle() {} },
@@ -44,7 +44,11 @@ function ui(fetch, { unavailableCrypto = false } = {}) {
     // Real WebCrypto signs; key generation is counted so tests can prove when a new agent key is created.
     const subtle = {
         generateKey: (...args) => { generated.push(args[0].name); return webcrypto.subtle.generateKey(...args); },
-        importKey: (...args) => webcrypto.subtle.importKey(...args), exportKey: (...args) => webcrypto.subtle.exportKey(...args),
+        // lenientImport models a browser that imports an Ed25519 private JWK from `d` alone without checking `x`.
+        importKey: (...args) => lenientImport && args[0] === 'jwk' && args[1].d
+            ? webcrypto.subtle.importKey('pkcs8', Buffer.concat([Buffer.from('302e020100300506032b657004220420', 'hex'), Buffer.from(args[1].d, 'base64url')]), ...args.slice(2))
+            : webcrypto.subtle.importKey(...args),
+        exportKey: (...args) => webcrypto.subtle.exportKey(...args),
         sign: (...args) => webcrypto.subtle.sign(...args), digest: (...args) => webcrypto.subtle.digest(...args)
     };
     const context = createContext({
@@ -183,7 +187,10 @@ test('overlapping registration clicks do not dispatch twice and clearing ignores
     let resolveRegistration;
     const app = ui(() => new Promise(resolve => { resolveRegistration = resolve; }));
     const pending = app.click('createAccount'); await app.click('createAccount');
-    while (app.calls.length === 0) await new Promise(resolve => setTimeout(resolve, 1));
+    for (let waited = 0; app.calls.length === 0; waited++) {
+        assert.ok(waited < 2000, 'Registration was never dispatched.');
+        await new Promise(resolve => setTimeout(resolve, 1));
+    }
     assert.equal(app.calls.length, 1); assert.deepEqual(app.generated, ['Ed25519']);
     await app.click('disconnect'); resolveRegistration(json(account)); await pending;
     assert.equal(app.get('identity').textContent, 'No account connected.'); assert.equal(app.get('credentialBackup').hidden, true);
@@ -211,13 +218,27 @@ test('resume_InvalidKeyFile_ShowsErrorWithoutRequest', async () => {
     for (const value of ['', 'not json', '[]', '{}', JSON.stringify({ accountId: 'a' }),
         JSON.stringify({ ...valid, key: { ...valid.key, d: undefined } }), JSON.stringify({ ...valid, key: { ...valid.key, d: 'short' } }),
         JSON.stringify({ ...valid, key: { ...valid.key, kty: 'EC' } }), JSON.stringify({ ...valid, key: { ...valid.key, crv: 'X25519' } }),
-        JSON.stringify({ ...valid, accountId: 7 }), JSON.stringify({ ...valid, key: { ...valid.key, x: valid.key.x.slice(1) } })]) {
+        JSON.stringify({ ...valid, accountId: 7 }), JSON.stringify({ ...valid, key: { ...valid.key, x: valid.key.x.slice(1) } }),
+        JSON.stringify({ ...valid, note: 'extra' }), JSON.stringify({ ...valid, key: { ...valid.key, kid: thumbprint(valid.key.x) } }),
+        JSON.stringify({ ...valid, key: { ...valid.key, use: 'sig' } })]) {
         app.get('agentKey').value = value; await app.click('register');
         assert.match(app.get('status').textContent, /saved agent key file/i, value);
         assert.deepEqual(app.calls, [], value); assert.equal(app.get('credentialBackup').hidden, true);
         assert.doesNotMatch(app.get('identity').textContent, /Account ID/);
     }
     assert.deepEqual(app.generated, []);
+});
+
+test('restoreKeyFile_PublicKeyNotMatchingPrivateKey_RefusedLocallyWithoutRequest', async () => {
+    const valid = JSON.parse(savedKeyFile().text), other = savedKeyFile();
+    const mismatched = JSON.stringify({ ...valid, key: { ...valid.key, x: other.x } });
+    for (const lenientImport of [false, true]) {
+        const app = ui(success, { lenientImport });
+        app.get('agentKey').value = mismatched; await app.click('register');
+        assert.match(app.get('status').textContent, /saved agent key file/i);
+        assert.deepEqual(app.calls, []); assert.deepEqual(app.generated, []);
+        assert.equal(app.get('credentialBackup').hidden, true);
+    }
 });
 
 test('separate recovery signs with the saved key without generating one or retrying an auth denial anonymously', async () => {
@@ -228,6 +249,7 @@ test('separate recovery signs with the saved key without generating one or retry
     assert.equal(registrationJwk(app.calls[0]).x, saved.x);
     assert.equal(app.get('identity').textContent, 'No account connected.');
     assert.match(app.get('status').textContent, /rejected.*401/);
+    assert.equal(app.get('agentKey').value, saved.text, 'A refused restore keeps the pasted key file for retry.');
 });
 
 test('privateCalls_CarryDpopTokenAndProof', async () => {
@@ -273,6 +295,19 @@ test('privateCalls_CarryDpopTokenAndProof', async () => {
     await app.click('disconnect'); expiresIn = 59; await app.click('createAccount');
     await app.click('loadAddresses');
     assert.equal(posts(app, '/v1/token').length, 3);
+});
+
+test('stream_Unauthenticated_ClearsCachedTokenLikeApi', async () => {
+    let streamStatus = 401;
+    const app = ui(async (path, options) => path === '/v1/inbox/events' ? new Response('', { status: streamStatus }) : success(path, options));
+    await app.click('createAccount');
+    assert.equal(posts(app, '/v1/token').length, 1);
+    await app.click('stream');
+    assert.match(app.get('status').textContent, /401/);
+    await app.click('loadAddresses');
+    assert.equal(posts(app, '/v1/token').length, 2, 'A 401 on the event stream drops the cached token.');
+    streamStatus = 503; await app.click('stream'); await app.click('loadAddresses');
+    assert.equal(posts(app, '/v1/token').length, 2, 'Other stream failures keep the cached token.');
 });
 
 test('resumeFromKeyFile_SameAgent', async () => {
@@ -365,6 +400,7 @@ test('restoring a saved account opens scenarios without generating another key',
     const app = ui(success);
     app.get('agentKey').value = savedKeyFile(account.accountId).text;
     await app.click('register');
+    assert.equal(app.get('agentKey').value, '', 'A successful restore clears the pasted private key.');
     assert.equal(app.get('workspace').hidden, false);
     assert.equal(app.get('accountStart').hidden, true);
     assert.equal(app.get('continueToContacts').hidden, true);
