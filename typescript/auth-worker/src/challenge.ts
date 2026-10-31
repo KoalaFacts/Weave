@@ -43,7 +43,9 @@ export async function readConsent(request: Request): Promise<URLSearchParams|nul
     return form;
   }catch{return null;}finally{
     if(timer!==undefined)clearTimeout(timer);
-    await reader.cancel().catch(()=>{});
+    // Stream cancellation is best-effort: an untrusted source may never settle
+    // cancel(), and awaiting it would defeat the read timeout above.
+    void reader.cancel().catch(()=>{});
     reader.releaseLock();
   }
 }
