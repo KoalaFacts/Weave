@@ -13,7 +13,7 @@ const form=(...fields:[string,string][])=>new Request("https://auth.weave.exampl
 test("readOwnerAction_RoundTrip_ReturnsAction",async()=>{
   const humanId=randomUUID(),agentId=randomUUID();
   const actions:OwnerFormAction[]=[
-    {kind:"confirm-binding",requestId:randomUUID()},{kind:"reject-binding",requestId:randomUUID()},
+    {kind:"confirm-binding",requestId:randomUUID(),keysDigest:randomBytes(32).toString("base64url")},{kind:"reject-binding",requestId:randomUUID()},
     {kind:"confirm-key",requestId:randomUUID()},{kind:"reject-key",requestId:randomUUID()},
     {kind:"revoke-key",agentId,kid:randomBytes(32).toString("base64url")},{kind:"issue-recovery-code",agentId}];
   for(const action of actions){
@@ -65,11 +65,23 @@ test("readOwnerAction_ExtraTokenMember_Null",async()=>{
 
 test("readOwnerAction_TamperedRequestId_Null",async()=>{
   const humanId=randomUUID(),x=randomUUID(),y=randomUUID();
-  const token=await ownerActionToken(key,humanId,{kind:"confirm-binding",requestId:x},now);
+  const token=await ownerActionToken(key,humanId,{kind:"confirm-binding",requestId:x,keysDigest:randomBytes(32).toString("base64url")},now);
   const [payload,signature]=token.split(".");
   const swapped=Buffer.from(Buffer.from(payload,"base64url").toString().replace(x,y)).toString("base64url");
   assert.notEqual(swapped,payload);
   assert.equal(await readOwnerAction(key,form(["action",swapped+"."+signature]),sessionFor(humanId),now),null);
+});
+
+test("readOwnerAction_ConfirmBindingTamperedOrMissingKeysDigest_Null",async()=>{
+  const humanId=randomUUID(),requestId=randomUUID(),shown=randomBytes(32).toString("base64url"),other=randomBytes(32).toString("base64url");
+  const token=await ownerActionToken(key,humanId,{kind:"confirm-binding",requestId,keysDigest:shown},now);
+  assert.deepEqual(await readOwnerAction(key,form(["action",token]),sessionFor(humanId),now),{kind:"confirm-binding",requestId,keysDigest:shown});
+  const [payload,signature]=token.split(".");
+  const swapped=Buffer.from(Buffer.from(payload,"base64url").toString().replace(shown,other)).toString("base64url");
+  assert.notEqual(swapped,payload);
+  assert.equal(await readOwnerAction(key,form(["action",swapped+"."+signature]),sessionFor(humanId),now),null,"a token cannot carry a different key set");
+  const bare=await signedCookieValue(key,"owner-action",{humanId,kind:"confirm-binding",requestId,expiresAt:now+600_000});
+  assert.equal(await readOwnerAction(key,form(["action",bare]),sessionFor(humanId),now),null,"a confirmation must name the key set it was shown");
 });
 
 test("readOwnerAction_IssueRecoveryCode_RoundTrip",async()=>{

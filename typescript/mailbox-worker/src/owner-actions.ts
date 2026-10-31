@@ -1,6 +1,6 @@
 import { atomic, type Env, type Transaction } from './database.ts';
 import { revokeKeyForOwner } from './agent-keys.ts';
-import { confirmBindingRequest, pendingBindingRequestsPerHuman, rejectBindingRequest } from './binding-requests.ts';
+import { confirmBindingRequest, liveKeysDigest, pendingBindingRequestsPerHuman, rejectBindingRequest } from './binding-requests.ts';
 import { maxAgentsPerHuman, requireReadable, writesRefused } from './humans.ts';
 import { confirmKeyRequest, rejectKeyRequest } from './key-requests.ts';
 import { issueRecoveryCode } from './recovery-codes.ts';
@@ -11,18 +11,18 @@ export const reauthWindowMs = 600_000;
 export const reauthFutureSkewMs = 60_000;
 
 export type OwnerKey = {kid: string; label: string | null; createdAt: string; lastUsedAt: string | null; coolingUntil: string | null};
-export type OwnerBindingRequest = {requestId: string; agentId: string; displayName: string | null; requestingKid: string; liveKeys: OwnerKey[]; createdAt: string; expiresAt: string};
+export type OwnerBindingRequest = {requestId: string; agentId: string; displayName: string | null; requestingKid: string; liveKeys: OwnerKey[]; keysDigest: string; createdAt: string; expiresAt: string};
 export type OwnerKeyRequest = {requestId: string; kid: string; label: string | null; endorsedBy: string | null; createdAt: string; expiresAt: string};
 export type OwnedAgentKeys = {agentId: string; displayName: string | null; keys: OwnerKey[]; keyRequests: OwnerKeyRequest[]};
 export type OwnerOverview = {frozen: true} | {frozen: false; bindingRequests: OwnerBindingRequest[]; agents: OwnedAgentKeys[]};
 
 export type OwnerAction = {humanId: string; authAt: number} & (
-    | {kind: 'confirm-binding' | 'reject-binding'; requestId: string}
-    | {kind: 'confirm-key' | 'reject-key'; requestId: string}
+    | {kind: 'confirm-binding'; requestId: string; keysDigest: string}
+    | {kind: 'reject-binding' | 'confirm-key' | 'reject-key'; requestId: string}
     | {kind: 'revoke-key'; agentId: string; kid: string}
     | {kind: 'issue-recovery-code'; agentId: string});
 export type OwnerFailureReason = 'stale-authentication' | 'frozen' | 'not-found' | 'not-pending' | 'expired' | 'agent-limit' | 'already-owned' | 'key-in-use'
-    | 'key-limit' | 'endorser-revoked' | 'requesting-key-revoked' | 'unavailable';
+    | 'key-limit' | 'endorser-revoked' | 'requesting-key-revoked' | 'keys-changed' | 'unavailable';
 export type OwnerFailure = {ok: false; reason: OwnerFailureReason};
 /** What the human-side functions of the owning modules return; `ownerAction` adds the recovery code variant. */
 export type OwnerDecision = {ok: true} | OwnerFailure;
@@ -31,6 +31,7 @@ export type OwnerHuman = {humanId: string; subject: string};
 
 const uuidPattern = /^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/i;
 const kidPattern = /^[A-Za-z0-9_-]{43}$/;
+const digestPattern = /^[A-Za-z0-9_-]{43}$/;
 const destructive = new Set<string>(['confirm-binding', 'confirm-key', 'revoke-key', 'issue-recovery-code']);
 const notFound: OwnerFailure = {ok: false, reason: 'not-found'};
 const unavailable: OwnerFailure = {ok: false, reason: 'unavailable'};
@@ -63,10 +64,15 @@ export async function ownerOverview(env: Env, humanId: string, clock: () => bigi
         const requests = ownedIds.length === 0 ? [] : (await tx.db.prepare(`SELECT request_id,account_id,kid,label,endorsed_by,CAST(created_at AS TEXT) created_at,CAST(expires_at AS TEXT) expires_at
             FROM key_requests WHERE account_id IN (${placeholders(ownedIds)}) AND status='pending' AND expires_at>CAST(? AS INTEGER) ORDER BY created_at,request_id`)
             .bind(...ownedIds, now).all<{request_id: string; account_id: string; kid: string; label: string | null; endorsed_by: string; created_at: string; expires_at: string}>()).results;
+        const bindingRequests: OwnerBindingRequest[] = [];
+        for (const row of bindings) {
+            const liveKeys = keys.filter(key => key.account_id === row.account_id).map(ownerKey);
+            bindingRequests.push({requestId: row.request_id, agentId: row.account_id, displayName: row.display_name, requestingKid: row.kid, liveKeys,
+                keysDigest: await liveKeysDigest(liveKeys.map(key => key.kid)), createdAt: apiTime(row.created_at)!, expiresAt: apiTime(row.expires_at)!});
+        }
         return {
             frozen: false as const,
-            bindingRequests: bindings.map(row => ({requestId: row.request_id, agentId: row.account_id, displayName: row.display_name, requestingKid: row.kid,
-                liveKeys: keys.filter(key => key.account_id === row.account_id).map(ownerKey), createdAt: apiTime(row.created_at)!, expiresAt: apiTime(row.expires_at)!})),
+            bindingRequests,
             agents: owned.map(agent => ({agentId: agent.account_id, displayName: agent.display_name,
                 keys: keys.filter(key => key.account_id === agent.account_id).map(ownerKey),
                 keyRequests: requests.filter(row => row.account_id === agent.account_id).map(row => ({requestId: row.request_id, kid: row.kid, label: row.label,
@@ -82,7 +88,8 @@ function validShape(input: unknown): OwnerAction | null {
     const uuid = (value: unknown) => typeof value === 'string' && uuidPattern.test(value);
     if (!uuid(action.humanId) || typeof action.authAt !== 'number' || !Number.isSafeInteger(action.authAt)) return null;
     switch (action.kind) {
-        case 'confirm-binding': case 'reject-binding': case 'confirm-key': case 'reject-key': return uuid(action.requestId) ? input as OwnerAction : null;
+        case 'confirm-binding': return uuid(action.requestId) && typeof action.keysDigest === 'string' && digestPattern.test(action.keysDigest) ? input as OwnerAction : null;
+        case 'reject-binding': case 'confirm-key': case 'reject-key': return uuid(action.requestId) ? input as OwnerAction : null;
         case 'revoke-key': return uuid(action.agentId) && typeof action.kid === 'string' && kidPattern.test(action.kid) ? input as OwnerAction : null;
         case 'issue-recovery-code': return uuid(action.agentId) ? input as OwnerAction : null;
         default: return null;
@@ -96,7 +103,7 @@ async function decide(tx: Transaction, input: DecidedAction, at: bigint): Promis
     if (!human) return notFound;
     if (human.frozen_at !== null) return {ok: false, reason: 'frozen'};
     switch (input.kind) {
-        case 'confirm-binding': return confirmBindingRequest(tx, {humanId: input.humanId, subject: human.subject}, input.requestId, at);
+        case 'confirm-binding': return confirmBindingRequest(tx, {humanId: input.humanId, subject: human.subject}, input.requestId, input.keysDigest, at);
         case 'reject-binding': return rejectBindingRequest(tx, {humanId: input.humanId, subject: human.subject}, input.requestId, at);
         case 'confirm-key': return confirmKeyRequest(tx, input.humanId, input.requestId, at);
         case 'reject-key': return rejectKeyRequest(tx, input.humanId, input.requestId, at);

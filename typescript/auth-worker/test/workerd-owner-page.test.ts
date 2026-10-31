@@ -207,6 +207,27 @@ test("account_ConfirmBinding_Fresh_303DoneAndAgentOwned",{timeout:60_000},async(
   assert.ok((await (await account(await sessionCookie(human))).text()).includes(agent.accountId));
 });
 
+test("account_ConfirmBinding_KeysChangedSincePage_ShowsKeysChanged",{timeout:90_000},async()=>{
+  const human=await seedHuman(),agent=await registerAgent("a"),view=await requestBinding(agent,human);
+  const token=await tokenFor(human,"Confirm binding");
+  // The agent's settled key adds a key after the owner's page was rendered.
+  const slipped=agentKey(),keysUrl=mailboxOrigin+"/v1/keys";
+  const added=await agentFetch(agent,"/v1/keys",{method:"POST",body:{proof:keyProof(slipped,{accountId:agent.accountId,audience:keysUrl}),
+    endorsement:keyEndorsement(agent.key,{accountId:agent.accountId,audience:keysUrl,newKid:slipped.kid})}});
+  assert.equal(added.status,200,await added.clone().text());
+  const response=await postAccount(token,await sessionCookie(human));
+  assert.equal(response.status,303);
+  assert.equal(result(response),"keys-changed");
+  assert.equal(await ownerOf(agent),null);
+  assert.equal(await bindingStatus(agent,view.requestId),"pending");
+  const page=await (await shared.mf.dispatchFetch(issuer+response.headers.get("location")!,{redirect:"manual",headers:{Cookie:await sessionCookie(human)}})).text();
+  assert.ok(page.includes("The agent&#39;s keys changed after you opened this page."),page);
+  assert.ok(page.includes(slipped.kid.slice(8)),"the reloaded page shows the new key");
+  // Positive control: a token from the reloaded page confirms.
+  assert.equal(result(await postAccount(await tokenFor(human,"Confirm binding"),await sessionCookie(human))),"done");
+  assert.equal(await ownerOf(agent),human.humanId);
+});
+
 test("account_ConfirmBinding_Stale_RedirectsToGithubSelectAccountNoEffect",{timeout:60_000},async()=>{
   const human=await seedHuman(),agent=await registerAgent("a"),view=await requestBinding(agent,human);
   const stale=Date.now()-600_001;

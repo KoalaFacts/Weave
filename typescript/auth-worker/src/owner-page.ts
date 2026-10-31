@@ -26,6 +26,7 @@ export const ownerResultText:Readonly<Record<string,string>>=Object.freeze({
   "key-limit":"The agent already has the maximum number of live keys.",
   "endorser-revoked":"The key that endorsed this request has been revoked.",
   "requesting-key-revoked":"The key that made this request has been revoked.",
+  "keys-changed":"The agent's keys changed after you opened this page. Review the current keys and confirm again.",
   unavailable:"Weave could not complete that right now. Try again later."
 });
 
@@ -104,7 +105,8 @@ export async function ownerFormTokens(key:string,humanId:string,overview:OwnerOv
   if(overview.frozen)return tokens;
   const add=async(name:string,action:Parameters<typeof ownerActionToken>[2])=>{tokens.set(name,await ownerActionToken(key,humanId,action,now));};
   for(const request of overview.bindingRequests){
-    await add("confirm-binding:"+request.requestId,{kind:"confirm-binding",requestId:request.requestId});
+    // The confirmation is bound to the live keys shown next to it; the mailbox worker refuses it if they changed.
+    await add("confirm-binding:"+request.requestId,{kind:"confirm-binding",requestId:request.requestId,keysDigest:request.keysDigest});
     await add("reject-binding:"+request.requestId,{kind:"reject-binding",requestId:request.requestId});
   }
   for(const agent of overview.agents){

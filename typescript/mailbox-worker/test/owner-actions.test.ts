@@ -4,6 +4,7 @@ import { start, type AgentCredential } from './harness.ts';
 import { agentKey, bindingRequest, dpopProof, keyEndorsement, keyProof, type TestKey } from './agent-key.ts';
 import { createOwnedAgent, signInHuman } from '../src/humans.ts';
 import { ownerAction, ownerOverview, reauthFutureSkewMs, reauthWindowMs, type OwnerAction } from '../src/owner-actions.ts';
+import { liveKeysDigest } from '../src/binding-requests.ts';
 import type { Env } from '../src/database.ts';
 
 type Harness = Awaited<ReturnType<typeof start>>;
@@ -21,8 +22,18 @@ async function human(h: Harness, subject: string): Promise<string> {
     assert.equal(result.ok, true);
     return (result as {humanId: string}).humanId;
 }
-const act = (h: Harness, humanId: string, action: Action, options: {clock?: () => bigint; env?: Env} = {}) =>
-    ownerAction(options.env ?? environment(h), {humanId, authAt: Date.now(), ...action} as OwnerAction, options.clock);
+/** The digest of the agent's live keys as they are now, as the owner page would have shown them. */
+const liveDigest = async (h: Harness, accountId: string) => liveKeysDigest((await h.db.prepare('SELECT kid FROM agent_keys WHERE account_id=? AND revoked_at IS NULL')
+    .bind(accountId).all<{kid: string}>()).results.map(row => row.kid));
+/** A confirm-binding without `keysDigest` confirms the key set the requesting agent has at the time of the call. */
+async function act(h: Harness, humanId: string, action: Action, options: {clock?: () => bigint; env?: Env} = {}) {
+    let input = {humanId, authAt: Date.now(), ...action} as Record<string, unknown>;
+    if (input.kind === 'confirm-binding' && !('keysDigest' in input)) {
+        const accountId = await h.db.prepare('SELECT account_id FROM binding_requests WHERE request_id=?').bind(input.requestId as string).first<string>('account_id');
+        input = {...input, keysDigest: accountId === null ? 'A'.repeat(43) : await liveDigest(h, accountId)};
+    }
+    return ownerAction(options.env ?? environment(h), input as OwnerAction, options.clock);
+}
 const at = (ms: number) => () => BigInt(ms) * 10000n;
 
 async function bind(h: Harness, cred: AgentCredential, subject: string): Promise<string> {
@@ -235,6 +246,36 @@ test('confirmBinding_RequestingKeyRevoked_Refused', async () => {
         await revokeInStorage(h, cred.key.kid);
         assert.deepEqual(await act(h, await human(h, '555'), {kind: 'confirm-binding', requestId}), {ok: false, reason: 'requesting-key-revoked'});
         assert.equal(await ownerOf(h, cred.accountId), null);
+    } finally { await h.close(); }
+});
+
+test('confirmBinding_KeyAddedAfterOverview_KeysChangedNoEffect', async () => {
+    const h = await start();
+    try {
+        const {cred, requestId} = await requested(h, '555');
+        const id = await human(h, '555');
+        const seen = await ownerOverview(environment(h), id);
+        assert.equal(seen.frozen, false);
+        if (seen.frozen) return;
+        const shown = seen.bindingRequests[0].keysDigest;
+        assert.equal(shown, await liveDigest(h, cred.accountId));
+        // The settled requesting key slips a new key in after the owner opened the page.
+        const slipped = agentKey();
+        const added = await h.request('/v1/keys', cred, 'POST', {proof: keyProof(slipped, {accountId: cred.accountId, audience: keysUrl}),
+            endorsement: keyEndorsement(cred.key, {accountId: cred.accountId, audience: keysUrl, newKid: slipped.kid})}) as unknown as Response;
+        assert.equal(added.status, 200, await added.clone().text());
+        assert.deepEqual(await act(h, id, {kind: 'confirm-binding', requestId, keysDigest: shown}), {ok: false, reason: 'keys-changed'});
+        assert.equal(await ownerOf(h, cred.accountId), null);
+        assert.equal(await bindingStatus(h, requestId), 'pending');
+        // Positive control: the page reloaded with the current keys confirms.
+        const reloaded = await ownerOverview(environment(h), id);
+        assert.equal(reloaded.frozen, false);
+        if (reloaded.frozen) return;
+        const fresh = reloaded.bindingRequests[0].keysDigest;
+        assert.notEqual(fresh, shown);
+        assert.deepEqual(reloaded.bindingRequests[0].liveKeys.map(key => key.kid).sort(), [cred.key.kid, slipped.kid].sort());
+        assert.deepEqual(await act(h, id, {kind: 'confirm-binding', requestId, keysDigest: fresh}), {ok: true});
+        assert.equal(await ownerOf(h, cred.accountId), id);
     } finally { await h.close(); }
 });
 
@@ -473,7 +514,10 @@ test('ownerAction_MalformedInput_NotFound', async () => {
         const id = await human(h, '555');
         const valid = crypto.randomUUID(), kid = 'A'.repeat(43);
         const cases: unknown[] = [
-            {humanId: id, authAt: Date.now(), kind: 'confirm-binding', requestId: 'not-a-uuid'},
+            {humanId: id, authAt: Date.now(), kind: 'confirm-binding', requestId: 'not-a-uuid', keysDigest: kid},
+            {humanId: id, authAt: Date.now(), kind: 'confirm-binding', requestId: valid},
+            {humanId: id, authAt: Date.now(), kind: 'confirm-binding', requestId: valid, keysDigest: 'A'.repeat(42)},
+            {humanId: id, authAt: Date.now(), kind: 'confirm-binding', requestId: valid, keysDigest: 'A'.repeat(42) + '='},
             {humanId: id, authAt: Date.now(), kind: 'reject-key', requestId: 42},
             {humanId: id, authAt: Date.now(), kind: 'revoke-key', agentId: valid, kid: 'A'.repeat(42)},
             {humanId: id, authAt: Date.now(), kind: 'revoke-key', agentId: 'x', kid},

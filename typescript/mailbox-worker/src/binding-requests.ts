@@ -1,7 +1,7 @@
 import * as schema from './schema.ts';
 import type { AgentAuth } from './agent-tokens.ts';
 import { findKey, isCooling } from './agent-keys.ts';
-import { parseJws, verifyJws } from './jose.ts';
+import { base64url, parseJws, verifyJws } from './jose.ts';
 import { apiTime, epochSeconds, exactInt64, nowUtc } from './time.ts';
 import { atomic, type Database, type Env, type Transaction } from './database.ts';
 import { maxAgentsPerHuman } from './humans.ts';
@@ -41,6 +41,15 @@ export function bindingView(row: BindingRow, now: bigint): BindingRequestView {
     const status = row.status === 'pending' && row.expiresAt <= now ? 'expired' : row.status;
     return {requestId: row.requestId, agentId: row.accountId, human: 'github:' + row.targetSubject, kid: row.kid, status,
         createdAt: apiTime(row.createdAt)!, expiresAt: apiTime(row.expiresAt)!, decidedAt: apiTime(row.decidedAt)};
+}
+
+/**
+ * What the owner page shows and the confirmation re-checks: the SHA-256 (base64url) of the agent's live key IDs, sorted and joined by
+ * newlines, so a key added or revoked after the page was rendered refuses the confirmation instead of being adopted unseen.
+ */
+export async function liveKeysDigest(kids: string[]): Promise<string> {
+    const text = [...kids].sort().join('\n');
+    return base64url(new Uint8Array(await crypto.subtle.digest('SHA-256', new TextEncoder().encode(text))));
 }
 
 function conflict(reason: 'owned-agent' | 'cooling' | 'binding-pending'): never {
@@ -144,8 +153,9 @@ async function requestForHuman(tx: Transaction, human: OwnerHuman, requestId: st
 /**
  * Human-side confirmation, staged in the caller's transaction (the human row was re-read there). The guarded UPDATE keeps the
  * binding one-way, and the agent count is read in the same optimistic transaction, so concurrent confirmations cannot pass the limit.
+ * `keysDigest` is the live key set the owner was shown; any other set now is `keys-changed`, so no key is adopted unseen.
  */
-export async function confirmBindingRequest(tx: Transaction, human: OwnerHuman, requestId: string, at: bigint): Promise<OwnerDecision> {
+export async function confirmBindingRequest(tx: Transaction, human: OwnerHuman, requestId: string, keysDigest: string, at: bigint): Promise<OwnerDecision> {
     const row = await requestForHuman(tx, human, requestId);
     if (!row) return {ok: false, reason: 'not-found'};
     if (row.status !== 'pending') return {ok: false, reason: 'not-pending'};
@@ -155,6 +165,8 @@ export async function confirmBindingRequest(tx: Transaction, human: OwnerHuman, 
     if (owner.human_id !== null) return {ok: false, reason: 'already-owned'};
     const requesting = await findKey(tx.db, row.kid);
     if (!requesting || requesting.accountId !== row.accountId || requesting.revokedAt !== null) return {ok: false, reason: 'requesting-key-revoked'};
+    const live = await tx.db.prepare('SELECT kid FROM agent_keys WHERE account_id=? AND revoked_at IS NULL').bind(row.accountId).all<{kid: string}>();
+    if (await liveKeysDigest(live.results.map(key => key.kid)) !== keysDigest) return {ok: false, reason: 'keys-changed'};
     const owned = await tx.db.prepare('SELECT count(*) n FROM accounts WHERE human_id=?').bind(human.humanId).first<number>('n');
     if (owned === null) fail(503, 'storage');
     if (owned >= maxAgentsPerHuman) return {ok: false, reason: 'agent-limit'};

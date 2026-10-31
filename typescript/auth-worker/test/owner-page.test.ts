@@ -16,7 +16,7 @@ test("ownerPage_EscapesSelfReportedNameAndShowsFingerprints",async()=>{
   const requesting=kid(),live=kid(),label='<img src=x onerror=alert(1)>';
   const requestId=randomUUID(),agentId=randomUUID();
   const overview=base({bindingRequests:[{requestId,agentId,displayName:'<script>alert(1)</script>',requestingKid:requesting,
-    liveKeys:[{kid:live,label:null,createdAt:iso(now),lastUsedAt:null,coolingUntil:iso(now+3_600_000)}],createdAt:iso(now),expiresAt:iso(now+86_400_000)}],
+    liveKeys:[{kid:live,label:null,createdAt:iso(now),lastUsedAt:null,coolingUntil:iso(now+3_600_000)}],keysDigest:kid(),createdAt:iso(now),expiresAt:iso(now+86_400_000)}],
     agents:[{agentId:randomUUID(),displayName:null,keys:[{kid:kid(),label,createdAt:iso(now),lastUsedAt:null,coolingUntil:null}],keyRequests:[]}]});
   const tokens=new Map([["confirm-binding:"+requestId,"tok-confirm"],["reject-binding:"+requestId,"tok-reject"]]);
   const response=ownerPage(overview,human,tokens,null,now);
@@ -48,7 +48,7 @@ test("ownerPage_UnknownResult_Ignored",async()=>{
     assert.ok(!body.includes('role="status"'),"result "+JSON.stringify(result)+" must not render");
   }
   assert.ok((await html(ownerPage(base(),human,new Map(),"agent-limit",now))).includes(ownerResultText["agent-limit"]));
-  assert.equal(Object.keys(ownerResultText).length,13);
+  assert.equal(Object.keys(ownerResultText).length,14);
 });
 
 test("ownerPage_StaleSession_SaysSignInAgain",async()=>{
@@ -68,7 +68,7 @@ test("ownerPage_RecoveryRequest_LabelledUnendorsed",async()=>{
 test("ownerFormTokens_CoversEveryFormTheOverviewRenders",async()=>{
   const signingKey=randomBytes(32).toString("base64url");
   const requestId=randomUUID(),agentId=randomUUID(),keyId=kid(),keyRequestId=randomUUID();
-  const overview=base({bindingRequests:[{requestId,agentId:randomUUID(),displayName:null,requestingKid:kid(),liveKeys:[],createdAt:iso(now),expiresAt:iso(now+1)}],
+  const overview=base({bindingRequests:[{requestId,agentId:randomUUID(),displayName:null,requestingKid:kid(),liveKeys:[],keysDigest:kid(),createdAt:iso(now),expiresAt:iso(now+1)}],
     agents:[{agentId,displayName:"a",keys:[{kid:keyId,label:null,createdAt:iso(now),lastUsedAt:null,coolingUntil:null}],
       keyRequests:[{requestId:keyRequestId,kid:kid(),label:null,endorsedBy:keyId,createdAt:iso(now),expiresAt:iso(now+1)}]}]});
   const tokens=await ownerFormTokens(signingKey,human.humanId,overview,now);
