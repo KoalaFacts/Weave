@@ -143,69 +143,72 @@ async function call(mf:Miniflare,token:string,name:string,args:Record<string,unk
 }
 const text=(value:string)=>({parts:[{text:value}]});
 
-test("twoOwners_FullWorkflowOverMcp",{timeout:240_000},async()=>{
+test("twoOwners_FullWorkflowOverMcp",{timeout:240_000},async t=>{
   const storage=await mkdtemp(join(tmpdir(),"weave-auth-e2e-"));
-  let mf=new Miniflare(options(storage));
-  try{
-    await initializeDatabase(await mf.getD1Database("db",mailboxName),BigInt(Date.now())*10000n);
-    const tokenA=await connect(mf,8101,"Agent A1"),tokenB=await connect(mf,8102,"Agent B1");
-    const a=(await call(mf,tokenA,"get_my_profile")).id as string,b=(await call(mf,tokenB,"get_my_profile")).id as string;
-    assert.notEqual(a,b);
+  let mf=new Miniflare(options(storage)),disposed=false;
+  const dispose=async()=>{if(!disposed){disposed=true;await mf.dispose();}};
+  // An after hook also runs when the test times out, so workerd never outlives it.
+  // Windows can briefly hold workerd's files after disposal; removal retries.
+  t.after(async()=>{
+    try{await dispose();}
+    finally{await rm(storage,{recursive:true,force:true,maxRetries:10,retryDelay:200});}
+  });
+  await initializeDatabase(await mf.getD1Database("db",mailboxName),BigInt(Date.now())*10000n);
+  const tokenA=await connect(mf,8101,"Agent A1"),tokenB=await connect(mf,8102,"Agent B1");
+  const a=(await call(mf,tokenA,"get_my_profile")).id as string,b=(await call(mf,tokenB,"get_my_profile")).id as string;
+  assert.notEqual(a,b);
 
-    const publicA=randomUUID(),addressB=randomUUID();
-    await call(mf,tokenA,"ensure_my_address",{addressId:publicA,label:"e2e-agent-a",isPublic:true});
-    await call(mf,tokenB,"ensure_my_address",{addressId:addressB,label:"e2e-agent-b"});
-    const found=await call(mf,tokenB,"search_registry",{q:"e2e-agent-a"});
-    assert.ok(found.items.some((x:{addressId:string;accountId:string})=>x.addressId===publicA&&x.accountId===a),"B1 finds A1's public address");
+  const publicA=randomUUID(),addressB=randomUUID();
+  await call(mf,tokenA,"ensure_my_address",{addressId:publicA,label:"e2e-agent-a",isPublic:true});
+  await call(mf,tokenB,"ensure_my_address",{addressId:addressB,label:"e2e-agent-b"});
+  const found=await call(mf,tokenB,"search_registry",{q:"e2e-agent-a"});
+  assert.ok(found.items.some((x:{addressId:string;accountId:string})=>x.addressId===publicA&&x.accountId===a),"B1 finds A1's public address");
 
-    const requested=await call(mf,tokenB,"request_contact",{requesterAddressId:addressB,recipientAccountId:a,recipientAddressId:publicA,message:text("hello from B1")});
-    const incoming=(await call(mf,tokenA,"list_my_contact_requests")).items as {requestId:string;requesterAccountId:string;status:string;generation:string}[];
-    const pending=incoming.find(x=>x.requestId===requested.request.requestId);
-    assert.ok(pending,"A1 sees the request");
-    assert.equal(pending.requesterAccountId,b);
-    assert.equal(pending.status,"pending");
-    const accepted=await call(mf,tokenA,"decide_contact",{requestId:pending.requestId,requesterAccountId:b,expectedGeneration:pending.generation,status:"accepted"});
-    assert.equal(accepted.isConnected,true);
+  const requested=await call(mf,tokenB,"request_contact",{requesterAddressId:addressB,recipientAccountId:a,recipientAddressId:publicA,message:text("hello from B1")});
+  const incoming=(await call(mf,tokenA,"list_my_contact_requests")).items as {requestId:string;requesterAccountId:string;status:string;generation:string}[];
+  const pending=incoming.find(x=>x.requestId===requested.request.requestId);
+  assert.ok(pending,"A1 sees the request");
+  assert.equal(pending.requesterAccountId,b);
+  assert.equal(pending.status,"pending");
+  const accepted=await call(mf,tokenA,"decide_contact",{requestId:pending.requestId,requesterAccountId:b,expectedGeneration:pending.generation,status:"accepted"});
+  assert.equal(accepted.isConnected,true);
 
-    // Six messages alternate A1,B1,...; each receiver reads the inbox and acknowledges.
-    const sides=[{token:tokenA,id:a},{token:tokenB,id:b}];
-    const bodies:string[]=[];
-    for(let i=0;i<6;i++){
-      const sender=sides[i%2],receiver=sides[(i+1)%2],body="message "+i;
-      const receipt=await call(mf,sender.token,"send_message",{recipientAccountId:receiver.id,message:text(body),idempotencyKey:"e2e-"+i});
-      const inbox=(await call(mf,receiver.token,"list_my_inbox")).items as {senderAccountId:string;message?:{messageId:string;parts:{text:string}[]}}[];
-      const item=inbox.find(x=>x.message?.messageId===receipt.messageId);
-      assert.ok(item,"message "+i+" is in the receiver's inbox");
-      assert.equal(item.senderAccountId,sender.id);
-      bodies.push(item.message!.parts[0].text);
-      await call(mf,receiver.token,"ack_message",{messageId:receipt.messageId,senderAccountId:sender.id});
-      const after=(await call(mf,receiver.token,"list_my_inbox")).items as {message?:{messageId:string}}[];
-      assert.ok(!after.some(x=>x.message?.messageId===receipt.messageId),"an acknowledged message leaves the inbox");
-    }
-    assert.deepEqual(bodies,["message 0","message 1","message 2","message 3","message 4","message 5"]);
-
-    // Restart: dispose and recreate on the same persisted D1, KV and Durable Object state.
-    await mf.dispose();
-    mf=new Miniflare(options(storage));
-    assert.equal((await call(mf,tokenA,"get_my_profile")).id,a,"A1's token survives a restart");
-    assert.equal((await call(mf,tokenB,"get_my_profile")).id,b,"B1's token survives a restart");
-    const contacts=await call(mf,tokenA,"list_my_contacts");
-    assert.ok(contacts.items.some((x:{accountId:string;canSend:boolean})=>x.accountId===b&&x.canSend),"the accepted contact persisted");
-
-    // Revoking B's grant takes effect on B's very next call; A is unaffected.
-    const db=await mf.getD1Database("db",mailboxName);
-    const grant=await db.prepare("SELECT grant_id,human_id FROM client_grants WHERE account_id=? AND revoked_at IS NULL").bind(b).first<{grant_id:string;human_id:string}>();
-    assert.ok(grant,"B1 has a live grant");
-    const rpc=await mf.getWorker(rpcName);
-    const revoked=await rpc.fetch("https://rpc.internal/",{method:"POST",body:JSON.stringify({humanId:grant.human_id,grantId:grant.grant_id})});
-    assert.deepEqual(await revoked.json(),{ok:true});
-    const denied=await mcp(mf,tokenB,"list_my_inbox");
-    assert.equal(denied.status,401);
-    assert.match(denied.headers.get("www-authenticate")??"",/invalid_token/);
-    assert.equal((await call(mf,tokenA,"get_my_profile")).id,a,"A1 still works");
-    assert.ok(Array.isArray((await call(mf,tokenA,"list_my_inbox")).items));
-  }finally{
-    await mf.dispose();
-    await rm(storage,{recursive:true,force:true});
+  // Six messages alternate A1,B1,...; each receiver reads the inbox and acknowledges.
+  const sides=[{token:tokenA,id:a},{token:tokenB,id:b}];
+  const bodies:string[]=[];
+  for(let i=0;i<6;i++){
+    const sender=sides[i%2],receiver=sides[(i+1)%2],body="message "+i;
+    const receipt=await call(mf,sender.token,"send_message",{recipientAccountId:receiver.id,message:text(body),idempotencyKey:"e2e-"+i});
+    const inbox=(await call(mf,receiver.token,"list_my_inbox")).items as {senderAccountId:string;message?:{messageId:string;parts:{text:string}[]}}[];
+    const item=inbox.find(x=>x.message?.messageId===receipt.messageId);
+    assert.ok(item,"message "+i+" is in the receiver's inbox");
+    assert.equal(item.senderAccountId,sender.id);
+    bodies.push(item.message!.parts[0].text);
+    await call(mf,receiver.token,"ack_message",{messageId:receipt.messageId,senderAccountId:sender.id});
+    const after=(await call(mf,receiver.token,"list_my_inbox")).items as {message?:{messageId:string}}[];
+    assert.ok(!after.some(x=>x.message?.messageId===receipt.messageId),"an acknowledged message leaves the inbox");
   }
+  assert.deepEqual(bodies,["message 0","message 1","message 2","message 3","message 4","message 5"]);
+
+  // Restart: dispose and recreate on the same persisted D1, KV and Durable Object state.
+  await dispose();
+  mf=new Miniflare(options(storage));
+  disposed=false;
+  assert.equal((await call(mf,tokenA,"get_my_profile")).id,a,"A1's token survives a restart");
+  assert.equal((await call(mf,tokenB,"get_my_profile")).id,b,"B1's token survives a restart");
+  const contacts=await call(mf,tokenA,"list_my_contacts");
+  assert.ok(contacts.items.some((x:{accountId:string;canSend:boolean})=>x.accountId===b&&x.canSend),"the accepted contact persisted");
+
+  // Revoking B's grant takes effect on B's very next call; A is unaffected.
+  const db=await mf.getD1Database("db",mailboxName);
+  const grant=await db.prepare("SELECT grant_id,human_id FROM client_grants WHERE account_id=? AND revoked_at IS NULL").bind(b).first<{grant_id:string;human_id:string}>();
+  assert.ok(grant,"B1 has a live grant");
+  const rpc=await mf.getWorker(rpcName);
+  const revoked=await rpc.fetch("https://rpc.internal/",{method:"POST",body:JSON.stringify({humanId:grant.human_id,grantId:grant.grant_id})});
+  assert.deepEqual(await revoked.json(),{ok:true});
+  const denied=await mcp(mf,tokenB,"list_my_inbox");
+  assert.equal(denied.status,401);
+  assert.match(denied.headers.get("www-authenticate")??"",/invalid_token/);
+  assert.equal((await call(mf,tokenA,"get_my_profile")).id,a,"A1 still works");
+  assert.ok(Array.isArray((await call(mf,tokenA,"list_my_inbox")).items));
 });

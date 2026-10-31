@@ -37,7 +37,9 @@ not repeated here. The preceding slice is the
   A2A v1.0.0 Message (`ROLE_USER`, UUIDv7 `messageId`, `application/json`
   payload); the envelope `createdAt` is the UUIDv7 millisecond and `expiresAt`
   is 24 hours later. `Part.data` must be a JSON object, narrower than A2A, which
-  allows any JSON value. At most 8 parts and 64 KiB serialized.
+  allows any JSON value. At most 8 parts and 64 KiB serialized; a `data` object
+  nests at most 16 levels (the object itself is level 1), checked iteratively
+  before any write.
 - **Idempotency keys (MCP only).** `idempotencyKey` is per account, bound to the
   tool and the validated input, and kept 24 hours. A replay returns the
   *current* result for the original message or request, not a frozen copy;
@@ -46,7 +48,12 @@ not repeated here. The preceding slice is the
   accepted channel the MCP-only tool error is `not-connected`.
 - **Inbox.** `list_my_inbox` shows a parsed `message` and omits `bytes` only when
   `payloadEncoding` is `application/json`, the body has the Message shape and its
-  `messageId` equals the envelope's. Anything else keeps `bytes`.
+  `messageId` equals the envelope's. The body is parsed only if it nests at most
+  32 levels and holds at most 10 000 JSON values (a bracket-depth scan before
+  parsing, an iterative walk after) and every part is an object, so a peer's
+  deeply nested body cannot fail the recipient's inbox page. Anything else keeps
+  `bytes`. The parsed `message` is attached after server data is renamed to
+  account vocabulary, so it is returned exactly as the sender wrote it.
 - **`ensure_my_address` is create-keyed.** `isPublic` is decided at creation; to
   publish, create a public address with a new `addressId`.
 - **Agent Cards.** `publish_my_agent_card` attaches an A2A Agent Card subset to a
@@ -61,7 +68,12 @@ not repeated here. The preceding slice is the
   and issues no code. `HumanDirectory` gains `recordGrant` and `revokeGrant`.
   Every private MCP call requires the token's grant row to be unrevoked and to
   match account, human and client, so a revocation takes effect on the next call,
-  including with a refreshed token, which keeps its `grantId`.
+  including with a refreshed token, which keeps its `grantId`. The grant is a
+  single point read per call, checked before scope (a revoked token is 401 even
+  without the scope). Every write tool re-reads the grant inside its own
+  transaction, so a revocation committed between authorization and the write
+  stops it: the tool error is `grant-revoked` (HTTP 401 inside the tool result)
+  and nothing is written.
 - **RFC 7662 introspection mode refuses private tools.** An introspection response
   cannot carry a `grantId`, so that mode still validates tokens but never
   authorizes a private call. The remote pair example now needs grant-bearing
