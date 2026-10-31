@@ -36,6 +36,24 @@ test('signInHuman_DifferentIds_ReturnDifferentHumans', async () => {
     } finally { await h.close(); }
 });
 
+test('signInHuman_RegistrationDisabled_ExistingHumanSignsInButUnknownHumanIsNotCreated', async () => {
+    const h = await start();
+    try {
+        const open = environment(h), known = await humanId(open, '123');
+        const closed = environment(h, { REGISTRATION_ENABLED: 'false' });
+        // Closing registration must not lock out a previously registered human.
+        assert.deepEqual(await signInHuman(closed, github('123', 'alice-renamed')),
+            { ok: true, humanId: known });
+        // But external GitHub login alone must not bypass the same registration
+        // gate used for new agents and self-registered control accounts.
+        assert.deepEqual(await signInHuman(closed, github('456')),
+            { ok: false, reason: 'unavailable' });
+        assert.equal(await h.db.prepare('SELECT count(*) AS n FROM humans').first('n'), 1);
+        assert.equal(await h.db.prepare('SELECT display_login FROM humans WHERE human_id=?')
+            .bind(known).first('display_login'), 'alice-renamed');
+    } finally { await h.close(); }
+});
+
 test('signInHuman_ProviderCreatedAtChanged_FreezesHuman', async () => {
     const h = await start();
     try {
