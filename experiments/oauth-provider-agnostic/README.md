@@ -35,7 +35,7 @@ whose Git blob hashes are verified; CI imports the real checkout directly.
 
 | Experiment | Assertion |
 | --- | --- |
-| Two synthetic issuers | Same client and resource code work using different metadata/configuration; token contents are opaque to the client. |
+| Two synthetic issuers | Same client code logs in using different metadata/configuration and the resource introspects each token freshly; token contents are opaque to the client. Private calls are still refused (no Weave consent grant). |
 | Access-shaped `oauth:` token | The client retains it unchanged, but the current RFC 7662 ingress rejects it. This is a characterization, not an attempt to bypass Access or broaden bearer grammar. |
 | Forged Access header | A bare `Cf-Access-Jwt-Assertion` never grants access. |
 | External non-UUID subject | Current resource validation rejects it before account lookup. No guessed/email-based account linking. |
@@ -81,6 +81,13 @@ after fresh issuer, audience, scope, active-state and expiry checks. A non-UUID
 subject is rejected before any account lookup; there is no subject-to-account
 mapping, email fallback or link store. Cloudflare Access signed identity
 assertions are *not* RFC 7662 responses and are not accepted.
+
+Since onboarding slice 4 every private `/mcp` call also requires a live Weave
+consent grant named by the token (`props.grantId`), which only the first-party
+Service Binding authorization server records. An RFC 7662 response carries no
+such grant, so a fully valid introspected token is still refused with
+`401 invalid_token`; the tests above now characterize that refusal after the
+unchanged client's discovery, PKCE exchange and fresh introspection.
 
 ## RFC 8414 explicitly approved cross-origin endpoint interoperability
 

@@ -19,6 +19,7 @@ import { addAgentKey, listAgentKeys, revokeAgentKey } from './agent-keys.ts';
 import { cancelBindingRequest, createBindingRequest, getBindingRequest } from './binding-requests.ts';
 import { recoverAgentKey } from './recovery-codes.ts';
 import { ownerAction, ownerOverview, type OwnerAction, type OwnerActionResult, type OwnerOverview } from './owner-actions.ts';
+import { liveGrant, recordGrant, revokeGrant, type RecordGrantInput, type RecordGrantResult, type RevokeGrantInput, type RevokeGrantResult } from './client-grants.ts';
 import { putCard } from './cards';
 import { decide, requestContact, setBlocked } from './contacts';
 import { deleteContact, ownContacts } from './contact-links';
@@ -38,6 +39,8 @@ export class HumanDirectory extends WorkerEntrypoint<Env> {
     hasAgent(humanId: string, accountId: string): Promise<boolean> { return humanHasAgent(scopedEnv(this.env), humanId, accountId); }
     ownerOverview(humanId: string): Promise<OwnerOverview> { return ownerOverview(scopedEnv(this.env), humanId); }
     ownerAction(input: OwnerAction): Promise<OwnerActionResult> { return ownerAction(scopedEnv(this.env), input); }
+    recordGrant(input: RecordGrantInput): Promise<RecordGrantResult> { return recordGrant(scopedEnv(this.env), input); }
+    revokeGrant(input: RevokeGrantInput): Promise<RevokeGrantResult> { return revokeGrant(scopedEnv(this.env), input); }
 }
 
 export default {
@@ -83,8 +86,7 @@ export default {
                     tools:privateMcpTools,
                     scope:privateScope,
                     authorize:async scope=>{
-                        const access=await authorizeOAuth(cfg,request,scope,async accountId=>
-                            (await env.db.prepare('SELECT account_id FROM accounts WHERE account_id=?').bind(accountId).first('account_id'))===accountId,
+                        const access=await authorizeOAuth(cfg,request,scope,grantId=>atomic(env.db,tx=>liveGrant(tx,grantId)),
                             undefined,Date.now);
                         return access instanceof Response?access:access.accountId;
                     },

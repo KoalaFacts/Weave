@@ -137,6 +137,20 @@ export const recoveryCodes = sqliteTable("recovery_codes", {
     check("recovery_codes_use",sql`used_at IS NULL OR used_at>=created_at`)
 ]);
 
+// Mirror of each OAuth consent grant issued by the authorization server. Private /mcp calls require the row to be live.
+export const clientGrants = sqliteTable("client_grants", {
+    grant_id: text("grant_id").notNull().primaryKey(),
+    human_id: text("human_id").notNull().references(() => humans.human_id, {onDelete:"restrict"}),
+    account_id: text("account_id").notNull().references(() => accounts.account_id, {onDelete:"restrict"}),
+    client_id: text("client_id").notNull(),
+    created_at: exactInteger("created_at").notNull(),
+    revoked_at: exactInteger("revoked_at"),
+}, t => [
+    index("client_grants_owner").on(t.human_id, t.account_id),
+    check("client_grants_client_id",sql`length(client_id) BETWEEN 1 AND 2048`),
+    check("client_grants_revocation",sql`revoked_at IS NULL OR revoked_at>=created_at`)
+]);
+
 export const accountAddresses = sqliteTable("account_addresses", {
     address_id: text("address_id").notNull().primaryKey(),
     account_id: text("account_id").notNull().references(() => accounts.account_id, {onDelete:"restrict"}),

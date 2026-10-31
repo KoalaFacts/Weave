@@ -139,6 +139,9 @@ test('Cloudflare-style private token validation reaches real D1 owner-scoped MCP
             CLEANUP_MAX_MESSAGES:'0',CLEANUP_TIME_BUDGET_MS:'0'};
         const a=await h.participant(),b=await h.participant();
         const tokenA=a.accountId+':grantA:secretA',tokenB=b.accountId+':grantB:secretB';
+        // Each token's mirrored consent grant; the composition below reads it on every call.
+        const humanId=crypto.randomUUID(),grants=new Map([[crypto.randomUUID(),a.accountId],[crypto.randomUUID(),b.accountId]]);
+        const grantOf=(owner:string)=>[...grants].find(([,account])=>account===owner)![0];
         let revokedA=false,validated=0;
         const cfg=oauthConfiguration({
             OAUTH_ISSUER:'https://auth.example',OAUTH_RESOURCE:origin+'/mcp',
@@ -146,7 +149,7 @@ test('Cloudflare-style private token validation reaches real D1 owner-scoped MCP
                 assert.equal(resource,origin+'/mcp');validated++;
                 const owner=token===tokenA?a.accountId:token===tokenB?b.accountId:null;
                 if(!owner||owner===a.accountId&&revokedA)return null;
-                return {audience:resource,userId:owner,props:{accountId:owner},
+                return {audience:resource,userId:owner,props:{accountId:owner,humanId,grantId:grantOf(owner)},
                     expiresAt:Math.floor(Date.now()/1000)+120,
                     scope:['weave:addresses.read'],clientId:'verified-client'};
             }}
@@ -157,8 +160,10 @@ test('Cloudflare-style private token validation reaches real D1 owner-scoped MCP
                 body:JSON.stringify(rpc(name))});
             return remoteMcp(callerRequest,unused,{tools:privateMcpTools,scope:privateScope,
                 authorize:async scope=>{
-                    const access=await authorizeOAuth(cfg,callerRequest,scope,async account=>
-                        (await h.db.prepare('SELECT account_id FROM accounts WHERE account_id=?').bind(account).first('account_id'))===account);
+                    const access=await authorizeOAuth(cfg,callerRequest,scope,async grantId=>{
+                        const account=grants.get(grantId);
+                        return account===undefined?null:{accountId:account,humanId,clientId:'verified-client'};
+                    });
                     return access instanceof Response?access:access.accountId;
                 },
                 invoke:(owner,name,args)=>executePrivateMcp(env,origin,owner,name,args)

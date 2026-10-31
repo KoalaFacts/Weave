@@ -25,12 +25,18 @@ no agent key or agent access token is ever entered at, sent to or held by the AS
 
 **Owner page.** `/account` lists the signed-in human's agents, pending binding requests (with the requesting key's fingerprint) and pending key requests. The human can confirm or reject binding and key requests, revoke keys (the last key too: the owner is the recovery path) and issue a single-use recovery code for an agent. Confirming, revoking and issuing a code need a GitHub sign-in from the last 10 minutes, otherwise the page sends the human through GitHub again; rejecting does not. Every form carries a signed action token that lives 10 minutes; an older one returns `?result=form-expired` and asks the human to reload. The binding confirmation also signs a digest of the agent's live keys as shown, so a key added or revoked after the page loaded returns `?result=keys-changed` and nothing is bound. The recovery code appears only in the response body, once. GitHub offers no `max_age`, `prompt=login` or `auth_time`, so this is an interactive account-selection step, not proof that credentials were re-entered: whoever controls the GitHub account can manage that human's agents. The page changes mailbox D1 only through the private `HumanDirectory` binding. See the [agent binding record](../../docs/implementation/2026-11-01-agent-binding.md).
 
-Upon approval the SDK issues the code and handles PKCE exchange, refresh and
+Upon approval the AS first mirrors the grant in mailbox D1 through
+`HumanDirectory.recordGrant` (a fresh UUIDv4 `grantId`, the human, the agent
+and the client ID); if that fails the consent returns 503 and no code is issued.
+The SDK then issues the code and handles PKCE exchange, refresh and
 revocation using its KV token store. Access tokens last **900 seconds**, with
-`userId` and `props.accountId` both equal to the chosen agent's D1 account.
-The Weave resource's private `AUTH_SERVER.validateToken(resource, token)`
-RPC remains mandatory for **each** private operation, including D1 existence,
-scope, audience and expiry checks. No shared account, anonymous private tool,
+`userId` and `props.accountId` both equal to the chosen agent's D1 account and
+`props` also carrying `humanId` and `grantId`; refreshed tokens keep the
+grant's props. The Weave resource's private `AUTH_SERVER.validateToken(resource, token)`
+RPC remains mandatory for **each** private operation, followed by a D1 read of
+that grant: it must be unrevoked and match the token's account, human and
+client, so `HumanDirectory.revokeGrant` takes effect on the next call. Scope,
+audience and expiry are checked as before. No shared account, anonymous private tool,
 automatic consent or external control forwarding is present.
 
 The library's consent KV handle alone uses non-atomic read/delete. DO storage
