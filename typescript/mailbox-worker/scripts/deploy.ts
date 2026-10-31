@@ -99,19 +99,33 @@ export async function deploy({env=process.env,fetchImpl=fetch,run,root=directory
         catch{throw Error(label+' unavailable; no cloud mutation inferred.');}
         if(response.status!==200||
             (response.headers.get('Content-Type')??'').split(';')[0].trim().toLowerCase()!=='application/json'){
-            await response.body?.cancel().catch(()=>{});
+            // A malformed response may never settle its cancellation promise.
+            void response.body?.cancel().catch(()=>{});
             throw Error(label+' unavailable or not JSON (HTTP '+response.status+').');
         }
         let parsed:unknown;
         try{
             const reader=response.body?.getReader();if(!reader)throw Error('missing body');
             const decoder=new TextDecoder('utf-8',{fatal:true});let raw='',size=0;
+            // Fetch can return headers before its body stalls; use one total
+            // body deadline rather than a per-chunk timeout.
+            let timer:ReturnType<typeof setTimeout>|undefined;
+            const deadline=new Promise<null>(resolve=>{timer=setTimeout(()=>resolve(null),3500);});
             try{
-                while(true){const part=await reader.read();if(part.done)break;
+                while(true){
+                    const part=await Promise.race([reader.read(),deadline]);
+                    if(part===null)throw Error('stalled discovery response');
+                    if(part.done)break;
                     size+=part.value.byteLength;if(size>8192)throw Error('oversized body');
-                    raw+=decoder.decode(part.value,{stream:true});}
+                    raw+=decoder.decode(part.value,{stream:true});
+                }
                 raw+=decoder.decode();
-            }finally{await reader.cancel().catch(()=>{});reader.releaseLock();}
+            }finally{
+                if(timer!==undefined)clearTimeout(timer);
+                // Do not await untrusted source cleanup after failing closed.
+                void reader.cancel().catch(()=>{});
+                reader.releaseLock();
+            }
             parsed=JSON.parse(raw);
         }catch{throw Error(label+' returned invalid bounded JSON.');}
         if(!parsed||typeof parsed!=='object'||Array.isArray(parsed))
