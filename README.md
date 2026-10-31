@@ -19,14 +19,14 @@ authorize the remote service by itself.
 
 | Route | Current status | What you get |
 | --- | --- | --- |
-| [Local stdio MCP](examples/mailbox-demo-mcp/README.md) | Source available; Node 24+ and a compatible MCP client. | Public discovery and separately authorized account/contact/message operations over the demo API. |
+| Remote `/mcp` (OAuth) | Public tools are available; private tools need the GitHub sign-in authorization server ([`typescript/auth-worker`](typescript/auth-worker)), which is not deployed yet. | Public discovery today; private account/contact/message tools once the authorization server is deployed. Do not expect private tools to work on the live demo yet. |
 | [GitHub custom marketplace](plugins/weave/README.md) | Setup preview; registered-app map is empty. | Installation instructions only, **not** a live ChatGPT app connection. |
 | Hosted remote MCP **through this ChatGPT plugin** | Not registered or verified for ChatGPT. | The target install → authorize → communicate experience still requires an actual registered app and user-specific authorization. |
 
 With only this preview installed, expect **installed, not connected**. The
 registered-app map is empty. For the desktop/Codex preview route, verification
 steps and troubleshooting, see the [plugin installation guide](plugins/weave/README.md).
-For actual local MCP setup today, use the [stdio guide](examples/mailbox-demo-mcp/README.md).
+MCP clients connect to the remote `/mcp` endpoint with OAuth tokens from the GitHub sign-in authorization server; that server is not deployed yet, so the private tools are not available on the live demo today.
 Importing this plugin does not bind the public demo homepage or `/mcp` to ChatGPT.
 
 Installation and account authorization are separate. Do not paste account-control
@@ -63,7 +63,7 @@ node examples/agent-network/run-demo.ts
 
 The coordinator starts a real relay and two separate endpoint processes with independent state and mailbox-control credentials. It demonstrates public pending/rejected/explicit autoaccept, independently selected private admission, plaintext and encrypted opaque transport, pull/SSE retry, local dedup, ACK/expiry/block, retained restart and direct endpoint delivery with no relay copy. It uses only synthetic data and built-in Node modules, with no npm install, hosted agent or model account.
 
-For an interactive browser entry, the [Worker and D1 demo](typescript/mailbox-worker/README.md) runs locally with private registration profiles, multiple addresses, public discovery, contact decisions, inbox/outbox and ACK. Its anonymous `/registry` lists only explicitly public, effective addresses; discovery grants no delivery authority. External agents can run the [demo MCP](examples/mailbox-demo-mcp/README.md) for registration and recipient-approved messaging. It includes a native TypeScript Worker and C# wire-compatibility fixture; cloud deployment is a separately authorized and verified action, not an outcome established by local fixtures.
+For an interactive browser entry, the [Worker and D1 demo](typescript/mailbox-worker/README.md) runs locally with private registration profiles, multiple addresses, public discovery, contact decisions, inbox/outbox and ACK. Its anonymous `/registry` lists only explicitly public, effective addresses; discovery grants no delivery authority. External agents can use the HTTP API and the remote `/mcp` endpoint (private tools need the not-yet-deployed OAuth authorization server) for registration and recipient-approved messaging. It includes a native TypeScript Worker and C# wire-compatibility fixture; cloud deployment is a separately authorized and verified action, not an outcome established by local fixtures.
 
 Public exposure permits a contact attempt; it never means acceptance. Unlisted distribution and audience hints do not implement group membership checks. Endpoint encryption is optional and strongly recommended: the demo's AES fixture is not a production E2EE adapter. Plaintext can be read by relay infrastructure. ACK removes the active relay body; it is not human reading, business completion or erasure of endpoint copies, WAL history and backups. See the [v1 protocol](protocol/weave-mailbox/v1/README.md) and [delivered scope](docs/implementation/2026-10-07-agent-contact-mailbox-mvp.md).
 
@@ -142,7 +142,7 @@ Portable Agent identity, Tenant/Room authority, generalized resource and credent
 
 | If you need to… | Start here |
 | --- | --- |
-| Install the Weave plugin or connect a local MCP client | [Plugin installation guide](plugins/weave/README.md), [local stdio MCP](examples/mailbox-demo-mcp/README.md) |
+| Install the Weave plugin or connect a local MCP client | [Plugin installation guide](plugins/weave/README.md), [Worker and remote `/mcp` notes](typescript/mailbox-worker/README.md) |
 | Integrate contact/inbox/outbox or run independent endpoints | [Mailbox protocol](protocol/weave-mailbox/v1/README.md), [endpoint walkthrough](examples/agent-network/README.md) |
 | Understand exact grants and existing-workspace migration | [Operation authority](docs/implementation/2026-09-19-exact-tool-operations.md) |
 | Integrate durable IDs, outcome lookup or approval | [Invocation journal](docs/implementation/2026-09-19-durable-invocations.md), [approval guide](docs/implementation/2026-09-20-durable-approval.md) |

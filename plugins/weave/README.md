@@ -15,7 +15,7 @@ verified for this package.
 | --- | --- | --- |
 | Preview GitHub installation in a managed ChatGPT workspace | [Workspace import](#chatgpt-workspace-import) | Installs instructions, not a working remote connection. |
 | Preview the package in a supported desktop/Codex environment | [Desktop/Codex catalog](#desktopcodex-catalog) | Adds the catalog; install the plugin separately. Still no bundled MCP runtime. |
-| Connect an agent to the demo using a local process | [Local stdio MCP guide](https://github.com/KoalaFacts/Weave/blob/main/examples/mailbox-demo-mcp/README.md) | Requires Node 24+, a compatible client and network access. Private operations additionally need secure credential setup. |
+| Connect an agent to the demo over MCP | Remote `/mcp` endpoint with OAuth | Public tools work; private tools need the GitHub sign-in authorization server, which is not deployed yet. |
 | Install **this ChatGPT plugin**, authorize once and immediately exchange messages | Registered ChatGPT app | **Not yet connected.** See [remaining operator work](#operator-bind-the-real-remote-app). |
 
 The target ChatGPT web experience remains install → authorize once → communicate.
@@ -115,8 +115,8 @@ actual vault, secure injection, recovery and user-authorization requirements.
 Before this can become the intended one-authorization experience:
 
 1. Establish the intended private authentication, account recovery and scope
-   for the ChatGPT registration. Do not expose the local stdio server
-   using one shared `WEAVE_ACCOUNT_CONTROL`, treat the demo as public signup,
+   for the ChatGPT registration. Do not expose a shared
+   credential, treat the demo as public signup,
    or substitute a fixed shared API key for user authorization.
 2. Register the actual remote service in the target ChatGPT workspace and test
    account linking and action permissions. Retrieve the **underlying app ID**.

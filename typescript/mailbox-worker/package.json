@@ -9,15 +9,14 @@
   },
   "scripts": {
     "build": "esbuild src/index.ts src/recovery.ts --bundle --format=esm --platform=browser --outdir=dist --external:node:crypto --external:cloudflare:workers --loader:.html=text --loader:.json=text --loader:.md=text",
-    "test": "npm run test:marketplace && npm run test:pair && npm run build && node --require ./test/local-miniflare.ts --test --test-concurrency=1 test/*.test.ts",
+    "test": "npm run test:marketplace && npm run build && node --require ./test/local-miniflare.ts --test --test-concurrency=1 test/*.test.ts",
     "test:marketplace": "node ../../scripts/marketplace/marketplace.ts check && node --test ../../scripts/marketplace/marketplace.test.ts",
     "typecheck": "tsc --noEmit && tsc --project tsconfig.tools.json",
     "dev": "wrangler dev --local",
     "test:compat": "npm run build && node test/compat.ts",
     "test:browser": "npm run build && node --test --test-concurrency=1 test/browser/*.browser.ts",
     "benchmark:hash": "node test/hash-benchmark.ts",
-    "build:recovery": "esbuild src/recovery.ts --bundle --format=esm --platform=browser --outfile=dist/recovery.js --external:node:crypto --loader:.html=text --loader:.json=text --loader:.md=text",
-    "test:pair": "node --test ../../examples/mailbox-demo-pair/test/*.test.ts"
+    "build:recovery": "esbuild src/recovery.ts --bundle --format=esm --platform=browser --outfile=dist/recovery.js --external:node:crypto --loader:.html=text --loader:.json=text --loader:.md=text"
   },
   "dependencies": {
     "drizzle-orm": "0.45.4"

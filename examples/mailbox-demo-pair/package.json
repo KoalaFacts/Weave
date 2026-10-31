@@ -1,1 +1,0 @@
-{"name":"weave-demo-pair","private":true,"type":"module","license":"Apache-2.0","engines":{"node":">=24"},"scripts":{"test":"node --test test/*.test.ts","doctor":"node run.ts doctor"}}
