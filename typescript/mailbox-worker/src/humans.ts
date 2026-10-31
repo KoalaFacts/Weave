@@ -41,6 +41,10 @@ export async function signInHuman(env: Env, input: HumanSignIn): Promise<SignInR
             .bind(input.provider, input.subject).first<{ human_id: string; provider_created_at: string; display_login: string; frozen_at: string | null }>();
         const now = nowUtc().toString();
         if (!row) {
+            // Existing humans may sign in while registrations are closed, but
+            // a first-time GitHub login must not create a new human behind the
+            // operator's registration gate.
+            if (env.REGISTRATION_ENABLED !== 'true') return { ok: false as const, reason: 'unavailable' as const };
             const humanId = crypto.randomUUID();
             tx.writes.push(tx.db.prepare('INSERT INTO humans(human_id,provider,subject,provider_created_at,display_login,frozen_at,created_at,updated_at) VALUES(?,?,?,?,?,NULL,?,?)')
                 .bind(humanId, input.provider, input.subject, input.providerCreatedAt, input.displayLogin, now, now));
