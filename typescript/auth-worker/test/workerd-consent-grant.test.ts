@@ -633,3 +633,26 @@ test("consent_AgentCreationUnavailable_Returns503WithoutCode",{timeout:60_000},a
     assert.deepEqual(await agentsOf(mf,existingHumanId),[]);
   }finally{await stop(instance);}
 });
+
+test("consent_ChangedHumanSessionAfterDisplay_CannotApproveAsAnotherHuman",{timeout:60_000},async()=>{
+  // A consent page describes one signed-in human and their agents. A different
+  // valid human session in the same browser must not authorize that handle.
+  const {mf}=shared;
+  const auth=authorization();
+  const original=await signIn(mf,auth,23001);
+  const consent=await openConsent(mf,auth,original);
+  assert.match(consent.html,/Signed in as @human23001/);
+  const replacement=await signIn(mf,authorization(),23002);
+  assert.notEqual(original,replacement);
+  const switchedCookies=consent.cookie.replace(original,replacement);
+  assert.notEqual(switchedCookies,consent.cookie);
+  const response=await post(mf,switchedCookies,{
+    handle:consent.handle,decision:"approve",agent:"new",agentName:"Unexpected agent"
+  });
+  assert.equal(response.status,400,
+    "a consent displayed to human A must not grant a new agent to human B");
+  assert.equal(response.headers.get("location"),null,"no authorization code may be issued");
+  assert.deepEqual(await agentsOf(mf,await humanIdOf(mf,23001)),[]);
+  assert.deepEqual(await agentsOf(mf,await humanIdOf(mf,23002)),[],
+    "a switched session must not create an agent for a different human");
+});
