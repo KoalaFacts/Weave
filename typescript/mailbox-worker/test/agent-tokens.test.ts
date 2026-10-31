@@ -6,7 +6,6 @@ import { tmpdir } from 'node:os';
 import { join } from 'node:path';
 import { setTimeout as delay } from 'node:timers/promises';
 import { start } from './harness.ts';
-import { controlHarness } from './control.ts';
 import { agentKey, clientAssertion, dpopProof, nowSeconds, type TestKey } from './agent-key.ts';
 import { issueAgentToken } from '../src/agent-tokens.ts';
 import type { Env } from '../src/database.ts';
@@ -320,19 +319,6 @@ test('resource_ProofReusedWithinWindow_Accepted', async () => {
         const init = {headers: {Authorization: 'DPoP ' + accessToken, DPoP: dpopProof(cred.key, {method: 'GET', url, accessToken})}};
         assert.equal((await h.mf.dispatchFetch(url, init)).status, 200);
         assert.equal((await h.mf.dispatchFetch(url, init)).status, 200);
-    } finally { await h.close(); }
-});
-
-// Control-specific; deleted with the control.
-test('resource_AgentTokenWithControl_401', async () => {
-    const h = await start();
-    try {
-        const cred = await register(h), control = await controlHarness(h).register();
-        const accessToken = await issue(h, cred);
-        const url = origin + '/v1/addresses';
-        const response = await h.mf.dispatchFetch(url, {headers: {Authorization: 'DPoP ' + accessToken, DPoP: dpopProof(cred.key, {method: 'GET', url, accessToken}),
-            'X-Weave-Account-Control': control.control}});
-        assert.equal(response.status, 401);
     } finally { await h.close(); }
 });
 

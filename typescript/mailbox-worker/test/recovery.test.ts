@@ -4,7 +4,6 @@ import { mkdtemp,rm } from 'node:fs/promises';
 import { tmpdir } from 'node:os';
 import { join } from 'node:path';
 import { start,payload} from './harness.ts';
-import { controlHarness, secret } from './control.ts';
 async function connect(h,a,b){
     const p=payload('recovery introduction'),input={requestVersion:2,requestId:p.messageId,requesterAccountId:a.accountId,requesterAddressId:a.cardId,recipientAccountId:b.accountId,recipientAddressId:b.cardId,payload:p};
     const request=await h.ok('/v1/contacts/requests',a,'POST',input),decision={requesterAccountId:a.accountId,expectedGeneration:request.generation,status:'accepted',reply:null};
@@ -51,8 +50,6 @@ test('retained recovery bundle reads post-cutover writes and performs no rate, c
         assert.equal((await h.request('/v1/outbox/'+expired.messageId,a)).status,404);
         await h.ok('/v1/directory');await h.ok('/v1/contacts/cards');
         for(const [path,owner,method,body] of [['/v1/addresses',c,'POST',{}],['/v1/inbox/events',b,'GET'],['/v1/contacts/requests/'+next.input.requestId+'/decision',b,'POST',next.decision],['/v1/inbox/'+acked.messageId+'/ack',b,'POST',{senderAccountId:a.accountId}]])assert.equal((await h.request(path,owner,method,body)).status,503);
-        // Control-specific (an unknown control cannot register during recovery); a new key gets 503 instead, covered in agent-keys.test.ts. Deleted with the control.
-        assert.equal((await controlHarness(h).request('/v1/accounts',secret(),'POST',{})).status,401);
         assert.equal((await (await h.mf.getWorker()).scheduled({scheduledTime:Date.now(),cron:'*/5 * * * *'})).outcome,'ok');
         assert.deepEqual(await snapshot(h.db),before,'Recovery must neither restore frozen state nor write during read-only service.');
     }finally{try{await h?.close();}finally{await rm(persist,{recursive:true,force:true});}}

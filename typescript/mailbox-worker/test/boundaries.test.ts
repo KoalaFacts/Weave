@@ -1,10 +1,7 @@
 import assert from 'node:assert/strict';
 import { test } from 'node:test';
-import { readFile } from 'node:fs/promises';
 import { build } from 'esbuild';
-import { Miniflare, convertV4MiniflareOptions } from 'miniflare';
 import { start, payload } from './harness.ts';
-import { controlHarness } from './control.ts';
 async function module(path) {
     const built=await build({entryPoints:[path],bundle:true,write:false,format:'esm',platform:'node'});
     return import('data:text/javascript;base64,'+Buffer.from(built.outputFiles[0].text).toString('base64'));
@@ -26,37 +23,6 @@ test('activation predicate accepts exact start, rejects exact end and preserves 
     assert.equal(eligible(card,start-1n),false); assert.equal(eligible(card,start),true); assert.equal(eligible(card,end),false);
     assert.equal(ticks('2026-10-12T12:00:00.0000002Z')-start,1n);
     assert.throws(()=>ticks('2026-02-30T00:00:00Z'));
-});
-// Control-specific; deleted with the control.
-test('node crypto scheme matches C# test vectors in real workerd and unknown schemes fail closed',async()=>{
-    const h=controlHarness(await start());
-    try {
-        const vectors=JSON.parse(await readFile('test/control-vectors.json','utf8'));
-        for(const {control,digest} of vectors.filter(v=>/^[\x20-\x7e]+$/.test(v.control))) {
-            const a=await h.register({},control);
-            const row=await h.db.prepare("SELECT * FROM accounts WHERE account_id=?").bind(a.agentId).first();
-            const record={controlHashScheme:row.control_hash_scheme,controlHash:row.control_hash,controlHashParameters:JSON.parse(row.control_hash_parameters)};
-            assert.equal(record.controlHashScheme,'sha256-utf8-v1'); assert.equal(record.controlHash,digest);
-            assert.deepEqual(record.controlHashParameters,{algorithm:'SHA-256',inputEncoding:'utf-8',digestEncoding:'hex-lower',normalization:'none',salt:null,rounds:1});
-            assert.equal((await h.request('/v1/inbox',control)).status,200);
-            const wrongParameters={...record,controlHashParameters:{...record.controlHashParameters,rounds:2}};
-            await h.db.prepare("UPDATE accounts SET control_hash_parameters=? WHERE account_id=?").bind(JSON.stringify(wrongParameters.controlHashParameters),a.agentId).run();
-            assert.equal((await h.request('/v1/inbox',control)).status,401);
-            assert.equal((await h.request('/v1/accounts',control,'POST',{})).status,401);
-            await assert.rejects(h.db.prepare('UPDATE accounts SET control_hash_scheme=? WHERE account_id=?').bind('unknown',a.agentId).run(),/CHECK constraint/);
-            assert.equal((await h.request('/v1/inbox',control)).status,401);
-            assert.equal((await h.request('/v1/accounts',control,'POST',{})).status,401);
-            assert.equal(await h.db.prepare("SELECT count(*) n FROM accounts WHERE account_id=?").bind(a.agentId).first('n'),1);
-        }
-        const bundled=await build({stdin:{contents:"import {controlDigest} from './src/credentials.ts'; export default {async fetch(r) {return Response.json(await controlDigest(await r.json()));}}",resolveDir:process.cwd()},bundle:true,write:false,format:'esm',platform:'browser',external:['node:crypto']});
-        const worker=new Miniflare(convertV4MiniflareOptions({modules:true,script:bundled.outputFiles[0].text,compatibilityDate:'2026-07-01',compatibilityFlags:['nodejs_compat']}));
-        try {for(const {control,digest} of vectors) assert.equal(await (await worker.dispatchFetch('http://localhost/',{method:'POST',body:JSON.stringify(control)})).json(),digest);} finally {await worker.dispose();}
-        const {digestMatches,controlDigest}=await module('src/credentials.ts');
-        assert.equal(await controlDigest('synthetic credential','unknown'),null);
-        assert.equal(digestMatches('00'.repeat(32),'00'.repeat(32)),true);
-        for(const malformed of ['','ab','g'.repeat(64),null,{}]) assert.equal(digestMatches('00'.repeat(32),malformed),false);
-        assert.equal(digestMatches('00'.repeat(32),'01'.repeat(32)),false);
-    } finally {await h.close();}
 });
 test('replacement of a rejected contact frees its pending slot atomically at the 64-message boundary',async()=>{
     const h=await start();

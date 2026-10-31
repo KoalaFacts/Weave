@@ -29,9 +29,9 @@ test('vault-first guide gates account creation on real storage and injection cap
 });
 test('registration contract in the vault guide matches HTTP without creating a credential', () => {
     const contract = JSON.parse(readFileSync(new URL('../src/openapi.json', import.meta.url), 'utf8'));
-    const security = contract.components.securitySchemes.AccountControl;
-    assert.equal(security.in, 'header'); assert.equal(security.name, 'X-Weave-Account-Control');
-    assert.match(security.description, /at least 64 characters/);
+    const security = contract.components.securitySchemes.DPoPProof;
+    assert.equal(security.in, 'header'); assert.equal(security.name, 'DPoP');
+    assert.deepEqual(contract.paths['/v1/accounts'].post.security, [{DPoPProof: []}]);
     assert.deepEqual(contract.components.schemas.accountSubmission.required ?? [], []);
     assert.ok(contract.paths['/v1/accounts'].post);
     assert.match(guide, /POST \/v1\/accounts/); assert.match(guide, /JSON body `\{\}`/);

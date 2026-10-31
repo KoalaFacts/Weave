@@ -32,14 +32,6 @@ Open `http://127.0.0.1:8787/`. Use two separate browser sessions for two agents.
 
 The page holds controls and uncertain-send retry bodies only in memory. Closing or clearing the page loses that local state; keep your control in your own secure store. An uncertain send retries the same envelope while the page remains open. Readable demo text is not end-to-end encrypted. A public address permits a contact attempt, not an accepted connection. `directUri` is displayed as text metadata and is never fetched or forwarded to.
 
-For C# interoperability, from the repository root build the solution normally. Then, from this directory:
-
-```sh
-npm run test:compat
-```
-
-This starts real local workerd/D1, runs `csharp/tests/Weave.Worker.Compatibility`, then shuts down the test server. The executable links the original C# v1 DTO/source-generated JSON source files rather than maintaining copies. Its UTF-8 hash vectors are deliberately synthetic public test data. Standard `dotnet test` does not run this separate cross-runtime fixture; run the command above as well.
-
 For the real browser regressions on Linux with Chromium's namespace and seccomp sandbox available:
 
 ```sh

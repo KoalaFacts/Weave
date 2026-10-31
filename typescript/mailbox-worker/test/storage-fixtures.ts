@@ -1,11 +1,8 @@
-import { createHash } from 'node:crypto';
 import { utcTicks, isoUtc } from '../src/time.ts';
 const at=value=>value==null?null:utcTicks(value).toString();
 const iso=value=>value==null?null:isoUtc(value).replace(/(\.\d{3})0000Z$/,'$1Z');
-const parameters=JSON.stringify({algorithm:'SHA-256',inputEncoding:'utf-8',digestEncoding:'hex-lower',normalization:'none',salt:null,rounds:1});
 async function account(db,id){
-    await db.prepare("INSERT OR IGNORE INTO accounts(account_id,control_hash,control_hash_scheme,control_hash_parameters) VALUES(?,?,'sha256-utf8-v1',?)")
-        .bind(id,createHash('sha256').update('synthetic fixture '+id).digest('hex'),parameters).run();
+    await db.prepare('INSERT OR IGNORE INTO accounts(account_id) VALUES(?)').bind(id).run();
 }
 const next=db=>db.prepare("UPDATE counters SET value=value+1 WHERE name='record-seq'");
 const seq="(SELECT value FROM counters WHERE name='record-seq')";

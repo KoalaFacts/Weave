@@ -301,9 +301,11 @@ test("consent_NewAgent_IssuesTokenForThatAccount",{timeout:60_000},async()=>{
   const owned=await agentsOf(mf,humanId);
   assert.equal(owned.length,1,"exactly one agent is created for the signed-in human");
   const [accountId]=owned;
-  const row=await (await mailboxDb(mf)).prepare("SELECT human_id,display_name,control_hash FROM accounts WHERE account_id=?")
-    .bind(accountId).first<{human_id:string;display_name:string;control_hash:string|null}>();
-  assert.deepEqual(row,{human_id:humanId,display_name:"Claude Code",control_hash:null});
+  const db=await mailboxDb(mf);
+  const row=await db.prepare("SELECT human_id,display_name FROM accounts WHERE account_id=?")
+    .bind(accountId).first<{human_id:string;display_name:string}>();
+  assert.deepEqual(row,{human_id:humanId,display_name:"Claude Code"});
+  assert.equal(await db.prepare("SELECT count(*) n FROM agent_keys WHERE account_id=?").bind(accountId).first<number>("n"),0,"an owned agent is created without a key");
   assert.equal(await grantsFor(mf,accountId),1,"grant must be attributed to the created account UUID");
   await registerAtResource(mf,accountId);
   const owner=await identify(mf,token);

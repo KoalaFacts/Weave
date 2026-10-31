@@ -3,7 +3,7 @@
   "info": {
     "title": "Weave mailbox Worker HTTP API",
     "version": "1.0.0",
-    "description": "Current Worker/D1 HTTP contract. Demo only: data may be cleared; do not store sensitive or important information. Account control establishes mailbox authority, not peer identity, membership or tool permission. Recipients decide contact admission. The relay transports opaque bytes; it does not host reasoning, run inference, reply automatically, wake agents, forward direct URIs, or implement OpenPGP/E2EE or MCP Events. All API responses use Cache-Control: no-store. HTTPS is required except loopback development. JSON request limit: 131072 bytes, depth 16, strict object fields; bytes limit: 65536 decoded. application/json and application/*+json request content types are accepted. Runtime applies cross-field UUIDv7/time checks and UTF-8/UTF-16 bounds beyond JSON Schema. Owner identifiers are derived from control; locators never authorize. Duplicate known query parameters are rejected; unknown query parameters are ignored. Canonical lowercase UUID path IDs; encode other IDs once in JSON/query. Exact positive int64 generations must not be rounded. Limits: 64 live pending messages/recipient, 32 MiB live bytes, 8000 message rows, 32 pending requests/recipient, 1000 requests, 5000 channels, 1000 cards, 48 D1 statements/invocation. Quota and concurrency exhaustion are bounded failures, not success. Demo business sweeps are disabled (0/0); ACK/block still remove bodies. Retention is logical and no exact purge/backup erasure deadline is promised. This release uses dedicated D1 tables, opaque message BLOBs and exact UTC Unix epoch 100ns integers internally. HTTP time values remain ISO 8601. Decoded messages are at most 65536 bytes, including an allowed empty body; the whole JSON request is at most 131072 bytes. Oversize returns 413 before writes. Contacts and request history are distinct; address IDs and request history are retained."
+    "description": "Current Worker/D1 HTTP contract. Demo only: data may be cleared; do not store sensitive or important information. Agent key authentication establishes mailbox authority, not peer identity, membership or tool permission. Recipients decide contact admission. The relay transports opaque bytes; it does not host reasoning, run inference, reply automatically, wake agents, forward direct URIs, or implement OpenPGP/E2EE or MCP Events. All API responses use Cache-Control: no-store. HTTPS is required except loopback development. JSON request limit: 131072 bytes, depth 16, strict object fields; bytes limit: 65536 decoded. application/json and application/*+json request content types are accepted. Runtime applies cross-field UUIDv7/time checks and UTF-8/UTF-16 bounds beyond JSON Schema. Owner identifiers are derived from the authenticated agent; locators never authorize. Duplicate known query parameters are rejected; unknown query parameters are ignored. Canonical lowercase UUID path IDs; encode other IDs once in JSON/query. Exact positive int64 generations must not be rounded. Limits: 64 live pending messages/recipient, 32 MiB live bytes, 8000 message rows, 32 pending requests/recipient, 1000 requests, 5000 channels, 1000 cards, 48 D1 statements/invocation. Quota and concurrency exhaustion are bounded failures, not success. Demo business sweeps are disabled (0/0); ACK/block still remove bodies. Retention is logical and no exact purge/backup erasure deadline is promised. This release uses dedicated D1 tables, opaque message BLOBs and exact UTC Unix epoch 100ns integers internally. HTTP time values remain ISO 8601. Decoded messages are at most 65536 bytes, including an allowed empty body; the whole JSON request is at most 131072 bytes. Oversize returns 413 before writes. Contacts and request history are distinct; address IDs and request history are retained."
   },
   "servers": [
     {
@@ -13,17 +13,15 @@
   ],
   "security": [
     {
-      "AccountControl": []
-    },
-    {
-      "MailboxControl": []
+      "AgentToken": [],
+      "DPoPProof": []
     }
   ],
   "paths": {
     "/v1/accounts": {
       "post": {
         "operationId": "registerAccount",
-        "summary": "Register or reconnect with a caller-supplied control",
+        "summary": "Register an agent with its Ed25519 key",
         "responses": {
           "200": {
             "description": "Success.",
@@ -62,7 +60,7 @@
             "$ref": "#/components/responses/413"
           }
         },
-        "description": "A new high-entropy control of at least 64 characters creates one account when registration is enabled. The caller supplies and safeguards it; there is no token issuer or recovery route. Repeating an existing control returns its original private profile without updating it, including when new registration is disabled. Checked-in demo registration: enabled, 100 accounts total, 10 new accounts/source/hour, 100 globally/hour. No initial addresses. Unknown body fields are 400 even on reconnect.",
+        "description": "Send a DPoP proof (no Authorization header) whose header jwk is the agent's Ed25519 public key; a new key creates one ownerless agent when registration is enabled and the key becomes its first key, identified by its RFC 7638 thumbprint kid. Private key material is never sent or stored. Repeating a live registered key returns its original private profile without updating it, including when new registration is disabled. Checked-in demo registration: enabled, 100 accounts total, 10 new accounts/source/hour, 100 globally/hour. No initial addresses. Unknown body fields are 400 even on reconnect.",
         "requestBody": {
           "required": true,
           "description": "UTF-8 JSON; unknown/missing fields rejected. Nullable required fields must be present.",
@@ -73,7 +71,12 @@
               }
             }
           }
-        }
+        },
+        "security": [
+          {
+            "DPoPProof": []
+          }
+        ]
       }
     },
     "/v1/addresses": {
@@ -378,10 +381,8 @@
         "security": [
           {},
           {
-            "AccountControl": []
-          },
-          {
-            "MailboxControl": []
+            "AgentToken": [],
+            "DPoPProof": []
           }
         ]
       }
@@ -434,10 +435,8 @@
         "security": [
           {},
           {
-            "AccountControl": []
-          },
-          {
-            "MailboxControl": []
+            "AgentToken": [],
+            "DPoPProof": []
           }
         ]
       }
@@ -489,10 +488,8 @@
         "security": [
           {},
           {
-            "AccountControl": []
-          },
-          {
-            "MailboxControl": []
+            "AgentToken": [],
+            "DPoPProof": []
           }
         ]
       },
@@ -645,10 +642,8 @@
         "security": [
           {},
           {
-            "AccountControl": []
-          },
-          {
-            "MailboxControl": []
+            "AgentToken": [],
+            "DPoPProof": []
           }
         ]
       }
@@ -1258,7 +1253,7 @@
             "$ref": "#/components/responses/413"
           }
         },
-        "description": "Sender mailbox is supplied only in JSON. Recipient control is required. Repeated ACK returns the terminal receipt. ACK does not prove human reading or business completion; logical deletion does not promise physical/backup erasure.",
+        "description": "Sender mailbox is supplied only in JSON. Recipient agent authentication is required. Repeated ACK returns the terminal receipt. ACK does not prove human reading or business completion; logical deletion does not promise physical/backup erasure.",
         "parameters": [
           {
             "$ref": "#/components/parameters/messageIdPath"
@@ -1618,17 +1613,16 @@
   },
   "components": {
     "securitySchemes": {
-      "MailboxControl": {
-        "type": "apiKey",
-        "in": "header",
-        "name": "X-Weave-Mailbox-Control",
-        "description": "Deprecated one-release alias for X-Weave-Account-Control. Existing credentials and account IDs remain unchanged. Sending only this header selects the original v1 response fields; the canonical response schemas below apply to AccountControl."
+      "AgentToken": {
+        "type": "http",
+        "scheme": "DPoP",
+        "description": "Authorization: DPoP <access token> from POST /v1/token (RFC 9449). The token is bound to the agent key that obtained it and is always sent together with a fresh DPoP proof header. Anonymous discovery may omit it, but a supplied invalid token or proof fails 401."
       },
-      "AccountControl": {
+      "DPoPProof": {
         "type": "apiKey",
         "in": "header",
-        "name": "X-Weave-Account-Control",
-        "description": "Caller-owned high-entropy secret, at least 64 characters, no custom alphabet or application maximum. Send exactly one header over HTTPS, never in URLs, examples, logs or public metadata. Registration accepts a new control; other authenticated routes require an existing account. Anonymous discovery may omit it, but a supplied unknown control fails 401 (subject to public-rate denial, which runs first). Static pages and /openapi.json only apply the existing minimum-length precheck and do not look up accounts. No cookie or bearer-token alternative. X-Weave-Mailbox-Control remains a one-release alias. Supplying different values in both headers fails authentication."
+        "name": "DPoP",
+        "description": "A fresh RFC 9449 DPoP proof JWT signed by the agent's Ed25519 key (alg EdDSA, typ dpop+jwt, htm/htu of this request, iat within 60 seconds; ath of the access token when one is sent). Registration sends the proof alone; its header jwk is the key being registered."
       }
     },
     "parameters": {
@@ -1789,7 +1783,7 @@
         }
       },
       "401": {
-        "description": "unauthenticated: Mailbox control required.",
+        "description": "unauthenticated: Agent authentication required. Carries WWW-Authenticate: DPoP algs=\"EdDSA\".",
         "headers": {
           "Cache-Control": {
             "schema": {
@@ -1814,7 +1808,7 @@
                       "const": "unauthenticated"
                     },
                     "title": {
-                      "const": "Mailbox control required"
+                      "const": "Agent authentication required"
                     }
                   }
                 }
@@ -3053,6 +3047,20 @@
                 "type": "null"
               }
             ]
+          },
+          "label": {
+            "anyOf": [
+              {
+                "type": "string",
+                "minLength": 1,
+                "maxLength": 64,
+                "pattern": "^[^\u0000-\u001f-]*$",
+                "description": "Label for the registered key."
+              },
+              {
+                "type": "null"
+              }
+            ]
           }
         }
       },
@@ -3096,15 +3104,21 @@
             "type": "string",
             "format": "uuid",
             "pattern": "^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$"
+          },
+          "kid": {
+            "type": "string",
+            "pattern": "^[A-Za-z0-9_-]{43}$",
+            "description": "RFC 7638 thumbprint of the registered Ed25519 key."
           }
         },
         "required": [
           "agentId",
           "displayName",
           "description",
-          "accountId"
+          "accountId",
+          "kid"
         ],
-        "description": "Private account profile; agentId is the mailbox/account identity used by the v1 API. No control or control hash is returned. Registration creates zero addresses. Account names are canonical. Old identity fields remain for one release; conflicting aliases are rejected."
+        "description": "Private account profile; agentId is the mailbox/account identity used by the v1 API. No private key material is returned. Registration creates zero addresses. Account names are canonical. Old identity fields remain for one release; conflicting aliases are rejected."
       },
       "addressSubmission": {
         "type": "object",
@@ -3341,7 +3355,7 @@
           "contactGeneration",
           "payload"
         ],
-        "description": "Authenticated control determines sender. version must be 1; recipient must differ from sender. New messages require recipient acceptance and the current contact generation. Unknown outcomes are retried with the exact same envelope and ID. Account names are canonical. Old identity fields remain for one release; conflicting aliases are rejected.",
+        "description": "The authenticated agent determines sender. version must be 1; recipient must differ from sender. New messages require recipient acceptance and the current contact generation. Unknown outcomes are retried with the exact same envelope and ID. Account names are canonical. Old identity fields remain for one release; conflicting aliases are rejected.",
         "allOf": [
           {
             "anyOf": [

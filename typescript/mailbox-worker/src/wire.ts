@@ -23,24 +23,18 @@ export function parse(text: string): any {
         return value;
     });
 }
-export function json(value: unknown, status = 200, legacy = false): Response {
-    return new Response(stringify(accountNames(value,legacy)), { status, headers: { 'Content-Type': status >= 400 ? 'application/problem+json' : 'application/json', 'Cache-Control': 'no-store', 'Pragma': 'no-cache' } });
+export function json(value: unknown, status = 200): Response {
+    return new Response(stringify(accountNames(value)), { status, headers: { 'Content-Type': status >= 400 ? 'application/problem+json' : 'application/json', 'Cache-Control': 'no-store', 'Pragma': 'no-cache' } });
 }
 const identityNames:Record<string,string>={agentId:'accountId',mailboxId:'accountId',ownerMailboxId:'ownerAccountId',senderMailboxId:'senderAccountId',recipientMailboxId:'recipientAccountId',requesterMailboxId:'requesterAccountId',peerMailboxId:'peerAccountId'};
-export function legacyResponse(request:Request):boolean {
-    return request.headers.has('X-Weave-Mailbox-Control')&&!request.headers.has('X-Weave-Account-Control');
-}
-export function accountNames(value:any,legacy=false):any {
-    if(Array.isArray(value))return value.map(child=>accountNames(child,legacy));
+export function accountNames(value:any):any {
+    if(Array.isArray(value))return value.map(child=>accountNames(child));
     if(value&&typeof value==='object'){
         const result:Record<string,any>={};
-        const summary = ('requestVersion' in value) && ('requesterMailboxId' in value);
-        const envelope = ('payload' in value) && ('recipientMailboxId' in value) && value.version === 2;
         for(const [key,child] of Object.entries(value)){
-            if(legacy&&(summary&&['requestVersion','requesterAddressId','recipientAddressId'].includes(key)||envelope&&key==='connectionToken'))continue;
-            result[key]=legacy&&envelope&&key==='version'?1:accountNames(child,legacy);
+            result[key]=accountNames(child);
             const canonical=key==='isBlockedByMailbox'?'isBlockedByAccount':identityNames[key];
-            if(canonical&&!legacy)result[canonical]=child;
+            if(canonical)result[canonical]=child;
         }
         return result;
     }
@@ -48,7 +42,7 @@ export function accountNames(value:any,legacy=false):any {
 }
 export function problem(error: unknown): Response {
     const p = error instanceof Problem ? error : new Problem(503, 'storage');
-    const titles: Record<string,string> = { invalid: 'Invalid request', unauthenticated: 'Account control required', unavailable: 'Resource unavailable', conflict: 'State conflict', expired: 'Expired', capacity: 'Capacity reached', tooLarge: 'Request too large', storage: 'Storage unavailable', maintenance:'Maintenance in progress' };
+    const titles: Record<string,string> = { invalid: 'Invalid request', unauthenticated: 'Agent authentication required', unavailable: 'Resource unavailable', conflict: 'State conflict', expired: 'Expired', capacity: 'Capacity reached', tooLarge: 'Request too large', storage: 'Storage unavailable', maintenance:'Maintenance in progress' };
     const response = json({ status: p.status, title: titles[p.code], code: p.code, ...(p.detail ?? {}) }, p.status);
     if (p.retryAfter !== undefined) response.headers.set('Retry-After', String(p.retryAfter));
     if (p.code === 'unauthenticated') response.headers.set('WWW-Authenticate', 'DPoP algs="EdDSA"');
@@ -86,13 +80,6 @@ export async function body(request: Request): Promise<any> {
 }
 export async function hash(value: string): Promise<string> {
     return Array.from(new Uint8Array(await crypto.subtle.digest('SHA-256', enc.encode(value))), b => b.toString(16).padStart(2,'0')).join('');
-}
-export function control(request: Request): string | null {
-    const canonical=request.headers.get('X-Weave-Account-Control'),legacy=request.headers.get('X-Weave-Mailbox-Control');
-    if(canonical!==null&&legacy!==null&&canonical!==legacy)fail(401,'unauthenticated');
-    const value = canonical??legacy;
-    if (value !== null && (value.length < 64)) fail(401, 'unauthenticated');
-    return value;
 }
 export function identityQuery(url:URL,canonical:string,legacy:string):string {
     const a=query(url,canonical),b=query(url,legacy);

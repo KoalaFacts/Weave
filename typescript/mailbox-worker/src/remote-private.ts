@@ -22,14 +22,14 @@ const validGeneration=(raw:unknown):bigint=>{
         invalidField('generation','must be the decimal generation string returned by the contact operation, e.g. "1"');
     return BigInt(raw);
 };
-/** All tool result shapes are sanitized recursively; mailbox channel tokens and
- * credential fields must not escape through a model-visible tool response.
+/** All tool result shapes are sanitized recursively; mailbox channel tokens
+ * must not escape through a model-visible tool response.
  */
-export function withoutControl(value:unknown):unknown {
-    if(Array.isArray(value))return value.map(withoutControl);
+export function withoutSecrets(value:unknown):unknown {
+    if(Array.isArray(value))return value.map(withoutSecrets);
     if(!record(value))return value;
-    return Object.fromEntries(Object.entries(value).filter(([key])=> !['connectionToken','controlHash','controlHashParameters','controlHashScheme'].includes(key))
-        .map(([key,child])=>[key,withoutControl(child)]));
+    return Object.fromEntries(Object.entries(value).filter(([key])=>key!=='connectionToken')
+        .map(([key,child])=>[key,withoutSecrets(child)]));
 }
 function parameters(args:Record<string,unknown>,allowed:string[],required:string[]=[]):void {
     const unknown=Object.keys(args).find(key=>!allowed.includes(key));
@@ -64,11 +64,11 @@ export async function executePrivateMcp(env:Env,origin:string,accountId:string,n
             pagination(target,args);
             const data=await atomic(env.db,tx=>name==='list_my_addresses'?ownedAddresses(tx,accountId,target):
                 name==='list_my_contacts'?ownContacts(tx,accountId,target):read(tx,target,accountId));
-            return json(withoutControl(data));
+            return json(withoutSecrets(data));
         }
         if(name==='get_my_channel'){
             parameters(args,['peerAccountId'],['peerAccountId']);identity(args.peerAccountId);target.pathname='/v1/contacts/channel';target.searchParams.set('peerAccountId',args.peerAccountId);
-            return json(withoutControl(await atomic(env.db,tx=>read(tx,target,accountId))));
+            return json(withoutSecrets(await atomic(env.db,tx=>read(tx,target,accountId))));
         }
         // Validate all shapes before running bounded cleanup or any state change.
         if(name==='ensure_my_address'){
@@ -76,7 +76,7 @@ export async function executePrivateMcp(env:Env,origin:string,accountId:string,n
             checkUuid(args.addressId,'addressId');
             if(args.label!==undefined&&typeof args.label!=='string')invalidField('label','must be a string');
             // Private by default; publishing an address requires an explicit separate action.
-            return json(withoutControl(await mutateAddress(env,accountId,null,{label:args.label??null,isPublic:false},
+            return json(withoutSecrets(await mutateAddress(env,accountId,null,{label:args.label??null,isPublic:false},
                 origin,false,args.addressId as string)));
         }
         if(name==='request_contact'){
@@ -89,7 +89,7 @@ export async function executePrivateMcp(env:Env,origin:string,accountId:string,n
             // non-first validation retains idempotent replay of old committed IDs.
             validatePayload(args.payload);
             await sweep(env);
-            return json(withoutControl(await atomic(env.db,tx=>requestContact(tx,accountId,{...args,requestId,requestVersion:2,requesterAccountId:accountId}))));
+            return json(withoutSecrets(await atomic(env.db,tx=>requestContact(tx,accountId,{...args,requestId,requestVersion:2,requesterAccountId:accountId}))));
         }
         if(name==='decide_contact'){
             parameters(args,['requestId','requesterAccountId','expectedGeneration','status','reply'],['requestId','requesterAccountId','expectedGeneration','status']);
@@ -101,7 +101,7 @@ export async function executePrivateMcp(env:Env,origin:string,accountId:string,n
                 validatePayload(args.reply);
             }
             await sweep(env);
-            return json(withoutControl(await atomic(env.db,tx=>decide(tx,accountId,args.requestId as string,
+            return json(withoutSecrets(await atomic(env.db,tx=>decide(tx,accountId,args.requestId as string,
                 {requesterMailboxId:args.requesterAccountId,expectedGeneration,status:args.status,reply:args.reply??null}))));
         }
         if(name==='send_message'){
@@ -114,14 +114,14 @@ export async function executePrivateMcp(env:Env,origin:string,accountId:string,n
             await sweep(env);
             // Original tokens for retained IDs, current tokens for new sends; all
             // resolved in the guarded transaction and never exposed to the model.
-            return json(withoutControl(await atomic(env.db,tx=>sendWithResolvedConnection(tx,accountId,
+            return json(withoutSecrets(await atomic(env.db,tx=>sendWithResolvedConnection(tx,accountId,
                 args.recipientAccountId as string,contactGeneration,args.payload))));
         }
         if(name==='ack_message'){
             parameters(args,['messageId','senderAccountId'],['messageId','senderAccountId']);
             checkUuid(args.messageId,'messageId');checkUuid(args.senderAccountId,'senderAccountId');
             await sweep(env);
-            return json(withoutControl(await atomic(env.db,tx=>ack(tx,accountId,args.messageId as string,{senderMailboxId:args.senderAccountId}))));
+            return json(withoutSecrets(await atomic(env.db,tx=>ack(tx,accountId,args.messageId as string,{senderMailboxId:args.senderAccountId}))));
         }
         fail(404,'unavailable');
     }catch(error){return problem(error);}

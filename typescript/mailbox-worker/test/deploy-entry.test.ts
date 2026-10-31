@@ -12,7 +12,7 @@ test('explicit publish branch keeps main ancestry and existing verification befo
     assert.equal((workflow.match(/node scripts\/verify-agent-entry\.ts/g)||[]).length,2);
     assert.match(workflow,/github\.event_name == 'push' && github\.ref == 'refs\/heads\/publish\/demo'/);
     assert.match(workflow,/environment: production/);
-    assert.match(workflow,/npm test/);assert.match(workflow,/npm run test:compat/);
+    assert.match(workflow,/npm test/);
 });
 test('manual deployment retains maintain choice while publish branch requires completed-only',()=>{
     const workflow=readFileSync(path,'utf8');

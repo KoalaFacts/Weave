@@ -23,20 +23,12 @@ export const humans = sqliteTable("humans", {
 export const accounts = sqliteTable("accounts", {
     account_id: text("account_id").notNull().primaryKey(),
     human_id: text("human_id").references(() => humans.human_id, {onDelete:"restrict"}),
-    control_hash: text("control_hash"),
-    control_hash_scheme: text("control_hash_scheme"),
-    control_hash_parameters: text("control_hash_parameters"),
     display_name: text("display_name"),
     description: text("description"),
     created_at: exactInteger("created_at"),
     updated_at: exactInteger("updated_at"),
 }, t => [
-    uniqueIndex("accounts_control_hash").on(t.control_hash),
-    index("accounts_human").on(t.human_id, t.created_at),
-    check("accounts_control_all_or_none",sql`(control_hash IS NULL AND control_hash_scheme IS NULL AND control_hash_parameters IS NULL) OR (control_hash IS NOT NULL AND control_hash_scheme IS NOT NULL AND control_hash_parameters IS NOT NULL)`),
-    check("accounts_control_digest",sql`length(control_hash)=64 AND control_hash NOT GLOB '*[^0-9a-f]*'`),
-    check("accounts_control_scheme",sql`control_hash_scheme='sha256-utf8-v1'`),
-    check("accounts_control_parameters",sql`json_valid(control_hash_parameters)`)
+    index("accounts_human").on(t.human_id, t.created_at)
 ]);
 
 export const agentKeys = sqliteTable("agent_keys", {

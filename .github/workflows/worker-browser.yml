@@ -32,7 +32,6 @@ jobs:
         with:
           node-version: '24'
           package-manager-cache: false
-      - uses: ./.github/actions/setup-dotnet
       - name: Install locked Worker dependencies
         run: npm ci --ignore-scripts --no-audit --no-fund
       - name: Check Worker types, API, D1 and MCP
@@ -40,13 +39,6 @@ jobs:
           npm run typecheck
           npm test
           npm audit --audit-level=high
-      - name: Build original C# wire compatibility fixture
-        working-directory: .
-        run: |
-          dotnet restore csharp/tests/Weave.Worker.Compatibility/Weave.Worker.Compatibility.csproj --locked-mode
-          dotnet build csharp/tests/Weave.Worker.Compatibility/Weave.Worker.Compatibility.csproj --no-restore -c Release
-      - name: Exercise C# against local Worker HTTP
-        run: npm run test:compat
       - name: Install locked Playwright Chromium and Linux dependencies
         run: npx --no-install playwright install --with-deps --no-shell chromium
       - name: Prepare the managed Worker browser sandbox

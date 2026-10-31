@@ -54,16 +54,10 @@ jobs:
           WEAVE_RELEASE_FIRST_PARTY_OAUTH: ${{ inputs.enable_first_party_oauth }}
       - run: npm ci --ignore-scripts
         working-directory: typescript/mailbox-worker
-      - uses: ./.github/actions/setup-dotnet
       - run: |
           npm run typecheck
           npm test
           npm audit --audit-level=high
-        working-directory: typescript/mailbox-worker
-      - run: |
-          dotnet restore csharp/tests/Weave.Worker.Compatibility/Weave.Worker.Compatibility.csproj --locked-mode
-          dotnet build csharp/tests/Weave.Worker.Compatibility/Weave.Worker.Compatibility.csproj --no-restore -c Release
-      - run: npm run test:compat
         working-directory: typescript/mailbox-worker
   deploy-repository:
     needs: verify

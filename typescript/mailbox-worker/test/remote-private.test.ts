@@ -7,7 +7,7 @@ import {build} from 'esbuild';
 // bundled production module instead of relying on Node's extensionless ESM resolution.
 const built=await build({entryPoints:['src/remote-private.ts'],bundle:true,write:false,platform:'node',format:'esm',logLevel:'silent'});
 const bundle='data:text/javascript;base64,'+Buffer.from(built.outputFiles[0].contents).toString('base64');
-const {privateScope,privateMcpTools,withoutControl,executePrivateMcp}=await import(bundle) as typeof import('../src/remote-private.ts');
+const {privateScope,privateMcpTools,withoutSecrets,executePrivateMcp}=await import(bundle) as typeof import('../src/remote-private.ts');
 import {start,payload} from './harness.ts';
 import type {Env} from '../src/database.ts';
 
@@ -49,8 +49,8 @@ test('private route receives only the introspected owner and required scope, nev
     assert.deepEqual(JSON.parse((await answer.json()).result.content[0].text),{items:[]});
 });
 test('model-visible result strips connection tokens recursively',()=>{
-    const item={items:[{accountId:'peer',connectionToken:'SECRET',nested:{controlHash:'HASH',generation:2n}}]};
-    assert.deepEqual(withoutControl(item),{items:[{accountId:'peer',nested:{generation:2n}}]});
+    const item={items:[{accountId:'peer',connectionToken:'SECRET',nested:{connectionToken:'NESTED',generation:2n}}]};
+    assert.deepEqual(withoutSecrets(item),{items:[{accountId:'peer',nested:{generation:2n}}]});
 });
 test('real D1 account-scoped contact, message and ACK use server-side channel tokens',async()=>{
     const h=await start();

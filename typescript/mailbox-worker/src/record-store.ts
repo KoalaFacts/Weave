@@ -54,7 +54,7 @@ export class RecordStore {
         switch(kind){
         case 'account':{
             const r=await this.select(schema.accounts,eq(schema.accounts.account_id,id));
-            return r&&{accountId:r.account_id,humanId:r.human_id,controlHash:r.control_hash,controlHashScheme:r.control_hash_scheme,controlHashParameters:r.control_hash_parameters===null?null:JSON.parse(r.control_hash_parameters),displayName:r.display_name,description:r.description};
+            return r&&{accountId:r.account_id,humanId:r.human_id,displayName:r.display_name,description:r.description};
         }
         case 'card':{
             const a=await this.select(schema.accountAddresses,eq(schema.accountAddresses.address_id,id));
@@ -99,7 +99,7 @@ export class RecordStore {
     }
     put(kind:string,owner:string,id:string,v:any):void{
         switch(kind){
-        case 'account':this.upsert(schema.accounts,{account_id:id,human_id:v.humanId??null,control_hash:v.controlHash??null,control_hash_scheme:v.controlHashScheme??null,control_hash_parameters:v.controlHashParameters==null?null:JSON.stringify(v.controlHashParameters),display_name:v.displayName,description:v.description,created_at:this.now},['account_id'],['human_id','control_hash','control_hash_scheme','control_hash_parameters']);return;
+        case 'account':this.upsert(schema.accounts,{account_id:id,human_id:v.humanId??null,display_name:v.displayName,description:v.description,created_at:this.now},['account_id'],['human_id']);return;
         case 'card':{
             const a=v._address,table=a?schema.accountAddresses:schema.contactCards,column=a?schema.accountAddresses.address_id:schema.contactCards.card_id,where=eq(column,id);
             const common={seq:this.sequence(table,where),created_at:ticks(v.createdAt),expires_at:ticks(v.expiresAt),revoked_at:ticks(v.revokedAt),public_seq:v._publicSequence===null?null:exactInt64(v._publicSequence)};

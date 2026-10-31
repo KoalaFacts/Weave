@@ -12,8 +12,7 @@ async function database() {
     return db;
 }
 function accounts(db) {
-    for(const id of ['synthetic-a','synthetic-b']) db.prepare(`INSERT INTO accounts(account_id,control_hash,control_hash_scheme,control_hash_parameters,created_at,updated_at)
-        VALUES(?,?,'sha256-utf8-v1',?,0,0)`).run(id,(id==='synthetic-a'?'a':'b').repeat(64),JSON.stringify({algorithm:'SHA-256',inputEncoding:'utf-8',digestEncoding:'hex-lower',normalization:'none',salt:null,rounds:1}));
+    for(const id of ['synthetic-a','synthetic-b']) db.prepare('INSERT INTO accounts(account_id,created_at,updated_at) VALUES(?,0,0)').run(id);
 }
 
 test('latest Drizzle schema defines the approved tables without compatibility views or triggers',async()=>{
@@ -23,7 +22,7 @@ test('latest Drizzle schema defines the approved tables without compatibility vi
         assert.deepEqual(tables,['account_addresses','accounts','agent_access_tokens','agent_assertions','agent_keys','contact_cards','contact_requests','contacts','counters','data_migrations','humans','legacy_channels','mailbox_guard','mailbox_records','mailbox_records_legacy','mailbox_revision','maintenance_state','message_delivery','rate_limits','stream_cursors','stream_leases']);
         assert.equal(db.prepare("SELECT count(*) n FROM sqlite_master WHERE type IN ('view','trigger')").get().n,0);
         const business=tables.filter(name=>name!=='data_migrations');
-        assert.equal(business.reduce((n,name)=>n+db.prepare(`PRAGMA table_info(${name})`).all().length,0),155);
+        assert.equal(business.reduce((n,name)=>n+db.prepare(`PRAGMA table_info(${name})`).all().length,0),152);
         assert.ok(business.flatMap(name=>db.prepare(`PRAGMA table_info(${name})`).all()).every(c=>!c.name.endsWith('_ticks')));
         assert.ok(!db.prepare('PRAGMA table_info(mailbox_records)').all().some(c=>c.name==='kind'));
     } finally { db.close(); }
@@ -48,7 +47,7 @@ test('message storage keeps opaque BLOB bytes, empty versus cleared bodies and e
 });
 
 test('schema plans reject destructive changes before any application',()=>{
-    for(const statement of ['DROP TABLE accounts','ALTER TABLE accounts DROP COLUMN control_hash','PRAGMA foreign_keys=OFF','DELETE FROM d1_migrations','CREATE TABLE replacement(x); DROP TABLE accounts'])
+    for(const statement of ['DROP TABLE accounts','ALTER TABLE accounts DROP COLUMN display_name','PRAGMA foreign_keys=OFF','DELETE FROM d1_migrations','CREATE TABLE replacement(x); DROP TABLE accounts'])
         assert.throws(()=>assertAdditiveSchemaPlan([statement]),/review|destructive|unsupported/);
     assert.doesNotThrow(()=>assertAdditiveSchemaPlan(['CREATE TABLE example(id TEXT PRIMARY KEY)','ALTER TABLE example ADD COLUMN created_at INTEGER','CREATE INDEX example_created ON example(created_at)']));
     assert.doesNotThrow(()=>assertAdditiveSchemaPlan(['CREATE TABLE child(owner TEXT REFERENCES parent(id) ON DELETE RESTRICT)']));

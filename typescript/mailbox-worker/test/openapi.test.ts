@@ -2,7 +2,6 @@ import assert from 'node:assert/strict';
 import { readFile } from 'node:fs/promises';
 import { test } from 'node:test';
 import { start, payload} from './harness.ts';
-import { controlHarness } from './control.ts';
 
 const source = await readFile('src/openapi.json','utf8');
 const spec = JSON.parse(source);
@@ -23,10 +22,6 @@ test('OpenAPI is an anonymous no-store JSON asset independent of account storage
         assert.equal(response.headers.get('cache-control'),'no-store');
         assert.equal(response.headers.get('x-content-type-options'),'nosniff');
         assert.equal(await response.text(),source);
-        // Control-specific header handling on a static asset; deleted with the control.
-        const c = controlHarness(h);
-        assert.equal((await c.request('/openapi.json','fictional-static-header-'.repeat(4))).status,200);
-        assert.equal((await c.request('/openapi.json','short')).status,401);
         assert.equal((await h.mf.dispatchFetch('http://example.test/openapi.json')).status,400);
         assert.equal((await h.request('/openapi.json',null,'POST',{})).status,401);
     } finally { await h.close(); }
@@ -53,7 +48,8 @@ test('OpenAPI describes the current HTTP method/path set with resolved local ref
             assert.equal(ids.has(operation.operationId),false);
             ids.add(operation.operationId);
             const anonymous = method === 'get' && ['/v1/directory','/v1/directory/address','/v1/contacts/cards','/v1/contacts/card'].includes(path);
-            assert.deepEqual(operation.security ?? spec.security,anonymous ? [{},{AccountControl:[]},{MailboxControl:[]}] : [{AccountControl:[]},{MailboxControl:[]}]);
+            const token = {AgentToken:[],DPoPProof:[]};
+            assert.deepEqual(operation.security ?? spec.security,path === '/v1/accounts' ? [{DPoPProof:[]}] : anonymous ? [{},token] : [token],path);
             const expectedPath = [...path.matchAll(/\{([^}]+)\}/g)].map(x => x[1]).sort();
             const actualPath = (operation.parameters ?? []).map(resolve).filter(x => x.in === 'path');
             assert.deepEqual(actualPath.map(x => x.name).sort(),expectedPath);
@@ -66,10 +62,12 @@ test('OpenAPI describes the current HTTP method/path set with resolved local ref
         for (const child of Object.values(value)) refs(child);
     }
     refs(spec);
-    assert.deepEqual(spec.components.securitySchemes.MailboxControl.type,'apiKey');
-    assert.equal(spec.components.securitySchemes.MailboxControl.name,'X-Weave-Mailbox-Control');
-    assert.equal(spec.components.securitySchemes.MailboxControl.in,'header');
-    assert.equal(spec.components.securitySchemes.AccountControl.name,'X-Weave-Account-Control');
+    assert.deepEqual(Object.keys(spec.components.securitySchemes).sort(),['AgentToken','DPoPProof']);
+    assert.equal(spec.components.securitySchemes.AgentToken.type,'http');
+    assert.equal(spec.components.securitySchemes.AgentToken.scheme,'DPoP');
+    assert.equal(spec.components.securitySchemes.DPoPProof.type,'apiKey');
+    assert.equal(spec.components.securitySchemes.DPoPProof.name,'DPoP');
+    assert.equal(spec.components.securitySchemes.DPoPProof.in,'header');
     assert.match(source,/"maximum": 9223372036854775807\b/);
     assert.doesNotMatch(source,/9223372036854776000/);
     assert.equal(spec.paths['/v1/inbox/events'].get.responses['200'].content['text/event-stream'].schema.type,'string');
@@ -109,9 +107,9 @@ test('documented account/address/contact/message/ACK responses match real Worker
     const h = await start();
     try {
         const a = await h.register(), b = await h.register();
-        // The documented /v1/accounts response is still the control registration shape; deleted with the control once the spec documents the key response (with kid).
-        const c = controlHarness(h), controlled = await c.register();
-        responseShape(spec.paths['/v1/accounts'].post,await c.ok('/v1/accounts',controlled,'POST',{}));
+        const registered = await h.ok('/v1/accounts',h.stranger(),'POST',{label:'documented'});
+        responseShape(spec.paths['/v1/accounts'].post,registered);
+        assert.equal(typeof registered.kid,'string');
         const address = await h.address(b);
         responseShape(spec.paths['/v1/addresses'].post,address);
         responseShape(spec.paths['/v1/addresses'].get,await h.ok('/v1/addresses',b));

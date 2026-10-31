@@ -1,7 +1,6 @@
 import assert from 'node:assert/strict';
 import { test } from 'node:test';
 import { start } from './harness.ts';
-import { controlHarness } from './control.ts';
 import { createOwnedAgent, humanHasAgent, listHumanAgents, maxAgentsPerHuman, signInHuman, type HumanSignIn } from '../src/humans.ts';
 import type { Env } from '../src/database.ts';
 
@@ -48,7 +47,7 @@ test('signInHuman_ProviderCreatedAtChanged_FreezesHuman', async () => {
     } finally { await h.close(); }
 });
 
-test('createOwnedAgent_NewHuman_AgentListedWithoutControl', async () => {
+test('createOwnedAgent_NewHuman_AgentListedWithoutKey', async () => {
     const h = await start();
     try {
         const env = environment(h), id = await humanId(env);
@@ -57,14 +56,12 @@ test('createOwnedAgent_NewHuman_AgentListedWithoutControl', async () => {
         const accountId = (created as { accountId: string }).accountId;
         assert.deepEqual(await listHumanAgents(env, id), [{ accountId, displayName: 'Claude Code' }]);
         assert.equal(await humanHasAgent(env, id, accountId), true);
-        const row = await h.db.prepare('SELECT human_id,control_hash,control_hash_scheme,control_hash_parameters FROM accounts WHERE account_id=?').bind(accountId).first();
-        assert.deepEqual({ ...row }, { human_id: id, control_hash: null, control_hash_scheme: null, control_hash_parameters: null });
+        assert.equal(await h.db.prepare('SELECT human_id FROM accounts WHERE account_id=?').bind(accountId).first('human_id'), id);
+        assert.equal(await h.db.prepare('SELECT count(*) n FROM agent_keys WHERE account_id=?').bind(accountId).first('n'), 0);
+        const columns = (await h.db.prepare('PRAGMA table_info(accounts)').all<{ name: string }>()).results.map(c => c.name);
+        assert.deepEqual(columns.filter(name => name.startsWith('control_')), []);
         const self = await h.register();
-        const selfRow = await h.db.prepare('SELECT human_id,control_hash FROM accounts WHERE account_id=?').bind(self.accountId).first();
-        assert.equal(selfRow.human_id, null);
-        // Control-specific: a control-registered agent stores a control hash. Deleted with the control.
-        const controlled = await controlHarness(h).register();
-        assert.ok((await h.db.prepare('SELECT control_hash FROM accounts WHERE account_id=?').bind(controlled.accountId).first()).control_hash);
+        assert.equal(await h.db.prepare('SELECT human_id FROM accounts WHERE account_id=?').bind(self.accountId).first('human_id'), null);
         assert.equal((await h.request('/v1/addresses', h.stranger())).status, 401);
     } finally { await h.close(); }
 });

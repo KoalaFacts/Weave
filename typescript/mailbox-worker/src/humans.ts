@@ -4,7 +4,7 @@ import { nowUtc, utcTicks } from './time.ts';
 import { fail } from './wire.ts';
 
 // A Human is a person who signed in with an external identity provider and owns
-// agents. Owned agents carry no control secret; their access is granted later.
+// agents. Owned agents are created without an agent key; their access is granted later.
 export const maxAgentsPerHuman = 10;
 
 export type HumanSignIn = { provider: 'github'; subject: string; providerCreatedAt: string; displayLogin: string };
@@ -85,7 +85,7 @@ export async function createOwnedAgent(env: Env, input: { humanId: string; displ
         if (!await admitRegistration(env, tx, input.sourceIp)) return { ok: false as const, reason: 'rate-limited' as const };
         const accountId = crypto.randomUUID();
         if (await tx.get('account', '', accountId)) fail(409, 'conflict');
-        tx.put('account', '', accountId, { accountId, humanId: input.humanId, controlHash: null, controlHashScheme: null, controlHashParameters: null, displayName: input.displayName, description: null });
+        tx.put('account', '', accountId, { accountId, humanId: input.humanId, displayName: input.displayName, description: null });
         return { ok: true as const, accountId };
     });
 }

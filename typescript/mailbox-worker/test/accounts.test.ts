@@ -4,7 +4,6 @@ import { mkdtemp, rm } from 'node:fs/promises';
 import { tmpdir } from 'node:os';
 import { join } from 'node:path';
 import { start, payload } from './harness.ts';
-import { controlHarness } from './control.ts';
 import { createOwnedAgent, signInHuman } from '../src/humans.ts';
 import { agentKey } from './agent-key.ts';
 
@@ -23,17 +22,6 @@ test('registration creates zero addresses and returns the registered key; invali
         assert.equal((await h.request('/v1/accounts',null,'POST',{})).status,401);
         assert.equal((await h.request('/v1/directory',h.stranger())).status,401);
         assert.equal((await h.request('/v1/account/directory',a,'PUT',{isPublic:true})).status,404);
-    } finally {await h.close();}
-});
-// Control format only; deleted with the control.
-test('control requires at least 64 chars without a custom character alphabet', async () => {
-    const h=controlHarness(await start());
-    try {
-        const a=await h.register({},'a b,'.repeat(16));
-        assert.deepEqual(Object.keys(a).sort(),['accountId','agentId','control','description','displayName']);
-        assert.deepEqual(await h.ok('/v1/addresses',a.control),{items:[],nextCursor:null});
-        assert.equal((await h.request('/v1/accounts','x'.repeat(63),'POST',{})).status,401);
-        const long=await h.register({},'z'.repeat(600)); assert.ok(long.accountId);
     } finally {await h.close();}
 });
 test('private addresses stay hidden through all public discovery paths and duplicate registration cannot publish them', async () => {
