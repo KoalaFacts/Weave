@@ -92,10 +92,15 @@ export async function boundedProviderJson(response:Response,maxBytes:number):Pro
   const reader=response.body?.getReader();
   if(!reader)return null;
   const decoder=new TextDecoder("utf-8",{fatal:true});
+  // A bounded fetch may return headers before an upstream stops delivering body bytes.
+  // Use one deadline for the entire JSON stream, not a fresh timeout per chunk.
+  let timer:ReturnType<typeof setTimeout>|undefined;
+  const deadline=new Promise<null>(resolve=>{timer=setTimeout(()=>resolve(null),providerTimeoutMs);});
   let bytes=0,text="";
   try{
     while(true){
-      const chunk=await reader.read();
+      const chunk=await Promise.race([reader.read(),deadline]);
+      if(chunk===null)return null;
       if(chunk.done)break;
       bytes+=chunk.value.byteLength;
       if(bytes>maxBytes)return null;
@@ -104,8 +109,9 @@ export async function boundedProviderJson(response:Response,maxBytes:number):Pro
     text+=decoder.decode();
     return JSON.parse(text) as unknown;
   }finally{
-    // A provider stream can refuse to finish cancellation after the byte cap is hit.
-    // Best-effort cleanup must not block a bounded login failure.
+    if(timer!==undefined)clearTimeout(timer);
+    // A provider stream can refuse to finish cancellation after the byte cap is hit
+    // or after the read deadline. Never await untrusted cancellation.
     void reader.cancel().catch(()=>{});
     reader.releaseLock();
   }
