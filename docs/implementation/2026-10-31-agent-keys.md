@@ -84,13 +84,13 @@ It is not repeated here.
 
 - DPoP proof `jti` values are **not** stored per request. Proofs are bounded by
   `iat` within ±60 s, `htm`, `htu` and `ath`; writes stay idempotent by their
-  IDs. Client-assertion `jti` values are single-use and recorded until `exp`.
+  IDs. Client-assertion `jti` values are single-use and kept until `exp` plus 60 s.
 - Cooling: a key added to an ownerless agent cools for 24 hours. While any key
   of that agent cools, no settled key can be revoked, not even by itself; a
   cooling key can revoke only itself and cannot endorse another key. The last
   live key of an ownerless agent cannot be revoked.
 - Agents owned by a person (created through the authorization server) have no
-  agent keys and cannot add keys yet (409 `owned-agent`).
+  agent keys and could not add keys in this slice; the [agent binding record](2026-11-01-agent-binding.md) supersedes this.
 
 ## Limits
 
