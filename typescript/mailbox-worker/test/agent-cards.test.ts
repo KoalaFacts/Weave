@@ -304,3 +304,43 @@ test('cardRoute_PublicReadLimitExceeded_429WithRetryAfter',async()=>{
         assert.ok(Number(limited.headers.get('retry-after'))>0);
     }finally{await h.close();}
 });
+
+test('publishCard_WhitespaceInIdentifierMembers_InvalidButDescriptionsMayWrap',async()=>{
+    const h=await start();
+    try{
+        const a=await h.register(),addressId=await publicAddress(h,a);
+        const c=(...codes:number[])=>String.fromCharCode(...codes);
+        const scheme=(value:unknown)=>card({securitySchemes:{x:value}});
+        const bad:[string,Record<string,unknown>][]=[
+            ['apiKey name with CRLF',scheme({apiKeySecurityScheme:{location:'header',name:'X-Key'+c(13,10)+'Set-Cookie: a=b'}})],
+            ['apiKey location body',scheme({apiKeySecurityScheme:{location:'body',name:'X-Key'}})],
+            ['http scheme with tab',scheme({httpAuthSecurityScheme:{scheme:'Bea'+c(9)+'rer'}})],
+            ['bearerFormat with LF',scheme({httpAuthSecurityScheme:{scheme:'Bearer',bearerFormat:'J'+c(10)+'WT'}})],
+            ['scope name with LF',scheme({oauth2SecurityScheme:{flows:{clientCredentials:{tokenUrl:'https://auth.example/t',scopes:{['a'+c(10)+'b']:'x'}}}}})],
+            ['scope value with CR',scheme({oauth2SecurityScheme:{flows:{clientCredentials:{tokenUrl:'https://auth.example/t',scopes:{a:'x'+c(13)}}}}})],
+            ['params key with LF',card({capabilities:{extensions:[{uri:'https://ext.example/x',params:{['k'+c(10)]:1}}]}})],
+            ['params value with tab',card({capabilities:{extensions:[{uri:'https://ext.example/x',params:{k:'a'+c(9)+'b'}}]}})],
+            ['tag with LF',card({skills:[{id:'s',name:'S',description:'d',tags:['a'+c(10)+'b']}]})],
+            ['name with LF',card({name:'a'+c(10)+'b'})],
+            ['description with CR',card({description:'a'+c(13,10)+'b'})],
+            ['scheme description with CR',scheme({mtlsSecurityScheme:{description:'a'+c(13)+'b'}})]
+        ];
+        for(const [name,value] of bad)assert.equal((await call(h,a,'publish_my_agent_card',{addressId,card:value})).status,400,name);
+        assert.equal(await cards(h),0);
+        const wrapped=card({description:'line one'+c(10)+'line two',skills:[{id:'s',name:'S',description:'a'+c(10)+'b',tags:[]}],
+            securitySchemes:{x:{apiKeySecurityScheme:{description:'a'+c(10)+'b',location:'cookie',name:'sid'}}}});
+        assert.deepEqual((await ok(h,a,'publish_my_agent_card',{addressId,card:wrapped})).agentCard,wrapped);
+    }finally{await h.close();}
+});
+
+test('publishCard_UrlOverLimitOnceNormalized_Invalid',async()=>{
+    const h=await start();
+    try{
+        const a=await h.register(),addressId=await publicAddress(h,a);
+        const url='https://agent.example/'+'é'.repeat(500);
+        assert.ok(url.length<2048&&new TextEncoder().encode(url).length<2048,'the raw input is within the limit');
+        const refused=await call(h,a,'publish_my_agent_card',{addressId,card:card({supportedInterfaces:[{url,protocolBinding:'JSONRPC',protocolVersion:'1.0'}]})});
+        assert.equal(refused.status,400);
+        assert.equal(await cards(h),0);
+    }finally{await h.close();}
+});

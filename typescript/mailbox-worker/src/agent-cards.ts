@@ -8,7 +8,9 @@ import { enc, fail, invalidField, uuid } from './wire.ts';
 
 export const MAX_CARD_BYTES = 32768;
 const BINDINGS = ['JSONRPC', 'GRPC', 'HTTP+JSON'];
-const controls = /[\u0000-\u0008\u000b\u000c\u000e-\u001f\u007f-\u009f]/u;
+// Every string rejects control characters including tab, CR and LF; only free-text descriptions may contain a line feed.
+const controls = /[\x00-\x1f\x7f-\x9f]/u;
+const proseControls = /[\x00-\x09\x0b-\x1f\x7f-\x9f]/u;
 const record = (value: unknown): value is Record<string, unknown> => !!value && typeof value === 'object' && !Array.isArray(value);
 
 function only(value: unknown, field: string, allowed: string[], required: string[]): Record<string, unknown> {
@@ -19,9 +21,9 @@ function only(value: unknown, field: string, allowed: string[], required: string
     if (missing !== undefined) invalidField(field + '.' + missing, 'is required');
     return value;
 }
-function text(value: unknown, field: string, max: number, min = 1): string {
-    if (typeof value !== 'string' || value.length < min || value.length > max || controls.test(value))
-        invalidField(field, `must be a string of ${min} to ${max} characters without control characters`);
+function text(value: unknown, field: string, max: number, min = 1, prose = false): string {
+    if (typeof value !== 'string' || value.length < min || value.length > max || (prose ? proseControls : controls).test(value))
+        invalidField(field, `must be a string of ${min} to ${max} characters without control characters${prose ? ' other than line feeds' : ''}`);
     return value;
 }
 function strings(value: unknown, field: string, maxItems: number, maxLength: number): string[] {
@@ -33,19 +35,25 @@ function httpsUrl(value: unknown, field: string): string {
     let url: URL;
     try { url = new URL(raw); } catch { return invalidField(field, 'must be an absolute https URL'); }
     // Only the canonical https:// form: WHATWG parsing also accepts https:host and https:\host, which other parsers read differently.
-    if (enc.encode(raw).length > 2048 || /[\u0000- \\]/u.test(raw) || !raw.startsWith('https://') || url.protocol !== 'https:' || !url.hostname || url.username || url.password)
+    if (enc.encode(raw).length > 2048 || /[\x00-\x20\\]/u.test(raw) || !raw.startsWith('https://') || url.protocol !== 'https:' || !url.hostname || url.username || url.password)
         invalidField(field, 'must be an absolute https:// URL without credentials');
+    if (enc.encode(url.href).length > 2048) invalidField(field, 'must be at most 2048 bytes once normalized');
     return url.href;
 }
 
 const optionalText = (item: Record<string, unknown>, key: string, field: string, max: number) =>
-    item[key] === undefined ? {} : {[key]: text(item[key], field + '.' + key, max)};
+    item[key] === undefined ? {} : {[key]: text(item[key], field + '.' + key, max, 1, key === 'description')};
 const optionalUrl = (item: Record<string, unknown>, key: string, field: string) =>
     item[key] === undefined ? {} : {[key]: httpsUrl(item[key], field + '.' + key)};
 const optionalBool = (item: Record<string, unknown>, key: string, field: string) => {
     if (item[key] === undefined) return {};
     if (typeof item[key] !== 'boolean') invalidField(field + '.' + key, 'must be true or false');
     return {[key]: item[key]};
+};
+// a2a.proto v1.0.0 APIKeySecurityScheme.location: "query", "header" or "cookie".
+const apiKeyLocation = (value: unknown, field: string): string => {
+    if (typeof value !== 'string' || !['query', 'header', 'cookie'].includes(value)) invalidField(field, 'must be query, header or cookie');
+    return value;
 };
 const nameKey = /^[A-Za-z0-9._-]{1,64}$/;
 
@@ -112,7 +120,7 @@ function checkFlows(value: unknown, field: string): Record<string, unknown> {
 // SecurityScheme oneof members and their fields (a2a.proto v1.0.0, proto3 JSON names).
 const schemeKinds: Record<string, {allowed: string[]; required: string[]; build: (item: Record<string, unknown>, field: string) => Record<string, unknown>}> = {
     apiKeySecurityScheme: {allowed: ['description', 'location', 'name'], required: ['location', 'name'], build: (item, field) =>
-        ({...optionalText(item, 'description', field, 1024), location: text(item.location, field + '.location', 64), name: text(item.name, field + '.name', 128)})},
+        ({...optionalText(item, 'description', field, 1024), location: apiKeyLocation(item.location, field + '.location'), name: text(item.name, field + '.name', 128)})},
     httpAuthSecurityScheme: {allowed: ['description', 'scheme', 'bearerFormat'], required: ['scheme'], build: (item, field) =>
         ({...optionalText(item, 'description', field, 1024), scheme: text(item.scheme, field + '.scheme', 64), ...optionalText(item, 'bearerFormat', field, 64)})},
     oauth2SecurityScheme: {allowed: ['description', 'flows', 'oauth2MetadataUrl'], required: ['flows'], build: (item, field) =>
@@ -160,7 +168,7 @@ export function checkAgentCard(value: unknown): Record<string, unknown> {
     if (!Array.isArray(input.skills) || input.skills.length > 32) invalidField('card.skills', 'must be an array of at most 32 skills');
     const card: Record<string, unknown> = {
         name: text(input.name, 'card.name', 128),
-        description: text(input.description, 'card.description', 1024),
+        description: text(input.description, 'card.description', 1024, 1, true),
         version: text(input.version, 'card.version', 32),
         supportedInterfaces: input.supportedInterfaces.map((entry, index) => {
             const field = `card.supportedInterfaces[${index}]`;
@@ -174,7 +182,7 @@ export function checkAgentCard(value: unknown): Record<string, unknown> {
             const field = `card.skills[${index}]`;
             const item = only(entry, field, ['id', 'name', 'description', 'tags'], ['id', 'name', 'description', 'tags']);
             return {id: text(item.id, field + '.id', 128), name: text(item.name, field + '.name', 128),
-                description: text(item.description, field + '.description', 1024), tags: strings(item.tags, field + '.tags', 16, 64)};
+                description: text(item.description, field + '.description', 1024, 1, true), tags: strings(item.tags, field + '.tags', 16, 64)};
         }),
         defaultInputModes: strings(input.defaultInputModes, 'card.defaultInputModes', 16, 128),
         defaultOutputModes: strings(input.defaultOutputModes, 'card.defaultOutputModes', 16, 128),
