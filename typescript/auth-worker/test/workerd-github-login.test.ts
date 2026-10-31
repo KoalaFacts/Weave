@@ -22,7 +22,7 @@ const mailboxBundle=readFileSync(resolve("../mailbox-worker/dist/index.js"),"utf
 
 // Only the two GitHub endpoints exist; every other outbound request is denied.
 type Recorded={url:string;method:string;headers:Record<string,string>;body:string};
-const github={requests:[] as Recorded[],userStatus:200,redirectToken:false,redirectUser:false,oversizedToken:false,oversizedUser:false};
+const github={requests:[] as Recorded[],userStatus:200,redirectToken:false,redirectUser:false,oversizedToken:false,oversizedUser:false,slowToken:false,slowUser:false};
 async function fakeGithub(request:Request):Promise<Response>{
   const body=await request.text();
   github.requests.push({url:request.url,method:request.method,
@@ -33,6 +33,7 @@ async function fakeGithub(request:Request):Promise<Response>{
       return Response.json({error:"bad_verification_code"});
     if(github.redirectToken)return new Response(null,{status:307,
       headers:{Location:"https://redirect-sink.example/credentials"}});
+    if(github.slowToken)await new Promise<void>(resolve=>setTimeout(resolve,5_500));
     return Response.json({access_token:fakeAccessToken,token_type:"bearer",scope:"read:user",
       ...(github.oversizedToken?{unexpectedPadding:"x".repeat(64*1024)}:{})});
   }
@@ -40,6 +41,7 @@ async function fakeGithub(request:Request):Promise<Response>{
     if(request.headers.get("authorization")!=="Bearer "+fakeAccessToken)return new Response("Bad credentials",{status:401});
     if(github.redirectUser)return new Response(null,{status:307,
       headers:{Location:"https://redirect-sink.example/identity"}});
+    if(github.slowUser)await new Promise<void>(resolve=>setTimeout(resolve,5_500));
     if(github.userStatus!==200)return new Response("upstream failure",{status:github.userStatus});
     return Response.json({id:4242,login:"octo-human",created_at:fakeCreatedAt,email:"private@example.com",
       ...(github.oversizedUser?{unexpectedPadding:"x".repeat(64*1024)}:{})});
@@ -294,6 +296,29 @@ test("callback_OversizedGithubResponses_FailClosedBeforeSession",{timeout:60_000
       assert.equal(sessionCookie(result.headers),undefined,"oversized provider payload must not create a session");
       assert.equal((await humans(shared.mf)).length,before,"oversized provider payload cannot create a human");
     }finally{github.oversizedToken=false;github.oversizedUser=false;}
+  }
+});
+
+test("callback_SlowGithubProvider_FailsClosedWithinDeadline",{timeout:40_000},async()=>{
+  // A healthy but unresponsive upstream must not occupy a login Worker indefinitely.
+  // Without a bounded provider fetch, this fixture eventually returns valid JSON
+  // and signs the human in; an abort must instead fail closed before that point.
+  const before=(await humans(shared.mf)).length;
+  for(const phase of ["token","user"] as const){
+    github.slowToken=phase==="token";
+    github.slowUser=phase==="user";
+    try{
+      const started=await begin();
+      const startedAt=performance.now();
+      const result=await callback(shared.mf,new URLSearchParams({
+        code:"fake-code",state:started.location!.searchParams.get("state")!
+      }).toString(),cookieHeader(started.loginCookie!));
+      const elapsed=performance.now()-startedAt;
+      assert.equal(result.status,502,phase+" slow provider must not sign in");
+      assert.ok(elapsed<5_200,phase+" must abort before the simulated 5.5s reply ("+elapsed+"ms)");
+      assert.equal(sessionCookie(result.headers),undefined);
+      assert.equal((await humans(shared.mf)).length,before);
+    }finally{github.slowToken=false;github.slowUser=false;}
   }
 });
 
