@@ -203,3 +203,31 @@ test('oauthAccountActive_FrozenGithubHuman_RevokesOwnedAgentButNotLegacyControlA
         assert.equal(await oauthAccountActive(env, crypto.randomUUID()), false);
     } finally { await h.close(); }
 });
+
+test('oauthAccountActive_ExternalIdentityWithoutHumanBinding_RequiresLiveControlOwner', async () => {
+    // RFC 7662 subject links and pre-human Service Binding tokens carry no
+    // human-owner claim. They cannot authorize an agent that lost its control
+    // credential or was transferred into human ownership.
+    const h = await start();
+    try {
+        const env = environment(h), id = await humanId(env);
+        const owned = await create(env, id) as { accountId: string };
+        const controlled = await h.register();
+        const orphanId = crypto.randomUUID();
+        await h.db.prepare('INSERT INTO accounts(account_id,human_id,control_hash,control_hash_scheme,control_hash_parameters) VALUES(?,NULL,NULL,NULL,NULL)')
+            .bind(orphanId).run();
+
+        assert.equal(await oauthAccountActive(env, controlled.accountId, undefined), true,
+            'a control-owned account with an explicit external-subject link remains eligible');
+        assert.equal(await oauthAccountActive(env, owned.accountId, undefined), false,
+            'an external link with no human-owner claim must not authorize a human-owned agent');
+        assert.equal(await oauthAccountActive(env, owned.accountId, id), true,
+            'a Service Binding token bound to the current unfrozen human remains eligible');
+        assert.equal(await oauthAccountActive(env, orphanId, undefined), false,
+            'an account with neither human owner nor control credential has no authority');
+        await h.db.prepare('UPDATE accounts SET control_hash=NULL,control_hash_scheme=NULL,control_hash_parameters=NULL WHERE account_id=?')
+            .bind(controlled.accountId).run();
+        assert.equal(await oauthAccountActive(env, controlled.accountId, undefined), false,
+            'removing the control credential must revoke a stale external subject grant');
+    } finally { await h.close(); }
+});
