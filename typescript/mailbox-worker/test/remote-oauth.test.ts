@@ -335,3 +335,42 @@ test('Service Binding refuses a previously issued bearer after GitHub owner free
             {accountId:legacy.accountId},'independent control-owned accounts stay eligible');
     }finally{await h.close();}
 });
+
+test('Service Binding revokes stale human bearer after account owner changes',async()=>{
+    const h=await start();
+    try{
+        const env={db:h.db,REGISTRATION_ENABLED:'true',REGISTRATION_MAX_ACCOUNTS:'100',
+            REGISTRATION_PER_IP_PER_HOUR:'100',REGISTRATION_GLOBAL_PER_HOUR:'100'} as Env;
+        const first=await signInHuman(env,{provider:'github',subject:'8460',
+            providerCreatedAt:'2020-01-01T00:00:00Z',displayLogin:'firstowner'});
+        const second=await signInHuman(env,{provider:'github',subject:'8461',
+            providerCreatedAt:'2020-01-02T00:00:00Z',displayLogin:'secondowner'});
+        assert.equal(first.ok,true); assert.equal(second.ok,true);
+        if(!first.ok||!second.ok)throw Error('Human test setup failed');
+        const created=await createOwnedAgent(env,{humanId:first.humanId,
+            displayName:'Transferable agent',sourceIp:'203.0.113.10'});
+        assert.equal(created.ok,true);
+        if(!created.ok)throw Error('Owned-agent test setup failed');
+        const now=Math.floor(Date.now()/1000);
+        let tokenOwner=first.humanId;
+        const binding={validateToken:async()=>({audience:config.resource,userId:created.accountId,
+            props:{accountId:created.accountId,humanId:tokenOwner},expiresAt:now+120,
+            scope:['weave:messages.send'],clientId:'verified-public-client'})};
+        const cfg=oauthConfiguration({AUTH_SERVER:binding,OAUTH_ISSUER:config.issuer,
+            OAUTH_RESOURCE:config.resource} as any,config.resource)!;
+        const token=req('owned:grant:secret');
+        const eligible=(accountId:string)=>oauthAccountActive(env,accountId);
+        assert.deepEqual(await authorizeOAuth(cfg,token,'weave:messages.send',eligible,undefined,now*1000),
+            {accountId:created.accountId},'original owner token must initially work');
+        // Simulate a future approved ownership transfer: the account remains active,
+        // but a grant bound to the previous human must lose all mailbox authority.
+        await h.db.prepare('UPDATE accounts SET human_id=? WHERE account_id=?')
+            .bind(second.humanId,created.accountId).run();
+        const stale=await authorizeOAuth(cfg,token,'weave:messages.send',eligible,undefined,now*1000);
+        assert.ok(stale instanceof Response);
+        assert.equal(stale.status,401,'old owner must lose access even while both humans are unfrozen');
+        tokenOwner=second.humanId;
+        assert.deepEqual(await authorizeOAuth(cfg,token,'weave:messages.send',eligible,undefined,now*1000),
+            {accountId:created.accountId},'current owner with a fresh matching grant may access the agent');
+    }finally{await h.close();}
+});
