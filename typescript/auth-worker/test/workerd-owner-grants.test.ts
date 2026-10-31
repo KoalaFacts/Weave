@@ -35,8 +35,16 @@ export class ProxiedKv extends WorkerEntrypoint{
 }
 export default {async fetch(){armed=true;return new Response(null,{status:204});}};`;
 
-function outbound(request:Request):Response|Promise<Response>{
-  if(request.method==="GET"&&request.url===demoOAuthClientId)return demoOAuthClientMetadata();
+// The demo client's metadata document, served uncacheable so the SDK fetches it each time it needs it; a test may rename
+// the client or take the document down, and counts fetches.
+const cimd={name:null as string|null,down:false,fetches:0};
+async function outbound(request:Request):Promise<Response>{
+  if(request.method==="GET"&&request.url===demoOAuthClientId){
+    cimd.fetches++;
+    if(cimd.down)return new Response("Unavailable",{status:503});
+    const document=await demoOAuthClientMetadata().json() as {client_name:string};
+    return Response.json({...document,client_name:cimd.name??document.client_name},{headers:{"Cache-Control":"no-store"}});
+  }
   return fakeGithub(request);
 }
 // Fake GitHub: the code "gh-<id>" signs in GitHub user <id> as login "human<id>".
@@ -126,22 +134,8 @@ let nextGithubId=9100;
 async function tokenEndpoint():Promise<string>{
   return ((await (await mf.dispatchFetch(issuer+"/.well-known/oauth-authorization-server")).json()) as {token_endpoint:string}).token_endpoint;
 }
-async function connect(githubId=++nextGithubId,agent="new"):Promise<Connection>{
-  const verifier=randomBytes(32).toString("base64url"),url=new URL(issuer+"/authorize");
-  for(const [k,v] of Object.entries({response_type:"code",client_id:demoOAuthClientId,redirect_uri:redirectUri,scope,state:"s",resource,
-    code_challenge:createHash("sha256").update(verifier).digest("base64url"),code_challenge_method:"S256"}))url.searchParams.set(k,v);
-  const begin=await mf.dispatchFetch(url.href,{redirect:"manual"});
-  const [login]=cookiePairs(begin.headers,"__Host-weave_login=");
-  const back=await mf.dispatchFetch(issuer+"/login/github/callback?"+new URLSearchParams({code:"gh-"+githubId,
-    state:new URL(begin.headers.get("location")!).searchParams.get("state")!}),{redirect:"manual",headers:{Cookie:login}});
-  assert.equal(back.status,302);
-  const [session]=cookiePairs(back.headers,"__Host-weave_human=");
-  const page=await mf.dispatchFetch(url.href,{redirect:"manual",headers:{Cookie:session}});
-  assert.equal(page.status,200);
-  const handle=(await page.text()).match(/name="handle" value="([A-Za-z0-9_-]{43})"/)![1];
-  const approved=await mf.dispatchFetch(issuer+"/authorize",{method:"POST",redirect:"manual",
-    headers:{Origin:issuer,Cookie:[session,...page.headers.getSetCookie().map(x=>x.split(";")[0])].join("; "),"Content-Type":"application/x-www-form-urlencoded"},
-    body:new URLSearchParams(agent==="new"?{handle,decision:"approve",agent,agentName:"Grants"}:{handle,decision:"approve",agent}).toString()});
+async function connect(githubId=++nextGithubId,agent="new",beforeApproval?:()=>void):Promise<Connection>{
+  const {approved,verifier}=await consent(githubId,agent,beforeApproval);
   assert.equal(approved.status,302);
   const code=new URL(approved.headers.get("location")!).searchParams.get("code")!;
   const token=await mf.dispatchFetch(await tokenEndpoint(),{method:"POST",headers:{"Content-Type":"application/x-www-form-urlencoded"},
@@ -155,6 +149,26 @@ async function connect(githubId=++nextGithubId,agent="new"):Promise<Connection>{
     .first<{grant_id:string;account_id:string}>())!;
   return {human:{humanId:human.human_id,login:human.display_login},accountId:grant.account_id,grantId:grant.grant_id,
     accessToken:issued.access_token,refreshToken:issued.refresh_token};
+}
+/** GitHub sign-in, the consent page, then (after `beforeApproval`) the approval POST, whose response it returns. */
+async function consent(githubId:number,agent:string,beforeApproval?:()=>void){
+  const verifier=randomBytes(32).toString("base64url"),url=new URL(issuer+"/authorize");
+  for(const [k,v] of Object.entries({response_type:"code",client_id:demoOAuthClientId,redirect_uri:redirectUri,scope,state:"s",resource,
+    code_challenge:createHash("sha256").update(verifier).digest("base64url"),code_challenge_method:"S256"}))url.searchParams.set(k,v);
+  const begin=await mf.dispatchFetch(url.href,{redirect:"manual"});
+  const [login]=cookiePairs(begin.headers,"__Host-weave_login=");
+  const back=await mf.dispatchFetch(issuer+"/login/github/callback?"+new URLSearchParams({code:"gh-"+githubId,
+    state:new URL(begin.headers.get("location")!).searchParams.get("state")!}),{redirect:"manual",headers:{Cookie:login}});
+  assert.equal(back.status,302);
+  const [session]=cookiePairs(back.headers,"__Host-weave_human=");
+  const page=await mf.dispatchFetch(url.href,{redirect:"manual",headers:{Cookie:session}});
+  assert.equal(page.status,200);
+  const handle=(await page.text()).match(/name="handle" value="([A-Za-z0-9_-]{43})"/)![1];
+  beforeApproval?.();
+  const approved=await mf.dispatchFetch(issuer+"/authorize",{method:"POST",redirect:"manual",
+    headers:{Origin:issuer,Cookie:[session,...page.headers.getSetCookie().map(x=>x.split(";")[0])].join("; "),"Content-Type":"application/x-www-form-urlencoded"},
+    body:new URLSearchParams(agent==="new"?{handle,decision:"approve",agent,agentName:"Grants"}:{handle,decision:"approve",agent}).toString()});
+  return {approved,verifier};
 }
 async function refresh(connection:Connection):Promise<Response>{
   return mf.dispatchFetch(await tokenEndpoint(),{method:"POST",headers:{"Content-Type":"application/x-www-form-urlencoded"},
@@ -287,4 +301,30 @@ test("account_FrozenHumanRevokeGrant_FrozenPageNothingRevoked",{timeout:60_000},
   assert.deepEqual(revokeForms(page),[]);
   assert.equal(await mirrorRevoked(connection.grantId),false);
   assert.equal((await sdkGrants(connection.accountId)).length,1);
+});
+
+test("consent_ClientRenamedBeforeApproval_RecordsTheNameThePageShowed",{timeout:60_000},async()=>{
+  cimd.name="Shown <b>Name</b>";
+  let fetches=0;
+  try{
+    const githubId=++nextGithubId;
+    const {approved}=await consent(githubId,"new",()=>{cimd.name="Swapped Name";fetches=cimd.fetches;});
+    assert.equal(approved.status,302);
+    const row=await (await db()).prepare("SELECT g.client_name FROM client_grants g JOIN humans h ON h.human_id=g.human_id WHERE h.subject=?")
+      .bind(String(githubId)).first<{client_name:string}>();
+    assert.equal(row!.client_name,"Shown <b>Name</b>");
+    // At approval only the SDK's completeAuthorization fetches the metadata document, to check the redirect URI.
+    assert.equal(cimd.fetches-fetches,1);
+  }finally{cimd.name=null;}
+});
+
+test("consent_CimdDownAtApproval_RefusedOnlyByCompleteAuthorization",{timeout:60_000},async()=>{
+  let fetches=0;
+  try{
+    const {approved}=await consent(++nextGithubId,"new",()=>{cimd.down=true;fetches=cimd.fetches;});
+    // The recorded name needs no fetch; the SDK still resolves the document in completeAuthorization and refuses there.
+    assert.equal(approved.status,400);
+    assert.equal(approved.headers.get("location"),null);
+    assert.equal(cimd.fetches-fetches,1);
+  }finally{cimd.down=false;}
 });

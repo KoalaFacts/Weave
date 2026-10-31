@@ -4,6 +4,7 @@ import type {CreateAgentResult} from "../../mailbox-worker/src/humans.ts";
 import type {RecordGrantResult} from "../../mailbox-worker/src/client-grants.ts";
 import type {OwnerActionResult,OwnerOverview} from "../../mailbox-worker/src/owner-actions.ts";
 import {createChallenge,validChallenge,validHandle,readConsent} from "./challenge.ts";
+import {consentClientName,normalisedClientName} from "./client-name.ts";
 import {consentPage} from "./consent-page.ts";
 import {beginGithubLogin,completeGithubLogin,failureLog,messagePage,type GithubLoginEnv} from "./github-login.ts";
 import {revokeSdkGrants,sdkRevocationsPerPage,type SdkGrants} from "./grant-cleanup.ts";
@@ -54,18 +55,19 @@ function provider(env:Env):OAuthAuthorizationServer<Env>{
 function stub(env:Env,handle:string):DurableObjectStub{
   return env.CONSENT_NONCES.get(env.CONSENT_NONCES.idFromName(handle));
 }
-async function putNonce(env:Env,handle:string,challenge:string):Promise<boolean>{
+type PendingConsent={challenge:string;clientName:string|null};
+async function putNonce(env:Env,handle:string,pending:PendingConsent):Promise<boolean>{
   const result=await stub(env,handle).fetch("https://nonce.internal/nonce",{
-    method:"PUT",headers:{"Content-Type":"application/json"},body:JSON.stringify({challenge})});
+    method:"PUT",headers:{"Content-Type":"application/json"},body:JSON.stringify(pending)});
   return result.status===201;
 }
-async function getNonce(env:Env,handle:string):Promise<string|null>{
+async function getNonce(env:Env,handle:string):Promise<PendingConsent|null>{
   const result=await stub(env,handle).fetch("https://nonce.internal/nonce");
   if(!result.ok)return null;
   const value:unknown=await result.json();
-  const challenge=value&&typeof value==="object"&&!Array.isArray(value)?
-    (value as {challenge?:unknown}).challenge:null;
-  return validChallenge(challenge)?challenge:null;
+  const {challenge,clientName}=value&&typeof value==="object"&&!Array.isArray(value)?
+    value as {challenge?:unknown;clientName?:unknown}:{};
+  return validChallenge(challenge)&&normalisedClientName(clientName)?{challenge,clientName}:null;
 }
 async function consumeNonce(env:Env,handle:string,challenge:string):Promise<boolean>{
   const result=await stub(env,handle).fetch("https://nonce.internal/nonce",{
@@ -90,8 +92,6 @@ const agentRefused:Record<Exclude<CreateAgentResult,{ok:true}>["reason"],()=>Res
 const validRequest=(request:AuthRequest,resource:string)=>request.resource===resource&&
   request.codeChallengeMethod==="S256"&&!!request.codeChallenge&&request.codeChallenge.length===43;
 const controlCharacters=/[\u0000-\u001f\u007f-\u009f]/gu;
-/** The client's self-reported name for the owner page: at most 128 characters, control characters shown as `?`; null if it gave none. */
-const ownerClientName=(name:string|undefined)=>name?.trim()?[...name.replace(controlCharacters,"?")].slice(0,128).join(""):null;
 /** The SDK-approved request as a fresh /authorize URL, so sign-in restarts it without trusting form input. */
 function authorizeUrl(issuer:string,request:AuthRequest):URL{
   const url=new URL("/authorize",issuer);
@@ -132,7 +132,8 @@ async function authorize(req:Request,env:Env,server:OAuthAuthorizationServer<Env
       const details=await oauth.describeConsent(parsed);
       const pending=await oauth.beginConsent(parsed);
       if(!validHandle(pending.handle))return unavailable();
-      if(!await putNonce(env,pending.handle,createChallenge()))return unavailable();
+      // The name this page shows is the one the owner page will list; approval records it without fetching it again.
+      if(!await putNonce(env,pending.handle,{challenge:createChallenge(),clientName:consentClientName(details)}))return unavailable();
       let agents;
       try{agents=await env.MAILBOX.listAgents(human.humanId);}catch{return directoryUnavailable();}
       const suggestedName=details.clientName.replace(controlCharacters,"").trim().slice(0,128);
@@ -162,13 +163,11 @@ async function authorize(req:Request,env:Env,server:OAuthAuthorizationServer<Env
       for(const cookie of approved.headers.getSetCookie())headers.append("Set-Cookie",cookie);
       return new Response(login.body,{status:login.status,headers});
     }
-    // The client's own metadata, for the name the owner page shows; an unresolvable CIMD document refuses consent as before.
-    const client=await oauth.lookupClient(approved.request.clientId);
     // SDK consent handles use KV, whose deletion is eventually consistent.
     // Only the Durable Object transaction fences simultaneous/replayed grants;
     // if consumption fails, never create an authorization code or an agent.
     const nonce=await getNonce(env,handle);
-    if(!nonce||!await consumeNonce(env,handle,nonce))return denied();
+    if(!nonce||!await consumeNonce(env,handle,nonce.challenge))return denied();
     const accountId=await resolveAgent(env,req,human.humanId,form);
     if(accountId instanceof Response)return accountId;
     // The mailbox mirrors the grant before any code exists; private /mcp calls require that row to be live,
@@ -177,7 +176,7 @@ async function authorize(req:Request,env:Env,server:OAuthAuthorizationServer<Env
     let recorded:RecordGrantResult;
     try{
       recorded=await env.MAILBOX.recordGrant({grantId,humanId:human.humanId,accountId,clientId:approved.request.clientId,
-        clientName:ownerClientName(client?.clientName)});
+        clientName:nonce.clientName});
     }catch{return directoryUnavailable();}
     if(!recorded.ok)return messagePage(503,"Not connected","Weave cannot record this connection right now. Try again later.");
     const {redirectTo}=await oauth.completeAuthorization({

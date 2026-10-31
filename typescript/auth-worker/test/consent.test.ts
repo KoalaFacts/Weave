@@ -3,6 +3,7 @@ import {randomUUID} from "node:crypto";
 import {test} from "node:test";
 import {createChallenge,validChallenge,readConsent} from "../src/challenge.ts";
 import {consentPage} from "../src/consent-page.ts";
+import {consentClientName,ownerClientName} from "../src/client-name.ts";
 
 const consentRequest=(body:string)=>new Request("https://auth.example/authorize",{method:"POST",
   headers:{"Content-Type":"application/x-www-form-urlencoded"},body});
@@ -92,4 +93,18 @@ test("consentPage_UntrustedClient_EscapesMetadataAndKeepsHeaders",async()=>{
   assert.equal(response.headers.get("x-frame-options"),"DENY");
   const unverified=await consentPage({...details,clientDomain:undefined},createChallenge(),{login:"alice"},[],"x").text();
   assert.match(unverified,/Self-registered client; its name is not independently verified/);
+});
+
+test("ownerClientName_NormalisesLikeTheMailbox",()=>{
+  const cases:[string|null|undefined,string|null][]=[["Claude Desktop","Claude Desktop"],[null,null],[undefined,null],["",null],["   ",null],
+    ["\t\n",null],["a\nb\u0000c\u009fd","a?b?c?d"],["a\u202ab\u202ec\u2066d\u2069e","a?b?c?d?e"],
+    ["x".repeat(200),"x".repeat(128)],["\u{1F600}".repeat(130),"\u{1F600}".repeat(128)]];
+  for(const [name,expected] of cases)assert.equal(ownerClientName(name),expected,String(name));
+});
+
+test("consentClientName_ClientIdFallbackIsNoName",()=>{
+  const clientId="https://client.example/oauth-client.json";
+  assert.equal(consentClientName({clientId,clientName:"Example\u202e client"}),"Example? client");
+  // describeConsent shows the client ID when the client gave no name; that is not a self-reported name.
+  assert.equal(consentClientName({clientId,clientName:clientId}),null);
 });

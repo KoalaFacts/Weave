@@ -57,11 +57,11 @@ function options(storage:string) {
   };
 }
 const url='https://nonce.internal/nonce';
-function request(method:'PUT'|'DELETE',challenge:string) {
+function request(method:'PUT'|'DELETE',challenge:string,body:Record<string,unknown>=method==='PUT'?{challenge,clientName:'Consent client'}:{challenge}) {
   // Miniflare's fetch overload takes its own Request type. Pass the
   // structurally compatible init object, not a Node/Workers Request.
   return {method,headers:{'Content-Type':'application/json'},
-    body:JSON.stringify({challenge})};
+    body:JSON.stringify(body)};
 }
 
 test('real workerd consent nonce atomically blocks parallel replay across cold restarts',async()=>{
@@ -78,12 +78,18 @@ test('real workerd consent nonce atomically blocks parallel replay across cold r
     const first=ns.get(ns.idFromName('independent-consent-handle'));
     const challenge=createChallenge(),other=createChallenge();
     assert.equal((await first.fetch(url)).status,404,'no nonce exists before a consent begins');
+    // The client name shown on the consent page is stored normalised: null or 1..128 characters, no controls.
+    for(const clientName of [undefined,'',' ','a\u202eb','x'.repeat(129),5])
+      assert.equal((await first.fetch(url,request('PUT',challenge,{challenge,clientName}))).status,400,String(clientName));
+    const unnamed=ns.get(ns.idFromName('unnamed-consent-handle'));
+    assert.equal((await unnamed.fetch(url,request('PUT',challenge,{challenge,clientName:null}))).status,201);
+    assert.deepEqual(await (await unnamed.fetch(url)).json(),{challenge,clientName:null});
     assert.equal((await first.fetch(url,request('PUT',challenge))).status,201);
     assert.equal((await first.fetch(url,request('PUT',other))).status,409,'one handle cannot silently change identity');
     const stored=await first.fetch(url);
     assert.equal(stored.status,200);
     assert.equal(stored.headers.get('cache-control'),'no-store');
-    assert.deepEqual(await stored.json(),{challenge});
+    assert.deepEqual(await stored.json(),{challenge,clientName:'Consent client'});
 
     // An actual process disposal and reopened SQLite store must preserve an
     // outstanding transaction; no successful response may lose the nonce.
@@ -91,7 +97,7 @@ test('real workerd consent nonce atomically blocks parallel replay across cold r
     mf=new Miniflare(options(storage));
     const reopened=await mf.getDurableObjectNamespace('CONSENT_NONCES');
     const second=reopened.get(reopened.idFromName('independent-consent-handle'));
-    assert.deepEqual(await (await second.fetch(url)).json(),{challenge});
+    assert.deepEqual(await (await second.fetch(url)).json(),{challenge,clientName:'Consent client'});
     const attempts=await Promise.all(Array.from({length:8},()=>second.fetch(url,request('DELETE',challenge))));
     const statuses=attempts.map(x=>x.status).sort((a,b)=>a-b);
     assert.deepEqual(statuses,[204,...Array.from({length:7},()=>409)],
