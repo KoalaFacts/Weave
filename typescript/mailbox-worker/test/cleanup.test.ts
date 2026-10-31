@@ -49,21 +49,21 @@ test('bounded cleanup resumes oldest eligible rows and purged IDs cannot be refr
         await scheduled(h);assert.equal(await h.db.prepare("SELECT count(*) n FROM mailbox_records").first('n'),2);
         // Advance the maintenance throttle, not the business records or production clock.
         await h.db.prepare("DELETE FROM maintenance_state WHERE name='sweep'").run();await scheduled(h);assert.equal(await h.db.prepare("SELECT count(*) n FROM mailbox_records").first('n'),0);
-        const envelope={version:1,recipientMailboxId:b.agentId,contactGeneration:1,payload:prior};assert.equal((await h.request('/v1/messages',a.control,'POST',envelope)).status,410);
-        assert.equal((await h.request('/v1/messages',a.control,'POST',{...envelope,payload:{...prior,createdAt:new Date().toISOString(),expiresAt:new Date(Date.now()+3600000).toISOString()}})).status,400);
-        assert.equal((await h.request('/v1/outbox/'+ids[0],a.control)).status,404);
+        const envelope={version:1,recipientMailboxId:b.agentId,contactGeneration:1,payload:prior};assert.equal((await h.request('/v1/messages',a,'POST',envelope)).status,410);
+        assert.equal((await h.request('/v1/messages',a,'POST',{...envelope,payload:{...prior,createdAt:new Date().toISOString(),expiresAt:new Date(Date.now()+3600000).toISOString()}})).status,400);
+        assert.equal((await h.request('/v1/outbox/'+ids[0],a)).status,404);
     }finally{await h.close();}
 });
 test('scheduled cleanup races with actual ACK and send without resurrecting payload or dropping new mail',async()=>{
     const h=await start();
     try{
-        const a=await h.participant(),b=await h.participant(),intro=payload('intro');await h.ok('/v1/contacts/requests',a.control,'POST',{requestId:intro.messageId,cardId:b.cardId,methodId:'relay',payload:intro});
-        await h.ok('/v1/contacts/requests/'+intro.messageId+'/decision',b.control,'POST',{requesterMailboxId:a.agentId,expectedGeneration:1,status:'accepted',reply:null});
+        const a=await h.participant(),b=await h.participant(),intro=payload('intro');await h.ok('/v1/contacts/requests',a,'POST',{requestId:intro.messageId,cardId:b.cardId,methodId:'relay',payload:intro});
+        await h.ok('/v1/contacts/requests/'+intro.messageId+'/decision',b,'POST',{requesterMailboxId:a.agentId,expectedGeneration:1,status:'accepted',reply:null});
         const next=payload('fresh race');await h.db.prepare("DELETE FROM maintenance_state WHERE name='sweep'").run();
-        const results=await Promise.all([scheduled(h),h.request('/v1/inbox/'+intro.messageId+'/ack',b.control,'POST',{senderMailboxId:a.agentId}),h.request('/v1/messages',a.control,'POST',{version:1,recipientMailboxId:b.agentId,contactGeneration:1,payload:next})]);
+        const results=await Promise.all([scheduled(h),h.request('/v1/inbox/'+intro.messageId+'/ack',b,'POST',{senderMailboxId:a.agentId}),h.request('/v1/messages',a,'POST',{version:1,recipientMailboxId:b.agentId,contactGeneration:1,payload:next})]);
         assert.equal(results[1].status,200);assert.equal(results[2].status,200);
         const row=await messageRow(h.db,intro.messageId);assert.equal(row.payload,null);assert.equal(row.receipt.state,'acknowledged');
-        assert.ok((await h.ok('/v1/inbox',b.control)).items.some(x=>x.envelope.payload.messageId===next.messageId));
+        assert.ok((await h.ok('/v1/inbox',b)).items.some(x=>x.envelope.payload.messageId===next.messageId));
     }finally{await h.close();}
 });
 for(const [maximum,budget,expected] of [['0','2000',0],['1','2000',1],['64','2000',64],['100000','2000',128],['100000','0',0]])test(`cleanup message limit ${maximum}, time budget ${budget} stops at actual bounded message count`,async()=>{

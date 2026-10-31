@@ -1,7 +1,8 @@
 import assert from 'node:assert/strict';
 import { readFile } from 'node:fs/promises';
 import { test } from 'node:test';
-import { start, payload, secret } from './harness.ts';
+import { start, payload} from './harness.ts';
+import { controlHarness } from './control.ts';
 
 const source = await readFile('src/openapi.json','utf8');
 const spec = JSON.parse(source);
@@ -22,8 +23,10 @@ test('OpenAPI is an anonymous no-store JSON asset independent of account storage
         assert.equal(response.headers.get('cache-control'),'no-store');
         assert.equal(response.headers.get('x-content-type-options'),'nosniff');
         assert.equal(await response.text(),source);
-        assert.equal((await h.request('/openapi.json','fictional-static-header-'.repeat(4))).status,200);
-        assert.equal((await h.request('/openapi.json','short')).status,401);
+        // Control-specific header handling on a static asset; deleted with the control.
+        const c = controlHarness(h);
+        assert.equal((await c.request('/openapi.json','fictional-static-header-'.repeat(4))).status,200);
+        assert.equal((await c.request('/openapi.json','short')).status,401);
         assert.equal((await h.mf.dispatchFetch('http://example.test/openapi.json')).status,400);
         assert.equal((await h.request('/openapi.json',null,'POST',{})).status,401);
     } finally { await h.close(); }
@@ -106,36 +109,38 @@ test('documented account/address/contact/message/ACK responses match real Worker
     const h = await start();
     try {
         const a = await h.register(), b = await h.register();
-        responseShape(spec.paths['/v1/accounts'].post,await h.ok('/v1/accounts',a.control,'POST',{}));
+        // The documented /v1/accounts response is still the control registration shape; deleted with the control once the spec documents the key response (with kid).
+        const c = controlHarness(h), controlled = await c.register();
+        responseShape(spec.paths['/v1/accounts'].post,await c.ok('/v1/accounts',controlled,'POST',{}));
         const address = await h.address(b);
         responseShape(spec.paths['/v1/addresses'].post,address);
-        responseShape(spec.paths['/v1/addresses'].get,await h.ok('/v1/addresses',b.control));
+        responseShape(spec.paths['/v1/addresses'].get,await h.ok('/v1/addresses',b));
         assert.deepEqual(await h.ok('/v1/directory'),{items:[],nextCursor:null});
         const introduction = payload('hello');
         const request = {requestId:introduction.messageId,cardId:address.addressId,methodId:'relay',payload:introduction};
-        const relation = await h.ok('/v1/contacts/requests',a.control,'POST',request);
+        const relation = await h.ok('/v1/contacts/requests',a,'POST',request);
         responseShape(spec.paths['/v1/contacts/requests'].post,relation);
         responseShape(spec.paths['/v1/contacts/requests/{requestId}'].get,relation.request);
-        const accepted = await h.ok('/v1/contacts/requests/'+request.requestId+'/decision',b.control,'POST',{
+        const accepted = await h.ok('/v1/contacts/requests/'+request.requestId+'/decision',b,'POST',{
             requesterMailboxId:a.agentId,expectedGeneration:relation.generation,status:'accepted',reply:null
         });
         assert.equal(accepted.isConnected,true);
         const envelope = {version:1,recipientMailboxId:b.agentId,contactGeneration:accepted.generation,payload:payload('ping')};
-        const receipt = await h.ok('/v1/messages',a.control,'POST',envelope);
+        const receipt = await h.ok('/v1/messages',a,'POST',envelope);
         responseShape(spec.paths['/v1/messages'].post,receipt);
-        responseShape(spec.paths['/v1/inbox'].get,await h.ok('/v1/inbox',b.control));
-        const ack = await h.ok('/v1/inbox/'+receipt.messageId+'/ack',b.control,'POST',{senderMailboxId:a.agentId});
+        responseShape(spec.paths['/v1/inbox'].get,await h.ok('/v1/inbox',b));
+        const ack = await h.ok('/v1/inbox/'+receipt.messageId+'/ack',b,'POST',{senderMailboxId:a.agentId});
         responseShape(spec.paths['/v1/inbox/{messageId}/ack'].post,ack);
         assert.equal(ack.state,'acknowledged');
-        assert.deepEqual(await h.ok('/v1/outbox/'+receipt.messageId,a.control),ack);
+        assert.deepEqual(await h.ok('/v1/outbox/'+receipt.messageId,a),ack);
         const pong = {version:1,recipientMailboxId:a.agentId,contactGeneration:accepted.generation,payload:payload('pong')};
-        await h.ok('/v1/messages',b.control,'POST',pong);
-        assert.deepEqual((await h.ok('/v1/inbox',a.control)).items,[{senderMailboxId:b.agentId,senderAccountId:b.agentId,envelope:{...pong,recipientAccountId:a.agentId}}]);
-        const pongAck = await h.ok('/v1/inbox/'+pong.payload.messageId+'/ack',a.control,'POST',{senderMailboxId:b.agentId});
+        await h.ok('/v1/messages',b,'POST',pong);
+        assert.deepEqual((await h.ok('/v1/inbox',a)).items,[{senderMailboxId:b.agentId,senderAccountId:b.agentId,envelope:{...pong,recipientAccountId:a.agentId}}]);
+        const pongAck = await h.ok('/v1/inbox/'+pong.payload.messageId+'/ack',a,'POST',{senderMailboxId:b.agentId});
         assert.equal(pongAck.state,'acknowledged');
-        assert.deepEqual(await h.ok('/v1/outbox/'+pong.payload.messageId,b.control),pongAck);
+        assert.deepEqual(await h.ok('/v1/outbox/'+pong.payload.messageId,b),pongAck);
         for (const invalid of [{...request,unknown:true},{...request,requestId:payload('different',Date.now()-60000).messageId}]) {
-            const response = await h.request('/v1/contacts/requests',a.control,'POST',invalid);
+            const response = await h.request('/v1/contacts/requests',a,'POST',invalid);
             assert.equal(response.status,400);
             assert.deepEqual(await response.json(),{status:400,title:'Invalid request',code:'invalid'});
         }
@@ -146,7 +151,7 @@ test('429 contract distinguishes public-rate Retry-After from registration capac
     const h = await start({bindings:{REGISTRATION_MAX_ACCOUNTS:'1'}});
     try {
         await h.register();
-        const capacity = await h.request('/v1/accounts',secret(),'POST',{});
+        const capacity = await h.request('/v1/accounts',h.stranger(),'POST',{});
         assert.equal(capacity.status,429);
         assert.equal(capacity.headers.get('retry-after'),null);
         assert.deepEqual(await capacity.json(),{status:429,title:'Capacity reached',code:'capacity'});

@@ -190,7 +190,7 @@ test('real Worker UI: isolated sessions, public/private discovery, acceptance, r
         await alice.locator('#label').fill(privateLabel);
         await alice.locator('#createAddress').click();
         await waitText(alice, 'addresses', privateLabel);
-        const privateId = (await h.agentOk(aliceAgent, '/v1/addresses')).items[0].addressId;
+        const privateId = (await h.ok('/v1/addresses',aliceAgent)).items[0].addressId;
         await bob.locator('#label').fill(publicLabel);
         await bob.locator('#isPublic').click();
         await bob.locator('#addressDeveloper summary').click();
@@ -198,7 +198,7 @@ test('real Worker UI: isolated sessions, public/private discovery, acceptance, r
         await bob.locator('#addressDeveloper summary').click();
         await bob.locator('#createAddress').click();
         await waitText(bob, 'addresses', publicLabel);
-        const publicId = (await h.agentOk(bobAgent, '/v1/addresses')).items[0].addressId;
+        const publicId = (await h.ok('/v1/addresses',bobAgent)).items[0].addressId;
         await registry.locator('#find').click();
         await waitText(registry, 'results', publicLabel);
         assert.equal(await registry.evaluate(() => document.querySelectorAll("#results article").length), 1);
@@ -250,7 +250,7 @@ test('real Worker UI: isolated sessions, public/private discovery, acceptance, r
         await waitText(bob, 'contacts', 'WEAVE-DEMO contact A to B.');
         assert.ok((await text(bob, 'contacts')).includes(aliceId));
         assert.equal(await bob.locator('#mailboxScenario').evaluate(el => el.open), false);
-        assert.equal((await h.agentOk(bobAgent, '/v1/inbox')).items.length, 1, 'Reading the inline introduction must not ACK it.');
+        assert.equal((await h.ok('/v1/inbox',bobAgent)).items.length, 1, 'Reading the inline introduction must not ACK it.');
         await fixture.screenshot(bob, 'demo-incoming-introduction');
         await bob.locator('#contacts').getByRole('button', { name: 'Accept contact', exact: true }).click();
         await bob.waitForFunction(() => document.querySelector('#contacts .row strong')?.textContent.startsWith('accepted'));
@@ -297,7 +297,7 @@ test('real Worker UI: isolated sessions, public/private discovery, acceptance, r
         await waitText(bob, 'inbox', 'No pending messages.');
         await alice.locator('#loadOutbox').click();
         await alice.waitForFunction(messageId => JSON.parse(document.getElementById('outbox').textContent).some(r => r.messageId === messageId && r.state === 'acknowledged'), messageId);
-        const receipt = (await h.agentOk(aliceAgent, '/v1/outbox')).items.filter(r => r.messageId === messageId);
+        const receipt = (await h.ok('/v1/outbox',aliceAgent)).items.filter(r => r.messageId === messageId);
         assert.equal(receipt.length, 1);
         assert.equal(receipt[0].state, 'acknowledged');
         const stored = await h.db.prepare("SELECT payload FROM mailbox_records WHERE sender_account_id=? AND message_id=?").bind(aliceId, messageId).first();
@@ -334,7 +334,7 @@ test('real Worker UI: isolated sessions, public/private discovery, acceptance, r
         await waitText(alice, 'inbox', 'No pending messages.');
         await bob.locator('#loadOutbox').tap();
         await bob.waitForFunction(id => JSON.parse(document.getElementById('outbox').textContent).some(r => r.messageId === id && r.state === 'acknowledged'), replyId);
-        assert.equal((await h.agentOk(bobAgent, '/v1/outbox/' + replyId)).state, 'acknowledged');
+        assert.equal((await h.ok('/v1/outbox/' + replyId,bobAgent)).state, 'acknowledged');
         await layout(fixture, bob, 'demo-reply-acknowledged-mobile', 390, 844, true);
         checkpoints.push('B replied with the walkthrough pong; A read and ACKed it; B sees the exact pong receipt acknowledged');
 
@@ -345,7 +345,7 @@ test('real Worker UI: isolated sessions, public/private discovery, acceptance, r
         assert.equal(await text(bob, 'identity'), 'Account ID: ' + bobId);
         assert.equal(await text(bobDesktop, 'identity'), 'Account ID: ' + bobId);
         assert.equal(await resume(alice, aliceKeyFile), aliceId);
-        assert.equal((await h.agentOk(aliceAgent, '/v1/addresses')).items.length, 1);
+        assert.equal((await h.ok('/v1/addresses',aliceAgent)).items.length, 1);
         checkpoints.push('Clear session erases page state, does not affect peer context, and the downloaded key file resumes the same account');
         assert.deepEqual(fixture.errors, []);
     } catch (error) {

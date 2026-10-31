@@ -29,19 +29,21 @@ test('expired, accepted and rejected history remains participant-visible across 
     try {
         const a = await h.register(), b = await h.register(), outsider = await h.register();
         const summaries = await history(h, a, b, 12);
+        // Issue every token before the snapshot: issuance is a write and is not under test.
+        for (const as of [a, b, outsider]) await h.token(as);
         const expected = summaries.map(r => ['pending','needsAction'].includes(r.status) ? {...r,status:'expired'} : r);
         await h.close(); h = await start({ persist, migrate:false, bindings });
         const revision = await h.db.prepare('SELECT token FROM mailbox_revision WHERE singleton=1').first('token');
         for (const participant of [a,b]) {
-            const first = await h.ok('/v1/contacts/requests', participant.control);
+            const first = await h.ok('/v1/contacts/requests', participant);
             assert.deepEqual(first.items, expected.slice(0,10));
             assert.ok(first.nextCursor);
-            const second = await h.ok('/v1/contacts/requests?afterCursor=' + encodeURIComponent(first.nextCursor), participant.control);
+            const second = await h.ok('/v1/contacts/requests?afterCursor=' + encodeURIComponent(first.nextCursor), participant);
             assert.deepEqual(second, { items:expected.slice(10), nextCursor:null });
-            assert.deepEqual(await h.ok('/v1/contacts/requests/' + summaries[0].requestId + '?requesterMailboxId=' + a.agentId, participant.control), expected[0]);
+            assert.deepEqual(await h.ok('/v1/contacts/requests/' + summaries[0].requestId + '?requesterMailboxId=' + a.agentId, participant), expected[0]);
         }
-        assert.deepEqual(await h.ok('/v1/contacts/requests', outsider.control), { items:[], nextCursor:null });
-        assert.equal((await h.request('/v1/contacts/requests/' + summaries[0].requestId + '?requesterMailboxId=' + a.agentId, outsider.control)).status, 404);
+        assert.deepEqual(await h.ok('/v1/contacts/requests', outsider), { items:[], nextCursor:null });
+        assert.equal((await h.request('/v1/contacts/requests/' + summaries[0].requestId + '?requesterMailboxId=' + a.agentId, outsider)).status, 404);
         assert.equal(await h.db.prepare('SELECT token FROM mailbox_revision WHERE singleton=1').first('token'), revision);
         assert.equal(await h.db.prepare("SELECT count(*) n FROM contact_requests").first('n'), 12);
     } finally { await h.close(); await rm(persist, { recursive:true, force:true }); }
@@ -63,6 +65,6 @@ test('enabled scheduled cleanup preserves every contact request and current loca
         assert.equal(result.outcome,'ok');
         assert.deepEqual(await relationSnapshot(h.db),before);
         assert.equal(await h.db.prepare("SELECT count(*) n FROM mailbox_records").first('n'),0);
-        assert.deepEqual((await h.ok('/v1/contacts/requests',b.control)).items.map(r=>r.status),['expired','expired','accepted','rejected']);
+        assert.deepEqual((await h.ok('/v1/contacts/requests',b)).items.map(r=>r.status),['expired','expired','accepted','rejected']);
     } finally { await h.close(); }
 });

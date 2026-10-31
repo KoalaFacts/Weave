@@ -1,6 +1,7 @@
 import assert from 'node:assert/strict';
 import { test } from 'node:test';
 import { start } from './harness.ts';
+import { controlHarness } from './control.ts';
 import { agentKey, clientAssertion, dpopProof, jws, keyEndorsement, keyProof, type TestKey } from './agent-key.ts';
 import { createOwnedAgent, signInHuman } from '../src/humans.ts';
 import { addAgentKey, revokeAgentKey } from '../src/agent-keys.ts';
@@ -441,8 +442,8 @@ test('listKeys_LiveKeysOnlyOldestFirst', async () => {
         assert.deepEqual(items[1], keptSummary);
         assert.equal(items[0].coolingUntil, null);
         assert.notEqual(items[0].lastUsedAt, null);
-        // Key management needs a DPoP agent token.
-        const control = await h.register();
-        await problem(await h.request('/v1/keys', control.control), 401, {code: 'unauthenticated'});
+        // Key management needs a DPoP agent token. Control-specific; deleted with the control.
+        const c = controlHarness(h), control = await c.register();
+        await problem(await c.request('/v1/keys', control.control), 401, {code: 'unauthenticated'});
     } finally { await h.close(); }
 });

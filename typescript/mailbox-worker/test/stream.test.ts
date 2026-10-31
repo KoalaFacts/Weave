@@ -13,15 +13,15 @@ test('SSE replays pending across reconnect, bounds per-account slots, ACK remove
     const h = await start(); let first, second;
     try {
         const a = await h.participant(), b = await h.participant(), p = payload();
-        await h.ok('/v1/contacts/requests',a.control,'POST',{requestId:p.messageId,cardId:b.cardId,methodId:'relay',payload:p});
-        const r1 = await h.request('/v1/inbox/events',b.control); assert.equal(r1.status,200,await (r1.status===200 ? Promise.resolve('') : r1.text()));
+        await h.ok('/v1/contacts/requests',a,'POST',{requestId:p.messageId,cardId:b.cardId,methodId:'relay',payload:p});
+        const r1 = await h.request('/v1/inbox/events',b); assert.equal(r1.status,200,await (r1.status===200 ? Promise.resolve('') : r1.text()));
         assert.equal(r1.headers.get('content-type'),'text/event-stream'); first = r1.body.getReader();
         assert.equal((await nextMessage(first)).envelope.payload.messageId,p.messageId);
-        const r2 = await h.mf.dispatchFetch('http://localhost/v1/inbox/events',{headers:{'X-Weave-Mailbox-Control':b.control,'Last-Event-ID':p.messageId}});
+        const r2 = await h.fetchAs(b,'http://localhost/v1/inbox/events',{headers:{'Last-Event-ID':p.messageId}});
         assert.equal(r2.status,200); second = r2.body.getReader(); assert.equal((await nextMessage(second)).envelope.payload.messageId,p.messageId);
-        assert.equal((await h.request('/v1/inbox/events',b.control)).status,429);
-        await h.ok('/v1/inbox/'+p.messageId+'/ack',b.control,'POST',{senderMailboxId:a.accountId});
-        assert.deepEqual(await h.ok('/v1/inbox',b.control),{items:[],nextCursor:null});
+        assert.equal((await h.request('/v1/inbox/events',b)).status,429);
+        await h.ok('/v1/inbox/'+p.messageId+'/ack',b,'POST',{senderMailboxId:a.accountId});
+        assert.deepEqual(await h.ok('/v1/inbox',b),{items:[],nextCursor:null});
         let rest=''; for (;;) { const v=await first.read(); if(v.done) break; rest+=new TextDecoder().decode(v.value); }
         assert.equal(rest.includes('event: message'),false);
     } finally { await first?.cancel(); await second?.cancel(); await h.close(); }
@@ -31,13 +31,13 @@ test('SSE account isolation holds while another account has a pending message an
     const h=await start(); let first,second;
     try {
         const a=await h.participant(),b=await h.participant(),p=payload();
-        await h.ok('/v1/contacts/requests',a.control,'POST',{requestId:p.messageId,cardId:b.cardId,methodId:'relay',payload:p});
-        first=(await h.request('/v1/inbox/events',b.control)).body.getReader();
-        second=(await h.request('/v1/inbox/events',b.control)).body.getReader();
-        assert.equal((await h.request('/v1/inbox/events',b.control)).status,429);
-        const own=await h.request('/v1/inbox/events',a.control);assert.equal(own.status,200);
+        await h.ok('/v1/contacts/requests',a,'POST',{requestId:p.messageId,cardId:b.cardId,methodId:'relay',payload:p});
+        first=(await h.request('/v1/inbox/events',b)).body.getReader();
+        second=(await h.request('/v1/inbox/events',b)).body.getReader();
+        assert.equal((await h.request('/v1/inbox/events',b)).status,429);
+        const own=await h.request('/v1/inbox/events',a);assert.equal(own.status,200);
         assert.equal((await own.text()).includes('event: message'),false);
-        assert.equal((await h.ok('/v1/inbox',b.control)).items[0].envelope.payload.messageId,p.messageId);
+        assert.equal((await h.ok('/v1/inbox',b)).items[0].envelope.payload.messageId,p.messageId);
     } finally {await first?.cancel();await second?.cancel();await h.close();}
 });
 
@@ -64,16 +64,16 @@ for(const count of [9,64])test('SSE traverses all '+count+' pending messages wit
     try {
         const a=await h.participant(),b=await h.participant(),expiresAt=new Date(Date.now()+3600000).toISOString();
         const first={...payload('contact'),expiresAt},ids=[first.messageId];
-        await h.ok('/v1/contacts/requests',a.control,'POST',{requestId:first.messageId,cardId:b.cardId,methodId:'relay',payload:first});
-        await h.ok('/v1/contacts/requests/'+first.messageId+'/decision',b.control,'POST',{requesterMailboxId:a.accountId,expectedGeneration:1,status:'accepted',reply:null});
+        await h.ok('/v1/contacts/requests',a,'POST',{requestId:first.messageId,cardId:b.cardId,methodId:'relay',payload:first});
+        await h.ok('/v1/contacts/requests/'+first.messageId+'/decision',b,'POST',{requesterMailboxId:a.accountId,expectedGeneration:1,status:'accepted',reply:null});
         for(let i=1;i<count;i++){
             const p={...payload('pending '+i),expiresAt};ids.push(p.messageId);
-            await h.ok('/v1/messages',a.control,'POST',{version:1,recipientMailboxId:b.accountId,contactGeneration:1,payload:p});
+            await h.ok('/v1/messages',a,'POST',{version:1,recipientMailboxId:b.accountId,contactGeneration:1,payload:p});
         }
         for(let traversal=0;traversal<2;traversal++){
             const delivered=new Set();
             for(let connection=0;connection<Math.ceil(count/8)+2 && delivered.size<count;connection++){
-                const response=await h.mf.dispatchFetch('http://localhost/v1/inbox/events',{headers:{'X-Weave-Mailbox-Control':b.control,'Last-Event-ID':ids.at(-1)}});
+                const response=await h.fetchAs(b,'http://localhost/v1/inbox/events',{headers:{'Last-Event-ID':ids.at(-1)}});
                 assert.equal(response.status,200);
                 for(const match of (await response.text()).matchAll(/^id: (.+)$/gm))delivered.add(match[1]);
                 // Response closure precedes waitUntil's lease/progress commit.
@@ -83,15 +83,15 @@ for(const count of [9,64])test('SSE traverses all '+count+' pending messages wit
                 }
             }
             assert.deepEqual([...delivered].sort(),[...ids].sort());
-            assert.equal((await h.ok('/v1/outbox/'+ids.at(-1),a.control)).state,'pending');
+            assert.equal((await h.ok('/v1/outbox/'+ids.at(-1),a)).state,'pending');
         }
     } finally {await h.close();}
 });
 async function pendingPair(h,count){
     const a=await h.participant(),b=await h.participant(),p=payload('contact'),ids=[p.messageId];
-    await h.ok('/v1/contacts/requests',a.control,'POST',{requestId:p.messageId,cardId:b.cardId,methodId:'relay',payload:p});
-    await h.ok('/v1/contacts/requests/'+p.messageId+'/decision',b.control,'POST',{requesterMailboxId:a.accountId,expectedGeneration:1,status:'accepted',reply:null});
-    for(let i=1;i<count;i++){const next=payload('message '+i);ids.push(next.messageId);await h.ok('/v1/messages',a.control,'POST',{version:1,recipientMailboxId:b.accountId,contactGeneration:1,payload:next});}
+    await h.ok('/v1/contacts/requests',a,'POST',{requestId:p.messageId,cardId:b.cardId,methodId:'relay',payload:p});
+    await h.ok('/v1/contacts/requests/'+p.messageId+'/decision',b,'POST',{requesterMailboxId:a.accountId,expectedGeneration:1,status:'accepted',reply:null});
+    for(let i=1;i<count;i++){const next=payload('message '+i);ids.push(next.messageId);await h.ok('/v1/messages',a,'POST',{version:1,recipientMailboxId:b.accountId,contactGeneration:1,payload:next});}
     return {a,b,ids};
 }
 async function controlledStream(h,owner,write){
@@ -112,8 +112,8 @@ for(const transition of ['ACK','block'])test('SSE takes a fresh D1 snapshot afte
             frames.push(frame);
             if(!changed&&frame.includes('id: '+ids[0])){
                 changed=true;
-                if(transition==='ACK')await h.ok('/v1/inbox/'+ids[1]+'/ack',b.control,'POST',{senderMailboxId:a.accountId});
-                else await h.ok('/v1/contacts/blocks',b.control,'PUT',{peerMailboxId:a.accountId,expectedGeneration:1});
+                if(transition==='ACK')await h.ok('/v1/inbox/'+ids[1]+'/ack',b,'POST',{senderMailboxId:a.accountId});
+                else await h.ok('/v1/contacts/blocks',b,'PUT',{peerMailboxId:a.accountId,expectedGeneration:1});
             }
         });
         await completion;assert.equal(changed,true);
@@ -133,6 +133,6 @@ test('late stream release cannot overwrite newer traversal progress',async()=>{
         assert.ok(JSON.parse(before).version);assert.ok(JSON.parse(before).cursor);
         unblock();await old.completion;
         assert.equal(await h.db.prepare("SELECT json_object('cursor',cursor,'version',version) data FROM stream_cursors WHERE account_id=?").bind(b.accountId).first('data'),before);
-        assert.equal((await h.ok('/v1/inbox',b.control)).items.length,ids.length);
+        assert.equal((await h.ok('/v1/inbox',b)).items.length,ids.length);
     } finally {unblock?.();await h.close();}
 });

@@ -2,7 +2,7 @@ import assert from 'node:assert/strict';
 import { test } from 'node:test';
 import { mkdir, writeFile } from 'node:fs/promises';
 import { join, resolve } from 'node:path';
-import { start, payload } from '../harness.ts';
+import { start, payload, keyFile } from '../harness.ts';
 import { seedRequest } from '../storage-fixtures.ts';
 import { BrowserFixture } from './playwright.ts';
 
@@ -13,7 +13,7 @@ test('contact history remains visible on desktop and native mobile after introdu
     try {
         h = await start({ bindings:{ CLEANUP_MAX_MESSAGES:'0', CLEANUP_TIME_BUDGET_MS:'0' } });
         fixture = new BrowserFixture(evidence, (await h.mf.ready).origin);
-        const a = await h.registerAgent(), b = await h.registerAgent();
+        const a = await h.register(), b = await h.register();
         for (const [index,status] of ['pending','accepted','rejected'].entries()) {
             const p = payload('synthetic history',Date.now() - 9 * 86400000 + index);
             const summary = { requestId:p.messageId,cardId:'synthetic-history-card',requesterMailboxId:a.accountId,
@@ -26,7 +26,7 @@ test('contact history remains visible on desktop and native mobile after introdu
             const label = mobile ? 'mobile' : 'desktop', viewport = mobile ? {width:390,height:844} : {width:1440,height:1000};
             const page = await fixture.page(label,'/',{viewport,isMobile:mobile});
             await page.locator('#recovery summary').click();
-            await page.locator('#agentKey').fill(b.keyFile);
+            await page.locator('#agentKey').fill(keyFile(b));
             await page.locator('#register').click();
             await page.waitForFunction(() => document.getElementById('identity').textContent.startsWith('Account ID:'));
             await page.locator('#contactScenario summary').click();

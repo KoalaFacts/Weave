@@ -34,7 +34,7 @@ test('real D1 account-owned address creation is private, replayable and cross-ac
         const createdBody=await created.json();
         assert.deepEqual(createdBody,{addressId,accountId:a.accountId,label:'Private A',isPublic:false,
             effectiveFrom:null,effectiveTo:null,directUri:null});
-        const stored=await h.ok('/v1/addresses',a.control);
+        const stored=await h.ok('/v1/addresses',a);
         assert.ok(stored.items.some((item:{addressId:string})=>item.addressId===addressId));
         const revision=await h.db.prepare('SELECT token FROM mailbox_revision WHERE singleton=1').first('token');
         const replay=await executePrivateMcp(e,origin,a.accountId,'ensure_my_address',args);

@@ -38,10 +38,10 @@ for(const replace of [false,true])for(const acknowledge of [false,true]){
                 assert.equal(receipt.status,200,await receipt.clone().text());
                 assert.equal((await receipt.json()).state,'acknowledged');
             }
-            await h.ok('/v1/contacts/accounts/'+b.accountId,a.control,'DELETE');
+            await h.ok('/v1/contacts/accounts/'+b.accountId,a,'DELETE');
             if(replace)assert.notEqual(await accept(),originalGeneration);
             // The canonical HTTP boundary still exposes the retained outcome.
-            const retained=await h.ok('/v1/outbox/'+ordinary.messageId,a.control);
+            const retained=await h.ok('/v1/outbox/'+ordinary.messageId,a);
             assert.equal(retained.state,acknowledge?'acknowledged':'blocked');
             const snapshot=()=>h.db.prepare(`SELECT m.seq,m.payload_size,hex(m.payload) body,d.state,CAST(d.terminal_at AS TEXT) terminal_at,d.fingerprint
                 FROM mailbox_records m JOIN message_delivery d ON d.message_seq=m.seq

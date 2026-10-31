@@ -4,6 +4,7 @@ import { readFile } from 'node:fs/promises';
 import { build } from 'esbuild';
 import { Miniflare, convertV4MiniflareOptions } from 'miniflare';
 import { start, payload } from './harness.ts';
+import { controlHarness } from './control.ts';
 async function module(path) {
     const built=await build({entryPoints:[path],bundle:true,write:false,format:'esm',platform:'node'});
     return import('data:text/javascript;base64,'+Buffer.from(built.outputFiles[0].text).toString('base64'));
@@ -26,8 +27,9 @@ test('activation predicate accepts exact start, rejects exact end and preserves 
     assert.equal(ticks('2026-10-12T12:00:00.0000002Z')-start,1n);
     assert.throws(()=>ticks('2026-02-30T00:00:00Z'));
 });
+// Control-specific; deleted with the control.
 test('node crypto scheme matches C# test vectors in real workerd and unknown schemes fail closed',async()=>{
-    const h=await start();
+    const h=controlHarness(await start());
     try {
         const vectors=JSON.parse(await readFile('test/control-vectors.json','utf8'));
         for(const {control,digest} of vectors.filter(v=>/^[\x20-\x7e]+$/.test(v.control))) {
@@ -60,20 +62,20 @@ test('replacement of a rejected contact frees its pending slot atomically at the
     const h=await start();
     try {
         const a=await h.participant(),b=await h.participant(),x=await h.participant(),p=payload();
-        await h.ok('/v1/contacts/requests',a.control,'POST',{requestId:p.messageId,cardId:b.cardId,methodId:'relay',payload:p});
-        await h.ok('/v1/contacts/requests/'+p.messageId+'/decision',b.control,'POST',{requesterMailboxId:a.accountId,expectedGeneration:1,status:'accepted',reply:null});
-        for(let i=0;i<62;i++) await h.ok('/v1/messages',a.control,'POST',{version:1,recipientMailboxId:b.accountId,contactGeneration:1,payload:payload('message '+i)});
+        await h.ok('/v1/contacts/requests',a,'POST',{requestId:p.messageId,cardId:b.cardId,methodId:'relay',payload:p});
+        await h.ok('/v1/contacts/requests/'+p.messageId+'/decision',b,'POST',{requesterMailboxId:a.accountId,expectedGeneration:1,status:'accepted',reply:null});
+        for(let i=0;i<62;i++) await h.ok('/v1/messages',a,'POST',{version:1,recipientMailboxId:b.accountId,contactGeneration:1,payload:payload('message '+i)});
         const first=payload();
-        await h.ok('/v1/contacts/requests',x.control,'POST',{requestId:first.messageId,cardId:b.cardId,methodId:'relay',payload:first});
-        await h.ok('/v1/contacts/requests/'+first.messageId+'/decision',b.control,'POST',{requesterMailboxId:x.accountId,expectedGeneration:1,status:'rejected',reply:null});
+        await h.ok('/v1/contacts/requests',x,'POST',{requestId:first.messageId,cardId:b.cardId,methodId:'relay',payload:first});
+        await h.ok('/v1/contacts/requests/'+first.messageId+'/decision',b,'POST',{requesterMailboxId:x.accountId,expectedGeneration:1,status:'rejected',reply:null});
         const overflow={version:1,recipientMailboxId:b.accountId,contactGeneration:1,payload:payload('overflow')};
-        assert.equal((await h.request('/v1/messages',a.control,'POST',overflow)).status,429);
+        assert.equal((await h.request('/v1/messages',a,'POST',overflow)).status,429);
         const second=payload();
-        const replaced=await h.ok('/v1/contacts/requests',x.control,'POST',{requestId:second.messageId,cardId:b.cardId,methodId:'relay',payload:second});
+        const replaced=await h.ok('/v1/contacts/requests',x,'POST',{requestId:second.messageId,cardId:b.cardId,methodId:'relay',payload:second});
         assert.equal(replaced.generation,2);
-        assert.equal((await h.ok('/v1/outbox/'+first.messageId,x.control)).state,'blocked');
-        assert.equal((await h.ok('/v1/outbox/'+second.messageId,x.control)).state,'pending');
-        assert.equal((await h.request('/v1/outbox/'+overflow.payload.messageId,a.control)).status,404);
+        assert.equal((await h.ok('/v1/outbox/'+first.messageId,x)).state,'blocked');
+        assert.equal((await h.ok('/v1/outbox/'+second.messageId,x)).state,'pending');
+        assert.equal((await h.request('/v1/outbox/'+overflow.payload.messageId,a)).status,404);
     } finally {await h.close();}
 });
 test('request replay after block reports channel transition time, while card ownership errors remain uniform',async()=>{
@@ -81,12 +83,12 @@ test('request replay after block reports channel transition time, while card own
     try {
         const a=await h.participant(),b=await h.participant(),p=payload();
         const submission={requestId:p.messageId,cardId:b.cardId,methodId:'relay',payload:p};
-        const pending=await h.ok('/v1/contacts/requests',a.control,'POST',submission);
-        await h.ok('/v1/contacts/blocks',b.control,'PUT',{peerMailboxId:a.accountId,expectedGeneration:1});
-        const replay=await h.ok('/v1/contacts/requests',a.control,'POST',submission);
+        const pending=await h.ok('/v1/contacts/requests',a,'POST',submission);
+        await h.ok('/v1/contacts/blocks',b,'PUT',{peerMailboxId:a.accountId,expectedGeneration:1});
+        const replay=await h.ok('/v1/contacts/requests',a,'POST',submission);
         assert.equal(replay.generation,2); assert.ok(Date.parse(replay.updatedAt)>=Date.parse(pending.updatedAt));
-        const c=await h.ok('/v1/contacts/card?cardId='+b.cardId,b.control); const {ownerMailboxId,ownerAccountId,...input}=c;
-        assert.equal((await h.request('/v1/contacts/cards',a.control,'PUT',input)).status,404);
-        assert.equal((await h.request('/v1/contacts/cards',b.control,'PUT',input)).status,409);
+        const c=await h.ok('/v1/contacts/card?cardId='+b.cardId,b); const {ownerMailboxId,ownerAccountId,...input}=c;
+        assert.equal((await h.request('/v1/contacts/cards',a,'PUT',input)).status,404);
+        assert.equal((await h.request('/v1/contacts/cards',b,'PUT',input)).status,409);
     } finally {await h.close();}
 });

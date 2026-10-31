@@ -22,7 +22,7 @@ test('registry search and exact lookup expose only actively public effective add
         const page=await h.ok('/v1/directory');assert.deepEqual(page.items.map(x=>x.addressId),[visible.addressId]);
         assert.equal((await h.ok('/v1/directory?q=Visible')).items.length,1);
         for(const address of hidden)assert.equal((await h.request('/v1/directory/address?addressId='+address.addressId)).status,404);
-        const exposed=JSON.stringify(page);for(const value of ['PRIVATE-PROFILE','PRIVATE-DESCRIPTION','PRIVATE-ADDRESS',a.control,'controlHash','payload'])assert.ok(!exposed.includes(value));
+        const exposed=JSON.stringify(page);for(const value of ['PRIVATE-PROFILE','PRIVATE-DESCRIPTION','PRIVATE-ADDRESS',await h.token(a),a.key.privateJwk.d!,'controlHash','payload'])assert.ok(!exposed.includes(value));
         assert.equal((await h.request('/v1/inbox')).status,401);
     }finally{await h.close();}
 });

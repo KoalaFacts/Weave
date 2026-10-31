@@ -80,7 +80,7 @@ test('public registry browser: desktop and touch browse ten-item pages, rate den
                 for (let index = 0; index < 3; index++) {
                     await rows(view.page, expected.slice(index * 10, (index + 1) * 10));
                     const text = await view.page.locator('body').innerText();
-                    for (const hidden of ['PRIVATE-', 'FUTURE-ADDRESS', 'EXPIRED-ADDRESS', owner.control]) assert.ok(!text.includes(hidden));
+                    for (const hidden of ['PRIVATE-', 'FUTURE-ADDRESS', 'EXPIRED-ADDRESS', await h.token(owner), owner.key.privateJwk.d!]) assert.ok(!text.includes(hidden));
                     assert.ok(text.includes('10 addresses per page.'));
                     assert.equal(await view.page.locator('#next').isDisabled(), index === 2);
                     await capture(fixture, view.page, 'registry-pagination-' + view.name + '-page-' + (index + 1));

@@ -12,7 +12,7 @@ for (const count of [0, 10, 11, 23]) test(`anonymous directory browses ${count} 
         const hidden = [];
         for (const profile of [{ label: 'PRIVATE' }, { label: 'FUTURE', isPublic: true, effectiveFrom: '2099-01-01T00:00:00Z' }, { label: 'EXPIRED', isPublic: true, effectiveTo: '2020-01-01T00:00:00Z' }]) hidden.push(await h.address(owner, profile));
         const removed = await h.address(owner, { label: 'REMOVED', isPublic: true });
-        await h.ok('/v1/addresses/' + removed.addressId, owner.control, 'DELETE');
+        await h.ok('/v1/addresses/' + removed.addressId, owner, 'DELETE');
         hidden.push(removed);
         const seen = [], sizes = [];
         let cursor = null;
@@ -20,7 +20,7 @@ for (const count of [0, 10, 11, 23]) test(`anonymous directory browses ${count} 
             const page = await h.ok('/v1/directory' + (cursor ? '?afterCursor=' + encodeURIComponent(cursor) : ''));
             sizes.push(page.items.length); seen.push(...page.items.map(item => item.addressId));
             for (const item of page.items) assert.deepEqual(Object.keys(item).sort(), ['accountId', 'addressId', 'directUri', 'effectiveFrom', 'effectiveTo', 'isPublic', 'label']);
-            assert.ok(!JSON.stringify(page).includes(owner.control));
+            assert.ok(!JSON.stringify(page).includes(await h.token(owner)));assert.ok(!JSON.stringify(page).includes(owner.key.privateJwk.d!));
             assert.ok(!JSON.stringify(page).includes('PRIVATE-'));
             cursor = page.nextCursor;
             if (cursor) { assert.ok(cursor.startsWith('directory-created-v1::')); assert.ok(cursor.endsWith('/'+page.items.at(-1).addressId)); }

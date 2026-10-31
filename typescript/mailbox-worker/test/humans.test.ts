@@ -1,6 +1,7 @@
 import assert from 'node:assert/strict';
 import { test } from 'node:test';
-import { start, secret } from './harness.ts';
+import { start } from './harness.ts';
+import { controlHarness } from './control.ts';
 import { createOwnedAgent, humanHasAgent, listHumanAgents, maxAgentsPerHuman, signInHuman, type HumanSignIn } from '../src/humans.ts';
 import type { Env } from '../src/database.ts';
 
@@ -61,8 +62,10 @@ test('createOwnedAgent_NewHuman_AgentListedWithoutControl', async () => {
         const self = await h.register();
         const selfRow = await h.db.prepare('SELECT human_id,control_hash FROM accounts WHERE account_id=?').bind(self.accountId).first();
         assert.equal(selfRow.human_id, null);
-        assert.ok(selfRow.control_hash);
-        assert.equal((await h.request('/v1/addresses', secret())).status, 401);
+        // Control-specific: a control-registered agent stores a control hash. Deleted with the control.
+        const controlled = await controlHarness(h).register();
+        assert.ok((await h.db.prepare('SELECT control_hash FROM accounts WHERE account_id=?').bind(controlled.accountId).first()).control_hash);
+        assert.equal((await h.request('/v1/addresses', h.stranger())).status, 401);
     } finally { await h.close(); }
 });
 

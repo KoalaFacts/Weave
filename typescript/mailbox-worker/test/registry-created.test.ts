@@ -16,8 +16,8 @@ test('directory creation order is newest first with a deterministic ID tie-break
         const expected=[a.addressId,b.addressId].sort().reverse().concat(older.addressId);
         const first=await page(h);assert.deepEqual(ids(first),expected.slice(0,2));
         const second=await page(h,first.nextCursor);assert.deepEqual(ids(second),expected.slice(2));assert.equal(second.nextCursor,null);
-        await h.ok('/v1/addresses/'+older.addressId,owner.control,'PUT',{isPublic:false,label:'edited'});
-        await h.ok('/v1/addresses/'+older.addressId,owner.control,'PUT',{isPublic:true,label:'edited'});
+        await h.ok('/v1/addresses/'+older.addressId,owner,'PUT',{isPublic:false,label:'edited'});
+        await h.ok('/v1/addresses/'+older.addressId,owner,'PUT',{isPublic:true,label:'edited'});
         assert.deepEqual(ids(await page(h,null,10)),expected);
     }finally{await h.close();}
 });
@@ -27,9 +27,9 @@ test('directory keyset continues after a deleted boundary while a new address ap
         for(let i=1;i<=5;i++)items.push(await at(h,owner,`2025-01-0${i}T00:00:00.000Z`));
         const first=await page(h);assert.deepEqual(ids(first),items.slice(3).reverse().map(a=>a.addressId));
         const newest=await at(h,owner,'2025-01-06T00:00:00.000Z');
-        await h.ok('/v1/addresses/'+items[3].addressId,owner.control,'DELETE');
+        await h.ok('/v1/addresses/'+items[3].addressId,owner,'DELETE');
         const second=await page(h,first.nextCursor);assert.deepEqual(ids(second),[items[2].addressId,items[1].addressId]);
-        await h.ok('/v1/addresses/'+items[0].addressId,owner.control,'PUT',{isPublic:false});
+        await h.ok('/v1/addresses/'+items[0].addressId,owner,'PUT',{isPublic:false});
         assert.deepEqual(ids(await page(h,second.nextCursor)),[]);
         assert.equal(ids(await page(h))[0],newest.addressId);
         assert.equal((await h.request('/v1/directory/address?addressId='+items[0].addressId)).status,404);

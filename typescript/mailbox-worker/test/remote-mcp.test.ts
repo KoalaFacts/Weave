@@ -20,7 +20,7 @@ test('remote MCP initializes and reads the real D1 public directory without acco
         const privateAddress=await h.address(account,{label:'remote-private'});
         const expired=await h.address(account,{label:'remote-expired',isPublic:true,effectiveTo:'2020-01-01T00:00:00Z'});
         const revoked=await h.address(account,{label:'remote-revoked',isPublic:true});
-        await h.ok('/v1/addresses/'+revoked.addressId,account.control,'DELETE');
+        await h.ok('/v1/addresses/'+revoked.addressId,account,'DELETE');
         const init=await rpc(h,'initialize',{protocolVersion:'2025-11-25',capabilities:{},clientInfo:{name:'fixture',version:'1'}});
         assert.equal(init.result.serverInfo.name,'weave-public');
         assert.deepEqual((await rpc(h,'tools/list')).result.tools.map(x=>x.name),['demo_guide','search_registry','lookup_address']);
