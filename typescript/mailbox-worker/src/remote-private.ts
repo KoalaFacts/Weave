@@ -71,20 +71,25 @@ async function connectedGeneration(tx:Transaction,owner:string,peer:string):Prom
     if(!channel||!request||!relation(channel,request).isConnected)fail(409,'not-connected');
     return channel.generation;
 }
-/** Inbox bodies that parse as an A2A Message are shown parsed, without the raw bytes. They remain untrusted peer content. */
-function withParsedMessages(page:{items:any[]}):unknown{
-    return {...page,items:page.items.map(item=>{
+/** The inbox page as JSON text. Bodies that are A2A Messages appear as `message`, without the raw bytes, spliced in as
+ * the peer's own JSON text so no server serializer rewrites or re-rounds them. They remain untrusted peer content. */
+function inboxText(page:{items:any[]}):string{
+    const messages:string[]=[],marker=crypto.randomUUID();
+    const items=page.items.map(item=>{
         const message=inboxMessage(item.envelope?.payload);
-        if(!message)return item;
+        if(message===null)return item;
         const {bytes:_bytes,...payload}=item.envelope.payload;
-        return {...item,envelope:{...item.envelope,payload},message};
-    })};
+        messages.push(message);
+        return {...item,envelope:{...item.envelope,payload},message:marker+':'+(messages.length-1)};
+    });
+    const text=stringify({...page,items});
+    return messages.reduce((result,message,index)=>result.replace(JSON.stringify(marker+':'+index),()=>message),text);
 }
 /** A write refuses inside its own transaction when the consent grant was revoked after authorization: the transaction's
  * revision check makes a revocation committed before the write's commit visible on retry. */
-const grantGuard=(accountId:string,grantId:string|undefined)=>async(tx:Transaction):Promise<void>=>{
-    if(grantId===undefined)return;
-    const grant=await liveGrant(tx.db,grantId);
+const grantGuard=(accountId:string,grantId:string)=>async(tx:Transaction):Promise<void>=>{
+    // A missing grant identity never skips the check.
+    const grant=typeof grantId==='string'&&grantId!==''?await liveGrant(tx.db,grantId):null;
     if(!grant||grant.accountId!==accountId)fail(401,'grant-revoked');
 };
 /** The production private-tool access: the consent grant is read on every call and re-checked inside each write. */
@@ -102,9 +107,8 @@ export function oauthPrivateAccess(env:Env,origin:string,config:OAuthOptions,req
         invoke:(accountId,name,args)=>grantId===null?Promise.resolve(problem(new Error('unauthorized invoke')))
             :executePrivateMcp(env,origin,accountId,name,args,grantId)};
 }
-/** `grantId` names the OAuth consent grant behind the call; writes re-check it in their transaction. Only direct
- * callers without OAuth (tests) omit it. */
-export async function executePrivateMcp(env:Env,origin:string,accountId:string,name:string,args:Record<string,unknown>,grantId?:string):Promise<Response> {
+/** `grantId` names the OAuth consent grant behind the call; every write re-checks it in its own transaction. */
+export async function executePrivateMcp(env:Env,origin:string,accountId:string,name:string,args:Record<string,unknown>,grantId:string):Promise<Response> {
     const guard=grantGuard(accountId,grantId);
     const guarded=<T>(operation:(tx:Transaction)=>Promise<T>)=>async(tx:Transaction)=>{await guard(tx);return operation(tx);};
     try {
@@ -122,7 +126,7 @@ export async function executePrivateMcp(env:Env,origin:string,accountId:string,n
             const data=await atomic(env.db,tx=>name==='list_my_addresses'?ownedAddresses(tx,accountId,target):
                 name==='list_my_contacts'?ownContacts(tx,accountId,target):read(tx,target,accountId));
             // Server data is filtered and renamed before peer Messages are attached, so peer content is returned exactly as sent.
-            return name==='list_my_inbox'?jsonText(stringify(withParsedMessages(accountNames(withoutSecrets(data)) as {items:any[]})))
+            return name==='list_my_inbox'?jsonText(inboxText(accountNames(withoutSecrets(data)) as {items:any[]}))
                 :json(withoutSecrets(data));
         }
         if(name==='get_my_channel'){

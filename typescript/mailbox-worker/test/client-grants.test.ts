@@ -10,7 +10,7 @@ import { oauthConfiguration } from '../src/remote-oauth.ts';
 
 // remote-private uses bundler-resolution imports; evaluate the bundled production module.
 const built = await build({ entryPoints: ['src/remote-private.ts'], bundle: true, write: false, platform: 'node', format: 'esm', logLevel: 'silent' });
-const { oauthPrivateAccess } = await import('data:text/javascript;base64,' + Buffer.from(built.outputFiles[0].contents).toString('base64')) as typeof import('../src/remote-private.ts');
+const { oauthPrivateAccess, executePrivateMcp } = await import('data:text/javascript;base64,' + Buffer.from(built.outputFiles[0].contents).toString('base64')) as typeof import('../src/remote-private.ts');
 
 const origin = 'https://demo.test', resource = origin + '/mcp', clientId = 'https://client.example/oauth-client.json';
 const environment = (db: Database, overrides: Partial<Env> = {}): Env => ({
@@ -245,5 +245,25 @@ test('mcpPrivate_RevokedTokenWithInsufficientScope_401', async () => {
         const denied = await call(token(alice.accountId));
         assert.equal(denied.status, 401);
         assert.match(denied.headers.get('WWW-Authenticate') ?? '', /error="invalid_token"/);
+    } finally { await h.close(); }
+});
+
+test('executePrivateMcp_WriteWithoutGrantIdentity_RefusedNothingWritten', async () => {
+    const h = await start();
+    try {
+        const env = environment(h.db), alice = await owner(env), grantId = crypto.randomUUID();
+        assert.deepEqual(await recordGrant(env, { grantId, ...alice, clientId }), { ok: true });
+        const addresses = async () => (await h.db.prepare('SELECT count(*) n FROM account_addresses WHERE account_id=?').bind(alice.accountId).first<number>('n'));
+        for (const missing of ['', undefined, null]) {
+            const refused = await executePrivateMcp(env, origin, alice.accountId, 'ensure_my_address', { addressId: crypto.randomUUID() }, missing as unknown as string);
+            assert.equal(refused.status, 401, String(missing));
+            assert.equal((await refused.json()).code, 'grant-revoked');
+        }
+        assert.equal(await addresses(), 0, 'nothing was written');
+        const other = await owner(env), foreignGrant = crypto.randomUUID();
+        assert.deepEqual(await recordGrant(env, { grantId: foreignGrant, ...other, clientId }), { ok: true });
+        assert.equal((await executePrivateMcp(env, origin, alice.accountId, 'ensure_my_address', { addressId: crypto.randomUUID() }, foreignGrant)).status, 401, "another account's grant");
+        assert.equal((await executePrivateMcp(env, origin, alice.accountId, 'ensure_my_address', { addressId: crypto.randomUUID() }, grantId)).status, 200, 'positive control');
+        assert.equal(await addresses(), 1);
     } finally { await h.close(); }
 });

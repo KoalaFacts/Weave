@@ -53,7 +53,12 @@ not repeated here. The preceding slice is the
   parsing, an iterative walk after) and every part is an object, so a peer's
   deeply nested body cannot fail the recipient's inbox page. Anything else keeps
   `bytes`. The parsed `message` is attached after server data is renamed to
-  account vocabulary, so it is returned exactly as the sender wrote it.
+  account vocabulary and is spliced in as the peer's own JSON text, so it is
+  returned exactly as the sender wrote it. In the MCP result the text content
+  carries those exact bytes; `structuredContent` holds the
+  same `message` as plain parsed JSON, so peer numbers there are JavaScript numbers
+  (an integer beyond 2^53 is rounded) and peer keys named `generation` are not
+  turned into decimal strings, unlike the server's own generation fields.
 - **`ensure_my_address` is create-keyed.** `isPublic` is decided at creation; to
   publish, create a public address with a new `addressId`.
 - **Agent Cards.** `publish_my_agent_card` attaches an A2A Agent Card subset to a

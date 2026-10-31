@@ -1,7 +1,7 @@
 import assert from 'node:assert/strict';
 import {test} from 'node:test';
 import {build} from 'esbuild';
-import {start,payload,type AgentCredential} from './harness.ts';
+import {withTestGrant,start,payload,type AgentCredential} from './harness.ts';
 import type {Env} from '../src/database.ts';
 import {remoteMcp,type PrivateAccess} from '../src/remote-mcp.ts';
 // Evaluate the bundled production modules, as the other private MCP tests do.
@@ -9,7 +9,8 @@ const bundle=async(entry:string)=>{
     const built=await build({entryPoints:[entry],bundle:true,write:false,platform:'node',format:'esm',logLevel:'silent'});
     return import('data:text/javascript;base64,'+Buffer.from(built.outputFiles[0].contents).toString('base64'));
 };
-const {executePrivateMcp}=await bundle('src/remote-private.ts') as typeof import('../src/remote-private.ts');
+const {executePrivateMcp:executeWithGrant}=await bundle('src/remote-private.ts') as typeof import('../src/remote-private.ts');
+const executePrivateMcp=withTestGrant(executeWithGrant);
 const {sweep}=await bundle('src/cleanup.ts') as typeof import('../src/cleanup.ts');
 
 const origin='https://demo.test';
@@ -400,5 +401,27 @@ test('sendMessage_DataDeeperThan16_InvalidNothingWritten',async()=>{
             assert.equal(answer.body.field,'message.parts[0].data');
         }
         assert.equal(await count(h,'SELECT count(*) n FROM mailbox_records'),before+1);
+    }finally{await h.close();}
+});
+
+test('remoteMcpInbox_PeerGenerationAndLargeInteger_NotRewrittenInStructuredContent',async()=>{
+    const h=await start();
+    try{
+        const env=environment(h),a=await h.participant(),b=await h.participant(),contact=await connectOverHttp(h,a,b);
+        const sent=await httpSend(h,b,a,contact,'application/json',
+            id=>`{"messageId":"${id}","role":"ROLE_USER","parts":[{"data":{"generation":7,"big":9007199254740993}}]}`);
+        const access:PrivateAccess={tools:[],scope:name=>name==='list_my_inbox'?'weave:messages.read':null,authorize:async()=>a.accountId,
+            invoke:(owner,name,args)=>executePrivateMcp(env,origin,owner,name,args)};
+        const response=await remoteMcp(new Request(origin+'/mcp',{method:'POST',headers:{'content-type':'application/json',accept:'application/json, text/event-stream',
+            authorization:'Bearer t'},body:JSON.stringify({jsonrpc:'2.0',id:1,method:'tools/call',params:{name:'list_my_inbox',arguments:{}}})}),
+            async()=>{throw Error('no public read');},access);
+        const result=(await response.json()).result;
+        const item=result.structuredContent.items.find((x:any)=>x.envelope.payload.messageId===sent.messageId);
+        const data=item.message.parts[0].data;
+        assert.equal(data.generation,7,'a peer key named generation stays the number the peer sent');
+        // structuredContent is parsed JSON: a peer integer beyond 2^53 is the nearest JS number there; the text content is exact.
+        assert.equal(data.big,9007199254740992);
+        assert.match(result.content[0].text,/"generation":7,"big":9007199254740993/);
+        assert.equal(typeof item.envelope.contactGeneration,'string','server generations stay exact decimal strings');
     }finally{await h.close();}
 });

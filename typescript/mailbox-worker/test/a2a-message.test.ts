@@ -52,7 +52,7 @@ test('inboxMessage_OnlyWellFormedA2aJson_IsParsed', () => {
     const body = (value: unknown, payloadEncoding = 'application/json') =>
         ({messageId: 'peer-chosen', payloadEncoding, bytes: Buffer.from(typeof value === 'string' ? value : JSON.stringify(value)).toString('base64')});
     const message = {messageId: 'peer-chosen', role: 'ROLE_AGENT', parts: [{text: 'hi'}], metadata: {kind: 'key-added'}};
-    assert.deepEqual(inboxMessage(body(message)), message);
+    assert.equal(inboxMessage(body(message)), JSON.stringify(message), 'the exact peer text');
     assert.equal(inboxMessage(body(message, 'text/plain')), null);
     assert.equal(inboxMessage({...body(message), messageId: 'envelope-id'}), null, 'the Message must carry the envelope messageId');
     assert.equal(inboxMessage(body('{"messageId":')), null);

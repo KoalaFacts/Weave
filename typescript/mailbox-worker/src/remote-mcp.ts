@@ -112,14 +112,25 @@ function argumentIssue(name: string, args: ObjectValue): string | null {
     }
     return null;
 }
-/** Structured copy of a JSON result. Generation integers become exact decimal
- * strings: an int64 must never round through a JavaScript number. */
-function structured(text: string): {structuredContent?: ObjectValue} {
+/** Structured copy of a JSON result. Server generation integers become exact
+ * decimal strings: an int64 must never round through a JavaScript number. The
+ * parsed peer `message` of each inbox item is peer content and is not converted:
+ * it is plain parsed JSON (numbers are JavaScript numbers; the text content keeps
+ * the exact digits). */
+function structured(text: string, peerMessages = false): {structuredContent?: ObjectValue} {
     try {
         const parsed: unknown = (JSON.parse as Function)(text, (key: string, value: unknown, context: {source?: string}) =>
             ['generation', 'contactGeneration', 'expectedGeneration'].includes(key) && typeof value === 'number'
                 ? (context.source ?? String(value)) : value);
-        return object(parsed) ? {structuredContent: parsed} : {};
+        if (!object(parsed)) return {};
+        if (peerMessages && Array.isArray(parsed.items)) {
+            const plain = JSON.parse(text) as {items: unknown[]};
+            parsed.items.forEach((item, index) => {
+                const original = plain.items[index];
+                if (object(item) && object(original) && Object.hasOwn(item, 'message')) item.message = original.message;
+            });
+        }
+        return {structuredContent: parsed};
     } catch { return {}; }
 }
 const guide = (id: RequestId, value: ObjectValue) =>
@@ -264,7 +275,7 @@ export async function remoteMcp(request: Request, read: DirectoryRead, privateAc
                 if(!object(profile)||Object.keys(profile).length!==1||profile.id!==caller) throw Error('Profile identity mismatch');
                 return result(id,{isError:false,structuredContent:profile,content:[{type:'text',text:body}]});
             }
-            return result(id, {...structured(body),content:[{type:'text',text:body}]});
+            return result(id, {...structured(body,params.name==='list_my_inbox'),content:[{type:'text',text:body}]});
         } catch {
             return result(id, {isError:true,content:[{type:'text',text:params.name==='get_my_profile'?'Profile identity unavailable.':`Private operation unavailable. ${retryAdvice(args)}`}]});
         }

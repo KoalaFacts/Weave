@@ -108,18 +108,18 @@ export function messagePayload(input: MessageInput, now: bigint): LowLevelPayloa
         bytes: base64(enc.encode(JSON.stringify(build(input, messageId))))};
 }
 
-/** The parsed Message of an application/json body shaped like an A2A Message carrying the envelope messageId; null keeps the raw bytes.
- * A body nested deeper than 32 levels or holding more than 10 000 values is never parsed. The result is untrusted peer content. */
-export function inboxMessage(payload: unknown): Record<string, unknown> | null {
+/** The exact JSON text of an application/json body shaped like an A2A Message carrying the envelope messageId; null keeps the
+ * raw bytes. A body nested deeper than 32 levels or holding more than 10 000 values is never parsed. The text is untrusted peer content. */
+export function inboxMessage(payload: unknown): string | null {
     if (!record(payload) || payload.payloadEncoding !== 'application/json' || typeof payload.bytes !== 'string' || typeof payload.messageId !== 'string') return null;
-    let parsed: unknown;
+    let parsed: unknown, text: string;
     try {
-        const text = new TextDecoder('utf-8', {fatal: true}).decode(Uint8Array.from(atob(payload.bytes), c => c.charCodeAt(0)));
+        text = new TextDecoder('utf-8', {fatal: true}).decode(Uint8Array.from(atob(payload.bytes), c => c.charCodeAt(0)));
         if (!shallowJson(text, MAX_INBOX_DEPTH)) return null;
         parsed = JSON.parse(text);
     }
     catch { return null; }
     if (!withinShape(parsed, MAX_INBOX_DEPTH, MAX_INBOX_VALUES)) return null;
     return record(parsed) && parsed.messageId === payload.messageId && typeof parsed.role === 'string'
-        && Array.isArray(parsed.parts) && parsed.parts.every(record) ? parsed : null;
+        && Array.isArray(parsed.parts) && parsed.parts.every(record) ? text : null;
 }

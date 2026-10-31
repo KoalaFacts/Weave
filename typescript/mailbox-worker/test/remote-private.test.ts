@@ -7,8 +7,9 @@ import {build} from 'esbuild';
 // bundled production module instead of relying on Node's extensionless ESM resolution.
 const built=await build({entryPoints:['src/remote-private.ts'],bundle:true,write:false,platform:'node',format:'esm',logLevel:'silent'});
 const bundle='data:text/javascript;base64,'+Buffer.from(built.outputFiles[0].contents).toString('base64');
-const {privateScope,privateMcpTools,withoutSecrets,executePrivateMcp}=await import(bundle) as typeof import('../src/remote-private.ts');
-import {start} from './harness.ts';
+const {privateScope,privateMcpTools,withoutSecrets,executePrivateMcp:executeWithGrant}=await import(bundle) as typeof import('../src/remote-private.ts');
+const executePrivateMcp=withTestGrant(executeWithGrant);
+import {withTestGrant,start} from './harness.ts';
 import type {Env} from '../src/database.ts';
 
 const origin='https://demo.test';

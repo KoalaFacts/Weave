@@ -1,14 +1,15 @@
 import assert from 'node:assert/strict';
 import { test } from 'node:test';
 import { build } from 'esbuild';
-import { start, payload, type AgentCredential } from './harness.ts';
+import {withTestGrant, start, payload, type AgentCredential } from './harness.ts';
 import { agentKey, bindingRequest, dpopProof, keyEndorsement, keyProof, type TestKey } from './agent-key.ts';
 import type { Env } from '../src/database.ts';
 import { createOwnedAgent, signInHuman } from '../src/humans.ts';
 import { ownerAction } from '../src/owner-actions.ts';
 
 const built = await build({entryPoints: ['src/remote-private.ts'], bundle: true, write: false, platform: 'node', format: 'esm', logLevel: 'silent'});
-const {executePrivateMcp} = await import('data:text/javascript;base64,' + Buffer.from(built.outputFiles[0].contents).toString('base64')) as typeof import('../src/remote-private.ts');
+const {executePrivateMcp:executeWithGrant} = await import('data:text/javascript;base64,' + Buffer.from(built.outputFiles[0].contents).toString('base64')) as typeof import('../src/remote-private.ts');
+const executePrivateMcp=withTestGrant(executeWithGrant);
 
 type Harness = Awaited<ReturnType<typeof start>>;
 type Participant = Awaited<ReturnType<Harness['participant']>>;

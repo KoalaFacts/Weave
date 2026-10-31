@@ -1,12 +1,13 @@
 import assert from 'node:assert/strict';
 import {test} from 'node:test';
 import {build} from 'esbuild';
-import {start} from './harness.ts';
+import {withTestGrant,start} from './harness.ts';
 import type {Env} from '../src/database.ts';
 
 // Match the production Worker bundler-resolution boundary, as in boundaries.test.ts.
 const built=await build({entryPoints:['src/remote-private.ts'],bundle:true,write:false,platform:'node',format:'esm',logLevel:'silent'});
-const {executePrivateMcp}=await import('data:text/javascript;base64,'+Buffer.from(built.outputFiles[0].contents).toString('base64')) as typeof import('../src/remote-private.ts');
+const {executePrivateMcp:executeWithGrant}=await import('data:text/javascript;base64,'+Buffer.from(built.outputFiles[0].contents).toString('base64')) as typeof import('../src/remote-private.ts');
+const executePrivateMcp=withTestGrant(executeWithGrant);
 const origin='https://demo.test';
 
 for(const replace of [false,true])for(const acknowledge of [false,true]){
