@@ -14,14 +14,14 @@ export type KeyRequestView = {requestId: string; agentId: string; kid: string; l
 export type KeyRequestRow = {requestId: string; accountId: string; kid: string; jwk: Ed25519Jwk; label: string | null; endorsedBy: string;
     status: KeyRequestStatus; createdAt: bigint; expiresAt: bigint; decidedAt: bigint | null};
 
-type StoredKeyRequest = {request_id: string; account_id: string; kid: string; public_jwk: string; label: string | null; endorsed_by: string; status: string;
+export type StoredKeyRequest = {request_id: string; account_id: string; kid: string; public_jwk: string; label: string | null; endorsed_by: string; status: string;
     created_at: string; expires_at: string; decided_at: string | null};
 
 const statuses = new Set<string>(['pending', 'confirmed', 'rejected', 'expired']);
-const keyRequestColumns = `request_id,account_id,kid,public_jwk,label,endorsed_by,status,CAST(created_at AS TEXT) created_at,CAST(expires_at AS TEXT) expires_at,
+export const keyRequestColumns = `request_id,account_id,kid,public_jwk,label,endorsed_by,status,CAST(created_at AS TEXT) created_at,CAST(expires_at AS TEXT) expires_at,
     CAST(decided_at AS TEXT) decided_at`;
 
-function keyRequestRow(row: StoredKeyRequest): KeyRequestRow {
+export function keyRequestRow(row: StoredKeyRequest): KeyRequestRow {
     // Only the four statuses and canonical public JWKs are written; anything else is storage corruption.
     if (!statuses.has(row.status)) fail(503, 'storage');
     let stored: unknown;

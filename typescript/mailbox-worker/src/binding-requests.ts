@@ -14,15 +14,15 @@ export type BindingStatus = 'pending' | 'confirmed' | 'rejected' | 'cancelled' |
 export type BindingRequestView = {requestId: string; agentId: string; human: string; kid: string; status: BindingStatus; createdAt: string; expiresAt: string; decidedAt: string | null};
 export type BindingRow = {requestId: string; accountId: string; targetSubject: string; kid: string; status: BindingStatus; createdAt: bigint; expiresAt: bigint; decidedAt: bigint | null};
 
-type StoredBinding = {request_id: string; account_id: string; target_subject: string; kid: string; status: string; created_at: string; expires_at: string; decided_at: string | null};
+export type StoredBinding = {request_id: string; account_id: string; target_subject: string; kid: string; status: string; created_at: string; expires_at: string; decided_at: string | null};
 
 const statuses = new Set<string>(['pending', 'confirmed', 'rejected', 'cancelled', 'expired']);
 const humanTarget = /^github:([1-9][0-9]{0,19})$/;
 const skewSeconds = 60;
-const bindingColumns = `request_id,account_id,target_subject,kid,status,CAST(created_at AS TEXT) created_at,CAST(expires_at AS TEXT) expires_at,
+export const bindingColumns = `request_id,account_id,target_subject,kid,status,CAST(created_at AS TEXT) created_at,CAST(expires_at AS TEXT) expires_at,
     CAST(decided_at AS TEXT) decided_at`;
 
-function bindingRow(row: StoredBinding): BindingRow {
+export function bindingRow(row: StoredBinding): BindingRow {
     // Only the five statuses are written; anything else is storage corruption.
     if (!statuses.has(row.status)) fail(503, 'storage');
     return {requestId: row.request_id, accountId: row.account_id, targetSubject: row.target_subject, kid: row.kid, status: row.status as BindingStatus,

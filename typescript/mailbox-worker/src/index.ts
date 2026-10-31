@@ -22,6 +22,7 @@ import { putCard } from './cards';
 import { decide, requestContact, setBlocked } from './contacts';
 import { deleteContact, ownContacts } from './contact-links';
 import { atomic, type Env } from './database';
+import { accountNotices } from './notices.ts';
 import { ack, send } from './messages';
 import { read } from './reads';
 import { body, fail, json, problem } from './wire';
@@ -132,6 +133,10 @@ export default {
             if(method==='GET'&&contact)return json(await atomic(env.db,tx=>ownContacts(tx,owner,url,decodeURIComponent(contact[1]))));
             if(method==='DELETE'&&contact)return json(await atomic(env.db,tx=>deleteContact(tx,owner,decodeURIComponent(contact[1]))));
             if (method === 'GET' && url.pathname === '/v1/inbox/events') return await stream(env,owner,request,context);
+            if (method === 'GET' && url.pathname === '/v1/inbox') return json(await atomic(env.db,async tx => {
+                const page = await read(tx,url,owner);
+                return {...page,notices:await accountNotices(tx,owner,tx.store.now)};
+            }));
             if (method === 'GET') return json(await atomic(env.db,tx => read(tx,url,owner)));
             const input = await body(request);
             // Validate bounded payloads before cleanup can produce any write.
