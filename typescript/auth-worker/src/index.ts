@@ -140,7 +140,12 @@ async function authorize(req:Request,env:Env,server:OAuthAuthorizationServer<Env
     const handle=form.get("handle"),decision=form.get("decision");
     if(!validHandle(handle)||!["approve","deny"].includes(decision??""))return denied();
     if(decision==="deny"){
+      // Validate the SDK browser-bound handle before touching the durable nonce.
+      // KV deletion from denyConsent alone is eventually consistent: fence any
+      // stale approval replay with the same one-time Durable Object used by Allow.
       const rejected=await oauth.denyConsent(req,handle);
+      const nonce=await getNonce(env,handle);
+      if(!nonce||!await consumeNonce(env,handle,nonce))return denied();
       return new Response(null,{status:302,headers:rejected.headers});
     }
     // The SDK must validate the original browser's consent cookie BEFORE
