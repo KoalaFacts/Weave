@@ -46,6 +46,53 @@ test('invalid AS response never grants access, no cached revoked token',async()=
     const error=await authorizeOAuth(config,req(),'weave:messages.send',exists,(async()=>{throw Error('AS secret failure')}) as typeof fetch,now*1000);
     assert.ok(error instanceof Response);assert.equal(error.status,503);assert.doesNotMatch(await error.text(),/secret/);
 });
+test('RFC7662 introspection body must stop waiting when a 200 JSON stream stalls',{timeout:7_000},async()=>{
+    // HTTP headers can arrive before the authorization server stops producing a body.
+    // The fetch deadline alone does not bound an already delivered Response stream.
+    let accountReads=0,cancelled=false;
+    const upstream=new ReadableStream<Uint8Array>({
+        start(controller){controller.enqueue(new TextEncoder().encode('{"active":true,'));},
+        cancel(){cancelled=true;return new Promise<void>(()=>{});}
+    });
+    const fetcher=(async()=>new Response(upstream,{headers:{'Content-Type':'application/json'}})) as typeof fetch;
+    const started=performance.now();
+    const answer=await authorizeOAuth(config,req(),'weave:messages.send',
+        async()=>{accountReads++;return true;},fetcher);
+    const elapsed=performance.now()-started;
+    assert.ok(answer instanceof Response);
+    assert.equal(answer.status,503,'incomplete introspection cannot authorize an account');
+    assert.equal(accountReads,0,'do not consult account ownership for incomplete AS responses');
+    assert.equal(cancelled,true,'attempt to cancel the stalled upstream');
+    assert.ok(elapsed<6_000,'stalled body must not defeat the 3.5s budget: '+elapsed+'ms');
+});
+test('RFC7662 non-JSON response cannot hang on a broken upstream cancel',{timeout:5_000},async()=>{
+    let cancelled=false;
+    const upstream=new ReadableStream<Uint8Array>({
+        cancel(){cancelled=true;return new Promise<void>(()=>{});}
+    });
+    const fetcher=(async()=>new Response(upstream,{headers:{'Content-Type':'text/html'}})) as typeof fetch;
+    const started=performance.now();
+    const answer=await authorizeOAuth(config,req(),'weave:messages.send',exists,fetcher);
+    assert.ok(answer instanceof Response);
+    assert.equal(answer.status,503);
+    assert.equal(cancelled,true);
+    assert.ok(performance.now()-started<3_500,'invalid response cleanup must not delay denial');
+});
+test('RFC7662 oversized JSON cannot hang on a broken upstream cancel',{timeout:5_000},async()=>{
+    let cancelled=false;
+    const upstream=new ReadableStream<Uint8Array>({
+        start(controller){controller.enqueue(new Uint8Array(8_193));},
+        cancel(){cancelled=true;return new Promise<void>(()=>{});}
+    });
+    const fetcher=(async()=>new Response(upstream,{headers:{'Content-Type':'application/json'}})) as typeof fetch;
+    const started=performance.now();
+    const answer=await authorizeOAuth(config,req(),'weave:messages.send',exists,fetcher);
+    assert.ok(answer instanceof Response);
+    assert.equal(answer.status,503);
+    assert.equal(cancelled,true);
+    assert.ok(performance.now()-started<3_500,'oversized response cleanup must not delay denial');
+});
+
 test('OAuth Basic form-encodes client ID and secret before transport',async()=>{
     const now=Math.floor(Date.now()/1000),special={...config,clientId:'weave+client',clientSecret:'secret+%value'};
     let observed='';
