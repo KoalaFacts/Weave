@@ -73,20 +73,16 @@ export async function humanHasAgent(env: Env, humanId: string, accountId: string
  * immediately denies their owned agents without invalidating unrelated control-owned accounts. */
 export async function oauthAccountActive(env: Env, accountId: string, serviceHumanId?: string | null): Promise<boolean> {
     requireReadable(env); requireUuid(accountId);
-    // Undefined: RFC 7662's independently approved issuer/subject -> account link.
-    // Null: legacy Service Binding token, only valid for a control-owned account.
-    // UUID: owner-linked Service Binding token, only valid while that exact human
-    // still owns the agent and is not frozen (ownership transfer revokes old grants).
-    if (serviceHumanId === null)
+    // Both unbound paths (external RFC 7662 subject link and legacy Service
+    // Binding token) can prove only a control-owned account. A stale external
+    // link must not survive control revocation or transfer into human ownership.
+    // Only an explicit current human UUID may authorize a human-owned agent.
+    if (serviceHumanId === null || serviceHumanId === undefined)
         return await env.db.prepare('SELECT 1 n FROM accounts WHERE account_id=? AND human_id IS NULL AND control_hash IS NOT NULL')
             .bind(accountId).first('n') !== null;
-    if (serviceHumanId !== undefined) {
-        if (!uuidPattern.test(serviceHumanId)) return false;
-        return await env.db.prepare('SELECT 1 n FROM accounts a JOIN humans h ON h.human_id=a.human_id WHERE a.account_id=? AND a.human_id=? AND h.frozen_at IS NULL')
-            .bind(accountId, serviceHumanId).first('n') !== null;
-    }
-    return await env.db.prepare('SELECT 1 n FROM accounts a LEFT JOIN humans h ON h.human_id=a.human_id WHERE a.account_id=? AND (a.human_id IS NULL OR (h.human_id IS NOT NULL AND h.frozen_at IS NULL))')
-        .bind(accountId).first('n') !== null;
+    if (!uuidPattern.test(serviceHumanId)) return false;
+    return await env.db.prepare('SELECT 1 n FROM accounts a JOIN humans h ON h.human_id=a.human_id WHERE a.account_id=? AND a.human_id=? AND h.frozen_at IS NULL')
+        .bind(accountId, serviceHumanId).first('n') !== null;
 }
 
 export async function createOwnedAgent(env: Env, input: { humanId: string; displayName: string; sourceIp: string }): Promise<CreateAgentResult> {
