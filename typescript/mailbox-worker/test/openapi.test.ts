@@ -2,6 +2,7 @@ import assert from 'node:assert/strict';
 import { readFile } from 'node:fs/promises';
 import { test } from 'node:test';
 import { start, payload} from './harness.ts';
+import { agentKey, dpopProof, keyEndorsement, keyProof } from './agent-key.ts';
 
 const source = await readFile('src/openapi.json','utf8');
 const spec = JSON.parse(source);
@@ -29,7 +30,7 @@ test('OpenAPI is an anonymous no-store JSON asset independent of account storage
 
 test('OpenAPI describes the current HTTP method/path set with resolved local references and security', () => {
     const routes = {
-        '/v1/accounts':['post'], '/v1/contacts':['get'], '/v1/contacts/accounts/{accountId}':['get','delete'], '/v1/addresses':['get','post'], '/v1/addresses/{addressId}':['get','put','delete'],
+        '/v1/accounts':['post'], '/v1/token':['post'], '/v1/keys':['get','post'], '/v1/keys/{kid}':['delete'], '/v1/contacts':['get'], '/v1/contacts/accounts/{accountId}':['get','delete'], '/v1/addresses':['get','post'], '/v1/addresses/{addressId}':['get','put','delete'],
         '/v1/directory':['get'], '/v1/directory/address':['get'], '/v1/contacts/cards':['get','put'],
         '/v1/contacts/owned-cards':['get'], '/v1/contacts/card':['get'], '/v1/contacts/requests':['get','post'],
         '/v1/contacts/requests/{requestId}':['get'], '/v1/contacts/requests/{requestId}/decision':['post'],
@@ -49,7 +50,8 @@ test('OpenAPI describes the current HTTP method/path set with resolved local ref
             ids.add(operation.operationId);
             const anonymous = method === 'get' && ['/v1/directory','/v1/directory/address','/v1/contacts/cards','/v1/contacts/card'].includes(path);
             const token = {AgentToken:[],DPoPProof:[]};
-            assert.deepEqual(operation.security ?? spec.security,path === '/v1/accounts' ? [{DPoPProof:[]}] : anonymous ? [{},token] : [token],path);
+            const proofOnly = path === '/v1/accounts' || path === '/v1/token';
+            assert.deepEqual(operation.security ?? spec.security,proofOnly ? [{DPoPProof:[]}] : anonymous ? [{},token] : [token],path);
             const expectedPath = [...path.matchAll(/\{([^}]+)\}/g)].map(x => x[1]).sort();
             const actualPath = (operation.parameters ?? []).map(resolve).filter(x => x.in === 'path');
             assert.deepEqual(actualPath.map(x => x.name).sort(),expectedPath);
@@ -68,6 +70,17 @@ test('OpenAPI describes the current HTTP method/path set with resolved local ref
     assert.equal(spec.components.securitySchemes.DPoPProof.type,'apiKey');
     assert.equal(spec.components.securitySchemes.DPoPProof.name,'DPoP');
     assert.equal(spec.components.securitySchemes.DPoPProof.in,'header');
+    assert.doesNotMatch(source,/X-Weave-(?:Account|Mailbox)-Control|AccountControl|MailboxControl/);
+    assert.deepEqual(spec.components.responses['401'].headers['WWW-Authenticate'].schema,{type:'string',const:'DPoP algs="EdDSA"'});
+    assert.equal(spec.components.responses['401'].headers['WWW-Authenticate'].required,true);
+    const labelPattern = spec.components.schemas.accountSubmission.properties.label.anyOf[0].pattern;
+    assert.equal(labelPattern,spec.components.schemas.accountSubmission.properties.displayName.anyOf[0].pattern);
+    const tokenForm = spec.paths['/v1/token'].post.requestBody.content['application/x-www-form-urlencoded'].schema;
+    assert.deepEqual(tokenForm.required.toSorted(),['client_assertion','client_assertion_type','grant_type']);
+    assert.deepEqual(Object.keys(tokenForm.properties).sort(),['client_assertion','client_assertion_type','client_id','grant_type']);
+    assert.deepEqual(resolve(spec.paths['/v1/token'].post.responses['400'].content['application/json'].schema).properties.error.enum.toSorted(),
+        ['invalid_dpop_proof','invalid_request','unsupported_grant_type']);
+    assert.deepEqual(spec.components.schemas.keyConflict.properties.reason.enum.toSorted(),['cooling','key-in-use','last-live-key','owned-agent']);
     assert.match(source,/"maximum": 9223372036854775807\b/);
     assert.doesNotMatch(source,/9223372036854776000/);
     assert.equal(spec.paths['/v1/inbox/events'].get.responses['200'].content['text/event-stream'].schema.type,'string');
@@ -110,6 +123,26 @@ test('documented account/address/contact/message/ACK responses match real Worker
         const registered = await h.ok('/v1/accounts',h.stranger(),'POST',{label:'documented'});
         responseShape(spec.paths['/v1/accounts'].post,registered);
         assert.equal(typeof registered.kid,'string');
+        const tokenUrl = 'http://localhost/v1/token';
+        const tokenResponse = await h.mf.dispatchFetch(tokenUrl,{method:'POST',headers:{'Content-Type':'application/x-www-form-urlencoded',DPoP:dpopProof(b.key,{method:'POST',url:tokenUrl})},
+            body:'grant_type=client_credentials&client_assertion_type=urn%3Aietf%3Aparams%3Aoauth%3Aclient-assertion-type%3Ajwt-bearer&client_assertion=invalid'});
+        assert.equal(tokenResponse.status,401);
+        assert.deepEqual(await tokenResponse.json(),{error:'invalid_client'});
+        responseShape(spec.paths['/v1/keys'].get,await h.ok('/v1/keys',b));
+        const audience = 'http://localhost/v1/keys', added = agentKey();
+        const summary = await h.ok('/v1/keys',b,'POST',{label:'backup',proof:keyProof(added,{accountId:b.accountId,audience}),
+            endorsement:keyEndorsement(b.key,{accountId:b.accountId,audience,newKid:added.kid})});
+        const keySchema = resolve(spec.paths['/v1/keys'].post.responses['200'].content['application/json'].schema);
+        assert.equal(keySchema.additionalProperties,false);
+        assert.deepEqual(Object.keys(summary).sort(),keySchema.required.toSorted());
+        const refused = await h.request('/v1/keys/'+b.key.kid,b,'DELETE');
+        assert.equal(refused.status,409);
+        const conflict = await refused.json();
+        assert.deepEqual(Object.keys(conflict).sort(),resolve(resolve(spec.paths['/v1/keys/{kid}'].delete.responses['409']).content['application/problem+json'].schema).required.toSorted());
+        responseShape(spec.paths['/v1/keys/{kid}'].delete,await h.ok('/v1/keys/'+added.kid,b,'DELETE'));
+        const unauthenticated = await h.request('/v1/addresses',h.stranger());
+        assert.equal(unauthenticated.status,401);
+        assert.equal(unauthenticated.headers.get('www-authenticate'),spec.components.responses['401'].headers['WWW-Authenticate'].schema.const);
         const address = await h.address(b);
         responseShape(spec.paths['/v1/addresses'].post,address);
         responseShape(spec.paths['/v1/addresses'].get,await h.ok('/v1/addresses',b));

@@ -316,9 +316,7 @@ export const mailboxRecordsLegacy = sqliteTable("mailbox_records_legacy", {
     index("records_kind").on(t.kind,t.seq),
     index("records_recipient").on(t.kind,sql`json_extract(data,'$.recipientMailboxId')`,t.seq),
     index("records_public").on(t.kind,sql`json_extract(data,'$.visibility')`,t.id),
-    index("records_control").on(t.kind,sql`json_extract(data,'$.controlHash')`),
     index("records_expiry").on(t.kind,sql`json_extract(data,'$.expiresAt')`),
-    uniqueIndex("account_control_hash").on(sql`json_extract(data,'$.controlHash')`).where(sql`kind='account'`),
     index("message_recipient").on(t.kind,sql`json_extract(data,'$.receipt.recipientMailboxId')`,t.seq),
     index("address_owner").on(t.kind,sql`json_extract(data,'$.ownerMailboxId')`,t.id),
     check("mailbox_records_legacy_valid_json",sql`json_valid(data)`)

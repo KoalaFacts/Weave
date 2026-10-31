@@ -1,4 +1,4 @@
-/** Fresh, canonical 256-bit authorization nonce; never a mailbox control. */
+/** Fresh, canonical 256-bit authorization nonce; never an agent credential. */
 export const ttlMs = 600_000;
 const pattern = /^[A-Za-z0-9_-]{43}$/;
 export function createChallenge(): string {

@@ -53,7 +53,6 @@ async function register(page, name) {
     await page.locator('#createAccount').click();
     const request = await registration;
     await waitText(page, 'status', 'Account connected.');
-    assert.equal(await request.headerValue('X-Weave-Account-Control'), null);
     assert.equal(await request.headerValue('Authorization'), null);
     const proof = JSON.parse(Buffer.from((await request.headerValue('DPoP')).split('.')[0], 'base64url').toString());
     assert.equal(proof.typ, 'dpop+jwt');

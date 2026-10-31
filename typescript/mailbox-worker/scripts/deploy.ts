@@ -81,7 +81,7 @@ export async function deploy({env=process.env,fetchImpl=fetch,run,root=directory
         let body:{success?:boolean;result?:T};try{body=await response.json() as typeof body;}catch{throw Error(label+' lookup returned invalid JSON; '+state+'.');}if(body?.success!==true||!body.result)throw Error(label+' lookup returned an invalid result; '+state+'.');return body.result;
     }
     // Public discovery must be observed from the public Internet, with no
-    // Cloudflare control token or mailbox control sent to those origins.
+    // Cloudflare API token or agent credential sent to those origins.
     // Bound response size and deadline, and never reflect a remote body/error.
     async function publicJson(url:string,label:string):Promise<Record<string,unknown>>{
         let response:Response;

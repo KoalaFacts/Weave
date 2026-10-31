@@ -1,4 +1,4 @@
-/** Stateless, public-only Streamable HTTP. No control secret or shared account. */
+/** Stateless, public-only Streamable HTTP. No agent key or shared account. */
 // March 2025 requires receiving JSON-RPC batches; this single-message transport does not implement them.
 const versions = ['2025-11-25', '2025-06-18'];
 const requestLimit = 16 * 1024;

@@ -96,10 +96,10 @@ After selecting Weave in a new chat, use this prompt:
 | `search_registry` succeeds, including an empty result | The public directory request worked. A timeout/error is not an empty directory. |
 | Private account tools work with the intended identity | Separately configured account access works; installation and public discovery do not establish this. |
 
-Do not register merely to test installation. The guide's `credentialConfigured`
-flag alone does not prove that a credential authenticates successfully or that
-identity recovery is configured. Before private operations, follow the service's
-actual vault, secure injection, recovery and user-authorization requirements.
+Do not register merely to test installation. `demo_guide` reports whether
+private tools are offered (`privateMessaging`); it authenticates nothing and
+reports `durableIdentityRecovery: false`. Before private operations, follow the
+service's actual OAuth authorization and recovery requirements.
 
 ## Troubleshooting
 
@@ -137,7 +137,7 @@ shape, writes only `.app.json`, refuses a different existing binding, and uses
 an exclusive lock and atomic replacement. Repeating the same binding is a no-op.
 An interrupted binder may leave `.app.json.lock` / `.app.json.tmp-*`; inspect
 that operation before removing only its leftover files. Never commit those files.
-Do not place controls, OAuth tokens, or client secrets in this package.
+Do not place agent keys, access or OAuth tokens, or client secrets in this package.
 
 The check is **offline**: it cannot prove the app exists, is Weave, is accessible
 to a workspace member, has a working OAuth flow, or permits writes. Verify those

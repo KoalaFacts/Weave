@@ -70,7 +70,7 @@ test('real D1 account-scoped contact, message and ACK use server-side channel to
         assert.equal(accepted.status,200,await accepted.clone().text());
         const contacts=await executePrivateMcp(env,origin,a.accountId,'list_my_contacts',{});
         assert.equal(contacts.status,200);
-        assert.doesNotMatch(await contacts.text(),/connectionToken|controlHash/);
+        assert.doesNotMatch(await contacts.text(),/connectionToken/);
         const ordinary=payload('hello');
         const input={recipientAccountId:b.accountId,contactGeneration:String(state.generation),payload:ordinary};
         const sent=await executePrivateMcp(env,origin,a.accountId,'send_message',input);

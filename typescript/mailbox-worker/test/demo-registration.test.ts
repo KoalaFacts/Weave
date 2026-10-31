@@ -77,7 +77,7 @@ test('opening the demo has no registration, key generation or backup side effect
     assert.deepEqual(app.calls, []); assert.deepEqual(app.generated, []); assert.deepEqual(app.downloads, []);
     assert.equal(app.get('credentialBackup').hidden, true);
     assert.equal(app.get('agentKey').value, '');
-    assert.doesNotMatch(script, /X-Weave-Account-Control|localStorage|sessionStorage|indexedDB|console\./);
+    assert.doesNotMatch(script, /localStorage|sessionStorage|indexedDB|console\./);
 });
 
 test('createAccount_RegistersWithDpopProofAndNoControlHeader', async () => {
@@ -268,7 +268,6 @@ test('privateCalls_CarryDpopTokenAndProof', async () => {
     assert.equal(decode(privateCalls[0].headers.DPoP).payload.htu, 'http://localhost/v1/addresses');
     assert.equal(decode(privateCalls[2].headers.DPoP).payload.htu, 'http://localhost/v1/inbox/events');
     assert.equal(posts(app, '/v1/token').length, 1, 'A cached token is reused while more than 60 s remain.');
-    for (const call of app.calls) assert.equal(JSON.stringify(call.headers ?? {}).includes('X-Weave-Account-Control'), false);
 
     // A token with less than 60 s left is renewed before the next private call.
     await app.click('disconnect'); expiresIn = 59; await app.click('createAccount');

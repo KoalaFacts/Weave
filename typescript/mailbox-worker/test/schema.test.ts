@@ -25,6 +25,9 @@ test('latest Drizzle schema defines the approved tables without compatibility vi
         assert.equal(business.reduce((n,name)=>n+db.prepare(`PRAGMA table_info(${name})`).all().length,0),152);
         assert.ok(business.flatMap(name=>db.prepare(`PRAGMA table_info(${name})`).all()).every(c=>!c.name.endsWith('_ticks')));
         assert.ok(!db.prepare('PRAGMA table_info(mailbox_records)').all().some(c=>c.name==='kind'));
+        // The archived legacy rows are never looked up by the removed account credential.
+        assert.deepEqual(db.prepare("SELECT name FROM sqlite_master WHERE type='index' AND tbl_name='mailbox_records_legacy' ORDER BY name").all().map(r=>r.name),
+            ['address_owner','legacy_identity','message_recipient','records_expiry','records_kind','records_public','records_recipient']);
     } finally { db.close(); }
 });
 

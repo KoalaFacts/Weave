@@ -21,7 +21,7 @@ The user explicitly chooses Allow or Deny. On Allow the AS validates the SDK
 consent cookie, re-reads the human session, atomically consumes the nonce in a
 DO transaction, then creates the new agent or confirms the chosen one is owned
 by that human. Client form fields cannot change scopes, subject or target, and
-no mailbox account control is ever entered at, sent to or held by the AS.
+no agent key or agent access token is ever entered at, sent to or held by the AS.
 
 Upon approval the SDK issues the code and handles PKCE exchange, refresh and
 revocation using its KV token store. Access tokens last **900 seconds**, with
@@ -135,7 +135,7 @@ its existing KV/DO bindings, GitHub client ID, both sign-in secrets and the
 exact `MAILBOX` binding to `demo`/`HumanDirectory`, and anonymous RFC 8414 issuer/CIMD/PKCE
 discovery. Any missing, mixed or mismatched prerequisite aborts **before**
 maintenance, schema processing or an upload. It never provisions KV, DO,
-credentials, D1 identity links or the AS Worker itself.
+credentials, D1 human or agent records or the AS Worker itself.
 
 After that preflight, the same versioned maintenance/recovery/active release
 stages the fixed `AUTH_SERVER` entrypoint service binding and both fixed

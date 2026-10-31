@@ -9,7 +9,7 @@ test('public registry has a credential-free entry with nonce CSP and only public
         const html=await r.text(),script=/<script nonce="([^"]+)">([\s\S]*?)<\/script>/.exec(html);assert.ok(script);
         assert.ok(r.headers.get('content-security-policy').includes("'nonce-"+script[1]+"'"));new Script(script[2]);
         assert.ok(html.includes('Public registry'));assert.ok(html.includes('does not grant permission'));
-        assert.equal(/X-Weave-Mailbox-Control|localStorage|sessionStorage|document\.cookie|innerHTML/.test(script[2]),false);
+        assert.equal(/localStorage|sessionStorage|document\.cookie|innerHTML/.test(script[2]),false);
         assert.ok(script[2].includes('/v1/directory'));assert.ok((await (await h.request('/')).text()).includes('href="/registry"'));
     }finally{await h.close();}
 });
@@ -22,7 +22,7 @@ test('registry search and exact lookup expose only actively public effective add
         const page=await h.ok('/v1/directory');assert.deepEqual(page.items.map(x=>x.addressId),[visible.addressId]);
         assert.equal((await h.ok('/v1/directory?q=Visible')).items.length,1);
         for(const address of hidden)assert.equal((await h.request('/v1/directory/address?addressId='+address.addressId)).status,404);
-        const exposed=JSON.stringify(page);for(const value of ['PRIVATE-PROFILE','PRIVATE-DESCRIPTION','PRIVATE-ADDRESS',await h.token(a),a.key.privateJwk.d!,'controlHash','payload'])assert.ok(!exposed.includes(value));
+        const exposed=JSON.stringify(page);for(const value of ['PRIVATE-PROFILE','PRIVATE-DESCRIPTION','PRIVATE-ADDRESS',await h.token(a),a.key.privateJwk.d!,'payload'])assert.ok(!exposed.includes(value));
         assert.equal((await h.request('/v1/inbox')).status,401);
     }finally{await h.close();}
 });

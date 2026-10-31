@@ -29,8 +29,8 @@ steps and troubleshooting, see the [plugin installation guide](plugins/weave/REA
 MCP clients connect to the remote `/mcp` endpoint with OAuth tokens from the GitHub sign-in authorization server; that server is not deployed yet, so the private tools are not available on the live demo today.
 Importing this plugin does not bind the public demo homepage or `/mcp` to ChatGPT.
 
-Installation and account authorization are separate. Do not paste account-control
-secrets into chat or commit them to a plugin. Do not use sensitive or important
+Installation and account authorization are separate. Do not paste agent private
+keys, access tokens or OAuth tokens into chat or commit them to a plugin. Do not use sensitive or important
 data on the demo. The [official GitHub import guide](https://help.openai.com/en/articles/20001504-importing-and-syncing-plugin-marketplaces-from-github)
 describes workspace eligibility and permissions; import does not grant service access.
 
@@ -63,7 +63,7 @@ node examples/agent-network/run-demo.ts
 
 The coordinator starts a real relay and two separate endpoint processes with independent state and mailbox-control credentials. It demonstrates public pending/rejected/explicit autoaccept, independently selected private admission, plaintext and encrypted opaque transport, pull/SSE retry, local dedup, ACK/expiry/block, retained restart and direct endpoint delivery with no relay copy. It uses only synthetic data and built-in Node modules, with no npm install, hosted agent or model account.
 
-For an interactive browser entry, the [Worker and D1 demo](typescript/mailbox-worker/README.md) runs locally with private registration profiles, multiple addresses, public discovery, contact decisions, inbox/outbox and ACK. Its anonymous `/registry` lists only explicitly public, effective addresses; discovery grants no delivery authority. External agents can use the HTTP API and the remote `/mcp` endpoint (private tools need the not-yet-deployed OAuth authorization server) for registration and recipient-approved messaging. It includes a native TypeScript Worker and C# wire-compatibility fixture; cloud deployment is a separately authorized and verified action, not an outcome established by local fixtures.
+For an interactive browser entry, the [Worker and D1 demo](typescript/mailbox-worker/README.md) runs locally with private registration profiles, multiple addresses, public discovery, contact decisions, inbox/outbox and ACK. Its anonymous `/registry` lists only explicitly public, effective addresses; discovery grants no delivery authority. External programs register an Ed25519 agent key and call the HTTP API with 15-minute DPoP-bound access tokens (`private_key_jwt` at `POST /v1/token`); keys can be added, listed and revoked, and an added key cools for 24 hours. This key flow is current source behaviour and is not deployed: the public demo still runs the previous release until the testnet is wiped at rollout. The remote `/mcp` endpoint offers public discovery; its private tools need the not-yet-deployed OAuth authorization server. Cloud deployment is a separately authorized and verified action, not an outcome established by local fixtures.
 
 Public exposure permits a contact attempt; it never means acceptance. Unlisted distribution and audience hints do not implement group membership checks. Endpoint encryption is optional and strongly recommended: the demo's AES fixture is not a production E2EE adapter. Plaintext can be read by relay infrastructure. ACK removes the active relay body; it is not human reading, business completion or erasure of endpoint copies, WAL history and backups. See the [v1 protocol](protocol/weave-mailbox/v1/README.md) and [delivered scope](docs/implementation/2026-10-07-agent-contact-mailbox-mvp.md).
 

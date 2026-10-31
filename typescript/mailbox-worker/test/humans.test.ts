@@ -58,8 +58,6 @@ test('createOwnedAgent_NewHuman_AgentListedWithoutKey', async () => {
         assert.equal(await humanHasAgent(env, id, accountId), true);
         assert.equal(await h.db.prepare('SELECT human_id FROM accounts WHERE account_id=?').bind(accountId).first('human_id'), id);
         assert.equal(await h.db.prepare('SELECT count(*) n FROM agent_keys WHERE account_id=?').bind(accountId).first('n'), 0);
-        const columns = (await h.db.prepare('PRAGMA table_info(accounts)').all<{ name: string }>()).results.map(c => c.name);
-        assert.deepEqual(columns.filter(name => name.startsWith('control_')), []);
         const self = await h.register();
         assert.equal(await h.db.prepare('SELECT human_id FROM accounts WHERE account_id=?').bind(self.accountId).first('human_id'), null);
         assert.equal((await h.request('/v1/addresses', h.stranger())).status, 401);

@@ -60,7 +60,7 @@
             "$ref": "#/components/responses/413"
           }
         },
-        "description": "Send a DPoP proof (no Authorization header) whose header jwk is the agent's Ed25519 public key; a new key creates one ownerless agent when registration is enabled and the key becomes its first key, identified by its RFC 7638 thumbprint kid. Private key material is never sent or stored. Repeating a live registered key returns its original private profile without updating it, including when new registration is disabled. Checked-in demo registration: enabled, 100 accounts total, 10 new accounts/source/hour, 100 globally/hour. No initial addresses. Unknown body fields are 400 even on reconnect.",
+        "description": "Send a DPoP proof (no Authorization header; htm POST, htu <origin>/v1/accounts, no ath) whose header jwk is the agent's Ed25519 public key; a new key creates one ownerless agent when registration is enabled and the key becomes its first key, identified by its RFC 7638 thumbprint kid. Private key material is never sent or stored. Repeating a live registered key returns its original private profile without updating it, including when new registration is disabled. Checked-in demo registration: enabled, 100 accounts total, 10 new accounts/source/hour, 100 globally/hour. No initial addresses. Unknown body fields are 400 even on reconnect. A revoked key is 401.",
         "requestBody": {
           "required": true,
           "description": "UTF-8 JSON; unknown/missing fields rejected. Nullable required fields must be present.",
@@ -77,6 +77,318 @@
             "DPoPProof": []
           }
         ]
+      }
+    },
+    "/v1/token": {
+      "post": {
+        "operationId": "issueAgentToken",
+        "summary": "Exchange a key assertion for a DPoP-bound access token",
+        "description": "OAuth 2.0 client credentials with private_key_jwt client authentication (RFC 7523) and DPoP (RFC 9449). Send no Authorization header. The DPoP proof is signed by the same key as the assertion, with htm POST, htu <origin>/v1/token and no ath. client_assertion is a compact JWS with header {alg: \"EdDSA\" or \"Ed25519\", kid} and payload {iss: <accountId>, sub: <accountId>, aud: \"<origin>/v1/token\", iat, exp, jti}: exp after now and at most now + 300 seconds, iat at most 60 seconds ahead and 300 seconds behind, jti 16 to 128 printable ASCII characters. Each jti is accepted once. Errors use the RFC 6749 JSON form, not problem+json; maintenance and read-only recovery return the shared 503 maintenance problem.",
+        "security": [
+          {
+            "DPoPProof": []
+          }
+        ],
+        "requestBody": {
+          "required": true,
+          "content": {
+            "application/x-www-form-urlencoded": {
+              "schema": {
+                "type": "object",
+                "additionalProperties": false,
+                "properties": {
+                  "grant_type": {
+                    "const": "client_credentials"
+                  },
+                  "client_assertion_type": {
+                    "const": "urn:ietf:params:oauth:client-assertion-type:jwt-bearer"
+                  },
+                  "client_assertion": {
+                    "type": "string",
+                    "description": "Compact EdDSA JWS signed by a live agent key."
+                  },
+                  "client_id": {
+                    "type": "string",
+                    "description": "Optional; when present it must equal the accountId."
+                  }
+                },
+                "required": [
+                  "grant_type",
+                  "client_assertion_type",
+                  "client_assertion"
+                ],
+                "description": "At most 8192 bytes; each parameter at most once; unknown parameters are invalid_request."
+              }
+            }
+          }
+        },
+        "responses": {
+          "200": {
+            "description": "Success.",
+            "headers": {
+              "Cache-Control": {
+                "schema": {
+                  "type": "string",
+                  "const": "no-store"
+                }
+              },
+              "Pragma": {
+                "schema": {
+                  "type": "string",
+                  "const": "no-cache"
+                }
+              }
+            },
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/tokenResponse"
+                }
+              }
+            }
+          },
+          "400": {
+            "description": "Malformed form, unsupported grant, or a DPoP proof that is invalid or not signed by the assertion key.",
+            "headers": {
+              "Cache-Control": {
+                "schema": {
+                  "type": "string",
+                  "const": "no-store"
+                }
+              },
+              "Pragma": {
+                "schema": {
+                  "type": "string",
+                  "const": "no-cache"
+                }
+              }
+            },
+            "content": {
+              "application/json": {
+                "schema": {
+                  "allOf": [
+                    {
+                      "$ref": "#/components/schemas/tokenError"
+                    }
+                  ],
+                  "properties": {
+                    "error": {
+                      "enum": [
+                        "invalid_request",
+                        "unsupported_grant_type",
+                        "invalid_dpop_proof"
+                      ]
+                    }
+                  }
+                }
+              }
+            }
+          },
+          "401": {
+            "description": "Any assertion failure, including replay and an unknown or revoked key.",
+            "headers": {
+              "Cache-Control": {
+                "schema": {
+                  "type": "string",
+                  "const": "no-store"
+                }
+              },
+              "Pragma": {
+                "schema": {
+                  "type": "string",
+                  "const": "no-cache"
+                }
+              }
+            },
+            "content": {
+              "application/json": {
+                "schema": {
+                  "allOf": [
+                    {
+                      "$ref": "#/components/schemas/tokenError"
+                    }
+                  ],
+                  "properties": {
+                    "error": {
+                      "enum": [
+                        "invalid_client"
+                      ]
+                    }
+                  }
+                }
+              }
+            }
+          },
+          "503": {
+            "description": "temporarily_unavailable: nothing was issued; retry with a new assertion. Maintenance and read-only recovery return the shared maintenance problem with Retry-After: 30.",
+            "headers": {
+              "Cache-Control": {
+                "schema": {
+                  "type": "string",
+                  "const": "no-store"
+                }
+              },
+              "Retry-After": {
+                "description": "Present for maintenance mode.",
+                "schema": {
+                  "type": "integer",
+                  "minimum": 1
+                }
+              }
+            },
+            "content": {
+              "application/json": {
+                "schema": {
+                  "allOf": [
+                    {
+                      "$ref": "#/components/schemas/tokenError"
+                    }
+                  ],
+                  "properties": {
+                    "error": {
+                      "const": "temporarily_unavailable"
+                    }
+                  }
+                }
+              },
+              "application/problem+json": {
+                "schema": {
+                  "$ref": "#/components/schemas/maintenanceProblem"
+                }
+              }
+            }
+          }
+        }
+      }
+    },
+    "/v1/keys": {
+      "get": {
+        "operationId": "listAgentKeys",
+        "summary": "List the agent's live keys",
+        "description": "Live keys of the authenticated agent, oldest first. No pagination: an agent holds at most 100 live keys.",
+        "responses": {
+          "200": {
+            "description": "Success.",
+            "headers": {
+              "Cache-Control": {
+                "schema": {
+                  "type": "string",
+                  "const": "no-store"
+                }
+              }
+            },
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/agentKeyPage"
+                }
+              }
+            }
+          },
+          "401": {
+            "$ref": "#/components/responses/401"
+          },
+          "503": {
+            "$ref": "#/components/responses/503"
+          }
+        }
+      },
+      "post": {
+        "operationId": "addAgentKey",
+        "summary": "Add a key endorsed by the current key",
+        "description": "The new key proves possession and the authenticated key endorses its thumbprint. The added key cools for 24 hours: it authenticates normally, but it cannot endorse another key and may revoke only itself. Repeating a live key of this agent returns its summary. At most 100 live keys (429 capacity). Agents owned by a person cannot add keys in this release.",
+        "requestBody": {
+          "required": true,
+          "content": {
+            "application/json": {
+              "schema": {
+                "$ref": "#/components/schemas/agentKeySubmission"
+              }
+            }
+          }
+        },
+        "responses": {
+          "200": {
+            "description": "Success.",
+            "headers": {
+              "Cache-Control": {
+                "schema": {
+                  "type": "string",
+                  "const": "no-store"
+                }
+              }
+            },
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/agentKey"
+                }
+              }
+            }
+          },
+          "400": {
+            "$ref": "#/components/responses/fieldInvalid"
+          },
+          "401": {
+            "$ref": "#/components/responses/401"
+          },
+          "503": {
+            "$ref": "#/components/responses/503"
+          },
+          "409": {
+            "$ref": "#/components/responses/keyConflict"
+          },
+          "413": {
+            "$ref": "#/components/responses/413"
+          },
+          "429": {
+            "$ref": "#/components/responses/429"
+          }
+        }
+      }
+    },
+    "/v1/keys/{kid}": {
+      "delete": {
+        "operationId": "revokeAgentKey",
+        "summary": "Revoke a key of the authenticated agent",
+        "description": "Revocation takes effect on the next request: tokens obtained with the key stop working. Repeating returns the original revokedAt. For an ownerless agent the last live key cannot be revoked; while any of its keys cools, no settled key can be revoked (not even by itself) and a cooling key may revoke only itself. A key of another agent is 404. No request body.",
+        "parameters": [
+          {
+            "$ref": "#/components/parameters/kidPath"
+          }
+        ],
+        "responses": {
+          "200": {
+            "description": "Success.",
+            "headers": {
+              "Cache-Control": {
+                "schema": {
+                  "type": "string",
+                  "const": "no-store"
+                }
+              }
+            },
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/agentKeyRevocation"
+                }
+              }
+            }
+          },
+          "401": {
+            "$ref": "#/components/responses/401"
+          },
+          "503": {
+            "$ref": "#/components/responses/503"
+          },
+          "404": {
+            "$ref": "#/components/responses/404"
+          },
+          "409": {
+            "$ref": "#/components/responses/keyConflict"
+          }
+        }
       }
     },
     "/v1/addresses": {
@@ -1744,6 +2056,16 @@
           "pattern": "^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$"
         },
         "description": "Canonical lowercase UUID. Must match authenticated agentId."
+      },
+      "kidPath": {
+        "name": "kid",
+        "in": "path",
+        "required": true,
+        "schema": {
+          "type": "string",
+          "pattern": "^[A-Za-z0-9_-]{43}$",
+          "description": "RFC 7638 thumbprint of an Ed25519 public key."
+        }
       }
     },
     "responses": {
@@ -1783,12 +2105,20 @@
         }
       },
       "401": {
-        "description": "unauthenticated: Agent authentication required. Carries WWW-Authenticate: DPoP algs=\"EdDSA\".",
+        "description": "unauthenticated: Agent authentication required. The access token is missing, expired or revoked, or the DPoP proof is missing or invalid. Obtain a new token from POST /v1/token and retry with a fresh proof.",
         "headers": {
           "Cache-Control": {
             "schema": {
               "type": "string",
               "const": "no-store"
+            }
+          },
+          "WWW-Authenticate": {
+            "required": true,
+            "description": "RFC 9449 DPoP challenge.",
+            "schema": {
+              "type": "string",
+              "const": "DPoP algs=\"EdDSA\""
             }
           }
         },
@@ -2080,6 +2410,42 @@
                   }
                 }
               ]
+            }
+          }
+        }
+      },
+      "keyConflict": {
+        "description": "conflict: key state refusal; reason explains which rule applied.",
+        "headers": {
+          "Cache-Control": {
+            "schema": {
+              "type": "string",
+              "const": "no-store"
+            }
+          }
+        },
+        "content": {
+          "application/problem+json": {
+            "schema": {
+              "$ref": "#/components/schemas/keyConflict"
+            }
+          }
+        }
+      },
+      "fieldInvalid": {
+        "description": "invalid: malformed body, JWS or claims; field names proof, endorsement or label.",
+        "headers": {
+          "Cache-Control": {
+            "schema": {
+              "type": "string",
+              "const": "no-store"
+            }
+          }
+        },
+        "content": {
+          "application/problem+json": {
+            "schema": {
+              "$ref": "#/components/schemas/fieldProblem"
             }
           }
         }
@@ -3054,8 +3420,8 @@
                 "type": "string",
                 "minLength": 1,
                 "maxLength": 64,
-                "pattern": "^[^\u0000-\u001f-]*$",
-                "description": "Label for the registered key."
+                "pattern": "^[^\\u0000-\\u001f\\u007f-\\u009f]*$",
+                "description": "Label for the key; 1 to 64 UTF-16 code units without control characters."
               },
               {
                 "type": "null"
@@ -3573,6 +3939,252 @@
           "title",
           "code"
         ]
+      },
+      "agentKey": {
+        "type": "object",
+        "additionalProperties": false,
+        "properties": {
+          "kid": {
+            "type": "string",
+            "pattern": "^[A-Za-z0-9_-]{43}$",
+            "description": "RFC 7638 thumbprint of an Ed25519 public key."
+          },
+          "label": {
+            "anyOf": [
+              {
+                "type": "string",
+                "minLength": 1,
+                "maxLength": 64
+              },
+              {
+                "type": "null"
+              }
+            ]
+          },
+          "createdAt": {
+            "type": "string",
+            "format": "date-time",
+            "pattern": "^\\d{4}-\\d{2}-\\d{2}T\\d{2}:\\d{2}:\\d{2}(?:\\.\\d{1,7})?Z$",
+            "description": "UTC timestamp ending in Z."
+          },
+          "lastUsedAt": {
+            "anyOf": [
+              {
+                "type": "string",
+                "format": "date-time",
+                "pattern": "^\\d{4}-\\d{2}-\\d{2}T\\d{2}:\\d{2}:\\d{2}(?:\\.\\d{1,7})?Z$",
+                "description": "UTC timestamp ending in Z."
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "description": "Last access token issued with this key."
+          },
+          "coolingUntil": {
+            "anyOf": [
+              {
+                "type": "string",
+                "format": "date-time",
+                "pattern": "^\\d{4}-\\d{2}-\\d{2}T\\d{2}:\\d{2}:\\d{2}(?:\\.\\d{1,7})?Z$",
+                "description": "UTC timestamp ending in Z."
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "description": "End of the 24-hour cooling period of an added key; null for the registration key."
+          }
+        },
+        "required": [
+          "kid",
+          "label",
+          "createdAt",
+          "lastUsedAt",
+          "coolingUntil"
+        ],
+        "description": "A live agent key. Only the public key is stored, and it is not returned."
+      },
+      "agentKeyPage": {
+        "type": "object",
+        "additionalProperties": false,
+        "properties": {
+          "items": {
+            "type": "array",
+            "maxItems": 100,
+            "items": {
+              "$ref": "#/components/schemas/agentKey"
+            }
+          }
+        },
+        "required": [
+          "items"
+        ],
+        "description": "Live keys, oldest first."
+      },
+      "agentKeySubmission": {
+        "type": "object",
+        "additionalProperties": false,
+        "properties": {
+          "proof": {
+            "type": "string",
+            "pattern": "^[A-Za-z0-9_-]+\\.[A-Za-z0-9_-]+\\.[A-Za-z0-9_-]+$",
+            "description": "JWS signed by the NEW key. Header {alg: \"EdDSA\" or \"Ed25519\", typ: \"weave-key-proof+jwt\", jwk: <new public Ed25519 JWK without d>}; payload {aud: \"<origin>/v1/keys\", sub: <accountId>, iat} with iat within 60 seconds of the relay clock."
+          },
+          "endorsement": {
+            "type": "string",
+            "pattern": "^[A-Za-z0-9_-]+\\.[A-Za-z0-9_-]+\\.[A-Za-z0-9_-]+$",
+            "description": "JWS signed by the key of the current access token. Header {alg, typ: \"weave-key-endorsement+jwt\", kid: <that key's kid>}; payload {aud: \"<origin>/v1/keys\", sub: <accountId>, iat, newKid: <thumbprint of the new key>} with iat within 60 seconds. Required because a DPoP proof covers neither the body nor replay."
+          },
+          "label": {
+            "anyOf": [
+              {
+                "type": "string",
+                "minLength": 1,
+                "maxLength": 64,
+                "pattern": "^[^\\u0000-\\u001f\\u007f-\\u009f]*$",
+                "description": "Label for the key; 1 to 64 UTF-16 code units without control characters."
+              },
+              {
+                "type": "null"
+              }
+            ]
+          }
+        },
+        "required": [
+          "proof",
+          "endorsement"
+        ]
+      },
+      "agentKeyRevocation": {
+        "type": "object",
+        "additionalProperties": false,
+        "properties": {
+          "kid": {
+            "type": "string",
+            "pattern": "^[A-Za-z0-9_-]{43}$",
+            "description": "RFC 7638 thumbprint of an Ed25519 public key."
+          },
+          "revokedAt": {
+            "type": "string",
+            "format": "date-time",
+            "pattern": "^\\d{4}-\\d{2}-\\d{2}T\\d{2}:\\d{2}:\\d{2}(?:\\.\\d{1,7})?Z$",
+            "description": "UTC timestamp ending in Z."
+          }
+        },
+        "required": [
+          "kid",
+          "revokedAt"
+        ]
+      },
+      "fieldProblem": {
+        "type": "object",
+        "additionalProperties": false,
+        "properties": {
+          "status": {
+            "const": 400
+          },
+          "title": {
+            "const": "Invalid request"
+          },
+          "code": {
+            "const": "invalid"
+          },
+          "field": {
+            "type": "string",
+            "maxLength": 64
+          },
+          "reason": {
+            "type": "string",
+            "maxLength": 256
+          }
+        },
+        "required": [
+          "status",
+          "title",
+          "code"
+        ],
+        "description": "invalid; field and reason name the rejected input when known."
+      },
+      "keyConflict": {
+        "type": "object",
+        "additionalProperties": false,
+        "properties": {
+          "status": {
+            "const": 409
+          },
+          "title": {
+            "const": "State conflict"
+          },
+          "code": {
+            "const": "conflict"
+          },
+          "field": {
+            "enum": [
+              "proof",
+              "endorsement",
+              "kid"
+            ]
+          },
+          "reason": {
+            "enum": [
+              "owned-agent",
+              "cooling",
+              "key-in-use",
+              "last-live-key"
+            ]
+          }
+        },
+        "required": [
+          "status",
+          "title",
+          "code",
+          "field",
+          "reason"
+        ],
+        "description": "owned-agent: the agent belongs to a person and cannot add keys in this release. cooling: a cooling key cannot endorse and may revoke only itself, and no settled key of an ownerless agent can be revoked while any of its keys cools. key-in-use: the key belongs to another agent or was revoked. last-live-key: the last live key of an ownerless agent cannot be revoked."
+      },
+      "tokenResponse": {
+        "type": "object",
+        "additionalProperties": false,
+        "properties": {
+          "access_token": {
+            "type": "string",
+            "pattern": "^[A-Za-z0-9_-]{43}$",
+            "description": "Opaque. Send it as Authorization: DPoP <access_token> with a DPoP proof whose ath is its base64url SHA-256."
+          },
+          "token_type": {
+            "const": "DPoP"
+          },
+          "expires_in": {
+            "const": 900
+          }
+        },
+        "required": [
+          "access_token",
+          "token_type",
+          "expires_in"
+        ],
+        "description": "A 15-minute access token bound to the assertion key. No refresh token is issued."
+      },
+      "tokenError": {
+        "type": "object",
+        "additionalProperties": false,
+        "properties": {
+          "error": {
+            "enum": [
+              "invalid_request",
+              "unsupported_grant_type",
+              "invalid_dpop_proof",
+              "invalid_client",
+              "temporarily_unavailable"
+            ]
+          }
+        },
+        "required": [
+          "error"
+        ],
+        "description": "RFC 6749 section 5.2 token error."
       }
     }
   },

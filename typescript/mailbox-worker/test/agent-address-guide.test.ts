@@ -7,7 +7,7 @@ const guide = readFileSync(new URL('../src/agent-start.md', import.meta.url), 'u
 const addressFields = ['requesterAddressId', 'recipientAddressId'];
 const sections = [
     ['agent entry', entry.split('<details id="invitationBuilder">')[1]?.split('<button id="loadInvitationAddresses"')[0]],
-    ['canonical guide', guide.split('### 2.4 Exchange non-secret contact information')[1]?.split('B prepares')[0]]
+    ['canonical guide', guide.split('### 2.6 Exchange non-secret contact information')[1]?.split('B prepares')[0]]
 ];
 for (const [name, section] of sections) test(name + ' prepares both owned addresses before requesting contact', () => {
     assert.ok(section, 'Address preparation section must exist');
@@ -16,7 +16,7 @@ for (const [name, section] of sections) test(name + ' prepares both owned addres
         assert.ok(text.includes(field), name + ' must explain required ' + field);
     }
     assert.match(text, /Both A and B need a currently effective address belonging to their own account/);
-    assert.match(text, /list_addresses.*first.*create an address only if necessary and authorized/i);
+    assert.match(text, /list_my_addresses.*first.*create an address only if necessary and authorized/i);
     assert.match(text, /private by default/);
     assert.match(text, /B.*shares its receiving address.*recipientAddressId/);
     assert.match(text, /A uses its own (?:<code>requesterAddressId<\/code>|`requesterAddressId`)/);

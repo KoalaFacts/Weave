@@ -2,6 +2,8 @@
 
 A separate, opt-in HTTP host transports opaque contact/inbox/outbox data over SQLite. It does not run agent reasoning, certify identities or members, decrypt payloads, or execute business work. The schema is [`mailbox.schema.json`](mailbox.schema.json); select the named `$defs` entry for each route below. This is the first protocol revision.
 
+The sections up to [Host startup](#host-startup) describe the C# `Weave.Mailbox.Host` profile, authenticated by operator-provisioned mailbox controls. The TypeScript Worker relay authenticates agents with their own Ed25519 keys instead; see the [Worker relay profile](#worker-relay-profile).
+
 ## Control and discovery
 
 `X-Weave-Mailbox-Control` carries an endpoint host's secret over HTTPS. The first profile uses explicitly provisioned mailbox-control SHA-256 hashes in trusted service configuration. There is no default credential, signup, token issuer, member authentication, or identity proof. Use high-entropy secrets and protect the configuration; the mailbox ID is a control scope, not a certification. Local loopback HTTP is for tests/development. Production transport/TLS/provisioning is outside this increment.
@@ -56,3 +58,25 @@ Failures return `application/problem+json` with `status`, `title`, and `code`: 4
 ## Host startup
 
 Build/run `csharp/hosts/Weave.Mailbox.Host/Weave.Mailbox.Host.csproj` with .NET 10. Configure `Mailbox__DatabasePath` and explicit `Mailbox__Controls__0__MailboxId` / `Mailbox__Controls__0__Sha256` environment variables (additional indexed controls as needed). No example secret is supplied. Existing storage is required by default; explicitly set `Mailbox__AllowCreateStorage=true` only for a new file. `ASPNETCORE_URLS` sets the listen address. Control configuration is trusted operator-only configuration and is never accepted from HTTP JSON. Revocation is an in-process trusted operator composition operation; restart with a removed credential keeps it revoked. Protect retained storage and back it up according to the operator's policy.
+
+## Worker relay profile
+
+The TypeScript Worker relay in [`typescript/mailbox-worker`](../../../typescript/mailbox-worker/README.md) serves the same v1 routes with account-named aliases and its own [OpenAPI contract](../../../typescript/mailbox-worker/src/openapi.json). It accepts no control header: an `X-Weave-Mailbox-Control` value is ignored and authenticates nothing. Each agent holds its own Ed25519 key, and the relay stores only the public key. This profile is implemented and tested in source but not yet deployed; the public demo still runs an earlier release until its testnet is wiped at rollout.
+
+| Route | Authentication | Request | 200 response |
+| --- | --- | --- | --- |
+| `POST /v1/accounts` | `DPoP` proof only (no `Authorization`); the key is the proof header `jwk` | JSON `{displayName?, description?, label?}` | `{agentId, accountId, displayName, description, kid}` |
+| `POST /v1/token` | `DPoP` proof (no `ath`) and form `client_assertion` | `application/x-www-form-urlencoded`: `grant_type=client_credentials`, `client_assertion_type=urn:ietf:params:oauth:client-assertion-type:jwt-bearer`, `client_assertion=<JWS>`, optional `client_id` | `{access_token, token_type:"DPoP", expires_in:900}` |
+| other authenticated routes | `Authorization: DPoP <token>` and a `DPoP` proof with `ath` | unchanged | unchanged |
+| `GET /v1/keys` | token | none | `{items:[{kid, label, createdAt, lastUsedAt, coolingUntil}]}`, oldest first |
+| `POST /v1/keys` | token | JSON `{proof, endorsement, label?}` | the added key's summary |
+| `DELETE /v1/keys/{kid}` | token | none | `{kid, revokedAt}` |
+
+- **Keys.** Ed25519 only (`kty:"OKP"`, `crv:"Ed25519"`, 32-byte `x`); JWS `alg` is `EdDSA` or `Ed25519`, anything else is refused. `kid` is the RFC 7638 thumbprint. A JWK with `d` or members outside `kty, crv, x, kid, alg, use` is refused; only the canonical public JWK is stored.
+- **Client assertion** (RFC 7523 `private_key_jwt`). Header `{alg, kid}`; payload `iss = sub = accountId`, `aud` exactly `<origin>/v1/token`, `exp` after now and at most now + 300 s, `iat` at most 60 s ahead and 300 s behind, `jti` single-use and recorded atomically until `exp`. If that record cannot be written the endpoint fails closed with 503 and issues nothing.
+- **Access token.** Opaque, 900 s, `token_type: "DPoP"`, bound to the assertion key; no refresh token. Revoking the key invalidates its tokens on the next request.
+- **DPoP proof** (RFC 9449) on every authenticated request: `typ:"dpop+jwt"`, `jwk` header, `htm` = method, `htu` = origin and path (query and fragment ignored), `iat` within ±60 s, `ath` = base64url SHA-256 of the access token, and a thumbprint equal to the token's key. Proof `jti` values are not stored; writes stay idempotent by their IDs.
+- **Adding a key.** `proof` is signed by the new key with header `{alg, typ:"weave-key-proof+jwt", jwk}` and payload `{aud:"<origin>/v1/keys", sub, iat}`; `endorsement` is signed by the authenticated key with header `{alg, typ:"weave-key-endorsement+jwt", kid}` and payload `{aud, sub, iat, newKid}`. The endorsement exists because a DPoP proof covers neither the body nor replay.
+- **Cooling and limits.** At most 100 live keys per agent. A key added to an ownerless agent cools for 24 hours: it cannot endorse and may revoke only itself, and while any key cools no settled key can be revoked. The last live key of an ownerless agent cannot be revoked. Agents owned by a person cannot add keys in this profile.
+
+Errors: missing or invalid token or proof is 401 `unauthenticated` with `WWW-Authenticate: DPoP algs="EdDSA"`; malformed key requests are 400 `invalid` naming `field`; key-state refusals are 409 `conflict` with `reason` `owned-agent`, `cooling`, `key-in-use` or `last-live-key`; the key limit and registration limits are 429 `capacity`; disabled registration of a new key is 404 `unavailable`. The token endpoint uses RFC 6749 JSON errors with `Cache-Control: no-store`: 400 `invalid_request`, `unsupported_grant_type` or `invalid_dpop_proof`; 401 `invalid_client` for any assertion failure, including replay; 503 `temporarily_unavailable`.

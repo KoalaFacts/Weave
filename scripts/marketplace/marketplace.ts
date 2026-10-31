@@ -79,7 +79,7 @@ export function inspect(root: string, requireApp = false): Inspection {
     return { status: errors.length ? 'invalid' : configured ? 'app-reference-configured' : 'setup-only', errors };
 }
 
-/** Binds a known public app ID, not an OAuth token or account-control secret. */
+/** Binds a known public app ID, not an OAuth token or agent key. */
 export function bind(root: string, id: string): 'bound' | 'unchanged' {
     if (!appId(id)) throw new BindingError('Supply the exact registered app ID (asdk_app followed by its identifier), not a plugin ID or a secret.');
     if (inspect(root).errors.length) throw new BindingError('The marketplace package is invalid; no changes were made.');
