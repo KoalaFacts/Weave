@@ -193,10 +193,10 @@ test('oauthAccountActive_FrozenGithubHuman_RevokesOwnedAgentButNotLegacyControlA
         const env = environment(h), id = await humanId(env);
         const owned = await create(env, id) as { accountId: string };
         const independent = await h.register();
-        assert.equal(await oauthAccountActive(env, owned.accountId), true);
+        assert.equal(await oauthAccountActive(env, owned.accountId, id), true);
         assert.equal(await oauthAccountActive(env, independent.accountId), true);
         await h.db.prepare('UPDATE humans SET frozen_at=updated_at WHERE human_id=?').bind(id).run();
-        assert.equal(await oauthAccountActive(env, owned.accountId), false,
+        assert.equal(await oauthAccountActive(env, owned.accountId, id), false,
             'previously issued bearer must stop authorizing private MCP operations');
         assert.equal(await oauthAccountActive(env, independent.accountId), true,
             'unrelated control-owned agent remains available');
