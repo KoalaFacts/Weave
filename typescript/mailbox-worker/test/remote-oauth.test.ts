@@ -352,9 +352,9 @@ test('Service Binding revokes stale human bearer after account owner changes',as
         assert.equal(created.ok,true);
         if(!created.ok)throw Error('Owned-agent test setup failed');
         const now=Math.floor(Date.now()/1000);
-        let tokenOwner=first.humanId;
+        let tokenOwner:string|null=first.humanId;
         const binding={validateToken:async()=>({audience:config.resource,userId:created.accountId,
-            props:{accountId:created.accountId,humanId:tokenOwner},expiresAt:now+120,
+            props:{accountId:created.accountId,...(tokenOwner?{humanId:tokenOwner}:{})},expiresAt:now+120,
             scope:['weave:messages.send'],clientId:'verified-public-client'})};
         const cfg=oauthConfiguration({AUTH_SERVER:binding,OAUTH_ISSUER:config.issuer,
             OAUTH_RESOURCE:config.resource} as any,config.resource)!;
@@ -362,6 +362,11 @@ test('Service Binding revokes stale human bearer after account owner changes',as
         const eligible=(accountId:string,serviceHumanId?:string|null)=>oauthAccountActive(env,accountId,serviceHumanId);
         assert.deepEqual(await authorizeOAuth(cfg,token,'weave:messages.send',eligible,undefined,now*1000),
             {accountId:created.accountId},'original owner token must initially work');
+        tokenOwner=null;
+        const missingOwner=await authorizeOAuth(cfg,token,'weave:messages.send',eligible,undefined,now*1000);
+        assert.ok(missingOwner instanceof Response);
+        assert.equal(missingOwner.status,401,'a legacy token must not grant an owned agent without a human binding');
+        tokenOwner=first.humanId;
         // Simulate a future approved ownership transfer: the account remains active,
         // but a grant bound to the previous human must lose all mailbox authority.
         await h.db.prepare('UPDATE accounts SET human_id=? WHERE account_id=?')
@@ -372,5 +377,12 @@ test('Service Binding revokes stale human bearer after account owner changes',as
         tokenOwner=second.humanId;
         assert.deepEqual(await authorizeOAuth(cfg,token,'weave:messages.send',eligible,undefined,now*1000),
             {accountId:created.accountId},'current owner with a fresh matching grant may access the agent');
+        // An orphaned agent has neither a current owner nor a control credential.
+        await h.db.prepare('UPDATE accounts SET human_id=NULL WHERE account_id=?')
+            .bind(created.accountId).run();
+        tokenOwner=null;
+        const orphan=await authorizeOAuth(cfg,token,'weave:messages.send',eligible,undefined,now*1000);
+        assert.ok(orphan instanceof Response);
+        assert.equal(orphan.status,401,'ownerless agents without a control credential must not accept legacy grants');
     }finally{await h.close();}
 });
