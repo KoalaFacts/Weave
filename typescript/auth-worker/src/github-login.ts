@@ -86,7 +86,7 @@ export const failureLog={exchange:"github-login: token exchange failed",user:"gi
  * GitHub's two expected responses are small; unexpected oversized data fails closed.
  */
 async function boundedProviderJson(response:Response,maxBytes:number):Promise<unknown|null>{
-  if(!/^application\\/json(?:;|$)/i.test(response.headers.get("Content-Type")??""))return null;
+  if(!/^application\/json(?:;|$)/i.test(response.headers.get("Content-Type")??""))return null;
   const reader=response.body?.getReader();
   if(!reader)return null;
   const decoder=new TextDecoder("utf-8",{fatal:true});
