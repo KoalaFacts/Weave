@@ -16,10 +16,14 @@ import { stream, type Context } from './stream';
 import { registerAgent } from './accounts';
 import { authenticateAgent, issueAgentToken } from './agent-tokens.ts';
 import { addAgentKey, listAgentKeys, revokeAgentKey } from './agent-keys.ts';
+import { cancelBindingRequest, createBindingRequest, getBindingRequest } from './binding-requests.ts';
+import { recoverAgentKey } from './recovery-codes.ts';
+import { ownerAction, ownerOverview, type OwnerAction, type OwnerActionResult, type OwnerOverview } from './owner-actions.ts';
 import { putCard } from './cards';
 import { decide, requestContact, setBlocked } from './contacts';
 import { deleteContact, ownContacts } from './contact-links';
 import { atomic, type Env } from './database';
+import { accountNotices } from './notices.ts';
 import { ack, send } from './messages';
 import { read } from './reads';
 import { body, fail, json, problem } from './wire';
@@ -32,6 +36,8 @@ export class HumanDirectory extends WorkerEntrypoint<Env> {
     listAgents(humanId: string): Promise<AgentSummary[]> { return listHumanAgents(scopedEnv(this.env), humanId); }
     createAgent(input: { humanId: string; displayName: string; sourceIp: string }): Promise<CreateAgentResult> { return createOwnedAgent(scopedEnv(this.env), input); }
     hasAgent(humanId: string, accountId: string): Promise<boolean> { return humanHasAgent(scopedEnv(this.env), humanId, accountId); }
+    ownerOverview(humanId: string): Promise<OwnerOverview> { return ownerOverview(scopedEnv(this.env), humanId); }
+    ownerAction(input: OwnerAction): Promise<OwnerActionResult> { return ownerAction(scopedEnv(this.env), input); }
 }
 
 export default {
@@ -89,6 +95,8 @@ export default {
             if (method === 'POST' && url.pathname === '/v1/accounts') return json(await registerAgent(env,request,await body(request)));
             if(env.RECOVERY_READ_ONLY==='true'&&(method!=='GET'||url.pathname==='/v1/inbox/events'))fail(503,'maintenance',30);
             if (method === 'POST' && url.pathname === '/v1/token') return await issueAgentToken(env,request);
+            // Owner recovery authenticates with the owner-issued code plus the new key's DPoP proof; the agent may have no usable key.
+            if (method === 'POST' && url.pathname === '/v1/key-requests') return json(await recoverAgentKey(env,request,await body(request)));
             if(env.RECOVERY_READ_ONLY!=='true'&&method==='GET'&&['/v1/directory','/v1/directory/address','/v1/contacts/cards','/v1/contacts/card'].includes(url.pathname))await publicReadRate(env,request);
             const account = await authenticateAgent(env,request);
             if (method === 'GET' && ['/v1/directory','/v1/directory/address'].includes(url.pathname)) return json(await atomic(env.db,tx => directory(tx,url)));
@@ -97,10 +105,17 @@ export default {
             if (url.pathname === '/v1/keys' || url.pathname.startsWith('/v1/keys/')) {
                 if (url.pathname === '/v1/keys') {
                     if (method === 'GET') return json(await listAgentKeys(env,account.accountId));
-                    if (method === 'POST') return json(await addAgentKey(env,request,account,await body(request)));
+                    if (method === 'POST') { const added = await addAgentKey(env,request,account,await body(request)); return json(added.body,added.status); }
                 }
                 const kid = /^\/v1\/keys\/([A-Za-z0-9_-]{43})$/.exec(url.pathname)?.[1];
                 if (method === 'DELETE' && kid !== undefined) return json(await revokeAgentKey(env,account,kid));
+                fail(404,'unavailable');
+            }
+            if (url.pathname === '/v1/binding-requests' || url.pathname.startsWith('/v1/binding-requests/')) {
+                if (method === 'POST' && url.pathname === '/v1/binding-requests') return json(await createBindingRequest(env,request,account,await body(request)));
+                const requestId = /^\/v1\/binding-requests\/([0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12})$/.exec(url.pathname)?.[1];
+                if (method === 'GET' && requestId !== undefined) return json(await getBindingRequest(env,account,requestId));
+                if (method === 'DELETE' && requestId !== undefined) return json(await cancelBindingRequest(env,account,requestId));
                 fail(404,'unavailable');
             }
             if (url.pathname === '/v1/addresses' || /^\/v1\/addresses\/[^/]+$/.test(url.pathname)) {
@@ -121,6 +136,10 @@ export default {
             if(method==='GET'&&contact)return json(await atomic(env.db,tx=>ownContacts(tx,owner,url,decodeURIComponent(contact[1]))));
             if(method==='DELETE'&&contact)return json(await atomic(env.db,tx=>deleteContact(tx,owner,decodeURIComponent(contact[1]))));
             if (method === 'GET' && url.pathname === '/v1/inbox/events') return await stream(env,owner,request,context);
+            if (method === 'GET' && url.pathname === '/v1/inbox') return json(await atomic(env.db,async tx => {
+                const page = await read(tx,url,owner);
+                return {...page,notices:await accountNotices(tx,owner,tx.store.now)};
+            }));
             if (method === 'GET') return json(await atomic(env.db,tx => read(tx,url,owner)));
             const input = await body(request);
             // Validate bounded payloads before cleanup can produce any write.

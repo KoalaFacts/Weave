@@ -3,11 +3,15 @@ import { test } from 'node:test';
 import { start } from './harness.ts';
 
 for (const count of [0, 10, 11, 23]) test(`anonymous directory browses ${count} public addresses in stable ten-item pages`, async () => {
-    const h = await start();
+    // An unclaimed agent may hold one public address, so each visible address has its own owner with the private profile.
+    const h = await start({ bindings: { REGISTRATION_PER_IP_PER_HOUR: '100' } });
     try {
-        const owner = await h.register({ displayName: 'PRIVATE-PROFILE', description: 'PRIVATE-DESCRIPTION' });
+        const ownerProfile = { displayName: 'PRIVATE-PROFILE', description: 'PRIVATE-DESCRIPTION' };
+        const owner = await h.register(ownerProfile);
+        // The hidden addresses (three public, one private) need the claimed-agent limits.
+        await h.claim(owner);
         const visible = [];
-        for (let index = 0; index < count; index++) visible.push(await h.address(owner, { label: `Public ${index}`, isPublic: true }));
+        for (let index = 0; index < count; index++) visible.push(await h.address(await h.register(ownerProfile), { label: `Public ${index}`, isPublic: true }));
         for (let index=0;index<visible.length;index++) await h.db.prepare("UPDATE account_addresses SET created_at=? WHERE address_id=?").bind((BigInt(Date.UTC(2025,0,1,0,0,index))*10000n).toString(),visible[index].addressId).run();
         const hidden = [];
         for (const profile of [{ label: 'PRIVATE' }, { label: 'FUTURE', isPublic: true, effectiveFrom: '2099-01-01T00:00:00Z' }, { label: 'EXPIRED', isPublic: true, effectiveTo: '2020-01-01T00:00:00Z' }]) hidden.push(await h.address(owner, profile));

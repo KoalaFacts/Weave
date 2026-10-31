@@ -91,3 +91,9 @@ test('guide explicitly retrieves and correlates the inbox introduction before ac
     for(const field of ['list_my_inbox','GET /v1/inbox','requestMessageId','requesterAccountId','recipientAccountId','nextCursor','needs_owner_action'])assert.ok(section.includes(field),field);
     assert.ok(section.indexOf('list_my_inbox')<section.indexOf('decide_contact'));
 });
+
+test('page prompt renews a token only on a 401 from a token-authenticated request',()=>{
+    const source=readFileSync(new URL('../src/agent-start.ts',import.meta.url),'utf8');
+    assert.doesNotMatch(source,/on 401 or expiry/);
+    assert.match(source,/token-authenticated/);
+});

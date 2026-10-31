@@ -73,6 +73,70 @@ export const agentAccessTokens = sqliteTable("agent_access_tokens", {
     check("agent_access_tokens_hash",sql`length(token_hash)=64 AND token_hash NOT GLOB '*[^0-9a-f]*'`)
 ]);
 
+// An ownerless agent's request that a GitHub human own it. No FK to humans: the target may not have signed in yet.
+export const bindingRequests = sqliteTable("binding_requests", {
+    request_id: text("request_id").notNull().primaryKey(),
+    account_id: text("account_id").notNull().references(() => accounts.account_id, {onDelete:"restrict"}),
+    target_subject: text("target_subject").notNull(),
+    kid: text("kid").notNull().references(() => agentKeys.kid, {onDelete:"restrict"}),
+    status: text("status").notNull(),
+    created_at: exactInteger("created_at").notNull(),
+    expires_at: exactInteger("expires_at").notNull(),
+    updated_at: exactInteger("updated_at").notNull(),
+    decided_at: exactInteger("decided_at"),
+}, t => [
+    uniqueIndex("binding_requests_pending").on(t.account_id).where(sql`status='pending'`),
+    index("binding_requests_target").on(t.target_subject, t.status, t.expires_at),
+    index("binding_requests_account").on(t.account_id, t.created_at),
+    index("binding_requests_retention").on(t.status, t.created_at),
+    check("binding_requests_subject_decimal",sql`length(target_subject) BETWEEN 1 AND 20 AND target_subject GLOB '[1-9]*' AND target_subject NOT GLOB '*[^0-9]*'`),
+    check("binding_requests_status",sql`status IN ('pending','confirmed','rejected','cancelled','expired')`),
+    check("binding_requests_expiry",sql`expires_at>created_at`),
+    check("binding_requests_decision",sql`(status='pending')=(decided_at IS NULL)`)
+]);
+
+// A key added to a human-owned agent by one of its live keys, held until the owner confirms it.
+export const keyRequests = sqliteTable("key_requests", {
+    request_id: text("request_id").notNull().primaryKey(),
+    account_id: text("account_id").notNull().references(() => accounts.account_id, {onDelete:"restrict"}),
+    kid: text("kid").notNull(),
+    public_jwk: text("public_jwk").notNull(),
+    label: text("label"),
+    endorsed_by: text("endorsed_by").notNull().references(() => agentKeys.kid, {onDelete:"restrict"}),
+    status: text("status").notNull(),
+    created_at: exactInteger("created_at").notNull(),
+    expires_at: exactInteger("expires_at").notNull(),
+    updated_at: exactInteger("updated_at").notNull(),
+    decided_at: exactInteger("decided_at"),
+}, t => [
+    uniqueIndex("key_requests_pending").on(t.account_id, t.kid).where(sql`status='pending'`),
+    index("key_requests_account").on(t.account_id, t.created_at),
+    index("key_requests_retention").on(t.status, t.created_at),
+    check("key_requests_kid",sql`length(kid)=43 AND kid NOT GLOB '*[^A-Za-z0-9_-]*'`),
+    check("key_requests_public_jwk",sql`json_valid(public_jwk)`),
+    check("key_requests_label",sql`label IS NULL OR length(label) BETWEEN 1 AND 64`),
+    check("key_requests_status",sql`status IN ('pending','confirmed','rejected','expired')`),
+    check("key_requests_expiry",sql`expires_at>created_at`),
+    check("key_requests_decision",sql`(status='pending')=(decided_at IS NULL)`)
+]);
+
+// The single current owner-issued recovery code of a human-owned agent, stored only as its hex SHA-256.
+// Issuing a new code replaces the row, which invalidates the earlier code.
+export const recoveryCodes = sqliteTable("recovery_codes", {
+    account_id: text("account_id").notNull().primaryKey().references(() => accounts.account_id, {onDelete:"restrict"}),
+    code_hash: text("code_hash").notNull(),
+    human_id: text("human_id").notNull().references(() => humans.human_id, {onDelete:"restrict"}),
+    created_at: exactInteger("created_at").notNull(),
+    expires_at: exactInteger("expires_at").notNull(),
+    used_at: exactInteger("used_at"),
+    updated_at: exactInteger("updated_at").notNull(),
+}, t => [
+    uniqueIndex("recovery_codes_hash").on(t.code_hash),
+    check("recovery_codes_hash_hex",sql`length(code_hash)=64 AND code_hash NOT GLOB '*[^0-9a-f]*'`),
+    check("recovery_codes_expiry",sql`expires_at>created_at`),
+    check("recovery_codes_use",sql`used_at IS NULL OR used_at>=created_at`)
+]);
+
 export const accountAddresses = sqliteTable("account_addresses", {
     address_id: text("address_id").notNull().primaryKey(),
     account_id: text("account_id").notNull().references(() => accounts.account_id, {onDelete:"restrict"}),
@@ -246,7 +310,7 @@ export const rateLimits = sqliteTable("rate_limits", {
 }, t => [
     uniqueIndex("rate_limit_identity").on(t.policy,t.bucket_key),
     index("rate_limit_window").on(t.policy,t.window_start,t.seq),
-    check("rate_limits_policy",sql`policy IN ('registration','public-read')`),
+    check("rate_limits_policy",sql`policy IN ('registration','public-read','key-recovery','agent-send','agent-contact','agent-token')`),
     check("rate_limits_count",sql`count>=0`)
 ]);
 

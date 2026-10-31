@@ -8,6 +8,7 @@ export type AgentCredential = { accountId: string; key: TestKey };
 const strangers = new WeakSet<AgentCredential>();
 // Shared across start() calls so a restart on the same persisted database (for example read-only recovery, which refuses new tokens) reuses issued tokens.
 const tokens = new Map<string, { accessToken: string; expiresAt: number }>();
+let humanSubjects = 900000;
 /** The demo's saved key-file form of a registered credential. */
 export const keyFile = (as: AgentCredential) => JSON.stringify({ accountId: as.accountId, key: { kty: 'OKP', crv: 'Ed25519', x: as.key.privateJwk.x, d: as.key.privateJwk.d } });
 export type StartOptions = { persist?: string; migrate?: boolean; bindings?: Record<string, string>; scriptPath?: string; legacy?: boolean; outboundService?: any };
@@ -64,7 +65,14 @@ export async function start({ persist, migrate = true, bindings = {}, scriptPath
         const stranger = (): AgentCredential => { const as = { accountId: randomUUID(), key: agentKey() }; strangers.add(as); return as; };
         const address = (account: AgentCredential, profile = {}) => ok('/v1/addresses',account,'POST',profile);
         const participant = async () => { const account=await register(); const card=await address(account); return {...account,cardId:card.addressId}; };
-        return { mf, db, request, ok, fetchAs, token, register, stranger, address, participant, close: () => mf.dispose() };
+        // Gives the agent a human owner directly in storage, so it runs under the claimed-agent limits.
+        const claim = async (account: AgentCredential) => {
+            const humanId = randomUUID(), subject = String(++humanSubjects), at = (BigInt(Date.now())*10000n).toString();
+            await db.batch([db.prepare("INSERT INTO humans(human_id,provider,subject,provider_created_at,display_login,created_at,updated_at) VALUES(?,'github',?,'2020-01-01T00:00:00Z',?,CAST(? AS INTEGER),CAST(? AS INTEGER))")
+                .bind(humanId, subject, 'owner' + subject, at, at), db.prepare('UPDATE accounts SET human_id=? WHERE account_id=?').bind(humanId, account.accountId)]);
+            return humanId;
+        };
+        return { mf, db, request, ok, fetchAs, token, register, stranger, address, participant, claim, close: () => mf.dispose() };
     } catch (error) {
         try { await mf.dispose(); }
         catch (cleanupError) { throw new AggregateError([error, cleanupError], 'Test runtime initialization and disposal failed.', { cause: error }); }

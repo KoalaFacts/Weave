@@ -18,8 +18,8 @@ const uuidPattern = /^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{1
 const controlCharacters = /[\u0000-\u001f\u007f-\u009f]/u;
 
 // Same gates the fetch handler applies: maintenance stops everything, recovery read-only stops writes.
-const writesRefused = (env: Env) => env.MAINTENANCE_MODE === 'true' || env.RECOVERY_READ_ONLY === 'true';
-const requireReadable = (env: Env) => { if (env.MAINTENANCE_MODE === 'true') fail(503, 'maintenance', 30); };
+export const writesRefused = (env: Env) => env.MAINTENANCE_MODE === 'true' || env.RECOVERY_READ_ONLY === 'true';
+export const requireReadable = (env: Env) => { if (env.MAINTENANCE_MODE === 'true') fail(503, 'maintenance', 30); };
 
 function sameInstant(left: string, right: string): boolean {
     try { return utcTicks(left) === utcTicks(right); } catch { return false; }

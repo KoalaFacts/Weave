@@ -5,6 +5,7 @@ import { ticks, nowText } from './protocol';
 import { accountAddresses } from './schema';
 import { addressSnapshot } from './wire-snapshots';
 import { isoUtc } from './time';
+import { agentLimits, agentTier } from './agent-limits.ts';
 
 function profile(input: any): any {
     object(input,[],['label','isPublic','effectiveFrom','effectiveTo','directUri']);
@@ -52,6 +53,14 @@ export async function mutateAddress(env: Env,owner: string,id: string|null,input
         if (!previous) {
             const count = await tx.db.prepare('SELECT (SELECT count(*) FROM contact_cards)+(SELECT count(*) FROM account_addresses) n').first<number>('n');
             if (count === null || count >= 1000) fail(429,'capacity');
+        }
+        // Per-agent limits apply to a new live address and to an address becoming public; counted in this transaction.
+        if (!previous || chosen.isPublic && !previous._address.isPublic) {
+            const limits = agentLimits[await agentTier(tx,owner)];
+            const live = await tx.db.prepare('SELECT count(*) n,coalesce(sum(is_public),0) public FROM account_addresses WHERE account_id=? AND revoked_at IS NULL')
+                .bind(owner).first<{n:number;public:number}>();
+            if (!live) fail(503,'storage');
+            if (!previous && live.n >= limits.liveAddresses || chosen.isPublic && live.public >= limits.publicAddresses) fail(429,'capacity');
         }
         const cardId = selectedId ?? crypto.randomUUID();
         if(selectedId===null&&await tx.get('card','',cardId))fail(409,'conflict');

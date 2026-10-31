@@ -3,6 +3,7 @@ import { Transaction } from './database';
 import { fail, generation, identity, object, uuid } from './wire';
 import { admit, invalidate } from './messages';
 import { establish } from './contact-links';
+import { agentLimits, agentTier, requireHourly } from './agent-limits.ts';
 import { blocked, channelView, current, fingerprint, MAX_GENERATION, nowText, pair, readChannel, relation, ticks, timestampMatches, validatePayload, writeChannel } from './protocol';
 
 export async function requestContact(tx: Transaction,owner: string,input: any): Promise<any> {
@@ -43,6 +44,8 @@ export async function requestContact(tx: Transaction,owner: string,input: any): 
             AND status IN ('pending','needsAction') AND expires_at>CAST(? AS INTEGER) AND terminal_at IS NULL) pending`)
         .bind(recipient,(BigInt(Date.now())*10000n).toString()).first<{requests:number;channels:number;pending:number}>();
     if (!quota || quota.requests >= 1000 || !old && quota.channels >= 5000 || quota.pending >= 32) fail(429,'capacity');
+    // A retried request ID returned above, so only new requests consume the hourly limit.
+    await requireHourly(tx,'agent-contact',owner,agentLimits[await agentTier(tx,owner)].contactRequestsPerHour);
     const now = nowText(tx); if (old) await invalidate(tx,old,now);
     const [low,high] = pair(owner,recipient);
     const c = {low,high,generation:(old?.generation ?? 0n)+1n,blockedLow:false,blockedHigh:false,currentRequest:{requesterMailboxId:owner,requestId:input.requestId},updatedAt:now};

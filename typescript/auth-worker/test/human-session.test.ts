@@ -2,7 +2,7 @@ import assert from "node:assert/strict";
 import {randomBytes,randomUUID} from "node:crypto";
 import {test} from "node:test";
 import {beginGithubLogin,completeGithubLogin,type GithubLoginEnv} from "../src/github-login.ts";
-import {humanSessionCookie,issueHumanSession,readHumanSession,signedCookieValue} from "../src/human-session.ts";
+import {freshAuthentication,humanSessionCookie,issueHumanSession,readHumanSession,signedCookieValue} from "../src/human-session.ts";
 
 const now=1_800_000_000_000;
 const newKey=()=>randomBytes(32).toString("base64url");
@@ -10,11 +10,31 @@ function requestWith(setCookie:string):Request{
   return new Request("https://auth.weave.example/authorize",{headers:{Cookie:setCookie.split(";")[0]}});
 }
 
-test("readHumanSession_RoundTrip_ReturnsSession",async()=>{
+test("readHumanSession_RoundTrip_CarriesAuthAt",async()=>{
   const key=newKey(),humanId=randomUUID();
   const cookie=await issueHumanSession(key,{humanId,login:"alice"},now);
   assert.deepEqual(await readHumanSession(key,requestWith(cookie),now+1000),
-    {humanId,login:"alice",expiresAt:now+3_600_000});
+    {humanId,login:"alice",expiresAt:now+3_600_000,authAt:now});
+});
+
+test("readHumanSession_ThreeMemberLegacyShape_ReturnsNull",async()=>{
+  const key=newKey();
+  const legacy=await signedCookieValue(key,"human-session",{humanId:randomUUID(),login:"alice",expiresAt:now+3_600_000});
+  assert.equal(await readHumanSession(key,requestWith(humanSessionCookie+"="+legacy),now),null);
+  const late=await signedCookieValue(key,"human-session",{humanId:randomUUID(),login:"alice",expiresAt:now+1000,authAt:now+2000});
+  assert.equal(await readHumanSession(key,requestWith(humanSessionCookie+"="+late),now),null,"authAt may not exceed expiresAt");
+  const early=await signedCookieValue(key,"human-session",{humanId:randomUUID(),login:"alice",expiresAt:now+3_600_000,authAt:now-1});
+  assert.equal(await readHumanSession(key,requestWith(humanSessionCookie+"="+early),now),null,"authAt may not predate the session lifetime");
+  const owner=await signedCookieValue(key,"owner-action",{humanId:randomUUID(),login:"alice",expiresAt:now+3_600_000,authAt:now});
+  assert.equal(await readHumanSession(key,requestWith(humanSessionCookie+"="+owner),now),null,"another purpose never verifies as a session");
+});
+
+test("freshAuthentication_Boundary",()=>{
+  const at=(authAt:number)=>({humanId:randomUUID(),login:"alice",expiresAt:authAt+3_600_000,authAt});
+  assert.equal(freshAuthentication(at(now-600_000),now),true);
+  assert.equal(freshAuthentication(at(now-600_001),now),false);
+  assert.equal(freshAuthentication(at(now+60_000),now),true);
+  assert.equal(freshAuthentication(at(now+60_001),now),false);
 });
 
 test("readHumanSession_TamperedPayload_ReturnsNull",async()=>{
@@ -22,7 +42,7 @@ test("readHumanSession_TamperedPayload_ReturnsNull",async()=>{
   const cookie=await issueHumanSession(key,{humanId:randomUUID(),login:"alice"},now);
   const [name,value]=cookie.split(";")[0].split("=");
   const [,signature]=value.split(".");
-  const forged=Buffer.from(JSON.stringify({humanId:randomUUID(),login:"mallory",expiresAt:now+3_600_000})).toString("base64url");
+  const forged=Buffer.from(JSON.stringify({humanId:randomUUID(),login:"mallory",expiresAt:now+3_600_000,authAt:now})).toString("base64url");
   assert.equal(await readHumanSession(key,requestWith(name+"="+forged+"."+signature),now),null);
 });
 
@@ -102,4 +122,25 @@ test("beginGithubLogin_StateTooLongForLoginCookie_Returns400WithoutRedirect",asy
   assert.equal(refused.headers.get("location"),null,"never send the browser to GitHub with a cookie that cannot be read back");
   assert.equal(refused.headers.get("set-cookie"),null);
   assert.match(await refused.text(),/Authorization request too long/);
+});
+
+const loginEnv=()=>({OAUTH_ISSUER:"https://auth.weave.example",GITHUB_CLIENT_ID:"Iv1.test-client-id",HUMAN_SESSION_KEY:newKey()});
+
+test("beginGithubLogin_Reauthenticate_AddsSelectAccountAndLogin",async()=>{
+  const response=await beginGithubLogin(loginEnv(),new URL("https://auth.weave.example/account"),now,{reauthenticate:{login:"octo-human"}});
+  assert.equal(response.status,302);
+  const location=new URL(response.headers.get("location")!);
+  assert.equal(location.searchParams.get("prompt"),"select_account");
+  assert.equal(location.searchParams.get("login"),"octo-human");
+  assert.equal(location.searchParams.get("scope"),"read:user");
+  const plain=new URL((await beginGithubLogin(loginEnv(),new URL("https://auth.weave.example/authorize"),now)).headers.get("location")!);
+  assert.equal(plain.searchParams.has("prompt"),false);
+  assert.equal(plain.searchParams.has("login"),false);
+});
+
+test("beginGithubLogin_AccountReturnTo_Allowed_QueryRefused",async()=>{
+  const go=(path:string)=>beginGithubLogin(loginEnv(),new URL("https://auth.weave.example"+path),now);
+  assert.equal((await go("/account")).status,302);
+  assert.equal((await go("/account?x=1")).status,400);
+  assert.equal((await go("/accounts")).status,400);
 });

@@ -30,7 +30,7 @@ test('OpenAPI is an anonymous no-store JSON asset independent of account storage
 
 test('OpenAPI describes the current HTTP method/path set with resolved local references and security', () => {
     const routes = {
-        '/v1/accounts':['post'], '/v1/token':['post'], '/v1/keys':['get','post'], '/v1/keys/{kid}':['delete'], '/v1/contacts':['get'], '/v1/contacts/accounts/{accountId}':['get','delete'], '/v1/addresses':['get','post'], '/v1/addresses/{addressId}':['get','put','delete'],
+        '/v1/accounts':['post'], '/v1/token':['post'], '/v1/keys':['get','post'], '/v1/keys/{kid}':['delete'], '/v1/binding-requests':['post'], '/v1/binding-requests/{requestId}':['get','delete'], '/v1/key-requests':['post'], '/v1/contacts':['get'], '/v1/contacts/accounts/{accountId}':['get','delete'], '/v1/addresses':['get','post'], '/v1/addresses/{addressId}':['get','put','delete'],
         '/v1/directory':['get'], '/v1/directory/address':['get'], '/v1/contacts/cards':['get','put'],
         '/v1/contacts/owned-cards':['get'], '/v1/contacts/card':['get'], '/v1/contacts/requests':['get','post'],
         '/v1/contacts/requests/{requestId}':['get'], '/v1/contacts/requests/{requestId}/decision':['post'],
@@ -50,7 +50,7 @@ test('OpenAPI describes the current HTTP method/path set with resolved local ref
             ids.add(operation.operationId);
             const anonymous = method === 'get' && ['/v1/directory','/v1/directory/address','/v1/contacts/cards','/v1/contacts/card'].includes(path);
             const token = {AgentToken:[],DPoPProof:[]};
-            const proofOnly = path === '/v1/accounts' || path === '/v1/token';
+            const proofOnly = path === '/v1/accounts' || path === '/v1/token' || path === '/v1/key-requests';
             assert.deepEqual(operation.security ?? spec.security,proofOnly ? [{DPoPProof:[]}] : anonymous ? [{},token] : [token],path);
             const expectedPath = [...path.matchAll(/\{([^}]+)\}/g)].map(x => x[1]).sort();
             const actualPath = (operation.parameters ?? []).map(resolve).filter(x => x.in === 'path');
@@ -86,7 +86,15 @@ test('OpenAPI describes the current HTTP method/path set with resolved local ref
     assert.deepEqual(Object.keys(tokenForm.properties).sort(),['client_assertion','client_assertion_type','client_id','grant_type']);
     assert.deepEqual(resolve(spec.paths['/v1/token'].post.responses['400'].content['application/json'].schema).properties.error.enum.toSorted(),
         ['invalid_dpop_proof','invalid_request','unsupported_grant_type']);
-    assert.deepEqual(spec.components.schemas.keyConflict.properties.reason.enum.toSorted(),['cooling','key-in-use','last-live-key','owned-agent']);
+    assert.deepEqual(spec.components.schemas.keyConflict.properties.reason.enum.toSorted(),['cooling','key-in-use','last-live-key']);
+    assert.deepEqual(spec.components.schemas.bindingConflict.properties.reason.enum.toSorted(),['binding-pending','cooling','owned-agent']);
+    assert.ok(spec.paths['/v1/keys'].post.responses['202'],'owned-agent key additions answer 202');
+    assert.equal(resolve(spec.paths['/v1/keys'].post.responses['202'].content['application/json'].schema),spec.components.schemas.KeyRequestView);
+    assert.doesNotMatch(spec.paths['/v1/keys'].post.description,/cannot add keys in this release/);
+    assert.equal(spec.components.responses['429'].headers['Retry-After'].schema.type,'integer');
+    for (const name of ['BindingRequestView','KeyRequestView','Notice']) assert.ok(spec.components.schemas[name],name);
+    assert.ok(spec.components.schemas.inboxPage.required.includes('notices'));
+    assert.equal(resolve(spec.components.schemas.inboxPage.properties.notices.items),spec.components.schemas.Notice);
     assert.match(source,/"maximum": 9223372036854775807\b/);
     assert.doesNotMatch(source,/9223372036854776000/);
     assert.equal(spec.paths['/v1/inbox/events'].get.responses['200'].content['text/event-stream'].schema.type,'string');
@@ -192,7 +200,7 @@ test('429 contract distinguishes public-rate Retry-After from registration capac
         assert.equal(capacity.status,429);
         assert.equal(capacity.headers.get('retry-after'),null);
         assert.deepEqual(await capacity.json(),{status:429,title:'Capacity reached',code:'capacity'});
-        assert.equal(spec.components.responses['429'].headers['Retry-After'],undefined);
+        assert.equal(spec.components.responses['429'].headers['Retry-After'].required,false);
         await h.ok('/v1/directory');
         await h.db.prepare("UPDATE rate_limits SET count=2000 WHERE policy='public-read' AND bucket_key='global'").run();
         const rate = await h.request('/v1/directory');
