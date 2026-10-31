@@ -1,7 +1,7 @@
 import assert from "node:assert/strict";
 import {randomBytes,randomUUID} from "node:crypto";
 import {test} from "node:test";
-import {beginGithubLogin,completeGithubLogin,type GithubLoginEnv} from "../src/github-login.ts";
+import {beginGithubLogin,boundedProviderJson,completeGithubLogin,type GithubLoginEnv} from "../src/github-login.ts";
 import {humanSessionCookie,issueHumanSession,readHumanSession,signedCookieValue} from "../src/human-session.ts";
 
 const now=1_800_000_000_000;
@@ -102,4 +102,33 @@ test("beginGithubLogin_StateTooLongForLoginCookie_Returns400WithoutRedirect",asy
   assert.equal(refused.headers.get("location"),null,"never send the browser to GitHub with a cookie that cannot be read back");
   assert.equal(refused.headers.get("set-cookie"),null);
   assert.match(await refused.text(),/Authorization request too long/);
+});
+
+
+test("boundedProviderJson_StalledAfterFirstChunk_FailsClosedWithinDeadline",{timeout:6_000},async()=>{
+  // An HTTP 200 can start a JSON body and then never deliver its final chunk.
+  // A byte limit cannot stop a stalled reader; the response body must have a total deadline.
+  let cancelled=false;
+  const stream=new ReadableStream<Uint8Array>({
+    start(controller){controller.enqueue(new TextEncoder().encode('{"access_token":"'));},
+    cancel(){cancelled=true;return new Promise<void>(()=>{});}
+  });
+  const started=performance.now();
+  const response=new Response(stream,{headers:{"Content-Type":"application/json"}});
+  assert.equal(await boundedProviderJson(response,8_192),null);
+  assert.ok(performance.now()-started<5_500,"a stalled provider body must fail closed promptly");
+  assert.equal(cancelled,true,"the stalled stream should be cancelled without awaiting its cleanup");
+});
+
+test("boundedProviderJson_ChunkedValidJSON_StillParses",async()=>{
+  const stream=new ReadableStream<Uint8Array>({
+    start(controller){
+      controller.enqueue(new TextEncoder().encode('{"access_'));
+      controller.enqueue(new TextEncoder().encode('token":"valid"}'));
+      controller.close();
+    }
+  });
+  assert.deepEqual(await boundedProviderJson(new Response(stream,{
+    headers:{"Content-Type":"application/json"}
+  }),8_192),{access_token:"valid"});
 });
