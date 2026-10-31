@@ -1,4 +1,4 @@
-import { atomic, type Env, type Transaction } from './database.ts';
+import { atomic, type Database, type Env } from './database.ts';
 import { writesRefused } from './humans.ts';
 import { nowUtc } from './time.ts';
 import { fail } from './wire.ts';
@@ -51,9 +51,10 @@ export async function revokeGrant(env: Env, input: RevokeGrantInput, clock: () =
     }, clock);
 }
 
-/** The grant while it is not revoked; null when it is revoked or unknown. */
-export async function liveGrant(tx: Transaction, grantId: string): Promise<GrantRow | null> {
-    const row = await tx.db.prepare('SELECT human_id,account_id,client_id FROM client_grants WHERE grant_id=? AND revoked_at IS NULL')
+/** The grant while it is not revoked; null when it is revoked or unknown. A single point read: inside a write's
+ * transaction the revision check makes it current at commit; outside one it is current when read. */
+export async function liveGrant(db: Database, grantId: string): Promise<GrantRow | null> {
+    const row = await db.prepare('SELECT human_id,account_id,client_id FROM client_grants WHERE grant_id=? AND revoked_at IS NULL')
         .bind(grantId).first<{ human_id: string; account_id: string; client_id: string }>();
     return row && { grantId, humanId: row.human_id, accountId: row.account_id, clientId: row.client_id };
 }

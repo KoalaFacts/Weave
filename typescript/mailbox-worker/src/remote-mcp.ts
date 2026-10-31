@@ -129,15 +129,21 @@ async function invalidFieldHint(response: Response): Promise<{field: string; rea
         return {field: parsed.field, reason: parsed.reason};
     } catch { return null; }
 }
-// Conflicts the caller can resolve itself; in both nothing was written.
-const conflictHints: Record<string, string> = {
-    'idempotency-conflict': 'This idempotencyKey was already used with different input (idempotency-conflict). Nothing was written; use a new key for a new request.',
-    'not-connected': 'You are not connected to this peer (not-connected). Nothing was written; request contact and wait for acceptance first.'
+// Refusals the caller can act on, by HTTP status and code; in each nothing was written.
+const refusalHints: Record<number, Record<string, string>> = {
+    409: {
+        'idempotency-conflict': 'This idempotencyKey was already used with different input (idempotency-conflict). Nothing was written; use a new key for a new request.',
+        'not-connected': 'You are not connected to this peer (not-connected). Nothing was written; request contact and wait for acceptance first.'
+    },
+    // The consent grant was revoked after this call was authorized; the write's own transaction refused it.
+    401: {'grant-revoked': 'Authorization for this account was revoked (grant-revoked). Nothing was written; the owner must authorize this client again.'}
 };
-async function conflictCode(response: Response): Promise<string | null> {
+async function refusalCode(response: Response): Promise<string | null> {
+    const hints = refusalHints[response.status];
+    if (!hints) return null;
     try {
         const parsed: unknown = JSON.parse(await boundedText(response.body, 4096));
-        return object(parsed) && typeof parsed.code === 'string' && Object.hasOwn(conflictHints, parsed.code) ? parsed.code : null;
+        return object(parsed) && typeof parsed.code === 'string' && Object.hasOwn(hints, parsed.code) ? parsed.code : null;
     } catch { return null; }
 }
 /** The injected read can access only the canonical public directory; never forward client headers. */
@@ -233,8 +239,8 @@ export async function remoteMcp(request: Request, read: DirectoryRead, privateAc
                 const hint = response.status === 400 ? await invalidFieldHint(response) : null;
                 if (hint) return result(id, {isError:true,structuredContent:{status:400,...hint},
                     content:[{type:'text',text:`Invalid argument ${hint.field}: ${hint.reason}. Nothing was written; correct it and call again.`}]});
-                const code = response.status === 409 ? await conflictCode(response) : null;
-                if (code) return result(id, {isError:true,structuredContent:{status:409,code},content:[{type:'text',text:conflictHints[code]}]});
+                const code = await refusalCode(response);
+                if (code) return result(id, {isError:true,structuredContent:{status:response.status,code},content:[{type:'text',text:refusalHints[response.status][code]}]});
                 await response.body?.cancel();
                 return result(id, {isError:true,content:[{type:'text',text:`Private operation failed (HTTP ${response.status}). Do not blindly retry unknown write outcomes; reconcile the original ID.`}]});
             }

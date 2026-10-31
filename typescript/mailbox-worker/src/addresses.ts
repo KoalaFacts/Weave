@@ -30,7 +30,8 @@ function baseUrl(origin: string): string {
     return url.origin;
 }
 export const addressView = (c: any) => ({addressId:c.cardId,accountId:c.ownerMailboxId,...c._address});
-export async function mutateAddress(env: Env,owner: string,id: string|null,input: any,origin: string,remove = false,creationId: string|null = null): Promise<any> {
+export async function mutateAddress(env: Env,owner: string,id: string|null,input: any,origin: string,remove = false,creationId: string|null = null,
+    guard: (tx: Transaction) => Promise<void> = async () => {}): Promise<any> {
     if (id !== null) uuid(id);
     if(creationId!==null){
         uuid(creationId);
@@ -38,6 +39,7 @@ export async function mutateAddress(env: Env,owner: string,id: string|null,input
     }
     const chosen = remove ? null : profile(input);
     return atomic(env.db,async tx => {
+        await guard(tx);
         const selectedId=id??creationId;
         const previous = selectedId === null ? null : await tx.get('card','',selectedId);
         if (id !== null && (!previous || !previous._address || previous._deleted || previous.ownerMailboxId !== owner)) fail(404,'unavailable');

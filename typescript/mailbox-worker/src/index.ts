@@ -6,9 +6,9 @@ import { registry } from './registry';
 import openapi from './openapi.json';
 import { publicReadRate } from './public-rate';
 import { remoteMcp } from './remote-mcp';
-import { oauthConfiguration, authorizeOAuth, protectedResourceMetadata } from './remote-oauth';
+import { oauthConfiguration, protectedResourceMetadata } from './remote-oauth';
 import { demoOAuthClientId, demoOAuthClientMetadata } from './oauth-client-metadata';
-import { privateMcpTools, privateScope, executePrivateMcp } from './remote-private';
+import { oauthPrivateAccess } from './remote-private';
 import { directory, directoryAgentCard, mutateAddress, ownedAddresses } from './addresses';
 import { sweep } from './cleanup';
 import { budgetDatabase } from './budget';
@@ -19,7 +19,7 @@ import { addAgentKey, listAgentKeys, revokeAgentKey } from './agent-keys.ts';
 import { cancelBindingRequest, createBindingRequest, getBindingRequest } from './binding-requests.ts';
 import { recoverAgentKey } from './recovery-codes.ts';
 import { ownerAction, ownerOverview, type OwnerAction, type OwnerActionResult, type OwnerOverview } from './owner-actions.ts';
-import { liveGrant, recordGrant, revokeGrant, type RecordGrantInput, type RecordGrantResult, type RevokeGrantInput, type RevokeGrantResult } from './client-grants.ts';
+import { recordGrant, revokeGrant, type RecordGrantInput, type RecordGrantResult, type RevokeGrantInput, type RevokeGrantResult } from './client-grants.ts';
 import { putCard } from './cards';
 import { decide, requestContact, setBlocked } from './contacts';
 import { deleteContact, ownContacts } from './contact-links';
@@ -82,16 +82,7 @@ export default {
                         if(env.RECOVERY_READ_ONLY!=='true')await publicReadRate(env,request);
                         return json(await atomic(env.db,tx=>directory(tx,target)));
                     } catch(error) { return problem(error); }
-                },cfg&&env.RECOVERY_READ_ONLY!=='true'?{
-                    tools:privateMcpTools,
-                    scope:privateScope,
-                    authorize:async scope=>{
-                        const access=await authorizeOAuth(cfg,request,scope,grantId=>atomic(env.db,tx=>liveGrant(tx,grantId)),
-                            undefined,Date.now);
-                        return access instanceof Response?access:access.accountId;
-                    },
-                    invoke:(accountId,name,args)=>executePrivateMcp(env,url.origin,accountId,name,args)
-                }:undefined);
+                },cfg&&env.RECOVERY_READ_ONLY!=='true'?oauthPrivateAccess(env,url.origin,cfg,request):undefined);
             }
             // Key self-registration; registerAgent applies the read-only recovery gate to new keys itself.
             if (method === 'POST' && url.pathname === '/v1/accounts') return json(await registerAgent(env,request,await body(request)));

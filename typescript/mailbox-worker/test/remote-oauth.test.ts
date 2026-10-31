@@ -97,7 +97,7 @@ test('Service Binding verifies exact resource, owner identity and operation scop
     const result=await authorizeOAuth(cfg as any,req(id+':grantId:secretValue'),'weave:messages.send',
         async grant=>{lookups++;return exists(grant);},
         (async()=>{throw Error('Never perform public token introspection in service mode');}) as typeof fetch,now*1000);
-    assert.deepEqual(result,{accountId:id});
+    assert.deepEqual(result,{accountId:id,grantId});
     assert.deepEqual(seen,{resource:config.resource,token:id+':grantId:secretValue'});
     assert.equal(lookups,1);
 });
@@ -158,7 +158,7 @@ test('Service Binding rechecks revocation rather than caching an accepted token'
     const binding={validateToken:async()=>{reads++;return revoked?null:validClaims;}};
     const cfg=oauthConfiguration({AUTH_SERVER:binding,OAUTH_ISSUER:config.issuer,OAUTH_RESOURCE:config.resource} as any,config.resource)!;
     const request=req(id+':grantId:secretValue');
-    assert.deepEqual(await authorizeOAuth(cfg,request,'weave:messages.send',exists,undefined,now*1000),{accountId:id});
+    assert.deepEqual(await authorizeOAuth(cfg,request,'weave:messages.send',exists,undefined,now*1000),{accountId:id,grantId});
     revoked=true;
     const denied=await authorizeOAuth(cfg,request,'weave:messages.send',exists,undefined,now*1000);
     assert.ok(denied instanceof Response);assert.equal(denied.status,401);assert.equal(reads,2);

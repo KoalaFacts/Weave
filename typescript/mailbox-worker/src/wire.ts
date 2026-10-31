@@ -47,7 +47,7 @@ export function accountNames(value:any):any {
 }
 export function problem(error: unknown): Response {
     const p = error instanceof Problem ? error : new Problem(503, 'storage');
-    const titles: Record<string,string> = { invalid: 'Invalid request', unauthenticated: 'Agent authentication required', unavailable: 'Resource unavailable', conflict: 'State conflict', expired: 'Expired', capacity: 'Capacity reached', tooLarge: 'Request too large', storage: 'Storage unavailable', maintenance:'Maintenance in progress', 'idempotency-conflict':'Idempotency key reused with different input', 'not-connected':'Not connected' };
+    const titles: Record<string,string> = { invalid: 'Invalid request', unauthenticated: 'Agent authentication required', unavailable: 'Resource unavailable', conflict: 'State conflict', expired: 'Expired', capacity: 'Capacity reached', tooLarge: 'Request too large', storage: 'Storage unavailable', maintenance:'Maintenance in progress', 'idempotency-conflict':'Idempotency key reused with different input', 'not-connected':'Not connected', 'grant-revoked':'Authorization revoked' };
     const response = json({ status: p.status, title: titles[p.code], code: p.code, ...(p.detail ?? {}) }, p.status);
     if (p.retryAfter !== undefined) response.headers.set('Retry-After', String(p.retryAfter));
     if (p.code === 'unauthenticated') response.headers.set('WWW-Authenticate', 'DPoP algs="EdDSA"');

@@ -15,6 +15,9 @@ import { sweep } from './cleanup';
 import { checkAgentCard, publishAgentCard } from './agent-cards.ts';
 import { checkMessage, inboxMessage, messagePayload } from './a2a-message.ts';
 import { idempotencyClaim, recordResultId, replayedResultId, type IdempotencyClaim } from './mcp-idempotency.ts';
+import { liveGrant } from './client-grants.ts';
+import { authorizeOAuth, type GrantLookup, type OAuthOptions } from './remote-oauth.ts';
+import type { PrivateAccess } from './remote-mcp.ts';
 
 export { privateMcpTools } from './private-mcp-tools';
 import { privateMcpTools } from './private-mcp-tools';
@@ -77,7 +80,33 @@ function withParsedMessages(page:{items:any[]}):unknown{
         return {...item,envelope:{...item.envelope,payload},message};
     })};
 }
-export async function executePrivateMcp(env:Env,origin:string,accountId:string,name:string,args:Record<string,unknown>):Promise<Response> {
+/** A write refuses inside its own transaction when the consent grant was revoked after authorization: the transaction's
+ * revision check makes a revocation committed before the write's commit visible on retry. */
+const grantGuard=(accountId:string,grantId:string|undefined)=>async(tx:Transaction):Promise<void>=>{
+    if(grantId===undefined)return;
+    const grant=await liveGrant(tx.db,grantId);
+    if(!grant||grant.accountId!==accountId)fail(401,'grant-revoked');
+};
+/** The production private-tool access: the consent grant is read on every call and re-checked inside each write. */
+export function oauthPrivateAccess(env:Env,origin:string,config:OAuthOptions,request:Request,
+    lookup:GrantLookup=grantId=>liveGrant(env.db,grantId)):PrivateAccess{
+    let grantId:string|null=null;
+    return {tools:privateMcpTools,scope:privateScope,
+        authorize:async scope=>{
+            const access=await authorizeOAuth(config,request,scope,lookup);
+            if(access instanceof Response)return access;
+            grantId=access.grantId;
+            return access.accountId;
+        },
+        // remoteMcp authorizes the exact tool scope immediately before every invoke.
+        invoke:(accountId,name,args)=>grantId===null?Promise.resolve(problem(new Error('unauthorized invoke')))
+            :executePrivateMcp(env,origin,accountId,name,args,grantId)};
+}
+/** `grantId` names the OAuth consent grant behind the call; writes re-check it in their transaction. Only direct
+ * callers without OAuth (tests) omit it. */
+export async function executePrivateMcp(env:Env,origin:string,accountId:string,name:string,args:Record<string,unknown>,grantId?:string):Promise<Response> {
+    const guard=grantGuard(accountId,grantId);
+    const guarded=<T>(operation:(tx:Transaction)=>Promise<T>)=>async(tx:Transaction)=>{await guard(tx);return operation(tx);};
     try {
         if(!privateScope(name))fail(404,'unavailable');
         const target=urlFor(origin,'/');
@@ -108,13 +137,13 @@ export async function executePrivateMcp(env:Env,origin:string,accountId:string,n
             if(args.isPublic!==undefined&&typeof args.isPublic!=='boolean')invalidField('isPublic','must be true or false');
             // Unlisted unless the caller asks for a public address; the slice-3 public-address limits apply.
             return json(withoutSecrets(await mutateAddress(env,accountId,null,{label:args.label??null,isPublic:args.isPublic===true},
-                origin,false,args.addressId as string)));
+                origin,false,args.addressId as string,guard)));
         }
         if(name==='publish_my_agent_card'){
             parameters(args,['addressId','card'],['addressId','card']);
             checkUuid(args.addressId,'addressId');
             const card=args.card===null?null:checkAgentCard(args.card);
-            return json(withoutSecrets(await publishAgentCard(env,accountId,args.addressId,card)));
+            return json(withoutSecrets(await publishAgentCard(env,accountId,args.addressId,card,guard)));
         }
         if(name==='request_contact'){
             parameters(args,['requesterAddressId','recipientAccountId','recipientAddressId','message','idempotencyKey'],['requesterAddressId','recipientAccountId','recipientAddressId','message']);
@@ -123,7 +152,7 @@ export async function executePrivateMcp(env:Env,origin:string,accountId:string,n
             const {requesterAddressId,recipientAccountId,recipientAddressId}=args;
             const claim=await idempotencyClaim(name,args.idempotencyKey,{requesterAddressId,recipientAccountId,recipientAddressId,message});
             await sweep(env);
-            return json(withoutSecrets(await atomic(env.db,tx=>keyed(tx,accountId,claim,async requestId=>{
+            return json(withoutSecrets(await atomic(env.db,guarded(tx=>keyed(tx,accountId,claim,async requestId=>{
                 const request=await tx.get('request',accountId,requestId);
                 if(!request)fail(404,'unavailable');
                 return relation(await readChannel(tx,accountId,request.summary.recipientMailboxId),request);
@@ -133,7 +162,7 @@ export async function executePrivateMcp(env:Env,origin:string,accountId:string,n
                 const result=await requestContact(tx,accountId,{requestVersion:2,requestId:payload.messageId,requesterAccountId:accountId,
                     requesterAddressId,recipientAccountId,recipientAddressId,payload});
                 return {result,resultId:payload.messageId};
-            }))));
+            })))));
         }
         if(name==='decide_contact'){
             parameters(args,['requestId','requesterAccountId','expectedGeneration','status','reply','idempotencyKey'],['requestId','requesterAccountId','expectedGeneration','status']);
@@ -144,7 +173,7 @@ export async function executePrivateMcp(env:Env,origin:string,accountId:string,n
             const {requestId,requesterAccountId,status}=args;
             const claim=await idempotencyClaim(name,args.idempotencyKey,{requestId,requesterAccountId,expectedGeneration:args.expectedGeneration,status,reply});
             await sweep(env);
-            return json(withoutSecrets(await atomic(env.db,tx=>keyed(tx,accountId,claim,async()=>{
+            return json(withoutSecrets(await atomic(env.db,guarded(tx=>keyed(tx,accountId,claim,async()=>{
                 const request=await tx.get('request',requesterAccountId,requestId);
                 if(!request||request.summary.recipientMailboxId!==accountId)fail(404,'unavailable');
                 return relation(await readChannel(tx,accountId,requesterAccountId),request);
@@ -152,7 +181,7 @@ export async function executePrivateMcp(env:Env,origin:string,accountId:string,n
                 const result=await decide(tx,accountId,requestId,{requesterMailboxId:requesterAccountId,expectedGeneration,status,
                     reply:reply&&messagePayload(reply,tx.store.now)});
                 return {result,resultId:requestId};
-            }))));
+            })))));
         }
         if(name==='send_message'){
             parameters(args,['recipientAccountId','contactGeneration','message','idempotencyKey'],['recipientAccountId','message']);
@@ -163,7 +192,7 @@ export async function executePrivateMcp(env:Env,origin:string,accountId:string,n
             const claim=await idempotencyClaim(name,args.idempotencyKey,{recipientAccountId,contactGeneration:args.contactGeneration??null,message});
             await sweep(env);
             // Channel tokens are resolved in the guarded transaction and never exposed to the model.
-            return json(withoutSecrets(await atomic(env.db,tx=>keyed(tx,accountId,claim,async messageId=>{
+            return json(withoutSecrets(await atomic(env.db,guarded(tx=>keyed(tx,accountId,claim,async messageId=>{
                 const stored=await tx.get('message',accountId,messageId);
                 if(!stored)fail(404,'unavailable');
                 return terminalize(tx,stored);
@@ -171,13 +200,13 @@ export async function executePrivateMcp(env:Env,origin:string,accountId:string,n
                 const generation=contactGeneration??await connectedGeneration(tx,accountId,recipientAccountId);
                 const payload=messagePayload(message,tx.store.now);
                 return {result:await sendWithResolvedConnection(tx,accountId,recipientAccountId,generation,payload),resultId:payload.messageId};
-            }))));
+            })))));
         }
         if(name==='ack_message'){
             parameters(args,['messageId','senderAccountId'],['messageId','senderAccountId']);
             checkUuid(args.messageId,'messageId');checkUuid(args.senderAccountId,'senderAccountId');
             await sweep(env);
-            return json(withoutSecrets(await atomic(env.db,tx=>ack(tx,accountId,args.messageId as string,{senderMailboxId:args.senderAccountId}))));
+            return json(withoutSecrets(await atomic(env.db,guarded(tx=>ack(tx,accountId,args.messageId as string,{senderMailboxId:args.senderAccountId})))));
         }
         fail(404,'unavailable');
     }catch(error){return problem(error);}

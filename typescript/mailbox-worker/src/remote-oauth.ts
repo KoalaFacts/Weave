@@ -34,7 +34,7 @@ export interface OAuthConfiguration {
 }
 export interface OAuthServiceConfiguration { mode:'service'; issuer:string; resource:string; authServer:OAuthServiceBinding; }
 export type OAuthOptions = OAuthConfiguration | OAuthServiceConfiguration;
-export type OAuthAccess = {accountId: string} | Response;
+export type OAuthAccess = {accountId: string; grantId: string} | Response;
 /** The mailbox's mirrored consent grant, or null when it is revoked or unknown. */
 export type LiveGrant = {accountId: string; humanId: string; clientId: string};
 export type GrantLookup = (grantId: string) => Promise<LiveGrant | null>;
@@ -131,15 +131,16 @@ export async function authorizeOAuth(
             || typeof claim.clientId!=='string' || !claim.clientId
             || !Array.isArray(claim.scope) || !claim.scope.every(scope=>typeof scope==='string'))
             return challenge(config,401,requiredScope,'invalid_token');
-        if (!claim.scope.includes(requiredScope))return challenge(config,403,requiredScope,'insufficient_scope');
-        // A revoked, unknown or mismatched grant is the same 401 as an invalid token; storage failure never allows.
+        // A revoked, unknown or mismatched grant is the same 401 as an invalid token, checked before scope so a
+        // revoked token never learns about scopes; storage failure never allows.
         let grant:LiveGrant|null;
         try {grant=await liveGrant(claim.props.grantId);}
         catch {return failClosed();}
         if (!grant || grant.accountId!==claim.userId || grant.humanId!==claim.props.humanId || grant.clientId!==claim.clientId)
             return challenge(config,401,requiredScope,'invalid_token');
+        if (!claim.scope.includes(requiredScope))return challenge(config,403,requiredScope,'insufficient_scope');
         if (claim.expiresAt<=Math.floor(clock()/1000))return challenge(config,401,requiredScope,'invalid_token');
-        return {accountId:claim.userId};
+        return {accountId:claim.userId,grantId:claim.props.grantId};
     }
     const form=new URLSearchParams({token:match[1],token_type_hint:'access_token'});
     let data: unknown;

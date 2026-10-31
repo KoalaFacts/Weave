@@ -6,11 +6,11 @@ import { createOwnedAgent, signInHuman } from '../src/humans.ts';
 import { liveGrant, recordGrant, revokeGrant } from '../src/client-grants.ts';
 import { atomic, type Database, type Env } from '../src/database.ts';
 import { remoteMcp } from '../src/remote-mcp.ts';
-import { authorizeOAuth, oauthConfiguration } from '../src/remote-oauth.ts';
+import { oauthConfiguration } from '../src/remote-oauth.ts';
 
 // remote-private uses bundler-resolution imports; evaluate the bundled production module.
 const built = await build({ entryPoints: ['src/remote-private.ts'], bundle: true, write: false, platform: 'node', format: 'esm', logLevel: 'silent' });
-const { privateMcpTools, privateScope, executePrivateMcp } = await import('data:text/javascript;base64,' + Buffer.from(built.outputFiles[0].contents).toString('base64')) as typeof import('../src/remote-private.ts');
+const { oauthPrivateAccess } = await import('data:text/javascript;base64,' + Buffer.from(built.outputFiles[0].contents).toString('base64')) as typeof import('../src/remote-private.ts');
 
 const origin = 'https://demo.test', resource = origin + '/mcp', clientId = 'https://client.example/oauth-client.json';
 const environment = (db: Database, overrides: Partial<Env> = {}): Env => ({
@@ -36,7 +36,7 @@ test('recordGrant_OwnedAgent_Recorded', async () => {
         assert.deepEqual(await recordGrant(env, { grantId, humanId, accountId, clientId }, () => 1234n), { ok: true });
         assert.deepEqual(await grantRow(h.db, grantId), { human_id: humanId, account_id: accountId, client_id: clientId, revoked_at: null });
         assert.equal(await h.db.prepare('SELECT CAST(created_at AS TEXT) t FROM client_grants WHERE grant_id=?').bind(grantId).first('t'), '1234');
-        assert.deepEqual(await atomic(h.db, tx => liveGrant(tx, grantId)), { grantId, humanId, accountId, clientId });
+        assert.deepEqual(await liveGrant(h.db, grantId), { grantId, humanId, accountId, clientId });
     } finally { await h.close(); }
 });
 
@@ -102,24 +102,27 @@ test('revokeGrant_Twice_Ok', async () => {
         assert.deepEqual(await revokeGrant(env, { humanId: alice.humanId, grantId }, () => 300n), { ok: true });
         assert.equal((await grantRow(h.db, grantId))?.revoked_at, '200', 'the first revocation time is kept');
         assert.equal(await revision(h.db), revoked, 'a repeated revocation writes nothing');
-        assert.equal(await atomic(h.db, tx => liveGrant(tx, grantId)), null);
+        assert.equal(await liveGrant(h.db, grantId), null);
     } finally { await h.close(); }
 });
 
-/** The production /mcp composition: Service Binding claims, then the D1 grant row on every call. */
-function mcp(env: Env, claims: (token: string) => unknown, lookup = (grantId: string) => atomic(env.db, tx => liveGrant(tx, grantId))) {
+type McpOptions = { lookup?: (grantId: string) => Promise<any>; name?: string; args?: Record<string, unknown>;
+    afterAuthorize?: () => Promise<void>; invoked?: { count: number } };
+/** The production /mcp composition: Service Binding claims, then the D1 grant row on every call and inside every write. */
+function mcp(env: Env, claims: (token: string) => unknown, options: McpOptions = {}) {
     const cfg = oauthConfiguration({ OAUTH_ISSUER: 'https://auth.example', OAUTH_RESOURCE: resource,
         AUTH_SERVER: { validateToken: async (_resource: string, token: string) => claims(token) as any } }, resource)!;
     return async (token: string) => {
         const request = new Request(resource, { method: 'POST', headers: { 'Content-Type': 'application/json', Accept: 'application/json, text/event-stream', Authorization: 'Bearer ' + token },
-            body: JSON.stringify({ jsonrpc: '2.0', id: 1, method: 'tools/call', params: { name: 'get_my_profile', arguments: {} } }) });
-        return remoteMcp(request, async () => { throw Error('no public read'); }, { tools: privateMcpTools, scope: privateScope,
-            authorize: async scope => { const access = await authorizeOAuth(cfg, request, scope, lookup); return access instanceof Response ? access : access.accountId; },
-            invoke: (accountId, name, args) => executePrivateMcp(env, origin, accountId, name, args) });
+            body: JSON.stringify({ jsonrpc: '2.0', id: 1, method: 'tools/call', params: { name: options.name ?? 'get_my_profile', arguments: options.args ?? {} } }) });
+        const access = oauthPrivateAccess(env, origin, cfg, request, options.lookup);
+        return remoteMcp(request, async () => { throw Error('no public read'); }, { ...access,
+            authorize: async scope => { const caller = await access.authorize(scope); await options.afterAuthorize?.(); return caller; },
+            invoke: (accountId, name, args) => { if (options.invoked) options.invoked.count++; return access.invoke(accountId, name, args); } });
     };
 }
-const claim = (accountId: string, props: Record<string, unknown>, client = clientId) => ({ audience: resource, userId: accountId, props: { accountId, ...props },
-    expiresAt: Math.floor(Date.now() / 1000) + 120, scope: ['weave:addresses.read'], clientId: client });
+const claim = (accountId: string, props: Record<string, unknown>, client = clientId, scope = ['weave:addresses.read']) => ({ audience: resource, userId: accountId,
+    props: { accountId, ...props }, expiresAt: Math.floor(Date.now() / 1000) + 120, scope, clientId: client });
 const token = (accountId: string) => accountId + ':sdkgrant:secret';
 
 test('mcpPrivate_RevokedGrant_401NextCall', async () => {
@@ -166,15 +169,18 @@ test('mcpPrivate_GrantStorageFailure_503', async () => {
         const env = environment(h.db), alice = await owner(env), grantId = crypto.randomUUID();
         assert.deepEqual(await recordGrant(env, { grantId, ...alice, clientId }), { ok: true });
         const broken: Database = { batch: s => h.db.batch(s), prepare: sql => { if (sql.includes('client_grants')) throw Error('D1 unavailable'); return h.db.prepare(sql); } };
-        let invoked = 0;
-        const call = mcp(environment(broken), () => claim(alice.accountId, { humanId: alice.humanId, grantId }));
+        let lookups = 0;
+        const invoked = { count: 0 };
+        const call = mcp(environment(broken), () => claim(alice.accountId, { humanId: alice.humanId, grantId }), { invoked });
         const failed = await call(token(alice.accountId));
         assert.equal(failed.status, 503);
         assert.equal(failed.headers.get('WWW-Authenticate'), null);
         assert.doesNotMatch(await failed.text(), /D1 unavailable/);
-        const thrown = await mcp(env, () => claim(alice.accountId, { humanId: alice.humanId, grantId }), async () => { invoked++; throw Error('storage'); })(token(alice.accountId));
+        const thrown = await mcp(env, () => claim(alice.accountId, { humanId: alice.humanId, grantId }),
+            { lookup: async () => { lookups++; throw Error('storage'); }, invoked })(token(alice.accountId));
         assert.equal(thrown.status, 503);
-        assert.equal(invoked, 1);
+        assert.equal(lookups, 1);
+        assert.equal(invoked.count, 0, 'no tool runs when the grant cannot be read');
     } finally { await h.close(); }
 });
 
@@ -185,9 +191,59 @@ test('mcpPrivate_TokenWithoutGrantId_401', async () => {
         assert.deepEqual(await recordGrant(env, { grantId, ...alice, clientId }), { ok: true });
         let lookups = 0;
         for (const props of [{}, { humanId: alice.humanId }, { grantId }, { humanId: alice.humanId, grantId: 'not-a-uuid' }, { humanId: 'not-a-uuid', grantId }]) {
-            const denied = await mcp(env, () => claim(alice.accountId, props), async () => { lookups++; return null; })(token(alice.accountId));
+            const denied = await mcp(env, () => claim(alice.accountId, props), { lookup: async () => { lookups++; return null; } })(token(alice.accountId));
             assert.equal(denied.status, 401, JSON.stringify(props));
         }
         assert.equal(lookups, 0, 'a token without grant identity never reaches storage');
+    } finally { await h.close(); }
+});
+
+test('mcpPrivate_GrantLookup_SinglePointReadWithoutTransaction', async () => {
+    const h = await start();
+    try {
+        const env = environment(h.db), alice = await owner(env), grantId = crypto.randomUUID();
+        assert.deepEqual(await recordGrant(env, { grantId, ...alice, clientId }), { ok: true });
+        const statements: string[] = [];
+        const counting: Database = { batch: s => h.db.batch(s), prepare: sql => { statements.push(sql); return h.db.prepare(sql); } };
+        const allowed = await mcp(environment(counting), () => claim(alice.accountId, { humanId: alice.humanId, grantId }))(token(alice.accountId));
+        assert.equal(allowed.status, 200);
+        assert.equal(statements.filter(sql => sql.includes('client_grants')).length, 1);
+        assert.equal(statements.filter(sql => sql.includes('mailbox_revision')).length, 0, 'unrelated revision churn cannot retry or fail the grant read');
+    } finally { await h.close(); }
+});
+
+test('mcpPrivate_GrantRevokedBetweenAuthorizeAndWrite_NothingWritten', async () => {
+    const h = await start();
+    try {
+        const env = environment(h.db), alice = await owner(env), grantId = crypto.randomUUID();
+        assert.deepEqual(await recordGrant(env, { grantId, ...alice, clientId }), { ok: true });
+        const claims = () => claim(alice.accountId, { humanId: alice.humanId, grantId }, clientId, ['weave:addresses.write']);
+        const addresses = () => h.db.prepare('SELECT address_id FROM account_addresses WHERE account_id=?').bind(alice.accountId).all<{ address_id: string }>();
+        const control = await mcp(env, claims, { name: 'ensure_my_address', args: { addressId: crypto.randomUUID() } })(token(alice.accountId));
+        assert.equal((await control.json()).result.isError, undefined, 'positive control');
+        const before = (await addresses()).results;
+        const invoked = { count: 0 };
+        const answer = await mcp(env, claims, { name: 'ensure_my_address', args: { addressId: crypto.randomUUID() }, invoked,
+            afterAuthorize: async () => { assert.deepEqual(await revokeGrant(env, { humanId: alice.humanId, grantId }), { ok: true }); } })(token(alice.accountId));
+        assert.equal(invoked.count, 1, 'the revocation landed after authorization, before the write');
+        const result = (await answer.json()).result;
+        assert.equal(result.isError, true);
+        assert.deepEqual(result.structuredContent, { status: 401, code: 'grant-revoked' });
+        assert.match(result.content[0].text, /revoked/);
+        assert.deepEqual((await addresses()).results, before, 'nothing was written');
+    } finally { await h.close(); }
+});
+
+test('mcpPrivate_RevokedTokenWithInsufficientScope_401', async () => {
+    const h = await start();
+    try {
+        const env = environment(h.db), alice = await owner(env), grantId = crypto.randomUUID();
+        assert.deepEqual(await recordGrant(env, { grantId, ...alice, clientId }), { ok: true });
+        const call = mcp(env, () => claim(alice.accountId, { humanId: alice.humanId, grantId }), { name: 'ensure_my_address', args: { addressId: crypto.randomUUID() } });
+        assert.equal((await call(token(alice.accountId))).status, 403, 'positive control: live grant, missing scope');
+        assert.deepEqual(await revokeGrant(env, { humanId: alice.humanId, grantId }), { ok: true });
+        const denied = await call(token(alice.accountId));
+        assert.equal(denied.status, 401);
+        assert.match(denied.headers.get('WWW-Authenticate') ?? '', /error="invalid_token"/);
     } finally { await h.close(); }
 });

@@ -196,10 +196,12 @@ export function checkAgentCard(value: unknown): Record<string, unknown> {
 }
 
 /** Stores, replaces (card) or removes (null) the card of the caller's own address. Nothing changes on a refusal. */
-export async function publishAgentCard(env: Env, owner: string, addressId: string, card: Record<string, unknown> | null): Promise<unknown> {
+export async function publishAgentCard(env: Env, owner: string, addressId: string, card: Record<string, unknown> | null,
+    guard: (tx: Transaction) => Promise<void> = async () => {}): Promise<unknown> {
     uuid(addressId);
     const serialized = card === null ? null : JSON.stringify(card);
     return atomic(env.db, async tx => {
+        await guard(tx);
         const address = await tx.get('card', '', addressId);
         if (!address || !address._address || address.ownerMailboxId !== owner) fail(404, 'unavailable');
         if (serialized === null) {
