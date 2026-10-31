@@ -1,6 +1,6 @@
 import assert from 'node:assert/strict';
 import { test } from 'node:test';
-import { existsSync, readFileSync, mkdtempSync, mkdirSync, writeFileSync, cpSync, rmSync, symlinkSync } from 'node:fs';
+import { existsSync, readFileSync, readdirSync, mkdtempSync, mkdirSync, writeFileSync, cpSync, rmSync, symlinkSync } from 'node:fs';
 import { tmpdir } from 'node:os';
 import { resolve, join } from 'node:path';
 import { fileURLToPath } from 'node:url';
@@ -11,13 +11,16 @@ const readJson = (path: string) => JSON.parse(readFileSync(path, 'utf8'));
 const catalog = '.agents/plugins/marketplace.json';
 const manifest = 'plugins/weave/.codex-plugin/plugin.json';
 const apps = 'plugins/weave/.app.json';
+const claudeManifest = 'plugins/weave/.claude-plugin/plugin.json';
+const claudeCatalog = '.claude-plugin/marketplace.json';
+const endpoint = 'https://demo.weave-389.workers.dev/mcp';
 const syntheticApp = 'asdk_app_' + 'a'.repeat(32); // Synthetic fixture, never installed.
 const otherApp = 'asdk_app_' + 'b'.repeat(32);
 
 function fixture(t: { after: (fn: () => void) => void }) {
     const dir = mkdtempSync(join(tmpdir(), 'weave-marketplace-'));
     t.after(() => rmSync(dir, { recursive: true, force: true }));
-    for (const path of ['.agents', 'plugins']) cpSync(join(root, path), join(dir, path), { recursive: true });
+    for (const path of ['.agents', '.claude-plugin', 'plugins']) cpSync(join(root, path), join(dir, path), { recursive: true });
     // Tests exercise the setup-only state even after an operator binds the real app.
     writeFileSync(join(dir, apps), '{"apps":{}}\n');
     return dir;
@@ -180,4 +183,66 @@ test('existing Worker verification runs and typechecks the marketplace tools', (
     assert.match(pkg.scripts.test, /^npm run test:marketplace && /);
     assert.equal(pkg.scripts['test:marketplace'], 'node ../../scripts/marketplace/marketplace.ts check && node --test ../../scripts/marketplace/marketplace.test.ts');
     assert.ok(config.include.includes('../../scripts/marketplace/*.ts'));
+});
+
+test('Claude Code manifest declares the remote HTTP MCP endpoint and shares the Codex skills', () => {
+    const claude = readJson(join(root, claudeManifest)), codex = readJson(join(root, manifest));
+    assert.equal(claude.name, 'weave');
+    assert.equal(claude.version, codex.version);
+    assert.equal(claude.skills, codex.skills);
+    assert.deepEqual(claude.mcpServers, { weave: { type: 'http', url: endpoint } });
+    assert.ok(!('hooks' in claude));
+});
+test('Claude Code marketplace lists the plugin from the repository path', () => {
+    const value = readJson(join(root, claudeCatalog));
+    assert.equal(value.name, 'weave-plugins');
+    assert.equal(typeof value.owner.name, 'string');
+    assert.equal(value.plugins.length, 1);
+    assert.equal(value.plugins[0].name, 'weave');
+    assert.equal(value.plugins[0].source, './plugins/weave');
+});
+test('Claude Code packaging is accepted and the Codex rules still hold', async t => {
+    const dir = fixture(t), { inspect } = await api();
+    assert.deepEqual(inspect(dir).errors, []);
+    change(dir, manifest, value => value.mcpServers = { weave: { type: 'http', url: endpoint } });
+    assert.ok(inspect(dir).errors.length > 0, 'the Codex manifest still forbids mcpServers');
+});
+for (const [label, mutate] of [
+    ['a different server name', (v: any) => { v.mcpServers.other = v.mcpServers.weave; }],
+    ['a non-https url', (v: any) => { v.mcpServers.weave.url = 'http://demo.weave-389.workers.dev/mcp'; }],
+    ['a url with a query', (v: any) => { v.mcpServers.weave.url = endpoint + '?token=x'; }],
+    ['a url with credentials', (v: any) => { v.mcpServers.weave.url = 'https://user:pw@demo.weave-389.workers.dev/mcp'; }],
+    ['a header', (v: any) => { v.mcpServers.weave.headers = { Authorization: 'Bearer x' }; }],
+    ['a stdio command', (v: any) => { v.mcpServers = { weave: { command: 'node', args: ['x.js'] } }; }],
+    ['a hook', (v: any) => { v.hooks = './hooks.json'; }],
+    ['a different skills path', (v: any) => { v.skills = './other/'; }],
+    ['a different version', (v: any) => { v.version = '9.9.9'; }]
+] as const) {
+    test('Claude manifest is rejected with ' + label, async t => {
+        const dir = fixture(t), { inspect } = await api();
+        change(dir, claudeManifest, mutate);
+        assert.ok(inspect(dir).errors.length > 0);
+    });
+}
+test('Claude marketplace must list exactly the local Weave plugin', async t => {
+    const dir = fixture(t), { inspect } = await api();
+    change(dir, claudeCatalog, value => value.plugins[0].source = { source: 'github', repo: 'someone/else' });
+    assert.ok(inspect(dir).errors.length > 0);
+});
+test('plugin files use the remote MCP contract and no removed credential vocabulary', () => {
+    const files: string[] = [];
+    const walk = (dir: string) => { for (const e of readdirSync(dir, { withFileTypes: true })) e.isDirectory() ? walk(join(dir, e.name)) : files.push(join(dir, e.name)); };
+    walk(join(root, 'plugins/weave'));
+    assert.ok(files.length >= 7);
+    for (const file of files) {
+        const text = readFileSync(file, 'utf8');
+        assert.doesNotMatch(text, /payload|bytes|X-Weave-Account-Control|control/i, file);
+    }
+    for (const path of ['skills/weave/SKILL.md', 'skills/setup/SKILL.md']) {
+        const text = readFileSync(join(root, 'plugins/weave', path), 'utf8');
+        assert.match(text, /get_my_profile/);
+    }
+    const skill = readFileSync(join(root, 'plugins/weave/skills/weave/SKILL.md'), 'utf8');
+    for (const name of ['ensure_my_address', 'request_contact', 'decide_contact', 'send_message', 'list_my_inbox', 'ack_message', 'idempotencyKey', 'contactGeneration', 'search_registry', 'lookup_address', 'publish_my_agent_card'])
+        assert.ok(skill.includes(name), name);
 });

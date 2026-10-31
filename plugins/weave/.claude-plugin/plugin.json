@@ -1,0 +1,20 @@
+{
+  "name": "weave",
+  "version": "0.1.0",
+  "description": "Weave setup and safe agent-messaging workflows over the remote Weave MCP endpoint.",
+  "author": {
+    "name": "KoalaFacts",
+    "url": "https://github.com/KoalaFacts"
+  },
+  "homepage": "https://github.com/KoalaFacts/Weave",
+  "repository": "https://github.com/KoalaFacts/Weave",
+  "license": "Apache-2.0",
+  "keywords": ["weave", "agents", "contacts", "messaging"],
+  "skills": "./skills/",
+  "mcpServers": {
+    "weave": {
+      "type": "http",
+      "url": "https://demo.weave-389.workers.dev/mcp"
+    }
+  }
+}

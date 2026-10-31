@@ -10,7 +10,10 @@ const catalogPath = '.agents/plugins/marketplace.json';
 const pluginPath = 'plugins/weave';
 const manifestPath = `${pluginPath}/.codex-plugin/plugin.json`;
 const appPath = `${pluginPath}/.app.json`;
-const files = new Set(['.codex-plugin/plugin.json', '.app.json', 'README.md', 'skills/setup/SKILL.md', 'skills/weave/SKILL.md', 'references/safety.md']);
+const claudeManifestPath = `${pluginPath}/.claude-plugin/plugin.json`;
+const claudeCatalogPath = '.claude-plugin/marketplace.json';
+const mcpEndpoint = 'https://demo.weave-389.workers.dev/mcp';
+const files = new Set(['.codex-plugin/plugin.json', '.claude-plugin/plugin.json', '.app.json', 'README.md', 'skills/setup/SKILL.md', 'skills/weave/SKILL.md', 'references/safety.md']);
 const record = (value: unknown): value is ObjectValue => value !== null && typeof value === 'object' && !Array.isArray(value);
 const keys = (value: ObjectValue, expected: string[]) => Object.keys(value).sort().join(',') === [...expected].sort().join(',');
 const appId = (value: unknown): value is string => typeof value === 'string' && /^asdk_app_[0-9a-f]{32}$/.test(value) && value !== 'asdk_app_' + '0'.repeat(32);
@@ -63,6 +66,15 @@ export function inspect(root: string, requireApp = false): Inspection {
         check(!('mcpServers' in manifest) && !('hooks' in manifest) && !('extensions' in manifest), 'This web-targeted package must not bundle runtimes, hooks, or an unreviewed overlay.');
         for (const path of packageFiles(root)) check(files.has(path), 'Unreviewed package file; do not bundle MCP runtimes, hooks, or credentials.');
         for (const path of files) safeFile(root, `${pluginPath}/${path}`);
+        const claude = json(root, claudeManifestPath);
+        check(claude.name === 'weave' && claude.version === manifest.version && claude.skills === manifest.skills && claude.license === 'Apache-2.0', 'The Claude Code manifest must match the Codex identity, version and shared skills path.');
+        check(!('hooks' in claude) && !('commands' in claude) && !('agents' in claude) && !('userConfig' in claude), 'The Claude Code manifest must not add hooks or other components.');
+        const servers = claude.mcpServers;
+        check(record(servers) && keys(servers, ['weave']) && record(servers.weave) && keys(servers.weave, ['type', 'url']) && servers.weave.type === 'http' && servers.weave.url === mcpEndpoint, 'The Claude Code manifest must declare only the Weave HTTP MCP endpoint, with no headers or credentials.');
+        const claudeCatalog = json(root, claudeCatalogPath);
+        const claudeEntries = claudeCatalog.plugins;
+        check(claudeCatalog.name === 'weave-plugins' && record(claudeCatalog.owner), 'Unexpected Claude Code marketplace identity.');
+        check(Array.isArray(claudeEntries) && claudeEntries.length === 1 && record(claudeEntries[0]) && claudeEntries[0].name === 'weave' && claudeEntries[0].source === './plugins/weave', 'The Claude Code marketplace must list exactly the local Weave plugin.');
         const mapping = json(root, appPath);
         check(keys(mapping, ['apps']) && record(mapping.apps), 'Invalid app mapping.');
         if (record(mapping.apps)) {

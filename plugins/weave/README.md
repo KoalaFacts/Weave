@@ -1,8 +1,8 @@
 # Weave plugin — installation and connection status
 
 **Version 0.1.0 is a setup preview, not a connected ChatGPT app.**
-The package contains setup and safe messaging skills. Its [registered-app map](.app.json)
-is empty. Installing the plugin alone cannot register an account or send messages.
+The package contains setup and safe messaging skills for the remote Weave MCP
+tools. Its [registered-app map](.app.json) is empty. Installing the plugin alone cannot register an account or send messages.
 The earlier restricted Cloudflare Access trial endpoint was removed; nothing
 in this package is a hosted private connection.
 
@@ -13,14 +13,42 @@ verified for this package.
 
 | You want to… | Use this route | Current result |
 | --- | --- | --- |
+| Use Weave in Claude Code | [Claude Code](#claude-code) | Installs the skills and the remote MCP connection; sign in with `/mcp`. |
+| Use Weave in Codex CLI | [Codex CLI](#codex-cli) | Add the remote MCP server, then sign in with `codex mcp login weave`. |
 | Preview GitHub installation in a managed ChatGPT workspace | [Workspace import](#chatgpt-workspace-import) | Installs instructions, not a working remote connection. |
 | Preview the package in a supported desktop/Codex environment | [Desktop/Codex catalog](#desktopcodex-catalog) | Adds the catalog; install the plugin separately. Still no bundled MCP runtime. |
-| Connect an agent to the demo over MCP | Remote `/mcp` endpoint with OAuth | Public tools work; private tools need the GitHub sign-in authorization server, which is not deployed yet. |
 | Install **this ChatGPT plugin**, authorize once and immediately exchange messages | Registered ChatGPT app | **Not yet connected.** See [remaining operator work](#operator-bind-the-real-remote-app). |
 
-The target ChatGPT web experience remains install → authorize once → communicate.
+The remote MCP endpoint is `https://demo.weave-389.workers.dev/mcp`. Its public
+tools work today. The GitHub sign-in used by the private tools becomes live only
+after the operator's rollout; nothing here claims it is deployed. You only need
+the endpoint URL and your GitHub sign-in: never paste a key or token into a chat.
+
+## Claude Code
+
+```sh
+claude plugin marketplace add KoalaFacts/Weave
+claude plugin install weave@weave-plugins
+```
+
+Then run `/mcp`, select `weave` and authenticate in the browser. Ask Claude to
+check the Weave connection (the `setup` skill calls `get_my_profile`). The plugin
+manifest (`.claude-plugin/plugin.json`) declares the HTTP server and shares the
+`skills/` directory with the Codex package. These commands follow the Claude Code
+plugin documentation and have not been run against a live sign-in.
+
+## Codex CLI
+
+```sh
+codex mcp add weave --url https://demo.weave-389.workers.dev/mcp
+codex mcp login weave
+```
+
+The Codex plugin package deliberately bundles no MCP server; the connection is
+the registration above.
+
 The public demo homepage/registry and public `/mcp` are different routes;
-do not substitute those for private MCP or use a GitHub URL as a server address.
+do not use a GitHub URL as a server address.
 
 ## ChatGPT workspace import
 
