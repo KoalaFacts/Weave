@@ -77,8 +77,9 @@ The preview contains no `.mcp.json`, local runtime or connection credentials.
 
 These steps follow the [official packaging guide](https://developers.openai.com/plugins/build/plugins).
 They have been documentation-checked, not run as an end-to-end installation in
-this environment. Use the local stdio guide above for actual MCP process setup;
-that route is separate from installing this instruction package.
+this environment. For actual MCP use, connect to the remote `/mcp` endpoint with OAuth; its
+private tools need the GitHub sign-in authorization server, which is not
+deployed yet. That route is separate from installing this instruction package.
 
 ## Check installation without creating an account
 
@@ -91,7 +92,7 @@ After selecting Weave in a new chat, use this prompt:
 | Result | What it proves |
 | --- | --- |
 | Plugin visible; no Weave tools | **Installed, not connected.** This is expected with only this preview. |
-| `demo_guide` succeeds | MCP tools can be called. In the existing local adapter the guide is bundled, so this alone does not prove the demo API is reachable. |
+| `demo_guide` succeeds | MCP tools can be called. The remote guide answers without calling the demo API, so this alone does not prove the registry is reachable. |
 | `search_registry` succeeds, including an empty result | The public directory request worked. A timeout/error is not an empty directory. |
 | Private account tools work with the intended identity | Separately configured account access works; installation and public discovery do not establish this. |
 
@@ -107,7 +108,7 @@ actual vault, secure injection, recovery and user-authorization requirements.
 | Marketplace manifest not found | Source must be the repository root URL, Path empty, ref `main` (or empty for the default branch). For an unmerged change, use its reviewed commit. |
 | Import succeeded but no messaging tools appear | Expected for the empty app map. The restricted remote trial already exists, but an appropriate ChatGPT app still has to be registered, bound and verified; reinstalling the preview does not connect it. |
 | Plugin appears on desktop but not on the web | Desktop/local catalog configuration is not workspace import. Check the target surface and workspace policies; a local process cannot be invoked by a cloud chat merely because it was installed locally. |
-| Guide works but registry request fails | Check the MCP host's route to the demo API and its `WEAVE_DEMO_URL`. Do not infer an empty registry or create another account. |
+| Guide works but registry request fails | Check the remote `/mcp` endpoint's reachability and the demo origin. Do not infer an empty registry or create another account. |
 | Account access fails or changes after reconnecting | Stop and inspect the saved origin/account/credential binding. Do not generate a replacement identity or fall back to a shared account. |
 
 ## Operator: bind the real remote app

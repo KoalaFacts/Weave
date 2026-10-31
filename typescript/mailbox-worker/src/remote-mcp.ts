@@ -244,7 +244,7 @@ export async function remoteMcp(request: Request, read: DirectoryRead, privateAc
         agentGuide: url.origin + '/agent-start.md', directory: url.origin + '/registry',
         nextRequirement: privateAccess
             ? 'Authorize an existing Weave account through the configured OAuth provider before using private tools. Anonymous messaging and automatic account registration are unavailable.'
-            : 'Per-user authorization is not implemented on this remote endpoint. The existing local stdio adapter is separate.'
+            : 'Per-user authorization is not implemented on this remote endpoint.'
     });
     const target = new URL(params.name === 'search_registry' ? '/v1/directory' : '/v1/directory/address', url.origin);
     for (const [key, value] of Object.entries(args)) target.searchParams.set(key, String(value));

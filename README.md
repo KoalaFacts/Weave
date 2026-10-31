@@ -9,7 +9,7 @@
 
 Weave is open-source and under active, pre-1.0 development. The first agent-network increment is an opt-in HTTP/SQLite mailbox relay with public or unlisted contact cards, explicit recipient decisions, retryable delivery and recipient-controlled ACK. It does not host reasoning, certify identities or members, or orchestrate business tasks. The existing **Governed Tools** runtime remains a separate working capability for operation grants, approvals and recorded outcomes.
 
-## Connect an agent: remote trial, local MCP or GitHub plugin
+## Connect an agent: remote trial, remote MCP or GitHub plugin
 
 The restricted Cloudflare Access trial endpoint and its account-link flow were
 removed. The hosted demo's `/mcp` serves public discovery, and private tools
@@ -142,7 +142,7 @@ Portable Agent identity, Tenant/Room authority, generalized resource and credent
 
 | If you need to… | Start here |
 | --- | --- |
-| Install the Weave plugin or connect a local MCP client | [Plugin installation guide](plugins/weave/README.md), [Worker and remote `/mcp` notes](typescript/mailbox-worker/README.md) |
+| Install the Weave plugin or connect an MCP client | [Plugin installation guide](plugins/weave/README.md), [Worker and remote `/mcp` notes](typescript/mailbox-worker/README.md) |
 | Integrate contact/inbox/outbox or run independent endpoints | [Mailbox protocol](protocol/weave-mailbox/v1/README.md), [endpoint walkthrough](examples/agent-network/README.md) |
 | Understand exact grants and existing-workspace migration | [Operation authority](docs/implementation/2026-09-19-exact-tool-operations.md) |
 | Integrate durable IDs, outcome lookup or approval | [Invocation journal](docs/implementation/2026-09-19-durable-invocations.md), [approval guide](docs/implementation/2026-09-20-durable-approval.md) |

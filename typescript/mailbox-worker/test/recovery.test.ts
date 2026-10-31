@@ -63,6 +63,7 @@ test('address history pages revoked and active addresses for the owner only',asy
         const foreign=await h.address(peer);
         await h.ok('/v1/addresses/'+revoked.addressId,owner.control,'DELETE');
         await h.ok('/v1/addresses/'+foreign.addressId,peer.control,'DELETE');
+        const rows=async()=>(await h.db.prepare('SELECT * FROM account_addresses ORDER BY address_id').all()).results,before=await rows();
         assert.deepEqual((await h.ok('/v1/addresses',owner.control)).items.map(x=>x.addressId),[active.addressId]);
         const first=await h.ok('/v1/addresses?includeRevoked=true&limit=1',owner.control);
         assert.equal(first.items[0].addressId,revoked.addressId);assert.ok(first.items[0].revokedAt);assert.ok(first.nextCursor);
@@ -70,5 +71,6 @@ test('address history pages revoked and active addresses for the owner only',asy
         assert.deepEqual(second.items.map(x=>x.addressId),[active.addressId]);
         assert.equal(second.items[0].revokedAt,null);assert.equal(second.nextCursor,null);
         for(const item of [...first.items,...second.items])assert.equal(item.accountId,owner.accountId);
+        assert.deepEqual(await rows(),before);
     }finally{await h.close();}
 });
