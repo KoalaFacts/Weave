@@ -129,7 +129,7 @@ test('createOwnedAgent_InvalidName_ReturnsInvalid', async () => {
     const h = await start();
     try {
         const env = environment(h), id = await humanId(env);
-        for (const name of ['', 'a'.repeat(129), 'a\u0007']) assert.deepEqual(await create(env, id, name), { ok: false, reason: 'invalid' });
+        for (const name of ['', '   ', '\u00a0\u2003', 'a'.repeat(129), 'a\u0007']) assert.deepEqual(await create(env, id, name), { ok: false, reason: 'invalid' });
         assert.deepEqual(await listHumanAgents(env, id), []);
     } finally { await h.close(); }
 });
