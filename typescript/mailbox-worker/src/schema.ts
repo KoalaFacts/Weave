@@ -151,6 +151,22 @@ export const clientGrants = sqliteTable("client_grants", {
     check("client_grants_revocation",sql`revoked_at IS NULL OR revoked_at>=created_at`)
 ]);
 
+// Private MCP write idempotency keys, per account and retained 24 hours. result_id names the stored message or request.
+export const mcpIdempotency = sqliteTable("mcp_idempotency", {
+    account_id: text("account_id").notNull().references(() => accounts.account_id, {onDelete:"restrict"}),
+    idempotency_key: text("idempotency_key").notNull(),
+    tool: text("tool").notNull(),
+    request_hash: text("request_hash").notNull(),
+    result_id: text("result_id").notNull(),
+    created_at: exactInteger("created_at").notNull(),
+}, t => [
+    primaryKey({columns:[t.account_id,t.idempotency_key]}),
+    index("mcp_idempotency_created").on(t.created_at),
+    check("mcp_idempotency_key",sql`length(idempotency_key) BETWEEN 1 AND 128 AND idempotency_key NOT GLOB '*[^A-Za-z0-9._:-]*'`),
+    check("mcp_idempotency_tool",sql`tool IN ('request_contact','decide_contact','send_message')`),
+    check("mcp_idempotency_hash",sql`length(request_hash)=64 AND request_hash NOT GLOB '*[^0-9a-f]*'`)
+]);
+
 export const accountAddresses = sqliteTable("account_addresses", {
     address_id: text("address_id").notNull().primaryKey(),
     account_id: text("account_id").notNull().references(() => accounts.account_id, {onDelete:"restrict"}),

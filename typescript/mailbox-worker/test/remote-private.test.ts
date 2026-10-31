@@ -8,7 +8,7 @@ import {build} from 'esbuild';
 const built=await build({entryPoints:['src/remote-private.ts'],bundle:true,write:false,platform:'node',format:'esm',logLevel:'silent'});
 const bundle='data:text/javascript;base64,'+Buffer.from(built.outputFiles[0].contents).toString('base64');
 const {privateScope,privateMcpTools,withoutSecrets,executePrivateMcp}=await import(bundle) as typeof import('../src/remote-private.ts');
-import {start,payload} from './harness.ts';
+import {start} from './harness.ts';
 import type {Env} from '../src/database.ts';
 
 const origin='https://demo.test';
@@ -58,28 +58,28 @@ test('real D1 account-scoped contact, message and ACK use server-side channel to
         const env:Env={db:h.db,REGISTRATION_ENABLED:'true',REGISTRATION_MAX_ACCOUNTS:'100',REGISTRATION_PER_IP_PER_HOUR:'10',
             REGISTRATION_GLOBAL_PER_HOUR:'100',CLEANUP_MAX_MESSAGES:'0',CLEANUP_TIME_BUDGET_MS:'0'};
         const a=await h.participant(),b=await h.participant(),c=await h.participant();
-        const contact=payload('request');
         const requested=await executePrivateMcp(env,origin,a.accountId,'request_contact',{
-            requesterAddressId:a.cardId,recipientAccountId:b.accountId,recipientAddressId:b.cardId,payload:contact
+            requesterAddressId:a.cardId,recipientAccountId:b.accountId,recipientAddressId:b.cardId,message:{parts:[{text:'request'}]}
         });
         assert.equal(requested.status,200,await requested.clone().text());
         const state=await requested.json();
         const accepted=await executePrivateMcp(env,origin,b.accountId,'decide_contact',{
-            requestId:contact.messageId,requesterAccountId:a.accountId,expectedGeneration:String(state.generation),status:'accepted'
+            requestId:state.request.requestId,requesterAccountId:a.accountId,expectedGeneration:String(state.generation),status:'accepted'
         });
         assert.equal(accepted.status,200,await accepted.clone().text());
         const contacts=await executePrivateMcp(env,origin,a.accountId,'list_my_contacts',{});
         assert.equal(contacts.status,200);
         assert.doesNotMatch(await contacts.text(),/connectionToken/);
-        const ordinary=payload('hello');
-        const input={recipientAccountId:b.accountId,contactGeneration:String(state.generation),payload:ordinary};
+        const input={recipientAccountId:b.accountId,contactGeneration:String(state.generation),message:{parts:[{text:'hello'}]},idempotencyKey:'hello-1'};
         const sent=await executePrivateMcp(env,origin,a.accountId,'send_message',input);
         assert.equal(sent.status,200,await sent.clone().text());
+        const ordinary=await sent.json() as {messageId:string};
         const duplicate=await executePrivateMcp(env,origin,a.accountId,'send_message',input);
-        assert.equal(duplicate.status,200,'same ID/content is idempotent');
+        assert.equal(duplicate.status,200,'same key and input is idempotent');
+        assert.equal((await duplicate.json()).messageId,ordinary.messageId);
         const inbox=await executePrivateMcp(env,origin,b.accountId,'list_my_inbox',{});
         assert.equal(inbox.status,200);
-        assert.ok((await inbox.json()).items.some((item:{envelope:{payload:{messageId:string}}})=>item.envelope?.payload?.messageId===ordinary.messageId));
+        assert.ok((await inbox.json()).items.some((item:{message?:{messageId:string}})=>item.message?.messageId===ordinary.messageId));
         const foreign=await executePrivateMcp(env,origin,c.accountId,'ack_message',{messageId:ordinary.messageId,senderAccountId:a.accountId});
         assert.equal(foreign.status,404,'another account must never acknowledge B inbox');
         const receipt=await executePrivateMcp(env,origin,b.accountId,'ack_message',{messageId:ordinary.messageId,senderAccountId:a.accountId});
@@ -118,14 +118,13 @@ test('malformed private request does not sweep or write maintenance state before
             CLEANUP_MAX_MESSAGES:'1',CLEANUP_TIME_BUDGET_MS:'2000'};
         const revision=await h.db.prepare('SELECT token FROM mailbox_revision WHERE singleton=1').first('token');
         const initial=await h.db.prepare("SELECT count(*) n FROM maintenance_state WHERE name='sweep'").first('n');
-        const content=payload('invalid-request');
         const response=await executePrivateMcp(env,origin,a.accountId,'request_contact',{
             requesterAddressId:a.cardId,recipientAccountId:b.accountId,
-            recipientAddressId:b.cardId,payload:{notAPayload:true}
+            recipientAddressId:b.cardId,message:{notAMessage:true}
         });
-        assert.equal(response.status,400,'invalid payload must be rejected');
+        assert.equal(response.status,400,'invalid message must be rejected');
         assert.equal(await h.db.prepare('SELECT token FROM mailbox_revision WHERE singleton=1').first('token'),
-            revision,'invalid payload must not commit cleanup or any other write');
+            revision,'invalid message must not commit cleanup or any other write');
         assert.equal(await h.db.prepare("SELECT count(*) n FROM maintenance_state WHERE name='sweep'").first('n'),initial);
     }finally{await h.close();}
 });
@@ -191,19 +190,25 @@ test('Cloudflare-style private token validation reaches real D1 owner-scoped MCP
     } finally {await h.close();}
 });
 
-test('private tool schemas state the UUIDv7 and timestamp rules the server enforces',()=>{
+test('private write tool schemas take an A2A Message and an optional idempotency key, never server-set IDs or times',()=>{
     const contact=privateMcpTools.find(tool=>tool.name==='request_contact')!.inputSchema as any;
-    assert.equal(Object.hasOwn(contact.properties,'requestId'),false,'the request ID is the payload messageId, not a parameter');
-    const v7=new RegExp(contact.properties.payload.properties.messageId.pattern);
-    assert.ok(v7.test('01a187ea-9ff1-78ef-9bde-0aaf2ece3297'));
-    assert.equal(v7.test('d3898e42-1b78-4fdf-b25f-1bad25df73e3'),false,'a UUIDv4 is not a valid messageId');
-    assert.equal(contact.properties.payload.properties.createdAt.format,'date-time');
-    assert.match(contact.properties.payload.properties.createdAt.description,/millisecond encoded in messageId/);
+    assert.equal(Object.hasOwn(contact.properties,'requestId'),false,'the request ID is the server-built messageId, not a parameter');
+    assert.equal(Object.hasOwn(contact.properties,'payload'),false);
+    for(const name of ['request_contact','send_message','decide_contact']){
+        const schema=privateMcpTools.find(tool=>tool.name===name)!.inputSchema as any;
+        const message=name==='decide_contact'?schema.properties.reply.anyOf[0]:schema.properties.message;
+        assert.deepEqual(Object.keys(message.properties).sort(),['contextId','parts'],name+' never accepts messageId or role');
+        assert.equal(message.properties.parts.maxItems,8);
+        assert.deepEqual(Object.keys(message.properties.parts.items.properties).sort(),['data','mediaType','text']);
+        const key=new RegExp(schema.properties.idempotencyKey.pattern);
+        assert.ok(key.test('retry:1.a_b-c'));assert.equal(key.test('has space'),false);
+        assert.equal(schema.required.includes('idempotencyKey'),false);
+    }
     const send=privateMcpTools.find(tool=>tool.name==='send_message')!.inputSchema as any;
-    assert.equal(send.properties.payload.properties.messageId.pattern,contact.properties.payload.properties.messageId.pattern);
+    assert.deepEqual(send.required,['recipientAccountId','message'],'contactGeneration is optional');
 });
 
-test('request_contact names the rejected field, writes nothing, and uses the payload messageId as the request ID',async()=>{
+test('request_contact names the rejected field, writes nothing, and uses the server-built messageId as the request ID',async()=>{
     const h=await start();
     try{
         const a=await h.participant(),b=await h.participant();
@@ -219,26 +224,23 @@ test('request_contact names the rejected field, writes nothing, and uses the pay
             assert.equal(typeof body.reason,'string');
             return body.reason as string;
         };
-        const content=payload('field-hints');
-        assert.match(await rejected({requestId:content.messageId,payload:content},'requestId'),/not a parameter/);
-        const shifted=new Date(Date.parse(content.createdAt)+1).toISOString();
-        assert.ok((await rejected({payload:{...content,createdAt:shifted}},'payload.createdAt')).includes(content.createdAt),
-            'the reason names the time encoded in messageId');
-        await rejected({payload:{...content,messageId:'d3898e42-1b78-4fdf-b25f-1bad25df73e3'}},'payload.messageId');
-        await rejected({payload:{...content,bytes:'not base64!'}},'payload.bytes');
-        const oneDay=new Date(Date.parse(content.createdAt)+86_400_000).toISOString();
-        const overOneDay=new Date(Date.parse(content.createdAt)+86_400_001).toISOString();
-        assert.match(await rejected({payload:{...content,expiresAt:overOneDay}},'payload.expiresAt'),/at most 24 hours/);
-        await rejected({payload:content,extra:true},'extra');
+        const message={parts:[{text:'field-hints'}]};
+        assert.match(await rejected({requestId:'01a187ea-9ff1-78ef-9bde-0aaf2ece3297',message},'requestId'),/not a parameter/);
+        assert.match(await rejected({message:{...message,messageId:'01a187ea-9ff1-78ef-9bde-0aaf2ece3297'}},'message'),/server sets messageId/);
+        await rejected({message:{parts:[]}},'message.parts');
+        await rejected({message:{parts:[{text:'x',data:{}}]}},'message.parts[0]');
+        await rejected({message,idempotencyKey:''},'idempotencyKey');
+        await rejected({message,extra:true},'extra');
         const {recipientAddressId:_omitted,...missing}=base;
-        const absent=await executePrivateMcp(env,origin,a.accountId,'request_contact',{...missing,payload:content});
+        const absent=await executePrivateMcp(env,origin,a.accountId,'request_contact',{...missing,message});
         assert.equal((await absent.json()).field,'recipientAddressId');
         const before=await executePrivateMcp(env,origin,a.accountId,'list_my_contact_requests',{});
-        assert.equal((await before.text()).includes(content.messageId),false,'rejected calls wrote no request');
-        const accepted=await executePrivateMcp(env,origin,a.accountId,'request_contact',{...base,payload:{...content,expiresAt:oneDay}});
+        assert.deepEqual((await before.json()).items,[],'rejected calls wrote no request');
+        const accepted=await executePrivateMcp(env,origin,a.accountId,'request_contact',{...base,message});
         assert.equal(accepted.status,200,await accepted.clone().text());
+        const requestId=(await accepted.json()).request.requestId;
         const listed=await executePrivateMcp(env,origin,a.accountId,'list_my_contact_requests',{});
-        assert.ok((await listed.text()).includes(content.messageId),'the request ID is the payload messageId');
+        assert.ok((await listed.json()).items.some((item:{requestId:string;requestMessageId?:string})=>item.requestId===requestId),'the request ID is the introduction messageId');
     }finally{await h.close();}
 });
 

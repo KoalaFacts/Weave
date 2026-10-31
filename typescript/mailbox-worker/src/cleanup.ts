@@ -1,5 +1,6 @@
 import { atomic, type Env } from './database';
 import { fail } from './wire';
+import { pruneIdempotency } from './mcp-idempotency.ts';
 
 export const CLEANUP_HARD_CAP = 100000;
 // D1 is also bounded by 48 statements/request. Two 64-message transactions leave
@@ -38,7 +39,10 @@ export async function sweep(env: Env,scheduled=false): Promise<{messages:number;
                 tx.writes.push(tx.db.prepare(`DELETE FROM mailbox_records WHERE seq IN (${marks}) AND seq IN
                     (SELECT message_seq FROM message_delivery WHERE state IN ('acknowledged','expired','blocked') AND terminal_at<=CAST(? AS INTEGER))`).bind(...ids,before));
             }
-            if(first)tx.put('maintenance','','sweep',{at:now});
+            if(first){
+                pruneIdempotency(tx,BigInt(now)*10000n);
+                tx.put('maintenance','','sweep',{at:now});
+            }
             return rows.length;
         });
         messages+=count;batches++;

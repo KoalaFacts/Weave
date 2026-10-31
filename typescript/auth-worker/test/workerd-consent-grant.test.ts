@@ -55,21 +55,6 @@ export default {
     return access instanceof Response?access:Response.json({accountId:access.accountId});
   }
 };`;
-// Payload generated with the exact mailbox wire shape.
-function mailboxPayload(bytes:string,now=Date.now()){
-  const hex=now.toString(16).padStart(12,"0");
-  return {
-    messageId:hex.slice(0,8)+"-"+hex.slice(8)+"-7"+
-      randomBytes(2).toString("hex").slice(1)+"-8"+
-      randomBytes(2).toString("hex").slice(1)+"-"+
-      randomBytes(6).toString("hex"),
-    createdAt:new Date(now).toISOString(),
-    expiresAt:new Date(now+3600000).toISOString(),
-    payloadEncoding:"text/plain",
-    bytes:Buffer.from(bytes).toString("base64")
-  };
-}
-
 // Fake GitHub: the code "gh-<id>" signs in GitHub user <id> as login "human<id>".
 function outbound(request:Request):Response|Promise<Response>{
   if(request.method==="GET"&&request.url===clientId)return demoOAuthClientMetadata();
@@ -538,27 +523,27 @@ test("consent_GithubSignedInAgents_ExchangeSixMessagesAcrossColdRestart",{timeou
     assert.ok(addressesA.items.some((x:{addressId:string})=>x.addressId===aAddress));
     assert.ok(!addressesA.items.some((x:{addressId:string})=>x.addressId===bAddress),
       "account A must not read private B addresses");
-    const intro=mailboxPayload("test-consent-introduction");
     const requested=await privateCall(mf,token,"request_contact",{
-      requesterAddressId:aAddress,recipientAccountId:accountB,recipientAddressId:bAddress,payload:intro});
+      requesterAddressId:aAddress,recipientAccountId:accountB,recipientAddressId:bAddress,
+      message:{parts:[{text:"test-consent-introduction"}]}});
+    const requestId=requested.request.requestId as string;
     const pending=await privateCall(mf,tokenB,"list_my_contact_requests");
     assert.ok(pending.items.some((x:{requestId:string;status:string})=>
-      x.requestId===intro.messageId&&x.status==="pending"));
+      x.requestId===requestId&&x.status==="pending"));
     await privateCall(mf,tokenB,"decide_contact",{
-      requestId:intro.messageId,requesterAccountId:account,
+      requestId,requesterAccountId:account,
       expectedGeneration:String(requested.generation),status:"accepted"});
     const deliveries:{token:string;receiverToken:string;sender:string;recipient:string;
-      payload:ReturnType<typeof mailboxPayload>}[]=[];
+      input:Record<string,unknown>;messageId:string}[]=[];
     async function sendMessage(index:number):Promise<void>{
       const fromA=index%2===0;
       const sender=fromA?account:accountB,recipient=fromA?accountB:account;
       const from=fromA?token:tokenB,to=fromA?tokenB:token;
-      const payload=mailboxPayload("test-message-"+index);
-      const receipt=await privateCall(mf,from,"send_message",{
-        recipientAccountId:recipient,contactGeneration:String(requested.generation),payload});
-      assert.equal(receipt.messageId,payload.messageId);
+      const input={recipientAccountId:recipient,contactGeneration:String(requested.generation),
+        message:{parts:[{text:"test-message-"+index}]},idempotencyKey:"consent-send-"+index};
+      const receipt=await privateCall(mf,from,"send_message",input);
       assert.equal(receipt.state,"pending");
-      deliveries.push({token:from,receiverToken:to,sender,recipient,payload});
+      deliveries.push({token:from,receiverToken:to,sender,recipient,input,messageId:receipt.messageId});
     }
     // Leave one message in EACH direction pending across a genuine cold restart.
     await sendMessage(0);
@@ -568,11 +553,11 @@ test("consent_GithubSignedInAgents_ExchangeSixMessagesAcrossColdRestart",{timeou
     instance={mf,storage:instance.storage};
     async function acknowledge(item:(typeof deliveries)[number]):Promise<void>{
       const inbox=await privateCall(mf,item.receiverToken,"list_my_inbox");
-      assert.ok(inbox.items.some((x:{envelope?:{payload?:{messageId:string}}})=>
-        x.envelope?.payload?.messageId===item.payload.messageId),
+      assert.ok(inbox.items.some((x:{message?:{messageId:string;parts:unknown}})=>
+        x.message?.messageId===item.messageId),
         "inbox must retain original pending message after Worker restart");
       const receipt=await privateCall(mf,item.receiverToken,"ack_message",{
-        messageId:item.payload.messageId,senderAccountId:item.sender});
+        messageId:item.messageId,senderAccountId:item.sender});
       assert.equal(receipt.state,"acknowledged");
     }
     await acknowledge(deliveries[0]);
@@ -581,10 +566,9 @@ test("consent_GithubSignedInAgents_ExchangeSixMessagesAcrossColdRestart",{timeou
       await sendMessage(i);
       await acknowledge(deliveries[i]);
     }
-    const replayedSend=await privateCall(mf,deliveries[0].token,"send_message",{
-      recipientAccountId:deliveries[0].recipient,
-      contactGeneration:String(requested.generation),payload:deliveries[0].payload});
-    assert.equal(replayedSend.state,"acknowledged","identical replay returns original ACK");
+    const replayedSend=await privateCall(mf,deliveries[0].token,"send_message",deliveries[0].input);
+    assert.equal(replayedSend.messageId,deliveries[0].messageId);
+    assert.equal(replayedSend.state,"acknowledged","identical keyed replay returns original ACK");
     const outA=await privateCall(mf,token,"list_my_outbox");
     const outB=await privateCall(mf,tokenB,"list_my_outbox");
     assert.ok(outA.items.length>=3&&outB.items.length>=3,"both accounts retain three outgoing receipts");

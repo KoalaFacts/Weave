@@ -1,7 +1,7 @@
 import assert from 'node:assert/strict';
 import {test} from 'node:test';
 import {build} from 'esbuild';
-import {start,payload} from './harness.ts';
+import {start} from './harness.ts';
 import {protectedResourceMetadata} from '../src/remote-oauth.ts';
 import type {Env} from '../src/database.ts';
 
@@ -70,12 +70,12 @@ test('two OAuth-account-owned private addresses support a full contact to ACK wo
             const response=await executePrivateMcp(e,origin,agent.accountId,'ensure_my_address',{addressId,label:'Private introduction'});
             assert.equal(response.status,200,await response.clone().text());
         }
-        const intro=payload('opaque introduction');
         const requested=await executePrivateMcp(e,origin,a.accountId,'request_contact',{
-            requesterAddressId:aId,recipientAccountId:b.accountId,recipientAddressId:bId,payload:intro
+            requesterAddressId:aId,recipientAccountId:b.accountId,recipientAddressId:bId,message:{parts:[{text:'opaque introduction'}]}
         });
         assert.equal(requested.status,200,await requested.clone().text());
         const state=await requested.json();
+        const intro={messageId:state.request.requestId as string};
         const inboxRequests=await executePrivateMcp(e,origin,b.accountId,'list_my_contact_requests',{});
         assert.equal(inboxRequests.status,200);
         assert.ok((await inboxRequests.json()).items.some((r:{requestId:string,status:string})=>r.requestId===intro.messageId&&r.status==='pending'));
@@ -86,11 +86,11 @@ test('two OAuth-account-owned private addresses support a full contact to ACK wo
             requestId:intro.messageId,requesterAccountId:a.accountId,expectedGeneration:String(state.generation),status:'accepted'
         });
         assert.equal(accepted.status,200,await accepted.clone().text());
-        const message=payload('first end-to-end message');
         const sent=await executePrivateMcp(e,origin,a.accountId,'send_message',{
-            recipientAccountId:b.accountId,contactGeneration:String(state.generation),payload:message
+            recipientAccountId:b.accountId,contactGeneration:String(state.generation),message:{parts:[{text:'first end-to-end message'}]}
         });
         assert.equal(sent.status,200,await sent.clone().text());
+        const message=await sent.json() as {messageId:string};
         const received=await executePrivateMcp(e,origin,b.accountId,'list_my_inbox',{});
         assert.equal(received.status,200);
         assert.ok((await received.json()).items.some((item:{envelope:{payload:{messageId:string}}})=>item.envelope?.payload?.messageId===message.messageId));

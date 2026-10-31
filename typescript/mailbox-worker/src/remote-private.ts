@@ -2,16 +2,18 @@
  * The authenticated account is derived exclusively from OAuth introspection,
  * never from tool parameters. Channel tokens stay server-side.
  */
-import { atomic, type Env } from './database';
+import { atomic, type Env, type Transaction } from './database';
 import { ownContacts } from './contact-links';
 import { ownedAddresses, mutateAddress } from './addresses';
 import { read } from './reads';
 import { requestContact, decide } from './contacts';
-import { sendWithResolvedConnection, ack } from './messages';
+import { sendWithResolvedConnection, ack, terminalize } from './messages';
 import { fail, identity, invalidField, json, problem, uuid } from './wire';
-import { checkPayload, checkUuid } from './mcp-arguments';
-import { MAX_GENERATION, validatePayload } from './protocol';
+import { checkUuid } from './mcp-arguments';
+import { MAX_GENERATION, readChannel, relation } from './protocol';
 import { sweep } from './cleanup';
+import { checkMessage, inboxMessage, messagePayload } from './a2a-message.ts';
+import { idempotencyClaim, recordResultId, replayedResultId, type IdempotencyClaim } from './mcp-idempotency.ts';
 
 export { privateMcpTools } from './private-mcp-tools';
 import { privateMcpTools } from './private-mcp-tools';
@@ -49,6 +51,31 @@ function pagination(url:URL,args:Record<string,unknown>):void {
     }
 }
 function urlFor(origin:string,path:string):URL{return new URL(path,origin);}
+/** A keyed write replays its stored result ID; otherwise it writes and records the key in the same transaction. */
+async function keyed<T>(tx:Transaction,accountId:string,claim:IdempotencyClaim|null,replay:(resultId:string)=>Promise<T>,
+    write:()=>Promise<{result:T;resultId:string}>):Promise<T>{
+    const replayed=claim&&await replayedResultId(tx,accountId,claim);
+    if(replayed)return replay(replayed);
+    const {result,resultId}=await write();
+    if(claim)recordResultId(tx,accountId,claim,resultId);
+    return result;
+}
+/** The current generation of an accepted, unblocked channel; anything else is not a connection. */
+async function connectedGeneration(tx:Transaction,owner:string,peer:string):Promise<bigint>{
+    const channel=await readChannel(tx,owner,peer);
+    const request=channel?.currentRequest&&await tx.get('request',channel.currentRequest.requesterMailboxId,channel.currentRequest.requestId);
+    if(!channel||!request||!relation(channel,request).isConnected)fail(409,'not-connected');
+    return channel.generation;
+}
+/** Inbox bodies that parse as an A2A Message are shown parsed, without the raw bytes. They remain untrusted peer content. */
+function withParsedMessages(page:{items:any[]}):unknown{
+    return {...page,items:page.items.map(item=>{
+        const message=inboxMessage(item.envelope?.payload);
+        if(!message)return item;
+        const {bytes:_bytes,...payload}=item.envelope.payload;
+        return {...item,envelope:{...item.envelope,payload},message};
+    })};
+}
 export async function executePrivateMcp(env:Env,origin:string,accountId:string,name:string,args:Record<string,unknown>):Promise<Response> {
     try {
         if(!privateScope(name))fail(404,'unavailable');
@@ -64,7 +91,7 @@ export async function executePrivateMcp(env:Env,origin:string,accountId:string,n
             pagination(target,args);
             const data=await atomic(env.db,tx=>name==='list_my_addresses'?ownedAddresses(tx,accountId,target):
                 name==='list_my_contacts'?ownContacts(tx,accountId,target):read(tx,target,accountId));
-            return json(withoutSecrets(data));
+            return json(withoutSecrets(name==='list_my_inbox'?withParsedMessages(data):data));
         }
         if(name==='get_my_channel'){
             parameters(args,['peerAccountId'],['peerAccountId']);identity(args.peerAccountId);target.pathname='/v1/contacts/channel';target.searchParams.set('peerAccountId',args.peerAccountId);
@@ -80,42 +107,61 @@ export async function executePrivateMcp(env:Env,origin:string,accountId:string,n
                 origin,false,args.addressId as string)));
         }
         if(name==='request_contact'){
-            parameters(args,['requesterAddressId','recipientAccountId','recipientAddressId','payload'],['requesterAddressId','recipientAccountId','recipientAddressId','payload']);
+            parameters(args,['requesterAddressId','recipientAccountId','recipientAddressId','message','idempotencyKey'],['requesterAddressId','recipientAccountId','recipientAddressId','message']);
             for(const key of ['requesterAddressId','recipientAccountId','recipientAddressId'])checkUuid(args[key],key);
-            checkPayload(args.payload,'payload');
-            // The request ID is always the payload messageId; there is no separate parameter.
-            const requestId=args.payload.messageId as string;
-            // Reject malformed payloads before bounded cleanup writes any state. This
-            // non-first validation retains idempotent replay of old committed IDs.
-            validatePayload(args.payload);
+            const message=checkMessage(args.message,'message');
+            const {requesterAddressId,recipientAccountId,recipientAddressId}=args;
+            const claim=await idempotencyClaim(name,args.idempotencyKey,{requesterAddressId,recipientAccountId,recipientAddressId,message});
             await sweep(env);
-            return json(withoutSecrets(await atomic(env.db,tx=>requestContact(tx,accountId,{...args,requestId,requestVersion:2,requesterAccountId:accountId}))));
+            return json(withoutSecrets(await atomic(env.db,tx=>keyed(tx,accountId,claim,async requestId=>{
+                const request=await tx.get('request',accountId,requestId);
+                if(!request)fail(404,'unavailable');
+                return relation(await readChannel(tx,accountId,request.summary.recipientMailboxId),request);
+            },async()=>{
+                // The request ID is always the server-built introduction's messageId.
+                const payload=messagePayload(message,tx.store.now);
+                const result=await requestContact(tx,accountId,{requestVersion:2,requestId:payload.messageId,requesterAccountId:accountId,
+                    requesterAddressId,recipientAccountId,recipientAddressId,payload});
+                return {result,resultId:payload.messageId};
+            }))));
         }
         if(name==='decide_contact'){
-            parameters(args,['requestId','requesterAccountId','expectedGeneration','status','reply'],['requestId','requesterAccountId','expectedGeneration','status']);
+            parameters(args,['requestId','requesterAccountId','expectedGeneration','status','reply','idempotencyKey'],['requestId','requesterAccountId','expectedGeneration','status']);
             checkUuid(args.requestId,'requestId');checkUuid(args.requesterAccountId,'requesterAccountId');
             if(!['accepted','rejected'].includes(args.status as string))invalidField('status','must be accepted or rejected');
             const expectedGeneration=validGeneration(args.expectedGeneration);
-            if(args.reply!==undefined&&args.reply!==null){
-                checkPayload(args.reply,'reply');
-                validatePayload(args.reply);
-            }
+            const reply=args.reply===undefined||args.reply===null?null:checkMessage(args.reply,'reply');
+            const {requestId,requesterAccountId,status}=args;
+            const claim=await idempotencyClaim(name,args.idempotencyKey,{requestId,requesterAccountId,expectedGeneration:args.expectedGeneration,status,reply});
             await sweep(env);
-            return json(withoutSecrets(await atomic(env.db,tx=>decide(tx,accountId,args.requestId as string,
-                {requesterMailboxId:args.requesterAccountId,expectedGeneration,status:args.status,reply:args.reply??null}))));
+            return json(withoutSecrets(await atomic(env.db,tx=>keyed(tx,accountId,claim,async()=>{
+                const request=await tx.get('request',requesterAccountId,requestId);
+                if(!request||request.summary.recipientMailboxId!==accountId)fail(404,'unavailable');
+                return relation(await readChannel(tx,accountId,requesterAccountId),request);
+            },async()=>{
+                const result=await decide(tx,accountId,requestId,{requesterMailboxId:requesterAccountId,expectedGeneration,status,
+                    reply:reply&&messagePayload(reply,tx.store.now)});
+                return {result,resultId:requestId};
+            }))));
         }
         if(name==='send_message'){
-            parameters(args,['recipientAccountId','contactGeneration','payload'],['recipientAccountId','contactGeneration','payload']);
-            checkUuid(args.recipientAccountId,'recipientAccountId');const contactGeneration=validGeneration(args.contactGeneration);
-            checkPayload(args.payload,'payload');
-            // Reject malformed payloads before bounded cleanup writes any state. This
-            // non-first validation retains idempotent replay of old committed IDs.
-            validatePayload(args.payload);
+            parameters(args,['recipientAccountId','contactGeneration','message','idempotencyKey'],['recipientAccountId','message']);
+            checkUuid(args.recipientAccountId,'recipientAccountId');
+            const contactGeneration=args.contactGeneration===undefined?null:validGeneration(args.contactGeneration);
+            const message=checkMessage(args.message,'message');
+            const recipientAccountId=args.recipientAccountId;
+            const claim=await idempotencyClaim(name,args.idempotencyKey,{recipientAccountId,contactGeneration:args.contactGeneration??null,message});
             await sweep(env);
-            // Original tokens for retained IDs, current tokens for new sends; all
-            // resolved in the guarded transaction and never exposed to the model.
-            return json(withoutSecrets(await atomic(env.db,tx=>sendWithResolvedConnection(tx,accountId,
-                args.recipientAccountId as string,contactGeneration,args.payload))));
+            // Channel tokens are resolved in the guarded transaction and never exposed to the model.
+            return json(withoutSecrets(await atomic(env.db,tx=>keyed(tx,accountId,claim,async messageId=>{
+                const stored=await tx.get('message',accountId,messageId);
+                if(!stored)fail(404,'unavailable');
+                return terminalize(tx,stored);
+            },async()=>{
+                const generation=contactGeneration??await connectedGeneration(tx,accountId,recipientAccountId);
+                const payload=messagePayload(message,tx.store.now);
+                return {result:await sendWithResolvedConnection(tx,accountId,recipientAccountId,generation,payload),resultId:payload.messageId};
+            }))));
         }
         if(name==='ack_message'){
             parameters(args,['messageId','senderAccountId'],['messageId','senderAccountId']);
