@@ -143,11 +143,14 @@ export const clientGrants = sqliteTable("client_grants", {
     human_id: text("human_id").notNull().references(() => humans.human_id, {onDelete:"restrict"}),
     account_id: text("account_id").notNull().references(() => accounts.account_id, {onDelete:"restrict"}),
     client_id: text("client_id").notNull(),
+    // The client's self-reported name (CIMD/DCR client_name); unverified, shown to the owner only.
+    client_name: text("client_name"),
     created_at: exactInteger("created_at").notNull(),
     revoked_at: exactInteger("revoked_at"),
 }, t => [
     index("client_grants_owner").on(t.human_id, t.account_id),
     check("client_grants_client_id",sql`length(client_id) BETWEEN 1 AND 2048`),
+    check("client_grants_client_name",sql`client_name IS NULL OR length(client_name) BETWEEN 1 AND 128`),
     check("client_grants_revocation",sql`revoked_at IS NULL OR revoked_at>=created_at`)
 ]);
 

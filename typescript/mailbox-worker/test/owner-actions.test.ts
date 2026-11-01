@@ -584,3 +584,173 @@ test('ownerAction_MalformedInput_NotFound', async () => {
         for (const input of cases) assert.deepEqual(await ownerAction(environment(h), input as OwnerAction), {ok: false, reason: 'not-found'}, JSON.stringify(input));
     } finally { await h.close(); }
 });
+
+const grantClient = 'https://client.example/oauth-client.json';
+async function seedGrant(h: Harness, humanId: string, accountId: string, options: {clientName?: string | null; createdAt?: bigint; revokedAt?: bigint | null; grantId?: string} = {}): Promise<string> {
+    const grantId = options.grantId ?? crypto.randomUUID();
+    await h.db.prepare('INSERT INTO client_grants(grant_id,human_id,account_id,client_id,client_name,created_at,revoked_at) VALUES(?,?,?,?,?,CAST(? AS INTEGER),CAST(? AS INTEGER))')
+        .bind(grantId, humanId, accountId, grantClient, options.clientName ?? null, (options.createdAt ?? 1000n).toString(), options.revokedAt === undefined || options.revokedAt === null ? null : options.revokedAt.toString()).run();
+    return grantId;
+}
+async function seedAddress(h: Harness, accountId: string, options: {label?: string | null; isPublic?: boolean; revoked?: boolean; card?: boolean; createdAt?: bigint} = {}): Promise<string> {
+    const addressId = crypto.randomUUID(), created = (options.createdAt ?? 1000n).toString();
+    const seq = ((await h.db.prepare('SELECT coalesce(max(seq),0)+1 n FROM account_addresses').first<number>('n')) as number);
+    await h.db.prepare('INSERT INTO account_addresses(address_id,account_id,seq,label,is_public,created_at,revoked_at,legacy_relay_endpoint) VALUES(?,?,?,?,?,CAST(? AS INTEGER),CAST(? AS INTEGER),?)')
+        .bind(addressId, accountId, seq, options.label ?? null, options.isPublic ? 1 : 0, created, options.revoked ? created : null, 'https://relay.test').run();
+    if (options.card) await h.db.prepare("INSERT INTO address_agent_cards(address_id,account_id,card_json,updated_at) VALUES(?,?,'{}',CAST(? AS INTEGER))").bind(addressId, accountId, created).run();
+    return addressId;
+}
+const grantRevokedAt = (h: Harness, grantId: string) => h.db.prepare('SELECT CAST(revoked_at AS TEXT) r FROM client_grants WHERE grant_id=?').bind(grantId).first<string>('r');
+async function overviewAgent(h: Harness, humanId: string, now?: () => bigint) {
+    const overview = await ownerOverview(environment(h), humanId, now);
+    assert.equal(overview.frozen, false);
+    if (overview.frozen) throw Error('frozen');
+    return overview.agents;
+}
+
+test('overview_AgentGrants_LiveOnlyNewestFirstWithClientName', async () => {
+    const h = await start();
+    try {
+        const id = await human(h, '555'), other = await human(h, '556');
+        const cred = await ownedAgent(h, id), second = await ownedAgent(h, id, 'second'), foreign = await ownedAgent(h, other, 'foreign');
+        const older = await seedGrant(h, id, cred.accountId, {clientName: 'Old client', createdAt: 1000n});
+        const newer = await seedGrant(h, id, cred.accountId, {createdAt: 2000n});
+        await seedGrant(h, id, cred.accountId, {createdAt: 3000n, revokedAt: 3500n});
+        await seedGrant(h, id, second.accountId, {clientName: 'Second', createdAt: 1500n});
+        await seedGrant(h, other, foreign.accountId, {createdAt: 1500n});
+        const agents = await overviewAgent(h, id);
+        const first = agents.find(a => a.agentId === cred.accountId)!;
+        assert.deepEqual(first.grants.map(g => g.grantId), [newer, older]);
+        assert.deepEqual(first.grants[1], {grantId: older, clientId: grantClient, clientName: 'Old client', createdAt: first.grants[1].createdAt});
+        assert.equal(first.grants[0].clientName, null);
+        assert.match(first.grants[0].createdAt, /^\d{4}-\d\d-\d\dT/);
+        assert.equal(agents.find(a => a.agentId === second.accountId)!.grants.length, 1);
+    } finally { await h.close(); }
+});
+
+test('overview_AgentAddresses_LiveOnlyWithCardFlag', async () => {
+    const h = await start();
+    try {
+        const id = await human(h, '555'), other = await human(h, '556');
+        const cred = await ownedAgent(h, id), foreign = await ownedAgent(h, other, 'foreign');
+        const plain = await seedAddress(h, cred.accountId, {label: 'Home', createdAt: 1000n});
+        const withCard = await seedAddress(h, cred.accountId, {isPublic: true, card: true, createdAt: 2000n});
+        await seedAddress(h, cred.accountId, {revoked: true});
+        await seedAddress(h, foreign.accountId);
+        const [agent] = await overviewAgent(h, id);
+        assert.deepEqual(agent.addresses.map(a => [a.addressId, a.label, a.isPublic, a.hasAgentCard]), [[plain, 'Home', false, false], [withCard, null, true, true]]);
+        assert.match(agent.addresses[0].createdAt, /^\d{4}-\d\d-\d\dT/);
+    } finally { await h.close(); }
+});
+
+test('overview_RevokedGrantIds_Last30Days', async () => {
+    const h = await start();
+    try {
+        const id = await human(h, '555'), cred = await ownedAgent(h, id);
+        const now = 1_000_000_000_000_000n, day = 864_000_000_000n;
+        const recent = await seedGrant(h, id, cred.accountId, {createdAt: now - day * 40n, revokedAt: now - day * 29n});
+        await seedGrant(h, id, cred.accountId, {createdAt: now - day * 40n, revokedAt: now - day * 30n - 1n});
+        const live = await seedGrant(h, id, cred.accountId, {createdAt: now - day});
+        const [agent] = await overviewAgent(h, id, () => now);
+        assert.deepEqual(agent.revokedGrantIds, [recent]);
+        assert.deepEqual(agent.grants.map(g => g.grantId), [live]);
+    } finally { await h.close(); }
+});
+
+test('overview_BusyAgent_BoundedPerAgentWithoutStarvingAnother', async () => {
+    const h = await start();
+    try {
+        const id = await human(h, '555'), busy = await ownedAgent(h, id), quiet = await ownedAgent(h, id, 'quiet');
+        const now = 1_000_000_000_000_000n;
+        const grants: string[] = [], revoked: string[] = [], addresses: string[] = [];
+        for (let i = 1n; i <= 51n; i++) grants.push(await seedGrant(h, id, busy.accountId, {createdAt: now - 1000n + i}));
+        for (let i = 1n; i <= 21n; i++) revoked.push(await seedGrant(h, id, busy.accountId, {createdAt: now - 1000n, revokedAt: now - 100n + i}));
+        for (let i = 1n; i <= 21n; i++) addresses.push(await seedAddress(h, busy.accountId, {createdAt: now - 1000n + i}));
+        const quietGrant = await seedGrant(h, id, quiet.accountId, {createdAt: now - 1000n});
+        const quietRevoked = await seedGrant(h, id, quiet.accountId, {createdAt: now - 1000n, revokedAt: now - 500n});
+        const quietAddress = await seedAddress(h, quiet.accountId, {createdAt: now - 1000n});
+        const agents = await overviewAgent(h, id, () => now);
+        const first = agents.find(a => a.agentId === busy.accountId)!, second = agents.find(a => a.agentId === quiet.accountId)!;
+        assert.deepEqual(first.grants.map(g => g.grantId), grants.slice(1).reverse(), '50 newest live grants');
+        assert.deepEqual(first.addresses.map(a => a.addressId), addresses.slice(0, 20), '20 oldest live addresses');
+        assert.deepEqual(first.revokedGrantIds, revoked.slice(1).reverse(), '20 most recently revoked');
+        assert.deepEqual(second.grants.map(g => g.grantId), [quietGrant]);
+        assert.deepEqual(second.addresses.map(a => a.addressId), [quietAddress]);
+        assert.deepEqual(second.revokedGrantIds, [quietRevoked]);
+    } finally { await h.close(); }
+});
+
+test('overview_OrdersByStoredTicksNotTheirText', async () => {
+    const h = await start();
+    try {
+        const id = await human(h, '555'), cred = await ownedAgent(h, id);
+        // As text "10" sorts before "9"; as ticks it is later.
+        const nine = await seedGrant(h, id, cred.accountId, {createdAt: 9n}), ten = await seedGrant(h, id, cred.accountId, {createdAt: 10n});
+        const nineAddress = await seedAddress(h, cred.accountId, {createdAt: 9n}), tenAddress = await seedAddress(h, cred.accountId, {createdAt: 10n});
+        const [agent] = await overviewAgent(h, id);
+        assert.deepEqual(agent.grants.map(g => g.grantId), [ten, nine]);
+        assert.deepEqual(agent.addresses.map(a => a.addressId), [nineAddress, tenAddress]);
+    } finally { await h.close(); }
+});
+
+test('overview_ReadsTheClockOnce', async () => {
+    const h = await start();
+    try {
+        const id = await human(h, '555'), cred = await ownedAgent(h, id);
+        await seedGrant(h, id, cred.accountId, {revokedAt: 2000n});
+        let reads = 0;
+        await overviewAgent(h, id, () => { reads++; return 1_000_000_000_000_000n; });
+        assert.equal(reads, 1);
+    } finally { await h.close(); }
+});
+
+test('revokeGrantAction_OtherHumansGrant_NotFoundNoChange', async () => {
+    const h = await start();
+    try {
+        const alice = await human(h, '555'), bob = await human(h, '556');
+        await ownedAgent(h, alice);
+        const theirs = await ownedAgent(h, bob, 'theirs');
+        const grantId = await seedGrant(h, bob, theirs.accountId);
+        assert.deepEqual(await act(h, alice, {kind: 'revoke-grant', grantId}), {ok: false, reason: 'not-found'});
+        assert.deepEqual(await act(h, alice, {kind: 'revoke-grant', grantId: crypto.randomUUID()}), {ok: false, reason: 'not-found'});
+        assert.equal(await grantRevokedAt(h, grantId), null);
+    } finally { await h.close(); }
+});
+
+test('revokeGrantAction_Twice_Ok', async () => {
+    const h = await start();
+    try {
+        const id = await human(h, '555'), cred = await ownedAgent(h, id);
+        const grantId = await seedGrant(h, id, cred.accountId);
+        assert.deepEqual(await act(h, id, {kind: 'revoke-grant', grantId}), {ok: true});
+        const first = await grantRevokedAt(h, grantId);
+        assert.notEqual(first, null);
+        assert.deepEqual(await act(h, id, {kind: 'revoke-grant', grantId}), {ok: true});
+        assert.equal(await grantRevokedAt(h, grantId), first);
+    } finally { await h.close(); }
+});
+
+test('revokeGrantAction_Frozen_Frozen', async () => {
+    const h = await start();
+    try {
+        const id = await human(h, '555'), cred = await ownedAgent(h, id);
+        const grantId = await seedGrant(h, id, cred.accountId);
+        await h.db.prepare('UPDATE humans SET frozen_at=updated_at WHERE human_id=?').bind(id).run();
+        assert.deepEqual(await act(h, id, {kind: 'revoke-grant', grantId}), {ok: false, reason: 'frozen'});
+        assert.equal(await grantRevokedAt(h, grantId), null);
+    } finally { await h.close(); }
+});
+
+test('revokeGrantAction_NoReauthNeeded', async () => {
+    const h = await start();
+    try {
+        const id = await human(h, '555'), cred = await ownedAgent(h, id);
+        const grantId = await seedGrant(h, id, cred.accountId);
+        assert.deepEqual(await act(h, id, {kind: 'revoke-grant', grantId, authAt: Date.now() - 86_400_000}), {ok: true});
+        assert.notEqual(await grantRevokedAt(h, grantId), null);
+        assert.deepEqual(await act(h, id, {kind: 'revoke-grant', grantId: 'not-a-uuid'}), {ok: false, reason: 'not-found'});
+        const other = await seedGrant(h, id, cred.accountId);
+        assert.deepEqual(await act(h, id, {kind: 'revoke-grant', grantId: other.toUpperCase()}), {ok: false, reason: 'not-found'});
+        assert.equal(await grantRevokedAt(h, other), null);
+    } finally { await h.close(); }
+});

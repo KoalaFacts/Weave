@@ -17,7 +17,7 @@ test("ownerPage_EscapesSelfReportedNameAndShowsFingerprints",async()=>{
   const requestId=randomUUID(),agentId=randomUUID();
   const overview=base({bindingRequests:[{requestId,agentId,displayName:'<script>alert(1)</script>',requestingKid:requesting,
     liveKeys:[{kid:live,label:null,createdAt:iso(now),lastUsedAt:null,coolingUntil:iso(now+3_600_000)}],keysDigest:kid(),createdAt:iso(now),expiresAt:iso(now+86_400_000)}],
-    agents:[{agentId:randomUUID(),displayName:null,keys:[{kid:kid(),label,createdAt:iso(now),lastUsedAt:null,coolingUntil:null}],keyRequests:[]}]});
+    agents:[{agentId:randomUUID(),displayName:null,keys:[{kid:kid(),label,createdAt:iso(now),lastUsedAt:null,coolingUntil:null}],keyRequests:[],grants:[],addresses:[],revokedGrantIds:[]}]});
   const tokens=new Map([["confirm-binding:"+requestId,"tok-confirm"],["reject-binding:"+requestId,"tok-reject"]]);
   const response=ownerPage(overview,human,tokens,null,now);
   assert.equal(response.status,200);
@@ -33,7 +33,42 @@ test("ownerPage_EscapesSelfReportedNameAndShowsFingerprints",async()=>{
   assert.ok(body.includes("still in its 24 h cooling window"));
   assert.ok(body.includes("Signed in as @alice"));
   assert.ok(body.includes('value="tok-confirm"')&&body.includes('value="tok-reject"'));
-  assert.ok(body.includes("Confirming, revoking or issuing a recovery code needs a GitHub sign-in in the last 10 minutes"));
+  assert.ok(body.includes("Confirming, revoking a key or issuing a recovery code needs a GitHub sign-in in the last 10 minutes"));
+  assert.ok(body.includes("Revoking a connected client's access does not."));
+});
+
+const agent=(over:Partial<Extract<OwnerOverview,{frozen:false}>["agents"][number]>={})=>({agentId:randomUUID(),displayName:"a",keys:[],keyRequests:[],
+  grants:[],addresses:[],revokedGrantIds:[],...over});
+
+test("ownerPage_ConnectedClients_EscapedUnverifiedWithRevoke",async()=>{
+  const hostile=randomUUID(),unnamed=randomUUID(),revoked=randomUUID();
+  const overview=base({agents:[agent({grants:[
+    {grantId:hostile,clientId:'javascript:alert(1)//"><script>x</script>',clientName:'<script>alert(1)</script><a href="javascript:alert(2)">x</a>',createdAt:iso(now)},
+    {grantId:unnamed,clientId:"https://client.example/cimd.json",clientName:null,createdAt:iso(now-1000)}],revokedGrantIds:[revoked]})]});
+  const tokens=new Map([["revoke-grant:"+hostile,"tok-hostile"],["revoke-grant:"+unnamed,"tok-unnamed"],["revoke-grant:"+revoked,"tok-revoked"]]);
+  const body=await html(ownerPage(overview,human,tokens,null,now));
+  assert.ok(body.includes("<h4>Connected clients</h4>"));
+  assert.ok(!body.includes("<script>")&&!body.includes("<a ")&&!body.includes('href="'),"client-supplied text must not become markup or a link");
+  assert.ok(body.includes("&#60;script&#62;alert(1)&#60;/script&#62;&#60;a href=&#34;javascript:alert(2)&#34;&#62;x&#60;/a&#62; (self-reported, not verified)"));
+  assert.ok(body.includes("<code>javascript:alert(1)//&#34;&#62;&#60;script&#62;x&#60;/script&#62;</code>"));
+  assert.ok(body.includes("Unnamed client")&&body.includes("<code>https://client.example/cimd.json</code>"));
+  assert.ok(body.includes('value="tok-hostile"><button type="submit">Revoke access</button>')&&body.includes('value="tok-unnamed"'));
+  assert.ok(!body.includes("tok-revoked")&&!body.includes(revoked),"revoked grant IDs are for clean-up only, never rendered");
+  const none=await html(ownerPage(base({agents:[agent()]}),human,new Map(),null,now));
+  assert.ok(none.includes("No connected clients."));
+});
+
+test("ownerPage_Addresses_Listed",async()=>{
+  const publicId=randomUUID(),privateId=randomUUID();
+  const overview=base({agents:[agent({addresses:[
+    {addressId:publicId,label:'<img src=x onerror=alert(1)>',isPublic:true,hasAgentCard:true,createdAt:iso(now)},
+    {addressId:privateId,label:null,isPublic:false,hasAgentCard:false,createdAt:iso(now+1000)}]})]});
+  const body=await html(ownerPage(overview,human,new Map(),null,now));
+  assert.ok(body.includes("<h4>Addresses</h4>"));
+  assert.ok(!body.includes("<img"));
+  assert.ok(body.includes("<code>"+publicId+"</code> label &#60;img src=x onerror=alert(1)&#62; (self-reported, not verified); public; has an agent card; created "+iso(now)));
+  assert.ok(body.includes("<code>"+privateId+"</code>; private; no agent card; created "+iso(now+1000)));
+  assert.ok((await html(ownerPage(base({agents:[agent()]}),human,new Map(),null,now))).includes("No addresses."));
 });
 
 test("ownerPage_Frozen_NoForms",async()=>{
@@ -48,7 +83,9 @@ test("ownerPage_UnknownResult_Ignored",async()=>{
     assert.ok(!body.includes('role="status"'),"result "+JSON.stringify(result)+" must not render");
   }
   assert.ok((await html(ownerPage(base(),human,new Map(),"agent-limit",now))).includes(ownerResultText["agent-limit"]));
-  assert.equal(Object.keys(ownerResultText).length,15);
+  assert.equal(Object.keys(ownerResultText).length,17);
+  assert.ok((await html(ownerPage(base(),human,new Map(),"cleanup-pending",now))).includes("Access is revoked; token clean-up will be retried on your next visit."));
+  assert.ok((await html(ownerPage(base(),human,new Map(),"cleanup-complete",now))).includes("Access is revoked and token clean-up is complete."));
   assert.ok((await html(ownerPage(base(),human,new Map(),"form-expired",now))).includes("This page expired. Reload it and try again."));
 });
 
@@ -59,13 +96,14 @@ test("ownerPage_StaleSession_SaysSignInAgain",async()=>{
 
 test("ownerFormTokens_CoversEveryFormTheOverviewRenders",async()=>{
   const signingKey=randomBytes(32).toString("base64url");
-  const requestId=randomUUID(),agentId=randomUUID(),keyId=kid(),keyRequestId=randomUUID();
+  const requestId=randomUUID(),agentId=randomUUID(),keyId=kid(),keyRequestId=randomUUID(),grantId=randomUUID();
   const overview=base({bindingRequests:[{requestId,agentId:randomUUID(),displayName:null,requestingKid:kid(),liveKeys:[],keysDigest:kid(),createdAt:iso(now),expiresAt:iso(now+1)}],
     agents:[{agentId,displayName:"a",keys:[{kid:keyId,label:null,createdAt:iso(now),lastUsedAt:null,coolingUntil:null}],
-      keyRequests:[{requestId:keyRequestId,kid:kid(),label:null,endorsedBy:keyId,createdAt:iso(now),expiresAt:iso(now+1)}]}]});
+      keyRequests:[{requestId:keyRequestId,kid:kid(),label:null,endorsedBy:keyId,createdAt:iso(now),expiresAt:iso(now+1)}],
+      grants:[{grantId,clientId:"https://client.example/cimd.json",clientName:"c",createdAt:iso(now)}],addresses:[],revokedGrantIds:[randomUUID()]}]});
   const tokens=await ownerFormTokens(signingKey,human.humanId,overview,now);
   assert.deepEqual([...tokens.keys()].sort(),["confirm-binding:"+requestId,"confirm-key:"+keyRequestId,"issue-recovery-code:"+agentId,
-    "reject-binding:"+requestId,"reject-key:"+keyRequestId,"revoke-key:"+agentId+":"+keyId].sort());
+    "reject-binding:"+requestId,"reject-key:"+keyRequestId,"revoke-grant:"+grantId,"revoke-key:"+agentId+":"+keyId].sort());
   const body=await html(ownerPage(overview,human,tokens,null,now));
   assert.equal(body.match(/<form /g)!.length,tokens.size);
   assert.equal((await ownerFormTokens(signingKey,human.humanId,{frozen:true},now)).size,0);

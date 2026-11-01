@@ -4,6 +4,7 @@ import { build } from 'esbuild';
 import { start } from './harness.ts';
 import { createOwnedAgent, signInHuman } from '../src/humans.ts';
 import { liveGrant, liveOwnedGrant, recordGrant, revokeGrant } from '../src/client-grants.ts';
+import { ownerAction } from '../src/owner-actions.ts';
 import { atomic, type Database, type Env } from '../src/database.ts';
 import { remoteMcp } from '../src/remote-mcp.ts';
 import { oauthConfiguration } from '../src/remote-oauth.ts';
@@ -303,5 +304,34 @@ test('executePrivateMcp_WriteWithoutGrantIdentity_RefusedNothingWritten', async 
         assert.equal((await executePrivateMcp(env, origin, alice.accountId, 'ensure_my_address', { addressId: crypto.randomUUID() }, foreignGrant)).status, 401, "another account's grant");
         assert.equal((await executePrivateMcp(env, origin, alice.accountId, 'ensure_my_address', { addressId: crypto.randomUUID() }, grantId)).status, 200, 'positive control');
         assert.equal(await addresses(), 1);
+    } finally { await h.close(); }
+});
+
+test('recordGrant_ClientNameStoredBounded', async () => {
+    const h = await start();
+    try {
+        const env = environment(h.db), { humanId, accountId } = await owner(env);
+        const name = (grantId: string) => h.db.prepare('SELECT client_name n FROM client_grants WHERE grant_id=?').bind(grantId).first<string | null>('n');
+        const cases: [string | null | undefined, string | null][] = [['Claude Desktop', 'Claude Desktop'], [null, null], [undefined, null], ['', null],
+            ['a\nb\u0000c\u009fd', 'a?b?c?d'], ['x'.repeat(200), 'x'.repeat(128)], ['   ', null], ['\t\n', null],
+            ['a\u202ab\u202ec\u2066d\u2069e', 'a?b?c?d?e'], ['\u{1F600}'.repeat(130), '\u{1F600}'.repeat(128)]];
+        for (const [clientName, stored] of cases) {
+            const grantId = crypto.randomUUID();
+            assert.deepEqual(await recordGrant(env, { grantId, humanId, accountId, clientId, ...(clientName === undefined ? {} : { clientName }) }), { ok: true });
+            assert.equal(await name(grantId), stored, String(clientName));
+        }
+        await assert.rejects(recordGrant(env, { grantId: crypto.randomUUID(), humanId, accountId, clientId, clientName: 5 as unknown as string }));
+    } finally { await h.close(); }
+});
+
+test('revokeGrantAction_Own_RevokedAndNextMcpCall401', async () => {
+    const h = await start();
+    try {
+        const env = environment(h.db), alice = await owner(env), grantId = crypto.randomUUID();
+        assert.deepEqual(await recordGrant(env, { grantId, ...alice, clientId, clientName: 'Client' }), { ok: true });
+        const call = mcp(env, () => claim(alice.accountId, { humanId: alice.humanId, grantId }));
+        assert.equal((await call(token(alice.accountId))).status, 200);
+        assert.deepEqual(await ownerAction(env, { kind: 'revoke-grant', humanId: alice.humanId, authAt: 0, grantId }), { ok: true });
+        assert.equal((await call(token(alice.accountId))).status, 401);
     } finally { await h.close(); }
 });

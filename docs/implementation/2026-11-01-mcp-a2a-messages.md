@@ -102,12 +102,9 @@ not repeated here. The preceding slice is the
   synthetic HTTP server in a POSIX shell; two of its tests skip on Windows. No
   deployment, real OAuth issuer, real GitHub consent or model-driven agent was
   exercised.
-- There is no owner interface for revoking a grant yet: it arrives in slice 5,
-  and `revokeGrant` is reachable only through the private `HumanDirectory`
-  binding.
-- SDK-side refresh tokens in the authorization server's KV store are not revoked.
-  They fail every private call through the mailbox grant check but stay valid
-  inside the SDK until they expire.
+- Owner revocation of a grant and the SDK refresh-token clean-up arrived in
+  slice 5; see the [owner grants record](2026-11-01-owner-grants.md) for its
+  behavior and limits.
 - Idempotency keys are kept 24 hours and are scoped to one account on a single D1
   database; they do not make business effects exactly-once.
 - Agent Card contents are not checked against reality: declared endpoints,

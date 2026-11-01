@@ -2,10 +2,12 @@ import {WorkerEntrypoint} from "cloudflare:workers";
 import {AuthorizationError,CimdFetchError,OAuthAuthorizationServer,type AuthRequest} from "@cloudflare/workers-oauth-provider";
 import type {CreateAgentResult} from "../../mailbox-worker/src/humans.ts";
 import type {RecordGrantResult} from "../../mailbox-worker/src/client-grants.ts";
-import type {OwnerOverview} from "../../mailbox-worker/src/owner-actions.ts";
+import type {OwnerActionResult,OwnerOverview} from "../../mailbox-worker/src/owner-actions.ts";
 import {validChallenge,validHandle,readConsent} from "./challenge.ts";
+import {consentClientName,normalisedClientName} from "./client-name.ts";
 import {consentPage} from "./consent-page.ts";
 import {beginGithubLogin,completeGithubLogin,failureLog,messagePage,type GithubLoginEnv} from "./github-login.ts";
+import {cleanUpRevokedGrants,type SdkGrants} from "./grant-cleanup.ts";
 import {freshAuthentication,readHumanSession,validSigningKey} from "./human-session.ts";
 import {readOwnerAction,destructiveKinds} from "./owner-forms.ts";
 import {ownerFormTokens,ownerPage,recoveryCodePage} from "./owner-page.ts";
@@ -63,18 +65,19 @@ async function subjectBoundChallenge(handle:string,humanId:string):Promise<strin
 function stub(env:Env,handle:string):DurableObjectStub{
   return env.CONSENT_NONCES.get(env.CONSENT_NONCES.idFromName(handle));
 }
-async function putNonce(env:Env,handle:string,challenge:string):Promise<boolean>{
+type PendingConsent={challenge:string;clientName:string|null};
+async function putNonce(env:Env,handle:string,pending:PendingConsent):Promise<boolean>{
   const result=await stub(env,handle).fetch("https://nonce.internal/nonce",{
-    method:"PUT",headers:{"Content-Type":"application/json"},body:JSON.stringify({challenge})});
+    method:"PUT",headers:{"Content-Type":"application/json"},body:JSON.stringify(pending)});
   return result.status===201;
 }
-async function getNonce(env:Env,handle:string):Promise<string|null>{
+async function getNonce(env:Env,handle:string):Promise<PendingConsent|null>{
   const result=await stub(env,handle).fetch("https://nonce.internal/nonce");
   if(!result.ok)return null;
   const value:unknown=await result.json();
-  const challenge=value&&typeof value==="object"&&!Array.isArray(value)?
-    (value as {challenge?:unknown}).challenge:null;
-  return validChallenge(challenge)?challenge:null;
+  const {challenge,clientName}=value&&typeof value==="object"&&!Array.isArray(value)?
+    value as {challenge?:unknown;clientName?:unknown}:{};
+  return validChallenge(challenge)&&normalisedClientName(clientName)?{challenge,clientName}:null;
 }
 async function consumeNonce(env:Env,handle:string,challenge:string):Promise<boolean>{
   const result=await stub(env,handle).fetch("https://nonce.internal/nonce",{
@@ -139,7 +142,9 @@ async function authorize(req:Request,env:Env,server:OAuthAuthorizationServer<Env
       const details=await oauth.describeConsent(parsed);
       const pending=await oauth.beginConsent(parsed);
       if(!validHandle(pending.handle))return unavailable();
-      if(!await putNonce(env,pending.handle,await subjectBoundChallenge(pending.handle,human.humanId)))return unavailable();
+      // The name this page shows is the one the owner page will list; approval records it without fetching it again.
+      if(!await putNonce(env,pending.handle,{challenge:await subjectBoundChallenge(pending.handle,human.humanId),
+        clientName:consentClientName(details)}))return unavailable();
       let agents;
       try{agents=await env.MAILBOX.listAgents(human.humanId);}catch{return directoryUnavailable();}
       const suggestedName=details.clientName.replace(controlCharacters,"").trim().slice(0,128);
@@ -160,12 +165,12 @@ async function authorize(req:Request,env:Env,server:OAuthAuthorizationServer<Env
       const human=await readHumanSession(env.HUMAN_SESSION_KEY,req,Date.now());
       if(!human)return denied();
       const nonce=await getNonce(env,handle);
-      if(!nonce||nonce!==await subjectBoundChallenge(handle,human.humanId))return denied();
+      if(!nonce||nonce.challenge!==await subjectBoundChallenge(handle,human.humanId))return denied();
       // Only the SDK may validate the original browser-bound consent cookie.
       // Its KV deletion is eventually consistent, so consume the Durable Object
       // nonce afterward to fence replayed approvals of a denied request.
       const rejected=await oauth.denyConsent(req,handle);
-      if(!await consumeNonce(env,handle,nonce))return denied();
+      if(!await consumeNonce(env,handle,nonce.challenge))return denied();
       return new Response(null,{status:302,headers:rejected.headers});
     }
     // The SDK must validate the original browser's consent cookie BEFORE
@@ -184,8 +189,8 @@ async function authorize(req:Request,env:Env,server:OAuthAuthorizationServer<Env
     // Only the Durable Object transaction fences simultaneous/replayed grants;
     // if consumption fails, never create an authorization code or an agent.
     const nonce=await getNonce(env,handle);
-    if(!nonce||nonce!==await subjectBoundChallenge(handle,human.humanId)||
-      !await consumeNonce(env,handle,nonce))return denied();
+    if(!nonce||nonce.challenge!==await subjectBoundChallenge(handle,human.humanId)||
+      !await consumeNonce(env,handle,nonce.challenge))return denied();
     const accountId=await resolveAgent(env,req,human.humanId,form);
     if(accountId instanceof Response)return accountId;
     // The mailbox mirrors the grant before any code exists; private /mcp calls require that row to be live,
@@ -193,11 +198,13 @@ async function authorize(req:Request,env:Env,server:OAuthAuthorizationServer<Env
     const grantId=crypto.randomUUID();
     let recorded:RecordGrantResult;
     try{
-      recorded=await env.MAILBOX.recordGrant({grantId,humanId:human.humanId,accountId,clientId:approved.request.clientId});
+      recorded=await env.MAILBOX.recordGrant({grantId,humanId:human.humanId,accountId,clientId:approved.request.clientId,
+        clientName:nonce.clientName});
     }catch{return directoryUnavailable();}
     if(!recorded.ok)return messagePage(503,"Not connected","Weave cannot record this connection right now. Try again later.");
     const {redirectTo}=await oauth.completeAuthorization({
-      request:approved.request,userId:accountId,metadata:{},
+      // The mailbox grant ID lets owner revocation find this SDK grant (and its refresh tokens) later.
+      request:approved.request,userId:accountId,metadata:{grantId},
       scope:approved.request.scope,props:{accountId,humanId:human.humanId,grantId}
     });
     const headers=new Headers(approved.headers);
@@ -215,8 +222,35 @@ async function authorize(req:Request,env:Env,server:OAuthAuthorizationServer<Env
 const methodNotAllowed=(allow:string)=>new Response("Method not allowed",{status:405,headers:{Allow:allow,"Cache-Control":"no-store"}});
 const accountRedirect=(result?:string)=>new Response(null,{status:303,headers:{
   Location:"/account"+(result===undefined?"":"?result="+result),"Cache-Control":"no-store","Referrer-Policy":"no-referrer"}});
-/** The owner page: agents, binding requests and keys of the signed-in human. Destructive actions need a fresh GitHub sign-in. */
-async function account(req:Request,env:Env):Promise<Response>{
+/**
+ * SDK clean-up for grants the mailbox already revoked: their SDK grants and refresh tokens go too. Bounded per page load;
+ * true only when it finished. An SDK failure is logged and retried on a later visit. Never un-revokes.
+ */
+async function revokeRevokedSdkGrants(api:SdkGrants,agents:readonly {agentId:string;revokedGrantIds:readonly string[]}[]):Promise<boolean>{
+  const cleanup=await cleanUpRevokedGrants(api,agents);
+  if(cleanup.failed)console.error(failureLog.grantSdkRevoke);
+  return cleanup.complete;
+}
+/**
+ * After the mailbox revoked `grantId`: the agent it belonged to, then that agent's SDK grant. True only when that clean-up
+ * finished; a frozen or unreadable re-read, or a grant outside the clean-up window, leaves it pending.
+ */
+async function revokeClientTokens(env:Env,api:SdkGrants,humanId:string,grantId:string):Promise<boolean>{
+  let overview:OwnerOverview;
+  try{overview=await env.MAILBOX.ownerOverview(humanId);}
+  catch{
+    console.error(failureLog.grantSdkRevoke);
+    return false;
+  }
+  if(overview.frozen)return false;
+  const agent=overview.agents.find(x=>x.revokedGrantIds.includes(grantId));
+  return agent!==undefined&&revokeRevokedSdkGrants(api,[{agentId:agent.agentId,revokedGrantIds:[grantId]}]);
+}
+/**
+ * The owner page: agents, binding requests, keys, connected clients and addresses of the signed-in human. Destructive actions
+ * need a fresh GitHub sign-in; revoking a client's grant does not.
+ */
+async function account(req:Request,env:Env,api:SdkGrants):Promise<Response>{
   if(req.method!=="GET"&&req.method!=="POST")return methodNotAllowed("GET, POST");
   const url=new URL(req.url),now=Date.now();
   const accountUrl=new URL("/account",env.OAUTH_ISSUER);
@@ -227,24 +261,31 @@ async function account(req:Request,env:Env):Promise<Response>{
   if(req.method==="GET"){
     let overview:OwnerOverview;
     try{overview=await env.MAILBOX.ownerOverview(session.humanId);}catch{return directoryUnavailable();}
+    // Retry SDK clean-up a failed or interrupted revocation left behind; the page renders either way.
+    const cleaned=!overview.frozen&&await revokeRevokedSdkGrants(api,overview.agents);
+    const result=url.searchParams.get("result");
     let tokens:Map<string,string>;
     try{tokens=await ownerFormTokens(env.HUMAN_SESSION_KEY,session.humanId,overview,now);}
     catch{
       console.error(failureLog.formSigning);
       return messagePage(503,"Temporarily unavailable","Weave cannot show your agents right now. Try again later.");
     }
-    return ownerPage(overview,session,tokens,url.searchParams.get("result"),now);
+    // A pending clean-up this very visit finished is reported as finished.
+    return ownerPage(overview,session,tokens,result==="cleanup-pending"&&cleaned?"cleanup-complete":result,now);
   }
   const action=await readOwnerAction(env.HUMAN_SESSION_KEY,req,session,now);
   if(action==="expired")return accountRedirect("form-expired");
   if(!action)return accountRedirect("not-found");
   if(destructiveKinds.has(action.kind)&&!freshAuthentication(session,now))
     return beginGithubLogin(env,accountUrl,now,{reauthenticate:{login:session.login}});
-  try{
-    const result=await env.MAILBOX.ownerAction({humanId:session.humanId,authAt:session.authAt,...action});
-    if(action.kind==="issue-recovery-code"&&"code" in result)return recoveryCodePage(action.agentId,result.code,result.expiresAt);
-    return accountRedirect(result.ok?"done":result.reason);
-  }catch{return directoryUnavailable();}
+  let result:OwnerActionResult;
+  try{result=await env.MAILBOX.ownerAction({humanId:session.humanId,authAt:session.authAt,...action});}
+  catch{return directoryUnavailable();}
+  if(action.kind==="issue-recovery-code"&&"code" in result)return recoveryCodePage(action.agentId,result.code,result.expiresAt);
+  // The mailbox revocation is committed and enforced at /mcp; an SDK failure only defers the token clean-up.
+  if(action.kind==="revoke-grant"&&result.ok)
+    return accountRedirect(await revokeClientTokens(env,api,session.humanId,action.grantId)?"done":"cleanup-pending");
+  return accountRedirect(result.ok?"done":result.reason);
 }
 export default class AuthServer extends WorkerEntrypoint<Env>{
   async fetch(req:Request):Promise<Response>{
@@ -252,7 +293,7 @@ export default class AuthServer extends WorkerEntrypoint<Env>{
     try{config(this.env,req.url);server=provider(this.env);}catch{return unavailable();}
     const path=new URL(req.url).pathname;
     if(path==="/authorize")return authorize(req,this.env,server);
-    if(path==="/account")return account(req,this.env);
+    if(path==="/account")return account(req,this.env,server.getOAuthApi(this.env));
     if(path==="/login/github/callback")return req.method==="GET"?completeGithubLogin(this.env,req,Date.now())
       :new Response("Method not allowed",{status:405,headers:{Allow:"GET","Cache-Control":"no-store"}});
     if(path==="/register"){

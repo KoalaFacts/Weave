@@ -1,20 +1,23 @@
 import {DurableObject} from "cloudflare:workers";
 import {ttlMs,validChallenge} from "./challenge.ts";
-interface Nonce {value:string; expiresAt:number}
+import {normalisedClientName} from "./client-name.ts";
+interface Nonce {value:string; clientName:string|null; expiresAt:number}
 /** Private, SQLite-backed, per-consent Durable Object.
  * A storage transaction, not KV read/delete, atomically stops parallel reuse.
+ * It also keeps the client name the consent page showed, so approval records that name without fetching it again.
  */
 export class ConsentNonce extends DurableObject {
   async fetch(req:Request):Promise<Response>{
     const path=new URL(req.url).pathname, now=Date.now();
     if(req.method==="PUT"&&path==="/nonce"){
       const input:unknown=await req.json().catch(()=>null);
-      const value=input&&typeof input==="object"&&!Array.isArray(input)&&
-        Object.keys(input).length===1?(input as {challenge?:unknown}).challenge:null;
-      if(!validChallenge(value))return new Response(null,{status:400});
+      const fields=input&&typeof input==="object"&&!Array.isArray(input)&&
+        Object.keys(input).length===2?input as {challenge?:unknown;clientName?:unknown}:null;
+      const value=fields?.challenge,clientName=fields?.clientName;
+      if(!validChallenge(value)||!normalisedClientName(clientName))return new Response(null,{status:400});
       const inserted=await this.ctx.storage.transaction(async tx=>{
         if(await tx.get("pending"))return false;
-        await tx.put("pending",{value,expiresAt:now+ttlMs} satisfies Nonce);return true;
+        await tx.put("pending",{value,clientName,expiresAt:now+ttlMs} satisfies Nonce);return true;
       });
       if(!inserted)return new Response(null,{status:409});
       await this.ctx.storage.setAlarm(now+ttlMs);
@@ -23,7 +26,7 @@ export class ConsentNonce extends DurableObject {
     if(req.method==="GET"&&path==="/nonce"){
       const pending=await this.ctx.storage.get<Nonce>("pending");
       return pending&&pending.expiresAt>now?
-        Response.json({challenge:pending.value},{headers:{"Cache-Control":"no-store"}}):
+        Response.json({challenge:pending.value,clientName:pending.clientName},{headers:{"Cache-Control":"no-store"}}):
         new Response(null,{status:404});
     }
     if(req.method==="DELETE"&&path==="/nonce"){
