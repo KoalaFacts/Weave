@@ -12,20 +12,22 @@ async function database() {
     return db;
 }
 function accounts(db) {
-    for(const id of ['synthetic-a','synthetic-b']) db.prepare(`INSERT INTO accounts(account_id,control_hash,control_hash_scheme,control_hash_parameters,created_at,updated_at)
-        VALUES(?,?,'sha256-utf8-v1',?,0,0)`).run(id,(id==='synthetic-a'?'a':'b').repeat(64),JSON.stringify({algorithm:'SHA-256',inputEncoding:'utf-8',digestEncoding:'hex-lower',normalization:'none',salt:null,rounds:1}));
+    for(const id of ['synthetic-a','synthetic-b']) db.prepare('INSERT INTO accounts(account_id,created_at,updated_at) VALUES(?,0,0)').run(id);
 }
 
 test('latest Drizzle schema defines the approved tables without compatibility views or triggers',async()=>{
     const db=await database();
     try {
         const tables=db.prepare("SELECT name FROM sqlite_master WHERE type='table' AND name NOT LIKE 'sqlite_%' ORDER BY name").all().map(r=>r.name);
-        assert.deepEqual(tables,['account_addresses','accounts','contact_cards','contact_requests','contacts','counters','data_migrations','humans','legacy_channels','mailbox_guard','mailbox_records','mailbox_records_legacy','mailbox_revision','maintenance_state','message_delivery','oauth_identity_links','rate_limits','stream_cursors','stream_leases']);
+        assert.deepEqual(tables,['account_addresses','accounts','agent_access_tokens','agent_assertions','agent_keys','contact_cards','contact_requests','contacts','counters','data_migrations','humans','legacy_channels','mailbox_guard','mailbox_records','mailbox_records_legacy','mailbox_revision','maintenance_state','message_delivery','rate_limits','stream_cursors','stream_leases']);
         assert.equal(db.prepare("SELECT count(*) n FROM sqlite_master WHERE type IN ('view','trigger')").get().n,0);
         const business=tables.filter(name=>name!=='data_migrations');
-        assert.equal(business.reduce((n,name)=>n+db.prepare(`PRAGMA table_info(${name})`).all().length,0),144);
+        assert.equal(business.reduce((n,name)=>n+db.prepare(`PRAGMA table_info(${name})`).all().length,0),152);
         assert.ok(business.flatMap(name=>db.prepare(`PRAGMA table_info(${name})`).all()).every(c=>!c.name.endsWith('_ticks')));
         assert.ok(!db.prepare('PRAGMA table_info(mailbox_records)').all().some(c=>c.name==='kind'));
+        // The archived legacy rows are never looked up by the removed account credential.
+        assert.deepEqual(db.prepare("SELECT name FROM sqlite_master WHERE type='index' AND tbl_name='mailbox_records_legacy' ORDER BY name").all().map(r=>r.name),
+            ['address_owner','legacy_identity','message_recipient','records_expiry','records_kind','records_public','records_recipient']);
     } finally { db.close(); }
 });
 
@@ -48,7 +50,7 @@ test('message storage keeps opaque BLOB bytes, empty versus cleared bodies and e
 });
 
 test('schema plans reject destructive changes before any application',()=>{
-    for(const statement of ['DROP TABLE accounts','ALTER TABLE accounts DROP COLUMN control_hash','PRAGMA foreign_keys=OFF','DELETE FROM d1_migrations','CREATE TABLE replacement(x); DROP TABLE accounts'])
+    for(const statement of ['DROP TABLE accounts','ALTER TABLE accounts DROP COLUMN display_name','PRAGMA foreign_keys=OFF','DELETE FROM d1_migrations','CREATE TABLE replacement(x); DROP TABLE accounts'])
         assert.throws(()=>assertAdditiveSchemaPlan([statement]),/review|destructive|unsupported/);
     assert.doesNotThrow(()=>assertAdditiveSchemaPlan(['CREATE TABLE example(id TEXT PRIMARY KEY)','ALTER TABLE example ADD COLUMN created_at INTEGER','CREATE INDEX example_created ON example(created_at)']));
     assert.doesNotThrow(()=>assertAdditiveSchemaPlan(['CREATE TABLE child(owner TEXT REFERENCES parent(id) ON DELETE RESTRICT)']));
@@ -68,20 +70,54 @@ test('live schema planning preserves unmanaged history and stops on column drift
     }finally{await h.close();}
 });
 
-
-test('release cannot auto-provision unapproved OAuth subject-link storage while repairing ordinary indexes',async()=>{
+test('live schema planning repairs a dropped ordinary index',async()=>{
     const {planLatestSchema,createMissingSchema}=await import('../scripts/latest-schema.ts');
     const {start}=await import('./harness.ts');const h=await start();
     try{
-        await h.db.prepare('DROP TABLE oauth_identity_links').run();
         await h.db.prepare('DROP INDEX addresses_owner').run();
-        const unrestricted=await planLatestSchema(h.db);
-        assert.ok(unrestricted.statements.some(sql=>sql.includes('oauth_identity_links')));
-        const release=await planLatestSchema(h.db,{omitUnapprovedOAuthIdentityLinks:true});
-        assert.ok(release.statements.some(sql=>sql.includes('addresses_owner')));
-        assert.ok(release.statements.every(sql=>!sql.includes('oauth_identity_links')));
-        await createMissingSchema(h.db,{omitUnapprovedOAuthIdentityLinks:true});
-        assert.equal(await h.db.prepare("SELECT name FROM sqlite_master WHERE type='table' AND name='oauth_identity_links'").first('name'),null);
+        const plan=await planLatestSchema(h.db);
+        assert.equal(plan.statements.length,1);
+        assert.match(plan.statements[0],/^CREATE INDEX [`"]addresses_owner[`"]/);
+        await createMissingSchema(h.db);
         assert.equal(await h.db.prepare("SELECT name FROM sqlite_master WHERE type='index' AND name='addresses_owner'").first('name'),'addresses_owner');
     }finally{await h.close();}
+});
+
+test('agent_keys refuses malformed kids, invalid JWK text, bad labels and inverted times',async()=>{
+    const db=await database();
+    try {
+        accounts(db);
+        const kid='k'.repeat(43);
+        const insert=db.prepare(`INSERT INTO agent_keys(kid,account_id,public_jwk,label,created_at,revoked_at,cooling_until,updated_at) VALUES(?,?,?,?,?,?,?,10)`);
+        insert.run(kid,'synthetic-a','{"crv":"Ed25519"}','laptop',10,null,null);
+        for(const row of [
+            ['k'.repeat(42),'synthetic-a','{}',null,10,null,null],['k'.repeat(42)+'+','synthetic-a','{}',null,10,null,null],
+            ['j'.repeat(43),'synthetic-a','not json',null,10,null,null],['j'.repeat(43),'synthetic-a','{}','',10,null,null],
+            ['j'.repeat(43),'synthetic-a','{}','x'.repeat(65),10,null,null],['j'.repeat(43),'synthetic-a','{}',null,10,9,null],
+            ['j'.repeat(43),'synthetic-a','{}',null,10,null,10],['j'.repeat(43),'missing','{}',null,10,null,null],
+        ]) assert.throws(()=>insert.run(...row),/constraint/i,JSON.stringify(row));
+        insert.run('j'.repeat(43),'synthetic-a','{}','x'.repeat(64),10,10,11);
+        assert.throws(()=>db.prepare("DELETE FROM accounts WHERE account_id='synthetic-a'").run(),/FOREIGN KEY/);
+    } finally { db.close(); }
+});
+
+test('agent assertion and access-token tables refuse malformed hashes, unknown keys and duplicate assertions',async()=>{
+    const db=await database();
+    try {
+        accounts(db);
+        const kid='k'.repeat(43);
+        db.prepare(`INSERT INTO agent_keys(kid,account_id,public_jwk,created_at,updated_at) VALUES(?,'synthetic-a','{}',10,10)`).run(kid);
+        const assertion=db.prepare('INSERT INTO agent_assertions(account_id,jti,expires_at,created_at) VALUES(?,?,20,10)');
+        assertion.run('synthetic-a','jti-0000000000000001');
+        assertion.run('synthetic-b','jti-0000000000000001');
+        assert.throws(()=>assertion.run('synthetic-a','jti-0000000000000001'),/UNIQUE|PRIMARY KEY/);
+        assert.throws(()=>assertion.run('missing','jti-0000000000000002'),/FOREIGN KEY/);
+        const tokens=db.prepare('INSERT INTO agent_access_tokens(token_hash,account_id,kid,expires_at,created_at) VALUES(?,?,?,20,10)');
+        tokens.run('a'.repeat(64),'synthetic-a',kid);
+        for(const row of [['a'.repeat(63),'synthetic-a',kid],['A'.repeat(64),'synthetic-a',kid],['g'.repeat(64),'synthetic-a',kid],['b'.repeat(64),'synthetic-a','j'.repeat(43)],['c'.repeat(64),'missing',kid]])
+            assert.throws(()=>tokens.run(...row),/constraint/i,JSON.stringify(row));
+        assert.throws(()=>db.prepare('DELETE FROM agent_keys WHERE kid=?').run(kid),/FOREIGN KEY/);
+        for(const name of ['agent_assertions_expiry','agent_access_tokens_expiry'])
+            assert.equal(db.prepare("SELECT name FROM sqlite_master WHERE type='index' AND name=?").get(name)?.name,name);
+    } finally { db.close(); }
 });

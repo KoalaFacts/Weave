@@ -15,7 +15,7 @@ function ui(read=async()=>({items:[owned],nextCursor:null})){
     const elements=new Map(),calls=[],copied=[];
     function element(){return {value:'',textContent:'',disabled:false,children:[],handlers:{},addEventListener(name,fn){(this.handlers[name]??=[]).push(fn);},append(...children){this.children.push(...children);},replaceChildren(...children){this.children=[...children];this.value='';}};}
     const get=id=>{if(!elements.has(id))elements.set(id,element());return elements.get(id);};
-    const session={accountId:'recipient',control:'SYNTHETIC_PRIVATE_CONTROL_DO_NOT_COPY'};
+    const session={accountId:'recipient',token:'SYNTHETIC_PRIVATE_TOKEN_DO_NOT_COPY'};
     const context=createContext({document:{getElementById:get,createElement:element},session,location:{origin:'https://demo.weave-389.workers.dev'},crypto:webcrypto,URL,Date,Map,JSON,navigator:{clipboard:{writeText:async text=>copied.push(text)}},api:async(s,path,method='GET')=>{calls.push({s,path,method});return read(s,path,method);},current:s=>{if(context.session!==s)throw Error('Session changed');}});
     runInContext(source,context);
     return {get,calls,copied,context,click:async id=>{for(const fn of get(id).handlers.click??[])await fn();},change:async id=>{for(const fn of get(id).handlers.change??[])await fn();},async ready(){await this.click('loadInvitationAddresses');get('invitationAddress').value=owned.addressId;}};
@@ -27,7 +27,7 @@ test('agent entry is readable without JavaScript and points to one canonical gui
     assert.match(html,/no account operation/i);
     assert.ok(existsSync(guidePath),'Canonical agent-start.md is missing');
     const guide=readFileSync(guidePath,'utf8');
-    for(const term of ['waiting_contact_acceptance','waiting_receipt','needs_owner_action','not_executed','outcome_unknown','runId','replyTo','nextAction','same exact','WEAVE_MAILBOX_CONTROL'])assert.ok(guide.includes(term),term);
+    for(const term of ['waiting_contact_acceptance','waiting_receipt','needs_owner_action','not_executed','outcome_unknown','runId','replyTo','nextAction','same exact'])assert.ok(guide.includes(term),term);
     assert.match(guide,/not.*automatically wake/i);
 });
 test('discovery is inert and invitation contains only the allowlisted nonsecret fields',async()=>{
@@ -37,7 +37,7 @@ test('discovery is inert and invitation contains only the allowlisted nonsecret 
     assert.deepEqual(Object.keys(card).sort(),['goal','origin','peerAddressId','peerAccountId','peerAgentId','runId','type','version'].sort());
     assert.equal(card.peerAccountId,'recipient');assert.equal(card.peerAgentId,'recipient');assert.equal(card.peerAddressId,owned.addressId);
     assert.equal(card.type,'weave-demo-invitation');assert.equal(card.goal,'one_ping_pong');assert.equal(card.version,1);
-    assert.match(card.runId,/^[0-9a-f-]{36}$/);assert.ok(!app.get('invitationCard').value.includes(app.context.session.control));
+    assert.match(card.runId,/^[0-9a-f-]{36}$/);assert.ok(!app.get('invitationCard').value.includes(app.context.session.token));
     assert.ok(app.calls.every(call=>call.method==='GET'&&call.path.startsWith('/v1/addresses')));
 });
 test('rebuilding and copying reuse the run until a new run is explicitly requested',async()=>{
@@ -88,6 +88,6 @@ test('copy revalidates address selection even if a change event was not delivere
 test('guide explicitly retrieves and correlates the inbox introduction before acceptance',()=>{
     const guide=readFileSync(guidePath,'utf8'),section=guide.split('### Recipient introduction review before acceptance')[1]?.split('## 4.')[0];
     assert.ok(section,'Recipient review step is missing');
-    for(const field of ['read_inbox','GET /v1/inbox','requestMessageId','requesterAccountId','recipientAccountId','nextCursor','needs_owner_action'])assert.ok(section.includes(field),field);
-    assert.ok(section.indexOf('read_inbox')<section.indexOf('decide_contact'));
+    for(const field of ['list_my_inbox','GET /v1/inbox','requestMessageId','requesterAccountId','recipientAccountId','nextCursor','needs_owner_action'])assert.ok(section.includes(field),field);
+    assert.ok(section.indexOf('list_my_inbox')<section.indexOf('decide_contact'));
 });

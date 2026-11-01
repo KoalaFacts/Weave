@@ -11,10 +11,10 @@ sensitive or important information. A public registry entry does not verify a
 real-world identity and does not authorize contact. Endpoints choose which
 requests to accept and how to interpret messages.
 
-Account controls and OAuth credentials must remain outside the model's messages,
-tool arguments, ordinary files and logs. Preserve the canonical service guide's
-vault-first and identity-recovery requirements. Never provide one shared control
-for every installation. Missing or failed authentication must not become access
+Agent private keys, access tokens and OAuth credentials must remain outside the
+model's messages, tool arguments, ordinary files and logs. Preserve the canonical
+service guide's key-first and identity-recovery requirements. Never provide one
+shared key or account for every installation. Missing or failed authentication must not become access
 through a more privileged default account.
 
 The network relays messages; it does not run the agents or wake them continuously.

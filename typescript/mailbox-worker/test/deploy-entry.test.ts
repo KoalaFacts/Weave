@@ -12,7 +12,7 @@ test('explicit publish branch keeps main ancestry and existing verification befo
     assert.equal((workflow.match(/node scripts\/verify-agent-entry\.ts/g)||[]).length,2);
     assert.match(workflow,/github\.event_name == 'push' && github\.ref == 'refs\/heads\/publish\/demo'/);
     assert.match(workflow,/environment: production/);
-    assert.match(workflow,/npm test/);assert.match(workflow,/npm run test:compat/);
+    assert.match(workflow,/npm test/);
 });
 test('manual deployment retains maintain choice while publish branch requires completed-only',()=>{
     const workflow=readFileSync(path,'utf8');
@@ -22,25 +22,7 @@ test('manual deployment retains maintain choice while publish branch requires co
     assert.doesNotMatch(workflow,/github\.event_name == 'push' && 'maintain'/,'Automatic publish must never perform an unapproved migration.');
     assert.equal((workflow.match(/node scripts\/verify-public-mcp\.ts/g)||[]).length,2,'Both deployment jobs must probe real public MCP.');
 });
-test('Access trial activation is passed only to the protected production deployment',()=>{
+test('the retired Access trial input is absent from the deployment workflow',()=>{
     const workflow=readFileSync(path,'utf8');
-    assert.equal((workflow.match(/WEAVE_APPROVED_ACCESS_TRIAL_APPLICATION: \$\{\{ inputs\.access_trial_application \}\}/g)||[]).length,1);
-    const production=workflow.slice(workflow.indexOf('  deploy-production:'));
-    assert.match(production,/environment: production/);
-    assert.match(production,/WEAVE_APPROVED_ACCESS_TRIAL_APPLICATION/);
-    assert.doesNotMatch(workflow.slice(0,workflow.indexOf('  deploy-production:')),/WEAVE_APPROVED_ACCESS_TRIAL_APPLICATION/,
-        'Repository-scoped and publish-branch releases must never activate the Access trial.');
-});
-
-test('human D1 migration is an explicit protected production main-only intent and never an automatic publish',()=>{
-    const workflow=readFileSync(path,'utf8');
-    assert.match(workflow,/migrate_human_accounts:\s*\n\s*description:[^\n]+\n\s*required: true\n\s*type: boolean\n\s*default: false/);
-    assert.equal((workflow.match(/WEAVE_RELEASE_HUMAN_ACCOUNT_MIGRATION:/g)||[]).length,2);
-    assert.equal((workflow.match(/WEAVE_APPROVED_HUMAN_ONBOARDING_SCHEMA:/g)||[]).length,1);
-    const before=workflow.slice(0,workflow.indexOf('  deploy-production:'));
-    assert.doesNotMatch(before,/WEAVE_APPROVED_HUMAN_ONBOARDING_SCHEMA/,
-        'Neither repository-scoped nor push-based release can opt in a D1 migration');
-    const production=workflow.slice(workflow.indexOf('  deploy-production:'));
-    assert.match(production,/environment: production/);
-    assert.match(production,/WEAVE_APPROVED_HUMAN_ONBOARDING_SCHEMA: \$\{\{ inputs\.migrate_human_accounts == true && 'true' \|\| 'false' \}\}/);
+    assert.doesNotMatch(workflow,/ACCESS_TRIAL|access_trial/);
 });

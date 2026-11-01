@@ -2,7 +2,8 @@ import type {ConsentDescription} from "@cloudflare/workers-oauth-provider";
 import type {AgentSummary} from "../../mailbox-worker/src/humans.ts";
 const esc=(s:string)=>s.replace(/[&<>"']/g,c=>"&#"+c.charCodeAt(0)+";");
 // HTML escaping cannot neutralize bidirectional reordering in client metadata.
-// Drop controls and hidden formatting characters that can spoof client or agent\n// labels while retaining Arabic/CJK text and legitimate emoji joiners.
+// Drop controls and hidden formatting characters that can spoof client or agent
+// labels while retaining Arabic/CJK text and legitimate emoji joiners.
 const invisibleControls=/[\u0000-\u001f\u007f-\u009f\u00ad\u061c\u200b\u200e\u200f\u202a-\u202e\u2060\u2066-\u2069\ufeff]/gu;
 const visible=(text:string)=>esc(text.replace(invisibleControls,""));
 const agentLabel=(agent:AgentSummary)=>(agent.displayName??"Unnamed agent")+" (account "+agent.accountId+")";

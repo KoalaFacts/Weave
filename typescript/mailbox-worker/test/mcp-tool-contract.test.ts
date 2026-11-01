@@ -2,7 +2,7 @@ import assert from 'node:assert/strict';
 import {test} from 'node:test';
 import {build} from 'esbuild';
 import {remoteMcp,type PrivateAccess} from '../src/remote-mcp.ts';
-import {start} from './harness.ts';
+import {start,payload} from './harness.ts';
 import type {Env} from '../src/database.ts';
 // Evaluate the bundled production module, as the other private MCP tests do.
 const built=await build({entryPoints:['src/remote-private.ts'],bundle:true,write:false,platform:'node',format:'esm',logLevel:'silent'});
@@ -72,7 +72,7 @@ test('real D1 results of every private tool conform to their published output sc
         await run(a.accountId,'get_my_profile');
         await run(a.accountId,'ensure_my_address',{addressId:'0199aaaa-0000-4000-8000-000000000001',label:'A'});
         await run(a.accountId,'list_my_addresses');
-        const intro=await run(a.accountId,'prepare_payload',{text:'contract-introduction'});
+        const intro=payload('contract-introduction');
         const requested=await run(a.accountId,'request_contact',{requesterAddressId:a.cardId,recipientAccountId:b.accountId,
             recipientAddressId:b.cardId,payload:intro});
         assert.equal(requested.generation,'1','generations are exact decimal strings in structured results');
@@ -81,7 +81,7 @@ test('real D1 results of every private tool conform to their published output sc
             expectedGeneration:requested.generation,status:'accepted'});
         await run(a.accountId,'list_my_contacts');
         await run(a.accountId,'get_my_channel',{peerAccountId:b.accountId});
-        const message=await run(a.accountId,'prepare_payload',{text:'contract-message'});
+        const message=payload('contract-message');
         await run(a.accountId,'send_message',{recipientAccountId:b.accountId,contactGeneration:requested.generation,payload:message});
         const inbox=await run(b.accountId,'list_my_inbox');
         assert.ok(inbox.items.length>0);

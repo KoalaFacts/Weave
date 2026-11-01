@@ -2,7 +2,7 @@ import assert from 'node:assert/strict';
 import {test} from 'node:test';
 import {body,Problem} from '../src/wire.ts';
 
-const request=(stream:ReadableStream<Uint8Array>)=>new Request('https://weave.test/v1/accounts/oauth/links',{
+const request=(stream:ReadableStream<Uint8Array>)=>new Request('https://weave.test/v1/keys',{
     method:'POST',headers:{'Content-Type':'application/json'},body:stream,duplex:'half'
 } as RequestInit&{duplex:'half'});
 
@@ -42,7 +42,7 @@ test('oversized JSON body refuses immediately even if upstream cancellation neve
 });
 
 test('bounded JSON request parsing still accepts ordinary valid bodies',async()=>{
-    const request=new Request('https://weave.test/v1/accounts/oauth/links',{
+    const request=new Request('https://weave.test/v1/keys',{
         method:'POST',headers:{'Content-Type':'application/json'},body:'{"consent":true}'
     });
     assert.deepEqual(await body(request),{consent:true});

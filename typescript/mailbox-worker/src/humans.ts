@@ -1,11 +1,10 @@
 import { admitRegistration } from './accounts.ts';
-import { CONTROL_HASH_SCHEME, validParameters } from './credentials.ts';
 import { atomic, type Env } from './database.ts';
 import { nowUtc, utcTicks } from './time.ts';
 import { fail } from './wire.ts';
 
 // A Human is a person who signed in with an external identity provider and owns
-// agents. Owned agents carry no control secret; their access is granted later.
+// agents. Owned agents are created without an agent key; their access is granted later.
 export const maxAgentsPerHuman = 10;
 
 export type HumanSignIn = { provider: 'github'; subject: string; providerCreatedAt: string; displayLogin: string };
@@ -80,26 +79,17 @@ export async function humanHasAgent(env: Env, humanId: string, accountId: string
 }
 
 /** Recheck bearer eligibility on every private OAuth call. Freezing a GitHub human
- * immediately denies their owned agents without invalidating unrelated control-owned accounts. */
+ * or moving the agent to another owner immediately denies the owner's OAuth bearer. */
 export async function oauthAccountActive(env: Env, accountId: string, serviceHumanId?: string | null): Promise<boolean> {
     requireReadable(env); requireUuid(accountId);
-    // Both unbound paths (external RFC 7662 subject link and legacy Service
-    // Binding token) can prove only a control-owned account. A stale external
-    // link must not survive control revocation or transfer into human ownership.
-    // Only an explicit current human UUID may authorize a human-owned agent.
-    if (serviceHumanId === null || serviceHumanId === undefined) {
-        // A non-null digest alone is not a live control credential: the schema
-        // permits valid JSON parameters that the control authenticator rejects.
-        // External subject links and legacy unbound tokens must follow that
-        // same revocation boundary, not merely the digest's presence.
-        const row = await env.db.prepare('SELECT control_hash_scheme,control_hash_parameters FROM accounts WHERE account_id=? AND human_id IS NULL AND control_hash IS NOT NULL')
-            .bind(accountId).first<{ control_hash_scheme: string | null; control_hash_parameters: string | null }>();
-        if (!row || row.control_hash_scheme !== CONTROL_HASH_SCHEME || typeof row.control_hash_parameters !== 'string')
-            return false;
-        try { return validParameters(JSON.parse(row.control_hash_parameters)); }
-        catch { return false; }
-    }
-    if (!uuidPattern.test(serviceHumanId)) return false;
+    // External RFC 7662 introspection (undefined) carries no human binding and can
+    // prove only a self-registered agent that still holds a live agent key. It
+    // never authorizes a human-owned agent, and a revoked key set ends access.
+    if (serviceHumanId === undefined)
+        return await env.db.prepare('SELECT 1 n FROM accounts a WHERE a.account_id=? AND a.human_id IS NULL AND EXISTS(SELECT 1 FROM agent_keys k WHERE k.account_id=a.account_id AND k.revoked_at IS NULL)')
+            .bind(accountId).first('n') !== null;
+    // A Service Binding bearer must name the agent's current, unfrozen human owner.
+    if (serviceHumanId === null || !uuidPattern.test(serviceHumanId)) return false;
     return await env.db.prepare('SELECT 1 n FROM accounts a JOIN humans h ON h.human_id=a.human_id WHERE a.account_id=? AND a.human_id=? AND h.frozen_at IS NULL')
         .bind(accountId, serviceHumanId).first('n') !== null;
 }
@@ -120,7 +110,7 @@ export async function createOwnedAgent(env: Env, input: { humanId: string; displ
         if (!await admitRegistration(env, tx, input.sourceIp)) return { ok: false as const, reason: 'rate-limited' as const };
         const accountId = crypto.randomUUID();
         if (await tx.get('account', '', accountId)) fail(409, 'conflict');
-        tx.put('account', '', accountId, { accountId, humanId: input.humanId, controlHash: null, controlHashScheme: null, controlHashParameters: null, displayName: input.displayName, description: null });
+        tx.put('account', '', accountId, { accountId, humanId: input.humanId, displayName: input.displayName, description: null });
         return { ok: true as const, accountId };
     });
 }

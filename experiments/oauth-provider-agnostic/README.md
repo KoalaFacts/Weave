@@ -74,24 +74,13 @@ successfully connected. These tests use no real vendor credentials or agents.
    protocol requirement. Negotiate/configure compatible lifetimes explicitly;
    never silently remove the limit to make a vendor test pass.
 
-## Opt-in RFC 7662 external subject resolution (not deployed)
+## External RFC 7662 subjects
 
-The resource's RFC 7662 verifier now accepts a server-composed
-`OAuthSubjectResolver`. After fresh issuer, audience, scope, active-state and
-expiry checks, only the trusted server can resolve the exact
-`{issuer, resource, subject}` triple to a Weave account UUID. It must be
-backed by an explicit owner-consented, persisted binding with revocation.
-Unknown/invalid links fail 401; binding-store outages fail 503. The existing
-D1 account check and both token-expiry checks remain mandatory. Two issuers
-may reuse the same opaque subject without sharing an account. No implicit
-email/UUID fallback applies once a resolver is configured.
-
-This is a **tested protocol extension point**, not active third-party
-login. Production code does not yet supply an external resolver, link-state
-schema or enrollment UI; existing accepted Weave-native UUID issuer handling
-is unchanged. Schema/migration, explicit linking consent and any real vendor
-deployment still need independent authorization and end-to-end testing.
-Cloudflare Access signed identity assertions are *not* RFC 7662 responses.
+The resource's RFC 7662 verifier accepts only a Weave account UUID as `sub`
+after fresh issuer, audience, scope, active-state and expiry checks. A non-UUID
+subject is rejected before any account lookup; there is no subject-to-account
+mapping, email fallback or link store. Cloudflare Access signed identity
+assertions are *not* RFC 7662 responses and are not accepted.
 
 ## RFC 8414 explicitly approved cross-origin endpoint interoperability
 

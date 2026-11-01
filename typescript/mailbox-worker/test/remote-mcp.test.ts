@@ -12,7 +12,7 @@ const call=(h,name,args={})=>rpc(h,'tools/call',{name,arguments:args});
 const read=(body)=>JSON.parse(body.result.content[0].text);
 const rateCount=(h)=>h.db.prepare("SELECT count(*) n FROM rate_limits WHERE policy='public-read'").first('n');
 
-test('remote MCP initializes and reads the real D1 public directory without account control',async()=>{
+test('remote MCP initializes and reads the real D1 public directory without agent credentials',async()=>{
     const h=await start();
     try {
         const account=await h.register();
@@ -20,7 +20,7 @@ test('remote MCP initializes and reads the real D1 public directory without acco
         const privateAddress=await h.address(account,{label:'remote-private'});
         const expired=await h.address(account,{label:'remote-expired',isPublic:true,effectiveTo:'2020-01-01T00:00:00Z'});
         const revoked=await h.address(account,{label:'remote-revoked',isPublic:true});
-        await h.ok('/v1/addresses/'+revoked.addressId,account.control,'DELETE');
+        await h.ok('/v1/addresses/'+revoked.addressId,account,'DELETE');
         const init=await rpc(h,'initialize',{protocolVersion:'2025-11-25',capabilities:{},clientInfo:{name:'fixture',version:'1'}});
         assert.equal(init.result.serverInfo.name,'weave-public');
         assert.deepEqual((await rpc(h,'tools/list')).result.tools.map(x=>x.name),['demo_guide','search_registry','lookup_address']);
@@ -70,7 +70,7 @@ test('maintenance and Origin checks also guard the actual MCP route',async()=>{
     } finally { await maintenance.close(); }
 });
 
-test('root and resource-specific well-known OAuth discovery must agree without any account control',async()=>{
+test('root and resource-specific well-known OAuth discovery must agree without any agent credential',async()=>{
     const routes=['/.well-known/oauth-protected-resource/mcp','/.well-known/oauth-protected-resource'];
     const configured={
         OAUTH_ISSUER:'https://trusted-issuer.example',OAUTH_RESOURCE:'https://localhost/mcp',

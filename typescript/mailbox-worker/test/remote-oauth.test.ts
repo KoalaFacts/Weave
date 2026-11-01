@@ -220,67 +220,11 @@ test('Service Binding rechecks expiry after the private RPC latency',async()=>{
     assert.ok(denied instanceof Response);assert.equal(denied.status,401);assert.equal(lookedUp,false);
 });
 
-test('provider-neutral RFC7662 subject links only through an explicitly verified issuer/subject mapping',async()=>{
-    const now=Math.floor(Date.now()/1000),externalSubject='tenant-specific-opaque-subject';
-    const introspected={...valid(now),sub:externalSubject};
-    const principal={issuer:config.issuer,subject:externalSubject,resource:config.resource};
-    let mapped=0,lookups=0;
-    const resolve=async(value:typeof principal)=>{assert.deepEqual(value,principal);mapped++;return id;};
-    const accountExists=async(value:string)=>{lookups++;return value===id;};
-    const before=await authorizeOAuth(config,req(),'weave:messages.send',accountExists,fetchFor(introspected),now*1000);
-    assert.ok(before instanceof Response);assert.equal(before.status,401);
-    // Explicit mapping is an opt-in, never inferred from a matching email or UUID.
-    const linked=await authorizeOAuth(config,req(),'weave:messages.send',accountExists,fetchFor(introspected),now*1000,resolve);
-    assert.deepEqual(linked,{accountId:id});assert.equal(mapped,1);assert.equal(lookups,1);
-});
-test('provider-neutral RFC7662 link is fail-closed for wrong issuer, missing link, account and mapping outage',async()=>{
-    const now=Math.floor(Date.now()/1000),opaque='external-identity',good={...valid(now),sub:opaque};
-    let mapped=0;
-    const resolver=async(v:{issuer:string;subject:string;resource:string})=>{mapped++;return v.issuer===config.issuer&&v.subject===opaque&&v.resource===config.resource?id:null;};
-    const call=(data:unknown,lookup=resolver,account=exists)=>authorizeOAuth(
-        config,req(),'weave:messages.send',account,fetchFor(data),now*1000,lookup);
-    const foreign=await call({...good,iss:'https://foreign-issuer.example'});
-    assert.ok(foreign instanceof Response);assert.equal(foreign.status,401);assert.equal(mapped,0);
-    for(const [lookup,account,status] of [
-        [async()=>null,exists,401],
-        [resolver,async()=>false,401],
-        [async()=>{throw Error('secret-link-store-down');},exists,503]
-    ] as const) {
-        const denied=await call(good,lookup,account);
-        assert.ok(denied instanceof Response);assert.equal(denied.status,status);
-        assert.doesNotMatch(await denied.text(),/secret-link-store-down/);
-    }
-    // When an explicit map exists, even a UUID-like external subject must not
-    // implicitly become its identically named Weave account.
-    const uuidSub=await call(valid(now),async()=>null);
-    assert.ok(uuidSub instanceof Response);assert.equal(uuidSub.status,401);
-});
-test('provider-neutral RFC7662 mapping never resurrects revoked or expired grants',async()=>{
-    const now=Math.floor(Date.now()/1000),data={...valid(now),sub:'external-owner',exp:now+1};
-    let clock=now*1000;
-    const resolver=async()=>{clock+=2000;return id;};
-    const expired=await authorizeOAuth(config,req(),'weave:messages.send',exists,fetchFor(data),()=>clock,resolver);
-    assert.ok(expired instanceof Response);assert.equal(expired.status,401);
-    const revoked=await authorizeOAuth(config,req(),'weave:messages.send',exists,fetchFor({...data,active:false,exp:now+120}),now*1000,resolver);
-    assert.ok(revoked instanceof Response);assert.equal(revoked.status,401);
-});
-
-test('two AS issuers using the same opaque subject cannot cross-link accounts',async()=>{
-    const now=Math.floor(Date.now()/1000),sub='same-subject-at-two-issuers';
-    const another={...config,issuer:'https://other-auth.example',
-        introspectionUrl:'https://other-auth.example/oauth/introspect'};
-    const second='ffffffff-ffff-4fff-8fff-ffffffffffff';
-    const links=new Map([[config.issuer+'|'+sub,id],[another.issuer+'|'+sub,second]]);
-    const resolver=async(p:{issuer:string;subject:string;resource:string})=>{
-        assert.equal(p.resource,config.resource);
-        return links.get(p.issuer+'|'+p.subject)??null;
-    };
-    const existsAccount=async(value:string)=>value===id||value===second;
-    const claims={...valid(now),sub};
-    assert.deepEqual(await authorizeOAuth(config,req(),'weave:messages.send',existsAccount,fetchFor(claims),now*1000,resolver),{accountId:id});
-    assert.deepEqual(await authorizeOAuth(another,req(),'weave:messages.send',existsAccount,fetchFor({...claims,iss:another.issuer}),now*1000,resolver),{accountId:second});
-    const swapped=await authorizeOAuth(another,req(),'weave:messages.send',existsAccount,fetchFor(claims),now*1000,resolver);
-    assert.ok(swapped instanceof Response);assert.equal(swapped.status,401);
+test('RFC7662 introspection refuses a subject that is not a Weave account ID without any account lookup',async()=>{
+    const now=Math.floor(Date.now()/1000);let lookups=0;
+    const denied=await authorizeOAuth(config,req(),'weave:messages.send',async()=>{lookups++;return true;},
+        fetchFor({...valid(now),sub:'tenant-specific-opaque-subject'}),now*1000);
+    assert.ok(denied instanceof Response);assert.equal(denied.status,401);assert.equal(lookups,0);
 });
 
 test('RFC7662 introspection rejects redirects without forwarding the bearer or Basic credentials',async()=>{
@@ -360,7 +304,7 @@ test('Service Binding refuses a previously issued bearer after GitHub owner free
             displayName:'Test agent',sourceIp:'203.0.113.9'});
         assert.equal(owned.ok,true);
         if(!owned.ok)throw Error('Test agent not registered');
-        const legacy=await h.register();
+        const selfRegistered=await h.register();
         const now=Math.floor(Date.now()/1000);
         let currentAccount=owned.accountId;
         const binding={validateToken:async()=>({audience:config.resource,userId:currentAccount,
@@ -377,9 +321,10 @@ test('Service Binding refuses a previously issued bearer after GitHub owner free
         const revoked=await authorizeOAuth(cfg,token,'weave:messages.send',eligible,undefined,now*1000);
         assert.ok(revoked instanceof Response);
         assert.equal(revoked.status,401,'freeze must reject an existing still-unexpired access token');
-        currentAccount=legacy.accountId;
-        assert.deepEqual(await authorizeOAuth(cfg,token,'weave:messages.send',eligible,undefined,now*1000),
-            {accountId:legacy.accountId},'independent control-owned accounts stay eligible');
+        currentAccount=selfRegistered.accountId;
+        const unbound=await authorizeOAuth(cfg,token,'weave:messages.send',eligible,undefined,now*1000);
+        assert.ok(unbound instanceof Response);
+        assert.equal(unbound.status,401,'a Service Binding token without its human authorizes no agent');
     }finally{await h.close();}
 });
 
@@ -412,7 +357,7 @@ test('Service Binding revokes stale human bearer after account owner changes',as
         tokenOwner=null;
         const missingOwner=await authorizeOAuth(cfg,token,'weave:messages.send',eligible,undefined,now*1000);
         assert.ok(missingOwner instanceof Response);
-        assert.equal(missingOwner.status,401,'a legacy token must not grant an owned agent without a human binding');
+        assert.equal(missingOwner.status,401,'a token must not grant an owned agent without a human binding');
         tokenOwner=first.humanId;
         // Simulate a future approved ownership transfer: the account remains active,
         // but a grant bound to the previous human must lose all mailbox authority.
@@ -424,12 +369,12 @@ test('Service Binding revokes stale human bearer after account owner changes',as
         tokenOwner=second.humanId;
         assert.deepEqual(await authorizeOAuth(cfg,token,'weave:messages.send',eligible,undefined,now*1000),
             {accountId:created.accountId},'current owner with a fresh matching grant may access the agent');
-        // An orphaned agent has neither a current owner nor a control credential.
+        // An orphaned agent has neither a current owner nor an agent key.
         await h.db.prepare('UPDATE accounts SET human_id=NULL WHERE account_id=?')
             .bind(created.accountId).run();
         tokenOwner=null;
         const orphan=await authorizeOAuth(cfg,token,'weave:messages.send',eligible,undefined,now*1000);
         assert.ok(orphan instanceof Response);
-        assert.equal(orphan.status,401,'ownerless agents without a control credential must not accept legacy grants');
+        assert.equal(orphan.status,401,'ownerless agents without an agent key must not accept unbound grants');
     }finally{await h.close();}
 });

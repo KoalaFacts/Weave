@@ -23,8 +23,8 @@ This package is a setup preview until a real Weave app is registered and linked.
 4. Report the installation, tool availability, public network access, and private
    account access separately. When credentials are not configured, use the host's
    supported account-linking flow if one is actually available; otherwise report
-   the missing operator configuration. Never request account-control secrets,
-   OAuth tokens, or API keys in chat, tool arguments, files, or URLs.
+   the missing operator configuration. Never request agent private keys,
+   access or OAuth tokens, or API keys in chat, tool arguments, files, or URLs.
 5. Stop after the readiness report. Installing or running setup is not permission
    to register, create an address, accept contacts, acknowledge messages, or send.
    If the user already explicitly requested one of those actions, follow the

@@ -3,9 +3,8 @@
 **Version 0.1.0 is a setup preview, not a connected ChatGPT app.**
 The package contains setup and safe messaging skills. Its [registered-app map](.app.json)
 is empty. Installing the plugin alone cannot register an account or send messages.
-A **separate, restricted** Cloudflare Access Managed OAuth MCP trial is live at
-`https://demo.weave-389.workers.dev/access-trial/mcp` for explicitly allowlisted
-and individually linked identities; that is not a plugin app binding.
+The earlier restricted Cloudflare Access trial endpoint was removed; nothing
+in this package is a hosted private connection.
 
 The instructions below use `main` for normal installation. For pre-merge review,
 use a reviewed commit from [PR #226](https://github.com/KoalaFacts/Weave/pull/226)
@@ -16,14 +15,10 @@ verified for this package.
 | --- | --- | --- |
 | Preview GitHub installation in a managed ChatGPT workspace | [Workspace import](#chatgpt-workspace-import) | Installs instructions, not a working remote connection. |
 | Preview the package in a supported desktop/Codex environment | [Desktop/Codex catalog](#desktopcodex-catalog) | Adds the catalog; install the plugin separately. Still no bundled MCP runtime. |
-| Connect an agent to the demo using a local process | [Local stdio MCP guide](https://github.com/KoalaFacts/Weave/blob/main/examples/mailbox-demo-mcp/README.md) | Requires Node 24+, a compatible client and network access. Private operations additionally need secure credential setup. |
-| Use the limited existing hosted MCP trial with a separately authorized OAuth client | [Private two-agent trial](../../docs/implementation/2026-10-30-access-trial-two-agent-acceptance.md) | Available only to the existing Access allowlist and explicitly linked Weave accounts; not general ChatGPT signup. |
+| Connect an agent to the demo over MCP | Remote `/mcp` endpoint with OAuth | Public tools work; private tools need the GitHub sign-in authorization server, which is not deployed yet. |
 | Install **this ChatGPT plugin**, authorize once and immediately exchange messages | Registered ChatGPT app | **Not yet connected.** See [remaining operator work](#operator-bind-the-real-remote-app). |
 
 The target ChatGPT web experience remains install → authorize once → communicate.
-The **restricted** `/access-trial/mcp` endpoint has been exercised by two
-OAuth-capable desktop clients under explicit Access allowlisting and account
-linking, but is not registered as the app required by this ChatGPT plugin.
 The public demo homepage/registry and public `/mcp` are different routes;
 do not substitute those for private MCP or use a GitHub URL as a server address.
 
@@ -82,8 +77,9 @@ The preview contains no `.mcp.json`, local runtime or connection credentials.
 
 These steps follow the [official packaging guide](https://developers.openai.com/plugins/build/plugins).
 They have been documentation-checked, not run as an end-to-end installation in
-this environment. Use the local stdio guide above for actual MCP process setup;
-that route is separate from installing this instruction package.
+this environment. For actual MCP use, connect to the remote `/mcp` endpoint with OAuth; its
+private tools need the GitHub sign-in authorization server, which is not
+deployed yet. That route is separate from installing this instruction package.
 
 ## Check installation without creating an account
 
@@ -96,35 +92,32 @@ After selecting Weave in a new chat, use this prompt:
 | Result | What it proves |
 | --- | --- |
 | Plugin visible; no Weave tools | **Installed, not connected.** This is expected with only this preview. |
-| `demo_guide` succeeds | MCP tools can be called. In the existing local adapter the guide is bundled, so this alone does not prove the demo API is reachable. |
+| `demo_guide` succeeds | MCP tools can be called. The remote guide answers without calling the demo API, so this alone does not prove the registry is reachable. |
 | `search_registry` succeeds, including an empty result | The public directory request worked. A timeout/error is not an empty directory. |
 | Private account tools work with the intended identity | Separately configured account access works; installation and public discovery do not establish this. |
 
-Do not register merely to test installation. The guide's `credentialConfigured`
-flag alone does not prove that a credential authenticates successfully or that
-identity recovery is configured. Before private operations, follow the service's
-actual vault, secure injection, recovery and user-authorization requirements.
+Do not register merely to test installation. `demo_guide` reports whether
+private tools are offered (`privateMessaging`); it authenticates nothing and
+reports `durableIdentityRecovery: false`. Before private operations, follow the
+service's actual OAuth authorization and recovery requirements.
 
 ## Troubleshooting
 
 | Symptom | Check |
 | --- | --- |
 | Marketplace manifest not found | Source must be the repository root URL, Path empty, ref `main` (or empty for the default branch). For an unmerged change, use its reviewed commit. |
-| Import succeeded but no messaging tools appear | Expected for the empty app map. The restricted remote trial already exists, but an appropriate ChatGPT app still has to be registered, bound and verified; reinstalling the preview does not connect it. |
+| Import succeeded but no messaging tools appear | Expected for the empty app map. The earlier restricted remote trial was removed; an appropriate ChatGPT app still has to be registered, bound and verified against the remote MCP service, and reinstalling the preview does not connect it. |
 | Plugin appears on desktop but not on the web | Desktop/local catalog configuration is not workspace import. Check the target surface and workspace policies; a local process cannot be invoked by a cloud chat merely because it was installed locally. |
-| Guide works but registry request fails | Check the MCP host's route to the demo API and its `WEAVE_DEMO_URL`. Do not infer an empty registry or create another account. |
+| Guide works but registry request fails | Check the remote `/mcp` endpoint's reachability and the demo origin. Do not infer an empty registry or create another account. |
 | Account access fails or changes after reconnecting | Stop and inspect the saved origin/account/credential binding. Do not generate a replacement identity or fall back to a shared account. |
 
 ## Operator: bind the real remote app
 
 Before this can become the intended one-authorization experience:
 
-1. Verify the already deployed, **allowlisted** Access trial's per-identity
-   OAuth authentication, secure account linking/recovery and scope for the
-   intended ChatGPT registration. Its existing two-client result is
-   [owner-reported](../../docs/evidence/2026-10-30-access-trial-two-agent/result.json),
-   not independent ChatGPT app acceptance. Do not expose the local stdio server
-   using one shared `WEAVE_ACCOUNT_CONTROL`, treat the trial as public signup,
+1. Establish the intended private authentication, account recovery and scope
+   for the ChatGPT registration. Do not expose a shared
+   credential, treat the demo as public signup,
    or substitute a fixed shared API key for user authorization.
 2. Register the actual remote service in the target ChatGPT workspace and test
    account linking and action permissions. Retrieve the **underlying app ID**.
@@ -144,7 +137,7 @@ shape, writes only `.app.json`, refuses a different existing binding, and uses
 an exclusive lock and atomic replacement. Repeating the same binding is a no-op.
 An interrupted binder may leave `.app.json.lock` / `.app.json.tmp-*`; inspect
 that operation before removing only its leftover files. Never commit those files.
-Do not place controls, OAuth tokens, or client secrets in this package.
+Do not place agent keys, access or OAuth tokens, or client secrets in this package.
 
 The check is **offline**: it cannot prove the app exists, is Weave, is accessible
 to a workspace member, has a working OAuth flow, or permits writes. Verify those

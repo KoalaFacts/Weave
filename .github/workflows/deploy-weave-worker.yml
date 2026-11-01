@@ -16,21 +16,11 @@ on:
         type: choice
         default: maintain
         options: [maintain, completed-only]
-      migrate_human_accounts:
-        description: One-time data-preserving human onboarding schema upgrade (protected production main, maintain mode only)
-        required: true
-        type: boolean
-        default: false
       enable_first_party_oauth:
         description: Separately approved one-time production OAuth bootstrap; requires existing AS, KV, DO, signing secret and completed-only mode
         required: true
         type: boolean
         default: false
-      access_trial_application:
-        description: One-time owner-approved Access trial activation (production, maintain mode); the exact UUID of the already provisioned Access application, otherwise empty
-        required: false
-        type: string
-        default: ''
 permissions:
   contents: read
 concurrency:
@@ -62,20 +52,12 @@ jobs:
           WEAVE_RELEASE_CONFIGURATION_SCOPE: ${{ inputs.configuration_scope }}
           WEAVE_RELEASE_DATABASE_MODE: ${{ inputs.database_mode }}
           WEAVE_RELEASE_FIRST_PARTY_OAUTH: ${{ inputs.enable_first_party_oauth }}
-          WEAVE_RELEASE_HUMAN_ACCOUNT_MIGRATION: ${{ inputs.migrate_human_accounts }}
-          WEAVE_RELEASE_ACCESS_TRIAL_APPLICATION: ${{ inputs.access_trial_application }}
       - run: npm ci --ignore-scripts
         working-directory: typescript/mailbox-worker
-      - uses: ./.github/actions/setup-dotnet
       - run: |
           npm run typecheck
           npm test
           npm audit --audit-level=high
-        working-directory: typescript/mailbox-worker
-      - run: |
-          dotnet restore csharp/tests/Weave.Worker.Compatibility/Weave.Worker.Compatibility.csproj --locked-mode
-          dotnet build csharp/tests/Weave.Worker.Compatibility/Weave.Worker.Compatibility.csproj --no-restore -c Release
-      - run: npm run test:compat
         working-directory: typescript/mailbox-worker
   deploy-repository:
     needs: verify
@@ -128,8 +110,6 @@ jobs:
           WEAVE_RELEASE_CONFIGURATION_SCOPE: ${{ inputs.configuration_scope }}
           WEAVE_RELEASE_DATABASE_MODE: ${{ inputs.database_mode }}
           WEAVE_RELEASE_FIRST_PARTY_OAUTH: ${{ inputs.enable_first_party_oauth }}
-          WEAVE_RELEASE_HUMAN_ACCOUNT_MIGRATION: ${{ inputs.migrate_human_accounts }}
-          WEAVE_RELEASE_ACCESS_TRIAL_APPLICATION: ${{ inputs.access_trial_application }}
       - name: Verify resources, migrate, confirm, and deploy existing demo
         run: node scripts/deploy.ts
         working-directory: typescript/mailbox-worker
@@ -138,19 +118,9 @@ jobs:
           CLOUDFLARE_ACCOUNT_ID: ${{ secrets.CLOUDFLARE_ACCOUNT_ID }}
           WEAVE_DEPLOY_DATABASE_MODE: ${{ github.event_name == 'push' && 'completed-only' || inputs.database_mode }}
           WEAVE_APPROVED_FIRST_PARTY_OAUTH_BINDING: ${{ inputs.enable_first_party_oauth == true && 'true' || 'false' }}
-          WEAVE_APPROVED_HUMAN_ONBOARDING_SCHEMA: ${{ inputs.migrate_human_accounts == true && 'true' || 'false' }}
-          WEAVE_APPROVED_ACCESS_TRIAL_APPLICATION: ${{ inputs.access_trial_application }}
       - name: Verify the published Agent Start guide and homepage
         run: node scripts/verify-agent-entry.ts
         working-directory: typescript/mailbox-worker
       - name: Verify published public MCP handshake, discovery and D1 read
         run: node scripts/verify-public-mcp.ts
         working-directory: typescript/mailbox-worker
-      - name: Retain time-limited D1 recovery checkpoint for the protected migration
-        if: ${{ always() && inputs.migrate_human_accounts == true }}
-        uses: actions/upload-artifact@043fb46d1a93c77aae656e7c1c64a875d1fc6a0a # v7
-        with:
-          name: weave-human-migration-recovery-${{ github.run_id }}
-          path: typescript/mailbox-worker/test-results/deployment/result.json
-          if-no-files-found: warn
-          retention-days: 7

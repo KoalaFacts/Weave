@@ -1,6 +1,6 @@
 import assert from 'node:assert/strict';
 import { test } from 'node:test';
-import { start, secret } from './harness.ts';
+import { start } from './harness.ts';
 import { createOwnedAgent, humanHasAgent, listHumanAgents, maxAgentsPerHuman, oauthAccountActive, signInHuman, type HumanSignIn } from '../src/humans.ts';
 import type { Env } from '../src/database.ts';
 
@@ -57,7 +57,7 @@ test('signInHuman_RegistrationDisabled_ExistingHumanSignsInButUnknownHumanIsNotC
         assert.deepEqual(await signInHuman(closed, github('123', 'alice-renamed')),
             { ok: true, humanId: known });
         // But external GitHub login alone must not bypass the same registration
-        // gate used for new agents and self-registered control accounts.
+        // gate used for new agents and self-registered agents.
         assert.deepEqual(await signInHuman(closed, github('456')),
             { ok: false, reason: 'unavailable' });
         assert.equal(await h.db.prepare('SELECT count(*) AS n FROM humans').first('n'), 1);
@@ -77,7 +77,7 @@ test('signInHuman_ProviderCreatedAtChanged_FreezesHuman', async () => {
     } finally { await h.close(); }
 });
 
-test('createOwnedAgent_NewHuman_AgentListedWithoutControl', async () => {
+test('createOwnedAgent_NewHuman_AgentListedWithoutKey', async () => {
     const h = await start();
     try {
         const env = environment(h), id = await humanId(env);
@@ -86,17 +86,11 @@ test('createOwnedAgent_NewHuman_AgentListedWithoutControl', async () => {
         const accountId = (created as { accountId: string }).accountId;
         assert.deepEqual(await listHumanAgents(env, id), [{ accountId, displayName: 'Claude Code' }]);
         assert.equal(await humanHasAgent(env, id, accountId), true);
-        const row = await h.db.prepare('SELECT human_id,control_hash,control_hash_scheme,control_hash_parameters FROM accounts WHERE account_id=?').bind(accountId).first();
-        assert.equal(row.human_id, id);
-        assert.match(row.control_hash, /^[0-9a-f]{64}$/);
-        assert.equal(row.control_hash_scheme, 'sha256-utf8-v1');
-        assert.equal(row.control_hash_parameters, '{}', 'an owned Agent must not have a valid control credential');
-        assert.equal((await h.db.prepare('SELECT count(*) n FROM accounts WHERE human_id IS NOT NULL AND control_hash_parameters<>?').bind('{}').first('n')), 0);
+        assert.equal(await h.db.prepare('SELECT human_id FROM accounts WHERE account_id=?').bind(accountId).first('human_id'), id);
+        assert.equal(await h.db.prepare('SELECT count(*) n FROM agent_keys WHERE account_id=?').bind(accountId).first('n'), 0);
         const self = await h.register();
-        const selfRow = await h.db.prepare('SELECT human_id,control_hash FROM accounts WHERE account_id=?').bind(self.accountId).first();
-        assert.equal(selfRow.human_id, null);
-        assert.ok(selfRow.control_hash);
-        assert.equal((await h.request('/v1/addresses', secret())).status, 401);
+        assert.equal(await h.db.prepare('SELECT human_id FROM accounts WHERE account_id=?').bind(self.accountId).first('human_id'), null);
+        assert.equal((await h.request('/v1/addresses', h.stranger())).status, 401);
     } finally { await h.close(); }
 });
 
@@ -271,7 +265,7 @@ test('humanDirectory_FrozenAfterCreatingAgent_RefusesManagement', async () => {
 
 // An already issued bearer is checked at the resource Worker on every call,
 // not just at the authorization server's one-time agent selection.
-test('oauthAccountActive_FrozenGithubHuman_RevokesOwnedAgentButNotLegacyControlAccount', async () => {
+test('oauthAccountActive_FrozenGithubHuman_RevokesOwnedAgentButNotSelfRegisteredAgent', async () => {
     const h = await start();
     try {
         const env = environment(h), id = await humanId(env);
@@ -283,56 +277,31 @@ test('oauthAccountActive_FrozenGithubHuman_RevokesOwnedAgentButNotLegacyControlA
         assert.equal(await oauthAccountActive(env, owned.accountId, id), false,
             'previously issued bearer must stop authorizing private MCP operations');
         assert.equal(await oauthAccountActive(env, independent.accountId), true,
-            'unrelated control-owned agent remains available');
+            'unrelated self-registered agent remains available');
         assert.equal(await oauthAccountActive(env, crypto.randomUUID()), false);
     } finally { await h.close(); }
 });
 
-test('oauthAccountActive_ExternalIdentityWithoutHumanBinding_RequiresLiveControlOwner', async () => {
-    // RFC 7662 subject links and pre-human Service Binding tokens carry no
-    // human-owner claim. They cannot authorize an agent that lost its control
-    // credential or was transferred into human ownership.
+test('oauthAccountActive_WithoutHumanBinding_RequiresSelfRegisteredAgentWithLiveKey', async () => {
+    // RFC 7662 introspection carries no human-owner claim, and a Service Binding
+    // token without one (null) proves nothing: neither may authorize a human-owned
+    // agent, and introspection ends once a self-registered agent has no live key.
     const h = await start();
     try {
         const env = environment(h), id = await humanId(env);
         const owned = await create(env, id) as { accountId: string };
-        const controlled = await h.register();
-        const orphanId = crypto.randomUUID();
-        await h.db.prepare('INSERT INTO accounts(account_id,human_id,control_hash,control_hash_scheme,control_hash_parameters) VALUES(?,NULL,?,?,?)')
-            .bind(orphanId, 'e'.repeat(64), 'sha256-utf8-v1', '{}').run();
-
-        assert.equal(await oauthAccountActive(env, controlled.accountId, undefined), true,
-            'a control-owned account with an explicit external-subject link remains eligible');
+        const independent = await h.register();
+        assert.equal(await oauthAccountActive(env, independent.accountId, undefined), true);
+        assert.equal(await oauthAccountActive(env, independent.accountId, null), false,
+            'a Service Binding token without its human is refused');
         assert.equal(await oauthAccountActive(env, owned.accountId, undefined), false,
-            'an external link with no human-owner claim must not authorize a human-owned agent');
+            'an introspected subject with no human-owner claim must not authorize a human-owned agent');
+        assert.equal(await oauthAccountActive(env, owned.accountId, null), false);
         assert.equal(await oauthAccountActive(env, owned.accountId, id), true,
             'a Service Binding token bound to the current unfrozen human remains eligible');
-        assert.equal(await oauthAccountActive(env, orphanId, undefined), false,
-            'an account with neither human owner nor control credential has no authority');
-        await h.db.prepare("UPDATE accounts SET control_hash_parameters='{}' WHERE account_id=?")
-            .bind(controlled.accountId).run();
-        assert.equal(await oauthAccountActive(env, controlled.accountId, undefined), false,
-            'removing the control credential must revoke a stale external subject grant');
-    } finally { await h.close(); }
-});
-
-
-test('oauthAccountActive_MalformedControlParameters_RevokesUnboundBearer', async () => {
-    // The schema accepts any JSON in control_hash_parameters, but HTTP account
-    // authentication rejects parameters that do not match the current scheme.
-    // A legacy Service Binding token or external OAuth subject link must not
-    // remain usable for a credential that can no longer authenticate.
-    const h = await start();
-    try {
-        const env = environment(h), controlled = await h.register();
-        assert.equal(await oauthAccountActive(env, controlled.accountId, undefined), true);
-        // "{}" passes accounts_control_parameters (json_valid) and the
-        // all-or-none constraint while failing validParameters().
-        await h.db.prepare("UPDATE accounts SET control_hash_parameters='{}' WHERE account_id=?")
-            .bind(controlled.accountId).run();
-        assert.equal(await oauthAccountActive(env, controlled.accountId, undefined), false,
-            'unbound bearer must not outlive the control credential’s supported parameters');
-        assert.equal(await oauthAccountActive(env, controlled.accountId, null), false,
-            'the legacy Service Binding path must enforce the same revocation');
+        await h.db.prepare('UPDATE agent_keys SET revoked_at=created_at WHERE account_id=?')
+            .bind(independent.accountId).run();
+        assert.equal(await oauthAccountActive(env, independent.accountId, undefined), false,
+            'revoking every agent key must end unbound introspected access');
     } finally { await h.close(); }
 });

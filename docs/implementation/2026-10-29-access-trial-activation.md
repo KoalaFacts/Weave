@@ -94,7 +94,7 @@ session and that session reached `get_my_profile`, but Claude Code's Managed
 OAuth bearer reached the origin and was denied with an indistinguishable
 `{"error":"access_denied"}`. Trial denials now add a fixed `reason`
 (`assertion-missing|malformed|header|issuer|audience|subject|lifetime|not-yet-valid|expired|keys-unavailable|key-not-found|signature`,
-`account-control`, `not-linked`, `account-missing`, `account-inactive`, `link-storage`) and log the
+`account-control`, `not-linked`, `account-missing`, `link-storage`) and log the
 same category. Only users already admitted by the Access allow policy can reach
 these routes. The reason never contains claim values, keys, controls or the
 assertion.

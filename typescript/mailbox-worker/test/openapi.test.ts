@@ -1,7 +1,8 @@
 import assert from 'node:assert/strict';
 import { readFile } from 'node:fs/promises';
 import { test } from 'node:test';
-import { start, payload, secret } from './harness.ts';
+import { start, payload} from './harness.ts';
+import { agentKey, dpopProof, keyEndorsement, keyProof } from './agent-key.ts';
 
 const source = await readFile('src/openapi.json','utf8');
 const spec = JSON.parse(source);
@@ -22,8 +23,6 @@ test('OpenAPI is an anonymous no-store JSON asset independent of account storage
         assert.equal(response.headers.get('cache-control'),'no-store');
         assert.equal(response.headers.get('x-content-type-options'),'nosniff');
         assert.equal(await response.text(),source);
-        assert.equal((await h.request('/openapi.json','fictional-static-header-'.repeat(4))).status,200);
-        assert.equal((await h.request('/openapi.json','short')).status,401);
         assert.equal((await h.mf.dispatchFetch('http://example.test/openapi.json')).status,400);
         assert.equal((await h.request('/openapi.json',null,'POST',{})).status,401);
     } finally { await h.close(); }
@@ -31,7 +30,7 @@ test('OpenAPI is an anonymous no-store JSON asset independent of account storage
 
 test('OpenAPI describes the current HTTP method/path set with resolved local references and security', () => {
     const routes = {
-        '/v1/accounts':['post'], '/v1/contacts':['get'], '/v1/contacts/accounts/{accountId}':['get','delete'], '/v1/addresses':['get','post'], '/v1/addresses/{addressId}':['get','put','delete'],
+        '/v1/accounts':['post'], '/v1/token':['post'], '/v1/keys':['get','post'], '/v1/keys/{kid}':['delete'], '/v1/contacts':['get'], '/v1/contacts/accounts/{accountId}':['get','delete'], '/v1/addresses':['get','post'], '/v1/addresses/{addressId}':['get','put','delete'],
         '/v1/directory':['get'], '/v1/directory/address':['get'], '/v1/contacts/cards':['get','put'],
         '/v1/contacts/owned-cards':['get'], '/v1/contacts/card':['get'], '/v1/contacts/requests':['get','post'],
         '/v1/contacts/requests/{requestId}':['get'], '/v1/contacts/requests/{requestId}/decision':['post'],
@@ -50,7 +49,9 @@ test('OpenAPI describes the current HTTP method/path set with resolved local ref
             assert.equal(ids.has(operation.operationId),false);
             ids.add(operation.operationId);
             const anonymous = method === 'get' && ['/v1/directory','/v1/directory/address','/v1/contacts/cards','/v1/contacts/card'].includes(path);
-            assert.deepEqual(operation.security ?? spec.security,anonymous ? [{},{AccountControl:[]},{MailboxControl:[]}] : [{AccountControl:[]},{MailboxControl:[]}]);
+            const token = {AgentToken:[],DPoPProof:[]};
+            const proofOnly = path === '/v1/accounts' || path === '/v1/token';
+            assert.deepEqual(operation.security ?? spec.security,proofOnly ? [{DPoPProof:[]}] : anonymous ? [{},token] : [token],path);
             const expectedPath = [...path.matchAll(/\{([^}]+)\}/g)].map(x => x[1]).sort();
             const actualPath = (operation.parameters ?? []).map(resolve).filter(x => x.in === 'path');
             assert.deepEqual(actualPath.map(x => x.name).sort(),expectedPath);
@@ -63,10 +64,29 @@ test('OpenAPI describes the current HTTP method/path set with resolved local ref
         for (const child of Object.values(value)) refs(child);
     }
     refs(spec);
-    assert.deepEqual(spec.components.securitySchemes.MailboxControl.type,'apiKey');
-    assert.equal(spec.components.securitySchemes.MailboxControl.name,'X-Weave-Mailbox-Control');
-    assert.equal(spec.components.securitySchemes.MailboxControl.in,'header');
-    assert.equal(spec.components.securitySchemes.AccountControl.name,'X-Weave-Account-Control');
+    assert.deepEqual(Object.keys(spec.components.securitySchemes).sort(),['AgentToken','DPoPProof']);
+    assert.equal(spec.components.securitySchemes.AgentToken.type,'http');
+    assert.equal(spec.components.securitySchemes.AgentToken.scheme,'DPoP');
+    assert.equal(spec.components.securitySchemes.DPoPProof.type,'apiKey');
+    assert.equal(spec.components.securitySchemes.DPoPProof.name,'DPoP');
+    assert.equal(spec.components.securitySchemes.DPoPProof.in,'header');
+    assert.doesNotMatch(source,/X-Weave-(?:Account|Mailbox)-Control|AccountControl|MailboxControl/);
+    assert.deepEqual(spec.components.responses['401'].headers['WWW-Authenticate'].schema,{type:'string',const:'DPoP algs="EdDSA"'});
+    assert.equal(spec.components.responses['401'].headers['WWW-Authenticate'].required,true);
+    const registration401 = resolve(spec.paths['/v1/accounts'].post.responses['401']);
+    assert.notEqual(registration401,spec.components.responses['401']);
+    assert.match(registration401.description,/revoked.*Stop/s);
+    assert.doesNotMatch(registration401.description,/POST \/v1\/token|retry/i);
+    assert.deepEqual(registration401.headers,spec.components.responses['401'].headers);
+    assert.deepEqual(registration401.content,spec.components.responses['401'].content);
+    const labelPattern = spec.components.schemas.accountSubmission.properties.label.anyOf[0].pattern;
+    assert.equal(labelPattern,spec.components.schemas.accountSubmission.properties.displayName.anyOf[0].pattern);
+    const tokenForm = spec.paths['/v1/token'].post.requestBody.content['application/x-www-form-urlencoded'].schema;
+    assert.deepEqual(tokenForm.required.toSorted(),['client_assertion','client_assertion_type','grant_type']);
+    assert.deepEqual(Object.keys(tokenForm.properties).sort(),['client_assertion','client_assertion_type','client_id','grant_type']);
+    assert.deepEqual(resolve(spec.paths['/v1/token'].post.responses['400'].content['application/json'].schema).properties.error.enum.toSorted(),
+        ['invalid_dpop_proof','invalid_request','unsupported_grant_type']);
+    assert.deepEqual(spec.components.schemas.keyConflict.properties.reason.enum.toSorted(),['cooling','key-in-use','last-live-key','owned-agent']);
     assert.match(source,/"maximum": 9223372036854775807\b/);
     assert.doesNotMatch(source,/9223372036854776000/);
     assert.equal(spec.paths['/v1/inbox/events'].get.responses['200'].content['text/event-stream'].schema.type,'string');
@@ -106,36 +126,58 @@ test('documented account/address/contact/message/ACK responses match real Worker
     const h = await start();
     try {
         const a = await h.register(), b = await h.register();
-        responseShape(spec.paths['/v1/accounts'].post,await h.ok('/v1/accounts',a.control,'POST',{}));
+        const registered = await h.ok('/v1/accounts',h.stranger(),'POST',{label:'documented'});
+        responseShape(spec.paths['/v1/accounts'].post,registered);
+        assert.equal(typeof registered.kid,'string');
+        const tokenUrl = 'http://localhost/v1/token';
+        const tokenResponse = await h.mf.dispatchFetch(tokenUrl,{method:'POST',headers:{'Content-Type':'application/x-www-form-urlencoded',DPoP:dpopProof(b.key,{method:'POST',url:tokenUrl})},
+            body:'grant_type=client_credentials&client_assertion_type=urn%3Aietf%3Aparams%3Aoauth%3Aclient-assertion-type%3Ajwt-bearer&client_assertion=invalid'});
+        assert.equal(tokenResponse.status,401);
+        assert.deepEqual(await tokenResponse.json(),{error:'invalid_client'});
+        responseShape(spec.paths['/v1/keys'].get,await h.ok('/v1/keys',b));
+        const audience = 'http://localhost/v1/keys', added = agentKey();
+        const summary = await h.ok('/v1/keys',b,'POST',{label:'backup',proof:keyProof(added,{accountId:b.accountId,audience}),
+            endorsement:keyEndorsement(b.key,{accountId:b.accountId,audience,newKid:added.kid})});
+        const keySchema = resolve(spec.paths['/v1/keys'].post.responses['200'].content['application/json'].schema);
+        assert.equal(keySchema.additionalProperties,false);
+        assert.deepEqual(Object.keys(summary).sort(),keySchema.required.toSorted());
+        const refused = await h.request('/v1/keys/'+b.key.kid,b,'DELETE');
+        assert.equal(refused.status,409);
+        const conflict = await refused.json();
+        assert.deepEqual(Object.keys(conflict).sort(),resolve(resolve(spec.paths['/v1/keys/{kid}'].delete.responses['409']).content['application/problem+json'].schema).required.toSorted());
+        responseShape(spec.paths['/v1/keys/{kid}'].delete,await h.ok('/v1/keys/'+added.kid,b,'DELETE'));
+        const unauthenticated = await h.request('/v1/addresses',h.stranger());
+        assert.equal(unauthenticated.status,401);
+        assert.equal(unauthenticated.headers.get('www-authenticate'),spec.components.responses['401'].headers['WWW-Authenticate'].schema.const);
         const address = await h.address(b);
         responseShape(spec.paths['/v1/addresses'].post,address);
-        responseShape(spec.paths['/v1/addresses'].get,await h.ok('/v1/addresses',b.control));
+        responseShape(spec.paths['/v1/addresses'].get,await h.ok('/v1/addresses',b));
         assert.deepEqual(await h.ok('/v1/directory'),{items:[],nextCursor:null});
         const introduction = payload('hello');
         const request = {requestId:introduction.messageId,cardId:address.addressId,methodId:'relay',payload:introduction};
-        const relation = await h.ok('/v1/contacts/requests',a.control,'POST',request);
+        const relation = await h.ok('/v1/contacts/requests',a,'POST',request);
         responseShape(spec.paths['/v1/contacts/requests'].post,relation);
         responseShape(spec.paths['/v1/contacts/requests/{requestId}'].get,relation.request);
-        const accepted = await h.ok('/v1/contacts/requests/'+request.requestId+'/decision',b.control,'POST',{
+        const accepted = await h.ok('/v1/contacts/requests/'+request.requestId+'/decision',b,'POST',{
             requesterMailboxId:a.agentId,expectedGeneration:relation.generation,status:'accepted',reply:null
         });
         assert.equal(accepted.isConnected,true);
         const envelope = {version:1,recipientMailboxId:b.agentId,contactGeneration:accepted.generation,payload:payload('ping')};
-        const receipt = await h.ok('/v1/messages',a.control,'POST',envelope);
+        const receipt = await h.ok('/v1/messages',a,'POST',envelope);
         responseShape(spec.paths['/v1/messages'].post,receipt);
-        responseShape(spec.paths['/v1/inbox'].get,await h.ok('/v1/inbox',b.control));
-        const ack = await h.ok('/v1/inbox/'+receipt.messageId+'/ack',b.control,'POST',{senderMailboxId:a.agentId});
+        responseShape(spec.paths['/v1/inbox'].get,await h.ok('/v1/inbox',b));
+        const ack = await h.ok('/v1/inbox/'+receipt.messageId+'/ack',b,'POST',{senderMailboxId:a.agentId});
         responseShape(spec.paths['/v1/inbox/{messageId}/ack'].post,ack);
         assert.equal(ack.state,'acknowledged');
-        assert.deepEqual(await h.ok('/v1/outbox/'+receipt.messageId,a.control),ack);
+        assert.deepEqual(await h.ok('/v1/outbox/'+receipt.messageId,a),ack);
         const pong = {version:1,recipientMailboxId:a.agentId,contactGeneration:accepted.generation,payload:payload('pong')};
-        await h.ok('/v1/messages',b.control,'POST',pong);
-        assert.deepEqual((await h.ok('/v1/inbox',a.control)).items,[{senderMailboxId:b.agentId,senderAccountId:b.agentId,envelope:{...pong,recipientAccountId:a.agentId}}]);
-        const pongAck = await h.ok('/v1/inbox/'+pong.payload.messageId+'/ack',a.control,'POST',{senderMailboxId:b.agentId});
+        await h.ok('/v1/messages',b,'POST',pong);
+        assert.deepEqual((await h.ok('/v1/inbox',a)).items,[{senderMailboxId:b.agentId,senderAccountId:b.agentId,envelope:{...pong,recipientAccountId:a.agentId}}]);
+        const pongAck = await h.ok('/v1/inbox/'+pong.payload.messageId+'/ack',a,'POST',{senderMailboxId:b.agentId});
         assert.equal(pongAck.state,'acknowledged');
-        assert.deepEqual(await h.ok('/v1/outbox/'+pong.payload.messageId,b.control),pongAck);
+        assert.deepEqual(await h.ok('/v1/outbox/'+pong.payload.messageId,b),pongAck);
         for (const invalid of [{...request,unknown:true},{...request,requestId:payload('different',Date.now()-60000).messageId}]) {
-            const response = await h.request('/v1/contacts/requests',a.control,'POST',invalid);
+            const response = await h.request('/v1/contacts/requests',a,'POST',invalid);
             assert.equal(response.status,400);
             assert.deepEqual(await response.json(),{status:400,title:'Invalid request',code:'invalid'});
         }
@@ -146,7 +188,7 @@ test('429 contract distinguishes public-rate Retry-After from registration capac
     const h = await start({bindings:{REGISTRATION_MAX_ACCOUNTS:'1'}});
     try {
         await h.register();
-        const capacity = await h.request('/v1/accounts',secret(),'POST',{});
+        const capacity = await h.request('/v1/accounts',h.stranger(),'POST',{});
         assert.equal(capacity.status,429);
         assert.equal(capacity.headers.get('retry-after'),null);
         assert.deepEqual(await capacity.json(),{status:429,title:'Capacity reached',code:'capacity'});

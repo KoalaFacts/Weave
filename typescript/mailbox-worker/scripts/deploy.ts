@@ -7,7 +7,6 @@ import { build } from 'esbuild';
 import { createMissingSchema, planLatestSchema, type StorageDatabase } from './latest-schema.ts';
 import { prepareCompletedDeployment } from './completed-deployment.ts';
 import { verifyCompletedMigration } from './completed-migration.ts';
-import { planHumanAccountUpgrade, applyHumanAccountUpgrade } from './human-account-upgrade.ts';
 
 interface WorkerConfig {
     name: string;
@@ -18,7 +17,6 @@ interface WorkerConfig {
 }
 interface Binding {name:string;type:string;id?:string;namespace_id?:string;class_name?:string;script_name?:string;text?:unknown;service?:string;environment?:string;entrypoint?:string;}
 interface WorkerSettings {bindings:Binding[];}
-interface AccessApplication {id?:unknown;name?:unknown;type?:unknown;domain?:unknown;aud?:unknown;oauth_configuration?:{enabled?:unknown};}
 interface CommandResult {status:number|null;stdout?:string;stderr?:string;}
 interface DatabaseConnection {db:StorageDatabase;close:()=>Promise<void>;}
 interface DeployOptions {
@@ -36,22 +34,11 @@ interface DeploymentReport {
     worker:string;databaseId:string;artifactSha256:Record<string,string>;startedAt:string;
     databaseMode:'maintain'|'completed-only';
     conversion?:unknown;schemaPlan?:Awaited<ReturnType<typeof planLatestSchema>>;
-    humanAccountUpgrade?:{status:'current'|'legacy';checksum:string|null};
-    d1RecoveryBookmark?:{databaseId:string;bookmark:string;capturedAt:string};
-    publicMaintenanceObservedAt?:string;
     recoveryVersion?:string;recoveryCommand?:string;finishedAt?:string;failure?:string;
 }
 
 const directory=resolve(dirname(fileURLToPath(import.meta.url)),'..');
 const expectedSubdomain='weave-389';
-// Ordinary demo releases are NOT permission to create an opt-in OAuth identity store.
-const demoSchemaPolicy={omitUnapprovedOAuthIdentityLinks:true} as const;
-// Only the one-time, owner-approved Access trial activation may create it.
-const approvedIdentityLinkPolicy={omitUnapprovedOAuthIdentityLinks:false} as const;
-const demoOrigin='https://demo.weave-389.workers.dev';
-const accessTrialName='Weave Managed OAuth Trial';
-const accessTrialDomain='demo.weave-389.workers.dev/access-trial/*';
-const accessTrialSettings=['ACCESS_TRIAL_ENABLED','ACCESS_TRIAL_ISSUER','ACCESS_TRIAL_RESOURCE','ACCESS_TRIAL_AUDIENCE'];
 export function deploymentConfig(base: WorkerConfig,env: NodeJS.ProcessEnv,root=directory){
     if(base.name!=='demo'||base.d1_databases?.length!==1||base.d1_databases[0].binding!=='db')throw Error('Expected existing Worker demo and binding db.');
     if(base.services!==undefined)throw Error('OAuth Service Bindings must be provisioned separately by an operator, not by this generic release.');
@@ -82,12 +69,6 @@ export async function buildArtifacts(root: string){
 export async function deploy({env=process.env,fetchImpl=fetch,run,root=directory,openDatabase=openRemoteDatabase,buildBundles=buildArtifacts,verifyMigration=verifyCompletedMigration,applySchema=createMissingSchema,planSchema=planLatestSchema}: DeployOptions={}){
     const databaseMode=env.WEAVE_DEPLOY_DATABASE_MODE??'maintain';
     if(databaseMode!=='maintain'&&databaseMode!=='completed-only')throw Error('Unknown database mode; use maintain or completed-only.');
-    const requestedHumanUpgrade=env.WEAVE_APPROVED_HUMAN_ONBOARDING_SCHEMA;
-    if(requestedHumanUpgrade!==undefined&&requestedHumanUpgrade!=='true'&&requestedHumanUpgrade!=='false')
-        throw Error('Invalid human onboarding migration authorization flag.');
-    const approvedHumanUpgrade=requestedHumanUpgrade==='true';
-    if(approvedHumanUpgrade&&databaseMode!=='maintain')
-        throw Error('Approved human onboarding schema upgrade requires explicit maintain mode.');
     const base=JSON.parse(await readFile(join(root,'wrangler.jsonc'),'utf8'));
     const config: ReturnType<typeof deploymentConfig> & {
         services?: {binding:string;service:string;entrypoint?:string}[]
@@ -100,15 +81,15 @@ export async function deploy({env=process.env,fetchImpl=fetch,run,root=directory
         let body:{success?:boolean;result?:T};try{body=await response.json() as typeof body;}catch{throw Error(label+' lookup returned invalid JSON; '+state+'.');}if(body?.success!==true||!body.result)throw Error(label+' lookup returned an invalid result; '+state+'.');return body.result;
     }
     // Public discovery must be observed from the public Internet, with no
-    // Cloudflare control token or mailbox control sent to those origins.
+    // Cloudflare API token or agent credential sent to those origins.
     // Bound response size and deadline, and never reflect a remote body/error.
-    async function publicJson(url:string,label:string,expectedStatus=200,expectedMime='application/json'):Promise<Record<string,unknown>>{
+    async function publicJson(url:string,label:string):Promise<Record<string,unknown>>{
         let response:Response;
-        try{response=await fetchImpl(url,{method:'GET',headers:{Accept:expectedMime,'Cache-Control':'no-store'},
+        try{response=await fetchImpl(url,{method:'GET',headers:{Accept:'application/json'},
             redirect:'manual',signal:AbortSignal.timeout(3500)});}
         catch{throw Error(label+' unavailable; no cloud mutation inferred.');}
-        if(response.status!==expectedStatus||
-            (response.headers.get('Content-Type')??'').split(';')[0].trim().toLowerCase()!==expectedMime){
+        if(response.status!==200||
+            (response.headers.get('Content-Type')??'').split(';')[0].trim().toLowerCase()!=='application/json'){
             // A malformed response may never settle its cancellation promise.
             void response.body?.cancel().catch(()=>{});
             throw Error(label+' unavailable or not JSON (HTTP '+response.status+').');
@@ -147,9 +128,6 @@ export async function deploy({env=process.env,fetchImpl=fetch,run,root=directory
     const worker=await inspect<WorkerSettings>('/workers/scripts/demo/settings','Existing Worker demo');
     if(!Array.isArray(worker.bindings))throw Error('Expected one valid existing D1 binding named db.');
     const bindings=Array.isArray(worker.bindings)?worker.bindings.filter(binding=>binding?.name==='db'):[];
-    const oauthFlags=Array.isArray(worker.bindings)?worker.bindings.filter(binding=>binding?.name==='OAUTH_IDENTITY_LINKS_ENABLED'):[];
-    if(oauthFlags.length>1||oauthFlags.some(binding=>binding.type!=='plain_text'||(binding.text!=='true'&&binding.text!=='false')))
-        throw Error('Invalid existing OAuth identity links setting; no mutation attempted.');
     // A previously approved private OAuth AS may already be bound by an
     // operator. Recreate only that exact existing service binding for all
     // three Wrangler stages; --keep-vars preserves variables, not services.
@@ -174,9 +152,8 @@ export async function deploy({env=process.env,fetchImpl=fetch,run,root=directory
         // OAuth fail closed. The resource Worker holds no shared AS secret.
         if(['OAUTH_ISSUER','OAUTH_RESOURCE','OAUTH_INTROSPECTION_URL','OAUTH_CLIENT_ID',
              'OAUTH_CLIENT_SECRET','OAUTH_INTROSPECTION_TRUSTED_ORIGIN']
-                .some(name=>worker.bindings.some(binding=>binding?.name===name))||
-            (oauthFlags.length!==0&&oauthFlags[0].text!=='false'))
-            throw Error('Resource OAuth bootstrap secrets or account policy are not preapproved; no mutation attempted.');
+                .some(name=>worker.bindings.some(binding=>binding?.name===name)))
+            throw Error('Resource OAuth bootstrap secrets are not preapproved; no mutation attempted.');
         const as=await inspect<WorkerSettings>('/workers/scripts/weave-auth-demo/settings','Approved existing OAuth authorization Worker');
         const kv=as.bindings?.filter(binding=>binding?.name==='OAUTH_KV')??[];
         const nonce=as.bindings?.filter(binding=>binding?.name==='CONSENT_NONCES')??[];
@@ -220,37 +197,6 @@ export async function deploy({env=process.env,fetchImpl=fetch,run,root=directory
         // Cloudflare's default WorkerEntrypoint is selected by omitting `entrypoint`.
         authBinding={name:'AUTH_SERVER',type:'service',service:'weave-auth-demo'};
     }
-    // One-time Access Managed OAuth trial activation. The owner names the exact
-    // already provisioned Access application; this release
-    // reads its audience and team domain, creates the approved identity-link
-    // table and enables only the path-scoped /access-trial routes.
-    const requestedTrial=env.WEAVE_APPROVED_ACCESS_TRIAL_APPLICATION??'';
-    let accessTrial:Record<string,string>|undefined;
-    if(requestedTrial!==''){
-        if(!/^[a-f0-9]{8}(?:-[a-f0-9]{4}){3}-[a-f0-9]{12}$/.test(requestedTrial))
-            throw Error('Invalid approved Access trial application; no mutation attempted.');
-        if(databaseMode!=='maintain'||firstPartyBootstrap||authBinding)
-            throw Error('Access trial activation requires a maintain-mode release without another OAuth binding; no mutation attempted.');
-        if(worker.bindings.some(binding=>accessTrialSettings.includes(binding?.name))||
-            (oauthFlags.length!==0&&oauthFlags[0].text!=='false'))
-            throw Error('Access trial or OAuth identity links are already configured; remove the one-time activation.');
-        const app=await inspect<AccessApplication>('/access/apps/'+requestedTrial,'Approved Access trial application');
-        const organization=await inspect<{auth_domain?:unknown}>('/access/organizations','Access organization');
-        if(app.id!==requestedTrial||app.name!==accessTrialName||app.type!=='self_hosted'||app.domain!==accessTrialDomain||
-            app.oauth_configuration?.enabled!==true||typeof app.aud!=='string'||!/^[A-Za-z0-9_-]{16,128}$/.test(app.aud))
-            throw Error('Approved Access trial application does not match the isolated trial; no mutation attempted.');
-        if(typeof organization.auth_domain!=='string'||!/^[a-z0-9-]+\.cloudflareaccess\.com$/.test(organization.auth_domain))
-            throw Error('Access organization team domain is invalid; no mutation attempted.');
-        accessTrial={
-            ACCESS_TRIAL_ENABLED:'true',
-            ACCESS_TRIAL_ISSUER:'https://'+organization.auth_domain,
-            ACCESS_TRIAL_RESOURCE:demoOrigin+'/access-trial/mcp',
-            ACCESS_TRIAL_AUDIENCE:app.aud,
-            OAUTH_IDENTITY_LINKS_ENABLED:'true'
-        };
-        Object.assign(config.vars,accessTrial);
-    }
-    const schemaPolicy=accessTrial?approvedIdentityLinkPolicy:demoSchemaPolicy;
     const oauthExisting=new Map<string,Binding>();
     if(authBinding){
         if(authBinding.type!=='service'||typeof authBinding.service!=='string'||
@@ -297,17 +243,6 @@ export async function deploy({env=process.env,fetchImpl=fetch,run,root=directory
     let connection: DatabaseConnection|undefined,phase='verified resources; no deployment attempted';
     const report: DeploymentReport={worker:'demo',databaseId:database.uuid,artifactSha256:hashes,startedAt:new Date().toISOString(),databaseMode};
     const save=async()=>writeFile(join(evidence,'result.json'),JSON.stringify({...report,phase},null,2)+'\n');
-    // Cloudflare D1 Time Travel GET needs only the existing token's D1 Read or
-    // Write permission. A current bookmark is not a backup export or permission
-    // to perform a destructive restore; it is a bounded recovery checkpoint.
-    async function requireD1RecoveryBookmark(label:string):Promise<string>{
-        const result=await inspect<{bookmark?:unknown}>(
-            '/d1/database/'+database.uuid+'/time_travel/bookmark',label,phase);
-        if(typeof result.bookmark!=='string'||
-            !/^[0-9a-f]{8}(?:-[0-9a-f]{8}){2}-[0-9a-f]{32}$/i.test(result.bookmark))
-            throw Error(label+' returned no valid D1 bookmark; no database write attempted.');
-        return result.bookmark;
-    }
     try{
         const configs: Record<string,string>={};
         for(const [name,entry,maintenance] of [['maintenance','index','true'],['active','index','false'],['recovery','recovery','false']]){
@@ -350,66 +285,26 @@ export async function deploy({env=process.env,fetchImpl=fetch,run,root=directory
         // initialization, resource provisioning or legacy SQL migration chain.
         const tables=(await connection.db.prepare("SELECT name FROM sqlite_master WHERE type='table'").all<{name:string}>()).results.map(row=>row.name);
         if(!tables.includes('mailbox_records')||!tables.includes('mailbox_revision')||!tables.includes('mailbox_guard'))throw Error('Expected existing mailbox storage; no mutation attempted.');
-        // A previously enabled link resolver must not be deployed against an
-        // absent identity store. Never silently create that store as part of
-        // the generic demo release or bypass its separate schema approval.
-        if(oauthFlags[0]?.text==='true'&&!tables.includes('oauth_identity_links'))
-            throw Error('OAuth identity links schema not provisioned; separate storage approval required before deployment.');
-        const planDemo=(db:StorageDatabase)=>planSchema(db,schemaPolicy);
-        const completed=databaseMode==='completed-only'?await prepareCompletedDeployment(connection.db,planDemo):undefined;
+        const completed=databaseMode==='completed-only'?await prepareCompletedDeployment(connection.db,planSchema):undefined;
         // Read-only and before maintenance: an unconverted database never pauses the service.
         if(!completed){
             report.conversion=await verifyMigration(connection.db);
             // Reject incompatible existing D1 shape BEFORE uploading the maintenance
             // Worker. Plan again under maintenance before any schema application:
             // this read-only preflight does not replace the post-pause verification.
-            if(approvedHumanUpgrade){
-                const preflight=await planHumanAccountUpgrade(connection.db);
-                if(preflight.status==='legacy')
-                    // The exact old accounts shape was verified read-only.
-                    // Check every *other* table/index for unexpected drift.
-                    await planSchema(connection.db,{...schemaPolicy,skipApprovedLegacyAccounts:true});
-                else await planDemo(connection.db);
-            }else await planDemo(connection.db);
-            // Refuse to pause the live Worker if the existing token cannot
-            // prove a D1 Time Travel recovery point in the approved account.
-            if(approvedHumanUpgrade)
-                await requireD1RecoveryBookmark('D1 Time Travel recovery bookmark');
+            await planSchema(connection.db);
             await save();
         }
         phase='maintenance deployment requested';await save();
         await command(['deploy','--keep-vars','--no-bundle'],'maintenance');
         verifySettings(await inspect('/workers/scripts/demo/settings','Maintenance settings',phase),'true');
-        if(approvedHumanUpgrade){
-            // The settings API may report the new configuration before public
-            // traffic serves it. Do not sample the final D1 restore point or
-            // write schema until public /mcp itself refuses requests.
-            const observed=await publicJson(demoOrigin+'/mcp','Public maintenance sentinel',503,'application/problem+json');
-            if(observed.status!==503||observed.code!=='maintenance')
-                throw Error('Public maintenance not confirmed; refusing D1 schema writes.');
-            report.publicMaintenanceObservedAt=new Date().toISOString();
-            phase='public maintenance confirmed; D1 upgrade pending';await save();
-        }
         phase='maintenance verified; database validation in progress';await save();
-        if(approvedHumanUpgrade){
-            // Take the *final* bookmark after maintenance has stopped new
-            // writes, just before the atomic additive D1 schema migration.
-            report.d1RecoveryBookmark={databaseId:database.uuid,
-                bookmark:await requireD1RecoveryBookmark('D1 Time Travel maintenance recovery bookmark'),
-                capturedAt:new Date().toISOString()};
-            await save();
-        }
         if(completed){
             Object.assign(report,await completed.confirm());await save();
         }else{
-            if(approvedHumanUpgrade){
-                const upgrade=await applyHumanAccountUpgrade(connection.db);
-                report.humanAccountUpgrade={status:upgrade.status,checksum:upgrade.checksum};
-                await save();
-            }
-            const plan=await planDemo(connection.db);report.schemaPlan=plan;await save();
-            await applySchema(connection.db,schemaPolicy);
-            if((await planDemo(connection.db)).statements.length)throw Error('Schema verification left unapplied statements; maintenance retained.');
+            const plan=await planSchema(connection.db);report.schemaPlan=plan;await save();
+            await applySchema(connection.db);
+            if((await planSchema(connection.db)).statements.length)throw Error('Schema verification left unapplied statements; maintenance retained.');
         }
         phase='database validated; maintenance retained; uploading recovery';await save();
         const output=await command(['versions','upload','--keep-vars','--no-bundle','--tag','schema-recovery'],'recovery');
@@ -452,18 +347,6 @@ export async function deploy({env=process.env,fetchImpl=fetch,run,root=directory
                 !Array.isArray(publicClient.response_types)||!publicClient.response_types.includes('code')||
                 publicClient.token_endpoint_auth_method!=='none')
                 throw Error('Public OAuth CIMD client metadata cannot complete the approved public loopback PKCE flow.');
-        }
-        if(accessTrial){
-            phase='active settings verified; Access trial protection unconfirmed';await save();
-            // Served by Cloudflare Access, not this Worker: proves the edge still
-            // protects the trial path and names the same team as the origin check.
-            const protectedResource=await publicJson(demoOrigin+'/.well-known/cloudflare-access-protected-resource/access-trial/mcp',
-                'Access trial protected-resource metadata');
-            if(protectedResource.resource!==accessTrial.ACCESS_TRIAL_RESOURCE||protectedResource.protected!==true||
-                !Array.isArray(protectedResource.authorization_servers)||
-                protectedResource.authorization_servers.length!==1||
-                protectedResource.authorization_servers[0]!==accessTrial.ACCESS_TRIAL_ISSUER)
-                throw Error('Access trial protected-resource metadata does not match the activated team and resource.');
         }
         phase='active deployment verified';report.finishedAt=new Date().toISOString();await save();
         console.log('Verified deployed demo registration, disabled business cleanup, D1 identity and maintenance exit.');

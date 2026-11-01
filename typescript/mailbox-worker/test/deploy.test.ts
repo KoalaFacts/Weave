@@ -138,114 +138,6 @@ async function completedFixture({legacy=false,checksum=completedChecksum,complet
     f.options.applySchema=async()=>{throw Error('Unexpected schema application');};
     return Object.assign(f,{h,sql,writes:()=>sql.filter(query=>!query.startsWith('SELECT ')&&!query.startsWith('PRAGMA '))});
 }
-for(const bad of ['','yes','1','TRUE'])test('invalid human migration opt-in rejects before any external request',async()=>{
-    const f=fixture({extraEnv:{WEAVE_APPROVED_HUMAN_ONBOARDING_SCHEMA:bad}});
-    await assert.rejects(deploy(f.options),/human onboarding migration authorization flag/);
-    assert.deepEqual(f.requests,[]);assert.deepEqual(f.commands,[]);
-});
-test('approved human migration cannot run in completed-only deployments',async()=>{
-    const f=fixture({extraEnv:{WEAVE_APPROVED_HUMAN_ONBOARDING_SCHEMA:'true',WEAVE_DEPLOY_DATABASE_MODE:'completed-only'}});
-    await assert.rejects(deploy(f.options),/requires explicit maintain mode/);
-    assert.deepEqual(f.requests,[]);assert.deepEqual(f.commands,[]);
-});
-// A settings API read is not proof that public traffic has switched to
-// maintenance. Before the approved D1 migration, require the actual public
-// /mcp edge to reject unauthenticated traffic with the maintenance sentinel.
-for (const [label, edgeStatus, edgeCode] of [
-    ['stale public Worker', 405, 'unavailable'],
-    ['unrelated HTTP 503', 503, 'storage']
-] as const) test('approved human migration refuses D1 writes while '+label+' is observed',async()=>{
-    const h=await start(),f=fixture({extraEnv:{WEAVE_APPROVED_HUMAN_ONBOARDING_SCHEMA:'true'}});
-    const bookmark='00000001-00000002-00004e2f-0a83ea2fceebc654de0640c422be4653';
-    const bookmarkPath='/d1/database/'+database.uuid+'/time_travel/bookmark';
-    const original=f.options.fetchImpl;
-    f.options.fetchImpl=async(url,options)=>{
-        if(url.endsWith(bookmarkPath)){
-            f.requests.push(url);
-            return Response.json({success:true,result:{bookmark}});
-        }
-        if(url==='https://demo.weave-389.workers.dev/mcp'){
-            f.requests.push(url);
-            assert.equal(f.commands.length,1,'public probe follows the maintenance upload');
-            assert.equal(options.headers.Authorization,undefined,'never send the Cloudflare token to the public Worker');
-            return new Response(JSON.stringify({status:edgeStatus,code:edgeCode}),{
-                status:edgeStatus,headers:{'Content-Type':'application/problem+json'}
-            });
-        }
-        return original(url,options);
-    };
-    f.options.openDatabase=async()=>({db:h.db,close:async()=>{f.closed=true;}});
-    const before=(await h.db.prepare('PRAGMA table_info("accounts")').all()).results;
-    try{
-        await assert.rejects(deploy(f.options),/public maintenance/i);
-        assert.deepEqual(f.events,['migration','maintenance'],
-            'leave the Worker in maintenance rather than converting or activating');
-        assert.equal(f.requests.filter(url=>url.endsWith(bookmarkPath)).length,1,
-            'no final recovery point or D1 migration before public maintenance is verified');
-        assert.deepEqual((await h.db.prepare('PRAGMA table_info("accounts")').all()).results,before);
-        assert.equal(f.closed,true);
-    }finally{await h.close();}
-});
-
-// A protected, data-preserving human upgrade still requires an actual D1
-// point-in-time recovery bookmark. Source tests alone cannot prove one exists.
-test('approved human upgrade refuses any Worker upload without a remote D1 recovery bookmark',async()=>{
-    const h=await start(),f=fixture({extraEnv:{WEAVE_APPROVED_HUMAN_ONBOARDING_SCHEMA:'true'}});
-    f.options.openDatabase=async()=>({db:h.db,close:async()=>{f.closed=true;}});
-    try{
-        await assert.rejects(deploy(f.options),/D1 Time Travel recovery bookmark/i);
-        assert.equal(f.commands.length,0,'no maintenance or database mutation before a verified recovery point');
-        assert.equal(f.closed,true);
-    }finally{await h.close();}
-});
-test('approved human upgrade captures an exact D1 recovery bookmark after public maintenance',async()=>{
-    const h=await start(),f=fixture({extraEnv:{WEAVE_APPROVED_HUMAN_ONBOARDING_SCHEMA:'true'}});
-    const bookmark='00000001-00000002-00004e2f-0a83ea2fceebc654de0640c422be4653';
-    const endpoint='/d1/database/'+database.uuid+'/time_travel/bookmark';
-    const original=f.options.fetchImpl;
-    f.options.fetchImpl=async(url,options)=>{
-        if(url==='https://demo.weave-389.workers.dev/mcp'){
-            f.requests.push(url);
-            assert.equal(f.commands.length,1,'public maintenance must follow the pause upload');
-            assert.equal(f.requests.filter(request=>request.endsWith(endpoint)).length,1,
-                'public maintenance must be verified before the final bookmark');
-            assert.equal(options.headers.Authorization,undefined,'no Cloudflare token to the public Worker');
-            assert.equal(options.redirect,'manual');
-            return new Response(JSON.stringify({status:503,code:'maintenance'}),{
-                status:503,headers:{'Content-Type':'application/problem+json','Cache-Control':'no-store'}
-            });
-        }
-        if(url.endsWith(endpoint)){
-            const reads=f.requests.filter(request=>request.endsWith(endpoint)).length;
-            assert.equal(f.commands.length,reads===0?0:1,
-                'the final bookmark must be sampled after verified maintenance');
-            f.requests.push(url);
-            assert.equal(options.headers.Authorization,'Bearer '+env.CLOUDFLARE_API_TOKEN);
-            return {ok:true,status:200,json:async()=>({success:true,result:{bookmark}})};
-        }
-        return original(url,options);
-    };
-    const run=f.options.run;
-    f.options.run=args=>{
-        assert.ok(f.requests.some(request=>request.endsWith(endpoint)),
-            'the recovery bookmark must be fetched before any Worker operation');
-        return run(args);
-    };
-    f.options.openDatabase=async()=>({db:h.db,close:async()=>{f.closed=true;}});
-    try{
-        const result=await deploy(f.options);
-        assert.equal(f.requests.filter(request=>request.endsWith(endpoint)).length,2,
-            'require a pre-pause capability check and a post-pause recovery point');
-        assert.equal(result.d1RecoveryBookmark?.bookmark,bookmark);
-        assert.ok(Number.isFinite(Date.parse(result.publicMaintenanceObservedAt??'')));
-        assert.equal(f.requests.filter(request=>request==='https://demo.weave-389.workers.dev/mcp').length,1);
-        assert.equal(result.d1RecoveryBookmark?.databaseId,database.uuid);
-        assert.ok(Number.isFinite(Date.parse(result.d1RecoveryBookmark?.capturedAt??'')));
-        const persisted=JSON.parse(readFileSync(new URL('../test-results/deployment/result.json',import.meta.url),'utf8'));
-        assert.equal(persisted.d1RecoveryBookmark?.bookmark,bookmark);
-        assert.deepEqual(f.events,['migration','maintenance','schema','recovery','active']);
-    }finally{await h.close();}
-});
 for(const mode of ['','unknown','COMPLETED-ONLY'])test('invalid explicit database mode stops before external operations: '+JSON.stringify(mode),async()=>{
     const f=fixture({extraEnv:{WEAVE_DEPLOY_DATABASE_MODE:mode}});
     await assert.rejects(deploy(f.options),/database mode/i);assert.equal(f.requests.length,0);assert.equal(f.commands.length,0);
@@ -353,42 +245,6 @@ for(const evidence of ['changed','missing','failed'])test('completed-only requir
     finally{await f.h.close();}
 });
 
-
-test('demo maintain deploy leaves optional unapproved OAuth table absent',async()=>{
-    const h=await start(),f=fixture();
-    try{
-        await h.db.prepare('DROP TABLE oauth_identity_links').run();
-        f.options.openDatabase=async()=>({db:h.db,close:async()=>{}});
-        f.options.verifyMigration=async()=>({alreadyCompleted:true});
-        f.options.planSchema=planLatestSchema;
-        f.options.applySchema=createMissingSchema;
-        const result=await deploy(f.options);
-        assert.equal(result.schemaPlan.statements.length,0);
-        assert.equal(f.commands.length,3);
-        assert.equal(await h.db.prepare("SELECT name FROM sqlite_master WHERE type='table' AND name='oauth_identity_links'").first('name'),null);
-    }finally{await h.close();}
-});
-test('completed-only deploy accepts an intentionally unprovisioned OAuth identity-link table',async()=>{
-    const f=await completedFixture();
-    try{
-        await f.h.db.prepare('DROP TABLE oauth_identity_links').run();
-        const result=await deploy(f.options);
-        assert.equal(result.databaseMode,'completed-only');
-        assert.equal(result.schemaPlan.statements.length,0);
-        assert.deepEqual(f.events,['maintenance','recovery','active']);
-        assert.equal(await f.h.db.prepare("SELECT name FROM sqlite_master WHERE type='table' AND name='oauth_identity_links'").first('name'),null);
-    }finally{await f.h.close();}
-});
-test('enabled remote OAuth identity links require provisioned D1 schema before any maintenance',async()=>{
-    const h=await start(),f=fixture({bindingResult:[dbBinding,{name:'OAUTH_IDENTITY_LINKS_ENABLED',type:'plain_text',text:'true'}]});
-    try{
-        await h.db.prepare('DROP TABLE oauth_identity_links').run();
-        f.options.openDatabase=async()=>({db:h.db,close:async()=>{}});
-        await assert.rejects(deploy(f.options),/OAuth identity links.*schema.*approval|OAuth identity links.*not provisioned/i);
-        assert.equal(f.commands.length,0);
-        assert.equal(await h.db.prepare("SELECT name FROM sqlite_master WHERE type='table' AND name='oauth_identity_links'").first('name'),null);
-    }finally{await h.close();}
-});
 
 const existingAuthService=[
     dbBinding,
@@ -562,7 +418,7 @@ test('explicit one-time first-party bootstrap attaches the approved existing AS 
 });
 test('OAuth binding bootstrap fails closed before maintenance when preapproved infrastructure or public issuer is absent',async()=>{
     // Each case names the refusal it must hit, so a case cannot pass by failing for an unrelated reason.
-    const resourcePolicy=/Resource OAuth bootstrap secrets or account policy are not preapproved/;
+    const resourcePolicy=/Resource OAuth bootstrap secrets are not preapproved/;
     const incompleteAs=/Approved OAuth authorization Worker has incomplete live bindings/;
     const issuerMetadata=/Approved OAuth issuer lacks the expected authorization-code, CIMD and PKCE metadata/;
     const cases=[
@@ -675,102 +531,11 @@ test('approved AS binding rollout verifies public resource discovery and CIMD be
     }
 });
 
-const trialApp='e9be571a-dae4-466c-8fe1-bf3c74cf878e';
-const trialAud='f'.repeat(64);
-const trialIssuer='https://synthetic-team.cloudflareaccess.com';
-const trialResource='https://demo.weave-389.workers.dev/access-trial/mcp';
-const trialVars={ACCESS_TRIAL_ENABLED:'true',ACCESS_TRIAL_ISSUER:trialIssuer,ACCESS_TRIAL_RESOURCE:trialResource,
-    ACCESS_TRIAL_AUDIENCE:trialAud,OAUTH_IDENTITY_LINKS_ENABLED:'true'};
-function accessTrialActivation({app={},organization={auth_domain:'synthetic-team.cloudflareaccess.com'},bindings=[dbBinding],
-    metadata={resource:trialResource,protected:true,authorization_servers:[trialIssuer]},mode,requested=trialApp}={}){
-    const f=fixture({bindingResult:bindings,extraEnv:{WEAVE_APPROVED_ACCESS_TRIAL_APPLICATION:requested,
-        ...(mode?{WEAVE_DEPLOY_DATABASE_MODE:mode}:{})}});
-    const original=f.options.fetchImpl;f.policies=[];
-    const plan=f.options.planSchema,apply=f.options.applySchema;
-    f.options.planSchema=async(db,policy)=>{f.policies.push(policy);return plan(db,policy);};
-    f.options.applySchema=async(db,policy)=>{f.policies.push(policy);return apply(db,policy);};
-    f.options.fetchImpl=async(url,options)=>{
-        if(url==='https://demo.weave-389.workers.dev/.well-known/cloudflare-access-protected-resource/access-trial/mcp'){
-            f.requests.push(url);
-            assert.equal(options.headers?.Authorization,undefined,'Never send the Cloudflare API token to public Access metadata');
-            return Response.json(metadata);
-        }
-        if(url.endsWith('/access/apps/'+requested)){
-            f.requests.push(url);
-            return {ok:true,status:200,json:async()=>({success:true,result:{id:trialApp,name:'Weave Managed OAuth Trial',
-                type:'self_hosted',domain:'demo.weave-389.workers.dev/access-trial/*',aud:trialAud,
-                oauth_configuration:{enabled:true},...app}})};
-        }
-        if(url.endsWith('/access/organizations')){
-            f.requests.push(url);
-            return {ok:true,status:200,json:async()=>({success:true,result:organization})};
-        }
-        const response=await original(url,options);
-        if(f.commands.length&&(url.endsWith('/workers/scripts/demo/settings')||url.includes('/workers/scripts/demo/versions/'))){
-            const payload=await response.json(),target=url.includes('/versions/')
-                ?payload.result.resources.bindings:payload.result.bindings;
-            for(const [name,text] of Object.entries(trialVars))target.push({name,type:'plain_text',text});
-            return {...response,json:async()=>payload};
-        }
-        return response;
-    };
-    return f;
-}
-test('ordinary releases keep the identity-link table unprovisioned',async()=>{
-    const f=fixture(),policies=[];const plan=f.options.planSchema,apply=f.options.applySchema;
-    f.options.planSchema=async(db,policy)=>{policies.push(policy);return plan(db,policy);};
-    f.options.applySchema=async(db,policy)=>{policies.push(policy);return apply(db,policy);};
+test('ordinary releases carry no Access trial or OAuth identity-link settings',async()=>{
+    const f=fixture({extraEnv:{WEAVE_APPROVED_ACCESS_TRIAL_APPLICATION:'e9be571a-dae4-466c-8fe1-bf3c74cf878e'}});
+    const requested:string[]=[];const original=f.options.fetchImpl;
+    f.options.fetchImpl=async(url,options)=>{requested.push(String(url));return original(url,options);};
     await deploy(f.options);
-    assert.ok(policies.length>0&&policies.every(policy=>policy.omitUnapprovedOAuthIdentityLinks===true));
-    assert.ok(f.configs.every(config=>config.vars.ACCESS_TRIAL_ENABLED===undefined&&config.vars.OAUTH_IDENTITY_LINKS_ENABLED===undefined));
-});
-test('approved Access trial activation creates the identity-link table and enables only the trial settings',async()=>{
-    const f=accessTrialActivation();
-    await deploy(f.options);
-    assert.deepEqual(f.events,['migration','maintenance','schema','recovery','active']);
-    assert.ok(f.policies.length>0&&f.policies.every(policy=>policy.omitUnapprovedOAuthIdentityLinks===false));
-    for(const config of f.configs){
-        for(const [name,value] of Object.entries(trialVars))assert.equal(config.vars[name],value);
-        assert.equal(config.services,undefined);
-    }
-    assert.ok(f.requests.includes('https://demo.weave-389.workers.dev/.well-known/cloudflare-access-protected-resource/access-trial/mcp'),
-        'Activation must prove the Access edge still protects the trial path');
-});
-test('Access trial activation fails closed before maintenance on any mismatch',async()=>{
-    const cases=[
-        accessTrialActivation({requested:'not-a-uuid'}),
-        accessTrialActivation({mode:'completed-only'}),
-        accessTrialActivation({app:{name:'Other application'}}),
-        accessTrialActivation({app:{domain:'demo.weave-389.workers.dev/*'}}),
-        accessTrialActivation({app:{type:'saas'}}),
-        accessTrialActivation({app:{oauth_configuration:{enabled:false}}}),
-        accessTrialActivation({app:{aud:'short'}}),
-        accessTrialActivation({app:{id:'00000000-0000-0000-0000-000000000001'}}),
-        accessTrialActivation({organization:{auth_domain:'evil.example.com'}}),
-        accessTrialActivation({organization:{}}),
-        accessTrialActivation({bindings:[dbBinding,{name:'ACCESS_TRIAL_ENABLED',type:'plain_text',text:'true'}]}),
-        accessTrialActivation({bindings:[dbBinding,{name:'OAUTH_IDENTITY_LINKS_ENABLED',type:'plain_text',text:'true'}]}),
-        accessTrialActivation({bindings:[dbBinding,{name:'AUTH_SERVER',type:'service',service:'weave-auth-demo'}]})
-    ];
-    for(const f of cases){
-        await assert.rejects(deploy(f.options));
-        assert.equal(f.commands.length,0,'No maintenance, D1 or active upload may start on a failed activation preflight');
-    }
-});
-test('Access trial activation reports an unprotected trial path after release',async()=>{
-    const f=accessTrialActivation({metadata:{resource:trialResource,protected:true,authorization_servers:['https://other.cloudflareaccess.com']}});
-    await assert.rejects(deploy(f.options),/protected-resource metadata does not match/);
-    assert.equal(f.commands.length,3);
-});
-test('approved identity-link policy creates the real table on D1 while the ordinary policy omits it',async()=>{
-    const h=await start();
-    try{
-        const tables=async()=>(await h.db.prepare("SELECT name FROM sqlite_master WHERE type='table' AND name='oauth_identity_links'").all()).results.length;
-        if(await tables())await h.db.prepare('DROP TABLE oauth_identity_links').run();
-        await createMissingSchema(h.db,{omitUnapprovedOAuthIdentityLinks:true});
-        assert.equal(await tables(),0);
-        await createMissingSchema(h.db,{omitUnapprovedOAuthIdentityLinks:false});
-        assert.equal(await tables(),1);
-        assert.equal((await planLatestSchema(h.db,{omitUnapprovedOAuthIdentityLinks:false})).statements.length,0);
-    }finally{await h.close();}
+    assert.ok(f.configs.every(config=>Object.keys(config.vars).every(name=>!/^ACCESS_TRIAL_|^OAUTH_IDENTITY_LINKS_/.test(name))));
+    assert.ok(requested.every(url=>!url.includes('/access/')),'The retired trial input must not trigger Access API calls');
 });

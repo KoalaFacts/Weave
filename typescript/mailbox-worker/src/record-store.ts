@@ -2,12 +2,10 @@ import { and, eq, getTableColumns, sql, type SQL } from 'drizzle-orm';
 import { drizzle } from 'drizzle-orm/d1';
 import { type AnySQLiteTable } from 'drizzle-orm/sqlite-core';
 import * as schema from './schema.ts';
-import { CONTROL_HASH_SCHEME } from './credentials.ts';
-import { exactInt64, isoUtc, utcTicks } from './time.ts';
+import { apiTime, exactInt64, utcTicks } from './time.ts';
 import { type Database, type Statement } from './database.ts';
 import { addressSnapshot, cardSnapshot, requestSnapshot, messageSnapshot } from './wire-snapshots.ts';
 
-const time=(value:string|null)=>value===null?null:isoUtc(value).replace(/(\.\d{3})0000Z$/,'$1Z');
 const ticks=(value:string|null|undefined)=>value==null?null:utcTicks(value);
 const pair=(id:string)=>JSON.parse(id) as [string,string];
 const selectColumns=(table:AnySQLiteTable)=>Object.fromEntries(Object.entries(getTableColumns(table)).map(([name,column])=>[
@@ -56,13 +54,7 @@ export class RecordStore {
         switch(kind){
         case 'account':{
             const r=await this.select(schema.accounts,eq(schema.accounts.account_id,id));
-            return r&&{accountId:r.account_id,humanId:r.human_id,
-                // The non-null storage marker of an owned agent is not a
-                // credential. Never surface it to callers as a control hash.
-                controlHash:r.human_id===null?r.control_hash:null,
-                controlHashScheme:r.human_id===null?r.control_hash_scheme:null,
-                controlHashParameters:r.human_id===null?JSON.parse(r.control_hash_parameters):null,
-                displayName:r.display_name,description:r.description};
+            return r&&{accountId:r.account_id,humanId:r.human_id,displayName:r.display_name,description:r.description};
         }
         case 'card':{
             const a=await this.select(schema.accountAddresses,eq(schema.accountAddresses.address_id,id));
@@ -76,7 +68,7 @@ export class RecordStore {
         }
         case 'channel':{
             const [low,high]=pair(id),r=await this.select(schema.legacyChannels,and(eq(schema.legacyChannels.low_account_id,low),eq(schema.legacyChannels.high_account_id,high))!);
-            return r&&{low:r.low_account_id,high:r.high_account_id,generation:exactInt64(r.generation),blockedLow:!!r.blocked_low,blockedHigh:!!r.blocked_high,currentRequest:r.current_request_id===null?null:{requesterMailboxId:r.current_requester_account_id,requestId:r.current_request_id},updatedAt:time(r.updated_at)};
+            return r&&{low:r.low_account_id,high:r.high_account_id,generation:exactInt64(r.generation),blockedLow:!!r.blocked_low,blockedHigh:!!r.blocked_high,currentRequest:r.current_request_id===null?null:{requesterMailboxId:r.current_requester_account_id,requestId:r.current_request_id},updatedAt:apiTime(r.updated_at)};
         }
         case 'message':{
             const r=await this.select(schema.mailboxRecords,and(eq(schema.mailboxRecords.sender_account_id,owner),eq(schema.mailboxRecords.message_id,id))!);
@@ -107,20 +99,7 @@ export class RecordStore {
     }
     put(kind:string,owner:string,id:string,v:any):void{
         switch(kind){
-        case 'account':{
-            const owned=v.humanId!==null&&v.humanId!==undefined;
-            // Cloudflare D1 does not permit disabling existing foreign-key
-            // enforcement during a table rebuild. Keep pre-human NOT NULL
-            // columns and give owned agents an inaccessible random marker.
-            // '{}' is deliberately not validParameters(CONTROL_HASH_PARAMETERS).
-            const marker=owned?Array.from(crypto.getRandomValues(new Uint8Array(32)),
-                byte=>byte.toString(16).padStart(2,'0')).join(''):v.controlHash;
-            this.upsert(schema.accounts,{account_id:id,human_id:owned?v.humanId:null,
-                control_hash:marker,control_hash_scheme:owned?CONTROL_HASH_SCHEME:v.controlHashScheme,
-                control_hash_parameters:owned?'{}':JSON.stringify(v.controlHashParameters),
-                display_name:v.displayName,description:v.description,created_at:this.now},
-                ['account_id'],['human_id','control_hash','control_hash_scheme','control_hash_parameters']);return;
-        }
+        case 'account':this.upsert(schema.accounts,{account_id:id,human_id:v.humanId??null,display_name:v.displayName,description:v.description,created_at:this.now},['account_id'],['human_id']);return;
         case 'card':{
             const a=v._address,table=a?schema.accountAddresses:schema.contactCards,column=a?schema.accountAddresses.address_id:schema.contactCards.card_id,where=eq(column,id);
             const common={seq:this.sequence(table,where),created_at:ticks(v.createdAt),expires_at:ticks(v.expiresAt),revoked_at:ticks(v.revokedAt),public_seq:v._publicSequence===null?null:exactInt64(v._publicSequence)};

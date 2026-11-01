@@ -21,13 +21,6 @@ export interface Env {
     OAUTH_CLIENT_SECRET?: string;
     // Optional, exclusive private RPC alternative to HTTPS RFC7662 introspection.
     AUTH_SERVER?: OAuthServiceBinding;
-    // External issuer/subject requires owner-approved D1 mapping, disabled by default.
-    OAUTH_IDENTITY_LINKS_ENABLED?: string;
-    // Separate, opt-in Cloudflare Access Managed OAuth experiment; never enables the public /mcp.
-    ACCESS_TRIAL_ENABLED?: string;
-    ACCESS_TRIAL_ISSUER?: string;
-    ACCESS_TRIAL_RESOURCE?: string;
-    ACCESS_TRIAL_AUDIENCE?: string;
     db: Database;
     MAINTENANCE_MODE?: string;
     RECOVERY_READ_ONLY?: string;

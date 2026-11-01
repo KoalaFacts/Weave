@@ -18,7 +18,7 @@ test('native Playwright pages preserve literal data, isolation, navigation and c
         } else if (request.url === '/touch') {
             response.setHeader('Content-Type', 'text/html');
             response.end(`<!doctype html><html><head><meta name="viewport" content="width=device-width, initial-scale=1"></head>
-                <body style="margin:0;height:2400px"><input id="control" value="synthetic masked control">
+                <body style="margin:0;height:2400px"><input id="agentKey" value="synthetic masked agent key">
                 <button id="touch-probe" style="position:fixed;bottom:10px;left:10px">Touch probe</button>
                 <script>document.getElementById('touch-probe').addEventListener('touchstart', event => {
                     globalThis.touchProbe = { trusted: event.isTrusted, points: navigator.maxTouchPoints };

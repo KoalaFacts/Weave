@@ -22,25 +22,55 @@ export const humans = sqliteTable("humans", {
 
 export const accounts = sqliteTable("accounts", {
     account_id: text("account_id").notNull().primaryKey(),
-    control_hash: text("control_hash").notNull(),
-    control_hash_scheme: text("control_hash_scheme").notNull(),
-    control_hash_parameters: text("control_hash_parameters").notNull(),
+    human_id: text("human_id").references(() => humans.human_id, {onDelete:"restrict"}),
     display_name: text("display_name"),
     description: text("description"),
     created_at: exactInteger("created_at"),
     updated_at: exactInteger("updated_at"),
-    // Appended to the live pre-human table with ALTER TABLE. Keep its original
-    // control columns and their NOT NULL constraints to preserve every FK.
-    human_id: text("human_id").references(() => humans.human_id, {onDelete:"restrict"}),
 }, t => [
-    uniqueIndex("accounts_control_hash").on(t.control_hash),
-    index("accounts_human").on(t.human_id, t.created_at),
-    // Owned agents use unguessable non-credential markers plus invalid control
-    // parameters; they can never satisfy the existing control authenticator.
-    check("accounts_owned_control_unclaimable",sql`human_id IS NULL OR control_hash_parameters='{}'`),
-    check("accounts_control_digest",sql`length(control_hash)=64 AND control_hash NOT GLOB '*[^0-9a-f]*'`),
-    check("accounts_control_scheme",sql`control_hash_scheme='sha256-utf8-v1'`),
-    check("accounts_control_parameters",sql`json_valid(control_hash_parameters)`)
+    index("accounts_human").on(t.human_id, t.created_at)
+]);
+
+export const agentKeys = sqliteTable("agent_keys", {
+    kid: text("kid").notNull().primaryKey(),
+    account_id: text("account_id").notNull().references(() => accounts.account_id, {onDelete:"restrict"}),
+    public_jwk: text("public_jwk").notNull(),
+    label: text("label"),
+    created_at: exactInteger("created_at").notNull(),
+    last_used_at: exactInteger("last_used_at"),
+    revoked_at: exactInteger("revoked_at"),
+    cooling_until: exactInteger("cooling_until"),
+    updated_at: exactInteger("updated_at").notNull(),
+}, t => [
+    index("agent_keys_account").on(t.account_id, t.revoked_at),
+    check("agent_keys_kid",sql`length(kid)=43 AND kid NOT GLOB '*[^A-Za-z0-9_-]*'`),
+    check("agent_keys_public_jwk",sql`json_valid(public_jwk)`),
+    check("agent_keys_revocation",sql`revoked_at IS NULL OR revoked_at>=created_at`),
+    check("agent_keys_cooling",sql`cooling_until IS NULL OR cooling_until>created_at`),
+    check("agent_keys_label",sql`label IS NULL OR length(label) BETWEEN 1 AND 64`)
+]);
+
+// Single-use client-assertion IDs, retained until the assertion's own exp.
+export const agentAssertions = sqliteTable("agent_assertions", {
+    account_id: text("account_id").notNull().references(() => accounts.account_id, {onDelete:"restrict"}),
+    jti: text("jti").notNull(),
+    expires_at: exactInteger("expires_at").notNull(),
+    created_at: exactInteger("created_at").notNull(),
+}, t => [
+    primaryKey({columns:[t.account_id,t.jti]}),
+    index("agent_assertions_expiry").on(t.expires_at)
+]);
+
+// Opaque DPoP-bound access tokens, stored only as their hex SHA-256.
+export const agentAccessTokens = sqliteTable("agent_access_tokens", {
+    token_hash: text("token_hash").notNull().primaryKey(),
+    account_id: text("account_id").notNull().references(() => accounts.account_id, {onDelete:"restrict"}),
+    kid: text("kid").notNull().references(() => agentKeys.kid, {onDelete:"restrict"}),
+    expires_at: exactInteger("expires_at").notNull(),
+    created_at: exactInteger("created_at").notNull(),
+}, t => [
+    index("agent_access_tokens_expiry").on(t.expires_at),
+    check("agent_access_tokens_hash",sql`length(token_hash)=64 AND token_hash NOT GLOB '*[^0-9a-f]*'`)
 ]);
 
 export const accountAddresses = sqliteTable("account_addresses", {
@@ -286,30 +316,12 @@ export const mailboxRecordsLegacy = sqliteTable("mailbox_records_legacy", {
     index("records_kind").on(t.kind,t.seq),
     index("records_recipient").on(t.kind,sql`json_extract(data,'$.recipientMailboxId')`,t.seq),
     index("records_public").on(t.kind,sql`json_extract(data,'$.visibility')`,t.id),
-    index("records_control").on(t.kind,sql`json_extract(data,'$.controlHash')`),
     index("records_expiry").on(t.kind,sql`json_extract(data,'$.expiresAt')`),
-    uniqueIndex("account_control_hash").on(sql`json_extract(data,'$.controlHash')`).where(sql`kind='account'`),
     index("message_recipient").on(t.kind,sql`json_extract(data,'$.receipt.recipientMailboxId')`,t.seq),
     index("address_owner").on(t.kind,sql`json_extract(data,'$.ownerMailboxId')`,t.id),
     check("mailbox_records_legacy_valid_json",sql`json_valid(data)`)
 ]);
 
-
-/** Optional, operator-approved identity binding. Do not apply to live D1 without
- * reviewed schema plan and Cloudflare storage-change approval. */
-export const oauthIdentityLinks = sqliteTable("oauth_identity_links", {
-    issuer: text("issuer").notNull(),
-    resource: text("resource").notNull(),
-    subject_digest: text("subject_digest").notNull(),
-    account_id: text("account_id").notNull().references(() => accounts.account_id, {onDelete:"cascade"}),
-    created_at: exactInteger("created_at").notNull(),
-    updated_at: exactInteger("updated_at").notNull(),
-    revoked_at: exactInteger("revoked_at"),
-}, t => [
-    primaryKey({columns:[t.issuer,t.resource,t.subject_digest]}),
-    index("oauth_identity_links_owner").on(t.account_id,t.issuer,t.resource),
-    check("oauth_identity_links_subject_digest",sql`length(subject_digest)=64 AND subject_digest NOT GLOB '*[^0-9a-f]*'`)
-]);
 
 // Independent data-script ledger; d1_migrations remains untouched and unmanaged.
 export const dataMigrations = sqliteTable('data_migrations', {

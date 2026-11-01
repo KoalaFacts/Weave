@@ -33,11 +33,6 @@ export interface OAuthConfiguration {
 export interface OAuthServiceConfiguration { mode:'service'; issuer:string; resource:string; authServer:OAuthServiceBinding; }
 export type OAuthOptions = OAuthConfiguration | OAuthServiceConfiguration;
 export type OAuthAccess = {accountId: string} | Response;
-/** The verified AS subject is not a Weave owner. External issuers require a
- * trusted server-side mapping established by the account owner.
- */
-export interface VerifiedOAuthSubject {issuer:string;resource:string;subject:string;}
-export type OAuthSubjectResolver=(subject:VerifiedOAuthSubject)=>Promise<string|null>;
 const identity = /^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/;
 const serviceTokenPattern = /^[A-Za-z0-9._~+/\-]+:[A-Za-z0-9._~+/\-]+:[A-Za-z0-9._~+/\-]+$/;
 const tokenPattern = /^[A-Za-z0-9\-._~+/]+={0,2}$/;
@@ -103,8 +98,7 @@ function failClosed():Response {
 export async function authorizeOAuth(
     config: OAuthOptions, request: Request, requiredScope: string,
     accountExists: (accountId: string, serviceHumanId?: string | null) => Promise<boolean>,
-    fetcher: typeof fetch = fetch, now: number | (() => number) = Date.now,
-    resolveAccount?: OAuthSubjectResolver
+    fetcher: typeof fetch = fetch, now: number | (() => number) = Date.now
 ): Promise<OAuthAccess> {
     const raw = request.headers.get('authorization');
     if (!raw || !/^Bearer\s+/i.test(raw)) return challenge(config,401,requiredScope,'invalid_token');
@@ -131,8 +125,8 @@ export async function authorizeOAuth(
             return challenge(config,401,requiredScope,'invalid_token');
         if (!claim.scope.includes(requiredScope))return challenge(config,403,requiredScope,'insufficient_scope');
         // A Service Binding bearer is bound to the human who authorized the agent.
-        // null means an older control-owned token; undefined remains reserved for
-        // external RFC 7662 introspection, which uses its own owner-approved link.
+        // A token without that human (null) is refused; undefined is reserved for
+        // external RFC 7662 introspection, which carries no human binding.
         try {if(!await accountExists(claim.userId,claim.props.humanId??null))
             return challenge(config,401,requiredScope,'invalid_token');}
         catch {return failClosed();}
@@ -189,21 +183,10 @@ export async function authorizeOAuth(
         return challenge(config,401,requiredScope,'invalid_token');
     }
     if (typeof info.scope!=='string'||!info.scope.split(' ').includes(requiredScope)) return challenge(config,403,requiredScope,'insufficient_scope');
-    // OAuth `sub` is issuer-local, not automatically an account UUID.
-    // External issuers need an owner-approved, exact issuer+subject map. Never
-    // silently fall back to a UUID or email if a resolver was configured.
-    let accountId:string;
-    if(resolveAccount){
-        let linked:string|null;
-        try {linked=await resolveAccount({issuer:config.issuer,resource:config.resource,subject:info.sub});}
-        catch {return failClosed();}
-        if(typeof linked!=='string'||!identity.test(linked))return challenge(config,401,requiredScope,'invalid_token');
-        accountId=linked;
-    }else{
-        // Compatibility with the existing explicitly trusted Weave-native AS.
-        if(!identity.test(info.sub))return challenge(config,401,requiredScope,'invalid_token');
-        accountId=info.sub;
-    }
+    // The configured authorization server is explicitly trusted to issue the
+    // Weave account UUID as `sub`; anything else is rejected.
+    if(!identity.test(info.sub))return challenge(config,401,requiredScope,'invalid_token');
+    const accountId=info.sub;
     if((info.exp as number)<=Math.floor(clock()/1000))return challenge(config,401,requiredScope,'invalid_token');
     try {if(!await accountExists(accountId))return challenge(config,401,requiredScope,'invalid_token');}catch{return failClosed();}
     // The account lookup can also outlive the bearer; revalidate before dispatch.

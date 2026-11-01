@@ -1,4 +1,4 @@
-/** Stateless, public-only Streamable HTTP. No control secret or shared account. */
+/** Stateless, public-only Streamable HTTP. No agent key or shared account. */
 // March 2025 requires receiving JSON-RPC batches; this single-message transport does not implement them.
 const versions = ['2025-11-25', '2025-06-18'];
 const requestLimit = 16 * 1024;
@@ -10,9 +10,6 @@ type DirectoryRead = (url: URL) => Promise<Response>;
 export interface PrivateAccess {
     tools: readonly unknown[];
     scope: (name: string) => string | null;
-    // Only a route that has already cryptographically verified an Access JWT may
-    // opt in. Normal OAuth/private and all anonymous/public routes still require a bearer.
-    signedAccessAssertionVerified?: true;
     authorize: (scope: string) => Promise<string | Response>;
     invoke: (ownerAccountId: string, name: string, args: Record<string,unknown>) => Promise<Response>;
 }
@@ -143,11 +140,7 @@ export async function remoteMcp(request: Request, read: DirectoryRead, privateAc
     let largeWriteOwner: string | null = null;
     try {
         const text = await boundedText(request.body, requestLimit, privateAccess ? async () => {
-            // A verified Access assertion can authorize a bounded large send
-            // even when Cloudflare consumes the opaque OAuth bearer at the edge.
-            // All other adapters preserve the original bearer requirement.
-            if ((privateAccess.signedAccessAssertionVerified!==true &&
-                    !/^Bearer [^\s]+$/i.test(request.headers.get('authorization') ?? ''))
+            if (!/^Bearer [^\s]+$/i.test(request.headers.get('authorization') ?? '')
                 || privateAccess.scope('send_message') !== 'weave:messages.send') return false;
             try {
                 const owner = await privateAccess.authorize('weave:messages.send');
@@ -166,13 +159,10 @@ export async function remoteMcp(request: Request, read: DirectoryRead, privateAc
         || (Object.hasOwn(message, 'id') && typeof message.id !== 'string' && !Number.isSafeInteger(message.id))) {
         return error(null, -32600, 'Invalid JSON-RPC request.', 400);
     }
-    // The elevated frame cap applies only to message sending or the local
-    // payload helper with the same verified message scope. Do not enlarge
-    // anonymous, public, or unrelated private RPC frames.
+    // The elevated frame cap applies to send_message alone. A claimed write
+    // scope never grants large anonymous, public or other private RPC frames.
     if (largeWriteOwner !== null && (message.method !== 'tools/call'
-        || !object(message.params) || (message.params.name !== 'send_message'
-            && !(message.params.name === 'prepare_payload'
-                && privateAccess?.scope('prepare_payload') === 'weave:messages.send'))))
+        || !object(message.params) || message.params.name !== 'send_message'))
         return error(null, -32600, 'Request is too large.', 413);
     // Notifications never execute a tool, including a tools/call sent without an id.
     if (!Object.hasOwn(message, 'id')) return reply(undefined, 202);
@@ -254,7 +244,7 @@ export async function remoteMcp(request: Request, read: DirectoryRead, privateAc
         agentGuide: url.origin + '/agent-start.md', directory: url.origin + '/registry',
         nextRequirement: privateAccess
             ? 'Authorize an existing Weave account through the configured OAuth provider before using private tools. Anonymous messaging and automatic account registration are unavailable.'
-            : 'Per-user authorization is not implemented on this remote endpoint. The existing local stdio adapter is separate.'
+            : 'Per-user authorization is not implemented on this remote endpoint.'
     });
     const target = new URL(params.name === 'search_registry' ? '/v1/directory' : '/v1/directory/address', url.origin);
     for (const [key, value] of Object.entries(args)) target.searchParams.set(key, String(value));

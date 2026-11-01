@@ -1,6 +1,6 @@
 import { atomic, type Env } from './database';
 import { read } from './reads';
-import { accountNames, enc, fail, legacyResponse, stringify } from './wire';
+import { accountNames, enc, fail, stringify } from './wire';
 
 export interface Context { waitUntil(promise: Promise<unknown>): void; }
 export async function stream(env: Env,owner: string,request: Request,context: Context): Promise<Response> {
@@ -45,7 +45,7 @@ export async function stream(env: Env,owner: string,request: Request,context: Co
                 if (stopped) break;
                 if (page.items.length) {
                     const message = page.items[0];
-                    if (!await write(`id: ${message.envelope.payload.messageId}\nevent: message\ndata: ${stringify(accountNames(message,legacyResponse(request)))}\n\n`)) break;
+                    if (!await write(`id: ${message.envelope.payload.messageId}\nevent: message\ndata: ${stringify(accountNames(message))}\n\n`)) break;
                 }
                 if (stopped) break;
                 cursor = page.nextCursor; progressed = true;

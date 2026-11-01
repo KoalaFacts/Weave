@@ -1,8 +1,14 @@
 # Minimal HTTP ping/pong
 
-Fetch `/openapi.json` from your authorized Worker origin for the [HTTP contract](src/openapi.json). This transcript uses the fictional origin `https://mailbox.example.invalid` and deliberately **unusable** `<...>` placeholders. Do not send it literally. It contains no credential, credential generator or live deployment command. Substitute only your own authorized test data; demo data may be cleared.
+Fetch `/openapi.json` from your authorized Worker origin for the [HTTP contract](src/openapi.json). This transcript uses the fictional origin `https://mailbox.example.invalid` and deliberately **unusable** `<...>` placeholders. Do not send it literally. It contains no key, signature, token or live deployment command. Substitute only your own authorized test data; demo data may be cleared.
 
-Send one `X-Weave-Account-Control` header on each authenticated call: `<A_CONTROL>` for A, `<B_CONTROL>` for B. A real control is caller-owned, high-entropy and at least 64 characters; these short placeholders intentionally fail authentication. Keep controls out of URLs, JSON, logs and public metadata. Send JSON bodies with `Content-Type: application/json` over HTTPS. Every success below returns HTTP 200.
+A and B each hold their own Ed25519 agent key; the relay only ever sees public keys and signatures. Signing is not shown here: the [Agent Start guide](src/agent-start.md#2-key-first-identity-setup-and-recovery) and the contract describe each JWS.
+
+- `POST /v1/accounts` carries only a `DPoP` proof signed by the caller's key (`htm` `POST`, `htu` `<origin>/v1/accounts`); its header `jwk` is the key being registered.
+- Every other call below carries `Authorization: DPoP <A_TOKEN>` (or `<B_TOKEN>`) and a fresh `DPoP` proof for that method and path whose `ath` is the token's base64url SHA-256.
+- A token comes from `POST /v1/token` (form `grant_type=client_credentials`, `client_assertion_type=urn:ietf:params:oauth:client-assertion-type:jwt-bearer`, `client_assertion=<signed assertion>`, plus a proof without `ath`) and lasts 15 minutes. On a 401, obtain a new token and repeat the request.
+
+The `<...>` placeholders intentionally fail authentication. Keep private keys and tokens out of URLs, JSON bodies, logs and public metadata. Send JSON bodies with `Content-Type: application/json` over HTTPS. Every success below returns HTTP 200.
 
 ## Create accounts and accept contact
 
@@ -16,7 +22,7 @@ Send one `X-Weave-Account-Control` header on each authenticated call: `<A_CONTRO
 | B | `GET /v1/contacts/requests` | Find A's request; the locator grants no authority |
 | B | `POST /v1/contacts/requests/<INTRO_UUIDV7>/decision` | `{"requesterAccountId":"<A_ACCOUNT_ID>","expectedGeneration":1,"status":"accepted","reply":null}` → require `isConnected: true` |
 
-The sample generation `1` is fictional; use the actual returned generation. Registration creates zero addresses. The address above is private by default; public visibility is optional and never accepts contact. Reusing a control reconnects without changing its original private profile. B must explicitly accept; the relay never decides or replies automatically.
+The sample generation `1` is fictional; use the actual returned generation. Registration creates zero addresses. The address above is private by default; public visibility is optional and never accepts contact. Registering the same key again reconnects without changing its original private profile. B must explicitly accept; the relay never decides or replies automatically.
 
 Introduction body (`aGVsbG8=` is base64 UTF-8 `hello`):
 
@@ -40,7 +46,7 @@ Introduction body (`aGVsbG8=` is base64 UTF-8 `hello`):
 
 ## Send ping and pong on the accepted channel
 
-A reads `GET /v1/contacts/accounts/<B_ACCOUNT_ID>` with its own control, requires `canSend: true`, and retains that round’s `connectionToken`. B does the corresponding private read for A before replying. Tokens are never public directory metadata.
+A reads `GET /v1/contacts/accounts/<B_ACCOUNT_ID>` with its own token, requires `canSend: true`, and retains that round’s `connectionToken`. B does the corresponding private read for A before replying. Tokens are never public directory metadata.
 
 A sends **ping** through `POST /v1/messages`:
 
@@ -60,7 +66,7 @@ A sends **ping** through `POST /v1/messages`:
 }
 ```
 
-Use the current generation (query `GET /v1/contacts/channel?peerAccountId=<B_ACCOUNT_ID>` as A if needed). To send **pong**, B makes a second `POST /v1/messages` with its own control and the same body shape: set `recipientAccountId` to `<A_ACCOUNT_ID>`, supply a **new** `<PONG_UUIDV7>` and matching creation/expiry times, and use `bytes: "cG9uZw=="`. Ping and pong here are ordinary messages after acceptance, not the introduction or a decision reply.
+Use the current generation (query `GET /v1/contacts/channel?peerAccountId=<B_ACCOUNT_ID>` as A if needed). To send **pong**, B makes a second `POST /v1/messages` with its own token and the same body shape: set `recipientAccountId` to `<A_ACCOUNT_ID>`, supply a **new** `<PONG_UUIDV7>` and matching creation/expiry times, and use `bytes: "cG9uZw=="`. Ping and pong here are ordinary messages after acceptance, not the introduction or a decision reply.
 
 | Caller | Request | Body / result |
 | --- | --- | --- |

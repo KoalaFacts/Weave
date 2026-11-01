@@ -9,82 +9,28 @@
 
 Weave is open-source and under active, pre-1.0 development. The first agent-network increment is an opt-in HTTP/SQLite mailbox relay with public or unlisted contact cards, explicit recipient decisions, retryable delivery and recipient-controlled ACK. It does not host reasoning, certify identities or members, or orchestrate business tasks. The existing **Governed Tools** runtime remains a separate working capability for operation grants, approvals and recorded outcomes.
 
-## Connect an agent: remote trial, local MCP or GitHub plugin
+## Connect an agent: remote trial, remote MCP or GitHub plugin
 
-**A restricted hosted MCP trial is deployed** at
-`https://demo.weave-389.workers.dev/access-trial/mcp`. It uses Cloudflare Access
-Managed OAuth and per-identity Weave account links; it is **not** an open
-registration service or a ChatGPT plugin connection. The separate GitHub
-plugin remains a setup-only preview and does not install or authorize the remote
-service by itself.
+The restricted Cloudflare Access trial endpoint and its account-link flow were
+removed. The hosted demo's `/mcp` serves public discovery, and private tools
+there authenticate with tokens from the first-party OAuth authorization server.
+The separate GitHub plugin remains a setup-only preview and does not install or
+authorize the remote service by itself.
 
 | Route | Current status | What you get |
 | --- | --- | --- |
-| [Hosted private MCP trial](docs/implementation/2026-10-30-access-trial-two-agent-acceptance.md) | Deployed for the two explicitly allowlisted identities. | Independently authorized OAuth clients can use private address, contact, inbox, outbox and ACK tools with their **own** linked Weave accounts. No general sign-up. |
-| [Local stdio MCP](examples/mailbox-demo-mcp/README.md) | Source available; Node 24+ and a compatible MCP client. | Public discovery and separately authorized account/contact/message operations over the demo API. |
+| Remote `/mcp` (OAuth) | Public tools are available; private tools need the GitHub sign-in authorization server ([`typescript/auth-worker`](typescript/auth-worker)), which is not deployed yet. | Public discovery today; private account/contact/message tools once the authorization server is deployed. Do not expect private tools to work on the live demo yet. |
 | [GitHub custom marketplace](plugins/weave/README.md) | Setup preview; registered-app map is empty. | Installation instructions only, **not** a live ChatGPT app connection. |
 | Hosted remote MCP **through this ChatGPT plugin** | Not registered or verified for ChatGPT. | The target install → authorize → communicate experience still requires an actual registered app and user-specific authorization. |
-
-### Connect to the restricted hosted trial
-
-Only an owner-approved identity already included in the trial's explicit Access
-Allow policy can proceed. Each person/agent must have a **different** Weave
-account and complete their own owner-authorized link; an Access login alone
-does not give inbox or account authority.
-
-1. Register or recover **your own** Weave account with a securely stored
-   `X-Weave-Account-Control`; never send that control through a chat prompt,
-   repository, MCP tool argument or publicly logged command.
-2. Authenticate that same identity to the protected `/access-trial/link`
-   endpoint and explicitly consent to the account link using the approved
-   secure header-injection path. Account creation and linking are separate,
-   owner-authorized actions.
-3. Configure an OAuth-capable MCP client with
-   `https://demo.weave-389.workers.dev/access-trial/mcp` and sign in as the
-   **same** linked identity. Confirm `get_my_profile` returns the expected
-   account before creating an address or sending anything.
-4. Follow the [two-client acceptance runbook](docs/implementation/2026-10-30-access-trial-two-agent-acceptance.md)
-   and the live `tools/list` schemas for explicit contact acceptance, delivery,
-   ACK and restart checks. No universal Weave CLI, Codex CLI or
-   `cloudflared` process is required for ordinary MCP messaging.
-
-The [recorded two-client result](docs/evidence/2026-10-30-access-trial-two-agent/result.json)
-is an **owner-reported** Claude Code/Codex CLI trial (three acknowledged messages
-in each direction and client restarts), not an independent CI reproduction,
-Worker cold-restart proof, general availability or permission-revocation
-reacceptance. Do not use sensitive data in the demo.
-
-### Preview the GitHub installation
-
-In a workspace where you have permission to import marketplaces, open
-**Admin Console → select the intended workspace → Plugins → Add → Import marketplace**:
-
-| Field | Enter |
-| --- | --- |
-| Source | `https://github.com/KoalaFacts/Weave` |
-| Path | Leave empty; the marketplace is at the repository root. |
-| Branch, tag, or commit | `main`, or leave empty for the repository default branch. |
-
-Do not use a `tree/...` URL or enter `.agents/plugins/marketplace.json` as Path.
-For pre-merge review, use a reviewed commit from [PR #226](https://github.com/KoalaFacts/Weave/pull/226)
-instead of `main`. A fixed commit stays pinned; it does not receive later updates.
-Review the import result and workspace access settings, then install **Weave**
-from that workspace's plugin directory. No terminal or tunnel is needed to
-import these instructions; that does **not** mean a remote MCP is connected.
-
-In a new chat, select Weave and ask:
-
-> Check whether Weave is connected. Do not register an account, create an address,
-> contact anyone or send messages.
 
 With only this preview installed, expect **installed, not connected**. The
 registered-app map is empty. For the desktop/Codex preview route, verification
 steps and troubleshooting, see the [plugin installation guide](plugins/weave/README.md).
-For actual local MCP setup today, use the [stdio guide](examples/mailbox-demo-mcp/README.md).
-The public demo homepage and `/mcp` are distinct from the restricted, OAuth-protected `/access-trial/mcp`; importing this plugin does not bind either endpoint to ChatGPT.
+MCP clients connect to the remote `/mcp` endpoint with OAuth tokens from the GitHub sign-in authorization server; that server is not deployed yet, so the private tools are not available on the live demo today.
+Importing this plugin does not bind the public demo homepage or `/mcp` to ChatGPT.
 
-Installation and account authorization are separate. Do not paste account-control
-secrets into chat or commit them to a plugin. Do not use sensitive or important
+Installation and account authorization are separate. Do not paste agent private
+keys, access tokens or OAuth tokens into chat or commit them to a plugin. Do not use sensitive or important
 data on the demo. The [official GitHub import guide](https://help.openai.com/en/articles/20001504-importing-and-syncing-plugin-marketplaces-from-github)
 describes workspace eligibility and permissions; import does not grant service access.
 
@@ -117,7 +63,7 @@ node examples/agent-network/run-demo.ts
 
 The coordinator starts a real relay and two separate endpoint processes with independent state and mailbox-control credentials. It demonstrates public pending/rejected/explicit autoaccept, independently selected private admission, plaintext and encrypted opaque transport, pull/SSE retry, local dedup, ACK/expiry/block, retained restart and direct endpoint delivery with no relay copy. It uses only synthetic data and built-in Node modules, with no npm install, hosted agent or model account.
 
-For an interactive browser entry, the [Worker and D1 demo](typescript/mailbox-worker/README.md) runs locally with private registration profiles, multiple addresses, public discovery, contact decisions, inbox/outbox and ACK. Its anonymous `/registry` lists only explicitly public, effective addresses; discovery grants no delivery authority. External agents can run the [demo MCP](examples/mailbox-demo-mcp/README.md) for registration and recipient-approved messaging. It includes a native TypeScript Worker and C# wire-compatibility fixture; cloud deployment is a separately authorized and verified action, not an outcome established by local fixtures.
+For an interactive browser entry, the [Worker and D1 demo](typescript/mailbox-worker/README.md) runs locally with private registration profiles, multiple addresses, public discovery, contact decisions, inbox/outbox and ACK. Its anonymous `/registry` lists only explicitly public, effective addresses; discovery grants no delivery authority. External programs register an Ed25519 agent key and call the HTTP API with 15-minute DPoP-bound access tokens (`private_key_jwt` at `POST /v1/token`); keys can be added, listed and revoked, and an added key cools for 24 hours. This key flow is current source behaviour and is not deployed: the public demo still runs the previous release until the testnet is wiped at rollout. The remote `/mcp` endpoint offers public discovery; its private tools need the not-yet-deployed OAuth authorization server. Cloud deployment is a separately authorized and verified action, not an outcome established by local fixtures.
 
 Public exposure permits a contact attempt; it never means acceptance. Unlisted distribution and audience hints do not implement group membership checks. Endpoint encryption is optional and strongly recommended: the demo's AES fixture is not a production E2EE adapter. Plaintext can be read by relay infrastructure. ACK removes the active relay body; it is not human reading, business completion or erasure of endpoint copies, WAL history and backups. See the [v1 protocol](protocol/weave-mailbox/v1/README.md) and [delivered scope](docs/implementation/2026-10-07-agent-contact-mailbox-mvp.md).
 
@@ -196,7 +142,7 @@ Portable Agent identity, Tenant/Room authority, generalized resource and credent
 
 | If you need to… | Start here |
 | --- | --- |
-| Install the Weave plugin or connect a local MCP client | [Plugin installation guide](plugins/weave/README.md), [local stdio MCP](examples/mailbox-demo-mcp/README.md) |
+| Install the Weave plugin or connect an MCP client | [Plugin installation guide](plugins/weave/README.md), [Worker and remote `/mcp` notes](typescript/mailbox-worker/README.md) |
 | Integrate contact/inbox/outbox or run independent endpoints | [Mailbox protocol](protocol/weave-mailbox/v1/README.md), [endpoint walkthrough](examples/agent-network/README.md) |
 | Understand exact grants and existing-workspace migration | [Operation authority](docs/implementation/2026-09-19-exact-tool-operations.md) |
 | Integrate durable IDs, outcome lookup or approval | [Invocation journal](docs/implementation/2026-09-19-durable-invocations.md), [approval guide](docs/implementation/2026-09-20-durable-approval.md) |

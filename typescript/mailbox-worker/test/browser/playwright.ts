@@ -5,7 +5,7 @@ import { chromium } from 'playwright';
 
 const screenshotLimit = 33;
 
-// Only fixed synthetic controls are used. Retain metadata, never headers or bodies.
+// Only synthetic agent keys from isolated test databases are used. Retain metadata, never headers or bodies.
 export class BrowserFixture {
     pages = new Map();
     mobilePages = new WeakSet();
@@ -28,8 +28,9 @@ export class BrowserFixture {
         }
     }
 
-    async page(name, path = '/', { viewport = { width: 1440, height: 1000 }, isMobile = false } = {}) {
-        const context = await this.browser.newContext({ viewport, isMobile, hasTouch: isMobile, serviceWorkers: 'block', acceptDownloads: false });
+    // acceptDownloads is opt-in per page so only a key-backup round trip can read a downloaded file.
+    async page(name, path = '/', { viewport = { width: 1440, height: 1000 }, isMobile = false, acceptDownloads = false } = {}) {
+        const context = await this.browser.newContext({ viewport, isMobile, hasTouch: isMobile, serviceWorkers: 'block', acceptDownloads });
         context.setDefaultTimeout(15000);
         context.setDefaultNavigationTimeout(15000);
         const messages = [];
@@ -135,7 +136,7 @@ export class BrowserFixture {
 
     async captureScreenshot(page, name, fullPage) {
         assert.ok(++this.screenshots <= screenshotLimit, 'Screenshot count exceeded evidence budget.');
-        const png = await page.screenshot({ fullPage, timeout: 10000, mask: [page.locator('#control')] });
+        const png = await page.screenshot({ fullPage, timeout: 10000, mask: [page.locator('#agentKey')] });
         assert.ok(png.length <= 8 * 1024 * 1024, 'Screenshot exceeded evidence byte budget.');
         await writeFile(join(this.evidence, name + '.png'), png);
     }

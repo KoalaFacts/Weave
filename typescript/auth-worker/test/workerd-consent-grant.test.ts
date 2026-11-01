@@ -301,17 +301,11 @@ test("consent_NewAgent_IssuesTokenForThatAccount",{timeout:60_000},async()=>{
   const owned=await agentsOf(mf,humanId);
   assert.equal(owned.length,1,"exactly one agent is created for the signed-in human");
   const [accountId]=owned;
-  const row=await (await mailboxDb(mf)).prepare("SELECT human_id,display_name,control_hash,control_hash_scheme,control_hash_parameters FROM accounts WHERE account_id=?")
-    .bind(accountId).first<{human_id:string;display_name:string;control_hash:string;control_hash_scheme:string;control_hash_parameters:string}>();
-  assert.ok(row,"the consented human-owned agent must be persisted");
-  assert.equal(row.human_id,humanId);
-  assert.equal(row.display_name,"Claude Code");
-  // The data-preserving migration retains NOT NULL control columns for old
-  // parent-table foreign keys. New owned agents receive an unclaimable marker,
-  // not a usable credential and not a NULL that the live D1 schema forbids.
-  assert.match(row.control_hash,/^[0-9a-f]{64}$/);
-  assert.equal(row.control_hash_scheme,"sha256-utf8-v1");
-  assert.equal(row.control_hash_parameters,"{}","owned agents must not have valid control credentials");
+  const db=await mailboxDb(mf);
+  const row=await db.prepare("SELECT human_id,display_name FROM accounts WHERE account_id=?")
+    .bind(accountId).first<{human_id:string;display_name:string}>();
+  assert.deepEqual(row,{human_id:humanId,display_name:"Claude Code"});
+  assert.equal(await db.prepare("SELECT count(*) n FROM agent_keys WHERE account_id=?").bind(accountId).first<number>("n"),0,"an owned agent is created without a key");
   assert.equal(await grantsFor(mf,accountId),1,"grant must be attributed to the created account UUID");
   await registerAtResource(mf,accountId);
   const owner=await identify(mf,token);

@@ -2,7 +2,7 @@ import assert from 'node:assert/strict';
 import { test } from 'node:test';
 import { mkdir, writeFile } from 'node:fs/promises';
 import { join, resolve } from 'node:path';
-import { start, payload } from '../harness.ts';
+import { start, payload, keyFile } from '../harness.ts';
 import { seedRequest } from '../storage-fixtures.ts';
 import { BrowserFixture } from './playwright.ts';
 
@@ -26,7 +26,7 @@ test('contact history remains visible on desktop and native mobile after introdu
             const label = mobile ? 'mobile' : 'desktop', viewport = mobile ? {width:390,height:844} : {width:1440,height:1000};
             const page = await fixture.page(label,'/',{viewport,isMobile:mobile});
             await page.locator('#recovery summary').click();
-            await page.locator('#control').fill(b.control);
+            await page.locator('#agentKey').fill(keyFile(b));
             await page.locator('#register').click();
             await page.waitForFunction(() => document.getElementById('identity').textContent.startsWith('Account ID:'));
             await page.locator('#contactScenario summary').click();
@@ -47,7 +47,7 @@ test('contact history remains visible on desktop and native mobile after introdu
             await fixture.screenshot(page,'contact-history-'+label);
         }
         assert.deepEqual(fixture.errors,[]);
-        assert.equal(fixture.trace.some(r=>r.method !== 'GET' && r.path !== '/v1/accounts'),false);
+        assert.equal(fixture.trace.some(r=>r.method !== 'GET' && !['/v1/accounts','/v1/token'].includes(r.path)),false);
         assert.equal(await h.db.prepare("SELECT count(*) n FROM contact_requests").first('n'),3);
         await writeFile(join(evidence,'result.json'),JSON.stringify({status:'passed',statuses:['expired','accepted','rejected'],requestRows:3,decisions:0,acknowledgments:0},null,2));
     } catch (error) {

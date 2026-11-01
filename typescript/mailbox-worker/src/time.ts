@@ -25,3 +25,9 @@ export function isoUtc(value: bigint | string): string {
     const prefix=new Date(Number(seconds*1000n)).toISOString().slice(0,19);
     return prefix+'.'+fraction.toString().padStart(7,'0')+'Z';
 }
+export function epochSeconds(ticks: bigint = nowUtc()): number {
+    const seconds=ticks/10000000n;
+    return Number(ticks<0n&&ticks%10000000n!==0n?seconds-1n:seconds);
+}
+/** API wire time: milliseconds unless the stored tick carries sub-millisecond precision. */
+export const apiTime=(ticks: string | bigint | null): string | null => ticks===null ? null : isoUtc(ticks).replace(/(\.\d{3})0000Z$/,'$1Z');
