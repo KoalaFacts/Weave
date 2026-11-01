@@ -48,7 +48,7 @@ export function accountNames(value:any,legacy=false):any {
 }
 export function problem(error: unknown): Response {
     const p = error instanceof Problem ? error : new Problem(503, 'storage');
-    const titles: Record<string,string> = { invalid: 'Invalid request', unauthenticated: 'Account control required', unavailable: 'Resource unavailable', conflict: 'State conflict', expired: 'Expired', capacity: 'Capacity reached', tooLarge: 'Request too large', storage: 'Storage unavailable', maintenance:'Maintenance in progress' };
+    const titles: Record<string,string> = { invalid: 'Invalid request', unauthenticated: 'Account control required', unavailable: 'Resource unavailable', conflict: 'State conflict', expired: 'Expired', capacity: 'Capacity reached', tooLarge: 'Request too large', timeout: 'Request timed out', storage: 'Storage unavailable', maintenance:'Maintenance in progress' };
     const response = json({ status: p.status, title: titles[p.code], code: p.code, ...(p.detail ?? {}) }, p.status);
     if (p.retryAfter !== undefined) response.headers.set('Retry-After', String(p.retryAfter));
     return response;
@@ -70,8 +70,26 @@ export async function body(request: Request): Promise<any> {
     if (Number(request.headers.get('Content-Length')) > 131072) fail(413, 'tooLarge');
     const reader = request.body?.getReader(); if (!reader) fail();
     const chunks: Uint8Array[] = []; let size = 0;
-    try { while (true) { const next = await reader.read(); if (next.done) break; size += next.value.length; if (size > 131072) fail(413, 'tooLarge'); chunks.push(next.value); } }
-    finally { await reader.cancel(); }
+    // A byte limit cannot bound a client that sends headers but stalls the body.
+    // Use one deadline for the whole stream, not one timer per chunk.
+    let timer: ReturnType<typeof setTimeout> | undefined;
+    const deadline = new Promise<null>(resolve => { timer = setTimeout(() => resolve(null), 3500); });
+    try {
+        while (true) {
+            const next = await Promise.race([reader.read(), deadline]);
+            if (next === null) fail(408, 'timeout');
+            if (next.done) break;
+            size += next.value.length;
+            if (size > 131072) fail(413, 'tooLarge');
+            chunks.push(next.value);
+        }
+    } finally {
+        if (timer !== undefined) clearTimeout(timer);
+        // A noncooperative stream may never settle cancel(); do not hold the
+        // rejected HTTP request open while attempting best-effort cleanup.
+        void reader.cancel().catch(() => {});
+        reader.releaseLock();
+    }
     const all = new Uint8Array(size); let offset = 0; for (const chunk of chunks) { all.set(chunk, offset); offset += chunk.length; }
     let value; try { value = parse(new TextDecoder('utf-8', { fatal: true }).decode(all)); } catch (e) { if (e instanceof Problem) throw e; fail(); }
     const depth = (v: any, n: number) => { if (n > 16) fail(); if (v && typeof v === 'object') for (const child of Object.values(v)) depth(child, n + 1); };
