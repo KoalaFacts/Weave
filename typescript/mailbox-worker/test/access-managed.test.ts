@@ -98,6 +98,47 @@ test('pinned cert URL refuses untrusted fetch errors and does not expose bearer'
     assert.equal(await verify(token(),(async()=>new Response('secret',{status:503})) as typeof fetch),null);
     assert.equal(await verify(token(),(async()=>{throw Error('secret hidden')}) as typeof fetch),null);
 });
+
+// The Cloudflare Access certs endpoint is externally controlled. Returning HTTP
+// headers is not proof that its JSON response stream will ever terminate.
+async function withinBound<T>(operation:Promise<T>,ms:number):Promise<T|'timed-out'> {
+    let timer:ReturnType<typeof setTimeout>|undefined;
+    try {
+        return await Promise.race([operation,new Promise<'timed-out'>(resolve=>{
+            timer=setTimeout(()=>resolve('timed-out'),ms);
+        })]);
+    } finally { if(timer!==undefined)clearTimeout(timer); }
+}
+test('Access JWKS stream that stalls after headers fails closed within a bounded time',async()=>{
+    let cancelled=0;
+    const stalled=(async()=>new Response(new ReadableStream<Uint8Array>({
+        start(controller){controller.enqueue(new TextEncoder().encode('{"keys":['));},
+        cancel(){cancelled++;return new Promise<void>(()=>{});}
+    }),{headers:{'Content-Type':'application/json'}})) as typeof fetch;
+    assert.equal(await withinBound(verify(token(),stalled),4800),null,
+        'a stalled JWKS response body must not hold private Access authentication open');
+    assert.equal(cancelled,1,'timeout should attempt to cancel the stale upstream');
+});
+test('Access rejects wrong JWKS Content-Type without waiting for stream cancellation',async()=>{
+    let cancelled=0;
+    const invalid=(async()=>new Response(new ReadableStream<Uint8Array>({
+        cancel(){cancelled++;return new Promise<void>(()=>{});}
+    }),{headers:{'Content-Type':'text/plain'}})) as typeof fetch;
+    assert.equal(await withinBound(verify(token(),invalid),1200),null,
+        'bad JWKS content-type should reject immediately even if cancel never settles');
+    assert.equal(cancelled,1,'rejected bodies should still initiate best-effort cancellation');
+});
+test('Access oversized JWKS body fails closed even when cancellation never settles',async()=>{
+    let cancelled=0;
+    const oversized=(async()=>new Response(new ReadableStream<Uint8Array>({
+        start(controller){controller.enqueue(new Uint8Array(65537));},
+        cancel(){cancelled++;return new Promise<void>(()=>{});}
+    }),{headers:{'Content-Type':'application/json'}})) as typeof fetch;
+    assert.equal(await withinBound(verify(token(),oversized),1200),null,
+        'an oversized JWKS response must not wait for untrusted cancellation');
+    assert.equal(cancelled,1,'oversized bodies should initiate best-effort cancellation');
+});
+
 test('a token that expires while its signing keys are checked cannot authorize',async()=>{
     let clock=now;
     const short=token({exp:Math.floor(now/1000)+1});
@@ -208,5 +249,42 @@ test('real workerd/D1 trial enforces two credentials, owner binding, revocation 
             'revoked owner mapping denies the next private call even with a valid Access JWT');
         assert.equal((await h.mf.dispatchFetch(resource,client('external-subject-B'))).status,200,
             'another owner retains independent access');
+    }finally{await h.close();}
+});
+
+test('Access trial revokes a persisted identity link when its control credential is removed',async()=>{
+    // An Access JWT proves identity, not permanent authority over a Weave account.
+    // A previously approved link must not outlive the account's control credential.
+    const h=await start({outboundService:async()=>new Response(JSON.stringify({keys:[jwk]}),
+        {headers:{'Content-Type':'application/json'}}),bindings:{
+        ACCESS_TRIAL_ENABLED:'true',ACCESS_TRIAL_ISSUER:issuer,ACCESS_TRIAL_RESOURCE:resource,
+        ACCESS_TRIAL_AUDIENCE:audience,OAUTH_IDENTITY_LINKS_ENABLED:'true'
+    }});
+    try{
+        const account=await h.register();
+        const jwt=token({sub:'revoked-control-subject'}, {},Date.now());
+        const linked=await h.mf.dispatchFetch('https://localhost/access-trial/link',{
+            method:'POST',headers:{'Content-Type':'application/json',
+                'X-Weave-Account-Control':account.control,'Cf-Access-Jwt-Assertion':jwt},
+            body:'{"consent":true}'
+        });
+        assert.equal(linked.status,200,await linked.clone().text());
+        const privateCall=()=>h.mf.dispatchFetch(resource,{
+            method:'POST',headers:{'Content-Type':'application/json',
+                Accept:'application/json, text/event-stream','MCP-Protocol-Version':'2025-11-25',
+                'Cf-Access-Jwt-Assertion':jwt},
+            body:JSON.stringify({jsonrpc:'2.0',id:5,method:'tools/call',
+                params:{name:'get_my_profile',arguments:{}}})
+        });
+        const before=await privateCall();
+        assert.equal(before.status,200,await before.clone().text());
+        assert.equal((await before.json()).result.structuredContent.id,account.accountId);
+        // The approved additive D1 migration retains NOT NULL control columns.
+        // Invalid control parameters revoke bearer authentication without changing identity links.
+        await h.db.prepare("UPDATE accounts SET control_hash_parameters='{}' WHERE account_id=?")
+            .bind(account.accountId).run();
+        const after=await privateCall();
+        assert.equal(after.status,401,'revoked account control must disable even an otherwise valid Access link');
+        assert.deepEqual(await after.json(),{error:'access_denied',reason:'account-inactive'});
     }finally{await h.close();}
 });

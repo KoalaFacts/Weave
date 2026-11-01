@@ -31,3 +31,16 @@ test('Access trial activation is passed only to the protected production deploym
     assert.doesNotMatch(workflow.slice(0,workflow.indexOf('  deploy-production:')),/WEAVE_APPROVED_ACCESS_TRIAL_APPLICATION/,
         'Repository-scoped and publish-branch releases must never activate the Access trial.');
 });
+
+test('human D1 migration is an explicit protected production main-only intent and never an automatic publish',()=>{
+    const workflow=readFileSync(path,'utf8');
+    assert.match(workflow,/migrate_human_accounts:\s*\n\s*description:[^\n]+\n\s*required: true\n\s*type: boolean\n\s*default: false/);
+    assert.equal((workflow.match(/WEAVE_RELEASE_HUMAN_ACCOUNT_MIGRATION:/g)||[]).length,2);
+    assert.equal((workflow.match(/WEAVE_APPROVED_HUMAN_ONBOARDING_SCHEMA:/g)||[]).length,1);
+    const before=workflow.slice(0,workflow.indexOf('  deploy-production:'));
+    assert.doesNotMatch(before,/WEAVE_APPROVED_HUMAN_ONBOARDING_SCHEMA/,
+        'Neither repository-scoped nor push-based release can opt in a D1 migration');
+    const production=workflow.slice(workflow.indexOf('  deploy-production:'));
+    assert.match(production,/environment: production/);
+    assert.match(production,/WEAVE_APPROVED_HUMAN_ONBOARDING_SCHEMA: \$\{\{ inputs\.migrate_human_accounts == true && 'true' \|\| 'false' \}\}/);
+});

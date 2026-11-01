@@ -7,7 +7,9 @@ const env = {
     WEAVE_AUTH_KV_NAMESPACE_ID: 'b'.repeat(32),
     OAUTH_ISSUER: 'https://weave-auth-demo.weave-389.workers.dev',
     OAUTH_RESOURCE: 'https://demo.weave-389.workers.dev/mcp',
-    OAUTH_ACCOUNT_PROOF_KEY: 'a-private-signing-key-must-never-appear'
+    GITHUB_CLIENT_ID: 'Iv23liPublicClientId',
+    GITHUB_CLIENT_SECRET: 'a-private-github-secret-must-never-appear',
+    HUMAN_SESSION_KEY: 'a-private-session-key-must-never-appear'
 };
 
 test('creates an exact approved demo authorization manifest without secrets', () => {
@@ -18,8 +20,12 @@ test('creates an exact approved demo authorization manifest without secrets', ()
     assert.equal(config.account_id, env.CLOUDFLARE_ACCOUNT_ID);
     assert.deepEqual(config.vars, {
         OAUTH_ISSUER: env.OAUTH_ISSUER,
-        OAUTH_RESOURCE: env.OAUTH_RESOURCE
+        OAUTH_RESOURCE: env.OAUTH_RESOURCE,
+        GITHUB_CLIENT_ID: env.GITHUB_CLIENT_ID
     });
+    assert.deepEqual(config.services, [
+        {binding: 'MAILBOX', service: 'demo', entrypoint: 'HumanDirectory'}
+    ]);
     assert.deepEqual(config.kv_namespaces, [
         {binding: 'OAUTH_KV', id: env.WEAVE_AUTH_KV_NAMESPACE_ID}
     ]);
@@ -29,12 +35,12 @@ test('creates an exact approved demo authorization manifest without secrets', ()
     assert.deepEqual(config.migrations, [
         {tag: 'v1', new_sqlite_classes: ['ConsentNonce']}
     ]);
-    assert.equal(JSON.stringify(config).includes(env.OAUTH_ACCOUNT_PROOF_KEY), false);
-    assert.equal('services' in config, false);
+    assert.equal(JSON.stringify(config).includes(env.GITHUB_CLIENT_SECRET), false);
+    assert.equal(JSON.stringify(config).includes(env.HUMAN_SESSION_KEY), false);
     assert.equal('routes' in config, false);
 });
 
-test('refuses wrong account/resource/issuer or missing approved KV namespace', () => {
+test('refuses wrong account/resource/issuer, missing approved KV namespace or GitHub client ID', () => {
     const mutations: Record<string,string|undefined>[] = [
         {CLOUDFLARE_ACCOUNT_ID: undefined},
         {CLOUDFLARE_ACCOUNT_ID: 'a'.repeat(31)},
@@ -45,7 +51,9 @@ test('refuses wrong account/resource/issuer or missing approved KV namespace', (
         {OAUTH_ISSUER: 'https://wrong.weave-389.workers.dev'},
         {OAUTH_ISSUER: 'https://weave-auth-demo.weave-389.workers.dev/'},
         {OAUTH_ISSUER: 'https://weave-auth-demo.weave-389.workers.dev@evil.example'},
-        {OAUTH_ISSUER: 'http://weave-auth-demo.weave-389.workers.dev'}
+        {OAUTH_ISSUER: 'http://weave-auth-demo.weave-389.workers.dev'},
+        {GITHUB_CLIENT_ID: undefined},
+        {GITHUB_CLIENT_ID: 'not a client id'}
     ];
     for (const change of mutations)
         assert.throws(() => renderDemoConfig({...env,...change}),

@@ -248,3 +248,27 @@ test('remote MCP turns a field rejection into a correctable tool error',async()=
     assert.deepEqual(frame.result.structuredContent,{status:400,field:'requestId',reason:'must be a UUIDv7'});
     assert.match(frame.result.content[0].text,/Invalid argument requestId: must be a UUIDv7\. Nothing was written/);
 });
+
+test('private prepare_payload creates a validated UUIDv7 text payload without touching D1',async()=>{
+    assert.equal(privateScope('prepare_payload'),'weave:messages.send');
+    const definition=privateMcpTools.find(tool=>tool.name==='prepare_payload');
+    assert.ok(definition,'the live private MCP tool list must advertise the helper');
+    assert.equal(definition.annotations.readOnlyHint,true);
+    assert.equal(definition.annotations.idempotentHint,false,'a new invocation generates a new ID; retries reuse the previous result');
+    const env={} as Env; // Any database access is a defect: this tool only constructs an envelope.
+    const response=await executePrivateMcp(env,origin,accountId,'prepare_payload',{text:'合作 hello 👋'});
+    assert.equal(response.status,200,await response.clone().text());
+    const content=await response.json() as {messageId:string;createdAt:string;expiresAt:string;payloadEncoding:string;bytes:string};
+    assert.match(content.messageId,/^[0-9a-f]{8}-[0-9a-f]{4}-7[0-9a-f]{3}-[89ab][0-9a-f]{3}-[0-9a-f]{12}$/);
+    assert.equal(BigInt('0x'+content.messageId.replaceAll('-','').slice(0,12)),BigInt(Date.parse(content.createdAt)));
+    assert.equal(Date.parse(content.expiresAt)-Date.parse(content.createdAt),3_600_000);
+    assert.equal(content.payloadEncoding,'text/plain');
+    assert.equal(Buffer.from(content.bytes,'base64').toString('utf8'),'合作 hello 👋');
+    const next=await executePrivateMcp(env,origin,accountId,'prepare_payload',{text:'合作 hello 👋'});
+    assert.equal(next.status,200);
+    assert.notEqual((await next.json()).messageId,content.messageId,'caller must save and reuse the original payload for a retry');
+    for(const args of [{text:123},{text:'💡'.repeat(16_385)},{text:'hello',accountId:'foreign'}]){
+        const rejected=await executePrivateMcp(env,origin,accountId,'prepare_payload',args);
+        assert.equal(rejected.status,400,'bad text and undeclared fields must not be accepted');
+    }
+});

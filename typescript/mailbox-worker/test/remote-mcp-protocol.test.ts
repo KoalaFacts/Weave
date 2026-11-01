@@ -76,7 +76,7 @@ test('rejects private tools and malformed lookup without touching the database',
     for(const name of ['register_account','send_message','read_inbox']){
         assert.equal((await call('tools/call',{name,arguments:{}})).error.code,-32602);
     }
-    assert.equal((await call('tools/call',{name:'lookup_address',arguments:{addressId:'../accounts/me'}})).error.code,-32602);
+    assert.equal((await call('tools/call',{name:'lookup_address',arguments:{addressId:'../accounts'}})).error.code,-32602);
     assert.equal((await call('tools/call',{name:'demo_guide',arguments:null})).error.code,-32602);
 });
 test('notifications return 202 without invoking tools',async()=>{
@@ -167,4 +167,33 @@ test('private MCP accepts a bounded full-size message only after trusted write-s
         unused,privateAccess);
     assert.equal(oversized.status,413,'even authorized requests remain capped at 128 KiB');
     assert.equal(invocations,1);
+});
+
+
+test('private payload preparation accepts a full text envelope only with the existing message grant',async()=>{
+    const text='A'.repeat(64_000),owner='11111111-2222-3333-4444-555555555555';
+    let grants=0,invoked=0;
+    const tools={
+        tools:[],scope:(name:string)=>['send_message','prepare_payload','list_my_inbox'].includes(name)
+            ?name==='list_my_inbox'?'weave:messages.read':'weave:messages.send':null,
+        authorize:async(scope:string)=>{assert.equal(scope,'weave:messages.send');grants++;return owner;},
+        invoke:async(account:string,name:string,args:Record<string,unknown>)=>{
+            invoked++;assert.equal(account,owner);assert.equal(name,'prepare_payload');
+            assert.equal(args.text,text);
+            return Response.json({prepared:true});
+        }
+    };
+    const large=(name:string)=>request(rpc('tools/call',{name,arguments:{text}}),
+        {authorization:'Bearer synthetic-unlogged-token'});
+    const prepared=await remoteMcp(large('prepare_payload'),unused,tools);
+    assert.equal(prepared.status,200,'an authorized 64 KiB text helper must pass the MCP framing gate');
+    assert.equal(JSON.parse((await prepared.json()).result.content[0].text).prepared,true);
+    assert.equal(invoked,1);
+    assert.equal(grants,2,'large frame and dispatch need independent owner checks');
+    const rejected={...tools,authorize:async()=>new Response(null,{status:403})};
+    assert.equal((await remoteMcp(large('prepare_payload'),unused,rejected)).status,413);
+    assert.equal((await remoteMcp(large('prepare_payload'),unused)).status,413);
+    assert.equal((await remoteMcp(large('list_my_inbox'),unused,tools)).status,413,
+        'the same write grant cannot enlarge an unrelated private tool frame');
+    assert.equal(invoked,1);
 });

@@ -5,6 +5,21 @@ import { exactInteger, opaqueBytes } from './sqlite-values.ts';
 // Latest target schema. Data transformations and their execution records are separate.
 // No compatibility views, synchronization triggers, or numbered schema snapshots.
 
+export const humans = sqliteTable("humans", {
+    human_id: text("human_id").notNull().primaryKey(),
+    provider: text("provider").notNull(),
+    subject: text("subject").notNull(),
+    provider_created_at: text("provider_created_at").notNull(),
+    display_login: text("display_login").notNull(),
+    frozen_at: exactInteger("frozen_at"),
+    created_at: exactInteger("created_at").notNull(),
+    updated_at: exactInteger("updated_at").notNull(),
+}, t => [
+    uniqueIndex("humans_subject").on(t.provider, t.subject),
+    check("humans_provider",sql`provider='github'`),
+    check("humans_subject_decimal",sql`length(subject) BETWEEN 1 AND 20 AND subject GLOB '[1-9]*' AND subject NOT GLOB '*[^0-9]*'`)
+]);
+
 export const accounts = sqliteTable("accounts", {
     account_id: text("account_id").notNull().primaryKey(),
     control_hash: text("control_hash").notNull(),
@@ -14,8 +29,15 @@ export const accounts = sqliteTable("accounts", {
     description: text("description"),
     created_at: exactInteger("created_at"),
     updated_at: exactInteger("updated_at"),
+    // Appended to the live pre-human table with ALTER TABLE. Keep its original
+    // control columns and their NOT NULL constraints to preserve every FK.
+    human_id: text("human_id").references(() => humans.human_id, {onDelete:"restrict"}),
 }, t => [
     uniqueIndex("accounts_control_hash").on(t.control_hash),
+    index("accounts_human").on(t.human_id, t.created_at),
+    // Owned agents use unguessable non-credential markers plus invalid control
+    // parameters; they can never satisfy the existing control authenticator.
+    check("accounts_owned_control_unclaimable",sql`human_id IS NULL OR control_hash_parameters='{}'`),
     check("accounts_control_digest",sql`length(control_hash)=64 AND control_hash NOT GLOB '*[^0-9a-f]*'`),
     check("accounts_control_scheme",sql`control_hash_scheme='sha256-utf8-v1'`),
     check("accounts_control_parameters",sql`json_valid(control_hash_parameters)`)

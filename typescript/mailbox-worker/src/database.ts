@@ -1,7 +1,7 @@
-import { fail, stringify } from './wire';
-import type { OAuthServiceBinding } from './remote-oauth';
-import { RecordStore } from './record-store';
-import { nowUtc } from './time';
+import { fail, stringify } from './wire.ts';
+import type { OAuthServiceBinding } from './remote-oauth.ts';
+import { RecordStore } from './record-store.ts';
+import { nowUtc } from './time.ts';
 
 export interface Statement {
     bind(...values: (string | number | null | ArrayBuffer)[]): Statement;
@@ -19,8 +19,6 @@ export interface Env {
     OAUTH_INTROSPECTION_TRUSTED_ORIGIN?: string;
     OAUTH_CLIENT_ID?: string;
     OAUTH_CLIENT_SECRET?: string;
-    // Independent short-lived AS consent proof secret, not a mailbox control.
-    OAUTH_ACCOUNT_PROOF_KEY?: string;
     // Optional, exclusive private RPC alternative to HTTPS RFC7662 introspection.
     AUTH_SERVER?: OAuthServiceBinding;
     // External issuer/subject requires owner-approved D1 mapping, disabled by default.
@@ -46,7 +44,8 @@ export class Transaction {
     invalidatedPair: string[] | null = null;
     private cache = new Map<string,any>();
     readonly store:RecordStore;
-    constructor(public db: Database) {this.store=new RecordStore(db,this.writes,nowUtc());}
+    db: Database;
+    constructor(db: Database) {this.db=db;this.store=new RecordStore(db,this.writes,nowUtc());}
     async get(kind: string, owner: string, id: string): Promise<any | null> {
         const key = stringify([kind,owner,id]); if (this.cache.has(key)) return this.cache.get(key);
         const value=await this.store.get(kind,owner,id);this.cache.set(key,value);return value;

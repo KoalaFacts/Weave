@@ -9,7 +9,7 @@
  */
 export interface OAuthServiceBinding {
     validateToken(resource:string,token:string):Promise<{
-        audience:string;userId:string;props:{accountId:string};
+        audience:string;userId:string;props:{accountId:string;humanId?:string};
         expiresAt:number;scope:string[];clientId:string;
     }|null>;
 }
@@ -102,7 +102,7 @@ function failClosed():Response {
  */
 export async function authorizeOAuth(
     config: OAuthOptions, request: Request, requiredScope: string,
-    accountExists: (accountId: string) => Promise<boolean>,
+    accountExists: (accountId: string, serviceHumanId?: string | null) => Promise<boolean>,
     fetcher: typeof fetch = fetch, now: number | (() => number) = Date.now,
     resolveAccount?: OAuthSubjectResolver
 ): Promise<OAuthAccess> {
@@ -122,13 +122,19 @@ export async function authorizeOAuth(
         const nowSec=Math.floor(clock()/1000);
         if (!claim || claim.audience!==config.resource || typeof claim.userId!=='string'
             || !identity.test(claim.userId) || !claim.props || typeof claim.props!=='object'
-            || claim.props.accountId!==claim.userId || !Number.isSafeInteger(claim.expiresAt)
+            || claim.props.accountId!==claim.userId
+             || (claim.props.humanId!==undefined && (typeof claim.props.humanId!=='string'
+                 || !identity.test(claim.props.humanId))) || !Number.isSafeInteger(claim.expiresAt)
             || claim.expiresAt<=nowSec || claim.expiresAt>nowSec+900
             || typeof claim.clientId!=='string' || !claim.clientId
             || !Array.isArray(claim.scope) || !claim.scope.every(scope=>typeof scope==='string'))
             return challenge(config,401,requiredScope,'invalid_token');
         if (!claim.scope.includes(requiredScope))return challenge(config,403,requiredScope,'insufficient_scope');
-        try {if(!await accountExists(claim.userId))return challenge(config,401,requiredScope,'invalid_token');}
+        // A Service Binding bearer is bound to the human who authorized the agent.
+        // null means an older control-owned token; undefined remains reserved for
+        // external RFC 7662 introspection, which uses its own owner-approved link.
+        try {if(!await accountExists(claim.userId,claim.props.humanId??null))
+            return challenge(config,401,requiredScope,'invalid_token');}
         catch {return failClosed();}
         if (claim.expiresAt<=Math.floor(clock()/1000))return challenge(config,401,requiredScope,'invalid_token');
         return {accountId:claim.userId};
@@ -140,12 +146,32 @@ export async function authorizeOAuth(
         // which the response.ok gate rejects without forwarding credentials.
         const response=await fetcher(config.introspectionUrl,{method:'POST',redirect:'manual',cache:'no-store',signal:AbortSignal.timeout(3500),
             headers:{'Authorization':'Basic '+btoa(formEncode(config.clientId)+':'+formEncode(config.clientSecret)),'Content-Type':'application/x-www-form-urlencoded','Accept':'application/json'},body:form});
-        if (!response.ok || !/^application\/json(?:;|$)/i.test(response.headers.get('Content-Type')??'')) {await response.body?.cancel();return failClosed();}
-        // Bound the remote AS response before JSON parsing; never log secrets or response text.
+        if (!response.ok || !/^application\/json(?:;|$)/i.test(response.headers.get('Content-Type')??'')) {
+            // A failed AS can refuse to finish cancellation; denying access must not wait for it.
+            void response.body?.cancel().catch(()=>{});
+            return failClosed();
+        }
+        // Fetch deadlines can finish when headers arrive: bound the *entire* JSON body too.
         const reader=response.body?.getReader(); if(!reader)return failClosed();
         let size=0,text='';const decoder=new TextDecoder('utf-8',{fatal:true});
-        try {while(true){const part=await reader.read();if(part.done)break;size+=part.value.byteLength;if(size>8192)return failClosed();text+=decoder.decode(part.value,{stream:true});}text+=decoder.decode();}
-        finally {await reader.cancel().catch(()=>{});reader.releaseLock();}
+        let timeout:ReturnType<typeof setTimeout>|undefined;
+        const deadline=new Promise<null>(resolve=>{timeout=setTimeout(()=>resolve(null),3500);});
+        try {
+            while(true){
+                const part=await Promise.race([reader.read(),deadline]);
+                if(part===null)return failClosed();
+                if(part.done)break;
+                size+=part.value.byteLength;
+                if(size>8192)return failClosed();
+                text+=decoder.decode(part.value,{stream:true});
+            }
+            text+=decoder.decode();
+        } finally {
+            if(timeout!==undefined)clearTimeout(timeout);
+            // Cleanup is best-effort: a stalled body/cancel promise cannot hold the authorization request.
+            void reader.cancel().catch(()=>{});
+            reader.releaseLock();
+        }
         data=JSON.parse(text);
     } catch {return failClosed();}
     if (!data || typeof data!=='object'||Array.isArray(data)) return challenge(config,401,requiredScope,'invalid_token');

@@ -8,6 +8,8 @@ import {fileURLToPath, pathToFileURL} from 'node:url';
 const issuer = 'https://weave-auth-demo.weave-389.workers.dev';
 const resource = 'https://demo.weave-389.workers.dev/mcp';
 const hexId = /^[0-9a-f]{32}$/i;
+// Public GitHub OAuth app client ID (not a secret); same shape the Worker accepts.
+const githubClientId = /^[A-Za-z0-9._-]{1,128}$/;
 
 export function renderDemoConfig(env: NodeJS.ProcessEnv): Record<string, unknown> {
     if (!hexId.test(env.CLOUDFLARE_ACCOUNT_ID ?? ''))
@@ -18,6 +20,8 @@ export function renderDemoConfig(env: NodeJS.ProcessEnv): Record<string, unknown
         throw Error('OAuth issuer does not match the approved demo Workers.dev address.');
     if (env.OAUTH_RESOURCE !== resource)
         throw Error('OAuth resource does not match the approved demo MCP endpoint.');
+    if (!githubClientId.test(env.GITHUB_CLIENT_ID ?? ''))
+        throw Error('Existing approved GitHub OAuth app client identifier is required.');
     return {
         name: 'weave-auth-demo',
         main: 'src/index.ts',
@@ -25,7 +29,11 @@ export function renderDemoConfig(env: NodeJS.ProcessEnv): Record<string, unknown
         compatibility_date: '2026-10-23',
         compatibility_flags: ['global_fetch_strictly_public', 'nodejs_compat'],
         workers_dev: true,
-        vars: {OAUTH_ISSUER: issuer, OAUTH_RESOURCE: resource},
+        // GITHUB_CLIENT_SECRET and HUMAN_SESSION_KEY are Worker secrets installed
+        // separately by the operator; they are never written to this manifest.
+        vars: {OAUTH_ISSUER: issuer, OAUTH_RESOURCE: resource, GITHUB_CLIENT_ID: env.GITHUB_CLIENT_ID},
+        // Private RPC to the demo mailbox Worker's human directory (sign-in, agent picker).
+        services: [{binding: 'MAILBOX', service: 'demo', entrypoint: 'HumanDirectory'}],
         kv_namespaces: [{binding: 'OAUTH_KV', id: env.WEAVE_AUTH_KV_NAMESPACE_ID}],
         durable_objects: {bindings: [{name: 'CONSENT_NONCES', class_name: 'ConsentNonce'}]},
         migrations: [{tag: 'v1', new_sqlite_classes: ['ConsentNonce']}]

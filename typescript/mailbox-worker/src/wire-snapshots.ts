@@ -1,4 +1,4 @@
-import { exactInt64, isoUtc } from './time';
+import { exactInt64, isoUtc } from './time.ts';
 const time=(value:string|null)=>value===null?null:isoUtc(value).replace(/(\.\d{3})0000Z$/,'$1Z');
 const base64=(bytes:number[])=>{let value='';for(let i=0;i<bytes.length;i+=8192)value+=String.fromCharCode(...bytes.slice(i,i+8192));return btoa(value);};
 export const addressSnapshot=(a:any)=>({cardId:a.address_id,ownerMailboxId:a.account_id,visibility:a.is_public?'public':'unlisted',createdAt:time(a.created_at),expiresAt:time(a.expires_at),revokedAt:time(a.revoked_at),audienceHint:null,

@@ -58,6 +58,28 @@ export async function executePrivateMcp(env:Env,origin:string,accountId:string,n
             uuid(accountId);
             return json({id:accountId});
         }
+        if(name==='prepare_payload'){
+            parameters(args,['text'],['text']);
+            if(typeof args.text!=='string'||args.text.length>65536)
+                invalidField('text','must be UTF-8 text of at most 65536 bytes');
+            const bytes=new TextEncoder().encode(args.text);
+            if(bytes.byteLength>65536)invalidField('text','UTF-8 text exceeds 65536 bytes');
+            const now=Date.now(),id=crypto.getRandomValues(new Uint8Array(16));
+            let clock=BigInt(now);
+            for(let i=5;i>=0;i--){id[i]=Number(clock&255n);clock>>=8n;}
+            id[6]=(id[6]&15)|112;
+            id[8]=(id[8]&63)|128;
+            const hex=Array.from(id,b=>b.toString(16).padStart(2,'0')).join('');
+            // Convert bounded bytes to binary for Worker btoa without Node Buffer.
+            let binary='';
+            for(let i=0;i<bytes.length;i+=8192)
+                binary+=String.fromCharCode(...bytes.subarray(i,i+8192));
+            return json({
+                messageId:hex.slice(0,8)+'-'+hex.slice(8,12)+'-'+hex.slice(12,16)+'-'+hex.slice(16,20)+'-'+hex.slice(20),
+                createdAt:new Date(now).toISOString(),expiresAt:new Date(now+3_600_000).toISOString(),
+                payloadEncoding:'text/plain',bytes:btoa(binary)
+            });
+        }
         if(['list_my_addresses','list_my_contact_requests','list_my_contacts','list_my_inbox','list_my_outbox'].includes(name)){
             target.pathname=name==='list_my_addresses'?'/v1/addresses':name==='list_my_contact_requests'?'/v1/contacts/requests':
                 name==='list_my_contacts'?'/v1/contacts':name==='list_my_inbox'?'/v1/inbox':'/v1/outbox';
