@@ -1,5 +1,5 @@
 import { WorkerEntrypoint } from 'cloudflare:workers';
-import { createOwnedAgent, humanHasAgent, listHumanAgents, signInHuman, type CreateAgentResult, type SignInResult, type HumanSignIn, type AgentSummary } from './humans.ts';
+import { createOwnedAgent, humanHasAgent, listHumanAgents, oauthAccountActive, signInHuman, type CreateAgentResult, type SignInResult, type HumanSignIn, type AgentSummary } from './humans.ts';
 import { demo } from './demo';
 import { agentStart } from './agent-start';
 import { registry } from './registry';
@@ -77,8 +77,8 @@ export default {
                     tools:privateMcpTools,
                     scope:privateScope,
                     authorize:async scope=>{
-                        const access=await authorizeOAuth(cfg,request,scope,async accountId=>
-                            (await env.db.prepare('SELECT account_id FROM accounts WHERE account_id=?').bind(accountId).first('account_id'))===accountId,
+                        const access=await authorizeOAuth(cfg,request,scope,async (accountId,serviceHumanId)=>
+                            oauthAccountActive(env,accountId,serviceHumanId),
                             undefined,Date.now);
                         return access instanceof Response?access:access.accountId;
                     },

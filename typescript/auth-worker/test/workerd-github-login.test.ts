@@ -7,7 +7,7 @@ import {join,resolve} from "node:path";
 import {after,before,test} from "node:test";
 import {Miniflare,type Response as MiniflareResponse} from "miniflare";
 import {initializeDatabase} from "../../mailbox-worker/scripts/latest-schema.ts";
-import {beginGithubLogin} from "../src/github-login.ts";
+import {beginGithubLogin,boundedProviderJson} from "../src/github-login.ts";
 import {signedCookieValue} from "../src/human-session.ts";
 
 const issuer="https://auth.weave.example";
@@ -22,7 +22,7 @@ const mailboxBundle=readFileSync(resolve("../mailbox-worker/dist/index.js"),"utf
 
 // Only the two GitHub endpoints exist; every other outbound request is denied.
 type Recorded={url:string;method:string;headers:Record<string,string>;body:string};
-const github={requests:[] as Recorded[],userStatus:200};
+const github={requests:[] as Recorded[],userStatus:200,redirectToken:false,redirectUser:false,oversizedToken:false,oversizedUser:false,slowToken:false,slowUser:false,userLogin:"octo-human"};
 async function fakeGithub(request:Request):Promise<Response>{
   const body=await request.text();
   github.requests.push({url:request.url,method:request.method,
@@ -31,12 +31,20 @@ async function fakeGithub(request:Request):Promise<Response>{
     const form=new URLSearchParams(body);
     if(form.get("client_secret")!==githubClientSecret||form.get("code")!=="fake-code")
       return Response.json({error:"bad_verification_code"});
-    return Response.json({access_token:fakeAccessToken,token_type:"bearer",scope:"read:user"});
+    if(github.redirectToken)return new Response(null,{status:307,
+      headers:{Location:"https://redirect-sink.example/credentials"}});
+    if(github.slowToken)await new Promise<void>(resolve=>setTimeout(resolve,5_500));
+    return Response.json({access_token:fakeAccessToken,token_type:"bearer",scope:"read:user",
+      ...(github.oversizedToken?{unexpectedPadding:"x".repeat(64*1024)}:{})});
   }
   if(request.method==="GET"&&request.url==="https://api.github.com/user"){
     if(request.headers.get("authorization")!=="Bearer "+fakeAccessToken)return new Response("Bad credentials",{status:401});
+    if(github.redirectUser)return new Response(null,{status:307,
+      headers:{Location:"https://redirect-sink.example/identity"}});
+    if(github.slowUser)await new Promise<void>(resolve=>setTimeout(resolve,5_500));
     if(github.userStatus!==200)return new Response("upstream failure",{status:github.userStatus});
-    return Response.json({id:4242,login:"octo-human",created_at:fakeCreatedAt,email:"private@example.com"});
+    return Response.json({id:4242,login:github.userLogin,created_at:fakeCreatedAt,email:"private@example.com",
+      ...(github.oversizedUser?{unexpectedPadding:"x".repeat(64*1024)}:{})});
   }
   return new Response("Outbound denied",{status:403});
 }
@@ -171,6 +179,29 @@ test("callback_ValidCodeAndState_SetsSessionAndRedirectsToReturnTo",{timeout:60_
   assert.ok(cleared&&/Max-Age=0/.test(cleared),"the login cookie must be cleared");
 });
 
+test("callback_SingleCharacterGithubLogin_CompletesVerifiedSignIn",{timeout:60_000},async()=>{
+  // Exercise the real provider response and private directory in isolated Workerd.
+  // A one-letter GitHub handle remains a legitimate authenticated user.
+  const instance=await start();
+  const previous=github.userLogin;
+  github.userLogin="q";
+  try{
+    const started=await begin();
+    const result=await callback(instance.mf,new URLSearchParams({
+      code:"fake-code",state:started.location!.searchParams.get("state")!
+    }).toString(),cookieHeader(started.loginCookie!));
+    assert.equal(result.status,302,"a one-letter GitHub account must complete sign-in");
+    assert.ok(sessionCookie(result.headers));
+    const rows=await humans(instance.mf);
+    assert.equal(rows.length,1);
+    assert.equal(rows[0].subject,"4242");
+    assert.equal(rows[0].display_login,"q");
+  }finally{
+    github.userLogin=previous;
+    await stop(instance);
+  }
+});
+
 test("callback_StateMismatch_Returns400WithoutSession",{timeout:30_000},async()=>{
   github.requests.length=0;
   const started=await begin();
@@ -234,6 +265,84 @@ test("callback_ExpiredLoginCookie_Returns400WithoutGithubCalls",{timeout:30_000}
   assert.equal(result.status,400);
   assert.equal(sessionCookie(result.headers),undefined);
   assert.equal(github.requests.length,0,"an expired login cookie must not reach GitHub");
+});
+
+test("callback_GithubProviderRedirects_FailClosedWithoutForwardingSecrets",{timeout:60_000},async()=>{
+  const before=(await humans(shared.mf)).length;
+  for(const phase of ["token","user"] as const){
+    github.requests.length=0;
+    logs.length=0;
+    github.redirectToken=phase==="token";
+    github.redirectUser=phase==="user";
+    try{
+      const started=await begin();
+      const state=started.location!.searchParams.get("state")!;
+      const result=await callback(shared.mf,new URLSearchParams({code:"fake-code",state}).toString(),
+        cookieHeader(started.loginCookie!));
+      assert.equal(result.status,502,phase+" redirect must not create a session");
+      assert.equal(sessionCookie(result.headers),undefined);
+      assert.equal((await humans(shared.mf)).length,before);
+      assert.ok(!github.requests.some(x=>x.url.startsWith("https://redirect-sink.example/")),
+        phase+" redirect must not receive a GitHub credential");
+      const expectedUrls=phase==="token"
+        ?["https://github.com/login/oauth/access_token"]
+        :["https://github.com/login/oauth/access_token","https://api.github.com/user"];
+      assert.deepEqual(github.requests.map(x=>x.url),expectedUrls,
+        phase+" must contact only the two fixed GitHub endpoints");
+      // Miniflare's outbound-service adapter does not preserve the caller's redirect mode
+      // on the handler Request; verify actual requests, credential destinations and outcome.
+      const exchange=github.requests[0];
+      assert.equal(new URLSearchParams(exchange.body).get("client_secret"),githubClientSecret);
+      if(phase==="user"){
+        const who=github.requests[1];
+        assert.equal(who.headers.authorization,"Bearer "+fakeAccessToken);
+      }
+      assert.ok(logs.some(x=>x.includes(phase==="token"
+        ?"github-login: token exchange failed":"github-login: user fetch failed")));
+      assert.ok(!logs.some(x=>x.includes(githubClientSecret)||x.includes(fakeAccessToken)));
+    }finally{github.redirectToken=false;github.redirectUser=false;}
+  }
+});
+
+test("callback_OversizedGithubResponses_FailClosedBeforeSession",{timeout:60_000},async()=>{
+  const before=(await humans(shared.mf)).length;
+  for(const phase of ["token","user"] as const){
+    github.oversizedToken=phase==="token";
+    github.oversizedUser=phase==="user";
+    github.requests.length=0;
+    try{
+      const started=await begin();
+      const result=await callback(shared.mf,new URLSearchParams({
+        code:"fake-code",state:started.location!.searchParams.get("state")!
+      }).toString(),cookieHeader(started.loginCookie!));
+      assert.equal(result.status,502,phase+" oversized provider payload must fail closed");
+      assert.equal(sessionCookie(result.headers),undefined,"oversized provider payload must not create a session");
+      assert.equal((await humans(shared.mf)).length,before,"oversized provider payload cannot create a human");
+    }finally{github.oversizedToken=false;github.oversizedUser=false;}
+  }
+});
+
+test("callback_SlowGithubProvider_FailsClosedWithinDeadline",{timeout:40_000},async()=>{
+  // A healthy but unresponsive upstream must not occupy a login Worker indefinitely.
+  // Without a bounded provider fetch, this fixture eventually returns valid JSON
+  // and signs the human in; an abort must instead fail closed before that point.
+  const before=(await humans(shared.mf)).length;
+  for(const phase of ["token","user"] as const){
+    github.slowToken=phase==="token";
+    github.slowUser=phase==="user";
+    try{
+      const started=await begin();
+      const startedAt=performance.now();
+      const result=await callback(shared.mf,new URLSearchParams({
+        code:"fake-code",state:started.location!.searchParams.get("state")!
+      }).toString(),cookieHeader(started.loginCookie!));
+      const elapsed=performance.now()-startedAt;
+      assert.equal(result.status,502,phase+" slow provider must not sign in");
+      assert.ok(elapsed<5_200,phase+" must abort before the simulated 5.5s reply ("+elapsed+"ms)");
+      assert.equal(sessionCookie(result.headers),undefined);
+      assert.equal((await humans(shared.mf)).length,before);
+    }finally{github.slowToken=false;github.slowUser=false;}
+  }
 });
 
 test("callback_GithubExchangeFails_Returns502AndLogsCategory",{timeout:30_000},async()=>{
@@ -320,4 +429,22 @@ test("allRoutes_MissingGithubSecret_Return503",{timeout:120_000},async()=>{
       }
     }finally{await mf.dispose();await rm(storage,{recursive:true,force:true});}
   }
+});
+
+
+test("boundedProviderJson_OversizedStreamWithStalledCancel_RejectsPromptly",{timeout:6_000},async()=>{
+  // A provider can exceed the JSON byte limit and then stall during cancellation.
+  // A bounded response must not await an untrusted ReadableStream.cancel() promise.
+  let cancellationRequested=false;
+  const body=new ReadableStream<Uint8Array>({
+    start(controller){controller.enqueue(new Uint8Array(8_193));},
+    cancel(){cancellationRequested=true;return new Promise<void>(()=>{});}
+  });
+  const started=performance.now();
+  const result=await boundedProviderJson(new Response(body,{
+    headers:{"Content-Type":"application/json"}
+  }),8_192);
+  assert.equal(result,null,"oversized provider data must be rejected");
+  assert.equal(cancellationRequested,true,"discard the untrusted provider response");
+  assert.ok(performance.now()-started<5_000,"stream cleanup must not defeat provider bounds");
 });
