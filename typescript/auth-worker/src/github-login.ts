@@ -133,6 +133,10 @@ async function githubAccessToken(env:GithubLoginEnv,code:string,verifier:string)
       const token=grant&&typeof grant==="object"?(grant as {access_token?:unknown}).access_token:null;
       if(typeof token==="string"&&token)return token;
     }
+    else {
+      // Non-2xx provider responses may contain unread bodies; discard without blocking denial.
+      void exchange.body?.cancel().catch(()=>{});
+    }
   }catch{/* logged below as a category only */}
   console.error(failureLog.exchange);
   return null;
@@ -152,6 +156,10 @@ async function fetchGithubUser(env:GithubLoginEnv,code:string,verifier:string):P
         user as {id?:unknown;login?:unknown;created_at?:unknown}:{};
       if(typeof id==="number"&&Number.isSafeInteger(id)&&id>=1&&typeof login==="string"&&githubLogin.test(login)&&
         typeof createdAt==="string"&&!Number.isNaN(Date.parse(createdAt)))return {subject:String(id),login,createdAt};
+    }
+    else {
+      // Do not retain a failed GitHub user response stream after rejecting sign-in.
+      void response.body?.cancel().catch(()=>{});
     }
   }catch{/* logged below as a category only */}
   console.error(failureLog.user);
