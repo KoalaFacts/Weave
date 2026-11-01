@@ -15,6 +15,9 @@ interface WorkerConfig {
     d1_databases: {binding:string;database_id:string;database_name:string;remote?:boolean;[key:string]:unknown}[];
     [key:string]: unknown;
 }
+// The live settings API reports a binding to a Worker's default environment as
+// "production"; any other named environment is unreviewed.
+const defaultEnvironment=(environment:string|undefined)=>environment===undefined||environment==='production';
 interface Binding {name:string;type:string;id?:string;namespace_id?:string;class_name?:string;script_name?:string;text?:unknown;service?:string;environment?:string;entrypoint?:string;}
 interface WorkerSettings {bindings:Binding[];}
 interface CommandResult {status:number|null;stdout?:string;stderr?:string;}
@@ -169,7 +172,7 @@ export async function deploy({env=process.env,fetchImpl=fetch,run,root=directory
             !single(as.bindings,'GITHUB_CLIENT_SECRET','secret_text')||
             !single(as.bindings,'HUMAN_SESSION_KEY','secret_text')||
             mailbox.length!==1||mailbox[0].type!=='service'||mailbox[0].service!=='demo'||
-            mailbox[0].entrypoint!=='HumanDirectory'||mailbox[0].environment!==undefined||
+            mailbox[0].entrypoint!=='HumanDirectory'||!defaultEnvironment(mailbox[0].environment)||
             kv.length!==1||kv[0].type!=='kv_namespace'||
             !/^[a-f0-9]{32}$/i.test(kv[0].namespace_id??'')||
             nonce.length!==1||nonce[0].type!=='durable_object_namespace'||
@@ -263,7 +266,7 @@ export async function deploy({env=process.env,fetchImpl=fetch,run,root=directory
             const foundAuth=deployed.bindings.filter(binding=>binding?.name==='AUTH_SERVER');
             if(authBinding){
                 if(foundAuth.length!==1||foundAuth[0].type!=='service'||foundAuth[0].service!==authBinding.service||
-                    foundAuth[0].entrypoint!==authBinding.entrypoint||foundAuth[0].environment!==undefined)
+                    foundAuth[0].entrypoint!==authBinding.entrypoint||!defaultEnvironment(foundAuth[0].environment))
                     throw Error('Existing AUTH_SERVER OAuth Service Binding not confirmed; stopping before schema writes.');
                 for(const [name,before] of oauthExisting){
                     const now=deployed.bindings.filter(binding=>binding?.name===name);

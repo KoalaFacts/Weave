@@ -356,14 +356,15 @@ const validFirstPartyClientMetadata={
 };
 function firstPartyBootstrap({bindings=preapprovedResource,asBindings=preapprovedIssuer,publicStatus=200,
     metadata=validFirstPartyIssuerMetadata,flag='true',resourceStatus=200,clientStatus=200,
-    resourceMetadata=validFirstPartyResourceMetadata,clientMetadata=validFirstPartyClientMetadata}={}){
+    resourceMetadata=validFirstPartyResourceMetadata,clientMetadata=validFirstPartyClientMetadata,serviceEnvironment=undefined}={}){
     const f=fixture({bindingResult:bindings,extraEnv:{WEAVE_APPROVED_FIRST_PARTY_OAUTH_BINDING:flag}});
     const original=f.options.fetchImpl;
     f.options.fetchImpl=async (url,options)=>{
         if(url.endsWith('/workers/scripts/weave-auth-demo/settings')){
             f.requests.push(url);
             assert.equal(options.headers.Authorization,'Bearer '+env.CLOUDFLARE_API_TOKEN);
-            return {ok:true,status:200,json:async()=>({success:true,result:{bindings:asBindings}})};
+            return {ok:true,status:200,json:async()=>({success:true,result:{bindings:serviceEnvironment===undefined?asBindings:
+                asBindings.map(b=>b.type==='service'?{...b,environment:serviceEnvironment}:b)}})};
         }
         if(url===firstPartyIssuer+'/.well-known/oauth-authorization-server'){
             f.requests.push(url);
@@ -387,7 +388,8 @@ function firstPartyBootstrap({bindings=preapprovedResource,asBindings=preapprove
             (url.endsWith('/workers/scripts/demo/settings')||url.includes('/workers/scripts/demo/versions/'))){
             const payload=await response.json(),target=url.includes('/versions/')
                 ?payload.result.resources.bindings:payload.result.bindings;
-            target.push({name:'AUTH_SERVER',type:'service',service:'weave-auth-demo'});
+            target.push({name:'AUTH_SERVER',type:'service',service:'weave-auth-demo',
+                ...(serviceEnvironment===undefined?{}:{environment:serviceEnvironment})});
             for(const [name,text] of [['OAUTH_ISSUER',firstPartyIssuer],['OAUTH_RESOURCE',firstPartyResource]])
                 target.push({name,type:'plain_text',text});
             return {...response,json:async()=>payload};
@@ -415,6 +417,12 @@ test('explicit one-time first-party bootstrap attaches the approved existing AS 
         assert.equal(JSON.stringify(config).includes('HUMAN_SESSION_KEY'),false);
     }
     assert.equal(f.closed,true);
+});
+test('first-party bootstrap accepts the default production environment Cloudflare reports on service bindings',async()=>{
+    // The live settings API reports "environment":"production" for a binding to a Worker's default environment.
+    const f=firstPartyBootstrap({serviceEnvironment:'production'});
+    await deploy(f.options);
+    assert.deepEqual(f.events,['migration','maintenance','schema','recovery','active']);
 });
 test('OAuth binding bootstrap fails closed before maintenance when preapproved infrastructure or public issuer is absent',async()=>{
     // Each case names the refusal it must hit, so a case cannot pass by failing for an unrelated reason.
