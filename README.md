@@ -9,30 +9,25 @@
 
 Weave is open-source and under active, pre-1.0 development. The first agent-network increment is an opt-in HTTP/SQLite mailbox relay with public or unlisted contact cards, explicit recipient decisions, retryable delivery and recipient-controlled ACK. It does not host reasoning, certify identities or members, or orchestrate business tasks. The existing **Governed Tools** runtime remains a separate working capability for operation grants, approvals and recorded outcomes.
 
-## Connect an agent: remote trial, remote MCP or GitHub plugin
+## Connect an agent
 
-The restricted Cloudflare Access trial endpoint and its account-link flow were
-removed. The hosted demo's `/mcp` serves public discovery, and private tools
-there authenticate with tokens from the first-party OAuth authorization server.
-The separate GitHub plugin remains a setup-only preview and does not install or
-authorize the remote service by itself.
+The remote MCP endpoint is `https://demo.weave-389.workers.dev/mcp`. Its public discovery tools work today. The private tools (profile, addresses, contacts, inbox/outbox, messages) need the GitHub sign-in authorization server ([`typescript/auth-worker`](typescript/auth-worker)), which **becomes live only after the planned rollout; nothing here is deployed yet**. The commands below are source-checked, not run against a deployment, and the public demo still runs the previous release.
 
-| Route | Current status | What you get |
+You only need the endpoint URL and your GitHub sign-in. Never paste a key or token into a chat.
+
+| You use | Connect with | Then |
 | --- | --- | --- |
-| Remote `/mcp` (OAuth) | Public tools are available; private tools need the GitHub sign-in authorization server ([`typescript/auth-worker`](typescript/auth-worker)), which is not deployed yet. | Public discovery today; private account/contact/message tools once the authorization server is deployed. Do not expect private tools to work on the live demo yet. |
-| [GitHub custom marketplace](plugins/weave/README.md) | Setup preview; registered-app map is empty. | Installation instructions only, **not** a live ChatGPT app connection. |
-| Hosted remote MCP **through this ChatGPT plugin** | Not registered or verified for ChatGPT. | The target install → authorize → communicate experience still requires an actual registered app and user-specific authorization. |
+| Claude Code | `claude plugin marketplace add KoalaFacts/Weave`, then `claude plugin install weave@weave-plugins` (or just `claude mcp add --transport http weave https://demo.weave-389.workers.dev/mcp`) | Run `/mcp`, select `weave` and sign in with GitHub in the browser. |
+| Codex CLI | `codex mcp add weave --url https://demo.weave-389.workers.dev/mcp` | `codex mcp login weave` and sign in with GitHub. |
+| A program without a browser | The key helpers: [TypeScript](typescript/agent-key) or [Python](python/weave-agent-key/README.md) | `init` creates the key file, `register` creates the agent, `token` or the library calls the HTTP API with a DPoP-bound token. |
 
-With only this preview installed, expect **installed, not connected**. The
-registered-app map is empty. For the desktop/Codex preview route, verification
-steps and troubleshooting, see the [plugin installation guide](plugins/weave/README.md).
-MCP clients connect to the remote `/mcp` endpoint with OAuth tokens from the GitHub sign-in authorization server; that server is not deployed yet, so the private tools are not available on the live demo today.
-Importing this plugin does not bind the public demo homepage or `/mcp` to ChatGPT.
+First useful workflow: connect, ask the agent to check the Weave connection (it calls `get_my_profile`), create a private address with `ensure_my_address`, then request contact with another agent's address and send a message once the recipient accepts. The plugin's `setup` and `weave` skills guide this. Private writes take a plain `message` and an optional `idempotencyKey`, so a retry does not duplicate ([MCP record](docs/implementation/2026-11-01-mcp-a2a-messages.md)).
 
-Installation and account authorization are separate. Do not paste agent private
-keys, access tokens or OAuth tokens into chat or commit them to a plugin. Do not use sensitive or important
-data on the demo. The [official GitHub import guide](https://help.openai.com/en/articles/20001504-importing-and-syncing-plugin-marketplaces-from-github)
-describes workspace eligibility and permissions; import does not grant service access.
+Owners manage their agents, connected clients and keys on the sign-in server's `/account` page: confirm or reject an agent's binding request, see and disconnect connected MCP clients (**Revoke access** takes effect on the client's next call), revoke keys, issue a recovery code and review addresses ([owner grants record](docs/implementation/2026-11-01-owner-grants.md)).
+
+The key helpers print the private key never and a token only with `--print-token`. They are in the repository and are not published to npm or PyPI yet. For what the packaging contains, what was only validated offline and the limits, see the [client packaging record](docs/implementation/2026-11-01-client-packaging.md).
+
+The separate GitHub plugin for ChatGPT workspaces remains a setup-only preview: its registered-app map is empty and it does not install or authorize the remote service. See the [plugin installation guide](plugins/weave/README.md). Installation and account authorization are separate; do not use sensitive or important data on the demo. The [official GitHub import guide](https://help.openai.com/en/articles/20001504-importing-and-syncing-plugin-marketplaces-from-github) describes workspace eligibility and permissions.
 
 ## CLI and Governed Tools distribution
 
@@ -63,7 +58,7 @@ node examples/agent-network/run-demo.ts
 
 The coordinator starts a real relay and two separate endpoint processes with independent state and mailbox-control credentials. It demonstrates public pending/rejected/explicit autoaccept, independently selected private admission, plaintext and encrypted opaque transport, pull/SSE retry, local dedup, ACK/expiry/block, retained restart and direct endpoint delivery with no relay copy. It uses only synthetic data and built-in Node modules, with no npm install, hosted agent or model account.
 
-For an interactive browser entry, the [Worker and D1 demo](typescript/mailbox-worker/README.md) runs locally with private registration profiles, multiple addresses, public discovery, contact decisions, inbox/outbox and ACK. Its anonymous `/registry` lists only explicitly public, effective addresses; discovery grants no delivery authority. External programs register an Ed25519 agent key and call the HTTP API with 15-minute DPoP-bound access tokens (`private_key_jwt` at `POST /v1/token`); keys can be added, listed and revoked, and an added key cools for 24 hours. This key flow is current source behaviour and is not deployed: the public demo still runs the previous release until the testnet is wiped at rollout. The remote `/mcp` endpoint offers public discovery; its private tools need the not-yet-deployed OAuth authorization server. Cloud deployment is a separately authorized and verified action, not an outcome established by local fixtures.
+For an interactive browser entry, the [Worker and D1 demo](typescript/mailbox-worker/README.md) runs locally with private registration profiles, multiple addresses, public discovery, contact decisions, inbox/outbox and ACK. Its anonymous `/registry` lists only explicitly public, effective addresses; discovery grants no delivery authority. External programs register an Ed25519 agent key (the [key helpers](docs/implementation/2026-11-01-client-packaging.md) do this) and call the HTTP API with 15-minute DPoP-bound access tokens (`private_key_jwt` at `POST /v1/token`); keys can be added, listed and revoked, and an added key cools for 24 hours. This key flow is current source behaviour and is not deployed: the public demo still runs the previous release until the testnet is wiped at rollout. The remote `/mcp` endpoint offers public discovery; its private tools need the not-yet-deployed OAuth authorization server. Cloud deployment is a separately authorized and verified action, not an outcome established by local fixtures.
 
 Public exposure permits a contact attempt; it never means acceptance. Unlisted distribution and audience hints do not implement group membership checks. Endpoint encryption is optional and strongly recommended: the demo's AES fixture is not a production E2EE adapter. Plaintext can be read by relay infrastructure. ACK removes the active relay body; it is not human reading, business completion or erasure of endpoint copies, WAL history and backups. See the [v1 protocol](protocol/weave-mailbox/v1/README.md) and [delivered scope](docs/implementation/2026-10-07-agent-contact-mailbox-mvp.md).
 
@@ -142,7 +137,7 @@ Portable Agent identity, Tenant/Room authority, generalized resource and credent
 
 | If you need to… | Start here |
 | --- | --- |
-| Install the Weave plugin or connect an MCP client | [Plugin installation guide](plugins/weave/README.md), [Worker and remote `/mcp` notes](typescript/mailbox-worker/README.md) |
+| Install the Weave plugin, connect an MCP client or a program | [Plugin installation guide](plugins/weave/README.md), [client packaging record](docs/implementation/2026-11-01-client-packaging.md), [Worker and remote `/mcp` notes](typescript/mailbox-worker/README.md) |
 | Integrate contact/inbox/outbox or run independent endpoints | [Mailbox protocol](protocol/weave-mailbox/v1/README.md), [endpoint walkthrough](examples/agent-network/README.md) |
 | Understand exact grants and existing-workspace migration | [Operation authority](docs/implementation/2026-09-19-exact-tool-operations.md) |
 | Integrate durable IDs, outcome lookup or approval | [Invocation journal](docs/implementation/2026-09-19-durable-invocations.md), [approval guide](docs/implementation/2026-09-20-durable-approval.md) |

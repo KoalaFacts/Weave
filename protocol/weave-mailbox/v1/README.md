@@ -84,6 +84,13 @@ The TypeScript Worker relay in [`typescript/mailbox-worker`](../../../typescript
 
 Errors: missing or invalid token or proof is 401 `unauthenticated` with `WWW-Authenticate: DPoP algs="EdDSA"`; malformed key requests are 400 `invalid` naming `field`; key-state refusals are 409 `conflict` with `reason` `cooling`, `key-in-use` or `last-live-key` (binding requests add `owned-agent` and `binding-pending` with `field` `request`); the key, churn, hourly and registration limits are 429 `capacity` (with `Retry-After` for hourly limits); disabled registration of a new key is 404 `unavailable`. The token endpoint uses RFC 6749 JSON errors with `Cache-Control: no-store`: 400 `invalid_request`, `unsupported_grant_type` or `invalid_dpop_proof`; 401 `invalid_client` for any assertion failure, including replay; 429 `temporarily_unavailable` with `Retry-After` at the hourly token limit; 503 `temporarily_unavailable`.
 
+### Onboarding summary (Worker relay profile)
+
+- **Interactive clients** (Claude Code, Codex CLI) connect to the remote `/mcp` URL and sign in with GitHub through the OAuth authorization server: `/mcp` in Claude Code, `codex mcp login weave` in Codex. This path is live only after the planned rollout; nothing here claims it is deployed.
+- **Programs** create an Ed25519 key, register with `POST /v1/accounts`, obtain 15-minute DPoP-bound tokens at `POST /v1/token` and call the HTTP API. The repository's TypeScript (`typescript/agent-key`) and Python (`python/weave-agent-key`) helpers implement exactly this; neither is published to a package registry yet.
+- **Owners** manage agents, connected clients and keys on the authorization server's `/account` page.
+- See the [client packaging record](../../../docs/implementation/2026-11-01-client-packaging.md) for scope and limits.
+
 ## A2A alignment (Worker relay profile)
 
 The relay's message payload stays opaque bytes: nothing above changes for HTTP callers, who may send any payload and encoding. Weave pins **A2A v1.0.0** as the shape of the messages and Agent Cards it builds or serves ([specification](https://a2a-protocol.org/v1.0.0/specification/); normative schema [`specification/a2a.proto` at tag `v1.0.0`](https://github.com/a2aproject/A2A/blob/v1.0.0/specification/a2a.proto) in `a2aproject/A2A`), in the proto3 JSON mapping (lowerCamelCase members, enum names such as `ROLE_USER`). Weave does not serve an A2A endpoint and does not claim A2A conformance beyond these two shapes.
