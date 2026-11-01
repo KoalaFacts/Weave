@@ -3,7 +3,7 @@ import { test } from 'node:test';
 import { build } from 'esbuild';
 import { start } from './harness.ts';
 import { createOwnedAgent, signInHuman } from '../src/humans.ts';
-import { liveGrant, recordGrant, revokeGrant } from '../src/client-grants.ts';
+import { liveGrant, liveOwnedGrant, recordGrant, revokeGrant } from '../src/client-grants.ts';
 import { ownerAction } from '../src/owner-actions.ts';
 import { atomic, type Database, type Env } from '../src/database.ts';
 import { remoteMcp } from '../src/remote-mcp.ts';
@@ -140,6 +140,44 @@ test('mcpPrivate_RevokedGrant_401NextCall', async () => {
         const denied = await call(token(alice.accountId));
         assert.equal(denied.status, 401);
         assert.match(denied.headers.get('WWW-Authenticate') ?? '', /error="invalid_token"/);
+    } finally { await h.close(); }
+});
+
+test('mcpPrivate_OwnerFrozenAfterGrant_401NextCall', async () => {
+    // An already issued token is rechecked at the resource on every call: freezing the
+    // human ends it without a revocation, and the agent's other owners are unaffected.
+    const h = await start();
+    try {
+        const env = environment(h.db), alice = await owner(env), bob = await owner(env);
+        const aliceGrant = crypto.randomUUID(), bobGrant = crypto.randomUUID();
+        assert.deepEqual(await recordGrant(env, { grantId: aliceGrant, ...alice, clientId }), { ok: true });
+        assert.deepEqual(await recordGrant(env, { grantId: bobGrant, ...bob, clientId }), { ok: true });
+        const aliceCall = mcp(env, () => claim(alice.accountId, { humanId: alice.humanId, grantId: aliceGrant }));
+        const bobCall = mcp(env, () => claim(bob.accountId, { humanId: bob.humanId, grantId: bobGrant }));
+        assert.equal((await aliceCall(token(alice.accountId))).status, 200, 'positive control');
+        await h.db.prepare('UPDATE humans SET frozen_at=updated_at WHERE human_id=?').bind(alice.humanId).run();
+        const denied = await aliceCall(token(alice.accountId));
+        assert.equal(denied.status, 401, "a frozen human's still-unexpired token must stop working");
+        assert.match(denied.headers.get('WWW-Authenticate') ?? '', /error="invalid_token"/);
+        assert.equal(await liveOwnedGrant(h.db, aliceGrant), null);
+        assert.equal((await bobCall(token(bob.accountId))).status, 200, 'an unrelated human keeps access');
+    } finally { await h.close(); }
+});
+
+test('liveOwnedGrant_AgentNowOwnedByAnotherHuman_Null', async () => {
+    // A grant names the human who consented. If the agent later belongs to someone
+    // else (or to no one), that human's grant must lose all authority.
+    const h = await start();
+    try {
+        const env = environment(h.db), alice = await owner(env), bob = await owner(env), grantId = crypto.randomUUID();
+        assert.deepEqual(await recordGrant(env, { grantId, ...alice, clientId }), { ok: true });
+        assert.deepEqual(await liveOwnedGrant(h.db, grantId), { grantId, ...alice, clientId });
+        await h.db.prepare('UPDATE accounts SET human_id=? WHERE account_id=?').bind(bob.humanId, alice.accountId).run();
+        assert.equal(await liveOwnedGrant(h.db, grantId), null, "the previous owner's grant is not live");
+        await h.db.prepare('UPDATE accounts SET human_id=NULL WHERE account_id=?').bind(alice.accountId).run();
+        assert.equal(await liveOwnedGrant(h.db, grantId), null, 'an ownerless agent accepts no human grant');
+        await h.db.prepare('UPDATE accounts SET human_id=? WHERE account_id=?').bind(alice.humanId, alice.accountId).run();
+        assert.deepEqual(await liveOwnedGrant(h.db, grantId), { grantId, ...alice, clientId }, 'positive control');
     } finally { await h.close(); }
 });
 

@@ -15,7 +15,7 @@ import { sweep } from './cleanup';
 import { checkAgentCard, publishAgentCard } from './agent-cards.ts';
 import { checkMessage, inboxMessage, messagePayload } from './a2a-message.ts';
 import { idempotencyClaim, recordResultId, replayedResultId, type IdempotencyClaim } from './mcp-idempotency.ts';
-import { liveGrant } from './client-grants.ts';
+import { liveGrant, liveOwnedGrant } from './client-grants.ts';
 import { authorizeOAuth, type GrantLookup, type OAuthOptions } from './remote-oauth.ts';
 import type { PrivateAccess } from './remote-mcp.ts';
 
@@ -92,9 +92,10 @@ const grantGuard=(accountId:string,grantId:string)=>async(tx:Transaction):Promis
     const grant=typeof grantId==='string'&&grantId!==''?await liveGrant(tx.db,grantId):null;
     if(!grant||grant.accountId!==accountId)fail(401,'grant-revoked');
 };
-/** The production private-tool access: the consent grant is read on every call and re-checked inside each write. */
+/** The production private-tool access: the consent grant, its human's current ownership and that human's freeze state are
+ * read on every call; each write re-checks the grant's revocation inside its own transaction. */
 export function oauthPrivateAccess(env:Env,origin:string,config:OAuthOptions,request:Request,
-    lookup:GrantLookup=grantId=>liveGrant(env.db,grantId)):PrivateAccess{
+    lookup:GrantLookup=grantId=>liveOwnedGrant(env.db,grantId)):PrivateAccess{
     let grantId:string|null=null;
     return {tools:privateMcpTools,scope:privateScope,
         authorize:async scope=>{

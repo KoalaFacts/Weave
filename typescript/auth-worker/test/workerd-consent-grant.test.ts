@@ -432,6 +432,12 @@ test("consent_Deny_RedirectsWithAccessDenied",{timeout:60_000},async()=>{
   assert.equal(redirect.searchParams.get("error"),"access_denied");
   assert.equal(redirect.searchParams.get("state"),auth.state);
   assert.equal(redirect.searchParams.get("code"),null);
+  // Even if the SDK KV deletion is eventually consistent, a denial must burn
+  // the strongly-consistent one-time nonce so the same handle cannot later approve.
+  assert.equal(await nonceStatus(mf,consent.handle),404,"denial must consume the pending authorization nonce");
+  const replay=await post(mf,consent.cookie,{handle:consent.handle,decision:"approve",agent:"new",agentName:"After denial"});
+  assert.equal(replay.status,400,"a denied authorization cannot later issue a code");
+  assert.equal(replay.headers.get("location"),null);
   assert.deepEqual(await agentsOf(mf,await humanIdOf(mf,6001)),[]);
 });
 
@@ -481,6 +487,9 @@ test("a foreign browser cannot burn an owner nonce before consent-cookie verific
       const foreign=await post(mf,cookie,fields);
       assert.equal(foreign.status,400);
       assert.equal(await nonceStatus(mf,consent.handle),200,"unauthorized browser must not destroy valid owner's nonce");
+      const foreignDeny=await post(mf,cookie,{handle:consent.handle,decision:"deny"});
+      assert.equal(foreignDeny.status,400,"a foreign browser cannot deny this owner's consent");
+      assert.equal(await nonceStatus(mf,consent.handle),200,"unauthorized denial must not consume the owner's nonce");
     }
     assert.deepEqual(await agentsOf(mf,await humanIdOf(mf,9002)),[]);
 
@@ -624,13 +633,22 @@ test("consent_AgentCreationUnavailable_Returns503WithoutCode",{timeout:60_000},a
   const instance=await start({},{REGISTRATION_ENABLED:{type:"text",value:"false"}});
   try{
     const {mf}=instance;
+    // Existing humans still sign in while registration is closed. Seed the
+    // previously registered identity so this tests agent creation, not the
+    // separate first-time human registration gate.
+    const existingHumanId=randomUUID();
+    const at=(BigInt(Date.now())*10000n).toString();
+    await (await mailboxDb(mf)).prepare(
+      "INSERT INTO humans(human_id,provider,subject,provider_created_at,display_login,created_at,updated_at) VALUES(?,?,?,?,?,?,?)"
+    ).bind(existingHumanId,"github","11001","2011-01-25T18:44:36Z","human11001",at,at).run();
     const auth=authorization();
     const consent=await openConsent(mf,auth,await signIn(mf,auth,11001));
     const response=await post(mf,consent.cookie,{handle:consent.handle,decision:"approve",agent:"new",agentName:"Claude Code"});
     assert.equal(response.status,503);
     assert.equal(response.headers.get("location"),null);
     assert.match(await response.text(),/New agents cannot be created right now/);
-    assert.deepEqual(await agentsOf(mf,await humanIdOf(mf,11001)),[]);
+    assert.equal(await humanIdOf(mf,11001),existingHumanId);
+    assert.deepEqual(await agentsOf(mf,existingHumanId),[]);
   }finally{await stop(instance);}
 });
 
@@ -692,4 +710,51 @@ test("refresh_KeepsGrantId_RevokedRefreshedToken401",{timeout:60_000},async()=>{
     assert.equal(denied.status,401,"a revoked grant refuses every token derived from it");
     assert.match(denied.headers.get("WWW-Authenticate")??"",/error="invalid_token"/);
   }
+});
+
+test("consent_ChangedHumanSessionAfterDisplay_CannotApproveAsAnotherHuman",{timeout:60_000},async()=>{
+  // A consent page describes one signed-in human and their agents. A different
+  // valid human session in the same browser must not authorize that handle.
+  const {mf}=shared;
+  const auth=authorization();
+  const original=await signIn(mf,auth,23001);
+  const consent=await openConsent(mf,auth,original);
+  assert.match(consent.html,/Signed in as @human23001/);
+  const replacement=await signIn(mf,authorization(),23002);
+  assert.notEqual(original,replacement);
+  const switchedCookies=consent.cookie.replace(original,replacement);
+  assert.notEqual(switchedCookies,consent.cookie);
+  const response=await post(mf,switchedCookies,{
+    handle:consent.handle,decision:"approve",agent:"new",agentName:"Unexpected agent"
+  });
+  assert.equal(response.status,400,
+    "a consent displayed to human A must not grant a new agent to human B");
+  assert.equal(response.headers.get("location"),null,"no authorization code may be issued");
+  assert.deepEqual(await agentsOf(mf,await humanIdOf(mf,23001)),[]);
+  assert.deepEqual(await agentsOf(mf,await humanIdOf(mf,23002)),[],
+    "a switched session must not create an agent for a different human");
+});
+
+test("consent_ChangedHumanSessionAfterDisplay_CannotDenyAnotherHumansConsent",{timeout:60_000},async()=>{
+  // Consent belongs to the human shown on its page, for both allow and deny.
+  // Retaining the SDK browser cookie must not let a different signed-in human
+  // invalidate the owner's still-pending consent.
+  const {mf}=shared;
+  const auth=authorization();
+  const original=await signIn(mf,auth,24001);
+  const consent=await openConsent(mf,auth,original);
+  assert.match(consent.html,/Signed in as @human24001/);
+  const replacement=await signIn(mf,authorization(),24002);
+  const switchedCookies=consent.cookie.replace(original,replacement);
+  assert.notEqual(switchedCookies,consent.cookie);
+  const foreign=await post(mf,switchedCookies,{handle:consent.handle,decision:"deny"});
+  assert.equal(foreign.status,400,"a different human must not deny the owner's pending consent");
+  assert.equal(foreign.headers.get("location"),null,"no client redirect from a foreign denial");
+  assert.equal(await nonceStatus(mf,consent.handle),200,
+    "a foreign denial must not burn the original owner's one-time consent");
+  // The original person can still deny their own consent.
+  const owner=await post(mf,consent.cookie,{handle:consent.handle,decision:"deny"});
+  assert.equal(owner.status,302);
+  assert.equal(new URL(owner.headers.get("location")!).searchParams.get("error"),"access_denied");
+  assert.equal(await nonceStatus(mf,consent.handle),404);
 });
