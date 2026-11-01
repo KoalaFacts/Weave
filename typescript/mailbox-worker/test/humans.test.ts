@@ -162,6 +162,24 @@ test('createOwnedAgent_BidiFormattingControls_CannotSpoofAgentPickerName', async
     } finally { await h.close(); }
 });
 
+test('createOwnedAgent_InvisibleDefaultIgnorables_CannotHideOrSpoofPickerName', async () => {
+    const h = await start();
+    try {
+        const env = environment(h), id = await humanId(env);
+        // trim() does not remove zero-width space / word joiner; either can
+        // make an owned-agent label visually blank or mask a changed name.
+        for (const name of ['\u200b', '\u2060', 'Safe\\u200bHidden',
+            'Safe\\u2060Hidden', 'Safe\\u00adHidden', 'Safe\\ufeffHidden']) {
+            assert.deepEqual(await create(env, id, name), { ok: false, reason: 'invalid' },
+                JSON.stringify(name));
+        }
+        assert.deepEqual(await listHumanAgents(env, id), [],
+            'rejected invisible-name attempts must not consume the ten-agent quota');
+        // Ordinary non-Latin text and the ZWJ in an emoji sequence still work.
+        assert.equal((await create(env, id, 'مرحبا 👩‍💻')).ok, true);
+    } finally { await h.close(); }
+});
+
 test('createOwnedAgent_SourceIpOverHourlyLimit_ReturnsRateLimited', async () => {
     const h = await start();
     try {

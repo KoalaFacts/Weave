@@ -100,7 +100,7 @@ test("consentPage_UntrustedUnicodeDirections_CannotSpoofDisplayedOAuthMetadata",
   // untrusted even when the SDK has checked its redirect URI and client ID.
   const page=consentPage({
     ...details,
-    clientName:"合作工具\u202Eevil",
+    clientName:"合作工具\u202Eevil\u200bspoof",
     clientDomain:"published\u2066.example\u2069",
     redirectHost:"client\u200F.example",
     scope:["weave:messages.send\u061C"]
@@ -109,7 +109,9 @@ test("consentPage_UntrustedUnicodeDirections_CannotSpoofDisplayedOAuthMetadata",
   const html=await page.text();
   assert.doesNotMatch(html,/[\u061c\u200e\u200f\u202a-\u202e\u2066-\u2069]/u,
     "direction formatting must not reach consent text or form values");
-  assert.match(html,/合作工具evil/);
+  assert.doesNotMatch(html,/[\u00ad\u200b\u2060\ufeff]/u,
+    "invisible formatting characters must not survive client metadata rendering");
+  assert.match(html,/合作工具evilspoof/);
   assert.match(html,/Agenthidden/);
   assert.match(html,/name="agentName"[^>]*value="Newagent"/);
 });
