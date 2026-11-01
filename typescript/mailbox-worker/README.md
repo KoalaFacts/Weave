@@ -82,6 +82,11 @@ it remains available in the failure report if that check fails.
 This protects the permitted SQL scope; it does not lock out concurrent administrators
 or provide an atomic snapshot across deployment steps.
 
+**Approved human/Agent onboarding compatibility migration (one-time):**
+The 2026-11-01 owner authorization in [#236](https://github.com/KoalaFacts/Weave/issues/236#issuecomment-6555968920) permits an opt-in **data-preserving** upgrade from the pre-human `accounts` table. D1 enforces foreign keys, so do not rebuild, rename or drop `accounts`: the migration appends a nullable `human_id` and creates `humans`/indexes in one atomic D1 batch, recording an immutable migration ledger entry. Existing control digests and NOT NULL constraints, contacts, messages, ACKs, OAuth identity links, and their foreign keys remain intact. New human-owned accounts store random non-credential markers with invalid control parameters and are accessible only by verified human OAuth grants; legacy bearer authentication explicitly excludes owned accounts.
+
+Only for the single reviewed release, select protected `maintain` mode and explicitly set `WEAVE_APPROVED_HUMAN_ONBOARDING_SCHEMA=true` in the authorized deployment invocation. The read-only preflight checks the exact old eight-column/constraint layout and all other existing D1 tables before maintenance; after maintenance it rechecks, applies only additive SQL and an atomic ledger write, verifies the generated target schema and foreign keys, retains a read-only recovery Worker version and only then considers active cutover. On failure the Worker remains in maintenance. Never enable the flag on ordinary releases, `completed-only` or `publish/demo`; no reset, parent-table rebuild, deletion or schema bypass is authorized. OAuth app, KV, Durable Object, secrets and Service Binding need separately verified provisioning; this D1 opt-in does not create them.
+
 Manual dispatch defaults to `database_mode: maintain` for the existing reviewed conversion
 and additive-schema flow. **`publish/demo` pushes always select `completed-only`** so ordinary
 release signaling cannot authorize a data migration. Direct authorized script execution

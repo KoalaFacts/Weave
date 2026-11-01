@@ -87,7 +87,11 @@ test('createOwnedAgent_NewHuman_AgentListedWithoutControl', async () => {
         assert.deepEqual(await listHumanAgents(env, id), [{ accountId, displayName: 'Claude Code' }]);
         assert.equal(await humanHasAgent(env, id, accountId), true);
         const row = await h.db.prepare('SELECT human_id,control_hash,control_hash_scheme,control_hash_parameters FROM accounts WHERE account_id=?').bind(accountId).first();
-        assert.deepEqual({ ...row }, { human_id: id, control_hash: null, control_hash_scheme: null, control_hash_parameters: null });
+        assert.equal(row.human_id, id);
+        assert.match(row.control_hash, /^[0-9a-f]{64}$/);
+        assert.equal(row.control_hash_scheme, 'sha256-utf8-v1');
+        assert.equal(row.control_hash_parameters, '{}', 'an owned Agent must not have a valid control credential');
+        assert.equal((await h.db.prepare('SELECT count(*) n FROM accounts WHERE human_id IS NOT NULL AND control_hash_parameters<>?').bind('{}').first('n')), 0);
         const self = await h.register();
         const selfRow = await h.db.prepare('SELECT human_id,control_hash FROM accounts WHERE account_id=?').bind(self.accountId).first();
         assert.equal(selfRow.human_id, null);
@@ -294,8 +298,8 @@ test('oauthAccountActive_ExternalIdentityWithoutHumanBinding_RequiresLiveControl
         const owned = await create(env, id) as { accountId: string };
         const controlled = await h.register();
         const orphanId = crypto.randomUUID();
-        await h.db.prepare('INSERT INTO accounts(account_id,human_id,control_hash,control_hash_scheme,control_hash_parameters) VALUES(?,NULL,NULL,NULL,NULL)')
-            .bind(orphanId).run();
+        await h.db.prepare('INSERT INTO accounts(account_id,human_id,control_hash,control_hash_scheme,control_hash_parameters) VALUES(?,NULL,?,?,?)')
+            .bind(orphanId, 'e'.repeat(64), 'sha256-utf8-v1', '{}').run();
 
         assert.equal(await oauthAccountActive(env, controlled.accountId, undefined), true,
             'a control-owned account with an explicit external-subject link remains eligible');
@@ -305,7 +309,7 @@ test('oauthAccountActive_ExternalIdentityWithoutHumanBinding_RequiresLiveControl
             'a Service Binding token bound to the current unfrozen human remains eligible');
         assert.equal(await oauthAccountActive(env, orphanId, undefined), false,
             'an account with neither human owner nor control credential has no authority');
-        await h.db.prepare('UPDATE accounts SET control_hash=NULL,control_hash_scheme=NULL,control_hash_parameters=NULL WHERE account_id=?')
+        await h.db.prepare("UPDATE accounts SET control_hash_parameters='{}' WHERE account_id=?")
             .bind(controlled.accountId).run();
         assert.equal(await oauthAccountActive(env, controlled.accountId, undefined), false,
             'removing the control credential must revoke a stale external subject grant');

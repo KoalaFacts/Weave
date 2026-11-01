@@ -14,7 +14,7 @@ export interface StorageDatabase {
     prepare(sql:string): StorageStatement;
     batch(statements:StorageStatement[]): Promise<unknown>;
 }
-export interface SchemaPlanOptions {omitUnapprovedOAuthIdentityLinks?:boolean;}
+export interface SchemaPlanOptions {omitUnapprovedOAuthIdentityLinks?:boolean; skipApprovedLegacyAccounts?:boolean;}
 type SchemaObject = {type: string; name: string; tbl_name: string; sql: string};
 type ColumnInfo = {name: string; type: string; notnull: number; dflt_value: unknown; pk: number};
 
@@ -63,6 +63,10 @@ export async function planLatestSchema(db: StorageDatabase,options:SchemaPlanOpt
         for(const sql of ddl)expected.exec(sql);
         for(const table of Object.values(schema)){
             const name=getTableConfig(table).name;if(!names.has(name))continue;
+            // Only the exact pre-human accounts layout prevalidated by
+            // planHumanAccountUpgrade may bypass this single-table comparison.
+            // Every other existing table, FK, CHECK and index is still checked.
+            if(options.skipApprovedLegacyAccounts&&name==='accounts')continue;
             const want=(expected.prepare(`PRAGMA table_info(${identifier(name)})`).all() as ColumnInfo[]).map(columnShape);
             const actual=(await db.prepare(`PRAGMA table_info(${identifier(name)})`).all<ColumnInfo>()).results.map(columnShape);
             if(JSON.stringify(actual)!==JSON.stringify(want))throw Error('Existing columns differ from the latest schema in '+name+'; explicit review required before changes.');

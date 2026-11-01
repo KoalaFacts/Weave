@@ -7,6 +7,7 @@ import { build } from 'esbuild';
 import { createMissingSchema, planLatestSchema, type StorageDatabase } from './latest-schema.ts';
 import { prepareCompletedDeployment } from './completed-deployment.ts';
 import { verifyCompletedMigration } from './completed-migration.ts';
+import { planHumanAccountUpgrade, applyHumanAccountUpgrade } from './human-account-upgrade.ts';
 
 interface WorkerConfig {
     name: string;
@@ -35,6 +36,7 @@ interface DeploymentReport {
     worker:string;databaseId:string;artifactSha256:Record<string,string>;startedAt:string;
     databaseMode:'maintain'|'completed-only';
     conversion?:unknown;schemaPlan?:Awaited<ReturnType<typeof planLatestSchema>>;
+    humanAccountUpgrade?:{status:'current'|'legacy';checksum:string|null};
     recoveryVersion?:string;recoveryCommand?:string;finishedAt?:string;failure?:string;
 }
 
@@ -78,6 +80,12 @@ export async function buildArtifacts(root: string){
 export async function deploy({env=process.env,fetchImpl=fetch,run,root=directory,openDatabase=openRemoteDatabase,buildBundles=buildArtifacts,verifyMigration=verifyCompletedMigration,applySchema=createMissingSchema,planSchema=planLatestSchema}: DeployOptions={}){
     const databaseMode=env.WEAVE_DEPLOY_DATABASE_MODE??'maintain';
     if(databaseMode!=='maintain'&&databaseMode!=='completed-only')throw Error('Unknown database mode; use maintain or completed-only.');
+    const requestedHumanUpgrade=env.WEAVE_APPROVED_HUMAN_ONBOARDING_SCHEMA;
+    if(requestedHumanUpgrade!==undefined&&requestedHumanUpgrade!=='true'&&requestedHumanUpgrade!=='false')
+        throw Error('Invalid human onboarding migration authorization flag.');
+    const approvedHumanUpgrade=requestedHumanUpgrade==='true';
+    if(approvedHumanUpgrade&&databaseMode!=='maintain')
+        throw Error('Approved human onboarding schema upgrade requires explicit maintain mode.');
     const base=JSON.parse(await readFile(join(root,'wrangler.jsonc'),'utf8'));
     const config: ReturnType<typeof deploymentConfig> & {
         services?: {binding:string;service:string;entrypoint?:string}[]
@@ -342,7 +350,14 @@ export async function deploy({env=process.env,fetchImpl=fetch,run,root=directory
             // Reject incompatible existing D1 shape BEFORE uploading the maintenance
             // Worker. Plan again under maintenance before any schema application:
             // this read-only preflight does not replace the post-pause verification.
-            await planDemo(connection.db);
+            if(approvedHumanUpgrade){
+                const preflight=await planHumanAccountUpgrade(connection.db);
+                if(preflight.status==='legacy')
+                    // The exact old accounts shape was verified read-only.
+                    // Check every *other* table/index for unexpected drift.
+                    await planSchema(connection.db,{...schemaPolicy,skipApprovedLegacyAccounts:true});
+                else await planDemo(connection.db);
+            }else await planDemo(connection.db);
             await save();
         }
         phase='maintenance deployment requested';await save();
@@ -352,6 +367,11 @@ export async function deploy({env=process.env,fetchImpl=fetch,run,root=directory
         if(completed){
             Object.assign(report,await completed.confirm());await save();
         }else{
+            if(approvedHumanUpgrade){
+                const upgrade=await applyHumanAccountUpgrade(connection.db);
+                report.humanAccountUpgrade={status:upgrade.status,checksum:upgrade.checksum};
+                await save();
+            }
             const plan=await planDemo(connection.db);report.schemaPlan=plan;await save();
             await applySchema(connection.db,schemaPolicy);
             if((await planDemo(connection.db)).statements.length)throw Error('Schema verification left unapplied statements; maintenance retained.');

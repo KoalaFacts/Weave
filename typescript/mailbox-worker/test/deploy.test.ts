@@ -138,6 +138,16 @@ async function completedFixture({legacy=false,checksum=completedChecksum,complet
     f.options.applySchema=async()=>{throw Error('Unexpected schema application');};
     return Object.assign(f,{h,sql,writes:()=>sql.filter(query=>!query.startsWith('SELECT ')&&!query.startsWith('PRAGMA '))});
 }
+for(const bad of ['','yes','1','TRUE'])test('invalid human migration opt-in rejects before any external request',async()=>{
+    const f=fixture({extraEnv:{WEAVE_APPROVED_HUMAN_ONBOARDING_SCHEMA:bad}});
+    await assert.rejects(deploy(f.options),/human onboarding migration authorization flag/);
+    assert.deepEqual(f.requests,[]);assert.deepEqual(f.commands,[]);
+});
+test('approved human migration cannot run in completed-only deployments',async()=>{
+    const f=fixture({extraEnv:{WEAVE_APPROVED_HUMAN_ONBOARDING_SCHEMA:'true',WEAVE_DEPLOY_DATABASE_MODE:'completed-only'}});
+    await assert.rejects(deploy(f.options),/requires explicit maintain mode/);
+    assert.deepEqual(f.requests,[]);assert.deepEqual(f.commands,[]);
+});
 for(const mode of ['','unknown','COMPLETED-ONLY'])test('invalid explicit database mode stops before external operations: '+JSON.stringify(mode),async()=>{
     const f=fixture({extraEnv:{WEAVE_DEPLOY_DATABASE_MODE:mode}});
     await assert.rejects(deploy(f.options),/database mode/i);assert.equal(f.requests.length,0);assert.equal(f.commands.length,0);

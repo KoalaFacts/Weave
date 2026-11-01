@@ -22,18 +22,22 @@ export const humans = sqliteTable("humans", {
 
 export const accounts = sqliteTable("accounts", {
     account_id: text("account_id").notNull().primaryKey(),
-    human_id: text("human_id").references(() => humans.human_id, {onDelete:"restrict"}),
-    control_hash: text("control_hash"),
-    control_hash_scheme: text("control_hash_scheme"),
-    control_hash_parameters: text("control_hash_parameters"),
+    control_hash: text("control_hash").notNull(),
+    control_hash_scheme: text("control_hash_scheme").notNull(),
+    control_hash_parameters: text("control_hash_parameters").notNull(),
     display_name: text("display_name"),
     description: text("description"),
     created_at: exactInteger("created_at"),
     updated_at: exactInteger("updated_at"),
+    // Appended to the live pre-human table with ALTER TABLE. Keep its original
+    // control columns and their NOT NULL constraints to preserve every FK.
+    human_id: text("human_id").references(() => humans.human_id, {onDelete:"restrict"}),
 }, t => [
     uniqueIndex("accounts_control_hash").on(t.control_hash),
     index("accounts_human").on(t.human_id, t.created_at),
-    check("accounts_control_all_or_none",sql`(control_hash IS NULL AND control_hash_scheme IS NULL AND control_hash_parameters IS NULL) OR (control_hash IS NOT NULL AND control_hash_scheme IS NOT NULL AND control_hash_parameters IS NOT NULL)`),
+    // Owned agents use unguessable non-credential markers plus invalid control
+    // parameters; they can never satisfy the existing control authenticator.
+    check("accounts_owned_control_unclaimable",sql`human_id IS NULL OR control_hash_parameters='{}'`),
     check("accounts_control_digest",sql`length(control_hash)=64 AND control_hash NOT GLOB '*[^0-9a-f]*'`),
     check("accounts_control_scheme",sql`control_hash_scheme='sha256-utf8-v1'`),
     check("accounts_control_parameters",sql`json_valid(control_hash_parameters)`)

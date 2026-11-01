@@ -9,7 +9,7 @@ function settings(env: Env, name: keyof Env, max: number): number {
 export async function authenticate(env: Env, secret: string | null): Promise<any | null> {
     if (secret === null) return null;
     const digest = (await controlDigest(secret))!;
-    const row = await env.db.prepare('SELECT account_id,control_hash,control_hash_scheme,control_hash_parameters,display_name,description FROM accounts WHERE control_hash=? AND control_hash_scheme=?').bind(digest,CONTROL_HASH_SCHEME).first<any>();
+    const row = await env.db.prepare('SELECT account_id,control_hash,control_hash_scheme,control_hash_parameters,display_name,description FROM accounts WHERE control_hash=? AND control_hash_scheme=? AND human_id IS NULL').bind(digest,CONTROL_HASH_SCHEME).first<any>();
     if (!row) fail(401,'unauthenticated');
     const account={accountId:row.account_id,controlHash:row.control_hash,controlHashScheme:row.control_hash_scheme,controlHashParameters:parse(row.control_hash_parameters),displayName:row.display_name,description:row.description};
     if (!validParameters(account.controlHashParameters) || !digestMatches(digest,account.controlHash)) fail(401,'unauthenticated');
@@ -41,7 +41,7 @@ export async function register(env: Env, request: Request, secret: string | null
     }
     const digest = (await controlDigest(secret))!;
     return atomic(env.db, async tx => {
-        const existing = await tx.db.prepare('SELECT account_id FROM accounts WHERE control_hash=?').bind(digest).first<string>('account_id');
+        const existing = await tx.db.prepare('SELECT account_id FROM accounts WHERE control_hash=? AND human_id IS NULL').bind(digest).first<string>('account_id');
         if (existing) { const a=await tx.get('account','',existing); if (a.controlHashScheme !== CONTROL_HASH_SCHEME || !validParameters(a.controlHashParameters) || !digestMatches(digest,a.controlHash)) fail(401,'unauthenticated'); return {agentId:a.accountId,displayName:a.displayName,description:a.description}; }
         if (env.REGISTRATION_ENABLED !== 'true') fail(404,'unavailable');
         const maxAccounts = settings(env,'REGISTRATION_MAX_ACCOUNTS',10000);
