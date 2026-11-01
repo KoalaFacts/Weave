@@ -17,8 +17,8 @@ const subjectPattern = /^[1-9][0-9]{0,19}$/;
 const loginPattern = /^[A-Za-z0-9](?:[A-Za-z0-9-]{0,38})$/;
 const uuidPattern = /^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/i;
 // Bidi formatting codes can visually reorder names in the human's OAuth agent picker.
-// Do not block ordinary Arabic/CJK text or emoji joiners, only invisible direction controls.
-const controlCharacters = /[\u0000-\u001f\u007f-\u009f\u061c\u200e\u200f\u202a-\u202e\u2066-\u2069]/u;
+// Preserve Arabic/CJK and emoji joiners, but reject invisible direction controls and\n// default-ignorable format characters that can spoof an OAuth agent-picker name.
+const controlCharacters = /[\u0000-\u001f\u007f-\u009f\u00ad\u061c\u200b\u200e\u200f\u202a-\u202e\u2060\u2066-\u2069\ufeff]/u;
 
 // Same gates the fetch handler applies: maintenance stops everything, recovery read-only stops writes.
 const writesRefused = (env: Env) => env.MAINTENANCE_MODE === 'true' || env.RECOVERY_READ_ONLY === 'true';
