@@ -74,7 +74,7 @@ test("consentPage_DuplicateNames_ShowsFullAccountIdentityBesideEveryChoice",asyn
     {accountId:second,displayName:"Shared agent"}
   ],"New agent");
   const html=await response.text();
-  const choices=html.match(/<label><input type="radio"[^>]*>[\\s\\S]*?<\\/label>/g)??[];
+  const choices=html.match(/<label><input type="radio"[^>]*>[^<]*<\/label>/g)??[];
   assert.equal(choices.length,2);
   for(const id of [first,second]){
     const choice=choices.find(label=>label.includes('value="'+id+'"'));
