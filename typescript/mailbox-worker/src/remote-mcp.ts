@@ -166,10 +166,13 @@ export async function remoteMcp(request: Request, read: DirectoryRead, privateAc
         || (Object.hasOwn(message, 'id') && typeof message.id !== 'string' && !Number.isSafeInteger(message.id))) {
         return error(null, -32600, 'Invalid JSON-RPC request.', 400);
     }
-    // The elevated frame cap applies to send_message alone. A claimed write
-    // scope never grants large anonymous, public or other private RPC frames.
+    // The elevated frame cap applies only to message sending or the local
+    // payload helper with the same verified message scope. Do not enlarge
+    // anonymous, public, or unrelated private RPC frames.
     if (largeWriteOwner !== null && (message.method !== 'tools/call'
-        || !object(message.params) || message.params.name !== 'send_message'))
+        || !object(message.params) || (message.params.name !== 'send_message'
+            && !(message.params.name === 'prepare_payload'
+                && privateAccess?.scope('prepare_payload') === 'weave:messages.send'))))
         return error(null, -32600, 'Request is too large.', 413);
     // Notifications never execute a tool, including a tools/call sent without an id.
     if (!Object.hasOwn(message, 'id')) return reply(undefined, 202);
