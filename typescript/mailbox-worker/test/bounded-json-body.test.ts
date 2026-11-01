@@ -24,7 +24,7 @@ test('JSON request body that stalls after a chunk cannot hold an HTTP handler in
     const outcome=await observed(body(request(stream)).then(()=>null).catch((e:unknown)=>e),4800);
     assert.notEqual(outcome,'timed-out','a stalled client body must have one whole-stream deadline');
     assert.ok(outcome instanceof Problem,'the deadline must reject the request with a typed error');
-    assert.equal(outcome.status,408,'slow client body is a request timeout, not a storage error');
+    assert.equal(outcome.status,400,'incomplete request bodies retain the existing v1 invalid-request wire contract');
     assert.equal(cancelled,1,'deadline must initiate best-effort stream cleanup');
 });
 

@@ -48,7 +48,7 @@ export function accountNames(value:any,legacy=false):any {
 }
 export function problem(error: unknown): Response {
     const p = error instanceof Problem ? error : new Problem(503, 'storage');
-    const titles: Record<string,string> = { invalid: 'Invalid request', unauthenticated: 'Account control required', unavailable: 'Resource unavailable', conflict: 'State conflict', expired: 'Expired', capacity: 'Capacity reached', tooLarge: 'Request too large', timeout: 'Request timed out', storage: 'Storage unavailable', maintenance:'Maintenance in progress' };
+    const titles: Record<string,string> = { invalid: 'Invalid request', unauthenticated: 'Account control required', unavailable: 'Resource unavailable', conflict: 'State conflict', expired: 'Expired', capacity: 'Capacity reached', tooLarge: 'Request too large', storage: 'Storage unavailable', maintenance:'Maintenance in progress' };
     const response = json({ status: p.status, title: titles[p.code], code: p.code, ...(p.detail ?? {}) }, p.status);
     if (p.retryAfter !== undefined) response.headers.set('Retry-After', String(p.retryAfter));
     return response;
@@ -77,7 +77,7 @@ export async function body(request: Request): Promise<any> {
     try {
         while (true) {
             const next = await Promise.race([reader.read(), deadline]);
-            if (next === null) fail(408, 'timeout');
+            if (next === null) fail(400, 'invalid');
             if (next.done) break;
             size += next.value.length;
             if (size > 131072) fail(413, 'tooLarge');
