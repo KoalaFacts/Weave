@@ -180,6 +180,22 @@ test('createOwnedAgent_InvisibleDefaultIgnorables_CannotHideOrSpoofPickerName', 
     } finally { await h.close(); }
 });
 
+test('createOwnedAgent_OnlyInvisibleJoiners_CannotConsumeOwnerQuota', async () => {
+    const h = await start();
+    try {
+        const env = environment(h), id = await humanId(env);
+        // Legitimate emoji sequences need a ZWJ, but a name made entirely of
+        // default-ignorable codepoints has no visible agent identity.
+        for (const name of ['\u200d', '\u200c', '\ufe0f', '\u034f', ' \u200d\ufe0f ']) {
+            assert.deepEqual(await create(env, id, name), { ok: false, reason: 'invalid' },
+                JSON.stringify(name));
+        }
+        assert.equal(await h.db.prepare('SELECT count(*) AS n FROM accounts WHERE human_id=?')
+            .bind(id).first('n'), 0, 'invisible-only names must not consume agent quota');
+        assert.equal((await create(env, id, '合作助手 👩‍💻')).ok, true);
+    } finally { await h.close(); }
+});
+
 test('createOwnedAgent_SourceIpOverHourlyLimit_ReturnsRateLimited', async () => {
     const h = await start();
     try {
