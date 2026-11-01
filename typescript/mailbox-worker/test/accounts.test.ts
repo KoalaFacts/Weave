@@ -120,3 +120,27 @@ test('directory and public-card cursors do not reveal private row counts', async
         const cards=await h.ok('/v1/contacts/cards?limit=1'); assert.equal(cards.items[0].cardId,publicOne.addressId); assert.equal(cards.nextCursor,'public-cards:cHVibGlj:1');
     } finally {await h.close();}
 });
+
+test('register_BidiOrInvisibleNameOrLabel_400InvalidAndNothingCreated', async () => {
+    const h=await start();
+    try {
+        const register=(profile:Record<string,unknown>)=>h.request('/v1/accounts',{accountId:'',key:agentKey()},'POST',profile);
+        const accounts=()=>h.db.prepare('SELECT count(*) n FROM accounts').first<number>('n');
+        for(const displayName of ['Alice\u202eecila','\u200b\u200b','\u2066Bob\u2069',' \u00ad ']){
+            const refused=await register({displayName});
+            assert.equal(refused.status,400,JSON.stringify(displayName));
+            assert.equal((await refused.json()).code,'invalid');
+        }
+        for(const label of ['laptop\u202epot','\u200b','\ufeff','   ']){
+            const refused=await register({label});
+            assert.equal(refused.status,400,JSON.stringify(label));
+            const problem=await refused.json();
+            assert.equal(problem.code,'invalid');
+            assert.equal(problem.field,'label');
+        }
+        assert.equal(await accounts(),0,'no refused registration created an agent');
+        const accepted=await h.register({displayName:'研究助手 Alice \u{1F469}\u200d\u{1F52C}',label:'work laptop'});
+        assert.equal(accepted.displayName,'研究助手 Alice \u{1F469}\u200d\u{1F52C}','positive control: visible text and emoji joiners are kept');
+        assert.equal(await accounts(),1);
+    } finally { await h.close(); }
+});

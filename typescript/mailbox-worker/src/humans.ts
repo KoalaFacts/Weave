@@ -1,6 +1,7 @@
 import { admitRegistration } from './accounts.ts';
 import { atomic, type Env } from './database.ts';
 import { nowUtc, utcTicks } from './time.ts';
+import { visibleName } from './visible-text.ts';
 import { fail } from './wire.ts';
 
 // A Human is a person who signed in with an external identity provider and owns
@@ -15,12 +16,6 @@ export type CreateAgentResult = { ok: true; accountId: string } | { ok: false; r
 const subjectPattern = /^[1-9][0-9]{0,19}$/;
 const loginPattern = /^[A-Za-z0-9](?:[A-Za-z0-9-]{0,38})$/;
 const uuidPattern = /^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/i;
-// Bidi formatting codes can visually reorder names in the human's OAuth agent picker.
-// Preserve Arabic/CJK and emoji joiners, but reject invisible direction controls and\n// default-ignorable format characters that can spoof an OAuth agent-picker name.
-const controlCharacters = /[\u0000-\u001f\u007f-\u009f\u00ad\u061c\u200b\u200e\u200f\u202a-\u202e\u2060\u2066-\u2069\ufeff]/u;
-// Preserve joiners inside real emoji, but a name made entirely of invisible
-// formatting/variation characters must never consume an owner's Agent quota.
-const visibleCharacter = /[^\p{Default_Ignorable_Code_Point}\p{White_Space}]/u;
 
 // Same gates the fetch handler applies: maintenance stops everything, recovery read-only stops writes.
 export const writesRefused = (env: Env) => env.MAINTENANCE_MODE === 'true' || env.RECOVERY_READ_ONLY === 'true';
@@ -82,8 +77,9 @@ export async function createOwnedAgent(env: Env, input: { humanId: string; displ
     if (writesRefused(env) || env.REGISTRATION_ENABLED !== 'true') return { ok: false, reason: 'unavailable' };
     const invalid = { ok: false, reason: 'invalid' } as const;
     if (typeof input?.humanId !== 'string' || !uuidPattern.test(input.humanId) || typeof input.sourceIp !== 'string'
-        || typeof input.displayName !== 'string' || input.displayName.trim().length === 0 || input.displayName.length > 128
-        || controlCharacters.test(input.displayName) || !visibleCharacter.test(input.displayName)) return invalid;
+        // Bidi or invisible characters could spoof a name in the OAuth agent picker; an invisible-only name must never
+        // consume an owner's agent quota.
+        || typeof input.displayName !== 'string' || input.displayName.length > 128 || !visibleName(input.displayName)) return invalid;
     return atomic(env.db, async tx => {
         const human = await tx.db.prepare('SELECT frozen_at FROM humans WHERE human_id=?').bind(input.humanId).first<{ frozen_at: string | null }>();
         if (!human) return invalid;

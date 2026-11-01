@@ -3,6 +3,7 @@ import {test} from 'node:test';
 import {build} from 'esbuild';
 import {withTestGrant,start,type AgentCredential} from './harness.ts';
 import type {Env} from '../src/database.ts';
+import {agentLimits} from '../src/agent-limits.ts';
 import {remoteMcp} from '../src/remote-mcp.ts';
 
 const built=await build({entryPoints:['src/remote-private.ts'],bundle:true,write:false,platform:'node',format:'esm',logLevel:'silent'});
@@ -50,11 +51,12 @@ test('ensureAddress_IsPublicTrue_ListedInDirectory',async()=>{
 test('ensureAddress_PublicOverLimit_429',async()=>{
     const h=await start();
     try{
-        const a=await h.register();
-        await publicAddress(h,a);
-        const second=await call(h,a,'ensure_my_address',{addressId:crypto.randomUUID(),isPublic:true});
-        assert.equal(second.status,429);
-        assert.equal(await count(h,'SELECT count(*) n FROM account_addresses WHERE account_id=?',a.accountId),1,'the refused address is not created');
+        // A private-tool caller acts through a human's grant, so the agent runs under the claimed-agent limit.
+        const a=await h.register(),limit=agentLimits.claimed.publicAddresses;
+        for(let i=0;i<limit;i++)await publicAddress(h,a,'Public '+i);
+        const over=await call(h,a,'ensure_my_address',{addressId:crypto.randomUUID(),isPublic:true});
+        assert.equal(over.status,429);
+        assert.equal(await count(h,'SELECT count(*) n FROM account_addresses WHERE account_id=?',a.accountId),limit,'the refused address is not created');
     }finally{await h.close();}
 });
 

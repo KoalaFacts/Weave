@@ -65,22 +65,23 @@ export function generation(value: unknown): asserts value is bigint {
 export function uuid(value: unknown): asserts value is string {
     if (typeof value !== 'string' || !/^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/.test(value)) fail();
 }
-export async function body(request: Request): Promise<any> {
-    if (!/^application\/(?:json|[\w.+-]+\+json)(?:\s*;|$)/i.test(request.headers.get('Content-Type') ?? '')) fail();
-    if (Number(request.headers.get('Content-Length')) > 131072) fail(413, 'tooLarge');
-    const reader = request.body?.getReader(); if (!reader) fail();
+/**
+ * Reads an untrusted request body under one whole-stream deadline and a byte cap; `refuse` throws the caller's error for
+ * a missing body, a stalled stream or an exceeded cap. A byte limit cannot bound a client that sends headers but stalls
+ * the body, so the deadline covers the whole stream, not each chunk.
+ */
+export async function boundedBody(request: Request, maxBytes: number, refuse: (reason: 'missing' | 'stalled' | 'tooLarge') => never): Promise<Uint8Array> {
+    const reader = request.body?.getReader() ?? refuse('missing');
     const chunks: Uint8Array[] = []; let size = 0;
-    // A byte limit cannot bound a client that sends headers but stalls the body.
-    // Use one deadline for the whole stream, not one timer per chunk.
     let timer: ReturnType<typeof setTimeout> | undefined;
     const deadline = new Promise<null>(resolve => { timer = setTimeout(() => resolve(null), 3500); });
     try {
         while (true) {
             const next = await Promise.race([reader.read(), deadline]);
-            if (next === null) fail(400, 'invalid');
+            if (next === null) refuse('stalled');
             if (next.done) break;
             size += next.value.length;
-            if (size > 131072) fail(413, 'tooLarge');
+            if (size > maxBytes) refuse('tooLarge');
             chunks.push(next.value);
         }
     } finally {
@@ -91,6 +92,12 @@ export async function body(request: Request): Promise<any> {
         reader.releaseLock();
     }
     const all = new Uint8Array(size); let offset = 0; for (const chunk of chunks) { all.set(chunk, offset); offset += chunk.length; }
+    return all;
+}
+export async function body(request: Request): Promise<any> {
+    if (!/^application\/(?:json|[\w.+-]+\+json)(?:\s*;|$)/i.test(request.headers.get('Content-Type') ?? '')) fail();
+    if (Number(request.headers.get('Content-Length')) > 131072) fail(413, 'tooLarge');
+    const all = await boundedBody(request, 131072, reason => reason === 'tooLarge' ? fail(413, 'tooLarge') : fail(400, 'invalid'));
     let value; try { value = parse(new TextDecoder('utf-8', { fatal: true }).decode(all)); } catch (e) { if (e instanceof Problem) throw e; fail(); }
     const depth = (v: any, n: number) => { if (n > 16) fail(); if (v && typeof v === 'object') for (const child of Object.values(v)) depth(child, n + 1); };
     depth(value, 0);

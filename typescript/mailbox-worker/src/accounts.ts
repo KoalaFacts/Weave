@@ -2,6 +2,7 @@ import { findKey, insertKey, validLabel } from './agent-keys.ts';
 import { atomic, type Env, type Transaction } from './database.ts';
 import { verifyDpop } from './dpop.ts';
 import { epochSeconds } from './time.ts';
+import { visibleName } from './visible-text.ts';
 import { fail, hash, object } from './wire.ts';
 
 function settings(env: Env, name: keyof Env, max: number): number {
@@ -40,6 +41,8 @@ function profile(input: any, optional: string[]): {displayName: string | null; d
     for (const [key,max] of [['displayName',128],['description',1024]] as const) {
         if (input[key] != null && (typeof input[key] !== 'string' || input[key].length > max || /[\u0000-\u001f\u007f-\u009f]/u.test(input[key]))) fail();
     }
+    // Owner pages and the OAuth agent picker show the name: bidi or invisible characters could make it read as another.
+    if (input.displayName != null && !visibleName(input.displayName)) fail();
     return {displayName:input.displayName ?? null,description:input.description ?? null};
 }
 async function newAccountId(tx: Transaction): Promise<string> {

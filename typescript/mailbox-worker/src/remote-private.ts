@@ -15,7 +15,7 @@ import { sweep } from './cleanup';
 import { checkAgentCard, publishAgentCard } from './agent-cards.ts';
 import { checkMessage, inboxMessage, messagePayload } from './a2a-message.ts';
 import { idempotencyClaim, recordResultId, replayedResultId, type IdempotencyClaim } from './mcp-idempotency.ts';
-import { liveGrant, liveOwnedGrant } from './client-grants.ts';
+import { liveOwnedGrant } from './client-grants.ts';
 import { authorizeOAuth, type GrantLookup, type OAuthOptions } from './remote-oauth.ts';
 import type { PrivateAccess } from './remote-mcp.ts';
 
@@ -85,15 +85,16 @@ function inboxText(page:{items:any[]}):string{
     const text=stringify({...page,items});
     return messages.reduce((result,message,index)=>result.replace(JSON.stringify(marker+':'+index),()=>message),text);
 }
-/** A write refuses inside its own transaction when the consent grant was revoked after authorization: the transaction's
- * revision check makes a revocation committed before the write's commit visible on retry. */
+/** A write refuses inside its own transaction when, after authorization, the consent grant was revoked, its human
+ * stopped owning the agent or was frozen: the transaction's revision check makes such a change committed before the
+ * write's commit visible on retry. */
 const grantGuard=(accountId:string,grantId:string)=>async(tx:Transaction):Promise<void>=>{
     // A missing grant identity never skips the check.
-    const grant=typeof grantId==='string'&&grantId!==''?await liveGrant(tx.db,grantId):null;
+    const grant=typeof grantId==='string'&&grantId!==''?await liveOwnedGrant(tx.db,grantId):null;
     if(!grant||grant.accountId!==accountId)fail(401,'grant-revoked');
 };
 /** The production private-tool access: the consent grant, its human's current ownership and that human's freeze state are
- * read on every call; each write re-checks the grant's revocation inside its own transaction. */
+ * read on every call, and again inside every write's own transaction. */
 export function oauthPrivateAccess(env:Env,origin:string,config:OAuthOptions,request:Request,
     lookup:GrantLookup=grantId=>liveOwnedGrant(env.db,grantId)):PrivateAccess{
     let grantId:string|null=null;

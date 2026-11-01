@@ -86,15 +86,21 @@ export function payload(bytes = 'hello', now = Date.now()) {
 }
 const testGrants = new Map<string, string>();
 let grantSubjects = 800000;
-type GrantDatabase = { prepare(sql: string): { bind(...values: string[]): { run(): Promise<unknown> } } };
-/** Seeds, once per account, a live consent grant row (with its own human) so direct private-tool calls pass the
- * mandatory in-write grant check. The account itself stays unowned. */
+type GrantDatabase = { prepare(sql: string): { bind(...values: string[]): { run(): Promise<unknown>; first<T = unknown>(column: string): Promise<T | null> } } };
+/** Seeds, once per account, a live consent grant row so direct private-tool calls pass the mandatory in-write grant
+ * check, which also requires the grant's human to own the agent and not be frozen. An already owned agent's grant hangs
+ * off its owner; an unowned agent is given its own human owner first (it then runs under the claimed-agent limits). */
 export async function testGrant(db: GrantDatabase, accountId: string): Promise<string> {
     const known = testGrants.get(accountId);
     if (known) return known;
-    const humanId = randomUUID(), grantId = randomUUID(), at = (BigInt(Date.now())*10000n).toString();
-    await db.prepare("INSERT INTO humans(human_id,provider,subject,provider_created_at,display_login,created_at,updated_at) VALUES(?,'github',?,'2020-01-01T00:00:00Z',?,CAST(? AS INTEGER),CAST(? AS INTEGER))")
-        .bind(humanId, String(++grantSubjects), 'grant-owner', at, at).run();
+    const grantId = randomUUID(), at = (BigInt(Date.now())*10000n).toString();
+    let humanId = await db.prepare('SELECT human_id FROM accounts WHERE account_id=?').bind(accountId).first<string>('human_id');
+    if (humanId === null) {
+        humanId = randomUUID();
+        await db.prepare("INSERT INTO humans(human_id,provider,subject,provider_created_at,display_login,created_at,updated_at) VALUES(?,'github',?,'2020-01-01T00:00:00Z',?,CAST(? AS INTEGER),CAST(? AS INTEGER))")
+            .bind(humanId, String(++grantSubjects), 'grant-owner', at, at).run();
+        await db.prepare('UPDATE accounts SET human_id=? WHERE account_id=? AND human_id IS NULL').bind(humanId, accountId).run();
+    }
     await db.prepare("INSERT INTO client_grants(grant_id,human_id,account_id,client_id,created_at,revoked_at) VALUES(?,?,?,'https://client.test/metadata.json',CAST(? AS INTEGER),NULL)")
         .bind(grantId, humanId, accountId, at).run();
     testGrants.set(accountId, grantId);

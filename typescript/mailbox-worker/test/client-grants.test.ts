@@ -3,7 +3,7 @@ import { test } from 'node:test';
 import { build } from 'esbuild';
 import { start } from './harness.ts';
 import { createOwnedAgent, signInHuman } from '../src/humans.ts';
-import { liveGrant, liveOwnedGrant, recordGrant, revokeGrant } from '../src/client-grants.ts';
+import { liveOwnedGrant, recordGrant, revokeGrant } from '../src/client-grants.ts';
 import { ownerAction } from '../src/owner-actions.ts';
 import { atomic, type Database, type Env } from '../src/database.ts';
 import { remoteMcp } from '../src/remote-mcp.ts';
@@ -37,7 +37,7 @@ test('recordGrant_OwnedAgent_Recorded', async () => {
         assert.deepEqual(await recordGrant(env, { grantId, humanId, accountId, clientId }, () => 1234n), { ok: true });
         assert.deepEqual(await grantRow(h.db, grantId), { human_id: humanId, account_id: accountId, client_id: clientId, revoked_at: null });
         assert.equal(await h.db.prepare('SELECT CAST(created_at AS TEXT) t FROM client_grants WHERE grant_id=?').bind(grantId).first('t'), '1234');
-        assert.deepEqual(await liveGrant(h.db, grantId), { grantId, humanId, accountId, clientId });
+        assert.deepEqual(await liveOwnedGrant(h.db, grantId), { grantId, humanId, accountId, clientId });
     } finally { await h.close(); }
 });
 
@@ -103,7 +103,7 @@ test('revokeGrant_Twice_Ok', async () => {
         assert.deepEqual(await revokeGrant(env, { humanId: alice.humanId, grantId }, () => 300n), { ok: true });
         assert.equal((await grantRow(h.db, grantId))?.revoked_at, '200', 'the first revocation time is kept');
         assert.equal(await revision(h.db), revoked, 'a repeated revocation writes nothing');
-        assert.equal(await liveGrant(h.db, grantId), null);
+        assert.equal(await liveOwnedGrant(h.db, grantId), null);
     } finally { await h.close(); }
 });
 
@@ -273,6 +273,29 @@ test('mcpPrivate_GrantRevokedBetweenAuthorizeAndWrite_NothingWritten', async () 
     } finally { await h.close(); }
 });
 
+test('mcpPrivate_OwnerFrozenBetweenAuthorizeAndWrite_NothingWritten', async () => {
+    const h = await start();
+    try {
+        const env = environment(h.db), alice = await owner(env), grantId = crypto.randomUUID();
+        assert.deepEqual(await recordGrant(env, { grantId, ...alice, clientId }), { ok: true });
+        const claims = () => claim(alice.accountId, { humanId: alice.humanId, grantId }, clientId, ['weave:addresses.write']);
+        const addresses = () => h.db.prepare('SELECT address_id FROM account_addresses WHERE account_id=?').bind(alice.accountId).all<{ address_id: string }>();
+        const control = await mcp(env, claims, { name: 'ensure_my_address', args: { addressId: crypto.randomUUID() } })(token(alice.accountId));
+        assert.equal((await control.json()).result.isError, undefined, 'positive control');
+        const before = (await addresses()).results, beforeRevision = await revision(h.db);
+        const invoked = { count: 0 };
+        const answer = await mcp(env, claims, { name: 'ensure_my_address', args: { addressId: crypto.randomUUID() }, invoked,
+            afterAuthorize: async () => { await h.db.prepare('UPDATE humans SET frozen_at=updated_at WHERE human_id=?').bind(alice.humanId).run(); } })(token(alice.accountId));
+        assert.equal(invoked.count, 1, 'the freeze landed after authorization, before the write');
+        const result = (await answer.json()).result;
+        assert.equal(result.isError, true);
+        assert.deepEqual(result.structuredContent, { status: 401, code: 'grant-revoked' });
+        assert.deepEqual((await addresses()).results, before, 'nothing was written');
+        assert.equal(await revision(h.db), beforeRevision, 'no state change was committed');
+        assert.equal((await grantRow(h.db, grantId))?.revoked_at, null, 'the freeze fences the write without revoking the grant');
+    } finally { await h.close(); }
+});
+
 test('mcpPrivate_RevokedTokenWithInsufficientScope_401', async () => {
     const h = await start();
     try {
@@ -314,7 +337,9 @@ test('recordGrant_ClientNameStoredBounded', async () => {
         const name = (grantId: string) => h.db.prepare('SELECT client_name n FROM client_grants WHERE grant_id=?').bind(grantId).first<string | null>('n');
         const cases: [string | null | undefined, string | null][] = [['Claude Desktop', 'Claude Desktop'], [null, null], [undefined, null], ['', null],
             ['a\nb\u0000c\u009fd', 'a?b?c?d'], ['x'.repeat(200), 'x'.repeat(128)], ['   ', null], ['\t\n', null],
-            ['a\u202ab\u202ec\u2066d\u2069e', 'a?b?c?d?e'], ['\u{1F600}'.repeat(130), '\u{1F600}'.repeat(128)]];
+            ['a\u202ab\u202ec\u2066d\u2069e', 'a?b?c?d?e'], ['\u{1F600}'.repeat(130), '\u{1F600}'.repeat(128)],
+            // The invisible characters the consent page strips; the emoji zero-width joiner is kept.
+            ['Claude\u200bDesktop', 'Claude?Desktop'], ['a\u00adb\u061cc\u200ed\u200fe\u2060f\ufeffg', 'a?b?c?d?e?f?g'], ['\u{1F469}\u200d\u{1F52C}', '\u{1F469}\u200d\u{1F52C}']];
         for (const [clientName, stored] of cases) {
             const grantId = crypto.randomUUID();
             assert.deepEqual(await recordGrant(env, { grantId, humanId, accountId, clientId, ...(clientName === undefined ? {} : { clientName }) }), { ok: true });
