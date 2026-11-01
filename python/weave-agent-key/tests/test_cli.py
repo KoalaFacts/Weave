@@ -16,6 +16,9 @@ import support
 ACCOUNT_ID = '0f8fad5b-d9cb-469f-a165-70867728950e'
 ISSUED_TOKEN = 'T' * 43
 LIMITED_ACCOUNT = '7c9e6679-7425-40de-944b-e07fc1f90ae7'
+GARBLED_ACCOUNT = '9b2e1c4d-3f5a-4e6b-8c7d-1a2b3c4d5e6f'
+GARBLED_TOKEN = 'G' * 43
+GARBLED_BODY = b'<html>xyzSECRETbodytext</html>'
 
 
 def run(*args):
@@ -51,11 +54,19 @@ class Relay(BaseHTTPRequestHandler):
             return self.reply(200, {'accountId': ACCOUNT_ID, 'displayName': None, 'description': None, 'kid': kid})
         if self.path == '/v1/token' and parse_qs(body).get('client_id') == [LIMITED_ACCOUNT]:
             return self.reply(429, {'error': 'temporarily_unavailable'}, {'Retry-After': '3600'})
+        if self.path == '/v1/token' and parse_qs(body).get('client_id') == [GARBLED_ACCOUNT]:
+            return self.reply(200, {'access_token': GARBLED_TOKEN, 'token_type': 'DPoP', 'expires_in': 900})
         if self.path == '/v1/token':
             return self.reply(200, {'access_token': ISSUED_TOKEN, 'token_type': 'DPoP', 'expires_in': 900})
         self.reply(401, {'status': 401, 'code': 'unauthenticated'})
 
     def do_GET(self):
+        if self.path == '/v1/keys' and self.headers.get('Authorization') == 'DPoP ' + GARBLED_TOKEN:
+            self.send_response(200)
+            self.send_header('Content-Type', 'text/html')
+            self.send_header('Content-Length', str(len(GARBLED_BODY)))
+            self.end_headers()
+            return self.wfile.write(GARBLED_BODY)
         if self.path == '/v1/keys' and self.headers.get('Authorization') == 'DPoP ' + ISSUED_TOKEN:
             return self.reply(200, {'items': [{'kid': 'k', 'label': None, 'createdAt': '2026-11-01T00:00:00Z', 'lastUsedAt': None, 'coolingUntil': None}]})
         self.reply(401, {'status': 401, 'code': 'unauthenticated'})
@@ -109,6 +120,12 @@ class CliTests(unittest.TestCase):
         self.assertEqual(code, 1)
         self.assertEqual(stdout, '')
         self.assertEqual(stderr, 'weave-agent-key: Token request answered HTTP 429 temporarily_unavailable; retry after 3600 s\n')
+
+    def test_cli_whoami_non_json_key_list_unexpected_response_without_echoing_body(self):
+        self.assertEqual(run('init', self.keyfile)[0], 0)
+        code, stdout, stderr = run('whoami', self.origin, self.keyfile, GARBLED_ACCOUNT)
+        self.assertEqual((code, stdout), (1, ''))
+        self.assertEqual(stderr, 'weave-agent-key: Key list answered HTTP 200 unexpected-response\n')
 
     def test_cli_options_apply_only_to_their_command(self):
         self.assertEqual(run('init', self.keyfile)[0], 0)

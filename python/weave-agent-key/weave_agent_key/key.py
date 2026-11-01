@@ -152,8 +152,9 @@ def _refuse(path: str | os.PathLike[str]) -> KeyFileError:
 
 
 def load_key(path: str | os.PathLike[str]) -> AgentKey:
-    """Reads a private JWK written by `create_key`; on POSIX a file accessible by group or others is refused."""
-    fd = os.open(path, os.O_RDONLY | getattr(os, 'O_BINARY', 0))
+    """Reads a private JWK written by `create_key`; only a regular file is read, and on POSIX one accessible by group or others is refused."""
+    # Non-blocking, so a FIFO or device (directly or behind a symlink) is opened at once and refused by the regular-file check.
+    fd = os.open(path, os.O_RDONLY | getattr(os, 'O_BINARY', 0) | getattr(os, 'O_NONBLOCK', 0))
     try:
         info = os.fstat(fd)
         if not stat.S_ISREG(info.st_mode) or info.st_size > _MAX_KEY_FILE_BYTES:

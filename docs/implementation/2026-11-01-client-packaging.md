@@ -18,9 +18,12 @@ commands were source-checked, not run against a deployment.
 - `typescript/agent-key` (Node 24, no runtime dependencies) and
   `python/weave-agent-key` (Python 3.12+, `cryptography`) implement the key
   protocol: `init`, `register`, `token` (expiry only unless `--print-token`) and
-  `whoami`. Differences: the Python helper is synchronous, uses a 30 s request
-  timeout and applies a stricter origin check. Both wait out one 429 whose
-  `Retry-After` is at most 60 s and report a longer one.
+  `whoami`. Both cancel a request after 30 s by default (the TypeScript helper
+  also takes a caller `AbortSignal` that cancels the Retry-After wait), use no
+  environment proxy, read only a regular key file, bound relay error codes and
+  wait out one 429 whose `Retry-After` is at most 60 s and report a longer one.
+  Differences: the Python helper is synchronous and applies a stricter origin
+  check. Python dependencies are hash-locked in `requirements.txt`.
 - The skills use the remote tool names and the `message` / `idempotencyKey`
   contract of the [MCP record](2026-11-01-mcp-a2a-messages.md). Owners manage
   agents, clients and keys on `/account` ([owner grants](2026-11-01-owner-grants.md)).

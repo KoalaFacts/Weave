@@ -11,9 +11,11 @@ from unittest.mock import patch
 from urllib.parse import parse_qs
 
 import support  # noqa: F401 - imports the package from this checkout and skips without cryptography
+import generate_vectors
 from weave_agent_key import AccessToken, HelperOptions, HttpResponse, access_token, fetch_with_key, load_key
 
-VECTORS = json.loads((Path(__file__).parent / 'vectors' / 'agent-key-vectors.json').read_text('utf-8'))
+VECTORS_TEXT = (Path(__file__).parent / 'vectors' / 'agent-key-vectors.json').read_bytes().decode('utf-8')
+VECTORS = json.loads(VECTORS_TEXT)
 
 
 def compact(vector):
@@ -50,6 +52,9 @@ class VectorTests(unittest.TestCase):
         self.assertEqual(token_request.headers['DPoP'], compact(VECTORS['tokenRequest']['dpop']))
         self.assertEqual(key_list.headers['Authorization'], 'DPoP ' + VECTORS['accessToken'])
         self.assertEqual(key_list.headers['DPoP'], compact(VECTORS['keyList']['dpop']))
+
+    def test_generator_reproduces_committed_vectors(self):
+        self.assertEqual(generate_vectors.render(generate_vectors.build()), VECTORS_TEXT)
 
 
 if __name__ == '__main__':

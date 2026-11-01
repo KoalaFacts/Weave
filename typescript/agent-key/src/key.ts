@@ -1,3 +1,4 @@
+import { constants } from 'node:fs';
 import { open, unlink } from 'node:fs/promises';
 
 export type PublicJwk = {kty: 'OKP'; crv: 'Ed25519'; x: string};
@@ -67,9 +68,10 @@ function refuse(path: string): never {
     throw new KeyFileError(`Key file ${path} does not hold an Ed25519 private JWK.`);
 }
 
-/** Reads a private JWK written by `createKey`; on POSIX a file accessible by group or others is refused. */
+/** Reads a private JWK written by `createKey`; only a regular file is read, and on POSIX one accessible by group or others is refused. */
 export async function loadKey(path: string): Promise<AgentKey> {
-    const file = await open(path, 'r');
+    // Non-blocking, so a FIFO or device (directly or behind a symlink) is opened at once and refused by the regular-file check.
+    const file = await open(path, constants.O_RDONLY | (constants.O_NONBLOCK ?? 0));
     let text: string;
     try {
         const info = await file.stat();

@@ -3,7 +3,8 @@ import { access, chmod, mkdtemp, readFile, rm, stat, writeFile } from 'node:fs/p
 import { tmpdir } from 'node:os';
 import { join } from 'node:path';
 import { test } from 'node:test';
-import { open, unlink } from 'node:fs/promises';
+import { open, symlink, unlink } from 'node:fs/promises';
+import { execFile } from 'node:child_process';
 import { createKey, KeyFileError, loadKey } from '../src/index.ts';
 import { writeNewKeyFile } from '../src/key.ts';
 
@@ -111,6 +112,23 @@ test('createKey_WriteOrCloseFails_RemovesPartialFileAndRethrowsOriginalError', a
             await assert.rejects(writeNewKeyFile(path, '{}', {open: failing(failWrite, failClose), unlink: removal}), {message}, name);
             if (failUnlink) await unlink(path);
             else await assert.rejects(access(path), {code: 'ENOENT'}, name);
+        }
+    } finally { await rm(dir, {recursive: true, force: true}); }
+});
+
+test('loadKey_FifoOrDevice_RefusedWithoutBlocking', {skip: posixOnly}, async () => {
+    const dir = await scratch();
+    try {
+        const fifo = join(dir, 'agent.fifo');
+        await new Promise<void>((resolve, reject) => execFile('mkfifo', ['-m', '600', fifo], error => error ? reject(error) : resolve()));
+        const linked = join(dir, 'linked.jwk');
+        await symlink(fifo, linked);
+        for (const path of [fifo, linked, '/dev/null']) {
+            const outcome = await Promise.race([loadKey(path).then(() => 'loaded', (error: unknown) => error instanceof KeyFileError ? 'refused' : String(error)),
+                new Promise<string>(resolve => setTimeout(() => resolve('blocked'), 2000))]);
+            // A blocked open would hold a thread forever; a writer releases it so the run can finish and report.
+            if (outcome === 'blocked') await (await open(fifo, 'w')).close();
+            assert.equal(outcome, 'refused', path);
         }
     } finally { await rm(dir, {recursive: true, force: true}); }
 });

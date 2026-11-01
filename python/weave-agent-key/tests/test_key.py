@@ -2,6 +2,7 @@ import json
 import os
 import stat
 import tempfile
+import threading
 import unittest
 from pathlib import Path
 
@@ -121,6 +122,32 @@ class KeyTests(unittest.TestCase):
                     path.unlink()
                 else:
                     self.assertFalse(path.exists())
+
+    @unittest.skipIf(os.name == 'nt', support.POSIX_ONLY)
+    def test_load_key_fifo_or_device_refused_without_blocking(self):
+        fifo = self.dir / 'agent.fifo'
+        os.mkfifo(fifo, 0o600)
+        linked = self.dir / 'linked.jwk'
+        linked.symlink_to(fifo)
+        for path in (fifo, linked, Path('/dev/null')):
+            outcome = []
+
+            def attempt(path=path):
+                try:
+                    load_key(path)
+                    outcome.append('loaded')
+                except KeyFileError:
+                    outcome.append('refused')
+            worker = threading.Thread(target=attempt, daemon=True)
+            worker.start()
+            worker.join(2)
+            if worker.is_alive():
+                # A blocked open would hold the thread forever; a writer releases it so the run can finish and report.
+                os.close(os.open(fifo, os.O_WRONLY))
+                worker.join(2)
+                outcome.insert(0, 'blocked')
+            with self.subTest(str(path)):
+                self.assertEqual(outcome[:1], ['refused'])
 
 
 if __name__ == '__main__':

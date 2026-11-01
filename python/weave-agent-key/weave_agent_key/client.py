@@ -22,9 +22,10 @@ __all__ = ['AccessToken', 'HelperOptions', 'HttpRequest', 'HttpResponse', 'Keyed
 
 @dataclass(frozen=True)
 class HttpRequest:
+    """A request for the transport. Its headers carry the access token and DPoP proof, so neither headers nor body are in its repr."""
     method: str
     url: str
-    headers: Mapping[str, str]
+    headers: Mapping[str, str] = field(repr=False)
     body: bytes | None = field(default=None, repr=False)
 
 
@@ -101,6 +102,9 @@ _MAX_RETRY_WAIT_SECONDS = 60
 _B64TOKEN = re.compile(r'[A-Za-z0-9\-._~+/]+=*')
 _MAX_TOKEN_LENGTH = 4096
 _RETRY_AFTER = re.compile(r'[0-9]{1,6}')
+# A relay-supplied code goes into error text: bounded, and without control or markup characters.
+_SAFE_CODE = re.compile(r'[A-Za-z0-9._ -]{1,64}')
+_UNSAFE_CODE = 'unexpected-error-code'
 _LOOPBACK = {'localhost', '127.0.0.1', '::1'}
 _DEFAULT_PORTS = {'https': 443, 'http': 80}
 # These requests authenticate with a DPoP proof alone; a 401 there is never an expired token.
@@ -170,7 +174,8 @@ def _error_code(response: HttpResponse) -> str | None:
     if not isinstance(body, dict):
         return None
     error, code = body.get('error'), body.get('code')
-    return error if isinstance(error, str) else code if isinstance(code, str) else None
+    value = error if isinstance(error, str) else code if isinstance(code, str) else None
+    return value if value is None or _SAFE_CODE.fullmatch(value) else _UNSAFE_CODE
 
 
 class _NoRedirect(urllib.request.HTTPRedirectHandler):
@@ -178,7 +183,8 @@ class _NoRedirect(urllib.request.HTTPRedirectHandler):
         return None
 
 
-_opener = urllib.request.build_opener(_NoRedirect)
+# No environment proxies: the token and proof go only to the relay origin, never through an http_proxy/https_proxy.
+_opener = urllib.request.build_opener(urllib.request.ProxyHandler({}), _NoRedirect)
 
 
 def _urllib_transport(timeout: float) -> Transport:

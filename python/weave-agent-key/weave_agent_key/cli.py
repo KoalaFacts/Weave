@@ -75,7 +75,13 @@ def _run(argv: Sequence[str]) -> None:
     response, _ = fetch_with_key(origin, key, token, 'GET', '/v1/keys')
     if not response.ok:
         raise WeaveHttpError('Key list', response.status, None)
-    _print({'accountId': account_id, 'kid': key.kid, 'keys': response.json()['items']})
+    try:
+        items = response.json().get('items')
+    except (AttributeError, ValueError):
+        items = None
+    if not isinstance(items, list):
+        raise WeaveHttpError('Key list', response.status, 'unexpected-response')
+    _print({'accountId': account_id, 'kid': key.kid, 'keys': items})
 
 
 def main(argv: Sequence[str] | None = None) -> int:

@@ -62,7 +62,9 @@ token = result.token;
 - `accessToken` sends a fresh single-use assertion (`aud` is the token endpoint, lifetime 60 s) and a DPoP proof. A 429 whose `Retry-After` is at most 60 seconds is waited out once; a longer one throws `RateLimitedError` with `retryAfter` for the caller to decide.
 - `fetchWithKey` sends `Authorization: DPoP <token>` and a proof whose `htu` is the URL without query or fragment, `htm` the uppercase method and `ath` the token hash. On a 401 it obtains one new token and repeats the request once; keep using the token it returns. Registration and key-only requests are never retried on 401.
 - Requests never follow redirects, because a proof is bound to the URL it names. A refused call throws `WeaveHttpError` with `status` and `code` (the relay's `error` or problem `code`); the response body is not retained.
-- `HelperOptions` replaces `fetch`, the clock or the sleep for tests and embedding hosts.
+- A relay `code` is kept only when it is at most 64 characters of `A-Z a-z 0-9 . _ -` and space, otherwise it is `unexpected-error-code`. A success body that is not the expected JSON is `unexpected-response`.
+- `loadKey` opens the file non-blocking and reads only a regular file, so a FIFO, a device or a symlink to one is refused at once.
+- `HelperOptions` replaces `fetch`, the clock or the sleep for tests and embedding hosts. Its `signal` cancels every request and the Retry-After wait; without one, each request is cancelled after 30 seconds.
 
 ## Tests
 

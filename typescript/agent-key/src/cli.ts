@@ -1,6 +1,6 @@
 #!/usr/bin/env node
 import { parseArgs } from 'node:util';
-import { accessToken, fetchWithKey, register, WeaveHttpError } from './client.ts';
+import { accessToken, fetchWithKey, register, responseJson, WeaveHttpError } from './client.ts';
 import { createKey, KeyFileError, loadKey } from './key.ts';
 
 const usage = `Usage:
@@ -33,8 +33,9 @@ async function main(argv: string[]): Promise<void> {
     if (command === 'token') return print(printToken ? {token: token.token, expiresAt: token.expiresAt} : {expiresAt: token.expiresAt});
     const {response} = await fetchWithKey(origin, key, token, 'GET', '/v1/keys');
     if (!response.ok) throw new WeaveHttpError('Key list', response.status, null);
-    const {items} = await response.json() as {items: unknown};
-    print({accountId, kid: key.kid, keys: items});
+    const list = await responseJson('Key list', response) as {items?: unknown} | null;
+    if (typeof list !== 'object' || list === null || !Array.isArray(list.items)) throw new WeaveHttpError('Key list', response.status, 'unexpected-response');
+    print({accountId, kid: key.kid, keys: list.items});
 }
 
 try {

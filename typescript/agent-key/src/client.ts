@@ -1,7 +1,12 @@
 import { base64url, signJws, type AgentKey } from './key.ts';
 
-/** Injection points for tests and embedding hosts; the defaults are the global fetch, the system clock and a timer. */
-export type HelperOptions = {fetch?: typeof fetch; now?: () => number; sleep?: (milliseconds: number) => Promise<void>};
+/**
+ * Injection points for tests and embedding hosts; the defaults are the global fetch, the system clock and a timer. `signal` cancels
+ * every request and the Retry-After wait; without it each request is cancelled after 30 seconds and the wait (at most 60 s) runs out.
+ */
+export type HelperOptions = {
+    fetch?: typeof fetch; now?: () => number; sleep?: (milliseconds: number, signal?: AbortSignal) => Promise<void>; signal?: AbortSignal;
+};
 /** A DPoP-bound access token and the agent it was issued to; `expiresAt` is an ISO 8601 instant by the local clock. */
 export type AccessToken = {token: string; expiresAt: string; accountId: string};
 
@@ -38,7 +43,19 @@ const loopback = new Set(['localhost', '127.0.0.1', '[::1]']);
 // These requests authenticate with a DPoP proof alone; a 401 there is never an expired token.
 const keyOnlyPaths = new Set(['/v1/accounts', '/v1/token', '/v1/key-requests']);
 const encoder = new TextEncoder();
-const defaultSleep = (milliseconds: number) => new Promise<void>(resolve => setTimeout(resolve, milliseconds));
+const requestTimeoutMilliseconds = 30_000;
+// A relay-supplied code goes into error text: bounded, and without control or markup characters.
+const safeCode = /^[A-Za-z0-9._ -]{1,64}$/;
+const unsafeCode = 'unexpected-error-code';
+
+function defaultSleep(milliseconds: number, signal?: AbortSignal): Promise<void> {
+    return new Promise<void>((resolve, reject) => {
+        if (signal?.aborted) return reject(signal.reason);
+        const abort = () => { clearTimeout(timer); reject(signal?.reason); };
+        const timer = setTimeout(() => { signal?.removeEventListener('abort', abort); resolve(); }, milliseconds);
+        signal?.addEventListener('abort', abort, {once: true});
+    });
+}
 
 /** The service origin: HTTPS, or HTTP on loopback only, with no path, query, fragment or credentials. */
 export function serviceOrigin(origin: string): string {
@@ -68,17 +85,25 @@ export async function dpopProof(key: AgentKey, method: string, url: URL, accessT
 }
 
 async function errorCode(response: Response): Promise<string | null> {
-    try {
-        const body: unknown = await response.json();
-        if (typeof body !== 'object' || body === null) return null;
-        const {error, code} = body as {error?: unknown; code?: unknown};
-        return typeof error === 'string' ? error : typeof code === 'string' ? code : null;
-    } catch { return null; }
+    let body: unknown;
+    try { body = await response.json(); } catch { return null; }
+    if (typeof body !== 'object' || body === null) return null;
+    const {error, code} = body as {error?: unknown; code?: unknown};
+    const value = typeof error === 'string' ? error : typeof code === 'string' ? code : null;
+    return value === null || safeCode.test(value) ? value : unsafeCode;
+}
+
+/** The parsed JSON body of a success response; a body that is not JSON is `unexpected-response`, and its text is never echoed. */
+export async function responseJson(operation: string, response: Response): Promise<unknown> {
+    try { return await response.json(); } catch (error) {
+        if (error instanceof SyntaxError) throw new WeaveHttpError(operation, response.status, 'unexpected-response');
+        throw error;
+    }
 }
 
 async function send(options: HelperOptions | undefined, url: URL, init: RequestInit): Promise<Response> {
     // Signed requests never follow redirects: a proof is bound to the URL it names.
-    return (options?.fetch ?? fetch)(url, {...init, redirect: 'manual'});
+    return (options?.fetch ?? fetch)(url, {...init, redirect: 'manual', signal: options?.signal ?? AbortSignal.timeout(requestTimeoutMilliseconds)});
 }
 
 /** POST /v1/accounts with a DPoP proof by the key. Repeating it with a live key returns the same agent. A 401 is reported, never retried. */
@@ -88,8 +113,8 @@ export async function register(origin: string, key: AgentKey, profile: {displayN
     const response = await send(options, url, {method: 'POST', headers: {'Content-Type': 'application/json', DPoP: await dpopProof(key, 'POST', url, undefined, options)},
         body: JSON.stringify(body)});
     if (!response.ok) throw new WeaveHttpError('Registration', response.status, await errorCode(response));
-    const result = await response.json() as {accountId?: unknown; kid?: unknown};
-    if (typeof result.accountId !== 'string' || result.kid !== key.kid) throw new WeaveHttpError('Registration', response.status, 'unexpected-response');
+    const result = await responseJson('Registration', response) as {accountId?: unknown; kid?: unknown} | null;
+    if (typeof result !== 'object' || result === null || typeof result.accountId !== 'string' || result.kid !== key.kid) throw new WeaveHttpError('Registration', response.status, 'unexpected-response');
     return {accountId: result.accountId};
 }
 
@@ -108,14 +133,14 @@ export async function accessToken(origin: string, key: AgentKey, accountId: stri
             // A short wait is taken once; anything longer is the caller's decision.
             if (attempt === 0 && Number(retryAfter) <= maxRetryWaitSeconds) {
                 await response.body?.cancel();
-                await (options?.sleep ?? defaultSleep)(Number(retryAfter) * 1000);
+                await (options?.sleep ?? defaultSleep)(Number(retryAfter) * 1000, options?.signal);
                 continue;
             }
             throw new RateLimitedError('Token request', await errorCode(response), Number(retryAfter));
         }
         if (!response.ok) throw new WeaveHttpError('Token request', response.status, await errorCode(response));
-        const issued = await response.json() as {access_token?: unknown; token_type?: unknown; expires_in?: unknown};
-        if (!usableToken(issued.access_token) || typeof issued.token_type !== 'string' || issued.token_type.toLowerCase() !== 'dpop'
+        const issued = await responseJson('Token request', response) as {access_token?: unknown; token_type?: unknown; expires_in?: unknown} | null;
+        if (typeof issued !== 'object' || issued === null || !usableToken(issued.access_token) || typeof issued.token_type !== 'string' || issued.token_type.toLowerCase() !== 'dpop'
             || typeof issued.expires_in !== 'number' || !(issued.expires_in > 0))
             throw new WeaveHttpError('Token request', response.status, 'unexpected-response');
         return {token: issued.access_token, expiresAt: new Date(iat * 1000 + issued.expires_in * 1000).toISOString(), accountId};

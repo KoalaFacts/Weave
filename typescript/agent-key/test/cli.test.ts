@@ -13,6 +13,9 @@ const cli = fileURLToPath(new URL('../src/cli.ts', import.meta.url));
 const accountId = '0f8fad5b-d9cb-469f-a165-70867728950e';
 const issuedToken = 'T'.repeat(43);
 const limitedAccount = '7c9e6679-7425-40de-944b-e07fc1f90ae7';
+const garbledAccount = '9b2e1c4d-3f5a-4e6b-8c7d-1a2b3c4d5e6f';
+const garbledToken = 'G'.repeat(43);
+const garbledBody = '<html>xyzSECRETbodytext</html>';
 
 type Run = {code: number; stdout: string; stderr: string};
 function run(...args: string[]): Promise<Run> {
@@ -39,6 +42,11 @@ async function fakeRelay(): Promise<{server: Server; origin: string}> {
         }
         if (request.url === '/v1/token' && new URLSearchParams(body).get('client_id') === limitedAccount)
             return reply(429, {error: 'temporarily_unavailable'}, {'Retry-After': '3600'});
+        if (request.url === '/v1/token' && new URLSearchParams(body).get('client_id') === garbledAccount)
+            return reply(200, {access_token: garbledToken, token_type: 'DPoP', expires_in: 900});
+        if (request.url === '/v1/keys' && request.headers.authorization === 'DPoP ' + garbledToken) {
+            response.writeHead(200, {'Content-Type': 'text/html'}); return response.end(garbledBody);
+        }
         if (request.url === '/v1/token' && request.method === 'POST') return reply(200, {access_token: issuedToken, token_type: 'DPoP', expires_in: 900});
         if (request.url === '/v1/keys' && request.method === 'GET' && request.headers.authorization === 'DPoP ' + issuedToken)
             return reply(200, {items: [{kid: 'k', label: null, createdAt: '2026-11-01T00:00:00Z', lastUsedAt: null, coolingUntil: null}]});
@@ -104,6 +112,22 @@ test('cli_Token_RateLimitedBeyondOneMinute_ReportsWaitWithoutWaiting', async () 
         assert.equal(limited.code, 1);
         assert.equal(limited.stdout, '');
         assert.equal(limited.stderr, 'weave-agent-key: Token request answered HTTP 429 temporarily_unavailable; retry after 3600 s\n');
+    } finally {
+        relay.server.close();
+        await rm(dir, {recursive: true, force: true});
+    }
+});
+
+test('cli_Whoami_NonJsonKeyList_UnexpectedResponseWithoutEchoingBody', async () => {
+    const dir = await mkdtemp(join(tmpdir(), 'weave-agent-key-cli-'));
+    const relay = await fakeRelay();
+    try {
+        const keyfile = join(dir, 'agent.jwk');
+        assert.equal((await run('init', keyfile)).code, 0);
+        const garbled = await run('whoami', relay.origin, keyfile, garbledAccount);
+        assert.equal(garbled.code, 1);
+        assert.equal(garbled.stdout, '');
+        assert.equal(garbled.stderr, 'weave-agent-key: Key list answered HTTP 200 unexpected-response\n');
     } finally {
         relay.server.close();
         await rm(dir, {recursive: true, force: true});

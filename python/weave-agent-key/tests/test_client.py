@@ -1,13 +1,18 @@
 import base64
 import hashlib
+import http.server
 import json
+import os
+import subprocess
+import sys
+import threading
 import tempfile
 import time
 import unittest
 from pathlib import Path
 from urllib.parse import parse_qs
 
-import support  # noqa: F401 - imports the package from this checkout and skips without cryptography
+import support
 from cryptography.hazmat.primitives.asymmetric.ed25519 import Ed25519PublicKey
 from weave_agent_key import (AccessToken, HelperOptions, HttpResponse, RateLimitedError, WeaveHttpError, access_token, create_key,
                              dpop_proof, fetch_with_key, load_key, register, service_origin)
@@ -243,6 +248,77 @@ class ClientTests(unittest.TestCase):
         relay = FakeRelay(self.key)
         issued = access_token(ORIGIN, self.key, ACCOUNT_ID, HelperOptions(transport=relay, now=lambda: 1793491200.9))
         self.assertEqual(issued.expires_at, '2026-11-01T00:15:00.000Z')
+
+    def test_relay_error_code_bounded_and_restricted_to_safe_characters(self):
+        cases = [({'error': 'invalid_client'}, 'invalid_client'), ({'code': 'rate-limited.v1 x'}, 'rate-limited.v1 x'),
+                 ({'error': '\x1b[31mred'}, 'unexpected-error-code'), ({'error': 'a' * 65}, 'unexpected-error-code'),
+                 ({'error': ''}, 'unexpected-error-code'), ({'code': 'line\nbreak'}, 'unexpected-error-code'), ({'other': 'x'}, None)]
+        for body, expected in cases:
+            relay = FakeRelay(self.key, lambda request, path, body=body: HttpResponse(400, {}, json.dumps(body).encode()))
+            with self.subTest(body), self.assertRaises(WeaveHttpError) as caught:
+                register(ORIGIN, self.key, options=HelperOptions(transport=relay))
+            self.assertEqual(caught.exception.code, expected)
+            self.assertNotRegex(str(caught.exception), '[\x00-\x1f]')
+            self.assertLess(len(str(caught.exception)), 120)
+
+    def test_http_request_repr_hides_credentials(self):
+        token = 'Q' * 43
+        captured = []
+
+        def relay(request):
+            captured.append(request)
+            return ok({'items': []})
+        fetch_with_key(ORIGIN, self.key, AccessToken(token, '2026-11-01T00:00:00.000Z', ACCOUNT_ID), 'GET', '/v1/keys',
+                       options=HelperOptions(transport=relay))
+        (request,) = captured
+        self.assertIn(token, request.headers['Authorization'])
+        for text in (repr(request), str(request)):
+            self.assertNotIn(token, text)
+            self.assertNotIn(request.headers['DPoP'], text)
+
+
+class ProxyTests(unittest.TestCase):
+    """The default transport never sends a request (and so its token and proof) through an environment proxy."""
+
+    def test_default_transport_ignores_environment_proxy(self):
+        hits = {'relay': 0, 'proxy': 0}
+
+        def server(name):
+            class Handler(http.server.BaseHTTPRequestHandler):
+                def do_GET(self):
+                    hits[name] += 1
+                    body = b'{"items":[]}'
+                    self.send_response(200)
+                    self.send_header('Content-Type', 'application/json')
+                    self.send_header('Content-Length', str(len(body)))
+                    self.end_headers()
+                    self.wfile.write(body)
+
+                def log_message(self, *args):
+                    pass
+            instance = http.server.HTTPServer(('127.0.0.1', 0), Handler)
+            threading.Thread(target=instance.serve_forever, daemon=True).start()
+            self.addCleanup(instance.server_close)
+            self.addCleanup(instance.shutdown)
+            return instance.server_address[1]
+
+        relay_port, proxy_port = server('relay'), server('proxy')
+        proxy = f'http://127.0.0.1:{proxy_port}'
+        env = {name: value for name, value in os.environ.items() if name.lower() not in ('no_proxy', 'http_proxy', 'https_proxy', 'all_proxy')}
+        env.update({'http_proxy': proxy, 'HTTP_PROXY': proxy, 'PYTHONPATH': str(support.PACKAGE_ROOT)})
+        script = f"""
+import tempfile, pathlib
+from weave_agent_key import AccessToken, create_key, fetch_with_key, load_key
+with tempfile.TemporaryDirectory() as directory:
+    path = pathlib.Path(directory) / 'agent.jwk'
+    create_key(path)
+    key = load_key(path)
+response, _ = fetch_with_key('http://127.0.0.1:{relay_port}', key, AccessToken('P' * 43, '2026-11-01T00:00:00.000Z', 'a'), 'GET', '/v1/keys')
+print(response.status)
+"""
+        result = subprocess.run([sys.executable, '-c', script], env=env, capture_output=True, text=True, timeout=60)
+        self.assertEqual(result.stdout.strip(), '200', result.stderr)
+        self.assertEqual(hits, {'relay': 1, 'proxy': 0})
 
 
 if __name__ == '__main__':

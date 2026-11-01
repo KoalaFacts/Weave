@@ -1,0 +1,2 @@
+# The direct requirement; requirements.txt is generated from it with hashes (see README).
+cryptography==50.0.2
