@@ -105,6 +105,52 @@ test("beginGithubLogin_StateTooLongForLoginCookie_Returns400WithoutRedirect",asy
 });
 
 
+test("completeGithubLogin_GithubErrorBodies_CancelWithoutWaiting",{timeout:4_000},async()=>{
+  // Even a non-2xx GitHub response owns a stream. Its cancellation may stall;
+  // fail authentication without retaining the unread response body or waiting.
+  const key=newKey(),state=randomBytes(32).toString("base64url");
+  const value=await signedCookieValue(key,"github-login",{
+    state,verifier:randomBytes(32).toString("base64url"),
+    returnTo:"https://auth.weave.example/authorize",expiresAt:now+600_000
+  });
+  let signIns=0;
+  const env:GithubLoginEnv={
+    OAUTH_ISSUER:"https://auth.weave.example",GITHUB_CLIENT_ID:"Iv1.test",
+    GITHUB_CLIENT_SECRET:"secret",HUMAN_SESSION_KEY:key,
+    MAILBOX:{signIn:async()=>{signIns++;throw Error("unexpected sign-in");}} as unknown as GithubLoginEnv["MAILBOX"]
+  };
+  const originalFetch=globalThis.fetch;
+  try{
+    for(const phase of ["token","user"] as const){
+      let cancelled=false,requests=0;
+      globalThis.fetch=async input=>{
+        requests++;
+        const url=String(input);
+        if(phase==="user"&&url==="https://github.com/login/oauth/access_token")
+          return Response.json({access_token:"gho_fake-test-token"});
+        assert.equal(url,phase==="token"
+          ?"https://github.com/login/oauth/access_token":"https://api.github.com/user");
+        const body=new ReadableStream<Uint8Array>({
+          start(controller){controller.enqueue(new TextEncoder().encode("upstream error"));},
+          cancel(){cancelled=true;return new Promise<void>(()=>{});}
+        });
+        return new Response(body,{status:503,headers:{"Content-Type":"text/plain"}});
+      };
+      const started=performance.now();
+      const result=await completeGithubLogin(env,new Request(
+        "https://auth.weave.example/login/github/callback?code=valid&state="+state,
+        {headers:{Cookie:"__Host-weave_login="+value}}
+      ),now);
+      assert.equal(result.status,502,phase+" failure must not authenticate");
+      assert.equal(cancelled,true,phase+" rejected body must be cancelled");
+      assert.ok(performance.now()-started<2_000,phase+" must not wait for cancellation");
+      assert.equal(requests,phase==="token"?1:2);
+      assert.equal(signIns,0,"a rejected GitHub provider response cannot create a human session");
+      assert.equal(result.headers.get("set-cookie"),null);
+    }
+  }finally{globalThis.fetch=originalFetch;}
+});
+
 test("boundedProviderJson_StalledAfterFirstChunk_FailsClosedWithinDeadline",{timeout:6_000},async()=>{
   // An HTTP 200 can start a JSON body and then never deliver its final chunk.
   // A byte limit cannot stop a stalled reader; the response body must have a total deadline.
