@@ -151,9 +151,13 @@ test('approved human migration cannot run in completed-only deployments',async()
 // A protected, data-preserving human upgrade still requires an actual D1
 // point-in-time recovery bookmark. Source tests alone cannot prove one exists.
 test('approved human upgrade refuses any Worker upload without a remote D1 recovery bookmark',async()=>{
-    const f=fixture({extraEnv:{WEAVE_APPROVED_HUMAN_ONBOARDING_SCHEMA:'true'}});
-    await assert.rejects(deploy(f.options),/D1 Time Travel recovery bookmark/i);
-    assert.equal(f.commands.length,0,'no maintenance or database mutation before a verified recovery point');
+    const h=await start(),f=fixture({extraEnv:{WEAVE_APPROVED_HUMAN_ONBOARDING_SCHEMA:'true'}});
+    f.options.openDatabase=async()=>({db:h.db,close:async()=>{f.closed=true;}});
+    try{
+        await assert.rejects(deploy(f.options),/D1 Time Travel recovery bookmark/i);
+        assert.equal(f.commands.length,0,'no maintenance or database mutation before a verified recovery point');
+        assert.equal(f.closed,true);
+    }finally{await h.close();}
 });
 test('approved human upgrade captures an exact D1 recovery bookmark before maintenance',async()=>{
     const h=await start(),f=fixture({extraEnv:{WEAVE_APPROVED_HUMAN_ONBOARDING_SCHEMA:'true'}});
