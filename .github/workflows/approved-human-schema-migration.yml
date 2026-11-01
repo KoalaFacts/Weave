@@ -46,8 +46,8 @@ jobs:
         env:
           WEAVE_RELEASE_CONFIGURATION_SCOPE: production
           WEAVE_RELEASE_DATABASE_MODE: maintain
-          WEAVE_RELEASE_HUMAN_ACCOUNT_MIGRATION: true
-          WEAVE_RELEASE_FIRST_PARTY_OAUTH: false
+          WEAVE_RELEASE_HUMAN_ACCOUNT_MIGRATION: 'true'
+          WEAVE_RELEASE_FIRST_PARTY_OAUTH: 'false'
           WEAVE_RELEASE_ACCESS_TRIAL_APPLICATION: ''
       - run: npm ci --ignore-scripts
         working-directory: typescript/mailbox-worker
@@ -98,8 +98,8 @@ jobs:
         env:
           WEAVE_RELEASE_CONFIGURATION_SCOPE: production
           WEAVE_RELEASE_DATABASE_MODE: maintain
-          WEAVE_RELEASE_HUMAN_ACCOUNT_MIGRATION: true
-          WEAVE_RELEASE_FIRST_PARTY_OAUTH: false
+          WEAVE_RELEASE_HUMAN_ACCOUNT_MIGRATION: 'true'
+          WEAVE_RELEASE_FIRST_PARTY_OAUTH: 'false'
           WEAVE_RELEASE_ACCESS_TRIAL_APPLICATION: ''
       - name: Check remote D1, retain time-travel bookmark and migrate only the approved source
         run: node scripts/deploy.ts
@@ -108,8 +108,8 @@ jobs:
           CLOUDFLARE_API_TOKEN: ${{ secrets.CLOUDFLARE_API_TOKEN }}
           CLOUDFLARE_ACCOUNT_ID: ${{ secrets.CLOUDFLARE_ACCOUNT_ID }}
           WEAVE_DEPLOY_DATABASE_MODE: maintain
-          WEAVE_APPROVED_HUMAN_ONBOARDING_SCHEMA: true
-          WEAVE_APPROVED_FIRST_PARTY_OAUTH_BINDING: false
+          WEAVE_APPROVED_HUMAN_ONBOARDING_SCHEMA: 'true'
+          WEAVE_APPROVED_FIRST_PARTY_OAUTH_BINDING: 'false'
       - name: Verify the published Agent Start guide and homepage
         run: node scripts/verify-agent-entry.ts
         working-directory: typescript/mailbox-worker
