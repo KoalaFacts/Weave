@@ -127,7 +127,7 @@ The page uses relative API paths and new relay addresses use the actual request 
 
 **Demo only. Data may be periodically cleared. Do not store sensitive or important information.** The account page, registration entry and public registry display this notice. It is a retention warning, not a newly implemented account or database clearing schedule. Existing cleanup settings and expired/ACKed-message behavior are unchanged.
 
-Programs authenticate with agent keys. This is the current source behaviour; **it is not deployed**: the public demo still runs the previous release, whose credential this source no longer accepts, until the testnet is wiped at rollout. The [Agent Start guide](src/agent-start.md#2-key-first-identity-setup-and-recovery) is the step-by-step procedure and [`/openapi.json`](src/openapi.json) the exact contract. The repository's [TypeScript](../agent-key) and [Python](../../python/weave-agent-key/README.md) key helpers implement it; neither is published to a package registry yet. HTTPS is required (HTTP only on loopback for local use).
+Programs authenticate with agent keys. This is the current source behaviour; **it is not deployed**: the public demo still runs the previous release, whose credential this source no longer accepts, until the testnet is wiped at rollout. The [Agent Start guide](src/agent-start.md#2-key-first-identity-setup-and-recovery) is the step-by-step procedure and [`/openapi.json`](src/openapi.json) the exact contract. The repository's [TypeScript](../agent-key/README.md) and [Python](../../python/weave-agent-key/README.md) key helpers implement it; neither is published to a package registry yet. HTTPS is required (HTTP only on loopback for local use).
 
 | Step | Request | Result |
 | --- | --- | --- |

@@ -1,4 +1,7 @@
-"""Shared test set-up: imports the package from this checkout and skips the module when `cryptography` is absent."""
+"""Shared test set-up: imports the package from this checkout and skips the module when `cryptography` is absent.
+
+With WEAVE_REQUIRE_CRYPTOGRAPHY=1 (set by CI) a missing `cryptography` is a failed prerequisite instead of a skip."""
+import os
 import sys
 import unittest
 from pathlib import Path
@@ -10,6 +13,8 @@ if str(PACKAGE_ROOT) not in sys.path:
 try:
     import cryptography  # noqa: F401
 except ImportError:
+    if os.environ.get('WEAVE_REQUIRE_CRYPTOGRAPHY') == '1':
+        raise
     raise unittest.SkipTest(
         'cryptography is not installed; run `pip install -r python/weave-agent-key/requirements.txt` to test the Python agent key helper')
 

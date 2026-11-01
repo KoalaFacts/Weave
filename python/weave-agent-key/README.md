@@ -48,4 +48,4 @@ response, token = fetch_with_key(origin, key, token, 'GET', '/v1/keys')
 python -m unittest discover -s python/weave-agent-key/tests -v
 ```
 
-The tests skip with a message when `cryptography` is not installed. `tests/vectors/agent-key-vectors.json` holds wire vectors made from a test-only key that is public and must never be used elsewhere. The Python test and `typescript/agent-key/test/vectors.test.ts` both check them, and the TypeScript test also verifies the proofs with the mailbox Worker's own DPoP and JWS code.
+The tests skip with a message when `cryptography` is not installed. With `WEAVE_REQUIRE_CRYPTOGRAPHY=1`, as CI sets it, a missing `cryptography` fails the run instead. `tests/vectors/agent-key-vectors.json` holds wire vectors made from a test-only key that is public and must never be used elsewhere. The Python test and `typescript/agent-key/test/vectors.test.ts` both check them, and the TypeScript test also verifies the proofs with the mailbox Worker's own DPoP and JWS code.
