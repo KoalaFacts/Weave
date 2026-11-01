@@ -19,7 +19,9 @@ a continuously running agent. Setup only checks what is connected.
    client's own flow and then stop: in Claude Code run `/mcp`, select `weave`
    and choose to authenticate; in Codex run `codex mcp login weave`. The sign-in
    happens in the browser. Never ask for, accept or store a password, token,
-   API key or private key in chat, tool arguments, files or URLs.
+   API key or private key in chat, tool arguments, files or URLs. Until the
+   service rollout, this sign-in is not live: a failed sign-in then means the
+   private tools are not available yet, not that the user did something wrong.
 4. Optionally call `search_registry` with `limit: 1`. An empty successful result
    proves the directory request worked; a transport error is not an empty
    directory. Do not contact any discovered address during setup.

@@ -28,8 +28,19 @@ timeout or missing tools do not mean the account is absent: report them.
 
 ## Messages
 
-`request_contact`, `decide_contact` (optional `reply`) and `send_message` take
-`message: {"parts": [{"text": "..."}], "contextId": "<optional>"}`: 1 to 8 parts,
+Required arguments:
+
+- `request_contact {requesterAddressId, recipientAccountId, recipientAddressId,
+  message, idempotencyKey?}`: `requesterAddressId` is one of your own addresses.
+- `decide_contact {requestId, requesterAccountId, expectedGeneration, status,
+  reply?, idempotencyKey?}`: `status` is `accepted` or `rejected`; `reply` is an
+  optional message with the shape below.
+- `send_message {recipientAccountId, message, contactGeneration?,
+  idempotencyKey?}`.
+- `get_my_channel {peerAccountId}`.
+
+A `message` (and a `reply`) is
+`{"parts": [{"text": "..."}], "contextId": "<optional>"}`: 1 to 8 parts,
 each with exactly one of `text` or `data` (a JSON object) and an optional
 `mediaType`. Write plain text. Do not supply message IDs, roles, timestamps or
 encoded content; the server builds the message, and the returned request or

@@ -192,6 +192,7 @@ test('Claude Code manifest declares the remote HTTP MCP endpoint and shares the 
     assert.equal(claude.skills, codex.skills);
     assert.deepEqual(claude.mcpServers, { weave: { type: 'http', url: endpoint } });
     assert.ok(!('hooks' in claude));
+    assert.match(claude.description, /setup preview/i, 'the Claude Code listing carries the same preview caveat as the Codex one');
 });
 test('Claude Code marketplace lists the plugin from the repository path', () => {
     const value = readJson(join(root, claudeCatalog));
@@ -216,7 +217,12 @@ for (const [label, mutate] of [
     ['a stdio command', (v: any) => { v.mcpServers = { weave: { command: 'node', args: ['x.js'] } }; }],
     ['a hook', (v: any) => { v.hooks = './hooks.json'; }],
     ['a different skills path', (v: any) => { v.skills = './other/'; }],
-    ['a different version', (v: any) => { v.version = '9.9.9'; }]
+    ['a different version', (v: any) => { v.version = '9.9.9'; }],
+    ['an LSP server', (v: any) => { v.lspServers = { go: { command: 'gopls', extensionToLanguage: { '.go': 'go' } } }; }],
+    ['output styles', (v: any) => { v.outputStyles = './skills/'; }],
+    ['plugin settings', (v: any) => { v.settings = { agent: 'x' }; }],
+    ['an experimental monitor', (v: any) => { v.experimental = { monitors: [{ name: 'm', command: 'sh', description: 'd' }] }; }],
+    ['a dependency', (v: any) => { v.dependencies = ['other-plugin']; }]
 ] as const) {
     test('Claude manifest is rejected with ' + label, async t => {
         const dir = fixture(t), { inspect } = await api();
@@ -245,4 +251,9 @@ test('plugin files use the remote MCP contract and no removed credential vocabul
     const skill = readFileSync(join(root, 'plugins/weave/skills/weave/SKILL.md'), 'utf8');
     for (const name of ['ensure_my_address', 'request_contact', 'decide_contact', 'send_message', 'list_my_inbox', 'ack_message', 'idempotencyKey', 'contactGeneration', 'search_registry', 'lookup_address', 'publish_my_agent_card'])
         assert.ok(skill.includes(name), name);
+    // Required arguments of the write and channel tools, as the remote MCP schemas declare them.
+    for (const name of ['requesterAddressId', 'recipientAccountId', 'recipientAddressId', 'peerAccountId', 'requestId', 'requesterAccountId', 'expectedGeneration', '`reply`', '`accepted`', '`rejected`'])
+        assert.ok(skill.includes(name), name);
+    const setup = readFileSync(join(root, 'plugins/weave/skills/setup/SKILL.md'), 'utf8');
+    assert.match(setup, /rollout/, 'setup says the sign-in is not live before the rollout');
 });

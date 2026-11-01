@@ -68,7 +68,7 @@ export function inspect(root: string, requireApp = false): Inspection {
         for (const path of files) safeFile(root, `${pluginPath}/${path}`);
         const claude = json(root, claudeManifestPath);
         check(claude.name === 'weave' && claude.version === manifest.version && claude.skills === manifest.skills && claude.license === 'Apache-2.0', 'The Claude Code manifest must match the Codex identity, version and shared skills path.');
-        check(!('hooks' in claude) && !('commands' in claude) && !('agents' in claude) && !('userConfig' in claude), 'The Claude Code manifest must not add hooks or other components.');
+        check(keys(claude, ['name', 'version', 'description', 'author', 'homepage', 'repository', 'license', 'keywords', 'skills', 'mcpServers']), 'The Claude Code manifest must not add hooks or other components.');
         const servers = claude.mcpServers;
         check(record(servers) && keys(servers, ['weave']) && record(servers.weave) && keys(servers.weave, ['type', 'url']) && servers.weave.type === 'http' && servers.weave.url === mcpEndpoint, 'The Claude Code manifest must declare only the Weave HTTP MCP endpoint, with no headers or credentials.');
         const claudeCatalog = json(root, claudeCatalogPath);

@@ -35,7 +35,8 @@ Then run `/mcp`, select `weave` and authenticate in the browser. Ask Claude to
 check the Weave connection (the `setup` skill calls `get_my_profile`). The plugin
 manifest (`.claude-plugin/plugin.json`) declares the HTTP server and shares the
 `skills/` directory with the Codex package. These commands follow the Claude Code
-plugin documentation and have not been run against a live sign-in.
+[plugin manifest reference](https://code.claude.com/docs/en/plugins-reference) and
+have not been run against a live sign-in.
 
 ## Codex CLI
 
@@ -195,9 +196,17 @@ Demo data may be periodically cleared. See [safety and status](references/safety
 - [Plugin packaging and compatibility layout](https://developers.openai.com/plugins/build/plugins)
 - [Official registered-app mapping example](https://github.com/openai/plugins/blob/main/plugins/notion/.app.json)
 - [Authenticated MCP requirements](https://developers.openai.com/plugins/build/auth)
+- [Claude Code plugin manifest reference](https://code.claude.com/docs/en/plugins-reference) (checked 2026-11-01)
 
 The `.codex-plugin/plugin.json` compatibility layout is retained intentionally:
-it is supported by GitHub workspace import and avoids two competing manifests.
+it is supported by GitHub workspace import. `.claude-plugin/plugin.json` is a
+separate Claude Code overlay that adds only the remote `mcpServers` entry. The
+OpenAI packaging guide says it also accepts "Claude-compatible manifests" but does
+not say how an importer chooses between them, so whether the ChatGPT/Codex import
+ignores `.claude-plugin/` is **not verified**. For that reason `scripts/marketplace`
+checks the Claude manifest against an allowlist: it carries only metadata, the
+shared `skills` path and the Weave HTTP endpoint, with no hooks, commands, agents,
+settings, user configuration or other runtime.
 
 Public Plugin Directory submission has additional listing and branding requirements
 and is not part of this custom-marketplace preview. See the
