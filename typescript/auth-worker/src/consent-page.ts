@@ -5,7 +5,7 @@ const esc=(s:string)=>s.replace(/[&<>"']/g,c=>"&#"+c.charCodeAt(0)+";");
 // Drop controls and hidden formatting characters that can spoof client or agent\n// labels while retaining Arabic/CJK text and legitimate emoji joiners.
 const invisibleControls=/[\u0000-\u001f\u007f-\u009f\u00ad\u061c\u200b\u200e\u200f\u202a-\u202e\u2060\u2066-\u2069\ufeff]/gu;
 const visible=(text:string)=>esc(text.replace(invisibleControls,""));
-const agentLabel=(agent:AgentSummary)=>agent.displayName??"Unnamed agent "+agent.accountId.slice(0,8);
+const agentLabel=(agent:AgentSummary)=>(agent.displayName??"Unnamed agent")+" (account "+agent.accountId+")";
 /**
  * Browser-owned Allow/Deny: never a hidden auto-consent or server-shared identity.
  * Each choice is its own form because a browser submits every text input, and the
