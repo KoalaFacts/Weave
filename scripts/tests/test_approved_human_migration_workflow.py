@@ -40,12 +40,12 @@ class ApprovedMigrationWorkflowTests(unittest.TestCase):
         self.assertNotIn('contents: write', self.workflow)
         self.assertIn('WEAVE_RELEASE_CONFIGURATION_SCOPE: production', self.workflow)
         self.assertIn('WEAVE_RELEASE_DATABASE_MODE: maintain', self.workflow)
-        self.assertIn('WEAVE_RELEASE_HUMAN_ACCOUNT_MIGRATION: true', self.workflow)
-        self.assertIn('WEAVE_RELEASE_FIRST_PARTY_OAUTH: false', self.workflow)
+        self.assertIn("WEAVE_RELEASE_HUMAN_ACCOUNT_MIGRATION: 'true'", self.workflow)
+        self.assertIn("WEAVE_RELEASE_FIRST_PARTY_OAUTH: 'false'", self.workflow)
         self.assertIn("WEAVE_RELEASE_ACCESS_TRIAL_APPLICATION: ''", self.workflow)
-        self.assertIn('WEAVE_APPROVED_HUMAN_ONBOARDING_SCHEMA: true', self.workflow)
+        self.assertIn("WEAVE_APPROVED_HUMAN_ONBOARDING_SCHEMA: 'true'", self.workflow)
         self.assertIn('WEAVE_DEPLOY_DATABASE_MODE: maintain', self.workflow)
-        self.assertNotIn('WEAVE_APPROVED_FIRST_PARTY_OAUTH_BINDING: true', self.workflow)
+        self.assertNotIn("WEAVE_APPROVED_FIRST_PARTY_OAUTH_BINDING: 'true'", self.workflow)
         self.assertNotIn('WEAVE_APPROVED_ACCESS_TRIAL_APPLICATION:', self.workflow)
 
     def test_existing_shared_secret_recovery_and_public_acceptance_gates_retained(self):
