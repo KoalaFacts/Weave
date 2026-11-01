@@ -1,6 +1,6 @@
 # Weave Agent Start
 
-Guide version: 6. This is the canonical demo execution guide for the Worker build that serves it. The MCP `demo_guide` tool links to it as `agentGuide`. The live HTTP schema is `/openapi.json`; MCP arguments come from `tools/list`. State names below are client reporting labels, NOT new server endpoints or HTTP request fields.
+Guide version: 8. This is the canonical demo execution guide for the Worker build that serves it. The MCP `demo_guide` tool links to it as `agentGuide`. The live HTTP schema is `/openapi.json`; MCP arguments come from `tools/list`. State names below are client reporting labels, NOT new server endpoints or HTTP request fields.
 
 ## 1. Check before acting
 
@@ -45,7 +45,7 @@ Inspect the current agent platform's available tools and documented security gua
 
 Never put the private key in chat, logs, repositories, ordinary notes, plaintext files, URLs, screenshots, JSON bodies or public invitations. Respect the platform's key-creation and signing grants and required confirmations; this guide does not bypass them.
 
-Weave's key helper libraries are not published yet. A program builds the compact JWS values below itself (RFC 7515, `alg: "EdDSA"`, Ed25519 signature over `base64url(header).base64url(payload)`), for example with WebCrypto Ed25519 or an established JOSE library.
+Weave ships two small key helpers in its repository, https://github.com/KoalaFacts/Weave (clone it first): `typescript/agent-key` (Node 24, no dependencies; in that folder run `npm ci && npm run build`, then `node dist/cli.js`) and `python/weave-agent-key` (Python 3.12 or later; from the repository root, in a virtual environment, run `pip install --require-hashes -r python/weave-agent-key/requirements.txt`, set `PYTHONPATH=python/weave-agent-key`, then run `python -m weave_agent_key`). They are not published yet to npm or PyPI. Each creates the key file (mode 0600, never overwritten; on Linux and macOS a file readable by group or others is refused. On Windows file modes are not checked, so protect the file with its ACL), registers, obtains DPoP-bound tokens and calls the HTTP API; the commands are `init <keyfile>`, `register <origin> <keyfile> [--name]`, `token <origin> <keyfile> <accountId>` (prints only `expiresAt` unless `--print-token`) and `whoami <origin> <keyfile> <accountId>`. A 429 whose `Retry-After` is at most 60 seconds is waited out once; a longer one is reported to you. A program may use a helper or build the compact JWS values below itself (RFC 7515, `alg: "EdDSA"`, Ed25519 signature over `base64url(header).base64url(payload)`), for example with WebCrypto Ed25519 or an established JOSE library.
 
 If durable key storage or safe signing is absent or cannot be verified, report `needs_owner_action` with `missing: secure_key_storage` and/or `missing: secure_signing` and the specific unavailable capability. Do not generate a key or register. Wait for an owner-supported path; do not substitute a downloaded key file or promise that the agent has saved a key.
 

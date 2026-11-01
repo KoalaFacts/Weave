@@ -5,7 +5,7 @@ import { atomic, type Env } from './database.ts';
 import { verifyDpop } from './dpop.ts';
 import { base64url, parseJws, verifyJws } from './jose.ts';
 import { epochSeconds, exactInt64, nowUtc } from './time.ts';
-import { Problem, fail, hash } from './wire.ts';
+import { Problem, boundedBody, fail, hash } from './wire.ts';
 
 export const accessTokenSeconds = 900;
 export const assertionMaxSeconds = 300;
@@ -41,19 +41,7 @@ function tokenResponse(status: number, value: unknown, retryAfter?: number): Res
 async function readForm(request: Request): Promise<Map<string, string>> {
     if (!/^application\/x-www-form-urlencoded(?:\s*;|$)/i.test(request.headers.get('Content-Type') ?? '')) invalidRequest();
     if (Number(request.headers.get('Content-Length')) > maxFormBytes) invalidRequest();
-    const reader = request.body?.getReader() ?? invalidRequest();
-    const chunks: Uint8Array[] = [];
-    let size = 0;
-    try {
-        for (let next = await reader.read(); !next.done; next = await reader.read()) {
-            size += next.value.length;
-            if (size > maxFormBytes) invalidRequest();
-            chunks.push(next.value);
-        }
-    } finally { await reader.cancel(); }
-    const bytes = new Uint8Array(size);
-    let offset = 0;
-    for (const chunk of chunks) { bytes.set(chunk, offset); offset += chunk.length; }
+    const bytes = await boundedBody(request, maxFormBytes, invalidRequest);
     let text = '';
     try { text = new TextDecoder('utf-8', {fatal: true}).decode(bytes); } catch { invalidRequest(); }
     const form = new Map<string, string>();

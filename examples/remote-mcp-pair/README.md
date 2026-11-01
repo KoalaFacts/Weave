@@ -58,3 +58,5 @@ The automated regression in the Worker test suite uses a **synthetic local HTTP 
 **Token requirement.** Private MCP tools need a Weave consent-grant token (OAuth consent through the Weave authorization server, which carries a `grantId`). A token validated only by RFC 7662 introspection cannot carry a grant, so the Worker refuses the private tools in that mode; this script needs the grant-bearing tokens the Weave authorization server issues. Revoking the grant takes effect on the next call.
 
 To close issue #236, execute this script against an approved public deployment with real OAuth bindings, then additionally perform the same interaction with **two actual independent model Agents** using their own authorized MCP connections and recoverable credentials. Do not label a scripted run as that final acceptance.
+
+To connect your own client or program instead, see the [connection steps in the root README](../../README.md#connect-an-agent) (Claude Code, Codex CLI and the key helpers).

@@ -6,6 +6,7 @@ import { atomic, type Database, type Env, type Transaction } from './database.ts
 import type { OwnerDecision } from './owner-actions.ts';
 import { keyRequestOfOwner, pendingKeyRequest, stageKeyRequest, type KeyRequestView } from './key-requests.ts';
 import { requireKeyChurnRoom } from './agent-limits.ts';
+import { visibleName } from './visible-text.ts';
 import { Problem, fail, invalidField, object } from './wire.ts';
 
 export const maxLiveKeysPerAgent = 100;
@@ -16,7 +17,6 @@ export type AgentKeySummary = {kid: string; label: string | null; createdAt: str
 
 type StoredKey = {kid: string; account_id: string; public_jwk: string; label: string | null; created_at: string; last_used_at: string | null; revoked_at: string | null; cooling_until: string | null};
 const optionalTicks = (value: string | null) => value === null ? null : exactInt64(value);
-const controlCharacters = /[\u0000-\u001f\u007f-\u009f]/u;
 
 const keyColumns = `kid,account_id,public_jwk,label,CAST(created_at AS TEXT) created_at,CAST(last_used_at AS TEXT) last_used_at,
     CAST(revoked_at AS TEXT) revoked_at,CAST(cooling_until AS TEXT) cooling_until`;
@@ -55,8 +55,9 @@ export function keySummary(row: KeyRow): AgentKeySummary {
 
 export function validLabel(value: unknown): string | null {
     if (value === undefined || value === null) return null;
-    if (typeof value !== 'string' || value.length < 1 || value.length > 64 || controlCharacters.test(value))
-        invalidField('label', 'must be 1 to 64 characters without control characters');
+    // Owner pages show the label: bidi or invisible characters could make it read as another key's.
+    if (typeof value !== 'string' || value.length > 64 || !visibleName(value))
+        invalidField('label', 'must be 1 to 64 characters, at least one visible, without control, bidi or invisible characters');
     return value;
 }
 

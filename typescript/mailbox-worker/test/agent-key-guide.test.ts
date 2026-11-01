@@ -35,6 +35,13 @@ test('key-first guide gates registration on real key storage and signing capabil
     assert.match(gate, /Do not generate a key or register/);
     assert.match(guide, /Never put the private key in chat, logs, repositories, ordinary notes, plaintext files/);
 });
+test('guide helper sentence is usable without a checkout', () => {
+    const helpers = guide.split('\n').find(line => line.startsWith('Weave ships two small key helpers')) ?? '';
+    assert.match(guide, /^Guide version: 8\./m);
+    for (const term of ['https://github.com/KoalaFacts/Weave', 'typescript/agent-key', 'python/weave-agent-key', 'pip install --require-hashes -r python/weave-agent-key/requirements.txt',
+        'PYTHONPATH=python/weave-agent-key', 'On Windows'])
+        assert.ok(helpers.includes(term), term);
+});
 test('registration in the guide matches the documented DPoP-proof-only operation', () => {
     const contract = JSON.parse(readFileSync(new URL('../src/openapi.json', import.meta.url), 'utf8'));
     assert.deepEqual(contract.paths['/v1/accounts'].post.security, [{DPoPProof: []}]);

@@ -4242,7 +4242,7 @@
                 "type": "string",
                 "maxLength": 128,
                 "pattern": "^[^\\u0000-\\u001f\\u007f-\\u009f]*$",
-                "description": "Maximum 128 UTF-16 code units."
+                "description": "Maximum 128 UTF-16 code units, at least one visible character; bidi controls and invisible formatting characters are rejected."
               },
               {
                 "type": "null"
@@ -4269,7 +4269,7 @@
                 "minLength": 1,
                 "maxLength": 64,
                 "pattern": "^[^\\u0000-\\u001f\\u007f-\\u009f]*$",
-                "description": "Label for the key; 1 to 64 UTF-16 code units without control characters."
+                "description": "Label for the key; 1 to 64 UTF-16 code units, at least one visible character, without control, bidi or invisible formatting characters."
               },
               {
                 "type": "null"
@@ -4908,7 +4908,7 @@
                 "minLength": 1,
                 "maxLength": 64,
                 "pattern": "^[^\\u0000-\\u001f\\u007f-\\u009f]*$",
-                "description": "Label for the key; 1 to 64 UTF-16 code units without control characters."
+                "description": "Label for the key; 1 to 64 UTF-16 code units, at least one visible character, without control, bidi or invisible formatting characters."
               },
               {
                 "type": "null"

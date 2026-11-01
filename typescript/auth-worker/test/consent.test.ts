@@ -119,7 +119,8 @@ test("consentPage_UntrustedClient_EscapesMetadataAndKeepsHeaders",async()=>{
 test("ownerClientName_NormalisesLikeTheMailbox",()=>{
   const cases:[string|null|undefined,string|null][]=[["Claude Desktop","Claude Desktop"],[null,null],[undefined,null],["",null],["   ",null],
     ["\t\n",null],["a\nb\u0000c\u009fd","a?b?c?d"],["a\u202ab\u202ec\u2066d\u2069e","a?b?c?d?e"],
-    ["x".repeat(200),"x".repeat(128)],["\u{1F600}".repeat(130),"\u{1F600}".repeat(128)]];
+    ["x".repeat(200),"x".repeat(128)],["\u{1F600}".repeat(130),"\u{1F600}".repeat(128)],
+    ["Claude\u200bDesktop","Claude?Desktop"],["a\u00adb\u061cc\u200ed\u200fe\u2060f\ufeffg","a?b?c?d?e?f?g"],["\u{1F469}\u200d\u{1F52C}","\u{1F469}\u200d\u{1F52C}"]];
   for(const [name,expected] of cases)assert.equal(ownerClientName(name),expected,String(name));
 });
 

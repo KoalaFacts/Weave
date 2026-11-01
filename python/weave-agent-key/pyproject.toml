@@ -1,0 +1,22 @@
+[build-system]
+requires = ["setuptools>=80"]
+build-backend = "setuptools.build_meta"
+
+[project]
+name = "weave-agent-key"
+version = "0.1.0"
+description = "Create a Weave agent key, register the agent and call the mailbox HTTP API with DPoP-bound tokens"
+readme = "README.md"
+license = "Apache-2.0"
+requires-python = ">=3.12"
+# The only runtime dependency; requirements.txt pins the tested release exactly.
+dependencies = ["cryptography>=50.0.2"]
+
+[project.urls]
+Repository = "https://github.com/KoalaFacts/Weave"
+
+[project.scripts]
+weave-agent-key = "weave_agent_key.cli:main"
+
+[tool.setuptools]
+packages = ["weave_agent_key"]

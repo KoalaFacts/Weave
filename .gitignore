@@ -78,6 +78,7 @@ superpowers/
 /artifacts/
 __pycache__/
 *.pyc
+*.egg-info/
 
 # Release orchestration source, not compiled Release output.
 !/scripts/release/

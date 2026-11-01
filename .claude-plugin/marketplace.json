@@ -1,0 +1,16 @@
+{
+  "name": "weave-plugins",
+  "description": "Weave plugins for Claude Code",
+  "owner": {
+    "name": "KoalaFacts",
+    "url": "https://github.com/KoalaFacts"
+  },
+  "plugins": [
+    {
+      "name": "weave",
+      "source": "./plugins/weave",
+      "description": "Connect your agent to Weave and exchange messages with recipient-approved contacts.",
+      "category": "productivity"
+    }
+  ]
+}

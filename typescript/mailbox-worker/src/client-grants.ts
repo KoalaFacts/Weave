@@ -1,6 +1,7 @@
 import { atomic, type Database, type Env, type Transaction } from './database.ts';
 import { writesRefused } from './humans.ts';
 import { nowUtc } from './time.ts';
+import { replaceInvisible } from './visible-text.ts';
 import { fail } from './wire.ts';
 
 // The mailbox mirror of each OAuth consent grant. The authorization server records a grant before it issues an
@@ -16,20 +17,18 @@ export type RevokeGrantResult = { ok: true } | { ok: false; reason: 'not-found' 
 
 const uuidPattern = /^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/;
 const controlCharacters = /[\u0000-\u001f\u007f-\u009f]/u;
-/** C0/C1 controls and the bidi embedding, override and isolate controls, which could make a name read as another. */
-const nameControls = /[\u0000-\u001f\u007f-\u009f\u202a-\u202e\u2066-\u2069]/gu;
 const maxClientName = 128;
 const uuid = (value: unknown): value is string => typeof value === 'string' && uuidPattern.test(value);
 
 /**
- * The self-reported name bounded to 128 characters with control and bidi characters replaced by `?`; empty or
- * whitespace-only becomes null. The authorization server applies the same rule (auth-worker/src/client-name.ts).
+ * The self-reported name bounded to 128 characters with control, bidi and invisible characters replaced by `?`; empty
+ * or whitespace-only becomes null. The authorization server applies the same rule (auth-worker/src/client-name.ts).
  */
 function boundedClientName(value: unknown): string | null {
     if (value === undefined || value === null) return null;
     if (typeof value !== 'string') fail();
     if (value.trim() === '') return null;
-    return [...value.replace(nameControls, '?')].slice(0, maxClientName).join('');
+    return [...replaceInvisible(value, '?')].slice(0, maxClientName).join('');
 }
 
 /** Records a grant for an agent the (not frozen) human owns. The authorization server issues no code unless this returns ok. */
@@ -70,16 +69,10 @@ export async function revokeGrantIn(tx: Transaction, humanId: string, grantId: s
     return { ok: true };
 }
 
-/** The grant while it is not revoked; null when it is revoked or unknown. A single point read: inside a write's
- * transaction the revision check makes it current at commit; outside one it is current when read. */
-export async function liveGrant(db: Database, grantId: string): Promise<GrantRow | null> {
-    const row = await db.prepare('SELECT human_id,account_id,client_id FROM client_grants WHERE grant_id=? AND revoked_at IS NULL')
-        .bind(grantId).first<{ human_id: string; account_id: string; client_id: string }>();
-    return row && { grantId, humanId: row.human_id, accountId: row.account_id, clientId: row.client_id };
-}
-
-/** The live grant only while its human still owns the agent and is not frozen. Authorization reads it on every
- * private call, so freezing the human or moving the agent to another owner ends every token of the grant at once. */
+/** The live grant only while it is not revoked, its human still owns the agent and is not frozen; null otherwise.
+ * Authorization reads it on every private call, and every write reads it again inside its own transaction, where the
+ * revision check makes it current at commit. Freezing the human or moving the agent to another owner therefore ends
+ * every token of the grant at once, including a write already authorized. */
 export async function liveOwnedGrant(db: Database, grantId: string): Promise<GrantRow | null> {
     const row = await db.prepare('SELECT g.human_id,g.account_id,g.client_id FROM client_grants g'
         + ' JOIN accounts a ON a.account_id=g.account_id AND a.human_id=g.human_id'

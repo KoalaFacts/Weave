@@ -401,3 +401,37 @@ test('token_StorageError_503LogsErrorClassOnly', async t => {
     assert.match(text, /D1 unavailable/);
     for (const secret of [assertion, proof, 'secret-jti-marker', cred.accountId, cred.key.privateJwk.d!]) assert.equal(text.includes(secret), false, secret);
 });
+
+const streamingTokenRequest = (stream: ReadableStream<Uint8Array>) => new Request(tokenUrl, {
+    method: 'POST', headers: {'Content-Type': 'application/x-www-form-urlencoded'}, body: stream, duplex: 'half',
+} as RequestInit & {duplex: 'half'});
+async function within<T>(operation: Promise<T>, milliseconds: number): Promise<T | 'timed-out'> {
+    let timer: ReturnType<typeof setTimeout> | undefined;
+    try { return await Promise.race([operation, new Promise<'timed-out'>(resolve => { timer = setTimeout(() => resolve('timed-out'), milliseconds); })]); }
+    finally { if (timer !== undefined) clearTimeout(timer); }
+}
+
+test('token_FormStallsAfterAChunk_400WithinDeadlineWithoutAwaitingCancel', {timeout: 7000}, async () => {
+    let cancelled = 0;
+    const stream = new ReadableStream<Uint8Array>({
+        start(controller) { controller.enqueue(new TextEncoder().encode('grant_type=client_credentials&')); },
+        cancel() { cancelled++; return new Promise<void>(() => {}); },
+    });
+    // Nothing is read from storage before the form is complete.
+    const outcome = await within(issueAgentToken({} as Env, streamingTokenRequest(stream)), 4800);
+    assert.notEqual(outcome, 'timed-out', 'a stalled token form must have one whole-stream deadline');
+    await refusal(outcome as Response, 400, 'invalid_request');
+    assert.equal(cancelled, 1, 'the deadline starts best-effort stream cleanup');
+});
+
+test('token_OversizedFormBody_400ImmediatelyWithoutAwaitingCancel', {timeout: 3000}, async () => {
+    let cancelled = 0;
+    const stream = new ReadableStream<Uint8Array>({
+        start(controller) { controller.enqueue(new Uint8Array(8193)); },
+        cancel() { cancelled++; return new Promise<void>(() => {}); },
+    });
+    const outcome = await within(issueAgentToken({} as Env, streamingTokenRequest(stream)), 1200);
+    assert.notEqual(outcome, 'timed-out', 'an oversized form must not wait for a hung cancel()');
+    await refusal(outcome as Response, 400, 'invalid_request');
+    assert.equal(cancelled, 1);
+});
