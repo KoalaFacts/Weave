@@ -27,7 +27,9 @@ commands were source-checked, not run against a deployment.
 - The skills use the remote tool names and the `message` / `idempotencyKey`
   contract of the [MCP record](2026-11-01-mcp-a2a-messages.md). Owners manage
   agents, clients and keys on `/account` ([owner grants](2026-11-01-owner-grants.md)).
-- Agent Start guide version 7 points section 2 at the helpers.
+- Agent Start guide version 8 points section 2 at the helpers, with the
+  repository URL, the Python install and `PYTHONPATH` step and the Windows
+  key-file exception.
 
 ## Preserved
 
@@ -50,7 +52,10 @@ commands were source-checked, not run against a deployment.
 
 - The Claude plugin passed `claude plugin validate`; it was not installed live.
 - No `claude plugin install`, `/mcp` sign-in or `codex mcp login` was run.
-- The new CI jobs have not yet run on GitHub.
+- The new CI jobs have not yet run on GitHub. `ci.yml` and `worker-browser.yml`
+  trigger only on pull requests to `main`, so the stacked onboarding PRs do not
+  run them; the helper jobs and the real-Worker helper test first run when the
+  stack reaches `main`. Until then the evidence is the local and WSL runs.
 - The Python helper is checked against wire vectors from the TypeScript side,
   not against a live Worker.
 - Neither helper is published; the OAuth sign-in is not deployed.
