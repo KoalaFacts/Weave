@@ -162,6 +162,9 @@ test('approved human upgrade captures an exact D1 recovery bookmark before maint
     const original=f.options.fetchImpl;
     f.options.fetchImpl=async(url,options)=>{
         if(url.endsWith(endpoint)){
+            const reads=f.requests.filter(request=>request.endsWith(endpoint)).length;
+            assert.equal(f.commands.length,reads===0?0:1,
+                'the final bookmark must be sampled after verified maintenance');
             f.requests.push(url);
             assert.equal(options.headers.Authorization,'Bearer '+env.CLOUDFLARE_API_TOKEN);
             return {ok:true,status:200,json:async()=>({success:true,result:{bookmark}})};
@@ -177,6 +180,8 @@ test('approved human upgrade captures an exact D1 recovery bookmark before maint
     f.options.openDatabase=async()=>({db:h.db,close:async()=>{f.closed=true;}});
     try{
         const result=await deploy(f.options);
+        assert.equal(f.requests.filter(request=>request.endsWith(endpoint)).length,2,
+            'require a pre-pause capability check and a post-pause recovery point');
         assert.equal(result.d1RecoveryBookmark?.bookmark,bookmark);
         assert.equal(result.d1RecoveryBookmark?.databaseId,database.uuid);
         assert.ok(Number.isFinite(Date.parse(result.d1RecoveryBookmark?.capturedAt??'')));
