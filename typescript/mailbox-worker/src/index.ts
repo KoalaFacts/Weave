@@ -126,6 +126,9 @@ export default {
                             const found=await env.db.prepare('SELECT account_id FROM accounts WHERE account_id=?')
                                 .bind(accountId).first<string>('account_id');
                             if(found!==accountId)return denial(401,'account-missing');
+                            // A stored Access identity link survives control revocation. Recheck the
+                            // control-owned account's live credential, not just its UUID, on every call.
+                            if(!await oauthAccountActive(env,accountId))return denial(401,'account-inactive');
                             if(identity.expiresAt<=Math.floor(Date.now()/1000))return denial(401,'assertion-expired');
                         }catch{return denial(503,'link-storage');}
                         // This isolated test grant is the owner's explicit link
