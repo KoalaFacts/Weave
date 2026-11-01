@@ -168,8 +168,8 @@ test('createOwnedAgent_InvisibleDefaultIgnorables_CannotHideOrSpoofPickerName', 
         const env = environment(h), id = await humanId(env);
         // trim() does not remove zero-width space / word joiner; either can
         // make an owned-agent label visually blank or mask a changed name.
-        for (const name of ['\u200b', '\u2060', 'Safe\\u200bHidden',
-            'Safe\\u2060Hidden', 'Safe\\u00adHidden', 'Safe\\ufeffHidden']) {
+        for (const name of ['\u200b', '\u2060', 'Safe\u200bHidden',
+            'Safe\u2060Hidden', 'Safe\u00adHidden', 'Safe\ufeffHidden']) {
             assert.deepEqual(await create(env, id, name), { ok: false, reason: 'invalid' },
                 JSON.stringify(name));
         }
