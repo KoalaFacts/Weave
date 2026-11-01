@@ -38,15 +38,26 @@ async function safeKeys(config:ManagedAccessConfiguration,fetcher:typeof fetch):
             method:'GET',redirect:'manual',cache:'no-store',signal:AbortSignal.timeout(3500),
             headers:{Accept:'application/json'}});
         if(!result.ok||!/^application\/json(?:;|$)/i.test(result.headers.get('content-type')??'')){
-            await result.body?.cancel();return null;
+            // Untrusted upstream cancellation may never settle. Deny immediately.
+            void result.body?.cancel().catch(()=>{});return null;
         }
         const reader=result.body?.getReader();if(!reader)return null;
         const decoder=new TextDecoder('utf-8',{fatal:true});let size=0,plain='';
-        try{while(true){const next=await reader.read();if(next.done)break;
+        // Fetch's header deadline does not necessarily cover a stalled response body.
+        // One deadline for the entire JWKS stream prevents slow-chunk prolongation.
+        let timer:ReturnType<typeof setTimeout>|undefined;
+        const deadline=new Promise<null>(resolve=>{timer=setTimeout(()=>resolve(null),3500);});
+        try{while(true){const next=await Promise.race([reader.read(),deadline]);
+            if(next===null)return null;
+            if(next.done)break;
             size+=next.value.byteLength;if(size>65536)return null;
             plain+=decoder.decode(next.value,{stream:true});}
             plain+=decoder.decode();
-        }finally{await reader.cancel().catch(()=>{});reader.releaseLock();}
+        }finally{
+            if(timer!==undefined)clearTimeout(timer);
+            void reader.cancel().catch(()=>{});
+            reader.releaseLock();
+        }
         const data:unknown=JSON.parse(plain);
         if(!object(data)||!Array.isArray(data.keys)||data.keys.length>12)return null;
         return data.keys;
