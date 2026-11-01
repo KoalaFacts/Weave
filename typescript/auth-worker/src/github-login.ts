@@ -16,6 +16,8 @@ const githubToken="https://github.com/login/oauth/access_token";
 const githubUser="https://api.github.com/user";
 const loginCookie="__Host-weave_login";
 const loginSeconds=600;
+// Bound both fixed GitHub HTTP subrequests, including a stalled response stream.
+const providerTimeoutMs=3_500;
 const githubLogin=/^[A-Za-z0-9](?:[A-Za-z0-9-]{0,38})$/;
 const callbackPath="/login/github/callback";
 
@@ -86,16 +88,60 @@ type GithubUser={subject:string;login:string;createdAt:string};
 export const failureLog={exchange:"github-login: token exchange failed",user:"github-login: user fetch failed",
   directory:"human-directory: call failed",formSigning:"owner-page: form signing failed",
   grantSdkRevoke:"grant-sdk-revoke: token clean-up failed"} as const;
+
+/** Bound untrusted provider response bodies before JSON decoding/allocating.
+ * Fixed endpoints and redirect guards alone do not limit an oversized 2xx body.
+ * GitHub's two expected responses are small; unexpected oversized data fails closed.
+ */
+export async function boundedProviderJson(response:Response,maxBytes:number):Promise<unknown|null>{
+  if(!/^application\/json(?:;|$)/i.test(response.headers.get("Content-Type")??"")){
+    // Discard an unsupported provider body without waiting on untrusted cancellation.
+    void response.body?.cancel().catch(()=>{});
+    return null;
+  }
+  const reader=response.body?.getReader();
+  if(!reader)return null;
+  const decoder=new TextDecoder("utf-8",{fatal:true});
+  // A bounded fetch may return headers before an upstream stops delivering body bytes.
+  // Use one deadline for the entire JSON stream, not a fresh timeout per chunk.
+  let timer:ReturnType<typeof setTimeout>|undefined;
+  const deadline=new Promise<null>(resolve=>{timer=setTimeout(()=>resolve(null),providerTimeoutMs);});
+  let bytes=0,text="";
+  try{
+    while(true){
+      const chunk=await Promise.race([reader.read(),deadline]);
+      if(chunk===null)return null;
+      if(chunk.done)break;
+      bytes+=chunk.value.byteLength;
+      if(bytes>maxBytes)return null;
+      text+=decoder.decode(chunk.value,{stream:true});
+    }
+    text+=decoder.decode();
+    return JSON.parse(text) as unknown;
+  }finally{
+    if(timer!==undefined)clearTimeout(timer);
+    // A provider stream can refuse to finish cancellation after the byte cap is hit
+    // or after the read deadline. Never await untrusted cancellation.
+    void reader.cancel().catch(()=>{});
+    reader.releaseLock();
+  }
+}
 async function githubAccessToken(env:GithubLoginEnv,code:string,verifier:string):Promise<string|null>{
   try{
-    const exchange=await fetch(githubToken,{method:"POST",
+    // Never follow a provider redirect with the client secret, code or PKCE verifier.
+    const exchange=await fetch(githubToken,{method:"POST",redirect:"manual",
+      signal:AbortSignal.timeout(providerTimeoutMs),
       headers:{Accept:"application/json","Content-Type":"application/x-www-form-urlencoded","User-Agent":"weave-auth"},
       body:new URLSearchParams({client_id:env.GITHUB_CLIENT_ID,client_secret:env.GITHUB_CLIENT_SECRET,code,
         redirect_uri:new URL(callbackPath,env.OAUTH_ISSUER).href,code_verifier:verifier})});
     if(exchange.ok){
-      const grant:unknown=await exchange.json();
+      const grant=await boundedProviderJson(exchange,8*1024);
       const token=grant&&typeof grant==="object"?(grant as {access_token?:unknown}).access_token:null;
       if(typeof token==="string"&&token)return token;
+    }
+    else {
+      // Non-2xx provider responses may contain unread bodies; discard without blocking denial.
+      void exchange.body?.cancel().catch(()=>{});
     }
   }catch{/* logged below as a category only */}
   console.error(failureLog.exchange);
@@ -106,14 +152,20 @@ async function fetchGithubUser(env:GithubLoginEnv,code:string,verifier:string):P
   const token=await githubAccessToken(env,code,verifier);
   if(!token)return null;
   try{
-    const response=await fetch(githubUser,{headers:{Authorization:"Bearer "+token,
+    // Likewise, never forward a GitHub bearer token to a redirected endpoint.
+    const response=await fetch(githubUser,{redirect:"manual",signal:AbortSignal.timeout(providerTimeoutMs),
+      headers:{Authorization:"Bearer "+token,
       Accept:"application/vnd.github+json","User-Agent":"weave-auth"}});
     if(response.ok){
-      const user:unknown=await response.json();
+      const user=await boundedProviderJson(response,16*1024);
       const {id,login,created_at:createdAt}=user&&typeof user==="object"?
         user as {id?:unknown;login?:unknown;created_at?:unknown}:{};
       if(typeof id==="number"&&Number.isSafeInteger(id)&&id>=1&&typeof login==="string"&&githubLogin.test(login)&&
         typeof createdAt==="string"&&!Number.isNaN(Date.parse(createdAt)))return {subject:String(id),login,createdAt};
+    }
+    else {
+      // Do not retain a failed GitHub user response stream after rejecting sign-in.
+      void response.body?.cancel().catch(()=>{});
     }
   }catch{/* logged below as a category only */}
   console.error(failureLog.user);
