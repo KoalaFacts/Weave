@@ -210,3 +210,38 @@ test('real workerd/D1 trial enforces two credentials, owner binding, revocation 
             'another owner retains independent access');
     }finally{await h.close();}
 });
+
+test('Access trial revokes a persisted identity link when its control credential is removed',async()=>{
+    // An Access JWT proves identity, not permanent authority over a Weave account.
+    // A previously approved link must not outlive the account's control credential.
+    const h=await start({outboundService:async()=>new Response(JSON.stringify({keys:[jwk]}),
+        {headers:{'Content-Type':'application/json'}}),bindings:{
+        ACCESS_TRIAL_ENABLED:'true',ACCESS_TRIAL_ISSUER:issuer,ACCESS_TRIAL_RESOURCE:resource,
+        ACCESS_TRIAL_AUDIENCE:audience,OAUTH_IDENTITY_LINKS_ENABLED:'true'
+    }});
+    try{
+        const account=await h.register();
+        const jwt=token({sub:'revoked-control-subject'}, {},Date.now());
+        const linked=await h.mf.dispatchFetch('https://localhost/access-trial/link',{
+            method:'POST',headers:{'Content-Type':'application/json',
+                'X-Weave-Account-Control':account.control,'Cf-Access-Jwt-Assertion':jwt},
+            body:'{"consent":true}'
+        });
+        assert.equal(linked.status,200,await linked.clone().text());
+        const privateCall=()=>h.mf.dispatchFetch(resource,{
+            method:'POST',headers:{'Content-Type':'application/json',
+                Accept:'application/json, text/event-stream','MCP-Protocol-Version':'2025-11-25',
+                'Cf-Access-Jwt-Assertion':jwt},
+            body:JSON.stringify({jsonrpc:'2.0',id:5,method:'tools/call',
+                params:{name:'get_my_profile',arguments:{}}})
+        });
+        const before=await privateCall();
+        assert.equal(before.status,200,await before.clone().text());
+        assert.equal((await before.json()).result.structuredContent.id,account.accountId);
+        await h.db.prepare('UPDATE accounts SET control_hash=NULL,control_hash_scheme=NULL,control_hash_parameters=NULL WHERE account_id=?')
+            .bind(account.accountId).run();
+        const after=await privateCall();
+        assert.equal(after.status,401,'revoked account control must disable even an otherwise valid Access link');
+        assert.deepEqual(await after.json(),{error:'access_denied',reason:'account-inactive'});
+    }finally{await h.close();}
+});
