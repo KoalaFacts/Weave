@@ -57,7 +57,7 @@ async function legacyFixture() {
         return h;
     } catch(error){await h.close();throw error;}
 }
-const inspect=async(db: ReturnType<typeof start> extends Promise<infer T>?T['db']:never)=>{
+const inspect=async(db: Awaited<ReturnType<typeof start>>['db'])=>{
     const query=async(sql:string)=>(await db.prepare(sql).all()).results;
     return {
         accounts: await query('SELECT * FROM accounts ORDER BY account_id'),
@@ -74,7 +74,8 @@ test('human D1 migration preserves legacy accounts, contacts, message bytes, ACK
     const h=await legacyFixture();
     try {
         const before=await inspect(h.db);
-        const oldSql=await h.db.prepare("SELECT sql FROM sqlite_master WHERE name='accounts'").first('sql');
+        const oldSql=await h.db.prepare("SELECT sql FROM sqlite_master WHERE name='accounts'").first<string>('sql');
+        assert.ok(oldSql);
         const plan=await planHumanAccountUpgrade(h.db);
         assert.equal(plan.status,'legacy');
         assert.equal(plan.statements.length,4);
@@ -88,7 +89,8 @@ test('human D1 migration preserves legacy accounts, contacts, message bytes, ACK
         assert.equal(await h.db.prepare('SELECT checksum FROM data_migrations WHERE script_id=?')
             .bind(humanAccountMigrationId).first('checksum'),plan.checksum);
         assert.equal((await planLatestSchema(h.db)).statements.length,0,'generated target schema must match additive migration exactly');
-        const newSql=await h.db.prepare("SELECT sql FROM sqlite_master WHERE name='accounts'").first('sql');
+        const newSql=await h.db.prepare("SELECT sql FROM sqlite_master WHERE name='accounts'").first<string>('sql');
+        assert.ok(newSql);
         assert.ok(newSql.includes(oldSql.slice(0,35)),'the existing parent table was ALTERed, not replaced');
         assert.equal((await planHumanAccountUpgrade(h.db)).status,'current');
         assert.equal((await applyHumanAccountUpgrade(h.db)).status,'current','repeat is read-only');
