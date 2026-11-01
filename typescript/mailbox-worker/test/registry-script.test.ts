@@ -18,10 +18,11 @@ async function registry(h) {
 }
 
 test('registry browser script requests ten-item pages and follows the server cursor without duplicate rows', async () => {
-    const h = await start();
+    // Eleven public addresses need eleven unclaimed agents (one public address each), beyond the default per-source registrations.
+    const h = await start({ bindings: { REGISTRATION_PER_IP_PER_HOUR: '100' } });
     try {
-        const account = await h.register(), expected = [];
-        for (let index = 0; index < 11; index++) expected.push(await h.address(account, { label: 'Browse ' + index, isPublic: true }));
+        const expected = [];
+        for (let index = 0; index < 11; index++) expected.push(await h.address(await h.register(), { label: 'Browse ' + index, isPublic: true }));
         for (let index=0;index<expected.length;index++) await h.db.prepare("UPDATE account_addresses SET created_at=? WHERE address_id=?").bind((BigInt(Date.UTC(2025,0,1,0,0,index))*10000n).toString(),expected[index].addressId).run();
         const page = await registry(h);
         assert.equal(new URL(page.calls[0].path, 'http://localhost').searchParams.get('limit'), '10');

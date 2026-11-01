@@ -3,6 +3,9 @@ import type { AgentAuth } from './agent-tokens.ts';
 import { jwkThumbprint, parseJws, publicJwk, verifyJws, type CompactJws, type Ed25519Jwk } from './jose.ts';
 import { apiTime, epochSeconds, exactInt64, nowUtc } from './time.ts';
 import { atomic, type Database, type Env, type Transaction } from './database.ts';
+import type { OwnerDecision } from './owner-actions.ts';
+import { keyRequestOfOwner, pendingKeyRequest, stageKeyRequest, type KeyRequestView } from './key-requests.ts';
+import { requireKeyChurnRoom } from './agent-limits.ts';
 import { Problem, fail, invalidField, object } from './wire.ts';
 
 export const maxLiveKeysPerAgent = 100;
@@ -61,7 +64,7 @@ const keyRequestSkewSeconds = 60;
 
 export const isCooling = (row: KeyRow, now: bigint): boolean => row.coolingUntil !== null && row.coolingUntil > now;
 
-function conflict(field: string, reason: 'owned-agent' | 'cooling' | 'key-in-use' | 'last-live-key'): never {
+export function conflict(field: string, reason: 'cooling' | 'key-in-use' | 'last-live-key'): never {
     throw new Problem(409, 'conflict', undefined, {field, reason});
 }
 
@@ -81,9 +84,10 @@ export async function listAgentKeys(env: Env, accountId: string): Promise<{items
 
 /**
  * POST /v1/keys: the new key proves possession with a self-signed proof and the authenticated key endorses its thumbprint,
- * because a DPoP proof covers neither the body nor replay. The added key cools for 24 h.
+ * because a DPoP proof covers neither the body nor replay. On an ownerless agent the added key cools for 24 h; on a human-owned
+ * agent it is held as a pending key request (202) until the owner confirms it, and cooling does not apply.
  */
-export async function addAgentKey(env: Env, request: Request, auth: AgentAuth, input: unknown): Promise<AgentKeySummary> {
+export async function addAgentKey(env: Env, request: Request, auth: AgentAuth, input: unknown): Promise<{status: 200 | 202; body: AgentKeySummary | KeyRequestView}> {
     object(input, ['proof', 'endorsement'], ['label']);
     const {proof: proofText, endorsement: endorsementText, label: labelValue} = input as {proof: unknown; endorsement: unknown; label?: unknown};
     const label = validLabel(labelValue);
@@ -108,21 +112,25 @@ export async function addAgentKey(env: Env, request: Request, auth: AgentAuth, i
         const at = tx.store.now;
         const owner = await tx.db.prepare('SELECT human_id FROM accounts WHERE account_id=?').bind(auth.accountId).first<{human_id: string | null}>();
         if (!owner) fail(401, 'unauthenticated');
-        // Human-owned agents are refused key additions in this slice.
-        if (owner.human_id !== null) conflict('proof', 'owned-agent');
+        const owned = owner.human_id !== null;
         const current = await findKey(tx.db, auth.kid);
         if (!current || current.revokedAt !== null || current.accountId !== auth.accountId) fail(401, 'unauthenticated');
-        if (isCooling(current, at)) conflict('endorsement', 'cooling');
+        if (!owned && isCooling(current, at)) conflict('endorsement', 'cooling');
         const existing = await findKey(tx.db, kid);
         if (existing) {
-            if (existing.accountId === auth.accountId && existing.revokedAt === null) return keySummary(existing);
+            if (existing.accountId === auth.accountId && existing.revokedAt === null) return {status: 200, body: keySummary(existing)};
             conflict('proof', 'key-in-use');
         }
+        // A retry of a pending owned-agent addition is answered before any limit, so it stays idempotent.
+        const pending = owned ? await pendingKeyRequest(tx.db, auth.accountId, kid, at) : null;
+        if (pending) return {status: 202, body: pending};
         // Counted inside the same optimistic transaction as the insert, so concurrent adds cannot pass the limit.
         if (await countLiveKeys(tx, auth.accountId) >= maxLiveKeysPerAgent) fail(429, 'capacity');
+        if (!owned) await requireKeyChurnRoom(tx, auth.accountId);
+        if (owned) return {status: 202, body: await stageKeyRequest(tx, {accountId: auth.accountId, kid, jwk, label, endorsedBy: auth.kid})};
         const coolingUntil = at + keyCoolingTicks;
         insertKey(tx, {kid, accountId: auth.accountId, jwk, label, coolingUntil});
-        return keySummary({kid, accountId: auth.accountId, jwk, label, createdAt: at, lastUsedAt: null, revokedAt: null, coolingUntil});
+        return {status: 200, body: keySummary({kid, accountId: auth.accountId, jwk, label, createdAt: at, lastUsedAt: null, revokedAt: null, coolingUntil})};
     });
 }
 
@@ -157,4 +165,45 @@ export async function revokeAgentKey(env: Env, auth: AgentAuth, kid: string, clo
         tx.writes.push(tx.db.prepare('UPDATE agent_keys SET revoked_at=CAST(? AS INTEGER),updated_at=CAST(? AS INTEGER) WHERE kid=? AND revoked_at IS NULL').bind(stamp, stamp, kid));
         return {kid, revokedAt: apiTime(at)!};
     });
+}
+
+/**
+ * Human-side confirmation, staged in the caller's transaction. Everything the request relied on is re-checked here: the endorser must
+ * still be live, the kid must still be unused on any agent, and the limits apply at confirmation time. The pending request becomes the
+ * key row and is not counted again as an addition, so only key rows (in the window and in total) are checked.
+ */
+export async function confirmKeyRequest(tx: Transaction, humanId: string, requestId: string, at: bigint): Promise<OwnerDecision> {
+    const row = await keyRequestOfOwner(tx, humanId, requestId);
+    if (!row) return {ok: false, reason: 'not-found'};
+    if (row.status !== 'pending') return {ok: false, reason: 'not-pending'};
+    if (row.expiresAt <= at) return {ok: false, reason: 'expired'};
+    const endorser = await findKey(tx.db, row.endorsedBy);
+    if (!endorser || endorser.accountId !== row.accountId || endorser.revokedAt !== null) return {ok: false, reason: 'endorser-revoked'};
+    if (await findKey(tx.db, row.kid)) return {ok: false, reason: 'key-in-use'};
+    if (await countLiveKeys(tx, row.accountId) >= maxLiveKeysPerAgent) return {ok: false, reason: 'key-limit'};
+    try { await requireKeyChurnRoom(tx, row.accountId, {countRequests: false}); }
+    catch (error) {
+        if (error instanceof Problem && error.status === 429) return {ok: false, reason: 'key-limit'};
+        throw error;
+    }
+    const stamp = at.toString();
+    insertKey(tx, {kid: row.kid, accountId: row.accountId, jwk: row.jwk, label: row.label, coolingUntil: null});
+    tx.writes.push(tx.db.prepare(`UPDATE key_requests SET status='confirmed',decided_at=CAST(? AS INTEGER),updated_at=CAST(? AS INTEGER)
+        WHERE request_id=? AND status='pending'`).bind(stamp, stamp, requestId));
+    return {ok: true};
+}
+
+/**
+ * Human-side revocation, staged in the caller's transaction. The owner may revoke any key of an owned agent, including the last
+ * live one: the owner stays the recovery path. Revoking a revoked key is a successful no-change.
+ */
+export async function revokeKeyForOwner(tx: Transaction, humanId: string, agentId: string, kid: string, at: bigint): Promise<OwnerDecision> {
+    const key = await findKey(tx.db, kid);
+    if (!key || key.accountId !== agentId) return {ok: false, reason: 'not-found'};
+    const owner = await tx.db.prepare('SELECT human_id FROM accounts WHERE account_id=?').bind(agentId).first<{human_id: string | null}>();
+    if (owner?.human_id !== humanId) return {ok: false, reason: 'not-found'};
+    if (key.revokedAt !== null) return {ok: true};
+    const stamp = at.toString();
+    tx.writes.push(tx.db.prepare('UPDATE agent_keys SET revoked_at=CAST(? AS INTEGER),updated_at=CAST(? AS INTEGER) WHERE kid=? AND revoked_at IS NULL').bind(stamp, stamp, kid));
+    return {ok: true};
 }

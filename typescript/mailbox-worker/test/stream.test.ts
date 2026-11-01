@@ -21,7 +21,7 @@ test('SSE replays pending across reconnect, bounds per-account slots, ACK remove
         assert.equal(r2.status,200); second = r2.body.getReader(); assert.equal((await nextMessage(second)).envelope.payload.messageId,p.messageId);
         assert.equal((await h.request('/v1/inbox/events',b)).status,429);
         await h.ok('/v1/inbox/'+p.messageId+'/ack',b,'POST',{senderMailboxId:a.accountId});
-        assert.deepEqual(await h.ok('/v1/inbox',b),{items:[],nextCursor:null});
+        assert.deepEqual(await h.ok('/v1/inbox',b),{items:[],nextCursor:null,notices:[]});
         let rest=''; for (;;) { const v=await first.read(); if(v.done) break; rest+=new TextDecoder().decode(v.value); }
         assert.equal(rest.includes('event: message'),false);
     } finally { await first?.cancel(); await second?.cancel(); await h.close(); }
@@ -63,6 +63,8 @@ for(const count of [9,64])test('SSE traverses all '+count+' pending messages wit
     const h=await start();
     try {
         const a=await h.participant(),b=await h.participant(),expiresAt=new Date(Date.now()+3600000).toISOString();
+        // Up to 63 sends in one hour exceed the unclaimed-agent limit of 30; delivery, not limits, is under test.
+        await h.claim(a);
         const first={...payload('contact'),expiresAt},ids=[first.messageId];
         await h.ok('/v1/contacts/requests',a,'POST',{requestId:first.messageId,cardId:b.cardId,methodId:'relay',payload:first});
         await h.ok('/v1/contacts/requests/'+first.messageId+'/decision',b,'POST',{requesterMailboxId:a.accountId,expectedGeneration:1,status:'accepted',reply:null});

@@ -1,5 +1,6 @@
 import * as schema from './schema.ts';
 import { findKey, type KeyRow } from './agent-keys.ts';
+import { admitHourly, agentLimits, agentTier } from './agent-limits.ts';
 import { atomic, type Env } from './database.ts';
 import { verifyDpop } from './dpop.ts';
 import { base64url, parseJws, verifyJws } from './jose.ts';
@@ -25,14 +26,16 @@ const dpopAuthorization = /^DPoP ([A-Za-z0-9_-]{43})$/i;
 class TokenRefusal {
     readonly status: number;
     readonly error: string;
-    constructor(status: number, error: string) { this.status = status; this.error = error; }
+    readonly retryAfter: number | undefined;
+    constructor(status: number, error: string, retryAfter?: number) { this.status = status; this.error = error; this.retryAfter = retryAfter; }
 }
 function refuse(status: number, error: string): never { throw new TokenRefusal(status, error); }
 function invalidRequest(): never { refuse(400, 'invalid_request'); }
 function invalidClient(): never { refuse(401, 'invalid_client'); }
 
-function tokenResponse(status: number, value: unknown): Response {
-    return new Response(JSON.stringify(value), {status, headers: {'Content-Type': 'application/json', 'Cache-Control': 'no-store', 'Pragma': 'no-cache'}});
+function tokenResponse(status: number, value: unknown, retryAfter?: number): Response {
+    return new Response(JSON.stringify(value), {status, headers: {'Content-Type': 'application/json', 'Cache-Control': 'no-store', 'Pragma': 'no-cache',
+        ...(retryAfter === undefined ? {} : {'Retry-After': String(retryAfter)})}});
 }
 
 async function readForm(request: Request): Promise<Map<string, string>> {
@@ -107,6 +110,9 @@ export async function issueAgentToken(env: Env, request: Request, clock: () => b
             const at = clock(), cutoff = at.toString();
             // The assertion may have expired since it was validated; its jti row could already be pruned.
             if (BigInt(exp) * ticksPerSecond <= at) invalidClient();
+            // Counted only for a valid, unspent assertion, in the issuing transaction: refused or invalid attempts consume nothing.
+            const admission = await admitHourly(tx, 'agent-token', key.accountId, agentLimits[await agentTier(tx, key.accountId)].tokensPerHour);
+            if (!admission.admitted) throw new TokenRefusal(429, 'temporarily_unavailable', admission.retryAfter);
             // Bounded expiry cleanup first, so the rows staged below are never part of it.
             tx.writes.push(tx.db.prepare('DELETE FROM agent_assertions WHERE rowid IN (SELECT rowid FROM agent_assertions WHERE expires_at<=CAST(? AS INTEGER) LIMIT ?)')
                 .bind((at - assertionRetentionTicks).toString(), expiredRowsPerIssue));
@@ -119,7 +125,7 @@ export async function issueAgentToken(env: Env, request: Request, clock: () => b
         });
         return tokenResponse(200, {access_token: accessToken, token_type: 'DPoP', expires_in: accessTokenSeconds});
     } catch (error) {
-        if (error instanceof TokenRefusal) return tokenResponse(error.status, {error: error.error});
+        if (error instanceof TokenRefusal) return tokenResponse(error.status, {error: error.error}, error.retryAfter);
         // D1 failures fail closed: nothing was committed. Only the error class and message are logged, never request data.
         if (!(error instanceof Problem)) console.error(JSON.stringify({event: 'agent-token-unavailable', errorClass: error instanceof Error ? error.name : typeof error,
             message: error instanceof Error ? error.message : null}));

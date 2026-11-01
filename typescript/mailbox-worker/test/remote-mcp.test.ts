@@ -16,6 +16,8 @@ test('remote MCP initializes and reads the real D1 public directory without agen
     const h=await start();
     try {
         const account=await h.register();
+        // Three public addresses exceed the unclaimed-agent limit of one.
+        await h.claim(account);
         const visible=await h.address(account,{label:'remote-public',isPublic:true});
         const privateAddress=await h.address(account,{label:'remote-private'});
         const expired=await h.address(account,{label:'remote-expired',isPublic:true,effectiveTo:'2020-01-01T00:00:00Z'});
@@ -39,6 +41,8 @@ test('remote MCP reuses public paging and preserves the opaque cursor',async()=>
     const h=await start();
     try {
         const account=await h.register();
+        // Two public addresses exceed the unclaimed-agent limit of one.
+        await h.claim(account);
         const first=await h.address(account,{label:'paged',isPublic:true});
         const second=await h.address(account,{label:'paged',isPublic:true});
         const page=read(await call(h,'search_registry',{q:'paged',limit:1}));

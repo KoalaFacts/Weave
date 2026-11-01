@@ -23,8 +23,8 @@ const controlCharacters = /[\u0000-\u001f\u007f-\u009f\u00ad\u061c\u200b\u200e\u
 const visibleCharacter = /[^\p{Default_Ignorable_Code_Point}\p{White_Space}]/u;
 
 // Same gates the fetch handler applies: maintenance stops everything, recovery read-only stops writes.
-const writesRefused = (env: Env) => env.MAINTENANCE_MODE === 'true' || env.RECOVERY_READ_ONLY === 'true';
-const requireReadable = (env: Env) => { if (env.MAINTENANCE_MODE === 'true') fail(503, 'maintenance', 30); };
+export const writesRefused = (env: Env) => env.MAINTENANCE_MODE === 'true' || env.RECOVERY_READ_ONLY === 'true';
+export const requireReadable = (env: Env) => { if (env.MAINTENANCE_MODE === 'true') fail(503, 'maintenance', 30); };
 
 function sameInstant(left: string, right: string): boolean {
     try { return utcTicks(left) === utcTicks(right); } catch { return false; }

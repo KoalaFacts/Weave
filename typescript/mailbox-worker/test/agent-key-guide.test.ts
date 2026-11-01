@@ -61,7 +61,7 @@ test('token section pins the implemented lifetimes, skew and renewal rule', () =
 test('key management states cooling, the 100-key limit and the lost-key consequence', () => {
     const keys = section('### 2.5 Back up, rotate and revoke keys', '### 2.6');
     for (const term of ['GET /v1/keys', 'POST /v1/keys', 'DELETE /v1/keys/{kid}', 'weave-key-proof+jwt', 'weave-key-endorsement+jwt', 'newKid', 'coolingUntil',
-        'last-live-key', 'owned-agent', 'key-in-use']) assert.ok(keys.includes(term), term);
+        'last-live-key', 'key-in-use']) assert.ok(keys.includes(term), term);
     assert.equal(keyCoolingTicks, 24n * 3600n * 10000000n);
     assert.ok(keys.includes('24 hours'), 'cooling period');
     assert.ok(keys.includes(`${maxLiveKeysPerAgent} live keys`), 'key limit');
@@ -70,6 +70,11 @@ test('key management states cooling, the 100-key limit and the lost-key conseque
     assert.match(keys, /cannot endorse/);
     assert.match(keys, /loses every key is lost/);
     assert.match(keys, /event stream opened before the revocation ends within about 20 seconds/);
+});
+test('guide teaches binding to a human, owned-agent key additions, recovery codes, limits and notices', () => {
+    for (const term of ['/v1/binding-requests', '/v1/key-requests', 'notices', '24 hours', 'weave-binding-request+jwt', 'Ask a human to own this agent', '202']) assert.ok(guide.includes(term), term);
+    assert.doesNotMatch(guide, /cannot add keys in this release/);
+    assert.match(guide, /lost `200`.*spends the code/s);
 });
 test('guide distinguishes durable saving, registration and restoration evidence', () => {
     for (const term of ['registrationStatus', 'keyPersistenceStatus', 'recoveryVerificationStatus', 'service origin', 'accountId', 'fresh session', 'different Account ID', 'Do not overwrite']) assert.ok(guide.includes(term), term);
