@@ -65,6 +65,27 @@ test("consentPage_OwnerWithAgents_ListsEscapedAgentsAndSignedInLogin",async()=>{
   assert.doesNotMatch(html,/proof|control/i);
 });
 
+test("consentPage_DuplicateNames_ShowsFullAccountIdentityBesideEveryChoice",async()=>{
+  // A human can own several agents with the same display name. Choosing the
+  // wrong radio button must not silently authorize a different private mailbox.
+  const first=randomUUID(),second=randomUUID();
+  const response=consentPage(details,createChallenge(),{login:"alice"},[
+    {accountId:first,displayName:"Shared agent"},
+    {accountId:second,displayName:"Shared agent"}
+  ],"New agent");
+  const html=await response.text();
+  const choices=html.match(/<label><input type="radio"[^>]*>[^<]*<\/label>/g)??[];
+  assert.equal(choices.length,2);
+  for(const id of [first,second]){
+    const choice=choices.find(label=>label.includes('value="'+id+'"'));
+    assert.ok(choice,"each owned agent remains selectable");
+    const inputEnd=choice!.indexOf(">",choice!.indexOf("<input"));
+    const visibleLabel=choice!.slice(inputEnd+1);
+    assert.match(visibleLabel,/Shared agent/);
+    assert.ok(visibleLabel.includes(id),"the full account ID must be visible beside its choice, not just a hidden form value");
+  }
+});
+
 test("consentPage_EachForm_SubmitsOnlyFieldsReadConsentAccepts",async()=>{
   const html=await consentPage(details,createChallenge(),{login:"alice"},
     [{accountId:randomUUID(),displayName:"A"}],"Claude Code").text();
@@ -92,4 +113,58 @@ test("consentPage_UntrustedClient_EscapesMetadataAndKeepsHeaders",async()=>{
   assert.equal(response.headers.get("x-frame-options"),"DENY");
   const unverified=await consentPage({...details,clientDomain:undefined},createChallenge(),{login:"alice"},[],"x").text();
   assert.match(unverified,/Self-registered client; its name is not independently verified/);
+});
+
+
+test("consentPage_UntrustedUnicodeDirections_CannotSpoofDisplayedOAuthMetadata",async()=>{
+  // HTML escaping does not remove Unicode bidi overrides. Client metadata is
+  // untrusted even when the SDK has checked its redirect URI and client ID.
+  const page=consentPage({
+    ...details,
+    clientName:"合作工具\u202Eevil\u200bspoof",
+    clientDomain:"published\u2066.example\u2069",
+    redirectHost:"client\u200F.example",
+    scope:["weave:messages.send\u061C"]
+  },createChallenge(),{login:"alice"},
+  [{accountId:randomUUID(),displayName:"Agent\u202Ehidden"}],"New\u200Eagent");
+  const html=await page.text();
+  assert.doesNotMatch(html,/[\u061c\u200e\u200f\u202a-\u202e\u2066-\u2069]/u,
+    "direction formatting must not reach consent text or form values");
+  assert.doesNotMatch(html,/[\u00ad\u200b\u2060\ufeff]/u,
+    "invisible formatting characters must not survive client metadata rendering");
+  assert.match(html,/合作工具evilspoof/);
+  assert.match(html,/Agenthidden/);
+  assert.match(html,/name="agentName"[^>]*value="Newagent"/);
+});
+
+test("readConsent_StalledFormStream_FailsClosedWithinDeadline",{timeout:7_000},async()=>{
+  // An untrusted POST may send only part of a form and never finish the body.
+  // A byte cap alone cannot bound this pending read, so it must fail closed.
+  const partial=new TextEncoder().encode("handle="+createChallenge()+"&decision=approve&agent=new&agentName=");
+  const stream=new ReadableStream<Uint8Array>({
+    start(controller){controller.enqueue(partial);},
+    cancel(){/* Simulated client stops sending; close after cancellation. */}
+  });
+  const request=new Request("https://auth.example/authorize",{
+    method:"POST",headers:{"Content-Type":"application/x-www-form-urlencoded"},body:stream,duplex:"half"
+  } as RequestInit);
+  const start=performance.now();
+  assert.equal(await readConsent(request),null,"a stalled consent body cannot be authorized");
+  assert.ok(performance.now()-start<5_500,"pending request body must be bounded");
+});
+
+test("readConsent_CancelNeverSettles_StillReturnsAtDeadline",{timeout:6_000},async()=>{
+  // A stalled upload can also supply a cancel() that never resolves. The timeout
+  // must bound the whole operation, including stream cleanup, not just read().
+  const partial=new TextEncoder().encode("handle="+createChallenge()+"&decision=approve&agent=new&agentName=");
+  const stream=new ReadableStream<Uint8Array>({
+    start(controller){controller.enqueue(partial);},
+    cancel(){return new Promise<void>(()=>{});}
+  });
+  const request=new Request("https://auth.example/authorize",{
+    method:"POST",headers:{"Content-Type":"application/x-www-form-urlencoded"},body:stream,duplex:"half"
+  } as RequestInit);
+  const start=performance.now();
+  assert.equal(await readConsent(request),null);
+  assert.ok(performance.now()-start<5_500,"cleanup must not defeat the upload deadline");
 });
