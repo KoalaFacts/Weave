@@ -79,7 +79,10 @@ test('human D1 migration preserves legacy accounts, contacts, message bytes, ACK
         const plan=await planHumanAccountUpgrade(h.db);
         assert.equal(plan.status,'legacy');
         assert.equal(plan.statements.length,4);
-        assert.ok(plan.statements.every(sql=>!/\b(?:DROP|DELETE|UPDATE|RENAME)\b/i.test(sql)));
+        assert.deepEqual(plan.statements.map(sql => /^\s*(CREATE TABLE|CREATE UNIQUE INDEX|ALTER TABLE|CREATE INDEX)\b/i.exec(sql)?.[1].toUpperCase()),
+            ['CREATE TABLE','CREATE UNIQUE INDEX','ALTER TABLE','CREATE INDEX']);
+        // ON DELETE RESTRICT is a foreign-key referential action, not a DELETE statement.
+        assert.ok(plan.statements.every(sql=>!/\b(?:DROP\s+(?:TABLE|INDEX)|DELETE\s+FROM|UPDATE\s+accounts|RENAME\s+TO)\b/i.test(sql)));
         assert.deepEqual(await inspect(h.db),before,'read-only planning cannot mutate old D1');
         await applyHumanAccountUpgrade(h.db);
         const after=await inspect(h.db);

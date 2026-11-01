@@ -279,7 +279,9 @@ test('Access trial revokes a persisted identity link when its control credential
         const before=await privateCall();
         assert.equal(before.status,200,await before.clone().text());
         assert.equal((await before.json()).result.structuredContent.id,account.accountId);
-        await h.db.prepare('UPDATE accounts SET control_hash=NULL,control_hash_scheme=NULL,control_hash_parameters=NULL WHERE account_id=?')
+        // The approved additive D1 migration retains NOT NULL control columns.
+        // Invalid control parameters revoke bearer authentication without changing identity links.
+        await h.db.prepare("UPDATE accounts SET control_hash_parameters='{}' WHERE account_id=?")
             .bind(account.accountId).run();
         const after=await privateCall();
         assert.equal(after.status,401,'revoked account control must disable even an otherwise valid Access link');
