@@ -38,6 +38,7 @@ interface DeploymentReport {
     conversion?:unknown;schemaPlan?:Awaited<ReturnType<typeof planLatestSchema>>;
     humanAccountUpgrade?:{status:'current'|'legacy';checksum:string|null};
     d1RecoveryBookmark?:{databaseId:string;bookmark:string;capturedAt:string};
+    publicMaintenanceObservedAt?:string;
     recoveryVersion?:string;recoveryCommand?:string;finishedAt?:string;failure?:string;
 }
 
@@ -101,13 +102,13 @@ export async function deploy({env=process.env,fetchImpl=fetch,run,root=directory
     // Public discovery must be observed from the public Internet, with no
     // Cloudflare control token or mailbox control sent to those origins.
     // Bound response size and deadline, and never reflect a remote body/error.
-    async function publicJson(url:string,label:string):Promise<Record<string,unknown>>{
+    async function publicJson(url:string,label:string,expectedStatus=200,expectedMime='application/json'):Promise<Record<string,unknown>>{
         let response:Response;
-        try{response=await fetchImpl(url,{method:'GET',headers:{Accept:'application/json'},
+        try{response=await fetchImpl(url,{method:'GET',headers:{Accept:expectedMime,'Cache-Control':'no-store'},
             redirect:'manual',signal:AbortSignal.timeout(3500)});}
         catch{throw Error(label+' unavailable; no cloud mutation inferred.');}
-        if(response.status!==200||
-            (response.headers.get('Content-Type')??'').split(';')[0].trim().toLowerCase()!=='application/json'){
+        if(response.status!==expectedStatus||
+            (response.headers.get('Content-Type')??'').split(';')[0].trim().toLowerCase()!==expectedMime){
             // A malformed response may never settle its cancellation promise.
             void response.body?.cancel().catch(()=>{});
             throw Error(label+' unavailable or not JSON (HTTP '+response.status+').');
@@ -379,6 +380,16 @@ export async function deploy({env=process.env,fetchImpl=fetch,run,root=directory
         phase='maintenance deployment requested';await save();
         await command(['deploy','--keep-vars','--no-bundle'],'maintenance');
         verifySettings(await inspect('/workers/scripts/demo/settings','Maintenance settings',phase),'true');
+        if(approvedHumanUpgrade){
+            // The settings API may report the new configuration before public
+            // traffic serves it. Do not sample the final D1 restore point or
+            // write schema until public /mcp itself refuses requests.
+            const observed=await publicJson(demoOrigin+'/mcp','Public maintenance sentinel',503,'application/problem+json');
+            if(observed.status!==503||observed.code!=='maintenance')
+                throw Error('Public maintenance not confirmed; refusing D1 schema writes.');
+            report.publicMaintenanceObservedAt=new Date().toISOString();
+            phase='public maintenance confirmed; D1 upgrade pending';await save();
+        }
         phase='maintenance verified; database validation in progress';await save();
         if(approvedHumanUpgrade){
             // Take the *final* bookmark after maintenance has stopped new

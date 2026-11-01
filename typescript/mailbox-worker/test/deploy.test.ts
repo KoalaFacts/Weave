@@ -148,6 +148,45 @@ test('approved human migration cannot run in completed-only deployments',async()
     await assert.rejects(deploy(f.options),/requires explicit maintain mode/);
     assert.deepEqual(f.requests,[]);assert.deepEqual(f.commands,[]);
 });
+// A settings API read is not proof that public traffic has switched to
+// maintenance. Before the approved D1 migration, require the actual public
+// /mcp edge to reject unauthenticated traffic with the maintenance sentinel.
+for (const [label, edgeStatus, edgeCode] of [
+    ['stale public Worker', 405, 'unavailable'],
+    ['unrelated HTTP 503', 503, 'storage']
+] as const) test('approved human migration refuses D1 writes while '+label+' is observed',async()=>{
+    const h=await start(),f=fixture({extraEnv:{WEAVE_APPROVED_HUMAN_ONBOARDING_SCHEMA:'true'}});
+    const bookmark='00000001-00000002-00004e2f-0a83ea2fceebc654de0640c422be4653';
+    const bookmarkPath='/d1/database/'+database.uuid+'/time_travel/bookmark';
+    const original=f.options.fetchImpl;
+    f.options.fetchImpl=async(url,options)=>{
+        if(url.endsWith(bookmarkPath)){
+            f.requests.push(url);
+            return Response.json({success:true,result:{bookmark}});
+        }
+        if(url==='https://demo.weave-389.workers.dev/mcp'){
+            f.requests.push(url);
+            assert.equal(f.commands.length,1,'public probe follows the maintenance upload');
+            assert.equal(options.headers.Authorization,undefined,'never send the Cloudflare token to the public Worker');
+            return new Response(JSON.stringify({status:edgeStatus,code:edgeCode}),{
+                status:edgeStatus,headers:{'Content-Type':'application/problem+json'}
+            });
+        }
+        return original(url,options);
+    };
+    f.options.openDatabase=async()=>({db:h.db,close:async()=>{f.closed=true;}});
+    const before=(await h.db.prepare('PRAGMA table_info("accounts")').all()).results;
+    try{
+        await assert.rejects(deploy(f.options),/public maintenance/i);
+        assert.deepEqual(f.events,['migration','maintenance'],
+            'leave the Worker in maintenance rather than converting or activating');
+        assert.equal(f.requests.filter(url=>url.endsWith(bookmarkPath)).length,1,
+            'no final recovery point or D1 migration before public maintenance is verified');
+        assert.deepEqual((await h.db.prepare('PRAGMA table_info("accounts")').all()).results,before);
+        assert.equal(f.closed,true);
+    }finally{await h.close();}
+});
+
 // A protected, data-preserving human upgrade still requires an actual D1
 // point-in-time recovery bookmark. Source tests alone cannot prove one exists.
 test('approved human upgrade refuses any Worker upload without a remote D1 recovery bookmark',async()=>{
@@ -159,12 +198,23 @@ test('approved human upgrade refuses any Worker upload without a remote D1 recov
         assert.equal(f.closed,true);
     }finally{await h.close();}
 });
-test('approved human upgrade captures an exact D1 recovery bookmark before maintenance',async()=>{
+test('approved human upgrade captures an exact D1 recovery bookmark after public maintenance',async()=>{
     const h=await start(),f=fixture({extraEnv:{WEAVE_APPROVED_HUMAN_ONBOARDING_SCHEMA:'true'}});
     const bookmark='00000001-00000002-00004e2f-0a83ea2fceebc654de0640c422be4653';
     const endpoint='/d1/database/'+database.uuid+'/time_travel/bookmark';
     const original=f.options.fetchImpl;
     f.options.fetchImpl=async(url,options)=>{
+        if(url==='https://demo.weave-389.workers.dev/mcp'){
+            f.requests.push(url);
+            assert.equal(f.commands.length,1,'public maintenance must follow the pause upload');
+            assert.equal(f.requests.filter(request=>request.endsWith(endpoint)).length,1,
+                'public maintenance must be verified before the final bookmark');
+            assert.equal(options.headers.Authorization,undefined,'no Cloudflare token to the public Worker');
+            assert.equal(options.redirect,'manual');
+            return new Response(JSON.stringify({status:503,code:'maintenance'}),{
+                status:503,headers:{'Content-Type':'application/problem+json','Cache-Control':'no-store'}
+            });
+        }
         if(url.endsWith(endpoint)){
             const reads=f.requests.filter(request=>request.endsWith(endpoint)).length;
             assert.equal(f.commands.length,reads===0?0:1,
@@ -187,6 +237,8 @@ test('approved human upgrade captures an exact D1 recovery bookmark before maint
         assert.equal(f.requests.filter(request=>request.endsWith(endpoint)).length,2,
             'require a pre-pause capability check and a post-pause recovery point');
         assert.equal(result.d1RecoveryBookmark?.bookmark,bookmark);
+        assert.ok(Number.isFinite(Date.parse(result.publicMaintenanceObservedAt??'')));
+        assert.equal(f.requests.filter(request=>request==='https://demo.weave-389.workers.dev/mcp').length,1);
         assert.equal(result.d1RecoveryBookmark?.databaseId,database.uuid);
         assert.ok(Number.isFinite(Date.parse(result.d1RecoveryBookmark?.capturedAt??'')));
         const persisted=JSON.parse(readFileSync(new URL('../test-results/deployment/result.json',import.meta.url),'utf8'));
