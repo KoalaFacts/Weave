@@ -95,6 +95,25 @@ test("consentPage_UntrustedClient_EscapesMetadataAndKeepsHeaders",async()=>{
 });
 
 
+test("consentPage_UntrustedUnicodeDirections_CannotSpoofDisplayedOAuthMetadata",async()=>{
+  // HTML escaping does not remove Unicode bidi overrides. Client metadata is
+  // untrusted even when the SDK has checked its redirect URI and client ID.
+  const page=consentPage({
+    ...details,
+    clientName:"合作工具\u202Eevil",
+    clientDomain:"published\u2066.example\u2069",
+    redirectHost:"client\u200F.example",
+    scope:["weave:messages.send\u061C"]
+  },createChallenge(),{login:"alice"},
+  [{accountId:randomUUID(),displayName:"Agent\u202Ehidden"}],"New\u200Eagent");
+  const html=await page.text();
+  assert.doesNotMatch(html,/[\u061c\u200e\u200f\u202a-\u202e\u2066-\u2069]/u,
+    "direction formatting must not reach consent text or form values");
+  assert.match(html,/合作工具evil/);
+  assert.match(html,/Agenthidden/);
+  assert.match(html,/name="agentName"[^>]*value="Newagent"/);
+});
+
 test("readConsent_StalledFormStream_FailsClosedWithinDeadline",{timeout:7_000},async()=>{
   // An untrusted POST may send only part of a form and never finish the body.
   // A byte cap alone cannot bound this pending read, so it must fail closed.
