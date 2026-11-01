@@ -22,7 +22,7 @@ const mailboxBundle=readFileSync(resolve("../mailbox-worker/dist/index.js"),"utf
 
 // Only the two GitHub endpoints exist; every other outbound request is denied.
 type Recorded={url:string;method:string;headers:Record<string,string>;body:string};
-const github={requests:[] as Recorded[],userStatus:200,redirectToken:false,redirectUser:false,oversizedToken:false,oversizedUser:false,slowToken:false,slowUser:false};
+const github={requests:[] as Recorded[],userStatus:200,redirectToken:false,redirectUser:false,oversizedToken:false,oversizedUser:false,slowToken:false,slowUser:false,userLogin:"octo-human"};
 async function fakeGithub(request:Request):Promise<Response>{
   const body=await request.text();
   github.requests.push({url:request.url,method:request.method,
@@ -43,7 +43,7 @@ async function fakeGithub(request:Request):Promise<Response>{
       headers:{Location:"https://redirect-sink.example/identity"}});
     if(github.slowUser)await new Promise<void>(resolve=>setTimeout(resolve,5_500));
     if(github.userStatus!==200)return new Response("upstream failure",{status:github.userStatus});
-    return Response.json({id:4242,login:"octo-human",created_at:fakeCreatedAt,email:"private@example.com",
+    return Response.json({id:4242,login:github.userLogin,created_at:fakeCreatedAt,email:"private@example.com",
       ...(github.oversizedUser?{unexpectedPadding:"x".repeat(64*1024)}:{})});
   }
   return new Response("Outbound denied",{status:403});
@@ -177,6 +177,29 @@ test("callback_ValidCodeAndState_SetsSessionAndRedirectsToReturnTo",{timeout:60_
   assert.ok(sessionCookie(result.headers),"the human session must be set");
   const cleared=result.headers.getSetCookie().find(x=>x.startsWith("__Host-weave_login="));
   assert.ok(cleared&&/Max-Age=0/.test(cleared),"the login cookie must be cleared");
+});
+
+test("callback_SingleCharacterGithubLogin_CompletesVerifiedSignIn",{timeout:60_000},async()=>{
+  // Exercise the real provider response and private directory in isolated Workerd.
+  // A one-letter GitHub handle remains a legitimate authenticated user.
+  const instance=await start();
+  const previous=github.userLogin;
+  github.userLogin="q";
+  try{
+    const started=await begin();
+    const result=await callback(instance.mf,new URLSearchParams({
+      code:"fake-code",state:started.location!.searchParams.get("state")!
+    }).toString(),cookieHeader(started.loginCookie!));
+    assert.equal(result.status,302,"a one-letter GitHub account must complete sign-in");
+    assert.ok(sessionCookie(result.headers));
+    const rows=await humans(instance.mf);
+    assert.equal(rows.length,1);
+    assert.equal(rows[0].subject,"4242");
+    assert.equal(rows[0].display_login,"q");
+  }finally{
+    github.userLogin=previous;
+    await stop(instance);
+  }
 });
 
 test("callback_StateMismatch_Returns400WithoutSession",{timeout:30_000},async()=>{

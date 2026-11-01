@@ -28,6 +28,18 @@ test('signInHuman_SameGithubId_ReturnsSameHumanAndUpdatesLogin', async () => {
     } finally { await h.close(); }
 });
 
+test('signInHuman_SingleCharacterGithubLogin_Accepted', async () => {
+    // GitHub permits 1–39 character logins. A valid one-letter identity must not
+    // be rejected by Weave's private HumanDirectory before agent onboarding.
+    const h = await start();
+    try {
+        const result = await signInHuman(environment(h), github('987', 'q'));
+        assert.equal(result.ok, true);
+        assert.equal(await h.db.prepare('SELECT display_login FROM humans WHERE subject=?')
+            .bind('987').first('display_login'), 'q');
+    } finally { await h.close(); }
+});
+
 test('signInHuman_DifferentIds_ReturnDifferentHumans', async () => {
     const h = await start();
     try {
