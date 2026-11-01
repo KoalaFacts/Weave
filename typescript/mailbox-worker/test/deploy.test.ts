@@ -148,6 +148,52 @@ test('approved human migration cannot run in completed-only deployments',async()
     await assert.rejects(deploy(f.options),/requires explicit maintain mode/);
     assert.deepEqual(f.requests,[]);assert.deepEqual(f.commands,[]);
 });
+// A protected, data-preserving human upgrade still requires an actual D1
+// point-in-time recovery bookmark. Source tests alone cannot prove one exists.
+test('approved human upgrade refuses any Worker upload without a remote D1 recovery bookmark',async()=>{
+    const h=await start(),f=fixture({extraEnv:{WEAVE_APPROVED_HUMAN_ONBOARDING_SCHEMA:'true'}});
+    f.options.openDatabase=async()=>({db:h.db,close:async()=>{f.closed=true;}});
+    try{
+        await assert.rejects(deploy(f.options),/D1 Time Travel recovery bookmark/i);
+        assert.equal(f.commands.length,0,'no maintenance or database mutation before a verified recovery point');
+        assert.equal(f.closed,true);
+    }finally{await h.close();}
+});
+test('approved human upgrade captures an exact D1 recovery bookmark before maintenance',async()=>{
+    const h=await start(),f=fixture({extraEnv:{WEAVE_APPROVED_HUMAN_ONBOARDING_SCHEMA:'true'}});
+    const bookmark='00000001-00000002-00004e2f-0a83ea2fceebc654de0640c422be4653';
+    const endpoint='/d1/database/'+database.uuid+'/time_travel/bookmark';
+    const original=f.options.fetchImpl;
+    f.options.fetchImpl=async(url,options)=>{
+        if(url.endsWith(endpoint)){
+            const reads=f.requests.filter(request=>request.endsWith(endpoint)).length;
+            assert.equal(f.commands.length,reads===0?0:1,
+                'the final bookmark must be sampled after verified maintenance');
+            f.requests.push(url);
+            assert.equal(options.headers.Authorization,'Bearer '+env.CLOUDFLARE_API_TOKEN);
+            return {ok:true,status:200,json:async()=>({success:true,result:{bookmark}})};
+        }
+        return original(url,options);
+    };
+    const run=f.options.run;
+    f.options.run=args=>{
+        assert.ok(f.requests.some(request=>request.endsWith(endpoint)),
+            'the recovery bookmark must be fetched before any Worker operation');
+        return run(args);
+    };
+    f.options.openDatabase=async()=>({db:h.db,close:async()=>{f.closed=true;}});
+    try{
+        const result=await deploy(f.options);
+        assert.equal(f.requests.filter(request=>request.endsWith(endpoint)).length,2,
+            'require a pre-pause capability check and a post-pause recovery point');
+        assert.equal(result.d1RecoveryBookmark?.bookmark,bookmark);
+        assert.equal(result.d1RecoveryBookmark?.databaseId,database.uuid);
+        assert.ok(Number.isFinite(Date.parse(result.d1RecoveryBookmark?.capturedAt??'')));
+        const persisted=JSON.parse(readFileSync(new URL('../test-results/deployment/result.json',import.meta.url),'utf8'));
+        assert.equal(persisted.d1RecoveryBookmark?.bookmark,bookmark);
+        assert.deepEqual(f.events,['migration','maintenance','schema','recovery','active']);
+    }finally{await h.close();}
+});
 for(const mode of ['','unknown','COMPLETED-ONLY'])test('invalid explicit database mode stops before external operations: '+JSON.stringify(mode),async()=>{
     const f=fixture({extraEnv:{WEAVE_DEPLOY_DATABASE_MODE:mode}});
     await assert.rejects(deploy(f.options),/database mode/i);assert.equal(f.requests.length,0);assert.equal(f.commands.length,0);

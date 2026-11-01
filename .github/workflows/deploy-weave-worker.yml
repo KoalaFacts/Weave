@@ -146,3 +146,11 @@ jobs:
       - name: Verify published public MCP handshake, discovery and D1 read
         run: node scripts/verify-public-mcp.ts
         working-directory: typescript/mailbox-worker
+      - name: Retain time-limited D1 recovery checkpoint for the protected migration
+        if: ${{ always() && inputs.migrate_human_accounts == true }}
+        uses: actions/upload-artifact@043fb46d1a93c77aae656e7c1c64a875d1fc6a0a # v7
+        with:
+          name: weave-human-migration-recovery-${{ github.run_id }}
+          path: typescript/mailbox-worker/test-results/deployment/result.json
+          if-no-files-found: warn
+          retention-days: 7

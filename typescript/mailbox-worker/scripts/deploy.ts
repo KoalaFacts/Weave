@@ -37,6 +37,7 @@ interface DeploymentReport {
     databaseMode:'maintain'|'completed-only';
     conversion?:unknown;schemaPlan?:Awaited<ReturnType<typeof planLatestSchema>>;
     humanAccountUpgrade?:{status:'current'|'legacy';checksum:string|null};
+    d1RecoveryBookmark?:{databaseId:string;bookmark:string;capturedAt:string};
     recoveryVersion?:string;recoveryCommand?:string;finishedAt?:string;failure?:string;
 }
 
@@ -295,6 +296,17 @@ export async function deploy({env=process.env,fetchImpl=fetch,run,root=directory
     let connection: DatabaseConnection|undefined,phase='verified resources; no deployment attempted';
     const report: DeploymentReport={worker:'demo',databaseId:database.uuid,artifactSha256:hashes,startedAt:new Date().toISOString(),databaseMode};
     const save=async()=>writeFile(join(evidence,'result.json'),JSON.stringify({...report,phase},null,2)+'\n');
+    // Cloudflare D1 Time Travel GET needs only the existing token's D1 Read or
+    // Write permission. A current bookmark is not a backup export or permission
+    // to perform a destructive restore; it is a bounded recovery checkpoint.
+    async function requireD1RecoveryBookmark(label:string):Promise<string>{
+        const result=await inspect<{bookmark?:unknown}>(
+            '/d1/database/'+database.uuid+'/time_travel/bookmark',label,phase);
+        if(typeof result.bookmark!=='string'||
+            !/^[0-9a-f]{8}(?:-[0-9a-f]{8}){2}-[0-9a-f]{32}$/i.test(result.bookmark))
+            throw Error(label+' returned no valid D1 bookmark; no database write attempted.');
+        return result.bookmark;
+    }
     try{
         const configs: Record<string,string>={};
         for(const [name,entry,maintenance] of [['maintenance','index','true'],['active','index','false'],['recovery','recovery','false']]){
@@ -358,12 +370,24 @@ export async function deploy({env=process.env,fetchImpl=fetch,run,root=directory
                     await planSchema(connection.db,{...schemaPolicy,skipApprovedLegacyAccounts:true});
                 else await planDemo(connection.db);
             }else await planDemo(connection.db);
+            // Refuse to pause the live Worker if the existing token cannot
+            // prove a D1 Time Travel recovery point in the approved account.
+            if(approvedHumanUpgrade)
+                await requireD1RecoveryBookmark('D1 Time Travel recovery bookmark');
             await save();
         }
         phase='maintenance deployment requested';await save();
         await command(['deploy','--keep-vars','--no-bundle'],'maintenance');
         verifySettings(await inspect('/workers/scripts/demo/settings','Maintenance settings',phase),'true');
         phase='maintenance verified; database validation in progress';await save();
+        if(approvedHumanUpgrade){
+            // Take the *final* bookmark after maintenance has stopped new
+            // writes, just before the atomic additive D1 schema migration.
+            report.d1RecoveryBookmark={databaseId:database.uuid,
+                bookmark:await requireD1RecoveryBookmark('D1 Time Travel maintenance recovery bookmark'),
+                capturedAt:new Date().toISOString()};
+            await save();
+        }
         if(completed){
             Object.assign(report,await completed.confirm());await save();
         }else{
