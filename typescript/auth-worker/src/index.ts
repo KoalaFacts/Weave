@@ -3,7 +3,7 @@ import {AuthorizationError,CimdFetchError,OAuthAuthorizationServer,type AuthRequ
 import type {CreateAgentResult} from "../../mailbox-worker/src/humans.ts";
 import type {RecordGrantResult} from "../../mailbox-worker/src/client-grants.ts";
 import type {OwnerOverview} from "../../mailbox-worker/src/owner-actions.ts";
-import {createChallenge,validChallenge,validHandle,readConsent} from "./challenge.ts";
+import {validChallenge,validHandle,readConsent} from "./challenge.ts";
 import {consentPage} from "./consent-page.ts";
 import {beginGithubLogin,completeGithubLogin,failureLog,messagePage,type GithubLoginEnv} from "./github-login.ts";
 import {freshAuthentication,readHumanSession,validSigningKey} from "./human-session.ts";
@@ -49,6 +49,16 @@ function provider(env:Env):OAuthAuthorizationServer<Env>{
     // advertised only when both budgets are bound, so metadata never points at a 503.
     ...registrationOpen(env)?{clientRegistrationEndpoint:"/register"}:{}
   });
+}
+/** Bind each random SDK consent handle to the human who actually saw the page.
+ * The 256-bit handle supplies entropy; SHA-256 domain separation makes an
+ * identical handle unusable with another valid signed-in human session.
+ * The existing per-handle Durable Object still fences one-time consumption.
+ */
+async function subjectBoundChallenge(handle:string,humanId:string):Promise<string>{
+  const bytes=new TextEncoder().encode("weave-consent-human-v1\\n"+handle+"\\n"+humanId);
+  const digest=new Uint8Array(await crypto.subtle.digest("SHA-256",bytes));
+  return btoa(String.fromCharCode(...digest)).replaceAll("+","-").replaceAll("/","_").replace(/=+$/,"");
 }
 function stub(env:Env,handle:string):DurableObjectStub{
   return env.CONSENT_NONCES.get(env.CONSENT_NONCES.idFromName(handle));
@@ -129,7 +139,7 @@ async function authorize(req:Request,env:Env,server:OAuthAuthorizationServer<Env
       const details=await oauth.describeConsent(parsed);
       const pending=await oauth.beginConsent(parsed);
       if(!validHandle(pending.handle))return unavailable();
-      if(!await putNonce(env,pending.handle,createChallenge()))return unavailable();
+      if(!await putNonce(env,pending.handle,await subjectBoundChallenge(pending.handle,human.humanId)))return unavailable();
       let agents;
       try{agents=await env.MAILBOX.listAgents(human.humanId);}catch{return directoryUnavailable();}
       const suggestedName=details.clientName.replace(controlCharacters,"").trim().slice(0,128);
@@ -144,7 +154,18 @@ async function authorize(req:Request,env:Env,server:OAuthAuthorizationServer<Env
     const handle=form.get("handle"),decision=form.get("decision");
     if(!validHandle(handle)||!["approve","deny"].includes(decision??""))return denied();
     if(decision==="deny"){
+      // A valid SDK browser cookie does not bind the handle to the GitHub human
+      // who saw the page. A later sign-in in that browser must not revoke the
+      // original human's pending consent, even though denial issues no grant.
+      const human=await readHumanSession(env.HUMAN_SESSION_KEY,req,Date.now());
+      if(!human)return denied();
+      const nonce=await getNonce(env,handle);
+      if(!nonce||nonce!==await subjectBoundChallenge(handle,human.humanId))return denied();
+      // Only the SDK may validate the original browser-bound consent cookie.
+      // Its KV deletion is eventually consistent, so consume the Durable Object
+      // nonce afterward to fence replayed approvals of a denied request.
       const rejected=await oauth.denyConsent(req,handle);
+      if(!await consumeNonce(env,handle,nonce))return denied();
       return new Response(null,{status:302,headers:rejected.headers});
     }
     // The SDK must validate the original browser's consent cookie BEFORE
@@ -163,7 +184,8 @@ async function authorize(req:Request,env:Env,server:OAuthAuthorizationServer<Env
     // Only the Durable Object transaction fences simultaneous/replayed grants;
     // if consumption fails, never create an authorization code or an agent.
     const nonce=await getNonce(env,handle);
-    if(!nonce||!await consumeNonce(env,handle,nonce))return denied();
+    if(!nonce||nonce!==await subjectBoundChallenge(handle,human.humanId)||
+      !await consumeNonce(env,handle,nonce))return denied();
     const accountId=await resolveAgent(env,req,human.humanId,form);
     if(accountId instanceof Response)return accountId;
     // The mailbox mirrors the grant before any code exists; private /mcp calls require that row to be live,

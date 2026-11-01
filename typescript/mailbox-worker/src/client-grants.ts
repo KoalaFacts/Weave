@@ -58,3 +58,14 @@ export async function liveGrant(db: Database, grantId: string): Promise<GrantRow
         .bind(grantId).first<{ human_id: string; account_id: string; client_id: string }>();
     return row && { grantId, humanId: row.human_id, accountId: row.account_id, clientId: row.client_id };
 }
+
+/** The live grant only while its human still owns the agent and is not frozen. Authorization reads it on every
+ * private call, so freezing the human or moving the agent to another owner ends every token of the grant at once. */
+export async function liveOwnedGrant(db: Database, grantId: string): Promise<GrantRow | null> {
+    const row = await db.prepare('SELECT g.human_id,g.account_id,g.client_id FROM client_grants g'
+        + ' JOIN accounts a ON a.account_id=g.account_id AND a.human_id=g.human_id'
+        + ' JOIN humans h ON h.human_id=g.human_id AND h.frozen_at IS NULL'
+        + ' WHERE g.grant_id=? AND g.revoked_at IS NULL')
+        .bind(grantId).first<{ human_id: string; account_id: string; client_id: string }>();
+    return row && { grantId, humanId: row.human_id, accountId: row.account_id, clientId: row.client_id };
+}
