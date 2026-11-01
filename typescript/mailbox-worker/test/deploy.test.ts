@@ -198,12 +198,23 @@ test('approved human upgrade refuses any Worker upload without a remote D1 recov
         assert.equal(f.closed,true);
     }finally{await h.close();}
 });
-test('approved human upgrade captures an exact D1 recovery bookmark before maintenance',async()=>{
+test('approved human upgrade captures an exact D1 recovery bookmark after public maintenance',async()=>{
     const h=await start(),f=fixture({extraEnv:{WEAVE_APPROVED_HUMAN_ONBOARDING_SCHEMA:'true'}});
     const bookmark='00000001-00000002-00004e2f-0a83ea2fceebc654de0640c422be4653';
     const endpoint='/d1/database/'+database.uuid+'/time_travel/bookmark';
     const original=f.options.fetchImpl;
     f.options.fetchImpl=async(url,options)=>{
+        if(url==='https://demo.weave-389.workers.dev/mcp'){
+            f.requests.push(url);
+            assert.equal(f.commands.length,1,'public maintenance must follow the pause upload');
+            assert.equal(f.requests.filter(request=>request.endsWith(endpoint)).length,1,
+                'public maintenance must be verified before the final bookmark');
+            assert.equal(options.headers.Authorization,undefined,'no Cloudflare token to the public Worker');
+            assert.equal(options.redirect,'manual');
+            return new Response(JSON.stringify({status:503,code:'maintenance'}),{
+                status:503,headers:{'Content-Type':'application/problem+json','Cache-Control':'no-store'}
+            });
+        }
         if(url.endsWith(endpoint)){
             const reads=f.requests.filter(request=>request.endsWith(endpoint)).length;
             assert.equal(f.commands.length,reads===0?0:1,
@@ -226,6 +237,8 @@ test('approved human upgrade captures an exact D1 recovery bookmark before maint
         assert.equal(f.requests.filter(request=>request.endsWith(endpoint)).length,2,
             'require a pre-pause capability check and a post-pause recovery point');
         assert.equal(result.d1RecoveryBookmark?.bookmark,bookmark);
+        assert.ok(Number.isFinite(Date.parse(result.publicMaintenanceObservedAt??'')));
+        assert.equal(f.requests.filter(request=>request==='https://demo.weave-389.workers.dev/mcp').length,1);
         assert.equal(result.d1RecoveryBookmark?.databaseId,database.uuid);
         assert.ok(Number.isFinite(Date.parse(result.d1RecoveryBookmark?.capturedAt??'')));
         const persisted=JSON.parse(readFileSync(new URL('../test-results/deployment/result.json',import.meta.url),'utf8'));
