@@ -19,10 +19,10 @@ test('latest Drizzle schema defines the approved tables without compatibility vi
     const db=await database();
     try {
         const tables=db.prepare("SELECT name FROM sqlite_master WHERE type='table' AND name NOT LIKE 'sqlite_%' ORDER BY name").all().map(r=>r.name);
-        assert.deepEqual(tables,['account_addresses','accounts','agent_access_tokens','agent_assertions','agent_keys','binding_requests','contact_cards','contact_requests','contacts','counters','data_migrations','humans','key_requests','legacy_channels','mailbox_guard','mailbox_records','mailbox_records_legacy','mailbox_revision','maintenance_state','message_delivery','rate_limits','recovery_codes','stream_cursors','stream_leases']);
+        assert.deepEqual(tables,['account_addresses','accounts','address_agent_cards','agent_access_tokens','agent_assertions','agent_keys','binding_requests','client_grants','contact_cards','contact_requests','contacts','counters','data_migrations','humans','key_requests','legacy_channels','mailbox_guard','mailbox_records','mailbox_records_legacy','mailbox_revision','maintenance_state','mcp_idempotency','message_delivery','rate_limits','recovery_codes','stream_cursors','stream_leases']);
         assert.equal(db.prepare("SELECT count(*) n FROM sqlite_master WHERE type IN ('view','trigger')").get().n,0);
         const business=tables.filter(name=>name!=='data_migrations');
-        assert.equal(business.reduce((n,name)=>n+db.prepare(`PRAGMA table_info(${name})`).all().length,0),179);
+        assert.equal(business.reduce((n,name)=>n+db.prepare(`PRAGMA table_info(${name})`).all().length,0),195);
         assert.ok(business.flatMap(name=>db.prepare(`PRAGMA table_info(${name})`).all()).every(c=>!c.name.endsWith('_ticks')));
         assert.ok(!db.prepare('PRAGMA table_info(mailbox_records)').all().some(c=>c.name==='kind'));
         // The archived legacy rows are never looked up by the removed account credential.
@@ -185,5 +185,40 @@ test('recovery_codes keeps one code per agent and refuses malformed hashes, dupl
         assert.equal(db.prepare("SELECT name FROM sqlite_master WHERE type='index' AND name='recovery_codes_hash'").get()?.name,'recovery_codes_hash');
         assert.throws(()=>db.prepare("INSERT INTO rate_limits(seq,policy,bucket_key,window_start,count) VALUES(1,'other','x',0,0)").run(),/constraint/i);
         db.prepare("INSERT INTO rate_limits(seq,policy,bucket_key,window_start,count) VALUES(1,'key-recovery','x',0,0)").run();
+    } finally { db.close(); }
+});
+
+test('client_grants refuses unknown humans or accounts, empty or oversized client IDs and a revocation before creation',async()=>{
+    const db=await database();
+    try {
+        accounts(db);
+        db.prepare("INSERT INTO humans(human_id,provider,subject,provider_created_at,display_login,created_at,updated_at) VALUES('h1','github','42','2020-01-01T00:00:00Z','alice',0,0)").run();
+        const insert=db.prepare('INSERT INTO client_grants(grant_id,human_id,account_id,client_id,created_at,revoked_at) VALUES(?,?,?,?,10,?)');
+        insert.run('g1','h1','synthetic-a','client',null);
+        for(const row of [
+            ['g1','h1','synthetic-a','client',null],['g2','missing','synthetic-a','client',null],['g2','h1','missing','client',null],
+            ['g2','h1','synthetic-a','',null],['g2','h1','synthetic-a','c'.repeat(2049),null],['g2','h1','synthetic-a','client',9],
+        ]) assert.throws(()=>insert.run(...row),/constraint/i,JSON.stringify(row));
+        insert.run('g2','h1','synthetic-b','c'.repeat(2048),10);
+        assert.equal(db.prepare("SELECT name FROM sqlite_master WHERE type='index' AND name='client_grants_owner'").get()?.name,'client_grants_owner');
+    } finally { db.close(); }
+});
+
+test('mcp_idempotency keeps one key per account and refuses unknown accounts, malformed keys, tools or hashes',async()=>{
+    const db=await database();
+    try {
+        accounts(db);
+        const insert=db.prepare('INSERT INTO mcp_idempotency(account_id,idempotency_key,tool,request_hash,result_id,created_at) VALUES(?,?,?,?,?,10)');
+        const digest='a'.repeat(64);
+        insert.run('synthetic-a','retry:1.a_b-C','send_message',digest,'m1');
+        insert.run('synthetic-b','retry:1.a_b-C','request_contact',digest,'r1');
+        for(const row of [
+            ['synthetic-a','retry:1.a_b-C','send_message',digest,'m2'],['missing','k','send_message',digest,'m'],
+            ['synthetic-a','','send_message',digest,'m'],['synthetic-a','k'.repeat(129),'send_message',digest,'m'],
+            ['synthetic-a','has space','send_message',digest,'m'],['synthetic-a','k','ack_message',digest,'m'],
+            ['synthetic-a','k','send_message','A'.repeat(64),'m'],['synthetic-a','k','send_message','a'.repeat(63),'m'],
+        ]) assert.throws(()=>insert.run(...row),/constraint/i,JSON.stringify(row));
+        insert.run('synthetic-a','k'.repeat(128),'decide_contact',digest,'r');
+        assert.equal(db.prepare("SELECT name FROM sqlite_master WHERE type='index' AND name='mcp_idempotency_created'").get()?.name,'mcp_idempotency_created');
     } finally { db.close(); }
 });

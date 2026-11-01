@@ -141,12 +141,8 @@ if(process.argv.includes('--agent')){
                 const timer=setTimeout(()=>child.kill(),1500);timer.unref();});
         }};
     }
-    function payload(value:string){
-        const when=Date.now(),prefix=when.toString(16).padStart(12,'0'),random=randomBytes(10);
-        const messageId=prefix.slice(0,8)+'-'+prefix.slice(8)+'-7'+random.toString('hex').slice(0,3)+'-'+(8+(random[2]&3)).toString(16)+random.toString('hex').slice(5,8)+'-'+random.toString('hex').slice(8,20);
-        return {messageId,createdAt:new Date(when).toISOString(),expiresAt:new Date(when+3600000).toISOString(),
-            payloadEncoding:'text/plain',bytes:Buffer.from(value).toString('base64')};
-    }
+    /** MCP write tools take plain A2A text parts; the server builds the Message and its ID. */
+    const text=(value:string)=>({parts:[{text:value}]});
     const evidence:{[key:string]:unknown}={kind:'scripted-remote-MCP-transport',notModelAgentProof:true,target:endpoint.href,
         startedAt:new Date().toISOString(),messages:[]};
     let evidenceFile:Awaited<ReturnType<typeof open>>|undefined;
@@ -214,9 +210,10 @@ if(process.argv.includes('--agent')){
         const addressA=randomUUID(),addressB=randomUUID(),nonce=randomBytes(8).toString('hex');
         await privateWrite(a,'A','ensure_my_address',{addressId:addressA,label:'Remote pair '+nonce+' A'});
         await privateWrite(b,'B','ensure_my_address',{addressId:addressB,label:'Remote pair '+nonce+' B'});
-        const intro=payload('synthetic introduction '+nonce);
         const decision=await privateWrite(a,'A','request_contact',{requesterAddressId:addressA,
-            recipientAccountId:profileB.id,recipientAddressId:addressB,payload:intro});
+            recipientAccountId:profileB.id,recipientAddressId:addressB,message:text('synthetic introduction '+nonce),
+            idempotencyKey:'pair-'+nonce+'-intro'});
+        const requestId:string=decision.request.requestId;
         async function find(c:Client,tool:string,predicate:(x:any)=>boolean){
             let afterCursor:undefined|string;
             for(let page=0;page<100;page++){
@@ -229,8 +226,8 @@ if(process.argv.includes('--agent')){
             }
             throw Error('Expected owner-scoped record unavailable or pagination incomplete');
         }
-        await find(b,'list_my_contact_requests',(x:any)=>x.requestId===intro.messageId);
-        await privateWrite(b,'B','decide_contact',{requestId:intro.messageId,requesterAccountId:profileA.id,
+        await find(b,'list_my_contact_requests',(x:any)=>x.requestId===requestId);
+        await privateWrite(b,'B','decide_contact',{requestId,requesterAccountId:profileA.id,
             expectedGeneration:String(decision.generation),status:'accepted'});
         const generation=String(decision.generation);
         await find(a,'list_my_contacts',(x:any)=>x.accountId===profileB.id&&x.canSend===true);
@@ -239,27 +236,30 @@ if(process.argv.includes('--agent')){
         assert.equal(String(seenA.generation),generation);assert.equal(String(seenB.generation),generation);
         const findInbox=(c:Client,messageId:string)=>find(c,'list_my_inbox',
             (x:any)=>x.envelope?.payload?.messageId===messageId);
+        const inboxText=(item:any)=>item.message?.parts?.[0]?.text;
         const findOutbox=(c:Client,messageId:string)=>find(c,'list_my_outbox',
             (x:any)=>x.messageId===messageId);
         const pending:{messageId:string;body:string;sender:'A'|'B'}[]=[];
-        let lastPayload:ReturnType<typeof payload>|null=null;
+        let last:{messageId:string;key:string;content:string;dest:string}|null=null;
         for(let i=0;i<6;i++){
             const sender=i%2===0?a:b,receiver=i%2===0?b:a;
             const dest=i%2===0?profileB.id:profileA.id;
-            const content='weave-remote-pair-'+nonce+'-'+i,body=payload(content);
-            if(i===5)lastPayload=body;
-            const receipt=await privateWrite(sender,i%2===0?'A':'B','send_message',{recipientAccountId:dest,contactGeneration:generation,payload:body});
-            assert.equal(receipt.messageId,body.messageId);
-            if(i<2){pending.push({messageId:body.messageId,body:content,sender:i===0?'A':'B'});}
+            const content='weave-remote-pair-'+nonce+'-'+i,key='pair-'+nonce+'-msg-'+i;
+            const receipt=await privateWrite(sender,i%2===0?'A':'B','send_message',{recipientAccountId:dest,contactGeneration:generation,
+                message:text(content),idempotencyKey:key});
+            const messageId:string=receipt.messageId;
+            assert.match(messageId,/^[0-9a-f]{8}-[0-9a-f]{4}-7[0-9a-f]{3}-[89ab][0-9a-f]{3}-[0-9a-f]{12}$/,'the server builds a UUIDv7 messageId');
+            if(i===5)last={messageId,key,content,dest};
+            if(i<2){pending.push({messageId,body:content,sender:i===0?'A':'B'});}
             else {
-                const item=await findInbox(receiver,body.messageId);
-                assert.equal(Buffer.from(item.envelope.payload.bytes,'base64').toString(),content);
-                assert.equal(item.senderMailboxId,i%2===0?profileA.id:profileB.id);
-                const ack=await privateWrite(receiver,i%2===0?'B':'A','ack_message',{messageId:body.messageId,senderAccountId:item.senderMailboxId});
+                const item=await findInbox(receiver,messageId);
+                assert.equal(inboxText(item),content);
+                assert.equal(item.senderAccountId,i%2===0?profileA.id:profileB.id);
+                const ack=await privateWrite(receiver,i%2===0?'B':'A','ack_message',{messageId,senderAccountId:item.senderAccountId});
                 assert.equal(ack.state,'acknowledged');
-                assert.equal((await findOutbox(sender,body.messageId)).state,'acknowledged');
+                assert.equal((await findOutbox(sender,messageId)).state,'acknowledged');
             }
-            (evidence.messages as unknown[]).push({sequence:i+1,direction:i%2===0?'A→B':'B→A',messageId:body.messageId,acknowledged:i>=2});
+            (evidence.messages as unknown[]).push({sequence:i+1,direction:i%2===0?'A→B':'B→A',messageId,acknowledged:i>=2});
             if(i===1){
                 await a.close();await b.close();a=start('A',tokenA);b=start('B',tokenB);
                 assert.notEqual(a.pid,b.pid);
@@ -268,8 +268,8 @@ if(process.argv.includes('--agent')){
                 for(const item of pending){
                     const receiving=item.sender==='A'?b:a,sending=item.sender==='A'?a:b;
                     const received=await findInbox(receiving,item.messageId);
-                    assert.equal(Buffer.from(received.envelope.payload.bytes,'base64').toString(),item.body);
-                    const ack=await privateWrite(receiving,item.sender==='A'?'B':'A','ack_message',{messageId:item.messageId,senderAccountId:received.senderMailboxId});
+                    assert.equal(inboxText(received),item.body);
+                    const ack=await privateWrite(receiving,item.sender==='A'?'B':'A','ack_message',{messageId:item.messageId,senderAccountId:received.senderAccountId});
                     assert.equal(ack.state,'acknowledged');
                     assert.equal((await findOutbox(sending,item.messageId)).state,'acknowledged');
                 }
@@ -277,13 +277,15 @@ if(process.argv.includes('--agent')){
                 evidence.bothProcessesRestarted=true;
             }
         }
-        assert.ok(lastPayload);
-        const original=await privateWrite(b,'B','send_message',{recipientAccountId:profileA.id,contactGeneration:generation,payload:lastPayload});
-        assert.equal(original.state,'acknowledged','a duplicate must return the original final receipt, not enqueue');
-        assert.equal(original.messageId,lastPayload.messageId);
-        assert.equal(await countInPages(b,'list_my_outbox',(x:any)=>x.messageId===lastPayload.messageId),1,
+        assert.ok(last);
+        // Same key and same message: the server returns the current receipt for the original message and writes nothing.
+        const original=await privateWrite(b,'B','send_message',{recipientAccountId:profileA.id,contactGeneration:generation,
+            message:text(last.content),idempotencyKey:last.key});
+        assert.equal(original.state,'acknowledged','a replayed key must return the original message receipt, not enqueue');
+        assert.equal(original.messageId,last.messageId);
+        assert.equal(await countInPages(b,'list_my_outbox',(x:any)=>x.messageId===last.messageId),1,
             'retained outbox ID must appear exactly once across all pages');
-        assert.equal(await countInPages(a,'list_my_inbox',(x:any)=>x.envelope?.payload?.messageId===lastPayload.messageId),0,
+        assert.equal(await countInPages(a,'list_my_inbox',(x:any)=>x.envelope?.payload?.messageId===last.messageId),0,
             'acknowledged message must not reappear in the recipient inbox after replay');
         evidence.retainedSendReplayedWithoutRedelivery=true;
         evidence.finishedAt=new Date().toISOString();evidence.completed=true;

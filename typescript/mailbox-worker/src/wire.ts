@@ -24,7 +24,11 @@ export function parse(text: string): any {
     });
 }
 export function json(value: unknown, status = 200): Response {
-    return new Response(stringify(accountNames(value)), { status, headers: { 'Content-Type': status >= 400 ? 'application/problem+json' : 'application/json', 'Cache-Control': 'no-store', 'Pragma': 'no-cache' } });
+    return jsonText(stringify(accountNames(value)), status);
+}
+/** A response for JSON text that is already serialized with canonical account names. */
+export function jsonText(text: string, status = 200): Response {
+    return new Response(text, { status, headers: { 'Content-Type': status >= 400 ? 'application/problem+json' : 'application/json', 'Cache-Control': 'no-store', 'Pragma': 'no-cache' } });
 }
 const identityNames:Record<string,string>={agentId:'accountId',mailboxId:'accountId',ownerMailboxId:'ownerAccountId',senderMailboxId:'senderAccountId',recipientMailboxId:'recipientAccountId',requesterMailboxId:'requesterAccountId',peerMailboxId:'peerAccountId'};
 export function accountNames(value:any):any {
@@ -32,7 +36,8 @@ export function accountNames(value:any):any {
     if(value&&typeof value==='object'){
         const result:Record<string,any>={};
         for(const [key,child] of Object.entries(value)){
-            result[key]=accountNames(child);
+            // An Agent Card is agent-declared content served exactly as stored; no alias keys are added inside it.
+            result[key]=key==='agentCard'?child:accountNames(child);
             const canonical=key==='isBlockedByMailbox'?'isBlockedByAccount':identityNames[key];
             if(canonical)result[canonical]=child;
         }
@@ -42,7 +47,7 @@ export function accountNames(value:any):any {
 }
 export function problem(error: unknown): Response {
     const p = error instanceof Problem ? error : new Problem(503, 'storage');
-    const titles: Record<string,string> = { invalid: 'Invalid request', unauthenticated: 'Agent authentication required', unavailable: 'Resource unavailable', conflict: 'State conflict', expired: 'Expired', capacity: 'Capacity reached', tooLarge: 'Request too large', storage: 'Storage unavailable', maintenance:'Maintenance in progress' };
+    const titles: Record<string,string> = { invalid: 'Invalid request', unauthenticated: 'Agent authentication required', unavailable: 'Resource unavailable', conflict: 'State conflict', expired: 'Expired', capacity: 'Capacity reached', tooLarge: 'Request too large', storage: 'Storage unavailable', maintenance:'Maintenance in progress', 'idempotency-conflict':'Idempotency key reused with different input', 'not-connected':'Not connected', 'grant-revoked':'Authorization revoked' };
     const response = json({ status: p.status, title: titles[p.code], code: p.code, ...(p.detail ?? {}) }, p.status);
     if (p.retryAfter !== undefined) response.headers.set('Retry-After', String(p.retryAfter));
     if (p.code === 'unauthenticated') response.headers.set('WWW-Authenticate', 'DPoP algs="EdDSA"');

@@ -23,7 +23,7 @@ for (const count of [0, 10, 11, 23]) test(`anonymous directory browses ${count} 
         do {
             const page = await h.ok('/v1/directory' + (cursor ? '?afterCursor=' + encodeURIComponent(cursor) : ''));
             sizes.push(page.items.length); seen.push(...page.items.map(item => item.addressId));
-            for (const item of page.items) assert.deepEqual(Object.keys(item).sort(), ['accountId', 'addressId', 'directUri', 'effectiveFrom', 'effectiveTo', 'isPublic', 'label']);
+            for (const item of page.items) assert.deepEqual(Object.keys(item).sort(), ['accountId', 'addressId', 'agentCard', 'directUri', 'effectiveFrom', 'effectiveTo', 'isPublic', 'label']);
             assert.ok(!JSON.stringify(page).includes(await h.token(owner)));assert.ok(!JSON.stringify(page).includes(owner.key.privateJwk.d!));
             assert.ok(!JSON.stringify(page).includes('PRIVATE-'));
             cursor = page.nextCursor;

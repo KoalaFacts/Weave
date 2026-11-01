@@ -84,3 +84,24 @@ export function payload(bytes = 'hello', now = Date.now()) {
     return { messageId: hex.slice(0,8) + '-' + hex.slice(8) + '-7' + randomBytes(2).toString('hex').slice(1) + '-8' + randomBytes(2).toString('hex').slice(1) + '-' + randomBytes(6).toString('hex'),
         createdAt: new Date(now).toISOString(), expiresAt: new Date(now + 3600000).toISOString(), payloadEncoding:'text/plain', bytes:Buffer.from(bytes).toString('base64') };
 }
+const testGrants = new Map<string, string>();
+let grantSubjects = 800000;
+type GrantDatabase = { prepare(sql: string): { bind(...values: string[]): { run(): Promise<unknown> } } };
+/** Seeds, once per account, a live consent grant row (with its own human) so direct private-tool calls pass the
+ * mandatory in-write grant check. The account itself stays unowned. */
+export async function testGrant(db: GrantDatabase, accountId: string): Promise<string> {
+    const known = testGrants.get(accountId);
+    if (known) return known;
+    const humanId = randomUUID(), grantId = randomUUID(), at = (BigInt(Date.now())*10000n).toString();
+    await db.prepare("INSERT INTO humans(human_id,provider,subject,provider_created_at,display_login,created_at,updated_at) VALUES(?,'github',?,'2020-01-01T00:00:00Z',?,CAST(? AS INTEGER),CAST(? AS INTEGER))")
+        .bind(humanId, String(++grantSubjects), 'grant-owner', at, at).run();
+    await db.prepare("INSERT INTO client_grants(grant_id,human_id,account_id,client_id,created_at,revoked_at) VALUES(?,?,?,'https://client.test/metadata.json',CAST(? AS INTEGER),NULL)")
+        .bind(grantId, humanId, accountId, at).run();
+    testGrants.set(accountId, grantId);
+    return grantId;
+}
+/** Direct executePrivateMcp calls with the account's seeded test grant. */
+export function withTestGrant<E extends { db: GrantDatabase }>(execute: (env: E, origin: string, accountId: string, name: string, args: Record<string, unknown>, grantId: string) => Promise<Response>) {
+    return async (env: E, origin: string, accountId: string, name: string, args: Record<string, unknown>) =>
+        execute(env, origin, accountId, name, args, await testGrant(env.db, accountId));
+}

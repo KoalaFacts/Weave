@@ -40,28 +40,21 @@ export default {
       },request.url);
     } catch {return new Response("OAuth unavailable",{status:503});}
     if(!oauth)return new Response("OAuth unavailable",{status:503});
+    // Test-only view of the AS's validated props for a token; the resource itself never returns them.
+    if(new URL(request.url).searchParams.has("props")){
+      const claim=await env.AUTH_SERVER.validateToken(env.OAUTH_RESOURCE,request.headers.get("authorization").slice(7));
+      return Response.json(claim&&claim.props);
+    }
     const access=await authorizeOAuth(oauth,request,"weave:messages.send",
-      async owner=>(await env.ACCOUNTS.prepare(
-        "SELECT account_id FROM accounts WHERE account_id=?"
-      ).bind(owner).first("account_id"))===owner);
+      async grantId=>{
+        const row=await env.ACCOUNTS.prepare(
+          "SELECT account_id,human_id,client_id FROM grants WHERE grant_id=?"
+        ).bind(grantId).first();
+        return row&&{accountId:row.account_id,humanId:row.human_id,clientId:row.client_id};
+      });
     return access instanceof Response?access:Response.json({accountId:access.accountId});
   }
 };`;
-// Payload generated with the exact mailbox wire shape.
-function mailboxPayload(bytes:string,now=Date.now()){
-  const hex=now.toString(16).padStart(12,"0");
-  return {
-    messageId:hex.slice(0,8)+"-"+hex.slice(8)+"-7"+
-      randomBytes(2).toString("hex").slice(1)+"-8"+
-      randomBytes(2).toString("hex").slice(1)+"-"+
-      randomBytes(6).toString("hex"),
-    createdAt:new Date(now).toISOString(),
-    expiresAt:new Date(now+3600000).toISOString(),
-    payloadEncoding:"text/plain",
-    bytes:Buffer.from(bytes).toString("base64")
-  };
-}
-
 // Fake GitHub: the code "gh-<id>" signs in GitHub user <id> as login "human<id>".
 function outbound(request:Request):Response|Promise<Response>{
   if(request.method==="GET"&&request.url===clientId)return demoOAuthClientMetadata();
@@ -153,7 +146,7 @@ async function start(authEnv?:Record<string,unknown>,mailboxEnv?:Record<string,u
   const mf=new Miniflare(options(storage,authEnv,mailboxEnv));
   await initializeDatabase(await mf.getD1Database("db","weave-mailbox-regression"),BigInt(Date.now())*10000n);
   await (await mf.getD1Database("ACCOUNTS","weave-resource-regression"))
-    .exec("CREATE TABLE accounts (account_id TEXT PRIMARY KEY);");
+    .exec("CREATE TABLE grants (grant_id TEXT PRIMARY KEY, account_id TEXT, human_id TEXT, client_id TEXT);");
   return {mf,storage};
 }
 async function stop(instance:Instance){
@@ -215,21 +208,28 @@ function codeFrom(response:{status:number;headers:{get(name:string):string|null}
   assert.ok(code,"authorization code must be returned after explicit consent");
   return code;
 }
-async function exchange(mf:Miniflare,code:string,auth:Authorization){
+type Tokens={access_token:string;refresh_token:string};
+async function tokenRequest(mf:Miniflare,fields:Record<string,string>):Promise<Tokens>{
   // Discover the SDK's actual token endpoint; v1.2.4 defaults to /oauth/token.
   const metadata=await mf.dispatchFetch(issuer+"/.well-known/oauth-authorization-server");
   const {token_endpoint:tokenEndpoint}=await metadata.json() as {token_endpoint:string};
   assert.equal(new URL(tokenEndpoint).origin,issuer);
   const token=await mf.dispatchFetch(tokenEndpoint,{method:"POST",redirect:"manual",
     headers:{"Content-Type":"application/x-www-form-urlencoded"},
-    body:new URLSearchParams({grant_type:"authorization_code",code,client_id:clientId,
-      redirect_uri:auth.redirectUri,code_verifier:auth.verifier,resource}).toString()});
-  assert.equal(token.status,200,"actual AS must exchange a PKCE code for resource-bound token");
-  const grant=await token.json() as {access_token?:string;expires_in?:number;resource?:string};
+    body:new URLSearchParams({...fields,client_id:clientId,resource}).toString()});
+  assert.equal(token.status,200,"actual AS must issue a resource-bound token for "+fields.grant_type);
+  const grant=await token.json() as {access_token?:string;refresh_token?:string;expires_in?:number;resource?:string};
   assert.ok(grant.access_token);
+  assert.ok(grant.refresh_token);
   assert.equal(grant.expires_in,900,"resource's 15-minute bound must not be relaxed");
   assert.equal(grant.resource,resource);
-  return grant.access_token;
+  return grant as Tokens;
+}
+async function exchangeTokens(mf:Miniflare,code:string,auth:Authorization){
+  return tokenRequest(mf,{grant_type:"authorization_code",code,redirect_uri:auth.redirectUri,code_verifier:auth.verifier});
+}
+async function exchange(mf:Miniflare,code:string,auth:Authorization){
+  return (await exchangeTokens(mf,code,auth)).access_token;
 }
 /** Full sign-in, consent and PKCE exchange; returns the token and the account it was granted for. */
 async function authorizeAgent(mf:Miniflare,githubId:number,agent:string,agentName?:string,session?:string){
@@ -242,14 +242,17 @@ async function authorizeAgent(mf:Miniflare,githubId:number,agent:string,agentNam
   return {token,session,accountId:await profileId(mf,token)};
 }
 let rpcId=100;
-async function privateCall(mf:Miniflare,token:string,name:string,args:Record<string,unknown>={}):Promise<any>{
+async function mcpCall(mf:Miniflare,token:string,name:string,args:Record<string,unknown>={}){
   const mailbox=await mf.getWorker("weave-mailbox-regression");
-  const response=await mailbox.fetch(resource,{
+  return mailbox.fetch(resource,{
     method:"POST",headers:{"Content-Type":"application/json",
       Accept:"application/json, text/event-stream",
       "MCP-Protocol-Version":"2025-11-25",Authorization:"Bearer "+token},
     body:JSON.stringify({jsonrpc:"2.0",id:rpcId++,method:"tools/call",params:{name,arguments:args}})
   });
+}
+async function privateCall(mf:Miniflare,token:string,name:string,args:Record<string,unknown>={}):Promise<any>{
+  const response=await mcpCall(mf,token,name,args);
   assert.equal(response.status,200,"real MCP rejected "+name);
   const frame=await response.json() as {result?:{isError?:boolean;structuredContent?:unknown;content?:{text:string}[]}};
   assert.ok(frame.result&&!frame.result.isError,"MCP private tool failed "+name);
@@ -273,9 +276,23 @@ async function identify(mf:Miniflare,token:string){
   const worker=await mf.getWorker("weave-resource-regression");
   return worker.fetch(resource,{method:"POST",headers:{Authorization:"Bearer "+token}});
 }
+/** Copies the account's live mailbox grant rows into the separate resource isolate's D1. */
 async function registerAtResource(mf:Miniflare,accountId:string){
-  await (await mf.getD1Database("ACCOUNTS","weave-resource-regression"))
-    .prepare("INSERT INTO accounts (account_id) VALUES (?)").bind(accountId).run();
+  const rows=await (await mailboxDb(mf)).prepare(
+    "SELECT grant_id,account_id,human_id,client_id FROM client_grants WHERE account_id=? AND revoked_at IS NULL"
+  ).bind(accountId).all<{grant_id:string;account_id:string;human_id:string;client_id:string}>();
+  const target=await mf.getD1Database("ACCOUNTS","weave-resource-regression");
+  for(const row of rows.results)await target.prepare("INSERT INTO grants VALUES (?,?,?,?)")
+    .bind(row.grant_id,row.account_id,row.human_id,row.client_id).run();
+}
+async function propsOf(mf:Miniflare,token:string){
+  const worker=await mf.getWorker("weave-resource-regression");
+  return (await worker.fetch(resource+"?props",{method:"POST",headers:{Authorization:"Bearer "+token}})).json() as Promise<Record<string,string>>;
+}
+async function clientGrants(mf:Miniflare,accountId:string){
+  return (await (await mailboxDb(mf)).prepare(
+    "SELECT grant_id,human_id,client_id,revoked_at FROM client_grants WHERE account_id=? ORDER BY created_at"
+  ).bind(accountId).all<{grant_id:string;human_id:string;client_id:string;revoked_at:number|null}>()).results;
 }
 async function nonceStatus(mf:Miniflare,handle:string):Promise<number>{
   const ns=await mf.getDurableObjectNamespace("CONSENT_NONCES");
@@ -515,27 +532,27 @@ test("consent_GithubSignedInAgents_ExchangeSixMessagesAcrossColdRestart",{timeou
     assert.ok(addressesA.items.some((x:{addressId:string})=>x.addressId===aAddress));
     assert.ok(!addressesA.items.some((x:{addressId:string})=>x.addressId===bAddress),
       "account A must not read private B addresses");
-    const intro=mailboxPayload("test-consent-introduction");
     const requested=await privateCall(mf,token,"request_contact",{
-      requesterAddressId:aAddress,recipientAccountId:accountB,recipientAddressId:bAddress,payload:intro});
+      requesterAddressId:aAddress,recipientAccountId:accountB,recipientAddressId:bAddress,
+      message:{parts:[{text:"test-consent-introduction"}]}});
+    const requestId=requested.request.requestId as string;
     const pending=await privateCall(mf,tokenB,"list_my_contact_requests");
     assert.ok(pending.items.some((x:{requestId:string;status:string})=>
-      x.requestId===intro.messageId&&x.status==="pending"));
+      x.requestId===requestId&&x.status==="pending"));
     await privateCall(mf,tokenB,"decide_contact",{
-      requestId:intro.messageId,requesterAccountId:account,
+      requestId,requesterAccountId:account,
       expectedGeneration:String(requested.generation),status:"accepted"});
     const deliveries:{token:string;receiverToken:string;sender:string;recipient:string;
-      payload:ReturnType<typeof mailboxPayload>}[]=[];
+      input:Record<string,unknown>;messageId:string}[]=[];
     async function sendMessage(index:number):Promise<void>{
       const fromA=index%2===0;
       const sender=fromA?account:accountB,recipient=fromA?accountB:account;
       const from=fromA?token:tokenB,to=fromA?tokenB:token;
-      const payload=mailboxPayload("test-message-"+index);
-      const receipt=await privateCall(mf,from,"send_message",{
-        recipientAccountId:recipient,contactGeneration:String(requested.generation),payload});
-      assert.equal(receipt.messageId,payload.messageId);
+      const input={recipientAccountId:recipient,contactGeneration:String(requested.generation),
+        message:{parts:[{text:"test-message-"+index}]},idempotencyKey:"consent-send-"+index};
+      const receipt=await privateCall(mf,from,"send_message",input);
       assert.equal(receipt.state,"pending");
-      deliveries.push({token:from,receiverToken:to,sender,recipient,payload});
+      deliveries.push({token:from,receiverToken:to,sender,recipient,input,messageId:receipt.messageId});
     }
     // Leave one message in EACH direction pending across a genuine cold restart.
     await sendMessage(0);
@@ -545,11 +562,11 @@ test("consent_GithubSignedInAgents_ExchangeSixMessagesAcrossColdRestart",{timeou
     instance={mf,storage:instance.storage};
     async function acknowledge(item:(typeof deliveries)[number]):Promise<void>{
       const inbox=await privateCall(mf,item.receiverToken,"list_my_inbox");
-      assert.ok(inbox.items.some((x:{envelope?:{payload?:{messageId:string}}})=>
-        x.envelope?.payload?.messageId===item.payload.messageId),
+      assert.ok(inbox.items.some((x:{message?:{messageId:string;parts:unknown}})=>
+        x.message?.messageId===item.messageId),
         "inbox must retain original pending message after Worker restart");
       const receipt=await privateCall(mf,item.receiverToken,"ack_message",{
-        messageId:item.payload.messageId,senderAccountId:item.sender});
+        messageId:item.messageId,senderAccountId:item.sender});
       assert.equal(receipt.state,"acknowledged");
     }
     await acknowledge(deliveries[0]);
@@ -558,10 +575,9 @@ test("consent_GithubSignedInAgents_ExchangeSixMessagesAcrossColdRestart",{timeou
       await sendMessage(i);
       await acknowledge(deliveries[i]);
     }
-    const replayedSend=await privateCall(mf,deliveries[0].token,"send_message",{
-      recipientAccountId:deliveries[0].recipient,
-      contactGeneration:String(requested.generation),payload:deliveries[0].payload});
-    assert.equal(replayedSend.state,"acknowledged","identical replay returns original ACK");
+    const replayedSend=await privateCall(mf,deliveries[0].token,"send_message",deliveries[0].input);
+    assert.equal(replayedSend.messageId,deliveries[0].messageId);
+    assert.equal(replayedSend.state,"acknowledged","identical keyed replay returns original ACK");
     const outA=await privateCall(mf,token,"list_my_outbox");
     const outB=await privateCall(mf,tokenB,"list_my_outbox");
     assert.ok(outA.items.length>=3&&outB.items.length>=3,"both accounts retain three outgoing receipts");
@@ -578,9 +594,9 @@ test("consent_GithubSignedInAgents_ExchangeSixMessagesAcrossColdRestart",{timeou
     assert.deepEqual(await ownerB.json(),{accountId:accountB});
     assert.equal((await identify(mf,"not-a-valid-cloudflare-access-token")).status,401);
     await (await mf.getD1Database("ACCOUNTS","weave-resource-regression"))
-      .prepare("DELETE FROM accounts WHERE account_id=?").bind(accountB).run();
+      .prepare("DELETE FROM grants WHERE account_id=?").bind(accountB).run();
     assert.equal((await identify(mf,tokenB)).status,401,
-      "removing a Weave account must immediately revoke private resource access");
+      "removing the account's grant must immediately revoke private resource access");
     assert.equal((await identify(mf,token)).status,200,
       "removing B must not deny the independently owned account A");
     const revocationMetadata=await mf.dispatchFetch(issuer+"/.well-known/oauth-authorization-server");
@@ -634,6 +650,66 @@ test("consent_AgentCreationUnavailable_Returns503WithoutCode",{timeout:60_000},a
     assert.equal(await humanIdOf(mf,11001),existingHumanId);
     assert.deepEqual(await agentsOf(mf,existingHumanId),[]);
   }finally{await stop(instance);}
+});
+
+test("consent_Approved_TokenCarriesGrantId",{timeout:60_000},async()=>{
+  const {mf}=shared;
+  const {token,accountId}=await authorizeAgent(mf,12001,"new","Grant mirror");
+  const humanId=await humanIdOf(mf,12001);
+  const rows=await clientGrants(mf,accountId);
+  assert.equal(rows.length,1,"exactly one mirrored grant per consent");
+  const [row]=rows;
+  assert.deepEqual({human_id:row.human_id,client_id:row.client_id,revoked_at:row.revoked_at},
+    {human_id:humanId,client_id:clientId,revoked_at:null});
+  assert.match(row.grant_id,/^[0-9a-f]{8}-[0-9a-f]{4}-4[0-9a-f]{3}-[89ab][0-9a-f]{3}-[0-9a-f]{12}$/);
+  assert.deepEqual(await propsOf(mf,token),{accountId,humanId,grantId:row.grant_id});
+});
+
+test("consent_RecordGrantFails_503NoCode",{timeout:60_000},async()=>{
+  // Read-only recovery still lists and checks owned agents, but refuses the grant write.
+  const instance=await start({},{RECOVERY_READ_ONLY:{type:"text",value:"true"}});
+  try{
+    const {mf}=instance,db=await mailboxDb(mf);
+    const humanId=randomUUID(),accountId=randomUUID(),at=(BigInt(Date.now())*10000n).toString();
+    await db.batch([
+      db.prepare("INSERT INTO humans(human_id,provider,subject,provider_created_at,display_login,created_at,updated_at) VALUES(?,'github','13001','2011-01-25T18:44:36Z','human13001',CAST(? AS INTEGER),CAST(? AS INTEGER))").bind(humanId,at,at),
+      db.prepare("INSERT INTO accounts(account_id,human_id,display_name,created_at,updated_at) VALUES(?,?,'Existing',CAST(? AS INTEGER),CAST(? AS INTEGER))").bind(accountId,humanId,at,at)
+    ]);
+    const session="__Host-weave_human="+await signedCookieValue(sessionKey,"human-session",
+      {humanId,login:"human13001",expiresAt:Date.now()+600_000,authAt:Date.now()});
+    const auth=authorization();
+    const consent=await openConsent(mf,auth,session);
+    assert.match(consent.html,new RegExp(accountId));
+    const response=await post(mf,consent.cookie,{handle:consent.handle,decision:"approve",agent:accountId});
+    assert.equal(response.status,503);
+    assert.equal(response.headers.get("location"),null,"no authorization code without a mirrored grant");
+    assert.equal(await grantsFor(mf,accountId),0,"the AS must not complete the authorization");
+    assert.equal(await db.prepare("SELECT count(*) n FROM client_grants").first("n"),0);
+  }finally{await stop(instance);}
+});
+
+test("refresh_KeepsGrantId_RevokedRefreshedToken401",{timeout:60_000},async()=>{
+  const {mf}=shared;
+  const auth=authorization();
+  const consent=await openConsent(mf,auth,await signIn(mf,auth,14001));
+  const first=await exchangeTokens(mf,codeFrom(await post(mf,consent.cookie,
+    {handle:consent.handle,decision:"approve",agent:"new",agentName:"Refreshing"}),auth),auth);
+  const accountId=await profileId(mf,first.access_token);
+  const [row]=await clientGrants(mf,accountId);
+  const refreshed=await tokenRequest(mf,{grant_type:"refresh_token",refresh_token:first.refresh_token});
+  assert.notEqual(refreshed.access_token,first.access_token);
+  // workers-oauth-provider 1.2.4 without a tokenExchangeCallback gives refreshed tokens the grant's own props.
+  assert.deepEqual(await propsOf(mf,refreshed.access_token),await propsOf(mf,first.access_token));
+  assert.equal((await propsOf(mf,refreshed.access_token)).grantId,row.grant_id);
+  assert.equal(await profileId(mf,refreshed.access_token),accountId);
+  // The owner revokes the mirrored grant; the AS-side tokens and refresh token stay valid at the AS.
+  await (await mailboxDb(mf)).prepare("UPDATE client_grants SET revoked_at=created_at WHERE grant_id=?").bind(row.grant_id).run();
+  const again=await tokenRequest(mf,{grant_type:"refresh_token",refresh_token:refreshed.refresh_token});
+  for(const token of [first.access_token,refreshed.access_token,again.access_token]){
+    const denied=await mcpCall(mf,token,"get_my_profile");
+    assert.equal(denied.status,401,"a revoked grant refuses every token derived from it");
+    assert.match(denied.headers.get("WWW-Authenticate")??"",/error="invalid_token"/);
+  }
 });
 
 test("consent_ChangedHumanSessionAfterDisplay_CannotApproveAsAnotherHuman",{timeout:60_000},async()=>{

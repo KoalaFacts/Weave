@@ -1,15 +1,15 @@
 import { WorkerEntrypoint } from 'cloudflare:workers';
-import { createOwnedAgent, humanHasAgent, listHumanAgents, oauthAccountActive, signInHuman, type CreateAgentResult, type SignInResult, type HumanSignIn, type AgentSummary } from './humans.ts';
+import { createOwnedAgent, humanHasAgent, listHumanAgents, signInHuman, type CreateAgentResult, type SignInResult, type HumanSignIn, type AgentSummary } from './humans.ts';
 import { demo } from './demo';
 import { agentStart } from './agent-start';
 import { registry } from './registry';
 import openapi from './openapi.json';
 import { publicReadRate } from './public-rate';
 import { remoteMcp } from './remote-mcp';
-import { oauthConfiguration, authorizeOAuth, protectedResourceMetadata } from './remote-oauth';
+import { oauthConfiguration, protectedResourceMetadata } from './remote-oauth';
 import { demoOAuthClientId, demoOAuthClientMetadata } from './oauth-client-metadata';
-import { privateMcpTools, privateScope, executePrivateMcp } from './remote-private';
-import { directory, mutateAddress, ownedAddresses } from './addresses';
+import { oauthPrivateAccess } from './remote-private';
+import { directory, directoryAgentCard, mutateAddress, ownedAddresses } from './addresses';
 import { sweep } from './cleanup';
 import { budgetDatabase } from './budget';
 import { stream, type Context } from './stream';
@@ -19,6 +19,7 @@ import { addAgentKey, listAgentKeys, revokeAgentKey } from './agent-keys.ts';
 import { cancelBindingRequest, createBindingRequest, getBindingRequest } from './binding-requests.ts';
 import { recoverAgentKey } from './recovery-codes.ts';
 import { ownerAction, ownerOverview, type OwnerAction, type OwnerActionResult, type OwnerOverview } from './owner-actions.ts';
+import { recordGrant, revokeGrant, type RecordGrantInput, type RecordGrantResult, type RevokeGrantInput, type RevokeGrantResult } from './client-grants.ts';
 import { putCard } from './cards';
 import { decide, requestContact, setBlocked } from './contacts';
 import { deleteContact, ownContacts } from './contact-links';
@@ -26,7 +27,7 @@ import { atomic, type Env } from './database';
 import { accountNotices } from './notices.ts';
 import { ack, send } from './messages';
 import { read } from './reads';
-import { body, fail, json, problem } from './wire';
+import { body, fail, json, problem, stringify } from './wire';
 import { validatePayload } from './protocol';
 
 // Private Service Binding RPC for the OAuth authorization server; deliberately has no fetch route.
@@ -38,6 +39,8 @@ export class HumanDirectory extends WorkerEntrypoint<Env> {
     hasAgent(humanId: string, accountId: string): Promise<boolean> { return humanHasAgent(scopedEnv(this.env), humanId, accountId); }
     ownerOverview(humanId: string): Promise<OwnerOverview> { return ownerOverview(scopedEnv(this.env), humanId); }
     ownerAction(input: OwnerAction): Promise<OwnerActionResult> { return ownerAction(scopedEnv(this.env), input); }
+    recordGrant(input: RecordGrantInput): Promise<RecordGrantResult> { return recordGrant(scopedEnv(this.env), input); }
+    revokeGrant(input: RevokeGrantInput): Promise<RevokeGrantResult> { return revokeGrant(scopedEnv(this.env), input); }
 }
 
 export default {
@@ -79,17 +82,7 @@ export default {
                         if(env.RECOVERY_READ_ONLY!=='true')await publicReadRate(env,request);
                         return json(await atomic(env.db,tx=>directory(tx,target)));
                     } catch(error) { return problem(error); }
-                },cfg&&env.RECOVERY_READ_ONLY!=='true'?{
-                    tools:privateMcpTools,
-                    scope:privateScope,
-                    authorize:async scope=>{
-                        const access=await authorizeOAuth(cfg,request,scope,async (accountId,serviceHumanId)=>
-                            oauthAccountActive(env,accountId,serviceHumanId),
-                            undefined,Date.now);
-                        return access instanceof Response?access:access.accountId;
-                    },
-                    invoke:(accountId,name,args)=>executePrivateMcp(env,url.origin,accountId,name,args)
-                }:undefined);
+                },cfg&&env.RECOVERY_READ_ONLY!=='true'?oauthPrivateAccess(env,url.origin,cfg,request):undefined);
             }
             // Key self-registration; registerAgent applies the read-only recovery gate to new keys itself.
             if (method === 'POST' && url.pathname === '/v1/accounts') return json(await registerAgent(env,request,await body(request)));
@@ -98,6 +91,13 @@ export default {
             // Owner recovery authenticates with the owner-issued code plus the new key's DPoP proof; the agent may have no usable key.
             if (method === 'POST' && url.pathname === '/v1/key-requests') return json(await recoverAgentKey(env,request,await body(request)));
             if(env.RECOVERY_READ_ONLY!=='true'&&method==='GET'&&['/v1/directory','/v1/directory/address','/v1/contacts/cards','/v1/contacts/card'].includes(url.pathname))await publicReadRate(env,request);
+            // The Agent Card is public, anonymous and agent-declared; it is served as stored, never as verified.
+            const cardRoute = method === 'GET' ? /^\/v1\/directory\/address\/([^/]+)\/agent-card\.json$/.exec(url.pathname) : null;
+            if (cardRoute) {
+                if (env.RECOVERY_READ_ONLY!=='true') await publicReadRate(env,request);
+                const card = await atomic(env.db,tx => directoryAgentCard(tx,cardRoute[1]));
+                return new Response(stringify(card),{headers:{'Content-Type':'application/json','Cache-Control':'no-store','Pragma':'no-cache','X-Content-Type-Options':'nosniff'}});
+            }
             const account = await authenticateAgent(env,request);
             if (method === 'GET' && ['/v1/directory','/v1/directory/address'].includes(url.pathname)) return json(await atomic(env.db,tx => directory(tx,url)));
             if (method === 'GET' && ['/v1/contacts/cards','/v1/contacts/card'].includes(url.pathname)) return json(await atomic(env.db,tx => read(tx,url,account?.accountId ?? null)));

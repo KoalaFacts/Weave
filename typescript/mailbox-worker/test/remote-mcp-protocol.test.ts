@@ -136,8 +136,9 @@ test('bounds directory response bytes',async()=>{
 
 
 test('private MCP accepts a bounded full-size message only after trusted write-scope authorization',async()=>{
-    const huge='A'.repeat(64_000);
-    const args={payload:{bytes:huge}};
+    // A full 64 KiB A2A Message fits the authorized send_message frame.
+    const huge='A'.repeat(65_400);
+    const args={recipientAccountId:'11111111-2222-4333-8444-555555555555',message:{parts:[{text:huge}]},idempotencyKey:'large-1'};
     const owner='11111111-2222-3333-4444-555555555555';
     const frame=rpc('tools/call',{name:'send_message',arguments:args});
     const largeRequest=()=>request(frame,{authorization:'Bearer synthetic-unlogged-token'});
@@ -153,7 +154,7 @@ test('private MCP accepts a bounded full-size message only after trusted write-s
         }
     };
     const accepted=await remoteMcp(largeRequest(),unused,privateAccess);
-    assert.equal(accepted.status,200,'valid 64 KiB-base64 private tool input must reach its authorized handler');
+    assert.equal(accepted.status,200,'a full 64 KiB message must reach its authorized handler');
     assert.deepEqual(JSON.parse((await accepted.json()).result.content[0].text),{accepted:true});
     assert.equal(validations,2,'large-body admission and actual tool dispatch are independently checked');
     assert.equal(invocations,1);
@@ -163,8 +164,51 @@ test('private MCP accepts a bounded full-size message only after trusted write-s
     assert.equal(invocations,1,'denied input must not invoke a private operation');
     assert.equal((await remoteMcp(largeRequest(),unused)).status,413,'anonymous requests retain the 16 KiB limit');
     const oversized=await remoteMcp(request(rpc('tools/call',{name:'send_message',
-        arguments:{payload:{bytes:'A'.repeat(140_000)}}}),{authorization:'Bearer synthetic-unlogged-token'}),
+        arguments:{message:{parts:[{text:'A'.repeat(140_000)}]}}}),{authorization:'Bearer synthetic-unlogged-token'}),
         unused,privateAccess);
     assert.equal(oversized.status,413,'even authorized requests remain capped at 128 KiB');
     assert.equal(invocations,1);
+});
+
+for(const name of ['request_contact','decide_contact']){
+    test(`private MCP accepts a ~60 KiB ${name} frame only after contacts write authorization`,async()=>{
+        const owner='11111111-2222-3333-4444-555555555555';
+        const args=name==='request_contact'
+            ?{requesterAddressId:owner,recipientAccountId:owner,recipientAddressId:owner,message:{parts:[{text:'A'.repeat(60_000)}]},idempotencyKey:'k'}
+            :{requestId:owner,requesterAccountId:owner,expectedGeneration:'1',status:'accepted',reply:{parts:[{text:'A'.repeat(60_000)}]}};
+        const frame=()=>request(rpc('tools/call',{name,arguments:args}),{authorization:'Bearer synthetic-unlogged-token'});
+        const scopes:string[]=[];let invocations=0;
+        const privateAccess={tools:[],
+            scope:(tool:string)=>tool==='send_message'?'weave:messages.send':['request_contact','decide_contact'].includes(tool)?'weave:contacts.write':null,
+            // A contacts-only token: it lacks weave:messages.send.
+            authorize:async(scope:string)=>{scopes.push(scope);return scope==='weave:contacts.write'?owner:new Response(null,{status:403});},
+            invoke:async(account:string,tool:string,received:Record<string,unknown>)=>{
+                invocations++;assert.equal(account,owner);assert.equal(tool,name);assert.deepEqual(received,args);return Response.json({accepted:true});
+            }};
+        const accepted=await remoteMcp(frame(),unused,privateAccess);
+        assert.equal(accepted.status,200);
+        assert.deepEqual(JSON.parse((await accepted.json()).result.content[0].text),{accepted:true});
+        assert.equal(invocations,1);
+        assert.equal(scopes.at(-1),'weave:contacts.write','dispatch rechecks the exact tool scope');
+        const other=await remoteMcp(request(rpc('tools/call',{name:'list_my_inbox',arguments:{padding:'A'.repeat(60_000)}}),
+            {authorization:'Bearer synthetic-unlogged-token'}),unused,{...privateAccess,scope:(tool:string)=>tool==='list_my_inbox'?'weave:messages.read':privateAccess.scope(tool)});
+        assert.equal(other.status,413,'the larger frame is fenced to the three message-carrying writes');
+        let changed=0;
+        const switched=await remoteMcp(frame(),unused,{...privateAccess,authorize:async(scope:string)=>scope==='weave:contacts.write'?(changed++===0?owner:'99999999-2222-3333-4444-555555555555'):new Response(null,{status:403})});
+        assert.equal((await switched.json()).error.code,-32603,'the owner must not change between admission and dispatch');
+        assert.equal(invocations,1);
+    });
+}
+
+test('private write failure text advises repeating with the same idempotencyKey only when one was given',async()=>{
+    const owner='11111111-2222-3333-4444-555555555555';
+    const access=(status:number)=>({tools:[],scope:()=>'weave:messages.send',authorize:async()=>owner,invoke:async()=>new Response(null,{status})});
+    const text=async(args:Record<string,unknown>,status=500)=>(await (await remoteMcp(request(rpc('tools/call',{name:'send_message',arguments:args}),
+        {authorization:'Bearer t'}),unused,access(status))).json()).result.content[0].text as string;
+    assert.match(await text({idempotencyKey:'k'}),/repeat the same call with the same idempotencyKey/);
+    assert.doesNotMatch(await text({idempotencyKey:'k'}),/original ID/);
+    assert.doesNotMatch(await text({}),/same idempotencyKey/);
+    const thrown=await (await remoteMcp(request(rpc('tools/call',{name:'send_message',arguments:{idempotencyKey:'k'}}),{authorization:'Bearer t'}),unused,
+        {...access(200),invoke:async()=>{throw Error('lost');}})).json();
+    assert.match(thrown.result.content[0].text,/same idempotencyKey/);
 });

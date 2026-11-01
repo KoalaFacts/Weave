@@ -1,7 +1,7 @@
 import assert from 'node:assert/strict';
 import { test } from 'node:test';
 import { start } from './harness.ts';
-import { createOwnedAgent, humanHasAgent, listHumanAgents, maxAgentsPerHuman, oauthAccountActive, signInHuman, type HumanSignIn } from '../src/humans.ts';
+import { createOwnedAgent, humanHasAgent, listHumanAgents, maxAgentsPerHuman, signInHuman, type HumanSignIn } from '../src/humans.ts';
 import type { Env } from '../src/database.ts';
 
 const environment = (h: { db: unknown }, overrides: Partial<Env> = {}) => ({
@@ -260,48 +260,5 @@ test('humanDirectory_FrozenAfterCreatingAgent_RefusesManagement', async () => {
         assert.equal(await h.db.prepare('SELECT count(*) n FROM accounts WHERE human_id=?').bind(id).first('n'), 1);
         // Over-correction guard: an unfrozen human is unaffected.
         assert.equal((await create(env, other)).ok, true);
-    } finally { await h.close(); }
-});
-
-// An already issued bearer is checked at the resource Worker on every call,
-// not just at the authorization server's one-time agent selection.
-test('oauthAccountActive_FrozenGithubHuman_RevokesOwnedAgentButNotSelfRegisteredAgent', async () => {
-    const h = await start();
-    try {
-        const env = environment(h), id = await humanId(env);
-        const owned = await create(env, id) as { accountId: string };
-        const independent = await h.register();
-        assert.equal(await oauthAccountActive(env, owned.accountId, id), true);
-        assert.equal(await oauthAccountActive(env, independent.accountId), true);
-        await h.db.prepare('UPDATE humans SET frozen_at=updated_at WHERE human_id=?').bind(id).run();
-        assert.equal(await oauthAccountActive(env, owned.accountId, id), false,
-            'previously issued bearer must stop authorizing private MCP operations');
-        assert.equal(await oauthAccountActive(env, independent.accountId), true,
-            'unrelated self-registered agent remains available');
-        assert.equal(await oauthAccountActive(env, crypto.randomUUID()), false);
-    } finally { await h.close(); }
-});
-
-test('oauthAccountActive_WithoutHumanBinding_RequiresSelfRegisteredAgentWithLiveKey', async () => {
-    // RFC 7662 introspection carries no human-owner claim, and a Service Binding
-    // token without one (null) proves nothing: neither may authorize a human-owned
-    // agent, and introspection ends once a self-registered agent has no live key.
-    const h = await start();
-    try {
-        const env = environment(h), id = await humanId(env);
-        const owned = await create(env, id) as { accountId: string };
-        const independent = await h.register();
-        assert.equal(await oauthAccountActive(env, independent.accountId, undefined), true);
-        assert.equal(await oauthAccountActive(env, independent.accountId, null), false,
-            'a Service Binding token without its human is refused');
-        assert.equal(await oauthAccountActive(env, owned.accountId, undefined), false,
-            'an introspected subject with no human-owner claim must not authorize a human-owned agent');
-        assert.equal(await oauthAccountActive(env, owned.accountId, null), false);
-        assert.equal(await oauthAccountActive(env, owned.accountId, id), true,
-            'a Service Binding token bound to the current unfrozen human remains eligible');
-        await h.db.prepare('UPDATE agent_keys SET revoked_at=created_at WHERE account_id=?')
-            .bind(independent.accountId).run();
-        assert.equal(await oauthAccountActive(env, independent.accountId, undefined), false,
-            'revoking every agent key must end unbound introspected access');
     } finally { await h.close(); }
 });

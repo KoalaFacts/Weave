@@ -35,7 +35,7 @@ test('private addresses stay hidden through all public discovery paths and dupli
         assert.equal((await h.ok('/v1/contacts/card?cardId='+hidden.addressId,a)).ownerMailboxId,a.accountId);
         const pub=await h.ok('/v1/addresses/'+hidden.addressId,a,'PUT',{label:'Visible',isPublic:true,directUri:'https://example.test/contact'});
         assert.equal(pub.addressId,hidden.addressId);
-        assert.deepEqual(await h.ok('/v1/directory/address?addressId='+pub.addressId),pub);
+        assert.deepEqual(await h.ok('/v1/directory/address?addressId='+pub.addressId),{...pub,agentCard:null});
         await h.ok('/v1/addresses/'+pub.addressId,a,'PUT',{isPublic:false});
         assert.deepEqual(await h.ok('/v1/accounts',a,'POST',{}),{agentId:a.accountId,accountId:a.accountId,displayName:null,description:null,kid:a.kid});
         assert.deepEqual(await h.ok('/v1/directory'),{items:[],nextCursor:null});
@@ -67,7 +67,7 @@ test('UTC scheduling hides future and expired addresses and denies their contact
         const active=await h.address(a,{isPublic:true,effectiveFrom:past,effectiveTo:future});
         const pending=await h.address(a,{isPublic:true,effectiveFrom:future});
         const expired=await h.address(a,{isPublic:true,effectiveTo:past});
-        assert.deepEqual((await h.ok('/v1/directory')).items,[active]);
+        assert.deepEqual((await h.ok('/v1/directory')).items,[{...active,agentCard:null}]);
         assert.equal((await h.ok('/v1/contacts/cards')).items.length,1);
         for(const address of [pending,expired]) {
             assert.equal((await h.request('/v1/directory/address?addressId='+address.addressId)).status,404);

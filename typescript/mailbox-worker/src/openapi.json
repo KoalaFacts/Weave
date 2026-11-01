@@ -2184,6 +2184,60 @@
           }
         }
       }
+    },
+    "/v1/directory/address/{addressId}/agent-card.json": {
+      "get": {
+        "operationId": "getPublicAddressAgentCard",
+        "summary": "Read the A2A Agent Card of a current public address",
+        "responses": {
+          "200": {
+            "description": "Success.",
+            "headers": {
+              "Cache-Control": {
+                "schema": {
+                  "type": "string",
+                  "const": "no-store"
+                }
+              },
+              "X-Content-Type-Options": {
+                "schema": {
+                  "type": "string",
+                  "const": "nosniff"
+                }
+              }
+            },
+            "content": {
+              "application/json": {
+                "schema": {
+                  "type": "object",
+                  "description": "Agent-declared A2A v1.0.0 AgentCard subset, served as stored. Unverified; the headers include X-Content-Type-Options: nosniff."
+                }
+              }
+            }
+          },
+          "400": {
+            "$ref": "#/components/responses/400"
+          },
+          "503": {
+            "$ref": "#/components/responses/503"
+          },
+          "404": {
+            "$ref": "#/components/responses/404"
+          },
+          "429": {
+            "$ref": "#/components/responses/publicRate"
+          }
+        },
+        "description": "Anonymous. Only for a public, unrevoked address inside its effective window that has a card; otherwise 404. The card is what the address owner declared: Weave never verifies it, never fetches the URLs it names, and deletes it when the address is revoked or made private. Public reads share the directory rate limits.",
+        "parameters": [
+          {
+            "$ref": "#/components/parameters/addressIdPath"
+          }
+        ],
+        "security": [
+          {}
+        ]
+      }
     }
   },
   "components": {
@@ -4436,6 +4490,23 @@
             ],
             "format": "date-time",
             "description": "Present when includeRevoked=true on an authenticated owner lookup."
+          },
+          "agentCard": {
+            "anyOf": [
+              {
+                "type": "object",
+                "description": "A2A v1.0.0 AgentCard subset declared by the agent. Weave stores it as written and never verifies it."
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "description": "Present on public directory reads only: the agent-declared card, or null. Untrusted agent-declared content."
+          },
+          "agentCardVerified": {
+            "type": "boolean",
+            "const": false,
+            "description": "Present on public directory reads only when a card is present; always false. Weave does not verify card contents."
           }
         },
         "required": [

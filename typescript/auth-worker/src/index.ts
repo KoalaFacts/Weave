@@ -1,6 +1,7 @@
 import {WorkerEntrypoint} from "cloudflare:workers";
 import {AuthorizationError,CimdFetchError,OAuthAuthorizationServer,type AuthRequest} from "@cloudflare/workers-oauth-provider";
 import type {CreateAgentResult} from "../../mailbox-worker/src/humans.ts";
+import type {RecordGrantResult} from "../../mailbox-worker/src/client-grants.ts";
 import type {OwnerOverview} from "../../mailbox-worker/src/owner-actions.ts";
 import {validChallenge,validHandle,readConsent} from "./challenge.ts";
 import {consentPage} from "./consent-page.ts";
@@ -187,9 +188,17 @@ async function authorize(req:Request,env:Env,server:OAuthAuthorizationServer<Env
       !await consumeNonce(env,handle,nonce))return denied();
     const accountId=await resolveAgent(env,req,human.humanId,form);
     if(accountId instanceof Response)return accountId;
+    // The mailbox mirrors the grant before any code exists; private /mcp calls require that row to be live,
+    // so the owner can revoke this client later. No mirror, no code.
+    const grantId=crypto.randomUUID();
+    let recorded:RecordGrantResult;
+    try{
+      recorded=await env.MAILBOX.recordGrant({grantId,humanId:human.humanId,accountId,clientId:approved.request.clientId});
+    }catch{return directoryUnavailable();}
+    if(!recorded.ok)return messagePage(503,"Not connected","Weave cannot record this connection right now. Try again later.");
     const {redirectTo}=await oauth.completeAuthorization({
       request:approved.request,userId:accountId,metadata:{},
-      scope:approved.request.scope,props:{accountId,humanId:human.humanId}
+      scope:approved.request.scope,props:{accountId,humanId:human.humanId,grantId}
     });
     const headers=new Headers(approved.headers);
     headers.set("Location",redirectTo);headers.set("Referrer-Policy","no-referrer");

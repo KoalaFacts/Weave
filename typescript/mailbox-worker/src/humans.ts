@@ -78,22 +78,6 @@ export async function humanHasAgent(env: Env, humanId: string, accountId: string
     return await env.db.prepare('SELECT 1 n FROM accounts a JOIN humans h ON h.human_id=a.human_id WHERE a.human_id=? AND a.account_id=? AND h.frozen_at IS NULL').bind(humanId, accountId).first('n') !== null;
 }
 
-/** Recheck bearer eligibility on every private OAuth call. Freezing a GitHub human
- * or moving the agent to another owner immediately denies the owner's OAuth bearer. */
-export async function oauthAccountActive(env: Env, accountId: string, serviceHumanId?: string | null): Promise<boolean> {
-    requireReadable(env); requireUuid(accountId);
-    // External RFC 7662 introspection (undefined) carries no human binding and can
-    // prove only a self-registered agent that still holds a live agent key. It
-    // never authorizes a human-owned agent, and a revoked key set ends access.
-    if (serviceHumanId === undefined)
-        return await env.db.prepare('SELECT 1 n FROM accounts a WHERE a.account_id=? AND a.human_id IS NULL AND EXISTS(SELECT 1 FROM agent_keys k WHERE k.account_id=a.account_id AND k.revoked_at IS NULL)')
-            .bind(accountId).first('n') !== null;
-    // A Service Binding bearer must name the agent's current, unfrozen human owner.
-    if (serviceHumanId === null || !uuidPattern.test(serviceHumanId)) return false;
-    return await env.db.prepare('SELECT 1 n FROM accounts a JOIN humans h ON h.human_id=a.human_id WHERE a.account_id=? AND a.human_id=? AND h.frozen_at IS NULL')
-        .bind(accountId, serviceHumanId).first('n') !== null;
-}
-
 export async function createOwnedAgent(env: Env, input: { humanId: string; displayName: string; sourceIp: string }): Promise<CreateAgentResult> {
     if (writesRefused(env) || env.REGISTRATION_ENABLED !== 'true') return { ok: false, reason: 'unavailable' };
     const invalid = { ok: false, reason: 'invalid' } as const;

@@ -3,13 +3,14 @@ import {test} from 'node:test';
 import {build} from 'esbuild';
 import {remoteMcp, type PrivateAccess} from '../src/remote-mcp.ts';
 import {authorizeOAuth, type OAuthConfiguration} from '../src/remote-oauth.ts';
-import {start} from './harness.ts';
+import {withTestGrant,start} from './harness.ts';
 import type {Env} from '../src/database.ts';
 
 const compiled=await build({entryPoints:['src/remote-private.ts'],bundle:true,write:false,platform:'node',format:'esm',logLevel:'silent'});
-const {privateMcpTools,privateScope,executePrivateMcp}=await import(
+const {privateMcpTools,privateScope,executePrivateMcp:executeWithGrant}=await import(
     'data:text/javascript;base64,'+Buffer.from(compiled.outputFiles[0].contents).toString('base64')
 ) as typeof import('../src/remote-private.ts');
+const executePrivateMcp=withTestGrant(executeWithGrant);
 
 const origin='https://demo.test';
 const config:OAuthConfiguration={
@@ -34,7 +35,7 @@ const introspection=(scopes:string)=>async()=>new Response(JSON.stringify({
 test('missing bearer preserves HTTP 401 and supplies ChatGPT tool-level OAuth challenge without dispatch',async()=>{
     const incoming=request(rpc('send_message'));let called=0;
     const access:PrivateAccess={tools:privateMcpTools,scope:privateScope,
-        authorize:scope=>authorizeOAuth(config,incoming,scope,async()=>true,
+        authorize:scope=>authorizeOAuth(config,incoming,scope,async()=>null,
             (async()=>{throw Error('introspection must not run without token');}) as typeof fetch),
         invoke:async()=>{called++;return new Response('{}');}};
     const response=await remoteMcp(incoming,unused,access);
@@ -58,7 +59,7 @@ test('missing bearer preserves HTTP 401 and supplies ChatGPT tool-level OAuth ch
 test('insufficient scope preserves HTTP 403 and gives bounded step-up challenge, never invoking tool',async()=>{
     const incoming=request(rpc('send_message'),'synthetic_access_token');let calls=0;
     const access:PrivateAccess={tools:privateMcpTools,scope:privateScope,
-        authorize:scope=>authorizeOAuth(config,incoming,scope,async()=>true,
+        authorize:scope=>authorizeOAuth(config,incoming,scope,async()=>null,
             introspection('weave:messages.read') as typeof fetch),
         invoke:async()=>{calls++;return new Response('{}');}};
     const response=await remoteMcp(incoming,unused,access);
@@ -77,7 +78,7 @@ test('insufficient scope preserves HTTP 403 and gives bounded step-up challenge,
 test('introspection outage remains HTTP 503 with no misleading OAuth linking UI',async()=>{
     const incoming=request(rpc('send_message'),'synthetic_access_token');let writes=0;
     const access:PrivateAccess={tools:privateMcpTools,scope:privateScope,
-        authorize:scope=>authorizeOAuth(config,incoming,scope,async()=>true,
+        authorize:scope=>authorizeOAuth(config,incoming,scope,async()=>null,
             (async()=>{throw Error('provider unavailable with internal secret');}) as typeof fetch),
         invoke:async()=>{writes++;return new Response('{}');}};
     const response=await remoteMcp(incoming,unused,access);

@@ -1,15 +1,17 @@
 /** OAuth 2 protected-resource boundary for individually authorized Weave accounts.
  * OAuth 2.1 code/PKCE/consent is performed by the configured authorization server,
  * never by a shared mailbox or by MCP tool arguments. Tokens are freshly verified on every protected call, using HTTPS introspection
- * or an opt-in private Cloudflare Service Binding; no positive token cache.
+ * or an opt-in private Cloudflare Service Binding; no positive token cache. Only Service Binding tokens carry the
+ * consent grant that private tools require; HTTPS introspection still validates but never authorizes a private call.
  */
 /** Trusted Cloudflare Workers OAuth Provider v1 RPC, not a public introspection URL.
  * Only AS-side grants whose authenticated account UUID is independently verified
- * may place that UUID in both userId and props.accountId.
+ * may place that UUID in both userId and props.accountId. props.grantId names the
+ * consent grant the AS mirrored in the mailbox before issuing the authorization code.
  */
 export interface OAuthServiceBinding {
     validateToken(resource:string,token:string):Promise<{
-        audience:string;userId:string;props:{accountId:string;humanId?:string};
+        audience:string;userId:string;props:{accountId:string;humanId:string;grantId:string};
         expiresAt:number;scope:string[];clientId:string;
     }|null>;
 }
@@ -32,7 +34,10 @@ export interface OAuthConfiguration {
 }
 export interface OAuthServiceConfiguration { mode:'service'; issuer:string; resource:string; authServer:OAuthServiceBinding; }
 export type OAuthOptions = OAuthConfiguration | OAuthServiceConfiguration;
-export type OAuthAccess = {accountId: string} | Response;
+export type OAuthAccess = {accountId: string; grantId: string} | Response;
+/** The mailbox's mirrored consent grant, or null when it is revoked or unknown. */
+export type LiveGrant = {accountId: string; humanId: string; clientId: string};
+export type GrantLookup = (grantId: string) => Promise<LiveGrant | null>;
 const identity = /^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/;
 const serviceTokenPattern = /^[A-Za-z0-9._~+/\-]+:[A-Za-z0-9._~+/\-]+:[A-Za-z0-9._~+/\-]+$/;
 const tokenPattern = /^[A-Za-z0-9\-._~+/]+={0,2}$/;
@@ -94,10 +99,12 @@ function failClosed():Response {
 }
 /** Only introspect with a fixed, operator-configured authorization server.
  * No bearer token is forwarded to a mailbox API or arbitrary caller URL.
+ * Every accepted token must name a live mirrored consent grant that matches its
+ * account, human and client; `liveGrant` reads it on every call (no cache).
  */
 export async function authorizeOAuth(
     config: OAuthOptions, request: Request, requiredScope: string,
-    accountExists: (accountId: string, serviceHumanId?: string | null) => Promise<boolean>,
+    liveGrant: GrantLookup,
     fetcher: typeof fetch = fetch, now: number | (() => number) = Date.now
 ): Promise<OAuthAccess> {
     const raw = request.headers.get('authorization');
@@ -117,21 +124,23 @@ export async function authorizeOAuth(
         if (!claim || claim.audience!==config.resource || typeof claim.userId!=='string'
             || !identity.test(claim.userId) || !claim.props || typeof claim.props!=='object'
             || claim.props.accountId!==claim.userId
-             || (claim.props.humanId!==undefined && (typeof claim.props.humanId!=='string'
-                 || !identity.test(claim.props.humanId))) || !Number.isSafeInteger(claim.expiresAt)
+            || typeof claim.props.humanId!=='string' || !identity.test(claim.props.humanId)
+            || typeof claim.props.grantId!=='string' || !identity.test(claim.props.grantId)
+            || !Number.isSafeInteger(claim.expiresAt)
             || claim.expiresAt<=nowSec || claim.expiresAt>nowSec+900
             || typeof claim.clientId!=='string' || !claim.clientId
             || !Array.isArray(claim.scope) || !claim.scope.every(scope=>typeof scope==='string'))
             return challenge(config,401,requiredScope,'invalid_token');
-        if (!claim.scope.includes(requiredScope))return challenge(config,403,requiredScope,'insufficient_scope');
-        // A Service Binding bearer is bound to the human who authorized the agent.
-        // A token without that human (null) is refused; undefined is reserved for
-        // external RFC 7662 introspection, which carries no human binding.
-        try {if(!await accountExists(claim.userId,claim.props.humanId??null))
-            return challenge(config,401,requiredScope,'invalid_token');}
+        // A revoked, unknown or mismatched grant is the same 401 as an invalid token, checked before scope so a
+        // revoked token never learns about scopes; storage failure never allows.
+        let grant:LiveGrant|null;
+        try {grant=await liveGrant(claim.props.grantId);}
         catch {return failClosed();}
+        if (!grant || grant.accountId!==claim.userId || grant.humanId!==claim.props.humanId || grant.clientId!==claim.clientId)
+            return challenge(config,401,requiredScope,'invalid_token');
+        if (!claim.scope.includes(requiredScope))return challenge(config,403,requiredScope,'insufficient_scope');
         if (claim.expiresAt<=Math.floor(clock()/1000))return challenge(config,401,requiredScope,'invalid_token');
-        return {accountId:claim.userId};
+        return {accountId:claim.userId,grantId:claim.props.grantId};
     }
     const form=new URLSearchParams({token:match[1],token_type_hint:'access_token'});
     let data: unknown;
@@ -183,13 +192,7 @@ export async function authorizeOAuth(
         return challenge(config,401,requiredScope,'invalid_token');
     }
     if (typeof info.scope!=='string'||!info.scope.split(' ').includes(requiredScope)) return challenge(config,403,requiredScope,'insufficient_scope');
-    // The configured authorization server is explicitly trusted to issue the
-    // Weave account UUID as `sub`; anything else is rejected.
-    if(!identity.test(info.sub))return challenge(config,401,requiredScope,'invalid_token');
-    const accountId=info.sub;
-    if((info.exp as number)<=Math.floor(clock()/1000))return challenge(config,401,requiredScope,'invalid_token');
-    try {if(!await accountExists(accountId))return challenge(config,401,requiredScope,'invalid_token');}catch{return failClosed();}
-    // The account lookup can also outlive the bearer; revalidate before dispatch.
-    if((info.exp as number)<=Math.floor(clock()/1000))return challenge(config,401,requiredScope,'invalid_token');
-    return {accountId};
+    // An RFC 7662 response carries no Weave consent grant, so no revocable grant
+    // row can stand behind it: introspected tokens never reach private tools.
+    return challenge(config,401,requiredScope,'invalid_token');
 }

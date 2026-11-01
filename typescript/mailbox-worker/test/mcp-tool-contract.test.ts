@@ -2,12 +2,13 @@ import assert from 'node:assert/strict';
 import {test} from 'node:test';
 import {build} from 'esbuild';
 import {remoteMcp,type PrivateAccess} from '../src/remote-mcp.ts';
-import {start,payload} from './harness.ts';
+import {withTestGrant,start} from './harness.ts';
 import type {Env} from '../src/database.ts';
 // Evaluate the bundled production module, as the other private MCP tests do.
 const built=await build({entryPoints:['src/remote-private.ts'],bundle:true,write:false,platform:'node',format:'esm',logLevel:'silent'});
-const {privateMcpTools,privateScope,executePrivateMcp}=await import('data:text/javascript;base64,'+
+const {privateMcpTools,privateScope,executePrivateMcp:executeWithGrant}=await import('data:text/javascript;base64,'+
     Buffer.from(built.outputFiles[0].contents).toString('base64')) as typeof import('../src/remote-private.ts');
+const executePrivateMcp=withTestGrant(executeWithGrant);
 
 type Schema=Record<string,any>;
 /** Minimal JSON Schema check for the keywords these contracts use. */
@@ -72,19 +73,22 @@ test('real D1 results of every private tool conform to their published output sc
         await run(a.accountId,'get_my_profile');
         await run(a.accountId,'ensure_my_address',{addressId:'0199aaaa-0000-4000-8000-000000000001',label:'A'});
         await run(a.accountId,'list_my_addresses');
-        const intro=payload('contract-introduction');
+        const publicId='0199aaaa-0000-4000-8000-000000000002';
+        await run(a.accountId,'ensure_my_address',{addressId:publicId,label:'Public A',isPublic:true});
+        await run(a.accountId,'publish_my_agent_card',{addressId:publicId,card:{name:'A',description:'Agent A.',version:'1',
+            supportedInterfaces:[{url:'https://a.example/a2a',protocolBinding:'JSONRPC',protocolVersion:'1.0'}],skills:[],
+            defaultInputModes:['text/plain'],defaultOutputModes:['text/plain'],capabilities:{}}});
         const requested=await run(a.accountId,'request_contact',{requesterAddressId:a.cardId,recipientAccountId:b.accountId,
-            recipientAddressId:b.cardId,payload:intro});
+            recipientAddressId:b.cardId,message:{parts:[{text:'contract-introduction'}]},idempotencyKey:'contract-intro'});
         assert.equal(requested.generation,'1','generations are exact decimal strings in structured results');
         await run(b.accountId,'list_my_contact_requests');
-        await run(b.accountId,'decide_contact',{requestId:intro.messageId,requesterAccountId:a.accountId,
+        await run(b.accountId,'decide_contact',{requestId:requested.request.requestId,requesterAccountId:a.accountId,
             expectedGeneration:requested.generation,status:'accepted'});
         await run(a.accountId,'list_my_contacts');
         await run(a.accountId,'get_my_channel',{peerAccountId:b.accountId});
-        const message=payload('contract-message');
-        await run(a.accountId,'send_message',{recipientAccountId:b.accountId,contactGeneration:requested.generation,payload:message});
+        const message=await run(a.accountId,'send_message',{recipientAccountId:b.accountId,message:{parts:[{text:'contract-message'}]}});
         const inbox=await run(b.accountId,'list_my_inbox');
-        assert.ok(inbox.items.length>0);
+        assert.ok(inbox.items.some((item:{message?:{messageId:string}})=>item.message?.messageId===message.messageId));
         await run(b.accountId,'ack_message',{messageId:message.messageId,senderAccountId:a.accountId});
         await run(a.accountId,'list_my_outbox');
         assert.deepEqual([...seen].sort(),(privateMcpTools as Schema[]).map(t=>t.name).sort(),'every private tool was exercised');

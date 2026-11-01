@@ -1,12 +1,13 @@
 import assert from 'node:assert/strict';
 import {test} from 'node:test';
 import {build} from 'esbuild';
-import {start,payload} from './harness.ts';
+import {withTestGrant,start} from './harness.ts';
 import {protectedResourceMetadata} from '../src/remote-oauth.ts';
 import type {Env} from '../src/database.ts';
 
 const built=await build({entryPoints:['src/remote-private.ts'],bundle:true,write:false,platform:'node',format:'esm',logLevel:'silent'});
-const {executePrivateMcp,privateScope,privateMcpTools}=await import('data:text/javascript;base64,'+Buffer.from(built.outputFiles[0].contents).toString('base64')) as typeof import('../src/remote-private.ts');
+const {executePrivateMcp:executeWithGrant,privateScope,privateMcpTools}=await import('data:text/javascript;base64,'+Buffer.from(built.outputFiles[0].contents).toString('base64')) as typeof import('../src/remote-private.ts');
+const executePrivateMcp=withTestGrant(executeWithGrant);
 const origin='https://demo.test';
 const env=(db:Env['db']):Env=>({db,REGISTRATION_ENABLED:'true',REGISTRATION_MAX_ACCOUNTS:'100',
     REGISTRATION_PER_IP_PER_HOUR:'10',REGISTRATION_GLOBAL_PER_HOUR:'100',
@@ -46,12 +47,12 @@ test('real D1 account-owned address creation is private, replayable and cross-ac
         assert.equal(changed.status,409,'same creation ID cannot silently update an address');
         const other=await executePrivateMcp(e,origin,b.accountId,'ensure_my_address',args);
         assert.equal(other.status,404,'foreign creation IDs cannot transfer ownership');
-        const bad=await executePrivateMcp(e,origin,a.accountId,'ensure_my_address',{...args,addressId:crypto.randomUUID(),isPublic:true});
-        assert.equal(bad.status,400,'public exposure requires a separate explicit operation');
+        const bad=await executePrivateMcp(e,origin,a.accountId,'ensure_my_address',{...args,addressId:crypto.randomUUID(),isPublic:'yes'});
+        assert.equal(bad.status,400,'isPublic must be a boolean');
         assert.equal(await h.db.prepare('SELECT token FROM mailbox_revision WHERE singleton=1').first('token'),revision,
             'denied mutations must not change D1 revision');
         const leaked=await h.request('/v1/directory/address?addressId='+addressId);
-        assert.equal(leaked.status,404,'the onboarding tool must never implicitly publish an address');
+        assert.equal(leaked.status,404,'an address is never published unless isPublic is true');
         const own=await executePrivateMcp(e,origin,a.accountId,'list_my_addresses',{limit:1});
         assert.equal(own.status,200);
         assert.ok((await own.json()).items.some((item:{addressId:string})=>item.addressId===addressId));
@@ -70,12 +71,12 @@ test('two OAuth-account-owned private addresses support a full contact to ACK wo
             const response=await executePrivateMcp(e,origin,agent.accountId,'ensure_my_address',{addressId,label:'Private introduction'});
             assert.equal(response.status,200,await response.clone().text());
         }
-        const intro=payload('opaque introduction');
         const requested=await executePrivateMcp(e,origin,a.accountId,'request_contact',{
-            requesterAddressId:aId,recipientAccountId:b.accountId,recipientAddressId:bId,payload:intro
+            requesterAddressId:aId,recipientAccountId:b.accountId,recipientAddressId:bId,message:{parts:[{text:'opaque introduction'}]}
         });
         assert.equal(requested.status,200,await requested.clone().text());
         const state=await requested.json();
+        const intro={messageId:state.request.requestId as string};
         const inboxRequests=await executePrivateMcp(e,origin,b.accountId,'list_my_contact_requests',{});
         assert.equal(inboxRequests.status,200);
         assert.ok((await inboxRequests.json()).items.some((r:{requestId:string,status:string})=>r.requestId===intro.messageId&&r.status==='pending'));
@@ -86,11 +87,11 @@ test('two OAuth-account-owned private addresses support a full contact to ACK wo
             requestId:intro.messageId,requesterAccountId:a.accountId,expectedGeneration:String(state.generation),status:'accepted'
         });
         assert.equal(accepted.status,200,await accepted.clone().text());
-        const message=payload('first end-to-end message');
         const sent=await executePrivateMcp(e,origin,a.accountId,'send_message',{
-            recipientAccountId:b.accountId,contactGeneration:String(state.generation),payload:message
+            recipientAccountId:b.accountId,contactGeneration:String(state.generation),message:{parts:[{text:'first end-to-end message'}]}
         });
         assert.equal(sent.status,200,await sent.clone().text());
+        const message=await sent.json() as {messageId:string};
         const received=await executePrivateMcp(e,origin,b.accountId,'list_my_inbox',{});
         assert.equal(received.status,200);
         assert.ok((await received.json()).items.some((item:{envelope:{payload:{messageId:string}}})=>item.envelope?.payload?.messageId===message.messageId));

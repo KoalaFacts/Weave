@@ -8,6 +8,13 @@ import {authorizeOAuth,type OAuthConfiguration} from '../../typescript/mailbox-w
 
 const account='01234567-89ab-4def-8123-456789abcdef';
 const scope='weave:messages.read';
+// The mailbox now admits a private call only for a live Weave consent grant named by the
+// token. RFC 7662 responses carry none, so a fully valid introspected token is refused.
+const noGrant=async()=>null;
+function refusedWithoutGrant(result:unknown){
+    assert.ok(result instanceof Response);assert.equal(result.status,401);
+    assert.match(result.headers.get('WWW-Authenticate')??'',/error="invalid_token"/);
+}
 async function provider(label:string,token:string,lifetime=900,subject=account,
     discovery:'oauth'|'oidc-inserted'|'oidc-appended'|'oidc-blocked'='oauth',
     resourceDiscovery:'path'|'root'|'multiple'='path'){
@@ -82,16 +89,16 @@ async function provider(label:string,token:string,lifetime=900,subject=account,
         close:()=>new Promise<void>(resolve=>{server.close(()=>resolve());server.closeAllConnections();})};
 }
 for(const [label,token] of [['issuer-a','opaque.alpha_123'],['issuer-b','opaque.beta~456']]){
-    test('unchanged client and RFC7662 resource validate independent '+label+' over HTTP',async(t)=>{
-        const p=await provider(label,token);let mapped=0;
+    test('unchanged client logs in at independent '+label+' over HTTP; the RFC7662 resource introspects but grants no private call',async(t)=>{
+        const p=await provider(label,token);let lookups=0;
         try{
             const actual=await p.login();assert.equal(actual,token);
             const request=new Request(p.resource,{headers:{Authorization:'Bearer '+actual}});
-            const verify=()=>authorizeOAuth(p.config,request,scope,async(id)=>{mapped++;return id===account;});
-            assert.deepEqual(await verify(),{accountId:account});assert.equal(mapped,1);
+            const verify=()=>authorizeOAuth(p.config,request,scope,async()=>{lookups++;return null;});
+            refusedWithoutGrant(await verify());
             p.revoke();const denied=await verify();assert.ok(denied instanceof Response);assert.equal(denied.status,401);
-            assert.equal(mapped,1);assert.deepEqual(p.counts,{authorization:1,exchange:1,introspection:2});
-            t.diagnostic('Real loopback HTTP discovery, PKCE, resource-bound exchange and per-call revocation; synthetic issuer only.');
+            assert.equal(lookups,0);assert.deepEqual(p.counts,{authorization:1,exchange:1,introspection:2});
+            t.diagnostic('Real loopback HTTP discovery, PKCE, resource-bound exchange and per-call introspection; synthetic issuer only.');
         }finally{await p.close();}
     });
 }
@@ -103,8 +110,7 @@ for(const discovery of ['oidc-inserted','oidc-appended'] as const){
             const token=await p.login();
             assert.equal(token,'opaque.oidc-'+discovery);
             const request=new Request(p.resource,{headers:{Authorization:'Bearer '+token}});
-            const access=await authorizeOAuth(p.config,request,scope,async(id)=>id===account);
-            assert.deepEqual(access,{accountId:account});
+            refusedWithoutGrant(await authorizeOAuth(p.config,request,scope,noGrant));
             assert.deepEqual(p.counts,{authorization:1,exchange:1,introspection:1});
         }finally{await p.close();}
     });
@@ -115,8 +121,8 @@ test('RFC 9728 root protected-resource metadata fallback completes the existing 
     try{
         const token=await p.login();
         assert.equal(token,'opaque.root-prm');
-        assert.deepEqual(await authorizeOAuth(p.config,new Request(p.resource,{headers:{Authorization:'Bearer '+token}}),
-            scope,async(id)=>id===account),{accountId:account});
+        refusedWithoutGrant(await authorizeOAuth(p.config,new Request(p.resource,{headers:{Authorization:'Bearer '+token}}),
+            scope,noGrant));
         assert.deepEqual(p.counts,{authorization:1,exchange:1,introspection:1});
     }finally{await p.close();}
 });
@@ -129,8 +135,8 @@ test('multiple authorized issuers require an exact operator selected issuer befo
         assert.deepEqual(p.counts,{authorization:0,exchange:0,introspection:0});
         const token=await p.login(p.issuer);
         assert.equal(token,'opaque.multi-issuer');
-        assert.deepEqual(await authorizeOAuth(p.config,new Request(p.resource,{headers:{Authorization:'Bearer '+token}}),
-            scope,async(id)=>id===account),{accountId:account});
+        refusedWithoutGrant(await authorizeOAuth(p.config,new Request(p.resource,{headers:{Authorization:'Bearer '+token}}),
+            scope,noGrant));
         assert.deepEqual(p.counts,{authorization:1,exchange:1,introspection:1});
     }finally{await p.close();}
 });
@@ -147,9 +153,9 @@ test('Access-shaped opaque token reaches the client but is not silently treated 
     const p=await provider('gateway-fixture','oauth:synthetic-opaque');
     try{
         const token=await p.login();assert.equal(token,'oauth:synthetic-opaque');
-        const result=await authorizeOAuth(p.config,new Request(p.resource,{headers:{Authorization:'Bearer '+token}}),scope,async()=>true);
+        const result=await authorizeOAuth(p.config,new Request(p.resource,{headers:{Authorization:'Bearer '+token}}),scope,noGrant);
         assert.ok(result instanceof Response);assert.equal(result.status,401);assert.equal(p.counts.introspection,0);
-        const forged=await authorizeOAuth(p.config,new Request(p.resource,{headers:{'Cf-Access-Jwt-Assertion':'synthetic-forgery'}}),scope,async()=>true);
+        const forged=await authorizeOAuth(p.config,new Request(p.resource,{headers:{'Cf-Access-Jwt-Assertion':'synthetic-forgery'}}),scope,noGrant);
         assert.ok(forged instanceof Response);assert.equal(forged.status,401);
     }finally{await p.close();}
 });
@@ -162,7 +168,7 @@ test('external non-UUID subject fails closed rather than being guessed from emai
     const p=await provider('external-subject','synthetic-token',900,'external-user-42');
     try{
         const token=await p.login();let lookup=false;
-        const result=await authorizeOAuth(p.config,new Request(p.resource,{headers:{Authorization:'Bearer '+token}}),scope,async()=>{lookup=true;return true;});
+        const result=await authorizeOAuth(p.config,new Request(p.resource,{headers:{Authorization:'Bearer '+token}}),scope,async()=>{lookup=true;return null;});
         assert.ok(result instanceof Response);assert.equal(result.status,401);assert.equal(lookup,false);
         assert.equal(p.counts.introspection,1);
     }finally{await p.close();}
