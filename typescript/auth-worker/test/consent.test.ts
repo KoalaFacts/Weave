@@ -79,7 +79,8 @@ test("consentPage_DuplicateNames_ShowsFullAccountIdentityBesideEveryChoice",asyn
   for(const id of [first,second]){
     const choice=choices.find(label=>label.includes('value="'+id+'"'));
     assert.ok(choice,"each owned agent remains selectable");
-    const visibleLabel=choice!.slice(choice!.indexOf(">")+1);
+    const inputEnd=choice!.indexOf(">",choice!.indexOf("<input"));
+    const visibleLabel=choice!.slice(inputEnd+1);
     assert.match(visibleLabel,/Shared agent/);
     assert.ok(visibleLabel.includes(id),"the full account ID must be visible beside its choice, not just a hidden form value");
   }
