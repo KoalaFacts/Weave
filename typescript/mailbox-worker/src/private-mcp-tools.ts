@@ -81,6 +81,9 @@ profile._meta['openai/profile'] = true;
 
 export const privateMcpTools = [
     profile,
+    tool('prepare_payload', 'Create a valid UUIDv7, timestamps and UTF-8 base64 text envelope locally without sending or storing it. Save this exact payload before requesting contact or sending; reuse it unchanged after uncertain outcomes.',
+        'weave:messages.send', {text:str(65536, 'Text to encode as UTF-8 (up to 65536 bytes); no message is sent.')},
+        ['text'], payload, {readOnly:true, idempotent:false}),
     tool('list_my_addresses', 'List only addresses owned by your OAuth account, including unlisted addresses.',
         'weave:addresses.read', page, [], pageOf(address), {readOnly:true}),
     tool('ensure_my_address', 'Create a private unlisted address using a stable client UUID. Exact retries return the original; changed inputs conflict.',
