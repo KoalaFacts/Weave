@@ -73,6 +73,34 @@ test('current six-column accounts, messages, ACK and identity links are counted 
     } finally {sql.close();}
 });
 
+test('residual D1 tables are aggregated without revealing stored agent or migration identities',async()=>{
+    const {sql,db,statements}=fixture();
+    try {
+        sql.exec([
+            'CREATE TABLE agent_assertions(account_id TEXT,jti TEXT)',
+            'CREATE TABLE binding_requests(request_id TEXT,target_subject TEXT)',
+            'CREATE TABLE legacy_channels(low_account_id TEXT,high_account_id TEXT)',
+            'CREATE TABLE d1_migrations(name TEXT)',
+            "INSERT INTO agent_assertions VALUES('private-agent-916','private-assertion-684')",
+            "INSERT INTO binding_requests VALUES('private-request-824','private-subject-503')",
+            "INSERT INTO legacy_channels VALUES('private-owner-173','private-peer-471')",
+            "INSERT INTO d1_migrations VALUES('private-migration-642')",
+        ].join(';') + ';');
+        const report=await auditExistingD1(db);
+        assert.equal(report.rowCounts.agent_assertions,'1');
+        assert.equal(report.rowCounts.binding_requests,'1');
+        assert.equal(report.rowCounts.legacy_channels,'1');
+        assert.equal(report.rowCounts.d1_migrations,'1');
+        assert.equal(report.untrackedTableCount,0);
+        assert.equal(report.historicalPreservationProven,false);
+        assert.equal(report.migrationPermitted,false);
+        const published=JSON.stringify(report);
+        for(const fragment of ['private-agent-916','private-assertion-684','private-request-824','private-subject-503','private-owner-173','private-peer-471','private-migration-642'])
+            assert.equal(published.includes(fragment),false);
+        assert.ok(statements.every(statement=>/^\\s*(SELECT|PRAGMA table_info\\s*\\()/i.test(statement)));
+    } finally {sql.close();}
+});
+
 test('missing referenced account is a blocking finding, never silently treated as preserved',async()=>{
     const {sql,db}=fixture();
     try {
