@@ -18,9 +18,10 @@ function fixture() {
         'CREATE TABLE client_grants(account_id TEXT,human_id TEXT)',
         'CREATE TABLE agent_keys(kid TEXT)',
         'CREATE TABLE mcp_idempotency(idempotency_key TEXT)',
-        'CREATE TABLE data_migrations(script_id TEXT,checksum TEXT)',
+        'CREATE TABLE data_migrations(script_id TEXT,checksum TEXT,completed_at INTEGER)',
         'CREATE TABLE oauth_identity_links(account_id TEXT)',
     ].join(';') + ';');
+    sql.exec("INSERT INTO data_migrations(script_id,checksum,completed_at) VALUES('normalize-mailbox-records','ecd612f0528cc03d0dee877269a5546e3531cd4d3533325fc3441938407efe62',17919826570270000)");
     const db:StorageDatabase={
         prepare(statement:string) {
             statements.push(statement);
@@ -62,6 +63,7 @@ test('current six-column accounts, messages, ACK and identity links are counted 
         assert.equal(report.orphanCounts['legacy-oauth-links-account'],'0');
         assert.equal(report.historicalPreservationProven,false);
         assert.equal(report.migrationPermitted,false);
+        assert.deepEqual(report.normalizeMailboxLedger,{state:'complete',completedAtTicks:'17919826570270000'});
         assert.equal(JSON.stringify(report).includes('human-A'),false);
         assert.equal(JSON.stringify(report).includes('m1'),false);
         assert.ok(statements.every(statement=>/^\s*(SELECT|PRAGMA table_info\s*\()/i.test(statement)));
@@ -117,5 +119,38 @@ test('missing old OAuth identity link table remains an explicit history-verifica
         assert.equal(report.rowCounts.oauth_identity_links,null);
         assert.ok(report.findings.includes('legacy-oauth-identity-history-unverified'));
         assert.equal(report.orphanCounts['legacy-oauth-links-account'],null);
+    } finally {sql.close();}
+});
+
+test('changed migration completion time is observable without reading private data',async()=>{
+    const {sql,db}=fixture();
+    try {
+        sql.exec('UPDATE data_migrations SET completed_at=17935778419690000');
+        const report=await auditExistingD1(db);
+        assert.deepEqual(report.normalizeMailboxLedger,{state:'complete',completedAtTicks:'17935778419690000'});
+        assert.equal(report.status,'observed');
+    } finally {sql.close();}
+});
+
+test('mismatched migration checksum is a blocking provenance finding',async()=>{
+    const {sql,db}=fixture();
+    try {
+        sql.exec("UPDATE data_migrations SET checksum='not-the-expected-checksum'");
+        const report=await auditExistingD1(db);
+        assert.deepEqual(report.normalizeMailboxLedger,{state:'unexpected-checksum',completedAtTicks:'17919826570270000'});
+        assert.equal(report.status,'needs-review');
+        assert.ok(report.findings.includes('normalize-mailbox-ledger-unexpected-checksum'));
+        assert.equal(JSON.stringify(report).includes('not-the-expected-checksum'),false);
+    } finally {sql.close();}
+});
+
+test('missing migration ledger is reported without attempting repair',async()=>{
+    const {sql,db}=fixture();
+    try {
+        sql.exec('DROP TABLE data_migrations');
+        const report=await auditExistingD1(db);
+        assert.deepEqual(report.normalizeMailboxLedger,{state:'unavailable',completedAtTicks:null});
+        assert.equal(report.status,'needs-review');
+        assert.ok(report.findings.includes('normalize-mailbox-ledger-unavailable'));
     } finally {sql.close();}
 });
