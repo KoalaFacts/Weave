@@ -170,7 +170,7 @@ test('Time Travel samples use only read-only GET and never expose restoration bo
         const timestamp=new URL(url).searchParams.get('timestamp');
         if (timestamp?.startsWith('2026-10-17')) return new Response('',{status:404});
         if (timestamp?.startsWith('2026-11-01')) return new Response('',{status:403});
-        return Response.json({success:true,result:{bookmark:timestamp ? 'after-ledger' : 'now'}});
+        return Response.json({success:true,result:{bookmark:timestamp ? 'private-bookmark-sentinel-63ad9' : 'now'}});
     };
     const evidence=await inspectTimeTravelBookmarks(
         'https://api.cloudflare.com/client/v4/accounts/a/d1/database/b/time_travel/bookmark',
@@ -184,7 +184,7 @@ test('Time Travel samples use only read-only GET and never expose restoration bo
     assert.notEqual(evidence[0].bookmarkSha256,evidence[3].bookmarkSha256);
     assert.equal(evidence[1].bookmarkSha256,null);
     assert.equal(evidence[0].bookmarkSha256?.length,64);
-    assert.equal(JSON.stringify(evidence).includes('after-ledger'),false);
+    assert.equal(JSON.stringify(evidence).includes('private-bookmark-sentinel-63ad9'),false);
     assert.equal(JSON.stringify(evidence).includes('protected-token'),false);
     assert.equal(requests.length,4);
     assert.ok(requests.every(url=>url.includes('/time_travel/bookmark')
