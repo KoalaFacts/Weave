@@ -140,17 +140,18 @@ export async function runRemoteInventory(env: NodeJS.ProcessEnv = process.env) {
     if (database.uuid !== dbBindings[0].id || !/^[A-Za-z0-9_-]+$/.test(database.name))
         throw Error('Verified live D1 identity does not match Worker binding.');
     const temporary = await mkdtemp(join(tmpdir(), 'weave-d1-readonly-'));
-    let proxy: Awaited<ReturnType<typeof import('wrangler').getPlatformProxy>> | undefined;
+    let dispose: (() => Promise<void>) | undefined;
     try {
         const configPath = join(temporary, 'wrangler.json');
         await writeFile(configPath, JSON.stringify({
-            ...base, account_id:env.CLOUDFLARE_ACCOUNT_ID,
+            ...base, main:join(workerRoot, 'src/index.ts'), account_id:env.CLOUDFLARE_ACCOUNT_ID,
             d1_databases:[{binding:'db',database_id:database.uuid,database_name:database.name,remote:true}],
         }), {mode:0o600});
         const {getPlatformProxy} = await import('wrangler');
-        proxy = await getPlatformProxy<{db:StorageDatabase}>({
+        const proxy = await getPlatformProxy<{db:StorageDatabase}>({
             configPath, envFiles:[], persist:false, remoteBindings:true,
         });
+        dispose = () => proxy.dispose();
         const audit = await auditExistingD1(proxy.env.db);
         const directory = join(workerRoot, 'test-results', 'read-only-d1');
         await mkdir(directory, {recursive:true});
@@ -163,7 +164,7 @@ export async function runRemoteInventory(env: NodeJS.ProcessEnv = process.env) {
         if (audit.status !== 'observed') throw Error('Live data preservation findings require review; no mutation attempted.');
         return report;
     } finally {
-        await proxy?.dispose();
+        await dispose?.();
         await rm(temporary, {recursive:true,force:true});
     }
 }
