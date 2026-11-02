@@ -28,16 +28,19 @@ function fixture() {
             if (!/^\s*(SELECT|PRAGMA table_info\s*\()/i.test(statement))
                 throw Error('Audit attempted a non-read-only statement');
             const prepared = sql.prepare(statement);
+            // Node's StatementSync binds positional values at all()/get() time.
+            // It has no bind() method; preserve D1's chained bind() contract here.
+            let bound: (string|number|null|ArrayBuffer)[] = [];
             return {
                 bind(...args:(string|number|null|ArrayBuffer)[]) {
-                    prepared.bind(...args as Parameters<typeof prepared.bind>);
+                    bound = args;
                     return this;
                 },
                 async all<T>() {
-                    return {results:prepared.all() as T[]};
+                    return {results:prepared.all(...(bound as Parameters<typeof prepared.all>)) as T[]};
                 },
                 async first<T>() {
-                    return (prepared.get() ?? null) as T|null;
+                    return (prepared.get(...(bound as Parameters<typeof prepared.get>)) ?? null) as T|null;
                 },
             };
         },
