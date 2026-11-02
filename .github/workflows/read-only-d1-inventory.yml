@@ -1,18 +1,30 @@
 name: Read-only Weave D1 Preservation Inventory
 on:
   workflow_dispatch:
+  # Authenticated fallback for the existing GitHub connector, which cannot
+  # invoke workflow_dispatch. Never run for other issues or commenters.
+  issue_comment:
+    types: [created]
 
 permissions:
   contents: read
 
-# Do not collect a snapshot while the reviewed release job may modify D1.
-concurrency:
-  group: deploy-weave-worker-demo
-  cancel-in-progress: false
-
+# Only an authorized inventory job may acquire the deployment lock; public
+# issue comments whose job is skipped must not queue or delay deployment.
 jobs:
   inventory:
-    if: github.event_name == 'workflow_dispatch' && github.ref == 'refs/heads/main'
+    if: >-
+      github.ref == 'refs/heads/main' &&
+      (github.event_name == 'workflow_dispatch' ||
+       (github.event_name == 'issue_comment' &&
+        github.event.issue.number == 236 &&
+        github.event.issue.pull_request == null &&
+        github.event.comment.body == '/weave-d1-inventory' &&
+        github.event.comment.user.login == 'ldsenow' &&
+        github.event.comment.author_association == 'MEMBER'))
+    concurrency:
+      group: deploy-weave-worker-demo
+      cancel-in-progress: false
     runs-on: ubuntu-latest
     environment: production
     steps:
@@ -20,13 +32,30 @@ jobs:
         with:
           ref: ${{ github.sha }}
           persist-credentials: false
-      - name: Require the exact dispatched main commit
+      - name: Require exact owner-authored request and unchanged main
         shell: bash
+        env:
+          WEAVE_REQUEST_ISSUE: ${{ github.event.issue.number }}
+          WEAVE_REQUEST_USER: ${{ github.event.comment.user.login }}
+          WEAVE_REQUEST_ASSOCIATION: ${{ github.event.comment.author_association }}
+          WEAVE_REQUEST_BODY: ${{ github.event.comment.body }}
+          WEAVE_REQUEST_IS_PR: ${{ github.event.issue.pull_request != null }}
         run: |
           set -euo pipefail
-          test "$GITHUB_EVENT_NAME" = workflow_dispatch
           test "$GITHUB_REF" = refs/heads/main
           test "$(git rev-parse HEAD)" = "$GITHUB_SHA"
+          case "$GITHUB_EVENT_NAME" in
+            workflow_dispatch) ;;
+            issue_comment)
+              test "$GITHUB_ACTOR" = ldsenow
+              test "$WEAVE_REQUEST_ISSUE" = 236
+              test "$WEAVE_REQUEST_USER" = ldsenow
+              test "$WEAVE_REQUEST_ASSOCIATION" = MEMBER
+              test "$WEAVE_REQUEST_BODY" = /weave-d1-inventory
+              test "$WEAVE_REQUEST_IS_PR" = false
+              ;;
+            *) echo "Unsupported inventory event" >&2; exit 1 ;;
+          esac
       - uses: actions/setup-node@949feb2413d6458794dcd2491c4babbbce0c15c1 # v7.1.0
         with:
           node-version: '24'
