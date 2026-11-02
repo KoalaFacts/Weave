@@ -9,11 +9,8 @@ on:
 permissions:
   contents: read
 
-# Do not collect a snapshot while the reviewed release job may modify D1.
-concurrency:
-  group: deploy-weave-worker-demo
-  cancel-in-progress: false
-
+# Only an authorized inventory job may acquire the deployment lock; public
+# issue comments whose job is skipped must not queue or delay deployment.
 jobs:
   inventory:
     if: >-
@@ -25,6 +22,9 @@ jobs:
         github.event.comment.body == '/weave-d1-inventory' &&
         github.event.comment.user.login == 'ldsenow' &&
         github.event.comment.author_association == 'MEMBER'))
+    concurrency:
+      group: deploy-weave-worker-demo
+      cancel-in-progress: false
     runs-on: ubuntu-latest
     environment: production
     steps:
