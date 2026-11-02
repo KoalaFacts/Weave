@@ -1,3 +1,4 @@
+import { createHash } from 'node:crypto';
 import { mkdtemp, mkdir, readFile, rm, writeFile } from 'node:fs/promises';
 import { tmpdir } from 'node:os';
 import { dirname, join, resolve } from 'node:path';
@@ -143,6 +144,68 @@ export async function auditExistingD1(db: StorageDatabase): Promise<ReadOnlyD1Au
     };
 }
 
+// Cloudflare Time Travel's read-only bookmark endpoint cannot read historical
+// rows or prove that any record was retained. Never call the restore endpoint.
+export const historicalBookmarkTimes = [
+    {label:'2026-10-17-schema-observation', at:'2026-10-17T12:00:00.000Z'},
+    {label:'2026-11-01-before-ledger-change', at:'2026-11-01T23:57:00.000Z'},
+    {label:'2026-11-02-after-ledger-change', at:'2026-11-02T00:05:00.000Z'},
+] as const;
+
+export interface TimeTravelBookmarkObservation {
+    label:string;
+    requestedAt:string|null;
+    status:'bookmark-returned'|'no-bookmark'|'permission-denied'|'not-available'|'api-error';
+    httpStatus:number|null;
+    // A digest permits equality comparison without publishing a restoration bookmark.
+    bookmarkSha256:string|null;
+}
+
+export async function inspectTimeTravelBookmarks(
+    url:string, token:string, request:typeof fetch = fetch,
+): Promise<TimeTravelBookmarkObservation[]> {
+    const samples: {label:string;at:string|null}[] = [
+        {label:'current',at:null},
+        ...historicalBookmarkTimes,
+    ];
+    const observed:TimeTravelBookmarkObservation[] = [];
+    for (const {label,at} of samples) {
+        const endpoint = at === null ? url : url + '?timestamp=' + encodeURIComponent(at);
+        let response:Response;
+        try {
+            response = await request(endpoint, {
+                method:'GET', headers:{Authorization:'Bearer ' + token},
+                redirect:'error', signal:AbortSignal.timeout(10000),
+            });
+        } catch {
+            observed.push({label,requestedAt:at,status:'api-error',httpStatus:null,bookmarkSha256:null});
+            continue;
+        }
+        const base = {label,requestedAt:at,httpStatus:response.status,bookmarkSha256:null};
+        if (!response.ok) {
+            const status = response.status === 401 || response.status === 403 ? 'permission-denied'
+                : response.status === 404 || response.status === 410 ? 'not-available' : 'api-error';
+            observed.push({...base,status});
+            continue;
+        }
+        try {
+            const body = await response.json() as {success?:boolean;result?:{bookmark?:unknown}};
+            const bookmark = body.success === true ? body.result?.bookmark : null;
+            if (typeof bookmark !== 'string' || bookmark.length === 0) {
+                observed.push({...base,status:'no-bookmark'});
+                continue;
+            }
+            observed.push({
+                ...base,status:'bookmark-returned',
+                bookmarkSha256:createHash('sha256').update(bookmark).digest('hex'),
+            });
+        } catch {
+            observed.push({...base,status:'api-error'});
+        }
+    }
+    return observed;
+}
+
 interface CloudflareResult<T> {success: boolean;result:T;}
 interface Binding {name:string;type:string;id?:string;}
 const workerRoot = resolve(dirname(fileURLToPath(import.meta.url)), '..');
@@ -186,12 +249,15 @@ export async function runRemoteInventory(env: NodeJS.ProcessEnv = process.env) {
         });
         dispose = () => proxy.dispose();
         const audit = await auditExistingD1(proxy.env.db);
+        const timeTravelBookmarks = await inspectTimeTravelBookmarks(
+            api + '/d1/database/' + database.uuid + '/time_travel/bookmark', env.CLOUDFLARE_API_TOKEN,
+        );
         const directory = join(workerRoot, 'test-results', 'read-only-d1');
         await mkdir(directory, {recursive:true});
         const report = {
             sourceSha:env.GITHUB_SHA ?? null, observedAt:new Date().toISOString(),
             storage:'existing-demo-worker-D1', d1Database:{uuid:database.uuid,name:database.name}, ...audit,
-            timeTravelRecoveryVerified:false,
+            timeTravelBookmarks, timeTravelRecoveryVerified:false,
         };
         await writeFile(join(directory,'result.json'), JSON.stringify(report, null, 2) + '\n', {mode:0o600});
         if (audit.status !== 'observed') throw Error('Live data preservation findings require review; no mutation attempted.');
