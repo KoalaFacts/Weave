@@ -1,0 +1,54 @@
+name: Read-only Weave D1 Preservation Inventory
+on:
+  workflow_dispatch:
+
+permissions:
+  contents: read
+
+# Do not collect a snapshot while the reviewed release job may modify D1.
+concurrency:
+  group: deploy-weave-worker-demo
+  cancel-in-progress: false
+
+jobs:
+  inventory:
+    if: github.event_name == 'workflow_dispatch' && github.ref == 'refs/heads/main'
+    runs-on: ubuntu-latest
+    environment: production
+    steps:
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1
+        with:
+          ref: \${{ github.sha }}
+          persist-credentials: false
+      - name: Require the exact dispatched main commit
+        shell: bash
+        run: |
+          set -euo pipefail
+          test "$GITHUB_EVENT_NAME" = workflow_dispatch
+          test "$GITHUB_REF" = refs/heads/main
+          test "$(git rev-parse HEAD)" = "$GITHUB_SHA"
+      - uses: actions/setup-node@949feb2413d6458794dcd2491c4babbbce0c15c1 # v7.1.0
+        with:
+          node-version: '24'
+          package-manager-cache: false
+      - run: npm ci --ignore-scripts
+        working-directory: typescript/mailbox-worker
+      - name: Verify the read-only inventory implementation
+        working-directory: typescript/mailbox-worker
+        run: |
+          npm run typecheck
+          node --test test/audit-existing-d1.test.ts
+      - name: Inventory only the verified existing demo D1
+        working-directory: typescript/mailbox-worker
+        run: node scripts/audit-existing-d1.ts
+        env:
+          CLOUDFLARE_API_TOKEN: \${{ secrets.CLOUDFLARE_API_TOKEN }}
+          CLOUDFLARE_ACCOUNT_ID: \${{ secrets.CLOUDFLARE_ACCOUNT_ID }}
+      - name: Retain aggregate-only protected evidence, even on review findings
+        if: always()
+        uses: actions/upload-artifact@043fb46d1a93c77aae656e7c1c64a875d1fc6a0a # v7
+        with:
+          name: weave-read-only-d1-\${{ github.run_id }}
+          path: typescript/mailbox-worker/test-results/read-only-d1/result.json
+          retention-days: 7
+          if-no-files-found: warn
