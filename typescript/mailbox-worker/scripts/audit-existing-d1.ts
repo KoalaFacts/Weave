@@ -183,7 +183,7 @@ export async function inspectTimeTravelBookmarks(
         }
         const base = {label,requestedAt:at,httpStatus:response.status,bookmarkSha256:null};
         if (!response.ok) {
-            const status = response.status === 401 || response.status === 403 ? 'permission-denied'
+            const status:TimeTravelBookmarkObservation['status'] = response.status === 401 || response.status === 403 ? 'permission-denied'
                 : response.status === 404 || response.status === 410 ? 'not-available' : 'api-error';
             observed.push({...base,status});
             continue;
