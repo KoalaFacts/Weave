@@ -13,6 +13,13 @@ export const inventoryTables = [
     'contact_requests', 'contacts', 'mailbox_records', 'message_delivery',
     'client_grants', 'mcp_idempotency', 'oauth_identity_links',
     'mailbox_records_legacy', 'data_migrations',
+    // The original core-only view missed pending agent auth/binding state,
+    // legacy channel/cursor state and the D1 migration ledger. Count rows only.
+    'agent_assertions', 'agent_access_tokens', 'binding_requests',
+    'key_requests', 'recovery_codes', 'address_agent_cards',
+    'legacy_channels', 'rate_limits', 'stream_leases', 'stream_cursors',
+    'counters', 'maintenance_state', 'mailbox_revision', 'mailbox_guard',
+    'd1_migrations',
 ] as const;
 const requiredTables = [
     'accounts', 'account_addresses', 'contact_requests', 'contacts',

@@ -202,7 +202,8 @@ public sealed class OpenApiConnectorIntegrationTests
         public void Dispose()
         {
             _cts.Cancel();
-            _listener.Stop();
+            // Close already stops and unregisters the listener. Calling Stop first
+            // can race with reuse of its ephemeral port during net10/net11 runs.
             _listener.Close();
             try
             { _loop.Wait(TimeSpan.FromSeconds(2)); }
