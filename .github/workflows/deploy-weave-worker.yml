@@ -3,6 +3,10 @@ on:
   # An explicit release signal, not automatic deployment on ordinary main pushes.
   push:
     branches: [publish/demo]
+  # Production-protected fallback for authenticated GitHub connector clients.
+  # Only the exact owner command on #236 can use this release entry.
+  issue_comment:
+    types: [created]
   workflow_dispatch:
     inputs:
       configuration_scope:
@@ -28,7 +32,17 @@ concurrency:
   cancel-in-progress: false
 jobs:
   verify:
-    if: github.ref == 'refs/heads/main' || github.ref == 'refs/heads/publish/demo'
+    if: >-
+      (github.event_name == 'workflow_dispatch' && github.ref == 'refs/heads/main') ||
+      (github.event_name == 'push' && github.ref == 'refs/heads/publish/demo') ||
+      (github.event_name == 'issue_comment' &&
+       github.ref == 'refs/heads/main' &&
+       github.event.issue.number == 236 &&
+       github.event.issue.pull_request == null &&
+       github.event.comment.body == '/weave-deploy-demo' &&
+       github.event.comment.user.login == 'ldsenow' &&
+       github.event.comment.author_association == 'MEMBER' &&
+       github.actor == 'ldsenow')
     runs-on: ubuntu-latest
     steps:
       - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1
@@ -36,6 +50,26 @@ jobs:
           ref: ${{ github.sha }}
           fetch-depth: 0
           persist-credentials: false
+      - name: Require authenticated owner command and unchanged main before release
+        if: github.event_name == 'issue_comment'
+        shell: bash
+        env:
+          WEAVE_EVENT_BODY: ${{ github.event.comment.body }}
+          WEAVE_EVENT_USER: ${{ github.event.comment.user.login }}
+          WEAVE_EVENT_ASSOCIATION: ${{ github.event.comment.author_association }}
+          WEAVE_EVENT_ISSUE: ${{ github.event.issue.number }}
+          WEAVE_EVENT_IS_PR: ${{ github.event.issue.pull_request != null }}
+        run: |
+          set -euo pipefail
+          test "$GITHUB_ACTOR" = ldsenow
+          test "$GITHUB_REF" = refs/heads/main
+          test "$WEAVE_EVENT_ISSUE" = 236
+          test "$WEAVE_EVENT_IS_PR" = false
+          test "$WEAVE_EVENT_BODY" = /weave-deploy-demo
+          test "$WEAVE_EVENT_USER" = ldsenow
+          test "$WEAVE_EVENT_ASSOCIATION" = MEMBER
+          test "$(git rev-parse HEAD)" = "$GITHUB_SHA"
+          test "$(git rev-parse origin/main)" = "$GITHUB_SHA"
       - name: Verify the release commit is already on main
         shell: bash
         run: |
@@ -49,9 +83,9 @@ jobs:
         shell: bash
         run: node typescript/mailbox-worker/scripts/oauth-rollout-intent.ts
         env:
-          WEAVE_RELEASE_CONFIGURATION_SCOPE: ${{ inputs.configuration_scope }}
-          WEAVE_RELEASE_DATABASE_MODE: ${{ inputs.database_mode }}
-          WEAVE_RELEASE_FIRST_PARTY_OAUTH: ${{ inputs.enable_first_party_oauth }}
+          WEAVE_RELEASE_CONFIGURATION_SCOPE: ${{ github.event_name == 'issue_comment' && 'production' || inputs.configuration_scope }}
+          WEAVE_RELEASE_DATABASE_MODE: ${{ github.event_name == 'issue_comment' && 'completed-only' || inputs.database_mode }}
+          WEAVE_RELEASE_FIRST_PARTY_OAUTH: ${{ github.event_name == 'issue_comment' && 'false' || inputs.enable_first_party_oauth }}
       - run: npm ci --ignore-scripts
         working-directory: typescript/mailbox-worker
       - run: |
@@ -89,14 +123,44 @@ jobs:
         working-directory: typescript/mailbox-worker
   deploy-production:
     needs: verify
-    if: inputs.configuration_scope == 'production'
+    if: >-
+      inputs.configuration_scope == 'production' ||
+      (github.event_name == 'issue_comment' &&
+       github.ref == 'refs/heads/main' &&
+       github.event.issue.number == 236 &&
+       github.event.issue.pull_request == null &&
+       github.event.comment.body == '/weave-deploy-demo' &&
+       github.event.comment.user.login == 'ldsenow' &&
+       github.event.comment.author_association == 'MEMBER' &&
+       github.actor == 'ldsenow')
     runs-on: ubuntu-latest
     environment: production
     steps:
       - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1
         with:
           ref: ${{ github.sha }}
+          fetch-depth: 0
           persist-credentials: false
+      - name: Require authenticated owner command and unchanged main before release
+        if: github.event_name == 'issue_comment'
+        shell: bash
+        env:
+          WEAVE_EVENT_BODY: ${{ github.event.comment.body }}
+          WEAVE_EVENT_USER: ${{ github.event.comment.user.login }}
+          WEAVE_EVENT_ASSOCIATION: ${{ github.event.comment.author_association }}
+          WEAVE_EVENT_ISSUE: ${{ github.event.issue.number }}
+          WEAVE_EVENT_IS_PR: ${{ github.event.issue.pull_request != null }}
+        run: |
+          set -euo pipefail
+          test "$GITHUB_ACTOR" = ldsenow
+          test "$GITHUB_REF" = refs/heads/main
+          test "$WEAVE_EVENT_ISSUE" = 236
+          test "$WEAVE_EVENT_IS_PR" = false
+          test "$WEAVE_EVENT_BODY" = /weave-deploy-demo
+          test "$WEAVE_EVENT_USER" = ldsenow
+          test "$WEAVE_EVENT_ASSOCIATION" = MEMBER
+          test "$(git rev-parse HEAD)" = "$GITHUB_SHA"
+          test "$(git rev-parse origin/main)" = "$GITHUB_SHA"
       - uses: actions/setup-node@949feb2413d6458794dcd2491c4babbbce0c15c1 # v7.1.0
         with:
           node-version: '24'
@@ -107,17 +171,17 @@ jobs:
         run: node scripts/oauth-rollout-intent.ts
         working-directory: typescript/mailbox-worker
         env:
-          WEAVE_RELEASE_CONFIGURATION_SCOPE: ${{ inputs.configuration_scope }}
-          WEAVE_RELEASE_DATABASE_MODE: ${{ inputs.database_mode }}
-          WEAVE_RELEASE_FIRST_PARTY_OAUTH: ${{ inputs.enable_first_party_oauth }}
+          WEAVE_RELEASE_CONFIGURATION_SCOPE: ${{ github.event_name == 'issue_comment' && 'production' || inputs.configuration_scope }}
+          WEAVE_RELEASE_DATABASE_MODE: ${{ github.event_name == 'issue_comment' && 'completed-only' || inputs.database_mode }}
+          WEAVE_RELEASE_FIRST_PARTY_OAUTH: ${{ github.event_name == 'issue_comment' && 'false' || inputs.enable_first_party_oauth }}
       - name: Verify resources, migrate, confirm, and deploy existing demo
         run: node scripts/deploy.ts
         working-directory: typescript/mailbox-worker
         env:
           CLOUDFLARE_API_TOKEN: ${{ secrets.CLOUDFLARE_API_TOKEN }}
           CLOUDFLARE_ACCOUNT_ID: ${{ secrets.CLOUDFLARE_ACCOUNT_ID }}
-          WEAVE_DEPLOY_DATABASE_MODE: ${{ github.event_name == 'push' && 'completed-only' || inputs.database_mode }}
-          WEAVE_APPROVED_FIRST_PARTY_OAUTH_BINDING: ${{ inputs.enable_first_party_oauth == true && 'true' || 'false' }}
+          WEAVE_DEPLOY_DATABASE_MODE: ${{ github.event_name == 'issue_comment' && 'completed-only' || inputs.database_mode }}
+          WEAVE_APPROVED_FIRST_PARTY_OAUTH_BINDING: ${{ github.event_name == 'issue_comment' && 'false' || (inputs.enable_first_party_oauth == true && 'true' || 'false') }}
       - name: Verify the published Agent Start guide and homepage
         run: node scripts/verify-agent-entry.ts
         working-directory: typescript/mailbox-worker
