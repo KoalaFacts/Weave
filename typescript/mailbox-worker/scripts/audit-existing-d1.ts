@@ -3,6 +3,7 @@ import { tmpdir } from 'node:os';
 import { dirname, join, resolve } from 'node:path';
 import { fileURLToPath, pathToFileURL } from 'node:url';
 import type { StorageDatabase } from './latest-schema.ts';
+import { completedMigration } from './completed-migration.ts';
 
 // This inventory deliberately cannot migrate, deploy, reset or repair D1.
 // No row identifiers, tokens, contents, subjects or email addresses are read.
@@ -28,6 +29,10 @@ export interface ReadOnlyD1Audit {
     accountColumns: string[];
     acknowledged: AuditCount;
     humanLinkedAccounts: AuditCount;
+    normalizeMailboxLedger: {
+        state: 'complete' | 'missing' | 'unavailable' | 'ambiguous' | 'incomplete' | 'unexpected-checksum';
+        completedAtTicks: string | null;
+    };
     orphanCounts: Record<string, AuditCount>;
     missingRequiredTables: string[];
     untrackedTableCount: number;
@@ -68,6 +73,28 @@ export async function auditExistingD1(db: StorageDatabase): Promise<ReadOnlyD1Au
     if (!current) findings.push('account-schema-requires-review');
     const has = (table:string, ...fields:string[]) =>
         present.has(table) && fields.every(field => columns.get(table)?.has(field));
+    let ledgerState: ReadOnlyD1Audit['normalizeMailboxLedger']['state'] = 'unavailable';
+    let completedAtTicks: string | null = null;
+    if (has('data_migrations', 'script_id', 'checksum', 'completed_at')) {
+        // A fixed allowlisted read: compare the stored checksum without returning its raw value.
+        const rows = (await db.prepare(
+            'SELECT CASE WHEN checksum=? THEN 1 ELSE 0 END AS checksum_matches, '
+            + 'CAST(completed_at AS TEXT) AS completed_at FROM data_migrations WHERE script_id=? LIMIT 2'
+        ).bind(completedMigration.checksum, completedMigration.scriptId)
+            .all<{checksum_matches:number;completed_at:string|null}>()).results;
+        if (rows.length === 0) ledgerState = 'missing';
+        else if (rows.length !== 1) ledgerState = 'ambiguous';
+        else {
+            const row = rows[0];
+            if (typeof row.completed_at === 'string' && /^[0-9]+$/.test(row.completed_at))
+                completedAtTicks = row.completed_at;
+            ledgerState = row.checksum_matches !== 1 ? 'unexpected-checksum'
+                : completedAtTicks === null ? 'incomplete' : 'complete';
+        }
+    }
+    if (ledgerState !== 'complete') findings.push('normalize-mailbox-ledger-' + ledgerState);
+    const normalizeMailboxLedger = {state:ledgerState, completedAtTicks};
+
     const orphans: Record<string, AuditCount> = {};
     const relationships = [
         ['messages-sender', 'mailbox_records', ['sender_account_id'], 'accounts', 'account_id',
@@ -109,7 +136,7 @@ export async function auditExistingD1(db: StorageDatabase): Promise<ReadOnlyD1Au
     return {
         status: findings.length ? 'needs-review' : 'observed',
         schema: current ? 'six-column-human-linked' : 'other-review-required',
-        rowCounts, accountColumns, acknowledged, humanLinkedAccounts,
+        rowCounts, accountColumns, acknowledged, humanLinkedAccounts, normalizeMailboxLedger,
         orphanCounts: orphans, missingRequiredTables,
         untrackedTableCount: entries.filter(row => !known.has(row.name) && !row.name.startsWith('sqlite_')).length,
         findings, historicalPreservationProven: false, migrationPermitted: false,
@@ -163,7 +190,7 @@ export async function runRemoteInventory(env: NodeJS.ProcessEnv = process.env) {
         await mkdir(directory, {recursive:true});
         const report = {
             sourceSha:env.GITHUB_SHA ?? null, observedAt:new Date().toISOString(),
-            storage:'existing-demo-worker-D1', ...audit,
+            storage:'existing-demo-worker-D1', d1Database:{uuid:database.uuid,name:database.name}, ...audit,
             timeTravelRecoveryVerified:false,
         };
         await writeFile(join(directory,'result.json'), JSON.stringify(report, null, 2) + '\n', {mode:0o600});
