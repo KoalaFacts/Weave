@@ -37,7 +37,7 @@ The PR190 exact-base coverage collector is no longer invoked by CI. Its old chec
 
 Required-check/ruleset configuration could not be verified because the read endpoint was denied. Ordinary workflow file identities, job names and Security Scan push/PR triggers therefore remain. Shared composite steps reduce duplicated maintenance without moving checks into nested reusable workflows or broadening path triggers to run unrelated suites. Release/publish/deployment workflows are not combined across credential or approval boundaries.
 
-The earlier workflow consolidation reduced source files from 15 to 13; the separately approved D1 migration channel now brings the total to 14. These changes do not delete historical Actions UI entries or run evidence. In particular, historical **Prepare PR90 Merge** came from `pr90-merge-preparation.yml`, which is not a current workflow file; it is distinct from the retired security-release-chain validation file.
+The earlier workflow consolidation reduced source files from 15 to 13; the separately approved D1 migration and read-only preservation inventory channels now bring the total to 15. These changes do not delete historical Actions UI entries or run evidence. In particular, historical **Prepare PR90 Merge** came from `pr90-merge-preparation.yml`, which is not a current workflow file; it is distinct from the retired security-release-chain validation file.
 
 ## Release and deployment setup
 
