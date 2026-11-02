@@ -128,8 +128,8 @@ for(const [name,options] of [['missing ledger table',{legacy:true}],['missing re
 });
 
 const completedChecksum=completedMigration.checksum;
-async function completedFixture({legacy=false,checksum=completedChecksum,completed='123',record=true}={}){
-    const h=await start({legacy}),f=fixture({extraEnv:{WEAVE_DEPLOY_DATABASE_MODE:'completed-only'}}),sql=[];
+async function completedFixture({legacy=false,checksum=completedChecksum,completed='123',record=true,bindingResult=[dbBinding]}={}){
+    const h=await start({legacy}),f=fixture({bindingResult,extraEnv:{WEAVE_DEPLOY_DATABASE_MODE:'completed-only'}}),sql=[];
     if(record&&!legacy)await h.db.prepare('INSERT INTO data_migrations(script_id,checksum,created_at,updated_at,completed_at) VALUES(?,?,1,1,?)')
         .bind('normalize-mailbox-records',checksum,completed).run();
     f.options.openDatabase=async()=>({db:{prepare:query=>{sql.push(query);return h.db.prepare(query);},batch:statements=>h.db.batch(statements)},close:async()=>{f.closed=true;}});
@@ -264,6 +264,26 @@ test('existing operator-provisioned OAuth Service Binding survives maintenance, 
     }
     assert.equal(f.commands.length,3);
     assert.equal(f.closed,true);
+});
+test('completed-only release preserves Cloudflare default production OAuth binding and existing D1 state',async()=>{
+    // Cloudflare reports a binding to the default Worker as environment: 'production'
+    // after the first approved OAuth rollout. This is the real release preflight.
+    const bindingResult=existingAuthService.map(binding=>binding.name==='AUTH_SERVER'
+        ?{...binding,environment:'production'}:binding);
+    const f=await completedFixture({bindingResult});
+    try{
+        const before=(await f.h.db.prepare('SELECT * FROM data_migrations').all()).results;
+        const result=await deploy(f.options);
+        assert.equal(result.databaseMode,'completed-only');
+        assert.deepEqual(f.events,['maintenance','recovery','active']);
+        for(const config of f.configs){
+            assert.deepEqual(config.services,[{binding:'AUTH_SERVER',service:'approved-auth-worker'}]);
+            assert.equal(config.vars.OAUTH_ISSUER,undefined);
+            assert.equal(config.vars.OAUTH_RESOURCE,undefined);
+        }
+        assert.deepEqual((await f.h.db.prepare('SELECT * FROM data_migrations').all()).results,before);
+        assert.equal(f.writes().length,1,'Only an IF NOT EXISTS zero-change ledger check is permitted');
+    }finally{await f.h.close();}
 });
 test('lost existing OAuth Service Binding after maintenance stops before any D1 migration check or schema write',async()=>{
     const f=fixture({bindingResult:existingAuthService}),original=f.options.fetchImpl;
