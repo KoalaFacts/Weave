@@ -20,6 +20,21 @@ test('demo entry serves executable UI with per-response CSP nonce, no cached cre
         const second=await h.request('/');assert.notEqual(second.headers.get('content-security-policy'),csp);
     } finally {await h.close();}
 });
+test('demo presents a real GitHub OAuth path for two independent MCP agents',async()=>{
+    const h=await start();
+    try {
+        const response=await h.request('/');assert.equal(response.status,200);
+        const html=await response.text();
+        assert.match(html,/<section id="mcpConnect" aria-labelledby="mcpConnectHeading">/);
+        assert.match(html,/href="https:\/\/weave-auth-demo\.weave-389\.workers\.dev\/account"/);
+        assert.match(html,/claude mcp add --transport http weave https:\/\/demo\.weave-389\.workers\.dev\/mcp/);
+        assert.match(html,/codex mcp add weave --url https:\/\/demo\.weave-389\.workers\.dev\/mcp/);
+        assert.match(html,/codex mcp login weave/);
+        assert.match(html,/separate GitHub sign-in and consent/i);
+        assert.match(html,/browser key-based account is not automatically linked/i);
+        assert.doesNotMatch(html,/authorization server that is not deployed yet/i);
+    } finally {await h.close();}
+});
 test('remote ingress requires HTTPS while local loopback remains usable',async()=>{
     const h=await start();
     try {
