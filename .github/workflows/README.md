@@ -37,7 +37,7 @@ The PR190 exact-base coverage collector is no longer invoked by CI. Its old chec
 
 Required-check/ruleset configuration could not be verified because the read endpoint was denied. Ordinary workflow file identities, job names and Security Scan push/PR triggers therefore remain. Shared composite steps reduce duplicated maintenance without moving checks into nested reusable workflows or broadening path triggers to run unrelated suites. Release/publish/deployment workflows are not combined across credential or approval boundaries.
 
-The earlier workflow consolidation reduced source files from 15 to 13; the separately approved D1 migration channel now brings the total to 14. These changes do not delete historical Actions UI entries or run evidence. In particular, historical **Prepare PR90 Merge** came from `pr90-merge-preparation.yml`, which is not a current workflow file; it is distinct from the retired security-release-chain validation file.
+The earlier workflow consolidation reduced source files from 15 to 13; the separately approved D1 migration and read-only preservation inventory channels now bring the total to 15. These changes do not delete historical Actions UI entries or run evidence. In particular, historical **Prepare PR90 Merge** came from `pr90-merge-preparation.yml`, which is not a current workflow file; it is distinct from the retired security-release-chain validation file.
 
 ## Release and deployment setup
 
@@ -50,3 +50,32 @@ Worker deployment uses existing `CLOUDFLARE_API_TOKEN` and `CLOUDFLARE_ACCOUNT_I
 **Separately approved legacy-human D1 migration:** Do not use the current-main generic `maintain` deploy or a `publish/demo` push to upgrade the existing legacy `accounts` table: newer agent-key onboarding commits removed that earlier migration path and are not approved for a combined live cutover. After its own exact-head CI/review and normal merge, manually dispatch [Approved D1 Human Account Migration](approved-human-schema-migration.yml) **from `main`**, entering the exact pinned source `150ec32e5f2415ed3c64db7e1c0d36655f8dabea` in `confirm_approved_source`. The protected `production` job then checks out only that commit, rechecks main ancestry and executes only `maintain` plus the approved human-account upgrade using the existing `CLOUDFLARE_API_TOKEN`. The pinned deployment code refuses unexpected D1 shapes, checks a D1 Time Travel bookmark before maintenance, verifies the actual public `/mcp` maintenance response before schema writes, retains the final recovery bookmark and a seven-day evidence artifact, and keeps OAuth/Access activation disabled. A refused preflight is a **failed release**, not permission to reset, restore, bypass drift guards, or ship the later agent-key schema. A completed migration still needs separate OAuth activation, independent public two-Agent messaging/ACK/restart acceptance and least-privilege revalidation.
 
 Browser installation and focused verification commands are documented in [browser testing](../../docs/browser-testing.md). CI and release tests use the browser selected by the pinned .NET Playwright SDK; Worker verification uses its pinned Node SDK. No workflow should return to direct Chrome startup or debugging-port polling.
+
+
+### Read-only live D1 preservation inventory (before any old migration)
+
+The protected [Read-only Weave D1 Preservation Inventory](read-only-d1-inventory.yml)
+workflow runs manually **from main** with the existing production environment
+and the existing `CLOUDFLARE_API_TOKEN` / `CLOUDFLARE_ACCOUNT_ID`.
+It never uploads a Worker, changes D1, creates OAuth resources or modifies
+permissions. It checks the real `demo` Worker binding, then reads only
+schema metadata, aggregate row counts, ACK totals, human-linked account count,
+legacy unmanaged `oauth_identity_links` presence/row count, and selected
+referential-integrity aggregates. A missing legacy OAuth table is reported as
+unverified history, not proof there were no links. The seven-day Actions artifact
+`weave-read-only-d1-<run-id>/result.json` excludes identities, subjects,
+controls, email, message contents, payloads and credentials. A reported orphan,
+missing core table, or incompatible accounts structure fails the job without
+repairing anything. Source tests assert SQL is restricted to reads.
+
+**This is a snapshot, not a migration or a historical-preservation proof.**
+In particular, a current six-column `accounts` table may be compatible with
+newer source while having no proof that the old human-account migration kept
+every prior record. No historical count baseline or D1 Time Travel restoration
+is inferred from this report. The pinned legacy human-migration source accepts
+older account shapes and **must not be dispatched merely because its workflow
+exists**: inspect this current live report, available recovery evidence and
+migration ledger first. If data history cannot be reconciled, stop and obtain
+a verified recovery path; do not reset, backfill guessed identities, or deploy
+old schema over current production. This read-only workflow also does not
+fulfil the required two-independent-Agent public message/ACK/reconnect proof.
