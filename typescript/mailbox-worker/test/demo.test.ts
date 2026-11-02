@@ -25,14 +25,28 @@ test('demo presents a real GitHub OAuth path for two independent MCP agents',asy
     try {
         const response=await h.request('/');assert.equal(response.status,200);
         const html=await response.text();
-        assert.match(html,/<section id="mcpConnect" aria-labelledby="mcpConnectHeading">/);
-        assert.match(html,/href="https:\/\/weave-auth-demo\.weave-389\.workers\.dev\/account"/);
-        assert.match(html,/claude mcp add --transport http weave https:\/\/demo\.weave-389\.workers\.dev\/mcp/);
-        assert.match(html,/codex mcp add weave --url https:\/\/demo\.weave-389\.workers\.dev\/mcp/);
-        assert.match(html,/codex mcp login weave/);
-        assert.match(html,/separate GitHub sign-in and consent/i);
-        assert.match(html,/browser key-based account is not automatically linked/i);
+        assert.match(html,/href="\/connect">Connect an agent through GitHub and MCP<\/a>/);
         assert.doesNotMatch(html,/authorization server that is not deployed yet/i);
+        const connection=await h.request('/connect');assert.equal(connection.status,200);
+        assert.equal(connection.headers.get('cache-control'),'no-store');
+        assert.equal(connection.headers.get('referrer-policy'),'no-referrer');
+        const csp=connection.headers.get('content-security-policy');
+        assert.ok(csp.includes("default-src 'none'"));
+        assert.ok(csp.includes("frame-ancestors 'none'"));
+        const connectHtml=await connection.text();
+        const nonce=/<style nonce="([^"]+)">/.exec(connectHtml)?.[1];
+        assert.ok(nonce && csp.includes("'nonce-"+nonce+"'"));
+        assert.match(connectHtml,/<section id="mcpConnect" aria-labelledby="mcpConnectHeading">/);
+        assert.match(connectHtml,/href="https:\/\/weave-auth-demo\.weave-389\.workers\.dev\/account"/);
+        assert.match(connectHtml,/claude mcp add --transport http weave https:\/\/demo\.weave-389\.workers\.dev\/mcp/);
+        assert.match(connectHtml,/codex mcp add weave --url https:\/\/demo\.weave-389\.workers\.dev\/mcp/);
+        assert.match(connectHtml,/codex mcp login weave/);
+        assert.match(connectHtml,/separate GitHub sign-in and consent/i);
+        assert.match(connectHtml,/browser key-based account is not automatically linked/i);
+        assert.doesNotMatch(connectHtml,/authorization server that is not deployed yet/i);
+        const second=await h.request('/connect');
+        assert.notEqual(second.headers.get('content-security-policy'),csp);
+        assert.equal((await h.mf.dispatchFetch('http://relay.test/connect')).status,400);
     } finally {await h.close();}
 });
 test('remote ingress requires HTTPS while local loopback remains usable',async()=>{

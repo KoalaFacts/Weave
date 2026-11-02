@@ -137,6 +137,12 @@ test('real Worker UI: isolated sessions, public/private discovery, acceptance, r
         const startMobile = await fixture.page('start-mobile', '/', { viewport: { width: 390, height: 844 }, isMobile: true });
         await layout(fixture, startMobile, 'demo-start-mobile', 390, 844, true);
         await startMobile.context().close();
+        const connection=await fixture.page('connection-mobile','/connect',{ viewport:{ width:390,height:844 },isMobile:true });
+        assert.equal(await connection.getByRole('heading',{name:'Connect your own agent using GitHub and MCP'}).isVisible(),true);
+        assert.equal(await connection.getByRole('link',{name:'Manage GitHub-linked agents and connected clients'}).isVisible(),true);
+        assert.ok((await connection.locator('pre').first().textContent()).includes('claude mcp add --transport http'));
+        assert.ok(await connection.evaluate(()=>document.documentElement.scrollWidth<=innerWidth+1),'Mobile MCP connection page must not scroll horizontally.');
+        await connection.context().close();
         await alice.locator('#browserGuide summary').click();
         assert.ok((await text(alice, 'browserGuide')).includes('acknowledged'));
         await fixture.screenshot(alice, 'demo-browser-walkthrough');
