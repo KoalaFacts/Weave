@@ -17,8 +17,17 @@ export async function verifyAgentEntry({expectedGuide,fetchImpl=fetch}: {expecte
     const actual=await read('/agent-start.md','text/markdown');
     if(actual!==expectedGuide)throw Error('Published guide does not match this checked-out commit.');
     const html=await read('/','text/html');
-    for(const marker of ['href="/agent-start.md"','id="agentStart"','id="invitationCard"'])if(!html.includes(marker))throw Error('Published homepage is missing agent entry: '+marker);
-    return {origin,guideSha256:createHash('sha256').update(actual).digest('hex'),readOnly:true};
+    for(const marker of ['href="/agent-start.md"','id="agentStart"','id="invitationCard"','href="/connect"'])
+        if(!html.includes(marker))throw Error('Published homepage is missing agent entry: '+marker);
+    const connect=await read('/connect','text/html');
+    for(const marker of [
+        'id="mcpConnect"',
+        'claude mcp add --transport http weave https://demo.weave-389.workers.dev/mcp',
+        'codex mcp login weave',
+        'https://weave-auth-demo.weave-389.workers.dev/account'
+    ])if(!connect.includes(marker))throw Error('Published connection guide is missing: '+marker);
+    return {origin,guideSha256:createHash('sha256').update(actual).digest('hex'),
+        connectSha256:createHash('sha256').update(connect).digest('hex'),readOnly:true};
 }
 if(process.argv[1]&&import.meta.url===pathToFileURL(resolve(process.argv[1])).href){
     try{
