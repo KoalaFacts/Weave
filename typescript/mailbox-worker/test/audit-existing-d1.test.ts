@@ -1,7 +1,7 @@
 import assert from 'node:assert/strict';
 import { DatabaseSync } from 'node:sqlite';
 import { test } from 'node:test';
-import { auditExistingD1 } from '../scripts/audit-existing-d1.ts';
+import { auditExistingD1, inspectTimeTravelBookmarks } from '../scripts/audit-existing-d1.ts';
 import type { StorageDatabase } from '../scripts/latest-schema.ts';
 
 function fixture() {
@@ -156,4 +156,54 @@ test('missing migration ledger is reported without attempting repair',async()=>{
         assert.equal(report.status,'needs-review');
         assert.ok(report.findings.includes('normalize-mailbox-ledger-unavailable'));
     } finally {sql.close();}
+});
+
+
+test('Time Travel samples use only read-only GET and never expose restoration bookmarks',async()=>{
+    const requests:string[]=[];
+    const fake:typeof fetch=async(input,init)=>{
+        const url=String(input);
+        requests.push(url);
+        assert.equal(init?.method,'GET');
+        assert.equal(init?.redirect,'error');
+        assert.equal((init?.headers as Record<string,string>).Authorization,'Bearer protected-token');
+        const timestamp=new URL(url).searchParams.get('timestamp');
+        if (timestamp?.startsWith('2026-10-17')) return new Response('',{status:404});
+        if (timestamp?.startsWith('2026-11-01')) return new Response('',{status:403});
+        return Response.json({success:true,result:{bookmark:timestamp ? 'after-ledger' : 'now'}});
+    };
+    const evidence=await inspectTimeTravelBookmarks(
+        'https://api.cloudflare.com/client/v4/accounts/a/d1/database/b/time_travel/bookmark',
+        'protected-token',fake,
+    );
+    assert.deepEqual(evidence.map(e=>e.status),[
+        'bookmark-returned','not-available','permission-denied','bookmark-returned',
+    ]);
+    assert.equal(evidence[1].httpStatus,404);
+    assert.equal(evidence[2].httpStatus,403);
+    assert.notEqual(evidence[0].bookmarkSha256,evidence[3].bookmarkSha256);
+    assert.equal(evidence[1].bookmarkSha256,null);
+    assert.equal(evidence[0].bookmarkSha256?.length,64);
+    assert.equal(JSON.stringify(evidence).includes('after-ledger'),false);
+    assert.equal(JSON.stringify(evidence).includes('protected-token'),false);
+    assert.equal(requests.length,4);
+    assert.ok(requests.every(url=>url.includes('/time_travel/bookmark')
+        && !url.includes('/restore') && !url.includes('protected-token')));
+});
+
+test('Time Travel malformed or failed reads are reported as unknown, not proof of no history',async()=>{
+    let call=0;
+    const fake:typeof fetch=async()=>{
+        call++;
+        if (call===1) throw Error('do not leak upstream headers');
+        if (call===2) return Response.json({success:true,result:{}});
+        if (call===3) return Response.json({success:false,result:{bookmark:'bogus'}});
+        return new Response('',{status:503});
+    };
+    const evidence=await inspectTimeTravelBookmarks(
+        'https://api.cloudflare.com/client/v4/accounts/a/d1/database/b/time_travel/bookmark','protected-token',fake,
+    );
+    assert.deepEqual(evidence.map(e=>e.status),['api-error','no-bookmark','no-bookmark','api-error']);
+    assert.ok(evidence.every(e=>e.bookmarkSha256===null));
+    assert.equal(JSON.stringify(evidence).includes('upstream headers'),false);
 });
