@@ -59,8 +59,10 @@ workflow runs manually **from main** with the existing production environment
 and the existing `CLOUDFLARE_API_TOKEN` / `CLOUDFLARE_ACCOUNT_ID`.
 It never uploads a Worker, changes D1, creates OAuth resources or modifies
 permissions. It checks the real `demo` Worker binding, then reads only
-schema metadata, aggregate row counts, ACK totals, human-linked account count
-and selected referential-integrity aggregates. The seven-day Actions artifact
+schema metadata, aggregate row counts, ACK totals, human-linked account count,
+legacy unmanaged `oauth_identity_links` presence/row count, and selected
+referential-integrity aggregates. A missing legacy OAuth table is reported as
+unverified history, not proof there were no links. The seven-day Actions artifact
 `weave-read-only-d1-<run-id>/result.json` excludes identities, subjects,
 controls, email, message contents, payloads and credentials. A reported orphan,
 missing core table, or incompatible accounts structure fails the job without
