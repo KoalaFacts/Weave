@@ -9,7 +9,8 @@ import type { StorageDatabase } from './latest-schema.ts';
 export const inventoryTables = [
     'accounts', 'humans', 'agent_keys', 'account_addresses', 'contact_cards',
     'contact_requests', 'contacts', 'mailbox_records', 'message_delivery',
-    'client_grants', 'mcp_idempotency', 'data_migrations',
+    'client_grants', 'mcp_idempotency', 'oauth_identity_links',
+    'mailbox_records_legacy', 'data_migrations',
 ] as const;
 const requiredTables = [
     'accounts', 'account_addresses', 'contact_requests', 'contacts',
@@ -43,6 +44,9 @@ export async function auditExistingD1(db: StorageDatabase): Promise<ReadOnlyD1Au
     const rowCounts: Record<string, AuditCount> = {};
     const missingRequiredTables = requiredTables.filter(name => !present.has(name));
     const findings: string[] = missingRequiredTables.length ? ['missing-core-tables'] : [];
+    // This table is unmanaged in today's Drizzle schema but existed in the
+    // reviewed pre-agent-key source. Absence is not proof it contained no data.
+    if (!present.has('oauth_identity_links')) findings.push('legacy-oauth-identity-history-unverified');
     async function count(sql: string): Promise<string> {
         const row = await db.prepare(sql).first<{value:string}>();
         if (row === null || !/^\d+$/.test(String(row.value))) throw Error('Invalid aggregate count from D1.');
@@ -84,6 +88,8 @@ export async function auditExistingD1(db: StorageDatabase): Promise<ReadOnlyD1Au
             'SELECT CAST(COUNT(*) AS TEXT) AS value FROM client_grants g LEFT JOIN accounts a ON a.account_id=g.account_id WHERE a.account_id IS NULL'],
         ['grants-human', 'client_grants', ['human_id'], 'humans', 'human_id',
             'SELECT CAST(COUNT(*) AS TEXT) AS value FROM client_grants g LEFT JOIN humans h ON h.human_id=g.human_id WHERE h.human_id IS NULL'],
+        ['legacy-oauth-links-account', 'oauth_identity_links', ['account_id'], 'accounts', 'account_id',
+            'SELECT CAST(COUNT(*) AS TEXT) AS value FROM oauth_identity_links l LEFT JOIN accounts a ON a.account_id=l.account_id WHERE a.account_id IS NULL'],
         ['accounts-human', 'accounts', ['human_id'], 'humans', 'human_id',
             'SELECT CAST(COUNT(*) AS TEXT) AS value FROM accounts a LEFT JOIN humans h ON h.human_id=a.human_id WHERE a.human_id IS NOT NULL AND h.human_id IS NULL'],
     ] as const;
