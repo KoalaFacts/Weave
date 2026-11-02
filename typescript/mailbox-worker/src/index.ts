@@ -1,6 +1,6 @@
 import { WorkerEntrypoint } from 'cloudflare:workers';
 import { createOwnedAgent, humanHasAgent, listHumanAgents, signInHuman, type CreateAgentResult, type SignInResult, type HumanSignIn, type AgentSummary } from './humans.ts';
-import { demo } from './demo';
+import { demo, connect } from './demo';
 import { agentStart } from './agent-start';
 import { registry } from './registry';
 import openapi from './openapi.json';
@@ -54,6 +54,7 @@ export default {
             const url = new URL(request.url), method = request.method;
             if (url.protocol !== 'https:' && !['localhost','127.0.0.1','[::1]'].includes(url.hostname)) fail(400,'invalid');
             if (method === 'GET' && url.pathname === '/') return demo();
+            if (method === 'GET' && url.pathname === '/connect') return connect();
             if (method === 'GET' && url.pathname === '/agent-start.md') return agentStart();
             if (method === 'GET' && url.pathname === '/registry') return registry();
             if (method === 'GET' && url.pathname === '/openapi.json') return new Response(openapi,{headers:{'Content-Type':'application/json','Cache-Control':'no-store','X-Content-Type-Options':'nosniff'}});
