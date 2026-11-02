@@ -97,7 +97,7 @@ test('residual D1 tables are aggregated without revealing stored agent or migrat
         const published=JSON.stringify(report);
         for(const fragment of ['private-agent-916','private-assertion-684','private-request-824','private-subject-503','private-owner-173','private-peer-471','private-migration-642'])
             assert.equal(published.includes(fragment),false);
-        assert.ok(statements.every(statement=>/^\\s*(SELECT|PRAGMA table_info\\s*\\()/i.test(statement)));
+        assert.ok(statements.every(statement=>/^\s*(SELECT|PRAGMA table_info\s*\()/i.test(statement)));
     } finally {sql.close();}
 });
 
