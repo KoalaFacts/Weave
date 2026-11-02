@@ -8,9 +8,31 @@ internal static class SiloLifecycleConfiguration
 {
     public static async Task VerifyAsync(string root, string backend, bool workspaceOverride)
     {
+        try
+        {
+            await VerifyOnceAsync(root, backend, workspaceOverride, "worker");
+        }
+        catch (OperationCanceledException) when (!TestContext.Current.CancellationToken.IsCancellationRequested
+            && HasOwnedListenerPortCollision(root))
+        {
+            // The OS may reassign the released fixture port before Node binds it.
+            // Retry only this observed EADDRINUSE, with a new reserved port and full assertions.
+            await VerifyOnceAsync(root, backend, workspaceOverride, "worker-retry");
+        }
+    }
+
+    private static bool HasOwnedListenerPortCollision(string root)
+    {
+        var path = Path.Join(root, ".weave", "silo.log");
+        return File.Exists(path) && File.ReadAllText(path).Contains(
+            "Error: listen EADDRINUSE: address already in use 127.0.0.1:", StringComparison.Ordinal);
+    }
+
+    private static async Task VerifyOnceAsync(string root, string backend, bool workspaceOverride, string workerDirectory)
+    {
         using var deadline = CancellationTokenSource.CreateLinkedTokenSource(TestContext.Current.CancellationToken);
         deadline.CancelAfter(TimeSpan.FromSeconds(12));
-        await using var worker = new SiloLifecycleWorker(Path.Join(root, "worker"), "healthy");
+        await using var worker = new SiloLifecycleWorker(Path.Join(root, workerDirectory), "healthy");
         var globalConnection = "Server=global-host;Database=global db;Password=fixture-only";
         var workspaceConnection = backend switch
         {
