@@ -204,7 +204,7 @@ export async function deploy({env=process.env,fetchImpl=fetch,run,root=directory
     if(authBinding){
         if(authBinding.type!=='service'||typeof authBinding.service!=='string'||
             !/^[a-z0-9](?:[a-z0-9-]{0,61}[a-z0-9])?$/.test(authBinding.service)||
-            authBinding.service==='demo'||authBinding.environment!==undefined||
+            authBinding.service==='demo'||!defaultEnvironment(authBinding.environment)||
             (authBinding.entrypoint!==undefined&&!/^[A-Za-z_$][A-Za-z0-9_$]{0,127}$/.test(authBinding.entrypoint)))
             throw Error('Invalid existing AUTH_SERVER OAuth Service Binding; no mutation attempted.');
         for(const [name,type] of [
