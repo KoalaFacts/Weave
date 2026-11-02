@@ -19,6 +19,7 @@ function fixture() {
         'CREATE TABLE agent_keys(kid TEXT)',
         'CREATE TABLE mcp_idempotency(idempotency_key TEXT)',
         'CREATE TABLE data_migrations(script_id TEXT,checksum TEXT)',
+        'CREATE TABLE oauth_identity_links(account_id TEXT)',
     ].join(';') + ';');
     const db:StorageDatabase={
         prepare(statement:string) {
@@ -48,7 +49,7 @@ test('current six-column accounts, messages, ACK and identity links are counted 
     const {sql,db,statements}=fixture();
     try {
         sql.exec("INSERT INTO humans VALUES('human-A'); INSERT INTO accounts(account_id,human_id) VALUES('a','human-A'),('b',NULL);"
-            + "INSERT INTO mailbox_records VALUES('m1','a','b'); INSERT INTO message_delivery VALUES('m1','acknowledged');");
+            + "INSERT INTO mailbox_records VALUES('m1','a','b'); INSERT INTO message_delivery VALUES('m1','acknowledged'); INSERT INTO oauth_identity_links VALUES('a');");
         const report=await auditExistingD1(db);
         assert.equal(report.status,'observed');
         assert.equal(report.schema,'six-column-human-linked');
@@ -57,6 +58,8 @@ test('current six-column accounts, messages, ACK and identity links are counted 
         assert.equal(report.acknowledged,'1');
         assert.equal(report.humanLinkedAccounts,'1');
         assert.equal(report.orphanCounts['delivery-message'],'0');
+        assert.equal(report.rowCounts.oauth_identity_links,'1');
+        assert.equal(report.orphanCounts['legacy-oauth-links-account'],'0');
         assert.equal(report.historicalPreservationProven,false);
         assert.equal(report.migrationPermitted,false);
         assert.equal(JSON.stringify(report).includes('human-A'),false);
@@ -102,5 +105,17 @@ test('a missing core table fails closed and still records existing table counts'
         assert.ok(report.missingRequiredTables.includes('contacts'));
         assert.equal(report.rowCounts.contacts,null);
         assert.ok(report.findings.includes('missing-core-tables'));
+    } finally {sql.close();}
+});
+
+test('missing old OAuth identity link table remains an explicit history-verification blocker',async()=>{
+    const {sql,db}=fixture();
+    try {
+        sql.exec('DROP TABLE oauth_identity_links;');
+        const report=await auditExistingD1(db);
+        assert.equal(report.status,'needs-review');
+        assert.equal(report.rowCounts.oauth_identity_links,null);
+        assert.ok(report.findings.includes('legacy-oauth-identity-history-unverified'));
+        assert.equal(report.orphanCounts['legacy-oauth-links-account'],null);
     } finally {sql.close();}
 });
