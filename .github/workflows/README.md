@@ -50,3 +50,30 @@ Worker deployment uses existing `CLOUDFLARE_API_TOKEN` and `CLOUDFLARE_ACCOUNT_I
 **Separately approved legacy-human D1 migration:** Do not use the current-main generic `maintain` deploy or a `publish/demo` push to upgrade the existing legacy `accounts` table: newer agent-key onboarding commits removed that earlier migration path and are not approved for a combined live cutover. After its own exact-head CI/review and normal merge, manually dispatch [Approved D1 Human Account Migration](approved-human-schema-migration.yml) **from `main`**, entering the exact pinned source `150ec32e5f2415ed3c64db7e1c0d36655f8dabea` in `confirm_approved_source`. The protected `production` job then checks out only that commit, rechecks main ancestry and executes only `maintain` plus the approved human-account upgrade using the existing `CLOUDFLARE_API_TOKEN`. The pinned deployment code refuses unexpected D1 shapes, checks a D1 Time Travel bookmark before maintenance, verifies the actual public `/mcp` maintenance response before schema writes, retains the final recovery bookmark and a seven-day evidence artifact, and keeps OAuth/Access activation disabled. A refused preflight is a **failed release**, not permission to reset, restore, bypass drift guards, or ship the later agent-key schema. A completed migration still needs separate OAuth activation, independent public two-Agent messaging/ACK/restart acceptance and least-privilege revalidation.
 
 Browser installation and focused verification commands are documented in [browser testing](../../docs/browser-testing.md). CI and release tests use the browser selected by the pinned .NET Playwright SDK; Worker verification uses its pinned Node SDK. No workflow should return to direct Chrome startup or debugging-port polling.
+
+
+### Read-only live D1 preservation inventory (before any old migration)
+
+The protected [Read-only Weave D1 Preservation Inventory](read-only-d1-inventory.yml)
+workflow runs manually **from main** with the existing production environment
+and the existing `CLOUDFLARE_API_TOKEN` / `CLOUDFLARE_ACCOUNT_ID`.
+It never uploads a Worker, changes D1, creates OAuth resources or modifies
+permissions. It checks the real `demo` Worker binding, then reads only
+schema metadata, aggregate row counts, ACK totals, human-linked account count
+and selected referential-integrity aggregates. The seven-day Actions artifact
+`weave-read-only-d1-<run-id>/result.json` excludes identities, subjects,
+controls, email, message contents, payloads and credentials. A reported orphan,
+missing core table, or incompatible accounts structure fails the job without
+repairing anything. Source tests assert SQL is restricted to reads.
+
+**This is a snapshot, not a migration or a historical-preservation proof.**
+In particular, a current six-column `accounts` table may be compatible with
+newer source while having no proof that the old human-account migration kept
+every prior record. No historical count baseline or D1 Time Travel restoration
+is inferred from this report. The pinned legacy human-migration source accepts
+older account shapes and **must not be dispatched merely because its workflow
+exists**: inspect this current live report, available recovery evidence and
+migration ledger first. If data history cannot be reconciled, stop and obtain
+a verified recovery path; do not reset, backfill guessed identities, or deploy
+old schema over current production. This read-only workflow also does not
+fulfil the required two-independent-Agent public message/ACK/reconnect proof.
