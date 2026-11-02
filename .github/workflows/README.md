@@ -57,6 +57,15 @@ Browser installation and focused verification commands are documented in [browse
 The protected [Read-only Weave D1 Preservation Inventory](read-only-d1-inventory.yml)
 workflow runs manually **from main** with the existing production environment
 and the existing `CLOUDFLARE_API_TOKEN` / `CLOUDFLARE_ACCOUNT_ID`.
+The same read-only workflow also accepts a narrowly scoped owner-authored
+issue comment when a connected GitHub client cannot call `workflow_dispatch`:
+create the **exact** comment `/weave-d1-inventory` on issue #236 using the
+verified existing repository member `ldsenow`. Other commenters, issue
+numbers, pull-request conversations and edits cannot start the inventory job.
+Both entry paths use the **same protected `production` environment**, exact
+main checkout, read-only token permissions, shared deploy concurrency lock,
+and existing Cloudflare Secrets; any environment reviewer approval remains
+required. This is not an unattended deployment or permission escalation.
 It never uploads a Worker, changes D1, creates OAuth resources or modifies
 permissions. It checks the real `demo` Worker binding, then reads only
 schema metadata, aggregate row counts, ACK totals, human-linked account count,
