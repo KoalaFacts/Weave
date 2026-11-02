@@ -63,7 +63,7 @@ test('current six-column accounts, messages, ACK and identity links are counted 
         assert.equal(report.orphanCounts['legacy-oauth-links-account'],'0');
         assert.equal(report.historicalPreservationProven,false);
         assert.equal(report.migrationPermitted,false);
-        assert.deepEqual(report.normalizeMailboxLedger,{state:'complete',completedAtTicks:'17919826570270000'});
+        assert.deepEqual(Reflect.get(report,'normalizeMailboxLedger'),{state:'complete',completedAtTicks:'17919826570270000'});
         assert.equal(JSON.stringify(report).includes('human-A'),false);
         assert.equal(JSON.stringify(report).includes('m1'),false);
         assert.ok(statements.every(statement=>/^\s*(SELECT|PRAGMA table_info\s*\()/i.test(statement)));
@@ -127,7 +127,7 @@ test('changed migration completion time is observable without reading private da
     try {
         sql.exec('UPDATE data_migrations SET completed_at=17935778419690000');
         const report=await auditExistingD1(db);
-        assert.deepEqual(report.normalizeMailboxLedger,{state:'complete',completedAtTicks:'17935778419690000'});
+        assert.deepEqual(Reflect.get(report,'normalizeMailboxLedger'),{state:'complete',completedAtTicks:'17935778419690000'});
         assert.equal(report.status,'observed');
     } finally {sql.close();}
 });
@@ -137,7 +137,7 @@ test('mismatched migration checksum is a blocking provenance finding',async()=>{
     try {
         sql.exec("UPDATE data_migrations SET checksum='not-the-expected-checksum'");
         const report=await auditExistingD1(db);
-        assert.deepEqual(report.normalizeMailboxLedger,{state:'unexpected-checksum',completedAtTicks:'17919826570270000'});
+        assert.deepEqual(Reflect.get(report,'normalizeMailboxLedger'),{state:'unexpected-checksum',completedAtTicks:'17919826570270000'});
         assert.equal(report.status,'needs-review');
         assert.ok(report.findings.includes('normalize-mailbox-ledger-unexpected-checksum'));
         assert.equal(JSON.stringify(report).includes('not-the-expected-checksum'),false);
@@ -149,7 +149,7 @@ test('missing migration ledger is reported without attempting repair',async()=>{
     try {
         sql.exec('DROP TABLE data_migrations');
         const report=await auditExistingD1(db);
-        assert.deepEqual(report.normalizeMailboxLedger,{state:'unavailable',completedAtTicks:null});
+        assert.deepEqual(Reflect.get(report,'normalizeMailboxLedger'),{state:'unavailable',completedAtTicks:null});
         assert.equal(report.status,'needs-review');
         assert.ok(report.findings.includes('normalize-mailbox-ledger-unavailable'));
     } finally {sql.close();}
