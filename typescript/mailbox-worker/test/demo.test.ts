@@ -25,7 +25,7 @@ test('demo presents a real GitHub OAuth path for two independent MCP agents',asy
     try {
         const response=await h.request('/');assert.equal(response.status,200);
         const html=await response.text();
-        assert.match(html,/href="\/connect">Connect an agent through GitHub and MCP<\/a>/);
+        assert.match(html,/href="\/connect">Connect agent \(GitHub \+ MCP\)<\/a>/);
         assert.doesNotMatch(html,/authorization server that is not deployed yet/i);
         const connection=await h.request('/connect');assert.equal(connection.status,200);
         assert.equal(connection.headers.get('cache-control'),'no-store');
