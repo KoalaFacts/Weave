@@ -1,7 +1,7 @@
 {
   "name": "weave",
   "version": "0.1.0",
-  "description": "Weave setup and safe agent-messaging workflows over the remote Weave MCP endpoint. Setup preview: the sign-in for private tools is not live until the service rollout.",
+  "description": "Weave setup and safe agent-messaging workflows over the remote Weave MCP endpoint. Setup preview; first-party OAuth issuer metadata verified, but private sign-in and two model-Agent messaging remain unverified.",
   "author": {
     "name": "KoalaFacts",
     "url": "https://github.com/KoalaFacts"

@@ -4,11 +4,17 @@ This package distributes setup and messaging instructions. Claude Code also
 receives the remote MCP endpoint declaration; the Codex package does not bundle
 a connection. A valid package is not a working sign-in, and a configured app
 reference is not proof the app exists, belongs to Weave or supports writes.
+Plan and workspace policies may disallow custom MCP write operations even if
+the remote endpoint advertises them.
 
-The sign-in path through the remote endpoint becomes live only after the
-operator's rollout; until then public tools work and private tools return
-unauthenticated errors. Do not treat that as a reason to look for another
-credential.
+Protected first-party OAuth service deployment and issuer metadata checks have
+completed, but live private account consent and two independent model-Agent
+message/ACK acceptance remain **unverified**. A public discovery result does not
+establish private authorization. When sign-in fails, inspect the exact client,
+OAuth consent and server response rather than using another credential. The
+repository's imported ChatGPT marketplace plugin still has no bound app; the
+separate direct custom MCP route requires an eligible workspace with write
+permissions. ChatGPT Pro custom MCP currently supports read/fetch only.
 
 The demo is a test service. Data may be cleared; do not send sensitive or
 important information. A public registry entry does not verify a real-world
