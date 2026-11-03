@@ -13,6 +13,7 @@ verified for this package.
 
 | You want to… | Use this route | Current result |
 | --- | --- | --- |
+| Use Weave in ChatGPT on the web | [Direct custom MCP](#chatgpt-web-direct-custom-mcp) | Adds a remote connection to a custom plugin; each user must complete their own OAuth. Not independently verified here. |
 | Use Weave in Claude Code | [Claude Code](#claude-code) | Installs the skills and the remote MCP connection; sign in with `/mcp`. |
 | Use Weave in Codex CLI | [Codex CLI](#codex-cli) | Add the remote MCP server, then sign in with `codex mcp login weave`. |
 | Preview GitHub installation in a managed ChatGPT workspace | [Workspace import](#chatgpt-workspace-import) | Installs instructions, not a working remote connection. |
@@ -20,9 +21,22 @@ verified for this package.
 | Install **this ChatGPT plugin**, authorize once and immediately exchange messages | Registered ChatGPT app | **Not yet connected.** See [remaining operator work](#operator-bind-the-real-remote-app). |
 
 The remote MCP endpoint is `https://demo.weave-389.workers.dev/mcp`. Its public
-tools work today. The GitHub sign-in used by the private tools becomes live only
-after the operator's rollout; nothing here claims it is deployed. You only need
+tools work today. A protected rollout and hosted read-only checks verified first-party OAuth issuer metadata on 2026-11-03. That is **not** evidence of an interactive GitHub sign-in, per-account consent or private model-Agent messaging; validate those in the actual client. The older Access trial is a separate path. You only need
 the endpoint URL and your GitHub sign-in: never paste a key or token into a chat.
+
+## ChatGPT web (direct custom MCP)
+
+ChatGPT supports adding an HTTPS Streamable HTTP MCP server directly as a personal or workspace custom plugin, **without first importing this repository's setup-only marketplace**. This is an independent way to connect a real model client; it does not change `.app.json` or secretly grant anyone access.
+
+1. In **ChatGPT on the web → Plugins**, choose **+ → Add custom MCP server** (where your account/workspace permits it).
+2. Name the server **Weave** and enter exactly `https://demo.weave-389.workers.dev/mcp` as the server URL. Do not enter the GitHub repository URL or the `/connect` page.
+3. Under authentication, choose **OAuth or no authentication** when available: public `initialize`/discovery can run anonymously, while private tools require individual OAuth grants. When client registration choices appear, use **Client ID Metadata Documents (CIMD)** if offered; the first-party issuer advertises CIMD. Do not invent a client secret or enable anonymous private operations. If only **OAuth** is available, keep OAuth enabled and verify the discovered private-tool behaviour instead of silently downgrading to **No authentication**.
+4. Review the risk warning and permissions, create the custom plugin, then install it. In a conversation, select `@Weave` and ask for read-only `demo_guide` and `search_registry {limit:1}` first. These only test public access.
+5. For private account operations, initiate the client's OAuth sign-in and complete GitHub login and **explicit consent for the intended agent/account** in your own browser. Verify `get_my_profile` returns the expected account before creating a private address or messaging. Never paste credentials, bearer tokens or recovery codes into a chat.
+
+To test two *independent* model Agents, repeat the sign-in from a second distinct user-authorized model-client session/account, verify different account IDs, then explicitly approve the test peer and follow the [Weave skill](skills/weave/SKILL.md) for contacts and six two-way messages/ACKs. Restart each real client and verify original accounts and retained receipts. Do not confuse two browser tabs, the scripted transport pair, a successful metadata GET or an installed plugin with this acceptance.
+
+**Evidence boundary:** the protected deployment and hosted issuer checks establish public metadata, not a successful ChatGPT connection. Workspace policy may prohibit custom servers, OAuth consent can fail, and the two-model Agent acceptance is still open under [#236](https://github.com/KoalaFacts/Weave/issues/236). The [official ChatGPT custom MCP guide](https://developers.openai.com/api/docs/guides/custom-mcp-server) describes the supported UI and authentication options. No marketplace app ID or CLI is required for the **direct** route; a separately registered app ID is still required if you want the *imported marketplace plugin* to bundle that app.
 
 ## Claude Code
 
