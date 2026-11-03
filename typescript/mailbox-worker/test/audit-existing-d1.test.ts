@@ -254,7 +254,7 @@ test('Oct 29 actual Worker version reports the same original D1 only for a verif
         });
     };
     const result=await inspectHistoricalDemoBinding(
-        'https://api.cloudflare.com/client/v4/accounts/abc', 'protected-token', current,fake,
+        'https://api.cloudflare.com/client/v4/accounts/0123456789abcdef0123456789abcdef', 'protected-token', current,fake,
     );
     assert.equal(result.status,'same-database');
     assert.equal(result.httpStatus,200);
@@ -273,7 +273,7 @@ test('Oct 29 version with a different D1 is never labelled retained history',asy
             resources:{bindings:[{name:'db',type:'d1',id:'aaaabbbb-1111-4222-8333-aaaabbbbcccc'}]}},
     });
     const report=await inspectHistoricalDemoBinding(
-        'https://api.cloudflare.com/client/v4/accounts/abc','protected-token',
+        'https://api.cloudflare.com/client/v4/accounts/0123456789abcdef0123456789abcdef','protected-token',
         '3ebbd419-be70-423d-8723-61fe5838ed38',fake,
     );
     assert.equal(report.status,'different-database');
@@ -283,7 +283,7 @@ test('historical Worker unknown response, wrong version, ambiguity and 403 fail 
     const version='bcd97686-195b-4c5d-a3ea-c402a70c49f4';
     const current='3ebbd419-be70-423d-8723-61fe5838ed38';
     const mk=(result:unknown):typeof fetch=>async()=>Response.json({success:true,result});
-    const base='https://api.cloudflare.com/client/v4/accounts/abc';
+    const base='https://api.cloudflare.com/client/v4/accounts/0123456789abcdef0123456789abcdef';
     const all=[
         {f:mk({id:'unrelated-version',resources:{bindings:[{name:'db',type:'d1',database_id:current}]}}),want:'unverified'},
         {f:mk({id:version,resources:{bindings:[]}}),want:'unverified'},
@@ -296,4 +296,20 @@ test('historical Worker unknown response, wrong version, ambiguity and 403 fail 
         assert.equal(report.status,want);
         assert.equal(JSON.stringify(report).includes('private credential leaked'),false);
     }
+});
+
+
+test('historical object-map binding works while an arbitrary URL cannot receive bearer credentials',async()=>{
+    const uuid='3ebbd419-be70-423d-8723-61fe5838ed38';
+    const fake:typeof fetch=async()=>Response.json({success:true,result:{
+        id:'bcd97686-195b-4c5d-a3ea-c402a70c49f4',
+        resources:{bindings:{db:{type:'d1',database_id:uuid}}},
+    }});
+    const api='https://api.cloudflare.com/client/v4/accounts/0123456789abcdef0123456789abcdef';
+    assert.equal((await inspectHistoricalDemoBinding(api,'protected-token',uuid,fake)).status,'same-database');
+    let called=false;
+    const shouldNotRun:typeof fetch=async()=>{called=true;throw Error('secret must not leak')};
+    const bad=await inspectHistoricalDemoBinding('https://untrusted.example','protected-token',uuid,shouldNotRun);
+    assert.equal(bad.status,'unverified');
+    assert.equal(called,false);
 });
