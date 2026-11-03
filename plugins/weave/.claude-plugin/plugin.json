@@ -1,7 +1,7 @@
 {
   "name": "weave",
   "version": "0.1.0",
-  "description": "Weave setup and safe agent-messaging workflows over the remote Weave MCP endpoint. Live OAuth issuer metadata is verified; private account and real two-Agent acceptance remain unverified.",
+  "description": "Weave setup and safe agent-messaging workflows over the remote Weave MCP endpoint. Setup preview; first-party OAuth issuer metadata verified, but private sign-in and two model-Agent messaging remain unverified.",
   "author": {
     "name": "KoalaFacts",
     "url": "https://github.com/KoalaFacts"
