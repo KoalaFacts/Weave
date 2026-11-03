@@ -137,6 +137,34 @@ jobs:
         run: |
           mkdir -p test-results/oauth-provider-agnostic
           node experiments/oauth-provider-agnostic/probe.ts https://demo.weave-389.workers.dev/mcp | tee test-results/oauth-provider-agnostic/discovery.json
+      - name: Check exactly approved first-party issuer (public GET only, advisory until live acceptance)
+        id: approved_issuer
+        shell: bash
+        continue-on-error: true
+        run: |
+          set -euo pipefail
+          node experiments/oauth-provider-agnostic/probe.ts \
+            https://demo.weave-389.workers.dev/mcp \
+            https://weave-auth-demo.weave-389.workers.dev \
+            | tee test-results/oauth-provider-agnostic/approved-issuer.json
+          grep -Fq '"outcome": "metadata-compatible"' test-results/oauth-provider-agnostic/approved-issuer.json
+      - name: Surface approved issuer failures without blocking undeployed source branches
+        if: always()
+        shell: bash
+        env:
+          ISSUER_STEP_OUTCOME: ${{ steps.approved_issuer.outcome }}
+        run: |
+          if [[ "$ISSUER_STEP_OUTCOME" != success ]]; then
+            echo "::warning title=First-party OAuth live metadata not verified::Read the approved-issuer artifact. A source branch is not evidence of deployment; do not claim GitHub login or private MCP acceptance."
+          fi
+      - name: Retain sanitized exact-issuer observation (not authentication evidence)
+        if: always()
+        uses: actions/upload-artifact@043fb46d1a93c77aae656e7c1c64a875d1fc6a0a # v7
+        with:
+          name: oauth-approved-issuer-discovery
+          path: test-results/oauth-provider-agnostic/approved-issuer.json
+          if-no-files-found: warn
+          retention-days: 14
       - name: Retain sanitized discovery result (not authentication evidence)
         if: always()
         uses: actions/upload-artifact@043fb46d1a93c77aae656e7c1c64a875d1fc6a0a # v7
